@@ -316,7 +316,7 @@ export function createSessionExecutionHost(options) {
       const controller = new AbortController(), handle = randomUUID();
       const job = { input, controller, done: false, cursor: 0, acknowledged: 0 };
       nativeHandles.set(handle, job);
-      job.settled = runReadOnlySessionExecution({ launcher: launcher(), storage: path.join(options.dataDirectory, 'harness', 'native-helpers'),
+      job.settled = runReadOnlySessionExecution({ launcher: launcher(), windowsOwner: options.windowsOwner, storage: path.join(options.dataDirectory, 'harness', 'native-helpers'),
         logicalDirectory: cwd, command, args: ['-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null', '-c', 'credential.helper=', ...input.args],
         env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null',
           GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0', GIT_NO_LAZY_FETCH: '1', GIT_NO_REPLACE_OBJECTS: '1', GIT_CEILING_DIRECTORIES: ceiling },
@@ -486,7 +486,7 @@ export function createSessionExecutionHost(options) {
         await nativeRecheck(input); signal?.throwIfAborted();
         const env = { ...nativeOptions.workerEnvironment, ...input.env };
         for (const key of Object.keys(env)) if (/TOKEN|SECRET|PASSWORD|API_KEY|CREDENTIAL|AUTHORIZATION|^DEVRYAN_.*URL/i.test(key)) delete env[key];
-        const started = await startReadOnlySessionExecution({ launcher: launcher(), storage: path.join(options.dataDirectory, 'harness', 'native-readers'),
+        const started = await startReadOnlySessionExecution({ launcher: launcher(), windowsOwner: options.windowsOwner, storage: path.join(options.dataDirectory, 'harness', 'native-readers'),
           logicalDirectory: readDirectory, command: input.command, args: readArgs, env,
           socketDirectory: nativeOptions.socketDirectory, workerBrowsers: false, deniedReadDirectories: nativeOptions.deniedReadDirectories, signal: AbortSignal.any([controller.signal, ...(signal ? [signal] : [])]),
           onOutput: ({ stream, data }) => nativeEvent(job, { type: 'output', stream, data: data.toString('base64') }) });
@@ -1125,7 +1125,7 @@ export function createSessionExecutionHost(options) {
       }
       retentionReady = !failed;
     },
-    startReadOnly: (input) => { options.assertExecutionReady?.(); return startReadOnlySessionExecution({ ...input, launcher: launcher(),
+    startReadOnly: (input) => { options.assertExecutionReady?.(); return startReadOnlySessionExecution({ ...input, launcher: launcher(), windowsOwner: options.windowsOwner,
       storage: path.join(options.dataDirectory, 'harness', 'provider-executions'), interactive: true }); },
     beforeCursorPrompt: async (input) => { options.assertExecutionReady?.(); await runtime.assertAdmission(input); return (await session(input)).revert ?? null; },
     settleController,

@@ -16,6 +16,7 @@ import {
     RiShieldUserLine,
     RiGithubLine,
 } from '@remixicon/react';
+import { useRuntimeFeature } from '@/lib/opencode/runtime-capabilities';
 import { BrowserVoiceButton } from '@/components/voice';
 // sessionStore removed — currentSessionId comes from useSessionUIStore
 import { useConfigStore, useVisibleConfigAgents } from '@/stores/useConfigStore';
@@ -642,6 +643,7 @@ type PendingTextareaSelectionRestore = {
 const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBottom }) => {
     const { t } = useI18n();
     const principal = useAuthPrincipal();
+    const mediaAvailable = useRuntimeFeature('media');
     const canCreateWorktrees = principal.scope !== 'managed' || principal.policy.createWorktrees;
     const { guardBuilderSend, requestAgentChange } = useAgentHandoffGuard();
     const draftStorage = React.useMemo(() => getSafeStorage(), []);
@@ -4569,7 +4571,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                             <MemoMobileModelButton onOpenModel={() => handleOpenMobilePanel('model')} className="min-w-0 flex-1" />
                                         </div>
                                         <div className="flex shrink-0 items-center gap-x-1">
-                                            <MemoBrowserVoiceButton />
+                                            {mediaAvailable ? <MemoBrowserVoiceButton /> : null}
                                             <ComposerActionButtons
                                                 isMobile={isMobile}
 
@@ -4626,7 +4628,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                 </div>
                                 <div className={cn('flex items-center flex-1 justify-end', footerGapClass, 'md:gap-x-3')}>
                                     <MemoModelControls className={cn('flex-1 min-w-0 justify-end')} />
-                                    <MemoBrowserVoiceButton />
+                                    {mediaAvailable ? <MemoBrowserVoiceButton /> : null}
                                     <ComposerActionButtons
                                         isMobile={isMobile}
 

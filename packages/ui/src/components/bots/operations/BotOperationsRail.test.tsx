@@ -477,7 +477,7 @@ describe('BotOperationsRail', () => {
     expect(mainLayout).toContain('<motion.aside');
     expect(mainLayout).toContain('<ErrorBoundary><RightSidebarTabs /></ErrorBoundary>');
     expect(mainLayout).toContain('{!botMode ? <ContextPanel /> : null}');
-    expect(mainLayout).toContain('{!botMode ? <BrowserPanel /> : null}');
+    expect(mainLayout).toContain('{browser && !botMode ? <BrowserPanel /> : null}');
     expect(mainLayout).toContain('canUseTerminal && !botMode');
     expect(rightSidebar).toContain('return <LazyViewBoundary><LazyBotOperationsRail');
     expect(rightSidebar).toContain("useMainSidebarAudienceStore((state) => state.audience === 'bots')");

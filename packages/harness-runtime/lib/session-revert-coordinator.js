@@ -52,8 +52,15 @@ export function createSessionRevertCoordinator({ runtime, conversation, executio
     }
     return settle(directory, tx, false);
   };
-  const resume = async (directory, transactionID) => withCrossProcessFileLock(
-    path.join(storage, changeKey(await runtime.projectDirectory({ directory })), `${transactionID}.lock`), async () => {
+  const resume = async (directory, transactionID) => {
+    const lockDirectory = path.join(storage, changeKey(await runtime.projectDirectory({ directory })));
+    if (process.platform === 'win32') {
+      if (typeof windowsOwner?.ensureDirectory !== 'function') throw failure('private_windows_storage_authority_unavailable');
+      await windowsOwner.ensureDirectory(storage);
+      await windowsOwner.ensureDirectory(lockDirectory);
+    }
+    return withCrossProcessFileLock(
+    path.join(lockDirectory, `${transactionID}.lock`), async () => {
       let tx = await runtime.transaction({ directory, transactionID });
       if (!tx) throw failure('revert_unavailable');
       if (tx.state === 'committed') { await releaseHolds(directory, tx); return tx.result; }
@@ -133,7 +140,8 @@ export function createSessionRevertCoordinator({ runtime, conversation, executio
         throw failure('mutation_recovery_required', cause);
       }
     }, { timeoutMs: 60_000, windowsLauncher },
-  );
+    );
+  };
   // Adopted Revert for conversations the ledger never owned: they ran while the
   // companion was unavailable, so only their uncaptured change evidence exists.
   // Retain read-only inspection of old interrupted records. Their IDs do not

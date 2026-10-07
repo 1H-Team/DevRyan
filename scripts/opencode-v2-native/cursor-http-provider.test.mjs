@@ -9,6 +9,7 @@ import { createCursorHttpProvider } from './cursor-http-provider.mjs';
 import { DEFAULT_RG, repositoryRoot } from './artifacts.mjs';
 
 test('original Cursor SDK verifies the current loopback key using the pinned user response shape', async () => {
+  await fs.mkdir(path.join(repositoryRoot, '.cache/v2-validation'), { recursive: true });
   const root = await fs.realpath(await fs.mkdtemp(path.join(repositoryRoot, '.cache/v2-validation/cursor-verify-')));
   const requests = [], key = 'owned-current-account';
   const provider = await createCursorHttpProvider({ expectedApiKey: () => key, onRequest: row => requests.push(row) });

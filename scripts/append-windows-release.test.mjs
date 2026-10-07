@@ -2,15 +2,17 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import YAML from 'yaml';
-import { appendWindowsRelease, verifyWindowsQualification, verifyWindowsInstallerReceipt, verifyMacosPublication } from './append-windows-release.mjs';
+import { appendWindowsRelease, verifyWindowsQualification, verifyWindowsInstallerReceipt, verifyMacosPublication, readWindowsReleaseVersion } from './append-windows-release.mjs';
 
-const source = '1'.repeat(40), version = '2.0.2', repo = '1H-Team/DevRyan';
+const source = '1'.repeat(40), version = await readWindowsReleaseVersion(), repo = '1H-Team/DevRyan';
 const bytes = name => Buffer.from(`qualified fixture ${name}`);
 const digest = name => createHash('sha256').update(bytes(name)).digest('hex');
 const asset = (name, id) => ({ id, name, size: bytes(name).length, digest: `sha256:${digest(name)}`, state: 'uploaded' });
-const macName = 'DevRyan-2.0.2-arm64.dmg';
+const macName = `DevRyan-${version}-arm64.dmg`;
 const nativeSteps = YAML.parse(await fs.readFile(new URL('../.github/workflows/windows.yml', import.meta.url), 'utf8')).jobs.native.steps;
 const qualification = () => ({ run: { status: 'completed', conclusion: 'success', head_sha: source,
   path: '.github/workflows/windows.yml', head_repository: { full_name: repo }, event: 'push' },
@@ -27,9 +29,46 @@ const receipt = arch => ({ protocol: 'devryan.windows-installer-qualification/1'
   acceptance: true, sourceTreeSha256: 'a'.repeat(64), evidenceSha256: createHash('sha256').update(JSON.stringify(installerEvidence(arch))).digest('hex'),
   name: `DevRyan-${version}-win-${arch}.exe`, size: bytes(`DevRyan-${version}-win-${arch}.exe`).length, sha256: digest(`DevRyan-${version}-win-${arch}.exe`) });
 const macQualification = () => ({ run: { ...qualification().run, path: '.github/workflows/release.yml' }, jobs:
-  ['build-desktop-electron-macos', 'publish-bot-runtime-images', 'verify-bot-runtime-topology', 'finalize-release'].map(name => ({ name, conclusion: 'success', steps:
+  ['build-desktop-electron-macos (aarch64-apple-darwin, arm64, darwin-aarch64)', 'publish-bot-runtime-images', 'verify-bot-runtime-topology', 'finalize-release'].map(name => ({ name, conclusion: 'success', steps:
     name === 'finalize-release' ? ['Verify required release assets before publish', 'Deploy and verify Supabase configuration and migrations', 'Publish release']
       .map(name => ({ name, status: 'completed', conclusion: 'success' })) : [] })) });
+
+test('Windows release version follows matching package manifests and rejects invalid or divergent versions', async () => {
+  const fixtureRoot = new URL('../.cache/test-fixtures/', import.meta.url);
+  await fs.mkdir(fixtureRoot, { recursive: true });
+  const root = await fs.mkdtemp(path.join(fileURLToPath(fixtureRoot), 'windows-release-version-'));
+  try {
+    await fs.mkdir(path.join(root, 'packages/electron'), { recursive: true });
+    for (const [rootVersion, electronVersion, accepted] of [['3.4.5', '3.4.5', true],
+      ['3.4.5', '3.4.6', false], ['3.4.5-beta', '3.4.5-beta', false], [null, null, false]]) {
+      await fs.writeFile(path.join(root, 'package.json'), JSON.stringify({ version: rootVersion }));
+      await fs.writeFile(path.join(root, 'packages/electron/package.json'), JSON.stringify({ version: electronVersion }));
+      if (accepted) {
+        assert.equal(await readWindowsReleaseVersion(root), rootVersion);
+        const command = `import {readWindowsReleaseVersion} from ${JSON.stringify(new URL('./append-windows-release.mjs', import.meta.url).href)}; console.log(await readWindowsReleaseVersion());`;
+        assert.equal(execFileSync(process.execPath, ['--input-type=module', '-e', command], { cwd: root, encoding: 'utf8' }).trim(), version);
+      }
+      else await assert.rejects(readWindowsReleaseVersion(root), /Matching root and Electron release versions required/);
+    }
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('macOS publication requires the unique successful ARM64 matrix job returned by GitHub', async () => {
+  const workflow = YAML.parse(await fs.readFile(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8'));
+  assert.deepEqual(workflow.jobs['build-desktop-electron-macos'].strategy.matrix.include,
+    [{ target: 'aarch64-apple-darwin', arch: 'arm64', platform: 'darwin-aarch64' }]);
+  const mac = macQualification();
+  verifyMacosPublication(mac.run, mac.jobs, source);
+  for (const name of ['build-desktop-electron-macos',
+    'build-desktop-electron-macos (x86_64-apple-darwin, x64, darwin-x86_64)',
+    mac.jobs[0].name + ' extra']) {
+    assert.throws(() => verifyMacosPublication(mac.run, [{ ...mac.jobs[0], name }, ...mac.jobs.slice(1)], source),
+      /Complete macOS publication required/);
+  }
+  assert.throws(() => verifyMacosPublication(mac.run, [...mac.jobs, mac.jobs[0]], source), /Complete macOS publication required/);
+  assert.throws(() => verifyMacosPublication(mac.run, [{ ...mac.jobs[0], conclusion: 'failure' }, ...mac.jobs.slice(1)], source),
+    /Complete macOS publication required/);
+});
 
 test('Windows append requires both complete native and installer gates on frozen source', () => {
   let q = qualification(); verifyWindowsQualification(q.run, q.jobs, source);
@@ -56,7 +95,7 @@ test('Windows append requires both complete native and installer gates on frozen
 test('Windows append verifies downloaded macOS bytes, preserves its asset and tag, and dry runs cannot upload', async () => {
   const fixtureRoot = new URL('../.cache/test-fixtures/', import.meta.url);
   await fs.mkdir(fixtureRoot, { recursive: true });
-  const directory = await fs.mkdtemp(path.join(path.resolve(fixtureRoot.pathname), 'windows-append-'));
+  const directory = await fs.mkdtemp(path.join(fileURLToPath(fixtureRoot), 'windows-append-'));
   const environment = { GITHUB_REPOSITORY: repo, GITHUB_TOKEN: 'fixture-only', WINDOWS_QUALIFICATION_RUN: '42', MACOS_RELEASE_RUN: '41', RELEASE_DRY_RUN: 'true' };
   let assets = [asset(macName, 17)], uploads = [], macBytes = bytes(macName), tagSource = source;
   const q = qualification();
@@ -64,27 +103,33 @@ test('Windows append verifies downloaded macOS bytes, preserves its asset and ta
     if (options.method === 'POST') {
       assert.ok(url.startsWith(`https://uploads.github.com/repos/${repo}/releases/7/assets?name=`));
       const name = new URL(url).searchParams.get('name');
-      assert.ok(['DevRyan-2.0.2-win-x64.exe', 'DevRyan-2.0.2-win-arm64.exe'].includes(name));
+      assert.ok([`DevRyan-${version}-win-x64.exe`, `DevRyan-${version}-win-arm64.exe`].includes(name));
       const data = []; for await (const chunk of options.body) data.push(chunk);
       assert.deepEqual(Buffer.concat(data), bytes(name)); uploads.push(name);
       const uploaded = asset(name, assets.length + 18); assets.push(uploaded); return Response.json(uploaded);
     }
     assert.ok(!options.method || options.method === 'GET');
-    if (url.endsWith('/git/ref/tags/v2.0.2')) return Response.json({ object: { type: 'commit', sha: tagSource } });
+    if (url.endsWith(`/git/ref/tags/v${version}`)) return Response.json({ object: { type: 'commit', sha: tagSource } });
     if (url.endsWith('/actions/runs/42')) return Response.json(q.run);
     if (url.endsWith('/actions/runs/42/jobs?per_page=100')) return Response.json({ total_count: 2, jobs: q.jobs });
     if (url.endsWith('/actions/runs/41')) return Response.json(macQualification().run);
     if (url.endsWith('/actions/runs/41/jobs?per_page=100')) return Response.json({ total_count: 4, jobs: macQualification().jobs });
-    if (url.endsWith('/releases/tags/v2.0.2')) return Response.json({ id: 7, draft: false, prerelease: false,
-      tag_name: 'v2.0.2', html_url: `https://github.com/${repo}/releases/tag/v2.0.2` });
+    if (url.endsWith(`/releases/tags/v${version}`)) return Response.json({ id: 7, draft: false, prerelease: false,
+      tag_name: `v${version}`, html_url: `https://github.com/${repo}/releases/tag/v${version}` });
     if (url.endsWith('/releases/7/assets?per_page=100')) return Response.json(assets);
-    if (url === `https://github.com/${repo}/releases/download/v2.0.2/${macName}`) {
+    if (url === `https://github.com/${repo}/releases/download/v${version}/${macName}`) {
       assert.equal(options.headers?.Authorization, undefined); return new Response(macBytes);
     }
     throw Error('Unexpected request');
   };
   const append = () => appendWindowsRelease({ source, version, directory, environment, fetchImpl });
   try {
+    for (const invalidVersion of ['3.4.5-beta', null]) {
+      await assert.rejects(appendWindowsRelease({ source, version: invalidVersion, directory, environment, fetchImpl }),
+        /Frozen Windows append identity required/);
+    }
+    await assert.rejects(appendWindowsRelease({ source, version: `${Number(version.split('.')[0]) + 1}.0.0`, directory, environment, fetchImpl }),
+      /Frozen Windows append package version required/);
     const macRoot = path.join(directory, 'DevRyan-macos-arm64-packaging'); await fs.mkdir(macRoot);
     await fs.writeFile(path.join(macRoot, 'macos-arm64-asset.json'), JSON.stringify({ protocol: 'devryan.release-asset/1',
       source, version, platform: 'macos-arm64', name: macName, size: bytes(macName).length, sha256: digest(macName) }));
@@ -110,7 +155,7 @@ test('Windows append verifies downloaded macOS bytes, preserves its asset and ta
     tagSource = source; assets.push(asset('unexpected.exe', 200)); await assert.rejects(append(), /Unexpected release asset/); assets.pop();
     environment.RELEASE_DRY_RUN = 'false';
     assert.equal((await append()).status, 'appended-and-verified');
-    assert.deepEqual(uploads, ['DevRyan-2.0.2-win-x64.exe', 'DevRyan-2.0.2-win-arm64.exe']);
+    assert.deepEqual(uploads, [`DevRyan-${version}-win-x64.exe`, `DevRyan-${version}-win-arm64.exe`]);
     assert.deepEqual(assets[0], asset(macName, 17)); assert.equal(tagSource, source);
     assert.equal((await append()).status, 'appended-and-verified'); assert.equal(uploads.length, 2);
   } finally { await fs.rm(directory, { recursive: true, force: true }); }

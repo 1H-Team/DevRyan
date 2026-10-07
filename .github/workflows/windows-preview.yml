@@ -1,0 +1,112 @@
+name: Windows preview
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [fix/windows-release]
+    paths: ['.github/workflows/windows-preview.yml', 'scripts/*windows-preview*', 'packages/**', 'bun.lock', 'package.json']
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    name: Preview ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2022
+            arch: x64
+          - runner: windows-11-arm
+            arch: arm64
+    env:
+      DEVRYAN_SKIP_INSTALL_PREPARE: '1'
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.14'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          architecture: ${{ matrix.arch }}
+      - name: Require native architecture and source
+        id: host
+        shell: pwsh
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          node -e "if(process.platform!=='win32'||process.arch!==process.env.EXPECTED_ARCH)throw Error('Native host mismatch')"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          bun -e "if(Bun.version!=='1.3.14'||process.arch!==process.env.EXPECTED_ARCH)throw Error('Pinned native Bun required')"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $source = git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "source=$source" >> $env:GITHUB_OUTPUT
+          New-Item -ItemType Directory -Force -Path .cache/test-fixtures | Out-Null
+          $fixtures = Join-Path $env:GITHUB_WORKSPACE '.cache/test-fixtures'
+          "TEMP=$fixtures" >> $env:GITHUB_ENV
+          "TMP=$fixtures" >> $env:GITHUB_ENV
+          "TMPDIR=$fixtures" >> $env:GITHUB_ENV
+          "GIT_CEILING_DIRECTORIES=$fixtures" >> $env:GITHUB_ENV
+      - name: Install exact workspace inputs
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Verify preview packaging contracts
+        run: node --test scripts/windows-preview.test.mjs packages/electron/tests/windows-preview.test.mjs
+      - name: Verify native PowerShell signing probe before packaging
+        run: node --input-type=module -e "import {readPreviewSigning} from './scripts/windows-preview-installer-smoke.mjs'; console.log(JSON.stringify(await readPreviewSigning(process.execPath)));"
+      - name: Download and execute integrity-pinned stock OpenCode
+        run: node scripts/windows-preview-opencode.mjs .cache/windows-preview/${{ matrix.arch }}/opencode ${{ matrix.arch }}
+      - name: Build desktop web assets
+        working-directory: packages/electron
+        run: node scripts/build-web-assets.mjs
+      - name: Bundle explicit preview startup
+        run: bun packages/electron/scripts/bundle-windows-preview.mjs
+      - name: Package separate per-user preview
+        run: node scripts/package-windows-preview.mjs ${{ matrix.arch }}
+      - name: Install, launch, exercise sessions, restart and uninstall
+        run: node scripts/windows-preview-installer-smoke.mjs ${{ matrix.arch }} ${{ steps.host.outputs.source }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DevRyan-windows-preview-${{ matrix.arch }}
+          path: |
+            .cache/windows-preview/${{ matrix.arch }}/package/DevRyan-2.0.3-windows-preview.1-win-${{ matrix.arch }}.exe
+            .cache/windows-preview/${{ matrix.arch }}/package/DevRyan-preview-evidence-${{ matrix.arch }}.json
+          if-no-files-found: error
+          retention-days: 90
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: DevRyan-windows-preview-diagnostics-${{ matrix.arch }}
+          path: |
+            .cache/windows-preview/${{ matrix.arch }}/package/DevRyan-preview-evidence-${{ matrix.arch }}.json
+            .cache/windows-preview/${{ matrix.arch }}/smoke-*/profile/logs/**
+            .cache/windows-preview/${{ matrix.arch }}/smoke-*/initial.json
+            .cache/windows-preview/${{ matrix.arch }}/smoke-*/restart.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  qualify:
+    name: Exact preview installer pair
+    needs: preview
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: DevRyan-windows-preview-*
+          merge-multiple: true
+          path: .cache/windows-preview-release
+      - name: Verify exact two installers and matching native smoke evidence
+        run: node scripts/windows-preview-release.mjs .cache/windows-preview-release "$(git rev-parse HEAD)"

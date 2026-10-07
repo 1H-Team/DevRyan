@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { assertWindowsBinaryArchitecture, verifyWindowsLibsqlEvidence, REVIEWED_WINDOWS_LIBSQL_COMMIT as commit, REVIEWED_WINDOWS_LIBSQL_INPUTS as inputs } from '../packages/web/server/lib/opencode/runtime-host/reviewed-windows-assets.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -9,21 +10,7 @@ import { fileURLToPath } from 'node:url';
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const execute = promisify(execFile);
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
-const commit = '55bee86d1c284f1ddf2b9e280e870d2b6cef884a';
-const inputs = Object.freeze({
-  'Cargo.toml': 'cf729f40413e3131258e98579ab760b2e75238255cd56729ebb65b4f410ea953',
-  'Cargo.lock': '897f93398893ce805b389b482ddf7555b75365a5f48a2e345703f21c1c58d74e',
-  'rust-toolchain.toml': 'df9ff8a9ca1dcbadc9b912fa46d0e99d20f2e3695a4fa4c009df5f02b44bece8',
-  'package.json': '9b38bb06405f07a6c7458bd3e821e3bebae0b19b4c6cd8b08607f36916228e50',
-});
-
-export function assertWindowsBinaryArchitecture(bytes, arch) {
-  assert.ok(bytes.length >= 64 && bytes.toString('ascii', 0, 2) === 'MZ', 'Windows binary header missing');
-  const offset = bytes.readUInt32LE(60);
-  assert.ok(offset >= 64 && offset + 6 <= bytes.length && bytes.toString('binary', offset, offset + 4) === 'PE\0\0', 'Windows PE header invalid');
-  assert.ok(arch === 'x64' || arch === 'arm64', 'Windows architecture unsupported');
-  assert.equal(bytes.readUInt16LE(offset + 4), arch === 'arm64' ? 0xaa64 : 0x8664, 'Windows binary architecture differs from host');
-}
+export { assertWindowsBinaryArchitecture };
 
 /** Reuse only this host's source-pinned, ABI-checked candidate. The returned
  * digest binds build input bytes; it is never a confinement acceptance grant. */
@@ -39,20 +26,7 @@ export async function readWindowsReviewedLibsqlAsset({ repository: root = reposi
   const evidenceBytes = await read(evidencePath);
   assert.ok(evidenceBytes.length <= 65536, 'Windows libsql candidate evidence bound');
   const evidence = JSON.parse(evidenceBytes.toString('utf8'));
-  const target = `${arch === 'arm64' ? 'aarch64' : 'x86_64'}-pc-windows-msvc`;
-  assert.equal(evidence.schema, 1); assert.equal(evidence.status, 'asset-candidate-passed');
-  assert.equal(evidence.stage, 'complete'); assert.equal(evidence.version, '0.5.29');
-  assert.equal(evidence.sourceCommit, commit); assert.equal(evidence.target, target);
-  assert.equal(evidence.toolchain, `1.85.1-${target}`); assert.equal(evidence.cmakeGenerator, 'NMake Makefiles');
-  assert.deepEqual(evidence.inputs, inputs); assert.deepEqual(evidence.inputSha256, inputs);
-  assert.ok(Array.isArray(evidence.smokes) && evidence.smokes.length === 2);
-  for (const [index, runtime] of ['node', 'bun'].entries()) {
-    const probe = evidence.smokes[index];
-    assert.equal(probe.status, 'passed'); assert.equal(probe.platform, 'win32');
-    assert.equal(probe.arch, arch); assert.equal(probe.runtime, runtime);
-    assert.ok(typeof probe.version === 'string' && (runtime === 'bun' ? probe.version === '1.3.14' : /^22\./.test(probe.version)));
-  }
-  assert.equal(evidence.binary, `DevRyan-libsql-win32-${arch}.node`);
+  verifyWindowsLibsqlEvidence(evidence, arch);
   const source = path.join(directory, evidence.binary), bytes = await read(source);
   assertWindowsBinaryArchitecture(bytes, arch); assert.equal(hash(bytes), evidence.sha256);
   return { source, path: evidence.binary, sha256: evidence.sha256, version: '0.5.29', mode: 0o644,

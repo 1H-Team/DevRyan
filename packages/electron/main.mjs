@@ -1,4 +1,5 @@
 import {createNativeSettingsDirectory,readNativeShellBundleBinding} from './native-settings-directory.mjs';
+import { isWindowsPreview, WINDOWS_PREVIEW_APP_ID, WINDOWS_PREVIEW_NAME, createPreviewUpdater, isPreviewUnsupportedCommand } from './windows-preview.mjs';
 import {selectInheritedShellEnv,selectShellDataRoots} from './shell-env-inheritance.mjs';
 import { AGENT_BROWSER_VERSION } from '@openchamber/web/server/lib/agent-browser/install.js';
 import { restartSupabaseHost } from './supabase-host-restart.mjs';
@@ -117,6 +118,7 @@ const botRecoveryDialog = createBotRecoveryDialog({ dialog });
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const isDev = process.env.OPENCHAMBER_ELECTRON_DEV === '1' || !app.isPackaged;
+const isPreview = isWindowsPreview({ app });
 const isRuntimeServiceMode = process.argv.includes('--runtime-service');
 const isRuntimeServiceControlProbe = process.argv.includes('--runtime-service-control=status');
 
@@ -124,7 +126,7 @@ const DEEP_LINK_PROTOCOL = 'openchamber';
 const STARTUP_RETRY_HOST = 'retry-startup';
 const BOT_RUNTIME_RETRY_HOST = 'retry-bot-runtime';
 const BOT_RUNTIME_CONTINUE_HOST = 'continue-without-bots';
-const APP_USER_MODEL_ID = process.platform === 'win32' ? 'dev.devryan.desktop' : 'dev.openchamber.desktop';
+const APP_USER_MODEL_ID = isPreview ? WINDOWS_PREVIEW_APP_ID : process.platform === 'win32' ? 'dev.devryan.desktop' : 'dev.openchamber.desktop';
 
 if (typeof process.env.OPENCHAMBER_ELECTRON_USER_DATA_DIR === 'string') {
   const configuredUserDataDirectory = process.env.OPENCHAMBER_ELECTRON_USER_DATA_DIR;
@@ -167,7 +169,7 @@ if (!isRuntimeServiceControlProbe && !app.requestSingleInstanceLock()) {
 
 // Set the product name early so electron-log derives its log directory as
 // ~/Library/Logs/DevRyan/ (not ~/Library/Logs/@openchamber/electron/).
-app.setName('DevRyan');
+app.setName(isPreview ? WINDOWS_PREVIEW_NAME : 'DevRyan');
 app.setAppUserModelId(APP_USER_MODEL_ID);
 app.commandLine.appendSwitch('proxy-bypass-list', '<-loopback>');
 
@@ -222,7 +224,7 @@ const cleanupExpiredDiagnosticsTemps = async (destination) => {
 };
 
 try {
-  if (!app.isDefaultProtocolClient(DEEP_LINK_PROTOCOL)) {
+  if (!isPreview && !app.isDefaultProtocolClient(DEEP_LINK_PROTOCOL)) {
     app.setAsDefaultProtocolClient(DEEP_LINK_PROTOCOL);
   }
 } catch (error) {
@@ -562,17 +564,17 @@ const bindingFailed = () => {
   return null;
 };
 try {
-  if (!isRuntimeServiceControlProbe) ({readRuntimeBundleBinding}=await import('@openchamber/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js'));
+  if (!isPreview && !isRuntimeServiceControlProbe) ({readRuntimeBundleBinding}=await import('@openchamber/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js'));
 } catch { bindingFailed(); }
 const shellRuntimeBundleBinding=(() => {
-  if (shellRuntimeBundleBindingError || isRuntimeServiceControlProbe) return null;
+  if (isPreview || shellRuntimeBundleBindingError || isRuntimeServiceControlProbe) return null;
   try { return readNativeShellBundleBinding({environment:{...process.env},home:os.homedir(),existsSync:fs.existsSync,readRuntimeBundleBinding}); }
   catch { return bindingFailed(); }
 })();
 const runtimeBundleRecoveryRequired=Boolean(shellRuntimeBundleBindingError)||shellRuntimeBundleBinding?.admission==='held'||shellRuntimeBundleBinding?.selection.reconciliationRequired===true;
 const resolveSettingsDirectory=shellRuntimeBundleBindingError
   ? () => { throw shellRuntimeBundleBindingError; }
-  : isRuntimeServiceControlProbe ? () => hostDataRootDirectory
+  : isPreview || isRuntimeServiceControlProbe ? () => hostDataRootDirectory
     : createNativeSettingsDirectory({environment:{...process.env},home:os.homedir(),existsSync:fs.existsSync,readRuntimeBundleBinding});
 const { settingsFilePath, readSettingsRoot, mutateSettingsRoot, normalizeHostUrl, readDesktopHostsConfig, writeDesktopHostsConfig, readWindowState, writeWindowState, debounceWindowStatePersist, holdForCheckpoint: holdDesktopSettingsForCheckpoint } = createDesktopSettings({
   fs, fsp, os, process, log, getMainWindow: () => state.mainWindow,
@@ -900,10 +902,10 @@ const spawnLocalServer = () => {
 const startLocalServer = async () => {
   if(!runtimeBundleRecoveryRequired)inheritUserShellEnv();
 
-  await acquireRuntimeOwner(isRuntimeServiceMode ? 'service' : 'app_bound');
+  if (!isPreview) await acquireRuntimeOwner(isRuntimeServiceMode ? 'service' : 'app_bound');
 
   const settings = readSettingsRoot();
-  const productionBotsExecutionDisabled = settings.productionBotsRuntimeMode === 'disabled';
+  const productionBotsExecutionDisabled = isPreview || settings.productionBotsRuntimeMode === 'disabled';
   // NOTE: We intentionally do NOT call preflightMacosProtectedDirectoryAccess
   // here. Stat'ing a path under ~/Documents/Desktop/Downloads triggers the
   // macOS TCC prompt before the user has any UI context for why. Defer to
@@ -915,7 +917,7 @@ const startLocalServer = async () => {
   // When the user enables "Desktop Network Access" we bind on all interfaces
   // so phones/tablets on the same Wi-Fi can reach the app. UI shows a clear
   // warning and persists the flag via /api/config/settings.
-  const lanAccessEnabled = !runtimeBundleRecoveryRequired && !isRuntimeServiceMode && settings.desktopLanAccessEnabled === true;
+  const lanAccessEnabled = !isPreview && !runtimeBundleRecoveryRequired && !isRuntimeServiceMode && settings.desktopLanAccessEnabled === true;
   const bindHost = lanAccessEnabled ? '0.0.0.0' : '127.0.0.1';
   // The in-process web server refuses to bind a network-exposed host without UI
   // auth (see server/lib/security/bind-host.js). Desktop Network Access is a
@@ -970,7 +972,7 @@ const startLocalServer = async () => {
   delete process.env.DEVRYAN_BROWSER_CDP_TOKEN;
   delete process.env.DEVRYAN_AGENT_BROWSER_BIN;
 
-  if (!runtimeBundleRecoveryRequired && !state.botSecretStore) {
+  if (!isPreview && !runtimeBundleRecoveryRequired && !state.botSecretStore) {
     try {
       state.botSecretStore = await createBotSecretStore({
         dataDirectory: dataRootDirectory(),
@@ -1008,7 +1010,7 @@ const startLocalServer = async () => {
     });
   };
 
-  try {
+  if (!isPreview) try {
     const {
       createAgentBrowserInstaller,
       provisionAgentBrowserSkill,
@@ -1054,6 +1056,8 @@ const startLocalServer = async () => {
     host: bindHost,
     attachSignals: false,
     exitOnShutdown: false,
+    ...(isPreview && process.argv.includes('--devryan-preview-smoke')
+      ? { runtimeConfigFile: path.join(process.env.DEVRYAN_PREVIEW_SMOKE_ROOT, 'project', 'opencode.json') } : {}),
     onRuntimeBundleCheckpoint: async () => {
       // Lease expiry does not prove a separate foreground writer exited. Use
       // the existing app-bound handoff before taking a bundle checkpoint.
@@ -1199,6 +1203,7 @@ const startLocalServer = async () => {
     requestBotIndexer: (request) => getBotRuntimeManager().requestIndexer(request),
     requestBotAgentEndpoint: (request) => getBotRuntimeManager().requestAgentEndpoint(request),
     getManagedBrowserEnvironment: async () => {
+      if (isPreview) return {};
       if (isRuntimeServiceMode && !desktopHostLeaseIsActive()) {
         const error = new Error('The desktop host is not connected');
         error.code = 'desktop_host_unavailable';
@@ -2979,6 +2984,7 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
     trafficLightPosition: process.platform === 'darwin' ? { x: 16, y: 17 } : undefined,
     webPreferences: {
       additionalArguments: [
+        `--devryan-runtime-mode=${isPreview ? 'standard-preview' : 'native'}`,
         `--openchamber-local-origin=${desktopLocalOrigin}`,
         `--openchamber-server-origin=${desktopServerOrigin}`,
         `--openchamber-home=${desktopHome}`,
@@ -3351,6 +3357,7 @@ const createBrowserPopoutWindow = async ({ surfaceId = '', workspaceId = '', bas
     trafficLightPosition: process.platform === 'darwin' ? { x: 16, y: 12 } : undefined,
     webPreferences: {
       additionalArguments: [
+        `--devryan-runtime-mode=${isPreview ? 'standard-preview' : 'native'}`,
         `--openchamber-local-origin=${desktopLocalOrigin}`,
         `--openchamber-server-origin=${desktopServerOrigin}`,
       ],
@@ -3471,6 +3478,7 @@ const createMiniChatWindow = async ({ mode, sessionId = '', directory = '', proj
     trafficLightPosition: process.platform === 'darwin' ? { x: 16, y: 17 } : undefined,
     webPreferences: {
       additionalArguments: [
+        `--devryan-runtime-mode=${isPreview ? 'standard-preview' : 'native'}`,
         `--openchamber-local-origin=${desktopLocalOrigin}`,
         `--openchamber-server-origin=${desktopServerOrigin}`,
         `--openchamber-home=${desktopHome}`,
@@ -3726,7 +3734,7 @@ const retryBotRuntimeStartup = () => {
 };
 
 const prepareBotRuntimeInBackground = () => {
-  if (runtimeBundleRecoveryRequired || state.botRuntimeRetryPromise || typeof state.serverHandle?.prepareBotRuntime !== 'function') {
+  if (isPreview || runtimeBundleRecoveryRequired || state.botRuntimeRetryPromise || typeof state.serverHandle?.prepareBotRuntime !== 'function') {
     return;
   }
   const current = requirePreparedBotRuntime().catch((error) => {
@@ -3744,7 +3752,7 @@ const prepareBotRuntimeInBackground = () => {
 };
 
 const prepareForegroundRuntime = async () => {
-  if(runtimeBundleRecoveryRequired)return;
+  if(isPreview || runtimeBundleRecoveryRequired)return;
   if (state.runtimeServiceClient || state.runtimeServiceCoordinator?.getOwner()) return;
   const automaticRuntime = await autoEnableBackgroundRuntimeOnFirstLaunch();
   if (automaticRuntime.mode === 'service') {
@@ -3826,11 +3834,11 @@ const verifyWindowsUpdateLauncher = async () => {
   if (bytes.length !== stat.size) throw new Error('update_native_manifest_changed');
   return verifyNativeRuntimeArtifacts({ manifestPath, manifestSha256: crypto.createHash('sha256').update(bytes).digest('hex'), launcher: windowsUpdateLauncher });
 };
-const windowsUpdateOwner = app.isPackaged && process.platform === 'win32' && ['x64', 'arm64'].includes(process.arch)
+const windowsUpdateOwner = !isPreview && app.isPackaged && process.platform === 'win32' && ['x64', 'arm64'].includes(process.arch)
   ? createWindowsUpdateOwner({ launcher: windowsUpdateLauncher, verifyLauncher: verifyWindowsUpdateLauncher }) : null;
 const verifyWindowsUpdateArtifacts = () => verifyWindowsInstalledArtifacts({ target: path.dirname(process.execPath), arch: process.arch,
   owner: windowsUpdateOwner, verifyNativeArtifacts: verifyNativeRuntimeArtifacts });
-const desktopUpdater = createDesktopUpdater({ currentVersion: APP_VERSION, cacheDirectory: updateCacheDirectory,
+const desktopUpdater = isPreview ? createPreviewUpdater() : createDesktopUpdater({ currentVersion: APP_VERSION, cacheDirectory: updateCacheDirectory,
   windowsOwner: windowsUpdateOwner, verifyWindowsArtifacts: verifyWindowsUpdateArtifacts,
   onProgress: progress => emitToAllWindows('openchamber:update-progress', progress) });
 const desktopDmgInstaller = app.isPackaged && process.platform === 'darwin' && !isRuntimeServiceMode && !isRuntimeServiceControlProbe
@@ -4076,6 +4084,9 @@ const runSpecChain = (specs, appName) => {
 };
 
 const handleInvoke = async (browserWindow, command, args = {}) => {
+  if (isPreview && isPreviewUnsupportedCommand(command)) {
+    throw new Error('windows_preview_feature_unavailable');
+  }
   switch (command) {
     case 'desktop_start_window_drag':
       return null;
@@ -4964,6 +4975,7 @@ const SENSITIVE_NATIVE_BROWSER_COMMANDS = new Set([
 ]);
 
 ipcMain.handle('openchamber:invoke', async (event, command, args) => {
+  if (isPreview && isPreviewUnsupportedCommand(command)) throw new Error('windows_preview_feature_unavailable');
   const browserWindow = BrowserWindow.fromWebContents(event.sender);
   if(command==='desktop_runtime_bundle_resume'){
     const handle=state.serverHandle;
@@ -5225,6 +5237,11 @@ app.whenReady().then(async () => {
   if (initial.length > 0) handleDeepLinks(initial);
 
   await startDesktopRuntime();
+  if (isPreview && process.argv.includes('--devryan-preview-smoke')) {
+    const { runPackagedPreviewSmoke } = await import('./windows-preview-smoke.mjs');
+    await runPackagedPreviewSmoke({ app, window: state.mainWindow, session: session.defaultSession, baseUrl: state.sidecarUrl });
+    performConfirmedQuit();
+  }
 }).catch(async (error) => {
   if (desktopDmgInstaller?.isCandidateStartup()) { await desktopDmgInstaller.refuseStartup();return; }
   const details = startupErrorDetails(error);

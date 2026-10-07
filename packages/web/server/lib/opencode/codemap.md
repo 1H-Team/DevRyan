@@ -52,7 +52,7 @@ Core OpenCode integration layer: config entities (agents/commands/skills/provide
 - `execution-artifacts.js` separately content-pins the bundled browser adapter for a per-call browser capability. It remains subject to native process confinement; only the declarative orchestration adapters receive control-tool execution. See `../browser-cdp/codemap.md`.
 
 - `session-scoped-revert.js` owns route-local query/body validation, disconnect cancellation and bounded diagnostics. Mutations require the injected native coordinator; no generic HTTP or OpenCode snapshot restoration path exists. `session-revert-coordinator.js` binds conversation-only native stage/clear to the exact durable mutation transaction through the admission owner. `session-execution-host.js` supplies canonical reads, confined execution and target cancellation. Imported receipt history remains inspectable, but pre-capture edits without a native mutation transaction cannot be undone or redone. See `docs/CONCURRENT_REVERT.md`. `session-provider-spawn.js`
-  and `session-provider-worker.mjs` own the confined Claude transport;
+  and `session-provider-worker.mjs` own the confined Claude transport. On Windows the worker verifies its launcher before constructing the native private file owner for protected state/provider directories, and the execution host forwards its existing owner to all read-only helpers;
   `claude-credential-projection.js` projects the account's current Claude access
   token into it (the sandbox cannot read the keychain). The transport runs in,
   and keys its private state by, the requesting session directory: the

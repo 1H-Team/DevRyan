@@ -1,3 +1,4 @@
+import { useRuntimeFeature } from '@/lib/opencode/runtime-capabilities';
 import { getRetentionNavigationRevision } from '@/lib/sessionRetention';
 import React from 'react';
 import { MainLayout } from '@/components/layout/MainLayout';
@@ -33,6 +34,7 @@ import { opencodeClient } from '@/lib/opencode/client';
 import { SyncProvider, useDirectorySync, useGlobalSyncSelector, useSessions } from '@/sync/sync-context';
 import { useGlobalSyncStore } from '@/sync/global-sync-store';
 import { ConfigUpdateOverlay } from '@/components/ui/ConfigUpdateOverlay';
+import { StandardPreviewNotice } from '@/components/ui/StandardPreviewNotice';
 import { OpenCodeProfileNotices } from '@/components/ui/OpenCodeProfileNotices';
 import { AboutDialog } from '@/components/ui/AboutDialog';
 import { RuntimeAPIProvider } from '@/contexts/RuntimeAPIProvider';
@@ -260,6 +262,7 @@ const StartupReadinessGate: React.FC<{
   isRetrying,
   onRetry,
 }) => {
+  const nativeExecution = useRuntimeFeature('nativeExecution');
   const providersLoadStatus = useConfigStore((state) => state.providersLoadStatus);
   const providersLoadError = useConfigStore((state) => state.providersLoadError);
   const agentsLoadStatus = useConfigStore((state) => state.agentsLoadStatus);
@@ -304,7 +307,7 @@ const StartupReadinessGate: React.FC<{
 
   React.useEffect(() => {
     let cancelled = false;
-    if (!currentDirectory) {
+    if (!nativeExecution || !currentDirectory) {
       setWorktreePhase({ status: 'ready', error: null });
       return;
     }
@@ -330,7 +333,7 @@ const StartupReadinessGate: React.FC<{
     return () => {
       cancelled = true;
     };
-  }, [currentDirectory, isConnected]);
+  }, [currentDirectory, isConnected, nativeExecution]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -342,6 +345,11 @@ const StartupReadinessGate: React.FC<{
       }
     };
 
+    if (!nativeExecution) {
+      clearWarmingDirectory();
+      setAgentRuntimePhase({ status: 'ready', error: null });
+      return;
+    }
     if (!isConnected) {
       clearWarmingDirectory();
       setAgentRuntimePhase({ status: 'idle', error: null });
@@ -373,7 +381,7 @@ const StartupReadinessGate: React.FC<{
       cancelled = true;
       clearWarmingDirectory();
     };
-  }, [currentDirectory, isConnected]);
+  }, [currentDirectory, isConnected, nativeExecution]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -541,6 +549,7 @@ function HostApp({ apis }: AppProps) {
   const [showMemoryDebug, setShowMemoryDebug] = React.useState(false);
   const refreshGitHubAuthStatus = useGitHubAuthStore((state) => state.refreshStatus);
   const authPrincipal = useAuthPrincipal();
+  const nativeExecution = useRuntimeFeature('nativeExecution');
 
   const [isEmbeddedVisible, setIsEmbeddedVisible] = React.useState(true);
   const [initRetryExhausted, setInitRetryExhausted] = React.useState(false);
@@ -586,12 +595,12 @@ function HostApp({ apis }: AppProps) {
   }, [apis]);
 
   React.useEffect(() => {
-    if (embeddedSessionChat) {
+    if (embeddedSessionChat || !nativeExecution) {
       return;
     }
 
     void refreshGitHubAuthStatus(apis.github, { force: true });
-  }, [apis.github, authPrincipal.id, authPrincipal.scope, embeddedSessionChat, refreshGitHubAuthStatus]);
+  }, [apis.github, authPrincipal.id, authPrincipal.scope, embeddedSessionChat, refreshGitHubAuthStatus, nativeExecution]);
 
   useAppFontEffects();
 
@@ -1165,6 +1174,7 @@ function HostApp({ apis }: AppProps) {
                     <>
                       <ConfigUpdateOverlay />
                       <OpenCodeProfileNotices />
+                      <StandardPreviewNotice />
                       <AboutDialogWrapper />
                       {showMemoryDebug && (
                         <MemoryDebugPanel onClose={() => setShowMemoryDebug(false)} />

@@ -416,7 +416,7 @@ export function createNativeRuntimeOwner(options) {
             const [session,source,parent]=await Promise.all([input.sessionID,input.sourceSessionID,input.parentID].map(id=>openCodeClient.sessions.get(id,{directory:input.directory})));
             return authorization.authorizeRelatedSessionRead({session,source,parent});
           },
-          parseAttachment:createNativeDocumentParser({launcher:artifacts.launcher,command:artifacts.writer,
+          parseAttachment:createNativeDocumentParser({launcher:artifacts.launcher,command:artifacts.writer,windowsOwner:options.privatePersistence?.windowsLedgerOwner,
             storage:path.join(descriptor.launch.global.state,'document-parser'),deniedReadDirectories:options.supervisedController?.deniedReadDirectories??[]})});
         documents=createNativeDocumentRuntime({admissionOwner:nativeOwner,documentOwner,reviewedConfiguration:bundle.reviewedConfiguration,
           readUserAttachments,locations:configurationSnapshot.locations,origin:{kind:'plugin',...documentOrigin}});

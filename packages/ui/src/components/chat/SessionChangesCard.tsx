@@ -1,3 +1,4 @@
+import { useRuntimeFeature } from '@/lib/opencode/runtime-capabilities';
 import React from 'react';
 import {
     RiArrowDownSLine,
@@ -350,7 +351,7 @@ export interface SessionChangesCardProps {
  * continuity card and before the status row. Visibility is decided solely by
  * `resolveSessionChangesFooterState` inside the controller.
  */
-export const SessionChangesCard: React.FC<SessionChangesCardProps> = React.memo(({ isMobile, onContentChange }) => {
+const AvailableSessionChangesCard: React.FC<SessionChangesCardProps> = React.memo(({ isMobile, onContentChange }) => {
     const controller = useSessionChangesController();
 
     if (!controller.state.visible || !controller.rootSessionId) {
@@ -395,4 +396,9 @@ export const SessionChangesCard: React.FC<SessionChangesCardProps> = React.memo(
     );
 });
 
-SessionChangesCard.displayName = 'SessionChangesCard';
+AvailableSessionChangesCard.displayName = 'SessionChangesCard';
+
+export const SessionChangesCard: React.FC<SessionChangesCardProps> = (props) => {
+    const available = useRuntimeFeature('revert');
+    return available ? <AvailableSessionChangesCard {...props} /> : null;
+};

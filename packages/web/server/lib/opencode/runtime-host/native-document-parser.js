@@ -9,7 +9,7 @@ const record=value=>value!==null&&typeof value==='object'&&!Array.isArray(value)
 const fields=(value,names)=>record(value)&&Object.keys(value).every(key=>names.includes(key));
 
 /** The original two-parser budget, with actual supervisor settlement before any result is returned. */
-export function createNativeDocumentParser({launcher,command,args=[],storage,onStarted,onTermination,deniedReadDirectories=[]}){
+export function createNativeDocumentParser({launcher,command,args=[],storage,windowsOwner,onStarted,onTermination,deniedReadDirectories=[]}){
  let active=0;const waiters=[];
  const acquire=async signal=>{
   signal.throwIfAborted();
@@ -56,10 +56,14 @@ export function createNativeDocumentParser({launcher,command,args=[],storage,onS
    if(Buffer.byteLength(pending)>64*1024)reject(fail('native_document_parser_protocol_invalid'));
   };
   try{
-   const handle=await startReadOnlySessionExecution({launcher,command,args:[...args,'--parse-document'],storage,
+   const handle=await startReadOnlySessionExecution({launcher,command,args:[...args,'--parse-document'],storage,windowsOwner,
     signal:combined,socketDirectory:null,workerBrowsers:false,deniedReadDirectories,onOutput:output,
     env:{PATH:'/usr/bin:/bin'},inputForLease:async lease=>{
-     const inputPath=path.join(lease.viewDirectory,'attachment.bin');await fs.writeFile(inputPath,payload.bytes,{mode:0o600});
+     const inputPath=path.join(lease.viewDirectory,'attachment.bin');
+     if(process.platform==='win32'){
+      if(typeof windowsOwner?.write!=='function')throw fail('private_windows_publication_authority_unavailable');
+      await windowsOwner.write(inputPath,Buffer.from(payload.bytes),{expected:null});
+     }else await fs.writeFile(inputPath,payload.bytes,{mode:0o600});
      return JSON.stringify({protocol,path:inputPath,name:payload.name,type:payload.type,home:path.join(path.dirname(lease.viewDirectory),'scratch')})+'\n';
     }});
    started=true;

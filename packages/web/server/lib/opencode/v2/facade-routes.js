@@ -106,7 +106,7 @@ export const createOpenCodeV2FacadeRouter = (deps) => {
     policy: deps.policy,
     recordDiagnostic: deps.recordDiagnostic,
   });
-  const integrations = createNativeIntegrationFacade({ getNativeRuntimeOwner: deps.getNativeRuntimeOwner, getOpenCodeRuntime: deps.getOpenCodeRuntime, request });
+  const integrations = deps.integrations ?? createNativeIntegrationFacade({ getNativeRuntimeOwner: deps.getNativeRuntimeOwner, getOpenCodeRuntime: deps.getOpenCodeRuntime, request });
   router.use((req, res, next) => {
     try {
       const client = resolveFacadeClient(deps.openCodeClient);

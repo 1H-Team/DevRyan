@@ -8,23 +8,9 @@ import { pipeline } from 'node:stream/promises';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { assertWindowsBinaryArchitecture } from './build-windows-reviewed-libsql.mjs';
+import { assertWindowsBinaryArchitecture, REVIEWED_WINDOWS_EXECUTABLES as pins } from '../packages/web/server/lib/opencode/runtime-host/reviewed-windows-assets.js';
 
 const root = path.resolve(fileURLToPath(new URL('../', import.meta.url)));
-const pins = Object.freeze({
-  x64: Object.freeze({
-    ast: Object.freeze({ package: '@ast-grep/cli-win32-x64-msvc', version: '0.45.3', member: 'package/ast-grep.exe', size: 51400704,
-      integrity: 'sha512-UZrpVbjLQqQIRxWqeMcwyLSIhlDZyhYb8SinssM38Oo6mEB2jMfHCEoigay9UOZTfUR268n72BBV48nW2h+QwA==', sha256: 'daff0f5963faab7617045833132a3538c85eee65f3afeedf347f829a7b8d83fb' }),
-    claude: Object.freeze({ package: '@anthropic-ai/claude-code-win32-x64', version: '2.1.251', member: 'package/claude.exe', size: 217360032,
-      integrity: 'sha512-fVXAvS2lCMJWD/lcyzzai5pcDQnlldGl8pwyGQ2vBxcuF8LS/7nVDqLOqTZsoAJ+VDKnlkPlPOJytDQEhTHHMQ==', sha256: '8d1229a281281b98fd2dee72b3253a704be4fce4d45207200cd32a9bb5a6c909' }),
-  }),
-  arm64: Object.freeze({
-    ast: Object.freeze({ package: '@ast-grep/cli-win32-arm64-msvc', version: '0.45.3', member: 'package/ast-grep.exe', size: 50103808,
-      integrity: 'sha512-X0+81Mgr8zsH6hu4Pqdr5h1IyAFUWbKS1PMkKT6awYiiTo/1uhVM/6WzJ+ohOQPmMTyt4poyyg46u2E4WzKECg==', sha256: '8b881d2e98c303f0f90ad6d2a9422dfe89ab32552873a49c7f35899138e813b7' }),
-    claude: Object.freeze({ package: '@anthropic-ai/claude-code-win32-arm64', version: '2.1.251', member: 'package/claude.exe', size: 208465056,
-      integrity: 'sha512-6hkf7WoAk74WJuQ/epE+GKy5SJ7RU7kcpy3PRFHt6E1tiYNscihfZY1TMQ+AMQsDo1iFQFHbGITR95+vr3at+w==', sha256: '89e91fed2dc6f6278fa1e179e6401c0a1c252fe80c57ee47f17f10f7f7b4e99c' }),
-  }),
-});
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const fail = code => Object.assign(new Error(code), { code });
 const bounded = maximum => {

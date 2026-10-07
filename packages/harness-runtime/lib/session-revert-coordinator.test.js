@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { git } from './session-changes-git.js';
 import { createSessionMutationRuntime } from './session-mutations.js';
+import { changeKey } from './session-changes-store.js';
 import { createSessionRevertCoordinator } from './session-revert-coordinator.js';
 
 const roots = [];
@@ -157,3 +158,21 @@ test('startup recovery and a subdirectory retry share the same transaction owner
   expect(f.calls).toHaveLength(1);
   expect(f.sessions.get('a').revert.messageID).toBe('pa');
 }, 60_000);
+
+test('Windows Revert prepares its protected storage and exact lock parent before acquiring native authority', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-revert-authority-')); roots.push(root);
+  const directory = await fs.realpath(root), storage = path.join(directory, 'coordinator');
+  const lockDirectory = path.join(storage, changeKey(directory));
+  const calls = [], refusal = Object.assign(new Error('private parent refused'), { code: 'private_windows_file_unverified' });
+  const runtime = { projectDirectory: async () => directory, pendingTransactions: async () => [{ id: 'fixture-transaction' }] };
+  const coordinator = createSessionRevertCoordinator({ runtime, directory: storage,
+    conversation: { capabilities: async () => ({ conversationOnlyRevert: 1 }) }, executions: { isConfined: async () => true },
+    windowsOwner: { ensureDirectory: async target => { calls.push(target); if (target === lockDirectory) throw refusal; } } });
+  const descriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+  try {
+    Object.defineProperty(process, 'platform', { ...descriptor, value: 'win32' });
+    await expect(coordinator.recover({ directory })).rejects.toBe(refusal);
+    expect(calls).toEqual([storage, lockDirectory]);
+    await expect(fs.access(storage)).rejects.toMatchObject({ code: 'ENOENT' });
+  } finally { Object.defineProperty(process, 'platform', descriptor); }
+});

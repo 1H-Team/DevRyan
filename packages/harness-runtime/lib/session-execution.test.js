@@ -5,7 +5,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { executionSocketDirectory, NODE_SPAWN_PRELOAD, ownedPrivateDirectory, prepareSessionExecution, removeExecutionSocketDirectory,
-  sessionExecutionProfile, windowsSessionExecutionProfile, parseWindowsExecutionProcessIdentity, readSessionExecutionReceipt, sweepExecutionSocketDirectories, sweepSessionTemporaryDirectories, verifySessionExecutionLauncher } from './session-execution.js';
+  sessionExecutionProfile, windowsSessionExecutionProfile, parseWindowsExecutionProcessIdentity, readSessionExecutionReceipt, sweepExecutionSocketDirectories, sweepSessionTemporaryDirectories, startReadOnlySessionExecution, verifySessionExecutionLauncher } from './session-execution.js';
 
 const roots = [], leases = [];
 test('Windows cancellation identity refuses recycled or widened process observations', () => {
@@ -357,4 +357,34 @@ test('explicit lease-local socket policy survives restart and rejects forged cle
   expect(await fs.readFile(path.join(outside, 'preserve'), 'utf8')).toBe('foreign');
   await expect(prepareSessionExecution({ launcher: path.join(root, 'launcher'), lease, socketDirectory: outside, workerBrowsers: false }))
     .rejects.toMatchObject({ code: 'invalid_execution_path' });
+});
+
+test('Windows read-only storage refuses missing authority and propagates private view refusal before launching', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-provider-authority-')); roots.push(root);
+  const launcher = path.join(root, 'fixture-launcher'), storage = path.join(root, 'storage');
+  const bytes = Buffer.from('disposable unit identity; never executed'); await fs.writeFile(launcher, bytes);
+  await fs.writeFile(`${launcher}.json`, JSON.stringify({ version: 1, policy: 3, acceptance: true, platform: 'win32', arch: process.arch,
+    binary: path.basename(launcher), sha256: createHash('sha256').update(bytes).digest('hex') }));
+  const descriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+  const calls = [], refusal = Object.assign(new Error('private view refused'), { code: 'private_windows_file_unverified' });
+  try {
+    Object.defineProperty(process, 'platform', { ...descriptor, value: 'win32' });
+    await expect(startReadOnlySessionExecution({ launcher, storage, command: launcher })).rejects
+      .toMatchObject({ code: 'private_windows_storage_authority_unavailable' });
+    await expect(fs.access(storage)).rejects.toMatchObject({ code: 'ENOENT' });
+    const windowsOwner = {
+      ensureDirectory: async directory => { calls.push(['ensure', directory]); await fs.mkdir(directory); },
+      createDirectory: async directory => {
+        calls.push(['create', directory]);
+        if (path.basename(directory) === 'worktree') throw refusal;
+        await fs.mkdir(directory);
+      },
+    };
+    await expect(startReadOnlySessionExecution({ launcher, storage, windowsOwner, command: launcher })).rejects.toBe(refusal);
+    expect(calls.map(([operation]) => operation)).toEqual(['ensure', 'create', 'create']);
+    expect(calls[0][1]).toBe(storage);
+    expect(path.dirname(calls[1][1])).toBe(await fs.realpath(storage));
+    expect(calls[2][1]).toBe(path.join(calls[1][1], 'worktree'));
+    expect(await fs.readdir(storage)).toEqual([]); // Failed private view leaves no execution root.
+  } finally { Object.defineProperty(process, 'platform', descriptor); }
 });

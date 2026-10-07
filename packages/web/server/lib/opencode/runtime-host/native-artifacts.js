@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 import { verifySessionExecutionLauncher } from '@openchamber/harness-runtime/lib/session-execution.js';
 import { REVIEWED_AST_ASSET_SHA256 } from './reviewed-package-transforms.js';
 import { REVIEWED_CLAUDE_ASSETS, REVIEWED_CLAUDE_CREDENTIALS } from './reviewed-claude-transform.js';
+import {assertWindowsBinaryArchitecture,reviewedWindowsRuntimeAsset,readWindowsLibsqlEvidence} from './reviewed-windows-assets.js';
 import {nativeArtifactInventoryLimit,validWindowsArtifactPath,verifyWindowsGitInventory,verifyWindowsGitMetadata} from './reviewed-windows-git.js';
 
 const exec = promisify(execFile), digestPattern = /^[a-f0-9]{64}$/;
@@ -25,7 +26,7 @@ export async function verifyNativeRuntimeArtifacts({ manifestPath, manifestSha25
   const bytes = await fs.readFile(manifestPath);
   if (createHash('sha256').update(bytes).digest('hex') !== manifestSha256) throw fail();
   const manifest = JSON.parse(bytes.toString('utf8'));
-  if (manifest.schema !== 1 || !digestPattern.test(manifest.buildId) || manifest.opencodeVersion !== '2.0.20'
+  if (manifest.admission === false || manifest.status === 'unqualified' || manifest.schema !== 1 || !digestPattern.test(manifest.buildId) || manifest.opencodeVersion !== '2.0.20'
     || manifest.bunVersion !== '1.3.14' || manifest.target !== `bun-${process.platform}-${process.arch}`
     || !digestPattern.test(manifest.inputs?.coreDigest) || !digestPattern.test(manifest.inputs?.lockSha256)
     || !Array.isArray(manifest.inputs.reviewedPlugins) || !Array.isArray(manifest.inputs.nativeRegistrations) || !manifest.inputs.nativeRegistrations.length
@@ -39,7 +40,7 @@ export async function verifyNativeRuntimeArtifacts({ manifestPath, manifestSha25
   if(process.platform==='win32')verifyWindowsGitMetadata(manifest.windowsGit,process.arch);
   const directory = await fs.realpath(path.dirname(manifestPath)), files = new Map();
   const foldedPaths=new Set();
-  let controller, writer, reviewedAst, reviewedConfiguration, reviewedClaudeCredentials;
+  let controller, writer, reviewedAst, reviewedConfiguration, reviewedClaudeCredentials, windowsLibsqlEvidence;
   const reviewedClaude={};
   for (const file of manifest.files) {
     if (!file || !['controller','writer','asset'].includes(file.role) || typeof file.path !== 'string'
@@ -64,14 +65,26 @@ export async function verifyNativeRuntimeArtifacts({ manifestPath, manifestSha25
         || file.sha256 !== REVIEWED_CLAUDE_CREDENTIALS.sha256 || file.size > 65536) throw fail();
       reviewedClaudeCredentials = Object.freeze({ path: target, sha256: file.sha256 });
     }
-    const ast = path.basename(file.path) === 'DevRyan-ast-grep-darwin-arm64';
-    const claudeAsset=Object.entries(REVIEWED_CLAUDE_ASSETS).find(([,asset])=>asset.path===file.path);
+    let windowsAsset;
+    if(process.platform==='win32'){
+      try{windowsAsset=reviewedWindowsRuntimeAsset(file,process.arch);}catch{throw fail();}
+      if(file.role==='controller'||file.role==='writer'||['ast','claude','libsql'].includes(windowsAsset)){
+        const handle=await fs.open(target,'r');
+        try{const header=Buffer.alloc(65536),{bytesRead}=await handle.read(header,0,header.length,0);assertWindowsBinaryArchitecture(header.subarray(0,bytesRead),process.arch);}
+        catch{throw fail();}finally{await handle.close();}
+      }
+      if(windowsAsset==='evidence')windowsLibsqlEvidence={path:target,row:file};
+    }
+    const ast = process.platform==='win32'?windowsAsset==='ast':path.basename(file.path) === 'DevRyan-ast-grep-darwin-arm64';
+    const claudeAsset=process.platform==='win32'
+      ? ['claude','libsql'].includes(windowsAsset)?[windowsAsset,file]:undefined
+      : Object.entries(REVIEWED_CLAUDE_ASSETS).find(([,asset])=>asset.path===file.path);
     if(claudeAsset){
       const [name,asset]=claudeAsset;if(reviewedClaude[name]||file.role!=='asset'||file.sha256!==asset.sha256||file.mode!==asset.mode)throw fail();
       reviewedClaude[name]=Object.freeze({path:target,sha256:file.sha256});
     }
     if (ast) {
-      if (reviewedAst || file.role !== 'asset' || file.sha256 !== REVIEWED_AST_ASSET_SHA256 || !(file.mode & 0o111)) throw fail();
+      if (reviewedAst || file.role !== 'asset' || process.platform!=='win32' && file.sha256 !== REVIEWED_AST_ASSET_SHA256 || !(file.mode & 0o111)) throw fail();
       reviewedAst = Object.freeze({ path: target, sha256: file.sha256 });
     }
     if (file.role === 'controller' || file.role === 'writer') {
@@ -96,6 +109,13 @@ export async function verifyNativeRuntimeArtifacts({ manifestPath, manifestSha25
   if(manifest.inputs.reviewedPlugins.some(origin=>origin.id==='devryan.provider-compat')&&(!reviewedClaude.claude||!reviewedClaude.libsql))throw fail();
   if(Object.keys(reviewedClaude).length===1)throw fail();
   if(manifest.compiledContracts?.some(value=>['devryan.bundle.credentials/1','devryan.bundle.credentials/2','devryan.claude-lifecycle/1'].includes(value)) && reviewedClaude.claude && !reviewedClaudeCredentials)throw fail();
+  if(process.platform==='win32'&&reviewedClaude.libsql){
+    if(!windowsLibsqlEvidence)throw fail();
+    try{
+      const evidence=await readWindowsLibsqlEvidence(windowsLibsqlEvidence.path,windowsLibsqlEvidence.row,process.arch);
+      if(evidence.sha256!==reviewedClaude.libsql.sha256||files.get(evidence.binary)!==reviewedClaude.libsql.path)throw fail();
+    }catch{throw fail();}
+  }
   const reviewedGit=process.platform==='win32'?await verifyWindowsGitInventory({manifest,directory,arch:process.arch}):undefined;
   return Object.freeze({ manifest, manifestPath, manifestSha256, directory, controller, writer, launcher, reviewedAst, reviewedConfiguration, reviewedClaudeCredentials,
     ...(reviewedGit?{reviewedGit}:{}),

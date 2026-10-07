@@ -13,7 +13,7 @@ import { withCrossProcessFileLock, writeFileAtomic } from './atomic-file.js';
 import { applyMutationText, initialMutationRuns, mutationText, visibleMutationRuns } from './session-mutation-text.js';
 import { inspectMutationFile, copyMutationObject, createViewMaterializer, mutationFileStamp, mutationStatStamp, GRANULAR_TEXT_BYTES } from './session-mutation-files.js';
 import { withExecutionIO } from './execution-io-pool.js';
-import { markObjectIfUnsynced } from './object-durability.js';
+import { markObjectIfUnsynced, syncPendingObjectDirectory } from './object-durability.js';
 import { readSessionExecutionReceipt, removeExecutionSocketDirectory } from './session-execution.js';
 import { removeExecutionDirectory } from './execution-cleanup.js';
 import { DEPENDENCY_INPUT_NAMES } from './execution-inputs.js';
@@ -177,6 +177,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     if (++state.commits >= maintenanceLimits.commits && !state.running) setImmediate(() => maintainLedger(root));
   };
   const rootFor = (directory) => path.join(storage, changeKey(directory));
+  const syncObjects = (root) => syncPendingObjectDirectory(root, { windowsLauncher });
   const bytesFor = async (repo, hash) => {
     if (typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash)) throw changeError('invalid_change_record');
     const bytes = await fs.readFile(path.join(repo.root, 'objects', hash));
@@ -186,7 +187,11 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   const putBytes = async (repo, bytes) => {
     const hash = digest(bytes), target = path.join(repo.root, 'objects', hash);
     try { markObjectIfUnsynced(path.dirname(target), (await fs.lstat(target)).ctimeMs); }
-    catch (error) { if (error.code !== 'ENOENT') throw error; await writeFileAtomic(target, bytes, { windowsOwner }); }
+    catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      if (process.platform === 'win32') await windowsOwner.ensureDirectory(path.dirname(target));
+      await writeFileAtomic(target, bytes, { windowsOwner });
+    }
     return hash;
   };
   const inspect = (repo, file, directory) => withExecutionIO(repo.root, () => inspectMutationFile(repo, file, directory));
@@ -277,8 +282,12 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     let queueMeter = queueMeters.get(directory);
     if (!queueMeter) { queueMeter = { progress: Date.now(), waiters: 0, following: undefined }; queueMeters.set(directory, queueMeter); }
     const ready = executionPhase('queue_wait', () => waitForExecutionQueue(previous.catch(() => {}), queueMeter));
-    const work = ready.then(() => {
+    const work = ready.then(async () => {
       checkExecutionAdmission();
+      if (process.platform === 'win32') {
+        if (typeof windowsOwner?.ensureDirectory !== 'function') throw changeError('private_windows_storage_authority_unavailable', 503);
+        await windowsOwner.ensureDirectory(storage);
+      }
       const lockStarted = Date.now();
       timing.queueMs = lockStarted - queued;
       let acquired = false;
@@ -308,10 +317,12 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         // Journal only contended acquisitions; every tool call takes this lock.
         if (lockWaitMs >= 250) executionDiagnostic({ phase: 'lock_wait', state: 'completed', elapsedMs: lockWaitMs, slow: true });
         const root = rootFor(directory), gitDir = path.join(root, 'git');
-        await fs.mkdir(root, { recursive: true, mode: 0o700 });
+        if (process.platform === 'win32') {
+          await windowsOwner.ensureDirectory(root); await windowsOwner.ensureDirectory(path.join(root, 'objects'));
+        } else await fs.mkdir(root, { recursive: true, mode: 0o700 });
         try { await fs.access(path.join(gitDir, 'HEAD')); }
         catch (error) { if (error.code !== 'ENOENT') throw error; await git(root, ['init', '--bare', '--quiet', gitDir]); }
-        const db = await quietExecutionPhase('ledger_open', () => openChangeStore(root, gitDir));
+        const db = await quietExecutionPhase('ledger_open', () => openChangeStore(root, gitDir, { syncObjects }));
         const storedMeta = await db.get('meta.json');
         const originalMeta = JSON.stringify(storedMeta);
         const meta = storedMeta ?? { version: 1, directory, sequence: 0 };
@@ -358,7 +369,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     const root = rootFor(directory), gitDir = path.join(root, 'git');
     try { await fs.access(path.join(gitDir, 'HEAD')); }
     catch (error) { if (error.code === 'ENOENT') return SNAPSHOT_MISS; throw error; }
-    const db = await quietExecutionPhase('ledger_snapshot', () => openChangeStore(root, gitDir));
+    const db = await quietExecutionPhase('ledger_snapshot', () => openChangeStore(root, gitDir, { syncObjects }));
     // A pending materialization may be unrecoverable (for example a foreign
     // edit); only the locked path can recover it or fail closed.
     if (!db.exists || await db.get('materialization.json')) return SNAPSHOT_MISS;
@@ -604,7 +615,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       do {
         if (++attempts > 4) throw changeError('workspace_changing', 503);
         dirty = false;
-        const snapshot = { directory: lease.projectDirectory, root, gitDir, db: await openChangeStore(root, gitDir) };
+        const snapshot = { directory: lease.projectDirectory, root, gitDir, db: await openChangeStore(root, gitDir, { syncObjects }) };
         // Read-only here: reuse the listing cached by immutable `files` tree identity.
         const paths = await snapshotPaths(snapshot);
         const walk = { classifier: await classifierFor(snapshot.directory, lease.vcs !== false, warm), strict: warm, inputs: new Set() };
@@ -1242,9 +1253,23 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     try {
       // Defined only when this preparation created the view: the fast
       // materializer never writes into a directory it did not create.
-      const createdView = await fs.mkdir(lease.viewDirectory, { recursive: true, mode: 0o700 });
+      let createdView;
+      if (process.platform === 'win32') {
+        const root = rootFor(lease.projectDirectory);
+        await windowsOwner.ensureDirectory(path.join(root, 'views'));
+        await windowsOwner.ensureDirectory(path.dirname(lease.viewDirectory));
+        try { await windowsOwner.createDirectory(lease.viewDirectory); createdView = lease.viewDirectory; }
+        catch (cause) { if (cause.code !== 'EEXIST') throw cause; await windowsOwner.ensureDirectory(lease.viewDirectory); }
+      } else createdView = await fs.mkdir(lease.viewDirectory, { recursive: true, mode: 0o700 });
       if (lease.preparation === 'none') {
-        await fs.mkdir(lease.workingDirectory, { recursive: true, mode: 0o700 });
+        if (process.platform === 'win32') {
+          const relative = path.relative(lease.viewDirectory, lease.workingDirectory);
+          if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw changeError('invalid_execution_path');
+          let working = lease.viewDirectory;
+          for (const part of relative.split(path.sep).filter(Boolean)) {
+            working = path.join(working, part); await windowsOwner.ensureDirectory(working);
+          }
+        } else await fs.mkdir(lease.workingDirectory, { recursive: true, mode: 0o700 });
         return await locked(lease.directory, async (repo) => {
           const current = await repo.db.get(key('leases', lease.token));
           if (current?.state !== 'preparing') throw changeError('execution_cancelled');
@@ -1274,7 +1299,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       });
       // Materialization uses immutable objects captured under the publication
       // lock; commands and copying do not hold that lock.
-      const root = rootFor(lease.projectDirectory), db = await openChangeStore(root, path.join(root, 'git'), { ref: lease.snapshotRef });
+      const root = rootFor(lease.projectDirectory), db = await openChangeStore(root, path.join(root, 'git'), { ref: lease.snapshotRef, syncObjects });
       const repo = { root, directory: lease.projectDirectory, db };
       // Operation state only filters eagerly copied base runs; lazy runs are
       // derived at publication, so the full operation scan is skipped.
@@ -1413,7 +1438,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     };
     if (captured.preparation !== 'none') {
       const root = rootFor(captured.projectDirectory), db = await openChangeStore(root, path.join(root, 'git'),
-        captured.snapshotRef ? { ref: captured.snapshotRef } : {});
+        { ...(captured.snapshotRef ? { ref: captured.snapshotRef } : {}), syncObjects });
       const repo = { root, directory: captured.projectDirectory };
       snapshot = { root, directory: captured.projectDirectory, db };
       for await (const file of db.list(`bases/${token}/files`)) { base.set(file.path, file); if (file.identity) identities.set(file.identity, file); }
@@ -1982,7 +2007,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     for (const entry of await fs.readdir(storage, { withFileTypes: true }).catch((cause) => { if (cause.code === 'ENOENT') return []; throw cause; })) {
       if (!entry.isDirectory() || !/^[a-f0-9]{64}$/.test(entry.name)) continue;
       const root = path.join(storage, entry.name);
-      const db = await openChangeStore(root, path.join(root, 'git'));
+      const db = await openChangeStore(root, path.join(root, 'git'), { syncObjects });
       const meta = await db.get('meta.json');
       if (meta?.version === 1 && path.isAbsolute(meta.directory ?? '')) directories.push(meta.directory);
     }

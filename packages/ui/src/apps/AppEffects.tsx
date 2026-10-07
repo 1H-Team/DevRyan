@@ -1,4 +1,5 @@
 import React from 'react';
+import { useRuntimeFeature } from '@/lib/opencode/runtime-capabilities';
 import { BotsEventOwner } from '@/apps/BotsEventOwner';
 import { ProjectPreviewGrantOwner } from '@/components/layout/localPreviewInstances';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
@@ -235,6 +236,10 @@ export function SyncRuntimeEffects({ embeddedBackgroundWorkEnabled }: {
 export function SyncAppEffects({ embeddedBackgroundWorkEnabled }: {
   embeddedBackgroundWorkEnabled: boolean;
 }) {
+  const nativeExecution = useRuntimeFeature('nativeExecution');
+  const managedChildTasks = useRuntimeFeature('managedChildTasks');
+  const bots = useRuntimeFeature('bots');
+  const browser = useRuntimeFeature('browser');
   usePwaManifestSync();
   useWindowControlsOverlayLayout();
   useKeyboardShortcuts();
@@ -243,11 +248,11 @@ export function SyncAppEffects({ embeddedBackgroundWorkEnabled }: {
     <>
       <SyncRuntimeEffects embeddedBackgroundWorkEnabled={embeddedBackgroundWorkEnabled} />
       <MiniChatPresenceBridge />
-      <QuotaRefreshOwner enabled={embeddedBackgroundWorkEnabled} />
-      <ManagedOrchestrationOwner />
-      <BotsEventOwner />
-      <BrowserLeaseClaimOwner />
-      <ProjectPreviewGrantOwner />
+      <QuotaRefreshOwner enabled={embeddedBackgroundWorkEnabled && nativeExecution} />
+      {managedChildTasks ? <ManagedOrchestrationOwner /> : null}
+      {bots ? <BotsEventOwner /> : null}
+      {browser ? <BrowserLeaseClaimOwner /> : null}
+      {browser ? <ProjectPreviewGrantOwner /> : null}
     </>
   );
 }

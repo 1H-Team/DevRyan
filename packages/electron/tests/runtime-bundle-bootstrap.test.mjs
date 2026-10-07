@@ -14,7 +14,7 @@ const bindingSpecifier = '@openchamber/web/server/lib/opencode/runtime-host/runt
 
 // Keep the emitted import form intact: a static external import executes before
 // even a textually earlier capture, including when the other code was inlined.
-function bootstrapProbe(source, bindingUrl, failed = false) {
+function bootstrapProbe(source, bindingUrl, failed = false, preview = false) {
   const start = source.search(/^(?:const|var) hostDataRootDirectory\s*=/m);
   const end = source.search(/^(?:const|var) shellRuntimeBundleBinding\s*=/m);
   assert.ok(start >= 0 && end > start, 'The shell bootstrap must remain identifiable');
@@ -30,6 +30,7 @@ function bootstrapProbe(source, bindingUrl, failed = false) {
   return `import ${pathAlias} from 'node:path';
 import ${osAlias} from 'node:os';
 const isRuntimeServiceControlProbe=false;
+const isPreview=${preview};
 ${importsAndCapture.replaceAll(bindingSpecifier, bindingUrl)}
 process.stdout.write(JSON.stringify({ hostRoot: hostDataRootDirectory, selectedRoot: process.env.OPENCHAMBER_DATA_DIR${failed ? ', code:shellRuntimeBundleBindingError?.code' : ''} }));
 `;
@@ -78,6 +79,18 @@ export const readRuntimeBundleBinding = () => null;
       assert.equal(result.status, 0, result.stderr || result.error?.message);
       assert.deepEqual(JSON.parse(result.stdout), { hostRoot: path.join(home, '.config', 'openchamber'), code: 'runtime_bundle_binding_invalid' });
       assert.equal(result.stderr, '');
+      await t.test(`${label}: preview excludes native binding`, async () => {
+        const previewRoot = path.join(fixture, 'preview-data');
+        const previewProbe = path.join(fixture, `${label}-preview.mjs`);
+        // A broken binding would throw if preview accidentally imported it.
+        await fs.writeFile(previewProbe, bootstrapProbe(source, pathToFileURL(brokenBinding).href, true, true));
+        const previewResult = spawnSync(process.execPath, [previewProbe], { cwd: fixture, encoding: 'utf8', timeout: 10_000,
+          env: { HOME: home, PATH: process.env.PATH, OPENCHAMBER_DATA_DIR: previewRoot } });
+        assert.equal(previewResult.status, 0, previewResult.stderr || previewResult.error?.message);
+        assert.equal(previewResult.signal, null);
+        assert.deepEqual(JSON.parse(previewResult.stdout), { hostRoot: previewRoot, selectedRoot: previewRoot });
+        assert.equal(previewResult.stderr, '');
+      });
     }
   } finally {
     await fs.rm(fixture, { recursive: true, force: true });

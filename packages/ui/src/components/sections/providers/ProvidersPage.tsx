@@ -1,3 +1,4 @@
+import { assertRuntimeFeatureAvailable, useRuntimeFeature } from '@/lib/opencode/runtime-capabilities';
 import React from 'react';
 import { useProviderConnectionStore, waitForProviderCatalogReady } from './providerCatalogConnection';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
@@ -134,12 +135,13 @@ export function ProviderAuthenticationSummary({ providerId, connectionState, cur
   claudeLoading: boolean;
 }) {
   const { t } = useI18n();
+  const providerOAuth = useRuntimeFeature('providerOAuth');
   if (providerId === CURSOR_ACP_PROVIDER_ID && cursorUnavailable && connectionState !== 'disconnect_pending') {
     return <div className="py-1.5 typography-ui-label text-muted-foreground" data-cursor-capability="unsupported">
       {t('settings.providers.page.auth.cursorUnavailable')}
     </div>;
   }
-  if (isAnthropicOAuthProviderId(providerId) && connectionState !== 'disconnect_pending' && connectionState !== 'not_connected') {
+  if (providerOAuth && isAnthropicOAuthProviderId(providerId) && connectionState !== 'disconnect_pending' && connectionState !== 'not_connected') {
     const status = getClaudeAuthenticationState(claudeStatus, claudeLoading);
     return (
       <div className="flex items-center gap-1.5 py-1.5" data-claude-auth-state={status}>
@@ -217,14 +219,15 @@ const parseAuthPayload = (payload: unknown): Record<string, AuthMethod[]> => {
   return result;
 };
 
-const providerSupportsApiKey = (providerId: string) => (
+const providerSupportsApiKey = (providerId: string, nativeOAuth = true) => (
   !isRetiredProviderId(providerId)
-  && !isAnthropicOAuthProviderId(providerId)
+  && (!nativeOAuth || !isAnthropicOAuthProviderId(providerId))
 );
 
 const ProvidersPageContent: React.FC = () => {
   const { t } = useI18n();
   const principal = useAuthPrincipal();
+  const providerOAuth = useRuntimeFeature('providerOAuth');
   const rawProviders = useConfigStore((state) => state.directoryScoped.__global__?.providers ?? state.providers);
   const discoveredProviders = React.useMemo(
     () => withRetiredProviderEntries(rawProviders),
@@ -407,25 +410,28 @@ const ProvidersPageContent: React.FC = () => {
   }, [selectedProviderId, candidateProviderId, unconnectedProviders]);
 
   const activeAnthropicProviderId = React.useMemo(() => {
+    if (!providerOAuth) return null;
     if (selectedProviderId === ADD_PROVIDER_ID) {
       return isAnthropicOAuthProviderId(candidateProviderId) ? candidateProviderId : null;
     }
     return isAnthropicOAuthProviderId(selectedProviderId) ? selectedProviderId : null;
-  }, [candidateProviderId, selectedProviderId]);
+  }, [candidateProviderId, selectedProviderId, providerOAuth]);
   const activeCursorAcpProviderId = React.useMemo(() => {
+    if (!providerOAuth) return null;
     if (selectedProviderId === ADD_PROVIDER_ID) {
       return candidateProviderId === CURSOR_ACP_PROVIDER_ID ? candidateProviderId : null;
     }
     return selectedProviderId === CURSOR_ACP_PROVIDER_ID ? selectedProviderId : null;
-  }, [candidateProviderId, selectedProviderId]);
+  }, [candidateProviderId, selectedProviderId, providerOAuth]);
   const activeManagedQuotaProviderId = React.useMemo<ManagedQuotaProviderId | null>(() => {
+    if (!providerOAuth) return null;
     const providerId = selectedProviderId === ADD_PROVIDER_ID ? candidateProviderId : selectedProviderId;
     return providerId === CURSOR_ACP_PROVIDER_ID
       || providerId === OLLAMA_CLOUD_PROVIDER_ID
       || providerId === OPENCODE_ZEN_PROVIDER_ID
       ? providerId
       : null;
-  }, [candidateProviderId, selectedProviderId]);
+  }, [candidateProviderId, selectedProviderId, providerOAuth]);
 
   const refreshClaudeCliStatus = React.useCallback(async () => {
     if (!activeAnthropicProviderId) {
@@ -584,7 +590,7 @@ const ProvidersPageContent: React.FC = () => {
   const selectedProvider = providers.find((provider) => provider.id === selectedProviderId);
   const selectedSources = selectedProviderId ? providerSources[selectedProviderId] : undefined;
   const selectedProviderName = selectedProvider ? getProviderDisplayName(selectedProvider, selectedSources) : '';
-  const selectedProviderSupportsApiKey = selectedProvider ? providerSupportsApiKey(selectedProvider.id) : false;
+  const selectedProviderSupportsApiKey = selectedProvider ? providerSupportsApiKey(selectedProvider.id, providerOAuth) : false;
   const selectedProviderIsCursor = isCursorAcpProviderId(selectedProvider?.id);
   const selectedCursorUnavailable = selectedProviderIsCursor && cursorRuntimeStatus?.platformUnavailable === true;
   const cursorSdkConfigured = cursorRuntimeStatus?.sdkAuthConfigured === true;
@@ -782,6 +788,7 @@ const ProvidersPageContent: React.FC = () => {
   };
 
   const handleOAuthStart = async (providerId: string, methodIndex: number) => {
+    assertRuntimeFeatureAvailable('providerOAuth');
     const busyKey = `oauth:${providerId}:${methodIndex}`;
     setAuthBusyKey(busyKey);
 
@@ -838,6 +845,7 @@ const ProvidersPageContent: React.FC = () => {
   };
 
   const handleOAuthComplete = async (providerId: string, methodIndex: number) => {
+    assertRuntimeFeatureAvailable('providerOAuth');
     const codeKey = `${providerId}:${methodIndex}`;
     const code = oauthCodes[codeKey]?.trim();
     if (!code) {
@@ -1248,7 +1256,7 @@ const ProvidersPageContent: React.FC = () => {
                 <p className="typography-meta text-muted-foreground px-2">{t('settings.providers.page.auth.loadingMethods')}</p>
               ) : (
                 <section className="px-2 pb-2 pt-0 space-y-4">
-                  {providerSupportsApiKey(candidateProviderId) && (
+                  {providerSupportsApiKey(candidateProviderId, providerOAuth) && (
                   <div className="py-1.5">
                     <label className="typography-ui-label text-foreground flex items-center gap-1.5">
                       {t('settings.providers.page.auth.apiKeyLabel')}
@@ -1286,14 +1294,14 @@ const ProvidersPageContent: React.FC = () => {
                   </div>
                   )}
 
-                  {isAnthropicOAuthProviderId(candidateProviderId) && (
+                  {providerOAuth && isAnthropicOAuthProviderId(candidateProviderId) && (
                     <>
                       {renderClaudeCodeAuth()}
                       {renderClaudeCompatibilityMode()}
                     </>
                   )}
 
-                  {candidateProviderId === 'openai' && renderChatgptSiwcAuth()}
+                  {providerOAuth && candidateProviderId === 'openai' && renderChatgptSiwcAuth()}
 
                   {activeCursorAcpProviderId === candidateProviderId && (
                     <div className="flex items-center justify-between gap-3 py-1.5">
@@ -1316,9 +1324,9 @@ const ProvidersPageContent: React.FC = () => {
                   )}
 
                   {(() => {
-                    const candidateSupportsApiKey = providerSupportsApiKey(candidateProviderId);
+                    const candidateSupportsApiKey = providerSupportsApiKey(candidateProviderId, providerOAuth);
                     const candidateAuthMethods = authMethodsByProvider[candidateProviderId] ?? [];
-                    const candidateOAuthMethods = isCursorAcpProviderId(candidateProviderId)
+                    const candidateOAuthMethods = !providerOAuth || isCursorAcpProviderId(candidateProviderId)
                       ? []
                       : candidateAuthMethods.filter((method) => normalizeAuthType(method) === 'oauth');
 
@@ -1441,7 +1449,7 @@ const ProvidersPageContent: React.FC = () => {
   });
   const providerAuthMethods = authMethodsByProvider[selectedProvider.id] ?? [];
   const oauthAuthMethods = providerAuthMethods.filter((method) => normalizeAuthType(method) === 'oauth');
-  const visibleOAuthAuthMethods = selectedProviderIsCursor ? [] : oauthAuthMethods;
+  const visibleOAuthAuthMethods = !providerOAuth || selectedProviderIsCursor ? [] : oauthAuthMethods;
 
   const filteredModels = providerModels.filter((model) => {
     const name = typeof model?.name === 'string' ? model.name : '';
@@ -1542,11 +1550,11 @@ const ProvidersPageContent: React.FC = () => {
                 </div>
                 )}
 
-                {isAnthropicOAuthProviderId(selectedProvider.id) && (
+                {providerOAuth && isAnthropicOAuthProviderId(selectedProvider.id) && (
                   renderClaudeCodeAuth()
                 )}
 
-                {selectedProvider.id === 'openai' && renderChatgptSiwcAuth()}
+                {providerOAuth && selectedProvider.id === 'openai' && renderChatgptSiwcAuth()}
 
                 {activeCursorAcpProviderId === selectedProvider.id && (
                   <div className="flex items-center justify-between gap-3 py-1.5">
@@ -1661,7 +1669,7 @@ const ProvidersPageContent: React.FC = () => {
           </section>
         </div>
 
-        {isAnthropicOAuthProviderId(selectedProvider.id) ? (
+        {providerOAuth && isAnthropicOAuthProviderId(selectedProvider.id) ? (
           <div className="mb-8">
             <div className="mb-1 px-1">
               <h3 className="typography-ui-header font-medium text-foreground">

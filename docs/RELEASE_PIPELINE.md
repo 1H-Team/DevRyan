@@ -204,15 +204,20 @@ durability, supervision and runtime compatibility must pass before installer
 scenarios run. These jobs do not open runtime admission or publish a release.
 See [Windows port](WINDOWS_PORT_PLAN.md).
 
-Version 2.0.2 keeps one frozen tag/source for all platforms. Publish the qualified
-macOS DMG first, then use `windows-release-append.yml` with that full source SHA,
-the original macOS publication run ID, and the successful two-architecture
+Each release keeps one frozen tag/source for all platforms. Windows qualification
+and append derive the version from matching root and Electron package versions.
+Publish the qualified macOS DMG first, then use `windows-release-append.yml` with
+that full source SHA, the original macOS publication run ID, and the successful two-architecture
 Windows qualification run ID. Its default `dry_run=true` verifies without uploads.
 The read-only preflight requires actual native, compiled acceptance and NSIS
 installation/update outcomes on both architectures, plus the completed macOS
 publication gates. Startup diagnostics and boot-refusal receipts cannot satisfy
 those gates. The implemented `Qualify per-user NSIS installation and updater recovery`
 stage records blockers explicitly; both native Windows runs remain required.
+The macOS publication verifier requires the unique ARM64 matrix job identity,
+`build-desktop-electron-macos (aarch64-apple-darwin, arm64, darwin-aarch64)`.
+Source fixes after publication require a new version and qualified source; do not
+move the published tag or append installers from a different source.
 
 The macOS packaging job retains its source/version/name/size/SHA-256 receipt
 as `DevRyan-macos-arm64-packaging` for 90 days. Windows qualification must retain
@@ -226,3 +231,19 @@ Windows installers and requires the exact existing `desktop` allowlist. A retry
 may reuse an already uploaded Windows asset only when its packaging digest
 matches. Unknown assets or uncertain integrity stop the append without deleting
 the existing release.
+
+## Windows compatibility preview
+
+The separate `windows-preview.yml` lane builds per-user x64 and ARM64 NSIS
+installers against stock OpenCode 2.0.20. It selects the packaged
+`standard-preview` mode before native bootstrap, uses a distinct application
+identity/data directory, and has no automatic-update feed. It does not change
+stable version parsing, native acceptance or published `v2.0.2`.
+
+The initial prerelease is `v2.0.3-windows-preview.1`; its exact public inventory is
+`DevRyan-2.0.3-windows-preview.1-win-x64.exe` and
+`DevRyan-2.0.3-windows-preview.1-win-arm64.exe`. Runtime archive integrity and PE
+architecture are verified independently of filenames. Checksums, signing status,
+Windows smoke results and limitations are recorded in the release notes.
+The [Windows plan](WINDOWS_PORT_PLAN.md) defines supported capabilities, bounded
+fixture tests, publication gates and preservation/branch cleanup requirements.

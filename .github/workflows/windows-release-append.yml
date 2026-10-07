@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       frozen_source:
-        description: 'Full source SHA already published as v2.0.2'
+        description: 'Full source SHA already published under its matching package version tag'
         required: true
         type: string
       macos_release_run:
@@ -25,7 +25,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: devryan-release-2.0.2-windows-append
+  group: devryan-release-windows-append
   cancel-in-progress: false
 
 env:

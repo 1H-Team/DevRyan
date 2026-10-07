@@ -6,7 +6,7 @@ import { spawn, execFile } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { writeFileAtomic } from './atomic-file.js';
 import { writableInputDirectories } from './execution-inputs.js';
-import { ensureWindowsPrivateDirectory, createWindowsPrivateFile, readWindowsPrivateFile } from './windows-private-files.js';
+import { ensureWindowsPrivateDirectory, createWindowsPrivateFile, createWindowsPrivateFileOwner, readWindowsPrivateFile } from './windows-private-files.js';
 
 const error = (code) => Object.assign(new Error(code), { code, status: 409 });
 
@@ -279,7 +279,8 @@ export async function prepareSessionExecution({ launcher, lease, socketDirectory
   // constructor options. Persist explicit no-socket selection in its owned
   // parent so that cleanup never probes the legacy global socket directory.
   const noSocketPolicy = path.join(root, 'no-execution-socket.json');
-  if (requestedSocketDirectory === null) await writeFileAtomic(noSocketPolicy, JSON.stringify({ version: 1, disabled: true }));
+  const policyOwner = process.platform === 'win32' ? createWindowsPrivateFileOwner({ launcher }) : undefined;
+  if (requestedSocketDirectory === null) await writeFileAtomic(noSocketPolicy, JSON.stringify({ version: 1, disabled: true }), { windowsOwner: policyOwner });
   else await fs.rm(noSocketPolicy, { force: true });
   // Seatbelt matches resolved paths; dependency overlays link caches here.
   const requestedAuxiliary = lease.auxiliaryDirectory ? path.resolve(lease.auxiliaryDirectory) : scratchDirectory;
@@ -300,7 +301,7 @@ export async function prepareSessionExecution({ launcher, lease, socketDirectory
   const nodeEnvironment = browsers || groupSignals ? await workerNodeEnvironment({ launcher, scratchDirectory, browsers, groupSignals }) : {};
   const socketDirectory = await prepareExecutionSocketDirectory(lease, requestedSocketDirectory);
   if (requestedSocketDirectory !== undefined && requestedSocketDirectory !== null) {
-    await writeFileAtomic(noSocketPolicy, JSON.stringify({ version: 1, directory: socketDirectory }));
+    await writeFileAtomic(noSocketPolicy, JSON.stringify({ version: 1, directory: socketDirectory }), { windowsOwner: policyOwner });
   }
   const sessionTemporaryDirectory = await prepareSessionTemporaryDirectory(auxiliaryDirectory, lease, launcher);
   // Only the macOS profile grants write-through; the Linux and Windows
@@ -567,10 +568,16 @@ export async function startSessionExecution({ launcher, lease, command, args = [
 
 /** Provider transports and title generation have no file contribution. They
  * still need the same OS boundary: a prompt requesting no tools is not one. */
-export async function startReadOnlySessionExecution({ launcher, storage, environment, auxiliaryDirectory, logicalDirectory, ...input }) {
+export async function startReadOnlySessionExecution({ launcher, storage, windowsOwner, environment, auxiliaryDirectory, logicalDirectory, ...input }) {
   if (!path.isAbsolute(storage ?? '') || !await verifySessionExecutionLauncher({ launcher })) throw error('mutation_runtime_unsupported');
-  await fs.mkdir(storage, { recursive: true, mode: 0o700 });
-  const root = await fs.mkdtemp(path.join(await fs.realpath(storage), 'provider-'));
+  if (process.platform === 'win32') {
+    if (typeof windowsOwner?.ensureDirectory !== 'function' || typeof windowsOwner?.createDirectory !== 'function') throw error('private_windows_storage_authority_unavailable');
+    await windowsOwner.ensureDirectory(storage);
+  } else await fs.mkdir(storage, { recursive: true, mode: 0o700 });
+  const canonicalStorage = await fs.realpath(storage);
+  const root = process.platform === 'win32' ? path.join(canonicalStorage, `provider-${randomUUID()}`)
+    : await fs.mkdtemp(path.join(canonicalStorage, 'provider-'));
+  if (process.platform === 'win32') await windowsOwner.createDirectory(root);
   // A read-only transport may run from its real project directory: the profile
   // still denies every write outside its private view, scratch and state. A
   // stable, truthful cwd keeps the provider's environment prompt (and its
@@ -582,9 +589,10 @@ export async function startReadOnlySessionExecution({ launcher, storage, environ
     ? await fs.realpath(logicalDirectory).catch(() => undefined) : undefined;
   const lease = { viewDirectory: path.join(root, 'worktree'), workingDirectory: path.join(root, 'worktree'), auxiliaryDirectory,
     ...(logicalWorkingDirectory ? { logicalWorkingDirectory } : {}) };
-  await fs.mkdir(lease.viewDirectory);
   let handle;
   try {
+    if (process.platform === 'win32') await windowsOwner.createDirectory(lease.viewDirectory);
+    else await fs.mkdir(lease.viewDirectory);
     const scratch = path.join(root, 'scratch');
     const env = { ...input.env, HOME: scratch, XDG_CONFIG_HOME: path.join(scratch, 'config'),
       XDG_DATA_HOME: path.join(scratch, 'data'), XDG_STATE_HOME: path.join(scratch, 'state'), XDG_CACHE_HOME: path.join(scratch, 'cache') };

@@ -605,7 +605,6 @@ test('native image launch requires the exact constructor-reviewed original regis
   expect(mocks.runtime.reserve).not.toHaveBeenCalled();
 });
 
-
 test('controller settlement joins a helper paused before handle acquisition and fences its old lifetime', async () => {
   const entered = Promise.withResolvers(), release = Promise.withResolvers();
   const realpath = fs.realpath.bind(fs);
@@ -650,7 +649,6 @@ test('failed controller settlement retains the old acquisition fence', async () 
   await expect(host.nativeExecution({ action: 'helper' })).rejects.toMatchObject({ code: 'execution_cancelled' });
   await expect(host.drain()).rejects.toBe(uncertain);
 });
-
 
 test('a helper missing its actual termination receipt fences replacement even after its handle disappears', async () => {
   const entered = Promise.withResolvers(), release = Promise.withResolvers();
@@ -739,4 +737,15 @@ test.each(['execution_cancelled', 'execution_reverted'])('native control complet
   const f = nativeManagedFixture(); mocks.runtime.finish.mockRejectedValue(Object.assign(Error(code), { code }));
   await expect(f.host.nativeManagedControl({ action: 'finish', invocation: f.invocation, token: f.lease.token })).rejects.toMatchObject({ code });
   expect(f.host).toBeDefined(); expect(mocks.runtime.executionReceipt).not.toHaveBeenCalled();
+});
+
+test('read-only execution receives only the host-owned Windows storage authority', async () => {
+  const native = await import('@openchamber/harness-runtime/lib/session-execution.js');
+  const windowsOwner = { ensureDirectory: vi.fn(), createDirectory: vi.fn() };
+  const callerOwner = { ensureDirectory: vi.fn() };
+  native.startReadOnlySessionExecution.mockResolvedValue({ child: {}, result: Promise.resolve({ confined: true }) });
+  const { host } = fixture({ windowsOwner });
+  await host.startReadOnly({ command: '/fixture/command', windowsOwner: callerOwner });
+  expect(native.startReadOnlySessionExecution).toHaveBeenCalledWith(expect.objectContaining({ windowsOwner }));
+  expect(mocks.runtimeOptions.windowsOwner).toBe(windowsOwner);
 });

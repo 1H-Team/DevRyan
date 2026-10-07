@@ -96,6 +96,7 @@ jobs:
           node-version: '22'
           architecture: ${{ matrix.arch }}
       - name: Verify native host and prepare owned fixtures
+        id: host
         shell: pwsh
         env:
           EXPECTED_ARCH: ${{ matrix.arch }}
@@ -103,6 +104,8 @@ jobs:
           node -e "if(process.platform!=='win32'||process.arch!==process.env.EXPECTED_ARCH)throw Error('Native runner architecture mismatch')"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           bun -e "if(Bun.version!=='1.3.14'||process.arch!==process.env.EXPECTED_ARCH)throw Error('Pinned native Bun required')"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --input-type=module -e "import {readWindowsReleaseVersion} from './scripts/append-windows-release.mjs'; import {appendFileSync} from 'node:fs'; appendFileSync(process.env.GITHUB_OUTPUT, 'version=' + await readWindowsReleaseVersion() + '\n');"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           New-Item -ItemType Directory -Force -Path $env:TMPDIR | Out-Null
           "TEMP=$env:TMPDIR" >> $env:GITHUB_ENV
@@ -278,6 +281,6 @@ jobs:
           path: |
             .cache/windows-native/${{ matrix.arch }}/installer-qualification/qualification.json
             .cache/windows-native/${{ matrix.arch }}/installer-qualification/evidence.json
-            .cache/windows-native/${{ matrix.arch }}/installer-qualification/DevRyan-2.0.2-win-${{ matrix.arch }}.exe
+            .cache/windows-native/${{ matrix.arch }}/installer-qualification/DevRyan-${{ steps.host.outputs.version }}-win-${{ matrix.arch }}.exe
           if-no-files-found: warn
           retention-days: 90

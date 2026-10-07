@@ -120,6 +120,8 @@ DevRyan is a Bun/Node monorepo that provides web and desktop UI runtimes for int
 - [Agent-agnostic Production Bots visual audit](docs/audits/2026-08-27-agent-agnostic-bots/README.md): 38 reviewed Electron-CDP states covering adapters, Bot-as-code, structured policy, egress/isolation, background runtime, exact Activity focus, narrow layouts, and restricted-role presentation.
 - [Bot failure repair verification](docs/audits/2026-08-30-bot-failure-repair/README.md): memory conflict recovery, durable browser-control waiting, dedicated OAuth image tooling, local migration/Docker/visual evidence, and the hosted-schema prerequisite for remaining live acceptance.
 
+- **Windows ordinary-user compatibility preview** → [docs/WINDOWS_PORT_PLAN.md](docs/WINDOWS_PORT_PLAN.md), `.github/workflows/windows-preview.yml`, `packages/electron/windows-preview-entry.mjs`, `packages/web/server/lib/opencode/standard-preview/`, and `scripts/windows-preview-session-smoke.mjs`. This separate prerelease does not grant native confinement admission.
+
 - **Release compilation, shared web/native handoffs, image caching and package commands** → [docs/RELEASE_PIPELINE.md](docs/RELEASE_PIPELINE.md), `scripts/release-artifacts.mjs`, `scripts/release-ci.mjs`, and `.github/workflows/release.yml`.
 
 - **Concurrent conversation Revert and native execution confinement** → [docs/CONCURRENT_REVERT.md](docs/CONCURRENT_REVERT.md), harness mutation/coordinator modules, web `session-execution-host.js`, `scripts/build-native-runtime.mjs`, and `scripts/verify-opencode-v2-package.mjs`.

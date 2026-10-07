@@ -2,6 +2,17 @@
 
 ## Responsibility
 
+`windows-preview-entry.mjs` selects the separate packaged Windows preview before
+`main.mjs` imports the web entry. `windows-preview.mjs` owns its app identity,
+isolated data/config roots and disabled updater. The preview uses the stock
+OpenCode CLI under ordinary user permissions; it skips native bundle selection,
+background-runtime/Bot ownership and native browser/media IPC. Its explicit
+installer smoke imports the disposable stdlib session fixture as a packaged
+resource and keeps owner cookies in memory. `scripts/bundle-windows-preview.mjs`
+bundles that entry; repository `scripts/package-windows-preview.mjs` supplies the
+separate per-user NSIS configuration. Stable packaging and updater qualification
+continue to use their original native acceptance gates.
+
 Normal `desktop_restart` shares `quit-cleanup.mjs`'s bounded owned-resource
 cleanup before relaunch. A background-runtime client only detaches its desktop
 broker; its service-owned terminals survive the window restart.

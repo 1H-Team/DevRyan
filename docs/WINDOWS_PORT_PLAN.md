@@ -1,36 +1,129 @@
-# Windows port and qualification
+# Windows compatibility preview and native qualification
 
-Windows follows the macOS 2.0.2 release. Both architectures must build and run
-their own artifacts: x64 on `windows-2022`, ARM64 on `windows-11-arm`.
-These are [GitHub hosted runner labels](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
-Bun stays at 1.3.14 and dependency versions stay pinned in `bun.lock`.
-Cross-compilation is useful for development but cannot qualify either platform.
+## Approved preview scope
 
-## Ownership and integration order
+The first Windows download is a separate experimental prerelease,
+`v2.0.3-windows-preview.1`, for x64 and ARM64. It uses stock OpenCode **2.0.20**
+with ordinary Windows-user permissions. DevRyan does not maintain Node/Bun
+forks for this lane. The unfinished native confinement port remains separate.
+Published `v2.0.2`, native admission, and stable release verification are unchanged.
 
-The Electron shell remains in `packages/electron`; its in-process web server
-remains the feature backend. Native contracts remain in the harness runtime and
-`packages/web/server/lib/opencode/runtime-host`. The legacy Tauri package receives
-no Windows features. Shared changes follow integration of the macOS inputs,
-storage, lifecycle, UX, skills, prompt, journal, and Bot image work.
+Electron hosts DevRyan's web feature backend in-process. Packaged preview
+metadata selects `standard-preview` before native bootstrap imports execute.
+The backend starts its own bundled OpenCode process with authenticated loopback
+communication and stock `/api/info` readiness. The preview has a separate app
+identity and data directory, an explicit capabilities response, and a visible
+notice explaining ordinary-user execution. Existing Electron origin, navigation,
+and IPC protections still apply.
 
-1. Add architecture-specific CI and build identities without enabling execution.
-2. Implement and qualify private filesystem and process identity boundaries.
-3. Finish the Windows supervisor, native controller, and writer together.
-4. Enable core execution only after the compiled safety inventory passes.
-5. Package, exercise installation/update recovery, then qualify both installers.
+The supported scope is local projects, validated file operations, API-key
+provider configuration, coding conversations, session history, permissions,
+questions, SSE, abort, restart and shutdown. OpenCode owns provider credentials;
+its ordinary tools may modify files and run commands with the user's permissions.
 
-All installers retain version 2.0.2 and the same frozen source. The manual
-`windows-release-append.yml` workflow defaults to a dry run and requires both
-architecture installer gates before appending to the already qualified macOS
-release. It binds original CI runs, packaging receipts, downloaded macOS bytes
-and the unchanged tag, then verifies the exact `desktop` asset allowlist.
-The NSIS qualification stage and SDK-backed updater are implemented, with
-execution held behind their native prerequisites. No actual installer or update
-qualification is claimed from source or local macOS tests; the append preflight
-refuses until that actual stage passes on both Windows architectures.
+Both backend routes and UI capabilities disable protected Revert/redo, captured
+change history, DevRyan-managed child-task orchestration, native provider
+transports, OAuth enrollment, managed Bots, native browser/media helpers and the
+integrated terminal. The preview never fabricates confinement or Revert receipts.
+Subscription OAuth and advanced native features are follow-up work.
 
-## Current gaps
+## Packaging and publication
+
+Use native `windows-2022` x64 and `windows-11-arm` ARM64 runners. Pin each official
+OpenCode platform archive's integrity and verify its executable's PE architecture;
+an installer filename is not architecture evidence. Build per-user NSIS installers
+with preview branding and automatic updates disabled. Preview upgrades use a
+new downloaded installer.
+
+The separate preview verifier requires exactly these public assets:
+
+- `DevRyan-2.0.3-windows-preview.1-win-x64.exe`
+- `DevRyan-2.0.3-windows-preview.1-win-arm64.exe`
+
+It binds source, runtime versions, architectures and hashes to each artifact.
+Checksums, tested scenarios, signing status and known limitations belong in the
+prerelease notes, without extra public checksum/metadata assets. Stable users
+must not be directed to the preview automatically.
+
+[OpenChamber's Windows workflow](https://github.com/openchamber/openchamber/blob/v2.1.1/.github/workflows/release.yml)
+is a packaging reference for Electron, bundled OpenCode and per-user NSIS.
+DevRyan retains its own backend, branding and release contracts.
+
+## Verification and completion
+
+1. Run `bun run validate:full`, `bun run build` and `bun run bundle:check` on
+   the final source, plus focused preview contract tests.
+2. On each native Windows runner, perform bounded installation, launch,
+   readiness, local project/file access, API-key setup with a disposable provider
+   fixture, chat/SSE, history, abort, restart and uninstall checks. Confirm
+   unsupported backend routes refuse requests.
+3. Fix reproduced startup failures before publishing that architecture.
+   Record unavailable checks honestly. LPAC qualification, exhaustive installer
+   recovery and paid live-provider testing do not block this experimental lane.
+4. Review existing repairs and preview changes in PR #1, fix actionable
+   regressions, update its description, complete relevant checks, and merge.
+5. Publish the prerelease from the reviewed source and verify its exact assets.
+
+Use **GPT-6.1 Sol with high reasoning** for all subagents: the runtime owner
+handles backend composition/lifecycle/adapters, the desktop/release owner handles
+Electron and packaging, and the review/test owner handles UI capabilities and
+independent checks. Assign disjoint files and preserve other agents' edits.
+
+Before synchronizing primary `main`, coordinate with active writers and retain a
+recoverable snapshot of all pre-existing edits. Preserve overlapping edits,
+fast-forward `main`, restore the edits, verify restoration, and retain the backup.
+These unrelated edits do not belong in preview commits or artifacts.
+
+Re-inventory open PRs before merging. After verifying ancestry, delete
+`fix/windows-release`, `hotfix/2.0.1`, `implementation/windows-port` and
+`release/2.0.2` from origin. Detach the repair worktree before deleting its local
+branch. Preserve unrelated detached worktrees and tags. Completion requires
+`main` as the only local/origin branch, merged PRs, and recoverable user work.
+
+## Native qualification status
+
+Native confinement remains unqualified on both Windows architectures. The prior
+[run 37612482825](https://github.com/1H-Team/DevRyan/actions/runs/37612482825)
+passed supervisor compilation, private-filesystem checks and candidate builds,
+but failed supervision and every Node/Bun bootstrap matrix case. This is not
+preview qualification evidence. The native lane continues to refuse admission
+until its original safety and installer gates pass.
+
+## Qualification history
+
+### October 7 repair work
+
+The published `v2.0.2` source, `0964e306`, failed native supervisor compilation
+on both architectures in [run 37519621690](https://github.com/1H-Team/DevRyan/actions/runs/37519621690).
+The compiler fix at `89e36f31` separates output-producing Windows API calls
+from short-circuit expressions, retaining `/W4 /WX` and every failure check.
+[Run 37606663566](https://github.com/1H-Team/DevRyan/actions/runs/37606663566)
+compiles both architectures and passes startup and private filesystem probes.
+Its original Node/Bun compatibility matrix and nested-descendant cancellation
+still fail; no runtime or installer qualification is claimed.
+
+Private ownership of the compatibility fixtures is corrected at `59666d0e`.
+Bounded stderr evidence from [run 37609149036](https://github.com/1H-Team/DevRyan/actions/runs/37609149036)
+at `58d65dc1` shows both hosts creating and settling the direct child, then
+failing before the project script starts: Node 22.23.3 attempts to inspect the
+denied drive root, and Bun 1.3.14 cannot enumerate the working directory's
+ancestors. All sixteen compatibility cases remain unchanged. Changing fixture
+ownership does not resolve these runtime bootstrap requirements, and host-root
+ACLs must not be widened to bypass confinement.
+
+The append verifier now recognizes the actual macOS ARM64 matrix job name.
+Installer qualification, release receipts and the exact uploaded installer path
+derive their version from matching root and Electron package manifests. Windows
+asset verification shares the existing reviewed executable/source pins and
+requires sealed libsql source/ABI evidence. Candidate manifests remain
+unqualified and cannot grant execution admission.
+
+Further source fixes need a new common release commit and version. Preserve the
+published `v2.0.2` tag and macOS asset; do not append different-source Windows
+installers to that release. Freeze the next patch only after both native lanes
+and the real installer scenarios qualify.
+
+### Earlier qualification history
 
 `.github/workflows/windows.yml` now defines both native runner jobs. It selects
 the matching Bun, Node and MSVC architectures, installs the frozen lock without
@@ -459,8 +552,8 @@ than repeating seven historical source variants. Their original results remain
 preserved. Complete runtime/input projection and abrupt-death profile recovery
 are still required; no native confinement or startup pass is inferred locally.
 
-All three platforms retain version 2.0.2. Finish engineering before one common
-source freeze, publish the qualified macOS asset first, then append both qualified
+Finish engineering before one common source and version freeze for the next
+release, publish the qualified macOS asset first, then append both qualified
 Windows installers through the existing `desktop` exact asset scope. Preserve
 the frozen tag and macOS digest. Provider sign-ins and non-production Supabase
 are unavailable currently; their mandatory gates stay pending.
@@ -654,7 +747,7 @@ the script does not build or execute an installer in that case.
 
 When those prerequisites pass, the driver builds actual unsigned per-user NSIS
 installers with the existing Electron resources and bundle closure. Both the
-baseline fixture and candidate retain version 2.0.2 and the same source. The
+baseline fixture and candidate retain the package version and the same source. The
 baseline has an explicit fixture metadata field; it is not an earlier shipped
 Windows release. The five cells exercise initial installation plus real app
 window/runtime health, acknowledged update readiness, integrity refusal with
@@ -695,6 +788,6 @@ installer launches. Reuse the macOS evidence table format and record unavailable
 or not-run cells explicitly. Platform signing is unavailable by design; native
 execution checks cannot be marked passed from a macOS simulation.
 
-The Windows release follows macOS 2.0.2 only after both architecture columns
+The Windows release follows its matching macOS publication only after both architecture columns
 pass their mandatory gates. Until those results exist, Windows remains a port
 in qualification.

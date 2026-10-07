@@ -5,6 +5,11 @@ Primary backend runtime for DevRyan web/desktop: starts Express, wires OpenCode 
 
 ## Design
 - **Startup barrier**: `index.js` waits for private native bundle provisioning/binding before dynamically importing `application.js`. A held rollback instead imports `lib/opencode/runtime-host/runtime-bundle-recovery.js`, which serves loopback inspection without initializing providers or feature stores. The composition module owns shared state and preserves the exported web/Electron server and direct CLI contract; feature behavior lives in `lib/*` factories.
+- **Windows desktop preview**: the explicit `standard-preview` mode selects
+  [the ordinary stock-runtime composition](lib/opencode/standard-preview/codemap.md)
+  before evaluating native bootstrap. It reuses the v2 facade, event and file
+  owners, owns a pinned stock OpenCode child and reports disabled protected
+  features without manufacturing native acceptance or receipts.
 - **Bundle transitions**: `lib/opencode/runtime-host/runtime-bundle-lifecycle.js`
   composes the actual controller checkpoint, application admission and existing
   producer/store drains. Authenticated administrator routes inspect updates and

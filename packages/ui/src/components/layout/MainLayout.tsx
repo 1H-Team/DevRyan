@@ -1,5 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import { motion, useDragControls, useMotionValue, animate } from 'motion/react';
+import { useRuntimeFeature } from '@/lib/opencode/runtime-capabilities';
 import { Header } from './Header';
 import { BottomTerminalDock } from './BottomTerminalDock';
 import { Sidebar, SIDEBAR_CONTENT_WIDTH } from './Sidebar';
@@ -62,6 +63,8 @@ const DESKTOP_RIGHT_SIDEBAR_MAX_WIDTH = 860;
 export const MainLayout: React.FC = () => {
     const { t } = useI18n();
     const principal = useAuthPrincipal();
+    const managedChildTasks = useRuntimeFeature('managedChildTasks');
+    const browser = useRuntimeFeature('browser');
     const canUseTerminal = hasAuthCapability(principal, 'terminal');
     const canUseBots = hasAuthCapability(principal, 'bots');
     const canManageProjects = hasAuthCapability(principal, 'manageProjects');
@@ -72,7 +75,7 @@ export const MainLayout: React.FC = () => {
     ));
     const requestedBotMode = useMainSidebarAudienceStore((state) => state.audience === 'bots');
     const botMode = canUseBots && requestedBotMode;
-    const canLaunchMultiRun = canManageProjects && canCreateWorktrees && canCreateBranches && !botMode;
+    const canLaunchMultiRun = canManageProjects && canCreateWorktrees && canCreateBranches && !botMode && managedChildTasks;
     const canCheckForUpdates = canReadSettingsPage(principal, 'about');
     const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);
     const isRightSidebarOpen = useUIStore((state) => state.isRightSidebarOpen);
@@ -785,7 +788,7 @@ export const MainLayout: React.FC = () => {
                                             )}
                                         </main>
                                         {!botMode ? <ContextPanel /> : null}
-                                        {!botMode ? <BrowserPanel /> : null}
+                                        {browser && !botMode ? <BrowserPanel /> : null}
                                     </div>
                                 </div>
                                 {canUseTerminal && !botMode ? <BottomTerminalDock isOpen={isBottomTerminalOpen} isMobile={isMobile}>

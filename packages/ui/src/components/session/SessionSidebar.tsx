@@ -2,6 +2,7 @@ import { getRetentionNavigationRevision } from '@/lib/sessionRetention';
 import { buildKnownSessionDirectories } from '@/lib/worktrees/worktreeDiscovery';
 import { createSidebarRowModel, selectableModelRows } from './sidebar/sidebarRowModel';
 import { SidebarRowsContext } from './sidebar/SidebarRowsContext';
+import { useRuntimeFeature } from '@/lib/opencode/runtime-capabilities';
 import React from 'react';
 import type { Session } from '@opencode-ai/sdk/v2';
 import { RiDeleteBinLine } from '@remixicon/react';
@@ -359,6 +360,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   const openContextPanelTab = useUIStore((state) => state.openContextPanelTab);
   const setSettingsDialogOpen = useUIStore((state) => state.setSettingsDialogOpen);
   const setSessionSwitcherOpen = useUIStore((state) => state.setSessionSwitcherOpen);
+  const managedChildTasks = useRuntimeFeature('managedChildTasks');
   const isScheduledTasksDialogOpen = useUIStore((state) => state.isScheduledTasksDialogOpen);
   const setScheduledTasksDialogOpen = useUIStore((state) => state.setScheduledTasksDialogOpen);
   const setMultiRunLauncherOpen = useUIStore((state) => state.setMultiRunLauncherOpen);
@@ -1855,7 +1857,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         </LazyViewBoundary>
       </DeferredSessionDialog>
 
-      <DeferredSessionDialog active={isScheduledTasksDialogOpen}>
+      <DeferredSessionDialog active={isScheduledTasksDialogOpen && managedChildTasks}>
         <LazyViewBoundary>
           <LazyScheduledTasksDialog />
         </LazyViewBoundary>
