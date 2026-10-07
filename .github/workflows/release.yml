@@ -5,6 +5,7 @@ on:
     tags:
       - 'v*'
       - '!v*-bot-inputs-*'
+      - '!v*-windows-preview.*'
   workflow_dispatch:
     inputs:
       version:

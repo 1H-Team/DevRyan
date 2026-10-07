@@ -240,6 +240,9 @@ installers against stock OpenCode 2.0.20. It selects the packaged
 identity/data directory, and has no automatic-update feed. It does not change
 stable version parsing, native acceptance or published `v2.0.2`.
 
+Windows preview tags are excluded from the stable release workflow; its version
+parser and production acceptance checks remain unchanged.
+
 The initial prerelease is `v2.0.3-windows-preview.1`; its exact public inventory is
 `DevRyan-2.0.3-windows-preview.1-win-x64.exe` and
 `DevRyan-2.0.3-windows-preview.1-win-arm64.exe`. Runtime archive integrity and PE

@@ -116,7 +116,7 @@ test('dry-run guards every external writer and verifies staged digests without c
 
 test('Bot input preparation excludes automatic releases and every application publication owner', () => {
   const workflow = YAML.parse(fs.readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8'));
-  assert.deepEqual(workflow.on.push.tags, ['v*', '!v*-bot-inputs-*']);
+  assert.deepEqual(workflow.on.push.tags, ['v*', '!v*-bot-inputs-*', '!v*-windows-preview.*']);
   assert.equal(workflow.on.workflow_dispatch.inputs.prepare_bot_inputs_only.default, false);
   assert.equal(workflow.on.workflow_dispatch.inputs.prepare_bot_inputs_only.type, 'boolean');
   assert.equal(workflow.env.RELEASE_BOT_INPUTS_ONLY, "${{ github.event_name == 'workflow_dispatch' && inputs.prepare_bot_inputs_only == true }}");
