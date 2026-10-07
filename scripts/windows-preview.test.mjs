@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { parseWindowsPreviewVersion, windowsPreviewAssetName, verifyWindowsPreviewAssetNames,
   verifyWindowsPreviewEvidence, sha256File } from './windows-preview-release.mjs';
 import { assertPreviewPeArchitecture, stageWindowsPreviewOpencode, WINDOWS_PREVIEW_OPENCODE_PINS } from './windows-preview-opencode.mjs';
-import { windowsPreviewBuilderConfig } from './package-windows-preview.mjs';
+import { windowsPreviewBuilderConfig, windowsPreviewPackagingEnvironment } from './package-windows-preview.mjs';
 import { readPreviewSigning, waitForPreviewExecutable } from './windows-preview-installer-smoke.mjs';
 import { WINDOWS_PREVIEW_VERSION, WINDOWS_PREVIEW_GUID } from '../packages/electron/windows-preview.mjs';
 
@@ -63,6 +64,28 @@ test('builder uses separate identity, stock resources and per-user NSIS without 
   assert.equal(config.publish, null);
   assert.equal(manifest.version, '2.0.2');
   assert.match(manifest.build.win.extraResources[0].to, /revert-runtime/);
+});
+
+test('preview packaging overrides automatic executable filters with NSIS-decodable BCJ', () => {
+  const inherited = { ELECTRON_BUILDER_7Z_FILTER: 'ARM', CSC_IDENTITY_AUTO_DISCOVERY: 'true', PATH: '/fixture/path' };
+  const environment = windowsPreviewPackagingEnvironment(inherited);
+  assert.equal(environment.ELECTRON_BUILDER_7Z_FILTER, 'BCJ');
+  assert.equal(environment.CSC_IDENTITY_AUTO_DISCOVERY, 'false');
+  assert.equal(environment.PATH, inherited.PATH);
+  assert.equal(inherited.ELECTRON_BUILDER_7Z_FILTER, 'ARM');
+  const require = createRequire(new URL('../packages/electron/package.json', import.meta.url));
+  const builderRequire = createRequire(require.resolve('electron-builder/package.json'));
+  const { compute7zCompressArgs } = builderRequire('app-builder-lib/out/targets/archive.js');
+  const previous = process.env.ELECTRON_BUILDER_7Z_FILTER;
+  try {
+    process.env.ELECTRON_BUILDER_7Z_FILTER = environment.ELECTRON_BUILDER_7Z_FILTER;
+    const args = compute7zCompressArgs('7z', { compression: 'normal' });
+    assert.ok(args.includes('-mf=BCJ'), 'the installed builder must actually pin its NSIS archive filter');
+    assert.equal(args.filter(argument => argument.startsWith('-mf=')).length, 1);
+  } finally {
+    if (previous === undefined) delete process.env.ELECTRON_BUILDER_7Z_FILTER;
+    else process.env.ELECTRON_BUILDER_7Z_FILTER = previous;
+  }
 });
 
 test('preview evidence binds source and installer bytes and both functional app launches', async () => {

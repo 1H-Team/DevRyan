@@ -8,6 +8,12 @@ import { WINDOWS_PREVIEW_OPENCODE_PINS, verifyPreviewExecutable } from './window
 
 const repository = path.resolve(fileURLToPath(new URL('../', import.meta.url)));
 const electronRoot = path.join(repository, 'packages/electron');
+export function windowsPreviewPackagingEnvironment(environment = process.env) {
+  // The bundled NSIS decoder cannot read modern 7za's automatically selected
+  // executable filters (including BCJ2). Use its supported single-stream BCJ:
+  // https://github.com/electron-userland/electron-builder/pull/9988
+  return { ...environment, CSC_IDENTITY_AUTO_DISCOVERY: 'false', ELECTRON_BUILDER_7Z_FILTER: 'BCJ' };
+}
 export function windowsPreviewBuilderConfig({ base, opencodeDirectory, outputDirectory, sessionSmoke }) {
   return { ...base, appId: WINDOWS_PREVIEW_APP_ID, productName: WINDOWS_PREVIEW_NAME, executableName: WINDOWS_PREVIEW_NAME,
     extraMetadata: { version: WINDOWS_PREVIEW_VERSION, main: './dist-bundle/windows-preview-entry.mjs', devryanRuntimeMode: 'standard-preview' },
@@ -38,7 +44,7 @@ export async function packageWindowsPreview({ arch, execute = (command, args, op
   await fs.writeFile(configFile, JSON.stringify(config, null, 2) + '\n');
   const require = createRequire(path.join(electronRoot, 'package.json'));
   const result = execute(process.execPath, [require.resolve('electron-builder/cli.js'), '--win', '--' + arch, '--publish', 'never', '--config', configFile],
-    { cwd: electronRoot, stdio: 'inherit', env: { ...process.env, CSC_IDENTITY_AUTO_DISCOVERY: 'false' } });
+    { cwd: electronRoot, stdio: 'inherit', env: windowsPreviewPackagingEnvironment() });
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error('windows_preview_packaging_failed');
 }
