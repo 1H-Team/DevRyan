@@ -30,7 +30,113 @@ execution held behind their native prerequisites. No actual installer or update
 qualification is claimed from source or local macOS tests; the append preflight
 refuses until that actual stage passes on both Windows architectures.
 
-## Current gaps
+## Release-readiness plan
+
+### Baseline and runtime decision
+
+[Run 37612482825](https://github.com/1H-Team/DevRyan/actions/runs/37612482825)
+at `26c85147` failed release qualification on both native architectures.
+Supervisor compilation, all 23 private-filesystem checks, reviewed executable
+and Git resources, libsql and candidate controller/writer builds passed.
+The original Node/Bun compatibility matrix passed 0 of 16 cases on each host.
+Compiled runtime acceptance did not run and neither installer qualified.
+
+Recommend a bounded compatibility investigation before committing to maintained
+Node/Bun forks. The first milestone must identify and prove the smallest change
+on both architectures. A permanent fork is not yet justified by the evidence.
+The product decision is pending: investigate a minimal fix first, maintain
+reviewed runtime patches, or require official runtimes and defer Windows.
+
+Maintained builds would make DevRyan responsible for rebasing security fixes,
+rebuilding and testing x64 and ARM64, pinning source/toolchain/artifact identities,
+and removing the patches when official builds qualify. They do not automatically
+fix user-installed runtimes, Bun-compiled executables or vendor binaries with
+embedded runtimes. Inventory those execution paths before selecting a solution.
+
+### Milestones and acceptance gates
+
+1. **Establish runtime feasibility.** Separate drive-root/cwd discovery from
+   nested pipe and ignored-stdio failures using the retained bounded stderr.
+   Evaluate documented runtime options and applicable official fixes first;
+   any experimental patch stays confined to disposable reviewed candidates.
+   Preserve the original sixteen compatibility cases and their guarantees.
+   Exit only when all sixteen pass on native x64 and ARM64, followed by running
+   descendant cancellation, early cancellation and parent-death settlement.
+   A successful LOCAL pipe probe alone is insufficient. Do not widen host-root
+   ACLs, remove LPAC or bypass existing admission checks.
+
+2. **Prove the shipped binary stack and decide maintenance.** Inventory project
+   Node/Bun launches, the compiled controller/writer, Claude and AST invocations.
+   Rebuild the controller/writer through the actual selected compiler and run
+   initialized workloads inside confinement. Exercise the exact reviewed Claude
+   and AST assets; recheck libsql ABI on the chosen runtimes. Do not infer that
+   a custom Bun compiler changes the runtime embedded in every compiled output.
+   Adopt a pinned patch set only after this complete stack qualifies and the
+   security-update/rebuild process is reproducible. If a vendor binary remains
+   incompatible, resolve that through vendor support or an explicit supported-
+   provider decision; patched Node/Bun alone cannot establish compatibility.
+
+3. **Resolve supervision and Revert evidence.** The native directory flush now
+   succeeds, but Revert subsequently fails termination-receipt validation on
+   both architectures. Capture bounded native refusal details and receipt-read
+   failure stages in disposable fixtures before selecting a fix. Verify process
+   creation identity, cancellation event ownership, Job drain and durable
+   receipt identity/schema. Failed or missing receipts must retain recovery
+   state and block publication. Re-run concurrent-writer/Revert, detached
+   descendants, early cancellation and parent-loss cases on both hosts.
+
+4. **Complete controller/provider integration.** Add explicit controller and
+   provider roles to the existing Windows supervisor policy while preserving
+   session-policy restrictions. Stage sealed read-only runtime, configuration
+   and finite bootstrap-evidence projections; retain logical signed identities
+   when reading their physical copies. Give each worker separate mutable roots.
+   Provide the supported read-only logical project view: today's private cwd
+   is writable, even though writes to the original absolute host path are denied.
+   Keep credential seed deletion with the existing host acknowledgement owner.
+   Route Claude transport launches through the host-owned provider channel,
+   bound to the current attempt/session/directory and approved executable.
+   Use native creation identities, cancellation and durable receipts throughout;
+   do not grant the confined child private-file authority or use PID-only kills.
+   Exit only after the integrated compiled inventory proves these contracts.
+
+5. **Qualify complete applications and installers.** Run `validate:full`,
+   `build` and `bundle:check` against the final source. Require successful native
+   supervisor acceptance, initialized controller/writer and credential handoff,
+   durable recovery, provider execution, cancellation/Revert/publication ordering,
+   and the supported UI/CLI/native feature checks on both architectures.
+   Candidate build or empty-input boot-refusal evidence cannot grant admission.
+   Exercise all five actual NSIS scenarios: installation, update success,
+   integrity refusal, interruption and rollback. Bind installer bytes, exact
+   version/source, native receipts and digests to the qualification evidence.
+
+6. **Freeze and publish one new release.** Choose the next patch version after
+   qualification (proposed `2.0.3` if still the next available version), then
+   qualify and freeze one common source/version for macOS, Windows x64 and
+   Windows ARM64. Any source change requires fresh affected qualification before
+   publication. Run release preflight in dry-run mode; require the exact
+   per-scope DevRyan asset allowlist and existing signing/digest checks. Publish
+   only after every required gate passes, then verify downloads and updater
+   selection on each native architecture. Keep published `v2.0.2` immutable.
+
+Milestones 1–2 decide whether maintained runtimes are viable. The bounded Revert
+investigation can run alongside them. Production integration follows the chosen
+runtime contract; installer/release work follows integrated native acceptance.
+Each milestone must retain failed evidence and an explicit pass/fail result.
+
+### Review and validation status
+
+The repair branch is tracked in [draft PR #1](https://github.com/1H-Team/DevRyan/pull/1).
+PR creation was blocked by `has_pull_requests: false`, not missing credentials.
+The feature is now enabled and the existing collaborators-only policy remains.
+
+Local build, bundle budgets, rebuilt macOS native artifacts and focused final
+regressions pass. Full validation reached the final web suite with one unchanged
+five-second timeout; the complete 62-test file and 14 remaining web tests passed
+on rerun without assertion or timeout changes. Record that command as failed,
+not a clean full-validation pass; the release milestone still requires a clean
+full run on its frozen source.
+
+## Qualification history
 
 ### October 7 repair work
 
