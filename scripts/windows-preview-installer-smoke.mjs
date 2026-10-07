@@ -10,6 +10,26 @@ import { verifyPreviewExecutable } from './windows-preview-opencode.mjs';
 const exec = promisify(execFile);
 const repository = path.resolve(fileURLToPath(new URL('../', import.meta.url)));
 const sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+export async function waitForPreviewExecutable(executable, { timeout = 60_000, pollInterval = 250 } = {}) {
+  const deadline = Date.now() + timeout;
+  while (true) {
+    try {
+      const stat = await fs.lstat(executable);
+      if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('windows_preview_installed_executable_invalid');
+      if (stat.size > 0) return;
+    } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    if (Date.now() >= deadline) throw new Error('windows_preview_installed_executable_timeout');
+    await sleep(Math.min(pollInterval, Math.max(1, deadline - Date.now())));
+  }
+}
+async function previewDirectoryInventory(directory) {
+  try {
+    const entries = await fs.readdir(directory, { withFileTypes: true });
+    return { entries: entries.sort((a, b) => a.name.localeCompare(b.name)).slice(0, 64).map(entry => ({
+      name: entry.name.slice(0, 200), type: entry.isFile() ? 'file' : entry.isDirectory() ? 'directory' : 'other',
+    })), truncated: entries.length > 64 };
+  } catch (error) { return { errorCode: /^E[A-Z]{1,24}$/.test(error.code || '') ? error.code : 'unavailable' }; }
+}
 export async function readPreviewSigning(file, execute = exec) {
   const script = "$ErrorActionPreference='Stop'; $s=Get-AuthenticodeSignature -LiteralPath $env:DEVRYAN_SIGNING_TARGET; $thumbprint=$null; if($s.SignerCertificate){$thumbprint=$s.SignerCertificate.Thumbprint}; @{status=$s.Status.ToString();thumbprint=$thumbprint} | ConvertTo-Json -Compress";
   let output;
@@ -83,9 +103,12 @@ export async function qualifyWindowsPreviewInstaller({ arch, sourceSha }) {
     stage = 'installer-signing';
     report.installer.signing = await readPreviewSigning(installer);
     stage = 'install';
+    const installationStarted = Date.now();
     await exec(installer, ['/S', '/D=' + installed], { timeout: 300_000, windowsHide: true, maxBuffer: 4096 });
+    report.installation = { elapsedMilliseconds: Date.now() - installationStarted, hostArch: process.arch };
     installedApp = true;
     stage = 'installed-executable';
+    await waitForPreviewExecutable(executable);
     report.installedExecutable = { ...await verifyPreviewExecutable(executable, arch), signing: await readPreviewSigning(executable) };
     stage = 'installed-stock';
     report.opencode = JSON.parse(await fs.readFile(path.join(installed, 'resources/opencode/opencode.json'), 'utf8'));
@@ -96,7 +119,19 @@ export async function qualifyWindowsPreviewInstaller({ arch, sourceSha }) {
     report.launch = await launch({ executable, fixtureRoot, profile, phase: 'initial' });
     stage = 'restart-launch';
     report.restart = await launch({ executable, fixtureRoot, profile, phase: 'restart' });
-  } catch (error) { failure = error; report.failedStage = stage; }
+  } catch (error) {
+    failure = error; report.failedStage = stage;
+    // Capture only our generated package/install filenames before uninstall
+    // removes the evidence. Never inspect the runtime profile or fixture keys.
+    const unpacked = path.join(directory, 'package', arch === 'arm64' ? 'win-arm64-unpacked' : 'win-unpacked');
+    report.installationDiagnostics = {
+      hostArch: process.arch,
+      packaged: await previewDirectoryInventory(unpacked),
+      packagedResources: await previewDirectoryInventory(path.join(unpacked, 'resources')),
+      installed: await previewDirectoryInventory(installed),
+      installedResources: await previewDirectoryInventory(path.join(installed, 'resources')),
+    };
+  }
   finally {
     const uninstaller = path.join(installed, 'Uninstall ' + WINDOWS_PREVIEW_NAME + '.exe');
     installedApp ||= await fs.stat(uninstaller).then(stat => stat.isFile(), () => false);

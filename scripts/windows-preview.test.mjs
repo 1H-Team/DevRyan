@@ -7,7 +7,7 @@ import { parseWindowsPreviewVersion, windowsPreviewAssetName, verifyWindowsPrevi
   verifyWindowsPreviewEvidence, sha256File } from './windows-preview-release.mjs';
 import { assertPreviewPeArchitecture, stageWindowsPreviewOpencode, WINDOWS_PREVIEW_OPENCODE_PINS } from './windows-preview-opencode.mjs';
 import { windowsPreviewBuilderConfig } from './package-windows-preview.mjs';
-import { readPreviewSigning } from './windows-preview-installer-smoke.mjs';
+import { readPreviewSigning, waitForPreviewExecutable } from './windows-preview-installer-smoke.mjs';
 import { WINDOWS_PREVIEW_VERSION, WINDOWS_PREVIEW_GUID } from '../packages/electron/windows-preview.mjs';
 
 test('preview release version and exact two branded assets are distinct from stable', () => {
@@ -120,4 +120,21 @@ test('signing probe records bounded command-only diagnostics and still rejects i
     assert.equal(error.signingProbe.stderr.length, 4096);
     return true;
   });
+});
+
+test('installer completion waits for the exact executable and refuses missing or invalid output', async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'preview-install-'));
+  try {
+    const executable = path.join(directory, 'DevRyan Windows Preview.exe');
+    let completed = false;
+    const completion = waitForPreviewExecutable(executable, { timeout: 1000, pollInterval: 5 }).then(() => { completed = true; });
+    await fs.writeFile(path.join(directory, 'Uninstall DevRyan Windows Preview.exe'), 'uninstaller');
+    await assert.rejects(waitForPreviewExecutable(path.join(directory, 'missing.exe'), { timeout: 20, pollInterval: 5 }),
+      /windows_preview_installed_executable_timeout/);
+    assert.equal(completed, false, 'an uninstaller alone cannot establish installation completion');
+    await fs.writeFile(executable, 'actual-output');
+    await completion;
+    await fs.mkdir(path.join(directory, 'invalid.exe'));
+    await assert.rejects(waitForPreviewExecutable(path.join(directory, 'invalid.exe')), /windows_preview_installed_executable_invalid/);
+  } finally { await fs.rm(directory, { recursive: true, force: true }); }
 });
