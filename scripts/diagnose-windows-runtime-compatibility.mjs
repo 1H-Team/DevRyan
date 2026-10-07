@@ -78,6 +78,14 @@ export function validateLocalStdioReceipt(receipt, { mode, size }) {
   return receipt;
 }
 
+export function runtimeCompatibilitySummary({ status, rows }) {
+  return { status, admission: false, rows: rows.map(({ runtime, mode, size, status, error, receipt, termination }) => ({
+    runtime, mode, size, status, receipt, termination,
+    ...(error ? { error: { code: typeof error.code === 'string' ? error.code.slice(0, 64) : null,
+      message: String(error.message ?? '').slice(0, 512) } } : {}),
+  })) };
+}
+
 export async function runWindowsRuntimeCompatibility(directory) {
   if (process.platform !== 'win32' || !['x64', 'arm64'].includes(process.arch)) throw Error('Actual native Windows runtime required');
   const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -143,6 +151,6 @@ export async function runWindowsRuntimeCompatibility(directory) {
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   if (process.argv.length !== 3) throw Error('Pass only the owned supervisor output directory');
   const evidence = await runWindowsRuntimeCompatibility(process.argv[2]);
-  console.log(JSON.stringify({ status: evidence.status, admission: false, rows: evidence.rows.map(({ runtime, mode, size, status }) => ({ runtime, mode, size, status })) }));
+  console.log(JSON.stringify(runtimeCompatibilitySummary(evidence)));
   process.exitCode = evidence.status === 'passed' ? 0 : 1;
 }

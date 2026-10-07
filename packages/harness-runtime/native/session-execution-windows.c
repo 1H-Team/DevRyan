@@ -1216,6 +1216,8 @@ typedef struct {
   HANDLE pipe;
   DWORD expected, count, error, hash;
   BOOL input;
+  BYTE *capture;
+  DWORD captureCapacity, captureLength;
 } diagnostic_stream;
 
 static DWORD WINAPI transfer_diagnostic_stream(void *argument) {
@@ -1239,6 +1241,11 @@ static DWORD WINAPI transfer_diagnostic_stream(void *argument) {
       }
       if (!transferred) break;
       if (stream->count > 1048576 - transferred) { stream->error = ERROR_FILE_TOO_LARGE; break; }
+      if (stream->capture && stream->captureLength < stream->captureCapacity) {
+        DWORD remaining = stream->captureCapacity - stream->captureLength;
+        DWORD count = transferred < remaining ? transferred : remaining;
+        memcpy(stream->capture + stream->captureLength, buffer, count); stream->captureLength += count;
+      }
       for (DWORD i = 0; i < transferred; i++) stream->hash = (stream->hash ^ buffer[i]) * 16777619u;
     }
     stream->count += transferred;
@@ -1260,6 +1267,7 @@ static int diagnose_local_stdio(int argc, wchar_t **argv) {
   if (errno || !*argv[2] || *end || length > 262144) return 125;
   LUID identity; checked(AllocateLocallyUniqueId(&identity), "local pipe identity");
   diagnostic_stream streams[3] = {0}; HANDLE handles[3], threads[3];
+  BYTE stderrCapture[4096]; streams[2].capture = stderrCapture; streams[2].captureCapacity = sizeof(stderrCapture);
   SECURITY_ATTRIBUTES inherited = {sizeof(inherited), NULL, TRUE};
   for (DWORD i = 0; i < 3; i++) {
     wchar_t name[192]; swprintf(name, 192, L"\\\\.\\pipe\\LOCAL\\DevRyan-stdio-%lu-%lu-%lu-%lu",
@@ -1305,6 +1313,19 @@ static int diagnose_local_stdio(int argc, wchar_t **argv) {
     }
     CloseHandle(threads[i]);
   }
+  /* Keep bounded child diagnostics only in the synthetic fixture artifact.
+   * Runtime bytes never become supervisor JSON or user-facing CI output. */
+  wchar_t directory[32768]; DWORD directoryLength = GetFullPathNameW(argv[3], 32768, directory, NULL);
+  if (!directoryLength || directoryLength >= 32768 || !wcsrchr(directory, L'\\')) fail("LOCAL stdio stderr artifact directory");
+  *wcsrchr(directory, L'\\') = 0;
+  wchar_t *capturePath = joined(directory, L"runtime-stderr.bin");
+  HANDLE capture = CreateFileW(capturePath, GENERIC_WRITE, 0, NULL, CREATE_NEW,
+    FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_WRITE_THROUGH, NULL);
+  if (capture == INVALID_HANDLE_VALUE) fail("LOCAL stdio stderr artifact creation");
+  DWORD captured;
+  checked(WriteFile(capture, stderrCapture, streams[2].captureLength, &captured, NULL)
+    && captured == streams[2].captureLength && FlushFileBuffers(capture), "LOCAL stdio stderr artifact write");
+  CloseHandle(capture); free(capturePath);
   DeleteProcThreadAttributeList(startup.lpAttributeList); free(startup.lpAttributeList); free(command);
   printf("{\"protocol\":\"devryan.windows-local-stdio/1\",\"created\":%s,\"windowsError\":%lu,\"exitCode\":%lu,\"settled\":%s,\"inputBytes\":%lu,\"inputError\":%lu,\"stdoutBytes\":%lu,\"stdoutHash\":%lu,\"stdoutError\":%lu,\"stderrBytes\":%lu,\"stderrHash\":%lu,\"stderrError\":%lu,\"admission\":false}\n",
     created ? "true" : "false", error, code, settled ? "true" : "false", streams[0].count, streams[0].error,

@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { spawnSync } from 'node:child_process';
-import { runtimeCompatibilityCases, runtimeCompatibilityProject, compatibilityPayload, validateLocalStdioReceipt } from './diagnose-windows-runtime-compatibility.mjs';
+import { runtimeCompatibilityCases, runtimeCompatibilityProject, compatibilityPayload, validateLocalStdioReceipt, runtimeCompatibilitySummary } from './diagnose-windows-runtime-compatibility.mjs';
 
 test('real project scripts exercise EOF, binary/backpressure, sync/async spawning and ignored/inherited streams', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'windows-project-contract-'));
@@ -29,4 +29,17 @@ test('local stdio evidence refuses missing settlement, widened keys, corrupted b
   assert.equal(validateLocalStdioReceipt(receipt, runtimeCompatibilityCases[0]), receipt);
   for (const change of [{ created: false }, { settled: false }, { admission: true }, { stdoutHash: 0 }, { stderrBytes: 1 },
     { inputError: 5 }, { exitCode: 125 }, { extra: true }]) assert.throws(() => validateLocalStdioReceipt({ ...receipt, ...change }, runtimeCompatibilityCases[0]));
+});
+
+test('CI summaries retain native receipts and bounded errors while excluding raw runtime output', () => {
+  const receipt = { protocol: 'devryan.windows-local-stdio/1', created: true, exitCode: 1 };
+  const termination = { terminated: true, confined: true, cancelled: false, exitCode: 125 };
+  const row = { runtime: 'node', mode: 'direct', size: 0, status: 'failed', receipt, termination,
+    error: { code: 'x'.repeat(128), message: 'y'.repeat(1024), stderr: 'private runtime output' },
+    stdout: 'private runtime output', stderr: 'private runtime output' };
+  const summary = runtimeCompatibilitySummary({ status: 'failed', rows: [row], stderr: 'private runtime output' });
+  assert.deepEqual(summary.rows[0], { runtime: 'node', mode: 'direct', size: 0, status: 'failed', receipt, termination,
+    error: { code: 'x'.repeat(64), message: 'y'.repeat(512) } });
+  assert.equal(summary.admission, false); assert.ok(!JSON.stringify(summary).includes('private runtime output'));
+  assert.equal(row.error.message.length, 1024);
 });
