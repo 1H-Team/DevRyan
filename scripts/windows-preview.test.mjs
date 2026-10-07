@@ -7,6 +7,7 @@ import { parseWindowsPreviewVersion, windowsPreviewAssetName, verifyWindowsPrevi
   verifyWindowsPreviewEvidence, sha256File } from './windows-preview-release.mjs';
 import { assertPreviewPeArchitecture, stageWindowsPreviewOpencode, WINDOWS_PREVIEW_OPENCODE_PINS } from './windows-preview-opencode.mjs';
 import { windowsPreviewBuilderConfig } from './package-windows-preview.mjs';
+import { readPreviewSigning } from './windows-preview-installer-smoke.mjs';
 import { WINDOWS_PREVIEW_VERSION, WINDOWS_PREVIEW_GUID } from '../packages/electron/windows-preview.mjs';
 
 test('preview release version and exact two branded assets are distinct from stable', () => {
@@ -97,4 +98,25 @@ test('preview workflow runs architecture-native packaging and installer checks b
     /workflow_dispatch:/, /contents: read/, /windows-preview-installer-smoke.mjs/, /--publish.*never|package-windows-preview.mjs/]) assert.match(workflow, pattern);
   assert.ok(workflow.indexOf('Install, launch, exercise sessions') < workflow.indexOf('actions/upload-artifact'));
   assert.doesNotMatch(workflow, /pull_request:|contents: write|gh release|windows-native|supervisor_acceptance/);
+});
+
+test('signing probe records bounded command-only diagnostics and still rejects invalid signatures', async () => {
+  const file = '/fixture/DevRyan-preview.exe';
+  const read = value => readPreviewSigning(file, async (_, args, options) => {
+    assert.equal(options.env.DEVRYAN_SIGNING_TARGET, file);
+    assert.equal(options.timeout, 30000);
+    assert.ok(args.includes('-NonInteractive'));
+    assert.match(args.at(-1), /\$thumbprint=\$null; if\(\$s.SignerCertificate\)/);
+    assert.doesNotMatch(args.at(-1), /thumbprint=if/);
+    return { stdout: JSON.stringify(value), stderr: '' };
+  });
+  assert.deepEqual(await read({ status: 'NotSigned', thumbprint: null }), { status: 'NotSigned', thumbprint: null });
+  await assert.rejects(read({ status: 'HashMismatch', thumbprint: null }), /windows_preview_signing_invalid/);
+  await assert.rejects(readPreviewSigning(file, async () => { throw Object.assign(new Error('fixed signing probe failed'),
+    { code: 1, stdout: '', stderr: 'x'.repeat(5000) }); }), error => {
+    assert.equal(error.message, 'windows_preview_signing_probe_failed');
+    assert.equal(error.signingProbe.code, 1);
+    assert.equal(error.signingProbe.stderr.length, 4096);
+    return true;
+  });
 });

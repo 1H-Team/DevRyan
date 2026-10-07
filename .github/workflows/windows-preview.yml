@@ -59,6 +59,8 @@ jobs:
         run: bun install --frozen-lockfile --ignore-scripts
       - name: Verify preview packaging contracts
         run: node --test scripts/windows-preview.test.mjs packages/electron/tests/windows-preview.test.mjs
+      - name: Verify native PowerShell signing probe before packaging
+        run: node --input-type=module -e "import {readPreviewSigning} from './scripts/windows-preview-installer-smoke.mjs'; console.log(JSON.stringify(await readPreviewSigning(process.execPath)));"
       - name: Download and execute integrity-pinned stock OpenCode
         run: node scripts/windows-preview-opencode.mjs .cache/windows-preview/${{ matrix.arch }}/opencode ${{ matrix.arch }}
       - name: Build desktop web assets

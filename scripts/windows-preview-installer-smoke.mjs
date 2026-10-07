@@ -10,11 +10,25 @@ import { verifyPreviewExecutable } from './windows-preview-opencode.mjs';
 const exec = promisify(execFile);
 const repository = path.resolve(fileURLToPath(new URL('../', import.meta.url)));
 const sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
-export async function readPreviewSigning(file) {
-  const script = '$s=Get-AuthenticodeSignature -LiteralPath $env:DEVRYAN_SIGNING_TARGET; @{status=$s.Status.ToString();thumbprint=if($s.SignerCertificate){$s.SignerCertificate.Thumbprint}else{$null}} | ConvertTo-Json -Compress';
-  const { stdout } = await exec('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script],
-    { env: { ...process.env, DEVRYAN_SIGNING_TARGET: file }, timeout: 30_000, maxBuffer: 4096, windowsHide: true });
-  const signing = JSON.parse(stdout.trim());
+export async function readPreviewSigning(file, execute = exec) {
+  const script = "$ErrorActionPreference='Stop'; $s=Get-AuthenticodeSignature -LiteralPath $env:DEVRYAN_SIGNING_TARGET; $thumbprint=$null; if($s.SignerCertificate){$thumbprint=$s.SignerCertificate.Thumbprint}; @{status=$s.Status.ToString();thumbprint=$thumbprint} | ConvertTo-Json -Compress";
+  let output;
+  try {
+    output = await execute('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script],
+      { env: { ...process.env, DEVRYAN_SIGNING_TARGET: file }, timeout: 30_000, maxBuffer: 4096, windowsHide: true });
+  } catch (cause) {
+    const error = new Error('windows_preview_signing_probe_failed');
+    error.signingProbe = { code: typeof cause.code === 'number' || /^E[A-Z]{1,24}$/.test(cause.code || '') ? cause.code : null,
+      stdout: String(cause.stdout || '').slice(0, 4096), stderr: String(cause.stderr || '').slice(0, 4096) };
+    throw error;
+  }
+  let signing;
+  try { signing = JSON.parse(output.stdout.trim()); }
+  catch {
+    const error = new Error('windows_preview_signing_output_invalid');
+    error.signingProbe = { stdout: String(output.stdout || '').slice(0, 4096), stderr: String(output.stderr || '').slice(0, 4096) };
+    throw error;
+  }
   if (!['Valid', 'NotSigned'].includes(signing.status) || signing.status === 'Valid' && !/^[A-Fa-f0-9]{40,64}$/.test(signing.thumbprint || '')) {
     throw new Error('windows_preview_signing_invalid');
   }
@@ -57,20 +71,29 @@ export async function qualifyWindowsPreviewInstaller({ arch, sourceSha }) {
   const report = { schema: 1, status: 'failed', arch, sourceSha, appVersion: WINDOWS_PREVIEW_VERSION };
   let installedApp = false;
   let failure;
+  let stage = 'installer-file';
   try {
     const stat = await fs.lstat(installer);
     if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('windows_preview_installer_invalid');
-    report.installer = { name: path.basename(installer), size: stat.size, sha256: await sha256File(installer), signing: await readPreviewSigning(installer) };
+    stage = 'installer-hash';
+    report.installer = { name: path.basename(installer), size: stat.size, sha256: await sha256File(installer) };
+    stage = 'installer-signing';
+    report.installer.signing = await readPreviewSigning(installer);
+    stage = 'install';
     await exec(installer, ['/S', '/D=' + installed], { timeout: 300_000, windowsHide: true, maxBuffer: 4096 });
     installedApp = true;
+    stage = 'installed-executable';
     report.installedExecutable = { ...await verifyPreviewExecutable(executable, arch), signing: await readPreviewSigning(executable) };
+    stage = 'installed-stock';
     report.opencode = JSON.parse(await fs.readFile(path.join(installed, 'resources/opencode/opencode.json'), 'utf8'));
     const stock = await verifyPreviewExecutable(path.join(installed, 'resources/opencode/opencode.exe'), arch);
     if (stock.sha256 !== report.opencode.sha256 || stock.size !== report.opencode.size) throw new Error('windows_preview_installed_stock_mismatch');
     report.install = 'passed';
+    stage = 'initial-launch';
     report.launch = await launch({ executable, fixtureRoot, profile, phase: 'initial' });
+    stage = 'restart-launch';
     report.restart = await launch({ executable, fixtureRoot, profile, phase: 'restart' });
-  } catch (error) { failure = error; }
+  } catch (error) { failure = error; report.failedStage = stage; }
   finally {
     const uninstaller = path.join(installed, 'Uninstall ' + WINDOWS_PREVIEW_NAME + '.exe');
     installedApp ||= await fs.stat(uninstaller).then(stat => stat.isFile(), () => false);
@@ -82,10 +105,12 @@ export async function qualifyWindowsPreviewInstaller({ arch, sourceSha }) {
         await sleep(250);
       }
       if (report.uninstall !== 'passed') throw new Error('windows_preview_uninstall_failed');
-    } catch (error) { failure ||= error; }
+    } catch (error) { failure ||= error; report.failedStage ||= 'uninstall'; }
   }
   report.status = failure ? 'failed' : 'passed';
   if (failure) report.errorCode = /^windows_preview_[a-z_]+$/.test(failure.message || '') ? failure.message : 'windows_preview_smoke_failed';
+  if (failure?.signingProbe) report.signingProbe = failure.signingProbe;
+  if (failure && /^E[A-Z]{1,24}$/.test(failure.code || '')) report.systemErrorCode = failure.code;
   const evidence = path.join(directory, 'package', `DevRyan-preview-evidence-${arch}.json`);
   await fs.writeFile(evidence, JSON.stringify(report, null, 2) + '\n', { flag: 'wx' });
   if (failure) throw new Error(report.errorCode);
