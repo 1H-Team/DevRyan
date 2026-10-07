@@ -6,6 +6,10 @@ Public tunnel management subsystem: provider registry, tunnel mode/intent typing
 ## Design
 - `access-control.js` owns durable Bot and Supabase-Off owner grants, hashed sessions, authorization generations, the early HTTP/upgrade boundary and explicit POST landing flow. Its private request map supplies verified owner identity to auth adapters. It is the production tunnel authority injected by `server/index.js`.
 - `bot-grants.js` owns the default-deny Bot route allowlist and grant checks reused by Bot authorization/catalog/event code.
+- Managed-account HTTP and supported WebSocket requests are marked as admitted
+  transport before the background runtime's native-session gate. They still
+  require normal account authentication and Bot permissions; native paths stay
+  excluded. Upgrade listeners run boundary, service gate, then feature handlers.
 - **Provider registry pattern** (`registry.js`) enforces required provider capabilities (`start/stop/checkAvailability/resolvePublicUrl`).
 - **Strong request normalization** (`types.js`) canonicalizes provider/mode/intent/token/hostname/configPath.
 - **Capability-driven validation**: request validity depends on provider-declared mode requirements.

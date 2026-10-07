@@ -17,7 +17,7 @@ export const makeNativeSimulation = (endpoint: string, origin: RegistrationOrigi
   if (url.protocol !== 'ws:' || url.hostname !== '127.0.0.1') throw new Error('Simulation endpoint must be loopback');
   const providerLayer = Layer.effect(SimulatedProvider.Service,
     provideRegistrationOrigin(origin, Effect.gen(function* () {
-      const context = yield* Layer.build(SimulatedProvider.layerDrive({ endpoint, version: '2.0.20' }));
+      const context = yield* Layer.build(SimulatedProvider.layerDrive({ endpoint, version: '2.0.24' }));
       return Context.get(context, SimulatedProvider.Service);
     })));
   const networkLayer = Layer.effect(HttpClient.HttpClient, Effect.gen(function* () {

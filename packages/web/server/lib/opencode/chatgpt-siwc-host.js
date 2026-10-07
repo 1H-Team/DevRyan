@@ -21,7 +21,7 @@ export async function readNativeOpenAiSelection(getNativeRuntimeOwner, directory
   return await (refresh && typeof owner.readOpenAiAccountSelection === 'function' ? owner.readOpenAiAccountSelection(scope) : owner.readOpenAiSelected(scope)) ?? null;
 }
 
-export function createHostChatgptSiwcEnrollment({ dataDirectory, getNativeRuntimeOwner, getOpenCodeRuntime, fetchImpl = fetch }) {
+export function createHostChatgptSiwcEnrollment({ dataDirectory, getNativeRuntimeOwner, getOpenCodeRuntime, fetchImpl = fetch, jwksImpl }) {
   const facadeFor = () => createNativeIntegrationFacade({ getNativeRuntimeOwner, getOpenCodeRuntime });
   const readCredential = async (directory, credentialID) => {
     const { owner, scope } = nativeScope(getNativeRuntimeOwner, directory);
@@ -53,7 +53,7 @@ export function createHostChatgptSiwcEnrollment({ dataDirectory, getNativeRuntim
       planUsage: value.methodID === CHATGPT_SIWC_METHOD_ID && hasSiwcPlanUsage(value.metadata?.scopes),
       subject: value.metadata?.subject ?? null, email: value.metadata?.email ?? null };
   };
-  return createChatgptSiwcEnrollmentOwner({ dataDirectory, fetchImpl, readConnected,
+  return createChatgptSiwcEnrollmentOwner({ dataDirectory, fetchImpl, jwksImpl, readConnected,
     readRegistrationCredential: async ({ directory, registration }) => {
       if (!registration.credentialID) return null;
       const row = await readCredential(directory, registration.credentialID);
@@ -62,9 +62,9 @@ export function createHostChatgptSiwcEnrollment({ dataDirectory, getNativeRuntim
         || row.value.metadata?.clientId !== registration.clientId) throw failSiwc('native_chatgpt_siwc_registration_changed');
       return row;
     },
-    persistCredential: async ({ directory, value, expectedActiveFingerprint, assertCurrent }) => {
+    persistCredential: async ({ directory, credentialID, value, expectedActiveFingerprint, assertCurrent }) => {
       const { scope } = nativeScope(getNativeRuntimeOwner, directory);
-      const result = await facadeFor().saveOAuthCredential('openai', value, { directory: scope.directory, expectedActiveFingerprint, assertCurrent });
+      const result = await facadeFor().saveOAuthCredential('openai', value, { directory: scope.directory, credentialID, expectedActiveFingerprint, assertCurrent });
       const row = await readCredential(scope.directory, result.credentialID);
       if (!row) throw failSiwc('native_chatgpt_siwc_credential_missing');
       return { credentialID: result.credentialID, expectedFingerprint: row.expectedFingerprint };

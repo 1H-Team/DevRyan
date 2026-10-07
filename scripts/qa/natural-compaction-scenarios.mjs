@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { gradeQaProject } from './acceptance-graders.mjs';
-import { resolveQaTargetOpenCodeVersion } from '../../packages/web/server/lib/opencode/version-policy.js';
+import { resolveQaTargetOpenCodeVersion, SUPPORTED_NATIVE_OPENCODE_VERSIONS } from '../../packages/web/server/lib/opencode/version-policy.js';
 import { openCodeBaseVersion } from '../../packages/web/server/lib/opencode/opencode-update-runtime.js';
 import { assertQaCandidateRuntimeVersion } from './runtime-target.mjs';
 import { findQaPlanApprovalUser, projectCompactionTaskSnapshot } from './compaction-scenarios.mjs';
@@ -52,7 +52,7 @@ export const findQaSeededInvestigationStarts = (rows, knownCallIds = new Set()) 
 const v2TriggerEvidenceUnavailable = 'Actual native trigger reason, context estimate and checkpoint journal evidence is required';
 const verifiedCompactionGeneration = version => {
   const base = openCodeBaseVersion(version);
-  if (base === '2.0.20') return 2;
+  if (SUPPORTED_NATIVE_OPENCODE_VERSIONS.includes(base)) return 2;
   throw new Error(`Native compaction policy has not been verified for OpenCode ${version}`);
 };
 
@@ -69,7 +69,7 @@ export function deriveQaNativeCompactionPolicy({ version, modelLimits, compactio
   assert.ok(numeric(buffer), 'Native compaction buffer is invalid');
   const threshold = window - buffer;
   assert.ok(threshold > 0, 'A positive natural compaction threshold is required');
-  return { version, generation, source: 'verified-native-2.0.20-policy', runtimeTarget, modelLimits,
+  return { version, generation, source: `verified-native-${runtimeTarget.version}-policy`, runtimeTarget, modelLimits,
     automatic: compaction?.auto ?? 'native-default', configuredBuffer: compaction?.buffer ?? null, buffer, threshold,
     thresholdBasis: modelLimits.input ? 'input-minus-buffer' : 'context-minus-buffer',
     triggerEvidence: { state: 'unavailable', reason: v2TriggerEvidenceUnavailable } };

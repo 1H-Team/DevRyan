@@ -2,7 +2,7 @@ import path from 'node:path';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { withExecutionAdmission } from './execution-admission.js';
 import { createPrimaryRecoveryController } from './provider-recovery.js';
-import { recoveryError, inspectRecoveryTurn, RECOVERY_CONTINUATION, RECOVERY_READ_TOOLS } from './provider-recovery-policy.js';
+import { recoveryError, isNativePrimaryRuntimeVersion, inspectRecoveryTurn, RECOVERY_CONTINUATION, RECOVERY_READ_TOOLS } from './provider-recovery-policy.js';
 
 const object = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 
@@ -290,7 +290,7 @@ export function createPrimaryRecoveryHost(options) {
     async helloNative({ policyVersion, instanceID }, owner) {
       gen2Client();
       const { data } = await request('/api/info');
-      if (!object(data) || data.version !== '2.0.20') throw recoveryError('recovery_runtime_unverified');
+      if (!object(data) || !isNativePrimaryRuntimeVersion(data.version)) throw recoveryError('recovery_runtime_unverified');
       return controller.plugin({ action: 'hello', policyVersion, instanceID,
         transport: 'native-v2', version: data.version }, undefined, undefined, owner);
     },

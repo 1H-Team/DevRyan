@@ -19,6 +19,9 @@ import {
 } from '@openchamber/bot-db';
 
 import { botObjectFileName } from './local-object-storage.js';
+import { BOT_CATALOG_ENVELOPES } from './catalog-validation.js';
+import { decryptBotJson } from './encryption.js';
+import { CONFIGURATION_RESOURCE_COLUMNS, configurationResourceBlockers } from './configuration-readiness.js';
 
 // One-time import of hosted (Supabase) Bots into the local catalog.
 //
@@ -72,7 +75,8 @@ const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, mil
 
 // GET-only cloud reader. Every request is checked against the exact allowlist
 // before it is sent; responses are bounded before allocation.
-export function createCloudBotReader({ url, secretKey, fetchImpl = globalThis.fetch, allowedTables, wait = sleep }) {
+export function createCloudBotReader({ url, secretKey, fetchImpl = globalThis.fetch, allowedTables, wait = sleep,
+  onDownloadedBytes = () => {} }) {
   let base;
   try {
     base = new URL(url);
@@ -109,6 +113,7 @@ export function createCloudBotReader({ url, secretKey, fetchImpl = globalThis.fe
         const { done, value } = await reader.read();
         if (done) break;
         total += value.byteLength;
+        onDownloadedBytes(value.byteLength);
         if (total > maximumBytes) {
           await reader.cancel().catch(() => undefined);
           return null;
@@ -188,13 +193,24 @@ export function createCloudBotReader({ url, secretKey, fetchImpl = globalThis.fe
       return marker;
     },
     // One keyset page as raw bytes; __k* aliases carry the order keys as text.
-    async page(table, { columns, orderColumns, after = null, limit }) {
+    async page(table, { columns, orderColumns, after = null, limit, avatarIds = null }) {
       if (!tables.has(table) || !columns.every((column) => IDENTIFIER.test(column))
         || !orderColumns.every((column) => columns.includes(column))
         || (after && after.some((value) => !KEY_VALUE.test(value)))) {
         fail('The import page request is invalid', 'bot_import_request_forbidden', { statusCode: 500 });
       }
       const search = new URLSearchParams();
+      if (avatarIds !== null) {
+        if (table !== 'bot_objects' || !Array.isArray(avatarIds) || avatarIds.length > 100
+          || avatarIds.some((id) => !UUID.test(id))) {
+          fail('The avatar request is invalid', 'bot_import_request_forbidden', { statusCode: 500 });
+        }
+        if (avatarIds.length === 0) return Buffer.from('[]');
+        search.set('id', `in.(${avatarIds.join(',')})`);
+        search.set('visibility', 'eq.profile');
+        search.set('channel_id', 'is.null');
+        search.set('deleted_at', 'is.null');
+      }
       search.set('select', [...columns, ...orderColumns.map((column, index) => `__k${index}:${column}::text`)].join(','));
       search.set('order', orderColumns.map((column) => `${column}.asc`).join(','));
       search.set('limit', String(limit));
@@ -377,15 +393,16 @@ export function createBotCatalogImport({
 
   // Pages one table from the cloud, resuming from its checkpoint. A row that
   // cannot fit the bound even alone fails explicitly.
-  const exportTable = async (reader, group, table, { columns, orderColumns }) => {
-    const entry = state.tables[group] ||= { pages: [], complete: false, columns, orderColumns };
+  const exportTable = async (reader, group, table, { columns, orderColumns, avatarIds = null }) => {
+    const entry = state.tables[group] ||= { pages: [], complete: false, table, columns, orderColumns,
+      ...(avatarIds === null ? {} : { avatarIds }) };
     while (!entry.complete) {
       checkCancelled();
       const after = entry.pages.at(-1)?.last || null;
       let limit = entry.limit || INITIAL_PAGE_ROWS;
       let bytes = null;
       for (;;) {
-        bytes = await reader.page(table, { columns, orderColumns, after, limit });
+        bytes = await reader.page(table, { columns, orderColumns, after, limit, avatarIds: entry.avatarIds ?? null });
         if (bytes) break;
         if (limit === 1) fail(`A ${table} row exceeds the ${MAX_PAGE_BYTES}-byte import bound`, 'bot_import_row_too_large');
         limit = Math.max(1, Math.floor(limit / 2));
@@ -410,6 +427,65 @@ export function createBotCatalogImport({
     }
   };
 
+  const tableEntries = (table) => Object.entries(state.tables).filter(([group, entry]) => (
+    (entry.table || group) === table
+  ));
+
+  async function* exportedRows(table) {
+    for (const [group, entry] of tableEntries(table)) {
+      for (const page of entry.pages) {
+        for (const row of parseRows(await readPage(group, page))) yield row;
+      }
+    }
+  }
+
+  const exportAvatars = async (reader, table) => {
+    const avatars = new Map();
+    for await (const bot of exportedRows('bots')) {
+      if (bot.avatar_object_id === null || bot.avatar_object_id === undefined) continue;
+      if (!UUID.test(bot.avatar_object_id) || avatars.has(bot.avatar_object_id)) {
+        fail('A cloud Bot avatar pointer is invalid', 'bot_import_object_invalid');
+      }
+      avatars.set(bot.avatar_object_id, bot.id);
+    }
+    const ids = [...avatars.keys()].sort();
+    // Empty avatar sets issue no object-table request. Batches keep PostgREST
+    // URLs bounded; their exact filters persist with each checkpoint.
+    for (let offset = 0; offset < Math.max(1, ids.length); offset += 100) {
+      await exportTable(reader, `bot_objects__avatars_${offset}`, 'bot_objects', {
+        columns: table.columns, orderColumns: table.primaryKey, avatarIds: ids.slice(offset, offset + 100),
+      });
+    }
+    const found = new Set();
+    for await (const row of exportedRows('bot_objects')) {
+      if (!avatars.has(row.id) || avatars.get(row.id) !== row.bot_id || row.visibility !== 'profile'
+        || row.channel_id !== null || row.deleted_at !== null
+        || !['image/png', 'image/jpeg', 'image/webp'].includes(row.content_type)) {
+        fail('A cloud Bot avatar record is invalid', 'bot_import_object_invalid');
+      }
+      found.add(row.id);
+    }
+    if (found.size !== avatars.size) fail('A cloud Bot avatar is missing', 'bot_import_object_missing');
+  };
+
+  const verifyConfigurationKey = () => withKey(async (key) => {
+    for (const spec of BOT_CATALOG_ENVELOPES.filter((entry) => (
+      ['bot_objects', 'bot_mcp_bindings'].includes(entry.table)
+    ))) {
+      for await (const row of exportedRows(spec.table)) {
+        for (const envelope of spec.envelopes) {
+          try {
+            decryptBotJson({ key, envelope: envelope.read(row), expectedKeyId: 'deployment-v1', associatedData: envelope.aad(row) });
+          } catch {
+            fail('The cloud Bot configuration requires its original encryption identity', 'bot_import_encryption_identity_mismatch', {
+              report: { table: spec.table },
+            });
+          }
+        }
+      }
+    }
+  });
+
   // Every stored page must be reproduced byte-for-byte, and each table must
   // still end where it ended: counts alone never prove a snapshot.
   const verifyTables = async (reader) => {
@@ -417,16 +493,18 @@ export function createBotCatalogImport({
       if (group === '__identities') continue;
       for (const page of entry.pages) {
         checkCancelled();
-        const bytes = await reader.page(group, {
+        const bytes = await reader.page(entry.table || group, {
           columns: entry.columns, orderColumns: entry.orderColumns, after: page.after, limit: page.limit,
+          avatarIds: entry.avatarIds ?? null,
         });
         if (!bytes || sha256(bytes) !== page.sha256) {
           fail(`Cloud ${group} rows changed during the import; stop every cloud Bot writer and start again`,
             'bot_import_source_changed', { report: { table: group } });
         }
       }
-      const tail = await reader.page(group, {
+      const tail = await reader.page(entry.table || group, {
         columns: entry.columns, orderColumns: entry.orderColumns, after: entry.terminalAfter ?? null, limit: 1,
+        avatarIds: entry.avatarIds ?? null,
       });
       if (!tail || parseRows(tail).length !== 0) {
         fail(`Cloud ${group} rows were added during the import; stop every cloud Bot writer and start again`,
@@ -446,15 +524,46 @@ export function createBotCatalogImport({
     const ids = new Set();
     for (const table of plan) {
       if (table.userColumns.length === 0) continue;
-      for (const page of state.tables[table.name]?.pages || []) {
-        for (const row of parseRows(await readPage(table.name, page))) {
-          for (const column of table.userColumns) {
-            if (typeof row[column] === 'string' && UUID.test(row[column])) ids.add(row[column].toLowerCase());
-          }
+      for await (const row of exportedRows(table.name)) {
+        for (const column of table.userColumns) {
+          if (typeof row[column] === 'string' && UUID.test(row[column])) ids.add(row[column].toLowerCase());
         }
       }
     }
     return [...ids].sort();
+  };
+
+  const candidateConfigurationBlockers = async (candidate, botIds, ownerUserId) => {
+    const selected = new Set(botIds);
+    const cached = new Map();
+    const readRows = async (table, columns) => {
+      const rows = [];
+      let afterId = null;
+      for (;;) {
+        const page = await host.readCandidate(candidate.operationId, {
+          table, columns, keyColumn: 'id', afterId, limit: 200,
+        });
+        rows.push(...page);
+        if (page.length < 200) return rows;
+        afterId = page.at(-1).id;
+      }
+    };
+    const get = async (table, id) => {
+      if (!cached.has(table)) cached.set(table, new Map((await readRows(table, CONFIGURATION_RESOURCE_COLUMNS[table]))
+        .map((row) => [row.id, row])));
+      return cached.get(table).get(id) || null;
+    };
+    const bots = new Map((await readRows('bots', ['id', 'active_revision_id'])).map((row) => [row.id, row]));
+    const environmentSecrets = await readRows('bot_environment_secrets', CONFIGURATION_RESOURCE_COLUMNS.bot_environment_secrets);
+    const credentials = await readRows('bot_credentials', CONFIGURATION_RESOURCE_COLUMNS.bot_credentials);
+    cached.set('bot_credentials', new Map(credentials.map((row) => [row.id, row])));
+    const blockers = [];
+    for (const revision of await readRows('bot_revisions', ['id', 'bot_id', 'contract'])) {
+      if (!selected.has(revision.bot_id) || bots.get(revision.bot_id)?.active_revision_id !== revision.id) continue;
+      blockers.push(...await configurationResourceBlockers({ botId: revision.bot_id, contract: revision.contract, get,
+        environmentSecrets, credentials, ownerUserId }));
+    }
+    return blockers;
   };
 
   const exportIdentities = async (reader, plan) => {
@@ -489,24 +598,22 @@ export function createBotCatalogImport({
     const directory = path.join(root, state.id, 'objects');
     await privateDirectory(directory);
     const done = new Set(objects.entries.map((entry) => entry.id));
-    for (const page of state.tables.bot_objects?.pages || []) {
-      for (const row of parseRows(await readPage('bot_objects', page))) {
-        checkCancelled();
-        if (row.deleted_at || done.has(row.id)) continue;
-        const file = botObjectFileName(row.storage_object_name);
-        const bytes = await reader.object(file);
-        if (!bytes) {
-          fail('A live cloud Bot object is missing', 'bot_import_object_missing', { report: { objectCount: 1 } });
-        }
-        if (bytes.byteLength !== Number(row.ciphertext_size) || sha256(bytes) !== row.ciphertext_hash) {
-          fail('A cloud Bot object does not match its record', 'bot_import_object_invalid');
-        }
-        const target = path.join(directory, file);
-        await fs.writeFile(target, bytes, { mode: 0o600 });
-        objects.entries.push({ id: row.id, file, bytes: bytes.byteLength, sha256: row.ciphertext_hash });
-        done.add(row.id);
-        if (objects.entries.length % 50 === 0) await saveState();
+    for await (const row of exportedRows('bot_objects')) {
+      checkCancelled();
+      if (row.deleted_at || done.has(row.id)) continue;
+      const file = botObjectFileName(row.storage_object_name);
+      const bytes = await reader.object(file);
+      if (!bytes) {
+        fail('A live cloud Bot object is missing', 'bot_import_object_missing', { report: { objectCount: 1 } });
       }
+      if (bytes.byteLength !== Number(row.ciphertext_size) || sha256(bytes) !== row.ciphertext_hash) {
+        fail('A cloud Bot object does not match its record', 'bot_import_object_invalid');
+      }
+      const target = path.join(directory, file);
+      await fs.writeFile(target, bytes, { mode: 0o600 });
+      objects.entries.push({ id: row.id, file, bytes: bytes.byteLength, sha256: row.ciphertext_hash });
+      done.add(row.id);
+      if (state.scope === 'configuration' || objects.entries.length % 50 === 0) await saveState();
     }
     objects.complete = true;
     await saveState();
@@ -521,11 +628,13 @@ export function createBotCatalogImport({
       yield renderSourceIdentityInsert();
     }
     for (const table of plan) {
-      for (const page of state.tables[table.name]?.pages || []) {
-        yield renderPageOpen();
-        yield await readPage(table.name, page);
-        yield renderPageClose();
-        yield renderPageInsert(table, { regenerate: false });
+      for (const [group, entry] of tableEntries(table.name)) {
+        for (const page of entry.pages) {
+          yield renderPageOpen();
+          yield await readPage(group, page);
+          yield renderPageClose();
+          yield renderPageInsert(table, { regenerate: false });
+        }
       }
     }
     yield renderLoadEpilogue({ disableTriggers: SOURCE_LOAD_TRIGGERS });
@@ -573,12 +682,13 @@ export function createBotCatalogImport({
     return ids;
   };
 
-  const execute = async ({ mode, sourceOwnerUserId }) => {
+  const execute = async ({ mode, scope, sourceOwnerUserId }) => {
     const cloud = readCloudSource();
     if (!cloud) fail('No Supabase project is configured on this host', 'bot_import_source_unconfigured', { statusCode: 400 });
     let source = null;
     try {
-      const probe = createCloudBotReader({ ...cloud, fetchImpl, allowedTables: [], wait });
+      const onDownloadedBytes = (bytes) => { state.downloadedBytes = (state.downloadedBytes || 0) + bytes; };
+      const probe = createCloudBotReader({ ...cloud, fetchImpl, allowedTables: [], wait, onDownloadedBytes });
       if (state.source?.project && state.source.project !== probe.project) {
         fail('The configured Supabase project changed since this import started', 'bot_import_source_changed');
       }
@@ -594,17 +704,22 @@ export function createBotCatalogImport({
       await setPhase('preparing_source');
       const created = await host.createImportSource(marker);
       source = created.handle;
-      const exportPlan = planImportTables(created.catalog);
+      const exportPlan = planImportTables(created.catalog, { scope });
       const reader = createCloudBotReader({
-        ...cloud, fetchImpl, wait,
+        ...cloud, fetchImpl, wait, onDownloadedBytes,
         allowedTables: [...exportPlan.map((table) => table.name), 'user_profiles'],
       });
 
       await setPhase('exporting');
       for (const table of exportPlan) {
+        if (scope === 'configuration' && table.name === 'bot_objects') {
+          await exportAvatars(reader, table);
+          continue;
+        }
         await exportTable(reader, table.name, table.name, { columns: table.columns, orderColumns: table.primaryKey });
       }
       await exportIdentities(reader, exportPlan);
+      if (scope === 'configuration') await verifyConfigurationKey();
       await setPhase('exporting_objects');
       await exportObjects(reader);
 
@@ -615,7 +730,7 @@ export function createBotCatalogImport({
       await setPhase('loading_source');
       await host.runImportSql({ kind: 'source', handle: source }, sourceLoadScript(exportPlan));
       const migrated = await host.migrateImportSource(source);
-      const mergePlan = planImportTables(migrated.catalog);
+      const mergePlan = planImportTables(migrated.catalog, { scope });
       const sourceCounts = await host.countRows({ kind: 'source', handle: source });
       const importedBotIds = await collectIds(async (table, after) => JSON.parse((await host.exportImportPage(
         { kind: 'source', handle: source },
@@ -646,6 +761,7 @@ export function createBotCatalogImport({
           }
           const finalization = renderMergeFinalization({
             importedBotIds,
+            scope,
             ownerMappings: sourceOwnerUserId
               ? importedBotIds.map((botId) => ({ botId, sourceOwnerUserId }))
               : [],
@@ -672,6 +788,9 @@ export function createBotCatalogImport({
               yield 'commit;\n';
             })());
           }
+          const blockers = scope === 'configuration'
+            ? await candidateConfigurationBlockers(candidate, importedBotIds, sourceOwnerUserId)
+            : [];
           const candidateCounts = await host.countRows(target);
           for (const table of mergePlan) {
             const expected = (localCounts[table.name] || 0) + (sourceCounts[table.name] || 0);
@@ -685,7 +804,7 @@ export function createBotCatalogImport({
           held = true;
           const committed = await host.commitRestore(candidate.operationId);
           markReplaced();
-          return { committed, report, importedBotCount: importedBotIds.length };
+          return { committed, report, blockers, importedBotCount: importedBotIds.length };
         } catch (error) {
           await host.discardCandidate(candidate.operationId).catch(() => undefined);
           if (held) await activationHold.reinstate(previousHold).catch(() => undefined);
@@ -699,6 +818,7 @@ export function createBotCatalogImport({
       await setPhase('completed', {
         result: {
           importedBotCount: merged.importedBotCount,
+          blockers: merged.blockers,
           envelopes: merged.report.envelopes,
           objects: merged.report.objects,
           disconnected: {
@@ -733,11 +853,14 @@ export function createBotCatalogImport({
       import: current ? {
         id: current.id,
         mode: current.mode,
+        scope: current.scope || 'full',
+        downloadedBytes: current.downloadedBytes || 0,
         phase: current.phase,
         running: running !== null,
         createdAt: current.createdAt,
         updatedAt: current.updatedAt,
-        tables: Object.keys(current.tables || {}).filter((name) => name !== '__identities').length,
+        tables: new Set(Object.entries(current.tables || {}).filter(([name]) => name !== '__identities')
+          .map(([name, entry]) => entry.table || name)).size,
         pages: Object.values(current.tables || {}).reduce((sum, entry) => sum + (entry.pages?.length || 0), 0),
         objects: current.objects?.entries?.length || 0,
         error: current.error || null,
@@ -774,8 +897,9 @@ export function createBotCatalogImport({
       }
       return publicStatus();
     },
-    async start({ mode, writersStopped } = {}) {
+    async start({ mode, scope = 'full', writersStopped } = {}) {
       if (!['empty', 'merge'].includes(mode)) fail('Choose an import mode: empty or merge', 'bot_import_mode_invalid', { statusCode: 400 });
+      if (!['full', 'configuration'].includes(scope)) fail('Choose a valid import scope', 'bot_import_scope_invalid', { statusCode: 400 });
       if (writersStopped !== true) {
         fail('Confirm that no other DevRyan host is writing cloud Bots before importing', 'bot_import_writers_unconfirmed', { statusCode: 400 });
       }
@@ -783,6 +907,10 @@ export function createBotCatalogImport({
       starting = true;
       try {
         await loadState();
+        if (state && !['completed', 'cancelled', 'dismissed', 'failed'].includes(state.phase)
+          && (state.scope || 'full') !== scope) {
+          fail('This import checkpoint has a different scope; cancel it before starting another import', 'bot_import_scope_mismatch');
+        }
         // Only an interrupted or quota-blocked import resumes; a failed one
         // (for example after the cloud changed) starts over from a fresh export.
         if (!state || ['completed', 'cancelled', 'dismissed', 'failed'].includes(state.phase) || state.mode !== mode) {
@@ -791,6 +919,8 @@ export function createBotCatalogImport({
             version: STATE_VERSION,
             id: crypto.randomUUID(),
             mode,
+            scope,
+            downloadedBytes: 0,
             phase: 'created',
             createdAt: new Date(now()).toISOString(),
             updatedAt: new Date(now()).toISOString(),
@@ -805,7 +935,7 @@ export function createBotCatalogImport({
         await saveState();
         cancelRequested = false;
         const sourceOwnerUserId = await resolveVerifiedSourceOwner().catch(() => null);
-        running = execute({ mode, sourceOwnerUserId: UUID.test(sourceOwnerUserId || '') ? sourceOwnerUserId : null })
+        running = execute({ mode, scope, sourceOwnerUserId: UUID.test(sourceOwnerUserId || '') ? sourceOwnerUserId : null })
           .catch(async (error) => {
             const code = typeof error?.code === 'string' ? error.code : 'bot_import_failed';
             state.error = {

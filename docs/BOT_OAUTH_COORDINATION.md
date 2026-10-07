@@ -11,7 +11,12 @@ refresh owners. Provider revocation can still require reconnection.
 - The web/Electron server owns refresh and atomic persistence for `host:openai`.
   Refreshes coalesce; conversations and valid requests do not serialize.
 - ChatGPT subscription auth is **Sign in with ChatGPT** (OSS plan usage): DevRyan
-  owns enrollment (`/api/provider/openai/siwc`), stores issued `client_id` with
+  owns local-only enrollment (`/api/provider/openai/siwc`); status and mutations
+  require direct loopback administrator transport without forwarding headers,
+  and mutations also require CSRF. Begin-owned five-minute deadlines reclaim
+  abandoned callback listeners. Saved sign-in survives catalog failures, with
+  bounded model-discovery retry; active staged registrations expose recovery.
+  The host stores issued `client_id` with
   tokens in the selected native credential, and refreshes at
   `https://auth.openai.com/api/accounts/oauth/token`. The host registration cache
   retains only an opaque reference, verified subject, issued client, host ID and
@@ -49,8 +54,15 @@ refresh owners. Provider revocation can still require reconnection.
 
 - Returning enrollment resolves an opaque registration reference server-side,
   reuses its issued client and verifies JWT issuer, audience, signature, expiry,
-  nonce and subject before saving. New credentials stage inactive, publish a
-  recoverable cache intent, then activate under selected-credential comparison.
+  nonce and subject before saving. Enrollment publishes its registration and
+  exact SDK-supported credential ID before requesting inactive creation, then
+  activates under selected-credential comparison. A failed initial publication
+  creates no credential; a lost create receipt retains the exact recovery target.
+  The SDK automatically selects its first credential; only that
+  exact newly saved record may replace the captured empty-selection fingerprint,
+  after native identity and row verification. Later failures retain its recovery
+  reference. Reconnect can finalize an already-active staged record through the
+  existing selection path with native row, selection and caller checks.
   Cancellation removes only its exact inactive stage; publication failures retain
   a recovery reference. Browser requests cannot provide issuer/client/token data.
 - Models come from the currently selected native credential and account endpoint.
@@ -116,6 +128,13 @@ Set `DEVRYAN_OAUTH_FIXTURE_BAKED=1` with a freshly built image to test its baked
 plugins instead of mounting the working-tree plugins. The acceptance verifies
 the dependency versions before making fixture requests. Run it after other
 large suites on resource-constrained Docker hosts.
+
+The OpenCode 2.0.24 offline lane uses a synthetic registered SIWC grant, the
+official refresh resource and Responses projection. It covers three coordinated
+refresh cycles, ordinary and structured requests, attachments, cancellation,
+restart and host events with the internet disabled. SIWC image generation is
+refused before provider dispatch or file publication; API-key image behavior
+belongs to the compiled reviewed-package qualification.
 
 Historical pre-SIWC verification (2026-08-31): 218 focused server tests passed;
 affected validation passed (including 3,157 web tests); repository type checks

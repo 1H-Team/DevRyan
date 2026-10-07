@@ -19,7 +19,7 @@ test('finite private and sanitized contracts retain exact witnesses and reject a
  expect(()=>parseNativeObservation({...common,stage:'physical',requestID:'req_1',kind:'primary',transport:'http',ordinal:1,attempt:null,wireOptions:{authorization:'private'}})).toThrow('native_observation_invalid');
 });
 test('only the exact native source gets one observation insertion; removal reproduces original bytes',async()=>{
- const original=await fs.readFile(path.resolve(import.meta.dirname,'../../node_modules/@opencode/core/dist/chunks/credential-nye1dag9.js'),'utf8');
+ const original=await fs.readFile(path.resolve(import.meta.dirname,'../../node_modules/@opencode/core/dist/chunks/repository-a6rczh0a.js'),'utf8');
  const helper=path.resolve(import.meta.dirname,'../../packages/web/server/lib/opencode/runtime-host/native-compaction-observation.ts');const result=rewriteNativeCompactionObservation(original,helper);
  expect(result.originalSha256).toBe(NATIVE_COMPACTION_SOURCE_SHA256);
  expect(result.transformedSha256).toBe(createHash('sha256').update(result.contents).digest('hex'));

@@ -32,7 +32,7 @@ async function inventory({ directory = path.join(root, 'packages/web/runtime'), 
   const stat = await fs.lstat(manifestPath);
   if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 4 * 1024 * 1024) throw new Error('Native bundle manifest unavailable');
   const bytes = await fs.readFile(manifestPath), manifest = JSON.parse(bytes.toString());
-  if (manifest.schema !== 1 || manifest.opencodeVersion !== '2.0.20' || manifest.target !== `bun-${target}`
+  if (manifest.schema !== 1 || manifest.opencodeVersion !== '2.0.24' || manifest.target !== `bun-${target}`
     || !Array.isArray(manifest.files) || !manifest.files.length || manifest.files.length > 256) throw new Error('Native bundle inventory invalid');
   const names = new Set(['native-bundle.json']);
   for (const file of manifest.files) {

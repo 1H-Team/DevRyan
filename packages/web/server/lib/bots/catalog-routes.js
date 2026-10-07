@@ -116,6 +116,7 @@ export function registerBotCatalogRoutes(app, {
         const body = req.body && typeof req.body === 'object' ? req.body : {};
         return res.status(202).json(await catalogImport.start({
           mode: body.mode,
+          ...(body.scope === undefined ? {} : { scope: body.scope }),
           writersStopped: body.writersStopped === true,
           principal: req.principal,
           request: req,

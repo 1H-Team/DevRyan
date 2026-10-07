@@ -20,7 +20,7 @@ import {
 } from './opencode-v2-wire.mjs';
 
 // ---------------------------------------------------------------------------
-// @opencode/schema@2.0.20 (root devDependency). `effect` is resolved from the
+// @opencode/schema@2.0.24 validates the retained 2.0.20 vectors. `effect` is resolved from the
 // schema package's own location because it is not hoisted.
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -174,7 +174,7 @@ const textItems = (record) => record.content.filter((item) => item.type === 'tex
 
 describe('loopback OpenCode 2.0.20 fixture', () => {
   it('pins the schema package and exposes the v2 control API through the generation selector', async () => {
-    assert.equal(schemaPackage.version, '2.0.20');
+    assert.equal(schemaPackage.version, '2.0.24');
     assert.ok(registry.has('Session.Info') && registry.has('Session.Message.Info') && registry.has('Form.Info'));
     for (const [type, version] of OPENCODE_V2_DURABLE_EVENT_VERSIONS) {
       const definition = EventManifest.Latest.get(type);

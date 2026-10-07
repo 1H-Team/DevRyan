@@ -2,10 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
-## [2.0.2] - 2026-10-06
+## [2.0.2] - 2026-10-08
 
 Candidate qualification is tracked in [the release evidence](docs/audits/2026-10-05-release-2.0.2/README.md). This entry does not establish publication or installed-platform acceptance.
 
+- Upgrade the bundled native runtime to OpenCode 2.0.24. Retained 2.0.20 bundles keep their own controller and guarded credential recovery. Additional qualification and remaining live acceptance are recorded in [the runtime upgrade evidence](docs/audits/2026-10-07-opencode-2.0.24/README.md).
+- Import hosted Bot configuration and current avatars into the local catalog while preserving local history and files. Imported Bots, routines and integrations stay inactive until their local resources and credentials are ready; interrupted transfers can resume.
+- Show local Bot hosting and Docker status in About, restore admitted account authentication through background-service tunnels, and make ChatGPT enrollment recoverable when the first saved credential is selected before completion.
 - Add DevRyan-owned Sign in with ChatGPT for eligible plan usage, with separate OpenAI API-key authentication. Saved registrations remain distinct across workspaces; sign-in without plan permission stays signed in and requires explicit reauthorization before subscription inference. Legacy Codex OAuth requires reconnect.
 - Use the selected native credential for account-specific OpenAI model discovery. Unavailable discovery no longer implies model entitlement. SIWC Responses requests preserve local tools, reject unsupported capabilities before sending, and require a completed stream; API-key requests retain their existing behavior.
 - Image generation uses an explicitly selected OpenAI API key with API billing. SIWC image requests refuse before token refresh or network traffic; account changes invalidate an in-flight image request.

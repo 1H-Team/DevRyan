@@ -12,6 +12,10 @@ export const RECOVERY_CONTINUATION = 'Continue from the existing progress and co
 // recovery (docs/PROVIDER_RECOVERY.md). Extend only with transport and hook
 // conformance evidence. The host target pin is independent of this allow-list.
 export const PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS = Object.freeze(['1.18.25', '1.18.26', '1.18.27', '1.18.29', '1.18.30', '1.18.31', '1.18.32', '1.18.33']);
+// Native Step/continuation ownership has separate conformance from legacy
+// transport recovery. Keep exact canonical versions for retained rollback.
+export const NATIVE_PRIMARY_SUPPORTED_OPENCODE_VERSIONS = Object.freeze(['2.0.20', '2.0.24']);
+export const isNativePrimaryRuntimeVersion = version => NATIVE_PRIMARY_SUPPORTED_OPENCODE_VERSIONS.includes(version);
 // The bundled companion runtime is a pinned upstream release plus DevRyan's
 // execution patch, which does not touch provider transport; it reports
 // `<upstream>-devryan.<n>` and is compatible exactly as its upstream base.

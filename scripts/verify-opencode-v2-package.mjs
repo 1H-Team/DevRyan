@@ -10,6 +10,7 @@ import { createOpenCodeClient } from '../packages/web/server/lib/opencode/openco
 import { createOpenCodeAdmission, createV2MessageId } from '../packages/web/server/lib/opencode/v2/admission.js';
 import { resolveSqliteDriver } from '../packages/web/server/lib/opencode/db-maintenance-core.js';
 import { createRuntimeBundleStore } from '../packages/web/server/lib/opencode/runtime-host/runtime-bundle.js';
+import { verifyNativeCloneCompatibility } from '../packages/web/server/lib/opencode/runtime-host/native-bundle-compatibility.js';
 import { resumeRuntimeBundle } from '../packages/web/server/lib/opencode/runtime-host/runtime-bundle-resume.js';
 import { readRollbackIntentSync, rollbackIntentPath, assertRollbackPhysicalExit } from '../packages/web/server/lib/opencode/runtime-host/bundle-rollback-intent.js';
 import { createRuntimeBundleCheckpoint } from '../packages/web/server/lib/opencode/runtime-host/bundle-checkpoint.js';
@@ -68,7 +69,7 @@ const errorEvidence = error => ({ name: error.name, code: error.code, message: e
   ...(error.errors ? { causes: Array.from(error.errors, errorEvidence) } : {}) });
 
 /** Qualified production binaries and real web owners; model replies alone are fixture data. */
-export async function runNativePackageAcceptance({ artifactRoot = path.join(repositoryRoot, '.cache/v2-validation/native-artifact'), diagnostic = false, reviewedSetup = false, browser = false, preflight = false, skillDataRoot, onParentDeathReady, managedInterval, eventReconcileIntervalMs, managedCorrectness = false } = {}) {
+export async function runNativePackageAcceptance({ artifactRoot = path.join(repositoryRoot, '.cache/v2-validation/native-artifact'), baselineArtifactRoot, diagnostic = false, reviewedSetup = false, browser = false, preflight = false, skillDataRoot, onParentDeathReady, managedInterval, eventReconcileIntervalMs, managedCorrectness = false } = {}) {
   validateEventReconcileInterval(eventReconcileIntervalMs);
   assert.equal(typeof managedCorrectness, 'boolean');
   if (managedCorrectness) assert.ok(!managedInterval && !reviewedSetup && !browser && !preflight && !skillDataRoot && !onParentDeathReady,
@@ -98,6 +99,17 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
     const manifestSha256 = fixtureSha256(await fs.readFile(manifestPath));
     const artifacts = await verifyNativeRuntimeArtifacts({ manifestPath, manifestSha256,
       launcher: path.join(artifactRoot, 'DevRyan-execution-darwin-arm64') });
+    let baselineArtifacts = artifacts, baselineManifestPath = manifestPath, baselineManifestSha256 = manifestSha256;
+    if (baselineArtifactRoot) {
+      baselineArtifactRoot = await fs.realpath(baselineArtifactRoot);
+      assert.ok(baselineArtifactRoot.startsWith(repositoryRoot + path.sep), 'Baseline artifacts must remain repository-owned');
+      baselineManifestPath = path.join(baselineArtifactRoot, 'native-bundle.json');
+      baselineManifestSha256 = fixtureSha256(await fs.readFile(baselineManifestPath));
+      baselineArtifacts = await verifyNativeRuntimeArtifacts({ manifestPath: baselineManifestPath, manifestSha256: baselineManifestSha256,
+        launcher: path.join(baselineArtifactRoot, 'DevRyan-execution-darwin-arm64') });
+    }
+    observations.push({ phase: 'qualified_release_pair', baselineVersion: baselineArtifacts.manifest.opencodeVersion,
+      baselineManifestSha256, candidateVersion: artifacts.manifest.opencodeVersion, candidateManifestSha256: manifestSha256 });
     assert.ok(Array.isArray(artifacts.manifest.inputs.resolvedPackages));
     assert.equal(artifacts.manifest.inputs.sourceFiles.some(row => /scripts\/opencode-v2-native\/(simulation|fixture-host)\./.test(row.path)), false);
     cases.push({ id: 'compiled-production-artifacts', status: 'passed', buildId: artifacts.manifest.buildId, manifestSha256,
@@ -140,11 +152,13 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
     await fs.writeFile(reviewedPluginManifestPath, JSON.stringify({ schema: 1, plugins: reviewedSetup ? reviewedSetupRegistrations(artifacts.manifest.inputs.reviewedPlugins,{browser}) : artifacts.manifest.inputs.reviewedPlugins }) + '\n');
     const launchArtifacts = { controllerBinary: artifacts.controller, writerBinary: artifacts.writer, artifactManifestPath: manifestPath,
       artifactManifestSha256: manifestSha256, reviewedNativeConfigPath, reviewedPluginManifestPath };
+    const baselineLaunchArtifacts = { ...launchArtifacts, controllerBinary: baselineArtifacts.controller, writerBinary: baselineArtifacts.writer,
+      artifactManifestPath: baselineManifestPath, artifactManifestSha256: baselineManifestSha256 };
     const sourceLaunch = { ...fixture.sourceLaunch, global: { home: fixture.sourceLaunch.global.home } };
     let nativeURL, epoch = 0, descriptor, currentController, baselineSnapshot;
     const nativeTransport = { fetch: globalThis.fetch };
     const intervalReads = { active: 0, history: 0, total: 0 };
-    const deps = { getRuntime: () => ({ generation: 2, baseUrl: nativeURL, version: '2.0.20', epoch }),
+    const deps = { getRuntime: () => ({ generation: 2, baseUrl: nativeURL, version: '2.0.24', epoch }),
       fetchImpl: (url, input) => {
         if (managedInterval) {
           intervalReads.total++;
@@ -175,10 +189,15 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
     const buildOpenCodeUrl = route => new URL(route, nativeURL).href;
     const checkpointOwners = new Map(), settledCheckpoints = new Map();
     const controlRoot = path.join(root, 'bundles');
-    const executeMigration = request => runNativeMigrationProcess({ binary: artifacts.controller, request, cwd: root,
+    const executeMigration = request => {
+      const selected = request.bundleID === 'baseline' ? baselineArtifacts : artifacts;
+      const selectedManifestPath = request.bundleID === 'baseline' ? baselineManifestPath : manifestPath;
+      const selectedManifestSha256 = request.bundleID === 'baseline' ? baselineManifestSha256 : manifestSha256;
+      return runNativeMigrationProcess({ binary: selected.controller, request, cwd: root,
       environment: privateEnvironment(Object.fromEntries(['home', 'config', 'data', 'state', 'cache', 'tmp', 'bin', 'log', 'repos']
         .map(key => [key, path.join(request.isolatedRoot, key)])), fixture.environment),
-      beforeSpawn: () => verifyNativeRuntimeArtifacts({ manifestPath, manifestSha256, launcher: artifacts.launcher }) });
+      beforeSpawn: () => verifyNativeRuntimeArtifacts({ manifestPath: selectedManifestPath, manifestSha256: selectedManifestSha256, launcher: selected.launcher }) });
+    };
 
     let loseImportAck = true, actualImports = 0;
     const upgradeLane = createCompiledBundleUpgradeLane({ observations });
@@ -221,6 +240,14 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
       const receipt = await runCompiledMigrationReplay({ request, run: executeMigration }); actualImports++;
       if (loseImportAck) { loseImportAck = false; throw Object.assign(new Error('fixture_import_ack_lost'), { code: 'fixture_import_ack_lost' }); }
       return receipt;
+    }, verifyV2Compatibility: async ({ source, artifacts: target }) => {
+      const sourceArtifact = await verifyNativeRuntimeArtifacts({ manifestPath: source.launch.artifactManifestPath,
+        manifestSha256: source.launch.artifactManifestSha256, launcher: path.join(path.dirname(source.launch.artifactManifestPath), 'DevRyan-execution-darwin-arm64') });
+      const targetArtifact = await verifyNativeRuntimeArtifacts({ manifestPath: target.artifactManifestPath,
+        manifestSha256: target.artifactManifestSha256, launcher: path.join(path.dirname(target.artifactManifestPath), 'DevRyan-execution-darwin-arm64') });
+      verifyNativeCloneCompatibility({ left: sourceArtifact.manifest, right: targetArtifact.manifest, databasePath: source.launch.opencodeDatabasePath });
+      return { status: 'compatible', binding: { protocol: 'devryan-v2-clone/1', sourceBundleID: source.bundleID,
+        sourceManifestSha256: source.launch.artifactManifestSha256, targetManifestSha256: target.artifactManifestSha256 } };
     }, captureCredentials: upgradeLane.captureCredentials, reconcileRollback: async input => {
       assert.equal(currentController.hasExited(), true, 'Rollback did not stop the actual compiled controller');
       for (const location of locations) assert.deepEqual(await host.runtime.activeLeases({ directory: location.directory }), []);
@@ -233,7 +260,7 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
     } });
     const originalProjectSnapshots = new Map(await Promise.all(fixture.projectMap.map(async row => [row.sourceDirectory, await snapshotOwnedTree(row.sourceDirectory)])));
     const baselineInput = { bundleID: 'baseline', generation: 2, source: { kind: 'legacy', launch: sourceLaunch },
-      projectMap: fixture.projectMap, auxiliary: { kind: 'absent' }, launchArtifacts };
+      projectMap: fixture.projectMap, auxiliary: { kind: 'absent' }, launchArtifacts: baselineLaunchArtifacts };
     await assert.rejects(store.prepare(baselineInput), error => error.code === 'fixture_import_ack_lost');
     const draft = path.join(controlRoot, 'bundles/baseline');
     assert.equal((await fs.stat(path.join(draft, 'sources/migration.json'))).isFile(), true);
@@ -254,7 +281,7 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
     await baselineSeed({ kind: 'bundle', bundleID: baseline.bundleID }, async (_, scope) => {
       await upgradeLane.seedBaseline(baseline, scope.assertHeld);
       if (!preflight && !managedInterval && !managedCorrectness) {
-        cases.push(await upgradeLane.assertIncompatibleTarget({ descriptor: baseline, artifacts, root, assertHeld: scope.assertHeld }));
+        cases.push(await upgradeLane.assertIncompatibleTarget({ descriptor: baseline, artifacts: baselineArtifacts, root, assertHeld: scope.assertHeld }));
       }
     });
     const baselineMarker = 'Fresh native v2 rollback baseline';
@@ -707,12 +734,13 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const {values}=parseArgs({options:{diagnostic:{type:'boolean'},'reviewed-setup':{type:'boolean'},browser:{type:'boolean'},preflight:{type:'boolean'},'artifact-root':{type:'string'},'skill-data':{type:'string'},'managed-correctness':{type:'boolean'},'event-reconcile-interval-ms':{type:'string'}}});
+  const {values}=parseArgs({options:{diagnostic:{type:'boolean'},'reviewed-setup':{type:'boolean'},browser:{type:'boolean'},preflight:{type:'boolean'},'artifact-root':{type:'string'},'baseline-artifact-root':{type:'string'},'skill-data':{type:'string'},'managed-correctness':{type:'boolean'},'event-reconcile-interval-ms':{type:'string'}}});
   if (values['event-reconcile-interval-ms'] !== undefined) assert.match(values['event-reconcile-interval-ms'], /^(750|1500)$/,
     '--event-reconcile-interval-ms must be 750 or 1500');
   const result = await runNativePackageAcceptance({ diagnostic:values.diagnostic??false,reviewedSetup:values['reviewed-setup']??false,browser:values.browser??false,preflight:values.preflight??false,
     managedCorrectness: values['managed-correctness'] ?? false,
     ...(values['event-reconcile-interval-ms'] === undefined ? {} : { eventReconcileIntervalMs: Number(values['event-reconcile-interval-ms']) }),
+    ...(values['baseline-artifact-root'] ? { baselineArtifactRoot: path.resolve(values['baseline-artifact-root']) } : {}),
     ...(values['artifact-root']?{artifactRoot:path.resolve(values['artifact-root'])}:{}),...(values['skill-data']?{skillDataRoot:path.resolve(values['skill-data'])}:{}) });
   process.stdout.write(JSON.stringify({ status: result.status, artifact: path.join(result.root, 'result.json'), cases: result.cases }) + '\n');
   if (!['passed', 'preflight-passed', 'interval-correctness-passed'].includes(result.status)) process.exitCode = 1;

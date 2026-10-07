@@ -28,19 +28,25 @@ export const waitForProviderCatalogReady = async ({
   refresh,
   isReady,
   onStalled,
+  signal,
   sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 }: {
   refresh: () => Promise<void>;
   isReady: () => boolean;
   onStalled?: () => Promise<boolean>;
+  signal?: AbortSignal;
   sleep?: (ms: number) => Promise<unknown>;
 }): Promise<boolean> => {
   const delays = [0, 500, 1000, 1500, 2000, 3000, 3000, 4000];
   for (const [attempt, delay] of delays.entries()) {
+    if (signal?.aborted) return false;
     if (delay) await sleep(delay);
+    if (signal?.aborted) return false;
     try {
       if (attempt === 3 && onStalled && !await onStalled()) return false;
+      if (signal?.aborted) return false;
       await refresh();
+      if (signal?.aborted) return false;
       if (isReady()) return true;
     } catch {
       // A saved credential is not a failed save when catalog discovery is unavailable.

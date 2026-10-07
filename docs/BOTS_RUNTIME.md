@@ -211,6 +211,36 @@ hosted Bots can be imported (after discovery while connected, or after their
 own check otherwise). Import is offline and owner-confirmed (other
 writers stopped); it never writes to the cloud:
 
+New UI imports request `scope: 'configuration'`: only Bot profiles, every
+configuration revision, memberships, routine definitions, credential and
+environment metadata, agent/MCP connections, binding resolutions, signatures,
+signer trust and Telegram connection settings are retained. Object metadata is
+filtered in the hosted query to the current `avatar_object_id` values, with
+`visibility=profile`, no channel and no deletion; only those encrypted images
+are downloaded. No chat, run, memory, audit, quota, Telegram pairing/queue,
+attachment, skill-package or Library payload is requested. The cloud source is
+preserved. Existing API callers omitting scope retain the full import behavior;
+legacy checkpoints likewise mean `full`, and an interrupted checkpoint cannot
+be resumed with another scope.
+
+Encrypted avatar keys and MCP descriptors must authenticate under the host's
+existing deployment identity before image transfer begins. A mismatch fails
+with `bot_import_encryption_identity_mismatch`; configuration-only import does
+not re-key or strip these settings. Each avatar is checkpointed immediately.
+Status reports cumulative decoded response bytes downloaded, including metadata
+verification reads and retries; this is not a compressed wire-byte measurement.
+
+Configuration imports keep signed contracts unchanged, pause imported active
+Bots and routines, clear routine due/last occurrences and connection health,
+and disable Telegram with a new generation, zero offset and no leases. Releasing
+the catalog activation hold resumes existing local Bots; imported Bots still
+need individual review and reactivation. Retained skill, Library, MCP, agent
+and model credential references resolve against local resources with their
+original IDs, ownership and digests. Missing or disconnected references appear
+as exact per-Bot blockers in the import result and Setup; activation of an
+already-published revision also checks these resources. Skill and Library files
+must be supplied locally if unavailable; the importer never downloads them.
+
 1. Export uses a GET-only allowlisted reader with bounded (32 MiB) responses;
    pages are stored encrypted and checkpointed with raw numerics preserved. A
    hosted quota response (402) leaves the import `blocked` and resumable.

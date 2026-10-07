@@ -66,6 +66,56 @@ test('browser scopes bind the actual method, path, body and current controller t
 
 const openaiBinding={kind:'openai',directory:binding.directory,controllerInstanceID:binding.controllerInstanceID,
   configurationDigest:binding.configurationDigest,acquisitionID:'openai-acquisition',integrationID:'openai',methodID:'chatgpt-siwc'};
+test.each(['create', 'activate', 'remove'])('SIWC %s retains and enforces its private guard while cloning request data', async operation => {
+  let current = true, checks = 0, captured;
+  const assertCurrent = async () => {
+    checks++;
+    if (!current) throw Object.assign(new Error('stale attempt'), { code: 'native_chatgpt_siwc_attempt_stale' });
+  };
+  const owner = createNativeIntegrationAuthorization({ controllerIdentity: () => openaiBinding.controllerInstanceID,
+    verifyBinding: async () => {}, authorizeConfiguredConnection: async () => {},
+    captureWebAuthorization: async selected => { captured = selected; return () => selected.assertCurrent(); } });
+  const body = { integrationID: 'openai', value: { type: 'oauth', methodID: 'chatgpt-siwc',
+    access: 'synthetic-access', refresh: 'synthetic-refresh', expires: 123456789, metadata: {} }, activate: false };
+  const direct = { ...openaiBinding, operation, valueType: 'oauth',
+    ...(operation === 'create' ? {} : { credentialID: 'credential-one', expectedFingerprint: 'c'.repeat(64) }),
+    requestedFingerprint: credentialMutationFingerprint(operation === 'create' ? body : { id: 'credential-one' }) };
+  const original = { ...direct, operation: `openai.credential.${operation}`, method: operation === 'remove' ? 'DELETE' : 'POST',
+    path: operation === 'create' ? '/api/credential' : `/api/credential/credential-one${operation === 'activate' ? '/activate' : ''}`,
+    ...(operation === 'create' ? { body } : {}), expectedActiveFingerprint: credentialMutationFingerprint(null), assertCurrent };
+  let authorizationID;
+  try {
+    await owner.withCallerOperation(original, async () => {
+      expect(captured).not.toBe(original);
+      expect(captured.assertCurrent).toBe(assertCurrent);
+      if (operation === 'create') {
+        expect(captured.body).not.toBe(body);
+        expect(captured.body.value).not.toBe(body.value);
+      }
+      original.assertCurrent = () => {};
+      ({ authorizationID } = await owner.capture({ binding: direct, operation: 'mutation',
+        requestAuthorization: owner.requestHeaders()['x-devryan-native-integration-grant'] }));
+    });
+    const grant = await owner.resolveMutation({ authorizationID, binding: direct });
+    expect(checks).toBeGreaterThan(1);
+    current = false;
+    await expect(grant.reauthorize()).rejects.toMatchObject({ code: 'native_chatgpt_siwc_attempt_stale' });
+  } finally { owner.close(); }
+});
+
+test.each([null, 'guard', {}, true])('browser scopes reject a nonfunction private guard before authorization: %j', async assertCurrent => {
+  let authorized = false, effects = 0;
+  const owner = createNativeIntegrationAuthorization({ controllerIdentity: () => openaiBinding.controllerInstanceID,
+    verifyBinding: async () => {}, authorizeConfiguredConnection: async () => {},
+    captureWebAuthorization: async () => { authorized = true; return async () => {}; } });
+  try {
+    await expect(owner.withCallerOperation({ ...spec, assertCurrent }, async () => { effects++; }))
+      .rejects.toMatchObject({ code: 'native_integration_scope_invalid' });
+    expect(authorized).toBe(false);
+    expect(effects).toBe(0);
+  } finally { owner.close(); }
+});
+
 test('OpenAI OAuth pins original caller, controller, configuration and actual acquisition',async()=>{
   const f=fixture();let authorizationID;
   await f.owner.withCallerOperation({...openaiBinding,operation:'openai.oauth.start',method:'POST',path:'/api/integration/openai/connect/oauth',body:{methodID:openaiBinding.methodID}},async()=>{

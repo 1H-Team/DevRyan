@@ -39,6 +39,7 @@ export type ProviderOAuthFetch = (
 interface ProviderCatalogEntry {
   id?: unknown;
   models?: unknown;
+  authType?: unknown;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -157,3 +158,10 @@ export const providerCatalogHasModels = (
   && Array.isArray(provider.models)
   && provider.models.length > 0
 )) === true;
+
+export const providerCatalogHasOpenAiPlanModels = (
+  providers: readonly ProviderCatalogEntry[] | null | undefined,
+): boolean => providers?.some(provider => provider.id === 'openai'
+  && provider.authType === 'oauth'
+  && Array.isArray(provider.models)
+  && provider.models.some((model: unknown) => isRecord(model) && model.available === true)) === true;

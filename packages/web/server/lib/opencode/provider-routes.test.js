@@ -27,9 +27,59 @@ vi.mock('./auth.js', () => ({
 const COPILOT_AUTO_MODEL = GITHUB_COPILOT_AUTO_MODEL;
 
 describe('dedicated SIWC routes', () => {
+  it('rejects LAN, remote hosts, origins and forwarding headers before parsing every SIWC route', async () => {
+    const owner = { status: vi.fn(), begin: vi.fn(), complete: vi.fn(), select: vi.fn(), cancel: vi.fn(), disconnect: vi.fn() };
+    const getOwner = vi.fn(() => owner);
+    const routes = [['get', ''], ['post', ''], ['post', '/attempt/complete'], ['post', '/attempt/select'], ['delete', '/attempt'], ['delete', '']];
+    const cases = [
+      { headers: { Host: 'public.example.test' } },
+      { headers: { Origin: 'https://other.example.test' } },
+      { headers: { Forwarded: 'for=203.0.113.1' } },
+      { headers: { 'X-Forwarded-For': '127.0.0.1' } },
+      { headers: { 'X-Forwarded-Proto': 'https' } },
+      { headers: { 'CF-Connecting-IP': '127.0.0.1' } },
+      { headers: { 'CF-Ray': 'fixture' } },
+      { headers: {}, address: '192.168.1.5' },
+    ];
+    for (const scenario of cases) {
+      const { app } = createApp({ getChatgptSiwcEnrollmentOwner: getOwner, isProviderAdministrator: () => true, useJsonParser: false, useCommonRequestMiddleware: true });
+      const transport = express();
+      if (scenario.address) transport.use((req, _res, next) => { Object.defineProperty(req.socket, 'remoteAddress', { value: scenario.address }); next(); });
+      transport.use(app);
+      for (const [method, suffix] of routes) {
+        const result = await request(transport)[method](`/api/provider/openai/siwc${suffix}`)
+          .set(scenario.headers).set('x-devryan-csrf', '1').set('Content-Type', 'application/json').send('{');
+        expect(result.status).toBe(403);
+        expect(result.body).toEqual({ code: 'native_chatgpt_siwc_local_required' });
+      }
+    }
+    expect(getOwner).not.toHaveBeenCalled();
+    for (const callback of Object.values(owner)) expect(callback).not.toHaveBeenCalled();
+  });
+  it('allows direct loopback administrator status without requiring mutation CSRF', async () => {
+    const status = vi.fn(async () => ({ connected: null, registrations: [] }));
+    const { app } = createApp({ getChatgptSiwcEnrollmentOwner: () => ({ status }), isProviderAdministrator: () => true });
+    await request(app).get('/api/provider/openai/siwc').expect(200);
+    expect(status).toHaveBeenCalledWith(expect.objectContaining({ directory: '/tmp/project' }));
+  });
+  it('rejects remote mixed-case SIWC routes before malformed or oversized JSON parsing', async () => {
+    const getOwner = vi.fn();
+    const { app } = createApp({ getChatgptSiwcEnrollmentOwner: getOwner, isProviderAdministrator: () => true, useJsonParser: false, useCommonRequestMiddleware: true });
+    // Express routes are case-insensitive by default, including the SIWC guard.
+    expect(app.enabled('case sensitive routing')).toBe(false);
+    for (const path of ['/api/provider/openai/SIWC', '/API/PROVIDER/OPENAI/SIWC/attempt/complete']) {
+      for (const body of ['{', JSON.stringify({ unexpected: 'x'.repeat(8192) })]) {
+        const result = await request(app).post(path).set('Host', 'public.example.test')
+          .set('x-devryan-csrf', '1').set('Content-Type', 'application/json').send(body);
+        expect(result.status).toBe(403);
+        expect(result.body).toEqual({ code: 'native_chatgpt_siwc_local_required' });
+      }
+    }
+    expect(getOwner).not.toHaveBeenCalled();
+  });
   it('requires administrator and CSRF before enrollment or cancellation work', async () => {
     const begin = vi.fn(), cancel = vi.fn();
-    const denied = createApp({ getChatgptSiwcEnrollmentOwner: () => ({ begin, cancel }), isProviderAdministrator: () => false, useJsonParser: false });
+    const denied = createApp({ getChatgptSiwcEnrollmentOwner: () => ({ begin, cancel }), isProviderAdministrator: () => false, useJsonParser: false, useCommonRequestMiddleware: true });
     expect((await request(denied.app).post('/api/provider/openai/siwc').set('Content-Type', 'application/json').send('{')).status).toBe(403);
     const allowed = createApp({ getChatgptSiwcEnrollmentOwner: () => ({ begin, cancel }), isProviderAdministrator: () => true });
     expect((await request(allowed.app).delete('/api/provider/openai/siwc/attempt')).status).toBe(403);
@@ -38,7 +88,7 @@ describe('dedicated SIWC routes', () => {
   it('carries only typed opaque registration and selection values to the scoped owner', async () => {
     const registrationRef = '00000000-0000-4000-8000-000000000001';
     const begin = vi.fn(async () => ({ status: 'pending' })), select = vi.fn(async () => ({ status: 'selected' })), cancel = vi.fn(async () => ({ status: 'cancelled' }));
-    const { app } = createApp({ getChatgptSiwcEnrollmentOwner: () => ({ begin, select, cancel }), isProviderAdministrator: () => true });
+    const { app } = createApp({ getChatgptSiwcEnrollmentOwner: () => ({ begin, select, cancel }), isProviderAdministrator: () => true, useJsonParser: false, useCommonRequestMiddleware: true });
     await request(app).post('/api/provider/openai/siwc').set('x-devryan-csrf', '1').send({ registrationRef, expectedActiveCredentialID: null }).expect(200);
     expect(begin.mock.calls[0][0]).toMatchObject({ directory: '/tmp/project', registrationRef, expectedActiveCredentialID: null });
     await request(app).post(`/api/provider/openai/siwc/${registrationRef}/select`).set('x-devryan-csrf', '1').send({ expectedActiveCredentialID: 'current-native' }).expect(200);

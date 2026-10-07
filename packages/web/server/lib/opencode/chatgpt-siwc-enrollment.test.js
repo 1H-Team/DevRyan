@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { EventEmitter } from 'node:events';
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createChatgptSiwcEnrollmentOwner } from './chatgpt-siwc-enrollment.js';
@@ -8,8 +9,8 @@ import { readSiwcRegistrations, revokeSiwcSession, writeSiwcRegistrations } from
 import { credentialMutationFingerprint as fingerprint } from './runtime-host/native-credential-mutation-owner.js';
 const directory = '/fixture/project';
 const cleanups = [];
-afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
-async function fixture({ scopes = 'openid chatgpt.tokens.use.direct' } = {}) {
+afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); vi.useRealTimers(); });
+async function fixture({ scopes = 'openid chatgpt.tokens.use.direct', autoactivateFirst = false } = {}) {
   const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'siwc-signed-'));
   const keys = await generateKeyPair('RS256');
   const jwk = await exportJWK(keys.publicKey);
@@ -17,12 +18,13 @@ async function fixture({ scopes = 'openid chatgpt.tokens.use.direct' } = {}) {
   let selected = null, tokens, sequence = 0;
   const connected = () => selected ? { credentialID: selected.credentialID, fingerprint: fingerprint(selected), methodID: selected.value.methodID,
     subject: selected.value.metadata.subject, email: selected.value.metadata.email, planUsage: selected.value.metadata.planUsage } : null;
-  const persistCredential = vi.fn(async ({ value, assertCurrent, expectedActiveFingerprint }) => {
+  const persistCredential = vi.fn(async ({ credentialID, value, assertCurrent, expectedActiveFingerprint }) => {
     assertCurrent();
     if (fingerprint(selected) !== expectedActiveFingerprint) throw Object.assign(new Error('switched'), { code: 'native_chatgpt_siwc_selection_changed' });
-    const row = { id: `credential-${++sequence}`, integrationID: 'openai', value };
+    const row = { id: credentialID, integrationID: 'openai', value };
     row.expectedFingerprint = fingerprint(row);
     records.set(row.id, row);
+    if (autoactivateFirst && records.size === 1) selected = { credentialID: row.id, value };
     return { credentialID: row.id, expectedFingerprint: row.expectedFingerprint };
   });
   const selectCredential = vi.fn(async ({ credentialID, expectedActiveFingerprint, assertCurrent }) => {
@@ -31,13 +33,16 @@ async function fixture({ scopes = 'openid chatgpt.tokens.use.direct' } = {}) {
     selected = { credentialID, value: records.get(credentialID).value };
     return connected();
   });
-  const removeCredential = vi.fn(async ({ credentialID, expectedFingerprint }) => {
+  const removeCredential = vi.fn(async ({ credentialID, expectedFingerprint, requireInactive, assertCurrent }) => {
+    if (assertCurrent) assertCurrent();
+    if (requireInactive && selected?.credentialID === credentialID) throw Object.assign(new Error('active'), { code: 'native_chatgpt_siwc_selection_changed' });
     if (records.get(credentialID)?.expectedFingerprint !== expectedFingerprint) throw new Error('changed');
     records.delete(credentialID);
   });
-  const owner = createChatgptSiwcEnrollmentOwner({ dataDirectory, jwksImpl: createLocalJWKSet({ keys: [jwk] }),
+  const readConnected = vi.fn(async () => connected());
+  const owner = createChatgptSiwcEnrollmentOwner({ dataDirectory, createCredentialID: () => `credential-${++sequence}`, jwksImpl: createLocalJWKSet({ keys: [jwk] }),
     fetchImpl: vi.fn(async () => Response.json(tokens)), persistCredential, selectCredential, removeCredential,
-    readConnected: async () => connected(), readRegistrationCredential: async ({ registration }) => records.get(registration.credentialID) ?? null,
+    readConnected, readRegistrationCredential: async ({ registration }) => records.get(registration.credentialID) ?? null,
     disconnectCredential: async ({ expectedActiveCredentialID }) => {
       if (expectedActiveCredentialID !== selected?.credentialID) throw Object.assign(new Error('switched'), { code: 'native_chatgpt_siwc_selection_changed' });
       records.delete(selected.credentialID); selected = null;
@@ -61,9 +66,52 @@ async function fixture({ scopes = 'openid chatgpt.tokens.use.direct' } = {}) {
     if (callbackScope) callbackUrl.searchParams.set('scope', callbackScope);
     return fetch(callbackUrl);
   };
-  return { owner, dataDirectory, records, persistCredential, selectCredential, removeCredential, begin, callback,
+  return { owner, dataDirectory, records, persistCredential, selectCredential, removeCredential, readConnected, begin, callback,
     complete: start => owner.complete(start.enrollmentID, {}, { directory }), selected: () => selected, switchSelection: value => { selected = value; } };
 }
+describe('SIWC attempt deadlines', () => {
+  const deadlineFixture = () => {
+    const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'siwc-deadline-'));
+    const servers = [], persistCredential = vi.fn();
+    const owner = createChatgptSiwcEnrollmentOwner({ dataDirectory, persistCredential, createServer: () => {
+      const server = new EventEmitter();
+      server.listen = (_port, _host, ready) => ready();
+      server.address = () => ({ port: 12345 });
+      server.close = vi.fn(); servers.push(server); return server;
+    } });
+    cleanups.push(async () => { await owner.close(); fs.rmSync(dataDirectory, { recursive: true, force: true }); });
+    vi.useFakeTimers();
+    return { owner, servers, persistCredential };
+  };
+  it('reclaims abandoned begin listeners and capacity without a complete request', async () => {
+    const f = deadlineFixture();
+    const attempts = [];
+    for (let index = 0; index < 64; index++) attempts.push(await f.owner.begin({ directory }));
+    await expect(f.owner.begin({ directory })).rejects.toMatchObject({ code: 'native_chatgpt_siwc_capacity' });
+    await vi.advanceTimersByTimeAsync(300_000);
+    expect(f.servers.every(server => server.close.mock.calls.length === 1)).toBe(true);
+    await expect(f.owner.complete(attempts[0].enrollmentID, {}, { directory })).rejects.toMatchObject({ code: 'native_chatgpt_siwc_attempt_missing' });
+    await expect(f.owner.begin({ directory })).resolves.toMatchObject({ status: 'pending' });
+    expect(f.persistCredential).not.toHaveBeenCalled();
+  });
+  it('settles an in-flight completion with timeout and clears the listener and timer', async () => {
+    const f = deadlineFixture(), attempt = await f.owner.begin({ directory });
+    const completed = f.owner.complete(attempt.enrollmentID, {}, { directory }).catch(error => error);
+    await vi.advanceTimersByTimeAsync(300_000);
+    expect(await completed).toMatchObject({ code: 'native_chatgpt_siwc_timeout', status: 408 });
+    expect(f.servers[0].close).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0); expect(f.persistCredential).not.toHaveBeenCalled();
+  });
+  it('cancellation and owner shutdown remove their attempt deadlines', async () => {
+    const f = deadlineFixture(), a = await f.owner.begin({ directory }), b = await f.owner.begin({ directory });
+    await f.owner.cancel(a.enrollmentID, { directory });
+    expect(vi.getTimerCount()).toBe(1);
+    await f.owner.close();
+    expect(vi.getTimerCount()).toBe(0);
+    expect(f.servers.every(server => server.close.mock.calls.length === 1)).toBe(true);
+    expect(b.status).toBe('pending');
+  });
+});
 describe('signed SIWC enrollment and selection', () => {
   it('verifies signed enrollment, stores tokens only in native credentials and restores opaque registration after restart', async () => {
     const f = await fixture(); const start = await f.begin();
@@ -124,8 +172,9 @@ describe('signed SIWC enrollment and selection', () => {
     const f = await fixture(); const first = await f.begin(); await f.callback(first); const one = await f.complete(first);
     const returning = await f.begin({ registrationRef: one.registrationRef }); await f.callback(returning);
     f.switchSelection({ credentialID: 'foreign', value: { type: 'key', key: 'fixture-key' } });
-    await expect(f.complete(returning)).rejects.toMatchObject({ code: 'native_chatgpt_siwc_selection_changed' });
+    await expect(f.complete(returning)).rejects.toMatchObject({ code: 'native_chatgpt_siwc_registration_cleanup_required' });
     expect(readSiwcRegistrations(f.dataDirectory).accounts[0].credentialID).toBe(one.credentialID);
+    expect(readSiwcRegistrations(f.dataDirectory).accounts[0].stagedCredentialID).toBe('credential-2');
   });
   it('cancellation removes a staged inactive credential without activating or changing current account', async () => {
     const f = await fixture(); const start = await f.begin(); await f.callback(start);
@@ -171,6 +220,104 @@ describe('signed SIWC enrollment and selection', () => {
   });
 });
 describe('registration recovery', () => {
+  it('publishes the exact recovery ID before native create and refuses initial cache failure without creating tokens', async () => {
+    const f = await fixture({ autoactivateFirst: true }), start = await f.begin(); await f.callback(start);
+    const failure = vi.spyOn(fs, 'renameSync').mockImplementation(() => { throw new Error('fixture-initial-publication-failed'); });
+    try { await expect(f.complete(start)).rejects.toThrow('fixture-initial-publication-failed'); }
+    finally { failure.mockRestore(); }
+    expect(f.persistCredential).not.toHaveBeenCalled(); expect(f.records.size).toBe(0); expect(f.selected()).toBeNull();
+    expect(readSiwcRegistrations(f.dataDirectory).accounts).toEqual([]);
+  });
+  it('retains exact staged recovery when native creation commits but its receipt is lost', async () => {
+    const f = await fixture({ autoactivateFirst: true }), start = await f.begin(); await f.callback(start);
+    const original = f.persistCredential.getMockImplementation();
+    f.persistCredential.mockImplementationOnce(async input => { await original(input); throw new Error('fixture-lost-create-receipt'); });
+    await expect(f.complete(start)).rejects.toMatchObject({ code: 'native_chatgpt_siwc_registration_cleanup_required' });
+    expect(f.removeCredential).not.toHaveBeenCalled();
+    const [row] = readSiwcRegistrations(f.dataDirectory).accounts;
+    expect(row).toMatchObject({ credentialID: null, stagedCredentialID: f.selected().credentialID });
+    await f.owner.select(row.registrationRef, { directory, expectedActiveCredentialID: f.selected().credentialID });
+    expect((await f.owner.status({ directory })).registrations[0]).toMatchObject({ active: true, cleanupRequired: false });
+  });
+  it('keeps a precommit refusal intent accurate and allows returning enrollment to clear the missing native target', async () => {
+    const f = await fixture(), start = await f.begin(); await f.callback(start);
+    f.persistCredential.mockRejectedValueOnce(new Error('fixture-before-commit-refusal'));
+    await expect(f.complete(start)).rejects.toMatchObject({ code: 'native_chatgpt_siwc_registration_cleanup_required' });
+    const [row] = (await f.owner.status({ directory })).registrations;
+    expect(row).toMatchObject({ credentialID: 'credential-1', active: false, cleanupRequired: true });
+    expect(f.records.size).toBe(0); expect(f.selected()).toBeNull();
+    const returning = await f.begin({ registrationRef: row.registrationRef, expectedActiveCredentialID: null });
+    await f.callback(returning); await f.complete(returning);
+    expect((await f.owner.status({ directory })).registrations[0]).toMatchObject({ active: true, cleanupRequired: false });
+  });
+  it('accepts only the exact first credential selected automatically with the captured empty selection', async () => {
+    const f = await fixture({ autoactivateFirst: true }), start = await f.begin(); await f.callback(start);
+    const result = await f.complete(start);
+    expect(result).toMatchObject({ status: 'enrolled', credentialID: 'credential-1' });
+    expect(f.selectCredential.mock.calls[0][0].expectedActiveFingerprint).toBe(fingerprint(f.selected()));
+    expect((await f.owner.status({ directory })).registrations[0]).toMatchObject({ active: true, cleanupRequired: false });
+  });
+  it('preserves an automatically selected first credential after cancellation and finalizes it through selection without OAuth', async () => {
+    const f = await fixture({ autoactivateFirst: true }), start = await f.begin(); await f.callback(start);
+    const original = f.persistCredential.getMockImplementation();
+    f.persistCredential.mockImplementationOnce(async input => { const saved = await original(input); await f.owner.cancel(start.enrollmentID, { directory }); return saved; });
+    await expect(f.complete(start)).rejects.toMatchObject({ code: 'native_chatgpt_siwc_registration_cleanup_required' });
+    expect(f.removeCredential).not.toHaveBeenCalled(); expect(f.records.size).toBe(1);
+    const [row] = (await f.owner.status({ directory })).registrations;
+    expect(row).toMatchObject({ active: true, cleanupRequired: true, credentialID: 'credential-1' });
+    expect(await f.owner.select(row.registrationRef, { directory, expectedActiveCredentialID: 'credential-1' })).toEqual({ success: true, registrationRef: row.registrationRef });
+    expect((await f.owner.status({ directory })).registrations[0]).toMatchObject({ active: true, cleanupRequired: false });
+  });
+  it('refuses a changed automatically selected record and retains recoverable active state', async () => {
+    const f = await fixture({ autoactivateFirst: true }), start = await f.begin(); await f.callback(start);
+    const original = f.persistCredential.getMockImplementation();
+    f.persistCredential.mockImplementationOnce(async input => {
+      const saved = await original(input); f.records.get(saved.credentialID).expectedFingerprint = fingerprint('changed'); return saved;
+    });
+    await expect(f.complete(start)).rejects.toMatchObject({ code: 'native_chatgpt_siwc_registration_cleanup_required' });
+    expect(f.selectCredential).not.toHaveBeenCalled(); expect(f.removeCredential).not.toHaveBeenCalled();
+    expect((await f.owner.status({ directory })).registrations[0]).toMatchObject({ cleanupRequired: true });
+  });
+  it.each([undefined, '', 'invalid'])('never drops the selection CAS for an automatically selected record with fingerprint %s', async fingerprint => {
+    const f = await fixture({ autoactivateFirst: true }), start = await f.begin(); await f.callback(start);
+    const original = f.readConnected.getMockImplementation();
+    f.readConnected.mockImplementation(async () => ({ ...await original(), fingerprint }));
+    await expect(f.complete(start)).rejects.toMatchObject({ code: 'native_chatgpt_siwc_registration_cleanup_required' });
+    expect(f.selectCredential).not.toHaveBeenCalled(); expect(f.removeCredential).not.toHaveBeenCalled();
+  });
+  it('refuses automatic selection when an established account was captured', async () => {
+    const f = await fixture({ autoactivateFirst: true }), first = await f.begin(); await f.callback(first); const one = await f.complete(first);
+    const second = await f.begin(); await f.callback(second, { issuedClientId: 'issued-client-b' });
+    const original = f.persistCredential.getMockImplementation();
+    f.persistCredential.mockImplementationOnce(async input => { const saved = await original(input); f.switchSelection({ credentialID: saved.credentialID, value: f.records.get(saved.credentialID).value }); return saved; });
+    await expect(f.complete(second)).rejects.toMatchObject({ code: 'native_chatgpt_siwc_registration_cleanup_required' });
+    expect(f.selectCredential).toHaveBeenCalledTimes(1); expect(f.records.has(one.credentialID)).toBe(true);
+  });
+  it('does not recover inactive or missing staged credentials and rejects stale recovery selection', async () => {
+    const f = await fixture({ autoactivateFirst: true }), start = await f.begin(); await f.callback(start);
+    f.selectCredential.mockRejectedValueOnce(new Error('fixture-later-failure'));
+    await expect(f.complete(start)).rejects.toMatchObject({ code: 'native_chatgpt_siwc_registration_cleanup_required' });
+    const [row] = (await f.owner.status({ directory })).registrations;
+    await expect(f.owner.select(row.registrationRef, { directory, expectedActiveCredentialID: null })).rejects.toMatchObject({ code: 'native_chatgpt_siwc_selection_changed' });
+    f.switchSelection(null);
+    await expect(f.owner.select(row.registrationRef, { directory, expectedActiveCredentialID: null })).rejects.toMatchObject({ code: 'native_chatgpt_siwc_reauthorization_required' });
+    f.switchSelection({ credentialID: 'credential-1', value: f.records.get('credential-1').value }); f.records.delete('credential-1');
+    await expect(f.owner.select(row.registrationRef, { directory, expectedActiveCredentialID: 'credential-1' })).rejects.toMatchObject({ code: 'native_chatgpt_siwc_reauthorization_required' });
+  });
+  it('retains the original registration guard during staged-active recovery', async () => {
+    const f = await fixture({ autoactivateFirst: true }), start = await f.begin(); await f.callback(start);
+    f.selectCredential.mockRejectedValueOnce(new Error('fixture-later-failure'));
+    await expect(f.complete(start)).rejects.toMatchObject({ code: 'native_chatgpt_siwc_registration_cleanup_required' });
+    const [row] = readSiwcRegistrations(f.dataDirectory).accounts;
+    const original = f.selectCredential.getMockImplementation();
+    f.selectCredential.mockImplementationOnce(async input => {
+      writeSiwcRegistrations(f.dataDirectory, { accounts: [{ ...row, clientId: 'changed-client' }] });
+      return original(input);
+    });
+    await expect(f.owner.select(row.registrationRef, { directory, expectedActiveCredentialID: 'credential-1' })).rejects.toMatchObject({ code: 'native_chatgpt_siwc_registration_changed' });
+    expect(readSiwcRegistrations(f.dataDirectory).accounts[0]).toMatchObject({ clientId: 'changed-client', stagedCredentialID: 'credential-1' });
+    expect(f.removeCredential).not.toHaveBeenCalled();
+  });
   it('retains previous returning reference when final cache publication fails and reconciles the staged active record', async () => {
     const f = await fixture(); const first = await f.begin(); await f.callback(first); const one = await f.complete(first);
     const returning = await f.begin({ registrationRef: one.registrationRef }); await f.callback(returning);
@@ -184,10 +331,12 @@ describe('registration recovery', () => {
     const row = readSiwcRegistrations(f.dataDirectory).accounts[0];
     expect(row).toMatchObject({ credentialID: one.credentialID, stagedCredentialID: f.selected().credentialID });
     expect(f.selected().credentialID).not.toBe(one.credentialID);
-    const next = await f.begin({ registrationRef: one.registrationRef, expectedActiveCredentialID: f.selected().credentialID });
+    expect((await f.owner.status({ directory })).registrations[0]).toMatchObject({ active: true, cleanupRequired: true });
+    expect((await f.owner.status({ directory })).registrations[0].credentialID).toBe(f.selected().credentialID);
+    await f.owner.select(one.registrationRef, { directory, expectedActiveCredentialID: f.selected().credentialID });
     expect(readSiwcRegistrations(f.dataDirectory).accounts[0]).toMatchObject({ credentialID: f.selected().credentialID });
     expect(readSiwcRegistrations(f.dataDirectory).accounts[0].stagedCredentialID).toBeUndefined();
-    await f.owner.cancel(next.enrollmentID, { directory });
+    expect((await f.owner.status({ directory })).registrations[0]).toMatchObject({ active: true, cleanupRequired: false });
   });
 });
 describe('SIWC revocation', () => {

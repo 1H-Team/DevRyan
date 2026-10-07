@@ -174,11 +174,13 @@ headers are not used on the SIWC path.
 The pinned released HTTP transport is used (experimental WebSocket transport
 is not enabled by this integration).
 
+Every SIWC status/enrollment/selection/cancellation/disconnect route requires a direct loopback administrator request: socket, Host and optional Origin must agree, with no forwarding headers. Mutation routes also require CSRF before parsing or owner work. Each begin owns a five-minute deadline that closes its callback listener and removes abandoned pending state, even without a complete request.
+
 Returning enrollment accepts an opaque registration reference and resolves its
 issued client and verified subject in the host. JWT checks precede persistence.
 Inactive staging, registration intent and selected-credential comparison protect
 cancellation, returning enrollment and recovery. Missing plan scope preserves
-sign-in while disabling plan use. Native credentials retain tokens; registration
+sign-in while disabling plan use. Active staged registrations expose cleanup recovery in the UI. Saved sign-in survives reload/catalog failures; bounded global and active-directory model discovery has an independent retry action. Native credentials retain tokens; registration
 cache/status responses never contain token material.
 
 Managed generation-2 models read the selected native credential in the resolved
@@ -568,7 +570,9 @@ explicitly; nothing else reads the default.
 - `resolveSharedJsonBodyLimit(pathname)`: returns the shared JSON parser limit
   for a request path (`1mb` for behavior, `16kb` for lease/apply/preview,
   `50mb` for the listed `/api` prefixes and every non-API path), or `null` for
-  any other `/api` path. Those stay unparsed so the OpenCode proxy can stream
+  any other `/api` path. The dedicated `/api/provider/openai/siwc` subtree also
+  bypasses shared JSON and URL-encoded parsing so local/admin/CSRF guards run
+  before its route-owned bounded parser. Other raw paths stay unparsed so the OpenCode proxy can stream
   them; a route there that reads `req.body` mounts its own bounded
   `express.json`. `api-json-body-coverage.test.js` parses every server source
   and fails when a non-GET `/api` route reads the request body (directly or

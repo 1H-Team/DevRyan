@@ -60,7 +60,7 @@ if(windowsCandidate){
 }
 const entries=[['controller',path.join(host,'controller-entry.ts')],['writer',path.join(host,'writer-entry.ts')]];
 const configurationEntry=path.join(host,'reviewed-configuration-entry.ts');
-const ptyBinding=path.join(coreRoot,windowsCandidate?'dist/persistent-pty/binary.bun.js':'dist/chunks/credential-dajrwvna.js');
+const ptyBinding=path.join(coreRoot,windowsCandidate?'dist/persistent-pty/binary.bun.js':'dist/chunks/repository-dajrwvna.js');
 const photonFile=createRequire(path.join(coreRoot,'package.json')).resolve('@silvia-odwyer/photon-node');
 let ptySource;
 if(windowsCandidate)ptySource=rewriteUnavailableNativePty(await fs.readFile(ptyBinding));
@@ -70,12 +70,12 @@ else{
   ptySource=rewriteNativeAsset('pty',await fs.readFile(ptyBinding),{assetPath:ptyBinary,assetSha256:hash(await fs.readFile(ptyBinary))});
 }
 const photonSource=rewriteNativeAsset('photon',await fs.readFile(photonFile));
-const compactionFile=path.join(coreRoot,'dist/chunks/credential-nye1dag9.js');
+const compactionFile=path.join(coreRoot,'dist/chunks/repository-a6rczh0a.js');
 const compaction=rewriteNativeCompactionObservation(await fs.readFile(compactionFile,'utf8'),path.join(host,'native-compaction-observation.ts'));
 const rewrites=new Map([[ptyBinding,ptySource],[photonFile,photonSource],[compactionFile,compaction.contents]]);
 for(const [file,contents] of rewrites) transforms.push({path:path.relative(repository,file),sha256:hash(await fs.readFile(file)),outputSha256:hash(contents),
   reason:file===ptyBinding?(windowsCandidate?'windows-persistent-pty-unavailable':'compiled-dynamic-package-resolve-unavailable'):file===compactionFile?'pinned-native-compaction-read-only-observation':'compiled-photon-source-wasm-read-denied'});
-const assetFilter=windowsCandidate?/(credential-nye1dag9|persistent-pty[\\/]binary\.bun|photon_rs)\.js$/:/(credential-dajrwvna|credential-nye1dag9|photon_rs)\.js$/;
+const assetFilter=windowsCandidate?/(repository-a6rczh0a|persistent-pty[\\/]binary\.bun|photon_rs)\.js$/:/(repository-dajrwvna|repository-a6rczh0a|photon_rs)\.js$/;
 const plugin={name:'devryan-pinned-asset-resolvers',setup(builder){builder.onLoad({filter:assetFilter},event=>{const contents=rewrites.get(path.resolve(event.path));if(contents===undefined) throw new Error('Unexpected native asset resolver');return {contents,loader:'js'};});}};
 const settings={target:'bun',minify:true,conditions:['bun'],sourcemap:'none',metafile:true,plugins:[plugin,reviewedNativeInputPlugin(reviewed)]};
 await fs.mkdir(path.dirname(output),{recursive:true});
@@ -147,7 +147,7 @@ try {
   const inputs={buildSources,lockSha256:hash(lockBytes),coreDigest,hostDigest,sourceFiles,resolvedPackages,
     reviewedInputProvenance:reviewed.provenance,
     nativeRegistrations:[...createReviewedNativePluginRegistry(coreDigest,{hostDigest}).values()].map(({id,manifestDigest,capabilities})=>({id,manifestDigest,capabilities})),reviewedPlugins,transforms};
-  const identity={bunVersion:Bun.version,bunRevision:Bun.revision,opencodeVersion:'2.0.20',target:`bun-${target}`,compiledContracts:[NATIVE_BUNDLE_CREDENTIAL_CONTRACT,CLAUDE_LIFECYCLE_PROTOCOL,'devryan-v2-clone/1','devryan.primary-step-stop/1','devryan.bundle.credential-owners/2'],inputs,
+  const identity={bunVersion:Bun.version,bunRevision:Bun.revision,opencodeVersion:'2.0.24',target:`bun-${target}`,compiledContracts:[NATIVE_BUNDLE_CREDENTIAL_CONTRACT,CLAUDE_LIFECYCLE_PROTOCOL,'devryan-v2-clone/1','devryan.primary-step-stop/1','devryan.bundle.credential-owners/2'],inputs,
     ...(windowsGitResource?{windowsGit:windowsGitResource.windowsGit}:{})};
   const buildId=hash(JSON.stringify(identity));
   const files=[];

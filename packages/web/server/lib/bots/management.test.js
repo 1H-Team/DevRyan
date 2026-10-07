@@ -141,6 +141,35 @@ const createHarness = ({
 };
 
 describe('Bot management control plane', () => {
+  it('checks missing retained MCP requirements for a cloned draft as well as a published revision', async () => {
+    const draft = { ...revision, contract: { ...contract, mcpBindings: [{ id: RUN_ID,
+      descriptorDigest: 'a'.repeat(64), manifestDigest: 'b'.repeat(64) }] } };
+    const harness = createHarness({ get: vi.fn(async (table) => table === 'bot_revisions' ? draft : null),
+      resolveCapabilities: async () => ({ available: true }),
+      preflightModel: async () => ({ model: { providerId: 'openai', modelId: 'fixture' }, egressHosts: ['api.openai.com:443'] }),
+    });
+    const health = await harness.management.activationHealth(principal, BOT_ID, REVISION_ID);
+    expect(health.gates.find((gate) => gate.id === 'configuration')).toMatchObject({ status: 'fail' });
+    expect(health.gates.find((gate) => gate.id === 'models')).toMatchObject({ status: 'pass' });
+    await expect(harness.management.activateRevision(principal, BOT_ID, REVISION_ID))
+      .rejects.toMatchObject({ code: 'bot_activation_blocked' });
+    expect(harness.store.activateRevision).not.toHaveBeenCalled();
+  });
+  it('blocks already-published revision activation and individual resume when a retained local resource is missing', async () => {
+    const activated = { ...revision, activated_at: NOW, contract: { skillBindings: [{ id: RUN_ID, digest: 'a'.repeat(64) }] } };
+    const get = vi.fn(async (table) => table === 'bot_revisions' ? activated : null);
+    const harness = createHarness({ get, authorization: {
+      requireManager: vi.fn(async () => ({ bot: { ...bot, lifecycle: 'paused', active_revision_id: REVISION_ID }, membership: membership() })),
+    } });
+    const health = await harness.management.activationHealth(principal, BOT_ID, REVISION_ID);
+    expect(health).toMatchObject({ ready: false, gates: [{ id: 'configuration', status: 'fail' }] });
+    await expect(harness.management.activateRevision(principal, BOT_ID, REVISION_ID))
+      .rejects.toMatchObject({ code: 'bot_activation_blocked' });
+    await expect(harness.management.transitionLifecycle(principal, BOT_ID, { lifecycle: 'active', expectedUpdatedAt: NOW }))
+      .rejects.toMatchObject({ code: 'bot_activation_blocked' });
+    expect(harness.store.activateRevision).not.toHaveBeenCalled();
+    expect(harness.store.updateIfRevision).not.toHaveBeenCalled();
+  });
   it('applies the same injected catalog rule to administrators and authorized members', async () => {
     const filterCatalog = vi.fn(async () => []);
     const harness = createHarness({

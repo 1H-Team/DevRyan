@@ -1233,6 +1233,7 @@ export type BotCatalogBackup = {
 };
 
 export type BotCatalogImportMode = 'empty' | 'merge';
+export type BotCatalogImportScope = 'full' | 'configuration';
 export type BotCatalogImportPhase =
   | 'exporting' | 'exporting_objects' | 'verifying' | 'loading_source' | 'merging'
   | 'completed' | 'failed' | 'blocked' | 'cancelled' | 'dismissed';
@@ -1246,6 +1247,8 @@ export type BotCatalogImportStatus = {
   import: {
     id: string;
     mode: BotCatalogImportMode;
+    scope?: BotCatalogImportScope;
+    downloadedBytes?: number;
     phase: BotCatalogImportPhase;
     running: boolean;
     createdAt: string;
@@ -1254,7 +1257,7 @@ export type BotCatalogImportStatus = {
     pages: number;
     objects: number;
     error: { code: string; message: string; retryable: boolean } | null;
-    result: { importedBotCount?: number } | null;
+    result: { importedBotCount?: number; blockers?: Array<{ botId: string; kind: string; resourceId: string }> } | null;
   } | null;
   /** Hosted Bots exist that have not been imported (or dismissed). */
   pending: boolean;
@@ -1286,7 +1289,7 @@ export type BotsApi = {
   restoreCatalog(backupId: string, confirmation: string): Promise<unknown>;
   startEmptyCatalog(confirmation: string): Promise<unknown>;
   resumeBotActivation(): Promise<unknown>;
-  startCatalogImport(request: { mode: BotCatalogImportMode; writersStopped: boolean }): Promise<BotCatalogImportStatus>;
+  startCatalogImport(request: { mode: BotCatalogImportMode; scope?: BotCatalogImportScope; writersStopped: boolean }): Promise<BotCatalogImportStatus>;
   /** Checks the hosted source again now; absent from older hosts (404). */
   checkCatalogImportSource(): Promise<BotCatalogImportStatus>;
   cancelCatalogImport(): Promise<BotCatalogImportStatus>;

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   BotImportPlanError,
+  CONFIGURATION_IMPORT_TABLES,
   IMPORT_CATALOG_SQL,
   IMPORT_DISABLED_TRIGGERS,
   REGENERATED_IDENTITIES,
@@ -110,6 +111,18 @@ const statements = (sql) => sql.split('\n')
 const indexOfStatement = (sql, pattern) => statements(sql).findIndex((statement) => pattern.test(statement));
 
 describe('planImportTables', () => {
+  test('configuration scope uses a fixed allowlist and retains Telegram settings without its queues', () => {
+    const tables = [...syntheticTables(), ...[
+      'bot_routines', 'bot_credentials', 'bot_environment_secrets', 'bot_agent_connections',
+      'bot_mcp_bindings', 'bot_revision_binding_resolutions', 'bot_revision_signatures',
+      'bot_signer_trust', 'bot_telegram_connections', 'bot_telegram_pairings',
+      'bot_telegram_inbox', 'bot_telegram_outbox', 'bot_skill_packages', 'bot_library_versions',
+      'bot_new_future_history',
+    ].map((name) => table(name, ['id']))];
+    expect(planImportTables({ tables }, { scope: 'configuration' }).map((entry) => entry.name).sort())
+      .toEqual([...CONFIGURATION_IMPORT_TABLES].sort());
+    expectPlanError(() => planImportTables({ tables }, { scope: 'unknown' }));
+  });
   test('orders parents before children with a deterministic tie-break', () => {
     const order = plan().map((entry) => entry.name);
     expect(order).toEqual(EXPECTED_ORDER);
@@ -528,6 +541,16 @@ describe('load prelude and epilogue', () => {
 });
 
 describe('renderMergeFinalization', () => {
+  test('configuration scope pauses imported activity and clears transport checkpoints without changing signed revisions', () => {
+    const sql = renderMergeFinalization({ importedBotIds: ['b0000000-0000-4000-8000-000000000001'], scope: 'configuration' });
+    expect(sql).toContain("set lifecycle = 'paused'");
+    expect(sql).toContain("then 'paused' else status end, next_occurrence_at = null, last_occurrence_at = null");
+    expect(sql).toContain("enabled = false, state = 'disabled'");
+    expect(sql).toContain('update_offset = 0, lease_owner = null, lease_until = null');
+    expect(sql).toContain('generation = gen_random_uuid()');
+    expect(sql).toContain('set health = null');
+    expect(sql).not.toContain('update public.bot_revisions');
+  });
   const BOT_A = '0f8fad5b-d9cb-469f-a165-70867728950e';
   const BOT_B = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
   const OWNER = 'a3bb189e-8bf9-3888-9912-ace4e6543002';

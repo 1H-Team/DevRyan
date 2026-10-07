@@ -31,6 +31,7 @@ import {
   botCatalogBackupLabel,
   botCatalogDiscoveryFailure,
   botCatalogImportPhaseLabel,
+  botCatalogImportScope,
   canCheckHostedBots,
   formatBotCatalogBytes,
   resolveBotCatalogAction,
@@ -188,7 +189,7 @@ export const BotCatalogPanel: React.FC<BotCatalogPanelProps> = ({
       case 'import_running':
         return {
           title: 'Importing Hosted Bots',
-          detail: botCatalogImportPhaseLabel(status.import?.import?.phase),
+          detail: `${botCatalogImportPhaseLabel(status.import?.import?.phase)} · ${formatBotCatalogBytes(status.import?.import?.downloadedBytes ?? 0)} downloaded`,
           control: (
             <Button type="button" size="xs" variant="outline" disabled={busy}
               onClick={() => void run(() => api.cancelCatalogImport(), 'Import cancelled.', false)}>
@@ -226,7 +227,9 @@ export const BotCatalogPanel: React.FC<BotCatalogPanelProps> = ({
       case 'resume_activation':
         return {
           title: 'Bots Are Paused',
-          detail: 'Restored or imported Bots stay paused until you resume them, so nothing runs or sends before you have checked them.',
+          detail: status.import?.import?.scope === 'configuration'
+            ? `Imported Bots, routines and Telegram stay paused for review in Setup. ${(status.import.import.result?.blockers?.length ?? 0)} configuration resources need attention. ${formatBotCatalogBytes(status.import.import.downloadedBytes ?? 0)} downloaded. Resume other Bots when ready.`
+            : 'Restored or imported Bots stay paused until you resume them, so nothing runs or sends before you have checked them.',
           control: (
             <Button type="button" size="xs" disabled={busy}
               onClick={() => void run(() => api.resumeBotActivation(), 'Bots resumed.')}>
@@ -357,6 +360,15 @@ export const BotCatalogPanel: React.FC<BotCatalogPanelProps> = ({
           ) : error ? (
             <p role="alert" className="typography-micro text-[var(--status-error)]">{error}</p>
           ) : null}
+          {variant === 'full' && status.viewerIsOwner && status.import?.import?.result?.blockers?.length ? (
+            <ul aria-label="Imported Bot Setup Requirements" className="rounded-md border px-3 py-2 typography-micro text-muted-foreground">
+              {status.import.import.result.blockers.map((entry, index) => (
+                <li key={`${entry.botId}:${entry.kind}:${entry.resourceId}:${index}`}>
+                  Bot {entry.botId}: {entry.kind} {entry.resourceId} needs local setup.
+                </li>
+              ))}
+            </ul>
+          ) : null}
           {variant === 'full' && status.viewerIsOwner && backups && backups.length > 0 ? (
             <ul className="divide-y rounded-md border" aria-label="Verified Bot Backups">
               {backups.slice(0, 8).map((backup) => (
@@ -436,7 +448,10 @@ export const BotCatalogPanel: React.FC<BotCatalogPanelProps> = ({
           <DialogHeader>
             <DialogTitle>Import Hosted Bots?</DialogTitle>
             <DialogDescription>
-              Hosted Bots are copied to this computer and keep their history. Bots already here are kept; if any
+              {botCatalogImportScope(status) === 'full' ? 'The existing import resumes with Bot history and files. ' : <>
+              Hosted Bots, their configuration and current profile images are copied to this computer. Chat history,
+              attachments and Library or skill files are omitted. Existing local resources are used where available;
+              missing requirements remain visible in Setup. </>}Bots already here are kept; if any
               Bot exists in both places the import stops without changing anything. Imported Bots stay paused until
               you resume them.
             </DialogDescription>
@@ -456,7 +471,8 @@ export const BotCatalogPanel: React.FC<BotCatalogPanelProps> = ({
             <Button type="button" variant="ghost" disabled={busy} onClick={() => setConfirm(null)}>Cancel</Button>
             <Button type="button" disabled={busy || !writersStopped}
               onClick={() => void run(
-                () => api.startCatalogImport({ mode: status.import?.import?.mode ?? 'merge', writersStopped: true }),
+                () => api.startCatalogImport({ mode: status.import?.import?.mode ?? 'merge',
+                  scope: botCatalogImportScope(status), writersStopped: true }),
                 'Import started.',
                 false,
               )}>

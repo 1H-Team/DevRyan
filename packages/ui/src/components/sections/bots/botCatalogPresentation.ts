@@ -1,4 +1,4 @@
-import type { BotCatalogBackup, BotCatalogStatus } from '@/lib/botsApi';
+import type { BotCatalogBackup, BotCatalogImportScope, BotCatalogStatus } from '@/lib/botsApi';
 
 // Exactly one recovery control per catalog state. Order matters: a running
 // operation outranks recovery, recovery outranks the activation hold, and the
@@ -23,7 +23,14 @@ const TERMINAL_IMPORT_CODES = new Set([
   'bot_import_local_not_empty',
   'bot_import_source_schema_unsupported',
   'bot_import_source_unconfigured',
+  'bot_import_encryption_identity_mismatch',
 ]);
+
+export const botCatalogImportScope = (status: BotCatalogStatus): BotCatalogImportScope => {
+  const current = status.import?.import;
+  return current && !['completed', 'failed', 'cancelled', 'dismissed'].includes(current.phase)
+    ? current.scope ?? 'full' : 'configuration';
+};
 
 export const resolveBotCatalogAction = (
   status: BotCatalogStatus | null,

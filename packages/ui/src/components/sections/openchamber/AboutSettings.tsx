@@ -14,6 +14,7 @@ import { DataStorageSettings } from './SessionRetentionSettings';
 import { DesktopKeepAwakeSettings } from './DesktopKeepAwakeSettings';
 import { DesktopNetworkSettings } from './DesktopNetworkSettings';
 import { OpenCodeVersionSection } from './OpenCodeVersionSection';
+import { DesktopBotHostStatus } from './DesktopBotHostStatus';
 
 const GITHUB_URL = 'https://github.com/1H-Team/DevRyan';
 
@@ -26,6 +27,7 @@ const DesktopAppSettings: React.FC = () => {
     <div className="border-t border-border/40 pt-6">
       <DesktopKeepAwakeSettings />
       <DesktopNetworkSettings />
+      <DesktopBotHostStatus />
     </div>
   );
 };

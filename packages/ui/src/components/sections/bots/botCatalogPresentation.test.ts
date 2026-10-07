@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import type { BotCatalogBackup, BotCatalogStatus } from '@/lib/botsApi';
 import {
   botCatalogDiscoveryFailure,
+  botCatalogImportScope,
   canCheckHostedBots,
   isBotCatalogRecoveryState,
   resolveBotCatalogAction,
@@ -39,6 +40,12 @@ const importState = (phase: string, extra: Record<string, unknown> = {}) => ({
 });
 
 describe('Bot catalog recovery presentation', () => {
+  test('starts configuration imports and keeps the exact scope of resumable checkpoints', () => {
+    expect(botCatalogImportScope(status())).toBe('configuration');
+    expect(botCatalogImportScope(status({ import: importState('blocked') }))).toBe('full');
+    expect(botCatalogImportScope(status({ import: importState('blocked', { scope: 'configuration' }) }))).toBe('configuration');
+    expect(botCatalogImportScope(status({ import: importState('failed', { scope: 'full' }) }))).toBe('configuration');
+  });
   test('offers exactly one control per state, in priority order', () => {
     expect(resolveBotCatalogAction(null, null)).toBeNull();
     expect(resolveBotCatalogAction(status(), [])).toBeNull();

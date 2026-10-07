@@ -1,3 +1,4 @@
+import {SUPPORTED_NATIVE_OPENCODE_VERSIONS} from '../version-policy.js';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import {parseClaudeLifecycleOperation} from './native-claude-lifecycle.js';
@@ -253,7 +254,7 @@ export function parseNativeMigrationRequest(value) {
 export function parseNativeMigrationReceipt(value) {
   bounded(value, NATIVE_PROCESS_LIMITS.messageBytes);
   keys(value, ['protocol', 'requestID', 'bundleID', 'databasePath', 'status', 'nativeVersion', 'marker', 'sourceInventorySha256', 'verificationSha256']);
-  if (value.protocol !== 'devryan-native-migration/1' || value.status !== 'completed' || value.nativeVersion !== '2.0.20' || !['completed', 'not-needed'].includes(value.marker)) throw invalid();
+  if (value.protocol !== 'devryan-native-migration/1' || value.status !== 'completed' || !SUPPORTED_NATIVE_OPENCODE_VERSIONS.includes(value.nativeVersion) || !['completed', 'not-needed'].includes(value.marker)) throw invalid();
   string(value.requestID); string(value.bundleID); absolute(value.databasePath); digest(value.sourceInventorySha256); digest(value.verificationSha256);
   return structuredClone(value);
 }

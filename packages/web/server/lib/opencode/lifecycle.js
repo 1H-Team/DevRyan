@@ -6,6 +6,7 @@ import { DEFAULT_AGENT_RUNTIME_SETTINGS, normalizeAgentRuntimeSettings } from '.
 import { buildVisibleSkillPolicy } from './skill-policy.js';
 import { SLIM_REPLACED_AGENT_NAMES, resolveSlimConfig } from './slim-config.js';
 import { probe as probeOpenCodeRuntime } from './readiness-probe.js';
+import { SUPPORTED_NATIVE_OPENCODE_VERSIONS } from './version-policy.js';
 
 const unavailable=(code='native_runtime_bundle_required')=>Object.assign(new Error(code==='native_runtime_owner_mismatch'?'Inherited runtime process requires a fresh server owner':'Verified native runtime bundle required'),{code,status:503});
 function normalizeWorkingDirectoryCandidate(value) {
@@ -212,11 +213,12 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
   };
   const startOpenCode=async()=>{
     state.isOpenCodeReady=false;assertExecutionReady();const {native,bundle}=assertNative();await bundle.verify();
+    if (!SUPPORTED_NATIVE_OPENCODE_VERSIONS.includes(bundle.version)) throw unavailable();
     state.openCodeWorkingDirectory=bundle.descriptor.projectMap[0].targetDirectory;
     const launchSettings=normalizeAgentRuntimeSettings(readAgentRuntimeSettings());
     await syncManagedAgentRuntimeConfig(launchSettings);emitStartupStatus('Starting the verified native runtime…');
     state.openCodeGeneration=2;state.isExternalOpenCode=false;
-    const instance=await native.start();state.openCodeProcess=instance;state.openCodeVersion='2.0.20';
+    const instance=await native.start();state.openCodeProcess=instance;state.openCodeVersion=bundle.version;
     const acceptedConfiguration=native.getConfigurationSnapshot?.()?.locations
       .find(location=>location.directory===state.openCodeWorkingDirectory)?.configuration;
     const acceptedSettings=acceptedConfiguration?{lsp:acceptedConfiguration.lsp!==false}:launchSettings;
@@ -245,10 +247,10 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     });return state.currentRestartPromise;
   };
   const bootstrapOpenCodeAtStartup=async()=>{
-    const {native}=assertNative();syncFromHmrState();state.isOpenCodeReady=false;
+    const {native,bundle}=assertNative();syncFromHmrState();state.isOpenCodeReady=false;
     // A process inherited from an older module has no authority in this owner.
     if(state.openCodeProcess&&!state.openCodeProcess.hasExited()){
-      if(state.openCodeGeneration!==2||state.openCodeVersion!=='2.0.20'||native.isReady?.()!==true){
+      if(state.openCodeGeneration!==2||state.openCodeVersion!==bundle.version||native.isReady?.()!==true){
         const error=unavailable('native_runtime_owner_mismatch');state.lastOpenCodeError=error.message;syncToHmrState();throw error;
       }
       await waitForOpenCodeReady();return;

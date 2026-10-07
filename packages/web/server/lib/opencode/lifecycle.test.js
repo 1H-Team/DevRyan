@@ -9,15 +9,16 @@ import {createOpenCodeLifecycleRuntime} from './lifecycle.js';
 function fixture(overrides={}){
  const events=[],state=overrides.state??{openCodeWorkingDirectory:process.cwd(),isShuttingDown:false},children=[];
  const native={isReady:()=>Boolean(children.at(-1)&&!children.at(-1).exited),start:vi.fn(async()=>{const child={port:43100,url:'http://localhost:43100',hasExited:()=>child.exited,close:async()=>{events.push('exit');child.exited=true;},killForRecovery:async()=>{events.push('settle');child.exited=true;}};children.push(child);return child;})};
- const bundle={descriptor:{generation:2,projectMap:[{targetDirectory:process.cwd()}]},verify:async()=>events.push('verify')};
+ const bundle={version:'2.0.24',descriptor:{generation:2,projectMap:[{targetDirectory:process.cwd()}]},verify:async()=>events.push('verify')};
  const runtime=createOpenCodeLifecycleRuntime({state,getNativeRuntime:()=>native,getRuntimeBundle:()=>bundle,
   buildOpenCodeUrl:()=> 'http://localhost:43100',resolveSlimConfiguration:()=>({enabled:false}),
   syncPackagedAgents:async()=>{events.push('agents');return {changed:false};},syncRuntimeAgentOverlays:async()=>({changed:false}),
-  probeOpenCodeReadiness:async input=>{expect(input.generation).toBe(2);events.push('probe');return {ready:true,generation:2,version:'2.0.20'};},
+  probeOpenCodeReadiness:async input=>{expect(input.generation).toBe(2);events.push('probe');return {ready:true,generation:2,version:bundle.version};},
   pauseManagedBrowserLeases:async()=>{events.push('pause');return 'owned';},resumeManagedBrowserLeases:async handle=>{expect(handle).toBe('owned');events.push('resume');},...overrides});
  return {runtime,state,native,bundle,events,children};
 }
-it('starts only a verified native owner and waits for its catalog',async()=>{const f=fixture();await f.runtime.bootstrapOpenCodeAtStartup();expect(f.events).toEqual(['verify','agents','probe']);expect(f.state).toMatchObject({openCodeGeneration:2,openCodeVersion:'2.0.20',isOpenCodeReady:true,isExternalOpenCode:false});expect(f.state.openCodeProcess).toBe(f.children[0]);});
+it('starts only a verified native owner and waits for its catalog',async()=>{const f=fixture();await f.runtime.bootstrapOpenCodeAtStartup();expect(f.events).toEqual(['verify','agents','probe']);expect(f.state).toMatchObject({openCodeGeneration:2,openCodeVersion:'2.0.24',isOpenCodeReady:true,isExternalOpenCode:false});expect(f.state.openCodeProcess).toBe(f.children[0]);});
+it('missing or unsupported verified lifecycle version refuses before the controller starts',async()=>{for(const version of [undefined,'2.0.25','2.0.24-dev']){const f=fixture();f.bundle.version=version;await expect(f.runtime.startOpenCode()).rejects.toMatchObject({code:'native_runtime_bundle_required'});expect(f.native.start).not.toHaveBeenCalled();}});
 it('inspects and restores prompts through their existing owner without applying runtime overlays', async () => {
  const prompts=[{name:'builder',state:'modified',currentHash:'a'.repeat(64),packagedHash:'b'.repeat(64)}];
  const sync=vi.fn(async()=>({prompts,changed:false})),overlays=vi.fn();
@@ -62,7 +63,7 @@ it('publishes the accepted launch settings only after readiness, independent of 
  let configured={lsp:false};let releaseReady;let readingReady;
  const readyStarted=new Promise(resolve=>{readingReady=resolve;});
  const readiness=new Promise(resolve=>{releaseReady=resolve;});
- const f=fixture({readAgentRuntimeSettings:()=>configured,probeOpenCodeReadiness:async()=>{readingReady();await readiness;return {ready:true,generation:2,version:'2.0.20'};}});
+ const f=fixture({readAgentRuntimeSettings:()=>configured,probeOpenCodeReadiness:async()=>{readingReady();await readiness;return {ready:true,generation:2,version:f.bundle.version};}});
  f.native.getConfigurationSnapshot=()=>({locations:[{directory:process.cwd(),configuration:{lsp:false}}]});
  const start=f.runtime.startOpenCode();await readyStarted;
  configured={lsp:true};expect(f.runtime.getAgentRuntimeApplicationState().appliedLsp).toBeNull();
@@ -127,7 +128,7 @@ it('forwards the native lifecycle version into original application health and H
   const f = fixture({ state: composition.state, syncToHmrState: composition.syncToHmrState });
   expect(composition.getHealthSnapshot()).toMatchObject({ openCodeVersion: null, openCodeRunning: false });
   await f.runtime.bootstrapOpenCodeAtStartup();
-  expect(hmrState).toMatchObject({ openCodeVersion: '2.0.20', openCodePort: 43100 });
+  expect(hmrState).toMatchObject({ openCodeVersion: '2.0.24', openCodePort: 43100 });
   const app = express();
   registerServerStatusRoutes(app, {
     express,
@@ -141,7 +142,7 @@ it('forwards the native lifecycle version into original application health and H
     const response = await request(app).get(route);
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
-      openCodeVersion: '2.0.20', openCodePort: 43100,
+      openCodeVersion: '2.0.24', openCodePort: 43100,
       openCodeGeneration: 2, openCodeRunning: true, isOpenCodeReady: true,
     });
   }
@@ -153,3 +154,5 @@ it('forwards the native lifecycle version into original application health and H
   composition.state.openCodePort = null;
   expect(composition.getHealthSnapshot()).toMatchObject({ openCodeVersion: null, openCodeRunning: false });
 });
+
+it('retained runtime reports its verified bundle version through launch and inherited ownership',async()=>{const f=fixture();f.bundle.version='2.0.20';await f.runtime.bootstrapOpenCodeAtStartup();expect(f.state.openCodeVersion).toBe('2.0.20');await f.runtime.bootstrapOpenCodeAtStartup();expect(f.native.start).toHaveBeenCalledTimes(1);});

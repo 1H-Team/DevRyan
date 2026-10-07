@@ -671,7 +671,7 @@ const resolveCursorSdkAgentDefinitions = async ({ directory, resolveModelSelecti
 const nativeBundle = await loadNativeRuntimeBundle({binding:selectedRuntimeBundle,verify:verifySelectedRuntimeBundle,
  launcher:executionArtifacts(path.dirname(selectedRuntimeBundle.descriptor.launch.artifactManifestPath)).launcher,
  getRegisteredProjects:async()=>sanitizeProjects((await readSettingsFromDisk())?.projects) ?? []});
-const executionReadiness={state:'active',diagnostic:null,companion:{version:'2.0.20'},
+const executionReadiness={state:'active',diagnostic:null,companion:{version:nativeBundle.artifacts.manifest.opencodeVersion},
  environment:{DEVRYAN_EXECUTION_BOUNDARY:'1',DEVRYAN_OPENCODE_ARTIFACT:nativeBundle.artifacts.controller,
  DEVRYAN_EXECUTION_LAUNCHER:nativeBundle.artifacts.launcher},assertReady(){}};
 const capturedExecutionEnvironment = executionReadiness.environment;
@@ -1466,7 +1466,7 @@ const openCodeLifecycleRuntime = createOpenCodeLifecycleRuntime({
   buildManagedOpenCodePath,
   getManagedOpenCodeShellEnvSnapshot: getLoginShellEnvSnapshot,
   getNativeRuntime: () => nativeRuntime,
-  getRuntimeBundle: () => selectedRuntimeBundle ? { descriptor: selectedRuntimeBundle.descriptor, verify: verifySelectedRuntimeBundle } : null,
+  getRuntimeBundle: () => selectedRuntimeBundle ? { descriptor: selectedRuntimeBundle.descriptor, version: nativeBundle.artifacts.manifest.opencodeVersion, verify: verifySelectedRuntimeBundle } : null,
   getActiveSessionCount,
   syncPackagedAgents: (options) => syncPackagedAgents({
     ...options,

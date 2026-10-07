@@ -39,7 +39,7 @@ test('native integration catalog exposes one host-owned SIWC method and preserve
     const integration = yield* Integration.Service;
     const id = Schema.decodeUnknownSync(Integration.ID)('openai');
     yield* integration.transform(editor => {
-      for (const methodID of ['chatgpt-browser', 'chatgpt-headless', 'other-owned-method']) editor.method.update({ integrationID:id,
+      for (const methodID of ['chatgpt-token-sharing', 'chatgpt-browser', 'chatgpt-headless', 'other-owned-method']) editor.method.update({ integrationID:id,
         method:Schema.decodeUnknownSync(Integration.OAuthMethod)({id:methodID,type:'oauth',label:methodID}),authorize:()=>Effect.die('fixture authorization unavailable') });
       editor.method.update({integrationID:id,method:Schema.decodeUnknownSync(Integration.KeyMethod)({type:'key',label:'API key'})});
       editor.method.update({integrationID:Schema.decodeUnknownSync(Integration.ID)('other-provider'),method:Schema.decodeUnknownSync(Integration.KeyMethod)({type:'key'})});
@@ -51,8 +51,8 @@ test('native integration catalog exposes one host-owned SIWC method and preserve
     const original = yield* integration.get(id), projected = yield* decorated.get(id);
     if (!original || !projected) throw new Error('OpenAI catalog missing');
     expect(projected.methods.filter(row=>row.type==='oauth'&&row.id==='chatgpt-siwc')).toEqual([Schema.decodeUnknownSync(Integration.OAuthMethod)({id:'chatgpt-siwc',type:'oauth',label:'Sign in with ChatGPT'})]);
-    expect(projected.methods.some(row=>row.type==='oauth'&&['chatgpt-browser','chatgpt-headless'].includes(row.id))).toBe(false);
-    expect(projected.methods.filter(row=>row.type!=='oauth'||row.id!=='chatgpt-siwc')).toEqual(original.methods.filter(row=>row.type!=='oauth'||!['chatgpt-siwc','chatgpt-browser','chatgpt-headless'].includes(row.id)));
+    expect(projected.methods.some(row=>row.type==='oauth'&&['chatgpt-token-sharing','chatgpt-browser','chatgpt-headless'].includes(row.id))).toBe(false);
+    expect(projected.methods.filter(row=>row.type!=='oauth'||row.id!=='chatgpt-siwc')).toEqual(original.methods.filter(row=>row.type!=='oauth'||!['chatgpt-siwc','chatgpt-token-sharing','chatgpt-browser','chatgpt-headless'].includes(row.id)));
     const before = yield* integration.list(), after = yield* decorated.list();
     expect(after.find(row=>row.id===id)).toEqual(projected);
     expect(after.filter(row=>row.id!==id)).toEqual(before.filter(row=>row.id!==id));

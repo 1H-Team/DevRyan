@@ -23,15 +23,15 @@ export const NATIVE_ASSET_SOURCE_SHA=Object.freeze({pty:'fe38312cd4acdfb067f520d
 /** Windows has no approved persistent PTY. Refuse before resolving a command,
  * creating an installation directory, or reading an environment override. */
 export function rewriteUnavailableNativePty(source) {
- if(hash(source)!=='fd478c6e033e2772ec73c96680918b00271997a4911f346e0b058103a78d5e92')throw new Error('Pinned native PTY resolver changed');
+ if(hash(source)!=='fb756bc4423617e2215f168c09de3d4690e947cbea9a324c1a6f643f09482b73')throw new Error('Pinned native PTY resolver changed');
  return 'async function resolveBinary(){throw new Error("native_pty_platform_unsupported");}\nexport {resolveBinary};\n';
 }
 /** Build-only transformations require the exact pinned bytes before rewriting. */
 export function rewriteNativeAsset(kind,source,{assetPath,assetSha256}={}) {
  if(!Object.hasOwn(NATIVE_ASSET_SOURCE_SHA,kind)||hash(source)!==NATIVE_ASSET_SOURCE_SHA[kind]) throw new Error('Pinned native asset resolver changed');
  if(kind==='pty') {
-  if(typeof assetPath!=='string'||!assetPath.startsWith('/')||!/^d333339292bb9f9a739dbce9e2ababbce81b3040ea3d064b8a9b359a1c05ab61$/.test(assetSha256)) throw new Error('Pinned native PTY asset changed');
-  return `import embedded from ${JSON.stringify(assetPath)} with {type:'file'};\nconst pty_binding_default={path:embedded,version:'0.1.13',sha256:${JSON.stringify(assetSha256)}};\nexport {pty_binding_default};\n`;
+  if(typeof assetPath!=='string'||!assetPath.startsWith('/')||!/^becb3b8b346d0d20b898a229ed42b107f1f0e179f50e5de52636bc26a07004fb$/.test(assetSha256)) throw new Error('Pinned native PTY asset changed');
+  return `import embedded from ${JSON.stringify(assetPath)} with {type:'file'};\nconst pty_binding_default={path:embedded,version:'0.2.0',sha256:${JSON.stringify(assetSha256)}};\nexport {pty_binding_default};\n`;
  }
  const original="const path = require('path').join(__dirname, 'photon_rs_bg.wasm');";
  const text=Buffer.from(source).toString('utf8');

@@ -1,3 +1,4 @@
+import {SUPPORTED_NATIVE_OPENCODE_VERSIONS} from '../version-policy.js';
 import fs from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import path from 'node:path';
@@ -26,7 +27,7 @@ export async function verifyNativeRuntimeArtifacts({ manifestPath, manifestSha25
   const bytes = await fs.readFile(manifestPath);
   if (createHash('sha256').update(bytes).digest('hex') !== manifestSha256) throw fail();
   const manifest = JSON.parse(bytes.toString('utf8'));
-  if (manifest.admission === false || manifest.status === 'unqualified' || manifest.schema !== 1 || !digestPattern.test(manifest.buildId) || manifest.opencodeVersion !== '2.0.20'
+  if (manifest.admission === false || manifest.status === 'unqualified' || manifest.schema !== 1 || !digestPattern.test(manifest.buildId) || !SUPPORTED_NATIVE_OPENCODE_VERSIONS.includes(manifest.opencodeVersion)
     || manifest.bunVersion !== '1.3.14' || manifest.target !== `bun-${process.platform}-${process.arch}`
     || !digestPattern.test(manifest.inputs?.coreDigest) || !digestPattern.test(manifest.inputs?.lockSha256)
     || !Array.isArray(manifest.inputs.reviewedPlugins) || !Array.isArray(manifest.inputs.nativeRegistrations) || !manifest.inputs.nativeRegistrations.length

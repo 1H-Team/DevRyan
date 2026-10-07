@@ -12,10 +12,20 @@ import { prepareQaNativeProfile, archiveQaNativeControllerLog } from './native-p
 import { startOwnedProcess } from './process.mjs';
 import { createQaHostLaunchEnvironment } from './launch-environment.mjs';
 import { createDiagnosticSanitizer } from '../../packages/harness-runtime/lib/sanitizer.js';
+import { TARGET_OPENCODE_VERSION } from '../../packages/web/server/lib/opencode/version-policy.js';
 import { translateNativeConfiguration } from '../../packages/web/server/lib/opencode/runtime-host/native-configuration-data.js';
 
 const repository = fileURLToPath(new URL('../../', import.meta.url)).replace(/\/$/, '');
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
+export async function archiveQaNativeHostLog(host, evidenceDirectory, sanitizer, file = 'host-startup.log') {
+  assert.ok(['host-startup.log', 'preparation.stderr.log'].includes(file));
+  const log = Buffer.from(sanitizer.sanitizeText(host.getLog()), 'utf8');
+  const maximum = 64 * 1024;
+  const output = log.subarray(Math.max(0, log.byteLength - maximum));
+  await fs.writeFile(path.join(evidenceDirectory, file), output, { mode: 0o600 });
+  return { file, state: 'captured', bytes: output.byteLength, sha256: hash(output), truncated: log.byteLength > maximum };
+}
+
 export async function runQaNativeFactoryDiagnostic({ artifactRoot, bun = 'bun' }) {
   artifactRoot = await fs.realpath(artifactRoot);
   assert.ok(artifactRoot.startsWith(path.join(repository, '.cache') + path.sep));
@@ -60,7 +70,7 @@ export async function runQaNativeFactoryDiagnostic({ artifactRoot, bun = 'bun' }
       assert.ok(match, 'Unexpected source acquisition stderr');
       return JSON.parse(match[1].replace(/\\/g, ''));
     });
-    assert.deepEqual(creationLogs, proof.accounts.map(account => ({ credentialID: account.credentialID, integrationID: 'openai', type: 'oauth', active: true })), 'Unexpected native credential creation log'); assert.equal(proof.compiledOAuthCreation, false); assert.equal(proof.nativeVersion, '2.0.20');
+    assert.deepEqual(creationLogs, proof.accounts.map(account => ({ credentialID: account.credentialID, integrationID: 'openai', type: 'oauth', active: true })), 'Unexpected native credential creation log'); assert.equal(proof.compiledOAuthCreation, false); assert.equal(proof.nativeVersion, TARGET_OPENCODE_VERSION);
     assert.equal(proof.reopened.methodID, 'chatgpt-siwc');
     report.cases.push({ id: 'synthetic-siwc-source-sdk-credential-mutations', source: 'source-sdk-native-credential-create', methodID: proof.reopened.methodID,
       settledMutations: proof.settledMutations, knownNativeCreationLogCount: creationLogs.length,
@@ -71,17 +81,21 @@ export async function runQaNativeFactoryDiagnostic({ artifactRoot, bun = 'bun' }
       checkedAt: Date.now(), expiryCheck: 'passed' } } };
   };
   try {
+    report.stage = 'owned_git_workspace';
     const gitConfig = path.join(root, 'gitconfig'), gitTemplate = path.join(root, 'git-template');
     await fs.writeFile(gitConfig, '', { mode: 0o600 }); await fs.mkdir(gitTemplate, { mode: 0o700 });
     await promisify(execFile)('git', ['init', '--quiet', `--template=${gitTemplate}`, workspace], { cwd: root, timeout: 15000,
       env: createQaHostLaunchEnvironment({ HOME: sourceHome, GIT_CONFIG_GLOBAL: gitConfig,
         GIT_CONFIG_NOSYSTEM: '1', GIT_CEILING_DIRECTORIES: root, GIT_TERMINAL_PROMPT: '0' }) });
+    report.stage = 'native_preparation_factory';
     const nativePreparation = await createQaNativePreparationFactory({ preparedInput, mirror: { reviewedNativeFile: 'reviewed-native.json',
       reviewedPluginFile: 'reviewed-plugins.json', opencodeConfigDirectory: 'opencode', webConfigDirectory: 'web' }, bootstrapCredentials });
+    report.stage = 'native_profile_preparation';
     profile = await prepareQaNativeProfile({ runtimeRoot, workspace, cell: { agent: 'builder', providerId: 'openai', modelId: modelID, variant: 'high', timeoutMs: 120000 }, nativePreparation });
     assert.equal(profile.evidence.generation, 2); assert.equal(profile.evidence.agentSelections.builder.variant, 'high');
     report.cases.push({ id: 'real-bundle-migration-saved-synthetic-graph', snapshotDigest: profile.evidence.snapshotDigest,
       inputDigest: profile.evidence.inputDigest, nativeBundle: profile.evidence.nativeBundle, agentCount: Object.keys(profile.evidence.agentSelections).length });
+    report.stage = 'actual_host_startup';
     host = startOwnedProcess(process.execPath, [profile.bootstrapPath], { cwd: repository,
       env: { ...profile.env, DEVRYAN_QA_RUNTIME: 'web', OPENCHAMBER_PORT: '0', GIT_CEILING_DIRECTORIES: repository, GIT_CONFIG_NOSYSTEM: '1' } });
     let ready;
@@ -128,13 +142,25 @@ export async function runQaNativeFactoryDiagnostic({ artifactRoot, bun = 'bun' }
     report.status = 'passed';
   } catch (error) {
     report.failure = { name: error.name, code: error.code ?? null, message: String(error.message).slice(0, 512) };
+    if (error.stderr) {
+      const sanitizer = createDiagnosticSanitizer({ homeDir: profile?.env.HOME ?? sourceHome,
+        pathMappings: [{ path: root, placeholder: '<QA_RUN>' }, { path: repository, placeholder: '<REPOSITORY>' }] });
+      report.preparationLog = await archiveQaNativeHostLog({ getLog: () => String(error.stderr) }, root,
+        sanitizer, 'preparation.stderr.log');
+    }
   } finally {
     if (host) report.startupCodes = [...new Set(host.getLog().match(/(?:native|context|execution|mutation|opencode)_[a-z_]+/g) ?? [])];
     if (host) try { report.cleanup = await host.stop(); } catch (error) { report.cleanupFailures.push({ name: error.name, code: error.code ?? null }); }
+    const sanitizer = createDiagnosticSanitizer({ homeDir: profile?.env.HOME ?? sourceHome,
+      pathMappings: [{ path: root, placeholder: '<QA_RUN>' }, { path: repository, placeholder: '<REPOSITORY>' }] });
+    if (host) {
+      try { report.hostLog = await archiveQaNativeHostLog(host, root, sanitizer); }
+      catch (error) { report.cleanupFailures.push({ code: error.code ?? 'host_log_archive_failed' }); }
+    }
+    if (report.failure) report.failure.message = sanitizer.sanitizeText(report.failure.message);
     if (profile) {
       try { await profile.verifyInputs(); } catch (error) { report.cleanupFailures.push({ code: error.code ?? 'input_verification_failed' }); }
-      try { report.nativeLog = await archiveQaNativeControllerLog(profile, root, createDiagnosticSanitizer({ homeDir: profile.env.HOME,
-        pathMappings: [{ path: root, placeholder: '<QA_RUN>' }, { path: repository, placeholder: '<REPOSITORY>' }] })); }
+      try { report.nativeLog = await archiveQaNativeControllerLog(profile, root, sanitizer); }
       catch (error) { report.cleanupFailures.push({ code: error.code ?? 'native_log_archive_failed' }); }
     }
     if (report.cleanupFailures.length) report.status = 'failed';

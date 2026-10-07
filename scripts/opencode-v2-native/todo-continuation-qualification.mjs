@@ -40,7 +40,7 @@ export async function qualifyNativeTodoContinuation(){
  const token=randomBytes(32).toString('base64url'),observations=[],diagnostics=[];
  const contextDigest=hash(await fs.readFile(path.join(repositoryRoot,'packages/web/server/lib/opencode/runtime-host/native-session-context.ts')));
  let child,nativeUrl,owner,managed,context,step,nativeEpoch=1,instanceID=randomUUID(),runnerGate,runnerBlocked=false,lostAck=false,sessionID;
- const deps={getRuntime:()=>({generation:2,baseUrl:nativeUrl,version:'2.0.20',epoch:nativeEpoch}),
+ const deps={getRuntime:()=>({generation:2,baseUrl:nativeUrl,version:'2.0.24',epoch:nativeEpoch}),
   getAuthHeaders:()=>({authorization:`Bearer ${token}`,...owner?.requestHeaders()}),
   withNativeWebOperation:(input,action)=>owner.withWebOperation(input,action),recordDiagnostic:row=>diagnostics.push(row)};
  const admission=createOpenCodeAdmission(deps,{beforePromptDispatch:(receipt,context)=>managed.admitNativePrompt(receipt,context),onPromptDispatchFailure:receipt=>managed.markNativePromptUncertain(receipt),

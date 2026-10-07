@@ -20,12 +20,12 @@ test('Windows-style Git checkout preserves byte-pinned reviewed resources',async
 });
 test('asset rewrites require exact pinned sources and embed only reviewed native paths',async()=>{
  const require=createRequire(path.join(core,'package.json'));
- const pty=await fs.readFile(path.join(core,'dist/chunks/credential-dajrwvna.js'));
+ const pty=await fs.readFile(path.join(core,'dist/chunks/repository-dajrwvna.js'));
  assert.equal(hash(pty),NATIVE_ASSET_SOURCE_SHA.pty);
  const assetPath=path.join(path.dirname(require.resolve('@opencode-ai/pty-darwin-arm64/package.json')),'bin/opencode-pty');
  const assetSha256=hash(await fs.readFile(assetPath));
  const transformed=rewriteNativeAsset('pty',pty,{assetPath,assetSha256});
- assert.match(transformed,/with \{type:'file'\}/);assert.match(transformed,/version:'0.1.13'/);assert.doesNotMatch(transformed,/binaryPath|createRequire/);
+ assert.match(transformed,/with \{type:'file'\}/);assert.match(transformed,/version:'0.2.0'/);assert.doesNotMatch(transformed,/binaryPath|createRequire/);
  const photon=await fs.readFile(require.resolve('@silvia-odwyer/photon-node'));
  const rewritten=rewriteNativeAsset('photon',photon);
  assert.match(rewritten,/globalThis.__OPENCODE_PHOTON_WASM_PATH/);assert.doesNotMatch(rewritten,/join\(__dirname, 'photon_rs_bg.wasm'\)/);

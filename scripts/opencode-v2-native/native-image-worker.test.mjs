@@ -6,7 +6,7 @@ import {createSessionExecutionHost} from '../../packages/web/server/lib/opencode
 import {createNativeImageRuntime} from '../../packages/web/server/lib/opencode/runtime-host/native-image-runtime.js';
 import {createControllerImages} from '../../packages/web/server/lib/opencode/runtime-host/controller-images.ts';
 import {createPrivilegedOpenCodeClient} from '../../packages/web/server/lib/opencode/opencode-client/privileged.js';
-import {toLLMMessages2} from '../../packages/web/node_modules/@opencode/core/dist/chunks/credential-hd8vw2pw.js';
+import {toLLMMessages as toLLMMessages2} from '@opencode/core/session/runner/to-llm-message';
 import {git} from '../../packages/harness-runtime/lib/session-changes-git.js';
 import {createSessionChangeHost} from '../../packages/harness-runtime/lib/session-changes-host.js';
 const repository=path.resolve(import.meta.dirname,'../..');

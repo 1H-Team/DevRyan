@@ -227,7 +227,8 @@ export function createNativeIntegrationFacade({ getNativeRuntimeOwner, getOpenCo
       if (providerID !== 'openai' || !record(body) || body.type !== 'oauth' || body.methodID !== 'chatgpt-siwc'
         || typeof body.access !== 'string' || !body.access || typeof body.refresh !== 'string' || !body.refresh
         || !Number.isSafeInteger(body.expires) || !record(body.metadata)) throw fail('opencode_invalid_input', 400);
-      const input = { integrationID: 'openai', value: {
+      if (options.credentialID !== undefined && !identifier(options.credentialID)) throw fail('opencode_invalid_input', 400);
+      const input = { ...(options.credentialID === undefined ? {} : { id: options.credentialID }), integrationID: 'openai', value: {
         type: 'oauth', methodID: 'chatgpt-siwc', access: body.access, refresh: body.refresh, expires: body.expires, metadata: body.metadata,
       }, activate: false };
       const scope = providerScope(selected, 'openai');
@@ -236,7 +237,7 @@ export function createNativeIntegrationFacade({ getNativeRuntimeOwner, getOpenCo
         ...(options.assertCurrent ? { assertCurrent: options.assertCurrent } : {}),
         body: input, valueType: 'oauth', methodID: 'chatgpt-siwc', requestedFingerprint: credentialMutationFingerprint(input) };
       const result = await selected.owner.credentialOperation(spec, { operation: 'create', input }); check(selected);
-      if (!identifier(result?.credentialID)) throw fail('native_integration_invalid_response', 502);
+      if (!identifier(result?.credentialID) || options.credentialID !== undefined && result.credentialID !== options.credentialID) throw fail('native_integration_invalid_response', 502);
       return { success: true, credentialID: result.credentialID };
     }),
     saveKey: (providerID, body, options) => run(options.directory, 'providerAuthentication', async selected => {

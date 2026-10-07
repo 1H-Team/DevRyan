@@ -257,9 +257,22 @@ describe('common request middleware', () => {
     // there mount their own parser (api-json-body-coverage.test.js).
     ['/api/session', null],
     ['/api/runtime-service/desktop-host', null],
+    ['/api/provider/openai/siwc', null],
+    ['/api/provider/openai/siwc/attempt/complete', null],
+    ['/api/provider/openai/siwc-legacy', '50mb'],
     ['/auth/session', '50mb'],
   ])('resolves the shared JSON body limit for %s', (pathname, limit) => {
     expect(resolveSharedJsonBodyLimit(pathname)).toBe(limit);
+  });
+
+  it('leaves JSON and URL-encoded SIWC bodies raw for guarded route parsing', async () => {
+    const app = express();
+    registerCommonRequestMiddleware(app, { express });
+    app.post('/api/provider/openai/siwc/attempt/complete', (req, res) => res.json({ parsed: req.body !== undefined }));
+    for (const [contentType, body] of [['application/json', '{'], ['application/x-www-form-urlencoded', 'value=fixture']]) {
+      const response = await request(app).post('/api/provider/openai/siwc/attempt/complete').set('Content-Type', contentType).send(body);
+      expect(response.status).toBe(200); expect(response.body).toEqual({ parsed: false });
+    }
   });
 
   it.each([

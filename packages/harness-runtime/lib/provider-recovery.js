@@ -11,7 +11,7 @@ import { currentObjectiveUser, isManagedMaintenancePrompt, observesNativeContinu
 import {
   classifyPrimaryTransportError, inspectRecoveryTurn, recoveryError,
   RECOVERY_READ_TOOLS, PROVIDER_PROGRESS_TIMEOUT_MS, validatePrimaryRecoveryRecord,
-  isProviderRecoverySupportedRuntimeVersion, isPrimaryRecoveryProvider, primaryRecoveryMode,
+  isProviderRecoverySupportedRuntimeVersion, isNativePrimaryRuntimeVersion, isPrimaryRecoveryProvider, primaryRecoveryMode,
 } from './provider-recovery-policy.js';
 
 const TERMINAL = new Set(['completed', 'needs_attention', 'cancelled', 'superseded']);
@@ -299,7 +299,7 @@ export function createPrimaryRecoveryController(options) {
   // Private native hook transition, never a plugin/RPC action. The failed
   // provider step must settle before the ordinary one-attempt owner dispatches.
   const nativeFallbackEligible = r => r?.executionGeneration === 2 && ownsRuntime && storageHealthy && !draining
-    && options.isManaged() && handshake?.version === '2.0.20' && r.instanceID === handshake.instanceID;
+    && options.isManaged() && isNativePrimaryRuntimeVersion(handshake?.version) && r.instanceID === handshake.instanceID;
   const nativeChoiceBound = r => nativeFallbackEligible(r) && !r.nativeFallback?.pending
     && typeof r.nativeFallback?.stepID === 'string' && r.nativeFallback.stepID === r.stepID
     && r.nativeFallback.userMessageID === currentObjectiveUser(r);
@@ -310,7 +310,7 @@ export function createPrimaryRecoveryController(options) {
     const result = await mutate(input.sessionID, async r => {
       const lazy = input.assistantMessageID === null;
       const exact = () => r && current() && ownsRuntime && storageHealthy && options.isManaged()
-        && r.executionGeneration === 2 && handshake?.version === '2.0.20' && input.instanceID === handshake.instanceID
+        && r.executionGeneration === 2 && isNativePrimaryRuntimeVersion(handshake?.version) && input.instanceID === handshake.instanceID
         && (lazy || nativeFallbackEligible(r))
         && r.state === 'observing' && !r.recoverySuppressed && !r.attemptCount && !r.recoveryID
         && (lazy ? r.stepID === input.previousStepID && validNativeWitness(input.attempt,input.permitSha256)
@@ -347,7 +347,7 @@ export function createPrimaryRecoveryController(options) {
           attempt:structuredClone(input.attempt),permitSha256:input.permitSha256,currentExecution:structuredClone(input.currentExecution)}} : {}),
         ...(execution ? {execution:structuredClone(execution)} : {})},
         ...(!execution && !lazy ? {state:'needs_attention',reason:choice.exhaustion ? 'native_fallback_exhausted' : 'native_fallback_unavailable'} : {})};
-    }, async()=>{await owner.authorize();if(!current() || handshake?.instanceID!==input.instanceID || handshake.version!=='2.0.20'
+    }, async()=>{await owner.authorize();if(!current() || handshake?.instanceID!==input.instanceID || !isNativePrimaryRuntimeVersion(handshake.version)
       || !ownsRuntime || !storageHealthy || !options.isManaged())throw recoveryError('native_fallback_fenced');});
     return {reserved:Boolean(result.nativeFallback?.execution),record:result};
   }
@@ -597,6 +597,8 @@ export function createPrimaryRecoveryController(options) {
         if(draining || !storageHealthy || !ownsRuntime || !options.isManaged() || nativeHelloOwner.isCurrent()!==true)throw recoveryError('recovery_owner_mismatch');
       }
       const replaced = !handshake || handshake.instanceID !== input.instanceID;
+      if (!replaced && isNativePrimaryRuntimeVersion(handshake.version)
+        && isNativePrimaryRuntimeVersion(input.version) && handshake.version !== input.version) throw recoveryError('recovery_owner_mismatch');
       if (handshake && replaced) live.clear();
       handshake = { instanceID: input.instanceID, version: input.transport === 'websocket-unverified' ? null : input.version };
       diagnostic('provider_recovery_capability', null, { supported: supported(), transport: input.transport ?? 'unverified' });
@@ -674,7 +676,7 @@ export function createPrimaryRecoveryController(options) {
         const fenced = (reason) => Object.assign(recoveryError('managed_continuation_fenced'), { fenceReason: reason });
         const stateFence = (record, proof = true) => (!['observing', 'completed'].includes(record.state) && !(proof && collectionAttention(record))
           ? `state_${/^[a-z_]{1,48}$/.test(record.state ?? '') ? record.state : 'invalid'}` : null);
-        const nativeSupported = nativePrompt && r.executionGeneration === 2 && handshake.version === '2.0.20';
+        const nativeSupported = nativePrompt && r.executionGeneration === 2 && isNativePrimaryRuntimeVersion(handshake.version);
         const preFence = !nativeSupported && !isProviderRecoverySupportedRuntimeVersion(handshake.version) ? 'runtime_unsupported'
           : draining ? 'draining'
             : !/^msg_[a-zA-Z0-9]+$/.test(input.userMessageID ?? '') ? 'invalid_continuation_id'
@@ -832,7 +834,7 @@ export function createPrimaryRecoveryController(options) {
         const choice = next.nativeFallback?.pending;
         if (choice) {
           const exact = () => stepGeneration === (generations.get(next.sessionID) ?? 0) && !draining
-            && ownsRuntime && storageHealthy && options.isManaged() && handshake?.version === '2.0.20'
+            && ownsRuntime && storageHealthy && options.isManaged() && isNativePrimaryRuntimeVersion(handshake?.version)
             && choice.instanceID === input.instanceID && handshake?.instanceID === input.instanceID
             && choice.cancellationGeneration === next.cancellationGeneration && next.stepID === choice.previousStepID
             && next.nativeFallback.userMessageID === input.userMessageID && next.state === 'observing' && !next.recoverySuppressed

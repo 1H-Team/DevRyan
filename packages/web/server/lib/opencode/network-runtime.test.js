@@ -72,7 +72,7 @@ describe('OpenCode network runtime', () => {
 
     beforeAll(async () => {
       directory = mkdtempSync(join(tmpdir(), 'devryan-network-ready-'));
-      v2 = await createLoopbackOpenCodeV2Fixture({ directory, heartbeatMs: 50 });
+      v2 = await createLoopbackOpenCodeV2Fixture({ directory, heartbeatMs: 50, opencodeVersion: TARGET_OPENCODE_V2_VERSION });
     });
 
     afterAll(async () => {

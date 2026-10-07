@@ -29,7 +29,7 @@ test('mode restoration refuses changed or unmanifested bytes before mutating any
   const filename = 'DevRyan-native-controller', target = path.join(location, filename);
   const policyName = 'DevRyan-execution-darwin-arm64.json', policy = path.join(location, policyName);
   await fs.writeFile(policy, 'policy'); await fs.chmod(policy, 0o644);
-  const manifest = { schema: 1, opencodeVersion: '2.0.20', target: 'bun-darwin-arm64',
+  const manifest = { schema: 1, opencodeVersion: '2.0.24', target: 'bun-darwin-arm64',
     files: [{ path: policyName, role: 'asset', mode: 0o600, size: 6, sha256: hash('policy') },
       { path: filename, role: 'controller', mode: 0o755, size: 7, sha256: hash('fixture') }] };
   await fs.writeFile(target, 'changed'); await fs.chmod(target, 0o644);

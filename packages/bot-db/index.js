@@ -19,6 +19,7 @@ export {
 } from './src/schema.js';
 export {
   BotImportPlanError,
+  CONFIGURATION_IMPORT_TABLES,
   IMPORT_CATALOG_SQL,
   IMPORT_DISABLED_TRIGGERS,
   REGENERATED_IDENTITIES,

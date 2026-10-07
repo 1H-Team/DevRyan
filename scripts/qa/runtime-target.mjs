@@ -4,7 +4,7 @@
 // runtime is qualified before the pin moves. Evidence records which applied.
 import fs from 'node:fs';
 import { openCodeBaseVersion } from '../../packages/web/server/lib/opencode/opencode-update-runtime.js';
-import { resolveQaTargetOpenCodeVersion } from '../../packages/web/server/lib/opencode/version-policy.js';
+import { resolveQaTargetOpenCodeVersion, SUPPORTED_NATIVE_OPENCODE_VERSIONS } from '../../packages/web/server/lib/opencode/version-policy.js';
 import { resolveLoopbackOpenCodeFixtureGeneration } from '../perf/loopback-opencode-fixtures.mjs';
 
 const describeTarget = target => target.source === 'host-pin' ? 'the pinned runtime' : `the ${target.source} candidate`;
@@ -15,8 +15,8 @@ const describeTarget = target => target.source === 'host-pin' ? 'the pinned runt
 export function resolveQaFixtureGeneration(generation, target = resolveQaTargetOpenCodeVersion()) {
   if (generation !== undefined) return resolveLoopbackOpenCodeFixtureGeneration(generation);
   const base = typeof target?.version === 'string' ? openCodeBaseVersion(target.version) : '';
-  if (base === '2.0.20') return 2;
-  throw new Error('QA fixture target must name the verified 2.0.20 transport, or explicitly select generation 2');
+  if (SUPPORTED_NATIVE_OPENCODE_VERSIONS.includes(base)) return 2;
+  throw new Error('QA fixture target must name the verified 2.0.20 or 2.0.24 transport, or explicitly select generation 2');
 }
 
 // Compare the exact native runtime release, permitting its branded build suffix.

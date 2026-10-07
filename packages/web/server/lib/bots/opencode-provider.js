@@ -1,3 +1,4 @@
+import { BOT_TARGET_OPENCODE_VERSION } from '../opencode/version-policy.js';
 import { setTimeout as delay } from 'node:timers/promises';
 import { classifyProviderTransportFailure } from '@openchamber/orchestration-runtime';
 import { createBotNativeClient } from './native-client.js';
@@ -176,7 +177,7 @@ const defaultWaitForReady = async ({ endpoint, token, fetchImpl, timeoutMs = DEF
         signal: requestSignal,
       });
       const { value } = await readResponseBody(response, { maxResponseBytes: 16 * 1024, signal: requestSignal });
-      if (response.ok && value?.ready === true && value.generation === 2 && value.version === '2.0.20') return;
+      if (response.ok && value?.ready === true && value.generation === 2 && value.version === BOT_TARGET_OPENCODE_VERSION) return;
     } catch {
     }
     await delay(200, undefined, { signal });

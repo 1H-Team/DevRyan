@@ -223,6 +223,8 @@ describe('Bot catalog routes', () => {
     expect(Object.keys(call).sort()).toEqual(['mode', 'principal', 'request', 'writersStopped']);
     expect(call).toMatchObject({ mode: 'merge', writersStopped: true, principal: OWNER });
     expect(call.request.path).toBe('/api/bots/database/import');
+    await request(app).post('/api/bots/database/import').send({ mode: 'merge', scope: 'configuration', writersStopped: true });
+    expect(catalogImport.start.mock.lastCall[0]).toMatchObject({ scope: 'configuration', mode: 'merge', writersStopped: true });
 
     for (const writersStopped of ['true', 1, 'yes', {}, null]) {
       await request(app).post('/api/bots/database/import').send({ mode: 'empty', writersStopped });

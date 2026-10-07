@@ -10,6 +10,7 @@ import { defaultNativeRegistrations } from './native-default-bundle.js';
 import {resumeRuntimeBundle} from './runtime-bundle-resume.js';
 import { executionArtifacts } from '../execution-artifacts.js';
 import { runNativeBundleCredentialProcess, NATIVE_BUNDLE_CREDENTIAL_CONTRACT } from './native-bundle-credential-process.js';
+import { verifyNativeCloneCompatibility } from './native-bundle-compatibility.js';
 
 const fail = code => Object.assign(new Error(code), { code, status: 503 });
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -56,10 +57,7 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
   };
   const compatible = async ({ source, artifacts }) => {
     const [left, right] = await Promise.all([verifyLaunch(source.launch), verifyLaunch(artifacts)]);
-    if (!right.manifest.compiledContracts?.includes(cloneContract)
-      || !right.manifest.compiledContracts?.includes(NATIVE_BUNDLE_CREDENTIAL_CONTRACT)
-      || left.manifest.opencodeVersion !== right.manifest.opencodeVersion
-      || left.manifest.inputs.coreDigest !== right.manifest.inputs.coreDigest) throw fail('bundle_v2_upgrade_compatibility_required');
+    verifyNativeCloneCompatibility({ left: left.manifest, right: right.manifest, databasePath: source.launch.opencodeDatabasePath });
     return { status: 'compatible', binding: { protocol: cloneContract, sourceBundleID: source.bundleID,
       sourceManifestSha256: source.launch.artifactManifestSha256, targetManifestSha256: artifacts.artifactManifestSha256 } };
   };
@@ -163,7 +161,10 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
         artifactManifestPath: retained.manifestPath, artifactManifestSha256: retained.manifestSha256,
         reviewedNativeConfigPath: current.descriptor.launch.reviewedNativeConfigPath, reviewedPluginManifestPath };
       await compatible({ source: current.descriptor, artifacts: launchArtifacts });
-      captureArtifacts = { manifestPath: retained.manifestPath, manifestSha256: retained.manifestSha256 };
+      const original = await verifyLaunch(current.descriptor.launch);
+      captureArtifacts = original.manifest.opencodeVersion === retained.manifest.opencodeVersion
+        && original.manifest.inputs.coreDigest === retained.manifest.inputs.coreDigest
+        ? { manifestPath: retained.manifestPath, manifestSha256: retained.manifestSha256 } : undefined;
       const bundleID = `native-${retained.manifestSha256.slice(0, 24)}-r${current.selection.revision}`;
       await store.prepare({ bundleID, generation: 2, source: { kind: 'bundle', bundleID: current.descriptor.bundleID },
         projectMap: current.descriptor.projectMap, auxiliary: { kind: 'absent' }, launchArtifacts });

@@ -1,3 +1,4 @@
+import { BOT_TARGET_OPENCODE_VERSION } from '../opencode/version-policy.js';
 import { randomUUID } from 'node:crypto';
 import { createOpenCodeClient } from '../opencode/opencode-client/index.js';
 import { readResponseBody } from '../opencode/opencode-client/envelope.js';
@@ -31,7 +32,7 @@ export function createBotNativeClient({ baseUrl, token, runId, fetchImpl = fetch
     throw new TypeError('Native Bot endpoint must be loopback');
   }
   const lifetime = new AbortController();
-  const getRuntime = () => ({ generation: 2, baseUrl: endpoint.origin, version: '2.0.20', epoch: runId });
+  const getRuntime = () => ({ generation: 2, baseUrl: endpoint.origin, version: BOT_TARGET_OPENCODE_VERSION, epoch: runId });
   const getAuthHeaders = () => ({ authorization: `Bearer ${token}` });
   let hub;
   const client = createOpenCodeClient({ getRuntime, getAuthHeaders, fetchImpl,

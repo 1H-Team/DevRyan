@@ -18,7 +18,7 @@ const siwcMethod = Schema.decodeUnknownSync(Integration.OAuthMethod)({ id: 'chat
 const projectCatalog = (info: Integration.Info): Integration.Info => info.id !== openaiID ? info : {
   ...info,
   methods: [...info.methods.filter(method => method.type !== 'oauth'
-    || !['chatgpt-siwc', 'chatgpt-browser', 'chatgpt-headless'].includes(method.id)), siwcMethod],
+    || !['chatgpt-siwc', 'chatgpt-token-sharing', 'chatgpt-browser', 'chatgpt-headless'].includes(method.id)), siwcMethod],
 };
 function ordered(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(ordered);

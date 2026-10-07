@@ -253,6 +253,12 @@ suite('cloud Bot import into the local catalog', () => {
       principal: { id: actorId, role: 'admin', scope: 'managed' }, botId, channelId,
       contentType: 'text/plain', bytes: Buffer.from(`object for ${name}`),
     });
+    const avatar = await blobs.uploadProfileAvatar({
+      principal: { id: actorId, role: 'admin', scope: 'managed' }, botId,
+      contentType: 'image/png', bytes: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j5WQAAAAASUVORK5CYII=', 'base64'),
+    });
+    const profile = await store.get('bots', { id: botId });
+    await store.updateIfRevision('bots', { id: botId }, { avatar_object_id: avatar.id }, profile.updated_at);
     for (let index = 0; index < 2; index += 1) {
       await store.insert('bot_audit_events', {
         event_id: crypto.randomUUID(), bot_id: botId, actor_user_id: actorId,
@@ -446,7 +452,7 @@ suite('cloud Bot import into the local catalog', () => {
       objectsDirectory: path.join(harness.dataDirectory, 'bots', 'objects'),
       hostStateDirectory: harness.dataDirectory,
     });
-    expect(live.objects).toBe(3);
+    expect(live.objects).toBe(6);
     expect(cloud.requests.every((request) => request.method === 'GET')).toBe(true);
   }, 600_000);
 
@@ -459,5 +465,63 @@ suite('cloud Bot import into the local catalog', () => {
     await expect(importer.start({ mode: 'empty', writersStopped: false })).rejects.toMatchObject({
       code: 'bot_import_writers_unconfirmed',
     });
+  }, 600_000);
+
+  test('imports only configuration and current avatars while preserving local history', async () => {
+    await manager.startEmptyCatalog();
+    resetObjects();
+    await upsertIdentity(localOwner, 'Workstation owner');
+    const localBot = await createBot(localOwner, 'Local configuration fixture');
+    const localMessages = Number(await psql('select count(*) from public.bot_messages;'));
+    const cloudBot = cloud.tables.get('bots')[0];
+    cloud.tables.get('bot_routines').push({
+      id: crypto.randomUUID(), bot_id: cloudBot.id, name: 'Imported daily task',
+      schedule_contract: { kind: 'daily' }, timezone: 'UTC', missed_policy: 'skip', missed_run_cap: 1,
+      status: 'active', revision_behavior: 'current_active', next_occurrence_at: '2026-10-08T00:00:00Z',
+      last_occurrence_at: '2026-10-07T00:00:00Z', created_by: cloudOwner, managed_by: cloudOwner,
+      created_at: new Date().toISOString(), updated_at: new Date().toISOString(), retired_at: null,
+    });
+    cloud.tables.get('bot_telegram_connections').push({
+      bot_id: cloudBot.id, generation: crypto.randomUUID(), enabled: false, telegram_bot_id: '123456789',
+      username: 'fixture_bot', credential_id: null, update_offset: 99, state: 'disabled', error_code: null,
+      lease_owner: crypto.randomUUID(), lease_until: '2026-10-08T00:00:00Z',
+      created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    });
+    const start = cloud.requests.length;
+    await newImporter();
+    await importer.start({ mode: 'merge', scope: 'configuration', writersStopped: true });
+    const status = await waitForImport();
+    expect(status.import).toMatchObject({ phase: 'completed', scope: 'configuration', result: { importedBotCount: 2, blockers: [] } });
+    expect(status.import.downloadedBytes).toBeGreaterThan(0);
+    expect(await psql(`select lifecycle from public.bots where id = '${localBot}';`)).toBe('active');
+    expect(await psql(`select string_agg(distinct lifecycle, ',') from public.bots where created_by = '${cloudOwner}';`)).toBe('paused');
+    expect(Number(await psql('select count(*) from public.bot_messages;'))).toBe(localMessages);
+    expect(await psql(`select count(*) from public.bot_runs where bot_id <> '${localBot}';`)).toBe('0');
+    expect(await psql(`select count(*) from public.bot_channels where bot_id <> '${localBot}';`)).toBe('0');
+    expect(await psql(`select count(*) from public.bot_audit_events where bot_id <> '${localBot}';`)).toBe('0');
+    expect(await psql(`select status || ':' || (next_occurrence_at is null)::text || ':' || (last_occurrence_at is null)::text from public.bot_routines;`)).toBe('paused:true:true');
+    expect(await psql(`select enabled::text || ':' || state || ':' || update_offset::text || ':' || (lease_owner is null)::text from public.bot_telegram_connections;`))
+      .toBe('false:disabled:0:true');
+    expect(await psql(`select count(*) from public.bot_objects where bot_id <> '${localBot}' and visibility <> 'profile';`)).toBe('0');
+    const requests = cloud.requests.slice(start);
+    const permitted = new Set(['bots', 'bot_revisions', 'bot_memberships', 'bot_routines', 'bot_credentials',
+      'bot_environment_secrets', 'bot_agent_connections', 'bot_mcp_bindings', 'bot_revision_binding_resolutions',
+      'bot_revision_signatures', 'bot_signer_trust', 'bot_telegram_connections', 'bot_objects', 'user_profiles']);
+    expect(requests.every((entry) => entry.method === 'GET' && (entry.path.includes('/rpc/')
+      || entry.path.startsWith('/storage/') || permitted.has(entry.path.slice('/rest/v1/'.length))))).toBe(true);
+    expect(requests.filter((entry) => entry.path.startsWith('/storage/'))).toHaveLength(2);
+    for (const request of requests.filter((entry) => entry.path === '/rest/v1/bot_objects')) {
+      const query = new URLSearchParams(request.search);
+      expect(query.get('visibility')).toBe('eq.profile');
+      expect(query.get('channel_id')).toBe('is.null');
+      expect(query.get('deleted_at')).toBe('is.null');
+      expect(query.get('id')).toStartWith('in.(');
+    }
+    console.info(JSON.stringify({
+      kind: 'configuration-import-transfer-evidence',
+      importedBotCount: status.import.result.importedBotCount,
+      avatarDownloads: requests.filter((entry) => entry.path.startsWith('/storage/')).length,
+      downloadedResponseBytes: status.import.downloadedBytes,
+    }));
   }, 600_000);
 });

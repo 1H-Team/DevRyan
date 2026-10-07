@@ -1,7 +1,7 @@
 import type { RegistrationCapability, RegistrationOrigin } from './registration-origin.js';
 
-/** Exact PluginInternal pre/post inventory reviewed from @opencode/core 2.0.20. */
-export const NATIVE_PLUGIN_VERSION = '2.0.20';
+/** Exact PluginInternal pre/post inventory reviewed from @opencode/core 2.0.24. */
+export const NATIVE_PLUGIN_VERSION = '2.0.24';
 export const REVIEWED_NATIVE_PLUGIN_IDS: readonly string[] = Object.freeze([
   'opencode.tool.input.repair',
   'opencode.config.worktree',

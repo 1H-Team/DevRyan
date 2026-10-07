@@ -40,7 +40,7 @@ Calling it again with the other email switches roles; `POST /auth/logout`
 Build the current source before verification (`bun run build` and the native artifact build required by the QA profile). The credential-free factory diagnostic is:
 
 ```bash
-bun scripts/qa/native-profile-factory-diagnostic.mjs --artifact-root "$PWD/.cache/v2-validation/native-artifact"
+node scripts/qa/native-profile-factory-diagnostic.mjs --artifact-root "$PWD/.cache/v2-validation/native-artifact"
 ```
 
 Use a fresh verified artifact directory in place of the example. This checks isolated startup, not personal provider access or managed-user authorization. Live checks need the reviewed setup and their explicit account bootstrap; never construct credential files by hand.

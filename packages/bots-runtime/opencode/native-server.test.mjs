@@ -3,7 +3,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Global } from '@opencode/util/global';
-import { createBotNativeServer, createBotNativeTools } from '../../web/server/lib/bots/native-server.mjs';
+import { Effect } from 'effect';
+import { HttpClientRequest } from 'effect/unstable/http';
+import { createBotNativeServer, createBotNativeTools, createBotNativeOAuthMiddleware } from '../../web/server/lib/bots/native-server.mjs';
 
 const token = 'a'.repeat(43);
 const environment = { DEVRYAN_BOT_GATEWAY_URL: 'http://egress:43121', DEVRYAN_BOT_RUNTIME_TOKEN: token,
@@ -11,7 +13,7 @@ const environment = { DEVRYAN_BOT_GATEWAY_URL: 'http://egress:43121', DEVRYAN_BO
   DEVRYAN_BOT_CHANNEL_ID: '22222222-2222-4222-8222-222222222222',
   DEVRYAN_BOT_REVISION_ID: '33333333-3333-4333-8333-333333333333', DEVRYAN_BOT_CHATGPT_IMAGE_GENERATION: '0' };
 
-test('native Bot startup, private routes, session persistence, and input isolation use the actual v2 graph', async () => {
+test('API-key native Bot startup, structured requests, cancellation, persistence and isolation retain the actual v2 graph', async () => {
   const parent = fileURLToPath(new URL('../../../.cache/bot-native-tests', import.meta.url));
   await fs.mkdir(parent, { recursive: true });
   const root = await fs.mkdtemp(path.join(parent, 'runtime-'));
@@ -62,7 +64,7 @@ test('native Bot startup, private routes, session persistence, and input isolati
   try {
     runtime = await createBotNativeServer(options);
     expect((await request('/devryan/ready', undefined, false)).status).toBe(401);
-    expect(await (await request('/devryan/ready')).json()).toEqual({ ready: true, generation: 2, opencode: { version: '2.0.20' } });
+    expect(await (await request('/devryan/ready')).json()).toEqual({ ready: true, generation: 2, opencode: { version: '2.0.24' } });
     expect((await request('/api/credential')).status).toBe(404);
     expect((await request('/api/provider?directory=/other')).status).toBe(400);
     expect((await request('/api/provider?location[directory]=/other')).status).toBe(400);
@@ -126,4 +128,44 @@ test('native Bot SIWC image refusal precedes dependency file reads, OAuth access
   await expect(tools.devryan_bot.execute({ operation: 'image.generate', payload: image }, { directory: '/workspace' }))
     .rejects.toMatchObject({ code: 'native_image_generation_siwc_unsupported' });
   expect(executions).toBe(0); expect(accessCalls).toBe(0);
+});
+
+test('native OAuth structured executor reuses SIWC projection and forwards other providers unchanged', async () => {
+  const sent = [], forward = request => { throw new Error(`Unexpected forwarding: ${request.url}`); };
+  const middleware = createBotNativeOAuthMiddleware({
+    access: async () => ({ accessToken: 'synthetic-access', accountId: 'synthetic-subject', expiresAt: Date.now() + 3600000 }),
+    fetchImpl: async (url, input) => {
+      sent.push({ url: String(url), body: JSON.parse(input.body), headers: new Headers(input.headers) });
+      return new Response('data: {"type":"response.completed","response":{"id":"fixture","status":"completed","output":[]}}\n\n',
+        { headers: { 'content-type': 'text/event-stream' } });
+    },
+  });
+  const body = { model: 'fixture', input: [{ role: 'system', content: [{ type: 'input_text', text: 'Schema output' }] }],
+    tools: [{ type: 'function', name: 'generate_object', parameters: { type: 'object' } }],
+    tool_choice: { type: 'function', name: 'generate_object' }, store: true, temperature: 0.2 };
+  const request = HttpClientRequest.bodyText(HttpClientRequest.post('https://api.openai.com/v1/responses'), JSON.stringify(body), 'application/json');
+  const response = await Effect.runPromise(middleware(request, forward));
+  await Effect.runPromise(response.text);
+  expect(sent).toHaveLength(1);
+  expect(sent[0].body).toMatchObject({ store: false, stream: true, input: [{ role: 'developer' },
+    { type: 'additional_tools', tools: [{ type: 'function', name: 'generate_object' }] }] });
+  expect(sent[0].body.tools).toBeUndefined();expect(sent[0].body.temperature).toBeUndefined();
+  expect(sent[0].headers.get('chatgpt-account-id')).toBeNull();
+  const other = HttpClientRequest.post('https://provider.invalid/v1/responses');
+  const forwarded = [];
+  expect(await Effect.runPromise(middleware(other, original => { forwarded.push(original); return Effect.succeed('untouched'); }))).toBe('untouched');
+  expect(forwarded).toEqual([other]);expect(sent).toHaveLength(1);
+});
+
+test('native OAuth structured executor releases the shared physical send when cancelled', async () => {
+  let begin, settle;const began = new Promise(resolve => { begin = resolve; }), settled = new Promise(resolve => { settle = resolve; });
+  const middleware = createBotNativeOAuthMiddleware({ access: async () => ({ accessToken: 'synthetic-access' }),
+    fetchImpl: (_url, { signal }) => new Promise((resolve, reject) => {
+      signal.addEventListener('abort', () => { settle();reject(new Error('cancelled')); }, { once: true });begin();
+    }) });
+  const request = HttpClientRequest.bodyText(HttpClientRequest.post('https://api.openai.com/v1/responses'), JSON.stringify({ input: [] }), 'application/json');
+  const abort = new AbortController();
+  const pending = Effect.runPromise(middleware(request, () => Effect.die('Unexpected forward')), { signal: abort.signal });
+  pending.catch(() => {});await began;abort.abort();await settled;
+  await expect(pending).rejects.toThrow();
 });

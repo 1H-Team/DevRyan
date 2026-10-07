@@ -22,6 +22,7 @@ function operation(spec) {
     || spec.kind === 'openai' && spec.integrationID !== 'openai'
     || spec.kind === 'cursor' && (spec.integrationID !== 'cursor-acp' || spec.methodID !== undefined)) throw fail('native_integration_scope_invalid');
   if (spec.expectedActiveFingerprint !== undefined && (spec.kind !== 'openai' || !sha(spec.expectedActiveFingerprint))) throw fail('native_integration_scope_invalid');
+  if (spec.assertCurrent !== undefined && typeof spec.assertCurrent !== 'function') throw fail('native_integration_scope_invalid');
   const encoded = value => { if (!id(value)) throw fail('native_integration_scope_invalid'); return encodeURIComponent(value); };
   const integration = () => `/api/integration/${encoded(spec.integrationID)}`;
   const attempt = () => `${integration()}/connect/oauth/${encoded(spec.attemptID)}`;
@@ -69,7 +70,10 @@ function operation(spec) {
     || spec.valueType === 'oauth' && (spec.kind === 'provider' ? spec.integrationID !== 'xai' || spec.methodID !== 'device' : !['chatgpt-siwc', ...(spec.operation === 'openai.credential.remove' ? ['chatgpt-browser', 'chatgpt-headless'] : [])].includes(spec.methodID))
     || !spec.operation.endsWith('.credential.create') && !sha(spec.expectedFingerprint))) throw fail('native_integration_scope_invalid');
   if (method !== spec.method || route !== spec.path || stable(body) !== stable(spec.body)) throw fail('native_integration_scope_invalid');
-  return structuredClone(spec);
+  // The constructor-owned guard stays private and retains its original closure.
+  // Clone the request data without attempting to serialize that function.
+  const { assertCurrent, ...data } = spec;
+  return { ...structuredClone(data), ...(assertCurrent === undefined ? {} : { assertCurrent }) };
 }
 
 const bindingScope = binding => {

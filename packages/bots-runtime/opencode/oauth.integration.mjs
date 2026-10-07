@@ -21,10 +21,14 @@ try {
   const mounts = [
     [`${root}/packages/web/server/lib/opencode`, '/src/opencode'],
     [`${root}/packages/web/server/lib/bots`, '/src/bots'],
+    [`${root}/packages/web/server/lib/multi-user/vault.js`, '/src/multi-user/vault.js'],
     [`${root}/packages/bot-egress/src`, '/src/egress'],
     [`${root}/packages/bots-runtime`, '/src/node_modules/@openchamber/bots-runtime'],
     [`${root}/packages/web/server/lib`, '/fixture-repository/packages/web/server/lib'],
     [`${root}/packages/shared-runtime`, '/fixture-repository/packages/shared-runtime'],
+    [`${root}/packages/harness-runtime`, '/fixture-repository/packages/harness-runtime'],
+    [`${root}/packages/harness-runtime`, '/harness-runtime'],
+    [`${root}/packages/shared-runtime`, '/shared-runtime'],
     [`${root}/packages/bots-runtime/opencode/oauth-fixture.mjs`, '/opt/devryan/oauth-fixture.mjs'],
     ...(!baked ? [
       [`${root}/packages/bots-runtime/opencode/devryan-bot-tools.mjs`, '/opt/devryan/devryan-bot-tools.mjs'],
@@ -34,12 +38,16 @@ try {
   ];
   const args = ['run', '--rm', '--name', name, '--network', 'none', '--user', '0', '--read-only',
     '--tmpfs', '/tmp:rw,exec', '--tmpfs', '/data:rw', '--tmpfs', '/workspace:rw',
+    '--tmpfs', '/node_modules:rw',
     '--add-host', 'chatgpt.com:127.0.0.1', '--add-host', 'api.openai.com:127.0.0.1',
     '--add-host', 'auth.openai.com:127.0.0.1', '--add-host', 'host.docker.internal:127.0.0.1',
     '--add-host', 'egress:127.0.0.1',
     '-e', 'HOME=/tmp/fixture-home', '-e', 'NODE_EXTRA_CA_CERTS=/fixture-tls/cert.pem',
     ...mounts.flatMap(([source, target]) => ['-v', `${source}:${target}:ro`]),
-    '--entrypoint', 'node', image, '/opt/devryan/oauth-fixture.mjs'];
+    // Host coordinator sources share the image's baked dependency graph.
+    // The resolution link lives only in disposable tmpfs; the image stays read-only.
+    '--entrypoint', 'node', image, '--input-type=module', '-e',
+    "import fs from 'node:fs'; for (const name of fs.readdirSync('/opt/devryan/node_modules')) fs.symlinkSync('/opt/devryan/node_modules/'+name,'/node_modules/'+name); await import('/opt/devryan/oauth-fixture.mjs');"];
   const child = spawn('docker', args, { stdio: 'inherit' });
   const timer = setTimeout(() => {
     spawnSync('docker', ['rm', '-f', name], { stdio: 'ignore', timeout: 10000 });

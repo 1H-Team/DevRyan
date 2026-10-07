@@ -3,6 +3,7 @@ import {
   getProviderOAuthErrorMessage,
   parseProviderOAuthAuthorization,
   providerCatalogHasModels,
+  providerCatalogHasOpenAiPlanModels,
   requestPostAuthConfigReload,
   requestProviderOAuthCallback,
   resolveProviderOAuthPhase,
@@ -10,6 +11,12 @@ import {
 } from './providerOAuth';
 
 describe('provider OAuth helpers', () => {
+  test('plan catalog readiness requires account discovery and a supported usable OAuth model', () => {
+    expect(providerCatalogHasOpenAiPlanModels([{ id: 'openai', authType: 'api', models: [{ available: true }] }])).toBe(false);
+    expect(providerCatalogHasOpenAiPlanModels([{ id: 'openai', authType: 'oauth', models: [{ available: false }] }])).toBe(false);
+    expect(providerCatalogHasOpenAiPlanModels([{ id: 'openai', authType: 'oauth', models: [{}] }])).toBe(false);
+    expect(providerCatalogHasOpenAiPlanModels([{ id: 'openai', authType: 'oauth', models: [{ available: true }] }])).toBe(true);
+  });
   test('parses SDK-wrapped automatic authorization details', () => {
     expect(parseProviderOAuthAuthorization({
       data: {

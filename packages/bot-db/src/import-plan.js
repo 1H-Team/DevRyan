@@ -28,6 +28,15 @@ export const REGENERATED_IDENTITIES = Object.freeze({
 });
 
 const IDENTIFIER = /^[a-z][a-z0-9_]{0,62}$/;
+// Configuration imports deliberately omit every runtime/history table and
+// resource payload. bot_objects is further restricted to current avatars by
+// the cloud reader before any object metadata or bytes are transferred.
+export const CONFIGURATION_IMPORT_TABLES = Object.freeze([
+  'bots', 'bot_revisions', 'bot_memberships', 'bot_routines', 'bot_credentials',
+  'bot_environment_secrets', 'bot_agent_connections', 'bot_mcp_bindings',
+  'bot_revision_binding_resolutions', 'bot_revision_signatures', 'bot_signer_trust',
+  'bot_telegram_connections', 'bot_objects',
+]);
 const PAGE_OPEN = "copy devryan_import_page (document) from stdin with (format csv, quote e'\\x01', delimiter e'\\x02');";
 
 export class BotImportPlanError extends Error {
@@ -60,13 +69,15 @@ const validateTable = (table) => {
 // Orders Bot tables so every non-deferrable reference and every reviewed
 // validation dependency loads first. Deferrable foreign keys are ignored: the
 // load defers them to commit.
-export function planImportTables(catalog) {
+export function planImportTables(catalog, { scope = 'full' } = {}) {
+  if (!['full', 'configuration'].includes(scope)) fail('The import scope is invalid');
   if (!catalog || !Array.isArray(catalog.tables)) fail('The import catalog is invalid');
   const tables = new Map();
   for (const table of catalog.tables) {
     validateTable(table);
     if (table.name !== 'bots' && !table.name.startsWith('bot_')) continue;
     if (table.name === 'bot_local_owner_mappings') continue;
+    if (scope === 'configuration' && !CONFIGURATION_IMPORT_TABLES.includes(table.name)) continue;
     tables.set(table.name, table);
   }
   if (!tables.has('bots')) fail('The import catalog has no Bot tables');
@@ -216,9 +227,11 @@ export const renderLoadEpilogue = ({ disableTriggers = IMPORT_DISABLED_TRIGGERS.
 // disconnected rather than re-keyed.
 export function renderMergeFinalization({
   importedBotIds,
+  scope = 'full',
   ownerMappings = [],
   disconnected = { credentials: [], environmentSecrets: [], telegramConnections: [] },
 } = {}) {
+  if (!['full', 'configuration'].includes(scope)) fail('The import scope is invalid');
   const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   const normalized = (value, message) => {
     if (typeof value !== 'string' || !uuid.test(value)) fail(message);
@@ -236,6 +249,12 @@ export function renderMergeFinalization({
       `update public.bot_telegram_outbox set state = 'uncertain' where bot_id in (${bots}) and state in ('sending', 'synthesizing');`,
       `update public.bot_telegram_inbox set state = 'admission_uncertain' where bot_id in (${bots}) and state = 'admitting';`,
       `update public.bot_telegram_connections set lease_owner = null, lease_until = null where bot_id in (${bots});`,
+    );
+    if (scope === 'configuration') statements.push(
+      `update public.bots set lifecycle = 'paused' where id in (${bots}) and lifecycle = 'active';`,
+      `update public.bot_routines set status = case when status = 'active' then 'paused' else status end, next_occurrence_at = null, last_occurrence_at = null where bot_id in (${bots});`,
+      `update public.bot_agent_connections set health = null where bot_id in (${bots});`,
+      `update public.bot_telegram_connections set enabled = false, state = 'disabled', error_code = null, generation = gen_random_uuid(), update_offset = 0, lease_owner = null, lease_until = null where bot_id in (${bots});`,
     );
   }
   // One mapping per Bot; a Bot mapped to two different owners is refused.

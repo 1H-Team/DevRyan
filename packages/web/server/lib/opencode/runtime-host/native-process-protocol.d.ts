@@ -58,7 +58,7 @@ export function parseNativeCommand(value:unknown):NativeProcessCommand;
 export function parseNativeReply(value:unknown):NativeProcessReply;
 export function encodeNativeProcessMessage(value:unknown):string;
 export interface MigrationRequest {readonly protocol:'devryan-native-migration/1';readonly requestID:string;readonly bundleID:string;readonly candidateDatabasePath:string;readonly isolatedRoot:string;readonly receiptPath:string;readonly auxiliary:{readonly kind:'absent'}|{readonly kind:'copy';readonly databasePath:string;readonly sha256:string};readonly projectMap:readonly {readonly sourceDirectory:string;readonly targetDirectory:string;readonly mode:'identity'|'synthetic-copy'}[]}
-export interface MigrationReceipt {readonly protocol:'devryan-native-migration/1';readonly requestID:string;readonly bundleID:string;readonly databasePath:string;readonly status:'completed';readonly nativeVersion:'2.0.20';readonly marker:'completed'|'not-needed';readonly sourceInventorySha256:string;readonly verificationSha256:string}
+export interface MigrationReceipt {readonly protocol:'devryan-native-migration/1';readonly requestID:string;readonly bundleID:string;readonly databasePath:string;readonly status:'completed';readonly nativeVersion:'2.0.20'|'2.0.24';readonly marker:'completed'|'not-needed';readonly sourceInventorySha256:string;readonly verificationSha256:string}
 export function parseNativeMigrationRequest(value:unknown):MigrationRequest;
 export function parseNativeMigrationReceipt(value:unknown):MigrationReceipt;
 

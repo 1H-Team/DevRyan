@@ -6,6 +6,11 @@ Feature sections for the Settings experience (providers, projects, behavior, des
 ## Design
 Section-per-domain pattern with shared primitives for consistency. The About surface shows verified bundled OpenCode identity and readiness. Runtime updates ship through the existing DevRyan updater.
 
+`DesktopBotHostStatus.tsx` adds local-only Bot hosting mode and server-reported
+Docker/catalog health to About, with an explicit refresh and navigation to the
+existing Bot settings. It does not change runtime preferences or expose native
+controls to remote browsers.
+
 Session defaults, the per-agent model summary, bundled runtime information and
 Agent Browser Control are composed by `components/sections/agents/` (Session
 Defaults and Runtime entries of Settings → Agents); the components they reuse

@@ -17,21 +17,21 @@ import {
   sendGatewayRelayFailure,
 } from '/src/egress/gateway-relay.js';
 
-assert.equal(JSON.parse(await fs.readFile('/opt/devryan/node_modules/@opencode/core/package.json', 'utf8')).version, '2.0.20');
+assert.equal(JSON.parse(await fs.readFile('/opt/devryan/node_modules/@opencode/core/package.json', 'utf8')).version, '2.0.24');
 assert.equal(JSON.parse(await fs.readFile('/opt/devryan/node_modules/opencode-gpt-imagegen/package.json', 'utf8')).version, '0.1.12');
 
 let rotation = 0;
-let auth = { type: 'oauth', accountId: 'fixture-account', access: 'fixture-access-0', refresh: 'fixture-refresh-0', expires: 0 };
+let auth = { type: 'oauth', methodID: 'chatgpt-siwc', clientId: 'fixture-registered-client', accountId: 'fixture-account',
+  scopes: ['chatgpt.tokens.use.direct'], metadata: { subject: 'fixture-account' },
+  access: 'fixture-access-0', refresh: 'fixture-refresh-0', expires: 0 };
 const providerCalls = [];
 const diagnostics = [];
 const children = [];
 const clients = [];
 let childLogs = '';
-let refusedWebsocketUpgrades = 0, attachmentObserved = false, blockedStarted, blockedClosed, imageBlockedStarted, imageBlockedClosed;
+let refusedWebsocketUpgrades = 0, attachmentObserved = false, blockedStarted, blockedClosed;
 const blocked = new Promise(resolve => { blockedStarted = resolve; });
 const closed = new Promise(resolve => { blockedClosed = resolve; });
-const imageBlocked = new Promise(resolve => { imageBlockedStarted = resolve; });
-const imageClosed = new Promise(resolve => { imageBlockedClosed = resolve; });
 const imageBytes = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAD0lEQVR4nGP4TwAwjAwFAIS1/wF0QtmAAAAAAElFTkSuQmCC', 'base64');
 const server = https.createServer({ key: await fs.readFile('/fixture-tls/key.pem'), cert: await fs.readFile('/fixture-tls/cert.pem') }, async (req, res) => {
   try {
@@ -43,16 +43,18 @@ const server = https.createServer({ key: await fs.readFile('/fixture-tls/key.pem
     }
     let raw = '';
     for await (const chunk of req) raw += chunk;
-    if (req.url === '/oauth/token') {
+    if (req.url === '/api/accounts/oauth/token') {
+      assert.equal(new URLSearchParams(raw).get('client_id'), 'fixture-registered-client');
+      assert.equal(new URLSearchParams(raw).get('resource'), 'https://api.openai.com/v1');
       assert.equal(new URLSearchParams(raw).get('refresh_token'), `fixture-refresh-${rotation}`);
       rotation++;
       res.setHeader('content-type', 'application/json');
       res.end(JSON.stringify({ access_token: `fixture-access-${rotation}`, refresh_token: `fixture-refresh-${rotation}`, expires_in: 3600 }));
       return;
     }
-    assert.equal(req.url, '/backend-api/codex/responses');
+    assert.equal(req.url, '/v1/responses');
     assert.equal(req.headers.authorization, `Bearer fixture-access-${rotation}`);
-    assert.equal(req.headers['chatgpt-account-id'], 'fixture-account');
+    assert.equal(req.headers['chatgpt-account-id'], undefined);
     const body = JSON.parse(raw);
     if (JSON.stringify(body.input).includes('Attachment fixture')) {
       assert.ok(body.input.some(item => item.content?.some(part => part.type === 'input_image' && part.image_url?.startsWith('data:image/png;base64,'))));
@@ -67,20 +69,13 @@ const server = https.createServer({ key: await fs.readFile('/fixture-tls/key.pem
       blockedStarted();
       return;
     }
-    if (body.tool_choice?.type === 'image_generation' && JSON.stringify(body.input).includes('Block image fixture')) {
-      res.on('close', () => imageBlockedClosed());
-      res.write(': waiting\n\n');
-      imageBlockedStarted();
-      return;
-    }
-    if (body.tool_choice?.type === 'image_generation') {
-      event({ type: 'response.output_item.done', item: { type: 'image_generation_call', result: imageBytes.toString('base64') } });
-    } else {
+    {
       const text = JSON.stringify(body.input).includes('JSON fixture') ? '{"answer":"fixture"}' : 'Fixture reply';
       const blockImage = JSON.stringify(body.input).includes('Generate blocked image');
       const imageCall = (blockImage || JSON.stringify(body.input).includes('Generate fixture image')) && !body.input.some(item => item.type === 'function_call_output');
-      const structuredCall = body.tools?.some(tool => tool.name === 'generate_object');
-      if (structuredCall) assert.deepEqual(body.tools.map(tool => tool.name), ['generate_object']);
+      const localTools = body.input.filter(item => item.type === 'additional_tools').flatMap(item => item.tools);
+      const structuredCall = localTools.some(tool => tool.name === 'generate_object');
+      if (structuredCall) assert.deepEqual(localTools.map(tool => tool.name), ['generate_object']);
       const item = imageCall || structuredCall
         ? { id: 'fc_fixture', type: 'function_call', call_id: 'call_fixture', name: imageCall ? 'devryan_image' : 'generate_object', status: 'completed',
           arguments: JSON.stringify(imageCall ? { prompt: blockImage ? 'Block image fixture' : 'A fixture pixel', out: blockImage ? '/workspace/cancelled.png' : '/workspace/pixel.png', quality: 'low' }
@@ -180,7 +175,7 @@ async function launch(name, port, environment) {
     try {
       const response = await fetch(`${url}/devryan/ready`, { headers, signal: AbortSignal.timeout(500) });
       const ready = await response.json();
-      if (response.ok && ready.ready && ready.generation === 2 && ready.opencode.version === '2.0.20') { healthy = true; break; }
+      if (response.ok && ready.ready && ready.generation === 2 && ready.opencode.version === '2.0.24') { healthy = true; break; }
     } catch { /* bounded startup wait */ }
     await delay(100);
   }
@@ -232,7 +227,11 @@ try {
   auth = { ...auth, expires: 0 };
   await chat(bots[0], 'Generate fixture image');
   assert.equal(rotation, 3);
-  assert.deepEqual(await fs.readFile('/workspace/pixel.png'), imageBytes);
+  // SIWC plan usage does not support image generation. The native tool must
+  // refuse before provider dispatch or filesystem publication. API-key image
+  // generation is qualified by the compiled reviewed-package image lane.
+  assert.equal(await fs.stat('/workspace/pixel.png').catch(() => null), null);
+  assert.equal(providerCalls.some(call => call.image), false);
   const attachmentSession = await chat(bots[0], 'Attachment fixture', [{ uri: `data:image/png;base64,${imageBytes.toString('base64')}`, name: 'pixel.png' }]);
   assert.equal(attachmentObserved, true);
   const { url, headers } = bots[0];
@@ -242,7 +241,7 @@ try {
   const structured = prompt => fetch(`${url}/devryan/bot/structured`, { method: 'POST', headers,
     body: JSON.stringify({ ...structuredInput, prompt }), signal: AbortSignal.timeout(25000) });
   const generated = await structured('Structured fixture');
-  assert.equal(generated.status, 200);
+  assert.equal(generated.status, 200, await generated.clone().text());
   assert.deepEqual(await generated.json(), { output: { answer: 'fixture' } });
   assert.equal((await structured('Invalid structured fixture')).status, 502);
   const abort = new AbortController();
@@ -252,19 +251,6 @@ try {
   assert.equal((await cancelled).name, 'AbortError');
   await Promise.race([closed, delay(5000).then(() => { throw new Error('Native structured provider cancellation did not settle'); })]);
   assert.equal((await (await fetch(`${url}/api/session`, { headers })).json()).data.length, before);
-  const imageSession = await bots[0].client.session.create({ title: 'Cancelled image fixture' });
-  assert.equal(imageSession.error, undefined);
-  const imagePrompt = await bots[0].client.session.promptAsync({ sessionID: imageSession.data.id, agent: 'bot',
-    model: { providerID: 'openai', modelID: 'gpt-6-astra' }, parts: [{ type: 'text', text: 'Generate blocked image' }] });
-  assert.equal(imagePrompt.error, undefined);
-  await imageBlocked;
-  const interrupt = await bots[0].client.session.abort({ sessionID: imageSession.data.id });
-  assert.equal(interrupt.error, undefined);
-  await Promise.race([imageClosed, delay(5000).then(() => { throw new Error('Native image provider cancellation did not settle'); })]);
-  assert.equal(await fs.stat('/workspace/cancelled.png').catch(() => null), null);
-  const status = await bots[0].client.session.status();
-  assert.equal(status.error, undefined);
-  assert.equal(status.data[imageSession.data.id], undefined);
   const exited = new Promise(resolve => bots[0].child.once('exit', resolve));
   assert.ok(bots[0].events.some(event => event.type === 'message.updated'));
   bots[0].client.close();
@@ -278,13 +264,12 @@ try {
   assert.ok((await restored.text()).includes('Fixture reply'));
   await chat(bots[0], 'Hello after restart');
   assert.equal(JSON.parse(await fs.readFile('/tmp/bot0/data/opencode/auth.json', 'utf8')).openai.refresh, '');
-  assert.ok(providerCalls.some((call) => call.image));
+  assert.equal(providerCalls.some((call) => call.image), false);
   assert.ok(providerCalls.filter((call) => !call.image).every((call) => call.model === 'gpt-6-astra'));
-  assert.ok(providerCalls.filter((call) => call.image).every((call) => call.model === 'gpt-6-astra' && call.reasoning?.effort === 'medium'));
   assert.ok(!JSON.stringify(diagnostics).match(/fixture-access|fixture-refresh|fixture-account/));
-  console.log(JSON.stringify({ passed: true, runtime: 'OpenCode 2.0.20', chatRequests: providerCalls.filter((c) => !c.image).length,
+  console.log(JSON.stringify({ passed: true, runtime: 'OpenCode 2.0.24', chatRequests: providerCalls.filter((c) => !c.image).length,
     imageRequests: providerCalls.filter((c) => c.image).length, coordinatedRefreshes: rotation, attachmentObserved,
-    structured: true, cancellationSettled: true, imageCancellationSettled: true, restart: true,
+    structured: true, cancellationSettled: true, siwcImageRefused: true, restart: true,
     hostClientAndEvents: true, refusedWebsocketUpgrades, transport: 'HTTP', internet: 'disabled' }));
 } catch (error) {
   console.error(childLogs);

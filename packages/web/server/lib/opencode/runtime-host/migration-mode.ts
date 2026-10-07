@@ -134,7 +134,7 @@ export async function runMigrationRequest(input: MigrationRequest,options:{reado
     verificationSha256 = await saveDocument(request.receiptPath+'.verification.json',verification);
   } finally { verificationDB.close(); }
   const receipt: MigrationReceipt = { protocol:'devryan-native-migration/1',requestID:request.requestID,bundleID:request.bundleID,
-    databasePath:request.candidateDatabasePath,status:'completed',nativeVersion:'2.0.20',marker,
+    databasePath:request.candidateDatabasePath,status:'completed',nativeVersion:'2.0.24',marker,
     sourceInventorySha256:sha256(await fs.readFile(snapshotPath)),verificationSha256 };
   await saveDocument(request.receiptPath,receipt);
   return receipt;

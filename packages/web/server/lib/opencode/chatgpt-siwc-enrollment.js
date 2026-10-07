@@ -40,6 +40,7 @@ export function createChatgptSiwcEnrollmentOwner({
   fetchImpl = fetch,
   now = Date.now,
   createServer = http.createServer,
+  createCredentialID = () => `cred_${crypto.randomUUID().replaceAll('-', '')}`,
   listenHost = '127.0.0.1',
 }) {
   if (typeof dataDirectory !== 'string' || !dataDirectory || typeof persistCredential !== 'function') {
@@ -77,6 +78,7 @@ export function createChatgptSiwcEnrollmentOwner({
   const forgetAttempt = (attempt) => {
     if (!attempt) return;
     attempt.aborted = true;
+    clearTimeout(attempt.deadline);
     closeLoopback(attempt);
     attempt.resolve?.(attempt);
     if (pending.get(attempt.id) === attempt) pending.delete(attempt.id);
@@ -203,6 +205,7 @@ export function createChatgptSiwcEnrollmentOwner({
             nonce: attempt.nonce,
             ...(jwksImpl ? { jwksImpl } : {}),
           });
+          if (attempt.aborted || closed) { settleHtml(res, false); return; }
           if (attempt.registration && identity.sub !== attempt.registration.subject) throw failSiwc('native_chatgpt_siwc_identity_mismatch', 400);
           const scopes = parseScopeList(tokens.scope);
           const email = typeof identity.email === 'string' ? identity.email : undefined;
@@ -246,7 +249,8 @@ export function createChatgptSiwcEnrollmentOwner({
         server.off('error', reject);
         resolve();
       });
-    });
+    }).catch(error => { forgetAttempt(attempt); throw error; });
+    if (closed) { forgetAttempt(attempt); live(); }
     const address = server.address();
     if (!address || typeof address === 'string' || !address.port) {
       forgetAttempt(attempt);
@@ -265,11 +269,18 @@ export function createChatgptSiwcEnrollmentOwner({
       loginHint: existing?.email,
     });
     pending.set(id, attempt);
+    // Begin owns the deadline, including abandoned requests that never complete.
+    attempt.deadline = setTimeout(() => {
+      attempt.error = failSiwc('native_chatgpt_siwc_timeout', 408);
+      forgetAttempt(attempt);
+    }, Math.max(1, 300_000 - (now() - attempt.createdAt)));
+    attempt.deadline.unref?.();
     return { enrollmentID: id, status: 'pending', url, methodID: CHATGPT_SIWC_METHOD_ID };
   };
 
   const assertAttempt = (target, context, validateRegistration = true) => {
     live();
+    if (target.error?.code === 'native_chatgpt_siwc_timeout') throw target.error;
     if (target.aborted || pending.get(target.id) !== target || context.directory !== target.directory) throw failSiwc('native_chatgpt_siwc_attempt_stale');
     if (validateRegistration && target.registration && credentialMutationFingerprint(registrationFor(target.registration.registrationRef)) !== target.registrationFingerprint) throw failSiwc('native_chatgpt_siwc_registration_changed');
   };
@@ -278,37 +289,56 @@ export function createChatgptSiwcEnrollmentOwner({
     live();
     const target = pending.get(id);
     if (!target) throw failSiwc('native_chatgpt_siwc_attempt_missing', 404);
-    assertAttempt(target, context);
     if (target.completing) throw failSiwc('native_chatgpt_siwc_attempt_pending');
     const claimedRegistration = target.registration?.registrationRef;
     if (claimedRegistration && completingRegistrations.has(claimedRegistration)) throw failSiwc('native_chatgpt_siwc_attempt_pending');
+    assertAttempt(target, context);
     if (claimedRegistration) completingRegistrations.add(claimedRegistration);
     target.completing = true;
-    let timer, saved, registrationRef, staged = false, activated = false;
+    let saved, registrationRef, stagedFingerprint, staged = false, activated = false;
     try {
-      await Promise.race([target.done, new Promise((_, reject) => {
-        timer = setTimeout(() => reject(failSiwc('native_chatgpt_siwc_timeout', 408)), Math.max(1, 300_000 - (now() - target.createdAt)));
-        timer.unref?.();
-      })]);
+      await target.done;
       assertAttempt(target, context);
       if (target.error) throw target.error;
       if (!target.result) throw failSiwc('native_chatgpt_siwc_incomplete');
       const { value, subject, email, clientId, scopes } = target.result;
       registrationRef = target.registration?.registrationRef ?? crypto.randomUUID();
       if (!target.registration && readSiwcRegistrations(dataDirectory).accounts.length >= 64) throw failSiwc('native_chatgpt_siwc_capacity');
-      const assertCurrent = () => assertAttempt(target, context);
-      saved = await persistCredential({ directory: target.directory, value,
-        expectedActiveFingerprint: target.expectedActiveFingerprint, assertCurrent });
-      if (!saved?.credentialID || !saved.expectedFingerprint) throw failSiwc('native_chatgpt_siwc_credential_missing');
+      const assertCurrent = () => {
+        assertAttempt(target, context);
+        if (staged && credentialMutationFingerprint(registrationFor(registrationRef)) !== stagedFingerprint) throw failSiwc('native_chatgpt_siwc_registration_changed');
+      };
+      const credentialID = createCredentialID();
+      if (typeof credentialID !== 'string' || !/^[A-Za-z0-9_-]{1,256}$/.test(credentialID)) throw failSiwc('native_chatgpt_siwc_credential_missing');
+      // The SDK and native wire both accept an explicit create ID. Persist the
+      // exact recovery target before a native commit can select the first record.
       assertCurrent();
       upsertRegistration({ ...target.registration, registrationRef, subject, email, clientId,
-        credentialID: target.registration?.credentialID ?? null, stagedCredentialID: saved.credentialID });
+        credentialID: target.registration?.credentialID ?? null, stagedCredentialID: credentialID });
       staged = true;
-      if (target.registration) target.registrationFingerprint = credentialMutationFingerprint(registrationFor(registrationRef));
-      // Enrollment stages an inactive record first. Only this captured selection
-      // can activate it; a lost CAS leaves the staged registration recoverable.
+      stagedFingerprint = credentialMutationFingerprint(registrationFor(registrationRef));
+      if (target.registration) target.registrationFingerprint = stagedFingerprint;
+      saved = await persistCredential({ directory: target.directory, credentialID, value,
+        expectedActiveFingerprint: target.expectedActiveFingerprint, assertCurrent });
+      if (saved?.credentialID !== credentialID || !saved.expectedFingerprint) throw failSiwc('native_chatgpt_siwc_credential_missing');
+      const selected = typeof readConnected === 'function' ? await readConnected({ directory: target.directory }) : null;
+      // The SDK selects its first credential even with activate:false. Observe
+      // that commit before later failures so rollback never removes active tokens.
+      activated = selected?.credentialID === saved.credentialID;
+      assertCurrent();
+      let expectedActiveFingerprint = target.expectedActiveFingerprint;
+      if (activated) {
+        const row = await readRegistrationCredential({ directory: target.directory,
+          registration: { registrationRef, subject, clientId, credentialID: saved.credentialID } });
+        if (target.expectedActiveFingerprint !== credentialMutationFingerprint(null)
+          || row?.expectedFingerprint !== saved.expectedFingerprint
+          || !/^[a-f0-9]{64}$/.test(selected.fingerprint ?? '')) throw failSiwc('native_chatgpt_siwc_selection_changed');
+        expectedActiveFingerprint = selected.fingerprint;
+      }
+      // Existing accounts retain the original selection CAS. The sole exception
+      // is the exact first record just committed and verified above.
       if (typeof selectCredential !== 'function') throw failSiwc('native_chatgpt_siwc_update_required');
-      await selectCredential({ directory: target.directory, ...saved, expectedActiveFingerprint: target.expectedActiveFingerprint, assertCurrent });
+      await selectCredential({ directory: target.directory, ...saved, expectedActiveFingerprint, assertCurrent });
       activated = true;
       assertCurrent();
       if (target.previousCredential && target.previousCredential.id !== saved.credentialID && typeof removeCredential === 'function') {
@@ -329,11 +359,12 @@ export function createChatgptSiwcEnrollmentOwner({
           }
         } catch { throw Object.assign(failSiwc('native_chatgpt_siwc_cleanup_failed', 503), { localCleanup: 'failed' }); }
       }
-      if (activated) throw Object.assign(failSiwc('native_chatgpt_siwc_registration_cleanup_required', 503), { credentialID: saved.credentialID, registrationRef });
+      // An uncertain create receipt cannot justify deleting tokens. The durable
+      // exact-ID intent lets status/selection recover after restart instead.
+      if (activated || staged && !saved) throw Object.assign(failSiwc('native_chatgpt_siwc_registration_cleanup_required', 503), { registrationRef });
       throw error;
     } finally {
       if (claimedRegistration) completingRegistrations.delete(claimedRegistration);
-      clearTimeout(timer);
       forgetAttempt(target);
     }
   };
@@ -341,13 +372,33 @@ export function createChatgptSiwcEnrollmentOwner({
   const select = async (registrationRef, context = {}) => {
     live();
     const registration = registrationFor(registrationRef);
-    if (!registration || !registration.credentialID) throw failSiwc('native_chatgpt_siwc_registration_missing', 404);
+    if (!registration || !registration.credentialID && !registration.stagedCredentialID) throw failSiwc('native_chatgpt_siwc_registration_missing', 404);
     const connected = typeof readConnected === 'function' ? await readConnected(context) : null;
     if (context.expectedActiveCredentialID !== (connected?.credentialID ?? null)) throw failSiwc('native_chatgpt_siwc_selection_changed');
-    const row = await readRegistrationCredential({ directory: context.directory, registration });
+    const recovering = Boolean(registration.stagedCredentialID);
+    if (recovering && registration.stagedCredentialID !== connected?.credentialID) throw failSiwc('native_chatgpt_siwc_reauthorization_required');
+    const credentialID = recovering ? registration.stagedCredentialID : registration.credentialID;
+    const registrationFingerprint = credentialMutationFingerprint(registration);
+    const assertCurrent = () => {
+      live();
+      if (credentialMutationFingerprint(registrationFor(registrationRef)) !== registrationFingerprint) throw failSiwc('native_chatgpt_siwc_registration_changed');
+    };
+    const row = await readRegistrationCredential({ directory: context.directory, registration: { ...registration, credentialID } });
     if (!row) throw failSiwc('native_chatgpt_siwc_reauthorization_required');
-    await selectCredential({ directory: context.directory, credentialID: registration.credentialID,
-      expectedFingerprint: row.expectedFingerprint, expectedActiveFingerprint: connected?.fingerprint ?? credentialMutationFingerprint(null), assertCurrent: live });
+    await selectCredential({ directory: context.directory, credentialID,
+      expectedFingerprint: row.expectedFingerprint, expectedActiveFingerprint: connected?.fingerprint ?? credentialMutationFingerprint(null), assertCurrent });
+    assertCurrent();
+    if (recovering) {
+      if (registration.credentialID && registration.credentialID !== credentialID) {
+        const previous = await readRegistrationCredential({ directory: context.directory, registration });
+        if (previous) await removeCredential({ directory: context.directory, credentialID: registration.credentialID,
+          expectedFingerprint: previous.expectedFingerprint, requireInactive: true, assertCurrent });
+      }
+      assertCurrent();
+      const { stagedCredentialID, ...resolved } = registration;
+      void stagedCredentialID;
+      upsertRegistration({ ...resolved, credentialID, savedAt: new Date(now()).toISOString() });
+    }
     return { success: true, registrationRef };
   };
 
@@ -368,7 +419,7 @@ export function createChatgptSiwcEnrollmentOwner({
       registrationRef: row.registrationRef,
       label: `${row.email ?? 'ChatGPT account'} · ${row.registrationRef.slice(0, 8)}`,
       email: row.email ?? null,
-      credentialID: row.credentialID ?? row.stagedCredentialID ?? null,
+      credentialID: row.stagedCredentialID && row.stagedCredentialID === connected?.credentialID ? row.stagedCredentialID : row.credentialID ?? row.stagedCredentialID ?? null,
       active: [row.credentialID, row.stagedCredentialID].includes(connected?.credentialID) && connected?.credentialID !== undefined,
       cleanupRequired: Boolean(row.stagedCredentialID),
     }));

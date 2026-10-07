@@ -83,11 +83,16 @@ must preserve those checks. A grant never inherits global administrator access.
   can replace the live catalog; missing vault records reject, or disconnect on
   import.
 - `catalog-import.js`: offline hosted-catalog import — GET-only allowlisted
+  configuration scope with server-filtered current avatars, immediate avatar
+  checkpoints, byte accounting and early encryption-identity verification;
   bounded reader, encrypted checkpointed pages, 402 → resumable `blocked`,
   fingerprint re-verification, source load at the reviewed schema, disjoint
   merge into a restored local snapshot with regenerated identities, owner
   mappings, activation hold and journaled commit. SQL rendering lives in
   `packages/bot-db/src/import-plan.js`.
+- `configuration-readiness.js`: exact retained skill/Library/MCP/agent/model
+  credential resolution against local resources; reports import blockers and
+  prevents already-published revisions bypassing individual activation checks.
 - `store.js`: one explicit-select repository per Bot table, cursor paging with
   cancellation-aware smaller-page retries for oversized reads,
   optimistic `updated_at` writes, fixed exact-version publish RPCs, durable
@@ -180,6 +185,8 @@ must preserve those checks. A grant never inherits global administrator access.
 - `native-server.mjs`: pinned native ServerFetch graph inside the existing Bot
   container; workspace-bound native routes, explicit native credential seeding,
   host-owned OAuth refresh, readiness and no-history structured generation.
+  Its OAuth Responses executor reuses the original SIWC transport for direct
+  structured calls; other providers and API-key graphs retain their native path.
 - `native-server.mjs` assembles gateway tools with SIWC image refusal before
   dependency execution/reference reads, including retained image tool calls.
 - `native-image-tool.mjs`: scoped I/O and cancellation adapter around the

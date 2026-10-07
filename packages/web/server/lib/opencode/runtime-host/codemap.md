@@ -1,5 +1,20 @@
 # Native OpenCode host
 
+The current package and compiled host pin is OpenCode 2.0.24. Artifact verification
+also accepts the retained 2.0.20 bundle for rollback, using that bundle's matching
+controller. Cross-version credential capture or projection cannot substitute a
+controller: exact OpenCode version, core digest and existing manifest checks still
+apply. The build pins PTY 0.2.0 bytes and the 2.0.24 compaction observation source.
+
+`native-bundle-compatibility.js` admits cross-release clones only for the reviewed
+2.0.20/2.0.24 core digests, exact SQLite schema and migration metadata, and declared
+clone/credential-owner contracts. It reads no account values. The lifecycle uses
+each original controller for cross-release credential capture and projection;
+same-core replacement capture retains its existing strict check. Compiled package
+qualification accepts `--baseline-artifact-root` to prove the retained old release
+against the candidate, including rollback; a same-release baseline proves no
+cross-release compatibility.
+
 `runtime-bundle-lifecycle.js` can retain one frozen, constructor-only held
 checkpoint grant. It reserves ownership before selection reads, rechecks the
 selector after settlement, and exposes only the genuine action-scoped

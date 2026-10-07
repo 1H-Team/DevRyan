@@ -29,7 +29,7 @@ const reverseKeys = (value) => {
 
 test('the checked-in table equals a fresh generation from the vendored document', () => {
   const { content, routeCount } = generateOpenCodeV2RoutesModule(sourceBytes());
-  assert.equal(routeCount, 140);
+  assert.equal(routeCount, 141);
   assert.equal(fs.readFileSync(OPENCODE_V2_ROUTES_OUTPUT_PATH, 'utf8'), content);
 });
 
@@ -38,7 +38,7 @@ test('generation is byte-stable across runs and across key order', () => {
   const second = generateOpenCodeV2RoutesModule(sourceBytes()).content;
   assert.equal(first, second);
   const sha = crypto.createHash('sha256').update(sourceBytes()).digest('hex');
-  const reordered = renderOpenCodeV2RoutesModule({ version: '2.0.20', sourceSha256: sha, operations: extractOpenCodeV2Operations(reverseKeys(sourceDoc())) });
+  const reordered = renderOpenCodeV2RoutesModule({ version: '2.0.24', sourceSha256: sha, operations: extractOpenCodeV2Operations(reverseKeys(sourceDoc())) });
   assert.equal(reordered, first);
   assert.match(first, new RegExp(`OPENCODE_V2_OPENAPI_SHA256 = "${sha}"`));
 });
@@ -46,7 +46,7 @@ test('generation is byte-stable across runs and across key order', () => {
 test('operations are sorted, unique and carry location modes from the spec', () => {
   const operations = extractOpenCodeV2Operations(sourceDoc());
   const keys = operations.map((operation) => `${operation.method} ${operation.template}`);
-  assert.equal(new Set(keys).size, 140);
+  assert.equal(new Set(keys).size, 141);
   const sorted = [...operations].sort((left, right) => (left.template === right.template
     ? (left.method < right.method ? -1 : 1)
     : (left.template < right.template ? -1 : 1)));
@@ -86,14 +86,14 @@ test('malformed documents fail instead of producing a smaller table', () => {
     () => extractOpenCodeV2Operations({ paths: { '/a/{id}': { get: { operationId: 'a', parameters: [] } } } }),
     /path parameters that differ/,
   );
-  assert.throws(() => renderOpenCodeV2RoutesModule({ version: '2.0.20', sourceSha256: 'nope', operations: [] }), /sha256/);
+  assert.throws(() => renderOpenCodeV2RoutesModule({ version: '2.0.24', sourceSha256: 'nope', operations: [] }), /sha256/);
   assert.throws(() => generateOpenCodeV2RoutesModule(Buffer.from('{not json')), SyntaxError);
 });
 
 test('CLI --check passes on the checked-in table and rejects unknown arguments', () => {
   const check = spawnSync(process.execPath, [SCRIPT, '--check'], { encoding: 'utf8' });
   assert.equal(check.status, 0, check.stderr);
-  assert.match(check.stdout, /is current \(140 routes\)/);
+  assert.match(check.stdout, /is current \(141 routes\)/);
   const unknown = spawnSync(process.execPath, [SCRIPT, '--force'], { encoding: 'utf8' });
   assert.equal(unknown.status, 2);
   assert.match(unknown.stderr, /Unknown argument/);

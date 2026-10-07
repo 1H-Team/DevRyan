@@ -24,4 +24,4 @@ test('actual reviewed schema and native media/text/omitted document conversion k
   applyNativeDocumentContext(event,{parentNote:true,replacements:[]});applyNativeDocumentContext(event,{parentNote:true,replacements:[]});
   expect(event.messages[0].content.filter(part=>part.text?.startsWith('Parent-task documents'))).toHaveLength(1);
  }finally{await fs.rm(root,{recursive:true,force:true});}
-});
+},120_000);

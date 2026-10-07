@@ -368,7 +368,14 @@ describe('durable Bot-only tunnel authorization', () => {
     } else if (cookieState === 'malformed') cookie = 'oc_tunnel_session=invalid';
     const app = express();
     registerTunnelAccessBoundary(app, null, { controller: f.controller, connection: f.connection });
-    const authenticateAccount = vi.fn((_req, res) => res.status(401).json({ authenticated: false, mode: 'multi-user' }));
+    registerRuntimeServiceRoutes(app, { controller: {
+      consumeBootstrap: async () => { throw new Error('No native proof'); }, authorizeSession: () => false,
+      publicStatus: () => { throw new Error('Native status must remain private'); },
+    } });
+    const authenticateAccount = vi.fn((req, res) => {
+      expect(req.principal).toBeUndefined();
+      res.status(401).json({ authenticated: false, mode: 'multi-user' });
+    });
     app.get('/auth/session', authenticateAccount);
     const response = await request(await listenOnLoopback(http.createServer(app))).get('/auth/session').set(remote).set('Cookie', cookie);
     expect(response.status).toBe(401);
@@ -384,6 +391,84 @@ describe('durable Bot-only tunnel authorization', () => {
     const response = await request(f.server).get('/auth/session').set(remote).set('Cookie', cookie);
     expect(response.body).toMatchObject({ authenticated: true, scope: 'tunnel-bot' });
     expect((await request(f.server).get('/api/terminal/create').set(remote).set('Cookie', cookie)).status).toBe(403);
+  });
+
+  it('admits managed members through the service gate without granting native or Bot authority', async () => {
+    const f = await fixture('on');
+    const app = express();
+    registerTunnelAccessBoundary(app, null, { controller: f.controller, connection: f.connection });
+    attachSupabaseConnectionBoundary(app, null, f.connection, { allowRemoteRequest: hasTunnelBoundaryAuthorization });
+    registerRuntimeServiceRoutes(app, { controller: {
+      consumeBootstrap: async () => { throw new Error('No native proof'); }, authorizeSession: () => false,
+      publicStatus: () => { throw new Error('Native status must remain private'); },
+    } });
+    let sessionValid = true;
+    let membershipActive = true;
+    const authorization = createBotAuthorization({ store: {
+      get: async (table) => table === 'bots' ? { id: BOT, lifecycle: 'active' }
+        : table === 'bot_memberships' && membershipActive ? { bot_id: BOT, user_id: OTHER, role: 'member', activated_at: '2026-01-01T00:00:00Z', revoked_at: null } : null,
+      listUserAccountKinds: async () => new Map(),
+    } });
+    const authenticateAccount = vi.fn((req, res, next) => {
+      expect(req.principal).toBeUndefined();
+      if (!sessionValid || !String(req.headers.cookie || '').includes('account=fixture')) return res.sendStatus(401);
+      req.principal = { id: OTHER, scope: 'managed', role: 'member', policy: { bots: true } };
+      return next();
+    });
+    app.use(authenticateAccount);
+    const hostExecution = vi.fn();
+    app.post('/api/bots/:botId/messages', async (req, res) => {
+      try {
+        await authorization.requireActiveMembership(req.principal, req.params.botId);
+        hostExecution();
+        res.json({ accepted: true });
+      } catch { res.sendStatus(403); }
+    });
+    const server = await listenOnLoopback(http.createServer(app));
+    const send = (cookie = 'account=fixture') => request(server).post(`/api/bots/${BOT}/messages`)
+      .set(remote).set('Cookie', cookie).set('X-DevRyan-CSRF', '1');
+    expect((await send('')).status).toBe(401);
+    expect((await send()).status).toBe(200);
+    membershipActive = false;
+    expect((await send()).status).toBe(403);
+    sessionValid = false;
+    expect((await send()).status).toBe(401);
+    const calls = authenticateAccount.mock.calls.length;
+    for (const route of ['/api/desktop/browser-cdp', '/api/runtime-service/handshake', '/auth/runtime-service-bootstrap']) {
+      expect((await request(server).get(route).set(remote).set('Cookie', 'account=fixture')).status).toBe(403);
+    }
+    expect(authenticateAccount).toHaveBeenCalledTimes(calls);
+    expect(hostExecution).toHaveBeenCalledOnce();
+  });
+
+  it('runs tunnel admission before the service upgrade gate and still requires account authentication', async () => {
+    const f = await fixture('on');
+    const app = express();
+    const server = http.createServer(app);
+    registerTunnelAccessBoundary(app, server, { controller: f.controller, connection: f.connection });
+    attachSupabaseConnectionBoundary(app, server, f.connection, { allowRemoteRequest: hasTunnelBoundaryAuthorization });
+    registerRuntimeServiceRoutes(app, { server, controller: {
+      consumeBootstrap: async () => { throw new Error('No native proof'); }, authorizeSession: () => false,
+      publicStatus: () => { throw new Error('Native status must remain private'); },
+    } });
+    const authenticateAccount = vi.fn((req, socket) => {
+      if (socket.destroyed) return;
+      expect(hasTunnelBoundaryAuthorization(req)).toBe(true);
+      expect(req.principal).toBeUndefined();
+      socket.end('HTTP/1.1 401 Account Session Required\r\nContent-Length: 0\r\n\r\n');
+    });
+    server.on('upgrade', authenticateAccount);
+    await listenOnLoopback(server);
+    for (const cookie of ['', 'oc_tunnel_session=expired']) {
+      const status = await new Promise((resolve, reject) => {
+        const ws = new WebSocket(`ws://127.0.0.1:${server.address().port}/api/global/event/ws`, { headers: { ...remote, Cookie: cookie } });
+        ws.on('unexpected-response', (_req, res) => { res.resume(); resolve(res.statusCode); ws.terminate(); });
+        ws.on('open', () => { ws.terminate(); reject(new Error('Unauthenticated upgrade succeeded')); });
+        ws.on('error', () => {});
+      });
+      expect(status).toBe(401);
+    }
+    expect(authenticateAccount).toHaveBeenCalledTimes(2);
   });
 
   it('never changes remote authentication policy during a cloud outage', async () => {

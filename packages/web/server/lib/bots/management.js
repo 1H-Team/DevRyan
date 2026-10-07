@@ -23,6 +23,7 @@ import {
   validateUuid,
 } from './validation.js';
 import { botErrorLogFields } from './error-normalization.js';
+import { configurationResourceBlockers } from './configuration-readiness.js';
 
 const DEPLOYMENT_KEY_ID = 'deployment-v1';
 const BOT_ROLES = Object.freeze(['member', 'operator', 'manager']);
@@ -1067,7 +1068,40 @@ export function createBotManagement({
       bot_id: decision.bot.id,
     });
     if (!revision) fail('Bot revision not found', 'bot_revision_not_found', 404);
+    const readInventory = async (table) => {
+      const rows = [];
+      let cursor = null;
+      do {
+        const page = await store.list(table, { filters: { bot_id: decision.bot.id }, cursor, limit: 100 });
+        rows.push(...page.items);
+        if (table === 'bot_environment_secrets' && rows.length > 128) {
+          fail('Bot environment-secret inventory exceeds its limit', 'bot_activation_blocked', 409);
+        }
+        cursor = page.nextCursor;
+      } while (cursor);
+      return rows;
+    };
+    const [environmentSecrets, credentials] = await Promise.all([
+      readInventory('bot_environment_secrets'),
+      revision.activated_at !== null || revision.contract?.mcpBindings?.length
+        ? readInventory('bot_credentials') : Promise.resolve([]),
+    ]);
+    const resourceBlockers = await configurationResourceBlockers({
+      botId: decision.bot.id, contract: revision.contract, environmentSecrets, credentials,
+      ownerUserId: decision.membership?.user_id || principal.id,
+      // Draft model readiness is owned by preflightModel below. Published
+      // revisions also need this pure check before their historical shortcut.
+      checkModelCredentials: revision.activated_at !== null,
+      get: (table, id) => store.get(table, { id }),
+    });
+    const resourceGate = { id: 'configuration', label: 'Local configuration resources', status: 'fail',
+      detail: resourceBlockers.map((entry) => `${entry.kind}: ${entry.resourceId}`).join('; ') };
     if (revision.activated_at !== null) {
+      if (resourceBlockers.length > 0) return Object.freeze({
+        ready: false,
+        gates: Object.freeze([resourceGate]),
+        revision: publicRevision(revision, true),
+      });
       return Object.freeze({ ready: true, gates: Object.freeze([]), revision: publicRevision(revision, true) });
     }
 
@@ -1146,6 +1180,7 @@ export function createBotManagement({
       : [];
     const policyCovered = Boolean(contract && !contractError);
     const gates = [
+      ...(resourceBlockers.length > 0 ? [resourceGate] : []),
       {
         id: 'schema',
         label: 'Control-plane schema',
@@ -1566,6 +1601,8 @@ export function createBotManagement({
     const timestamp = now().toISOString();
     const computerPrepared = request.lifecycle === 'active';
     if (computerPrepared) {
+      const health = await activationHealth(principal, botId, decision.bot.active_revision_id);
+      if (!health.ready) fail('Bot configuration requires local resources', 'bot_activation_blocked', 409, { gates: health.gates });
       await beforeActivateComputer({
         bot: decision.bot,
         revision: { id: decision.bot.active_revision_id },

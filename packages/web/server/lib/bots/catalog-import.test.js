@@ -7,6 +7,7 @@ import { REVIEWED_SOURCE_SCHEMAS } from '@openchamber/bot-db';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createBotActivationHold } from './activation-hold.js';
+import { encryptBotJson } from './encryption.js';
 import { BotCatalogImportError, createBotCatalogImport, createCloudBotReader } from './catalog-import.js';
 
 const MiB = 1024 * 1024;
@@ -160,6 +161,10 @@ const createFakeCloud = ({ tables = cloudTables(), objects, marker = MARKER, tra
       if (inList) {
         const values = new Set(inList[1].split(','));
         rows = rows.filter((row) => values.has(String(row[key])));
+      } else if (value.startsWith('eq.')) {
+        rows = rows.filter((row) => String(row[key]) === value.slice(3));
+      } else if (value === 'is.null') {
+        rows = rows.filter((row) => row[key] === null);
       }
     }
     const or = url.searchParams.get('or');
@@ -317,6 +322,84 @@ const runImport = async (importer, mode = 'merge') => {
   await importer.start({ mode, writersStopped: true });
   return settle(importer);
 };
+
+const configurationHarness = ({ keyByte = KEY_BYTE, secondAvatar = false } = {}) => {
+  const tables = cloudTables();
+  const avatar = (row, botId) => ({
+    ...row, bot_id: botId, visibility: 'profile', channel_id: null, deleted_at: null, content_type: 'image/png',
+    ciphertext_size: OBJECT_BYTES.byteLength, ciphertext_hash: sha256(OBJECT_BYTES),
+    wrapped_key: encryptBotJson({ key: Buffer.alloc(32, keyByte), keyId: 'deployment-v1',
+      value: { key: Buffer.alloc(32, 9).toString('base64') }, associatedData: `devryan-bot-object-key:${row.id}:v1` }),
+  });
+  tables.bots = tables.bots.map((row) => ({ ...row,
+    avatar_object_id: row.id === BOT_A ? LIVE_OBJECT_ROW : secondAvatar ? DELETED_OBJECT_ROW : null,
+  }));
+  tables.bot_objects[0] = avatar(tables.bot_objects[0], BOT_A);
+  if (secondAvatar) tables.bot_objects[1] = avatar(tables.bot_objects[1], BOT_B);
+  const catalog = { tables: CATALOG.tables.map((table) => ({ ...table, columns: table.name === 'bots'
+    ? [...table.columns, 'avatar_object_id'] : table.name === 'bot_objects'
+      ? [...table.columns, 'visibility', 'channel_id', 'content_type', 'wrapped_key'] : table.columns })) };
+  const exported = createExportHost();
+  exported.host.createImportSource = vi.fn(async () => ({ handle: 'source-handle', catalog }));
+  const result = createHarness({ host: exported.host, cloud: { tables,
+    objects: new Map([[LIVE_OBJECT_FILE, OBJECT_BYTES], [`${DELETED_OBJECT_NAME}.bin`, OBJECT_BYTES]]) } });
+  return { ...result, scripts: exported.scripts };
+};
+
+describe('configuration-only import', () => {
+  it('transfers only configuration and current avatars, retaining strict filters during re-verification', async () => {
+    const { importer, cloud, scripts } = configurationHarness();
+    await importer.start({ mode: 'merge', scope: 'configuration', writersStopped: true });
+    const status = await settle(importer);
+    expect(status.import.scope).toBe('configuration');
+    expect(status.import.downloadedBytes).toBeGreaterThan(OBJECT_BYTES.byteLength);
+    expect(cloud.requests.some((request) => request.path === '/rest/v1/bot_audit_events')).toBe(false);
+    const requests = cloud.requests.filter((request) => request.path === '/rest/v1/bot_objects');
+    expect(requests.length).toBeGreaterThan(1);
+    for (const request of requests) expect(request.params).toMatchObject({
+      id: `in.(${LIVE_OBJECT_ROW})`, visibility: 'eq.profile', channel_id: 'is.null', deleted_at: 'is.null',
+    });
+    expect(cloud.requests.filter((request) => request.path.startsWith('/storage/')).map((request) => request.path))
+      .toEqual([`/storage/v1/object/devryan-bot-objects/objects/${LIVE_OBJECT_FILE}`]);
+    expect(scripts[0].text).not.toContain('insert into public."bot_audit_events"');
+    expect(scripts[0].text).toContain(LIVE_OBJECT_ROW);
+    expect(scripts[0].text).not.toContain(DELETED_OBJECT_ROW);
+  });
+
+  it('checks the source encryption identity before fetching an avatar', async () => {
+    const { importer, cloud } = configurationHarness({ keyByte: 42 });
+    await importer.start({ mode: 'merge', scope: 'configuration', writersStopped: true });
+    expect((await settle(importer)).import.error.code).toBe('bot_import_encryption_identity_mismatch');
+    expect(cloud.requests.some((request) => request.path.startsWith('/storage/'))).toBe(false);
+  });
+
+  it('does not query object metadata when no Bot has an avatar', async () => {
+    const { importer, cloud } = configurationHarness();
+    cloud.tables.bots.forEach((bot) => { bot.avatar_object_id = null; });
+    await importer.start({ mode: 'merge', scope: 'configuration', writersStopped: true });
+    await settle(importer);
+    expect(cloud.requests.some((request) => request.path === '/rest/v1/bot_objects' || request.path.startsWith('/storage/'))).toBe(false);
+  });
+
+  it('checkpoints each avatar across quota interruptions and refuses a change of scope', async () => {
+    const { importer, cloud } = configurationHarness({ secondAvatar: true });
+    let blocked = true;
+    cloud.hooks.respond = (_url, request) => (blocked && request.path.endsWith(`${DELETED_OBJECT_NAME}.bin`)
+      ? statusResponse(402) : null);
+    await importer.start({ mode: 'merge', scope: 'configuration', writersStopped: true });
+    expect((await settle(importer)).import.phase).toBe('blocked');
+    expect((await readState()).objects.entries).toHaveLength(1);
+    const downloaded = importer.status().import.downloadedBytes;
+    await expect(importer.start({ mode: 'merge', scope: 'full', writersStopped: true }))
+      .rejects.toMatchObject({ code: 'bot_import_scope_mismatch' });
+    blocked = false;
+    await importer.start({ mode: 'merge', scope: 'configuration', writersStopped: true });
+    await settle(importer);
+    expect(cloud.requests.filter((request) => request.path.endsWith(LIVE_OBJECT_FILE))).toHaveLength(1);
+    expect(importer.status().import.downloadedBytes).toBeGreaterThan(downloaded);
+    expect((await readState()).objects.entries).toHaveLength(2);
+  });
+});
 
 const deferred = () => {
   let resolve;

@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createLoopbackOpenCodeFixtureForGeneration } from '../../../../../../scripts/perf/loopback-opencode-fixtures.mjs';
 import { PERF_CHILD_SESSION_IDS, PERF_PARENT_SESSION_ID } from '../../../../../../scripts/perf/fixture-session-seeds.mjs';
 import { createOpenCodeAdmission } from '../v2/admission.js';
+import { TARGET_OPENCODE_V2_VERSION } from '../readiness-probe.js';
 import { NO_CONTENT, isNoContent, readResponseBody, unwrapData, unwrapList, unwrapLocated, unwrapPage, unwrapV1Payload } from './envelope.js';
 import { mapV2ErrorResponse, OPENCODE_CLIENT_ERROR_CODES, OpenCodeClientError, V2_ERROR_TAG_CODES } from './errors.js';
 import { createOpenCodeClient, OPENCODE_CLIENT_SHAPE } from './index.js';
@@ -53,7 +54,7 @@ describe('openCodeClient contract (native v2 fixture)', () => {
 
   beforeAll(async () => {
     directory = mkdtempSync(path.join(tmpdir(), 'devryan-opencode-client-'));
-    const fixture = await createLoopbackOpenCodeFixtureForGeneration(2, { directory, heartbeatMs: 50 });
+    const fixture = await createLoopbackOpenCodeFixtureForGeneration(2, { directory, heartbeatMs: 50, opencodeVersion: TARGET_OPENCODE_V2_VERSION });
     const fetchCalls = [], diagnostics = [];
     let admission;
     const deps = {

@@ -1,5 +1,6 @@
 import {inspectClaudeRequest,isClaudeInspectionUnavailable,unavailableClaudeInspection,sendClaudeInspectionError} from './runtime-host/native-claude-inspection.js';
 import express from 'express';
+import { isDirectLocalRequest } from '../security/direct-local-request.js';
 import { createProjectIdFromPath } from '../projects/project-id.js';
 import fs from 'fs';
 import { OPENCODE_CONFIG_DIR } from './shared.js';
@@ -459,6 +460,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     return owner.select(req.params.id,context);
   }));
 
+  const siwcLocal=(req,res,next)=>isDirectLocalRequest(req)?next():res.status(403).json({code:'native_chatgpt_siwc_local_required'});
   const siwcAdmin=(req,res,next)=>isProviderAdministrator(req)?next():res.status(403).json({code:'native_chatgpt_siwc_administrator_required'});
   const siwcCsrf=(req,res,next)=>req.get('x-devryan-csrf')==='1'?next():res.status(403).json({code:'native_chatgpt_siwc_csrf_required'});
   const siwcBody=limit=>{const parse=express.json({limit});return(req,res,next)=>parse(req,res,error=>error?res.status(400).json({code:'native_chatgpt_siwc_request_invalid'}):next());};
@@ -485,21 +487,21 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       });
     }
   };
-  app.get('/api/provider/openai/siwc',siwcAdmin,(req,res)=>siwcReply(req,res,async(owner,context)=>owner.status(context)));
-  app.post('/api/provider/openai/siwc',siwcAdmin,siwcCsrf,siwcBody('4kb'),(req,res)=>siwcReply(req,res,async(owner,context)=>{
+  app.get('/api/provider/openai/siwc',siwcLocal,siwcAdmin,(req,res)=>siwcReply(req,res,async(owner,context)=>owner.status(context)));
+  app.post('/api/provider/openai/siwc',siwcLocal,siwcAdmin,siwcCsrf,siwcBody('4kb'),(req,res)=>siwcReply(req,res,async(owner,context)=>{
     return owner.begin({...context,...siwcSelectionBody(req.body,true)});
   }));
-  app.post('/api/provider/openai/siwc/:id/complete',siwcAdmin,siwcCsrf,siwcBody('4kb'),(req,res)=>siwcReply(req,res,(owner,context)=>{
+  app.post('/api/provider/openai/siwc/:id/complete',siwcLocal,siwcAdmin,siwcCsrf,siwcBody('4kb'),(req,res)=>siwcReply(req,res,(owner,context)=>{
     if(!emptySiwcBody(req.body))throw Object.assign(new Error('native_chatgpt_siwc_request_invalid'),{code:'native_chatgpt_siwc_request_invalid',status:400});
     return owner.complete(req.params.id,req.body,context);
   }));
-  app.post('/api/provider/openai/siwc/:id/select',siwcAdmin,siwcCsrf,siwcBody('4kb'),(req,res)=>siwcReply(req,res,(owner,context)=>{
+  app.post('/api/provider/openai/siwc/:id/select',siwcLocal,siwcAdmin,siwcCsrf,siwcBody('4kb'),(req,res)=>siwcReply(req,res,(owner,context)=>{
     const body=siwcSelectionBody(req.body);
     if(body.expectedActiveCredentialID===undefined)throw Object.assign(new Error('native_chatgpt_siwc_request_invalid'),{code:'native_chatgpt_siwc_request_invalid',status:400});
     return owner.select(req.params.id,{...context,...body});
   }));
-  app.delete('/api/provider/openai/siwc/:id',siwcAdmin,siwcCsrf,(req,res)=>siwcReply(req,res,(owner,context)=>owner.cancel(req.params.id,context)));
-  app.delete('/api/provider/openai/siwc',siwcAdmin,siwcCsrf,siwcBody('4kb'),(req,res)=>siwcReply(req,res,(owner,context)=>{
+  app.delete('/api/provider/openai/siwc/:id',siwcLocal,siwcAdmin,siwcCsrf,(req,res)=>siwcReply(req,res,(owner,context)=>owner.cancel(req.params.id,context)));
+  app.delete('/api/provider/openai/siwc',siwcLocal,siwcAdmin,siwcCsrf,siwcBody('4kb'),(req,res)=>siwcReply(req,res,(owner,context)=>{
     const body=siwcSelectionBody(req.body);
     if(body.expectedActiveCredentialID===undefined)throw Object.assign(new Error('native_chatgpt_siwc_request_invalid'),{code:'native_chatgpt_siwc_request_invalid',status:400});
     return owner.disconnect({...context,...body});

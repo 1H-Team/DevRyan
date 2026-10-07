@@ -354,7 +354,7 @@ export async function createPerformanceFixture({ root, generation, artifactRoot,
       const readyStarted = performance.now();
       controller = await runtimeOwner.start(); startupMs = performance.now() - readyStarted;
       assert.equal(controller.bound.catalog.asserted, true);
-      version = (await client.health.runtimeInfo()).version; assert.equal(version, '2.0.20');
+      version = (await client.health.runtimeInfo()).version; assert.equal(version, artifacts.manifest.opencodeVersion);
       pluginHash = performanceSha256(artifacts.manifest.inputs.reviewedPlugins);
     }
     // Fixture preparation is outside all scenario measurement spans.

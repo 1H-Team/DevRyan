@@ -43,7 +43,7 @@ describe('readiness probe against the loopback fixtures', () => {
 
   beforeAll(async () => {
     directory = mkdtempSync(join(tmpdir(), 'devryan-readiness-probe-'));
-    v2 = await createLoopbackOpenCodeV2Fixture({ directory, heartbeatMs: 50 });
+    v2 = await createLoopbackOpenCodeV2Fixture({ directory, heartbeatMs: 50, opencodeVersion: TARGET_OPENCODE_V2_VERSION });
   });
 
   afterAll(async () => {

@@ -378,8 +378,11 @@ export function registerTunnelAccessBoundary(app, server, { controller, connecti
     // Valid Bot sessions retain their restricted authority. An expired or revoked
     // cookie must not trap the stable hostname behind the obsolete link screen.
     // Clearing it only reaches normal account authentication; it grants no access.
-    if (usesManagedDirectLogin(req) && hasTunnelCookie && !remoteSession) {
-      controller.clearTunnelSessionCookie(req, res);
+    if (usesManagedDirectLogin(req) && !remoteSession) {
+      if (hasTunnelCookie) controller.clearTunnelSessionCookie(req, res);
+      // Admit the transport past the native service-cookie gate. The ordinary
+      // account session, policy and Bot membership checks still authorize it.
+      authorizedRequests.add(req);
       return next();
     }
     if (connection.enabled && !hasTunnelCookie) return next();
@@ -408,9 +411,14 @@ export function registerTunnelAccessBoundary(app, server, { controller, connecti
       socket.once('close', unregister);
       return;
     }
-    if (connection.enabled && !String(req.headers?.cookie || '').includes(`${COOKIE}=`)) return;
     // Downstream upgrade handlers still require normal account authentication.
-    if (usesManagedDirectLogin(req) && !controller.getTunnelSessionFromRequest(req)) return;
+    if (usesManagedDirectLogin(req) && !session
+      && sameRemoteOrigin(req, controller.getActiveTunnelHost(), true)
+      && /^\/api\/(?:(?:terminal\/ws|(?:global\/)?event\/ws)(?:\?|$)|preview\/proxy\/)/.test(req.url || '')) {
+      authorizedRequests.add(req);
+      return;
+    }
+    if (connection.enabled && !String(req.headers?.cookie || '').includes(`${COOKIE}=`)) return;
     req.tunnelAccessDenied = true;
     socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n'); socket.destroy();
   };

@@ -18,11 +18,13 @@ server renders import SQL from it.
   newer, drifted), renders one migration transaction, and validates the
   database names used for live, candidate, source and retired databases.
 - `src/import-plan.js` — hosted-catalog import planning and SQL rendering:
+  fixed configuration-only table allowlist (runtime/history omitted),
   dependency order (with extra ordering for channel/ACL tables and deferred
   cyclic keys), raw JSON page loading, regenerated audit ids and run queue
   sequences, avatar restore, the two triggers disabled during a load, and
   merge finalization (uncertain deliveries, released leases, owner mappings,
-  disconnected integrations).
+  disconnected integrations, paused configuration-only Bots/routines and
+  disabled Telegram with reset checkpoints).
 - `sql/bootstrap-cluster.sql`, `sql/bootstrap-database.sql` — roles, schemas
   and the history table created before any migration.
 - `docker/database/`, `docker/rest/` — the pinned PostgreSQL and PostgREST

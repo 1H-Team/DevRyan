@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   BOT_TARGET_OPENCODE_VERSION,
   TARGET_OPENCODE_VERSION,
+  SUPPORTED_NATIVE_OPENCODE_VERSIONS,
   resolveQaTargetOpenCodeVersion,
 } from './version-policy.js';
 
@@ -10,6 +11,11 @@ describe('OpenCode version policy', () => {
   it('pins the host and Bot runtime targets as exact release versions', () => {
     expect(TARGET_OPENCODE_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
     expect(BOT_TARGET_OPENCODE_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
+  it('accepts only the reviewed current and rollback versions', () => {
+    expect(SUPPORTED_NATIVE_OPENCODE_VERSIONS).toEqual(['2.0.20', '2.0.24']);
+    expect(Object.isFrozen(SUPPORTED_NATIVE_OPENCODE_VERSIONS)).toBe(true);
   });
 
   it('targets the host pin for QA unless a candidate version is named explicitly', () => {

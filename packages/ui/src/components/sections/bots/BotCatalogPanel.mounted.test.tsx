@@ -35,6 +35,24 @@ const buttons = (container: Searchable, label: string): Found => (
 
 
 describe('mounted Bot catalog panel', () => {
+  test('reports configuration import bytes and exact setup requirements while imported Bots stay paused', async () => withDom(async (container) => {
+    const { createRoot } = await import('react-dom/client');
+    const root = createRoot(container as unknown as Element);
+    const api: BotsApi = { ...botsApi, listCatalogBackups: async () => ({ backups: [] }),
+      getCatalogStatus: async () => status({ activationHold: { reason: 'import', createdAt: '' }, import: {
+        cloud: null, pending: false, import: { id: 'import', mode: 'merge', scope: 'configuration',
+          phase: 'completed', running: false, createdAt: '', updatedAt: '', tables: 2, pages: 3, objects: 1,
+          downloadedBytes: 4096, error: null, result: { importedBotCount: 1,
+            blockers: [{ botId: 'bot-a', kind: 'skill', resourceId: 'skill-a' }] } },
+      } }),
+    };
+    try {
+      await act(async () => { root.render(<I18nProvider><BotCatalogPanel variant="full" api={api} /></I18nProvider>); });
+      expect(container.textContent).toContain('Imported Bots, routines and Telegram stay paused');
+      expect(container.textContent).toContain('4.0 KB downloaded');
+      expect(container.textContent).toContain('Bot bot-a: skill skill-a needs local setup.');
+    } finally { await act(async () => { root.unmount(); }); }
+  }));
   test('renders nothing in compact mode when the catalog needs no action', async () => withDom(async (container) => {
     const { createRoot } = await import('react-dom/client');
     const root = createRoot(container as unknown as Element);

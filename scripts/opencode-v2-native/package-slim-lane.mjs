@@ -124,7 +124,11 @@ export async function createCompiledSlimWebBridge(){
   async request(directory,suffix,options={}){
    assert.equal(closed,false);assert.ok(suffix.startsWith('/')&&!suffix.includes('..'));
    const prefix='/api/openchamber/interviews/'+sha256(directory);
-   return fetch(baseURL+prefix+suffix,{...options,signal:AbortSignal.timeout(10000)});
+   try { return await fetch(baseURL+prefix+suffix,{...options,signal:AbortSignal.timeout(10000)}); }
+   catch(error) {
+    error.protocolEvidence={lane:'compiled-slim-interview',method:options.method??'GET',route:suffix,timeoutMs:10000};
+    throw error;
+   }
   },
   close:()=>closing??=(async()=>{closed=true;await new Promise((resolve,reject)=>server.close(error=>error?reject(error):resolve()));await Promise.allSettled(active);})(),
  };

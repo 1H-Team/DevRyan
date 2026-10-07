@@ -74,6 +74,8 @@ export async function startFakeCloud({ tables, objects, schemaMarker = '20260908
         rows = rows.filter((row) => values.has(String(row[key])));
       } else if (value.startsWith('eq.')) {
         rows = rows.filter((row) => String(row[key]) === value.slice(3));
+      } else if (value === 'is.null') {
+        rows = rows.filter((row) => row[key] === null);
       }
     }
     const or = url.searchParams.get('or');

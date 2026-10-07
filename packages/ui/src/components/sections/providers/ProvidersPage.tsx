@@ -36,6 +36,7 @@ import {
   getProviderOAuthErrorMessage,
   parseProviderOAuthAuthorization,
   providerCatalogHasModels,
+  providerCatalogHasOpenAiPlanModels,
   requestPostAuthConfigReload,
   requestProviderOAuthCallback,
   resolveProviderOAuthPhase,
@@ -603,13 +604,14 @@ const ProvidersPageContent: React.FC = () => {
 
   const waitForProviderCatalog = React.useCallback(async (
     providerId: string,
-    options?: { onStalled?: () => Promise<boolean> },
+    options?: { onStalled?: () => Promise<boolean>; requireOpenAiPlanModels?: boolean; signal?: AbortSignal },
   ) => {
     const activeDirectory = currentDirectory?.trim() || null;
     const directories = activeDirectory ? [null, activeDirectory] : [null];
 
     return waitForProviderCatalogReady({
       onStalled: options?.onStalled,
+      signal: options?.signal,
       refresh: async () => {
         await Promise.all(directories.map((directory) => loadProviders({ directory, force: true })));
       },
@@ -619,6 +621,8 @@ const ProvidersPageContent: React.FC = () => {
         const activeProviders = activeDirectory
           ? state.directoryScoped[activeDirectory]?.providers
           : globalProviders;
+        if (options?.requireOpenAiPlanModels) return providerCatalogHasOpenAiPlanModels(globalProviders)
+          && providerCatalogHasOpenAiPlanModels(activeProviders);
         return providerCatalogHasModels(globalProviders, providerId)
           && providerCatalogHasModels(activeProviders, providerId);
       },
@@ -629,9 +633,10 @@ const ProvidersPageContent: React.FC = () => {
   // credentials are already saved by this point; only the catalog is lagging.
   const finalizeProviderConnection = React.useCallback(async (
     providerId: string,
-    options?: { onStalled?: () => Promise<boolean> },
+    options?: { onStalled?: () => Promise<boolean>; requireOpenAiPlanModels?: boolean; signal?: AbortSignal },
   ) => {
     const providerReady = await waitForProviderCatalog(providerId, options);
+    if (options?.signal?.aborted) return false;
 
     setSelectedProvider(providerId);
     quotaRefreshCoordinator.settingsChanged();
@@ -1059,13 +1064,22 @@ const ProvidersPageContent: React.FC = () => {
   const renderChatgptSiwcAuth = () => (
     <ChatgptSiwcEnrollment
       refreshRevision={openAiAuthRevision}
+      catalogReady={providerCatalogHasOpenAiPlanModels(rawProviders) && providerCatalogHasOpenAiPlanModels(activeProviderCatalog)}
       administrator={principal.role === 'admin' && principal.scope !== 'tunnel-bot'}
       principalID={principal.id}
       directory={currentDirectory}
-      onSelected={async () => {
-        const result = await requestPostAuthConfigReload();
-        if (!result.ok) throw new Error('reload');
-        await loadProviders({ directory: null });
+      onSelected={async (connection, signal) => {
+        await requestPostAuthConfigReload();
+        if (signal.aborted) return false;
+        if (connection === null || connection?.planUsage === false) {
+          const activeDirectory = currentDirectory?.trim() || null;
+          await Promise.all((activeDirectory ? [null, activeDirectory] : [null])
+            .map(directory => loadProviders({ directory, force: true })));
+          if (signal.aborted) return false;
+          quotaRefreshCoordinator.settingsChanged();
+          return true;
+        }
+        return finalizeProviderConnection('openai', { requireOpenAiPlanModels: true, signal });
       }}
     />
   );

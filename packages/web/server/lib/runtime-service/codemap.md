@@ -1,9 +1,11 @@
 # packages/web/server/lib/runtime-service/
 
-The early Bot tunnel boundary may admit Bot HTTP/SSE and static shell requests
+The early tunnel boundary may admit Bot HTTP/SSE, managed-account requests and static shell requests
 without a desktop session cookie. Its private WeakSet is the only bypass proof;
 native capabilities are denied before those requests reach this module. Upgrade
-handlers honor prior rejection and never mint native or UI credentials remotely.
+handlers run after tunnel admission, honor prior rejection, and never mint native
+or UI credentials remotely. Managed-account traffic still reaches normal account
+authentication and policy checks.
 
 - `routes.js`: loopback-only one-time bootstrap, HttpOnly/SameSite cookie and
   CSRF gate, safe versioned handshake, short desktop-host lease (including the

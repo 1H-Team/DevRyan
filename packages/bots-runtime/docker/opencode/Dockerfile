@@ -14,8 +14,8 @@ RUN apt-get update \
       python3 make g++ \
     && rm -rf /var/lib/apt/lists/* \
     && npm install --omit=dev --no-audit --no-fund --save-exact \
-      @opencode/server@2.0.20 @opencode/core@2.0.20 @opencode/ai@2.0.20 \
-      @opencode/schema@2.0.20 @opencode/plugin@2.0.20 effect@4.0.0-rc.112 \
+      @opencode/server@2.0.24 @opencode/core@2.0.24 @opencode/ai@2.0.24 \
+      @opencode/schema@2.0.24 @opencode/plugin@2.0.24 effect@4.0.0-rc.112 \
       @opencode-ai/plugin@1.18.33 opencode-gpt-imagegen@0.1.12 \
     && npm cache clean --force \
     && groupadd --gid 10001 devryan \
@@ -44,7 +44,7 @@ COPY --chown=10001:10001 packages/bots-runtime/docker/opencode/entrypoint.sh /op
 RUN node --input-type=module -e "import fs from 'node:fs'; import { rewriteReviewedImagegen } from './reviewed-imagegen-transform.mjs'; fs.writeFileSync('node_modules/opencode-gpt-imagegen/dist/devryan.js',rewriteReviewedImagegen(fs.readFileSync('node_modules/opencode-gpt-imagegen/dist/index.js')).contents);" \
     && node --input-type=module -e "import { applyImagegenModelHotfix } from './imagegen-model-hotfix.mjs'; const result = applyImagegenModelHotfix({ configDirectory: '/opt/devryan' }); if (!result.ok) throw new Error(result.error);" \
     && chmod 0555 /opt/devryan/entrypoint.sh /opt/devryan/launch-opencode.mjs \
-    && test "$(node -p "JSON.parse(require('node:fs').readFileSync('/opt/devryan/node_modules/@opencode/server/package.json','utf8')).version")" = "2.0.20" \
+    && test "$(node -p "JSON.parse(require('node:fs').readFileSync('/opt/devryan/node_modules/@opencode/server/package.json','utf8')).version")" = "2.0.24" \
     && test "$(node -p "JSON.parse(require('node:fs').readFileSync('/opt/devryan/node_modules/opencode-gpt-imagegen/package.json','utf8')).version")" = "0.1.12"
 
 ENV NODE_ENV=production
@@ -53,7 +53,7 @@ USER 10001:10001
 EXPOSE 4096
 
 HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:4096/devryan/ready',{headers:{authorization:'Bearer '+process.env.DEVRYAN_BOT_RUNTIME_TOKEN}}).then(async r=>{const v=await r.json();if(!r.ok||!v.ready||v.generation!==2||v.opencode.version!=='2.0.20')process.exit(1)}).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:4096/devryan/ready',{headers:{authorization:'Bearer '+process.env.DEVRYAN_BOT_RUNTIME_TOKEN}}).then(async r=>{const v=await r.json();if(!r.ok||!v.ready||v.generation!==2||v.opencode.version!=='2.0.24')process.exit(1)}).catch(()=>process.exit(1))"
 
 ENTRYPOINT ["/opt/devryan/entrypoint.sh"]
 CMD ["serve"]

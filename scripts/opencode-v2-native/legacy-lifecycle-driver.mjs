@@ -38,6 +38,7 @@ const registryOptions = { registryPath: path.join(binding.descriptor.launch.glob
 const hash = value => createHash('sha256').update(value).digest('hex');
 const launcher = path.join(path.dirname(binding.descriptor.launch.controllerBinary), `DevRyan-execution-${process.platform}-${process.arch}`);
 const bundle = await loadNativeRuntimeBundle({ binding, launcher });
+const nativeVersion = bundle.artifacts.manifest.opencodeVersion;
 const { agents, commands = {}, ...legacy } = input.configuration;
 const resolve = createNativeConfigurationSnapshotResolver({ loadLocation: async () => ({ legacy: structuredClone(legacy),
   agents: structuredClone(agents), commands: structuredClone(commands), skills: [], slim: { mergedConfig: {} },
@@ -51,7 +52,7 @@ const directory = locations[0].directory, observations = [], diagnostics = [], e
 const journal = await createFixtureJournal({ webDataDirectory: binding.descriptor.launch.webDataDirectory,
   label: `fixture-lc-${randomBytes(4).toString('hex')}` });
 let owner, managed, host, url, epoch = 0;
-const deps = { getRuntime: () => ({ generation: 2, baseUrl: url, version: '2.0.20', epoch }),
+const deps = { getRuntime: () => ({ generation: 2, baseUrl: url, version: nativeVersion, epoch }),
   getAuthHeaders: () => owner?.getAuthHeaders() ?? {}, withNativeWebOperation: (spec, action) => owner.nativeOwner.withWebOperation(spec, action),
   recordDiagnostic: payload => { diagnostics.push(payload); journal.clientDiagnostic(payload); } };
 const admission = createOpenCodeAdmission(deps, { beforePromptDispatch: (receipt, context) => managed.admitNativePrompt(receipt, context),
@@ -105,7 +106,7 @@ try {
   assert.ok(sessionIDs.length > 0, 'Native rollback must inspect real created v2 work');
   const history = new Map();
   const inspect = async () => {
-    assert.equal((await client.health.runtimeInfo()).version, '2.0.20');
+    assert.equal((await client.health.runtimeInfo()).version, nativeVersion);
     for (const sessionID of sessionIDs) {
       const session = await client.sessions.get(sessionID); assert.equal(session.id, sessionID);
       const messages = await client.sessions.messages(sessionID, {}, { directory: session.directory });
@@ -171,7 +172,7 @@ try {
       retention, heldRetryRefused: input.rollback.phase === 'ack-loss', sameHostResumeRefused: input.rollback.phase === 'ack-loss' };
   } else quiescence = await checkpoint({kind:'bundle',bundleID:input.bundleID},stamp=>stamp);
   assert.equal(second.hasExited(),true);
-  result = { quiescence, ...(rollbackEvidence ? { rollback: rollbackEvidence } : {}), id: 'rollback-selected-native-lifecycle', status: 'passed', version: '2.0.20', sessionIDs, history: Object.fromEntries(history),
+  result = { quiescence, ...(rollbackEvidence ? { rollback: rollbackEvidence } : {}), id: 'rollback-selected-native-lifecycle', status: 'passed', version: nativeVersion, sessionIDs, history: Object.fromEntries(history),
     restart: { previousInstance: first.instanceID, replacementInstance: second.instanceID, exit: stopped },
     source: 'actual-selected-v2-owner-canonical-history-and-supervised-restart' };
 } finally {
