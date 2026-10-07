@@ -5,8 +5,6 @@ on:
   push:
     branches: [fix/windows-release]
     paths: ['.github/workflows/windows-preview.yml', 'scripts/*windows-preview*', 'packages/**', 'bun.lock', 'package.json']
-  pull_request:
-    paths: ['.github/workflows/windows-preview.yml', 'scripts/*windows-preview*', 'packages/**', 'bun.lock', 'package.json']
 
 permissions:
   contents: read

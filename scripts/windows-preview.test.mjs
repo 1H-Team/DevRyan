@@ -94,7 +94,7 @@ test('preview evidence binds source and installer bytes and both functional app 
 test('preview workflow runs architecture-native packaging and installer checks before artifact upload', async () => {
   const workflow = await fs.readFile(new URL('../.github/workflows/windows-preview.yml', import.meta.url), 'utf8');
   for (const pattern of [/windows-2022[\s\S]*arch: x64/, /windows-11-arm[\s\S]*arch: arm64/, /branches: \[fix\/windows-release\]/,
-    /pull_request:/, /contents: read/, /windows-preview-installer-smoke.mjs/, /--publish.*never|package-windows-preview.mjs/]) assert.match(workflow, pattern);
+    /workflow_dispatch:/, /contents: read/, /windows-preview-installer-smoke.mjs/, /--publish.*never|package-windows-preview.mjs/]) assert.match(workflow, pattern);
   assert.ok(workflow.indexOf('Install, launch, exercise sessions') < workflow.indexOf('actions/upload-artifact'));
-  assert.doesNotMatch(workflow, /contents: write|gh release|windows-native|supervisor_acceptance/);
+  assert.doesNotMatch(workflow, /pull_request:|contents: write|gh release|windows-native|supervisor_acceptance/);
 });

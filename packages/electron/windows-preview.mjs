@@ -14,7 +14,7 @@ export const WINDOWS_PREVIEW_OPENCODE_PINS = Object.freeze({
 export function isPreviewUnsupportedCommand(command) {
   return typeof command !== 'string' || ['desktop_bot_', 'desktop_agent_browser_', 'desktop_browser_',
     'desktop_macos_speech_', 'desktop_runtime_service_', 'desktop_runtime_bundle_'].some(prefix => command.startsWith(prefix))
-    || command === 'desktop_set_agent_browser_control';
+    || ['desktop_set_agent_browser_control', 'desktop_export_bot_recovery', 'desktop_restore_bot_recovery'].includes(command);
 }
 
 /** Only the dedicated packaged entry can select this desktop composition. */

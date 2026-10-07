@@ -52,6 +52,6 @@ test('preview main keeps origin protections and avoids native bootstrap before w
   assert.match(main, /nodeIntegration: false/);
   assert.match(main, /isPrivilegedRendererUrl/);
   assert.match(main, /isPreviewUnsupportedCommand\(command\)/);
-  for (const command of ['desktop_browser_surface_create', 'desktop_agent_browser_install', 'desktop_bot_runtime_setup', 'desktop_runtime_bundle_resume', 'desktop_runtime_service_enable', 'desktop_macos_speech_start']) assert.equal(isPreviewUnsupportedCommand(command), true);
+  for (const command of ['desktop_browser_surface_create', 'desktop_agent_browser_install', 'desktop_bot_runtime_setup', 'desktop_runtime_bundle_resume', 'desktop_runtime_service_enable', 'desktop_macos_speech_start', 'desktop_export_bot_recovery', 'desktop_restore_bot_recovery']) assert.equal(isPreviewUnsupportedCommand(command), true);
   assert.equal(isPreviewUnsupportedCommand('desktop_restart'), false);
 });
