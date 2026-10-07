@@ -6,7 +6,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { ensureWindowsPrivateDirectory } from '../packages/harness-runtime/lib/windows-private-files.js';
+import { createWindowsPrivateFile, createWindowsPrivateFileOwner, ensureWindowsPrivateDirectory } from '../packages/harness-runtime/lib/windows-private-files.js';
 import { startSessionExecution } from '../packages/harness-runtime/lib/session-execution.js';
 
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -91,20 +91,26 @@ export async function runWindowsRuntimeCompatibility(directory) {
   const bun = JSON.parse(execFileSync('bun', ['-e', 'console.log(JSON.stringify({path:process.execPath,version:Bun.version,arch:process.arch}))'], { encoding: 'utf8', timeout: 5000 }));
   assert.equal(bun.version, '1.3.14'); assert.equal(bun.arch, process.arch);
   const runtimes = [{ id: 'node', executable: process.execPath, version: process.versions.node }, { id: 'bun', executable: bun.path, version: bun.version }];
+  const owner = createWindowsPrivateFileOwner({ launcher });
   const output = path.join(root, 'runtime-compatibility'); await fs.mkdir(output);
   const evidence = { protocol: 'devryan.windows-runtime-compatibility/1', source: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim(),
     sourceSha256: hash(source), supervisorSha256: manifest.sha256, manifestSha256: hash(manifestBytes), arch: process.arch,
     status: 'failed', admission: false, acceptance: false, runtimes: [], rows: [] };
   for (const runtime of runtimes) {
-    evidence.runtimes.push({ id: runtime.id, version: runtime.version, sha256: hash(await fs.readFile(runtime.executable)) });
+    const runtimeSource = await fs.realpath(runtime.executable);
+    const sha256 = hash(await fs.readFile(runtimeSource)), size = (await fs.stat(runtimeSource)).size;
+    evidence.runtimes.push({ id: runtime.id, version: runtime.version, sha256 });
     for (const cell of runtimeCompatibilityCases) {
       const fixture = path.join(output, `${runtime.id}-${cell.mode}-${cell.size}`);
       await ensureWindowsPrivateDirectory(launcher, fixture);
       const view = path.join(fixture, 'worktree'); await ensureWindowsPrivateDirectory(launcher, view);
       // The real executable and project are disposable, reviewed test inputs.
-      const executable = path.join(view, `${runtime.id}.exe`); await fs.copyFile(runtime.executable, executable);
-      await fs.writeFile(path.join(view, 'package.json'), JSON.stringify({ name: 'devryan-lpac-project', scripts: { build: 'node project.cjs leaf' } }));
-      await fs.writeFile(path.join(view, 'project.cjs'), runtimeCompatibilityProject);
+      // Ordinary host copies/writes do not bind the current user as owner.
+      // Native creation gives every fixture file the required private identity.
+      const executable = path.join(view, `${runtime.id}.exe`);
+      await owner.streamFile(runtimeSource, executable, { expectedSha256: sha256, expectedSize: size });
+      await createWindowsPrivateFile(launcher, path.join(view, 'package.json'), Buffer.from(JSON.stringify({ name: 'devryan-lpac-project', scripts: { build: 'node project.cjs leaf' } })));
+      await createWindowsPrivateFile(launcher, path.join(view, 'project.cjs'), Buffer.from(runtimeCompatibilityProject));
       let stdout = '', stderr = '', handle, timer;
       const row = { runtime: runtime.id, ...cell, status: 'failed' };
       try {
