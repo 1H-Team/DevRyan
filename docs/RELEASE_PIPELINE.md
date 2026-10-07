@@ -231,3 +231,19 @@ Windows installers and requires the exact existing `desktop` allowlist. A retry
 may reuse an already uploaded Windows asset only when its packaging digest
 matches. Unknown assets or uncertain integrity stop the append without deleting
 the existing release.
+
+## Windows compatibility preview
+
+The separate `windows-preview.yml` lane builds per-user x64 and ARM64 NSIS
+installers against stock OpenCode 2.0.20. It selects the packaged
+`standard-preview` mode before native bootstrap, uses a distinct application
+identity/data directory, and has no automatic-update feed. It does not change
+stable version parsing, native acceptance or published `v2.0.2`.
+
+The initial prerelease is `v2.0.3-windows-preview.1`; its exact public inventory is
+`DevRyan-2.0.3-windows-preview.1-win-x64.exe` and
+`DevRyan-2.0.3-windows-preview.1-win-arm64.exe`. Runtime archive integrity and PE
+architecture are verified independently of filenames. Checksums, signing status,
+Windows smoke results and limitations are recorded in the release notes.
+The [Windows plan](WINDOWS_PORT_PLAN.md) defines supported capabilities, bounded
+fixture tests, publication gates and preservation/branch cleanup requirements.

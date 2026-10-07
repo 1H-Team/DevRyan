@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { act } from 'react';
 import { describe, expect, mock, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { withDom } from '@/components/bots/chat/botMountedDom';
+import { beginRuntimeCapabilityRead, observeRuntimeCapabilityHealth, resetRuntimeCapabilitiesForTests } from '@/lib/opencode/runtime-capabilities';
 import { I18nProvider } from '@/lib/i18n';
 mock.module('@/components/ui/ProviderLogo', () => ({ ProviderLogo: () => null }));
 const { ProviderAuthenticationSummary } = await import('./ProvidersPage');
@@ -82,3 +84,17 @@ describe('collapsed provider authentication summary', () => {
     expect(render({ providerId: 'cursor-acp', cursorUnavailable: true, connectionState: 'disconnect_pending' })).toContain('Disconnect pending');
   });
 });
+
+test('stock Anthropic API-key preview does not advertise native Claude Code authentication', async () => withDom(async (container) => {
+  const { createRoot } = await import('react-dom/client');
+  const root = createRoot(container as unknown as Element);
+  observeRuntimeCapabilityHealth({ openCode: { generation: 2, runtimeMode: 'standard-preview', ordinaryUserPermissions: true,
+    capabilities: { providerApiKey: true, providerOAuth: false },
+  } }, beginRuntimeCapabilityRead());
+  try {
+    await act(async () => { root.render(<I18nProvider><ProviderAuthenticationSummary providerId="anthropic" connectionState="connected" cursorConfigured={false} claudeStatus={null} claudeLoading={false} /></I18nProvider>); });
+    expect(container.textContent).toContain('Connected');
+    expect(container.textContent).not.toContain('Checking Claude Code');
+    expect(container.find((node) => node.hasAttribute('data-claude-auth-state'))).toBeNull();
+  } finally { await act(async () => { root.unmount(); }); resetRuntimeCapabilitiesForTests(); }
+}));

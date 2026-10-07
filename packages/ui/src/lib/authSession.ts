@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { isRuntimeFeatureAvailable, useRuntimeCapabilityStore } from '@/lib/opencode/runtime-capabilities';
 import {
   canonicalSettingsPermissionSlug,
   fullSettingsPermissions,
@@ -126,18 +127,29 @@ export const retryAuthSession = async (): Promise<void> => {
   await retrySessionHandler?.();
 };
 
-export const getAuthPrincipal = (): AuthPrincipal => currentPrincipal;
+let runtimePrincipal: AuthPrincipal = currentPrincipal;
+let runtimePrincipalSource = currentPrincipal;
+let runtimeFeatures = useRuntimeCapabilityStore.getState().snapshot.features;
+export const getAuthPrincipal = (): AuthPrincipal => {
+  const snapshot = useRuntimeCapabilityStore.getState().snapshot;
+  if (runtimePrincipalSource !== currentPrincipal || runtimeFeatures !== snapshot.features) {
+    runtimePrincipalSource = currentPrincipal;
+    runtimeFeatures = snapshot.features;
+    runtimePrincipal = snapshot.runtimeMode === 'standard-preview' ? { ...currentPrincipal, policy: {
+      ...currentPrincipal.policy, bots: false, browser: false, terminal: false,
+    } } : currentPrincipal;
+  }
+  return runtimePrincipal;
+};
 
 export const subscribeAuthPrincipal = (listener: () => void): (() => void) => {
   listeners.add(listener);
-  return () => { listeners.delete(listener); };
+  const unsubscribe = useRuntimeCapabilityStore.subscribe(listener);
+  return () => { listeners.delete(listener); unsubscribe(); };
 };
 
 export const useAuthPrincipal = (): AuthPrincipal => React.useSyncExternalStore(
-  (listener) => {
-    listeners.add(listener);
-    return () => listeners.delete(listener);
-  },
+  subscribeAuthPrincipal,
   getAuthPrincipal,
   () => LOCAL_ADMIN,
 );
@@ -194,7 +206,8 @@ export const canEditPersonalAgentModels = (principal: AuthPrincipal): boolean =>
 export const hasAuthCapability = (
   principal: AuthPrincipal,
   capability: Exclude<AuthCapability, 'settingsPages' | 'settingsPermissions' | 'featureOverrides'>,
-): boolean => principal.scope === 'local-admin' || principal.policy[capability] === true;
+): boolean => (!(capability === 'terminal' || capability === 'browser' || capability === 'bots')
+  || isRuntimeFeatureAvailable(capability)) && (principal.scope === 'local-admin' || principal.policy[capability] === true);
 
 export const assertCanCreateBranches = (): void => {
   if (!hasAuthCapability(getAuthPrincipal(), 'createBranches')) {

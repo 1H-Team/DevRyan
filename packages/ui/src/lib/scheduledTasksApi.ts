@@ -1,3 +1,4 @@
+import { assertRuntimeFeatureAvailable } from './opencode/runtime-capabilities';
 export type ScheduledTaskStatus = 'idle' | 'running' | 'success' | 'error';
 
 export type ScheduledTask = {
@@ -58,6 +59,7 @@ const ensureProjectID = (projectID: string): string => {
 };
 
 export const fetchScheduledTasks = async (projectID: string): Promise<ScheduledTask[]> => {
+  assertRuntimeFeatureAvailable('managedChildTasks');
   const safeProjectID = ensureProjectID(projectID);
   const response = await fetch(`/api/projects/${encodeURIComponent(safeProjectID)}/scheduled-tasks`);
   if (!response.ok) {
@@ -71,6 +73,7 @@ export const fetchScheduledTasks = async (projectID: string): Promise<ScheduledT
 };
 
 export const upsertScheduledTask = async (projectID: string, task: Partial<ScheduledTask>): Promise<ScheduledTask[]> => {
+  assertRuntimeFeatureAvailable('managedChildTasks');
   const safeProjectID = ensureProjectID(projectID);
   const response = await fetch(`/api/projects/${encodeURIComponent(safeProjectID)}/scheduled-tasks`, {
     method: 'PUT',
@@ -92,6 +95,7 @@ export const upsertScheduledTask = async (projectID: string, task: Partial<Sched
 };
 
 export const deleteScheduledTask = async (projectID: string, taskID: string): Promise<ScheduledTask[]> => {
+  assertRuntimeFeatureAvailable('managedChildTasks');
   const safeProjectID = ensureProjectID(projectID);
   const safeTaskID = ensureProjectID(taskID);
   const response = await fetch(`/api/projects/${encodeURIComponent(safeProjectID)}/scheduled-tasks/${encodeURIComponent(safeTaskID)}`, {
@@ -112,6 +116,7 @@ export const deleteScheduledTask = async (projectID: string, taskID: string): Pr
 };
 
 export const runScheduledTaskNow = async (projectID: string, taskID: string): Promise<{ sessionId?: string }> => {
+  assertRuntimeFeatureAvailable('managedChildTasks');
   const safeProjectID = ensureProjectID(projectID);
   const safeTaskID = ensureProjectID(taskID);
   const response = await fetch(`/api/projects/${encodeURIComponent(safeProjectID)}/scheduled-tasks/${encodeURIComponent(safeTaskID)}/run`, {

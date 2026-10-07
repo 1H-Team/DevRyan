@@ -1,4 +1,5 @@
 import React from 'react';
+import { useRuntimeFeature } from '@/lib/opencode/runtime-capabilities';
 import { useVoiceContext } from '@/hooks/useVoiceContext';
 import { useConfigStore } from '@/stores/useConfigStore';
 
@@ -19,11 +20,12 @@ const VoiceContextBridge = React.memo(function VoiceContextBridge() {
  * ```
  */
 export function VoiceProvider({ children }: { children: React.ReactNode }) {
+    const media = useRuntimeFeature('media');
     const voiceModeEnabled = useConfigStore((state) => state.voiceModeEnabled);
 
     return (
         <>
-            {voiceModeEnabled ? <VoiceContextBridge /> : null}
+            {voiceModeEnabled && media ? <VoiceContextBridge /> : null}
             {children}
         </>
     );

@@ -1,3 +1,4 @@
+import { isRuntimeFeatureAvailable } from '@/lib/opencode/runtime-capabilities';
 import { canAccessSettingsPage, hasAuthCapability, type AuthPrincipal } from '@/lib/authSession';
 import { getSettingsPageMeta, type SettingsPageSlug } from '@/lib/settings/metadata';
 import { isDesktopShell, isWebRuntime } from '@/lib/desktop';
@@ -19,7 +20,7 @@ export const canAccessSettingsDestination = (
   principal: AuthPrincipal,
   slug: SettingsPageSlug,
 ): boolean => (
-  slug === 'bots'
+  slug === 'voice' && !isRuntimeFeatureAvailable('media') ? false : slug === 'bots'
     ? hasAuthCapability(principal, 'bots') && canAccessSettingsPage(principal, slug)
     : canAccessSettingsPage(principal, slug)
 );

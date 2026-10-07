@@ -1,3 +1,4 @@
+import { assertRuntimeFeatureAvailable } from './opencode/runtime-capabilities';
 import { opencodeClient } from './opencode/client';
 import type {
   ManagedTaskEventRecord,
@@ -230,6 +231,7 @@ export const createManagedOrchestrationApi = (options: {
   const fetchImpl = options.fetchImpl ?? fetch;
 
   const requestJson = async <T>(input: string, init?: RequestInit): Promise<T> => {
+    assertRuntimeFeatureAvailable('managedChildTasks');
     let response: Response;
     try {
       response = await fetchImpl(input, init);
@@ -296,6 +298,7 @@ export const createManagedOrchestrationApi = (options: {
       );
     },
     async acknowledgeTask(taskId, body) {
+      assertRuntimeFeatureAvailable('managedChildTasks');
       if (body.action === 'retry' || body.action === 'resume' || body.action === 'retry_in_place') {
         (await opencodeClient.awaitInputSubscription())();
       }

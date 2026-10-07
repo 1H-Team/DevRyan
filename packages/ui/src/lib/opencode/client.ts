@@ -27,7 +27,7 @@ import {
 import { resolveProviderPromptTools } from "./provider-prompt-tools";
 import { getSdkErrorMessage } from './sdk-error';
 import { CURSOR_ACP_PROVIDER_ID } from '../providers/cursorAcp';
-import { beginRuntimeCapabilityRead, failRuntimeCapabilityRead, observeRuntimeCapabilityHealth } from './runtime-capabilities';
+import { assertRuntimeFeatureAvailable, beginRuntimeCapabilityRead, failRuntimeCapabilityRead, observeRuntimeCapabilityHealth } from './runtime-capabilities';
 
 // Use relative path by default (works with both dev and nginx proxy server)
 // Can be overridden with VITE_OPENCODE_URL for absolute URLs in special deployments
@@ -1813,6 +1813,7 @@ class OpencodeService {
     directory?: string,
     options: { scope?: ScopedRevertScope; rootSessionId?: string } = {},
   ): Promise<ScopedSessionRevertResult> {
+    assertRuntimeFeatureAvailable('revert');
     const targetDirectory = directory || this.currentDirectory;
     return requestScopedSessionRevert({
       baseUrl: this.baseUrl,
@@ -1825,6 +1826,7 @@ class OpencodeService {
   }
 
   async unrevertSessionScoped(sessionId: string, directory?: string): Promise<ScopedSessionUnrevertResult> {
+    assertRuntimeFeatureAvailable('revert');
     const targetDirectory = directory || this.currentDirectory;
     return requestScopedSessionUnrevert({
       baseUrl: this.baseUrl,
@@ -1838,6 +1840,7 @@ class OpencodeService {
     directory?: string,
     options: { signal?: AbortSignal } = {},
   ): Promise<SessionTreeChanges> {
+    assertRuntimeFeatureAvailable('revert');
     const targetDirectory = directory || this.currentDirectory;
     return requestSessionTreeChanges({
       baseUrl: this.baseUrl,
@@ -1849,12 +1852,14 @@ class OpencodeService {
   }
 
   async sessionChangesAction(sessionId: string, directory: string, revision: string, action: 'undo' | 'redo'): Promise<void> {
+    assertRuntimeFeatureAvailable('revert');
     const url = buildScopedRevertUrl(this.baseUrl, sessionId, `changes/${action}`, directory);
     const response = await this.noStoreFetch(url.toString(), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ revision }) });
     if (!response.ok) throw await readScopedRevertError(response, 'Cannot restore session changes');
   }
 
   async getSessionChangesPage(sessionId: string, directory: string, revision: string, cursor: string | null, signal?: AbortSignal): Promise<SessionTreeChanges> {
+    assertRuntimeFeatureAvailable('revert');
     const url = buildScopedRevertUrl(this.baseUrl, sessionId, 'changes', directory);
     url.searchParams.set('revision', revision);
     if (cursor) url.searchParams.set('cursor', cursor);
@@ -1866,6 +1871,7 @@ class OpencodeService {
   }
 
   async getSessionChangesDiffPage(sessionId: string, directory: string, revision: string, file: string, cursor: string | null, signal?: AbortSignal, segment: number | null = null): Promise<SessionChangesDiffPage> {
+    assertRuntimeFeatureAvailable('revert');
     const url = buildScopedRevertUrl(this.baseUrl, sessionId, 'changes/diff', directory);
     url.searchParams.set('revision', revision);
     url.searchParams.set('file', file);

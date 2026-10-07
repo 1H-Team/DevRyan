@@ -1,3 +1,4 @@
+import { isRuntimeFeatureAvailable } from '@/lib/opencode/runtime-capabilities';
 import * as gitHttp from '@/lib/gitApiHttp';
 import type { GitWorktreeBootstrapStatus, RuntimeAPIs } from '@/lib/api/types';
 
@@ -240,6 +241,8 @@ export const waitForWorktreeBootstrap = async (
   operationId?: string | null,
   options?: { retryFailedPopulate?: boolean },
 ): Promise<void> => {
+  // Standard Preview uses ordinary project directories, with no managed bootstrap receipt.
+  if (!isRuntimeFeatureAvailable('nativeExecution')) return;
   const key = getKey(directory);
   if (!key) return;
   const entry = ensureEntry(directory);

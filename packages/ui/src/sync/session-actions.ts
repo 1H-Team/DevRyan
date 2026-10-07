@@ -1,3 +1,4 @@
+import { assertRuntimeFeatureAvailable } from '@/lib/opencode/runtime-capabilities';
 import { getRetentionNavigationRevision, type SelectionOptions } from '@/lib/sessionRetention';
 /**
  * Session actions — SDK-calling operations for session management.
@@ -2572,6 +2573,7 @@ export async function revertToMessage(
   messageId: string,
   options: RevertToMessageOptions = {},
 ): Promise<void> {
+  assertRuntimeFeatureAvailable('revert');
   if (!messageId) {
     throw new Error("messageID is required")
   }
@@ -2896,6 +2898,7 @@ export async function undoSession(sessionId: string): Promise<void> {
  * `redo_unavailable` is not an error for the user: it toasts "Nothing to redo".
  */
 export async function unrevertSession(sessionId: string): Promise<void> {
+  assertRuntimeFeatureAvailable('revert');
   const sessionDirectory = getSessionDirectory(sessionId)
   const store = directoryStore(sessionDirectory)
   const state = store.getState()

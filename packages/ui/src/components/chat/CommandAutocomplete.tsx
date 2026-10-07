@@ -1,3 +1,4 @@
+import { useRuntimeFeature } from '@/lib/opencode/runtime-capabilities';
 import React from 'react';
 import { RiCommandLine, RiFileLine, RiFlashlightLine, RiRefreshLine, RiScissorsLine, RiTerminalBoxLine, RiArrowGoBackLine, RiArrowGoForwardLine, RiSearchEyeLine, RiTimeLine } from '@remixicon/react';
 import { cn, fuzzyMatch } from '@/lib/utils';
@@ -51,6 +52,8 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
 }, ref) => {
   const { t } = useI18n();
   const principal = useAuthPrincipal();
+  const canRevert = useRuntimeFeature('revert');
+  const managedChildTasks = useRuntimeFeature('managedChildTasks');
   const canUseFiles = hasAuthCapability(principal, 'files');
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
   const sessionMessages = useSessionMessages(currentSessionId ?? '');
@@ -145,7 +148,9 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
               fuzzyMatch(cmd.name, searchQuery) ||
               (cmd.description && fuzzyMatch(cmd.description, searchQuery))
             )
-          : allCommands).filter(cmd => allowInitCommand || cmd.name !== 'init');
+          : allCommands).filter(cmd => (allowInitCommand || cmd.name !== 'init')
+          && (canRevert || !['undo', 'redo'].includes(cmd.name))
+          && (managedChildTasks || cmd.name !== 'workspace-review'));
 
         filtered.sort((a, b) => {
           const aStartsWith = a.name.toLowerCase().startsWith(searchQuery.toLowerCase());
@@ -188,7 +193,9 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
               fuzzyMatch(cmd.name, searchQuery) ||
               (cmd.description && fuzzyMatch(cmd.description, searchQuery))
             )
-          : builtInCommands).filter(cmd => allowInitCommand || cmd.name !== 'init');
+          : builtInCommands).filter(cmd => (allowInitCommand || cmd.name !== 'init')
+          && (canRevert || !['undo', 'redo'].includes(cmd.name))
+          && (managedChildTasks || cmd.name !== 'workspace-review'));
 
         setCommands(filtered);
       } finally {
@@ -197,7 +204,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
     };
 
     loadCommands();
-  }, [searchQuery, hasMessagesInCurrentSession, hasSession, canStartSessionCommand, commandsWithMetadata, skills, t]);
+  }, [searchQuery, hasMessagesInCurrentSession, hasSession, canStartSessionCommand, commandsWithMetadata, skills, t, canRevert, managedChildTasks]);
 
   React.useEffect(() => {
     setSelectedIndex(0);

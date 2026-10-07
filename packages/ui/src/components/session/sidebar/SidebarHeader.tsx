@@ -1,4 +1,5 @@
 import React from 'react';
+import { useRuntimeFeature } from '@/lib/opencode/runtime-capabilities';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   RiSearchLine,
@@ -53,6 +54,7 @@ export function SidebarHeader(props: Props): React.ReactNode {
     onAudienceChange,
   } = props;
 
+  const managedChildTasks = useRuntimeFeature('managedChildTasks');
   const showCodingActions = audience === 'coding-agents' && !hideDirectoryControls;
   const showTopRow = showSidebarToggle || (showCodingActions && !hideSearchAction);
   const reserveExternalChromeOnly = reserveExternalDesktopChromeRow && !showTopRow;
@@ -82,7 +84,7 @@ export function SidebarHeader(props: Props): React.ReactNode {
         <TooltipContent side="bottom" sideOffset={4}><p>{t('sessions.sidebar.header.actions.newChat')}</p></TooltipContent>
       </Tooltip>
 
-      {showMultiRun ? <Tooltip>
+      {showMultiRun && managedChildTasks ? <Tooltip>
         <TooltipTrigger asChild>
           <button
             type="button"
@@ -96,7 +98,7 @@ export function SidebarHeader(props: Props): React.ReactNode {
         <TooltipContent side="bottom" sideOffset={4}><p>{t('sessions.sidebar.header.actions.newMultiRun')}</p></TooltipContent>
       </Tooltip> : null}
 
-      <Tooltip>
+      {managedChildTasks ? <Tooltip>
         <TooltipTrigger asChild>
           <button
             type="button"
@@ -108,7 +110,7 @@ export function SidebarHeader(props: Props): React.ReactNode {
           </button>
         </TooltipTrigger>
         <TooltipContent side="bottom" sideOffset={4}><p>{t('sessions.sidebar.header.actions.scheduledTasks')}</p></TooltipContent>
-      </Tooltip>
+      </Tooltip> : null}
     </div>
   ) : null;
 

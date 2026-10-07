@@ -1,3 +1,4 @@
+import { useRuntimeFeature } from '@/lib/opencode/runtime-capabilities';
 import React from 'react';
 import type { Part } from '@opencode-ai/sdk/v2';
 import { useShallow } from 'zustand/react/shallow';
@@ -170,6 +171,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     const getAgentModelForSession = useSelectionStore((s) => s.getAgentModelForSession);
     const getSessionModelSelection = useSelectionStore((s) => s.getSessionModelSelection);
     const revertToMessage = sessionActions.revertToMessage;
+    const canRevert = useRuntimeFeature('revert');
     const forkFromMessage = sessionActions.forkFromMessage;
 
     streamPerfCount('ui.chat_message.render');
@@ -1086,7 +1088,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                                                 showReasoningTraces={showReasoningTraces}
                                                 onAuxiliaryContentComplete={handleAuxiliaryContentComplete}
                                                 agentMention={agentMention}
-                                                onRevert={handleRevert}
+                                                onRevert={canRevert ? handleRevert : undefined}
                                                 isReverting={isReverting}
                                                 onFork={isUser ? handleFork : undefined}
                                                 errorMessage={assistantErrorText}
@@ -1121,7 +1123,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                                                 showReasoningTraces={showReasoningTraces}
                                                 onAuxiliaryContentComplete={handleAuxiliaryContentComplete}
                                                 agentMention={agentMention}
-                                                onRevert={handleRevert}
+                                                onRevert={canRevert ? handleRevert : undefined}
                                                 isReverting={isReverting}
                                                 onFork={isUser ? handleFork : undefined}
                                                 errorMessage={assistantErrorText}

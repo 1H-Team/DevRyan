@@ -1,3 +1,4 @@
+import { useRuntimeFeature } from '@/lib/opencode/runtime-capabilities';
 import React from 'react';
 import {
     Dialog,
@@ -36,6 +37,7 @@ export const TimelineDialog: React.FC<TimelineDialogProps> = ({
     const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
     const isRevertPending = useSessionRevertPending(currentSessionId ?? '');
     const messages = useSessionMessageRecords(currentSessionId ?? '');
+    const canRevert = useRuntimeFeature('revert');
     const revertToMessage = useSessionUIStore((state) => state.revertToMessage);
     const forkFromMessage = useSessionUIStore((state) => state.forkFromMessage);
     const { isMobile, isTablet } = useDeviceInfo();
@@ -232,10 +234,10 @@ export const TimelineDialog: React.FC<TimelineDialogProps> = ({
                                                     <button
                                                         type="button"
                                                         className="h-5 w-5 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-                                                        disabled={Boolean(revertingMessageId) || isRevertPending}
+                                                        disabled={!canRevert || Boolean(revertingMessageId) || isRevertPending}
                                                         onClick={async (e) => {
                                                             e.stopPropagation();
-                                                            if (revertingMessageId || isRevertPending) return;
+                                                            if (!canRevert || revertingMessageId || isRevertPending) return;
                                                             setRevertingMessageId(message.info.id);
                                                             try {
                                                                 await revertToMessage(currentSessionId, message.info.id);

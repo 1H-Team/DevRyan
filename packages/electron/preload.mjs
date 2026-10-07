@@ -14,6 +14,7 @@ const readArgValue = (name) => {
 
 const localOrigin = readArgValue('--openchamber-local-origin');
 const serverOrigin = readArgValue('--openchamber-server-origin');
+const isPreview = readArgValue('--devryan-runtime-mode') === 'standard-preview';
 const homeDirectory = readArgValue('--openchamber-home');
 const macosMajorRaw = readArgValue('--openchamber-macos-major');
 const macosMajor = Number.parseInt(macosMajorRaw, 10);
@@ -97,6 +98,7 @@ if (Number.isFinite(macosMajor) && macosMajor > 0) {
 
 contextBridge.exposeInMainWorld('__OPENCHAMBER_ELECTRON__', {
   runtime: 'electron',
+  ...(isPreview ? { runtimeMode: 'standard-preview', capabilities: { browser: false, terminal: false, media: false, updater: false } } : {}),
 });
 
 // Note: bootOutcome must stay writable from the main world's initScript so

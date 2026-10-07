@@ -20,6 +20,13 @@ export type RuntimeCapabilityKey = (typeof RUNTIME_CAPABILITY_KEYS)[number];
 export type RuntimeCapabilities = Readonly<Record<RuntimeCapabilityKey, boolean>>;
 export type OpenCodeRuntimeGeneration = 2;
 
+export const RUNTIME_FEATURE_KEYS = ['chat', 'sessions', 'files', 'providerApiKey', 'revert', 'nativeExecution',
+  'managedChildTasks', 'providerOAuth', 'bots', 'browser', 'media', 'terminal'] as const;
+export type RuntimeFeatureKey = (typeof RUNTIME_FEATURE_KEYS)[number];
+export type RuntimeFeatures = Readonly<Record<RuntimeFeatureKey, boolean>>;
+const PREVIEW_ALLOWED_FEATURES: ReadonlySet<RuntimeFeatureKey> = new Set(['chat', 'sessions', 'files', 'providerApiKey']);
+const UNAVAILABLE_RUNTIME_FEATURES = Object.freeze(Object.fromEntries(RUNTIME_FEATURE_KEYS.map(key => [key, false]))) as RuntimeFeatures;
+
 export type RuntimeCapabilitySnapshot = Readonly<{
   /** `null` when the server did not report a valid generation. */
   generation: OpenCodeRuntimeGeneration | null;
@@ -27,6 +34,9 @@ export type RuntimeCapabilitySnapshot = Readonly<{
   /** `default` until a `/health` body with an `openCode` block was read. */
   source: 'default' | 'health';
   runtimeIdentity?: string | null;
+  runtimeMode?: 'standard-preview';
+  ordinaryUserPermissions?: boolean;
+  features?: RuntimeFeatures;
 }>;
 
 export const DEFAULT_RUNTIME_CAPABILITIES: RuntimeCapabilities = Object.freeze({
@@ -84,13 +94,20 @@ export const parseRuntimeCapabilitySnapshot = (health: unknown): RuntimeCapabili
   const capabilities = {} as Record<RuntimeCapabilityKey, boolean>;
   for (const key of RUNTIME_CAPABILITY_KEYS) {
     const value = reported?.[key];
-    capabilities[key] = generation === 2 && value === true;
+    capabilities[key] = generation === 2 && block.runtimeMode !== 'standard-preview' && value === true;
   }
 
   return Object.freeze({
     generation,
     capabilities: Object.freeze(capabilities),
     source: 'health',
+    ...(block.runtimeMode === 'standard-preview' ? {
+      runtimeMode: 'standard-preview' as const,
+      ordinaryUserPermissions: block.ordinaryUserPermissions === true,
+      features: Object.freeze(Object.fromEntries(RUNTIME_FEATURE_KEYS.map(key => [key,
+        generation === 2 && block.ordinaryUserPermissions === true && PREVIEW_ALLOWED_FEATURES.has(key) && reported?.[key] === true,
+      ]))) as RuntimeFeatures,
+    } : {}),
     ...(typeof block.runtimeIdentity === 'string' && block.runtimeIdentity.trim()
       ? { runtimeIdentity: block.runtimeIdentity } : {}),
   });
@@ -98,7 +115,9 @@ export const parseRuntimeCapabilitySnapshot = (health: unknown): RuntimeCapabili
 
 const areSnapshotsEqual = (left: RuntimeCapabilitySnapshot, right: RuntimeCapabilitySnapshot): boolean => {
   if (left.generation !== right.generation || left.source !== right.source
-    || left.runtimeIdentity !== right.runtimeIdentity) return false;
+    || left.runtimeIdentity !== right.runtimeIdentity || left.runtimeMode !== right.runtimeMode
+    || left.ordinaryUserPermissions !== right.ordinaryUserPermissions
+    || RUNTIME_FEATURE_KEYS.some(key => left.features?.[key] !== right.features?.[key])) return false;
   return RUNTIME_CAPABILITY_KEYS.every((key) => left.capabilities[key] === right.capabilities[key]);
 };
 
@@ -148,7 +167,7 @@ export const invalidateRuntimeCapabilities = (): void => {
   readRevision += 1;
   inFlight = null;
   const current = useRuntimeCapabilityStore.getState().snapshot;
-  const unknown = DEFAULT_RUNTIME_CAPABILITY_SNAPSHOT;
+  const unknown = unavailableSnapshot(current);
   useRuntimeCapabilityStore.setState({ snapshot: areSnapshotsEqual(current, unknown) ? current : unknown,
     status: 'idle', failedAt: 0 });
 };
@@ -158,7 +177,7 @@ export const observeRuntimeCapabilityHealth = (health: unknown, revision: number
   const next = parseRuntimeCapabilitySnapshot(health);
   const current = useRuntimeCapabilityStore.getState().snapshot;
   if (next.generation === null) {
-    const unknown = DEFAULT_RUNTIME_CAPABILITY_SNAPSHOT;
+    const unknown = unavailableSnapshot(next.runtimeMode === 'standard-preview' ? next : current);
     useRuntimeCapabilityStore.setState({ snapshot: areSnapshotsEqual(current, unknown) ? current : unknown });
     failRuntimeCapabilityRead(revision);
     return useRuntimeCapabilityStore.getState().snapshot;
@@ -256,6 +275,33 @@ export const useRuntimeCapability = (key: RuntimeCapabilityKey): boolean => {
   }, [status]);
   return enabled;
 };
+
+// A failed refresh cannot restore protected controls during a preview restart.
+const unavailableSnapshot = (previous: RuntimeCapabilitySnapshot): RuntimeCapabilitySnapshot =>
+  previous.runtimeMode === 'standard-preview' ? Object.freeze({ ...DEFAULT_RUNTIME_CAPABILITY_SNAPSHOT,
+    runtimeMode: 'standard-preview', ordinaryUserPermissions: previous.ordinaryUserPermissions,
+    features: UNAVAILABLE_RUNTIME_FEATURES,
+  }) : DEFAULT_RUNTIME_CAPABILITY_SNAPSHOT;
+
+export const isRuntimeFeatureAvailable = (key: RuntimeFeatureKey,
+  snapshot = useRuntimeCapabilityStore.getState().snapshot): boolean =>
+  snapshot.runtimeMode !== 'standard-preview' || snapshot.features?.[key] === true;
+
+export const assertRuntimeFeatureAvailable = (key: RuntimeFeatureKey): void => {
+  if (!isRuntimeFeatureAvailable(key)) throw Object.assign(new Error(`${key} is unavailable in Standard Preview.`), {
+    code: 'capability_unavailable', capability: key,
+  });
+};
+
+export const useRuntimeFeature = (key: RuntimeFeatureKey): boolean => {
+  const available = useRuntimeCapabilityStore(state => isRuntimeFeatureAvailable(key, state.snapshot));
+  const status = useRuntimeCapabilityStore(state => state.status);
+  React.useEffect(() => { if (status === 'idle') void loadRuntimeCapabilities(); }, [status]);
+  return available;
+};
+
+export const useStandardPreview = (): boolean =>
+  useRuntimeCapabilityStore(state => state.snapshot.runtimeMode === 'standard-preview');
 
 /** Test-only reset of the module state. */
 export const resetRuntimeCapabilitiesForTests = (): void => {

@@ -1,140 +1,93 @@
-# Windows port and qualification
+# Windows compatibility preview and native qualification
 
-Windows qualification follows the macOS 2.0.2 release. Both architectures must build and run
-their own artifacts: x64 on `windows-2022`, ARM64 on `windows-11-arm`.
-These are [GitHub hosted runner labels](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
-Bun stays at 1.3.14 and dependency versions stay pinned in `bun.lock`.
-Cross-compilation is useful for development but cannot qualify either platform.
+## Approved preview scope
 
-## Ownership and integration order
+The first Windows download is a separate experimental prerelease,
+`v2.0.3-windows-preview.1`, for x64 and ARM64. It uses stock OpenCode **2.0.20**
+with ordinary Windows-user permissions. DevRyan does not maintain Node/Bun
+forks for this lane. The unfinished native confinement port remains separate.
+Published `v2.0.2`, native admission, and stable release verification are unchanged.
 
-The Electron shell remains in `packages/electron`; its in-process web server
-remains the feature backend. Native contracts remain in the harness runtime and
-`packages/web/server/lib/opencode/runtime-host`. The legacy Tauri package receives
-no Windows features. Shared changes follow integration of the macOS inputs,
-storage, lifecycle, UX, skills, prompt, journal, and Bot image work.
+Electron hosts DevRyan's web feature backend in-process. Packaged preview
+metadata selects `standard-preview` before native bootstrap imports execute.
+The backend starts its own bundled OpenCode process with authenticated loopback
+communication and stock `/api/info` readiness. The preview has a separate app
+identity and data directory, an explicit capabilities response, and a visible
+notice explaining ordinary-user execution. Existing Electron origin, navigation,
+and IPC protections still apply.
 
-1. Add architecture-specific CI and build identities without enabling execution.
-2. Implement and qualify private filesystem and process identity boundaries.
-3. Finish the Windows supervisor, native controller, and writer together.
-4. Enable core execution only after the compiled safety inventory passes.
-5. Package, exercise installation/update recovery, then qualify both installers.
+The supported scope is local projects, validated file operations, API-key
+provider configuration, coding conversations, session history, permissions,
+questions, SSE, abort, restart and shutdown. OpenCode owns provider credentials;
+its ordinary tools may modify files and run commands with the user's permissions.
 
-All installers in a release share one version and frozen source. The manual
-`windows-release-append.yml` workflow defaults to a dry run and requires both
-architecture installer gates before appending to the already qualified macOS
-release. It binds original CI runs, packaging receipts, downloaded macOS bytes
-and the unchanged tag, then verifies the exact `desktop` asset allowlist.
-The NSIS qualification stage and SDK-backed updater are implemented, with
-execution held behind their native prerequisites. No actual installer or update
-qualification is claimed from source or local macOS tests; the append preflight
-refuses until that actual stage passes on both Windows architectures.
+Both backend routes and UI capabilities disable protected Revert/redo, captured
+change history, DevRyan-managed child-task orchestration, native provider
+transports, OAuth enrollment, managed Bots, native browser/media helpers and the
+integrated terminal. The preview never fabricates confinement or Revert receipts.
+Subscription OAuth and advanced native features are follow-up work.
 
-## Release-readiness plan
+## Packaging and publication
 
-### Baseline and runtime decision
+Use native `windows-2022` x64 and `windows-11-arm` ARM64 runners. Pin each official
+OpenCode platform archive's integrity and verify its executable's PE architecture;
+an installer filename is not architecture evidence. Build per-user NSIS installers
+with preview branding and automatic updates disabled. Preview upgrades use a
+new downloaded installer.
 
-[Run 37612482825](https://github.com/1H-Team/DevRyan/actions/runs/37612482825)
-at `26c85147` failed release qualification on both native architectures.
-Supervisor compilation, all 23 private-filesystem checks, reviewed executable
-and Git resources, libsql and candidate controller/writer builds passed.
-The original Node/Bun compatibility matrix passed 0 of 16 cases on each host.
-Compiled runtime acceptance did not run and neither installer qualified.
+The separate preview verifier requires exactly these public assets:
 
-Recommend a bounded compatibility investigation before committing to maintained
-Node/Bun forks. The first milestone must identify and prove the smallest change
-on both architectures. A permanent fork is not yet justified by the evidence.
-The product decision is pending: investigate a minimal fix first, maintain
-reviewed runtime patches, or require official runtimes and defer Windows.
+- `DevRyan-2.0.3-windows-preview.1-win-x64.exe`
+- `DevRyan-2.0.3-windows-preview.1-win-arm64.exe`
 
-Maintained builds would make DevRyan responsible for rebasing security fixes,
-rebuilding and testing x64 and ARM64, pinning source/toolchain/artifact identities,
-and removing the patches when official builds qualify. They do not automatically
-fix user-installed runtimes, Bun-compiled executables or vendor binaries with
-embedded runtimes. Inventory those execution paths before selecting a solution.
+It binds source, runtime versions, architectures and hashes to each artifact.
+Checksums, tested scenarios, signing status and known limitations belong in the
+prerelease notes, without extra public checksum/metadata assets. Stable users
+must not be directed to the preview automatically.
 
-### Milestones and acceptance gates
+[OpenChamber's Windows workflow](https://github.com/openchamber/openchamber/blob/v2.1.1/.github/workflows/release.yml)
+is a packaging reference for Electron, bundled OpenCode and per-user NSIS.
+DevRyan retains its own backend, branding and release contracts.
 
-1. **Establish runtime feasibility.** Separate drive-root/cwd discovery from
-   nested pipe and ignored-stdio failures using the retained bounded stderr.
-   Evaluate documented runtime options and applicable official fixes first;
-   any experimental patch stays confined to disposable reviewed candidates.
-   Preserve the original sixteen compatibility cases and their guarantees.
-   Exit only when all sixteen pass on native x64 and ARM64, followed by running
-   descendant cancellation, early cancellation and parent-death settlement.
-   A successful LOCAL pipe probe alone is insufficient. Do not widen host-root
-   ACLs, remove LPAC or bypass existing admission checks.
+## Verification and completion
 
-2. **Prove the shipped binary stack and decide maintenance.** Inventory project
-   Node/Bun launches, the compiled controller/writer, Claude and AST invocations.
-   Rebuild the controller/writer through the actual selected compiler and run
-   initialized workloads inside confinement. Exercise the exact reviewed Claude
-   and AST assets; recheck libsql ABI on the chosen runtimes. Do not infer that
-   a custom Bun compiler changes the runtime embedded in every compiled output.
-   Adopt a pinned patch set only after this complete stack qualifies and the
-   security-update/rebuild process is reproducible. If a vendor binary remains
-   incompatible, resolve that through vendor support or an explicit supported-
-   provider decision; patched Node/Bun alone cannot establish compatibility.
+1. Run `bun run validate:full`, `bun run build` and `bun run bundle:check` on
+   the final source, plus focused preview contract tests.
+2. On each native Windows runner, perform bounded installation, launch,
+   readiness, local project/file access, API-key setup with a disposable provider
+   fixture, chat/SSE, history, abort, restart and uninstall checks. Confirm
+   unsupported backend routes refuse requests.
+3. Fix reproduced startup failures before publishing that architecture.
+   Record unavailable checks honestly. LPAC qualification, exhaustive installer
+   recovery and paid live-provider testing do not block this experimental lane.
+4. Review existing repairs and preview changes in PR #1, fix actionable
+   regressions, update its description, complete relevant checks, and merge.
+5. Publish the prerelease from the reviewed source and verify its exact assets.
 
-3. **Resolve supervision and Revert evidence.** The native directory flush now
-   succeeds, but Revert subsequently fails termination-receipt validation on
-   both architectures. Capture bounded native refusal details and receipt-read
-   failure stages in disposable fixtures before selecting a fix. Verify process
-   creation identity, cancellation event ownership, Job drain and durable
-   receipt identity/schema. Failed or missing receipts must retain recovery
-   state and block publication. Re-run concurrent-writer/Revert, detached
-   descendants, early cancellation and parent-loss cases on both hosts.
+Use **GPT-6.1 Sol with high reasoning** for all subagents: the runtime owner
+handles backend composition/lifecycle/adapters, the desktop/release owner handles
+Electron and packaging, and the review/test owner handles UI capabilities and
+independent checks. Assign disjoint files and preserve other agents' edits.
 
-4. **Complete controller/provider integration.** Add explicit controller and
-   provider roles to the existing Windows supervisor policy while preserving
-   session-policy restrictions. Stage sealed read-only runtime, configuration
-   and finite bootstrap-evidence projections; retain logical signed identities
-   when reading their physical copies. Give each worker separate mutable roots.
-   Provide the supported read-only logical project view: today's private cwd
-   is writable, even though writes to the original absolute host path are denied.
-   Keep credential seed deletion with the existing host acknowledgement owner.
-   Route Claude transport launches through the host-owned provider channel,
-   bound to the current attempt/session/directory and approved executable.
-   Use native creation identities, cancellation and durable receipts throughout;
-   do not grant the confined child private-file authority or use PID-only kills.
-   Exit only after the integrated compiled inventory proves these contracts.
+Before synchronizing primary `main`, coordinate with active writers and retain a
+recoverable snapshot of all pre-existing edits. Preserve overlapping edits,
+fast-forward `main`, restore the edits, verify restoration, and retain the backup.
+These unrelated edits do not belong in preview commits or artifacts.
 
-5. **Qualify complete applications and installers.** Run `validate:full`,
-   `build` and `bundle:check` against the final source. Require successful native
-   supervisor acceptance, initialized controller/writer and credential handoff,
-   durable recovery, provider execution, cancellation/Revert/publication ordering,
-   and the supported UI/CLI/native feature checks on both architectures.
-   Candidate build or empty-input boot-refusal evidence cannot grant admission.
-   Exercise all five actual NSIS scenarios: installation, update success,
-   integrity refusal, interruption and rollback. Bind installer bytes, exact
-   version/source, native receipts and digests to the qualification evidence.
+Re-inventory open PRs before merging. After verifying ancestry, delete
+`fix/windows-release`, `hotfix/2.0.1`, `implementation/windows-port` and
+`release/2.0.2` from origin. Detach the repair worktree before deleting its local
+branch. Preserve unrelated detached worktrees and tags. Completion requires
+`main` as the only local/origin branch, merged PRs, and recoverable user work.
 
-6. **Freeze and publish one new release.** Choose the next patch version after
-   qualification (proposed `2.0.3` if still the next available version), then
-   qualify and freeze one common source/version for macOS, Windows x64 and
-   Windows ARM64. Any source change requires fresh affected qualification before
-   publication. Run release preflight in dry-run mode; require the exact
-   per-scope DevRyan asset allowlist and existing signing/digest checks. Publish
-   only after every required gate passes, then verify downloads and updater
-   selection on each native architecture. Keep published `v2.0.2` immutable.
+## Native qualification status
 
-Milestones 1–2 decide whether maintained runtimes are viable. The bounded Revert
-investigation can run alongside them. Production integration follows the chosen
-runtime contract; installer/release work follows integrated native acceptance.
-Each milestone must retain failed evidence and an explicit pass/fail result.
-
-### Review and validation status
-
-The repair branch is tracked in [draft PR #1](https://github.com/1H-Team/DevRyan/pull/1).
-PR creation was blocked by `has_pull_requests: false`, not missing credentials.
-The feature is now enabled and the existing collaborators-only policy remains.
-
-Local build, bundle budgets, rebuilt macOS native artifacts and focused final
-regressions pass. Full validation reached the final web suite with one unchanged
-five-second timeout; the complete 62-test file and 14 remaining web tests passed
-on rerun without assertion or timeout changes. Record that command as failed,
-not a clean full-validation pass; the release milestone still requires a clean
-full run on its frozen source.
+Native confinement remains unqualified on both Windows architectures. The prior
+[run 37612482825](https://github.com/1H-Team/DevRyan/actions/runs/37612482825)
+passed supervisor compilation, private-filesystem checks and candidate builds,
+but failed supervision and every Node/Bun bootstrap matrix case. This is not
+preview qualification evidence. The native lane continues to refuse admission
+until its original safety and installer gates pass.
 
 ## Qualification history
 
