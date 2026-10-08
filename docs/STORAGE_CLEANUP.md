@@ -17,6 +17,7 @@ bun run cache:report            # every top-level .cache family: owner, class, s
 bun run cache:prune             # preview only: what would be stripped or removed, and why the rest is kept
 bun run cache:prune --apply     # preview, then delete (re-audits and rechecks each target before removing it)
 bun run cache:prune --max-size 30G --apply   # custom budget (default 50G)
+bun run cache:prune --evict-evidence         # also preview evicting the oldest uncited evidence runs to meet the budget
 ```
 
 `bun run clean` is the same preview as `cache:prune`. `node scripts/storage.mjs
@@ -112,11 +113,18 @@ sanitized proof into `docs/audits/<date>/` instead of relying on a `.cache` path
 
 ## Budget
 
-`--max-size <N>G` (default 50G) is a ceiling for `.cache`. After the class rules,
-if the projected size is still over, the oldest eligible run-evidence and session
-units are removed whole until it fits. Cited, pinned, protected, active and
-failure-capped units are never evicted, and neither is a unit under 1 MiB once
-stripped (cheap evidence). Evictions are marked `budget eviction` in the preview.
+`--max-size <N>G` (default 50G) is a ceiling for `.cache`. The class rules run
+first (scratch and unowned removal, heavy payload stripping). If the projected
+size is still over, the preview reports the shortfall and names the flag that
+would go further; by default nothing else is selected, so logs and JSON results
+are never deleted to meet the budget.
+
+`--evict-evidence` opts in: the oldest eligible run-evidence and session units
+are then removed whole until the budget fits. Cited, pinned, protected, active
+and failure-capped units are never evicted, and neither is a unit under 1 MiB
+once stripped. Evictions are marked `budget eviction` in the preview. With
+`--apply` and no manifest the flag is given on the same command; a manifest
+records it.
 
 ## Coverage by family
 

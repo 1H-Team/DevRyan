@@ -24,7 +24,7 @@ const recoveryNotes = {
 
 // Walk `.cache` once: size every family, classify candidate units under the retention registry and decide
 // strip/remove for each. Nothing here deletes; the result is a preview that `applyStorage` re-derives.
-async function auditCache(root, { citations, now, usage, state, baseEligibleBytes, maxBytes }) {
+async function auditCache(root, { citations, now, usage, state, baseEligibleBytes, maxBytes, evictEvidence }) {
   const protection = makeProtection(citations);
   const families = [], records = [], skipped = { young: 0, nothingToStrip: 0, kept: {} };
   let names = [];
@@ -109,7 +109,9 @@ async function auditCache(root, { citations, now, usage, state, baseEligibleByte
   const totalBytes = families.reduce((sum, family) => sum + family.bytes, 0);
   let projected = totalBytes - baseEligibleBytes - entries.filter(entry => entry.eligible).reduce((sum, entry) => sum + entry.identity.allocatedBytes, 0);
   const evictions = [];
-  if (projected > maxBytes) {
+  // Stripped run evidence (logs, JSON) is only evicted on explicit opt-in; scratch/unowned/rebuildable are already
+  // handled by their class rules above.
+  if (projected > maxBytes && evictEvidence) {
     const candidates = potential.filter(item => item.evictable && ['run-evidence', 'session'].includes(item.record.klass.class)
       && (!item.entry || item.entry.eligible) && item.record.scan.bytes - (item.entry?.identity.allocatedBytes ?? 0) >= minEvictionGain)
       .sort((a, b) => basis(a.record) - basis(b.record) || a.record.path.localeCompare(b.record.path));
@@ -131,10 +133,10 @@ async function auditCache(root, { citations, now, usage, state, baseEligibleByte
   const reclaim = new Map();
   for (const entry of entries) if (entry.eligible) reclaim.set(entry.family, (reclaim.get(entry.family) ?? 0) + entry.identity.allocatedBytes);
   for (const family of families) family.reclaimableBytes = reclaim.get(family.name) ?? 0;
-  return { entries, families, skipped, totalBytes, evictions, budgetProjectedBytes: Math.max(0, projected + baseEligibleBytes) };
+  return { entries, families, skipped, totalBytes, evictions, budgetProjectedBytes: Math.max(0, projected) };
 }
 
-export async function auditStorage(root = repository, { usage = defaults.usage, now = Date.now(), maxBytes = defaultMaxBytes } = {}) {
+export async function auditStorage(root = repository, { usage = defaults.usage, now = Date.now(), maxBytes = defaultMaxBytes, evictEvidence = false } = {}) {
   const state = await gitState(root);
   const references = await packageReferences(root, state.protectedFiles);
   const activity = await usage(root);
@@ -205,7 +207,7 @@ export async function auditStorage(root = repository, { usage = defaults.usage, 
     entry.eligible = !!entry.identity && entry.reasons.length === 0;
   }
   const baseEligibleBytes = entries.filter(entry => entry.eligible).reduce((sum, entry) => sum + entry.identity.allocatedBytes, 0);
-  const cache = await auditCache(root, { citations: await cacheCitations(root), now, usage: activity, state, baseEligibleBytes, maxBytes });
+  const cache = await auditCache(root, { citations: await cacheCitations(root), now, usage: activity, state, baseEligibleBytes, maxBytes, evictEvidence });
   entries.push(...cache.entries);
   const worktrees = await worktreeDetails(root);
   const protectedAreas = [
@@ -217,7 +219,8 @@ export async function auditStorage(root = repository, { usage = defaults.usage, 
     ...state.worktrees.filter(tree => within(root, tree)).map(tree => ({ path: path.relative(root, tree), reason: 'Registered worktree; preserve source and evidence, never recursively remove' })),
   ];
   const body = { schemaVersion: 1, root, createdAt: new Date(now).toISOString(), policy: 'conservative-v1', entries, protectedAreas,
-    families: cache.families, worktrees, skipped: cache.skipped, totalBytes: cache.totalBytes, maxBytes, evictions: cache.evictions,
+    families: cache.families, worktrees, skipped: cache.skipped, totalBytes: cache.totalBytes, maxBytes, evictEvidence, evictions: cache.evictions,
+    shortfallBytes: Math.max(0, cache.budgetProjectedBytes - maxBytes),
     freeBytes: diskStatus(root).freeBytes,
     eligibleBytes: entries.filter(entry => entry.eligible).reduce((sum, entry) => sum + entry.identity.allocatedBytes, 0) };
   return { ...body, manifestId: hash(JSON.stringify(body)) };
@@ -251,7 +254,7 @@ export async function applyStorage(manifest, root = repository, adapters = {}) {
   const report = { schemaVersion: 1, manifestId: manifest.manifestId, startedAt: new Date().toISOString(), results: [] };
   const reportFile = path.join(output, `cleanup-${Date.now()}-${process.pid}.json`);
   try {
-    const fresh = await auditStorage(root, { usage: dependencies.usage, now: dependencies.now, maxBytes: manifest.maxBytes ?? defaultMaxBytes });
+    const fresh = await auditStorage(root, { usage: dependencies.usage, now: dependencies.now, maxBytes: manifest.maxBytes ?? defaultMaxBytes, evictEvidence: manifest.evictEvidence === true });
     for (const target of targets) {
       const result = { path: target.path, outcome: 'refused' };
       report.results.push(result);
@@ -313,6 +316,7 @@ export function renderReport(result) {
   rows.sort((a, b) => b.bytes - a.bytes);
   lines.push(table(rows, [['FAMILY', row => row.name], ['CLASS', row => row.class], ['SIZE', row => GiB(row.bytes)],
     ['RECLAIM', row => GiB(row.reclaimableBytes)], ['UNITS', row => row.units], ['OWNER', row => row.owner.length > 70 ? `${row.owner.slice(0, 67)}...` : row.owner]]));
+  if (result.shortfallBytes > 0) lines.push(`Budget shortfall ${GiB(result.shortfallBytes)}: only --evict-evidence would go further (removes oldest uncited, unpinned evidence runs).`);
   lines.push(`Policy preview reclaims ${GiB(result.eligibleBytes)}${result.evictions.length ? ` (${result.evictions.length} run(s) evicted for the budget)` : ''}; `
     + `${result.skipped.young} unit(s) too recent. Preview with \`bun run cache:prune\`.`);
   if (result.worktrees.length) {
@@ -324,30 +328,31 @@ export function renderReport(result) {
 
 export async function storageMain(argv, root = repository) {
   const [command, ...args] = argv;
-  const usage = 'Usage: node scripts/storage.mjs report|audit|clean [--json|--quiet] [--max-size <N>G] [--manifest <new-file>] [--apply [manifest]]';
+  const usage = 'Usage: node scripts/storage.mjs report|audit|clean [--json|--quiet] [--max-size <N>G] [--evict-evidence] [--manifest <new-file>] [--apply [manifest]]';
   if (!['report', 'audit', 'clean'].includes(command)) throw new Error(usage);
   const options = {};
   for (let i = 0; i < args.length; i++) {
     const flag = args[i];
-    if (!['--json', '--quiet', '--manifest', '--apply', '--max-size'].includes(flag) || options[flag] !== undefined) throw new Error('Invalid or repeated option');
+    if (!['--json', '--quiet', '--manifest', '--apply', '--max-size', '--evict-evidence'].includes(flag) || options[flag] !== undefined) throw new Error('Invalid or repeated option');
     if (flag === '--apply' && (args[i + 1] === undefined || args[i + 1].startsWith('--'))) { options[flag] = true; continue; }
     options[flag] = ['--manifest', '--apply', '--max-size'].includes(flag) ? args[++i] : true;
     if (!options[flag] || String(options[flag]).startsWith('--')) throw new Error('Missing option value');
   }
   if ((options['--apply'] && (command !== 'clean' || options['--manifest'])) || (options['--manifest'] && command === 'report')
     || (options['--json'] && options['--quiet'])) throw new Error('Incompatible options');
+  const evictEvidence = options['--evict-evidence'] === true;
   const maxBytes = options['--max-size'] ? parseSize(options['--max-size']) : defaultMaxBytes;
   let result;
   if (options['--apply']) {
-    if (options['--apply'] === true) result = await applyStorage(await auditStorage(root, { maxBytes }), root);
+    if (options['--apply'] === true) result = await applyStorage(await auditStorage(root, { maxBytes, evictEvidence }), root);
     else {
-      if (options['--max-size']) throw new Error('Incompatible options');
+      if (options['--max-size'] || options['--evict-evidence']) throw new Error('Incompatible options');
       const file = await confined(root, options['--apply']);
       if (!/^\.cache\/storage\/[A-Za-z0-9._-]+\.json$/.test(options['--apply'])) throw new Error('Manifest input must be a JSON file in .cache/storage');
       result = await applyStorage(await optionalJson(file), root);
     }
   } else {
-    result = await auditStorage(root, { maxBytes });
+    result = await auditStorage(root, { maxBytes, evictEvidence });
     if (options['--manifest']) {
       if (!/^\.cache\/storage\/[A-Za-z0-9._-]+\.json$/.test(options['--manifest'])) throw new Error('Manifest output must be a new JSON file in .cache/storage');
       const file = await confined(root, options['--manifest'], true);
@@ -376,6 +381,7 @@ export async function storageMain(argv, root = repository) {
         console.log(`  ${entry.kind === 'strip' ? 'STRIP' : 'REMOVE'} ${entry.path}: ${GiB(entry.identity.allocatedBytes)}`
           + `${entry.targets ? `, ${entry.targets.length} heavy target(s)` : ''}${entry.budget ? ', budget eviction' : ''}`);
       }
+      if (result.shortfallBytes > 0) console.log(`Budget shortfall: ${GiB(result.shortfallBytes)} still over after the class rules. Stripped run evidence is kept; --evict-evidence would also remove the oldest uncited, unpinned evidence runs.`);
       for (const [reason, count] of kept) console.log(`KEEP ${count} entr${count === 1 ? 'y' : 'ies'}: ${reason}`);
       console.log(`KEEP ${result.skipped.young} unit(s): too recent for their class (24 h minimum)`);
       for (const entry of result.protectedAreas) console.log(`KEEP ${entry.path}: ${entry.reason}`);

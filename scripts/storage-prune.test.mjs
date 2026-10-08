@@ -178,7 +178,7 @@ test('the pinned ripgrep input and its siblings are protected whether or not cod
   function homes(current) { return entry(current, '.cache/v2-spike/homes'); }
 }));
 
-test('the budget evicts the oldest eligible runs first, never cited, pinned or tiny ones', () => fixture(async ({ root, now, put, audit, entry }) => {
+test('over budget, light evidence is kept unless --evict-evidence; then the oldest go first, never cited, pinned or tiny ones', () => fixture(async ({ root, now, put, audit, entry }) => {
   const big = 'x'.repeat(2 * 1024 * 1024);
   for (const [name, completed] of [['oldest', '2026-01-01'], ['older', '2026-01-02'], ['newer', '2026-01-03'], ['pinned', '2026-01-01'], ['cited', '2026-01-01'], ['tiny', '2026-01-01']]) {
     await put(`.cache/perf/${name}/result.json`, name === 'tiny' ? '{}' : big);
@@ -188,7 +188,11 @@ test('the budget evicts the oldest eligible runs first, never cited, pinned or t
   await writeFile(path.join(root, 'docs/a.md'), 'proof .cache/perf/cited/result.json');
   const none = await audit({ maxBytes: 1024 ** 3 });
   assert.equal(none.entries.filter(item => item.budget).length, 0);
-  const manifest = await audit({ maxBytes: 7 * 1024 * 1024 });
+  const withheld = await audit({ maxBytes: 7 * 1024 * 1024 });
+  assert.equal(withheld.entries.filter(item => item.budget).length, 0, 'light evidence is not evicted without the flag');
+  assert.ok(withheld.shortfallBytes > 0);
+  assert.match(renderReport(withheld), /--evict-evidence/);
+  const manifest = await audit({ maxBytes: 7 * 1024 * 1024, evictEvidence: true });
   const evicted = manifest.entries.filter(item => item.budget).map(item => item.path);
   assert.deepEqual(evicted, ['.cache/perf/oldest', '.cache/perf/older']);
   for (const name of ['pinned', 'cited', 'tiny']) assert.ok(!evicted.includes(`.cache/perf/${name}`));
