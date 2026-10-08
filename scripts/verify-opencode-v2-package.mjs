@@ -85,9 +85,10 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
     assert.ok(!reviewedSetup && !browser && !preflight && !skillDataRoot && !onParentDeathReady,
       'Managed interval diagnostic cannot replace another package qualification');
   }
-  const run = createRunRoot({ parent: path.join(repositoryRoot, '.cache/v2-validation'), prefix: 'package-', owner: 'scripts/verify-opencode-v2-package.mjs',
+  const cache = path.join(repositoryRoot, '.cache/v2-validation'); await fs.mkdir(cache, { recursive: true });
+  const root = await fs.realpath(await fs.mkdtemp(path.join(cache, 'package-')));
+  const run = createRunRoot({ dir: root, owner: 'scripts/verify-opencode-v2-package.mjs',
     extraPayloads: ['bundles', 'negative', 'legacy', 'relocated', 'asset-supervision', 'denied-read-control'] });
-  const root = await fs.realpath(run.dir);
   const cases = [], observations = [], diagnostics = [], cleanupFailures = [];
   const source = await captureNativeAcceptanceSource();
   const runnerSha256 = fixtureSha256(await fs.readFile(fileURLToPath(import.meta.url)));

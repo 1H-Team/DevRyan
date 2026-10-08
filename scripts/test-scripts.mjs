@@ -4,7 +4,8 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import os from 'node:os';
 
 import { discoverTestFiles, isBunTestSource } from './test-runner-utils.mjs';
 
@@ -49,10 +50,19 @@ export function runScriptTests(root = repositoryRoot) {
     // Native graph fixtures must not share Bun's resolver and loader state.
     ...bun.map(file => ['bun', ['test', `./${file}`]]),
   ];
-  for (const [command, arguments_] of commands) {
-    console.log(`\n$ ${command} ${arguments_.join(' ')}`);
-    const result = spawnSync(command, arguments_, { cwd: root, stdio: 'inherit', env: process.env });
-    if (result.status !== 0) return result.status ?? 1;
+  // Private per-run TMPDIR (inside any caller-chosen TMPDIR), removed afterwards so suite leaks cannot accumulate.
+  const parent = process.env.TMPDIR || os.tmpdir();
+  mkdirSync(parent, { recursive: true });
+  const temporary = mkdtempSync(path.join(parent, 'devryan-script-tests-'));
+  const env = { ...process.env, TMPDIR: temporary };
+  try {
+    for (const [command, arguments_] of commands) {
+      console.log(`\n$ ${command} ${arguments_.join(' ')}`);
+      const result = spawnSync(command, arguments_, { cwd: root, stdio: 'inherit', env });
+      if (result.status !== 0) return result.status ?? 1;
+    }
+  } finally {
+    rmSync(temporary, { recursive: true, force: true });
   }
   return 0;
 }

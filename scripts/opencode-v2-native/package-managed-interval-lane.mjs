@@ -240,8 +240,8 @@ export async function runCompiledManagedIntervalArm({ caseID, intervalMs, client
 
 /** The existing package verifier constructs and closes every real private arm. */
 export async function runCompiledManagedIntervalDiagnostic({ artifactRoot, onArm = () => {} }) {
-  const run = createRunRoot({ parent: path.join(repositoryRoot, '.cache/v2-validation'), prefix: 'managed-interval-', owner: 'scripts/opencode-v2-native/package-managed-interval-lane.mjs' });
-  const root = await fs.realpath(run.dir);
+  const root = await fs.realpath(await fs.mkdtemp(path.join(repositoryRoot, '.cache/v2-validation/managed-interval-')));
+  const run = createRunRoot({ dir: root, owner: 'scripts/opencode-v2-native/package-managed-interval-lane.mjs' });
   const policyFile = path.join(root, 'policy.json');
   const prospective = { policy: managedIntervalPolicy, policySha256: hash(managedIntervalPolicy),
     configurationDelta: { path: ['policies', 'eventReconcileIntervalMs'], baseline: 750, candidate: 1500 },
