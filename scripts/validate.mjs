@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { warnIfCacheOverBudget } from './storage-policy.mjs';
 
 const mode = process.argv[2] ?? 'affected';
 
@@ -483,6 +484,8 @@ if (isDirectExecution) {
   try {
     const plan = buildPlan(mode);
     printPlan(plan);
+    // Heavy QA fills .cache and the disk: warn (never fail) before a full run.
+    if (mode === 'full') warnIfCacheOverBudget(workspaceRoot);
     runCommands(plan.commands);
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
