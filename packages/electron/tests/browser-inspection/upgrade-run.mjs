@@ -5,11 +5,16 @@ import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { startOwnedProcess } from '../../../../scripts/qa/process.mjs';
+import { createRunRoot } from '../../../../scripts/qa/run-root.mjs';
 
 const repository = path.resolve(fileURLToPath(new URL('../../../..', import.meta.url)));
 const cache = path.join(repository, '.cache/browser-upgrade');
 await fs.mkdir(cache, { recursive: true });
-const root = await fs.mkdtemp(path.join(cache, 'acceptance-'));
+// Profile and session payloads go on pass (or interrupt); result, cleanup evidence and logs stay.
+let owned;
+const run = createRunRoot({ parent: cache, prefix: 'acceptance-', owner: 'packages/electron/tests/browser-inspection/upgrade-run.mjs',
+  heavyNames: ['userData', 'sessionData', 'crashDumps'], onInterrupt: async () => { await owned?.stop().catch(() => {}); } });
+const root = run.dir;
 for (const key of ['userData', 'sessionData', 'logs', 'crashDumps', 'home']) await fs.mkdir(path.join(root, key));
 const install = path.resolve(process.argv[2] || path.join(cache, 'current'));
 assert.ok(install.startsWith(`${repository}${path.sep}`), 'Use a repository-local managed install');
@@ -19,7 +24,7 @@ const env = {};
 for (const key of ['PATH', 'LANG', 'DISPLAY', 'WAYLAND_DISPLAY', 'SYSTEMROOT', 'WINDIR']) if (process.env[key]) env[key] = process.env[key];
 Object.assign(env, { HOME: path.join(root, 'home'), XDG_RUNTIME_DIR: '.',
   DEVRYAN_BROWSER_UPGRADE_NODE: process.execPath, DEVRYAN_BROWSER_UPGRADE_ROOT: root, DEVRYAN_BROWSER_UPGRADE_INSTALL: install });
-const owned = startOwnedProcess(require('electron'), [fileURLToPath(new URL('./upgrade-main.mjs', import.meta.url))], { cwd: install, env });
+owned = startOwnedProcess(require('electron'), [fileURLToPath(new URL('./upgrade-main.mjs', import.meta.url))], { cwd: install, env });
 const { child } = owned;
 let logs = '';
 for (const stream of [child.stdout, child.stderr]) stream.on('data', chunk => { logs = (logs + chunk).slice(-32768); if (String(chunk).startsWith('Checking')) process.stdout.write(chunk); });
@@ -45,3 +50,4 @@ if (evidence.versions.agentBrowser === '0.38.1') {
   evidence.checks.push('all four videos decode fully; contact-sheet artifacts exist');
 }
 await fs.writeFile(path.join(root, 'result.json'), JSON.stringify(evidence, null, 2));
+run.finish('passed');

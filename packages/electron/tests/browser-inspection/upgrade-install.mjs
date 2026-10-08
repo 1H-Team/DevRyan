@@ -4,14 +4,17 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { createRunRoot } from '../../../../scripts/qa/run-root.mjs';
 import { createAgentBrowserInstaller, AGENT_BROWSER_VERSION, resolveAgentBrowserBinaryName } from '../../../web/server/lib/agent-browser/install.js';
 const repository = fileURLToPath(new URL('../../../../', import.meta.url));
 const cache = path.join(repository, '.cache/browser-upgrade');
-const root = await fs.mkdtemp(path.join(cache, 'install-'));
+// The managed install is this run's deliverable (upgrade-run.mjs consumes it), so a pass keeps it.
+const run = createRunRoot({ parent: cache, prefix: 'install-', owner: 'packages/electron/tests/browser-inspection/upgrade-install.mjs', keepOnPass: true });
+const root = run.dir;
 const homeDir = path.join(root, 'home'); await fs.mkdir(homeDir);
 const bunExecutable = process.argv[2];
 assert.ok(bunExecutable && path.isAbsolute(bunExecutable), 'Pass the absolute supported Bun executable');
-const env = { PATH: process.env.PATH, HOME: homeDir, BUN_INSTALL_CACHE_DIR: path.join(root, 'bun-cache') };
+const env = { PATH: process.env.PATH, HOME: homeDir, BUN_INSTALL_CACHE_DIR: path.join(repository, '.cache/shared/bun-install-cache') };
 const installer = createAgentBrowserInstaller({ dataRoot: root, homeDir, bunExecutable, env });
 const results = [];
 for (const [name, action] of [['fresh', () => installer.ensureInstalled()], ['no-op', () => installer.ensureInstalled()], ['repair', () => installer.repair()]]) {
@@ -41,4 +44,5 @@ assert.equal(upgraded.ok, true, JSON.stringify(upgraded.issues));
 assert.equal(upgraded.installedVersion, AGENT_BROWSER_VERSION);
 await fs.writeFile(path.join(root, 'result.json'), JSON.stringify({ results, layout, nodeIndependentNativeVersion: true,
   unavailableExecutionPlatforms: layout.filter(name => name !== path.basename(installed.binaryPath)) }, null, 2));
+run.finish('passed');
 console.log(JSON.stringify({ root, installRoot: path.dirname(path.dirname(packageRoot)), status: 'passed', checks: results.map(row => row.name), layout }));
