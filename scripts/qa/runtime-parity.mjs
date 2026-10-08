@@ -20,7 +20,7 @@ await vite.listen();
 const requireElectron=createRequire(path.join(root,'packages/electron/package.json'));
 const browser=startOwnedProcess(requireElectron('electron'),['--remote-debugging-port='+debug,'--user-data-dir='+path.join(output,'chromium'),path.join(root,'scripts/qa/browser-shell.cjs')],{
  cwd:root,env:{...process.env,DEVRYAN_QA_BACKGROUND:'1',DEVRYAN_QA_ORIGIN:`http://127.0.0.1:${port}`}});
-let cdp;
+let cdp,passed=false;
 const evidence={checks:[],consoleErrors:[]};
 try {
  const target=await discoverPageTarget(debug);cdp=await CdpConnection.connect(target.webSocketDebuggerUrl);
@@ -82,5 +82,7 @@ try {
  assert.equal(await evaluate(cdp,"document.querySelectorAll('[data-session-row]').length"),0);
  assert.equal(await evaluate(cdp,'fixture.sidebarState.exits'),1);evidence.checks.push({check:'removing virtual rows releases empty-state animation guard'});
 
- assert.deepEqual(evidence.consoleErrors,[]);await fs.writeFile(path.join(output,'evidence.json'),JSON.stringify(evidence,null,2));console.log(JSON.stringify({passed:evidence.checks.length,evidence:path.join(output,'evidence.json')}));run.finish('passed');
+ assert.deepEqual(evidence.consoleErrors,[]);await fs.writeFile(path.join(output,'evidence.json'),JSON.stringify(evidence,null,2));console.log(JSON.stringify({passed:evidence.checks.length,evidence:path.join(output,'evidence.json')}));passed=true;
 } finally {cdp?.close();await browser.stop();await vite.close();}
+// After the browser has exited: Chromium recreates its profile directory on shutdown.
+run.finish(passed?'passed':'failed');
