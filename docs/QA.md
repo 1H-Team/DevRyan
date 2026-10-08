@@ -1,5 +1,30 @@
 # Isolated Electron and web QA
 
+## Run directories and disk use
+
+QA, validation and benchmark producers write one run directory per invocation
+under `.cache/<family>/` (gitignored) through `scripts/qa/run-root.mjs`. Each gets
+a `run.json` (`schemaVersion`, `owner`, `createdAt`, `completedAt`,
+`status`: `running`, `passed`, `failed` or `interrupted`, `pinned`).
+
+- On pass, and on Ctrl-C or SIGTERM (`interrupted`), the heavy runtime payload is
+  deleted: `runtime/`, `home/`, `profile/`, packaged `*.app`, `node_modules`,
+  `runtime-bundles` and copied native binaries. `result.json`, logs, JSON/JSONL
+  evidence, screenshots and checksums stay.
+- Exception: `scripts/qa/package-electron.mjs` produces the packaged app that
+  later runs consume, so a pass keeps it (an interrupted build still removes it).
+  Those `.cache/qa/packaged-electron-*` packages are governed by the package
+  retention rule in [STORAGE_CLEANUP.md](STORAGE_CLEANUP.md).
+- On failure everything is kept for diagnosis.
+- `--keep-artifacts` or `DEVRYAN_KEEP_ARTIFACTS=1` keeps the payload in every case.
+  Set `"pinned": true` in `run.json` to keep a run through pruning.
+- Run `bun run cache:report` after heavy QA and `bun run cache:prune` to preview
+  cleanup; see [Local repository storage](STORAGE_CLEANUP.md). Check `df -h .`
+  before packaging (a packaged QA app is about 1.8 GB).
+
+Per-command notes below describing a run's runtime as retained apply to
+failures and to `--keep-artifacts` runs.
+
 ## OpenCode 2 native writer slice
 
 The explicit Darwin arm64 command below exercises the pinned 2.0.20 native
@@ -24,8 +49,10 @@ checks protected paths, BOM/CRLF and formatter behavior, competing writers,
 permissions, shells, cancellation, interrupted publication, controller restart,
 and managed child completion with conversation Revert/Redo. Independent
 project hashes and ledger leases establish publication or discard; actual
-confined termination must precede every process outcome. Failed attempts retain
-`result.json` and `native.log`, and cleanup retains owned process identities.
+confined termination must precede every process outcome. A passing or interrupted
+run deletes its runtime payload and keeps `result.json` and logs; `--keep-artifacts`
+or `DEVRYAN_KEEP_ARTIFACTS=1` keeps the payload. Failed attempts retain everything
+(`result.json`, `native.log`, runtime), and cleanup retains owned process identities.
 Package trees, product sources and configuration are hashed before boot; source
 or artifact changes invalidate the acceptance cohort. The emitted
 `remainingMandatoryGate` lists implemented lanes that did not complete and
@@ -74,8 +101,9 @@ web admission owner, scheduler, ledger and supervisor. Only HTTP model responses
 are fixture data. Separate assertions cover asset initialization and full server
 execution while the supervisor denies reads of the repository's `packages`,
 `scripts` and `node_modules`. The importer works on consistent disposable copies,
-with relocated projects and private configuration/data roots. Results and failed
-attempts remain under `.cache/v2-validation/package-*/result.json`; incomplete
+with relocated projects and private configuration/data roots. The runtime payload is deleted on pass (`--keep-artifacts` /
+`DEVRYAN_KEEP_ARTIFACTS=1` keeps it); `result.json` and logs are retained, and
+failed attempts keep everything, under `.cache/v2-validation/package-*/result.json`; incomplete
 mandatory lanes, changed source or incomplete cleanup keep the exit nonzero.
 This command does not activate a bundle in the installed app.
 
@@ -164,8 +192,10 @@ This is a source-checked recipe, not a completed clean-room build. It uses the e
 
 Run from the root of a clean, committed DevRyan checkout. Use a separate disposable worktree with its own copied dependencies for the Electron ABI rebuild. Rebuilding native modules in the checkout used by web QA would replace its Node bindings with Electron bindings.
 
+Bun's default install backend on macOS is `clonefile`: each installed file is an APFS copy-on-write clone, so the worktree's native rebuild rewrites only its own copy and the install cache and other checkouts are untouched, while the extra dependency tree costs almost no disk. The recipe no longer passes `--backend=copyfile`, which duplicated every dependency byte; this change did not re-run the native rebuild end to end, so if a rebuild ever alters shared files, restore `--backend=copyfile` for the worktree install and remove the worktree (`git worktree remove`) when finished.
+
 ```sh
-bun install --frozen-lockfile --backend=copyfile
+bun install --frozen-lockfile
 bun run type-check:ui
 bun run build:web
 bun run --cwd packages/electron build:native-helpers
@@ -175,7 +205,7 @@ qaNativeRoot="$PWD/.cache/qa/native-bootstrap"
 git worktree add --detach "$qaNativeRoot" HEAD
 (
   cd "$qaNativeRoot"
-  bun install --frozen-lockfile --backend=copyfile --cache-dir "$qaNativeRoot/.cache/bun-install"
+  bun install --frozen-lockfile --cache-dir "$qaNativeRoot/.cache/bun-install"
   DEVRYAN_BOT_RUNTIME_REQUIRE_RELEASE_MANIFEST=0 bun run --cwd packages/electron bundle:main
   ELECTRON_BUILDER_ARCH=arm64 bun run --cwd packages/electron rebuild:native
   CSC_IDENTITY_AUTO_DISCOVERY=false node --input-type=module <<'NODE'

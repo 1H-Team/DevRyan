@@ -7,6 +7,14 @@
 - `bun run validate:affected` expands validation to affected packages and shared-runtime dependents.
 - `bun run validate:full` runs workspace lint, type checks, documentation validation, and the full deterministic test gate.
 
+`bun run test:scripts` gives the suite a private per-run `TMPDIR` inside the
+caller's `TMPDIR` (or the system temporary directory) and removes it afterwards,
+so test leaks cannot accumulate. If you point `TMPDIR` into this checkout, use a
+per-run subdirectory under `.cache/test-fixtures/` (for example
+`mktemp -d .cache/test-fixtures/run-XXXXXX`) and delete it when the command
+finishes; never reuse one shared directory across runs. `bun run cache:prune`
+removes leftover `.cache/test-fixtures/*` after 24 hours.
+
 When disposable fixtures use a `TMPDIR` inside this checkout, set
 `GIT_CEILING_DIRECTORIES` to that same canonical fixture directory for the test
 command. This prevents fixtures without their own Git metadata from discovering
