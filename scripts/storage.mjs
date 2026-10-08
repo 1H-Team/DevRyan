@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { activityReasons, activityScope, buildPaths, cacheCitations, classifyUnit, confined, day, defaultMaxBytes, diskStatus,
   familyRegistry, fileHash, gitState, hash, ignoredPaths, keptFailuresPerFamily, keptRebuildables, makeProtection, minimumAgeMs,
-  optionalJson, packagePattern, packageReferences, parseSize, processUsage, protectedInputs, readRunMeta, rebuildablePattern,
+  optionalJson, packagePattern, packageReferences, parseSize, processUsage, protectedInputs, readRunMeta, rebuildableGroup,
   recognized, reportOnlyClasses, retentionName, run, scanUnit, treeIdentity, within, worktreeDetails } from './storage-policy.mjs';
 
 const repository = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '');
@@ -61,7 +61,9 @@ async function auditCache(root, { citations, now, usage, state, baseEligibleByte
   for (const family of families) {
     const own = records.filter(record => record.family === family);
     own.filter(record => record.meta.failed).sort(newestFirst).slice(0, keptFailuresPerFamily).forEach(record => failureKeep.add(record.path));
-    own.filter(record => rebuildablePattern.test(record.name)).sort(newestFirst).slice(0, keptRebuildables).forEach(record => rebuildableKeep.add(record.path));
+    for (const group of new Set(own.map(record => rebuildableGroup(record.name)).filter(Boolean))) {
+      own.filter(record => rebuildableGroup(record.name) === group).sort(newestFirst).slice(0, keptRebuildables).forEach(record => rebuildableKeep.add(record.path));
+    }
   }
   const potential = [];
   for (const record of records) {
@@ -72,7 +74,7 @@ async function auditCache(root, { citations, now, usage, state, baseEligibleByte
     if (record.meta.pinned) reasons.push('Pinned');
     if (protectedInputs.some(input => within(input, record.path))) reasons.push('Code-read input or cited artifact root');
     if (failureKeep.has(record.path)) reasons.push(`One of the ${keptFailuresPerFamily} most recent failed runs in ${record.family.name}`);
-    if (rebuildableKeep.has(record.path)) reasons.push(`One of the ${keptRebuildables} newest native artifacts`);
+    if (rebuildableKeep.has(record.path)) reasons.push(`One of the ${keptRebuildables} newest packaged outputs of its kind`);
     const wholeAllowed = ['scratch', 'unowned'].includes(record.klass.class) && !protection.blocksRemoval(record.path);
     const absolute = path.join(root, record.path);
     if (state.worktrees.some(tree => within(tree, absolute) || within(absolute, tree))) reasons.push('Registered worktree is protected');

@@ -255,3 +255,17 @@ test('a QA package touched within 24 hours is never selected, even when supersed
     assert.equal(old.entries.filter(item => item.eligible).length, 1);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test('packaged outputs keep their newest two per kind and shared caches are report-only', () => fixture(async ({ put, audit, entry }) => {
+  for (let i = 1; i <= 4; i++) {
+    await put(`.cache/qa/stage-f-v2-prepared-${i}/app/X.app/Contents/a`);
+    await put(`.cache/qa/stage-f-v2-prepared-${i}/run.json`, JSON.stringify({ schemaVersion: 1, status: 'passed', pinned: false, completedAt: `2026-01-0${i}T00:00:00Z` }));
+  }
+  await put('.cache/shared/bun-install-cache/pkg/a.js');
+  const manifest = await audit();
+  const kept = manifest.entries.filter(item => item.path.includes('stage-f') && !item.eligible).map(item => item.path).sort();
+  assert.deepEqual(kept, ['.cache/qa/stage-f-v2-prepared-3', '.cache/qa/stage-f-v2-prepared-4']);
+  assert.equal(entry(manifest, '.cache/qa/stage-f-v2-prepared-1').kind, 'strip');
+  assert.equal(manifest.entries.some(item => item.path.startsWith('.cache/shared')), false);
+  assert.equal(manifest.families.find(family => family.name === 'shared').class, 'report-only');
+}));

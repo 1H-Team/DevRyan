@@ -65,11 +65,11 @@ the last 24 hours is ever selected, whatever the class.
 |---|---|---|
 | scratch | `test-fixtures/*`, `wf/*`, `storage-tests/*`, `*/tmp`, `v2-validation/journal-reader-*`, `v2-validation/compaction-journal-*` | removed after 24 hours unless cited, pinned or protected |
 | run evidence | `qa/*`, `v2-validation/*`, `perf/*`, `livetest/*`, `opencode-upgrade/*`, `release-*/*`, `v2-spike/*`, `browser-upgrade/*`, `browser-inspect/*` | after 3 days, heavy subtrees are stripped and light files kept; the 5 newest failed runs per family stay intact |
-| rebuildable | `qa/packaged-electron-*` (the existing package rule below), `v2-validation/native-artifact-*` | newest 2 stay intact plus pinned, cited and native donors; older ones lose heavy payloads |
+| rebuildable | `qa/packaged-electron-*` (the existing package rule below), `qa/stage-f-*`, `browser-upgrade/install-*`, `v2-validation/native-artifact-*` | packaged outputs that later runs consume: newest 2 per kind stay intact plus pinned, cited and native donors; older ones lose heavy payloads |
 | session | `sessions/<date>-<task>/` | heavy subtrees stripped after 14 days; logs kept |
 | unowned | any other name, including loose `.cache/*.log` | removed after 14 days unless cited or pinned (cited: heavy subtrees stripped, files kept) |
 | worktrees | `worktrees/*` and every registered worktree | report only |
-| report only | `storage/`, `eslint/`, `typecheck/`, `plugin-upgrades/`, `session-execution/`, `windows-native/` | sized and listed; never selected |
+| report only | `shared/` (shared Bun install cache), `storage/`, `eslint/`, `typecheck/`, `plugin-upgrades/`, `session-execution/`, `windows-native/` | sized and listed; never selected |
 
 Heavy subtrees: `node_modules`, `.bun`, `runtime-bundles`, `*.app`, Chromium
 caches (`Cache`, `Code Cache`, `GPUCache`, `Dawn*Cache`, `GrShaderCache`,
@@ -131,6 +131,7 @@ stripped (cheap evidence). Evictions are marked `budget eviction` in the preview
 | `test-fixtures/*`, `wf/*`, `storage-tests/*`, `*/tmp` | scratch | tests and workflow scratch | remove after 24 hours |
 | `sessions/<date>-<task>/` | session | agent sessions | strip heavy after 14 days |
 | `worktrees/*`, nested worktrees | worktrees | `git worktree` | report only; suggest `git worktree remove` for clean branch checkouts and `git worktree prune` for missing ones |
+| `shared/` | report only | `scripts/qa/profile-preparation.mjs` | shared reusable caches such as `shared/bun-install-cache`; never per-run deletion |
 | `storage/` | report only | this tool | manifests and cleanup reports |
 | `eslint/`, `typecheck/` | report only | package lint and type-check caches | listed |
 | `plugin-upgrades/`, `session-execution/`, `windows-native/` | report only | build inputs | listed; never selected |

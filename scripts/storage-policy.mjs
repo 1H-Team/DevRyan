@@ -160,6 +160,7 @@ const exactFamilies = {
   'browser-inspect': reg('run-evidence', 'packages/electron/tests/browser-inspection/run.mjs'),
   'test-fixtures': reg('scratch', 'disposable test fixtures (scripts/qa/*, scripts/verify-*.mjs, tests)'),
   wf: reg('scratch', 'workflow scratch (agent workflow tmp)'),
+  shared: reg('report-only', 'shared reusable caches, e.g. shared/bun-install-cache (scripts/qa/profile-preparation.mjs)'),
   'storage-tests': reg('scratch', 'scripts/storage.test.mjs fixtures'),
   sessions: reg('session', 'agent session logs (.cache/sessions/<date>-<task>/)'),
   worktrees: reg('worktrees', 'agent worktrees (git worktree)'),
@@ -189,7 +190,9 @@ export function classifyUnit(family, child) {
   return base;
 }
 export const unitDepth = klass => (klass === 'unowned' ? 1 : 2);
-export const rebuildablePattern = /^native-artifact(-|$)/;
+// Packaged outputs that later runs consume (keepOnPass producers): the newest two per group stay intact.
+export const rebuildableGroup = name => /^native-artifact(-|$)/.test(name) ? 'native-artifact' : /^stage-f-/.test(name) ? 'stage-f'
+  : /^install-/.test(name) ? 'install' : null;
 
 // Exact paths code reads as inputs or docs cite as artifact roots; never selected, even though they are heavy.
 export const protectedInputs = [
