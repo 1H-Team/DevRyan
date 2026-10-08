@@ -170,13 +170,15 @@ test('Cargo cleanup requires recognized outputs and every descendant to be older
   assert.equal(entry.eligible, true);
 }));
 
-test('CLI invalid inputs fail identically regardless of output mode; no implicit apply', () => fixture(async ({ root }) => {
+test('CLI invalid inputs fail identically regardless of output mode; apply is always explicit', () => fixture(async ({ root }) => {
   for (const mode of [[], ['--json'], ['--quiet']]) {
     await assert.rejects(storageMain(['audit', '--apply', 'missing.json', ...mode], root), /Incompatible/);
     await assert.rejects(storageMain(['clean', '--unknown', ...mode], root), /Invalid/);
     await assert.rejects(storageMain(['clean', '--apply', '../outside', ...mode], root), /Invalid repository/);
   }
-  await assert.rejects(storageMain(['clean', '--apply'], root), /Missing/);
+  await assert.rejects(storageMain(['audit', '--apply'], root), /Incompatible/);
+  await assert.rejects(storageMain(['clean', '--apply', '--manifest', '.cache/storage/x.json'], root), /Incompatible/);
+  await assert.rejects(storageMain(['clean', '--max-size', 'lots'], root), /--max-size/);
 }));
 
 test('malformed manifest errors never echo file contents and arbitrary repository files are not manifest inputs', () => fixture(async ({ root }) => {
