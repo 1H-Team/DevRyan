@@ -12,11 +12,18 @@ const parseObservation = row => {
 };
 const row = { type: 'lifecycle', at: 10, event: 'native_observation', sessionID: 'ses_fixture', directory: '<WORKTREE_aaaaaaaaaaaa>',
   payload: { schema: 1, stage: 'model-prepared', requestID: 'fixture', sessionID: 'ses_fixture', directory: '<WORKTREE_aaaaaaaaaaaa>' } };
+const closers = new WeakMap();
+// Closers run before the fixture removal: closing a journal recreates files.
+const closeBeforeCleanup = (t, close) => closers.get(t).push(close);
 async function fixture(t) {
   const base = path.resolve('.cache/v2-validation');
   await mkdir(base, { recursive: true });
   const runtimeRoot = await mkdtemp(path.join(base, 'journal-reader-'));
-  t.after(() => rm(runtimeRoot, { recursive: true, force: true }));
+  closers.set(t, []);
+  t.after(async () => {
+    for (const close of closers.get(t)) await close();
+    await rm(runtimeRoot, { recursive: true, force: true });
+  });
   const journalDirectory = path.join(runtimeRoot, 'harness/journal');
   await mkdir(path.join(journalDirectory, 'sessions/ses_fixture'), { recursive: true });
   return { runtimeRoot, journalDirectory, parseObservation };
@@ -95,7 +102,7 @@ test('real existing journal sanitizer and export preserve finite native linkage 
   await mkdir(directory);
   const sanitizer = createDiagnosticSanitizer({ homeDir: input.runtimeRoot, worktreeRoots: [directory] });
   const journal = createDiagnosticJournal({ directory: input.journalDirectory, sanitizer, runtime: 'qa-contract' });
-  t.after(() => journal.close());
+  closeBeforeCleanup(t, () => journal.close());
   const scope = { schema: 1, controllerInstanceID: 'controller_fixture', configurationDigest: 'a'.repeat(64), sessionID: 'ses_fixture', directory };
   const execution = { agent: 'orchestrator', providerID: 'openai', modelID: 'fixture-model', variant: 'high' };
   const attempt = { traceID: 'trace_fixture', spanID: 'span_fixture' };

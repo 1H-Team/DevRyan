@@ -96,12 +96,13 @@ test('actual shared journal sanitizer roundtrip retains raw native compaction wi
   const { readQaNativeObservations } = await import('./native-observation-evidence.mjs');
   const base = path.resolve('.cache/v2-validation'); await mkdir(base, { recursive: true });
   const runtimeRoot = await mkdtemp(path.join(base, 'compaction-journal-'));
-  t.after(() => rm(runtimeRoot, { recursive: true, force: true }));
   const directory = path.join(runtimeRoot, 'project'); await mkdir(directory);
   const journalDirectory = path.join(runtimeRoot, 'harness/journal');
   const sanitizer = createDiagnosticSanitizer({ homeDir: runtimeRoot, worktreeRoots: [directory] });
   const journal = createDiagnosticJournal({ directory: journalDirectory, sanitizer, runtime: 'qa-contract' });
   t.after(() => journal.close());
+  // Registered after the journal close: hooks run in order, and closing recreates files.
+  t.after(() => rm(runtimeRoot, { recursive: true, force: true }));
   const data = fixture();
   for (const payload of data.observations) journal.enqueue({ type: 'lifecycle', event: 'native_observation', at: 112,
     sessionID: input.sessionID, directory, payload: { ...payload, directory } });
