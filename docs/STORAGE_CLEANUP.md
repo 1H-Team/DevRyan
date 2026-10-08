@@ -5,6 +5,27 @@ caches, private test environments and dependency snapshots. These are separate
 from installed-app conversations and configuration. Git-ignored does not mean
 disposable: QA evidence, native donors and dirty worktrees may live in caches.
 
+Heavy QA writes about 25 GB a day under the gitignored `.cache/`. Producers now
+remove their own runtime payloads when a run passes or is interrupted (see
+[QA.md](QA.md)); this tool reports what remains and prunes it under a retention
+policy that never deletes cited evidence.
+
+## Commands
+
+```sh
+bun run cache:report            # every top-level .cache family: owner, class, size, reclaimable bytes
+bun run cache:prune             # preview only: what would be stripped or removed, and why the rest is kept
+bun run cache:prune --apply     # preview, then delete (re-audits and rechecks each target before removing it)
+bun run cache:prune --max-size 30G --apply   # custom budget (default 50G)
+```
+
+`bun run clean` is the same preview as `cache:prune`. `node scripts/storage.mjs
+report|audit|clean` accepts the same options, plus the manifest workflow below
+(`--manifest`, `--apply <manifest>`). `report` prints a table and the suggested
+`git worktree` commands; `--json` prints the full audit. Both walk the whole
+cache, so allow a minute or two. `validate:full` prints a one-line warning when
+`.cache` exceeds the budget or free disk is below 20 GB; it never fails the run.
+
 ## Preview and manual cleanup
 
 Run from the repository root, with builds, QA and benchmarks paused. The utility
@@ -20,7 +41,7 @@ node scripts/storage.mjs clean --apply .cache/storage/review.json
 Both `audit` and plain `clean` only preview. `--manifest` writes a new inventory
 without deleting anything; existing files are not overwritten. Review eligible
 paths, estimated allocated bytes, references and protection reasons. Only
-`clean --apply` deletes files. `--json` or `--quiet` changes presentation, never
+`clean --apply` (with or without a manifest) deletes files. `--json` or `--quiet` changes presentation, never
 validation. Invalid requests, refusals and partial failures exit nonzero.
 Manifest input/output paths are repository-relative JSON files directly under
 `.cache/storage`. Invalid JSON errors never echo file contents. No new
@@ -33,7 +54,94 @@ under `.cache/storage/cleanup-*.json`. Re-run audit for a fresh manifest after
 changes. Repeated old applies refuse removed files without deleting anything
 else. Do not edit manifests to bypass protection.
 
-## Retention policy
+## Retention classes
+
+Every top-level `.cache` entry is classified by a registry in
+`scripts/storage-policy.mjs`. A unit is a direct child of a family (for example
+`.cache/qa/<run>`), or the entry itself for unowned names. Nothing modified in
+the last 24 hours is ever selected, whatever the class.
+
+| Class | Matches | Rule |
+|---|---|---|
+| scratch | `test-fixtures/*`, `wf/*`, `storage-tests/*`, `*/tmp`, `v2-validation/journal-reader-*`, `v2-validation/compaction-journal-*` | removed after 24 hours unless cited, pinned or protected |
+| run evidence | `qa/*`, `v2-validation/*`, `perf/*`, `livetest/*`, `opencode-upgrade/*`, `release-*/*`, `v2-spike/*`, `browser-upgrade/*`, `browser-inspect/*` | after 3 days, heavy subtrees are stripped and light files kept; the 5 newest failed runs per family stay intact |
+| rebuildable | `qa/packaged-electron-*` (the existing package rule below), `v2-validation/native-artifact-*` | newest 2 stay intact plus pinned, cited and native donors; older ones lose heavy payloads |
+| session | `sessions/<date>-<task>/` | heavy subtrees stripped after 14 days; logs kept |
+| unowned | any other name, including loose `.cache/*.log` | removed after 14 days unless cited or pinned (cited: heavy subtrees stripped, files kept) |
+| worktrees | `worktrees/*` and every registered worktree | report only |
+| report only | `storage/`, `eslint/`, `typecheck/`, `plugin-upgrades/`, `revert-runtime-*`, `session-execution/`, `windows-native/` | sized and listed; never selected |
+
+Heavy subtrees: `node_modules`, `.bun`, `runtime-bundles`, `*.app`, Chromium
+caches (`Cache`, `Code Cache`, `GPUCache`, `Dawn*Cache`, `GrShaderCache`,
+`ShaderCache`), any directory holding `CACHEDIR.TAG`, and binaries (`.dmg`,
+`.asar`, `.node`, `.dylib`, `.so`, `.dll`, `.exe`, `.wasm`, `.pak`, `.msi`,
+`.nupkg`, `.pdb`, or Mach-O/ELF/PE content of 256 KiB or more). Light files
+(`.json`, `.jsonl`, `.ndjson`, `.log`, `.txt`, `.md`, `.png`, `.sha256`, `.err`)
+are never stripped. Files that are neither heavy nor light (archives, databases,
+scripts) are left alone and show up as size in the report.
+
+Metadata read from a run directory: `run.json` (`status`, `pinned`,
+`completedAt`, written by `scripts/qa/run-root.mjs`) and the older
+`storage-retention.json` (`pinned`, `payloadState`, `completedAt`). `pinned: true`
+keeps the whole run. A `failed` status counts toward the per-family failure cap.
+Without either file the newest modification time inside the unit is its age.
+
+## Citations and protected inputs
+
+Committed docs and code cite about 700 `.cache/...` paths as evidence, often by
+SHA-256 alone. The tool collects every `.cache/...` path mentioned in tracked
+or non-ignored files (docs, code, JSON, workflows) plus direct `.cache/qa/*.json`
+and `.cache/perf/*.json` configuration.
+
+- A cited file is never deleted, even when it is a binary.
+- A cited directory (a unit or deeper) is never removed whole and keeps its light
+  files; heavy subtrees inside it can still be stripped. A cited heavy directory
+  (for example a cited `node_modules`) is kept whole.
+- A path ending in `*` cites everything with that prefix.
+- Citing only a family root such as `.cache/qa` protects nothing.
+- Paths that code reads as inputs are protected in full:
+  `.cache/v2-spike/homes/g2-01-seam-smoke/cache/opencode/bin/rg` (the
+  SHA-pinned `DEFAULT_RG` of `scripts/opencode-v2-native/artifacts.mjs`),
+  `v2-validation/native-artifact*` reference artifacts, `quota-fixtures`,
+  `perf/ledger-*`, `perf/multi-session`, `browser-upgrade/current`,
+  `test-fixtures/verified-runtime` and `test-fixtures/foreign`. See
+  `protectedInputs` in `scripts/storage-policy.mjs`.
+
+A failed scan of the citations aborts the audit rather than guessing. Copy small,
+sanitized proof into `docs/audits/<date>/` instead of relying on a `.cache` path.
+
+## Budget
+
+`--max-size <N>G` (default 50G) is a ceiling for `.cache`. After the class rules,
+if the projected size is still over, the oldest eligible run-evidence and session
+units are removed whole until it fits. Cited, pinned, protected, active and
+failure-capped units are never evicted, and neither is a unit under 1 MiB once
+stripped (cheap evidence). Evictions are marked `budget eviction` in the preview.
+
+## Coverage by family
+
+| Family | Class | Owner | What the tool does |
+|---|---|---|---|
+| `qa/packaged-electron-*` | rebuildable | `scripts/qa/package-electron.mjs` | existing package rule: keep 2 newest, pins, references, donors; remove only the `.app` |
+| `qa/*` (other) | run evidence | `scripts/qa/*.mjs` runners | strip heavy after 3 days |
+| `v2-validation/*` | run evidence | `scripts/verify-opencode-v2-*.mjs`, `scripts/opencode-v2-native/*` | strip heavy after 3 days; journal fixtures are scratch; `native-artifact-*` keep newest 2 |
+| `perf/*` | run evidence | `scripts/perf/*` | strip heavy after 3 days |
+| `livetest/*`, `opencode-upgrade/*`, `release-*/*` | run evidence | live journeys, upgrade and release procedures | strip heavy after 3 days |
+| `v2-spike/*`, `browser-upgrade/*`, `browser-inspect/*` | run evidence | reviewed inputs and browser inspection tests | strip heavy after 3 days; code-read inputs protected |
+| `test-fixtures/*`, `wf/*`, `storage-tests/*`, `*/tmp` | scratch | tests and workflow scratch | remove after 24 hours |
+| `sessions/<date>-<task>/` | session | agent sessions | strip heavy after 14 days |
+| `worktrees/*`, nested worktrees | worktrees | `git worktree` | report only; suggest `git worktree remove` for clean branch checkouts and `git worktree prune` for missing ones |
+| `storage/` | report only | this tool | manifests and cleanup reports |
+| `eslint/`, `typecheck/` | report only | package lint and type-check caches | listed |
+| `plugin-upgrades/`, `revert-runtime-*`, `session-execution/`, `windows-native/` | report only | build inputs | listed; never selected |
+| loose `.cache/*.log` and anything unregistered | unowned | none | remove after 14 days unless cited or pinned |
+| `packages/desktop/src-tauri/target/{release,debug/incremental}` | Cargo cache | Cargo/Tauri | remove if untouched for 14 days |
+
+Producers write the metadata the tool relies on; add a new family to the
+registry in `scripts/storage-policy.mjs` when adding a producer, otherwise it is
+reported as unowned.
+
+## QA package and Cargo retention policy
 
 - Keep the two newest verified top-level `.cache/qa/packaged-electron-*` packages,
   native donors, explicit pins, packages referenced by direct QA/performance JSON
