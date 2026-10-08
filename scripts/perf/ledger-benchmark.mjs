@@ -362,7 +362,7 @@ export async function runLedgerBenchmark(options) {
       // maintenance before the clone and ledger go.
       if (deferred) await Promise.allSettled([...deferred]);
       await drainRuntime(runtime).catch(() => { /* Best effort: the iteration's own error, if any, is what propagates. */ });
-      if (options.keep) run.finish(completed ? 'passed' : 'failed');
+      if (run.keepArtifacts) run.finish(completed ? 'passed' : 'failed');
       else { await fs.rm(root, { recursive: true, force: true }); run.dispose(); }
     }
   }
@@ -435,7 +435,7 @@ export async function runPreparationProfile(options) {
         if (cleanupError) row.status = 'cleanup-failed';
         await fs.writeFile(path.join(trialRoot, 'worker.log'), worker.getLog());
         // Delete only after retained OS identities confirm the owned process tree stopped.
-        if (!options.keep && !cleanupError && row.status === 'completed') {
+        if (!run.keepArtifacts && !cleanupError && row.status === 'completed') {
           await fs.rm(path.join(trialRoot, 'fixture'), { recursive: true, force: true });
           await fs.rm(path.join(trialRoot, 'home'), { recursive: true, force: true });
           row.fixtureRemoved = await fs.access(path.join(trialRoot, 'fixture')).then(() => false, () => true);
