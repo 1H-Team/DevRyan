@@ -68,6 +68,7 @@ function lstatOrNull(target) { try { return lstatSync(target); } catch { return 
  * it) removed alongside the standard heavy subtrees, e.g. copied binaries.
  * `heavyNames` are extra directory names removed at any depth (e.g. per-trial `fixture`).
  * `external` are paths outside the run dir owned by this run (a tmpdir runtime).
+ * `dir` adopts an existing run directory created by a shared fixture helper.
  * `name` uses a fixed directory name instead of a unique `prefix` suffix.
  * `keepOnPass` is for producers whose payload is the deliverable (a packaged app
  * consumed by later runs): a pass keeps it, an interrupt still removes it.
@@ -75,11 +76,11 @@ function lstatOrNull(target) { try { return lstatSync(target); } catch { return 
  * SIGINT/SIGTERM themselves and then call `finish('interrupted')`.
  * `onInterrupt` runs before interrupt cleanup so owned processes can stop.
  */
-export function createRunRoot({ parent, prefix = 'run-', name, owner, keepArtifacts, keepOnPass = false, argv, env, extraPayloads = [], heavyNames = [], external = [], onInterrupt,
+export function createRunRoot({ parent, prefix = 'run-', name, dir: adoptedDir, owner, keepArtifacts, keepOnPass = false, argv, env, extraPayloads = [], heavyNames = [], external = [], onInterrupt,
   signals = true, exitProcessOnSignal = true } = {}) {
-  if (!parent || !owner) throw new TypeError('createRunRoot requires parent and owner');
-  mkdirSync(parent, { recursive: true, mode: 0o700 });
-  const dir = name ? path.join(parent, name) : mkdtempSync(path.join(parent, prefix));
+  if (!owner || (!parent && !adoptedDir)) throw new TypeError('createRunRoot requires owner and parent (or dir)');
+  if (parent) mkdirSync(parent, { recursive: true, mode: 0o700 });
+  const dir = adoptedDir ? path.resolve(adoptedDir) : name ? path.join(parent, name) : mkdtempSync(path.join(parent, prefix));
   if (name) mkdirSync(dir, { recursive: true, mode: 0o700 });
   const keep = keepArtifactsRequested({ argv, env: env ?? process.env, keep: keepArtifacts });
   const manifestPath = path.join(dir, RUN_MANIFEST);

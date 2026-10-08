@@ -13,6 +13,7 @@ import {CdpConnection,discoverPageTarget,evaluate} from './cdp.mjs';
 import {createQaUiDriver} from './ui-driver.mjs';
 import {readRuntimeBundleBinding} from '../../packages/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js';
 import {assertRollbackPhysicalExit,captureRollbackFiles,readRollbackIntentSync} from '../../packages/web/server/lib/opencode/runtime-host/bundle-rollback-intent.js';
+import {createRunRoot} from './run-root.mjs';
 
 const repository=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
@@ -65,7 +66,8 @@ export async function runQaPackagedBundleRecovery({controlRoot,environment,direc
  const settingsPath=path.join(binding.descriptor.launch.webDataDirectory,'settings.json');
  const settingsBytes=await fs.readFile(settingsPath).catch(error=>{if(error.code==='ENOENT')return null;throw error;});
  const packaged=await loadQaPackagedArtifact({root,evidencePath:packageEvidencePath});
- const output=await fs.mkdtemp(path.join(directory,'packaged-cold-recovery-'));
+ const run=createRunRoot({parent:directory,prefix:'packaged-cold-recovery-',owner:'scripts/qa/packaged-bundle-recovery.mjs',heavyNames:['browser']});
+ const output=run.dir;
  await fs.chmod(output,0o700);
  const home=path.join(output,'home'),data=path.join(output,'data'),profile=path.join(output,'browser');
  await fs.mkdir(home,{mode:0o700});await fs.mkdir(data,{mode:0o700});
@@ -152,6 +154,7 @@ export async function runQaPackagedBundleRecovery({controlRoot,environment,direc
    else{result.cleanupErrors.push('owned Electron did not exit naturally with code zero');primaryError=fail('qa_packaged_cold_recovery_exit_failed');}
   }
   await fs.writeFile(path.join(output,'result.json'),JSON.stringify(result,null,2)+'\n',{mode:0o600,flag:'wx'});
+  run.finish(result.status==='passed'?'passed':'failed');
  }
  if(primaryError||result.cleanupErrors.length)throw Object.assign(fail('qa_packaged_cold_recovery_failed'),{evidence:result});
  return result;

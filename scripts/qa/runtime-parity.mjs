@@ -5,9 +5,10 @@ import {createRequire} from 'node:module';
 import {pathToFileURL} from 'node:url';
 import {reservePort,startOwnedProcess} from './process.mjs';
 import {CdpConnection,discoverPageTarget,evaluate} from './cdp.mjs';
+import { createRunRoot } from './run-root.mjs';
 const root=path.resolve(import.meta.dirname,'../..'), fixture=path.join(root,'tests/visual-runtime-parity');
-await fs.mkdir(path.join(root,'.cache'),{recursive:true});
-const output=await fs.mkdtemp(path.join(root,'.cache/runtime-parity-'));
+const run=createRunRoot({parent:path.join(root,'.cache'),prefix:'runtime-parity-',owner:'scripts/qa/runtime-parity.mjs',heavyNames:['chromium']});
+const output=run.dir;
 const uiRequire=createRequire(path.join(root,'packages/ui/package.json'));
 const webRequire=createRequire(path.join(root,'packages/web/package.json'));
 const {createServer}=await import(pathToFileURL(webRequire.resolve('vite')));
@@ -81,5 +82,5 @@ try {
  assert.equal(await evaluate(cdp,"document.querySelectorAll('[data-session-row]').length"),0);
  assert.equal(await evaluate(cdp,'fixture.sidebarState.exits'),1);evidence.checks.push({check:'removing virtual rows releases empty-state animation guard'});
 
- assert.deepEqual(evidence.consoleErrors,[]);await fs.writeFile(path.join(output,'evidence.json'),JSON.stringify(evidence,null,2));console.log(JSON.stringify({passed:evidence.checks.length,evidence:path.join(output,'evidence.json')}));
+ assert.deepEqual(evidence.consoleErrors,[]);await fs.writeFile(path.join(output,'evidence.json'),JSON.stringify(evidence,null,2));console.log(JSON.stringify({passed:evidence.checks.length,evidence:path.join(output,'evidence.json')}));run.finish('passed');
 } finally {cdp?.close();await browser.stop();await vite.close();}

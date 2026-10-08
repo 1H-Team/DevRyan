@@ -4,13 +4,16 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
+import { createRunRoot } from './run-root.mjs';
 import { requireCacheDirectory } from './claude-quota-fixture.mjs';
 import { applyImagegenModelHotfix } from '../../packages/web/server/lib/opencode/imagegen-model-hotfix.js';
 
 export async function checkInstalledPlugins({ modules, output, configFile }) {
   if (!path.isAbsolute(modules)) throw new Error('An absolute installed modules directory is required');
   await requireCacheDirectory(output);
-  const root = await fs.mkdtemp(path.join(output, 'plugins-'));
+  const run = createRunRoot({ parent: output, prefix: 'plugins-', owner: 'scripts/qa/plugin-upgrades.mjs', heavyNames: ['config'], signals: 'exit' });
+  const root = run.dir;
+  let passed = false;
   const config = configFile ? JSON.parse(await fs.readFile(configFile, 'utf8')) : {
     disabled_mcps: ['context7', 'websearch', 'gh_grep'],
     agents: { builder: { model: 'fixture/primary', variant: 'high' }, explorer: { model: 'fixture/specialist', variant: 'low' } },
@@ -113,10 +116,12 @@ export async function checkInstalledPlugins({ modules, output, configFile }) {
       slim: 'real package config preserves host models, variants, prompts, permissions and disabled MCPs; apply_patch hook accepts leading-indent context drift and rejects missing context',
       cursor: 'installed entrypoint imports; text delta and tool-call duplicate handling', liveProviderRequests: 0 };
     await fs.writeFile(path.join(root, 'result.json'), JSON.stringify(result, null, 2) + '\n');
+    passed = true;
     return { ...result, output: root };
   } finally {
     await slim?.dispose?.();
     globalThis.fetch = originalFetch;
+    run.finish(passed ? 'passed' : 'failed');
   }
 }
 

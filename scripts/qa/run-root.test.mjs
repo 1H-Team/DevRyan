@@ -66,6 +66,14 @@ test('keep flag, argv and env keep payloads on pass', () => {
   }
 });
 
+test('an existing fixture directory can be adopted', () => {
+  const parent = scratch(); const adopted = path.join(parent, 'fixture'); mkdirSync(adopted); seed(adopted);
+  const run = createRunRoot({ dir: adopted, owner: 'test', signals: false, env: {}, argv: [] });
+  assert.equal(run.dir, adopted); run.finish('passed');
+  assert.equal(manifestOf(run).status, 'passed'); assert.equal(existsSync(path.join(adopted, 'home')), false);
+  rmSync(parent, { recursive: true });
+});
+
 test('keepOnPass keeps a delivered payload on pass but not on interrupt', () => {
   const parent = scratch(); const passed = create(parent, { keepOnPass: true }); seed(passed.dir);
   passed.finish('passed'); assert.ok(existsSync(path.join(passed.dir, 'runtime/bin/tool')));

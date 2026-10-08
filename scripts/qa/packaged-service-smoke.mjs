@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { createRunRoot } from './run-root.mjs';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { captureQaSourceIdentity } from './artifact-evidence.mjs';
@@ -24,9 +25,9 @@ export async function runPackagedServiceSmoke({ packageEvidence, artifactRoot })
   assert.equal(packaged.evidence.source.sha256, before.sha256, 'Package source differs from the candidate');
   const fixtures = path.join(repository, '.cache/test-fixtures');
   assert.equal(await fs.realpath(fixtures), fixtures);
-  await fs.mkdir(path.join(repository, '.cache/qa'), { recursive: true, mode: 0o700 });
-  const output = await fs.mkdtemp(path.join(repository, '.cache/qa/packaged-service-'));
-  const runtimeRoot = await fs.mkdtemp(path.join(fixtures, 'packaged-service-'));
+  const run = createRunRoot({ parent: path.join(repository, '.cache/qa'), prefix: 'packaged-service-', owner: 'scripts/qa/packaged-service-smoke.mjs' });
+  const output = run.dir;
+  const runtimeRoot = run.own(await fs.mkdtemp(path.join(fixtures, 'packaged-service-')));
   await fs.chmod(runtimeRoot, 0o700);
   const workspace = path.join(runtimeRoot, 'workspace');
   await fs.mkdir(workspace, { mode: 0o700 });
@@ -125,7 +126,7 @@ export async function runPackagedServiceSmoke({ packageEvidence, artifactRoot })
     if (evidence.cleanupErrors.length) evidence.outcome = 'failed';
     await fs.writeFile(path.join(output, 'evidence.json'), JSON.stringify(evidence, null, 2) + '\n', { mode: 0o600 });
     // Retain failure state; successful fixtures contain no account snapshots.
-    if (evidence.outcome === 'passed') await fs.rm(runtimeRoot, { recursive: true, force: true });
+    run.finish(evidence.outcome === 'passed' ? 'passed' : 'failed');
   }
   return { ...evidence, output };
 }
