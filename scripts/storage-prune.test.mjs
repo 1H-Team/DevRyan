@@ -232,3 +232,26 @@ test('the report lists every top-level family with owner, class and size, and th
   assert.equal(cacheBudgetWarning('/x', { measure: () => 1, disk: () => ({ freeBytes: 2 ** 40 }) }), null);
   assert.equal(cacheBudgetWarning('/x', { measure: () => { throw new Error('boom'); } }), null);
 }));
+
+test('a QA package touched within 24 hours is never selected, even when superseded', async () => {
+  await mkdir(path.join(repository, '.cache/storage-tests'), { recursive: true });
+  const root = await mkdtemp(path.join(repository, '.cache/storage-tests/prune-'));
+  try {
+    await run('git', ['init', '-q'], { cwd: root });
+    await writeFile(path.join(root, '.gitignore'), '.cache/\n');
+    for (const [index, name] of ['aold', 'bmiddle', 'cnewest'].entries()) {
+      const scope = `.cache/qa/packaged-electron-${name}`, app = `${scope}/app/mac-arm64/DevRyan QA.app`;
+      await mkdir(path.join(root, app, 'Contents/Resources'), { recursive: true });
+      await writeFile(path.join(root, app, 'Contents/Resources/app.asar'), 'fixture archive');
+      await writeFile(path.join(root, scope, 'package-evidence.json'), JSON.stringify({ schemaVersion: 1, output: path.join(root, scope), appPath: path.join(root, app),
+        archiveSha256: hash('fixture archive'), nativeSmoke: { sqlite: 'passed', pty: 'passed' } }));
+      await writeFile(path.join(root, scope, 'storage-retention.json'), JSON.stringify({ schemaVersion: 1, createdAt: '2026-01-01T00:00:00Z',
+        completedAt: `2026-01-0${index + 1}T00:00:00Z`, pinned: false, payloadState: 'ready' }));
+    }
+    const fresh = await auditStorage(root, { usage: idle });
+    assert.equal(fresh.entries.filter(item => item.eligible).length, 0);
+    assert.ok(fresh.entries[0].reasons.includes('Modified within the last 24 hours'));
+    const old = await auditStorage(root, { usage: idle, now: Date.now() + 30 * day });
+    assert.equal(old.entries.filter(item => item.eligible).length, 1);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

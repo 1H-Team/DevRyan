@@ -174,6 +174,7 @@ export async function auditStorage(root = repository, { usage = defaults.usage, 
       if (retention && (retention.schemaVersion !== 1 || retention.payloadState !== 'ready' || retention.pinned !== false)) entry.reasons.push('Retention pin or incomplete metadata');
       if (entry.references.some(ref => ref.required)) entry.reasons.push('Referenced baseline or QA configuration');
       entry.verified = true;
+      if (entry.identity.latestMtimeMs > now - day) entry.reasons.push('Modified within the last 24 hours');
     } catch (error) { entry.reasons.push(isMissing(error) ? 'Missing payload or provenance' : error.message); }
   }
   const newest = entries.filter(entry => entry.verified).sort((a, b) => Date.parse(b.completedAt) - Date.parse(a.completedAt) || a.path.localeCompare(b.path)).slice(0, 2);

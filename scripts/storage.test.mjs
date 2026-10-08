@@ -7,6 +7,7 @@ import { applyStorage, auditStorage, storageMain, validateManifest } from './sto
 import { hash, run, treeIdentity } from './storage-policy.mjs';
 
 const repository = fileURLToPath(new URL('../', import.meta.url));
+const later = () => Date.now() + 30 * 86400000;
 const idle = async () => ({ known: true, paths: [] });
 const resign = manifest => { const { manifestId: _id, ...body } = manifest; return { ...body, manifestId: hash(JSON.stringify(body)) }; };
 async function fixture(action) {
@@ -31,7 +32,7 @@ async function fixture(action) {
       await writeFile(path.join(root, scope, 'result.json'), '{"outcome":"passed"}');
       items.push({ scope, app, evidence, retention });
     }
-    await action({ root, items, audit: () => auditStorage(root, { usage: idle }) });
+    await action({ root, items, audit: () => auditStorage(root, { usage: idle, now: later() }) });
   } finally { await rm(root, { recursive: true, force: true }); }
 }
 
@@ -40,13 +41,13 @@ test('preview preserves payloads; apply deletes only superseded executable and k
   const manifest = await audit();
   assert.deepEqual(manifest.entries.filter(e => e.eligible).map(e => e.path), [items[0].app]);
   await treeIdentity(path.join(root, items[0].app));
-  const report = await applyStorage(manifest, root, { usage: idle });
+  const report = await applyStorage(manifest, root, { usage: idle, now: later() });
   assert.equal(report.ok, true);
   await assert.rejects(readFile(path.join(root, items[0].app, 'Contents/Resources/app.asar')), { code: 'ENOENT' });
   assert.deepEqual(await readFile(path.join(root, items[0].scope, 'package-evidence.json')), before);
   assert.equal(JSON.parse(await readFile(path.join(root, items[0].scope, 'storage-retention.json'))).payloadState, 'historical');
   assert.equal((await audit()).entries.filter(e => e.eligible).length, 0);
-  assert.equal((await applyStorage(manifest, root, { usage: idle })).ok, false);
+  assert.equal((await applyStorage(manifest, root, { usage: idle, now: later() })).ok, false);
 }));
 
 test('pinned, referenced baselines and active packages are protected', () => fixture(async ({ root, items, audit }) => {
@@ -102,18 +103,18 @@ test('changed manifest, forged paths, overlapping paths and source files cannot 
   await writeFile(path.join(root, source), 'never remove');
   await run('git', ['add', '-f', '--', source], { cwd: root });
   assert.equal((await audit()).entries[0].eligible, false);
-  assert.equal((await applyStorage(manifest, root, { usage: idle })).ok, false);
+  assert.equal((await applyStorage(manifest, root, { usage: idle, now: later() })).ok, false);
   assert.equal(await readFile(path.join(root, source), 'utf8'), 'never remove');
 }));
 
 test('changed payload and newly introduced pin invalidate an old manifest', () => fixture(async ({ root, items, audit }) => {
   let manifest = await audit();
   await writeFile(path.join(root, items[0].app, 'Contents/Resources/app.asar'), 'changed archive');
-  assert.equal((await applyStorage(manifest, root, { usage: idle })).ok, false);
+  assert.equal((await applyStorage(manifest, root, { usage: idle, now: later() })).ok, false);
   await writeFile(path.join(root, items[0].app, 'Contents/Resources/app.asar'), 'fixture archive');
   manifest = await audit();
   await writeFile(path.join(root, items[0].scope, 'storage-retention.json'), JSON.stringify({ ...items[0].retention, pinned: true }));
-  assert.equal((await applyStorage(manifest, root, { usage: idle })).ok, false);
+  assert.equal((await applyStorage(manifest, root, { usage: idle, now: later() })).ok, false);
 }));
 
 test('symlink escapes and aliased candidate roots fail closed', () => fixture(async ({ root, items, audit }) => {
@@ -125,12 +126,12 @@ test('symlink escapes and aliased candidate roots fail closed', () => fixture(as
   const manifest = await audit();
   await rm(path.join(root, items[0].app), { recursive: true });
   await symlink(path.join(root, items[1].app), path.join(root, items[0].app));
-  assert.equal((await applyStorage(manifest, root, { usage: idle })).ok, false);
+  assert.equal((await applyStorage(manifest, root, { usage: idle, now: later() })).ok, false);
   assert.equal(await readFile(outside, 'utf8'), 'protected');
 }));
 
 test('partial failures are durable, non-successful and never leave the package marked ready', () => fixture(async ({ root, items, audit }) => {
-  const report = await applyStorage(await audit(), root, { usage: idle, remove: async () => { throw new Error('simulated IO failure'); } });
+  const report = await applyStorage(await audit(), root, { usage: idle, now: later(), remove: async () => { throw new Error('simulated IO failure'); } });
   assert.equal(report.ok, false);
   assert.equal(report.results[0].outcome, 'partial-failure');
   assert.equal(JSON.parse(await readFile(path.join(root, items[0].scope, 'storage-retention.json'))).payloadState, 'removing');
@@ -140,7 +141,7 @@ test('partial failures are durable, non-successful and never leave the package m
 
 test('process usage is checked again immediately before each deletion', () => fixture(async ({ root, items, audit }) => {
   let calls = 0;
-  const report = await applyStorage(await audit(), root, { usage: async () => ++calls === 1
+  const report = await applyStorage(await audit(), root, { now: later(), usage: async () => ++calls === 1
     ? idle() : { known: true, paths: [{ pid: 99, path: path.join(root, items[0].app) }] } });
   assert.equal(report.ok, false);
   await treeIdentity(path.join(root, items[0].app));
@@ -155,18 +156,18 @@ test('registered dirty worktrees are retained, including ignored generated paylo
   assert.equal(await readFile(path.join(root, nested, 'important.txt'), 'utf8'), 'uncommitted source');
 }));
 
-test('Cargo cleanup requires recognized outputs and every descendant to be older than fourteen days', () => fixture(async ({ root, audit }) => {
+test('Cargo cleanup requires recognized outputs and every descendant to be older than fourteen days', () => fixture(async ({ root }) => {
   const base = 'packages/desktop/src-tauri';
   await mkdir(path.join(root, base, 'target/release'), { recursive: true });
   await writeFile(path.join(root, base, 'Cargo.toml'), '[package]');
   await writeFile(path.join(root, base, 'target/.rustc_info.json'), '{}');
   await writeFile(path.join(root, base, 'target/release/generated'), 'build output');
-  let entry = (await audit()).entries.find(e => e.kind === 'cargo-cache');
+  let entry = (await auditStorage(root, { usage: idle })).entries.find(e => e.kind === 'cargo-cache');
   assert.equal(entry.eligible, false);
   const past = new Date(Date.now() - 16 * 86400000);
   await utimes(path.join(root, base, 'target/release/generated'), past, past);
   await utimes(path.join(root, base, 'target/release'), past, past);
-  entry = (await audit()).entries.find(e => e.kind === 'cargo-cache');
+  entry = (await auditStorage(root, { usage: idle })).entries.find(e => e.kind === 'cargo-cache');
   assert.equal(entry.eligible, true);
 }));
 
