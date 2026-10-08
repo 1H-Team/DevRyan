@@ -61,7 +61,11 @@
       "!node_modules/@openchamber/web/server/default-config/agents/*.spec.*",
       "!node_modules/@openchamber/web/server/default-config/plugins/*.test.*",
       "!node_modules/@openchamber/web/server/default-config/plugins/*.spec.*",
-      "!node_modules/@openchamber/web/server/default-config/user-profile/**/test-*.md"
+      "!node_modules/@openchamber/web/server/default-config/user-profile/**/test-*.md",
+      "!node_modules/@openchamber/web/runtime/darwin-*{,/**}",
+      "!node_modules/@openchamber/web/runtime/win32-*{,/**}",
+      "!node_modules/@openchamber/web/runtime/linux-*{,/**}",
+      "!node_modules/@openchamber/web/runtime/reviewed-inputs/claude-*/assets{,/**}"
     ],
     "extraResources": [
       {
@@ -194,8 +198,7 @@
     },
     "asarUnpack": [
       "node_modules/@openchamber/harness-runtime/**",
-      "node_modules/@openchamber/web/server/lib/opencode/session-provider-worker.mjs",
-      "node_modules/@openchamber/web/server/lib/opencode/claude-credential-projection.js"
+      "node_modules/@openchamber/web/**"
     ]
   }
 }
