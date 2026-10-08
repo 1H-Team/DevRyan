@@ -39,6 +39,14 @@ DevRyan provides web and Electron interfaces to OpenCode over HTTP and SSE. This
 - Run `bun run build` when dependencies, bundling, dynamic imports, exports, or packaging inputs change; use `bun run bundle:check` for startup bundle verification. Add runtime/visual checks where static tests cannot establish changed behavior.
 - Report what passed, failed, or was unavailable. Do not weaken assertions, suppress failures, or call an unavailable platform/signing/live check a pass.
 
+## Local artifacts and disk
+
+- Scratch and evidence go only under `.cache/<family>/`, written by repo scripts. Ad hoc session logs go in `.cache/sessions/<date>-<task>/`, never loose `.cache/*.log`.
+- Before finishing, remove worktrees you created (`git worktree remove`), downloaded CI artifacts and superseded retry directories.
+- Copy small, sanitized proof into `docs/audits/<date>/`. Never cite a `.cache` path as the sole proof, and never treat an app, runtime or `node_modules` as evidence. Cited `.cache` files are protected from pruning.
+- Check `df -h .` before packaging (a QA app is about 1.8 GB). Run `bun run cache:report` when finishing heavy QA, and `bun run cache:prune` to preview cleanup (`--apply` deletes). Passing and interrupted QA runs delete their runtime payload unless `--keep-artifacts` or `DEVRYAN_KEEP_ARTIFACTS=1` is set.
+- Details: [local storage and retention](docs/STORAGE_CLEANUP.md).
+
 ## Runtime incidents and live checks
 
 - For reported runtime issues (stuck sessions, failed prompts, abort/stream/sync anomalies, worktree or evidence lifecycle), inspect the diagnostic journal before forming a code-only theory. Resolve Error Log UUIDs through the administrator detail API first, then correlate session and call/tool/message/task IDs; run the journal gap check before concluding.
