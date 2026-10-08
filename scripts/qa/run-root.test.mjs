@@ -66,6 +66,14 @@ test('keep flag, argv and env keep payloads on pass', () => {
   }
 });
 
+test('keepOnPass keeps a delivered payload on pass but not on interrupt', () => {
+  const parent = scratch(); const passed = create(parent, { keepOnPass: true }); seed(passed.dir);
+  passed.finish('passed'); assert.ok(existsSync(path.join(passed.dir, 'runtime/bin/tool')));
+  const interrupted = create(parent, { keepOnPass: true }); seed(interrupted.dir);
+  interrupted.finish('interrupted'); assert.equal(existsSync(path.join(interrupted.dir, 'runtime')), false);
+  rmSync(parent, { recursive: true });
+});
+
 test('extra payloads and external paths are removed; escapes are ignored', () => {
   const parent = scratch(); const outside = scratch(); writeFileSync(path.join(outside, 'keep.txt'), 'x');
   const external = scratch(); writeFileSync(path.join(external, 'big'), 'x');

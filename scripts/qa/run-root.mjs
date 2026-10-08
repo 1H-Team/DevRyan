@@ -67,9 +67,11 @@ function lstatOrNull(target) { try { return lstatSync(target); } catch { return 
  * `extraPayloads` are extra paths (relative to the run dir, or absolute inside
  * it) removed alongside the standard heavy subtrees, e.g. copied binaries.
  * `external` are paths outside the run dir owned by this run (a tmpdir runtime).
+ * `keepOnPass` is for producers whose payload is the deliverable (a packaged app
+ * consumed by later runs): a pass keeps it, an interrupt still removes it.
  * `onInterrupt` runs before interrupt cleanup so owned processes can stop.
  */
-export function createRunRoot({ parent, prefix = 'run-', owner, keepArtifacts, argv, env, extraPayloads = [], external = [], onInterrupt,
+export function createRunRoot({ parent, prefix = 'run-', owner, keepArtifacts, keepOnPass = false, argv, env, extraPayloads = [], external = [], onInterrupt,
   signals = true, exitProcessOnSignal = true } = {}) {
   if (!parent || !owner) throw new TypeError('createRunRoot requires parent and owner');
   mkdirSync(parent, { recursive: true, mode: 0o700 });
@@ -89,7 +91,7 @@ export function createRunRoot({ parent, prefix = 'run-', owner, keepArtifacts, a
     finished = true;
     manifest.status = status;
     manifest.completedAt = new Date().toISOString();
-    if (!keep && status !== 'failed') {
+    if (!keep && status !== 'failed' && !(keepOnPass && status === 'passed')) {
       try {
         payloadsRemoved = removeRunPayloads(dir, { extra: extraPayloads });
         for (const target of externalPaths) { rmSync(target, { recursive: true, force: true }); payloadsRemoved.push(target); }

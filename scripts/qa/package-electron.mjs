@@ -1,11 +1,12 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
+import { readFile, realpath, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { bundleElectronMain } from '../../packages/electron/scripts/bundle-main.mjs';
 import { captureQaArtifactIdentity, captureQaSourceIdentity } from './artifact-evidence.mjs';
+import { createRunRoot } from './run-root.mjs';
 import { restoreRevertRuntimeExecutableModes } from '../verify-revert-runtime-artifacts.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -47,132 +48,141 @@ export async function packageQaElectron({ webDist, nativeSourceApp } = {}) {
       nativeArtifacts.push({ name, version: installed, relative, source, sha256: sha256(await readFile(source)), kind });
     }
   }
-  const outputRoot = path.join(root, '.cache/qa');
-  await mkdir(outputRoot, { recursive: true, mode: 0o700 });
-  const output = await mkdtemp(path.join(outputRoot, 'packaged-electron-'));
+  // The packaged app is this producer's deliverable (consumed by later QA runs and
+  // pruned as a rebuildable family), so a pass keeps the app; an interrupt
+  // removes the partial build and the run manifest records the outcome.
+  const run = createRunRoot({ parent: path.join(root, '.cache/qa'), prefix: 'packaged-electron-', owner: 'scripts/qa/package-electron.mjs', keepOnPass: true });
+  const output = run.dir;
   const createdAt = new Date().toISOString();
   const retentionFile = path.join(output, 'storage-retention.json');
   await writeFile(retentionFile, JSON.stringify({ schemaVersion: 1, createdAt, completedAt: null,
     pinned: false, payloadState: 'building' }, null, 2) + '\n', { mode: 0o600 });
-  const staging = path.join(output, 'staging');
-  const before = await captureQaSourceIdentity(root);
-  const main = await bundleElectronMain({ outdir: path.join(staging, 'dist-bundle') });
-  const mainInputsPath = path.join(path.dirname(main), 'main.inputs.json');
-  const mainInputsBytes = await readFile(mainInputsPath), mainInputs = JSON.parse(mainInputsBytes);
-  if (mainInputs.workingDirectory !== canonicalRoot || mainInputs.mainSha256 !== sha256(await readFile(main))
-    || !Array.isArray(mainInputs.inputs) || !mainInputs.inputs.length) throw new Error('Electron main input closure is invalid');
-  const web = await captureQaArtifactIdentity(canonicalDist);
-  const { build, Platform, Arch } = requireElectron('electron-builder');
-  const productName = 'DevRyan QA';
-  const appPath = path.join(output, 'app/mac-arm64', `${productName}.app`);
-  const afterPackPath = path.join(output, 'after-pack.cjs');
-  await writeFile(afterPackPath, `const fs = require('node:fs/promises');\nconst path = require('node:path');\nmodule.exports = async context => {\n  const resources = path.join(context.appOutDir, ${JSON.stringify(`${productName}.app`)}, 'Contents/Resources');\n  for (const artifact of ${JSON.stringify(nativeArtifacts)}) {\n    await fs.copyFile(artifact.source, path.join(resources, 'app.asar.unpacked', artifact.relative));\n  }\n};\n`);
-  const config = {
-    ...packageJson.build,
-    extends: null,
-    productName,
-    electronVersion: installedElectron,
-    directories: { ...packageJson.build.directories, output: path.join(output, 'app') },
-    files: [
-      ...packageJson.build.files.filter(file => !['dist-bundle/main.mjs', 'dist-bundle/desktop-update-install.mjs', 'dist-bundle/desktop-update-install-windows.mjs'].includes(file)),
-      // Deterministic suites create and remove private fixtures while QA builds.
-      '!node_modules/**/.tmp{,/**/*}',
-      { from: path.dirname(main), to: 'dist-bundle', filter: ['main.mjs', 'desktop-update-install.mjs', 'desktop-update-install-windows.mjs'] },
-      { from: path.join(root, 'scripts/qa'), to: '.', filter: ['packaged-host.mjs', 'packaged-host-policy.mjs', 'isolated-home.mjs'] },
-    ],
-    extraMetadata: { main: './packaged-host.mjs' },
-    extraResources: [...packageJson.build.extraResources, ...packageJson.build.mac.extraResources]
-      .filter(resource => ['web-dist', 'native', 'revert-runtime'].includes(resource.to))
-      .map(resource => resource.to === 'web-dist' ? { from: canonicalDist, to: 'web-dist' } : resource),
-    extraFiles: [],
-    mac: { ...packageJson.build.mac, extraResources: [], extraFiles: [], target: ['dir'], identity: null, hardenedRuntime: false, notarize: false },
-    publish: null,
-    afterPack: afterPackPath,
-  };
-  // An explicit config file replaces package.json's build arrays. Passing an
-  // object instead merges extraResources and can copy the stale normal UI too.
-  const configPath = path.join(output, 'electron-builder.cjs');
-  await writeFile(configPath, `module.exports = ${JSON.stringify(config, null, 2)};\n`);
-  await build({ projectDir: electronRoot, targets: Platform.MAC.createTarget('dir', Arch.arm64), config: configPath, publish: 'never' });
-  const after = await captureQaSourceIdentity(root);
-  if (before.sha256 !== after.sha256) {
-    const previous = new Map(before.entries.map(entry => [entry.file, entry.sha256]));
-    const changed = after.entries.filter(entry => previous.get(entry.file) !== entry.sha256).map(entry => entry.file);
-    await writeFile(path.join(output, 'source-changed.json'), JSON.stringify({ before, after, changed }, null, 2));
-    throw new Error(`Candidate source changed while Electron was packaging: ${changed.slice(0, 30).join(', ')}`);
-  }
-  const resources = path.join(appPath, 'Contents/Resources');
-  await restoreRevertRuntimeExecutableModes({ directory: path.join(resources, 'revert-runtime') });
-  const archive = path.join(resources, 'app.asar');
-  const packagedMain = asar.extractFile(archive, 'dist-bundle/main.mjs');
-  if (sha256(packagedMain) !== sha256(await readFile(main))) throw new Error('Packaged Electron main differs from the fresh bundle');
-  for (const [file, expected] of [['desktop-update-install.mjs', mainInputs.installerSha256], ['desktop-update-install-windows.mjs', mainInputs.windowsInstallerSha256]]) {
-    if (sha256(asar.extractFile(archive, `dist-bundle/${file}`)) !== expected) throw new Error('Packaged update helper differs from the fresh bundle');
-  }
-  for (const input of mainInputs.inputs) {
-    const absolute = path.resolve(canonicalRoot, input.file);
-    if (!inside(canonicalRoot, absolute) || sha256(await readFile(absolute)) !== input.sha256) throw new Error('Electron main input changed during packaging');
-  }
-  if (sha256(await readFile(mainInputsPath)) !== sha256(mainInputsBytes)) throw new Error('Electron main input receipt changed during packaging');
-  const verifiedShellFiles = [];
-  for (const [directory, files] of [
-    [electronRoot, ['preload.mjs', 'origin-policy.mjs', 'browser-webview-policy.mjs', 'browser-cdp-bridge.mjs']],
-    [path.join(root, 'scripts/qa'), ['packaged-host.mjs', 'packaged-host-policy.mjs', 'isolated-home.mjs']],
-  ]) {
-    for (const file of files) {
-      const sourceHash = sha256(await readFile(path.join(directory, file)));
-      if (sha256(asar.extractFile(archive, file)) !== sourceHash) throw new Error(`Packaged shell file differs from source: ${file}`);
-      verifiedShellFiles.push({ file: path.relative(root, path.join(directory, file)), sha256: sourceHash });
+  let evidence;
+  try {
+    const staging = path.join(output, 'staging');
+    const before = await captureQaSourceIdentity(root);
+    const main = await bundleElectronMain({ outdir: path.join(staging, 'dist-bundle') });
+    const mainInputsPath = path.join(path.dirname(main), 'main.inputs.json');
+    const mainInputsBytes = await readFile(mainInputsPath), mainInputs = JSON.parse(mainInputsBytes);
+    if (mainInputs.workingDirectory !== canonicalRoot || mainInputs.mainSha256 !== sha256(await readFile(main))
+      || !Array.isArray(mainInputs.inputs) || !mainInputs.inputs.length) throw new Error('Electron main input closure is invalid');
+    const web = await captureQaArtifactIdentity(canonicalDist);
+    const { build, Platform, Arch } = requireElectron('electron-builder');
+    const productName = 'DevRyan QA';
+    const appPath = path.join(output, 'app/mac-arm64', `${productName}.app`);
+    const afterPackPath = path.join(output, 'after-pack.cjs');
+    await writeFile(afterPackPath, `const fs = require('node:fs/promises');\nconst path = require('node:path');\nmodule.exports = async context => {\n  const resources = path.join(context.appOutDir, ${JSON.stringify(`${productName}.app`)}, 'Contents/Resources');\n  for (const artifact of ${JSON.stringify(nativeArtifacts)}) {\n    await fs.copyFile(artifact.source, path.join(resources, 'app.asar.unpacked', artifact.relative));\n  }\n};\n`);
+    const config = {
+      ...packageJson.build,
+      extends: null,
+      productName,
+      electronVersion: installedElectron,
+      directories: { ...packageJson.build.directories, output: path.join(output, 'app') },
+      files: [
+        ...packageJson.build.files.filter(file => !['dist-bundle/main.mjs', 'dist-bundle/desktop-update-install.mjs', 'dist-bundle/desktop-update-install-windows.mjs'].includes(file)),
+        // Deterministic suites create and remove private fixtures while QA builds.
+        '!node_modules/**/.tmp{,/**/*}',
+        { from: path.dirname(main), to: 'dist-bundle', filter: ['main.mjs', 'desktop-update-install.mjs', 'desktop-update-install-windows.mjs'] },
+        { from: path.join(root, 'scripts/qa'), to: '.', filter: ['packaged-host.mjs', 'packaged-host-policy.mjs', 'isolated-home.mjs'] },
+      ],
+      extraMetadata: { main: './packaged-host.mjs' },
+      extraResources: [...packageJson.build.extraResources, ...packageJson.build.mac.extraResources]
+        .filter(resource => ['web-dist', 'native', 'revert-runtime'].includes(resource.to))
+        .map(resource => resource.to === 'web-dist' ? { from: canonicalDist, to: 'web-dist' } : resource),
+      extraFiles: [],
+      mac: { ...packageJson.build.mac, extraResources: [], extraFiles: [], target: ['dir'], identity: null, hardenedRuntime: false, notarize: false },
+      publish: null,
+      afterPack: afterPackPath,
+    };
+    // An explicit config file replaces package.json's build arrays. Passing an
+    // object instead merges extraResources and can copy the stale normal UI too.
+    const configPath = path.join(output, 'electron-builder.cjs');
+    await writeFile(configPath, `module.exports = ${JSON.stringify(config, null, 2)};\n`);
+    await build({ projectDir: electronRoot, targets: Platform.MAC.createTarget('dir', Arch.arm64), config: configPath, publish: 'never' });
+    const after = await captureQaSourceIdentity(root);
+    if (before.sha256 !== after.sha256) {
+      const previous = new Map(before.entries.map(entry => [entry.file, entry.sha256]));
+      const changed = after.entries.filter(entry => previous.get(entry.file) !== entry.sha256).map(entry => entry.file);
+      await writeFile(path.join(output, 'source-changed.json'), JSON.stringify({ before, after, changed }, null, 2));
+      throw new Error(`Candidate source changed while Electron was packaging: ${changed.slice(0, 30).join(', ')}`);
     }
+    const resources = path.join(appPath, 'Contents/Resources');
+    await restoreRevertRuntimeExecutableModes({ directory: path.join(resources, 'revert-runtime') });
+    const archive = path.join(resources, 'app.asar');
+    const packagedMain = asar.extractFile(archive, 'dist-bundle/main.mjs');
+    if (sha256(packagedMain) !== sha256(await readFile(main))) throw new Error('Packaged Electron main differs from the fresh bundle');
+    for (const [file, expected] of [['desktop-update-install.mjs', mainInputs.installerSha256], ['desktop-update-install-windows.mjs', mainInputs.windowsInstallerSha256]]) {
+      if (sha256(asar.extractFile(archive, `dist-bundle/${file}`)) !== expected) throw new Error('Packaged update helper differs from the fresh bundle');
+    }
+    for (const input of mainInputs.inputs) {
+      const absolute = path.resolve(canonicalRoot, input.file);
+      if (!inside(canonicalRoot, absolute) || sha256(await readFile(absolute)) !== input.sha256) throw new Error('Electron main input changed during packaging');
+    }
+    if (sha256(await readFile(mainInputsPath)) !== sha256(mainInputsBytes)) throw new Error('Electron main input receipt changed during packaging');
+    const verifiedShellFiles = [];
+    for (const [directory, files] of [
+      [electronRoot, ['preload.mjs', 'origin-policy.mjs', 'browser-webview-policy.mjs', 'browser-cdp-bridge.mjs']],
+      [path.join(root, 'scripts/qa'), ['packaged-host.mjs', 'packaged-host-policy.mjs', 'isolated-home.mjs']],
+    ]) {
+      for (const file of files) {
+        const sourceHash = sha256(await readFile(path.join(directory, file)));
+        if (sha256(asar.extractFile(archive, file)) !== sourceHash) throw new Error(`Packaged shell file differs from source: ${file}`);
+        verifiedShellFiles.push({ file: path.relative(root, path.join(directory, file)), sha256: sourceHash });
+      }
+    }
+    const verifiedWorkspaceFiles = [];
+    const workspaceMappings = [
+      ['node_modules/@openchamber/web/server/', 'packages/web/server/'],
+      ['node_modules/@openchamber/shared-runtime/', 'packages/shared-runtime/'],
+      ['node_modules/@openchamber/harness-runtime/', 'packages/harness-runtime/'],
+      ['node_modules/@openchamber/orchestration-runtime/', 'packages/orchestration-runtime/'],
+      ['node_modules/@openchamber/bot-egress/', 'packages/bot-egress/'],
+    ];
+    for (const entry of asar.listPackage(archive).map(file => file.replace(/^\//, ''))) {
+      const mapping = workspaceMappings.find(([prefix]) => entry.startsWith(prefix));
+      if (!mapping || typeof asar.statFile(archive, entry).size !== 'number') continue;
+      const file = mapping[1] + entry.slice(mapping[0].length);
+      const sourceHash = sha256(await readFile(path.join(root, file)));
+      if (sha256(asar.extractFile(archive, entry)) !== sourceHash) throw new Error(`Packaged workspace file differs from source: ${file}`);
+      verifiedWorkspaceFiles.push({ file, sha256: sourceHash });
+    }
+    if (!verifiedWorkspaceFiles.some(entry => entry.file === 'packages/web/server/index.js')) throw new Error('Packaged server source was not verified');
+    const packagedWeb = await captureQaArtifactIdentity(path.join(resources, 'web-dist'));
+    if (web.sha256 !== packagedWeb.sha256) throw new Error('Packaged UI differs from the candidate web artifact');
+    for (const artifact of nativeArtifacts) {
+      if (sha256(await readFile(path.join(resources, 'app.asar.unpacked', artifact.relative))) !== artifact.sha256) throw new Error('Packaged native binary differs from the verified local source');
+    }
+    const binary = path.join(appPath, 'Contents/MacOS', productName);
+    const nativeSmoke = JSON.parse(execFileSync(binary, ['--input-type=commonjs', '--eval', `
+      const load = require('node:module').createRequire(process.argv[1] + '/package.json');
+      const Database = load('better-sqlite3');
+      const db = new Database(':memory:');
+      if (db.prepare('select 1 as value').get().value !== 1) throw Error('SQLite native smoke failed');
+      db.close();
+      const terminal = load('node-pty').spawn('/bin/sh', ['-c', 'exit 0'], { env: process.env });
+      const timer = setTimeout(() => process.exit(1), 5000);
+      terminal.onExit(({exitCode}) => { clearTimeout(timer); if (exitCode !== 0) process.exit(1);
+        console.log(JSON.stringify({ electron: process.versions.electron, nodeModuleAbi: process.versions.modules, sqlite: 'passed', pty: 'passed' })); });
+    `, archive], { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, encoding: 'utf8', timeout: 10000 }));
+    evidence = { schemaVersion: 1, purpose: 'actual packaged Electron Coding Agents QA with isolated test bootstrap',
+      output, binary, appPath, electronVersion: installedElectron, platform: process.platform, arch: process.arch,
+      source: before, webArtifact: web, packagedWebArtifact: packagedWeb, verifiedShellFiles, verifiedWorkspaceFiles,
+      mainSha256: sha256(packagedMain), mainInputClosure: { path: mainInputsPath, sha256: sha256(mainInputsBytes), ...mainInputs },
+      preloadSha256: sha256(asar.extractFile(archive, 'preload.mjs')),
+      archiveSha256: sha256(await readFile(archive)), bootstrapSha256: sha256(asar.extractFile(archive, 'packaged-host.mjs')),
+      bootstrapPolicySha256: sha256(asar.extractFile(archive, 'packaged-host-policy.mjs')),
+      packagerSha256: sha256(await readFile(fileURLToPath(import.meta.url))),
+      nativeSourceApp: nativeApp, nativeArtifacts, nativeSmoke,
+      signing: 'disabled', publication: 'disabled', nativeRebuild: 'not-run; matched local packaged binaries copied into owned output',
+      excludedAcceptance: ['signing/notarization', 'updater installation', 'global protocol registration', 'OS keychain integration', 'background Bot service', 'legacy Tauri'] };
+    await writeFile(path.join(output, 'package-evidence.json'), `${JSON.stringify(evidence, null, 2)}\n`);
+    await writeFile(retentionFile, JSON.stringify({ schemaVersion: 1, createdAt, completedAt: new Date().toISOString(),
+      pinned: false, payloadState: 'ready' }, null, 2) + '\n', { mode: 0o600 });
+    run.finish('passed');
+  } catch (error) {
+    run.finish('failed');
+    throw error;
   }
-  const verifiedWorkspaceFiles = [];
-  const workspaceMappings = [
-    ['node_modules/@openchamber/web/server/', 'packages/web/server/'],
-    ['node_modules/@openchamber/shared-runtime/', 'packages/shared-runtime/'],
-    ['node_modules/@openchamber/harness-runtime/', 'packages/harness-runtime/'],
-    ['node_modules/@openchamber/orchestration-runtime/', 'packages/orchestration-runtime/'],
-    ['node_modules/@openchamber/bot-egress/', 'packages/bot-egress/'],
-  ];
-  for (const entry of asar.listPackage(archive).map(file => file.replace(/^\//, ''))) {
-    const mapping = workspaceMappings.find(([prefix]) => entry.startsWith(prefix));
-    if (!mapping || typeof asar.statFile(archive, entry).size !== 'number') continue;
-    const file = mapping[1] + entry.slice(mapping[0].length);
-    const sourceHash = sha256(await readFile(path.join(root, file)));
-    if (sha256(asar.extractFile(archive, entry)) !== sourceHash) throw new Error(`Packaged workspace file differs from source: ${file}`);
-    verifiedWorkspaceFiles.push({ file, sha256: sourceHash });
-  }
-  if (!verifiedWorkspaceFiles.some(entry => entry.file === 'packages/web/server/index.js')) throw new Error('Packaged server source was not verified');
-  const packagedWeb = await captureQaArtifactIdentity(path.join(resources, 'web-dist'));
-  if (web.sha256 !== packagedWeb.sha256) throw new Error('Packaged UI differs from the candidate web artifact');
-  for (const artifact of nativeArtifacts) {
-    if (sha256(await readFile(path.join(resources, 'app.asar.unpacked', artifact.relative))) !== artifact.sha256) throw new Error('Packaged native binary differs from the verified local source');
-  }
-  const binary = path.join(appPath, 'Contents/MacOS', productName);
-  const nativeSmoke = JSON.parse(execFileSync(binary, ['--input-type=commonjs', '--eval', `
-    const load = require('node:module').createRequire(process.argv[1] + '/package.json');
-    const Database = load('better-sqlite3');
-    const db = new Database(':memory:');
-    if (db.prepare('select 1 as value').get().value !== 1) throw Error('SQLite native smoke failed');
-    db.close();
-    const terminal = load('node-pty').spawn('/bin/sh', ['-c', 'exit 0'], { env: process.env });
-    const timer = setTimeout(() => process.exit(1), 5000);
-    terminal.onExit(({exitCode}) => { clearTimeout(timer); if (exitCode !== 0) process.exit(1);
-      console.log(JSON.stringify({ electron: process.versions.electron, nodeModuleAbi: process.versions.modules, sqlite: 'passed', pty: 'passed' })); });
-  `, archive], { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, encoding: 'utf8', timeout: 10000 }));
-  const evidence = { schemaVersion: 1, purpose: 'actual packaged Electron Coding Agents QA with isolated test bootstrap',
-    output, binary, appPath, electronVersion: installedElectron, platform: process.platform, arch: process.arch,
-    source: before, webArtifact: web, packagedWebArtifact: packagedWeb, verifiedShellFiles, verifiedWorkspaceFiles,
-    mainSha256: sha256(packagedMain), mainInputClosure: { path: mainInputsPath, sha256: sha256(mainInputsBytes), ...mainInputs },
-    preloadSha256: sha256(asar.extractFile(archive, 'preload.mjs')),
-    archiveSha256: sha256(await readFile(archive)), bootstrapSha256: sha256(asar.extractFile(archive, 'packaged-host.mjs')),
-    bootstrapPolicySha256: sha256(asar.extractFile(archive, 'packaged-host-policy.mjs')),
-    packagerSha256: sha256(await readFile(fileURLToPath(import.meta.url))),
-    nativeSourceApp: nativeApp, nativeArtifacts, nativeSmoke,
-    signing: 'disabled', publication: 'disabled', nativeRebuild: 'not-run; matched local packaged binaries copied into owned output',
-    excludedAcceptance: ['signing/notarization', 'updater installation', 'global protocol registration', 'OS keychain integration', 'background Bot service', 'legacy Tauri'] };
-  await writeFile(path.join(output, 'package-evidence.json'), `${JSON.stringify(evidence, null, 2)}\n`);
-  await writeFile(retentionFile, JSON.stringify({ schemaVersion: 1, createdAt, completedAt: new Date().toISOString(),
-    pinned: false, payloadState: 'ready' }, null, 2) + '\n', { mode: 0o600 });
   return evidence;
 }
 
