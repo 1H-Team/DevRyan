@@ -1,4 +1,4 @@
-import { executionSignal, checkExecutionAdmission, executionPhase, executionStep, timedExecutionStep, withExecutionAdmission, withExecutionPreparation, withExecutionSummary } from '@openchamber/harness-runtime/lib/execution-admission.js';
+import { executionSignal, checkExecutionAdmission, executionPhase, executionStep, timedExecutionStep, withExecutionAdmission, withExecutionObservation, withExecutionPreparation, withExecutionSummary } from '@openchamber/harness-runtime/lib/execution-admission.js';
 import { classifySessionChangeTool } from '@openchamber/harness-runtime/lib/session-changes-tools.js';
 import { cleanupExecutionLease } from '@openchamber/harness-runtime/lib/execution-cleanup.js';
 import { createHash, randomUUID } from 'node:crypto';
@@ -91,7 +91,9 @@ export function createSessionExecutionHost(options) {
   const runtime = createSessionMutationRuntime({ directory: path.join(options.dataDirectory, 'harness', 'session-mutations'),
     onMaterialize: options.onMaterialize,
     // Ledger maintenance and input-classification failures reach the journal.
-    onDiagnostic: (record) => { try { options.onDiagnostic?.({ event: 'session_execution', ...record }); } catch { /* Observer only. */ } } });
+    onDiagnostic: (record) => { try { options.onDiagnostic?.({ event: 'session_execution', ...record }); } catch { /* Observer only. */ } },
+    // Every ledger lock's wait and hold time (turn timing; observer only).
+    onLockTiming: (timing) => { try { options.onLockTiming?.(timing); } catch { /* Observer only. */ } } });
   const generation = () => resolveOpenCodeGeneration(options.openCodeClient);
   const requestSignal = () => AbortSignal.any([AbortSignal.timeout(30_000), ...(executionSignal() ? [executionSignal()] : [])]);
   // Gen 2 reads keep the gen-1 failure codes.
@@ -343,7 +345,13 @@ export function createSessionExecutionHost(options) {
       await nativeRecheck(input);
       if (generation() !== 2) throw failure('native_execution_generation_mismatch');
       signal?.throwIfAborted();
-      return dispatch(input, async () => { await nativeRecheck(input); signal?.throwIfAborted(); });
+      const recheck = async () => { await nativeRecheck(input); signal?.throwIfAborted(); };
+      // Journaled like the plugin path (one record with per-step time, only
+      // when slow or failed), including ledger lock wait and hold. Observation
+      // only: no deadline is added and failures keep their codes.
+      return input.action === 'direct-finish' ? directFinish(input, recheck, withExecutionObservation)
+        : withExecutionObservation(input, () => dispatch(input, recheck),
+          { phase: 'direct_admit', onDiagnostic: options.onDiagnostic, minMs: options.admissionSummaryMinMs ?? 250 });
     }
     if (input.action === 'control-begin' || input.action === 'control-finish') {
       const origin = input.authorization?.input?.provenance;
@@ -968,12 +976,12 @@ export function createSessionExecutionHost(options) {
   // like an admission (only when slow or failed) but gains no deadline: the
   // receipt commit must settle. `tool_execution` is the companion's run time
   // between admission and this finish; it is not part of `elapsedMs`.
-  const directFinish = (input) => {
+  const directFinish = (input, recheckNative, summarize = withExecutionSummary) => {
     const admittedAt = typeof input.token === 'string' ? directAdmissions.get(input.token) : undefined;
     if (admittedAt !== undefined) directAdmissions.delete(input.token);
-    return withExecutionSummary(input, () => {
+    return summarize(input, () => {
       if (admittedAt !== undefined) executionStep('tool_execution', Date.now() - admittedAt);
-      return dispatch(input);
+      return dispatch(input, recheckNative);
     }, { phase: 'direct_finish', onDiagnostic: options.onDiagnostic, minMs: options.admissionSummaryMinMs ?? 250 });
   };
   const dispatchPlugin = (input, recheckNative) => input.action === 'direct-finish' ? directFinish(input)

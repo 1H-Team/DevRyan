@@ -5,6 +5,81 @@ import { describe, expect, it } from 'vitest';
 import { createTurnTimingRuntime, registerTurnTimingRoutes } from './turn-timing.js';
 
 describe('turn timing runtime', () => {
+  it('attributes native provider marks, bridge calls and ledger locks to the active turn and journals them without text', () => {
+    let now = 1_000;
+    const marks = [];
+    const settled = [];
+    const runtime = createTurnTimingRuntime({ now: () => now, onTurnMark: (entry) => marks.push(entry), onTurnSettled: (entry) => settled.push(entry) });
+    // Nothing is attributed before the turn exists, and clients cannot post server marks.
+    expect(runtime.recordSessionMark({ sessionId: 'ses_native', mark: 'provider_request_sent' })).toBe(false);
+    expect(runtime.recordBridgeCall({ sessionId: 'ses_native', method: 'native.admission.authorize', durationMs: 5, statusCode: 200 })).toBe(false);
+    expect(runtime.recordClientMark({ sessionId: 'ses_native', messageId: 'msg_user', mark: 'provider_first_byte' })).toBe(false);
+
+    runtime.recordClientMark({ sessionId: 'ses_native', messageId: 'msg_user', mark: 'send_started', directory: '/project',
+      metadata: { source: 'proxy', providerID: 'openai', modelID: 'gpt-5.6-sol', agent: 'orchestrator', variant: 'high' } });
+    now = 1_100;
+    runtime.recordClientMark({ sessionId: 'ses_native', messageId: 'msg_user', mark: 'prompt_accepted', directory: '/project',
+      metadata: { providerID: 'openai', modelID: 'gpt-5.6-sol', agent: 'orchestrator', variant: 'high', text: 'private prompt' } });
+    expect(runtime.recordLedgerLock({ sessionId: 'ses_native', operation: 'registerNativeSession', waitMs: 7_700, holdMs: 40 })).toBe(true);
+    runtime.recordLedgerLock({ sessionId: 'ses_native', operation: 'finishDirect', waitMs: 20, holdMs: 30, failed: true });
+    runtime.recordBridgeCall({ sessionId: 'ses_native', method: 'native.admission.authorize', durationMs: 900, statusCode: 200, reused: false });
+    runtime.recordBridgeCall({ sessionId: 'ses_native', method: 'native.admission.authorize', durationMs: 300, statusCode: 503, reused: true });
+    runtime.recordBridgeCall({ sessionId: 'ses_native', method: 'native.observation', durationMs: 100, statusCode: null });
+    now = 9_000;
+    expect(runtime.recordSessionMark({ sessionId: 'ses_native', mark: 'provider_request_prepared', metadata: { kind: 'primary', requestID: 'req_1' } })).toBe(true);
+    now = 9_500;
+    runtime.recordSessionMark({ sessionId: 'ses_native', mark: 'provider_request_sent', metadata: { kind: 'primary', transport: 'ws', requestID: 'req_1', text: 'private' } });
+    now = 10_000;
+    runtime.recordSessionMark({ sessionId: 'ses_native', mark: 'provider_first_byte', metadata: { transport: 'http', statusCode: 200 } });
+    expect(runtime.recordSessionMark({ sessionId: 'ses_native', mark: 'provider_first_byte' })).toBe(false);
+    now = 11_000;
+    runtime.processOpenCodeEvent({ type: 'message.updated', properties: { info: { id: 'msg_assistant', sessionID: 'ses_native', role: 'assistant',
+      parentID: 'msg_user', time: { created: 11_000 } } } });
+    runtime.processOpenCodeEvent({ type: 'message.part.delta', properties: { sessionID: 'ses_native', messageID: 'msg_assistant', partID: 'prt_1',
+      field: 'text', delta: 'secret response text' } });
+    now = 12_000;
+    runtime.processOpenCodeEvent({ type: 'session.status', properties: { sessionID: 'ses_native', status: { type: 'idle' } } });
+    // After the turn settles nothing more is attributed to it.
+    expect(runtime.recordBridgeCall({ sessionId: 'ses_native', method: 'late', durationMs: 1, statusCode: 200 })).toBe(false);
+
+    const [record] = runtime.getRecentTimings({ sessionId: 'ses_native' }).records;
+    expect(record.durationsMs).toEqual(expect.objectContaining({
+      send_started_to_provider_request_sent: 8_500,
+      provider_request_sent_to_provider_first_byte: 500,
+      provider_first_byte_to_first_text_delta: 1_000,
+      send_started_to_first_text_delta: 10_000,
+    }));
+    expect(record.diagnostics.bridge).toEqual({ count: 3, durationMs: 1_300, maxMs: 900, reusedCount: 1, failedCount: 2,
+      methods: [{ method: 'native.admission.authorize', count: 2, durationMs: 1_200, maxMs: 900 },
+        { method: 'native.observation', count: 1, durationMs: 100, maxMs: 100 }] });
+    expect(record.diagnostics.ledger).toEqual({ count: 2, waitMs: 7_720, holdMs: 70, maxWaitMs: 7_700, maxHoldMs: 40, failedCount: 1,
+      operations: [{ action: 'registerNativeSession', count: 1, waitMs: 7_700, holdMs: 40 },
+        { action: 'finishDirect', count: 1, waitMs: 20, holdMs: 30 }] });
+
+    expect(marks.map((entry) => entry.mark)).toEqual(['send_started', 'prompt_accepted', 'provider_request_prepared', 'provider_request_sent',
+      'provider_first_byte', 'assistant_message_created', 'first_text_delta', 'session_status_idle']);
+    expect(marks.find((entry) => entry.mark === 'first_text_delta')).toEqual({ sessionId: 'ses_native', userMessageId: 'msg_user',
+      directory: '/project', mark: 'first_text_delta', at: 11_000, payload: { assistantMessageID: 'msg_assistant', elapsedMs: 10_000 } });
+    expect(marks.find((entry) => entry.mark === 'provider_request_sent').payload).toEqual({ elapsedMs: 8_500, transport: 'ws', kind: 'primary', requestID: 'req_1' });
+    expect(marks.find((entry) => entry.mark === 'provider_first_byte').payload).toEqual({ elapsedMs: 9_000, transport: 'http', statusCode: 200 });
+    expect(settled).toHaveLength(1);
+    expect(settled[0]).toMatchObject({ sessionId: 'ses_native', userMessageId: 'msg_user', mark: 'summary', at: 12_000, payload: {
+      assistantMessageID: 'msg_assistant', durationMs: 11_000,
+      model: { providerID: 'openai', modelID: 'gpt-5.6-sol', agent: 'orchestrator', variant: 'high' },
+      bridge: record.diagnostics.bridge, ledger: record.diagnostics.ledger,
+    } });
+    expect(settled[0].payload.stages).toEqual(expect.arrayContaining([{ phase: 'provider_request_sent_to_provider_first_byte', durationMs: 500 }]));
+    const journaled = JSON.stringify([marks, settled]);
+    expect(journaled).not.toContain('private');
+    expect(journaled).not.toContain('secret response text');
+  });
+
+  it('keeps turn timing when a journal observer fails', () => {
+    const runtime = createTurnTimingRuntime({ onTurnMark: () => { throw new Error('observer failure'); } });
+    expect(runtime.recordClientMark({ sessionId: 'ses_1', messageId: 'msg_user', mark: 'send_started' })).toBe(true);
+    expect(Object.keys(runtime.getRecentTimings({ sessionId: 'ses_1' }).records[0].marks)).toEqual(['send_started']);
+  });
+
   it('correlates client timing marks with OpenCode turn events', () => {
     let now = 1_000;
     const runtime = createTurnTimingRuntime({ now: () => now });

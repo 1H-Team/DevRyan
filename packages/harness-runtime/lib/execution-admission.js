@@ -4,6 +4,8 @@ import { hostDeadlineExpired } from './host-stall-clock.js';
 const context = new AsyncLocalStorage();
 export const executionRemainingMs = () => Math.max(0, (context.getStore()?.deadline ?? Infinity) - Date.now());
 export const executionDiagnostic = (record) => context.getStore()?.report?.(record);
+// True while an admission, summary or observation journals this work.
+export const executionReporting = () => typeof context.getStore()?.report === 'function';
 export const executionSignal = () => context.getStore()?.signal;
 export const checkExecutionAdmission = () => executionSignal()?.throwIfAborted();
 export const executionProgressMeter = () => context.getStore()?.meter;
@@ -97,6 +99,17 @@ export async function withExecutionSummary(input, action, { phase, onDiagnostic,
   return context.run({ ...context.getStore(), report, summary: createSummary({ minMs, slowMs }, phase) }, () => executionPhase(phase, action));
 }
 
+// Like withExecutionSummary, for paths that ran without any execution context
+// (native direct admissions and finishes): failures keep their original error
+// and code, because timeout errors are rewrapped only for work that had a
+// context before. Inside an existing context it is withExecutionSummary.
+export async function withExecutionObservation(input, action, { phase, onDiagnostic, minMs, slowMs } = {}) {
+  if (context.getStore()) return withExecutionSummary(input, action, { phase, onDiagnostic, minMs, slowMs });
+  if (typeof phase !== 'string' || !phase) throw new TypeError('withExecutionObservation requires a phase');
+  const report = createReport(input, onDiagnostic);
+  return context.run({ report, summary: createSummary({ minMs, slowMs }, phase), observeOnly: true }, () => executionPhase(phase, action));
+}
+
 // Timing-only steps for an active summary. Unlike executionPhase, they never
 // check the admission signal, so code that did not observe cancellation
 // before (for example the session-changes queue) cannot start throwing.
@@ -137,7 +150,7 @@ export async function executionPhase(phase, action) {
     return result;
   } catch (cause) {
     const failure = current?.signal?.aborted ? current.signal.reason
-      : current && (cause?.name === 'TimeoutError' || ['capture_timeout', 'LOCK_TIMEOUT'].includes(cause?.code))
+      : current && !current.observeOnly && (cause?.name === 'TimeoutError' || ['capture_timeout', 'LOCK_TIMEOUT'].includes(cause?.code))
         ? Object.assign(new Error('local_execution_timeout', { cause }), { code: 'local_execution_timeout', status: 503 }) : cause;
     settle({ phase, state: 'failed', elapsedMs: Date.now() - started,
       code: ['local_execution_timeout', 'execution_preparation_stalled', 'execution_poller_lost',
@@ -162,7 +175,7 @@ export async function quietExecutionPhase(phase, action, slowMs = 250) {
     return result;
   } catch (cause) {
     const failure = current?.signal?.aborted ? current.signal.reason
-      : current && (cause?.name === 'TimeoutError' || ['capture_timeout', 'LOCK_TIMEOUT'].includes(cause?.code))
+      : current && !current.observeOnly && (cause?.name === 'TimeoutError' || ['capture_timeout', 'LOCK_TIMEOUT'].includes(cause?.code))
         ? Object.assign(new Error('local_execution_timeout', { cause }), { code: 'local_execution_timeout', status: 503 }) : cause;
     current?.report?.({ phase, state: 'failed', elapsedMs: Date.now() - started,
       code: ['local_execution_timeout', 'execution_preparation_stalled', 'execution_poller_lost',

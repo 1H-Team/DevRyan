@@ -152,5 +152,8 @@ export function createSessionMutationRuntime(options: {
   onChange?(input: MutationPublication & { directory: string }): void | Promise<void>;
   onMaterialize?(row: { path: string; before: unknown; after: unknown }): void | Promise<void>;
   /** Background failures (ledger maintenance, input classification); codes only. */
-  onDiagnostic?(record: { phase: string; state: 'failed'; code: string }): void;
+  onDiagnostic?(record: { phase: string; state: 'failed' | 'completed'; code?: string; elapsedMs?: number; slow?: boolean; action?: string; sessionID?: string; steps?: string }): void;
+  /** Every owner-lock acquisition (observer only): queue and lock wait from the call, then hold time
+   * (transaction and commit). `operation` is the outermost runtime method, or the install pass. */
+  onLockTiming?(timing: { operation: string; sessionID?: string; queueMs: number; waitMs: number; holdMs: number; wrote: boolean; failed: boolean }): void;
 }): SessionMutationRuntime;

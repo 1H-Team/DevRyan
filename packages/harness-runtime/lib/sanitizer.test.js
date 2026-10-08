@@ -175,3 +175,22 @@ test('retains exact revert correlation with no file contents or unbounded detail
   expect(record.payload).toEqual(payload);
   expect(sanitizer.sanitizeExportValue(record).payload.transactionID).toBe(transactionID);
 });
+
+test('retains turn timing summaries with bridge, ledger and provider request timings only', () => {
+  const sanitizer = createDiagnosticSanitizer();
+  const payload = {
+    assistantMessageID: 'msg_assistant', durationMs: 4_200,
+    model: { providerID: 'openai', modelID: 'gpt-5.6-sol', agent: 'orchestrator', variant: 'high' },
+    stages: [{ phase: 'send_started_to_provider_request_sent', durationMs: 3_100 }],
+    bridge: { count: 3, durationMs: 1_500, maxMs: 900, reusedCount: 0, failedCount: 1,
+      methods: [{ method: 'native.admission.authorize', count: 2, durationMs: 1_200, maxMs: 900 }] },
+    ledger: { count: 2, waitMs: 7_700, holdMs: 400, maxWaitMs: 7_600, maxHoldMs: 300, failedCount: 0,
+      operations: [{ action: 'registerNativeSession', count: 1, waitMs: 7_600, holdMs: 300 }] },
+  };
+  const record = sanitizer.sanitizeRecord({ type: 'timing', at: 5, mark: 'turn.summary', sessionID: 'ses_1', messageID: 'msg_user',
+    payload: { ...payload, prompt: 'private prompt text' } });
+  expect(record.payload).toEqual(payload);
+  const incident = sanitizer.sanitizeRecord({ type: 'lifecycle', at: 6, event: 'provider_request_prepared', sessionID: 'ses_1',
+    payload: { providerRequestID: 'req_native', requestPreparedAt: 1_000, requestSentAt: 1_400, transport: 'ws' } });
+  expect(incident.payload).toEqual({ providerRequestID: 'req_native', requestPreparedAt: 1_000, requestSentAt: 1_400, transport: 'ws' });
+});

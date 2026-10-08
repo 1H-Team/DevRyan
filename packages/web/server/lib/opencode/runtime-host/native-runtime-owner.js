@@ -8,6 +8,7 @@ import { createRuntimeBundleStore } from './runtime-bundle.js';
 import { verifyNativeRuntimeArtifacts } from './native-artifacts.js';
 import { createNativeControllerProcess } from './native-process.js';
 import { createNativeAdmissionOwner } from './native-admission-owner.js';
+import { parseNativeProviderTiming } from './native-provider-timing.js';
 import { createNativePrimaryStepOwner } from './primary-step-owner.js';
 import { createNativeManagedTaskOwner } from './managed-task-owner.js';
 import { createNativeRetention } from './native-retention.js';
@@ -281,6 +282,13 @@ export function createNativeRuntimeOwner(options) {
       if (!observationOwner) throw fail('native_observation_unavailable');
       return observationOwner.handleRpc(method, params);
     }
+    if (method === 'native.provider-timing') {
+      // Turn timing only: no permit, no authority, nothing durable.
+      const timing = parseNativeProviderTiming(params);
+      if (timing.controllerInstanceID !== nativeInstanceID) throw fail('native_provider_timing_expired');
+      try { options.onProviderTiming?.(timing); } catch { /* Observer only. */ }
+      return null;
+    }
     if (method === 'native.primary-step') {
       if (!primaryStep) throw fail('native_primary_owner_unavailable');
       return primaryStep(params);
@@ -363,7 +371,9 @@ export function createNativeRuntimeOwner(options) {
     if (method.startsWith('execution.native.')) return executionHost.nativeExecution({ ...params, action: method.slice('execution.native.'.length) }, context);
     throw fail('native_rpc_unavailable');
   };
-  const bridge = createManagedOrchestrationPrivateHost({ handleRpc });
+  // Every authorized controller RPC's route, duration, status and connection
+  // reuse reaches turn timing (observer only).
+  const bridge = createManagedOrchestrationPrivateHost({ handleRpc, onRequestTiming: options.onBridgeTiming });
   const start = ({ admission: launchAdmission = 'open' } = {}) => {
     if (!['open', 'checkpoint'].includes(launchAdmission) || checkpointHeld && launchAdmission !== 'checkpoint') return Promise.reject(fail('native_checkpoint_admission_held'));
     if (launchAdmission === 'checkpoint') checkpointHeld = true;
@@ -415,7 +425,8 @@ export function createNativeRuntimeOwner(options) {
       nativeInstanceID = instanceID;
       observationOwner = configurationSnapshot ? createNativeObservationOwner({ instanceID, snapshot: configurationSnapshot,
         controller: () => child, isReady: () => nativeInstanceID === instanceID && phase === 'ready' && !stopping && !stopped && Boolean(child && !child.hasExited()),
-        admissionOwner: nativeOwner, openCodeClient, recordDiagnostic: options.recordDiagnostic }) : undefined;
+        admissionOwner: nativeOwner, openCodeClient, recordDiagnostic: options.recordDiagnostic,
+        onObservation: options.onNativeObservation }) : undefined;
       cursor=createNativeCursorOwner({instanceID,admissionOwner:nativeOwner,runtime:executionHost.runtime,controller:active,recovery:cursorRecovery,
         isReady:()=>nativeInstanceID===instanceID&&phase==='ready'&&!stopping,
         abortAndWait:sessionID=>options.cursorRuntime.abortAndWait(sessionID),onStarted:(scope,recheck)=>primaryStep.external(scope,recheck)});

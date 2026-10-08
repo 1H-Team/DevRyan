@@ -48,6 +48,15 @@ export function withExecutionSummary<T>(input: {
 }, action: () => T | Promise<T>, options: {
   phase: string; onDiagnostic?: (record: ExecutionDiagnostic) => void; minMs?: number; slowMs?: number;
 }): Promise<T>;
+/** Like withExecutionSummary for work that had no execution context: failures keep their original error and code. */
+export function withExecutionObservation<T>(input: {
+  sessionID?: string; userMessageID?: string; messageID?: string; callID?: string;
+  toolOrigin?: string; action?: string; kind?: string; fallbackReason?: string;
+}, action: () => T | Promise<T>, options: {
+  phase: string; onDiagnostic?: (record: ExecutionDiagnostic) => void; minMs?: number; slowMs?: number;
+}): Promise<T>;
+/** True while an admission, summary or observation journals the current work. */
+export function executionReporting(): boolean;
 /** Records a timing step into the active summary, if any. Never checks the admission signal. */
 export function executionStep(phase: string, elapsedMs: number): void;
 /** Times `action` as a summary step when a summary is active. Never checks the admission signal. */

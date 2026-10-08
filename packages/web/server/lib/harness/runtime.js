@@ -249,6 +249,15 @@ export const createWebHarnessRuntime = (options = {}) => {
       return record({ type: 'lifecycle', event: event.event === 'session_execution' ? 'session_execution' : 'session_revert',
         sessionID: event.sessionID, payload: event });
     },
+    // Turn timing marks and per-turn summaries (`turn.<mark>`, `turn.summary`):
+    // timings, identities and model selection only, never prompt text.
+    recordTurnTiming(entry) {
+      if (typeof entry?.mark !== 'string' || !/^[a-z][a-z0-9_]{0,63}$/.test(entry.mark) || typeof entry.sessionId !== 'string') return false;
+      return record({ type: 'timing', mark: `turn.${entry.mark}`, sessionID: entry.sessionId,
+        ...(typeof entry.userMessageId === 'string' ? { messageID: entry.userMessageId } : {}),
+        ...(typeof entry.directory === 'string' ? { directory: entry.directory } : {}),
+        payload: entry.payload ?? {} });
+    },
     recordLifecycleEvent(event) {
       return record({
         type: 'lifecycle',

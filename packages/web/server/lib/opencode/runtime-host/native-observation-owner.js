@@ -52,7 +52,10 @@ export function createNativeObservationOwner(options) {
         observation={...observation,userMessageID:info.parentID};
       }
       await recheck(); current();
-      return write(observation);
+      const written = write(observation);
+      // Turn timing only, after the committed journal write.
+      try { options.onObservation?.(observation); } catch { /* Observer only. */ }
+      return written;
     }); } catch(cause) { gap(observation); throw cause; }
   };
   return {observeAcceptedUser,handleRpc};
