@@ -444,7 +444,8 @@ export const createQaLaunchEnvironment = ({ runtimeRoot, home, opencodeBinary, b
         HOME: home, OPENCODE_TEST_HOME: home, XDG_CONFIG_HOME: path.join(home, '.config'),
         XDG_DATA_HOME: path.join(home, '.local/share'), XDG_STATE_HOME: path.join(home, '.local/state'),
         XDG_CACHE_HOME: path.join(home, '.cache'), TMPDIR: path.join(home, 'tmp'),
-        BUN_INSTALL_CACHE_DIR: path.join(home, '.cache/bun'),
+        // One content-addressed package cache shared by every QA home (was ~115 MB per home).
+        BUN_INSTALL_CACHE_DIR: path.join(repositoryRoot, '.cache/shared/bun-install-cache'),
         OPENCHAMBER_DATA_DIR: data, OPENCHAMBER_ELECTRON_USER_DATA_DIR: path.join(runtimeRoot, 'browser-profile'),
         OPENCHAMBER_DIST_DIR: path.join(repositoryRoot, 'packages/web/dist'), OPENCHAMBER_ELECTRON_DEV: '1',
         OPENCODE_BINARY: opencodeBinary, CLAUDE_PROXY_PORT: '0',
