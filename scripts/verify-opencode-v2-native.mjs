@@ -22,6 +22,7 @@ import { runWriterByteEdges, runSameFileWriters, runProtectedRootCases, runInter
 import { nativeBackgroundMarkerCount, runControllerCrashHold, runPendingBackgroundRestart } from './opencode-v2-native/restart-lane.mjs';
 import { runNativeRemovalCases } from './opencode-v2-native/removal-lanes.mjs';
 import { assertWriterOutcome, assertTerminatedBeforeOutcome, snapshotFiles, writerCases } from './opencode-v2-native/assertions.mjs';
+import { createRunRoot } from './qa/run-root.mjs';
 
 const git = promisify(execFile);
 const admittedOperations = new Set(['session.create', 'session.prompt', 'session.switchAgent', 'session.switchModel', 'session.setPermissions',
@@ -36,8 +37,8 @@ const errorEvidence = error => ({ name: error.name, message: error.message, stac
 export const runNativeWriterAcceptance = async (options = {}) => {
   const artifacts = await verifyNativeAcceptanceArtifacts(options);
   const source = await captureNativeAcceptanceSource();
-  const cache = path.join(repositoryRoot, '.cache/v2-validation'); await fs.mkdir(cache, { recursive: true });
-  const root = await fs.realpath(await fs.mkdtemp(path.join(cache, 'native-')));
+  const run = createRunRoot({ parent: path.join(repositoryRoot, '.cache/v2-validation'), prefix: 'native-', owner: 'scripts/verify-opencode-v2-native.mjs' });
+  const root = await fs.realpath(run.dir);
   const directory = path.join(root, 'project');
   const home = path.join(root, 'home');
   const tmp = path.join(root, 'tmp');
@@ -501,13 +502,14 @@ export const runNativeWriterAcceptance = async (options = {}) => {
       return remaining;
     })() };
   await fs.writeFile(path.join(root, 'result.json'), JSON.stringify(result, null, 2));
+  run.finish(runError ? 'failed' : 'passed');
   if (runError) throw Object.assign(runError, { artifact: path.join(root, 'result.json') });
   return result;
 };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    const args = process.argv.slice(2);
+    const args = process.argv.slice(2).filter(argument => argument !== '--keep-artifacts');
     assert.ok(args.length === 0 || args.length === 1 && args[0] === '--managed-wake-attribution',
       'Usage: node scripts/verify-opencode-v2-native.mjs [--managed-wake-attribution]');
     const result = await runNativeWriterAcceptance({ managedWakeAttribution: args.length === 1 });

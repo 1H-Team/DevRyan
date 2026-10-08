@@ -10,11 +10,12 @@ import {createV2MessageId} from '../packages/web/server/lib/opencode/v2/admissio
 import {readSessionExecutionReceipt} from '../packages/harness-runtime/lib/session-execution.js';
 import {resolveSqliteDriver} from '../packages/web/server/lib/opencode/db-maintenance-core.js';
 import {waitFor} from './opencode-v2-native/process-lanes.mjs';
+import {createRunRoot} from './qa/run-root.mjs';
 
 const evidence=error=>({code:error.code??error.name,message:error.message,...error.missingCatalog?{missingCatalog:error.missingCatalog}:{},...error.errors?{causes:Array.from(error.errors,evidence)}:{}});
 export async function runCompiledCursorDiagnostic({artifactRoot}){
- const cache=path.join(repositoryRoot,'.cache/v2-validation');await fs.mkdir(cache,{recursive:true});
- const root=await fs.realpath(await fs.mkdtemp(path.join(cache,'compiled-cursor-'))),source=await captureNativeAcceptanceSource();
+ const run=createRunRoot({parent:path.join(repositoryRoot,'.cache/v2-validation'),prefix:'compiled-cursor-',owner:'scripts/verify-opencode-v2-cursor.mjs'});
+ const root=await fs.realpath(run.dir),source=await captureNativeAcceptanceSource();
  const observations=[],diagnostics=[],cases=[],cleanupFailures=[];let fixture,provider,failure,selectedApiKey='owned-loopback-account-b';
  const originalBackend=process.env.CURSOR_BACKEND_URL;
  try{
@@ -123,6 +124,7 @@ export async function runCompiledCursorDiagnostic({artifactRoot}){
  const after=await captureNativeAcceptanceSource(),result={schema:1,diagnostic:true,artifactRoot,root,cases,observations,diagnostics,cleanupFailures,
   source,sourceUnchanged:source.sourceDigest===after.sourceDigest,...failure?{failure}: {}};
  await fs.writeFile(path.join(root,'result.json'),JSON.stringify(result,null,2)+'\n');
+ run.finish(failure||cleanupFailures.length?'failed':'passed');
  const resultSha256=fixtureSha256(await fs.readFile(path.join(root,'result.json')));
  console.log(JSON.stringify({root,cases:cases.length,failure,cleanupFailures,sourceUnchanged:result.sourceUnchanged,resultSha256}));
  if(failure||cleanupFailures.length)process.exitCode=1;return result;
