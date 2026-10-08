@@ -7,7 +7,7 @@ import {make} from '@opencode/core/image/photon';
 import {resolveBinary} from '@opencode/core/persistent-pty/binary.bun';
 import '@opencode/core/pty/pty.bun';
 import {dlopen} from 'bun:ffi';
-import ffiAsset from '../../../../../../node_modules/.bun/bun-pty@0.4.8/node_modules/bun-pty/rust-pty/target/release/librust_pty_arm64.dylib' with {type:'file'};
+import ffiAsset from '../../../../../../node_modules/.bun/bun-pty@0.4.9/node_modules/bun-pty/rust-pty/target/release/librust_pty_arm64.dylib' with {type:'file'};
 import type {NativeAssetRequest} from './native-process-protocol.js';
 const hash=(bytes:Uint8Array)=>createHash('sha256').update(bytes).digest('hex');
 function png() {
@@ -32,7 +32,7 @@ export async function verifyNativeAssets(request:NativeAssetRequest,buildId:stri
   const pty=await resolveBinary(request.globals.bin),bytes=await fs.readFile(pty),stat=await fs.stat(pty);
   const digest=hash(bytes);if(digest!=='becb3b8b346d0d20b898a229ed42b107f1f0e179f50e5de52636bc26a07004fb'||(stat.mode&0o111)===0) throw new Error('native_pty_asset_invalid');
   const ffiBytes=new Uint8Array(await Bun.file(ffiAsset).arrayBuffer());
-  if(hash(ffiBytes)!=='d61d60ed8348eadfb396418f85ff8dcee7428fe94feb1395c0ae9f68eba3868f') throw new Error('native_ffi_asset_invalid');
+  if(hash(ffiBytes)!=='694b0a2f6a9d0b6195c985630cb176dca4e2bf486b206b8365205262e062ba0b') throw new Error('native_ffi_asset_invalid');
   const library=dlopen(ffiAsset,{bun_pty_get_pid:{args:['i32'],returns:'i32'}});
   try{if(typeof library.symbols.bun_pty_get_pid!=='function') throw new Error('native_ffi_asset_invalid');}finally{library.close();}
   return {protocol:1,type:'assets-verified',buildId,parser:{bash:true,powershell:true},photon:{width,height,mime:image.mime},pty:{sha256:digest,size:bytes.length,executable:true},ffi:{loaded:true}};

@@ -3,6 +3,16 @@ import {rewriteNativeAsset,rewriteUnavailableNativePty,NATIVE_ASSET_SOURCE_SHA,p
 import {execFileSync} from 'node:child_process';
 const repository=path.resolve(import.meta.dirname,'../..'),core=await fs.realpath(path.join(repository,'node_modules/@opencode/core'));
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
+test('FFI verification embeds the native library from the locked core dependency',async()=>{
+ const verifier=path.join(repository,'packages/web/server/lib/opencode/runtime-host/verify-assets.ts');
+ const source=await fs.readFile(verifier,'utf8');
+ const imported=source.match(/import ffiAsset from '([^']+)' with \{type:'file'\}/)?.[1];
+ assert.ok(imported);
+ const require=createRequire(path.join(core,'package.json'));
+ const expected=path.join(path.dirname(require.resolve('bun-pty/package.json')),'rust-pty/target/release/librust_pty_arm64.dylib');
+ assert.equal(await fs.realpath(path.resolve(path.dirname(verifier),imported)),await fs.realpath(expected));
+ assert.ok(source.includes(`if(hash(ffiBytes)!=='${hash(await fs.readFile(expected))}')`));
+});
 test('Windows-style Git checkout preserves byte-pinned reviewed resources',async()=>{
  const fixture=await fs.mkdtemp(path.join(repository,'.cache/test-fixtures/reviewed-checkout-'));
  const files=['packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js',
