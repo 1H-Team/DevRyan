@@ -14,6 +14,7 @@ import { createQaHostLaunchEnvironment } from '../qa/launch-environment.mjs';
 import { startOwnedProcess } from '../qa/process.mjs';
 import { parseProcessSample } from './ledger-profile-worker.mjs';
 import { runtimeUpgradeScenarios } from './runtime-upgrade-comparison.mjs';
+import { createRunRoot } from '../qa/run-root.mjs';
 
 const execute = promisify(execFile), pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -435,12 +436,15 @@ export async function runPairedBenchmark({artifactRoot,outputRoot,diagnostic=fal
   const order=schedule.order;
   for(const [pairIndex,pair] of order.entries())for(const scenario of selectedScenarios)for(const arm of pair){
     const generation=2;
-    const root=await fs.mkdtemp(path.join(outputRoot,`${pairIndex+1}-${scenario}-${arm.id}-`));
+    let armProcess;
+    const armRun=createRunRoot({parent:outputRoot,prefix:`${pairIndex+1}-${scenario}-${arm.id}-`,owner:'scripts/perf/native-upgrade-benchmark.mjs',
+      extraPayloads:['bundles'],onInterrupt:async()=>{await armProcess?.stop().catch(()=>{});}});
+    const root=armRun.dir;
     const input={root,generation,scenario,artifactRoot:arm.artifactRoot,comparisonArmID:arm.id,eventReconcileIntervalMs:arm.eventReconcileIntervalMs,operations:diagnostic?2:benchmarkProtocol.operations,
       idleMs:diagnostic?500:benchmarkProtocol.idleMs,warmupMs:diagnostic?0:benchmarkProtocol.warmupMs};
     const requestPath=path.join(root,'request.json');await fs.writeFile(requestPath,JSON.stringify(input)+'\n');
     const child=startOwnedProcess(process.execPath,[file,'--arm',requestPath],{cwd:repositoryRoot,
-      env:createQaHostLaunchEnvironment({TMPDIR:root,GIT_CEILING_DIRECTORIES:repositoryRoot})});
+      env:createQaHostLaunchEnvironment({TMPDIR:root,GIT_CEILING_DIRECTORIES:repositoryRoot})});armProcess=child;
     let run,cleanup;
     try {
       const exit=await new Promise((resolve,reject)=>{child.child.once('exit',(code,signal)=>resolve({code,signal}));child.child.once('error',reject);});
@@ -449,6 +453,8 @@ export async function runPairedBenchmark({artifactRoot,outputRoot,diagnostic=fal
     }finally{
       await fs.writeFile(path.join(root,'arm.log'),child.getLog());cleanup=await child.stop();
     }
+    const armPassed=run?.status==='completed'&&run.armExit.code===0&&!run.armExit.signal;
+    armRun.finish(armPassed&&!cleanup.remainingProcessIds.length?'passed':'failed');
     assert.deepEqual(cleanup.remainingProcessIds,[]);if(run?.status!=='completed'||run.armExit.code!==0||run.armExit.signal){
       const failure={status:'failed',diagnostic,launches:[...launches,run],failedRoot:root,armCleanup:cleanup};
       await fs.writeFile(path.join(outputRoot,'result.json'),JSON.stringify(failure,null,2)+'\n');

@@ -34,6 +34,7 @@ import {
 } from './electron-interactive-benchmark.mjs';
 
 import { PERF_PARENT_SESSION_ID } from './fixture-session-seeds.mjs';
+import { createRunRoot } from '../qa/run-root.mjs';
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDirectory, '../..');
@@ -659,8 +660,10 @@ export const runElectronResourceBenchmark = async ({ argv = [], startupMode = 'n
   }
   const electronBinary = packaged?.binary ?? resolvePackagedElectronBinary(options.electronBinary);
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const outputDirectory = path.join(options.outputRoot, `${timestamp}-${options.label}`);
-  await mkdir(outputDirectory, { recursive: true });
+  // Per-run runtime payloads (profiles, Chromium caches) go on pass; summary, screenshots and traces stay.
+  const run = createRunRoot({ parent: options.outputRoot, name: `${timestamp}-${options.label}`, owner: 'scripts/perf/electron-resource-benchmark.mjs',
+    heavyNames: ['runtime'] });
+  const outputDirectory = run.dir;
 
   const gitCommit = execFileSync('git', ['rev-parse', 'HEAD'], {
     cwd: repositoryRoot,
@@ -766,6 +769,7 @@ export const runElectronResourceBenchmark = async ({ argv = [], startupMode = 'n
   result.integrity = { passed: integrityErrors.length === 0, errors: integrityErrors.map(error => error.message) };
   if (measurementError) result.workloadError = measurementError.message;
   await writeFile(path.join(outputDirectory, 'summary.json'), JSON.stringify(result, null, 2));
+  run.finish(measurementError || integrityErrors.length ? 'failed' : 'passed');
   if (measurementError || integrityErrors.length) {
     throw new AggregateError([...(measurementError ? [measurementError] : []), ...integrityErrors], 'Performance workload or integrity validation failed; see summary.json');
   }
@@ -777,7 +781,7 @@ export const runElectronResourceBenchmark = async ({ argv = [], startupMode = 'n
 };
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  runElectronResourceBenchmark({ argv: process.argv.slice(2) }).catch((error) => {
+  runElectronResourceBenchmark({ argv: process.argv.slice(2).filter(argument => argument !== '--keep-artifacts') }).catch((error) => {
     console.error('[perf] benchmark failed:', error);
     process.exitCode = 1;
   });
