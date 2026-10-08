@@ -69,7 +69,7 @@ the last 24 hours is ever selected, whatever the class.
 | session | `sessions/<date>-<task>/` | heavy subtrees stripped after 14 days; logs kept |
 | unowned | any other name, including loose `.cache/*.log` | removed after 14 days unless cited or pinned (cited: heavy subtrees stripped, files kept) |
 | worktrees | `worktrees/*` and every registered worktree | report only |
-| report only | `storage/`, `eslint/`, `typecheck/`, `plugin-upgrades/`, `revert-runtime-*`, `session-execution/`, `windows-native/` | sized and listed; never selected |
+| report only | `storage/`, `eslint/`, `typecheck/`, `plugin-upgrades/`, `session-execution/`, `windows-native/` | sized and listed; never selected |
 
 Heavy subtrees: `node_modules`, `.bun`, `runtime-bundles`, `*.app`, Chromium
 caches (`Cache`, `Code Cache`, `GPUCache`, `Dawn*Cache`, `GrShaderCache`,
@@ -133,7 +133,7 @@ stripped (cheap evidence). Evictions are marked `budget eviction` in the preview
 | `worktrees/*`, nested worktrees | worktrees | `git worktree` | report only; suggest `git worktree remove` for clean branch checkouts and `git worktree prune` for missing ones |
 | `storage/` | report only | this tool | manifests and cleanup reports |
 | `eslint/`, `typecheck/` | report only | package lint and type-check caches | listed |
-| `plugin-upgrades/`, `revert-runtime-*`, `session-execution/`, `windows-native/` | report only | build inputs | listed; never selected |
+| `plugin-upgrades/`, `session-execution/`, `windows-native/` | report only | build inputs | listed; never selected |
 | loose `.cache/*.log` and anything unregistered | unowned | none | remove after 14 days unless cited or pinned |
 | `packages/desktop/src-tauri/target/{release,debug/incremental}` | Cargo cache | Cargo/Tauri | remove if untouched for 14 days |
 

@@ -167,8 +167,6 @@ const exactFamilies = {
   eslint: reg('tool-cache', 'ESLint caches (packages/*/package.json)'),
   typecheck: reg('tool-cache', 'TypeScript build info (packages/*/tsconfig.json)'),
   'plugin-upgrades': reg('build-input', 'dependency snapshots and evidence'),
-  'revert-runtime-source': reg('build-input', 'Revert runtime companion source'),
-  'revert-runtime-companion': reg('build-input', 'Revert runtime companion'),
   'session-execution': reg('build-input', 'scripts/build-session-execution.mjs'),
   'windows-native': reg('build-input', 'scripts/build-native-runtime.mjs, scripts/build-windows-git.mjs'),
 };

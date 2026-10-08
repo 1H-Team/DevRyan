@@ -211,7 +211,6 @@ export async function auditStorage(root = repository, { usage = defaults.usage, 
     { path: 'packages/web/runtime', reason: 'Required Revert runtime' },
     { path: '.tmp', reason: 'Legacy fixtures lack uniform ownership/completion proof; retained' },
     { path: '.cache/plugin-upgrades', reason: 'Dependency snapshots and evidence; age/ownership unresolved' },
-    { path: '.cache/revert-runtime-source', reason: 'Companion source and dependencies; outside cleanup allowlist' },
     ...state.worktrees.filter(tree => within(root, tree)).map(tree => ({ path: path.relative(root, tree), reason: 'Registered worktree; preserve source and evidence, never recursively remove' })),
   ];
   const body = { schemaVersion: 1, root, createdAt: new Date(now).toISOString(), policy: 'conservative-v1', entries, protectedAreas,
