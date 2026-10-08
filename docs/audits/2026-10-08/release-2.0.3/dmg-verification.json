@@ -1,0 +1,17 @@
+{
+  "verifiedAt": "2026-10-08T12:30:15.406Z",
+  "version": "2.0.3",
+  "bundleIdentifier": "dev.openchamber.desktop",
+  "architecture": "arm64",
+  "codesignDeepStrict": "passed",
+  "signing": "ad-hoc; no notarization claimed",
+  "nativeRuntime": {
+    "opencodeVersion": "2.0.24",
+    "manifestSha256": "42a0ceb778e911dc17875d71baabb59149a526727cc92785d8d754e69a070dcb",
+    "verification": "passed"
+  },
+  "duplicatePlatformRuntimeEntries": 0,
+  "unpackedWebServer": "present",
+  "appLaunch": "not-run",
+  "installedAppUpdate": "not-run"
+}

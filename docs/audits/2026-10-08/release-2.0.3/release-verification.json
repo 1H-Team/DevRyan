@@ -1,0 +1,101 @@
+{
+  "verifiedAt": "2026-10-08T12:28:24.886Z",
+  "source": "ec3a04a9e9e23fd3fe8964f9fb8786a4d847b15f",
+  "tag": "v2.0.3",
+  "scope": "desktop-macos-arm64",
+  "url": "https://github.com/1H-Team/DevRyan/releases/tag/v2.0.3",
+  "publishedAt": "2026-10-08T12:26:52Z",
+  "draft": false,
+  "prerelease": false,
+  "assets": [
+    {
+      "name": "DevRyan-2.0.3-arm64.dmg",
+      "size": 381223618,
+      "state": "uploaded",
+      "digest": "sha256:5c259614162ccc8db6af48234b6aec14485489977d32654b02c53dabd70acae9"
+    }
+  ],
+  "packagingReceipt": {
+    "protocol": "devryan.release-asset/1",
+    "source": "ec3a04a9e9e23fd3fe8964f9fb8786a4d847b15f",
+    "version": "2.0.3",
+    "platform": "macos-arm64",
+    "name": "DevRyan-2.0.3-arm64.dmg",
+    "size": 381223618,
+    "sha256": "5c259614162ccc8db6af48234b6aec14485489977d32654b02c53dabd70acae9"
+  },
+  "workflow": {
+    "url": "https://github.com/1H-Team/DevRyan/actions/runs/37775444286",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "create-release",
+        "conclusion": "success"
+      },
+      {
+        "name": "prepare-desktop-electron-macos (aarch64-apple-darwin, macos-26, arm64, darwin-aarch64)",
+        "conclusion": "success"
+      },
+      {
+        "name": "build-web-artifact",
+        "conclusion": "success"
+      },
+      {
+        "name": "resolve-bot-runtime-images",
+        "conclusion": "success"
+      },
+      {
+        "name": "build-bot-runtime-image (indexer)",
+        "conclusion": "success"
+      },
+      {
+        "name": "build-bot-runtime-image (opencode)",
+        "conclusion": "success"
+      },
+      {
+        "name": "build-bot-runtime-image (rest)",
+        "conclusion": "success"
+      },
+      {
+        "name": "build-bot-runtime-image (egress)",
+        "conclusion": "success"
+      },
+      {
+        "name": "build-bot-runtime-image (computer)",
+        "conclusion": "success"
+      },
+      {
+        "name": "build-bot-runtime-image (supervisor)",
+        "conclusion": "success"
+      },
+      {
+        "name": "build-bot-runtime-image (engine-proxy)",
+        "conclusion": "success"
+      },
+      {
+        "name": "build-bot-runtime-image (database)",
+        "conclusion": "success"
+      },
+      {
+        "name": "publish-npm",
+        "conclusion": "skipped"
+      },
+      {
+        "name": "publish-bot-runtime-images",
+        "conclusion": "success"
+      },
+      {
+        "name": "verify-bot-runtime-topology",
+        "conclusion": "success"
+      },
+      {
+        "name": "build-desktop-electron-macos (aarch64-apple-darwin, arm64, darwin-aarch64)",
+        "conclusion": "success"
+      },
+      {
+        "name": "finalize-release",
+        "conclusion": "success"
+      }
+    ]
+  }
+}

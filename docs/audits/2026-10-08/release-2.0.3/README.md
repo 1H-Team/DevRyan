@@ -49,7 +49,29 @@ database up to date, migration history matched, and the Bot schema marker was
 `20260908182901`. No pending migration needed application. The [native input
 verification](https://github.com/1H-Team/DevRyan/actions/runs/37773552679) also passed.
 
-Publication is pending. The tag-triggered `desktop-macos-arm64` workflow must
-verify signed Bot images, topology, the packaged native runtime and DMG, exact
-public asset inventory and packaging digest, and hosted Supabase migrations and
-schema marker before publishing.
+[DevRyan v2.0.3](https://github.com/1H-Team/DevRyan/releases/tag/v2.0.3) was
+published at `2026-10-08T12:26:52Z` from immutable tag `v2.0.3` on
+`ec3a04a9e9e23fd3fe8964f9fb8786a4d847b15f`. [Release CI](https://github.com/1H-Team/DevRyan/actions/runs/37775444286)
+passed signed Bot image verification, topology, packaged native runtime and DMG
+checks, exact asset inventory and packaging digest, and hosted migration/schema
+verification. The final database deployment also reported up to date. npm
+publication was skipped for the desktop scope.
+
+The [release verification](release-verification.json) records a published,
+non-prerelease release with exactly one public asset:
+`DevRyan-2.0.3-arm64.dmg`, 381,223,618 bytes. Its downloaded SHA-256
+`5c259614162ccc8db6af48234b6aec14485489977d32654b02c53dabd70acae9` matches both
+GitHub and the [CI packaging receipt](macos-arm64-asset.json).
+Compared with the 550,335,790-byte 2.0.2 DMG, this is about 31% smaller;
+this is an installer-size comparison, not a runtime performance claim.
+
+[Read-only DMG inspection](dmg-verification.json) confirms version 2.0.3,
+bundle identifier `dev.openchamber.desktop`, arm64 architecture and passing
+`codesign --verify --deep --strict`. The app is ad-hoc signed. The native
+OpenCode 2.0.24 resource passes manifest, payload, launcher and signature
+verification, with manifest SHA-256
+`42a0ceb778e911dc17875d71baabb59149a526727cc92785d8d754e69a070dcb`.
+No platform runtime remains inside `app.asar` or the unpacked web package;
+the unpacked web server remains present. The image was not used to launch or
+update the installed app. Downloaded installer and CI artifacts were removed
+after copying these small receipts, and the read-only image was detached.
