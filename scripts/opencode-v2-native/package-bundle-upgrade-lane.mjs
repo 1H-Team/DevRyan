@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { verifyNativeRuntimeArtifacts } from '../../packages/web/server/lib/opencode/runtime-host/native-artifacts.js';
 import { nativeBundleCredentialFingerprint } from '../../packages/web/server/lib/opencode/runtime-host/native-bundle-credential-contract.js';
 import { snapshotOwnedTree } from './package-rollback-lane.mjs';
+import { cloneTree } from '../qa/run-root.mjs';
 
 /** Session history is compared independently of the intentionally reconciled
  * credential/KV state. This is a read of the closed native database, not a write. */
@@ -68,19 +69,21 @@ export function createCompiledBundleUpgradeLane({ observations, credentialProces
     },
     async assertIncompatibleTarget({ descriptor, artifacts, root, assertHeld }) {
       const target = path.join(root, 'credential-contract-omission');
-      await fs.cp(path.dirname(descriptor.launch.artifactManifestPath), target, { recursive: true, errorOnExist: true, force: false });
-      const manifestPath = path.join(target, 'native-bundle.json');
-      const manifest = structuredClone(artifacts.manifest);
-      manifest.compiledContracts = manifest.compiledContracts.filter(value => value !== NATIVE_BUNDLE_CREDENTIAL_CONTRACT);
-      await fs.writeFile(manifestPath, JSON.stringify(manifest) + '\n');
-      const manifestSha256 = createHash('sha256').update(await fs.readFile(manifestPath)).digest('hex');
-      const verified = await verifyNativeRuntimeArtifacts({ manifestPath, manifestSha256, launcher: path.join(target, path.basename(artifacts.launcher)) });
-      const incompatible = { ...descriptor, launch: { ...descriptor.launch, controllerBinary: verified.controller, writerBinary: verified.writer,
-        artifactManifestPath: manifestPath, artifactManifestSha256: manifestSha256 } };
-      await assert.rejects(credentialProcess({ descriptor: incompatible, assertHeld, action: { protocol: NATIVE_BUNDLE_CREDENTIAL_CONTRACT, action: 'capture' } }),
-        error => error.code === 'bundle_credential_contract_incompatible');
-      return { id: 'compiled-credential-target-contract-refusal', status: 'passed', omittedContract: NATIVE_BUNDLE_CREDENTIAL_CONTRACT,
-        manifestSha256, buildId: manifest.buildId, scope: 'capability-omission negative; same signed compiled payload, not a different binary version' };
+      cloneTree(path.dirname(descriptor.launch.artifactManifestPath), target);
+      try {
+        const manifestPath = path.join(target, 'native-bundle.json');
+        const manifest = structuredClone(artifacts.manifest);
+        manifest.compiledContracts = manifest.compiledContracts.filter(value => value !== NATIVE_BUNDLE_CREDENTIAL_CONTRACT);
+        await fs.writeFile(manifestPath, JSON.stringify(manifest) + '\n');
+        const manifestSha256 = createHash('sha256').update(await fs.readFile(manifestPath)).digest('hex');
+        const verified = await verifyNativeRuntimeArtifacts({ manifestPath, manifestSha256, launcher: path.join(target, path.basename(artifacts.launcher)) });
+        const incompatible = { ...descriptor, launch: { ...descriptor.launch, controllerBinary: verified.controller, writerBinary: verified.writer,
+          artifactManifestPath: manifestPath, artifactManifestSha256: manifestSha256 } };
+        await assert.rejects(credentialProcess({ descriptor: incompatible, assertHeld, action: { protocol: NATIVE_BUNDLE_CREDENTIAL_CONTRACT, action: 'capture' } }),
+          error => error.code === 'bundle_credential_contract_incompatible');
+        return { id: 'compiled-credential-target-contract-refusal', status: 'passed', omittedContract: NATIVE_BUNDLE_CREDENTIAL_CONTRACT,
+          manifestSha256, buildId: manifest.buildId, scope: 'capability-omission negative; same signed compiled payload, not a different binary version' };
+      } finally { await fs.rm(target, { recursive: true, force: true }); }
     },
     async seedBaseline(descriptor, assertHeld) {
       const before = await captureCredentials({ descriptor, assertHeld });

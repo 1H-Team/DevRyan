@@ -59,6 +59,7 @@ import { createCompiledHelperAgentFixture } from './opencode-v2-native/package-h
 import { createFixtureJournal } from './opencode-v2-native/fixture-journal.mjs';
 import { gradeJournalRoot, compiledDurableJournalCase } from './opencode-v2-native/journal-evidence.mjs';
 import { runCompiledSeededCredentialBoot } from './opencode-v2-native/package-seeded-credential-lane.mjs';
+import { createRunRoot } from './qa/run-root.mjs';
 
 const privateEnvironment = (globals, inherited) => createQaHostLaunchEnvironment({ ...inherited,
   HOME: globals.home, XDG_CONFIG_HOME: globals.config, XDG_DATA_HOME: globals.data, XDG_STATE_HOME: globals.state,
@@ -84,8 +85,9 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
     assert.ok(!reviewedSetup && !browser && !preflight && !skillDataRoot && !onParentDeathReady,
       'Managed interval diagnostic cannot replace another package qualification');
   }
-  const cache = path.join(repositoryRoot, '.cache/v2-validation'); await fs.mkdir(cache, { recursive: true });
-  const root = await fs.realpath(await fs.mkdtemp(path.join(cache, 'package-')));
+  const run = createRunRoot({ parent: path.join(repositoryRoot, '.cache/v2-validation'), prefix: 'package-', owner: 'scripts/verify-opencode-v2-package.mjs',
+    extraPayloads: ['bundles', 'negative', 'legacy', 'relocated', 'asset-supervision', 'denied-read-control'] });
+  const root = await fs.realpath(run.dir);
   const cases = [], observations = [], diagnostics = [], cleanupFailures = [];
   const source = await captureNativeAcceptanceSource();
   const runnerSha256 = fixtureSha256(await fs.readFile(fileURLToPath(import.meta.url)));
@@ -730,11 +732,12 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
     sourceCohort: { valid: changedPaths.length === 0, changedPaths } };
   if (cleanupFailures.length || changedPaths.length) result.status = 'failed';
   await fs.writeFile(path.join(root, 'result.json'), JSON.stringify(result, null, 2) + '\n');
+  run.finish(['passed', 'preflight-passed', 'interval-correctness-passed'].includes(result.status) ? 'passed' : 'failed');
   return result;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const {values}=parseArgs({options:{diagnostic:{type:'boolean'},'reviewed-setup':{type:'boolean'},browser:{type:'boolean'},preflight:{type:'boolean'},'artifact-root':{type:'string'},'baseline-artifact-root':{type:'string'},'skill-data':{type:'string'},'managed-correctness':{type:'boolean'},'event-reconcile-interval-ms':{type:'string'}}});
+  const {values}=parseArgs({options:{diagnostic:{type:'boolean'},'reviewed-setup':{type:'boolean'},browser:{type:'boolean'},preflight:{type:'boolean'},'artifact-root':{type:'string'},'baseline-artifact-root':{type:'string'},'skill-data':{type:'string'},'managed-correctness':{type:'boolean'},'keep-artifacts':{type:'boolean'},'event-reconcile-interval-ms':{type:'string'}}});
   if (values['event-reconcile-interval-ms'] !== undefined) assert.match(values['event-reconcile-interval-ms'], /^(750|1500)$/,
     '--event-reconcile-interval-ms must be 750 or 1500');
   const result = await runNativePackageAcceptance({ diagnostic:values.diagnostic??false,reviewedSetup:values['reviewed-setup']??false,browser:values.browser??false,preflight:values.preflight??false,
