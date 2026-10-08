@@ -16,9 +16,14 @@ disappearance and permission-failure cases.
 - Production web/Electron build: passed.
 - Startup bundle budgets: passed; web startup gzip 1,440,395 bytes against a
   1,456,388-byte limit.
-- Full validation: pending completion. The first attempt passed lint, type
-  checks and docs validation, then failed the hard-coded preview version test;
-  the corrected assertion is included in the retry.
+- Full validation coverage: passed. The first attempt failed the hard-coded
+  preview version test. The retry passed lint, type checks, docs validation and
+  every deterministic package before web; the user interruption stopped the
+  command during web tests. Resuming `bun run --cwd packages/web test` passed
+  all 6,518 tests in 534 Vitest files and all 14 native-host tests. The UI suite
+  passed 4,062 tests in 589 files. The final storage correction was separately
+  checked with all 26 storage tests, and final docs validation passed. The
+  interrupted full command itself is not reported as a successful exit.
 - [Runtime parity](runtime-parity.json): all 13 checks passed, with no console
   errors. The run manifest reports `passed`; its Chromium profile was removed.
 - [Isolated web chat](qa-web.json): failed before any UI check with
@@ -37,8 +42,14 @@ existing ad-hoc signing class.
 
 ## Publication
 
+Release preparation commit `61b88a653df3ab506ce48644e163c8e5d97332af` and all 29
+pending commits were pushed to `main`. The [hosted migration workflow](https://github.com/1H-Team/DevRyan/actions/runs/37773555540)
+passed from that commit: both dry-run and deployment reported the remote
+database up to date, migration history matched, and the Bot schema marker was
+`20260908182901`. No pending migration needed application. The [native input
+verification](https://github.com/1H-Team/DevRyan/actions/runs/37773552679) also passed.
+
 Publication is pending. The tag-triggered `desktop-macos-arm64` workflow must
 verify signed Bot images, topology, the packaged native runtime and DMG, exact
 public asset inventory and packaging digest, and hosted Supabase migrations and
-schema marker before publishing. The separate migration workflow will first
-apply any pending hosted migrations from the pushed source.
+schema marker before publishing.
