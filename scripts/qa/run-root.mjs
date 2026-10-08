@@ -69,6 +69,8 @@ function lstatOrNull(target) { try { return lstatSync(target); } catch { return 
  * `external` are paths outside the run dir owned by this run (a tmpdir runtime).
  * `keepOnPass` is for producers whose payload is the deliverable (a packaged app
  * consumed by later runs): a pass keeps it, an interrupt still removes it.
+ * `signals: 'exit'` installs only the exit hook, for producers that handle
+ * SIGINT/SIGTERM themselves and then call `finish('interrupted')`.
  * `onInterrupt` runs before interrupt cleanup so owned processes can stop.
  */
 export function createRunRoot({ parent, prefix = 'run-', owner, keepArtifacts, keepOnPass = false, argv, env, extraPayloads = [], external = [], onInterrupt,
@@ -106,6 +108,8 @@ export function createRunRoot({ parent, prefix = 'run-', owner, keepArtifacts, k
   if (signals) {
     const onExit = () => { if (!finished) finishSync('failed'); };
     process.on('exit', onExit); handlers.push(['exit', onExit]);
+  }
+  if (signals === true) {
     for (const signal of Object.keys(SIGNAL_CODES)) {
       const handler = () => {
         Promise.resolve().then(() => onInterrupt?.(signal)).catch(() => {}).then(() => {

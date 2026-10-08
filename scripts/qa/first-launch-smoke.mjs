@@ -4,7 +4,8 @@
 // Usage: docs/QA.md "Packaged first-launch smokes".
 import { createHash } from 'node:crypto';
 import { execFile, execFileSync } from 'node:child_process';
-import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -16,6 +17,7 @@ import { CdpConnection, discoverPageTarget, evaluate } from './cdp.mjs';
 import { createQaIsolatedRuntimeEnvironment, qaPlatformEnvironment } from './launch-environment.mjs';
 import { loadQaPackagedArtifact } from './packaged-artifact.mjs';
 import { reservePort, startOwnedProcess } from './process.mjs';
+import { createRunRoot } from './run-root.mjs';
 
 const repository = fileURLToPath(new URL('../../', import.meta.url)).replace(/\/$/, '');
 const execFileAsync = promisify(execFile);
@@ -422,11 +424,14 @@ export async function runFirstLaunchSmoke(options) {
   const startedAt = new Date(), started = performance.now();
   const outputRoot = path.join(repository, '.cache/qa');
   await mkdir(outputRoot, { recursive: true, mode: 0o700 });
-  const output = await mkdtemp(path.join(outputRoot, `first-launch-${options.scenario}-`));
+  const run = createRunRoot({ parent: outputRoot, prefix: `first-launch-${options.scenario}-`, owner: 'scripts/qa/first-launch-smoke.mjs',
+    keepArtifacts: options.keepRuntime, signals: 'exit' });
+  const output = run.dir;
   await chmod(output, 0o700);
   // Git boundaries below keep SDK discovery inside the owned fixture, including
   // when the caller supplies a repository-local TMPDIR.
   const runtimeRoot = await realpath(await mkdtemp(path.join(os.tmpdir(), `devryan-first-launch-${options.scenario}-`)));
+  run.own(runtimeRoot);
   const layout = firstLaunchLayout(runtimeRoot);
   const logsOut = path.join(output, 'logs');
   await mkdir(logsOut, { mode: 0o700 });
@@ -699,11 +704,11 @@ export async function runFirstLaunchSmoke(options) {
     if (evidence.verdict !== 'prerequisite-failed') {
       evidence.verdict = evidence.outcome?.result === 'PASS' && !evidence.errors.length && evidence.checks.every(row => row.outcome === 'passed') ? 'passed' : 'failed';
     }
-    // Remove the bulky private runtime only after a passing, fully cleaned run.
-    evidence.runtimeRetained = options.keepRuntime || evidence.verdict !== 'passed' || evidence.teardown?.clean === false;
-    if (!evidence.runtimeRetained) {
-      try { await rm(runtimeRoot, { recursive: true, force: true }); } catch (error) { evidence.errors.push(`cleanup: ${sanitize(error.message)}`); evidence.runtimeRetained = true; }
-    }
+    // Remove the bulky private runtime after a pass or an interrupt with clean teardown; a failure keeps it.
+    const cleanTeardown = evidence.teardown?.clean !== false;
+    run.finish(evidence.verdict === 'passed' && cleanTeardown ? 'passed' : interrupted && cleanTeardown ? 'interrupted' : 'failed');
+    evidence.runtimeRetained = existsSync(runtimeRoot);
+    evidence.runStatus = run.status;
     evidence.finishedAt = new Date().toISOString();
     evidence.timings.totalMs = Math.round(performance.now() - started);
     await writeFile(path.join(output, 'evidence.json'), `${JSON.stringify(evidence, null, 2)}\n`, { mode: 0o600 });
