@@ -66,6 +66,7 @@ function lstatOrNull(target) { try { return lstatSync(target); } catch { return 
  * `finish('passed'|'failed')` is idempotent; the first terminal status wins.
  * `extraPayloads` are extra paths (relative to the run dir, or absolute inside
  * it) removed alongside the standard heavy subtrees, e.g. copied binaries.
+ * `heavyNames` are extra directory names removed at any depth (e.g. per-trial `fixture`).
  * `external` are paths outside the run dir owned by this run (a tmpdir runtime).
  * `keepOnPass` is for producers whose payload is the deliverable (a packaged app
  * consumed by later runs): a pass keeps it, an interrupt still removes it.
@@ -73,7 +74,7 @@ function lstatOrNull(target) { try { return lstatSync(target); } catch { return 
  * SIGINT/SIGTERM themselves and then call `finish('interrupted')`.
  * `onInterrupt` runs before interrupt cleanup so owned processes can stop.
  */
-export function createRunRoot({ parent, prefix = 'run-', owner, keepArtifacts, keepOnPass = false, argv, env, extraPayloads = [], external = [], onInterrupt,
+export function createRunRoot({ parent, prefix = 'run-', owner, keepArtifacts, keepOnPass = false, argv, env, extraPayloads = [], heavyNames = [], external = [], onInterrupt,
   signals = true, exitProcessOnSignal = true } = {}) {
   if (!parent || !owner) throw new TypeError('createRunRoot requires parent and owner');
   mkdirSync(parent, { recursive: true, mode: 0o700 });
@@ -95,7 +96,7 @@ export function createRunRoot({ parent, prefix = 'run-', owner, keepArtifacts, k
     manifest.completedAt = new Date().toISOString();
     if (!keep && status !== 'failed' && !(keepOnPass && status === 'passed')) {
       try {
-        payloadsRemoved = removeRunPayloads(dir, { extra: extraPayloads });
+        payloadsRemoved = removeRunPayloads(dir, { extra: extraPayloads, anywhere: [...HEAVY_ANYWHERE, ...heavyNames] });
         for (const target of externalPaths) { rmSync(target, { recursive: true, force: true }); payloadsRemoved.push(target); }
       } catch { /* evidence stays; the prune tool retries */ }
     }

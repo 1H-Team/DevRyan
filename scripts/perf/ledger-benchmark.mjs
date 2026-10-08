@@ -44,6 +44,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { startOwnedProcess } from '../qa/process.mjs';
+import { createRunRoot } from '../qa/run-root.mjs';
 
 const execute = promisify(execFile);
 const repositoryRoot = fileURLToPath(new URL('../../', import.meta.url));
@@ -65,7 +66,7 @@ export function parseLedgerBenchmarkArgs(argv) {
     else if (flag === '--warm-calls') options.warmCalls = Number(value());
     else if (flag === '--out') options.out = path.resolve(value());
     else if (flag === '--prewarm') options.prewarm = true;
-    else if (flag === '--keep') options.keep = true;
+    else if (flag === '--keep' || flag === '--keep-artifacts') options.keep = true;
     else if (flag === '--profile') options.profile = true;
     else if (flag === '--companion') throw new Error('The legacy companion benchmark is retired; use native-upgrade-benchmark.mjs');
     else if (flag === '--timeout-ms') options.timeoutMs = Number(value());
@@ -289,7 +290,11 @@ export async function runLedgerBenchmark(options) {
   await fs.mkdir(benchRoot, { recursive: true });
   const iterations = [];
   for (let iteration = 0; iteration < options.iterations; iteration += 1) {
-    const root = await fs.mkdtemp(path.join(benchRoot, 'run-'));
+    // The run root also removes the clone and ledger when interrupted (SIGINT/SIGTERM).
+    const run = createRunRoot({ parent: benchRoot, prefix: 'run-', owner: 'scripts/perf/ledger-benchmark.mjs',
+      keepArtifacts: options.keep, extraPayloads: ['project', 'ledger'] });
+    const root = run.dir;
+    let completed = false;
     const project = path.join(root, 'project'), storage = path.join(root, 'ledger');
     const deferred = options.deferredCleanup ? new Set() : null;
     let runtime = null;
@@ -351,12 +356,14 @@ export async function runLedgerBenchmark(options) {
         warmBeginMs: warm.map(row => row.beginMs), warmFinishMs: warm.map(row => row.finishMs),
         burstMode, burstSpanMs: burst?.spanMs ?? null, burstBeginMs: burst?.calls.map(row => row.beginMs) ?? null,
         restampBeginMs: restamp?.beginMs ?? null, controlMs: control.totalMs, drainMs, maintenanceDrainMs, ledgerEntries: ledgerEntries?.total ?? null }));
+      completed = true;
     } finally {
       // A failed iteration still waits for its in-flight cleanups and ledger
       // maintenance before the clone and ledger go.
       if (deferred) await Promise.allSettled([...deferred]);
       await drainRuntime(runtime).catch(() => { /* Best effort: the iteration's own error, if any, is what propagates. */ });
-      if (!options.keep) await fs.rm(root, { recursive: true, force: true });
+      if (options.keep) run.finish(completed ? 'passed' : 'failed');
+      else { await fs.rm(root, { recursive: true, force: true }); run.dispose(); }
     }
   }
   const pick = (select) => summarize(iterations.flatMap(select));
@@ -395,7 +402,9 @@ export async function runPreparationProfile(options) {
   if (options.fixtureFiles !== null) options = { ...options, repo: await ensureFixtureRepository(options.fixtureFiles) };
   const cacheRoot = path.join(repositoryRoot, '.cache/perf/ledger-profile');
   await fs.mkdir(cacheRoot, { recursive: true });
-  const outputRoot = await fs.mkdtemp(path.join(cacheRoot, 'run-'));
+  const run = createRunRoot({ parent: cacheRoot, prefix: 'run-', owner: 'scripts/perf/ledger-benchmark.mjs',
+    keepArtifacts: options.keep, heavyNames: ['fixture', 'home'] });
+  const outputRoot = run.dir;
   const rows = [];
   for (const mode of ['ledger']) {
     for (let iteration = 0; iteration < options.iterations; iteration += 1) {
@@ -446,6 +455,7 @@ export async function runPreparationProfile(options) {
     for (const metric of Object.keys(row.metrics ?? {})) summary[key].metrics[metric] = summarize(rows
       .filter(item => item.status === 'completed' && `${item.mode}/${item.scenario}` === key).map(item => item.metrics?.[metric]));
   }
+  run.finish(rows.every(row => row.status === 'completed') ? 'passed' : 'failed');
   return { version: 2, at: new Date().toISOString(), outputRoot, repo: options.repo, runtime: options.runtime,
     platform: `${process.platform}-${process.arch}`, node: process.version, iterations: options.iterations,
     parallel: options.parallel, burstMode: burstModeFor(options),
