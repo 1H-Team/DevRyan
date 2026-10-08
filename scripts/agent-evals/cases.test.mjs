@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { describe, test } from 'node:test';
+import { after, describe, test } from 'node:test';
 
 import {
   buildCaseDefinition,
@@ -16,13 +16,18 @@ import { buildOwnedTestEvidenceCommand } from './client.mjs';
 import { allocateRunFiles, assertFixtureReady, cleanupRunFiles } from './fixture.mjs';
 import { retainPrivateToolInterval } from './tool-evidence.mjs';
 
+// Temporary fixtures live under os.tmpdir(), which may be repository-local; remove them afterwards.
+const tempRoots = [];
+const trackTemp = directory => { tempRoots.push(directory); return directory; };
+after(() => { for (const directory of tempRoots) rmSync(directory, { recursive: true, force: true }); });
+
 const git = (cwd, args) => {
   const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
 };
 
 const makeFixture = () => {
-  const root = mkdtempSync(path.join(os.tmpdir(), 'devryan-agent-eval-case-'));
+  const root = trackTemp(mkdtempSync(path.join(os.tmpdir(), 'devryan-agent-eval-case-')));
   mkdirSync(path.join(root, 'src'), { recursive: true });
   git(root, ['init', '--quiet']);
   git(root, ['config', 'user.email', 'eval@example.test']);

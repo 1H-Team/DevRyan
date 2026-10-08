@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, test } from 'node:test';
+import { after, describe, test } from 'node:test';
 
 import {
   EVALUATION_CASE_IDS,
@@ -12,10 +12,15 @@ import {
 } from './config.mjs';
 import { discoverScriptTestFiles } from '../test-scripts.mjs';
 
+// Temporary fixtures live under os.tmpdir(), which may be repository-local; remove them afterwards.
+const tempRoots = [];
+const trackTemp = directory => { tempRoots.push(directory); return directory; };
+after(() => { for (const directory of tempRoots) rmSync(directory, { recursive: true, force: true }); });
+
 const repoRoot = path.resolve(new URL('../..', import.meta.url).pathname);
 
 const makeWorkspace = () => {
-  const root = mkdtempSync(path.join(os.tmpdir(), 'devryan-agent-eval-config-'));
+  const root = trackTemp(mkdtempSync(path.join(os.tmpdir(), 'devryan-agent-eval-config-')));
   const fixtureRoot = path.join(root, 'fixture');
   const reportDirectory = path.join(root, 'reports');
   mkdirSync(path.join(fixtureRoot, 'src'), { recursive: true });

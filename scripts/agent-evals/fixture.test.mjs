@@ -1,17 +1,9 @@
 import assert from 'node:assert/strict';
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  renameSync,
-  symlinkSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { describe, test } from 'node:test';
+import { after, describe, test } from 'node:test';
 
 import {
   allocateRunFiles,
@@ -22,6 +14,11 @@ import {
   writeRunOwnedFile,
 } from './fixture.mjs';
 
+// Temporary fixtures live under os.tmpdir(), which may be repository-local; remove them afterwards.
+const tempRoots = [];
+const trackTemp = directory => { tempRoots.push(directory); return directory; };
+after(() => { for (const directory of tempRoots) rmSync(directory, { recursive: true, force: true }); });
+
 const git = (cwd, args) => {
   const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
@@ -29,7 +26,7 @@ const git = (cwd, args) => {
 };
 
 const makeFixture = () => {
-  const root = mkdtempSync(path.join(os.tmpdir(), 'devryan-agent-eval-fixture-'));
+  const root = trackTemp(mkdtempSync(path.join(os.tmpdir(), 'devryan-agent-eval-fixture-')));
   mkdirSync(path.join(root, 'src'), { recursive: true });
   git(root, ['init', '--quiet']);
   git(root, ['config', 'user.email', 'eval@example.test']);
@@ -145,7 +142,7 @@ describe('evaluation fixture safety', () => {
     const root = makeFixture();
     const starting = assertFixtureReady(root);
     const files = allocateRunFiles(root, 'run-swapped-src');
-    const outside = mkdtempSync(path.join(os.tmpdir(), 'devryan-agent-eval-outside-'));
+    const outside = trackTemp(mkdtempSync(path.join(os.tmpdir(), 'devryan-agent-eval-outside-')));
     renameSync(path.join(root, 'src'), path.join(root, 'original-src'));
     symlinkSync(outside, path.join(root, 'src'), 'dir');
     writeFileSync(files.sourcePath, 'must remain outside the fixture\n');

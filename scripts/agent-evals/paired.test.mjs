@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, test } from 'node:test';
+import { after, describe, test } from 'node:test';
 import { comparePairedReports, pairedSuccessVerdict, runPairedEvaluation } from './paired.mjs';
+
+// Temporary fixtures live under os.tmpdir(), which may be repository-local; remove them afterwards.
+const tempRoots = [];
+const trackTemp = directory => { tempRoots.push(directory); return directory; };
+after(() => { for (const directory of tempRoots) rmSync(directory, { recursive: true, force: true }); });
 
 const report = (enabled, amount = enabled ? 80 : 100) => ({ executionMode: 'live', fixtureHash: 'a'.repeat(64), environmentHash: 'b'.repeat(64),
   selection: { providerId: 'openai', modelId: 'gpt-6-astra', variant: 'medium', agent: 'orchestrator' },
@@ -193,7 +198,7 @@ const makeFixture = (root, name) => {
 
 describe('paired runtime evaluation execution status', () => {
   const runWith = async (candidateAmount) => {
-    const root = mkdtempSync(path.join(os.tmpdir(), 'devryan-agent-eval-paired-'));
+    const root = trackTemp(mkdtempSync(path.join(os.tmpdir(), 'devryan-agent-eval-paired-')));
     const common = { providerId: 'openai', modelId: 'gpt-6-astra', agent: 'orchestrator', variant: 'medium',
       caseIds: ['inspect'], timeoutMs: 120_000, repetitions: 1, reportDirectory: path.join(root, 'reports') };
     const baseline = { ...common, fixtureRoot: makeFixture(root, 'baseline'), devRyanBaseUrl: 'http://127.0.0.1:4310' };
