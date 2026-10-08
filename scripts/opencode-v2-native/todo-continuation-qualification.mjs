@@ -17,6 +17,7 @@ import {createNativeManagedFixture} from './managed-fixture.mjs';
 import {verifyNativeAcceptanceArtifacts,repositoryRoot} from './artifacts.mjs';
 import {createQaHostLaunchEnvironment} from '../qa/launch-environment.mjs';
 import {reservePort} from '../qa/process.mjs';
+import {createRunRoot} from '../qa/run-root.mjs';
 import {startNativeFixtureProcess} from './fixture-process.mjs';
 
 const exec=promisify(execFile),hash=bytes=>createHash('sha256').update(bytes).digest('hex');
@@ -26,7 +27,8 @@ const waitFor=async(read,predicate,label)=>{const deadline=Date.now()+30_000;for
 /** Focused real native qualification. No provider traffic or installed-app state. */
 export async function qualifyNativeTodoContinuation(){
  const artifacts=await verifyNativeAcceptanceArtifacts();
- const root=await fs.realpath(await fs.mkdtemp(path.join(repositoryRoot,'.cache/v2-validation/native-todo-')));
+ const run=createRunRoot({parent:path.join(repositoryRoot,'.cache/v2-validation'),prefix:'native-todo-',owner:'scripts/opencode-v2-native/todo-continuation-qualification.mjs'});
+ const root=await fs.realpath(run.dir);
  const directory=path.join(root,'project'),home=path.join(root,'home'),tmp=path.join(root,'tmp'),dataDirectory=path.join(root,'web-data');
  for(const folder of [directory,tmp,dataDirectory,...['config','data','state','cache','git-template'].map(name=>path.join(home,name))])await fs.mkdir(folder,{recursive:true});
  await fs.writeFile(path.join(tmp,'package.json'),'{"type":"commonjs"}\n');
@@ -162,6 +164,7 @@ export async function qualifyNativeTodoContinuation(){
   const remaining=await Promise.allSettled([managed.close(),host.drain()]);cleanup.push(...remaining);owner.dispose();await bridge.stop();
   await fs.writeFile(path.join(root,'result.json'),JSON.stringify({status:failure?'failed':'passed',observations,diagnostics,
    failure:failure&&{message:failure.message,stack:failure.stack},cleanup:cleanup.map(row=>({status:row.status,...(row.status==='rejected'?{error:row.reason.message}:{})}))},null,2));
+  run.finish(failure||!cleanup.every(row=>row.status==='fulfilled')?'failed':'passed');
  }
  if(failure)throw Object.assign(failure,{root});
  assert.ok(cleanup.every(row=>row.status==='fulfilled'),'Actual TODO qualification cleanup failed');return {root,observations};

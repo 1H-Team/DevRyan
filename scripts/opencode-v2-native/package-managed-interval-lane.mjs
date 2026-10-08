@@ -11,6 +11,7 @@ import { createV2MessageId } from '../../packages/web/server/lib/opencode/v2/adm
 import { readSessionExecutionReceipt } from '../../packages/harness-runtime/lib/session-execution.js';
 import { createProcessSampler } from '../perf/native-upgrade-benchmark.mjs';
 import { repositoryRoot } from './artifacts.mjs';
+import {createRunRoot} from '../qa/run-root.mjs';
 
 // Prospective diagnostic policy. This never changes the production 750ms default
 // and does not replace the separate 21 calibration + 42 paired workload launches.
@@ -239,7 +240,8 @@ export async function runCompiledManagedIntervalArm({ caseID, intervalMs, client
 
 /** The existing package verifier constructs and closes every real private arm. */
 export async function runCompiledManagedIntervalDiagnostic({ artifactRoot, onArm = () => {} }) {
-  const root = await fs.realpath(await fs.mkdtemp(path.join(repositoryRoot, '.cache/v2-validation/managed-interval-')));
+  const run = createRunRoot({ parent: path.join(repositoryRoot, '.cache/v2-validation'), prefix: 'managed-interval-', owner: 'scripts/opencode-v2-native/package-managed-interval-lane.mjs' });
+  const root = await fs.realpath(run.dir);
   const policyFile = path.join(root, 'policy.json');
   const prospective = { policy: managedIntervalPolicy, policySha256: hash(managedIntervalPolicy),
     configurationDelta: { path: ['policies', 'eventReconcileIntervalMs'], baseline: 750, candidate: 1500 },
@@ -256,7 +258,9 @@ export async function runCompiledManagedIntervalDiagnostic({ artifactRoot, onArm
     arms.push(arm); await onArm(arm);
     if (arm.cleanup !== 'passed') break;
   }
-  return { root, policyFile, policy: managedIntervalPolicy, policySha256: hash(managedIntervalPolicy), arms, ...gradeCompiledManagedInterval(arms) };
+  const graded = gradeCompiledManagedInterval(arms);
+  run.finish(arms.length && arms.every(arm => arm.cleanup === 'passed') ? 'passed' : 'failed');
+  return { root, policyFile, policy: managedIntervalPolicy, policySha256: hash(managedIntervalPolicy), arms, ...graded };
 }
 
 async function main() {

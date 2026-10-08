@@ -14,6 +14,7 @@ import { createQaHostLaunchEnvironment } from './launch-environment.mjs';
 import { createDiagnosticSanitizer } from '../../packages/harness-runtime/lib/sanitizer.js';
 import { TARGET_OPENCODE_VERSION } from '../../packages/web/server/lib/opencode/version-policy.js';
 import { translateNativeConfiguration } from '../../packages/web/server/lib/opencode/runtime-host/native-configuration-data.js';
+import { createRunRoot } from './run-root.mjs';
 
 const repository = fileURLToPath(new URL('../../', import.meta.url)).replace(/\/$/, '');
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -29,7 +30,8 @@ export async function archiveQaNativeHostLog(host, evidenceDirectory, sanitizer,
 export async function runQaNativeFactoryDiagnostic({ artifactRoot, bun = 'bun' }) {
   artifactRoot = await fs.realpath(artifactRoot);
   assert.ok(artifactRoot.startsWith(path.join(repository, '.cache') + path.sep));
-  const root = await fs.mkdtemp(path.join(repository, '.cache/v2-validation/native-factory-'));
+  const run = createRunRoot({ parent: path.join(repository, '.cache/v2-validation'), prefix: 'native-factory-', owner: 'scripts/qa/native-profile-factory-diagnostic.mjs' });
+  const root = run.dir;
   const sourceHome = path.join(root, 'mirror'), workspace = path.join(root, 'workspace'), runtimeRoot = path.join(root, 'runtime');
   for (const directory of [sourceHome, workspace, path.join(sourceHome, 'opencode'), path.join(sourceHome, 'web')]) await fs.mkdir(directory, { recursive: true, mode: 0o700 });
   const names = (await fs.readdir(path.join(repository, 'packages/web/server/default-config/agents'))).filter(file => file.endsWith('.md')).map(file => file.slice(0, -3));
@@ -165,11 +167,12 @@ export async function runQaNativeFactoryDiagnostic({ artifactRoot, bun = 'bun' }
     }
     if (report.cleanupFailures.length) report.status = 'failed';
     await fs.writeFile(path.join(root, 'result.json'), JSON.stringify(report, null, 2) + '\n', { mode: 0o600 });
+    run.finish(report.status === 'passed' ? 'passed' : 'failed');
   }
   return { root, report };
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const args = process.argv.slice(2);
+  const args = process.argv.slice(2).filter(argument => argument !== '--keep-artifacts');
   if (args.length !== 2 || args[0] !== '--artifact-root' || !args[1]) throw Error('Only explicit --artifact-root <repo-artifact-root> is accepted');
   const result = await runQaNativeFactoryDiagnostic({ artifactRoot: args[1] });
   process.stdout.write(JSON.stringify({ root: result.root, status: result.report.status, failure: result.report.failure ?? null }) + '\n');

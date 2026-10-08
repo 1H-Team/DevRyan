@@ -5,11 +5,13 @@ import {pathToFileURL} from 'node:url';
 import {runReadOnlySessionExecution} from '../../packages/harness-runtime/lib/session-execution.js';
 import {createCursorHttpProvider} from './cursor-http-provider.mjs';
 import {repositoryRoot,DEFAULT_RG} from './artifacts.mjs';
+import {createRunRoot} from '../qa/run-root.mjs';
 
 /** Native prerequisite check: original SDK store and transport in a long,
  * confined private lease. Unavailable launchers fail this explicit check. */
 export async function verifyConfinedCursorStore({artifactRoot}){
- const root=await fs.realpath(await fs.mkdtemp(path.join(repositoryRoot,'.cache/v2-validation/cursor-confined-store-')));
+ const run=createRunRoot({parent:path.join(repositoryRoot,'.cache/v2-validation'),prefix:'cursor-confined-store-',owner:'scripts/opencode-v2-native/cursor-confined-store.mjs'});
+ const root=await fs.realpath(run.dir);
  const storage=path.join(root,'bundles/bundles/candidate/web-data/harness/session-mutations', 'a'.repeat(64),'views');
  const requests=[],provider=await createCursorHttpProvider({expectedApiKey:()=> 'owned-loopback-store-key',onRequest:row=>requests.push(row),
   models:[{id:'composer',displayName:'Owned Composer'},{id:'auto',displayName:'Owned Auto'}]});
@@ -42,7 +44,7 @@ export async function verifyConfinedCursorStore({artifactRoot}){
  }catch(error){failure={code:error.code??error.name,message:error.message};}
  finally{await provider.close();}
  const proof={root,receipt:result?.receipt,titleReceipt:title?.receipt,requests,...failure?{failure}:{}};
- await fs.writeFile(path.join(root,'result.json'),JSON.stringify(proof,null,2)+'\n');
+ await fs.writeFile(path.join(root,'result.json'),JSON.stringify(proof,null,2)+'\n');run.finish(failure?'failed':'passed');
  console.log(JSON.stringify(proof));if(failure)process.exitCode=1;return proof;
 }
 if(import.meta.url===pathToFileURL(process.argv[1]).href){
