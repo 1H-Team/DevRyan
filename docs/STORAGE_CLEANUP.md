@@ -26,6 +26,8 @@ report|audit|clean` accepts the same options, plus the manifest workflow below
 `git worktree` commands; `--json` prints the full audit. Both walk the whole
 cache, so allow a minute or two. `validate:full` prints a one-line warning when
 `.cache` exceeds the budget or free disk is below 20 GB; it never fails the run.
+Preview scans tolerate cache entries removed during enumeration; other filesystem
+errors still fail the command.
 
 ## Preview and manual cleanup
 

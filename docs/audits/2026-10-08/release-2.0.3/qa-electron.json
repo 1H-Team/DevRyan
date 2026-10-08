@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "revision": "2553fd8bd1bdfd5ed03193e7f860b7427a7508d3",
+  "dirty": true,
+  "runtime": "electron",
+  "scenario": "chat",
+  "fixtureGeneration": 2,
+  "startedAt": "2026-10-08T11:46:22.711Z",
+  "outcome": "failed",
+  "checks": [],
+  "consoleErrors": [],
+  "screenshots": [],
+  "liveProvider": "not-run",
+  "physicalDevice": "not-run",
+  "visualReview": "pending",
+  "runtimeService": false,
+  "inspection": {
+    "cdp": "http://127.0.0.1:51664",
+    "fixture": "http://127.0.0.1:51663"
+  },
+  "error": "Timed out waiting for CDP Runtime.evaluate",
+  "fixture": {
+    "generation": 2,
+    "activeScenario": "idle",
+    "sseClientCount": 0,
+    "sseConnectionCount": 0,
+    "statusRequestCount": 0,
+    "suppressedEvents": [],
+    "suppressionRuns": [],
+    "messageRequestCounts": {},
+    "olderMessageRequestCounts": {},
+    "messagePageRequests": [],
+    "textLengths": {
+      "ses_perfparent": 0,
+      "ses_perfchild1": 0,
+      "ses_perfchild2": 0,
+      "ses_perfchild3": 0
+    },
+    "receivedPrompts": [],
+    "canonicalUserDelays": [],
+    "rejectedPrompts": [],
+    "replies": [],
+    "unknownRoutes": [],
+    "locationRequired": [],
+    "wireLosses": [],
+    "streamDrops": [],
+    "eventCounts": {
+      "session.created": 4,
+      "session.inbox.enqueued": 4,
+      "session.inbox.delivered": 4
+    },
+    "permissionCount": 0,
+    "questionCount": 0,
+    "executingSessions": [],
+    "abortedPrompts": 0,
+    "activePrompts": 0
+  },
+  "cleanupErrors": [],
+  "finishedAt": "2026-10-08T11:48:01.681Z"
+}

@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.3] - 2026-10-08
+
+- Ship the bundled native runtime once in the desktop app while keeping the web server files available outside the application archive.
+- Clean up disposable QA, test and benchmark runtime payloads after successful or interrupted runs, with isolated profiles and shared dependency caches.
+- Add cache reporting and pruning with retention rules that preserve cited evidence, pinned runs, active packages and required build inputs. Preview scans tolerate entries removed during enumeration.
+
 ## [2.0.2] - 2026-10-08
 
 Candidate qualification is tracked in [the release evidence](docs/audits/2026-10-05-release-2.0.2/README.md). This entry does not establish publication or installed-platform acceptance.

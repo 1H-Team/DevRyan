@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -35,6 +37,28 @@ async function fixture(action) {
     await action({ root, now, put, age, audit, entry });
   } finally { await rm(root, { recursive: true, force: true }); }
 }
+
+test('cache scans tolerate disappearing units but propagate other stat failures', t => fixture(async ({ root, put, audit, entry }) => {
+  const relative = '.cache/test-fixtures/disappearing';
+  const directory = path.join(root, relative);
+  await put(`${relative}/a.txt`);
+  const original = fs.lstatSync;
+  t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+  t.mock.method(fs, 'lstatSync', file => {
+    if (file === directory) fs.rmSync(directory, { recursive: true, force: true });
+    return original(file);
+  });
+  syncBuiltinESMExports();
+  assert.equal(entry(await audit(), relative), undefined);
+  t.mock.restoreAll();
+  await put(`${relative}/a.txt`);
+  t.mock.method(fs, 'lstatSync', file => {
+    if (file === directory) throw Object.assign(new Error('fixture denied'), { code: 'EACCES' });
+    return original(file);
+  });
+  syncBuiltinESMExports();
+  await assert.rejects(audit(), { code: 'EACCES' });
+}));
 
 test('scratch is removed after 24 hours; anything newer is skipped', () => fixture(async ({ root, now, put, age, audit, entry }) => {
   await put('.cache/test-fixtures/old/a.txt');

@@ -41,17 +41,22 @@ async function auditCache(root, { citations, now, usage, state, baseEligibleByte
     const sizeOnly = target => scanUnit(root, target, protection, { detectHeavy: false }).bytes;
     if (reportOnlyClasses.has(base.class)) { family.bytes = sizeOnly(relative); continue; }
     const addUnit = (unit, klass, child) => {
+      let stat;
+      try { stat = lstatSync(path.join(root, unit)); }
+      catch (error) { if (isMissing(error)) return; throw error; }
+      if (stat.isSymbolicLink()) return;
       const scan = scanUnit(root, unit, protection);
-      const stat = lstatSync(path.join(root, unit));
       family.bytes += scan.bytes; family.units++;
       records.push({ path: unit, family, name: child ?? dirent.name, klass, scan,
         meta: stat.isDirectory() ? readRunMeta(path.join(root, unit)) : { pinned: false, failed: false, completedMs: null } });
     };
     if (base.class === 'unowned' || !dirent.isDirectory()) { addUnit(relative, { ...base, class: 'unowned' }, undefined); continue; }
-    for (const child of (await readdir(path.join(root, relative))).sort()) {
+    let children;
+    try { children = await readdir(path.join(root, relative)); }
+    catch (error) { if (isMissing(error)) continue; throw error; }
+    for (const child of children.sort()) {
       const unit = `${relative}/${child}`;
       if (packagePattern.test(unit)) { family.bytes += sizeOnly(unit); continue; }
-      if (lstatSync(path.join(root, unit)).isSymbolicLink()) continue;
       addUnit(unit, classifyUnit(dirent.name, child), child);
     }
   }

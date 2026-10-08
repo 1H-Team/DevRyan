@@ -1,0 +1,56 @@
+{
+  "checks": [
+    {
+      "check": "real canvas and 1000-row list mounted",
+      "rows": 29,
+      "cols": 112,
+      "lines": 38,
+      "text": "DevRyan terminal parity fixture\nUTF-8: café 漢字 👩‍💻\n┌────────────────────────┐\n│  line drawing + colors  │\n└────────────────────────┘\nReady>"
+    },
+    {
+      "check": "End focuses final virtual row",
+      "focus": "session_999"
+    },
+    {
+      "check": "sidebar preserves prepend anchor and measures dynamic heights",
+      "anchor": {
+        "id": "session_371",
+        "top": -39
+      }
+    },
+    {
+      "check": "keyboard text reaches PTY callback",
+      "input": "hello café"
+    },
+    {
+      "check": "IME commits once"
+    },
+    {
+      "check": "native paste retains bracketed-paste encoding"
+    },
+    {
+      "check": "VT reply reaches PTY callback"
+    },
+    {
+      "check": "historical replay suppresses VT replies"
+    },
+    {
+      "check": "serialization includes scrollback and restores viewport",
+      "before": 20
+    },
+    {
+      "check": "resize and hidden output retained"
+    },
+    {
+      "check": "native pointer selection and link activation"
+    },
+    {
+      "check": "real CodeMirror edits full 250KB mixed-EOL buffer and editor extension consumes Escape",
+      "length": 250030
+    },
+    {
+      "check": "removing virtual rows releases empty-state animation guard"
+    }
+  ],
+  "consoleErrors": []
+}

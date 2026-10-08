@@ -50,6 +50,7 @@ test('download integrity is enforced before archive extraction', async () => {
 
 test('builder uses separate identity, stock resources and per-user NSIS without stable native inputs', async () => {
   const manifest = JSON.parse(await fs.readFile(new URL('../packages/electron/package.json', import.meta.url), 'utf8'));
+  const stableVersion = manifest.version;
   const config = windowsPreviewBuilderConfig({ base: manifest.build, opencodeDirectory: '/fixture/stock', outputDirectory: '/fixture/output', sessionSmoke: '/fixture/smoke.mjs' });
   assert.notEqual(config.appId, manifest.build.win.appId);
   assert.notEqual(config.nsis.guid, manifest.build.nsis.guid);
@@ -62,7 +63,7 @@ test('builder uses separate identity, stock resources and per-user NSIS without 
   assert.deepEqual(config.win.extraResources, []);
   assert.deepEqual(config.extraResources.map(resource => resource.to), ['web-dist', 'opencode', 'windows-preview-session-smoke.mjs']);
   assert.equal(config.publish, null);
-  assert.equal(manifest.version, '2.0.2');
+  assert.equal(manifest.version, stableVersion);
   assert.match(manifest.build.win.extraResources[0].to, /revert-runtime/);
 });
 
