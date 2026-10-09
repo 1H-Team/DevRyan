@@ -51,7 +51,7 @@ was refused with `bundle_v2_upgrade_compatibility_required`.
 
 ## Evidence
 
-`fresh-layout.jsonl` compares two fresh databases:
+`fresh-layout.json` compares two fresh databases:
 
 - A read-only copy of the owner's real 2.0.20 database, created by the actual compiled
   2.0.20 controller.
@@ -61,7 +61,7 @@ They have identical DDL. The 48 migration IDs of 2.0.20 are an exact prefix of t
 49 IDs of 2.0.26; the only addition is the data-only
 `20261007190000_azure_cli_external_credential`.
 
-`isolated-upgrade.jsonl` records two lanes in private HOME/XDG profiles outside the
+`isolated-upgrade.json` records two lanes in private HOME/XDG profiles outside the
 repository. Both used the real artifact verifier, compiled controllers and credential
 process. The owner's installed app and data were only read.
 
@@ -133,7 +133,7 @@ node scripts/verify-opencode-v2-package.mjs --artifact-root .cache/bundle-upgrad
 Attempt 7 passed 52/52 cases in 8 min 43 s: the earlier 48 plus the four below.
 It left no remaining mandatory gates or cleanup failures, and the source cohort
 was unchanged. Parent-death and the durable journal roots (3/3) passed.
-`package-clone-layouts.jsonl` holds its sanitized rows:
+`package-clone-layouts.json` holds its sanitized rows:
 
 - `compiled-clone-layout-legacy`: schema `86eba4fd…` with the legacy journal
   (`b0c489f7…`), checked against the reviewed layout for 2.0.20 → 2.0.26.

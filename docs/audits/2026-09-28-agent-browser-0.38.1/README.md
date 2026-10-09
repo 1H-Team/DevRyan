@@ -86,11 +86,13 @@ nonfatal recording status and preservation of user-modified skills.
 validation retains existing/generated-target warnings. Final suite results
 and sanitized fixture evidence are recorded in [evidence.json](evidence.json). Screenshots/contact sheets are reviewed visually;
 videos are fully decoded, with the visual review based on their contact sheets.
-The final [0.38.1 screenshot](common.png) and [0.33.2 screenshot](baseline-0.33.2.png)
-have identical SHA-256 hashes. Reviewed recording contact sheets cover
+The final [0.38.1 screenshot](common.png) and the 0.33.2 baseline screenshot
+had identical SHA-256 hashes (the byte-identical baseline copy was removed 2026-10). Reviewed recording contact sheets cover
 [WebM](recording-webm.contact-sheet.png), [MP4](recording-mp4.contact-sheet.png),
 [confined execution](confined-false.contact-sheet.png) and
-[confined cancellation](confined-true.contact-sheet.png).
+[confined cancellation](confined-true.contact-sheet.png). The raw `.webm`/`.mp4`
+recordings were removed 2026-10; regenerate via
+`node packages/electron/tests/browser-inspection/upgrade-run.mjs <install-root>`.
 
 ## Remaining release gates
 

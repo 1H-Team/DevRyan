@@ -36,10 +36,10 @@ configuration.
 
 | File | What it is |
 | --- | --- |
-| `parity-manifest.1.18.33.json` | `scripts/qa/parity-manifest.mjs` capture of the mirrored profile on 1.18.33 |
-| `live-cases.mjs` | the journey prompts and expectations that produced `live-journeys.md` |
+| `parity-manifest.1.18.33.json` | removed 2026-10 (raw payload); regenerate via `node scripts/qa/parity-manifest.mjs --origin <url> --directory <fixture> --out <file.json>` against a 1.18.33 isolated host |
+| `live-cases.mjs` | removed 2026-10 (script); the journey prompts and expectations behind `live-journeys.md`; regenerate by re-running the lane described above |
 | `live-journeys.md` | outcomes, dispatch structure, tool timings and first-token proxy per journey |
-| `cache-usage.md`, `cache-usage.<run>.json` | `scripts/qa/cache-usage-report.mjs` over each host's journal (cache-read ratio, continuity) and the per-case summary |
+| `cache-usage.md`, `cache-usage.<run>.json` | `cache-usage.md` kept; the per-run `cache-usage.p0{a,b,c,d}.json` payloads were removed 2026-10; regenerate via `node scripts/qa/cache-usage-report.mjs <journal>` over each host's journal (cache-read ratio, continuity) |
 | `ledger-benchmark.json` | seeded, same-session, deferred-cleanup ledger benchmark on the 12k-file fixture |
 
 ## Numbers to beat or match (1.18.33 companion 2.1.2, Node 26, darwin-arm64)

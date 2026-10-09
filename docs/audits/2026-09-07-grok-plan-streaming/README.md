@@ -38,14 +38,16 @@ Cancellation evidence: [web](web/grok-cancelled-draft.png), [Electron](electron/
 
 | Check | Result |
 | --- | --- |
-| [Focused plan/lifecycle suite](validation-plan.log) | 220 passed, 0 failed across six files |
-| [Final `validate:full`](validation-full.log) | Workspace lint, type checks, docs, and all 575 script tests passed; stopped at the unrelated Bot egress `bounds a relayed response` test (`ECONNRESET`) |
-| [Isolated egress retry](validation-egress-retry.log) | Same failure; 8 passed, 1 failed; its source was not changed by this task |
-| [Standalone UI suite](validation-ui.log) | Main batch: 3,569 passed, 3 failed in concurrent Bots transcript/Telegram/copy changes |
-| [Standalone web suite](validation-web.log) | 3,755 passed, 5 failed in Git status/PR-description, scoped-revert timeout, and Bot context tests |
-| [Standalone Electron suite](validation-electron.log) | 309 passed, 0 failed |
-| [Build and Electron staging](build.log) | Passed on the tested source; a root `bun run build` also passed before the final visibility correction |
-| [Bundle budgets](bundle-check.log) | Passed |
+| Focused plan/lifecycle suite (`validation-plan.log`) | 220 passed, 0 failed across six files |
+| Final `validate:full` (`validation-full.log`) | Workspace lint, type checks, docs, and all 575 script tests passed; stopped at the unrelated Bot egress `bounds a relayed response` test (`ECONNRESET`) |
+| Isolated egress retry (`validation-egress-retry.log`) | Same failure; 8 passed, 1 failed; its source was not changed by this task |
+| Standalone UI suite (`validation-ui.log`) | Main batch: 3,569 passed, 3 failed in concurrent Bots transcript/Telegram/copy changes |
+| Standalone web suite (`validation-web.log`) | 3,755 passed, 5 failed in Git status/PR-description, scoped-revert timeout, and Bot context tests |
+| Standalone Electron suite (`validation-electron.log`) | 309 passed, 0 failed |
+| Build and Electron staging (`build.log`) | Passed on the tested source; a root `bun run build` also passed before the final visibility correction |
+| Bundle budgets (`bundle-check.log`) | Passed |
+
+Raw logs removed 2026-10; regenerate by re-running the lane described above.
 
 The full suite is not green; unrelated assertions were not weakened or edited. The final visibility correction is covered by final-source lint/type checks, rebuilding both hosts, and the passing hidden-reasoning reload checks.
 

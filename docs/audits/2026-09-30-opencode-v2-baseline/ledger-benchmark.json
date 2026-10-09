@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "runtime": "/Users/zoubair/Repositories/DevRyan/packages/harness-runtime/lib",
-  "repo": "/Users/zoubair/Repositories/DevRyan/.cache/perf/ledger-fixtures/files-12000",
+  "runtime": "<HOME>/Repositories/DevRyan/packages/harness-runtime/lib",
+  "repo": "<HOME>/Repositories/DevRyan/.cache/perf/ledger-fixtures/files-12000",
   "iterations": 2,
   "warmCalls": 3,
   "prewarm": true,

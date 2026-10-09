@@ -47,7 +47,7 @@ normalizing chunk names and minifier symbol numbering) and
 
 ## Compatibility decision
 
-`clone-layout.jsonl` inspects the 2.0.24 baseline and 2.0.26-migrated candidate
+`clone-layout.json` inspects the 2.0.24 baseline and 2.0.26-migrated candidate
 databases from the same acceptance run. Both match the reviewed schema,
 `__drizzle_migrations` and user-version layout; the candidate additionally
 records the Azure CLI migration (49 vs 48 `migration` rows), which the layout
