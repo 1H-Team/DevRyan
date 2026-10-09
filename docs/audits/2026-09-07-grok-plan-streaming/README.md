@@ -38,14 +38,16 @@ Cancellation evidence: [web](web/grok-cancelled-draft.png), [Electron](electron/
 
 | Check | Result |
 | --- | --- |
-| [Focused plan/lifecycle suite](validation-plan.log) | 220 passed, 0 failed across six files |
-| [Final `validate:full`](validation-full.log) | Workspace lint, type checks, docs, and all 575 script tests passed; stopped at the unrelated Bot egress `bounds a relayed response` test (`ECONNRESET`) |
-| [Isolated egress retry](validation-egress-retry.log) | Same failure; 8 passed, 1 failed; its source was not changed by this task |
-| [Standalone UI suite](validation-ui.log) | Main batch: 3,569 passed, 3 failed in concurrent Bots transcript/Telegram/copy changes |
-| [Standalone web suite](validation-web.log) | 3,755 passed, 5 failed in Git status/PR-description, scoped-revert timeout, and Bot context tests |
-| [Standalone Electron suite](validation-electron.log) | 309 passed, 0 failed |
-| [Build and Electron staging](build.log) | Passed on the tested source; a root `bun run build` also passed before the final visibility correction |
-| [Bundle budgets](bundle-check.log) | Passed |
+| Focused plan/lifecycle suite (`validation-plan.log`) | 220 passed, 0 failed across six files |
+| Final `validate:full` (`validation-full.log`) | Workspace lint, type checks, docs, and all 575 script tests passed; stopped at the unrelated Bot egress `bounds a relayed response` test (`ECONNRESET`) |
+| Isolated egress retry (`validation-egress-retry.log`) | Same failure; 8 passed, 1 failed; its source was not changed by this task |
+| Standalone UI suite (`validation-ui.log`) | Main batch: 3,569 passed, 3 failed in concurrent Bots transcript/Telegram/copy changes |
+| Standalone web suite (`validation-web.log`) | 3,755 passed, 5 failed in Git status/PR-description, scoped-revert timeout, and Bot context tests |
+| Standalone Electron suite (`validation-electron.log`) | 309 passed, 0 failed |
+| Build and Electron staging (`build.log`) | Passed on the tested source; a root `bun run build` also passed before the final visibility correction |
+| Bundle budgets (`bundle-check.log`) | Passed |
+
+Raw logs removed 2026-10; regenerate by re-running the lane described above.
 
 The full suite is not green; unrelated assertions were not weakened or edited. The final visibility correction is covered by final-source lint/type checks, rebuilding both hosts, and the passing hidden-reasoning reload checks.
 
@@ -55,3 +57,7 @@ Reproduce after building/staging current assets:
 DEVRYAN_QA_SCENARIO=grok-plan bun scripts/qa/run.mjs
 DEVRYAN_QA_RUNTIME=electron DEVRYAN_QA_SCENARIO=grok-plan bun scripts/qa/run.mjs
 ```
+
+## Acceptance procedure
+
+Run `DEVRYAN_QA_SCENARIO=grok-plan bun scripts/qa/run.mjs` for isolated web acceptance and add `DEVRYAN_QA_RUNTIME=electron` for the actual desktop host. Build the current UI and stage Electron assets first, as for the recovery-card scenario. The fixture emits xAI-shaped reasoning/text parts and real `message.part.delta` events, holds the turn busy at each assertion, and proves the card grows before completion. It covers a split sentinel, multiple reasoning parts, a text continuation, the handoff to a final assistant, disabled actions across tool-call gaps, exact saved Markdown after idle/reload, and an aborted draft that cannot save or implement. Captures cover both themes and wide/narrow layouts, with reasoning displayed and hidden. Plan turns retain reasoning source parts through `ChatMessage`; `MessageBody` applies the Thinking visibility preference after resolving the card. Inspect every original PNG before recording visual acceptance. This is deterministic provider transport; a separately configured live xAI journey is required for a live-provider claim. The product fixes chat rendering to Live; legacy Sorted projection remains unit-test territory.

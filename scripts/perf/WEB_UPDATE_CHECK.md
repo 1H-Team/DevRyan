@@ -74,3 +74,41 @@ manager disk caches remain natural. This focused web-host study does not prove
 renderer responsiveness, native recovery, live providers, or managed scheduler
 behavior. Run only after other QA/build/test work stops and script/source
 identities are frozen.
+
+## Reproducing the recorded comparison
+
+The protocol above compares
+three fresh hosts per source version, in AB/BA/AB order, with the same final UI,
+runtime, dependencies and instrumentation. It measures the actual cold route,
+concurrent health latency, event-loop delay and synchronous package-discovery
+CPU samples. Run it after builds, validation and other QA have stopped. This
+benchmark specifically requires Node's [`module.registerHooks`](https://nodejs.org/api/module.html#moduleregisterhooksoptions)
+(added in Node 22.15.0 and 23.5.0); the recorded comparison runtime is Node 26.0.0.
+
+From a fresh checkout, recover the exact historical module and copy the current
+module into ignored evidence storage. The benchmark validates both byte hashes
+before launching; a different revision fails instead of changing the baseline.
+
+```sh
+mkdir -p .cache/perf/update-check-inputs
+git show ff7abd116ca37db53a56981d7de76100f2a97690:packages/web/server/lib/package-manager.js > .cache/perf/update-check-inputs/package-manager.before.js
+cp packages/web/server/lib/package-manager.js .cache/perf/update-check-inputs/package-manager.after.js
+node --input-type=module <<'JS'
+import path from 'node:path';
+import { runWebUpdateCheckBenchmark } from './scripts/perf/web-update-check-benchmark.mjs';
+const inputs = path.resolve('.cache/perf/update-check-inputs');
+const result = await runWebUpdateCheckBenchmark({
+  beforeSource: path.join(inputs, 'package-manager.before.js'),
+  afterSource: path.join(inputs, 'package-manager.after.js'),
+  uiDirectory: path.resolve('.cache/qa/REPLACE_WITH_FINAL_VERIFIED_WEB_CANDIDATE'),
+  label: 'cold-discovery',
+});
+process.stdout.write(JSON.stringify({ outcome: result.outcome, resultFile: result.resultFile }) + '\n');
+if (result.outcome !== 'passed') process.exitCode = 1;
+JS
+```
+
+Replace the UI path with the verified candidate built using the packaged QA procedure in [QA](../../docs/QA.md).
+The benchmark uses ordinary Node module options and retains all six outcomes.
+It measures one historical module inside the otherwise fixed current host;
+it does not represent an entire historical build or live-provider performance.

@@ -50,7 +50,7 @@ Isolated hosts (`.cache/livetest/launch-host.mjs`, `preserveOrchestration` + `mi
 - fixer completed 106s kind=start collected+44s 
 - designer completed 196s kind=start collected+15s 
 - designer failed 55s kind=start collected+Nones provider_usage_limit
-- tool errors: root/read: File not found: /Users/zoubair/.cache/devryan-livetest/p0c/workspace/design-rules/README.md
+- tool errors: root/read: File not found: <HOME>/.cache/devryan-livetest/p0c/workspace/design-rules/README.md
 - final: All three Vitest files passed; final completion is paused by a provider limit while correcting the pill’s text contrast.
 
 ### `l3-research` (p0a)

@@ -24,7 +24,7 @@ import { isNativeStatusMessage, isNativeTurnParent } from '../../../../../../sha
 // to be strictly increasing in seq order (ids.js `clampIncreasingTime`).
 //
 // Every lossy field is tagged `LOSS(<key>)`; the keys are the entries of the
-// semantic-loss register in `v2/codemap.md`. Everything here is pure except
+// semantic-loss register in `v2/DOCUMENTATION.md`. Everything here is pure except
 // the two page-fill helpers, which only await the fetchers they are given.
 // ---------------------------------------------------------------------------
 

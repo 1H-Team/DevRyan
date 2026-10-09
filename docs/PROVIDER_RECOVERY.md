@@ -1,18 +1,15 @@
 # Primary provider recovery
 
-## Incident evidence and scope
+## Why this exists
 
-The August 30, 2026 incident in `ses_fabc85566ffe6tFmBYAM8iX5Ws` expired after
-900.295 seconds, matching the configured total transport deadline. OpenCode
-1.18.25 and its resolved OpenAI configuration supported the shorter header and
-chunk limits. Forty-one completed tools preceded a blank failed model step;
-idle preceded message finalization. Neither journal gap scan found gaps.
-
-There is no historical wire trace showing why the shorter limits did not fire.
-Raw SSE heartbeat bytes can reset the transport chunk timer. That mechanism is
-verified; its involvement in this particular request remains a hypothesis.
-Current configuration is not a historical per-request snapshot. This change
-does not replay the incident or change the running application's settings.
+A primary provider turn can stall while raw SSE heartbeat bytes keep resetting
+the transport chunk timer, so the configured header and chunk limits never
+fire and the turn expires only at the total transport deadline. Recovery
+therefore watches semantic progress rather than bytes. The mechanism is
+verified; its involvement in any one historical request cannot be proven
+without a wire trace. Recovery does not change provider settings of the
+running application. Incident evidence is in the
+[verification history](audits/2026-10-09/provider-recovery-history/README.md).
 
 ## Ownership and policy
 
@@ -37,10 +34,27 @@ recovery remains the fallback until host enforcement is advertised.
 
 Enforcement requires a live managed runtime, exclusive private file-lock owner,
 healthy durable storage, an allow-listed OpenCode version verified through
-`/global/health` (`PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS` in
-`provider-recovery-policy.js`: 1.18.25, 1.18.26, 1.18.27, 1.18.29, 1.18.30, 1.18.31, 1.18.32 and 1.18.33), and the bundled plugin handshake. Unsupported versions, external
-runtimes, and opt-in WebSocket/native transports remain manual. Do not expand
-this allowlist without transport and hook conformance tests.
+`/global/health`, and the bundled plugin handshake. Unsupported versions,
+external runtimes, and opt-in WebSocket/native-LLM transports remain manual.
+
+Recovery is enabled per reviewed release, by exact version. Two allow-lists in
+`packages/harness-runtime/lib/provider-recovery-policy.js` carry the versions:
+
+- `NATIVE_PRIMARY_SUPPORTED_OPENCODE_VERSIONS`, tested through
+  `isNativePrimaryRuntimeVersion`, covers the native generation-2 runtime that
+  is the current execution path. Native Step and continuation ownership has its
+  own conformance, so a native release is added only after the fixture below
+  passes against that release's bundle. A version missing from the list is
+  fenced as `recovery_runtime_unverified` or `runtime_unsupported` and stays
+  manual.
+- `PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS` covers the legacy 1.x
+  generation. It gates the 1.x transport-error shape, managed collection
+  continuation and retained rollback only; it does not make a 1.x runtime the
+  current one, and it is never extended for new releases.
+
+Read the constants for the exact versions rather than copying them into
+documents. Do not expand either list without transport and hook conformance
+tests.
 
 A handshake in another directory is insufficient: the exact admitted turn must
 also have a pre-request hook receipt from that runtime instance, and the failed
@@ -55,9 +69,9 @@ An exhausted scope lookup stays fail-closed. Transport failures identify the RPC
 action and request/response phase without including bridge credentials; the UI
 identifies these as local recovery-service failures, not provider outages.
 
-The version gate follows OpenCode's [plugin hooks](https://github.com/anomalyco/opencode/blob/v1.18.25/packages/plugin/src/index.ts),
-[request preparation](https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/session/llm/request.ts),
-and [tool registry](https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/tool/registry.ts).
+The version gate follows OpenCode's plugin hooks, request preparation and tool
+registry for the release in question; a release that changes any of them needs
+fresh conformance evidence before it is listed.
 `OPENCODE_EXPERIMENTAL_WEBSOCKETS` and `OPENCODE_EXPERIMENTAL_NATIVE_LLM`
 disable enforcement until separately validated.
 
@@ -80,15 +94,10 @@ fixture must never be promoted to production Claude conformance. No installed
 runtime, dependencies, provider timeout, or running application setting is
 changed by this work.
 
-The September 9 incident (`ses_f79443fdbffe6LFuH0cTDWNLNM`, assistant
-`msg_086dd906e001mqkNXEeII0GNDN`) used `anthropic/claude-opus-5`. Its finalized
-`UnknownError` contained the 208771 ms stall envelope, without a corresponding
-`session.error` in the inspected window. A pending `edit` subsequently became
-an error; the journal does not prove whether it executed. There were no recorded
-session gaps; the gap scan reported unrelated Bot network gaps. The cached
-Meridian 1.62.6 source emits this envelope for its upstream-idle error, but there
-is no wire/SDK trace establishing why this request stopped producing data.
-A finalized failure with any unresolved tool yields
+A finalized Claude `UnknownError` carrying the upstream stall envelope is a
+classified chunk timeout, but the incident that exposed it
+([history](audits/2026-10-09/provider-recovery-history/README.md)) shows a
+pending tool may already have run. A finalized failure with any unresolved tool yields
 `recovery_tool_outcome_unknown` with zero automatic attempts. The user must
 review the outcome and explicitly continue; tool-error labels alone never prove
 that no side effect occurred.
@@ -110,9 +119,8 @@ progress and blockers before a watchdog stop. The watchdog never restarts
 OpenCode and never cancels managed descendants. Its result is a local suspected
 stall, which alone cannot authorize recovery.
 
-OpenCode 1.18.25's [processor](https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/session/processor.ts)
-does not publish incremental tool-argument deltas after creating a pending tool
-part. This phase cannot satisfy the originally proposed progress-observation
+The OpenCode processor does not publish incremental tool-argument deltas after
+creating a pending tool part. The current event feed cannot satisfy the originally proposed progress-observation
 contract. When the deadline encounters pending arguments, the host reports
 `provider_input_progress_unavailable`, keeps Stop available, and suspends the
 semantic cutoff until an observable phase resumes. It does not label argument
@@ -128,8 +136,8 @@ bounded to 30 seconds with bounded individual observations. Idle, an abort
 acknowledgement, a failed read, and renderer-forced idle are not sufficient.
 Healthy status-map omission is accepted only with independent session,
 transcript and blocker checks. Generic timeout wording is ineligible; a bounded, valid JSON envelope with `type: upstream_timeout` and the exact `Upstream stalled: no data for <positive milliseconds>ms` message is classified as a chunk timeout on verified runtime versions. The presentation classifier maps the same envelope to `stream_idle_timeout`. The exact
-`UnknownError` timeout shape of an allow-listed runtime (1.18.25, 1.18.26, 1.18.27, 1.18.29, 1.18.30, 1.18.31, 1.18.32, 1.18.33) has
-a version-specific compatibility rule.
+`UnknownError` timeout shape of an allow-listed legacy runtime has a
+version-specific compatibility rule.
 
 With no prior work, recovery reuses original text and safe file/data attachment
 references. Otherwise it appends a continuation. It never removes history,
@@ -200,76 +208,17 @@ The browser fixture at `tests/visual-provider-recovery` mounts the real componen
 with an isolated API adapter. It covers recovery status, Stop, blocked actions,
 disconnect/reconnect and explicit continuation without provider access.
 
-Implementation verification, August 30–31, 2026:
-
-| Check | Result |
-| --- | --- |
-| Full harness plus recovery-store suites | 139 passed |
-| Focused web plugin, managed-orchestration, overlay and harness suites | 139 passed |
-| Focused VS Code bridge and managed-runtime suites | 54 passed |
-| Full `bun run type-check` and `bun run lint` | Passed |
-| `bun run validate:affected` | Lint/type-check passed; aggregate stopped on seven failures in existing script suites |
-| Separate rerun of those script suites | All 45 passed; aggregate validation is not claimed green |
-| Real OpenCode 1.18.25 with loopback fake provider | Heartbeat-only, missing headers, silent SSE and stalled non-SSE body each recovered exactly once |
-| Semantic cutoff with heartbeat traffic | One provider request, `needs_attention`, zero automatic recovery attempts |
-| Shared browser component | Status, Stop, blocked action, disconnect/reconnect and explicit continuation checked |
-
-OpenCode 1.18.27 compatibility was verified on September 3, 2026 with the
-isolated loopback-provider fixture. Heartbeat-only traffic completed exactly one
-automatic recovery. Missing headers, silent SSE and a stalled non-SSE body
-reached the native-retry fence with one provider request and zero recovery
-attempts. Semantic cutoff also made only one request and no recovery attempt.
-The plugin hooks, request preparation, tool registry and processor sources are
-unchanged from 1.18.26. See [upgrade notes](OPENCODE_1_18_27_UPGRADE_NOTES.md).
-
-OpenCode 1.18.29 compatibility was verified on September 5, 2026 with the same
-isolated loopback-provider fixture. Heartbeat-only traffic completed exactly one
-automatic recovery. Missing headers, silent SSE and a stalled non-SSE body
-reached the native-retry fence with one provider request and zero recovery
-attempts. Semantic cutoff also made only one request and no recovery attempt.
-
-OpenCode 1.18.30 compatibility was verified on September 9, 2026 with the
-isolated loopback-provider fixture. Heartbeat-only OpenAI traffic and the exact
-Anthropic upstream-timeout envelope each completed one recovery with two provider
-requests. Semantic cutoff and interrupted Anthropic tool input each made one
-provider request and zero recovery attempts; both stopped for user attention.
-
-The bundled companion runtime reports `<upstream>-devryan.<n>` from
-`/global/health`. Its patch does not touch provider transport, request
-preparation or error shapes, so compatibility follows the upstream base: only
-`<allow-listed version>-devryan.<n>` is accepted. From v1.2.7 until this change,
-companion runtimes were treated as unsupported and never recovered automatically.
-On September 23, 2026 the fixture below was run against the bundled
-`1.18.31-devryan.9` binary. Heartbeat, silent-SSE, non-SSE, missing-header and
-Anthropic upstream-timeout traffic each completed one recovery with two provider
-requests; non-SSE needed one rerun for the documented cold start. Semantic cutoff
-and interrupted Anthropic tool input each made one request and zero recovery
-attempts, stopping for user attention.
-
-OpenCode 1.18.31 compatibility was verified on September 14, 2026 with the
-isolated loopback-provider fixture. Heartbeat, silent-SSE, non-SSE, and
-missing-header traffic each completed one recovery with two provider requests.
-The Anthropic upstream-timeout envelope also completed one recovery. Semantic
-cutoff and interrupted Anthropic tool input each made one provider request and
-zero recovery attempts; both stopped for user attention.
-
-OpenCode 1.18.32 compatibility was verified on September 24, 2026 with the
-isolated loopback-provider fixture against the bundled DevRyan companion 2.1.0
-(upstream 1.18.32). Heartbeat, silent-SSE, non-SSE, missing-header and Anthropic
-upstream-timeout traffic each completed one recovery with two provider requests;
-heartbeat needed one rerun for the documented cold start. Semantic cutoff and
-interrupted Anthropic tool input each made one provider request and zero
-recovery attempts, stopping for user attention.
-
-OpenCode 1.18.33 compatibility was verified on September 30, 2026 with the
-isolated loopback-provider fixture against the bundled DevRyan companion 2.1.2
-(upstream 1.18.33). Heartbeat, silent-SSE, non-SSE, missing-header and Anthropic
-upstream-timeout traffic each completed one recovery with two provider requests;
-missing-header needed one rerun. Semantic cutoff and interrupted Anthropic tool
-input each made one provider request and zero recovery attempts, stopping for
-user attention. The allow-list also gates managed continuation (the wake that
-makes a parent collect a finished sub-agent's result), which was fenced as
-`runtime_unsupported` on 1.18.33 until this verification.
+Verification of each reviewed release is recorded as a paragraph in the
+[verification history](audits/2026-10-09/provider-recovery-history/README.md):
+the isolated loopback-provider fixture (`tests/provider-recovery/runtime-conformance.mjs`)
+runs heartbeat-only, silent-SSE, non-SSE, missing-header and Anthropic
+upstream-timeout traffic, each expected to complete exactly one recovery, and
+semantic cutoff plus interrupted Anthropic tool input, each expected to make one
+provider request with zero automatic attempts. A release is added to an
+allow-list only after that fixture passes against its executable. The bundled
+companion runtime of the legacy 1.x line reports `<upstream>-devryan.<n>`; its
+patch does not touch provider transport, so compatibility follows the upstream
+base version exactly.
 
 The bundled plugin's hooks only observe while the host does not enforce
 recovery (its hello reports `enforced: false`: observe mode, or a runtime it
@@ -309,41 +258,6 @@ accepted recovery remains read-only and is observed through settlement. Removing
 the plugin or deleting state is not a safe rollback.
 
 
-### Claude timeout verification — September 9, 2026
-
-- The focused recovery/controller/host, lifecycle, classifier, UI-error, and
-  recovery-store run passed 148 tests. A subsequent targeted check also verified
-  that a failed old observation is logged against the original user message.
-- Real OpenCode 1.18.29 with a loopback fake Anthropic provider completed exactly
-  one recovery for the reported upstream-timeout envelope and heartbeat-only
-  transport failure. Interrupted edit arguments made one provider request,
-  zero recovery attempts, and left the fixture sentinel unchanged.
-- Additional silent-SSE, semantic, missing-header and non-SSE runs failed during
-  isolated OpenCode startup/session initialization, before their provider
-  fault scenarios ran. These are unavailable conformance checks, not passes.
-  All owned native fixture processes/directories were cleaned up; reports are
-  retained locally under `.cache/claude-recovery-native-evidence`.
-- The real shared browser component was checked for Claude timeout wording,
-  uncertain-edit attention, explicit continuation, Stop, and disconnect/reconnect.
-- The bundled recovery plugin passed all 14 contract tests, including Claude
-  identity and tool-guard coverage. `bun run bundle:check` and the final
-  workspace type-check rerun passed.
-- `bun run build` passed for web and Electron. Full validation passed lint,
-  type checks and documentation validation, then failed in six repository-script
-  tests. Both agent-evaluation failures passed a serial rerun; the bootstrap
-  retry-count assertion and three release-smoke timeouts still failed.
-- Continued package checks passed orchestration (399 tests), Cursor, Electron,
-  legacy desktop, shared runtime, and the Bot suites except egress. The broad
-  harness run hit repeated failures/timeouts in the separate session-change
-  work and was interrupted after retaining those failures; focused recovery
-  tests passed independently. UI had 3595 passes and one hard-coded-label source
-  scan timeout, which also timed out in isolation. The web run also reported
-  scoped-revert and Git fixture failures and was interrupted before completion;
-  its recovery plugin was checked separately. No failing assertions or test
-  deadlines were weakened. Full-suite validation is not claimed green.
-
-These tests do not certify the managed Meridian/Claude Agent SDK connection.
-The production Claude conformance gate therefore remains closed.
 
 
 ## Collecting a user-recovered child after a parent failure

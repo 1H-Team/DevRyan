@@ -3,11 +3,11 @@
 The cross-component operator and security runbook is `docs/BOTS_RUNTIME.md`.
 This document remains the implementation contract for the server control plane.
 Retry repair verification and outstanding live acceptance are recorded in
-`docs/BOT_SAFE_RETRY_REPAIR_2026-08-30.md`.
+[the safe retry repair record](../../../../../docs/audits/2026-08-30-bot-failure-repair/safe-retry-repair.md).
 
 ## Current simplified product boundary
 
-`docs/BOTS_SIMPLIFICATION_2026-08-27.md` is the current user-facing contract.
+The "Current simplified product contract" section of `docs/BOTS_RUNTIME.md` is the current user-facing contract (history: [simplification research](../../../../../docs/audits/2026-08-27/bots-simplification/README.md)).
 New and newly saved Bots are OpenCode-only, receive server-enforced file,
 runtime, public-internet, and persistent-computer defaults, and clear MCP plus
 operating/prohibited/advanced instruction layers. Optional per-Bot Skills remain

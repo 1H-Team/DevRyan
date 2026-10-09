@@ -435,19 +435,19 @@
           "failures": [
             "candidate:The operation was aborted due to timeout"
           ],
-          "output": "/Users/zoubair/Repositories/DevRyan/.cache/companion-c4/tree/.cache/qa/duplicate-serializer-kpvH76"
+          "output": "<HOME>/Repositories/DevRyan/.cache/companion-c4/tree/.cache/qa/duplicate-serializer-kpvH76"
         },
         {
           "attempt": 2,
           "passed": true,
           "failures": [],
-          "output": "/Users/zoubair/Repositories/DevRyan/.cache/companion-c4/tree/.cache/qa/duplicate-serializer-GjVnrg"
+          "output": "<HOME>/Repositories/DevRyan/.cache/companion-c4/tree/.cache/qa/duplicate-serializer-GjVnrg"
         },
         {
           "attempt": 3,
           "passed": true,
           "failures": [],
-          "output": "/Users/zoubair/Repositories/DevRyan/.cache/companion-c4/tree/.cache/qa/duplicate-serializer-ypeOdk"
+          "output": "<HOME>/Repositories/DevRyan/.cache/companion-c4/tree/.cache/qa/duplicate-serializer-ypeOdk"
         }
       ],
       "passedCompleteRuns": 2,

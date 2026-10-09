@@ -1,0 +1,54 @@
+[
+  {
+    "lane": "provision-twice",
+    "step": "step-a",
+    "ok": true,
+    "elapsedMs": 10636,
+    "opencodeVersion": "2.0.20",
+    "artifactManifestSha256": "0420e39136efcc9f2fd407736365f19ad5c4644751c6dadaf72a897bd8a91192",
+    "revision": 1,
+    "selectedBundleID": "default-native",
+    "previousBundleID": null,
+    "sourceBundleID": null,
+    "startupUpgradeFailure": null
+  },
+  {
+    "lane": "provision-twice",
+    "step": "step-b",
+    "ok": true,
+    "elapsedMs": 19446,
+    "opencodeVersion": "2.0.26",
+    "artifactManifestSha256": "8a951a7d49661c8df4e2788670f3b2a212ecfd1894909a756fe0c56b31344f22",
+    "revision": 2,
+    "selectedBundleID": "native-8a951a7d49661c8df4e27886-r1",
+    "previousBundleID": "default-native",
+    "sourceBundleID": "default-native",
+    "startupUpgradeFailure": null
+  },
+  {
+    "lane": "server-boot",
+    "step": "server",
+    "ok": true,
+    "readyAfterSeconds": 42,
+    "health": {
+      "status": "ok",
+      "openCodeVersion": "2.0.26",
+      "isOpenCodeReady": true,
+      "lastOpenCodeError": null
+    },
+    "revision": 2,
+    "selectedBundleID": "native-8a951a7d49661c8df4e27886-r1",
+    "previousBundleID": "default-native",
+    "migrationRows": {
+      "selected": {
+        "count": 49,
+        "latest": "20261007190000_azure_cli_external_credential"
+      },
+      "previous": {
+        "count": 48,
+        "latest": "20260923013825_project_time_active"
+      }
+    },
+    "shutdown": "graceful, no leftover processes"
+  }
+]

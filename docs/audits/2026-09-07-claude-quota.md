@@ -176,3 +176,47 @@ Native forking creates additional transcript files and copies the selected histo
 Native transcript counters cover successful assistant usage records, not every failed provider attempt or auxiliary inference. Live provider bodies and authorization headers are not intercepted. Model, context occupancy and API-equivalent cost do not substitute for authoritative subscription quota. Local reference inactivity cannot exclude unobserved activity on another device.
 
 Forked transcripts can copy an earlier response under another transcript session ID. Usage remains deduplicated by provider message ID; the reusable reader reports observed transcript IDs separately. Use Meridian request telemetry for actual SDK invocation lineage. Earlier result files used a session count calculated after deduplication; that field is unsuitable for counting intentional forks and is excluded from the comparison.
+
+## Acceptance procedure
+
+This audit documents the incident, pinned runtime, control/candidate distinction, quota resolution and rollback. This study is opt-in and is separate from deterministic CI and visual QA.
+
+Run the real-executable offline regression with explicit installed paths:
+
+```sh
+node scripts/qa/meridian-prefix.mjs --modules /absolute/managed/node_modules --claude /absolute/native/claude --arm candidate --steps 20 --parallel 4
+node scripts/qa/meridian-prefix.mjs --modules /absolute/managed/node_modules --claude /absolute/native/claude --arm candidate --steps 10 --parallel 3 --stream false
+```
+
+The loopback provider emits synthetic authored responses and never contacts Anthropic or reads authentication. `--arm control` retains the previous installed HTTP/handoff revision and is expected to fail the prefix/history assertions. Do not treat its synthetic usage values as quota measurements.
+
+For live work, first prepare a cache-owned profile with `prepareMeridianFixture` and `prepareClaudeQuotaRuntime` from `scripts/qa/claude-quota-fixture.mjs` and `scripts/qa/claude-quota-runtime.mjs`. Both require explicit installed module/executable paths and refuse dependency installation. The runtime launch environment sets `HOME`, `CLAUDE_CONFIG_DIR`, `MERIDIAN_CONFIG_DIR` and `MERIDIAN_SESSION_DIR` inside the private home for the same reason as live matrix profiles: Meridian 1.62.x inside the Bun OpenCode host derives its `quota` oauth-token profile and other state from `HOME`. Preparation and `startClaudeQuotaRuntime` both reject any Meridian/Claude path outside that home (only the absolute `MERIDIAN_CLAUDE_PATH` executable may live elsewhere); a profile saved before `HOME` was owned fails before any process starts and must be prepared again. Save their `{ fixture, profile }` return values to a cache-owned JSON file. Record an authoritative `projectQuota` baseline from the explicitly authorized loopback Meridian quota origin, plus the agreed `limitPoints`, `diagnosticReservePoints` and `finalHeadroomPoints`. The admission default is 20 points; the implementation allows at most 40 when separately authorized. Keep at least five points for final retests.
+
+The guarded runner accepts this configuration (all paths must be explicit):
+
+```json
+{
+  "preparedFile": "/absolute/DevRyan/.cache/qa/study/prepared.json",
+  "installedModules": "/absolute/managed/node_modules",
+  "claudeExecutable": "/absolute/native/claude",
+  "arm": "direct",
+  "baselineFile": "/absolute/DevRyan/.cache/qa/study/baseline.json",
+  "quotaOrigin": "http://127.0.0.1:3456",
+  "outputRoot": "/absolute/DevRyan/.cache/qa/study/results",
+  "referenceSession": "/absolute/authorized/reference-session.jsonl"
+}
+```
+
+Run `node scripts/qa/meridian-designer-continuity.mjs --quota /absolute/CONFIG.json`. Each `direct`, `control` or `candidate` invocation creates a fresh Git project, uses identical TSX/CSS prompts, verifies exact Opus 4.8/medium selection, and checks files and tests independently. Native interactive Claude uses the existing web package's `node-pty`; mediated runs use the actual private web/OpenCode/plugin path. Explicit benchmark titles separate the primary workload from title generation. Use three cohorts in direct/control/candidate, candidate/control/direct, then direct/control/candidate order. Retain failed attempts, pause on missing/stale quota, and never admit another arm merely because a quota request failed. Avoid other account activity throughout the measured windows.
+
+Set `"cancellationCheck": true` for a separate direct/candidate idle/cancellation/recovery run, outside paired workload totals. It keeps the completed session open for six minutes, checks for native responses and quota changes, then cancels an actually started foreground tool. It waits past that tool's completion deadline to detect survivors, checks for newly observed native responses after settled abort, and resumes the review/tests. All of its consumption still counts against the same overall quota ceiling.
+
+Set `"workload": "sustained"` for the longer twelve-brief review workbench instead of the default small component. Every turn requires actual TypeScript/TSX, CSS and test edits. Its independent grader lives outside the editable project and checks public behavior and React server-rendered output, including stable sorting, pagination, CSV escaping, immutable moderation/replies and safe highlighting. The final turn also builds the component for a browser. React and React DOM are linked from existing installed repository dependencies; seeding does not install packages. Freeze the same fixture and prompts for all arms and retain their prompt/source hashes.
+
+An optional `"calibrationTurns": 2` runs only the first two sustained briefs to check the new fixture before committing to a full cohort. Such evidence is labeled `editing-calibration`, records its shorter prompt hash and required/full turn counts, and must not be counted as a completed paired workload.
+
+A quota reset does not renew the authorized study ceiling. Do not run a measured arm across a reset. While all model work is idle, retain a valid final reading for the old window and a fresh starting reading for the new window; explicitly carry previous consumption in the baseline file's `carriedConsumedPoints`, including any reserve for integer rounding. Admission adds that carried amount to new-window consumption. Missing old-window evidence must not be replaced with an invented zero.
+
+An authoritative zero-usage window can have a null reset timestamp while inactive. Preserve that raw baseline. When its first active reset timestamp appears, the runner records `activatedFiveHourReset` and the corresponding observation atomically in the cache-owned baseline file. Subsequent inactive windows or changed reset timestamps then stop admission; an inactive starting baseline cannot silently grant a second window's budget. A nonzero window without a reset boundary remains invalid. Full sustained arms require at least sixty minutes before a known quota reset and sixty minutes of existing access lifetime at startup; the runner does not write refresh credentials.
+
+The output records authoritative quota before/after each turn, immediate and delayed samples, native usage deduplicated by provider message ID, exact model/effort evidence, mediated request counters and verified file/test outcomes. Each delayed endpoint must have been fetched after completed work plus 30 seconds; a recent cached reading that predates completion is insufficient. That endpoint can serve as the next turn's preceding observation while fresh, since no inference occurs between them. The first prompt similarly requires a fresh observation fetched after the arm started. Valid observations can be reused for up to 85 seconds to avoid bursts of quota refresh requests, while their provider fetch time remains subject to the 90-second freshness bound. With model work idle, the runner can wait up to ten minutes for a fresh endpoint. Missing or stale quota during active inference still aborts the owned workload. Native transcript and Meridian client counters do not cover every auxiliary or failed provider attempt. A one-point quota display delta of zero does not establish zero consumption or parity. The runner never writes refresh credentials or passwords, never patches the installed runtime, and stops only processes it created.

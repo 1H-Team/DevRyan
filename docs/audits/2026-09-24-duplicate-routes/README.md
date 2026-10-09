@@ -31,10 +31,10 @@ no Anthropic transport (see [HARNESS_OPTIMIZATION.md](../../HARNESS_OPTIMIZATION
   with `bun run build` and `bun run bundle:check`. The companion build passed its
   14 acceptance scenarios.
 - **Native serializer probe** on the companion executable: runs 1 and 3 passed
-  every check ([`serializer-probe-1.json`](serializer-probe-1.json),
-  [`serializer-probe-3.json`](serializer-probe-3.json)). Run 2 timed out on the
-  candidate arm while two live runs shared the machine and is retained
-  ([`serializer-probe-2.json`](serializer-probe-2.json)).
+  every check (`serializer-probe-1.json`, `serializer-probe-3.json`; raw payloads
+  removed 2026-10; regenerate via `node scripts/qa/cache-serializer-probe.mjs <companion> --duplicates`).
+  Run 2 timed out on the candidate arm while two live runs shared the machine
+  (`serializer-probe-2.json`, removed with the others).
 - **Per route** (`<route>/`): pilot (`live-pilot.json`), ten-pair acceptance
   (`live-acceptance.json`, 5 skill and 5 managed pairs) and a three-pair
   Plan-mode instruction-reuse supplement (`instruction-reuse-live.json`). Every
@@ -42,7 +42,7 @@ no Anthropic transport (see [HARNESS_OPTIMIZATION.md](../../HARNESS_OPTIMIZATION
   critical failures, repeated mutations and extra same-key calls; requests never
   grew; no wire or collector failures. The acceptance report's SHA-256 is the
   profile's `reportHash`.
-- **Retained failed attempts** (`<route>/failed/`):
+- **Failed attempts** (`<route>/failed/` reports removed 2026-10; regenerate by re-running the lane described above):
   - `xai-47` pilot 1: each arm's last request (a session title) was cut when the
     runner deleted its session while the response was still streaming, recorded
     as `transport-failed`. The runner now waits for in-flight wire requests
@@ -73,8 +73,8 @@ counts for the ten primary requests; they are not billing or quota claims.
 After promotion, each route ran `--verify-default` (2 pairs; the candidate arm
 without `DEVRYAN_DUPLICATE_OUTPUTS`, so only the release profile enables the
 projection). All four passed (`<route>/verify-default.json`): the candidate
-applied 2 reductions per trial with a clean wire. The first `openai-sol` run is
-retained under `failed/`: a baseline request failed before response headers
+applied 2 reductions per trial with a clean wire. The first `openai-sol` run
+(its `failed/` report removed 2026-10): a baseline request failed before response headers
 (upstream connection error) while another route ran concurrently, OpenCode
 retried it, and the extra request exceeded the pilot's request cap. Run alone,
 it passed.

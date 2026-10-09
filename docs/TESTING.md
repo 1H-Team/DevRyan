@@ -58,10 +58,15 @@ affected mode. See the command planner in `scripts/validate.mjs`.
 The documentation check scans current Markdown/MDX local links, reference-link
 definitions, HTML `src`/`href`, and explicit repository source paths in inline
 code. It ignores code examples, remote URLs, and same-page fragments; it checks
-file existence, not heading anchors. Historical reports under `docs/audits/`,
-saved plans under `docs/superpowers/plans/`, and changelog/backport records report
-missing old targets as warnings. Known generated build/runtime paths are
+file existence, not heading anchors. Historical reports under `docs/audits/` and
+`CHANGELOG.md` report missing old targets as warnings. Known generated build/runtime paths are
 reported as unchecked. It does not contact external sites.
+
+`docs:validate` also runs `scripts/docs/doc-retention.mjs` (standalone: `node scripts/docs/doc-retention.mjs`):
+
+- Codemaps were removed: any `codemap.md` or `CODEMAP.md` is an error, except vendored files under `packages/web/runtime/reviewed-inputs/`. Module contracts go in the nearest `DOCUMENTATION.md`.
+- Every `docs/audits/<YYYY-MM-DD>/<slug>/` needs a `README.md`. Entries (and loose files in a date folder) must be cited from `CHANGELOG.md`, a top-level `docs/*.md` or a `DOCUMENTATION.md`. Legacy `<date>-<slug>` names are grandfathered.
+- Audits may not keep `.jsonl`, `.log`, `.webm`, `.mp4` or `.mjs` files, nor any file over 200 KB, except the hash-pinned `live-acceptance.json` files listed in `AUDIT_PINNED_EVIDENCE` in that module.
 
 ## Suite ownership
 

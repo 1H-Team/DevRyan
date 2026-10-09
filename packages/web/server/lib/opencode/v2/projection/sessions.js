@@ -18,7 +18,7 @@
 // metadata.devryan entries (archive, todo) carry the owner `sessionID`: v2
 // children and forks inherit the parent's whole metadata (F4), so an entry
 // whose owner is another session is ignored. Every lossy field is tagged
-// `LOSS(<key>)` against the semantic-loss register in `v2/codemap.md`.
+// `LOSS(<key>)` against the semantic-loss register in `v2/DOCUMENTATION.md`.
 // Everything here is pure.
 // ---------------------------------------------------------------------------
 

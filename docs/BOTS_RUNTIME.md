@@ -11,8 +11,7 @@ remain the authority for implementation details.
 
 ## Current simplified product contract
 
-The user-facing model is documented in
-`docs/BOTS_SIMPLIFICATION_2026-08-27.md`. A Bot is created with capability-first
+A Bot is created with capability-first
 defaults and new configurations always run through OpenCode. Bot Settings has
 Overview, Resources, Memory, Members, Routines, and Lifecycle. Resources owns
 the persistent computer files, optional on-demand Skills/SOPs, protected
@@ -21,6 +20,32 @@ public profile plus Soul/personality, Standing Role, Objectives, and compact
 primary Provider/Model/Thinking controls. There is
 no user-facing MCP, AG-UI, policy/access matrix, Library/source workflow,
 revision/bundle, recovery, or advanced-instruction configuration.
+
+### Bot settings
+
+1. **Overview** — name, title, avatar, Soul/personality, Standing Role,
+   Objectives, Provider, Model, Thinking, status. Core identity is
+   revision-backed and applies to future runs; advanced instruction and token
+   controls remain hidden.
+2. **Resources** — built-in capability summary; computer files/folders; optional
+   Skills/SOPs; protected provider API keys/accounts; environment secrets.
+3. **Memory** — Remembered and Forgotten facts with remember/forget controls.
+4. **Members** — who may message and operate the Bot; no role selector.
+5. **Routines** — goal, schedule, timezone, timeout, rationale, completion
+   criteria; consequential actions confirm with the requester.
+6. **Lifecycle** — Active, Paused, Delete.
+
+### Operations sidebar
+
+- **Current run** — live state and cancel when applicable.
+- **Computer** — view, take control, return control.
+- **Confirmations** — consequential actions and reconciliation.
+- **Shared** — files produced or shared in the current conversation.
+
+History: [simplification research and acceptance criteria](audits/2026-08-27/bots-simplification/README.md).
+History: [bot upgrade implementation and verification](audits/2026-08-31/bot-upgrade-verification/README.md).
+
+### Conversation
 
 The conversation is shaped like a messaging thread. The sidebar row shows
 typing dots while a Bot is preparing or writing (in any channel) and "Needs
@@ -1269,7 +1294,7 @@ atomic-save workflow are documented in the repository diagnostics modules.
 ## Further implementation references
 
 - Runtime policy: `packages/bots-runtime/DOCUMENTATION.md`
-- Electron/Docker ownership: `packages/electron/codemap.md`
+- Electron/Docker ownership: `packages/electron/bot-runtime-manager.mjs`
 - Supervisor and socket boundary: `packages/bot-supervisor/DOCUMENTATION.md`
 - Model egress: `packages/bot-egress/DOCUMENTATION.md`
 - Computer runtime: `packages/bot-computer/DOCUMENTATION.md`

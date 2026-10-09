@@ -1,3 +1,5 @@
+// Intentional divergence from upstream: buildResult adds an optional `errorCode` field that quota
+// providers and the UI rely on. Preserve it when merging or porting upstream changes.
 export const formatResetTime = (timestamp) => {
   try {
     const resetDate = new Date(timestamp);

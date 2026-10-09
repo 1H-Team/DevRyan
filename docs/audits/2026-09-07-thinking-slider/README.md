@@ -48,3 +48,19 @@ These checks use deterministic OpenCode fixture responses through the real app
 and transport. Live paid provider execution and physical touch hardware were not
 tested. Recovery uses the same component and has automated coverage; no separate
 recovery-card screenshot is included.
+
+## Acceptance procedure
+
+After building and staging the shared UI, run
+`DEVRYAN_QA_SCENARIO=thinking bun run qa` and
+`DEVRYAN_QA_RUNTIME=electron DEVRYAN_QA_SCENARIO=thinking bun run qa`.
+The isolated scenario checks zero through five native levels, the circular thumb,
+60% detent/release behavior, keyboard/focus restoration, light/dark desktop and
+390px touch web, cancelled touch, reduced motion, and an explicit Medium prompt
+plus canonical reload. Screenshots and results are written to the reported
+`.cache/qa/` directory. This verifies fixture transport, not live provider billing
+or physical touch hardware.
+
+Set `DEVRYAN_QA_BACKGROUND=1` to keep the web QA Chromium window hidden during
+scripted interaction; screenshots still capture the real renderer. The thinking
+scenario also verifies the supported header Fast toggle and focus restoration.

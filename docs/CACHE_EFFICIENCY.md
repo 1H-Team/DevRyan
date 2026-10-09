@@ -1,9 +1,10 @@
 # Cache efficiency accounting and bounded QA
 
-This change ships accounting, not a cache-policy default. The UI's active-context
-calculation, selected models, main-task effort, native history, permission checks,
-Anthropic cache boundaries and retention remain unchanged. No new dependency or
-database is required.
+Cache efficiency is an accounting and bounded-QA surface, not a cache-policy
+default. The UI's active-context calculation, selected models, main-task effort,
+native history, permission checks, Anthropic cache boundaries and retention are
+unaffected by it. It needs no dependency or database beyond the existing
+runtime.
 
 ## Review groups and ownership
 

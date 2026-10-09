@@ -8,7 +8,7 @@ Personal models, variants, prompts, permissions and MCP choices remain user-owne
 
 - The managed plugin registry is [managed-plugins.js](../packages/web/server/lib/opencode/managed-plugins.js).
   Keep it consistent with the sanitized profile manifest, installed entrypoints,
-  Slim schema URL, package tests, Bot image pins and current codemaps.
+  Slim schema URL, package tests and Bot image pins.
 - [Claude runtime compatibility](../packages/web/server/lib/opencode/claude-runtime-compatibility.js)
   owns the selected Claude proxy/Meridian/Agent SDK/Claude Code tuple and provenance.
   Update those four components together after acceptance. An exact source patch
@@ -143,7 +143,7 @@ older DevRyan release does not reverse an unknown installed source patch safely.
 
 Retain the version/integrity matrix, agent-change dispositions, commands, sanitized
 results, source hashes, platform limits and final accepted/held/failed statuses in
-the audit. Update codemaps and this runbook when ownership or gates change.
+the audit. Update this runbook when ownership or gates change.
 
 ## Image request model default
 

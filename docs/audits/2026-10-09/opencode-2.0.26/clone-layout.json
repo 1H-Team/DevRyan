@@ -1,0 +1,20 @@
+[
+  {
+    "bundle": "baseline",
+    "schemaSha256": "86eba4fd4db542bd82ef56f76c1e5eba80af1efc021e10cd5a7f59d70e5f1bf0",
+    "migrationsSha256": "b0c489f7584f30b688a23e9cc6326c1c37b1dfb166ba14e5d55ee3cf33f08d9e",
+    "userVersion": 0,
+    "matchesReviewed": true,
+    "migrationCount": 48,
+    "latest": "20260923013825_project_time_active"
+  },
+  {
+    "bundle": "candidate",
+    "schemaSha256": "86eba4fd4db542bd82ef56f76c1e5eba80af1efc021e10cd5a7f59d70e5f1bf0",
+    "migrationsSha256": "b0c489f7584f30b688a23e9cc6326c1c37b1dfb166ba14e5d55ee3cf33f08d9e",
+    "userVersion": 0,
+    "matchesReviewed": true,
+    "migrationCount": 49,
+    "latest": "20261007190000_azure_cli_external_credential"
+  }
+]

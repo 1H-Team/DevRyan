@@ -35,7 +35,9 @@ The primary evidence is in
 referenced PNG files were reviewed before `reviewStatus` was changed to
 `reviewed`; generated logs, contact sheets, and failed/stale captures were not
 copied. The earlier raw-Electron pass remains in
-[visual/evidence.json](visual/evidence.json) as supplemental evidence.
+[visual/evidence.json](visual/evidence.json) as supplemental evidence. Two `visual/` PNGs that were byte-identical to their
+`visual-packaged/` counterparts (`transcript-empty-light-r220.png`,
+`transcript-partial-failure-light-narrow.png`) were removed 2026-10.
 
 ## Reproduction
 

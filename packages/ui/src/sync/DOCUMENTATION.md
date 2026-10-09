@@ -751,6 +751,11 @@ Plan mode reaches the model through the synthetic plan-mode preface. The prompt 
 
 If an auto-send fails while the transport disconnects, the claimed rows are restored with their dispatch identity intact. The queue hook never dispatches while disconnected and grants that restored idle queue exactly one new attempt on the authoritative disconnected-to-connected edge. A WS-to-SSE switch preserves the current connection state because selecting a fallback transport does not prove that it connected. The SSE SDK also constructs its stream wrapper before opening the response, so SSE publishes recovery only after its first parsed or yielded event; an error response cannot create a transient connected pulse. A steady connected state is not a retry signal, so persistent validation, authorization, or provider failures cannot create an automatic retry loop.
 
+## Cross-runtime handoff context
+
+`sendMessageToSession` (`session-ui-store.ts`, `buildCrossRuntimeHandoffPart`) prepends one synthetic text part only when a send crosses the OpenCode/Cursor boundary; same-backend model changes continue native session history. The part carries the newest contiguous source-backend user/assistant messages with visible text, bounded by `CROSS_RUNTIME_HANDOFF_MAX_MESSAGES` (8 messages), `CROSS_RUNTIME_HANDOFF_MAX_TEXT_CHARS` (1,400 characters per message, then `[truncated]`) and `CROSS_RUNTIME_HANDOFF_MAX_CHARS` (6,000 characters total).
+Budget goes to the newest messages first and the result is presented chronologically; dropped older context is flagged with `CROSS_RUNTIME_HANDOFF_OMISSION_MARKER`. Synthetic parts are never reused as source material for a later handoff. Regressions live in `session-ui-store.send.test.ts`.
+
 ## Session history loader
 
 `SessionMessageLoader` is created once by `SyncProvider` and owns first-page,
@@ -902,3 +907,5 @@ session switching/remounts, explicit Default, model changes and the actual
 optimistic dispatch boundary with controlled transport promises.
 
 Session error notifications persist only bounded classifications and safe display text alongside completion read state. Raw exception stacks and provider bodies are never persisted. Viewing a session does not resolve its failure notice. A newer canonical user turn (including a Plan retry) supersedes proven older same-session failures; live user parts and canonical history pages provide this authority, while optimistic rows and synthetic maintenance wakes do not. Persisted owning user IDs/server timestamps avoid comparing server chronology with renderer receipt clocks. Legacy keyed failures can use canonical history order; uncorrelated legacy notices and uncorrelated delayed error events remain conservative until successful completion. A newer authoritative successful completion also resolves captured older failures.
+
+History: [session creation verification record](../../../../docs/audits/2026-09-24/session-creation/README.md).

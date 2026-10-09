@@ -73,7 +73,7 @@ The user's running application and live provider accounts were not test inputs.
 | Terminal reproducibility | Local Zig 0.15.2 rebuild produced the pinned WASM byte-for-byte and matching PTY trampoline. WASM SHA-256: `51b016a6aa3c29ead71c7c8acf8c01d43b064bae19957a9c9f9e2bf469267629`. |
 | Packed distribution | The production packer completed. The tarball contains all six terminal notice/provenance files and the exact WASM/font digests, with the retired terminal dependency absent. |
 
-The complete browser result is preserved in [browser-checks.json](browser-checks.json).
+The complete browser result is preserved in [runtime-parity.json](../2026-10-08/release-2.0.3/runtime-parity.json) (byte-identical copy kept there; this folder's duplicate removed 2026-10).
 The fixture lives in `tests/visual-runtime-parity`, and its runner cleans up its
 owned browser, server and profile. The native journey lives in
 `scripts/verify-concurrent-revert-execution.mjs`; set its two documented artifact
