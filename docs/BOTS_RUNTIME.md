@@ -1294,7 +1294,7 @@ atomic-save workflow are documented in the repository diagnostics modules.
 ## Further implementation references
 
 - Runtime policy: `packages/bots-runtime/DOCUMENTATION.md`
-- Electron/Docker ownership: `packages/electron/codemap.md`
+- Electron/Docker ownership: `packages/electron/bot-runtime-manager.mjs`
 - Supervisor and socket boundary: `packages/bot-supervisor/DOCUMENTATION.md`
 - Model egress: `packages/bot-egress/DOCUMENTATION.md`
 - Computer runtime: `packages/bot-computer/DOCUMENTATION.md`

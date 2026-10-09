@@ -138,7 +138,6 @@ catch-all `uiRoute` then answers 404 instead of proxying the path to
 app.opencode.ai (or serving `index.html` with status 200 when a web UI is
 embedded). The host's `/api` route guard (`opencode-routes.js`) rejects unknown
 paths before they reach OpenCode; this closes the gap for any other caller.
-Host kill switch: `DEVRYAN_OPENCODE_UI_BLOCK=0`.
 
 ## Deferred prototypes (measured decisions)
 

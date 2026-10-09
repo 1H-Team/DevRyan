@@ -1,18 +1,18 @@
-# OpenCode 2 compatibility boundary
+# OpenCode 2 compatibility boundary: contracts
 
-## Ownership and evidence
+This directory adapts the pinned OpenCode 2 responses (`TARGET_OPENCODE_VERSION` in
+`../version-policy.js`) to the existing DevRyan application contract. It does not
+implement the native execution host or certify plugin, confinement, migration or
+performance parity. Remaining gates are in [the OpenCode module documentation](../DOCUMENTATION.md).
+`openapi-*.json` and `__vectors__/` files carry the runtime version of the build that produced them.
 
-This directory adapts pinned OpenCode 2.0.26 responses to the existing DevRyan
-application contract. It does not implement the native execution host or certify
-plugin, confinement, migration or performance parity. The remaining gates are in
-[the OpenCode module documentation](../DOCUMENTATION.md).
+## Adapter contracts
 
 - `route-policy.js` classifies every operation from `routes.generated.js` by
   audience, validates body-dependent privilege and rejects unknown routes.
-  The repository-init endpoint and the 2.0.26 external integration connect
+  The repository-init endpoint and the external integration connect
   endpoint stay denied; the session `parentID`
-  body field cannot bypass managed child-session ownership. Historic 2.0.20
-  vectors remain labeled with the runtime that produced them.
+  body field cannot bypass managed child-session ownership.
   `openapi-routes.js` checks the readiness document against that pinned table.
 - `../opencode-client/` owns both-generation requests, bounded response reads,
   location encoding, pagination and runtime fencing. A nested operation retains

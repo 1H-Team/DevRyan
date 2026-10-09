@@ -17,8 +17,8 @@ DevRyan provides web and Electron interfaces to OpenCode over HTTP and SSE. This
 - New desktop work belongs in `packages/electron`. Electron starts the web server in-process, or connects to its owned runtime service; do not introduce a sidecar feature backend. The shell owns native integrations and browser/runtime-service facilities.
 - `packages/desktop` is legacy Tauri, retained for released-install auto-update compatibility. Add no features or speculative backports there. The cutover is a separate user decision: [migration runbook](docs/TAURI_TO_ELECTRON_CUTOVER.md).
 - Shared UI uses runtime capabilities and the preload compatibility bridge; preserve intentional web/Electron contracts rather than branching on shell identity.
-- Use [CODEMAP.md](CODEMAP.md) when locating unfamiliar ownership or entrypoints. Follow the relevant folder codemap or module documentation when its contracts matter. A small edit in a known file does not require reading the entire map or unrelated documents. Codemap authoring rules are in the "Codemap conventions" section of [CODEMAP.md](CODEMAP.md).
-- Update the relevant codemap and documentation when changing ownership, entrypoints, or contracts. Use package manifests and lockfiles for current versions and commands.
+- Locate unfamiliar ownership through package manifests, entrypoints, and the nearest `DOCUMENTATION.md`; follow module documentation when its contracts matter. A small edit in a known file does not require reading unrelated documents. Do not add `codemap.md` files.
+- Update the relevant `DOCUMENTATION.md` when changing ownership, entrypoints, or contracts. Use package manifests and lockfiles for current versions and commands.
 
 ## Implementation
 
