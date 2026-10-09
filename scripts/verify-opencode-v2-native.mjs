@@ -69,7 +69,7 @@ export const runNativeWriterAcceptance = async (options = {}) => {
   let nativeRequestCount = 0, privateRpcCount = 0, managedWakeAttribution;
   let capturedPrompt;
   const controllerRestarts = [];
-  const deps = { getRuntime: () => ({ generation: 2, baseUrl: nativeUrl, version: '2.0.24', epoch: nativeEpoch,
+  const deps = { getRuntime: () => ({ generation: 2, baseUrl: nativeUrl, version: '2.0.26', epoch: nativeEpoch,
     paths: { home, config: env.XDG_CONFIG_HOME, data: env.XDG_DATA_HOME, state: env.XDG_STATE_HOME, cache: env.XDG_CACHE_HOME } }),
     getAuthHeaders: () => ({ authorization: `Bearer ${token}`, ...owner?.requestHeaders() }), recordDiagnostic: record => diagnostics.push(record),
     withNativeWebOperation: (spec, action) => owner.withWebOperation(spec, action),

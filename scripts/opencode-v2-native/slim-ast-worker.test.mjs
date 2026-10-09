@@ -16,7 +16,7 @@ test('actual original AST tools run in supervised private views with permission,
  const inputs=await prepareReviewedNativeInputs(repository);
  const core=await fs.realpath(path.join(repository,'node_modules/@opencode/core'));
  const require=createRequire(path.join(core,'package.json'));
- const pty=path.join(core,'dist/chunks/repository-dajrwvna.js');
+ const pty=path.join(core,'dist/chunks/location-services-dajrwvna.js');
  const ptyAsset=path.join(path.dirname(require.resolve('@opencode-ai/pty-darwin-arm64/package.json')),'bin/opencode-pty');
  const photon=require.resolve('@silvia-odwyer/photon-node');
  const rewrites=new Map(inputs.rewrites);

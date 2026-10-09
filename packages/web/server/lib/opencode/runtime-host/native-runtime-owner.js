@@ -69,11 +69,16 @@ export function createRuntimeBundleVerifier(binding, privatePersistence={}) {
   };
 }
 
-/** Resume uses the complete selected bundle and its immutable reviewed configuration. */
-export async function loadNativeRuntimeBundle({ binding, launcher, verify = createRuntimeBundleVerifier(binding), getRegisteredProjects }) {
+/** Resume uses the complete selected bundle and its immutable reviewed configuration.
+ * `verified` is the result of `verify()` that the caller has just awaited, so boot does
+ * not stream every harness ledger twice. It must match the binding, otherwise loading fails closed.
+ * Each launch still runs `verify` again. */
+export async function loadNativeRuntimeBundle({ binding, launcher, verify = createRuntimeBundleVerifier(binding), verified, getRegisteredProjects }) {
   if (binding.admission === 'held') throw fail('runtime_bundle_reconciliation_required');
   if (binding.descriptor.generation !== 2) throw fail('native_runtime_generation_mismatch');
-  await verify();
+  if (verified === undefined) await verify();
+  else if (verified?.integrity !== 'verified' || verified.phase !== 'resume'
+    || verified.descriptor?.bundleID !== binding.descriptor.bundleID) throw fail('runtime_bundle_recomposition_required');
   const descriptor = binding.descriptor, launch = descriptor.launch;
   const artifacts = await verifyNativeRuntimeArtifacts({ manifestPath: launch.artifactManifestPath, manifestSha256: launch.artifactManifestSha256, launcher });
   if (artifacts.controller !== launch.controllerBinary || artifacts.writer !== launch.writerBinary) throw fail('native_runtime_artifacts_unverified');

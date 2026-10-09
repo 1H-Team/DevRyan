@@ -67,7 +67,9 @@ export function createOwnedRemoteMcp(options: OwnedRemoteMcpOptions) {
   const origin = Object.freeze({ ...options.registrationOrigin, capabilities: Object.freeze([...options.registrationOrigin.capabilities]) });
   if (origin.kind !== 'native' || !origin.capabilities.includes('network') || !/^[a-f0-9]{64}$/.test(origin.manifestDigest)) throw new Error('Invalid reviewed MCP service origin');
   const configurationOrigins = new Map<string, RegistrationOrigin>();
-  const configurationIDs = new Set(['opencode.config.mcp', 'opencode.mcp.codemode.defaults', 'opencode.provider.opencode']);
+  // 2.0.26 configuration policy only removes servers its `integration.use` policy denies.
+  const policyID = 'opencode.config.policy';
+  const configurationIDs = new Set(['opencode.config.mcp', 'opencode.mcp.codemode.defaults', 'opencode.provider.opencode', policyID]);
   for (const [id, value] of options.reviewedConfigurationOrigins ?? []) {
     if (!configurationIDs.has(id) || value.id !== id || value.kind !== 'native' || !/^[a-f0-9]{64}$/.test(value.manifestDigest))
       throw new Error('Invalid reviewed MCP configuration origin');
@@ -217,7 +219,8 @@ export function createOwnedRemoteMcp(options: OwnedRemoteMcpOptions) {
             editor.set(server, expected.config);
           },
           update: () => { throw new HostRefusal('native_mcp_configuration_sealed', 403, 'mcp.transform'); },
-          remove: () => { throw new HostRefusal('native_mcp_configuration_sealed', 403, 'mcp.transform'); },
+          // Removal only narrows the reviewed catalog; only the policy origin may do it.
+          remove: server => { if (registration.id !== policyID) throw new HostRefusal('native_mcp_configuration_sealed', 403, 'mcp.transform'); editor.remove(server); },
         }));
         openCatalog(location.directory, catalog.acquisitionID);
         return registrationResult;

@@ -17,6 +17,8 @@ for (const [key, value] of Object.entries(privateEnvironment)) {
 
 if (runtime === 'electron') {
     const { app } = await import('electron');
+    // Private QA homes have no login keychain; never access the user's keychain.
+    app.commandLine.appendSwitch('use-mock-keychain');
     const logs = path.join(runtimeRoot, 'logs');
     await mkdir(logs, { recursive: true, mode: 0o700 });
     app.setPath('home', process.env.DEVRYAN_QA_HOME);

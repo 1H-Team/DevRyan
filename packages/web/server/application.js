@@ -181,8 +181,6 @@ import { configureWorktreeBootstrapRuntime } from './lib/git/service.js';
 import { buildGitGenerationTimingRecord } from './lib/git/generation-diagnostics.js';
 import { stripEventDiffContent } from './lib/opencode/diff-summary.js';
 import {
-  OPENCODE_DB_PRELAUNCH_TIME_BUDGET_MS,
-  createOpenCodeDbCompactionScheduler,
   createOpenCodeDbMaintenance,
   normalizeOpenCodeDbMaintenanceSettings,
 } from './lib/opencode/db-maintenance.js';
@@ -194,7 +192,9 @@ const __dirname = path.dirname(__filename);
 const bundleWork = createRuntimeBundleWorkFence();
 const privatePersistence = selectedRuntimeBundle ? await createNativePrivatePersistence(selectedRuntimeBundle) : {};
 const verifySelectedRuntimeBundle = selectedRuntimeBundle ? createRuntimeBundleVerifier(selectedRuntimeBundle, privatePersistence) : null;
-if (verifySelectedRuntimeBundle) await verifySelectedRuntimeBundle();
+// Boot verifies once, before any setup, and passes the result to loadNativeRuntimeBundle.
+// No await separates the two, so a second ledger scan would see the same state.
+const bootVerifiedRuntimeBundle = verifySelectedRuntimeBundle ? await verifySelectedRuntimeBundle() : undefined;
 const configuredDefaultConfigRoot = typeof process.env.DEVRYAN_DEFAULT_CONFIG_ROOT === 'string'
   ? process.env.DEVRYAN_DEFAULT_CONFIG_ROOT.trim()
   : '';
@@ -668,7 +668,7 @@ const resolveCursorSdkAgentDefinitions = async ({ directory, resolveModelSelecti
   return definitions;
 };
 
-const nativeBundle = await loadNativeRuntimeBundle({binding:selectedRuntimeBundle,verify:verifySelectedRuntimeBundle,
+const nativeBundle = await loadNativeRuntimeBundle({binding:selectedRuntimeBundle,verify:verifySelectedRuntimeBundle,verified:bootVerifiedRuntimeBundle,
  launcher:executionArtifacts(path.dirname(selectedRuntimeBundle.descriptor.launch.artifactManifestPath)).launcher,
  getRegisteredProjects:async()=>sanitizeProjects((await readSettingsFromDisk())?.projects) ?? []});
 const executionReadiness={state:'active',diagnostic:null,companion:{version:nativeBundle.artifacts.manifest.opencodeVersion},
@@ -1391,26 +1391,9 @@ const openCodeDbMaintenance = createOpenCodeDbMaintenance({
   dataDir: OPENCHAMBER_DATA_DIR,
   journal: (entry) => harnessRuntime.record(entry),
 });
-const openCodeDbCompactionScheduler = createOpenCodeDbCompactionScheduler();
 const readOpenCodeDbMaintenanceSettings = async () => normalizeOpenCodeDbMaintenanceSettings(
   (await readSettingsFromDisk())?.opencodeDbMaintenance,
 );
-// Runs in the only window where OpenCode's database is not open by the
-// runtime: right before a managed spawn while no managed child exists. The
-// automatic pass is delete-only and time-bounded; Settings → Storage "Compact"
-// schedules a single forced VACUUM pass and restarts OpenCode to reach here.
-const runOpenCodeDbMaintenanceBeforeSpawn = async ({ reason } = {}) => {
-  const forced = openCodeDbCompactionScheduler.consumeForced();
-  const settings = await readOpenCodeDbMaintenanceSettings();
-  if (!forced && !settings.enabled) return;
-  await openCodeDbMaintenance.run({
-    idleHours: settings.idleHours,
-    keepSeqPerAggregate: settings.keepSeqPerAggregate,
-    vacuum: forced ? 'force' : 'never',
-    timeBudgetMs: forced ? null : OPENCODE_DB_PRELAUNCH_TIME_BUDGET_MS,
-    reason: forced ? 'compact' : (typeof reason === 'string' && reason ? reason : 'startup'),
-  });
-};
 
 const userProfileProvisioning = createUserProfileProvisioningRuntime({
   configDirectory: selectedRuntimeBundle?.descriptor.launch.opencodeConfigDirectory, homedir: getRuntimeHome,
@@ -1522,7 +1505,6 @@ const openCodeLifecycleRuntime = createOpenCodeLifecycleRuntime({
     }
   },
   onStartupStatus: (text) => onOpenCodeStartupStatus?.(text),
-  beforeManagedSpawn: runOpenCodeDbMaintenanceBeforeSpawn,
   assertExecutionReady: executionReadiness.assertReady,
 });
 
@@ -2506,9 +2488,6 @@ async function main(options = {}) {
   registerEvidenceRoutes(app, { runtime: evidenceRuntime });
   registerOpenCodeDbMaintenanceRoutes(app, {
     maintenance: openCodeDbMaintenance,
-    scheduler: openCodeDbCompactionScheduler,
-    restartOpenCode: () => restartOpenCode(),
-    isManagedRuntime: () => !(isExternalOpenCode || ENV_SKIP_OPENCODE_START || Boolean(ENV_CONFIGURED_OPENCODE_HOST)),
     readMaintenanceSettings: readOpenCodeDbMaintenanceSettings,
   });
   await harnessInitialization;

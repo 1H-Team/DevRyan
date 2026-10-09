@@ -34,7 +34,7 @@ const canonicalTarget = async (target) => {
   }
 };
 
-export async function prepareQaFixtureProfile({runtimeRoot,workspace,cell,generation,artifactRoot,
+export async function prepareQaFixtureProfile({runtimeRoot,workspace,cell,generation,artifactRoot,thinkingModels,
   prepareNativeProfile = prepareRuntimeUiProfile}) {
   if (cell?.transport !== 'fixture' || cell.providerId !== 'fixture' || cell.modelId !== 'fixture-model'
     || !['web','electron'].includes(cell.runtime) || !['core-journey','mobile'].includes(cell.scenarioId)
@@ -75,7 +75,7 @@ export async function prepareQaFixtureProfile({runtimeRoot,workspace,cell,genera
     desktopWindowState:{width:1280,height:800,maximized:false}}),{mode:0o600});
   // A distinct native agent fallback makes explicit Default/High restoration
   // observable when a later synthetic user omits its variant.
-  const fixture=await createLoopbackOpenCodeFixtureForGeneration(fixtureGeneration,{directory:workspace,agentVariant:modelSelection.variant});
+  const fixture=await createLoopbackOpenCodeFixtureForGeneration(fixtureGeneration,{directory:workspace,agentVariant:modelSelection.variant,thinkingModels});
   let nativeProfile,facade;
   try {
     fixture.seedHistory(PERF_PARENT_SESSION_ID,{turns:180,textBytes:256});

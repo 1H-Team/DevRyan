@@ -114,6 +114,16 @@ file-fsync/rename/parent-fsync sequence. Invalid JSON records are moved to a
 
 ## Operational limits
 
+- Whole-ledger listings must stream. `openChangeStore().records()` yields every
+  `{key, oid, value}` of a snapshot through `gitTokens` plus batched
+  `gitRecords`, ignoring pending writes so callers may `set()` while iterating.
+  Never list a whole tree through `git()`: its stdout cap is 1 MiB, and a ledger
+  with tens of thousands of keys exceeds it (`change_record_too_large` at boot).
+- Mutation ledger size follows the project, not its history, for untouched
+  files: their baseline runs are one content-reference page. Edited documents,
+  operations, leases and calls have no retention horizon yet. Superseded Git
+  trees and pages are pruned after a two-hour grace. See
+  [Concurrent Revert](../../docs/CONCURRENT_REVERT.md).
 - Journal writes are ordered through a bounded O(1) enqueue path. Per-session
   chunks rotate at 4 MiB, the LRU writer pool keeps at most six file
   descriptors open, retention is seven days, and total storage caps at 1 GiB

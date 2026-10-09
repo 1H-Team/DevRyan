@@ -92,3 +92,14 @@ test('queued shell notification uses only its exact immutable settled lease occu
  f.db.set(leaseKey,lease);await f.db.commit();await expect(inspectBundleHarness(f.web,{relocate:true,projectMap:[{sourceDirectory:directory,targetDirectory:directory}],sessionIDs:[sessionID],messageIDs:['msg_source','msg_assistant'],verifiedContinuations:[proof]})).rejects.toMatchObject({code:'bundle_message_reference_lost'});
  f.db.set(leaseKey,{...lease,extra:{notificationID:messageID}});await f.db.commit();await expect(verify([proof])).rejects.toMatchObject({code:'bundle_message_reference_lost'});
 });
+
+test('a ledger whose key listing exceeds 1 MiB inspects and relocates without buffering the listing',async()=>{
+ const f=await fixture({state:'completed',acked:true});let names=0;
+ for(let i=0;i<4200;i++){const key=`files/${String(i).padStart(6,'0')}${'a'.repeat(250)}/x.json`;names+=key.length+1;f.db.set(key,{i});}
+ await f.db.commit();expect(names).toBeGreaterThan(1024*1024);
+ expect((await f.verify()).sessionReferences).toEqual(['ses_removed']);
+ const directory=f.member.directory,key=`files/${String(4199).padStart(6,'0')}${'a'.repeat(250)}/x.json`;
+ await f.verify({relocate:true,checkpointID:'checkpoint',projectMap:[{sourceDirectory:directory,targetDirectory:directory}]});
+ const storage=path.join(f.web,'harness','session-mutations',changeKey(directory)),after=await openChangeStore(storage,path.join(storage,'git'));
+ expect(await after.get(key)).toEqual({i:4199});expect(await after.get('meta.json')).toMatchObject({directory});
+},60_000);

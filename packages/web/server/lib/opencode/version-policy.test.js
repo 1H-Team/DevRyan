@@ -14,7 +14,7 @@ describe('OpenCode version policy', () => {
   });
 
   it('accepts only the reviewed current and rollback versions', () => {
-    expect(SUPPORTED_NATIVE_OPENCODE_VERSIONS).toEqual(['2.0.20', '2.0.24']);
+    expect(SUPPORTED_NATIVE_OPENCODE_VERSIONS).toEqual(['2.0.20', '2.0.24', '2.0.26']);
     expect(Object.isFrozen(SUPPORTED_NATIVE_OPENCODE_VERSIONS)).toBe(true);
   });
 

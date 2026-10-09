@@ -1,29 +1,14 @@
 import React from 'react';
-import { RiDatabase2Line, RiLoaderLine, RiSearchLine } from '@remixicon/react';
+import { RiLoaderLine, RiSearchLine } from '@remixicon/react';
 import { toast } from '@/components/ui';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { useI18n } from '@/lib/i18n';
 import { formatBytes } from '@/lib/formatBytes';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import type { OpenCodeStorageRunSummary, OpenCodeStorageStatus } from '@/lib/api/types';
-import { describeDryRun, describeLastRun, describeRunFailure, formatCount } from './openCodeStorageCopy';
+import { describeDryRun, describeLastRun, formatCount } from './openCodeStorageCopy';
 
-// A forced compaction restarts OpenCode and can VACUUM a multi-GB file; poll
-// the status for a bounded time so the panel refreshes when it lands.
-const COMPACTION_POLL_INTERVAL_MS = 5_000;
-const COMPACTION_POLL_ATTEMPTS = 36;
-
-type OpenCodeStorageBusy = 'idle' | 'dryRun' | 'scheduling' | 'compacting';
-
-const sleep = (ms: number) => new Promise<void>((resolve) => { setTimeout(resolve, ms); });
+type OpenCodeStorageBusy = 'idle' | 'dryRun';
 
 interface OpenCodeStorageSettingsViewProps {
   status: OpenCodeStorageStatus | null;
@@ -32,10 +17,13 @@ interface OpenCodeStorageSettingsViewProps {
   dryRun: OpenCodeStorageRunSummary | null;
   busy: OpenCodeStorageBusy;
   onDryRun: () => void;
-  onCompact: () => void;
 }
 
-/** Presentational half; the container below owns fetching, polling and the confirm dialog. */
+/**
+ * Presentational half; the container below owns fetching and the dry run.
+ * Read-only: DevRyan runs native OpenCode 2, and the OpenCode 1 cleanup only
+ * reports what it would remove (`db-maintenance-routes.js`).
+ */
 export const OpenCodeStorageSettingsView: React.FC<OpenCodeStorageSettingsViewProps> = ({
   status,
   loading,
@@ -43,11 +31,11 @@ export const OpenCodeStorageSettingsView: React.FC<OpenCodeStorageSettingsViewPr
   dryRun,
   busy,
   onDryRun,
-  onCompact,
 }) => {
   const { t } = useI18n();
   const usable = Boolean(status?.exists && status.schema === 'ok');
-  const canCompact = usable && Boolean(status?.managedRuntime) && !status?.compactionPending && !status?.running;
+  // The server recognised a native OpenCode 2 database: nothing to maintain.
+  const nativeV2 = Boolean(status?.exists && status.generation === 2 && status.error === 'v2_database');
 
   let summary: string;
   if (!status) {
@@ -56,6 +44,11 @@ export const OpenCodeStorageSettingsView: React.FC<OpenCodeStorageSettingsViewPr
       : t('settings.openchamber.storage.unavailable', { error });
   } else if (!status.exists) {
     summary = t('settings.openchamber.storage.missing');
+  } else if (nativeV2) {
+    summary = t('settings.openchamber.storage.v2.summary', {
+      size: formatBytes(status.dbBytes),
+      wal: formatBytes(status.walBytes),
+    });
   } else if (status.schema !== 'ok') {
     summary = t('settings.openchamber.storage.schemaMismatch');
   } else {
@@ -89,24 +82,12 @@ export const OpenCodeStorageSettingsView: React.FC<OpenCodeStorageSettingsViewPr
               : <RiSearchLine className="mr-1 h-3.5 w-3.5" />}
             {t('settings.openchamber.storage.actions.dryRun')}
           </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="xs"
-            onClick={onCompact}
-            disabled={busy !== 'idle' || !canCompact}
-            className="!font-normal normal-case"
-          >
-            {busy === 'scheduling' || busy === 'compacting'
-              ? <RiLoaderLine className="mr-1 h-3.5 w-3.5 animate-spin" />
-              : <RiDatabase2Line className="mr-1 h-3.5 w-3.5" />}
-            {busy === 'compacting'
-              ? t('settings.openchamber.storage.actions.compacting')
-              : t('settings.openchamber.storage.actions.compact')}
-          </Button>
         </div>
       </div>
       <p className="typography-meta text-muted-foreground">{summary}</p>
+      {nativeV2 && (
+        <p className="typography-meta text-muted-foreground">{t('settings.openchamber.storage.v2.notNeeded')}</p>
+      )}
       {usable && status && status.orphanEventRows > 0 && (
         <p className="typography-meta text-muted-foreground">
           {t('settings.openchamber.storage.orphans', { count: formatCount(status.orphanEventRows) })}
@@ -121,15 +102,6 @@ export const OpenCodeStorageSettingsView: React.FC<OpenCodeStorageSettingsViewPr
       {status?.running && (
         <p className="typography-meta text-muted-foreground">{t('settings.openchamber.storage.running')}</p>
       )}
-      {status?.compactionPending && (
-        <p className="typography-meta text-muted-foreground">{t('settings.openchamber.storage.pending')}</p>
-      )}
-      {status && status.maintenance?.enabled === false && (
-        <p className="typography-meta text-muted-foreground">{t('settings.openchamber.storage.autoDisabled')}</p>
-      )}
-      {status && !status.managedRuntime && (
-        <p className="typography-meta text-muted-foreground">{t('settings.openchamber.storage.external')}</p>
-      )}
       {status && error && (
         <p className="typography-meta text-destructive">{error}</p>
       )}
@@ -139,7 +111,7 @@ export const OpenCodeStorageSettingsView: React.FC<OpenCodeStorageSettingsViewPr
 
 /**
  * Settings → Data Retention → OpenCode Storage. Rendered only when the
- * runtime's diagnostics API exposes the storage members (web/Electron); the
+ * runtime's diagnostics API exposes the storage members (web/Electron).
  */
 export const OpenCodeStorageSettings: React.FC = () => {
   const { t } = useI18n();
@@ -150,7 +122,6 @@ export const OpenCodeStorageSettings: React.FC = () => {
   const [error, setError] = React.useState<string | null>(null);
   const [dryRun, setDryRun] = React.useState<OpenCodeStorageRunSummary | null>(null);
   const [busy, setBusy] = React.useState<OpenCodeStorageBusy>('idle');
-  const [confirmOpen, setConfirmOpen] = React.useState(false);
   const mountedRef = React.useRef(true);
 
   React.useEffect(() => {
@@ -198,95 +169,16 @@ export const OpenCodeStorageSettings: React.FC = () => {
     }
   }, [busy, diagnostics, t]);
 
-  const compact = React.useCallback(async () => {
-    if (!diagnostics?.compactOpenCodeStorage || busy !== 'idle') return;
-    setBusy('scheduling');
-    const previousRunAt = status?.lastRun?.at ?? null;
-    try {
-      const result = await diagnostics.compactOpenCodeStorage({});
-      setConfirmOpen(false);
-      if (!result.scheduled) {
-        throw new Error(t('settings.openchamber.storage.toast.compactFailed'));
-      }
-      toast.message(t('settings.openchamber.storage.toast.scheduled'));
-      if (mountedRef.current) {
-        setBusy('compacting');
-        setDryRun(null);
-      }
-      for (let attempt = 0; attempt < COMPACTION_POLL_ATTEMPTS && mountedRef.current; attempt += 1) {
-        await sleep(COMPACTION_POLL_INTERVAL_MS);
-        const next = await refresh();
-        const landed = Boolean(
-          next
-          && !next.compactionPending
-          && !next.running
-          && next.lastRun
-          && !next.lastRun.dryRun
-          && next.lastRun.at !== previousRunAt,
-        );
-        if (landed && next?.lastRun) {
-          if (next.lastRun.status === 'ok') {
-            toast.success(t('settings.openchamber.storage.toast.completed'), {
-              description: t('settings.openchamber.storage.toast.completedDescription', {
-                events: formatCount(next.lastRun.deletedEvents),
-                before: formatBytes(next.lastRun.before?.dbBytes ?? 0),
-                after: formatBytes(next.lastRun.after?.dbBytes ?? 0),
-              }),
-            });
-          } else {
-            toast.error(t('settings.openchamber.storage.toast.compactFailed'), {
-              description: describeRunFailure(t, next.lastRun.error),
-            });
-          }
-          break;
-        }
-      }
-    } catch (cause) {
-      toast.error(t('settings.openchamber.storage.toast.compactFailed'), {
-        description: cause instanceof Error ? cause.message : undefined,
-      });
-    } finally {
-      if (mountedRef.current) setBusy('idle');
-    }
-  }, [busy, diagnostics, refresh, status, t]);
-
   if (!available) return null;
 
   return (
-    <>
-      <OpenCodeStorageSettingsView
-        status={status}
-        loading={loading}
-        error={error}
-        dryRun={dryRun}
-        busy={busy}
-        onDryRun={() => { void runDryRun(); }}
-        onCompact={() => setConfirmOpen(true)}
-      />
-      <Dialog open={confirmOpen} onOpenChange={(open) => { if (busy === 'idle') setConfirmOpen(open); }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>{t('settings.openchamber.storage.dialog.title')}</DialogTitle>
-            <DialogDescription>
-              {t('settings.openchamber.storage.dialog.description', {
-                hours: formatCount(status?.maintenance?.idleHours ?? 24),
-                keep: formatCount(status?.maintenance?.keepSeqPerAggregate ?? 64),
-                reclaimable: formatBytes(status?.reclaimableBytes ?? 0),
-              })}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmOpen(false)} disabled={busy !== 'idle'}>
-              {t('settings.common.actions.cancel')}
-            </Button>
-            <Button variant="destructive" onClick={() => { void compact(); }} disabled={busy !== 'idle'}>
-              {busy === 'scheduling'
-                ? t('settings.openchamber.storage.actions.compacting')
-                : t('settings.openchamber.storage.dialog.confirm')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+    <OpenCodeStorageSettingsView
+      status={status}
+      loading={loading}
+      error={error}
+      dryRun={dryRun}
+      busy={busy}
+      onDryRun={() => { void runDryRun(); }}
+    />
   );
 };

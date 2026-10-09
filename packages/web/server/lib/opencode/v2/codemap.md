@@ -2,14 +2,15 @@
 
 ## Ownership and evidence
 
-This directory adapts pinned OpenCode 2.0.24 responses to the existing DevRyan
+This directory adapts pinned OpenCode 2.0.26 responses to the existing DevRyan
 application contract. It does not implement the native execution host or certify
 plugin, confinement, migration or performance parity. The remaining gates are in
 [the upgrade plan](../../../../../../docs/OPENCODE_V2_AGENT_UPGRADE_PLAN.md).
 
 - `route-policy.js` classifies every operation from `routes.generated.js` by
   audience, validates body-dependent privilege and rejects unknown routes.
-  The 2.0.24 repository-init endpoint stays denied; the new session `parentID`
+  The repository-init endpoint and the 2.0.26 external integration connect
+  endpoint stay denied; the session `parentID`
   body field cannot bypass managed child-session ownership. Historic 2.0.20
   vectors remain labeled with the runtime that produced them.
   `openapi-routes.js` checks the readiness document against that pinned table.

@@ -17,7 +17,7 @@ afterEach(async () => { for (const root of roots.splice(0)) await fs.rm(root, { 
 
 async function fixture({ unknownController = false, unsettledController = false, failDrain = false, drainFailures = 0, failProjection = false,
   failRestart = false, failQuiesce = false, failCapture = false, failRetain = false, failStore = null, reconciliationRequired = false,
-  retainCheckpoint, beforeReadSelected, beforeDrain } = {}) {
+  retainCheckpoint, beforeReadSelected, beforeDrain, neverStarted = false, assertOwner } = {}) {
   const root = await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()), 'runtime-bundle-lifecycle-')); roots.push(root);
   const launch = { opencodeDatabasePath: path.join(root, 'a.db'), webDataDirectory: path.join(root, 'web'),
     webConfigDirectory: path.join(root, 'web-config'), opencodeConfigDirectory: path.join(root, 'config'),
@@ -86,11 +86,11 @@ async function fixture({ unknownController = false, unsettledController = false,
     };
   };
   const restart = vi.fn(async () => { events.push('restart'); if (failRestart) throw new Error('host refused restart'); });
-  const lifecycle = createRuntimeBundleLifecycle({ binding, artifactDirectory, verifyArtifacts, credentialProcess, storeFactory, retainCheckpoint,
+  const lifecycle = createRuntimeBundleLifecycle({ binding, artifactDirectory, verifyArtifacts, credentialProcess, storeFactory, retainCheckpoint, neverStarted,
     retainArtifacts: async () => { events.push('retain'); if (failRetain) throw injected('bundle_retain_failed'); return retained; }, requestRecomposition: restart,
     getController: () => unknownController ? null : controller,
     closeAdmission: async () => { events.push('admission-close'); gate.close(); },
-    assertAdmissionClosed: async () => gate.assertClosed(),
+    assertAdmissionClosed: async () => { gate.assertClosed(); await assertOwner?.(); },
     stopProducers: async () => { events.push('producers-stop'); },
     beforeControllerStop: async () => { events.push('credentials-drain'); },
     afterExit: async () => { events.push('owner-close'); },
@@ -128,6 +128,22 @@ test.each([
   await expect(value.lifecycle.upgrade({ expectedRevision: 1 })).rejects.toMatchObject({ code });
   expect(value.events).not.toContain('prepare'); expect(value.events).not.toContain('select');
   expect(await value.lifecycle.inspect()).toMatchObject({ state: 'held', revision: 1, reason: code });
+});
+
+test('a never-started cold owner upgrades without a controller and every held step re-proves its owner', async () => {
+  let proofs = 0, foreign = false;
+  const value = await fixture({ unknownController: true, neverStarted: true,
+    assertOwner: async () => { proofs++; if (foreign) throw Object.assign(new Error('owned'), { code: 'bundle_upgrade_owner_active' }); } });
+  const result = await value.lifecycle.upgrade({ expectedRevision: 1 });
+  expect(result).toMatchObject({ state: 'restart_required', previousBundleID: 'A', revision: 2 });
+  expect(value.events).toEqual(['retain', 'admission-close', 'producers-stop', 'credentials-drain', 'execution-drain', 'owner-close',
+    'stores-drain', 'prepare', 'capture', 'capture', 'select']);
+  expect(proofs).toBeGreaterThan(3);
+  const refused = await fixture({ unknownController: true, neverStarted: true,
+    assertOwner: async () => { if (foreign) throw Object.assign(new Error('owned'), { code: 'bundle_upgrade_owner_active' }); } });
+  foreign = true;
+  await expect(refused.lifecycle.upgrade({ expectedRevision: 1 })).rejects.toMatchObject({ code: 'bundle_upgrade_owner_active' });
+  expect(refused.events).not.toContain('prepare'); expect(refused.events).not.toContain('select');
 });
 
 test('incompatible credential rollback preserves both identities and publishes held recovery', async () => {

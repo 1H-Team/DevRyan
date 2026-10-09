@@ -1,10 +1,10 @@
 // Reads the OpenCode 2.x OpenAPI document into a flat, sorted operation table.
 // Shared by the build-time generator (scripts/generate-opencode-v2-routes.mjs),
-// which renders `routes.generated.js` from the vendored `openapi-2.0.24.json`,
+// which renders `routes.generated.js` from the vendored `openapi-2.0.26.json`,
 // and by the runtime drift check (`diffLiveSpec` in route-policy.js), which
 // compares a live host's `/openapi.json` with that table. Pure: no I/O.
 
-export const OPENCODE_V2_OPENAPI_VERSION = '2.0.24';
+export const OPENCODE_V2_OPENAPI_VERSION = '2.0.26';
 export const OPENCODE_V2_OPENAPI_FILENAME = `openapi-${OPENCODE_V2_OPENAPI_VERSION}.json`;
 export const OPENCODE_V2_ROUTES_GENERATED_FILENAME = 'routes.generated.js';
 

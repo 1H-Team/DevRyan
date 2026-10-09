@@ -2,6 +2,8 @@ import type {BunPlugin} from 'bun';
 export const NATIVE_ASSET_SOURCE_SHA:Readonly<Record<'pty'|'photon',string>>;
 export function rewriteNativeAsset(kind:'pty'|'photon',source:Uint8Array,options?:{assetPath?:string;assetSha256?:string}):string;
 export function rewriteSealedNodeRequire(source:string):string;
+export const NATIVE_AGENT_DEFAULTS_SOURCE_SHA256:string;
+export function rewriteNativeAgentDefaults(source:Uint8Array):string;
 export function rewriteUnavailableNativePty(source:Uint8Array):string;
 export const REVIEWED_PONYTAIL_MODULE:'devryan:reviewed-ponytail-instructions';
 export const REVIEWED_AST_FILENAME:'DevRyan-ast-grep-darwin-arm64';

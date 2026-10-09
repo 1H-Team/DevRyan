@@ -18,14 +18,18 @@ const cloneContract = 'devryan-v2-clone/1';
 const finiteCode = error => /^bundle_[a-z0-9_]{1,100}$/.test(error?.code ?? '') ? error.code : 'bundle_lifecycle_failed';
 const selectedMatches = (binding, current) => current?.selection.revision === binding.selection.revision
   && current.selection.selectedBundleID === binding.descriptor.bundleID;
+/** The candidate an upgrade from `revision` to the retained manifest prepares. */
+export const nativeUpgradeBundleID = (manifestSha256, revision) => `native-${manifestSha256.slice(0, 24)}-r${revision}`;
 
 /** The application supplies the original live owner and all host drains. No
- * caller may choose a controller, source path, checkpoint or credential value. */
+ * caller may choose a controller, source path, checkpoint or credential value.
+ * `neverStarted` is only for the cold startup owner, which has no controller
+ * and proves the absence of any other live owner through assertAdmissionClosed. */
 export function createRuntimeBundleLifecycle({ binding, getController, closeAdmission, assertAdmissionClosed,
   stopProducers, drainStores, executionHost, afterExit, beforeControllerStop, requestRecomposition,
   artifactDirectory = executionArtifacts().directory, verifyArtifacts = verifyNativeRuntimeArtifacts,
   credentialProcess = runNativeBundleCredentialProcess, storeFactory = createRuntimeBundleStore,
-  retainArtifacts = retainNativeArtifacts, retainCheckpoint, privatePersistence={} }) {
+  retainArtifacts = retainNativeArtifacts, retainCheckpoint, privatePersistence={}, neverStarted = false }) {
   if (retainCheckpoint !== undefined && typeof retainCheckpoint !== 'function') throw fail('bundle_checkpoint_grant_invalid');
   // Permanent for this process: the application admission gate never reopens
   // after a checkpoint starts closing it, so neither may the lifecycle.
@@ -33,7 +37,7 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
   const checkpoint = createRuntimeBundleCheckpoint({ ownerID: binding.descriptor.bundleID, generation: 2,
     launch: binding.descriptor.launch, getController, assertAdmissionClosed,
     closeAdmission: () => { checkpointHeld = true; state = 'held'; return closeAdmission(); },
-    stopProducers, drainStores, executionHost, afterExit, beforeControllerStop });
+    stopProducers, drainStores, executionHost, afterExit, beforeControllerStop, neverStarted });
   let state = binding.selection.reconciliationRequired ? 'held' : 'ready';
   let reason = state === 'held' ? 'bundle_rollback_reconciliation_required' : null;
   let transition;
@@ -165,7 +169,7 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
       captureArtifacts = original.manifest.opencodeVersion === retained.manifest.opencodeVersion
         && original.manifest.inputs.coreDigest === retained.manifest.inputs.coreDigest
         ? { manifestPath: retained.manifestPath, manifestSha256: retained.manifestSha256 } : undefined;
-      const bundleID = `native-${retained.manifestSha256.slice(0, 24)}-r${current.selection.revision}`;
+      const bundleID = nativeUpgradeBundleID(retained.manifestSha256, current.selection.revision);
       await store.prepare({ bundleID, generation: 2, source: { kind: 'bundle', bundleID: current.descriptor.bundleID },
         projectMap: current.descriptor.projectMap, auxiliary: { kind: 'absent' }, launchArtifacts });
       return store.select({ bundleID, expectedRevision: input.expectedRevision });

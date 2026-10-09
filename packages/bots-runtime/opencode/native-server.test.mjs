@@ -64,7 +64,7 @@ test('API-key native Bot startup, structured requests, cancellation, persistence
   try {
     runtime = await createBotNativeServer(options);
     expect((await request('/devryan/ready', undefined, false)).status).toBe(401);
-    expect(await (await request('/devryan/ready')).json()).toEqual({ ready: true, generation: 2, opencode: { version: '2.0.24' } });
+    expect(await (await request('/devryan/ready')).json()).toEqual({ ready: true, generation: 2, opencode: { version: '2.0.26' } });
     expect((await request('/api/credential')).status).toBe(404);
     expect((await request('/api/provider?directory=/other')).status).toBe(400);
     expect((await request('/api/provider?location[directory]=/other')).status).toBe(400);

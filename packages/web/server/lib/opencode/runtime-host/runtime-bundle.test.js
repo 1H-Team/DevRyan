@@ -19,6 +19,10 @@ import { readRuntimeBundleBinding, getRuntimeHome } from './runtime-bundle-bindi
 import { git } from '../../../../../harness-runtime/lib/session-changes-git.js';
 import { openChangeStore, changeKey } from '../../../../../harness-runtime/lib/session-changes-store.js';
 import { createMigrationFixture, assertMigratedFixture } from '../../../../../../scripts/opencode-v2-native/migration-fixture.mjs';
+import { REVIEWED_NATIVE_CLONE_RELEASES } from './native-bundle-compatibility.js';
+import { nativeUpgradeBundleID } from './runtime-bundle-lifecycle.js';
+import { readStartupBundleUpgradeFailure, recordStartupBundleUpgradeFailure } from './bundle-startup-upgrade-status.js';
+import { TARGET_OPENCODE_VERSION } from '../version-policy.js';
 
 const execute=promisify(execFile), roots=[];
 // Store composition seam; native-bundle-credentials.test.ts exercises the
@@ -817,6 +821,81 @@ test('a selected unheld launch prunes unreferenced artifact sets, sweeps drafts 
  await expect(createRuntimeBundleStore({controlRoot,allowRecoveredInputStartup:true,runMigration:async()=>{throw Error('fixture no migration');},
   withQuiescedSource:async()=>{throw Error('fixture no checkpoint');},verifyArtifacts:async()=>{}}).verify({bundleID:'default-native',phase:'resume'})).resolves.toMatchObject({integrity:'verified'});
 });
+// Release fixtures with the reviewed core graphs; launches verify only manifest bytes.
+const pinnedRelease=async(f,version)=>{
+ const directory=path.join(f.root,'pinned-'+version),files=[];await fs.mkdir(directory);
+ for(const name of ['DevRyan-controller','DevRyan-writer']){const bytes=Buffer.from(`fixture ${name} ${version}\n`);await fs.writeFile(path.join(directory,name),bytes);await fs.chmod(path.join(directory,name),0o755);
+  files.push({path:name,sha256:sha256(bytes),size:bytes.length,mode:0o755});}
+ await fs.writeFile(path.join(directory,'native-bundle.json'),JSON.stringify({schema:1,opencodeVersion:version,files,
+  inputs:{reviewedPlugins:[],coreDigest:REVIEWED_NATIVE_CLONE_RELEASES[version]??'0'.repeat(64)},
+  compiledContracts:['devryan-v2-clone/1',NATIVE_BUNDLE_CREDENTIAL_CONTRACT,'devryan.bundle.credential-owners/2']})+'\n');return directory;
+};
+const launchPinned=async(f,home,artifactDirectory,credentialProcess)=>{
+ const {provisionDefaultNativeBundle}=await import('./native-default-bundle.js');await fs.mkdir(home,{recursive:true});
+ return provisionDefaultNativeBundle({env:{PATH:process.env.PATH},home,cwd:f.seed.projectMap[0].targetDirectory,artifactDirectory,runMigration:f.runMigration,credentialProcess,
+  verifyArtifacts:async({manifestPath,manifestSha256,launcher})=>{const directory=path.dirname(manifestPath);return {directory,manifestPath,manifestSha256,launcher,
+   controller:path.join(directory,'DevRyan-controller'),writer:path.join(directory,'DevRyan-writer'),manifest:JSON.parse(await fs.readFile(manifestPath,'utf8'))};}});
+};
+const startupUpgradeFixture=async name=>{
+ const f=await fixture(),home=path.join(f.root,name),older=await pinnedRelease(f,'2.0.20'),pinned=await pinnedRelease(f,TARGET_OPENCODE_VERSION);
+ const captures=[];
+ const credentialProcess=async({descriptor,action,assertHeld})=>{await assertHeld();expect(action.action).toBe('capture');captures.push(descriptor.bundleID);return captureCredentials();};
+ const controlRoot=await launchPinned(f,home,older);recordStartupBundleUpgradeFailure(null);
+ return {f,home,older,pinned,controlRoot,captures,credentialProcess,launch:(release,process=credentialProcess)=>launchPinned(f,home,release,process),
+  binding:()=>readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot})};
+};
+test('default startup upgrades a selected bundle below the version pin through the cold lifecycle and keeps it for rollback',async()=>{
+ const u=await startupUpgradeFixture('startup-upgrade-home'),before=u.binding();
+ expect(before.descriptor.bundleID).toBe('default-native');
+ const db=resolveSqliteDriver().open(before.descriptor.launch.opencodeDatabasePath,{readonly:true});
+ let sessions;try{sessions=db.prepare('SELECT id FROM session_v2 ORDER BY id').all();}finally{db.close();}
+ expect(await u.launch(u.pinned)).toBe(u.controlRoot);
+ const after=u.binding(),shipped=sha256(await fs.readFile(path.join(u.pinned,'native-bundle.json')));
+ expect(after.selection).toMatchObject({revision:2,selectedBundleID:nativeUpgradeBundleID(shipped,1),previousBundleID:'default-native',transition:'activate',reconciliationRequired:false});
+ expect(after.descriptor).toMatchObject({sourceBundleID:'default-native',launch:{artifactManifestSha256:shipped}});
+ expect(u.captures).toEqual(['default-native','default-native']);expect(readStartupBundleUpgradeFailure()).toBe(null);
+ const copied=resolveSqliteDriver().open(after.descriptor.launch.opencodeDatabasePath,{readonly:true});
+ try{expect(copied.prepare('SELECT id FROM session_v2 ORDER BY id').all()).toEqual(sessions);}finally{copied.close();}
+ // The rollback target and its retained artifacts stay; a later launch is a no-op.
+ expect(await fs.stat(before.descriptor.launch.opencodeDatabasePath).then(stat=>stat.isFile())).toBe(true);
+ expect((await fs.readdir(path.join(u.controlRoot,'artifacts'))).filter(name=>/^[a-f0-9]{64}$/.test(name))).toHaveLength(2);
+ expect(await u.launch(u.pinned,async()=>{throw Error('current selection never upgrades again');})).toBe(u.controlRoot);
+ expect(u.binding().selection.revision).toBe(2);
+},60_000);
+test('default startup never upgrades while another process owns the selected bundle and reports the refusal',async()=>{
+ const u=await startupUpgradeFixture('startup-owner-home'),launch=u.binding().descriptor.launch;
+ const lock=path.join(launch.webDataDirectory,'orchestration','owner.lock');await fs.mkdir(path.dirname(lock),{recursive:true});
+ await fs.writeFile(lock,JSON.stringify({version:1,token:'t'.repeat(32),pid:process.pid,acquiredAt:Date.now()}));
+ expect(await u.launch(u.pinned)).toBe(u.controlRoot);
+ expect(u.binding().selection).toMatchObject({revision:1,selectedBundleID:'default-native'});
+ expect(readStartupBundleUpgradeFailure()).toBe('bundle_upgrade_owner_active');expect(u.captures).toEqual([]);
+ await fs.rm(lock);
+ const registry=path.join(launch.global.state,'managed-opencode-processes.json');
+ await fs.writeFile(registry,JSON.stringify({version:2,processes:[{childPid:process.pid,ownerPid:process.pid,port:null,binary:launch.controllerBinary,startedAt:Date.now()}]}));
+ recordStartupBundleUpgradeFailure(null);expect(await u.launch(u.pinned)).toBe(u.controlRoot);
+ expect(u.binding().selection.revision).toBe(1);expect(readStartupBundleUpgradeFailure()).toBe('bundle_upgrade_owner_active');
+ await fs.rm(registry);recordStartupBundleUpgradeFailure(null);
+ expect(await u.launch(u.pinned)).toBe(u.controlRoot);expect(u.binding().selection.revision).toBe(2);
+},60_000);
+test('default startup never downgrades and never upgrades to an unpinned shipped version',async()=>{
+ const u=await startupUpgradeFixture('startup-pin-home');
+ expect(await u.launch(await pinnedRelease(u.f,'2.0.24'))).toBe(u.controlRoot);
+ expect(u.binding().selection.revision).toBe(1);expect(readStartupBundleUpgradeFailure()).toBe('bundle_upgrade_unavailable');
+ const newer=await startupUpgradeFixture('startup-newer-home');
+ const {upgradeSelectedNativeBundleAtStartup}=await import('./native-bundle-startup-upgrade.js');
+ const refused=await upgradeSelectedNativeBundleAtStartup({controlRoot:newer.controlRoot,env:{DEVRYAN_QA_OPENCODE_VERSION:'2.0.19'},artifactDirectory:await pinnedRelease(newer.f,'2.0.19'),
+  createLifecycle:()=>{throw Error('a newer selected runtime is never replaced');},log:{}});
+ expect(refused).toEqual({status:'failed',code:'bundle_runtime_newer_than_application'});expect(newer.binding().selection.revision).toBe(1);
+},60_000);
+test('a startup upgrade killed during its copy leaves an unsealed candidate that the next launch replaces',async()=>{
+ const u=await startupUpgradeFixture('startup-interrupted-home'),shipped=sha256(await fs.readFile(path.join(u.pinned,'native-bundle.json')));
+ const candidate=path.join(u.controlRoot,'bundles',nativeUpgradeBundleID(shipped,1));
+ await fs.mkdir(path.join(candidate,'web-data'),{recursive:true,mode:0o700});await fs.writeFile(path.join(candidate,'web-data','partial'),'interrupted copy');
+ expect(await u.launch(u.pinned)).toBe(u.controlRoot);
+ expect(u.binding().selection).toMatchObject({revision:2,selectedBundleID:nativeUpgradeBundleID(shipped,1)});
+ expect(await fs.stat(path.join(candidate,'web-data','partial')).catch(error=>error.code)).toBe('ENOENT');
+ expect((await fs.readdir(path.join(u.controlRoot,'bundles'))).filter(name=>name.startsWith('.stale-'))).toEqual([]);
+},60_000);
 test('fresh default startup seeds the global OpenCode config directory under an OPENCODE_CONFIG_DIR layer',async()=>{
  const f=await fixture(),home=path.join(f.root,'layered-home'),release=await releaseArtifacts(f,'A'),global=path.join(home,'.config','opencode'),overlay=path.join(f.root,'layered-overlay');
  for(const [file,text] of [[path.join(global,'agents','g.md'),'global'],[path.join(global,'agents','shared.md'),'global'],[path.join(overlay,'agents','shared.md'),'overlay'],[path.join(overlay,'agents','o.md'),'overlay']]){

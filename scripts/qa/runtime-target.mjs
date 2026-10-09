@@ -16,7 +16,7 @@ export function resolveQaFixtureGeneration(generation, target = resolveQaTargetO
   if (generation !== undefined) return resolveLoopbackOpenCodeFixtureGeneration(generation);
   const base = typeof target?.version === 'string' ? openCodeBaseVersion(target.version) : '';
   if (SUPPORTED_NATIVE_OPENCODE_VERSIONS.includes(base)) return 2;
-  throw new Error('QA fixture target must name the verified 2.0.20 or 2.0.24 transport, or explicitly select generation 2');
+  throw new Error('QA fixture target must name the verified 2.0.20, 2.0.24 or 2.0.26 transport, or explicitly select generation 2');
 }
 
 // Compare the exact native runtime release, permitting its branded build suffix.

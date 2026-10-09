@@ -83,7 +83,7 @@ test('manual/natural adapters use native evidence and never fall back to v1 life
   assert.equal(findNaturalCompactionBoundaries(auto.rows, { ...input, version: '2.0.20', observations: auto.observations, nativeObservationScope: input })[0].thresholdReached, true);
   assert.deepEqual(findNaturalCompactionBoundaries(auto.rows, { ...input, version: '2.0.20', observations: auto.observations }), []);
   assert.equal(readQaNativeCompactionPolicy(auto.observations, input).threshold, 800);
-  for (const version of ['2.0.20', '2.0.24']) assert.equal(readQaNativeCompactionPolicy(auto.observations, { ...input, version }).version, version);
+  for (const version of ['2.0.20', '2.0.24', '2.0.26']) assert.equal(readQaNativeCompactionPolicy(auto.observations, { ...input, version }).version, version);
   assert.throws(() => readQaNativeCompactionPolicy(auto.observations, { ...input, version: '2.0.21' }), { code: 'qa_native_compaction_evidence_unavailable' });
   assert.throws(() => readQaNativeCompactionPolicy(auto.observations, { ...input, directory: '/foreign' }), { code: 'qa_native_compaction_evidence_unavailable' });
 });

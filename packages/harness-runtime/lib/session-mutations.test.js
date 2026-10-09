@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, spyOn, test as bunTest } from 'bun:test';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -992,7 +992,11 @@ async function ledgerState(f) {
   for await (const { value } of db.entries('files')) {
     if (!value.published) continue;
     let revisions = 0; for await (const _ of db.list(`revisions/${value.id}`)) revisions += 1;
-    const text = []; for await (const run of db.list(`runs/${value.id}`)) text.push(Buffer.from(run.bytes, 'base64').toString('latin1'));
+    const text = [];
+    for await (const { value: page } of db.entries(`runs/${value.id}`)) {
+      if (!Array.isArray(page)) { text.push((await fs.readFile(path.join(root, 'objects', page.baseline))).toString('latin1')); continue; }
+      for (const run of page) text.push(Buffer.from(run.bytes, 'base64').toString('latin1'));
+    }
     state[value.published.path] = { hash: value.published.hash, mode: value.published.mode, deleted: Boolean(value.published.deleted), revisions, text: text.join('') };
   }
   return state;
@@ -1107,7 +1111,10 @@ test('record caching is invisible: edits, reverts and outcomes match with the ca
 });
 
 test('background packing keeps the ledger exact, including while a call runs concurrently', async () => {
-  const f = await fixture({ maintenance: { looseObjects: 5, packs: 2, commits: 1_000, pruneExpiry: 'now' } });
+  // The concurrent run keeps the production prune grace: a grace of 'now'
+  // may remove a running call's not yet published objects.
+  const limits = { looseObjects: 5, packs: 2, commits: 1_000 };
+  const f = await fixture({ maintenance: limits });
   await manyFiles(f, 60);
   const root = path.join(f.storage, changeKey(await fs.realpath(f.directory)));
   const objects = async () => Object.fromEntries((await git(root, ['--git-dir', path.join(root, 'git'), 'count-objects', '-v'])).toString()
@@ -1127,7 +1134,7 @@ test('background packing keeps the ledger exact, including while a call runs con
   // First run packs loose objects; a concurrent call must be unaffected.
   const [, concurrent] = await Promise.all([f.runtime.maintainLedger({ directory: f.directory }), call(1, 'd1/e1/f1.txt')]);
   expect(concurrent).toEqual([{ path: 'd1/e1/f1.txt', status: 'modified' }]);
-  await f.runtime.maintainLedger({ directory: f.directory });
+  await createSessionMutationRuntime({ directory: f.storage, maintenance: { ...limits, pruneExpiry: 'now' } }).maintainLedger({ directory: f.directory });
   const packed = await objects();
   expect(packed.packs).toBeGreaterThanOrEqual(1);
   // Consolidation and prune leave every reachable record readable.
@@ -1151,6 +1158,137 @@ test('packing can be switched off', async () => {
   const root = path.join(f.storage, changeKey(await fs.realpath(f.directory)));
   const stats = (await git(root, ['--git-dir', path.join(root, 'git'), 'count-objects', '-v'])).toString();
   expect(stats).toMatch(/^packs: 0$/m);
+});
+
+test('maintenance prunes superseded loose objects without waiting for pack consolidation', async () => {
+  const f = await fixture({ maintenance: { looseObjects: 5, packs: 1_000, commits: 1_000, pruneExpiry: 'now' } });
+  await manyFiles(f, 30);
+  const root = path.join(f.storage, changeKey(await fs.realpath(f.directory))), gitDir = path.join(root, 'git');
+  for (const index of [0, 1, 2]) {
+    const lease = await f.begin('s', `p${index}`, `c${index}`);
+    await fs.writeFile(path.join(lease.viewDirectory, 'd0/e0/f0.txt'), `edit ${index}\n`);
+    await f.finish(lease);
+  }
+  const unreachable = async () => (await git(root, ['--git-dir', gitDir, 'prune', '--dry-run', '--expire=now'])).toString().trim();
+  expect(await unreachable()).not.toBe('');
+  const before = await ledgerState(f);
+  await f.runtime.maintainLedger({ directory: f.directory });
+  expect(await unreachable()).toBe('');
+  expect((await git(root, ['--git-dir', gitDir, 'count-objects', '-v'])).toString()).toMatch(/^count: 0$/m);
+  expect(await ledgerState(f)).toEqual(before);
+  await f.revert('s', 'p2');
+  expect(await f.read('d0/e0/f0.txt')).toBe('edit 1\n');
+});
+
+describe('baseline content references', () => {
+  const documents = async (f) => {
+    const root = path.join(f.storage, changeKey(await fs.realpath(f.directory)));
+    const db = await openChangeStore(root, path.join(root, 'git')), byPath = {};
+    for await (const { value } of db.entries('files')) {
+      if (!value.published) continue;
+      const pages = [];
+      for await (const { key, value: page } of db.entries(`runs/${value.id}`)) pages.push({ key: key.slice(key.lastIndexOf('/') + 1), page });
+      byPath[value.published.path] = { id: value.id, pages };
+    }
+    return { root, db, byPath };
+  };
+  const sha = (text) => createHash('sha256').update(text).digest('hex');
+  // Longer than one 32 KiB inline row, with multibyte text across a row boundary.
+  const large = `${'α'.repeat(20_000)}\nmiddle\n${'ω'.repeat(20_000)}\n`;
+
+  test('untouched baselines store one content reference; edits, Revert and old hosts stay exact', async () => {
+    const scenario = async () => {
+      const f = await fixture();
+      await f.write('large.txt', large); await f.write('small.txt', 'one\ntwo\n'); await f.write('empty.txt', '');
+      const a = await f.begin('s', 'p1', 'c1');
+      await fs.writeFile(path.join(a.viewDirectory, 'small.txt'), 'one\n2\n');
+      await f.finish(a);
+      const b = await f.begin('s', 'p2', 'c2');
+      await fs.writeFile(path.join(b.viewDirectory, 'large.txt'), large.replace('middle', 'center'));
+      await f.finish(b);
+      const edited = { state: await ledgerState(f), large: await f.read('large.txt'), small: await f.read('small.txt') };
+      await f.revert('s', 'p2');
+      const reverted = { large: await f.read('large.txt'), small: await f.read('small.txt') };
+      await f.revert('s', 'p1');
+      return { f, outcome: { edited, reverted, original: { large: await f.read('large.txt'), small: await f.read('small.txt') }, state: await ledgerState(f) } };
+    };
+    const { f, outcome } = await scenario();
+    const { outcome: inline } = await withEnv({ DEVRYAN_LEDGER_BASELINE_REFS: '0' }, scenario);
+    expect(outcome).toEqual(inline);
+    expect(outcome.edited.large).toBe(large.replace('middle', 'center'));
+    expect(outcome.reverted).toEqual({ large, small: 'one\n2\n' });
+    expect(outcome.original).toEqual({ large, small: 'one\ntwo\n' });
+
+    const fresh = await fixture(); await fresh.write('large.txt', large); await fresh.write('empty.txt', '');
+    await fresh.finish(await fresh.begin('s', 'p1', 'c1'));
+    const { db, byPath } = await documents(fresh);
+    expect(byPath['large.txt'].pages).toEqual([{ key: '0000000000.json', page: { baseline: sha(large), size: Buffer.byteLength(large) } }]);
+    expect(byPath['empty.txt'].pages).toEqual([]);
+    // A host predating references reads runs as arrays and fails closed.
+    await expect((async () => { for await (const _ of db.list(`runs/${byPath['large.txt'].id}`)); })())
+      .rejects.toMatchObject({ code: 'invalid_change_record' });
+    // Edited documents keep granular inline runs.
+    expect((await documents(f)).byPath['large.txt'].pages.every(({ page }) => Array.isArray(page))).toBe(true);
+  }, 600_000);
+
+  test('maintenance compacts inline baselines in place; pinned leases and concurrent edits stay exact', async () => {
+    const f = await fixture({ maintenance: { looseObjects: 1_000_000, packs: 1_000, commits: 1_000_000 } });
+    await manyFiles(f, 40); await f.write('large.txt', large);
+    const { pinned, before } = await withEnv({ DEVRYAN_LEDGER_BASELINE_REFS: '0' }, async () => {
+      const first = await f.begin('s', 'p1', 'c1');
+      await fs.writeFile(path.join(first.viewDirectory, 'd1/e1/f1.txt'), 'edited\n');
+      await f.finish(first);
+      // Prepared before compaction: its pinned snapshot holds inline pages.
+      return { pinned: await f.begin('s', 'p2', 'c2'), before: await ledgerState(f) };
+    });
+    const inline = await documents(f);
+    expect(inline.byPath['large.txt'].pages.map(({ page }) => page.length)).toEqual([3]);
+    expect(Object.values(inline.byPath).some(({ pages }) => pages.some(({ page }) => !Array.isArray(page)))).toBe(false);
+
+    // A writer lands while candidates are read outside the lock: its document
+    // must keep the writer's runs, and the pass must not claim completion.
+    const lstat = fs.lstat.bind(fs);
+    let concurrent = null;
+    const probe = spyOn(fs, 'lstat').mockImplementation(async (file, ...rest) => {
+      if (!concurrent && String(file).includes(`${path.sep}objects${path.sep}`)) {
+        concurrent = (async () => {
+          const lease = await f.begin('t', 'q1', 'd1');
+          await fs.writeFile(path.join(lease.viewDirectory, 'large.txt'), large.replace('middle', 'concurrent'));
+          return f.finish(lease);
+        })();
+        await concurrent;
+      }
+      return lstat(file, ...rest);
+    });
+    try { await f.runtime.maintainLedger({ directory: f.directory }); }
+    finally { probe.mockRestore(); }
+    expect((await concurrent).files).toEqual([{ path: 'large.txt', status: 'modified' }]);
+    const stamp = path.join(inline.root, 'baseline-refs');
+    await expect(fs.access(stamp)).rejects.toMatchObject({ code: 'ENOENT' });
+    const compacted = await documents(f);
+    expect(compacted.byPath['large.txt'].pages.every(({ page }) => Array.isArray(page))).toBe(true);
+    expect(compacted.byPath['d1/e1/f1.txt'].pages.every(({ page }) => Array.isArray(page))).toBe(true);
+    expect(compacted.byPath['d0/e0/f0.txt'].pages).toEqual([{ key: '0000000000.json',
+      page: { baseline: sha('line 0\n'), size: 7 } }]);
+    expect(await f.read('large.txt')).toBe(large.replace('middle', 'concurrent'));
+    const after = await ledgerState(f);
+    expect(after['large.txt'].revisions).toBe(before['large.txt'].revisions + 1);
+    expect({ ...after, 'large.txt': before['large.txt'] }).toEqual(before);
+    // Nothing left to convert: the next pass completes.
+    await f.runtime.maintainLedger({ directory: f.directory });
+    await fs.access(stamp);
+
+    // The lease prepared from inline pages publishes onto compacted state.
+    await fs.writeFile(path.join(pinned.viewDirectory, 'd0/e0/f0.txt'), 'line 0\nadded\n');
+    expect((await f.finish(pinned)).files).toEqual([{ path: 'd0/e0/f0.txt', status: 'modified' }]);
+    expect(await f.read('large.txt')).toBe(large.replace('middle', 'concurrent'));
+    await f.revert('t', 'q1');
+    expect(await f.read('large.txt')).toBe(large);
+    await f.revert('s', 'p2');
+    expect(await f.read('d0/e0/f0.txt')).toBe('line 0\n');
+    await f.revert('s', 'p1');
+    expect(await f.read('d1/e1/f1.txt')).toBe('line 1\nline 1\n');
+  }, 600_000);
 });
 
 describe('direct receipts for native read-only tools', () => {

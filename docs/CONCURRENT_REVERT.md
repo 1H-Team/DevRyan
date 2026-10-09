@@ -157,6 +157,21 @@ Observation treats a path under a file or symlink ancestor as absent. The
 ancestor is observed instead and is never followed, so replacing a tracked
 directory does not block later executions. Writes into the project still refuse
 such paths. Symlink targets are captured and restored as raw bytes.
+
+Granular text history (`runs/<document>`) is stored as inline base64 pages,
+except for a document still at its first observed text. That document stores one
+`{ baseline, size }` page naming its content object, because the object
+already holds those bytes and objects are never collected
+(`DEVRYAN_LEDGER_BASELINE_REFS=0` writes inline pages again; references stay
+readable). Background maintenance (`DEVRYAN_LEDGER_PACK=0` turns it off)
+converts older inline baselines in batches of 1024 under the owner lock. It
+replaces a document only while its `runs/<document>` subtree still matches the
+snapshot the candidate was read from, and writes `baseline-refs` in the ledger
+root once nothing remains. Pinned lease trees keep their inline pages. After
+packing loose objects, maintenance prunes unreachable ones older than two
+hours. Records themselves have no retention horizon: deleted text, deleted-file
+documents, operations, leases and calls stay, because any operation can be
+reverted or redone while its session exists.
 Execution views are disposable, since a crash cancels their lease and a view is
 never published after one. View files are copied without sync, while writes
 into the project stay synced. Reconciliation and view preparation overlap
@@ -250,8 +265,10 @@ records `required_unavailable` and returns `execution_artifacts_unavailable`
 and Cursor starts. Explicitly external or unsupported runtime modes retain their
 documented ordinary behavior.
 Deploy or roll back the host and companion together. A preparation rollback must
-retain a host that can read whole-content revisions and retained conflict objects;
-do not point a pre-migration ledger implementation at new history.
+retain a host that can read whole-content revisions, retained conflict objects and
+baseline references; a host predating references fails closed
+(`invalid_change_record`) on every document stored by reference. Do not point a
+pre-migration ledger implementation at new history.
 
 The real dispatcher journey is `scripts/verify-concurrent-revert-execution.mjs`.
 Set `DEVRYAN_TEST_REVERT_UI=1` to additionally exercise the actual web and Electron

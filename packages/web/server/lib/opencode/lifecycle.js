@@ -5,10 +5,17 @@ import { formatPackagedAgentSyncConflicts } from './packaged-agent-sync.js';
 import { DEFAULT_AGENT_RUNTIME_SETTINGS, normalizeAgentRuntimeSettings } from './agent-runtime-settings.js';
 import { buildVisibleSkillPolicy } from './skill-policy.js';
 import { SLIM_REPLACED_AGENT_NAMES, resolveSlimConfig } from './slim-config.js';
-import { probe as probeOpenCodeRuntime } from './readiness-probe.js';
+import { probe as probeOpenCodeRuntime, resolveExpectedOpenCodeVersion } from './readiness-probe.js';
 import { SUPPORTED_NATIVE_OPENCODE_VERSIONS } from './version-policy.js';
+import { readStartupBundleUpgradeFailure } from './runtime-host/bundle-startup-upgrade-status.js';
 
 const unavailable=(code='native_runtime_bundle_required')=>Object.assign(new Error(code==='native_runtime_owner_mismatch'?'Inherited runtime process requires a fresh server owner':'Verified native runtime bundle required'),{code,status:503});
+// Readiness would refuse this runtime with version_mismatch; startup normally
+// upgrades it first (runtime-host/native-bundle-startup-upgrade.js).
+const upgradeRequired=(version,expected)=>{
+  const failure=readStartupBundleUpgradeFailure();
+  return Object.assign(new Error(`Native runtime OpenCode ${version} must be upgraded to ${expected}${failure?`; the startup upgrade did not complete (${failure})`:''}. Restart DevRyan to retry the upgrade.`),{code:'bundle_upgrade_required',status:503});
+};
 function normalizeWorkingDirectoryCandidate(value) {
   if (typeof value !== 'string') {
     return null;
@@ -214,6 +221,9 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
   const startOpenCode=async()=>{
     state.isOpenCodeReady=false;assertExecutionReady();const {native,bundle}=assertNative();await bundle.verify();
     if (!SUPPORTED_NATIVE_OPENCODE_VERSIONS.includes(bundle.version)) throw unavailable();
+    // An invalid QA override is left for the readiness probe to report.
+    let expectedVersion=null;try{expectedVersion=resolveExpectedOpenCodeVersion(2);}catch{}
+    if(expectedVersion&&bundle.version!==expectedVersion)throw upgradeRequired(bundle.version,expectedVersion);
     state.openCodeWorkingDirectory=bundle.descriptor.projectMap[0].targetDirectory;
     const launchSettings=normalizeAgentRuntimeSettings(readAgentRuntimeSettings());
     await syncManagedAgentRuntimeConfig(launchSettings);emitStartupStatus('Starting the verified native runtime…');

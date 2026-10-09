@@ -11,7 +11,7 @@ const sha = value => createHash('sha256').update(value).digest('hex');
 
 export function assertSourceImageOAuthProof(proof) {
   assert.deepEqual(Object.keys(proof).sort(), ['accounts', 'compiledOAuthCreation', 'nativeVersion', 'reopened', 'requestPhases', 'settledMutations', 'source']);
-  assert.equal(proof.source, source); assert.equal(proof.nativeVersion, '2.0.24');
+  assert.equal(proof.source, source); assert.equal(proof.nativeVersion, '2.0.26');
   assert.equal(proof.compiledOAuthCreation, false); assert.equal(proof.settledMutations, 2);
   assert.equal(proof.accounts.length, 2);
   proof.accounts.forEach((account, index) => {

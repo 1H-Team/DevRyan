@@ -7,12 +7,25 @@
 // diff patch bodies, so on a busy machine the table dominates the database
 // (12.9 of 15.4 GB observed). This pass is for that v1 database only:
 // DevRyan's v1 runtime uses the v1 API and the live SSE stream, neither of
-// which reads `event` rows. An OpenCode v2 database (a `kv` table, where v2
-// records its `migration.v1-v2` import; v1 through 1.18.33 has none) builds
-// its projections from `event`, so it is detected on a read-only connection
-// and never opened for writing; mutations also require the caller to name the
-// runtime generation (1) that owns the file. Note that v1 1.18.x itself keeps
-// a `migration` table (TEXT ids), so that table is not a v2 signal.
+// which reads `event` rows. Note that v1 1.18.x itself keeps a `migration`
+// table (TEXT ids), so that table is not a v2 signal.
+//
+// An OpenCode v2 database (a `kv` table, where v2 records its
+// `migration.v1-v2` import; v1 through 1.18.33 has none) is detected on a
+// read-only connection and never opened for writing; mutations also require
+// the caller to name the runtime generation (1) that owns the file. Reader
+// check (@opencode/core 2.0.20–2.0.26 dist): v2 writes its projections
+// (`session_v2`, `session_message`, ...) while publishing, and inserts `event`
+// rows only when `events.persist` is on, which DevRyan's native host leaves
+// off; `Session.remove` deletes the session's `event` and `event_sequence`
+// rows itself. v2 therefore keeps no event log for this pass to trim, and the
+// v1 rules would be destructive there: v2 never writes the legacy `session`
+// table, so the orphan purge would drop every live session's
+// `event_sequence` row (the next publish would reuse a seq that
+// `session_message (session_id, seq)` already holds) together with DevRyan's
+// own recovered-input receipts. Inspection reports a database that matches
+// the v2 profile as `v2_database` (maintenance not needed); anything else
+// with a `kv` table is a `schema_mismatch`.
 //
 // Reader check (v1.18.27 source):
 //   * `event` rows are read by `/sync/history` (multi-device sync),
@@ -44,7 +57,6 @@ export const OPENCODE_DB_MAINTENANCE_DEFAULTS = Object.freeze({
   idleHours: 24,
   keepSeqPerAggregate: 64,
 });
-export const OPENCODE_DB_PRELAUNCH_TIME_BUDGET_MS = 20_000;
 export const OPENCODE_DB_VACUUM_FREELIST_RATIO = 0.15;
 export const OPENCODE_DB_VACUUM_FREE_DISK_RATIO = 1.2;
 export const OPENCODE_DB_VACUUM_MODES = Object.freeze(['never', 'auto', 'force']);
@@ -65,6 +77,16 @@ const REQUIRED_COLUMNS = Object.freeze({
   event_sequence: ['aggregate_id', 'seq'],
   session: ['id', 'time_updated'],
   session_context_epoch: ['session_id', 'baseline_seq'],
+});
+
+// Identity of a native OpenCode v2 database (every column exists since
+// 2.0.20). Read-only: only used to tell a known v2 layout from an unknown one.
+const V2_PROFILE_COLUMNS = Object.freeze({
+  kv: ['key', 'value'],
+  session_v2: ['id', 'time_updated'],
+  session_message: ['session_id', 'seq'],
+  event: ['id', 'aggregate_id', 'seq', 'type', 'data'],
+  event_sequence: ['aggregate_id', 'seq'],
 });
 
 // `substr(...) = 'ses_'` rather than LIKE: `_` is a LIKE wildcard.
@@ -250,9 +272,9 @@ const pragmaValue = (db, name) => {
 };
 
 /** PRAGMA table_info guard: abort instead of guessing when OpenCode's tables change shape. */
-export const checkOpenCodeDbSchema = (db) => {
+export const checkOpenCodeDbSchema = (db, required = REQUIRED_COLUMNS) => {
   const missing = [];
-  for (const [table, columns] of Object.entries(REQUIRED_COLUMNS)) {
+  for (const [table, columns] of Object.entries(required)) {
     let rows;
     try {
       rows = db.pragma(`table_info(${table})`);
@@ -385,6 +407,14 @@ export const inspectOpenCodeDb = ({ driver, dbPath }) => {
     db = openReadonly(driver, dbPath);
     result.generation = detectOpenCodeDbGeneration(db);
     if (result.generation === 2) {
+      // Known v2 layout: nothing to maintain. A `kv` table without the v2
+      // profile is an unknown layout, never reported as v2.
+      const profile = checkOpenCodeDbSchema(db, V2_PROFILE_COLUMNS);
+      if (!profile.ok) {
+        result.schema = 'mismatch';
+        result.error = `schema_mismatch: ${profile.missing.join(', ')}`;
+        return result;
+      }
       result.error = 'v2_database';
       return result;
     }

@@ -126,8 +126,40 @@ export async function createMigrationFixture({ root, conversations = true }) {
       databaseSha256: fixtureSha256(await fs.readFile(databasePath)), appliedMigrations: [initialMigration.id] } };
 }
 
-/** Private empty initialization seed: setup/workspaces only, no conversations or old journal. */
+/** Private empty initialization seed: setup/workspaces only, no conversations or old journal.
+ * Its database still carries the legacy DDL and __drizzle_migrations table. */
 export const createEmptyRuntimeFixture = ({ root }) => createMigrationFixture({ root, conversations: false });
+
+/** The POSIX source every 2.x install provisions (native-default-bundle.js): a
+ * zero-byte empty.db with no legacy journal, private source directories and an
+ * identity workspace map. The workspace is a Git repository so project
+ * discovery stops inside the fixture root. */
+export async function createFreshInstallSource({ root }) {
+  root = await repositoryPath(root);
+  const sourceRoot = path.join(root, 'fresh-native-source');
+  const sourceLaunch = { opencodeDatabasePath: path.join(sourceRoot, 'empty.db'), webDataDirectory: path.join(sourceRoot, 'web-data'),
+    webConfigDirectory: path.join(sourceRoot, 'web-config'), opencodeConfigDirectory: path.join(sourceRoot, 'opencode-config'),
+    global: { home: path.join(sourceRoot, 'home') } };
+  for (const directory of [sourceLaunch.webDataDirectory, sourceLaunch.webConfigDirectory, sourceLaunch.opencodeConfigDirectory, sourceLaunch.global.home]) {
+    await fs.mkdir(directory, { recursive: true, mode: 0o700 });
+  }
+  await fs.writeFile(sourceLaunch.opencodeDatabasePath, '', { flag: 'wx' });
+  resolveSqliteDriver().open(sourceLaunch.opencodeDatabasePath).close();
+  await fs.chmod(sourceLaunch.opencodeDatabasePath, 0o600);
+  const gitConfig = path.join(root, 'git-config'); await fs.writeFile(gitConfig, '');
+  const template = path.join(root, 'git-template'); await fs.mkdir(template);
+  const environment = createQaHostLaunchEnvironment({ HOME: sourceLaunch.global.home, GIT_CEILING_DIRECTORIES: root,
+    GIT_CONFIG_GLOBAL: gitConfig, GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0' });
+  const directory = path.join(root, 'workspace'); await fs.mkdir(directory);
+  const git = args => execute('/usr/bin/git', args, { cwd: directory, env: environment, timeout: 10_000, maxBuffer: 1024 * 1024 });
+  await git(['init', '--quiet', '--initial-branch=main', `--template=${template}`]);
+  await fs.writeFile(path.join(directory, 'seed.txt'), 'fresh install workspace\n');
+  await git(['add', '--', 'seed.txt']);
+  await git(['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'core.hooksPath=/dev/null',
+    'commit', '--quiet', '-m', 'owned synthetic baseline']);
+  return { root, environment, sourceLaunch, projectMap: [{ sourceDirectory: directory, targetDirectory: directory, mode: 'identity' }],
+    expected: { databaseSha256: fixtureSha256(await fs.readFile(sourceLaunch.opencodeDatabasePath)) } };
+}
 
 /** Independent raw-store assertions after the actual compiled importer. */
 export async function assertMigratedFixture({ fixture, descriptor }) {

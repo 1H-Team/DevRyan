@@ -52,7 +52,7 @@ const C3_RULES = [
   [DENY, /^(PUT|DELETE) \/api\/experimental\/mcp\/\{server\}$/],
   [DENY, /^POST \/api\/vcs\/init$/],
   // deny: integrations and workspace
-  [DENY, /^\w+ \/api\/integration\/\{integrationID\}\/connect\/command/],
+  [DENY, /^\w+ \/api\/integration\/\{integrationID\}\/connect\/(command|external)/],
   [DENY, /^POST \/api\/experimental\/integration\/wellknown$/],
   [DENY, /^\w+ \/api\/worktree(\/|$)/],
   [DENY, /^PATCH \/api\/project\/\{projectID\}$/],
@@ -121,13 +121,13 @@ const BODY_FOR = {
 };
 
 describe('route table coverage', () => {
-  it('knows the 141 OpenAPI operations of 2.0.24 plus GET /openapi.json', () => {
-    expect(OPENCODE_V2_ROUTES_VERSION).toBe('2.0.24');
-    expect(OPENCODE_V2_ROUTES).toHaveLength(141);
+  it('knows the 142 OpenAPI operations of 2.0.26 plus GET /openapi.json', () => {
+    expect(OPENCODE_V2_ROUTES_VERSION).toBe('2.0.26');
+    expect(OPENCODE_V2_ROUTES).toHaveLength(142);
     expect(OPENCODE_V2_EXTRA_ROUTES.map(keyOf)).toEqual(['GET /openapi.json']);
     const known = listOpenCodeV2KnownRoutes().map(keyOf);
-    expect(known).toHaveLength(142);
-    expect(new Set(known).size).toBe(142);
+    expect(known).toHaveLength(143);
+    expect(new Set(known).size).toBe(143);
   });
 
   it('classifies every known route explicitly with a valid class and nothing else', () => {
@@ -474,7 +474,7 @@ describe('location binding', () => {
 
 describe('diffLiveSpec', () => {
   it('reports no drift for the vendored document, as an object or as text', () => {
-    expect(diffLiveSpec(vendoredDoc())).toMatchObject({ ok: true, version: '2.0.24', error: null, added: [], removed: [], changed: [] });
+    expect(diffLiveSpec(vendoredDoc())).toMatchObject({ ok: true, version: '2.0.26', error: null, added: [], removed: [], changed: [] });
     expect(diffLiveSpec(VENDORED_TEXT).ok).toBe(true);
   });
 

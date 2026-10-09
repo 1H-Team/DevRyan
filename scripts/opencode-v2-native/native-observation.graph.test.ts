@@ -80,7 +80,7 @@ const gates = createAdmissionGates(`);
     source=source.replace(/from ("file:[^"]+")/g,(_all,specifier:string)=>'from '+JSON.stringify(fileURLToPath(JSON.parse(specifier))));
     const entry = path.join(root, 'fixture.mjs'); await fs.writeFile(entry, source);
     const assetPlugin=await createNativeAssetFixturePlugin(repository);
-    const compactionPlugin: Bun.BunPlugin={name:'pinned-read-only-compaction-observation',setup(builder){builder.onLoad({filter:/repository-a6rczh0a\.js$/},async event=>({
+    const compactionPlugin: Bun.BunPlugin={name:'pinned-read-only-compaction-observation',setup(builder){builder.onLoad({filter:/location-services-qhaz1dgr\.js$/},async event=>({
       contents:rewriteNativeCompactionObservation(await fs.readFile(event.path,'utf8'),path.join(repository,'packages/web/server/lib/opencode/runtime-host/native-compaction-observation.ts')).contents,loader:'js'}));}};
     const built=await Bun.build({entrypoints:[entry],outdir:root,naming:{entry:'observed.mjs',asset:'[name]-[hash].[ext]'},target:'bun',plugins:[assetPlugin,compactionPlugin,reviewedNativeInputPlugin(await prepareReviewedNativeInputs(repository))]});
     if(!built.success)throw new AggregateError(built.logs,'Actual observation graph build failed');await writeNativeFixtureOutputs(built.outputs);

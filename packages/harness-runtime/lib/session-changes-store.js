@@ -42,6 +42,10 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,s
   // unchanged (or removing a key read as absent) stages nothing, so a
   // read-mostly transaction does not create a Git commit.
   const baseline = new Map();
+  const parseRow = (row) => {
+    const tab = row.indexOf('\t'), fields = row.slice(0, tab).trim().split(/\s+/);
+    return { key: row.slice(tab + 1), oid: fields[2], size: Number(fields[3]) };
+  };
   const indexed = async (snapshot) => {
     // Once this store's full listing exceeded the bound, listing each new tree
     // only to discard it costs O(ledger) per transaction. Stay on the paged
@@ -54,8 +58,7 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,s
         for await (const row of runTokens(cwd, [...args, 'ls-tree', '-r', '-l', '-z', snapshot])) {
           bytes += Buffer.byteLength(row);
           if (bytes > 1024 * 1024) { oversizedStores.add(gitDir); return null; } // Larger ledgers stay paged from Git.
-          const tab = row.indexOf('\t'), fields = row.slice(0, tab).trim().split(/\s+/);
-          rows.push({ key: row.slice(tab + 1), oid: fields[2], size: Number(fields[3]) });
+          rows.push(parseRow(row));
         }
         return rows.sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
       })();
@@ -72,8 +75,7 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,s
       return;
     }
     for await (const row of runTokens(cwd, [...args, '--literal-pathspecs', 'ls-tree', '-r', '-l', '-z', snapshot, '--', start])) {
-      const tab = row.indexOf('\t'), fields = row.slice(0, tab).trim().split(/\s+/);
-      yield { key: row.slice(tab + 1), oid: fields[2], size: Number(fields[3]) };
+      yield parseRow(row);
     }
   };
   const get = async (key) => {
@@ -125,6 +127,21 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,s
     // stay streamed; do not collect all historical keys just to merge writes.
     for (const [key, data] of [...pending].sort(([a], [b]) => a.localeCompare(b))) {
       if (key.startsWith(`${prefix}/`) && data !== null) yield { key, value: typeof data === 'object' ? await get(key) : JSON.parse(data) };
+    }
+  };
+  // Whole snapshot without a capped stdout buffer: the listing is drained first
+  // (rows only, so `ls-tree` never outlives its timeout behind a slow consumer)
+  // and values arrive in bounded cat-file batches. Ignores `pending` so a caller
+  // may set() while iterating. Rows read from the current tree seed the baseline.
+  const records = async function* (snapshot = tree) {
+    if (!snapshot) return;
+    const rows = [];
+    for await (const row of runTokens(cwd, [...args, 'ls-tree', '-r', '-l', '-z', snapshot])) rows.push(parseRow(row));
+    for await (const row of runRecords(cwd, args, rows)) {
+      const data = JSON.stringify(row.value);
+      remember(`${gitDir}:${row.oid}`, data);
+      if (snapshot === tree && !pending.has(row.key)) baseline.set(row.key, data);
+      yield row;
     }
   };
   const list = async function* (prefix) {
@@ -210,6 +227,20 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,s
     if (!tree) return null;
     return run(['rev-parse', '--verify', `${tree}:${prefix}`]).then((value) => value.toString().trim(), () => null);
   };
-  return { get, set, remove, entries, list, setList, commit, leaseRef, pin, release, importPrefix, prefixIdentity,
+  // prefixIdentity for many prefixes: one listing per 128 (command lines stay
+  // short on Windows). Absent prefixes map to null.
+  const prefixIdentities = async (prefixes) => {
+    if (pending.size || prefixes.some((prefix) => !validKey(`${prefix}/page.json`))) throw changeError('invalid_change_record');
+    const result = new Map(prefixes.map((prefix) => [prefix, null]));
+    if (!tree) return result;
+    for (let start = 0; start < prefixes.length; start += 128) {
+      for await (const row of runTokens(cwd, [...args, '--literal-pathspecs', 'ls-tree', '-z', tree, '--', ...prefixes.slice(start, start + 128)])) {
+        const tab = row.indexOf('\t'), fields = row.slice(0, tab).trim().split(/\s+/), prefix = row.slice(tab + 1);
+        if (fields[1] === 'tree' && result.has(prefix)) result.set(prefix, fields[2]);
+      }
+    }
+    return result;
+  };
+  return { get, set, remove, entries, records, list, setList, commit, leaseRef, pin, release, importPrefix, prefixIdentity, prefixIdentities,
     get tree() { return tree; }, get exists() { return tree !== null; }, get pendingCount() { return pending.size; } };
 }

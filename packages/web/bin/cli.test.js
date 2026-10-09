@@ -337,7 +337,7 @@ describe('bundled runtime help', () => {
           XDG_DATA_HOME: path.join(root, 'data'), OPENCHAMBER_DATA_DIR: path.join(root, 'web-data'), NO_COLOR: '1' },
         timeout: 15000, maxBuffer: 256 * 1024,
       });
-      expect(stdout).toContain('bundled native OpenCode 2.0.24');
+      expect(stdout).toContain('bundled native OpenCode 2.0.26');
       expect(stdout).toContain('Update DevRyan');
       for (const flag of ['--foreground', '--host', '--port']) expect(stdout).toContain(flag);
       expect(stdout).not.toMatch(/OPENCODE_HOST|OPENCODE_PORT|OPENCODE_SKIP_START|OPENCHAMBER_OPENCODE_HOSTNAME/);

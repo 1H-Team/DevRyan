@@ -8,19 +8,22 @@ import { CdpConnection, discoverPageTarget, evaluate } from './cdp.mjs';
 import { createQaUiDriver } from './ui-driver.mjs';
 import { reservePort, startOwnedProcess } from './process.mjs';
 import { PERF_PARENT_SESSION_ID } from '../perf/fixture-session-seeds.mjs';
-import { createLoopbackOpenCodeFixtureForGeneration } from '../perf/loopback-opencode-fixtures.mjs';
 import { resolveQaFixtureGeneration } from './runtime-target.mjs';
-import { createQaIsolatedRuntimeEnvironment } from './launch-environment.mjs';
+import { createQaHostLaunchEnvironment } from './launch-environment.mjs';
+import { prepareQaFixtureProfile } from './fixture-scenarios.mjs';
+import { gradeQaRendererErrors, navigateQaElectronWireFacade } from './matrix-runner.mjs';
+import { waitForQaHostReady } from './host-readiness.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const requireElectron = createRequire(new URL('../../packages/electron/package.json', import.meta.url));
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export async function runQa({ runtime = 'web', scenario = 'chat', generation, outputRoot = path.join(root, '.cache/qa'), holdMs = 0 } = {}) {
+export async function runQa({ runtime = 'web', scenario = 'chat', generation, artifactRoot = process.env.QA_NATIVE_ARTIFACT_ROOT, outputRoot = path.join(root, '.cache/qa'), holdMs = 0 } = {}) {
   if (!Number.isSafeInteger(holdMs) || holdMs < 0 || holdMs > 300000) throw new Error('QA inspection hold must be 0–300000 milliseconds');
   if (!['web', 'electron'].includes(runtime)) throw new Error('QA runtime must be web or electron');
   if (!['chat', 'mobile', 'recovery', 'thinking', 'grok-plan', 'session-changes', 'execution-failure', 'skill-loading', 'navigation'].includes(scenario) || (scenario === 'mobile' && runtime !== 'web')) throw new Error('QA scenario must be chat, recovery, thinking, grok-plan, session-changes, execution-failure, skill-loading, or mobile on web');
   const fixtureGeneration = resolveQaFixtureGeneration(generation);
+  if (!path.isAbsolute(artifactRoot ?? '')) throw new Error('QA requires QA_NATIVE_ARTIFACT_ROOT pointing to verified native artifacts under .cache');
   if (runtime === 'electron') {
     const [webIndex, stagedIndex] = await Promise.all([
       readFile(path.join(root, 'packages/web/dist/index.html'), 'utf8'),
@@ -31,16 +34,15 @@ export async function runQa({ runtime = 'web', scenario = 'chat', generation, ou
   await mkdir(outputRoot, { recursive: true, mode: 0o700 });
   const output = await mkdtemp(path.join(outputRoot, `${runtime}-${scenario}-`));
   const temporary = path.join(output, 'runtime');
-  const data = path.join(temporary, 'data');
-  const profile = path.join(temporary, 'profile');
+  let data, profile;
   const workspace = path.join(temporary, 'workspace');
-  await Promise.all([data, profile, workspace].map((directory) => mkdir(directory, { recursive: true, mode: 0o700 })));
+  await mkdir(workspace, { recursive: true, mode: 0o700 });
   const evidence = { schemaVersion: 1, revision: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(),
     dirty: !!execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).trim(), runtime, scenario, fixtureGeneration,
-    startedAt: new Date().toISOString(), outcome: 'failed', checks: [], consoleErrors: [], screenshots: [],
+    startedAt: new Date().toISOString(), outcome: 'failed', checks: [], consoleErrors: [], consoleObservations: [], expectedFailures: [], screenshots: [],
     liveProvider: 'not-run', physicalDevice: 'not-run', visualReview: 'pending' };
   const owned = [];
-  let fixture;
+  let fixture, qaProfile;
   let cdp;
   let interrupted = false;
   const onInterrupt = () => { interrupted = true; };
@@ -90,11 +92,14 @@ export async function runQa({ runtime = 'web', scenario = 'chat', generation, ou
   };
   try {
     execFileSync('git', ['init', '--quiet', workspace]);
-    await writeFile(path.join(data, 'settings.json'), JSON.stringify({ messageStreamTransport: 'sse', lastDirectory: workspace,
-      projects: [{ id: 'qa-project', path: workspace, label: 'QA workspace' }], activeProjectId: 'qa-project',
-      desktopWindowState: { width: 1280, height: 800, maximized: false } }));
     const thinking = scenario === 'thinking' ? await import('./thinking-slider.mjs') : null;
-    fixture = await createLoopbackOpenCodeFixtureForGeneration(fixtureGeneration, { directory: workspace, thinkingModels: thinking?.thinkingModels });
+    qaProfile = await prepareQaFixtureProfile({ runtimeRoot: temporary, workspace, artifactRoot, generation: fixtureGeneration,
+      thinkingModels: thinking?.thinkingModels,
+      cell: { runtime, transport: 'fixture', providerId: 'fixture', modelId: 'fixture-model', scenarioId: scenario === 'mobile' ? 'mobile' : 'core-journey', agent: 'builder', planMode: false, variant: null } });
+    fixture = qaProfile.fixture;
+    data = qaProfile.env.OPENCHAMBER_DATA_DIR;
+    profile = qaProfile.env.OPENCHAMBER_ELECTRON_USER_DATA_DIR;
+    evidence.profile = qaProfile.evidence;
     const sessionChanges = scenario === 'session-changes' ? await import('./session-changes.mjs') : null;
     const preparedChanges = sessionChanges ? await sessionChanges.prepareSessionChangesQa({ fixture, directory: workspace, dataDirectory: data }) : null;
     const debugPort = await reservePort();
@@ -105,19 +110,16 @@ export async function runQa({ runtime = 'web', scenario = 'chat', generation, ou
       await writeFile(settingsPath, JSON.stringify({ ...JSON.parse(await readFile(settingsPath, 'utf8')), desktopLocalPort: port,
         ...(scenario === 'navigation' && process.env.DEVRYAN_QA_RUNTIME_SERVICE === '1' ? { productionBotsRuntimeMode: 'service' } : {}) }));
     }
-    const qaHome = path.join(temporary, 'home');
-    await mkdir(qaHome, { recursive: true, mode: 0o700 });
-    await writeFile(path.join(qaHome, '.devryan-qa-home'), '', { mode: 0o600 });
-    await writeFile(path.join(temporary, 'credentials.env.json'), '{}', { mode: 0o600 });
-    const env = createQaIsolatedRuntimeEnvironment({ runtime, runtimeRoot: temporary, home: qaHome, data, profile,
-      distDirectory: path.join(root, 'packages/web/dist'), port, runtimeEnv: fixture.runtimeEnv,
-      overrides: { OPENCODE_HOST: fixture.origin, OPENCODE_SKIP_START: 'true', OPENCHAMBER_SKIP_OPENCODE_START: 'true' } });
+    const env = createQaHostLaunchEnvironment(qaProfile.env, { DEVRYAN_QA_RUNTIME: runtime,
+      OPENCHAMBER_PORT: String(port), OPENCHAMBER_DIST_DIR: path.join(root, 'packages/web/dist') });
+    await qaProfile.verifyInputs();
     const start = (command, args, environment = env) => {
       const process = startOwnedProcess(command, args, { cwd: root, env: environment });
       owned.push(process);
       return process;
     };
     const origin = `http://127.0.0.1:${port}`;
+    const facade = await qaProfile.startFacade(origin);
     const browserFlags = [`--remote-debugging-port=${debugPort}`, `--user-data-dir=${profile}`,
       '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', '--disable-background-timer-throttling'];
     const runtimeService = runtime === 'electron' && scenario === 'navigation' && process.env.DEVRYAN_QA_RUNTIME_SERVICE === '1';
@@ -129,19 +131,27 @@ export async function runQa({ runtime = 'web', scenario = 'chat', generation, ou
       await waitFor('web readiness', async () => fetch(`${origin}/api/health`, { signal: AbortSignal.timeout(1000) }).then((r) => r.ok).catch(() => false), 60000);
       if (runtimeService) start(requireElectron('electron'), [...browserFlags, 'scripts/qa/isolated-host.mjs']);
       else start(requireElectron('electron'), [...browserFlags, 'scripts/qa/browser-shell.cjs'],
-        { ...env, DEVRYAN_QA_ORIGIN: origin });
+        { ...env, DEVRYAN_QA_ORIGIN: facade.origin });
     } else if (runtime === 'electron') {
       start(requireElectron('electron'), [...browserFlags, ...(profilePort ? [`--inspect=${profilePort}`] : []), 'scripts/qa/isolated-host.mjs']);
     }
     evidence.inspection = { cdp: `http://127.0.0.1:${debugPort}`, fixture: fixture.origin };
     console.log(JSON.stringify({ output, runtime, scenario, ...evidence.inspection }));
+    await check('initial native runtime readiness', () => waitForQaHostReady({ origin,
+      checkAlive: () => { if (interrupted) throw new Error('QA interrupted'); for (const child of owned) child.check(); } }));
     const target = await discoverPageTarget(debugPort);
     cdp = await CdpConnection.connect(target.webSocketDebuggerUrl);
+    const recordConsoleError = (kind, text) => {
+      if (evidence.consoleErrors.length >= 100) return;
+      const sanitized = sanitize(text);
+      evidence.consoleErrors.push(sanitized);
+      evidence.consoleObservations.push({ ordinal: evidence.consoleErrors.length, kind, text: sanitized });
+    };
     cdp.on('Runtime.exceptionThrown', ({ exceptionDetails }) => {
-      if (evidence.consoleErrors.length < 100) evidence.consoleErrors.push(sanitize(exceptionDetails.exception?.description ?? exceptionDetails.text));
+      recordConsoleError('exception', exceptionDetails.exception?.description ?? exceptionDetails.text);
     });
     cdp.on('Runtime.consoleAPICalled', ({ type, args }) => {
-      if (type === 'error' && evidence.consoleErrors.length < 100) evidence.consoleErrors.push(sanitize(args.map((arg) => arg.value ?? arg.description ?? '').join(' ')));
+      if (type === 'error') recordConsoleError('console', args.map((arg) => arg.value ?? arg.description ?? '').join(' '));
     });
     let transportReady = false;
     cdp.on('Network.webSocketFrameReceived', ({ response }) => {
@@ -171,7 +181,9 @@ export async function runQa({ runtime = 'web', scenario = 'chat', generation, ou
       // immediately navigating again. Keep the console-error gate intact.
       await waitFor('Electron initial document', () => evaluate(cdp, `document.readyState === 'complete' && Boolean(document.querySelector('textarea'))`), 60000);
       const appOrigin = await evaluate(cdp, 'location.origin');
-      await cdp.send('Page.navigate', { url: `${appOrigin}/?session=${PERF_PARENT_SESSION_ID}` });
+      await navigateQaElectronWireFacade(cdp, { localOrigin: appOrigin, facadeOrigin: facade.origin });
+      await waitFor('Electron fixture origin', () => evaluate(cdp, `location.origin === ${JSON.stringify(facade.origin)}`));
+      await cdp.send('Page.navigate', { url: `${facade.origin}/?session=${PERF_PARENT_SESSION_ID}` });
     }
     evidence.inspection.app = await evaluate(cdp, 'location.origin');
     if (runtime === 'web') {
@@ -277,8 +289,10 @@ export async function runQa({ runtime = 'web', scenario = 'chat', generation, ou
       await waitFor('provider cancellation', async () => fixture.getState().abortedPrompts === before + 1 && fixture.getState().activePrompts === 0);
     });
     await check('reconnect and reopen without duplicate user messages', async () => {
+      const disconnect = { kind: 'sse-disconnect', consoleStartOrdinal: evidence.consoleErrors.length, beforeConnections: fixture.getState().sseConnectionCount };
       fixture.disconnectEvents();
-      await waitFor('SSE reconnect', async () => fixture.getState().sseClientCount > 0);
+      await waitFor('SSE reconnect', async () => fixture.getState().sseConnectionCount > disconnect.beforeConnections && fixture.getState().sseClientCount > 0);
+      const recovered = { consoleEndOrdinal: evidence.consoleErrors.length, afterConnections: fixture.getState().sseConnectionCount };
       const loaded = cdp.waitFor('Page.loadEventFired');
       await cdp.send('Page.reload');
       await loaded;
@@ -286,12 +300,16 @@ export async function runQa({ runtime = 'web', scenario = 'chat', generation, ou
       const ids = fixture.getState().receivedPrompts.map((prompt) => prompt.messageID);
       const counts = await evaluate(cdp, `${JSON.stringify(ids)}.map(id=>[...document.querySelectorAll('[data-message-id]')].filter(e=>e.dataset.messageId===id).length)`);
       if (ids.length !== 2 || new Set(ids).size !== 2 || counts.some((count) => count !== 1)) throw new Error('Reconnection lost or duplicated a submitted turn');
-      const rows = await fetch(`${fixture.origin}/session/${PERF_PARENT_SESSION_ID}/message`).then((r) => r.json());
-      for (const row of rows.filter((row) => row.info.parentID === ids[0])) {
+      const rows = await evaluate(cdp, `fetch(${JSON.stringify(`/api/session/${PERF_PARENT_SESSION_ID}/message?directory=${encodeURIComponent(workspace)}`)}).then(async r=>{if(!r.ok)throw new Error('QA message read failed');return r.json();})`);
+      if (!Array.isArray(rows)) throw new Error('QA message read returned an invalid page');
+      const responses = rows.filter((row) => row.info.parentID === ids[0]);
+      if (!responses.length) throw new Error('Reopened response missing from canonical history');
+      for (const row of responses) {
         const expected = row.parts.filter((part) => part.type === 'text').map((part) => part.text).join(' ').trim();
-        const rendered = await evaluate(cdp, `[...document.querySelectorAll('[data-message-id]')].find(e=>e.dataset.messageId===${JSON.stringify(row.info.id)})?.textContent`);
-        if (!expected || !rendered?.includes(expected)) throw new Error('Reopened response lost fixture text');
+        if (!expected) throw new Error('Reopened response lost canonical fixture text');
+        await waitFor('reopened response matches canonical fixture text', () => evaluate(cdp, `[...document.querySelectorAll('[data-message-id]')].find(e=>e.dataset.messageId===${JSON.stringify(row.info.id)})?.textContent.includes(${JSON.stringify(expected)})`));
       }
+      evidence.expectedFailures.push({ ...disconnect, ...recovered, recovery: 'canonical-snapshots', sessionID: PERF_PARENT_SESSION_ID, messageID: ids[0], assistantMessageID: responses.at(-1).info.id });
     });
     if (scenario === 'execution-failure' || scenario === 'skill-loading') {
       const { runExecutionFailureQa } = await import('./execution-failure.mjs');
@@ -316,7 +334,8 @@ export async function runQa({ runtime = 'web', scenario = 'chat', generation, ou
     await screenshot('chat-idle');
     evidence.diagnostics = await evaluate(cdp, `fetch('/api/diagnostics/status').then(async r=>({httpStatus:r.status,...(r.ok?await r.json():{})}))`);
     evidence.fixture = fixture.getState();
-    if (evidence.consoleErrors.length) throw new Error('Renderer console errors captured; see result.json');
+    evidence.unexpectedConsoleErrors = gradeQaRendererErrors(evidence.consoleObservations, evidence.expectedFailures);
+    if (evidence.unexpectedConsoleErrors.length) throw new Error('Unexpected renderer console errors captured; see result.json');
     evidence.outcome = 'passed';
   } catch (error) {
     evidence.error = sanitize(error.message);
@@ -331,7 +350,7 @@ export async function runQa({ runtime = 'web', scenario = 'chat', generation, ou
     for (const process of owned.toReversed()) {
       try { await process.stop(); } catch (error) { evidence.cleanupErrors.push(sanitize(error.message)); }
     }
-    try { await fixture?.close(); } catch (error) { evidence.cleanupErrors.push(sanitize(error.message)); }
+    try { await qaProfile?.close(); } catch (error) { evidence.cleanupErrors.push(sanitize(error.message)); }
     if (evidence.cleanupErrors.length) evidence.outcome = 'failed';
     if (scenario === 'navigation') {
       const selectionTimings = owned.flatMap(process => process.getLog().split('\n').flatMap(line => {
@@ -352,8 +371,10 @@ export async function runQa({ runtime = 'web', scenario = 'chat', generation, ou
     await writeFile(path.join(output, 'process-logs.json'), JSON.stringify(logs, null, 2));
     evidence.finishedAt = new Date().toISOString();
     try {
-      await rename(path.join(data, 'harness/journal'), path.join(output, 'journal'));
-      evidence.journalDirectory = 'journal';
+      if (data) {
+        await rename(path.join(data, 'harness/journal'), path.join(output, 'journal'));
+        evidence.journalDirectory = 'journal';
+      }
     } catch (error) { if (error.code !== 'ENOENT') evidence.cleanupErrors.push(sanitize(error.message)); }
     if (!evidence.cleanupErrors.length) {
       try { await rm(temporary, { recursive: true, force: true }); }

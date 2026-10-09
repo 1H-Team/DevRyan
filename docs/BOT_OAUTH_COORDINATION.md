@@ -129,7 +129,7 @@ plugins instead of mounting the working-tree plugins. The acceptance verifies
 the dependency versions before making fixture requests. Run it after other
 large suites on resource-constrained Docker hosts.
 
-The OpenCode 2.0.24 offline lane uses a synthetic registered SIWC grant, the
+The OpenCode 2.0.26 offline lane uses a synthetic registered SIWC grant, the
 official refresh resource and Responses projection. It covers three coordinated
 refresh cycles, ordinary and structured requests, attachments, cancellation,
 restart and host events with the internet disabled. SIWC image generation is

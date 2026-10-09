@@ -15,7 +15,6 @@ import {
 import {
   OPENCODE_DB_MAINTENANCE_JOURNAL_EVENT,
   OPENCODE_DB_MAINTENANCE_STATE_FILE,
-  createOpenCodeDbCompactionScheduler,
   createOpenCodeDbMaintenance,
   createOpenCodeDbMaintenanceInProcessExecutor,
   createOpenCodeDbMaintenanceWorkerExecutor,
@@ -185,6 +184,85 @@ const createV2FixtureDb = (dir, { marker = 'kv-marker' } = {}) => {
   }
   db.close();
   return dbPath;
+};
+
+// Native OpenCode v2 (DDL as a 2.0.26 bundle `opencode.db` has it; only the
+// tables the v2 profile and the v1 rules involve). v2 never writes the legacy
+// `session` table, and DevRyan's host runs with `events.persist: false`, so
+// `event` holds only DevRyan's own recovered-input receipts.
+const V2_SCHEMA_SQL = `
+CREATE TABLE kv (key text PRIMARY KEY, value text NOT NULL, time_created integer NOT NULL, time_updated integer NOT NULL);
+CREATE TABLE "migration" (id TEXT PRIMARY KEY, time_completed INTEGER NOT NULL);
+CREATE TABLE __drizzle_migrations (id integer PRIMARY KEY, hash text NOT NULL, created_at numeric);
+CREATE TABLE project (id text PRIMARY KEY, worktree text NOT NULL, time_created integer NOT NULL, time_updated integer NOT NULL);
+CREATE TABLE session (id text PRIMARY KEY, project_id text NOT NULL, time_updated integer NOT NULL);
+CREATE TABLE session_v2 (
+  id text PRIMARY KEY, project_id text NOT NULL, parent_id text, slug text NOT NULL, directory text NOT NULL, title text,
+  version text NOT NULL, time_created integer NOT NULL, time_updated integer NOT NULL, time_idle integer, time_viewed integer,
+  idle_outcome text,
+  CONSTRAINT fk_session_v2_project_id_project_id_fk FOREIGN KEY (project_id) REFERENCES project(id) ON DELETE CASCADE
+);
+CREATE TABLE session_message (
+  id text PRIMARY KEY, session_id text NOT NULL, type text NOT NULL, seq integer NOT NULL, time_created integer NOT NULL,
+  time_updated integer NOT NULL, data text NOT NULL,
+  CONSTRAINT fk_session_message_session_id_session_v2_id_fk FOREIGN KEY (session_id) REFERENCES session_v2(id) ON DELETE CASCADE
+);
+CREATE UNIQUE INDEX session_message_session_seq_idx ON session_message (session_id, seq);
+CREATE TABLE event_sequence (aggregate_id text PRIMARY KEY, seq integer NOT NULL, owner_id text);
+CREATE TABLE event (
+  id text PRIMARY KEY, aggregate_id text NOT NULL, seq integer NOT NULL, type text NOT NULL, data text NOT NULL,
+  created integer DEFAULT 0 NOT NULL,
+  CONSTRAINT fk_event_aggregate_id_event_sequence_aggregate_id_fk FOREIGN KEY (aggregate_id) REFERENCES event_sequence(aggregate_id) ON DELETE CASCADE
+);
+CREATE UNIQUE INDEX event_aggregate_seq_idx ON event (aggregate_id, seq);
+`;
+const V2_RECEIPT_AGGREGATE = 'ses_live:recovered-input-cancellation';
+
+/**
+ * Fixture: a live and an idle `session_v2` session (3 messages each, their
+ * `event_sequence` rows, no native `event` rows) and one DevRyan receipt
+ * aggregate with its event. Under the v1 orphan rule every one of them would
+ * look orphaned, because the legacy `session` table is empty.
+ */
+const createNativeV2FixtureDb = (dir, { now = NOW } = {}) => {
+  const dbPath = path.join(dir, 'opencode.db');
+  fs.writeFileSync(dbPath, '');
+  const db = openDb(dbPath);
+  db.pragma('journal_mode = WAL');
+  db.exec(V2_SCHEMA_SQL);
+  db.prepare('INSERT INTO kv (key, value, time_created, time_updated) VALUES (?, ?, ?, ?)').run('migration.v1-v2', '{"phase":"completed"}', now, now);
+  db.prepare('INSERT INTO migration (id, time_completed) VALUES (?, ?)').run('20260923013825_project_time_active', now);
+  db.prepare('INSERT INTO project (id, worktree, time_created, time_updated) VALUES (?, ?, ?, ?)').run('prj_1', '/work', now, now);
+  const insertSession = db.prepare(`INSERT INTO session_v2 (id, project_id, slug, directory, version, time_created, time_updated)
+                                    VALUES (?, 'prj_1', ?, '/work', '2.0.26', ?, ?)`);
+  const insertSequence = db.prepare('INSERT INTO event_sequence (aggregate_id, seq, owner_id) VALUES (?, ?, NULL)');
+  const insertMessage = db.prepare(`INSERT INTO session_message (id, session_id, type, seq, time_created, time_updated, data)
+                                    VALUES (?, ?, 'user', ?, ?, ?, '{}')`);
+  for (const [id, timeUpdated] of [['ses_live', now - HOUR], ['ses_idle', now - 48 * HOUR]]) {
+    insertSession.run(id, id, timeUpdated - HOUR, timeUpdated);
+    insertSequence.run(id, 2);
+    for (let seq = 0; seq <= 2; seq += 1) insertMessage.run(`msg_${id}_${seq}`, id, seq, timeUpdated, timeUpdated);
+  }
+  insertSequence.run(V2_RECEIPT_AGGREGATE, 0);
+  db.prepare('INSERT INTO event (id, aggregate_id, seq, type, data, created) VALUES (?, ?, ?, ?, ?, ?)')
+    .run('evt_receipt', V2_RECEIPT_AGGREGATE, 0, 'devryan.recovered-input.cancelled@1', '{}', now);
+  db.close();
+  return dbPath;
+};
+
+const v2Counts = (dbPath) => {
+  const db = openDb(dbPath, { readonly: true });
+  try {
+    const one = (sql) => db.prepare(sql).get().n;
+    return {
+      events: one('SELECT COUNT(*) AS n FROM event'),
+      seqs: Object.fromEntries(db.prepare('SELECT aggregate_id, seq FROM event_sequence').all().map((row) => [row.aggregate_id, row.seq])),
+      sessions: one('SELECT COUNT(*) AS n FROM session_v2'),
+      messages: one('SELECT COUNT(*) AS n FROM session_message'),
+    };
+  } finally {
+    db.close();
+  }
 };
 
 // Records every open so a test can assert a file was never opened for writing.
@@ -464,6 +542,21 @@ describe('performOpenCodeDbMaintenance', () => {
     expect(opens.every((entry) => entry.readonly)).toBe(true);
   });
 
+  it('never applies the v1 rules to a native v2 database, even for a forced generation-1 run', () => {
+    const dbPath = createNativeV2FixtureDb(makeTempDir());
+    const before = v2Counts(dbPath);
+    const { driver: recorded, opens } = recordingDriver();
+
+    const result = runCore(dbPath, { driver: recorded, keepSeqPerAggregate: 1, vacuum: 'force' });
+
+    expect(result).toMatchObject({ status: 'skipped', error: 'v2_database', generation: 2, deletedEvents: 0, vacuumed: false, before: null });
+    // Live sequences and the receipt survive: losing them would reuse a seq
+    // `session_message` already holds and fail recovered-input cancellation.
+    expect(before.seqs).toEqual({ ses_live: 2, ses_idle: 2, [V2_RECEIPT_AGGREGATE]: 0 });
+    expect(v2Counts(dbPath)).toEqual(before);
+    expect(opens).toEqual([{ dbPath, readonly: true }]);
+  });
+
   it('still maintains a real-shaped 1.18.x database (v1 `migration` journal, no drizzle table)', () => {
     const dbPath = createFixtureDb(makeTempDir());
     const { driver: recorded, opens } = recordingDriver();
@@ -540,6 +633,8 @@ describe('detectOpenCodeDbGeneration', () => {
     for (const marker of ['kv-marker', 'kv-table']) {
       expect(generationOf(createV2FixtureDb(makeTempDir(), { marker }))).toBe(2);
     }
+    // A native v2 database: no session_context_epoch, both migration journals.
+    expect(generationOf(createNativeV2FixtureDb(makeTempDir()))).toBe(2);
   });
 });
 
@@ -567,18 +662,34 @@ describe('inspectOpenCodeDb', () => {
     db.close();
     const inspection = inspectOpenCodeDb({ driver, dbPath });
     expect(inspection.exists).toBe(true);
+    expect(inspection.generation).toBe('unknown');
     expect(inspection.schema).toBe('mismatch');
     expect(inspection.error).toContain('schema_mismatch');
   });
 
   it('reports the database generation and stops at a v2 file, opening it read-only', () => {
-    const v2Path = createV2FixtureDb(makeTempDir());
+    const v2Path = createNativeV2FixtureDb(makeTempDir());
     const { driver: recorded, opens } = recordingDriver();
-    expect(inspectOpenCodeDb({ driver: recorded, dbPath: v2Path })).toMatchObject({ exists: true, generation: 2, error: 'v2_database', eventRows: 0 });
+    const v2 = inspectOpenCodeDb({ driver: recorded, dbPath: v2Path });
+    expect(v2).toMatchObject({ exists: true, generation: 2, schema: 'unknown', error: 'v2_database', eventRows: 0, orphanEventRows: 0 });
+    expect(v2.dbBytes).toBeGreaterThan(0);
     expect(opens).toEqual([{ dbPath: v2Path, readonly: true }]);
 
     const v1Path = createFixtureDb(makeTempDir());
     expect(inspectOpenCodeDb({ driver, dbPath: v1Path })).toMatchObject({ generation: 1, schema: 'ok', eventRows: 235, error: null });
+  });
+
+  it('reports a kv table without the v2 profile as an unknown layout, never as v2', () => {
+    // v1 tables plus a bare `kv`: not a layout DevRyan has seen OpenCode 2 write.
+    const dbPath = createV2FixtureDb(makeTempDir());
+    const { driver: recorded, opens } = recordingDriver();
+
+    const inspection = inspectOpenCodeDb({ driver: recorded, dbPath });
+
+    expect(inspection).toMatchObject({ exists: true, generation: 2, schema: 'mismatch' });
+    expect(inspection.error).toMatch(/^schema_mismatch: /);
+    expect(inspection.error).toContain('session_v2');
+    expect(opens).toEqual([{ dbPath, readonly: true }]);
   });
 });
 
@@ -776,6 +887,31 @@ describe('createOpenCodeDbMaintenance', () => {
     expect(counts(dbPath).events).toBe(eventsBefore);
   });
 
+  it('reports the selected native v2 database as OpenCode 2 and leaves it untouched', async () => {
+    const dir = makeTempDir();
+    const dbPath = createNativeV2FixtureDb(dir);
+    const before = v2Counts(dbPath);
+    recordSelection(dir, dbPath);
+    const { maintenance } = createRuntime(dbPath, dir, { selection: false });
+
+    const inspection = await maintenance.inspect();
+    expect(inspection).toMatchObject({
+      dbPath,
+      exists: true,
+      dbSource: 'selection',
+      runtimeGeneration: 2,
+      generation: 2,
+      schema: 'unknown',
+      error: 'v2_database',
+    });
+    expect(inspection.dbBytes).toBeGreaterThan(0);
+    expect(await maintenance.run({ vacuum: 'force', reason: 'compact' }))
+      .toMatchObject({ status: 'skipped', error: 'runtime_generation_unsupported', deletedEvents: 0, vacuumed: false });
+    expect(await maintenance.run({ dryRun: true }))
+      .toMatchObject({ status: 'skipped', error: 'v2_database', generation: 2, dbSource: 'selection' });
+    expect(v2Counts(dbPath)).toEqual(before);
+  });
+
   it('never prunes a v2 database even when the legacy core fixture names it', async () => {
     const dir = makeTempDir();
     const dbPath = createV2FixtureDb(dir);
@@ -834,19 +970,6 @@ describe('createOpenCodeDbMaintenance', () => {
     );
     expect(counts(dbPath).perAggregate.ses_idle).toEqual({ n: 64, lo: 36, hi: 99 });
   }, 20_000);
-});
-
-describe('createOpenCodeDbCompactionScheduler', () => {
-  it('is a one-shot flag', () => {
-    const scheduler = createOpenCodeDbCompactionScheduler();
-    expect(scheduler.isForcedPending()).toBe(false);
-    expect(scheduler.consumeForced()).toBe(false);
-    scheduler.scheduleForced();
-    expect(scheduler.isForcedPending()).toBe(true);
-    expect(scheduler.consumeForced()).toBe(true);
-    expect(scheduler.consumeForced()).toBe(false);
-    expect(scheduler.isForcedPending()).toBe(false);
-  });
 });
 
 describe('other OpenCode process detection', () => {

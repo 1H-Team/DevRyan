@@ -17,7 +17,7 @@ import {
   sendGatewayRelayFailure,
 } from '/src/egress/gateway-relay.js';
 
-assert.equal(JSON.parse(await fs.readFile('/opt/devryan/node_modules/@opencode/core/package.json', 'utf8')).version, '2.0.24');
+assert.equal(JSON.parse(await fs.readFile('/opt/devryan/node_modules/@opencode/core/package.json', 'utf8')).version, '2.0.26');
 assert.equal(JSON.parse(await fs.readFile('/opt/devryan/node_modules/opencode-gpt-imagegen/package.json', 'utf8')).version, '0.1.12');
 
 let rotation = 0;
@@ -175,7 +175,7 @@ async function launch(name, port, environment) {
     try {
       const response = await fetch(`${url}/devryan/ready`, { headers, signal: AbortSignal.timeout(500) });
       const ready = await response.json();
-      if (response.ok && ready.ready && ready.generation === 2 && ready.opencode.version === '2.0.24') { healthy = true; break; }
+      if (response.ok && ready.ready && ready.generation === 2 && ready.opencode.version === '2.0.26') { healthy = true; break; }
     } catch { /* bounded startup wait */ }
     await delay(100);
   }
@@ -267,7 +267,7 @@ try {
   assert.equal(providerCalls.some((call) => call.image), false);
   assert.ok(providerCalls.filter((call) => !call.image).every((call) => call.model === 'gpt-6-astra'));
   assert.ok(!JSON.stringify(diagnostics).match(/fixture-access|fixture-refresh|fixture-account/));
-  console.log(JSON.stringify({ passed: true, runtime: 'OpenCode 2.0.24', chatRequests: providerCalls.filter((c) => !c.image).length,
+  console.log(JSON.stringify({ passed: true, runtime: 'OpenCode 2.0.26', chatRequests: providerCalls.filter((c) => !c.image).length,
     imageRequests: providerCalls.filter((c) => c.image).length, coordinatedRefreshes: rotation, attachmentObserved,
     structured: true, cancellationSettled: true, siwcImageRefused: true, restart: true,
     hostClientAndEvents: true, refusedWebsocketUpgrades, transport: 'HTTP', internet: 'disabled' }));

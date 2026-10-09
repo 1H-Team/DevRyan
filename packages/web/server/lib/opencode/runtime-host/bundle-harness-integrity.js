@@ -142,9 +142,7 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
       if (/^refs\/devryan\/leases\/[a-f0-9-]{36}$/.test(name)) stores.push({store:await openChangeStore(root,gitDirectory,{ref:name,gitRunner,...nativeFiles?{syncObjects:nativeFiles.deferObjectDurability}:{}}),ref:name});
     }
     for (const {store,ref} of stores) {
-      const keys = (await runGit(root,['--git-dir',gitDirectory,'ls-tree','-r','--name-only',store.tree])).toString().trim().split('\n').filter(Boolean);
-      for (const key of keys) {
-        const record = await store.get(key);
+      for await (const {key,value:record} of store.records()) {
         if (key.startsWith('transactions/') && record.state === 'prepared') throw bundleFailure('migration_revert_pending');
         if (key.startsWith('sessions/') && record.pending) throw bundleFailure('migration_revert_pending');
         if (key.startsWith('leases/') && (!['published','cancelled'].includes(record.state) || record.cleanupPending)) throw bundleFailure('bundle_execution_unsettled');

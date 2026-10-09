@@ -40,7 +40,7 @@ export async function createCompiledCursorFixture({root,artifactRoot,provider,ob
  const launchArtifacts={controllerBinary:artifacts.controller,writerBinary:artifacts.writer,artifactManifestPath:manifestPath,artifactManifestSha256:manifestSha256,reviewedNativeConfigPath,reviewedPluginManifestPath};
  let runtimeOwner,host,managed,cursor,nativeURL,controller,epoch=0;
  const readonlyScope=new AsyncLocalStorage();
- const deps={getRuntime:()=>({generation:2,baseUrl:nativeURL,version:'2.0.24',epoch}),getAuthHeaders:()=>runtimeOwner?.getAuthHeaders()??{},
+ const deps={getRuntime:()=>({generation:2,baseUrl:nativeURL,version:'2.0.26',epoch}),getAuthHeaders:()=>runtimeOwner?.getAuthHeaders()??{},
   withNativeWebOperation:(spec,action)=>runtimeOwner.nativeOwner.withWebOperation(spec,action)};
  const admission=createOpenCodeAdmission(deps,{beforePromptDispatch:(receipt,context)=>managed.admitNativePrompt(receipt,context),
   onPromptDispatchFailure:receipt=>managed.markNativePromptUncertain(receipt),

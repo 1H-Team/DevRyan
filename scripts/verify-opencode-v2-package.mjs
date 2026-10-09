@@ -10,7 +10,6 @@ import { createOpenCodeClient } from '../packages/web/server/lib/opencode/openco
 import { createOpenCodeAdmission, createV2MessageId } from '../packages/web/server/lib/opencode/v2/admission.js';
 import { resolveSqliteDriver } from '../packages/web/server/lib/opencode/db-maintenance-core.js';
 import { createRuntimeBundleStore } from '../packages/web/server/lib/opencode/runtime-host/runtime-bundle.js';
-import { verifyNativeCloneCompatibility } from '../packages/web/server/lib/opencode/runtime-host/native-bundle-compatibility.js';
 import { resumeRuntimeBundle } from '../packages/web/server/lib/opencode/runtime-host/runtime-bundle-resume.js';
 import { readRollbackIntentSync, rollbackIntentPath, assertRollbackPhysicalExit } from '../packages/web/server/lib/opencode/runtime-host/bundle-rollback-intent.js';
 import { createRuntimeBundleCheckpoint } from '../packages/web/server/lib/opencode/runtime-host/bundle-checkpoint.js';
@@ -52,7 +51,8 @@ import { assertPackagePreflightOptions, assertCompiledCompositionCatalogs, packa
 import { runCompiledManagedIntervalArm } from './opencode-v2-native/package-managed-interval-lane.mjs';
 import { runCompiledIntervalCorrectness, validateEventReconcileInterval, intervalCorrectnessArmTimeoutMs } from './opencode-v2-native/package-interval-correctness.mjs';
 import { runCompiledHumanQueue } from './opencode-v2-native/package-human-queue-lane.mjs';
-import { createCompiledBundleUpgradeLane, snapshotClosedBundleSource, snapshotRetainedBundleWork } from './opencode-v2-native/package-bundle-upgrade-lane.mjs';
+import { assertBundleCloneLayout, createCompiledBundleUpgradeLane, snapshotClosedBundleSource, snapshotRetainedBundleWork, verifyCompiledCloneCompatibility } from './opencode-v2-native/package-bundle-upgrade-lane.mjs';
+import { runCompiledFreshInstallUpgrade } from './opencode-v2-native/package-fresh-install-upgrade-lane.mjs';
 import { runCompiledClaudeCredentialBridge } from './opencode-v2-native/compiled-claude-credentials.mjs';
 import { runCompiledHelperIsolation } from './opencode-v2-native/package-helper-isolation-lane.mjs';
 import { createCompiledHelperAgentFixture } from './opencode-v2-native/package-helper-agent-fixture.mjs';
@@ -88,7 +88,7 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
   const cache = path.join(repositoryRoot, '.cache/v2-validation'); await fs.mkdir(cache, { recursive: true });
   const root = await fs.realpath(await fs.mkdtemp(path.join(cache, 'package-')));
   const run = createRunRoot({ dir: root, owner: 'scripts/verify-opencode-v2-package.mjs',
-    extraPayloads: ['bundles', 'negative', 'legacy', 'relocated', 'asset-supervision', 'denied-read-control'] });
+    extraPayloads: ['bundles', 'negative', 'legacy', 'relocated', 'asset-supervision', 'denied-read-control', 'fresh-install-upgrade/bundles'] });
   const cases = [], observations = [], diagnostics = [], cleanupFailures = [];
   const source = await captureNativeAcceptanceSource();
   const runnerSha256 = fixtureSha256(await fs.readFile(fileURLToPath(import.meta.url)));
@@ -161,7 +161,7 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
     let nativeURL, epoch = 0, descriptor, currentController, baselineSnapshot;
     const nativeTransport = { fetch: globalThis.fetch };
     const intervalReads = { active: 0, history: 0, total: 0 };
-    const deps = { getRuntime: () => ({ generation: 2, baseUrl: nativeURL, version: '2.0.24', epoch }),
+    const deps = { getRuntime: () => ({ generation: 2, baseUrl: nativeURL, version: '2.0.26', epoch }),
       fetchImpl: (url, input) => {
         if (managedInterval) {
           intervalReads.total++;
@@ -243,15 +243,7 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
       const receipt = await runCompiledMigrationReplay({ request, run: executeMigration }); actualImports++;
       if (loseImportAck) { loseImportAck = false; throw Object.assign(new Error('fixture_import_ack_lost'), { code: 'fixture_import_ack_lost' }); }
       return receipt;
-    }, verifyV2Compatibility: async ({ source, artifacts: target }) => {
-      const sourceArtifact = await verifyNativeRuntimeArtifacts({ manifestPath: source.launch.artifactManifestPath,
-        manifestSha256: source.launch.artifactManifestSha256, launcher: path.join(path.dirname(source.launch.artifactManifestPath), 'DevRyan-execution-darwin-arm64') });
-      const targetArtifact = await verifyNativeRuntimeArtifacts({ manifestPath: target.artifactManifestPath,
-        manifestSha256: target.artifactManifestSha256, launcher: path.join(path.dirname(target.artifactManifestPath), 'DevRyan-execution-darwin-arm64') });
-      verifyNativeCloneCompatibility({ left: sourceArtifact.manifest, right: targetArtifact.manifest, databasePath: source.launch.opencodeDatabasePath });
-      return { status: 'compatible', binding: { protocol: 'devryan-v2-clone/1', sourceBundleID: source.bundleID,
-        sourceManifestSha256: source.launch.artifactManifestSha256, targetManifestSha256: target.artifactManifestSha256 } };
-    }, captureCredentials: upgradeLane.captureCredentials, reconcileRollback: async input => {
+    }, verifyV2Compatibility: verifyCompiledCloneCompatibility, captureCredentials: upgradeLane.captureCredentials, reconcileRollback: async input => {
       assert.equal(currentController.hasExited(), true, 'Rollback did not stop the actual compiled controller');
       for (const location of locations) assert.deepEqual(await host.runtime.activeLeases({ directory: location.directory }), []);
       assert.equal(fixtureSha256(await fs.readFile(fixture.sourceLaunch.opencodeDatabasePath)), fixture.expected.databaseSha256);
@@ -305,6 +297,9 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
     const candidateInput = { bundleID: 'candidate', generation: 2, source: { kind: 'bundle', bundleID: baseline.bundleID },
       projectMap: baseline.projectMap, auxiliary: { kind: 'absent' }, launchArtifacts };
     const importsBeforeClone = actualImports;
+    // The closed baseline the clone gate inspects; the fresh-install lane proves the other layout.
+    if (!preflight && !managedInterval && !managedCorrectness) cases.push(assertBundleCloneLayout({ kind: 'legacy',
+      databasePath: baseline.launch.opencodeDatabasePath, left: baselineArtifacts.manifest, right: artifacts.manifest }));
     descriptor = await store.prepare(candidateInput);
     assert.equal(actualImports, importsBeforeClone, 'A→B clone must not rerun the legacy importer');
     const afterCloneSnapshot=await snapshotClosedBundleSource(baseline);
@@ -693,6 +688,10 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
       assert.equal(provider.requests.length, providerCountBeforeRecovery, 'Native inspection/restart inferred or replayed a prompt');
       assert.equal(fixtureSha256(await fs.readFile(fixture.sourceLaunch.opencodeDatabasePath)), fixture.expected.databaseSha256);
       assert.deepEqual(await snapshotRetainedBundleWork(descriptor), retainedWork);
+      // Separate control root: the same forward clone and rollback from the production empty source.
+      cases.push(...await runCompiledFreshInstallUpgrade({ root, reviewedPluginManifestPath, configuration, catalogRequirements, provider, observations,
+        baseline: { artifacts: baselineArtifacts, manifestPath: baselineManifestPath, manifestSha256: baselineManifestSha256 },
+        candidate: { artifacts, manifestPath, manifestSha256 } }));
       // Separate control root: a fresh default-shaped initialization that still holds its setup seed at first boot.
       const providerCountBeforeSeeded = provider.requests.length;
       cases.push(await runCompiledSeededCredentialBoot({ root, artifacts, manifestPath, manifestSha256, reviewedPluginManifestPath,

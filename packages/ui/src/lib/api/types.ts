@@ -988,13 +988,10 @@ export interface OpenCodeStorageStatus {
   lastDryRun: OpenCodeStorageRunSummary | null;
   running: boolean;
   maintenance: OpenCodeStorageMaintenanceSettings;
-  managedRuntime: boolean;
-  compactionPending: boolean;
 }
 
+// Only `{ dryRun: true }` is served; any other request answers 409 `maintenance_not_applicable`.
 export interface OpenCodeStorageCompactResult {
-  scheduled?: boolean;
-  pending?: boolean;
   dryRun?: boolean;
   run?: OpenCodeStorageRunSummary;
 }

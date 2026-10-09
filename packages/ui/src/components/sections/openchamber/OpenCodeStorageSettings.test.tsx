@@ -52,6 +52,7 @@ const run: OpenCodeStorageRunSummary = {
 const status: OpenCodeStorageStatus = {
   dbPath: '/Users/dev/.local/share/opencode/opencode.db',
   exists: true,
+  generation: 1,
   schema: 'ok',
   dbBytes: 15_400_000_000,
   walBytes: 4_000_000,
@@ -66,8 +67,6 @@ const status: OpenCodeStorageStatus = {
   lastDryRun: null,
   running: false,
   maintenance: { enabled: true, idleHours: 24, keepSeqPerAggregate: 64 },
-  managedRuntime: true,
-  compactionPending: false,
 };
 
 const renderView = (props: Partial<React.ComponentProps<typeof OpenCodeStorageSettingsView>> = {}) => renderToStaticMarkup(
@@ -79,11 +78,14 @@ const renderView = (props: Partial<React.ComponentProps<typeof OpenCodeStorageSe
       dryRun={null}
       busy="idle"
       onDryRun={() => {}}
-      onCompact={() => {}}
       {...props}
     />
   </I18nProvider>,
 );
+
+// The `disabled` attribute, not the `disabled:` Tailwind variants in the class list.
+const buttonStates = (markup: string) => (markup.match(/<button[^>]*>/g) ?? [])
+  .map((button) => /\sdisabled(?:=""|(?=[\s>]))/.test(button));
 
 describe('OpenCodeStorageSettings', () => {
 
@@ -91,13 +93,13 @@ describe('OpenCodeStorageSettings', () => {
     const markup = renderWithApis({
       ...baseDiagnostics,
       getOpenCodeStorage: async () => status,
-      compactOpenCodeStorage: async () => ({ scheduled: true }),
+      compactOpenCodeStorage: async () => ({ dryRun: true }),
     });
     expect(markup).toContain('data-opencode-storage-settings');
     expect(markup).toContain('OpenCode Storage');
     expect(markup).toContain('Reading OpenCode storage');
     expect(markup).toContain('Dry Run');
-    expect(markup).toContain('Compact Now');
+    expect(markup).not.toContain('Compact Now');
   });
 
   test('the view shows size, reclaimable space, event rows and the last run', () => {
@@ -106,19 +108,15 @@ describe('OpenCodeStorageSettings', () => {
     expect(markup).toContain('1.1 GiB reclaimable');
     expect(markup).toContain((177_081).toLocaleString());
     expect(markup).toContain(`removed ${(13727).toLocaleString()} events`);
-    expect(markup).not.toContain('turned off in settings.json');
-    expect(markup).not.toContain('only available for the OpenCode runtime');
   });
 
-  test('the view explains disabled automatic cleanup, external runtimes and pending compaction', () => {
-    const disabled = renderView({ status: { ...status, maintenance: { ...status.maintenance, enabled: false } } });
-    expect(disabled).toContain('turned off in settings.json');
-
-    const external = renderView({ status: { ...status, managedRuntime: false } });
-    expect(external).toContain('only available for the OpenCode runtime');
-
-    const pending = renderView({ status: { ...status, compactionPending: true } });
-    expect(pending).toContain('Compaction is scheduled');
+  test('an OpenCode 1 database is read-only: no automatic cleanup is promised and only Dry Run is offered', () => {
+    const never = renderView({ status: { ...status, lastRun: null, maintenance: { ...status.maintenance, enabled: false } } });
+    expect(never).toContain('No cleanup has run. DevRyan runs OpenCode 2 and no longer cleans up an OpenCode 1 database');
+    expect(never).not.toContain('before every OpenCode launch');
+    expect(never).not.toContain('turned off in settings.json');
+    expect(never).not.toContain('Compact Now');
+    expect(buttonStates(never)).toEqual([false]);
 
     const orphans = renderView({ status: { ...status, orphanEventRows: 42 } });
     expect(orphans).toContain('42 events belong to deleted sessions');
@@ -140,10 +138,48 @@ describe('OpenCodeStorageSettings', () => {
     expect(markup).toContain('another OpenCode process is running');
   });
 
+  test('the view reports a native OpenCode 2 database as needing no maintenance, with Dry Run off', () => {
+    const nativeV2: OpenCodeStorageStatus = {
+      ...status,
+      dbPath: '/bundle/opencode/opencode.db',
+      dbSource: 'selection',
+      runtimeGeneration: 2,
+      generation: 2,
+      schema: 'unknown',
+      dbBytes: 12 * 1024 * 1024,
+      walBytes: 2 * 1024 * 1024,
+      eventRows: 0,
+      orphanEventRows: 0,
+      error: 'v2_database',
+      lastRun: null,
+      maintenance: { ...status.maintenance, enabled: false },
+    };
+    const markup = renderView({ status: nativeV2 });
+    expect(markup).toContain('Database 12.0 MiB (+ 2.0 MiB WAL) · OpenCode 2 layout');
+    expect(markup).toContain('Cleanup is not needed: OpenCode 2 does not keep the event log');
+    expect(markup).not.toContain('not the one DevRyan knows');
+    expect(markup).not.toContain('No cleanup has run');
+    expect(buttonStates(markup)).toEqual([true]);
+  });
+
+  test('an unknown layout, including a kv table without the v2 profile, still fails closed', () => {
+    const unknownLayouts: OpenCodeStorageStatus[] = [
+      { ...status, generation: 'unknown', schema: 'mismatch', error: 'schema_mismatch: session_context_epoch' },
+      { ...status, generation: 2, schema: 'mismatch', error: 'schema_mismatch: session_v2' },
+    ];
+    for (const unknown of unknownLayouts) {
+      const markup = renderView({ status: unknown });
+      expect(markup).toContain('not the one DevRyan knows');
+      expect(markup).not.toContain('OpenCode 2 layout');
+      expect(buttonStates(markup)).toEqual([true]);
+    }
+  });
+
   test('is mounted by the Data Retention section and its copy lives in the storage namespace', () => {
     expect(retentionSource).toContain("import { OpenCodeStorageSettings } from './OpenCodeStorageSettings';");
     expect(retentionSource).toContain('<OpenCodeStorageSettings />');
     expect(messages).toContain("'settings.openchamber.storage.title': 'OpenCode Storage'");
-    expect(messages).toContain("'settings.openchamber.storage.actions.compact': 'Compact Now'");
+    expect(messages).toContain("'settings.openchamber.storage.actions.dryRun': 'Dry Run'");
+    expect(messages).not.toContain("'settings.openchamber.storage.actions.compact'");
   });
 });

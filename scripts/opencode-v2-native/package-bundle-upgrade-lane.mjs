@@ -6,8 +6,46 @@ import { runNativeBundleCredentialProcess, NATIVE_BUNDLE_CREDENTIAL_CONTRACT } f
 import { createHash } from 'node:crypto';
 import { verifyNativeRuntimeArtifacts } from '../../packages/web/server/lib/opencode/runtime-host/native-artifacts.js';
 import { nativeBundleCredentialFingerprint } from '../../packages/web/server/lib/opencode/runtime-host/native-bundle-credential-contract.js';
+import { inspectNativeCloneLayout, isReviewedNativeClonePair, verifyNativeCloneCompatibility, REVIEWED_NATIVE_CLONE_LAYOUT,
+  REVIEWED_NATIVE_FRESH_CLONE_LAYOUT } from '../../packages/web/server/lib/opencode/runtime-host/native-bundle-compatibility.js';
 import { snapshotOwnedTree } from './package-rollback-lane.mjs';
 import { cloneTree } from '../qa/run-root.mjs';
+
+/** The production clone gate over both re-verified artifacts and the closed source database. */
+export async function verifyCompiledCloneCompatibility({ source, artifacts }) {
+  const verify = (manifestPath, manifestSha256) => verifyNativeRuntimeArtifacts({ manifestPath, manifestSha256,
+    launcher: path.join(path.dirname(manifestPath), 'DevRyan-execution-darwin-arm64') });
+  const left = await verify(source.launch.artifactManifestPath, source.launch.artifactManifestSha256);
+  const right = await verify(artifacts.artifactManifestPath, artifacts.artifactManifestSha256);
+  verifyNativeCloneCompatibility({ left: left.manifest, right: right.manifest, databasePath: source.launch.opencodeDatabasePath });
+  return { status: 'compatible', binding: { protocol: 'devryan-v2-clone/1', sourceBundleID: source.bundleID,
+    sourceManifestSha256: source.launch.artifactManifestSha256, targetManifestSha256: artifacts.artifactManifestSha256 } };
+}
+
+const reviewedCloneLayouts = Object.freeze({ legacy: REVIEWED_NATIVE_CLONE_LAYOUT, 'fresh-install': REVIEWED_NATIVE_FRESH_CLONE_LAYOUT });
+/** Each source kind must reach its own reviewed layout: a legacy import keeps
+ * __drizzle_migrations, a fresh install has none. Release-independent structure
+ * is always checked; the exact reviewed layout and release pair only across
+ * releases, the only clones whose gate inspects the database. */
+export function assertBundleCloneLayout({ kind, databasePath, left, right }) {
+  const reviewed = reviewedCloneLayouts[kind];
+  assert.ok(reviewed, 'Unknown clone source layout');
+  const layout = inspectNativeCloneLayout(databasePath);
+  assert.equal(layout.migrationsSha256 === null, kind === 'fresh-install', `The ${kind} baseline has the wrong legacy migration journal`);
+  const crossRelease = left.opencodeVersion !== right.opencodeVersion;
+  if (crossRelease) {
+    assert.deepEqual(layout, { ...reviewed }, `The ${kind} baseline is not the reviewed ${kind} layout`);
+    assert.equal(isReviewedNativeClonePair(left, right, layout), true, `${left.opencodeVersion} → ${right.opencodeVersion} is not a reviewed clone pair`);
+  }
+  return { id: `compiled-clone-layout-${kind}`, status: 'passed', layout, baselineVersion: left.opencodeVersion,
+    candidateVersion: right.opencodeVersion, gate: crossRelease ? 'reviewed-cross-release-layout' : 'same-release-structure-only' };
+}
+
+/** Applied native migration IDs; a clone must never move its source to another level. */
+export function readNativeMigrationIDs(databasePath) {
+  const db = resolveSqliteDriver().open(databasePath, { readonly: true });
+  try { return db.prepare('SELECT id FROM migration ORDER BY id').all().map(row => row.id); } finally { db.close(); }
+}
 
 /** Session history is compared independently of the intentionally reconciled
  * credential/KV state. This is a read of the closed native database, not a write. */
@@ -29,6 +67,27 @@ export async function snapshotClosedBundleSource(descriptor){
  assert.equal(path.relative(directory,descriptor.launch.opencodeDatabasePath),'opencode/opencode.db');
  return {files:(await snapshotOwnedTree(directory)).filter(row=>row.path!=='opencode/opencode.db-shm'),
   history:readBundleConversationRows(descriptor)};
+}
+
+/** A clone captures A's credentials through A's original controller, which
+ * checkpoints any committed WAL frames when it closes. That rewrites
+ * opencode.db/-wal bytes but never their data, so this snapshot compares the
+ * schema and every table's rows (one readonly transaction) instead of those two
+ * files; every other byte and the original history stay exact. */
+export async function snapshotCheckpointedBundleSource(descriptor) {
+  const closed = await snapshotClosedBundleSource(descriptor), database = ['opencode/opencode.db', 'opencode/opencode.db-wal'];
+  const db = resolveSqliteDriver().open(descriptor.launch.opencodeDatabasePath, { readonly: true });
+  let tables;
+  try {
+    db.prepare('BEGIN').run();
+    const schema = db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name").all();
+    tables = { schema, rows: Object.fromEntries(schema.filter(row => row.type === 'table').map(row => [row.name,
+      createHash('sha256').update(JSON.stringify(db.prepare(`SELECT * FROM "${row.name.replaceAll('"', '""')}"`).all()
+        .map(value => JSON.stringify(value)).sort())).digest('hex')])) };
+  } finally { try { db.prepare('ROLLBACK').run(); } finally { db.close(); } }
+  return { files: closed.files.filter(row => !database.includes(row.path)), database: tables, history: closed.history,
+    walBytes: closed.files.find(row => row.path === database[1]) ? (await fs.stat(descriptor.launch.opencodeDatabasePath + '-wal')).size : null,
+    physical: closed.files.filter(row => database.includes(row.path)) };
 }
 
 /** Dedicated unregistered integration IDs preserve original credential graph

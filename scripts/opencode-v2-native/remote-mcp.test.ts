@@ -120,6 +120,34 @@ test('only exact reviewed native configuration origins can perform sealed no-op 
 });
 
 
+test('the 2.0.26 configuration policy origin may only list and remove reviewed MCP servers', async () => {
+  const { provideRegistrationOrigin } = await import('../../packages/web/server/lib/opencode/runtime-host/registration-origin.js');
+  const { createReviewedNativePluginRegistry } = await import('../../packages/web/server/lib/opencode/runtime-host/native-plugin-registry.js');
+  const registry = createReviewedNativePluginRegistry('b'.repeat(64));
+  const policy = registry.get('opencode.config.policy'), defaults = registry.get('opencode.mcp.codemode.defaults');
+  if (!policy || !defaults) throw new Error('Pinned policy and defaults origins required');
+  const removed: string[] = []; let changed = 0;
+  const n = native();
+  const value: Mcp.Interface = { ...n.service, transform: callback => Effect.sync(() => {
+    callback({ list: () => [[Mcp.ServerName.make('reviewed'), config]], get: name => name === 'reviewed' ? config : undefined,
+      set: () => { changed++; }, update: () => { changed++; }, remove: name => { removed.push(name); } });
+    return { dispose: Effect.void };
+  }) };
+  const owner = createOwnedRemoteMcp({ ...options(), reviewedConfigurationOrigins: new Map([[policy.id, policy], [defaults.id, defaults]]) });
+  const service = owner.decorateMcp(value, location);
+  await Effect.runPromise(Effect.scoped(provideRegistrationOrigin(policy, service.transform(editor => {
+    for (const [name] of editor.list()) editor.remove(name);
+  }))));
+  expect(removed).toEqual(['reviewed']);
+  for (const mutate of [(editor: Mcp.Editor) => editor.update('reviewed', current => current),
+    (editor: Mcp.Editor) => editor.set('reviewed', { ...config, url: 'http://127.0.0.1:2/forged' })]) {
+    await expect(Effect.runPromise(Effect.scoped(provideRegistrationOrigin(policy, service.transform(mutate)))))
+      .rejects.toThrow('native_mcp_configuration_sealed');
+  }
+  await expect(Effect.runPromise(Effect.scoped(provideRegistrationOrigin(defaults, service.transform(editor => editor.remove('reviewed'))))))
+    .rejects.toThrow('native_mcp_configuration_sealed');
+  expect(removed).toEqual(['reviewed']); expect(changed).toBe(0);
+});
 test('credential ownership accessor never trusts a credential metadata source or plausible MCP name', () => {
   const owner=createOwnedRemoteMcp(options());
   for(const id of ['mcp_foreign','reviewed','xai','openai','cursor-acp']) expect(owner.ownsCredentialIntegration(id)).toBe(false);

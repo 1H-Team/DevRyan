@@ -170,7 +170,7 @@ export async function prepareSourceOpenAiFixture({ databasePath, directory, prof
     assert.deepEqual(requests.map(row => `${row.account}:${row.phase}`), ['A:create','B:create']);
     // Native Credential.create activates atomically; no separate activation is emitted.
     assert.equal(mutationsSeen.length, 2);
-    return { source: 'synthetic-siwc-native-credential-create-source-sdk-shared-queue', nativeVersion: '2.0.24',
+    return { source: 'synthetic-siwc-native-credential-create-source-sdk-shared-queue', nativeVersion: '2.0.26',
       accounts, reopened, requestPhases: requests, settledMutations: mutationsSeen.length, compiledOAuthCreation: false };
   } finally { globalThis.fetch = previousFetch; }
 }

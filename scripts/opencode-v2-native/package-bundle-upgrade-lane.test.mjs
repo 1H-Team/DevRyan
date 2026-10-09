@@ -6,7 +6,8 @@ import { resolveSqliteDriver } from '../../packages/web/server/lib/opencode/db-m
 import { NATIVE_BUNDLE_CREDENTIAL_CONTRACT, nativeBundleCredentialFingerprint as fingerprint, parseNativeBundleCredentialBoot } from '../../packages/web/server/lib/opencode/runtime-host/native-bundle-credential-contract.js';
 import { runSelectedNativeLifecycle } from './package-rollback-lane.mjs';
 import { emptyClaudeLifecycle } from '../../packages/web/server/lib/opencode/runtime-host/native-claude-lifecycle.js';
-import { createCompiledBundleUpgradeLane, snapshotClosedBundleSource, snapshotRetainedBundleWork } from './package-bundle-upgrade-lane.mjs';
+import { assertBundleCloneLayout, createCompiledBundleUpgradeLane, readNativeMigrationIDs, snapshotCheckpointedBundleSource, snapshotClosedBundleSource, snapshotRetainedBundleWork } from './package-bundle-upgrade-lane.mjs';
+import { REVIEWED_NATIVE_CLONE_RELEASES } from '../../packages/web/server/lib/opencode/runtime-host/native-bundle-compatibility.js';
 
 const protocol = NATIVE_BUNDLE_CREDENTIAL_CONTRACT;
 async function fixture() {
@@ -155,4 +156,58 @@ test('selected lifecycle identity failure closes its actual owned child before p
     assert.equal(exit.pid,pid); assert.equal(exit.signal,'SIGTERM'); assert.equal(exit.timedOut,false);
     assert.equal(exit.failure,'selected_native_lifecycle_failed'); assert.equal(exit.hostIdentity,null);
   } finally { await fs.rm(f.root,{recursive:true,force:true}); }
+});
+
+
+test('each clone source kind keeps its own layout; only a cross-release pair must match the exact reviewed layout', async () => {
+  const root = await fs.mkdtemp(path.resolve('.cache/v2-validation/bundle-clone-layout-'));
+  const release = version => ({ opencodeVersion: version, inputs: { coreDigest: REVIEWED_NATIVE_CLONE_RELEASES[version] } });
+  const database = async (name, sql) => {
+    const file = path.join(root, name); await fs.writeFile(file, '');
+    const db = resolveSqliteDriver().open(file); try { db.exec(sql); } finally { db.close(); }
+    return file;
+  };
+  try {
+    const fresh = await database('fresh.db', 'CREATE TABLE migration (id TEXT PRIMARY KEY, time_completed INTEGER NOT NULL);'
+      + "INSERT INTO migration VALUES ('20260127222353_b',2),('20260127222353_a',1)");
+    const legacy = await database('legacy.db', 'CREATE TABLE migration (id TEXT PRIMARY KEY, time_completed INTEGER NOT NULL);'
+      + 'CREATE TABLE __drizzle_migrations (id INTEGER PRIMARY KEY, hash TEXT NOT NULL, created_at INTEGER NOT NULL, name TEXT NOT NULL)');
+    const same = { left: release('2.0.26'), right: release('2.0.26') }, cross = { left: release('2.0.20'), right: release('2.0.26') };
+    const freshCase = assertBundleCloneLayout({ kind: 'fresh-install', databasePath: fresh, ...same });
+    assert.equal(freshCase.id, 'compiled-clone-layout-fresh-install'); assert.equal(freshCase.gate, 'same-release-structure-only');
+    assert.equal(freshCase.layout.migrationsSha256, null);
+    const legacyCase = assertBundleCloneLayout({ kind: 'legacy', databasePath: legacy, ...same });
+    assert.match(legacyCase.layout.migrationsSha256, /^[a-f0-9]{64}$/);
+    assert.throws(() => assertBundleCloneLayout({ kind: 'fresh-install', databasePath: legacy, ...same }), /wrong legacy migration journal/);
+    assert.throws(() => assertBundleCloneLayout({ kind: 'legacy', databasePath: fresh, ...same }), /wrong legacy migration journal/);
+    // Neither synthetic DDL is a reviewed layout, so a cross-release pair refuses both.
+    assert.throws(() => assertBundleCloneLayout({ kind: 'fresh-install', databasePath: fresh, ...cross }), /not the reviewed fresh-install layout/);
+    assert.throws(() => assertBundleCloneLayout({ kind: 'legacy', databasePath: legacy, ...cross }), /not the reviewed legacy layout/);
+    assert.throws(() => assertBundleCloneLayout({ kind: 'imported', databasePath: fresh, ...same }), /Unknown clone source layout/);
+    assert.deepEqual(readNativeMigrationIDs(fresh), ['20260127222353_a', '20260127222353_b']);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('checkpoint-aware source snapshot ignores only a WAL drain and still detects data and durable-file changes', async () => {
+  const f = await fixture();
+  try {
+    const a = await f.create('baseline'); history(a, 'ses_original');
+    const writer = resolveSqliteDriver().open(a.launch.opencodeDatabasePath);
+    try {
+      writer.pragma('journal_mode=WAL'); writer.pragma('wal_autocheckpoint=0');
+      writer.prepare('INSERT INTO session_v2 VALUES (?)').run('ses_pending_in_wal');
+      const before = await snapshotCheckpointedBundleSource(a);
+      assert.ok(before.walBytes > 0);
+      assert.deepEqual(before.history.sessions.map(row => row.id), ['ses_original', 'ses_pending_in_wal']);
+      writer.pragma('wal_checkpoint(TRUNCATE)');
+      const after = await snapshotCheckpointedBundleSource(a);
+      assert.equal(after.walBytes, 0); assert.notDeepEqual(after.physical, before.physical);
+      const strip = ({ physical, walBytes, ...data }) => data;
+      assert.deepEqual(strip(after), strip(before));
+      writer.prepare('INSERT INTO session_message VALUES (?,?,?,?)').run('msg_new', 'ses_original', 2, 'changed data');
+      assert.notDeepEqual(strip(await snapshotCheckpointedBundleSource(a)).database, strip(before).database);
+    } finally { writer.close(); }
+    await fs.writeFile(path.join(path.dirname(a.preparedManifestPath), 'retained.txt'), 'changed durable source');
+    assert.ok((await snapshotCheckpointedBundleSource(a)).files.some(row => row.path === 'retained.txt'));
+  } finally { await fs.rm(f.root, { recursive: true, force: true }); }
 });

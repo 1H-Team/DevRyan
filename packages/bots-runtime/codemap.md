@@ -24,7 +24,7 @@ Dependency-free, JSON-only policy contracts shared by every Production Bots host
 - `docker/opencode/`: pinned non-root OpenCode image and serve entrypoint for a
   server-compiled read-only runtime config. `launch-opencode.mjs` imports the
   fixed per-run environment JSON without shell evaluation and starts the native
-  2.0.24 server under pinned Bun; the legacy
+  2.0.26 server under pinned Bun; the legacy
   initializer remains a fixture-only image command.
 - `opencode/native-server.test.mjs`, `native-image-tool.test.mjs`, `native-tool-policy.test.mjs`: disposable native graph, private route, persistence, structured-output, permission and original image executor checks.
 - `opencode/oauth.integration.mjs` / `oauth-fixture.mjs`: disposable Docker acceptance with no internet, fixture TLS/OAuth/provider endpoints, host coordinator plus two native Bot processes, forced refreshes and native execution of the pinned image plugin. No production login, container or image tag is modified.

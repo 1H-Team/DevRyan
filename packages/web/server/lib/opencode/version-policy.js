@@ -1,13 +1,13 @@
-export const TARGET_OPENCODE_VERSION = '2.0.24';
+export const TARGET_OPENCODE_VERSION = '2.0.26';
 
 // Retained bundles use their matching compiled controller for rollback.
-export const SUPPORTED_NATIVE_OPENCODE_VERSIONS = Object.freeze(['2.0.20', TARGET_OPENCODE_VERSION]);
+export const SUPPORTED_NATIVE_OPENCODE_VERSIONS = Object.freeze(['2.0.20', '2.0.24', TARGET_OPENCODE_VERSION]);
 
 // The Bot runtime container image pins its own OpenCode build
 // (packages/bots-runtime/docker/opencode/Dockerfile). The two roll independently:
 // the host pin can move ahead while the container image waits for a rebuilt,
 // re-verified release.
-export const BOT_TARGET_OPENCODE_VERSION = '2.0.24';
+export const BOT_TARGET_OPENCODE_VERSION = '2.0.26';
 
 const EXACT_VERSION = /^2\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 

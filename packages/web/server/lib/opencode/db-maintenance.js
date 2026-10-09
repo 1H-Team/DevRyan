@@ -7,15 +7,17 @@
 // live-OpenCode-process guards, the worker-thread executor, the persisted
 // last-run file and the harness journal.
 //
-// The pre-launch hook (`lifecycle.deps.beforeManagedSpawn`) runs `run()` with
-// `vacuum: 'never'` and a time budget while no managed OpenCode process
-// exists; the Settings → Storage "Compact now" action schedules a one-shot
-// forced run that the same hook consumes across the restart it triggers.
+// The server calls only `inspect()` and dry runs (Settings → Storage). The
+// pass mutates nothing unless the selected runtime is OpenCode 1, and runtime
+// selection accepts generation 2 only, so no mutating pass runs; the former
+// pre-launch hook and the forced "Compact now" hand-off were removed.
 //
-// The database comes from the runtime selection manifest the lifecycle writes
-// before every managed launch (`runtime-selection.js`). Without one, runs
+// The database comes from the runtime selection manifest the server writes at
+// boot (`runtime-selection.js`; `application.js` records the selected native
+// bundle's `launch.opencodeDatabasePath`, generation 2). Without one, runs
 // refuse to mutate (`runtime_selection_unavailable`); inspection and dry runs
-// fall back to the legacy newest-by-mtime guess and report `dbSource`.
+// fall back to the legacy newest-by-mtime guess and report `dbSource`. A
+// native v2 database inspects as `v2_database`: no maintenance applies.
 // ---------------------------------------------------------------------------
 
 import fs from 'node:fs';
@@ -37,7 +39,6 @@ import {
 
 export {
   OPENCODE_DB_MAINTENANCE_DEFAULTS,
-  OPENCODE_DB_PRELAUNCH_TIME_BUDGET_MS,
   normalizeOpenCodeDbMaintenanceSettings,
   resolveSqliteDriver,
 } from './db-maintenance-core.js';
@@ -265,28 +266,6 @@ const summarizeRun = (result, database) => ({
   after: result.after,
   error: result.error,
 });
-
-/**
- * One-shot coordination between the Compact route and the pre-launch hook:
- * the route schedules a forced VACUUM, restarts OpenCode, and the hook that
- * runs before the new managed spawn consumes it.
- */
-export const createOpenCodeDbCompactionScheduler = () => {
-  let forcedPending = false;
-  return {
-    scheduleForced() {
-      forcedPending = true;
-    },
-    consumeForced() {
-      const pending = forcedPending;
-      forcedPending = false;
-      return pending;
-    },
-    isForcedPending() {
-      return forcedPending;
-    },
-  };
-};
 
 export const createOpenCodeDbMaintenance = ({
   dataDir,

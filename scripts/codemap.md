@@ -229,7 +229,14 @@ Repository automation entrypoint for developer workflows: validation planning, l
   `package-seeded-credential-lane.mjs` boots a fresh bundle whose setup
   credential seed is present at first boot; distinct constructor-owned
   never-started checkpoints fence source preparation and prepared-bundle
-  selection. `removal-lanes.mjs` uses the
+  selection. `package-bundle-upgrade-lane.mjs` owns the clone gate call and
+  `assertBundleCloneLayout` (each source kind keeps its reviewed layout; the
+  exact layout is required only across releases).
+  `package-fresh-install-upgrade-lane.mjs` repeats the forward clone and
+  rollback in its own control root from `createFreshInstallSource`, the
+  production zero-byte `empty.db` without `__drizzle_migrations`
+  (`createEmptyRuntimeFixture` keeps that legacy journal).
+  `removal-lanes.mjs` uses the
   production removal coordinator, independent native row checks, real writer
   cancellation and retained commit recovery; published workspace bytes stay
   intact. Optional `--managed-wake-attribution` adds the finite same-runtime

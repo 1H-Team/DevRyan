@@ -47,12 +47,12 @@ test('private native hello verifies the canonical pin without asserting readines
   await expect(f.host.plugin({ action: 'hello', policyVersion: 1, instanceID: 'forged', transport: 'native-v2' }))
     .rejects.toMatchObject({ code: 'recovery_runtime_unverified' });
   expect(reads).toHaveLength(0);
-  for (const version of ['2.0.20', '2.0.24']) {
+  for (const version of ['2.0.20', '2.0.24', '2.0.26']) {
     f.client.health.runtimeInfo = async options => { reads.push(options); return { version }; };
     const hello = await f.host.helloNative({ policyVersion: 1, instanceID: `native-owner-${version}` });
     expect(hello).toMatchObject({ instanceID: `native-owner-${version}`, supported: false, enforced: false });
   }
-  expect(reads).toHaveLength(2);
+  expect(reads).toHaveLength(3);
   expect(reads[0].signal).toBeInstanceOf(AbortSignal);
   expect(reads[0].maxResponseBytes).toBe(16 * 1024 * 1024);
   expect(typeof reads[0].onResponseRead).toBe('function');
@@ -60,7 +60,7 @@ test('private native hello verifies the canonical pin without asserting readines
 
 test('private native hello rejects unknown, malformed, mismatched and replaced runtime evidence', async () => {
   const f = await nativeSelectionHost();
-  for (const version of [null, 'unknown', '1.18.25', '2.0.21', '2.0.20-dev', ' 2.0.20 ', '2.0.24-dev', ' 2.0.24 ', '2.0.25', 2]) {
+  for (const version of [null, 'unknown', '1.18.25', '2.0.21', '2.0.20-dev', ' 2.0.20 ', '2.0.24-dev', ' 2.0.24 ', '2.0.25', '2.0.26-dev', '2.0.27', 2]) {
     f.client.health.runtimeInfo = async () => ({ version });
     await expect(f.host.helloNative({ policyVersion: 1, instanceID: 'native-owner' }))
       .rejects.toMatchObject({ code: 'recovery_runtime_unverified' });

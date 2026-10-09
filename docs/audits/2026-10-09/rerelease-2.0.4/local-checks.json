@@ -1,0 +1,55 @@
+{
+  "verifiedAt": "2026-10-09T16:25:39.345Z",
+  "version": "2.0.4",
+  "releaseName": "DevRyanv2.0.4",
+  "commitMessage": "release v2.0.4",
+  "checks": {
+    "validateFull": {
+      "exitCode": 0,
+      "uiTests": 4067,
+      "uiFiles": 589,
+      "webTests": 6545,
+      "webFiles": 535,
+      "nativeHostTests": 14
+    },
+    "build": {
+      "exitCode": 0
+    },
+    "bundleCheck": {
+      "exitCode": 0,
+      "raw": 4885257,
+      "rawLimit": 4962877,
+      "gzip": 1440401,
+      "gzipLimit": 1456388
+    },
+    "nativeArtifacts": {
+      "exitCode": 0
+    },
+    "electronQa": {
+      "exitCode": 0,
+      "checksPassed": 7
+    },
+    "webQa": {
+      "exitCode": 1,
+      "checksPassed": 7,
+      "reason": "unexpected renderer console errors; bootstrap 403s also recorded for the original release"
+    },
+    "cacheReport": {
+      "exitCode": 0,
+      "cacheGiB": 48.14,
+      "freeDiskGiB": 193.39
+    },
+    "cachePrune": {
+      "exitCode": 0,
+      "mode": "preview-only"
+    }
+  },
+  "pendingMigrationFiles": 0,
+  "hostedMigrations": "checked by the existing GitHub workflow on the replacement source before tag recreation",
+  "notChecked": [
+    "live providers",
+    "installed-app update",
+    "Windows",
+    "notarization"
+  ]
+}

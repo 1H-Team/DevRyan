@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { test } from 'node:test';
-import { createMigrationFixture, createEmptyRuntimeFixture, createMigrationRefusalCopy, fixtureSha256 } from './migration-fixture.mjs';
+import { createMigrationFixture, createEmptyRuntimeFixture, createFreshInstallSource, createMigrationRefusalCopy, fixtureSha256 } from './migration-fixture.mjs';
 import { repositoryRoot } from './artifacts.mjs';
 import { resolveSqliteDriver } from '../../packages/web/server/lib/opencode/db-maintenance-core.js';
 import { captureMigrationInventory } from '../../packages/web/server/lib/opencode/runtime-host/bundle-migration-inventory.js';
@@ -77,4 +77,33 @@ test('native initialization seed preserves setup and workspaces without old conv
       await fs.readFile(path.join(row.targetDirectory,'seed.txt'),'utf8'));
     for(const row of fixture.expected.configurations) assert.equal(fixtureSha256(await fs.readFile(row.file)),row.sha256);
   } finally { await fs.rm(root,{recursive:true,force:true}); }
+});
+
+test('fresh-install source is the production zero-byte empty.db with an identity workspace, unlike the legacy empty seed', async () => {
+  const root = await fs.mkdtemp(path.join(temporaryRoot, 'fresh-install-source-'));
+  try {
+    const legacy = await createEmptyRuntimeFixture({ root: await fs.mkdtemp(path.join(root, 'legacy-')) });
+    const seeded = resolveSqliteDriver().open(legacy.sourceLaunch.opencodeDatabasePath, { readonly: true });
+    try { assert.equal(seeded.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name='__drizzle_migrations'").get().n, 1); }
+    finally { seeded.close(); }
+    const fixture = await createFreshInstallSource({ root: await fs.mkdtemp(path.join(root, 'fresh-')) });
+    const { sourceLaunch } = fixture, sourceRoot = path.join(fixture.root, 'fresh-native-source');
+    assert.deepEqual(sourceLaunch, { opencodeDatabasePath: path.join(sourceRoot, 'empty.db'), webDataDirectory: path.join(sourceRoot, 'web-data'),
+      webConfigDirectory: path.join(sourceRoot, 'web-config'), opencodeConfigDirectory: path.join(sourceRoot, 'opencode-config'),
+      global: { home: path.join(sourceRoot, 'home') } });
+    const stat = await fs.stat(sourceLaunch.opencodeDatabasePath);
+    assert.equal(stat.size, 0); assert.equal(stat.mode & 0o777, 0o600);
+    assert.equal(fixture.expected.databaseSha256, fixtureSha256(''));
+    const db = resolveSqliteDriver().open(sourceLaunch.opencodeDatabasePath, { readonly: true });
+    try { assert.deepEqual(db.prepare('SELECT name FROM sqlite_master').all(), []); } finally { db.close(); }
+    for (const directory of [sourceLaunch.webDataDirectory, sourceLaunch.webConfigDirectory, sourceLaunch.opencodeConfigDirectory, sourceLaunch.global.home]) {
+      assert.deepEqual(await fs.readdir(directory), []); assert.equal((await fs.stat(directory)).mode & 0o777, 0o700);
+    }
+    const [mapping] = fixture.projectMap;
+    assert.deepEqual(fixture.projectMap, [{ sourceDirectory: mapping.sourceDirectory, targetDirectory: mapping.sourceDirectory, mode: 'identity' }]);
+    assert.equal(await fs.realpath(mapping.sourceDirectory), mapping.sourceDirectory);
+    assert.equal((await fs.stat(path.join(mapping.sourceDirectory, '.git'))).isDirectory(), true);
+    assert.equal(fixture.environment.GIT_CEILING_DIRECTORIES, fixture.root);
+    await assert.rejects(createFreshInstallSource({ root: fixture.root }), { code: 'EEXIST' });
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
 });

@@ -1,0 +1,56 @@
+{
+  "verifiedAt": "2026-10-09T16:08:14.714Z",
+  "revision": "8b25a286626657c86154cd24e79c29bea3a9121a",
+  "dirty": true,
+  "runtime": "web",
+  "outcome": "failed",
+  "checks": [
+    {
+      "name": "initial native runtime readiness",
+      "outcome": "passed",
+      "elapsedMs": 5750.608457999999
+    },
+    {
+      "name": "selected session and composer",
+      "outcome": "passed",
+      "elapsedMs": 1341.6105000000007
+    },
+    {
+      "name": "four-session stream reaches selected transcript",
+      "outcome": "passed",
+      "elapsedMs": 1532.7540000000008
+    },
+    {
+      "name": "typing survives background streaming",
+      "outcome": "passed",
+      "elapsedMs": 505.2676250000004
+    },
+    {
+      "name": "send and reconcile a real composer submission",
+      "outcome": "passed",
+      "elapsedMs": 2472.233959000001
+    },
+    {
+      "name": "cancel an active composer submission",
+      "outcome": "passed",
+      "elapsedMs": 157.63320799999929
+    },
+    {
+      "name": "reconnect and reopen without duplicate user messages",
+      "outcome": "passed",
+      "elapsedMs": 1433.0929170000018
+    }
+  ],
+  "error": "Unexpected renderer console errors captured; see result.json",
+  "unexpectedConsoleErrors": [
+    "[bootstrap] deferred phase failed for / Error: question.list failed (403): [object Object]\n    at lU (http://127.0.0.1:[REDACTED]:high_entropy.js:99:78076)\n    at async Ze (http://127.0.0.1:[REDACTED]:high_entropy.js:31:34002)\n    at async Promise.allSettled (index 3)",
+    "[bootstrap] session load failed for / Error: session.list failed (403): [object Object]\n    at http://127.0.0.1:[REDACTED]:high_entropy.js:117:29726\n    at async Ze (http://127.0.0.1:[REDACTED]:high_entropy.js:31:34002)\n    at async uU (http://127.0.0.1:[REDACTED]:high_entropy.js:99:82189)\n    at async http://127.0.0.1:[REDACTED]:high_entropy.js:117:29196",
+    "[bootstrap] deferred phase failed for <QA_RUNTIME>/bundles/bundles/candidate/global/home Error: question.list failed (403): [object Object]\n    at lU (http://127.0.0.1:[REDACTED]:high_entropy.js:99:78076)\n    at async Ze (http://127.0.0.1:[REDACTED]:high_entropy.js:31:34002)\n    at async Promise.allSettled (index 3)",
+    "[bootstrap] session load failed for <QA_RUNTIME>/bundles/bundles/candidate/global/home Error: session.list failed (403): [object Object]\n    at http://127.0.0.1:[REDACTED]:high_entropy.js:117:29726\n    at async Ze (http://127.0.0.1:[REDACTED]:high_entropy.js:31:34002)\n    at async uU (http://127.0.0.1:[REDACTED]:high_entropy.js:99:82189)\n    at async http://127.0.0.1:[REDACTED]:high_entropy.js:117:29196"
+  ],
+  "cleanupErrors": [],
+  "journal": {
+    "archived": true,
+    "gapCheckExitCode": 0
+  }
+}

@@ -959,7 +959,7 @@ ENVIRONMENT:
   OPENCHAMBER_DATA_DIR         Override DevRyan data directory
 
 RUNTIME:
-  DevRyan serves its bundled native OpenCode 2.0.24 runtime.
+  DevRyan serves its bundled native OpenCode 2.0.26 runtime.
   Update DevRyan to update the bundled runtime.
 
 EXAMPLES:

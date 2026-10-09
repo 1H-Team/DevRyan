@@ -262,7 +262,7 @@ try {
   result = { integrationLocations: 2, nativeOAuthCommit: true, revokedAttemptRefused: false, closedHandlesRefused: false,
     providerKinds: [], physicalReceipts: 0, permitsWereOwned: true };
   // Provider lanes are added only through actual native Session services below.
-  const deps = { getRuntime: () => ({ generation: 2, version: '2.0.24', baseUrl: nativeURL, epoch: 1 }), getAuthHeaders: () => admissionOwner.requestHeaders(),
+  const deps = { getRuntime: () => ({ generation: 2, version: '2.0.26', baseUrl: nativeURL, epoch: 1 }), getAuthHeaders: () => admissionOwner.requestHeaders(),
     withNativeWebOperation: (spec, action) => admissionOwner.withWebOperation(spec, action) };
   const admission = createOpenCodeAdmission(deps, { nativeOwner: admissionOwner });
   const client = createOpenCodeClient({ ...deps, getAdmission: () => admission });

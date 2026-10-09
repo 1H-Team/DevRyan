@@ -28,6 +28,7 @@ import { resolveGen2OpenCodeClient } from './opencode-client-seam.js';
 import { readFacadeMessagePage, resolveFacadeDirectory, sendOpenCodeFacadeError, validateFacadeBody } from './v2/facade-routes.js';
 import { createGlobalAgentsMdRuntime } from './global-agents-md-runtime.js';
 import { registerGlobalAgentsMdRoutes } from './global-agents-md-routes.js';
+import { createOpenCodeUpdateCheckHandler } from './opencode-update-check.js';
 import {
   readMeridianPromptMode,
   setMeridianPromptCompatibilityMode,
@@ -79,6 +80,8 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     crypto,
     clientReloadDelayMs,
     getOpenCodeResolutionSnapshot,
+    // Injected in tests; defaults to global fetch for the fixed npm registry lookup.
+    openCodeUpdateCheckFetch,
     formatSettingsResponse,
     readSettingsFromDisk,
     readSettingsFromDiskMigrated,
@@ -331,6 +334,9 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       res.status(500).json({ error: 'Failed to resolve OpenCode binary' });
     }
   });
+
+  // Read-only latest upstream release lookup; installs nothing.
+  app.get('/api/config/opencode-update-check', createOpenCodeUpdateCheckHandler({ fetchImpl: openCodeUpdateCheckFetch }));
 
   app.put('/api/config/settings', async (req, res) => {
     console.log('[API:PUT /api/config/settings] Received request');

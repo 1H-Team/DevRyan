@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+## [2.0.4] - 2026-10-09
+
+- OpenCode Storage (Settings → About → Data & Storage) is now read-only and says so. A native OpenCode 2 database is reported as needing no cleanup instead of as an unknown layout. Compact Now and the "Cleanup runs before every OpenCode launch" notice are removed: DevRyan runs OpenCode 2, and since the move to the native runtime the OpenCode 1 cleanup no longer ran, because nothing called its pre-launch hook. For an OpenCode 1 database, Dry Run still reports what a cleanup would remove. Details are in [the storage audit](docs/audits/2026-10-09/opencode-storage-v2/README.md).
+
+- Upgrade a retained native runtime at startup when a DevRyan update pins a newer OpenCode version, instead of failing with "Native runtime is not ready: version_mismatch". The selected bundle is cloned onto the shipped runtime before any controller starts, and the previous bundle stays as the rollback target. Clones now also qualify fresh-install databases, which never carry the legacy migration table. A runtime that still misses the pin is refused before launch with the version pair and the recorded upgrade failure. Evidence is in [the startup upgrade audit](docs/audits/2026-10-09/startup-bundle-upgrade/README.md).
+
+- Upgrade the bundled native runtime and Bot image to OpenCode 2.0.26. Retained 2.0.24 and 2.0.20 bundles keep their own controller; a 2.0.26 database never clones into an older release. The bundled runtime keeps the 2.0.24 external-directory permission prompt that OpenCode 2.0.26 removed from agent defaults, and still loads OpenCode's configuration policy plugin. Qualification is recorded in [the runtime upgrade evidence](docs/audits/2026-10-09/opencode-2.0.26/README.md).
+- Add Check for Updates to the OpenCode section of Settings → About. It reports the latest upstream stable 2.x release on request; bundled runtime updates still arrive through DevRyan updates.
+- Reduce mutation ledger storage by sharing untouched file baselines with existing content objects, compacting older baseline records, and reclaiming unreachable Git objects. Existing Revert and Redo history is preserved; older hosts refuse the compacted records. Measurements and retention limits are recorded in [the ledger evidence](docs/audits/2026-10-09/ledger-retention/README.md).
+- Avoid verifying the same harness ledger twice during runtime startup while retaining verification for every launch, and enable the reviewed provider recovery policy for OpenCode 2.0.26.
+- Keep development Electron QA on Chromium's mock keychain so its private profile cannot trigger a macOS login-keychain reset dialog.
+- Start standalone web/Electron QA through the verified private native bundle and synthetic wire facade used by matrix QA, replacing retired external-runtime flags that caused startup rejection. Missing native artifacts fail before an app launches.
+
 ## [2.0.3] - 2026-10-08
 
 - Ship the bundled native runtime once in the desktop app while keeping the web server files available outside the application archive.

@@ -139,7 +139,7 @@ export async function startNativeController(boot:NativeProcessBoot,identity:{cor
     configurationSnapshot:boot.configurationSnapshot,rpc,registrationOrigin:remoteMcpOrigin,
     providerCompatibilityOrigin:providerOrigin,
     reviewedNativeProviderOrigin:nativePlugins.get('opencode.provider.xai'),
-    reviewedConfigurationOrigins:new Map([...nativePlugins].filter(([id])=>['opencode.config.mcp','opencode.mcp.codemode.defaults','opencode.provider.opencode'].includes(id))),
+    reviewedConfigurationOrigins:new Map([...nativePlugins].filter(([id])=>['opencode.config.mcp','opencode.mcp.codemode.defaults','opencode.provider.opencode','opencode.config.policy'].includes(id))),
     isBound:()=>bound,isExecutionReady:()=>executionReady,executeOwnedFallback:executeOwned,
     authorizeMcpCall:(invocation,_binding,action)=>routing.withControl(invocation,action),
     bootstrapCredentials:()=>bootstrapNativeSetupCredentials({seedPath:path.join(boot.globals.config,'native-setup-credentials.json'),expected:boot.setupCredentialSeed}).pipe(Effect.tap(result=>Effect.sync(()=>{if('sha256' in result)setupCredentialSeed={status:result.status,count:result.count,sha256:result.sha256};})),Effect.asVoid),

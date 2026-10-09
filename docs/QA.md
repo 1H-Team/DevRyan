@@ -1,5 +1,13 @@
 # Isolated Electron and web QA
 
+The standalone `bun run qa` fixture runner requires `QA_NATIVE_ARTIFACT_ROOT`
+pointing to a verified native artifact directory under this repository's `.cache/`.
+It prepares the same private native bundle and synthetic wire facade as matrix QA;
+it does not pass the retired external-runtime flags to the host. Electron QA
+selects Chromium's mock keychain before production imports, so its private HOME
+cannot prompt to reset the workstation's login keychain. Web and Electron runs
+do not qualify personal keychain integration or live-provider access.
+
 ## Run directories and disk use
 
 QA, validation and benchmark producers write one run directory per invocation
@@ -121,6 +129,37 @@ accepted it. Case `compiled-seeded-credential-first-boot` prepares a fresh
 initialization whose `native-setup-credentials.json` (one fake API key) is
 present at first boot, then proves the controller started, unlinked the seed
 after stamping its digest, restarted, and holds the imported credential.
+
+To qualify an upgrade from a retained release, add its compiled artifacts as the
+baseline. The baseline must be repository-owned:
+
+```sh
+node scripts/verify-opencode-v2-package.mjs --artifact-root .cache/v2-validation/native-artifact-candidate --baseline-artifact-root <retained-release-artifacts>
+```
+
+Bundle A then runs the baseline controller and bundle B the candidate. Clones
+cover both reviewed source layouts:
+
+- **Legacy.** The main lane imports the legacy fixture, which keeps
+  `__drizzle_migrations`. Case `compiled-clone-layout-legacy` checks it.
+- **Fresh install.** A separate control root under `fresh-install-upgrade/`
+  starts from the production empty source, as every real 2.x install does: a
+  zero-byte `empty.db` with no legacy journal and an identity workspace map.
+  Case `compiled-clone-layout-fresh-install` checks it. The baseline importer
+  and controller create and run A. Then:
+  - `compiled-fresh-install-clone`: the clone gate admits the A→B clone of the
+    closed database. The clone captures A's credentials through A's own
+    controller, which may drain pending WAL frames into `opencode.db`. So this
+    case compares A's database by schema and rows, and every other file byte
+    for byte. `sourceWalCheckpointed` reports whether a drain happened.
+  - `compiled-fresh-install-rollback`: B's controller runs its own work, then
+    rolls back. A's original controller receives B's credentials. A's history and
+    migration IDs are unchanged, and A's controller restarts the rolled-back
+    database.
+
+The exact reviewed layout and release pair are asserted only when the versions
+differ. A same-release run checks only that each kind has or lacks the legacy
+journal, and its gate result says so.
 
 The migration fixture contains two independent relocated Git projects, exact
 conversation/tool IDs, compaction dispositions, attachment bytes, ordered

@@ -1,0 +1,51 @@
+{
+  "verifiedAt": "2026-10-09T16:12:38.534Z",
+  "revision": "8b25a286626657c86154cd24e79c29bea3a9121a",
+  "dirty": true,
+  "runtime": "electron",
+  "outcome": "passed",
+  "checks": [
+    {
+      "name": "initial native runtime readiness",
+      "outcome": "passed",
+      "elapsedMs": 28341.425042
+    },
+    {
+      "name": "selected session and composer",
+      "outcome": "passed",
+      "elapsedMs": 983.0349579999965
+    },
+    {
+      "name": "four-session stream reaches selected transcript",
+      "outcome": "passed",
+      "elapsedMs": 1529.7725829999981
+    },
+    {
+      "name": "typing survives background streaming",
+      "outcome": "passed",
+      "elapsedMs": 508.6165830000027
+    },
+    {
+      "name": "send and reconcile a real composer submission",
+      "outcome": "passed",
+      "elapsedMs": 2367.475958999996
+    },
+    {
+      "name": "cancel an active composer submission",
+      "outcome": "passed",
+      "elapsedMs": 348.33470800000214
+    },
+    {
+      "name": "reconnect and reopen without duplicate user messages",
+      "outcome": "passed",
+      "elapsedMs": 1154.9355419999993
+    }
+  ],
+  "error": null,
+  "unexpectedConsoleErrors": [],
+  "cleanupErrors": [],
+  "journal": {
+    "archived": true,
+    "gapCheckExitCode": 0
+  }
+}

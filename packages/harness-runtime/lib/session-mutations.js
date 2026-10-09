@@ -73,6 +73,30 @@ const restampBatching = () => process.env.DEVRYAN_LEDGER_RESTAMP_BATCH !== '0';
 // pay a filesystem lookup per object: 0.6 s per commit, about ten commits per
 // call, on a 5.6k-file project (a packed store answers in about 40 ms).
 const LEDGER_MAINTENANCE = Object.freeze({ looseObjects: 1_000, packs: 12, commits: 64, pruneExpiry: '2.hours.ago' });
+// A document whose runs are exactly its first observed text stores one marker
+// page naming that text's content object instead of base64 pages: the bytes
+// already live in `objects/`, which is never collected. On a 12k-file project
+// these baselines were 124 of 148 MB of `runs/`. A marker is not an array, so
+// a host predating it fails closed (`invalid_change_record`) instead of
+// reading empty text. Kill switch: DEVRYAN_LEDGER_BASELINE_REFS=0 writes and
+// compacts no markers; existing markers stay readable.
+const baselineRefs = () => process.env.DEVRYAN_LEDGER_BASELINE_REFS !== '0';
+const BASELINE_PAGE = '0000000000.json';
+// Written once a compaction pass leaves no inline baseline behind.
+const BASELINE_COMPACTED = 'baseline-refs';
+const COMPACT_BATCH = 1024;
+const baselineMarker = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
+  && Object.keys(value).length === 2 && /^[a-f0-9]{64}$/.test(value.baseline) && Number.isSafeInteger(value.size) && value.size > 0;
+// The text of runs that are exactly a document's untouched baseline (stored
+// whole or in 32 KiB rows), or null.
+const baselineText = (runs, id) => {
+  let text = '';
+  for (const run of runs) {
+    if (run.id !== `${id}:baseline` || run.owner !== null || run.deletedBy.length || run.replaces.length || run.start !== text.length) return null;
+    text += run.text;
+  }
+  return text || null;
+};
 // Build tools write caches inside node_modules (Vite's bundled config and
 // dependency optimizer, loader caches), which the read-only dependency input
 // denies. A view's node_modules therefore links to a host-owned overlay: one
@@ -157,9 +181,20 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     state.running = withoutExecutionDeadline(async () => {
       const gitDir = path.join(root, 'git');
       const run = (args) => git(root, ['--git-dir', gitDir, ...args], { timeoutMs: 10 * 60_000 });
+      // Its loose objects are packed below; a failure leaves inline pages.
+      await compactBaselines(root).catch((cause) => {
+        diagnostic({ phase: 'ledger_compaction', state: 'failed', code: cause?.code ?? 'ledger_compaction_failed' });
+      });
       const stats = Object.fromEntries((await run(['count-objects', '-v'])).toString().trim().split('\n')
         .map((line) => line.split(': ')).map(([name, value]) => [name, Number(value)]));
-      if (stats.count >= maintenanceLimits.looseObjects) await run(['repack', '-d', '-q', '--no-write-bitmap-index']);
+      if (stats.count >= maintenanceLimits.looseObjects) {
+        await run(['repack', '-d', '-q', '--no-write-bitmap-index']);
+        // What stays loose is unreachable: superseded trees (each commit
+        // rewrites the large `files/`, `runs/` and `revisions/` trees) and
+        // replaced pages. Waiting for the consolidation below left 380 MiB of
+        // them in one two-week-old ledger. The grace keeps in-flight objects.
+        await run(['prune', `--expire=${maintenanceLimits.pruneExpiry}`]);
+      }
       if ((stats.packs ?? 0) + 1 >= maintenanceLimits.packs) {
         await run(['repack', '-a', '-d', '-q', '--no-write-bitmap-index']);
         await run(['prune', `--expire=${maintenanceLimits.pruneExpiry}`]);
@@ -414,10 +449,31 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   const inactive = (repo) => cachedRecords(repo, 'operations', readInactive, (ids) => new Set(ids));
   const runsFor = async (repo, id, prefix = 'runs') => {
     const runs = [];
-    for await (const run of repo.db.list(`${prefix}/${id}`)) runs.push({ ...run, text: Buffer.from(run.bytes, 'base64').toString('latin1') });
+    let marker = false;
+    for await (const { value } of repo.db.entries(`${prefix}/${id}`)) {
+      // A marker is the document's only page.
+      if (marker || (baselineMarker(value) && runs.length)) throw changeError('invalid_change_record');
+      if (baselineMarker(value)) {
+        const bytes = await bytesFor(repo, value.baseline);
+        if (bytes.length !== value.size) throw changeError('invalid_change_record');
+        runs.push(...initialMutationRuns(bytes.toString('latin1'), `${id}:baseline`));
+        marker = true;
+        continue;
+      }
+      if (!Array.isArray(value)) throw changeError('invalid_change_record');
+      for (const run of value) runs.push({ ...run, text: Buffer.from(run.bytes, 'base64').toString('latin1') });
+    }
     return runs;
   };
   const saveRuns = async (repo, id, runs, prefix = 'runs', options) => {
+    const baseline = baselineRefs() ? baselineText(runs, id) : null;
+    if (baseline !== null) {
+      // The object is normally present already; this also marks it for sync.
+      const bytes = Buffer.from(baseline, 'latin1'), hash = await putBytes(repo, bytes);
+      if (!options?.absent) for await (const { key: page } of repo.db.entries(`${prefix}/${id}`)) repo.db.remove(page);
+      repo.db.set(`${prefix}/${id}/${BASELINE_PAGE}`, { baseline: hash, size: bytes.length });
+      return;
+    }
     const rows = function* () {
       for (const run of runs) {
         for (let offset = 0; offset < run.text.length; offset += 32_768) {
@@ -427,6 +483,63 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       }
     };
     await repo.db.setList(`${prefix}/${id}`, rows(), options);
+  };
+  // Replaces inline baselines written before markers, in batches under the
+  // owner lock. Candidates are read lock-free from one snapshot; a batch
+  // rewrites a document only while its `runs/<id>` subtree is still that
+  // snapshot's, so a concurrent edit is never replaced. Each batch publishes
+  // through the normal compare-and-swap ref update; lease refs keep pinned
+  // trees and their inline pages reachable. Projected text is unchanged.
+  const compactBaselines = async (root) => {
+    if (!baselineRefs()) return;
+    const stamp = path.join(root, BASELINE_COMPACTED);
+    try { await fs.access(stamp); return; }
+    catch (cause) { if (cause.code !== 'ENOENT') throw cause; }
+    const snapshot = { root, db: await openChangeStore(root, path.join(root, 'git'), { syncObjects }) };
+    const meta = await snapshot.db.get('meta.json');
+    if (meta?.version !== 1 || !path.isAbsolute(meta.directory ?? '')) return;
+    // A moved or deleted project resolves elsewhere; never lock another root.
+    const resolved = await resolveRepository(meta.directory).catch(() => null);
+    if (!resolved || rootFor(resolved.directory) !== root) return;
+    const candidates = [];
+    let id = null, pages = [], runs = [], inline = true, visited = 0;
+    const consider = async () => {
+      const text = id !== null && inline ? baselineText(runs, id) : null;
+      if (text === null) return;
+      const bytes = Buffer.from(text, 'latin1');
+      candidates.push({ id, pages, marker: { baseline: await putBytes(snapshot, bytes), size: bytes.length } });
+    };
+    for await (const { key: page, value } of snapshot.db.entries('runs')) {
+      const doc = page.slice('runs/'.length, page.lastIndexOf('/'));
+      if (doc !== id) {
+        await consider();
+        id = doc; pages = []; runs = []; inline = true;
+        if (++visited % 64 === 0) await yieldToEventLoop();
+      }
+      pages.push(page);
+      if (!Array.isArray(value)) { inline = false; continue; }
+      for (const run of value) runs.push({ ...run, text: Buffer.from(run.bytes, 'base64').toString('latin1') });
+    }
+    await consider();
+    // Read while the snapshot is still the published tree.
+    const expected = await snapshot.db.prefixIdentities(candidates.map((candidate) => `runs/${candidate.id}`));
+    let skipped = 0;
+    for (let start = 0; start < candidates.length; start += COMPACT_BATCH) {
+      const batch = candidates.slice(start, start + COMPACT_BATCH), prefixes = batch.map((candidate) => `runs/${candidate.id}`);
+      await locked(meta.directory, async (repo) => {
+        if (!repo || repo.root !== root) { skipped += batch.length; return; }
+        const current = await repo.db.prefixIdentities(prefixes);
+        for (const [index, candidate] of batch.entries()) {
+          const prefix = prefixes[index];
+          if (!expected.get(prefix) || current.get(prefix) !== expected.get(prefix)) { skipped += 1; continue; }
+          for (const page of candidate.pages) repo.db.remove(page);
+          repo.db.set(`${prefix}/${BASELINE_PAGE}`, candidate.marker);
+        }
+      }, { requireExisting: true, operation: 'ledger_compaction' });
+      await new Promise((resolve) => setTimeout(resolve, WARM_BATCH_GAP_MS));
+    }
+    // Skipped documents changed meanwhile; the next maintenance retries them.
+    if (!skipped) await fs.writeFile(stamp, '');
   };
   const revisionsFor = async (repo, id) => {
     const revisions = [];

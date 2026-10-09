@@ -1,0 +1,59 @@
+{
+  "verifiedAt": "2026-10-09T09:31:43.649Z",
+  "version": "2.0.4",
+  "logs": [
+    {
+      "name": "validate-full",
+      "sha256": "65402261ca55434b3c735e350913194dca673ba6236f4028288b50fbc4d4fb9b",
+      "exitCode": 0
+    },
+    {
+      "name": "build",
+      "sha256": "d92314ac5c89fcb6a5ae95e5652665051c8563ec07428e6bbf329ba5951d2466",
+      "exitCode": 0
+    },
+    {
+      "name": "bundle-check",
+      "sha256": "b26f5f1d14414d1bb3f2528263c912ecc5cd3e5d23953e4b7baf04c1bc11c996",
+      "exitCode": 0
+    },
+    {
+      "name": "runtime-artifacts",
+      "sha256": "c6ea881ed39fb810b20468155bab869d6d51383514e42a2505c9bb1bc93a347a",
+      "exitCode": 0
+    },
+    {
+      "name": "docs-validation-final",
+      "sha256": "15def712b5afc5631087b213637376a5e6995f30841118946501fd37b7747149",
+      "exitCode": 0
+    },
+    {
+      "name": "qa-regressions-final",
+      "sha256": "c4b5e4a532c48400263291eeab620681e9b375a7118cfda53760477b403862b0",
+      "exitCode": 0
+    }
+  ],
+  "ui": {
+    "tests": 4065,
+    "files": 589
+  },
+  "web": {
+    "tests": 6534,
+    "files": 535,
+    "nativeHostTests": 14
+  },
+  "qaRegressionTests": 24,
+  "bundle": {
+    "raw": 4886251,
+    "rawLimit": 4962877,
+    "gzip": 1440655,
+    "gzipLimit": 1456388
+  },
+  "qaOverall": {
+    "web": "failed-console-gate",
+    "electron": "failed-console-gate",
+    "functionalChecksPassed": 7
+  },
+  "cacheReport": "completed",
+  "cachePrune": "preview-only"
+}

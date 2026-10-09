@@ -163,6 +163,8 @@ describe('multi-user policy', () => {
       ['/openchamber/tunnel/status', 'GET', 'tunnel'],
       ['/diagnostics/export', 'POST', 'about'],
       ['/opencode/update-check', 'GET', 'about'],
+      ['/config/opencode-resolution', 'GET', 'about'],
+      ['/config/opencode-update-check', 'GET', 'about'],
       ['/projects/project-1/icon', 'PUT', 'projects'],
       ['/git/identities', 'GET', 'git'],
       ['/github/auth/start', 'POST', 'users'],

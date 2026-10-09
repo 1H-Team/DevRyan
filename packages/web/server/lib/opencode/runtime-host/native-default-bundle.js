@@ -19,6 +19,7 @@ import {pruneRetainedNativeArtifacts,retainNativeArtifacts} from './retained-nat
 import {protectNativeSetupSource,removeNativeSetupSource,resetAbandonedNativeSetupSource,sweepRemovedNativeSetupSources} from './native-setup-source.js';
 import {canonicalJSON,isRecord,readBundleJSON,sha256} from './bundle-migration-inventory.js';
 import {reclaimReusedLock} from './native-setup-local-owners.js';
+import {upgradeSelectedNativeBundleAtStartup} from './native-bundle-startup-upgrade.js';
 
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 const fail=code=>Object.assign(new Error(code),{code,status:503});
@@ -104,10 +105,12 @@ export function defaultNativeRegistrations(origins) {
 /** Called by the application entrypoint before importing data owners.
  * Old conversations and journals are not imported. Existing native selections
  * retain their complete state; setup seeding applies only to the first bundle.
+ * A selected bundle whose OpenCode version misses the application pin is
+ * upgraded from the shipped artifacts first (native-bundle-startup-upgrade.js).
  * Constructor seams are for disposable fixtures, never environment metadata.
  */
 export async function provisionDefaultNativeBundle({env=process.env,home=os.homedir(),cwd=process.cwd(),
- artifactDirectory=executionArtifacts().directory,verifyArtifacts=verifyNativeRuntimeArtifacts,runMigration,
+ artifactDirectory=executionArtifacts().directory,verifyArtifacts=verifyNativeRuntimeArtifacts,runMigration,credentialProcess,
  defaultConfigRoot=new URL('../../../default-config/',import.meta.url),captureLogicalSetup}={}) {
  if(env.OPENCODE_DB!==undefined&&!path.isAbsolute(env.OPENCODE_DB)||env.OPENCODE_HOST||env.OPENCODE_SKIP_START==='true'||env.OPENCHAMBER_SKIP_OPENCODE_START==='true'||env.OPENCODE_BINARY
   ||env.DEVRYAN_OPENCODE_GENERATION!==undefined&&env.DEVRYAN_OPENCODE_GENERATION!=='2')throw fail('native_runtime_configuration_unsupported');
@@ -144,6 +147,9 @@ export async function provisionDefaultNativeBundle({env=process.env,home=os.home
       if(verified.controller!==value.controllerBinary||verified.writer!==value.writerBinary)throw fail('bundle_artifact_generation_mismatch');}});
     await store.verify({bundleID:selected.descriptor.bundleID,phase:'resume'});
    }});
+   // An application update can pin a newer OpenCode than the selected bundle runs.
+   // Windows owners hold OS locks this cold owner check cannot observe.
+   if(!operations.windows)await upgradeSelectedNativeBundleAtStartup({controlRoot,env,artifactDirectory,verifyArtifacts,credentialProcess,privatePersistence});
    await sweepSelectedLeftovers(controlRoot,privatePersistence);
    return controlRoot;
   }

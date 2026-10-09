@@ -173,6 +173,8 @@ export const OPENCODE_V2_ROUTE_CLASSES = Object.freeze({
   'POST /api/integration/{integrationID}/connect/command': D,
   'GET /api/integration/{integrationID}/connect/command/{attemptID}': D,
   'DELETE /api/integration/{integrationID}/connect/command/{attemptID}': D,
+  // 2.0.26 external sources (e.g. Azure CLI) run outside DevRyan's credential owners: denied.
+  'POST /api/integration/{integrationID}/connect/external': D,
   'POST /api/experimental/integration/wellknown': D,
   'GET /api/credential': P,
   'POST /api/credential': S,
@@ -395,7 +397,7 @@ export const OPENCODE_V2_BROWSER_SESSION_PATCH_KEYS = Object.freeze(['title']);
 const classifySessionWriteBody = (route, body) => {
   if (!isRecord(body)) return { routeClass: D, reason: 'body_invalid' };
   const allowed = route.body?.keys ?? [];
-  // Native 2.0.24 adds parentID; child creation remains owned by managed delegation.
+  // Native 2.0.26 adds parentID; child creation remains owned by managed delegation.
   const unknown = Object.keys(body).filter((key) => !allowed.includes(key) || key === 'parentID');
   if (unknown.length > 0) return { routeClass: D, reason: 'body_key_not_allowed', keys: unknown.sort() };
   const privileged = Object.keys(body).filter((key) => SESSION_PRIVILEGED_BODY_KEYS.includes(key) && body[key] !== undefined);

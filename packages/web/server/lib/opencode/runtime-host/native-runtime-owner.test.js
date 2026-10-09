@@ -4,7 +4,7 @@ import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {verifyNativeBootMigration} from './native-boot-migration.js';
 import {resolveSqliteDriver} from '../db-maintenance-core.js';
-import { createNativeRuntimeOwner } from './native-runtime-owner.js';
+import { createNativeRuntimeOwner, loadNativeRuntimeBundle } from './native-runtime-owner.js';
 import { createNativeCursorRecovery } from './native-cursor-recovery.js';
 import {createCursorSdkRuntime} from '../../../../../cursor-sdk-runtime/index.js';
 
@@ -392,4 +392,32 @@ test('normal close retains the physical controller until the credential queue ha
   await owner.start();const closing=owner.close();await draining;expect(exited).toBe(false);release();await closing;
   expect(order).toEqual(['queue-drained','controller-exit']);
  },undefined,options=>{options.withCredentialMutationQueue=async action=>{entered();await blocked;await action();order.push('queue-drained');};});
+});
+
+const loaderBinding=()=>({admission:'pending',descriptor:{bundleID:'selected',generation:2,
+  // A relative manifest path makes the artifact check refuse immediately after the bundle gate.
+  launch:{artifactManifestPath:'relative-manifest.json',artifactManifestSha256:'0'.repeat(64)}}});
+
+test('boot hands its fresh verification to the loader instead of rescanning the bundle',async()=>{
+  const verify=vi.fn(async()=>{throw new Error('unexpected second verification');});
+  await expect(loadNativeRuntimeBundle({binding:loaderBinding(),launcher:'/launcher',verify,
+    verified:{descriptor:{bundleID:'selected'},phase:'resume',integrity:'verified',admission:'held'}}))
+    .rejects.toMatchObject({code:'native_runtime_artifacts_unverified'});
+  expect(verify).not.toHaveBeenCalled();
+});
+
+test('the loader verifies itself without a hand-off and fails closed on a mismatched one',async()=>{
+  const verify=vi.fn(async()=>({descriptor:{bundleID:'selected'},phase:'resume',integrity:'verified',admission:'held'}));
+  await expect(loadNativeRuntimeBundle({binding:loaderBinding(),launcher:'/launcher',verify}))
+    .rejects.toMatchObject({code:'native_runtime_artifacts_unverified'});
+  expect(verify).toHaveBeenCalledTimes(1);
+  verify.mockClear();
+  for(const verified of [null,{descriptor:{bundleID:'other'},phase:'resume',integrity:'verified'},
+    {descriptor:{bundleID:'selected'},phase:'prepared',integrity:'verified'},{descriptor:{bundleID:'selected'},phase:'resume'}]){
+    await expect(loadNativeRuntimeBundle({binding:loaderBinding(),launcher:'/launcher',verify,verified}))
+      .rejects.toMatchObject({code:'runtime_bundle_recomposition_required'});
+  }
+  await expect(loadNativeRuntimeBundle({binding:{...loaderBinding(),admission:'held'},launcher:'/launcher',verify,
+    verified:{descriptor:{bundleID:'selected'},phase:'resume',integrity:'verified'}})).rejects.toMatchObject({code:'runtime_bundle_reconciliation_required'});
+  expect(verify).not.toHaveBeenCalled();
 });

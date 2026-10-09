@@ -23,7 +23,7 @@ export const NATIVE_ASSET_SOURCE_SHA=Object.freeze({pty:'fe38312cd4acdfb067f520d
 /** Windows has no approved persistent PTY. Refuse before resolving a command,
  * creating an installation directory, or reading an environment override. */
 export function rewriteUnavailableNativePty(source) {
- if(hash(source)!=='fb756bc4423617e2215f168c09de3d4690e947cbea9a324c1a6f643f09482b73')throw new Error('Pinned native PTY resolver changed');
+ if(hash(source)!=='839d0be2ff23f4e023365d25a492acd4f375650af77e4b912a87a2dca0a677ec')throw new Error('Pinned native PTY resolver changed');
  return 'async function resolveBinary(){throw new Error("native_pty_platform_unsupported");}\nexport {resolveBinary};\n';
 }
 /** Build-only transformations require the exact pinned bytes before rewriting. */
@@ -39,6 +39,14 @@ export function rewriteNativeAsset(kind,source,{assetPath,assetSha256}={}) {
  return text.replace(original,"const path = globalThis.__OPENCODE_PHOTON_WASM_PATH;\nif (typeof path !== 'string' || !path) throw new Error('Native embedded Photon WASM unavailable');");
 }
 
+/** OpenCode 2.0.26 removed the default external-directory ask from Agent.Info.default.
+ * Restore the 2.0.24 rule at its original position so later agent rules still win. */
+export const NATIVE_AGENT_DEFAULTS_SOURCE_SHA256='0327d7211fb85ccbf4aa9de4b134ba2928872b8529548fa7efefa07222748023';
+export function rewriteNativeAgentDefaults(source) {
+ const text=Buffer.from(source).toString('utf8'),anchor='            { action: "*", resource: "*", effect: "allow" },\n';
+ if(hash(source)!==NATIVE_AGENT_DEFAULTS_SOURCE_SHA256||text.split(anchor).length!==2) throw new Error('Pinned native agent defaults changed');
+ return text.replace(anchor,anchor+'            { action: "external_directory", resource: "*", effect: "ask" },\n');
+}
 export const REVIEWED_PONYTAIL_MODULE='devryan:reviewed-ponytail-instructions';
 export const REVIEWED_AST_FILENAME='DevRyan-ast-grep-darwin-arm64';
 
