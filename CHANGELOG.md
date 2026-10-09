@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Remove generated codemaps, finished plans and unreferenced audit evidence, and make `docs:validate` reject codemaps and unretained audit files. Details are in [the documentation cleanup record](docs/audits/2026-10-09/docs-cleanup/README.md).
+
 ## [2.0.4] - 2026-10-09
 
 - OpenCode Storage (Settings → About → Data & Storage) is now read-only and says so. A native OpenCode 2 database is reported as needing no cleanup instead of as an unknown layout. Compact Now and the "Cleanup runs before every OpenCode launch" notice are removed: DevRyan runs OpenCode 2, and since the move to the native runtime the OpenCode 1 cleanup no longer ran, because nothing called its pre-launch hook. For an OpenCode 1 database, Dry Run still reports what a cleanup would remove. Details are in [the storage audit](docs/audits/2026-10-09/opencode-storage-v2/README.md).
