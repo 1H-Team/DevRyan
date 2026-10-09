@@ -220,7 +220,7 @@ automatic recovery. Missing headers, silent SSE and a stalled non-SSE body
 reached the native-retry fence with one provider request and zero recovery
 attempts. Semantic cutoff also made only one request and no recovery attempt.
 The plugin hooks, request preparation, tool registry and processor sources are
-unchanged from 1.18.26. See [upgrade notes](OPENCODE_1_18_27_UPGRADE_NOTES.md).
+unchanged from 1.18.26.
 
 OpenCode 1.18.29 compatibility was verified on September 5, 2026 with the same
 isolated loopback-provider fixture. Heartbeat-only traffic completed exactly one

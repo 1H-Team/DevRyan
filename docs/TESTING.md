@@ -58,9 +58,8 @@ affected mode. See the command planner in `scripts/validate.mjs`.
 The documentation check scans current Markdown/MDX local links, reference-link
 definitions, HTML `src`/`href`, and explicit repository source paths in inline
 code. It ignores code examples, remote URLs, and same-page fragments; it checks
-file existence, not heading anchors. Historical reports under `docs/audits/`,
-saved plans under `docs/superpowers/plans/`, and changelog/backport records report
-missing old targets as warnings. Known generated build/runtime paths are
+file existence, not heading anchors. Historical reports under `docs/audits/` and
+`CHANGELOG.md` report missing old targets as warnings. Known generated build/runtime paths are
 reported as unchecked. It does not contact external sites.
 
 ## Suite ownership

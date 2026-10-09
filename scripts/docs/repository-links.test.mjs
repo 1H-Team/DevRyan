@@ -39,6 +39,14 @@ test('reports historical and generated references without treating them as curre
   assert.equal(result.warnings.length, 2);
 });
 
+test('treats only audits and the changelog as historical', t => {
+  const root = fixture(t, { 'CHANGELOG.md': '[a](gone.md)', 'docs/audits/past.md': '[a](gone.md)', 'docs/plans/live.md': '[a](gone.md)' });
+  const result = validateRepositoryLinks(root, ['CHANGELOG.md', 'docs/audits/past.md', 'docs/plans/live.md']);
+  assert.equal(result.warnings.length, 2);
+  assert.equal(result.errors.length, 1);
+  assert.match(result.errors[0], /docs\/plans\/live\.md/);
+});
+
 test('checks site routes and rejects repository escapes and malformed encoding', t => {
   const root = fixture(t, { 'packages/docs/content/docs/index.mdx': '[a](/guide/) [b](/gone/)', 'README.md': '[escape](../outside.md) [bad](%ZZ.md)' });
   const result = validateRepositoryLinks(root, ['packages/docs/content/docs/index.mdx', 'README.md'], { siteRoutes: new Set(['/guide/']) });

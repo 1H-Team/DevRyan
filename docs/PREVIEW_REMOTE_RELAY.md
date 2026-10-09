@@ -308,7 +308,7 @@ sequence, not effort.
 5. Failure-mode polish: 502 on disconnect, target eviction, browser-side
    empty state, "agent connected" indicator in Settings.
 6. Documentation + tutorial for the remote-host scenario; update
-   `docs/REVERSE_PROXY.md` cross-link.
+   `packages/docs/content/docs/reverse-proxy.mdx` cross-link.
 
 ## Why not …?
 
@@ -329,4 +329,4 @@ sequence, not effort.
 
 - Loopback runtime: `packages/web/server/lib/preview/proxy-runtime.js`
 - Browser PreviewPane + cache: `packages/ui/src/components/layout/ContextPanel.tsx`
-- Reverse-proxy deployment notes: `docs/REVERSE_PROXY.md`
+- Reverse-proxy deployment notes: `packages/docs/content/docs/reverse-proxy.mdx`
