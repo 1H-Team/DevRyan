@@ -192,25 +192,14 @@ message, phase and error identifiers without file contents or tool arguments.
 
 ## Build and rollout
 
-The [companion manifest](../packages/web/server/lib/opencode/companion/manifest.json)
-pins OpenCode 1.18.33 at `51ef4be1d3c122f18fefb510dca8d778571f4f18`, the full patch
-digest and every changed source file. `bun run build:revert-runtime` prepares the
-pinned checkout inside `.cache`, verifies source, checks types and regression
-tests, builds the companion and native supervisor, and runs real execution
-acceptance. It uses frozen dependency fixtures and no live provider credentials.
-An authorized existing checkout may be supplied with `--source`; it is never
-reset. No installed runtime or user profile is changed by this build.
+`scripts/build-native-runtime.mjs` builds the sealed native runtime and the
+accepted execution launcher into `packages/web/runtime/<platform>-<arch>`;
+`bun run build:revert-runtime` is a compatibility alias for it. Release
+ordering, the shared web/native handoffs and cache behavior are in
+[RELEASE_PIPELINE.md](RELEASE_PIPELINE.md).
 
-A companion that passed its type and regression checks is cached under
-`.cache/revert-runtime-companion`. The cache key covers the pinned commit, patch
-digest, runtime version, platform and Bun version, and the entry is reused only
-when its recorded digest matches. The native supervisor build and DevRyan
-execution acceptance always run. `DEVRYAN_REVERT_COMPANION_ONLY=1` stops after
-the companion step; the `Warm release caches` workflow uses this on `main`,
-because caches saved by a tag-triggered release are visible only to that tag.
-
-Only successful acceptance writes the runtime manifest. The current paired
-companion is 2.1.2 on OpenCode 1.18.33, with execution preparation protocol 3
+Only successful acceptance writes the runtime manifest. The paired runtime uses
+execution preparation protocol 3
 (direct receipts for built-in read, glob, grep and skill; the host records only their fenced ledger commit) and retention protocol 1. The host verifies the required
 capability versions, platform, architecture and artifact digests before enabling
 capture. Artifacts live under `packages/web/runtime/<platform>-<arch>`; Electron
@@ -271,11 +260,9 @@ baseline references; a host predating references fails closed
 pre-migration ledger implementation at new history.
 
 The real dispatcher journey is `scripts/verify-concurrent-revert-execution.mjs`.
-Set `DEVRYAN_TEST_REVERT_UI=1` to additionally exercise the actual web and Electron
-Revert control, restored composer, concurrent command and late publication.
-Supply `DEVRYAN_TEST_ELECTRON_BINARY` from `scripts/qa/package-electron.mjs` for
-the packaged Electron journey. Its isolated bootstrap uses a mock OS keychain,
-private profile and home, and disables background Bots and protocol registration.
+Its isolated bootstrap uses a mock OS keychain, private profile and home, and
+disables background Bots and protocol registration. Web and packaged-Electron
+Revert UI journeys run through `scripts/qa/run.mjs` (see [QA.md](QA.md)).
 Verification results and platform availability are recorded in the
 [implementation audit](audits/2026-09-20-concurrent-revert/README.md).
 
