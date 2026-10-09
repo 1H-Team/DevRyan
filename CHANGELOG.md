@@ -17,11 +17,15 @@ All notable changes to this project will be documented in this file.
 - Keep development Electron QA on Chromium's mock keychain so its private profile cannot trigger a macOS login-keychain reset dialog.
 - Start standalone web/Electron QA through the verified private native bundle and synthetic wire facade used by matrix QA, replacing retired external-runtime flags that caused startup rejection. Missing native artifacts fail before an app launches.
 
+Release verification is recorded in [the release evidence](docs/audits/2026-10-09/release-2.0.4/README.md) and [the re-release evidence](docs/audits/2026-10-09/rerelease-2.0.4/README.md).
+
 ## [2.0.3] - 2026-10-08
 
 - Ship the bundled native runtime once in the desktop app while keeping the web server files available outside the application archive.
 - Clean up disposable QA, test and benchmark runtime payloads after successful or interrupted runs, with isolated profiles and shared dependency caches.
 - Add cache reporting and pruning with retention rules that preserve cited evidence, pinned runs, active packages and required build inputs. Preview scans tolerate entries removed during enumeration.
+
+Release verification is recorded in [the release evidence](docs/audits/2026-10-08/release-2.0.3/README.md).
 
 ## [2.0.2] - 2026-10-08
 

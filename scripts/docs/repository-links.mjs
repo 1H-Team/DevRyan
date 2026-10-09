@@ -88,7 +88,7 @@ export function validateRepositoryLinks(root, files, { siteRoutes = new Set() } 
       const relative = kind === 'source' || local.startsWith('/')
         ? local.replace(/^\//, '') : path.join(path.dirname(file), local);
       let resolved = path.resolve(root, relative);
-      // Codemaps also use paths relative to their own package directory.
+      // Source paths may also be relative to the document's own directory (vendored reviewed inputs).
       if (kind === 'source' && !existsSync(resolved)) {
         const nearby = path.resolve(root, path.dirname(file), local);
         if (nearby.startsWith(path.resolve(root) + path.sep) && existsSync(nearby)) resolved = nearby;

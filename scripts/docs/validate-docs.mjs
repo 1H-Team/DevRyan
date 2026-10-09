@@ -3,6 +3,7 @@ import path from "node:path"
 import { execFileSync } from "node:child_process"
 import { existsSync } from "node:fs"
 import { validateRepositoryLinks } from "./repository-links.mjs"
+import { docRetentionErrorMessages } from "./doc-retention.mjs"
 
 const repoRoot = path.resolve(import.meta.dirname, "..", "..")
 const docsRoot = path.join(repoRoot, "packages", "docs")
@@ -79,6 +80,7 @@ async function run() {
   const repository = validateRepositoryLinks(repoRoot, repositoryFiles, { siteRoutes: routeSet })
   errors.push(...repository.errors)
   for (const warning of repository.warnings) console.warn(`Docs warning: ${warning}`)
+  errors.push(...docRetentionErrorMessages(repoRoot))
 
   if (errors.length > 0) {
     console.error("Docs validation failed:")

@@ -55,3 +55,10 @@ test('checks site routes and rejects repository escapes and malformed encoding',
   assert.match(result.errors.join('\n'), /reference leaves repository/);
   assert.match(result.errors.join('\n'), /invalid URL encoding/);
 });
+
+test('resolves explicit source paths relative to the document directory when they are absent from the root', t => {
+  const root = fixture(t, { 'vendor/pkg/DOC.md': '`scripts/tool.mjs` `scripts/gone.mjs`', 'vendor/pkg/scripts/tool.mjs': '' });
+  const result = validateRepositoryLinks(root, ['vendor/pkg/DOC.md']);
+  assert.equal(result.errors.length, 1);
+  assert.match(result.errors[0], /missing source: scripts\/gone\.mjs/);
+});
