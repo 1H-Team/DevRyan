@@ -5,7 +5,7 @@
 This directory adapts pinned OpenCode 2.0.26 responses to the existing DevRyan
 application contract. It does not implement the native execution host or certify
 plugin, confinement, migration or performance parity. The remaining gates are in
-[the upgrade plan](../../../../../../docs/OPENCODE_V2_AGENT_UPGRADE_PLAN.md).
+[the OpenCode module documentation](../DOCUMENTATION.md).
 
 - `route-policy.js` classifies every operation from `routes.generated.js` by
   audience, validates body-dependent privilege and rejects unknown routes.

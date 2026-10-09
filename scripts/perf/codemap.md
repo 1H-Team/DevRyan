@@ -273,8 +273,8 @@ behavior.
   and do not claim runtime dispatch qualification. `--companion` is retired.
   Native macOS lease sockets retain their guarded `/private/tmp` location;
   project, config, data, logs and reports stay under the repository cache.
-  See the [preparation profile](../../docs/LEDGER_PREPARATION_PROFILE_2026-09-27.md)
-  for measurement boundaries and historical results.
+  See the [performance guidance](../../docs/AGENT_PERFORMANCE.md)
+  for measurement guidance.
 - `multi-session-report.mjs` turns a run into `report.md` (per-role peaks and
   growth slopes, child-process churn as memory-time, responsiveness
   percentiles, busy-session buckets, Docker, system competitors, timeline) and

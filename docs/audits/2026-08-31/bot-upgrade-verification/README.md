@@ -1,5 +1,7 @@
 # Bot upgrade implementation and verification
 
+> Historical — archived 2026-10-09; current contract: [Bots runtime](../../../BOTS_RUNTIME.md)
+
 Implementation is integrated in the working tree. **This is not a production
 release sign-off.** No production migration, real Telegram pairing, provider
 credential configuration or release was performed. Existing uncommitted work

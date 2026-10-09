@@ -812,3 +812,7 @@ Standard-provider titles use the selected model with a 30-second shared budget f
 The prompt preview remains visible until a resolved title is durably enqueued. One retry runs after 60 seconds; only exhausted attempts produce the local fallback. Idle-only persistence, manual rename precedence, and restart reconciliation remain unchanged. Existing saved titles are not regenerated.
 
 `session_title_generation` is a journal lifecycle event (log records do not preserve an event field). The top-level `sessionID` identifies the target, and `payload.helperSessionID` identifies the hidden helper. Stages distinguish creation, response, recovery, cleanup, and final generation; reasons include `timeout`, `http_failure`, `empty_response`, `validation_rejection`, `recovery_failure`, `request_failure`, and `cancelled`. Diagnostics contain status/model/timing metadata, never the request or generated title.
+
+## History
+
+History: the OpenCode 2 upgrade plans are archived in [audits/2026-10-05/opencode-v2-handoff](../../../../../docs/audits/2026-10-05/opencode-v2-handoff/README.md).

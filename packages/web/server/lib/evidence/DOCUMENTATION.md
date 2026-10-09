@@ -11,3 +11,5 @@ refs or any restore, reset, apply, attribution, or revert capability.
 Evidence is interval-based: user edits, external processes, and overlapping
 sessions may be included. Capture failures become explicit gaps and never block
 prompt delivery.
+
+History: [turn evidence implementation plan](../../../../../docs/audits/2026-07-16/turn-evidence-plan/README.md).

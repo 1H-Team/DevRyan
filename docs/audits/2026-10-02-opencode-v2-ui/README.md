@@ -1,7 +1,7 @@
 # Native v 2 UI wire and runtime qualification
 
 Status: the final source 8/native-B nine-cell local functional and visual qualification passed. The
-[current final evidence table](../../OPENCODE_V2_AGENT_UPGRADE_PLAN.md#current-final-candidate-evidence)
+[current final evidence table](../2026-10-05/opencode-v2-handoff/README.md#current-final-candidate-evidence)
 records these scoped passes and remaining overall gates. The results below are historical:
 eight scenario scopes passed, while their nine-scenario baseline remained open
 pending the 800-pixel dark Electron startup check and final screenshot review.

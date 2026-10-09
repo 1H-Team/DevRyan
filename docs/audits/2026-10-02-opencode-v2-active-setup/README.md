@@ -33,7 +33,7 @@ role/backup/Council bindings and 12 live normal/Plan journeys remain unqualified
 Astra/Sol/Opus/DeepSeek/Grok roles, backups and ordered Council are unchanged.
 The GPT-6.1 Sol/high review-subagent preference does not change that role graph.
 See the
-[current final evidence table](../../OPENCODE_V2_AGENT_UPGRADE_PLAN.md#current-final-candidate-evidence).
+[current final evidence table](../2026-10-05/opencode-v2-handoff/README.md#current-final-candidate-evidence).
 The candidate-numbered records below retain their original historical scopes.
 
 Current source 8 freeze `r20-source-final-8.json` has SHA

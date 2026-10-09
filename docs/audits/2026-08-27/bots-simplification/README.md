@@ -1,5 +1,7 @@
 # Bot settings and operations simplification
 
+> Historical — archived 2026-10-09; current contract: [Bots runtime](../../../BOTS_RUNTIME.md#current-simplified-product-contract)
+
 Date: 2026-08-27
 
 This document records the product research, migration boundaries, target

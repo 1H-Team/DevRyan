@@ -1,5 +1,7 @@
 # Session creation implementation and verification
 
+> Historical — archived 2026-10-09; current contract: [Sync documentation](../../../../packages/ui/src/sync/DOCUMENTATION.md)
+
 This is a dated verification record. Context Mode, its worker pool and the
 worker/benchmark scripts it cites were removed from DevRyan on 2026-09-24; the
 worker statements below describe the August 31 implementation only. The session

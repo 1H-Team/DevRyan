@@ -57,3 +57,7 @@ Reproduce after building/staging current assets:
 DEVRYAN_QA_SCENARIO=grok-plan bun scripts/qa/run.mjs
 DEVRYAN_QA_RUNTIME=electron DEVRYAN_QA_SCENARIO=grok-plan bun scripts/qa/run.mjs
 ```
+
+## Acceptance procedure
+
+Run `DEVRYAN_QA_SCENARIO=grok-plan bun scripts/qa/run.mjs` for isolated web acceptance and add `DEVRYAN_QA_RUNTIME=electron` for the actual desktop host. Build the current UI and stage Electron assets first, as for the recovery-card scenario. The fixture emits xAI-shaped reasoning/text parts and real `message.part.delta` events, holds the turn busy at each assertion, and proves the card grows before completion. It covers a split sentinel, multiple reasoning parts, a text continuation, the handoff to a final assistant, disabled actions across tool-call gaps, exact saved Markdown after idle/reload, and an aborted draft that cannot save or implement. Captures cover both themes and wide/narrow layouts, with reasoning displayed and hidden. Plan turns retain reasoning source parts through `ChatMessage`; `MessageBody` applies the Thinking visibility preference after resolving the card. Inspect every original PNG before recording visual acceptance. This is deterministic provider transport; a separately configured live xAI journey is required for a live-provider claim. The product fixes chat rendering to Live; legacy Sorted projection remains unit-test territory.

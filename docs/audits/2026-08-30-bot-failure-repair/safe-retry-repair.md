@@ -1,5 +1,7 @@
 # Bot safe retry repair — 2026-08-30
 
+> Historical — archived 2026-10-09; current contract: [Bots module documentation](../../../packages/web/server/lib/bots/DOCUMENTATION.md)
+
 ## Status
 
 The retry repair, refusal UI, and diagnostic instrumentation are implemented.

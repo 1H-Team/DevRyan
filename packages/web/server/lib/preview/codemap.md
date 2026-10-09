@@ -36,3 +36,5 @@ Preview and standalone-web Browser routing: project preview grants, navigation p
 - Consumed by `/api/preview/*`, capability-gated `/api/browser/*`, `ContextPanel`, and the standalone-web Browser surface/pop-out.
 - Coordinates with session auth cookies and proxy routing in the main server runtime.
 - Terminal lifecycle callbacks revoke source grants immediately.
+
+See also [DOCUMENTATION.md](DOCUMENTATION.md) for supported topologies.

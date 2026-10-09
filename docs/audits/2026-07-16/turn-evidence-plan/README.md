@@ -1,5 +1,7 @@
 # Standalone implementation plan: Exact turn checkpoints as evidence
 
+> Historical — archived 2026-10-09; current contract: [Turn evidence](../../../../packages/web/server/lib/evidence/DOCUMENTATION.md)
+
 This scope excludes durable worktree bootstrap and diagnostic bundles.
 
 > Status note: implementation is underway in the working tree. The shared

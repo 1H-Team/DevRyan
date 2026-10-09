@@ -314,3 +314,7 @@ passed). Other completed package suites passed. This is a recorded validation
 limitation, not a full-suite pass. Documentation validation and patch whitespace
 checks passed; the documentation validator retains existing unrelated missing
 source warnings.
+
+## Acceptance procedure
+
+This audit records SDK 1.0.28 model selections, the fixed two-pool budget, observed limitations and rollback. `scripts/qa/cursor-usage-live.mjs` is explicit opt-in and never runs as part of deterministic validation. It compares direct SDK execution with frozen control/candidate shared runtimes in private `.cache/qa/` workspaces. The runner keeps failed consumption, rotates per-run question scopes, checks completed files/tests and reload/idle behavior, and stops admission on missing quota, changed account evidence or reserved headroom. `lifecycle` adds bounded native question, subagent, cancellation/resume and title checks. Its measurements do not establish browser or packaged Electron acceptance; run isolated host QA separately. Never infer provider cache hits from local Agent-cache reuse, turn occupancy from cumulative run totals, or zero consumption from missing billing data.

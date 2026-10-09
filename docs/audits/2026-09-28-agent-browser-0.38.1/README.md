@@ -130,3 +130,24 @@ managed FFmpeg cache need not be deleted to restore core browsing.
 - [Electron debugger session routing](https://www.electronjs.org/docs/latest/api/debugger)
 - [Pinned FFmpeg distribution and source notices](https://github.com/eugeneware/ffmpeg-static/releases/tag/b6.1.1)
 - [Existing duplicate-output qualification workflow](../../HARNESS_OPTIMIZATION.md#duplicate-output-acceptance)
+
+## Earlier CDP bridge compatibility spike (0.33.2, 2026-08-02)
+
+Folded in from the former standalone CDP spike document. These results used 0.33.2 and do not qualify 0.38.1. They gated `packages/electron/browser-cdp-bridge.mjs`; its contract now lives in `packages/electron/codemap.md`.
+
+Verdict: GO. `agent-browser connect <ws-url>` works against a bare page WebSocket with no HTTP CDP discovery (headless Chrome 150 on loopback, direct page URL as emitted for a lease). Navigation, `snapshot -i` and screenshot capture succeeded. A `ws` server created with `port: 0` has no address until `listening`, so the bridge must await that event before publishing a capability URL, and tests must model the asynchronous lifecycle.
+
+Connect-time handshake: root `Runtime.evaluate` probe, `Target.setDiscoverTargets`, `Target.getTargets`, `Target.attachToTarget {flatten:true}` (returns `sessionId`), then session-scoped `Runtime.evaluate`, `Page.enable` / `Runtime.enable` / `Network.enable`, `Target.setAutoAttach`, `Runtime.runIfWaitingForDebugger`, and a repeated root `Browser.getVersion` before operation batches. After attach everything uses flat-session messaging (`DOM.*`, `Accessibility.*`, `Runtime.*`, `Input.*`, `Page.navigate`, `Page.captureScreenshot`).
+
+Bridge requirements the spike established:
+
+1. One shared loopback listener, usable only after `listening`, stopped after the last lease closes.
+2. Per-lease capability path, pinned guest, controlling client, synthetic target and session IDs and in-flight budget.
+3. Synthetic root layer for `Browser.getVersion` and the `Target.*` discovery/attach/detach methods around exactly one guest per lease.
+4. Strip the synthetic `sessionId` before `webContents.debugger.sendCommand` and restore it on replies and events.
+5. Browser-level domain fence: in-session `Target.setAutoAttach` is synthesized as `{}` and every other session-scoped `Target.*` or `Browser.*` method is rejected, because forwarding them could enumerate or mutate sibling Electron targets.
+6. Tag intercepted `Input.*` activity with the owning lease so only the observing window sees it.
+7. A reconnect test must repeat the attach handshake and a real session-scoped command; a clean client disconnect releases only the client and the same capability accepts the next one, with late results of the previous client fenced.
+
+Packaged Electron acceptance (arm64, 2026-08-02) used a small four-page local site (`<HOME>/Repositories/test/site`). One Builder root held a single lease across repeated navigation/snapshot operations while the root-scoped menu showed one row. A second root ran concurrently and closed its own lease without affecting the first. A builder edited the live site and verified the change through the same browser tool. The acceptance exposed that `Page.captureScreenshot` stalled while an inactive lease `<webview>` used `visibility:hidden`; lease panes now stay full-sized and paintable with `opacity:0`, z-order isolation and `pointer-events:none`, and a hidden-capture run while a manual tab was selected recorded no capture timeout. Agent Browser Control reported expected and installed `0.33.2`, status `Ready`, and the global active count went from 1 to 0 after the explicit close. Static bridge coverage handles distinct guests, capability isolation, debugger conflicts, close, idle and shutdown cleanup and the two-minute orphan fence; real-hardware reclamation of an abandoned guest over the full orphan interval remained optional.
+

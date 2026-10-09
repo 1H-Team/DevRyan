@@ -907,3 +907,5 @@ session switching/remounts, explicit Default, model changes and the actual
 optimistic dispatch boundary with controlled transport promises.
 
 Session error notifications persist only bounded classifications and safe display text alongside completion read state. Raw exception stacks and provider bodies are never persisted. Viewing a session does not resolve its failure notice. A newer canonical user turn (including a Plan retry) supersedes proven older same-session failures; live user parts and canonical history pages provide this authority, while optimistic rows and synthetic maintenance wakes do not. Persisted owning user IDs/server timestamps avoid comparing server chronology with renderer receipt clocks. Legacy keyed failures can use canonical history order; uncorrelated legacy notices and uncorrelated delayed error events remain conservative until successful completion. A newer authoritative successful completion also resolves captured older failures.
+
+History: [session creation verification record](../../../../docs/audits/2026-09-24/session-creation/README.md).

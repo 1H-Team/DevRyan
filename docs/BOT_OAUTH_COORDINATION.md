@@ -1,10 +1,9 @@
 # Shared host and Bot OpenAI OAuth
 
-Event `dac127cc-05d9-4dd8-938a-e3f89efbbbf6` remains unchanged. Its confirmed
-immediate failure was `Token refresh failed: 401`; retained evidence cannot
-establish the historical provider-side invalidation sequence. The repair
-prevents host-login divergence, stale scoped writeback and independent managed
-refresh owners. Provider revocation can still require reconnection.
+The host and Bots share one OpenAI OAuth credential without divergence. The
+design prevents host-login divergence, stale scoped writeback and independent
+managed refresh owners. Provider-side revocation can still require
+reconnection.
 
 ## Ownership and safety
 
@@ -129,18 +128,9 @@ plugins instead of mounting the working-tree plugins. The acceptance verifies
 the dependency versions before making fixture requests. Run it after other
 large suites on resource-constrained Docker hosts.
 
-The OpenCode 2.0.26 offline lane uses a synthetic registered SIWC grant, the
+The offline native lane uses a synthetic registered SIWC grant, the
 official refresh resource and Responses projection. It covers three coordinated
 refresh cycles, ordinary and structured requests, attachments, cancellation,
 restart and host events with the internet disabled. SIWC image generation is
 refused before provider dispatch or file publication; API-key image behavior
 belongs to the compiled reviewed-package qualification.
-
-Historical pre-SIWC verification (2026-08-31): 218 focused server tests passed;
-affected validation passed (including 3,157 web tests); repository type checks
-and lint passed. Offline OpenCode 1.18.25 acceptance completed six
-chat/structured requests across a managed host and two Bot processes, one real
-image-plugin request, and three coordinated refresh cycles. These historical
-Codex/image results are not SIWC production or release evidence. The check also
-passed with the freshly built image's baked plugins. No production
-login, Bot, failed run or audit event was changed.

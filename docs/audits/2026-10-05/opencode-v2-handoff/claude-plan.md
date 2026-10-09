@@ -1,6 +1,8 @@
 # DevRyan agents on OpenCode 2 — upgrade and harness plan (revised after reconciliation with Codex)
 
-Historical collaborative plan. The [verified finish plan](./OPENCODE_V2_AGENT_UPGRADE_PLAN.md) supersedes its execution order and readiness claims. Spike results below are not integrated production acceptance.
+> Historical — archived 2026-10-09; current contract: [OpenCode module documentation](../../../../packages/web/server/lib/opencode/DOCUMENTATION.md)
+
+Historical collaborative plan. The [verified finish plan](./README.md) supersedes its execution order and readiness claims. Spike results below are not integrated production acceptance.
 
 ## Context
 
@@ -125,7 +127,7 @@ None of substance after this revision. I would still keep the 1.18.33 baseline r
 - Per-agent research results (JSON lines with `"type":"result"`, labels on the `started` lines) under `~/.claude/projects/-Users-zoubair-Repositories-DevRyan/b409e98a-c292-4109-a6e5-6edac3a54c89/subagents/workflows/`: `wf_97ab45fc-a39` (inventory: v2-architecture, v2-plugin-api, ecosystem, openchamber, v2-perf-issues, runtime-companion, server-api-consumers, ui-sync-sdk, harness-agents, v2-prep-history, qa-infra), `wf_60cf11c0-e18` (tool-transform-api, tool-bypass-failopen, revert, subagent-inbox, plugins-slim-claude, db-and-qa, pain-points), `wf_54a160df-5e9` (fail-closed-gate, codemode-identity, revert-lifecycle, agent-editor-overlays).
 - Not yet read when the plan was approved: tool-bypass-failopen, subagent-inbox, plugins-slim-claude, pain-points. Read them before Phases 4–6.
 - Memory note with decisions and verified facts: `devryan-opencode-v2-upgrade-plan-2026-09-30.md`.
-- Codex's parallel draft (not mine, untracked): `docs/OPENCODE_V2_AGENT_UPGRADE_PLAN.md`.
+- Codex's parallel draft (not mine, untracked): `README.md` in this folder.
 
 ## Still open when this was written
 Five source reviews had not returned: remaining tool-path bypasses, the subagent/inbox mapping, Slim/Ponytail/ECC detail, revert lifecycle paths, and the measured pain-point ranking. Their topics are covered by G1, G5 and Phases 5–6; their results may reorder Phase 6 but should not change the architecture.

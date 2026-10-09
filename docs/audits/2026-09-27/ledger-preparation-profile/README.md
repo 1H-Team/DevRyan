@@ -1,5 +1,7 @@
 # Ledger preparation profiling
 
+> Historical — archived 2026-10-09; current contract: [Agent performance guidance](../../../AGENT_PERFORMANCE.md)
+
 The retained journal's 72.2-second preparation and its separate 45.4-second,
 99-commit preparation are distinct observations. These fixtures measure current
 source and do not reconstruct either historical session. In particular, a

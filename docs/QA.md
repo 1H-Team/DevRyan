@@ -35,8 +35,8 @@ failures and to `--keep-artifacts` runs.
 
 ## OpenCode 2 native writer slice
 
-The explicit Darwin arm64 command below exercises the pinned 2.0.20 native
-simulation transport and product host against the real web private bridge,
+The explicit Darwin arm64 command below exercises the native
+simulation transport (pinned by `TARGET_OPENCODE_VERSION` in `packages/web/server/lib/opencode/version-policy.js`) and product host against the real web private bridge,
 execution supervisor and mutation ledger:
 
 ```sh
@@ -105,30 +105,15 @@ Development ad-hoc signing does not establish release signing or support on
 another platform.
 
 Package qualification uses the compiled controller and writer with the real
-web admission owner, scheduler, ledger and supervisor. Only HTTP model responses
-are fixture data. Separate assertions cover asset initialization and full server
-execution while the supervisor denies reads of the repository's `packages`,
-`scripts` and `node_modules`. The importer works on consistent disposable copies,
-with relocated projects and private configuration/data roots. The runtime payload is deleted on pass (`--keep-artifacts` /
+web admission owner, scheduler, ledger and supervisor; only HTTP model responses
+are fixture data. The runtime payload is deleted on pass (`--keep-artifacts` /
 `DEVRYAN_KEEP_ARTIFACTS=1` keeps it); `result.json` and logs are retained, and
-failed attempts keep everything, under `.cache/v2-validation/package-*/result.json`; incomplete
-mandatory lanes, changed source or incomplete cleanup keep the exit nonzero.
-This command does not activate a bundle in the installed app.
-
-Every compiled host (the package process, each fresh lifecycle driver and the
-parent-death owner) also writes the production web diagnostic journal into its
-descriptor's `web-data/harness/journal`; the in-memory diagnostic arrays are a
-tee of the same records. Case `compiled-durable-journal-roots` grades the
-selected candidate, the baseline and the SIGKILLed parent-death candidate, and
-passes only at 3/3. A missing root or one without chunks is unavailable, never
-passed. A present root needs sealed chunks (the parent-death root is sealed by
-the next owner's journal recovery), at least one `lifecycle` record, an empty
-`node scripts/journal.mjs --dir <root> gaps --verify` run recorded under
-`package-*/journal-gaps/`, and every record reconciled to the writer that
-accepted it. Case `compiled-seeded-credential-first-boot` prepares a fresh
-initialization whose `native-setup-credentials.json` (one fake API key) is
-present at first boot, then proves the controller started, unlinked the seed
-after stamping its digest, restarted, and holds the imported credential.
+failed attempts keep everything, under `.cache/v2-validation/package-*/result.json`.
+Incomplete mandatory lanes, changed source or incomplete cleanup keep the exit
+nonzero. This command does not activate a bundle in the installed app. The
+case list and what each lane asserts are documented with the lane modules in
+[OpenCode 2 native verification scripts](../scripts/opencode-v2-native/DOCUMENTATION.md);
+read the lane code for the authoritative case IDs.
 
 To qualify an upgrade from a retained release, add its compiled artifacts as the
 baseline. The baseline must be repository-owned:
@@ -137,52 +122,11 @@ baseline. The baseline must be repository-owned:
 node scripts/verify-opencode-v2-package.mjs --artifact-root .cache/v2-validation/native-artifact-candidate --baseline-artifact-root <retained-release-artifacts>
 ```
 
-Bundle A then runs the baseline controller and bundle B the candidate. Clones
-cover both reviewed source layouts:
+With a baseline, bundle A runs the baseline controller and bundle B the
+candidate, covering both the legacy and the fresh-install clone layouts and
+rollback; see the [upgrade qualification notes](../scripts/opencode-v2-native/DOCUMENTATION.md#upgrade-qualification-against-a-retained-baseline).
 
-- **Legacy.** The main lane imports the legacy fixture, which keeps
-  `__drizzle_migrations`. Case `compiled-clone-layout-legacy` checks it.
-- **Fresh install.** A separate control root under `fresh-install-upgrade/`
-  starts from the production empty source, as every real 2.x install does: a
-  zero-byte `empty.db` with no legacy journal and an identity workspace map.
-  Case `compiled-clone-layout-fresh-install` checks it. The baseline importer
-  and controller create and run A. Then:
-  - `compiled-fresh-install-clone`: the clone gate admits the A→B clone of the
-    closed database. The clone captures A's credentials through A's own
-    controller, which may drain pending WAL frames into `opencode.db`. So this
-    case compares A's database by schema and rows, and every other file byte
-    for byte. `sourceWalCheckpointed` reports whether a drain happened.
-  - `compiled-fresh-install-rollback`: B's controller runs its own work, then
-    rolls back. A's original controller receives B's credentials. A's history and
-    migration IDs are unchanged, and A's controller restarts the rolled-back
-    database.
-
-The exact reviewed layout and release pair are asserted only when the versions
-differ. A same-release run checks only that each kind has or lacks the legacy
-journal, and its gate result says so.
-
-The migration fixture contains two independent relocated Git projects, exact
-conversation/tool IDs, compaction dispositions, attachment bytes, ordered
-permissions, and separate web/native configuration trees. A lost import
-acknowledgement must recover from the real persisted importer receipt on an
-exact preparation retry. Rollback first quiesces the actual candidate; its
-synthetic-copy reconciliation requires unchanged independent baseline roots
-and retains the complete candidate and project work. The selected baseline
-then launches the accepted generation-one companion through the production
-lifecycle, with offline model fetch and automatic update disabled, and reads
-all fixture sessions through real HTTP routes.
-
-The package also exercises the configured command executor, native manual
-compaction, formatter subprocess, per-location read boundaries, and a tracked
-primary background notice resumed after controller replacement. The latter
-requires the original objective and saved selection, a fresh runtime handshake,
-exactly one canonical continuation, and another real writer after replacement.
-The separate parent-death fixture waits for a real confined shell, kills only
-its owned Node process, and checks every observed descendant plus both real
-controller and worker termination receipts before requiring no publication.
-Its explicit constructor-owned local grant is smoke-test policy; it does not
-substitute for production authentication contract tests. Release signing and
-other-platform support remain separate qualification gates.
+## Isolated QA runner
 
 Run from the repository root using the Node and Bun versions declared in `package.json`. Install the lockfile dependencies with `bun install --frozen-lockfile`. No extra QA dependency is required; the browser driver reuses Electron and `ws` already installed in its workspace.
 
@@ -207,11 +151,16 @@ Current coverage: select a fixture session; connect event transport; receive fou
 
 The default smoke does not cover new-session creation, attachments, queue policy, permission dialogs, tool expansion or old-history anchoring; use the matrix fixture for those journeys. Drawer swipes, native dialogs, long idle recovery and closed-session memory still need separate verification. Physical-device keyboard behavior remains unverified until exercised on a device.
 
-## Grok streaming plan cards
+## Feature acceptance procedures
 
-Run `DEVRYAN_QA_SCENARIO=grok-plan bun scripts/qa/run.mjs` for isolated web acceptance and add `DEVRYAN_QA_RUNTIME=electron` for the actual desktop host. Build the current UI and stage Electron assets first, as for the recovery-card scenario. The fixture emits xAI-shaped reasoning/text parts and real `message.part.delta` events, holds the turn busy at each assertion, and proves the card grows before completion. It covers a split sentinel, multiple reasoning parts, a text continuation, the handoff to a final assistant, disabled actions across tool-call gaps, exact saved Markdown after idle/reload, and an aborted draft that cannot save or implement. Captures cover both themes and wide/narrow layouts, with reasoning displayed and hidden. Plan turns retain reasoning source parts through `ChatMessage`; `MessageBody` applies the Thinking visibility preference after resolving the card. Inspect every original PNG before recording visual acceptance. This is deterministic provider transport; a separately configured live xAI journey is required for a live-provider claim. The product fixes chat rendering to Live; legacy Sorted projection remains unit-test territory.
+Per-feature acceptance procedures live with their audit records:
 
-The [2026-09-07 Grok streaming audit](audits/2026-09-07-grok-plan-streaming/README.md) retains reviewed web/Electron captures, exact build identity, automated results, and the unavailable live-provider check.
+- Grok streaming plan cards (`DEVRYAN_QA_SCENARIO=grok-plan`): [audit](audits/2026-09-07-grok-plan-streaming/README.md#acceptance-procedure).
+- Thinking slider (`DEVRYAN_QA_SCENARIO=thinking`): [audit](audits/2026-09-07-thinking-slider/README.md#acceptance-procedure).
+- Claude quota and native prefix study (`scripts/qa/meridian-prefix.mjs`): [audit](audits/2026-09-07-claude-quota.md#acceptance-procedure).
+- Cursor usage comparison (`scripts/qa/cursor-usage-live.mjs`): [audit](audits/2026-09-15-cursor-usage.md#acceptance-procedure).
+- Matched compaction retrieval diagnostics: [procedure](audits/2026-10-09/qa-retrieval-diagnostics/README.md).
+- Cold web update-check comparison: [protocol and recipe](../scripts/perf/WEB_UPDATE_CHECK.md#reproducing-the-recorded-comparison).
 
 ## Local packaged Electron candidate
 
@@ -286,7 +235,7 @@ DEVRYAN_QA_DIST_DIR="$qaWebDist" bun scripts/qa/package-electron.mjs
 
 The first app is only a native-binary donor and must not be launched or treated as an acceptance artifact. Its recipe deliberately omits release resources and the release afterPack hook. The real QA packager subsequently checks the donor's Electron version, module versions, arm64 architecture and copied hashes, packages the current source plus selected UI, and runs actual SQLite and PTY ABI smoke checks. Retain the final emitted `package-evidence.json` path for QA/performance commands. The donor worktree and its local dependency tree may be retained until verification is complete; do not reuse that dependency tree for Node/web runs. No signing, notarization, publication, installed-app replacement or global runtime installation is requested. The production `bun run electron:build` is unsuitable here because it requires a verified Bot release manifest and invokes the release packaging path.
 
-Managed hosts launch the verified native v2 controller and writer bundle. Build the native artifact with the repository's `scripts/build-native-runtime.mjs` and retain its manifest hash. Readiness and natural-threshold checks require pinned OpenCode 2.0.20. QA uses private empty initialization seeds, preserves reviewed setup and workspace inputs, and starts a fresh diagnostic journal. No standalone v1 executable or old conversation import is required.
+Managed hosts launch the verified native v2 controller and writer bundle. Build the native artifact with the repository's `scripts/build-native-runtime.mjs` and retain its manifest hash. Readiness and natural-threshold checks require the pinned OpenCode (`TARGET_OPENCODE_VERSION`). QA uses private empty initialization seeds, preserves reviewed setup and workspace inputs, and starts a fresh diagnostic journal. No standalone v1 executable or old conversation import is required.
 
 Fresh Stage F preparation uses `scripts/qa/stage-f-preparation.mjs` with explicit current source, artifact, web-build and packaged-app hashes and produces seven v2 wire cells plus two actual-backend cells. Historical build9/G1 recipes do not qualify current source.
 
@@ -517,7 +466,7 @@ The generation-1 live observer records whitelisted controls at native `chat.mess
 
 The initial manual/natural planning request explicitly makes the revision-1 brief authoritative for the proposed priority sorting while preserving the user-note file as historical input. Revision 2 then rejects that sorting and requires creation order. This avoids an unrelated ambiguity before the compaction workload; it does not answer questions after compaction, change the saved-plan checks, or authorize implementation early.
 
-Manual compaction requires both canonical summary linkage and independently observed native lifecycle events at each boundary. It verifies revision 2 remains saved, the paused project stays unchanged, and implementation resumes from the current approval surface. With Plan enabled, the reference is the app's saved session revision, identified by its original human request, source message, session directory, creation time and slug. Its raw path, byte count and hash remain pinned. Every exact revision read must stay inside the project-plan directory derived from the prepared runtime's own data root, reject symlinks and match the file's bytes to the API response. With Plan disabled, the reference remains the existing `.opencode/plans/qa-current.md` file in the owned project. Both references are checked at every paused boundary and before approval; a later Plan card cannot replace the baseline. Fresh approval requests contain the existing path and require an observed successful native read before a new full canonical Plan response. The harness does not copy the file, refeed its contents or count an unreadable reference as continuity. Natural compaction additionally requires pinned OpenCode 2.0.20's unchanged configured model limits, measured usage at the threshold, `auto: true` and no provider-overflow substitute. It sends labelled synthetic project audit data through the ordinary composer, bounded to 256 KiB per batch, 40 batches per boundary and 32 MiB total, within the cell deadline. Reaching a workload bound without two verified boundaries fails; one boundary, a forced summary or a fixture result cannot stand in for natural coverage.
+Manual compaction requires both canonical summary linkage and independently observed native lifecycle events at each boundary. It verifies revision 2 remains saved, the paused project stays unchanged, and implementation resumes from the current approval surface. With Plan enabled, the reference is the app's saved session revision, identified by its original human request, source message, session directory, creation time and slug. Its raw path, byte count and hash remain pinned. Every exact revision read must stay inside the project-plan directory derived from the prepared runtime's own data root, reject symlinks and match the file's bytes to the API response. With Plan disabled, the reference remains the existing `.opencode/plans/qa-current.md` file in the owned project. Both references are checked at every paused boundary and before approval; a later Plan card cannot replace the baseline. Fresh approval requests contain the existing path and require an observed successful native read before a new full canonical Plan response. The harness does not copy the file, refeed its contents or count an unreadable reference as continuity. Natural compaction additionally requires the pinned OpenCode (`TARGET_OPENCODE_VERSION`)'s unchanged configured model limits, measured usage at the threshold, `auto: true` and no provider-overflow substitute. It sends labelled synthetic project audit data through the ordinary composer, bounded to 256 KiB per batch, 40 batches per boundary and 32 MiB total, within the cell deadline. Reaching a workload bound without two verified boundaries fails; one boundary, a forced summary or a fixture result cannot stand in for natural coverage.
 
 Manual Orchestrator coverage keeps its mixed first-boundary policy: two distinct seeded task/child/dispatch identities, one actually running child and one completed result with its exact undispositioned envelope. Both must be observed across native start and canonical summary completion. The active child may finish naturally during compaction while its result stays pending. Collection follows that exit observation; both exact results must remain completed through the second boundary. Missing, failed, consumed, replaced or ambiguous witnesses fail coverage.
 
@@ -564,44 +513,6 @@ bun run perf:electron -- --label candidate-interactive \
 
 It measures trusted typing during a background stream, two complete histories and pagination, session/draft switching, scrolling, reasoning expansion, reconnect/cancel and repeated navigation with natural heap/DOM samples. Each input measurement ends when the expected DOM state and two animation frames have completed: this is render-ready latency, not compositor presentation. Chromium Event Timing, long tasks and a bounded compressed trace are retained separately. Read [the exact protocol](../scripts/perf/INTERACTIVE.md) before running a matched comparison. Three fresh runs per package with at least five seconds of warmup and thirty-second memory windows are required. Every measured action retains its correctness gate, including the unchanged two-pixel pagination bound. A baseline that fails a correctness gate cannot support a complete performance comparison; retain its failure and report the unavailable phases rather than repairing or relabelling the preserved baseline.
 
-## Cold web update-check comparison
-
-The focused [update-check protocol](../scripts/perf/WEB_UPDATE_CHECK.md) compares
-three fresh hosts per source version, in AB/BA/AB order, with the same final UI,
-runtime, dependencies and instrumentation. It measures the actual cold route,
-concurrent health latency, event-loop delay and synchronous package-discovery
-CPU samples. Run it after builds, validation and other QA have stopped. This
-benchmark specifically requires Node's [`module.registerHooks`](https://nodejs.org/api/module.html#moduleregisterhooksoptions)
-(added in Node 22.15.0 and 23.5.0); the recorded comparison runtime is Node 26.0.0.
-
-From a fresh checkout, recover the exact historical module and copy the current
-module into ignored evidence storage. The benchmark validates both byte hashes
-before launching; a different revision fails instead of changing the baseline.
-
-```sh
-mkdir -p .cache/perf/update-check-inputs
-git show ff7abd116ca37db53a56981d7de76100f2a97690:packages/web/server/lib/package-manager.js > .cache/perf/update-check-inputs/package-manager.before.js
-cp packages/web/server/lib/package-manager.js .cache/perf/update-check-inputs/package-manager.after.js
-node --input-type=module <<'JS'
-import path from 'node:path';
-import { runWebUpdateCheckBenchmark } from './scripts/perf/web-update-check-benchmark.mjs';
-const inputs = path.resolve('.cache/perf/update-check-inputs');
-const result = await runWebUpdateCheckBenchmark({
-  beforeSource: path.join(inputs, 'package-manager.before.js'),
-  afterSource: path.join(inputs, 'package-manager.after.js'),
-  uiDirectory: path.resolve('.cache/qa/REPLACE_WITH_FINAL_VERIFIED_WEB_CANDIDATE'),
-  label: 'cold-discovery',
-});
-process.stdout.write(JSON.stringify({ outcome: result.outcome, resultFile: result.resultFile }) + '\n');
-if (result.outcome !== 'passed') process.exitCode = 1;
-JS
-```
-
-Replace the UI path with the verified candidate built using the procedure above.
-The benchmark uses ordinary Node module options and retains all six outcomes.
-It measures one historical module inside the otherwise fixed current host;
-it does not represent an entire historical build or live-provider performance.
-
 ## Configured live-provider smoke
 
 This opt-in command makes two minimal real-provider requests through an existing loopback DevRyan host. Set the origin explicitly; the runner never discovers or stops the user's app.
@@ -627,122 +538,7 @@ Fall back to tool/message/task ID or a bounded timestamp window. Read `GET /api/
 
 See `packages/harness-runtime/DOCUMENTATION.md` and `packages/web/server/lib/diagnostics/DOCUMENTATION.md` for storage, sanitization, authenticated export, and retention contracts.
 
-## Matched retrieval diagnostics
-
-The scenarios **compaction-retrieval-control** and **compaction-retrieval-compacted** investigate retrieval and inference after one manually requested native summary. They require live packaged Electron, Builder and Plan off. They do not establish retention, natural-compaction or automatic-continuation acceptance.
-
-Generate the reviewed six-arm order (control/compacted, compacted/control, control/compacted):
-
-~~~sh
-node --input-type=module <<'JS'
-import { mkdir, writeFile } from 'node:fs/promises';
-import { createQaRetrievalDiagnosticMatrix } from './scripts/qa/compaction-retrieval-diagnostic.mjs';
-await mkdir('.cache/qa', { recursive: true });
-const config = createQaRetrievalDiagnosticMatrix({
-  evidenceRoot: '.cache/qa/retrieval-study',
-  providerId: 'xai', modelId: 'grok-4.6', timeoutMs: 1200000,
-});
-await writeFile('.cache/qa/retrieval-study.json', JSON.stringify(config, null, 2));
-JS
-DEVRYAN_QA_PACKAGE_EVIDENCE=/absolute/path/to/package-evidence.json \
-  bun scripts/qa/run.mjs --config .cache/qa/retrieval-study.json
-~~~
-
-Freeze the candidate package, production source and all scripts before starting paid runs. Each arm starts with a fresh owned profile/project/session and the same attachments, diagnosis, revision-2 input and one 256-KiB ordinary audit batch. The runner verifies the saved revised plan, unchanged paused implementation, observed source read and initial native failed test, no prior compaction, and measured usage below the unchanged native threshold. It records differing model-generated plan hashes; mismatched or failed prerequisites remain visible as incomparable arms.
-
-Only the compacted arm sends the actual composer command /compact. Both arms then receive exactly “Continue with the next permitted step from the current state.” A pending question stops the arm without a reply or repair. Question evidence must link the current root assistant and exact pending call; an unresolved historical/unmatched request is classified separately. Provider, native or permission failures remain separate from retrieval evidence. Every arm still receives the normal owned-session cleanup after its evidence and failure screenshot have been captured.
-
-The per-arm retrieval-diagnostic.json preserves canonical summary, tool input/output, exact read/glob/claim ordering, question IDs, before/after saved plans, ordinary input hashes, profile/candidate identity and journal health. Any bounded text truncation is marked. Empty glob output alone is insufficient: a missing-path inference candidate requires a subsequent absence claim, the unchanged saved file, and no successful exact-path recovery. This is human-review triage; a candidate alone records **review-required**, not a proven functional or compaction-induced failure. Questions, changed paused files and repeated completed inspections still fail automated checks.
-
-Aggregate all six records without dropping failed arms:
-
-~~~sh
-node --input-type=module <<'JS'
-import { readFile, writeFile } from 'node:fs/promises';
-import path from 'node:path';
-import { summarizeQaRetrievalStudy } from './scripts/qa/compaction-retrieval-diagnostic.mjs';
-const root = '.cache/qa/retrieval-study';
-const summary = JSON.parse(await readFile(path.join(root, 'summary.json'), 'utf8'));
-const arms = [];
-for (const run of summary.runs) {
-  const result = JSON.parse(await readFile(path.join(run.output, 'result.json'), 'utf8'));
-  let diagnostic = null;
-  try { diagnostic = JSON.parse(await readFile(path.join(run.output, 'retrieval-diagnostic.json'), 'utf8')); }
-  catch (error) { if (error.code !== 'ENOENT') throw error; }
-  arms.push({ id: result.cell.id, outcome: run.outcome, diagnostic });
-}
-await writeFile(path.join(root, 'paired-diagnostic.json'),
-  JSON.stringify(summarizeQaRetrievalStudy(arms), null, 2));
-JS
-~~~
-
-Inspect every captured PNG and the exact claim/read/question evidence. The pair report separates comparable and incomparable states, generic interruptions and compacted-only/control-only/both/neither retrieval candidates. It preserves differing plans and failed matrix outcomes. Its three acceptance flags always remain false, including when all observation checks pass. Human classification is required before attributing any loss to compaction or proposing a retrieval or memory change.
-
-## Thinking slider acceptance
-
-After building and staging the shared UI, run
-`DEVRYAN_QA_SCENARIO=thinking bun run qa` and
-`DEVRYAN_QA_RUNTIME=electron DEVRYAN_QA_SCENARIO=thinking bun run qa`.
-The isolated scenario checks zero through five native levels, the circular thumb,
-60% detent/release behavior, keyboard/focus restoration, light/dark desktop and
-390px touch web, cancelled touch, reduced motion, and an explicit Medium prompt
-plus canonical reload. Screenshots and results are written to the reported
-`.cache/qa/` directory. This verifies fixture transport, not live provider billing
-or physical touch hardware.
-
-Set `DEVRYAN_QA_BACKGROUND=1` to keep the web QA Chromium window hidden during
-scripted interaction; screenshots still capture the real renderer. The thinking
-scenario also verifies the supported header Fast toggle and focus restoration.
-
-Recorded acceptance evidence: [2026-09-07 thinking slider](audits/2026-09-07-thinking-slider/README.md).
-
-## Claude quota and native prefix verification
-
-The [Claude quota audit](audits/2026-09-07-claude-quota.md) documents the incident, pinned runtime, control/candidate distinction, quota resolution and rollback. This study is opt-in and is separate from deterministic CI and visual QA.
-
-Run the real-executable offline regression with explicit installed paths:
-
-```sh
-node scripts/qa/meridian-prefix.mjs --modules /absolute/managed/node_modules --claude /absolute/native/claude --arm candidate --steps 20 --parallel 4
-node scripts/qa/meridian-prefix.mjs --modules /absolute/managed/node_modules --claude /absolute/native/claude --arm candidate --steps 10 --parallel 3 --stream false
-```
-
-The loopback provider emits synthetic authored responses and never contacts Anthropic or reads authentication. `--arm control` retains the previous installed HTTP/handoff revision and is expected to fail the prefix/history assertions. Do not treat its synthetic usage values as quota measurements.
-
-For live work, first prepare a cache-owned profile with `prepareMeridianFixture` and `prepareClaudeQuotaRuntime` from `scripts/qa/claude-quota-fixture.mjs` and `scripts/qa/claude-quota-runtime.mjs`. Both require explicit installed module/executable paths and refuse dependency installation. The runtime launch environment sets `HOME`, `CLAUDE_CONFIG_DIR`, `MERIDIAN_CONFIG_DIR` and `MERIDIAN_SESSION_DIR` inside the private home for the same reason as live matrix profiles: Meridian 1.62.x inside the Bun OpenCode host derives its `quota` oauth-token profile and other state from `HOME`. Preparation and `startClaudeQuotaRuntime` both reject any Meridian/Claude path outside that home (only the absolute `MERIDIAN_CLAUDE_PATH` executable may live elsewhere); a profile saved before `HOME` was owned fails before any process starts and must be prepared again. Save their `{ fixture, profile }` return values to a cache-owned JSON file. Record an authoritative `projectQuota` baseline from the explicitly authorized loopback Meridian quota origin, plus the agreed `limitPoints`, `diagnosticReservePoints` and `finalHeadroomPoints`. The admission default is 20 points; the implementation allows at most 40 when separately authorized. Keep at least five points for final retests.
-
-The guarded runner accepts this configuration (all paths must be explicit):
-
-```json
-{
-  "preparedFile": "/absolute/DevRyan/.cache/qa/study/prepared.json",
-  "installedModules": "/absolute/managed/node_modules",
-  "claudeExecutable": "/absolute/native/claude",
-  "arm": "direct",
-  "baselineFile": "/absolute/DevRyan/.cache/qa/study/baseline.json",
-  "quotaOrigin": "http://127.0.0.1:3456",
-  "outputRoot": "/absolute/DevRyan/.cache/qa/study/results",
-  "referenceSession": "/absolute/authorized/reference-session.jsonl"
-}
-```
-
-Run `node scripts/qa/meridian-designer-continuity.mjs --quota /absolute/CONFIG.json`. Each `direct`, `control` or `candidate` invocation creates a fresh Git project, uses identical TSX/CSS prompts, verifies exact Opus 4.8/medium selection, and checks files and tests independently. Native interactive Claude uses the existing web package's `node-pty`; mediated runs use the actual private web/OpenCode/plugin path. Explicit benchmark titles separate the primary workload from title generation. Use three cohorts in direct/control/candidate, candidate/control/direct, then direct/control/candidate order. Retain failed attempts, pause on missing/stale quota, and never admit another arm merely because a quota request failed. Avoid other account activity throughout the measured windows.
-
-Set `"cancellationCheck": true` for a separate direct/candidate idle/cancellation/recovery run, outside paired workload totals. It keeps the completed session open for six minutes, checks for native responses and quota changes, then cancels an actually started foreground tool. It waits past that tool's completion deadline to detect survivors, checks for newly observed native responses after settled abort, and resumes the review/tests. All of its consumption still counts against the same overall quota ceiling.
-
-Set `"workload": "sustained"` for the longer twelve-brief review workbench instead of the default small component. Every turn requires actual TypeScript/TSX, CSS and test edits. Its independent grader lives outside the editable project and checks public behavior and React server-rendered output, including stable sorting, pagination, CSV escaping, immutable moderation/replies and safe highlighting. The final turn also builds the component for a browser. React and React DOM are linked from existing installed repository dependencies; seeding does not install packages. Freeze the same fixture and prompts for all arms and retain their prompt/source hashes.
-
-An optional `"calibrationTurns": 2` runs only the first two sustained briefs to check the new fixture before committing to a full cohort. Such evidence is labeled `editing-calibration`, records its shorter prompt hash and required/full turn counts, and must not be counted as a completed paired workload.
-
-A quota reset does not renew the authorized study ceiling. Do not run a measured arm across a reset. While all model work is idle, retain a valid final reading for the old window and a fresh starting reading for the new window; explicitly carry previous consumption in the baseline file's `carriedConsumedPoints`, including any reserve for integer rounding. Admission adds that carried amount to new-window consumption. Missing old-window evidence must not be replaced with an invented zero.
-
-An authoritative zero-usage window can have a null reset timestamp while inactive. Preserve that raw baseline. When its first active reset timestamp appears, the runner records `activatedFiveHourReset` and the corresponding observation atomically in the cache-owned baseline file. Subsequent inactive windows or changed reset timestamps then stop admission; an inactive starting baseline cannot silently grant a second window's budget. A nonzero window without a reset boundary remains invalid. Full sustained arms require at least sixty minutes before a known quota reset and sixty minutes of existing access lifetime at startup; the runner does not write refresh credentials.
-
-The output records authoritative quota before/after each turn, immediate and delayed samples, native usage deduplicated by provider message ID, exact model/effort evidence, mediated request counters and verified file/test outcomes. Each delayed endpoint must have been fetched after completed work plus 30 seconds; a recent cached reading that predates completion is insufficient. That endpoint can serve as the next turn's preceding observation while fresh, since no inference occurs between them. The first prompt similarly requires a fresh observation fetched after the arm started. Valid observations can be reused for up to 85 seconds to avoid bursts of quota refresh requests, while their provider fetch time remains subject to the 90-second freshness bound. With model work idle, the runner can wait up to ten minutes for a fresh endpoint. Missing or stale quota during active inference still aborts the owned workload. Native transcript and Meridian client counters do not cover every auxiliary or failed provider attempt. A one-point quota display delta of zero does not establish zero consumption or parity. The runner never writes refresh credentials or passwords, never patches the installed runtime, and stops only processes it created.
-
-## Cursor usage comparison
-
-The [Cursor usage audit](audits/2026-09-15-cursor-usage.md) records SDK 1.0.28 model selections, the fixed two-pool budget, observed limitations and rollback. `scripts/qa/cursor-usage-live.mjs` is explicit opt-in and never runs as part of deterministic validation. It compares direct SDK execution with frozen control/candidate shared runtimes in private `.cache/qa/` workspaces. The runner keeps failed consumption, rotates per-run question scopes, checks completed files/tests and reload/idle behavior, and stops admission on missing quota, changed account evidence or reserved headroom. `lifecycle` adds bounded native question, subagent, cancellation/resume and title checks. Its measurements do not establish browser or packaged Electron acceptance; run isolated host QA separately. Never infer provider cache hits from local Agent-cache reuse, turn occupancy from cumulative run totals, or zero consumption from missing billing data.
+## Isolated scenarios and live-profile options
 
 Run `DEVRYAN_QA_SCENARIO=execution-failure bun scripts/qa/run.mjs` (and add `DEVRYAN_QA_RUNTIME=electron` for desktop) to replay a session error after idle without an assistant, reload its persistent notice, and verify failed grouped tools. Build and stage current assets first. The fixture uses no live provider and no installed-app data.
 
@@ -765,10 +561,10 @@ To qualify live QA, including an OpenCode upgrade, against the owner's personal 
 By default, live QA expects the runtime to report the host pin (`TARGET_OPENCODE_VERSION` in `packages/web/server/lib/opencode/version-policy.js`). To qualify a candidate runtime before the pin moves, set an exact version for the run:
 
 ```sh
-DEVRYAN_QA_OPENCODE_VERSION=2.0.20 <usual QA command>
+DEVRYAN_QA_OPENCODE_VERSION=<exact version> <usual QA command>
 ```
 
-- The value must be an exact version (`2.0.20`, not `2.0` or `latest`). An invalid value fails the cell before any owned process starts.
+- The value must be an exact version (for example the current `TARGET_OPENCODE_VERSION`, not `2.0` or `latest`). An invalid value fails the cell before any owned process starts.
 - Do not add the companion suffix: the check removes `-devryan.<n>` from the version the runtime reports, and compares that exactly to the target.
 - Evidence records the target the run was checked against as `runtimeTarget: { version, source }`, next to `runtimeVersion`. `source` is `host-pin` or `DEVRYAN_QA_OPENCODE_VERSION`. Evidence with `source: DEVRYAN_QA_OPENCODE_VERSION` qualifies a candidate only. It is not evidence for the pin.
 - This applies to matrix-cell evidence, the natural-compaction `policy` evidence, the compaction-retrieval diagnostic and the duplicate-serializer probe (which also records `pluginSdkVersion`). The probe needs the installed `@opencode-ai/plugin` in `packages/web/node_modules` to equal the target version, and fails with the installed and required versions otherwise.

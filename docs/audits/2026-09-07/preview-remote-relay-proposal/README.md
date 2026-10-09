@@ -1,5 +1,7 @@
 # Preview — Remote-user laptop relay (design)
 
+> Historical — archived 2026-10-09; no current contract; proposal not built (the implemented same-host tunnel preview is documented in [Preview documentation](../../../../packages/web/server/lib/preview/DOCUMENTATION.md))
+
 Status: same-host tunnel preview is implemented; the separate user-laptop relay described below is design only.
 Owner: TBD.
 Audience: contributors planning the next phase of the embedded preview feature.
