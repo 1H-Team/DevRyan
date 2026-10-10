@@ -21,6 +21,7 @@ import { Database } from '@opencode/core/database/database';
 import { Logger } from 'effect';
 import { assertNativeCatalog, type NativeCatalogAssertion } from './startup-catalog.js';
 import { nativeModelCatalogOverride } from './native-model-catalog.js';
+import { createNativeCatalogDiagnostics } from './native-catalog-diagnostics.js';
 import type { NativeGlobalRoots, NativeCatalogRequirements } from './native-process-protocol.js';
 
 export interface NativeRuntimeHostOptions extends AdmissionGateOptions {
@@ -115,6 +116,7 @@ export async function createNativeRuntimeHost(options: NativeRuntimeHostOptions)
     if (failures.length) throw new AggregateError(failures, 'Native host settlement failed');
   })();
   try {
+    const diagnostics = createNativeCatalogDiagnostics();
     const handler = await Effect.runPromise(ServerFetch.make({
       database: { path: options.databasePath },
       config: { project: false },
@@ -123,7 +125,9 @@ export async function createNativeRuntimeHost(options: NativeRuntimeHostOptions)
       models: { fetch: false, snapshot: false },
       simulation: false,
       app: { name: 'DevRyan', version: '2.0.26', channel: 'native-candidate' },
-    }, { overrides }).pipe(Scope.provide(scope), Effect.provide(Logger.layer([Logger.withConsoleError(Logger.formatLogFmt)], { mergeWithExisting:false }))));
+    }, { overrides }).pipe(Scope.provide(scope), Effect.provide(diagnostics.context), Effect.onError(cause => Effect.sync(() => diagnostics.capture(cause))), Effect.provide(Logger.layer([Logger.withConsoleError(Logger.formatLogFmt)], { mergeWithExisting:false })))).catch(() => {
+      throw new Error(`native_catalog_construction_failed_${diagnostics.cause() ?? 'cause_unavailable'}`);
+    });
     if (options.readiness) catalog = await assertNativeCatalog({ directories:options.readiness.directories,
       requirements:options.readiness.requirements,
       ...(options.configurationSnapshot ? { requirementsForDirectory:(directory:string)=>options.configurationSnapshot?.locations.find(location=>location.directory===directory)?.requiredCatalogs } : {}),

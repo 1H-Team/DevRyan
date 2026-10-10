@@ -752,15 +752,15 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     let withOpenAIAvailability = withGitHubCopilot;
     if (!isExternalOpenCode()) {
       let selected, lookupUnavailable = false;
-      try { selected = await readNativeOpenAiSelection(getNativeRuntimeOwner, directory, { refresh: true }); } catch {
+      try { selected = await readNativeOpenAiSelection(getNativeRuntimeOwner, directory, { refresh: true, fallbackLocation: true }); } catch {
         lookupUnavailable = true;
-        try { selected = await readNativeOpenAiSelection(getNativeRuntimeOwner, directory); } catch { /* Unknown ownership remains unavailable. */ }
+        try { selected = await readNativeOpenAiSelection(getNativeRuntimeOwner, directory, { fallbackLocation: true }); } catch { /* Unknown ownership remains unavailable. */ }
       }
       let auth = selected?.value;
       let accountModels = lookupUnavailable ? null : await resolveSiwcAccountModels(auth);
       if (selected) {
         try {
-          const current = await readNativeOpenAiSelection(getNativeRuntimeOwner, directory);
+          const current = await readNativeOpenAiSelection(getNativeRuntimeOwner, directory, { fallbackLocation: true });
           if (JSON.stringify(current) !== JSON.stringify(selected)) { auth = current?.value; accountModels = null; lookupUnavailable = true; }
         } catch { accountModels = null; lookupUnavailable = true; }
       }
@@ -804,7 +804,16 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       // If merging fails, still return the upstream provider list so the UI never
       // blanks the entire provider list or persists an empty snapshot.
       console.error('Failed to merge provider integrations:', error);
-      const availablePayload = isExternalOpenCode() ? upstreamPayload : annotateOpenAIModelAvailability(upstreamPayload, undefined, { unavailable: true });
+      let availablePayload = upstreamPayload;
+      if (!isExternalOpenCode()) {
+        // An API-key account is not subject to ChatGPT availability; keep its catalog untouched.
+        let keyAuth;
+        try {
+          const selected = await readNativeOpenAiSelection(getNativeRuntimeOwner, undefined, { fallbackLocation: true });
+          if (['key', 'api'].includes(selected?.value?.type)) keyAuth = selected.value;
+        } catch { /* Unknown ownership remains unavailable. */ }
+        availablePayload = annotateOpenAIModelAvailability(upstreamPayload, keyAuth, keyAuth ? {} : { unavailable: true });
+      }
       return res.json(markIncomplete(annotateModelDefaultThinking(availablePayload)));
     }
   });

@@ -1,0 +1,42 @@
+{
+  "date": "2026-10-10",
+  "status": "passed",
+  "checks": [
+    {
+      "command": "DEVRYAN_SCRIPT_TEST_CONCURRENCY=1 bun run validate:full",
+      "exitCode": 0
+    },
+    {
+      "command": "bun run build",
+      "exitCode": 0
+    },
+    {
+      "command": "bun run bundle:check",
+      "exitCode": 0
+    },
+    {
+      "command": "git diff --check",
+      "exitCode": 0
+    }
+  ],
+  "initialAttempt": {
+    "command": "bun run validate:full",
+    "exitCode": 1,
+    "reason": "Three subprocess timeouts in concurrent script fixtures; unchanged assertions passed with serial script execution"
+  },
+  "uiTestsPassed": 4082,
+  "webTestFilesPassed": 537,
+  "webTestsPassed": 6592,
+  "nativeWebTailTestsPassed": 14,
+  "migrationSourceChanges": [],
+  "releaseScope": "desktop-macos-arm64",
+  "expectedPublicAssets": [
+    "DevRyan-2.0.5-arm64.dmg"
+  ],
+  "limitations": [
+    "Real-account usage and new provider UI states remain unverified",
+    "Hosted migrations and release packaging require the production workflow",
+    "Same-version installations may require manual DMG installation",
+    "No notarization or Windows acceptance"
+  ]
+}

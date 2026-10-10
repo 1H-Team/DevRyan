@@ -6,6 +6,7 @@ let getProvidersImpl: (options?: { directory?: string | null }) => Promise<unkno
 let listAgentsStrictImpl: () => Promise<unknown>
 let providerCallOptions: Array<{ directory?: string | null } | undefined>
 let settingsDefaultAgent: string | undefined
+let readHealthImpl: () => Promise<import('@/lib/startup/health').StartupHealthSnapshot | null>
 
 const actualOpencodeClientModule = await import("@/lib/opencode/client")
 mock.module("@/lib/opencode/client", () => ({
@@ -20,6 +21,7 @@ mock.module("@/lib/opencode/client", () => ({
     },
     listAgentsStrict: () => listAgentsStrictImpl(),
     checkHealth: () => Promise.resolve(true),
+    readHealth: () => readHealthImpl(),
   },
 }))
 
@@ -76,6 +78,8 @@ describe("useConfigStore startup load status", () => {
     settingsDefaultAgent = undefined
     getProvidersImpl = () => Promise.resolve({ providers: [], default: {} })
     listAgentsStrictImpl = () => Promise.resolve([])
+    readHealthImpl = () => Promise.resolve({ ready: true, runtimeIdentity: 'fixture:1', error: null,
+      startup: { state: 'ready', attempt: 1, code: null } })
     globalThis.fetch = mock((input: RequestInfo | URL) => {
       const url = String(input)
       if (url.startsWith("/api/config/agents")) {
@@ -394,5 +398,60 @@ describe("useConfigStore startup load status", () => {
     expect(state.initializationLoadStatus).toBe("error")
     expect(state.initializationLoadError).toBe("provider bootstrap failed")
     expect(state.lastDisconnectReason).toBe("init_error")
+  })
+
+  test('startup failure stops immediately and Retry initializes only the new attempt', async () => {
+    readHealthImpl = async () => ({ ready: false, runtimeIdentity: 'fixture:1', error: 'Native startup conflict',
+      startup: { state: 'failed', attempt: 1, code: 'NATIVE_CONFLICT' } })
+    await useConfigStore.getState().initializeApp({ startup: true })
+    expect(useConfigStore.getState().initializationRetryable).toBe(false)
+    expect(useConfigStore.getState().initializationLoadError).toBe('NATIVE_CONFLICT')
+    expect(useConfigStore.getState().isConnected).toBe(false)
+    expect(providerCallOptions).toEqual([])
+
+    readHealthImpl = async () => ({ ready: true, runtimeIdentity: 'fixture:2', error: null,
+      startup: { state: 'ready', attempt: 2, code: null } })
+    await useConfigStore.getState().initializeApp({ startup: true })
+    expect(useConfigStore.getState().isInitialized).toBe(true)
+    expect(useConfigStore.getState().initializationLoadError).toBeUndefined()
+    expect(providerCallOptions).toHaveLength(1)
+  })
+
+  test('startup initialization deduplicates health and loads agents only after providers finish', async () => {
+    let healthCalls = 0
+    let releaseHealth!: (value: import('@/lib/startup/health').StartupHealthSnapshot) => void
+    readHealthImpl = () => { healthCalls++; return new Promise(resolve => { releaseHealth = resolve }) }
+    let releaseProviders!: (value: unknown) => void
+    getProvidersImpl = () => new Promise(resolve => { releaseProviders = resolve })
+    let agentCalls = 0
+    listAgentsStrictImpl = async () => { agentCalls++; return [] }
+    const first = useConfigStore.getState().initializeApp({ startup: true })
+    const second = useConfigStore.getState().initializeApp({ startup: true })
+    expect(healthCalls).toBe(1)
+    releaseHealth({ ready: true, runtimeIdentity: 'fixture:1', error: null })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(providerCallOptions).toHaveLength(1)
+    expect(agentCalls).toBe(0)
+    releaseProviders({ providers: [], default: {} })
+    await Promise.all([first, second])
+    expect(agentCalls).toBe(1)
+    expect(useConfigStore.getState().isInitialized).toBe(true)
+  })
+
+  test('a replaced startup owner cannot publish its late failed health response', async () => {
+    let releaseOld!: (value: import('@/lib/startup/health').StartupHealthSnapshot) => void
+    readHealthImpl = () => new Promise(resolve => { releaseOld = resolve })
+    const controller = new AbortController()
+    const old = useConfigStore.getState().initializeApp({ startup: true, signal: controller.signal })
+    controller.abort()
+    readHealthImpl = async () => ({ ready: true, runtimeIdentity: 'fixture:2', error: null,
+      startup: { state: 'ready', attempt: 2, code: null } })
+    await useConfigStore.getState().initializeApp({ startup: true })
+    releaseOld({ ready: false, runtimeIdentity: 'fixture:1', error: 'Old failure',
+      startup: { state: 'failed', attempt: 1, code: 'OLD_FAILURE' } })
+    await old
+    expect(useConfigStore.getState().isInitialized).toBe(true)
+    expect(useConfigStore.getState().initializationLoadError).toBeUndefined()
+    expect(providerCallOptions).toHaveLength(1)
   })
 })

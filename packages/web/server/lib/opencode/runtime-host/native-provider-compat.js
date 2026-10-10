@@ -1,7 +1,22 @@
 import { isDeepStrictEqual } from 'node:util';
 import { Model } from '@opencode/core/model';
 import { Provider } from '@opencode/core/provider';
-import { Schema } from 'effect';
+import { Result, Schema } from 'effect';
+import { nativeCatalogSchemaPaths } from './native-catalog-diagnostics.js';
+
+/** Refuse individual unencodable rows before policy reads or the HTTP encoder sees them. */
+export function nativeEncodableModels(models) {
+  const accepted = models.filter((model, index) => {
+    const result = Schema.encodeUnknownResult(Model.Info)(model);
+    if (Result.isSuccess(result)) {
+      try { JSON.stringify(result.success); return true; } catch { /* Non-JSON plugin settings. */ }
+    }
+    const paths = Result.isFailure(result) ? nativeCatalogSchemaPaths(result.failure) : [];
+    for (const field of paths.length ? paths : ['']) console.error(`level=warn msg=model_response_schema_invalid name=SchemaError schemaPath=[${index}]${field ? '.' + field : ''}`);
+    return false;
+  });
+  return accepted.length === models.length ? models : accepted;
+}
 import { normalizeOpenAIModels, enforceDetailedOpenAIReasoningSummary, openAIModelHeaders } from '../../../default-config/plugins/openai-gpt-5-6-models.mjs';
 import { selectGitHubCopilotRemoteModels } from '../../../default-config/plugins/github-copilot-models.mjs';
 

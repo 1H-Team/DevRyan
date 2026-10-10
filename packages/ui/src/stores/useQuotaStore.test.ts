@@ -262,6 +262,21 @@ describe('useQuotaStore refresh ownership', () => {
     expect(state.providerRefreshState.codex?.refreshError).toBe('temporary outage');
   });
 
+  test('keeps discovery pending and prior results when discovery answers 503', async () => {
+    const previous = providerResult('codex');
+    useQuotaStore.setState({ results: [previous] });
+    globalThis.fetch = (async () => Response.json(
+      { error: 'Runtime starting', code: 'native_runtime_not_ready' },
+      { status: 503 },
+    )) as typeof fetch;
+
+    await useQuotaStore.getState().fetchAllQuotas({ rediscover: true });
+
+    const state = useQuotaStore.getState();
+    expect(state.configuredProviderIds).toBeNull();
+    expect(state.results[0]).toBe(previous);
+  });
+
   test('keeps provider errors independent when another provider succeeds', async () => {
     globalThis.fetch = (async (input) => {
       const providerId = String(input).includes('codex') ? 'codex' : 'cursor-acp';

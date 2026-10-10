@@ -1,0 +1,231 @@
+{
+  "schemaVersion": 1,
+  "kind": "packaged-native-app-bound-startup",
+  "outcome": "passed",
+  "scope": "three fresh processes/profiles; prepared native bundle; local HTTP model fixture; natural first usable renderer",
+  "sourceSha256": "2205a5d1728b6eaa452cde01d342cfbe0e7503ba91381bb9487ed18da837a32f",
+  "archiveSha256": "8a11900e98db7b93776b9dd4100a879178073c58a6301a62b15e1135af67ae3b",
+  "summary": {
+    "launches": 3,
+    "medianUiReadyMs": 14191.824832999999,
+    "minimumUiReadyMs": 13724.437209000003,
+    "maximumUiReadyMs": 16819.650417
+  },
+  "unavailable": [
+    "foreground warm service",
+    "foreground cold service",
+    "foreground stale-owner recovery",
+    "foreground service upgrade"
+  ],
+  "excluded": [
+    "launchd/SMAppService registration",
+    "installed state",
+    "paid providers",
+    "first native-bundle provisioning",
+    "cold OS caches"
+  ],
+  "runs": [
+    {
+      "iteration": 0,
+      "startup": {
+        "outcome": "passed",
+        "forcedNavigations": 0,
+        "hostAvailableMs": 5805.368625000001,
+        "nativeStartupReadyMs": 14259.882708000001,
+        "hostReadyMs": 14259.969833,
+        "fixtureCatalogReadyMs": 14279.240125,
+        "uiReadyMs": 16819.650417,
+        "firstSelectedModel": {
+          "observedAtMs": 15203.395125,
+          "providerId": "opencode",
+          "modelId": "fledge-alpha-free",
+          "catalogAvailable": true
+        },
+        "electronStartupPhases": {
+          "source": "injected-launch-records",
+          "collectedAtMs": 16819.653542,
+          "records": [
+            {
+              "phase": "shell_environment",
+              "outcome": "completed",
+              "durationMs": 23
+            },
+            {
+              "phase": "foreground_preparation",
+              "outcome": "completed",
+              "durationMs": 8
+            },
+            {
+              "phase": "server_import",
+              "outcome": "completed",
+              "durationMs": 2885
+            },
+            {
+              "phase": "server_listen",
+              "outcome": "completed",
+              "durationMs": 637
+            },
+            {
+              "phase": "initial_url",
+              "outcome": "completed",
+              "durationMs": 4686
+            },
+            {
+              "phase": "renderer_navigation",
+              "outcome": "completed",
+              "durationMs": 218
+            }
+          ]
+        }
+      },
+      "subscription": {
+        "readyAcknowledgedAtMs": 16608.856792,
+        "transport": "websocket",
+        "error": null
+      },
+      "finalBundle": {
+        "bundleID": "candidate",
+        "revision": 1,
+        "previousBundleID": null,
+        "opencodeVersion": "2.0.26",
+        "artifactManifestSha256": "1cdb19d3a2627568b8a2591b2cef62b359c3ccbf33ae2f1b31628c5784136f14"
+      },
+      "cleanupErrors": []
+    },
+    {
+      "iteration": 1,
+      "startup": {
+        "outcome": "passed",
+        "forcedNavigations": 0,
+        "hostAvailableMs": 5219.541875000003,
+        "nativeStartupReadyMs": 12738.330709000002,
+        "hostReadyMs": 12738.367166999997,
+        "fixtureCatalogReadyMs": 12748.232750000003,
+        "uiReadyMs": 13724.437209000003,
+        "firstSelectedModel": {
+          "observedAtMs": 13724.329250000003,
+          "providerId": "devryan-smoke",
+          "modelId": "smoke-write",
+          "agent": "builder",
+          "catalogAvailable": true
+        },
+        "electronStartupPhases": {
+          "source": "injected-launch-records",
+          "collectedAtMs": 13724.442125000001,
+          "records": [
+            {
+              "phase": "shell_environment",
+              "outcome": "completed",
+              "durationMs": 12
+            },
+            {
+              "phase": "foreground_preparation",
+              "outcome": "completed",
+              "durationMs": 7
+            },
+            {
+              "phase": "server_import",
+              "outcome": "completed",
+              "durationMs": 2916
+            },
+            {
+              "phase": "server_listen",
+              "outcome": "completed",
+              "durationMs": 573
+            },
+            {
+              "phase": "initial_url",
+              "outcome": "completed",
+              "durationMs": 4601
+            },
+            {
+              "phase": "renderer_navigation",
+              "outcome": "completed",
+              "durationMs": 193
+            }
+          ]
+        }
+      },
+      "subscription": {
+        "readyAcknowledgedAtMs": 13368.207959,
+        "transport": "websocket",
+        "error": null
+      },
+      "finalBundle": {
+        "bundleID": "candidate",
+        "revision": 1,
+        "previousBundleID": null,
+        "opencodeVersion": "2.0.26",
+        "artifactManifestSha256": "1cdb19d3a2627568b8a2591b2cef62b359c3ccbf33ae2f1b31628c5784136f14"
+      },
+      "cleanupErrors": []
+    },
+    {
+      "iteration": 2,
+      "startup": {
+        "outcome": "passed",
+        "forcedNavigations": 0,
+        "hostAvailableMs": 5571.470083,
+        "nativeStartupReadyMs": 13150.769292000004,
+        "hostReadyMs": 13150.834207999993,
+        "fixtureCatalogReadyMs": 13164.591374999996,
+        "uiReadyMs": 14191.824832999999,
+        "firstSelectedModel": {
+          "observedAtMs": 14008.676291999996,
+          "providerId": "opencode",
+          "modelId": "fledge-alpha-free",
+          "catalogAvailable": true
+        },
+        "electronStartupPhases": {
+          "source": "injected-launch-records",
+          "collectedAtMs": 14191.829458,
+          "records": [
+            {
+              "phase": "shell_environment",
+              "outcome": "completed",
+              "durationMs": 13
+            },
+            {
+              "phase": "foreground_preparation",
+              "outcome": "completed",
+              "durationMs": 9
+            },
+            {
+              "phase": "server_import",
+              "outcome": "completed",
+              "durationMs": 3041
+            },
+            {
+              "phase": "server_listen",
+              "outcome": "completed",
+              "durationMs": 590
+            },
+            {
+              "phase": "initial_url",
+              "outcome": "completed",
+              "durationMs": 4851
+            },
+            {
+              "phase": "renderer_navigation",
+              "outcome": "completed",
+              "durationMs": 202
+            }
+          ]
+        }
+      },
+      "subscription": {
+        "readyAcknowledgedAtMs": 13761.850958000003,
+        "transport": "websocket",
+        "error": null
+      },
+      "finalBundle": {
+        "bundleID": "candidate",
+        "revision": 1,
+        "previousBundleID": null,
+        "opencodeVersion": "2.0.26",
+        "artifactManifestSha256": "1cdb19d3a2627568b8a2591b2cef62b359c3ccbf33ae2f1b31628c5784136f14"
+      },
+      "cleanupErrors": []
+    }
+  ]
+}

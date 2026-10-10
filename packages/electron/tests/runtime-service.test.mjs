@@ -20,7 +20,7 @@ import {
   unsealRuntimeServiceBootstrapToken,
   validateRuntimeServiceDescriptor,
 } from '../runtime-service.mjs';
-import { createRuntimeOwnerAcquirer, recoverAppBoundRuntime } from '../runtime-service-startup.mjs';
+import { createRuntimeOwnerAcquirer, recoverAppBoundRuntime, retryRuntimeServiceConnection } from '../runtime-service-startup.mjs';
 
 const directories = [];
 
@@ -756,6 +756,78 @@ describe('process identity ownership', () => {
     await assert.rejects(stopped({ getBootSessionId: async () => { throw new Error('OS unavailable'); } }), {
       recoveryReason: 'boot_identity_unavailable',
     });
+  });
+
+  test('stale descriptors stop waiting only when the current owner is proved absent or stopped', async () => {
+    for (const state of ['missing', 'matching_stopped', 'mismatched_stopped', 'mismatched_live', 'unverified']) {
+      const { dataDirectory, options, original, replacement } = await fixture();
+      await original.start({ port: 44001, health: 'healthy' });
+      const descriptor = original.getDescriptor();
+      if (state === 'missing') await original.release();
+      if (state === 'matching_stopped') {
+        await original.release();
+        await original.acquire({ mode: 'service' });
+        await original.start({ port: 44001, health: 'healthy' });
+      }
+      if (state === 'unverified') await fs.unlink(identityPath(dataDirectory));
+      const currentDescriptor = state === 'matching_stopped' ? original.getDescriptor() : descriptor;
+      const inspection = { ...options,
+        isProcessAlive: () => state === 'mismatched_live' || state === 'unverified' };
+      let attempts = 0, elapsed = 0;
+      const result = retryRuntimeServiceConnection({
+        connect: async () => {
+          attempts++;
+          if (attempts > 1) return 'normal retry';
+          await assertRuntimeServiceDescriptorOwner({ dataDirectory, ...inspection, descriptor: currentDescriptor });
+          assert.fail('The fixture descriptor must be stale');
+        },
+        isOwnerStopped: () => waitForRuntimeServiceOwnerStopped({ dataDirectory, ...inspection, timeoutMs: 0 }),
+        now: () => elapsed, wait: async ms => { elapsed += ms; },
+      });
+      if (state === 'mismatched_live' || state === 'unverified') {
+        assert.equal(await result, 'normal retry');
+        assert.equal(attempts, 2);
+      } else {
+        await assert.rejects(result, { code: 'runtime_service_owner_stale', retryable: false });
+        assert.equal(attempts, 1);
+        assert.equal(elapsed, 0);
+      }
+      await original.release();
+      await replacement.release();
+    }
+  });
+
+  test('an owner starting after early stale detection still fences both recovery checks and acquisition', async () => {
+    for (const race of ['before_stopped_check', 'before_acquire']) {
+      const { dataDirectory, options, original, replacement } = await fixture();
+      const inspection = { ...options, isProcessAlive: pid => pid !== original.getOwner().pid };
+      assert.equal(await waitForRuntimeServiceOwnerStopped({ dataDirectory, ...inspection, timeoutMs: 0 }), true);
+      const successor = await coordinatorFor(dataDirectory, { ...inspection, pid: 794 });
+      let persisted = false;
+      const connectionError = Object.assign(new Error('stale descriptor'), { code: 'runtime_service_owner_stale', retryable: false });
+      const recovery = recoverAppBoundRuntime({
+        connectionError,
+        unregister: async () => {
+          if (race === 'before_stopped_check') await successor.acquire({ mode: 'service' });
+          return { ok: true, state: 'not_registered' };
+        },
+        waitForStopped: () => waitForRuntimeServiceOwnerStopped({ dataDirectory, ...inspection, timeoutMs: 0 }),
+        acquire: async () => {
+          if (race === 'before_acquire') await successor.acquire({ mode: 'service' });
+          await replacement.acquire({ mode: 'app_bound' });
+        },
+        setMode: async () => { persisted = true; }, release: () => replacement.release(),
+      });
+      await assert.rejects(recovery, {
+        code: race === 'before_stopped_check' ? 'runtime_service_owner_active' : 'runtime_service_owner_exists',
+        cause: connectionError,
+      });
+      assert.equal(persisted, false);
+      assert.equal((await readRuntimeServiceOwner({ dataDirectory })).owner.instanceId, successor.getOwner().instanceId);
+      await original.release();
+      assert.equal((await readRuntimeServiceOwner({ dataDirectory })).owner.instanceId, successor.getOwner().instanceId);
+      await successor.release();
+    }
   });
 
   for (const damaged of ['missing', 'malformed', 'another_generation', 'another_instance', 'another_pid', 'invalid_start', 'old_version_write']) {

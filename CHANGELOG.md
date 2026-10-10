@@ -4,7 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.5] - 2026-10-10
+
+- Restore usage details for Claude, OpenAI, xAI and OpenCode Go under the native runtime. Usage now reads the selected account from the native credential store instead of a credential file that no longer exists. xAI usage is read-only and may lag until the next xAI request renews the sign-in. A connected provider whose usage cannot be read shows a short reason with a retry instead of nothing, and usage discovery retries within seconds after a slow start.
+- With Sign in with ChatGPT, Settings → Providers lists and counts only the OpenAI models the account can use. A saved default that needs an API key resolves to a usable OpenAI model. API-key accounts keep their full list when a ChatGPT account lookup fails or the project directory is not a reviewed location.
+- Accept xAI sign-in rows when reading provider credential metadata.
+
+Source verification is recorded in [the usage and model list record](docs/audits/2026-10-10/usage-models/README.md); real-account verification is pending.
+
+- Recover a stale background-service owner immediately, report native startup health and preparation phases, and stop renderer polling when startup fails. Manual Retry starts a fresh attempt. Native catalog failures now record sanitized failure stages. Three isolated packaged launches and three first launches after a 2.0.20 → 2.0.26 upgrade reached usable chat. Scope, measurements and limitations are recorded in [the startup reliability audit](docs/audits/2026-10-09/startup-reliability/README.md).
+- Let startup finish when a saved OpenAI login uses a retired authentication method. Reconnect through Sign in with ChatGPT before using that provider. Deliver repaired native host code even when the OpenCode version stays the same, retaining the previous bundle for rollback. Defer optional agent/chat warmup until the app is usable and automatic update discovery until its normal interval. Isolated startup and same-version delivery checks are recorded in [the model catalog repair audit](docs/audits/2026-10-10/model-catalog/README.md).
+- Expand isolated startup, model-catalog and retained-bundle upgrade verification, including packaged headless service launches.
+- Remove old disposable QA and synthetic benchmark payloads while preserving source, retained evidence and installed-app data. Details are in [the storage cleanup record](docs/audits/2026-10-09/storage-cleanup/README.md).
 - Remove generated codemaps, finished plans and unreferenced audit evidence, and make `docs:validate` reject codemaps and unretained audit files. Details are in [the documentation cleanup record](docs/audits/2026-10-09/docs-cleanup/README.md).
+- Accept a retained native runtime bundle of any OpenCode 2.x release for rollback, running its own controller, instead of only the listed 2.0.20, 2.0.24 and 2.0.26 releases. Cross-release clones still require a reviewed release pair.
+
+Release verification for the current candidate is recorded in [the usage repair release evidence](docs/audits/2026-10-10/rerelease-usage-2.0.5/README.md). Prior release verification is recorded in [the replacement v2.0.5 release evidence](docs/audits/2026-10-10/rerelease-2.0.5/README.md); [the earlier publication evidence](docs/audits/2026-10-10/release-2.0.5/README.md) is retained as history.
 
 ## [2.0.4] - 2026-10-09
 

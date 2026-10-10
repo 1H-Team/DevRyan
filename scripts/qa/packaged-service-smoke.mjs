@@ -2,6 +2,7 @@
 // No launchd registration, owner account, provider sign-in or installed app state.
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { createRunRoot } from './run-root.mjs';
 import { execFileSync } from 'node:child_process';
@@ -23,23 +24,34 @@ export async function runPackagedServiceSmoke({ packageEvidence, artifactRoot })
   const before = await captureQaSourceIdentity(repository);
   const packaged = await loadQaPackagedArtifact({ root: repository, evidencePath: packageEvidence });
   assert.equal(packaged.evidence.source.sha256, before.sha256, 'Package source differs from the candidate');
+  const { version: appVersion } = JSON.parse(await fs.readFile(new URL('../../packages/electron/package.json', import.meta.url), 'utf8'));
   const fixtures = path.join(repository, '.cache/test-fixtures');
+  await fs.mkdir(fixtures, { recursive: true, mode: 0o700 });
   assert.equal(await fs.realpath(fixtures), fixtures);
-  const run = createRunRoot({ parent: path.join(repository, '.cache/qa'), prefix: 'packaged-service-', owner: 'scripts/qa/packaged-service-smoke.mjs' });
+  let activeStop = async () => {};
+  const run = createRunRoot({ parent: path.join(repository, '.cache/qa'), prefix: 'packaged-service-',
+    owner: 'scripts/qa/packaged-service-smoke.mjs', onInterrupt: () => activeStop() });
   const output = run.dir;
   const runtimeRoot = run.own(await fs.mkdtemp(path.join(fixtures, 'packaged-service-')));
   await fs.chmod(runtimeRoot, 0o700);
   const workspace = path.join(runtimeRoot, 'workspace');
   await fs.mkdir(workspace, { mode: 0o700 });
-  execFileSync('git', ['init', '--quiet', workspace], { cwd: repository, env: {
-    PATH: process.env.PATH, GIT_CEILING_DIRECTORIES: fixtures,
+  execFileSync('git', ['init', '--quiet', '--initial-branch=main', '--template=', workspace], { cwd: repository, env: {
+    PATH: process.env.PATH, HOME: runtimeRoot, GIT_CONFIG_GLOBAL: os.devNull, GIT_CONFIG_NOSYSTEM: '1', GIT_CEILING_DIRECTORIES: fixtures,
   } });
   const evidence = { schemaVersion: 1, kind: 'packaged-direct-runtime-service', outcome: 'failed',
     sourceSha256: before.sha256, archiveSha256: packaged.evidence.archiveSha256,
-    scope: 'direct headless launch, private owner, loopback refusal, physical shutdown and restart',
-    excluded: ['launchd-registration', 'desktop-host-lease', 'paid-providers', 'managed-user', 'three-acceptance-journal-roots'],
-    runs: [], cleanupErrors: [] };
+    scope: 'three direct headless fresh processes on one private profile; host listening, owner fencing, refusal and physical shutdown',
+    excluded: ['launchd-registration', 'desktop-host-lease', 'usable-UI', 'native-model-readiness', 'paid-providers', 'managed-user', 'three-acceptance-journal-roots'],
+    appVersion, runs: [], cleanupErrors: [] };
   let prepared, app;
+  let stopping;
+  const stop = () => stopping ??= (async () => {
+    for (const [owner, close] of [['owned_service', () => app?.stop()], ['fixture_provider', () => prepared?.close()]]) {
+      try { await close(); } catch { evidence.cleanupErrors.push(`${owner}_cleanup_failed`); }
+    }
+  })();
+  activeStop = stop;
   try {
     prepared = await prepareRuntimeUiProfile({ cell: { transport: 'runtime-fixture' }, runtimeRoot, workspace,
       targetGeneration: 2, artifactRoot });
@@ -48,7 +60,7 @@ export async function runPackagedServiceSmoke({ packageEvidence, artifactRoot })
     await fs.mkdir(profile, { mode: 0o700 });
     const settingsPath = path.join(dataDirectory, 'settings.json');
     const settings = JSON.parse(await fs.readFile(settingsPath, 'utf8'));
-    for (let iteration = 0; iteration < 2; iteration++) {
+    for (let iteration = 0; iteration < 3; iteration++) {
       const port = await reservePort();
       await fs.writeFile(settingsPath, JSON.stringify({ ...settings, desktopLocalPort: port,
         desktopLanAccessEnabled: false, productionBotsRuntimeMode: 'disabled' }) + '\n', { mode: 0o600 });
@@ -56,6 +68,7 @@ export async function runPackagedServiceSmoke({ packageEvidence, artifactRoot })
         OPENCHAMBER_ELECTRON_USER_DATA_DIR: profile, OPENCHAMBER_DIST_DIR: packaged.artifactDirectory,
         OPENCHAMBER_PORT: String(port), GIT_CEILING_DIRECTORIES: fixtures };
       delete env.NODE_OPTIONS;
+      const startedAt = performance.now();
       app = startOwnedProcess(packaged.binary, ['--runtime-service', `--user-data-dir=${profile}`], { cwd: workspace, env });
       const deadline = performance.now() + 90_000;
       let descriptor;
@@ -66,6 +79,7 @@ export async function runPackagedServiceSmoke({ packageEvidence, artifactRoot })
         if (performance.now() > deadline) throw new Error('packaged_service_start_timeout');
         await pause(100);
       }
+      const hostListeningMs = performance.now() - startedAt;
       const owner = await readRuntimeServiceOwner({ dataDirectory });
       assert.equal(owner.state, 'valid');
       assert.equal(owner.owner.mode, 'service');
@@ -80,7 +94,7 @@ export async function runPackagedServiceSmoke({ packageEvidence, artifactRoot })
       assert.ok(processIdentity.processStartIdentity);
       assert.equal(processIdentity.processStartIdentity, await readRuntimeProcessStartIdentity(app.child.pid));
       assert.equal(descriptor.desktopHost.state, 'unavailable');
-      assert.equal(descriptor.appVersion, '2.0.2');
+      assert.equal(descriptor.appVersion, appVersion);
       assert.equal(owner.stat.mode & 0o777, 0o600);
       const base = `http://127.0.0.1:${port}`;
       const request = (url, options) => fetch(base + url, { ...options, signal: AbortSignal.timeout(5_000) });
@@ -96,6 +110,7 @@ export async function runPackagedServiceSmoke({ packageEvidence, artifactRoot })
       assert.equal(prepared.evidence.providerRequests.length, 0, 'Headless startup sent a model request without a desktop lease');
       await prepared.verifyInputs();
       const run = { iteration, pid: descriptor.pid, instanceId: descriptor.instanceId, generation: descriptor.ownerGeneration,
+        hostListeningMs,
         ownerStartIdentity: processIdentity.processStartIdentity, health: descriptor.health, desktopHost: descriptor.desktopHost.state,
         handshakeRefusal: handshake.status, bootstrapRefusal: bootstrap.status, providerRequests: 0 };
       if (iteration) assert.notEqual(run.instanceId, evidence.runs[0].instanceId);
@@ -117,12 +132,7 @@ export async function runPackagedServiceSmoke({ packageEvidence, artifactRoot })
   } catch (error) {
     evidence.error = typeof error.code === 'string' ? error.code : String(error.message).replaceAll(runtimeRoot, '<QA_RUNTIME>');
   } finally {
-    if (app) {
-      try { await app.stop(); } catch (error) { evidence.cleanupErrors.push(error.code ?? 'owned_service_cleanup_failed'); }
-    }
-    if (prepared) {
-      try { await prepared.close(); } catch (error) { evidence.cleanupErrors.push(error.code ?? 'fixture_provider_cleanup_failed'); }
-    }
+    await stop();
     if (evidence.cleanupErrors.length) evidence.outcome = 'failed';
     await fs.writeFile(path.join(output, 'evidence.json'), JSON.stringify(evidence, null, 2) + '\n', { mode: 0o600 });
     // Retain failure state; successful fixtures contain no account snapshots.

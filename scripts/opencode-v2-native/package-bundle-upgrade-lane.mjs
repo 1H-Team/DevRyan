@@ -154,6 +154,34 @@ export function createCompiledBundleUpgradeLane({ observations, credentialProces
       await project(descriptor, before, source, assertHeld, 'synthetic_seed');
       baselineDescriptor = descriptor;
     },
+    async seedBuiltinCatalog(descriptor, assertHeld, { copilotEndpoint } = {}) {
+      if (copilotEndpoint !== undefined) {
+        const endpoint = new URL(copilotEndpoint);
+        assert.equal(endpoint.protocol, 'http:', 'Copilot fixture requires a loopback HTTP endpoint');
+        assert.equal(endpoint.hostname, '127.0.0.1', 'Copilot fixture refuses external discovery');
+        assert.equal(endpoint.username + endpoint.password + endpoint.search + endpoint.hash, '');
+        assert.equal(endpoint.pathname, '/');
+        assert.ok(Number(endpoint.port) > 0);
+      }
+      const before = await captureCredentials({ descriptor, assertHeld });
+      assert.equal(before.snapshot.credentials.some(row => ['openai', 'cursor-acp', 'github-copilot'].includes(row.integrationID)), false,
+        'Builtin catalog fixture requires an unseeded synthetic bundle');
+      const source = { ...before.snapshot, credentials: [...before.snapshot.credentials,
+        { id: 'cred_fixtureOpenAi', integrationID: 'openai', label: 'Synthetic catalog OAuth', active: true,
+          value: { ...oauth('catalog'), methodID: 'chatgpt-siwc', metadata: { accountID: 'owned-catalog-account', clientId: 'oaiapp_fixture_client',
+            subject: 'owned-catalog-account', scopes: ['openid', 'profile', 'email', 'offline_access', 'resource.invoke', 'chatgpt.tokens.use.direct'],
+            extAgentHostId: 'urn:uuid:00000000-0000-4000-8000-0000000000aa', planUsage: true } } },
+        { id: 'cred_fixtureCursor', integrationID: 'cursor-acp', label: 'Synthetic catalog Cursor', active: true,
+          value: { type: 'key', key: 'synthetic-cursor-catalog-key' } },
+        ...(copilotEndpoint === undefined ? [] : [{ id: 'cred_fixtureCopilot', integrationID: 'github-copilot',
+          label: 'Synthetic catalog Copilot', active: true,
+          value: { ...oauth('catalog-copilot'), metadata: { apiEndpoint: new URL(copilotEndpoint).origin } } }]),
+      ].sort((left, right) => left.id.localeCompare(right.id)) };
+      await project(descriptor, before, source, assertHeld, 'synthetic_builtin_catalog');
+      return { id: 'compiled-synthetic-builtin-catalog-credentials', status: 'passed',
+        integrationIDs: ['openai', 'cursor-acp', ...(copilotEndpoint === undefined ? [] : ['github-copilot'])],
+        accounts: copilotEndpoint === undefined ? 2 : 3 };
+    },
     async assertClone({ baseline, candidate }) {
       assert.equal(candidate.sourceBundleID, baseline.bundleID);
       assert.deepEqual(candidate.projectMap, baseline.projectMap);

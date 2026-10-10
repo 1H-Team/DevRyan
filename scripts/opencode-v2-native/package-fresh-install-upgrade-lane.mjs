@@ -37,8 +37,9 @@ export async function runCompiledFreshInstallUpgrade({ root, baseline, candidate
     protectedRoots: [fixture.sourceLaunch.global.home, fixture.sourceLaunch.webDataDirectory] }));
   const reviewedNativeConfigPath = path.join(laneRoot, 'reviewed-native.json');
   await fs.writeFile(reviewedNativeConfigPath, JSON.stringify({ schema: 1, configuration, locations, catalogRequirements }) + '\n');
-  const launchArtifacts = ({ artifacts, manifestPath, manifestSha256 }) => ({ controllerBinary: artifacts.controller, writerBinary: artifacts.writer,
-    artifactManifestPath: manifestPath, artifactManifestSha256: manifestSha256, reviewedNativeConfigPath, reviewedPluginManifestPath });
+  const launchArtifacts = ({ artifacts, manifestPath, manifestSha256, reviewedPluginManifestPath: artifactPluginManifestPath }) => ({ controllerBinary: artifacts.controller, writerBinary: artifacts.writer,
+    artifactManifestPath: manifestPath, artifactManifestSha256: manifestSha256, reviewedNativeConfigPath,
+    reviewedPluginManifestPath: artifactPluginManifestPath ?? reviewedPluginManifestPath });
   const controlRoot = path.join(laneRoot, 'bundles');
   const lane = createCompiledBundleUpgradeLane({ observations });
   const sourceCheckpoint = neverStarted('fresh-source', 1, fixture.sourceLaunch);

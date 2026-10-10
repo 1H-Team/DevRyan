@@ -1,0 +1,90 @@
+{
+  "version": "2.0.5",
+  "source": "fbc17cee1f23805019360609ed359709dbb9469c",
+  "fullGate": "completed in segments after fixture correction; original invocation failed",
+  "checks": [
+    {
+      "name": "build",
+      "logSha256": "7847a3f3a3f94c77cdc4d886ceb80d0258d53bfc4f159c0591ad41954e144bd4",
+      "outcome": "passed"
+    },
+    {
+      "name": "bundle-check",
+      "logSha256": "7a1c8699dd666d74f5d0838e1b38e672c72ae0776cbc1ce2443677d02a25e09f",
+      "outcome": "passed"
+    },
+    {
+      "name": "native-build",
+      "logSha256": "2a82b571fa1b2303d5041bf98edd8124e19293710b76022f1b893fec24253208",
+      "outcome": "passed"
+    },
+    {
+      "name": "validate-full",
+      "logSha256": "d37736ee2724820133c1d804b983f1e4c10e1f4c101b92509063a2be6b8def04",
+      "outcome": "failed-at-stale-electron-fixture"
+    },
+    {
+      "name": "electron-test-retry",
+      "logSha256": "46616f2cce65ddc42b43945100922e8787df29c819842ba36b6810b162c5b62f",
+      "outcome": "passed"
+    },
+    {
+      "name": "desktop-test",
+      "logSha256": "206fc42ae9fb2275020676a5ea657594832897c6826013057dee390a19a3d399",
+      "outcome": "passed"
+    },
+    {
+      "name": "ui-test",
+      "logSha256": "cd02461f83ad7270444291fc8a115e2c0b0d66c4e819021b281343b492e17272",
+      "outcome": "passed"
+    },
+    {
+      "name": "web-test",
+      "logSha256": "5c654642c200493199be2ee361b149c9439ccd5bb969b29827ed2af98b15682e",
+      "outcome": "passed"
+    }
+  ],
+  "counts": {
+    "ui": 4077,
+    "webVitest": 6554,
+    "webNative": 14,
+    "legacyTauri": 39,
+    "electronSplash": 10
+  },
+  "packaged": {
+    "sourceSha256": "acd25baa8b3e6c4d73f711e09c0d5f5957fb66af183f8eac0a26bebb1c996114",
+    "archiveSha256": "d55d7b7ff00acca76e4b92eb416014ce73625502d4f83640ff0faf5d52d1df1a",
+    "nativeSmoke": {
+      "electron": "41.2.1",
+      "nodeModuleAbi": "145",
+      "sqlite": "passed",
+      "pty": "passed"
+    }
+  },
+  "journals": [
+    {
+      "run": "web-chat-cvnj85",
+      "recordCounts": {
+        "lifecycle": 22,
+        "open_code_event": 1
+      },
+      "gapCount": 0,
+      "independentGapCheck": {
+        "exitCode": 0,
+        "outputLines": 0
+      }
+    },
+    {
+      "run": "electron-chat-4s0Psu",
+      "recordCounts": {
+        "lifecycle": 26,
+        "open_code_event": 1
+      },
+      "gapCount": 0,
+      "independentGapCheck": {
+        "exitCode": 0,
+        "outputLines": 0
+      }
+    }
+  ]
+}

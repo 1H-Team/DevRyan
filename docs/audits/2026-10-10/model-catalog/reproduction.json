@@ -1,0 +1,49 @@
+{
+  "qualification": "synthetic-provider-shape-only",
+  "status": "passed",
+  "models": 282,
+  "artifact": {
+    "bundleID": "candidate",
+    "revision": 1,
+    "artifactManifestSha256": "bc6c9b5af194fac6373f1c8c109feb91c476beb25c97e26f353a83955c636d7d"
+  },
+  "cases": [
+    {
+      "id": "synthetic-oauth-legacy-columns-null",
+      "rows": 2,
+      "connectorID": null,
+      "methodID": null
+    },
+    {
+      "id": "actual-custom-provider-model-catalog",
+      "providerID": "cursor-acp",
+      "expectedModels": 282,
+      "matchedModels": 282,
+      "connected": true
+    },
+    {
+      "id": "actual-custom-provider-model-catalog",
+      "providerID": "anthropic",
+      "expectedModels": 0,
+      "matchedModels": 0,
+      "connected": true
+    }
+  ],
+  "health": {
+    "ready": true,
+    "generation": 2,
+    "errorCodes": []
+  },
+  "cleanupFailures": [],
+  "modelFields": {
+    "name": 282,
+    "cost": 36,
+    "options": 30,
+    "variants": 28,
+    "cursorModel": 7
+  },
+  "omittedModelFields": 0,
+  "omittedOptionFields": 0,
+  "omittedVariantFields": 0,
+  "providerPackageMatches": true
+}

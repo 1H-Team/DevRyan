@@ -1,0 +1,18 @@
+{
+  "qualification": "HEAD UI startup policy with current repaired native host; no working tree replacement",
+  "head": "e5fb7687277806b120a0520af98dcf3baee246c2",
+  "files": [
+    {
+      "file": "packages/ui/src/App.tsx",
+      "sha256": "24077dd8617577f63822b55ae779db83990623b67a7206d801efe135a355ade5"
+    },
+    {
+      "file": "packages/ui/src/components/layout/MainLayout.tsx",
+      "sha256": "be93d5da0447035191484097b1279fd67933bf052c2ce9ef16c85f24057cc1ba"
+    },
+    {
+      "file": "packages/ui/src/lib/startup/readiness.ts",
+      "sha256": "a675ff2355e743176ce7da0760a224f1950c3c03ac982df282d9da94aa051914"
+    }
+  ]
+}

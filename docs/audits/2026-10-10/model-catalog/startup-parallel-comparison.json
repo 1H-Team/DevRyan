@@ -1,0 +1,27 @@
+{
+  "qualification": "Matched foreground launches; serial versus concurrent catalog preparation and previous versus optimized UI startup policy; repaired native artifacts on identical OpenCode 2.0.26 core; sanitized 282-model configuration and synthetic retired OpenAI login",
+  "outcome": "no-measured-improvement; concurrency experiment removed",
+  "beforeMs": 13677.438333000006,
+  "afterMs": 14277.770542000013,
+  "reductionPercent": -4.389215249112593,
+  "runs": {
+    "previous": {
+      "outcome": "passed",
+      "summary": {
+        "launches": 3,
+        "medianUiReadyMs": 13677.438333000006,
+        "minimumUiReadyMs": 13517.619708999991,
+        "maximumUiReadyMs": 16875.429125
+      }
+    },
+    "optimized": {
+      "outcome": "passed",
+      "summary": {
+        "launches": 3,
+        "medianUiReadyMs": 14277.770542000013,
+        "minimumUiReadyMs": 14146.378957999987,
+        "maximumUiReadyMs": 14727.08470800001
+      }
+    }
+  }
+}

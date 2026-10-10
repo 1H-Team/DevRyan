@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createHostChatgptSiwcEnrollment } from './chatgpt-siwc-host.js';
+import { createHostChatgptSiwcEnrollment, readNativeOpenAiSelection } from './chatgpt-siwc-host.js';
 import { credentialMutationFingerprint as fingerprint } from './runtime-host/native-credential-mutation-owner.js';
 const cleanups = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
@@ -70,5 +70,22 @@ describe('scoped native SIWC sign-out', () => {
     await expect(f.owner.disconnect({ directory, expectedActiveCredentialID: 'fixture-id' }))
       .rejects.toMatchObject({ code: 'native_chatgpt_siwc_cleanup_failed', localCleanup: 'failed' });
     expect(f.selected()).toEqual(replacement); expect(f.release).toHaveBeenCalledWith(false);
+  });
+});
+
+describe('read-only default location fallback', () => {
+  it('reads the default location for an unreviewed directory only when asked', async () => {
+    const f = fixture();
+    const getOwner = () => f.native;
+    await expect(readNativeOpenAiSelection(getOwner, '/unreviewed')).rejects.toMatchObject({ code: 'native_chatgpt_siwc_location_required' });
+    const selected = await readNativeOpenAiSelection(getOwner, '/unreviewed', { fallbackLocation: true });
+    expect(selected.credentialID).toBe('fixture-id');
+    expect(f.native.readOpenAiSelected).toHaveBeenLastCalledWith(expect.objectContaining({ directory }));
+  });
+  it('still refuses mutation paths for an unreviewed directory', async () => {
+    const f = fixture();
+    await expect(f.owner.disconnect({ directory: '/unreviewed', expectedActiveCredentialID: 'fixture-id' }))
+      .rejects.toMatchObject({ code: 'native_chatgpt_siwc_location_required' });
+    expect(f.native.credentialOperation).not.toHaveBeenCalled();
   });
 });

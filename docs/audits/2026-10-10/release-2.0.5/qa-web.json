@@ -1,0 +1,599 @@
+{
+  "schemaVersion": 1,
+  "revision": "7a668a2d36c3d58114f29ab390ef1bc7dc42fbdc",
+  "dirty": true,
+  "runtime": "web",
+  "scenario": "chat",
+  "fixtureGeneration": 2,
+  "startedAt": "2026-10-09T20:03:52.174Z",
+  "outcome": "failed",
+  "checks": [
+    {
+      "name": "initial native runtime readiness",
+      "outcome": "passed",
+      "elapsedMs": 6017.0255
+    },
+    {
+      "name": "selected session and composer",
+      "outcome": "passed",
+      "elapsedMs": 1413.3244169999998
+    },
+    {
+      "name": "four-session stream reaches selected transcript",
+      "outcome": "passed",
+      "elapsedMs": 2334.0712920000005
+    },
+    {
+      "name": "typing survives background streaming",
+      "outcome": "passed",
+      "elapsedMs": 510.77687499999956
+    },
+    {
+      "name": "send and reconcile a real composer submission",
+      "outcome": "passed",
+      "elapsedMs": 2504.0226250000014
+    },
+    {
+      "name": "cancel an active composer submission",
+      "outcome": "passed",
+      "elapsedMs": 272.0396249999976
+    },
+    {
+      "name": "reconnect and reopen without duplicate user messages",
+      "outcome": "passed",
+      "elapsedMs": 1502.7212499999987
+    }
+  ],
+  "consoleErrors": [
+    "[bootstrap] session load failed for / Error: session.list failed (403): [object Object]\n    at http://127.0.0.1:[REDACTED]:high_entropy.js:117:29726\n    at async Ze (http://127.0.0.1:[REDACTED]:high_entropy.js:31:34536)\n    at async mj (http://127.0.0.1:[REDACTED]:high_entropy.js:99:82189)\n    at async http://127.0.0.1:[REDACTED]:high_entropy.js:117:29196",
+    "[bootstrap] session load failed for <QA_RUNTIME>/bundles/bundles/candidate/global/home Error: session.list failed (403): [object Object]\n    at http://127.0.0.1:[REDACTED]:high_entropy.js:117:29726\n    at async Ze (http://127.0.0.1:[REDACTED]:high_entropy.js:31:34536)\n    at async mj (http://127.0.0.1:[REDACTED]:high_entropy.js:99:82189)\n    at async http://127.0.0.1:[REDACTED]:high_entropy.js:117:29196",
+    "[bootstrap] deferred phase failed for / Error: question.list failed (403): [object Object]\n    at gj (http://127.0.0.1:[REDACTED]:high_entropy.js:99:78076)\n    at async Ze (http://127.0.0.1:[REDACTED]:high_entropy.js:31:34536)\n    at async Promise.allSettled (index 3)",
+    "[bootstrap] deferred phase failed for <QA_RUNTIME>/bundles/bundles/candidate/global/home Error: question.list failed (403): [object Object]\n    at gj (http://127.0.0.1:[REDACTED]:high_entropy.js:99:78076)\n    at async Ze (http://127.0.0.1:[REDACTED]:high_entropy.js:31:34536)\n    at async Promise.allSettled (index 3)",
+    "[event-pipeline] SSE stream error TypeError: network error"
+  ],
+  "consoleObservations": [
+    {
+      "ordinal": 1,
+      "kind": "console",
+      "text": "[bootstrap] session load failed for / Error: session.list failed (403): [object Object]\n    at http://127.0.0.1:[REDACTED]:high_entropy.js:117:29726\n    at async Ze (http://127.0.0.1:[REDACTED]:high_entropy.js:31:34536)\n    at async mj (http://127.0.0.1:[REDACTED]:high_entropy.js:99:82189)\n    at async http://127.0.0.1:[REDACTED]:high_entropy.js:117:29196"
+    },
+    {
+      "ordinal": 2,
+      "kind": "console",
+      "text": "[bootstrap] session load failed for <QA_RUNTIME>/bundles/bundles/candidate/global/home Error: session.list failed (403): [object Object]\n    at http://127.0.0.1:[REDACTED]:high_entropy.js:117:29726\n    at async Ze (http://127.0.0.1:[REDACTED]:high_entropy.js:31:34536)\n    at async mj (http://127.0.0.1:[REDACTED]:high_entropy.js:99:82189)\n    at async http://127.0.0.1:[REDACTED]:high_entropy.js:117:29196"
+    },
+    {
+      "ordinal": 3,
+      "kind": "console",
+      "text": "[bootstrap] deferred phase failed for / Error: question.list failed (403): [object Object]\n    at gj (http://127.0.0.1:[REDACTED]:high_entropy.js:99:78076)\n    at async Ze (http://127.0.0.1:[REDACTED]:high_entropy.js:31:34536)\n    at async Promise.allSettled (index 3)"
+    },
+    {
+      "ordinal": 4,
+      "kind": "console",
+      "text": "[bootstrap] deferred phase failed for <QA_RUNTIME>/bundles/bundles/candidate/global/home Error: question.list failed (403): [object Object]\n    at gj (http://127.0.0.1:[REDACTED]:high_entropy.js:99:78076)\n    at async Ze (http://127.0.0.1:[REDACTED]:high_entropy.js:31:34536)\n    at async Promise.allSettled (index 3)"
+    },
+    {
+      "ordinal": 5,
+      "kind": "console",
+      "text": "[event-pipeline] SSE stream error TypeError: network error"
+    }
+  ],
+  "expectedFailures": [
+    {
+      "kind": "sse-disconnect",
+      "consoleStartOrdinal": 4,
+      "beforeConnections": 1,
+      "consoleEndOrdinal": 5,
+      "afterConnections": 2,
+      "recovery": "canonical-snapshots",
+      "sessionID": "ses_perfparent",
+      "messageID": "msg_122441a2e001jDJfDBb5Oj19g1",
+      "assistantMessageID": "msg_122441a5c0040000000000006R"
+    }
+  ],
+  "screenshots": [
+    "chat-idle.png",
+    "failure.png"
+  ],
+  "liveProvider": "not-run",
+  "physicalDevice": "not-run",
+  "visualReview": "pending",
+  "profile": {
+    "transport": "fixture",
+    "version": "2.0.20",
+    "generation": 2,
+    "fixtureGeneration": 2,
+    "credentialsCopied": false,
+    "globalConfigurationRead": false,
+    "inputDigest": "[REDACTED]:high_entropy",
+    "nativeBundle": {
+      "bundleID": "candidate",
+      "revision": 1
+    },
+    "runtimeOwner": "actual-private-native-bundle",
+    "uiTransport": "[REDACTED]:high_entropy",
+    "electronHostMode": "not-applicable",
+    "localElectronIPC": "not-qualified-by-wire",
+    "agentFallbackVariant": "low",
+    "applicationAgentFallbackVariant": "low",
+    "modelSelection": {
+      "providerId": "fixture",
+      "modelId": "fixture-model",
+      "variant": "low"
+    },
+    "history": {
+      "sessionID": "ses_perfparent",
+      "turns": 180
+    },
+    "isolation": {
+      "home": "<QA_RUNTIME>/bundles/bundles/candidate/global/home",
+      "data": "<QA_RUNTIME>/bundles/bundles/candidate/web-data",
+      "browserProfile": "<QA_RUNTIME>/browser-profile",
+      "workspace": "<QA_RUNTIME>/workspace"
+    },
+    "managedScheduler": "not-simulated"
+  },
+  "runtimeService": false,
+  "inspection": {
+    "cdp": "http://127.0.0.1:52752",
+    "fixture": "http://127.0.0.1:52745",
+    "app": "http://127.0.0.1:52754"
+  },
+  "streamEvents": {
+    "session.status": 3,
+    "message.updated": 2,
+    "message.part.delta": 224
+  },
+  "diagnostics": {
+    "httpStatus": 200,
+    "enabled": true,
+    "directory": "<QA_RUNTIME>/bundles/bundles/candidate/web-data/harness/journal",
+    "diskBytes": 7208,
+    "maxBytes": 1073741824,
+    "segmentCount": 1,
+    "sessionCount": 0,
+    "queuedRecords": 0,
+    "writtenRecords": 22,
+    "gapRecords": 0,
+    "lastError": null,
+    "commandDeadlineRecovery": {
+      "activeCount": 0,
+      "recoveredCount": 0,
+      "unresolvedCount": 0,
+      "lastOutcome": null,
+      "lastError": null,
+      "updatedAt": null
+    }
+  },
+  "fixture": {
+    "generation": 2,
+    "activeScenario": "idle",
+    "sseClientCount": 1,
+    "sseConnectionCount": 2,
+    "statusRequestCount": 10,
+    "suppressedEvents": [],
+    "suppressionRuns": [],
+    "messageRequestCounts": {
+      "ses_perfparent": 24,
+      "ses_perfchild3": 4,
+      "ses_perfchild1": 2,
+      "ses_perfchild2": 2
+    },
+    "olderMessageRequestCounts": {
+      "ses_perfparent": 13
+    },
+    "messagePageRequests": [
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "order": "desc",
+        "type": null,
+        "cursor": false,
+        "returned": 50,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a122436f060000000000000009b"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 200,
+        "order": "desc",
+        "type": null,
+        "cursor": true,
+        "returned": 200,
+        "firstMessageID": "msg_1a122436ef20000000000000009b",
+        "lastMessageID": "msg_1a12241e86600000000000000037"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "order": "desc",
+        "type": null,
+        "cursor": false,
+        "returned": 50,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a122436f060000000000000009b"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 200,
+        "order": "desc",
+        "type": null,
+        "cursor": true,
+        "returned": 200,
+        "firstMessageID": "msg_1a122436ef20000000000000009b",
+        "lastMessageID": "msg_1a12241e86600000000000000037"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 50,
+        "order": "desc",
+        "type": null,
+        "cursor": false,
+        "returned": 1,
+        "firstMessageID": "msg_user_ses_perfchild3",
+        "lastMessageID": "msg_user_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "order": "desc",
+        "type": null,
+        "cursor": false,
+        "returned": 30,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a122439616000000000000000a5"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 200,
+        "order": "desc",
+        "type": null,
+        "cursor": true,
+        "returned": 200,
+        "firstMessageID": "msg_1a122439602000000000000000a5",
+        "lastMessageID": "msg_1a122420f7600000000000000041"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 100,
+        "order": "desc",
+        "type": null,
+        "cursor": false,
+        "returned": 100,
+        "firstMessageID": "msg_assistant_ses_perfparent",
+        "lastMessageID": "msg_1a12243113200000000000000083"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 100,
+        "order": "desc",
+        "type": null,
+        "cursor": false,
+        "returned": 2,
+        "firstMessageID": "msg_assistant_ses_perfchild1",
+        "lastMessageID": "msg_user_ses_perfchild1"
+      },
+      {
+        "sessionID": "ses_perfchild2",
+        "limit": 100,
+        "order": "desc",
+        "type": null,
+        "cursor": false,
+        "returned": 2,
+        "firstMessageID": "msg_assistant_ses_perfchild2",
+        "lastMessageID": "msg_user_ses_perfchild2"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 100,
+        "order": "desc",
+        "type": null,
+        "cursor": false,
+        "returned": 2,
+        "firstMessageID": "msg_assistant_ses_perfchild3",
+        "lastMessageID": "msg_user_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "order": "desc",
+        "type": null,
+        "cursor": false,
+        "returned": 30,
+        "firstMessageID": "msg_assistant_ses_perfparent",
+        "lastMessageID": "msg_1a1224399ea000000000000000a6"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 30,
+        "order": "desc",
+        "type": null,
+        "cursor": false,
+        "returned": 2,
+        "firstMessageID": "msg_assistant_ses_perfchild1",
+        "lastMessageID": "msg_user_ses_perfchild1"
+      },
+      {
+        "sessionID": "ses_perfchild2",
+        "limit": 30,
+        "order": "desc",
+        "type": null,
+        "cursor": false,
+        "returned": 2,
+        "firstMessageID": "msg_assistant_ses_perfchild2",
+        "lastMessageID": "msg_user_ses_perfchild2"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 30,
+        "order": "desc",
+        "type": null,
+        "cursor": false,
+        "returned": 2,
+        "firstMessageID": "msg_assistant_ses_perfchild3",
+        "lastMessageID": "msg_user_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "order": "desc",
+        "type": null,
+        "cursor": false,
+        "returned": 30,
+        "firstMessageID": "msg_1224418f500100000000000069",
+        "lastMessageID": "msg_1a1224399fe000000000000000a6"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "order": "desc",
+        "type": null,
+        "cursor": true,
+        "returned": 30,
+        "firstMessageID": "msg_1a1224399ea000000000000000a6",
+        "lastMessageID": "msg_1a122435f6600000000000000097"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 200,
+        "order": "desc",
+        "type": null,
+        "cursor": true,
+        "returned": 200,
+        "firstMessageID": "msg_1a122435f5200000000000000097",
+        "lastMessageID": "msg_1a12241d8c600000000000000033"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "order": "desc",
+        "type": null,
+        "cursor": false,
+        "returned": 30,
+        "firstMessageID": "msg_122441a5c0040000000000006R",
+        "lastMessageID": "msg_1a12243a1ce000000000000000a8"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "order": "desc",
+        "type": null,
+        "cursor": true,
+        "returned": 30,
+        "firstMessageID": "msg_1a12243a1ba000000000000000a8",
+        "lastMessageID": "msg_1a12243673600000000000000099"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 200,
+        "order": "desc",
+        "type": null,
+        "cursor": true,
+        "returned": 200,
+        "firstMessageID": "msg_1a12243672200000000000000099",
+        "lastMessageID": "msg_1a12241e09600000000000000035"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "order": "desc",
+        "type": null,
+        "cursor": false,
+        "returned": 30,
+        "firstMessageID": "msg_1224423040040000000000006v",
+        "lastMessageID": "msg_1a12243a98a000000000000000aa"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "order": "desc",
+        "type": null,
+        "cursor": true,
+        "returned": 30,
+        "firstMessageID": "msg_1a12243a5b6000000000000000a9",
+        "lastMessageID": "msg_1a122436ef20000000000000009b"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "order": "desc",
+        "type": null,
+        "cursor": false,
+        "returned": 50,
+        "firstMessageID": "msg_12244236a00200000000000072",
+        "lastMessageID": "msg_1a12243828e000000000000000a0"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "order": "desc",
+        "type": null,
+        "cursor": true,
+        "returned": 50,
+        "firstMessageID": "msg_1a12243827a000000000000000a0",
+        "lastMessageID": "msg_1a1224320e600000000000000087"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 200,
+        "order": "desc",
+        "type": null,
+        "cursor": true,
+        "returned": 200,
+        "firstMessageID": "msg_1a1224320d200000000000000087",
+        "lastMessageID": "msg_1a122419a4600000000000000023"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "order": "desc",
+        "type": null,
+        "cursor": false,
+        "returned": 50,
+        "firstMessageID": "msg_12244236a00200000000000072",
+        "lastMessageID": "msg_1a12243828e000000000000000a0"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "order": "desc",
+        "type": null,
+        "cursor": true,
+        "returned": 50,
+        "firstMessageID": "msg_1a12243827a000000000000000a0",
+        "lastMessageID": "msg_1a1224320e600000000000000087"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 200,
+        "order": "desc",
+        "type": null,
+        "cursor": true,
+        "returned": 200,
+        "firstMessageID": "msg_1a1224320d200000000000000087",
+        "lastMessageID": "msg_1a122419a4600000000000000023"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 200,
+        "order": "desc",
+        "type": null,
+        "cursor": false,
+        "returned": 200,
+        "firstMessageID": "msg_12244236a00200000000000072",
+        "lastMessageID": "msg_1a122425d9600000000000000055"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 200,
+        "order": "desc",
+        "type": null,
+        "cursor": true,
+        "returned": 171,
+        "firstMessageID": "msg_1a122425d8200000000000000055",
+        "lastMessageID": "msg_1a12241117a00000000000000000"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 50,
+        "order": "desc",
+        "type": null,
+        "cursor": false,
+        "returned": 3,
+        "firstMessageID": "msg_1224418f500d0000000000006L",
+        "lastMessageID": "msg_user_ses_perfchild3"
+      }
+    ],
+    "textLengths": {
+      "ses_perfparent": 660,
+      "ses_perfchild1": 426,
+      "ses_perfchild2": 426,
+      "ses_perfchild3": 468
+    },
+    "receivedPrompts": [
+      {
+        "sessionID": "ses_perfparent",
+        "messageID": "msg_122441a2e001jDJfDBb5Oj19g1",
+        "partTypes": [
+          "text"
+        ],
+        "model": {
+          "providerID": "fixture",
+          "modelID": "fixture-model",
+          "variant": "low"
+        },
+        "agent": "build",
+        "delivery": "queue",
+        "variant": "low",
+        "planMode": false
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "messageID": "msg_1224422d50011iWaBkUSYQvSu7",
+        "partTypes": [
+          "text"
+        ],
+        "model": {
+          "providerID": "fixture",
+          "modelID": "fixture-model",
+          "variant": "low"
+        },
+        "agent": "build",
+        "delivery": "queue",
+        "variant": "low",
+        "planMode": false
+      }
+    ],
+    "canonicalUserDelays": [],
+    "rejectedPrompts": [],
+    "replies": [],
+    "unknownRoutes": [],
+    "locationRequired": [],
+    "wireLosses": [],
+    "streamDrops": [],
+    "eventCounts": {
+      "session.created": 4,
+      "session.inbox.enqueued": 6,
+      "session.inbox.delivered": 6,
+      "worktree.resolved": 1,
+      "project.updated": 1,
+      "integration.updated": 1,
+      "provider.updated": 1,
+      "model.updated": 1,
+      "vcs.branch.updated": 1,
+      "agent.updated": 1,
+      "command.updated": 1,
+      "skill.updated": 1,
+      "websearch.updated": 1,
+      "reference.updated": 1,
+      "plugin.updated": 1,
+      "session.execution.started": 6,
+      "session.step.started": 6,
+      "session.text.started": 6,
+      "session.text.delta": 361,
+      "session.text.ended": 6,
+      "session.step.streamed": 6,
+      "session.step.ended": 5,
+      "session.execution.succeeded": 5,
+      "session.agent.selected": 1,
+      "session.model.selected": 1,
+      "session.step.failed": 1,
+      "session.execution.interrupted": 1
+    },
+    "permissionCount": 0,
+    "questionCount": 0,
+    "executingSessions": [],
+    "abortedPrompts": 1,
+    "activePrompts": 0
+  },
+  "unexpectedConsoleErrors": [
+    "[bootstrap] session load failed for / Error: session.list failed (403): [object Object]\n    at http://127.0.0.1:[REDACTED]:high_entropy.js:117:29726\n    at async Ze (http://127.0.0.1:[REDACTED]:high_entropy.js:31:34536)\n    at async mj (http://127.0.0.1:[REDACTED]:high_entropy.js:99:82189)\n    at async http://127.0.0.1:[REDACTED]:high_entropy.js:117:29196",
+    "[bootstrap] session load failed for <QA_RUNTIME>/bundles/bundles/candidate/global/home Error: session.list failed (403): [object Object]\n    at http://127.0.0.1:[REDACTED]:high_entropy.js:117:29726\n    at async Ze (http://127.0.0.1:[REDACTED]:high_entropy.js:31:34536)\n    at async mj (http://127.0.0.1:[REDACTED]:high_entropy.js:99:82189)\n    at async http://127.0.0.1:[REDACTED]:high_entropy.js:117:29196",
+    "[bootstrap] deferred phase failed for / Error: question.list failed (403): [object Object]\n    at gj (http://127.0.0.1:[REDACTED]:high_entropy.js:99:78076)\n    at async Ze (http://127.0.0.1:[REDACTED]:high_entropy.js:31:34536)\n    at async Promise.allSettled (index 3)",
+    "[bootstrap] deferred phase failed for <QA_RUNTIME>/bundles/bundles/candidate/global/home Error: question.list failed (403): [object Object]\n    at gj (http://127.0.0.1:[REDACTED]:high_entropy.js:99:78076)\n    at async Ze (http://127.0.0.1:[REDACTED]:high_entropy.js:31:34536)\n    at async Promise.allSettled (index 3)"
+  ],
+  "error": "Unexpected renderer console errors captured; see result.json",
+  "cleanupErrors": [],
+  "finishedAt": "2026-10-09T20:04:26.259Z",
+  "journalDirectory": "journal"
+}

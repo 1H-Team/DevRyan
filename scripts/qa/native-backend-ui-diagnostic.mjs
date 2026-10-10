@@ -11,11 +11,12 @@ import { createQaNativeInputVerifier, createQaNativeLaunchEnvironment } from './
 import { createRuntimeBundleStore } from '../../packages/web/server/lib/opencode/runtime-host/runtime-bundle.js';
 import { createRuntimeBundleCheckpoint } from '../../packages/web/server/lib/opencode/runtime-host/bundle-checkpoint.js';
 import { readRuntimeBundleBinding } from '../../packages/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js';
-import { translateNativeConfiguration } from '../../packages/web/server/lib/opencode/runtime-host/native-configuration-data.js';
+import { translateNativeConfiguration, nativeProviderConfigurations } from '../../packages/web/server/lib/opencode/runtime-host/native-configuration-data.js';
 import { listPackagedAgents } from '../../packages/web/server/lib/opencode/packaged-agents.js';
 import { openChangeStore, changeKey } from '../../packages/harness-runtime/lib/session-changes-store.js';
 import { readSessionExecutionReceipt } from '../../packages/harness-runtime/lib/session-execution.js';
 import { runQaMatrix } from './matrix-runner.mjs';
+import { TARGET_OPENCODE_VERSION } from '../../packages/web/server/lib/opencode/version-policy.js';
 
 const repository = fileURLToPath(new URL('../../', import.meta.url)).replace(/\/$/, '');
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -59,10 +60,11 @@ export function runtimeUiConfiguration(baseURL) {
       description: `Synthetic ${name}`, prompt: 'Follow only the isolated QA request.', model, variant: 'high' }])), title: { disable: true } } };
 }
 
-export function runtimeUiNativeConfiguration(legacy) {
+export function runtimeUiNativeConfiguration(legacy, catalogProviders = {}) {
+  assert.ok(!Object.hasOwn(catalogProviders, runtimeUiTuple.providerID), 'Catalog fixture must preserve the UI tuple');
   const native = translateNativeConfiguration({ legacy, agents: legacy.agent });
   const declared = createHttpProviderConfiguration(legacy.provider['devryan-smoke'].options.baseURL);
-  native.providers = declared.providers;
+  native.providers = { ...declared.providers, ...nativeProviderConfigurations(catalogProviders) };
   delete native.providers['devryan-smoke'].models['gpt-5-native-smoke'];
   native.providers['devryan-smoke'].models['smoke-write'].variants = [{ id: 'high', settings: { temperature: 0 } }];
   return native;
@@ -186,9 +188,29 @@ export async function assertRuntimeUiPublication({ rows, sessionID, directory, l
 
 /** Data-only preparation. The matrix's real web/Electron host remains the
  * sole process/runtime owner; this never starts a controller or reads accounts. */
-export async function prepareRuntimeUiProfile({ cell, runtimeRoot, workspace, targetGeneration, artifactRoot }) {
+/** Constructor-only location policy for genuine production startup provisioning. */
+export function runtimeUiBundleLayout(runtimeRoot, startupUpgrade = false) {
+  assert.equal(typeof startupUpgrade, 'boolean');
+  assert.ok(path.isAbsolute(runtimeRoot) && path.resolve(runtimeRoot) === runtimeRoot);
+  const stateRoot = startupUpgrade ? path.join(runtimeRoot, 'state') : null;
+  const controlRoot = stateRoot ? path.join(stateRoot, 'devryan/runtime-bundles') : path.join(runtimeRoot, 'bundles');
+  return { controlRoot, createLaunchEnvironment(binding) {
+    assert.equal(binding.controlRoot, controlRoot);
+    const env = createQaNativeLaunchEnvironment({ binding, runtimeRoot });
+    if (stateRoot) {
+      // An explicit root skips production provisioning; the normal XDG root
+      // lets the packaged application perform its own cold startup upgrade.
+      delete env.DEVRYAN_RUNTIME_BUNDLE_ROOT;
+      env.XDG_STATE_HOME = stateRoot;
+    }
+    return env;
+  } };
+}
+
+export async function prepareRuntimeUiProfile({ cell, runtimeRoot, workspace, targetGeneration, artifactRoot, startupUpgrade = false, catalogProviders, legacyOpenAiBrowser = false }) {
   assert.equal(targetGeneration, 2);
   assert.equal(cell.transport, 'runtime-fixture');
+  const layout = runtimeUiBundleLayout(runtimeRoot, startupUpgrade);
   await ownedFutureDirectory(runtimeRoot); await ownedFutureDirectory(workspace);
   if (await fs.realpath(workspace) !== workspace || !path.isAbsolute(artifactRoot ?? '')
     || !inside(path.join(repository, '.cache'), artifactRoot) || await fs.realpath(artifactRoot) !== artifactRoot) throw fail('qa_runtime_fixture_path_invalid');
@@ -196,7 +218,7 @@ export async function prepareRuntimeUiProfile({ cell, runtimeRoot, workspace, ta
   const provider = await createRuntimeUiProvider({ generation: targetGeneration, directory: workspace });
   try {
     const sourceHome = path.join(runtimeRoot, 'mirror'); await fs.mkdir(sourceHome);
-    const legacy = runtimeUiConfiguration(provider.baseURL), native = runtimeUiNativeConfiguration(legacy);
+    const legacy = runtimeUiConfiguration(provider.baseURL), native = runtimeUiNativeConfiguration(legacy, catalogProviders);
     const primaryAgents = ['builder', 'orchestrator'];
     const agentOverrides = runtimeUiAgentOverrides();
     const pinnedAgents = Object.fromEntries(Object.entries(agentOverrides).map(([name, value]) => [name, { model: value.model, variant: value.variant }]));
@@ -224,9 +246,17 @@ export async function prepareRuntimeUiProfile({ cell, runtimeRoot, workspace, ta
       mirror: { reviewedNativeFile: 'reviewed-native.json', reviewedPluginFile: 'reviewed-plugins.json', opencodeConfigDirectory: 'opencode', webConfigDirectory: 'web' },
       bootstrapCredentials: async () => { throw fail('qa_runtime_fixture_accounts_forbidden'); } });
     const source = await factory.prepareSource({ runtimeRoot, workspace, sourceHome, artifactRoot });
+    const emptyStartupSource = startupUpgrade && manifest.opencodeVersion !== TARGET_OPENCODE_VERSION;
+    if (emptyStartupSource) {
+      // Production first installs import an empty.db, rather than the factory's
+      // legacy schema seeded by the current SDK. Let the baseline's own
+      // controller create its original reviewed native database layout.
+      source.launch.opencodeDatabasePath = path.join(path.dirname(source.launch.opencodeDatabasePath), 'empty.db');
+      await fs.writeFile(source.launch.opencodeDatabasePath, '', { flag: 'wx', mode: 0o600 });
+    }
     await verifier.verifyInputs();
     await fs.copyFile(path.join(sourceHome, 'web/settings.json'), path.join(source.launch.webDataDirectory, 'settings.json'));
-    const controlRoot = path.join(runtimeRoot, 'bundles'), descriptors = new Map(), checkpoints = new Map();
+    const controlRoot = layout.controlRoot, descriptors = new Map(), checkpoints = new Map();
     const store = createRuntimeBundleStore({ controlRoot, runMigration: source.runMigration, withQuiescedSource: async (scope, action) => {
       const current = scope.kind === 'legacy' ? { bundleID: 'synthetic-source', generation: 1, launch: source.launch } : descriptors.get(scope.bundleID);
       if (!current) throw fail('qa_runtime_fixture_checkpoint_missing');
@@ -237,20 +267,30 @@ export async function prepareRuntimeUiProfile({ cell, runtimeRoot, workspace, ta
     } });
     const selected = await store.prepare({ bundleID: 'candidate', generation: 2,
       source: { kind: 'legacy', launch: source.launch }, projectMap: source.projectMap, auxiliary: { kind: 'absent' }, launchArtifacts: source.nativeArtifacts });
+    if (legacyOpenAiBrowser) {
+      assert.equal(manifest.opencodeVersion, TARGET_OPENCODE_VERSION, 'Legacy credential fixture requires the current initialized database');
+      const { Database } = await import('bun:sqlite');
+      const fixtureDB = new Database(selected.launch.opencodeDatabasePath);
+      try {
+        fixtureDB.query('INSERT INTO credential (id,integration_id,label,value,active,connector_id,method_id,time_created,time_updated) VALUES (?,?,?,?,1,NULL,NULL,?,?)')
+          .run('crd_legacy_fixture','openai','Synthetic retired login',JSON.stringify({type:'oauth',methodID:'chatgpt-browser',access:'synthetic-access',refresh:'synthetic-refresh',expires:Date.now()+3600000,metadata:{accountID:'synthetic-account'}}),Date.now(),Date.now());
+      } finally { fixtureDB.close(); }
+    }
+    if (emptyStartupSource) assert.equal((await fs.stat(source.launch.opencodeDatabasePath)).size, 0, 'Baseline import must preserve the empty source');
     descriptors.set('candidate', selected);
     await store.select({ bundleID: selected.bundleID, expectedRevision: 0 });
     const binding = readRuntimeBundleBinding({ DEVRYAN_RUNTIME_BUNDLE_ROOT: controlRoot }), launch = binding.descriptor.launch;
     await fs.writeFile(path.join(launch.global.home, '.devryan-qa-home'), 'Owned synthetic actual-backend UI\n', { mode: 0o600 });
     await fs.writeFile(path.join(runtimeRoot, 'credentials.env.json'), '{}\n', { mode: 0o600 });
-    const env = createQaNativeLaunchEnvironment({ binding, runtimeRoot });
+    const env = layout.createLaunchEnvironment(binding);
     env.NO_PROXY = env.no_proxy = 'localhost,127.0.0.1';
     const storage = path.join(launch.webDataDirectory, 'harness/session-mutations');
-    return { env, bootstrapPath: fileURLToPath(new URL('./isolated-host.mjs', import.meta.url)), nativeLogRoot: launch.global.log,
+    return { env, controlRoot, bootstrapPath: fileURLToPath(new URL('./isolated-host.mjs', import.meta.url)), nativeLogRoot: launch.global.log,
       toolPrompt: runtimeUiToolPrompt, verifyInputs: verifier.verifyInputs,
       verifyToolPublication: async input => { provider.check(); return assertRuntimeUiPublication({ ...input, directory: workspace,
         leaseForCall: scope => readRuntimeUiLease({ ...scope, storage }) }); },
       close: () => provider.close(),
-      evidence: { transport: 'runtime-fixture', generation: targetGeneration, credentialsCopied: false, personalSetup: false,
+      evidence: { transport: 'runtime-fixture', generation: targetGeneration, credentialsCopied: false, personalSetup: false, legacyOpenAiBrowser,
         inputDigest: verifier.inputDigest, sourceHome, modelSelection: runtimeUiTuple, providerRequests: provider.observations,
         nativeBundle: { bundleID: selected.bundleID, revision: binding.selection.revision },
         excludedAcceptance: ['saved-user-graph', 'paid-provider', 'reasoning-policy', 'native-compaction', 'managed-task-ui'] } };

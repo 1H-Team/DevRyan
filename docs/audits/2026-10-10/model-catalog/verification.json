@@ -1,0 +1,245 @@
+{
+  "qualification": "deterministic-local-fixtures-and-isolated-QA-only",
+  "fullValidation": {
+    "command": "DEVRYAN_SCRIPT_TEST_CONCURRENCY=1 bun run validate:full",
+    "exitCode": 1,
+    "webPassed": 6550,
+    "webTimedOut": 6,
+    "failingFiles": [
+      "server/lib/opencode/runtime-host/runtime-bundle.test.js",
+      "server/lib/opencode/runtime-host/native-session-removal.test.js"
+    ],
+    "failure": "unchanged-fixture-5000ms-timeouts",
+    "earlierAttempt": "unchanged manual-compaction-submission deadline assertion failed; standalone 18 tests passed"
+  },
+  "retests": [
+    {
+      "command": "bunx vitest run --no-file-parallelism --maxWorkers=1 server/lib/opencode/runtime-host/runtime-bundle.test.js server/lib/opencode/runtime-host/native-session-removal.test.js",
+      "exitCode": 0,
+      "passed": 73,
+      "assertionsChanged": false
+    }
+  ],
+  "nativeRegression": {
+    "command": "bun test scripts/opencode-v2-native/native-catalog-diagnostics.test.ts scripts/opencode-v2-native/native-provider-compat.test.ts scripts/opencode-v2-native/controller-protocol.test.ts scripts/opencode-v2-native/controller-model-encoding.graph.test.ts",
+    "passed": 27,
+    "failed": 0,
+    "realGraph": true
+  },
+  "ui": {
+    "command": "bun run --cwd packages/ui test",
+    "exitCode": 0,
+    "batchPassed": 4076,
+    "isolatedTestsPassed": true
+  },
+  "webTail": {
+    "command": "bun test packages/web/server/lib/opencode/runtime-host/native-helper.test.js packages/web/server/lib/opencode/runtime-host/native-retention-quiet.test.ts packages/web/server/lib/opencode/runtime-host/native-queued-input.test.ts",
+    "passed": 14,
+    "failed": 0
+  },
+  "startupBenchmarkTests": {
+    "command": "node --test scripts/perf/electron-lifecycle-benchmark.test.mjs scripts/qa/native-startup-benchmark.test.mjs",
+    "passed": 42,
+    "failed": 0
+  },
+  "priorPackagedRetry": {
+    "outcome": "failed",
+    "nativeReadiness": true,
+    "error": "second launch timed out waiting for usable UI during concurrent full validation",
+    "modelHttp500Reproduced": false,
+    "runs": [
+      {
+        "iteration": 0,
+        "outcome": "passed",
+        "nativeStartupReadyMs": 30144.284875,
+        "uiReadyMs": 33845.539124999996,
+        "error": null,
+        "cleanupErrors": [],
+        "remainingProcesses": null
+      },
+      {
+        "iteration": 1,
+        "outcome": "failed",
+        "nativeStartupReadyMs": 30276.676125000005,
+        "uiReadyMs": null,
+        "error": "Timed out: first usable UI after native startup documents",
+        "cleanupErrors": [],
+        "remainingProcesses": null
+      }
+    ]
+  },
+  "unavailable": [
+    "installed incident reproduction",
+    "installed-app update",
+    "release signing/notarization",
+    "live account/provider verification",
+    "controlled startup comparison"
+  ],
+  "stderrTailRegression": {
+    "passed": 11,
+    "failed": 0,
+    "oversizedChunkMarkerPreserved": true
+  },
+  "sanitizer": {
+    "passed": 11,
+    "failed": 0
+  },
+  "build": {
+    "command": "bun run build",
+    "exitCode": 0
+  },
+  "bundleCheck": {
+    "command": "bun run bundle:check",
+    "exitCode": 0
+  },
+  "typeChecks": {
+    "ui": 0,
+    "webAndNativeHost": 0
+  },
+  "lintChanged": {
+    "exitCode": 0
+  },
+  "docsValidation": {
+    "command": "bun run docs:validate",
+    "exitCode": 0,
+    "documents": 220,
+    "localReferences": 805,
+    "existingUnrelatedWarnings": true
+  },
+  "reproduction": {
+    "outcome": "passed",
+    "models": 282,
+    "syntheticOAuthNullRows": 2,
+    "configFilesRewritten": false
+  },
+  "selectedArtifactComparison": {
+    "version": "2.0.26",
+    "sameCoreDigest": true,
+    "sameLock": false,
+    "packages": [
+      {
+        "name": "effect",
+        "selectedVersions": [
+          "4.0.0-rc.112"
+        ],
+        "currentVersions": [
+          "4.0.0-rc.112"
+        ],
+        "sameFingerprint": true
+      },
+      {
+        "name": "@opencode/core",
+        "selectedVersions": [
+          "2.0.26",
+          "2.0.26"
+        ],
+        "currentVersions": [
+          "2.0.26",
+          "2.0.26"
+        ],
+        "sameFingerprint": true
+      },
+      {
+        "name": "@opencode/server",
+        "selectedVersions": [
+          "2.0.26"
+        ],
+        "currentVersions": [
+          "2.0.26"
+        ],
+        "sameFingerprint": true
+      },
+      {
+        "name": "@opencode/schema",
+        "selectedVersions": [
+          "2.0.26"
+        ],
+        "currentVersions": [
+          "2.0.26"
+        ],
+        "sameFingerprint": true
+      }
+    ]
+  },
+  "finalNaturalChecks": [
+    {
+      "outcome": "startup-passed-picker-check-failed",
+      "uiReadyMs": 30773.771374999997,
+      "nativeReadyMs": 27663.469584,
+      "modelCatalogStatus": 200,
+      "cursorMatched": 282,
+      "updateChecks": 0,
+      "agentWarmupAtMs": 31886.110584000002,
+      "pickerError": "raw-model-ID-search-timeout",
+      "remainingProcesses": 0
+    },
+    {
+      "outcome": "failed",
+      "reason": "QA-window-hidden",
+      "composer": true,
+      "fixtureModelAvailable": true,
+      "eventStreamReady": true,
+      "nativeReadyMs": 53324.342916999994,
+      "remainingProcesses": 0
+    }
+  ],
+  "finalPackagedAcceptance": {
+    "outcome": "passed",
+    "launches": 3,
+    "startupMode": "foreground",
+    "modelsPerLaunch": 282,
+    "pickerModel": "composer-2.5",
+    "updateChecks": 0,
+    "agentWarmupAfterUsableUi": true,
+    "remainingProcesses": 0,
+    "screenshotsReviewed": 6,
+    "timingQualification": "foreground-controlled admission, not natural startup latency"
+  },
+  "chromiumForegroundRetry": {
+    "outcome": "failed",
+    "reason": "Page.bringToFront acknowledged but Electron window remained hidden on second launch",
+    "runs": [
+      {
+        "outcome": "passed",
+        "nativeReadyMs": 49968.167542,
+        "uiReadyMs": 55880.403709000006,
+        "foregroundMethod": "Page.bringToFront",
+        "remainingProcesses": 0
+      },
+      {
+        "outcome": "failed",
+        "nativeReadyMs": 79750.90983399999,
+        "uiReadyMs": null,
+        "foregroundMethod": "Page.bringToFront",
+        "remainingProcesses": 0
+      }
+    ]
+  },
+  "timingConfounds": {
+    "controlledSpeedupEstablished": false,
+    "foregroundAndNaturalRunsNotComparable": true,
+    "hostSwapUsedMiBObserved": 4759.19
+  },
+  "cleanup": {
+    "taskOwnedQaAppsAndRuntimeCopiesRemoved": true,
+    "supersededRetriesRemoved": true,
+    "trackedQaProcessesRemaining": 0,
+    "unrelatedCachesPreserved": true,
+    "sessionScratchRemoved": true
+  },
+  "diffCheck": {
+    "command": "git diff --check",
+    "exitCode": 0
+  },
+  "cache": {
+    "reportCommand": "bun run cache:report",
+    "reportExitCode": 0,
+    "usageGiB": 30.46,
+    "budgetGiB": 50,
+    "freeDiskGiB": 211.95,
+    "pruneCommand": "bun run cache:prune",
+    "pruneExitCode": 0,
+    "previewOnly": true,
+    "unrelatedEligiblePackageRemoved": false
+  }
+}

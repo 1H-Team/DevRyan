@@ -1,0 +1,116 @@
+{
+  "qualification": "observational-before-optional-prewarm-deferral",
+  "outcome": "passed",
+  "sourceSha256": "2446219484e003310220138db5acb6799b434dc118c9faf68d6e46c50009a5bc",
+  "archiveSha256": "571211af3e05bc603266ff0977e6da378e8e796b7e5fda1172ef64eb2e706c3d",
+  "packagedNativeManifestSha256": "972a5a35300a4ecab9ffd3c5b3daa7cdfac53872e983c99b9106b720fed615cd",
+  "nativeSmoke": {
+    "electron": "41.2.1",
+    "nodeModuleAbi": "145",
+    "sqlite": "passed",
+    "pty": "passed"
+  },
+  "summary": {
+    "launches": 3,
+    "medianUiReadyMs": 27027.797542000008,
+    "minimumUiReadyMs": 18631.330707999994,
+    "maximumUiReadyMs": 27945.509542
+  },
+  "runs": [
+    {
+      "launch": 1,
+      "outcome": "passed",
+      "uiReadyMs": 27945.509542,
+      "forcedNavigations": 0,
+      "nativeStartupReady": true,
+      "fixtureModelSelected": {
+        "providerId": "devryan-smoke",
+        "modelId": "smoke-write",
+        "agent": "builder",
+        "catalogAvailable": true
+      },
+      "catalog": {
+        "status": 200,
+        "providerID": "cursor-acp",
+        "expected": 282,
+        "matched": 282
+      },
+      "artifact": {
+        "bundleID": "candidate",
+        "revision": 1,
+        "previousBundleID": null,
+        "opencodeVersion": "2.0.26",
+        "artifactManifestSha256": "cd9c5d12a15b81f8b9909a6ed521cb3754a7f59bbd352965d08fb6ceed565ced"
+      },
+      "deferredStartupFailure": false,
+      "cleanupErrors": [],
+      "remainingProcesses": 0
+    },
+    {
+      "launch": 2,
+      "outcome": "passed",
+      "uiReadyMs": 27027.797542000008,
+      "forcedNavigations": 0,
+      "nativeStartupReady": true,
+      "fixtureModelSelected": {
+        "providerId": "devryan-smoke",
+        "modelId": "smoke-write",
+        "agent": "builder",
+        "catalogAvailable": true
+      },
+      "catalog": {
+        "status": 200,
+        "providerID": "cursor-acp",
+        "expected": 282,
+        "matched": 282
+      },
+      "artifact": {
+        "bundleID": "candidate",
+        "revision": 1,
+        "previousBundleID": null,
+        "opencodeVersion": "2.0.26",
+        "artifactManifestSha256": "cd9c5d12a15b81f8b9909a6ed521cb3754a7f59bbd352965d08fb6ceed565ced"
+      },
+      "deferredStartupFailure": false,
+      "cleanupErrors": [],
+      "remainingProcesses": 0
+    },
+    {
+      "launch": 3,
+      "outcome": "passed",
+      "uiReadyMs": 18631.330707999994,
+      "forcedNavigations": 0,
+      "nativeStartupReady": true,
+      "fixtureModelSelected": {
+        "providerId": "devryan-smoke",
+        "modelId": "smoke-write",
+        "agent": "builder",
+        "catalogAvailable": true
+      },
+      "catalog": {
+        "status": 200,
+        "providerID": "cursor-acp",
+        "expected": 282,
+        "matched": 282
+      },
+      "artifact": {
+        "bundleID": "candidate",
+        "revision": 1,
+        "previousBundleID": null,
+        "opencodeVersion": "2.0.26",
+        "artifactManifestSha256": "cd9c5d12a15b81f8b9909a6ed521cb3754a7f59bbd352965d08fb6ceed565ced"
+      },
+      "deferredStartupFailure": false,
+      "cleanupErrors": [],
+      "remainingProcesses": 0
+    }
+  ],
+  "visualReview": "All three PNGs inspected: composer and fixture model control render without an error overlay; custom picker expansion not captured.",
+  "excluded": [
+    "launchd/SMAppService registration",
+    "installed state",
+    "paid providers",
+    "first native-bundle provisioning",
+    "cold OS caches"
+  ]
+}

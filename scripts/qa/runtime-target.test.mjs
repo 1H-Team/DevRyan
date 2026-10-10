@@ -11,7 +11,8 @@ test('fixture generation follows the exact QA target and rejects unknown transpo
   assert.equal(resolveQaFixtureGeneration(undefined, candidate), 2);
   for (const generation of [2, '2']) assert.equal(resolveQaFixtureGeneration(generation), Number(generation));
   for (const generation of [1, '1', null, '', ' 2 ', '2.0.20', 0, 3, true]) assert.throws(() => resolveQaFixtureGeneration(generation), /generation/);
-  for (const version of ['1.18.33', '2.0.21', '3.0.0', 'latest', undefined]) assert.throws(() => resolveQaFixtureGeneration(undefined, { version }), /verified/);
+  for (const version of ['2.0.21', '2.1.0']) assert.equal(resolveQaFixtureGeneration(undefined, { version }), 2);
+  for (const version of ['1.18.33', '3.0.0', 'latest', undefined]) assert.throws(() => resolveQaFixtureGeneration(undefined, { version }), /OpenCode 2\.x release/);
 });
 
 test('the host pin is the default target and records its source', () => {

@@ -215,6 +215,8 @@ export function createNativeOpenAi(options: NativeOpenAiOptions) {
       if (connection.type !== 'credential' || !credentials) return yield* inner.connection.resolve(connection);
       const record = yield* credentials.get(connection.id); requireCurrent(acquisition);
       if (!record || record.integrationID !== openaiID || record.value.type !== 'oauth') return yield* inner.connection.resolve(connection);
+      // Retired imports are unavailable catalog connections; physical attempts still require SIWC.
+      if (['chatgpt-browser', 'chatgpt-headless', 'chatgpt-token-sharing'].includes(record.value.methodID)) return undefined;
       if (!methods.has(record.value.methodID)) return yield* deny('native_openai_method_unsupported');
       const current = yield* selected(directory);
       if (!current || current.credentialID !== record.id) return yield* deny('native_credential_changed');

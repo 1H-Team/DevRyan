@@ -4,6 +4,19 @@ import { createDiagnosticSanitizer } from './sanitizer.js';
 import { parseNativeJournalObservation } from '../../shared-runtime/lib/native-observation.js';
 
 describe('diagnostic sanitizer', () => {
+  test('startup catalog codes and finite schema paths survive journaling and export', () => {
+    const sanitizer = createDiagnosticSanitizer();
+    const code = 'native_catalog_read_failed_model_http_500_response_schema_invalid';
+    const record = { type: 'lifecycle', event: 'native_startup', payload: { phase: 'failed', code,
+      diagnostics: [{ level: 'error', msg: 'response_schema_invalid', name: 'HttpApiSchemaError', schemaPath: 'data.[3].cost.[0].input', secret: 'private' },
+        { name: 'SchemaError', schemaPath: 'settings.privateSecret', msg: 'private' }] } };
+    const saved = sanitizer.sanitizeRecord(record);
+    expect(saved.payload.code).toBe(code);
+    expect(saved.payload.diagnostics).toEqual([{ level: 'error', msg: 'response_schema_invalid', name: 'HttpApiSchemaError', schemaPath: 'data.[3].cost.[0].input' }, { name: 'SchemaError' }]);
+    expect(sanitizer.sanitizeExportValue(saved)).toEqual(saved);
+    expect(JSON.stringify(saved)).not.toContain('private');
+    expect(sanitizer.sanitizeRecord({ ...record, payload: { code: 'native_catalog_' + 'a9Qx7Kp2Lm8Vn3Rs6Td0Wz5Bc1Hj4Fg9'.repeat(3) } }).payload.code).not.toContain('a9Qx7Kp2Lm8Vn3Rs6Td0Wz5Bc1Hj4Fg9');
+  });
   test('preserves finite native request evidence through journal and export without admitting content or paths', () => {
     const sanitizer = createDiagnosticSanitizer({ worktreeRoots: ['/fixture/project'], knownSecrets: ['fixture-secret-model'] });
     const payload = { schema: 1, stage: 'model-prepared', controllerInstanceID: 'instance-1', configurationDigest: 'a'.repeat(64),

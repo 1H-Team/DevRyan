@@ -18,14 +18,21 @@ import type { QuotaProviderId } from '@/types';
 
 import { useCanReadUsage } from './useProviderUsage';
 
-/** Inline Usage section for a Providers-catalog provider; renders nothing without a usage source. */
-export const ProviderUsageSection: React.FC<{ providerId: string }> = ({ providerId }) => {
+/**
+ * Inline Usage section for a Providers-catalog provider; renders nothing without a usage source.
+ * A connected provider still shows the panel (reason and retry) while usage discovery is failing.
+ */
+export const ProviderUsageSection: React.FC<{ providerId: string; connected?: boolean }> = ({
+  providerId,
+  connected = false,
+}) => {
   const canReadUsage = useCanReadUsage();
   const quotaProviderId = getQuotaProviderIdForProvider(providerId);
   const hasResult = useQuotaStore((state) => (
     quotaProviderId ? state.results.some((entry) => entry.providerId === quotaProviderId) : false
   ));
-  if (!canReadUsage || !quotaProviderId || !hasResult) return null;
+  const discoveryFailed = useQuotaStore((state) => state.configuredProviderIds === null && state.error !== null);
+  if (!canReadUsage || !quotaProviderId || !(hasResult || (connected && discoveryFailed))) return null;
   return <ProviderUsagePanel key={quotaProviderId} quotaProviderId={quotaProviderId} variant="section" className="mb-8" />;
 };
 

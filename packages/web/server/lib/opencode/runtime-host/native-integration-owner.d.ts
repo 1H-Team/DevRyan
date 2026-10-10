@@ -23,6 +23,7 @@ export function createNativeIntegrationOwner(options:NativeIntegrationOwnerOptio
   readonly holdOpenAiSelection:(operation:NativeIntegrationOperation)=>Promise<(cleared:boolean)=>void>;
   readonly readOpenAiCredential:(operation:NativeIntegrationOperation,credentialID:string)=>Promise<unknown>;
   readonly readOpenAiSelected:(operation:NativeIntegrationOperation)=>Promise<import('./native-openai-auth.js').NativeOpenAiSelected|undefined>;
+  readonly readProviderSelected:(operation:NativeIntegrationOperation)=>Promise<{readonly directory:string;readonly controllerInstanceID:string;readonly integrationID:'xai'|'opencode-go';readonly credentialID:string;readonly value:Record<string,unknown>}|undefined>;
   readonly credentialMetadata:(operation:NativeIntegrationOperation)=>Promise<unknown>;
   readonly requestHeaders:()=>Record<string,string>;
   readonly markReady:()=>void;

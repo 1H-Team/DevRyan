@@ -1,0 +1,18 @@
+{
+  "createdAt": "2026-10-09T20:32:35.073Z",
+  "supersededTaskQaPackagesRemoved": 1,
+  "newestVerifiedQaPackageRetained": true,
+  "worktreesCreated": 0,
+  "cacheReport": {
+    "passed": true,
+    "totalBytes": 30915985408,
+    "freeBytes": 231852367872
+  },
+  "prunePreview": {
+    "passed": true,
+    "totalBytes": 30916071424,
+    "eligibleGroups": 1,
+    "applied": false
+  },
+  "downloadedCiArtifactsRemoved": true
+}

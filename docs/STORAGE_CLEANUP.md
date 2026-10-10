@@ -1,5 +1,8 @@
 # Local repository storage
 
+The [2026-10-09 cleanup record](audits/2026-10-09/storage-cleanup/README.md)
+documents archived branch retirement, reclaimed storage and source preservation.
+
 DevRyan development retains independent Electron QA applications, Rust build
 caches, private test environments and dependency snapshots. These are separate
 from installed-app conversations and configuration. Git-ignored does not mean

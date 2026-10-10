@@ -57,7 +57,8 @@ test('v2 ceiling follows its input/context buffer policy and never silently appl
   }
   assert.equal(policy({ modelLimits: { context: 0, input: 100000 } }).threshold, 84000);
   for (const buffer of [-1, null, '1000', NaN, Infinity, 276000]) assert.throws(() => policy({ compaction: { buffer } }));
-  for (const version of ['1.18.30', '2.0.21', '3.0.0']) {
+  assert.equal(nativePolicy({ version: '2.0.21', target: { ...candidate, version: '2.0.21' } }).threshold, policy({}).threshold);
+  for (const version of ['1.18.30', '3.0.0']) {
     assert.throws(() => nativePolicy({ version, target: { ...candidate, version } }), /has not been verified|exact OpenCode version/);
   }
 });

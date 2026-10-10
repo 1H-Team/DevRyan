@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { runStartupPhase } from './runtime-service-startup.mjs';
 
 import {
   buildBotStartupAttentionHtml,
@@ -153,7 +154,7 @@ describe('Electron startup splash', () => {
       const { runtimeBundleRecoveryRequired, shellRuntimeBundleBindingError, state, prepareForegroundRuntime,
         resolveInitialUrl, activateMainWindow, installPowerResumeHook,
         isLocalStartupTarget, readSettingsRoot, prepareBotRuntimeInBackground,
-        startupErrorDetails, log, releaseDesktopKeepAwake, killSidecar, showStartupFailure } = owners;
+        startupErrorDetails, log, releaseDesktopKeepAwake, killSidecar, showStartupFailure, runStartupPhase } = owners;
       const desktopDmgInstaller = null;
       ${source.slice(start, end)}
       return startDesktopRuntime;
@@ -168,6 +169,7 @@ describe('Electron startup splash', () => {
         resumeDeferredOpenCodeStartup: () => { calls.push('resume-native'); return nativeStartup; },
       } };
       const startup = createStartup({
+        runStartupPhase,
         runtimeBundleRecoveryRequired: held, state,
         shellRuntimeBundleBindingError: bindingFailed ? Object.assign(new Error('Cannot verify selected runtime'), { code: 'runtime_bundle_binding_invalid' }) : undefined,
         startupErrorDetails: error => ({ code: error.code }),

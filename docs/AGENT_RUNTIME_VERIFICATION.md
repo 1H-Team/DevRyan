@@ -43,7 +43,7 @@ Build the current source before verification (`bun run build` and the native art
 node scripts/qa/native-profile-factory-diagnostic.mjs --artifact-root "$PWD/.cache/v2-validation/native-artifact"
 ```
 
-Use a fresh verified artifact directory in place of the example. This checks isolated startup, not personal provider access or managed-user authorization. Live checks need the reviewed setup and their explicit account bootstrap; never construct credential files by hand.
+Use a fresh verified artifact directory in place of the example. This checks isolated startup and credential-free usage discovery (providers without an account report not configured through the actual controller), not personal provider access or managed-user authorization. Live checks need the reviewed setup and their explicit account bootstrap; never construct credential files by hand.
 
 The attended `live-credential-owner.mjs` and credential-free compiled rehearsal
 are documented in [tracked live credential ownership](QA.md#tracked-live-credential-owner).
@@ -63,6 +63,24 @@ bun scripts/journal.mjs gaps
 ```
 
 ### Desktop runtime ownership after restart
+
+For slow startup, separate the Electron window, web listener, native runtime
+and usable chat. `/health` and `/api/health` expose `openCodeStartup` with
+`state` (`idle`, `starting`, `ready`, `failed`), `attempt`, and a bounded `code`.
+A failed attempt is terminal until recovery starts a new attempt; a listening
+web server alone does not establish OpenCode readiness. Older hosts may omit
+this additive field. The UI polls startup health once a second with a
+three-second request timeout and a 120-second overall health deadline, and
+shows an authoritative failure without exhausting transient retries.
+
+Electron logs `[electron] startup phase` durations for shell preparation, server
+import/listen, runtime-service connection/recovery and renderer navigation.
+`[runtime-bundle] startup phase` records the verified bundle upgrade duration.
+Correlate those with the selected-bundle journal's native startup records;
+do not add concurrent phase durations as if every phase were sequential.
+A stale service descriptor stops connection retries early only when a fresh
+ownership inspection proves the owner stopped. Live or unverifiable owners
+retain conservative fencing and the existing bounded recovery transaction.
 
 For launch failures with `runtime_service_owner_active`, `runtime_service_owner_stale`,
 or `runtime_service_owner_unverified`, correlate the Electron startup log with
@@ -149,3 +167,26 @@ When the report starts with an Error Log event UUID, treat that UUID as a durabl
 - Runtime health: `GET /api/diagnostics/status` (default port 3000; `dev:server` uses `${OPENCHAMBER_PORT:-3001}`) reports `sessionCount`, bytes, queue/write/gap counts, segment count, and the last error.
 - Caveats: records and manifests are sanitized before disk (secrets redacted, home/worktree paths rewritten to `<WORKTREE_…>` placeholders); retention is 7 days / 1 GiB total. Absence of an expected non-delta record is itself evidence — the runtime never saw it.
 - Deep contracts: `packages/harness-runtime/DOCUMENTATION.md` (journal, sanitizer, export, storage limits) and `packages/web/server/lib/diagnostics/DOCUMENTATION.md` (HTTP status/clear/export/sanitize).
+
+## Startup ownership contracts
+
+The [startup reliability investigation](audits/2026-10-09/startup-reliability/README.md)
+records the implementation evidence and remaining acceptance gaps.
+
+`retryRuntimeServiceConnection` bounds the foreground connection at 20 seconds,
+extended to 60 only while the service is still booting (no descriptor, a stale
+owner, or health not yet ready). A stale descriptor triggers one guarded current-owner
+observation: only proved stopped/missing ownership ends the wait early; live or
+unverified ownership retains normal retries. Recovery still unregisters, proves
+stopped again, and acquires exclusively before persisting app-bound mode.
+Each connection attempt receives the retry's absolute deadline. Bootstrap and
+desktop-host lease HTTP requests (including lease response bodies and capability
+fallback) abort after at most five seconds or the remaining deadline. Health
+polling also respects its remaining deadline. Broker admission stores the validated
+lease synchronously and starts deferred OpenCode without holding the lease response;
+generation publication remains owned by the web runtime-service route.
+Startup phase logs report elapsed milliseconds and allowlisted failure codes for
+shell environment, server import/listen, service connection/recovery, foreground
+preparation, URL resolution, renderer navigation, and service OpenCode readiness.
+
+- **Startup health owner**: `src/lib/startup/health.ts` validates optional host startup snapshots and polls health every second with a three-second request deadline and a two-minute overall deadline. `useConfigStore.initializeApp` deduplicates that owner before loading providers then agents; `App` cancels old owners on retry/unmount and exposes authoritative terminal failures through the existing Retry screen. Older health servers retain readiness compatibility, and startup warmup/sync gates remain required.

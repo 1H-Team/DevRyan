@@ -20,7 +20,9 @@ import { createNativeAuthorization } from '../../packages/web/server/lib/opencod
 import { createOpenAiOAuthCoordinator } from '../../packages/web/server/lib/opencode/openai-oauth-coordinator.js';
 
 const repository = path.resolve(import.meta.dirname, '../..');
-export async function prepareSourceOpenAiFixture({ databasePath, directory, profileRoot, expiresIn = { A: 3600, B: 3600 }, canaryPrefix }) {
+export async function prepareSourceOpenAiFixture({ databasePath, directory, profileRoot, expiresIn = { A: 3600, B: 3600 }, canaryPrefix, additionalIntegrations = [] }) {
+  assert.ok(Array.isArray(additionalIntegrations) && new Set(additionalIntegrations).size === additionalIntegrations.length);
+  assert.ok(additionalIntegrations.every(id => ['cursor-acp', 'opencode', 'opencode-go', 'xai'].includes(id)));
   if(canaryPrefix!==undefined)assert.match(canaryPrefix,/^[a-z0-9_-]{16,128}$/);
   assert.deepEqual(Object.keys(expiresIn).sort(), ['A', 'B']);
   for (const value of Object.values(expiresIn)) assert.ok(Number.isSafeInteger(value) && value >= 1 && value <= 3600);
@@ -158,6 +160,14 @@ export async function prepareSourceOpenAiFixture({ databasePath, directory, prof
           throw Error('Original native OAuth did not commit its selected account');
         });
         const records=yield* credentials.list('openai');accounts.push(readProof(selected,records.find(row=>row.id===selected.credentialID)));
+      }
+      if (prepare) for (const integrationID of additionalIntegrations) {
+        // The incident's active xAI device credential had already expired.
+        const value = integrationID === 'xai'
+          ? { type: 'oauth', methodID: 'device', access: 'synthetic-xai-access', refresh: 'synthetic-xai-refresh', expires: Date.now() - 3600000 }
+          : { type: 'key', key: `synthetic-${integrationID}-key` };
+        yield* credentials.create({ integrationID, value, activate: true, label: 'Synthetic startup shape' })
+          .pipe(Effect.provide(Logger.layer([], { mergeWithExisting: false })));
       }
       const selected=yield* Effect.promise(() => adapter.readSelectedOwned({ directory })),records=yield* credentials.list('openai');
       return readProof(selected,records.find(row=>row.id===selected.credentialID));

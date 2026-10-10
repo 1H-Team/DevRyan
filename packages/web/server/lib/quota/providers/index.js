@@ -150,7 +150,7 @@ const providerAliases = new Map([
   ['opencode-zen', 'opencode'],
 ]);
 
-const resolveProviderId = (providerId) => providerAliases.get(providerId) ?? providerId;
+export const resolveProviderId = (providerId) => providerAliases.get(providerId) ?? providerId;
 
 export const listConfiguredQuotaProviders = (options = {}) => {
   const configured = [];

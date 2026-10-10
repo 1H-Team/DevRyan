@@ -5,6 +5,7 @@ import {createHash} from 'node:crypto';
 import {verifyNativeBootMigration} from './native-boot-migration.js';
 import {resolveSqliteDriver} from '../db-maintenance-core.js';
 import { createNativeRuntimeOwner, loadNativeRuntimeBundle } from './native-runtime-owner.js';
+import * as nativeArtifacts from './native-artifacts.js';
 import { createNativeCursorRecovery } from './native-cursor-recovery.js';
 import {createCursorSdkRuntime} from '../../../../../cursor-sdk-runtime/index.js';
 
@@ -88,6 +89,20 @@ test('a coherent clone reseal after verification cannot replace the selected pre
   options.bundle.verify=async()=>{await verifyNativeBootMigration(boot);verified=true;};
   options.bundle.refreshLocations=async()=>{expect(verified).toBe(true);await reseal(2);};
  });
+});
+
+test('launch verifies once before lifecycle configuration and refuses its failure before controller spawn',async()=>{
+ const events=[];
+ await fixture(async({owner})=>{
+  await expect(owner.start({beforeConfiguration:async()=>{events.push('configuration');throw Error('config refused');}})).rejects.toThrow('config refused');
+  expect(events).toEqual(['verified','configuration']);expect(transport.create).not.toHaveBeenCalled();
+  await owner.close();
+ },undefined,options=>{options.bundle.verify=async()=>{events.push('verified');};});
+ events.length=0;
+ await fixture(async({owner})=>{
+  await expect(owner.start({beforeConfiguration:async()=>{events.push('configuration');}})).rejects.toThrow('verify refused');
+  expect(events).toEqual(['verified']);expect(transport.create).not.toHaveBeenCalled();await owner.close();
+ },undefined,options=>{options.bundle.verify=async()=>{events.push('verified');throw Error('verify refused');};});
 });
 
 test('startup passes fresh original Cursor declarations without account discovery or secret fields',async()=>{
@@ -216,6 +231,55 @@ test('unconfirmed boot keeps private authority alive until actual exit recovery 
   await owner.close();
   expect(drain).toHaveBeenCalledTimes(1); expect(transport.stop).toHaveBeenCalledTimes(1);
 }));
+
+test('native startup journals failure before binding and excludes arbitrary error payloads', async () => {
+ for (const code of ['native_catalog_read_failed_model_http_500_model_normalize_failed', 'private secret config']) {
+  const records=[];
+  await fixture(async({owner})=>{
+   transport.create.mockRejectedValue(Object.assign(new Error(code),{secret:'private credential'}));
+   await expect(owner.start()).rejects.toThrow(code);
+   const events=records.filter(row=>row.event==='native_startup');
+   expect(events.map(row=>row.payload.phase)).toEqual(['starting','failed']);
+   expect(events[1].payload).toMatchObject({stage:'controller',bundleID:'fixture',buildId:'fixture',code:code.startsWith('native_catalog_')?code:'native_startup_failed'});
+   expect(events[1].payload.controllerInstanceID).toMatch(/^[a-f0-9-]{36}$/);
+   expect(events[1].payload.durationMs).toBeGreaterThanOrEqual(0);
+   expect(JSON.stringify(records)).not.toContain('private');
+   await owner.close();
+  },undefined,options=>{options.recordDiagnostic=entry=>records.push(entry);});
+ }
+});
+
+test('native startup records bound, ready and physical exit before fallible cleanup', async()=>{
+ const records=[];
+ await fixture(async({owner,settleController})=>{
+  let launch,exited=false;
+  transport.create.mockImplementation(async options=>{
+   launch=options;return {bound:{catalog:{asserted:true}},hasExited:()=>exited,call:async()=>null,
+    close:async()=>{exited=true;await launch.afterExit({pid:123,code:0,signal:null,expected:true,startedAt:Date.now()});},killForRecovery:async()=>{}};
+  });
+  await owner.start();
+  expect(records.filter(row=>row.event==='native_startup').map(row=>row.payload.phase)).toEqual(['starting','bound','ready']);
+  settleController.mockRejectedValueOnce(new Error('private cleanup details'));
+  await expect(owner.close()).rejects.toThrow('private cleanup details');
+  const exit=records.find(row=>row.event==='opencode_process_exit');
+  expect(exit.payload).toMatchObject({pid:123,code:0,signal:null,expected:true,bundleID:'fixture',buildId:'fixture'});
+  expect(JSON.stringify(records)).not.toContain('private');
+ },undefined,options=>{options.recordDiagnostic=entry=>records.push(entry);});
+});
+
+test('catalog startup failure is recorded once before cleanup can replace its exception',async()=>{
+ const records=[];
+ await fixture(async({owner})=>{
+  let exited=false;
+  transport.create.mockResolvedValue({bound:{catalog:{asserted:false}},hasExited:()=>exited,
+   close:async()=>{exited=true;throw new Error('private cleanup failure');},killForRecovery:async()=>{}});
+  await expect(owner.start()).rejects.toThrow('private cleanup failure');
+  const failures=records.filter(row=>row.event==='native_startup'&&row.payload.phase==='failed');
+  expect(failures).toHaveLength(1);expect(failures[0].payload.code).toBe('native_catalog_mismatch');
+  expect(JSON.stringify(records)).not.toContain('private');
+  await owner.close();
+ },undefined,options=>{options.recordDiagnostic=entry=>records.push(entry);});
+});
 
 test('startup keeps readiness and web grants closed through durable removal recovery', () => fixture(async ({ owner, runtime, root }) => {
   let entered, release, launch, exited = false;
@@ -397,6 +461,26 @@ test('normal close retains the physical controller until the credential queue ha
 const loaderBinding=()=>({admission:'pending',descriptor:{bundleID:'selected',generation:2,
   // A relative manifest path makes the artifact check refuse immediately after the bundle gate.
   launch:{artifactManifestPath:'relative-manifest.json',artifactManifestSha256:'0'.repeat(64)}}});
+
+test('fresh verified artifacts are reused only for the exact selected launch and supervisor',async()=>{
+ const root=await fs.mkdtemp(path.resolve(import.meta.dirname,'../../../../../../.cache/v2-validation/native-loader-'));
+ const verifyArtifacts=vi.spyOn(nativeArtifacts,'verifyNativeRuntimeArtifacts').mockRejectedValue(Error('unexpected artifact rescan'));
+ try{
+  const launch={artifactManifestPath:path.join(root,'native-bundle.json'),artifactManifestSha256:'a'.repeat(64),controllerBinary:path.join(root,'controller'),writerBinary:path.join(root,'writer'),
+   reviewedNativeConfigPath:path.join(root,'reviewed-native.json'),reviewedPluginManifestPath:path.join(root,'reviewed-plugins.json'),global:{tmp:root}};
+  await fs.writeFile(launch.reviewedNativeConfigPath,JSON.stringify({schema:1,configuration:{},catalogRequirements:{agents:[],plugins:[],tools:[],models:[]},locations:[{directory:root}]}));
+  await fs.writeFile(launch.reviewedPluginManifestPath,JSON.stringify({schema:1,plugins:[]}));
+  const descriptor={bundleID:'selected',generation:2,launch,projectMap:[{targetDirectory:root}]};
+  const artifacts={manifestPath:launch.artifactManifestPath,manifestSha256:launch.artifactManifestSha256,controller:launch.controllerBinary,writer:launch.writerBinary,launcher:path.join(root,'supervisor'),manifest:{inputs:{reviewedPlugins:[]}}};
+  const verified={descriptor,phase:'resume',integrity:'verified',admission:'held',artifacts};
+  const binding={controlRoot:root,admission:'pending',descriptor,selection:{preparedManifestSha256:'b'.repeat(64)}};
+  const loaded=await loadNativeRuntimeBundle({binding,launcher:artifacts.launcher,verified});
+  expect(loaded.artifacts).toBe(artifacts);expect(verifyArtifacts).not.toHaveBeenCalled();
+  for(const mutation of [{manifestPath:path.join(root,'other.json')},{manifestSha256:'c'.repeat(64)},{launcher:path.join(root,'other-supervisor')},{controller:path.join(root,'other-controller')},{writer:path.join(root,'other-writer')}]){
+   await expect(loadNativeRuntimeBundle({binding,launcher:artifacts.launcher,verified:{...verified,artifacts:{...artifacts,...mutation}}})).rejects.toMatchObject({code:'native_runtime_artifacts_unverified'});
+  }
+ }finally{verifyArtifacts.mockRestore();await fs.rm(root,{recursive:true,force:true});}
+});
 
 test('boot hands its fresh verification to the loader instead of rescanning the bundle',async()=>{
   const verify=vi.fn(async()=>{throw new Error('unexpected second verification');});

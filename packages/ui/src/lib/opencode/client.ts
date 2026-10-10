@@ -1,4 +1,5 @@
 import { getSafeStorage } from '@/stores/utils/safeStorage';
+import { parseStartupHealth, type StartupHealthSnapshot } from '@/lib/startup/health';
 import { createOpencodeClient, OpencodeClient } from "@opencode-ai/sdk/v2";
 import type { FilesAPI, RuntimeAPIs } from "../api/types";
 import { getDesktopHomeDirectory } from "../desktop";
@@ -2159,6 +2160,10 @@ class OpencodeService {
 
   // Health Check - using /health endpoint for detailed status
   async checkHealth(): Promise<boolean> {
+    return (await this.readHealth())?.ready === true;
+  }
+
+  async readHealth(options?: { signal?: AbortSignal }): Promise<StartupHealthSnapshot | null> {
     const capabilityRevision = beginRuntimeCapabilityRead();
     try {
       // Health endpoint is at root, not under /api
@@ -2172,19 +2177,21 @@ class OpencodeService {
       } else {
         healthUrl = `${normalizedBase}/health`;
       }
-      const response = await this.noStoreFetch(healthUrl);
+      const response = await this.noStoreFetch(healthUrl, { signal: options?.signal });
+      options?.signal?.throwIfAborted();
       if (!response.ok) {
         failRuntimeCapabilityRead(capabilityRevision);
-        return false;
+        return null;
       }
 
       const healthData = await response.json();
+      options?.signal?.throwIfAborted();
       observeRuntimeCapabilityHealth(healthData, capabilityRevision);
 
-      return healthData?.openCode?.generation === 2 && healthData.isOpenCodeReady === true;
+      return parseStartupHealth(healthData);
     } catch {
-      failRuntimeCapabilityRead(capabilityRevision);
-      return false;
+      if (!options?.signal?.aborted) failRuntimeCapabilityRead(capabilityRevision);
+      return null;
     }
   }
 

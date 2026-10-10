@@ -230,13 +230,12 @@ export const MainLayout: React.FC = () => {
         setRightSidebarOpen(!isRightSidebarOpen);
     }, [isRightSidebarOpen, mobileLeftDrawerOpen, setRightSidebarOpen, setMobileLeftDrawerOpen]);
 
-    // Trigger initial update check shortly after mount, then repeat using server-suggested cadence.
+    // Keep update discovery out of launch; use the regular cadence for the first check too.
     const checkForUpdates = useUpdateStore((state) => state.checkForUpdates);
     React.useEffect(() => {
         if (!canCheckForUpdates) {
             return;
         }
-        const initialDelayMs = 3000;
         const defaultIntervalMs = 60 * 60 * 1000;
         const minIntervalMs = 5 * 60 * 1000;
         const maxIntervalMs = 24 * 60 * 60 * 1000;
@@ -259,7 +258,7 @@ export const MainLayout: React.FC = () => {
             }, delayMs);
         };
 
-        scheduleNext(initialDelayMs);
+        scheduleNext(defaultIntervalMs);
 
         return () => {
             disposed = true;

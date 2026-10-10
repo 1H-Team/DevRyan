@@ -175,6 +175,14 @@ export function createNativeIntegrationOwner({ instanceID, snapshot, stateDirect
       if (operation.operation !== 'openai.integration') throw fail('native_integration_scope_invalid');
       return ownedCall({ action: 'openai-read-selected-owned', directory: operation.directory });
     }),
+    readProviderSelected: operation => grants.withCallerOperation(operation, async () => {
+      if (operation.operation !== 'provider.integration' || !['xai', 'opencode-go'].includes(operation.integrationID)) throw fail('native_integration_scope_invalid');
+      const selected = await ownedCall({ action: 'provider-read-selected-owned', directory: operation.directory, integrationID: operation.integrationID });
+      if (selected === undefined || selected === null) return undefined;
+      if (typeof selected !== 'object' || Array.isArray(selected) || selected.directory !== operation.directory || selected.controllerInstanceID !== instanceID
+        || selected.integrationID !== operation.integrationID || typeof selected.credentialID !== 'string' || !selected.value || typeof selected.value !== 'object') throw fail('native_integration_binding_invalid', 502);
+      return selected;
+    }),
     credentialMetadata: operation => grants.withCallerOperation(operation, () => {
       if (!['openai.integration', 'mcp.integration', 'cursor.integration', 'provider.integration'].includes(operation.operation)) throw fail('native_integration_scope_invalid');
       return ownedCall({ action: 'credential-metadata-owned', directory: operation.directory, integrationID: operation.integrationID });

@@ -1,0 +1,27 @@
+{
+  "qualification": "Matched foreground launches; current repaired native artifacts; previous versus optimized UI startup policy; sanitized 282-model configuration and synthetic retired OpenAI login",
+  "outcome": "no-measured-improvement",
+  "beforeMs": 14067.612374999997,
+  "afterMs": 14262.686999999976,
+  "reductionPercent": -1.3866932056405863,
+  "runs": {
+    "previous": {
+      "outcome": "passed",
+      "summary": {
+        "launches": 3,
+        "medianUiReadyMs": 14067.612374999997,
+        "minimumUiReadyMs": 13735.412958,
+        "maximumUiReadyMs": 17200.944792000002
+      }
+    },
+    "optimized": {
+      "outcome": "passed",
+      "summary": {
+        "launches": 3,
+        "medianUiReadyMs": 14262.686999999976,
+        "minimumUiReadyMs": 14078.468958000012,
+        "maximumUiReadyMs": 15175.696417
+      }
+    }
+  }
+}

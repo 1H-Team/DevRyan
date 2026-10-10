@@ -1,0 +1,1574 @@
+{
+  "schemaVersion": 1,
+  "kind": "packaged-native-app-bound-startup",
+  "outcome": "passed",
+  "scope": "three fresh processes/profiles; prepared native bundle; local HTTP model fixture; natural first usable renderer",
+  "sourceSha256": "acd25baa8b3e6c4d73f711e09c0d5f5957fb66af183f8eac0a26bebb1c996114",
+  "archiveSha256": "d55d7b7ff00acca76e4b92eb416014ce73625502d4f83640ff0faf5d52d1df1a",
+  "runs": [
+    {
+      "iteration": 0,
+      "startup": {
+        "outcome": "passed",
+        "startupMode": "natural",
+        "scope": "fresh-process/fresh-profile; actual native backend; local HTTP model fixture",
+        "clock": "parent performance.now; elapsed milliseconds since spawn invocation",
+        "pollIntervalMs": 100,
+        "forcedNavigations": 0,
+        "documents": [
+          {
+            "observedAtMs": 13294.064875000002,
+            "timeOrigin": 1791577580268.8,
+            "href": "http://127.0.0.1:58320/",
+            "readyState": "loading",
+            "visibilityState": "visible",
+            "composer": false,
+            "newChat": false,
+            "model": false,
+            "modelLabels": [],
+            "selectedModel": null,
+            "sessionID": null,
+            "navigation": {
+              "type": "navigate",
+              "domContentLoadedEventEnd": 0,
+              "loadEventEnd": 0,
+              "duration": 0
+            },
+            "paints": []
+          },
+          {
+            "observedAtMs": 29749.4545,
+            "timeOrigin": 1791577581037.3,
+            "href": "http://127.0.0.1:58320/",
+            "readyState": "complete",
+            "visibilityState": "visible",
+            "composer": false,
+            "newChat": false,
+            "model": false,
+            "modelLabels": [],
+            "selectedModel": {
+              "providerId": "",
+              "modelId": "",
+              "catalogAvailable": false
+            },
+            "sessionID": null,
+            "navigation": {
+              "type": "reload",
+              "domContentLoadedEventEnd": 127.5,
+              "loadEventEnd": 128.89999999850988,
+              "duration": 128.89999999850988
+            },
+            "paints": [
+              {
+                "name": "first-paint",
+                "startTime": 168
+              },
+              {
+                "name": "first-contentful-paint",
+                "startTime": 168
+              }
+            ]
+          },
+          {
+            "observedAtMs": 32156.478041000002,
+            "timeOrigin": 1791577599429.8,
+            "href": "http://127.0.0.1:58320/",
+            "readyState": "loading",
+            "visibilityState": "visible",
+            "composer": false,
+            "newChat": false,
+            "model": false,
+            "modelLabels": [],
+            "selectedModel": null,
+            "sessionID": null,
+            "navigation": {
+              "type": "reload",
+              "domContentLoadedEventEnd": 0,
+              "loadEventEnd": 0,
+              "duration": 0
+            },
+            "paints": []
+          }
+        ],
+        "healthObservations": [
+          {
+            "observedAtMs": 13305.296083,
+            "state": "idle",
+            "attempt": 0,
+            "code": null
+          },
+          {
+            "observedAtMs": 13515.864458000002,
+            "state": "starting",
+            "attempt": 1,
+            "code": null
+          },
+          {
+            "observedAtMs": 29685.137625000003,
+            "state": "ready",
+            "attempt": 1,
+            "code": null
+          }
+        ],
+        "nativeStartupObservation": "observed",
+        "cdpTargetMs": 1959.5539580000004,
+        "loopbackOriginMs": 13275.019166,
+        "lastObservedDocument": {
+          "timeOrigin": 1791577599429.8,
+          "href": "http://127.0.0.1:58320/",
+          "readyState": "complete",
+          "visibilityState": "visible",
+          "composer": true,
+          "newChat": true,
+          "model": true,
+          "modelLabels": [
+            "smoke-write"
+          ],
+          "selectedModel": {
+            "providerId": "devryan-smoke",
+            "modelId": "smoke-write",
+            "agent": "builder",
+            "catalogAvailable": true
+          },
+          "sessionID": null,
+          "navigation": {
+            "type": "reload",
+            "domContentLoadedEventEnd": 60.20000000298023,
+            "loadEventEnd": 61.600000001490116,
+            "duration": 61.600000001490116
+          },
+          "paints": [
+            {
+              "name": "first-paint",
+              "startTime": 88
+            },
+            {
+              "name": "first-contentful-paint",
+              "startTime": 88
+            }
+          ]
+        },
+        "firstObservedDocument": {
+          "timeOrigin": 1791577580268.8,
+          "href": "http://127.0.0.1:58320/",
+          "readyState": "loading",
+          "visibilityState": "visible",
+          "composer": false,
+          "newChat": false,
+          "model": false,
+          "modelLabels": [],
+          "selectedModel": null,
+          "sessionID": null,
+          "navigation": {
+            "type": "navigate",
+            "domContentLoadedEventEnd": 0,
+            "loadEventEnd": 0,
+            "duration": 0
+          },
+          "paints": []
+        },
+        "hostAvailableMs": 13305.296083,
+        "nativeStartupReadyMs": 29685.137625000003,
+        "hostReadyMs": 29685.255458,
+        "fixtureCatalogReadyMs": 29741.863750000004,
+        "firstSelectedModel": {
+          "observedAtMs": 30426.283083000002,
+          "providerId": "opencode",
+          "modelId": "fledge-alpha-free",
+          "catalogAvailable": true
+        },
+        "document": {
+          "timeOrigin": 1791577599429.8,
+          "href": "http://127.0.0.1:58320/",
+          "readyState": "complete",
+          "visibilityState": "visible",
+          "composer": true,
+          "newChat": true,
+          "model": true,
+          "modelLabels": [
+            "smoke-write"
+          ],
+          "selectedModel": {
+            "providerId": "devryan-smoke",
+            "modelId": "smoke-write",
+            "agent": "builder",
+            "catalogAvailable": true
+          },
+          "sessionID": null,
+          "navigation": {
+            "type": "reload",
+            "domContentLoadedEventEnd": 60.20000000298023,
+            "loadEventEnd": 61.600000001490116,
+            "duration": 61.600000001490116
+          },
+          "paints": [
+            {
+              "name": "first-paint",
+              "startTime": 88
+            },
+            {
+              "name": "first-contentful-paint",
+              "startTime": 88
+            }
+          ]
+        },
+        "uiReadyMs": 33312.674583,
+        "electronStartupPhases": {
+          "source": "injected-launch-records",
+          "collectedAtMs": 33315.65825,
+          "records": [
+            {
+              "phase": "shell_environment",
+              "outcome": "completed",
+              "durationMs": 43
+            },
+            {
+              "phase": "foreground_preparation",
+              "outcome": "completed",
+              "durationMs": 29
+            },
+            {
+              "phase": "server_import",
+              "outcome": "completed",
+              "durationMs": 6650
+            },
+            {
+              "phase": "server_listen",
+              "outcome": "completed",
+              "durationMs": 1956
+            },
+            {
+              "phase": "initial_url",
+              "outcome": "completed",
+              "durationMs": 10990
+            },
+            {
+              "phase": "renderer_navigation",
+              "outcome": "completed",
+              "durationMs": 496
+            }
+          ]
+        },
+        "nativeTransitions": [
+          {
+            "elapsedMs": 1969.8181249999998,
+            "url": "data:startup-document",
+            "loaderId": null,
+            "kind": "initial-cdp-target"
+          },
+          {
+            "elapsedMs": 13123.816832999999,
+            "url": "http://127.0.0.1:58320/",
+            "loaderId": "1B756DA42BB7D4805BC2329D4334C298",
+            "kind": "native-top-frame-navigation"
+          },
+          {
+            "elapsedMs": 13823.484290999999,
+            "url": "http://127.0.0.1:58320/",
+            "loaderId": "238875CD032E32E033F1A42814F9120C",
+            "kind": "native-top-frame-navigation"
+          },
+          {
+            "elapsedMs": 32124.475625,
+            "url": "http://127.0.0.1:58320/",
+            "loaderId": "7D41F4BE17D65DE8A6632DA041553AF9",
+            "kind": "native-top-frame-navigation"
+          }
+        ],
+        "benchmarkNavigationAttempts": [],
+        "nativeDocumentChanges": 2
+      },
+      "cleanupErrors": [],
+      "initialBundle": {
+        "bundleID": "candidate",
+        "revision": 1,
+        "previousBundleID": null,
+        "opencodeVersion": "2.0.26",
+        "artifactManifestSha256": "7a6e1a534d834c1fd1935e731ecea6ebd9324016f2578848033e6bad6faebebd"
+      },
+      "subscription": {
+        "readyAcknowledgedAtMs": 32550.415541000002,
+        "transport": "websocket",
+        "error": null
+      },
+      "finalBundle": {
+        "bundleID": "candidate",
+        "revision": 1,
+        "previousBundleID": null,
+        "opencodeVersion": "2.0.26",
+        "artifactManifestSha256": "7a6e1a534d834c1fd1935e731ecea6ebd9324016f2578848033e6bad6faebebd"
+      },
+      "cleanup": {
+        "source": "retained-os-process-ancestry-and-start-identities",
+        "rootPid": 80076,
+        "rootObserved": true,
+        "observationIntervalMs": 500,
+        "observationErrors": [],
+        "observedProcesses": [
+          {
+            "pid": 80076,
+            "parentPid": 79995,
+            "startIdentity": "Sat Oct 10 00:26:07 2026"
+          },
+          {
+            "pid": 80087,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:08 2026"
+          },
+          {
+            "pid": 80088,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:08 2026"
+          },
+          {
+            "pid": 80097,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:09 2026"
+          },
+          {
+            "pid": 80117,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:11 2026"
+          },
+          {
+            "pid": 80128,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:12 2026"
+          },
+          {
+            "pid": 80142,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:14 2026"
+          },
+          {
+            "pid": 80151,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:15 2026"
+          },
+          {
+            "pid": 80159,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:16 2026"
+          },
+          {
+            "pid": 80173,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:18 2026"
+          },
+          {
+            "pid": 80179,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:18 2026"
+          },
+          {
+            "pid": 80186,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:19 2026"
+          },
+          {
+            "pid": 80192,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:20 2026"
+          },
+          {
+            "pid": 80253,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:25 2026"
+          },
+          {
+            "pid": 80262,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:26 2026"
+          },
+          {
+            "pid": 80270,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:26 2026"
+          },
+          {
+            "pid": 80278,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:28 2026"
+          },
+          {
+            "pid": 80293,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:30 2026"
+          },
+          {
+            "pid": 80299,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:31 2026"
+          },
+          {
+            "pid": 80314,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:33 2026"
+          },
+          {
+            "pid": 80317,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:33 2026"
+          },
+          {
+            "pid": 80318,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:33 2026"
+          },
+          {
+            "pid": 80323,
+            "parentPid": 80317,
+            "startIdentity": "Sat Oct 10 00:26:33 2026"
+          },
+          {
+            "pid": 80339,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:35 2026"
+          },
+          {
+            "pid": 80340,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:35 2026"
+          },
+          {
+            "pid": 80341,
+            "parentPid": 80339,
+            "startIdentity": "Sat Oct 10 00:26:35 2026"
+          },
+          {
+            "pid": 80342,
+            "parentPid": 80340,
+            "startIdentity": "Sat Oct 10 00:26:35 2026"
+          },
+          {
+            "pid": 80363,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:36 2026"
+          },
+          {
+            "pid": 80435,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:37 2026"
+          },
+          {
+            "pid": 80504,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:40 2026"
+          },
+          {
+            "pid": 80507,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:40 2026"
+          },
+          {
+            "pid": 80534,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:40 2026"
+          },
+          {
+            "pid": 80535,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:40 2026"
+          },
+          {
+            "pid": 80536,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:40 2026"
+          },
+          {
+            "pid": 80673,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:40 2026"
+          },
+          {
+            "pid": 80705,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:41 2026"
+          },
+          {
+            "pid": 80708,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:41 2026"
+          },
+          {
+            "pid": 80711,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:41 2026"
+          },
+          {
+            "pid": 80716,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:41 2026"
+          },
+          {
+            "pid": 80734,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:41 2026"
+          },
+          {
+            "pid": 80740,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:41 2026"
+          },
+          {
+            "pid": 80743,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:42 2026"
+          },
+          {
+            "pid": 80771,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:42 2026"
+          },
+          {
+            "pid": 80775,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:42 2026"
+          },
+          {
+            "pid": 80799,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:42 2026"
+          },
+          {
+            "pid": 80802,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:43 2026"
+          },
+          {
+            "pid": 80805,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:43 2026"
+          },
+          {
+            "pid": 80833,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:43 2026"
+          },
+          {
+            "pid": 80836,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:43 2026"
+          },
+          {
+            "pid": 80839,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:43 2026"
+          },
+          {
+            "pid": 80864,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:44 2026"
+          },
+          {
+            "pid": 80867,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:44 2026"
+          },
+          {
+            "pid": 80870,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:44 2026"
+          },
+          {
+            "pid": 80895,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:44 2026"
+          },
+          {
+            "pid": 80898,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:44 2026"
+          },
+          {
+            "pid": 80902,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:44 2026"
+          },
+          {
+            "pid": 80923,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:45 2026"
+          },
+          {
+            "pid": 80926,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:45 2026"
+          },
+          {
+            "pid": 80929,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:45 2026"
+          },
+          {
+            "pid": 80943,
+            "parentPid": 80076,
+            "startIdentity": "Sat Oct 10 00:26:45 2026"
+          }
+        ],
+        "remainingProcessIds": [],
+        "signals": [],
+        "trackingClosed": true
+      }
+    },
+    {
+      "iteration": 1,
+      "startup": {
+        "outcome": "passed",
+        "startupMode": "natural",
+        "scope": "fresh-process/fresh-profile; actual native backend; local HTTP model fixture",
+        "clock": "parent performance.now; elapsed milliseconds since spawn invocation",
+        "pollIntervalMs": 100,
+        "forcedNavigations": 0,
+        "documents": [
+          {
+            "observedAtMs": 12210.319916,
+            "timeOrigin": 1791577631076.6,
+            "href": "http://127.0.0.1:58493/",
+            "readyState": "loading",
+            "visibilityState": "visible",
+            "composer": false,
+            "newChat": false,
+            "model": false,
+            "modelLabels": [],
+            "selectedModel": null,
+            "sessionID": null,
+            "navigation": {
+              "type": "navigate",
+              "domContentLoadedEventEnd": 0,
+              "loadEventEnd": 0,
+              "duration": 0
+            },
+            "paints": []
+          },
+          {
+            "observedAtMs": 20422.429291,
+            "timeOrigin": 1791577631543,
+            "href": "http://127.0.0.1:58493/",
+            "readyState": "complete",
+            "visibilityState": "visible",
+            "composer": false,
+            "newChat": false,
+            "model": false,
+            "modelLabels": [],
+            "selectedModel": {
+              "providerId": "",
+              "modelId": "",
+              "catalogAvailable": false
+            },
+            "sessionID": null,
+            "navigation": {
+              "type": "reload",
+              "domContentLoadedEventEnd": 96.79999999701977,
+              "loadEventEnd": 98.5,
+              "duration": 98.5
+            },
+            "paints": [
+              {
+                "name": "first-paint",
+                "startTime": 112
+              },
+              {
+                "name": "first-contentful-paint",
+                "startTime": 112
+              }
+            ]
+          },
+          {
+            "observedAtMs": 22893.119415999994,
+            "timeOrigin": 1791577641923.6,
+            "href": "http://127.0.0.1:58493/",
+            "readyState": "loading",
+            "visibilityState": "visible",
+            "composer": false,
+            "newChat": false,
+            "model": false,
+            "modelLabels": [],
+            "selectedModel": null,
+            "sessionID": null,
+            "navigation": {
+              "type": "reload",
+              "domContentLoadedEventEnd": 0,
+              "loadEventEnd": 0,
+              "duration": 0
+            },
+            "paints": []
+          }
+        ],
+        "healthObservations": [
+          {
+            "observedAtMs": 12219.807125,
+            "state": "idle",
+            "attempt": 0,
+            "code": null
+          },
+          {
+            "observedAtMs": 12450.040165999999,
+            "state": "starting",
+            "attempt": 1,
+            "code": null
+          },
+          {
+            "observedAtMs": 20408.402874999992,
+            "state": "ready",
+            "attempt": 1,
+            "code": null
+          }
+        ],
+        "nativeStartupObservation": "observed",
+        "cdpTargetMs": 1379.098291000002,
+        "loopbackOriginMs": 12199.509207999996,
+        "lastObservedDocument": {
+          "timeOrigin": 1791577641923.6,
+          "href": "http://127.0.0.1:58493/",
+          "readyState": "complete",
+          "visibilityState": "visible",
+          "composer": true,
+          "newChat": true,
+          "model": true,
+          "modelLabels": [
+            "smoke-write"
+          ],
+          "selectedModel": {
+            "providerId": "devryan-smoke",
+            "modelId": "smoke-write",
+            "agent": "builder",
+            "catalogAvailable": true
+          },
+          "sessionID": null,
+          "navigation": {
+            "type": "reload",
+            "domContentLoadedEventEnd": 41.899999998509884,
+            "loadEventEnd": 43.600000001490116,
+            "duration": 43.600000001490116
+          },
+          "paints": [
+            {
+              "name": "first-paint",
+              "startTime": 64
+            },
+            {
+              "name": "first-contentful-paint",
+              "startTime": 64
+            }
+          ]
+        },
+        "firstObservedDocument": {
+          "timeOrigin": 1791577631076.6,
+          "href": "http://127.0.0.1:58493/",
+          "readyState": "loading",
+          "visibilityState": "visible",
+          "composer": false,
+          "newChat": false,
+          "model": false,
+          "modelLabels": [],
+          "selectedModel": null,
+          "sessionID": null,
+          "navigation": {
+            "type": "navigate",
+            "domContentLoadedEventEnd": 0,
+            "loadEventEnd": 0,
+            "duration": 0
+          },
+          "paints": []
+        },
+        "hostAvailableMs": 12219.807125,
+        "nativeStartupReadyMs": 20408.402874999992,
+        "hostReadyMs": 20408.455708,
+        "fixtureCatalogReadyMs": 20420.928332999996,
+        "firstSelectedModel": {
+          "observedAtMs": 20837.9315,
+          "providerId": "opencode",
+          "modelId": "fledge-alpha-free",
+          "catalogAvailable": true
+        },
+        "document": {
+          "timeOrigin": 1791577641923.6,
+          "href": "http://127.0.0.1:58493/",
+          "readyState": "complete",
+          "visibilityState": "visible",
+          "composer": true,
+          "newChat": true,
+          "model": true,
+          "modelLabels": [
+            "smoke-write"
+          ],
+          "selectedModel": {
+            "providerId": "devryan-smoke",
+            "modelId": "smoke-write",
+            "agent": "builder",
+            "catalogAvailable": true
+          },
+          "sessionID": null,
+          "navigation": {
+            "type": "reload",
+            "domContentLoadedEventEnd": 41.899999998509884,
+            "loadEventEnd": 43.600000001490116,
+            "duration": 43.600000001490116
+          },
+          "paints": [
+            {
+              "name": "first-paint",
+              "startTime": 64
+            },
+            {
+              "name": "first-contentful-paint",
+              "startTime": 64
+            }
+          ]
+        },
+        "uiReadyMs": 23486.219749999997,
+        "electronStartupPhases": {
+          "source": "injected-launch-records",
+          "collectedAtMs": 23486.266375,
+          "records": [
+            {
+              "phase": "shell_environment",
+              "outcome": "completed",
+              "durationMs": 46
+            },
+            {
+              "phase": "foreground_preparation",
+              "outcome": "completed",
+              "durationMs": 21
+            },
+            {
+              "phase": "server_import",
+              "outcome": "completed",
+              "durationMs": 6382
+            },
+            {
+              "phase": "server_listen",
+              "outcome": "completed",
+              "durationMs": 2050
+            },
+            {
+              "phase": "initial_url",
+              "outcome": "completed",
+              "durationMs": 10640
+            },
+            {
+              "phase": "renderer_navigation",
+              "outcome": "completed",
+              "durationMs": 257
+            }
+          ]
+        },
+        "nativeTransitions": [
+          {
+            "elapsedMs": 1386.0562500000015,
+            "url": "data:startup-document",
+            "loaderId": null,
+            "kind": "initial-cdp-target"
+          },
+          {
+            "elapsedMs": 12082.9735,
+            "url": "http://127.0.0.1:58493/",
+            "loaderId": "4D836FAA86A5EEA1513F475DBB22B483",
+            "kind": "native-top-frame-navigation"
+          },
+          {
+            "elapsedMs": 12494.824415999996,
+            "url": "http://127.0.0.1:58493/",
+            "loaderId": "C2D12BD74239D4B0BEA888D4DE5CDAFB",
+            "kind": "native-top-frame-navigation"
+          },
+          {
+            "elapsedMs": 22871.464249999997,
+            "url": "http://127.0.0.1:58493/",
+            "loaderId": "F9366F3BA694D223E8E76E0087485C75",
+            "kind": "native-top-frame-navigation"
+          }
+        ],
+        "benchmarkNavigationAttempts": [],
+        "nativeDocumentChanges": 2
+      },
+      "cleanupErrors": [],
+      "initialBundle": {
+        "bundleID": "candidate",
+        "revision": 1,
+        "previousBundleID": null,
+        "opencodeVersion": "2.0.26",
+        "artifactManifestSha256": "7a6e1a534d834c1fd1935e731ecea6ebd9324016f2578848033e6bad6faebebd"
+      },
+      "subscription": {
+        "readyAcknowledgedAtMs": 23253.863625000005,
+        "transport": "websocket",
+        "error": null
+      },
+      "finalBundle": {
+        "bundleID": "candidate",
+        "revision": 1,
+        "previousBundleID": null,
+        "opencodeVersion": "2.0.26",
+        "artifactManifestSha256": "7a6e1a534d834c1fd1935e731ecea6ebd9324016f2578848033e6bad6faebebd"
+      },
+      "cleanup": {
+        "source": "retained-os-process-ancestry-and-start-identities",
+        "rootPid": 81053,
+        "rootObserved": true,
+        "observationIntervalMs": 500,
+        "observationErrors": [],
+        "observedProcesses": [
+          {
+            "pid": 81053,
+            "parentPid": 79995,
+            "startIdentity": "Sat Oct 10 00:26:59 2026"
+          },
+          {
+            "pid": 81055,
+            "parentPid": 81053,
+            "startIdentity": "Sat Oct 10 00:26:59 2026"
+          },
+          {
+            "pid": 81057,
+            "parentPid": 81055,
+            "startIdentity": "Sat Oct 10 00:26:59 2026"
+          },
+          {
+            "pid": 81062,
+            "parentPid": 81053,
+            "startIdentity": "Sat Oct 10 00:26:59 2026"
+          },
+          {
+            "pid": 81063,
+            "parentPid": 81053,
+            "startIdentity": "Sat Oct 10 00:26:59 2026"
+          },
+          {
+            "pid": 81066,
+            "parentPid": 81053,
+            "startIdentity": "Sat Oct 10 00:27:00 2026"
+          },
+          {
+            "pid": 81078,
+            "parentPid": 81053,
+            "startIdentity": "Sat Oct 10 00:27:02 2026"
+          },
+          {
+            "pid": 81081,
+            "parentPid": 81053,
+            "startIdentity": "Sat Oct 10 00:27:02 2026"
+          },
+          {
+            "pid": 81089,
+            "parentPid": 81053,
+            "startIdentity": "Sat Oct 10 00:27:03 2026"
+          },
+          {
+            "pid": 81149,
+            "parentPid": 81053,
+            "startIdentity": "Sat Oct 10 00:27:05 2026"
+          },
+          {
+            "pid": 81178,
+            "parentPid": 81053,
+            "startIdentity": "Sat Oct 10 00:27:06 2026"
+          },
+          {
+            "pid": 81219,
+            "parentPid": 81053,
+            "startIdentity": "Sat Oct 10 00:27:11 2026"
+          },
+          {
+            "pid": 81240,
+            "parentPid": 81053,
+            "startIdentity": "Sat Oct 10 00:27:12 2026"
+          },
+          {
+            "pid": 81282,
+            "parentPid": 81053,
+            "startIdentity": "Sat Oct 10 00:27:14 2026"
+          },
+          {
+            "pid": 81285,
+            "parentPid": 81053,
+            "startIdentity": "Sat Oct 10 00:27:15 2026"
+          },
+          {
+            "pid": 81288,
+            "parentPid": 81053,
+            "startIdentity": "Sat Oct 10 00:27:16 2026"
+          },
+          {
+            "pid": 81294,
+            "parentPid": 81053,
+            "startIdentity": "Sat Oct 10 00:27:17 2026"
+          },
+          {
+            "pid": 81307,
+            "parentPid": 81053,
+            "startIdentity": "Sat Oct 10 00:27:18 2026"
+          },
+          {
+            "pid": 81308,
+            "parentPid": 81053,
+            "startIdentity": "Sat Oct 10 00:27:18 2026"
+          },
+          {
+            "pid": 81313,
+            "parentPid": 81307,
+            "startIdentity": "Sat Oct 10 00:27:18 2026"
+          },
+          {
+            "pid": 81317,
+            "parentPid": 81053,
+            "startIdentity": "Sat Oct 10 00:27:18 2026"
+          },
+          {
+            "pid": 81318,
+            "parentPid": 81317,
+            "startIdentity": "Sat Oct 10 00:27:18 2026"
+          },
+          {
+            "pid": 81338,
+            "parentPid": 81053,
+            "startIdentity": "Sat Oct 10 00:27:19 2026"
+          },
+          {
+            "pid": 81515,
+            "parentPid": 81053,
+            "startIdentity": "Sat Oct 10 00:27:22 2026"
+          },
+          {
+            "pid": 81542,
+            "parentPid": 81053,
+            "startIdentity": "Sat Oct 10 00:27:22 2026"
+          },
+          {
+            "pid": 81543,
+            "parentPid": 81053,
+            "startIdentity": "Sat Oct 10 00:27:22 2026"
+          },
+          {
+            "pid": 81647,
+            "parentPid": 81053,
+            "startIdentity": "Sat Oct 10 00:27:22 2026"
+          },
+          {
+            "pid": 81650,
+            "parentPid": 81053,
+            "startIdentity": "Sat Oct 10 00:27:22 2026"
+          },
+          {
+            "pid": 81680,
+            "parentPid": 81053,
+            "startIdentity": "Sat Oct 10 00:27:22 2026"
+          },
+          {
+            "pid": 81698,
+            "parentPid": 81053,
+            "startIdentity": "Sat Oct 10 00:27:22 2026"
+          },
+          {
+            "pid": 81724,
+            "parentPid": 81053,
+            "startIdentity": "Sat Oct 10 00:27:23 2026"
+          },
+          {
+            "pid": 81727,
+            "parentPid": 81053,
+            "startIdentity": "Sat Oct 10 00:27:23 2026"
+          },
+          {
+            "pid": 81794,
+            "parentPid": 81053,
+            "startIdentity": "Sat Oct 10 00:27:23 2026"
+          },
+          {
+            "pid": 81797,
+            "parentPid": 81053,
+            "startIdentity": "Sat Oct 10 00:27:23 2026"
+          },
+          {
+            "pid": 81837,
+            "parentPid": 81053,
+            "startIdentity": "Sat Oct 10 00:27:24 2026"
+          },
+          {
+            "pid": 81840,
+            "parentPid": 81053,
+            "startIdentity": "Sat Oct 10 00:27:24 2026"
+          }
+        ],
+        "remainingProcessIds": [],
+        "signals": [],
+        "trackingClosed": true
+      }
+    },
+    {
+      "iteration": 2,
+      "startup": {
+        "outcome": "passed",
+        "startupMode": "natural",
+        "scope": "fresh-process/fresh-profile; actual native backend; local HTTP model fixture",
+        "clock": "parent performance.now; elapsed milliseconds since spawn invocation",
+        "pollIntervalMs": 100,
+        "forcedNavigations": 0,
+        "documents": [
+          {
+            "observedAtMs": 5330.452750000011,
+            "timeOrigin": 1791577661400.1,
+            "href": "http://127.0.0.1:58653/",
+            "readyState": "loading",
+            "visibilityState": "visible",
+            "composer": false,
+            "newChat": false,
+            "model": false,
+            "modelLabels": [],
+            "selectedModel": null,
+            "sessionID": null,
+            "navigation": {
+              "type": "navigate",
+              "domContentLoadedEventEnd": 0,
+              "loadEventEnd": 0,
+              "duration": 0
+            },
+            "paints": []
+          },
+          {
+            "observedAtMs": 13714.689375000002,
+            "timeOrigin": 1791577661711.3,
+            "href": "http://127.0.0.1:58653/",
+            "readyState": "complete",
+            "visibilityState": "visible",
+            "composer": false,
+            "newChat": false,
+            "model": false,
+            "modelLabels": [],
+            "selectedModel": {
+              "providerId": "",
+              "modelId": "",
+              "catalogAvailable": false
+            },
+            "sessionID": null,
+            "navigation": {
+              "type": "reload",
+              "domContentLoadedEventEnd": 29,
+              "loadEventEnd": 30.299999997019768,
+              "duration": 30.299999997019768
+            },
+            "paints": [
+              {
+                "name": "first-paint",
+                "startTime": 44
+              },
+              {
+                "name": "first-contentful-paint",
+                "startTime": 44
+              }
+            ]
+          },
+          {
+            "observedAtMs": 15909.704417,
+            "timeOrigin": 1791577672082.3,
+            "href": "http://127.0.0.1:58653/",
+            "readyState": "loading",
+            "visibilityState": "visible",
+            "composer": false,
+            "newChat": false,
+            "model": false,
+            "modelLabels": [],
+            "selectedModel": null,
+            "sessionID": null,
+            "navigation": {
+              "type": "reload",
+              "domContentLoadedEventEnd": 0,
+              "loadEventEnd": 0,
+              "duration": 0
+            },
+            "paints": []
+          }
+        ],
+        "healthObservations": [
+          {
+            "observedAtMs": 5333.990625000006,
+            "state": "idle",
+            "attempt": 0,
+            "code": null
+          },
+          {
+            "observedAtMs": 5535.334792000009,
+            "state": "starting",
+            "attempt": 1,
+            "code": null
+          },
+          {
+            "observedAtMs": 13702.550959,
+            "state": "ready",
+            "attempt": 1,
+            "code": null
+          }
+        ],
+        "nativeStartupObservation": "observed",
+        "cdpTargetMs": 561.2899590000015,
+        "loopbackOriginMs": 5321.958666999999,
+        "lastObservedDocument": {
+          "timeOrigin": 1791577672082.3,
+          "href": "http://127.0.0.1:58653/",
+          "readyState": "complete",
+          "visibilityState": "visible",
+          "composer": true,
+          "newChat": true,
+          "model": true,
+          "modelLabels": [
+            "smoke-write"
+          ],
+          "selectedModel": {
+            "providerId": "devryan-smoke",
+            "modelId": "smoke-write",
+            "agent": "builder",
+            "catalogAvailable": true
+          },
+          "sessionID": null,
+          "navigation": {
+            "type": "reload",
+            "domContentLoadedEventEnd": 36.600000001490116,
+            "loadEventEnd": 38.80000000447035,
+            "duration": 38.80000000447035
+          },
+          "paints": [
+            {
+              "name": "first-paint",
+              "startTime": 56
+            },
+            {
+              "name": "first-contentful-paint",
+              "startTime": 56
+            }
+          ]
+        },
+        "firstObservedDocument": {
+          "timeOrigin": 1791577661400.1,
+          "href": "http://127.0.0.1:58653/",
+          "readyState": "loading",
+          "visibilityState": "visible",
+          "composer": false,
+          "newChat": false,
+          "model": false,
+          "modelLabels": [],
+          "selectedModel": null,
+          "sessionID": null,
+          "navigation": {
+            "type": "navigate",
+            "domContentLoadedEventEnd": 0,
+            "loadEventEnd": 0,
+            "duration": 0
+          },
+          "paints": []
+        },
+        "hostAvailableMs": 5333.990625000006,
+        "nativeStartupReadyMs": 13702.550959,
+        "hostReadyMs": 13702.594292000009,
+        "fixtureCatalogReadyMs": 13713.67033400001,
+        "firstSelectedModel": {
+          "observedAtMs": 14734.956542,
+          "providerId": "opencode",
+          "modelId": "fledge-alpha-free",
+          "catalogAvailable": true
+        },
+        "document": {
+          "timeOrigin": 1791577672082.3,
+          "href": "http://127.0.0.1:58653/",
+          "readyState": "complete",
+          "visibilityState": "visible",
+          "composer": true,
+          "newChat": true,
+          "model": true,
+          "modelLabels": [
+            "smoke-write"
+          ],
+          "selectedModel": {
+            "providerId": "devryan-smoke",
+            "modelId": "smoke-write",
+            "agent": "builder",
+            "catalogAvailable": true
+          },
+          "sessionID": null,
+          "navigation": {
+            "type": "reload",
+            "domContentLoadedEventEnd": 36.600000001490116,
+            "loadEventEnd": 38.80000000447035,
+            "duration": 38.80000000447035
+          },
+          "paints": [
+            {
+              "name": "first-paint",
+              "startTime": 56
+            },
+            {
+              "name": "first-contentful-paint",
+              "startTime": 56
+            }
+          ]
+        },
+        "uiReadyMs": 16514.416209000003,
+        "electronStartupPhases": {
+          "source": "injected-launch-records",
+          "collectedAtMs": 16514.426875000005,
+          "records": [
+            {
+              "phase": "shell_environment",
+              "outcome": "completed",
+              "durationMs": 15
+            },
+            {
+              "phase": "foreground_preparation",
+              "outcome": "completed",
+              "durationMs": 8
+            },
+            {
+              "phase": "server_import",
+              "outcome": "completed",
+              "durationMs": 2960
+            },
+            {
+              "phase": "server_listen",
+              "outcome": "completed",
+              "durationMs": 542
+            },
+            {
+              "phase": "initial_url",
+              "outcome": "completed",
+              "durationMs": 4633
+            },
+            {
+              "phase": "renderer_navigation",
+              "outcome": "completed",
+              "durationMs": 207
+            }
+          ]
+        },
+        "nativeTransitions": [
+          {
+            "elapsedMs": 562.4779590000107,
+            "url": "data:startup-document",
+            "loaderId": null,
+            "kind": "initial-cdp-target"
+          },
+          {
+            "elapsedMs": 5248.167291999998,
+            "url": "http://127.0.0.1:58653/",
+            "loaderId": "6962355A139516E20FDFD290C36880E4",
+            "kind": "native-top-frame-navigation"
+          },
+          {
+            "elapsedMs": 5510.6077090000035,
+            "url": "http://127.0.0.1:58653/",
+            "loaderId": "7D30C575E4E8B5BC09239C8C22203287",
+            "kind": "native-top-frame-navigation"
+          },
+          {
+            "elapsedMs": 15888.419167,
+            "url": "http://127.0.0.1:58653/",
+            "loaderId": "0BC35A972A9C02E2C912CB5E981720BD",
+            "kind": "native-top-frame-navigation"
+          }
+        ],
+        "benchmarkNavigationAttempts": [],
+        "nativeDocumentChanges": 2
+      },
+      "cleanupErrors": [],
+      "initialBundle": {
+        "bundleID": "candidate",
+        "revision": 1,
+        "previousBundleID": null,
+        "opencodeVersion": "2.0.26",
+        "artifactManifestSha256": "7a6e1a534d834c1fd1935e731ecea6ebd9324016f2578848033e6bad6faebebd"
+      },
+      "subscription": {
+        "readyAcknowledgedAtMs": 16138.394874999998,
+        "transport": "websocket",
+        "error": null
+      },
+      "finalBundle": {
+        "bundleID": "candidate",
+        "revision": 1,
+        "previousBundleID": null,
+        "opencodeVersion": "2.0.26",
+        "artifactManifestSha256": "7a6e1a534d834c1fd1935e731ecea6ebd9324016f2578848033e6bad6faebebd"
+      },
+      "cleanup": {
+        "source": "retained-os-process-ancestry-and-start-identities",
+        "rootPid": 81974,
+        "rootObserved": true,
+        "observationIntervalMs": 500,
+        "observationErrors": [],
+        "observedProcesses": [
+          {
+            "pid": 81974,
+            "parentPid": 79995,
+            "startIdentity": "Sat Oct 10 00:27:36 2026"
+          },
+          {
+            "pid": 81979,
+            "parentPid": 81974,
+            "startIdentity": "Sat Oct 10 00:27:36 2026"
+          },
+          {
+            "pid": 81980,
+            "parentPid": 81974,
+            "startIdentity": "Sat Oct 10 00:27:36 2026"
+          },
+          {
+            "pid": 81984,
+            "parentPid": 81974,
+            "startIdentity": "Sat Oct 10 00:27:36 2026"
+          },
+          {
+            "pid": 82018,
+            "parentPid": 81974,
+            "startIdentity": "Sat Oct 10 00:27:39 2026"
+          },
+          {
+            "pid": 82023,
+            "parentPid": 81974,
+            "startIdentity": "Sat Oct 10 00:27:40 2026"
+          },
+          {
+            "pid": 82034,
+            "parentPid": 81974,
+            "startIdentity": "Sat Oct 10 00:27:41 2026"
+          },
+          {
+            "pid": 82051,
+            "parentPid": 81974,
+            "startIdentity": "Sat Oct 10 00:27:42 2026"
+          },
+          {
+            "pid": 82070,
+            "parentPid": 81974,
+            "startIdentity": "Sat Oct 10 00:27:43 2026"
+          },
+          {
+            "pid": 82075,
+            "parentPid": 81974,
+            "startIdentity": "Sat Oct 10 00:27:44 2026"
+          },
+          {
+            "pid": 82082,
+            "parentPid": 81974,
+            "startIdentity": "Sat Oct 10 00:27:44 2026"
+          },
+          {
+            "pid": 82085,
+            "parentPid": 81974,
+            "startIdentity": "Sat Oct 10 00:27:45 2026"
+          },
+          {
+            "pid": 82090,
+            "parentPid": 81974,
+            "startIdentity": "Sat Oct 10 00:27:46 2026"
+          },
+          {
+            "pid": 82094,
+            "parentPid": 81974,
+            "startIdentity": "Sat Oct 10 00:27:47 2026"
+          },
+          {
+            "pid": 82107,
+            "parentPid": 81974,
+            "startIdentity": "Sat Oct 10 00:27:48 2026"
+          },
+          {
+            "pid": 82108,
+            "parentPid": 81974,
+            "startIdentity": "Sat Oct 10 00:27:48 2026"
+          },
+          {
+            "pid": 82113,
+            "parentPid": 82107,
+            "startIdentity": "Sat Oct 10 00:27:48 2026"
+          },
+          {
+            "pid": 82117,
+            "parentPid": 81974,
+            "startIdentity": "Sat Oct 10 00:27:49 2026"
+          },
+          {
+            "pid": 82118,
+            "parentPid": 82117,
+            "startIdentity": "Sat Oct 10 00:27:49 2026"
+          },
+          {
+            "pid": 82144,
+            "parentPid": 81974,
+            "startIdentity": "Sat Oct 10 00:27:49 2026"
+          },
+          {
+            "pid": 82278,
+            "parentPid": 81974,
+            "startIdentity": "Sat Oct 10 00:27:52 2026"
+          },
+          {
+            "pid": 82306,
+            "parentPid": 81974,
+            "startIdentity": "Sat Oct 10 00:27:52 2026"
+          },
+          {
+            "pid": 82307,
+            "parentPid": 81974,
+            "startIdentity": "Sat Oct 10 00:27:52 2026"
+          },
+          {
+            "pid": 82411,
+            "parentPid": 81974,
+            "startIdentity": "Sat Oct 10 00:27:52 2026"
+          },
+          {
+            "pid": 82442,
+            "parentPid": 81974,
+            "startIdentity": "Sat Oct 10 00:27:52 2026"
+          },
+          {
+            "pid": 82445,
+            "parentPid": 81974,
+            "startIdentity": "Sat Oct 10 00:27:52 2026"
+          },
+          {
+            "pid": 82497,
+            "parentPid": 81974,
+            "startIdentity": "Sat Oct 10 00:27:53 2026"
+          },
+          {
+            "pid": 82567,
+            "parentPid": 81974,
+            "startIdentity": "Sat Oct 10 00:27:53 2026"
+          },
+          {
+            "pid": 82570,
+            "parentPid": 81974,
+            "startIdentity": "Sat Oct 10 00:27:53 2026"
+          },
+          {
+            "pid": 82625,
+            "parentPid": 81974,
+            "startIdentity": "Sat Oct 10 00:27:54 2026"
+          }
+        ],
+        "remainingProcessIds": [],
+        "signals": [],
+        "trackingClosed": true
+      }
+    }
+  ],
+  "unavailable": [
+    "foreground warm service",
+    "foreground cold service",
+    "foreground stale-owner recovery",
+    "foreground service upgrade"
+  ],
+  "excluded": [
+    "launchd/SMAppService registration",
+    "installed state",
+    "paid providers",
+    "first native-bundle provisioning",
+    "cold OS caches"
+  ],
+  "summary": {
+    "launches": 3,
+    "medianUiReadyMs": 23486.219749999997,
+    "minimumUiReadyMs": 16514.416209000003,
+    "maximumUiReadyMs": 33312.674583
+  }
+}

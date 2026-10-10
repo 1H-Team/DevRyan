@@ -1,0 +1,162 @@
+{
+  "qualification": "isolated-packaged-app-foreground-admission-synthetic-provider-shape-only",
+  "outcome": "passed",
+  "startupMode": "foreground",
+  "timingQualification": "foreground-controlled admission, not natural startup latency",
+  "sourceSha256": "83673008fe4c508f94cf6acc1ebf18eacfa68f258a4d32860137c8211535f49e",
+  "archiveSha256": "492d6ce59621732836e38adc6ee2672b15e98c5db429965e5713620e887ac666",
+  "nativeSmoke": {
+    "electron": "41.2.1",
+    "nodeModuleAbi": "145",
+    "sqlite": "passed",
+    "pty": "passed"
+  },
+  "signing": "disabled",
+  "publication": "disabled",
+  "packagedManifestSha256": "5322d773bc2733c2e2ec06bc9a2b2a8cf8a0cb9da62889d38809c6174a777126",
+  "isolatedBuildId": "a540a857a63f20c0007beb58f4c965ed41290fe269fd853c6318c2bbd766a4e2",
+  "packagedBuildId": "e74afda2759a83cf5ecd13033002577a810439402aff49f8def98ee4a2584c98",
+  "inputComparison": {
+    "buildSources": true,
+    "lockSha256": true,
+    "coreDigest": true,
+    "hostDigest": true,
+    "sourceFiles": true,
+    "resolvedPackages": false,
+    "reviewedInputProvenance": true,
+    "nativeRegistrations": true,
+    "reviewedPlugins": true,
+    "transforms": true
+  },
+  "summary": {
+    "launches": 3,
+    "medianUiReadyMs": 49845.49295799999,
+    "minimumUiReadyMs": 49242.52516600001,
+    "maximumUiReadyMs": 99050.19379199998
+  },
+  "runs": [
+    {
+      "iteration": 0,
+      "outcome": "passed",
+      "uiReadyMs": 99050.19379199998,
+      "nativeReadyMs": 85239.571375,
+      "forcedNavigations": 0,
+      "visibility": "visible",
+      "selectedModel": {
+        "providerId": "devryan-smoke",
+        "modelId": "smoke-write",
+        "agent": "builder",
+        "catalogAvailable": true
+      },
+      "eventStream": {
+        "readyAcknowledgedAtMs": 91789.05979199999,
+        "transport": "websocket",
+        "error": null
+      },
+      "catalog": {
+        "status": 200,
+        "providerID": "cursor-acp",
+        "expected": 282,
+        "matched": 282,
+        "pickerModelID": "composer-2.5",
+        "pickerModelVisible": true
+      },
+      "background": {
+        "agentWarmupAtMs": 100017.46262499999,
+        "updateChecks": 0
+      },
+      "updateObservationAfterUiMs": 4000,
+      "foregroundActivation": {
+        "method": "desktop_focus_main_window",
+        "outcome": "acknowledged",
+        "focused": true
+      },
+      "artifactManifestSha256": "bc6c9b5af194fac6373f1c8c109feb91c476beb25c97e26f353a83955c636d7d",
+      "deferredStartupFailure": false,
+      "cleanupErrors": [],
+      "remainingProcesses": []
+    },
+    {
+      "iteration": 1,
+      "outcome": "passed",
+      "uiReadyMs": 49242.52516600001,
+      "nativeReadyMs": 46092.34445800001,
+      "forcedNavigations": 0,
+      "visibility": "visible",
+      "selectedModel": {
+        "providerId": "devryan-smoke",
+        "modelId": "smoke-write",
+        "agent": "builder",
+        "catalogAvailable": true
+      },
+      "eventStream": {
+        "readyAcknowledgedAtMs": 47367.82062500002,
+        "transport": "websocket",
+        "error": null
+      },
+      "catalog": {
+        "status": 200,
+        "providerID": "cursor-acp",
+        "expected": 282,
+        "matched": 282,
+        "pickerModelID": "composer-2.5",
+        "pickerModelVisible": true
+      },
+      "background": {
+        "agentWarmupAtMs": 50244.870375,
+        "updateChecks": 0
+      },
+      "updateObservationAfterUiMs": 4000,
+      "foregroundActivation": {
+        "method": "desktop_focus_main_window",
+        "outcome": "acknowledged",
+        "focused": true
+      },
+      "artifactManifestSha256": "bc6c9b5af194fac6373f1c8c109feb91c476beb25c97e26f353a83955c636d7d",
+      "deferredStartupFailure": false,
+      "cleanupErrors": [],
+      "remainingProcesses": []
+    },
+    {
+      "iteration": 2,
+      "outcome": "passed",
+      "uiReadyMs": 49845.49295799999,
+      "nativeReadyMs": 46520.490374999994,
+      "forcedNavigations": 0,
+      "visibility": "visible",
+      "selectedModel": {
+        "providerId": "devryan-smoke",
+        "modelId": "smoke-write",
+        "agent": "builder",
+        "catalogAvailable": true
+      },
+      "eventStream": {
+        "readyAcknowledgedAtMs": 46856.191374999995,
+        "transport": "websocket",
+        "error": null
+      },
+      "catalog": {
+        "status": 200,
+        "providerID": "cursor-acp",
+        "expected": 282,
+        "matched": 282,
+        "pickerModelID": "composer-2.5",
+        "pickerModelVisible": true
+      },
+      "background": {
+        "agentWarmupAtMs": 50685.380166999996,
+        "updateChecks": 0
+      },
+      "updateObservationAfterUiMs": 4000,
+      "foregroundActivation": {
+        "method": "desktop_focus_main_window",
+        "outcome": "acknowledged",
+        "focused": true
+      },
+      "artifactManifestSha256": "bc6c9b5af194fac6373f1c8c109feb91c476beb25c97e26f353a83955c636d7d",
+      "deferredStartupFailure": false,
+      "cleanupErrors": [],
+      "remainingProcesses": []
+    }
+  ]
+}

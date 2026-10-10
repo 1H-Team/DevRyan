@@ -2,6 +2,7 @@ import {expect,test} from 'bun:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {Database} from 'bun:sqlite';
+import {createRequire} from 'node:module';
 import {prepareReviewedNativeInputs,reviewedNativeInputPlugin} from '../native-runtime-assets.mjs';
 import {createNativeAssetFixturePlugin,writeNativeFixtureOutputs} from './native-asset-fixture.mjs';
 
@@ -16,6 +17,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {Effect} from 'effect';
+import {Database as FixtureDatabase} from 'bun:sqlite';
 import {isReviewedControllerGitArgs} from ${JSON.stringify(path.join(host,'../execution-helper-policy.js'))};
 const root=process.env.DEVRYAN_CATALOG_ROOT;
 const directories=[path.join(root,'one'),path.join(root,'two')];
@@ -51,23 +53,34 @@ const snapshot={schema:1,revision:1,digest:'a'.repeat(64),registrationManifestDi
 const token='a'.repeat(43);let runtime;
 try{
  globalThis.coldControllerHelper=controllerHelper;
- runtime=await startNativeController({instanceID:'isolated-cold-controller',buildId:'d'.repeat(64),globals,
+ const start=()=>startNativeController({instanceID:'isolated-cold-controller',buildId:'d'.repeat(64),globals,
   databasePath:path.join(globals.data,'native.db'),directory:directories[0],
   locations:directories.map(directory=>({directory,readRoots:[directory],protectedRoots:[]})),configuration,
   configurationSnapshot:snapshot,reviewedPlugins:[],catalogRequirements:requirements,httpToken:token,
   bridge:{url:'http://127.0.0.1:1',token:'offline-fixture'}},
   {coreDigest:'b'.repeat(64),hostDigest:'c'.repeat(64),reviewedPlugins:[],migration:'not-needed'});
+ runtime=await start();
+ await runtime.close();runtime=undefined;
+ const fixtureDB=new FixtureDatabase(path.join(globals.data,'native.db'));
+ try{
+  fixtureDB.query('INSERT INTO credential (id,integration_id,label,value,active,connector_id,method_id,time_created,time_updated) VALUES (?,?,?,?,1,NULL,NULL,?,?)')
+   .run('crd_legacy_fixture','openai','Synthetic retired login',JSON.stringify({type:'oauth',methodID:'chatgpt-browser',access:'synthetic-access',refresh:'synthetic-refresh',expires:Date.now()+3600000,metadata:{accountID:'synthetic-account'}}),Date.now(),Date.now());
+ }finally{fixtureDB.close();}
+ runtime=await start();
  assert.equal(runtime.catalog.asserted,true);
  for(const directory of directories){
   const url=new URL(runtime.url+'/api/agent');
   const response=await nativeFetch(url,{headers:{authorization:'Bearer '+token,'x-opencode-directory':encodeURIComponent(directory)}});
   assert.equal(response.status,200);const body=await response.json();
   assert.equal(body.location.directory,directory);assert.ok(body.data.some(agent=>agent.id==='orchestrator'));
+  const models=await nativeFetch(runtime.url+'/api/model',{headers:{authorization:'Bearer '+token,'x-opencode-directory':encodeURIComponent(directory)}});
+  assert.equal(models.status,200);assert.ok(Array.isArray((await models.json()).data));
  }
  process.stdout.write(JSON.stringify({catalogAsserted:true,locations:directories.length}));
 }finally{await runtime?.close();}
 `);
   const helperFixture={name:'owned-read-only-git-discovery',setup(builder:Bun.PluginBuilder){
+   builder.onResolve({filter:/^adm-zip$/},()=>({path:createRequire(path.join(repository,'packages/shared-runtime/package.json')).resolve('adm-zip')}));
    builder.onLoad({filter:/\/controller-processes\.ts$/},async event=>{
     const source=await fs.readFile(event.path,'utf8'),start=source.indexOf('export function createControllerHelper('),end=source.indexOf('export function controllerProcessOverrides(');
     if(start<0||end<=start)throw Error('Original controller helper boundary missing');

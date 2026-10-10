@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "attempts": [
+    {
+      "run": "native-startup-6CrHiZ",
+      "outcome": "failed",
+      "stage": "fixture-preparation",
+      "code": "qa_runtime_fixture_path_invalid",
+      "appLaunched": false
+    },
+    {
+      "run": "native-startup-GY5WU9",
+      "outcome": "failed",
+      "stage": "subscription-observation",
+      "error": "Timed out: first usable UI after native startup documents\n\n'failed' !== 'passed'\n",
+      "nativeStartupReadyMs": 18690.301458,
+      "lastObservedDocument": {
+        "timeOrigin": 1791569633462.5,
+        "href": "http://127.0.0.1:54355/",
+        "readyState": "complete",
+        "visibilityState": "visible",
+        "composer": true,
+        "newChat": true,
+        "model": true,
+        "modelLabels": [
+          "smoke-write"
+        ],
+        "selectedModel": {
+          "providerId": "devryan-smoke",
+          "modelId": "smoke-write",
+          "agent": "builder",
+          "catalogAvailable": true
+        },
+        "sessionID": null,
+        "navigation": {
+          "type": "reload",
+          "domContentLoadedEventEnd": 45.30000000447035,
+          "loadEventEnd": 46.100000001490116,
+          "duration": 46.100000001490116
+        },
+        "paints": [
+          {
+            "name": "first-paint",
+            "startTime": 72
+          },
+          {
+            "name": "first-contentful-paint",
+            "startTime": 72
+          }
+        ]
+      },
+      "subscription": {
+        "readyAcknowledgedAtMs": null,
+        "error": null
+      },
+      "cleanupErrors": [],
+      "qualification": "Observer did not cover renderer WebSocket transport; no usable-chat timing acceptance"
+    },
+    {
+      "run": "native-startup-LxTzam",
+      "outcome": "failed",
+      "stage": "upgrade-fixture-compatibility",
+      "error": "QA host readiness failed: bundle_upgrade_required\n\n'failed' !== 'passed'\n",
+      "initialBundle": {
+        "bundleID": "candidate",
+        "revision": 1,
+        "previousBundleID": null,
+        "opencodeVersion": "2.0.20",
+        "artifactManifestSha256": "ea707b249817c16e41839c87772ba7ef9fa0a630463fc5df6569e0b8f2360aad"
+      },
+      "startupFailure": {
+        "observedAtMs": 12717.391792000002,
+        "state": "failed",
+        "attempt": 1,
+        "code": "bundle_upgrade_required"
+      },
+      "phases": {
+        "source": "injected-launch-records",
+        "collectedAtMs": 12717.712625,
+        "records": [
+          {
+            "phase": "bundle_upgrade",
+            "outcome": "failed",
+            "durationMs": 6096,
+            "code": "bundle_v2_upgrade_compatibility_required"
+          },
+          {
+            "phase": "shell_environment",
+            "outcome": "completed",
+            "durationMs": 12
+          },
+          {
+            "phase": "foreground_preparation",
+            "outcome": "completed",
+            "durationMs": 9
+          },
+          {
+            "phase": "bundle_upgrade",
+            "outcome": "failed",
+            "durationMs": 6096,
+            "code": "bundle_v2_upgrade_compatibility_required"
+          },
+          {
+            "phase": "server_import",
+            "outcome": "completed",
+            "durationMs": 8826
+          },
+          {
+            "phase": "server_listen",
+            "outcome": "completed",
+            "durationMs": 533
+          },
+          {
+            "phase": "initial_url",
+            "outcome": "completed",
+            "durationMs": 10341
+          },
+          {
+            "phase": "renderer_navigation",
+            "outcome": "completed",
+            "durationMs": 217
+          }
+        ]
+      },
+      "cleanupErrors": [],
+      "qualification": "Legacy synthetic source layout refused by production compatibility guard; no upgrade timing acceptance"
+    }
+  ]
+}

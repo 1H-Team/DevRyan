@@ -27,6 +27,14 @@ describe('selected native provider configuration owner',()=>{
     expect(fs.readFileSync(`${user}.openchamber.backup`,'utf8')).toBe(before);expect(fs.readFileSync(project,'utf8')).toContain('openai');expect(committed).toEqual(['auth','user']);
     expect(f.credentialOperation.mock.calls[0][0]).toMatchObject({operation:'openai.credential.remove',expectedFingerprint:f.row.expectedFingerprint,directory:f.project});
   });
+  it.each([
+    ['xai', 'device', true], ['xai', 'chatgpt-siwc', false], ['openai', 'chatgpt-siwc', true], ['openai', 'device', false], ['opencode-go', 'device', false],
+  ])('validates oauth credential metadata by provider: %s %s accepted=%s',async(providerID,methodID,accepted)=>{
+    const f=fixture(providerID);f.row.valueType='oauth';f.row.methodID=methodID;
+    const result=f.run({providerID,scope:'all'},owner=>owner.readAuthenticationSource());
+    if(accepted)await expect(result).resolves.toEqual({exists:true,path:null});
+    else await expect(result).rejects.toMatchObject({code:'native_credential_metadata_invalid'});
+  });
   it('preserves exact selected project sources and removes all four project layers',async()=>{
     const f=fixture('cursor-acp');fs.mkdirSync(path.join(f.project,'.opencode'));
     const files=['opencode.json','opencode.jsonc','.opencode/opencode.json','.opencode/opencode.jsonc'].map(name=>path.join(f.project,name));

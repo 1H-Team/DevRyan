@@ -1,4 +1,5 @@
 import type { AgentModelSelection } from '@/lib/agentModelSelection';
+import { isProviderModelAvailable, type ProviderModelAvailability } from '@/lib/providers/modelAvailability';
 import { resolveProviderModelVariant } from '@/lib/providers/variantControls';
 
 export type AgentDefaultSource = 'personal' | 'inherited' | 'host-managed' | 'availability-fallback';
@@ -17,6 +18,7 @@ export type AgentDefaultProvider = {
     id: string;
     variants?: Record<string, unknown>;
     available?: boolean;
+    unavailableReason?: ProviderModelAvailability['unavailableReason'];
   }>;
 };
 
@@ -73,6 +75,21 @@ export const resolveAgentDefaultSelection = ({
     source: isSingleModelAgentDefault(agent) ? 'inherited' as const : 'host-managed' as const,
   };
   const provider = providers.find(entry => entry.id === candidate.providerId);
+  const candidateModel = provider?.models?.find((model) => model.id === candidate.modelId);
+  // Only a model the signed-in account type cannot use is replaced, and only within
+  // its provider. Retired models and account-lookup outages keep the saved choice.
+  if (candidateModel?.unavailableReason === 'auth_type_unsupported') {
+    const fallbackModel = provider?.models?.find(isProviderModelAvailable);
+    if (fallbackModel) {
+      return {
+        providerId: candidate.providerId,
+        modelId: fallbackModel.id,
+        variant: resolveProviderModelVariant(provider, fallbackModel.id, candidate.variant) ?? null,
+        source: 'availability-fallback',
+        agentName: agent.name,
+      };
+    }
+  }
   return { ...candidate, variant: resolveProviderModelVariant(provider, candidate.modelId, candidate.variant) ?? null,
     agentName: agent.name };
 };

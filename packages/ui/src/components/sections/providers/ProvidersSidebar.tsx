@@ -271,7 +271,7 @@ const ProviderListItem: React.FC<{
   const { t } = useI18n();
   const modelCount = getProviderModelsForDisplay(
     provider as { id?: string; models?: Array<{ id?: string; name?: string }> },
-    { hidePairedFastModels: true },
+    { hidePairedFastModels: true, hideUnavailable: true },
   ).length;
   const isSelected = provider.id === selectedProviderId;
   const providerName = getProviderDisplayName(provider, sources);

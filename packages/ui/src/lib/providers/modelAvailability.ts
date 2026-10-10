@@ -4,6 +4,12 @@ export type ProviderModelAvailability = {
   requiredAuthType?: 'api';
 };
 
+/** Provider-level fields the server adds when it annotates ChatGPT account models. */
+export type ProviderAccountModelFields = {
+  authType?: string;
+  accountModelsStatus?: 'available' | 'unavailable';
+};
+
 export const isProviderModelAvailable = (
   model: unknown,
 ): boolean => !model || typeof model !== 'object' || (model as ProviderModelAvailability).available !== false;
@@ -39,6 +45,15 @@ export const resolveAvailableProviderModel = (
   }
 
   return null;
+};
+
+export const getProviderModelUnavailability = (
+  model: unknown,
+): { message: string; retryable: boolean } | undefined => {
+  const message = getProviderModelUnavailableMessage(model);
+  if (message === undefined) return undefined;
+  const reason = (model as ProviderModelAvailability).unavailableReason;
+  return { message, retryable: reason === 'account_models_unavailable' };
 };
 
 export const getProviderModelUnavailableMessage = (

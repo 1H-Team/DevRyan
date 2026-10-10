@@ -39,11 +39,18 @@ Examples:
 - `useUpdateStore.ts`
 
 `useAgentRuntimeWarmupStore.ts` is a narrow, non-persisted status store for the
-single directory currently being warmed by the app startup effect. Assistant
+single directory currently being warmed after the app becomes usable. Assistant
 status consumers subscribe only to this string and replace a generic working
 phrase with `Preparing project…` when their active directory matches. The app
 clears the value on warmup settlement and effect cleanup only when it still owns
-the same directory value.
+the same directory value. Optional project discovery (including MCP and command
+catalog prewarming) and Markdown/tool-dialog imports start one second after the
+startup-ready event and do not gate the composer. The backend does not launch
+prewarming for every saved project during startup. Native health, provider/agent
+catalogs, configuration, global/directory sync, session list, response style and
+worktree state still gate readiness. The first automatic update check uses the
+regular one-hour interval after `MainLayout` mounts; explicit checks remain
+immediate.
 
 `useConfigStore.ts` keeps OpenCode connection state separate from its low-frequency
 provider/agent initialization status. A confirmed healthy connection stays connected
@@ -577,6 +584,15 @@ Expected model:
 - `SessionSidebar` may do one-shot bootstrap for expanded visible project/worktree groups if PR info is missing
 - no live PR work for header
 - no background PR sweeps outside visible demand
+
+### Provider usage (quota)
+
+- `quota-refresh-coordinator.ts` owns the usage refresh timer (30-minute baseline, faster when auto-refresh is on).
+- Optional `needsPromptRetry` (wired in `useQuotaStore.ts` to `configuredProviderIds === null`) shortens the next delay to `min(interval, DISCOVERY_RETRY_MS = 15 s)` while provider discovery has not succeeded, e.g. a `503 native_runtime_not_ready` while the runtime starts.
+- Prompt retries are capped at 8 consecutive attempts; the counter resets when the dependency returns false and on `stop()`. Without the dependency the schedule is unchanged.
+- A failed discovery leaves `configuredProviderIds` null and keeps previously known results.
+- Settings → Providers shows a provider's usage panel when a result exists, or when the provider is connected and discovery is failing (`configuredProviderIds === null` with a store `error`), so the reason and the refresh button are visible. A connected provider with no usage source after a successful discovery shows nothing. An account whose usage cannot be read arrives from the server as a `configured: true`, `ok: false` result and renders its `error` text.
+- `ProviderUsagePanel` without a result shows "no data yet" while discovery is pending and "Usage can't be read yet" once discovery finished.
 
 ## Known Intentional Fallbacks
 

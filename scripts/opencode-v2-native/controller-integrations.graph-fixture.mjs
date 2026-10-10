@@ -147,6 +147,7 @@ const controller = { instanceID: 'owned_controller', call: async input => {
   if (input.action === 'credential-operation-owned') return factory.credentialOwned(input);
   if (input.action === 'credential-metadata-owned') return factory.credentialMetadataOwned(input);
   if (input.action === 'openai-read-selected-owned') return factory.readSelectedOwned(input);
+  if (input.action === 'provider-read-selected-owned') return factory.readProviderSelectedOwned(input);
   if (input.action === 'openai-cas-selected-owned') return factory.compareAndSwapSelectedOwned(input);
   throw new Error('Unexpected owned controller action');
 }, killAndWaitForExit: async () => { throw new Error('Transport failures require actual ServerFetch cleanup'); } };

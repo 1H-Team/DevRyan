@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { gradeQaProject } from './acceptance-graders.mjs';
-import { resolveQaTargetOpenCodeVersion, SUPPORTED_NATIVE_OPENCODE_VERSIONS } from '../../packages/web/server/lib/opencode/version-policy.js';
+import { resolveQaTargetOpenCodeVersion, isNativeOpenCodeVersion } from '../../packages/web/server/lib/opencode/version-policy.js';
 import { openCodeBaseVersion } from '../../packages/web/server/lib/opencode/opencode-update-runtime.js';
 import { assertQaCandidateRuntimeVersion } from './runtime-target.mjs';
 import { findQaPlanApprovalUser, projectCompactionTaskSnapshot } from './compaction-scenarios.mjs';
@@ -52,7 +52,7 @@ export const findQaSeededInvestigationStarts = (rows, knownCallIds = new Set()) 
 const v2TriggerEvidenceUnavailable = 'Actual native trigger reason, context estimate and checkpoint journal evidence is required';
 const verifiedCompactionGeneration = version => {
   const base = openCodeBaseVersion(version);
-  if (SUPPORTED_NATIVE_OPENCODE_VERSIONS.includes(base)) return 2;
+  if (isNativeOpenCodeVersion(base)) return 2;
   throw new Error(`Native compaction policy has not been verified for OpenCode ${version}`);
 };
 

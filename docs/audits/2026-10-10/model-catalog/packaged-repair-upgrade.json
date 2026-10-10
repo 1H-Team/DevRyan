@@ -1,0 +1,269 @@
+{
+  "qualification": "Three fresh isolated production app-bound cold upgrades from the exact selected installed artifact, using synthetic state",
+  "outcome": "passed",
+  "scope": "three fresh baseline profiles; production startup upgrade; local HTTP model fixture; foreground-controlled admission",
+  "startupMode": "foreground",
+  "sourceSha256": "85baf5ec4c7351657bbb02a89c74a72c344a5f61434f4edeb2abe23ca15fbc00",
+  "archiveSha256": "7c17aa4f35ddb268f7e330d6b8f6779087b7aeb2219a8874bc178a4e76818037",
+  "summary": {
+    "launches": 3,
+    "medianUiReadyMs": 31331.713709000003,
+    "minimumUiReadyMs": 31245.425209000005,
+    "maximumUiReadyMs": 31391.608208000005
+  },
+  "runs": [
+    {
+      "iteration": 1,
+      "uiReadyMs": 31245.425209000005,
+      "nativeStartupReadyMs": 28924.379042000004,
+      "uiAfterNativeMs": 2321.0461670000004,
+      "foregroundMethod": "desktop_focus_main_window",
+      "forcedNavigations": 0,
+      "subscriptionReady": true,
+      "composerVisible": true,
+      "modelControlVisible": true,
+      "selectedModel": {
+        "providerId": "devryan-smoke",
+        "modelId": "smoke-write",
+        "agent": "builder",
+        "catalogAvailable": true
+      },
+      "catalog": {
+        "status": 200,
+        "providerID": "cursor-acp",
+        "expected": 282,
+        "matched": 282,
+        "pickerModelID": "composer-2.5",
+        "pickerModelVisible": true
+      },
+      "background": {
+        "agentWarmupAtMs": 32207.317166999997,
+        "updateChecks": 0
+      },
+      "initialBundle": {
+        "bundleID": "candidate",
+        "revision": 1,
+        "previousBundleID": null,
+        "opencodeVersion": "2.0.26",
+        "artifactManifestSha256": "504ac9c1c97469d2205bf9e4fffca1dbc5e5e37d033431f574e437b80f9a9110"
+      },
+      "finalBundle": {
+        "bundleID": "native-7459febe9d41e4ff19d92ace-r1",
+        "revision": 2,
+        "previousBundleID": "candidate",
+        "opencodeVersion": "2.0.26",
+        "artifactManifestSha256": "7459febe9d41e4ff19d92ace94df85d3d87ad68b9a5607c812a8f566afb79ec5"
+      },
+      "deferredStartupFailures": 0,
+      "cleanupErrors": [],
+      "remainingProcesses": [],
+      "phases": [
+        {
+          "phase": "shell_environment",
+          "outcome": "completed",
+          "durationMs": 11
+        },
+        {
+          "phase": "foreground_preparation",
+          "outcome": "completed",
+          "durationMs": 8
+        },
+        {
+          "phase": "bundle_upgrade",
+          "outcome": "completed",
+          "durationMs": 17818
+        },
+        {
+          "phase": "server_import",
+          "outcome": "completed",
+          "durationMs": 19723
+        },
+        {
+          "phase": "server_listen",
+          "outcome": "completed",
+          "durationMs": 512
+        },
+        {
+          "phase": "initial_url",
+          "outcome": "completed",
+          "durationMs": 21488
+        },
+        {
+          "phase": "renderer_navigation",
+          "outcome": "completed",
+          "durationMs": 210
+        }
+      ]
+    },
+    {
+      "iteration": 2,
+      "uiReadyMs": 31391.608208000005,
+      "nativeStartupReadyMs": 28590.692207999993,
+      "uiAfterNativeMs": 2800.916000000012,
+      "foregroundMethod": "desktop_focus_main_window",
+      "forcedNavigations": 0,
+      "subscriptionReady": true,
+      "composerVisible": true,
+      "modelControlVisible": true,
+      "selectedModel": {
+        "providerId": "devryan-smoke",
+        "modelId": "smoke-write",
+        "agent": "builder",
+        "catalogAvailable": true
+      },
+      "catalog": {
+        "status": 200,
+        "providerID": "cursor-acp",
+        "expected": 282,
+        "matched": 282,
+        "pickerModelID": "composer-2.5",
+        "pickerModelVisible": true
+      },
+      "background": {
+        "agentWarmupAtMs": 32369.417916000006,
+        "updateChecks": 0
+      },
+      "initialBundle": {
+        "bundleID": "candidate",
+        "revision": 1,
+        "previousBundleID": null,
+        "opencodeVersion": "2.0.26",
+        "artifactManifestSha256": "504ac9c1c97469d2205bf9e4fffca1dbc5e5e37d033431f574e437b80f9a9110"
+      },
+      "finalBundle": {
+        "bundleID": "native-7459febe9d41e4ff19d92ace-r1",
+        "revision": 2,
+        "previousBundleID": "candidate",
+        "opencodeVersion": "2.0.26",
+        "artifactManifestSha256": "7459febe9d41e4ff19d92ace94df85d3d87ad68b9a5607c812a8f566afb79ec5"
+      },
+      "deferredStartupFailures": 0,
+      "cleanupErrors": [],
+      "remainingProcesses": [],
+      "phases": [
+        {
+          "phase": "shell_environment",
+          "outcome": "completed",
+          "durationMs": 12
+        },
+        {
+          "phase": "foreground_preparation",
+          "outcome": "completed",
+          "durationMs": 7
+        },
+        {
+          "phase": "bundle_upgrade",
+          "outcome": "completed",
+          "durationMs": 18020
+        },
+        {
+          "phase": "server_import",
+          "outcome": "completed",
+          "durationMs": 19924
+        },
+        {
+          "phase": "server_listen",
+          "outcome": "completed",
+          "durationMs": 529
+        },
+        {
+          "phase": "initial_url",
+          "outcome": "completed",
+          "durationMs": 21584
+        },
+        {
+          "phase": "renderer_navigation",
+          "outcome": "completed",
+          "durationMs": 205
+        }
+      ]
+    },
+    {
+      "iteration": 3,
+      "uiReadyMs": 31331.713709000003,
+      "nativeStartupReadyMs": 29063.56158400001,
+      "uiAfterNativeMs": 2268.1521249999932,
+      "foregroundMethod": "desktop_focus_main_window",
+      "forcedNavigations": 0,
+      "subscriptionReady": true,
+      "composerVisible": true,
+      "modelControlVisible": true,
+      "selectedModel": {
+        "providerId": "devryan-smoke",
+        "modelId": "smoke-write",
+        "agent": "builder",
+        "catalogAvailable": true
+      },
+      "catalog": {
+        "status": 200,
+        "providerID": "cursor-acp",
+        "expected": 282,
+        "matched": 282,
+        "pickerModelID": "composer-2.5",
+        "pickerModelVisible": true
+      },
+      "background": {
+        "agentWarmupAtMs": 32296.066709000006,
+        "updateChecks": 0
+      },
+      "initialBundle": {
+        "bundleID": "candidate",
+        "revision": 1,
+        "previousBundleID": null,
+        "opencodeVersion": "2.0.26",
+        "artifactManifestSha256": "504ac9c1c97469d2205bf9e4fffca1dbc5e5e37d033431f574e437b80f9a9110"
+      },
+      "finalBundle": {
+        "bundleID": "native-7459febe9d41e4ff19d92ace-r1",
+        "revision": 2,
+        "previousBundleID": "candidate",
+        "opencodeVersion": "2.0.26",
+        "artifactManifestSha256": "7459febe9d41e4ff19d92ace94df85d3d87ad68b9a5607c812a8f566afb79ec5"
+      },
+      "deferredStartupFailures": 0,
+      "cleanupErrors": [],
+      "remainingProcesses": [],
+      "phases": [
+        {
+          "phase": "shell_environment",
+          "outcome": "completed",
+          "durationMs": 12
+        },
+        {
+          "phase": "foreground_preparation",
+          "outcome": "completed",
+          "durationMs": 7
+        },
+        {
+          "phase": "bundle_upgrade",
+          "outcome": "completed",
+          "durationMs": 18097
+        },
+        {
+          "phase": "server_import",
+          "outcome": "completed",
+          "durationMs": 19984
+        },
+        {
+          "phase": "server_listen",
+          "outcome": "completed",
+          "durationMs": 524
+        },
+        {
+          "phase": "initial_url",
+          "outcome": "completed",
+          "durationMs": 21622
+        },
+        {
+          "phase": "renderer_navigation",
+          "outcome": "completed",
+          "durationMs": 210
+        }
+      ]
+    }
+  ],
+  "candidate": {
+    "opencodeVersion": "2.0.26",
+    "artifactManifestSha256": "7459febe9d41e4ff19d92ace94df85d3d87ad68b9a5607c812a8f566afb79ec5"
+  }
+}

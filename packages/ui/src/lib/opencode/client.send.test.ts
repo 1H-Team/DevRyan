@@ -61,6 +61,27 @@ describe("opencode client sends", () => {
     }) as typeof fetch
   })
 
+  test('health reads keep transient HTTP failures unavailable and preserve older server readiness', async () => {
+    for (const status of [502, 503]) {
+      globalThis.fetch = mock(async () => new Response(null, { status })) as typeof fetch
+      expect(await opencodeClient.readHealth()).toBeNull()
+      expect(await opencodeClient.checkHealth()).toBe(false)
+    }
+    globalThis.fetch = mock(async () => Response.json({ openCode: { generation: 2 }, isOpenCodeReady: true })) as typeof fetch
+    expect(await opencodeClient.checkHealth()).toBe(true)
+  })
+
+  test('health reads reject a late response from an aborted startup owner', async () => {
+    let release!: (value: Response) => void
+    globalThis.fetch = mock(() => new Promise<Response>(resolve => { release = resolve })) as typeof fetch
+    const controller = new AbortController()
+    const pending = opencodeClient.readHealth({ signal: controller.signal })
+    controller.abort()
+    release(Response.json({ openCode: { generation: 2 }, isOpenCodeReady: true,
+      openCodeRuntimeIdentity: 'old:1', openCodeStartup: { state: 'ready', attempt: 1, code: null } }))
+    expect(await pending).toBeNull()
+  })
+
   test("times out scoped reverts even when the fetch adapter ignores AbortSignal", async () => {
     let capturedSignal: AbortSignal | undefined
     const ignoredFetch = mock((_url: string | URL | Request, init?: RequestInit) => {

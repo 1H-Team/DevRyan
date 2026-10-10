@@ -1,0 +1,519 @@
+{
+  "qualification": "Matched foreground launches; consolidated launch/bundle-loading verification and optimized versus previous UI startup policy; repaired native artifacts on identical OpenCode 2.0.26 core; sanitized 282-model configuration and synthetic retired OpenAI login",
+  "configuration": {
+    "sanitizedProvidersSha256": "30964e30968770c01324b6507607b6953d076d383a966cb5f5bda179bcae9f33",
+    "cursorModels": 282,
+    "retiredOpenAiMethod": "chatgpt-browser",
+    "legacyOAuthColumns": null,
+    "timingFixture": "Same sanitized provider shapes, synthetic retired OpenAI login and local model transport in both cohorts; empty plugin/MCP configuration and fixture model defaults. Full registered-plugin/integration coverage is a separate native startup proof."
+  },
+  "coreDigest": "9f5a227676de99f375459ba7b5be9f78a9c215ca62e8d7ffe9cfe920b24ea808",
+  "beforeMs": 13914.306499999999,
+  "afterMs": 13342.730750000017,
+  "reductionPercent": 4.107827795801263,
+  "cohorts": {
+    "previous": {
+      "outcome": "passed",
+      "scope": "three fresh processes/profiles; prepared native bundle; local HTTP model fixture; foreground-controlled admission",
+      "startupMode": "foreground",
+      "sourceSha256": "f979d8d44a84c5da5c3a65e7dcd4dbe344f97c53ed775620dedffad8d4a252ec",
+      "archiveSha256": "ac19ade1fb41814c9b7cc925b101b404f8a4f9a28e5278522532a843f8b6183d",
+      "summary": {
+        "launches": 3,
+        "medianUiReadyMs": 13914.306499999999,
+        "minimumUiReadyMs": 13648.072417000003,
+        "maximumUiReadyMs": 16865.648875
+      },
+      "runs": [
+        {
+          "iteration": 1,
+          "uiReadyMs": 16865.648875,
+          "nativeStartupReadyMs": 13858.313166,
+          "uiAfterNativeMs": 3007.335708999999,
+          "foregroundMethod": "desktop_focus_main_window",
+          "forcedNavigations": 0,
+          "subscriptionReady": true,
+          "composerVisible": true,
+          "modelControlVisible": true,
+          "selectedModel": {
+            "providerId": "devryan-smoke",
+            "modelId": "smoke-write",
+            "agent": "builder",
+            "catalogAvailable": true
+          },
+          "catalog": {
+            "status": 200,
+            "providerID": "cursor-acp",
+            "expected": 282,
+            "matched": 282,
+            "pickerModelID": "composer-2.5",
+            "pickerModelVisible": true
+          },
+          "background": {
+            "agentWarmupAtMs": 16388.445041,
+            "updateChecks": 1
+          },
+          "initialBundle": {
+            "bundleID": "candidate",
+            "revision": 1,
+            "previousBundleID": null,
+            "opencodeVersion": "2.0.26",
+            "artifactManifestSha256": "67d38e85265602e843efeaf2b0c74a32416e132a9fc05d37bb7029f0113713fe"
+          },
+          "finalBundle": {
+            "bundleID": "candidate",
+            "revision": 1,
+            "previousBundleID": null,
+            "opencodeVersion": "2.0.26",
+            "artifactManifestSha256": "67d38e85265602e843efeaf2b0c74a32416e132a9fc05d37bb7029f0113713fe"
+          },
+          "deferredStartupFailures": 0,
+          "cleanupErrors": [],
+          "remainingProcesses": [],
+          "phases": [
+            {
+              "phase": "shell_environment",
+              "outcome": "completed",
+              "durationMs": 21
+            },
+            {
+              "phase": "foreground_preparation",
+              "outcome": "completed",
+              "durationMs": 9
+            },
+            {
+              "phase": "server_import",
+              "outcome": "completed",
+              "durationMs": 2870
+            },
+            {
+              "phase": "server_listen",
+              "outcome": "completed",
+              "durationMs": 553
+            },
+            {
+              "phase": "initial_url",
+              "outcome": "completed",
+              "durationMs": 4523
+            },
+            {
+              "phase": "renderer_navigation",
+              "outcome": "completed",
+              "durationMs": 208
+            }
+          ]
+        },
+        {
+          "iteration": 2,
+          "uiReadyMs": 13914.306499999999,
+          "nativeStartupReadyMs": 12616.137208,
+          "uiAfterNativeMs": 1298.1692919999987,
+          "foregroundMethod": "desktop_focus_main_window",
+          "forcedNavigations": 0,
+          "subscriptionReady": true,
+          "composerVisible": true,
+          "modelControlVisible": true,
+          "selectedModel": {
+            "providerId": "devryan-smoke",
+            "modelId": "smoke-write",
+            "agent": "builder",
+            "catalogAvailable": true
+          },
+          "catalog": {
+            "status": 200,
+            "providerID": "cursor-acp",
+            "expected": 282,
+            "matched": 282,
+            "pickerModelID": "composer-2.5",
+            "pickerModelVisible": true
+          },
+          "background": {
+            "agentWarmupAtMs": 13228.319457999998,
+            "updateChecks": 1
+          },
+          "initialBundle": {
+            "bundleID": "candidate",
+            "revision": 1,
+            "previousBundleID": null,
+            "opencodeVersion": "2.0.26",
+            "artifactManifestSha256": "67d38e85265602e843efeaf2b0c74a32416e132a9fc05d37bb7029f0113713fe"
+          },
+          "finalBundle": {
+            "bundleID": "candidate",
+            "revision": 1,
+            "previousBundleID": null,
+            "opencodeVersion": "2.0.26",
+            "artifactManifestSha256": "67d38e85265602e843efeaf2b0c74a32416e132a9fc05d37bb7029f0113713fe"
+          },
+          "deferredStartupFailures": 0,
+          "cleanupErrors": [],
+          "remainingProcesses": [],
+          "phases": [
+            {
+              "phase": "shell_environment",
+              "outcome": "completed",
+              "durationMs": 12
+            },
+            {
+              "phase": "foreground_preparation",
+              "outcome": "completed",
+              "durationMs": 7
+            },
+            {
+              "phase": "server_import",
+              "outcome": "completed",
+              "durationMs": 2847
+            },
+            {
+              "phase": "server_listen",
+              "outcome": "completed",
+              "durationMs": 518
+            },
+            {
+              "phase": "initial_url",
+              "outcome": "completed",
+              "durationMs": 4558
+            },
+            {
+              "phase": "renderer_navigation",
+              "outcome": "completed",
+              "durationMs": 191
+            }
+          ]
+        },
+        {
+          "iteration": 3,
+          "uiReadyMs": 13648.072417000003,
+          "nativeStartupReadyMs": 12270.619625000007,
+          "uiAfterNativeMs": 1377.4527919999964,
+          "foregroundMethod": "desktop_focus_main_window",
+          "forcedNavigations": 0,
+          "subscriptionReady": true,
+          "composerVisible": true,
+          "modelControlVisible": true,
+          "selectedModel": {
+            "providerId": "devryan-smoke",
+            "modelId": "smoke-write",
+            "agent": "builder",
+            "catalogAvailable": true
+          },
+          "catalog": {
+            "status": 200,
+            "providerID": "cursor-acp",
+            "expected": 282,
+            "matched": 282,
+            "pickerModelID": "composer-2.5",
+            "pickerModelVisible": true
+          },
+          "background": {
+            "agentWarmupAtMs": 13130.275125,
+            "updateChecks": 1
+          },
+          "initialBundle": {
+            "bundleID": "candidate",
+            "revision": 1,
+            "previousBundleID": null,
+            "opencodeVersion": "2.0.26",
+            "artifactManifestSha256": "67d38e85265602e843efeaf2b0c74a32416e132a9fc05d37bb7029f0113713fe"
+          },
+          "finalBundle": {
+            "bundleID": "candidate",
+            "revision": 1,
+            "previousBundleID": null,
+            "opencodeVersion": "2.0.26",
+            "artifactManifestSha256": "67d38e85265602e843efeaf2b0c74a32416e132a9fc05d37bb7029f0113713fe"
+          },
+          "deferredStartupFailures": 0,
+          "cleanupErrors": [],
+          "remainingProcesses": [],
+          "phases": [
+            {
+              "phase": "shell_environment",
+              "outcome": "completed",
+              "durationMs": 12
+            },
+            {
+              "phase": "foreground_preparation",
+              "outcome": "completed",
+              "durationMs": 7
+            },
+            {
+              "phase": "server_import",
+              "outcome": "completed",
+              "durationMs": 2768
+            },
+            {
+              "phase": "server_listen",
+              "outcome": "completed",
+              "durationMs": 519
+            },
+            {
+              "phase": "initial_url",
+              "outcome": "completed",
+              "durationMs": 4447
+            },
+            {
+              "phase": "renderer_navigation",
+              "outcome": "completed",
+              "durationMs": 200
+            }
+          ]
+        }
+      ]
+    },
+    "optimized": {
+      "outcome": "passed",
+      "scope": "three fresh processes/profiles; prepared native bundle; local HTTP model fixture; foreground-controlled admission",
+      "startupMode": "foreground",
+      "sourceSha256": "85baf5ec4c7351657bbb02a89c74a72c344a5f61434f4edeb2abe23ca15fbc00",
+      "archiveSha256": "7c17aa4f35ddb268f7e330d6b8f6779087b7aeb2219a8874bc178a4e76818037",
+      "summary": {
+        "launches": 3,
+        "medianUiReadyMs": 13342.730750000017,
+        "minimumUiReadyMs": 13150.331000000006,
+        "maximumUiReadyMs": 13724.531709000003
+      },
+      "runs": [
+        {
+          "iteration": 1,
+          "uiReadyMs": 13724.531709000003,
+          "nativeStartupReadyMs": 11312.319209000008,
+          "uiAfterNativeMs": 2412.212499999994,
+          "foregroundMethod": "desktop_focus_main_window",
+          "forcedNavigations": 0,
+          "subscriptionReady": true,
+          "composerVisible": true,
+          "modelControlVisible": true,
+          "selectedModel": {
+            "providerId": "devryan-smoke",
+            "modelId": "smoke-write",
+            "agent": "builder",
+            "catalogAvailable": true
+          },
+          "catalog": {
+            "status": 200,
+            "providerID": "cursor-acp",
+            "expected": 282,
+            "matched": 282,
+            "pickerModelID": "composer-2.5",
+            "pickerModelVisible": true
+          },
+          "background": {
+            "agentWarmupAtMs": 14687.762459000005,
+            "updateChecks": 0
+          },
+          "initialBundle": {
+            "bundleID": "candidate",
+            "revision": 1,
+            "previousBundleID": null,
+            "opencodeVersion": "2.0.26",
+            "artifactManifestSha256": "7459febe9d41e4ff19d92ace94df85d3d87ad68b9a5607c812a8f566afb79ec5"
+          },
+          "finalBundle": {
+            "bundleID": "candidate",
+            "revision": 1,
+            "previousBundleID": null,
+            "opencodeVersion": "2.0.26",
+            "artifactManifestSha256": "7459febe9d41e4ff19d92ace94df85d3d87ad68b9a5607c812a8f566afb79ec5"
+          },
+          "deferredStartupFailures": 0,
+          "cleanupErrors": [],
+          "remainingProcesses": [],
+          "phases": [
+            {
+              "phase": "shell_environment",
+              "outcome": "completed",
+              "durationMs": 12
+            },
+            {
+              "phase": "foreground_preparation",
+              "outcome": "completed",
+              "durationMs": 9
+            },
+            {
+              "phase": "server_import",
+              "outcome": "completed",
+              "durationMs": 1948
+            },
+            {
+              "phase": "server_listen",
+              "outcome": "completed",
+              "durationMs": 547
+            },
+            {
+              "phase": "initial_url",
+              "outcome": "completed",
+              "durationMs": 3677
+            },
+            {
+              "phase": "renderer_navigation",
+              "outcome": "completed",
+              "durationMs": 196
+            }
+          ]
+        },
+        {
+          "iteration": 2,
+          "uiReadyMs": 13342.730750000017,
+          "nativeStartupReadyMs": 10154.845874999999,
+          "uiAfterNativeMs": 3187.884875000018,
+          "foregroundMethod": "desktop_focus_main_window",
+          "forcedNavigations": 0,
+          "subscriptionReady": true,
+          "composerVisible": true,
+          "modelControlVisible": true,
+          "selectedModel": {
+            "providerId": "devryan-smoke",
+            "modelId": "smoke-write",
+            "agent": "builder",
+            "catalogAvailable": true
+          },
+          "catalog": {
+            "status": 200,
+            "providerID": "cursor-acp",
+            "expected": 282,
+            "matched": 282,
+            "pickerModelID": "composer-2.5",
+            "pickerModelVisible": true
+          },
+          "background": {
+            "agentWarmupAtMs": 14319.812542,
+            "updateChecks": 0
+          },
+          "initialBundle": {
+            "bundleID": "candidate",
+            "revision": 1,
+            "previousBundleID": null,
+            "opencodeVersion": "2.0.26",
+            "artifactManifestSha256": "7459febe9d41e4ff19d92ace94df85d3d87ad68b9a5607c812a8f566afb79ec5"
+          },
+          "finalBundle": {
+            "bundleID": "candidate",
+            "revision": 1,
+            "previousBundleID": null,
+            "opencodeVersion": "2.0.26",
+            "artifactManifestSha256": "7459febe9d41e4ff19d92ace94df85d3d87ad68b9a5607c812a8f566afb79ec5"
+          },
+          "deferredStartupFailures": 0,
+          "cleanupErrors": [],
+          "remainingProcesses": [],
+          "phases": [
+            {
+              "phase": "shell_environment",
+              "outcome": "completed",
+              "durationMs": 13
+            },
+            {
+              "phase": "foreground_preparation",
+              "outcome": "completed",
+              "durationMs": 8
+            },
+            {
+              "phase": "server_import",
+              "outcome": "completed",
+              "durationMs": 1898
+            },
+            {
+              "phase": "server_listen",
+              "outcome": "completed",
+              "durationMs": 512
+            },
+            {
+              "phase": "initial_url",
+              "outcome": "completed",
+              "durationMs": 3581
+            },
+            {
+              "phase": "renderer_navigation",
+              "outcome": "completed",
+              "durationMs": 190
+            }
+          ]
+        },
+        {
+          "iteration": 3,
+          "uiReadyMs": 13150.331000000006,
+          "nativeStartupReadyMs": 10311.472583000024,
+          "uiAfterNativeMs": 2838.8584169999813,
+          "foregroundMethod": "desktop_focus_main_window",
+          "forcedNavigations": 0,
+          "subscriptionReady": true,
+          "composerVisible": true,
+          "modelControlVisible": true,
+          "selectedModel": {
+            "providerId": "devryan-smoke",
+            "modelId": "smoke-write",
+            "agent": "builder",
+            "catalogAvailable": true
+          },
+          "catalog": {
+            "status": 200,
+            "providerID": "cursor-acp",
+            "expected": 282,
+            "matched": 282,
+            "pickerModelID": "composer-2.5",
+            "pickerModelVisible": true
+          },
+          "background": {
+            "agentWarmupAtMs": 14105.590625000012,
+            "updateChecks": 0
+          },
+          "initialBundle": {
+            "bundleID": "candidate",
+            "revision": 1,
+            "previousBundleID": null,
+            "opencodeVersion": "2.0.26",
+            "artifactManifestSha256": "7459febe9d41e4ff19d92ace94df85d3d87ad68b9a5607c812a8f566afb79ec5"
+          },
+          "finalBundle": {
+            "bundleID": "candidate",
+            "revision": 1,
+            "previousBundleID": null,
+            "opencodeVersion": "2.0.26",
+            "artifactManifestSha256": "7459febe9d41e4ff19d92ace94df85d3d87ad68b9a5607c812a8f566afb79ec5"
+          },
+          "deferredStartupFailures": 0,
+          "cleanupErrors": [],
+          "remainingProcesses": [],
+          "phases": [
+            {
+              "phase": "shell_environment",
+              "outcome": "completed",
+              "durationMs": 12
+            },
+            {
+              "phase": "foreground_preparation",
+              "outcome": "completed",
+              "durationMs": 7
+            },
+            {
+              "phase": "server_import",
+              "outcome": "completed",
+              "durationMs": 1910
+            },
+            {
+              "phase": "server_listen",
+              "outcome": "completed",
+              "durationMs": 516
+            },
+            {
+              "phase": "initial_url",
+              "outcome": "completed",
+              "durationMs": 3527
+            },
+            {
+              "phase": "renderer_navigation",
+              "outcome": "completed",
+              "durationMs": 191
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "limits": [
+    "Foreground-controlled admission; not natural startup latency",
+    "Three fresh processes/profiles per cohort; no cold OS-cache claim",
+    "Sanitized model configuration and synthetic state; no installed credentials, database or paid-provider inference"
+  ]
+}

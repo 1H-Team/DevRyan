@@ -1,0 +1,44 @@
+{
+  "status": "passed",
+  "failure": null,
+  "lastNativeHealth": {
+    "generation": 2,
+    "ready": true
+  },
+  "usageDiscovery": {
+    "listed": [
+      "codex"
+    ],
+    "results": [
+      {
+        "providerID": "xai",
+        "listed": false,
+        "ok": false,
+        "configured": false,
+        "errorCode": "NOT_CONFIGURED"
+      },
+      {
+        "providerID": "opencode-go",
+        "listed": false,
+        "ok": false,
+        "configured": false,
+        "errorCode": "NOT_CONFIGURED"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "id": "synthetic-siwc-source-sdk-credential-mutations"
+    },
+    {
+      "id": "real-bundle-migration-saved-synthetic-graph"
+    },
+    {
+      "id": "actual-native-usage-discovery-without-accounts"
+    },
+    {
+      "id": "actual-production-isolated-web-and-native-controller"
+    }
+  ],
+  "cleanupFailures": []
+}

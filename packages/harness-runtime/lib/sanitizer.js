@@ -3,6 +3,15 @@ import crypto from 'node:crypto';
 import { projectUsageObservation, runtimeUsageObservation } from '../../shared-runtime/lib/usage-observation.js';
 import { parseNativeObservation, parseNativeJournalObservation } from '../../shared-runtime/lib/native-observation.js';
 
+// Record keys may themselves be secrets. Only native schema field names and indices escape.
+const schemaFields = new Set(['data', 'location', 'directory', 'id', 'modelID', 'providerID', 'canonical', 'family', 'name',
+  'compatibility', 'reasoningField', 'requireReasoning', 'maxTokensField', 'requireFinishReason', 'requireAssistantAfterTool',
+  'supportsPromptCacheKey', 'supportsThinkingBlockBinding', 'supportsEffortUpdates', 'package', 'settings', 'headers', 'body',
+  'capabilities', 'tools', 'input', 'output', 'variants', 'time', 'released', 'cost', 'tier', 'type', 'size', 'cache', 'read',
+  'write', 'status', 'enabled', 'limit', 'context', 'compaction']);
+export const sanitizeNativeSchemaPath = value => typeof value === 'string' && value.length <= 256
+  && value.split('.').every(key => schemaFields.has(key) || key === '<key>' || /^\[\d{1,10}\]$/.test(key));
+
 const REDACTED = '[REDACTED]';
 
 const RECORD_FIELDS = Object.freeze({
@@ -345,6 +354,26 @@ export const createDiagnosticSanitizer = (options = {}) => {
             ? { controllerInstanceID: redactString(gap.controllerInstanceID, { highEntropy: false }) } : {}) };
         continue;
       }
+      if (key === 'payload' && type === 'lifecycle' && object.event === 'native_startup') {
+        output[key] = sanitizeNested(value);
+        const code = asObject(value)?.code;
+        // These producer-validated fixed catalog codes resemble high-entropy tokens.
+        if (typeof code === 'string' && /^native_catalog_(?:construction_failed|read_failed_(?:agent|plugin|model)_(?:http_[45][0-9]{2}|refusal_(?:403|409|503)))_(?:helper_directory_denied|helper_denied|helper_timeout_invalid|controller_helper_denied|controller_helper_unavailable|mutation_runtime_unsupported|catalog_unavailable|catalog_file_invalid|model_build_failed|model_read_failed|model_account_failed|model_normalize_failed|provider_location_required|provider_location_expired|openai_method_unsupported|response_schema_invalid|schema_invalid|cause_unavailable)$/.test(code)) {
+          output[key].code = redactString(code, { highEntropy: false });
+        }
+        const diagnostics = asObject(value)?.diagnostics;
+        if (Array.isArray(diagnostics)) output[key].diagnostics = diagnostics.slice(-16).flatMap(row => {
+          const metadata = {};
+          for (const [field, nested] of Object.entries(asObject(row) || {})) {
+            if (field === 'level' && ['error', 'warn', 'ERROR', 'WARN'].includes(nested)
+              || ['name', '_tag'].includes(field) && ['HttpApiSchemaError', 'SchemaError', 'TypeError', 'Error'].includes(nested)
+              || field === 'msg' && ['response_schema_invalid', 'schema_invalid', 'model_response_schema_invalid'].includes(nested)
+              || field === 'schemaPath' && sanitizeNativeSchemaPath(nested)) metadata[field] = redactString(nested, { highEntropy: false });
+          }
+          return metadata.name || metadata._tag || metadata.msg ? [metadata] : [];
+        });
+        continue;
+      }
       if (key === 'payload' && type === 'lifecycle' && object.event === 'opencode_process_exit') {
         const metadata = {};
         for (const [field, nested] of Object.entries(asObject(value) || {})) {
@@ -432,6 +461,10 @@ export const createDiagnosticSanitizer = (options = {}) => {
       for (const [key, nested] of Object.entries(object)) {
         if (key === 'payload' && object.type === 'lifecycle' && object.event === 'native_observation') {
           output[key] = redactNativeObservation(parseNativeJournalObservation(nested));
+          continue;
+        }
+        if (key === 'payload' && object.type === 'lifecycle' && object.event === 'native_startup') {
+          output[key] = sanitizeRecord({ type: 'lifecycle', event: 'native_startup', payload: nested }).payload;
           continue;
         }
         if ((object.type === 'reasoning' && ['text', 'content', 'data'].includes(key))

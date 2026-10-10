@@ -268,6 +268,29 @@ export function createControllerIntegrations(options:ControllerIntegrationsOptio
         active:active?.type==='credential'&&active.id===record.id}));
     }).pipe(Effect.provide(Logger.layer([],{mergeWithExisting:false}))));
   };
+  const readProviderSelectedOwned=async(input:{readonly directory:string;readonly controllerInstanceID:string;readonly integrationID:string})=>{
+    const acquisition=acquisitions.get(input.directory);
+    if(!acquisition)return refuse('native_integration_acquisition_expired');
+    assertAcquisition(acquisition);
+    if(input.controllerInstanceID!==options.controllerInstanceID)return refuse('native_integration_binding_invalid');
+    return Effect.runPromise(Effect.gen(function*(){
+      const id=Schema.decodeUnknownSync(Integration.ID)(input.integrationID);
+      if(!isOwnedProviderIntegration(id)||(id!=='xai'&&id!=='opencode-go'))return refuse('native_integration_binding_invalid');
+      providerBinding(input.directory,id);
+      const connection=yield* acquisition.mcpInner.connection.active(id);assertAcquisition(acquisition);
+      if(!connection||connection.type!=='credential')return undefined;
+      const credential=yield* acquisition.credentials.get(connection.id);assertAcquisition(acquisition);
+      const value=credential?.value;
+      if(!credential||credential.integrationID!==id||!value
+        ||(id==='xai'?value.type!=='oauth'||value.methodID!=='device'||typeof value.access!=='string'||!value.access:value.type!=='key'||typeof value.key!=='string'||!value.key))return refuse('native_integration_binding_invalid');
+      const current=yield* acquisition.mcpInner.connection.active(id);assertAcquisition(acquisition);
+      const latest=yield* acquisition.credentials.get(connection.id);assertAcquisition(acquisition);
+      if(!current||current.type!=='credential'||current.id!==connection.id||credentialMutationFingerprint(latest)!==credentialMutationFingerprint(credential))return refuse('native_credential_changed');
+      // Usage reads never renew: the refresh grant stays inside the controller.
+      const selected=value.type==='oauth'?{type:value.type,methodID:value.methodID,access:value.access,expires:value.expires}:value.type==='key'?{type:value.type,key:value.key}:refuse('native_integration_binding_invalid');
+      return {directory:input.directory,controllerInstanceID:options.controllerInstanceID,integrationID:id,credentialID:credential.id,value:selected};
+    }).pipe(Effect.provideService(Location.Service,acquisition.location),Effect.provide(Logger.layer([],{mergeWithExisting:false}))));
+  };
   const catalogBinding=(directory:string)=>{
     const acquisition=acquisitions.get(directory),origin=options.providerCompatibilityOrigin;
     if(!acquisition||!origin||origin.kind!=='plugin'||origin.id!=='devryan.provider-compat'||!/^[a-f0-9]{64}$/.test(origin.manifestDigest))return refuse('native_provider_catalog_unavailable');
@@ -331,5 +354,5 @@ export function createControllerIntegrations(options:ControllerIntegrationsOptio
       if(!claudeLifecycle)return refuse('native_claude_lifecycle_owner_expired');return claudeLifecycle.transitionOwned(input);
     },
     readSelectedOwned:openai.readSelectedOwned,compareAndSwapSelectedOwned:openai.compareAndSwapSelectedOwned,
-    discoverCopilot,readCatalogSelectionOwned,readSelectedCursorKeyOwned,readCursorReadOnlyKeyOwned,commitCredentialOwned:mutation.commitOwned,credentialOwned,credentialMetadataOwned,readOpenAiCredentialOwned,close};
+    discoverCopilot,readCatalogSelectionOwned,readSelectedCursorKeyOwned,readCursorReadOnlyKeyOwned,commitCredentialOwned:mutation.commitOwned,credentialOwned,credentialMetadataOwned,readProviderSelectedOwned,readOpenAiCredentialOwned,close};
 }

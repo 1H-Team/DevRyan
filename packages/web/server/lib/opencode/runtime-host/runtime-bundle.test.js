@@ -84,6 +84,17 @@ import os from 'node:os'; import {runMigrationRequest} from ${JSON.stringify(pat
   const baselineInput={bundleID:'baseline',generation:2,source:{kind:'legacy',launch:sourceLaunch},projectMap:seed.projectMap,auxiliary:{kind:'absent'},launchArtifacts};
   return {root,seed,controlRoot,store,baselineInput,launchArtifacts,checkpoints,withQuiescedSource,runMigration,verifyArtifacts};
 }
+test('verification hands its checked artifacts to the loader without extending the wire result',async()=>{
+ const f=await fixture();await f.store.prepare(f.baselineInput);
+ let artifacts;
+ const store=createRuntimeBundleStore({controlRoot:f.controlRoot,withQuiescedSource:f.withQuiescedSource,runMigration:f.runMigration,
+  verifyArtifacts:async input=>{const checked=await f.verifyArtifacts(input);artifacts={...checked,manifestPath:input.launch.artifactManifestPath};return artifacts;}});
+ const verified=await store.verify({bundleID:'baseline',phase:'resume'});
+ expect(verified.artifacts).toBe(artifacts);
+ expect(Object.keys(verified)).toEqual(['descriptor','phase','integrity','admission']);
+ expect(JSON.parse(JSON.stringify(verified))).not.toHaveProperty('artifacts');
+});
+
 test('original store clone forwards captured native enrollment authority without copying the dedicated account',async()=>{
  const f=await fixture(),baseline=await f.store.prepare(f.baselineInput);
  await f.store.select({bundleID:'baseline',expectedRevision:0});
@@ -861,6 +872,27 @@ test('default startup upgrades a selected bundle below the version pin through t
  expect((await fs.readdir(path.join(u.controlRoot,'artifacts'))).filter(name=>/^[a-f0-9]{64}$/.test(name))).toHaveLength(2);
  expect(await u.launch(u.pinned,async()=>{throw Error('current selection never upgrades again');})).toBe(u.controlRoot);
  expect(u.binding().selection.revision).toBe(2);
+},60_000);
+test('cold startup activates repaired host artifacts at the same OpenCode version once and retains rollback',async()=>{
+ const u=await startupUpgradeFixture('startup-host-repair-home');
+ await u.launch(u.pinned);const before=u.binding();
+ const manifestPath=path.join(u.pinned,'native-bundle.json'),manifest=JSON.parse(await fs.readFile(manifestPath,'utf8'));
+ const controller=manifest.files.find(file=>file.path==='DevRyan-controller');
+ const bytes=Buffer.from('fixture repaired controller at unchanged OpenCode version\n');
+ await fs.writeFile(path.join(u.pinned,controller.path),bytes);controller.sha256=sha256(bytes);controller.size=bytes.length;
+ await fs.writeFile(manifestPath,JSON.stringify(manifest)+'\n');
+ const shipped=sha256(await fs.readFile(manifestPath));
+ await u.launch(u.pinned);const after=u.binding();
+ expect(after.selection).toMatchObject({revision:3,selectedBundleID:nativeUpgradeBundleID(shipped,2),previousBundleID:before.descriptor.bundleID,reconciliationRequired:false});
+ expect(after.descriptor.launch.artifactManifestSha256).toBe(shipped);
+ expect(await fs.stat(before.descriptor.launch.opencodeDatabasePath).then(stat=>stat.isFile())).toBe(true);
+ const captures=[...u.captures];await u.launch(u.pinned,async()=>{throw Error('Identical repaired artifact must not be copied again');});
+ expect(u.captures).toEqual(captures);expect(u.binding().selection.revision).toBe(3);
+ // A selected same-version rollback is an explicit choice, not a stale host to replace.
+ const selectionPath=path.join(u.controlRoot,'selection.json');
+ await fs.writeFile(selectionPath,JSON.stringify({...before.selection,revision:4,previousBundleID:after.descriptor.bundleID,transition:'rollback'})+'\n');
+ await u.launch(u.pinned,async()=>{throw Error('Explicit rollback must be retained');});
+ expect(u.binding().selection).toMatchObject({revision:4,selectedBundleID:before.descriptor.bundleID,transition:'rollback'});
 },60_000);
 test('default startup never upgrades while another process owns the selected bundle and reports the refusal',async()=>{
  const u=await startupUpgradeFixture('startup-owner-home'),launch=u.binding().descriptor.launch;

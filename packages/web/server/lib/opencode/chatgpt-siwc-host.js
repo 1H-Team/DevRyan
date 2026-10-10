@@ -3,11 +3,17 @@ import { createNativeIntegrationFacade } from './v2/native-integration-facade.js
 import { CHATGPT_SIWC_METHOD_ID, failSiwc, hasSiwcPlanUsage, isLegacyCodexChatgptMethodId, revokeSiwcSession } from './chatgpt-siwc.js';
 import { credentialMutationFingerprint } from './runtime-host/native-credential-mutation-owner.js';
 
-function nativeScope(getNativeRuntimeOwner, directory) {
+// `fallbackLocation` is for read-only callers: credentials are global, so an unreviewed
+// project directory resolves to the default location. Mutation paths never set it.
+function nativeScope(getNativeRuntimeOwner, directory, { fallbackLocation = false } = {}) {
   const owner = getNativeRuntimeOwner();
   const snapshot = owner?.getConfigurationSnapshot?.();
-  const target = typeof directory === 'string' && directory ? directory : snapshot?.locations?.[0]?.directory;
-  const location = snapshot?.locations?.find(row => row.directory === target);
+  let target = typeof directory === 'string' && directory ? directory : snapshot?.locations?.[0]?.directory;
+  let location = snapshot?.locations?.find(row => row.directory === target);
+  if (!location && fallbackLocation) {
+    location = snapshot?.locations?.[0];
+    target = location?.directory;
+  }
   if (!owner?.isReady?.() || !location) throw failSiwc('native_chatgpt_siwc_location_required');
   return { owner, scope: { kind: 'openai', directory: target, integrationID: 'openai',
     configurationDigest: credentialMutationFingerprint(location.configuration?.providers?.openai ?? {}),
@@ -15,8 +21,8 @@ function nativeScope(getNativeRuntimeOwner, directory) {
 }
 
 /** Private scoped read: the browser receives a redacted status, never this value. */
-export async function readNativeOpenAiSelection(getNativeRuntimeOwner, directory, { refresh = false } = {}) {
-  const { owner, scope } = nativeScope(getNativeRuntimeOwner, directory);
+export async function readNativeOpenAiSelection(getNativeRuntimeOwner, directory, { refresh = false, fallbackLocation = false } = {}) {
+  const { owner, scope } = nativeScope(getNativeRuntimeOwner, directory, { fallbackLocation });
   if (typeof owner.readOpenAiSelected !== 'function') throw failSiwc('native_chatgpt_siwc_update_required');
   return await (refresh && typeof owner.readOpenAiAccountSelection === 'function' ? owner.readOpenAiAccountSelection(scope) : owner.readOpenAiSelected(scope)) ?? null;
 }

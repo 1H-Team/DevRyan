@@ -78,3 +78,11 @@ controller and worker termination receipts before requiring no publication.
 Its explicit constructor-owned local grant is smoke-test policy; it does not
 substitute for production authentication contract tests. Release signing and
 other-platform support remain separate qualification gates.
+
+## Synthetic provider catalog preflight
+
+Preflight also seeds active synthetic OpenAI, Cursor and GitHub Copilot
+credentials through the baseline's compiled SDK, preserves them across the
+clone, and asserts their model rows in both locations on both releases.
+Copilot discovery uses a fixture HTTP server restricted to loopback;
+no external credential or provider is used by this check.

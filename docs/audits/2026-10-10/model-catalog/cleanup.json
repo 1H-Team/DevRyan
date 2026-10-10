@@ -1,0 +1,17 @@
+{
+  "qualification": "Only task-created QA payloads and session scratch; light immutable QA evidence retained",
+  "removedPayloads": [
+    ".cache/qa/packaged-electron-VQpBH2/app/mac-arm64/DevRyan QA.app",
+    ".cache/qa/packaged-electron-2J0YIt/app/mac-arm64/DevRyan QA.app",
+    ".cache/qa/packaged-electron-fmo8v9/app/mac-arm64/DevRyan QA.app",
+    ".cache/qa/packaged-electron-deGzQJ/app/mac-arm64/DevRyan QA.app",
+    ".cache/v2-validation/native-factory-DdUQzm/runtime",
+    ".cache/v2-validation/native-factory-heqiYm/runtime",
+    ".cache/v2-validation/native-factory-en6Pqp/runtime",
+    ".cache/v2-validation/native-factory-D2I7l0/runtime",
+    ".cache/v2-validation/native-factory-1qhNsL/runtime"
+  ],
+  "sessionScratchRemoved": true,
+  "unrelatedCachesPreserved": true,
+  "installedStateModified": false
+}

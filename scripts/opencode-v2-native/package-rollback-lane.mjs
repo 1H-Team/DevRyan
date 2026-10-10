@@ -22,7 +22,7 @@ export async function snapshotOwnedTree(directory) {
 }
 
 /** Start the actual selected v2 lifecycle in a fresh private process before module imports. */
-export async function runSelectedNativeLifecycle({ controlRoot, descriptor, configuration, fixture, logFile, sessionIDs = [], seedInput, rollback, readProcessIdentity = processIdentity }) {
+export async function runSelectedNativeLifecycle({ controlRoot, descriptor, configuration, fixture, logFile, sessionIDs = [], seedInput, rollback, builtinCatalog, readProcessIdentity = processIdentity }) {
   const globals = descriptor.launch.global;
   const environment = createQaHostLaunchEnvironment(fixture.environment, {
     DEVRYAN_RUNTIME_BUNDLE_ROOT: controlRoot, OPENCHAMBER_DATA_DIR: descriptor.launch.webDataDirectory,
@@ -52,7 +52,7 @@ export async function runSelectedNativeLifecycle({ controlRoot, descriptor, conf
     assert.ok(child.pid, 'Selected native lifecycle spawn did not create a process');
     hostIdentity = readProcessIdentity(child.pid); assert.equal(hostIdentity?.pid, child.pid);
     child.stdin.end(JSON.stringify({ bundleID: descriptor.bundleID, configuration,
-      sessionIDs, seedInput, evidencePath, ...(rollback ? { rollback } : {}) }));
+      sessionIDs, seedInput, evidencePath, ...(rollback ? { rollback } : {}), ...(builtinCatalog ? { builtinCatalog } : {}) }));
     exit = await closed;
     if (spawnError) failure ??= spawnError;
   } catch (error) {

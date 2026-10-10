@@ -1302,6 +1302,8 @@ export const settingsDict = {
   'settings.usage.page.options.showInHeader': 'Show in Header Menu',
   'settings.usage.page.options.showInHeaderTooltip': 'When enabled, this provider\'s usage will be visible in the quick access dropdown menu in the app header.',
   'settings.usage.page.state.noData': 'No usage data available yet.',
+  'settings.usage.page.state.unreadableTitle': "Usage can't be read yet",
+  'settings.usage.page.state.unreadableDescription': 'Use the refresh button to try again.',
   'settings.usage.page.state.refreshFailedTitle': 'Failed to refresh usage data',
   'settings.usage.page.state.staleTitle': 'Showing last known usage',
   'settings.usage.page.state.staleDescription': 'This data is older than the active refresh interval. DevRyan will retry automatically.',

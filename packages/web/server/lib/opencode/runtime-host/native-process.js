@@ -8,6 +8,24 @@ import { startParentDeathWatchdog } from '../parent-death-watchdog.js';
 import { registerManagedOpenCodeProcess, unregisterManagedOpenCodeProcess, reapOrphanedManagedOpenCodeProcesses } from '../managed-process-registry.js';
 import { NATIVE_PROCESS_LIMITS, parseNativeBoot, parseNativeCommand, parseNativeReply, encodeNativeProcessMessage } from './native-process-protocol.js';
 import { NativeCommandRefusal } from './native-command-refusal.js';
+import { createDiagnosticSanitizer, sanitizeNativeSchemaPath } from '@openchamber/harness-runtime/lib/sanitizer.js';
+
+const stderrDiagnostics = tail => {
+  const sanitizer = createDiagnosticSanitizer();
+  const rows = [];
+  for (const line of sanitizer.sanitizeText(tail).split('\n').slice(-16)) {
+    const row = {};
+    for (const match of line.matchAll(/(?:^|\s)(level|msg|name|_tag|schemaPath)=("[^"\n]*"|[^\s]+)/g)) {
+      const value = match[2].replace(/^"|"$/g, '');
+      if (match[1] === 'level' && /^(?:error|warn|ERROR|WARN)$/.test(value)
+        || match[1] === 'msg' && ['response_schema_invalid', 'schema_invalid', 'model_response_schema_invalid'].includes(value)
+        || ['name', '_tag'].includes(match[1]) && ['HttpApiSchemaError', 'SchemaError', 'TypeError', 'Error'].includes(value)
+        || match[1] === 'schemaPath' && sanitizeNativeSchemaPath(value)) row[match[1]] = value;
+    }
+    if (row.name || row._tag || row.msg) rows.push(row);
+  }
+  return rows;
+};
 
 const failure = code => Object.assign(new Error(code), { code, status: 503 });
 const deadline = async (work, timeoutMs, code) => {
@@ -89,7 +107,7 @@ export async function createNativeControllerProcess(options) {
     if (!supervised && process.platform !== 'win32' && child.pid) { try { process.kill(-child.pid, 'SIGKILL'); } catch { /* Already drained. */ } }
     watchdog.dispose();
   });
-  let stderrBytes = 0, stderrTail = '', observationUnavailable = false;
+  let stderrBytes = 0, stderrTail = Buffer.alloc(0), observationUnavailable = false;
   const observationMarker = 'native_observation_unavailable';
   child.once('close', (code, signalName) => {
     exitResult = { pid: child.pid ?? null, code, signal: signalName, expected: closing, instanceID: boot.instanceID, startedAt,
@@ -116,16 +134,17 @@ export async function createNativeControllerProcess(options) {
       resolveExit(exitResult);
     })().catch(error => { rejectTermination(error); rejectExit(error); });
   });
-  // Raw provider/plugin output can contain credentials. Only lifecycle facts
-  // enter this log; structured runtime diagnostics retain their own redaction.
+  // Raw provider/plugin output can contain credentials. The bounded memory tail
+  // escapes only as sanitized, recognized diagnostic fields on startup failure.
   child.stderr.on('data', chunk => {
     stderrBytes += chunk.byteLength;
+    const text = observationUnavailable ? '' : stderrTail.toString('utf8') + chunk.toString('utf8');
+    stderrTail = Buffer.from(Buffer.concat([stderrTail, chunk.subarray(-4096)]).subarray(-4096));
     if (observationUnavailable) return;
-    const text = stderrTail + chunk.toString('utf8');
     if (text.includes(observationMarker)) {
-      observationUnavailable = true; stderrTail = '';
+      observationUnavailable = true;
       try { options.onObservationUnavailable?.(boot.instanceID); } catch { /* Evidence failure cannot alter execution. */ }
-    } else stderrTail = text.slice(-(observationMarker.length - 1));
+    }
   });
   child.stdout.on('data', chunk => {
     if (fatal) return;
@@ -190,10 +209,14 @@ export async function createNativeControllerProcess(options) {
   } catch (cause) {
     try { await killForRecovery(); }
     catch (cleanup) { throw Object.assign(cleanup, { nativeProcessUnsettled: true }); }
+    const diagnostics = stderrDiagnostics(stderrTail.toString('utf8'));
+    if (diagnostics.length && cause instanceof Error) Object.assign(cause, { startupDiagnostics: diagnostics });
+    stderrTail = Buffer.alloc(0);
     throw cause;
   }
   return {
     url: bound.url, port: bound.port, instanceID: boot.instanceID, pid: child.pid, startedAt, bound,
+    startupDiagnostics: stderrDiagnostics(stderrTail.toString('utf8')),
     hasExited: () => exitResult !== undefined, call, killForRecovery, killAndWaitForExit, killAndWaitForTermination,
     close() {
       if (closeWork) return closeWork;

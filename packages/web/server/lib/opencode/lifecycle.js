@@ -6,7 +6,7 @@ import { DEFAULT_AGENT_RUNTIME_SETTINGS, normalizeAgentRuntimeSettings } from '.
 import { buildVisibleSkillPolicy } from './skill-policy.js';
 import { SLIM_REPLACED_AGENT_NAMES, resolveSlimConfig } from './slim-config.js';
 import { probe as probeOpenCodeRuntime, resolveExpectedOpenCodeVersion } from './readiness-probe.js';
-import { SUPPORTED_NATIVE_OPENCODE_VERSIONS } from './version-policy.js';
+import { isNativeOpenCodeVersion } from './version-policy.js';
 import { readStartupBundleUpgradeFailure } from './runtime-host/bundle-startup-upgrade-status.js';
 
 const unavailable=(code='native_runtime_bundle_required')=>Object.assign(new Error(code==='native_runtime_owner_mismatch'?'Inherited runtime process requires a fresh server owner':'Verified native runtime bundle required'),{code,status:503});
@@ -89,6 +89,37 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     return {native,bundle};
   };
   const emitStartupStatus=text=>onStartupStatus(text);
+  state.openCodeStartup ??= { state: 'idle', attempt: 0, code: null };
+  const assertCurrentStartup = (attempt) => {
+    if (state.openCodeStartup.attempt !== attempt) {
+      throw Object.assign(new Error('OpenCode startup was superseded'), { code: 'opencode_startup_superseded' });
+    }
+  };
+  const runStartup = async (operation) => {
+    const attempt = state.openCodeStartup.attempt + 1;
+    state.openCodeStartup = { state: 'starting', attempt, code: null };
+    state.lastOpenCodeError = null;
+    state.isOpenCodeReady = false;
+    try {
+      const result = await operation(attempt);
+      assertCurrentStartup(attempt);
+      if (state.openCodeStartup.attempt === attempt) {
+        state.openCodeStartup = { state: 'ready', attempt, code: null };
+      }
+      return result;
+    } catch (error) {
+      if (state.openCodeStartup.attempt === attempt) {
+        const candidate = error?.code ?? error?.message;
+        const code = typeof candidate === 'string' && /^(?:native|opencode|bundle)_[a-z0-9_]{1,95}$/.test(candidate)
+          ? candidate : 'opencode_startup_failed';
+        state.openCodeStartup = { state: 'failed', attempt, code };
+        state.isOpenCodeReady = false;
+        state.lastOpenCodeError = error?.message ?? code;
+        syncToHmrState();
+      }
+      throw error;
+    }
+  };
   const getAgentRuntimeApplicationState=()=>({runtimeMode:'managed',appliedLsp:typeof state.appliedAgentRuntimeSettings?.lsp==='boolean'?state.appliedAgentRuntimeSettings.lsp:null});
   const prepareAgentRuntimeConfig = async () => {
     let settings = {};
@@ -127,13 +158,15 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       expectedAgentHashes: { [name]: expectedHash }, restoreOnly: true });
     return { changed: result.changed, backups: result.restored ?? [] };
   };
-  const syncManagedAgentRuntimeConfig = async (agentRuntimeSettings = normalizeAgentRuntimeSettings(readAgentRuntimeSettings())) => {
+  const syncManagedAgentRuntimeConfig = async (agentRuntimeSettings = normalizeAgentRuntimeSettings(readAgentRuntimeSettings()), attempt = state.openCodeStartup.attempt) => {
     const { workingDirectory, slimConfig, skillPolicy, packagedOptions } = await prepareAgentRuntimeConfig();
+    assertCurrentStartup(attempt);
     if (workingDirectory !== state.openCodeWorkingDirectory) {
       state.openCodeWorkingDirectory = workingDirectory;
       syncToHmrState();
     }
     const packagedResult = await syncPackagedAgents(packagedOptions);
+    assertCurrentStartup(attempt);
     const conflicts = Array.isArray(packagedResult?.conflicts) ? packagedResult.conflicts : [];
     if (conflicts.length > 0) {
       const message = formatPackagedAgentSyncConflicts(conflicts)
@@ -145,6 +178,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       skillPolicy,
       agentRuntimeSettings,
     });
+    assertCurrentStartup(attempt);
 
     if (packagedResult?.changed) {
       console.log('[OpenCode] Synced packaged agents', {
@@ -176,7 +210,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     };
   };
 
-  const waitForRuntimeReadiness = async ({ generation, timeoutMs, intervalMs, describe }) => {
+  const waitForRuntimeReadiness = async ({ generation, timeoutMs, intervalMs, describe, attempt = state.openCodeStartup.attempt }) => {
     const deadline = Date.now() + timeoutMs;
     let last = null;
     do {
@@ -190,6 +224,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       } catch {
         last = { ready: false, reason: 'unreachable' };
       }
+      assertCurrentStartup(attempt);
       if (last.ready) {
         state.openCodeGeneration = last.generation;
         if (last.version) state.openCodeVersion = last.version;
@@ -202,6 +237,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     } while (Date.now() < deadline);
 
     const reason = last?.reason ?? 'timeout';
+    assertCurrentStartup(attempt);
     const error = new Error(describe(reason));
     error.code = 'opencode_runtime_not_ready';
     error.reason = reason;
@@ -210,70 +246,78 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     throw error;
   };
 
-  const waitForOpenCodeReady=async(timeoutMs=20000,intervalMs=400)=>{
+  const waitForOpenCodeReady=async(timeoutMs=20000,intervalMs=400,attempt=state.openCodeStartup.attempt)=>{
     assertNative();if(!state.openCodePort)throw unavailable();
-    await waitForRuntimeReadiness({generation:2,timeoutMs,intervalMs,describe:reason=>`Native runtime is not ready: ${reason}`});
+    await waitForRuntimeReadiness({generation:2,timeoutMs,intervalMs,attempt,describe:reason=>`Native runtime is not ready: ${reason}`});
+    assertCurrentStartup(attempt);
     state.isOpenCodeReady=true;state.lastOpenCodeError=null;state.openCodeNotReadySince=0;syncToHmrState();
   };
   const waitForAgentPresence=async(agentName,timeoutMs=15000,intervalMs=300)=>{
     assertNative();await waitForRuntimeReadiness({generation:2,timeoutMs,intervalMs,describe:reason=>`Agent "${agentName}" runtime catalog is not ready: ${reason}`});
   };
-  const startOpenCode=async()=>{
-    state.isOpenCodeReady=false;assertExecutionReady();const {native,bundle}=assertNative();await bundle.verify();
-    if (!SUPPORTED_NATIVE_OPENCODE_VERSIONS.includes(bundle.version)) throw unavailable();
+  const launchOpenCode=async(attempt)=>{
+    state.isOpenCodeReady=false;assertExecutionReady();const {native,bundle}=assertNative();
+    assertCurrentStartup(attempt);
+    if (!isNativeOpenCodeVersion(bundle.version)) throw unavailable();
     // An invalid QA override is left for the readiness probe to report.
     let expectedVersion=null;try{expectedVersion=resolveExpectedOpenCodeVersion(2);}catch{}
     if(expectedVersion&&bundle.version!==expectedVersion)throw upgradeRequired(bundle.version,expectedVersion);
     state.openCodeWorkingDirectory=bundle.descriptor.projectMap[0].targetDirectory;
     const launchSettings=normalizeAgentRuntimeSettings(readAgentRuntimeSettings());
-    await syncManagedAgentRuntimeConfig(launchSettings);emitStartupStatus('Starting the verified native runtime…');
     state.openCodeGeneration=2;state.isExternalOpenCode=false;
-    const instance=await native.start();state.openCodeProcess=instance;state.openCodeVersion=bundle.version;
+    const instance=await native.start({ beforeConfiguration: async () => {
+      assertCurrentStartup(attempt);
+      await syncManagedAgentRuntimeConfig(launchSettings,attempt);assertCurrentStartup(attempt);emitStartupStatus('Starting the verified native runtime…');
+    } });assertCurrentStartup(attempt);state.openCodeProcess=instance;state.openCodeVersion=bundle.version;
     const acceptedConfiguration=native.getConfigurationSnapshot?.()?.locations
       .find(location=>location.directory===state.openCodeWorkingDirectory)?.configuration;
     const acceptedSettings=acceptedConfiguration?{lsp:acceptedConfiguration.lsp!==false}:launchSettings;
     state.openCodeBaseUrl=instance.url;setOpenCodePort(instance.port);setDetectedOpenCodeApiPrefix('');syncToHmrState();
-    await waitForOpenCodeReady();state.appliedAgentRuntimeSettings=acceptedSettings;syncToHmrState();return instance;
+    await waitForOpenCodeReady(20000,400,attempt);assertCurrentStartup(attempt);state.appliedAgentRuntimeSettings=acceptedSettings;syncToHmrState();return instance;
   };
+  const startOpenCode=()=>state.currentRestartPromise??runStartup(launchOpenCode);
   let pausedBrowserLeases;
   let browserLeasesPaused=false;
   let restartRecoveryRequired=false;
   const restartOpenCode=async()=>{
     if(state.isShuttingDown)return;if(state.currentRestartPromise)return state.currentRestartPromise;
-    assertNative();const restartStartedAt=Date.now();
+    const restartStartedAt=Date.now();
     // Publish the promise before any injected operation can fail synchronously.
-    state.currentRestartPromise=Promise.resolve().then(async()=>{
+    state.currentRestartPromise=Promise.resolve().then(()=>runStartup(async(attempt)=>{
       state.isRestartingOpenCode=true;state.isOpenCodeReady=false;state.openCodeNotReadySince=Date.now();
       try{
+        assertNative();
         if(!browserLeasesPaused){pausedBrowserLeases=await pauseManagedBrowserLeases('opencode_restart');browserLeasesPaused=true;}
         if(state.openCodeProcess){if(state.openCodeProcess.hasExited())await state.openCodeProcess.killForRecovery();else await state.openCodeProcess.close();}
         state.openCodeProcess=null;state.openCodePort=null;syncToHmrState();
-        await startOpenCode();if(state.expressApp){setupProxy(state.expressApp);ensureOpenCodeApiPrefix();}
+        await launchOpenCode(attempt);if(state.expressApp){setupProxy(state.expressApp);ensureOpenCodeApiPrefix();}
         await onOpenCodeRestarted({restartStartedAt});
         await resumeManagedBrowserLeases(pausedBrowserLeases);
         browserLeasesPaused=false;pausedBrowserLeases=undefined;restartRecoveryRequired=false;
       }catch(error){restartRecoveryRequired=true;state.lastOpenCodeError=error.message;state.isOpenCodeReady=false;throw error;}
       finally{state.isRestartingOpenCode=false;state.currentRestartPromise=null;syncToHmrState();}
-    });return state.currentRestartPromise;
+    }));return state.currentRestartPromise;
   };
-  const bootstrapOpenCodeAtStartup=async()=>{
+  const bootstrapOpenCodeAtStartup=()=>state.currentRestartPromise??runStartup(async(attempt)=>{
     const {native,bundle}=assertNative();syncFromHmrState();state.isOpenCodeReady=false;
     // A process inherited from an older module has no authority in this owner.
     if(state.openCodeProcess&&!state.openCodeProcess.hasExited()){
       if(state.openCodeGeneration!==2||state.openCodeVersion!==bundle.version||native.isReady?.()!==true){
         const error=unavailable('native_runtime_owner_mismatch');state.lastOpenCodeError=error.message;syncToHmrState();throw error;
       }
-      await waitForOpenCodeReady();return;
+      await waitForOpenCodeReady(20000,400,attempt);return;
     }
-    try{return await startOpenCode();}catch(error){state.isOpenCodeReady=false;state.lastOpenCodeError=error.message;syncToHmrState();throw error;}
-  };
+    return launchOpenCode(attempt);
+  });
   let failures=0;
   const triggerHealthCheck=async()=>{
     if(state.isShuttingDown||state.isRestartingOpenCode)return;
     if(restartRecoveryRequired){await restartOpenCode();return;}
     if(!state.openCodeProcess)return;
     if(state.openCodeProcess.hasExited()){await restartOpenCode();return;}
+    const attempt=state.openCodeStartup.attempt;
     const result=await probeOpenCodeReadiness({generation:2,baseUrl:buildOpenCodeUrl('/',''),headers:getOpenCodeAuthHeaders(),signal:AbortSignal.timeout(5000)}).catch(()=>({ready:false}));
+    if(state.openCodeStartup.attempt!==attempt)return;
     state.openCodeProbe={checkedAt:Date.now(),succeeded:result.ready===true};
     if(result.ready){failures=0;return;}if(getActiveSessionCount()>0)return;
     const configured=Number(process.env.DEVRYAN_HEALTH_RESTART_FAILURES),limit=Number.isSafeInteger(configured)&&configured>=1&&configured<=10?configured:3;
@@ -295,9 +339,11 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
 
     console.log(`Applying saved OpenCode configuration scopes: ${scopes.join(', ') || 'runtime'}`);
     await restartOpenCode();
+    const attempt = state.openCodeStartup.attempt;
 
     try {
       await waitForOpenCodeReady();
+      assertCurrentStartup(attempt);
       state.isOpenCodeReady = true;
       state.openCodeNotReadySince = 0;
 
@@ -308,6 +354,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         });
       }
 
+      assertCurrentStartup(attempt);
       state.isOpenCodeReady = true;
       state.openCodeNotReadySince = 0;
       return {
@@ -315,6 +362,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         requiresReload: false,
       };
     } catch (error) {
+      assertCurrentStartup(attempt);
       state.isOpenCodeReady = false;
       state.openCodeNotReadySince = Date.now();
       console.error('Failed to apply saved OpenCode configuration:', error.message);

@@ -72,16 +72,20 @@ const sweepUnsealedCandidate = async (controlRoot, bundleID) => {
 
 /** Cold upgrade of the selected bundle at startup, inside the bootstrap lock and
  * before any data owner, controller or admission exists. It runs only when the
- * selected OpenCode version misses this application's pin and the application
- * ships exactly the pinned version, and it never downgrades. The lifecycle
+ * selected artifact differs from this application's pinned artifact, and it
+ * never downgrades OpenCode. The lifecycle
  * upgrade performs the verified clone, credential capture and selector CAS, and
  * keeps the previous bundle as the rollback target. A failure leaves the
  * selection unchanged and is recorded for the startup error, never thrown. */
 export async function upgradeSelectedNativeBundleAtStartup({ controlRoot, env = process.env, artifactDirectory,
   verifyArtifacts, credentialProcess, privatePersistence = {}, createLifecycle = createRuntimeBundleLifecycle, log = console }) {
+  let upgradeStartedAt;
   const refused = code => {
     recordStartupBundleUpgradeFailure(code);
     log.warn?.(`[runtime-bundle] startup upgrade not applied: ${code}`);
+    if (upgradeStartedAt !== undefined) log.warn?.('[runtime-bundle] startup phase', {
+      phase: 'bundle_upgrade', outcome: 'failed', elapsedMs: Date.now() - upgradeStartedAt, code,
+    });
     return { status: 'failed', code };
   };
   let expected;
@@ -91,10 +95,12 @@ export async function upgradeSelectedNativeBundleAtStartup({ controlRoot, env = 
     if (binding.admission === 'held' || binding.selection.reconciliationRequired) return { status: 'held' };
     const launch = binding.descriptor.launch;
     const selected = await readManifest(launch.artifactManifestPath);
-    if (selected?.version === expected) return { status: 'current' };
+    if (selected?.version === expected && binding.selection.transition === 'rollback') return { status: 'current' };
     const shipped = await readManifest(path.join(artifactDirectory, 'native-bundle.json'));
+    if (selected?.version === expected && selected.sha256 === shipped?.sha256) return { status: 'current' };
     if (shipped?.version !== expected) return refused('bundle_upgrade_unavailable');
     if (newer(selected?.version, expected)) return refused('bundle_runtime_newer_than_application');
+    upgradeStartedAt = Date.now();
     // The next controller launch reaps dead owners' orphans anyway; a live owner is never touched.
     const reaped = await reapOrphanedManagedOpenCodeProcesses(registryOptions(launch));
     if (reaped.kept.length || reaped.reaped.some(entry => !entry.terminated)) throw fail('bundle_upgrade_owner_active');
@@ -106,6 +112,7 @@ export async function upgradeSelectedNativeBundleAtStartup({ controlRoot, env = 
       artifactDirectory, verifyArtifacts, credentialProcess, privatePersistence });
     const result = await lifecycle.upgrade({ expectedRevision: binding.selection.revision });
     log.info?.(`[runtime-bundle] upgraded the selected runtime from OpenCode ${selected?.version ?? 'unknown'} to ${shipped.version}`);
+    log.info?.('[runtime-bundle] startup phase', { phase: 'bundle_upgrade', outcome: 'completed', elapsedMs: Date.now() - upgradeStartedAt });
     return { status: 'upgraded', revision: result.revision, from: selected?.version ?? null, to: shipped.version };
   } catch (error) {
     return refused(finiteCode(error));

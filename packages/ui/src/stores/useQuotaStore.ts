@@ -596,6 +596,7 @@ export const quotaRefreshCoordinator = createQuotaRefreshCoordinator({
   loadSettings: () => useQuotaStore.getState().loadSettings(),
   refresh: (options) => useQuotaStore.getState().fetchAllQuotas(options),
   getRefreshIntervalMs: () => getEffectiveQuotaRefreshIntervalMs(useQuotaStore.getState()),
+  needsPromptRetry: () => useQuotaStore.getState().configuredProviderIds === null,
 });
 
 notifyQuotaSettingsChanged = () => quotaRefreshCoordinator.settingsChanged();

@@ -1,0 +1,98 @@
+{
+  "qualification": "Final deterministic validation and isolated unsigned QA; no installed app or user data changed",
+  "completedAt": "2026-10-10T00:58:10.619Z",
+  "fullValidation": {
+    "command": "DEVRYAN_SCRIPT_TEST_CONCURRENCY=1 bun run validate:full",
+    "exitCode": 0,
+    "logSha256": "2fde40178f4348e4e38570e46248b91e77a998e6060d6143f95e0dd5c107eb33",
+    "uiTestsPassed": 4076,
+    "webTestFilesPassed": 535,
+    "webTestsPassed": 6560,
+    "nativeWebTailTestsPassed": 14,
+    "workspaceLintAndTypes": "passed",
+    "realNativeGraphChecks": "passed"
+  },
+  "focusedVerification": {
+    "lifecycleBundleAndNativeOwnerTestsPassed": 115,
+    "build": {
+      "command": "bun run build",
+      "exitCode": 0
+    },
+    "bundleCheck": {
+      "command": "bun run bundle:check",
+      "exitCode": 0
+    }
+  },
+  "finalNativeArtifact": {
+    "opencodeVersion": "2.0.26",
+    "buildID": "08496114b6cf7a9e7aa29714b89226ce4a1cdff7bba0dc5d4da477e2bd0ba44b",
+    "artifactManifestSha256": "7459febe9d41e4ff19d92ace94df85d3d87ad68b9a5607c812a8f566afb79ec5"
+  },
+  "completeStartup": {
+    "status": "passed",
+    "plugins": 7,
+    "cursorModels": 282,
+    "activeIntegrationShapes": 5,
+    "legacyOpenAiMethod": "chatgpt-browser",
+    "legacyOAuthColumns": null,
+    "xaiExpiryState": "expired",
+    "startupCodes": [],
+    "cleanupFailures": [],
+    "remainingProcesses": []
+  },
+  "postFullFixtureChange": {
+    "change": "Synthetic xAI expiry is past; read-only synthetic metadata assertion verifies it",
+    "actualNativeStartup": "passed",
+    "changedFixtureLintExitCode": 0,
+    "productionCodeChanged": false
+  },
+  "packagedComparison": {
+    "launchesPerCohort": 3,
+    "beforeMedianMs": 13914.306499999999,
+    "afterMedianMs": 13342.730750000017,
+    "reductionPercent": 4.107827795801263,
+    "configurationQualification": "Same sanitized provider shapes, synthetic retired OpenAI login and local model transport in both cohorts; empty plugin/MCP configuration and fixture model defaults. Full registered-plugin/integration coverage is a separate native startup proof.",
+    "proof": "startup-comparison.json"
+  },
+  "packagedSameVersionRepair": {
+    "launches": 3,
+    "status": "passed",
+    "proof": "packaged-repair-upgrade.json"
+  },
+  "historicalAttempts": {
+    "priorValidationWithConcurrentQA": "one native-process startup timeout; isolated 11 tests passed, then clean full validation passed",
+    "accidentalWholeWebTestCommand": "interrupted; not counted as a pass",
+    "earlierHistory": "verification.json"
+  },
+  "limits": [
+    "Unsigned QA packages; release signing and notarization not checked",
+    "Installed-app update/relaunch not performed",
+    "Live provider inference not performed",
+    "Timing uses a controlled sanitized fixture, not the installed database, natural foreground admission or cold OS caches"
+  ],
+  "requiredUserAction": "Reconnect retired OpenAI login through Sign in with ChatGPT before using OpenAI",
+  "docsValidation": {
+    "command": "bun run docs:validate",
+    "exitCode": 0,
+    "documents": 220,
+    "localReferences": 810,
+    "existingUnrelatedWarnings": true
+  },
+  "diffCheck": {
+    "command": "git diff --check",
+    "exitCode": 0
+  },
+  "cleanupProof": "cleanup.json",
+  "cache": {
+    "reportCommand": "bun run cache:report",
+    "reportExitCode": 0,
+    "usageGiB": 30.48,
+    "budgetGiB": 50,
+    "freeDiskGiB": 211.47,
+    "pruneCommand": "bun run cache:prune",
+    "pruneExitCode": 0,
+    "previewOnly": true,
+    "eligibleGiB": 1.16,
+    "unrelatedEligiblePackageRemoved": false
+  }
+}

@@ -76,6 +76,34 @@ describe('provider usage in Settings → Providers', () => {
     expect(render(<ProviderUsageSection providerId="openai" />)).toBe('');
   });
 
+  test('shows nothing for a connected provider that simply has no usage source', () => {
+    expect(render(<ProviderUsageSection providerId="openai" connected />)).toBe('');
+  });
+
+  test('shows the failure and a retry for a connected provider while usage discovery is failing', () => {
+    const state: Partial<ReturnType<typeof useQuotaStore.getState>> = {
+      configuredProviderIds: null,
+      error: 'native_runtime_not_ready',
+    };
+    useQuotaStore.setState(state);
+    Object.assign(useQuotaStore.getInitialState(), state);
+
+    const markup = render(<ProviderUsageSection providerId="openai" connected />);
+
+    expect(markup).toContain('No usage data available yet.');
+    expect(markup).toContain('native_runtime_not_ready');
+    expect(render(<ProviderUsageSection providerId="openai" connected={false} />)).toBe('');
+    expect(render(<ProviderUsageSection providerId="ollama" connected />)).toBe('');
+  });
+
+  test('stays hidden while discovery is merely pending', () => {
+    const state: Partial<ReturnType<typeof useQuotaStore.getState>> = { configuredProviderIds: null, error: null };
+    useQuotaStore.setState(state);
+    Object.assign(useQuotaStore.getInitialState(), state);
+
+    expect(render(<ProviderUsageSection providerId="openai" connected />)).toBe('');
+  });
+
   test('shows the most-used window as a sidebar meter', () => {
     const markup = render(<ProviderUsageMeter quotaProviderId="claude" />);
 

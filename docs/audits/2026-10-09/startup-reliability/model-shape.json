@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "scope": "282 sanitized Cursor model shapes; original and diagnostic-enabled 2.0.26 controllers; no installed credential access",
+  "runs": [
+    {
+      "run": "native-factory-ooSmmV",
+      "status": "passed",
+      "qualification": "synthetic-factory-and-actual-isolated-host-startup-only",
+      "models": {
+        "id": "actual-custom-provider-model-catalog",
+        "providerID": "cursor-acp",
+        "expectedModels": 282,
+        "matchedModels": 282,
+        "connected": true
+      },
+      "nativeReady": true,
+      "cleanupFailures": []
+    },
+    {
+      "run": "native-factory-5wWS9x",
+      "status": "passed",
+      "qualification": "synthetic-factory-and-actual-isolated-host-startup-only",
+      "models": {
+        "id": "actual-custom-provider-model-catalog",
+        "providerID": "cursor-acp",
+        "expectedModels": 282,
+        "matchedModels": 282,
+        "connected": true
+      },
+      "nativeReady": true,
+      "cleanupFailures": []
+    }
+  ]
+}

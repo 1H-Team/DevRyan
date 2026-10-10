@@ -98,7 +98,7 @@ export function createNativeProviderConfigurationOperation({ descriptor, getSnap
       await recheck();
       if (!Array.isArray(rows) || rows.length > 256 || rows.some(row => !row || row.integrationID !== integrationID || !/^[A-Za-z0-9_-]{1,256}$/.test(row.id ?? '')
         || !/^[a-f0-9]{64}$/.test(row.expectedFingerprint ?? '') || !['key', 'oauth'].includes(row.valueType)
-        || kind === 'cursor' && row.valueType !== 'key' || row.valueType === 'oauth' && !['chatgpt-siwc', 'chatgpt-browser', 'chatgpt-headless'].includes(row.methodID))
+        || kind === 'cursor' && row.valueType !== 'key' || row.valueType === 'oauth' && !(kind === 'openai' ? ['chatgpt-siwc', 'chatgpt-browser', 'chatgpt-headless'].includes(row.methodID) : kind === 'provider' && integrationID === 'xai' && row.methodID === 'device'))
         || new Set(rows.map(row => row.id)).size !== rows.length) throw fail('native_credential_metadata_invalid', 502);
       return rows;
     };

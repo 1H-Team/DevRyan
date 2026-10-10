@@ -1,6 +1,45 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { assertPackagePreflightOptions, assertCompiledCompositionCatalogs, packagePreflightResult } from './package-preflight.mjs';
+import { assertPackagePreflightOptions, assertCompiledCompositionCatalogs, packagePreflightResult,
+  createBuiltinCatalogPreflight, assertBuiltinCatalogPreflight, builtinCatalogPreflightFetch } from './package-preflight.mjs';
+
+test('builtin fixture routes fixed compatibility discovery to loopback and refuses every other external URL', async () => {
+  const calls = [];
+  const fetch = builtinCatalogPreflightFetch('http://127.0.0.1:43210', async (input, options) => {
+    calls.push({ url: String(input), options }); return new Response('{}');
+  });
+  await fetch('https://api.githubcopilot.com/models', { headers: { authorization: 'synthetic' } });
+  await fetch('http://127.0.0.1:43211/health');
+  assert.equal(calls[0].url, 'http://127.0.0.1:43210/models');
+  assert.equal(calls[0].options.headers.authorization, 'synthetic');
+  for (const url of ['https://api.githubcopilot.com/inference', 'https://api.openai.com/models', 'http://fixture.invalid/models']) {
+    assert.throws(() => fetch(url), /refuses external/);
+  }
+  assert.equal(calls.length, 2);
+});
+
+test('builtin catalog preflight discovers only synthetic loopback models and asserts both location catalogs', async () => {
+  const lane = await createBuiltinCatalogPreflight();
+  try {
+    const endpoint = new URL(lane.endpoint);
+    assert.equal(endpoint.hostname, '127.0.0.1'); assert.equal(endpoint.protocol, 'http:');
+    const response = await fetch(new URL('/models', endpoint));
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.data[0].id, 'devryan-startup-copilot');
+    assert.equal(lane.evidence().discoveryRequests, 1);
+    assert.equal((await fetch(new URL('/inference', endpoint))).status, 404);
+    const calls = [];
+    const client = { catalog: { providerList: async ({ directory }) => {
+      calls.push(directory);
+      return { connected: lane.expected.map(row => row.providerID),
+        all: lane.expected.map(row => ({ id: row.providerID, models: { [row.id]: {} } })) };
+    } } };
+    const proof = await assertBuiltinCatalogPreflight({ client, directories: ['/owned/one', '/owned/two'], expected: lane.expected });
+    assert.deepEqual(calls, ['/owned/one', '/owned/two']);
+    assert.equal(proof.locations.length, 2); assert.equal(proof.synthetic, true);
+  } finally { await lane.close(); }
+});
 
 const fixture = () => {
   const locations = ['/owned/one', '/owned/two'].map(directory => ({ directory, activeRegistrationIDs: ['reviewed'],

@@ -83,6 +83,11 @@ file-fsync/rename/parent-fsync sequence. Invalid JSON records are moved to a
   a recent time range by rebuilding older retained records and their blob
   sidecars, or remove all current and legacy journal data. Both modes preserve
   the discovery files and accept newly arriving records afterward.
+  These modules also preserve validated native startup catalog codes and bounded recognized
+  stderr diagnostics. Schema paths accept only fixed field names and indices;
+  raw errors, values and arbitrary plugin logfmt fields remain excluded. The
+  `sanitizeNativeSchemaPath` submodule export shares that path policy with the
+  native producer. Startup export applies the same validation again.
   Web/Electron hosts record raw OpenCode events only from the canonical global
   watcher; event transport bridges never call the journal, preventing duplicate
   records when multiple UI stream clients are attached.

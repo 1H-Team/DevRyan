@@ -140,4 +140,15 @@ describe('UsageProviderPanel quota warnings and value rows', () => {
     expect(openCodeMarkup).not.toContain('background-color:var(--status-error)');
     expect(adaptiveMarkup).toContain('background-color:var(--status-error)');
   });
+
+  test('shows the server error text for a configured provider without windows', () => {
+    const markup = renderPanel({
+      providerId: 'codex',
+      providerName: 'OpenAI',
+      entries: [],
+      error: 'Usage is not available with Sign in with ChatGPT',
+    });
+
+    expect(markup).toContain('Usage is not available with Sign in with ChatGPT');
+  });
 });

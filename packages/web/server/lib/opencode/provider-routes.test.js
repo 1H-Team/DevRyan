@@ -1011,6 +1011,61 @@ describe('OpenCode provider routes', () => {
     fetchSpy.mockRestore();
   });
 
+  it('resolves an unreviewed project directory to the default location for API-key availability reads', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: vi.fn(async () => ({
+        providers: [{ id: 'openai', name: 'OpenAI', models: { 'gpt-5.6-luna': { id: 'gpt-5.6-luna', name: 'GPT-5.6 Luna' } } }],
+        default: {},
+      })),
+    });
+    const readOpenAiSelected = vi.fn(async (scope) => {
+      expect(scope.directory).toBe('/tmp/project');
+      return { credentialID: 'native-key-fixture', value: { type: 'key', key: 'native-secret-api-key' } };
+    });
+    const { app } = createApp({
+      buildOpenCodeUrl: vi.fn((requestPath) => `http://opencode.test${requestPath}`),
+      cursorSdkRuntime: null,
+      getNativeRuntimeOwner: () => ({ isReady: () => true, getConfigurationSnapshot: () => ({ locations: [{ directory: '/tmp/project', configuration: { providers: {} } }] }), readOpenAiSelected }),
+    });
+
+    const response = await request(app).get('/api/config/providers?directory=%2Ftmp%2Funreviewed').expect(200);
+
+    expect(readOpenAiSelected).toHaveBeenCalled();
+    expect(response.body.providers[0].authType).toBe('api');
+    expect(response.body.providers[0].models['gpt-5.6-luna'].available).not.toBe(false);
+    fetchSpy.mockRestore();
+  });
+
+  it('leaves the catalog untouched for API-key users when provider integration merging fails', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    readAuthFile.mockImplementation(() => { throw new Error('auth read failed'); });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: vi.fn(async () => ({
+        providers: [{ id: 'openai', name: 'OpenAI', models: { 'gpt-5.6-luna': { id: 'gpt-5.6-luna', name: 'GPT-5.6 Luna' } } }],
+        default: {},
+      })),
+    });
+    const keyOwner = { isReady: () => true, getConfigurationSnapshot: () => ({ locations: [{ directory: '/tmp/project', configuration: { providers: {} } }] }),
+      readOpenAiSelected: async () => ({ credentialID: 'native-key-fixture', value: { type: 'key', key: 'native-secret-api-key' } }) };
+    const oauthOwner = { ...keyOwner, readOpenAiSelected: async () => ({ credentialID: 'oauth-fixture', value: { type: 'oauth', methodID: 'chatgpt-siwc', access: 'a' } }) };
+    try {
+      const keyApp = createApp({ buildOpenCodeUrl: vi.fn((requestPath) => `http://opencode.test${requestPath}`), cursorSdkRuntime: null, getNativeRuntimeOwner: () => keyOwner }).app;
+      const keyResponse = await request(keyApp).get('/api/config/providers').expect(200);
+      expect(keyResponse.body.providers[0].models['gpt-5.6-luna']).toEqual({ id: 'gpt-5.6-luna', name: 'GPT-5.6 Luna' });
+      expect(errors).toHaveBeenCalledWith('Failed to merge provider integrations:', expect.any(Error));
+      expect(keyResponse.body.providers[0].authType).toBe('api');
+      expect(keyResponse.body.providers[0].accountModelsStatus).toBeUndefined();
+      const oauthApp = createApp({ buildOpenCodeUrl: vi.fn((requestPath) => `http://opencode.test${requestPath}`), cursorSdkRuntime: null, getNativeRuntimeOwner: () => oauthOwner }).app;
+      const oauthResponse = await request(oauthApp).get('/api/config/providers').expect(200);
+      expect(oauthResponse.body.providers[0].accountModelsStatus).toBe('unavailable');
+    } finally {
+      errors.mockRestore();
+      fetchSpy.mockRestore();
+    }
+  });
+
   it('leaves external OpenCode OpenAI catalogs unchanged', async () => {
     readAuthFile.mockReturnValue({ openai: { type: 'oauth', access: 'secret-access-token' } });
     const upstream = {

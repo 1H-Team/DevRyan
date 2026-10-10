@@ -304,7 +304,9 @@ describe('scoped OpenCode Bot plugin', () => {
       for (const dependency of scanner.scan(await fs.readFile(new URL(source, repository), 'utf8')).imports) {
         if (!dependency.path.startsWith('.')) continue;
         const resolved = path.posix.resolve(path.posix.dirname(target), dependency.path);
-        expect(copies.has(resolved), `${source} requires uncopied image input ${resolved}`).toBe(true);
+        // Bun resolves emitted .js imports to their original TypeScript modules.
+        const available = copies.has(resolved) || (resolved.endsWith('.js') && copies.has(resolved.slice(0, -3) + '.ts'));
+        expect(available, `${source} requires uncopied image input ${resolved}`).toBe(true);
       }
     }
   });

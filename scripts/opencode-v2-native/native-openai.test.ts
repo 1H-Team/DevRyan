@@ -61,6 +61,30 @@ test('native integration catalog exposes one host-owned SIWC method and preserve
   }).pipe(Effect.provide(layer))));
 });
 
+test.each(['chatgpt-browser','chatgpt-headless','chatgpt-token-sharing'])('retired %s connection does not block catalog reads or authorize requests', async methodID => {
+  await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const credential = yield* Credential.Service, integration = yield* Integration.Service;
+    const legacy = { ...value, methodID: Schema.decodeUnknownSync(Integration.MethodID)(methodID) };
+    const created = yield* credential.create({ integrationID: Schema.decodeUnknownSync(Integration.ID)('openai'), value: legacy });
+    let attempts = 0;
+    const adapter = createNativeOpenAi({ assertAttempt:()=>Effect.void,controllerIdentity:()=> 'controller-fixture',isBound:()=>true,isExecutionReady:()=>true,
+      access:async()=>{attempts++;throw Error('Retired credential must not acquire access');},
+      captureOAuthGrant:()=>Effect.die('No enrollment'),withCredentialMutation:(_binding,action)=>action });
+    adapter.decorateCredential(credential);
+    const decorated = adapter.decorateIntegration(integration,actual);
+    const connection = yield* decorated.connection.active(Schema.decodeUnknownSync(Integration.ID)('openai'));
+    if (!connection) throw Error('Legacy selection missing');
+    expect(yield* decorated.connection.resolve(connection)).toBeUndefined();
+    expect((yield* credential.get(created.id))?.value).toEqual(legacy);
+    const hooks = adapter.decorateHooks(yield* PluginHooks.Service);
+    const event: SessionHttpRequest = {sessionID,agent,model,kind:'primary',request:new Request('https://api.openai.com/v1/responses')};
+    const exit = yield* Effect.exit(hooks.trigger('session','http.request',event).pipe(Effect.provideService(Location.Service,actual)));
+    expect(exit._tag).toBe('Failure');
+    if (exit._tag === 'Failure') expect(exit.cause.reasons).toContainEqual(expect.objectContaining({ _tag:'Die', defect:expect.objectContaining({code:'native_openai_method_unsupported'}) }));
+    expect(attempts).toBe(0);
+  }).pipe(Effect.provide(layer))));
+});
+
 test('real native Credential/Integration keeps bootstrap metadata local and uses original-service CAS', async () => {
   await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
     const credential = yield* Credential.Service, integration = yield* Integration.Service;

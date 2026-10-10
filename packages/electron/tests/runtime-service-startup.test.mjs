@@ -8,6 +8,9 @@ import {
   createRuntimeOwnerAcquirer,
   recoverAppBoundRuntime,
   retryRuntimeServiceConnection,
+  runtimeServiceRequestSignal,
+  runStartupPhase,
+  createDesktopHostLeaseHandler,
 } from '../runtime-service-startup.mjs';
 import { createRuntimeServiceRegistration } from '../runtime-service-registration.mjs';
 
@@ -299,6 +302,130 @@ describe('background runtime connection wait', () => {
     await assert.rejects(result, { code: 'runtime_service_bootstrap_rejected' });
     assert.ok(clock.now >= 25_000 && clock.now < 25_500);
   });
+
+  test('a stale descriptor stops retrying only after current ownership is proved stopped', async () => {
+    for (const stopped of [true, false, new Error('identity unavailable')]) {
+      let attempts = 0, observations = 0, elapsed = 0;
+      const result = retryRuntimeServiceConnection({
+        connect: async () => {
+          attempts++;
+          if (attempts === 1) throw failure('runtime_service_owner_stale');
+          return 'connected to the replacement';
+        },
+        isOwnerStopped: async () => {
+          observations++;
+          if (stopped instanceof Error) throw stopped;
+          return stopped;
+        },
+        now: () => elapsed, wait: async ms => { elapsed += ms; },
+      });
+      if (stopped === true) {
+        await assert.rejects(result, { code: 'runtime_service_owner_stale', retryable: false });
+        assert.equal(attempts, 1);
+        assert.equal(elapsed, 0);
+      } else {
+        assert.equal(await result, 'connected to the replacement');
+        assert.equal(attempts, 2);
+      }
+      assert.equal(observations, 1);
+    }
+  });
+
+  test('cold missing descriptors retain their starting budget without inspecting ownership', async () => {
+    let elapsed = 0;
+    const deadlines = [];
+    const result = await retryRuntimeServiceConnection({
+      connect: async ({ deadline }) => {
+        deadlines.push(deadline);
+        if (elapsed < 27_000) throw failure('ENOENT');
+        return 'connected';
+      },
+      isOwnerStopped: () => assert.fail('Missing descriptors are expected during cold service startup'),
+      now: () => elapsed, wait: async ms => { elapsed += ms; },
+    });
+    assert.equal(result, 'connected');
+    assert.equal(deadlines[0], 20_000);
+    assert.ok(deadlines.slice(1).every(deadline => deadline === 60_000));
+  });
+
+  test('HTTP aborts keep the ordinary connection budget and a sanitized timeout code', async () => {
+    let elapsed = 0;
+    const result = retryRuntimeServiceConnection({
+      connect: async ({ deadline }) => {
+        elapsed += Math.min(5_000, deadline - elapsed);
+        throw new DOMException('request details', 'TimeoutError');
+      },
+      now: () => elapsed, wait: async ms => { elapsed += ms; },
+    });
+    await assert.rejects(result, { code: 'runtime_service_connection_timeout' });
+    assert.equal(elapsed, 20_000);
+  });
+});
+
+test('service HTTP request signals share the retry deadline and cap individual requests', t => {
+  const timeouts = [];
+  t.mock.method(AbortSignal, 'timeout', ms => { timeouts.push(ms); return AbortSignal.abort(); });
+  runtimeServiceRequestSignal(60_000, () => 0);
+  runtimeServiceRequestSignal(60_000, () => 59_900);
+  assert.deepEqual(timeouts, [5_000, 100]);
+  assert.throws(() => runtimeServiceRequestSignal(60_000, () => 60_000), {
+    code: 'runtime_service_connection_timeout', retryable: false,
+  });
+});
+
+test('desktop broker admission returns while OpenCode startup is pending and reports failure safely', async () => {
+  const logs = [];
+  let rejectStartup, started = false;
+  const state = { serverHandle: { resumeDeferredOpenCodeStartup: () => {
+    started = true;
+    return new Promise((_resolve, reject) => { rejectStartup = reject; });
+  } } };
+  const handler = createDesktopHostLeaseHandler({ state, log: { warn: (...args) => logs.push(args) } });
+  const lease = { leaseId: 'fixture', brokerToken: 'private fixture', expiresAt: 'fixture' };
+  assert.equal(handler(lease), undefined);
+  assert.deepEqual(state.desktopHostBrokerLease, lease);
+  assert.ok(Object.isFrozen(state.desktopHostBrokerLease));
+  lease.brokerToken = 'changed';
+  assert.equal(state.desktopHostBrokerLease.brokerToken, 'private fixture');
+  await Promise.resolve();
+  assert.equal(started, true);
+  assert.equal(logs.length, 0);
+  rejectStartup(Object.assign(new Error('private request details'), { code: 'runtime_service_start_failed' }));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(logs.length, 1);
+  assert.deepEqual({ ...logs[0][1], elapsedMs: 0 }, {
+    phase: 'service_opencode', outcome: 'failed', elapsedMs: 0, code: 'runtime_service_start_failed',
+  });
+  assert.doesNotMatch(JSON.stringify(logs), /private/);
+});
+
+test('startup phase timings retain success results and original failures without payloads', async () => {
+  const logs = [];
+  let clock = 10;
+  const log = { info: (...args) => logs.push(args), warn: (...args) => logs.push(args) };
+  assert.equal(await runStartupPhase('fixture_success', async () => { clock += 12; return 'result'; }, log, () => clock), 'result');
+  const error = new Error('private request details');
+  await assert.rejects(runStartupPhase('fixture_failure', async () => { clock += 8; throw error; }, log, () => clock), value => value === error);
+  assert.deepEqual(logs.map(([, value]) => value), [
+    { phase: 'fixture_success', outcome: 'completed', elapsedMs: 12 },
+    { phase: 'fixture_failure', outcome: 'failed', elapsedMs: 8, code: 'startup_phase_failed' },
+  ]);
+  assert.doesNotMatch(JSON.stringify(logs), /private/);
+});
+
+test('lease refreshes admit the broker without retrying failed deferred startup', async () => {
+  let starts = 0;
+  const state = { serverHandle: { resumeDeferredOpenCodeStartup: async () => {
+    starts++;
+    throw Object.assign(new Error('fixture'), { code: 'native_startup_failed' });
+  } } };
+  const handler = createDesktopHostLeaseHandler({ state });
+  handler({ leaseId: 'initial' });
+  await new Promise(resolve => setImmediate(resolve));
+  handler({ leaseId: 'refreshed' });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(starts, 1);
+  assert.equal(state.desktopHostBrokerLease.leaseId, 'refreshed');
 });
 
 describe('service mode without a registration', () => {

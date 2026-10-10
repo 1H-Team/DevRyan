@@ -214,3 +214,26 @@ test('expired SIWC image access refuses before OAuth refresh, provider traffic o
     expect(commands).toBe(1); expect(network).toBe(0); expect(mutations).toBe(0);
   } finally { globalThis.fetch = originalFetch; await owner.invalidate(); await fs.rm(root, { recursive: true, force: true }); }
 });
+
+test('provider selected reads are limited to xAI and OpenCode Go under the caller grant', async () => {
+  const root = await fs.mkdtemp(path.resolve(import.meta.dirname, '../../../../../../.cache/v2-validation/provider-read-owner-'));
+  const instanceID = 'controller-fixture'; let reply, calls = [];
+  const owner = createNativeIntegrationOwner({ instanceID, stateDirectory: root,
+    snapshot: { locations: [{ directory: root, configuration: { providers: {} }, compatibility: { mcp: {} } }] },
+    controller: () => ({ instanceID, call: async input => { calls.push(input); return structuredClone(reply); } }),
+    isReady: () => true, withMutationQueue: action => action(), captureWebAuthorization: async () => async () => {}, admissionOwner: {} });
+  const scope = id => ({ kind: 'provider', directory: root, integrationID: id, configurationDigest: fingerprint({}),
+    operation: 'provider.integration', method: 'GET', path: `/api/integration/${id}` });
+  try {
+    reply = { directory: root, controllerInstanceID: instanceID, integrationID: 'xai', credentialID: 'cred_x', value: { type: 'oauth', methodID: 'device', access: 'fixture-access' } };
+    expect(await owner.readProviderSelected(scope('xai'))).toEqual(reply);
+    expect(calls).toEqual([{ action: 'provider-read-selected-owned', directory: root, integrationID: 'xai', controllerInstanceID: instanceID }]);
+    reply = null; expect(await owner.readProviderSelected(scope('opencode-go'))).toBeUndefined();
+    reply = { directory: root, controllerInstanceID: instanceID, integrationID: 'opencode-go', credentialID: 'cred_x', value: { type: 'key', key: 'k' } };
+    await expect(owner.readProviderSelected(scope('xai'))).rejects.toMatchObject({ code: 'native_integration_binding_invalid' });
+    const count = calls.length;
+    await expect(owner.readProviderSelected({ ...scope('xai'), operation: 'openai.integration' })).rejects.toBeTruthy();
+    await expect(owner.readProviderSelected({ ...scope('opencode'), integrationID: 'opencode' })).rejects.toBeTruthy();
+    expect(calls.length).toBe(count);
+  } finally { await owner.invalidate(); await fs.rm(root, { recursive: true, force: true }); }
+});

@@ -1,7 +1,11 @@
 export const TARGET_OPENCODE_VERSION = '2.0.26';
 
-// Retained bundles use their matching compiled controller for rollback.
-export const SUPPORTED_NATIVE_OPENCODE_VERSIONS = Object.freeze(['2.0.20', '2.0.24', TARGET_OPENCODE_VERSION]);
+// Any OpenCode 2.x release can run natively: each bundle is admitted through its own
+// verified artifact manifest, and a retained bundle uses its matching compiled
+// controller for rollback. The version number grants no clone compatibility
+// (native-bundle-compatibility.js) and never selects a runtime above the host pin.
+const NATIVE_RELEASE_VERSION = /^2\.\d+\.\d+$/;
+export const isNativeOpenCodeVersion = version => typeof version === 'string' && NATIVE_RELEASE_VERSION.test(version);
 
 // The Bot runtime container image pins its own OpenCode build
 // (packages/bots-runtime/docker/opencode/Dockerfile). The two roll independently:

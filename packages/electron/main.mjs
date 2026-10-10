@@ -71,6 +71,9 @@ import {
   ensureRuntimeServiceRegistered,
   retireMismatchedRuntimeService,
   reregisterRuntimeServiceAfterUpgrade,
+  runtimeServiceRequestSignal,
+  runStartupPhase,
+  createDesktopHostLeaseHandler,
 } from './runtime-service-startup.mjs';
 import {
   buildQuitRiskSnapshot,
@@ -552,7 +555,9 @@ const loadShellEnv = () => {
 // bundle selector. Adopt their shell-only values first so this process's root
 // capture and binding read resolve the same roots as the server.
 if (!isRuntimeServiceControlProbe) {
+  const startedAt = performance.now();
   Object.assign(process.env, selectShellDataRoots(process.env, loadShellEnv(), { packaged: app.isPackaged }));
+  log.info('[electron] startup phase', { phase: 'shell_environment', outcome: 'completed', elapsedMs: Math.round(performance.now() - startedAt) });
 }
 
 // The binding changes OPENCHAMBER_DATA_DIR during module evaluation. Capture
@@ -761,13 +766,13 @@ const waitForHealth = async (url, timeoutMs = 20_000, initialPollMs = 250, maxPo
   let pollMs = initialPollMs;
   while (Date.now() < deadline) {
     try {
-      const response = await fetch(buildHealthUrl(url), { signal: AbortSignal.timeout(Math.min(pollMs * 4, 1500)) });
+      const response = await fetch(buildHealthUrl(url), { signal: AbortSignal.timeout(Math.max(1, Math.min(pollMs * 4, 1500, deadline - Date.now()))) });
       if (response.ok) {
         return true;
       }
     } catch {
     }
-    await new Promise((resolve) => setTimeout(resolve, pollMs));
+    await new Promise((resolve) => setTimeout(resolve, Math.max(0, Math.min(pollMs, deadline - Date.now()))));
     pollMs = Math.min(pollMs * 2, maxPollMs);
   }
   return false;
@@ -1040,7 +1045,8 @@ const startLocalServer = async () => {
     log.warn('[agent-browser] managed setup failed; continuing without browser automation');
   }
 
-  const { startWebUiServer } = await webServerEntry.load();
+  updateStartupSplashStatus('Preparing the runtime…');
+  const { startWebUiServer } = await runStartupPhase('server_import', () => webServerEntry.load(), log);
 
   const desktopHostLeaseIsActive = () => (
     state.desktopHostBrokerLease
@@ -1051,7 +1057,7 @@ const startLocalServer = async () => {
     code: 'desktop_host_unavailable',
   });
 
-  const handle = await startWebUiServer({
+  const handle = await runStartupPhase('server_listen', () => startWebUiServer({
     port: chosenPort,
     host: bindHost,
     attachSignals: false,
@@ -1112,10 +1118,7 @@ const startLocalServer = async () => {
     deferOpenCodeStartup: true,
     productionBotsExecutionDisabled,
     onDesktopHostLease: isRuntimeServiceMode
-      ? async (lease) => {
-          state.desktopHostBrokerLease = Object.freeze({ ...lease });
-          await state.serverHandle?.resumeDeferredOpenCodeStartup?.();
-        }
+      ? createDesktopHostLeaseHandler({ state, log })
       : null,
     onDesktopHostRelease: isRuntimeServiceMode
       ? async (leaseId) => {
@@ -1257,7 +1260,7 @@ const startLocalServer = async () => {
       };
     },
     getAppMetrics: () => app.getAppMetrics(),
-  });
+  }), log);
 
   const port = handle.getPort();
   const url = buildLocalUrl(port);
@@ -1398,9 +1401,11 @@ const setRuntimeServiceCookie = async (url, setCookieHeader) => {
   });
 };
 
-const registerDesktopHostLease = async (url, broker) => {
+const registerDesktopHostLease = async (url, broker, deadline) => {
+  const signal = runtimeServiceRequestSignal(deadline);
   const register = (capabilities) => session.defaultSession.fetch(`${url}/api/runtime-service/desktop-host`, {
     method: 'POST',
+    signal,
     headers: {
       'Content-Type': 'application/json',
       'X-DevRyan-CSRF': '1',
@@ -1473,10 +1478,11 @@ const stopDesktopHostBroker = async ({ notifyService = true } = {}) => {
   await broker?.close().catch(() => undefined);
 };
 
-const bootstrapRuntimeServiceSession = async (url, descriptor) => {
+const bootstrapRuntimeServiceSession = async (url, descriptor, deadline) => {
   const bootstrapToken = unsealRuntimeServiceBootstrapToken({ descriptor, safeStorage });
   const bootstrap = await session.defaultSession.fetch(`${url}/auth/runtime-service-bootstrap`, {
     method: 'POST',
+    signal: runtimeServiceRequestSignal(deadline),
     headers: {
       'Content-Type': 'application/json',
       'X-DevRyan-CSRF': '1',
@@ -1493,7 +1499,7 @@ const bootstrapRuntimeServiceSession = async (url, descriptor) => {
 
 // prepare-update exists since the first runtime-service release (1.1.7), so a
 // service from any older version can be drained through it.
-const retireStaleRuntimeService = (descriptor, url) => retireMismatchedRuntimeService({
+const retireStaleRuntimeService = (descriptor, url, deadline) => retireMismatchedRuntimeService({
   descriptor,
   appVersion: APP_VERSION,
   log,
@@ -1501,9 +1507,10 @@ const retireStaleRuntimeService = (descriptor, url) => retireMismatchedRuntimeSe
     if (!await waitForHealth(url, 5_000, 100)) {
       throw Object.assign(new Error('The background runtime is not ready'), { code: 'runtime_service_unavailable' });
     }
-    await bootstrapRuntimeServiceSession(url, descriptor);
+    await bootstrapRuntimeServiceSession(url, descriptor, deadline);
     const response = await session.defaultSession.fetch(`${url}/api/runtime-service/prepare-update`, {
       method: 'POST',
+      signal: runtimeServiceRequestSignal(deadline),
       headers: { 'X-DevRyan-CSRF': '1' },
     });
     if (!response.ok) {
@@ -1531,7 +1538,7 @@ const recordRuntimeServiceAppVersion = async () => {
 
 let runtimeServiceReconnectPromise = null;
 let runtimeServiceRetired = false;
-const connectToRuntimeService = async ({ reconnecting = false } = {}) => {
+const connectToRuntimeService = async ({ reconnecting = false, deadline = Date.now() + 20_000 } = {}) => {
   const descriptor = await readRuntimeServiceDescriptor({ dataDirectory: dataRootDirectory() });
   if (!isRuntimeServiceProtocolSupported(descriptor.protocolVersion)) {
     const error = new Error('The background runtime protocol is not supported by this app version');
@@ -1550,21 +1557,21 @@ const connectToRuntimeService = async ({ reconnecting = false } = {}) => {
       });
     }
     runtimeServiceRetired = true;
-    await retireStaleRuntimeService(descriptor, url);
+    await retireStaleRuntimeService(descriptor, url, deadline);
     throw Object.assign(new Error('The background runtime is restarting for this app version'), {
       code: 'runtime_service_unavailable',
     });
   }
-  if (!await waitForHealth(url, 5_000, 100)) {
+  if (!await waitForHealth(url, Math.max(0, Math.min(5_000, deadline - Date.now())), 100)) {
     const error = new Error('The background runtime is not ready');
     error.code = 'runtime_service_unavailable';
     throw error;
   }
   await assertRuntimeServiceDescriptorOwner({ dataDirectory: dataRootDirectory(), descriptor });
-  await bootstrapRuntimeServiceSession(url, descriptor);
+  await bootstrapRuntimeServiceSession(url, descriptor, deadline);
   const broker = await startDesktopHostBroker();
   try {
-    const status = await registerDesktopHostLease(url, broker);
+    const status = await registerDesktopHostLease(url, broker, deadline);
     if (status?.instanceId !== descriptor.instanceId
       || status?.ownerGeneration !== descriptor.ownerGeneration
       || status?.protocolVersion !== descriptor.protocolVersion) {
@@ -1730,7 +1737,8 @@ const recoverStartupToAppBound = (connectionError) => recoverAppBoundRuntime({
 });
 
 const waitForRuntimeServiceConnection = () => retryRuntimeServiceConnection({
-  connect: () => connectToRuntimeService(),
+  connect: ({ deadline }) => connectToRuntimeService({ deadline }),
+  isOwnerStopped: () => waitForOwnerStopped({ dataDirectory: dataRootDirectory(), timeoutMs: 0 }),
 });
 
 const enableBackgroundBots = async ({ allowLegacy = false } = {}) => {
@@ -3757,12 +3765,15 @@ const prepareForegroundRuntime = async () => {
   const automaticRuntime = await autoEnableBackgroundRuntimeOnFirstLaunch();
   if (automaticRuntime.mode === 'service') {
     try {
+      updateStartupSplashStatus('Preparing the background runtime…');
       await resumeBackgroundRuntimeAfterAppUpdate();
       await reregisterBackgroundRuntimeAfterManualUpgrade();
       await ensureRuntimeServiceRegistered({ registration: getRuntimeServiceRegistration(), log });
-      await waitForRuntimeServiceConnection();
+      updateStartupSplashStatus('Connecting to the background runtime…');
+      await runStartupPhase('service_connection', () => waitForRuntimeServiceConnection(), log);
     } catch (error) {
-      await recoverStartupToAppBound(error);
+      updateStartupSplashStatus('Recovering the local runtime…');
+      await runStartupPhase('service_recovery', () => recoverStartupToAppBound(error), log);
       state.runtimeServiceClient = false;
       state.sidecarUrl = null;
       log.warn('[runtime-service] startup rolled back to app-bound Bots', {
@@ -3781,11 +3792,11 @@ const startDesktopRuntime = () => {
       if (desktopStartupFailed) {
         applyDesktopKeepAwake(readDesktopKeepAwakeEnabled());
       }
-      await prepareForegroundRuntime();
-      const startupContext = await resolveInitialUrl();
+      await runStartupPhase('foreground_preparation', () => prepareForegroundRuntime(), log);
+      const startupContext = await runStartupPhase('initial_url', () => resolveInitialUrl(), log);
       const { initialUrl, localOrigin, bootOutcome } = startupContext;
       state.pendingBotStartupContext = null;
-      await activateMainWindow(initialUrl, localOrigin, bootOutcome);
+      await runStartupPhase('renderer_navigation', () => activateMainWindow(initialUrl, localOrigin, bootOutcome), log);
       desktopStartupFailed = false;
 
       if(!runtimeBundleRecoveryRequired)installPowerResumeHook();

@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "kind": "packaged-direct-runtime-service",
+  "outcome": "passed",
+  "scope": "three direct headless fresh processes on one private profile; host listening, owner fencing, refusal and physical shutdown",
+  "sourceSha256": "2205a5d1728b6eaa452cde01d342cfbe0e7503ba91381bb9487ed18da837a32f",
+  "archiveSha256": "8a11900e98db7b93776b9dd4100a879178073c58a6301a62b15e1135af67ae3b",
+  "appVersion": "2.0.4",
+  "excluded": [
+    "launchd-registration",
+    "desktop-host-lease",
+    "usable-UI",
+    "native-model-readiness",
+    "paid-providers",
+    "managed-user",
+    "three-acceptance-journal-roots"
+  ],
+  "runs": [
+    {
+      "iteration": 0,
+      "hostListeningMs": 4799.118415999999,
+      "health": "healthy",
+      "desktopHost": "unavailable",
+      "handshakeRefusal": 401,
+      "bootstrapRefusal": 401,
+      "providerRequests": 0,
+      "remainingProcessIds": [],
+      "observationErrors": []
+    },
+    {
+      "iteration": 1,
+      "hostListeningMs": 4850.1865419999995,
+      "health": "healthy",
+      "desktopHost": "unavailable",
+      "handshakeRefusal": 401,
+      "bootstrapRefusal": 401,
+      "providerRequests": 0,
+      "remainingProcessIds": [],
+      "observationErrors": []
+    },
+    {
+      "iteration": 2,
+      "hostListeningMs": 4934.857124999999,
+      "health": "healthy",
+      "desktopHost": "unavailable",
+      "handshakeRefusal": 401,
+      "bootstrapRefusal": 401,
+      "providerRequests": 0,
+      "remainingProcessIds": [],
+      "observationErrors": []
+    }
+  ],
+  "cleanupErrors": []
+}

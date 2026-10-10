@@ -3,7 +3,12 @@ import {createHash} from 'node:crypto';
 import {Credential} from '@opencode/core/credential';
 import {Effect,Schema} from 'effect';
 import {HostRefusal,refuseHost} from '../../packages/web/server/lib/opencode/runtime-host/host-refusal.js';
-import {parseNativeBoot,parseNativeCommand,parseNativeMigrationRequest} from '../../packages/web/server/lib/opencode/runtime-host/native-process-protocol.js';
+import {parseNativeBoot,parseNativeCommand,parseNativeMigrationRequest,parseNativeReply} from '../../packages/web/server/lib/opencode/runtime-host/native-process-protocol.js';
+
+test('boot refusals preserve the fixed model response encoding cause',()=>{
+ const code='native_catalog_read_failed_model_http_500_response_schema_invalid';
+ expect(parseNativeReply({protocol:1,id:'boot',ok:false,error:{code,status:503,message:code}})).toEqual({protocol:1,id:'boot',ok:false,error:{code,status:503,message:code}});
+});
 
 test('catalog selection command retains exact reviewed acquisition binding',()=>{
  const command={protocol:1,id:'catalog',action:'provider-catalog-selection-owned',directory:'/project/a',controllerInstanceID:'controller-one',integrationID:'github-copilot',acquisitionID:'acquisition-one',configurationDigest:'a'.repeat(64),origin:{id:'devryan.provider-compat',manifestDigest:'b'.repeat(64)}} as const;

@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { createNativeControllerProcess, prepareSupervisedController } from './native-process.js';
 import {parseNativeBoot,parseNativeCommand,parseNativeReply} from './native-process-protocol.js';
 
-const fixture = async (action, bootReply) => {
+const fixture = async (action, bootReply, stderr = '') => {
   const base = path.resolve(import.meta.dirname, '../../../../../../.cache/v2-validation');
   await fs.mkdir(base, { recursive: true });
   const root = await fs.mkdtemp(path.join(base, 'native-process-'));
@@ -17,7 +17,7 @@ let boot, held;
 const send = value => process.stdout.write(JSON.stringify({protocol:1,...value})+'\\n');
 readline.createInterface({input:process.stdin}).on('line', line=>{
   const input=JSON.parse(line);
-  if(input.type==='boot') {boot=input;send(${bootReply ? JSON.stringify(bootReply) : "{type:'bound',bundleID:boot.bundleID,instanceID:boot.instanceID,buildId:boot.buildId,url:'http://127.0.0.1:54321',port:54321,catalog:{asserted:true},migration:{v1:'not-needed'}}"});return;}
+  if(input.type==='boot') {boot=input;process.stderr.write(${JSON.stringify(stderr)});setTimeout(()=>send(${bootReply ? JSON.stringify(bootReply) : "{type:'bound',bundleID:boot.bundleID,instanceID:boot.instanceID,buildId:boot.buildId,url:'http://127.0.0.1:54321',port:54321,catalog:{asserted:true},migration:{v1:'not-needed'}}"}),20);return;}
   if(input.action==='hold'){held=input;return;}
   if(input.action==='release'){send({id:held.id,ok:true,result:'settled'});send({id:input.id,ok:true});return;}
   if(input.action==='open'){process.stderr.write('private-output native_observation_');setTimeout(()=>{process.stderr.write('unavailable private-output native_observation_unavailable');send({id:input.id,ok:true});},10);return;}
@@ -34,6 +34,17 @@ readline.createInterface({input:process.stdin}).on('line', line=>{
   try { await action({root,boot,binary,start:async options => (controller=await createNativeControllerProcess({binary,cwd:root,boot,environment:{PATH:process.env.PATH},timeoutMs:3000,...options}))}); }
   finally { if(controller && !controller.hasExited()) await controller.killForRecovery(); await fs.rm(root,{recursive:true,force:true}); }
 };
+
+test('startup failure attaches only bounded sanitized recognized stderr fields after owned exit', async () => {
+  const code = 'native_catalog_read_failed_model_http_500_response_schema_invalid';
+  const row = { level: 'error', msg: 'response_schema_invalid', name: 'HttpApiSchemaError', schemaPath: 'data.[2].time.released' };
+  await fixture(async ({ start, root }) => {
+    const logFile = path.join(root, 'controller.jsonl');
+    await expect(start({ logFile })).rejects.toMatchObject({ code, startupDiagnostics: [row, { name: 'SchemaError' }] });
+    expect(await fs.readFile(logFile, 'utf8')).not.toContain('private-secret');
+  }, { id: 'boot', ok: false, error: { code, status: 503, message: 'private-secret' } },
+  'private-secret'.repeat(1000) + '\nlevel=error msg=response_schema_invalid name=HttpApiSchemaError schemaPath=data.[2].time.released token=private-secret\nname=SchemaError msg=private-secret schemaPath=settings.privateSecret\n');
+});
 
 test('typed catalog diagnostics preserve exact route intent without making availability a startup gate',async()=>{
  await fixture(async({boot})=>{
@@ -129,6 +140,15 @@ test('observation warnings retain one finite gap across stderr chunks without pe
   expect(text).not.toContain('observer unavailable');
 }));
 
+test('an observation marker before an oversized stderr tail still records its gap', () => fixture(async ({ start, boot }) => {
+  const gaps = [];
+  const controller = await start({ onObservationUnavailable: id => gaps.push(id) });
+  expect(gaps).toEqual([boot.instanceID]);
+  await controller.call({ action: 'open' });
+  expect(gaps).toEqual([boot.instanceID]);
+  expect((await controller.close()).observationUnavailable).toBe(true);
+}, undefined, 'native_observation_unavailable ' + 'private-output'.repeat(1000)));
+
 
 test('queued command inspection can omit an input ID while delivery/recovery commands remain strict',()=>{
  const permit={token:'a'.repeat(64),revision:0,sessionID:'ses_scope'};
@@ -171,4 +191,12 @@ test.skipIf(!launcherPresent)('the supervised controller may unlink only the set
     await expect(fs.readFile(config, 'utf8')).resolves.toBe('{}');
     await expect(fs.access(path.join(globals.config, 'written'))).rejects.toMatchObject({ code: 'ENOENT' });
   } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('provider-read-selected-owned is limited to xAI and OpenCode Go with exact fields', () => {
+  const base = { protocol: 1, id: 'cmd', action: 'provider-read-selected-owned', directory: '/tmp/project', controllerInstanceID: 'controller-one' };
+  for (const integrationID of ['xai', 'opencode-go']) expect(parseNativeCommand({ ...base, integrationID }).integrationID).toBe(integrationID);
+  for (const integrationID of ['openai', 'opencode', 'cursor-acp']) expect(() => parseNativeCommand({ ...base, integrationID })).toThrow();
+  expect(() => parseNativeCommand({ ...base, integrationID: 'xai', credentialID: 'cred' })).toThrow();
+  expect(() => parseNativeCommand({ ...base })).toThrow();
 });

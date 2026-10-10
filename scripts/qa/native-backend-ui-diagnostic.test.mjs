@@ -62,6 +62,15 @@ test('synthetic backend declaration retains one finite loopback tuple and no acc
   for (const origin of ['https://external.invalid/v1', 'http://localhost:12345/v1', 'http://127.0.0.1:12345/v1?key=fake', 'http://user@127.0.0.1:12345/v1']) assert.throws(() => runtimeUiConfiguration(origin));
 });
 
+test('optional catalog providers preserve the isolated UI fixture and add only translated model data', () => {
+  const legacy = runtimeUiConfiguration('http://127.0.0.1:12345/v1');
+  const providers = { 'cursor-acp': { npm: '@ai-sdk/openai-compatible', options: { baseURL: 'http://127.0.0.1:1/v1' }, models: { synthetic: { cost: { input: 1, output: 2 }, cursorModel: 'synthetic', variants: { high: { cost: { input: 2 } } } } } } };
+  const native = runtimeUiNativeConfiguration(legacy, providers);
+  assert.ok(Schema.decodeUnknownSync(Config.Info)(native).providers['cursor-acp'].models.synthetic);
+  assert.deepEqual(native.providers['devryan-smoke'], runtimeUiNativeConfiguration(legacy).providers['devryan-smoke']);
+  assert.throws(() => runtimeUiNativeConfiguration(legacy, { 'devryan-smoke': {} }));
+});
+
 test('real model packets require completed read before write and preserve actual generation schemas', () => {
   for (const generation of [2]) {
     const respond = createRuntimeUiResponder({ generation, directory: '/owned/project' });
@@ -169,4 +178,18 @@ test('profile refuses unknown generation and escaped source before any provider 
   await assert.rejects(prepareRuntimeUiProfile({ ...input, targetGeneration: 3 }));
   await assert.rejects(prepareRuntimeUiProfile({ ...input, targetGeneration: 2, runtimeRoot: path.join(root, 'link/runtime') }), /path_invalid/);
   assert.deepEqual(await fs.readdir(outside), []);
+});
+
+test('startup upgrade fixture uses the production empty source and checks preservation after baseline import', async () => {
+  const source = await fs.readFile(new URL('./native-backend-ui-diagnostic.mjs', import.meta.url), 'utf8');
+  const factory = await fs.readFile(new URL('./native-profile-factory.mjs', import.meta.url), 'utf8');
+  assert.match(factory, /CREATE TABLE __drizzle_migrations/);
+  const preparation = source.indexOf('const source = await factory.prepareSource');
+  const emptySource = source.indexOf("if (emptyStartupSource) {", preparation);
+  const migration = source.indexOf('const selected = await store.prepare', preparation);
+  const selection = source.indexOf('await store.select', migration);
+  assert.ok(preparation < emptySource && emptySource < migration && migration < selection);
+  assert.match(source.slice(emptySource, migration), /'empty\.db'[\s\S]*fs\.writeFile\(source\.launch\.opencodeDatabasePath, '', \{ flag: 'wx', mode: 0o600 \}\)/);
+  assert.match(source, /const emptyStartupSource = startupUpgrade && manifest\.opencodeVersion !== TARGET_OPENCODE_VERSION/);
+  assert.match(source.slice(migration, selection), /if \(emptyStartupSource\) assert\.equal\(\(await fs\.stat\(source\.launch\.opencodeDatabasePath\)\)\.size, 0/);
 });

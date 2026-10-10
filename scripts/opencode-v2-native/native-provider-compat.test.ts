@@ -1,11 +1,25 @@
-import {expect,test} from 'bun:test';
+import {expect,test,spyOn} from 'bun:test';
 import {Model} from '@opencode/core/model';
 import {Provider} from '@opencode/core/provider';
 import {Schema} from 'effect';
-import {normalizeNativeOpenAiModels,normalizeNativeOpenAiRequest,nativeCopilotModelsFromAccount} from '../../packages/web/server/lib/opencode/runtime-host/native-provider-compat.js';
+import {normalizeNativeOpenAiModels,normalizeNativeOpenAiRequest,nativeCopilotModelsFromAccount,nativeEncodableModels} from '../../packages/web/server/lib/opencode/runtime-host/native-provider-compat.js';
 const make=(id:string)=>Schema.decodeUnknownSync(Model.Info)({...Model.Info.default(Schema.decodeUnknownSync(Provider.ID)('openai'),Schema.decodeUnknownSync(Model.ID)(id)),
   limit:{context:400000,input:272000,output:32000},settings:{reasoningEffort:'high',reasoningSummary:'auto',retained:true},
   variants:[{id:'none',settings:{reasoningEffort:'none'}},{id:'high',settings:{reasoningEffort:'high',reasoningSummary:'auto'},headers:{'x-retained':'yes'},body:{retained:true}}]});
+test('unencodable native rows cannot poison healthy catalog rows or mutate their references',()=>{
+  const diagnostic=spyOn(console,'error').mockImplementation(()=>{});
+  try {
+    const good=make('healthy'),source=[good];
+    expect(nativeEncodableModels(source)).toBe(source);
+    const invalid={...good,time:{released:NaN}};
+    expect(nativeEncodableModels([good,invalid])).toEqual([good]);
+    expect(nativeEncodableModels([good,invalid])[0]).toBe(good);
+    expect(nativeEncodableModels([{...good,settings:{private:1n}}])).toEqual([]);
+    expect(diagnostic).toHaveBeenLastCalledWith('level=warn msg=model_response_schema_invalid name=SchemaError schemaPath=[0]');
+    expect(nativeEncodableModels([{...good,limit:{...good.limit,context:NaN}}])).toEqual([]);
+    expect(diagnostic).toHaveBeenLastCalledWith('level=warn msg=model_response_schema_invalid name=SchemaError schemaPath=[0].limit.context');
+  } finally { diagnostic.mockRestore(); }
+});
 test('native model shapes use the original OpenAI OAuth policy while preserving route IDs and native variant overlays',()=>{
   const source=[make('gpt-5.6-sol'),make('gpt-5.6-luna-fast'),make('gpt-5.6'),make('gpt-5.3-codex-spark')];
   const result=normalizeNativeOpenAiModels(source,{oauth:true,compactionReserved:7500});

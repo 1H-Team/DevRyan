@@ -20,6 +20,7 @@ import {
   assertStartupMode,
   captureFirstDocumentStartup,
   observeStartupNavigation,
+  parseStartupPhaseLogs,
   prepareMemorySessions,
   runSessionMemoryScenario,
 } from './electron-lifecycle-benchmark.mjs';
@@ -488,6 +489,7 @@ const runOnce = async ({ scenario, runIndex, scenarioDirectory, electronBinary, 
     const origin = await waitForRendererOrigin(cdp);
     const loopbackOriginMs = performance.now() - spawnedAt;
     startup = await captureFirstDocumentStartup({ cdp, fixture, origin, startedAt: spawnedAt, checkAlive, startupMode,
+      readStartupPhases: () => parseStartupPhaseLogs(logs),
       milestones: { cdpTargetMs, loopbackOriginMs }, navigationAudit: startupNavigationAudit });
     await writeFile(path.join(runDirectory, 'startup.json'), JSON.stringify(startup, null, 2));
     if (startup.outcome !== 'passed') throw new Error(`Native startup failed: ${startup.error}`);

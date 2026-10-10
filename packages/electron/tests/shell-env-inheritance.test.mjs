@@ -82,7 +82,7 @@ test('main marks a packaged app for the server re-merge before importing the ser
  const marker=mainSource.indexOf("if (app.isPackaged) process.env[PACKAGED_DESKTOP_ENV] = '1'; else delete process.env[PACKAGED_DESKTOP_ENV];");
  assert.ok(marker>0);
  // The server entry is evaluated (imported) by its loader at this call.
- const serverImport=mainSource.indexOf('await webServerEntry.load()');
+ const serverImport=mainSource.indexOf("await runStartupPhase('server_import', () => webServerEntry.load(), log)");
  assert.ok(serverImport>0);
  assert.ok(marker<serverImport);
  assert.match(mainSource,/import \{ PACKAGED_DESKTOP_ENV \} from '@openchamber\/web\/server\/lib\/opencode\/login-shell-env-filter\.js';/);

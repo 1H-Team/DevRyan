@@ -1,0 +1,263 @@
+{
+  "qualification": "Exact selected installed controller; sanitized provider shapes and synthetic credential records; no installed database copied or modified",
+  "cause": {
+    "integrationID": "openai",
+    "valueType": "oauth",
+    "methodID": "chatgpt-browser",
+    "issuePath": "credential.value.methodID",
+    "connectorID": null,
+    "methodColumn": null
+  },
+  "metadataInspection": {
+    "mode": "read-only immutable",
+    "promptsOrMessagesRead": false,
+    "journalGaps": 0,
+    "activeProjectConfigOverrides": false,
+    "credentialSecretsSelected": false,
+    "onlyKnownMetadataProjections": true
+  },
+  "selected": {
+    "artifactManifestSha256": "504ac9c1c97469d2205bf9e4fffca1dbc5e5e37d033431f574e437b80f9a9110",
+    "supportedMethod": {
+      "status": "passed",
+      "cases": [
+        {
+          "id": "synthetic-oauth-legacy-columns-null",
+          "rows": 6,
+          "connectorID": null,
+          "methodID": null,
+          "additionalIntegrations": [
+            "cursor-acp",
+            "opencode",
+            "opencode-go",
+            "xai"
+          ]
+        },
+        {
+          "id": "actual-custom-provider-model-catalog",
+          "providerID": "anthropic",
+          "expectedModels": 0,
+          "matchedModels": 0
+        }
+      ],
+      "startupCodes": [],
+      "health": {
+        "generation": 2,
+        "ready": true,
+        "port": 49560,
+        "errorCodes": [],
+        "errorType": "object",
+        "executionState": "active",
+        "executionCode": null
+      },
+      "cleanupFailures": [],
+      "remainingProcesses": []
+    },
+    "retiredMethod": {
+      "status": "failed",
+      "cases": [
+        {
+          "id": "synthetic-oauth-legacy-columns-null",
+          "rows": 6,
+          "connectorID": null,
+          "methodID": null,
+          "additionalIntegrations": [
+            "cursor-acp",
+            "opencode",
+            "opencode-go",
+            "xai"
+          ]
+        },
+        {
+          "id": "synthetic-legacy-openai-browser-startup-only",
+          "methodID": "chatgpt-browser",
+          "inference": "not-run"
+        }
+      ],
+      "startupCodes": [
+        "native_catalog_read_failed_model_http_500_cause_unavailable"
+      ],
+      "health": null,
+      "cleanupFailures": [],
+      "remainingProcesses": []
+    }
+  },
+  "diagnosticsOnly": {
+    "artifactManifestSha256": "7b7c9817bd606e6ec7b8a68d2faee620e2d3eac4fad4870cfad5210a93cf6f4b",
+    "retiredMethod": {
+      "status": "failed",
+      "cases": [
+        {
+          "id": "synthetic-oauth-legacy-columns-null",
+          "rows": 6,
+          "connectorID": null,
+          "methodID": null,
+          "additionalIntegrations": [
+            "cursor-acp",
+            "opencode",
+            "opencode-go",
+            "xai"
+          ]
+        },
+        {
+          "id": "synthetic-legacy-openai-browser-startup-only",
+          "methodID": "chatgpt-browser",
+          "inference": "not-run"
+        }
+      ],
+      "startupCodes": [
+        "native_catalog_read_failed_model_http_500_openai_method_unsupported"
+      ],
+      "health": null,
+      "cleanupFailures": [],
+      "remainingProcesses": []
+    }
+  },
+  "repaired": {
+    "artifactManifestSha256": "14b1524f079391c9a1ea4b53b750f743417f6da92d01a1c425ccc1847115e5e0",
+    "retiredMethod": {
+      "status": "passed",
+      "cases": [
+        {
+          "id": "synthetic-oauth-legacy-columns-null",
+          "rows": 6,
+          "connectorID": null,
+          "methodID": null,
+          "additionalIntegrations": [
+            "cursor-acp",
+            "opencode",
+            "opencode-go",
+            "xai"
+          ]
+        },
+        {
+          "id": "synthetic-legacy-openai-browser-startup-only",
+          "methodID": "chatgpt-browser",
+          "inference": "not-run"
+        },
+        {
+          "id": "actual-custom-provider-model-catalog",
+          "providerID": "anthropic",
+          "expectedModels": 0,
+          "matchedModels": 0
+        }
+      ],
+      "startupCodes": [],
+      "health": {
+        "generation": 2,
+        "ready": true,
+        "port": 50358,
+        "errorCodes": [],
+        "errorType": "object",
+        "executionState": "active",
+        "executionCode": null
+      },
+      "cleanupFailures": [],
+      "remainingProcesses": []
+    },
+    "completeConfiguration": {
+      "status": "passed",
+      "artifactManifestSha256": "67d38e85265602e843efeaf2b0c74a32416e132a9fc05d37bb7029f0113713fe",
+      "activePluginIDs": [
+        "devryan.provider-compat",
+        "devryan.slim",
+        "devryan.slim-commands",
+        "devryan.slim-lifecycle",
+        "devryan.document-reader",
+        "devryan.reviewed-skills",
+        "opencode-gpt-imagegen"
+      ],
+      "providers": [
+        {
+          "id": "actual-custom-provider-model-catalog",
+          "providerID": "cursor-acp",
+          "expectedModels": 282,
+          "matchedModels": 282,
+          "connected": true
+        },
+        {
+          "id": "actual-custom-provider-model-catalog",
+          "providerID": "anthropic",
+          "expectedModels": 0,
+          "matchedModels": 0,
+          "connected": true
+        }
+      ],
+      "startupCodes": [],
+      "cleanupFailures": [],
+      "remainingProcesses": []
+    },
+    "finalCompleteConfiguration": {
+      "status": "passed",
+      "activePluginIDs": [
+        "devryan.provider-compat",
+        "devryan.slim",
+        "devryan.slim-commands",
+        "devryan.slim-lifecycle",
+        "devryan.document-reader",
+        "devryan.reviewed-skills",
+        "opencode-gpt-imagegen"
+      ],
+      "providers": [
+        {
+          "id": "actual-custom-provider-model-catalog",
+          "providerID": "cursor-acp",
+          "expectedModels": 282,
+          "matchedModels": 282,
+          "connected": true
+        },
+        {
+          "id": "actual-custom-provider-model-catalog",
+          "providerID": "anthropic",
+          "expectedModels": 0,
+          "matchedModels": 0,
+          "connected": true
+        }
+      ],
+      "credentialShapes": [
+        {
+          "id": "synthetic-expired-xai-startup-only",
+          "methodID": "device",
+          "expiryState": "expired",
+          "inference": "not-run"
+        },
+        {
+          "id": "synthetic-oauth-legacy-columns-null",
+          "rows": 6,
+          "connectorID": null,
+          "methodID": null,
+          "additionalIntegrations": [
+            "cursor-acp",
+            "opencode",
+            "opencode-go",
+            "xai"
+          ]
+        },
+        {
+          "id": "synthetic-legacy-openai-browser-startup-only",
+          "methodID": "chatgpt-browser",
+          "inference": "not-run"
+        }
+      ],
+      "startupCodes": [],
+      "health": {
+        "ready": true,
+        "generation": 2
+      },
+      "cleanupFailures": [],
+      "remainingProcesses": [],
+      "artifactManifestSha256": "7459febe9d41e4ff19d92ace94df85d3d87ad68b9a5607c812a8f566afb79ec5"
+    }
+  },
+  "regressions": {
+    "nativeColdGraph": "passed; native model HTTP 200 in both actual locations",
+    "retiredMethodCases": [
+      "chatgpt-browser",
+      "chatgpt-headless",
+      "chatgpt-token-sharing"
+    ],
+    "credentialMutation": "none; records unchanged",
+    "physicalRequests": "native_openai_method_unsupported before access acquisition"
+  },
+  "requiredUserAction": "Reconnect retired OpenAI login through Sign in with ChatGPT before using OpenAI; startup itself succeeds"
+}

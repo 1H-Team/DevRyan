@@ -275,7 +275,7 @@ Do not run a second independent refresh owner against the shared login.
 - Every `POST /api/session/:sessionID/prompt_async` applies the shared provider/agent tool policy before Cursor interception or generic proxying. Packaged Orchestrator sends merge `task: false` with any provider-specific restriction, including Copilot's optional Resend namespace limits, so web and Electron forwarding preserve the same managed-only contract as the shared UI runtime overlay.
 - Accepted non-Cursor `POST /api/session/:sessionID/prompt_async` requests schedule non-blocking provider-neutral title generation with the directory and visible non-synthetic text captured at acceptance. Derived and selected-model candidates are atomically enqueued before their synthetic `session.updated` projection. Every provider waits for authoritative idle or completed-turn recovery before compare/PATCH/read verification; canonical idle, update, and delete events plus successful session-list loads drive durable reconciliation and bounded-concurrency placeholder recovery. Managed children that bypass the public prompt proxy recover from their canonical session updates and lists. This changes no public HTTP or SSE contract. Cached schema-verified Grok duplicate-tool disables merge synchronously, while discovery and refresh never block the prompt.
 - Intercepted `cursor-acp` prompts schedule a non-blocking Cursor Auto title request after acceptance. Only default, generated, provider-error, or legacy raw-prompt titles are eligible, and the upstream session is re-read before PATCH so manual names are never overwritten.
-- `GET /api/config/providers` normalizes configured GitHub Copilot aliases to `github-copilot`, preserves upstream OpenCode model metadata when present, adds selectable Copilot Auto, discovers account-specific Copilot models when upstream omits or empties them, and exposes a minimal fallback model list only when authenticated discovery is unavailable. Managed OpenAI entries also include sanitized `authType` metadata; OAuth-incompatible models remain present internally with `available: false`, `unavailableReason`, and `requiredAuthType` so clients can filter them and prevent invalid sends. External OpenCode responses are not annotated. When the upstream OpenCode catalog request fails or returns a non-OK status, the route still returns the integration providers (Cursor, Copilot) with HTTP 200 but adds top-level `catalogIncomplete: true`, so clients must not treat that payload as a complete catalog.
+- `GET /api/config/providers` normalizes configured GitHub Copilot aliases to `github-copilot`, preserves upstream OpenCode model metadata when present, adds selectable Copilot Auto, discovers account-specific Copilot models when upstream omits or empties them, and exposes a minimal fallback model list only when authenticated discovery is unavailable. Managed OpenAI entries also include sanitized `authType` metadata; OAuth-incompatible models remain present internally with `available: false`, `unavailableReason`, and `requiredAuthType` so clients can filter them and prevent invalid sends. External OpenCode responses are not annotated. The OpenAI selection reads in `mergeProviderIntegrations` pass `fallbackLocation: true` to `readNativeOpenAiSelection` (`chatgpt-siwc-host.js`): credentials are global, so a project directory the native runtime has not reviewed resolves to the default reviewed location instead of marking every OpenAI model unavailable. The option is read-only; mutation paths (`mutate`, `readCredential`, enrollment, disconnect) keep refusing unreviewed directories with `native_chatgpt_siwc_location_required`. If integration merging fails, the route first tries a non-refresh selection read with the same fallback; an API-key credential returns the catalog annotated as API-key auth and otherwise untouched, anything else keeps the `unavailable` annotation (annotate, never delete). When the upstream OpenCode catalog request fails or returns a non-OK status, the route still returns the integration providers (Cursor, Copilot) with HTTP 200 but adds top-level `catalogIncomplete: true`, so clients must not treat that payload as a complete catalog.
 
 ## Public exports (question-routes.js)
 - `QUESTION_PARTIAL_HEADER`: response header name used to identify which pending-question source is temporarily unavailable.
@@ -377,11 +377,11 @@ explicitly; nothing else reads the default.
 - `createAgentRuntimeWarmup(dependencies)`: creates a read-only warmup runtime. Returned API:
   - `warm({ directory?, timeoutMs?, commandTimeoutMs?, mcpTimeoutMs? })`: runs health, directory-scoped config/provider/agent/session-status/OpenCode skill/MCP/command fetches, optional Cursor SDK worker prewarm, and capped visible-skill file read tasks; returns per-task ready/error/timeout results and never starts prompts, command execution, or sessions. MCP status and command discovery run concurrently with independent longer timeouts because cold OpenCode MCP/runtime loading can sit on the first-prompt critical path. Concurrent calls for the same normalized directory share one in-flight promise and its first caller's timeout configuration; different directories remain concurrent.
   - `getLatestResult()`: returns the latest in-memory warmup diagnostics, including timestamp, directory, task statuses, errors, timeout state, and additive harness metadata.
-- `registerAgentRuntimeWarmupRoute(app, warmupRuntime)`: registers `POST /api/startup/agent-runtime-warmup` for startup readiness.
+- `registerAgentRuntimeWarmupRoute(app, warmupRuntime)`: registers `POST /api/startup/agent-runtime-warmup` for optional project prewarming after UI readiness.
 
 ## Public exports (project-prewarm-runtime.js)
 - `createProjectPrewarmRuntime(dependencies)`: creates a non-throwing project prewarm coordinator. Returned API:
-  - `run(reason)`: waits up to 30 seconds for OpenCode readiness, discovers the current ordered directory list, and warms it sequentially. A newer invocation supersedes the older loop, shutdown can abort between directories, and failures remain visible in `[Prewarm]` diagnostics without blocking startup or restart completion.
+  - `run(reason)`: waits up to 30 seconds for OpenCode readiness, discovers the current ordered directory list, and warms it sequentially. A newer invocation supersedes the older loop, shutdown can abort between directories, and failures remain visible in `[Prewarm]` diagnostics without blocking restart completion. The application does not start this all-project discovery during launch; the renderer warms only its active directory after UI readiness.
 
 ## Public exports (harness-result.js)
 - `createHarnessSuccess(options?)`, `createHarnessWarning(options?)`, `createHarnessError(options?)`: build deterministic harness envelopes.
@@ -816,3 +816,45 @@ The prompt preview remains visible until a resolved title is durably enqueued. O
 ## History
 
 History: the OpenCode 2 upgrade plans are archived in [audits/2026-10-05/opencode-v2-handoff](../../../../../docs/audits/2026-10-05/opencode-v2-handoff/README.md).
+
+## Native startup and retained versions
+
+The native owner now owns the launch bundle verification and invokes the
+lifecycle's config synchronization before capturing the native snapshot. Boot
+passes fresh verified artifacts privately to the bundle loader; this receipt
+never extends the serialized verification result. Reviewed config bytes and
+the controller's immediate pre-spawn artifacts still receive their own checks.
+
+The current package and compiled host pin is OpenCode 2.0.26.
+Cold startup compares the selected and shipped artifact manifest digests even
+when their OpenCode versions match, so a repaired DevRyan host is activated once
+through the existing verified clone, credential checkpoint and selector CAS.
+An identical artifact skips preparation; the prior bundle remains available for
+rollback. An explicitly selected rollback at the pinned OpenCode version stays
+selected. This local runtime preparation does not check for app updates.
+Artifact verification
+accepts a retained bundle of any OpenCode 2.x release for rollback
+(`isNativeOpenCodeVersion`), each using its matching controller; startup never runs
+one above the host pin. Cross-version credential capture or projection cannot
+substitute a controller: exact OpenCode version, core digest and existing manifest
+checks still apply. The build pins PTY 0.2.0 bytes and the 2.0.26 compaction observation source
+(`location-services-qhaz1dgr.js`, behavior unchanged from 2.0.24). A pinned
+`@opencode/schema` agent-defaults transform restores the 2.0.24
+`external_directory: * → ask` default that 2.0.26 removed.
+
+- `lifecycle.js` owns `openCodeStartup` on `/health` and `/api/health`: an
+  additive `{ state, attempt, code }` snapshot. Each boot or restart publishes
+  `starting` before verification/recovery, then `ready` or `failed`; failures
+  carry bounded diagnostic identifiers only. An older attempt cannot replace
+  the current status. Consumers still require native readiness before use.
+
+`native-catalog-diagnostics.ts` gives graph construction and each catalog HTTP
+read its own native ErrorReporter context. Non-OK reads retain only a fixed
+route, HTTP status and recognized refusal/stage or schema classification;
+unknown defects remain `cause_unavailable`. Model construction, reads, account
+lookup and normalization preserve deliberate denials and report fixed stage
+codes. No response bodies, raw messages, stacks, paths or configuration enter
+diagnostics, including when the SDK converts a defect to an empty 500.
+The native owner journals startup starting/bound/ready/failed phases and
+durations through its existing diagnostic callback, including failure before
+binding; physical exits are recorded before fallible owner cleanup.

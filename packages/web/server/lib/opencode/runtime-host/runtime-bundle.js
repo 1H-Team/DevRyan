@@ -258,7 +258,7 @@ export function createRuntimeBundleStore(options) {
     if (!Array.isArray(manifest.artifactFiles) || canonicalJSON(manifest.artifactFiles.map(row=>row.path).sort())!==canonicalJSON(expectedArtifacts)
       || manifest.artifactFiles.find(row=>row.path===value.launch.artifactManifestPath)?.sha256!==value.launch.artifactManifestSha256) throw fail('bundle_manifest_invalid');
     for (const row of manifest.artifactFiles) if (!isRecord(row) || !validHash(row.sha256) || await fileHash(absolute(row.path))!==row.sha256) throw fail('bundle_artifact_changed');
-    await verifyArtifacts({generation:value.generation,launch:value.launch});
+    const verifiedArtifacts = await verifyArtifacts({generation:value.generation,launch:value.launch});
     if (phase === 'prepared') {
       const initial=durable(manifest.initialFiles,root,value.launch);
       await verifyTree(root,initial);
@@ -301,7 +301,10 @@ export function createRuntimeBundleStore(options) {
         if (phase==='resume') assertBundlePendingInput(db,verifiedContinuations);
       }
     } finally { db.raw.close(); }
-    return {descriptor:value,phase,integrity:'verified',admission:'held'};
+    const result = {descriptor:value,phase,integrity:'verified',admission:'held'};
+    // Keep the fresh signature receipt private; the wire verification contract stays unchanged.
+    if (verifiedArtifacts?.manifestPath) Object.defineProperty(result, 'artifacts', { value: verifiedArtifacts });
+    return result;
   };
   const finishPreparation=async(value,artifacts,request)=>{
     const root=path.join(controlRoot,'bundles',value.bundleID);

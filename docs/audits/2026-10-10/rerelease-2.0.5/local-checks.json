@@ -1,0 +1,25 @@
+{
+  "date": "2026-10-10",
+  "qualification": "Current candidate before consolidation into the replacement release commit",
+  "checks": [
+    { "command": "DEVRYAN_SCRIPT_TEST_CONCURRENCY=1 bun run validate:full", "exitCode": 0 },
+    { "command": "bun run build", "exitCode": 0 },
+    { "command": "bun run bundle:check", "exitCode": 0 },
+    { "command": "git diff --check", "exitCode": 0 }
+  ],
+  "uiMainBatchTestsPassed": 4076,
+  "webTestFilesPassed": 535,
+  "webTestsPassed": 6560,
+  "nativeWebTailTestsPassed": 14,
+  "migrationSourceChanges": [],
+  "productionCodeChangedAfterValidation": false,
+  "packagedStartupProof": "../model-catalog/final-verification.json",
+  "releaseScope": "desktop-macos-arm64",
+  "expectedPublicAssets": ["DevRyan-2.0.5-arm64.dmg"],
+  "limitations": [
+    "Hosted migrations and release packaging are verified separately by GitHub Actions",
+    "No live provider inference or installed-app replacement",
+    "No notarization or Windows qualification",
+    "Same-version installed applications may require manual DMG installation"
+  ]
+}

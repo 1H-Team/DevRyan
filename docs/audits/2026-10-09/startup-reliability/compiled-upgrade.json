@@ -1,0 +1,654 @@
+{
+  "schemaVersion": 1,
+  "scope": "Isolated synthetic accounts and loopback model discovery; no installed account access or external providers",
+  "runs": [
+    {
+      "run": "package-UzlIJL",
+      "status": "failed",
+      "qualification": "composition-preflight-only",
+      "sourceDigest": "af3b39e12d7fcba148ce2a6d270765af575872862c3752f293814c3ba7003bee",
+      "sourceCohort": {
+        "valid": false,
+        "changedPaths": [
+          "packages/web/server/lib/opencode/runtime-host/native-bundle-startup-upgrade.js"
+        ]
+      },
+      "error": null,
+      "cleanupFailures": [],
+      "cases": [
+        {
+          "id": "compiled-production-artifacts",
+          "status": "passed",
+          "buildId": "801380bb443989324496487b13045b77f9a6962fbe75ef2119fdb72d4cd30af9",
+          "manifestSha256": "5ca591f1a0300f3cdb74ce381ce54253b5ab0283a019ef4fcd6b59db817053fd"
+        },
+        {
+          "id": "compiled-current-build-inputs",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-empty-initialization-lost-ack-resume",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-empty-initialization-idempotent-replay",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-fresh-native-initialization",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-synthetic-builtin-catalog-credentials",
+          "status": "passed"
+        },
+        {
+          "id": "fresh-v2-baseline-checkpoint",
+          "status": "passed",
+          "version": "2.0.20",
+          "builtinCatalog": {
+            "status": "passed",
+            "locations": 2,
+            "models": [
+              {
+                "providerID": "openai",
+                "id": "gpt-5.6-sol"
+              },
+              {
+                "providerID": "cursor-acp",
+                "id": "devryan-startup-cursor"
+              },
+              {
+                "providerID": "github-copilot",
+                "id": "devryan-startup-copilot"
+              }
+            ]
+          }
+        },
+        {
+          "id": "compiled-v2-derived-bundle-clone",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-reviewed-setup-active",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-ready-catalog",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-active-builtin-startup-catalog",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-composition-catalogs-two-locations",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-human-queue-child-idle-and-await-race",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-human-explicit-steer-with-busy-child",
+          "status": "passed"
+        },
+        {
+          "id": "package-read",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-existing-workspace-write",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-existing-workspace-revert-redo",
+          "status": "passed"
+        },
+        {
+          "id": "package-write",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-ordered-council",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-council-ordered-owned-members",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-remote-mcp-one",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-remote-mcp-two",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-remote-mcp-two-locations",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-active-command-ponytail-help",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-active-command-deepwork",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-active-command-loop",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-active-command-reflect",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-active-interview",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-active-interview-cancel",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-retained-initial-input",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-retained-multiple-inputs",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-retained-input-discard-lost-ack",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-retained-fallback-input",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-retained-fallback-discard-and-new-prompt",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-retained-shell-notification",
+          "status": "passed"
+        }
+      ],
+      "nativeStartup": [
+        {
+          "phase": "starting",
+          "stage": "settlement",
+          "durationMs": 0,
+          "code": null
+        },
+        {
+          "phase": "bound",
+          "stage": "controller",
+          "durationMs": 5886,
+          "code": null
+        },
+        {
+          "phase": "ready",
+          "stage": "open",
+          "durationMs": 6189,
+          "code": null
+        },
+        {
+          "phase": "starting",
+          "stage": "settlement",
+          "durationMs": 0,
+          "code": null
+        },
+        {
+          "phase": "bound",
+          "stage": "controller",
+          "durationMs": 3820,
+          "code": null
+        },
+        {
+          "phase": "ready",
+          "stage": "open",
+          "durationMs": 4261,
+          "code": null
+        },
+        {
+          "phase": "starting",
+          "stage": "settlement",
+          "durationMs": 0,
+          "code": null
+        },
+        {
+          "phase": "bound",
+          "stage": "controller",
+          "durationMs": 5492,
+          "code": null
+        },
+        {
+          "phase": "ready",
+          "stage": "open",
+          "durationMs": 6200,
+          "code": null
+        },
+        {
+          "phase": "starting",
+          "stage": "settlement",
+          "durationMs": 0,
+          "code": null
+        },
+        {
+          "phase": "bound",
+          "stage": "controller",
+          "durationMs": 4404,
+          "code": null
+        },
+        {
+          "phase": "ready",
+          "stage": "open",
+          "durationMs": 4777,
+          "code": null
+        },
+        {
+          "phase": "starting",
+          "stage": "settlement",
+          "durationMs": 0,
+          "code": null
+        },
+        {
+          "phase": "bound",
+          "stage": "controller",
+          "durationMs": 4306,
+          "code": null
+        },
+        {
+          "phase": "ready",
+          "stage": "open",
+          "durationMs": 4656,
+          "code": null
+        },
+        {
+          "phase": "starting",
+          "stage": "settlement",
+          "durationMs": 0,
+          "code": null
+        },
+        {
+          "phase": "bound",
+          "stage": "controller",
+          "durationMs": 4177,
+          "code": null
+        },
+        {
+          "phase": "ready",
+          "stage": "open",
+          "durationMs": 4543,
+          "code": null
+        },
+        {
+          "phase": "starting",
+          "stage": "settlement",
+          "durationMs": 0,
+          "code": null
+        },
+        {
+          "phase": "bound",
+          "stage": "controller",
+          "durationMs": 4443,
+          "code": null
+        },
+        {
+          "phase": "ready",
+          "stage": "open",
+          "durationMs": 4801,
+          "code": null
+        },
+        {
+          "phase": "starting",
+          "stage": "settlement",
+          "durationMs": 0,
+          "code": null
+        },
+        {
+          "phase": "bound",
+          "stage": "controller",
+          "durationMs": 4608,
+          "code": null
+        },
+        {
+          "phase": "ready",
+          "stage": "open",
+          "durationMs": 4997,
+          "code": null
+        },
+        {
+          "phase": "starting",
+          "stage": "settlement",
+          "durationMs": 0,
+          "code": null
+        },
+        {
+          "phase": "bound",
+          "stage": "controller",
+          "durationMs": 4287,
+          "code": null
+        },
+        {
+          "phase": "ready",
+          "stage": "open",
+          "durationMs": 4647,
+          "code": null
+        },
+        {
+          "phase": "starting",
+          "stage": "settlement",
+          "durationMs": 0,
+          "code": null
+        },
+        {
+          "phase": "bound",
+          "stage": "controller",
+          "durationMs": 4565,
+          "code": null
+        },
+        {
+          "phase": "ready",
+          "stage": "open",
+          "durationMs": 4948,
+          "code": null
+        },
+        {
+          "phase": "starting",
+          "stage": "settlement",
+          "durationMs": 0,
+          "code": null
+        },
+        {
+          "phase": "bound",
+          "stage": "controller",
+          "durationMs": 5633,
+          "code": null
+        },
+        {
+          "phase": "ready",
+          "stage": "open",
+          "durationMs": 6173,
+          "code": null
+        },
+        {
+          "phase": "starting",
+          "stage": "settlement",
+          "durationMs": 0,
+          "code": null
+        },
+        {
+          "phase": "bound",
+          "stage": "controller",
+          "durationMs": 5927,
+          "code": null
+        },
+        {
+          "phase": "ready",
+          "stage": "open",
+          "durationMs": 6409,
+          "code": null
+        },
+        {
+          "phase": "starting",
+          "stage": "settlement",
+          "durationMs": 0,
+          "code": null
+        },
+        {
+          "phase": "bound",
+          "stage": "controller",
+          "durationMs": 5766,
+          "code": null
+        },
+        {
+          "phase": "ready",
+          "stage": "open",
+          "durationMs": 6985,
+          "code": null
+        },
+        {
+          "phase": "starting",
+          "stage": "settlement",
+          "durationMs": 0,
+          "code": null
+        },
+        {
+          "phase": "bound",
+          "stage": "controller",
+          "durationMs": 6460,
+          "code": null
+        },
+        {
+          "phase": "ready",
+          "stage": "open",
+          "durationMs": 7049,
+          "code": null
+        }
+      ],
+      "builtinCatalog": {
+        "status": "passed",
+        "baselineVersion": "2.0.20",
+        "candidateVersion": "2.0.26",
+        "locations": 2,
+        "models": [
+          {
+            "providerID": "openai",
+            "id": "gpt-5.6-sol"
+          },
+          {
+            "providerID": "cursor-acp",
+            "id": "devryan-startup-cursor"
+          },
+          {
+            "providerID": "github-copilot",
+            "id": "devryan-startup-copilot"
+          }
+        ],
+        "discoveryRequests": 22,
+        "synthetic": true
+      }
+    },
+    {
+      "run": "package-j9lwfq",
+      "status": "failed",
+      "qualification": "composition-preflight-only",
+      "sourceDigest": "d8f968dc7a7a61a85ea12b0a9c87f82c7d3be9e048a0678f2c17824930f75599",
+      "sourceCohort": {
+        "valid": true,
+        "changedPaths": []
+      },
+      "error": {
+        "name": "TimeoutError",
+        "code": 23,
+        "message": "The operation was aborted due to timeout",
+        "lane": "compiled-slim-interview",
+        "timeoutMs": 10000
+      },
+      "cleanupFailures": [],
+      "cases": [
+        {
+          "id": "compiled-production-artifacts",
+          "status": "passed",
+          "buildId": "801380bb443989324496487b13045b77f9a6962fbe75ef2119fdb72d4cd30af9",
+          "manifestSha256": "5ca591f1a0300f3cdb74ce381ce54253b5ab0283a019ef4fcd6b59db817053fd"
+        },
+        {
+          "id": "compiled-current-build-inputs",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-empty-initialization-lost-ack-resume",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-empty-initialization-idempotent-replay",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-fresh-native-initialization",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-synthetic-builtin-catalog-credentials",
+          "status": "passed"
+        },
+        {
+          "id": "fresh-v2-baseline-checkpoint",
+          "status": "passed",
+          "version": "2.0.20",
+          "builtinCatalog": {
+            "status": "passed",
+            "locations": 2,
+            "models": [
+              {
+                "providerID": "openai",
+                "id": "gpt-5.6-sol"
+              },
+              {
+                "providerID": "cursor-acp",
+                "id": "devryan-startup-cursor"
+              },
+              {
+                "providerID": "github-copilot",
+                "id": "devryan-startup-copilot"
+              }
+            ]
+          }
+        },
+        {
+          "id": "compiled-v2-derived-bundle-clone",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-reviewed-setup-active",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-ready-catalog",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-active-builtin-startup-catalog",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-composition-catalogs-two-locations",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-human-queue-child-idle-and-await-race",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-human-explicit-steer-with-busy-child",
+          "status": "passed"
+        },
+        {
+          "id": "package-read",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-existing-workspace-write",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-existing-workspace-revert-redo",
+          "status": "passed"
+        },
+        {
+          "id": "package-write",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-ordered-council",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-council-ordered-owned-members",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-remote-mcp-one",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-remote-mcp-two",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-remote-mcp-two-locations",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-active-command-ponytail-help",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-active-command-deepwork",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-active-command-loop",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-active-command-reflect",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-active-interview",
+          "status": "passed"
+        }
+      ],
+      "nativeStartup": [
+        {
+          "phase": "starting",
+          "stage": "settlement",
+          "durationMs": 0,
+          "code": null
+        },
+        {
+          "phase": "bound",
+          "stage": "controller",
+          "durationMs": 3772,
+          "code": null
+        },
+        {
+          "phase": "ready",
+          "stage": "open",
+          "durationMs": 4114,
+          "code": null
+        }
+      ],
+      "builtinCatalog": {
+        "status": "passed",
+        "baselineVersion": "2.0.20",
+        "candidateVersion": "2.0.26",
+        "locations": 2,
+        "models": [
+          {
+            "providerID": "openai",
+            "id": "gpt-5.6-sol"
+          },
+          {
+            "providerID": "cursor-acp",
+            "id": "devryan-startup-cursor"
+          },
+          {
+            "providerID": "github-copilot",
+            "id": "devryan-startup-copilot"
+          }
+        ],
+        "discoveryRequests": 22,
+        "synthetic": true
+      }
+    }
+  ]
+}

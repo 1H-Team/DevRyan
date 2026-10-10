@@ -1,0 +1,271 @@
+{
+  "schemaVersion": 1,
+  "kind": "packaged-native-app-bound-startup-upgrade",
+  "outcome": "passed",
+  "scope": "three fresh baseline profiles; production app-bound native startup upgrade; local HTTP model fixture; natural first usable renderer",
+  "sourceSha256": "2205a5d1728b6eaa452cde01d342cfbe0e7503ba91381bb9487ed18da837a32f",
+  "archiveSha256": "8a11900e98db7b93776b9dd4100a879178073c58a6301a62b15e1135af67ae3b",
+  "candidate": {
+    "opencodeVersion": "2.0.26",
+    "artifactManifestSha256": "1cdb19d3a2627568b8a2591b2cef62b359c3ccbf33ae2f1b31628c5784136f14"
+  },
+  "summary": {
+    "launches": 3,
+    "medianUiReadyMs": 31174.467041999997,
+    "minimumUiReadyMs": 31170.273833,
+    "maximumUiReadyMs": 32094.9495
+  },
+  "unavailable": [
+    "foreground warm service",
+    "foreground cold service",
+    "foreground stale-owner recovery",
+    "foreground service upgrade"
+  ],
+  "excluded": [
+    "launchd/SMAppService registration",
+    "installed state",
+    "paid providers",
+    "first native-bundle provisioning",
+    "cold OS caches"
+  ],
+  "runs": [
+    {
+      "iteration": 0,
+      "startup": {
+        "outcome": "passed",
+        "forcedNavigations": 0,
+        "hostAvailableMs": 21061.403625,
+        "nativeStartupReadyMs": 31098.748375,
+        "hostReadyMs": 31098.800292000004,
+        "fixtureCatalogReadyMs": 31110.556417000003,
+        "uiReadyMs": 32094.9495,
+        "firstSelectedModel": {
+          "observedAtMs": 31440.911042000003,
+          "providerId": "opencode",
+          "modelId": "fledge-alpha-free",
+          "catalogAvailable": true
+        },
+        "electronStartupPhases": {
+          "source": "injected-launch-records",
+          "collectedAtMs": 32094.952333999998,
+          "records": [
+            {
+              "phase": "shell_environment",
+              "outcome": "completed",
+              "durationMs": 14
+            },
+            {
+              "phase": "foreground_preparation",
+              "outcome": "completed",
+              "durationMs": 10
+            },
+            {
+              "phase": "bundle_upgrade",
+              "outcome": "completed",
+              "durationMs": 15578
+            },
+            {
+              "phase": "server_import",
+              "outcome": "completed",
+              "durationMs": 18380
+            },
+            {
+              "phase": "server_listen",
+              "outcome": "completed",
+              "durationMs": 611
+            },
+            {
+              "phase": "initial_url",
+              "outcome": "completed",
+              "durationMs": 20109
+            },
+            {
+              "phase": "renderer_navigation",
+              "outcome": "completed",
+              "durationMs": 244
+            }
+          ]
+        }
+      },
+      "subscription": {
+        "readyAcknowledgedAtMs": 31857.664459000003,
+        "transport": "websocket",
+        "error": null
+      },
+      "initialBundle": {
+        "bundleID": "candidate",
+        "revision": 1,
+        "previousBundleID": null,
+        "opencodeVersion": "2.0.20",
+        "artifactManifestSha256": "ea707b249817c16e41839c87772ba7ef9fa0a630463fc5df6569e0b8f2360aad"
+      },
+      "finalBundle": {
+        "bundleID": "native-1cdb19d3a2627568b8a2591b-r1",
+        "revision": 2,
+        "previousBundleID": "candidate",
+        "opencodeVersion": "2.0.26",
+        "artifactManifestSha256": "1cdb19d3a2627568b8a2591b2cef62b359c3ccbf33ae2f1b31628c5784136f14"
+      },
+      "cleanupErrors": []
+    },
+    {
+      "iteration": 1,
+      "startup": {
+        "outcome": "passed",
+        "forcedNavigations": 0,
+        "hostAvailableMs": 20162.610416999996,
+        "nativeStartupReadyMs": 30209.969250000002,
+        "hostReadyMs": 30210.015042000006,
+        "fixtureCatalogReadyMs": 30224.355749999995,
+        "uiReadyMs": 31174.467041999997,
+        "firstSelectedModel": {
+          "observedAtMs": 30564.774792000004,
+          "providerId": "opencode",
+          "modelId": "fledge-alpha-free",
+          "catalogAvailable": true
+        },
+        "electronStartupPhases": {
+          "source": "injected-launch-records",
+          "collectedAtMs": 31174.468917,
+          "records": [
+            {
+              "phase": "shell_environment",
+              "outcome": "completed",
+              "durationMs": 13
+            },
+            {
+              "phase": "foreground_preparation",
+              "outcome": "completed",
+              "durationMs": 8
+            },
+            {
+              "phase": "bundle_upgrade",
+              "outcome": "completed",
+              "durationMs": 14938
+            },
+            {
+              "phase": "server_import",
+              "outcome": "completed",
+              "durationMs": 17797
+            },
+            {
+              "phase": "server_listen",
+              "outcome": "completed",
+              "durationMs": 523
+            },
+            {
+              "phase": "initial_url",
+              "outcome": "completed",
+              "durationMs": 19486
+            },
+            {
+              "phase": "renderer_navigation",
+              "outcome": "completed",
+              "durationMs": 214
+            }
+          ]
+        }
+      },
+      "subscription": {
+        "readyAcknowledgedAtMs": 30845.225459,
+        "transport": "websocket",
+        "error": null
+      },
+      "initialBundle": {
+        "bundleID": "candidate",
+        "revision": 1,
+        "previousBundleID": null,
+        "opencodeVersion": "2.0.20",
+        "artifactManifestSha256": "ea707b249817c16e41839c87772ba7ef9fa0a630463fc5df6569e0b8f2360aad"
+      },
+      "finalBundle": {
+        "bundleID": "native-1cdb19d3a2627568b8a2591b-r1",
+        "revision": 2,
+        "previousBundleID": "candidate",
+        "opencodeVersion": "2.0.26",
+        "artifactManifestSha256": "1cdb19d3a2627568b8a2591b2cef62b359c3ccbf33ae2f1b31628c5784136f14"
+      },
+      "cleanupErrors": []
+    },
+    {
+      "iteration": 2,
+      "startup": {
+        "outcome": "passed",
+        "forcedNavigations": 0,
+        "hostAvailableMs": 20896.01029199999,
+        "nativeStartupReadyMs": 30636.953624999995,
+        "hostReadyMs": 30637.011499999993,
+        "fixtureCatalogReadyMs": 30800.52549999999,
+        "uiReadyMs": 31170.273833,
+        "firstSelectedModel": {
+          "observedAtMs": 31170.13491699999,
+          "providerId": "devryan-smoke",
+          "modelId": "smoke-write",
+          "agent": "builder",
+          "catalogAvailable": true
+        },
+        "electronStartupPhases": {
+          "source": "injected-launch-records",
+          "collectedAtMs": 31170.279749999987,
+          "records": [
+            {
+              "phase": "shell_environment",
+              "outcome": "completed",
+              "durationMs": 14
+            },
+            {
+              "phase": "foreground_preparation",
+              "outcome": "completed",
+              "durationMs": 13
+            },
+            {
+              "phase": "bundle_upgrade",
+              "outcome": "completed",
+              "durationMs": 15399
+            },
+            {
+              "phase": "server_import",
+              "outcome": "completed",
+              "durationMs": 18274
+            },
+            {
+              "phase": "server_listen",
+              "outcome": "completed",
+              "durationMs": 661
+            },
+            {
+              "phase": "initial_url",
+              "outcome": "completed",
+              "durationMs": 20184
+            },
+            {
+              "phase": "renderer_navigation",
+              "outcome": "completed",
+              "durationMs": 289
+            }
+          ]
+        }
+      },
+      "subscription": {
+        "readyAcknowledgedAtMs": 30935.03433299999,
+        "transport": "websocket",
+        "error": null
+      },
+      "initialBundle": {
+        "bundleID": "candidate",
+        "revision": 1,
+        "previousBundleID": null,
+        "opencodeVersion": "2.0.20",
+        "artifactManifestSha256": "ea707b249817c16e41839c87772ba7ef9fa0a630463fc5df6569e0b8f2360aad"
+      },
+      "finalBundle": {
+        "bundleID": "native-1cdb19d3a2627568b8a2591b-r1",
+        "revision": 2,
+        "previousBundleID": "candidate",
+        "opencodeVersion": "2.0.26",
+        "artifactManifestSha256": "1cdb19d3a2627568b8a2591b2cef62b359c3ccbf33ae2f1b31628c5784136f14"
+      },
+      "cleanupErrors": []
+    }
+  ]
+}

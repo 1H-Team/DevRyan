@@ -168,4 +168,35 @@ describe('agent default resolution', () => {
       source: 'host-managed',
     });
   });
+
+  test('replaces a default that needs an API key with a model the ChatGPT sign-in can use', () => {
+    const agents = [{ ...orchestrator, variant: 'high' }];
+    const apiOnly = { available: false as const, unavailableReason: 'auth_type_unsupported' as const };
+    const other = { id: 'anthropic', models: [{ id: 'claude-sonnet-4-6' }] };
+    expect(resolveAgentDefaultSelection({
+      agentName: 'Orchestrator',
+      agents,
+      providers: [other, { id: 'openai', models: [
+        { id: 'gpt-5.6-sol', ...apiOnly, variants: { high: {} } },
+        { id: 'gpt-5.6', variants: { medium: {}, high: {} } },
+      ] }],
+    })).toMatchObject({ providerId: 'openai', modelId: 'gpt-5.6', variant: 'high', source: 'availability-fallback' });
+
+    // Never crosses providers: with nothing usable on the provider the saved choice stays.
+    expect(resolveAgentDefaultSelection({
+      agentName: 'Orchestrator',
+      agents,
+      providers: [other, { id: 'openai', models: [{ id: 'gpt-5.6-sol', ...apiOnly }] }],
+    })).toMatchObject({ providerId: 'openai', modelId: 'gpt-5.6-sol', source: 'inherited' });
+  });
+
+  test('keeps the saved default when the ChatGPT account models could not be loaded', () => {
+    const outage = { available: false as const, unavailableReason: 'account_models_unavailable' as const };
+    expect(resolveAgentDefaultSelection({
+      agentName: 'Orchestrator',
+      agents: [orchestrator],
+      providers: [{ id: 'anthropic', models: [{ id: 'claude-sonnet-4-6' }] },
+        { id: 'openai', models: [{ id: 'gpt-5.6-sol', ...outage }, { id: 'gpt-5.6', ...outage }] }],
+    })).toMatchObject({ providerId: 'openai', modelId: 'gpt-5.6-sol', source: 'inherited' });
+  });
 });

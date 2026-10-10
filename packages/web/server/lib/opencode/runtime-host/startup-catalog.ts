@@ -1,25 +1,17 @@
-import { Schema } from 'effect';
+import { Schema, type Context } from 'effect';
 import { inspectModelSelection } from '@openchamber/shared-runtime';
 import { Plugin } from '@opencode/schema/plugin';
 import type { NativeCatalogRequirements, NativeCursorCatalog, NativeCatalogAvailability } from './native-process-protocol.js';
 import { runWithHostRefusal } from './host-refusal.js';
+import { createNativeCatalogDiagnostics, nativeCatalogCause } from './native-catalog-diagnostics.js';
 const catalogRoutes = { '/api/agent':'agent', '/api/plugin':'plugin', '/api/model':'model' } as const;
-const knownCauses = new Map([
-  ['native_helper_directory_denied','helper_directory_denied'],
-  ['native_helper_denied','helper_denied'],
-  ['native_helper_timeout_invalid','helper_timeout_invalid'],
-  ['controller_helper_denied','controller_helper_denied'],
-  ['controller_helper_unavailable','controller_helper_unavailable'],
-  ['mutation_runtime_unsupported','mutation_runtime_unsupported'],
-  ['native_catalog_unavailable','catalog_unavailable'],
-]);
 const IDs = Schema.Array(Schema.Struct({ id: Schema.String }));
 const Models = Schema.Array(Schema.Struct({ id: Schema.String, providerID: Schema.String,
   variants:Schema.optional(Schema.Array(Schema.Struct({id:Schema.String}))) }));
 export interface NativeCatalogAssertion { readonly asserted:boolean;readonly missing:NativeCatalogRequirements;readonly availability:NativeCatalogAvailability }
 /** Query the controller's actual location graphs, never reconstruct a second SDK. */
 export async function assertNativeCatalog(options: { readonly directories:readonly string[];
-  readonly requirements:NativeCatalogRequirements;readonly handler:(request:Request)=>Promise<Response>;
+  readonly requirements:NativeCatalogRequirements;readonly handler:(request:Request, context?:Context.Context<never>)=>Promise<Response>;
   readonly cursorCatalog?:NativeCursorCatalog;
   readonly requirementsForDirectory?:(directory:string)=>NativeCatalogRequirements|undefined;
   readonly tools:(directory:string)=>Promise<readonly string[]> }):Promise<NativeCatalogAssertion> {
@@ -30,10 +22,12 @@ export async function assertNativeCatalog(options: { readonly directories:readon
     if (!requirements) throw new Error('native_catalog_requirements_missing');
     const read = async (route:keyof typeof catalogRoutes):Promise<unknown> => {
       let response:Response|undefined;
-      const result = await runWithHostRefusal(async () => response = await options.handler(new Request(`http://native${route}`, { headers:{'x-opencode-directory':encodeURIComponent(directory)} })));
+      const diagnostics = createNativeCatalogDiagnostics();
+      const result = await diagnostics.run(() => runWithHostRefusal(async () => response = await options.handler(new Request(`http://native${route}`, { headers:{'x-opencode-directory':encodeURIComponent(directory)} }), diagnostics.context)));
       if (!result.ok || !result.value.ok) {
-        const cause=!result.ok?knownCauses.get(result.refusal.code):undefined;
+        const cause=!result.ok?nativeCatalogCause(result.refusal):diagnostics.cause();
         const status=response?`http_${response.status}`:`refusal_${!result.ok?result.refusal.status:503}`;
+        for (const schemaPath of diagnostics.paths()) console.error(`level=error msg=response_schema_invalid name=HttpApiSchemaError schemaPath=${schemaPath}`);
         throw new Error(`native_catalog_read_failed_${catalogRoutes[route]}_${status}_${cause??'cause_unavailable'}`);
       }
       response=result.value;

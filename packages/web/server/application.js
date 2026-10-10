@@ -1834,7 +1834,6 @@ const bootstrapOpenCodeAtStartup = (...args) => bundleWork.run(async () => {
   void standardSessionTitleRuntime.cleanupStaleHelpers().catch((error) => {
     console.warn(`[SessionTitle] Startup helper cleanup failed: ${error?.message || error}`);
   });
-  if (!bundleWork.isHeld()) void projectPrewarmRuntime?.run('startup');
 });
 
 const fetchAgentsSnapshot = (...args) => serverUtilsRuntime.fetchAgentsSnapshot(...args);
@@ -2315,6 +2314,7 @@ async function main(options = {}) {
         openCodeApiPrefixDetected: true,
         isOpenCodeReady,
         lastOpenCodeError,
+        openCodeStartup: openCodeLifecycleState.openCodeStartup,
         openCodeProfileNotices,
         openCodeProbe: openCodeLifecycleState.openCodeProbe ?? null,
         lastOpenCodeLaunchDiagnostics,

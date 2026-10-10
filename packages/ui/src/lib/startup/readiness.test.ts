@@ -115,6 +115,16 @@ describe("startup readiness", () => {
     )
   })
 
+  test('a terminal startup failure wins over a stale connected event', () => {
+    const snapshot = withStartupBootstrapReadiness(createStartupReadinessSnapshot('ready'), {
+      desktopBootReady: true, isConnected: true, isInitialized: false, retriesExhausted: true,
+      openCodeError: 'Native bootstrap failed', providers: { status: 'idle' }, agents: { status: 'idle' },
+      initialization: { status: 'error', error: 'Native bootstrap failed' },
+    })
+    expect(summarizeStartupReadiness(snapshot).phase).toBe('health')
+    expect(summarizeStartupReadiness(snapshot).error).toContain('Native bootstrap failed')
+  })
+
   test("treats an empty session list as valid after the list request succeeds", () => {
     const snapshot = withStartupReadinessPhase(
       createStartupReadinessSnapshot("ready"),
@@ -125,32 +135,12 @@ describe("startup readiness", () => {
     expect(summarizeStartupReadiness(snapshot).ready).toBe(true)
   })
 
-  test("blocks on chat runtime warmup before startup is complete", () => {
-    const snapshot = withStartupReadinessPhase(
-      createStartupReadinessSnapshot("ready"),
-      "chatRuntime",
-      { status: "loading" },
-    )
-
-    const summary = summarizeStartupReadiness(snapshot)
-
-    expect(summary.ready).toBe(false)
-    expect(summary.phase).toBe("chatRuntime")
-    expect(summary.status).toBe("loading")
-  })
-
-  test("blocks on agent runtime warmup before startup is complete", () => {
-    const snapshot = withStartupReadinessPhase(
-      createStartupReadinessSnapshot("ready"),
-      "agentRuntime",
-      { status: "loading" },
-    )
-
-    const summary = summarizeStartupReadiness(snapshot)
-
-    expect(summary.ready).toBe(false)
-    expect(summary.phase).toBe("agentRuntime")
-    expect(summary.status).toBe("loading")
+  test("requires runtime and workspace state, without optional prewarming", () => {
+    expect(STARTUP_READINESS_PHASES).toEqual([
+      "health", "providers", "agents", "initialization", "globalSync",
+      "directorySync", "sessionList", "responseStyle", "worktree",
+    ])
+    expect(summarizeStartupReadiness(createStartupReadinessSnapshot("ready")).ready).toBe(true)
   })
 
   test("allows non-main desktop boot views to bypass chat readiness", () => {
@@ -183,6 +173,22 @@ describe("startup readiness", () => {
 
     expect(result).toEqual({ restartAttempted: true, restartError: null })
     expect(calls).toEqual(["restart", "initialize"])
+  })
+
+  test('Retry cancels the old startup owner before health/restart and starts a fresh owner only after restart settles', async () => {
+    const calls: string[] = []
+    let releaseRestart!: () => void
+    const pending = recoverStartupInitialization({
+      cancelInitialization: () => { calls.push('cancel') },
+      loadHealth: async () => { calls.push('health'); return { isOpenCodeReady: false } },
+      restartOpenCode: () => { calls.push('restart'); return new Promise<void>(resolve => { releaseRestart = resolve }) },
+      initializeApp: async () => { calls.push('initialize') },
+    })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(calls).toEqual(['cancel', 'health', 'restart'])
+    releaseRestart()
+    await pending
+    expect(calls).toEqual(['cancel', 'health', 'restart', 'initialize'])
   })
 
   test("does not restart a healthy runtime during client-only recovery", async () => {

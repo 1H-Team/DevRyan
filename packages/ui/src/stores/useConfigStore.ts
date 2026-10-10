@@ -7,6 +7,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import { devtools } from './utils/devtoolsGate';
 import type { Provider, Agent } from "@opencode-ai/sdk/v2";
 import { opencodeClient } from "@/lib/opencode/client";
+import { waitForStartupHealth } from "@/lib/startup/health";
 import { primeWorktreeBootstrap } from "@/lib/worktrees/worktreeBootstrap";
 import { scopeMatches, subscribeToConfigChanges } from "@/lib/configSync";
 import type { ModelMetadata } from "@/types";
@@ -38,7 +39,7 @@ import {
 } from "@/lib/agentSelection";
 import { cacheResponseStyleInstructionFromSettings } from "@/lib/responseStyle";
 import { getOrderedThinkingVariants, resolveProviderModelVariant } from "@/lib/providers/variantControls";
-import { isProviderModelAvailable, resolveAvailableProviderModel } from "@/lib/providers/modelAvailability";
+import { isProviderModelAvailable, resolveAvailableProviderModel, type ProviderAccountModelFields } from "@/lib/providers/modelAvailability";
 
 const MODELS_DEV_API_URL = "https://models.dev/api.json";
 const MODELS_DEV_PROXY_URL = "/api/openchamber/models-metadata";
@@ -198,7 +199,7 @@ const normalizeProviderDisplayName = (name: string) => (
 );
 
 type ProviderModel = Provider["models"][string];
-type ProviderWithModelList = Omit<Provider, "models"> & { models: ProviderModel[] };
+type ProviderWithModelList = Omit<Provider, "models"> & ProviderAccountModelFields & { models: ProviderModel[] };
 
 type GitModelSelection = { providerId: string; modelId: string };
 
@@ -629,6 +630,7 @@ interface ConfigStore {
     isInitialized: boolean;
     initializationLoadStatus: ConfigLoadStatus;
     initializationLoadError: string | undefined;
+    initializationRetryable: boolean;
     providersLoadStatus: ConfigLoadStatus;
     providersLoadError: string | undefined;
     agentsLoadStatus: ConfigLoadStatus;
@@ -742,7 +744,7 @@ interface ConfigStore {
     getAgentModelSelection: (agentName: string) => AgentModelSelection | null;
     probeConnection: (options?: { timeoutMs?: number }) => Promise<boolean>;
     checkConnection: () => Promise<boolean>;
-    initializeApp: () => Promise<void>;
+    initializeApp: (options?: { startup?: boolean; signal?: AbortSignal; startupTimeoutMs?: number }) => Promise<void>;
     getCurrentProvider: () => ProviderWithModelList | undefined;
     getCurrentModel: () => ProviderModel | undefined;
     getCurrentAgent: () => Agent | undefined;
@@ -795,6 +797,7 @@ const _providerLoadTokens = new Map<string, object>();
 const PROVIDER_CATALOG_INCOMPLETE_ERROR = "OpenCode provider catalog unavailable";
 const _inFlightAgents = new Map<string, Promise<boolean>>();
 let _initializeAppInFlight: Promise<void> | null = null;
+let _initializeAppSignal: AbortSignal | undefined;
 
 export const useConfigStore = create<ConfigStore>()(
     devtools(
@@ -821,6 +824,7 @@ export const useConfigStore = create<ConfigStore>()(
                 isInitialized: false,
                 initializationLoadStatus: "idle",
                 initializationLoadError: undefined,
+                initializationRetryable: true,
                 providersLoadStatus: "idle",
                 providersLoadError: undefined,
                 agentsLoadStatus: "idle",
@@ -2195,10 +2199,13 @@ export const useConfigStore = create<ConfigStore>()(
                     return false;
                 },
 
-                initializeApp: async () => {
-                    if (_initializeAppInFlight) {
+                initializeApp: async (options) => {
+                    if (_initializeAppInFlight && !_initializeAppSignal?.aborted) {
                         return _initializeAppInFlight;
                     }
+
+                    const signal = options?.signal;
+                    _initializeAppSignal = signal;
 
                     const run = (async () => {
                         let connectionConfirmed = false;
@@ -2207,11 +2214,23 @@ export const useConfigStore = create<ConfigStore>()(
                                 isInitialized: false,
                                 initializationLoadStatus: "loading",
                                 initializationLoadError: undefined,
+                                initializationRetryable: true,
                             });
                             const debug = streamDebugEnabled();
                             if (debug) console.log("Starting app initialization...");
 
-                            const isConnected = await get().checkConnection();
+                            let isConnected: boolean;
+                            if (options?.startup) {
+                                await waitForStartupHealth(
+                                    (requestSignal) => opencodeClient.readHealth({ signal: requestSignal }),
+                                    { signal: signal ?? new AbortController().signal, timeoutMs: options.startupTimeoutMs },
+                                );
+                                signal?.throwIfAborted();
+                                set({ isConnected: true, hasEverConnected: true, connectionPhase: "connected" });
+                                isConnected = true;
+                            } else {
+                                isConnected = await get().checkConnection();
+                            }
                             if (debug) console.log("Connection check result:", isConnected);
 
                             if (!isConnected) {
@@ -2227,12 +2246,14 @@ export const useConfigStore = create<ConfigStore>()(
 
                             if (debug) console.log("Loading providers...");
                             await get().loadProviders();
+                            signal?.throwIfAborted();
                             if (get().providersLoadStatus === "error") {
                                 throw new Error(get().providersLoadError || "Failed to load providers");
                             }
 
                             if (debug) console.log("Loading agents...");
                             const agentsReady = await get().loadAgents();
+                            signal?.throwIfAborted();
                             if (!agentsReady || get().agentsLoadStatus === "error") {
                                 throw new Error(get().agentsLoadError || "Failed to load agents");
                             }
@@ -2248,12 +2269,16 @@ export const useConfigStore = create<ConfigStore>()(
                             });
                             if (debug) console.log("App initialized successfully");
                         } catch (error) {
+                            if (signal?.aborted) return;
                             console.error("Failed to initialize app:", error);
-                            const message = error instanceof Error ? error.message : String(error);
+                            const message = error instanceof Error && error.name === 'TimeoutError'
+                                ? 'OpenCode did not become ready within two minutes.'
+                                : error instanceof Error ? error.message : String(error);
                             set({
                                 isInitialized: false,
                                 initializationLoadStatus: "error",
                                 initializationLoadError: message || "Failed to initialize DevRyan",
+                                initializationRetryable: !options?.startup || connectionConfirmed,
                                 isConnected: connectionConfirmed,
                                 connectionPhase: connectionConfirmed
                                     ? "connected"
@@ -2262,7 +2287,10 @@ export const useConfigStore = create<ConfigStore>()(
                             });
                         }
                     })().finally(() => {
-                        _initializeAppInFlight = null;
+                        if (_initializeAppInFlight === run) {
+                            _initializeAppInFlight = null;
+                            _initializeAppSignal = undefined;
+                        }
                     });
 
                     _initializeAppInFlight = run;

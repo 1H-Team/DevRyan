@@ -6,7 +6,8 @@ import {Model} from '@opencode/core/model';
 import {Plugin} from '@opencode/plugin/effect';
 import type {IntegrationDomain} from '@opencode/plugin/effect/integration';
 import {Context,Effect,Option,Schema,Stream} from 'effect';
-import {normalizeNativeOpenAiModels,normalizeNativeOpenAiRequest,nativeCopilotModelsFromAccount} from './native-provider-compat.js';
+import {normalizeNativeOpenAiModels,normalizeNativeOpenAiRequest,nativeCopilotModelsFromAccount,nativeEncodableModels} from './native-provider-compat.js';
+import {nativeCatalogStageFailure,withNativeCatalogStage} from './native-catalog-diagnostics.js';
 
 export interface NativeProviderCompatibilityOptions {
   readonly policyForDirectory:(directory:string)=>{readonly compactionReserved?:number};
@@ -24,7 +25,9 @@ const openaiOAuth=(integration:Pick<IntegrationDomain,'connection'>)=>Effect.gen
 
 /** Scoped registered data policy; the final physical credential hooks remain owned separately. */
 export const createNativeProviderCompatibility=(options:NativeProviderCompatibilityOptions)=>{
-  const modelOverride=Model.node.replace(Model.node.mapLayer(original=>Layer.effect(Model.Service,Effect.gen(function*(){
+  const modelOverride=Model.node.replace(Model.node.mapLayer(original=>{
+    const reviewed=original.pipe(Layer.catchCause(cause=>Layer.effect(Model.Service,nativeCatalogStageFailure(cause,'native_model_build_failed'))));
+    return Layer.effect(Model.Service,Effect.gen(function*(){
     const inner=yield* Model.Service,context=yield* Effect.context<never>();
     const integration=Option.getOrUndefined(Context.getOption(context,NativeIntegration.Service));
     const location=Option.getOrUndefined(Context.getOption(context,Location.Service));
@@ -33,19 +36,22 @@ export const createNativeProviderCompatibility=(options:NativeProviderCompatibil
     yield* Effect.addFinalizer(()=>Effect.sync(()=>{active=false;}));
     const normalize=(models:readonly Model.Info[])=>Effect.gen(function*(){
       if(!active)return yield* Effect.die(new Error('native_provider_location_expired'));
-      const connection=yield* integration.connection.active(Schema.decodeUnknownSync(NativeIntegration.ID)('openai'));
-      const value=connection?yield* integration.connection.resolve(connection).pipe(Effect.orElseSucceed(()=>undefined)):undefined;
-      const oauth=options.isOpenAiOAuth?yield* options.isOpenAiOAuth({directory:location.directory,integration}):value?.type==='oauth'&&['chatgpt-siwc'].includes(value.methodID);
+      models=yield* withNativeCatalogStage(Effect.sync(()=>nativeEncodableModels(models)), 'native_model_normalize_failed');
+      const connection=yield* withNativeCatalogStage(integration.connection.active(Schema.decodeUnknownSync(NativeIntegration.ID)('openai')), 'native_model_account_failed');
+      const value=connection?yield* withNativeCatalogStage(integration.connection.resolve(connection).pipe(Effect.orElseSucceed(()=>undefined)), 'native_model_account_failed'):undefined;
+      const oauth=options.isOpenAiOAuth?yield* withNativeCatalogStage(options.isOpenAiOAuth({directory:location.directory,integration}), 'native_model_account_failed'):value?.type==='oauth'&&['chatgpt-siwc'].includes(value.methodID);
       if(!active)return yield* Effect.die(new Error('native_provider_location_expired'));
-      const normalized=normalizeNativeOpenAiModels(models,{oauth,...policy});
-      const rows=options.discoverCopilot?yield* options.discoverCopilot({directory:location.directory,integration}):undefined;
+      const normalized=yield* withNativeCatalogStage(Effect.sync(()=>normalizeNativeOpenAiModels(models,{oauth,...policy})), 'native_model_normalize_failed');
+      const rows=options.discoverCopilot?yield* withNativeCatalogStage(options.discoverCopilot({directory:location.directory,integration}), 'native_model_account_failed'):undefined;
       if(!active)return yield* Effect.die(new Error('native_provider_location_expired'));
-      return Array.isArray(rows)?[...normalized.filter(model=>model.providerID!=='github-copilot'),...nativeCopilotModelsFromAccount(rows,normalized.filter(model=>model.providerID==='github-copilot'))]:normalized;
+      return Array.isArray(rows)?yield* withNativeCatalogStage(Effect.sync(()=>nativeEncodableModels([...normalized.filter(model=>model.providerID!=='github-copilot'),...nativeCopilotModelsFromAccount(rows,normalized.filter(model=>model.providerID==='github-copilot'))])), 'native_model_normalize_failed'):nativeEncodableModels(normalized);
     });
     const current=<A,E,R>(read:Effect.Effect<A,E,R>)=>Effect.suspend(()=>active?read:Effect.die(new Error('native_provider_location_expired'))).pipe(Effect.flatMap(value=>active?Effect.succeed(value):Effect.die(new Error('native_provider_location_expired'))));
-    const one=(read:Effect.Effect<Model.Info|undefined>)=>current(read).pipe(Effect.flatMap(model=>model?normalize([model]).pipe(Effect.map(rows=>rows.find(row=>row.providerID===model.providerID&&row.id===model.id))):Effect.succeed(undefined)));
-    return {...inner,get:(providerID,modelID)=>providerID==='github-copilot'?current(inner.all()).pipe(Effect.flatMap(normalize),Effect.map(rows=>rows.find(model=>model.providerID===providerID&&model.id===modelID))):one(inner.get(providerID,modelID)),all:()=>current(inner.all()).pipe(Effect.flatMap(normalize)),available:()=>current(inner.available()).pipe(Effect.flatMap(normalize)),default:()=>one(inner.default()),small:providerID=>one(inner.small(providerID))} satisfies Model.Interface;
-  })).pipe(Layer.provide(original))));
+    const read=<A>(effect:Effect.Effect<A>)=>withNativeCatalogStage(current(effect),'native_model_read_failed');
+    const one=(effect:Effect.Effect<Model.Info|undefined>)=>read(effect).pipe(Effect.flatMap(model=>model?normalize([model]).pipe(Effect.map(rows=>rows.find(row=>row.providerID===model.providerID&&row.id===model.id))):Effect.succeed(undefined)));
+    return {...inner,get:(providerID,modelID)=>providerID==='github-copilot'?read(inner.all()).pipe(Effect.flatMap(normalize),Effect.map(rows=>rows.find(model=>model.providerID===providerID&&model.id===modelID))):one(inner.get(providerID,modelID)),all:()=>read(inner.all()).pipe(Effect.flatMap(normalize)),available:()=>read(inner.available()).pipe(Effect.flatMap(normalize)),default:()=>one(inner.default()),small:providerID=>one(inner.small(providerID))} satisfies Model.Interface;
+  })).pipe(Layer.provide(reviewed));
+  }));
   const plugin=Plugin.define({
   id:'devryan.provider-compat',effect:ctx=>Effect.gen(function*(){
     const directory=ctx.location.directory;

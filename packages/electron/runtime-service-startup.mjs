@@ -144,8 +144,47 @@ const RUNTIME_SERVICE_STARTING_CODES = new Set([
   'runtime_service_unavailable',
 ]);
 
+export const runtimeServiceRequestSignal = (deadline = Infinity, now = Date.now) => {
+  const remainingMs = Math.min(5_000, deadline - now());
+  if (remainingMs <= 0) {
+    throw Object.assign(new Error('Background runtime connection timed out'), {
+      code: 'runtime_service_connection_timeout', retryable: false,
+    });
+  }
+  return AbortSignal.timeout(Math.ceil(remainingMs));
+};
+
+export const runStartupPhase = async (phase, operation, log, now = () => performance.now()) => {
+  const startedAt = now();
+  try {
+    const result = await operation();
+    log?.info?.('[electron] startup phase', { phase, outcome: 'completed', elapsedMs: Math.round(now() - startedAt) });
+    return result;
+  } catch (error) {
+    log?.warn?.('[electron] startup phase', {
+      phase, outcome: 'failed', elapsedMs: Math.round(now() - startedAt),
+      code: diagnosticCode(error?.code) || 'startup_phase_failed',
+    });
+    throw error;
+  }
+};
+
+export const createDesktopHostLeaseHandler = ({ state, log }) => {
+  let startupRequested = false;
+  return (lease) => {
+    state.desktopHostBrokerLease = Object.freeze({ ...lease });
+    const handle = state.serverHandle;
+    if (startupRequested || !handle) return;
+    // Lease refreshes must not retry a terminal startup failure without user recovery.
+    startupRequested = true;
+    void Promise.resolve().then(() => runStartupPhase('service_opencode',
+      () => handle.resumeDeferredOpenCodeStartup?.(), log)).catch(() => undefined);
+  };
+};
+
 export const retryRuntimeServiceConnection = async ({
   connect,
+  isOwnerStopped,
   timeoutMs = 20_000,
   startingTimeoutMs = 60_000,
   retryDelayMs = 250,
@@ -153,14 +192,26 @@ export const retryRuntimeServiceConnection = async ({
   wait = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }),
 }) => {
   const startedAt = now();
+  let budgetMs = timeoutMs;
   for (;;) {
     try {
-      return await connect();
-    } catch (error) {
-      const budgetMs = RUNTIME_SERVICE_STARTING_CODES.has(error?.code) ? startingTimeoutMs : timeoutMs;
+      return await connect({ deadline: startedAt + budgetMs });
+    } catch (caught) {
+      let error = caught;
+      if (error?.code === 'runtime_service_owner_stale' && isOwnerStopped) {
+        // Failed observation grants no takeover; recovery rechecks before claiming ownership.
+        const stopped = await Promise.resolve().then(isOwnerStopped).catch(() => false);
+        if (stopped === true) error.retryable = false;
+      }
+      if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
+        error = Object.assign(new Error('Background runtime connection timed out', { cause: error }), {
+          code: 'runtime_service_connection_timeout',
+        });
+      }
+      budgetMs = RUNTIME_SERVICE_STARTING_CODES.has(error?.code) ? startingTimeoutMs : timeoutMs;
       if (error?.retryable === false || now() - startedAt >= budgetMs) throw error;
     }
-    await wait(retryDelayMs);
+    await wait(Math.min(retryDelayMs, Math.max(1, startedAt + budgetMs - now())));
   }
 };
 

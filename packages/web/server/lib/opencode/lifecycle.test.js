@@ -8,7 +8,7 @@ import { registerServerStatusRoutes } from './core-routes.js';
 import {createOpenCodeLifecycleRuntime} from './lifecycle.js';
 function fixture(overrides={}){
  const events=[],state=overrides.state??{openCodeWorkingDirectory:process.cwd(),isShuttingDown:false},children=[];
- const native={isReady:()=>Boolean(children.at(-1)&&!children.at(-1).exited),start:vi.fn(async()=>{const child={port:43100,url:'http://localhost:43100',hasExited:()=>child.exited,close:async()=>{events.push('exit');child.exited=true;},killForRecovery:async()=>{events.push('settle');child.exited=true;}};children.push(child);return child;})};
+ const native={isReady:()=>Boolean(children.at(-1)&&!children.at(-1).exited),start:vi.fn(async({beforeConfiguration}={})=>{await (overrides.getRuntimeBundle?.()??bundle).verify();await beforeConfiguration?.();const child={port:43100,url:'http://localhost:43100',hasExited:()=>child.exited,close:async()=>{events.push('exit');child.exited=true;},killForRecovery:async()=>{events.push('settle');child.exited=true;}};children.push(child);return child;})};
  const bundle={version:'2.0.26',descriptor:{generation:2,projectMap:[{targetDirectory:process.cwd()}]},verify:async()=>events.push('verify')};
  const runtime=createOpenCodeLifecycleRuntime({state,getNativeRuntime:()=>native,getRuntimeBundle:()=>bundle,
   buildOpenCodeUrl:()=> 'http://localhost:43100',resolveSlimConfiguration:()=>({enabled:false}),
@@ -18,7 +18,80 @@ function fixture(overrides={}){
  return {runtime,state,native,bundle,events,children};
 }
 it('starts only a verified native owner and waits for its catalog',async()=>{const f=fixture();await f.runtime.bootstrapOpenCodeAtStartup();expect(f.events).toEqual(['verify','agents','probe']);expect(f.state).toMatchObject({openCodeGeneration:2,openCodeVersion:'2.0.26',isOpenCodeReady:true,isExternalOpenCode:false});expect(f.state.openCodeProcess).toBe(f.children[0]);});
-it('missing or unsupported verified lifecycle version refuses before the controller starts',async()=>{for(const version of [undefined,'2.0.25','2.0.27','2.0.26-dev']){const f=fixture();f.bundle.version=version;await expect(f.runtime.startOpenCode()).rejects.toMatchObject({code:'native_runtime_bundle_required'});expect(f.native.start).not.toHaveBeenCalled();}});
+it('publishes startup attempts and terminal boot failure before any controller binds', async () => {
+ const f=fixture();
+ expect(f.state.openCodeStartup).toEqual({state:'idle',attempt:0,code:null});
+ let rejectBoot;
+ f.native.start.mockImplementationOnce(()=>new Promise((_,reject)=>{rejectBoot=reject;}));
+ const boot=f.runtime.bootstrapOpenCodeAtStartup();
+ await vi.waitFor(()=>expect(rejectBoot).toBeTypeOf('function'));
+ expect(f.state.openCodeStartup).toEqual({state:'starting',attempt:1,code:null});
+ const code='native_catalog_read_failed_model_http_500_cause_unavailable';
+ rejectBoot(Object.assign(new Error(code),{code}));
+ await expect(boot).rejects.toMatchObject({code});
+ expect(f.state.openCodeStartup).toEqual({state:'failed',attempt:1,code});
+ expect(f.state.openCodeProcess).toBeUndefined();
+ await f.runtime.restartOpenCode();
+ expect(f.state.openCodeStartup).toEqual({state:'ready',attempt:2,code:null});
+ expect(f.state.lastOpenCodeError).toBeNull();
+});
+it('does not publish raw failure details in startup status and clears failure before retry work', async () => {
+ const f=fixture();
+ f.bundle.verify=async()=>{throw new Error('secret fixture /private/config');};
+ await expect(f.runtime.startOpenCode()).rejects.toThrow('secret fixture');
+ expect(f.state.openCodeStartup).toEqual({state:'failed',attempt:1,code:'opencode_startup_failed'});
+ let releaseVerification;
+ f.bundle.verify=()=>new Promise(resolve=>{releaseVerification=resolve;});
+ const retry=f.runtime.startOpenCode();
+ expect(f.state.openCodeStartup).toEqual({state:'starting',attempt:2,code:null});
+ expect(f.state.lastOpenCodeError).toBeNull();
+ releaseVerification();await retry;
+ expect(f.state.openCodeStartup).toEqual({state:'ready',attempt:2,code:null});
+});
+it('a superseded startup failure cannot replace the current attempt status', async () => {
+ const f=fixture();let rejectFirst;
+ f.bundle.verify=vi.fn().mockImplementationOnce(()=>new Promise((_,reject)=>{rejectFirst=reject;})).mockResolvedValue(undefined);
+ const first=f.runtime.startOpenCode();
+ await f.runtime.startOpenCode();
+ rejectFirst(Object.assign(new Error('late failure'),{code:'native_old_failure'}));
+ await expect(first).rejects.toThrow('late failure');
+ expect(f.state.openCodeStartup).toEqual({state:'ready',attempt:2,code:null});
+ expect(f.state.isOpenCodeReady).toBe(true);
+});
+it('a superseded successful readiness probe cannot clear a newer terminal startup failure', async () => {
+ let releaseProbe;
+ const probe=vi.fn().mockImplementationOnce(()=>new Promise(resolve=>{releaseProbe=resolve;}));
+ const f=fixture({probeOpenCodeReadiness:probe});
+ const first=f.runtime.startOpenCode();
+ await vi.waitFor(()=>expect(releaseProbe).toBeTypeOf('function'));
+ f.bundle.verify=async()=>{throw Object.assign(new Error('replacement failed'),{code:'native_replacement_failed'});};
+ await expect(f.runtime.startOpenCode()).rejects.toMatchObject({code:'native_replacement_failed'});
+ const current={...f.state};
+ releaseProbe({ready:true,generation:2,version:'old-probe-version'});
+ await expect(first).rejects.toMatchObject({code:'opencode_startup_superseded'});
+ expect(f.state.openCodeStartup).toEqual({state:'failed',attempt:2,code:'native_replacement_failed'});
+ expect(f.state.isOpenCodeReady).toBe(false);
+ expect(f.state.lastOpenCodeError).toBe('replacement failed');
+ expect(f.state.openCodeVersion).toBe(current.openCodeVersion);
+});
+it('a superseded failing readiness probe cannot overwrite the new ready owner', async () => {
+ let rejectProbe;
+ const probe=vi.fn().mockImplementationOnce(()=>new Promise((_,reject)=>{rejectProbe=reject;}))
+  .mockResolvedValue({ready:true,generation:2,version:'2.0.26'});
+ const f=fixture({probeOpenCodeReadiness:probe});
+ const first=f.runtime.startOpenCode();
+ await vi.waitFor(()=>expect(rejectProbe).toBeTypeOf('function'));
+ await f.runtime.startOpenCode();
+ const currentOwner=f.state.openCodeProcess;
+ rejectProbe(new Error('old probe timeout'));
+ await expect(first).rejects.toMatchObject({code:'opencode_startup_superseded'});
+ expect(f.state.openCodeStartup).toEqual({state:'ready',attempt:2,code:null});
+ expect(f.state.isOpenCodeReady).toBe(true);
+ expect(f.state.lastOpenCodeError).toBeNull();
+ expect(f.state.openCodeProcess).toBe(currentOwner);
+});
+it('missing or unsupported verified lifecycle version refuses before the controller starts',async()=>{for(const version of [undefined,'1.18.33','3.0.0','2.0.26-dev']){const f=fixture();f.bundle.version=version;await expect(f.runtime.startOpenCode()).rejects.toMatchObject({code:'native_runtime_bundle_required'});expect(f.native.start).not.toHaveBeenCalled();}});
+it('any other 2.x release requires the pinned upgrade before the controller starts',async()=>{for(const version of ['2.0.20','2.0.25','2.0.27']){const f=fixture();f.bundle.version=version;await expect(f.runtime.startOpenCode()).rejects.toMatchObject({code:'bundle_upgrade_required'});expect(f.native.start).not.toHaveBeenCalled();}});
 it('inspects and restores prompts through their existing owner without applying runtime overlays', async () => {
  const prompts=[{name:'builder',state:'modified',currentHash:'a'.repeat(64),packagedHash:'b'.repeat(64)}];
  const sync=vi.fn(async()=>({prompts,changed:false})),overlays=vi.fn();
@@ -31,7 +104,7 @@ it('inspects and restores prompts through their existing owner without applying 
  expect(overlays).not.toHaveBeenCalled();expect(f.native.start).not.toHaveBeenCalled();
 });
 it('missing/legacy bundle or external flags fail before any owner starts',async()=>{for(const overrides of [{getNativeRuntime:()=>null},{getRuntimeBundle:()=>({descriptor:{generation:1}})},{env:{ENV_SKIP_OPENCODE_START:true}},{env:{ENV_CONFIGURED_OPENCODE_HOST:{origin:'http://localhost:1'}}}]){const f=fixture(overrides);await expect(f.runtime.bootstrapOpenCodeAtStartup()).rejects.toMatchObject({code:'native_runtime_bundle_required'});expect(f.native.start).not.toHaveBeenCalled();}});
-it('artifact failure never falls back to a standalone executable or marks ready',async()=>{const f=fixture({getRuntimeBundle:()=>({descriptor:{generation:2},verify:async()=>{throw Object.assign(Error('invalid'),{code:'native_runtime_artifacts_unverified'});}})});await expect(f.runtime.bootstrapOpenCodeAtStartup()).rejects.toMatchObject({code:'native_runtime_artifacts_unverified'});expect(f.native.start).not.toHaveBeenCalled();expect(f.state.isOpenCodeReady).toBe(false);});
+it('artifact failure never falls back to a standalone executable or marks ready',async()=>{const f=fixture({getRuntimeBundle:()=>({version:'2.0.26',descriptor:{generation:2,projectMap:[{targetDirectory:process.cwd()}]},verify:async()=>{throw Object.assign(Error('invalid'),{code:'native_runtime_artifacts_unverified'});}})});await expect(f.runtime.bootstrapOpenCodeAtStartup()).rejects.toMatchObject({code:'native_runtime_artifacts_unverified'});expect(f.children).toHaveLength(0);expect(f.events).not.toContain('agents');expect(f.state.isOpenCodeReady).toBe(false);});
 it('replacement drains the exact child and browser lease before native restart',async()=>{const f=fixture();await f.runtime.startOpenCode();f.events.length=0;await Promise.all([f.runtime.restartOpenCode(),f.runtime.restartOpenCode()]);expect(f.events).toEqual(['pause','exit','verify','agents','probe','resume']);expect(f.native.start).toHaveBeenCalledTimes(2);expect(f.state.isRestartingOpenCode).toBe(false);});
 it('a synchronous pause failure clears restart ownership and the next health check retries',async()=>{
  const pause=vi.fn().mockImplementationOnce(()=>{throw new Error('pause failed');}).mockResolvedValue('owned');
@@ -126,7 +199,8 @@ it('forwards the native lifecycle version into original application health and H
     multiUserRuntime: { enabled: false },
   });
   const f = fixture({ state: composition.state, syncToHmrState: composition.syncToHmrState });
-  expect(composition.getHealthSnapshot()).toMatchObject({ openCodeVersion: null, openCodeRunning: false });
+  expect(composition.getHealthSnapshot()).toMatchObject({ openCodeVersion: null, openCodeRunning: false,
+    openCodeStartup: { state: 'idle', attempt: 0, code: null } });
   await f.runtime.bootstrapOpenCodeAtStartup();
   expect(hmrState).toMatchObject({ openCodeVersion: '2.0.26', openCodePort: 43100 });
   const app = express();
@@ -144,6 +218,7 @@ it('forwards the native lifecycle version into original application health and H
     expect(response.body).toMatchObject({
       openCodeVersion: '2.0.26', openCodePort: 43100,
       openCodeGeneration: 2, openCodeRunning: true, isOpenCodeReady: true,
+      openCodeStartup: { state: 'ready', attempt: 1, code: null },
     });
   }
   composition.state.isOpenCodeReady = false;
@@ -159,7 +234,7 @@ it('retained runtime reports its verified bundle version through launch and inhe
 it('a supported runtime below the version pin refuses before launch and names the recorded startup upgrade failure',async()=>{
  const f=fixture();f.bundle.version='2.0.20';
  await expect(f.runtime.bootstrapOpenCodeAtStartup()).rejects.toMatchObject({code:'bundle_upgrade_required',message:expect.stringContaining('OpenCode 2.0.20 must be upgraded to 2.0.26')});
- expect(f.native.start).not.toHaveBeenCalled();expect(f.events).toEqual(['verify']);expect(f.state.lastOpenCodeError).toMatch(/Restart DevRyan to retry the upgrade\.$/);
+ expect(f.native.start).not.toHaveBeenCalled();expect(f.events).toEqual([]);expect(f.state.lastOpenCodeError).toMatch(/Restart DevRyan to retry the upgrade\.$/);
  const {recordStartupBundleUpgradeFailure}=await import('./runtime-host/bundle-startup-upgrade-status.js');recordStartupBundleUpgradeFailure('bundle_upgrade_owner_active');
  try{await expect(f.runtime.bootstrapOpenCodeAtStartup()).rejects.toMatchObject({message:expect.stringContaining('the startup upgrade did not complete (bundle_upgrade_owner_active)')});}
  finally{recordStartupBundleUpgradeFailure(null);}

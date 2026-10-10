@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseArgs } from 'node:util';
+import { isDeepStrictEqual, parseArgs } from 'node:util';
 import { createSessionExecutionHost } from '../packages/web/server/lib/opencode/session-execution-host.js';
 import { createNativeRevertConversation } from '../packages/web/server/lib/opencode/session-revert-coordinator.js';
 import { createOpenCodeClient } from '../packages/web/server/lib/opencode/opencode-client/index.js';
@@ -47,11 +47,12 @@ import { createCompiledMcpLane } from './opencode-v2-native/package-mcp-lane.mjs
 import { runCompiledSlimTools } from './opencode-v2-native/package-slim-tools-lane.mjs';
 import { createCompiledImageLane } from './opencode-v2-native/package-image-lane.mjs';
 import { readNativeRemovalRows, assertNativeRemovalAbsent, assertCompletedRemoval } from './opencode-v2-native/removal-lanes.mjs';
-import { assertPackagePreflightOptions, assertCompiledCompositionCatalogs, packagePreflightResult } from './opencode-v2-native/package-preflight.mjs';
+import { assertPackagePreflightOptions, assertCompiledCompositionCatalogs, packagePreflightResult,
+  createBuiltinCatalogPreflight, assertBuiltinCatalogPreflight, builtinCatalogPreflightFetch } from './opencode-v2-native/package-preflight.mjs';
 import { runCompiledManagedIntervalArm } from './opencode-v2-native/package-managed-interval-lane.mjs';
 import { runCompiledIntervalCorrectness, validateEventReconcileInterval, intervalCorrectnessArmTimeoutMs } from './opencode-v2-native/package-interval-correctness.mjs';
 import { runCompiledHumanQueue } from './opencode-v2-native/package-human-queue-lane.mjs';
-import { assertBundleCloneLayout, createCompiledBundleUpgradeLane, snapshotClosedBundleSource, snapshotRetainedBundleWork, verifyCompiledCloneCompatibility } from './opencode-v2-native/package-bundle-upgrade-lane.mjs';
+import { assertBundleCloneLayout, createCompiledBundleUpgradeLane, snapshotClosedBundleSource, snapshotCheckpointedBundleSource, snapshotRetainedBundleWork, verifyCompiledCloneCompatibility } from './opencode-v2-native/package-bundle-upgrade-lane.mjs';
 import { runCompiledFreshInstallUpgrade } from './opencode-v2-native/package-fresh-install-upgrade-lane.mjs';
 import { runCompiledClaudeCredentialBridge } from './opencode-v2-native/compiled-claude-credentials.mjs';
 import { runCompiledHelperIsolation } from './opencode-v2-native/package-helper-isolation-lane.mjs';
@@ -92,7 +93,8 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
   const cases = [], observations = [], diagnostics = [], cleanupFailures = [];
   const source = await captureNativeAcceptanceSource();
   const runnerSha256 = fixtureSha256(await fs.readFile(fileURLToPath(import.meta.url)));
-  let provider, runtimeOwner, host, managed, fixture, result, browserLane, slimWeb, mcpLane, imageLane, failureEvents, journal;
+  let provider, runtimeOwner, host, managed, fixture, result, browserLane, slimWeb, mcpLane, imageLane, failureEvents, journal, builtinCatalog;
+  const originalFetch = globalThis.fetch;
   try {
     assert.equal(process.env.DEVRYAN_RUNTIME_BUNDLE_ROOT, undefined, 'Package QA requires an isolated launch environment');
     if (browser) assert.equal(reviewedSetup, true, 'Compiled browser qualification requires the active reviewed setup');
@@ -135,6 +137,11 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
       onRequest: row => observations.push({ phase: 'http_provider_request', ...row }) });
     if (reviewedSetup) mcpLane = await createCompiledMcpLane();
     const configuration = createHttpProviderConfiguration(provider.baseURL);
+    if (preflight) {
+      builtinCatalog = await createBuiltinCatalogPreflight();
+      Object.assign(configuration.providers, builtinCatalog.providers);
+      globalThis.fetch = builtinCatalogPreflightFetch(builtinCatalog.endpoint, originalFetch);
+    }
     if (!managedInterval && !managedCorrectness) {
       const helperFixture = await createCompiledHelperAgentFixture({ root });
       Object.assign(configuration.agents, helperFixture.agents);
@@ -151,12 +158,17 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
     if (managedCorrectness) catalogRequirements.agents.push('oracle');
     const reviewedNativeConfigPath = path.join(root, 'reviewed-native.json');
     const reviewedPluginManifestPath = path.join(root, 'reviewed-plugins.json');
+    const baselineReviewedPluginManifestPath = path.join(root, 'baseline-reviewed-plugins.json');
     await fs.writeFile(reviewedNativeConfigPath, JSON.stringify({ schema: 1, configuration, locations, catalogRequirements }) + '\n');
     await fs.writeFile(reviewedPluginManifestPath, JSON.stringify({ schema: 1, plugins: reviewedSetup ? reviewedSetupRegistrations(artifacts.manifest.inputs.reviewedPlugins,{browser}) : artifacts.manifest.inputs.reviewedPlugins }) + '\n');
+    await fs.writeFile(baselineReviewedPluginManifestPath, JSON.stringify({ schema: 1, plugins: reviewedSetup
+      ? reviewedSetupRegistrations(baselineArtifacts.manifest.inputs.reviewedPlugins, { browser })
+      : baselineArtifacts.manifest.inputs.reviewedPlugins }) + '\n');
     const launchArtifacts = { controllerBinary: artifacts.controller, writerBinary: artifacts.writer, artifactManifestPath: manifestPath,
       artifactManifestSha256: manifestSha256, reviewedNativeConfigPath, reviewedPluginManifestPath };
     const baselineLaunchArtifacts = { ...launchArtifacts, controllerBinary: baselineArtifacts.controller, writerBinary: baselineArtifacts.writer,
-      artifactManifestPath: baselineManifestPath, artifactManifestSha256: baselineManifestSha256 };
+      artifactManifestPath: baselineManifestPath, artifactManifestSha256: baselineManifestSha256,
+      reviewedPluginManifestPath: baselineReviewedPluginManifestPath };
     const sourceLaunch = { ...fixture.sourceLaunch, global: { home: fixture.sourceLaunch.global.home } };
     let nativeURL, epoch = 0, descriptor, currentController, baselineSnapshot;
     const nativeTransport = { fetch: globalThis.fetch };
@@ -275,6 +287,8 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
       executionHost: baselineSeedHost, drainStores: () => baselineSeedHost.runtime.drain() });
     await baselineSeed({ kind: 'bundle', bundleID: baseline.bundleID }, async (_, scope) => {
       await upgradeLane.seedBaseline(baseline, scope.assertHeld);
+      if (preflight) cases.push(await upgradeLane.seedBuiltinCatalog(baseline, scope.assertHeld,
+        { copilotEndpoint: builtinCatalog.endpoint }));
       if (!preflight && !managedInterval && !managedCorrectness) {
         cases.push(await upgradeLane.assertIncompatibleTarget({ descriptor: baseline, artifacts: baselineArtifacts, root, assertHeld: scope.assertHeld }));
       }
@@ -288,11 +302,12 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
       return {items:[{type:'textDelta',text:'Fresh native baseline complete'}],reason:'stop'};
     });
     const baselineEvidence = await runSelectedNativeLifecycle({controlRoot,descriptor:baseline,configuration,fixture,
-      seedInput:baselineMarker,logFile:path.join(root,'native-baseline-lifecycle.log')});
+      seedInput:baselineMarker,logFile:path.join(root,'native-baseline-lifecycle.log'),
+      ...(preflight ? { builtinCatalog: { expected: builtinCatalog.expected, endpoint: builtinCatalog.endpoint } } : {})});
     assert.equal(baselineRequests,1);
     cases.push({...baselineEvidence,id:'fresh-v2-baseline-checkpoint'});
     settledCheckpoints.set('baseline',baselineEvidence);
-    baselineSnapshot = await snapshotClosedBundleSource(baseline);
+    baselineSnapshot = await snapshotCheckpointedBundleSource(baseline);
     await provider.setResponder(()=>{throw new Error('Unsolicited packaged model request');});
     const candidateInput = { bundleID: 'candidate', generation: 2, source: { kind: 'bundle', bundleID: baseline.bundleID },
       projectMap: baseline.projectMap, auxiliary: { kind: 'absent' }, launchArtifacts };
@@ -302,10 +317,18 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
       databasePath: baseline.launch.opencodeDatabasePath, left: baselineArtifacts.manifest, right: artifacts.manifest }));
     descriptor = await store.prepare(candidateInput);
     assert.equal(actualImports, importsBeforeClone, 'A→B clone must not rerun the legacy importer');
-    const afterCloneSnapshot=await snapshotClosedBundleSource(baseline);
-    assert.deepEqual(afterCloneSnapshot, baselineSnapshot, 'Clone changed its closed durable source or logical history');
+    const afterCloneSnapshot=await snapshotCheckpointedBundleSource(baseline);
+    const { physical: sourceBytes, walBytes: sourceWal, ...sourceData } = baselineSnapshot;
+    const { physical: afterCloneBytes, walBytes: afterCloneWal, ...afterCloneData } = afterCloneSnapshot;
+    assert.deepEqual(afterCloneData, sourceData, 'Clone changed its closed durable files, schema, table rows or history');
+    // Original credential capture closes SQLite and may checkpoint committed
+    // WAL frames. Every table and other file remain exact; only this drain is allowed.
+    const sourceWalCheckpointed = !isDeepStrictEqual(afterCloneBytes, sourceBytes);
+    if (sourceWalCheckpointed) assert.ok(sourceWal > 0 && !afterCloneWal,
+      'Closed source database bytes changed other than by a WAL checkpoint');
     observations.push({phase:'closed_source_clone_invariance',historySha256:fixtureSha256(JSON.stringify(baselineSnapshot.history)),
-      sessions:baselineSnapshot.history.sessions.length,messages:baselineSnapshot.history.messages.length,transientExclusion:'opencode/opencode.db-shm'});
+      sessions:baselineSnapshot.history.sessions.length,messages:baselineSnapshot.history.messages.length,
+      sourceWalCheckpointed, transientExclusion:'opencode/opencode.db-shm'});
     checkpointOwners.set('candidate', Promise.resolve(descriptor));
     cases.push(await upgradeLane.assertClone({ baseline, candidate: descriptor }));
     await assert.rejects(store.select({ bundleID: 'candidate', expectedRevision: 0 }), error => error.code === 'bundle_selection_revision_conflict');
@@ -317,7 +340,7 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
     const candidateSeed = createRuntimeBundleCheckpoint({ ownerID: descriptor.bundleID, generation: 2, launch: descriptor.launch, neverStarted: true,
       closeAdmission: () => candidateSeedHost.runtime.drain(), getController: () => null, stopProducers: async () => {},
       executionHost: candidateSeedHost, drainStores: () => candidateSeedHost.runtime.drain() });
-    await candidateSeed({ kind: 'bundle', bundleID: descriptor.bundleID }, (_, scope) => upgradeLane.rotateCandidate(descriptor, scope.assertHeld));
+    if (!preflight) await candidateSeed({ kind: 'bundle', bundleID: descriptor.bundleID }, (_, scope) => upgradeLane.rotateCandidate(descriptor, scope.assertHeld));
     const { readRuntimeBundleBinding } = await import('../packages/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js');
     const binding = readRuntimeBundleBinding({ DEVRYAN_RUNTIME_BUNDLE_ROOT: controlRoot });
     const bundle = await loadNativeRuntimeBundle({ binding, launcher: artifacts.launcher });
@@ -432,6 +455,12 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
     assert.equal(controller.bound.catalog.asserted, true);
     if(reviewedSetup)await assertReviewedSetupBoot({runtimeOwner,controller,client,browser,onCase:row=>cases.push(row)});
     cases.push({ id: 'compiled-ready-catalog', status: 'passed', instanceID: controller.instanceID, source: 'accepted-supervisor-source-denied-full-serve' });
+    if (preflight) {
+      cases.push({ ...await assertBuiltinCatalogPreflight({ client, directories: locations.map(row => row.directory),
+        expected: builtinCatalog.expected }), baselineVersion: baselineEvidence.version,
+        candidateVersion: artifacts.manifest.opencodeVersion, ...builtinCatalog.evidence() });
+      assert.ok(builtinCatalog.evidence().discoveryRequests > 0, 'Builtin Copilot never used its loopback catalog');
+    }
     if (reviewedSetup) cases.push(await assertCompiledCompositionCatalogs({ runtimeOwner, client, readNativePlugins: async directory => {
       const response = await fetch(new URL('/api/plugin', controller.url), { headers: { ...runtimeOwner.getAuthHeaders(),
         'x-opencode-directory': encodeURIComponent(directory) }, signal: AbortSignal.timeout(10000) });
@@ -690,7 +719,8 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
       assert.deepEqual(await snapshotRetainedBundleWork(descriptor), retainedWork);
       // Separate control root: the same forward clone and rollback from the production empty source.
       cases.push(...await runCompiledFreshInstallUpgrade({ root, reviewedPluginManifestPath, configuration, catalogRequirements, provider, observations,
-        baseline: { artifacts: baselineArtifacts, manifestPath: baselineManifestPath, manifestSha256: baselineManifestSha256 },
+        baseline: { artifacts: baselineArtifacts, manifestPath: baselineManifestPath, manifestSha256: baselineManifestSha256,
+          reviewedPluginManifestPath: baselineReviewedPluginManifestPath },
         candidate: { artifacts, manifestPath, manifestSha256 } }));
       // Separate control root: a fresh default-shaped initialization that still holds its setup seed at first boot.
       const providerCountBeforeSeeded = provider.requests.length;
@@ -718,9 +748,10 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
     }
   } catch (error) { result = { status: 'failed', error: errorEvidence(error) }; }
   finally {
-    for (const close of [() => failureEvents?.close(), () => runtimeOwner?.close(), () => managed?.close(), () => host?.drain(), () => journal?.drain(), () => provider?.close(), () => browserLane?.close(), () => slimWeb?.close(), () => mcpLane?.close(), () => imageLane?.close()]) {
+    for (const close of [() => failureEvents?.close(), () => runtimeOwner?.close(), () => managed?.close(), () => host?.drain(), () => journal?.drain(), () => provider?.close(), () => browserLane?.close(), () => slimWeb?.close(), () => mcpLane?.close(), () => imageLane?.close(), () => builtinCatalog?.close()]) {
       try { await close(); } catch (error) { cleanupFailures.push(errorEvidence(error)); }
     }
+    if (preflight) globalThis.fetch = originalFetch;
   }
   const after = await captureNativeAcceptanceSource();
   const changedPaths = [...new Set([...Object.keys(source.sources), ...Object.keys(after.sources)])]

@@ -197,3 +197,51 @@ test('private Claude lifecycle commands use original KV during held admission wi
   }).pipe(Effect.provide(layer),Effect.provideService(Location.Service,location))));
  }finally{await factory.close();await fs.rm(state,{recursive:true,force:true});}
 });
+
+test('provider selected reads return the active native key and refuse stale, foreign or out-of-scope requests',async()=>{
+  const config=snapshot();
+  const state=await fs.mkdtemp(path.resolve('.cache/v2-validation/provider-native-read-'));
+  let queue:Promise<void>=Promise.resolve();
+  const node=createNativeIntegrationOwner({instanceID:'controller-one',snapshot:config,stateDirectory:state,
+    controller:()=>({instanceID:'controller-one',call:async input=>{
+      if(input.action==='credential-commit-owned')return factory.commitCredentialOwned(input);
+      if(input.action==='credential-operation-owned')return factory.credentialOwned(input);
+      if(input.action==='credential-metadata-owned')return factory.credentialMetadataOwned(input);
+      if(input.action==='provider-read-selected-owned')return factory.readProviderSelectedOwned(input);
+      throw Error('Unexpected native control');
+    },killAndWaitForExit:async()=>{throw Error('No native process in service acquisition fixture');},
+    killAndWaitForTermination:async()=>{throw Error('No native process in service acquisition fixture');}}),isReady:()=>true,
+    withMutationQueue:action=>{const result=queue.then(action);queue=result.then(()=>undefined,()=>undefined);return result;},
+    captureWebAuthorization:async()=>async()=>{},
+    admissionOwner:{withProviderResolution:async (_input,action)=>action(async()=>{}),withProviderAttempt:(_input,action)=>action(async()=>{}),withImageGeneration:async()=>{throw Error('Outside fixture');}}});
+  const factory=createControllerIntegrations({controllerInstanceID:'controller-one',configurationSnapshot:config,
+    registrationOrigin:{kind:'native',id:'devryan.remote-mcp',manifestDigest:'c'.repeat(64),capabilities:['network']},reviewedConfigurationOrigins:new Map(),
+    isBound:()=>true,isExecutionReady:()=>true,rpc:(method,input,context)=>node.handleRpc(method,input,context),
+    executeOwnedFallback:invocation=>invocation.executeNative(),authorizeMcpCall:(_i,_b,a)=>a});
+  const layer=LayerNode.compile(LayerNode.group([Credential.node,Integration.node]),{replacements:[...factory.overrides,
+    Global.node.replace(Global.layerWith({home:state,data:state,cache:state,config:state,state,tmp:state,bin:state,log:state,repos:state}))]});
+  const scope=(integrationID:string)=>({kind:'provider' as const,directory,integrationID,configurationDigest:credentialMutationFingerprint({}),
+    operation:'provider.integration',method:'GET' as const,path:`/api/integration/${integrationID}`});
+  const read=(integrationID:string,controllerInstanceID='controller-one')=>factory.readProviderSelectedOwned({directory,controllerInstanceID,integrationID});
+  try{
+    await Effect.runPromise(Effect.scoped(Effect.gen(function*(){
+      const credentials=yield* Credential.Service;
+      expect(yield* Effect.promise(()=>read('xai'))).toBeUndefined();
+      expect(yield* Effect.promise(()=>read('opencode-go'))).toBeUndefined();
+      const body={integrationID:Schema.decodeUnknownSync(Integration.ID)('opencode-go'),label:'Go A',value:{type:'key' as const,key:'synthetic-go-key'}};
+      const created=yield* Effect.promise(()=>node.credentialOperation({...scope('opencode-go'),operation:'provider.credential.create',method:'POST',path:'/api/credential',
+        body,valueType:'key',requestedFingerprint:credentialMutationFingerprint(body)},{operation:'create',input:body}));
+      if(!created||typeof created!=='object'||!('credentialID' in created))throw Error('Native credential ID required');
+      const id=Schema.decodeUnknownSync(Credential.ID)(created.credentialID);
+      const selected=yield* Effect.promise(()=>node.readProviderSelected(scope('opencode-go')));
+      expect(selected).toEqual({directory,controllerInstanceID:'controller-one',integrationID:'opencode-go',credentialID:id,value:{type:'key',key:'synthetic-go-key'}});
+      expect(yield* Effect.promise(()=>node.readProviderSelected(scope('xai')))).toBeUndefined();
+      for(const bad of ['openai','opencode','cursor-acp','github-copilot']){
+        const denied=yield* Effect.exit(Effect.promise(()=>read(bad)));expect(denied._tag).toBe('Failure');
+      }
+      const foreign=yield* Effect.exit(Effect.promise(()=>read('opencode-go','controller-two')));expect(foreign._tag).toBe('Failure');
+      expect(String((yield* credentials.get(id))?.integrationID)).toBe('opencode-go');
+    }).pipe(Effect.provide(layer),Effect.provideService(Location.Service,location))));
+    await expect(read('opencode-go')).rejects.toMatchObject({code:'native_integration_acquisition_expired'});
+  }finally{await node.invalidate();await factory.close();await fs.rm(state,{recursive:true,force:true});}
+});

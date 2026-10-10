@@ -100,6 +100,7 @@ export const ProviderUsagePanel: React.FC<ProviderUsagePanelProps> = ({
   const result = useQuotaStore((state) => state.results.find((entry) => entry.providerId === quotaProviderId) ?? null);
   const refreshState = useQuotaStore((state) => state.providerRefreshState[quotaProviderId]);
   const isLoading = useQuotaStore((state) => state.isLoading);
+  const discoveryFinished = useQuotaStore((state) => state.configuredProviderIds !== null);
   const error = useQuotaStore((state) => state.error);
   const autoRefresh = useQuotaStore((state) => state.autoRefresh);
   const refreshIntervalMs = useQuotaStore((state) => state.refreshIntervalMs);
@@ -223,7 +224,13 @@ export const ProviderUsagePanel: React.FC<ProviderUsagePanelProps> = ({
 
   const notices: Notice[] = [];
   if (!result) {
-    notices.push({ tone: 'info', title: t('settings.usage.page.state.noData') });
+    notices.push(discoveryFinished
+      ? {
+        tone: 'info',
+        title: t('settings.usage.page.state.unreadableTitle'),
+        body: t('settings.usage.page.state.unreadableDescription'),
+      }
+      : { tone: 'info', title: t('settings.usage.page.state.noData') });
   }
   if (error) {
     notices.push({ tone: 'error', title: t('settings.usage.page.state.refreshFailedTitle'), body: error });

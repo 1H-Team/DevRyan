@@ -41,6 +41,7 @@ export type NativeProcessCommand = {readonly protocol:1;readonly id:string} & (
   ({readonly action:'provider-catalog-selection-owned'} & NativeProviderCatalogBinding) |
   {readonly action:'openai-read-credential-owned';readonly directory:string;readonly controllerInstanceID:string;readonly credentialID:string} |
   {readonly action:'openai-read-selected-owned';readonly directory:string;readonly controllerInstanceID:string} |
+  {readonly action:'provider-read-selected-owned';readonly directory:string;readonly controllerInstanceID:string;readonly integrationID:'xai'|'opencode-go'} |
   {readonly action:'openai-cas-selected-owned';readonly directory:string;readonly controllerInstanceID:string;readonly expected:NativeOpenAiSelected;readonly next:Credential.OAuth} |
   {readonly action:'reconcile-shell-owned'|'reconcile-primary-owned';readonly sessionID:string;readonly messageID:string;readonly permit:NativeWirePermit} |
   {readonly action:'cancel-recovered-input-owned';readonly sessionID:string;readonly messageID:string;readonly payloadHash:string;readonly enqueuedSeq:number;readonly cancellationReceiptVersion:1;readonly permit:NativeWirePermit} |

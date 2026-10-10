@@ -95,6 +95,39 @@ test('open checkpoint and invalid closed history refuse instead of claiming a co
   } finally { await fs.rm(f.root,{recursive:true,force:true}); }
 });
 
+test('builtin catalog fixture activates synthetic OAuth and Cursor through the held credential projection', async () => {
+  const f = await fixture();
+  try {
+    const a = await f.create('baseline'); await f.lane.seedBaseline(a, held);
+    const proof = await f.lane.seedBuiltinCatalog(a, held);
+    assert.equal(proof.accounts, 2);
+    const credentials = (await f.lane.captureCredentials({ descriptor: a, assertHeld: held })).snapshot.credentials;
+    assert.equal(credentials.find(row => row.integrationID === 'openai').value.methodID, 'chatgpt-siwc');
+    assert.equal(credentials.find(row => row.integrationID === 'cursor-acp').value.type, 'key');
+    assert.equal(credentials.filter(row => ['openai', 'cursor-acp'].includes(row.integrationID)).every(row => row.active), true);
+    assert.doesNotMatch(JSON.stringify(f.observations), /synthetic-access|synthetic-refresh|synthetic-cursor-catalog-key/);
+    await assert.rejects(f.lane.seedBuiltinCatalog(a, held), /requires an unseeded/);
+  } finally { await fs.rm(f.root, { recursive: true, force: true }); }
+});
+
+test('active builtin Copilot catalog fixture requires an explicit loopback discovery endpoint', async () => {
+  const f = await fixture();
+  try {
+    const a = await f.create('baseline'); await f.lane.seedBaseline(a, held);
+    for (const copilotEndpoint of ['https://127.0.0.1:43210', 'http://fixture.invalid:43210', 'http://127.0.0.1:43210/models',
+      'http://user@127.0.0.1:43210', 'http://127.0.0.1:43210/?secret=fixture']) {
+      await assert.rejects(f.lane.seedBuiltinCatalog(a, held, { copilotEndpoint }));
+    }
+    assert.equal(f.states.get(a.bundleID).credentials.length, 2, 'Refused endpoints must not project credentials');
+    const proof = await f.lane.seedBuiltinCatalog(a, held, { copilotEndpoint: 'http://127.0.0.1:43210/' });
+    assert.equal(proof.accounts, 3);
+    const row = f.states.get(a.bundleID).credentials.find(row => row.integrationID === 'github-copilot');
+    assert.equal(row.active, true); assert.equal(row.value.methodID, 'device');
+    assert.deepEqual(row.value.metadata, { apiEndpoint: 'http://127.0.0.1:43210' });
+    assert.doesNotMatch(JSON.stringify(f.observations), /synthetic-access|synthetic-refresh|apiEndpoint/);
+  } finally { await fs.rm(f.root, { recursive: true, force: true }); }
+});
+
 test('closed bundle source ignores only exact transient SHM and retains durable bytes and original history',async()=>{
  const f=await fixture();
  try{

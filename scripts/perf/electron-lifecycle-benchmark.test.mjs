@@ -14,10 +14,12 @@ import {
   loadOlderHistoryPage,
   observeStartupNavigation,
   prepareMemorySessions,
+  parseStartupPhaseLogs,
   projectRendererMemory,
   selectedFixtureModelIsAvailable,
   SESSION_MEMORY_FIXTURE,
   summarizeMemoryCheckpoints,
+  sanitizeStartupPhases,
 } from './electron-lifecycle-benchmark.mjs';
 
 const host = { process: { heapUsed: 99999 }, appMetrics: [
@@ -337,4 +339,113 @@ test('startup requires the actual selected model to resolve in both UI and conne
   assert.equal(selectedFixtureModelIsAvailable({ ...snapshot, selectedModel: { ...snapshot.selectedModel, catalogAvailable: false } }, catalog), false);
   assert.equal(selectedFixtureModelIsAvailable(snapshot, { ...catalog, connected: [] }), false);
   assert.equal(selectedFixtureModelIsAvailable(snapshot, { ...catalog, all: [] }), false);
+});
+
+test('startup evidence separates host availability, native readiness and usable UI without admitting a failure splash', async t => {
+  for (const terminal of [false, true]) await t.test(terminal ? 'terminal failure' : 'delayed ready', async child => {
+    let healthCalls = 0;
+    let catalogCalls = 0;
+    const server = http.createServer((request, response) => {
+      response.setHeader('Content-Type', 'application/json');
+      if (request.url === '/api/provider') {
+        catalogCalls++;
+        response.end(JSON.stringify({ connected: ['fixture'], all: [{ id: 'fixture', models: { 'fixture-model': {} } }] }));
+      } else {
+        healthCalls++;
+        response.end(JSON.stringify({ isOpenCodeReady: !terminal && healthCalls > 1,
+          openCodeStartup: { state: terminal ? 'failed' : healthCalls > 1 ? 'ready' : 'starting', attempt: 4,
+            code: terminal ? 'NATIVE_BOOT_FAILED' : null }, lastOpenCodeError: 'sensitive host details' }));
+      }
+    });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    child.after(async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); });
+    const cdp = { on: () => () => {}, send: async () => ({ result: { value: readyStartupSnapshot('visible') } }) };
+    const result = await captureFirstDocumentStartup({ cdp, origin: `http://127.0.0.1:${server.address().port}`,
+      fixture: { getState: () => ({ sseClientCount: 1 }) }, startedAt: performance.now(),
+      readStartupPhases: () => [{ phase: 'initial_url', outcome: 'completed', elapsedMs: 17, directory: '/private' }] });
+    assert.equal(result.nativeStartupObservation, 'observed');
+    assert.deepEqual(result.electronStartupPhases.records, [{ phase: 'initial_url', outcome: 'completed', durationMs: 17 }]);
+    assert.equal(JSON.stringify(result).includes('sensitive host details'), false);
+    assert.equal(JSON.stringify(result).includes('/private'), false);
+    if (terminal) {
+      assert.equal(result.outcome, 'failed');
+      assert.equal(result.startupFailure.code, 'NATIVE_BOOT_FAILED');
+      assert.equal(result.startupFailure.attempt, 4);
+      assert.equal(healthCalls, 1);
+      assert.equal(catalogCalls, 0);
+      assert.equal(result.uiReadyMs, undefined);
+    } else {
+      assert.equal(result.outcome, 'passed');
+      assert.deepEqual(result.healthObservations.map(record => record.state), ['starting', 'ready']);
+      assert.ok(result.nativeStartupReadyMs >= result.hostAvailableMs);
+      assert.ok(result.hostReadyMs >= result.nativeStartupReadyMs);
+      assert.ok(result.fixtureCatalogReadyMs >= result.hostReadyMs);
+      assert.ok(result.uiReadyMs >= result.fixtureCatalogReadyMs);
+    }
+  });
+});
+
+test('startup phase projection keeps durations and fixed codes without paths or arbitrary log payloads', () => {
+  const logs = `[electron] startup phase { phase: 'initial_url', outcome: 'completed', elapsedMs: 12, secret: 'private' }\n`
+    + `[electron] startup phase {\n phase: 'service_connection', outcome: 'failed', elapsedMs: 15, code: 'runtime_service_not_registered' }\n`
+    + `[runtime-bundle] startup phase { phase: 'bundle_upgrade', outcome: 'completed', elapsedMs: 42 }`;
+  assert.deepEqual(sanitizeStartupPhases(parseStartupPhaseLogs(logs)), [
+    { phase: 'initial_url', outcome: 'completed', durationMs: 12 },
+    { phase: 'service_connection', outcome: 'failed', durationMs: 15, code: 'runtime_service_not_registered' },
+    { phase: 'bundle_upgrade', outcome: 'completed', durationMs: 42 },
+  ]);
+  assert.deepEqual(sanitizeStartupPhases([{ phase: '/private/path', outcome: 'completed', elapsedMs: 3 },
+    { phase: 'service', outcome: 'failed', elapsedMs: 2, code: 'secret token' },
+    { phase: 'service', outcome: 'completed', elapsedMs: -1 }]), [
+    { phase: 'service', outcome: 'failed', durationMs: 2, code: null },
+  ]);
+});
+
+test('native startup requires its exact model/agent tuple and an authoritative event-stream acknowledgement', async t => {
+  const tuple = { providerId: 'devryan-smoke', modelId: 'smoke-write', agent: 'builder' };
+  const server = http.createServer((request, response) => {
+    response.setHeader('Content-Type', 'application/json');
+    response.end(JSON.stringify(request.url === '/api/provider'
+      ? { connected: [tuple.providerId], all: [{ id: tuple.providerId, models: { [tuple.modelId]: {} } }] }
+      : { isOpenCodeReady: true }));
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); });
+  let reads = 0;
+  const cdp = { on: () => () => {}, send: async () => {
+    reads++;
+    return { result: { value: { ...readyStartupSnapshot('visible'),
+      selectedModel: { ...tuple, agent: reads < 3 ? 'wrong-agent' : tuple.agent, catalogAvailable: true } } } };
+  } };
+  const result = await captureFirstDocumentStartup({ cdp, origin: `http://127.0.0.1:${server.address().port}`,
+    startedAt: performance.now(), runtimeUiTuple: tuple, isEventStreamReady: () => reads >= 4 });
+  assert.equal(result.outcome, 'passed');
+  assert.equal(reads, 4);
+  assert.match(result.scope, /actual native backend; local HTTP model fixture/);
+  assert.equal(result.nativeStartupObservation, 'unavailable');
+  await assert.rejects(captureFirstDocumentStartup({ cdp, startedAt: 0, runtimeUiTuple: tuple }), /authoritative event-stream readiness/);
+});
+
+
+test('foreground admission uses the owned shell focus command once and still requires a later visible snapshot', async t => {
+  const origin = await startupTestHost(t);
+  let focused = false, requests = 0, reads = 0;
+  const methods = [];
+  const cdp = { on: () => () => {}, send: async method => {
+    methods.push(method);
+    assert.equal(method, 'Runtime.evaluate');
+    reads++;
+    return { result: { value: readyStartupSnapshot(focused ? 'visible' : 'hidden') } };
+  } };
+  const result = await captureFirstDocumentStartup({ cdp, fixture: { getState: () => ({ sseClientCount: 1 }) },
+    origin, startedAt: performance.now(), startupMode: 'foreground',
+    foregroundWindow: { method: 'desktop_focus_main_window', activate: async () => { requests++; focused = true; return { focused: true }; } } });
+  assert.equal(result.outcome, 'passed');
+  assert.equal(requests, 1);
+  assert.ok(reads >= 3);
+  assert.equal(result.foregroundActivation.method, 'desktop_focus_main_window');
+  assert.deepEqual(result.foregroundActivation.acknowledgement, { focused: true });
+  assert.equal(result.document.visibilityState, 'visible');
+  assert.ok(result.uiReadyMs > result.foregroundActivation.acknowledgedAtMs);
+  assert.equal(result.forcedNavigations, 0);
 });

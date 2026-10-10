@@ -50,6 +50,16 @@ import {projectNativeClaudeWorkerProfiles} from './native-claude-worker-profiles
 const fail = code => Object.assign(new Error(code), { code, status: 503, statusCode: 503 });
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const startupFailureCodes = new Set(['native_catalog_mismatch', 'native_clone_evidence_invalid', 'native_configuration_sources_changed',
+  'native_cursor_catalog_invalid', 'native_checkpoint_admission_held', 'native_process_boot_timeout', 'native_process_command_timeout',
+  'native_process_exit_unconfirmed', 'native_process_failed', 'native_controller_termination_unconfirmed',
+  'runtime_bundle_reconciliation_required', 'runtime_bundle_recomposition_required']);
+const catalogCauseCodes = 'helper_directory_denied|helper_denied|helper_timeout_invalid|controller_helper_denied|controller_helper_unavailable|mutation_runtime_unsupported|catalog_unavailable|catalog_file_invalid|model_build_failed|model_read_failed|model_account_failed|model_normalize_failed|provider_location_required|provider_location_expired|openai_method_unsupported|response_schema_invalid|schema_invalid|cause_unavailable';
+const catalogStartupCode = new RegExp(`^native_catalog_(?:construction_failed|read_failed_(?:agent|plugin|model)_(?:http_[45][0-9]{2}|refusal_(?:403|409|503)))_(?:${catalogCauseCodes})$`);
+const startupFailureCode = cause => {
+  const code = cause?.code ?? cause?.message;
+  return typeof code === 'string' && (startupFailureCodes.has(code) || catalogStartupCode.test(code)) ? code : 'native_startup_failed';
+};
 
 /** Every launch rechecks the frozen selection and the complete bundle. */
 export function createRuntimeBundleVerifier(binding, privatePersistence={}) {
@@ -71,17 +81,18 @@ export function createRuntimeBundleVerifier(binding, privatePersistence={}) {
 
 /** Resume uses the complete selected bundle and its immutable reviewed configuration.
  * `verified` is the result of `verify()` that the caller has just awaited, so boot does
- * not stream every harness ledger twice. It must match the binding, otherwise loading fails closed.
+ * not stream every harness ledger or signed artifact twice. It must match the binding, otherwise loading fails closed.
  * Each launch still runs `verify` again. */
 export async function loadNativeRuntimeBundle({ binding, launcher, verify = createRuntimeBundleVerifier(binding), verified, getRegisteredProjects }) {
   if (binding.admission === 'held') throw fail('runtime_bundle_reconciliation_required');
   if (binding.descriptor.generation !== 2) throw fail('native_runtime_generation_mismatch');
-  if (verified === undefined) await verify();
-  else if (verified?.integrity !== 'verified' || verified.phase !== 'resume'
+  if (verified === undefined) verified = await verify();
+  if (verified?.integrity !== 'verified' || verified.phase !== 'resume'
     || verified.descriptor?.bundleID !== binding.descriptor.bundleID) throw fail('runtime_bundle_recomposition_required');
   const descriptor = binding.descriptor, launch = descriptor.launch;
-  const artifacts = await verifyNativeRuntimeArtifacts({ manifestPath: launch.artifactManifestPath, manifestSha256: launch.artifactManifestSha256, launcher });
-  if (artifacts.controller !== launch.controllerBinary || artifacts.writer !== launch.writerBinary) throw fail('native_runtime_artifacts_unverified');
+  const artifacts = verified.artifacts ?? await verifyNativeRuntimeArtifacts({ manifestPath: launch.artifactManifestPath, manifestSha256: launch.artifactManifestSha256, launcher });
+  if (artifacts.manifestPath !== launch.artifactManifestPath || artifacts.manifestSha256 !== launch.artifactManifestSha256
+    || artifacts.launcher !== launcher || artifacts.controller !== launch.controllerBinary || artifacts.writer !== launch.writerBinary) throw fail('native_runtime_artifacts_unverified');
   const reviewed = JSON.parse(await fs.readFile(launch.reviewedNativeConfigPath, 'utf8'));
   const registrationBytes = await fs.readFile(launch.reviewedPluginManifestPath);
   const plugins = JSON.parse(registrationBytes.toString('utf8'));
@@ -113,6 +124,13 @@ export function createNativeRuntimeOwner(options) {
   if (!bundle?.descriptor || typeof bundle.verify !== 'function' || typeof authorization?.captureWebAuthorization !== 'function'
     || typeof authorization.authorizeOperation !== 'function') throw fail('native_runtime_dependencies_required');
   const { descriptor, artifacts } = bundle;
+  const recordStartupDiagnostic = (event, payload) => {
+    try {
+      if (options.recordDiagnostic?.({ type: 'lifecycle', event, payload: {
+        bundleID: descriptor.bundleID, buildId: artifacts.manifest.buildId, ...payload,
+      } }) === false) console.warn('native_observation_unavailable');
+    } catch { console.warn('native_observation_unavailable'); }
+  };
   const supportsClaudeLifecycle=artifacts.manifest.compiledContracts?.includes(CLAUDE_LIFECYCLE_PROTOCOL)===true;
   const selectedPreparedManifestSha256 = bundle.preparedManifestSha256;
   const assertSelectedClone = async () => {
@@ -381,13 +399,26 @@ export function createNativeRuntimeOwner(options) {
   // Every authorized controller RPC's route, duration, status and connection
   // reuse reaches turn timing (observer only).
   const bridge = createManagedOrchestrationPrivateHost({ handleRpc, onRequestTiming: options.onBridgeTiming });
-  const start = ({ admission: launchAdmission = 'open' } = {}) => {
+  const start = ({ admission: launchAdmission = 'open', beforeConfiguration } = {}) => {
     if (!['open', 'checkpoint'].includes(launchAdmission) || checkpointHeld && launchAdmission !== 'checkpoint') return Promise.reject(fail('native_checkpoint_admission_held'));
     if (launchAdmission === 'checkpoint') checkpointHeld = true;
     if (starting) return starting;
     if (unsettledLaunch) return Promise.reject(unsettledLaunch);
     if (stopping || stopped || child && !child.hasExited()) return Promise.reject(fail('native_controller_already_owned'));
     phase = 'closed';
+    const startupStartedAt = Date.now();
+    let startupStage = 'settlement', startupInstanceID, startupFailureRecorded = false;
+    const startupDiagnostic = (phase, code, diagnostics) => recordStartupDiagnostic('native_startup', {
+      phase, stage: startupStage, controllerInstanceID: startupInstanceID ?? null,
+      durationMs: Math.max(0, Date.now() - startupStartedAt), ...(code ? { code } : {}),
+      ...(diagnostics ? { diagnostics } : {}),
+    });
+    const recordStartupFailure = cause => {
+      if (startupFailureRecorded) return;
+      startupFailureRecorded = true;
+      startupDiagnostic('failed', startupFailureCode(cause), cause?.startupDiagnostics);
+    };
+    startupDiagnostic('starting');
     starting = (async () => {
       // A crash's OS event is insufficient: publication and ACK recovery may
       // still be settling. Every replacement waits for this same barrier.
@@ -400,8 +431,13 @@ export function createNativeRuntimeOwner(options) {
       await images?.close();
       await cursor?.close();
       lastExit = undefined;
+      startupStage = 'verification';
       await bundle.verify();
       const instanceID=randomUUID();
+      startupInstanceID = instanceID;
+      startupStage = 'configuration';
+      // The lifecycle synchronizes config inside this verified launch, avoiding a second full bundle scan.
+      await beforeConfiguration?.();
       const recoveredSessionIDs=await recoveredInputs.install(instanceID);
       await bundle.refreshLocations?.();
       configurationSnapshot = await bundle.resolveConfiguration?.(++configurationRevision);
@@ -577,6 +613,7 @@ export function createNativeRuntimeOwner(options) {
           });
         }else claudeEnrollment=undefined;
       }else providers=undefined;
+      startupStage = 'controller';
       child = await createNativeControllerProcess({ binary: artifacts.controller, cwd: boot.directory, environment, boot,
         onObservationUnavailable: controllerInstanceID => recordObservationGap({ stage: 'controller', controllerInstanceID }),
         supervisor: { launcher: artifacts.launcher,
@@ -588,6 +625,10 @@ export function createNativeRuntimeOwner(options) {
         },
         afterExit: exit => {
           phase = 'closed';
+          recordStartupDiagnostic('opencode_process_exit', {
+            controllerInstanceID: instanceID, pid: exit.pid ?? null, code: exit.code ?? null, signal: exit.signal ?? null,
+            expected: exit.expected === true, uptimeMs: Math.max(0, Date.now() - (exit.startedAt ?? startupStartedAt)),
+          });
           // Do not await this queue here: a reverse credential command may be
           // waiting for this very exit callback before it releases the queue.
           void launchIntegrations?.invalidate();
@@ -608,6 +649,7 @@ export function createNativeRuntimeOwner(options) {
         },
       });
       try {
+        startupDiagnostic('bound', undefined, child.startupDiagnostics);
         await setupCredentialSeed?.settle(child.bound.setupCredentialSeed);
         await options.onBound?.(child);
         if (!child.bound.catalog.asserted) {
@@ -622,6 +664,7 @@ export function createNativeRuntimeOwner(options) {
           } });
         }
         if (checkpointHeld) { phase = 'checkpoint'; return child; }
+        startupStage = 'recovery';
         await options.beforeOpen?.();
         if (checkpointHeld) { phase = 'checkpoint'; return child; }
         // Private recovery may run while HTTP readiness and fresh web grants
@@ -650,13 +693,16 @@ export function createNativeRuntimeOwner(options) {
           await nativeOwner.recoverExecutionContinuations({ directory: location.directory });
         }
         if (checkpointHeld) throw fail('native_checkpoint_admission_held');
+        startupStage = 'open';
         await child.call({ action: 'open' });
         if (checkpointHeld) throw fail('native_checkpoint_admission_held');
         phase = 'ready';
         launchIntegrations?.markReady();
+        startupDiagnostic('ready');
         return child;
-      } catch (cause) { await child.close(); throw cause; }
+      } catch (cause) { recordStartupFailure(cause); await child.close(); throw cause; }
     })().catch(cause => {
+      recordStartupFailure(cause);
       if (cause?.nativeProcessUnsettled) {
         unsettledLaunch = cause;
         if (lastExit) void lastExit.then(() => { if (unsettledLaunch === cause) unsettledLaunch = undefined; }, () => {});
@@ -811,6 +857,10 @@ export function createNativeRuntimeOwner(options) {
     readOpenAiSelected: operation => {
       if (!integrations) throw fail('native_integration_owner_unavailable');
       return integrations.readOpenAiSelected(operation);
+    },
+    readProviderSelected: operation => {
+      if (!integrations) throw fail('native_integration_owner_unavailable');
+      return integrations.readProviderSelected(operation);
     },
     credentialMetadata: operation => {
       if (!integrations) throw fail('native_integration_owner_unavailable');

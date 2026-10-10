@@ -1,4 +1,4 @@
-import {SUPPORTED_NATIVE_OPENCODE_VERSIONS} from '../version-policy.js';
+import {isNativeOpenCodeVersion} from '../version-policy.js';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import {parseClaudeLifecycleOperation} from './native-claude-lifecycle.js';
@@ -155,6 +155,7 @@ export function parseNativeCommand(value) {
     'provider-catalog-selection-owned': ['directory', 'controllerInstanceID', 'integrationID', 'acquisitionID', 'configurationDigest', 'origin'],
     'openai-read-credential-owned': ['directory', 'controllerInstanceID', 'credentialID'],
     'openai-read-selected-owned': ['directory', 'controllerInstanceID'],
+    'provider-read-selected-owned': ['directory', 'controllerInstanceID', 'integrationID'],
     'openai-cas-selected-owned': ['directory', 'controllerInstanceID', 'expected', 'next'],
     'interview-action-owned':['sessionID','permit','kind','body'],
     'cursor-record-owned':['controllerInstanceID','directory','sessionID','userMessageID','assistantMessageID','agent','modelID','variant','accepted','record','permit'],
@@ -206,6 +207,7 @@ export function parseNativeCommand(value) {
   }
   if (value.permit?.sessionID !== undefined && value.permit.sessionID !== value.sessionID) throw invalid();
   if (value.action === 'provider-catalog-selection-owned' && (value.integrationID !== 'github-copilot' || value.acquisitionID.length > 256)) throw invalid();
+  if (value.action === 'provider-read-selected-owned' && !['xai', 'opencode-go'].includes(value.integrationID)) throw invalid();
   if (value.action === 'openai-cas-selected-owned' && (value.expected.directory !== value.directory
     || value.expected.controllerInstanceID !== value.controllerInstanceID || value.expected.value.methodID !== value.next.methodID)) throw invalid();
   return structuredClone(value);
@@ -254,7 +256,7 @@ export function parseNativeMigrationRequest(value) {
 export function parseNativeMigrationReceipt(value) {
   bounded(value, NATIVE_PROCESS_LIMITS.messageBytes);
   keys(value, ['protocol', 'requestID', 'bundleID', 'databasePath', 'status', 'nativeVersion', 'marker', 'sourceInventorySha256', 'verificationSha256']);
-  if (value.protocol !== 'devryan-native-migration/1' || value.status !== 'completed' || !SUPPORTED_NATIVE_OPENCODE_VERSIONS.includes(value.nativeVersion) || !['completed', 'not-needed'].includes(value.marker)) throw invalid();
+  if (value.protocol !== 'devryan-native-migration/1' || value.status !== 'completed' || !isNativeOpenCodeVersion(value.nativeVersion) || !['completed', 'not-needed'].includes(value.marker)) throw invalid();
   string(value.requestID); string(value.bundleID); absolute(value.databasePath); digest(value.sourceInventorySha256); digest(value.verificationSha256);
   return structuredClone(value);
 }

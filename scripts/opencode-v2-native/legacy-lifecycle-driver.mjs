@@ -8,6 +8,10 @@ globalThis.console = new Console({ stdout: process.stderr, stderr: process.stder
 let bytes = '';
 for await (const chunk of process.stdin) { bytes += chunk; assert.ok(Buffer.byteLength(bytes) <= 65536); }
 const input = JSON.parse(bytes);
+if (input.builtinCatalog) {
+  const { builtinCatalogPreflightFetch } = await import('./package-preflight.mjs');
+  globalThis.fetch = builtinCatalogPreflightFetch(input.builtinCatalog.endpoint);
+}
 if (input.rollback !== undefined) {
   assert.ok(input.rollback && typeof input.rollback === 'object' && !Array.isArray(input.rollback));
   assert.deepEqual(Object.keys(input.rollback).sort(), ['expectedRevision', 'phase', 'targetBundleID']);
@@ -88,6 +92,12 @@ owner = createNativeRuntimeOwner({ bundle, openCodeClient: client, admission, ex
 let result;
 try {
   const first = await owner.start();
+  let builtinCatalog;
+  if (input.builtinCatalog) {
+    const { assertBuiltinCatalogPreflight } = await import('./package-preflight.mjs');
+    builtinCatalog = await assertBuiltinCatalogPreflight({ client, directories: locations.map(row => row.directory),
+      expected: input.builtinCatalog.expected });
+  }
   registry.push(...readManagedOpenCodeRegistry(registryOptions).map(({ childPid, ownerPid }) => ({ childPid, ownerPid })));
   await fs.writeFile(input.evidencePath, JSON.stringify(registry));
   const sessionIDs = [...input.sessionIDs];
@@ -172,7 +182,7 @@ try {
       retention, heldRetryRefused: input.rollback.phase === 'ack-loss', sameHostResumeRefused: input.rollback.phase === 'ack-loss' };
   } else quiescence = await checkpoint({kind:'bundle',bundleID:input.bundleID},stamp=>stamp);
   assert.equal(second.hasExited(),true);
-  result = { quiescence, ...(rollbackEvidence ? { rollback: rollbackEvidence } : {}), id: 'rollback-selected-native-lifecycle', status: 'passed', version: nativeVersion, sessionIDs, history: Object.fromEntries(history),
+  result = { quiescence, ...(rollbackEvidence ? { rollback: rollbackEvidence } : {}), ...(builtinCatalog ? { builtinCatalog } : {}), id: 'rollback-selected-native-lifecycle', status: 'passed', version: nativeVersion, sessionIDs, history: Object.fromEntries(history),
     restart: { previousInstance: first.instanceID, replacementInstance: second.instanceID, exit: stopped },
     source: 'actual-selected-v2-owner-canonical-history-and-supervised-restart' };
 } finally {

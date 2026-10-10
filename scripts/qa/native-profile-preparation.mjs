@@ -225,7 +225,7 @@ export async function readQaNativeSelectionView(binding, environment, workspace)
       if(selected)devryanBackupSelections[agent]={model:selected.providerId+'/'+selected.modelId,variant:selected.variant};
     }
     process.stdout.write(JSON.stringify(projectQaNativeSnapshot(snapshot,directory,{devryanBackupSelections})));`;
-  const { stdout, stderr } = await promisify(execFile)(process.execPath, ['--input-type=module', '--eval', source], {
+  const { stdout, stderr } = await promisify(execFile)(process.versions.bun ? 'node' : process.execPath, ['--input-type=module', '--eval', source], {
     cwd: repository, env: { ...environment, DEVRYAN_QA_WORKSPACE: workspace,
       DEVRYAN_QA_LAUNCHER: path.join(path.dirname(binding.descriptor.launch.controllerBinary), `DevRyan-execution-${process.platform}-${process.arch}`) },
     timeout: 60000, maxBuffer: 4 * 1024 * 1024,

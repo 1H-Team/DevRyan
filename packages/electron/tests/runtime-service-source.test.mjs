@@ -25,7 +25,7 @@ describe('runtime-service desktop bootstrap source contract', () => {
       mainSource.indexOf('const prepareForegroundRuntime = async () => {'),
       mainSource.indexOf('const startDesktopRuntime = () => {'),
     );
-    assert.match(preparation, /try \{\s+await resumeBackgroundRuntimeAfterAppUpdate\(\);\s+await reregisterBackgroundRuntimeAfterManualUpgrade\(\);\s+await ensureRuntimeServiceRegistered\(\{ registration: getRuntimeServiceRegistration\(\), log \}\);\s+await waitForRuntimeServiceConnection\(\);\s+\} catch \(error\) \{\s+await recoverStartupToAppBound\(error\);/);
+    assert.match(preparation, /try \{\s+updateStartupSplashStatus\('Preparing the background runtime…'\);\s+await resumeBackgroundRuntimeAfterAppUpdate\(\);\s+await reregisterBackgroundRuntimeAfterManualUpgrade\(\);\s+await ensureRuntimeServiceRegistered\(\{ registration: getRuntimeServiceRegistration\(\), log \}\);\s+updateStartupSplashStatus\('Connecting to the background runtime…'\);\s+await runStartupPhase\('service_connection', \(\) => waitForRuntimeServiceConnection\(\), log\);\s+\} catch \(error\) \{\s+updateStartupSplashStatus\('Recovering the local runtime…'\);\s+await runStartupPhase\('service_recovery', \(\) => recoverStartupToAppBound\(error\), log\);/);
   });
 
   test('ordinary and held background startup own the server without opening a recovery window', async () => {
@@ -111,7 +111,7 @@ describe('runtime-service desktop bootstrap source contract', () => {
       mainSource.indexOf('const startDesktopRuntime = () => {'),
       mainSource.indexOf("app.on('before-quit'"),
     );
-    const activation = startup.indexOf('await activateMainWindow(initialUrl, localOrigin, bootOutcome);');
+    const activation = startup.indexOf("await runStartupPhase('renderer_navigation', () => activateMainWindow(initialUrl, localOrigin, bootOutcome), log);");
     const openCodeResume = startup.indexOf('state.serverHandle?.resumeDeferredOpenCodeStartup?.()');
     const preparation = startup.indexOf('prepareBotRuntimeInBackground()');
 
@@ -132,6 +132,8 @@ describe('runtime-service desktop bootstrap source contract', () => {
     assert.match(mainSource, /if \(automaticRuntime\.mode === 'service'\)/);
     assert.doesNotMatch(readyBranch, /await clearElectronRuntimeCaches\(/);
     assert.match(mainSource, /deferOpenCodeStartup: true/);
+    assert.match(mainSource, /isOwnerStopped: \(\) => waitForOwnerStopped\(\{ dataDirectory: dataRootDirectory\(\), timeoutMs: 0 \}\)/);
+    assert.match(mainSource, /onDesktopHostLease: isRuntimeServiceMode\s+\? createDesktopHostLeaseHandler\(\{ state, log \}\)/);
   });
 
   test('packages the in-process service bridge and LaunchAgent template for unsigned releases', () => {

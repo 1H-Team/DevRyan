@@ -275,10 +275,40 @@ TMPDIR="$PWD/.cache/test-fixtures" GIT_CEILING_DIRECTORIES="$PWD/.cache/test-fix
   --artifact-root "$PWD/.cache/v2-validation/EXAMPLE-native"
 ```
 
-It records a new `.cache/qa/packaged-service-*/evidence.json`; failed fixtures
+It records three direct headless launches in `.cache/qa/packaged-service-*/evidence.json`; failed fixtures
 remain available for diagnosis. It uses synthetic configuration and no account
 snapshots. Direct launch does not qualify launchd registration, an authenticated
 desktop-host lease, or the three compiled acceptance journal roots.
+
+For three fresh packaged app-bound launches through usable chat, run
+`scripts/qa/native-startup-benchmark.mjs` with the same Bun options,
+`--package-evidence` and `--artifact-root`. It requires the actual native
+catalog, exact fixture model and agent, composer, sessions and the renderer's
+global event-stream readiness acknowledgment. It also requires optional project
+warmup to start after usable UI and zero update-check requests through four
+seconds after readiness, retaining only fixed endpoint counts and timings. With
+`DEVRYAN_QA_CATALOG_CONFIG`, it also searches the actual model picker for one
+supplied Cursor model and saves a screenshot after the timing measurement.
+Measurements use the first document,
+without reloads, and must run separately from builds and tests. If macOS hides
+the QA window, the programmatic `runNativeStartupBenchmark` entrypoint accepts
+`startupMode: 'foreground'`, using the existing one-shot foreground admission
+check after readiness through Electron's owned `desktop_focus_main_window`
+command. Such results qualify usable UI, not natural startup
+latency, and must be reported separately. The local
+model fixture and prepared bundles do not qualify personal accounts or first
+provisioning. Foreground warm/cold service attachment, stale-owner recovery
+and service upgrade need separate OS registration isolation: the packaged QA
+policy disables registration, and changing that policy would access the
+user's registered service.
+
+Add `--baseline-artifact-root /absolute/repo/path/to/older-native` to measure
+three first launches after a native upgrade. In this mode, `--artifact-root`
+must match the native manifest embedded in the package exactly. The fixture
+prepares the older selection at the ordinary private XDG state location and
+lets production startup perform its guarded upgrade. Each run requires the
+new revision, preserved previous bundle, exact candidate manifest and usable
+chat; it does not change OS service registration.
 
 ## Interpreting an incomplete acceptance run
 
@@ -588,3 +618,30 @@ Sections: DevRyan health (an allowlisted set of fields); agents (permission rule
 Bodies (prompts, templates, skills, tool descriptions) are stored only as sha256 plus length, after per-run folders are replaced with `<directory>`, `<qa-home>` and `<home>`. When the host is unready or the base runtime version differs from the expected one, the capture stops without writing a manifest. A route that returns 404 is recorded as `skipped`; any other failure is recorded as `error` and the run exits 1. `--diff` reads the baseline before anything is written and exits 0 only when every section matches; runtime identity and `capturedAt` are reported but never count as a difference.
 
 Generation-2 manual and natural compaction grading reads the same journal. Each boundary requires the actual native trigger, budget and outcome, committed Started/Ended event IDs, sequence and timestamps, and the running compaction message linked to its REST summary. Summary text must match the raw-event digest; an empty textual summary requires an actual native provider-state/context checkpoint witness. Task-cohort brackets use raw committed time because REST summary times may be clamped. Prefill scheduling uses actual Prepared model limits and frozen native settings as an explicit estimate, so skipped native checks need no fabricated budget. Natural acceptance requires two actual automatic due full-context estimates at the same unchanged native ceiling; provider overflow, projected summaries alone and measured anchor-token proxies cannot establish it. Existing plan, pending-child identity, disposition and project continuity checks still apply. No live boundary has been qualified by the deterministic consumer tests.
+
+## Startup diagnostic owners
+
+`electron-lifecycle-benchmark.mjs` records parent-clock host availability, optional native startup state/attempt/code, provider catalog and usable-UI milestones; a terminal native startup failure cannot count as success. Optional launch-owned Electron phase records retain only bounded phase names, outcomes, durations and fixed codes, with collection timing kept separate from phase durations. Older hosts explicitly lack native-state evidence. Native/local-model-fixture callers provide an exact provider/model/agent tuple and authoritative event-stream readiness; external fixture admission retains its existing composer, model, visibility and SSE criteria.
+
+- `packaged-service-smoke.mjs`: directly launches the actual packaged `--runtime-service` three times in a private repository fixture, verifies PID/start identity and owner/descriptor generation, unauthenticated handshake/bootstrap/lease refusal, no model sends before a desktop lease, physical drain and restart. Package/source identities are checked before and after; it never registers a launchd job. Registration, authenticated desktop leases and live providers remain separate gates.
+
+- `native-startup-benchmark.mjs`: three packaged app-bound launches using fresh private profiles, an explicit verified native artifact and a local model fixture. Optional `--baseline-artifact-root` exercises production startup upgrade and verifies the selector revision, previous bundle and exact packaged candidate. Requires the native catalog, composer, exact model/agent tuple, sessions and the renderer's global event-stream readiness acknowledgment. Records first-document timings without reloading; foreground service registration scenarios remain unavailable in this isolated harness. `DEVRYAN_QA_CATALOG_CONFIG` may point to a sanitized reproduction `providers.json` under repository `.cache/sessions/`; the runner sanitizes its shapes again and requires every supplied Cursor model in the packaged catalog.
+
+The native startup constructor also supports a `startupPolicy: 'previous'`
+comparison cohort using an explicitly recorded prior UI build. Candidate cohorts
+require the current source identity; an immutable historical baseline may pass
+its recorded `baselineSourceSha256`, which must match its verified package and
+is accepted only for the `previous` cohort. Both package and current source
+identities remain in the evidence.
+Candidate cohorts
+keep the default `optimized` policy and require zero startup update checks and
+optional agent warmup after usable UI. `DEVRYAN_QA_LEGACY_OPENAI_BROWSER=1`
+inserts a synthetic retired OpenAI login with NULL connector/method columns into
+the private initialized database; no installed credentials are copied and the
+local model fixture remains the execution provider. Same-version startup repair
+acceptance requires distinct artifact digests and one committed selector
+transition to the exact packaged artifact. Older-version imports still use the
+private empty source; same-version repair trials preserve their initialized
+source and synthetic credential record.
+
+- `startup-catalog-reproduction.mjs`: explicit read-only `--config` capture of Cursor model IDs, numeric prices and variant shapes into a synthetic loopback-only provider fixture. Optional `--config-overlay` captures Anthropic API-key presence with a synthetic replacement; `--legacy-oauth-columns` sets only synthetic OAuth rows' connector/method columns to NULL. `--output-root` confines captured fixtures to repository `.cache/sessions/`. Removes credentials, endpoints, labels and prompts before invoking the isolated compiled-native factory diagnostic; this does not establish installed-account or upgrade acceptance. Reviewed configuration imports run under Node even when the runner uses Bun.

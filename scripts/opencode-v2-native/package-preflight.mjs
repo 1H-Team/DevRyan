@@ -1,6 +1,72 @@
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 import { toV1ToolName } from '../../packages/web/server/lib/opencode/v2/projection/tools.js';
 const effectiveVariant = value => value === undefined || value === null || value === '' ? 'default' : value;
+
+/** Fence the fixture host too: compatibility discovery owns a fixed remote URL. */
+export function builtinCatalogPreflightFetch(endpoint, nativeFetch = globalThis.fetch) {
+  const loopback = new URL(endpoint);
+  assert.equal(loopback.protocol, 'http:'); assert.equal(loopback.hostname, '127.0.0.1');
+  assert.ok(loopback.port); assert.equal(loopback.pathname, '/');
+  assert.equal(loopback.username + loopback.password + loopback.search + loopback.hash, '');
+  return (input, options) => {
+    const url = new URL(input instanceof Request ? input.url : input);
+    if (url.href === 'https://api.githubcopilot.com/models') {
+      const redirected = input instanceof Request ? new Request(new URL('/models', loopback), input) : new URL('/models', loopback);
+      return nativeFetch(redirected, options);
+    }
+    assert.equal(url.protocol, 'http:', 'Builtin fixture refuses external networking');
+    assert.equal(url.hostname, '127.0.0.1', 'Builtin fixture refuses external networking');
+    return nativeFetch(input, options);
+  };
+}
+
+/** Active builtin grants use a disposable discovery endpoint, never a real provider. */
+export async function createBuiltinCatalogPreflight() {
+  let requests = 0;
+  const server = createServer((request, response) => {
+    if (request.method !== 'GET' || request.url !== '/models') { response.writeHead(404).end(); return; }
+    requests++;
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({ data: [{ id: 'devryan-startup-copilot', name: 'Synthetic startup Copilot',
+      version: '2026-10-09', model_picker_enabled: true, supported_endpoints: ['/chat/completions'],
+      capabilities: { family: 'gpt-5', limits: { max_context_window_tokens: 32768, max_prompt_tokens: 16384,
+        max_output_tokens: 4096 }, supports: { tool_calls: true, vision: false } } }] }));
+  });
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+  const endpoint = `http://127.0.0.1:${server.address().port}`;
+  const model = name => ({ name, capabilities: { tools: true, input: ['text'], output: ['text'] },
+    limit: { context: 32768, input: 16384, output: 4096 } });
+  return { endpoint, providers: {
+    openai: { models: { 'gpt-5.6-sol': model('Synthetic startup OpenAI') } },
+    'cursor-acp': { package: 'aisdk:@ai-sdk/openai-compatible', env: [], settings: { baseURL: endpoint },
+      models: { 'devryan-startup-cursor': model('Synthetic startup Cursor') } },
+  }, expected: [{ providerID: 'openai', id: 'gpt-5.6-sol' },
+    { providerID: 'cursor-acp', id: 'devryan-startup-cursor' }, { providerID: 'github-copilot', id: 'devryan-startup-copilot' }],
+  evidence: () => ({ discoveryRequests: requests }),
+  close: () => new Promise((resolve, reject) => { server.close(error => error ? reject(error) : resolve()); server.closeAllConnections(); }) };
+}
+
+export async function assertBuiltinCatalogPreflight({ client, directories, expected }) {
+  const locations = [];
+  for (const directory of directories) {
+    const deadline = Date.now() + 10000;
+    let providers;
+    do {
+      providers = await client.catalog.providerList({ directory });
+      if (expected.every(model => providers.connected?.includes(model.providerID)
+        && providers.all.find(row => row.id === model.providerID)?.models?.[model.id])) break;
+      await new Promise(resolve => setTimeout(resolve, 50));
+    } while (Date.now() < deadline);
+    for (const model of expected) {
+      assert.ok(providers.connected?.includes(model.providerID), `Synthetic builtin is not active: ${model.providerID}`);
+      assert.ok(providers.all.find(row => row.id === model.providerID)?.models?.[model.id],
+        `Missing active builtin catalog model: ${model.providerID}/${model.id}`);
+    }
+    locations.push({ directory, models: expected });
+  }
+  return { id: 'compiled-active-builtin-startup-catalog', status: 'passed', locations, synthetic: true };
+}
 
 export function assertPackagePreflightOptions({ preflight, reviewedSetup, onParentDeathReady }) {
   if (!preflight) return;

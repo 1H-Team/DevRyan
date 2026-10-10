@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { resolveQaTargetOpenCodeVersion, SUPPORTED_NATIVE_OPENCODE_VERSIONS } from '../../packages/web/server/lib/opencode/version-policy.js';
+import { resolveQaTargetOpenCodeVersion, isNativeOpenCodeVersion } from '../../packages/web/server/lib/opencode/version-policy.js';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const sameScope = (left, right) => ['controllerInstanceID', 'configurationDigest', 'sessionID', 'directory'].every(key => left[key] === right[key]);
@@ -63,7 +63,7 @@ export function findQaNativeCompactionBoundaries(rows, { observations = [], sess
 // This is actual observed policy for QA workload scheduling; each acceptance
 // boundary independently requires its own unchanged native budget/estimate.
 export function readQaNativeCompactionPolicy(observations, { sessionID, directory, configurationDigest, version = resolveQaTargetOpenCodeVersion().version }) {
-  if (!SUPPORTED_NATIVE_OPENCODE_VERSIONS.includes(version)) throw Object.assign(new Error('qa_native_compaction_policy_unavailable'), { code: 'qa_native_compaction_evidence_unavailable' });
+  if (!isNativeOpenCodeVersion(version)) throw Object.assign(new Error('qa_native_compaction_policy_unavailable'), { code: 'qa_native_compaction_evidence_unavailable' });
   const witness = `<WORKTREE_${hash(directory).slice(0, 12)}>`;
   const triggers = observations.filter(item => item.stage === 'compaction-trigger' && item.sessionID === sessionID
     && item.directory === witness && item.configurationDigest === configurationDigest && item.budget !== null)

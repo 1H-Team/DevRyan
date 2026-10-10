@@ -56,7 +56,7 @@ import { useI18n } from '@/lib/i18n';
 import { useAuthPrincipal } from '@/lib/authSession';
 import { ClaudeDedicatedEnrollment } from './ClaudeDedicatedEnrollment';
 import { ChatgptSiwcEnrollment } from './ChatgptSiwcEnrollment';
-import { getProviderModelUnavailableMessage } from '@/lib/providers/modelAvailability';
+import { getProviderModelUnavailability } from '@/lib/providers/modelAvailability';
 import { BundledRuntimeUpdate } from './BundledRuntimeUpdate';
 import {
   getClaudePromptMode,
@@ -1460,7 +1460,11 @@ const ProvidersPageContent: React.FC = () => {
 
   const providerModels = getProviderModelsForDisplay(selectedProvider, {
     hidePairedFastModels: true,
+    hideUnavailable: true,
   });
+  const accountModelsUnavailable = selectedProvider.accountModelsStatus === 'unavailable'
+    ? getProviderModelUnavailability(selectedProvider.models[0])
+    : undefined;
   const providerAuthMethods = authMethodsByProvider[selectedProvider.id] ?? [];
   const oauthAuthMethods = providerAuthMethods.filter((method) => normalizeAuthType(method) === 'oauth');
   const visibleOAuthAuthMethods = !providerOAuth || selectedProviderIsCursor ? [] : oauthAuthMethods;
@@ -1491,7 +1495,10 @@ const ProvidersPageContent: React.FC = () => {
           </div>
         </div>
 
-        <ProviderUsageSection providerId={selectedProvider.id} />
+        <ProviderUsageSection
+          providerId={selectedProvider.id}
+          connected={selectedConnectionState !== 'not_connected'}
+        />
 
         {/* Authentication */}
         <div className="mb-8">
@@ -1799,14 +1806,27 @@ const ProvidersPageContent: React.FC = () => {
               />
             </div>
 
-            {filteredModels.length === 0 ? (
+            {providerModels.length === 0 && accountModelsUnavailable ? (
+              <div className="flex items-center justify-between gap-3 py-3">
+                <p className="typography-meta text-muted-foreground">{accountModelsUnavailable.message}</p>
+                {accountModelsUnavailable.retryable ? (
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    className="!font-normal flex-shrink-0"
+                    onClick={() => void loadProviders({ force: true })}
+                  >
+                    {t('settings.providers.page.actions.retry')}
+                  </Button>
+                ) : null}
+              </div>
+            ) : filteredModels.length === 0 ? (
               <p className="typography-meta text-muted-foreground py-4 text-center">{t('settings.providers.page.models.noModelsMatchFilter')}</p>
             ) : (
               <div className="divide-y divide-[var(--surface-subtle)]">
                 {filteredModels.map((model) => {
                   const modelId = typeof model?.id === 'string' ? model.id : '';
                   const modelName = typeof model?.name === 'string' ? model.name : modelId;
-                  const unavailableMessage = getProviderModelUnavailableMessage(model);
                   const metadata = modelId ? getModelMetadata(selectedProvider.id, modelId) as ModelMetadata | undefined : undefined;
                   const hiddenRefs = getHiddenModelRefsForProviderModel(selectedProvider.id, model);
                   const isHidden = isHiddenProviderModelRef(hiddenModels, selectedProvider.id, model);
@@ -1856,7 +1876,6 @@ const ProvidersPageContent: React.FC = () => {
                         </button>
                       </div>
                       </div>
-                      {unavailableMessage ? <p className="typography-meta text-muted-foreground">{unavailableMessage}</p> : null}
                     </div>
                   );
                 })}

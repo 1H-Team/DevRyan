@@ -239,6 +239,7 @@ export async function startNativeController(boot:NativeProcessBoot,identity:{cor
       case 'claude-lifecycle-transition-owned':return requireIntegrations(input.controllerInstanceID).transitionClaudeLifecycleOwned(input);
       case 'openai-read-credential-owned':return requireIntegrations(input.controllerInstanceID).readOpenAiCredentialOwned(input);
       case 'openai-read-selected-owned':return requireIntegrations(input.controllerInstanceID).readSelectedOwned(input);
+      case 'provider-read-selected-owned':return requireIntegrations(input.controllerInstanceID).readProviderSelectedOwned(input);
       case 'openai-cas-selected-owned':return requireIntegrations(input.controllerInstanceID).compareAndSwapSelectedOwned(input);
       case 'provider-catalog-selection-owned':{
         if(!providers||input.controllerInstanceID!==boot.instanceID)throw new Error('native_provider_owner_unavailable');
