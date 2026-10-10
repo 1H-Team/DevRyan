@@ -350,6 +350,7 @@ export function createNativeOpenAi(options: NativeOpenAiOptions) {
     }),
   });
   return Object.freeze({ decorateIntegration, decorateCredential, decorateHooks, closeLocation,
+    requiresOpenAiHttp: (directory: string): Effect.Effect<boolean> => selected(directory).pipe(Effect.map(current => current?.value.type === 'oauth' && current.value.methodID === 'chatgpt-siwc')),
     readSelectedOwned: (input: { directory: string }) => Effect.runPromise(selected(input.directory).pipe(Effect.provide(Logger.layer([], { mergeWithExisting: false })))),
     compareAndSwapSelectedOwned: (input: { directory: string; expected: NativeOpenAiSelected; next: Credential.Value }) => Effect.runPromise(Effect.gen(function* () {
       const store = credentials, expected = structuredClone(input.expected), next = Schema.decodeUnknownSync(Credential.Value)(input.next);

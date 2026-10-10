@@ -1,0 +1,25 @@
+{
+  "outcome": "passed",
+  "taskOwnedSupersededDirectoriesRemoved": [
+    ".cache/qa/packaged-electron-FOkQ4z",
+    ".cache/qa/native-startup-ZMT9V8",
+    ".cache/qa/native-startup-tiThDx"
+  ],
+  "downloadedCiPackagingReceiptRemoved": true,
+  "sanitizedPackagingReceipt": "macos-arm64-asset.json",
+  "worktreeCreated": false,
+  "currentQaPackageRetained": true,
+  "currentNativeArtifactRetained": true,
+  "cacheReport": {
+    "exitCode": 0,
+    "cacheGiB": 33.11,
+    "freeDiskGiB": 177.89
+  },
+  "cachePrune": {
+    "exitCode": 0,
+    "preview": true,
+    "applied": false,
+    "previewReclaimGiB": 1.16
+  },
+  "unrelatedArtifactsPruned": false
+}

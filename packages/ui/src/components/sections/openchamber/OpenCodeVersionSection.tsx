@@ -74,9 +74,7 @@ export const OpenCodeVersionSection: React.FC<{ compact?: boolean }> = ({ compac
         {upstreamMessage ? (
           <p className={cn('mt-2 typography-meta', upstream.phase === 'failed' ? 'text-[var(--status-error)]' : 'text-foreground')}>{upstreamMessage}</p>
         ) : null}
-        {upstream.phase === 'done' ? <p className="mt-1 typography-micro text-muted-foreground">{t('settings.openchamber.about.opencode.upstream.note')}</p> : null}
       </div>
-      <p className="mt-1 typography-micro text-muted-foreground">{t('settings.openchamber.about.opencode.bundledUpdates')}</p>
     </section>
   );
 };

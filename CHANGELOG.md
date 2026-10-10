@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.6] - 2026-10-10
+
+- Fix startup preparation when a sealed runtime manifest exceeds 4 MiB, using the shared 32 MiB limit while retaining integrity checks. Keep the original failure and Retry visible when startup settings cannot be read. Isolated packaged evidence is recorded in [the runtime preparation audit](docs/audits/2026-10-10/runtime-preparation/README.md).
+- Route Sign in with ChatGPT primary turns through HTTP, including requests prepared for WebSocket transport, and record sanitized provider refusal reasons. Transport regression and isolated startup evidence are recorded in [the primary transport audit](docs/audits/2026-10-10/siwc-primary-transport/README.md).
+- Repair Sign in with ChatGPT responses when the provider omits the SSE content type, while retaining stream validation and completion checks. Prevent concurrent xAI requests from racing the same credential refresh, and restore inspection of ordinary Claude accounts.
+- Add an optional Codex connection for OpenAI usage without changing the selected inference sign-in. Show usage source and account identity, weekly windows, and reset-credit expiry; distinguish unavailable inventory from a confirmed zero balance.
+- Preserve useful provider failure reasons in live and restored sessions, and redact sensitive provider metadata from diagnostics.
+- Add startup phase timings and renderer readiness diagnostics. About keeps the app version and OpenCode update status together. Startup import experiments remain unapplied; no launch-speed improvement is claimed.
+
+Provider verification and limitations are recorded in [the provider repair audit](docs/audits/2026-10-10/provider-repairs/README.md). Startup diagnostics are recorded in [the startup import evaluation](docs/audits/2026-10-10/startup-imports/README.md). Original release qualification is recorded in [the v2.0.6 release evidence](docs/audits/2026-10-10/release-2.0.6/README.md); replacement qualification is recorded in [the replacement release evidence](docs/audits/2026-10-10/rerelease-2.0.6/README.md).
+
 ## [2.0.5] - 2026-10-10
 
 - Restore usage details for Claude, OpenAI, xAI and OpenCode Go under the native runtime. Usage now reads the selected account from the native credential store instead of a credential file that no longer exists. xAI usage is read-only and may lag until the next xAI request renews the sign-in. A connected provider whose usage cannot be read shows a short reason with a retry instead of nothing, and usage discovery retries within seconds after a slow start.

@@ -1,0 +1,24 @@
+⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  server/lib/opencode/runtime-host/native-process.test.js > credential settlement remains attached when bounded recovery times out
+Error: native_process_exit_unconfirmed
+ ❯ failure server/lib/opencode/runtime-host/native-process.js:30:39
+     28| };
+     29|
+     30| const failure = code => Object.assign(new Error(code), { code, status:…
+       |                                       ^
+     31| const deadline = async (work, timeoutMs, code) => {
+     32|   let timer;
+ ❯ Timeout.<anonymous> server/lib/opencode/runtime-host/native-process.js:33:103
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 540 passed (541)
+      Tests  1 failed | 6625 passed (6626)
+   Start at  19:45:47
+   Duration  332.22s (transform 4.24s, setup 0ms, import 39.07s, tests 238.45s, environment 26ms)
+
+error: script "test" exited with code 1
+error: script "test:full" exited with code 1
+error: script "validate:full" exited with code 1

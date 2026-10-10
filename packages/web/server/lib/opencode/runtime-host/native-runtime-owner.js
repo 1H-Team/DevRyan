@@ -1,3 +1,4 @@
+import { startStartupTiming } from '../startup-timing.js';
 import {captureNativeSetupCredentialSeed} from './native-setup-credential-ack.js';
 import {nativeBundleFileOperations} from './native-bundle-file-operations.js';
 import {createNativeHelperOwner} from './native-helper-owner.js';
@@ -408,6 +409,12 @@ export function createNativeRuntimeOwner(options) {
     phase = 'closed';
     const startupStartedAt = Date.now();
     let startupStage = 'settlement', startupInstanceID, startupFailureRecorded = false;
+    let finishStage = startStartupTiming('native_settlement');
+    const nextStage = (stage) => {
+      finishStage();
+      startupStage = stage;
+      finishStage = startStartupTiming(`native_${stage}`);
+    };
     const startupDiagnostic = (phase, code, diagnostics) => recordStartupDiagnostic('native_startup', {
       phase, stage: startupStage, controllerInstanceID: startupInstanceID ?? null,
       durationMs: Math.max(0, Date.now() - startupStartedAt), ...(code ? { code } : {}),
@@ -416,6 +423,7 @@ export function createNativeRuntimeOwner(options) {
     const recordStartupFailure = cause => {
       if (startupFailureRecorded) return;
       startupFailureRecorded = true;
+      finishStage('failed');
       startupDiagnostic('failed', startupFailureCode(cause), cause?.startupDiagnostics);
     };
     startupDiagnostic('starting');
@@ -431,13 +439,14 @@ export function createNativeRuntimeOwner(options) {
       await images?.close();
       await cursor?.close();
       lastExit = undefined;
-      startupStage = 'verification';
+      nextStage('verification');
       await bundle.verify();
       const instanceID=randomUUID();
       startupInstanceID = instanceID;
-      startupStage = 'configuration';
+      nextStage('configuration_sync');
       // The lifecycle synchronizes config inside this verified launch, avoiding a second full bundle scan.
       await beforeConfiguration?.();
+      nextStage('configuration');
       const recoveredSessionIDs=await recoveredInputs.install(instanceID);
       await bundle.refreshLocations?.();
       configurationSnapshot = await bundle.resolveConfiguration?.(++configurationRevision);
@@ -613,7 +622,7 @@ export function createNativeRuntimeOwner(options) {
           });
         }else claudeEnrollment=undefined;
       }else providers=undefined;
-      startupStage = 'controller';
+      nextStage('controller');
       child = await createNativeControllerProcess({ binary: artifacts.controller, cwd: boot.directory, environment, boot,
         onObservationUnavailable: controllerInstanceID => recordObservationGap({ stage: 'controller', controllerInstanceID }),
         supervisor: { launcher: artifacts.launcher,
@@ -664,7 +673,7 @@ export function createNativeRuntimeOwner(options) {
           } });
         }
         if (checkpointHeld) { phase = 'checkpoint'; return child; }
-        startupStage = 'recovery';
+        nextStage('recovery');
         await options.beforeOpen?.();
         if (checkpointHeld) { phase = 'checkpoint'; return child; }
         // Private recovery may run while HTTP readiness and fresh web grants
@@ -693,11 +702,12 @@ export function createNativeRuntimeOwner(options) {
           await nativeOwner.recoverExecutionContinuations({ directory: location.directory });
         }
         if (checkpointHeld) throw fail('native_checkpoint_admission_held');
-        startupStage = 'open';
+        nextStage('open');
         await child.call({ action: 'open' });
         if (checkpointHeld) throw fail('native_checkpoint_admission_held');
         phase = 'ready';
         launchIntegrations?.markReady();
+        finishStage();
         startupDiagnostic('ready');
         return child;
       } catch (cause) { recordStartupFailure(cause); await child.close(); throw cause; }

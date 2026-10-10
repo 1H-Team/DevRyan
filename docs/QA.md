@@ -1,5 +1,8 @@
 # Isolated Electron and web QA
 
+The [startup import evaluation](audits/2026-10-10/startup-imports/README.md)
+records the October 10 diagnostic probes and deferred timing acceptance.
+
 The standalone `bun run qa` fixture runner requires `QA_NATIVE_ARTIFACT_ROOT`
 pointing to a verified native artifact directory under this repository's `.cache/`.
 It prepares the same private native bundle and synthetic wire facade as matrix QA;
@@ -152,6 +155,23 @@ Current coverage: select a fixture session; connect event transport; receive fou
 The default smoke does not cover new-session creation, attachments, queue policy, permission dialogs, tool expansion or old-history anchoring; use the matrix fixture for those journeys. Drawer swipes, native dialogs, long idle recovery and closed-session memory still need separate verification. Physical-device keyboard behavior remains unverified until exercised on a device.
 
 ## Feature acceptance procedures
+
+`DEVRYAN_QA_SCENARIO=provider-usage bun run qa` runs the chat journey and renders
+weekly usage, source/account identity, reset expiries and unknown/zero inventories
+through the built Providers UI. Set `DEVRYAN_QA_RUNTIME=electron` for the native
+shell. A scoped `window.fetch` fixture is installed before the first module loads
+and quota discovery runs. Electron renderer execution waits for the isolated
+native owner to be ready; this scenario does not qualify cold-start timing.
+Provider parsing and credential behavior are covered separately by their
+deterministic suites. This scenario does not claim live-provider access or a real
+Codex login.
+
+After explicit authorization for each provider prompt,
+`bun scripts/qa/provider-access-smoke.mjs --allow-live <bundle-root> <repo-cache-output> [openai|xai]`
+performs one short direct request per selected provider using the current access
+token in memory and the native response parser. It does not refresh tokens or
+write credentials. Evidence includes only bounded safe diagnostics and whether
+the stored credential stayed unchanged; this is not an authenticated UI turn.
 
 Per-feature acceptance procedures live with their audit records:
 
@@ -626,6 +646,8 @@ Generation-2 manual and natural compaction grading reads the same journal. Each 
 - `packaged-service-smoke.mjs`: directly launches the actual packaged `--runtime-service` three times in a private repository fixture, verifies PID/start identity and owner/descriptor generation, unauthenticated handshake/bootstrap/lease refusal, no model sends before a desktop lease, physical drain and restart. Package/source identities are checked before and after; it never registers a launchd job. Registration, authenticated desktop leases and live providers remain separate gates.
 
 - `native-startup-benchmark.mjs`: three packaged app-bound launches using fresh private profiles, an explicit verified native artifact and a local model fixture. Optional `--baseline-artifact-root` exercises production startup upgrade and verifies the selector revision, previous bundle and exact packaged candidate. Requires the native catalog, composer, exact model/agent tuple, sessions and the renderer's global event-stream readiness acknowledgment. Records first-document timings without reloading; foreground service registration scenarios remain unavailable in this isolated harness. `DEVRYAN_QA_CATALOG_CONFIG` may point to a sanitized reproduction `providers.json` under repository `.cache/sessions/`; the runner sanitizes its shapes again and requires every supplied Cursor model in the packaged catalog.
+  For matched optimization comparisons, pass `--baseline-package-evidence <absolute> --candidate-package-evidence <absolute> --artifact-root <absolute>` instead. The runner executes B1/C1/C2/B2/B3/C3 with fresh profiles, pins one synthetic catalog for all launches, checks matching native/dependency identities and unchanged source, and accepts only a median reduction of at least 5% with all three pairs faster. Only the reviewed App and feature-route import candidates may differ between the source receipts. Natural startup is the default; `--startup-mode foreground` is explicitly qualified separately. Startup phase logs and bounded renderer readiness marks expose stage durations without configuration or message content. Each launch verifies journal health and runs the offline gap scan before deleting its private payload.
+
 
 The native startup constructor also supports a `startupPolicy: 'previous'`
 comparison cohort using an explicitly recorded prior UI build. Candidate cohorts

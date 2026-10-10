@@ -2060,7 +2060,10 @@ const startupErrorDetails = (error) => {
 
 const buildStartupErrorHtml = (error) => {
   const details = startupErrorDetails(error);
-  return buildStartupErrorHtmlFromSettings(shellRuntimeBundleBindingError ? {} : readSettingsRoot(), {
+  let settings = {};
+  // A failed runtime binding must not prevent its own error page from rendering.
+  try { if (!shellRuntimeBundleBindingError) settings = readSettingsRoot(); } catch { /* Use the default appearance. */ }
+  return buildStartupErrorHtmlFromSettings(settings, {
     message: details.displayMessage,
   });
 };

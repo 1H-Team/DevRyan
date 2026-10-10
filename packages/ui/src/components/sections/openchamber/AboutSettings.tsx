@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/lib/i18n';
 import { isDesktopLocalOriginActive, isDesktopShell } from '@/lib/desktop';
+import { getDesktopAppVersion } from '@/lib/desktopNative';
 import { DataStorageSettings } from './SessionRetentionSettings';
 import { DesktopKeepAwakeSettings } from './DesktopKeepAwakeSettings';
 import { DesktopNetworkSettings } from './DesktopNetworkSettings';
@@ -19,6 +20,7 @@ import { DesktopBotHostStatus } from './DesktopBotHostStatus';
 const GITHUB_URL = 'https://github.com/1H-Team/DevRyan';
 
 const MIN_CHECKING_DURATION = 800; // ms
+declare const __APP_VERSION__: string | undefined;
 
 /** App-level switches for the local desktop shell (display sleep and LAN access). */
 const DesktopAppSettings: React.FC = () => {
@@ -36,6 +38,7 @@ export const AboutSettings: React.FC = () => {
   const { t } = useI18n();
   const [updateDialogOpen, setUpdateDialogOpen] = React.useState(false);
   const [showChecking, setShowChecking] = React.useState(false);
+  const [appVersion, setAppVersion] = React.useState<string | null>(null);
   const updateStore = useUpdateStore(useShallow((s) => ({
     info: s.info,
     checking: s.checking,
@@ -51,7 +54,32 @@ export const AboutSettings: React.FC = () => {
   })));
   const { isMobile } = useDeviceInfo();
 
-  const currentVersion = updateStore.info?.currentVersion || 'unknown';
+  React.useEffect(() => {
+    const controller = new AbortController();
+    const loadVersion = async () => {
+      let version: unknown = null;
+      try {
+        if (isDesktopShell() && isDesktopLocalOriginActive()) {
+          version = await getDesktopAppVersion();
+        } else {
+          const response = await fetch('/api/system/info', { signal: controller.signal });
+          if (response.ok) {
+            const data: unknown = await response.json();
+            if (data && typeof data === 'object' && 'openchamberVersion' in data) version = data.openchamberVersion;
+          }
+        }
+      } catch {
+        // The UI build still identifies this release when the host lookup fails.
+      }
+      const resolved = typeof version === 'string' && version.trim() ? version.trim()
+        : typeof __APP_VERSION__ === 'string' && __APP_VERSION__.trim() ? __APP_VERSION__.trim() : null;
+      if (!controller.signal.aborted) setAppVersion(resolved);
+    };
+    void loadVersion();
+    return () => controller.abort();
+  }, []);
+
+  const currentVersion = appVersion ?? t('settings.openchamber.about.state.unavailable');
 
   // Track if we initiated a check to show toast on completion
   const didInitiateCheck = React.useRef(false);

@@ -88,6 +88,9 @@ file-fsync/rename/parent-fsync sequence. Invalid JSON records are moved to a
   raw errors, values and arbitrary plugin logfmt fields remain excluded. The
   `sanitizeNativeSchemaPath` submodule export shares that path policy with the
   native producer. Startup export applies the same validation again.
+  Provider failures retain only finite allowlisted error types, codes and parameter
+  names from `shared-runtime/lib/provider-error-details.js`; raw provider bodies
+  remain excluded. Journal export revalidates these fields.
   Web/Electron hosts record raw OpenCode events only from the canonical global
   watcher; event transport bridges never call the journal, preventing duplicate
   records when multiple UI stream clients are attached.

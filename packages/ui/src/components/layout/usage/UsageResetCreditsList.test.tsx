@@ -22,13 +22,20 @@ const resetCredits = (overrides: Partial<UsageResetCredits>): UsageResetCredits 
   credits: overrides.credits ?? [],
 });
 
-const renderList = (value: UsageResetCredits) => renderToStaticMarkup(
+const renderList = (value: UsageResetCredits | null) => renderToStaticMarkup(
   <I18nProvider>
     <UsageResetCreditsList resetCredits={value} />
   </I18nProvider>
 );
 
 describe('UsageResetCreditsList', () => {
+  test('unavailable inventory does not invent a zero or expiry; known count-only zero stays visible', () => {
+    const unknown = renderList(null);
+    expect(unknown).toContain('Reset Bank'); expect(unknown).toContain('Unavailable'); expect(unknown).not.toContain('0 available');
+    const known = renderList({ ...resetCredits({ availableCount: 0 }), detailsAvailable: false });
+    expect(known).toContain('0 available'); expect(known).toContain('Expiry details unavailable.');
+    expect(known).not.toContain('No expiry');
+  });
   test('omits the expiry row when credit details are empty', () => {
     const markup = renderList(resetCredits({
       availableCount: 2,

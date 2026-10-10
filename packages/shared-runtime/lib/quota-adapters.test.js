@@ -16,6 +16,7 @@ import {
   XAI_OAUTH_TOKEN_URL,
   ZAI_QUOTA_URL,
   fetchCodexQuotaAdapter,
+  normalizeCodexAppServerQuota,
   fetchDeepSeekQuotaAdapter,
   fetchKimiQuotaAdapter,
   fetchOpenCodeGoQuotaAdapter,
@@ -508,6 +509,28 @@ describe('Kimi shared quota adapter', () => {
 });
 
 describe('ChatGPT shared quota adapter', () => {
+  test('normalizes documented RPC buckets and preserves unknown, zero and capped reset details', () => {
+    const bucket = { limitId: 'codex', primary: { usedPercent: 20, windowDurationMins: 300, resetsAt: 1_800_000_000 },
+      secondary: { usedPercent: 30, windowDurationMins: 10080, resetsAt: 1_800_010_000 } };
+    const countOnly = normalizeCodexAppServerQuota({ rateLimits: bucket, rateLimitResetCredits: { availableCount: 5, credits: null } });
+    expect(countOnly.usage.windows.weekly.usedPercent).toBe(30);
+    expect(countOnly.usage.resetCredits).toMatchObject({ availableCount: 5, credits: [], detailsAvailable: false });
+    expect(normalizeCodexAppServerQuota({ rateLimits: bucket, rateLimitResetCredits: null }).usage.resetCredits).toBeNull();
+    expect(normalizeCodexAppServerQuota({ rateLimits: bucket, rateLimitResetCredits: { availableCount: 0, credits: [] } }).usage.resetCredits)
+      .toMatchObject({ availableCount: 0, credits: [], detailsAvailable: true });
+    const capped = normalizeCodexAppServerQuota({ rateLimits: bucket, rateLimitResetCredits: {
+      availableCount: 8, credits: [{ id: 'reset-1', status: 'available', expiresAt: 1_800_030_000 }],
+    } });
+    expect(capped.usage.resetCredits.availableCount).toBe(8);
+    expect(capped.usage.resetCredits.credits[0].expiresAt).toBe(1_800_030_000_000);
+    const multiple = normalizeCodexAppServerQuota({ rateLimits: bucket, rateLimitsByLimitId: { codex: bucket, other: {
+      limitId: 'other', limitName: 'Other pool', primary: { usedPercent: 45, windowDurationMins: 60, resetsAt: 1_800_010_000 },
+    } } });
+    expect(multiple.usage.windows['Other pool (1h)'].usedPercent).toBe(45);
+    const invalid = normalizeCodexAppServerQuota({ rateLimits: { primary: { usedPercent: '0', windowDurationMins: 300 },
+      secondary: { usedPercent: 110, windowDurationMins: 10080 } }, rateLimitResetCredits: { availableCount: -1 } });
+    expect(invalid.ok).toBe(false); expect(invalid.usage.windows).toEqual({}); expect(invalid.usage.resetCredits).toBeNull();
+  });
   const run = async (usagePayload, resetPayload = null) => fetchCodexQuotaAdapter({
     credential: { accessToken: 'access', accountId: 'account' },
     now,

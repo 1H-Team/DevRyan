@@ -1,0 +1,21 @@
+{
+  "outcome": "passed",
+  "archiveSha256": "ba5b78b14bb4bca9c93238ddd8603634bf377ca9f9e8d36e2073ff569a052585",
+  "scenarios": [
+    {
+      "scenario": "large-manifest",
+      "outcome": "passed",
+      "manifestBytes": 5246352,
+      "nativeReady": true,
+      "composer": true,
+      "model": "smoke-write"
+    },
+    {
+      "scenario": "invalid-manifest",
+      "outcome": "passed",
+      "manifestBytes": 5246352,
+      "originalError": true,
+      "retry": true
+    }
+  ]
+}

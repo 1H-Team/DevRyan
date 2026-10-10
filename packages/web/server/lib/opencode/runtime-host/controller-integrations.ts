@@ -353,6 +353,6 @@ export function createControllerIntegrations(options:ControllerIntegrationsOptio
     transitionClaudeLifecycleOwned:(input:Parameters<ReturnType<typeof createControllerClaudeLifecycle>['transitionOwned']>[0])=>{
       if(!claudeLifecycle)return refuse('native_claude_lifecycle_owner_expired');return claudeLifecycle.transitionOwned(input);
     },
-    readSelectedOwned:openai.readSelectedOwned,compareAndSwapSelectedOwned:openai.compareAndSwapSelectedOwned,
+    requiresOpenAiHttp:openai.requiresOpenAiHttp,readSelectedOwned:openai.readSelectedOwned,compareAndSwapSelectedOwned:openai.compareAndSwapSelectedOwned,
     discoverCopilot,readCatalogSelectionOwned,readSelectedCursorKeyOwned,readCursorReadOnlyKeyOwned,commitCredentialOwned:mutation.commitOwned,credentialOwned,credentialMetadataOwned,readProviderSelectedOwned,readOpenAiCredentialOwned,close};
 }

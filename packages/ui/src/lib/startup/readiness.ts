@@ -21,6 +21,15 @@ export interface StartupPhaseSnapshot {
 
 export type StartupReadinessSnapshot = Record<StartupReadinessPhase, StartupPhaseSnapshot>
 
+export const markStartupReadiness = (snapshot: StartupReadinessSnapshot, measured: Set<string>): void => {
+  for (const phase of STARTUP_READINESS_PHASES) {
+    const name = `devryan-startup-gate-${phase}-${snapshot[phase].status}`
+    if (measured.has(name)) continue
+    measured.add(name)
+    performance.mark(name)
+  }
+}
+
 export interface StartupReadinessOptions {
   route?: StartupRoute
 }

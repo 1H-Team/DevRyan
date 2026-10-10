@@ -1,0 +1,85 @@
+{
+  "source": "4f3da907b66e55927f9fa3bbcb2dd51a033a8126",
+  "qualification": "segmented full gate: all preceding packages passed; complete unchanged web rerun passed",
+  "checks": [
+    {
+      "command": "bun run build",
+      "exitCode": 0,
+      "logSha256": "7a7dc6467167aa149dd3b801c12ad8cf20d27c7528d469c5de8dcbd34a327166"
+    },
+    {
+      "command": "bun run --cwd packages/electron build:web-assets",
+      "exitCode": 0,
+      "logSha256": "c9cb2f8a2c18c8ea70b7332c5d631fb560917cca9f362d14f541314f83f6aba5"
+    },
+    {
+      "command": "DEVRYAN_SCRIPT_TEST_CONCURRENCY=1 bun run validate:full",
+      "exitCode": 1,
+      "logSha256": "d88a3bcbabdad637feb47ba4d6b8716c6edf80f81dfbc14fc47afb1e2f27e08e"
+    },
+    {
+      "command": "native-process Vitest suite (unchanged, isolated)",
+      "exitCode": 0,
+      "logSha256": "cd295ad2e3998fb33d85b6b5d996906e464b1ebf299818df6959cfd64a1503a0"
+    },
+    {
+      "command": "bun run --cwd packages/web test (complete unchanged rerun)",
+      "exitCode": 0,
+      "logSha256": "3bdae4d1dcf78bb74de78ca54115bc94aff989b51791afab682377682a85fe58"
+    },
+    {
+      "command": "bun run docs:validate (final evidence)",
+      "exitCode": 0,
+      "logSha256": "a1c448542672cd0961771aa914cad52e102d5b627bd179e597ff118c81261a6a"
+    },
+    {
+      "command": "fresh native runtime build",
+      "exitCode": 0,
+      "logSha256": "a0aba7b2b18b44bdf40d518fc9c525d7b2147d5b63b2b62ea97c44e18c6dbb4e"
+    },
+    {
+      "command": "isolated web provider-usage QA",
+      "exitCode": 0,
+      "logSha256": "84f2fae446a738ee992f91b0dac0d6e3c632ae70d732d3bd01ef2217f0f071ea"
+    },
+    {
+      "command": "isolated Electron provider-usage QA",
+      "exitCode": 0,
+      "logSha256": "69fd56ead1501cab1a4e013ea0b0dd576db48c4483f92dfab7885e7eaddd915d"
+    },
+    {
+      "command": "packaged startup foreground-controlled acceptance",
+      "exitCode": 0,
+      "logSha256": "10832df4f675539d8c42037bfaa8e2dbed6da82eb6fd9f0c5579965555acee12"
+    },
+    {
+      "command": "packaged direct runtime-service acceptance",
+      "exitCode": 0,
+      "logSha256": "cdc1b41c1b70fb217fe9fc81d000e67cb8a4c06fb9651a1126540c6987847828"
+    },
+    {
+      "command": "bun run cache:report",
+      "exitCode": 0,
+      "logSha256": "f03678e14db7fcda9be0ca28ee069f46f0f8d0ace0091394181af05ee37bd81b"
+    },
+    {
+      "command": "bun run cache:prune (preview)",
+      "exitCode": 0,
+      "logSha256": "f716c6a2018cc9b71b41d54277e48858ac5ccb01ee3afcd00ce79d7cd7dbccb7"
+    }
+  ],
+  "bundle": {
+    "outcome": "passed",
+    "raw": 4893950,
+    "gzip": 1442996,
+    "gzipBudget": 1456388
+  },
+  "unavailable": [
+    "natural startup timing",
+    "live Codex enrollment",
+    "authenticated live-provider UI turns",
+    "installed-app replacement",
+    "notarization",
+    "Windows acceptance"
+  ]
+}

@@ -80,6 +80,46 @@ describe('useQuotaStore refresh ownership', () => {
     });
   });
 
+  test('retains failed readings only for the same known source and account', async () => {
+    const previous = providerResult('codex', { source: 'codex-app-server', connectionId: 'account-a', account: { email: 'a@example.test', planType: 'pro' } });
+    const retainedTrend = [{ usedPercent: 10, fetchedAt: 1, resetAt: null }];
+    for (const change of [
+      {},
+      { connectionId: 'account-b' },
+      { source: 'chatgpt-siwc' as const },
+      { account: { email: 'b@example.test', planType: 'pro' } },
+      { connectionId: null },
+      { source: null },
+    ]) {
+      useQuotaStore.setState({ results: [previous], trendHistory: { 'codex|window||weekly': retainedTrend, 'xai|window||weekly': retainedTrend },
+        providerRefreshState: { codex: { lastAttemptAt: 1, lastSuccessAt: 1, refreshError: null } } });
+      globalThis.fetch = (async () => Response.json({ ...previous, ...change, ok: false, usage: null, error: 'Unavailable' })) as typeof fetch;
+      await useQuotaStore.getState().fetchProviderQuota('codex');
+      const state = useQuotaStore.getState();
+      expect(state.results[0].ok).toBe(Object.keys(change).length === 0);
+      expect(state.trendHistory['codex|window||weekly']).toBe(Object.keys(change).length === 0 ? retainedTrend : undefined);
+      expect(state.trendHistory['xai|window||weekly']).toBe(retainedTrend);
+      expect(state.providerRefreshState.codex?.lastSuccessAt).toBe(Object.keys(change).length === 0 ? 1 : null);
+    }
+  });
+
+  test('connection invalidation clears quota and prevents a late old-account read from publishing', async () => {
+    const old = pendingResponse(), current = pendingResponse(); let calls = 0;
+    globalThis.fetch = (async () => ++calls === 1 ? old.promise : current.promise) as typeof fetch;
+    useQuotaStore.setState({ results: [providerResult('codex')], configuredProviderIds: ['codex'] });
+    const first = useQuotaStore.getState().fetchProviderQuota('codex');
+    useQuotaStore.getState().invalidateProviderQuota('codex');
+    expect(useQuotaStore.getState().results).toEqual([]);
+    const second = useQuotaStore.getState().fetchProviderQuota('codex');
+    old.resolve(Response.json(providerResult('codex', { connectionId: 'old-account' })));
+    await first;
+    expect(useQuotaStore.getState().results).toEqual([]);
+    expect(useQuotaStore.getState().isFetchingProvider.codex).toBe(true);
+    current.resolve(Response.json(providerResult('codex', { connectionId: 'new-account' })));
+    await second;
+    expect(useQuotaStore.getState().results[0].connectionId).toBe('new-account');
+  });
+
   test('uses the active managed assignment for discovery and provider refresh', async () => {
     const first = assignment('project-1', '/projects/project-1/main', true);
     const active = assignment('project-2', '/projects/project-2/main');

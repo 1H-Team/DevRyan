@@ -1,0 +1,15 @@
+{
+  "qualification": "synthetic-factory-and-actual-isolated-host-startup-only",
+  "status": "passed",
+  "caseIDs": [
+    "synthetic-siwc-source-sdk-credential-mutations",
+    "real-bundle-migration-saved-synthetic-graph",
+    "actual-native-usage-discovery-without-accounts",
+    "actual-production-isolated-web-and-native-controller"
+  ],
+  "artifactManifestSha256": "53a818082dddde5b46a930f7de997ff68d3dccc364caa7c2a8ca37675603d7a2",
+  "ready": true,
+  "cleanupFailures": [],
+  "remainingProcessIds": [],
+  "liveProviderInference": false
+}

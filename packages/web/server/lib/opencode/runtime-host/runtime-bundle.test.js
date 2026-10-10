@@ -5,6 +5,7 @@ import {verifyNativeBootMigration} from './native-boot-migration.js';
 import {recoveredInputHash} from './native-recovered-input-hash.js';
 import { afterEach, expect, test, vi } from 'vitest';
 import fs from 'node:fs/promises';
+import fsSync from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFile, spawn } from 'node:child_process';
@@ -23,6 +24,7 @@ import { REVIEWED_NATIVE_CLONE_RELEASES } from './native-bundle-compatibility.js
 import { nativeUpgradeBundleID } from './runtime-bundle-lifecycle.js';
 import { readStartupBundleUpgradeFailure, recordStartupBundleUpgradeFailure } from './bundle-startup-upgrade-status.js';
 import { TARGET_OPENCODE_VERSION } from '../version-policy.js';
+import { BUNDLE_DOCUMENT_MAX_BYTES } from './bundle-document-limits.js';
 
 const execute=promisify(execFile), roots=[];
 // Store composition seam; native-bundle-credentials.test.ts exercises the
@@ -353,6 +355,33 @@ test('early binding accepts exact generation-one globals and refuses a stale des
   await fs.writeFile(descriptorFile,JSON.stringify(baseline));
   await fs.writeFile(path.join(f.controlRoot,'selection.json'),JSON.stringify({...bound.selection,reconciliationRequired:true}));
   expect(()=>readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:f.controlRoot})).toThrow('bundle_rollback_reconciliation_required');
+});
+test('early binding shares the sealed document limit and still rejects oversized, changed and linked manifests',async()=>{
+  const f=await fixture(), baseline=await f.store.prepare(f.baselineInput);
+  await f.store.select({bundleID:'baseline',expectedRevision:0});
+  const selectionFile=path.join(f.controlRoot,'selection.json');
+  const selection=JSON.parse(await fs.readFile(selectionFile,'utf8'));
+  const original=await fs.readFile(baseline.preparedManifestPath,'utf8');
+  const large=original+' '.repeat(4*1024*1024);
+  await fs.writeFile(baseline.preparedManifestPath,large);
+  await fs.writeFile(selectionFile,JSON.stringify({...selection,preparedManifestSha256:sha256(large)}));
+  const bind=()=>readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:f.controlRoot});
+  expect(bind().descriptor.bundleID).toBe('baseline');
+  await fs.appendFile(baseline.preparedManifestPath,' ');
+  expect(bind).toThrow('runtime_bundle_binding_invalid');
+  await fs.writeFile(baseline.preparedManifestPath,original+' '.repeat(BUNDLE_DOCUMENT_MAX_BYTES));
+  expect(bind).toThrow('runtime_bundle_binding_invalid');
+  const lstat=fsSync.lstatSync;
+  const metadata=vi.spyOn(fsSync,'lstatSync').mockImplementation(file=>{
+    const stat=lstat(file);
+    if(file===baseline.preparedManifestPath)stat.size=1;
+    return stat;
+  });
+  try { expect(bind).toThrow('runtime_bundle_binding_invalid'); } finally { metadata.mockRestore(); }
+  await fs.rename(baseline.preparedManifestPath,baseline.preparedManifestPath+'.real');
+  await fs.writeFile(baseline.preparedManifestPath+'.real',large);
+  await fs.symlink(baseline.preparedManifestPath+'.real',baseline.preparedManifestPath);
+  expect(bind).toThrow('runtime_bundle_binding_invalid');
 });
 test('copied existing ledger preserves original refs and rebinds settled lease paths with native identities',async()=>{
   const f=await fixture(), sourceDirectory=f.seed.projectMap[0].sourceDirectory, sessionID='ses_migration_root_1';

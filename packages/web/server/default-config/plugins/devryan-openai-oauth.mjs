@@ -148,56 +148,54 @@ async function encodeRequest(request) {
 }
 function completedResponse(response) {
   if (!response.ok) return response; // Preserve provider HTTP error classification.
-  if (!response.body || !response.headers.get('content-type')?.includes('text/event-stream'))
+  const contentType = response.headers.get('content-type');
+  if (!response.body || (contentType && contentType.split(';')[0].trim().toLowerCase() !== 'text/event-stream'))
     throw policyFailure('chatgpt_siwc_stream_required');
+  // The direct SIWC route can omit Content-Type; framing and completion still validate every response.
+  const headers = new Headers(response.headers);
+  headers.set('content-type', 'text/event-stream');
   const decoder = new TextDecoder(), encoder = new TextEncoder();
-  let pending = '', terminal = '', terminalTimer;
-  const releaseTimer = () => { clearTimeout(terminalTimer); terminalTimer = undefined; };
+  let pending = '', terminal = false;
   const consume = (frame, controller) => {
     if (Buffer.byteLength(frame) > 1024 * 1024) throw policyFailure('chatgpt_siwc_stream_invalid');
-    const data = frame.split(/\r?\n/).filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n');
-    if (data && data !== '[DONE]') {
-      let event;
-      try { event = JSON.parse(data); } catch { throw policyFailure('chatgpt_siwc_stream_invalid'); }
-      if (!object(event) || typeof event.type !== 'string') throw policyFailure('chatgpt_siwc_stream_invalid');
-      if (event.error || event.response?.error || ['failed', 'incomplete', 'cancelled'].includes(event.response?.status)
-        || ['error', 'response.failed', 'response.incomplete', 'response.cancelled'].includes(event.type))
-        throw policyFailure('chatgpt_siwc_stream_failed');
-      if (event.type === 'response.completed') {
-        if (terminal || (event.response?.status && event.response.status !== 'completed')
-          || event.response?.error || event.response?.incomplete_details)
-          throw policyFailure('chatgpt_siwc_stream_failed');
-        terminal = frame + '\n\n';
-        // Responses must settle promptly after completion; an open socket is not success.
-        terminalTimer = setTimeout(() => controller.error(policyFailure('chatgpt_siwc_stream_interrupted')), 5_000);
-        terminalTimer.unref?.(); return;
-      }
-    } else if (data === '[DONE]' && !terminal) throw policyFailure('chatgpt_siwc_stream_interrupted');
-    // Hold completion until EOF: a later failure must reach the SDK before success.
-    if (!terminal) controller.enqueue(encoder.encode(frame + '\n\n'));
+    const data = frame.split(/\r?\n/).filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n').trim();
+    // Match the native SSE reader's comment and null keepalives.
+    if (!data || data === 'null' || data.startsWith(':')) return;
+    if (data === '[DONE]') throw policyFailure('chatgpt_siwc_stream_interrupted');
+    let event;
+    try { event = JSON.parse(data); } catch { throw policyFailure('chatgpt_siwc_stream_invalid'); }
+    if (!object(event) || typeof event.type !== 'string') throw policyFailure('chatgpt_siwc_stream_invalid');
+    const failed = ['error', 'response.failed', 'response.incomplete', 'response.cancelled'].includes(event.type);
+    if (!failed && (event.error || event.response?.error || ['failed', 'incomplete', 'cancelled'].includes(event.response?.status)))
+      throw policyFailure('chatgpt_siwc_stream_failed');
+    if (event.type === 'response.completed' && ((event.response?.status && event.response.status !== 'completed')
+      || event.response?.incomplete_details)) throw policyFailure('chatgpt_siwc_stream_failed');
+    // Preserve provider failures for the native parser, including their code and param.
+    controller.enqueue(encoder.encode(frame + '\n\n'));
+    if (failed || event.type === 'response.completed') {
+      terminal = true;
+      controller.terminate();
+    }
   };
   const body = response.body.pipeThrough(new TransformStream({
     transform(chunk, controller) {
-      try {
-        pending += decoder.decode(chunk, { stream: true });
-        let separator;
-        while ((separator = /\r?\n\r?\n/.exec(pending))) {
-          consume(pending.slice(0, separator.index), controller);
-          pending = pending.slice(separator.index + separator[0].length);
-        }
-        if (Buffer.byteLength(pending) > 1024 * 1024) throw policyFailure('chatgpt_siwc_stream_invalid');
-      } catch (error) { releaseTimer(); throw error; }
+      pending += decoder.decode(chunk, { stream: true });
+      let separator;
+      while (!terminal && (separator = /\r?\n\r?\n/.exec(pending))) {
+        const frame = pending.slice(0, separator.index);
+        pending = pending.slice(separator.index + separator[0].length);
+        consume(frame, controller);
+      }
+      if (terminal) pending = '';
+      if (Buffer.byteLength(pending) > 1024 * 1024) throw policyFailure('chatgpt_siwc_stream_invalid');
     },
     flush(controller) {
-      try {
-        pending += decoder.decode();
-        if (pending.trim()) consume(pending, controller);
-        if (!terminal) throw policyFailure('chatgpt_siwc_stream_interrupted');
-        controller.enqueue(encoder.encode(terminal));
-      } finally { releaseTimer(); }
+      pending += decoder.decode();
+      if (pending.trim()) consume(pending, controller);
+      if (!terminal) throw policyFailure('chatgpt_siwc_stream_interrupted');
     },
   }));
-  return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
+  return new Response(body, { status: response.status, statusText: response.statusText, headers });
 }
 
 function createTransport(access, fetchImpl = fetch) {

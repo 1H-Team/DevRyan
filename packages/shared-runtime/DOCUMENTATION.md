@@ -32,9 +32,28 @@ Managed runtimes can apply immediately when authoritative active-session count i
 
 ## Quota adapters
 
+`normalizeCodexAppServerQuota` maps the documented `account/rateLimits/read`
+windows by duration and limit bucket. It keeps reset-credit inventories separate
+from ordinary credits, preserves authoritative counts when expiry details are
+partial, and distinguishes unavailable details from an empty inventory. The
+web host owns the optional Codex process and private usage sign-in.
+
 `lib/quota-adapters.js` owns provider request and normalization rules used by the web server for OpenCode Zen, OpenCode Go, z.ai, Kimi, Codex, xAI, and DeepSeek. Adapters accept injected credentials, `fetch`, and clocks; they return a common usage-window shape, value-only rows when a percentage does not exist, partial-parse warnings, and deterministic configured/error state. The Zen adapter performs a bounded, non-evaluating SolidJS billing hydration parse and enforces the exact authenticated workspace billing origin. It emits one Credits progress window comparing current-month spend with the available balance; monthly-limit and auto-reload fields are parsed for payload compatibility but are not exposed in usage output.
 
 Codex merges usage and reset-credit responses without suppressing either balance. xAI uses the pinned CLI billing contract, validates the reported final HTTPS origin, and supports one refresh-and-retry through a host-provided credential persistence callback. When xAI supplies a recognized weekly or monthly period with a valid reset timestamp but omits the percentage field, the adapter treats the protobuf-default omission as zero usage; a present but malformed percentage still produces a warning. After billing succeeds, xAI also makes a bounded, best-effort read of the private `ConsumerUiSvc.GetRemainingResets` gRPC-Web method with the effective OAuth token. Valid, unexpired reset tokens are reduced to a count and expiry-only reset-bank summary; redemption-capable token IDs never leave the adapter. Reset-service failures add a sanitized warning without discarding billing usage. DeepSeek reports the provider's available balances as value-only rows. Credentials, persistence, OAuth ownership, and transport policy remain host responsibilities.
+
+## Safe provider errors
+
+`lib/provider-error-details.js` extracts only finite allowlisted provider error
+codes and request parameter names from bounded structured bodies. Session error
+projection and the diagnostic sanitizer share this allowlist, preserving useful
+failure classification without copying response bodies into diagnostic fields.
+
+`lib/native-observation.js` validates native runtime observation envelopes.
+Its `provider-refusal` stage accepts only reviewed local OpenAI refusal codes,
+request kinds and physical hook names; additional fields are rejected. The
+runtime host emits these records and the harness sanitizer validates their
+safe journal projection using the same contract.
 
 ## Assistant image syntax
 

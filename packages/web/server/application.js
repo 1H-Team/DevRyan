@@ -1872,6 +1872,7 @@ const gracefulShutdownRuntime = createGracefulShutdownRuntime({
   getCursorSdkRuntime: () => cursorSdkRuntime,
   getSessionExecutionHost: () => sessionExecutionHost,
   closeNativeRuntime: nativeBundle ? () => nativeRuntime.close() : undefined,
+  closeFeatureRoutes: () => featureRoutesRuntime.close(),
   getSessionTitleRuntime: () => standardSessionTitleRuntime,
   shouldSkipOpenCodeStop: () => ENV_SKIP_OPENCODE_START || isExternalOpenCode,
   getOpenCodePort: () => openCodePort,
@@ -1937,6 +1938,7 @@ async function main(options = {}) {
       globalMessageStreamHub.stop();
       await managedOrchestrationRuntime?.shutdown();
       await openAiOAuthBridge.close();
+      await featureRoutesRuntime.close();
       await tunnelService.stop();
       tunnelAuthController.suspendActiveTunnel?.();
       if (scheduledFailure) throw scheduledFailure;
@@ -2873,6 +2875,7 @@ async function main(options = {}) {
   });
   server.once('close', () => {
     void openAiOAuthBridge.close().catch(() => undefined);
+    void Promise.resolve(featureRoutesRuntime.close()).catch(() => console.warn('quota_connection_cleanup_failed'));
     browserObservationRuntime?.closeAll();
     projectPreviewInstancesRuntime.shutdown();
     previewProxyRuntime.shutdown();

@@ -1,4 +1,5 @@
 import React from 'react';
+import { UsageSourceDetails } from './UsageSourceDetails';
 import { RiArrowDownSLine, RiArrowRightSLine, RiRefreshLine } from '@remixicon/react';
 import { ProviderLogo } from '@/components/ui/ProviderLogo';
 import { cn } from '@/lib/utils';
@@ -110,6 +111,7 @@ export const UsageProviderPanel = React.memo(function UsageProviderPanel({
   const hasRows = Boolean(group) && (
     entries.length > 0
     || Boolean(group?.resetCredits)
+    || (group?.source === 'codex-app-server' && group.resetCredits === null)
     || Boolean(group?.modelFamilies?.length)
     || Boolean(group?.warnings?.length)
   );
@@ -126,6 +128,7 @@ export const UsageProviderPanel = React.memo(function UsageProviderPanel({
             <div className="truncate typography-micro text-muted-foreground" aria-live="polite">
               {t('header.services.updatedAt', { time: formatUpdatedTime(group?.usageUpdatedAt ?? null) })}
             </div>
+            {group ? <UsageSourceDetails source={group.source} account={group.account} /> : null}
           </div>
         </div>
         <button
@@ -217,7 +220,7 @@ export const UsageProviderPanel = React.memo(function UsageProviderPanel({
             </div>
           ) : null}
 
-          {group.resetCredits ? <UsageResetCreditsList resetCredits={group.resetCredits} /> : null}
+          {group.resetCredits || group.source === 'codex-app-server' && group.resetCredits === null ? <UsageResetCreditsList resetCredits={group.resetCredits ?? null} /> : null}
         </div>
       ) : null}
     </div>

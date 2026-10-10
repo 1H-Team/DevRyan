@@ -59,6 +59,7 @@ const documentSnapshot = () => `(() => {
     sessionID: new URL(location.href).searchParams.get('session'),
     navigation: navigation ? { type: navigation.type, domContentLoadedEventEnd: navigation.domContentLoadedEventEnd,
       loadEventEnd: navigation.loadEventEnd, duration: navigation.duration } : null,
+    readinessGates: performance.getEntriesByType('mark').filter(e => /^devryan-startup-gate-(health|providers|agents|initialization|globalSync|directorySync|sessionList|responseStyle|worktree)-(idle|loading|ready|error)$/.test(e.name)).map(e => ({ name: e.name, elapsedMs: e.startTime })),
     paints: performance.getEntriesByType('paint').map(e => ({ name: e.name, startTime: e.startTime })) };
 })()`;
 

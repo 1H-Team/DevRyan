@@ -83,6 +83,12 @@ test('QA facade uses original native client/proxy, passes product features and s
     const history=await f.request(`/api/session/${session.body.id}/message`);assert.equal(history.status,200);assert.ok(history.body.some(row=>row.info.id===messageID));
     assert.equal((await f.request('/api/config/settings')).body.actualProductFeature,true);
     assert.equal((await f.request('/api/health')).body.actualProductFeature,true);
+    for (const route of ['/api/provider/auth', '/api/provider/fixture/source']) {
+      const read = await f.request(route);
+      assert.equal(read.status, 200);
+      assert.equal(read.body.actualProductFeature, true, 'Provider metadata stays owned by the actual isolated host');
+      assert.equal(f.passed.at(-1).path, route);
+    }
     const writeHeaders={origin:f.facade.origin,referer:f.facade.origin+'/chat?session=unit',cookie:f.cookie,'content-type':'application/json'};
     const write=await fetch(f.facade.origin+'/api/config/settings',{method:'PUT',headers:writeHeaders,body:'{}'});
     assert.equal(write.status,200);const written=await write.json();

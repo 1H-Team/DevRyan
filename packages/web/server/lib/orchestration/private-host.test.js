@@ -12,6 +12,24 @@ const callRpc = (environment, body, options = {}) => fetch(environment.DEVRYAN_O
 });
 
 describe('managed orchestration private host', () => {
+  it('attributes credential resolution timing through its nested binding without exposing it', async () => {
+    const onRequestTiming = vi.fn();
+    const host = createManagedOrchestrationPrivateHost({ handleRpc: async () => null, onRequestTiming });
+    const environment = await host.start();
+    try {
+      const response = await callRpc(environment, {
+        method: 'credential.resolution.commit',
+        params: { binding: { sessionID: 'ses_resolution', credentialID: 'fixture-private', expectedFingerprint: 'a'.repeat(64) } },
+      });
+      expect(response.status).toBe(200);
+      await response.json();
+      await vi.waitFor(() => expect(onRequestTiming).toHaveBeenCalledOnce());
+      expect(onRequestTiming.mock.calls[0][0]).toMatchObject({ method: 'credential.resolution.commit', sessionID: 'ses_resolution', statusCode: 200 });
+      expect(JSON.stringify(onRequestTiming.mock.calls)).not.toContain('fixture-private');
+      expect(JSON.stringify(onRequestTiming.mock.calls)).not.toContain('expectedFingerprint');
+    } finally { await host.stop(); }
+  });
+
   it('runs native action authority after bearer admission and before dispatch', async () => {
     const handleRpc = vi.fn(async () => 'dispatched');
     const authorizeRpc = vi.fn(async ({ params }) => {

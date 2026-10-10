@@ -1,0 +1,181 @@
+{
+  "schemaVersion": 1,
+  "kind": "packaged-direct-runtime-service",
+  "outcome": "passed",
+  "sourceSha256": "721a42ca6ece8038824f77eda780c03e7bf3ebbe94a2d6c78bb9ee0902d42fc6",
+  "archiveSha256": "3d7d57bd2f48585ab7c07287fd46dec9d5cd6d7ec5a53295c0e428aa44760683",
+  "scope": "three direct headless fresh processes on one private profile; host listening, owner fencing, refusal and physical shutdown",
+  "excluded": [
+    "launchd-registration",
+    "desktop-host-lease",
+    "usable-UI",
+    "native-model-readiness",
+    "paid-providers",
+    "managed-user",
+    "three-acceptance-journal-roots"
+  ],
+  "appVersion": "2.0.6",
+  "runs": [
+    {
+      "iteration": 0,
+      "pid": 13572,
+      "instanceId": "7cefb318-d910-4348-83f9-c9d810e137c9",
+      "generation": 1,
+      "hostListeningMs": 5693.6677500000005,
+      "ownerStartIdentity": "darwin:Sat Oct 10 15:38:50 2026",
+      "health": "healthy",
+      "desktopHost": "unavailable",
+      "handshakeRefusal": 401,
+      "bootstrapRefusal": 401,
+      "providerRequests": 0,
+      "cleanup": {
+        "source": "retained-os-process-ancestry-and-start-identities",
+        "rootPid": 13572,
+        "rootObserved": true,
+        "observationIntervalMs": 500,
+        "observationErrors": [],
+        "observedProcesses": [
+          {
+            "pid": 13572,
+            "parentPid": 95997,
+            "startIdentity": "Sat Oct 10 19:38:50 2026"
+          },
+          {
+            "pid": 13616,
+            "parentPid": 13572,
+            "startIdentity": "Sat Oct 10 19:38:50 2026"
+          },
+          {
+            "pid": 13617,
+            "parentPid": 13572,
+            "startIdentity": "Sat Oct 10 19:38:50 2026"
+          },
+          {
+            "pid": 13729,
+            "parentPid": 13572,
+            "startIdentity": "Sat Oct 10 19:38:52 2026"
+          },
+          {
+            "pid": 13843,
+            "parentPid": 13572,
+            "startIdentity": "Sat Oct 10 19:38:53 2026"
+          },
+          {
+            "pid": 13999,
+            "parentPid": 13572,
+            "startIdentity": "Sat Oct 10 19:38:55 2026"
+          }
+        ],
+        "remainingProcessIds": [],
+        "signals": [],
+        "trackingClosed": true
+      }
+    },
+    {
+      "iteration": 1,
+      "pid": 14047,
+      "instanceId": "211cf016-3fd7-4219-bb35-be9fadf1f84f",
+      "generation": 1,
+      "hostListeningMs": 5121.109042,
+      "ownerStartIdentity": "darwin:Sat Oct 10 15:38:55 2026",
+      "health": "healthy",
+      "desktopHost": "unavailable",
+      "handshakeRefusal": 401,
+      "bootstrapRefusal": 401,
+      "providerRequests": 0,
+      "cleanup": {
+        "source": "retained-os-process-ancestry-and-start-identities",
+        "rootPid": 14047,
+        "rootObserved": true,
+        "observationIntervalMs": 500,
+        "observationErrors": [],
+        "observedProcesses": [
+          {
+            "pid": 14047,
+            "parentPid": 95997,
+            "startIdentity": "Sat Oct 10 19:38:55 2026"
+          },
+          {
+            "pid": 14090,
+            "parentPid": 14047,
+            "startIdentity": "Sat Oct 10 19:38:56 2026"
+          },
+          {
+            "pid": 14091,
+            "parentPid": 14047,
+            "startIdentity": "Sat Oct 10 19:38:56 2026"
+          },
+          {
+            "pid": 14260,
+            "parentPid": 14047,
+            "startIdentity": "Sat Oct 10 19:38:58 2026"
+          },
+          {
+            "pid": 14302,
+            "parentPid": 14047,
+            "startIdentity": "Sat Oct 10 19:38:58 2026"
+          },
+          {
+            "pid": 14304,
+            "parentPid": 14047,
+            "startIdentity": "Sat Oct 10 19:38:58 2026"
+          },
+          {
+            "pid": 14384,
+            "parentPid": 14047,
+            "startIdentity": "Sat Oct 10 19:38:59 2026"
+          }
+        ],
+        "remainingProcessIds": [],
+        "signals": [],
+        "trackingClosed": true
+      }
+    },
+    {
+      "iteration": 2,
+      "pid": 14494,
+      "instanceId": "97cc373e-3db6-4d4b-8e00-7bb43cc43bc2",
+      "generation": 1,
+      "hostListeningMs": 5123.276041999998,
+      "ownerStartIdentity": "darwin:Sat Oct 10 15:39:01 2026",
+      "health": "healthy",
+      "desktopHost": "unavailable",
+      "handshakeRefusal": 401,
+      "bootstrapRefusal": 401,
+      "providerRequests": 0,
+      "cleanup": {
+        "source": "retained-os-process-ancestry-and-start-identities",
+        "rootPid": 14494,
+        "rootObserved": true,
+        "observationIntervalMs": 500,
+        "observationErrors": [],
+        "observedProcesses": [
+          {
+            "pid": 14494,
+            "parentPid": 95997,
+            "startIdentity": "Sat Oct 10 19:39:01 2026"
+          },
+          {
+            "pid": 14499,
+            "parentPid": 14494,
+            "startIdentity": "Sat Oct 10 19:39:01 2026"
+          },
+          {
+            "pid": 14500,
+            "parentPid": 14494,
+            "startIdentity": "Sat Oct 10 19:39:01 2026"
+          },
+          {
+            "pid": 14716,
+            "parentPid": 14494,
+            "startIdentity": "Sat Oct 10 19:39:04 2026"
+          }
+        ],
+        "remainingProcessIds": [],
+        "signals": [],
+        "trackingClosed": true
+      }
+    }
+  ],
+  "cleanupErrors": []
+}

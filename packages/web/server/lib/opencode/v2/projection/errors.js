@@ -16,8 +16,9 @@
 //
 // `v2Type` is a lossless pass-through for classifiers that will be rewritten
 // against v2 types later. `isRetryable` stays undefined; `response.body` is not
-// carried (no DevRyan consumer reads v1 `responseBody`). Everything here is pure.
+// carried; finite provider code/parameter details are projected instead.
 // ---------------------------------------------------------------------------
+import { providerErrorDetails } from '../../../../../../shared-runtime/lib/provider-error-details.js';
 
 /**
  * @typedef {object} V2StructuredError
@@ -33,6 +34,8 @@
  * @property {number} [statusCode]
  * @property {string} [v2Type]
  * @property {string} [reason]
+ * @property {string} [providerCode]
+ * @property {string} [providerParam]
  */
 
 /**
@@ -116,6 +119,9 @@ export const toV1Error = (error, options = {}) => {
   const data = isHttpStatus(error.status)
     ? { message, statusCode: error.status, v2Type }
     : { message, v2Type };
+  if (v2Type.startsWith('provider.') && isRecord(error.response)) {
+    Object.assign(data, providerErrorDetails(error.response.body));
+  }
   return { name: v1ErrorNameForV2Type(v2Type, message, options), data };
 };
 

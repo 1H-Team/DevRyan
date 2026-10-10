@@ -76,6 +76,21 @@ describe('provider usage in Settings → Providers', () => {
     expect(render(<ProviderUsageSection providerId="openai" />)).toBe('');
   });
 
+  test('renders Codex account identity, weekly limits, and unknown reset inventory', () => {
+    const codex: ProviderResult = { ...result('codex', { '7d': usageWindow(27) }), source: 'codex-app-server',
+      connectionId: 'usage-account', account: { email: 'usage@example.test', planType: 'pro' },
+      usage: { windows: { '7d': usageWindow(27) }, resetCredits: null } };
+    const state: Partial<ReturnType<typeof useQuotaStore.getState>> = { results: [codex], configuredProviderIds: ['codex'] };
+    useQuotaStore.setState(state); Object.assign(useQuotaStore.getInitialState(), state);
+    const markup = render(<ProviderUsageSection providerId="openai" connected />);
+    expect(markup).toContain('Usage source: Codex');
+    expect(markup).toContain('usage@example.test');
+    expect(markup).toContain('7-Day Limit');
+    expect(markup).toContain('Reset Bank');
+    expect(markup).toContain('Unavailable');
+    expect(markup).not.toContain('0 available');
+  });
+
   test('shows nothing for a connected provider that simply has no usage source', () => {
     expect(render(<ProviderUsageSection providerId="openai" connected />)).toBe('');
   });

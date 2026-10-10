@@ -2,6 +2,7 @@ import React from 'react';
 import { RiArrowDownSLine, RiArrowRightSLine, RiInformationLine, RiRefreshLine } from '@remixicon/react';
 
 import { UsageResetCreditsList } from '@/components/layout/usage/UsageResetCreditsList';
+import { UsageSourceDetails } from '@/components/layout/usage/UsageSourceDetails';
 import { sortUsageEntries } from '@/components/layout/usage/usage-groups';
 import { SettingsDetailSection } from '@/components/sections/shared/SettingsDetailSection';
 import { Button } from '@/components/ui/button';
@@ -301,6 +302,7 @@ export const ProviderUsagePanel: React.FC<ProviderUsagePanelProps> = ({
 
   const body = (
     <div className="space-y-4">
+      {result ? <UsageSourceDetails source={result.source} account={result.account} /> : null}
       {notices.map((notice) => <UsageNotice key={`${notice.tone}:${notice.title}`} {...notice} />)}
 
       {overallUsageEntries.length > 0 ? (
@@ -319,8 +321,8 @@ export const ProviderUsagePanel: React.FC<ProviderUsagePanelProps> = ({
         </div>
       ) : null}
 
-      {usage?.resetCredits ? (
-        <UsageResetCreditsList resetCredits={usage.resetCredits} />
+      {usage?.resetCredits || result?.source === 'codex-app-server' && usage?.resetCredits === null ? (
+        <UsageResetCreditsList resetCredits={usage?.resetCredits ?? null} />
       ) : null}
 
       {modelGroups.length > 0 ? (

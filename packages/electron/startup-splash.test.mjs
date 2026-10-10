@@ -13,6 +13,34 @@ import {
 const mainSource = () => readFileSync(new URL('./main.mjs', import.meta.url), 'utf8');
 
 describe('Electron startup splash', () => {
+  it('replaces the splash with the original failure and Retry when selected-bundle settings become unreadable', async () => {
+    const source = mainSource();
+    const build = source.slice(source.indexOf('const buildStartupErrorHtml ='), source.indexOf('const buildBotStartupAttentionHtml ='));
+    const show = source.slice(source.indexOf('const showStartupFailure ='), source.indexOf('const showBotStartupAttention ='));
+    const calls = [];
+    const error = Object.assign(new Error('Runtime preparation failed'), { code: 'runtime_bundle_binding_invalid' });
+    const showFailure = new Function('owners', `
+      const { startupErrorDetails, readSettingsRoot, buildStartupErrorHtmlFromSettings, state, navigateWindow } = owners;
+      const shellRuntimeBundleBindingError = null;
+      ${build}
+      ${show}
+      return showStartupFailure;
+    `)({
+      startupErrorDetails: value => ({ displayMessage: `${value.message} (${value.code})` }),
+      readSettingsRoot: () => { throw new Error('Settings binding changed after upgrade'); },
+      buildStartupErrorHtmlFromSettings: buildStartupErrorHtml,
+      state: { mainWindow: { isDestroyed: () => false, show: () => calls.push('show'), focus: () => calls.push('focus') } },
+      navigateWindow: async (_window, url) => {
+        const html = decodeURIComponent(url.split(',').slice(1).join(','));
+        expect(html).toContain('Runtime preparation failed (runtime_bundle_binding_invalid)');
+        expect(html).toContain('openchamber://retry-startup');
+        expect(html).not.toContain('Settings binding changed');
+        calls.push('navigate');
+      },
+    });
+    await expect(showFailure(error)).resolves.toBeUndefined();
+    expect(calls).toEqual(['navigate', 'show', 'focus']);
+  });
   it('uses one foreground-colored large mark when the saved startup theme is dark', () => {
     const html = buildStartupSplashHtml({ themeMode: 'dark' });
 

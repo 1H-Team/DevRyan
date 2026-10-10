@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { Context, Effect, Layer, Option, Schema, Stream, type Scope, type Tracer } from 'effect';
 import { SessionModelRequest } from '@opencode/core/session/model-request';
+import { Location } from '@opencode/core/location';
 import { PluginHooks } from '@opencode/core/plugin/hooks';
 import type { WebSocketChannelExchange } from '@opencode/ai/route';
 import { mergeProviderOptions } from '@opencode/ai/schema/options';
@@ -10,9 +11,10 @@ import { registerNativeCompactionObservation, type NativeCompactionBudget } from
 import { SessionEvent } from '@opencode/schema/session-event';
 import { OperationPermitRef } from './native-admission-contract.js';
 import type { ExecutionRpc } from './worker-protocol.js';
-import { projectNativeReasoningOptions, type NativeObservation } from './native-observation-contract.js';
+import { isSafeNativeOpenAiRefusalCode, projectNativeReasoningOptions, type NativeObservation } from './native-observation-contract.js';
 import type { PrimaryStepPublication } from './primary-step.js';
 import { isNativeCursorIngress } from './native-cursor-ingress.js';
+import { HostRefusal } from './host-refusal.js';
 
 export interface NativeAttemptIdentity {
   readonly traceID: string;
@@ -34,6 +36,16 @@ export const currentNativeAttemptIdentity: Effect.Effect<NativeAttemptIdentity |
 );
 
 type PreparedObservation = Extract<NativeObservation, {stage:'model-prepared'}>;
+type RefusalObservation = Extract<NativeObservation, {stage:'provider-refusal'}>;
+const refusalHook=(value:PropertyKey):value is RefusalObservation['hook']=>
+  value==='http.request'||value==='http.response'||value==='experimental.ws.handshake'||value==='experimental.ws.send';
+function refusalAttempt(value:unknown):{sessionID:string;kind:RefusalObservation['kind']}|null {
+  if(value===null||typeof value!=='object'||!('sessionID' in value)||typeof value.sessionID!=='string'
+    ||!('kind' in value)||!('model' in value)||value.model===null||typeof value.model!=='object'
+    ||!('providerID' in value.model)||value.model.providerID!=='openai')return null;
+  const kind=value.kind;
+  return kind==='primary'||kind==='title'||kind==='compaction'||kind==='generate'?{sessionID:value.sessionID,kind}:null;
+}
 interface Preparation {readonly observed:PreparedObservation;readonly nextOrdinal:()=>number}
 const PreparationRef = Context.Reference<Preparation | undefined>('DevRyan/NativeObservationPreparation', {defaultValue:()=>undefined});
 
@@ -120,11 +132,22 @@ export function createNativeObservation(options:{readonly controllerInstanceID:s
       compaction:input=>prepare('compaction',input,inner.compaction(input)),generate:input=>prepare('generate',input,inner.generate(input))});
   })).pipe(Layer.provide(original))));
   const decorateHooks=(inner:PluginHooks.Interface):PluginHooks.Interface=>({...inner,
-    trigger:(domain,name,event)=>inner.trigger(domain,name,event).pipe(Effect.tap(result=>Effect.gen(function*(){
+    trigger:(domain,name,event)=>Effect.suspend(()=>{
+      const source=domain==='session'&&refusalHook(name)?refusalAttempt(event):null;
+      return inner.trigger(domain,name,event).pipe(Effect.onError(cause=>Effect.gen(function*(){
+        if(!source||!refusalHook(name))return;
+        const reason=cause.reasons.slice(0,8).find(reason=>reason._tag==='Die'&&reason.defect instanceof HostRefusal
+          &&isSafeNativeOpenAiRefusalCode(reason.defect.code));
+        if(!reason||reason._tag!=='Die'||!(reason.defect instanceof HostRefusal))return;
+        const actual=Option.getOrUndefined(Context.getOption(yield* Effect.context(),Location.Service));
+        if(!actual)return yield* Effect.logWarning('native_observation_unavailable',{stage:'provider-refusal'});
+        yield* emit({schema:1,stage:'provider-refusal',controllerInstanceID:options.controllerInstanceID,configurationDigest:options.configurationDigest,
+          sessionID:source.sessionID,directory:actual.directory,kind:source.kind,hook:name,code:reason.defect.code});
+      }).pipe(Effect.catchCause(()=>Effect.logWarning('native_observation_unavailable',{stage:'provider-refusal'})))),Effect.tap(result=>Effect.gen(function*(){
       if(domain!=='session'||name!=='experimental.ws.send')return;
       const preparation=yield* PreparationRef;
       if(preparation)yield* physical(preparation.observed,'ws',preparation.nextOrdinal(),result!==null&&typeof result==='object'&&'frame' in result?result.frame:undefined);
-    })))});
+    })));})});
   const compactions=SessionCompaction.node.replace(SessionCompaction.node.mapLayer(original=>Layer.effect(SessionCompaction.Service,Effect.gen(function*(){
     const inner=yield* SessionCompaction.Service;
     return SessionCompaction.Service.of({...inner,compact:trigger=>Effect.gen(function*(){

@@ -382,12 +382,13 @@ export interface SharedUsageResetCredits {
   totalEarnedCount: number | null;
   credits: SharedUsageResetCredit[];
   source: 'dedicated' | 'usage';
+  detailsAvailable?: boolean;
 }
 
 export interface SharedProviderUsage {
   windows: Record<string, SharedUsageWindow>;
   models?: Record<string, SharedProviderUsage>;
-  resetCredits?: SharedUsageResetCredits;
+  resetCredits?: SharedUsageResetCredits | null;
 }
 
 export interface SharedQuotaProviderResult {
@@ -476,6 +477,8 @@ export function fetchCodexQuotaAdapter(options?: SharedQuotaAdapterOptions<{
   accessToken: string;
   accountId?: string | null;
 }>): Promise<SharedQuotaProviderResult>;
+
+export function normalizeCodexAppServerQuota(payload: unknown, options?: { now?: number }): SharedQuotaProviderResult;
 
 export function fetchXaiQuotaAdapter(options?: SharedQuotaAdapterOptions<{
   accessToken: string;

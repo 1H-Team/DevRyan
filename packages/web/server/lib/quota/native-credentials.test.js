@@ -63,7 +63,11 @@ describe('native quota credentials', () => {
   it('maps OpenAI to an oauth entry, and a key to null', async () => {
     const readOpenAiSelection = vi.fn(async () => ({ directory, credentialID: 'c', value: { type: 'oauth', methodID: 'chatgpt-siwc', access: 'acc', refresh: 'ref', expires: 1, metadata: { accountID: 'acct' } } }));
     const credentials = create(createOwner(), { readOpenAiSelection });
-    expect(await credentials.readAuth('codex')).toEqual({ openai: { type: 'oauth', access: 'acc', accountId: 'acct', methodID: 'chatgpt-siwc' } });
+    expect(await credentials.readAuth('codex')).toEqual({ openai: { type: 'oauth', access: 'acc', accountId: undefined,
+      methodID: 'chatgpt-siwc', connectionId: 'c', account: { email: null, planType: null } } });
+    expect((await create(createOwner(), { readOpenAiSelection: async () => ({ directory, value: {
+      type: 'oauth', methodID: 'chatgpt-browser', access: 'acc', metadata: { accountID: 'workspace' },
+    } }) }).readAuth('codex')).openai.accountId).toBe('workspace');
     expect(readOpenAiSelection).toHaveBeenCalledWith(expect.any(Function), directory, { refresh: true });
     expect(await create(createOwner(), { readOpenAiSelection: async () => ({ directory, value: { type: 'key', key: 'k' } }) }).readAuth('codex')).toBeNull();
     expect(await create(createOwner(), { readOpenAiSelection: async () => null }).readAuth('codex')).toBeNull();

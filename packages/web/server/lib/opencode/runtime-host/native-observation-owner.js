@@ -36,7 +36,7 @@ export function createNativeObservationOwner(options) {
     // cannot fill or guess it, even though it owns the actual Bus publication.
     if (step && Object.hasOwn(input.observation,'userMessageID')) throw failure('native_observation_invalid');
     observation = parseNativeObservation(step ? {...input.observation,userMessageID:'unlinked'} : input.observation);
-    if (!['model-prepared','physical','step-link','compaction-trigger','compaction-outcome','compaction-event'].includes(observation.stage)) throw failure('native_observation_invalid');
+    if (!['model-prepared','physical','provider-refusal','step-link','compaction-trigger','compaction-outcome','compaction-event'].includes(observation.stage)) throw failure('native_observation_invalid');
     try { return await options.admissionOwner.withProviderAttempt({directory:observation.directory,sessionID:observation.sessionID,
       permit:input.permit,kind:step?'primary':'kind' in observation?observation.kind:'compaction'},async recheck=>{
       if (step) {

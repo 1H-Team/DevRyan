@@ -3,13 +3,16 @@ import path from 'node:path';
 import os from 'node:os';
 import { createHash } from 'node:crypto';
 import {readRollbackIntentSync,rollbackIntentUnresolved} from './bundle-rollback-intent.js';
+import {BUNDLE_DOCUMENT_MAX_BYTES} from './bundle-document-limits.js';
 
 const fail = () => Object.assign(new Error('runtime_bundle_binding_invalid'), { code: 'runtime_bundle_binding_invalid', status: 503 });
 const id = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value);
 const read = file => {
   const stat = fs.lstatSync(file);
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 4 * 1024 * 1024) throw fail();
-  return JSON.parse(fs.readFileSync(file, 'utf8'));
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > BUNDLE_DOCUMENT_MAX_BYTES) throw fail();
+  const bytes = fs.readFileSync(file);
+  if (bytes.length > BUNDLE_DOCUMENT_MAX_BYTES) throw fail();
+  return JSON.parse(bytes.toString('utf8'));
 };
 const freeze = value => {
   if (value && typeof value === 'object') { for (const child of Object.values(value)) freeze(child); Object.freeze(value); }

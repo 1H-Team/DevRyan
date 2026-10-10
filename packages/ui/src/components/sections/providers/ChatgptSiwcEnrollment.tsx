@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { useI18n } from '@/lib/i18n';
 import { openExternalUrl } from '@/lib/url';
 import { isDesktopLocalOriginActive } from '@/lib/desktop';
+import { useQuotaStore } from '@/stores/useQuotaStore';
 
 interface SiwcStatus {
   connected: {
@@ -132,6 +133,7 @@ export function ChatgptSiwcEnrollment({ administrator, principalID, directory, r
   const changed = async (controller: AbortController | null, revision: number, connection?: { planUsage: boolean } | null) => {
     // Mutation already succeeded. Discovery/status failures must not imply lost credentials.
     if (!current(controller, revision) || !controller) return;
+    useQuotaStore.getState().invalidateProviderQuota('codex');
     setCatalog(connection === null ? null : 'loading');
     try {
       const data = await readStatus(scope, controller.signal);

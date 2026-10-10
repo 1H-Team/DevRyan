@@ -2,6 +2,7 @@ import type { Session, Message, Part, Provider } from "@opencode-ai/sdk/v2";
 
 export type { Session, Message, Part, Provider };
 export type {
+  UsageSourceMetadata,
   QuotaProviderId,
   UsageWindow,
   UsageWindows,

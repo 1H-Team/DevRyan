@@ -9,15 +9,15 @@ import {
 } from './reset-credit-summary';
 
 interface UsageResetCreditsListProps {
-  resetCredits: UsageResetCredits;
+  resetCredits: UsageResetCredits | null;
 }
 
 export const UsageResetCreditsList = React.memo(function UsageResetCreditsList({
   resetCredits,
 }: UsageResetCreditsListProps) {
   const { t } = useI18n();
-  const availableCount = getResetCreditsAvailableCount(resetCredits);
-  const expirySummary = React.useMemo(() => buildResetCreditsSummary(resetCredits), [resetCredits]);
+  const availableCount = resetCredits ? getResetCreditsAvailableCount(resetCredits) : null;
+  const expirySummary = React.useMemo(() => resetCredits ? buildResetCreditsSummary(resetCredits) : [], [resetCredits]);
 
   return (
     <div className="rounded-lg border border-[var(--interactive-border)] bg-[color-mix(in_srgb,var(--foreground)_2%,transparent)] px-3 py-2.5">
@@ -34,7 +34,7 @@ export const UsageResetCreditsList = React.memo(function UsageResetCreditsList({
             {t('header.services.resetCredits.availableLabel')}
           </span>
           <span className="typography-ui-label tabular-nums text-foreground">
-            {t('header.services.resetCredits.availableCount', { count: availableCount })}
+            {availableCount === null ? t('settings.providers.codexUsage.unknown') : t('header.services.resetCredits.availableCount', { count: availableCount })}
           </span>
         </div>
 
@@ -60,6 +60,7 @@ export const UsageResetCreditsList = React.memo(function UsageResetCreditsList({
           </div>
         ) : null}
       </div>
+      {resetCredits?.detailsAvailable === false ? <p className="mt-2 typography-micro text-muted-foreground">{t('header.services.resetCredits.expiryUnavailable')}</p> : null}
     </div>
   );
 });

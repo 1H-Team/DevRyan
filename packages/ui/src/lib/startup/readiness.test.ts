@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 
 import {
   STARTUP_READINESS_PHASES,
+  markStartupReadiness,
   createStartupReadinessSnapshot,
   recoverStartupInitialization,
   shouldShowStartupReadinessScreen,
@@ -12,6 +13,27 @@ import {
 } from "./readiness"
 
 describe("startup readiness", () => {
+  test("timing is bounded across retries and never records error content or changes readiness", () => {
+    const measured = new Set<string>()
+    const failed = withStartupReadinessPhase(createStartupReadinessSnapshot("loading"), "providers", {
+      status: "error", error: "private configuration content",
+    })
+    const before = summarizeStartupReadiness(failed)
+    try {
+      for (let retry = 0; retry < 100; retry++) markStartupReadiness(failed, measured)
+      expect(measured.size).toBe(STARTUP_READINESS_PHASES.length)
+      expect(summarizeStartupReadiness(failed)).toEqual(before)
+      markStartupReadiness(createStartupReadinessSnapshot("ready"), measured)
+      expect(measured.size).toBe(2 * STARTUP_READINESS_PHASES.length)
+      for (const name of measured) {
+        expect(name).not.toContain("private")
+        expect(performance.getEntriesByName(name)).toHaveLength(1)
+      }
+    } finally {
+      for (const name of measured) performance.clearMarks(name)
+    }
+  })
+
   test("is ready only when every send-critical phase is ready", () => {
     const snapshot = createStartupReadinessSnapshot("ready")
 

@@ -35,6 +35,9 @@ test('fresh sign-in requires user code and separate explicit selection; no autom
   const { createRoot } = await import('react-dom/client'); const root = createRoot(container as unknown as Element);
   try {
     await act(async () => root.render(<ClaudeDedicatedEnrollment administrator principalID="admin" directory="/owned/project" onSelected={onSelected} />));
+    expect(container.textContent).toContain('Optional dedicated Claude account');
+    expect(container.textContent).toContain('Existing Claude Code or Meridian sign-ins work while valid.');
+    expect(container.textContent).toContain('automatic renewal');
     expect(calls).toHaveLength(1); expect(calls[0].method).toBe('GET');
     await click(container, 'Sign in to a Dedicated Profile'); expect(opened).toEqual([URL]);
     await enter(container, 'original-code#foreign-state'); await click(container, 'Complete Sign-In');

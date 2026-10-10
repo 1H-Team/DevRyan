@@ -1,0 +1,29 @@
+{
+  "scope": "one direct live request per provider through the installed native parser; no UI or credential refresh",
+  "at": "2026-10-10T14:45:27.047Z",
+  "results": [
+    {
+      "provider": "openai",
+      "model": "gpt-6-astra",
+      "status": 200,
+      "quotaHeadersPresent": [],
+      "outcome": "failed",
+      "stage": "stream-policy",
+      "policyCode": "chatgpt_siwc_stream_required",
+      "mediaType": "missing",
+      "hasBody": true,
+      "bodyKind": "sse",
+      "bodyTruncated": false,
+      "replayWithSseHeader": {
+        "status": 200,
+        "quotaHeadersPresent": [],
+        "outcome": "completed",
+        "nativeParserAccepted": true,
+        "answerWasOk": true,
+        "quotaEventSeen": false,
+        "frames": 9
+      },
+      "credentialUnchanged": true
+    }
+  ]
+}

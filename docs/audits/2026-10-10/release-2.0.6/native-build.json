@@ -1,0 +1,46 @@
+{
+  "buildId": "5f0c8f0f0fb98ee183b951e7ee62542ced4f3688b034a39e57b7a52bea0a313e",
+  "manifestSha256": "856ee1f0f46ec532b2b7689e8a6e2f05e35ff52b9b895945ad62fd47901d86f6",
+  "files": [
+    {
+      "path": "DevRyan-native-configuration.mjs",
+      "sha256": "2614fed410c73fa577bfee6b0829280d54951fba44ad55b94c7e715efbca34f7"
+    },
+    {
+      "path": "DevRyan-Claude-credentials.mjs",
+      "sha256": "c471852fec5221957636d87cc80a4be155c74c6dda37d58d971e181cbe697c1e"
+    },
+    {
+      "path": "DevRyan-native-controller",
+      "sha256": "c1fb8daa8a8cd203772322c456743bdd6f2b006dc33371a9dcad46e0a3710923"
+    },
+    {
+      "path": "DevRyan-native-writer",
+      "sha256": "0d3deea8a9243b52e610ac99130cfa20cf1bc8a41ccf48fe69e73a9eaa782e90"
+    },
+    {
+      "path": "DevRyan-ast-grep-darwin-arm64",
+      "sha256": "5651f0c6dcbbf2f7813297f9eb8f6ba00fb4ee2d81410a8138ac6151416f31ad"
+    },
+    {
+      "path": "DevRyan-Claude-darwin-arm64",
+      "sha256": "625869b01e0050f260b2980fac248fd9cef9e462612bded4ec9d3d49ff8969a5"
+    },
+    {
+      "path": "DevRyan-libsql-darwin-arm64.node",
+      "sha256": "3fd9e58190311b5ee027c3e5452a6a410b31a5d610fd55853d797bb3c9f5db0c"
+    },
+    {
+      "path": "DevRyan-execution-darwin-arm64",
+      "sha256": "75349e2afb1cf75ef2b0be989351d4ed44caf1665e448cee000986c09090f025"
+    },
+    {
+      "path": "DevRyan-execution-darwin-arm64.json",
+      "sha256": "0956b56ad625bb54573f91d9288284b3a271099c5ba00c7381294ad6bcb83e77"
+    },
+    {
+      "path": "DevRyan-execution-darwin-arm64-spawn.dylib",
+      "sha256": "8020c1647a3aa2046d34c76179e45cad25277047fa5b3826f4e6c1caf6bf087e"
+    }
+  ]
+}

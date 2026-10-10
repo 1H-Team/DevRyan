@@ -24,6 +24,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
   } = dependencies;
 
   let quotaProviders = null;
+  let quotaRuntime;
   const getQuotaProviders = async () => {
     if (!quotaProviders) {
       quotaProviders = await import('../quota/index.js');
@@ -329,7 +330,9 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       getProfile,
     });
 
-    registerQuotaRoutes(app, {
+    quotaRuntime = registerQuotaRoutes(app, {
+      openchamberDataDir,
+      isProviderAdministrator: routeDependencies.isProviderAdministrator,
       getNativeRuntimeOwner: routeDependencies.getNativeRuntimeOwner,
       openCodeClient,
       getQuotaProviders,
@@ -399,5 +402,6 @@ export const createFeatureRoutesRuntime = (dependencies) => {
 
   return {
     registerRoutes,
+    close: () => quotaRuntime?.close(),
   };
 };

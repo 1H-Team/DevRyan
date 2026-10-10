@@ -34,6 +34,7 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     tunnelAuthController,
     getHarnessRuntime,
     closeNativeRuntime,
+    closeFeatureRoutes,
   } = dependencies;
 
   const gracefulShutdown = async (options = {}) => {
@@ -47,8 +48,8 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     harnessRuntime?.beginDrain?.();
     // Native close needs the journal, scheduler and private execution bridge
     // alive until its scope, supervisors and durable ACK barrier have settled.
-    if (closeNativeRuntime) {
-      try { await closeNativeRuntime(); }
+    if (closeNativeRuntime || closeFeatureRoutes) {
+      try { await closeNativeRuntime?.(); await closeFeatureRoutes?.(); }
       catch (cause) {
         // Admission stays drained, but a refused native settlement must be
         // retryable once its owner confirms exit and durable recovery.

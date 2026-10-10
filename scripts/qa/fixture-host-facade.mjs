@@ -29,6 +29,8 @@ const loopback = value => {
 };
 const core = pathname => /^\/api\/(?:session(?:\/|$)|experimental\/(?:session|tool)(?:\/|$)|question(?:\/|$)|permission(?:\/|$)|(?:agent|provider|command|config|global\/config|skill|mcp|path|project|vcs|lsp)(?:\/|$)|(?:global\/)?event$)/.test(pathname);
 const featureConfig = pathname => /^\/api\/config\//.test(pathname) && !['/api/config/providers', '/api/config/agents', '/api/config/agent-runtime'].includes(pathname);
+const providerReadFeature = req => req.method === 'GET'
+  && (req.path === '/api/provider/auth' || /^\/api\/provider\/[^/]+\/source$/.test(req.path));
 
 /** Disposable UI transport only. Original native binding and local host still
  * boot normally; no fixture ID, permit or receipt is offered to that owner. */
@@ -91,7 +93,7 @@ export async function createQaFixtureHostFacade({ fixture, realOrigin, workspace
     OPEN_CODE_READY_GRACE_MS: 0, getRuntime: () => ({ openCodePort: new URL(fixture.origin).port, isOpenCodeReady: true }),
     buildOpenCodeUrl: route => fixture.origin + route });
   app.use((req, res, next) => {
-    if (!core(req.path) || featureConfig(req.path) || /^\/api\/session\/[^/]+\/recovery(?:\/|$)/.test(req.path)
+    if (!core(req.path) || featureConfig(req.path) || providerReadFeature(req) || /^\/api\/session\/[^/]+\/recovery(?:\/|$)/.test(req.path)
       || /^\/api\/session\/[^/]+\/context-usage$/.test(req.path)) return next();
     res.once('finish', () => { if (res.statusCode === 404) unexpected.push({ method: req.method, path: req.path,
       pathSegments: req.path.split('/').filter(Boolean).slice(0,8).map(segment=>segment.slice(0,128)),

@@ -1,0 +1,24 @@
+{
+  "qualification": "production Vite graph; no accepted wall-clock comparison",
+  "startupGraphEntries": 26,
+  "modules": [
+    {
+      "name": "AboutDialog",
+      "file": "assets/AboutDialog-CiGk0JoJ.js",
+      "rawBytes": 3693,
+      "inStartupGraph": false
+    },
+    {
+      "name": "MemoryDebugPanel",
+      "file": "assets/MemoryDebugPanel-DFwL4cw3.js",
+      "rawBytes": 15826,
+      "inStartupGraph": false
+    },
+    {
+      "name": "McpOAuthCallbackPage",
+      "file": "assets/McpOAuthCallbackPage-cotFhogl.js",
+      "rawBytes": 3735,
+      "inStartupGraph": false
+    }
+  ]
+}

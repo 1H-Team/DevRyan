@@ -53,14 +53,21 @@ export interface UsageResetCredits {
   totalEarnedCount: number | null;
   credits: UsageResetCredit[];
   source: 'dedicated' | 'usage';
+  detailsAvailable?: boolean;
+}
+
+export interface UsageSourceMetadata {
+  source?: 'codex-app-server' | 'chatgpt-siwc' | null;
+  connectionId?: string | null;
+  account?: { email: string | null; planType: string | null } | null;
 }
 
 export interface ProviderUsage extends UsageWindows {
   models?: Record<string, UsageWindows>;
-  resetCredits?: UsageResetCredits;
+  resetCredits?: UsageResetCredits | null;
 }
 
-export interface ProviderResult {
+export interface ProviderResult extends UsageSourceMetadata {
   providerId: QuotaProviderId;
   providerName: string;
   ok: boolean;

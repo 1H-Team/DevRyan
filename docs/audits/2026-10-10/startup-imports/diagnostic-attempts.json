@@ -1,0 +1,174 @@
+{
+  "acceptance": "deferred by user; no accepted timing cohort or speed claim",
+  "qualification": "Failed diagnostic attempts only. Configuration synchronization was split into its own stage after these probes. Neither attempt qualifies a launch-time comparison.",
+  "attempts": [
+    {
+      "attempt": 1,
+      "outcome": "failed",
+      "reason": "owned_app_exited_before_usable_chat",
+      "startupMode": "natural",
+      "archiveSha256": "79e8d878a4ae3c372ca8ffc812c27b0a507fe16182370fabdcbd0fe0bf5c5b17",
+      "packageSourceSha256": "93e308e0d758ee55cfd03665e6b0e10bb09ccd3ca87100cc0ed5dd59d6cccc51",
+      "rendererVisibility": "visible",
+      "forcedNavigations": 0,
+      "phases": [
+        {
+          "phase": "shell_environment",
+          "outcome": "completed",
+          "durationMs": 20
+        },
+        {
+          "phase": "foreground_preparation",
+          "outcome": "completed",
+          "durationMs": 8
+        },
+        {
+          "phase": "bundle_preparation",
+          "outcome": "completed",
+          "durationMs": 64.82058299999994
+        },
+        {
+          "phase": "application_import",
+          "outcome": "completed",
+          "durationMs": 2037.8721249999999
+        },
+        {
+          "phase": "server_import",
+          "outcome": "completed",
+          "durationMs": 2104
+        },
+        {
+          "phase": "server_listen",
+          "outcome": "completed",
+          "durationMs": 694
+        },
+        {
+          "phase": "initial_url",
+          "outcome": "completed",
+          "durationMs": 3983
+        },
+        {
+          "phase": "renderer_navigation",
+          "outcome": "completed",
+          "durationMs": 324
+        },
+        {
+          "phase": "native_settlement",
+          "outcome": "completed",
+          "durationMs": 0.3337499999997817
+        },
+        {
+          "phase": "native_verification",
+          "outcome": "completed",
+          "durationMs": 1384.6779999999999
+        },
+        {
+          "phase": "native_configuration",
+          "outcome": "completed",
+          "durationMs": 12608.38225
+        },
+        {
+          "phase": "native_controller",
+          "outcome": "completed",
+          "durationMs": 2309.501292000001
+        },
+        {
+          "phase": "native_recovery",
+          "outcome": "completed",
+          "durationMs": 3128.666250000002
+        },
+        {
+          "phase": "native_open",
+          "outcome": "completed",
+          "durationMs": 4.701249999998254
+        }
+      ],
+      "offlineJournalGapScan": "passed; explicit --verify scan of owned selected bundle journal",
+      "cleanupErrors": []
+    },
+    {
+      "attempt": 2,
+      "outcome": "failed",
+      "reason": "usable_chat_timeout",
+      "startupMode": "natural",
+      "archiveSha256": "79e8d878a4ae3c372ca8ffc812c27b0a507fe16182370fabdcbd0fe0bf5c5b17",
+      "packageSourceSha256": "93e308e0d758ee55cfd03665e6b0e10bb09ccd3ca87100cc0ed5dd59d6cccc51",
+      "rendererVisibility": "hidden",
+      "forcedNavigations": 0,
+      "phases": [
+        {
+          "phase": "shell_environment",
+          "outcome": "completed",
+          "durationMs": 19
+        },
+        {
+          "phase": "foreground_preparation",
+          "outcome": "completed",
+          "durationMs": 9
+        },
+        {
+          "phase": "bundle_preparation",
+          "outcome": "completed",
+          "durationMs": 78.76950000000011
+        },
+        {
+          "phase": "application_import",
+          "outcome": "completed",
+          "durationMs": 2126.077791
+        },
+        {
+          "phase": "server_import",
+          "outcome": "completed",
+          "durationMs": 2207
+        },
+        {
+          "phase": "server_listen",
+          "outcome": "completed",
+          "durationMs": 686
+        },
+        {
+          "phase": "initial_url",
+          "outcome": "completed",
+          "durationMs": 4283
+        },
+        {
+          "phase": "renderer_navigation",
+          "outcome": "completed",
+          "durationMs": 292
+        },
+        {
+          "phase": "native_settlement",
+          "outcome": "completed",
+          "durationMs": 0.3289169999998194
+        },
+        {
+          "phase": "native_verification",
+          "outcome": "completed",
+          "durationMs": 1449.8961250000002
+        },
+        {
+          "phase": "native_configuration",
+          "outcome": "completed",
+          "durationMs": 10289.689959000001
+        },
+        {
+          "phase": "native_controller",
+          "outcome": "completed",
+          "durationMs": 4070.2902920000015
+        },
+        {
+          "phase": "native_recovery",
+          "outcome": "completed",
+          "durationMs": 220.56266600000163
+        },
+        {
+          "phase": "native_open",
+          "outcome": "completed",
+          "durationMs": 1.0154170000023441
+        }
+      ],
+      "offlineJournalGapScan": "passed; explicit --verify scan of owned selected bundle journal",
+      "cleanupErrors": []
+    }
+  ]
+}

@@ -21,7 +21,7 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 export async function runQa({ runtime = 'web', scenario = 'chat', generation, artifactRoot = process.env.QA_NATIVE_ARTIFACT_ROOT, outputRoot = path.join(root, '.cache/qa'), holdMs = 0 } = {}) {
   if (!Number.isSafeInteger(holdMs) || holdMs < 0 || holdMs > 300000) throw new Error('QA inspection hold must be 0–300000 milliseconds');
   if (!['web', 'electron'].includes(runtime)) throw new Error('QA runtime must be web or electron');
-  if (!['chat', 'mobile', 'recovery', 'thinking', 'grok-plan', 'session-changes', 'execution-failure', 'skill-loading', 'navigation'].includes(scenario) || (scenario === 'mobile' && runtime !== 'web')) throw new Error('QA scenario must be chat, recovery, thinking, grok-plan, session-changes, execution-failure, skill-loading, or mobile on web');
+  if (!['chat', 'mobile', 'recovery', 'thinking', 'grok-plan', 'session-changes', 'execution-failure', 'skill-loading', 'navigation', 'provider-usage'].includes(scenario) || (scenario === 'mobile' && runtime !== 'web')) throw new Error('QA scenario must be chat, recovery, thinking, grok-plan, session-changes, execution-failure, skill-loading, navigation, provider-usage, or mobile on web');
   const fixtureGeneration = resolveQaFixtureGeneration(generation);
   if (!path.isAbsolute(artifactRoot ?? '')) throw new Error('QA requires QA_NATIVE_ARTIFACT_ROOT pointing to verified native artifacts under .cache');
   if (runtime === 'electron') {
@@ -44,6 +44,7 @@ export async function runQa({ runtime = 'web', scenario = 'chat', generation, ar
   const owned = [];
   let fixture, qaProfile;
   let cdp;
+  let providerUsageFixture;
   let interrupted = false;
   const onInterrupt = () => { interrupted = true; };
   process.on('SIGINT', onInterrupt);
@@ -131,16 +132,22 @@ export async function runQa({ runtime = 'web', scenario = 'chat', generation, ar
       await waitFor('web readiness', async () => fetch(`${origin}/api/health`, { signal: AbortSignal.timeout(1000) }).then((r) => r.ok).catch(() => false), 60000);
       if (runtimeService) start(requireElectron('electron'), [...browserFlags, 'scripts/qa/isolated-host.mjs']);
       else start(requireElectron('electron'), [...browserFlags, 'scripts/qa/browser-shell.cjs'],
-        { ...env, DEVRYAN_QA_ORIGIN: facade.origin });
+        { ...env, DEVRYAN_QA_ORIGIN: scenario === 'provider-usage' ? 'about:blank' : facade.origin });
     } else if (runtime === 'electron') {
       start(requireElectron('electron'), [...browserFlags, ...(profilePort ? [`--inspect=${profilePort}`] : []), 'scripts/qa/isolated-host.mjs']);
     }
     evidence.inspection = { cdp: `http://127.0.0.1:${debugPort}`, fixture: fixture.origin };
     console.log(JSON.stringify({ output, runtime, scenario, ...evidence.inspection }));
-    await check('initial native runtime readiness', () => waitForQaHostReady({ origin,
+    const initialReadiness = () => check('initial native runtime readiness', () => waitForQaHostReady({ origin,
       checkAlive: () => { if (interrupted) throw new Error('QA interrupted'); for (const child of owned) child.check(); } }));
+    if (scenario !== 'provider-usage') await initialReadiness();
     const target = await discoverPageTarget(debugPort);
     cdp = await CdpConnection.connect(target.webSocketDebuggerUrl);
+    if (runtime === 'electron' && scenario === 'provider-usage') {
+      // This scenario qualifies settings and chat after the actual native owner
+      // is ready. Cold-start timing belongs to the startup-specific QA suites.
+      await cdp.send('Emulation.setScriptExecutionDisabled', { value: true });
+    }
     const recordConsoleError = (kind, text) => {
       if (evidence.consoleErrors.length >= 100) return;
       const sanitized = sanitize(text);
@@ -163,19 +170,31 @@ export async function runQa({ runtime = 'web', scenario = 'chat', generation, ar
     // Match the isolated server's chosen workspace before shared stores mount.
     // Web has no desktop preload to provide its initial directory.
     await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `
-      for (const principal of ['anonymous', 'local-admin']) {
+      if (location.protocol === 'http:' && location.hostname === '127.0.0.1') for (const principal of ['anonymous', 'local-admin']) {
         localStorage.setItem('devryan.user.' + principal + ':lastDirectory', ${JSON.stringify(workspace)});
       }
     ` });
     await cdp.send('Network.enable');
     await cdp.send('Runtime.enable');
     await cdp.send('Page.enable');
+    if (scenario === 'provider-usage') {
+      const { setupProviderUsageQa } = await import('./provider-usage.mjs');
+      providerUsageFixture = await setupProviderUsageQa(cdp);
+      await initialReadiness();
+    }
     // Use the same CSS-pixel viewport for initial selection as the subsequent
     // matrix; native Retina defaults otherwise precede the first metric override.
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
     if (process.env.DEVRYAN_QA_BACKGROUND !== '1') await cdp.send('Page.bringToFront');
     if (runtime === 'electron') {
       await waitFor('Electron loopback origin', async () => /^http:\/\/127\.0\.0\.1:\d+/.test(await evaluate(cdp, 'location.href')));
+      if (scenario === 'provider-usage') {
+        await cdp.send('Emulation.setScriptExecutionDisabled', { value: false });
+        const loaded = cdp.waitFor('Page.loadEventFired');
+        await cdp.send('Page.reload');
+        await loaded;
+        evidence.rendererStartup = 'deferred until actual native host readiness; cold-start timing not tested';
+      }
       // A loopback URL is visible at navigation commit, before the renderer
       // finishes loading its modules. Do not cancel that initial boot by
       // immediately navigating again. Keep the console-error gate intact.
@@ -185,12 +204,13 @@ export async function runQa({ runtime = 'web', scenario = 'chat', generation, ar
       await waitFor('Electron fixture origin', () => evaluate(cdp, `location.origin === ${JSON.stringify(facade.origin)}`));
       await cdp.send('Page.navigate', { url: `${facade.origin}/?session=${PERF_PARENT_SESSION_ID}` });
     }
-    evidence.inspection.app = await evaluate(cdp, 'location.origin');
     if (runtime === 'web') {
       const loaded = cdp.waitFor('Page.loadEventFired');
-      await cdp.send('Page.reload');
+      if (scenario === 'provider-usage') await cdp.send('Page.navigate', { url: facade.origin });
+      else await cdp.send('Page.reload');
       await loaded;
     }
+    evidence.inspection.app = await evaluate(cdp, 'location.origin');
     await check('selected session and composer', async () => {
       await waitFor('session row', () => evaluate(cdp, `Boolean(document.body?.innerText.includes('Performance parent'))`), 60000);
       await createQaUiDriver(cdp).click({ selector: `[data-session-row="${PERF_PARENT_SESSION_ID}"] button`, text: 'Performance parent' });
@@ -311,6 +331,10 @@ export async function runQa({ runtime = 'web', scenario = 'chat', generation, ar
       }
       evidence.expectedFailures.push({ ...disconnect, ...recovered, recovery: 'canonical-snapshots', sessionID: PERF_PARENT_SESSION_ID, messageID: ids[0], assistantMessageID: responses.at(-1).info.id });
     });
+    if (scenario === 'provider-usage') {
+      const { runProviderUsageQa } = await import('./provider-usage.mjs');
+      evidence.providerUsage = await runProviderUsageQa({ cdp, check, screenshot, fixture: providerUsageFixture });
+    }
     if (scenario === 'execution-failure' || scenario === 'skill-loading') {
       const { runExecutionFailureQa } = await import('./execution-failure.mjs');
       evidence.executionFailure = await runExecutionFailureQa({ fixture, cdp, directory: workspace, check, screenshot, skillOnly: scenario === 'skill-loading' });
@@ -345,8 +369,11 @@ export async function runQa({ runtime = 'web', scenario = 'chat', generation, ar
     if (holdMs) console.log(JSON.stringify({ inspectionHoldMs: holdMs, error: evidence.error }));
     while (!interrupted && Date.now() < holdUntil) await delay(100);
     if (fixture) evidence.fixture = fixture.getState();
-    cdp?.close();
+    if (providerUsageFixture) await providerUsageFixture.collect().catch(error => { evidence.consoleErrors.push(sanitize(error.message)); evidence.outcome = 'failed'; });
+    if (providerUsageFixture) evidence.providerUsageTransport = { requests: providerUsageFixture.requests, failures: providerUsageFixture.failures };
     evidence.cleanupErrors = [];
+    if (providerUsageFixture) await providerUsageFixture.close().catch(error => { evidence.cleanupErrors.push(sanitize(error.message)); });
+    cdp?.close();
     for (const process of owned.toReversed()) {
       try { await process.stop(); } catch (error) { evidence.cleanupErrors.push(sanitize(error.message)); }
     }

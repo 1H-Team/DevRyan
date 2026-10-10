@@ -1,0 +1,20 @@
+{
+  "archiveSha256": "ba5b78b14bb4bca9c93238ddd8603634bf377ca9f9e8d36e2073ff569a052585",
+  "sourceSha256": "e5774dd8f1cc9a02082265b40567af2f6a0247c40f79b26aa85aa62eb7cc256c",
+  "nativeSmoke": {
+    "electron": "41.2.1",
+    "nodeModuleAbi": "145",
+    "sqlite": "passed",
+    "pty": "passed"
+  },
+  "productionFiles": [
+    {
+      "file": "packages/electron/main.mjs",
+      "sha256": "ba8dedaa29583a891cafeeffc5d124fc56575e338d65fad682797936b77c0f35"
+    },
+    {
+      "file": "packages/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js",
+      "sha256": "94742fbf7d10f436046de8f6f094c71065e873a653d9f6872a78dada6a65b62d"
+    }
+  ]
+}

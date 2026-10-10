@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
 import { isRetiredProviderId } from './retiredProviders';
+import { useQuotaStore } from '@/stores/useQuotaStore';
 
 export interface ProviderSourceInfo {
   exists: boolean;
@@ -116,6 +117,7 @@ export const disconnectProvider = async (
   if (!payload || payload.success !== true) {
     throw new Error('Invalid provider disconnect response');
   }
+  if (providerId === 'openai') useQuotaStore.getState().invalidateProviderQuota('codex');
   return payload;
 };
 

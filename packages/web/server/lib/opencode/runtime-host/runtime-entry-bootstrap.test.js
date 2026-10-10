@@ -8,10 +8,12 @@ it.each(['ready','held-A','pending-B'])('actual thin entry awaits bootstrap and 
  try{
   const entry=await fs.readFile(new URL('../../../index.js',import.meta.url),'utf8');
   await fs.writeFile(path.join(root,'entry.mjs'),entry
+   .replace("'./lib/opencode/startup-timing.js'","'./startup-timing.mjs'")
    .replace("'./lib/opencode/runtime-host/runtime-entry-bootstrap.js'","'./bootstrap.mjs'")
    .replace("'./lib/opencode/runtime-host/runtime-bundle-binding.js'","'./binding.mjs'")
    .replace("'./lib/opencode/runtime-host/runtime-bundle-recovery.js'","'./recovery.mjs'")
    .replace("'./application.js'","'./application.mjs'"));
+  await fs.copyFile(new URL('../startup-timing.js',import.meta.url),path.join(root,'startup-timing.mjs'));
   await fs.writeFile(path.join(root,'bootstrap.mjs'),"await new Promise(resolve=>setTimeout(resolve,10));globalThis.__fixtureEntryBound=true;\n");
   await fs.writeFile(path.join(root,'binding.mjs'),`export const selectedRuntimeBundle={admission:${JSON.stringify(held?'held':'pending')},selection:{reconciliationRequired:${state==='held-A'}}};\n`);
   const composition="if(!globalThis.__fixtureEntryBound)throw Error('composition_preceded_binding');export const gracefulShutdown=1,setupProxy=2,restartOpenCode=3,startWebUiServer=4,parseArgs=5;export const runWebCliEntry=filename=>{globalThis.__fixtureEntryFilename=filename;};\n";

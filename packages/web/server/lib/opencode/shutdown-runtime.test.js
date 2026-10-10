@@ -46,6 +46,7 @@ describe('graceful shutdown runtime', () => {
       getIsShuttingDown: () => shuttingDown, setIsShuttingDown: value => { shuttingDown = value; },
       getHarnessRuntime: () => ({ beginDrain: () => order.push('admission'), drain: async () => order.push('stores') }),
       closeNativeRuntime: async () => { order.push('native'); if (!settled) throw new Error('settlement pending'); },
+      closeFeatureRoutes: async () => { order.push('usage-connection'); },
       openCodeWatcherRuntime: { stop: () => order.push('watcher') },
       globalMessageStreamHub: { stop: () => order.push('shared-hub') },
     });
@@ -53,7 +54,7 @@ describe('graceful shutdown runtime', () => {
     expect(order).toEqual(['admission', 'native']); expect(shuttingDown).toBe(false);
     settled = true;
     await runtime.gracefulShutdown({ exitProcess: false });
-    expect(order).toEqual(['admission', 'native', 'admission', 'native', 'watcher', 'shared-hub', 'stores']);
+    expect(order).toEqual(['admission', 'native', 'admission', 'native', 'usage-connection', 'watcher', 'shared-hub', 'stores']);
   });
 
   it('naturally exits after stopping the real shared hub reconnect timer', async () => {

@@ -20,6 +20,10 @@ const CHECK = t('settings.openchamber.about.opencode.actions.checkUpdates');
 const CHECKING = t('settings.openchamber.about.opencode.actions.checkingUpdates');
 const UP_TO_DATE = (version: string) => t('settings.openchamber.about.opencode.upstream.upToDate', { version });
 const FAILED = t('settings.openchamber.about.opencode.upstream.failed');
+const expectRemovedCopy = (container: HostElement) => {
+  expect(container.textContent).not.toContain(t('settings.openchamber.about.opencode.bundledUpdates'));
+  expect(container.textContent).not.toContain('Latest upstream OpenCode release. DevRyan qualifies runtime updates before bundling them.');
+};
 
 type Deferred = { url: string; signal: AbortSignal | null; resolve: (response: Response) => void; reject: (error: unknown) => void };
 const originalFetch = globalThis.fetch;
@@ -63,15 +67,15 @@ for (const compact of [true, false]) test(`offers Check for Updates without fetc
     expect(findButton(container, CHECK)).not.toBeNull();
     expect(findButton(container, t('settings.openchamber.about.opencode.actions.retry'))).not.toBeNull();
     expect(container.textContent).toContain('2.0.24');
-    expect(container.textContent).toContain(t('settings.openchamber.about.opencode.bundledUpdates'));
+    expectRemovedCopy(container);
     expect(calls).toEqual([RESOLUTION_URL]);
     expect(liveRegion(container)?.textContent).toBe('');
   } finally { await act(async () => root.unmount()); }
 }));
 
-test('shows progress, then an available upstream update', async () => withDom(async (container) => {
+for (const compact of [true, false]) test(`shows progress, then an available upstream update (compact=${compact})`, async () => withDom(async (container) => {
   const { updateRequests } = installFetch(bundled('2.0.24'));
-  const root = await mount(container, <OpenCodeVersionSection />);
+  const root = await mount(container, <OpenCodeVersionSection compact={compact} />);
   try {
     await act(async () => { findButton(container, CHECK)?.click(); });
     const progress = findButton(container, CHECKING);
@@ -81,7 +85,7 @@ test('shows progress, then an available upstream update', async () => withDom(as
     await act(async () => { updateRequests[0].resolve(Response.json({ latestVersion: '2.0.26' })); });
     expect(findButton(container, CHECK)?.getAttribute('data-disabled')).toBeNull();
     expect(liveRegion(container)?.textContent).toContain(t('settings.openchamber.about.opencode.upstream.updateAvailable', { version: '2.0.26' }));
-    expect(liveRegion(container)?.textContent).toContain(t('settings.openchamber.about.opencode.upstream.note'));
+    expectRemovedCopy(container);
   } finally { await act(async () => root.unmount()); }
 }));
 

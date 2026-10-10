@@ -637,6 +637,9 @@ explicitly; nothing else reads the default.
 
 ## Public exports (feature-routes-runtime.js)
 - `createFeatureRoutesRuntime(dependencies)`: creates runtime for main feature route registration orchestration.
+  Its `close()` settles the optional Codex usage connection on graceful shutdown,
+  runtime checkpoint and listener close. Quota registration receives the private
+  application data directory and augmented executable search path.
 - Returned API:
   - `registerRoutes(app, routeDependencies)`
 

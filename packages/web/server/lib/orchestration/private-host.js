@@ -66,7 +66,7 @@ const normalizeRequest = (value) => {
 
 // Best-effort turn attribution for timing only; never an authority input.
 const requestSessionID = (params) => {
-  for (const value of [params?.sessionID, params?.permit?.sessionID, params?.invocation?.sessionID, params?.input?.sessionID]) {
+  for (const value of [params?.sessionID, params?.permit?.sessionID, params?.invocation?.sessionID, params?.input?.sessionID, params?.binding?.sessionID]) {
     if (typeof value === 'string' && value.length > 0 && value.length <= 256) return value;
   }
   return null;

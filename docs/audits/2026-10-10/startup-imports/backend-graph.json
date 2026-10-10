@@ -1,0 +1,16 @@
+{
+  "qualification": "esbuild static import closure, dependencies external; not a runtime timing measurement",
+  "applicationEagerModules": 536,
+  "barrelClosureModules": 85,
+  "barrelModulesOutsideApplicationEagerClosure": [
+    "packages/web/server/lib/opencode/index.js",
+    "packages/web/server/lib/opencode/providers.js",
+    "packages/web/server/lib/opencode/commands.js"
+  ],
+  "candidateStillRequires": [
+    "providers.js",
+    "commands.js"
+  ],
+  "onlyExcludedModule": "index.js",
+  "retained": false
+}

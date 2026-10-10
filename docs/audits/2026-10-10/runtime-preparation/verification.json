@@ -1,0 +1,59 @@
+{
+  "validation": {
+    "command": "bun run validate:full",
+    "exitCode": 1,
+    "attempts": [
+      {
+        "failure": "scripts/diagnose-windows-runtime-compatibility.test.mjs: spawnSync bun ETIMEDOUT",
+        "isolatedRerun": {
+          "passed": 3,
+          "failed": 0
+        }
+      },
+      {
+        "scriptConcurrency": 2,
+        "failure": "native-process.test.js: native_process_exit_unconfirmed",
+        "webVitest": {
+          "passed": 6626,
+          "failed": 1
+        },
+        "isolatedRerun": {
+          "passed": 12,
+          "failed": 0
+        }
+      }
+    ],
+    "completed": [
+      "workspace lint",
+      "workspace type checks",
+      "documentation",
+      "script and native graph suites",
+      "all deterministic workspace package suites"
+    ],
+    "ui": {
+      "passed": 4091,
+      "failed": 0
+    },
+    "webNativeTail": {
+      "passed": 14,
+      "failed": 0
+    },
+    "qualification": "Full command was nonzero; all suites completed with unchanged focused reruns."
+  },
+  "build": {
+    "command": "bun run build",
+    "exitCode": 0
+  },
+  "bundle": {
+    "command": "bun run bundle:check",
+    "exitCode": 0
+  },
+  "packaged": {
+    "outcome": "passed",
+    "evidence": "evidence.json"
+  },
+  "installedApplicationChanged": false,
+  "dependenciesChanged": false,
+  "signingVerified": false,
+  "liveProvidersVerified": false
+}

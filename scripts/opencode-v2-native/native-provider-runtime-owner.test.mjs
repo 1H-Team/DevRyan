@@ -37,9 +37,9 @@ test('catalog stays in the shared queue through actual fetch settlement and queu
   const second=owned.owner.catalog(binding);const secondRejected=assert.rejects(second,/native_provider_owner_expired/);
   const closed=owned.owner.close();release();await closed;await Promise.all([firstRejected,secondRejected]);assert.equal(fetched,1);
 });
-const claudeFixture=(profiles,fetchImpl=async()=>Response.json({five_hour:{utilization:12,resets_at:new Date(Date.now()+10000).toISOString()}}))=>{
+const claudeFixture=(profiles,fetchImpl=async()=>Response.json({five_hour:{utilization:12,resets_at:new Date(Date.now()+10000).toISOString()}}),options={})=>{
  let ready=true,instance=instanceID,grant=true,chain=Promise.resolve();const expiries=Object.fromEntries(profiles.map(row=>[row.id,Date.now()+3600000]));
- const owner=createNativeProviderRuntimeOwner({claudeSupported:true,instanceID,snapshot:{locations:[{directory,configuration}]},registrationOrigin:origin,isReady:()=>ready,controller:()=>({instanceID:instance}),withMutationQueue:action=>{const work=chain.then(action);chain=work.catch(()=>{});return work;},admissionOwner:{withProviderAttempt:async()=>{throw new Error('inspection is not inference');}},meridian:{boot:{profiles,globals:{home:'/owned'}}},claudeCredentials:{oauthTokenExpiries:expiries,loadModule:async()=>{throw new Error('no Keychain/module for access-only');}},fetchImpl});
+ const owner=createNativeProviderRuntimeOwner({claudeSupported:true,instanceID,snapshot:{locations:[{directory,configuration}]},registrationOrigin:origin,isReady:()=>ready,controller:()=>({instanceID:instance}),withMutationQueue:action=>{const work=chain.then(action);chain=work.catch(()=>{});return work;},admissionOwner:{withProviderAttempt:async()=>{throw new Error('inspection is not inference');}},meridian:{boot:{profiles,defaultProfile:options.defaultProfile,globals:{home:'/owned'}}},claudeCredentials:{oauthTokenExpiries:expiries,loadModule:async()=>{throw new Error('no Keychain/module for access-only');},...options.claudeCredentials},fetchImpl});
  return {owner,expiries,recheck:async()=>{if(!grant)throw Object.assign(new Error('revoked'),{code:'permission_denied',status:403});},revoke:()=>{grant=false;},stop:()=>{ready=false;},replace:()=>{instance='b'.repeat(32);}};
 };
 test('inspection reads only one explicit selected access-only account; missing/expired/ambiguous never fetch',async()=>{
@@ -48,8 +48,44 @@ test('inspection reads only one explicit selected access-only account; missing/e
   const quota=await owned.owner.inspectClaude({directory,kind:'quota'},{recheck:owned.recheck});assert.equal(quota.ok,true);assert.equal(calls,1);assert.ok(!JSON.stringify(quota).includes('synthetic-token'));
   owned.expiries.qa=1;await assert.rejects(owned.owner.inspectClaude({directory,kind:'quota'},{recheck:owned.recheck}),/claude_credentials_expired/);assert.equal(calls,1);
  }finally{await owned.owner.close();}
- for(const rows of [[],[...profiles,{id:'other',type:'claude-max'}],[{id:'legacy',type:'oauth-token',oauthToken:'synthetic'}]]){
+ for(const rows of [[...profiles,{id:'other',type:'claude-max'}],[{id:'legacy',type:'oauth-token',oauthToken:'synthetic'}]]){
   const owned=claudeFixture(rows,async()=>{throw new Error('must not fetch');});try{await assert.rejects(owned.owner.inspectClaude({directory,kind:'quota'},{recheck:owned.recheck}),/claude_credentials_missing|native_claude_account_ambiguous|native_claude_profile_unreviewed/);}finally{await owned.owner.close();}
+ }
+});
+test('shared inspection uses only the implicit default or saved selected service without enrollment or renewal',async()=>{
+ const shared={id:'shared',type:'claude-max',claudeConfigDir:'/owned/relocated/shared',keychainService:'Claude Code-credentials-01234567'};
+ const other={id:'other',type:'claude-max',keychainService:'Claude Code-credentials-89abcdef'};
+ for(const scenario of [
+  {profiles:[],service:'Claude Code-credentials'},
+  {profiles:[],service:'Claude Code-credentials',missing:true},
+  {profiles:[],service:'Claude Code-credentials',expired:true},
+  {profiles:[shared],service:shared.keychainService},
+  {profiles:[other,shared],defaultProfile:shared.id,service:shared.keychainService},
+  {profiles:[other,shared],defaultProfile:shared.id,service:shared.keychainService,missing:true},
+  {profiles:[other,shared],defaultProfile:shared.id,service:shared.keychainService,expired:true},
+  {profiles:[other,shared],ambiguous:true},
+  {profiles:[other,shared],defaultProfile:'unknown',ambiguous:true},
+ ]){
+  let reads=0,calls=0;
+  const value=scenario.missing?null:{claudeAiOauth:{accessToken:'synthetic-shared',refreshToken:'synthetic-unused',expiresAt:Date.now()+(scenario.expired?-1:120000)}};
+  const forbidden=async()=>{throw new Error('inspection must not renew or write');};
+  const owned=claudeFixture(scenario.profiles,async(_url,options)=>{
+   calls++;assert.equal(options.headers.Authorization,'Bearer synthetic-shared');return Response.json({five_hour:{utilization:12}});
+  },{defaultProfile:scenario.defaultProfile,claudeCredentials:{
+   lifecycle:{read:async()=>emptyClaudeLifecycle(),transition:forbidden},
+   loadModule:async()=>({createPlatformCredentialStore:options=>{
+    assert.equal(options.serviceName,scenario.service);return {read:async()=>{reads++;return value;},write:forbidden};
+   },ensureFreshToken:forbidden,refreshOAuthToken:forbidden}),
+  }});
+  try{
+   const error=scenario.ambiguous?'native_claude_account_ambiguous':scenario.missing?'claude_credentials_missing':scenario.expired?'claude_credentials_expired':undefined;
+   for(const kind of ['status','quota']){
+    const work=owned.owner.inspectClaude({directory,kind},{recheck:owned.recheck});
+    if(error)await assert.rejects(work,new RegExp(error));
+    else{const result=await work;assert.equal(kind==='status'?result.loggedIn:result.ok,true);assert.ok(!JSON.stringify(result).includes('synthetic-shared'));}
+   }
+   assert.equal(calls,error?0:1);assert.equal(reads,scenario.ambiguous?0:error?2:6);
+  }finally{await owned.owner.close();}
  }
 });
 test('inspection rechecks authorization/controller after async HTTP and drains cancellation without CLI fallback',async()=>{

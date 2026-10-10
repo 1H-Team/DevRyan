@@ -1,0 +1,2402 @@
+{
+  "schemaVersion": 1,
+  "kind": "packaged-native-app-bound-startup",
+  "outcome": "passed",
+  "scope": "three fresh processes/profiles; prepared native bundle; local HTTP model fixture; foreground-controlled admission",
+  "launches": 3,
+  "startupMode": "foreground",
+  "timingQualification": "foreground-controlled admission, not natural startup latency",
+  "sourceSha256": "721a42ca6ece8038824f77eda780c03e7bf3ebbe94a2d6c78bb9ee0902d42fc6",
+  "packageSourceSha256": "721a42ca6ece8038824f77eda780c03e7bf3ebbe94a2d6c78bb9ee0902d42fc6",
+  "archiveSha256": "3d7d57bd2f48585ab7c07287fd46dec9d5cd6d7ec5a53295c0e428aa44760683",
+  "startupPolicy": "optimized",
+  "legacyOpenAiBrowser": false,
+  "runs": [
+    {
+      "iteration": 0,
+      "startup": {
+        "outcome": "passed",
+        "startupMode": "foreground",
+        "scope": "fresh-process/fresh-profile; actual native backend; local HTTP model fixture; foreground-controlled admission, not natural startup latency",
+        "clock": "parent performance.now; elapsed milliseconds since spawn invocation",
+        "pollIntervalMs": 100,
+        "forcedNavigations": 0,
+        "documents": [
+          {
+            "observedAtMs": 6719.556167,
+            "timeOrigin": 1791646534365.6,
+            "href": "http://127.0.0.1:50368/",
+            "readyState": "loading",
+            "visibilityState": "hidden",
+            "composer": false,
+            "newChat": false,
+            "model": false,
+            "modelLabels": [],
+            "selectedModel": null,
+            "sessionID": null,
+            "navigation": {
+              "type": "navigate",
+              "domContentLoadedEventEnd": 0,
+              "loadEventEnd": 0,
+              "duration": 0
+            },
+            "readinessGates": [],
+            "paints": []
+          },
+          {
+            "observedAtMs": 43671.895,
+            "timeOrigin": 1791646571252.3,
+            "href": "http://127.0.0.1:50368/",
+            "readyState": "complete",
+            "visibilityState": "hidden",
+            "composer": false,
+            "newChat": false,
+            "model": false,
+            "modelLabels": [],
+            "selectedModel": {
+              "providerId": "",
+              "modelId": "",
+              "catalogAvailable": false
+            },
+            "sessionID": null,
+            "navigation": {
+              "type": "reload",
+              "domContentLoadedEventEnd": 67.70000000298023,
+              "loadEventEnd": 69.1000000089407,
+              "duration": 69.1000000089407
+            },
+            "readinessGates": [],
+            "paints": []
+          }
+        ],
+        "healthObservations": [
+          {
+            "observedAtMs": 6722.475583999999,
+            "state": "idle",
+            "attempt": 0,
+            "code": null
+          },
+          {
+            "observedAtMs": 7199.242334,
+            "state": "starting",
+            "attempt": 1,
+            "code": null
+          },
+          {
+            "observedAtMs": 43439.114209,
+            "state": "ready",
+            "attempt": 1,
+            "code": null
+          }
+        ],
+        "nativeStartupObservation": "observed",
+        "cdpTargetMs": 1006.9658749999999,
+        "loopbackOriginMs": 6699.886167,
+        "lastObservedDocument": {
+          "timeOrigin": 1791646571252.3,
+          "href": "http://127.0.0.1:50368/",
+          "readyState": "complete",
+          "visibilityState": "visible",
+          "composer": true,
+          "newChat": true,
+          "model": true,
+          "modelLabels": [
+            "smoke-write"
+          ],
+          "selectedModel": {
+            "providerId": "devryan-smoke",
+            "modelId": "smoke-write",
+            "agent": "builder",
+            "catalogAvailable": true
+          },
+          "sessionID": null,
+          "navigation": {
+            "type": "reload",
+            "domContentLoadedEventEnd": 67.70000000298023,
+            "loadEventEnd": 69.1000000089407,
+            "duration": 69.1000000089407
+          },
+          "readinessGates": [
+            {
+              "name": "devryan-startup-gate-health-loading",
+              "elapsedMs": 305.79999999701977
+            },
+            {
+              "name": "devryan-startup-gate-providers-idle",
+              "elapsedMs": 305.79999999701977
+            },
+            {
+              "name": "devryan-startup-gate-agents-idle",
+              "elapsedMs": 305.79999999701977
+            },
+            {
+              "name": "devryan-startup-gate-initialization-loading",
+              "elapsedMs": 305.79999999701977
+            },
+            {
+              "name": "devryan-startup-gate-globalSync-loading",
+              "elapsedMs": 305.79999999701977
+            },
+            {
+              "name": "devryan-startup-gate-directorySync-loading",
+              "elapsedMs": 305.79999999701977
+            },
+            {
+              "name": "devryan-startup-gate-sessionList-loading",
+              "elapsedMs": 305.79999999701977
+            },
+            {
+              "name": "devryan-startup-gate-responseStyle-loading",
+              "elapsedMs": 305.79999999701977
+            },
+            {
+              "name": "devryan-startup-gate-worktree-idle",
+              "elapsedMs": 305.79999999701977
+            },
+            {
+              "name": "devryan-startup-gate-health-ready",
+              "elapsedMs": 553.2000000029802
+            },
+            {
+              "name": "devryan-startup-gate-providers-loading",
+              "elapsedMs": 553.2000000029802
+            },
+            {
+              "name": "devryan-startup-gate-worktree-loading",
+              "elapsedMs": 554.6000000089407
+            },
+            {
+              "name": "devryan-startup-gate-worktree-ready",
+              "elapsedMs": 592.2000000029802
+            },
+            {
+              "name": "devryan-startup-gate-globalSync-ready",
+              "elapsedMs": 655.7000000029802
+            },
+            {
+              "name": "devryan-startup-gate-sessionList-ready",
+              "elapsedMs": 683.1000000089407
+            },
+            {
+              "name": "devryan-startup-gate-directorySync-ready",
+              "elapsedMs": 687.7999999970198
+            },
+            {
+              "name": "devryan-startup-gate-providers-ready",
+              "elapsedMs": 711.2000000029802
+            },
+            {
+              "name": "devryan-startup-gate-agents-loading",
+              "elapsedMs": 712.7000000029802
+            },
+            {
+              "name": "devryan-startup-gate-agents-ready",
+              "elapsedMs": 745.9000000059605
+            },
+            {
+              "name": "devryan-startup-gate-responseStyle-ready",
+              "elapsedMs": 745.9000000059605
+            },
+            {
+              "name": "devryan-startup-gate-initialization-ready",
+              "elapsedMs": 1017.4000000059605
+            }
+          ],
+          "paints": []
+        },
+        "firstObservedDocument": {
+          "timeOrigin": 1791646534365.6,
+          "href": "http://127.0.0.1:50368/",
+          "readyState": "loading",
+          "visibilityState": "hidden",
+          "composer": false,
+          "newChat": false,
+          "model": false,
+          "modelLabels": [],
+          "selectedModel": null,
+          "sessionID": null,
+          "navigation": {
+            "type": "navigate",
+            "domContentLoadedEventEnd": 0,
+            "loadEventEnd": 0,
+            "duration": 0
+          },
+          "readinessGates": [],
+          "paints": []
+        },
+        "hostAvailableMs": 6722.475583999999,
+        "nativeStartupReadyMs": 43439.114209,
+        "hostReadyMs": 43439.256084,
+        "fixtureCatalogReadyMs": 43667.360542,
+        "firstSelectedModel": {
+          "observedAtMs": 44427.552375,
+          "providerId": "devryan-smoke",
+          "modelId": "smoke-write",
+          "agent": "builder",
+          "catalogAvailable": true
+        },
+        "foregroundActivation": {
+          "method": "desktop_focus_main_window",
+          "requestedAtMs": 45358.114792,
+          "documentTimeOrigin": 1791646571252.3,
+          "outcome": "acknowledged",
+          "acknowledgement": {
+            "focused": true
+          },
+          "acknowledgedAtMs": 45456.311
+        },
+        "document": {
+          "timeOrigin": 1791646571252.3,
+          "href": "http://127.0.0.1:50368/",
+          "readyState": "complete",
+          "visibilityState": "visible",
+          "composer": true,
+          "newChat": true,
+          "model": true,
+          "modelLabels": [
+            "smoke-write"
+          ],
+          "selectedModel": {
+            "providerId": "devryan-smoke",
+            "modelId": "smoke-write",
+            "agent": "builder",
+            "catalogAvailable": true
+          },
+          "sessionID": null,
+          "navigation": {
+            "type": "reload",
+            "domContentLoadedEventEnd": 67.70000000298023,
+            "loadEventEnd": 69.1000000089407,
+            "duration": 69.1000000089407
+          },
+          "readinessGates": [
+            {
+              "name": "devryan-startup-gate-health-loading",
+              "elapsedMs": 305.79999999701977
+            },
+            {
+              "name": "devryan-startup-gate-providers-idle",
+              "elapsedMs": 305.79999999701977
+            },
+            {
+              "name": "devryan-startup-gate-agents-idle",
+              "elapsedMs": 305.79999999701977
+            },
+            {
+              "name": "devryan-startup-gate-initialization-loading",
+              "elapsedMs": 305.79999999701977
+            },
+            {
+              "name": "devryan-startup-gate-globalSync-loading",
+              "elapsedMs": 305.79999999701977
+            },
+            {
+              "name": "devryan-startup-gate-directorySync-loading",
+              "elapsedMs": 305.79999999701977
+            },
+            {
+              "name": "devryan-startup-gate-sessionList-loading",
+              "elapsedMs": 305.79999999701977
+            },
+            {
+              "name": "devryan-startup-gate-responseStyle-loading",
+              "elapsedMs": 305.79999999701977
+            },
+            {
+              "name": "devryan-startup-gate-worktree-idle",
+              "elapsedMs": 305.79999999701977
+            },
+            {
+              "name": "devryan-startup-gate-health-ready",
+              "elapsedMs": 553.2000000029802
+            },
+            {
+              "name": "devryan-startup-gate-providers-loading",
+              "elapsedMs": 553.2000000029802
+            },
+            {
+              "name": "devryan-startup-gate-worktree-loading",
+              "elapsedMs": 554.6000000089407
+            },
+            {
+              "name": "devryan-startup-gate-worktree-ready",
+              "elapsedMs": 592.2000000029802
+            },
+            {
+              "name": "devryan-startup-gate-globalSync-ready",
+              "elapsedMs": 655.7000000029802
+            },
+            {
+              "name": "devryan-startup-gate-sessionList-ready",
+              "elapsedMs": 683.1000000089407
+            },
+            {
+              "name": "devryan-startup-gate-directorySync-ready",
+              "elapsedMs": 687.7999999970198
+            },
+            {
+              "name": "devryan-startup-gate-providers-ready",
+              "elapsedMs": 711.2000000029802
+            },
+            {
+              "name": "devryan-startup-gate-agents-loading",
+              "elapsedMs": 712.7000000029802
+            },
+            {
+              "name": "devryan-startup-gate-agents-ready",
+              "elapsedMs": 745.9000000059605
+            },
+            {
+              "name": "devryan-startup-gate-responseStyle-ready",
+              "elapsedMs": 745.9000000059605
+            },
+            {
+              "name": "devryan-startup-gate-initialization-ready",
+              "elapsedMs": 1017.4000000059605
+            }
+          ],
+          "paints": []
+        },
+        "uiReadyMs": 45576.877416999996,
+        "electronStartupPhases": {
+          "source": "injected-launch-records",
+          "collectedAtMs": 45576.88325,
+          "records": [
+            {
+              "phase": "shell_environment",
+              "outcome": "completed",
+              "durationMs": 17
+            },
+            {
+              "phase": "foreground_preparation",
+              "outcome": "completed",
+              "durationMs": 14
+            },
+            {
+              "phase": "bundle_preparation",
+              "outcome": "completed",
+              "durationMs": 91.8727080000001
+            },
+            {
+              "phase": "application_import",
+              "outcome": "completed",
+              "durationMs": 3024.730125
+            },
+            {
+              "phase": "server_import",
+              "outcome": "completed",
+              "durationMs": 3119
+            },
+            {
+              "phase": "server_listen",
+              "outcome": "completed",
+              "durationMs": 800
+            },
+            {
+              "phase": "initial_url",
+              "outcome": "completed",
+              "durationMs": 5505
+            },
+            {
+              "phase": "renderer_navigation",
+              "outcome": "completed",
+              "durationMs": 636
+            },
+            {
+              "phase": "native_settlement",
+              "outcome": "completed",
+              "durationMs": 0.5076669999998558
+            },
+            {
+              "phase": "native_verification",
+              "outcome": "completed",
+              "durationMs": 2211.29475
+            },
+            {
+              "phase": "native_configuration_sync",
+              "outcome": "completed",
+              "durationMs": 148.83833400000003
+            },
+            {
+              "phase": "native_configuration",
+              "outcome": "completed",
+              "durationMs": 30549.346292000002
+            },
+            {
+              "phase": "native_controller",
+              "outcome": "completed",
+              "durationMs": 3005.101499999997
+            },
+            {
+              "phase": "native_recovery",
+              "outcome": "completed",
+              "durationMs": 246.8996249999982
+            },
+            {
+              "phase": "native_open",
+              "outcome": "completed",
+              "durationMs": 1.54316700000345
+            }
+          ]
+        },
+        "nativeTransitions": [
+          {
+            "elapsedMs": 1010.8483339999993,
+            "url": "data:startup-document",
+            "loaderId": null,
+            "kind": "initial-cdp-target"
+          },
+          {
+            "elapsedMs": 6582.302999999999,
+            "url": "http://127.0.0.1:50368/",
+            "loaderId": "3085BDB5AFA1D37DA4490C99D16C101C",
+            "kind": "native-top-frame-navigation"
+          },
+          {
+            "elapsedMs": 7273.693042,
+            "url": "http://127.0.0.1:50368/",
+            "loaderId": "8848DB7C90AE0708CB843936F9F43BB6",
+            "kind": "native-top-frame-navigation"
+          },
+          {
+            "elapsedMs": 43430.477917,
+            "url": "http://127.0.0.1:50368/",
+            "loaderId": "80BB9481970FEA2429487F2B21F82676",
+            "kind": "native-top-frame-navigation"
+          }
+        ],
+        "benchmarkNavigationAttempts": [],
+        "nativeDocumentChanges": 1
+      },
+      "cleanupErrors": [],
+      "initialBundle": {
+        "bundleID": "candidate",
+        "revision": 1,
+        "previousBundleID": null,
+        "opencodeVersion": "2.0.26",
+        "artifactManifestSha256": "856ee1f0f46ec532b2b7689e8a6e2f05e35ff52b9b895945ad62fd47901d86f6"
+      },
+      "subscription": {
+        "readyAcknowledgedAtMs": 43949.891792,
+        "transport": "websocket",
+        "error": null
+      },
+      "background": {
+        "agentWarmupAtMs": 46552.572709,
+        "updateChecks": 0
+      },
+      "journal": {
+        "gapRecords": 0,
+        "lastError": null
+      },
+      "finalBundle": {
+        "bundleID": "candidate",
+        "revision": 1,
+        "previousBundleID": null,
+        "opencodeVersion": "2.0.26",
+        "artifactManifestSha256": "856ee1f0f46ec532b2b7689e8a6e2f05e35ff52b9b895945ad62fd47901d86f6"
+      },
+      "rendererExceptions": 0,
+      "cleanup": {
+        "source": "retained-os-process-ancestry-and-start-identities",
+        "rootPid": 96590,
+        "rootObserved": true,
+        "observationIntervalMs": 500,
+        "observationErrors": [],
+        "observedProcesses": [
+          {
+            "pid": 96590,
+            "parentPid": 96000,
+            "startIdentity": "Sat Oct 10 19:35:27 2026"
+          },
+          {
+            "pid": 96658,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:35:28 2026"
+          },
+          {
+            "pid": 96660,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:35:28 2026"
+          },
+          {
+            "pid": 96680,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:35:28 2026"
+          },
+          {
+            "pid": 96773,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:35:30 2026"
+          },
+          {
+            "pid": 96800,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:35:30 2026"
+          },
+          {
+            "pid": 96837,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:35:31 2026"
+          },
+          {
+            "pid": 96894,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:35:32 2026"
+          },
+          {
+            "pid": 97090,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:35:34 2026"
+          },
+          {
+            "pid": 97133,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:35:35 2026"
+          },
+          {
+            "pid": 97144,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:35:35 2026"
+          },
+          {
+            "pid": 97297,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:35:37 2026"
+          },
+          {
+            "pid": 97300,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:35:37 2026"
+          },
+          {
+            "pid": 98859,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:35:51 2026"
+          },
+          {
+            "pid": 99766,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:36:06 2026"
+          },
+          {
+            "pid": 99805,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:36:08 2026"
+          },
+          {
+            "pid": 99813,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:36:09 2026"
+          },
+          {
+            "pid": 99814,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:36:09 2026"
+          },
+          {
+            "pid": 99819,
+            "parentPid": 99813,
+            "startIdentity": "Sat Oct 10 19:36:09 2026"
+          },
+          {
+            "pid": 99911,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:36:11 2026"
+          },
+          {
+            "pid": 99957,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:36:11 2026"
+          },
+          {
+            "pid": 245,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:36:12 2026"
+          },
+          {
+            "pid": 246,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:36:12 2026"
+          },
+          {
+            "pid": 275,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:36:12 2026"
+          },
+          {
+            "pid": 424,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:36:13 2026"
+          },
+          {
+            "pid": 553,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:36:13 2026"
+          },
+          {
+            "pid": 558,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:36:13 2026"
+          },
+          {
+            "pid": 562,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:36:13 2026"
+          },
+          {
+            "pid": 566,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:36:13 2026"
+          },
+          {
+            "pid": 610,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:36:13 2026"
+          },
+          {
+            "pid": 614,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:36:13 2026"
+          },
+          {
+            "pid": 617,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:36:13 2026"
+          },
+          {
+            "pid": 676,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:36:14 2026"
+          },
+          {
+            "pid": 687,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:36:14 2026"
+          },
+          {
+            "pid": 692,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:36:14 2026"
+          },
+          {
+            "pid": 696,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:36:14 2026"
+          },
+          {
+            "pid": 741,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:36:14 2026"
+          },
+          {
+            "pid": 747,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:36:14 2026"
+          },
+          {
+            "pid": 750,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:36:15 2026"
+          },
+          {
+            "pid": 784,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:36:15 2026"
+          },
+          {
+            "pid": 788,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:36:15 2026"
+          },
+          {
+            "pid": 795,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:36:15 2026"
+          },
+          {
+            "pid": 852,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:36:15 2026"
+          },
+          {
+            "pid": 857,
+            "parentPid": 96590,
+            "startIdentity": "Sat Oct 10 19:36:15 2026"
+          }
+        ],
+        "remainingProcessIds": [],
+        "signals": [],
+        "trackingClosed": true
+      },
+      "journalGapCheck": "passed"
+    },
+    {
+      "iteration": 1,
+      "startup": {
+        "outcome": "passed",
+        "startupMode": "foreground",
+        "scope": "fresh-process/fresh-profile; actual native backend; local HTTP model fixture; foreground-controlled admission, not natural startup latency",
+        "clock": "parent performance.now; elapsed milliseconds since spawn invocation",
+        "pollIntervalMs": 100,
+        "forcedNavigations": 0,
+        "documents": [
+          {
+            "observedAtMs": 6582.027249999999,
+            "timeOrigin": 1791646598694.2,
+            "href": "http://127.0.0.1:50556/",
+            "readyState": "loading",
+            "visibilityState": "hidden",
+            "composer": false,
+            "newChat": false,
+            "model": false,
+            "modelLabels": [],
+            "selectedModel": null,
+            "sessionID": null,
+            "navigation": {
+              "type": "navigate",
+              "domContentLoadedEventEnd": 0,
+              "loadEventEnd": 0,
+              "duration": 0
+            },
+            "readinessGates": [],
+            "paints": []
+          },
+          {
+            "observedAtMs": 39810.58904199999,
+            "timeOrigin": 1791646599219.3,
+            "href": "http://127.0.0.1:50556/",
+            "readyState": "complete",
+            "visibilityState": "visible",
+            "composer": false,
+            "newChat": false,
+            "model": false,
+            "modelLabels": [],
+            "selectedModel": {
+              "providerId": "",
+              "modelId": "",
+              "catalogAvailable": false
+            },
+            "sessionID": null,
+            "navigation": {
+              "type": "reload",
+              "domContentLoadedEventEnd": 144.40000000596046,
+              "loadEventEnd": 2579.2000000029802,
+              "duration": 2579.2000000029802
+            },
+            "readinessGates": [
+              {
+                "name": "devryan-startup-gate-health-loading",
+                "elapsedMs": 232.40000000596046
+              },
+              {
+                "name": "devryan-startup-gate-providers-idle",
+                "elapsedMs": 232.40000000596046
+              },
+              {
+                "name": "devryan-startup-gate-agents-idle",
+                "elapsedMs": 232.40000000596046
+              },
+              {
+                "name": "devryan-startup-gate-initialization-loading",
+                "elapsedMs": 232.40000000596046
+              },
+              {
+                "name": "devryan-startup-gate-globalSync-loading",
+                "elapsedMs": 232.40000000596046
+              },
+              {
+                "name": "devryan-startup-gate-directorySync-loading",
+                "elapsedMs": 232.40000000596046
+              },
+              {
+                "name": "devryan-startup-gate-sessionList-loading",
+                "elapsedMs": 232.40000000596046
+              },
+              {
+                "name": "devryan-startup-gate-responseStyle-loading",
+                "elapsedMs": 232.40000000596046
+              },
+              {
+                "name": "devryan-startup-gate-worktree-idle",
+                "elapsedMs": 232.40000000596046
+              }
+            ],
+            "paints": [
+              {
+                "name": "first-paint",
+                "startTime": 348
+              },
+              {
+                "name": "first-contentful-paint",
+                "startTime": 348
+              }
+            ]
+          },
+          {
+            "observedAtMs": 40097.463542,
+            "timeOrigin": 1791646632365.7,
+            "href": "http://127.0.0.1:50556/",
+            "readyState": "loading",
+            "visibilityState": "hidden",
+            "composer": false,
+            "newChat": false,
+            "model": false,
+            "modelLabels": [],
+            "selectedModel": null,
+            "sessionID": null,
+            "navigation": {
+              "type": "reload",
+              "domContentLoadedEventEnd": 0,
+              "loadEventEnd": 0,
+              "duration": 0
+            },
+            "readinessGates": [],
+            "paints": []
+          }
+        ],
+        "healthObservations": [
+          {
+            "observedAtMs": 6586.30804199999,
+            "state": "idle",
+            "attempt": 0,
+            "code": null
+          },
+          {
+            "observedAtMs": 6998.583624999999,
+            "state": "starting",
+            "attempt": 1,
+            "code": null
+          },
+          {
+            "observedAtMs": 39732.185916999995,
+            "state": "ready",
+            "attempt": 1,
+            "code": null
+          }
+        ],
+        "nativeStartupObservation": "observed",
+        "cdpTargetMs": 836.1957089999923,
+        "loopbackOriginMs": 6568.811208999992,
+        "lastObservedDocument": {
+          "timeOrigin": 1791646632365.7,
+          "href": "http://127.0.0.1:50556/",
+          "readyState": "complete",
+          "visibilityState": "visible",
+          "composer": true,
+          "newChat": true,
+          "model": true,
+          "modelLabels": [
+            "smoke-write"
+          ],
+          "selectedModel": {
+            "providerId": "devryan-smoke",
+            "modelId": "smoke-write",
+            "agent": "builder",
+            "catalogAvailable": true
+          },
+          "sessionID": null,
+          "navigation": {
+            "type": "reload",
+            "domContentLoadedEventEnd": 45.79999999701977,
+            "loadEventEnd": 47,
+            "duration": 47
+          },
+          "readinessGates": [
+            {
+              "name": "devryan-startup-gate-health-loading",
+              "elapsedMs": 271.20000000298023
+            },
+            {
+              "name": "devryan-startup-gate-providers-idle",
+              "elapsedMs": 271.20000000298023
+            },
+            {
+              "name": "devryan-startup-gate-agents-idle",
+              "elapsedMs": 271.20000000298023
+            },
+            {
+              "name": "devryan-startup-gate-initialization-loading",
+              "elapsedMs": 271.20000000298023
+            },
+            {
+              "name": "devryan-startup-gate-globalSync-loading",
+              "elapsedMs": 271.20000000298023
+            },
+            {
+              "name": "devryan-startup-gate-directorySync-loading",
+              "elapsedMs": 271.20000000298023
+            },
+            {
+              "name": "devryan-startup-gate-sessionList-loading",
+              "elapsedMs": 271.20000000298023
+            },
+            {
+              "name": "devryan-startup-gate-responseStyle-loading",
+              "elapsedMs": 271.20000000298023
+            },
+            {
+              "name": "devryan-startup-gate-worktree-idle",
+              "elapsedMs": 271.20000000298023
+            },
+            {
+              "name": "devryan-startup-gate-health-ready",
+              "elapsedMs": 425.8999999910593
+            },
+            {
+              "name": "devryan-startup-gate-providers-loading",
+              "elapsedMs": 426
+            },
+            {
+              "name": "devryan-startup-gate-worktree-loading",
+              "elapsedMs": 426.79999999701977
+            },
+            {
+              "name": "devryan-startup-gate-worktree-ready",
+              "elapsedMs": 451.79999999701977
+            },
+            {
+              "name": "devryan-startup-gate-sessionList-ready",
+              "elapsedMs": 498.59999999403954
+            },
+            {
+              "name": "devryan-startup-gate-directorySync-ready",
+              "elapsedMs": 500.09999999403954
+            },
+            {
+              "name": "devryan-startup-gate-providers-ready",
+              "elapsedMs": 502
+            },
+            {
+              "name": "devryan-startup-gate-agents-loading",
+              "elapsedMs": 503.09999999403954
+            },
+            {
+              "name": "devryan-startup-gate-globalSync-ready",
+              "elapsedMs": 531
+            },
+            {
+              "name": "devryan-startup-gate-agents-ready",
+              "elapsedMs": 535
+            },
+            {
+              "name": "devryan-startup-gate-responseStyle-ready",
+              "elapsedMs": 535
+            },
+            {
+              "name": "devryan-startup-gate-initialization-ready",
+              "elapsedMs": 817.7000000029802
+            }
+          ],
+          "paints": [
+            {
+              "name": "first-paint",
+              "startTime": 2052
+            },
+            {
+              "name": "first-contentful-paint",
+              "startTime": 2052
+            }
+          ]
+        },
+        "firstObservedDocument": {
+          "timeOrigin": 1791646598694.2,
+          "href": "http://127.0.0.1:50556/",
+          "readyState": "loading",
+          "visibilityState": "hidden",
+          "composer": false,
+          "newChat": false,
+          "model": false,
+          "modelLabels": [],
+          "selectedModel": null,
+          "sessionID": null,
+          "navigation": {
+            "type": "navigate",
+            "domContentLoadedEventEnd": 0,
+            "loadEventEnd": 0,
+            "duration": 0
+          },
+          "readinessGates": [],
+          "paints": []
+        },
+        "hostAvailableMs": 6586.30804199999,
+        "nativeStartupReadyMs": 39732.185916999995,
+        "hostReadyMs": 39732.356417,
+        "fixtureCatalogReadyMs": 39808.59,
+        "firstSelectedModel": {
+          "observedAtMs": 39977.805584,
+          "providerId": "opencode",
+          "modelId": "fledge-alpha-free",
+          "catalogAvailable": true
+        },
+        "foregroundActivation": {
+          "method": "desktop_focus_main_window",
+          "requestedAtMs": 41856.94933399999,
+          "documentTimeOrigin": 1791646632365.7,
+          "outcome": "acknowledged",
+          "acknowledgement": {
+            "focused": true
+          },
+          "acknowledgedAtMs": 42055.91099999999
+        },
+        "document": {
+          "timeOrigin": 1791646632365.7,
+          "href": "http://127.0.0.1:50556/",
+          "readyState": "complete",
+          "visibilityState": "visible",
+          "composer": true,
+          "newChat": true,
+          "model": true,
+          "modelLabels": [
+            "smoke-write"
+          ],
+          "selectedModel": {
+            "providerId": "devryan-smoke",
+            "modelId": "smoke-write",
+            "agent": "builder",
+            "catalogAvailable": true
+          },
+          "sessionID": null,
+          "navigation": {
+            "type": "reload",
+            "domContentLoadedEventEnd": 45.79999999701977,
+            "loadEventEnd": 47,
+            "duration": 47
+          },
+          "readinessGates": [
+            {
+              "name": "devryan-startup-gate-health-loading",
+              "elapsedMs": 271.20000000298023
+            },
+            {
+              "name": "devryan-startup-gate-providers-idle",
+              "elapsedMs": 271.20000000298023
+            },
+            {
+              "name": "devryan-startup-gate-agents-idle",
+              "elapsedMs": 271.20000000298023
+            },
+            {
+              "name": "devryan-startup-gate-initialization-loading",
+              "elapsedMs": 271.20000000298023
+            },
+            {
+              "name": "devryan-startup-gate-globalSync-loading",
+              "elapsedMs": 271.20000000298023
+            },
+            {
+              "name": "devryan-startup-gate-directorySync-loading",
+              "elapsedMs": 271.20000000298023
+            },
+            {
+              "name": "devryan-startup-gate-sessionList-loading",
+              "elapsedMs": 271.20000000298023
+            },
+            {
+              "name": "devryan-startup-gate-responseStyle-loading",
+              "elapsedMs": 271.20000000298023
+            },
+            {
+              "name": "devryan-startup-gate-worktree-idle",
+              "elapsedMs": 271.20000000298023
+            },
+            {
+              "name": "devryan-startup-gate-health-ready",
+              "elapsedMs": 425.8999999910593
+            },
+            {
+              "name": "devryan-startup-gate-providers-loading",
+              "elapsedMs": 426
+            },
+            {
+              "name": "devryan-startup-gate-worktree-loading",
+              "elapsedMs": 426.79999999701977
+            },
+            {
+              "name": "devryan-startup-gate-worktree-ready",
+              "elapsedMs": 451.79999999701977
+            },
+            {
+              "name": "devryan-startup-gate-sessionList-ready",
+              "elapsedMs": 498.59999999403954
+            },
+            {
+              "name": "devryan-startup-gate-directorySync-ready",
+              "elapsedMs": 500.09999999403954
+            },
+            {
+              "name": "devryan-startup-gate-providers-ready",
+              "elapsedMs": 502
+            },
+            {
+              "name": "devryan-startup-gate-agents-loading",
+              "elapsedMs": 503.09999999403954
+            },
+            {
+              "name": "devryan-startup-gate-globalSync-ready",
+              "elapsedMs": 531
+            },
+            {
+              "name": "devryan-startup-gate-agents-ready",
+              "elapsedMs": 535
+            },
+            {
+              "name": "devryan-startup-gate-responseStyle-ready",
+              "elapsedMs": 535
+            },
+            {
+              "name": "devryan-startup-gate-initialization-ready",
+              "elapsedMs": 817.7000000029802
+            }
+          ],
+          "paints": [
+            {
+              "name": "first-paint",
+              "startTime": 2052
+            },
+            {
+              "name": "first-contentful-paint",
+              "startTime": 2052
+            }
+          ]
+        },
+        "uiReadyMs": 42161.96833399999,
+        "electronStartupPhases": {
+          "source": "injected-launch-records",
+          "collectedAtMs": 42161.973375,
+          "records": [
+            {
+              "phase": "shell_environment",
+              "outcome": "completed",
+              "durationMs": 18
+            },
+            {
+              "phase": "foreground_preparation",
+              "outcome": "completed",
+              "durationMs": 32
+            },
+            {
+              "phase": "bundle_preparation",
+              "outcome": "completed",
+              "durationMs": 103.67925000000002
+            },
+            {
+              "phase": "application_import",
+              "outcome": "completed",
+              "durationMs": 2887.6198750000003
+            },
+            {
+              "phase": "server_import",
+              "outcome": "completed",
+              "durationMs": 3009
+            },
+            {
+              "phase": "server_listen",
+              "outcome": "completed",
+              "durationMs": 895
+            },
+            {
+              "phase": "initial_url",
+              "outcome": "completed",
+              "durationMs": 5560
+            },
+            {
+              "phase": "renderer_navigation",
+              "outcome": "completed",
+              "durationMs": 545
+            },
+            {
+              "phase": "native_settlement",
+              "outcome": "completed",
+              "durationMs": 0.45620899999994435
+            },
+            {
+              "phase": "native_verification",
+              "outcome": "completed",
+              "durationMs": 1895.010792000001
+            },
+            {
+              "phase": "native_configuration_sync",
+              "outcome": "completed",
+              "durationMs": 152.8936250000006
+            },
+            {
+              "phase": "native_configuration",
+              "outcome": "completed",
+              "durationMs": 27234.169791
+            },
+            {
+              "phase": "native_controller",
+              "outcome": "completed",
+              "durationMs": 3204.4563750000016
+            },
+            {
+              "phase": "native_recovery",
+              "outcome": "completed",
+              "durationMs": 266.5239170000059
+            },
+            {
+              "phase": "native_open",
+              "outcome": "completed",
+              "durationMs": 1.521958999997878
+            }
+          ]
+        },
+        "nativeTransitions": [
+          {
+            "elapsedMs": 838.6865839999955,
+            "url": "data:startup-document",
+            "loaderId": null,
+            "kind": "initial-cdp-target"
+          },
+          {
+            "elapsedMs": 6459.650458999997,
+            "url": "http://127.0.0.1:50556/",
+            "loaderId": "BFAE55EC2702AF35DF5CAB48C3749911",
+            "kind": "native-top-frame-navigation"
+          },
+          {
+            "elapsedMs": 7025.216833999992,
+            "url": "http://127.0.0.1:50556/",
+            "loaderId": "BE440CC4660B6F8B3843B12CA83EBA52",
+            "kind": "native-top-frame-navigation"
+          },
+          {
+            "elapsedMs": 40071.02824999999,
+            "url": "http://127.0.0.1:50556/",
+            "loaderId": "C2B2113B27C2B764E2ED1FDD0D5B794F",
+            "kind": "native-top-frame-navigation"
+          }
+        ],
+        "benchmarkNavigationAttempts": [],
+        "nativeDocumentChanges": 2
+      },
+      "cleanupErrors": [],
+      "initialBundle": {
+        "bundleID": "candidate",
+        "revision": 1,
+        "previousBundleID": null,
+        "opencodeVersion": "2.0.26",
+        "artifactManifestSha256": "856ee1f0f46ec532b2b7689e8a6e2f05e35ff52b9b895945ad62fd47901d86f6"
+      },
+      "subscription": {
+        "readyAcknowledgedAtMs": 40484.86962499999,
+        "transport": "websocket",
+        "error": null
+      },
+      "background": {
+        "agentWarmupAtMs": 43043.854209,
+        "updateChecks": 0
+      },
+      "journal": {
+        "gapRecords": 0,
+        "lastError": null
+      },
+      "finalBundle": {
+        "bundleID": "candidate",
+        "revision": 1,
+        "previousBundleID": null,
+        "opencodeVersion": "2.0.26",
+        "artifactManifestSha256": "856ee1f0f46ec532b2b7689e8a6e2f05e35ff52b9b895945ad62fd47901d86f6"
+      },
+      "rendererExceptions": 0,
+      "cleanup": {
+        "source": "retained-os-process-ancestry-and-start-identities",
+        "rootPid": 2066,
+        "rootObserved": true,
+        "observationIntervalMs": 500,
+        "observationErrors": [],
+        "observedProcesses": [
+          {
+            "pid": 2066,
+            "parentPid": 96000,
+            "startIdentity": "Sat Oct 10 19:36:32 2026"
+          },
+          {
+            "pid": 2108,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:36:32 2026"
+          },
+          {
+            "pid": 2109,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:36:32 2026"
+          },
+          {
+            "pid": 2123,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:36:33 2026"
+          },
+          {
+            "pid": 2327,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:36:36 2026"
+          },
+          {
+            "pid": 2397,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:36:37 2026"
+          },
+          {
+            "pid": 2415,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:36:38 2026"
+          },
+          {
+            "pid": 2447,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:36:38 2026"
+          },
+          {
+            "pid": 2561,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:36:40 2026"
+          },
+          {
+            "pid": 2635,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:36:41 2026"
+          },
+          {
+            "pid": 3079,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:36:52 2026"
+          },
+          {
+            "pid": 3989,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:37:07 2026"
+          },
+          {
+            "pid": 4175,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:37:09 2026"
+          },
+          {
+            "pid": 4176,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:37:09 2026"
+          },
+          {
+            "pid": 4181,
+            "parentPid": 4175,
+            "startIdentity": "Sat Oct 10 19:37:09 2026"
+          },
+          {
+            "pid": 4279,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:37:11 2026"
+          },
+          {
+            "pid": 4489,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:37:13 2026"
+          },
+          {
+            "pid": 4491,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:37:13 2026"
+          },
+          {
+            "pid": 4492,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:37:13 2026"
+          },
+          {
+            "pid": 4518,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:37:13 2026"
+          },
+          {
+            "pid": 4521,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:37:13 2026"
+          },
+          {
+            "pid": 4672,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:37:14 2026"
+          },
+          {
+            "pid": 4675,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:37:14 2026"
+          },
+          {
+            "pid": 4678,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:37:14 2026"
+          },
+          {
+            "pid": 4704,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:37:14 2026"
+          },
+          {
+            "pid": 4708,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:37:14 2026"
+          },
+          {
+            "pid": 4767,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:37:14 2026"
+          },
+          {
+            "pid": 4770,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:37:14 2026"
+          },
+          {
+            "pid": 4774,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:37:14 2026"
+          },
+          {
+            "pid": 4809,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:37:15 2026"
+          },
+          {
+            "pid": 4812,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:37:15 2026"
+          },
+          {
+            "pid": 4815,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:37:15 2026"
+          },
+          {
+            "pid": 4818,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:37:15 2026"
+          },
+          {
+            "pid": 4859,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:37:15 2026"
+          },
+          {
+            "pid": 4862,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:37:15 2026"
+          },
+          {
+            "pid": 4865,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:37:15 2026"
+          },
+          {
+            "pid": 4909,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:37:16 2026"
+          },
+          {
+            "pid": 4913,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:37:16 2026"
+          },
+          {
+            "pid": 4916,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:37:16 2026"
+          },
+          {
+            "pid": 4955,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:37:16 2026"
+          },
+          {
+            "pid": 4960,
+            "parentPid": 2066,
+            "startIdentity": "Sat Oct 10 19:37:16 2026"
+          }
+        ],
+        "remainingProcessIds": [],
+        "signals": [],
+        "trackingClosed": true
+      },
+      "journalGapCheck": "passed"
+    },
+    {
+      "iteration": 2,
+      "startup": {
+        "outcome": "passed",
+        "startupMode": "foreground",
+        "scope": "fresh-process/fresh-profile; actual native backend; local HTTP model fixture; foreground-controlled admission, not natural startup latency",
+        "clock": "parent performance.now; elapsed milliseconds since spawn invocation",
+        "pollIntervalMs": 100,
+        "forcedNavigations": 0,
+        "documents": [
+          {
+            "observedAtMs": 6265.471250000002,
+            "timeOrigin": 1791646659220.4,
+            "href": "http://127.0.0.1:50729/",
+            "readyState": "loading",
+            "visibilityState": "hidden",
+            "composer": false,
+            "newChat": false,
+            "model": false,
+            "modelLabels": [],
+            "selectedModel": null,
+            "sessionID": null,
+            "navigation": {
+              "type": "navigate",
+              "domContentLoadedEventEnd": 0,
+              "loadEventEnd": 0,
+              "duration": 0
+            },
+            "readinessGates": [],
+            "paints": []
+          },
+          {
+            "observedAtMs": 52436.47858300002,
+            "timeOrigin": 1791646659774.5,
+            "href": "http://127.0.0.1:50729/",
+            "readyState": "complete",
+            "visibilityState": "visible",
+            "composer": false,
+            "newChat": false,
+            "model": false,
+            "modelLabels": [],
+            "selectedModel": {
+              "providerId": "",
+              "modelId": "",
+              "catalogAvailable": false
+            },
+            "sessionID": null,
+            "navigation": {
+              "type": "reload",
+              "domContentLoadedEventEnd": 142.90000000596046,
+              "loadEventEnd": 2437.2000000029802,
+              "duration": 2437.2000000029802
+            },
+            "readinessGates": [
+              {
+                "name": "devryan-startup-gate-health-loading",
+                "elapsedMs": 241
+              },
+              {
+                "name": "devryan-startup-gate-providers-idle",
+                "elapsedMs": 241.1000000089407
+              },
+              {
+                "name": "devryan-startup-gate-agents-idle",
+                "elapsedMs": 241.1000000089407
+              },
+              {
+                "name": "devryan-startup-gate-initialization-loading",
+                "elapsedMs": 241.1000000089407
+              },
+              {
+                "name": "devryan-startup-gate-globalSync-loading",
+                "elapsedMs": 241.1000000089407
+              },
+              {
+                "name": "devryan-startup-gate-directorySync-loading",
+                "elapsedMs": 241.1000000089407
+              },
+              {
+                "name": "devryan-startup-gate-sessionList-loading",
+                "elapsedMs": 241.1000000089407
+              },
+              {
+                "name": "devryan-startup-gate-responseStyle-loading",
+                "elapsedMs": 241.1000000089407
+              },
+              {
+                "name": "devryan-startup-gate-worktree-idle",
+                "elapsedMs": 241.1000000089407
+              }
+            ],
+            "paints": [
+              {
+                "name": "first-paint",
+                "startTime": 376
+              },
+              {
+                "name": "first-contentful-paint",
+                "startTime": 376
+              }
+            ]
+          },
+          {
+            "observedAtMs": 53257.51362500002,
+            "timeOrigin": 1791646706275.2,
+            "href": "http://127.0.0.1:50729/",
+            "readyState": "loading",
+            "visibilityState": "hidden",
+            "composer": false,
+            "newChat": false,
+            "model": false,
+            "modelLabels": [],
+            "selectedModel": null,
+            "sessionID": null,
+            "navigation": {
+              "type": "reload",
+              "domContentLoadedEventEnd": 0,
+              "loadEventEnd": 0,
+              "duration": 0
+            },
+            "readinessGates": [],
+            "paints": []
+          }
+        ],
+        "healthObservations": [
+          {
+            "observedAtMs": 6267.146124999999,
+            "state": "idle",
+            "attempt": 0,
+            "code": null
+          },
+          {
+            "observedAtMs": 6674.15733300001,
+            "state": "starting",
+            "attempt": 1,
+            "code": null
+          },
+          {
+            "observedAtMs": 52415.728250000015,
+            "state": "ready",
+            "attempt": 1,
+            "code": null
+          }
+        ],
+        "nativeStartupObservation": "observed",
+        "cdpTargetMs": 735.3304170000192,
+        "loopbackOriginMs": 6254.54908300002,
+        "lastObservedDocument": {
+          "timeOrigin": 1791646706275.2,
+          "href": "http://127.0.0.1:50729/",
+          "readyState": "complete",
+          "visibilityState": "visible",
+          "composer": true,
+          "newChat": true,
+          "model": true,
+          "modelLabels": [
+            "smoke-write"
+          ],
+          "selectedModel": {
+            "providerId": "devryan-smoke",
+            "modelId": "smoke-write",
+            "agent": "builder",
+            "catalogAvailable": true
+          },
+          "sessionID": null,
+          "navigation": {
+            "type": "reload",
+            "domContentLoadedEventEnd": 166.09999999403954,
+            "loadEventEnd": 167.20000000298023,
+            "duration": 167.20000000298023
+          },
+          "readinessGates": [
+            {
+              "name": "devryan-startup-gate-health-loading",
+              "elapsedMs": 394.79999999701977
+            },
+            {
+              "name": "devryan-startup-gate-providers-idle",
+              "elapsedMs": 394.8999999910593
+            },
+            {
+              "name": "devryan-startup-gate-agents-idle",
+              "elapsedMs": 394.8999999910593
+            },
+            {
+              "name": "devryan-startup-gate-initialization-loading",
+              "elapsedMs": 394.8999999910593
+            },
+            {
+              "name": "devryan-startup-gate-globalSync-loading",
+              "elapsedMs": 394.8999999910593
+            },
+            {
+              "name": "devryan-startup-gate-directorySync-loading",
+              "elapsedMs": 394.8999999910593
+            },
+            {
+              "name": "devryan-startup-gate-sessionList-loading",
+              "elapsedMs": 394.8999999910593
+            },
+            {
+              "name": "devryan-startup-gate-responseStyle-loading",
+              "elapsedMs": 394.8999999910593
+            },
+            {
+              "name": "devryan-startup-gate-worktree-idle",
+              "elapsedMs": 394.8999999910593
+            },
+            {
+              "name": "devryan-startup-gate-health-ready",
+              "elapsedMs": 544.3999999910593
+            },
+            {
+              "name": "devryan-startup-gate-providers-loading",
+              "elapsedMs": 544.3999999910593
+            },
+            {
+              "name": "devryan-startup-gate-worktree-loading",
+              "elapsedMs": 545
+            },
+            {
+              "name": "devryan-startup-gate-worktree-ready",
+              "elapsedMs": 577.0999999940395
+            },
+            {
+              "name": "devryan-startup-gate-globalSync-ready",
+              "elapsedMs": 630.0999999940395
+            },
+            {
+              "name": "devryan-startup-gate-sessionList-ready",
+              "elapsedMs": 646.3999999910593
+            },
+            {
+              "name": "devryan-startup-gate-directorySync-ready",
+              "elapsedMs": 648.0999999940395
+            },
+            {
+              "name": "devryan-startup-gate-providers-ready",
+              "elapsedMs": 649.5999999940395
+            },
+            {
+              "name": "devryan-startup-gate-agents-loading",
+              "elapsedMs": 651
+            },
+            {
+              "name": "devryan-startup-gate-agents-ready",
+              "elapsedMs": 691.8999999910593
+            },
+            {
+              "name": "devryan-startup-gate-responseStyle-ready",
+              "elapsedMs": 691.8999999910593
+            },
+            {
+              "name": "devryan-startup-gate-initialization-ready",
+              "elapsedMs": 949.5999999940395
+            }
+          ],
+          "paints": [
+            {
+              "name": "first-paint",
+              "startTime": 2392
+            },
+            {
+              "name": "first-contentful-paint",
+              "startTime": 2392
+            }
+          ]
+        },
+        "firstObservedDocument": {
+          "timeOrigin": 1791646659220.4,
+          "href": "http://127.0.0.1:50729/",
+          "readyState": "loading",
+          "visibilityState": "hidden",
+          "composer": false,
+          "newChat": false,
+          "model": false,
+          "modelLabels": [],
+          "selectedModel": null,
+          "sessionID": null,
+          "navigation": {
+            "type": "navigate",
+            "domContentLoadedEventEnd": 0,
+            "loadEventEnd": 0,
+            "duration": 0
+          },
+          "readinessGates": [],
+          "paints": []
+        },
+        "hostAvailableMs": 6267.146124999999,
+        "nativeStartupReadyMs": 52415.728250000015,
+        "hostReadyMs": 52415.864875,
+        "fixtureCatalogReadyMs": 52434.59516700002,
+        "firstSelectedModel": {
+          "observedAtMs": 54059.896542,
+          "providerId": "devryan-smoke",
+          "modelId": "smoke-write",
+          "agent": "builder",
+          "catalogAvailable": true
+        },
+        "foregroundActivation": {
+          "method": "desktop_focus_main_window",
+          "requestedAtMs": 55250.87725000002,
+          "documentTimeOrigin": 1791646706275.2,
+          "outcome": "acknowledged",
+          "acknowledgement": {
+            "focused": true
+          },
+          "acknowledgedAtMs": 55308.197208
+        },
+        "document": {
+          "timeOrigin": 1791646706275.2,
+          "href": "http://127.0.0.1:50729/",
+          "readyState": "complete",
+          "visibilityState": "visible",
+          "composer": true,
+          "newChat": true,
+          "model": true,
+          "modelLabels": [
+            "smoke-write"
+          ],
+          "selectedModel": {
+            "providerId": "devryan-smoke",
+            "modelId": "smoke-write",
+            "agent": "builder",
+            "catalogAvailable": true
+          },
+          "sessionID": null,
+          "navigation": {
+            "type": "reload",
+            "domContentLoadedEventEnd": 166.09999999403954,
+            "loadEventEnd": 167.20000000298023,
+            "duration": 167.20000000298023
+          },
+          "readinessGates": [
+            {
+              "name": "devryan-startup-gate-health-loading",
+              "elapsedMs": 394.79999999701977
+            },
+            {
+              "name": "devryan-startup-gate-providers-idle",
+              "elapsedMs": 394.8999999910593
+            },
+            {
+              "name": "devryan-startup-gate-agents-idle",
+              "elapsedMs": 394.8999999910593
+            },
+            {
+              "name": "devryan-startup-gate-initialization-loading",
+              "elapsedMs": 394.8999999910593
+            },
+            {
+              "name": "devryan-startup-gate-globalSync-loading",
+              "elapsedMs": 394.8999999910593
+            },
+            {
+              "name": "devryan-startup-gate-directorySync-loading",
+              "elapsedMs": 394.8999999910593
+            },
+            {
+              "name": "devryan-startup-gate-sessionList-loading",
+              "elapsedMs": 394.8999999910593
+            },
+            {
+              "name": "devryan-startup-gate-responseStyle-loading",
+              "elapsedMs": 394.8999999910593
+            },
+            {
+              "name": "devryan-startup-gate-worktree-idle",
+              "elapsedMs": 394.8999999910593
+            },
+            {
+              "name": "devryan-startup-gate-health-ready",
+              "elapsedMs": 544.3999999910593
+            },
+            {
+              "name": "devryan-startup-gate-providers-loading",
+              "elapsedMs": 544.3999999910593
+            },
+            {
+              "name": "devryan-startup-gate-worktree-loading",
+              "elapsedMs": 545
+            },
+            {
+              "name": "devryan-startup-gate-worktree-ready",
+              "elapsedMs": 577.0999999940395
+            },
+            {
+              "name": "devryan-startup-gate-globalSync-ready",
+              "elapsedMs": 630.0999999940395
+            },
+            {
+              "name": "devryan-startup-gate-sessionList-ready",
+              "elapsedMs": 646.3999999910593
+            },
+            {
+              "name": "devryan-startup-gate-directorySync-ready",
+              "elapsedMs": 648.0999999940395
+            },
+            {
+              "name": "devryan-startup-gate-providers-ready",
+              "elapsedMs": 649.5999999940395
+            },
+            {
+              "name": "devryan-startup-gate-agents-loading",
+              "elapsedMs": 651
+            },
+            {
+              "name": "devryan-startup-gate-agents-ready",
+              "elapsedMs": 691.8999999910593
+            },
+            {
+              "name": "devryan-startup-gate-responseStyle-ready",
+              "elapsedMs": 691.8999999910593
+            },
+            {
+              "name": "devryan-startup-gate-initialization-ready",
+              "elapsedMs": 949.5999999940395
+            }
+          ],
+          "paints": [
+            {
+              "name": "first-paint",
+              "startTime": 2392
+            },
+            {
+              "name": "first-contentful-paint",
+              "startTime": 2392
+            }
+          ]
+        },
+        "uiReadyMs": 55540.339708000014,
+        "electronStartupPhases": {
+          "source": "injected-launch-records",
+          "collectedAtMs": 55540.34675,
+          "records": [
+            {
+              "phase": "shell_environment",
+              "outcome": "completed",
+              "durationMs": 19
+            },
+            {
+              "phase": "foreground_preparation",
+              "outcome": "completed",
+              "durationMs": 11
+            },
+            {
+              "phase": "bundle_preparation",
+              "outcome": "completed",
+              "durationMs": 80.90754200000003
+            },
+            {
+              "phase": "application_import",
+              "outcome": "completed",
+              "durationMs": 2904.198417
+            },
+            {
+              "phase": "server_import",
+              "outcome": "completed",
+              "durationMs": 2988
+            },
+            {
+              "phase": "server_listen",
+              "outcome": "completed",
+              "durationMs": 860
+            },
+            {
+              "phase": "initial_url",
+              "outcome": "completed",
+              "durationMs": 5307
+            },
+            {
+              "phase": "renderer_navigation",
+              "outcome": "completed",
+              "durationMs": 574
+            },
+            {
+              "phase": "native_settlement",
+              "outcome": "completed",
+              "durationMs": 0.46108299999923474
+            },
+            {
+              "phase": "native_verification",
+              "outcome": "completed",
+              "durationMs": 2092.1982500000004
+            },
+            {
+              "phase": "native_configuration_sync",
+              "outcome": "completed",
+              "durationMs": 134.4722499999989
+            },
+            {
+              "phase": "native_configuration",
+              "outcome": "completed",
+              "durationMs": 39876.671125
+            },
+            {
+              "phase": "native_controller",
+              "outcome": "completed",
+              "durationMs": 3320.1247920000023
+            },
+            {
+              "phase": "native_recovery",
+              "outcome": "completed",
+              "durationMs": 239.0252079999991
+            },
+            {
+              "phase": "native_open",
+              "outcome": "completed",
+              "durationMs": 1.5247500000041327
+            }
+          ]
+        },
+        "nativeTransitions": [
+          {
+            "elapsedMs": 737.4140420000185,
+            "url": "data:startup-document",
+            "loaderId": null,
+            "kind": "initial-cdp-target"
+          },
+          {
+            "elapsedMs": 6139.626417000021,
+            "url": "http://127.0.0.1:50729/",
+            "loaderId": "32779078DD46C6FF6B2C82B48E43A437",
+            "kind": "native-top-frame-navigation"
+          },
+          {
+            "elapsedMs": 6700.133750000008,
+            "url": "http://127.0.0.1:50729/",
+            "loaderId": "41B97C21EE7A3F178078CCEADFC31830",
+            "kind": "native-top-frame-navigation"
+          },
+          {
+            "elapsedMs": 53109.659208,
+            "url": "http://127.0.0.1:50729/",
+            "loaderId": "B13E258E61843BF193283A08D35C69AD",
+            "kind": "native-top-frame-navigation"
+          }
+        ],
+        "benchmarkNavigationAttempts": [],
+        "nativeDocumentChanges": 2
+      },
+      "cleanupErrors": [],
+      "initialBundle": {
+        "bundleID": "candidate",
+        "revision": 1,
+        "previousBundleID": null,
+        "opencodeVersion": "2.0.26",
+        "artifactManifestSha256": "856ee1f0f46ec532b2b7689e8a6e2f05e35ff52b9b895945ad62fd47901d86f6"
+      },
+      "subscription": {
+        "readyAcknowledgedAtMs": 53640.665958,
+        "transport": "websocket",
+        "error": null
+      },
+      "background": {
+        "agentWarmupAtMs": 56488.23366700002,
+        "updateChecks": 0
+      },
+      "journal": {
+        "gapRecords": 0,
+        "lastError": null
+      },
+      "finalBundle": {
+        "bundleID": "candidate",
+        "revision": 1,
+        "previousBundleID": null,
+        "opencodeVersion": "2.0.26",
+        "artifactManifestSha256": "856ee1f0f46ec532b2b7689e8a6e2f05e35ff52b9b895945ad62fd47901d86f6"
+      },
+      "rendererExceptions": 0,
+      "cleanup": {
+        "source": "retained-os-process-ancestry-and-start-identities",
+        "rootPid": 5797,
+        "rootObserved": true,
+        "observationIntervalMs": 500,
+        "observationErrors": [],
+        "observedProcesses": [
+          {
+            "pid": 5797,
+            "parentPid": 96000,
+            "startIdentity": "Sat Oct 10 19:37:33 2026"
+          },
+          {
+            "pid": 5845,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:37:33 2026"
+          },
+          {
+            "pid": 5846,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:37:33 2026"
+          },
+          {
+            "pid": 5863,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:37:33 2026"
+          },
+          {
+            "pid": 5953,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:37:35 2026"
+          },
+          {
+            "pid": 5996,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:37:35 2026"
+          },
+          {
+            "pid": 6099,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:37:36 2026"
+          },
+          {
+            "pid": 6277,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:37:39 2026"
+          },
+          {
+            "pid": 6451,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:37:41 2026"
+          },
+          {
+            "pid": 6490,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:37:42 2026"
+          },
+          {
+            "pid": 7886,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:37:55 2026"
+          },
+          {
+            "pid": 10430,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:20 2026"
+          },
+          {
+            "pid": 10632,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:23 2026"
+          },
+          {
+            "pid": 10634,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:23 2026"
+          },
+          {
+            "pid": 10635,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:23 2026"
+          },
+          {
+            "pid": 10640,
+            "parentPid": 10634,
+            "startIdentity": "Sat Oct 10 19:38:23 2026"
+          },
+          {
+            "pid": 10823,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:25 2026"
+          },
+          {
+            "pid": 11135,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:27 2026"
+          },
+          {
+            "pid": 11172,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:27 2026"
+          },
+          {
+            "pid": 11173,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:27 2026"
+          },
+          {
+            "pid": 11199,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:27 2026"
+          },
+          {
+            "pid": 11234,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:28 2026"
+          },
+          {
+            "pid": 11237,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:28 2026"
+          },
+          {
+            "pid": 11241,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:28 2026"
+          },
+          {
+            "pid": 11267,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:28 2026"
+          },
+          {
+            "pid": 11301,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:28 2026"
+          },
+          {
+            "pid": 11304,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:28 2026"
+          },
+          {
+            "pid": 11360,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:28 2026"
+          },
+          {
+            "pid": 11390,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:28 2026"
+          },
+          {
+            "pid": 11393,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:28 2026"
+          },
+          {
+            "pid": 11397,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:28 2026"
+          },
+          {
+            "pid": 11457,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:29 2026"
+          },
+          {
+            "pid": 11460,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:29 2026"
+          },
+          {
+            "pid": 11463,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:29 2026"
+          },
+          {
+            "pid": 11505,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:29 2026"
+          },
+          {
+            "pid": 11508,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:29 2026"
+          },
+          {
+            "pid": 11511,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:29 2026"
+          },
+          {
+            "pid": 11542,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:30 2026"
+          },
+          {
+            "pid": 11547,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:30 2026"
+          },
+          {
+            "pid": 11550,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:30 2026"
+          },
+          {
+            "pid": 11554,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:30 2026"
+          },
+          {
+            "pid": 11571,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:30 2026"
+          },
+          {
+            "pid": 11574,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:30 2026"
+          },
+          {
+            "pid": 11578,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:30 2026"
+          },
+          {
+            "pid": 11609,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:31 2026"
+          },
+          {
+            "pid": 11612,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:31 2026"
+          },
+          {
+            "pid": 11618,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:31 2026"
+          },
+          {
+            "pid": 11658,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:31 2026"
+          },
+          {
+            "pid": 11663,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:31 2026"
+          },
+          {
+            "pid": 11668,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:31 2026"
+          },
+          {
+            "pid": 11732,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:32 2026"
+          },
+          {
+            "pid": 11736,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:32 2026"
+          },
+          {
+            "pid": 11743,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:32 2026"
+          },
+          {
+            "pid": 11787,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:32 2026"
+          },
+          {
+            "pid": 11849,
+            "parentPid": 5797,
+            "startIdentity": "Sat Oct 10 19:38:33 2026"
+          }
+        ],
+        "remainingProcessIds": [],
+        "signals": [],
+        "trackingClosed": true
+      },
+      "journalGapCheck": "passed"
+    }
+  ],
+  "catalogFixtureSha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+  "unavailable": [
+    "foreground warm service",
+    "foreground cold service",
+    "foreground stale-owner recovery",
+    "foreground service upgrade"
+  ],
+  "excluded": [
+    "launchd/SMAppService registration",
+    "installed state",
+    "paid providers",
+    "first native-bundle provisioning",
+    "cold OS caches"
+  ],
+  "summary": {
+    "launches": 3,
+    "medianUiReadyMs": 45576.877416999996,
+    "minimumUiReadyMs": 42161.96833399999,
+    "maximumUiReadyMs": 55540.339708000014
+  }
+}

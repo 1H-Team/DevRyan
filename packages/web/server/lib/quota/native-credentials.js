@@ -1,5 +1,6 @@
 import { readNativeOpenAiSelection } from '../opencode/chatgpt-siwc-host.js';
 import { credentialMutationFingerprint } from '../opencode/runtime-host/native-credential-mutation-owner.js';
+import { CHATGPT_SIWC_METHOD_ID } from '../opencode/chatgpt-siwc.js';
 
 /**
  * Quota credential source for the native runtime. Credentials live privately in
@@ -87,8 +88,14 @@ export function createNativeQuotaCredentials({
     const { value } = selected;
     if (value.type === 'key') return null;
     if (value.type !== 'oauth' || !isText(value.access) || !isText(value.methodID)) throw fail('native_credential_invalid');
-    const accountId = typeof value.metadata?.accountID === 'string' ? value.metadata.accountID : undefined;
-    return { openai: { type: 'oauth', access: value.access, accountId, methodID: value.methodID } };
+    // SIWC accountID is the identity subject, not a ChatGPT workspace header.
+    const accountId = value.methodID !== CHATGPT_SIWC_METHOD_ID && typeof value.metadata?.accountID === 'string'
+      ? value.metadata.accountID : undefined;
+    return { openai: { type: 'oauth', access: value.access, accountId, methodID: value.methodID,
+      connectionId: typeof selected.credentialID === 'string' ? selected.credentialID : null,
+      account: { email: typeof value.metadata?.email === 'string' ? value.metadata.email : null,
+        planType: typeof value.metadata?.planType === 'string' ? value.metadata.planType : null },
+    } };
   };
 
   const readProvider = async (state, entry) => {

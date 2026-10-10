@@ -1,0 +1,16 @@
+{
+  "scope": "one direct live request per provider through the installed native parser; no UI or credential refresh",
+  "at": "2026-10-10T14:42:57.679Z",
+  "results": [
+    {
+      "provider": "openai",
+      "model": "gpt-6-astra",
+      "status": 200,
+      "quotaHeadersPresent": [],
+      "outcome": "failed",
+      "stage": "stream-policy",
+      "policyCode": "chatgpt_siwc_stream_required",
+      "credentialUnchanged": true
+    }
+  ]
+}

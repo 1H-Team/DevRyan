@@ -12,7 +12,7 @@ import {FetchHttpClient} from 'effect/unstable/http';
 import {XAIPlugin} from '@opencode/core/plugin/provider/xai';
 import {Global} from '@opencode/util/global';
 import {LayerNode} from '@opencode/util/effect/layer-node';
-import {Effect,Layer,Schema} from 'effect';
+import {Cause,Effect,Fiber,Layer,Schema,Semaphore} from 'effect';
 import {createControllerProviderCredentials} from '../../packages/web/server/lib/opencode/runtime-host/controller-provider-credentials.ts';
 import {CredentialMutationReauthorizeRef} from '../../packages/web/server/lib/opencode/runtime-host/credential-mutation-contract.ts';
 import {OperationPermitRef} from '../../packages/web/server/lib/opencode/runtime-host/native-admission-contract.ts';
@@ -24,10 +24,11 @@ const id=Schema.decodeUnknownSync(Integration.ID);
 const value=Schema.decodeUnknownSync(Credential.Value);
 const permit={token:'a'.repeat(64),revision:0,sessionID:'ses_fixture'};
 const stale=value({type:'oauth',methodID:'device',access:'fixture-access',refresh:'fixture-refresh',expires:1});
-async function fixture(action,{fetchResponse,reauthorize,beforeRead,allowConsole=false,refreshScope=true}={}){
+async function fixture(action,{fetchResponse,reauthorize,beforeRead,beforeResolution,allowConsole=false,refreshScope=true}={}){
   const root=await fs.mkdtemp(path.resolve('.cache/v2-validation/provider-native-'));
   const location=Schema.decodeUnknownSync(Location.Info)({directory:root,project:{id:'global',directory:root,canonical:root}});
   let raw,originalIntegration,reads=0,checks=0,current=true,allowed=true,fetches=0,queued=0,generation=0;
+  const resolutionQueue=Semaphore.makeUnsafe(1);
   const actualFetch=globalThis.fetch;
   // Exact original XAI endpoints only. Any unexpected native/network behavior
   // fails this fixture; no installed authentication or provider is consulted.
@@ -40,7 +41,10 @@ async function fixture(action,{fetchResponse,reauthorize,beforeRead,allowConsole
   const assert=Effect.promise(async()=>{checks++;if(!allowed)throw Error('fixture_revoked');await reauthorize?.();});
   const adapter=createControllerProviderCredentials({controllerInstanceID:'fixture-controller',reviewedNativeProviderOrigin:origin,
     withCredentialMutation:(_binding,body)=>body.pipe(Effect.provideService(CredentialMutationReauthorizeRef,assert)),
-    withCredentialResolution:(_binding,check,body)=>{queued++;return check.pipe(Effect.andThen(body),Effect.tap(()=>check));},
+    withCredentialResolution:(_binding,check,body)=>{
+      const ordinal=++queued;
+      return resolutionQueue.withPermits(1)(Effect.promise(async()=>{await beforeResolution?.(ordinal);}).pipe(Effect.andThen(check),Effect.andThen(body),Effect.tap(()=>check)));
+    },
     captureLocation:()=>{const captured=generation;return {acquisitionID:'fixture-acquisition-'+captured,configurationDigest:'d'.repeat(64),assertCurrent:()=>{if(!current||generation!==captured)throw Error('fixture_acquisition_expired');}};},
     assertAttempt:()=>assert,assertResolution:()=>assert,captureOAuthGrant:()=>Effect.succeed({authorizationID:'fixture-caller',reauthorize:assert}),
     ownsDelegatedIntegration:()=>false});
@@ -67,7 +71,7 @@ async function fixture(action,{fetchResponse,reauthorize,beforeRead,allowConsole
       })},location);
       const resolve=(provider='xai')=>runner(provider).resolve({id:'ses_fixture',location},()=>Effect.succeed([]))
         .pipe(refreshScope?Effect.provideService(OperationPermitRef,permit):effect=>effect);
-      return yield* action({...state,credentials,integration,resolve,hooks});
+      return yield* action(Object.assign(state,{credentials,integration,resolve,hooks}));
     }).pipe(Effect.provide(layer),Effect.provide(FetchHttpClient.layer),Effect.provideService(Location.Service,location))));
   }finally{globalThis.fetch=actualFetch;await fs.rm(root,{recursive:true,force:true});}
 }
@@ -84,6 +88,62 @@ test('original native XAI refresh persists only exact selected OAuth under admit
     expect(yield* resolve()).toMatchObject({type:'oauth',access:'fixture-rotated',refresh:'fixture-next',methodID:'device'});
     expect((yield* credentials.get(created.id)).value).toMatchObject({access:'fixture-rotated',refresh:'fixture-next'});
     expect(yield* resolve()).toMatchObject({access:'fixture-rotated'});
+  }));
+});
+
+test('concurrent title and primary XAI resolutions reuse only the refresh committed by their queue',async()=>{
+  let entered,release;
+  const started=new Promise(resolve=>{entered=resolve;}),gate=new Promise(resolve=>{release=resolve;});
+  await fixture(state=>Effect.gen(function*(){
+    const created=yield* state.raw.create({integrationID:id('xai'),value:stale});
+    const title=yield* Effect.forkChild(state.resolve().pipe(Effect.exit));
+    yield* Effect.promise(()=>started);
+    const primary=yield* Effect.forkChild(state.resolve().pipe(Effect.exit));
+    while(state.queued<2)yield* Effect.sleep('1 millis');
+    release();
+    expect((yield* Fiber.join(title))._tag).toBe('Success');
+    expect((yield* Fiber.join(primary))._tag).toBe('Success');
+    expect(state.fetches).toBe(1);
+    expect((yield* state.credentials.get(created.id)).value.access).toBe('fixture-rotated');
+    for(const kind of ['title','primary']){
+      yield* state.hooks.trigger('session','model.request',{sessionID:'ses_fixture',agent:'builder',model:{providerID:'xai',id:'grok-4.6'},kind,headers:{}})
+        .pipe(Effect.provideService(OperationPermitRef,permit));
+    }
+  }),{fetchResponse:async()=>{entered();await gate;return Response.json({access_token:'fixture-rotated',refresh_token:'fixture-next',expires_in:3600});}});
+});
+
+for(const change of ['replace','switch','revoke'])test('waiting XAI resolution refuses '+change+' after an authorized refresh',async()=>{
+  let store,credentialID,revoke;
+  await fixture(state=>Effect.gen(function*(){
+    store=state.raw;revoke=state.revoke;
+    credentialID=(yield* store.create({integrationID:id('xai'),value:stale})).id;
+    const [first,second]=yield* Effect.all([state.resolve().pipe(Effect.exit),state.resolve().pipe(Effect.exit)],{concurrency:'unbounded'});
+    expect(first._tag).toBe('Success');expect(second._tag).toBe('Failure');
+    if(second._tag!=='Failure')throw Error('Changed credential was accepted');
+    expect(String(Cause.squash(second.cause))).toContain(change==='revoke'?'fixture_revoked':'native_credential_changed');
+    expect(state.fetches).toBe(1);
+    if(change==='replace')expect((yield* store.get(credentialID)).value.access).toBe('fixture-unrelated');
+    if(change==='switch')expect((yield* state.integration.connection.active(id('xai'))).id).not.toBe(credentialID);
+  }),{
+    fetchResponse:async()=>{await new Promise(resolve=>setTimeout(resolve,20));return Response.json({access_token:'fixture-rotated',refresh_token:'fixture-next',expires_in:3600});},
+    beforeResolution:async ordinal=>{
+      if(ordinal!==2)return;
+      if(change==='revoke'){revoke();return;}
+      const replacement=value({...stale,access:'fixture-unrelated',refresh:'fixture-unrelated-refresh',expires:Date.now()+3600000});
+      if(change==='replace')await Effect.runPromise(store.update(credentialID,{value:replacement}));
+      else await Effect.runPromise(store.create({integrationID:id('xai'),value:replacement}));
+    },
+  });
+});
+
+test('concurrent unchanged provider key resolutions remain read-only and dispatch normally',async()=>{
+  await fixture(state=>Effect.gen(function*(){
+    yield* state.raw.create({integrationID:id('xai'),value:value({type:'key',key:'fixture-key'})});
+    const results=yield* Effect.all([state.resolve(),state.resolve()],{concurrency:'unbounded'});
+    expect(results.map(result=>result.type)).toEqual(['key','key']);
+    expect(state.queued).toBe(0);expect(state.fetches).toBe(0);
+    yield* state.hooks.trigger('session','http.request',{sessionID:'ses_fixture',agent:'builder',model:{providerID:'xai',id:'grok-4.6'},kind:'primary',request:new Request('https://fixture.invalid/responses')})
+      .pipe(Effect.provideService(OperationPermitRef,permit));
   }));
 });
 

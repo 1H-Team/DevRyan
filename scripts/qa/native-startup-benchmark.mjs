@@ -34,6 +34,19 @@ export function parseNativeStartupArgs(argv) {
   return { packageEvidence: argv[1], artifactRoot: argv[3], ...(argv.length === 6 ? { baselineArtifactRoot: argv[5] } : {}) };
 }
 
+export function parseStartupComparisonArgs(argv) {
+  const flags = ['--baseline-package-evidence', '--candidate-package-evidence', '--artifact-root'];
+  assert.ok(argv.length === 6 || argv.length === 8, 'Comparison requires explicit baseline, candidate and native artifacts');
+  for (let index = 0; index < flags.length; index++) {
+    assert.equal(argv[index * 2], flags[index], 'Unexpected comparison option');
+    assert.ok(path.isAbsolute(argv[index * 2 + 1]), 'Comparison artifacts must be absolute');
+  }
+  if (argv.length === 8) assert.equal(argv[6], '--startup-mode');
+  const startupMode = argv[7] ?? 'natural';
+  assertStartupMode(startupMode);
+  return { baselinePackageEvidence: argv[1], candidatePackageEvidence: argv[3], artifactRoot: argv[5], startupMode };
+}
+
 export function assertNativeStartupUpgrade(initial, final, candidate) {
   assertNativeUpgradeBaseline(initial.opencodeVersion, candidate.opencodeVersion, initial.artifactManifestSha256, candidate.artifactManifestSha256);
   assert.equal(final.revision, initial.revision + 1, 'Startup must commit one selection transition');
@@ -179,12 +192,7 @@ export function assertNativeStartupPackageSource(packaged, current, startupPolic
   assert.equal(packaged, baselineSourceSha256 ?? current, 'Package source differs from the reviewed cohort');
 }
 
-export async function runNativeStartupBenchmark({ packageEvidence, artifactRoot, baselineArtifactRoot, startupMode = 'natural', startupPolicy = 'optimized', baselineSourceSha256 }) {
-  assertStartupMode(startupMode);
-  assert.ok(['optimized','previous'].includes(startupPolicy), 'Explicit startup comparison policy required');
-  if (process.platform !== 'darwin' || process.arch !== 'arm64' || !globalThis.Bun) throw new Error('Native packaged startup measurement requires pinned Bun on Darwin ARM64');
-  const before = await captureQaSourceIdentity(repository);
-  const legacyOpenAiBrowser = process.env.DEVRYAN_QA_LEGACY_OPENAI_BROWSER === '1';
+async function readStartupCatalogFixture() {
   let catalogProviders;
   if (process.env.DEVRYAN_QA_CATALOG_CONFIG) {
     const file = await fs.realpath(process.env.DEVRYAN_QA_CATALOG_CONFIG);
@@ -192,8 +200,23 @@ export async function runNativeStartupBenchmark({ packageEvidence, artifactRoot,
     const provider = JSON.parse(await fs.readFile(file, 'utf8'));
     catalogProviders = { ...syntheticCursorProvider({ provider }), ...syntheticAnthropicProvider({ provider }) };
   }
+  return catalogProviders;
+}
+
+export async function runNativeStartupBenchmark(options) {
+  return runStartupLaunches(options);
+}
+
+async function runStartupLaunches({ packageEvidence, artifactRoot, baselineArtifactRoot, startupMode = 'natural', startupPolicy = 'optimized', baselineSourceSha256 }, comparisonSource, comparisonCatalog) {
+  assertStartupMode(startupMode);
+  assert.ok(['optimized','previous'].includes(startupPolicy), 'Explicit startup comparison policy required');
+  if (process.platform !== 'darwin' || process.arch !== 'arm64' || !globalThis.Bun) throw new Error('Native packaged startup measurement requires pinned Bun on Darwin ARM64');
+  const before = await captureQaSourceIdentity(repository);
+  const legacyOpenAiBrowser = process.env.DEVRYAN_QA_LEGACY_OPENAI_BROWSER === '1';
+  const catalogProviders = comparisonCatalog ?? await readStartupCatalogFixture();
   const packaged = await loadQaPackagedArtifact({ root: repository, evidencePath: packageEvidence });
-  assertNativeStartupPackageSource(packaged.evidence.source.sha256, before.sha256, startupPolicy, baselineSourceSha256);
+  if (comparisonSource) assert.equal(packaged.evidence.source.sha256, comparisonSource, 'Comparison package source changed');
+  else assertNativeStartupPackageSource(packaged.evidence.source.sha256, before.sha256, startupPolicy, baselineSourceSha256);
   let candidate;
   if (baselineArtifactRoot) {
     assert.ok(artifactRoot.startsWith(repository + path.sep) && await fs.realpath(artifactRoot) === artifactRoot, 'Candidate artifacts must be canonical repository-owned files');
@@ -210,16 +233,19 @@ export async function runNativeStartupBenchmark({ packageEvidence, artifactRoot,
   let activeStop = async () => {};
   const run = createRunRoot({ parent: path.join(repository, '.cache/qa'), prefix: 'native-startup-',
     owner: 'scripts/qa/native-startup-benchmark.mjs', onInterrupt: () => activeStop() });
+  const launchScope = comparisonSource ? 'one fresh process/profile' : 'three fresh processes/profiles';
   const evidence = { schemaVersion: 1, kind: candidate ? 'packaged-native-app-bound-startup-upgrade' : 'packaged-native-app-bound-startup', outcome: 'failed',
     scope: candidate ? 'three fresh baseline profiles; production app-bound native startup upgrade; local HTTP model fixture; natural first usable renderer'
-      : 'three fresh processes/profiles; prepared native bundle; local HTTP model fixture; natural first usable renderer',
+      : `${launchScope}; prepared native bundle; local HTTP model fixture; natural first usable renderer`,
     ...(candidate ? { candidate } : {}),
-    startupMode, ...(startupMode === 'foreground' ? { scope: candidate ? 'three fresh baseline profiles; production startup upgrade; local HTTP model fixture; foreground-controlled admission' : 'three fresh processes/profiles; prepared native bundle; local HTTP model fixture; foreground-controlled admission', timingQualification: 'foreground-controlled admission, not natural startup latency' } : {}),
+    launches: comparisonSource ? 1 : 3,
+    startupMode, ...(startupMode === 'foreground' ? { scope: candidate ? 'three fresh baseline profiles; production startup upgrade; local HTTP model fixture; foreground-controlled admission' : `${launchScope}; prepared native bundle; local HTTP model fixture; foreground-controlled admission`, timingQualification: 'foreground-controlled admission, not natural startup latency' } : {}),
     sourceSha256: before.sha256, packageSourceSha256: packaged.evidence.source.sha256, archiveSha256: packaged.evidence.archiveSha256, startupPolicy, legacyOpenAiBrowser, runs: [],
+    catalogFixtureSha256: hash(JSON.stringify(catalogProviders ?? null)),
     unavailable: ['foreground warm service', 'foreground cold service', 'foreground stale-owner recovery', 'foreground service upgrade'],
     excluded: ['launchd/SMAppService registration', 'installed state', 'paid providers', 'first native-bundle provisioning', 'cold OS caches'] };
   try {
-    for (let iteration = 0; iteration < 3; iteration++) {
+    for (let iteration = 0; iteration < (comparisonSource ? 1 : 3); iteration++) {
       const directory = path.join(run.dir, `run-${iteration + 1}`);
       await fs.mkdir(directory, { mode: 0o700 });
       const runtimeRoot = run.own(await fs.mkdtemp(path.join(fixtures, 'native-startup-')));
@@ -231,7 +257,8 @@ export async function runNativeStartupBenchmark({ packageEvidence, artifactRoot,
         pathMappings: [{ path: runtimeRoot, placeholder: '<QA_RUNTIME>' }, { path: repository, placeholder: '<REPOSITORY>' }] });
       const record = { iteration, startup: null, cleanupErrors: [] };
       evidence.runs.push(record);
-      let prepared, app, cdp, audit, subscription, background;
+      let prepared, app, cdp, audit, subscription, background, removeRuntimeErrors;
+      let rendererExceptions = 0;
       let stopping;
       const stop = () => stopping ??= (async () => {
         for (const [owner, close] of [['app', () => app?.stop()], ['provider', () => prepared?.close()]]) {
@@ -263,6 +290,7 @@ export async function runNativeStartupBenchmark({ packageEvidence, artifactRoot,
         const target = await discoverPageTarget(debugPort);
         const cdpTargetMs = performance.now() - startedAt;
         cdp = await CdpConnection.connect(target.webSocketDebuggerUrl);
+        removeRuntimeErrors = cdp.on('Runtime.exceptionThrown', () => { rendererExceptions++; });
         audit = observeStartupNavigation(cdp, startedAt, target.url);
         subscription = observeNativeStartupSubscription(cdp, startedAt, `http://127.0.0.1:${port}`);
         background = observeStartupBackgroundWork(cdp, startedAt, `http://127.0.0.1:${port}`);
@@ -324,6 +352,13 @@ export async function runNativeStartupBenchmark({ packageEvidence, artifactRoot,
           await fs.writeFile(path.join(directory, 'model-picker.png'), Buffer.from(picker.data, 'base64'), { mode: 0o600 });
           await ui.key('Escape', { code: 'Escape' });
         }
+        const diagnostics = await fetch(new URL('/api/diagnostics/status', origin), { signal: AbortSignal.timeout(10000) });
+        assert.equal(diagnostics.status, 200, 'Journal status must be available');
+        const journal = await diagnostics.json();
+        record.journal = { gapRecords: journal.gapRecords, lastError: journal.lastError ? 'journal_error' : null };
+        assert.equal(journal.gapRecords, 0, 'Startup journal has gaps');
+        assert.ok(!journal.lastError, 'Startup journal reported an error');
+        assert.equal(rendererExceptions, 0, 'Renderer threw during startup');
         record.finalBundle = readBundleStartupState(prepared.controlRoot);
         if (candidate) assertNativeStartupUpgrade(record.initialBundle, record.finalBundle, candidate);
         await prepared.verifyInputs();
@@ -339,7 +374,8 @@ export async function runNativeStartupBenchmark({ packageEvidence, artifactRoot,
         record.error = sanitize.sanitizeText(String(error.message), { highEntropy: false });
         throw error;
       } finally {
-        audit?.complete(); subscription?.close(); background?.close(); cdp?.close();
+        record.rendererExceptions = rendererExceptions;
+        removeRuntimeErrors?.(); audit?.complete(); subscription?.close(); background?.close(); cdp?.close();
         await stop();
         activeStop = async () => {};
         if (app) record.cleanup = app.getCleanupEvidence();
@@ -348,6 +384,16 @@ export async function runNativeStartupBenchmark({ packageEvidence, artifactRoot,
         if (prepared) {
           try { logs = readNativeStartupLogs(app, prepared.env.DEVRYAN_QA_HOME); }
           catch { record.cleanupErrors.push('main_log_unreadable'); }
+        }
+        if (prepared) {
+          try {
+            const binding = readRuntimeBundleBinding({ DEVRYAN_RUNTIME_BUNDLE_ROOT: prepared.controlRoot });
+            const journalDirectory = path.join(binding.descriptor.launch.webDataDirectory, 'harness/journal');
+            const gaps = execFileSync(process.execPath, ['scripts/journal.mjs', 'gaps', '--dir', journalDirectory, '--verify'],
+              { cwd: repository, encoding: 'utf8', timeout: 10000 });
+            record.journalGapCheck = gaps.trim() ? 'failed' : 'passed';
+            if (gaps.trim()) record.cleanupErrors.push('journal_gaps');
+          } catch { record.journalGapCheck = 'unavailable'; record.cleanupErrors.push('journal_gap_check_failed'); }
         }
         await fs.writeFile(path.join(directory, 'startup.log'), sanitize.sanitizeText(logs, { highEntropy: false }), { mode: 0o600 });
         await fs.writeFile(path.join(directory, 'evidence.json'), JSON.stringify(record, null, 2) + '\n', { mode: 0o600 });
@@ -358,7 +404,7 @@ export async function runNativeStartupBenchmark({ packageEvidence, artifactRoot,
     assert.equal((await loadQaPackagedArtifact({ root: repository, evidencePath: packageEvidence })).evidence.archiveSha256, packaged.evidence.archiveSha256);
     if (candidate) assert.equal(hash(await fs.readFile(path.join(packaged.evidence.appPath,
       'Contents/Resources/revert-runtime/darwin-arm64/native-bundle.json'))), candidate.artifactManifestSha256, 'Packaged native candidate changed during measurement');
-    evidence.summary = summarizeNativeStartupRuns(evidence.runs);
+    if (!comparisonSource) evidence.summary = summarizeNativeStartupRuns(evidence.runs);
     evidence.outcome = 'passed';
   } catch (error) {
     evidence.error = typeof error.code === 'string' ? error.code : 'qa_native_startup_failed';
@@ -369,8 +415,80 @@ export async function runNativeStartupBenchmark({ packageEvidence, artifactRoot,
   return { ...evidence, output: run.dir };
 }
 
+export function summarizeStartupComparison(baseline, candidate) {
+  const before = summarizeNativeStartupRuns(baseline), after = summarizeNativeStartupRuns(candidate);
+  const improvementPercent = 100 * (before.medianUiReadyMs - after.medianUiReadyMs) / before.medianUiReadyMs;
+  const pairedImprovements = baseline.map((run, index) => candidate[index].startup.uiReadyMs < run.startup.uiReadyMs);
+  return { baseline: before, candidate: after, improvementPercent, pairedImprovements,
+    accepted: improvementPercent >= 5 && pairedImprovements.every(Boolean) };
+}
+
+export function assertStartupComparisonSources(baseline, candidate, current) {
+  assert.equal(candidate.sha256, current, 'Candidate must match current reviewed source');
+  const previous = new Map(baseline.entries.map(entry => [entry.file, entry.sha256]));
+  const next = new Map(candidate.entries.map(entry => [entry.file, entry.sha256]));
+  const changed = [...new Set([...previous.keys(), ...next.keys()])].filter(file => previous.get(file) !== next.get(file));
+  assert.ok(changed.length > 0, 'Comparison requires an actual candidate');
+  const allowed = ['packages/ui/src/App.tsx', 'packages/web/server/lib/opencode/feature-routes-runtime.js'];
+  assert.ok(changed.every(file => allowed.includes(file)), 'Comparison changed files outside the startup candidates');
+  for (const source of [baseline, candidate]) {
+    assert.equal(hash(JSON.stringify(source.entries)), source.sha256, 'Source receipt is invalid');
+  }
+  return changed;
+}
+
+export async function runNativeStartupComparison({ baselinePackageEvidence, candidatePackageEvidence, artifactRoot, startupMode = 'natural' }) {
+  assertStartupMode(startupMode);
+  assert.ok(typeof artifactRoot === 'string' && artifactRoot.startsWith(path.join(repository, '.cache') + path.sep),
+    'Comparison native artifacts must stay in the repository cache');
+  assert.equal(await fs.realpath(artifactRoot), artifactRoot, 'Comparison native artifacts must be canonical');
+  const before = await captureQaSourceIdentity(repository);
+  const baseline = await loadQaPackagedArtifact({ root: repository, evidencePath: baselinePackageEvidence });
+  const candidate = await loadQaPackagedArtifact({ root: repository, evidencePath: candidatePackageEvidence });
+  const catalogProviders = await readStartupCatalogFixture();
+  const changed = assertStartupComparisonSources(baseline.evidence.source, candidate.evidence.source, before.sha256);
+  assert.equal(baseline.evidence.electronVersion, candidate.evidence.electronVersion);
+  assert.deepEqual(baseline.evidence.nativeArtifacts.map(({ relative, sha256 }) => ({ relative, sha256 })),
+    candidate.evidence.nativeArtifacts.map(({ relative, sha256 }) => ({ relative, sha256 })));
+  const nativeManifest = async packaged => hash(await fs.readFile(path.join(packaged.evidence.appPath, 'Contents/Resources/revert-runtime/darwin-arm64/native-bundle.json')));
+  const nativeDigest = await nativeManifest(baseline);
+  assert.equal(await nativeManifest(candidate), nativeDigest, 'Native runtime versions must match');
+  assert.equal(hash(await fs.readFile(path.join(artifactRoot, 'native-bundle.json'))), nativeDigest, 'Fixture must match packaged native runtime');
+  const run = createRunRoot({ parent: path.join(repository, '.cache/qa'), prefix: 'startup-comparison-', owner: 'scripts/qa/native-startup-benchmark.mjs' });
+  const evidence = { outcome: 'failed', startupMode, changed, nativeDigest, catalogFixtureSha256: hash(JSON.stringify(catalogProviders ?? null)), order: ['B1', 'C1', 'C2', 'B2', 'B3', 'C3'],
+    baselineSourceSha256: baseline.evidence.source.sha256, candidateSourceSha256: candidate.evidence.source.sha256,
+    baselineArchiveSha256: baseline.evidence.archiveSha256, candidateArchiveSha256: candidate.evidence.archiveSha256,
+    baseline: [], candidate: [] };
+  try {
+    for (const label of evidence.order) {
+      const packaged = label[0] === 'B' ? baseline : candidate;
+      const result = await runStartupLaunches({ packageEvidence: packaged.evidencePath, artifactRoot, startupMode }, packaged.evidence.source.sha256, catalogProviders);
+      evidence[label[0] === 'B' ? 'baseline' : 'candidate'].push(...result.runs);
+      assert.equal(result.outcome, 'passed', `Launch ${label} failed: ${result.output}`);
+      assert.equal((await captureQaSourceIdentity(repository)).sha256, before.sha256, 'Source changed during comparison');
+    }
+    for (const packaged of [baseline, candidate]) {
+      const final = await loadQaPackagedArtifact({ root: repository, evidencePath: packaged.evidencePath });
+      assert.equal(final.evidence.archiveSha256, packaged.evidence.archiveSha256, 'Comparison archive changed');
+      assert.equal(final.evidence.source.sha256, packaged.evidence.source.sha256, 'Comparison source receipt changed');
+    }
+    assert.equal(await nativeManifest(baseline), nativeDigest);
+    assert.equal(await nativeManifest(candidate), nativeDigest);
+    evidence.summary = summarizeStartupComparison(evidence.baseline, evidence.candidate);
+    evidence.outcome = 'passed';
+  } catch (error) { evidence.error = error.message; }
+  finally {
+    await fs.writeFile(path.join(run.dir, 'evidence.json'), JSON.stringify(evidence, null, 2) + '\n', { mode: 0o600 });
+    run.finish(evidence.outcome);
+  }
+  return { ...evidence, output: run.dir };
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-  const result = await runNativeStartupBenchmark(parseNativeStartupArgs(process.argv.slice(2)));
+  const argv = process.argv.slice(2);
+  const result = argv[0] === '--baseline-package-evidence'
+    ? await runNativeStartupComparison(parseStartupComparisonArgs(argv))
+    : await runNativeStartupBenchmark(parseNativeStartupArgs(argv));
   process.stdout.write(JSON.stringify({ outcome: result.outcome, output: result.output, summary: result.summary, error: result.error }) + '\n');
   process.exitCode = result.outcome === 'passed' ? 0 : 1;
 }

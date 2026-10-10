@@ -548,6 +548,52 @@ const normalizeResetCreditsPayload = (payload, source, now) => {
   return { availableCount, totalEarnedCount, credits, source };
 };
 
+/** Normalize the documented account/rateLimits/read reply without inferring missing limits. */
+export const normalizeCodexAppServerQuota = (payload, { now = Date.now() } = {}) => {
+  const data = asObject(payload);
+  const windows = {};
+  const labels = new Map();
+  const warnings = [];
+  const buckets = asObject(data?.rateLimitsByLimitId);
+  const entries = buckets && Object.keys(buckets).length > 0
+    ? Object.entries(buckets) : [['codex', data?.rateLimits]];
+  for (const [key, raw] of entries) {
+    const bucket = asObject(raw);
+    if (!bucket) continue;
+    for (const field of ['primary', 'secondary']) {
+      const window = asObject(bucket[field]);
+      if (!window) continue;
+      const minutes = window.windowDurationMins;
+      const usedPercent = window.usedPercent;
+      if (typeof minutes !== 'number' || !Number.isFinite(minutes) || minutes <= 0
+        || typeof usedPercent !== 'number' || !Number.isFinite(usedPercent) || usedPercent < 0 || usedPercent > 100) {
+        warnings.push('A usage window was unavailable or malformed.');
+        continue;
+      }
+      const duration = minutes * 60;
+      const label = resolveWindowLabel(duration, 'limit');
+      const bucketName = asNonEmptyString(bucket.limitName) ?? asNonEmptyString(bucket.limitId) ?? key;
+      addCollisionSafeWindow(windows, labels, key === 'codex' ? label : `${bucketName} (${label})`, toSharedUsageWindow({
+        usedPercent, windowSeconds: duration, resetAt: firstTimestamp(window, ['resetsAt']),
+        description: `Codex usage bucket: ${bucketName}.`, now,
+      }));
+    }
+  }
+  const rawResets = asObject(data?.rateLimitResetCredits);
+  const resetCredits = rawResets && Number.isSafeInteger(rawResets.availableCount) && rawResets.availableCount >= 0
+    ? normalizeResetCreditsPayload(rawResets, 'dedicated', now) : null;
+  return buildSharedQuotaResult({
+    providerId: 'codex', providerName: 'ChatGPT', configured: true,
+    ok: Object.keys(windows).length > 0 || resetCredits !== null,
+    usage: { windows, resetCredits: resetCredits ? {
+      ...resetCredits, detailsAvailable: Array.isArray(rawResets.credits),
+    } : null }, warnings,
+    ...(Object.keys(windows).length === 0 && resetCredits === null ? {
+      error: 'The usage connection returned no allowance or reset-bank data.', errorCode: 'CODEX_USAGE_UNAVAILABLE',
+    } : {}), now,
+  });
+};
+
 const fetchCodexResetCredits = async (fetchImpl, accessToken, accountId, now) => {
   try {
     const response = await fetchImpl(CODEX_RESET_CREDITS_URL, {

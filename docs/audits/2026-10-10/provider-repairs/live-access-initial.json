@@ -1,0 +1,25 @@
+{
+  "scope": "one direct live request per provider through the installed native parser; no UI or credential refresh",
+  "at": "2026-10-10T14:23:15.447Z",
+  "results": [
+    {
+      "provider": "openai",
+      "model": "gpt-6-astra",
+      "outcome": "failed",
+      "reason": "bounded_transport_or_native_parser_failure",
+      "credentialUnchanged": true
+    },
+    {
+      "provider": "xai",
+      "model": "grok-4.6",
+      "status": 200,
+      "quotaHeadersPresent": [],
+      "outcome": "completed",
+      "nativeParserAccepted": true,
+      "answerWasOk": true,
+      "quotaEventSeen": false,
+      "frames": 17,
+      "credentialUnchanged": true
+    }
+  ]
+}

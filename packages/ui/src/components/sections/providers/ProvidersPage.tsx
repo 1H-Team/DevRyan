@@ -6,7 +6,7 @@ import { ProviderLogo } from '@/components/ui/ProviderLogo';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
-import { quotaRefreshCoordinator } from '@/stores/useQuotaStore';
+import { quotaRefreshCoordinator, useQuotaStore } from '@/stores/useQuotaStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -55,6 +55,7 @@ import { useUsageOnlySelectionAvailable } from './useProviderUsage';
 import { useI18n } from '@/lib/i18n';
 import { useAuthPrincipal } from '@/lib/authSession';
 import { ClaudeDedicatedEnrollment } from './ClaudeDedicatedEnrollment';
+import { CodexUsageConnection } from './CodexUsageConnection';
 import { ChatgptSiwcEnrollment } from './ChatgptSiwcEnrollment';
 import { getProviderModelUnavailability } from '@/lib/providers/modelAvailability';
 import { BundledRuntimeUpdate } from './BundledRuntimeUpdate';
@@ -706,7 +707,10 @@ const ProvidersPageContent: React.FC = () => {
         throw new Error(message);
       }
 
-      if (providerId === 'openai') setOpenAiAuthRevision(value => value + 1);
+      if (providerId === 'openai') {
+        useQuotaStore.getState().invalidateProviderQuota('codex');
+        setOpenAiAuthRevision(value => value + 1);
+      }
       toast.success(t('settings.providers.page.toast.apiKeySaved'));
       setApiKeyInputs((prev) => ({ ...prev, [providerId]: '' }));
       recordConfigMutationResponse(payload);
@@ -761,6 +765,7 @@ const ProvidersPageContent: React.FC = () => {
     }
 
     setOauthCodes((prev) => ({ ...prev, [codeKey]: '' }));
+    if (providerId === 'openai') useQuotaStore.getState().invalidateProviderQuota('codex');
     setOauthDetails((prev) => {
       const next = { ...prev };
       delete next[codeKey];
@@ -1575,7 +1580,10 @@ const ProvidersPageContent: React.FC = () => {
                   renderClaudeCodeAuth()
                 )}
 
-                {providerOAuth && selectedProvider.id === 'openai' && renderChatgptSiwcAuth()}
+                {providerOAuth && selectedProvider.id === 'openai' && <>
+                  {renderChatgptSiwcAuth()}
+                  <CodexUsageConnection administrator={principal.role === 'admin' && principal.scope !== 'tunnel-bot'} principalID={principal.id} />
+                </>}
 
                 {activeCursorAcpProviderId === selectedProvider.id && (
                   <div className="flex items-center justify-between gap-3 py-1.5">

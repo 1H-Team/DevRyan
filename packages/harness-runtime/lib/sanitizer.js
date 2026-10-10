@@ -2,6 +2,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { projectUsageObservation, runtimeUsageObservation } from '../../shared-runtime/lib/usage-observation.js';
 import { parseNativeObservation, parseNativeJournalObservation } from '../../shared-runtime/lib/native-observation.js';
+import { isSafeProviderCode, isSafeProviderParam, isSafeErrorType } from '../../shared-runtime/lib/provider-error-details.js';
 
 // Record keys may themselves be secrets. Only native schema field names and indices escape.
 const schemaFields = new Set(['data', 'location', 'directory', 'id', 'modelID', 'providerID', 'canonical', 'family', 'name',
@@ -46,7 +47,7 @@ const NESTED_FIELDS = new Set([
   'version', 'phase', 'outcome', 'settledAt',
   'title', 'description', 'text', 'delta', 'reasoning', 'reasoningText',
   'tool', 'name', 'callID', 'callId', 'input', 'output', 'error', 'message',
-  'code', 'reason', 'action', 'permission', 'questions', 'answers', 'response',
+  'code', 'reason', 'action', 'permission', 'questions', 'answers', 'response', 'providerCode', 'providerParam', 'v2Type',
   'directory', 'path', 'file', 'filePath', 'url', 'mime', 'mimeType', 'size',
   'filename',
   'sha256', 'hash', 'source', 'runtime', 'providerID', 'providerId', 'modelID',
@@ -238,7 +239,8 @@ export const createDiagnosticSanitizer = (options = {}) => {
   const sanitizeNested = (value, seen = new WeakSet(), field = '') => {
     if (value === null || typeof value === 'boolean' || typeof value === 'number') return value;
     if (typeof value === 'string') {
-      return redactString(value, { highEntropy: !STABLE_IDENTIFIER_FIELDS.has(field) });
+      return redactString(value, { highEntropy: !STABLE_IDENTIFIER_FIELDS.has(field)
+        && !['providerCode', 'providerParam', 'v2Type'].includes(field) });
     }
     if (Array.isArray(value)) return value.map((entry) => sanitizeNested(entry, seen, field));
     const object = asObject(value);
@@ -282,6 +284,12 @@ export const createDiagnosticSanitizer = (options = {}) => {
       ? TOKEN_FIELDS
       : (field === 'cache' ? TOKEN_CACHE_FIELDS : NESTED_FIELDS);
     for (const [key, nested] of Object.entries(object)) {
+      if ((key === 'providerCode' && !isSafeProviderCode(nested))
+        || (key === 'providerParam' && !isSafeProviderParam(nested))
+        || (key === 'v2Type' && !isSafeErrorType(nested))) {
+        report.droppedFields += 1;
+        continue;
+      }
       if (key === 'owner' && nested !== 'devryan') {
         report.droppedFields += 1;
         continue;
@@ -450,7 +458,8 @@ export const createDiagnosticSanitizer = (options = {}) => {
     const visit = (value, field = '', seen = new WeakSet()) => {
       if (value === null || typeof value === 'boolean' || typeof value === 'number') return value;
       if (typeof value === 'string') {
-        return redactString(value, { highEntropy: !STABLE_IDENTIFIER_FIELDS.has(field) });
+        return redactString(value, { highEntropy: !STABLE_IDENTIFIER_FIELDS.has(field)
+          && !['providerCode', 'providerParam', 'v2Type'].includes(field) });
       }
       if (Array.isArray(value)) return value.map((entry) => visit(entry, field, seen));
       const object = asObject(value);
@@ -459,6 +468,9 @@ export const createDiagnosticSanitizer = (options = {}) => {
       seen.add(object);
       const output = {};
       for (const [key, nested] of Object.entries(object)) {
+        if ((key === 'providerCode' && !isSafeProviderCode(nested))
+          || (key === 'providerParam' && !isSafeProviderParam(nested))
+          || (key === 'v2Type' && !isSafeErrorType(nested))) continue;
         if (key === 'payload' && object.type === 'lifecycle' && object.event === 'native_observation') {
           output[key] = redactNativeObservation(parseNativeJournalObservation(nested));
           continue;

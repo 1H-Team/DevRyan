@@ -1,9 +1,10 @@
+import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { test } from 'node:test';
 import { observeStartupBackgroundWork, assertNativeStartupPackageSource, assertNativeStartupUpgrade, assertNativeUpgradeBaseline, observeNativeStartupSubscription, parseNativeStartupArgs, readNativeStartupLogs,
-  summarizeNativeStartupRuns } from './native-startup-benchmark.mjs';
+  parseStartupComparisonArgs, summarizeStartupComparison, assertStartupComparisonSources, summarizeNativeStartupRuns } from './native-startup-benchmark.mjs';
 import { parseStartupPhaseLogs } from '../perf/electron-lifecycle-benchmark.mjs';
 import { runtimeUiBundleLayout } from './native-backend-ui-diagnostic.mjs';
 import { resolveRuntimeBundleRoot } from '../../packages/web/server/lib/opencode/runtime-host/runtime-bundle-root.js';
@@ -217,4 +218,35 @@ test('background startup evidence counts only owned fixed endpoints and cleans u
   assert.equal(JSON.stringify(observer.evidence).includes('private'), false);
   observer.close();
   assert.equal([...cdp.listeners.values()].every(entries => entries.size === 0), true);
+});
+
+test('comparison requires five percent and all three pairs, with complete launches', () => {
+  const runs = times => times.map(uiReadyMs => ({ startup: { outcome: 'passed', uiReadyMs }, cleanupErrors: [] }));
+  expectAccepted([100, 110, 120], [90, 95, 100], true);
+  expectAccepted([100, 110, 120], [99, 109, 119], false);
+  expectAccepted([100, 110, 120], [101, 90, 95], false);
+  function expectAccepted(before, after, accepted) {
+    assert.equal(summarizeStartupComparison(runs(before), runs(after)).accepted, accepted);
+  }
+  assert.throws(() => summarizeStartupComparison(runs([100, 110]), runs([90, 95, 100])));
+});
+
+test('comparison pins both receipts and permits only the two optimization files', () => {
+  const source = entries => ({ entries, sha256: createHash('sha256').update(JSON.stringify(entries)).digest('hex') });
+  const file = 'packages/ui/src/App.tsx';
+  const baseline = source([{ file, sha256: 'a' }]), candidate = source([{ file, sha256: 'b' }]);
+  assert.deepEqual(assertStartupComparisonSources(baseline, candidate, candidate.sha256), [file]);
+  assert.throws(() => assertStartupComparisonSources(baseline, candidate, baseline.sha256));
+  const foreign = source([...candidate.entries, { file: 'bun.lock', sha256: 'c' }]);
+  assert.throws(() => assertStartupComparisonSources(baseline, foreign, foreign.sha256));
+  assert.throws(() => assertStartupComparisonSources({ ...baseline, sha256: 'bad' }, candidate, candidate.sha256));
+});
+
+test('comparison CLI defaults to natural and explicitly labels foreground mode', () => {
+  const args = ['--baseline-package-evidence', '/repo/baseline.json', '--candidate-package-evidence', '/repo/candidate.json', '--artifact-root', '/repo/native'];
+  assert.equal(parseStartupComparisonArgs(args).startupMode, 'natural');
+  assert.equal(parseStartupComparisonArgs([...args, '--startup-mode', 'foreground']).startupMode, 'foreground');
+  for (const invalid of [args.slice(0, 4), [...args, '--reload', 'true'], [...args, '--startup-mode', 'hidden'], args.map(value => value === '/repo/native' ? 'relative' : value)]) {
+    assert.throws(() => parseStartupComparisonArgs(invalid));
+  }
 });

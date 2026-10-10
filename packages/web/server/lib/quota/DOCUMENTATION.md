@@ -3,6 +3,9 @@
 ## Purpose
 This module fetches quota and usage signals for supported providers in the web server runtime.
 
+The [October 10 provider repair audit](../../../../../docs/audits/2026-10-10/provider-repairs/README.md)
+records incident evidence and verification boundaries.
+
 ## Entrypoints and structure
 - `packages/web/server/lib/quota/index.js`: public entrypoint imported by `packages/web/server/index.js`.
 - `packages/web/server/lib/quota/routes.js`: Express route registration for quota endpoints.
@@ -40,6 +43,34 @@ These provider IDs are currently dispatchable via `fetchQuotaForProvider(provide
 | `ollama-cloud` | Ollama Cloud | `providers/ollama-cloud.js` | Managed cookie, then legacy `~/.config/ollama-quota/cookie` fallback |
 
 ## Codex reset-bank credits
+
+Sign in with ChatGPT (`chatgpt-siwc`) stores an identity subject, not a ChatGPT
+workspace ID. Usage requests must omit `ChatGPT-Account-Id` for that method;
+legacy OAuth accounts retain their existing header behavior. Read-only checks
+on October 10 returned `401 no_matching_rule` from both usage endpoints with
+the selected unexpired SIWC token. This is an unavailable source, not zero usage.
+
+An explicit, optional usage connection runs the installed Codex app-server with
+a private DevRyan profile. It uses `account/rateLimits/read` for rate windows
+and `rateLimitResetCredits`, independently of inference credentials. Connection
+controls live at `/api/quota/codex/connection`; mutations require the local
+administrator and CSRF protections. The helper never installs Codex, imports
+another profile, runs a model, or redeems a reset. Its process lifetime is bounded
+and the feature-route owner closes it on shutdown/checkpoint.
+
+Shutdown waits for an observed process exit or close, escalating from `SIGTERM`
+to `SIGKILL` after one second. If termination is still unconfirmed after another
+second, the connection reports `CODEX_TERMINATION_UNCONFIRMED`, retains its private
+profiles, and refuses further sign-in, usage-helper launches, or disconnect
+cleanup for that owner. Restart DevRyan before reconnecting; sending a kill
+signal alone never authorizes profile deletion. Optional account email and plan
+fields are `null` when absent or empty.
+
+The documented app-server inventory distinguishes null (unknown), an
+authoritative zero count, and count-only results whose individual expiry rows
+are unavailable. Displayed rows need not exhaust the authoritative count.
+Ordinary extra-usage balances never become reset-bank counts. Results carry
+their source and connection identity so changing accounts clears old figures.
 
 The Codex provider uses the OpenAI/ChatGPT OAuth entry (`openai`, `codex`, or `chatgpt`) and fetches the standard usage payload from `https://chatgpt.com/backend-api/wham/usage`. When possible it also makes a best-effort request to the private `https://chatgpt.com/backend-api/wham/rate-limit-reset-credits` endpoint to display reset-bank credits with per-credit expiry dates.
 
@@ -140,7 +171,7 @@ Under the native (v2) runtime, provider credentials live privately in the native
 
 - `GET /api/quota/providers` (native): does not resolve the Claude proxy. While the owner is `native-pending` it waits up to `runtimeReadinessHoldMs`, then answers `503 { error: 'native_runtime_not_ready', code: 'native_runtime_not_ready' }` so clients retry. The list is the registry list minus `claude`, `codex`, `xai`, `opencode-go`, plus the native-configured ids, plus `claude` when `inspectClaudeRequest({ kind: 'status' })` succeeds or fails with any code other than `claude_credentials_missing`, `native_claude_external_unavailable` or `native_claude_update_required` (`native_runtime_not_ready` returns the 503). Each lookup has its own try/catch.
 - `GET /api/quota/:providerId` (native, resolved id `codex`/`xai`/`opencode-go`): injects the credential through `readAuth` into the existing fetcher; xAI gets a no-op `writeAuth`, OpenCode Go no-op `mutateAuth`/`deleteManagedCredential` so legacy auth-file cleanup cannot run. A failed read returns 200 `ok: false, configured: true, errorCode: 'native_credential_unreadable'` ("Usage could not be read from the selected account."); a pending runtime returns the same shape with `errorCode: 'native_runtime_not_ready'`. It never falls back to `readAuthFile`.
-- Native-only outcomes (`configured: true`, `ok: false`): xAI 401 becomes `native_xai_token_renewal_pending` ("xAI usage updates after your next xAI request."); a 401/403 from the OpenAI usage endpoint for a `chatgpt-siwc` credential becomes `siwc_usage_unavailable` ("Usage is not available with Sign in with ChatGPT."). The OpenAI case is detected from the HTTP status of the first usage request, not message text. Whether ChatGPT usage accepts the Sign in with ChatGPT token is unverified.
+- Native-only outcomes (`configured: true`, `ok: false`): xAI 401 becomes `native_xai_token_renewal_pending` ("xAI usage updates after your next xAI request."); a confirmed HTTP 401 `no_matching_rule` refusal from the OpenAI usage endpoint for a `chatgpt-siwc` credential becomes `siwc_usage_unavailable`. Other authentication failures retain their own diagnosis; arbitrary message text cannot establish unsupported usage. The selected SIWC token was verified read-only on October 10: both usage endpoints returned `401 no_matching_rule`.
 - Claude (native) discovery lists `claude` when the status inspection succeeds or fails with an account-exists code (`isClaudeInspectionUnavailable` and not `isClaudeAccountAbsent`). Authorization refusals do not list it. `native_runtime_not_ready`, `native_provider_owner_expired` and `native_provider_configuration_changed` answer the pending 503 so the client retries. Claude accounts are global: when the request's project directory is not a reviewed location, discovery and `GET /api/quota/claude` repeat the read against the default location.
 - Claude (native): `unavailableClaudeInspection('quota', code)` is `configured: true` unless the code is `claude_credentials_missing`, `native_claude_external_unavailable` or `native_claude_update_required`, so an expired, ambiguous or unreadable account shows a note instead of a blank (`claude_credentials_expired` and `native_claude_account_ambiguous` have specific short messages).
 
@@ -169,6 +200,8 @@ and state/transport to `packages/ui/src/stores/useQuotaStore.ts`.
 - Successful data is retained when a later request fails. UI state records
   `lastAttemptAt`, `lastSuccessAt`, and `refreshError` separately and derives
   staleness from the active cadence.
+  Retention is limited to the same source and account; a changed connection
+  identity invalidates the earlier result, including on a failed refresh.
 - Authentication and provider-configuration success paths request safe
   rediscovery instead of starting additional polling loops.
 

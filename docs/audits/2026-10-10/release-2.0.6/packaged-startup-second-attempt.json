@@ -1,0 +1,562 @@
+{
+  "schemaVersion": 1,
+  "kind": "packaged-native-app-bound-startup",
+  "outcome": "failed",
+  "scope": "three fresh processes/profiles; prepared native bundle; local HTTP model fixture; natural first usable renderer",
+  "launches": 3,
+  "startupMode": "natural",
+  "sourceSha256": "721a42ca6ece8038824f77eda780c03e7bf3ebbe94a2d6c78bb9ee0902d42fc6",
+  "packageSourceSha256": "721a42ca6ece8038824f77eda780c03e7bf3ebbe94a2d6c78bb9ee0902d42fc6",
+  "archiveSha256": "3d7d57bd2f48585ab7c07287fd46dec9d5cd6d7ec5a53295c0e428aa44760683",
+  "startupPolicy": "optimized",
+  "legacyOpenAiBrowser": false,
+  "runs": [
+    {
+      "iteration": 0,
+      "startup": {
+        "outcome": "failed",
+        "startupMode": "natural",
+        "scope": "fresh-process/fresh-profile; actual native backend; local HTTP model fixture",
+        "clock": "parent performance.now; elapsed milliseconds since spawn invocation",
+        "pollIntervalMs": 100,
+        "forcedNavigations": 0,
+        "documents": [
+          {
+            "observedAtMs": 6167.2122500000005,
+            "timeOrigin": 1791646400524,
+            "href": "http://127.0.0.1:49930/",
+            "readyState": "loading",
+            "visibilityState": "hidden",
+            "composer": false,
+            "newChat": false,
+            "model": false,
+            "modelLabels": [],
+            "selectedModel": null,
+            "sessionID": null,
+            "navigation": {
+              "type": "navigate",
+              "domContentLoadedEventEnd": 0,
+              "loadEventEnd": 0,
+              "duration": 0
+            },
+            "readinessGates": [],
+            "paints": []
+          },
+          {
+            "observedAtMs": 40715.732584000005,
+            "timeOrigin": 1791646435119.3,
+            "href": "http://127.0.0.1:49930/",
+            "readyState": "complete",
+            "visibilityState": "hidden",
+            "composer": false,
+            "newChat": false,
+            "model": false,
+            "modelLabels": [],
+            "selectedModel": {
+              "providerId": "",
+              "modelId": "",
+              "catalogAvailable": false
+            },
+            "sessionID": null,
+            "navigation": {
+              "type": "reload",
+              "domContentLoadedEventEnd": 35.20000000298023,
+              "loadEventEnd": 36.099999994039536,
+              "duration": 36.099999994039536
+            },
+            "readinessGates": [],
+            "paints": []
+          }
+        ],
+        "healthObservations": [
+          {
+            "observedAtMs": 6175.660875,
+            "state": "idle",
+            "attempt": 0,
+            "code": null
+          },
+          {
+            "observedAtMs": 6594.185375000001,
+            "state": "starting",
+            "attempt": 1,
+            "code": null
+          },
+          {
+            "observedAtMs": 40549.859875,
+            "state": "ready",
+            "attempt": 1,
+            "code": null
+          }
+        ],
+        "nativeStartupObservation": "observed",
+        "cdpTargetMs": 1030.5647920000001,
+        "loopbackOriginMs": 6152.445292,
+        "lastObservedDocument": {
+          "timeOrigin": 1791646435119.3,
+          "href": "http://127.0.0.1:49930/",
+          "readyState": "complete",
+          "visibilityState": "hidden",
+          "composer": true,
+          "newChat": true,
+          "model": true,
+          "modelLabels": [
+            "smoke-write"
+          ],
+          "selectedModel": {
+            "providerId": "devryan-smoke",
+            "modelId": "smoke-write",
+            "agent": "builder",
+            "catalogAvailable": true
+          },
+          "sessionID": null,
+          "navigation": {
+            "type": "reload",
+            "domContentLoadedEventEnd": 35.20000000298023,
+            "loadEventEnd": 36.099999994039536,
+            "duration": 36.099999994039536
+          },
+          "readinessGates": [
+            {
+              "name": "devryan-startup-gate-health-loading",
+              "elapsedMs": 172
+            },
+            {
+              "name": "devryan-startup-gate-providers-idle",
+              "elapsedMs": 172
+            },
+            {
+              "name": "devryan-startup-gate-agents-idle",
+              "elapsedMs": 172
+            },
+            {
+              "name": "devryan-startup-gate-initialization-loading",
+              "elapsedMs": 172
+            },
+            {
+              "name": "devryan-startup-gate-globalSync-loading",
+              "elapsedMs": 172
+            },
+            {
+              "name": "devryan-startup-gate-directorySync-loading",
+              "elapsedMs": 172
+            },
+            {
+              "name": "devryan-startup-gate-sessionList-loading",
+              "elapsedMs": 172
+            },
+            {
+              "name": "devryan-startup-gate-responseStyle-loading",
+              "elapsedMs": 172
+            },
+            {
+              "name": "devryan-startup-gate-worktree-idle",
+              "elapsedMs": 172
+            },
+            {
+              "name": "devryan-startup-gate-health-ready",
+              "elapsedMs": 335.59999999403954
+            },
+            {
+              "name": "devryan-startup-gate-providers-loading",
+              "elapsedMs": 335.59999999403954
+            },
+            {
+              "name": "devryan-startup-gate-worktree-loading",
+              "elapsedMs": 336.09999999403954
+            },
+            {
+              "name": "devryan-startup-gate-worktree-ready",
+              "elapsedMs": 358
+            },
+            {
+              "name": "devryan-startup-gate-globalSync-ready",
+              "elapsedMs": 387.79999999701977
+            },
+            {
+              "name": "devryan-startup-gate-sessionList-ready",
+              "elapsedMs": 401.20000000298023
+            },
+            {
+              "name": "devryan-startup-gate-directorySync-ready",
+              "elapsedMs": 401.79999999701977
+            },
+            {
+              "name": "devryan-startup-gate-providers-ready",
+              "elapsedMs": 403.09999999403954
+            },
+            {
+              "name": "devryan-startup-gate-agents-loading",
+              "elapsedMs": 404
+            },
+            {
+              "name": "devryan-startup-gate-agents-ready",
+              "elapsedMs": 430.40000000596046
+            },
+            {
+              "name": "devryan-startup-gate-responseStyle-ready",
+              "elapsedMs": 430.40000000596046
+            },
+            {
+              "name": "devryan-startup-gate-initialization-ready",
+              "elapsedMs": 617.7999999970198
+            }
+          ],
+          "paints": []
+        },
+        "firstObservedDocument": {
+          "timeOrigin": 1791646400524,
+          "href": "http://127.0.0.1:49930/",
+          "readyState": "loading",
+          "visibilityState": "hidden",
+          "composer": false,
+          "newChat": false,
+          "model": false,
+          "modelLabels": [],
+          "selectedModel": null,
+          "sessionID": null,
+          "navigation": {
+            "type": "navigate",
+            "domContentLoadedEventEnd": 0,
+            "loadEventEnd": 0,
+            "duration": 0
+          },
+          "readinessGates": [],
+          "paints": []
+        },
+        "hostAvailableMs": 6175.660875,
+        "nativeStartupReadyMs": 40549.859875,
+        "hostReadyMs": 40549.982917,
+        "fixtureCatalogReadyMs": 40710.769625,
+        "firstSelectedModel": {
+          "observedAtMs": 40991.954000000005,
+          "providerId": "opencode",
+          "modelId": "fledge-alpha-free",
+          "catalogAvailable": true
+        },
+        "error": "Timed out: first usable UI after native startup documents",
+        "electronStartupPhases": {
+          "source": "injected-launch-records",
+          "collectedAtMs": 85745.393667,
+          "records": [
+            {
+              "phase": "shell_environment",
+              "outcome": "completed",
+              "durationMs": 30
+            },
+            {
+              "phase": "foreground_preparation",
+              "outcome": "completed",
+              "durationMs": 15
+            },
+            {
+              "phase": "bundle_preparation",
+              "outcome": "completed",
+              "durationMs": 73.43187499999999
+            },
+            {
+              "phase": "application_import",
+              "outcome": "completed",
+              "durationMs": 2333.817792
+            },
+            {
+              "phase": "server_import",
+              "outcome": "completed",
+              "durationMs": 2410
+            },
+            {
+              "phase": "server_listen",
+              "outcome": "completed",
+              "durationMs": 714
+            },
+            {
+              "phase": "initial_url",
+              "outcome": "completed",
+              "durationMs": 4928
+            },
+            {
+              "phase": "renderer_navigation",
+              "outcome": "completed",
+              "durationMs": 611
+            },
+            {
+              "phase": "native_settlement",
+              "outcome": "completed",
+              "durationMs": 0.38412500000049477
+            },
+            {
+              "phase": "native_verification",
+              "outcome": "completed",
+              "durationMs": 1768.7429580000007
+            },
+            {
+              "phase": "native_configuration_sync",
+              "outcome": "completed",
+              "durationMs": 146.64537500000006
+            },
+            {
+              "phase": "native_configuration",
+              "outcome": "completed",
+              "durationMs": 29604.577208000002
+            },
+            {
+              "phase": "native_controller",
+              "outcome": "completed",
+              "durationMs": 2200.9365840000028
+            },
+            {
+              "phase": "native_recovery",
+              "outcome": "completed",
+              "durationMs": 176.3064579999991
+            },
+            {
+              "phase": "native_open",
+              "outcome": "completed",
+              "durationMs": 1.0371250000025611
+            }
+          ]
+        },
+        "nativeTransitions": [
+          {
+            "elapsedMs": 1047.548667,
+            "url": "data:startup-document",
+            "loaderId": null,
+            "kind": "initial-cdp-target"
+          },
+          {
+            "elapsedMs": 6054.040709000001,
+            "url": "http://127.0.0.1:49930/",
+            "loaderId": "0F89E27F0E8228106AD705959250F83C",
+            "kind": "native-top-frame-navigation"
+          },
+          {
+            "elapsedMs": 6656.301917000001,
+            "url": "http://127.0.0.1:49930/",
+            "loaderId": "6C5E9F30AD4BA2AAFD4EA55354F33EE7",
+            "kind": "native-top-frame-navigation"
+          },
+          {
+            "elapsedMs": 40579.263542,
+            "url": "http://127.0.0.1:49930/",
+            "loaderId": "1CD40F13B199AE13D52E4AFD450EEE45",
+            "kind": "native-top-frame-navigation"
+          }
+        ],
+        "benchmarkNavigationAttempts": [],
+        "nativeDocumentChanges": 1
+      },
+      "cleanupErrors": [],
+      "initialBundle": {
+        "bundleID": "candidate",
+        "revision": 1,
+        "previousBundleID": null,
+        "opencodeVersion": "2.0.26",
+        "artifactManifestSha256": "856ee1f0f46ec532b2b7689e8a6e2f05e35ff52b9b895945ad62fd47901d86f6"
+      },
+      "subscription": {
+        "readyAcknowledgedAtMs": 40902.753625000005,
+        "transport": "websocket",
+        "error": null
+      },
+      "error": "Timed out: first usable UI after native startup documents\n\n'failed' !== 'passed'\n",
+      "rendererExceptions": 0,
+      "cleanup": {
+        "source": "retained-os-process-ancestry-and-start-identities",
+        "rootPid": 82398,
+        "rootObserved": true,
+        "observationIntervalMs": 500,
+        "observationErrors": [],
+        "observedProcesses": [
+          {
+            "pid": 82398,
+            "parentPid": 82307,
+            "startIdentity": "Sat Oct 10 19:33:14 2026"
+          },
+          {
+            "pid": 82410,
+            "parentPid": 82398,
+            "startIdentity": "Sat Oct 10 19:33:15 2026"
+          },
+          {
+            "pid": 82411,
+            "parentPid": 82398,
+            "startIdentity": "Sat Oct 10 19:33:15 2026"
+          },
+          {
+            "pid": 82416,
+            "parentPid": 82398,
+            "startIdentity": "Sat Oct 10 19:33:15 2026"
+          },
+          {
+            "pid": 82481,
+            "parentPid": 82398,
+            "startIdentity": "Sat Oct 10 19:33:17 2026"
+          },
+          {
+            "pid": 82511,
+            "parentPid": 82398,
+            "startIdentity": "Sat Oct 10 19:33:18 2026"
+          },
+          {
+            "pid": 82557,
+            "parentPid": 82398,
+            "startIdentity": "Sat Oct 10 19:33:19 2026"
+          },
+          {
+            "pid": 82563,
+            "parentPid": 82398,
+            "startIdentity": "Sat Oct 10 19:33:19 2026"
+          },
+          {
+            "pid": 82575,
+            "parentPid": 82398,
+            "startIdentity": "Sat Oct 10 19:33:20 2026"
+          },
+          {
+            "pid": 82766,
+            "parentPid": 82398,
+            "startIdentity": "Sat Oct 10 19:33:23 2026"
+          },
+          {
+            "pid": 83302,
+            "parentPid": 82398,
+            "startIdentity": "Sat Oct 10 19:33:35 2026"
+          },
+          {
+            "pid": 85241,
+            "parentPid": 82398,
+            "startIdentity": "Sat Oct 10 19:33:51 2026"
+          },
+          {
+            "pid": 85255,
+            "parentPid": 82398,
+            "startIdentity": "Sat Oct 10 19:33:53 2026"
+          },
+          {
+            "pid": 85259,
+            "parentPid": 82398,
+            "startIdentity": "Sat Oct 10 19:33:53 2026"
+          },
+          {
+            "pid": 85260,
+            "parentPid": 82398,
+            "startIdentity": "Sat Oct 10 19:33:53 2026"
+          },
+          {
+            "pid": 85265,
+            "parentPid": 85259,
+            "startIdentity": "Sat Oct 10 19:33:53 2026"
+          },
+          {
+            "pid": 85516,
+            "parentPid": 82398,
+            "startIdentity": "Sat Oct 10 19:33:55 2026"
+          },
+          {
+            "pid": 85551,
+            "parentPid": 82398,
+            "startIdentity": "Sat Oct 10 19:33:55 2026"
+          },
+          {
+            "pid": 85552,
+            "parentPid": 82398,
+            "startIdentity": "Sat Oct 10 19:33:55 2026"
+          },
+          {
+            "pid": 85579,
+            "parentPid": 82398,
+            "startIdentity": "Sat Oct 10 19:33:55 2026"
+          },
+          {
+            "pid": 85744,
+            "parentPid": 82398,
+            "startIdentity": "Sat Oct 10 19:33:56 2026"
+          },
+          {
+            "pid": 85748,
+            "parentPid": 82398,
+            "startIdentity": "Sat Oct 10 19:33:56 2026"
+          },
+          {
+            "pid": 85751,
+            "parentPid": 82398,
+            "startIdentity": "Sat Oct 10 19:33:56 2026"
+          },
+          {
+            "pid": 85884,
+            "parentPid": 82398,
+            "startIdentity": "Sat Oct 10 19:33:57 2026"
+          },
+          {
+            "pid": 85887,
+            "parentPid": 82398,
+            "startIdentity": "Sat Oct 10 19:33:57 2026"
+          },
+          {
+            "pid": 85964,
+            "parentPid": 82398,
+            "startIdentity": "Sat Oct 10 19:33:57 2026"
+          },
+          {
+            "pid": 85968,
+            "parentPid": 82398,
+            "startIdentity": "Sat Oct 10 19:33:57 2026"
+          },
+          {
+            "pid": 85974,
+            "parentPid": 82398,
+            "startIdentity": "Sat Oct 10 19:33:57 2026"
+          },
+          {
+            "pid": 86040,
+            "parentPid": 82398,
+            "startIdentity": "Sat Oct 10 19:33:58 2026"
+          },
+          {
+            "pid": 86044,
+            "parentPid": 82398,
+            "startIdentity": "Sat Oct 10 19:33:58 2026"
+          },
+          {
+            "pid": 86048,
+            "parentPid": 82398,
+            "startIdentity": "Sat Oct 10 19:33:58 2026"
+          },
+          {
+            "pid": 86090,
+            "parentPid": 82398,
+            "startIdentity": "Sat Oct 10 19:33:58 2026"
+          },
+          {
+            "pid": 88644,
+            "parentPid": 82398,
+            "startIdentity": "Sat Oct 10 19:34:20 2026"
+          },
+          {
+            "pid": 90995,
+            "parentPid": 82398,
+            "startIdentity": "Sat Oct 10 19:34:40 2026"
+          }
+        ],
+        "remainingProcessIds": [],
+        "signals": [],
+        "trackingClosed": true
+      },
+      "journalGapCheck": "passed"
+    }
+  ],
+  "catalogFixtureSha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+  "unavailable": [
+    "foreground warm service",
+    "foreground cold service",
+    "foreground stale-owner recovery",
+    "foreground service upgrade"
+  ],
+  "excluded": [
+    "launchd/SMAppService registration",
+    "installed state",
+    "paid providers",
+    "first native-bundle provisioning",
+    "cold OS caches"
+  ],
+  "error": "ERR_ASSERTION"
+}

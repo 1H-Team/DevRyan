@@ -587,6 +587,14 @@ Expected model:
 
 ### Provider usage (quota)
 
+- OpenAI usage results identify their source and connection account. Retained
+  successful data and trends belong only to that identity. A changed identity,
+  explicit disconnect or reconnect invalidates old figures; a revision fence
+  prevents an earlier in-flight response from restoring them.
+- Optional Codex connection controls use the existing quota refresh owner after
+  account changes. They poll only while an explicit sign-in is pending and
+  cancel that sign-in when the connection panel unmounts.
+
 - `quota-refresh-coordinator.ts` owns the usage refresh timer (30-minute baseline, faster when auto-refresh is on).
 - Optional `needsPromptRetry` (wired in `useQuotaStore.ts` to `configuredProviderIds === null`) shortens the next delay to `min(interval, DISCOVERY_RETRY_MS = 15 s)` while provider discovery has not succeeded, e.g. a `503 native_runtime_not_ready` while the runtime starts.
 - Prompt retries are capped at 8 consecutive attempts; the counter resets when the dependency returns false and on `stop()`. Without the dependency the schedule is unchanged.

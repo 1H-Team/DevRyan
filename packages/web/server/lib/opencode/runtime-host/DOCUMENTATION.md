@@ -1,5 +1,42 @@
 # Native startup catalog diagnostics
 
+## Provider request and account boundaries
+
+The [primary SIWC transport incident](../../../../../../docs/audits/2026-10-10/siwc-primary-transport/README.md)
+records the transport mismatch, synthetic reproduction and verification
+status.
+
+`controller-providers.ts` removes the prepared WebSocket option when the OpenAI
+credential owner reports a current ChatGPT SIWC selection. This policy applies
+to all native request kinds; API-key requests retain their prepared transport.
+Credential values stay in `native-openai.ts`, and physical hooks still enforce
+account identity and route restrictions. `native-observation.ts` records bounded
+`provider-refusal` observations for physical OpenAI hooks using only reviewed
+codes, request kind and hook name alongside the common session identity.
+
+The shared SIWC response adapter accepts SSE keepalives and split frames, and
+accepts the observed direct-route response with an omitted Content-Type header
+while validating its framing and normalizing the downstream SSE header. It finishes at `response.completed` without waiting for EOF. Structured terminal
+provider failures reach the native parser intact. A cancelled consumer cancels
+the underlying response; premature EOF and malformed or oversized frames still
+fail. API-key requests bypass this SIWC normalization.
+
+Provider credential resolution reads its selected snapshot inside the serialized
+mutation queue. Concurrent requests may advance only through a refresh committed
+by that same controller while their resolutions are pending. Account switches,
+revoked authorization and unrelated credential replacement still fail. Session
+correlation includes the credential request's binding, allowing title and primary
+request resolution to be traced independently.
+
+Claude inspection uses the implicit default account when there are no saved
+profiles, the sole profile when there is one, and the exact configured default
+when there are several. An ambiguous selection stays unavailable. Ordinary
+shared credentials are read from their original owner without renewal or writes;
+expired shared credentials require reconnecting through Claude Code/Meridian.
+Dedicated enrollment is optional automatic renewal.
+
+## Startup diagnostics
+
 The native controller composes the actual location graphs in `bootstrap.ts`.
 `startup-catalog.ts` reads their agent, plugin and model HTTP catalogs after the
 plugin activation barrier. Model availability remains a separate per-selection
@@ -87,3 +124,23 @@ the compiled native controller remains the supplied verified artifact.
 See [runtime verification](../../../../../../docs/AGENT_RUNTIME_VERIFICATION.md)
 and the [2026-10-10 incident audit](../../../../../../docs/audits/2026-10-10/model-catalog/README.md)
 for isolation rules and the limits of the reproduced evidence.
+
+### Startup timing
+
+The web entry logs `bundle_preparation` and `application_import` before the
+journal owner exists. Native launch logs consecutive `native_settlement`,
+`native_verification`, `native_configuration_sync`, `native_configuration`,
+`native_controller`, `native_recovery`, and `native_open` durations through
+`../startup-timing.js`. These records contain fixed phase names, monotonic
+elapsed milliseconds and completion/failure outcomes only. Existing journal
+startup/failure records and recovery ordering remain authoritative. The timings
+are observations, never readiness or integrity shortcuts.
+
+Startup binding reads sealed bundle documents with the same 32 MiB
+`BUNDLE_DOCUMENT_MAX_BYTES` limit used by bundle storage and native boot
+verification, checking both file metadata and bytes read. Hash, canonical-path
+and symlink checks remain required. Electron's startup failure page falls back
+to its default appearance if selected-bundle settings cannot be read, preserving
+the original error and Retry action even after an upgrade changes selection.
+The [runtime preparation audit](../../../../../../docs/audits/2026-10-10/runtime-preparation/README.md)
+records the incident and isolated packaged regression evidence.

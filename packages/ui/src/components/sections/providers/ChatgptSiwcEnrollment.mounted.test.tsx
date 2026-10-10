@@ -7,7 +7,10 @@ mock.module('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: string, values: Re
 mock.module('@/components/ui/button', () => ({ Button: (props: React.ButtonHTMLAttributes<HTMLButtonElement>) => <button onClick={props.onClick} disabled={props.disabled} aria-pressed={props['aria-pressed']}>{props.children}</button> }));
 const opened: string[] = [];
 let localOrigin = true;
-mock.module('@/lib/desktop', () => ({ isDesktopLocalOriginActive: () => localOrigin }));
+const actualDesktop = await import('@/lib/desktop');
+mock.module('@/lib/desktop', () => ({ ...actualDesktop, isDesktopLocalOriginActive: () => localOrigin }));
+const { useQuotaStore } = await import('@/stores/useQuotaStore');
+const originalQuotaState = useQuotaStore.getState();
 const actualUrl = await import('@/lib/url');
 mock.module('@/lib/url', () => ({ ...actualUrl, openExternalUrl: async (url: string) => { opened.push(url); return true; } }));
 const { ChatgptSiwcEnrollment } = await import('./ChatgptSiwcEnrollment');
@@ -30,7 +33,7 @@ beforeEach(() => {
     return Response.json({ enrollmentID: ID, status: 'pending', url: signInUrl });
   }), { preconnect: () => {} });
 });
-afterEach(() => { globalThis.fetch = originalFetch; });
+afterEach(() => { globalThis.fetch = originalFetch; useQuotaStore.setState(originalQuotaState, true); });
 const click = async (container: HostElement, text: string) => act(async () => {
   const node = container.find(element => element.tagName === 'BUTTON' && element.textContent === text);
   expect(node).not.toBeNull(); expect(node?.getAttribute('disabled')).toBeNull(); node?.click();
@@ -220,6 +223,8 @@ test('principal replacement aborts pending consent and ignores its late completi
 }));
 
 test('saved account selection uses native credential reference without sending account metadata', async () => withDom(async container => {
+  useQuotaStore.setState({ results: [{ providerId: 'codex', providerName: 'OpenAI', ok: true, configured: true,
+    fetchedAt: 1, usage: { windows: {} }, source: 'chatgpt-siwc', connectionId: 'old-account' }] });
   globalThis.fetch = Object.assign(mock(async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input), method = init?.method ?? 'GET';
     calls.push({ path, method, body: String(init?.body ?? ''), csrf: new Headers(init?.headers).get('x-devryan-csrf') });
@@ -230,6 +235,7 @@ test('saved account selection uses native credential reference without sending a
   try {
     await act(async () => root.render(<ChatgptSiwcEnrollment administrator principalID="admin" onSelected={onSelected} />));
     await click(container, 'Use This Account');
+    expect(useQuotaStore.getState().results.some(result => result.providerId === 'codex')).toBe(false);
     expect(calls.find(call => call.method === 'POST')).toEqual({ path: `/api/provider/openai/siwc/${REF}/select`, method: 'POST', body: '{"expectedActiveCredentialID":null}', csrf: '1' });
     expect(opened).toHaveLength(0); expect(selected).toBe(1);
   } finally { await act(async () => root.unmount()); }

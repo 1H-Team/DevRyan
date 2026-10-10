@@ -20,9 +20,36 @@ describe('physical SIWC policy', () => {
     await expect(plugin.testing.createTransport(getAccess, send)(request({ input: [], tools: [{ type }] }))).rejects.toMatchObject({ code: 'chatgpt_siwc_tool_unsupported' });
     expect(getAccess).not.toHaveBeenCalled(); expect(send).not.toHaveBeenCalled();
   });
-  it.each([event('response.output_text.delta', { delta: 'partial' }), event('response.incomplete'), event('response.failed'), event('error'), completed + event('response.failed'), event('response.created',{error:{code:'fixture'}}) + completed, event('response.created',{response:{status:'incomplete'}}) + completed])('rejects incomplete or late-failed streams', async text => {
+  it.each([event('response.output_text.delta', { delta: 'partial' }), event('response.created',{error:{code:'fixture'}}) + completed, event('response.created',{response:{status:'incomplete'}}) + completed])('rejects interrupted or inconsistent streams', async text => {
     const response = await plugin.testing.createTransport(access, async () => stream(text))(request({ input: [] }));
     await expect(response.text()).rejects.toMatchObject({ code: expect.stringMatching(/^chatgpt_siwc_stream_/) });
+  });
+  it.each(['response.failed', 'response.incomplete', 'response.cancelled', 'error'])('preserves %s and provider code/parameter for the native parser', async type => {
+    const failure = event(type, { response: { status: 'failed', error: { code: 'subscription_sharing_usage_limit_exceeded', param: 'tools', message: 'fixture failure' } } });
+    const delta = event('response.output_text.delta', { delta: 'partial' });
+    for (const prefix of ['', delta]) {
+      const response = siwcPolicy.completedResponse(stream(prefix + failure + completed));
+      expect(await response.text()).toBe(prefix + failure);
+    }
+  });
+  it('ignores null and comment keepalives without hiding malformed events', async () => {
+    expect(await siwcPolicy.completedResponse(stream(': ping\n\ndata: null\n\ndata: : keepalive\n\n' + completed)).text()).toBe(completed);
+    for (const invalid of ['data: nope\n\n', 'data: []\n\n', 'data: [DONE]\n\n']) {
+      await expect(siwcPolicy.completedResponse(stream(invalid)).text()).rejects.toBeDefined();
+    }
+  });
+  it.each([undefined, 'TEXT/EVENT-STREAM; charset=utf-8'])('validates SSE when its content type is %s', async contentType => {
+    const response = siwcPolicy.completedResponse(new Response(new TextEncoder().encode(completed), {
+      headers: contentType ? { 'content-type': contentType } : {},
+    }));
+    expect(response.headers.get('content-type')).toBe('text/event-stream');
+    expect(await response.text()).toBe(completed);
+  });
+  it('still refuses non-SSE bodies and incomplete streams when the content type is absent', async () => {
+    for (const body of ['{"error":"not SSE"}', 'data: nope\n\n', event('response.created')]) {
+      await expect(siwcPolicy.completedResponse(new Response(new TextEncoder().encode(body))).text()).rejects.toBeDefined();
+    }
+    expect(() => siwcPolicy.completedResponse(Response.json({ error: 'not SSE' }))).toThrow('chatgpt_siwc_stream_required');
   });
   it('preserves supported custom, namespace, additional tools and account-gated web search', () => {
     const tool = {type:'custom',name:'local',format:{type:'text'}}, namespace = {type:'namespace',name:'files',tools:[tool]}, additional = {type:'additional_tools',tools:[tool]}, web = {type:'web_search'};
@@ -35,33 +62,35 @@ describe('physical SIWC policy', () => {
     await expect(plugin.testing.createTransport(getAccess,send)(request(body))).rejects.toBeDefined();
     expect(send).not.toHaveBeenCalled(); expect(getAccess).not.toHaveBeenCalled();
   });
-  it('handles split UTF-8/CRLF events, delivers deltas, holds completion until EOF', async () => {
+  it('handles split UTF-8/CRLF events and completes without waiting for EOF', async () => {
     let source;
-    const response=siwcPolicy.completedResponse(new Response(new ReadableStream({start(controller){source=controller;}}),{headers:{'content-type':'text/event-stream'}}));
-    const reader=response.body.getReader(), encoder=new TextEncoder();
-    const delta=event('response.output_text.delta',{delta:'héllo'}).replaceAll('\n','\r\n');
-    const bytes=encoder.encode(delta);
-    source.enqueue(bytes.slice(0,50)); source.enqueue(bytes.slice(50));
+    const cancel = vi.fn();
+    const response = siwcPolicy.completedResponse(new Response(new ReadableStream({ start(controller) { source = controller; }, cancel }), { headers: { 'content-type': 'text/event-stream' } }));
+    const reader = response.body.getReader(), encoder = new TextEncoder();
+    const delta = event('response.output_text.delta', { delta: 'héllo' }).replaceAll('\n', '\r\n');
+    const bytes = encoder.encode(delta), utf8 = bytes.indexOf(0xc3);
+    source.enqueue(bytes.slice(0, utf8 + 1)); source.enqueue(bytes.slice(utf8 + 1));
     expect(new TextDecoder().decode((await reader.read()).value)).toContain('héllo');
     source.enqueue(encoder.encode(completed));
-    let settled=false;
-    const final=reader.read().then(value=>{settled=true;return value;});
-    await Promise.resolve(); expect(settled).toBe(false);
-    source.close(); expect(new TextDecoder().decode((await final).value)).toBe(completed);
+    expect(new TextDecoder().decode((await reader.read()).value)).toBe(completed);
     expect((await reader.read()).done).toBe(true);
+    await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce());
   });
-  it('bounds an issuer that leaves a completed stream open', async () => {
-    vi.useFakeTimers();
-    try {
-      const response=siwcPolicy.completedResponse(new Response(new ReadableStream({start(controller){controller.enqueue(new TextEncoder().encode(completed));}}),{headers:{'content-type':'text/event-stream'}}));
-      const result=response.text().then(()=>true,error=>error.code);
-      await vi.advanceTimersByTimeAsync(5_001);
-      expect(await result).toBe('chatgpt_siwc_stream_interrupted');
-    } finally { vi.useRealTimers(); }
+  it('stops at completion and does not reinterpret trailing frames', async () => {
+    expect(await siwcPolicy.completedResponse(stream(completed + event('response.failed'))).text()).toBe(completed);
   });
-  it('fails a source interruption even after a completed event', async () => {
-    const response=siwcPolicy.completedResponse(new Response(new ReadableStream({start(controller){controller.enqueue(new TextEncoder().encode(completed));controller.error(new Error('fixture interrupted'));}}),{headers:{'content-type':'text/event-stream'}}));
+  it('propagates reader cancellation to the provider source', async () => {
+    const cancel = vi.fn();
+    const response = siwcPolicy.completedResponse(new Response(new ReadableStream({ cancel }), { headers: { 'content-type': 'text/event-stream' } }));
+    await response.body.cancel();
+    await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce());
+  });
+  it('fails a source interruption before completion', async () => {
+    const response = siwcPolicy.completedResponse(new Response(new ReadableStream({ start(controller) { controller.error(new Error('fixture interrupted')); } }), { headers: { 'content-type': 'text/event-stream' } }));
     await expect(response.text()).rejects.toThrow('fixture interrupted');
+  });
+  it('keeps the frame size bound', async () => {
+    await expect(siwcPolicy.completedResponse(stream('data: ' + 'x'.repeat(1024 * 1024))).text()).rejects.toMatchObject({ code: 'chatgpt_siwc_stream_invalid' });
   });
   it('rejects malformed requests and non-Responses endpoints before credentials', async () => {
     const getAccess=vi.fn(access),send=vi.fn(),transport=plugin.testing.createTransport(getAccess,send);

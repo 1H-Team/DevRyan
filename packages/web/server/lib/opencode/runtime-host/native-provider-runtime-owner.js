@@ -189,12 +189,14 @@ export function createNativeProviderRuntimeOwner({instanceID,snapshot,registrati
   const inspectClaude=async(input,{recheck,signal}={})=>{
     if(!claudeSupported)throw fail('native_claude_update_required',503);
     live();if(!record(input)||Object.keys(input).some(key=>!['directory','kind'].includes(key))||!locations.has(input.directory)||!['status','quota'].includes(input.kind)||typeof recheck!=='function')throw fail('native_claude_inspection_invalid');
-    // Inference owns active/priority/sticky routing. Without an exact selected
-    // account receipt, inspection must not choose among several accounts.
+    // Inspection uses the saved selection, never inference's priority/sticky routing.
     const profiles=credentialProfiles;
-    if(!profiles?.length||!resolveClaude)throw fail('claude_credentials_missing',401);
-    if(profiles.length!==1)throw fail('native_claude_account_ambiguous',409);
-    const profile=profiles[0];
+    if(!profiles||!resolveClaude)throw fail('claude_credentials_missing',401);
+    let profile;
+    if(!profiles.length)profile={id:'default',type:'claude-max'};
+    else if(profiles.length===1)profile=profiles[0];
+    else profile=profiles.find(row=>row.id===meridian.boot.defaultProfile);
+    if(!profile)throw fail('native_claude_account_ambiguous',409);
     if(profile.type==='api'||profile.type==='oauth-token'&&profile.credentialPolicy!=='access-only'||profile.oauthToken&&profile.type!=='oauth-token')throw fail('native_claude_profile_unreviewed',409);
     const cancel=new AbortController();catalogControllers.add(cancel);
     const currentSignal=signal?AbortSignal.any([signal,cancel.signal]):cancel.signal;

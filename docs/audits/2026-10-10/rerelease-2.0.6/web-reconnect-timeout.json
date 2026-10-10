@@ -1,0 +1,458 @@
+{
+  "schemaVersion": 1,
+  "revision": "99eb5a28142033c15e731b789c88082be1ef616e",
+  "dirty": true,
+  "runtime": "web",
+  "scenario": "provider-usage",
+  "fixtureGeneration": 2,
+  "startedAt": "2026-10-10T17:56:11.766Z",
+  "outcome": "failed",
+  "checks": [
+    {
+      "name": "initial native runtime readiness",
+      "outcome": "passed",
+      "elapsedMs": 6679.897374999997
+    },
+    {
+      "name": "selected session and composer",
+      "outcome": "passed",
+      "elapsedMs": 523.5052499999983
+    },
+    {
+      "name": "four-session stream reaches selected transcript",
+      "outcome": "passed",
+      "elapsedMs": 1620.6804999999986
+    },
+    {
+      "name": "typing survives background streaming",
+      "outcome": "passed",
+      "elapsedMs": 516.8531250000015
+    },
+    {
+      "name": "send and reconcile a real composer submission",
+      "outcome": "passed",
+      "elapsedMs": 2526.782625
+    },
+    {
+      "name": "cancel an active composer submission",
+      "outcome": "passed",
+      "elapsedMs": 196.30879200000345
+    },
+    {
+      "name": "reconnect and reopen without duplicate user messages",
+      "outcome": "failed",
+      "elapsedMs": 30373.721458999993,
+      "error": "Timed out: restored response"
+    }
+  ],
+  "consoleErrors": [
+    "[event-pipeline] SSE stream error TypeError: network error"
+  ],
+  "consoleObservations": [
+    {
+      "ordinal": 1,
+      "kind": "console",
+      "text": "[event-pipeline] SSE stream error TypeError: network error"
+    }
+  ],
+  "expectedFailures": [],
+  "screenshots": [
+    "failure.png"
+  ],
+  "liveProvider": "not-run",
+  "physicalDevice": "not-run",
+  "visualReview": "pending",
+  "profile": {
+    "transport": "fixture",
+    "version": "2.0.20",
+    "generation": 2,
+    "fixtureGeneration": 2,
+    "credentialsCopied": false,
+    "globalConfigurationRead": false,
+    "inputDigest": "[REDACTED]:high_entropy",
+    "nativeBundle": {
+      "bundleID": "candidate",
+      "revision": 1
+    },
+    "runtimeOwner": "actual-private-native-bundle",
+    "uiTransport": "[REDACTED]:high_entropy",
+    "electronHostMode": "not-applicable",
+    "localElectronIPC": "not-qualified-by-wire",
+    "agentFallbackVariant": "low",
+    "applicationAgentFallbackVariant": "low",
+    "modelSelection": {
+      "providerId": "fixture",
+      "modelId": "fixture-model",
+      "variant": "low"
+    },
+    "history": {
+      "sessionID": "ses_perfparent",
+      "turns": 180
+    },
+    "isolation": {
+      "home": "<QA_RUNTIME>/bundles/bundles/candidate/global/home",
+      "data": "<QA_RUNTIME>/bundles/bundles/candidate/web-data",
+      "browserProfile": "<QA_RUNTIME>/browser-profile",
+      "workspace": "<QA_RUNTIME>/workspace"
+    },
+    "managedScheduler": "not-simulated"
+  },
+  "runtimeService": false,
+  "inspection": {
+    "cdp": "http://127.0.0.1:60703",
+    "fixture": "http://127.0.0.1:60686",
+    "app": "http://127.0.0.1:60705"
+  },
+  "streamEvents": {
+    "message.part.delta": 232
+  },
+  "error": "Timed out: restored response",
+  "fixture": {
+    "generation": 2,
+    "activeScenario": "idle",
+    "sseClientCount": 1,
+    "sseConnectionCount": 2,
+    "statusRequestCount": 4,
+    "suppressedEvents": [],
+    "suppressionRuns": [],
+    "messageRequestCounts": {
+      "ses_perfparent": 17,
+      "ses_perfchild3": 3,
+      "ses_perfchild1": 2,
+      "ses_perfchild2": 2
+    },
+    "olderMessageRequestCounts": {
+      "ses_perfparent": 9
+    },
+    "messagePageRequests": [
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "order": "desc",
+        "type": null,
+        "cursor": false,
+        "returned": 50,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a126f4e5fd0000000000000009b"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 200,
+        "order": "desc",
+        "type": null,
+        "cursor": true,
+        "returned": 200,
+        "firstMessageID": "msg_1a126f4e5e90000000000000009b",
+        "lastMessageID": "msg_1a126f35f5d00000000000000037"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "order": "desc",
+        "type": null,
+        "cursor": false,
+        "returned": 50,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a126f4e5fd0000000000000009b"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 200,
+        "order": "desc",
+        "type": null,
+        "cursor": true,
+        "returned": 200,
+        "firstMessageID": "msg_1a126f4e5e90000000000000009b",
+        "lastMessageID": "msg_1a126f35f5d00000000000000037"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 50,
+        "order": "desc",
+        "type": null,
+        "cursor": false,
+        "returned": 50,
+        "firstMessageID": "msg_user_ses_perfparent",
+        "lastMessageID": "msg_1a126f4e5fd0000000000000009b"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 200,
+        "order": "desc",
+        "type": null,
+        "cursor": true,
+        "returned": 200,
+        "firstMessageID": "msg_1a126f4e5e90000000000000009b",
+        "lastMessageID": "msg_1a126f35f5d00000000000000037"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 50,
+        "order": "desc",
+        "type": null,
+        "cursor": false,
+        "returned": 1,
+        "firstMessageID": "msg_user_ses_perfchild3",
+        "lastMessageID": "msg_user_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 100,
+        "order": "desc",
+        "type": null,
+        "cursor": false,
+        "returned": 100,
+        "firstMessageID": "msg_assistant_ses_perfparent",
+        "lastMessageID": "msg_1a126f4882900000000000000083"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 100,
+        "order": "desc",
+        "type": null,
+        "cursor": false,
+        "returned": 2,
+        "firstMessageID": "msg_assistant_ses_perfchild1",
+        "lastMessageID": "msg_user_ses_perfchild1"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 100,
+        "order": "desc",
+        "type": null,
+        "cursor": false,
+        "returned": 2,
+        "firstMessageID": "msg_assistant_ses_perfchild3",
+        "lastMessageID": "msg_user_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfchild2",
+        "limit": 100,
+        "order": "desc",
+        "type": null,
+        "cursor": false,
+        "returned": 2,
+        "firstMessageID": "msg_assistant_ses_perfchild2",
+        "lastMessageID": "msg_user_ses_perfchild2"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "order": "desc",
+        "type": null,
+        "cursor": false,
+        "returned": 30,
+        "firstMessageID": "msg_assistant_ses_perfparent",
+        "lastMessageID": "msg_1a126f510e1000000000000000a6"
+      },
+      {
+        "sessionID": "ses_perfchild1",
+        "limit": 30,
+        "order": "desc",
+        "type": null,
+        "cursor": false,
+        "returned": 2,
+        "firstMessageID": "msg_assistant_ses_perfchild1",
+        "lastMessageID": "msg_user_ses_perfchild1"
+      },
+      {
+        "sessionID": "ses_perfchild2",
+        "limit": 30,
+        "order": "desc",
+        "type": null,
+        "cursor": false,
+        "returned": 2,
+        "firstMessageID": "msg_assistant_ses_perfchild2",
+        "lastMessageID": "msg_user_ses_perfchild2"
+      },
+      {
+        "sessionID": "ses_perfchild3",
+        "limit": 30,
+        "order": "desc",
+        "type": null,
+        "cursor": false,
+        "returned": 2,
+        "firstMessageID": "msg_assistant_ses_perfchild3",
+        "lastMessageID": "msg_user_ses_perfchild3"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "order": "desc",
+        "type": null,
+        "cursor": false,
+        "returned": 30,
+        "firstMessageID": "msg_126f5c7df0020000000000006f",
+        "lastMessageID": "msg_1a126f510f5000000000000000a6"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "order": "desc",
+        "type": null,
+        "cursor": true,
+        "returned": 30,
+        "firstMessageID": "msg_1a126f510e1000000000000000a6",
+        "lastMessageID": "msg_1a126f4d65d00000000000000097"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 200,
+        "order": "desc",
+        "type": null,
+        "cursor": true,
+        "returned": 200,
+        "firstMessageID": "msg_1a126f4d64900000000000000097",
+        "lastMessageID": "msg_1a126f34fbd00000000000000033"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "order": "desc",
+        "type": null,
+        "cursor": false,
+        "returned": 30,
+        "firstMessageID": "msg_126f5c96a0030000000000006x",
+        "lastMessageID": "msg_1a126f518c5000000000000000a8"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "order": "desc",
+        "type": null,
+        "cursor": true,
+        "returned": 30,
+        "firstMessageID": "msg_1a126f518b1000000000000000a8",
+        "lastMessageID": "msg_1a126f4de2d00000000000000099"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 200,
+        "order": "desc",
+        "type": null,
+        "cursor": true,
+        "returned": 200,
+        "firstMessageID": "msg_1a126f4de1900000000000000099",
+        "lastMessageID": "msg_1a126f3578d00000000000000035"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "order": "desc",
+        "type": null,
+        "cursor": false,
+        "returned": 30,
+        "firstMessageID": "msg_126f5d21d0040000000000007X",
+        "lastMessageID": "msg_1a126f52095000000000000000aa"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 30,
+        "order": "desc",
+        "type": null,
+        "cursor": true,
+        "returned": 30,
+        "firstMessageID": "msg_1a126f52081000000000000000aa",
+        "lastMessageID": "msg_1a126f4e5fd0000000000000009b"
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "limit": 200,
+        "order": "desc",
+        "type": null,
+        "cursor": true,
+        "returned": 200,
+        "firstMessageID": "msg_1a126f4e5e90000000000000009b",
+        "lastMessageID": "msg_1a126f35f5d00000000000000037"
+      }
+    ],
+    "textLengths": {
+      "ses_perfparent": 722,
+      "ses_perfchild1": 466,
+      "ses_perfchild2": 466,
+      "ses_perfchild3": 512
+    },
+    "receivedPrompts": [
+      {
+        "sessionID": "ses_perfparent",
+        "messageID": "msg_126f5c923001qdMgJrh3a2IN7b",
+        "partTypes": [
+          "text"
+        ],
+        "model": {
+          "providerID": "fixture",
+          "modelID": "fixture-model",
+          "variant": "low"
+        },
+        "agent": "build",
+        "delivery": "queue",
+        "variant": "low",
+        "planMode": false
+      },
+      {
+        "sessionID": "ses_perfparent",
+        "messageID": "msg_126f5d1df0011BeWtjQPPIFMWH",
+        "partTypes": [
+          "text"
+        ],
+        "model": {
+          "providerID": "fixture",
+          "modelID": "fixture-model",
+          "variant": "low"
+        },
+        "agent": "build",
+        "delivery": "queue",
+        "variant": "low",
+        "planMode": false
+      }
+    ],
+    "canonicalUserDelays": [],
+    "rejectedPrompts": [],
+    "replies": [],
+    "unknownRoutes": [],
+    "locationRequired": [],
+    "wireLosses": [],
+    "streamDrops": [],
+    "eventCounts": {
+      "session.created": 4,
+      "session.inbox.enqueued": 6,
+      "session.inbox.delivered": 6,
+      "worktree.resolved": 1,
+      "project.updated": 1,
+      "integration.updated": 1,
+      "provider.updated": 1,
+      "model.updated": 1,
+      "vcs.branch.updated": 1,
+      "agent.updated": 1,
+      "command.updated": 1,
+      "skill.updated": 1,
+      "websearch.updated": 1,
+      "reference.updated": 1,
+      "plugin.updated": 1,
+      "session.execution.started": 6,
+      "session.step.started": 6,
+      "session.text.started": 6,
+      "session.text.delta": 392,
+      "session.text.ended": 6,
+      "session.step.streamed": 6,
+      "session.step.ended": 5,
+      "session.execution.succeeded": 5,
+      "session.agent.selected": 1,
+      "session.model.selected": 1,
+      "session.step.failed": 1,
+      "session.execution.interrupted": 1
+    },
+    "permissionCount": 0,
+    "questionCount": 0,
+    "executingSessions": [],
+    "abortedPrompts": 1,
+    "activePrompts": 0
+  },
+  "providerUsageTransport": {
+    "requests": [],
+    "failures": []
+  },
+  "cleanupErrors": [],
+  "finishedAt": "2026-10-10T17:57:18.066Z",
+  "journalDirectory": "journal"
+}

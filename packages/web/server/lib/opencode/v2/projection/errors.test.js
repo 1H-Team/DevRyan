@@ -49,6 +49,24 @@ describe('toV1Error', () => {
     });
   });
 
+  it.each([
+    { error: { code: 'unsupported_parameter', param: 'tools' } },
+    { type: 'response.failed', response: { error: { code: 'unsupported_parameter', param: 'tools' } } },
+    { type: 'error', code: 'unsupported_parameter', param: 'tools' },
+  ])('carries only finite provider code and parameter from %j', (body) => {
+    const projected = toV1Error({ type: 'provider.invalid-request', message: 'rejected', response: { body: JSON.stringify({ ...body, input: 'private prompt', authorization: 'private token' }) } });
+    expect(projected.data).toEqual({ message: 'rejected', v2Type: 'provider.invalid-request', providerCode: 'unsupported_parameter', providerParam: 'tools' });
+    expect(JSON.stringify(projected)).not.toContain('private');
+  });
+
+  it.each([
+    'not json', ' '.repeat(65537), JSON.stringify({ error: { code: 'private-token', param: 'input.private-text' } }),
+    JSON.stringify({ error: { code: ['unsupported_parameter'], param: { private: 'tools' } } }),
+  ])('drops malformed, oversized and unrecognized detail', (body) => {
+    expect(toV1Error({ type: 'provider.invalid-request', message: '', response: { body } }).data)
+      .toEqual({ message: '', v2Type: 'provider.invalid-request' });
+  });
+
   it('uses a caller-supplied overflow classifier only for invalid requests', () => {
     const isContextOverflow = (message) => /context length/i.test(message);
     expect(toV1Error(

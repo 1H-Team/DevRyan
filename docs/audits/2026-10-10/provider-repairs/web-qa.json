@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "revision": "3295d4991c1457fd6be999c7b9da3acb16659b74",
+  "dirty": true,
+  "runtime": "web",
+  "scenario": "provider-usage",
+  "startedAt": "2026-10-10T14:50:22.494Z",
+  "finishedAt": "2026-10-10T14:50:49.897Z",
+  "outcome": "passed",
+  "checks": [
+    {
+      "name": "initial native runtime readiness",
+      "outcome": "passed",
+      "elapsedMs": 3692.860584
+    },
+    {
+      "name": "selected session and composer",
+      "outcome": "passed",
+      "elapsedMs": 191.43104099999982
+    },
+    {
+      "name": "four-session stream reaches selected transcript",
+      "outcome": "passed",
+      "elapsedMs": 1541.9445000000014
+    },
+    {
+      "name": "typing survives background streaming",
+      "outcome": "passed",
+      "elapsedMs": 517.2890829999997
+    },
+    {
+      "name": "send and reconcile a real composer submission",
+      "outcome": "passed",
+      "elapsedMs": 2371.8850420000017
+    },
+    {
+      "name": "cancel an active composer submission",
+      "outcome": "passed",
+      "elapsedMs": 254.56583300000057
+    },
+    {
+      "name": "reconnect and reopen without duplicate user messages",
+      "outcome": "passed",
+      "elapsedMs": 1166.601292000003
+    },
+    {
+      "name": "weekly usage, source identity and reset expiry render",
+      "outcome": "passed",
+      "elapsedMs": 205.38895799999955
+    },
+    {
+      "name": "reset inventory unknown renders distinctly",
+      "outcome": "passed",
+      "elapsedMs": 255.3754169999993
+    },
+    {
+      "name": "reset inventory zero renders distinctly",
+      "outcome": "passed",
+      "elapsedMs": 254.3970420000005
+    }
+  ],
+  "unexpectedConsoleErrors": [],
+  "providerUsage": {
+    "source": "synthetic quota transport with built product UI",
+    "requests": 5,
+    "modes": [
+      "available",
+      "unknown",
+      "zero"
+    ],
+    "liveProvider": false
+  },
+  "providerUsageTransport": {
+    "requests": [
+      "/api/quota/providers",
+      "/api/quota/codex",
+      "/api/quota/codex/connection",
+      "/api/quota/codex",
+      "/api/quota/codex"
+    ],
+    "failures": []
+  },
+  "cleanupErrors": [],
+  "liveProvider": "not-run",
+  "physicalDevice": "not-run",
+  "visualReview": {
+    "outcome": "passed",
+    "reviewer": "agent",
+    "imagesReviewed": [
+      "provider-usage-available.png",
+      "provider-usage-unknown.png",
+      "provider-usage-zero.png",
+      "chat-idle.png"
+    ],
+    "notes": "Weekly 37%, source and account identity readable; three reset credits with expiry; unknown unavailable; zero without expiry rows. Chat view shows completed and cancelled fixture turns and composer."
+  },
+  "expectedConsoleObservations": [
+    "[event-pipeline] SSE stream error TypeError: network error"
+  ],
+  "nativeArtifactBuildId": "06e1878a8e9679b5dcdae278c0dd29e5d3d99d3bfa6f2c76a1609a2321cd3d11"
+}

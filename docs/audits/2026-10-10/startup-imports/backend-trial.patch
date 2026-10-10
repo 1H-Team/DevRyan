@@ -1,0 +1,56 @@
+--- a/packages/web/server/lib/opencode/feature-routes-runtime.js
++++ b/packages/web/server/lib/opencode/feature-routes-runtime.js
+@@ -104,7 +104,7 @@
+       removeAntigravityProviderConfig,
+       removeProviderConfig,
+       ensureAnthropicOAuthProviderConfig,
+-    } = await import('./index.js');
++    } = await import('./providers.js');
+ 
+     registerSettingsUtilityRoutes(app, {
+       readCustomThemesFromDisk,
+@@ -213,20 +213,26 @@
+       deleteAgentModelOverride,
+       writeAgentBackupModel,
+       deleteAgentBackupModel,
++      listConfigAgents,
++    } = await import('./agents.js');
++    const {
+       readAgentRuntimeSettings,
+       writeAgentRuntimeSettings,
+-      listConfigAgents,
++    } = await import('./agent-runtime-settings.js');
++    const {
+       getCommandSources,
+       createCommand,
+       updateCommand,
+       deleteCommand,
++    } = await import('./commands.js');
++    const {
+       listMcpConfigs,
+       getMcpConfig,
+       createMcpConfig,
+       updateMcpConfig,
+       deleteMcpConfig,
+       recoverMcpConfigs,
+-    } = await import('./index.js');
++    } = await import('./mcp.js');
+ 
+     registerConfigEntityRoutes(app, {
+       resolveProjectDirectory,
+@@ -266,12 +272,14 @@
+       createSkill,
+       updateSkill,
+       deleteSkill,
++    } = await import('./skills.js');
++    const {
+       readSkillSupportingFile,
+       writeSkillSupportingFile,
+       deleteSkillSupportingFile,
+       SKILL_SCOPE,
+       SKILL_DIR,
+-    } = await import('./index.js');
++    } = await import('./shared.js');
+ 
+     const {
+       getCuratedSkillsSources,

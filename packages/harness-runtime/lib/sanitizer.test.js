@@ -4,6 +4,19 @@ import { createDiagnosticSanitizer } from './sanitizer.js';
 import { parseNativeJournalObservation } from '../../shared-runtime/lib/native-observation.js';
 
 describe('diagnostic sanitizer', () => {
+  test('retains only allowlisted provider failure details through journal and export', () => {
+    const sanitizer = createDiagnosticSanitizer();
+    const row = { type: 'open_code_event', payload: { type: 'session.error', properties: { sessionID: 'ses_fixture',
+      error: { name: 'APIError', data: { message: 'rejected', v2Type: 'provider.invalid-request',
+        providerCode: 'unsupported_parameter', providerParam: 'tools', private: 'private token' } } } } };
+    const saved = sanitizer.sanitizeRecord(row);
+    expect(saved.payload.properties.error.data).toEqual({ message: 'rejected', v2Type: 'provider.invalid-request', providerCode: 'unsupported_parameter', providerParam: 'tools' });
+    expect(sanitizer.sanitizeExportValue(saved)).toEqual(saved);
+    expect(sanitizer.sanitizeExportValue({ providerCode: 'private-token', providerParam: 'private-prompt', v2Type: 'private-error' })).toEqual({});
+    expect(sanitizer.sanitizeRecord({ ...row, payload: { error: { data: {
+      providerCode: 'private-token', providerParam: 'private-prompt', v2Type: 'private-error',
+    } } } }).payload.error.data).toEqual({});
+  });
   test('startup catalog codes and finite schema paths survive journaling and export', () => {
     const sanitizer = createDiagnosticSanitizer();
     const code = 'native_catalog_read_failed_model_http_500_response_schema_invalid';
@@ -39,6 +52,21 @@ describe('diagnostic sanitizer', () => {
     expect(sanitizer.sanitizeRecord({ type: 'lifecycle', event: 'native_observation_gap', payload: {
       stage: 'controller', controllerInstanceID: 'instance-1', message: 'private error detail',
     } }).payload).toEqual({ code: 'native_observation_unavailable', stage: 'controller', controllerInstanceID: 'instance-1' });
+  });
+  test('preserves finite local provider refusal codes through journaling and export', () => {
+    const sanitizer = createDiagnosticSanitizer({ worktreeRoots: ['/fixture/project'] });
+    const payload = { schema: 1, stage: 'provider-refusal', controllerInstanceID: 'instance-1', configurationDigest: 'a'.repeat(64),
+      sessionID: 'ses_1', directory: '/fixture/project', kind: 'primary', hook: 'experimental.ws.handshake', code: 'native_openai_route_unreviewed' };
+    const row = { type: 'lifecycle', event: 'native_observation', sessionID: payload.sessionID, directory: payload.directory, payload };
+    const saved = sanitizer.sanitizeRecord(row);
+    expect(saved.directory).toMatch(/^<WORKTREE_[a-f0-9]{12}>$/);
+    expect(saved.payload).toEqual({ ...payload, directory: saved.directory });
+    expect(sanitizer.sanitizeExportValue(saved)).toEqual(saved);
+    expect(JSON.stringify(saved)).not.toContain('/fixture/project');
+    for (const changed of [{ code: 'native_openai_private_secret' }, { request: 'private prompt' }, { headers: { authorization: 'private' } }, { stack: 'private stack' }]) {
+      expect(() => sanitizer.sanitizeRecord({ ...row, payload: { ...payload, ...changed } })).toThrow('native_observation_invalid');
+      expect(() => sanitizer.sanitizeExportValue({ ...saved, payload: { ...saved.payload, ...changed } })).toThrow('native_observation_invalid');
+    }
   });
 
   test('limits process-exit fields to their dedicated event without widening other payloads', () => {

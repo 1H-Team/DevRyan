@@ -52,6 +52,7 @@ import { applyMobileKeyboardMode } from '@/lib/mobileKeyboardMode';
 import { SyncAppEffects } from '@/apps/AppEffects';
 import { useAppFontEffects } from '@/apps/useAppFontEffects';
 import {
+  markStartupReadiness,
   createStartupReadinessSnapshot,
   recoverStartupInitialization,
   shouldShowStartupReadinessScreen,
@@ -374,7 +375,7 @@ const StartupReadinessGate: React.FC<{
     return () => window.clearTimeout(timer);
   }, [hasCompletedStartup]);
 
-  const summary = React.useMemo(() => {
+  const readinessSnapshot = React.useMemo(() => {
     let snapshot = createStartupReadinessSnapshot('ready');
     snapshot = withStartupBootstrapReadiness(snapshot, {
       desktopBootReady: !isDesktopRuntime || (bootOutcomeKnown && bootViewIsMain),
@@ -408,7 +409,7 @@ const StartupReadinessGate: React.FC<{
     });
     snapshot = withStartupReadinessPhase(snapshot, 'worktree', worktreePhase);
 
-    return summarizeStartupReadiness(snapshot, { route: 'main' });
+    return snapshot;
   }, [
     agentsLoadError,
     agentsLoadStatus,
@@ -431,6 +432,13 @@ const StartupReadinessGate: React.FC<{
     responseStyleInstructionLoaded,
     worktreePhase,
   ]);
+
+  const summary = React.useMemo(() => summarizeStartupReadiness(readinessSnapshot, { route: 'main' }), [readinessSnapshot]);
+  const measuredReadiness = React.useRef(new Set<string>());
+  React.useEffect(() => {
+    if (hasCompletedStartup) return;
+    markStartupReadiness(readinessSnapshot, measuredReadiness.current);
+  }, [readinessSnapshot, hasCompletedStartup]);
 
   React.useEffect(() => {
     setInitialLoadingStatus(getStartupStatusText(summary));

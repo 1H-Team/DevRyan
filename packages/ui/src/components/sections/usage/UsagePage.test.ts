@@ -53,8 +53,8 @@ describe('Provider usage panel rows', () => {
     const pageSource = source('ProviderUsagePanel.tsx');
 
     expect(pageSource).toContain("import { UsageResetCreditsList } from '@/components/layout/usage/UsageResetCreditsList'");
-    expect(pageSource).toContain('usage?.resetCredits ? (');
-    expect(pageSource).toContain('<UsageResetCreditsList resetCredits={usage.resetCredits} />');
+    expect(pageSource).toContain("usage?.resetCredits || result?.source === 'codex-app-server' && usage?.resetCredits === null");
+    expect(pageSource).toContain('<UsageResetCreditsList resetCredits={usage?.resetCredits ?? null} />');
   });
 
   test('forces only the OpenCode Credits progress row to use the success tone', () => {

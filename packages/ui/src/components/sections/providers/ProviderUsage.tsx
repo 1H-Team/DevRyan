@@ -14,9 +14,11 @@ import {
 } from '@/lib/quota';
 import { cn } from '@/lib/utils';
 import { useQuotaStore } from '@/stores/useQuotaStore';
+import { useAuthPrincipal } from '@/lib/authSession';
 import type { QuotaProviderId } from '@/types';
 
 import { useCanReadUsage } from './useProviderUsage';
+import { CodexUsageConnection } from './CodexUsageConnection';
 
 /**
  * Inline Usage section for a Providers-catalog provider; renders nothing without a usage source.
@@ -39,6 +41,7 @@ export const ProviderUsageSection: React.FC<{ providerId: string; connected?: bo
 /** Detail view for a usage source without a matching Providers row. */
 export const UsageOnlyProviderView: React.FC<{ quotaProviderId: QuotaProviderId }> = ({ quotaProviderId }) => {
   const { t } = useI18n();
+  const principal = useAuthPrincipal();
   const providerName = QUOTA_PROVIDER_MAP[quotaProviderId]?.name ?? quotaProviderId;
 
   return (
@@ -50,6 +53,7 @@ export const UsageOnlyProviderView: React.FC<{ quotaProviderId: QuotaProviderId 
           subtitle={t('settings.providers.usageOnly.description')}
         />
         <ProviderUsagePanel key={quotaProviderId} quotaProviderId={quotaProviderId} variant="page" embedded />
+        {quotaProviderId === 'codex' ? <CodexUsageConnection administrator={principal.role === 'admin' && principal.scope !== 'tunnel-bot'} principalID={principal.id} /> : null}
       </div>
     </ScrollableOverlay>
   );

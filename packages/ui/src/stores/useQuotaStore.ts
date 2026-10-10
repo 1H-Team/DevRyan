@@ -54,6 +54,7 @@ interface QuotaStore extends QuotaSettingsState {
   discoverConfiguredProviders: () => Promise<QuotaProviderId[]>;
   fetchAllQuotas: (options?: FetchQuotaOptions) => Promise<void>;
   fetchProviderQuota: (providerId: QuotaProviderId, options?: FetchQuotaOptions) => Promise<void>;
+  invalidateProviderQuota: (providerId: QuotaProviderId) => void;
   setSelectedProvider: (providerId: QuotaProviderId | null) => void;
   setAutoRefresh: (enabled: boolean) => void;
   setRefreshInterval: (intervalMs: number) => void;
@@ -69,6 +70,7 @@ interface QuotaStore extends QuotaSettingsState {
 
 const knownProviderIds = new Set<QuotaProviderId>(QUOTA_PROVIDERS.map((provider) => provider.id));
 const inFlightProviderRefreshes = new Map<QuotaProviderId, Promise<void>>();
+const providerRevisions = new Map<QuotaProviderId, number>();
 let inFlightDiscovery: Promise<QuotaProviderId[]> | null = null;
 let activeAllRefreshes = 0;
 let notifyQuotaSettingsChanged = () => {};
@@ -132,7 +134,24 @@ const isProviderResult = (payload: unknown, providerId: QuotaProviderId): payloa
       candidate.warnings === undefined
       || (Array.isArray(candidate.warnings) && candidate.warnings.every((warning) => typeof warning === 'string'))
     )
+    && (candidate.source === undefined || candidate.source === null || candidate.source === 'codex-app-server' || candidate.source === 'chatgpt-siwc')
+    && (candidate.connectionId === undefined || candidate.connectionId === null || typeof candidate.connectionId === 'string')
+    && (candidate.account === undefined || candidate.account === null || (
+      typeof candidate.account === 'object'
+      && (candidate.account.email === null || typeof candidate.account.email === 'string')
+      && (candidate.account.planType === null || typeof candidate.account.planType === 'string')
+    ))
     && ('usage' in candidate);
+};
+
+const sameUsageSource = (left: ProviderResult, right: ProviderResult) => (
+  left.source === right.source && left.connectionId === right.connectionId
+  && left.account?.email === right.account?.email
+  && (right.source === undefined || Boolean(right.source && right.connectionId))
+);
+const clearProviderTrends = (history: UsageTrendHistory, providerId: QuotaProviderId) => {
+  const entries = Object.entries(history).filter(([key]) => !key.startsWith(`${encodeURIComponent(providerId)}|`));
+  return entries.length === Object.keys(history).length ? history : Object.fromEntries(entries);
 };
 
 const sameProviderIds = (
@@ -395,6 +414,8 @@ export const useQuotaStore = create<QuotaStore>()(
       fetchProviderQuota: (providerId, options = {}) => {
         const existingRequest = inFlightProviderRefreshes.get(providerId);
         if (existingRequest) return existingRequest;
+        const revision = providerRevisions.get(providerId) ?? 0;
+        const current = () => revision === (providerRevisions.get(providerId) ?? 0);
 
         const attemptAt = Date.now();
         set((state) => ({
@@ -417,6 +438,7 @@ export const useQuotaStore = create<QuotaStore>()(
               { headers: quotaRequestHeaders() },
             );
             const payload = await response.json().catch(() => null) as unknown;
+            if (!current()) return;
             if (!response.ok) {
               throw new Error(payloadError(payload, 'Failed to fetch quota'));
             }
@@ -429,16 +451,20 @@ export const useQuotaStore = create<QuotaStore>()(
             set((state) => {
               const previousRefresh = state.providerRefreshState[providerId];
               const previousResult = state.results.find((entry) => entry.providerId === providerId);
+              const sourceChanged = Boolean(previousResult && !sameUsageSource(previousResult, result));
+              const trendHistory = sourceChanged ? clearProviderTrends(state.trendHistory, providerId) : state.trendHistory;
+              const lastSuccessAt = sourceChanged ? null : previousRefresh?.lastSuccessAt ?? null;
 
               if (!result.configured) {
                 return {
                   results: replaceProviderResult(state.results, providerId, result),
+                  trendHistory: clearProviderTrends(trendHistory, providerId),
                   configuredProviderIds: state.configuredProviderIds?.filter((id) => id !== providerId) ?? null,
                   providerRefreshState: {
                     ...state.providerRefreshState,
                     [providerId]: {
                       lastAttemptAt: attemptAt,
-                      lastSuccessAt: previousRefresh?.lastSuccessAt ?? null,
+                      lastSuccessAt,
                       refreshError: result.error ?? null,
                     },
                   },
@@ -447,14 +473,15 @@ export const useQuotaStore = create<QuotaStore>()(
 
               if (!result.ok) {
                 return {
-                  results: previousResult?.ok
+                  results: previousResult?.ok && !sourceChanged
                     ? state.results
                     : replaceProviderResult(state.results, providerId, result),
+                  trendHistory,
                   providerRefreshState: {
                     ...state.providerRefreshState,
                     [providerId]: {
                       lastAttemptAt: attemptAt,
-                      lastSuccessAt: previousRefresh?.lastSuccessAt ?? null,
+                      lastSuccessAt,
                       refreshError: result.error ?? 'Provider usage unavailable',
                     },
                   },
@@ -463,7 +490,7 @@ export const useQuotaStore = create<QuotaStore>()(
 
               return {
                 results: replaceProviderResult(state.results, providerId, result),
-                trendHistory: recordProviderUsageTrends(state.trendHistory, result),
+                trendHistory: recordProviderUsageTrends(trendHistory, result),
                 providerRefreshState: {
                   ...state.providerRefreshState,
                   [providerId]: {
@@ -475,6 +502,7 @@ export const useQuotaStore = create<QuotaStore>()(
               };
             });
           } catch (error) {
+            if (!current()) return;
             const message = errorMessage(error, 'Failed to fetch quota');
             const fallback: ProviderResult = {
               providerId,
@@ -502,7 +530,7 @@ export const useQuotaStore = create<QuotaStore>()(
               };
             });
           } finally {
-            set((state) => ({
+            if (current()) set((state) => ({
               isFetchingProvider: { ...state.isFetchingProvider, [providerId]: false },
             }));
           }
@@ -515,6 +543,21 @@ export const useQuotaStore = create<QuotaStore>()(
         });
         inFlightProviderRefreshes.set(providerId, tracked);
         return tracked;
+      },
+
+      invalidateProviderQuota: (providerId) => {
+        providerRevisions.set(providerId, (providerRevisions.get(providerId) ?? 0) + 1);
+        inFlightProviderRefreshes.delete(providerId);
+        set((state) => {
+          const providerRefreshState = { ...state.providerRefreshState };
+          delete providerRefreshState[providerId];
+          return {
+            results: state.results.filter((result) => result.providerId !== providerId),
+            trendHistory: clearProviderTrends(state.trendHistory, providerId),
+            providerRefreshState,
+            isFetchingProvider: { ...state.isFetchingProvider, [providerId]: false },
+          };
+        });
       },
 
       setSelectedProvider: (providerId) => set({ selectedProviderId: providerId }),

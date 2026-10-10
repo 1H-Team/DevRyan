@@ -239,6 +239,9 @@ export const Header: React.FC<HeaderProps> = ({
           ?? quotaProviderRefreshState[provider.id]?.lastSuccessAt
           ?? null,
         resetCredits: result?.usage?.resetCredits,
+        source: result?.source,
+        connectionId: result?.connectionId,
+        account: result?.account,
         warnings: result?.warnings,
         error: quotaProviderRefreshState[provider.id]?.refreshError
           ?? ((result && !result.ok && result.configured) ? result.error : undefined),

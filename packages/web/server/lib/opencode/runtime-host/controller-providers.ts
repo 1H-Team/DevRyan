@@ -19,7 +19,7 @@ export interface ControllerProvidersOptions{
  readonly configurationSnapshot:NativeConfigurationSnapshot;
  readonly origin:RegistrationOrigin;
  readonly scrubSystem:(text:string)=>string;
- readonly integrations:Pick<ReturnType<typeof createControllerIntegrations>,'discoverCopilot'|'readCatalogSelectionOwned'>;
+ readonly integrations:Pick<ReturnType<typeof createControllerIntegrations>,'discoverCopilot'|'readCatalogSelectionOwned'|'requiresOpenAiHttp'>;
  readonly rpc:(method:string,input:unknown,options?:{readonly signal:AbortSignal})=>Promise<unknown>;
  readonly isBound:()=>boolean;readonly isExecutionReady:()=>boolean;
 }
@@ -50,7 +50,17 @@ export function createControllerProviders(options:ControllerProvidersOptions){
   const context=yield* Effect.context<never>();const location=Option.getOrUndefined(Context.getOption(context,Location.Service)),agents=Option.getOrUndefined(Context.getOption(context,Agent.Service));if(!location||!agents)fail('native_provider_location_required');let active=true;
   yield* Effect.addFinalizer(()=>Effect.sync(()=>{active=false;}));
   const wrap=<Event>(kind:NativeProviderAttempt['kind'],input:SessionModelRequest.Input,read:Effect.Effect<SessionModelRequest.Prepared<Event>>)=>Effect.gen(function*(){
-   const prepared=yield* read;if(input.model.ref.providerID!=='anthropic')return prepared;
+   const prepared=yield* read;
+   if(input.model.ref.providerID==='openai'){
+    if(prepared.options.webSocket===undefined)return prepared;
+    if(!active)fail('native_provider_location_expired');current(location.directory);
+    const requiresHttp=yield* options.integrations.requiresOpenAiHttp(location.directory);
+    if(!active)fail('native_provider_location_expired');current(location.directory);
+    if(!requiresHttp)return prepared;
+    const requestOptions={...prepared.options};delete requestOptions.webSocket;
+    return {...prepared,options:requestOptions};
+   }
+   if(input.model.ref.providerID!=='anthropic')return prepared;
    if(!active)fail('native_provider_location_expired');current(location.directory);
    if(prepared.options.webSocket)fail('native_meridian_websocket_unsupported');
    const agent=yield* agents.get(input.agent);if(!agent)fail('native_provider_agent_unavailable');

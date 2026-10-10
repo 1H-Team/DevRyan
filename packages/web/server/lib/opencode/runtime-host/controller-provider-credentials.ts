@@ -46,6 +46,8 @@ const refuse = (code: string): never => { throw new HostRefusal(code, 403, 'cred
 export function createControllerProviderCredentials(options: ControllerProviderCredentialsOptions) {
   let credentials: Credential.Interface | undefined;
   const integrations = new Map<string, Integration.Interface>();
+  // Only waiting resolutions inherit a refresh committed by this owner; unrelated writes still refuse.
+  const pendingOAuthResolutions = new Set<{ record: Credential.Info }>();
   // Observations belong to this exact admitted Effect object. They issue no
   // authority and disappear with its caller; never key them by Session ID.
   const selections = new WeakMap<OperationPermit, Map<OwnedProviderIntegration, {
@@ -187,15 +189,23 @@ export function createControllerProviderCredentials(options: ControllerProviderC
       },
     } }));
     });
-    const resolve: Integration.Interface['connection']['resolve'] = connection => Effect.gen(function* () {
+    const resolve: Integration.Interface['connection']['resolve'] = connection => Effect.suspend(() => {
+      let pending: { record: Credential.Info } | undefined;
+      return Effect.gen(function* () {
       if (connection.type !== 'credential' || !credentials) return yield* inner.connection.resolve(connection);
-      const original = yield* credentials.get(connection.id);
-      if (!original || !isOwnedProviderIntegration(original.integrationID)) return yield* inner.connection.resolve(connection);
-      validateValue(original.integrationID, original.value);
+      const observed = yield* credentials.get(connection.id);
+      if (!observed || !isOwnedProviderIntegration(observed.integrationID)) return yield* inner.connection.resolve(connection);
+      const integrationID = observed.integrationID;
+      let original: Credential.Info = observed;
+      validateValue(integrationID, original.value);
+      if (original.value.type === 'oauth') {
+        pending = { record: original };
+        pendingOAuthResolutions.add(pending);
+      }
       const scope = yield* Resolution;
       if (!scope?.active || scope.directory !== location.directory || scope.permit.sessionID !== scope.sessionID) return yield* Effect.fail(new Integration.AuthorizationError({cause:new HostRefusal('native_provider_resolution_scope_required',403,'credential.provider')}));
-      const capture = current(original.integrationID); capture.assertCurrent();
-      const binding: CredentialResolutionBinding = { kind: 'provider', integrationID: original.integrationID,
+      const capture = current(integrationID); capture.assertCurrent();
+      let binding: CredentialResolutionBinding = { kind: 'provider', integrationID,
         ...(original.value.type === 'key' ? {valueType:'key' as const} : {valueType:'oauth' as const,integrationID:'xai' as const,methodID:'device' as const}),
         directory: location.directory, controllerInstanceID: options.controllerInstanceID, acquisitionID: capture.acquisitionID,
         configurationDigest: capture.configurationDigest, sessionID: scope.sessionID, permit: scope.permit,
@@ -204,6 +214,11 @@ export function createControllerProviderCredentials(options: ControllerProviderC
         capture.assertCurrent(); yield* options.assertResolution(binding); capture.assertCurrent(); });
       let expected = original.value;
       const resolveOAuth = Effect.gen(function* () {
+        if (pending) {
+          original = pending.record;
+          expected = original.value;
+          binding = { ...binding, expectedFingerprint: fingerprint(original) };
+        }
         yield* reauthorize; yield* assertSelected(location.directory, original);
         const commit: ResolutionCommit = { binding, original, reauthorize, assertSelected: assertSelected(location.directory, original), assertCurrent: capture.assertCurrent, active: true, committed: false };
         return yield* Effect.gen(function* () {
@@ -211,6 +226,13 @@ export function createControllerProviderCredentials(options: ControllerProviderC
           if (commit.result && !commit.committed) return refuse('native_provider_resolution_not_committed');
           expected = commit.result ?? original.value;
           yield* assertSelected(location.directory, original, expected); yield* reauthorize;
+          if (commit.result) {
+            const previous = fingerprint(original), refreshed = structuredClone({ ...original, value: expected });
+            for (const waiting of pendingOAuthResolutions) {
+              if (fingerprint(waiting.record) === previous) waiting.record = refreshed;
+            }
+            original = refreshed;
+          }
           return result;
         }).pipe(Effect.ensuring(Effect.sync(() => { commit.active = false; })));
       });
@@ -227,6 +249,7 @@ export function createControllerProviderCredentials(options: ControllerProviderC
       proofs.set(original.integrationID, {directory:location.directory,acquisitionID:capture.acquisitionID,record:structuredClone({...original,value:expected})});
       selections.set(scope.permit,proofs);
       return result;
+      }).pipe(Effect.ensuring(Effect.sync(() => { if (pending) pendingOAuthResolutions.delete(pending); })));
     });
     const attempts = new Map<Integration.AttemptID, { readonly directory: string; readonly grant: { readonly authorizationID: string; readonly reauthorize: Effect.Effect<void> } }>();
     const ownedAttempt = (input: { integrationID: Integration.ID; attemptID: Integration.AttemptID }) => Effect.gen(function* () {

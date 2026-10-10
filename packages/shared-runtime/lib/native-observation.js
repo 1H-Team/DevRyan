@@ -23,6 +23,17 @@ const attempt = value => {
   exact(value, ['traceID', 'spanID']);
   if (![value.traceID, value.spanID].every(id)) throw failure();
 };
+const OPENAI_REFUSAL_CODES = new Set([
+  'native_credential_changed', 'native_credential_mutation_authorization_required',
+  'native_openai_acquisition_active', 'native_openai_attempt_scope_required',
+  'native_openai_hook_identity_changed', 'native_openai_hook_invalid',
+  'native_openai_key_route_unavailable', 'native_openai_key_unavailable',
+  'native_openai_location_expired', 'native_openai_location_unavailable',
+  'native_openai_method_unsupported', 'native_openai_oauth_scope_required',
+  'native_openai_owner_unavailable', 'native_openai_route_unreviewed',
+  'native_openai_socket_changed', 'native_openai_startup_held',
+]);
+export const isSafeNativeOpenAiRefusalCode = value => typeof value === 'string' && OPENAI_REFUSAL_CODES.has(value);
 export function projectNativeReasoningOptions(value) {
   const output = {}, source = object(value) ? value : {};
   for (const key of ['reasoningEffort', 'reasoningSummary', 'reasoning_effort', 'effort', 'thinkingLevel']) if (id(source[key])) output[key] = source[key];
@@ -61,6 +72,11 @@ function parse(value, journal) {
         || !['http','ws'].includes(value.transport) || !Number.isSafeInteger(value.ordinal) || value.ordinal < 1) throw failure();
       if(value.wireOptions!==null&&(!object(value.wireOptions)||JSON.stringify(projectNativeReasoningOptions(value.wireOptions))!==JSON.stringify(value.wireOptions)))throw failure();
       attempt(value.attempt); break;
+    case 'provider-refusal':
+      exact(value, [...common, 'kind', 'hook', 'code']);
+      if (!['primary','title','compaction','generate'].includes(value.kind)
+        || !['http.request','http.response','experimental.ws.handshake','experimental.ws.send'].includes(value.hook)
+        || !isSafeNativeOpenAiRefusalCode(value.code)) throw failure(); break;
     case 'step-link':
       exact(value, [...common, 'eventID', 'sequence', 'created', 'assistantMessageID', 'userMessageID', 'execution', 'attempt']);
       if (![value.eventID, value.assistantMessageID, value.userMessageID].every(id) || !Number.isSafeInteger(value.sequence) || value.sequence < 1 || !number(value.created)) throw failure();

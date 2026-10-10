@@ -649,12 +649,14 @@ describe('native quota discovery and fetch', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     try {
       for (const status of [401, 403]) {
-        fetchSpy.mockResolvedValue(response({}, status));
+        fetchSpy.mockResolvedValue(new Response(JSON.stringify(status === 401 ? { code: 'no_matching_rule' } : {}), { status }));
         const picked = { directory, credentialID: 'c', value: { type: 'oauth', methodID: 'chatgpt-siwc', access: 'a', refresh: 'r', expires: 1 } };
         const owner = readyOwner({ readOpenAiSelected: async () => picked, readOpenAiAccountSelection: async () => picked });
         const siwc = register({ owner, quota: await import('./providers/index.js') });
         const body = (await request(siwc).get('/api/quota/codex').expect(200)).body;
-        expect(body).toMatchObject({ ok: false, configured: true, errorCode: 'siwc_usage_unavailable', error: 'Usage is not available with Sign in with ChatGPT.' });
+        expect(body).toMatchObject({ ok: false, configured: true, source: 'chatgpt-siwc', connectionId: 'c' });
+        if (status === 401) expect(body.errorCode).toBe('siwc_usage_unavailable');
+        else expect(body.errorCode).toBeUndefined();
       }
       fetchSpy.mockResolvedValue(response({}, 401));
       const legacyMethod = { directory, credentialID: 'c', value: { type: 'oauth', methodID: 'chatgpt-browser', access: 'a', refresh: 'r', expires: 1 } };

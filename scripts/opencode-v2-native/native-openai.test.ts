@@ -4,6 +4,13 @@ import openAiPlugin from '../../packages/web/server/default-config/plugins/devry
 const siwcPolicy = openAiPlugin.siwcPolicy;
 import * as NativeTool from '@opencode/ai/tool';
 import { ToolCallPart } from '@opencode/ai/schema/messages';
+import { AIError, LLMRequest } from '@opencode/ai/schema/index';
+import * as OpenAI from '@opencode/ai/providers/openai';
+import * as OpenAIResponses from '@opencode/ai/protocols/openai-responses';
+import { Framing } from '@opencode/ai/route/framing';
+import { toSessionError } from '@opencode/core/session/to-session-error';
+import { toV1Error } from '../../packages/web/server/lib/opencode/v2/projection/errors.js';
+import { createDiagnosticSanitizer } from '../../packages/harness-runtime/lib/sanitizer.js';
 import { dispatch } from '@opencode/ai/tool-runtime';
 import { Credential } from '@opencode/core/credential';
 import { Integration } from '@opencode/core/integration';
@@ -14,7 +21,7 @@ import { Agent } from '@opencode/core/agent';
 import { Model } from '@opencode/schema/model';
 import { Global } from '@opencode/util/global';
 import { LayerNode } from '@opencode/util/effect/layer-node';
-import { Context, Effect, Layer, Option, Schema } from 'effect';
+import { Cause, Context, Effect, Layer, Option, Schema, Stream } from 'effect';
 import type { SessionHttpRequest, SessionHttpResponse, SessionWebSocketHandshake, SessionWebSocketSend } from '@opencode/plugin/effect/session';
 import { createNativeOpenAi } from '../../packages/web/server/lib/opencode/runtime-host/native-openai.js';
 import { OperationPermitRef } from '../../packages/web/server/lib/opencode/runtime-host/native-admission-contract.js';
@@ -33,6 +40,94 @@ const sessionID = Schema.decodeUnknownSync(SessionSchema.ID)('ses_openai_fixture
 const agent = Schema.decodeUnknownSync(Agent.ID)('build');
 const value = Schema.decodeUnknownSync(Credential.OAuth)({ type:'oauth',methodID:'chatgpt-siwc',refresh:'fixture-refresh',access:'fixture-access',expires:100000,
   metadata:{accountID:'fixture-account',clientId:'fixture-client',subject:'fixture-subject',extAgentHostId:'fixture-host',scopes:['chatgpt.tokens.use.direct'],idToken:'fixture-id-token',planUsage:true,retained:'fixture'} });
+
+const parserRequest = new LLMRequest({ model: OpenAI.responses('gpt-5-fixture'), system: [], messages: [], tools: [] });
+async function nativeTerminal(event: Record<string, unknown>, omitContentType = false) {
+  const wrapped = siwcPolicy.completedResponse(new Response(new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`), {
+    headers: omitContentType ? {} : { 'content-type': 'text/event-stream' },
+  }));
+  const bytes = new Uint8Array(await wrapped.arrayBuffer());
+  const frames = await Effect.runPromise(Stream.runCollect(Framing.sse.frame(Stream.fromIterable([bytes]))));
+  expect(frames).toHaveLength(1);
+  const decoded = Schema.decodeUnknownSync(OpenAIResponses.protocol.stream.event)(frames[0]);
+  return Effect.runPromise(Effect.exit(OpenAIResponses.protocol.stream.step(OpenAIResponses.protocol.stream.initial(parserRequest), decoded)));
+}
+
+test('SIWC response without Content-Type completes through the native parser', async () => {
+  const exit = await nativeTerminal({ type: 'response.completed', response: { status: 'completed' } }, true);
+  expect(exit._tag).toBe('Success');
+  if (exit._tag !== 'Success') throw Error('Headerless SIWC stream failed');
+  expect(exit.value[1]).toContainEqual(expect.objectContaining({ type: 'step-finish', reason: expect.objectContaining({ normalized: 'stop' }) }));
+});
+
+test.each(['response.failed', 'error'])('SIWC %s reaches the real native parser as a structured failure', async type => {
+  for (const code of ['subscription_sharing_usage_limit_exceeded', 'subscription_sharing_unsupported_capability',
+    'subscription_sharing_invalid_user', 'chatpass_v2_scope_not_authorized']) {
+    const detail = { code, param: 'tools', message: 'private provider fixture' };
+    const exit = await nativeTerminal(type === 'error' ? { type, error: detail } : { type, response: { error: detail } });
+    expect(exit._tag).toBe('Failure');
+    if (exit._tag !== 'Failure') throw Error('Provider failure completed successfully');
+    const failure = Cause.squash(exit.cause);
+    expect(failure).toBeInstanceOf(AIError);
+    const projected = toV1Error(toSessionError(failure));
+    expect(projected?.data).toMatchObject({ providerCode: code, providerParam: 'tools' });
+    expect(JSON.stringify(projected)).not.toContain('private provider fixture');
+    const sanitizer = createDiagnosticSanitizer();
+    const journal = sanitizer.sanitizeRecord({ type: 'open_code_event', payload: { type: 'session.error', properties: { sessionID: 'ses_fixture', error: projected } } });
+    expect(journal).toMatchObject({ payload: { properties: { error: { data: { providerCode: code, providerParam: 'tools' } } } } });
+    expect(JSON.stringify(journal)).not.toContain('"response"');
+    expect(sanitizer.sanitizeExportValue(journal)).toEqual(journal);
+  }
+});
+
+test('SIWC native parser preserves an output-limit finish instead of inventing a transport failure', async () => {
+  const exit = await nativeTerminal({ type: 'response.incomplete', response: { status: 'incomplete', incomplete_details: { reason: 'max_output_tokens' } } });
+  expect(exit._tag).toBe('Success');
+  if (exit._tag !== 'Success') throw Error('Output limit lost its native finish reason');
+  expect(exit.value[1]).toContainEqual(expect.objectContaining({ type: 'step-finish', reason: expect.objectContaining({ normalized: 'length' }) }));
+});
+
+test('native OpenAI transport policy follows current authentication without acquiring access', async () => {
+  await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const credential = yield* Credential.Service, integration = yield* Integration.Service;
+    const adapter = createNativeOpenAi({assertAttempt:()=>Effect.void,controllerIdentity:()=> 'controller-fixture',isBound:()=>true,isExecutionReady:()=>true,
+      access:async()=>{throw Error('Transport policy must not acquire access');},captureOAuthGrant:()=>Effect.die('No enrollment'),withCredentialMutation:(_binding,action)=>action});
+    adapter.decorateCredential(credential);adapter.decorateIntegration(integration,actual);
+    const siwc = yield* credential.create({integrationID:openai,value});
+    expect(yield* adapter.requiresOpenAiHttp(directory)).toBe(true); // Expired access still requires HTTP; physical attempts own refresh.
+    const key = yield* credential.create({integrationID:openai,value:Schema.decodeUnknownSync(Credential.Value)({type:'key',key:'synthetic-policy-key'})});
+    yield* integration.connection.activate(key.id);
+    expect(yield* adapter.requiresOpenAiHttp(directory)).toBe(false);
+    yield* integration.connection.activate(siwc.id);
+    expect(yield* adapter.requiresOpenAiHttp(directory)).toBe(true);
+    const unsupported = yield* credential.create({integrationID:openai,value:{...value,methodID:Schema.decodeUnknownSync(Integration.MethodID)('chatgpt-browser')}});
+    yield* integration.connection.activate(unsupported.id);
+    expect(yield* adapter.requiresOpenAiHttp(directory)).toBe(false);
+  }).pipe(Effect.provide(layer))));
+});
+
+test.each(['selection','location','controller'] as const)('native OpenAI transport policy refuses a changed %s during selection', async change => {
+  await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const credential = yield* Credential.Service, integration = yield* Integration.Service;
+    const siwc = yield* credential.create({integrationID:openai,value});
+    const key = yield* credential.create({integrationID:openai,value:Schema.decodeUnknownSync(Credential.Value)({type:'key',key:'synthetic-policy-key'})});
+    yield* integration.connection.activate(siwc.id);
+    let identity = 'controller-fixture';
+    const adapter = createNativeOpenAi({assertAttempt:()=>Effect.void,controllerIdentity:()=>identity,isBound:()=>true,isExecutionReady:()=>true,
+      access:async()=>{throw Error('Transport policy must not acquire access');},captureOAuthGrant:()=>Effect.die('No enrollment'),withCredentialMutation:(_binding,action)=>action});
+    adapter.decorateCredential({...credential,get:id=>credential.get(id).pipe(Effect.tap(()=>change==='selection'?integration.connection.activate(key.id):
+      change==='location'?adapter.closeLocation(directory,integration):Effect.sync(()=>{identity='controller-replaced';}))) });
+    adapter.decorateIntegration(integration,actual);
+    const result = yield* Effect.promise(()=>runWithHostRefusal(()=>Effect.runPromise(adapter.requiresOpenAiHttp(directory))));
+    expect(result.ok).toBe(false);
+    if(result.ok)throw Error('Stale transport policy accepted');
+    expect(result.refusal.code).toBe(change==='selection'?'native_credential_changed':'native_openai_location_expired');
+    if(change==='location'){
+      const expired = yield* Effect.promise(()=>runWithHostRefusal(()=>Effect.runPromise(adapter.requiresOpenAiHttp(directory))));
+      expect(expired.ok).toBe(false);
+    }
+  }).pipe(Effect.provide(layer))));
+});
 
 test('native integration catalog exposes one host-owned SIWC method and preserves API-key and unrelated entries', async () => {
   await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
@@ -146,8 +241,8 @@ test('physical native hooks finalize after earlier hooks for primary, title, com
       const text=terminal==='interrupted'?'data: {"type":"response.output_text.delta","delta":"partial"}\n\n':terminal==='late-error'?'data: {"type":"response.completed"}\n\ndata: {"type":"response.failed"}\n\n':`data: ${JSON.stringify({type:terminal})}\n\n`;
       const received:SessionHttpResponse={...sent,response:new Response(text,{headers:{'content-type':'text/event-stream'}})};
       yield* decorated.trigger('session','http.response',received);
-      if(terminal==='response.completed')expect(yield* Effect.promise(()=>received.response.text())).toBe(text);
-      else expect((yield* Effect.promise(()=>received.response.text().then(()=>true,()=>false)))).toBe(false);
+      if(terminal==='interrupted') expect((yield* Effect.promise(()=>received.response.text().then(()=>true,()=>false)))).toBe(false);
+      else expect(yield* Effect.promise(()=>received.response.text())).toBe(terminal==='late-error' ? 'data: {"type":"response.completed"}\n\n' : text);
     }
 
   }).pipe(Effect.provide(layer))));
