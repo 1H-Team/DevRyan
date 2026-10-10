@@ -16,8 +16,14 @@ and the exact asset name, size and packaging digest. It applies pending hosted
 migrations and verifies migration history and the schema marker before publication.
 No migration source is changed by this candidate.
 
-The publication outcome is recorded in [release-verification.json](release-verification.json)
-and the [Release workflow](https://github.com/1H-Team/DevRyan/actions/workflows/release.yml).
+The publication passed in [run 38050592027](https://github.com/1H-Team/DevRyan/actions/runs/38050592027).
+The [publication receipt](release-verification.json) confirms the exact title,
+latest non-draft release, source and single-asset allowlist. The published DMG
+matches the [packaging receipt](macos-arm64-asset.json) in size and SHA-256.
+Both migration dry run and push reported that the hosted database is up to date;
+migration history and schema-marker verification passed. The release tag stays
+frozen at `fae808f1b0ae6b7f2f93768afaf7727f3bbbc807`; this receipt is
+recorded afterwards in a documentation-only commit.
 Real-account provider usage and the new provider UI states remain unverified.
 Installed-app replacement, notarization and Windows acceptance were not run.
 Existing v2.0.5 installations may need manual installation of the replacement DMG.

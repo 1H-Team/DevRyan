@@ -1,0 +1,9 @@
+{
+  "protocol": "devryan.release-asset/1",
+  "source": "fae808f1b0ae6b7f2f93768afaf7727f3bbbc807",
+  "version": "2.0.5",
+  "platform": "macos-arm64",
+  "name": "DevRyan-2.0.5-arm64.dmg",
+  "size": 380631503,
+  "sha256": "e704ef61749387f9b908febe63cf4c79aff76f2787eb500c796eb34cde3320f2"
+}

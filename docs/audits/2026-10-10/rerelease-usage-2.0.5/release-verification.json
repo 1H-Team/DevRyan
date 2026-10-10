@@ -1,1 +1,111 @@
-{"status":"pending"}
+{
+  "status": "passed",
+  "source": "fae808f1b0ae6b7f2f93768afaf7727f3bbbc807",
+  "commitMessage": "release v2.0.5",
+  "release": {
+    "name": "DevRyanv2.0.5",
+    "tag": "v2.0.5",
+    "url": "https://github.com/1H-Team/DevRyan/releases/tag/v2.0.5",
+    "draft": false,
+    "prerelease": false,
+    "latest": true,
+    "publishedAt": "2026-10-10T12:14:15Z",
+    "assets": [
+      {
+        "name": "DevRyan-2.0.5-arm64.dmg",
+        "size": 380631503,
+        "state": "uploaded",
+        "digest": "sha256:e704ef61749387f9b908febe63cf4c79aff76f2787eb500c796eb34cde3320f2",
+        "url": "https://github.com/1H-Team/DevRyan/releases/download/v2.0.5/DevRyan-2.0.5-arm64.dmg"
+      }
+    ]
+  },
+  "workflow": {
+    "url": "https://github.com/1H-Team/DevRyan/actions/runs/38050592027",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "create-release",
+        "conclusion": "success"
+      },
+      {
+        "name": "build-web-artifact",
+        "conclusion": "success"
+      },
+      {
+        "name": "resolve-bot-runtime-images",
+        "conclusion": "success"
+      },
+      {
+        "name": "prepare-desktop-electron-macos (aarch64-apple-darwin, macos-26, arm64, darwin-aarch64)",
+        "conclusion": "success"
+      },
+      {
+        "name": "build-bot-runtime-image (engine-proxy)",
+        "conclusion": "success"
+      },
+      {
+        "name": "build-bot-runtime-image (indexer)",
+        "conclusion": "success"
+      },
+      {
+        "name": "build-bot-runtime-image (egress)",
+        "conclusion": "success"
+      },
+      {
+        "name": "build-bot-runtime-image (opencode)",
+        "conclusion": "success"
+      },
+      {
+        "name": "build-bot-runtime-image (database)",
+        "conclusion": "success"
+      },
+      {
+        "name": "build-bot-runtime-image (supervisor)",
+        "conclusion": "success"
+      },
+      {
+        "name": "build-bot-runtime-image (rest)",
+        "conclusion": "success"
+      },
+      {
+        "name": "build-bot-runtime-image (computer)",
+        "conclusion": "success"
+      },
+      {
+        "name": "publish-npm",
+        "conclusion": "skipped"
+      },
+      {
+        "name": "publish-bot-runtime-images",
+        "conclusion": "success"
+      },
+      {
+        "name": "verify-bot-runtime-topology",
+        "conclusion": "success"
+      },
+      {
+        "name": "build-desktop-electron-macos (aarch64-apple-darwin, arm64, darwin-aarch64)",
+        "conclusion": "success"
+      },
+      {
+        "name": "finalize-release",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "migrationVerification": {
+    "step": "Deploy and verify Supabase configuration and migrations",
+    "conclusion": "success",
+    "pendingMigrations": [],
+    "dryRunResult": "Remote database is up to date.",
+    "pushResult": "Remote database is up to date."
+  },
+  "assetPackagingReceipt": "macos-arm64-asset.json",
+  "assetVerification": "Exact desktop-macos-arm64 allowlist, source, size and SHA-256 match",
+  "limitations": [
+    "Real-account provider usage and new provider UI states were not verified",
+    "No installed-app replacement, notarization or Windows acceptance",
+    "Existing v2.0.5 installations may require manual DMG installation"
+  ]
+}
