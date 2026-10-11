@@ -108,8 +108,12 @@ export async function packageReferences(root, sourceFiles) {
     } catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
   for (const relative of files) {
-    const file = await confined(root, relative);
-    const stat = await lstat(file);
+    let file, stat;
+    try { file = await confined(root, relative); stat = await lstat(file); }
+    catch (error) {
+      if (error.code === 'ENOENT' && !relative.startsWith('.cache/')) continue;
+      throw error;
+    }
     if (!stat.isFile() || stat.size > 8 * 1024 * 1024) {
       if (relative.endsWith('.json')) throw new Error('Configuration reference scan is incomplete');
       continue;

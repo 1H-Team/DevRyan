@@ -42,7 +42,7 @@ for(const kind of ['cursor','openai']as const)test(`${kind} key mutation recheck
   if(kind==='cursor')store=createControllerCursorCredentials({controllerInstanceID:instance,withCredentialMutation:bridge.withCredentialMutation,captureLocation:()=>()=>{}}).decorateCredential(original);
   else{
    const adapter=createNativeOpenAi({controllerIdentity:()=>instance,isBound:()=>true,isExecutionReady:()=>true,assertAttempt:()=>Effect.void,
-    access:async()=>undefined,captureOAuthGrant:()=>Effect.succeed({authorizationID:'unused',reauthorize:Effect.void}),withCredentialMutation:bridge.withCredentialMutation});
+    withCredentialResolution:(_binding,_reauthorize,action)=>action,captureLocation:()=>({acquisitionID:"fixture",configurationDigest:"a".repeat(64),assertCurrent:()=>{}}),assertResolution:()=>Effect.void,captureOAuthGrant:()=>Effect.succeed({authorizationID:'unused',reauthorize:Effect.void}),withCredentialMutation:bridge.withCredentialMutation});
    store=adapter.decorateCredential(original);adapter.decorateIntegration(integration,location);
   }
   const run=Effect.runPromise(store.update(created.id,{label:'must-not-commit'}).pipe(Effect.provideService(Location.Service,location)));
@@ -56,7 +56,7 @@ for(const kind of ['cursor','openai']as const)test(`${kind} key mutation recheck
   if(kind==='cursor')unowned=createControllerCursorCredentials({controllerInstanceID:instance,withCredentialMutation:(_binding,action)=>action,captureLocation:()=>()=>{}}).decorateCredential(original);
   else{
    const adapter=createNativeOpenAi({controllerIdentity:()=>instance,isBound:()=>true,isExecutionReady:()=>true,assertAttempt:()=>Effect.void,
-    access:async()=>undefined,captureOAuthGrant:()=>Effect.succeed({authorizationID:'unused',reauthorize:Effect.void}),withCredentialMutation:(_binding,action)=>action});
+    withCredentialResolution:(_binding,_reauthorize,action)=>action,captureLocation:()=>({acquisitionID:"fixture",configurationDigest:"a".repeat(64),assertCurrent:()=>{}}),assertResolution:()=>Effect.void,captureOAuthGrant:()=>Effect.succeed({authorizationID:'unused',reauthorize:Effect.void}),withCredentialMutation:(_binding,action)=>action});
    unowned=adapter.decorateCredential(original);adapter.decorateIntegration(integration,location);
   }
   const absent=yield* Effect.promise(()=>Effect.runPromise(unowned.update(created.id,{label:'unowned'}).pipe(Effect.provideService(Location.Service,location))).then(()=>undefined,error=>error));

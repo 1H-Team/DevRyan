@@ -1,3 +1,4 @@
+import { cursorReadOnlyOptions } from './worker-payload.js';
 import { createInterface } from 'node:readline';
 import process from 'node:process';
 import {
@@ -176,7 +177,8 @@ const { Agent } = cursorSdk;
 
 writeEvent({ type: 'ready' });
 
-const getAgentCacheKey = (sessionID, directory, model, agents, mcpServerIdentity, apiKey) => `${trimString(sessionID)}\u0000${trimString(directory)}\u0000${stableJson({
+const getAgentCacheKey = (sessionID, directory, model, agents, mcpServerIdentity, apiKey, readOnly) => `${trimString(sessionID)}\u0000${trimString(directory)}\u0000${stableJson({
+  readOnly,
   credentialIdentity: credentialCacheIdentity(apiKey),
   model: normalizeModelSelection(model),
   agents: normalizeCursorSdkAgentDefinitions(agents),
@@ -194,10 +196,11 @@ const getOrCreateAgent = async ({
   mcpServers,
   mcpServerIdentity,
   active = false,
+  readOnly = false,
 }) => {
   const normalizedAgents = pinCursorSdkSubagentModels(normalizeCursorSdkAgentDefinitions(agents), model);
   const normalizedMcpServers = isPlainObject(mcpServers) ? mcpServers : null;
-  const key = getAgentCacheKey(sessionID, directory, model, normalizedAgents, mcpServerIdentity, apiKey);
+  const key = getAgentCacheKey(sessionID, directory, model, normalizedAgents, mcpServerIdentity, apiKey, readOnly);
   const cached = agentCache.get(key);
   if (cached) {
     if (active) agentCache.markActive(key);
@@ -209,6 +212,7 @@ const getOrCreateAgent = async ({
     ...(CURSOR_SETTING_SOURCES ? { settingSources: CURSOR_SETTING_SOURCES } : {}),
   };
   const agentOptions = {
+    ...cursorReadOnlyOptions(readOnly),
     apiKey,
     model,
     local,
@@ -270,6 +274,7 @@ const handlePrepare = async (command) => {
       agents,
       mcpServers,
       mcpServerIdentity,
+      readOnly: command.readOnly === true,
     });
     writeTiming('cursor_agent_prepared', { cacheHit: prepared.cacheHit === true });
     writeRequestEvent(requestID, {
@@ -369,6 +374,7 @@ const handlePrompt = async (command) => {
       agents,
       mcpServers,
       mcpServerIdentity,
+      readOnly: command.readOnly === true,
       active: true,
     });
     activeAgentCacheKey = prepared.cacheKey;
@@ -567,6 +573,10 @@ for await (const line of lines) {
     command = JSON.parse(line);
   } catch {
     continue;
+  }
+  if (['prompt', 'prepare'].includes(command?.type)) {
+    try { cursorReadOnlyOptions(command.readOnly); }
+    catch (error) { writeRequestEvent(trimString(command.requestID), { type: 'error', error: error.message }); continue; }
   }
   if (command?.type === 'prompt') {
     void handlePrompt(command);

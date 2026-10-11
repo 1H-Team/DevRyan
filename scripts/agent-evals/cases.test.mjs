@@ -324,6 +324,10 @@ export function summarizeEvalValues(values) {
         return {
           rootSessionId: 'ses_parent',
           childSessionIds: ['ses_child'],
+          sessionTree: [{ sessionId: 'ses_parent', messages: [{ info: { role: 'assistant' }, parts: [
+            { type: 'text', text: 'I will delegate the scoped summary correction and verify its fixture.' },
+            { type: 'tool', tool: 'devryan_task', state: { input: { action: 'start' } } },
+          ] }] }],
           tools: [
             { tool: 'devryan_task', status: 'completed', final: true },
             { tool: 'bash', status: 'completed', final: true, sessionScope: 'child' },

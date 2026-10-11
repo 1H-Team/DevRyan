@@ -199,6 +199,7 @@ const getStartupStatusText = (summary: StartupReadinessSummary): string => {
 
 type DirectoryStartupSnapshot = {
   status: 'loading' | 'partial' | 'complete';
+  bootstrapError?: string;
   sessionListStatus: 'idle' | 'loading' | 'ready' | 'error';
   sessionListError?: string;
 };
@@ -208,12 +209,13 @@ const DirectoryStartupProbe: React.FC<{
   onSnapshot: (snapshot: DirectoryStartupSnapshot) => void;
 }> = ({ directory, onSnapshot }) => {
   const status = useDirectorySync((state) => state.status, directory);
+  const bootstrapError = useDirectorySync((state) => state.bootstrapError, directory);
   const sessionListStatus = useDirectorySync((state) => state.sessionListStatus, directory);
   const sessionListError = useDirectorySync((state) => state.sessionListError, directory);
 
   React.useEffect(() => {
-    onSnapshot({ status, sessionListStatus, sessionListError });
-  }, [onSnapshot, sessionListError, sessionListStatus, status]);
+    onSnapshot({ status, bootstrapError, sessionListStatus, sessionListError });
+  }, [onSnapshot, bootstrapError, sessionListError, sessionListStatus, status]);
 
   return null;
 };
@@ -394,7 +396,8 @@ const StartupReadinessGate: React.FC<{
       ? { status: 'error', error: globalError }
       : { status: globalReady ? 'ready' : 'loading' });
     snapshot = withStartupReadinessPhase(snapshot, 'directorySync', {
-      status: directorySnapshot.status === 'complete' ? 'ready' : 'loading',
+      status: directorySnapshot.bootstrapError ? 'error' : directorySnapshot.status === 'complete' ? 'ready' : 'loading',
+      error: directorySnapshot.bootstrapError,
     });
     snapshot = withStartupReadinessPhase(snapshot, 'sessionList', {
       status: directorySnapshot.sessionListStatus === 'ready'
@@ -415,6 +418,7 @@ const StartupReadinessGate: React.FC<{
     agentsLoadStatus,
     bootOutcomeKnown,
     bootViewIsMain,
+    directorySnapshot.bootstrapError,
     directorySnapshot.sessionListError,
     directorySnapshot.sessionListStatus,
     directorySnapshot.status,

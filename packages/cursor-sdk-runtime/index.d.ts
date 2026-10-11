@@ -162,8 +162,8 @@ export type CursorSdkRuntime = {
   getVirtualProvider(scope?: {directory?:string}): Promise<{ id: string; name: string; models: Record<string, CursorModelRecord> }>;
   getCachedVirtualProvider(): { id: string; name: string; models: Record<string, CursorModelRecord> };
   getDeclaredVirtualProvider(): { id: string; name: string; models: Record<string, CursorModelRecord> };
-  refreshVirtualProvider(options?: { force?: boolean; reason?: string; timeoutMs?: number; directory?:string }): Promise<{ id: string; name: string; models: Record<string, CursorModelRecord> }>;
-  validateModelSelection(input: { directory?: string; modelID: string; variant?: string | null }): Promise<boolean | null>;
+  refreshVirtualProvider(options?: { force?: boolean; reason?: string; timeoutMs?: number; directory?:string; signal?:AbortSignal }): Promise<{ id: string; name: string; models: Record<string, CursorModelRecord> }>;
+  validateModelSelection(input: { directory?: string; modelID: string; variant?: string | null; signal?: AbortSignal; onFailure?: (failure: { reason: string }) => void }): Promise<boolean | null>;
   generateText(input: { titleHelper?: boolean; text: string; directory: string; sessionID?: string; modelID: string; variant?: string; signal?: AbortSignal; timeoutMs?: number }): Promise<string | null>;
   generateTitle(input: {
     text: string;
@@ -246,12 +246,13 @@ export function createCursorSdkRuntime(options: Record<string, unknown> & {
     | { kind: 'catalog' | 'verify'; directory?:string }
     | { kind: 'prewarm'; directory?: string; sessionID?: string }
   ) => Promise<string | null>;
-  ownedReadOnly?: <A>(input:{kind:'title'|'catalog'|'verify';directory?:string;sessionID?:string},action:()=>Promise<A>)=>Promise<A>;
+  ownedReadOnly?: <A>(input:{kind:'title'|'catalog'|'verify';directory?:string;sessionID?:string;signal?:AbortSignal},action:()=>Promise<A>)=>Promise<A>;
   nativeWarming?: false;
   /** Retain the admitted caller through actual execution and persistence settlement. */
   ownedPrompt?: (input: { sessionID: string; directory: string; userMessageID: string;
     assistantMessageID: string; agent: string; modelID: string; variant?: string;
     modelSelection: CursorSdkModelSelection }) => Promise<{
+      readonly readOnly?: boolean;
       run<A>(action: () => Promise<A>): Promise<A>; close(): Promise<void>;
     }>;
   onTitleUsageObservation?: (input: {

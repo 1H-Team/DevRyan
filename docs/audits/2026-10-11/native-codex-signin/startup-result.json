@@ -1,0 +1,12 @@
+{
+  "qualification": "synthetic-factory-and-actual-isolated-host-startup-only",
+  "status": "passed",
+  "cases": [
+    "synthetic-siwc-source-sdk-credential-mutations",
+    "real-bundle-migration-saved-synthetic-graph",
+    "actual-native-usage-discovery-without-accounts",
+    "actual-production-isolated-web-and-native-controller"
+  ],
+  "cleanupFailures": [],
+  "nativeBuildId": "9c368830cc95d9e9c73440d02316239cf67b9a11c93ca48aff5b27c72e8e39d1"
+}

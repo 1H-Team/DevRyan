@@ -37,6 +37,7 @@ DevRyan forwards OpenCode's provider-reported assistant token payloads without a
 Every probe uses `SIGKILL` for timeout termination and rejects execution errors, signals, nonzero exits, malformed output and partial timeout stdout. Environment values and captured shell output are never logged. The internal factory supports injected execution, clock, shell candidates and executable checks; short deadline overrides are test-only dependencies, not settings. `env-runtime.test.js` uses deterministic fakes for host-specific paths plus an isolated short-deadline process that ignores SIGTERM and is verified dead after timeout. Windows and WSL behavior is simulated on non-Windows hosts.
 
 ## Entrypoints and structure
+- `runtime-helper-agents.js`: the shared host-owned no-tools title, commit and PR helper definitions, including disabled native `title`. Legacy overlays and final native configuration snapshots use the same policy; native applies it after saved/Slim role resolution so helpers are available without competing automatic title inference. Helpers inherit no pinned model or effort and retain each admitted caller's exact selection.
 - `packages/web/server/lib/opencode/index.js`: public re-export boundary for configuration, agents, skills, provider auth, UI auth, and managed plugin setup.
 - `packages/web/server/lib/opencode/auth.js`: provider authentication file operations.
 - `packages/web/server/lib/opencode/auth-state-runtime.js`: managed OpenCode server auth password/header runtime.
@@ -56,9 +57,8 @@ Every probe uses `SIGKILL` for timeout termination and rejects execution errors,
 - `packages/web/server/lib/opencode/claude-auth-status.js`: bounded, non-billable Claude Code authentication check using `claude auth status --json`. It returns deterministic status codes and exposes only safe authentication metadata, excluding account email and organization data.
 - `packages/web/server/lib/opencode/claude-cli-runtime.js`: shared read-only Claude Code executable resolution for web/Electron. Explicit `CLAUDE_CODE_CLI` wins, followed by the provisioned managed OpenCode package and the host's effective PATH; candidates are validated before execution and no refresh path installs or mutates the runtime.
 - `packages/web/server/lib/opencode/provider-integrations.js`: canonical provider metadata helpers for DevRyan-managed provider aliases such as GitHub Copilot, plus auth alias synchronization between `github-copilot` and legacy `copilot` auth keys.
-- `packages/web/server/lib/opencode/openai-model-availability.js`: annotates managed OpenAI provider catalogs with sanitized `authType` metadata for Sign in with ChatGPT (`chatgpt-siwc`) and API-key auth. For SIWC, optional account model slugs from `GET /v1/models` mark catalog rows the account cannot list as unavailable; the retired Codex GPT-5.6 allowlist is not applied. API-key and external OpenCode catalogs remain provider-driven. Credentials and model IDs are never remapped or exposed.
-- `packages/web/server/lib/opencode/openai-siwc-model-catalog.js`: briefly caches SIWC account model slugs per account/access fingerprint for provider catalog annotation.
-- `packages/web/server/default-config/plugins/openai-gpt-5-6-models.mjs`: pins OAuth (SIWC) context windows to 1,050,000 for GPT-5.4/5.5/5.6 and 400,000 for GPT-5.4 mini, with a 256,000 auto-compaction threshold for those rows. GPT-5.3 Codex Spark retains its 121,600 context and 115,200 threshold. Its internal `limit.input` includes the resolved OpenCode compaction reservation so OpenCode's subtraction lands on the threshold; shared UI uses the official `limit.context` for these exact OAuth rows. Does not attach Codex CLI identity headers on the SIWC path. Direct API-key, unknown model, and non-OpenAI catalogs remain provider-driven.
+- `packages/web/server/lib/opencode/openai-model-availability.js`: reads secret-free selected-credential metadata and annotates managed OpenAI provider catalogs with `authType`. Native `chatgpt-browser`, existing `chatgpt-token-sharing` and API-key catalogs pass through; retired OAuth rows require sign-in again. No account model request or credential refresh occurs. API-key and external OpenCode catalogs remain provider-driven. Credentials and model IDs are never remapped or exposed.
+- `packages/web/server/default-config/plugins/openai-gpt-5-6-models.mjs`: pins ChatGPT OAuth context windows to 1,050,000 for GPT-5.4/5.5/5.6 and 400,000 for GPT-5.4 mini, with a 256,000 auto-compaction threshold for those rows. GPT-5.3 Codex Spark retains its 121,600 context and 115,200 threshold. Its internal `limit.input` includes the resolved OpenCode compaction reservation so OpenCode's subtraction lands on the threshold; shared UI uses the official `limit.context` for these exact OAuth rows. Does not attach Codex CLI identity headers on the SIWC path. Direct API-key, unknown model, and non-OpenAI catalogs remain provider-driven.
 - `packages/web/server/lib/opencode/github-copilot-models.js`: account-specific GitHub Copilot model discovery using stored OpenCode Copilot auth, success-only in-memory caching, and emergency fallback model metadata. Discovery prefers `model_picker_enabled` models when present. When a modern account payload marks every model non-picker, it retains only API-returned GitHub utility models instead of guessing that every chat row is manually selectable; legacy payloads without capability metadata retain their compatibility behavior. Configured provider catalogs also receive the canonical selectable `auto` model (`api.id = "auto"`) with the complete limits/capability contract required by OpenCode provider listing, and all entries receive runnable `api` metadata.
 - `packages/web/server/lib/opencode/lifecycle.js`: OpenCode process lifecycle runtime (startup, restart, readiness, health monitoring). Configuration-triggered restarts coalesce and wait until live agents are idle. Before replacing a managed child, restart pauses browser-lease admission, drains and releases the old epoch, and holds admission closed for the complete replacement. It resumes leases only after successful startup and reconciliation. An unconditional finalizer clears restart flags and the shared promise even when pause or resume fails; the actual lease fence remains held so a later restart can recover. Applied settings come from the successfully ready controller snapshot, never a later mutable settings read. Restart decisions combine the event-driven activity snapshot with authoritative `/session/status` queries for known project directories; if live status cannot be verified, the current process is preserved and the check is retried. Health checks never kill a still-running busy process solely because its health endpoint timed out. An unexpected exit of a ready managed server triggers an immediate health check (and so a restart) instead of waiting for the next poll, and every exit is reported through the optional `onManagedProcessExit({ pid, code, signal, uptimeMs, expected, stderrTail })` with a bounded (16 KiB) stderr tail kept after readiness, because a runtime panic prints only there; `server/index.js` journals it as `opencode_process_exit`. `onOpenCodeRestarted` receives `{ restartStartedAt }`, and the managed instance exposes its spawn time as `startedAt`. On POSIX every managed server is tied to its owner by `parent-death-watchdog.js` (SIGTERM, then SIGKILL after about three seconds, because a busy runtime can ignore SIGTERM). A watchdog that cannot start is reported as `managed_opencode_watchdog_unavailable` and the launch is refused. When the server exits, its process group is killed so MCP children cannot outlive it; all group signals go through the injectable `signalManagedProcessGroup`.
 - Managed OpenCode startup receives only the private loopback `DEVRYAN_ORCHESTRATION_URL`/`DEVRYAN_ORCHESTRATION_TOKEN` pair and fixed `DEVRYAN_ORCHESTRATION_ACCOUNT_DEFAULTS=1` capability marker from the web owner. The private plugin requests root-owner agent execution before plan-safe checks, and scheduler admission repeats owner resolution. Personal account defaults are never written into generated OpenCode overlays or host agent files. Owner-conflict and lost-ownership errors from that callback continue spawn without the bridge instead of aborting OpenCode. User or shell values for those names are removed, external OpenCode receives no bridge, and the bridge owner stops before Cursor/OpenCode teardown.
@@ -158,57 +158,38 @@ Clean-user provisioning writes only the conflict-tracked baseline for managed ru
 Web/Electron overlays both inventory the packaged runtime plugins, including the always-on `devryan-skill-context.mjs` adapter; maintenance-only Tauri assets intentionally remain frozen without it. The `devryan-tool-input-guard.mjs` hook rejects known binary paths before native `read` or `oc_read` executes, replaces unexpected signature/control-character binary results before persistence, and removes historical binary read payloads only from provider-bound request copies. Proper image attachment parts, SVG, ordinary UTF-8/Unicode text, unrelated tool output, and canonical historical records remain unchanged. Binary input rejections retain `DEVRYAN_TOOL_INPUT_INVALID`; sanitized results use the bounded `DEVRYAN_BINARY_READ_BLOCKED` notice. The same hook rejects a `grep.path` containing multiple absolute targets and never splits paths or repairs input. It also validates absolute paths for `read`/`oc_read`, `edit`/`multiedit`/`patch`/`write`, `grep`/`glob`/`list`, and `bash`/`shell` `cwd`/`workdir` before OpenCode mints its `external_directory` prompt: a degenerate path (over 512 characters, over 40 segments, a segment over 255 bytes, a segment repeated four times, or `//` after a non-existent prefix) or an outside-project path under a directory that does not exist is rejected with `DEVRYAN_TOOL_INPUT_INVALID` naming the deepest existing ancestor, so the model self-corrects instead of the user approving a directory that is not there. Relative paths, non-strings, paths inside the project, existing paths, and writes whose external parent exists are untouched, so OpenCode's own prompt still fires for real external paths. Externally managed OpenCode servers remain responsible for their own tool execution policy.
 
 ## Public exports (auth.js)
-Managed host-linked OpenAI OAuth is owned by `openai-oauth-coordinator.js`,
-`openai-oauth-bridge.js`, and Sign in with ChatGPT enrollment
-(`chatgpt-siwc.js`, `chatgpt-siwc-enrollment.js`, `chatgpt-siwc-host.js`, routes under
-`/api/provider/openai/siwc`). The repository plugin
-`default-config/plugins/devryan-openai-oauth.mjs` installs a provider-specific
-transport to `https://api.openai.com` for ChatGPT plan usage through OpenCode's
-config hook; it does not replace login methods, provider model/parameter hooks,
-or global fetch. HTTP response streaming and abort signals are preserved.
-API-key request bodies are preserved; SIWC Responses bodies are normalized by
-`siwcPolicy`, an immutable property on the bundled provider plugin factory. The
-factory is its only module export, preserving the plugin loader contract. SIWC permits POST `/v1/responses` and GET `/v1/models`
-only. Experimental WebSockets, Image Generation, Chat Completions and other
-paths are refused at the physical request boundary. Account/residency Codex
-headers are not used on the SIWC path.
-The pinned released HTTP transport is used (experimental WebSocket transport
-is not enabled by this integration).
+Desktop/web OpenAI sign-in uses OpenCode's reviewed `opencode.provider.openai`
+plugin and `chatgpt-browser` method, exposed as **Codex browser (legacy)**.
+API key is the other visible method. Existing `chatgpt-token-sharing` credentials
+keep working for chat but are hidden for new enrollment. Retired `chatgpt-siwc`
+and `chatgpt-headless` rows remain removable and require one new sign-in.
+Token-sharing rows mislabeled as browser credentials (`metadata.clientID`)
+remain unavailable. Stored rows do not block startup; method-changing startup
+migration writes remain logged no-ops.
 
-Every SIWC status/enrollment/selection/cancellation/disconnect route requires a direct loopback administrator request: socket, Host and optional Origin must agree, with no forwarding headers. Mutation routes also require CSRF before parsing or owner work. Each begin owns a five-minute deadline that closes its callback listener and removes abandoned pending state, even without a complete request.
+`runtime-host/native-openai.ts` owns admission and selected-credential proof,
+sharing serialized resolution/commit primitives with xAI. OpenCode refreshes
+inside that commit. The physical hook enforces the exact method-specific HTTP
+route: `/backend-api/codex/responses` on `chatgpt.com` for Codex, or public
+`/v1/responses` for existing token-sharing credentials. It re-stamps Authorization
+and only Codex's actual stored account ID. OpenCode owns request encoding and
+response parsing. The Node OAuth coordinator does not refresh these tokens.
 
-Returning enrollment accepts an opaque registration reference and resolves its
-issued client and verified subject in the host. JWT checks precede persistence.
-Inactive staging, registration intent and selected-credential comparison protect
-cancellation, returning enrollment and recovery. Missing plan scope preserves
-sign-in while disabling plan use. Active staged registrations expose cleanup recovery in the UI. Saved sign-in survives reload/catalog failures; bounded global and active-directory model discovery has an independent retry action. Native credentials retain tokens; registration
-cache/status responses never contain token material.
+Generic `/api/provider/openai/oauth/{authorize,callback,cancel}` routes require
+direct loopback administrator transport and CSRF before parsing. The facade
+starts the automatic callback flow; callback polls `oauth.status` once and returns
+pending, complete, failed or expired. The UI polls every 1.5 seconds, can cancel,
+and hides sign-in on remote/non-admin surfaces. Normal Disconnect removes the
+credential; it does not revoke consent at OpenAI.
 
-Managed generation-2 models read the selected native credential in the resolved
-location, then use its account `/v1/models` response. Account order, display names
-and slugs survive annotation; failed or stale lookups disable availability.
-Models absent from the runtime remain visible as unsupported.
-
-Sign-out compares the selected record, blocks access and drains its helpers and
-native session owners before discovered remote revocation and exact local token
-removal. Results distinguish remote confirmation from local cleanup; local failure
-keeps access blocked and registration/host IDs survive reconnection. Generic
-OpenAI OAuth deletion requires this dedicated sign-out flow.
-
-Refreshes coalesce for the selected native host connection, while valid provider
-requests remain concurrent. Native compare-and-swap writes retain method/client,
-verified subject, scopes, plan-use and host metadata. The existing persistence
-queue also coordinates compatibility auth-file owners. Rejected or ambiguous refreshes
-block that generation; the content-free private state file survives restart.
-Persistence failure prevents issuing the new token. A corrupt state file
-disables coordinated OAuth without taking down the web runtime.
-
-Only managed children receive the private loopback bridge environment. Each
-launch rotates its capability and requires a new handshake. Bots use their
-existing private run gateway instead. Externally managed OpenCode (including
-unmanaged hosts), direct independent auth-file writers,
-API-key connections and other providers are not claimed as coordinated.
-Do not run a second independent refresh owner against the shared login.
+OpenCode's Codex model list and context limits remain authoritative. Existing
+token-sharing connections retain DevRyan's context pinning. Quota reuses the
+selected Codex access token and actual account ID for `/wham/usage`, without
+refresh or a second enrollment. Other OAuth methods return usage unavailable.
+Usage publishes only provider windows and opaque connection identity, never a
+credential. Bots and managed users on OAuth still fail with
+`bot_opencode_provider_authentication` (401); API-key Bots are unaffected.
+See the [native Codex audit](../../../../../docs/audits/2026-10-11/native-codex-signin/README.md).
 
 - `readAuthFile()`: Reads and parses `~/.local/share/opencode/auth.json`.
 - `writeAuthFile(auth)`: Writes auth file with automatic backup.
@@ -269,13 +250,14 @@ Do not run a second independent refresh owner against the shared login.
 - `POST /api/provider/anthropic/check-oauth` verifies Claude Code with bounded `claude auth status --json`, returns deterministic unavailable, signed-out, timeout, and execution-failure semantics, writes the reviewed `opencode-with-claude` proxy config to the active project config when possible (user config otherwise), and refreshes OpenCode only when it changes config.
 - `DELETE /api/provider/:providerId/auth?scope=all&directory=<active-project>` removes auth, user, custom, and only the explicitly resolved active-project config. It returns per-source removal results plus refreshed sources and always invalidates provider runtime state, including idempotent retries that only need to flush a stale catalog.
 - `GET /api/provider/anthropic/prompt-mode` reports only the safe prompt mode, compatibility flag, and editability. `PUT` accepts only `{ compatibilityMode: boolean }`, preserves unrelated Meridian settings, and rejects configured external runtimes as read-only.
+- `GET /api/provider/anthropic/enrollment`, `POST /api/provider/anthropic/enrollment`, and `POST /api/provider/anthropic/enrollment/:id/{complete,select}` are the administrator-only dedicated Claude profile routes (mutations also require `x-devryan-csrf: 1`). They delegate to the native enrollment owner and return only `{ code }` on failure. Each failure is journaled as a `claude_enrollment_failed` lifecycle record carrying `{ action, code, statusCode }` only; request bodies, authorization codes and URLs are never recorded.
 - `POST /api/provider/cursor-acp/configure` verifies Cursor SDK auth/model discovery without writing OpenCode bridge config.
 - `GET /api/provider/cursor-acp/runtime-status` reports Cursor SDK execution auth and dashboard usage-token status independently as `sdkAuthConfigured` and `usageAuthConfigured`, plus Cursor worker mode/readiness/restart diagnostics.
 - `GET /api/session/status` merges Cursor SDK runtime busy/idle status into the proxied OpenCode session status payload, falling back to Cursor-only status when upstream status is unavailable.
 - Every `POST /api/session/:sessionID/prompt_async` applies the shared provider/agent tool policy before Cursor interception or generic proxying. Packaged Orchestrator sends merge `task: false` with any provider-specific restriction, including Copilot's optional Resend namespace limits, so web and Electron forwarding preserve the same managed-only contract as the shared UI runtime overlay.
 - Accepted non-Cursor `POST /api/session/:sessionID/prompt_async` requests schedule non-blocking provider-neutral title generation with the directory and visible non-synthetic text captured at acceptance. Derived and selected-model candidates are atomically enqueued before their synthetic `session.updated` projection. Every provider waits for authoritative idle or completed-turn recovery before compare/PATCH/read verification; canonical idle, update, and delete events plus successful session-list loads drive durable reconciliation and bounded-concurrency placeholder recovery. Managed children that bypass the public prompt proxy recover from their canonical session updates and lists. This changes no public HTTP or SSE contract. Cached schema-verified Grok duplicate-tool disables merge synchronously, while discovery and refresh never block the prompt.
 - Intercepted `cursor-acp` prompts schedule a non-blocking Cursor Auto title request after acceptance. Only default, generated, provider-error, or legacy raw-prompt titles are eligible, and the upstream session is re-read before PATCH so manual names are never overwritten.
-- `GET /api/config/providers` normalizes configured GitHub Copilot aliases to `github-copilot`, preserves upstream OpenCode model metadata when present, adds selectable Copilot Auto, discovers account-specific Copilot models when upstream omits or empties them, and exposes a minimal fallback model list only when authenticated discovery is unavailable. Managed OpenAI entries also include sanitized `authType` metadata; OAuth-incompatible models remain present internally with `available: false`, `unavailableReason`, and `requiredAuthType` so clients can filter them and prevent invalid sends. External OpenCode responses are not annotated. The OpenAI selection reads in `mergeProviderIntegrations` pass `fallbackLocation: true` to `readNativeOpenAiSelection` (`chatgpt-siwc-host.js`): credentials are global, so a project directory the native runtime has not reviewed resolves to the default reviewed location instead of marking every OpenAI model unavailable. The option is read-only; mutation paths (`mutate`, `readCredential`, enrollment, disconnect) keep refusing unreviewed directories with `native_chatgpt_siwc_location_required`. If integration merging fails, the route first tries a non-refresh selection read with the same fallback; an API-key credential returns the catalog annotated as API-key auth and otherwise untouched, anything else keeps the `unavailable` annotation (annotate, never delete). When the upstream OpenCode catalog request fails or returns a non-OK status, the route still returns the integration providers (Cursor, Copilot) with HTTP 200 but adds top-level `catalogIncomplete: true`, so clients must not treat that payload as a complete catalog.
+- `GET /api/config/providers` preserves native model metadata and existing Copilot/Cursor merging. OpenAI availability reads only selected credential metadata in the requested reviewed location, falling back to the default reviewed location for unreviewed project directories. API-key and built-in ChatGPT catalogs pass through; retired sign-ins mark models `reauthorization_required`. External catalogs remain unchanged. Failed upstream catalogs retain integration providers with `catalogIncomplete: true`.
 
 ## Public exports (question-routes.js)
 - `QUESTION_PARTIAL_HEADER`: response header name used to identify which pending-question source is temporarily unavailable.
@@ -573,7 +555,7 @@ explicitly; nothing else reads the default.
 - `resolveSharedJsonBodyLimit(pathname)`: returns the shared JSON parser limit
   for a request path (`1mb` for behavior, `16kb` for lease/apply/preview,
   `50mb` for the listed `/api` prefixes and every non-API path), or `null` for
-  any other `/api` path. The dedicated `/api/provider/openai/siwc` subtree also
+  any other `/api` path. The dedicated `/api/provider/openai/oauth` subtree also
   bypasses shared JSON and URL-encoded parsing so local/admin/CSRF guards run
   before its route-owned bounded parser. Other raw paths stay unparsed so the OpenCode proxy can stream
   them; a route there that reads `req.body` mounts its own bounded
@@ -637,9 +619,9 @@ explicitly; nothing else reads the default.
 
 ## Public exports (feature-routes-runtime.js)
 - `createFeatureRoutesRuntime(dependencies)`: creates runtime for main feature route registration orchestration.
-  Its `close()` settles the optional Codex usage connection on graceful shutdown,
-  runtime checkpoint and listener close. Quota registration receives the private
-  application data directory and augmented executable search path.
+  Its `close()` remains a compatibility no-op; quota owns no separate Codex
+  process. Quota registration receives the private application data directory
+  and augmented executable search path for its remaining provider integrations.
 - Returned API:
   - `registerRoutes(app, routeDependencies)`
 
@@ -820,6 +802,14 @@ The prompt preview remains visible until a resolved title is durably enqueued. O
 
 History: the OpenCode 2 upgrade plans are archived in [audits/2026-10-05/opencode-v2-handoff](../../../../../docs/audits/2026-10-05/opencode-v2-handoff/README.md).
 
+## Archive diagnostics
+
+Archive facade failures emit `session_archive_failed` to the diagnostic journal,
+correlated by session ID. The payload contains only the archive/unarchive action,
+a bounded machine error code, and HTTP status; messages, directories, and session
+content are omitted. The [archive investigation](../../../../../docs/audits/2026-10-11/session-archive/README.md)
+records live diagnostic limits and isolated native archive/unarchive coverage.
+
 ## Native startup and retained versions
 
 The native owner now owns the launch bundle verification and invokes the
@@ -861,3 +851,7 @@ diagnostics, including when the SDK converts a defect to an empty 500.
 The native owner journals startup starting/bound/ready/failed phases and
 durations through its existing diagnostic callback, including failure before
 binding; physical exits are recorded before fallible owner cleanup.
+
+### Managed Cursor Plan execution
+
+Native managed catalog reads use verified tool or recovery authority rather than a browser principal. Catalog access grants no execution rights. Managed Cursor prompt grants derive immutable read-only policy from the durable task; SDK create/resume permits only `read`, `grep`, `glob`, and `ls`, excludes task/MCP delegation, and includes policy in agent cache identity. Worker payloads carry this host-owned boolean, never a prompt-body override. Model discovery preserves SDK `reasoning_effort` choices; saved Medium resolves only to an actual Medium variant and never falls back to High or generic thinking.

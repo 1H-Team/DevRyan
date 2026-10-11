@@ -1,0 +1,61 @@
+{
+  "scope": "direct live requests per provider through the installed native parser, including OpenAI tool-bearing turns; no UI or credential refresh",
+  "at": "2026-10-10T19:55:45.483Z",
+  "results": [
+    {
+      "provider": "openai",
+      "model": "gpt-6-astra",
+      "scenario": "plain",
+      "status": 200,
+      "quotaHeadersPresent": [],
+      "outcome": "completed",
+      "nativeParserAccepted": true,
+      "answerWasOk": true,
+      "quotaEventSeen": false,
+      "frames": 9,
+      "credentialUnchanged": true
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-6-astra",
+      "scenario": "tools-available",
+      "status": 200,
+      "quotaHeadersPresent": [],
+      "outcome": "completed",
+      "nativeParserAccepted": true,
+      "answerWasOk": true,
+      "lookupCalled": false,
+      "quotaEventSeen": false,
+      "frames": 9,
+      "credentialUnchanged": true
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-6-astra",
+      "scenario": "tool-call",
+      "status": 200,
+      "quotaHeadersPresent": [],
+      "outcome": "completed",
+      "nativeParserAccepted": true,
+      "answerWasOk": false,
+      "lookupCalled": true,
+      "quotaEventSeen": false,
+      "frames": 12,
+      "credentialUnchanged": true
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-6-astra",
+      "scenario": "tool-result",
+      "status": 200,
+      "quotaHeadersPresent": [],
+      "outcome": "completed",
+      "nativeParserAccepted": true,
+      "answerWasOk": true,
+      "lookupCalled": false,
+      "quotaEventSeen": false,
+      "frames": 9,
+      "credentialUnchanged": true
+    }
+  ]
+}

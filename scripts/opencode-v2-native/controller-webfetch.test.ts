@@ -2,6 +2,9 @@ import {test,expect} from 'bun:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
+import {createHash} from 'node:crypto';
+import {createNativeConfigurationSnapshotResolver} from '../../packages/web/server/lib/opencode/runtime-host/native-configuration-snapshot.js';
+import type {RuntimeBundleDescriptor} from '../../packages/web/server/lib/opencode/runtime-host/runtime-bundle.js';
 import {prepareReviewedNativeInputs,reviewedNativeInputPlugin} from '../native-runtime-assets.mjs';
 import {createNativeAssetFixturePlugin,writeNativeFixtureOutputs} from './native-asset-fixture.mjs';
 const repository=path.resolve(import.meta.dirname,'../..');
@@ -11,6 +14,18 @@ test('controller webfetch uses actual native selection/hooks/provider with froze
  await fs.mkdir(tmp,{recursive:true});await fs.mkdir(directory);await fs.writeFile(path.join(tmp,'package.json'),'{}\n');let child:ReturnType<typeof Bun.spawn>|undefined;
  try{
   const host=path.join(repository,'packages/web/server/lib/opencode/runtime-host');
+  const config=path.join(home,'config');await fs.mkdir(config);
+  const manifest=JSON.stringify({schema:1,plugins:[]}),reviewedPluginManifestPath=path.join(root,'plugins.json'),reviewedNativeConfigPath=path.join(root,'policy.json');
+  await fs.writeFile(reviewedPluginManifestPath,manifest);await fs.writeFile(reviewedNativeConfigPath,JSON.stringify({schema:1,locations:[{directory}],catalogRequirements:{agents:[],models:[],plugins:[],tools:[]}}));
+  const saved={model:'owned/m1',default_agent:'build',providers:{owned:{package:'@opencode/ai/providers/openai-compatible',env:[],settings:{baseURL:'http://127.0.0.1:1/v1',apiKey:'owned-fixture'},models:Object.fromEntries(['m1','m2'].map(id=>[id,{capabilities:{tools:true,input:['text'],output:['text']},limit:{context:32768,input:16384,output:4096},variants:[{id:'high',settings:{temperature:0.1}}]}]))}}};
+  const descriptor:RuntimeBundleDescriptor={
+   schema:1,bundleID:'controller-fetch-fixture',generation:2,createdAt:0,preparedManifestPath:path.join(root,'prepared.json'),
+   checkpoint:{checkpointID:'fixture-checkpoint',ownerID:'fixture-owner',generation:2,databasePath:path.join(root,'checkpoint.db'),webDataDirectory:path.join(root,'web-data'),webConfigDirectory:path.join(root,'web-config'),opencodeConfigDirectory:config,settledAt:0},
+   launch:{controllerBinary:path.join(root,'controller'),writerBinary:path.join(root,'writer'),artifactManifestPath:path.join(root,'artifacts.json'),artifactManifestSha256:'0'.repeat(64),opencodeDatabasePath:path.join(root,'opencode.db'),webDataDirectory:path.join(root,'web-data'),webConfigDirectory:path.join(root,'web-config'),opencodeConfigDirectory:config,global:{home,config,data:path.join(home,'data'),state:path.join(home,'state'),cache:path.join(home,'cache'),bin:path.join(home,'bin'),log:path.join(home,'log'),repos:path.join(home,'repos'),tmp},reviewedPluginManifestPath,reviewedNativeConfigPath},
+   projectMap:[{sourceDirectory:directory,targetDirectory:directory,mode:'identity'}],
+  };
+  const snapshot=await createNativeConfigurationSnapshotResolver({loadLocation:async()=>({legacy:saved,agents:{build:{model:'owned/m1'}},commands:{},skills:[],slim:{},parseMarkdown:()=>({body:'',frontmatter:{}})})})({binding:{descriptor},revision:1,expectedRegistrationDigest:createHash('sha256').update(manifest).digest('hex')});
+  expect(snapshot.locations[0].configuration).toMatchObject({agents:{title:{disabled:true}}});
   const source=`
    import assert from 'node:assert/strict';import fs from 'node:fs/promises';import path from 'node:path';
    import {Effect,Layer,Logger,ErrorReporter,Context} from 'effect';import {Global} from '@opencode/util/global';import {Plugin} from '@opencode/core/plugin';import {PluginHooks} from '@opencode/core/plugin/hooks';import {Location} from '@opencode/core/location';
@@ -27,9 +42,10 @@ test('controller webfetch uses actual native selection/hooks/provider with froze
    const owners=createControllerWebfetch({tmpDirectory:tmp,originals:original,fetch:(value,init)=>{const local=new URL(value);local.hostname='127.0.0.1';local.protocol='http:';return fetch(local,init);},withSecondary:(invocation,request,execute)=>Effect.gen(function*(){assert.equal(invocation.toolID,'webfetch');assert.ok(Object.isFrozen(request));assert.ok(Object.isFrozen(request.model));wrapped.push(request.model);return yield* execute.pipe(Effect.provideService(OperationPermitRef,{token:'c'.repeat(64),sessionID:request.sessionID,revision:0}));})});
    let location,capturedHooks,plugins,helperContext;const correlations=[];
    const capture=Plugin.node.replace(Plugin.node.mapLayer(layer=>Layer.effect(Plugin.Service,Effect.gen(function*(){const plugin=yield* Plugin.Service;plugins=plugin;location=yield* Location.Service;capturedHooks=yield* PluginHooks.Service;yield* capturedHooks.register('session','model.request',event=>Effect.gen(function*(){const permit=yield* OperationPermitRef;assert.equal(permit?.token,'c'.repeat(64));hooks.push({kind:event.kind,model:event.model.id,secondaryAuthority:true});if(event.sessionID.startsWith('ses_helper_')){const seen=yield* helperContext.session.get({sessionID:event.sessionID});assert.equal(seen.id,event.sessionID);correlations.push(seen.id);}if(event.sessionID==='ses_helper_rejected')event.tools.forbidden={};}));return {...plugin,activate:(entries,failures)=>plugin.activate(entries.map(entry=>({...entry,effect:ctx=>{helperContext=helperPluginContext(ctx);return entry.effect(helperContext)}})),failures)};})).pipe(Layer.provide(layer))));
+   const fixtureConfiguration=${JSON.stringify(snapshot.locations[0].configuration)};fixtureConfiguration.providers.owned.settings.baseURL=server.url.toString()+'v1';
    try{await Effect.runPromise(Effect.scoped(Effect.gen(function*(){
     const handler=yield* ServerFetch.make({database:{path:':memory:'},config:{project:false},models:{fetch:false,snapshot:false},fs:{filewatcher:false,fff:false},events:{persist:false}},{overrides:[
-     ...configurationOverrides({model:'owned/m1',default_agent:'build',providers:{owned:{package:'@opencode/ai/providers/openai-compatible',env:[],settings:{baseURL:server.url.toString()+'v1',apiKey:'owned-fixture'},models:Object.fromEntries(['m1','m2'].map(id=>[id,{capabilities:{tools:true,input:['text'],output:['text']},limit:{context:32768,input:16384,output:4096},variants:[{id:'high',settings:{temperature:0.1}}]}]))}},agents:{build:{model:{providerID:'owned',model:'m1'}},'devryan-title':{mode:'subagent',system:'Title helper fixture'}},snapshots:false,warming:false}),
+     ...configurationOverrides(fixtureConfiguration),
      Global.node.replace(Global.layerWith({home,config:home+'/config',data:home+'/data',state:home+'/state',cache:home+'/cache',tmp,bin:home+'/bin',log:home+'/log',repos:home+'/repos'})),...owners.overrides,capture]});
     const httpContext=Context.make(ErrorReporter.CurrentErrorReporters,new Set([ErrorReporter.make(({cause})=>console.error('NATIVE_CAUSE',cause))])).pipe(Context.add(Logger.CurrentLoggers,new Set()));
     const call=(route,body)=>Effect.promise(async()=>{const response=await handler(new Request('http://opencode.local'+route,{method:body===undefined?'GET':'POST',headers:{'content-type':'application/json','x-opencode-directory':directory},...body===undefined?{}:{body:JSON.stringify(body)}}),httpContext);const text=await response.text();assert.equal(response.status,200,text);return JSON.parse(text).data;});

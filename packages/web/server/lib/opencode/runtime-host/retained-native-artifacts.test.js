@@ -1,10 +1,10 @@
-import {test,expect,afterEach} from 'vitest';
+import {test,expect,afterEach,vi} from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import {createHash} from 'node:crypto';
 import {pruneRetainedNativeArtifacts,retainNativeArtifacts} from './retained-native-artifacts.js';
-const roots=[];afterEach(async()=>{for(const root of roots.splice(0))await fs.rm(root,{recursive:true,force:true});});
+const roots=[];afterEach(async()=>{vi.restoreAllMocks();for(const root of roots.splice(0))await fs.rm(root,{recursive:true,force:true});});
 const hash=value=>createHash('sha256').update(value).digest('hex');
 test('retains the complete manifest-owned inventory, modes and Claude asset independently of Resources',async()=>{
  const root=await fs.mkdtemp(path.resolve('../../.cache/v2-validation/artifact-retention-'));roots.push(root);
@@ -15,8 +15,47 @@ test('retains the complete manifest-owned inventory, modes and Claude asset inde
  const verifyArtifacts=async input=>({manifestPath:input.manifestPath,launcher:path.join(path.dirname(input.manifestPath),'launcher'),controller:path.join(path.dirname(input.manifestPath),names[0]),writer:path.join(path.dirname(input.manifestPath),names[1])});
  const retained=await retainNativeArtifacts({controlRoot,manifestPath,manifestSha256,verifyArtifacts});
  expect(retained.manifestPath).toBe(path.join(controlRoot,'artifacts',manifestSha256,'native-bundle.json'));
+ const copied=path.join(path.dirname(retained.manifestPath),names[0]),original=path.join(source,names[0]);
+ await fs.writeFile(copied,'destination mutation');
+ expect(hash(await fs.readFile(original))).toBe(files[0].sha256);
+ await fs.writeFile(copied,await fs.readFile(original));
+ await fs.writeFile(original,'source mutation');
+ expect(hash(await fs.readFile(copied))).toBe(files[0].sha256);
  await fs.rm(source,{recursive:true});
  for(const row of files){const file=path.join(path.dirname(retained.manifestPath),row.path);expect(hash(await fs.readFile(file))).toBe(row.sha256);expect((await fs.stat(file)).mode&0o777).toBe(row.mode);}
+});
+
+test.each([false,true])('clone-copy fallback preserves verification and cleans a corrupted candidate: %s',async corrupt=>{
+ const root=await fs.mkdtemp(path.resolve('../../.cache/v2-validation/artifact-retention-'));roots.push(root);
+ const source=path.join(root,'source'),controlRoot=path.join(root,'control');await fs.mkdir(source);
+ const bytes=Buffer.alloc(4*1024*1024,42),file=path.join(source,'DevRyan-controller');await fs.writeFile(file,bytes,{mode:0o755});
+ const manifestPath=path.join(source,'native-bundle.json');
+ await fs.writeFile(manifestPath,JSON.stringify({files:[{path:'DevRyan-controller',sha256:hash(bytes),size:bytes.length,mode:0o755}]}));
+ const manifestSha256=hash(await fs.readFile(manifestPath));
+ const copy=fs.copyFile.bind(fs),read=fs.readFile.bind(fs);
+ let copies=0;
+ vi.spyOn(fs,'readFile').mockImplementation((target,...args)=>{
+  expect(String(target).endsWith('DevRyan-controller')).toBe(false);
+  return read(target,...args);
+ });
+ vi.spyOn(fs,'copyFile').mockImplementation(async(from,to,flags)=>{
+  expect(flags&fs.constants.COPYFILE_FICLONE).toBe(fs.constants.COPYFILE_FICLONE);
+  expect(flags&fs.constants.COPYFILE_EXCL).toBe(fs.constants.COPYFILE_EXCL);
+  copies++;
+  // Simulate a filesystem's ordinary-copy fallback without sharing inodes.
+  await copy(from,to,flags&~fs.constants.COPYFILE_FICLONE);
+  if(corrupt)await fs.writeFile(to,Buffer.alloc(bytes.length,43));
+ });
+ const options={controlRoot,manifestPath,manifestSha256,verifyArtifacts:async input=>({...input,controller:path.join(path.dirname(input.manifestPath),'DevRyan-controller'),writer:path.join(path.dirname(input.manifestPath),'DevRyan-writer')})};
+ if(corrupt){
+  await expect(retainNativeArtifacts(options)).rejects.toMatchObject({code:'bundle_artifact_retention_invalid'});
+  expect((await fs.readdir(path.join(controlRoot,'artifacts'))).filter(name=>name.startsWith('.retaining-')||name===manifestSha256)).toEqual([]);
+ }else{
+  await retainNativeArtifacts(options);
+  await retainNativeArtifacts(options);
+  expect(hash(await read(path.join(controlRoot,'artifacts',manifestSha256,'DevRyan-controller')))).toBe(hash(bytes));
+ }
+ expect(copies).toBe(1);
 });
 
 const HOUR=60*60_000;

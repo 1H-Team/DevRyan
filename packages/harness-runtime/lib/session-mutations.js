@@ -1008,7 +1008,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     }
     return result;
   });
-  const registerNativeSession = (input) => locked(input.directory, async (repo) => {
+  const registerNativeSession = (input) => snapshotOrLocked(input.directory, async (repo) => {
     if (!validID(input.sessionID) || (input.parentID !== undefined && input.parentID !== null && !validID(input.parentID))) throw changeError('invalid_capture_identity', 400);
     const sessionKey = key('sessions', input.sessionID), previous = await repo.db.get(sessionKey);
     if (previous && previous.parentID !== (input.parentID ?? null)) throw changeError('invalid_session_lineage');

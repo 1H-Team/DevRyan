@@ -61,6 +61,26 @@ const createHarness = async () => {
 };
 
 describe('managed scheduler cancellation', () => {
+  test('a cancelled submission queued behind persistence never creates or launches a task', async () => {
+    const entered = deferred(), release = deferred(), runs = [], controller = new AbortController();
+    let held = false, ids = 0;
+    const scheduler = createManagedTaskScheduler({
+      persistence: { load: async () => null, save: async snapshot => {
+        if (!held && snapshot.tasks.length === 1) { held = true; entered.resolve(); await release.promise; }
+      } },
+      executor: { start: async task => { runs.push(task.taskId); return { status: 'completed', recoverablePreview: 'Done' }; } },
+      createTaskId: () => `dvr_task_${++ids}`,
+    });
+    try {
+      await scheduler.initialize();
+      const first = scheduler.submit(input(1)); await entered.promise;
+      const reason = Error('caller disconnected');
+      const second = scheduler.submit(input(2), { signal: controller.signal });
+      void second.catch(() => {});
+      controller.abort(reason); release.resolve(); await first; await expect(second).rejects.toBe(reason);
+      expect(scheduler.listTasks()).toHaveLength(1); expect(ids).toBe(1); expect(runs).toEqual(['dvr_task_1']);
+    } finally { release.resolve(); await scheduler.shutdown(); }
+  });
   test('cancels one of four concurrent tasks without touching the others', async () => {
     const { aborts, scheduler } = await createHarness();
     const tasks = [];

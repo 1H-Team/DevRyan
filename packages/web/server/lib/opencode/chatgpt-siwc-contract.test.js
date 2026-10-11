@@ -15,9 +15,9 @@ describe('SIWC native owner contracts', () => {
   it('does not relabel legacy OpenAI credentials as SIWC', () => {
     expect(projectNativeSetupCredentials({ openai: { type: 'oauth', access: 'fixture-access', refresh: 'fixture-refresh', expires: 120000 } }).credentials[0].value.methodID).toBe('chatgpt-browser');
   });
-  it('makes unavailable account catalog explicit', () => {
+  it('requires reauthorization for a retired SIWC account', () => {
     const auth = { type: 'oauth', methodID: 'chatgpt-siwc', access: 'fixture-access', metadata: { ...metadata, scopes: ['chatgpt.tokens.use.direct'] } };
-    const provider = annotateOpenAIModelAvailability({ providers: [{ id: 'openai', models: { model: { id: 'model' } } }] }, auth, { accountModels: null }).providers[0];
-    expect(provider.models.model).toMatchObject({ available: false, unavailableReason: 'account_models_unavailable' });
+    const provider = annotateOpenAIModelAvailability({ providers: [{ id: 'openai', models: { model: { id: 'model' } } }] }, auth).providers[0];
+    expect(provider.models.model).toMatchObject({ available: false, unavailableReason: 'reauthorization_required' });
   });
 });

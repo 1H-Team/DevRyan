@@ -20,6 +20,7 @@ import {protectNativeSetupSource,removeNativeSetupSource,resetAbandonedNativeSet
 import {canonicalJSON,isRecord,readBundleJSON,sha256} from './bundle-migration-inventory.js';
 import {reclaimReusedLock} from './native-setup-local-owners.js';
 import {upgradeSelectedNativeBundleAtStartup} from './native-bundle-startup-upgrade.js';
+import {recoverSelectedBundleLeasesAtStartup} from './native-bundle-lease-recovery.js';
 
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 const fail=code=>Object.assign(new Error(code),{code,status:503});
@@ -140,6 +141,8 @@ export async function provisionDefaultNativeBundle({env=process.env,home=os.home
   if(await exists(path.join(controlRoot,'selection.json'))){
    const selected=readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot},{allowHeldInspection:true});
    if(selected.admission==='held'||selected.selection.reconciliationRequired)return controlRoot;
+   // Every verification below refuses an unsettled lease of the selected bundle.
+   if(!operations.windows)await recoverSelectedBundleLeasesAtStartup({controlRoot});
    if(await exists(sourceRoot))await removeNativeSetupSource({controlRoot,sourceRoot,...privatePersistence,verifySelected:async()=>{
     const store=createRuntimeBundleStore({...privatePersistence,controlRoot,allowRecoveredInputStartup:true,runMigration:async()=>{throw fail('bundle_migration_generation_invalid');},
      withQuiescedSource:async()=>{throw fail('bundle_quiescence_unverified');},

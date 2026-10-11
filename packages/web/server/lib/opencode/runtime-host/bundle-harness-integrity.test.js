@@ -93,6 +93,17 @@ test('queued shell notification uses only its exact immutable settled lease occu
  f.db.set(leaseKey,{...lease,extra:{notificationID:messageID}});await f.db.commit();await expect(verify([proof])).rejects.toMatchObject({code:'bundle_message_reference_lost'});
 });
 
+test('an unsettled lease or pending lease cleanup refuses as bundle_execution_unsettled',async()=>{
+ const f=await fixture({state:'completed',acked:true}),token='30000000-0000-4000-8000-000000000003',key=`leases/${token}.json`;
+ const lease={token,directory:f.member.directory,generation:0,preparation:'none',executionKind:'control',
+  scope:{sessionID:'ses_control',userMessageID:'msg_user',messageID:'msg_assistant',callID:'call_control'}};
+ const verify=()=>f.verify({sessionIDs:['ses_control'],messageIDs:['msg_user','msg_assistant']});
+ for(const state of [{state:'preparing'},{state:'ready'},{state:'cancelled',cleanupPending:true},{state:'published',cleanupPending:true}]){
+  f.db.set(key,{...lease,...state});await f.db.commit();await expect(verify()).rejects.toMatchObject({code:'bundle_execution_unsettled'});
+ }
+ f.db.set(key,{...lease,state:'cancelled',cleanupPending:false,cleaned:true});await f.db.commit();await expect(verify()).resolves.toBeDefined();
+});
+
 test('a ledger whose key listing exceeds 1 MiB inspects and relocates without buffering the listing',async()=>{
  const f=await fixture({state:'completed',acked:true});let names=0;
  for(let i=0;i<4200;i++){const key=`files/${String(i).padStart(6,'0')}${'a'.repeat(250)}/x.json`;names+=key.length+1;f.db.set(key,{i});}

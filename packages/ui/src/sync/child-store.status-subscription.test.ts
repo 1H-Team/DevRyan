@@ -7,6 +7,25 @@ import {
 } from "./child-store"
 
 describe("ChildStoreManager status subscriptions", () => {
+  test("a failed directory stays failed across renders until explicit recovery", () => {
+    const childStores = new ChildStoreManager()
+    let boots = 0
+    childStores.configure({ onBootstrap: () => { boots++ } })
+    const store = childStores.ensureChild("/repo/failed")
+    expect(boots).toBe(1)
+    store.setState({ status: "partial", bootstrapError: "path unavailable" })
+    childStores.ensureChild("/repo/failed")
+    childStores.ensureChild("/repo/failed")
+    expect(boots).toBe(1)
+    store.setState({ bootstrapError: undefined, sessionListStatus: "error" })
+    childStores.ensureChild("/repo/failed")
+    expect(boots).toBe(1)
+    store.setState({ status: "loading", sessionListStatus: "idle" })
+    childStores.ensureChild("/repo/failed")
+    expect(boots).toBe(2)
+    childStores.disposeAll()
+  })
+
   test("grants bootstrap authority only to current-directory subscriptions", () => {
     expect(shouldBootstrapDirectorySubscription(undefined, "/repo/active")).toBe(true)
     expect(shouldBootstrapDirectorySubscription("/REPO/ACTIVE/", "/repo/active")).toBe(true)

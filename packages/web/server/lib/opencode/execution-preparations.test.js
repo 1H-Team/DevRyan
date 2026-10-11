@@ -108,6 +108,22 @@ test('an uncertain lease cannot block unrelated recovery or cleanup', async () =
   expect(cancelled).toEqual(['safe']); expect(cleaned).toEqual(['safe']); expect(failures).toHaveLength(2);
 });
 
+test('an owner-less control lease from an earlier host is settled; an owner-less process lease is still reported', async () => {
+  const cancelled = [], cleaned = [], failures = [], probed = [];
+  const control = { token: 'control', directory: '/fixture', state: 'ready', preparation: 'none', executionKind: 'control' };
+  const unclaimed = { token: 'unclaimed', directory: '/fixture', state: 'preparing', preparation: 'none' };
+  const spawned = { token: 'process', directory: '/fixture', state: 'ready', executionKind: 'process' };
+  const runtime = { activeLeases: async () => [control, unclaimed, spawned],
+    pendingCleanup: async () => [{ ...control, state: 'cancelled' }, { ...spawned, state: 'cancelled' }],
+    cancelLease: async (lease) => { cancelled.push(lease.token); },
+    cleanupLease: async (lease) => { cleaned.push(lease.token); return true; } };
+  await recoverExecutionLeases({ runtime, directory: '/fixture', ownerLost: async (lease) => { probed.push(lease.token); return false; },
+    onFailure: (error) => failures.push(error.code) });
+  expect(cancelled).toEqual(['control', 'unclaimed']); expect(cleaned).toEqual(['control']);
+  expect(probed).toEqual([]);
+  expect(failures).toEqual(['mutation_termination_unconfirmed', 'mutation_termination_unconfirmed']);
+});
+
 
 test('slow identity and lease lookup consume the poll budget without cancelling preparation', async () => {
   let complete, launches = 0, cancelled = 0;

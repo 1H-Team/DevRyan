@@ -34,7 +34,13 @@ export function createNativeManagedTaskOwner({ admissionOwner, taskContext, exec
   return async (input, context = {}) => {
     if (!input || input.tool !== 'devryan_task' || input.authorization?.input?.provenance?.id !== 'devryan.managed-task'
       || input.authorization?.input?.provenance?.kind !== 'plugin') throw fail('native_task_origin_required');
-    const recheck = () => admissionOwner.recheckExecution(input);
+    if (input.input?.action === 'start') context = { ...context, signal: context.signal
+      ? AbortSignal.any([context.signal, AbortSignal.timeout(25_000)]) : AbortSignal.timeout(25_000) };
+    const recheck = async () => {
+      context.signal?.throwIfAborted();
+      await admissionOwner.recheckExecution(input);
+      context.signal?.throwIfAborted();
+    };
     await recheck();
     const args = parse(input.input);
     const scope = { rootSessionId: input.sessionID, directory: input.directory, resultMode: 'reference', resultContractVersion: 1 };
@@ -43,7 +49,7 @@ export function createNativeManagedTaskOwner({ admissionOwner, taskContext, exec
       context.signal?.throwIfAborted();
       await taskContext.authorizeNativeTaskInvocation(input);
       await recheck();
-      const result = await action();
+      const result = await admissionOwner.withManagedTaskCatalogInvocation(input, action);
       await recheck(); context.signal?.throwIfAborted(); return result;
     };
     const barrier = async missingTaskID => {
@@ -96,17 +102,19 @@ export function createNativeManagedTaskOwner({ admissionOwner, taskContext, exec
       const idempotencyKey = createHash('sha256').update(JSON.stringify([input.sessionID, input.messageID, input.callID, args])).digest('hex');
       return admissionOwner.withPermit(input, async () => {
         const policy = await taskContext.authorizeNativeTaskInvocation(input);
+        await recheck();
         // Child registration already requires this real parent control call in
         // the existing ledger. It runs no subprocess and owns no file view.
         const { lease } = await executionHost.nativeManagedControl({ invocation: input, action: 'begin' });
         try {
-          return await runtime.handleRpc({ method: 'submit', params: { ...scope, idempotencyKey, agent, prompt,
+          await recheck();
+          return await admissionOwner.withManagedTaskCatalogInvocation(input, () => runtime.handleRpc({ method: 'submit', params: { ...scope, idempotencyKey, agent, prompt,
             label: args.label === undefined ? `Managed ${agent} task` : text(args.label, 'label'),
             dispatchGroupId: input.messageID, dispatchCallId: input.callID, parentTaskId: null,
             mode: 'orchestrator', readOnly: policy.readOnly, providerId: '', modelId: '', variant: null,
             allowDuplicate: args.allow_duplicate === true,
             ...(args.required_checks === undefined ? {} : { requiredChecks: structuredClone(args.required_checks) }),
-            ...(args.timeout_seconds === undefined ? {} : { timeoutAt: Date.now() + Math.min(86_400, args.timeout_seconds) * 1000 }) } }, context);
+            ...(args.timeout_seconds === undefined ? {} : { timeoutAt: Date.now() + Math.min(86_400, args.timeout_seconds) * 1000 }) } }, context));
         } finally {
           await executionHost.nativeManagedControl({ invocation: input, action: 'finish', token: lease.token });
         }

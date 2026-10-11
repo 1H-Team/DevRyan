@@ -13,7 +13,7 @@ describe('physical SIWC policy', () => {
     const source = { model: 'account-model', input: [{ type: 'message', role: 'system', content: 'policy' }, { role: 'user', content: 'hello' }], tools: [{ type: 'function', name: 'local', parameters: {} }], store: true, stream: false, temperature: 1, previous_response_id: 'old', max_output_tokens: 3, metadata: { private: true }, prompt_cache_retention: '24h' };
     expect(await (await transport(request(source))).text()).toBe(completed);
     const sent = JSON.parse(send.mock.calls[0][1].body);
-    expect(sent).toEqual({ model: 'account-model', input: [{ type: 'message', role: 'developer', content: 'policy' }, { role: 'user', content: 'hello' }, {type:'additional_tools',tools:source.tools}], store: false, stream: true });
+    expect(sent).toEqual({ model: 'account-model', input: [{ type: 'message', role: 'developer', content: 'policy' }, { role: 'user', content: 'hello' }, {type:'additional_tools',role:'developer',tools:source.tools}], store: false, stream: true });
   });
   it.each(['image_generation', 'file_search', 'code_interpreter', 'computer_use_preview', 'mcp', 'tool_search', 'programmatic_tool_calling'])('refuses %s before credential or provider traffic', async type => {
     const getAccess = vi.fn(access), send = vi.fn();
@@ -52,10 +52,21 @@ describe('physical SIWC policy', () => {
     expect(() => siwcPolicy.completedResponse(Response.json({ error: 'not SSE' }))).toThrow('chatgpt_siwc_stream_required');
   });
   it('preserves supported custom, namespace, additional tools and account-gated web search', () => {
-    const tool = {type:'custom',name:'local',format:{type:'text'}}, namespace = {type:'namespace',name:'files',tools:[tool]}, additional = {type:'additional_tools',tools:[tool]}, web = {type:'web_search'};
+    const tool = {type:'custom',name:'local',format:{type:'text'}}, namespace = {type:'namespace',name:'files',tools:[tool]}, additional = {type:'additional_tools',role:'developer',tools:[tool]}, web = {type:'web_search'};
     const sent=JSON.parse(siwcPolicy.encodeBody({input:[additional],tools:[namespace,web],instructions:'policy'}));
     expect(sent).toEqual({input:[additional],tools:[namespace,web],instructions:'policy',store:false,stream:true});
     expect(() => siwcPolicy.encodeBody({input:[{type:'additional_tools',tools:[{type:'image_generation'}]}]})).toThrow('chatgpt_siwc_tool_unsupported');
+  });
+  it('gives every additional tools item the developer role the Responses API requires', () => {
+    const tool = {type:'function',name:'local',parameters:{}}, user = {role:'user',content:'hello'};
+    // A single user message plus tools is the reported failure: the role-less item was input[1].
+    expect(JSON.parse(siwcPolicy.encodeBody({input:[user],tools:[tool]})).input).toEqual([user,{type:'additional_tools',role:'developer',tools:[tool]}]);
+    for (const role of [undefined, 'system']) {
+      const sent = JSON.parse(siwcPolicy.encodeBody({input:[{type:'additional_tools',...(role ? {role} : {}),tools:[tool]},user]}));
+      expect(sent.input[0]).toEqual({type:'additional_tools',role:'developer',tools:[tool]});
+    }
+    for (const item of JSON.parse(siwcPolicy.encodeBody({input:[{type:'additional_tools',tools:[tool]},user],tools:[tool]})).input.filter(item => item.type === 'additional_tools'))
+      expect(item.role).toBe('developer');
   });
   it.each([{input:'string'}, {input:[{role:'user',content:[{type:'input_audio',data:'opaque'}]}]}, {input:[],tool_choice:{type:'image_generation'}}, {input:[],tool_choice:{type:'allowed_tools',tools:[{type:'mcp'}]}}])('refuses incompatible context or tool choice', async body => {
     const send = vi.fn(), getAccess=vi.fn(access);

@@ -311,6 +311,30 @@ describe('Cursor SDK worker runtime config', () => {
     });
   });
 
+  test.each([false, true])('uses only host policy in one-shot and persistent workers (persistent=%s)', async persistent => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-policy-wire-'));
+    const capture = { calls: [], children: [], commands: [], input: null };
+    let readOnly = true;
+    const runtime = createCursorSdkRuntime({ storageDir: tempDir, env: { CURSOR_API_KEY: 'synthetic' },
+      ownedPrompt: async () => ({ readOnly, run: action => action(), close: async () => {} }),
+      useNodeWorkerForPrompts: true, usePersistentWorkerForPrompts: persistent,
+      spawnImpl: persistent ? createFakePersistentWorkerSpawn(capture) : createFakeWorkerSpawn(capture),
+    });
+    try {
+      expect((await runtime.prewarmSession({ sessionID: 'ses_policy', modelID: 'composer-2.5' })).disabled).toBe(true);
+      expect(capture.calls).toHaveLength(0);
+      for (const policy of [true, false]) {
+        readOnly = policy;
+        await runtime.handlePromptAsync({ sessionID: 'ses_policy', directory: tempDir, body: {
+          readOnly: !policy, messageID: `msg_policy_${policy}`, model: { providerID: 'cursor-acp', modelID: 'composer-2.5' }, parts: [{ type: 'text', text: 'Inspect' }],
+        } });
+        await waitFor(() => runtime.getSessionStatus().ses_policy?.type === 'idle');
+        const payload = persistent ? capture.commands.filter(command => command.type === 'prompt').at(-1) : capture.input;
+        expect(payload.readOnly).toBe(policy);
+      }
+    } finally { await runtime.dispose(); }
+  });
+
   test('owned prompt retains original scope through physical settlement and final persistence', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cursor-owned-lifetime-'));
     const capture = { calls: [], input: null }, phases = [];
@@ -321,7 +345,7 @@ describe('Cursor SDK worker runtime config', () => {
     const runtime = createCursorSdkRuntime({ storageDir: tempDir, env: { CURSOR_API_KEY: 'forbidden-environment-fallback' },
       readAuth: () => { throw new Error('Owned native prompt must not read compatibility auth'); },
       ownedReadOnly: async (scope, action) => {
-        expect(scope).toEqual({ kind: 'catalog', directory: tempDir });catalog = true;
+        expect(scope).toEqual({ kind: 'catalog', directory: tempDir, signal: expect.any(AbortSignal) });catalog = true;
         try { return await action(); } finally { catalog = false; }
       },
       loadSdk: async () => ({ Cursor: { models: { list: async input => {
@@ -341,7 +365,7 @@ describe('Cursor SDK worker runtime config', () => {
         expect(input.userMessageID).toBe('msg_owned_lifetime');
         expect(input.modelID).toBe('composer-2.5');
         phases.push('captured');
-        return { run: async action => { current = true; return action(); }, close: async () => { current = false; closed++; phases.push('closed'); } };
+        return { readOnly: true, run: async action => { current = true; return action(); }, close: async () => { current = false; closed++; phases.push('closed'); } };
       },
       onPersistRecord: async ({ record }) => {
         expect(current).toBe(true);
@@ -364,6 +388,7 @@ describe('Cursor SDK worker runtime config', () => {
         body: { messageID: 'msg_owned_lifetime', model: { providerID: 'cursor-acp', modelID: 'composer-2.5' }, parts: [{ type: 'text', text: 'owned' }] } });
       expect(response.status).toBe(204);
       await waitFor(() => capture.input);
+      expect(capture.input.readOnly).toBe(true);
       expect(closed).toBe(0); expect(phases.slice(0, 5)).toEqual(['catalog-key', 'captured', 'key', 'user', 'assistant']);
       publish({});
       await waitFor(() => persisted);

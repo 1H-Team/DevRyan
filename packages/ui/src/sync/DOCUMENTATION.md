@@ -70,6 +70,21 @@ shell does not erase the preceding completed measurement.
 
 ## Directory subscription bootstrap authority
 
+Directory bootstrap starts its session list alongside project, provider, config,
+path and status requests. Every request carries its captured directory and a
+30-second deadline covering transient retries; a stalled transport cannot hold
+the startup screen indefinitely. Required path/status failures populate
+`bootstrapError`, which the startup screen exposes through Retry. Session-list
+failure retains its separate error. Neither failure establishes readiness.
+
+Bootstrap owners cancel on disposal, replacement and startup Retry. Deferred
+enrichment keeps the same owner after critical bootstrap finishes, so it can
+publish only into the original live store. Newer live statuses and session
+create/delete events win over older snapshots. Questions and permissions recover
+while the session list finishes; optional agent/LSP/VCS reads follow critical
+readiness. Bounded `devryan-directory-*` performance measures identify request
+durations and outcomes without directory names or response data.
+
 Reconnect REST recovery is fenced per child store and against the bounded
 directory lifecycle journal. An older overlapping read, deletion/recreation,
 or lifecycle change cannot publish stale sessions. Records whose live message

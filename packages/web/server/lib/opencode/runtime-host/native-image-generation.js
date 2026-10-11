@@ -20,7 +20,7 @@ export function createNativeImageGeneration({withImageGeneration,originals,fetch
         if(!allowedEndpoints.has(url)||init?.method!=='POST'||typeof init.body!=='string'||Buffer.byteLength(init.body)>limit)
           throw fail('native_image_generation_request_invalid');
         currentSignal.throwIfAborted();const credential=await owner.access();currentSignal.throwIfAborted();
-        if(credential.methodID==='chatgpt-siwc')throw fail('native_image_generation_siwc_unsupported');
+        if(credential.valueType!=='key')throw fail('native_image_generation_siwc_unsupported');
         const apiKey=credential.valueType==='key';
         if(apiKey&&credential.methodID!=='api-key')throw fail('native_image_generation_credential_invalid');
         apiKeyBilling=apiKey;

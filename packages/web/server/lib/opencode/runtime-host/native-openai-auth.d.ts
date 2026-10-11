@@ -34,7 +34,6 @@ export function createNativeOpenAiAuth(options: {
   directory: string;
   controllerIdentity(): string | undefined;
   readSelected(input: { directory: string }): Promise<NativeOpenAiSelected | undefined>;
-  compareAndSwapSelected(input: { directory: string; expected: NativeOpenAiSelected; next: Credential.Value }): Promise<boolean>;
 }): {
   readonly asyncStorage: NativeOpenAiAsyncStorage;
   imageAccess(input: { directory: string }): Promise<NativeOpenAiImageKey | undefined>;

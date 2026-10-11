@@ -164,6 +164,7 @@ const assertManagedReadOnlyAgentSupport = (input) => {
 };
 
 export const createManagedTaskScheduler = (options = {}) => {
+  const cursorReadOnly = options.cursorReadOnly === true;
   const executor = options.executor;
   if (!executor || typeof executor.start !== 'function') {
     throw new TypeError('executor.start is required');
@@ -1097,6 +1098,8 @@ export const createManagedTaskScheduler = (options = {}) => {
     const origin = resolveAutoResumeOriginLocked(task);
     const ownerKey = await resolveAutoResumeOwnerKey(task.rootSessionId);
     const backup = await resolveAutoResumeHook('resolveBackupExecution', {
+      taskId: task.taskId,
+      autoResumeGeneration: generation,
       rootSessionId: task.rootSessionId,
       directory: task.directory,
       agent: task.agent,
@@ -1142,6 +1145,7 @@ export const createManagedTaskScheduler = (options = {}) => {
         breakerUntil: (providerId) => breakerUntilLocked(providerId, ownerKey),
         providerReset,
         origin,
+        cursorReadOnly,
       });
       if (plan.state !== 'scheduled') {
         await commitAutoResumeExhaustedLocked(previous, plan.reason);
@@ -1905,9 +1909,11 @@ export const createManagedTaskScheduler = (options = {}) => {
     }
   };
 
-  const submit = async (input) => {
+  const submit = async (input, { signal } = {}) => {
+    signal?.throwIfAborted();
     await ensureInitialized();
     const task = await runExclusive(async () => {
+      signal?.throwIfAborted();
       assertNotRemoving(input);
       const indexKey = idempotencyIndexKey(input.rootSessionId, input.idempotencyKey);
       const existingTaskId = idempotencyIndex.get(indexKey);
@@ -2013,6 +2019,7 @@ export const createManagedTaskScheduler = (options = {}) => {
         timeoutAt: input.timeoutAt ?? null,
         recoveryLineageId: input.recoveryLineageId ?? null,
       });
+      signal?.throwIfAborted();
       await commitNewTaskLocked(next);
       return cloneTask(next);
     });

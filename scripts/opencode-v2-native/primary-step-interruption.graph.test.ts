@@ -12,6 +12,8 @@ for (const boundary of ['physical','handoff','missing-callback'] as const) test(
   const sourcePath=path.join(repository,'scripts/opencode-v2-native/controller-integrations.graph-fixture.mjs');
   let source=await fs.readFile(sourcePath,'utf8');
   const replace=(before:string,after:string)=>{if(source.split(before).length!==2)throw Error('Original graph fixture changed: '+before);source=source.replace(before,after);};
+  // Title generation is outside these controlled primary-interruption cases.
+  replace('let initialPairReleased=false;', 'let initialPairReleased=true;');
   source="import {Fiber} from 'effect';\nimport {SessionEvent} from '@opencode/schema/session-event';\nimport {SessionMessage} from '@opencode/core/session/message';\nimport {Database as SqliteDatabase} from 'bun:sqlite';\n"+
     "import {createNativeObservation} from "+JSON.stringify(path.join(repository,'packages/web/server/lib/opencode/runtime-host/native-observation.ts'))+";\n"+
     "import {createNativeObservationOwner} from "+JSON.stringify(path.join(repository,'packages/web/server/lib/opencode/runtime-host/native-observation-owner.js'))+";\n"+
@@ -64,7 +66,7 @@ const gates = createAdmissionGates({executionActivity:inner=>{nativeExecution=in
     primaryRuntime.plugin=async input=>{if(input.action==='step'){primaryObserved();await responseBarrier;}return originalPlugin(input);};
   }
   await primaryRuntime.initialize();realPrimaryStep=createNativePrimaryStepOwner({admissionOwner,openCodeClient:client,primaryRuntime,instanceID:'owned_controller',allowStopHandoff:true});
-  const session=await callerContext.run(caller,()=>client.sessions.create({model:{providerID:'openai',modelID:'gpt-5.5'}},{directory}));
+  const session=await callerContext.run(caller,()=>client.sessions.create({title:'Owned interruption fixture',model:{providerID:'openai',modelID:'gpt-5.5'}},{directory}));
   await callerContext.run(caller,()=>client.prompts.command(session.id,{command:'interview',arguments:'Bound original command',agent:'build',model:{providerID:'openai',modelID:'gpt-5.5'}},{directory}));
   let timer;try{await Promise.race([primaryStarted,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Actual primary did not start')),15_000);})]);}finally{clearTimeout(timer);}
   const rawUser=(await Effect.runPromise(nativeStore.messages({sessionID:session.id}))).find(row=>row.type==='user');assert.ok(rawUser);

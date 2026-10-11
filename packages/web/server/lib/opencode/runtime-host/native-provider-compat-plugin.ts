@@ -4,25 +4,18 @@ import {Location} from '@opencode/core/location';
 import {Layer} from 'effect';
 import {Model} from '@opencode/core/model';
 import {Plugin} from '@opencode/plugin/effect';
-import type {IntegrationDomain} from '@opencode/plugin/effect/integration';
-import {Context,Effect,Option,Schema,Stream} from 'effect';
+import {Context,Effect,Option,Stream} from 'effect';
 import {normalizeNativeOpenAiModels,normalizeNativeOpenAiRequest,nativeCopilotModelsFromAccount,nativeEncodableModels} from './native-provider-compat.js';
 import {nativeCatalogStageFailure,withNativeCatalogStage} from './native-catalog-diagnostics.js';
 
 export interface NativeProviderCompatibilityOptions {
   readonly policyForDirectory:(directory:string)=>{readonly compactionReserved?:number};
-  /** The current scoped native Integration domain; no credential value crosses this callback. */
-  readonly isOpenAiOAuth?:(input:{directory:string;integration:NativeIntegration.Interface})=>Effect.Effect<boolean>;
+  /** Metadata-only current selection; catalog reads never resolve or refresh credentials. */
+  readonly isOpenAiOAuth:(directory:string)=>Effect.Effect<boolean>;
   /** Original-caller discovery owns networking and selected-connection reauthorization. */
   readonly discoverCopilot?:(input:{directory:string;integration:NativeIntegration.Interface})=>Effect.Effect<unknown>;
   readonly scrubAnthropicSystem?:(text:string)=>string;
 }
-const openaiOAuth=(integration:Pick<IntegrationDomain,'connection'>)=>Effect.gen(function*(){
-  const connection=yield* integration.connection.active('openai');
-  const value=connection?yield* integration.connection.resolve(connection).pipe(Effect.orElseSucceed(()=>undefined)):undefined;
-  return value?.type==='oauth'&&['chatgpt-siwc'].includes(value.methodID);
-});
-
 /** Scoped registered data policy; the final physical credential hooks remain owned separately. */
 export const createNativeProviderCompatibility=(options:NativeProviderCompatibilityOptions)=>{
   const modelOverride=Model.node.replace(Model.node.mapLayer(original=>{
@@ -37,9 +30,7 @@ export const createNativeProviderCompatibility=(options:NativeProviderCompatibil
     const normalize=(models:readonly Model.Info[])=>Effect.gen(function*(){
       if(!active)return yield* Effect.die(new Error('native_provider_location_expired'));
       models=yield* withNativeCatalogStage(Effect.sync(()=>nativeEncodableModels(models)), 'native_model_normalize_failed');
-      const connection=yield* withNativeCatalogStage(integration.connection.active(Schema.decodeUnknownSync(NativeIntegration.ID)('openai')), 'native_model_account_failed');
-      const value=connection?yield* withNativeCatalogStage(integration.connection.resolve(connection).pipe(Effect.orElseSucceed(()=>undefined)), 'native_model_account_failed'):undefined;
-      const oauth=options.isOpenAiOAuth?yield* withNativeCatalogStage(options.isOpenAiOAuth({directory:location.directory,integration}), 'native_model_account_failed'):value?.type==='oauth'&&['chatgpt-siwc'].includes(value.methodID);
+      const oauth=yield* withNativeCatalogStage(options.isOpenAiOAuth(location.directory), 'native_model_account_failed');
       if(!active)return yield* Effect.die(new Error('native_provider_location_expired'));
       const normalized=yield* withNativeCatalogStage(Effect.sync(()=>normalizeNativeOpenAiModels(models,{oauth,...policy})), 'native_model_normalize_failed');
       const rows=options.discoverCopilot?yield* withNativeCatalogStage(options.discoverCopilot({directory:location.directory,integration}), 'native_model_account_failed'):undefined;
@@ -67,7 +58,7 @@ export const createNativeProviderCompatibility=(options:NativeProviderCompatibil
       if(!active||event.model.providerID!=='openai')return;
       const models=yield* ctx.model.list({location:{directory}}).pipe(Effect.orDie);
       const model=models.data.find(row=>row.providerID===event.model.providerID&&row.id===event.model.id);if(!model)return;
-      const currentOAuth=yield* openaiOAuth(ctx.integration);if(!active)return;
+      const currentOAuth=yield* options.isOpenAiOAuth(directory);if(!active)return;
       const next=normalizeNativeOpenAiRequest(model,event.options,{}, {oauth:currentOAuth});
       if(next.settings!==event.options)event.options={...event.options,...next.settings};
       // Removed Spark summaries must not survive a spread over the old options.
@@ -77,7 +68,7 @@ export const createNativeProviderCompatibility=(options:NativeProviderCompatibil
       if(!active||event.model.providerID!=='openai')return;
       const models=yield* ctx.model.list({location:{directory}}).pipe(Effect.orDie);
       const model=models.data.find(row=>row.providerID===event.model.providerID&&row.id===event.model.id);if(!model)return;
-      const currentOAuth=yield* openaiOAuth(ctx.integration);if(!active)return;
+      const currentOAuth=yield* options.isOpenAiOAuth(directory);if(!active)return;
       Object.assign(event.headers,normalizeNativeOpenAiRequest(model,undefined,event.headers,{oauth:currentOAuth}).headers);
     }),{providerID:'openai'});
     const refresh=ctx.provider.reload().pipe(Effect.andThen(ctx.model.reload()));

@@ -62,6 +62,10 @@ bun scripts/journal.mjs show <sessionID> --tail 200
 bun scripts/journal.mjs gaps
 ```
 
+The [11 October Cursor Explorer QA investigation](audits/2026-10-11/live-agent-qa.md)
+records an interrupted native Plan-mode run, diagnostic evidence, and the proposed
+authorization, model-effort and read-only execution repairs.
+
 ### Desktop runtime ownership after restart
 
 For slow startup, separate the Electron window, web listener, native runtime
@@ -76,6 +80,10 @@ shows an authoritative failure without exhausting transient retries.
 Electron logs `[electron] startup phase` durations for shell preparation, server
 import/listen, runtime-service connection/recovery and renderer navigation.
 `[runtime-bundle] startup phase` records the verified bundle upgrade duration.
+A `bundle_lease_recovery` phase means startup settled abandoned control leases
+of the selected bundle before verification; `abandoned control leases not
+settled: <code>` means a remaining lease will refuse launch with
+`bundle_execution_unsettled`.
 Correlate those with the selected-bundle journal's native startup records;
 do not add concurrent phase durations as if every phase were sequential.
 A stale service descriptor stops connection retries early only when a fresh
@@ -188,5 +196,8 @@ generation publication remains owned by the web runtime-service route.
 Startup phase logs report elapsed milliseconds and allowlisted failure codes for
 shell environment, server import/listen, service connection/recovery, foreground
 preparation, URL resolution, renderer navigation, and service OpenCode readiness.
+Service recovery also reports unregister, stopped-owner wait, exclusive
+app-bound acquisition and mode persistence separately. These nested durations
+retain the same ownership checks and deadlines.
 
 - **Startup health owner**: `src/lib/startup/health.ts` validates optional host startup snapshots and polls health every second with a three-second request deadline and a two-minute overall deadline. `useConfigStore.initializeApp` deduplicates that owner before loading providers then agents; `App` cancels old owners on retry/unmount and exposes authoritative terminal failures through the existing Retry screen. Older health servers retain readiness compatibility, and startup warmup/sync gates remain required.

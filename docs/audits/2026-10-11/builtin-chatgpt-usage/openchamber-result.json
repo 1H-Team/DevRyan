@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-11T07:08:07.438Z",
+  "scope": "one GET usage request matching OpenChamber headers using current built-in ChatGPT credential; no refresh or writes",
+  "methodID": "chatgpt-token-sharing",
+  "tokenUnexpired": true,
+  "accountHeaderPresent": false,
+  "status": 401,
+  "providerCode": "no_matching_rule",
+  "usageWindowsPresent": 0,
+  "outcome": "provider_refused",
+  "credentialUnchanged": true,
+  "selectionUnchanged": true
+}

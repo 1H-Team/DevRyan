@@ -11,6 +11,7 @@ const bodyFields = (body, fields) => {
   if (!record(body) || Object.keys(body).some(field => !fields.includes(field))) throw fail('opencode_invalid_input', 400);
   return body;
 };
+const providerOAuthMethod = { xai: 'device', openai: 'chatgpt-browser' };
 const oauthMethods = info => info.methods.filter(method => method.type === 'oauth');
 const segment = value => { if (!identifier(value)) throw fail('native_integration_invalid_response', 502); return encodeURIComponent(value); };
 
@@ -118,18 +119,25 @@ export function createNativeIntegrationFacade({ getNativeRuntimeOwner, getOpenCo
   };
   const pending = (selected, key) => {
     const value = attempts.get(key);
-    if (!value?.attemptID || value.expiresAt <= now()) throw fail('native_integration_attempt_unavailable', 404);
+    if (!value?.attemptID) throw fail('native_integration_attempt_unavailable', 404);
     check(value.selected);
     if (value.selected.owner !== selected.owner || value.selected.snapshot !== selected.snapshot) throw fail('native_integration_grant_expired');
     return value;
   };
   const complete = async (selected, key, options, input) => {
     const value = pending(selected, key);
+    if (value.expiresAt <= now()) throw fail('native_integration_attempt_expired', 410);
     bodyFields(input, ['code']);
     if (input.code !== undefined && (typeof input.code !== 'string' || !input.code || input.code.length > 8192)) throw fail('opencode_invalid_input', 400);
     const path = `/api/integration/${segment(value.scope.integrationID)}/connect/oauth/${segment(value.attemptID)}/complete`;
     await scopedRequest(selected, { ...value.scope, methodID: value.methodID, attemptID: value.attemptID }, `${value.scope.kind}.oauth.complete`, path, { ...options, timeoutMs: 180_000 }, 'POST', input);
     attempts.delete(key); return true;
+  };
+  const cancel = async (selected, key, options) => {
+    const value = pending(selected, key);
+    await scopedRequest(selected, { ...value.scope, methodID: value.methodID, attemptID: value.attemptID }, `${value.scope.kind}.oauth.cancel`,
+      `/api/integration/${segment(value.scope.integrationID)}/connect/oauth/${segment(value.attemptID)}`, options, 'DELETE');
+    if (attempts.get(key) === value) attempts.delete(key);
   };
   const credential = async (selected, id, options) => {
     if (!identifier(id) || typeof selected.owner.credentialMetadata !== 'function') throw unavailable('providerAuthentication');
@@ -151,7 +159,6 @@ export function createNativeIntegrationFacade({ getNativeRuntimeOwner, getOpenCo
   };
   const mutateCredential = async (selected, id, operation, options, body) => {
     const metadata = await credential(selected, id, options);
-    if (operation === 'remove' && metadata.integrationID === 'openai' && metadata.valueType === 'oauth') throw fail('native_chatgpt_siwc_disconnect_required', 409);
     if (options.expectedFingerprint !== undefined && options.expectedFingerprint !== metadata.expectedFingerprint) throw fail('native_credential_changed', 409);
     let scope;
     if (['openai', 'cursor-acp', 'xai', 'opencode', 'opencode-go'].includes(metadata.integrationID)) {
@@ -208,37 +215,42 @@ export function createNativeIntegrationFacade({ getNativeRuntimeOwner, getOpenCo
       for (const providerID of ['openai','cursor-acp','xai','opencode','opencode-go']) {
         const info = await providerInfo(selected,providerID,options);
         result[providerID] = info.methods.filter(method => method.type === 'key'
-          || method.type === 'oauth' && providerID === 'xai' && method.id === 'device')
+          || method.type === 'oauth' && method.id === providerOAuthMethod[providerID])
           .map(method => ({type:method.type==='key'?'api':'oauth',label:method.label}));
       }
       return result;
     }),
     providerStart: (providerID, body, options) => run(options.directory, 'providerAuthentication', async selected => {
-      bodyFields(body,['method']);if(providerID!=='xai'||!Number.isSafeInteger(body.method)||body.method<0)throw fail('opencode_invalid_input',400);
-      const info=await providerInfo(selected,providerID,options),methods=info.methods.filter(method=>method.type==='oauth'&&method.id==='device');
-      const method=methods[body.method];if(method?.type!=='oauth')throw fail('native_provider_method_unsupported');
-      const scope=providerScope(selected,providerID);return start(selected,scope,method.id,keyFor(options.directory,scope.kind,providerID,body.method),options);
+      bodyFields(body, ['method']);
+      if (!providerOAuthMethod[providerID] || body.method !== 0) throw fail('opencode_invalid_input', 400);
+      const info = await providerInfo(selected, providerID, options);
+      const method = info.methods.find(method => method.type === 'oauth' && method.id === providerOAuthMethod[providerID]);
+      if (!method) throw fail('native_provider_method_unsupported');
+      const scope = providerScope(selected, providerID), key = keyFor(options.directory, scope.kind, providerID, body.method);
+      pruneReplaced(selected);
+      if (attempts.get(key)?.attemptID) await cancel(selected, key, options);
+      return start(selected, scope, method.id, key, options);
     }),
-    providerComplete: (providerID, body, options) => run(options.directory,'providerAuthentication',selected=>{
-      bodyFields(body,['method','code']);if(providerID!=='xai'||!Number.isSafeInteger(body.method)||body.method<0)throw fail('opencode_invalid_input',400);
-      return complete(selected,keyFor(options.directory,'provider',providerID,body.method),options,body.code===undefined?{}:{code:body.code});
+    providerComplete: (providerID, body, options) => run(options.directory, 'providerAuthentication', async selected => {
+      bodyFields(body, ['method', 'code']);
+      if (!providerOAuthMethod[providerID] || body.method !== 0) throw fail('opencode_invalid_input', 400);
+      const scope = providerScope(selected, providerID), key = keyFor(options.directory, scope.kind, providerID, body.method);
+      const value = pending(selected, key);
+      if (value.expiresAt <= now()) { await cancel(selected, key, options); return { status: 'expired' }; }
+      if (body.code !== undefined) {
+        await complete(selected, key, options, { code: body.code }); return { status: 'complete' };
+      }
+      const status = unwrapData(await scopedRequest(selected, { ...value.scope, methodID: value.methodID, attemptID: value.attemptID },
+        `${value.scope.kind}.oauth.status`, `/api/integration/${segment(providerID)}/connect/oauth/${segment(value.attemptID)}`, options));
+      if (!record(status) || !['pending', 'complete', 'failed', 'expired'].includes(status.status)) throw fail('native_integration_invalid_response', 502);
+      if (status.status !== 'pending') attempts.delete(key);
+      return { status: status.status };
     }),
-    saveOAuthCredential: (providerID, body, options) => run(options.directory, 'providerAuthentication', async selected => {
-      if (providerID !== 'openai' || !record(body) || body.type !== 'oauth' || body.methodID !== 'chatgpt-siwc'
-        || typeof body.access !== 'string' || !body.access || typeof body.refresh !== 'string' || !body.refresh
-        || !Number.isSafeInteger(body.expires) || !record(body.metadata)) throw fail('opencode_invalid_input', 400);
-      if (options.credentialID !== undefined && !identifier(options.credentialID)) throw fail('opencode_invalid_input', 400);
-      const input = { ...(options.credentialID === undefined ? {} : { id: options.credentialID }), integrationID: 'openai', value: {
-        type: 'oauth', methodID: 'chatgpt-siwc', access: body.access, refresh: body.refresh, expires: body.expires, metadata: body.metadata,
-      }, activate: false };
-      const scope = providerScope(selected, 'openai');
-      const spec = { ...scope, operation: 'openai.credential.create', method: 'POST', path: '/api/credential',
-        ...(options.expectedActiveFingerprint === undefined ? {} : { expectedActiveFingerprint: options.expectedActiveFingerprint }),
-        ...(options.assertCurrent ? { assertCurrent: options.assertCurrent } : {}),
-        body: input, valueType: 'oauth', methodID: 'chatgpt-siwc', requestedFingerprint: credentialMutationFingerprint(input) };
-      const result = await selected.owner.credentialOperation(spec, { operation: 'create', input }); check(selected);
-      if (!identifier(result?.credentialID) || options.credentialID !== undefined && result.credentialID !== options.credentialID) throw fail('native_integration_invalid_response', 502);
-      return { success: true, credentialID: result.credentialID };
+    providerCancel: (providerID, body, options) => run(options.directory, 'providerAuthentication', async selected => {
+      bodyFields(body, ['method']);
+      if (!providerOAuthMethod[providerID] || body.method !== 0) throw fail('opencode_invalid_input', 400);
+      const scope = providerScope(selected, providerID);
+      await cancel(selected, keyFor(options.directory, scope.kind, providerID, body.method), options); return true;
     }),
     saveKey: (providerID, body, options) => run(options.directory, 'providerAuthentication', async selected => {
       bodyFields(body, ['type', 'key']); if (!['openai', 'cursor-acp', 'xai', 'opencode', 'opencode-go'].includes(providerID) || body.type !== 'api' || typeof body.key !== 'string' || !body.key.trim() || body.key.length > 16384) throw fail('opencode_invalid_input', 400);

@@ -134,7 +134,7 @@ const isProviderResult = (payload: unknown, providerId: QuotaProviderId): payloa
       candidate.warnings === undefined
       || (Array.isArray(candidate.warnings) && candidate.warnings.every((warning) => typeof warning === 'string'))
     )
-    && (candidate.source === undefined || candidate.source === null || candidate.source === 'codex-app-server' || candidate.source === 'chatgpt-siwc')
+    && (candidate.source === undefined || candidate.source === null || candidate.source === 'chatgpt-browser' || candidate.source === 'chatgpt-token-sharing' || candidate.source === 'chatgpt-headless' || candidate.source === 'codex-app-server' || candidate.source === 'chatgpt-siwc')
     && (candidate.connectionId === undefined || candidate.connectionId === null || typeof candidate.connectionId === 'string')
     && (candidate.account === undefined || candidate.account === null || (
       typeof candidate.account === 'object'

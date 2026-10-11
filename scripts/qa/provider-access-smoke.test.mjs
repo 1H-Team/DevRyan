@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as OpenAI from '@opencode/ai/providers/openai';
 import * as OpenAIResponses from '@opencode/ai/protocols/openai-responses';
-import { inspectProviderResponse } from './provider-access-smoke.mjs';
+import { Effect } from 'effect';
+import { inspectProviderResponse, toolScenarioRequest, toolScenarios } from './provider-access-smoke.mjs';
 
 test('live smoke diagnostics never retain response bodies or arbitrary headers', async () => {
   const result = await inspectProviderResponse(Response.json({ error: { code: 'insufficient_quota', param: 'tools', message: 'private sentinel' } }, {
@@ -14,11 +15,12 @@ test('live smoke diagnostics never retain response bodies or arbitrary headers',
   assert.equal(JSON.stringify(result).includes('private sentinel'), false);
 });
 
-test('stream policy failure retains safe stage and code', async () => {
+test('incomplete stream does not receive a response adapter', async () => {
   const result = await inspectProviderResponse(new Response('data: {"type":"response.created"}\n\n', {
     headers: { 'content-type': 'text/event-stream' },
-  }), { id: 'openai' });
-  assert.deepEqual(result, { status: 200, quotaHeadersPresent: [], outcome: 'failed', stage: 'body-read', policyCode: 'chatgpt_siwc_stream_interrupted' });
+  }), { id: 'openai', api: OpenAI, model: 'fixture', protocol: OpenAIResponses.protocol });
+  assert.equal(result.outcome, 'incomplete');
+  assert.equal(result.nativeParserAccepted, true);
 });
 
 test('native parser failure exposes only known provider fields', async () => {
@@ -42,7 +44,7 @@ test('native parser smoke recognizes a completed OK response', async () => {
   assert.equal(result.outcome, 'completed');
   assert.equal(result.answerWasOk, true);
   assert.equal(result.nativeParserAccepted, true);
-  const mislabelled = await inspectProviderResponse(new Response(events.map(event => `data: ${JSON.stringify(event)}\n\n`).join('')),
+  const mislabelled = await inspectProviderResponse(new Response(events.map(event => `data: ${JSON.stringify(event)}\n\n`).join(''), {headers:{'content-type':'text/plain'}}),
     { id: 'openai', api: OpenAI, model: 'fixture', protocol: OpenAIResponses.protocol });
   assert.equal(mislabelled.replayWithSseHeader.outcome, 'completed');
   assert.equal(mislabelled.replayWithSseHeader.answerWasOk, true);
@@ -58,6 +60,36 @@ test('non-SSE success response is classified without retaining its body', async 
   assert.equal(result.bodyKind, 'json');
   assert.equal(result.providerCode, 'subscription_sharing_usage_unavailable');
   assert.equal(JSON.stringify(result).includes('private sentinel'), false);
-  const mislabelled = await inspectProviderResponse(new Response('data: {"type":"response.completed"}\n\n'), { id: 'openai' });
+  const mislabelled = await inspectProviderResponse(new Response('data: {"type":"response.completed"}\n\n', {headers:{'content-type':'text/plain'}}), { id: 'openai' });
   assert.equal(mislabelled.bodyKind, 'sse');
+});
+
+test('tool scenarios send the native tool-bearing body with flat tools', async () => {
+  const provider = { id: 'openai', api: OpenAI, model: 'fixture', protocol: OpenAIResponses.protocol };
+  assert.deepEqual(toolScenarios.map(scenario => scenario.id), ['tools-available', 'tool-call', 'tool-result']);
+  for (const scenario of toolScenarios) {
+    const native = await Effect.runPromise(provider.protocol.body.from(toolScenarioRequest(provider, scenario)));
+    assert.deepEqual(native.tools.map(tool => tool.name), ['lookup_code']);
+    const sent = JSON.parse(JSON.stringify(native));
+    assert.deepEqual(sent.tools.map(tool => tool.name), ['lookup_code']);
+    assert.equal(sent.input.some(item => item.type === 'additional_tools'), false);
+    assert.equal(sent.input.every(item => item.type === 'additional_tools' || item.type !== 'message' || typeof item.role === 'string'), true);
+  }
+  const result = await Effect.runPromise(provider.protocol.body.from(toolScenarioRequest(provider, toolScenarios[2])));
+  assert.deepEqual(result.input.map(item => item.type), ['message', 'function_call', 'function_call_output']);
+});
+
+test('native parser smoke recognizes the requested tool call', async () => {
+  const provider = { id: 'openai', api: OpenAI, model: 'fixture', protocol: OpenAIResponses.protocol };
+  const call = { type: 'function_call', id: 'fc_fixture', call_id: 'call_fixture', name: 'lookup_code', arguments: '{"ticket":"A1"}', status: 'completed' };
+  const events = [{ type: 'response.output_item.added', output_index: 0, item: { ...call, arguments: '', status: 'in_progress' } },
+    { type: 'response.function_call_arguments.delta', item_id: 'fc_fixture', output_index: 0, delta: call.arguments },
+    { type: 'response.output_item.done', output_index: 0, item: call },
+    { type: 'response.completed', response: { status: 'completed', output: [call] } }];
+  const result = await inspectProviderResponse(new Response(events.map(event => `data: ${JSON.stringify(event)}\n\n`).join(''), {
+    headers: { 'content-type': 'text/event-stream' },
+  }), provider, toolScenarioRequest(provider, toolScenarios[1]));
+  assert.equal(result.outcome, 'completed');
+  assert.equal(result.lookupCalled, true);
+  assert.equal(result.answerWasOk, false);
 });

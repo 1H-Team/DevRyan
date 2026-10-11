@@ -1,5 +1,7 @@
 # Production Bots server control plane
 
+OpenAI OAuth (`chatgpt-browser`, `chatgpt-token-sharing` and retired methods) is currently refused by the native host with `bot_opencode_provider_authentication` (401). Reconnecting does not enable Bot/managed-user ChatGPT inference in this pass. API-key Bots are unaffected; the retained OAuth coordination implementation is deferred to a separate migration pass.
+
 The cross-component operator and security runbook is `docs/BOTS_RUNTIME.md`.
 This document remains the implementation contract for the server control plane.
 Retry repair verification and outstanding live acceptance are recorded in

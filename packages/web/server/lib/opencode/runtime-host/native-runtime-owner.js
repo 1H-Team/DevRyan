@@ -3,6 +3,7 @@ import {captureNativeSetupCredentialSeed} from './native-setup-credential-ack.js
 import {nativeBundleFileOperations} from './native-bundle-file-operations.js';
 import {createNativeHelperOwner} from './native-helper-owner.js';
 import fs from 'node:fs/promises';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import {bundleContinuationItem} from './bundle-owned-continuations.js';
 import path from 'node:path';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
@@ -45,6 +46,7 @@ import {createNativeRecoveredInputOwner} from './native-recovered-input.js';
 import {createNativeClaudeLifecycleClient} from './native-claude-lifecycle-client.js';
 import {CLAUDE_LIFECYCLE_PROTOCOL} from './native-claude-lifecycle.js';
 import {createNativeClaudeEnrollmentOwner} from './native-claude-enrollment.js';
+import {resolveNativeClaudeEnrollmentDirectory} from './native-claude-enrollment-location.js';
 import {createNativeClaudeProfilePublication} from './native-claude-profile-publication.js';
 import {projectNativeClaudeWorkerProfiles} from './native-claude-worker-profiles.js';
 
@@ -212,6 +214,7 @@ export function createNativeRuntimeOwner(options) {
     bindShellJob: input => executionHost.nativeExecution({ ...input, action: 'bind-shell-job' }),
     getShellJobReceipt: input => executionHost.nativeShellJobReceipt(input),
     verifyManagedTaskDispatch: input => getManagedRuntime().verifyNativeTaskDispatch(input),
+    verifyManagedTaskCatalog: input => getManagedRuntime().verifyNativeTaskCatalog(input),
     verifyPrimaryContinuationDispatch: input => primaryRuntime.captureNativeContinuationDispatch({ ...input, instanceID: nativeInstanceID }),
     verifyPrimaryRecoveryDispatch:input=>primaryRuntime.captureNativeRecoveryDispatch({...input,instanceID:nativeInstanceID}),
     bindNativeRecoveryDispatchInput:input=>primaryRuntime.bindNativeRecoveryDispatchInput({...input,instanceID:nativeInstanceID}),
@@ -286,6 +289,7 @@ export function createNativeRuntimeOwner(options) {
     cancelAndWait: input => executionHost.executions.cancelAndWait(input),
   });
   const retention=createNativeRetention({admissionOwner:nativeOwner,controller:active,removal,runtime:executionHost.runtime,ownerID:descriptor.bundleID});
+  const managedCursorCatalog = new AsyncLocalStorage();
   const managedTask = createNativeManagedTaskOwner({ admissionOwner: nativeOwner, taskContext, executionHost, getManagedRuntime });
   const council = createNativeCouncilOwner({ admissionOwner: nativeOwner, taskContext, executionHost, getManagedRuntime,
     readCouncilMembers: async input => reviewedCouncilMembers(configurationSnapshot, input) });
@@ -589,8 +593,9 @@ export function createNativeRuntimeOwner(options) {
             if(!principal||!['local-admin','managed'].includes(principal.scope)||typeof principal.id!=='string')throw fail('native_claude_enrollment_principal_required');
             return hash(JSON.stringify({scope:principal.scope,id:principal.id,appSessionId:principal.appSessionId??null,sessionTokenHash:principal.sessionTokenHash??null}));
           };
+          const enrollmentDirectory=context=>resolveNativeClaudeEnrollmentDirectory({directory:context?.directory,locations:snapshot.locations,projectMap:descriptor.projectMap});
           const assertAuthority=async(binding,context)=>{
-            if(!bindings.has(binding)||binding.directory!==context?.directory||binding.principalID!==principalKey()
+            if(!bindings.has(binding)||binding.directory!==enrollmentDirectory(context)||binding.principalID!==principalKey()
               ||phase!=='ready'||stopping||checkpointHeld||configurationSnapshot!==snapshot||nativeInstanceID!==instanceID||!child||child.hasExited())throw fail('native_claude_enrollment_binding_changed');
             await binding.authorization();
             if(phase!=='ready'||stopping||checkpointHeld||configurationSnapshot!==snapshot||nativeInstanceID!==instanceID||!child||child.hasExited())throw fail('native_claude_enrollment_binding_changed');
@@ -607,8 +612,7 @@ export function createNativeRuntimeOwner(options) {
             beforeEnrollment:context=>migrateNativeClaudeLegacyFences({profiles:profiles.profiles,home:globals.home,
               asset:artifacts.reviewedClaudeCredentials,lifecycle:claudeLifecycle},context),
             captureBinding:async context=>{
-              const directory=context?.directory;
-              if(!snapshot.locations.some(row=>row.directory===directory)||!descriptor.projectMap.some(row=>row.targetDirectory===directory))throw fail('native_claude_enrollment_location_unreviewed');
+              const directory=enrollmentDirectory(context);
               if(profiles.sources.profiles==='env'||profiles.sources.defaultProfile==='env')throw fail('native_claude_enrollment_environment_override');
               const binding={principalID:principalKey(),directory,controllerInstanceID:instanceID,providerConfigurationDigest:providerConfiguration,
                 profileFilesBaseline:await publication.snapshot(),authorization:await authorization.captureWebAuthorization({operation:'provider.configuration',scope:'user',directory})};
@@ -830,36 +834,6 @@ export function createNativeRuntimeOwner(options) {
       if (!integrations || phase !== 'ready' || stopping) throw fail('native_integration_owner_unavailable');
       return integrations.getOpenAiOAuthCoordinator();
     },
-    readOpenAiAccountSelection: operation => {
-      if (!integrations) throw fail('native_integration_owner_unavailable');
-      return integrations.readOpenAiAccountSelection(operation);
-    },
-    stopOpenAiRequests: async operation => {
-      if (!integrations || phase !== 'ready' || stopping) throw fail('native_integration_owner_unavailable');
-      const captured = active(), instanceID = nativeInstanceID;
-      const unblock = await integrations.holdOpenAiSelection(operation);
-      const held = [];
-      const release = async cleared => {
-        for (const sessionID of held) {
-          if (active() !== captured || nativeInstanceID !== instanceID || captured.hasExited()) throw fail('native_chatgpt_siwc_settlement_changed');
-          await captured.call({ action: 'release', sessionID });
-        }
-        unblock(cleared);
-      };
-      try {
-        await helperText.stopProvider('openai');
-        const sessions = await openCodeClient.sessions.list({ limit: 10001 });
-        if (!Array.isArray(sessions) || sessions.length > 10000) throw fail('native_chatgpt_siwc_sessions_unbounded');
-        for (const session of sessions.filter(row => row.model?.providerID === 'openai')) {
-          if (active() !== captured || nativeInstanceID !== instanceID || phase !== 'ready' || stopping) throw fail('native_chatgpt_siwc_settlement_changed');
-          const state = await executionHost.runtime.nativeAdmissionState({ directory: session.directory, sessionID: session.id });
-          if (state.held) continue;
-          // The native hold owns cancellation acknowledgement and descendant settlement.
-          await captured.call({ action: 'hold', sessionID: session.id }); held.push(session.id);
-        }
-        return release;
-      } catch (error) { await release(false); throw error; }
-    },
     readOpenAiCredential: (operation, credentialID) => {
       if (!integrations) throw fail('native_integration_owner_unavailable');
       return integrations.readOpenAiCredential(operation, credentialID);
@@ -885,7 +859,9 @@ export function createNativeRuntimeOwner(options) {
     persistCursorRecord:input=>{if(!cursor)throw fail('native_cursor_owner_unavailable');return cursor.persist(input);},
     withCursorExecution:(input,action)=>{if(!cursor)throw fail('native_cursor_owner_unavailable');return cursor.withExecution(input,action);},
     resolveCursorApiKey:input=>{if(!cursor)throw fail('native_cursor_owner_unavailable');return cursor.resolveApiKey(input);},
+    withManagedCursorCatalog: (input, action) => managedCursorCatalog.run(Object.freeze(structuredClone(input)), action),
     withCursorReadOnly:async(input,action)=>{
+      input?.signal?.throwIfAborted();
       if(!cursor||phase!=='ready'||stopping||!record(input)||!['title','text','catalog','verify'].includes(input.kind)
         ||!bundle.locations.some(location=>location.directory===input.directory)||await fs.realpath(input.directory)!==input.directory
         ||(input.kind==='title'?!input.sessionID:input.kind!=='text'&&input.sessionID!==undefined))throw fail('native_cursor_readonly_scope_required');
@@ -893,9 +869,13 @@ export function createNativeRuntimeOwner(options) {
       const session=input.sessionID?await openCodeClient.sessions.get(input.sessionID,{directory:input.directory}):undefined;
       if(session&&(session.directory!==input.directory||session.time?.archived||session.revert||session.model?.providerID!=='cursor-acp'))throw fail('native_cursor_readonly_scope_required');
       if(input.kind==='title'&&input.modelID&&(session.model?.id!==input.modelID||(session.model?.variant??undefined)!==input.variant))throw fail('native_title_selection_changed');
-      const reauthorize=input.kind==='title' ? await authorization.captureTitleHelperAuthorization(session) : await authorization.captureWebAuthorization({operation:'cursor.readonly',sessionID:input.sessionID,directory:input.directory},session);
+      const catalogScope=managedCursorCatalog.getStore();
+      if(input.kind==='catalog'&&catalogScope&&catalogScope.directory!==input.directory)throw fail('native_cursor_catalog_scope_invalid');
+      const catalogAuthorization=input.kind==='catalog' ? await nativeOwner.captureManagedCursorCatalogAuthorization(catalogScope ?? input) : null;
+      const reauthorize=catalogAuthorization ?? (input.kind==='title' ? await authorization.captureTitleHelperAuthorization(session) : await authorization.captureWebAuthorization({operation:'cursor.readonly',sessionID:input.sessionID,directory:input.directory},session));
       const initial=session?await executionHost.runtime.nativeAdmissionState({directory:input.directory,sessionID:input.sessionID}):{revision:0,held:false,reverting:false};
       const recheck=async()=>{
+        input.signal?.throwIfAborted();
         if(phase!=='ready'||stopping||child!==target||cursor!==selectedCursor)throw fail('native_cursor_owner_expired');
         await reauthorize();
         if(session){
@@ -903,7 +883,7 @@ export function createNativeRuntimeOwner(options) {
           if(current.directory!==input.directory||current.time?.archived||current.revert||current.model?.providerID!=='cursor-acp'
             ||JSON.stringify(current.model)!==JSON.stringify(session.model)||current.agent!==session.agent||state.held||state.reverting||state.revision!==initial.revision)throw fail('native_cursor_scope_revoked');
         }
-        await reauthorize();if(phase!=='ready'||stopping||child!==target||cursor!==selectedCursor)throw fail('native_cursor_owner_expired');
+        await reauthorize();input.signal?.throwIfAborted();if(phase!=='ready'||stopping||child!==target||cursor!==selectedCursor)throw fail('native_cursor_owner_expired');
       };
       const scope={kind:input.kind,directory:input.directory,...input.sessionID?{sessionID:input.sessionID}:{}};
       return selectedCursor.withReadOnly(scope,{revision:initial.revision,recheck},action);

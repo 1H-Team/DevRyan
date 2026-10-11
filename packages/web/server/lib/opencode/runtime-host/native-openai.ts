@@ -1,36 +1,27 @@
-import crypto from 'node:crypto';
-import openAiPlugin from '../../../default-config/plugins/devryan-openai-oauth.mjs';
 import { Credential } from '@opencode/core/credential';
 import { Integration } from '@opencode/core/integration';
 import type { Location } from '@opencode/core/location';
 import { Location as NativeLocation } from '@opencode/core/location';
 import type { PluginHooks } from '@opencode/core/plugin/hooks';
 import { Context, Effect, Logger, Option, Schema } from 'effect';
-import { CredentialAuthorizationRef, CredentialMutationReauthorizeRef, type WithCredentialMutation, type CredentialMutationBinding } from './credential-mutation-contract.js';
-import type { NativeOpenAiAttempt, NativeOpenAiSelected } from './native-openai-auth.js';
+import { CredentialAuthorizationRef, CredentialMutationReauthorizeRef, CredentialResolutionScopeRef, type WithCredentialMutation, type WithCredentialResolution, type CredentialResolutionBinding, type CredentialMutationBinding } from './credential-mutation-contract.js';
+import type { NativeOpenAiSelected } from './native-openai-auth.js';
 import { HostRefusal, refuseHost } from './host-refusal.js';
+import { credentialMutationFingerprint as fingerprint } from './native-credential-mutation-owner.js';
+import { RegistrationOriginRef, type RegistrationOrigin } from './registration-origin.js';
+import type { ProviderCredentialLocation } from './controller-provider-credentials.js';
 import { OperationPermitRef, requestPermit, type OperationPermit } from './native-admission-contract.js';
 
-const siwcPolicy = openAiPlugin.siwcPolicy;
-const methods = new Set(['chatgpt-siwc']);
+const methods = new Set(['chatgpt-token-sharing', 'chatgpt-browser']);
+const retired = new Set(['chatgpt-siwc', 'chatgpt-headless']);
 const openaiID = Schema.decodeUnknownSync(Integration.ID)('openai');
-const siwcMethod = Schema.decodeUnknownSync(Integration.OAuthMethod)({ id: 'chatgpt-siwc', type: 'oauth', label: 'Sign in with ChatGPT' });
 const projectCatalog = (info: Integration.Info): Integration.Info => info.id !== openaiID ? info : {
-  ...info,
-  methods: [...info.methods.filter(method => method.type !== 'oauth'
-    || !['chatgpt-siwc', 'chatgpt-token-sharing', 'chatgpt-browser', 'chatgpt-headless'].includes(method.id)), siwcMethod],
+  ...info, methods: info.methods.filter(method => method.type !== 'oauth' || method.id === 'chatgpt-browser'),
 };
-function ordered(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(ordered);
-  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => [key, ordered(item)]));
-  return value;
-}
-const fingerprint = (value: unknown) => crypto.createHash('sha256').update(JSON.stringify(ordered(value))).digest('hex');
 const deny = (code = 'native_openai_owner_unavailable') => refuseHost(new HostRefusal(code, 503, 'provider.openai'));
 export type NativeOpenAiKind = 'primary'|'compaction'|'title'|'generate';
 interface PhysicalIdentity { readonly sessionID: string; readonly model: { readonly providerID: string }; readonly kind: NativeOpenAiKind }
 interface HttpAttempt extends PhysicalIdentity { request: Request }
-interface ResponseAttempt extends HttpAttempt { response: Response }
 interface HandshakeAttempt extends PhysicalIdentity { url: string; headers: Record<string, string> }
 interface SendAttempt extends PhysicalIdentity { frame: string }
 function physical(value: unknown): value is PhysicalIdentity {
@@ -40,24 +31,19 @@ function physical(value: unknown): value is PhysicalIdentity {
     && 'providerID' in value.model && typeof value.model.providerID === 'string';
 }
 function http(value: unknown): value is HttpAttempt { return physical(value) && 'request' in value && value.request instanceof Request; }
-function response(value: unknown): value is ResponseAttempt { return http(value) && 'response' in value && value.response instanceof Response; }
 function handshake(value: unknown): value is HandshakeAttempt {
   return physical(value) && 'url' in value && typeof value.url === 'string' && 'headers' in value
     && typeof value.headers === 'object' && value.headers !== null && !Array.isArray(value.headers)
     && Object.values(value.headers).every(item => typeof item === 'string');
 }
 function send(value: unknown): value is SendAttempt { return physical(value) && 'frame' in value && typeof value.frame === 'string'; }
-function responsesURL(input: string, websocket: boolean): string | undefined {
-  // Sign in with ChatGPT plan usage uses the public Responses API only.
-  // WebSockets are unsupported for this path; Codex chatgpt.com rewrites are retired.
+function responsesURL(input: string, websocket: boolean, methodID: string): string | undefined {
   if (websocket) return undefined;
   const url = new URL(input);
   if (url.username || url.password || url.protocol !== 'https:') return undefined;
-  if (url.hostname === 'chatgpt.com' && url.port === '' && url.pathname === '/backend-api/codex/responses') {
-    url.hostname = 'api.openai.com';
-    url.pathname = '/v1/responses';
-  }
-  if (url.hostname !== 'api.openai.com' || url.port !== '' || url.pathname !== '/v1/responses' || url.search || url.hash) return undefined;
+  const legacy = methodID === 'chatgpt-browser';
+  if (url.hostname !== (legacy ? 'chatgpt.com' : 'api.openai.com') || url.port !== ''
+    || url.pathname !== (legacy ? '/backend-api/codex/responses' : '/v1/responses') || url.search || url.hash) return undefined;
   return url.href;
 }
 
@@ -70,15 +56,22 @@ export interface NativeOpenAiOptions {
   isBound(): boolean;
   isExecutionReady(): boolean;
   assertAttempt(input: NativeOpenAiPhysicalAttempt): Effect.Effect<void>;
-  access(input: NativeOpenAiPhysicalAttempt): Promise<NativeOpenAiAttempt | undefined>;
+  withCredentialResolution: WithCredentialResolution;
+  captureLocation(directory: string): ProviderCredentialLocation;
+  assertResolution(binding: CredentialResolutionBinding): Effect.Effect<void>;
+  reviewedNativeProviderOrigin?: RegistrationOrigin;
+  reviewedNativeCodexOrigin?: RegistrationOrigin;
   withCredentialMutation: WithCredentialMutation;
   captureOAuthGrant(input: { readonly directory: string; readonly controllerInstanceID: string; readonly integrationID: 'openai'; readonly methodID: string }): Effect.Effect<{ readonly authorizationID: string; readonly reauthorize: Effect.Effect<void> }>;
 }
 
-/** Captured services perform CAS; only the Node coordinator owns refresh. */
+/** OpenCode owns OAuth and transport; the host owns admission and serialized commits. */
 export function createNativeOpenAi(options: NativeOpenAiOptions) {
   let credentials: Credential.Interface | undefined;
-  const siwcRequests = new WeakSet<Request>();
+  interface ResolutionCommit { readonly original: Credential.Info; readonly reauthorize: Effect.Effect<void>; readonly assertSelected: Effect.Effect<void>; readonly assertCurrent: () => void; active: boolean; committed: boolean; result?: Credential.OAuth }
+  const Commit = Context.Reference<ResolutionCommit | undefined>('DevRyan/OpenAiCredentialCommit', { defaultValue: () => undefined });
+  const pendingResolutions = new Set<{ record: Credential.Info }>();
+  const selections = new WeakMap<OperationPermit, { readonly acquisition: Acquisition; readonly record: Credential.Info }>();
   interface Acquisition { readonly inner: Integration.Interface; readonly location: Location.Interface; readonly controllerInstanceID: string; closed: boolean; readonly attempts: Map<Integration.AttemptID, OAuthScope> }
   interface OAuthScope { readonly acquisition: Acquisition; readonly methodID: Integration.MethodID; readonly grant: { readonly authorizationID: string; readonly reauthorize: Effect.Effect<void> } }
   const OAuthAuthorization = Context.Reference<OAuthScope | undefined>('DevRyan/OpenAiOAuthAuthorization', { defaultValue: () => undefined });
@@ -124,7 +117,7 @@ export function createNativeOpenAi(options: NativeOpenAiOptions) {
     if (oauth) { yield* oauth.grant.reauthorize; requireCurrent(acquisition); }
     if (!store) return yield* deny();
     if (value.type === 'oauth' && !methods.has(value.methodID)
-      && !(operation === 'remove' && ['chatgpt-browser', 'chatgpt-headless'].includes(value.methodID))) return yield* deny('native_openai_method_unsupported');
+      && !(operation === 'remove' && retired.has(value.methodID))) return yield* deny('native_openai_method_unsupported');
     const original = record ? structuredClone(record) : undefined;
     const binding: CredentialMutationBinding = { kind: 'openai', directory: actual.directory, controllerInstanceID,
       integrationID: 'openai', operation, credentialID: original?.id,
@@ -153,6 +146,15 @@ export function createNativeOpenAi(options: NativeOpenAiOptions) {
       action: Effect.Effect<A, E, R>, requestedValue?: Credential.Value): Effect.Effect<A, E, R> => Effect.gen(function* () {
       const record = yield* inner.get(id);
       if (!record || record.integrationID !== openaiID) return yield* action;
+      const commit = yield* Commit;
+      if (commit) {
+        if (!commit.active || operation !== 'update' || commit.committed || !commit.result || id !== commit.original.id
+          || fingerprint(record) !== fingerprint(commit.original)
+          || fingerprint(request) !== fingerprint({ id, updates: { value: commit.result } })) return yield* deny('native_openai_resolution_commit_invalid');
+        commit.assertCurrent(); yield* commit.reauthorize; yield* commit.assertSelected; yield* commit.reauthorize; commit.assertCurrent();
+        const result = yield* action; commit.committed = true; return result;
+      }
+      if (operation === 'update' && record.value.type === 'oauth' && requestedValue) return yield* deny('native_openai_resolution_scope_required');
       return yield* mutation(operation, record, requestedValue ?? record.value, request, action);
     });
     return { ...inner,
@@ -160,7 +162,15 @@ export function createNativeOpenAi(options: NativeOpenAiOptions) {
         const copy = structuredClone(input);
         return copy.integrationID === openaiID ? mutation('create', undefined, copy.value, copy, inner.create(copy)) : inner.create(copy);
       },
-      update: (id, updates) => { const copy = structuredClone(updates); return existing('update', id, { id, updates: copy }, inner.update(id, copy), copy.value); },
+      update: (id, updates) => { const copy = structuredClone(updates); return Effect.gen(function* () {
+        const record = yield* inner.get(id);
+        // OpenCode's startup migration must not revive a retired sign-in.
+        if (record?.integrationID === openaiID && record.value.type === 'oauth' && copy.value &&
+          (copy.value.type !== 'oauth' || copy.value.methodID !== record.value.methodID)) {
+          yield* Effect.logWarning('native_openai_method_migration_ignored'); return;
+        }
+        yield* existing('update', id, { id, updates: copy }, inner.update(id, copy), copy.value);
+      }); },
       activate: id => existing('activate', id, { id }, inner.activate(id)),
       remove: id => existing('remove', id, { id }, inner.remove(id)),
     };
@@ -202,32 +212,105 @@ export function createNativeOpenAi(options: NativeOpenAiOptions) {
       const info=credentials ? yield* credentials.get(id) : undefined;
       return yield* info?.integrationID === openaiID ? live(action.pipe(Effect.provideService(NativeLocation.Service,acquisition.location))) : action;
     });
-    return { ...inner, transform: callback => live(inner.transform(callback)), reload: () => live(inner.reload()),
-      // Enrollment remains host-owned; this projection cannot register an SDK authorize callback.
+    const assertSelected = (original: Credential.Info, expected: Credential.Value = original.value) => Effect.gen(function* () {
+      const current = yield* selected(directory);
+      if (!current || current.credentialID !== original.id || fingerprint(current.value) !== fingerprint(expected)) return yield* deny('native_credential_changed');
+      requireCurrent(acquisition);
+    });
+    const transform: Integration.Interface['transform'] = callback => Effect.gen(function* () {
+      requireCurrent(acquisition); const origin = yield* RegistrationOriginRef;
+      return yield* inner.transform(editor => callback({ ...editor, method: { ...editor.method, update: implementation => {
+        if (implementation.integrationID !== openaiID || !('authorize' in implementation)) return editor.method.update(implementation);
+        if (!methods.has(implementation.method.id)) return editor.method.update({ ...implementation,
+          authorize: () => deny('native_openai_method_unsupported'),
+          ...(implementation.refresh ? { refresh: () => deny('native_openai_method_unsupported') } : {}),
+        });
+        const legacy = implementation.method.id === 'chatgpt-browser';
+        const reviewed = legacy ? options.reviewedNativeCodexOrigin : options.reviewedNativeProviderOrigin;
+        if (!origin || !reviewed || origin.kind !== 'native' || origin.id !== (legacy ? 'opencode.provider.openai' : 'opencode.provider.chatgpt')
+          || fingerprint(origin) !== fingerprint(reviewed)) throw new HostRefusal('native_openai_registration_unreviewed', 403, 'provider.openai');
+        const original = implementation, refresh = implementation.refresh;
+        editor.method.update({ ...original, authorize: answer => Effect.gen(function* () {
+          if (!legacy) return yield* deny('native_openai_method_unsupported');
+          const authorization = yield* OAuthAuthorization;
+          if (!authorization || authorization.acquisition !== acquisition) return yield* deny('native_openai_oauth_scope_required');
+          const checked = <A, E, R>(action: Effect.Effect<A, E, R>) => Effect.gen(function* () {
+            yield* authorization.grant.reauthorize; requireCurrent(acquisition);
+            const result = yield* action;
+            yield* authorization.grant.reauthorize; requireCurrent(acquisition); return result;
+          });
+          const result = yield* checked(original.authorize(answer));
+          return result.mode === 'auto' ? { ...result, callback: checked(result.callback) }
+            : { ...result, callback: code => checked(result.callback(code)) };
+        }), ...(refresh ? { refresh: value => Effect.gen(function* () {
+          const commit = yield* Commit;
+          if (!commit?.active || commit.original.value.type !== 'oauth' || fingerprint(value) !== fingerprint(commit.original.value)) return yield* deny('native_openai_resolution_scope_required');
+          yield* commit.reauthorize; commit.assertCurrent();
+          const result = yield* refresh(value);
+          if (result.methodID !== value.methodID || !result.access || !result.refresh) return yield* deny('native_openai_method_unsupported');
+          yield* commit.reauthorize; commit.assertCurrent(); commit.result = structuredClone(result); return result;
+        }) } : {}) });
+      } } }));
+    });
+    const resolve: Integration.Interface['connection']['resolve'] = connection => Effect.suspend(() => {
+      let pending: { record: Credential.Info } | undefined;
+      return Effect.gen(function* () {
+        requireCurrent(acquisition);
+        if (connection.type !== 'credential' || !credentials) return yield* inner.connection.resolve(connection);
+        const observed = yield* credentials.get(connection.id); requireCurrent(acquisition);
+        if (!observed || observed.integrationID !== openaiID || observed.value.type !== 'oauth') return yield* inner.connection.resolve(connection);
+        if (retired.has(observed.value.methodID) || observed.value.methodID === 'chatgpt-browser' && typeof observed.value.metadata?.clientID === 'string') return undefined;
+        if (!methods.has(observed.value.methodID)) return yield* deny('native_openai_method_unsupported');
+        const scope = yield* CredentialResolutionScopeRef;
+        if (!scope) return structuredClone(observed.value);
+        let original: Credential.Info = observed;
+        if (!scope.active || scope.directory !== directory || scope.permit.sessionID !== scope.sessionID) return yield* deny('native_openai_resolution_scope_required');
+        const captured = options.captureLocation(directory); captured.assertCurrent();
+        pending = { record: original }; pendingResolutions.add(pending);
+        let binding: CredentialResolutionBinding = { kind: 'openai', integrationID: 'openai', valueType: 'oauth',
+          methodID: observed.value.methodID === 'chatgpt-browser' ? 'chatgpt-browser' : 'chatgpt-token-sharing',
+          directory, controllerInstanceID: acquisition.controllerInstanceID, acquisitionID: captured.acquisitionID, configurationDigest: captured.configurationDigest,
+          sessionID: scope.sessionID, permit: scope.permit, credentialID: original.id, expectedFingerprint: fingerprint(original) };
+        const reauthorize = Effect.gen(function* () {
+          if (!scope.active) return yield* deny('native_openai_resolution_scope_required');
+          requireCurrent(acquisition); captured.assertCurrent(); yield* options.assertResolution(binding); requireCurrent(acquisition); captured.assertCurrent();
+        });
+        let expected: Credential.Value = original.value;
+        const result = yield* options.withCredentialResolution(binding, reauthorize, Effect.gen(function* () {
+          if (!pending) return yield* deny();
+          original = pending.record; expected = original.value;
+          binding = { ...binding, expectedFingerprint: fingerprint(original) };
+          yield* reauthorize; yield* assertSelected(original);
+          const commit: ResolutionCommit = { original, reauthorize, assertSelected: assertSelected(original), assertCurrent: () => { requireCurrent(acquisition); captured.assertCurrent(); }, active: true, committed: false };
+          return yield* Effect.gen(function* () {
+            const resolved = yield* inner.connection.resolve(connection).pipe(Effect.provideService(Commit, commit), Effect.timeout('60 seconds'), Effect.catchTag('TimeoutError', () => deny('native_openai_resolution_timeout')));
+            if (commit.result && !commit.committed) return yield* deny('native_openai_resolution_not_committed');
+            expected = commit.result ?? original.value;
+            yield* assertSelected(original, expected); yield* reauthorize;
+            if (commit.result) {
+              const previous = fingerprint(original), refreshed = structuredClone({ ...original, value: expected });
+              for (const waiting of pendingResolutions) if (fingerprint(waiting.record) === previous) waiting.record = refreshed;
+              original = refreshed;
+            }
+            return resolved;
+          }).pipe(Effect.ensuring(Effect.sync(() => { commit.active = false; })));
+        }));
+        yield* reauthorize;
+        selections.set(scope.permit, { acquisition, record: structuredClone({ ...original, value: expected }) });
+        return result;
+      }).pipe(Effect.ensuring(Effect.sync(() => { if (pending) pendingResolutions.delete(pending); })));
+    });
+    return { ...inner, transform, reload: () => live(inner.reload()),
       get: id => live(inner.get(id).pipe(Effect.map(info => info ? projectCatalog(info) : info))),
       list: () => live(inner.list().pipe(Effect.map(rows => rows.map(projectCatalog)))),
       connection: { ...inner.connection, key: input => input.integrationID === openaiID
         ? live(inner.connection.key(input).pipe(Effect.provideService(NativeLocation.Service,acquisition.location))) : inner.connection.key(input),
       activate: id => connectionMutation(id,inner.connection.activate(id)),
       update: (id,updates) => connectionMutation(id,inner.connection.update(id,updates)),
-      remove: id => connectionMutation(id,inner.connection.remove(id)), active: id => id === openaiID ? live(inner.connection.active(id)) : inner.connection.active(id), resolve: connection => Effect.gen(function* () {
-      requireCurrent(acquisition);
-      if (connection.type !== 'credential' || !credentials) return yield* inner.connection.resolve(connection);
-      const record = yield* credentials.get(connection.id); requireCurrent(acquisition);
-      if (!record || record.integrationID !== openaiID || record.value.type !== 'oauth') return yield* inner.connection.resolve(connection);
-      // Retired imports are unavailable catalog connections; physical attempts still require SIWC.
-      if (['chatgpt-browser', 'chatgpt-headless', 'chatgpt-token-sharing'].includes(record.value.methodID)) return undefined;
-      if (!methods.has(record.value.methodID)) return yield* deny('native_openai_method_unsupported');
-      const current = yield* selected(directory);
-      if (!current || current.credentialID !== record.id) return yield* deny('native_credential_changed');
-      // Activation and selection reload use metadata in both phases. They
-      // never refresh; every physical HTTP/WS attempt has the final hook below.
-      requireCurrent(acquisition); return structuredClone(current.value);
-
-    }) }, oauth: { ...inner.oauth,
+      remove: id => connectionMutation(id,inner.connection.remove(id)), active: id => id === openaiID ? live(inner.connection.active(id)) : inner.connection.active(id), resolve }, oauth: { ...inner.oauth,
       connect: input => input.integrationID !== openaiID ? inner.oauth.connect(input) : Effect.gen(function* () {
         requireCurrent(acquisition);
-        if (!methods.has(input.methodID)) return yield* deny('native_openai_method_unsupported');
+        if (input.methodID !== 'chatgpt-browser') return yield* deny('native_openai_method_unsupported');
         const info = yield* inner.get(openaiID); requireCurrent(acquisition);
         if (!info?.methods.some(method => method.type === 'oauth' && method.id === input.methodID)) return yield* deny('native_openai_method_unsupported');
         const grant = yield* options.captureOAuthGrant({ directory, controllerInstanceID: acquisition.controllerInstanceID, integrationID: 'openai', methodID: input.methodID });
@@ -261,41 +344,25 @@ export function createNativeOpenAi(options: NativeOpenAiOptions) {
     const attemptInput = { directory, controllerInstanceID, sessionID: input.sessionID, kind: input.kind, permit, credentialID: before?.credentialID };
     yield* options.assertAttempt(attemptInput); requireCurrent(acquisition);
     if (!before || before.value.type === 'key') return { acquisition, controllerInstanceID, selected: before, attempt: undefined };
-    if (!methods.has(before.value.methodID)) return yield* deny('native_openai_method_unsupported');
-    const attempt = yield* Effect.promise(() => options.access(attemptInput));
-    const after = yield* selected(directory); requireCurrent(acquisition);
+    if (before.value.type !== 'oauth' || !methods.has(before.value.methodID)) return yield* deny('native_openai_method_unsupported');
+    const proof = selections.get(permit);
+    if (!proof || proof.acquisition !== acquisition || proof.record.id !== before.credentialID) return yield* deny('native_openai_resolution_proof_required');
+    if (fingerprint(proof.record.value) !== fingerprint(before.value)) return yield* deny('native_credential_changed');
     yield* options.assertAttempt(attemptInput); requireCurrent(acquisition);
-    if (!attempt || identity() !== controllerInstanceID || !options.isExecutionReady()
-      || !after || after.value.type !== 'oauth' || after.credentialID !== before.credentialID
-      || after.value.methodID !== before.value.methodID || after.value.access !== attempt.accessToken
-      || after.value.expires !== attempt.expiresAt) return yield* deny('native_credential_changed');
-    return { acquisition, controllerInstanceID, selected: after, attempt };
+    if (!options.isExecutionReady()) return yield* deny('native_openai_startup_held');
+    return { acquisition, controllerInstanceID, selected: before, attempt: { accessToken: before.value.access } };
   });
   const finalize = (name: PropertyKey, event: unknown, original: { sessionID: string; kind: string; modelFingerprint: string }): Effect.Effect<void> => Effect.gen(function* () {
     if (!physical(event) || event.sessionID !== original.sessionID || event.kind !== original.kind
       || fingerprint(event.model) !== original.modelFingerprint) return yield* deny('native_openai_hook_identity_changed');
-    if (name === 'http.response') {
-      if (!response(event)) return yield* deny('native_openai_hook_invalid');
-      if (siwcRequests.has(event.request)) event.response = siwcPolicy.completedResponse(event.response);
-      return;
-    }
     const actual = yield* location();
-    let siwcBody: string | undefined;
-    if (name === 'http.request' && http(event)) {
-      const current = yield* selected(actual.directory);
-      if (current?.value.type === 'oauth' && methods.has(current.value.methodID)) {
-        if (!responsesURL(event.request.url, false)) return yield* deny('native_openai_route_unreviewed');
-        siwcBody = yield* Effect.promise(() => siwcPolicy.encodeRequest(event.request));
-      }
-    }
     const proof = yield* fresh(actual.directory, event); requireCurrent(proof.acquisition);
     if (name === 'experimental.ws.send' && send(event)) {
       const socket = sockets.get(event.sessionID);
       const key = proof.selected?.value.type === 'key' ? proof.selected : undefined;
-      const generation = proof.attempt?.generation ?? (key ? fingerprint([proof.controllerInstanceID, key.credentialID, key.value]) : undefined);
+      const generation = key ? fingerprint([proof.controllerInstanceID, key.credentialID, key.value]) : undefined;
       if (!socket || socket.directory !== actual.directory || socket.controllerInstanceID !== proof.controllerInstanceID
-        || socket.generation !== generation || socket.credentialID !== (proof.attempt?.credentialID ?? key?.credentialID)
-        || socket.accountId !== proof.attempt?.accountId) return yield* deny('native_openai_socket_changed');
+        || socket.generation !== generation || socket.credentialID !== key?.credentialID) return yield* deny('native_openai_socket_changed');
       return;
     }
     const attempt = proof.attempt;
@@ -321,53 +388,36 @@ export function createNativeOpenAi(options: NativeOpenAiOptions) {
       return yield* deny('native_openai_socket_changed');
     }
     if (name === 'http.request' && http(event)) {
-      const url = responsesURL(event.request.url, false);
+      const value = proof.selected?.value;
+      if (value?.type !== 'oauth') return yield* deny('native_openai_method_unsupported');
+      const url = responsesURL(event.request.url, false, value.methodID);
       if (!url) return yield* deny('native_openai_route_unreviewed');
       const headers = new Headers(event.request.headers);
       headers.set('authorization', `Bearer ${attempt.accessToken}`);
       headers.delete('chatgpt-account-id');
-      headers.delete('x-openai-internal-codex-residency'); headers.delete('x-opencode-title');
-      headers.delete('content-length'); headers.set('content-type', 'application/json');
-      if (siwcBody === undefined) return yield* deny('native_credential_changed');
-      event.request = new Request(url, { method: 'POST', body: siwcBody, headers, signal: event.request.signal, redirect: 'error' });
-      siwcRequests.add(event.request); return;
+      if (value.methodID === 'chatgpt-browser' && typeof value.metadata?.accountID === 'string') headers.set('chatgpt-account-id', value.metadata.accountID);
+      event.request = new Request(event.request, { headers }); return;
     }
     if (name === 'experimental.ws.handshake' && handshake(event)) {
-      // ChatGPT plan usage does not support websocket Responses.
+      // DevRyan qualifies both native OAuth flows over HTTP.
       return yield* deny('native_openai_route_unreviewed');
     }
     return yield* deny('native_openai_hook_invalid');
   });
   const decorateHooks = (inner: PluginHooks.Interface): PluginHooks.Interface => ({ ...inner,
     has: (domain, name, providerID) => domain === 'session' && (providerID === undefined || providerID === 'openai')
-      && ['http.request', 'http.response', 'experimental.ws.handshake', 'experimental.ws.send'].includes(String(name)) ? Effect.succeed(true) : inner.has(domain, name, providerID),
+      && ['http.request', 'experimental.ws.handshake', 'experimental.ws.send'].includes(String(name)) ? Effect.succeed(true) : inner.has(domain, name, providerID),
     trigger: (domain, name, event) => Effect.suspend(() => {
-      const original = domain === 'session' && ['http.request', 'http.response', 'experimental.ws.handshake', 'experimental.ws.send'].includes(String(name))
+      const original = domain === 'session' && ['http.request', 'experimental.ws.handshake', 'experimental.ws.send'].includes(String(name))
         && physical(event) && event.model.providerID === 'openai'
-        ? { sessionID: event.sessionID, kind: event.kind, modelFingerprint: fingerprint(event.model), request: name === 'http.response' && http(event) ? event.request : undefined } : undefined;
-      return inner.trigger(domain, name, event).pipe(Effect.tap(result => original?.request && (!http(result) || result.request !== original.request)
-        ? deny('native_openai_hook_identity_changed') : original ? finalize(name, result, original) : Effect.void));
+        ? { sessionID: event.sessionID, kind: event.kind, modelFingerprint: fingerprint(event.model) } : undefined;
+      return inner.trigger(domain, name, event).pipe(Effect.tap(result => original ? finalize(name, result, original) : Effect.void));
     }),
   });
   return Object.freeze({ decorateIntegration, decorateCredential, decorateHooks, closeLocation,
-    requiresOpenAiHttp: (directory: string): Effect.Effect<boolean> => selected(directory).pipe(Effect.map(current => current?.value.type === 'oauth' && current.value.methodID === 'chatgpt-siwc')),
+    requiresOpenAiHttp: (directory: string): Effect.Effect<boolean> => selected(directory).pipe(Effect.map(current => current?.value.type === 'oauth' && methods.has(current.value.methodID) && !(current.value.methodID === 'chatgpt-browser' && typeof current.value.metadata?.clientID === 'string'))),
+    isOpenAiTokenSharing: (directory: string): Effect.Effect<boolean> => selected(directory).pipe(Effect.map(current => current?.value.type === 'oauth' && current.value.methodID === 'chatgpt-token-sharing')),
     readSelectedOwned: (input: { directory: string }) => Effect.runPromise(selected(input.directory).pipe(Effect.provide(Logger.layer([], { mergeWithExisting: false })))),
-    compareAndSwapSelectedOwned: (input: { directory: string; expected: NativeOpenAiSelected; next: Credential.Value }) => Effect.runPromise(Effect.gen(function* () {
-      const store = credentials, expected = structuredClone(input.expected), next = Schema.decodeUnknownSync(Credential.Value)(input.next);
-      if (!store || expected.directory !== input.directory || expected.controllerInstanceID !== identity()
-        || expected.integrationID !== 'openai' || expected.value.type !== 'oauth' || next.type !== 'oauth'
-        || next.methodID !== expected.value.methodID || !methods.has(next.methodID)) return false;
-      const binding = (value: Credential.OAuth) => {
-        const metadata = { ...value.metadata };
-        for (const field of ['scopes', 'idToken', 'planUsage']) delete metadata[field];
-        return { ...value, access: undefined, refresh: undefined, expires: undefined, metadata };
-      };
-      if (fingerprint(binding(expected.value)) !== fingerprint(binding(next))) return false;
-      const current = yield* selected(input.directory);
-      if (!current || fingerprint(current) !== fingerprint(expected)) return false;
-      if (identity() !== expected.controllerInstanceID) return false;
-      yield* store.update(Schema.decodeUnknownSync(Credential.ID)(expected.credentialID), { value: next });
-      return identity() === expected.controllerInstanceID;
-    }).pipe(Effect.provide(Logger.layer([], { mergeWithExisting: false })))),
+    compareAndSwapSelectedOwned: async (_input: { directory: string; expected: NativeOpenAiSelected; next: Credential.Value }) => false,
   });
 }

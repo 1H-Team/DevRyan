@@ -1,5 +1,5 @@
 import { generateCursorHelperText } from './text-generation.js';
-import { assertWorkerPayloadBytes } from './worker-payload.js';
+import { assertWorkerPayloadBytes, cursorReadOnlyOptions, cursorCatalogModels } from './worker-payload.js';
 import process from 'node:process';
 import os from 'node:os';
 import path from 'node:path';
@@ -133,6 +133,7 @@ const createCrossSourceMessageDedupe = (limit = 80) => {
 const main = async () => {
   assertCursorSdkNodeCompatibility();
   const input = await readStdin();
+  const toolPolicy = cursorReadOnlyOptions(input.readOnly);
   const apiKey = trimString(input.apiKey);
   const modelID = trimString(input.modelID) || 'auto';
   const modelSelection = normalizeModelSelection(input.modelSelection, modelID);
@@ -159,7 +160,7 @@ const main = async () => {
   const agentID = trimString(input.agentID);
 
   if (!apiKey) throw new Error('Cursor SDK API key is not configured.');
-  if (!prompt) throw new Error('Cursor prompt is required.');
+  if (!prompt && input.type !== 'catalog') throw new Error('Cursor prompt is required.');
 
   // The pinned local runtime's workspace ignore mapping consumes this
   // environment field; configureRipgrepPath on the public entry does not reach it.
@@ -172,6 +173,13 @@ const main = async () => {
     if (!path.isAbsolute(home) || !process.env.TMPDIR || path.resolve(home) !== path.resolve(process.env.TMPDIR)) {
       throw new Error('Confined Cursor scratch directory is required.');
     }
+  }
+  if (input.type === 'catalog') {
+    writeEvent({ type: 'catalog-result', models: cursorCatalogModels(await cursorSdk.Cursor.models.list({ apiKey })) });
+    setTimeout(() => process.exit(0), 25).unref?.();
+    return;
+  }
+  if (process.env.DEVRYAN_EXECUTION_WORKER === '1') {
     // The default SDK path repeats the full workspace beneath HOME and can
     // exceed SQLite's path budget for a deep private lease. Keep the original
     // SQLite store in this call's existing writable scratch instead.
@@ -205,6 +213,7 @@ const main = async () => {
     ...(CURSOR_SETTING_SOURCES ? { settingSources: CURSOR_SETTING_SOURCES } : {}),
   };
   const agentOptions = {
+    ...toolPolicy,
     apiKey,
     model,
     local,

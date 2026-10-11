@@ -118,8 +118,8 @@ export function createNativeCursorOwner({instanceID,admissionOwner,runtime,contr
    grants.set(scope.sessionID,grant);
    try{await recovery?.stage({scope:grant.scope,revision:grant.revision});}
    catch(error){grants.delete(scope.sessionID);throw error;}
-   return {run:async action=>{if(grant.ran)throw fail('native_cursor_scope_used');grant.ran=true;return context.run(grant,action);},
-    close:()=>finish(grant)};
+   return Object.freeze({readOnly:captured.readOnly===true,run:async action=>{if(grant.ran)throw fail('native_cursor_scope_used');grant.ran=true;return context.run(grant,action);},
+    close:()=>finish(grant)});
   },
   async withExecution(input,action){
    const grant=current(),scope=grant.scope;

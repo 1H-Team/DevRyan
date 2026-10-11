@@ -946,10 +946,14 @@ describe('DevRyan loopback evaluation client', () => {
       'mcp__resend__*': false,
       task: false,
     });
-    assert.equal(bodies[4].tools['*'], false);
-    assert.equal(bodies[4].tools.read, true);
-    assert.equal(bodies[4].tools.oc_read, true);
-    assert.equal(bodies[4].tools.ast_grep_search, true);
+    assert.deepEqual(bodies[4].tools, {
+      '*': false,
+      read: true,
+      glob: true,
+      grep: true,
+      webfetch: true,
+      websearch: true,
+    });
     assert.equal(bodies[4].tools.ctx_search, undefined);
     assert.equal(bodies[4].tools.write, undefined);
     assert.equal(bodies[4].tools.oc_write, undefined);

@@ -25,7 +25,7 @@ const agents:Agent.Interface={get:()=>Effect.die('No agent read'),resolve:()=>Ef
 const create=(policy:(directory:string)=>Effect.Effect<boolean>)=>createControllerProviders({controllerInstanceID:'controller-policy',
  configurationSnapshot:{schema:1,revision:0,sourceStamp:'fixture',digest:'a'.repeat(64),registrationManifestDigest:'b'.repeat(64),locations:[{directory,configuration:{},skills:[],instructions:[],textReferences:[],aliases:[],activePlugins:[],compatibility:{legacy:{},agents:{},commands:{},slim:{},mcp:{}},requiredCatalogs:{agents:[],plugins:[],tools:[],models:[],skills:[],commands:[],mcp:[]}}]},
  origin:{kind:'plugin',id:'devryan.provider-compat',manifestDigest:'b'.repeat(64),capabilities:['provider']},scrubSystem:text=>text,
- integrations:{requiresOpenAiHttp:policy,discoverCopilot:()=>Effect.succeed(undefined),readCatalogSelectionOwned:async()=>{throw Error('No catalog read');}},rpc:async()=>{throw Error('No RPC');},isBound:()=>true,isExecutionReady:()=>true});
+ integrations:{requiresOpenAiHttp:policy,isOpenAiTokenSharing:()=>Effect.succeed(false),discoverCopilot:()=>Effect.succeed(undefined),readCatalogSelectionOwned:async()=>{throw Error('No catalog read');}},rpc:async()=>{throw Error('No RPC');},isBound:()=>true,isExecutionReady:()=>true});
 const run=<A,E>(effect:Effect.Effect<A,E,Location.Service|Agent.Service|Scope.Scope>)=>Effect.runPromise(Effect.scoped(effect.pipe(Effect.provideService(Location.Service,location),Effect.provideService(Agent.Service,agents))));
 
 test('prepared OpenAI requests follow current SIWC policy for every request kind and retain all other behavior',async()=>{

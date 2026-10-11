@@ -12,7 +12,6 @@ import {createCredentialMutationBridge} from './credential-mutation-bridge.js';
 import {createControllerProviderCredentials} from './controller-provider-credentials.js';
 import {createControllerCursorCredentials} from './controller-cursor-credentials.js';
 import {createNativeOpenAi} from './native-openai.js';
-import type {NativeOpenAiAttempt} from './native-openai-auth.js';
 import {createOwnedRemoteMcp,type OwnedRemoteMcpOptions} from './remote-mcp.js';
 import {reviewedMcpConfiguration} from './reviewed-mcp-configuration.js';
 import type {NativeConfigurationSnapshot} from './native-configuration-snapshot.js';
@@ -33,6 +32,8 @@ export interface ControllerIntegrationsOptions {
   readonly registrationOrigin:RegistrationOrigin;
   readonly providerCompatibilityOrigin?:RegistrationOrigin;
   readonly reviewedNativeProviderOrigin?:RegistrationOrigin;
+  readonly reviewedNativeOpenAiOrigin?:RegistrationOrigin;
+  readonly reviewedNativeCodexOrigin?:RegistrationOrigin;
   readonly reviewedConfigurationOrigins:ReadonlyMap<string,RegistrationOrigin>;
   readonly isBound:()=>boolean;readonly isExecutionReady:()=>boolean;
   readonly executeOwnedFallback:OwnedRemoteMcpOptions['executeOwnedFallback'];
@@ -74,9 +75,9 @@ export function createControllerIntegrations(options:ControllerIntegrationsOptio
   const openaiBinding=(input:{directory:string;methodID?:string}):NativeIntegrationBinding=>{
     const acquisition=acquisitions.get(input.directory),configurationDigest=digests.get(input.directory);
     if(closed||!acquisition||acquisition.closed||!configurationDigest)return refuse('native_integration_acquisition_expired');
-    if(input.methodID!==undefined&&input.methodID!=='chatgpt-siwc')refuse('native_openai_method_unsupported');
+    if(input.methodID!==undefined&&!['chatgpt-token-sharing','chatgpt-browser'].includes(input.methodID))refuse('native_openai_method_unsupported');
     return {kind:'openai',directory:input.directory,controllerInstanceID:options.controllerInstanceID,integrationID:'openai',
-      acquisitionID:acquisition.id,configurationDigest,...(input.methodID==='chatgpt-siwc'?{methodID:input.methodID}:{})};
+      acquisitionID:acquisition.id,configurationDigest,...(input.methodID==='chatgpt-token-sharing'||input.methodID==='chatgpt-browser'?{methodID:input.methodID}:{})};
   };
   const cursorBinding=(directory:string):NativeIntegrationBinding=>{
     const acquisition=acquisitions.get(directory);
@@ -97,7 +98,7 @@ export function createControllerIntegrations(options:ControllerIntegrationsOptio
   };
   const fullBinding=(binding:CredentialMutationBinding):NativeIntegrationBinding=>{
     if(binding.kind==='openai'){
-      if(binding.valueType==='oauth'&&binding.operation==='remove'&&(binding.methodID==='chatgpt-browser'||binding.methodID==='chatgpt-headless'))return {...openaiBinding({directory:binding.directory}),kind:'openai',methodID:binding.methodID};
+      if(binding.valueType==='oauth'&&binding.operation==='remove'&&(binding.methodID==='chatgpt-siwc'||binding.methodID==='chatgpt-browser'||binding.methodID==='chatgpt-headless'))return {...openaiBinding({directory:binding.directory}),kind:'openai',methodID:binding.methodID};
       return openaiBinding(binding);
     }
     if(binding.kind==='cursor')return cursorBinding(binding.directory);
@@ -130,14 +131,16 @@ export function createControllerIntegrations(options:ControllerIntegrationsOptio
     isBound:options.isBound,isExecutionReady:options.isExecutionReady,withCredentialMutation:mutation.withCredentialMutation,
     captureOAuthGrant:input=>capture(openaiBinding(input),'oauth'),
     assertAttempt:input=>Effect.promise(async()=>{await options.rpc('openai.attempt',input);}),
-    access:async input=>{
-      const value=await options.rpc('openai.access',input);
-      if(value===undefined||value===null)return undefined;
-      if(!record(value)||typeof value.credentialID!=='string'||typeof value.methodID!=='string'||typeof value.accountId!=='string'
-        ||typeof value.accessToken!=='string'||typeof value.expiresAt!=='number'||!Number.isFinite(value.expiresAt)||typeof value.generation!=='string')return refuse('native_openai_access_invalid');
-      if(value.credentialID!==input.credentialID||!['chatgpt-siwc'].includes(value.methodID))return refuse('native_openai_access_invalid');
-      return {credentialID:value.credentialID,methodID:value.methodID,accountId:value.accountId,accessToken:value.accessToken,expiresAt:value.expiresAt,generation:value.generation} satisfies NativeOpenAiAttempt;
-    }});
+    withCredentialResolution:mutation.withCredentialResolution,
+    captureLocation:directory=>{
+      const binding=openaiBinding({directory}),acquisition=acquisitions.get(directory);
+      if(!acquisition)return refuse('native_integration_acquisition_expired');
+      return {acquisitionID:binding.acquisitionID,configurationDigest:binding.configurationDigest,assertCurrent:()=>assertAcquisition(acquisition)};
+    },
+    assertResolution:binding=>Effect.promise(()=>options.rpc('provider.credential.assert',binding)).pipe(Effect.asVoid),
+    reviewedNativeProviderOrigin:options.reviewedNativeOpenAiOrigin,
+    reviewedNativeCodexOrigin:options.reviewedNativeCodexOrigin,
+  });
   const mcp=createOwnedRemoteMcp({reviewedServersByDirectory:reviewed,registrationOrigin:options.registrationOrigin,
     reviewedConfigurationOrigins:options.reviewedConfigurationOrigins,controllerInstanceID:options.controllerInstanceID,
     executeOwnedFallback:options.executeOwnedFallback,authorizeCall:options.authorizeMcpCall,withCredentialMutation:mutation.withCredentialMutation,
@@ -353,6 +356,6 @@ export function createControllerIntegrations(options:ControllerIntegrationsOptio
     transitionClaudeLifecycleOwned:(input:Parameters<ReturnType<typeof createControllerClaudeLifecycle>['transitionOwned']>[0])=>{
       if(!claudeLifecycle)return refuse('native_claude_lifecycle_owner_expired');return claudeLifecycle.transitionOwned(input);
     },
-    requiresOpenAiHttp:openai.requiresOpenAiHttp,readSelectedOwned:openai.readSelectedOwned,compareAndSwapSelectedOwned:openai.compareAndSwapSelectedOwned,
+    requiresOpenAiHttp:openai.requiresOpenAiHttp,isOpenAiTokenSharing:openai.isOpenAiTokenSharing,readSelectedOwned:openai.readSelectedOwned,compareAndSwapSelectedOwned:openai.compareAndSwapSelectedOwned,
     discoverCopilot,readCatalogSelectionOwned,readSelectedCursorKeyOwned,readCursorReadOnlyKeyOwned,commitCredentialOwned:mutation.commitOwned,credentialOwned,credentialMetadataOwned,readProviderSelectedOwned,readOpenAiCredentialOwned,close};
 }

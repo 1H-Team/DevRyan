@@ -339,7 +339,6 @@ describe('managed OpenCode executor', () => {
       read: true,
       glob: true,
       grep: true,
-      ast_grep_search: true,
       webfetch: true,
     });
   });
@@ -362,13 +361,66 @@ describe('managed OpenCode executor', () => {
       modelId: 'composer-2.5',
       readOnly: true,
     }), {});
-    await expect(operation).rejects.toThrow('does not expose enforceable per-prompt write restrictions');
+    await expect(operation).rejects.toThrow('this host cannot enforce read-only tool restrictions');
     await expect(operation).rejects.toMatchObject({
       code: 'MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED',
       statusCode: 409,
     });
     expect(created).toBe(false);
   });
+
+  for (const method of ['start', 'resume', 'retryInPlace']) {
+    for (const capability of [undefined, false, true]) {
+      test(`Cursor read-only ${method} requires the captured host capability (${capability})`, async () => {
+        const prompts = [];
+        let created = 0;
+        let reads = 0;
+        const transport = {
+          async createSession() { created += 1; return { id: 'ses_child' }; },
+          async promptSession(input) { prompts.push(input); },
+          async readSession() { reads += 1; return { id: 'ses_child' }; },
+          async readStatus() { reads += 1; return { type: 'idle' }; },
+          async readMessages() {
+            reads += 1;
+            return prompts.length ? [assistant({ info: { id: 'msg_new' } })] : [assistant({
+              info: { id: 'msg_old', error: { name: 'MessageAbortedError', data: { message: 'Stopped' } } },
+              parts: [],
+            })];
+          },
+          async abortSession() { return true; },
+          deleteSession,
+        };
+        const options = { transport, cursorReadOnly: capability, now: () => 1_000,
+          sleep: async () => undefined, idleStablePolls: 1 };
+        const executor = createManagedOpenCodeExecutor(options);
+        // A mutable composition object or task payload cannot enable a constructed executor.
+        options.cursorReadOnly = capability !== true;
+        const operation = executor[method](task({
+          providerId: 'cursor-acp', modelId: 'composer-2.5', readOnly: true,
+          cursorReadOnly: true,
+          ...(method === 'start' ? {} : { childSessionId: 'ses_child', attempt: 2 }),
+        }), {
+          async setChildSessionId() { return true; },
+          async markAccepted() { return true; },
+        });
+        if (capability !== true) {
+          await expect(operation).rejects.toMatchObject({
+            code: 'MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED', statusCode: 409,
+          });
+          expect(created).toBe(0);
+          expect(reads).toBe(0);
+          expect(prompts).toHaveLength(0);
+          return;
+        }
+        expect((await operation).status).toBe('completed');
+        expect(created).toBe(method === 'start' ? 1 : 0);
+        expect(prompts).toHaveLength(1);
+        expect(prompts[0].providerId).toBe('cursor-acp');
+        expect(prompts[0].prompt).toStartWith(`${MANAGED_READ_ONLY_PROMPT}\n\n`);
+        expect(prompts[0].tools).toMatchObject({ '*': false, task: false, read: true });
+      });
+    }
+  }
 
   test('fails closed before child creation for a historical read-only Designer task', async () => {
     let created = false;
@@ -3152,7 +3204,7 @@ describe('managed task prompt preamble', () => {
     expect(created).toBe(0);
   });
 
-  test('never carries the preamble on resume or retry-in-place continuations', async () => {
+  test.each([false, true])('never carries the preamble on resume or retry-in-place continuations (readOnly=%s)', async readOnly => {
     const prompts = [];
     let hookCalls = 0;
     const statuses = [{ type: 'idle' }, { type: 'busy' }, { type: 'idle' }];
@@ -3194,21 +3246,25 @@ describe('managed task prompt preamble', () => {
     const acceptOnly = { async markAccepted() { return true; } };
 
     const resumed = await executor.resume(
-      task({ childSessionId: 'ses_child', executionKind: 'resume' }),
+      task({ childSessionId: 'ses_child', executionKind: 'resume', readOnly }),
       acceptOnly,
     );
     expect(resumed.status).toBe('completed');
-    expect(prompts.map((entry) => stripManagedAssignment(entry.prompt))).toEqual([MANAGED_RESUME_CONTINUATION_PROMPT]);
+    const prefix = readOnly ? `${MANAGED_READ_ONLY_PROMPT}\n\n` : '';
+    expect(prompts.map((entry) => stripManagedAssignment(entry.prompt))).toEqual([`${prefix}${MANAGED_RESUME_CONTINUATION_PROMPT}`]);
 
     const retried = await executor.retryInPlace(
-      task({ childSessionId: 'ses_child', executionKind: 'retry_in_place', attempt: 2 }),
+      task({ childSessionId: 'ses_child', executionKind: 'retry_in_place', attempt: 2, readOnly }),
       acceptOnly,
     );
     expect(retried.status).toBe('completed');
     expect(prompts.map((entry) => stripManagedAssignment(entry.prompt))).toEqual([
-      MANAGED_RESUME_CONTINUATION_PROMPT,
-      `${MANAGED_RETRY_IN_PLACE_PROMPT}\n\n${MANAGED_MODEL_CONTINUATION_NOTICE_PREFIX}github-copilot/gpt-4.1 · fast to continue the previous task.`,
+      `${prefix}${MANAGED_RESUME_CONTINUATION_PROMPT}`,
+      `${prefix}${MANAGED_RETRY_IN_PLACE_PROMPT}\n\n${MANAGED_MODEL_CONTINUATION_NOTICE_PREFIX}github-copilot/gpt-4.1 · fast to continue the previous task.`,
     ]);
+    if (readOnly) for (const entry of prompts) expect(entry.tools).toEqual({
+      '*': false, read: true, glob: true, grep: true, webfetch: true, websearch: true, task: false,
+    });
     expect(hookCalls).toBe(0);
   });
 });

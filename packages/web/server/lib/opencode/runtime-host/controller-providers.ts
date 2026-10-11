@@ -19,7 +19,7 @@ export interface ControllerProvidersOptions{
  readonly configurationSnapshot:NativeConfigurationSnapshot;
  readonly origin:RegistrationOrigin;
  readonly scrubSystem:(text:string)=>string;
- readonly integrations:Pick<ReturnType<typeof createControllerIntegrations>,'discoverCopilot'|'readCatalogSelectionOwned'|'requiresOpenAiHttp'>;
+ readonly integrations:Pick<ReturnType<typeof createControllerIntegrations>,'discoverCopilot'|'readCatalogSelectionOwned'|'requiresOpenAiHttp'|'isOpenAiTokenSharing'>;
  readonly rpc:(method:string,input:unknown,options?:{readonly signal:AbortSignal})=>Promise<unknown>;
  readonly isBound:()=>boolean;readonly isExecutionReady:()=>boolean;
 }
@@ -36,7 +36,7 @@ export function createControllerProviders(options:ControllerProvidersOptions){
  if(options.origin.kind!=='plugin'||options.origin.id!=='devryan.provider-compat')fail('native_provider_origin_unreviewed');
  const locations=new Map(structuredClone(options.configurationSnapshot.locations).map(location=>[location.directory,location]));let closed=false;
  const current=(directory:string)=>{if(closed||!locations.has(directory)||!options.isBound()||!options.isExecutionReady())fail('native_provider_location_expired');};
- const compatibility=createNativeProviderCompatibility({scrubAnthropicSystem:options.scrubSystem,discoverCopilot:options.integrations.discoverCopilot,policyForDirectory:directory=>{
+ const compatibility=createNativeProviderCompatibility({isOpenAiOAuth:options.integrations.isOpenAiTokenSharing,scrubAnthropicSystem:options.scrubSystem,discoverCopilot:options.integrations.discoverCopilot,policyForDirectory:directory=>{
   const configuration=locations.get(directory)?.compatibility.legacy;
   const compaction=record(configuration?.compaction)?configuration.compaction:{};
   const reserved=compaction.reserved;

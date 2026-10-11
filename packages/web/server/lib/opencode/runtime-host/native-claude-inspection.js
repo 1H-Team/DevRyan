@@ -23,9 +23,9 @@ export async function fetchSelectedClaudeQuota({accessToken,signal,fetchImpl}){
 /** Codes meaning there is no usable Claude account to report on (usage is not listed). */
 export const isClaudeAccountAbsent=code=>['claude_credentials_missing','native_claude_external_unavailable','native_claude_update_required'].includes(code);
 const CLAUDE_UNAVAILABLE_MESSAGES={
- claude_credentials_missing:'Sign in with your existing Claude Code or Meridian account, then refresh. A dedicated connection is optional.',
- native_claude_account_ambiguous:'More than one Claude account is connected. Usage needs a single selected account.',
- claude_credentials_expired:'The Claude sign-in has expired. Reconnect the selected account in Claude Code or Meridian, then refresh. A dedicated connection is optional.',
+ claude_credentials_missing:'Sign in with Claude Code or Meridian, then refresh.',
+ native_claude_account_ambiguous:'More than one Claude account is connected. Select one.',
+ claude_credentials_expired:'Claude sign-in expired. Reconnect in Claude Code or Meridian, then refresh.',
 };
 export const unavailableClaudeInspection=(kind,code)=>kind==='status'
  ?{installed:code!=='native_claude_external_unavailable',path:null,loggedIn:false,authStatus:'unavailable',errorCode:code,error:CLAUDE_UNAVAILABLE_MESSAGES[code]??'Selected Claude account is unavailable.'}

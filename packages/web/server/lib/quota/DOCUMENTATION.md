@@ -44,35 +44,33 @@ These provider IDs are currently dispatchable via `fetchQuotaForProvider(provide
 
 ## Codex reset-bank credits
 
-Sign in with ChatGPT (`chatgpt-siwc`) stores an identity subject, not a ChatGPT
-workspace ID. Usage requests must omit `ChatGPT-Account-Id` for that method;
-legacy OAuth accounts retain their existing header behavior. Read-only checks
-on October 10 returned `401 no_matching_rule` from both usage endpoints with
-the selected unexpired SIWC token. This is an unavailable source, not zero usage.
+Native **Codex browser (legacy)** (`chatgpt-browser`) uses the selected OpenCode
+credential for chat and usage. `native-credentials.js` first reads secret-free
+metadata, then obtains the selected value through the private owner read,
+verifying directory, integration and credential ID. Only its access token and
+actual `metadata.accountID` reach the injected Codex fetcher. Usage and optional reset-bank reads reject redirects and bound time/response size.
+No refresh token is forwarded and usage never renews or persists credentials. OpenCode owns refresh
+inside the host's serialized resolution commit during provider requests.
 
-An explicit, optional usage connection runs the installed Codex app-server with
-a private DevRyan profile. It uses `account/rateLimits/read` for rate windows
-and `rateLimitResetCredits`, independently of inference credentials. Connection
-controls live at `/api/quota/codex/connection`; mutations require the local
-administrator and CSRF protections. The helper never installs Codex, imports
-another profile, runs a model, or redeems a reset. Its process lifetime is bounded
-and the feature-route owner closes it on shutdown/checkpoint.
+The fetcher reads `https://chatgpt.com/backend-api/wham/usage` and makes a bounded,
+best-effort reset-credit lookup. Results identify the selected connection with
+an opaque ID; account email is absent. Changing connections invalidates old
+figures through the existing quota store contract. A missing weekly window is
+not invented. The separate Codex app-server profile, enrollment routes and UI
+have been removed; `/api/quota/codex/connection*` no longer exists. Existing
+private usage profiles are not imported, migrated or deleted automatically.
 
-Shutdown waits for an observed process exit or close, escalating from `SIGTERM`
-to `SIGKILL` after one second. If termination is still unconfirmed after another
-second, the connection reports `CODEX_TERMINATION_UNCONFIRMED`, retains its private
-profiles, and refuses further sign-in, usage-helper launches, or disconnect
-cleanup for that owner. Restart DevRyan before reconnecting; sending a kill
-signal alone never authorizes profile deletion. Optional account email and plan
-fields are `null` when absent or empty.
+Existing `chatgpt-token-sharing` and retired OAuth rows remain metadata-only for
+usage. They return compatible `siwc_usage_unavailable` with a Codex sign-in hint,
+without a provider request. The [built-in credential investigation](../../../../../docs/audits/2026-10-11/builtin-chatgpt-usage/README.md)
+returned HTTP 401 `no_matching_rule`; the subsequent isolated native Codex
+probe passed chat and returned HTTP 200 with one recognized allowance window.
+See [the native Codex audit](../../../../../docs/audits/2026-10-11/native-codex-signin/README.md)
+for verification limits.
 
-The documented app-server inventory distinguishes null (unknown), an
-authoritative zero count, and count-only results whose individual expiry rows
-are unavailable. Displayed rows need not exhaust the authoritative count.
-Ordinary extra-usage balances never become reset-bank counts. Results carry
-their source and connection identity so changing accounts clears old figures.
-
-The Codex provider uses the OpenAI/ChatGPT OAuth entry (`openai`, `codex`, or `chatgpt`) and fetches the standard usage payload from `https://chatgpt.com/backend-api/wham/usage`. When possible it also makes a best-effort request to the private `https://chatgpt.com/backend-api/wham/rate-limit-reset-credits` endpoint to display reset-bank credits with per-credit expiry dates.
+External OpenCode's compatible OAuth entry (`openai`, `codex`, or `chatgpt`)
+continues to use the existing legacy usage fetcher. This does not establish
+support for token-sharing credentials.
 
 Codex rate-limit window labels are derived from each window's `limit_window_seconds`, not from whether OpenAI reports it as `primary_window` or `secondary_window`. A 5-hour duration maps to `5h`, a 7-day duration maps to `weekly`, and other positive durations use the shared duration-label convention. If duration metadata is absent or invalid, the compatibility fallback remains primary → `5h` and secondary → `weekly`.
 
@@ -167,11 +165,11 @@ Quota routes accept the active project directory via `x-opencode-directory` or `
 
 Under the native (v2) runtime, provider credentials live privately in the native controller; no `auth.json` exists and none is ever written or consulted. The legacy path (external OpenCode, or no native owner) is unchanged.
 
-`native-credentials.js` (`createNativeQuotaCredentials`) exposes `mode()` (`legacy` | `native-pending` | `native-ready`), `listConfigured()` and `readAuth(quotaId)`. Every lookup is scoped to the default reviewed location (`snapshot.locations[0]`), never the request's project directory, because credentials are global. Discovery uses secret-free `credentialMetadata` rows: a provider is configured when an active row of the expected type exists (OpenAI and xAI `oauth`, OpenCode Go `key`); a failed lookup is unknown rather than absent, so that provider stays listed and its fetch reports either `configured: false` or an explicit unreadable result. `readAuth` returns a legacy-shaped, in-memory entry for the existing fetchers and validates the reply (integration, directory, value type, field types, otherwise `native_credential_invalid`). OpenAI reuses `readNativeOpenAiSelection`; xAI and OpenCode Go use the owner's `readProviderSelected`. The xAI entry carries no refresh token, so the host never renews it (renewal belongs to the native runtime and a host-side rotation could not be saved). Values are never logged or retained.
+`native-credentials.js` (`createNativeQuotaCredentials`) exposes `mode()` (`legacy` | `native-pending` | `native-ready`), `listConfigured()` and `readAuth(quotaId)`. Every lookup is scoped to the default reviewed location (`snapshot.locations[0]`), never the request's project directory, because credentials are global. Discovery uses secret-free `credentialMetadata` rows: a provider is configured when an active row of the expected type exists (OpenAI and xAI `oauth`, OpenCode Go `key`); a failed lookup is unknown rather than absent, so that provider stays listed and its fetch reports either `configured: false` or an explicit unreadable result. `readAuth` returns OpenAI metadata or a legacy-shaped, in-memory entry for the other fetchers and validates the reply (integration, directory, value type, field types, otherwise `native_credential_invalid`). OpenAI uses `readNativeOpenAiMetadata` and, only for Codex browser, the selected credential read; xAI and OpenCode Go use the owner's `readProviderSelected`. The xAI entry carries no refresh token, so the host never renews it (renewal belongs to the native runtime and a host-side rotation could not be saved). Values are never logged or retained.
 
 - `GET /api/quota/providers` (native): does not resolve the Claude proxy. While the owner is `native-pending` it waits up to `runtimeReadinessHoldMs`, then answers `503 { error: 'native_runtime_not_ready', code: 'native_runtime_not_ready' }` so clients retry. The list is the registry list minus `claude`, `codex`, `xai`, `opencode-go`, plus the native-configured ids, plus `claude` when `inspectClaudeRequest({ kind: 'status' })` succeeds or fails with any code other than `claude_credentials_missing`, `native_claude_external_unavailable` or `native_claude_update_required` (`native_runtime_not_ready` returns the 503). Each lookup has its own try/catch.
-- `GET /api/quota/:providerId` (native, resolved id `codex`/`xai`/`opencode-go`): injects the credential through `readAuth` into the existing fetcher; xAI gets a no-op `writeAuth`, OpenCode Go no-op `mutateAuth`/`deleteManagedCredential` so legacy auth-file cleanup cannot run. A failed read returns 200 `ok: false, configured: true, errorCode: 'native_credential_unreadable'` ("Usage could not be read from the selected account."); a pending runtime returns the same shape with `errorCode: 'native_runtime_not_ready'`. It never falls back to `readAuthFile`.
-- Native-only outcomes (`configured: true`, `ok: false`): xAI 401 becomes `native_xai_token_renewal_pending` ("xAI usage updates after your next xAI request."); a confirmed HTTP 401 `no_matching_rule` refusal from the OpenAI usage endpoint for a `chatgpt-siwc` credential becomes `siwc_usage_unavailable`. Other authentication failures retain their own diagnosis; arbitrary message text cannot establish unsupported usage. The selected SIWC token was verified read-only on October 10: both usage endpoints returned `401 no_matching_rule`.
+- `GET /api/quota/:providerId` (native, resolved id `codex`/`xai`/`opencode-go`): reads through `readAuth`; Codex browser reaches the existing fetcher; other OpenAI OAuth returns usage unavailable immediately. xAI gets a no-op `writeAuth`, OpenCode Go no-op `mutateAuth`/`deleteManagedCredential` so legacy auth-file cleanup cannot run. A failed read returns 200 `ok: false, configured: true, errorCode: 'native_credential_unreadable'` ("Usage could not be read from the selected account."); a pending runtime returns the same shape with `errorCode: 'native_runtime_not_ready'`. It never falls back to `readAuthFile`.
+- Native-only outcomes (`configured: true`, `ok: false`): native Codex usage 401 becomes `native_openai_token_renewal_pending` (updates after the next OpenAI request); xAI 401 becomes `native_xai_token_renewal_pending` ("xAI usage updates after your next xAI request."); non-Codex OpenAI OAuth metadata returns `siwc_usage_unavailable` without accessing tokens or usage endpoints.
 - Claude (native) discovery lists `claude` when the status inspection succeeds or fails with an account-exists code (`isClaudeInspectionUnavailable` and not `isClaudeAccountAbsent`). Authorization refusals do not list it. `native_runtime_not_ready`, `native_provider_owner_expired` and `native_provider_configuration_changed` answer the pending 503 so the client retries. Claude accounts are global: when the request's project directory is not a reviewed location, discovery and `GET /api/quota/claude` repeat the read against the default location.
 - Claude (native): `unavailableClaudeInspection('quota', code)` is `configured: true` unless the code is `claude_credentials_missing`, `native_claude_external_unavailable` or `native_claude_update_required`, so an expired, ambiguous or unreadable account shows a note instead of a blank (`claude_credentials_expired` and `native_claude_account_ambiguous` have specific short messages).
 

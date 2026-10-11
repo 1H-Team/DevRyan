@@ -8,7 +8,7 @@ import { allocateRunFiles, assertFixtureReady } from './fixture.mjs';
 import { spawnSync } from 'node:child_process';
 import { ROUTING_CASES, routingFixture, routingSource, collectRoutingEvidence, collectRoutingMetrics } from './routing-cases.mjs';
 import { EVALUATION_CASE_IDS } from './config.mjs';
-import { gradeRoutingOutcome, gradeToolRequirements } from './graders.mjs';
+import { gradeInitialAssessment, gradeRoutingOutcome, gradeToolRequirements } from './graders.mjs';
 import { runSessionTurn } from './client.mjs';
 
 const repaired = (caseId, filename) => ROUTING_CASES[caseId].kind === 'typo'
@@ -19,6 +19,21 @@ const repaired = (caseId, filename) => ROUTING_CASES[caseId].kind === 'typo'
     .replace('background:green;color:white', 'background:white;color:#333')
     .replace("(needsReview ? '<span>Needs Review</span>' : '') + '<span class=\"service-type\">Procedure</span>'",
       "'<span class=\"service-type\">Procedure</span>' + (needsReview ? '<span>Needs Review</span>' : '')");
+
+const assessmentByKind = {
+  visual: 'I will inspect the service markup and styles before Designer implements the requested spacing, colors, and ordering while preserving pricing.',
+  behavior: 'I will inspect zero-price handling before Fixer changes that behavior and verifies the existing presentation remains intact.',
+  footer: 'Explorer will locate the footer population logic so we can establish the empty-list cause and propose regression checks.',
+  inventory: 'Explorers will map identity, billing, and session usage separately to establish complete counts and elevated-route ownership.',
+  external: 'Librarian will check the official Node.js documentation to establish the per-test timeout flag and its default.',
+  typo: 'I will inspect the priceLabel comment and fix its spelling while preserving code behavior.',
+};
+const initialRoot = (scenario, includeAssessment = true) => ({ sessionId: 'root', messages: [{
+  info: { role: 'assistant' }, parts: [
+    ...(includeAssessment ? [{ type: 'text', text: assessmentByKind[scenario.kind] }] : []),
+    { type: 'tool', tool: scenario.agent ? 'devryan_task' : 'edit', state: { status: 'completed' } },
+  ],
+}] });
 
 for (const [caseId, scenario] of Object.entries(ROUTING_CASES)) {
   test(`${caseId} observes a failing baseline, grades the dispatched role, and restores its fixture`, async () => {
@@ -53,7 +68,7 @@ for (const [caseId, scenario] of Object.entries(ROUTING_CASES)) {
             routingEvidence: scenario.kind === 'footer' ? { located: true, cause: true, verification: true }
               : scenario.kind === 'inventory' ? { counts: { identity: 180, billing: 180, session: 180, elevated: 135 } }
               : scenario.kind === 'external' ? { cited: true, flag: true, defaultValue: true } : null,
-            sessionTree: [{ sessionId: 'root', messages: [] }, ...(scenario.agent ? [{ sessionId: 'child', messages: [{ parts: [
+            sessionTree: [initialRoot(scenario), ...(scenario.agent ? [{ sessionId: 'child', messages: [{ parts: [
               { type: 'tool', tool: scenario.readOnly ? 'read' : 'edit', state: { status: 'completed' } }] }] }] : [])],
             terminalEvidence: { complete: true },
             tools: [...(scenario.agent ? [{ tool: 'devryan_task', status: 'completed', sessionScope: 'root' }] : []),
@@ -74,6 +89,12 @@ for (const [caseId, scenario] of Object.entries(ROUTING_CASES)) {
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 }
+
+test('routing fixture requires visible assessment before the first root dispatch', () => {
+  const scenario = ROUTING_CASES['routing-visual'];
+  assert.equal(gradeInitialAssessment({ sessionTree: [initialRoot(scenario)], rootSessionId: 'root' }).passed, true);
+  assert.equal(gradeInitialAssessment({ sessionTree: [initialRoot(scenario, false)], rootSessionId: 'root' }).passed, false);
+});
 
 const editedChild = (sessionId) => ({ sessionId, messages: [{ parts: [{ type: 'tool', tool: 'apply_patch', state: { status: 'completed' } }] }] });
 const failedChild = (sessionId) => ({ sessionId, messages: [{ parts: [{ type: 'tool', tool: 'edit', state: { status: 'error' } }] }] });

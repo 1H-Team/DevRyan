@@ -107,6 +107,48 @@ describe('managed transport backup policy', () => {
     }
   });
 
+  test('binds backup discovery to the parked task and cancellation generation', async () => {
+    const queries = [];
+    const h = createHarness({ startResult: transportFailed, autoResumeOptions: {
+      resolveBackupExecution: async (query) => { queries.push(query); return BACKUP; },
+    } });
+    try {
+      await h.scheduler.initialize();
+      const task = await h.park();
+      const generation = h.state(task.taskId).cancelGeneration;
+      await h.runDue();
+      expect(queries[0]).toEqual({
+        taskId: task.taskId, autoResumeGeneration: generation,
+        rootSessionId: task.rootSessionId, directory: task.directory,
+        agent: task.agent, providerId: task.providerId, modelId: task.modelId,
+      });
+    } finally {
+      await h.scheduler.shutdown();
+    }
+  });
+
+  for (const cursorReadOnly of [false, true]) {
+    test(`scheduler propagates read-only Cursor backup capability (${cursorReadOnly})`, async () => {
+      const h = createHarness({ startResult: transportFailed,
+        backup: { providerId: 'cursor-acp', modelId: 'composer', variant: null },
+        schedulerOptions: { cursorReadOnly },
+      });
+      try {
+        await h.scheduler.initialize();
+        const task = await h.park({ readOnly: true });
+        await h.runDue();
+        expect(h.attempts).toHaveLength(cursorReadOnly ? 1 : 0);
+        if (cursorReadOnly) {
+          expect(h.attempts[0]).toMatchObject({ providerId: 'cursor-acp', modelId: 'composer' });
+        } else {
+          expect(h.state(task.taskId)).toMatchObject({ state: 'exhausted', reason: 'backup_unavailable' });
+        }
+      } finally {
+        await h.scheduler.shutdown();
+      }
+    });
+  }
+
   test('uses one configured backup without quota probes, breakers, or reset scheduling', async () => {
     let quotaProbes = 0;
     const h = createHarness({ startResult: transportFailed, providerReset() { quotaProbes++; return null; } });

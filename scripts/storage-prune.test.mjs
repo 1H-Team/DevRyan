@@ -79,6 +79,13 @@ test('scratch is removed after 24 hours; anything newer is skipped', () => fixtu
   for (const item of manifest.entries.filter(candidate => candidate.eligible)) assert.ok(item.identity.latestMtimeMs <= now - day);
 }));
 
+test('deleted tracked source files do not block a storage audit', () => fixture(async ({ root, put, audit }) => {
+  const file = await put('scripts/retired-test.mjs', '// retired fixture');
+  await run('git', ['add', 'scripts/retired-test.mjs'], { cwd: root });
+  await rm(file);
+  await audit();
+}));
+
 test('a cited file is never selected and a cited directory keeps its light files', () => fixture(async ({ root, now, put, audit, entry }) => {
   await put('.cache/qa/run1/result.json', '{}');
   await put('.cache/qa/run1/bin/tool.node', 'binary');

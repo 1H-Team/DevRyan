@@ -5,6 +5,10 @@ import { hostDeadlineExpired } from '@openchamber/harness-runtime/lib/host-stall
 
 const failure = (code) => Object.assign(new Error(code), { code, status: 409 });
 
+/** A control lease runs no process and owns no prepared view inputs. */
+export const neverSpawnedControlLease = (lease) => lease?.preparation === 'none' && (lease.executionKind ?? 'control') === 'control';
+const unownedControlLease = (lease) => !lease.ownerID && neverSpawnedControlLease(lease);
+
 /** Polling waits never replay a tool. The preparation retains its own lifetime
  * until cancellation and all owned I/O have settled. */
 export function createExecutionPreparations({ runtime, onDiagnostic, owner, pollMs = 20_000, ownerTimeoutMs = 60_000 }) {
@@ -119,7 +123,13 @@ export function createExecutionPreparations({ runtime, onDiagnostic, owner, poll
 /** One uncertain lease must not prevent unrelated recoverable work settling. */
 export async function recoverExecutionLeases({ runtime, directory, ownerLost, onFailure }) {
   const abandoned = async (lease) => {
-    if (!lease.ownerID) throw failure('mutation_termination_unconfirmed');
+    if (!lease.ownerID) {
+      // Earlier builds reserved native control leases without an owner. Such a
+      // lease spawned nothing, and this build always records an owner, so an
+      // owner-less control lease belongs to a previous host.
+      if (unownedControlLease(lease)) return true;
+      throw failure('mutation_termination_unconfirmed');
+    }
     return ownerLost(lease);
   };
   for (const lease of await runtime.activeLeases({ directory })) {

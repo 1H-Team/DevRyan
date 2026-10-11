@@ -679,6 +679,7 @@ describe('Packaged OpenChamber agents', () => {
     expect(orchestrator?.prompt).toContain('Skill announcements are tool activity only');
     expect(orchestrator?.prompt).toContain('do not write assistant text to announce skill use');
     expect(orchestrator?.prompt).toContain('**Visible reasoning rule.**');
+    expect(orchestrator?.prompt).toContain('Before the first tool call of a new task, write a brief user-facing assessment in ordinary assistant text');
     expect(orchestrator?.prompt).toContain('Honor the DevRyan rationale-display reminder captured in the first user turn');
     expect(orchestrator?.prompt).toContain('Explain why instead of merely repeating the tool action');
     expect(orchestrator?.prompt).toContain('Never expose or claim to expose private chain-of-thought');

@@ -3,12 +3,52 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createNativeAuthorization } from './native-authorization.js';
 import { createSupabaseConnection } from '../../multi-user/supabase-connection.js';
+import { getRequestPrincipal, runWithRequestPrincipal } from '../../multi-user/request-context.js';
+import { createNativeAdmissionOwner } from './native-admission-owner.js';
+import { createOpenCodeClient } from '../opencode-client/index.js';
+import { createOpenCodeAdmission } from '../v2/admission.js';
 
 const fixture = async action => {
   const root = await fs.mkdtemp(path.resolve(import.meta.dirname, '../../../../../../.cache/v2-validation/native-auth-'));
   try { await action(root); } finally { await fs.rm(root, { recursive: true, force: true }); }
 };
 const manifest = { inputs: { nativeRegistrations: [{ id: 'opencode.tool.read', manifestDigest: 'a'.repeat(64), capabilities: ['read'] }], reviewedPlugins: [] } };
+
+test('archive retains real local owner authorization across client locks and native metadata effects', () => fixture(async directory => {
+  const connection = await createSupabaseConnection({ config: { configured: true, enabled: false, dataDirectory: directory },
+    fetchImpl: () => { throw new Error('Cloud calls forbidden'); } });
+  let owner, admission, cookie;
+  const sessionID = 'ses_archive';
+  let metadata = { unrelated: 'preserved' };
+  try {
+    await connection.rememberOwner({ id: 'enrolled-uuid', role: 'admin', scope: 'managed' }, { setHeader: (_name, values) => { cookie = values[0].split(';')[0]; } });
+    const principal = connection.authenticateLocalOwner({ socket: { remoteAddress: '127.0.0.1' }, headers: { host: 'localhost:3000', cookie } });
+    const authorization = createNativeAuthorization({ locations: [{ directory }], manifest, getRequestPrincipal,
+      captureLocalAuthorization: value => connection.captureAuthorization(value), getMultiUserRuntime: () => ({ enabled: false, connection }) });
+    const client = createOpenCodeClient({ getRuntime: () => ({ generation: 2, baseUrl: 'http://fixture.invalid', epoch: 1 }), getAdmission: () => admission,
+      getAuthHeaders: () => owner.requestHeaders(), withNativeWebOperation: (spec, action) => owner.withWebOperation(spec, action),
+      fetchImpl: async (_url, options) => {
+        expect(getRequestPrincipal()).toBe(principal);
+        if (options.method === 'PATCH') {
+          const body = JSON.parse(options.body);
+          await owner.handleRpc('native.admission.authorize', { operation: 'session.setMetadata', sessionID,
+            existingPermit: JSON.parse(options.headers['x-devryan-native-permit']), input: { sessionID, metadata: body.metadata } });
+          metadata = body.metadata;
+        }
+        return Response.json({ data: { id: sessionID, location: { directory }, metadata, time: { created: 1, updated: 1 } } });
+      } });
+    admission = createOpenCodeAdmission({ getRuntime: () => ({ generation: 2, baseUrl: 'http://fixture.invalid', epoch: 1 }) }, { client });
+    owner = createNativeAdmissionOwner({ directory, ownerID: 'fixture', runtime: { registerNativeSession: async () => {}, nativeAdmissionState: async () => ({ held: false, revision: 0 }) },
+      getSession: id => client.sessions.get(id), readSessionMetadata: async () => ({id:sessionID,directory,metadata:structuredClone(metadata)}), ...authorization });
+    await runWithRequestPrincipal(principal, async () => {
+      expect((await client.sessions.archive(sessionID, 123, { directory })).time.archived).toBe(123);
+      expect(metadata.unrelated).toBe('preserved');
+      expect((await client.sessions.archive(sessionID, 0, { directory })).time.archived).toBe(0);
+      await connection.dispose();
+      await expect(client.sessions.archive(sessionID, 456, { directory })).rejects.toMatchObject({ code: 'native_web_principal_denied' });
+    });
+  } finally { owner?.dispose(); await connection.dispose(); }
+}));
 
 test('native web scope retains the original managed caller and rechecks grants before each effect', () => fixture(async directory => {
   let current = { scope: 'managed', id: 'alice', appSessionId: 'alice-session' }, allowed = true;
@@ -159,4 +199,14 @@ test('detached title issuer retains canonical owner checks without enabling gene
  for(const operation of ['helper.generate','session.rename'])await expect(authorization.authorizeOperation({operation},session)).rejects.toMatchObject({code:'native_owned_operation_required'});
  allowed=false;await expect(check()).rejects.toMatchObject({code:'native_session_access_revoked'});
  await expect(authorization.captureTitleHelperAuthorization({...session,revert:{messageID:'msg_old'}})).rejects.toMatchObject({code:'native_title_scope_invalid'});
+}));
+
+
+test('detached managed catalog issuer verifies root owner without granting a public operation',()=>fixture(async directory=>{
+ let allowed=true;const authorization=createNativeAuthorization({locations:[{directory}],manifest,getRequestPrincipal:()=>undefined,getMultiUserRuntime:()=>({enabled:true,resolveSessionPlanContext:async()=>allowed?{directory}:null})});
+ const session={id:'ses_catalog_root',directory};
+ const check=await authorization.captureManagedCatalogAuthorization(session);await check();
+ await expect(authorization.authorizeOperation({operation:'cursor.readonly'},session)).rejects.toMatchObject({code:'native_owned_operation_required'});
+ for(const invalid of [{parentID:'ses_other'},{revert:{messageID:'msg_old'}},{time:{archived:1}}])await expect(authorization.captureManagedCatalogAuthorization({...session,...invalid})).rejects.toMatchObject({code:'native_managed_catalog_scope_invalid'});
+ allowed=false;await expect(check()).rejects.toMatchObject({code:'native_session_access_revoked'});
 }));

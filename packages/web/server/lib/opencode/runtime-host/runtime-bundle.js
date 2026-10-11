@@ -3,6 +3,9 @@ import {runNativeHarnessRelocationProcess} from './native-harness-relocation.js'
 import {isWindowsPrivateControlName} from '../../../../../harness-runtime/lib/windows-private-files.js';
 import {relocateNativeSetupProfiles} from './native-setup-profiles.js';
 import fs from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { timeStartupPhase } from '../startup-timing.js';
 import path from 'node:path';
 import { resolveSqliteDriver } from '../db-maintenance-core.js';
 import { executionArtifacts } from '../execution-artifacts.js';
@@ -26,7 +29,9 @@ const absolute = value => { if (typeof value !== 'string' || !path.isAbsolute(va
 const fileHashOwned = async file => {
   const stat = await fs.lstat(file);
   if (!stat.isFile() || stat.isSymbolicLink()) throw fail('bundle_file_invalid');
-  return sha256(await fs.readFile(file));
+  const digest = createHash('sha256');
+  for await (const bytes of createReadStream(file, { highWaterMark: 1024 * 1024 })) digest.update(bytes);
+  return digest.digest('hex');
 };
 const launch = value => {
   if (!isRecord(value) || !isRecord(value.global) || !validHash(value.artifactManifestSha256)) throw fail('bundle_descriptor_invalid');
@@ -93,7 +98,7 @@ const copyTreeOwned = async (source,target,{ignore=false,relative='',windowsOwne
   if (stat.isDirectory()) {
     await fs.mkdir(target,{recursive:true,mode:0o700});
     for (const name of (await fs.readdir(source)).sort()) await copyTreeOwned(path.join(source,name),path.join(target,name),{ignore,windowsOwner,relative:relative ? relative+'/'+name:name});
-  } else if (stat.isFile()) { await fs.mkdir(path.dirname(target),{recursive:true,mode:0o700}); await fs.copyFile(source,target); await fs.chmod(target,stat.mode & 0o777); }
+  } else if (stat.isFile()) { await fs.mkdir(path.dirname(target),{recursive:true,mode:0o700}); await fs.copyFile(source,target,fs.constants.COPYFILE_FICLONE); await fs.chmod(target,stat.mode & 0o777); }
   else throw fail('bundle_special_file_source');
 };
 // These are the existing user data sources in skills.js. Copying HOME itself
@@ -357,12 +362,14 @@ export function createRuntimeBundleStore(options) {
       try{
         const sessionIDs=db.all('SELECT id FROM session_v2').map(row=>row.id),messageIDs=db.all('SELECT id FROM session_message').map(row=>row.id);
         harness=await inspectHarness(source.launch.webDataDirectory,{sessionIDs,messageIDs},source.launch);
-        await operations.withSqliteOutput(path.join(root,'opencode','opencode.db'),file=>db.backup(file));
+        await timeStartupPhase('bundle_database_checkpoint',()=>operations.withSqliteOutput(path.join(root,'opencode','opencode.db'),file=>db.backup(file)));
       }finally{db.raw.close();}
-      await copyTree(source.launch.webDataDirectory,path.join(root,'web-data'),{ignore:true});
-      await copyTree(source.launch.webConfigDirectory,path.join(root,'config','openchamber'));
-      await copyTree(source.launch.opencodeConfigDirectory,globals.config);
-      for(const [key,directory] of Object.entries(source.launch.global))if(key!=='config')await copyTree(directory,globals[key],{ignore:true});
+      await timeStartupPhase('bundle_data_copy',async()=>{
+        await copyTree(source.launch.webDataDirectory,path.join(root,'web-data'),{ignore:true});
+        await copyTree(source.launch.webConfigDirectory,path.join(root,'config','openchamber'));
+        await copyTree(source.launch.opencodeConfigDirectory,globals.config);
+        for(const [key,directory] of Object.entries(source.launch.global))if(key!=='config')await copyTree(directory,globals[key],{ignore:true});
+      });
       let copiedHomeToken=operations.windows?await options.windowsOwner.tree(globals.home):undefined;
       // Relocate only the existing typed account profile paths, never arbitrary JSON strings.
       const profiles=path.join(source.launch.global.home,'.config','meridian','profiles.json');

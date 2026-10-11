@@ -2,10 +2,29 @@ import { describe, expect, it } from 'vitest';
 import { createNativeManagedTaskOwner } from './managed-task-owner.js';
 
 describe('native managed task owner', () => {
+  it.each(['before', 'during'])('cancels %s control preparation without submission and settles an acquired lease', async phase => {
+    const controller = new AbortController(), captures = [], calls = [];
+    const reason = Error('caller disconnected');
+    const run = createNativeManagedTaskOwner({
+      admissionOwner: { recheckExecution: async () => {}, withPermit: async (_input, action) => action(),
+        withManagedTaskCatalogInvocation: async (_input, action) => action() },
+      taskContext: { authorizeNativeTaskInvocation: async () => ({ readOnly: true }) },
+      executionHost: { nativeManagedControl: async input => {
+        captures.push(input.action);
+        if (input.action === 'begin') controller.abort(reason);
+        return { lease: { token: 'acquired' } };
+      } }, getManagedRuntime: () => ({ handleRpc: async input => { calls.push(input); } }),
+    });
+    if (phase === 'before') controller.abort(reason);
+    await expect(run({ tool: 'devryan_task', authorization: { input: { provenance: { id: 'devryan.managed-task', kind: 'plugin' } } },
+      input: { action: 'start', agent: 'explorer', prompt: 'Inspect' } }, { signal: controller.signal })).rejects.toBe(reason);
+    expect(calls).toEqual([]);
+    expect(captures).toEqual(phase === 'before' ? [] : ['begin', 'finish']);
+  });
   it('uses host Plan authority and saved execution; rejects caller model and read-only overrides', async () => {
     const calls = [];
     const captures = [];
-    const run = createNativeManagedTaskOwner({ admissionOwner: { recheckExecution: async () => {}, withPermit: async (_input, action) => action() },
+    const run = createNativeManagedTaskOwner({ admissionOwner: { withManagedTaskCatalogInvocation: async (_input, action) => action(), recheckExecution: async () => {}, withPermit: async (_input, action) => action() },
       taskContext: { authorizeNativeTaskInvocation: async () => ({ readOnly: true }) },
       executionHost: { nativeManagedControl: async input => { captures.push(input); return { lease: { token: 'control_1' } }; },
         plugin: async () => { throw Error('legacy bridge must remain closed'); } },
@@ -28,7 +47,7 @@ describe('native managed task owner', () => {
   });
   it('rechecks ownership on every bounded wait and stops on revocation', async () => {
     let checks = 0, waits = 0;
-    const run = createNativeManagedTaskOwner({ admissionOwner: { recheckExecution: async () => { if (++checks === 3) throw Error('revoked'); } },
+    const run = createNativeManagedTaskOwner({ admissionOwner: { withManagedTaskCatalogInvocation: async (_input, action) => action(), recheckExecution: async () => { if (++checks === 3) throw Error('revoked'); } },
       taskContext: { authorizeNativeTaskInvocation: async () => ({ readOnly: false }) },
       getManagedRuntime: () => ({ handleRpc: async ({ params }) => { waits += 1; expect(params.waitTimeoutMs).toBe(25_000); return { task: { status: 'running' } }; } }) });
     await expect(run({ tool: 'devryan_task', authorization: { input: { provenance: { id: 'devryan.managed-task', kind: 'plugin' } } },
@@ -37,7 +56,7 @@ describe('native managed task owner', () => {
   });
   it('serializes cancellation with holds and rejects malformed cancellation options', async () => {
     const calls = [];
-    const run = createNativeManagedTaskOwner({ admissionOwner: { recheckExecution: async () => {},
+    const run = createNativeManagedTaskOwner({ admissionOwner: { withManagedTaskCatalogInvocation: async (_input, action) => action(), recheckExecution: async () => {},
       withPermit: async (_input, action) => { calls.push('locked'); return action(); } },
     taskContext: { authorizeNativeTaskInvocation: async () => { calls.push('policy'); return { readOnly: false }; } },
     getManagedRuntime: () => ({ handleRpc: async () => { calls.push('cancel'); return { task: { status: 'aborted' } }; } }) });
@@ -56,7 +75,7 @@ const invocation = {tool:'devryan_task',authorization:{input:{provenance:{kind:'
 const terminal = (id='dvr_task_one',status='failed',preview='retained detail') => ({task:{taskId:id,rootSessionId:'ses_root',directory:'/project',status},
   resultEnvelope:{envelopeId:`dvr_result_${id}`,taskId:id,rootSessionId:'ses_root',directory:'/project',status,action:null,partial:status!=='completed',recoverablePreview:preview}});
 function adapter(handleRpc,extra={}) {
-  return createNativeManagedTaskOwner({admissionOwner:{recheckExecution:async()=>{},withPermit:async(_input,run)=>run()},
+  return createNativeManagedTaskOwner({admissionOwner:{withManagedTaskCatalogInvocation:async(_input,action)=>action(),recheckExecution:async()=>{},withPermit:async(_input,run)=>run()},
     taskContext:{authorizeNativeTaskInvocation:async()=>({readOnly:false})},getManagedRuntime:()=>({handleRpc}),...extra});
 }
 it('requires terminal collection before disposition, preserves manual recovery and follows up through the scheduler',async()=>{

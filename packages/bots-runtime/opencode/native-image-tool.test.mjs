@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createBotNativeImageTool } from '../../web/server/lib/bots/native-image-tool.mjs';
 import { prepareReviewedNativeInputs, reviewedNativeInputPlugin } from '../../../scripts/native-runtime-assets.mjs';
 
-test('Bot image wrapper retains original request, reference and versioned output while bounding cancellation and paths', async () => {
+test('API-key Bot image wrapper retains original transport and paths while refusing OAuth', async () => {
   const repository = fileURLToPath(new URL('../../../', import.meta.url));
   const parent = path.join(repository, '.cache/bot-native-tests');
   await fs.mkdir(parent, { recursive: true });
@@ -19,10 +19,10 @@ test('Bot image wrapper retains original request, reference and versioned output
   await fs.writeFile(modulePath, await build.outputs[0].text());
   const originals = await import(pathToFileURL(modulePath).href);
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aPz8AAAAASUVORK5CYII=', 'base64');
-  let account = 'fixture-one', calls = 0, blocked = false, settled = false, started;
+  let account = 'fixture-one', calls = 0, blocked = false, settled = false, started, oauth = false;
   const pending = new Promise(resolve => { started = resolve; });
   const image = await createBotNativeImageTool({ directory, originals,
-    access: async operation => { expect(operation).toBe('access'); return { accessToken: account, accountId: 'fixture-account' }; },
+    access: async operation => { expect(operation).toBe('access'); return oauth ? { valueType: 'oauth' } : { valueType: 'key', methodID: 'api-key', accessToken: account }; },
     fetchImpl: async (_url, init) => {
       calls++;
       expect(init.headers.get('Authorization')).toBe(`Bearer ${account}`);
@@ -48,6 +48,11 @@ test('Bot image wrapper retains original request, reference and versioned output
     const second = await image.execute({ ...input, images: ['pixel.png'] }, {});
     expect(second.metadata.out).toBe(path.join(directory, 'pixel-v2.png'));
     expect(await fs.readFile(first.metadata.out)).toEqual(png);
+    oauth = true;
+    await expect(image.execute({ ...input, out: 'oauth.png' }, {})).rejects.toThrow('native_image_generation_siwc_unsupported');
+    expect(calls).toBe(2);
+    expect(await fs.stat(path.join(directory, 'oauth.png')).catch(() => null)).toBeNull();
+    oauth = false;
     await expect(image.execute({ ...input, out: '../escape/denied.png' }, {})).rejects.toThrow('native_read_root_denied');
     expect(await fs.stat(path.join(root, 'escape')).catch(() => null)).toBeNull();
     await fs.symlink(root, path.join(directory, 'outside'));

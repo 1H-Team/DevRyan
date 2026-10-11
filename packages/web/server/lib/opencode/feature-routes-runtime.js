@@ -24,7 +24,6 @@ export const createFeatureRoutesRuntime = (dependencies) => {
   } = dependencies;
 
   let quotaProviders = null;
-  let quotaRuntime;
   const getQuotaProviders = async () => {
     if (!quotaProviders) {
       quotaProviders = await import('../quota/index.js');
@@ -125,9 +124,9 @@ export const createFeatureRoutesRuntime = (dependencies) => {
 
     registerOpenCodeRoutes(app, {
       openCodeClient,
+      recordDiagnostic: routeDependencies.recordDiagnostic,
       getNativeRuntimeOwner: routeDependencies.getNativeRuntimeOwner,
       getClaudeEnrollmentOwner: () => routeDependencies.getNativeRuntimeOwner?.()?.getClaudeEnrollmentOwner?.(),
-      getChatgptSiwcEnrollmentOwner: routeDependencies.getChatgptSiwcEnrollmentOwner,
       isProviderAdministrator: routeDependencies.isProviderAdministrator,
       crypto,
       clientReloadDelayMs,
@@ -330,7 +329,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       getProfile,
     });
 
-    quotaRuntime = registerQuotaRoutes(app, {
+    registerQuotaRoutes(app, {
       openchamberDataDir,
       isProviderAdministrator: routeDependencies.isProviderAdministrator,
       getNativeRuntimeOwner: routeDependencies.getNativeRuntimeOwner,
@@ -402,6 +401,6 @@ export const createFeatureRoutesRuntime = (dependencies) => {
 
   return {
     registerRoutes,
-    close: () => quotaRuntime?.close(),
+    close: () => {},
   };
 };

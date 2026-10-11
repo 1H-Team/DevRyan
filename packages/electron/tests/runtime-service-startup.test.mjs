@@ -141,6 +141,22 @@ describe('automatic background runtime startup', () => {
 });
 
 describe('transactional foreground recovery', () => {
+  test('reports recovery substeps without changing ownership order', async () => {
+    const phases = [], calls = [];
+    await recoverAppBoundRuntime({
+      connectionError: new Error('connection failed'),
+      unregister: async () => { calls.push('unregister'); return { ok: true }; },
+      waitForStopped: async () => { calls.push('stopped'); return true; },
+      acquire: async () => { calls.push('acquired'); },
+      setMode: async () => { calls.push('persisted'); },
+      release: async () => { throw new Error('unexpected release'); },
+      log: { info: (_message, detail) => phases.push(detail), warn: () => {} },
+    });
+    assert.deepEqual(calls, ['unregister', 'stopped', 'acquired', 'persisted']);
+    assert.deepEqual(phases.map(row => row.phase), ['service_unregister', 'service_wait_for_owner', 'service_acquire_app_bound', 'service_persist_app_bound']);
+    assert.ok(phases.every(row => row.outcome === 'completed' && row.elapsedMs >= 0));
+  });
+
   for (const connectionCode of ['runtime_service_descriptor_missing', 'smappservice_registration_failed', 'runtime_service_approval_required',
     'runtime_service_owner_stale', 'desktop_host_registration_failed']) {
     test(`recovers stale service mode or post-update failure: ${connectionCode}`, async () => {

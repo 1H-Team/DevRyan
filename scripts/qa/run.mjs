@@ -132,7 +132,7 @@ export async function runQa({ runtime = 'web', scenario = 'chat', generation, ar
       await waitFor('web readiness', async () => fetch(`${origin}/api/health`, { signal: AbortSignal.timeout(1000) }).then((r) => r.ok).catch(() => false), 60000);
       if (runtimeService) start(requireElectron('electron'), [...browserFlags, 'scripts/qa/isolated-host.mjs']);
       else start(requireElectron('electron'), [...browserFlags, 'scripts/qa/browser-shell.cjs'],
-        { ...env, DEVRYAN_QA_ORIGIN: scenario === 'provider-usage' ? 'about:blank' : facade.origin });
+        { ...env, DEVRYAN_QA_ORIGIN: 'about:blank' });
     } else if (runtime === 'electron') {
       start(requireElectron('electron'), [...browserFlags, ...(profilePort ? [`--inspect=${profilePort}`] : []), 'scripts/qa/isolated-host.mjs']);
     }
@@ -172,6 +172,7 @@ export async function runQa({ runtime = 'web', scenario = 'chat', generation, ar
     await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `
       if (location.protocol === 'http:' && location.hostname === '127.0.0.1') for (const principal of ['anonymous', 'local-admin']) {
         localStorage.setItem('devryan.user.' + principal + ':lastDirectory', ${JSON.stringify(workspace)});
+        localStorage.setItem('devryan.user.' + principal + ':homeDirectory', ${JSON.stringify(workspace)});
       }
     ` });
     await cdp.send('Network.enable');
@@ -206,8 +207,7 @@ export async function runQa({ runtime = 'web', scenario = 'chat', generation, ar
     }
     if (runtime === 'web') {
       const loaded = cdp.waitFor('Page.loadEventFired');
-      if (scenario === 'provider-usage') await cdp.send('Page.navigate', { url: facade.origin });
-      else await cdp.send('Page.reload');
+      await cdp.send('Page.navigate', { url: facade.origin });
       await loaded;
     }
     evidence.inspection.app = await evaluate(cdp, 'location.origin');

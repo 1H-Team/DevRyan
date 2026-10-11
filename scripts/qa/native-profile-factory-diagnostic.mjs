@@ -29,10 +29,11 @@ export async function archiveQaNativeHostLog(host, evidenceDirectory, sanitizer,
   return { file, state: 'captured', bytes: output.byteLength, sha256: hash(output), truncated: log.byteLength > maximum };
 }
 
-export async function runQaNativeFactoryDiagnostic({ artifactRoot, bun = 'bun', providers, activePluginIDs = [], additionalIntegrations = [], legacyOAuthColumns = false, legacyOpenAiBrowser = false }) {
+export async function runQaNativeFactoryDiagnostic({ artifactRoot, bun = 'bun', providers, activePluginIDs = [], additionalIntegrations = [], legacyOAuthColumns = false, legacyOpenAiBrowser = false, holdChatgptSignin = false }) {
   artifactRoot = await fs.realpath(artifactRoot);
   assert.ok(artifactRoot.startsWith(path.join(repository, '.cache') + path.sep));
-  const run = createRunRoot({ parent: path.join(repository, '.cache/v2-validation'), prefix: 'native-factory-', owner: 'scripts/qa/native-profile-factory-diagnostic.mjs' });
+  const run = createRunRoot({ parent: path.join(repository, '.cache/v2-validation'), prefix: 'native-factory-',
+    owner: 'scripts/qa/native-profile-factory-diagnostic.mjs', signals: holdChatgptSignin ? 'exit' : true });
   const root = run.dir;
   const sourceHome = path.join(root, 'mirror'), workspace = path.join(root, 'workspace'), runtimeRoot = path.join(root, 'runtime');
   for (const directory of [sourceHome, workspace, path.join(sourceHome, 'opencode'), path.join(sourceHome, 'web')]) await fs.mkdir(directory, { recursive: true, mode: 0o700 });
@@ -65,7 +66,7 @@ export async function runQaNativeFactoryDiagnostic({ artifactRoot, bun = 'bun', 
     const globals = Object.fromEntries(['home', 'config', 'data', 'state', 'cache', 'tmp'].map(key => [key, path.join(profileRoot, key)]));
     for (const value of Object.values(globals)) await fs.mkdir(value, { recursive: true, mode: 0o700 });
     const module = fileURLToPath(new URL('../opencode-v2-native/package-image-source-oauth.mjs', import.meta.url));
-    const input = { databasePath: binding.descriptor.launch.opencodeDatabasePath, directory: workspace, profileRoot, expiresIn: { A: 3600, B: 3600 }, additionalIntegrations };
+    const input = { databasePath: binding.descriptor.launch.opencodeDatabasePath, directory: workspace, profileRoot, expiresIn: { A: 3600, B: 3600 }, additionalIntegrations, retiredSeed: true };
     const script = path.join(root, 'source-acquisition.mjs');
     await fs.writeFile(script, `const {prepareSourceOpenAiFixture}=await import(${JSON.stringify(module)});process.stdout.write(JSON.stringify(await prepareSourceOpenAiFixture(${JSON.stringify(input)})));\n`, { mode: 0o600 });
     const { stdout, stderr } = await promisify(execFile)(bun, [script], { cwd: repository, timeout: 60000, maxBuffer: 1024 * 1024,
@@ -114,6 +115,9 @@ export async function runQaNativeFactoryDiagnostic({ artifactRoot, bun = 'bun', 
       reviewedPluginFile: 'reviewed-plugins.json', opencodeConfigDirectory: 'opencode', webConfigDirectory: 'web' }, bootstrapCredentials });
     report.stage = 'native_profile_preparation';
     profile = await prepareQaNativeProfile({ runtimeRoot, workspace, cell: { agent: 'builder', providerId: 'openai', modelId: modelID, variant, timeoutMs: 120000 }, nativePreparation });
+    const preparedBinding = readRuntimeBundleBinding(profile.env);
+    await fs.writeFile(path.join(preparedBinding.descriptor.launch.webDataDirectory, 'settings.json'),
+      JSON.stringify({ lastDirectory: workspace, homeDirectory: workspace }), { mode: 0o600 });
     // Recreate a legacy imported record only after source acquisition; no inference uses this fixture.
     if (legacyOpenAiBrowser) {
       const source = `import {Database} from 'bun:sqlite'; const db=new Database(process.argv[1]);
@@ -202,6 +206,22 @@ export async function runQaNativeFactoryDiagnostic({ artifactRoot, bun = 'bun', 
     report.cases.push({ id: 'actual-production-isolated-web-and-native-controller', hostPID: host.child.pid, nativePort: health.openCodePort,
       effectiveSelection: { agent: builder.name, model: builder.model, variant: builder.variant }, actualModel: openai.models[modelID].id });
     report.status = 'passed';
+    for (const route of ['/api/provider', '/api/provider/auth']) {
+      const response = await fetch(new URL(route, url), { signal: AbortSignal.timeout(10000) });
+      assert.equal(response.ok, true, 'Default UI provider location must load');
+    }
+    if (holdChatgptSignin) {
+      const auth = await fetch(new URL('/api/provider/auth' + query, url), { signal: AbortSignal.timeout(10000) });
+      assert.equal(auth.ok, true); const methods = (await auth.json()).openai;
+      assert.ok(methods.some(method => method.type === 'oauth' && method.label === 'Codex browser (legacy)'));
+      const binding = readRuntimeBundleBinding(profile.env);
+      process.stdout.write(JSON.stringify({ status: 'waiting-for-chatgpt-signin', origin: url.origin, directory: workspace,
+        journal: path.join(binding.descriptor.launch.webDataDirectory, 'harness/journal'), bundleRoot: binding.controlRoot }) + '\n');
+      await new Promise(resolve => {
+        const finish = () => { process.off('SIGINT', finish); process.off('SIGTERM', finish); resolve(); };
+        process.once('SIGINT', finish); process.once('SIGTERM', finish);
+      });
+    }
   } catch (error) {
     report.failure = { name: error.name, code: error.code ?? null, message: String(error.message).slice(0, 512) };
     if (error.stderr) {
@@ -232,9 +252,9 @@ export async function runQaNativeFactoryDiagnostic({ artifactRoot, bun = 'bun', 
   return { root, report };
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const args = process.argv.slice(2).filter(argument => argument !== '--keep-artifacts');
+  const args = process.argv.slice(2).filter(argument => argument !== '--keep-artifacts' && argument !== '--hold-chatgpt-signin');
   if (args.length !== 2 || args[0] !== '--artifact-root' || !args[1]) throw Error('Only explicit --artifact-root <repo-artifact-root> is accepted');
-  const result = await runQaNativeFactoryDiagnostic({ artifactRoot: args[1] });
+  const result = await runQaNativeFactoryDiagnostic({ artifactRoot: args[1], holdChatgptSignin: process.argv.includes('--hold-chatgpt-signin') });
   process.stdout.write(JSON.stringify({ root: result.root, status: result.report.status, failure: result.report.failure ?? null }) + '\n');
   process.exitCode = result.report.status === 'passed' ? 0 : 1;
 }

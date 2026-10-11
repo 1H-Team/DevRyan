@@ -65,8 +65,8 @@ test('browser scopes bind the actual method, path, body and current controller t
 });
 
 const openaiBinding={kind:'openai',directory:binding.directory,controllerInstanceID:binding.controllerInstanceID,
-  configurationDigest:binding.configurationDigest,acquisitionID:'openai-acquisition',integrationID:'openai',methodID:'chatgpt-siwc'};
-test.each(['create', 'activate', 'remove'])('SIWC %s retains and enforces its private guard while cloning request data', async operation => {
+  configurationDigest:binding.configurationDigest,acquisitionID:'openai-acquisition',integrationID:'openai',methodID:'chatgpt-token-sharing'};
+test.each(['create', 'activate', 'remove'])('Built-in ChatGPT %s retains and enforces its private guard while cloning request data', async operation => {
   let current = true, checks = 0, captured;
   const assertCurrent = async () => {
     checks++;
@@ -75,7 +75,7 @@ test.each(['create', 'activate', 'remove'])('SIWC %s retains and enforces its pr
   const owner = createNativeIntegrationAuthorization({ controllerIdentity: () => openaiBinding.controllerInstanceID,
     verifyBinding: async () => {}, authorizeConfiguredConnection: async () => {},
     captureWebAuthorization: async selected => { captured = selected; return () => selected.assertCurrent(); } });
-  const body = { integrationID: 'openai', value: { type: 'oauth', methodID: 'chatgpt-siwc',
+  const body = { integrationID: 'openai', value: { type: 'oauth', methodID: 'chatgpt-token-sharing',
     access: 'synthetic-access', refresh: 'synthetic-refresh', expires: 123456789, metadata: {} }, activate: false };
   const direct = { ...openaiBinding, operation, valueType: 'oauth',
     ...(operation === 'create' ? {} : { credentialID: 'credential-one', expectedFingerprint: 'c'.repeat(64) }),
@@ -117,15 +117,15 @@ test.each([null, 'guard', {}, true])('browser scopes reject a nonfunction privat
 });
 
 test('OpenAI OAuth pins original caller, controller, configuration and actual acquisition',async()=>{
-  const f=fixture();let authorizationID;
-  await f.owner.withCallerOperation({...openaiBinding,operation:'openai.oauth.start',method:'POST',path:'/api/integration/openai/connect/oauth',body:{methodID:openaiBinding.methodID}},async()=>{
-    ({authorizationID}=await f.owner.capture({binding:openaiBinding,operation:'oauth',requestAuthorization:f.owner.requestHeaders()['x-devryan-native-integration-grant']}));
+  const f=fixture(), codexBinding={...openaiBinding,methodID:'chatgpt-browser'};let authorizationID;
+  await f.owner.withCallerOperation({...codexBinding,operation:'openai.oauth.start',method:'POST',path:'/api/integration/openai/connect/oauth',body:{methodID:codexBinding.methodID}},async()=>{
+    ({authorizationID}=await f.owner.capture({binding:codexBinding,operation:'oauth',requestAuthorization:f.owner.requestHeaders()['x-devryan-native-integration-grant']}));
   });
   f.changeCaller();
-  const nativeMutation={kind:'openai',directory:openaiBinding.directory,controllerInstanceID:openaiBinding.controllerInstanceID,integrationID:'openai',methodID:openaiBinding.methodID,valueType:'oauth',operation:'create',requestedFingerprint:'b'.repeat(64)};
+  const nativeMutation={kind:'openai',directory:codexBinding.directory,controllerInstanceID:codexBinding.controllerInstanceID,integrationID:'openai',methodID:codexBinding.methodID,valueType:'oauth',operation:'create',requestedFingerprint:'b'.repeat(64)};
   const grant=await f.owner.resolveMutation({authorizationID,binding:nativeMutation});await grant.reauthorize();
   expect(new Set(f.checked)).toEqual(new Set(['original']));
-  await expect(f.owner.reauthorize({authorizationID,binding:{...openaiBinding,acquisitionID:'copied'}})).rejects.toMatchObject({code:'native_integration_grant_mismatch'});
+  await expect(f.owner.reauthorize({authorizationID,binding:{...codexBinding,acquisitionID:'copied'}})).rejects.toMatchObject({code:'native_integration_grant_mismatch'});
   await expect(f.owner.resolveMutation({authorizationID,binding:{...nativeMutation,valueType:'key',methodID:undefined}})).rejects.toMatchObject({code:'native_integration_grant_mismatch'});
   f.revoke();await expect(grant.reauthorize()).rejects.toThrow('original_caller_revoked');
 });
@@ -144,8 +144,8 @@ test.each([['openai','openai'],['cursor','cursor-acp'],['provider','xai'],['prov
   await expect(f.owner.withCallerOperation({...direct,operation:`${kind}.credential.create`,method:'POST',path:'/api/credential',body:{...request,label:'changed'}},async()=>{})).rejects.toMatchObject({code:'native_integration_scope_invalid'});
   if(kind==='cursor'){
     await expect(f.owner.capture({binding:direct,operation:'connection'})).rejects.toMatchObject({code:'native_integration_scope_invalid'});
-    const body={integrationID,value:{type:'oauth',methodID:'chatgpt-siwc'}};
-    await expect(f.owner.withCallerOperation({...direct,valueType:'oauth',methodID:'chatgpt-siwc',operation:'cursor.credential.create',method:'POST',path:'/api/credential',body,requestedFingerprint:credentialMutationFingerprint(body)},async()=>{})).rejects.toMatchObject({code:'native_integration_scope_invalid'});
+    const body={integrationID,value:{type:'oauth',methodID:'chatgpt-token-sharing'}};
+    await expect(f.owner.withCallerOperation({...direct,valueType:'oauth',methodID:'chatgpt-token-sharing',operation:'cursor.credential.create',method:'POST',path:'/api/credential',body,requestedFingerprint:credentialMutationFingerprint(body)},async()=>{})).rejects.toMatchObject({code:'native_integration_scope_invalid'});
     await expect(f.owner.withCallerOperation({...direct,operation:'openai.credential.create',method:'POST',path:'/api/credential',body:request},async()=>{})).rejects.toMatchObject({code:'native_integration_scope_invalid'});
   }
 });

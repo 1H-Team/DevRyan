@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
+import { EventEmitter } from 'node:events';
+import { PassThrough, Writable } from 'node:stream';
 import { createCursorSdkRuntime } from './index.js';
+import { createNativeCursorOwner } from '../web/server/lib/opencode/runtime-host/native-cursor-owner.js';
 
 const createRuntimeForModels = (models) => createCursorSdkRuntime({
   env: { CURSOR_API_KEY: 'test-key' },
@@ -16,7 +19,99 @@ const createRuntimeForModels = (models) => createCursorSdkRuntime({
   }),
 });
 
+test('owned catalogs retain saved effort and settle cancellation, deadline and uncertain receipts', async () => {
+  for (const mode of ['success', 'cancel', 'deadline', 'uncertain']) {
+    const timedOut = mode === 'deadline';
+    const caller = new AbortController(), receipt = Promise.withResolvers(), started = Promise.withResolvers(), stopped = Promise.withResolvers();
+    const inputs = [];
+    let cancelled = 0, completed = false;
+    const owner = createNativeCursorOwner({ instanceID: 'fixture', isReady: () => true, admissionOwner: {}, runtime: {},
+      controller: () => ({ instanceID: 'fixture', call: async ({ action, ...input }) => {
+        expect(action).toBe('cursor-readonly-key-owned'); await owner.assertReadOnlyKey(input);
+        return { key: 'synthetic-owned-key', credentialID: 'fixture-key', expectedFingerprint: 'a'.repeat(64) };
+      } }), abortAndWait: async () => {}, onStarted: async () => {} });
+    const runtime = createCursorSdkRuntime({ env: {}, nativeWarming: false, nodeBinary: process.execPath,
+      resolveApiKey: scope => owner.resolveApiKey(scope),
+      ownedReadOnly: (scope, action) => owner.withReadOnly({ kind: scope.kind, directory: scope.directory },
+        { revision: 0, recheck: async () => scope.signal?.throwIfAborted() }, action),
+      executionAdapter: { startReadOnly: request => owner.withReadOnlyExecution(async () => {
+        const child = new EventEmitter(); child.stdout = new PassThrough(); child.stderr = new PassThrough();
+        let wire = '';
+        child.stdin = new Writable({ write: (chunk, _encoding, done) => { wire += chunk; done(); },
+          final: done => {
+            inputs.push(JSON.parse(wire)); started.resolve(); done();
+            if (mode === 'success') queueMicrotask(() => {
+              child.stdout.end(`${JSON.stringify({ type: 'catalog-result', models: [{ id: 'chosen', variants: [{ params: [{ id: 'effort', value: 'high' }] }] }] })}\n`);
+              child.emit('close', 0, null);
+            });
+          } });
+        return { child, workerInput: request.inputForLease({ workingDirectory: '/confined' }), result: receipt.promise,
+          cancel: async () => {
+            cancelled++; child.stdout.end(`${JSON.stringify({ type: 'catalog-result', models: [{ id: 'late-success' }] })}\n`);
+            child.emit('close', 0, null); stopped.resolve();
+          } };
+      }) },
+    });
+    const reason = Error('caller stopped');
+    try {
+      const pending = runtime.refreshVirtualProvider({ directory: '/fixture', timeoutMs: timedOut ? 30 : 1000,
+        signal: caller.signal }).finally(() => { completed = true; });
+      void pending.catch(() => {});
+      await started.promise;
+      if (mode === 'success') {
+        expect(completed).toBe(false);
+        receipt.resolve({ confined: true, terminated: true, cancelled: false });
+        const provider = await pending;
+        expect(provider.models.chosen.variants.high.cursorSdkModel).toEqual({ id: 'chosen', params: [{ id: 'effort', value: 'high' }] });
+        expect(await runtime.validateModelSelection({ dir: '/fixture', modelID: 'chosen', variant: 'high' })).toBe(true);
+        expect(inputs).toHaveLength(1); expect(cancelled).toBe(0);
+        continue;
+      }
+      if (!timedOut) caller.abort(reason);
+      await stopped.promise;
+      expect(cancelled).toBe(1); expect(completed).toBe(false);
+      expect(inputs[0]).toMatchObject({ type: 'catalog', apiKey: 'synthetic-owned-key', directory: '/confined' });
+      expect(inputs[0]).not.toHaveProperty('signal');
+      if (mode === 'uncertain') receipt.reject(Error('termination receipt unavailable'));
+      else receipt.resolve({ confined: true, terminated: true, cancelled: true });
+      if (mode === 'uncertain') await expect(pending).rejects.toMatchObject({ nativeProcessUnsettled: true });
+      else if (timedOut) await expect(pending).rejects.toMatchObject({ code: 'native_cursor_catalog_timeout' });
+      else await expect(pending).rejects.toBe(reason);
+      expect(runtime.getCachedVirtualProvider().models['late-success']).toBeUndefined();
+      expect(runtime.getRuntimeStatus()).toMatchObject({ lastModelRefreshTimedOut: timedOut,
+        lastModelRefreshError: timedOut ? 'native_cursor_catalog_timeout' : 'cursor_model_catalog_cancelled' });
+    } finally { receipt.resolve({ confined: true, terminated: true, cancelled: true }); await runtime.dispose(); await owner.close(); }
+  }
+});
+
 describe('Cursor SDK model discovery', () => {
+  test('native public timeout after an account switch returns declared fallback without prior-account evidence', async () => {
+    let key = 'owned-account-a', readSignal;
+    const calls = [];
+    const runtime = createCursorSdkRuntime({ nativeWarming: false, modelDiscoveryTtlMs: 60_000,
+      resolveApiKey: async () => key,
+      ownedReadOnly: async (scope, action) => { readSignal = scope.signal; return action(); },
+      loadSdk: async () => ({ Cursor: { models: { list: async ({ apiKey }) => {
+        calls.push(apiKey);
+        if (apiKey === 'owned-account-b') await new Promise(resolve => readSignal.addEventListener('abort', resolve, { once: true }));
+        return [{ id: apiKey }];
+      } } } }),
+    });
+    try {
+      expect((await runtime.getVirtualProvider({ directory: '/owned/project' })).models['owned-account-a']).toBeDefined();
+      key = 'owned-account-b';
+      const provider = await runtime.refreshVirtualProvider({ directory: '/owned/project', timeoutMs: 20 });
+      expect(calls).toEqual(['owned-account-a', 'owned-account-b']);
+      expect(provider.models['owned-account-a']).toBeUndefined();
+      expect(provider.models['owned-account-b']).toBeUndefined();
+      expect(provider.models['composer-2.5']).toBeDefined();
+      expect(runtime.getCachedVirtualProvider().models).toEqual(provider.models);
+      expect(runtime.getRuntimeStatus()).toMatchObject({ modelsRefreshing: false, modelsSource: 'fallback',
+        modelCount: Object.keys(provider.models).length, lastModelRefreshTimedOut: true,
+        lastModelRefreshError: 'native_cursor_catalog_timeout' });
+    } finally { await runtime.dispose(); }
+  });
+
   test('native catalogs resolve the current account before TTL reuse and keep warming disabled', async () => {
     let key = 'owned-account-a';
     let allowed = true;
@@ -659,7 +754,7 @@ test('native prompt selections refresh account-specific SDK parameters while pre
     storageDir: directory, env: { CURSOR_API_KEY: 'forbidden-ambient' },
     readAuth: () => { throw Error('Native selection must not read legacy auth'); },
     resolveApiKey: async scope => { expect(scope.directory).toBe(directory);return key; },
-    ownedReadOnly: async (scope, action) => { expect(scope).toEqual({ kind: 'catalog', directory });scopes.push(scope);return action(); },
+    ownedReadOnly: async (scope, action) => { expect(scope).toEqual({ kind: 'catalog', directory, signal: expect.any(AbortSignal) });scopes.push(scope);return action(); },
     nativeWarming: false, modelDiscoveryTtlMs: 60_000, getWorkspaceDiff: async () => '',
     loadSdk: async () => ({
       Cursor: { models: { list: async input => { requests.push(input.apiKey);return [{
@@ -748,4 +843,51 @@ test('changing the selected account between discovery and prompt dispatch refuse
     expect(physicalCalls).toBe(0);
     expect(await runtime.getSessionMessages('ses_changed')).toEqual([]);
   } finally { await runtime.dispose(); await rm(directory, { recursive: true, force: true }); }
+});
+
+test('reasoning_effort preserves exact thinking efforts and rejects missing effort aliases', async () => {
+  const params = effort => [{ id: 'thinking', value: 'true' }, { id: 'reasoning_effort', value: effort }, { id: 'context', value: '200k' }];
+  const runtime = createRuntimeForModels([{ id: 'claude-haiku-5.5', variants: ['high', 'low', 'medium'].map(effort => ({ params: params(effort) })) }]);
+  try {
+    const record = (await runtime.getVirtualProvider()).models['claude-haiku-5.5'];
+    expect(Object.keys(record.variants).sort()).toEqual(['thinking-high', 'thinking-low', 'thinking-medium']);
+    expect(record.variants['thinking-medium'].cursorSdkModel.params).toEqual(params('medium'));
+    expect(record.variants['thinking-medium'].limit.context).toBe(200000);
+    expect(record.options.cursorSdkModel.params).toEqual(params('medium'));
+    expect(await runtime.validateModelSelection({ modelID: record.id, variant: 'medium' })).toBe(true);
+    expect(await runtime.validateModelSelection({ modelID: record.id, variant: 'thinking-medium' })).toBe(true);
+    expect(await runtime.validateModelSelection({ modelID: record.id, variant: 'thinking-unknown' })).toBe(false);
+    expect(await runtime.validateModelSelection({ modelID: record.id, variant: 'max' })).toBe(false);
+  } finally { await runtime.dispose(); }
+  const unavailable = createRuntimeForModels([{ id: 'claude-haiku-5.5', variants: [{ params: params('high') }] }]);
+  try {
+    expect(await unavailable.validateModelSelection({ modelID: 'claude-haiku-5.5', variant: 'medium' })).toBe(false);
+    expect(await unavailable.validateModelSelection({ modelID: 'claude-haiku-5.5', variant: 'thinking-medium' })).toBe(false);
+  } finally { await unavailable.dispose(); }
+});
+
+
+test('native ultra replaces reasoning_effort without adding a conflicting effort parameter', async () => {
+  const runtime = createRuntimeForModels([{ id: 'gpt-5.6-sol', variants: [{ params: [{ id: 'reasoning_effort', value: 'max' }, { id: 'context', value: '400k' }] }] }]);
+  try {
+    const record = (await runtime.getVirtualProvider()).models['gpt-5.6-sol'];
+    expect(record.variants.ultra.cursorSdkModel.params).toEqual([{ id: 'reasoning_effort', value: 'ultra' }, { id: 'context', value: '400k' }]);
+  } finally { await runtime.dispose(); }
+});
+
+
+test('selection diagnostics expose bounded codes while authority failures retain a safe refusal', async () => {
+  for (const code of ['native_web_principal_required', 'unsafe_secret:credential', `native_${'a'.repeat(81)}`]) {
+    const failures = [];
+    const runtime = createCursorSdkRuntime({ env: {}, nativeWarming: false,
+      resolveApiKey: async () => { throw new Error('Credential reads forbidden'); },
+      ownedReadOnly: async () => { throw Object.assign(new Error('Sensitive provider details'), { code }); },
+    });
+    try {
+      const pending = runtime.validateModelSelection({ modelID: 'chosen', onFailure: failure => { failures.push(failure); throw new Error('Diagnostic sink failed'); } });
+      if (code === 'native_web_principal_required') await expect(pending).rejects.toMatchObject({ code, message: code });
+      else expect(await pending).toBe(null);
+      expect(failures).toEqual([{ reason: code === 'native_web_principal_required' ? code : 'cursor_model_catalog_unavailable' }]);
+    } finally { await runtime.dispose(); }
+  }
 });

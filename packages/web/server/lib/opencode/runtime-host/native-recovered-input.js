@@ -289,6 +289,8 @@ export function createNativeRecoveredInputOwner({databasePath,primaryRuntime,cap
     },
     assertOperation(request,entry){if(!request.sessionID||!sessions.has(request.sessionID))return;
       if(['execution.interrupt','session.abort','session.stop'].includes(request.operation))return;
+      // The admission owner pins this permit to an archive-only metadata change.
+      if(entry?.archiveMetadata&&request.sessionID===entry.permit.sessionID&&['web.operation','session.setMetadata'].includes(request.operation))return;
       const grant=grants.get(request.sessionID);
       if(entry?.recoveredInputCancellation&&['inbox.cancel','recovered.input.cancel'].includes(request.operation))return;
       if(!grant||['admission.prompt','admission.command','session.prompt','session.command','session.switchAgent','session.switchModel',

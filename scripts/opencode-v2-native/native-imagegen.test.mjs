@@ -131,25 +131,17 @@ yield* sdk.agent.list({location:{directory:${JSON.stringify(directory)}}});yield
 },30_000);
 
 
-test('actual original transport uses fresh selected account for each physical request and awaits cancelled stream settlement',async()=>{
- let selected='account-one',checks=0,cancelled=false;const requests=[];
- const transport=createNativeImageGeneration({originals,withImageGeneration:async(_invocation,action)=>action({access:async()=>({methodID:'chatgpt-headless',accessToken:'fixture-'+selected,accountId:selected}),recheck:async()=>{checks++;}}),fetchImpl:async(url,init)=>{
-  const body=JSON.parse(init.body);requests.push({url,body,headers:new Headers(init.headers)});
-  if(body.input[0].content[0].text==='Cancel original parser')return new Response(new ReadableStream({start(controller){init.signal.addEventListener('abort',()=>{cancelled=true;controller.error(init.signal.reason);},{once:true});},cancel(){cancelled=true;}}));
-  return new Response(`data: ${JSON.stringify({type:'response.output_item.done',item:{type:'image_generation_call',result:png.toString('base64')}})}\n\n`);
- }});
- const args={prompt:'Original transport',quality:'high',size:'1024x1024',referenceImages:['data:image/png;base64,'+png.toString('base64')]};
- expect(await transport({token:'lease-one'},args)).toEqual({base64:png.toString('base64')});selected='account-two';
- expect(await transport({token:'lease-two'},args)).toEqual({base64:png.toString('base64')});
- expect(requests.map(row=>[row.url,row.headers.get('Authorization'),row.headers.get('ChatGPT-Account-Id')])).toEqual([
-  ['https://chatgpt.com/backend-api/codex/responses','Bearer fixture-account-one','account-one'],
-  ['https://chatgpt.com/backend-api/codex/responses','Bearer fixture-account-two','account-two'],
- ]);
- expect(requests.every(row=>row.body.model==='gpt-6-astra'&&row.body.reasoning.effort==='medium')).toBe(true);
- expect(requests[1].body.tools).toEqual([{type:'image_generation',output_format:'png',quality:'high',size:'1024x1024'}]);expect(requests[1].body.input[0].content[1].image_url).toBe(args.referenceImages[0]);
- const controller=new AbortController(),work=transport({token:'lease-cancel'},{prompt:'Cancel original parser',quality:'auto',referenceImages:[]},{signal:controller.signal});
- while(requests.length<3)await new Promise(resolve=>setTimeout(resolve,1));controller.abort(Error('fixture_cancelled'));
- await expect(work).rejects.toThrow('fixture_cancelled');expect(cancelled).toBe(true);expect(checks).toBeGreaterThan(5);
+test('original image transport refuses every OAuth method before physical traffic',async()=>{
+ for(const methodID of ['chatgpt-token-sharing','chatgpt-siwc','chatgpt-browser','chatgpt-headless']){
+  let requests=0,rechecks=0;
+  const transport=createNativeImageGeneration({originals,
+   withImageGeneration:async(_invocation,action)=>action({access:async()=>({valueType:'oauth',methodID,accessToken:'fixture-access',accountId:'fixture-account'}),recheck:async()=>{rechecks++;}}),
+   fetchImpl:async()=>{requests++;throw Error('Unexpected OAuth image request');},
+  });
+  await expect(transport({token:'fixture-lease'},{prompt:'Refused OAuth image',quality:'high',size:'1024x1024',referenceImages:[]}))
+   .rejects.toMatchObject({code:'native_image_generation_siwc_unsupported',status:403});
+  expect(requests).toBe(0);expect(rechecks).toBe(0);
+ }
 });
 
 test('explicit API-key image transport retains the original body/parser and refuses changed selection or cancelled streams',async()=>{

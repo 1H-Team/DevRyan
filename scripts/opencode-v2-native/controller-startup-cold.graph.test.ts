@@ -64,7 +64,8 @@ try{
  const fixtureDB=new FixtureDatabase(path.join(globals.data,'native.db'));
  try{
   fixtureDB.query('INSERT INTO credential (id,integration_id,label,value,active,connector_id,method_id,time_created,time_updated) VALUES (?,?,?,?,1,NULL,NULL,?,?)')
-   .run('crd_legacy_fixture','openai','Synthetic retired login',JSON.stringify({type:'oauth',methodID:'chatgpt-browser',access:'synthetic-access',refresh:'synthetic-refresh',expires:Date.now()+3600000,metadata:{accountID:'synthetic-account'}}),Date.now(),Date.now());
+   .run('crd_legacy_fixture','openai','Synthetic retired login',JSON.stringify({type:'oauth',methodID:'chatgpt-browser',access:'synthetic-access',refresh:'synthetic-refresh',expires:Date.now()+3600000,metadata:{clientID:'synthetic-client'}}),Date.now(),Date.now());
+  fixtureDB.query('INSERT INTO credential (id,integration_id,label,value,active,connector_id,method_id,time_created,time_updated) VALUES (?,?,?,?,0,NULL,NULL,?,?)').run('crd_siwc_fixture','openai','Retired SIWC',JSON.stringify({type:'oauth',methodID:'chatgpt-siwc',access:'synthetic-access',refresh:'synthetic-refresh',expires:1}),Date.now(),Date.now());
  }finally{fixtureDB.close();}
  runtime=await start();
  assert.equal(runtime.catalog.asserted,true);
@@ -93,7 +94,7 @@ try{
   if(!child.stdout||typeof child.stdout==='number'||!child.stderr||typeof child.stderr==='number')throw Error('Owned fixture pipes required');
   const [code,stdout,stderr]=await Promise.all([child.exited,new Response(child.stdout).text(),new Response(child.stderr).text()]);
   await fs.writeFile(path.join(repository,'.cache/v2-validation/controller-startup-cold-child.log'),stderr);
-  expect({code,errors:stderr.split('\n').filter(line=>line&&!/^timestamp=.* level=INFO /.test(line))}).toEqual({code:0,errors:[]});
+  expect({code,errors:stderr.split('\n').filter(line=>line&&!/^timestamp=.* level=INFO /.test(line)&&!/^timestamp=.* level=WARN .*native_openai_method_migration_ignored/.test(line))}).toEqual({code:0,errors:[]});
   expect(JSON.parse(stdout)).toEqual({catalogAsserted:true,locations:2});
   const db=new Database(path.join(root,'isolated/data/native.db'),{readonly:true});
   try{expect(db.query('SELECT COUNT(*) AS count FROM project').get()).toEqual({count:2});}finally{db.close();}

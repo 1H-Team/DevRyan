@@ -1175,7 +1175,6 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
                       {renderHighlightedText(sessionTitle, normalizedSessionSearchQuery)}
                     </span>
                   </div>
-                  {isOpening && <span role="status" className="typography-ui-label text-muted-foreground">{t('sessions.navigation.opening')}</span>}
                   {pendingPermissionCount > 0 ? (
                     <span className="inline-flex items-center gap-1 rounded bg-destructive/10 px-1 py-0.5 text-[0.7rem] text-destructive flex-shrink-0" title={t('sessions.sidebar.session.status.permissionRequired')} aria-label={t('sessions.sidebar.session.status.permissionRequired')}>
                       <RiShieldLine className="h-3 w-3" />

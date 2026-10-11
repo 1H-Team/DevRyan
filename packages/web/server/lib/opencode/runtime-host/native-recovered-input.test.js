@@ -8,6 +8,9 @@ import {verifyBundleRecoveredInputs} from './bundle-recovered-inputs.js';
 import {inspectBundleHarness} from './bundle-harness-integrity.js';
 import {nativeShellCompletionFingerprint} from './native-shell-completion.js';
 import {assertBundlePendingInput,sha256} from './bundle-migration-inventory.js';
+import {createNativeAdmissionOwner} from './native-admission-owner.js';
+import {createOpenCodeClient} from '../opencode-client/index.js';
+import {createOpenCodeAdmission} from '../v2/admission.js';
 const roots=[];afterEach(async()=>{for(const {root,db} of roots.splice(0)){db.close();await fs.rm(root,{recursive:true,force:true});}});
 async function fixture(){
  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'recovered-input-'))),file=path.join(root,'native.db');await fs.writeFile(file,'');const db=resolveSqliteDriver().open(file);roots.push({root,db});
@@ -39,6 +42,60 @@ test('initial queued crash is inspectable, fenced, explicitly same-ID adopted an
  for(const operation of ['admission.prompt','admission.command','session.compact','inbox.queue','inbox.steer','session.synthetic','execution.wake','store.claim'])expect(()=>owner.assertOperation({sessionID:f.sessionID,operation})).toThrow('native_recovered_input_fenced');
  expect(owner.assertOperation({sessionID:f.sessionID,operation:'session.abort'})).toBeUndefined();await owner.action(f.sessionID,'resume-input',f.scope(snapshot),{owner:null});expect(f.calls()).toBe(1);expect((await owner.snapshot(f.sessionID)).state).toBe('resuming');
  await expect(owner.action(f.sessionID,'resume-input',f.scope(snapshot),{owner:null})).rejects.toMatchObject({statusCode:409});const replacement=f.owner();await replacement.install('epoch2');expect((await replacement.snapshot(f.sessionID)).inputs[0].messageID).toBe(f.messageID);
+});
+test.each(['queued','promoted'])('archive preserves %s recovered input and its execution fence',async location=>{
+ const f=await fixture();
+ if(location==='promoted'){f.db.prepare('DELETE FROM session_inbox').run();f.message(f.messageID,'user',1,{text:'retained input'});}
+ const recovered=f.owner();await recovered.install('epoch');const before=await recovered.snapshot(f.sessionID);
+ let owner,admission,allowed=true,metadata={unrelated:'preserved',devryan:{custom:'preserved'}};
+ const client=createOpenCodeClient({getRuntime:()=>({generation:2,baseUrl:'http://fixture.invalid',epoch:1}),getAdmission:()=>admission,
+  getAuthHeaders:()=>owner.requestHeaders(),withNativeWebOperation:(spec,action)=>owner.withWebOperation(spec,action),
+  fetchImpl:async(_url,options)=>{
+   if(options.method==='PATCH'){
+    const body=JSON.parse(options.body),permit=JSON.parse(options.headers['x-devryan-native-permit']);
+    await expect(owner.handleRpc('native.admission.authorize',{operation:'session.setMetadata',sessionID:f.sessionID,existingPermit:permit,
+     input:{sessionID:f.sessionID,metadata:{...body.metadata,unrelated:'changed'}}})).rejects.toMatchObject({code:'native_web_payload_changed'});
+    await owner.handleRpc('native.admission.authorize',{operation:'session.setMetadata',sessionID:f.sessionID,existingPermit:permit,input:{sessionID:f.sessionID,metadata:body.metadata}});
+    await expect(owner.handleRpc('native.admission.authorize',{operation:'inbox.queue',sessionID:f.sessionID,existingPermit:permit})).rejects.toMatchObject({code:'native_recovered_input_fenced'});
+    metadata=body.metadata;
+   }
+   return Response.json({data:{id:f.sessionID,location:{directory:f.root},metadata,time:{created:1,updated:1}}});
+  }});
+ admission=createOpenCodeAdmission({getRuntime:()=>({generation:2,baseUrl:'http://fixture.invalid',epoch:1})},{client});
+ owner=createNativeAdmissionOwner({directory:f.root,ownerID:'fixture',getSession:id=>client.sessions.get(id),
+  authorizeOperation:async()=>{throw new Error('Unscoped operation forbidden');},
+  readSessionMetadata:async()=>({id:f.sessionID,directory:f.root,metadata:structuredClone(metadata)}),
+  runtime:{registerNativeSession:async()=>{},nativeAdmissionState:async()=>({held:false,revision:0})},
+  captureWebAuthorization:async()=>async()=>{if(!allowed)throw Object.assign(new Error('revoked'),{code:'revoked'});},
+  assertRecoveredInputOperation:(request,entry)=>recovered.assertOperation(request,entry)});
+ try{
+  expect((await client.sessions.archive(f.sessionID,123,{directory:f.root})).time.archived).toBe(123);
+  expect(metadata).toEqual({unrelated:'preserved',devryan:{custom:'preserved',archive:{sessionID:f.sessionID,at:123}}});
+  expect((await recovered.snapshot(f.sessionID)).inputs).toEqual(before.inputs);
+  expect((await client.sessions.archive(f.sessionID,null,{directory:f.root})).time.archived??null).toBeNull();
+  const spec={operation:'sessions.archive',method:'PATCH',path:`/api/session/${f.sessionID}`,directory:f.root};
+  await expect(owner.withWebOperation({...spec,body:{metadata:{devryan:{archive:{sessionID:f.sessionID,at:123}}}}},async()=>{})).rejects.toMatchObject({code:'native_archive_scope_invalid'});
+  await expect(owner.withWebOperation({...spec,body:{title:'renamed',metadata}},async()=>{})).rejects.toMatchObject({code:'native_archive_scope_invalid'});
+  expect(()=>recovered.assertOperation({sessionID:f.sessionID,operation:'session.setMetadata'})).toThrow('native_recovered_input_fenced');
+  expect(()=>recovered.assertOperation({sessionID:f.sessionID,operation:'web.operation'})).toThrow('native_recovered_input_fenced');
+  expect(()=>recovered.assertOperation({sessionID:f.sessionID,operation:'execution.wake'})).toThrow('native_recovered_input_fenced');
+  allowed=false;await expect(client.sessions.archive(f.sessionID,456,{directory:f.root})).rejects.toMatchObject({code:'revoked'});
+  expect((await recovered.snapshot(f.sessionID)).inputs).toEqual(before.inputs);
+ }finally{owner.dispose();}
+});
+test('ordinary resumed operations acquire their recovered grant before checking the admission entry',async()=>{
+ const f=await fixture(),recovered=f.owner();await recovered.install('epoch');
+ const owner=createNativeAdmissionOwner({directory:f.root,ownerID:'fixture',getSession:async()=>({id:f.sessionID,directory:f.root}),
+  authorizeOperation:async()=>{},runtime:{registerNativeSession:async()=>{},nativeAdmissionState:async()=>({held:false,revision:0})},
+  captureWebAuthorization:async()=>async()=>{},assertRecoveredInputOperation:(request,entry)=>recovered.assertOperation(request,entry)});
+ try{
+  await recovered.automatic({sessionID:f.sessionID,messageID:f.messageID,expectedItem:{type:'user',delivery:'queue',payload:{text:'retained input'}}},f.record(),async()=>{},async()=>{
+   await owner.withWebOperation({operation:'sessions.rename',method:'PATCH',path:`/api/session/${f.sessionID}`,directory:f.root,body:{title:'Resumed input'}},async()=>{
+    const permit=JSON.parse(owner.requestHeaders()['x-devryan-native-permit']);
+    await owner.handleRpc('native.admission.authorize',{operation:'session.rename',sessionID:f.sessionID,existingPermit:permit,input:{sessionID:f.sessionID,title:'Resumed input'}});
+   });
+  });
+ }finally{owner.dispose();}
 });
 test('details project retained skill and file attachments to the renderer contract',async()=>{
  const f=await fixture(),hashed='devryan-539ddc37a961e3aceadfc7bbb540b8e7';

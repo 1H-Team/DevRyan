@@ -248,10 +248,10 @@ export const normalizeOpenAIOAuthGpt56Models = (models) => {
 };
 
 // Shared data-only policy for the legacy plugin and the owned native adapter.
-export const normalizeOpenAIModels = (models, { oauth = false, compactionReserved } = {}) => {
+export const normalizeOpenAIModels = (models, { oauth = false, chatgpt = false, compactionReserved } = {}) => {
   const supported = removeNoneReasoningVariants(models);
   const oauthModels = oauth ? normalizeOpenAIOAuthGpt56Models(supported) : supported;
-  const limited = oauth ? normalizeCodexContextLimits(oauthModels, compactionReserved) : oauthModels;
+  const limited = oauth || chatgpt ? normalizeCodexContextLimits(oauthModels, compactionReserved) : oauthModels;
   return normalizeReasoningSummaries(limited);
 };
 

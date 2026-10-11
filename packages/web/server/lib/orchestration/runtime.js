@@ -158,6 +158,11 @@ const isDependencyUnavailable = (error) => error?.name === 'TimeoutError' || err
 
 const normalizeRuntimeError = (error) => {
   if (!error || typeof error !== 'object') return error;
+  if (error.nativeProcessUnsettled) return Object.assign(createRuntimeError('native_process_settlement_unconfirmed',
+    'Native execution termination could not be confirmed', 503), { cause: error, nativeProcessUnsettled: true });
+  if (typeof error.code === 'string' && /^native_[a-z_]{1,80}$/.test(error.code)) return Object.assign(
+    createRuntimeError(error.code, error.code, Number.isSafeInteger(error.statusCode) ? error.statusCode
+      : ERROR_STATUS_BY_CODE[error.code] ?? (Number.isSafeInteger(error.status) ? error.status : 503)), { cause: error });
   if (typeof error.code === 'string' && error.code) {
     if (!Number.isSafeInteger(error.statusCode)) {
       const status = Number.isSafeInteger(error.status) && error.status >= 400 && error.status <= 599 ? error.status : null;
@@ -265,6 +270,8 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
   const isManagedOpenCode = options.isManagedOpenCode ?? (() => true);
   const getWorkAdmissionBlock = options.getWorkAdmissionBlock ?? (() => null);
   const publishEvent = options.publishEvent ?? (() => undefined);
+  const cursorReadOnly = options.cursorReadOnly === true && typeof options.nativeTaskDispatch === 'function';
+  const supportsReadOnlyProvider = providerId => supportsManagedReadOnlyProvider(providerId, { cursorReadOnly });
   const harnessPolicies = Object.freeze(Object.fromEntries(Object.entries(resolveHarnessPolicies(options.environment ?? process.env))
     .map(([key, enabled]) => [key, typeof options.harnessPolicies?.[key] === 'boolean' ? options.harnessPolicies[key] : enabled])));
   const policyProjection = () => ({ schemaVersion: 1, policies: harnessPolicies,
@@ -300,8 +307,24 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
   }
   const validateAgentExecution = typeof options.validateAgentExecution === 'function'
     ? options.validateAgentExecution
-    : async ({ directory, providerId, modelId, variant }) => {
-      if (providerId === 'cursor-acp') return options.cursorSdkRuntime?.validateModelSelection?.({ directory, modelID: modelId, variant }) ?? null;
+    : async (input) => {
+      const { signal, ...catalogScope } = input;
+      const { directory, providerId, modelId, variant } = catalogScope;
+      if (providerId === 'cursor-acp') {
+        const onFailure = ({ reason }) => options.onModelValidationFailure?.({ rootSessionId: input.rootSessionId, taskId: input.taskId,
+          directory, agent: input.agent, providerId, modelId, variant, reason });
+        const validate = () => options.cursorSdkRuntime?.validateModelSelection?.({ directory, modelID: modelId, variant, onFailure,
+          ...(signal ? { signal } : {}) }) ?? null;
+        try {
+          return await (options.withManagedCursorCatalog ? options.withManagedCursorCatalog(catalogScope, validate) : validate());
+        } catch (error) {
+          const reason = typeof error?.code === 'string' && /^native_[a-z_]{1,80}$/.test(error.code)
+            ? error.code : 'cursor_model_catalog_unavailable';
+          onFailure({ reason });
+          if (reason.startsWith('native_') || error?.nativeProcessUnsettled) throw error;
+          return null;
+        }
+      }
       const client = resolveGen2OpenCodeClient(openCodeClient);
       try {
         const catalog = await client.catalog.providers(directory ? { directory } : {}, { timeoutMs: 5_000 });
@@ -343,12 +366,15 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     const backup = await resolveAutoResumeBackupExecution(params);
     if (backup && validateAgentExecution && await validateAgentExecution({
       directory: params.directory, providerId: backup.providerId, modelId: backup.modelId, variant: backup.variant ?? null,
+      ...(backup.providerId === 'cursor-acp' ? { rootSessionId: params.rootSessionId, agent: params.agent,
+        taskId: params.taskId, autoResumeGeneration: params.autoResumeGeneration } : {}),
     }) !== true) return null;
     return backup;
   };
   const executor = options.executor ?? createWebManagedOpenCodeExecutor({
     ...(options.eventReconcileIntervalMs === undefined ? {} : { eventReconcileIntervalMs: options.eventReconcileIntervalMs }),
     cursorSdkRuntime: options.cursorSdkRuntime,
+    cursorReadOnly,
     registerExecutionChild: options.registerExecutionChild,
     nativeTaskDispatch: options.nativeTaskDispatch,
     ...(openCodeClient === null ? {} : { openCodeClient }),
@@ -395,7 +421,9 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
           return { outcome: 'rejected', code: 'backup_changed', message: 'The configured backup changed or was removed' };
         }
         if (validateAgentExecution) {
-          const available = await validateAgentExecution({ directory: task.directory, providerId: params.providerId, modelId: params.modelId, variant: params.variant ?? null });
+          const available = await validateAgentExecution({ directory: task.directory, providerId: params.providerId, modelId: params.modelId, variant: params.variant ?? null,
+            ...(params.providerId === 'cursor-acp' ? { rootSessionId: task.rootSessionId, agent: task.agent,
+              taskId: task.taskId, autoResumeGeneration: params.autoResumeGeneration } : {}) });
           if (available === false) {
             return { outcome: 'rejected', code: 'backup_unavailable', message: 'The configured backup model is unavailable' };
           }
@@ -436,6 +464,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
   };
 
   const scheduler = options.scheduler ?? createManagedTaskScheduler({
+    cursorReadOnly,
     onBarrierChange: options.onBarrierChange,
     onRequiredCheckReceipt: options.onRequiredCheckReceipt,
     executor,
@@ -608,6 +637,35 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     return task;
   };
 
+  // A recovery catalog read is bound to the current unacknowledged attempt,
+  // never to a caller-supplied root ID or the original tool's expired permit.
+  const verifyNativeTaskCatalog = async (input) => {
+    const check = () => {
+      assertAvailable(); assertWorkAdmission();
+      const task = scheduler.getTask(input?.taskId);
+      const envelope = scheduler.getResultEnvelope(input?.taskId);
+      if (!initialized || !ownershipAcquired || shutdownPromise || !task || task.owner !== 'devryan'
+        || task.rootSessionId !== input.rootSessionId || task.directory !== input.directory || task.agent !== input.agent
+        || input.providerId !== 'cursor-acp' || !Number.isSafeInteger(input.autoResumeGeneration)
+        || !envelope || envelope.action !== null || envelope.autoResume?.enabled !== true
+        || envelope.autoResume.cancelGeneration !== input.autoResumeGeneration
+        || !['planning', 'scheduled', 'attempting'].includes(envelope.autoResume.state)) {
+        throw createRuntimeError('native_managed_task_catalog_invalid', 'Managed recovery catalog authority expired', 403);
+      }
+      return task;
+    };
+    const task = check();
+    await persistence.verifyOwnership?.();
+    const backup = await resolveAutoResumeBackupExecution({ rootSessionId: task.rootSessionId,
+      directory: task.directory, agent: task.agent, providerId: task.providerId, modelId: task.modelId });
+    check();
+    if (!backup || backup.providerId !== input.providerId || backup.modelId !== input.modelId
+      || (backup.variant ?? null) !== (input.variant ?? null)) {
+      throw createRuntimeError('native_managed_task_catalog_invalid', 'Managed recovery selection changed', 403);
+    }
+    return task;
+  };
+
   const projectTaskResult = async (task, resultMode, envelope = scheduler.getResultEnvelope(task.taskId)) => {
     const result = projectManagedTaskResultForMode(
       projectTask(task, envelope),
@@ -639,7 +697,8 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     failures: result.failures,
   });
 
-  const resolveAdmittedAgentExecution = async (params, readOnly) => {
+  const resolveAdmittedAgentExecution = async (params, readOnly, signal) => {
+    signal?.throwIfAborted();
     const requested = {
       providerId: typeof params.providerId === 'string' ? params.providerId.trim() : '',
       modelId: typeof params.modelId === 'string' ? params.modelId.trim() : '',
@@ -656,10 +715,10 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     let admitted = resolved;
     if (
       readOnly
-      && !supportsManagedReadOnlyProvider(resolved.providerId)
+      && !supportsReadOnlyProvider(resolved.providerId)
       && requested.providerId
       && requested.modelId
-      && supportsManagedReadOnlyProvider(requested.providerId)
+      && supportsReadOnlyProvider(requested.providerId)
     ) {
       admitted = requested;
     }
@@ -669,7 +728,11 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         providerId: admitted.providerId,
         modelId: admitted.modelId,
         variant: admitted.variant ?? null,
+        ...(signal ? { signal } : {}),
+        ...(admitted.providerId === 'cursor-acp' ? { rootSessionId: params.rootSessionId,
+          agent: params.agent, taskId: params.taskId, autoResumeGeneration: params.autoResumeGeneration } : {}),
       });
+      signal?.throwIfAborted();
       if (available !== true) {
         throw createRuntimeError(
           available === false ? 'managed_agent_model_unavailable' : 'managed_agent_model_availability_unknown',
@@ -743,13 +806,15 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         return { allowed: true, provisional: false };
       }
       case 'submit': {
+        context.signal?.throwIfAborted();
         assertWorkAdmission();
         const timeoutAt = resolveSubmitTimeoutAt(params, now);
         const readOnly = resolveReadOnly(params);
         // The canonical name is what gets resolved, scheduled and fingerprinted.
         const submittedAgent = await resolveSubmittedAgent(params);
         const agent = typeof submittedAgent === 'string' ? submittedAgent.trim() : '';
-        const admittedExecution = await resolveAdmittedAgentExecution({ ...params, agent: submittedAgent }, readOnly);
+        context.signal?.throwIfAborted();
+        const admittedExecution = await resolveAdmittedAgentExecution({ ...params, agent: submittedAgent }, readOnly, context.signal);
         const providerId = admittedExecution.providerId;
         if (readOnly && agent && !supportsManagedReadOnlyAgent(agent)) {
           throw createRuntimeError(
@@ -758,13 +823,14 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
             409,
           );
         }
-        if (readOnly && providerId && !supportsManagedReadOnlyProvider(providerId)) {
+        if (readOnly && providerId && !supportsReadOnlyProvider(providerId)) {
           throw createRuntimeError(
             MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED,
             MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED_MESSAGE,
             409,
           );
         }
+        context.signal?.throwIfAborted();
         const task = await scheduler.submit({
           idempotencyKey: params.idempotencyKey,
           rootSessionId: params.rootSessionId,
@@ -787,7 +853,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
           // marks independent reviewer seats for the duplicate guard.
           ...(params.deadlineClass === 'council' ? { deadlineClass: 'council' } : {}),
           timeoutAt,
-        });
+        }, ...(context.signal ? [{ signal: context.signal }] : []));
         return projectTaskResult(task, resultMode);
       }
       case 'wait': {
@@ -1107,6 +1173,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
       } }, action);
     },
     verifyNativeTaskDispatch: input => verifyNativeTaskDispatch(input).catch(error => { throw normalizeRuntimeError(error); }),
+    verifyNativeTaskCatalog: input => verifyNativeTaskCatalog(input).catch(error => { throw normalizeRuntimeError(error); }),
     cancelSessionsForRemoval: async input => {
       assertAvailable();
       await ensureOwnership();

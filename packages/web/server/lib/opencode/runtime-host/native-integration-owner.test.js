@@ -121,44 +121,18 @@ test('finite physical and resolution checks use the original admitted caller, ex
   }finally{await owner.invalidate();await fs.rm(root,{recursive:true,force:true});}
 });
 
-test('SIWC sign-out waits for shared mutation settlement and blocks native, Bot and image access', async () => {
-  const root = await fs.mkdtemp(path.resolve(import.meta.dirname, '../../../../../../.cache/v2-validation/siwc-signout-owner-'));
-  const instanceID = 'controller-fixture', credentialID = 'fixture-siwc';
-  const selected = { directory: root, controllerInstanceID: instanceID, credentialID, integrationID: 'openai',
-    value: { type: 'oauth', methodID: 'chatgpt-siwc', access: 'fixture-access', refresh: 'fixture-refresh', expires: Date.now() + 3600000,
-      metadata: { clientId: 'issued-fixture', subject: 'fixture-subject', accountID: 'fixture-subject',
-        scopes: ['chatgpt.tokens.use.direct'], planUsage: true, extAgentHostId: 'urn:uuid:00000000-0000-4000-8000-000000000001' } } };
-  let queue = Promise.resolve(), releaseQueue, enteredQueue;
-  const withMutationQueue = action => { const result = queue.then(action); queue = result.catch(() => {}); return result; };
-  const pending = new Promise(resolve => { releaseQueue = resolve; });
-  const entered = new Promise(resolve => { enteredQueue = resolve; });
-  const prior = withMutationQueue(async () => { enteredQueue(); await pending; });
-  await entered;
-  const owner = createNativeIntegrationOwner({ instanceID, stateDirectory: root,
+test('OpenAI attempt RPC remains available but host token access is removed', async () => {
+  const root = await fs.mkdtemp(path.resolve(import.meta.dirname, '../../../../../../.cache/v2-validation/builtin-owner-'));
+  const owner = createNativeIntegrationOwner({ instanceID: 'controller-fixture', stateDirectory: root,
     snapshot: { locations: [{ directory: root, configuration: { providers: {} }, compatibility: { mcp: {} } }] },
-    controller: () => ({ instanceID, call: async command => {
-      if (command.action !== 'openai-read-selected-owned') throw new Error('unexpected fixture command');
-      return selected;
-    } }), isReady: () => true, withMutationQueue, captureWebAuthorization: async () => async () => {},
-    admissionOwner: { withProviderAttempt: async (_input, action) => action(), withImageGeneration: async (_input, action) => action(async () => {}) } });
-  owner.markReady();
-  const scope = { kind: 'openai', directory: root, integrationID: 'openai', configurationDigest: fingerprint({}),
-    operation: 'openai.integration', method: 'GET', path: '/api/integration/openai', expectedActiveFingerprint: fingerprint(selected) };
-  let held = false;
-  const holding = owner.holdOpenAiSelection(scope).then(release => { held = true; return release; });
+    controller: () => ({ instanceID: 'controller-fixture', call: async () => { throw Error('Unexpected credential read'); } }),
+    isReady: () => true, withMutationQueue: action => action(), captureWebAuthorization: async () => async () => {},
+    admissionOwner: { withProviderAttempt: async (_input, action) => action() } });
   try {
-    await Promise.resolve(); await Promise.resolve(); expect(held).toBe(false);
-    releaseQueue(); await prior; const release = await holding;
-    const input = { controllerInstanceID: instanceID, directory: root, credentialID, sessionID: 'fixture-session', kind: 'primary' };
-    await expect(owner.handleRpc('openai.access', input)).rejects.toMatchObject({ code: 'native_chatgpt_siwc_signed_out' });
-    await expect(owner.getOpenAiOAuthCoordinator().access({})).rejects.toMatchObject({ code: 'native_chatgpt_siwc_signed_out' });
-    release(false);
-    await expect(owner.handleRpc('openai.attempt', input)).rejects.toMatchObject({ code: 'native_chatgpt_siwc_signed_out' });
-    release(true);
+    const input = { directory: root, controllerInstanceID: 'controller-fixture', sessionID: 'ses_fixture', kind: 'primary' };
     expect(await owner.handleRpc('openai.attempt', input)).toBeNull();
-    await expect(owner.withImageGeneration({ directory: root }, image => image.access()))
-      .rejects.toMatchObject({ code: 'native_image_generation_siwc_unsupported' });
-  } finally { releaseQueue(); await owner.invalidate(); await fs.rm(root, { recursive: true, force: true }); }
+    await expect(owner.handleRpc('openai.access', input)).rejects.toMatchObject({ code: 'native_integration_operation_invalid' });
+  } finally { await owner.invalidate(); await fs.rm(root, { recursive: true, force: true }); }
 });
 
 test('native image access retains selected key and admission proof through final settlement', async () => {
@@ -210,7 +184,7 @@ test('expired SIWC image access refuses before OAuth refresh, provider traffic o
     admissionOwner: { withImageGeneration: async (_input, action) => action(async () => {}) } });
   owner.markReady();
   try {
-    await expect(owner.withImageGeneration({ directory: root }, image => image.access())).rejects.toMatchObject({ code: 'native_image_generation_siwc_unsupported' });
+    await expect(owner.withImageGeneration({ directory: root }, image => image.access())).rejects.toMatchObject({ code: 'bot_opencode_provider_authentication' });
     expect(commands).toBe(1); expect(network).toBe(0); expect(mutations).toBe(0);
   } finally { globalThis.fetch = originalFetch; await owner.invalidate(); await fs.rm(root, { recursive: true, force: true }); }
 });
@@ -235,5 +209,25 @@ test('provider selected reads are limited to xAI and OpenCode Go under the calle
     await expect(owner.readProviderSelected({ ...scope('xai'), operation: 'openai.integration' })).rejects.toBeTruthy();
     await expect(owner.readProviderSelected({ ...scope('opencode'), integrationID: 'opencode' })).rejects.toBeTruthy();
     expect(calls.length).toBe(count);
+  } finally { await owner.invalidate(); await fs.rm(root, { recursive: true, force: true }); }
+});
+
+
+test('OpenAI selected usage reads refuse foreign identities and never enter the mutation queue', async () => {
+  const root = await fs.mkdtemp(path.resolve(import.meta.dirname, '../../../../../../.cache/v2-validation/openai-read-owner-'));
+  const instanceID = 'controller-fixture'; let reply, queues = 0;
+  const owner = createNativeIntegrationOwner({ instanceID, stateDirectory: root,
+    snapshot: { locations: [{ directory: root, configuration: { providers: {} }, compatibility: { mcp: {} } }] },
+    controller: () => ({ instanceID, call: async () => structuredClone(reply) }), isReady: () => true,
+    withMutationQueue: action => { queues++; return action(); }, captureWebAuthorization: async () => async () => {}, admissionOwner: {} });
+  const scope = { kind: 'openai', directory: root, integrationID: 'openai', configurationDigest: fingerprint({}),
+    operation: 'openai.integration', method: 'GET', path: '/api/integration/openai' };
+  const valid = { directory: root, controllerInstanceID: instanceID, integrationID: 'openai', credentialID: 'cred_x', value: { type: 'oauth', methodID: 'chatgpt-browser', access: 'fixture-access' } };
+  try {
+    reply = valid; expect(await owner.readOpenAiSelected(scope)).toEqual(valid);
+    for (const patch of [{ directory: '/foreign' }, { controllerInstanceID: 'foreign-controller' }, { integrationID: 'xai' }, { value: null }]) {
+      reply = { ...valid, ...patch }; await expect(owner.readOpenAiSelected(scope)).rejects.toMatchObject({ code: 'native_integration_binding_invalid' });
+    }
+    reply = null; expect(await owner.readOpenAiSelected(scope)).toBeUndefined(); expect(queues).toBe(0);
   } finally { await owner.invalidate(); await fs.rm(root, { recursive: true, force: true }); }
 });

@@ -60,14 +60,9 @@ const credentialMutation = value => {
     keys(value, ['operation', 'input']);
     keys(value.input, ['integrationID', 'value', 'id', 'label', 'activate']);
     if (!['openai', 'cursor-acp', 'xai', 'opencode', 'opencode-go'].includes(value.input.integrationID)) throw invalid();
-    if (value.input.value?.type === 'oauth') {
-      if (value.input.integrationID !== 'openai') throw invalid();
-      oauth(value.input.value);
-    } else {
-      keys(value.input.value, ['type', 'key']);
-      if (value.input.value.type !== 'key') throw invalid();
-      string(value.input.value.key);
-    }
+    keys(value.input.value, ['type', 'key']);
+    if (value.input.value.type !== 'key') throw invalid();
+    string(value.input.value.key);
     if (value.input.id !== undefined) identifier(value.input.id);
     if (value.input.label !== undefined) label(value.input.label);
     if (value.input.activate !== undefined && typeof value.input.activate !== 'boolean') throw invalid();

@@ -10,6 +10,7 @@ import {
 } from '@openchamber/orchestration-runtime';
 
 import { createNativeConsumerFixture } from '../opencode/test-native-consumer-client.js';
+import { createNativeManagedTaskOwner } from '../opencode/runtime-host/managed-task-owner.js';
 import { createWebManagedOrchestrationRuntime as createNativeOrchestrationRuntime } from './runtime.js';
 
 // These scheduler fixtures own their catalogs explicitly; no legacy transport
@@ -66,6 +67,122 @@ const createPersistence = () => {
     async save(value) { snapshot = structuredClone(value); },
   };
 };
+
+it('admits the native Plan Explorer with its exact Cursor selection under owned catalog authority', async () => {
+  let authorized = false;
+  const validate = vi.fn(async input => {
+    expect(authorized).toBe(true);
+    expect(input).toEqual({ directory: '/workspace', modelID: 'claude-haiku-5-5', variant: 'medium', onFailure: expect.any(Function), signal: expect.any(AbortSignal) });
+    return true;
+  });
+  const catalog = vi.fn(async (input, action) => {
+    expect(input).toMatchObject({ rootSessionId: 'ses_root', directory: '/workspace', agent: 'explorer',
+      providerId: 'cursor-acp', modelId: 'claude-haiku-5-5', variant: 'medium' });
+    authorized = true;
+    try { return await action(); } finally { authorized = false; }
+  });
+  const runtime = createNativeOrchestrationRuntime({
+    persistence: createPersistence(), readAgentCatalog: async () => [{ name: 'explorer', mode: 'subagent' }],
+    resolveAgentExecution: async () => ({ providerId: 'cursor-acp', modelId: 'claude-haiku-5-5', variant: 'medium' }),
+    cursorReadOnly: true, nativeTaskDispatch: (_scope, action) => action(), withManagedCursorCatalog: catalog,
+    cursorSdkRuntime: { validateModelSelection: validate },
+    executor: { start: async () => ({ status: 'completed', recoverablePreview: 'Located the component' }) },
+  });
+  const owner = createNativeManagedTaskOwner({
+    admissionOwner: { recheckExecution: async () => {}, withPermit: (_input, action) => action(),
+      withManagedTaskCatalogInvocation: (_input, action) => action() },
+    taskContext: { authorizeNativeTaskInvocation: async () => ({ readOnly: true }) },
+    executionHost: { nativeManagedControl: async () => ({ lease: { token: 'control_fixture' } }) },
+    getManagedRuntime: () => runtime,
+  });
+  try {
+    const result = await owner({ tool: 'devryan_task', sessionID: 'ses_root', directory: '/workspace',
+      messageID: 'msg_plan', callID: 'call_explorer',
+      authorization: { input: { provenance: { id: 'devryan.managed-task', kind: 'plugin' } } },
+      input: { action: 'start', agent: 'explorer', prompt: 'Locate the component' } });
+    expect(result.task).toMatchObject({ providerId: 'cursor-acp', modelId: 'claude-haiku-5-5', variant: 'medium', agent: 'explorer' });
+    expect(validate).toHaveBeenCalledOnce();
+    expect(catalog).toHaveBeenCalledOnce();
+  } finally { await runtime.shutdown(); }
+});
+
+it.each(['scope', 'sdk'])('refuses %s catalog authority failure before scheduler admission and records a safe reason', async (source) => {
+  const refusal = Object.assign(new Error('native_permit_revoked'), { code: 'native_permit_revoked', statusCode: 403 });
+  const validate = vi.fn(async ({ onFailure }) => { onFailure({ reason: refusal.code }); throw refusal; });
+  const submit = vi.fn();
+  const onModelValidationFailure = vi.fn();
+  const runtime = createNativeOrchestrationRuntime({ persistence: createPersistence(),
+    readAgentCatalog: async () => [{ name: 'explorer', mode: 'subagent' }],
+    scheduler: { initialize: async () => {}, shutdown: async () => {}, flush: async () => {}, getDiagnostics: () => ({}), submit },
+    executor: {}, cursorSdkRuntime: { validateModelSelection: validate }, onModelValidationFailure,
+    withManagedCursorCatalog: async (_input, action) => {
+      if (source === 'sdk') return action();
+      throw refusal;
+    },
+  });
+  try {
+    await expect(runtime.handleRpc({ method: 'submit', params: submitParams('refused', { providerId: 'cursor-acp' }) }))
+      .rejects.toMatchObject({ code: refusal.code, message: refusal.code, statusCode: 403 });
+    expect(validate).toHaveBeenCalledTimes(source === 'sdk' ? 1 : 0); expect(submit).not.toHaveBeenCalled();
+    expect(onModelValidationFailure).toHaveBeenCalledWith(expect.objectContaining({ rootSessionId: 'ses_root', reason: 'native_permit_revoked' }));
+    expect(JSON.stringify(onModelValidationFailure.mock.calls)).not.toContain('private details');
+  } finally { await runtime.shutdown(); }
+});
+
+it('fences submission after delayed catalog validation and retains uncertain termination', async () => {
+  for (const uncertain of [false, true]) {
+    const controller = new AbortController(), gate = deferred(), entered = deferred(), submit = vi.fn();
+    const uncertainty = Object.assign(new AggregateError([], 'termination unconfirmed'), { nativeProcessUnsettled: true });
+    const reason = Object.assign(Error('caller stopped'), { code: 'native_caller_stopped', statusCode: 409 });
+    const runtime = createNativeOrchestrationRuntime({ persistence: createPersistence(),
+      readAgentCatalog: async () => [{ name: 'explorer', mode: 'subagent' }],
+      scheduler: { initialize: async () => {}, shutdown: async () => {}, flush: async () => {}, getDiagnostics: () => ({}), submit },
+      executor: {}, withManagedCursorCatalog: (input, action) => {
+        expect(input).not.toHaveProperty('signal');
+        expect(structuredClone(input)).toEqual(input);
+        return action();
+      },
+      cursorSdkRuntime: { validateModelSelection: async ({ signal }) => {
+        expect(signal).toBe(controller.signal); entered.resolve(); await gate.promise;
+        if (uncertain) throw uncertainty;
+        return true;
+      } },
+    });
+    try {
+      const pending = runtime.handleRpc({ method: 'submit', params: submitParams('cancelled', { providerId: 'cursor-acp' }) }, { signal: controller.signal });
+      const rejection = uncertain ? expect(pending).rejects.toMatchObject({ code: 'native_process_settlement_unconfirmed', nativeProcessUnsettled: true, cause: uncertainty })
+        : expect(pending).rejects.toMatchObject({ code: reason.code, message: reason.code, statusCode: 409 });
+      await entered.promise; controller.abort(reason); gate.resolve();
+      await rejection; expect(submit).not.toHaveBeenCalled();
+    } finally { gate.resolve(); await runtime.shutdown(); }
+  }
+});
+
+it('binds detached Cursor catalog reads to current recovery generation, ownership and configured backup', async () => {
+  const task = { taskId: 'dvr_task_catalog', owner: 'devryan', rootSessionId: 'ses_root', directory: '/workspace', agent: 'explorer', providerId: 'openai', modelId: 'parent' };
+  const envelope = { action: null, autoResume: { enabled: true, state: 'planning', cancelGeneration: 3 } };
+  let variant = 'medium';
+  const verifyOwnership = vi.fn(async () => {});
+  const runtime = createWebManagedOrchestrationRuntime({
+    persistence: { ...createPersistence(), verifyOwnership }, executor: {},
+    scheduler: { initialize: async () => {}, shutdown: async () => {}, flush: async () => {}, getDiagnostics: () => ({}),
+      getTask: () => task, getResultEnvelope: () => envelope, listTasks: () => [], listResultEnvelopes: () => [] },
+    resolveBackupExecution: async () => ({ providerId: 'cursor-acp', modelId: 'claude-haiku-5-5', variant }),
+  });
+  const input = { taskId: task.taskId, rootSessionId: task.rootSessionId, directory: task.directory, agent: task.agent,
+    providerId: 'cursor-acp', modelId: 'claude-haiku-5-5', variant: 'medium', autoResumeGeneration: 3 };
+  try {
+    await runtime.getSnapshot();
+    await expect(runtime.verifyNativeTaskCatalog(input)).resolves.toBe(task);
+    expect(verifyOwnership).toHaveBeenCalled();
+    await expect(runtime.verifyNativeTaskCatalog({ ...input, rootSessionId: 'ses_foreign' })).rejects.toMatchObject({ code: 'native_managed_task_catalog_invalid' });
+    await expect(runtime.verifyNativeTaskCatalog({ ...input, autoResumeGeneration: 2 })).rejects.toMatchObject({ code: 'native_managed_task_catalog_invalid' });
+    variant = 'high';
+    await expect(runtime.verifyNativeTaskCatalog(input)).rejects.toMatchObject({ code: 'native_managed_task_catalog_invalid' });
+    variant = 'medium'; envelope.action = 'abandon';
+    await expect(runtime.verifyNativeTaskCatalog(input)).rejects.toMatchObject({ code: 'native_managed_task_catalog_invalid' });
+  } finally { await runtime.shutdown(); }
+});
 
 it('native removal is constructor-only and requires the current managed persistence owner', async () => {
   const calls = [];
@@ -2181,6 +2298,8 @@ describe('web managed orchestration runtime', () => {
       agent: 'explorer',
       providerId: 'github-copilot',
       modelId: 'gpt-4.1',
+      taskId: 'dvr_task_auto_1',
+      autoResumeGeneration: 0,
     });
     expect(resolveProviderReset).toHaveBeenCalledWith({
       providerId: 'github-copilot',

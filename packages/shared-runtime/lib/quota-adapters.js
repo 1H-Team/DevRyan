@@ -597,14 +597,14 @@ export const normalizeCodexAppServerQuota = (payload, { now = Date.now() } = {})
 const fetchCodexResetCredits = async (fetchImpl, accessToken, accountId, now) => {
   try {
     const response = await fetchImpl(CODEX_RESET_CREDITS_URL, {
-      method: 'GET',
+      method: 'GET', redirect: 'error', signal: AbortSignal.timeout(10_000),
       headers: buildCodexHeaders(accessToken, accountId, {
         'OpenAI-Beta': 'codex-1',
         originator: 'Codex Desktop',
       }),
     });
     if (!response.ok) return null;
-    return normalizeResetCreditsPayload(await response.json(), 'dedicated', now);
+    return normalizeResetCreditsPayload(JSON.parse(new TextDecoder().decode(await readBoundedBytes(response, 64 * 1024, 'Codex reset bank'))), 'dedicated', now);
   } catch {
     return null;
   }
@@ -686,7 +686,7 @@ export const fetchCodexQuotaAdapter = async ({
 
   try {
     const response = await fetchImpl(CODEX_USAGE_URL, {
-      method: 'GET',
+      method: 'GET', redirect: 'error', signal: AbortSignal.timeout(20_000),
       headers: buildCodexHeaders(accessToken, accountId),
     });
     if (!response.ok) {
@@ -698,11 +698,12 @@ export const fetchCodexQuotaAdapter = async ({
         error: response.status === 401
           ? 'Session expired — please re-authenticate with OpenAI'
           : `API error: ${response.status}`,
+        ...(response.status === 401 ? { errorCode: 'REAUTHENTICATION_REQUIRED' } : {}),
         now,
       });
     }
 
-    const payload = asObject(await response.json()) ?? {};
+    const payload = asObject(JSON.parse(new TextDecoder().decode(await readBoundedBytes(response, 64 * 1024, 'Codex usage')))) ?? {};
     const rateLimit = asObject(payload.rate_limit ?? payload.rateLimit);
     const warnings = [];
     const windows = {};
@@ -750,7 +751,7 @@ export const fetchCodexQuotaAdapter = async ({
       providerName,
       ok: false,
       configured: true,
-      error: errorMessage(error),
+      error: error?.message === 'Codex usage response was too large.' ? error.message : 'ChatGPT usage could not be read.',
       now,
     });
   }

@@ -243,6 +243,7 @@ export const createOpenCodeV2FacadeRouter = (deps) => {
   route('get', '/provider/auth', (_client, _req, _res, options) => integrations.providerMethods(options));
   route('post', '/provider/:providerID/oauth/authorize', (_client, req, _res, options) => integrations.providerStart(req.params.providerID, req.body ?? {}, options));
   route('post', '/provider/:providerID/oauth/callback', (_client, req, _res, options) => integrations.providerComplete(req.params.providerID, req.body ?? {}, options));
+  route('post', '/provider/:providerID/oauth/cancel', (_client, req, _res, options) => integrations.providerCancel(req.params.providerID, req.body ?? {}, options));
   route('put', '/auth/:providerID', (_client, req, _res, options) => integrations.saveKey(req.params.providerID, req.body ?? {}, options));
   route('delete', '/provider/:providerID/auth', (_client, req, _res, options) => {
     validateFacadeBody(req.body ?? {}, []);

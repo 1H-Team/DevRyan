@@ -9,6 +9,8 @@ export type NativeManagedTaskDispatch = { readonly taskId: string; readonly leas
   | { readonly operation: 'prompt'; readonly sessionID: string; readonly providerId: string; readonly modelId: string;
       readonly agent: string; readonly variant: string | null });
 
+export interface NativeManagedCursorCatalogScope {readonly rootSessionId:string;readonly directory:string;readonly agent:string;readonly providerId:string;readonly modelId:string;readonly variant:string|null;readonly taskId?:string;readonly autoResumeGeneration?:number}
+
 export interface NativeSessionIdentity { readonly id: string; readonly directory: string; readonly parentID?: string | null; readonly agent?:string; readonly model?:{readonly providerID:string;readonly id:string;readonly variant?:string}; readonly metadata?:Readonly<Record<string,unknown>>; readonly time?:{readonly archived?:number}; readonly revert?:unknown }
 export interface NativeCommandPromptAdmission {
   readonly admit:(receipt:NativePromptSelectionReceipt,authorizeWrite:()=>Promise<void>)=>Promise<void>;
@@ -94,6 +96,8 @@ export interface NativeAdmissionOwnerOptions {
     readonly callID?: string; readonly permit?: OperationPermit }) => Promise<void | NativeShellReconciliation | NativeDeferredWakeReceipt>;
   readonly awaitReady?: () => Promise<void>;
   /** Constructor-only proof from the current durable scheduler and its process owner. Never exposed through RPC. */
+  readonly captureManagedCatalogAuthorization?: (session:NativeSessionIdentity)=>Promise<()=>Promise<void>>;
+  readonly verifyManagedTaskCatalog?: (input: NativeManagedCursorCatalogScope) => Promise<ManagedTaskRecord>;
   readonly verifyManagedTaskDispatch?: (input: NativeManagedTaskDispatch) => Promise<ManagedTaskRecord>;
   readonly verifyPrimaryContinuationDispatch?: (input: NativePrimaryContinuationDispatch) => Promise<{
     record:PrimaryRecoveryExecutionRecord;prompt:NativePrimaryContinuationPrompt;recheck:()=>Promise<void>}>;
@@ -124,12 +128,14 @@ export interface NativeAdmissionOwner {
     readonly metadata: Readonly<Record<string, unknown>>; readonly request?: unknown;readonly intent?:Readonly<Record<string,unknown>> }, action: () => Promise<A>) => Promise<A>;
   /** Constructor-only preselection span for the trusted command adapter; exact HTTP selection effects only, no prompt or inbox authority. */
   readonly withCommandSelection: <A>(input: { readonly sessionID: string }, action: () => Promise<A>) => Promise<A>;
+  readonly withManagedTaskCatalogInvocation:<A>(input:NativeExecutionAuthorization,action:()=>Promise<A>)=>Promise<A>;
+  readonly captureManagedCursorCatalogAuthorization:(input:NativeManagedCursorCatalogScope|{readonly directory:string;readonly kind:'catalog'})=>Promise<(()=>Promise<void>)|null>;
   readonly withManagedTaskDispatch: <A>(input: NativeManagedTaskDispatch, action: () => Promise<A>) => Promise<A>;
   /** Private exact TODO metadata derivative; caller already owns withPermit's session lock. */
   readonly withNativeTodoWrite:<A>(input:{invocation:NativeExecutionAuthorization;metadata:Readonly<Record<string,unknown>>},action:()=>Promise<A>)=>Promise<A>;
   readonly captureContextAuthorization:(input:{permit:OperationPermit;directory:string;sessionID:string;phase:'compaction'})=>Promise<()=>Promise<void>>;
   readonly captureCursorAuthorization:(input:{readonly directory:string;readonly sessionID:string;readonly userMessageID:string;readonly assistantMessageID:string;
-    readonly agent:string;readonly modelID:string;readonly variant?:string})=>Promise<{readonly accepted:Readonly<Record<string,unknown>>;readonly revision:number;readonly recheck:()=>Promise<void>}>;
+    readonly agent:string;readonly modelID:string;readonly variant?:string})=>Promise<{readonly accepted:Readonly<Record<string,unknown>>;readonly revision:number;readonly readOnly:boolean;readonly recheck:()=>Promise<void>}>;
   /** Read-only original session hook scope; does not derive mutation or continuation authority. */
   readonly captureSessionHookAuthorization:(input:{permit:OperationPermit;directory:string;sessionID:string;phase:'prompt'|'context'|'compaction'|'retry'|'model.request';messageID?:string})=>Promise<()=>Promise<void>>;
   readonly captureToolHookAuthorization:(input:{readonly permit:OperationPermit;readonly directory:string;readonly sessionID:string;

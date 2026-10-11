@@ -68,7 +68,7 @@ export async function prepareQaFixtureProfile({runtimeRoot,workspace,cell,genera
   await writeFile(path.join(home,'.gitconfig'),'[user]\n\tname = DevRyan QA\n\temail = qa@devryan.invalid\n',{mode:0o600});
   // Private app defaults match the fixture's native Low fallback. The driver
   // still selects each requested Default/High through the actual controls.
-  await writeFile(path.join(data,'settings.json'),JSON.stringify({messageStreamTransport:'sse',showReasoningTraces:true,lastDirectory:workspace,
+  await writeFile(path.join(data,'settings.json'),JSON.stringify({messageStreamTransport:'sse',showReasoningTraces:true,lastDirectory:workspace,homeDirectory:workspace,
     defaultModel:modelRef,defaultAgent:cell.agent === 'builder' ? 'build' : cell.agent,
     agentModelSelections:Object.fromEntries(agentNames.map(name => [name,modelSelection])),
     projects:[{id:'qa-project',path:workspace,label:'QA workspace'}],activeProjectId:'qa-project',queueModeEnabled:true,

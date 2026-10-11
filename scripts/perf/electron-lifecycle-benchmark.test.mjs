@@ -8,6 +8,7 @@ import { createOpenCodeClient } from '../../packages/web/server/lib/opencode/ope
 import { createQaUiDriver } from '../qa/ui-driver.mjs';
 import {
   captureFirstDocumentStartup,
+  waitForStartupCatalog,
   captureMemoryCheckpoint,
   assertEarlierCanonicalHistory,
   historyCoverage,
@@ -28,6 +29,23 @@ const host = { process: { heapUsed: 99999 }, appMetrics: [
 ] };
 const heap = { usedSize: 123, totalSize: 456 };
 const dom = { documents: 1, nodes: 20, jsEventListeners: 5 };
+
+test('catalog readiness records warmup errors and still requires a successful bounded response', async t => {
+  let statuses = [503, 500, 200];
+  const server = http.createServer((_request, response) => {
+    response.statusCode = statuses.length > 1 ? statuses.shift() : statuses[0];
+    response.end(JSON.stringify({ connected: ['fixture'] }));
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); });
+  const origin = `http://127.0.0.1:${server.address().port}`, observed = [];
+  assert.deepEqual(await waitForStartupCatalog(origin, { onResponse: status => observed.push(status) }), { connected: ['fixture'] });
+  assert.deepEqual(observed, [503, 500, 200]);
+  statuses = [403];
+  await assert.rejects(waitForStartupCatalog(origin), /failed \(403\)/);
+  statuses = [503];
+  await assert.rejects(waitForStartupCatalog(origin, { timeoutMs: 30 }), /readiness timed out/);
+});
 
 test('a buffered history reveal must prove older canonical content in the exact session', () => {
   const row = (id, created, sessionID = 'ses_history') => ({ info: { id, sessionID, time: { created } }, parts: [{ type: 'text', text: id }] });

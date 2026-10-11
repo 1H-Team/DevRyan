@@ -105,13 +105,19 @@ function toolsPolicy(tools) {
   }
   return { local, grouped };
 }
+// The Responses API requires `role: "developer"` on this item; without it the
+// item is read as a message and refused with "Missing required parameter: 'input[N].role'".
+const additionalTools = tools => ({ type: 'additional_tools', role: 'developer', tools });
 function encodeBody(value) {
   if (!object(value) || !Array.isArray(value.input)) throw policyFailure('chatgpt_siwc_context_required');
   const next = { ...value, store: false, stream: true };
   for (const field of unsupportedFields) delete next[field];
   next.input = value.input.map(item => {
     if (!object(item)) throw policyFailure('chatgpt_siwc_context_required');
-    if (item.type === 'additional_tools') { toolsPolicy(item.tools); return item; }
+    if (item.type === 'additional_tools') {
+      toolsPolicy(item.tools);
+      return item.role === undefined || item.role === 'system' ? { ...item, role: 'developer' } : item;
+    }
     if (Array.isArray(item.content) && item.content.some(part => object(part) && /audio|video/.test(String(part.type))))
       throw policyFailure('chatgpt_siwc_input_unsupported');
     return item.role === 'system' ? { ...item, role: 'developer' } : item;
@@ -119,7 +125,7 @@ function encodeBody(value) {
   if (next.tools !== undefined) {
     const { local, grouped } = toolsPolicy(next.tools);
     // A generated namespace would change the native registry's exact tool lookup.
-    if (local.length) next.input.push({ type: 'additional_tools', tools: local });
+    if (local.length) next.input.push(additionalTools(local));
     if (grouped.length) next.tools = grouped; else delete next.tools;
   }
   if (next.tool_choice !== undefined && !object(next.tool_choice) && !['none', 'auto', 'required'].includes(next.tool_choice))

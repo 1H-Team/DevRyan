@@ -20,6 +20,27 @@ const packageVerifierSource = fs.readFileSync(
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 
 describe('runtime-service desktop bootstrap source contract', () => {
+  test('Docker unavailability settles background preparation without rejecting desktop startup', async () => {
+    const start = mainSource.indexOf('const prepareBotRuntimeInBackground = () => {');
+    const end = mainSource.indexOf('const prepareForegroundRuntime = async () => {', start);
+    const state = { serverHandle: { prepareBotRuntime() {} }, botRuntimeRetryPromise: null };
+    const warnings = [];
+    let fail;
+    const pending = new Promise((_, reject) => { fail = reject; });
+    const prepare = new Function('state', 'requirePreparedBotRuntime', 'log', `
+      const isPreview = false, runtimeBundleRecoveryRequired = false;
+      const startupErrorDetails = error => ({ code: error.code, message: error.message });
+      ${mainSource.slice(start, end)}
+      return prepareBotRuntimeInBackground;
+    `)(state, () => pending, { warn: (...args) => warnings.push(args) });
+    assert.equal(prepare(), undefined, 'desktop must continue while Docker is unresolved');
+    const completion = state.botRuntimeRetryPromise;
+    fail(Object.assign(new Error('Docker is stopped'), { code: 'bot_runtime_docker_unavailable' }));
+    await completion;
+    assert.equal(state.botRuntimeRetryPromise, null);
+    assert.equal(warnings[0][1].code, 'bot_runtime_docker_unavailable');
+  });
+
   test('post-update registration and connection failures share guarded startup recovery', () => {
     const preparation = mainSource.slice(
       mainSource.indexOf('const prepareForegroundRuntime = async () => {'),

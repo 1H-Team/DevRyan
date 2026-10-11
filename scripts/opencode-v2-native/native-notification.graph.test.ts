@@ -15,6 +15,8 @@ for (const boundary of ['physical','context'] as const) test(`owned original sta
   const sourcePath=path.join(repository,'scripts/opencode-v2-native/controller-integrations.graph-fixture.mjs');
   let source=await fs.readFile(sourcePath,'utf8');
   const replace=(before:string,after:string)=>{if(source.split(before).length!==2)throw Error('Original graph fixture changed: '+before);source=source.replace(before,after);};
+  // Title generation is outside these controlled primary-notification cases.
+  replace('let initialPairReleased=false;', 'let initialPairReleased=true;');
   source="import {createControllerImages} from "+JSON.stringify(path.join(repository,'packages/web/server/lib/opencode/runtime-host/controller-images.ts'))+";\nimport {toLLMMessages as toLLMMessages2} from '@opencode/core/session/runner/to-llm-message';\nimport {createPrimaryRecoveryHost} from "+JSON.stringify(path.join(repository,'packages/harness-runtime/lib/provider-recovery-host.js'))+";\nimport {createNativePrimaryStepOwner} from "+JSON.stringify(path.join(repository,'packages/web/server/lib/opencode/runtime-host/primary-step-owner.js'))+";\nimport {createPrivilegedOpenCodeClient} from "+JSON.stringify(path.join(repository,'packages/web/server/lib/opencode/opencode-client/privileged.js'))+";\nimport {createNativeImageRuntime} from "+JSON.stringify(path.join(repository,'packages/web/server/lib/opencode/runtime-host/native-image-runtime.js'))+";\nimport {SessionMessage} from '@opencode/core/session/message';\nimport {primaryStepOverride} from "+JSON.stringify(path.join(repository,'packages/web/server/lib/opencode/runtime-host/primary-step.ts'))+";\n"+source;
   replace('let nativeURL, ready = false, handler, map,',`let primaryRuntime,realPrimaryStep;let nativeStore,nativeExecution,runnerPermit,foreignScope=false,revokeOnRead=false,releaseResponse,primaryObserved,capturedBus;const primarySteps=[],published=[];const responseBarrier=new Promise(resolve=>releaseResponse=resolve),primaryStarted=new Promise(resolve=>primaryObserved=resolve),physicalKinds=[],primaryBodies=new Set();let nativeURL, ready = false, handler, map,`);
   replace('const options = { database:', "const options = { app:{name:'DevRyan notification graph',version:'2.0.26',channel:'fixture'},database:");
@@ -44,10 +46,6 @@ for (const boundary of ['physical','context'] as const) test(`owned original sta
   replace('const gates = createAdmissionGates({','const gates = createAdmissionGates({executionActivity:inner=>{nativeExecution=inner;return inner;},captureSessionStore:inner=>{nativeStore=inner;return Effect.succeed(inner);},');
   replace('      const output = JSON.stringify(body)',`      if(${JSON.stringify(boundary)}==='physical'&&primaryBodies.has(createHash('sha256').update(text).digest('hex'))){primaryObserved();await responseBarrier;}
       const output = JSON.stringify(body)`);
-  // The context cell deliberately holds primary before its physical request.
-  // Start the original pair deadline only after that controlled hold is released.
-  replace('const awaitInitialPhysicalPair = async kind => {',`const awaitInitialPhysicalPair = async kind => {
-   if(${JSON.stringify(boundary)}==='context')await responseBarrier;`);
   const begin=source.indexOf('  const session = await callerContext.run(caller, () => client.sessions.create(');
   const end=source.indexOf('} catch (error) { primaryFailure = error;');
   if(begin<0||end<begin)throw Error('Original graph main changed');
@@ -55,7 +53,7 @@ for (const boundary of ['physical','context'] as const) test(`owned original sta
   const directory=directories[0];
   primaryRuntime=createPrimaryRecoveryHost({dataDirectory:path.join(root,'primary-recovery'),openCodeClient:client,mode:'observe',isManaged:()=>true,managedBarrier:async()=>({state:'clear'}),authorize:async()=>caller.active});
   await primaryRuntime.initialize();realPrimaryStep=createNativePrimaryStepOwner({admissionOwner,openCodeClient:client,primaryRuntime,instanceID:'owned_controller'});
-  const session=await callerContext.run(caller,()=>client.sessions.create({model:{providerID:'openai',modelID:'gpt-5.5'}},{directory}));
+  const session=await callerContext.run(caller,()=>client.sessions.create({title:'Owned notification fixture',model:{providerID:'openai',modelID:'gpt-5.5'}},{directory}));
   await callerContext.run(caller,()=>client.prompts.command(session.id,{command:'interview',arguments:'Bound original command',agent:'build',model:{providerID:'openai',modelID:'gpt-5.5'}},{directory}));
   let primaryTimer;try{await Promise.race([primaryStarted,new Promise((_,reject)=>{primaryTimer=setTimeout(()=>reject(Error('Actual primary did not start')),15_000);})]);}finally{clearTimeout(primaryTimer);}
   assert.equal(physicalKinds.filter(kind=>kind==='primary').length,${boundary==='context'?0:1},'Held boundary must be before the first physical request in context case');

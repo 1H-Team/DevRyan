@@ -31,6 +31,10 @@ export function createNativeAuthorization({ locations, manifest, getRequestPrinc
     // detached work; a missing HTTP principal never creates a web grant.
   };
   return {
+    captureManagedCatalogAuthorization: async session => {
+      if (!session?.id || session.parentID || session.time?.archived || session.revert) throw fail('native_managed_catalog_scope_invalid');
+      await detached(session); return () => detached(session);
+    },
     captureTitleHelperAuthorization: async session=>{
       if(session?.revert||!session?.model?.providerID||!(session.model.id??session.model.modelID))throw fail('native_title_scope_invalid');
       await detached(session);return ()=>detached(session);

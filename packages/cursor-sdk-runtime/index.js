@@ -1,4 +1,4 @@
-import { serializeWorkerPayload } from './worker-payload.js';
+import { serializeWorkerPayload, cursorReadOnlyOptions, cursorCatalogModels, assertWorkerPayloadBytes } from './worker-payload.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
@@ -63,6 +63,7 @@ const COMPATIBILITY_MODEL_PAIRS = [
 const CURSOR_MODEL_PARAM_FAST = 'fast';
 const CURSOR_MODEL_PARAM_THINKING = 'thinking';
 const CURSOR_MODEL_PARAM_REASONING = 'reasoning';
+const CURSOR_MODEL_PARAM_REASONING_EFFORT = 'reasoning_effort';
 const CURSOR_MODEL_PARAM_EFFORT = 'effort';
 const CURSOR_MODEL_PARAM_CONTEXT = 'context';
 const CURSOR_MODEL_TRUE_VALUE = 'true';
@@ -914,7 +915,8 @@ const cloneCursorMcpServers = (servers) => {
   }
 };
 
-const createAgentRuntimeFingerprint = ({ directory, model, agents, mcpServerIdentity, apiKey }) => stableJson({
+const createAgentRuntimeFingerprint = ({ directory, model, agents, mcpServerIdentity, apiKey, readOnly = false }) => stableJson({
+  readOnly,
   credentialIdentity: credentialCacheIdentity(apiKey),
   directory: trimString(directory),
   model: cloneCursorSdkModelSelection(model),
@@ -939,7 +941,8 @@ const normalizeCursorModelEffort = (value) => (
 const createCursorVariantKeyFromParams = (params) => {
   const thinkingEnabled = getModelParamValue(params, CURSOR_MODEL_PARAM_THINKING).toLowerCase() === CURSOR_MODEL_TRUE_VALUE;
   const effort = normalizeCursorModelEffort(
-    getModelParamValue(params, CURSOR_MODEL_PARAM_REASONING)
+    getModelParamValue(params, CURSOR_MODEL_PARAM_REASONING_EFFORT)
+    || getModelParamValue(params, CURSOR_MODEL_PARAM_REASONING)
     || getModelParamValue(params, CURSOR_MODEL_PARAM_EFFORT)
   );
 
@@ -967,7 +970,8 @@ const getCursorContextLimitFromParams = (params) => (
 const scoreCursorSdkVariant = (sdkVariant) => {
   const params = normalizeModelSelectionParams(sdkVariant?.params);
   const effort = normalizeCursorModelEffort(
-    getModelParamValue(params, CURSOR_MODEL_PARAM_REASONING)
+    getModelParamValue(params, CURSOR_MODEL_PARAM_REASONING_EFFORT)
+    || getModelParamValue(params, CURSOR_MODEL_PARAM_REASONING)
     || getModelParamValue(params, CURSOR_MODEL_PARAM_EFFORT)
   );
   return (
@@ -1068,7 +1072,7 @@ const addNativeUltraCursorVariants = (records) => {
     const ultraParams = normalizeModelSelectionParams(sourceSelection.params).map((param) => {
       if (
         !replacedEffort
-        && (param.id === CURSOR_MODEL_PARAM_REASONING || param.id === CURSOR_MODEL_PARAM_EFFORT)
+        && (param.id === CURSOR_MODEL_PARAM_REASONING_EFFORT || param.id === CURSOR_MODEL_PARAM_REASONING || param.id === CURSOR_MODEL_PARAM_EFFORT)
       ) {
         replacedEffort = true;
         return { ...param, value: 'ultra' };
@@ -1212,11 +1216,13 @@ const resolveVariantRecord = (variants, variant) => {
   if (!key) return null;
   const direct = variants[key];
   if (isPlainObject(direct)) return direct;
-  const normalizedKey = createCursorVariantKeyFromParams([
-    { id: CURSOR_MODEL_PARAM_THINKING, value: key.toLowerCase().includes(CURSOR_MODEL_PARAM_THINKING) ? CURSOR_MODEL_TRUE_VALUE : 'false' },
-    { id: CURSOR_MODEL_PARAM_EFFORT, value: key },
-  ]);
-  return normalizedKey && isPlainObject(variants[normalizedKey]) ? variants[normalizedKey] : null;
+  const normalized = key.toLowerCase();
+  const thinking = normalized.startsWith('thinking-');
+  const effort = normalizeCursorModelEffort(thinking ? normalized.slice('thinking-'.length) : normalized);
+  if (!effort) return null;
+  const canonical = thinking ? `thinking-${effort}` : effort;
+  if (isPlainObject(variants[canonical])) return variants[canonical];
+  return !thinking && isPlainObject(variants[`thinking-${effort}`]) ? variants[`thinking-${effort}`] : null;
 };
 
 const getCursorSdkSelectionFromModelRecord = (record, variant) => {
@@ -1933,11 +1939,15 @@ export function createCursorSdkRuntime(options = {}) {
       throw selectionError('cursor_model_account_changed', selection.id, undefined);
     }
   };
-  const refreshModels = async ({ force = false, reason = 'refresh', directory } = {}) => {
+  const refreshModels = async ({ force = false, reason = 'refresh', directory, signal } = {}) => {
     assertHostSupported();
     if (typeof options.resolveApiKey === 'function') {
-      const { Cursor } = await loadSdk();
+      signal?.throwIfAborted();
+      const workerCatalog = !hasInjectedLoadSdk && options.executionAdapter;
+      const sdk = workerCatalog ? null : await loadSdk();
+      signal?.throwIfAborted();
       const apiKey = await resolveApiKey({ kind: 'catalog', directory });
+      signal?.throwIfAborted();
       const identity = apiKey ? credentialCacheIdentity(apiKey) : null;
       const cached = identity ? nativeModelCatalogs.get(identity) : null;
       if (!force && cached && (modelDiscoveryTtlMs === 0 || now() - cached.completedAt < modelDiscoveryTtlMs)) return cached.records;
@@ -1947,7 +1957,9 @@ export function createCursorSdkRuntime(options = {}) {
       lastModelRefreshTimedOut = false;
       try {
         if (!apiKey) throw new Error('Cursor SDK API key is not configured.');
-        const models = await Cursor.models.list({ apiKey });
+        const models = workerCatalog ? await generateReadOnlyWorker({ mode: 'catalog', keyKind: 'catalog',
+          text: '', directory, apiKey, signal }) : await sdk.Cursor.models.list({ apiKey });
+        signal?.throwIfAborted();
         if (!Array.isArray(models)) throw new Error('Cursor model catalog is unavailable.');
         const records = normalizeSdkModelRecords(models, { declaredFallback: false });
         modelCatalogEvidence.set(records, { identity });
@@ -1958,6 +1970,7 @@ export function createCursorSdkRuntime(options = {}) {
         lastModelRefreshError = null;
         return records;
       } catch (error) {
+        if (signal?.aborted || error?.nativeProcessUnsettled || /^native_[a-z_]{1,80}$/.test(error?.code ?? '')) throw error;
         if (identity) nativeModelCatalogs.delete(identity);
         lastModelRecords = fallbackModelRecords();
         lastModelsSource = 'fallback';
@@ -2020,7 +2033,34 @@ export function createCursorSdkRuntime(options = {}) {
     return modelRefreshInFlight;
   };
 
-  const refreshVirtualProviderNow = async ({ force = false, reason = 'refresh', timeoutMs = 0, directory } = {}) => {
+  const refreshVirtualProviderNow = async ({ force = false, reason = 'refresh', timeoutMs = 0, directory, signal } = {}) => {
+    if (typeof options.resolveApiKey === 'function') {
+      const deadline = AbortSignal.timeout(timeoutMs > 0 ? timeoutMs : 20_000);
+      const boundedSignal = signal ? AbortSignal.any([signal, deadline]) : deadline;
+      try {
+        const models = await withReadOnly({ kind: 'catalog', directory, signal: boundedSignal },
+          () => refreshModels({ force, reason, directory, signal: boundedSignal }));
+        boundedSignal.throwIfAborted();
+        return buildVirtualProvider(models);
+      } catch (error) {
+        if (boundedSignal.aborted) {
+          lastModelRefreshTimedOut = deadline.aborted && !signal?.aborted;
+          lastModelRefreshError = lastModelRefreshTimedOut ? 'native_cursor_catalog_timeout' : 'cursor_model_catalog_cancelled';
+          lastError = lastModelRefreshError;
+        }
+        if (error?.nativeProcessUnsettled || /^native_[a-z_]{1,80}$/.test(error?.code ?? '')) throw error;
+        signal?.throwIfAborted();
+        if (deadline.aborted) {
+          if (timeoutMs > 0 && !signal) {
+            lastModelRecords = fallbackModelRecords();
+            lastModelsSource = 'fallback';
+            return buildVirtualProvider(lastModelRecords);
+          }
+          throw Object.assign(new Error('native_cursor_catalog_timeout'), { code: 'native_cursor_catalog_timeout', statusCode: 503 });
+        }
+        throw error;
+      }
+    }
     const refreshPromise = withReadOnly({ kind: 'catalog', directory }, () => refreshModels({ force, reason, directory }));
     const boundedTimeoutMs = Math.max(0, Number(timeoutMs) || 0);
     if (!boundedTimeoutMs) {
@@ -2046,12 +2086,13 @@ export function createCursorSdkRuntime(options = {}) {
     });
   };
 
-  const resolveCursorSdkModelSelection = async ({ modelID, variant, directory }) => {
+  const resolveCursorSdkModelSelection = async ({ modelID, variant, directory, signal }) => {
     assertHostSupported();
+    signal?.throwIfAborted();
     const normalizedModelID = normalizeModelId(modelID);
     let records = lastModelRecords;
     if (typeof options.resolveApiKey === 'function') {
-      records = (await refreshVirtualProviderNow({ directory, reason: 'model_selection' })).models;
+      records = (await refreshVirtualProviderNow({ directory, reason: 'model_selection', signal })).models;
       if (!modelCatalogEvidence.has(records)) throw selectionError('cursor_model_catalog_unavailable', normalizedModelID, variant, 503);
     } else if (!records || !isPlainObject(records[normalizedModelID])) {
       records = (await refreshVirtualProviderNow({ directory, reason: 'model_selection_miss' })).models;
@@ -2072,12 +2113,13 @@ export function createCursorSdkRuntime(options = {}) {
     agentDefinitions,
     mcpServers,
     mcpServerIdentity,
+    readOnly = false,
   }) => {
     assertSelectionCredential(modelSelection, apiKey);
     const model = cloneCursorSdkModelSelection(modelSelection) || createFallbackCursorSdkModelSelection(modelID);
     const agents = pinCursorSdkSubagentModels(cloneCursorSdkAgentDefinitions(agentDefinitions), model);
     const normalizedMcpServers = cloneCursorMcpServers(mcpServers);
-    const fingerprint = createAgentRuntimeFingerprint({ directory, model, agents, mcpServerIdentity, apiKey });
+    const fingerprint = createAgentRuntimeFingerprint({ directory, model, agents, mcpServerIdentity, apiKey, readOnly });
     const cached = agentsBySession.get(sessionID);
     if (cached?.fingerprint === fingerprint && cached?.agent) {
       agentsBySession.delete(sessionID);
@@ -2095,6 +2137,7 @@ export function createCursorSdkRuntime(options = {}) {
       apiKey,
       model,
       local,
+      ...cursorReadOnlyOptions(readOnly),
       ...(trimString(directory) ? { platform: { workspaceRef: directory } } : {}),
       ...(agents ? { agents } : {}),
       ...(normalizedMcpServers ? { mcpServers: normalizedMcpServers } : {}),
@@ -2147,6 +2190,7 @@ export function createCursorSdkRuntime(options = {}) {
     agentDefinitions,
     mcpServers,
     mcpServerIdentity,
+    readOnly = false,
   }) => {
     const model = cloneCursorSdkModelSelection(modelSelection) || createFallbackCursorSdkModelSelection(modelID);
     const agent = await getOrCreateAgent({
@@ -2158,6 +2202,7 @@ export function createCursorSdkRuntime(options = {}) {
       agentDefinitions,
       mcpServers,
       mcpServerIdentity,
+      readOnly,
     });
     const message = Array.isArray(images) && images.length > 0
       ? { text: prompt, images }
@@ -2320,10 +2365,10 @@ export function createCursorSdkRuntime(options = {}) {
     });
   };
 
-  const generateNodeWorkerTitle = async ({ text, directory, sessionID, apiKey: selectedKey, onUsage, mode = 'title', keyKind = mode, modelSelection = { id: 'auto' }, signal }) => {
+  const generateReadOnlyWorker = async ({ text, directory, sessionID, apiKey: selectedKey, onUsage, mode = 'title', keyKind = mode, modelSelection = { id: 'auto' }, signal }) => {
     signal?.throwIfAborted();
     const promptText = mode === 'text' ? text : trimString(text);
-    if (!promptText) return null;
+    if (!promptText && mode !== 'catalog') return null;
     const apiKey = selectedKey ?? await resolveApiKey({ kind: keyKind, directory, sessionID });
     if (!apiKey) return null;
     assertSelectionCredential(modelSelection, apiKey);
@@ -2333,7 +2378,8 @@ export function createCursorSdkRuntime(options = {}) {
     const preflightWire = serializeWorkerPayload(frozen);
     const inputForLease = (lease) => serializeWorkerPayload({ ...frozen, directory: lease.workingDirectory });
     const owned = options.executionAdapter ? await options.executionAdapter.startReadOnly({
-      input: preflightWire, inputForLease, command: nodeBinary, args: [workerPath], env: { ...process.env, ...workerEnv } }) : null;
+      input: preflightWire, inputForLease, command: nodeBinary, args: [workerPath], env: { ...process.env, ...workerEnv },
+      ...(signal ? { signal } : {}) }) : null;
     const child = owned ? owned.child : spawnImpl(nodeBinary, [workerPath], {
       cwd: workerCwd,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -2363,6 +2409,7 @@ export function createCursorSdkRuntime(options = {}) {
     const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
     let streamError;
     try { for await (const line of lines) {
+      if (mode === 'catalog') assertWorkerPayloadBytes(Buffer.byteLength(line));
       if (!trimString(line)) continue;
       let payload = null;
       try {
@@ -2370,7 +2417,9 @@ export function createCursorSdkRuntime(options = {}) {
       } catch {
         continue;
       }
-      if (mode === 'text' && payload?.type === 'text-result') {
+      if (mode === 'catalog' && payload?.type === 'catalog-result') {
+        title = cursorCatalogModels(payload.models);
+      } else if (mode === 'text' && payload?.type === 'text-result') {
         if (typeof payload.text !== 'string' || Buffer.byteLength(payload.text) > 262144) workerError = 'Cursor helper output is invalid.';
         else title = payload.text;
       } else if (payload?.type === 'title-result') {
@@ -2401,6 +2450,7 @@ export function createCursorSdkRuntime(options = {}) {
         ? `Cursor SDK title worker exited with code ${exit.code}: ${detail}`
         : `Cursor SDK title worker exited with code ${exit.code}.`);
     }
+    if (mode === 'catalog' && !Array.isArray(title)) throw new Error('cursor_model_catalog_invalid');
     return title;
   };
 
@@ -2417,11 +2467,12 @@ export function createCursorSdkRuntime(options = {}) {
     agentDefinitions,
     mcpServers,
     mcpServerIdentity,
+    readOnly = false,
     signal,
   }) => {
     // Freeze caller-owned objects before any preparation or filesystem await.
     const frozen = JSON.parse(serializeWorkerPayload({
-      apiKey, sessionID, modelID,
+      apiKey, sessionID, modelID, readOnly,
       modelSelection: cloneCursorSdkModelSelection(modelSelection) || createFallbackCursorSdkModelSelection(modelID),
       agents: cloneCursorSdkAgentDefinitions(agentDefinitions), mcpServers: cloneCursorMcpServers(mcpServers),
       mcpServerIdentity: trimString(mcpServerIdentity), prompt,
@@ -3045,6 +3096,7 @@ export function createCursorSdkRuntime(options = {}) {
             apiKey: input.apiKey,
             sessionID: input.sessionID,
             modelID: input.modelID,
+            readOnly: input.readOnly === true,
             modelSelection: cloneCursorSdkModelSelection(input.modelSelection) || createFallbackCursorSdkModelSelection(input.modelID),
             agents: cloneCursorSdkAgentDefinitions(input.agentDefinitions),
             mcpServers: cloneCursorMcpServers(input.mcpServers),
@@ -3161,6 +3213,7 @@ export function createCursorSdkRuntime(options = {}) {
             apiKey: input.apiKey,
             sessionID: input.sessionID,
             modelID: input.modelID,
+            readOnly: input.readOnly === true,
             modelSelection: cloneCursorSdkModelSelection(input.modelSelection) || createFallbackCursorSdkModelSelection(input.modelID),
             agents: cloneCursorSdkAgentDefinitions(input.agentDefinitions),
             mcpServers: cloneCursorMcpServers(input.mcpServers),
@@ -3307,7 +3360,7 @@ export function createCursorSdkRuntime(options = {}) {
       return await persistentWorkerRuntime.generateTitle(input);
     } catch (error) {
       logger.warn?.('[CursorSDK] persistent title worker unavailable, falling back to one-shot worker:', error);
-      return generateNodeWorkerTitle(input);
+      return generateReadOnlyWorker(input);
     }
   };
 
@@ -3332,14 +3385,14 @@ export function createCursorSdkRuntime(options = {}) {
         }
       },
     };
-    if (options.executionAdapter) return generateNodeWorkerTitle(titleInput);
+    if (options.executionAdapter) return generateReadOnlyWorker(titleInput);
     if (!useNodeWorkerForPrompts) {
       return generateDirectTitle(titleInput);
     }
     if (usePersistentWorkerForPrompts) {
       return generatePersistentWorkerTitle(titleInput);
     }
-    return generateNodeWorkerTitle(titleInput);
+    return generateReadOnlyWorker(titleInput);
   };
 
   const createPromptRun = options.executionAdapter ? createNodeWorkerPromptRun : typeof options.createPromptRun === 'function'
@@ -3385,6 +3438,7 @@ export function createCursorSdkRuntime(options = {}) {
     agentDefinitions,
     mcpServers,
     mcpServerIdentity,
+    readOnly = false,
   }) => {
     recordCursorTimingMark({
       sessionID,
@@ -3402,6 +3456,7 @@ export function createCursorSdkRuntime(options = {}) {
       agentDefinitions,
       mcpServers,
       mcpServerIdentity,
+      readOnly,
     });
     const agentID = trimString(prepared.agent?.agentId);
     recordCursorTimingMark({
@@ -3511,7 +3566,7 @@ export function createCursorSdkRuntime(options = {}) {
 
   const prewarmCursorSession = async (input = {}) => {
     assertHostSupported();
-    if (options.nativeWarming === false) return { ok: false, configured: false, disabled: true, reason: 'native_warming_disabled' };
+    if (options.nativeWarming === false || options.ownedPrompt) return { ok: false, configured: false, disabled: true, reason: 'native_warming_disabled' };
     const sessionID = trimString(input.sessionID);
     const directory = trimString(input.directory);
     const modelID = normalizeModelId(input.modelID);
@@ -4466,6 +4521,7 @@ export function createCursorSdkRuntime(options = {}) {
         apiKey,
         modelID,
         modelSelection,
+        readOnly: ownedPrompt?.readOnly === true,
         prompt: executionPrompt,
         directory,
         images,
@@ -5116,7 +5172,7 @@ export function createCursorSdkRuntime(options = {}) {
     },
     async prewarm() {
       assertHostSupported();
-      if (options.nativeWarming === false) return { ...getStatus(), ok: false, disabled: true, reason: 'native_warming_disabled' };
+      if (options.nativeWarming === false || options.ownedPrompt) return { ...getStatus(), ok: false, disabled: true, reason: 'native_warming_disabled' };
       const apiKey = await resolveApiKey({ kind: 'prewarm' });
       if (!apiKey) {
         return {
@@ -5159,7 +5215,17 @@ export function createCursorSdkRuntime(options = {}) {
     async validateModelSelection(input) {
       if (!hostSupported) return false;
       try { await resolveCursorSdkModelSelection(input); return true; }
-      catch (error) { return error?.code === 'cursor_model_unavailable' ? false : null; }
+      catch (error) {
+        if (error?.code === 'cursor_model_unavailable') return false;
+        const reason = typeof error?.code === 'string' && /^native_[a-z_]{1,80}$/.test(error.code)
+          ? error.code : 'cursor_model_catalog_unavailable';
+        try { input.onFailure?.({ reason }); } catch { /* Diagnostics cannot change admission. */ }
+        if (error?.nativeProcessUnsettled) throw error;
+        if (reason.startsWith('native_')) throw Object.assign(new Error(reason), { code: reason,
+          statusCode: Number.isSafeInteger(error.statusCode) ? error.statusCode : 503, cause: error });
+        input.signal?.throwIfAborted();
+        return null;
+      }
     },
     async generateText(input = {}) {
       const directory = trimString(input.directory), sessionID = trimString(input.sessionID);
@@ -5172,7 +5238,7 @@ export function createCursorSdkRuntime(options = {}) {
       if (input.titleHelper && !sessionID) throw new Error('cursor_helper_title_session_required');
       const modelSelection = await resolveCursorSdkModelSelection({ modelID: input.modelID, variant: input.variant, directory });
       signal.throwIfAborted();
-      return withReadOnly({ kind: input.titleHelper ? 'title' : 'text', directory, ...(sessionID ? { sessionID } : {}), ...(input.titleHelper ? { modelID: input.modelID, ...(input.variant ? { variant: input.variant } : {}) } : {}) }, () => generateNodeWorkerTitle({
+      return withReadOnly({ kind: input.titleHelper ? 'title' : 'text', directory, ...(sessionID ? { sessionID } : {}), ...(input.titleHelper ? { modelID: input.modelID, ...(input.variant ? { variant: input.variant } : {}) } : {}) }, () => generateReadOnlyWorker({
         text: input.text, directory, sessionID, mode: 'text', keyKind: input.titleHelper ? 'title' : 'text', modelSelection, signal,
         onUsage: observation => options.onTitleUsageObservation?.({ sessionID: sessionID || null, directory, observation }),
       }));

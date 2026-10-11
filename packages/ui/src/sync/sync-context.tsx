@@ -3515,32 +3515,42 @@ export function SyncProvider(props: {
     [childStores, messageLoader, props.sdk, props.directory, resyncSession],
   )
 
+  const cancelDirectoryBootstrapRef = useRef<(directory: string) => void>(() => {})
+
   // Configure child store manager
   useEffect(() => {
-    const bootingDirs = new Map<string, symbol>()
+    const bootingDirs = new Map<string, AbortController>()
+    const bootstrapOwners = new Map<string, AbortController>()
+    const cancelBootstrap = (directory: string) => {
+      bootstrapOwners.get(directory)?.abort()
+      bootstrapOwners.delete(directory)
+      bootingDirs.delete(directory)
+    }
+    cancelDirectoryBootstrapRef.current = cancelBootstrap
 
     childStores.configure({
       onBootstrap: (directory) => {
         if (bootingDirs.has(directory)) return
-        const bootstrapToken = Symbol(directory)
+        cancelBootstrap(directory)
+        const bootstrapToken = new AbortController()
+        bootstrapOwners.set(directory, bootstrapToken)
         bootingDirs.set(directory, bootstrapToken)
 
         const store = childStores.getChild(directory)
         if (!store) {
-          if (bootingDirs.get(directory) === bootstrapToken) {
-            bootingDirs.delete(directory)
-          }
+          cancelBootstrap(directory)
           return
         }
         const isOwned = () => (
           childStores.getChild(directory) === store
-          && bootingDirs.get(directory) === bootstrapToken
+          && bootstrapOwners.get(directory) === bootstrapToken
         )
 
         const runBootstrap = async () => {
           const globalState = useGlobalSyncStore.getState()
           await bootstrapDirectory({
             directory,
+            signal: bootstrapToken.signal,
             sdk: props.sdk,
             getState: () => store.getState(),
             set: (patch) => {
@@ -3555,7 +3565,7 @@ export function SyncProvider(props: {
               projects: globalState.projects,
               providers: globalState.providers,
             },
-            loadSessions: (dir) => retry(async () => {
+            loadSessions: async (dir, signal) => {
               if (!isOwned()) return
               const requestLifecycleRevision = captureDirectorySessionListRevision(dir)
               store.setState({ sessionListStatus: "loading", sessionListError: undefined })
@@ -3563,8 +3573,8 @@ export function SyncProvider(props: {
                 directory: dir,
                 roots: true,
                 limit: 50,
-              })
-              if (!isOwned()) return
+              }, { signal })
+              if (!isOwned() || signal.aborted) return
               // SDK returns { error } instead of { data } on non-ok responses (503).
               // Preserve HTTP status so retry()'s transient detection works.
               const rawError = (result as { error?: unknown }).error
@@ -3602,7 +3612,7 @@ export function SyncProvider(props: {
                 sessionListError: undefined,
               })
               ingestDirectoryStateIntoRoutingIndex(routingIndex, directory, store.getState())
-            }),
+            },
           })
           if (!isOwned()) return
           void restorePersistedSessionIndicatorsForDirectory(directory, store).catch(() => undefined)
@@ -3615,7 +3625,7 @@ export function SyncProvider(props: {
         })
       },
       onDispose: (directory, snapshot) => {
-        bootingDirs.delete(directory)
+        cancelBootstrap(directory)
         messageLoader.invalidateDirectory(directory)
         directorySessionLifecycleOverlays.delete(normalizeEventDirectory(directory))
         clearDirectorySessionChangeAttributions(directory)
@@ -3643,7 +3653,7 @@ export function SyncProvider(props: {
       }
     }
     return () => {
-      bootingDirs.clear()
+      for (const directory of bootstrapOwners.keys()) cancelBootstrap(directory)
     }
   }, [childStores, messageLoader, props.sdk, routingIndex])
 
@@ -3703,6 +3713,8 @@ export function SyncProvider(props: {
     for (const directory of getActiveDirectoryStoreKeys(childStores.children.keys(), activeDirectoryRef.current)) {
       const store = childStores.children.get(directory)
       if (store && store.getState().status !== "complete") {
+        cancelDirectoryBootstrapRef.current(directory)
+        store.setState({ status: "loading", bootstrapError: undefined, sessionListError: undefined, sessionListStatus: "idle" })
         childStores.ensureChild(directory)
       }
     }

@@ -6,7 +6,7 @@ export function providerUsageFixture(mode = 'available', now = Date.now()) {
   const window = { usedPercent: 37, remainingPercent: 63, windowSeconds: 604800,
     resetAfterSeconds: 86400, resetAt: now + 86400000, resetAtFormatted: 'Tomorrow', resetAfterFormatted: '1d' };
   return { providerId: 'codex', providerName: 'ChatGPT', ok: true, configured: true, fetchedAt: now,
-    source: 'codex-app-server', connectionId: 'fixture-usage-account', account: { email: 'usage@example.invalid', planType: 'plus' },
+    source: 'chatgpt-browser', connectionId: 'fixture-native-account', account: null,
     usage: { windows: { weekly: window }, resetCredits: { availableCount: mode === 'unknown' ? null : mode === 'zero' ? 0 : 3,
       totalEarnedCount: null, source: 'usage', detailsAvailable: mode !== 'unknown',
       credits: mode === 'available' ? [{ id: 'fixture-reset', status: 'available', resetType: 'weekly',
@@ -32,8 +32,6 @@ export async function setupProviderUsageQa(cdp) {
       if (url.origin !== location.origin || method !== 'GET') return originalFetch(input, init);
       const result = modes[state.mode];
       const payload = url.pathname === '/api/quota/providers' ? { providers: ['codex'] }
-        : url.pathname === '/api/quota/codex/connection' ? { available: true, configured: true,
-          source: result.source, connectionId: result.connectionId, account: result.account, login: null }
         : url.pathname === '/api/quota/codex' ? result : undefined;
       if (!payload) return originalFetch(input, init);
       const signal = init?.signal ?? request?.signal;
@@ -70,10 +68,11 @@ export async function runProviderUsageQa({ cdp, check, screenshot, fixture }) {
   await ui.click({ text: 'Providers', exact: false, selector: 'button' });
   await ui.waitExpression('usage-only ChatGPT provider', `document.body.innerText.includes('ChatGPT')`);
   await ui.click({ text: 'ChatGPT', exact: false, selector: 'button' });
-  await check('weekly usage, source identity and reset expiry render', async () => {
+  await check('weekly usage, native source and reset expiry render', async () => {
     await ui.waitExpression('weekly reset bank', `document.body.innerText.includes('Reset Bank') && document.body.innerText.includes('3 available')`);
     const text = await evaluate(cdp, 'document.body.innerText');
-    assert.match(text, /usage@example\.invalid/);
+    assert.match(text, /Usage source: ChatGPT/);
+    assert.doesNotMatch(text, /Sign in for Usage/);
     assert.match(text, /Weekly/i);
     assert.match(text, /Fixture expiry/);
     assert.equal(await evaluate(cdp, 'document.documentElement.scrollWidth > innerWidth + 1'), false);

@@ -28,12 +28,18 @@ describe('selected native provider configuration owner',()=>{
     expect(f.credentialOperation.mock.calls[0][0]).toMatchObject({operation:'openai.credential.remove',expectedFingerprint:f.row.expectedFingerprint,directory:f.project});
   });
   it.each([
-    ['xai', 'device', true], ['xai', 'chatgpt-siwc', false], ['openai', 'chatgpt-siwc', true], ['openai', 'device', false], ['opencode-go', 'device', false],
+    ['xai', 'device', true], ['xai', 'chatgpt-siwc', false], ['openai', 'chatgpt-token-sharing', true], ['openai', 'chatgpt-browser', true], ['openai', 'chatgpt-siwc', true], ['openai', 'device', false], ['opencode-go', 'device', false],
   ])('validates oauth credential metadata by provider: %s %s accepted=%s',async(providerID,methodID,accepted)=>{
     const f=fixture(providerID);f.row.valueType='oauth';f.row.methodID=methodID;
     const result=f.run({providerID,scope:'all'},owner=>owner.readAuthenticationSource());
     if(accepted)await expect(result).resolves.toEqual({exists:true,path:null});
     else await expect(result).rejects.toMatchObject({code:'native_credential_metadata_invalid'});
+  });
+  it.each(['chatgpt-token-sharing','chatgpt-siwc','chatgpt-browser','chatgpt-headless'])('disconnects OpenAI %s through the normal removal owner',async methodID=>{
+    const f=fixture();f.row.valueType='oauth';f.row.methodID=methodID;
+    await f.run({providerID:'openai',scope:'auth'},owner=>owner.disconnectCredentials(()=>{}));
+    expect(f.credentialOperation).toHaveBeenCalledWith(expect.objectContaining({operation:'openai.credential.remove',methodID}),
+      expect.objectContaining({operation:'remove',id:f.row.id}));
   });
   it('preserves exact selected project sources and removes all four project layers',async()=>{
     const f=fixture('cursor-acp');fs.mkdirSync(path.join(f.project,'.opencode'));

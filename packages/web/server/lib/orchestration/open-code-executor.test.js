@@ -731,6 +731,41 @@ describe('web managed OpenCode executor on gen 2 (openCodeClient)', () => {
     expect(() => createExecutor({})).toThrow('openCodeClient must be an openCodeClient');
   });
 
+  it('dispatches a read-only Cursor child under fresh native task authority and refuses a revoked prompt', async () => {
+    for (const revoked of [false, true]) {
+      const context = new AsyncLocalStorage();
+      const client = createFakeOpenCodeClient();
+      const cursorSdkRuntime = {
+        handlePromptAsync: vi.fn(async () => {
+          expect(context.getStore()).toMatchObject({ operation: 'prompt', taskId: task.taskId, leaseToken: task.leaseToken });
+          return { handled: true, status: 204 };
+        }),
+        getSessionStatus: () => ({ ses_child_v2: { type: 'idle' } }),
+        getSessionMessages: async () => [{ info: { id: 'msg_cursor', role: 'assistant', finish: 'stop' }, parts: [{ type: 'text', text: 'Located file' }] }],
+        abortSession: async () => true, deleteSessionState: async () => {},
+      };
+      const executor = createExecutor(client, { cursorSdkRuntime, cursorReadOnly: true,
+        nativeTaskDispatch: async (input, action) => {
+          if (input.operation === 'prompt' && revoked) throw Object.assign(new Error('revoked'), { code: 'native_managed_task_lease_invalid' });
+          return context.run(input, action);
+        } });
+      try {
+        const result = executor.start({ ...task, readOnly: true, providerId: 'cursor-acp', modelId: 'claude-haiku-5-5', variant: 'medium' },
+          { setChildSessionId: async () => true, markAccepted: async () => true });
+        if (revoked) {
+          await expect(result).rejects.toMatchObject({ code: 'native_managed_task_lease_invalid' });
+          expect(cursorSdkRuntime.handlePromptAsync).not.toHaveBeenCalled();
+        } else {
+          await expect(result).resolves.toMatchObject({ status: 'completed', recoverablePreview: 'Located file' });
+          expect(cursorSdkRuntime.handlePromptAsync).toHaveBeenCalledWith(expect.objectContaining({ body: expect.objectContaining({
+            model: { providerID: 'cursor-acp', modelID: 'claude-haiku-5-5' }, variant: 'medium',
+          }) }));
+        }
+        expect(client.prompts.prompt).not.toHaveBeenCalled();
+      } finally { await executor.shutdown(); }
+    }
+  });
+
   it('creates, prompts, observes and reads the child through the client with today\'s budgets', async () => {
     const client = createFakeOpenCodeClient();
     const registerExecutionChild = vi.fn(async () => {});

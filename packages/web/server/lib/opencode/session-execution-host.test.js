@@ -6,7 +6,7 @@ import fs from 'node:fs/promises';
 const mocks = vi.hoisted(() => ({
   runtime: { admitDirect: vi.fn(), finishDirect: vi.fn(), executionReceipt: vi.fn(), reserve: vi.fn(), prepare: vi.fn(),
     begin: vi.fn(), claimLease: vi.fn(), leaseForCall: vi.fn(), finish: vi.fn(), cleanupLease: vi.fn(), drain: vi.fn(),
-    assertAdmission: vi.fn(), registerChild: vi.fn(), cancelUnstartedCall: vi.fn() },
+    assertAdmission: vi.fn(), registerChild: vi.fn(), cancelUnstartedCall: vi.fn(), cancelLease: vi.fn() },
   classify: vi.fn(),
   runtimeOptions: null,
 }));
@@ -139,7 +139,7 @@ test('ready native managed control rechecks the exact invocation and retains the
   expect(f.recheck).toHaveBeenCalledWith(f.invocation);
   const digest = createHash('sha256').update(JSON.stringify(f.invocation.input)).digest('hex');
   expect(mocks.runtime.begin).toHaveBeenCalledWith(expect.objectContaining({ tool: 'devryan_task', kind: 'control', protocol: 3,
-    argsDigest: digest, executionFingerprint: digest, userMessageID: 'msg_user' }));
+    argsDigest: digest, executionFingerprint: digest, userMessageID: 'msg_user', ownerID: 'owner_fixture' }));
   expect(mocks.runtime.claimLease).toHaveBeenCalledWith({ directory, token: 'control_1', kind: 'control' });
   expect(await f.host.nativeManagedControl({ action: 'finish', invocation: f.invocation, token: 'control_1' }))
     .toEqual({ files: [], operationID: 'published_1' });
@@ -737,6 +737,40 @@ test.each(['execution_cancelled', 'execution_reverted'])('native control complet
   const f = nativeManagedFixture(); mocks.runtime.finish.mockRejectedValue(Object.assign(Error(code), { code }));
   await expect(f.host.nativeManagedControl({ action: 'finish', invocation: f.invocation, token: f.lease.token })).rejects.toMatchObject({ code });
   expect(f.host).toBeDefined(); expect(mocks.runtime.executionReceipt).not.toHaveBeenCalled();
+});
+
+test('a finish refused after the tool permit retired cancels and cleans the exact ready control lease', async () => {
+  const f = nativeManagedFixture();
+  await f.host.nativeManagedControl({ action: 'begin', invocation: f.invocation });
+  f.recheck.mockRejectedValue(Object.assign(Error('retired'), { code: 'native_permit_invalid' }));
+  await expect(f.host.nativeManagedControl({ action: 'finish', invocation: f.invocation, token: f.lease.token }))
+    .rejects.toMatchObject({ code: 'native_permit_invalid' });
+  expect(mocks.runtime.finish).not.toHaveBeenCalled();
+  expect(mocks.runtime.leaseForCall).toHaveBeenCalledWith({ directory, sessionID: input.sessionID, callID: input.callID });
+  expect(mocks.runtime.cancelLease).toHaveBeenCalledWith({ directory, token: f.lease.token });
+  expect(mocks.runtime.cleanupLease).toHaveBeenCalledWith(f.lease);
+});
+
+test.each([
+  ['another token', f => ({ token: 'control_other' })], ['a published lease', () => ({ state: 'published' })],
+  ['a process lease', () => ({ executionKind: 'process', preparation: undefined })],
+  ['another message', f => ({ scope: { ...f.lease.scope, messageID: 'msg_other' } })],
+])('a failed finish leaves %s untouched', async (_label, change) => {
+  const f = nativeManagedFixture();
+  mocks.runtime.leaseForCall.mockResolvedValue({ ...f.lease, ...change(f) });
+  f.recheck.mockRejectedValue(Object.assign(Error('retired'), { code: 'native_permit_invalid' }));
+  await expect(f.host.nativeManagedControl({ action: 'finish', invocation: f.invocation, token: f.lease.token }))
+    .rejects.toMatchObject({ code: 'native_permit_invalid' });
+  expect(mocks.runtime.cancelLease).not.toHaveBeenCalled();
+  expect(mocks.runtime.cleanupLease).not.toHaveBeenCalled();
+});
+
+test('a failed settlement never replaces the finish failure', async () => {
+  const f = nativeManagedFixture();
+  f.recheck.mockRejectedValue(Object.assign(Error('retired'), { code: 'native_permit_invalid' }));
+  mocks.runtime.cancelLease.mockRejectedValue(Object.assign(Error('locked'), { code: 'LOCK_TIMEOUT' }));
+  await expect(f.host.nativeManagedControl({ action: 'finish', invocation: f.invocation, token: f.lease.token }))
+    .rejects.toMatchObject({ code: 'native_permit_invalid' });
 });
 
 test('read-only execution receives only the host-owned Windows storage authority', async () => {

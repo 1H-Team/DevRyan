@@ -1,0 +1,13 @@
+{
+  "command": "node scripts/verify-opencode-v2-native.mjs",
+  "status": "passed",
+  "casesPassed": 49,
+  "sourceDigest": "a8eaa21d893a2ed1dce1d9d87172a9c8438e4c1b3ab70549c64a4a51ec8a983f",
+  "artifactDigest": "7c9b19fccfaf5803968cca0a05560f38aa6390da8d70c79944224fef7400b91c",
+  "sourceCohortValid": true,
+  "changedPaths": [],
+  "remainingMandatoryGate": [],
+  "cleanup": { "remainingProcessIds": [], "trackingClosed": true },
+  "coverage": "Real native archive/unarchive before and after a completed simulated turn; recovered queued/promoted input is covered separately by the composed regression tests.",
+  "limitation": "The installed app was not replaced and the affected live session was not mutated."
+}

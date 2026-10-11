@@ -54,6 +54,12 @@ function fixture({ legacyAccount = 'account-a', bound = false } = {}) {
 }
 
 describe('host-linked OpenAI connection identity', () => {
+  it('reports reauthentication when the native host refuses OAuth', async () => {
+    const coordinator = createOpenAiOAuthCoordinator({asyncStorage:{readAuth:async()=>{throw Object.assign(new Error('reconnect'),{code:'bot_opencode_provider_authentication',statusCode:401});},compareAndSwap:async()=>false}});
+    coordinator.markReady();
+    const connections = createHostOAuthConnections({coordinator,repository:{},vault:{}});
+    expect(await connections.authState({metadata:{connectionId:'host:openai',oauthAccountKey:oauthAccountKey('account-a')}})).toBe('reauth_required');
+  });
   it('migrates a proven matching legacy identity in place and erases its refresh snapshot', async () => {
     const f = fixture();
     expect(await f.connections.authState(f.row())).toBe('ready');

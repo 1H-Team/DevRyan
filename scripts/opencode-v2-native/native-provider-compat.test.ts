@@ -20,16 +20,16 @@ test('unencodable native rows cannot poison healthy catalog rows or mutate their
     expect(diagnostic).toHaveBeenLastCalledWith('level=warn msg=model_response_schema_invalid name=SchemaError schemaPath=[0].limit.context');
   } finally { diagnostic.mockRestore(); }
 });
-test('native model shapes use the original OpenAI OAuth policy while preserving route IDs and native variant overlays',()=>{
+test('native model shapes trust the built-in ChatGPT catalog and pin context windows while preserving route IDs and native variant overlays',()=>{
   const source=[make('gpt-5.6-sol'),make('gpt-5.6-luna-fast'),make('gpt-5.6'),make('gpt-5.3-codex-spark')];
   const result=normalizeNativeOpenAiModels(source,{oauth:true,compactionReserved:7500});
-  expect(result.map(model=>String(model.id))).toEqual(['gpt-5.6-sol','gpt-5.6-luna-fast','gpt-5.3-codex-spark']);
+  expect(result.map(model=>String(model.id))).toEqual(['gpt-5.6-sol','gpt-5.6-luna-fast','gpt-5.6','gpt-5.3-codex-spark']);
   expect(result[0].limit).toEqual({context:1050000,input:263500,output:32000});
-  expect(result[0].variants.map(variant=>String(variant.id))).toEqual(['high','max','ultra']);
+  expect(result[0].variants.map(variant=>String(variant.id))).toEqual(['high']);
   expect(result[0].variants[0].headers).toEqual({'x-retained':'yes'});
   expect(result[0].variants[0].body).toEqual({retained:true});
   expect(result[0].settings?.reasoningSummary).toBe('detailed');
-  expect(result[2].settings).toEqual({reasoningEffort:'high',retained:true});
+  expect(result[3].settings).toEqual({reasoningEffort:'high',retained:true});
   expect(String(source[0].variants[0].id)).toBe('none');
   expect(source[0].settings?.reasoningSummary).toBe('auto');
   const key=normalizeNativeOpenAiModels(source,{oauth:false});

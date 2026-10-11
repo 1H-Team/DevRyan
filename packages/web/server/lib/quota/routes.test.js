@@ -645,27 +645,38 @@ describe('native quota discovery and fetch', () => {
     }
   });
 
-  it('explains Sign in with ChatGPT usage refusal and keeps other OpenAI failures', async () => {
+  it.each(['chatgpt-token-sharing', 'chatgpt-siwc', 'chatgpt-headless'])('reports unavailable usage for %s without a network call', async methodID => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const owner = readyOwner({credentialMetadata: async()=>[{id:'c',integrationID:'openai',valueType:'oauth',methodID,active:true}]});
     try {
-      for (const status of [401, 403]) {
-        fetchSpy.mockResolvedValue(new Response(JSON.stringify(status === 401 ? { code: 'no_matching_rule' } : {}), { status }));
-        const picked = { directory, credentialID: 'c', value: { type: 'oauth', methodID: 'chatgpt-siwc', access: 'a', refresh: 'r', expires: 1 } };
-        const owner = readyOwner({ readOpenAiSelected: async () => picked, readOpenAiAccountSelection: async () => picked });
-        const siwc = register({ owner, quota: await import('./providers/index.js') });
-        const body = (await request(siwc).get('/api/quota/codex').expect(200)).body;
-        expect(body).toMatchObject({ ok: false, configured: true, source: 'chatgpt-siwc', connectionId: 'c' });
-        if (status === 401) expect(body.errorCode).toBe('siwc_usage_unavailable');
-        else expect(body.errorCode).toBeUndefined();
-      }
-      fetchSpy.mockResolvedValue(response({}, 401));
-      const legacyMethod = { directory, credentialID: 'c', value: { type: 'oauth', methodID: 'chatgpt-browser', access: 'a', refresh: 'r', expires: 1 } };
-      const owner = readyOwner({ readOpenAiAccountSelection: async () => legacyMethod, readOpenAiSelected: async () => legacyMethod });
+      const body = (await request(register({owner,quota:await import('./providers/index.js')})).get('/api/quota/codex').expect(200)).body;
+      expect(body).toMatchObject({ok:false,configured:true,source:methodID,connectionId:'c',errorCode:'siwc_usage_unavailable',account:null});
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {fetchSpy.mockRestore();}
+  });
+
+  it('reports native Codex renewal as pending without asking for a second login', async () => {
+    const owner = readyOwner({ credentialMetadata: async () => [{ id: 'c', integrationID: 'openai', valueType: 'oauth', methodID: 'chatgpt-browser', active: true }],
+      readOpenAiSelected: async () => ({ directory, integrationID: 'openai', credentialID: 'c', value: { type: 'oauth', methodID: 'chatgpt-browser', access: 'native-access' } }) });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(response({}, 401));
+    try {
       const body = (await request(register({ owner, quota: await import('./providers/index.js') })).get('/api/quota/codex').expect(200)).body;
-      expect(body.errorCode).toBeUndefined();
-      expect(body).toMatchObject({ ok: false, configured: true });
-    } finally {
-      fetchSpy.mockRestore();
-    }
+      expect(body).toMatchObject({ ok: false, configured: true, source: 'chatgpt-browser', connectionId: 'c', errorCode: 'native_openai_token_renewal_pending' });
+      expect(body.error).toContain('next OpenAI request'); expect(fetchSpy).toHaveBeenCalledTimes(1);
+    } finally { fetchSpy.mockRestore(); }
+  });
+
+  it('reads Codex usage from the chat account and never exposes its credential', async () => {
+    const owner = readyOwner({ credentialMetadata: async () => [{ id: 'c', integrationID: 'openai', valueType: 'oauth', methodID: 'chatgpt-browser', active: true }],
+      readOpenAiSelected: async () => ({ directory, integrationID: 'openai', credentialID: 'c', value: { type: 'oauth', methodID: 'chatgpt-browser', access: 'native-secret', refresh: 'refresh-secret', metadata: { accountID: 'account' } } }) });
+    const fetchQuotaForProvider = vi.fn(async (_provider, options) => {
+      expect(options.readAuth().openai).toEqual({ type: 'oauth', methodID: 'chatgpt-browser', access: 'native-secret', accountId: 'account', connectionId: 'c' });
+      return { ok: true, configured: true, usage: { windows: [{ id: '5h', usedPercent: 10 }, { id: 'weekly', usedPercent: 20 }] } };
+    });
+    const app = register({ owner, quota: { fetchQuotaForProvider } });
+    const body = (await request(app).get('/api/quota/codex').expect(200)).body;
+    expect(body).toMatchObject({ ok: true, source: 'chatgpt-browser', connectionId: 'c', account: null });
+    expect(JSON.stringify(body)).not.toContain('secret');
+    await request(app).post('/api/quota/codex/connection/start').send({}).expect(404);
   });
 });

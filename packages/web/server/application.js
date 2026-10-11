@@ -96,7 +96,6 @@ import { createSettingsNormalizationRuntime } from './lib/opencode/settings-norm
 import { createSettingsHelpers } from './lib/opencode/settings-helpers.js';
 import { createThemeRuntime } from './lib/opencode/theme-runtime.js';
 import { createFeatureRoutesRuntime } from './lib/opencode/feature-routes-runtime.js';
-import { createHostChatgptSiwcEnrollment } from './lib/opencode/chatgpt-siwc-host.js';
 import { canReceiveProjectMetadataEvent } from './lib/scheduled-tasks/routes.js';
 import { parseServeCliOptions } from './lib/opencode/cli-options.js';
 import {
@@ -1274,11 +1273,6 @@ const staticRoutesRuntime = createStaticRoutesRuntime({
 });
 const featureRoutesRuntime = createFeatureRoutesRuntime({
   clientReloadDelayMs: CLIENT_RELOAD_DELAY_MS,
-});
-const chatgptSiwcEnrollment = createHostChatgptSiwcEnrollment({
-  dataDirectory: OPENCHAMBER_DATA_DIR,
-  getNativeRuntimeOwner: () => nativeRuntime,
-  getOpenCodeRuntime,
 });
 const bootstrapRuntime = createBootstrapRuntime({
   createUiAuth,
@@ -2542,6 +2536,10 @@ async function main(options = {}) {
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
     cursorSdkRuntime:cursorPromptRuntime,
+    cursorReadOnly: Boolean(nativeBundle),
+    withManagedCursorCatalog: nativeBundle ? (input, action) => nativeRuntime.withManagedCursorCatalog(input, action) : undefined,
+    onModelValidationFailure: input => harnessRuntime.record({ type: 'lifecycle', event: 'managed_model_validation_failed',
+      sessionID: input.rootSessionId, directory: input.directory, payload: input }),
     // Spawn time of the managed OpenCode now serving; null for an external runtime.
     readRuntimeStartedAt: () => (
       isExternalOpenCode || ENV_SKIP_OPENCODE_START || ENV_CONFIGURED_OPENCODE_HOST
@@ -2751,8 +2749,8 @@ async function main(options = {}) {
 
   await featureRoutesRuntime.registerRoutes(app, {
     openCodeClient,
+    recordDiagnostic: (entry) => harnessRuntime.record(entry),
     getNativeRuntimeOwner: () => nativeRuntime,
-    getChatgptSiwcEnrollmentOwner: () => chatgptSiwcEnrollment,
     isProviderAdministrator: () => canForceConfigRestart(getRequestPrincipal()),
     crypto,
     getLoginShellEnvSnapshot,

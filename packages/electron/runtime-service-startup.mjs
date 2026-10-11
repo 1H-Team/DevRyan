@@ -294,7 +294,7 @@ export const recoverAppBoundRuntime = async ({
   let registrationState = null;
   let registrationCode = null;
   try {
-    const result = await unregister();
+    const result = await runStartupPhase('service_unregister', unregister, log);
     registrationState = diagnosticState(result?.state);
     registrationCode = diagnosticCode(result?.code);
     if (result?.ok !== true) {
@@ -303,16 +303,16 @@ export const recoverAppBoundRuntime = async ({
       });
     }
     phase = 'wait_for_owner';
-    if (!await waitForStopped()) {
+    if (!await runStartupPhase('service_wait_for_owner', waitForStopped, log)) {
       throw Object.assign(new Error('Background runtime is still active. Wait for it to stop and retry.'), {
         code: 'runtime_service_owner_active',
       });
     }
     phase = 'acquire_app_bound';
-    await acquire();
+    await runStartupPhase('service_acquire_app_bound', acquire, log);
     acquired = true;
     phase = 'persist_app_bound';
-    await setMode();
+    await runStartupPhase('service_persist_app_bound', setMode, log);
     log?.warn?.('[runtime-service] startup recovered', {
       phase: 'app_bound_acquired', code: 'runtime_service_startup_recovered',
       registrationState, registrationCode,

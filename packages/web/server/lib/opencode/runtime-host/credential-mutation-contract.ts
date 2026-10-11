@@ -10,6 +10,9 @@ export const CredentialAuthorizationRef = Context.Reference<string | undefined>(
 /** Issued only inside the queued original action; rereads must not outlive its grant. */
 export const CredentialMutationReauthorizeRef = Context.Reference<Effect.Effect<void> | undefined>('DevRyan/CredentialMutationReauthorize', { defaultValue: () => undefined });
 
+export interface CredentialResolutionScope { readonly sessionID: string; readonly directory: string; readonly permit: OperationPermit; active: boolean }
+export const CredentialResolutionScopeRef = Context.Reference<CredentialResolutionScope | undefined>('DevRyan/ProviderCredentialResolution', { defaultValue: () => undefined });
+
 /** Private constructor contract; fingerprints bind payloads, never confer grants. */
 export type CredentialMutationBinding = {
   readonly directory: string;
@@ -26,13 +29,13 @@ export type CredentialMutationBinding = {
 
 /** Actual model-resolution scope, not a settings grant or a physical-request claim. */
 export type CredentialResolutionBinding = {
-  readonly kind: 'provider'; readonly integrationID: OwnedProviderIntegration;
   readonly controllerInstanceID: string; readonly directory: string;
   readonly acquisitionID: string; readonly configurationDigest: string;
   readonly sessionID: string; readonly permit: OperationPermit;
   readonly credentialID: string; readonly expectedFingerprint: string;
-} & ({ readonly valueType: 'key'; readonly methodID?: never }
-  | { readonly valueType: 'oauth'; readonly integrationID: 'xai'; readonly methodID: 'device' });
+} & ({ readonly kind: 'provider'; readonly integrationID: OwnedProviderIntegration; readonly valueType: 'key'; readonly methodID?: never }
+  | { readonly kind: 'provider'; readonly valueType: 'oauth'; readonly integrationID: 'xai'; readonly methodID: 'device' }
+  | { readonly kind: 'openai'; readonly valueType: 'oauth'; readonly integrationID: 'openai'; readonly methodID: 'chatgpt-token-sharing' | 'chatgpt-browser' });
 
 export type WithCredentialMutation = <A, E, R>(binding: CredentialMutationBinding,
   action: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;

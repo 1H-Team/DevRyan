@@ -60,21 +60,14 @@ describe('native quota credentials', () => {
     expect([...await create(all).listConfigured()].sort()).toEqual(['codex', 'opencode-go', 'xai']);
   });
 
-  it('maps OpenAI to an oauth entry, and a key to null', async () => {
-    const readOpenAiSelection = vi.fn(async () => ({ directory, credentialID: 'c', value: { type: 'oauth', methodID: 'chatgpt-siwc', access: 'acc', refresh: 'ref', expires: 1, metadata: { accountID: 'acct' } } }));
+  it('reads only OpenAI metadata and returns no token for quota', async () => {
+    const readOpenAiSelection = vi.fn(async () => ({ type: 'oauth', methodID: 'chatgpt-token-sharing', credentialID: 'c' }));
     const credentials = create(createOwner(), { readOpenAiSelection });
-    expect(await credentials.readAuth('codex')).toEqual({ openai: { type: 'oauth', access: 'acc', accountId: undefined,
-      methodID: 'chatgpt-siwc', connectionId: 'c', account: { email: null, planType: null } } });
-    expect((await create(createOwner(), { readOpenAiSelection: async () => ({ directory, value: {
-      type: 'oauth', methodID: 'chatgpt-browser', access: 'acc', metadata: { accountID: 'workspace' },
-    } }) }).readAuth('codex')).openai.accountId).toBe('workspace');
-    expect(readOpenAiSelection).toHaveBeenCalledWith(expect.any(Function), directory, { refresh: true });
-    expect(await create(createOwner(), { readOpenAiSelection: async () => ({ directory, value: { type: 'key', key: 'k' } }) }).readAuth('codex')).toBeNull();
-    expect(await create(createOwner(), { readOpenAiSelection: async () => null }).readAuth('codex')).toBeNull();
-    await expect(create(createOwner(), { readOpenAiSelection: async () => ({ directory: '/other', value: { type: 'oauth', access: 'a', methodID: 'm' } }) }).readAuth('codex'))
-      .rejects.toMatchObject({ code: 'native_credential_invalid' });
+    expect(await credentials.readAuth('codex')).toEqual({ openai: { type: 'oauth', methodID: 'chatgpt-token-sharing', connectionId: 'c' } });
+    expect(readOpenAiSelection).toHaveBeenCalledWith(expect.any(Function), directory);
+    readOpenAiSelection.mockResolvedValue({ type: 'key', credentialID: 'k' });
+    expect(await credentials.readAuth('codex')).toBeNull();
   });
-
   it('maps xAI without its refresh token and OpenCode Go to an api key', async () => {
     const readProviderSelected = vi.fn(async (scope) => scope.integrationID === 'xai'
       ? { directory, controllerInstanceID: 'i', integrationID: 'xai', credentialID: 'c', value: { type: 'oauth', methodID: 'device', access: 'xa', refresh: 'xr', expires: 99 } }
@@ -85,6 +78,17 @@ describe('native quota credentials', () => {
     expect(JSON.stringify(xai)).not.toContain('xr');
     expect(await credentials.readAuth('opencode-go')).toEqual({ 'opencode-go': { type: 'api', key: 'gk' } });
     expect(readProviderSelected.mock.calls[0][0]).toMatchObject({ kind: 'provider', directory, operation: 'provider.integration', integrationID: 'xai' });
+  });
+
+  it('reads the selected Codex access token and account ID without forwarding refresh credentials', async () => {
+    const selection = vi.fn(async () => ({ type: 'oauth', methodID: 'chatgpt-browser', credentialID: 'c' }));
+    const owner = createOwner({ readOpenAiSelected: vi.fn(async () => ({ directory, integrationID: 'openai', credentialID: 'c',
+      value: { type: 'oauth', methodID: 'chatgpt-browser', access: 'native-access', refresh: 'never-forward', metadata: { accountID: 'native-account' } } })) });
+    expect(await create(owner, { readOpenAiSelection: selection }).readAuth('codex')).toEqual({ openai: {
+      type: 'oauth', methodID: 'chatgpt-browser', access: 'native-access', accountId: 'native-account', connectionId: 'c' } });
+    expect(owner.readOpenAiSelected.mock.calls[0][0]).toMatchObject({ directory, kind: 'openai', operation: 'openai.integration' });
+    owner.readOpenAiSelected.mockResolvedValue({ directory, integrationID: 'openai', credentialID: 'changed', value: { type: 'oauth', methodID: 'chatgpt-browser', access: 'other' } });
+    await expect(create(owner, { readOpenAiSelection: selection }).readAuth('codex')).rejects.toMatchObject({ code: 'native_credential_invalid' });
   });
 
   it('returns null with no active credential and validates replies', async () => {

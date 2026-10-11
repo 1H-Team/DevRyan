@@ -123,8 +123,8 @@ const getProviderUsageLimitFailureReason = (status) => {
     : 'Provider usage limit reached';
 };
 
-const assertReadOnlyProviderSupport = (task) => {
-  if (!task.readOnly || supportsManagedReadOnlyProvider(task.providerId)) return;
+const assertReadOnlyProviderSupport = (task, cursorReadOnly) => {
+  if (!task.readOnly || supportsManagedReadOnlyProvider(task.providerId, { cursorReadOnly })) return;
   const error = new Error(MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED_MESSAGE);
   error.code = MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED;
   error.statusCode = 409;
@@ -717,6 +717,7 @@ const toTerminalResult = (observation) => {
 
 export const createManagedOpenCodeExecutor = (options = {}) => {
   const transport = options.transport;
+  const cursorReadOnly = options.cursorReadOnly === true;
   const requiredMethods = [
     'createSession',
     'promptSession',
@@ -2110,7 +2111,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
   const start = async (task, control) => {
     assertRunning();
     assertReadOnlyAgentSupport(task);
-    assertReadOnlyProviderSupport(task);
+    assertReadOnlyProviderSupport(task, cursorReadOnly);
     // Resolved before the child exists so a failing host hook cannot orphan a session.
     const promptPreamble = resolveTaskPromptPreamble
       ? await resolveTaskPromptPreamble(task)
@@ -2177,7 +2178,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       throw new Error(`Managed task ${task.taskId} has no child session`);
     }
     assertReadOnlyAgentSupport(task);
-    assertReadOnlyProviderSupport(task);
+    assertReadOnlyProviderSupport(task, cursorReadOnly);
 
     let status;
     let observation;
@@ -2273,7 +2274,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       throw new Error(`Managed task ${task.taskId} has no child session`);
     }
     assertReadOnlyAgentSupport(task);
-    assertReadOnlyProviderSupport(task);
+    assertReadOnlyProviderSupport(task, cursorReadOnly);
     if (task.transportRecovery?.phase === 'backup_pending') {
       // Automatic fallback never aborts a newer turn to make room for itself.
       const observation = await readObservation(task);

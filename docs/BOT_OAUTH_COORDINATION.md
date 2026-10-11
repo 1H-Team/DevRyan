@@ -1,9 +1,16 @@
 # Shared host and Bot OpenAI OAuth
 
-The host and Bots share one OpenAI OAuth credential without divergence. The
-design prevents host-login divergence, stale scoped writeback and independent
-managed refresh owners. Provider-side revocation can still require
-reconnection.
+Desktop/web ChatGPT sign-in now uses OpenCode's built-in
+`chatgpt-browser` flow for chat and usage, retaining existing
+`chatgpt-token-sharing` connections for chat. OpenCode owns token refresh under the host's
+serialized credential-resolution queue. Bots and managed users on any OpenAI
+OAuth login fail with `bot_opencode_provider_authentication` (401) in this pass;
+reconnecting does not fix this unsupported path. API-key Bots remain supported.
+Bot OAuth gateway/container integration is a separate follow-up pass.
+
+The sections below document the retained compatibility coordinator and Bot
+implementation, not the current desktop/web sign-in contract. See the
+[built-in migration audit](audits/2026-10-11/builtin-chatgpt-signin/README.md).
 
 ## Ownership and safety
 

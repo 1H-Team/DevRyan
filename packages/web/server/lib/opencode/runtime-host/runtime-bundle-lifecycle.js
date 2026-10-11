@@ -11,6 +11,7 @@ import {resumeRuntimeBundle} from './runtime-bundle-resume.js';
 import { executionArtifacts } from '../execution-artifacts.js';
 import { runNativeBundleCredentialProcess, NATIVE_BUNDLE_CREDENTIAL_CONTRACT } from './native-bundle-credential-process.js';
 import { verifyNativeCloneCompatibility } from './native-bundle-compatibility.js';
+import { timeStartupPhase } from '../startup-timing.js';
 
 const fail = code => Object.assign(new Error(code), { code, status: 503 });
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -54,8 +55,8 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
   let captureArtifacts;
   const snapshots = new Map();
   const verifyLaunch = async launch => {
-    const result = await verifyArtifacts({ manifestPath: launch.artifactManifestPath,
-      manifestSha256: launch.artifactManifestSha256, launcher: executionArtifacts(path.dirname(launch.artifactManifestPath)).launcher });
+    const result = await timeStartupPhase('bundle_artifact_verification', () => verifyArtifacts({ manifestPath: launch.artifactManifestPath,
+      manifestSha256: launch.artifactManifestSha256, launcher: executionArtifacts(path.dirname(launch.artifactManifestPath)).launcher }));
     if (result.controller !== launch.controllerBinary || result.writer !== launch.writerBinary) throw fail('bundle_artifact_generation_mismatch');
     return result;
   };
@@ -95,7 +96,7 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
     const stat = await fs.lstat(manifestPath);
     if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 4 * 1024 * 1024) throw fail('bundle_candidate_artifact_invalid');
     const manifestSha256 = hash(await fs.readFile(manifestPath));
-    const artifacts = await verifyArtifacts({ manifestPath, manifestSha256, launcher: executionArtifacts(artifactDirectory).launcher });
+    const artifacts = await timeStartupPhase('bundle_artifact_verification', () => verifyArtifacts({ manifestPath, manifestSha256, launcher: executionArtifacts(artifactDirectory).launcher }));
     return { artifacts, manifestSha256, manifestPath };
   };
   const inspect = async () => {
@@ -153,7 +154,7 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
     upgrade: input => run('upgrade', input, async current => {
       const candidate = await readCandidate();
       if (candidate.manifestSha256 === current.descriptor.launch.artifactManifestSha256) throw fail('bundle_upgrade_not_available');
-      const retained = await retainArtifacts({ ...privatePersistence, controlRoot: binding.controlRoot, ...candidate, verifyArtifacts });
+      const retained = await timeStartupPhase('bundle_artifact_retention', () => retainArtifacts({ ...privatePersistence, controlRoot: binding.controlRoot, ...candidate, verifyArtifacts }));
       const inputRoot = path.join(binding.controlRoot, 'upgrade-inputs', retained.manifestSha256);
       await fs.mkdir(inputRoot, { recursive: true, mode: 0o700 });
       if (await fs.realpath(inputRoot) !== inputRoot) throw fail('bundle_path_invalid');
@@ -170,9 +171,9 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
         && original.manifest.inputs.coreDigest === retained.manifest.inputs.coreDigest
         ? { manifestPath: retained.manifestPath, manifestSha256: retained.manifestSha256 } : undefined;
       const bundleID = nativeUpgradeBundleID(retained.manifestSha256, current.selection.revision);
-      await store.prepare({ bundleID, generation: 2, source: { kind: 'bundle', bundleID: current.descriptor.bundleID },
-        projectMap: current.descriptor.projectMap, auxiliary: { kind: 'absent' }, launchArtifacts });
-      return store.select({ bundleID, expectedRevision: input.expectedRevision });
+      await timeStartupPhase('bundle_candidate_preparation', () => store.prepare({ bundleID, generation: 2, source: { kind: 'bundle', bundleID: current.descriptor.bundleID },
+        projectMap: current.descriptor.projectMap, auxiliary: { kind: 'absent' }, launchArtifacts }));
+      return timeStartupPhase('bundle_selection', () => store.select({ bundleID, expectedRevision: input.expectedRevision }));
     }),
     rollback: input => run('rollback', input, async current => {
       const targetBundleID = current.selection.reconciliationRequired ? current.selection.selectedBundleID : current.selection.previousBundleID;

@@ -27,6 +27,7 @@ import {
 } from './admission.js';
 import { createPrimaryRecoveryHost } from '../../../../../harness-runtime/lib/provider-recovery-host.js';
 import { resolveProviderPromptTools } from '../../../../../orchestration-runtime/provider-prompt-tools.js';
+import { createWebManagedOpenCodeExecutor } from '../../orchestration/open-code-executor.js';
 import { readDevryanPartDescriptors, userTextSegments } from './projection/ids.js';
 import { readDevryanPromptSelection, toV1UserMetadata } from './projection/messages.js';
 
@@ -924,6 +925,75 @@ describe('durable accepted-operation identity and native permissions', () => {
     await store.fresh().prompt(store.session.id, { ...original(), agent: 'orchestrator', tools }, originalOptions());
     expect(store.session.permissions.at(-1)).toEqual({ action: 'subagent', resource: '*', effect: 'deny' });
     expect(writes(store.calls)).toEqual([`PATCH /api/session/${store.session.id}`, `POST /api/session/${store.session.id}/prompt`]);
+  });
+
+  it.each(['cursor-acp', 'openai', 'github-copilot'])('admits the shared %s read-only policy and preserves it after restart', async provider => {
+    const store = nativeAdmissionStore();
+    store.session.permissions = [{ action: 'plugin-writer', resource: '*', effect: 'allow' }];
+    const tools = { ...resolveProviderPromptTools(provider, 'explorer', { readOnly: true }), task: false };
+    const permissions = [
+      { action: 'plugin-writer', resource: '*', effect: 'allow' },
+      { action: '*', resource: '*', effect: 'deny' },
+      ...['glob', 'grep', 'read'].map(action => ({ action, resource: '*', effect: 'allow' })),
+      { action: 'subagent', resource: '*', effect: 'deny' },
+      ...['webfetch', 'websearch'].map(action => ({ action, resource: '*', effect: 'allow' })),
+    ];
+    await store.fresh().prompt(store.session.id, { ...original(), tools }, originalOptions());
+    expect(store.session.permissions).toEqual(permissions);
+    await store.fresh().prompt(store.session.id, { ...original(), messageID: 'msg_readonlyRecovery', tools }, originalOptions());
+    expect(store.session.permissions).toEqual(permissions);
+    expect(store.calls.filter(call => call.method === 'PATCH')).toHaveLength(1);
+  });
+
+  it('starts a read-only Cursor child through the production native admission bridge', async () => {
+    const store = nativeAdmissionStore();
+    const nativeFetch = store.deps.fetchImpl;
+    store.deps.fetchImpl = async (url, init = {}) => {
+      if (new URL(url).pathname === '/devryan/session' && init.method === 'POST') {
+        return Response.json({ data: store.session });
+      }
+      return nativeFetch(url, init);
+    };
+    let admission;
+    const client = createOpenCodeClient({ ...store.deps, getAdmission: () => admission });
+    admission = store.fresh();
+    const dispatches = [];
+    const cursorPromptRuntime = {
+      handlePromptAsync: async input => {
+        await client.prompts.prompt(input.sessionID, input.body, { directory: input.directory });
+        return { handled: true, status: 204 };
+      },
+      getSessionStatus: () => ({ [store.session.id]: { type: 'idle' } }),
+      getSessionMessages: async () => [{
+        info: { id: 'msg_cursorDone', role: 'assistant', finish: 'stop', time: { created: Date.now() + 1_000, completed: Date.now() + 1_000 } },
+        parts: [{ type: 'text', text: 'Located the relevant files.' }],
+      }],
+    };
+    const executor = createWebManagedOpenCodeExecutor({ openCodeClient: client, cursorSdkRuntime: cursorPromptRuntime,
+      cursorReadOnly: true, nativeTaskDispatch: async (scope, action) => { dispatches.push(scope); return action(); },
+      pollIntervalMs: 0, idleStablePolls: 1 });
+    const progress = [];
+    try {
+      await expect(executor.start({ taskId: 'dvr_task_nativeCursor', leaseToken: 'lease_nativeCursor',
+        rootSessionId: 'ses_root', directory: '/workspace', dispatchCallId: 'call_cursor', childSessionId: null,
+        providerId: 'cursor-acp', modelId: 'claude-haiku-5-5', agent: 'explorer', variant: 'medium',
+        readOnly: true, label: 'Inspect', prompt: 'Find the relevant files.' }, {
+        setChildSessionId: async () => true, markAccepted: async () => true,
+        recordProgress: async value => { progress.push(value); return true; },
+      })).resolves.toMatchObject({ status: 'completed' });
+      expect(dispatches.at(-1)).toMatchObject({ operation: 'prompt', taskId: 'dvr_task_nativeCursor',
+        leaseToken: 'lease_nativeCursor', providerId: 'cursor-acp', modelId: 'claude-haiku-5-5', variant: 'medium' });
+      expect(store.session.model).toEqual({ id: 'claude-haiku-5-5', providerID: 'cursor-acp', variant: 'medium' });
+      expect(store.session.permissions).toEqual([
+        { action: '*', resource: '*', effect: 'deny' },
+        ...['glob', 'grep', 'read'].map(action => ({ action, resource: '*', effect: 'allow' })),
+        { action: 'subagent', resource: '*', effect: 'deny' },
+        ...['webfetch', 'websearch'].map(action => ({ action, resource: '*', effect: 'allow' })),
+      ]);
+      expect(store.turns.size).toBe(1);
+      expect(progress).toContainEqual({ childPromptedAt: expect.any(Number) });
+      expect(progress).toContainEqual({ firstAssistantPartAt: expect.any(Number) });
+    } finally { await executor.shutdown(); }
   });
 
   it.each(['invalid', 'arbitrary_plugin_tool'])('still refuses an unknown %s permission action before effects', async (name) => {

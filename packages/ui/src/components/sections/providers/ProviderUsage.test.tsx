@@ -91,6 +91,17 @@ describe('provider usage in Settings → Providers', () => {
     expect(markup).not.toContain('0 available');
   });
 
+  test('renders native Codex allowance without a second login or inventing a missing weekly window', () => {
+    const codex: ProviderResult = { ...result('codex', { '5h': usageWindow(37) }), source: 'chatgpt-browser', connectionId: 'selected-native-account', account: null };
+    const state = { results: [codex], configuredProviderIds: ['codex'] as const };
+    useQuotaStore.setState({ ...state, configuredProviderIds: [...state.configuredProviderIds] });
+    Object.assign(useQuotaStore.getInitialState(), state);
+    const markup = render(<ProviderUsageSection providerId="openai" connected />);
+    expect(markup).toContain('Usage source: ChatGPT'); expect(markup).toContain('37%');
+    expect(markup).not.toContain('Weekly Limit'); expect(markup).not.toContain('7-Day Limit');
+    expect(markup).not.toContain('Sign in for Usage'); expect(markup).not.toContain('Account unavailable');
+  });
+
   test('shows nothing for a connected provider that simply has no usage source', () => {
     expect(render(<ProviderUsageSection providerId="openai" connected />)).toBe('');
   });

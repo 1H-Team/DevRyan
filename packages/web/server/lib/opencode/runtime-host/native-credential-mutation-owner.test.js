@@ -95,6 +95,10 @@ it('finite provider identities never alias accounts or authorize foreign OAuth m
     acquisitionID:'acquisition-one',configurationDigest:'a'.repeat(64),credentialID:'credential-one',expectedFingerprint:'b'.repeat(64),
     sessionID:'ses_one',permit:{token:'c'.repeat(64),sessionID:'ses_one',revision:0}};
   expect(parseCredentialResolutionBinding(resolution)).toEqual(resolution);
+  const openai={...resolution,kind:'openai',integrationID:'openai',methodID:'chatgpt-token-sharing'};
+  expect(parseCredentialResolutionBinding(openai)).toEqual(openai);
+  expect(parseCredentialResolutionBinding({...openai,methodID:'chatgpt-browser'}).methodID).toBe('chatgpt-browser');
+  for(const methodID of ['chatgpt-siwc','chatgpt-headless','device']) expect(()=>parseCredentialResolutionBinding({...openai,methodID})).toThrow('native_credential_resolution_binding_invalid');
   for (const change of [{methodID:'browser'},{integrationID:'opencode-go'},{permit:{...resolution.permit,revision:-1}},
     {permit:{...resolution.permit,sessionID:'ses_other'}},{credential:'secret-not-permitted'},{directory:42},{directory:{}},{directory:null}]) {
     expect(()=>parseCredentialResolutionBinding({...resolution,...change})).toThrow('native_credential_resolution_binding_invalid');

@@ -57,7 +57,7 @@ export interface UsageResetCredits {
 }
 
 export interface UsageSourceMetadata {
-  source?: 'codex-app-server' | 'chatgpt-siwc' | null;
+  source?: 'chatgpt-browser' | 'chatgpt-token-sharing' | 'chatgpt-siwc' | 'chatgpt-headless' | 'codex-app-server' | null;
   connectionId?: string | null;
   account?: { email: string | null; planType: string | null } | null;
 }

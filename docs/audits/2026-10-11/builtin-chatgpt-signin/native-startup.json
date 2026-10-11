@@ -1,0 +1,17 @@
+{
+  "qualification": "synthetic-factory-and-actual-isolated-host-startup-only",
+  "status": "passed",
+  "openCodeVersion": "2.0.26",
+  "buildId": "185a4dabd947b07c71236150f1bcfda2b0c78fc640ad20be2e21bb8ea6692629",
+  "artifactManifestSha256": "0a7696beed3bebda0b6b887c4fa8677e4f983a1d78aaca4b3afb1e43a150de81",
+  "retiredSeed": "chatgpt-siwc",
+  "ready": true,
+  "executionState": "active",
+  "cleanupFailures": [],
+  "defaultProviderRoutesChecked": [
+    "/api/provider",
+    "/api/provider/auth"
+  ],
+  "realProviderRequests": 0,
+  "attendedConsent": "waived-by-user"
+}

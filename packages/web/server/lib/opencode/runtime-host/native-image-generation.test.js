@@ -22,21 +22,21 @@ test('image requests retain exact lease scope, fresh checks and generation until
  }finally{owner.dispose();}
 });
 
-test('original image transport receives current account per fetch, bounds output and closes revoked response',async()=>{
+test('original image transport receives current API key per fetch, bounds output and closes revoked response',async()=>{
  const context=new AsyncLocalStorage();let account='a',revoked=false,canceled=0,calls=0;
  const pluginEndpoint='https://chatgpt.com/backend-api/codex/responses';
  const originals={withReviewedImagegenOwner:(owner,action)=>context.run(owner,action),callReviewedImagegenResponses:async()=>{
   const response=await context.getStore().fetch(pluginEndpoint,{method:'POST',headers:{Authorization:'Bearer stale'},body:'{}'});
   return response.text();
  }};
- const withImageGeneration=(_invocation,action)=>action({access:async()=>({methodID:'chatgpt-headless',accountId:account,accessToken:account+'-fixture'}),recheck:async()=>{if(revoked)throw Error('revoked');}});
+ const withImageGeneration=(_invocation,action)=>action({access:async()=>({valueType:'key',methodID:'api-key',accessToken:account+'-fixture'}),recheck:async()=>{if(revoked)throw Error('revoked');}});
  const generated=createNativeImageGeneration({originals,withImageGeneration,fetchImpl:async(url,init)=>{
-  calls++;expect(url).toBe(pluginEndpoint);expect(init.redirect).toBe('error');expect(init.signal).toBeInstanceOf(AbortSignal);
-  expect(init.headers.get('Authorization')).toBe(`Bearer ${account}-fixture`);expect(init.headers.get('ChatGPT-Account-Id')).toBe(account);
+  calls++;expect(url).toBe('https://api.openai.com/v1/responses');expect(init.redirect).toBe('error');expect(init.signal).toBeInstanceOf(AbortSignal);
+  expect(init.headers.get('Authorization')).toBe(`Bearer ${account}-fixture`);expect(init.headers.get('ChatGPT-Account-Id')).toBeNull();
   return new Response('cG5n');
  }});
  const args={prompt:'fixture',quality:'medium',referenceImages:[]};
- expect(await generated({},args)).toEqual({base64:'cG5n'});account='b';expect(await generated({},args)).toEqual({base64:'cG5n'});expect(calls).toBe(2);
+ expect(await generated({},args)).toEqual({base64:'cG5n',billing:'api-key'});account='b';expect(await generated({},args)).toEqual({base64:'cG5n',billing:'api-key'});expect(calls).toBe(2);
  const cancel=new AbortController();cancel.abort();await expect(generated({},args,{signal:cancel.signal})).rejects.toThrow();expect(calls).toBe(2);
  const denied=createNativeImageGeneration({originals,withImageGeneration,fetchImpl:async()=>{revoked=true;return new Response(new ReadableStream({cancel(){canceled++;}}));}});
  await expect(denied({},args)).rejects.toThrow('revoked');expect(canceled).toBe(1);revoked=false;

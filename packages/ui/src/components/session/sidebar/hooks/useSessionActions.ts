@@ -36,7 +36,6 @@ type Args = {
   unshareSession: (id: string) => Promise<Session | null>;
   deleteSession: (id: string) => Promise<boolean>;
   deleteSessions: (ids: string[]) => Promise<DeleteSessionsResult>;
-  archiveSession: (id: string) => Promise<boolean>;
   archiveSessions: (ids: string[]) => Promise<ArchiveSessionsResult>;
   unarchiveSession: (id: string) => Promise<boolean>;
   unarchiveSessions: (ids: string[]) => Promise<UnarchiveSessionsResult>;
@@ -186,9 +185,10 @@ export const useSessionActions = (args: Args) => {
         if (!shouldHardDelete) {
           args.onArchiveRequested?.([session.id]);
         }
-        const success = shouldHardDelete
-          ? await args.deleteSession(session.id)
-          : await args.archiveSession(session.id);
+        const archiveResult = shouldHardDelete ? null : await args.archiveSessions([session.id]);
+        const success = archiveResult
+          ? archiveResult.archivedIds.includes(session.id)
+          : await args.deleteSession(session.id);
         if (success) {
           if (!shouldHardDelete) {
             args.onArchiveSucceeded?.([session.id]);
@@ -200,7 +200,12 @@ export const useSessionActions = (args: Args) => {
           }
           toast.error(shouldHardDelete
             ? t('sessions.sidebar.session.delete.error')
-            : t('sessions.sidebar.session.archive.error'));
+            : t('sessions.sidebar.session.archive.error'), {
+            description: archiveResult ? resolveSessionDeleteFailureDescription(
+              archiveResult.failures,
+              t('sessions.sidebar.dialogs.deleteResult.tryAgain'),
+            ) : undefined,
+          });
         }
         return;
       }

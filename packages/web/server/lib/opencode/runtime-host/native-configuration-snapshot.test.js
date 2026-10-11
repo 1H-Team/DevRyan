@@ -4,6 +4,7 @@ import os from 'node:os';
 import { createHash } from 'node:crypto';
 import { afterEach, expect, it } from 'vitest';
 import { createNativeConfigurationSnapshotResolver, nativeCatalogModels, nativeCatalogSelections } from './native-configuration-snapshot.js';
+import { buildRuntimeHelperAgents } from '../runtime-helper-agents.js';
 import { readReviewedSkillResource, resolveReviewedSkillAlias, lookupReviewedSkillResourcePath } from './reviewed-skills.js';
 
 const roots = [];
@@ -98,13 +99,13 @@ it('derives enabled native agents while preserving every explicit catalog requir
  expect(location.configuration.agents.title.disabled).toBe(true);
  expect(location.configuration.agents.legacyDormant.disabled).toBe(true);
  expect(location.configuration.agents.enabled.disabled).toBe(false);
- expect(location.requiredCatalogs.agents).toEqual(['builder','enabled']);
+ expect(location.requiredCatalogs.agents).toEqual(['builder','enabled','devryan-title','devryan-commit','devryan-pr']);
  const file=f.input.binding.descriptor.launch.reviewedNativeConfigPath;
  const policy=JSON.parse(await fs.readFile(file,'utf8'));
  policy.catalogRequirements.agents=['title','explicit-missing','builder'];
  await fs.writeFile(file,JSON.stringify(policy));
  const explicitlyRequired=await f.resolver({...f.input,revision:2});
- expect(explicitlyRequired.locations[0].requiredCatalogs.agents).toEqual(['title','explicit-missing','builder','enabled']);
+ expect(explicitlyRequired.locations[0].requiredCatalogs.agents).toEqual(['title','explicit-missing','builder','enabled','devryan-title','devryan-commit','devryan-pr']);
 });
 
 it('derives enabled agents when the reviewed policy omits its agent list',async()=>{
@@ -115,8 +116,30 @@ it('derives enabled agents when the reviewed policy omits its agent list',async(
  policy.catalogRequirements={};
  await fs.writeFile(file,JSON.stringify(policy));
  const snapshot=await f.resolver(f.input);
- expect(snapshot.locations[0].requiredCatalogs.agents).toEqual(['builder']);
+ expect(snapshot.locations[0].requiredCatalogs.agents).toEqual(['builder','devryan-title','devryan-commit','devryan-pr']);
  expect(snapshot.locations[0].configuration.agents.title.disabled).toBe(true);
+});
+
+it('materializes host no-tools helpers and disables native titles after Slim overrides',async()=>{
+ const f=await fixture(),manifest={schema:1,plugins:[{id:'devryan.slim',legacySpecs:['fixture-slim']}]};
+ f.loaded.legacy.plugin=['fixture-slim'];
+ f.loaded.agents.title={model:'missing/title',disabled:false};
+ f.loaded.agents['devryan-title']={model:'missing/helper',permission:{'*':'allow'}};
+ f.loaded.slim={mergedConfig:{}};
+ await fs.writeFile(f.input.binding.descriptor.launch.reviewedPluginManifestPath,JSON.stringify(manifest));
+ f.input.expectedRegistrationDigest=createHash('sha256').update(JSON.stringify(manifest)).digest('hex');
+ const resolver=createNativeConfigurationSnapshotResolver({loadLocation:async()=>({...structuredClone({...f.loaded,parseMarkdown:undefined}),parseMarkdown:f.loaded.parseMarkdown}),
+  resolveSlimAgents:()=>({agents:{builder:f.loaded.agents.builder,title:{disabled:false},'devryan-title':{permission:{'*':'allow'}}}})});
+ const {configuration,compatibility,requiredCatalogs}= (await resolver(f.input)).locations[0];
+ expect(configuration.agents.title).toEqual({disabled:true});
+ expect(compatibility.agents['devryan-title']).toEqual(buildRuntimeHelperAgents()['devryan-title']);
+ for(const name of ['devryan-title','devryan-commit','devryan-pr']){
+  expect(configuration.agents[name]).toMatchObject({hidden:true,mode:'subagent',permissions:[{action:'*',resource:'*',effect:'deny'}]});
+  expect(configuration.agents[name].model).toBeUndefined();
+  expect(requiredCatalogs.agents).toContain(name);
+ }
+ expect(requiredCatalogs.agents).not.toContain('title');
+ expect(requiredCatalogs.models.some(model=>model.providerID==='missing')).toBe(false);
 });
 
 it('refuses malformed explicit agent requirements instead of dropping them',async()=>{

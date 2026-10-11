@@ -805,12 +805,13 @@ test('execution outcome queries never create a ledger for an unmanaged project',
     calls: [{ messageID: '', callID: 'call_one' }] })).rejects.toMatchObject({ code: 'invalid_capture_identity' });
 });
 
-test('registered prompts, admission and lease lookups answer while another process holds the ledger lock', async () => {
+test('registered sessions, prompts, admission and lease lookups answer while another process holds the ledger lock', async () => {
   const { withExecutionAdmission } = await import('./execution-admission.js');
   const { withCrossProcessFileLock } = await import('./atomic-file.js');
   const f = await fixture();
   await f.write('x', 'old');
   const registered = await f.runtime.registerPrompt({ directory: f.directory, sessionID: 'steady', userMessageID: 'p1' });
+  const native = await f.runtime.registerNativeSession({ directory: f.directory, sessionID: 'native', parentID: 'steady' });
   const owner = await f.begin('owner', 'p0', 'c0');
   let release, entered;
   const held = new Promise((resolve) => { release = resolve; });
@@ -820,6 +821,8 @@ test('registered prompts, admission and lease lookups answer while another proce
   await started;
   try {
     const fast = { timeoutMs: 1_000 };
+    await expect(withExecutionAdmission({ sessionID: 'native' }, () => f.runtime.registerNativeSession({
+      directory: f.directory, sessionID: 'native', parentID: 'steady' }), fast)).resolves.toEqual(native);
     await expect(withExecutionAdmission({ sessionID: 'steady' }, () => f.runtime.registerPrompt({
       directory: f.directory, sessionID: 'steady', userMessageID: 'p1' }), fast)).resolves.toEqual(registered);
     await expect(withExecutionAdmission({ sessionID: 'steady' }, () => f.runtime.assertAdmission({
@@ -830,7 +833,15 @@ test('registered prompts, admission and lease lookups answer while another proce
     await expect(withExecutionAdmission({ sessionID: 'steady' }, () => f.runtime.registerPrompt({
       directory: f.directory, sessionID: 'steady', userMessageID: 'p2' }), { timeoutMs: 150 }))
       .rejects.toMatchObject({ code: 'local_execution_timeout' });
+    await expect(withExecutionAdmission({ sessionID: 'new-native' }, () => f.runtime.registerNativeSession({
+      directory: f.directory, sessionID: 'new-native', parentID: 'steady' }), { timeoutMs: 150 }))
+      .rejects.toMatchObject({ code: 'local_execution_timeout' });
   } finally { release(); await holder; }
+  await expect(f.runtime.registerNativeSession({ directory: f.directory, sessionID: 'native' }))
+    .rejects.toMatchObject({ code: 'invalid_session_lineage' });
+  await fs.mkdir(path.join(f.directory, 'nested'));
+  await expect(f.runtime.registerNativeSession({ directory: path.join(f.directory, 'nested'), sessionID: 'native', parentID: 'steady' }))
+    .rejects.toMatchObject({ code: 'session_directory_mismatch' });
 });
 
 test('a lease lookup never reports absence while a reservation for the call is queued', async () => {
@@ -857,6 +868,7 @@ test('lock-free reads fail closed when a materialization needs recovery', async 
   await fs.writeFile(path.join(a.viewDirectory, 'x'), '1'); await expect(f.finish(a)).rejects.toThrow('fixture crash');
   await f.write('x', 'foreign');
   const restarted = createSessionMutationRuntime({ directory: f.storage });
+  await expect(restarted.registerNativeSession({ directory: f.directory, sessionID: 'a' })).rejects.toMatchObject({ code: 'mutation_recovery_required' });
   await expect(restarted.assertAdmission({ directory: f.directory, sessionID: 'a' })).rejects.toMatchObject({ code: 'mutation_recovery_required' });
   await expect(restarted.executionOutcomes({ directory: f.directory, sessionID: 'a', calls: [{ messageID: 'pa-assistant', callID: 'ca' }] }))
     .rejects.toMatchObject({ code: 'mutation_recovery_required' });

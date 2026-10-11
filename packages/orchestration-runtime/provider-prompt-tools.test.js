@@ -40,25 +40,19 @@ describe('provider prompt tool policy', () => {
     expect(resolveProviderPromptTools('openai', 'designer', { readOnly: true })).toEqual({
       '*': false,
       read: true,
-      oc_read: true,
       glob: true,
-      oc_glob: true,
       grep: true,
-      ls: true,
-      oc_ls: true,
-      stat: true,
-      oc_stat: true,
-      ast_grep_search: true,
       webfetch: true,
       websearch: true,
-      google_search: true,
     });
-    expect(resolveProviderPromptTools('github-copilot', 'designer', { readOnly: true })).toMatchObject({
-      'resend_*': false,
-      'mcp__resend__*': false,
+    expect(resolveProviderPromptTools('github-copilot', 'orchestrator', { readOnly: true })).toEqual({
+      task: false,
       '*': false,
       read: true,
+      glob: true,
+      grep: true,
       webfetch: true,
+      websearch: true,
     });
   });
 

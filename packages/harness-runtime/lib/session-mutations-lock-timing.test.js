@@ -18,16 +18,16 @@ async function fixture() {
     onDiagnostic: (record) => diagnostics.push(record) });
   return { runtime, directory, timings, diagnostics };
 }
-// Holds the owner lock of the first transaction that checks its ledger HEAD.
+// Delay directory setup inside the transaction; snapshot HEAD reads do not hold the lock.
 const holdFirstTransaction = (ms) => {
-  const access = fs.access.bind(fs);
+  const mkdir = fs.mkdir.bind(fs);
   let held = false;
-  return spyOn(fs, 'access').mockImplementation(async (file, ...rest) => {
-    if (!held && String(file).endsWith(`${path.sep}git${path.sep}HEAD`)) {
+  return spyOn(fs, 'mkdir').mockImplementation(async (file, ...rest) => {
+    if (!held && await fs.access(path.join(String(file), 'owner.lock')).then(() => true, () => false)) {
       held = true;
       await new Promise((resolve) => setTimeout(resolve, ms));
     }
-    return access(file, ...rest);
+    return mkdir(file, ...rest);
   });
 };
 

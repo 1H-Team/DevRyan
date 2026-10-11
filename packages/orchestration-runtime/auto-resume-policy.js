@@ -149,6 +149,7 @@ export const planAutoResumeAttempt = ({
   breakerUntil = null,
   providerReset = null,
   origin = null,
+  cursorReadOnly = false,
 }) => {
   const originExecution = {
     providerId: origin?.providerId ?? task.providerId,
@@ -160,7 +161,7 @@ export const planAutoResumeAttempt = ({
     if (state.attemptCount >= 1 || task.transportRecovery?.backupAttempts === 1) return exhausted('attempt_cap');
     if (now >= state.expiresAt) return exhausted('time_cap');
     const distinct = backup && (backup.providerId !== task.providerId || backup.modelId !== task.modelId);
-    if (!distinct || (task.readOnly && !supportsManagedReadOnlyProvider(backup.providerId))
+    if (!distinct || (task.readOnly && !supportsManagedReadOnlyProvider(backup.providerId, { cursorReadOnly }))
       || readBreaker(breakerUntil, backup.providerId, now).until !== null) {
       return exhausted('backup_unavailable');
     }
@@ -202,7 +203,7 @@ export const planAutoResumeAttempt = ({
   if (
     backupDiffers
     && !state.backupAttemptTaskId
-    && (!task.readOnly || supportsManagedReadOnlyProvider(backup.providerId))
+    && (!task.readOnly || supportsManagedReadOnlyProvider(backup.providerId, { cursorReadOnly }))
     && readBreaker(breakerUntil, backup.providerId, now).until === null
   ) {
     return {

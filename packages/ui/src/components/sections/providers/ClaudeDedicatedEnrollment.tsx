@@ -9,6 +9,15 @@ interface PendingEnrollment { enrollmentID: string; url: string; state: string }
 const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 const id = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value);
 const endpoint = '/api/provider/anthropic/enrollment';
+type EnrollmentError = 'load' | 'start' | 'confirm' | 'update' | 'callback' | 'capacity';
+const errorKeys = {
+  load: 'settings.providers.enrollment.loadFailed',
+  start: 'settings.providers.enrollment.startFailed',
+  confirm: 'settings.providers.enrollment.confirmFailed',
+  update: 'settings.providers.enrollment.updateRequired',
+  callback: 'settings.providers.enrollment.callbackInvalid',
+  capacity: 'settings.providers.enrollment.capacity',
+} as const;
 
 // The original manual flow accepts a callback URL or code#state. A plain code
 // is bound to the pending request's original state, never to another account.
@@ -36,7 +45,7 @@ export function ClaudeDedicatedEnrollment({ administrator, principalID, director
   const [pending, setPending] = React.useState<PendingEnrollment | null>(null);
   const [code, setCode] = React.useState('');
   const [busy, setBusy] = React.useState(false);
-  const [error, setError] = React.useState<'failed' | 'update' | 'callback' | 'capacity' | null>(null);
+  const [error, setError] = React.useState<EnrollmentError | null>(null);
   const active = React.useRef<AbortController | null>(null);
   const scope = directory?.trim() ? `?directory=${encodeURIComponent(directory.trim())}` : '';
 
@@ -59,7 +68,7 @@ export function ClaudeDedicatedEnrollment({ administrator, principalID, director
         }
         if (new Set(rows.map(row => row.enrollmentID)).size !== rows.length) throw new Error('response');
         if (!controller.signal.aborted) setAccounts(rows);
-      } catch { if (!controller.signal.aborted) setError(value => value ?? 'failed'); }
+      } catch { if (!controller.signal.aborted) setError(value => value ?? 'load'); }
     })();
     return () => { controller.abort(); if (active.current === controller) active.current = null; };
   }, [administrator, principalID, scope]);
@@ -89,7 +98,7 @@ export function ClaudeDedicatedEnrollment({ administrator, principalID, director
       if (!current(controller)) return;
       setPending({ enrollmentID: data.enrollmentID, url: url.toString(), state });
       await openExternalUrl(url.toString());
-    } catch { if (current(controller)) setError(value => value ?? 'failed'); }
+    } catch { if (current(controller)) setError(value => value ?? 'start'); }
     finally { if (current(controller)) setBusy(false); }
   };
   const complete = async () => {
@@ -104,7 +113,7 @@ export function ClaudeDedicatedEnrollment({ administrator, principalID, director
       if (!current(controller)) return;
       setAccounts(rows => [...rows.filter(row => row.enrollmentID !== pending.enrollmentID), { enrollmentID: pending.enrollmentID, profileID: String(data.profileID), status: 'enrolled' }]);
       setPending(null);
-    } catch { if (current(controller)) setError(value => value ?? 'failed'); }
+    } catch { if (current(controller)) setError(value => value ?? 'confirm'); }
     finally { if (current(controller)) setBusy(false); }
   };
   const select = async (row: Enrollment) => {
@@ -118,7 +127,7 @@ export function ClaudeDedicatedEnrollment({ administrator, principalID, director
         setAccounts(rows => rows.map(account => account.enrollmentID === row.enrollmentID ? { ...account, status: 'enrolled' } : account));
         await onSelected();
       }
-    } catch { if (current(controller)) setError(value => value ?? 'failed'); }
+    } catch { if (current(controller)) setError(value => value ?? 'confirm'); }
     finally { if (current(controller)) setBusy(false); }
   };
   if (!administrator) return null;
@@ -136,6 +145,6 @@ export function ClaudeDedicatedEnrollment({ administrator, principalID, director
       {row.status === 'unavailable' ? <span className="typography-meta text-muted-foreground">{t('settings.providers.enrollment.unavailable')}</span> :
         <Button size="xs" variant="outline" disabled={busy} onClick={() => void select(row)}>{t(row.status === 'incomplete' ? 'settings.providers.enrollment.recover' : 'settings.providers.enrollment.select')}</Button>}
     </div>)}
-    {error ? <p role="alert" className="typography-meta text-[var(--status-error)]">{t(error === 'callback' ? 'settings.providers.enrollment.callbackInvalid' : error === 'update' ? 'settings.providers.enrollment.updateRequired' : error === 'capacity' ? 'settings.providers.enrollment.capacity' : 'settings.providers.enrollment.failed')}</p> : null}
+    {error ? <p role="alert" className="typography-meta text-[var(--status-error)]">{t(errorKeys[error])}</p> : null}
   </section>;
 }

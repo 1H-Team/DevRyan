@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { prepareSourceImageAccounts, assertSourceImageOAuthProof } from './package-image-oauth-process.mjs';
 
-test('owned source SDK creates two synthetic SIWC native records and survives scope close/reopen', { timeout: 45000 }, async () => {
+test('owned source SDK seeds two retired synthetic SIWC native records and survives scope close/reopen', { timeout: 45000 }, async () => {
   const repository = path.resolve(import.meta.dirname, '../..');
   const root = await fs.mkdtemp(path.join(repository, '.cache/v2-validation/source-image-test-'));
   try {

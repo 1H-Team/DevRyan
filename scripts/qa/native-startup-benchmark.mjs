@@ -36,15 +36,22 @@ export function parseNativeStartupArgs(argv) {
 
 export function parseStartupComparisonArgs(argv) {
   const flags = ['--baseline-package-evidence', '--candidate-package-evidence', '--artifact-root'];
-  assert.ok(argv.length === 6 || argv.length === 8, 'Comparison requires explicit baseline, candidate and native artifacts');
+  assert.ok([6, 8, 10].includes(argv.length), 'Comparison requires explicit baseline, candidate and native artifacts');
   for (let index = 0; index < flags.length; index++) {
     assert.equal(argv[index * 2], flags[index], 'Unexpected comparison option');
     assert.ok(path.isAbsolute(argv[index * 2 + 1]), 'Comparison artifacts must be absolute');
   }
-  if (argv.length === 8) assert.equal(argv[6], '--startup-mode');
-  const startupMode = argv[7] ?? 'natural';
+  let startupMode = 'natural', baselineArtifactRoot;
+  for (let index = 6; index < argv.length; index += 2) {
+    if (argv[index] === '--startup-mode' && index === 6) startupMode = argv[index + 1];
+    else if (argv[index] === '--baseline-artifact-root' && baselineArtifactRoot === undefined) {
+      baselineArtifactRoot = argv[index + 1];
+      assert.ok(path.isAbsolute(baselineArtifactRoot), 'Upgrade baseline artifacts must be absolute');
+    } else throw new Error('Unexpected comparison option');
+  }
   assertStartupMode(startupMode);
-  return { baselinePackageEvidence: argv[1], candidatePackageEvidence: argv[3], artifactRoot: argv[5], startupMode };
+  return { baselinePackageEvidence: argv[1], candidatePackageEvidence: argv[3], artifactRoot: argv[5], startupMode,
+    ...(baselineArtifactRoot ? { baselineArtifactRoot } : {}) };
 }
 
 export function assertNativeStartupUpgrade(initial, final, candidate) {
@@ -167,11 +174,11 @@ export function observeStartupBackgroundWork(cdp, startedAt, origin) {
   return { evidence, close };
 }
 
-export function readNativeStartupLogs(app, qaHome) {
-  const logs = [app?.getLog() ?? ''];
+export function readNativeStartupLogs(app, qaHome, offset = 0) {
+  const logs = app ? [app.getLog()] : [];
   // electron-log resolves its file beneath the isolated app home on this QA
   // host. Never search the user's Library or infer it from an installed app.
-  try { logs.push(readFileSync(path.join(qaHome, 'Library/Logs/DevRyan/main.log'), 'utf8')); }
+  try { logs.push(readFileSync(path.join(qaHome, 'Library/Logs/DevRyan/main.log'), 'utf8').slice(offset)); }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
   return logs.join('\n');
 }
@@ -285,38 +292,43 @@ async function runStartupLaunches({ packageEvidence, artifactRoot, baselineArtif
         const env = { ...prepared.env, DEVRYAN_QA_RUNTIME: 'electron', OPENCHAMBER_ELECTRON_USER_DATA_DIR: profile,
           GIT_CEILING_DIRECTORIES: fixtures };
         delete env.NODE_OPTIONS;
-        const startedAt = performance.now();
-        app = startOwnedProcess(packaged.binary, [`--remote-debugging-port=${debugPort}`, `--user-data-dir=${profile}`], { cwd: workspace, env });
-        const target = await discoverPageTarget(debugPort);
-        const cdpTargetMs = performance.now() - startedAt;
-        cdp = await CdpConnection.connect(target.webSocketDebuggerUrl);
-        removeRuntimeErrors = cdp.on('Runtime.exceptionThrown', () => { rendererExceptions++; });
-        audit = observeStartupNavigation(cdp, startedAt, target.url);
-        subscription = observeNativeStartupSubscription(cdp, startedAt, `http://127.0.0.1:${port}`);
-        background = observeStartupBackgroundWork(cdp, startedAt, `http://127.0.0.1:${port}`);
-        await Promise.all([cdp.send('Page.enable'), cdp.send('Runtime.enable'), cdp.send('Network.enable')]);
-        const checkAlive = () => { app.check(); subscription.check(); };
-        const deadline = performance.now() + 45_000;
-        let origin;
-        while (!origin) {
-          checkAlive();
-          const href = await evaluate(cdp, 'location.href').catch(() => '');
-          if (/^http:\/\/127\.0\.0\.1:\d+\//.test(href)) origin = new URL(href).origin;
-          if (performance.now() > deadline) throw new Error('qa_startup_renderer_origin_timeout');
-          if (!origin) await pause(100);
-        }
-        record.startup = await captureFirstDocumentStartup({ cdp, origin, startedAt, checkAlive, navigationAudit: audit, startupMode,
-          ...(startupMode === 'foreground' ? { foregroundWindow: { method: 'desktop_focus_main_window', activate: async () => {
-            const result = await evaluate(cdp, 'window.__TAURI__.core.invoke("desktop_focus_main_window", {})');
-            assert.equal(result?.focused, true, 'Owned Electron window must acknowledge focus');
-            return result;
-          } } } : {}),
-          runtimeUiTuple: { providerId: runtimeUiTuple.providerID, modelId: runtimeUiTuple.modelID, agent: 'builder' },
-          isEventStreamReady: subscription.isReady,
-          readStartupPhases: () => parseStartupPhaseLogs(readNativeStartupLogs(app, prepared.env.DEVRYAN_QA_HOME)),
-          milestones: { cdpTargetMs, loopbackOriginMs: performance.now() - startedAt } });
-        record.subscription = subscription.evidence;
-        assert.equal(record.startup.outcome, 'passed', record.startup.error);
+        const captureLaunch = async launchRecord => {
+          const logOffset = readNativeStartupLogs(null, prepared.env.DEVRYAN_QA_HOME).length;
+          const startedAt = performance.now();
+          app = startOwnedProcess(packaged.binary, [`--remote-debugging-port=${debugPort}`, `--user-data-dir=${profile}`], { cwd: workspace, env });
+          const target = await discoverPageTarget(debugPort);
+          const cdpTargetMs = performance.now() - startedAt;
+          cdp = await CdpConnection.connect(target.webSocketDebuggerUrl);
+          removeRuntimeErrors = cdp.on('Runtime.exceptionThrown', () => { rendererExceptions++; });
+          audit = observeStartupNavigation(cdp, startedAt, target.url);
+          subscription = observeNativeStartupSubscription(cdp, startedAt, `http://127.0.0.1:${port}`);
+          background = observeStartupBackgroundWork(cdp, startedAt, `http://127.0.0.1:${port}`);
+          await Promise.all([cdp.send('Page.enable'), cdp.send('Runtime.enable'), cdp.send('Network.enable')]);
+          const checkAlive = () => { app.check(); subscription.check(); };
+          const deadline = performance.now() + 45_000;
+          let origin;
+          while (!origin) {
+            checkAlive();
+            const href = await evaluate(cdp, 'location.href').catch(() => '');
+            if (/^http:\/\/127\.0\.0\.1:\d+\//.test(href)) origin = new URL(href).origin;
+            if (performance.now() > deadline) throw new Error('qa_startup_renderer_origin_timeout');
+            if (!origin) await pause(100);
+          }
+          launchRecord.startup = await captureFirstDocumentStartup({ cdp, origin, startedAt, checkAlive, navigationAudit: audit, startupMode,
+            ...(startupMode === 'foreground' ? { foregroundWindow: { method: 'desktop_focus_main_window', activate: async () => {
+              const result = await evaluate(cdp, 'window.__TAURI__.core.invoke("desktop_focus_main_window", {})');
+              assert.equal(result?.focused, true, 'Owned Electron window must acknowledge focus');
+              return result;
+            } } } : {}),
+            runtimeUiTuple: { providerId: runtimeUiTuple.providerID, modelId: runtimeUiTuple.modelID, agent: 'builder' },
+            isEventStreamReady: subscription.isReady,
+            readStartupPhases: () => parseStartupPhaseLogs(readNativeStartupLogs(app, prepared.env.DEVRYAN_QA_HOME, logOffset)),
+            milestones: { cdpTargetMs, loopbackOriginMs: performance.now() - startedAt } });
+          launchRecord.subscription = subscription.evidence;
+          assert.equal(launchRecord.startup.outcome, 'passed', launchRecord.startup.error);
+          return { origin, checkAlive };
+        };
+        const { origin, checkAlive } = await captureLaunch(record);
         if (catalogProviders) {
           const response = await fetch(new URL('/api/provider?directory=' + encodeURIComponent(workspace), origin), { signal: AbortSignal.timeout(10000) });
           assert.equal(response.status, 200);
@@ -364,6 +376,36 @@ async function runStartupLaunches({ packageEvidence, artifactRoot, baselineArtif
         await prepared.verifyInputs();
         const screenshot = await cdp.send('Page.captureScreenshot', { format: 'png' });
         await fs.writeFile(path.join(directory, 'startup.png'), Buffer.from(screenshot.data, 'base64'), { mode: 0o600 });
+        // Exercise real persisted session listing on the next process, without model calls.
+        const historySize = 200;
+        for (let index = 0; index < historySize; index++) {
+          const response = await fetch(new URL('/api/session?directory=' + encodeURIComponent(workspace), origin), {
+            method: 'POST', headers: { 'content-type': 'application/json', 'X-DevRyan-CSRF': '1' },
+            body: JSON.stringify({ title: `Synthetic startup history ${index}` }), signal: AbortSignal.timeout(10_000),
+          });
+          assert.equal(response.status, 200, 'Synthetic history creation failed');
+          assert.ok((await response.json()).id, 'Synthetic session needs a stable ID');
+        }
+        removeRuntimeErrors?.(); audit.complete(); subscription.close(); background.close(); cdp.close();
+        await app.stop();
+        record.firstCleanup = app.getCleanupEvidence();
+        assert.deepEqual(record.firstCleanup.remainingProcessIds, [], 'First process must exit before reopening');
+        record.reopen = { startup: null, cleanupErrors: [], historySize };
+        rendererExceptions = 0;
+        const reopened = await captureLaunch(record.reopen);
+        const reopenedBundle = readBundleStartupState(prepared.controlRoot);
+        assertNativeStartupReopen(record.finalBundle, reopenedBundle, record.reopen.startup.electronStartupPhases.records);
+        record.reopen.finalBundle = reopenedBundle;
+        const response = await fetch(new URL('/api/session?directory=' + encodeURIComponent(workspace) + '&roots=true&limit=50', reopened.origin), {
+          signal: AbortSignal.timeout(10_000),
+        });
+        assert.equal(response.status, 200);
+        const listed = await response.json();
+        assert.equal(listed.length, 50, 'Reopened app must load the first page of populated history');
+        record.reopen.listedSessions = listed.length;
+        assert.equal(rendererExceptions, 0, 'Reopened renderer threw during startup');
+        const reopenScreenshot = await cdp.send('Page.captureScreenshot', { format: 'png' });
+        await fs.writeFile(path.join(directory, 'reopen.png'), Buffer.from(reopenScreenshot.data, 'base64'), { mode: 0o600 });
       } catch (error) {
         if (cdp) {
           try {
@@ -404,7 +446,10 @@ async function runStartupLaunches({ packageEvidence, artifactRoot, baselineArtif
     assert.equal((await loadQaPackagedArtifact({ root: repository, evidencePath: packageEvidence })).evidence.archiveSha256, packaged.evidence.archiveSha256);
     if (candidate) assert.equal(hash(await fs.readFile(path.join(packaged.evidence.appPath,
       'Contents/Resources/revert-runtime/darwin-arm64/native-bundle.json'))), candidate.artifactManifestSha256, 'Packaged native candidate changed during measurement');
-    if (!comparisonSource) evidence.summary = summarizeNativeStartupRuns(evidence.runs);
+    if (!comparisonSource) {
+      evidence.summary = summarizeNativeStartupRuns(evidence.runs);
+      evidence.reopenSummary = summarizeNativeStartupRuns(evidence.runs.map(record => record.reopen));
+    }
     evidence.outcome = 'passed';
   } catch (error) {
     evidence.error = typeof error.code === 'string' ? error.code : 'qa_native_startup_failed';
@@ -413,6 +458,13 @@ async function runStartupLaunches({ packageEvidence, artifactRoot, baselineArtif
     run.finish(evidence.outcome);
   }
   return { ...evidence, output: run.dir };
+}
+
+export function assertNativeStartupReopen(before, after, phases) {
+  assert.deepEqual(after, before, 'Unchanged reopen must preserve the selected bundle and revision');
+  assert.ok(Array.isArray(phases) && phases.some(row => row.phase === 'server_listen' && row.outcome === 'completed'), 'Reopen requires startup phase evidence');
+  const mutations = new Set(['bundle_upgrade', 'bundle_artifact_retention', 'bundle_data_copy', 'bundle_candidate_preparation', 'bundle_selection']);
+  assert.ok(phases.every(row => !mutations.has(row.phase)), 'Unchanged reopen must not upgrade or copy a bundle');
 }
 
 export function summarizeStartupComparison(baseline, candidate) {
@@ -429,7 +481,28 @@ export function assertStartupComparisonSources(baseline, candidate, current) {
   const next = new Map(candidate.entries.map(entry => [entry.file, entry.sha256]));
   const changed = [...new Set([...previous.keys(), ...next.keys()])].filter(file => previous.get(file) !== next.get(file));
   assert.ok(changed.length > 0, 'Comparison requires an actual candidate');
-  const allowed = ['packages/ui/src/App.tsx', 'packages/web/server/lib/opencode/feature-routes-runtime.js'];
+  const allowed = [
+    'packages/ui/src/App.tsx', 'packages/web/server/lib/opencode/feature-routes-runtime.js',
+    'packages/ui/src/sync/bootstrap.ts', 'packages/ui/src/sync/bootstrap-session-list.test.ts',
+    'packages/ui/src/sync/child-store.ts', 'packages/ui/src/sync/child-store.status-subscription.test.ts',
+    'packages/ui/src/sync/directory-bootstrap-request.ts', 'packages/ui/src/sync/directory-bootstrap-request.test.ts',
+    'packages/ui/src/sync/sync-context.tsx', 'packages/ui/src/sync/types.ts', 'packages/ui/src/sync/DOCUMENTATION.md',
+    'packages/web/server/lib/opencode/startup-timing.js', 'packages/web/server/lib/opencode/startup-timing.test.js',
+    'packages/web/server/lib/opencode/runtime-host/retained-native-artifacts.js',
+    'packages/web/server/lib/opencode/runtime-host/retained-native-artifacts.test.js',
+    'packages/web/server/lib/opencode/runtime-host/runtime-bundle.js',
+    'packages/web/server/lib/opencode/runtime-host/runtime-bundle-lifecycle.js',
+    'packages/web/server/lib/opencode/runtime-host/DOCUMENTATION.md',
+    'packages/electron/runtime-service-startup.mjs', 'packages/electron/tests/runtime-service-startup.test.mjs',
+    'packages/electron/tests/runtime-service-source.test.mjs',
+    // Concurrent user edit removes a session-opening label; record it in comparison evidence.
+    'packages/ui/src/components/session/sidebar/SessionNodeItem.tsx',
+    // Reviewed concurrent archive fix; these operation handlers do not run during startup.
+    'packages/web/server/lib/opencode/runtime-host/native-admission-owner.js',
+    'packages/web/server/lib/opencode/runtime-host/native-recovered-input.js',
+    'packages/web/server/lib/opencode/runtime-host/native-authorization.test.js',
+    'packages/web/server/lib/opencode/runtime-host/native-recovered-input.test.js',
+  ];
   assert.ok(changed.every(file => allowed.includes(file)), 'Comparison changed files outside the startup candidates');
   for (const source of [baseline, candidate]) {
     assert.equal(hash(JSON.stringify(source.entries)), source.sha256, 'Source receipt is invalid');
@@ -437,7 +510,7 @@ export function assertStartupComparisonSources(baseline, candidate, current) {
   return changed;
 }
 
-export async function runNativeStartupComparison({ baselinePackageEvidence, candidatePackageEvidence, artifactRoot, startupMode = 'natural' }) {
+export async function runNativeStartupComparison({ baselinePackageEvidence, candidatePackageEvidence, artifactRoot, baselineArtifactRoot, startupMode = 'natural' }) {
   assertStartupMode(startupMode);
   assert.ok(typeof artifactRoot === 'string' && artifactRoot.startsWith(path.join(repository, '.cache') + path.sep),
     'Comparison native artifacts must stay in the repository cache');
@@ -462,7 +535,7 @@ export async function runNativeStartupComparison({ baselinePackageEvidence, cand
   try {
     for (const label of evidence.order) {
       const packaged = label[0] === 'B' ? baseline : candidate;
-      const result = await runStartupLaunches({ packageEvidence: packaged.evidencePath, artifactRoot, startupMode }, packaged.evidence.source.sha256, catalogProviders);
+      const result = await runStartupLaunches({ packageEvidence: packaged.evidencePath, artifactRoot, baselineArtifactRoot, startupMode }, packaged.evidence.source.sha256, catalogProviders);
       evidence[label[0] === 'B' ? 'baseline' : 'candidate'].push(...result.runs);
       assert.equal(result.outcome, 'passed', `Launch ${label} failed: ${result.output}`);
       assert.equal((await captureQaSourceIdentity(repository)).sha256, before.sha256, 'Source changed during comparison');
@@ -475,6 +548,7 @@ export async function runNativeStartupComparison({ baselinePackageEvidence, cand
     assert.equal(await nativeManifest(baseline), nativeDigest);
     assert.equal(await nativeManifest(candidate), nativeDigest);
     evidence.summary = summarizeStartupComparison(evidence.baseline, evidence.candidate);
+    evidence.reopenSummary = summarizeStartupComparison(evidence.baseline.map(record => record.reopen), evidence.candidate.map(record => record.reopen));
     evidence.outcome = 'passed';
   } catch (error) { evidence.error = error.message; }
   finally {

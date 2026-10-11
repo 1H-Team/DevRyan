@@ -461,6 +461,8 @@ export interface ManagedOpenCodeTransport {
 }
 
 export interface ManagedOpenCodeExecutorOptions {
+  /** Host capability; enable only for enforced managed Cursor read-only execution. */
+  cursorReadOnly?: boolean;
   transport: ManagedOpenCodeTransport;
   subscribeAssistantActivity?: ManagedAssistantActivitySubscribe;
   bindAssistantActivity?: ManagedAssistantActivityBind;
@@ -545,6 +547,8 @@ export interface ManagedTaskAutoResumeProviderReset {
 export interface ManagedTaskAutoResumeOptions {
   resolveOwnerKey?(input: { rootSessionId: string }): string | Promise<string>;
   resolveBackupExecution?(input: {
+    taskId: string;
+    autoResumeGeneration: number;
     rootSessionId: string;
     directory: string;
     agent: string;
@@ -585,6 +589,8 @@ export type ManagedTaskLaunchAdmissionDecision =
     };
 
 export interface ManagedTaskSchedulerOptions {
+  /** Same verified host capability used by the managed executor. Defaults false. */
+  cursorReadOnly?: boolean;
   onBarrierChange?(input: { rootSessionId: string; state: string; at: number; taskCount: number }): void;
   onRequiredCheckReceipt?(input: { task: ManagedTaskRecord; receipt: RequiredCheckReceipt }): void;
   executor: ManagedTaskExecutor;
@@ -705,7 +711,7 @@ export interface ManagedTaskScheduler {
   getChildAssignment(childSessionId: string, directory: string): ManagedTaskRecord | null;
   recordRequiredCheck(taskId: string, leaseToken: string, receipt: RequiredCheckReceipt, phase: 'start' | 'bind' | 'complete'): Promise<boolean>;
   recordRequiredChecks(taskId: string, leaseToken: string, receipts: RequiredCheckReceipt[], phase: 'start' | 'bind' | 'complete'): Promise<boolean>;
-  submit(input: ManagedTaskSubmitInput): Promise<ManagedTaskRecord>;
+  submit(input: ManagedTaskSubmitInput, options?: { signal?: AbortSignal }): Promise<ManagedTaskRecord>;
   cancelTask(taskId: string, options?: { cascade?: false; reason?: string }): Promise<ManagedTaskRecord>;
   cancelTask(taskId: string, options: { cascade: true; reason?: string }): Promise<ManagedTaskRecord[]>;
   waitForTask(taskId: string, options?: {
@@ -870,6 +876,7 @@ export function planAutoResumeAttempt(input: {
   providerReset?: ManagedTaskAutoResumeProviderReset | null;
   /** The execution the lineage started on; defaults to the task's own. */
   origin?: { providerId: string; modelId: string; variant: string | null } | null;
+  cursorReadOnly?: boolean;
 }): ManagedTaskAutoResumePlan;
 export function buildAutoResumeAcknowledgeParams(input: {
   task: Pick<ManagedTaskRecord, 'taskId' | 'rootSessionId' | 'directory'>;
@@ -1019,7 +1026,7 @@ export function resolveProviderPromptTools(
 ): Readonly<Record<string, boolean>> | undefined;
 export const MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED: 'MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED';
 export const MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED_MESSAGE: string;
-export function supportsManagedReadOnlyProvider(providerId: unknown): boolean;
+export function supportsManagedReadOnlyProvider(providerId: unknown, options?: { cursorReadOnly?: boolean }): boolean;
 export const MANAGED_READ_ONLY_AGENT_UNSUPPORTED: 'MANAGED_READ_ONLY_AGENT_UNSUPPORTED';
 export const MANAGED_READ_ONLY_AGENT_UNSUPPORTED_MESSAGE: string;
 export function supportsManagedReadOnlyAgent(agent: unknown): boolean;

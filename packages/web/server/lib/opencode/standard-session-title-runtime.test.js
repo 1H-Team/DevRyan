@@ -5,6 +5,9 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createFileSessionTitleOutbox, createMemorySessionTitleOutbox } from './session-title-outbox.js';
+import { buildV2PromptContent, buildDevryanPromptMetadata } from './v2/admission.js';
+import { toV1UserParts } from './v2/projection/messages.js';
+import { loadPlanModeInstruction } from '../../../../../scripts/agent-evals/plan-mode.mjs';
 import {
   SESSION_TITLE_HELPER_SESSION_TITLE,
   createStandardSessionTitleRuntime,
@@ -202,6 +205,25 @@ afterEach(async () => {
 });
 
 describe('standard session title runtime', () => {
+  it('titles the complete real request after the current multipart Plan prompt round-trip', async () => {
+    const preface = loadPlanModeInstruction();
+    const requests = ['Fix mobile chat positioning and dark tab selection.', 'Match certification fills and remove scrolling breadcrumb backgrounds.'];
+    const content = buildV2PromptContent([{ type: 'text', text: preface, synthetic: true }, ...requests.map(text => ({ type: 'text', text }))]);
+    const metadata = { devryan: buildDevryanPromptMetadata({ origin: 'user', planMode: content.planMode, parts: content.segments }, { text: content.text }) };
+    const parts = toV1UserParts({ id: 'msg_plan', text: content.text, metadata }, 'ses_1');
+    expect(parts.map(part => [part.text, part.synthetic === true])).toEqual([[preface, true], ...requests.map(text => [text, false])]);
+    const fake = createFakeOpenCode({ status: 'idle', completed: true });
+    fake.state.messages.set('ses_1', [{ ...userMessage(''), parts }, completedAssistantMessage()]);
+    const generated = vi.fn(async () => 'Public Profile Visual Corrections');
+    const projected = [];
+    const runtime = createRuntime({ fake, projected, generateSessionModelTitle: generated });
+    try {
+      await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+      expect(generated).toHaveBeenCalledWith(expect.objectContaining({ text: requests.join(' ') }));
+      expect(projected[0]).toMatchObject({ title: 'Public Profile Visual Corrections', source: 'session_model' });
+    } finally { await runtime.dispose(); }
+  });
+
   it('refuses the retired blocking helper-session path and derives the title without admission or retry', async () => {
     const fake = createFakeOpenCode();
     const projected = [], diagnostics = [];

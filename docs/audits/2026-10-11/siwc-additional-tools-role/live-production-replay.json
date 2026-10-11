@@ -1,0 +1,52 @@
+{
+  "scope": "primary request bodies captured from the production-composition provider graph test, replayed once each against the live provider with the current access token in memory; no UI or credential refresh",
+  "at": "2026-10-10, 20:05-20:12 UTC",
+  "model": "gpt-6-astra",
+  "results": [
+    {
+      "body": "first turn",
+      "variant": "role removed from the additional_tools item (v2.0.6 wire shape)",
+      "inputShape": [["message", "user"], ["additional_tools", null]],
+      "toolCount": 14,
+      "status": 400,
+      "outcome": "provider-refused",
+      "providerCode": "missing_required_parameter",
+      "providerParam": "input[1].role",
+      "credentialUnchanged": true
+    },
+    {
+      "body": "first turn",
+      "variant": "repaired encoder",
+      "inputShape": [["message", "user"], ["additional_tools", "developer"]],
+      "toolCount": 14,
+      "status": 200,
+      "outcome": "completed",
+      "nativeParserAccepted": true,
+      "frames": 28,
+      "credentialUnchanged": true
+    },
+    {
+      "body": "follow-up after a tool result",
+      "variant": "repaired encoder, fixture function_call id kept",
+      "inputShape": [["message", "user"], ["function_call", null], ["function_call_output", null], ["additional_tools", "developer"]],
+      "toolCount": 14,
+      "status": 400,
+      "outcome": "provider-refused",
+      "providerCode": "invalid_value",
+      "providerParam": "input[1].id",
+      "note": "fixture artifact: the graph fixture invents a function_call id that does not begin with 'fc'",
+      "credentialUnchanged": true
+    },
+    {
+      "body": "follow-up after a tool result",
+      "variant": "repaired encoder, fixture function_call id omitted",
+      "inputShape": [["message", "user"], ["function_call", null], ["function_call_output", null], ["additional_tools", "developer"]],
+      "toolCount": 14,
+      "status": 200,
+      "outcome": "completed",
+      "nativeParserAccepted": true,
+      "frames": 14,
+      "credentialUnchanged": true
+    }
+  ]
+}

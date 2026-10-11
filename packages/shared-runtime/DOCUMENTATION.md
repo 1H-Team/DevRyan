@@ -36,7 +36,8 @@ Managed runtimes can apply immediately when authoritative active-session count i
 windows by duration and limit bucket. It keeps reset-credit inventories separate
 from ordinary credits, preserves authoritative counts when expiry details are
 partial, and distinguishes unavailable details from an empty inventory. The
-web host owns the optional Codex process and private usage sign-in.
+normalizer remains a compatibility export; desktop/web usage now reuses the
+selected native Codex sign-in instead of owning an app-server profile.
 
 `lib/quota-adapters.js` owns provider request and normalization rules used by the web server for OpenCode Zen, OpenCode Go, z.ai, Kimi, Codex, xAI, and DeepSeek. Adapters accept injected credentials, `fetch`, and clocks; they return a common usage-window shape, value-only rows when a percentage does not exist, partial-parse warnings, and deterministic configured/error state. The Zen adapter performs a bounded, non-evaluating SolidJS billing hydration parse and enforces the exact authenticated workspace billing origin. It emits one Credits progress window comparing current-month spend with the available balance; monthly-limit and auto-reload fields are parsed for payload compatibility but are not exposed in usage output.
 
@@ -58,3 +59,8 @@ safe journal projection using the same contract.
 ## Assistant image syntax
 
 `lib/assistant-image-sources.js` is the dependency-free parser shared by the UI candidate projection and authoritative web authorization. It recognizes supported Markdown image/link forms while masking escaped syntax and code, canonicalizes local/file/raw/HTTP/data sources, rejects SVG and unsupported schemes, and can strip load-bearing image syntax without removing surrounding prose. `testing/assistant-image-fixtures.js` is the golden parity set consumed by both hosts.
+
+Codex usage and optional reset-bank reads reject redirects, use 20/10-second
+timeouts and reuse bounded 64-KiB response parsing. A usage 401 exposes
+`REAUTHENTICATION_REQUIRED`; native hosts can report renewal pending because
+OpenCode owns refresh. Optional reset failures preserve the main allowance.

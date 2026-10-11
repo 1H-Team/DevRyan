@@ -35,11 +35,10 @@ test('fresh sign-in requires user code and separate explicit selection; no autom
   const { createRoot } = await import('react-dom/client'); const root = createRoot(container as unknown as Element);
   try {
     await act(async () => root.render(<ClaudeDedicatedEnrollment administrator principalID="admin" directory="/owned/project" onSelected={onSelected} />));
-    expect(container.textContent).toContain('Optional dedicated Claude account');
-    expect(container.textContent).toContain('Existing Claude Code or Meridian sign-ins work while valid.');
-    expect(container.textContent).toContain('automatic renewal');
+    expect(container.textContent).toContain('Dedicated profile');
+    expect(container.textContent).toContain('Optional. Keeps Claude signed in automatically.');
     expect(calls).toHaveLength(1); expect(calls[0].method).toBe('GET');
-    await click(container, 'Sign in to a Dedicated Profile'); expect(opened).toEqual([URL]);
+    await click(container, 'Add Dedicated Profile'); expect(opened).toEqual([URL]);
     await enter(container, 'original-code#foreign-state'); await click(container, 'Complete Sign-In');
     expect(calls.filter(call => call.path.includes('/complete'))).toHaveLength(0);
     await enter(container, 'original-code#original-state'); await click(container, 'Complete Sign-In');
@@ -63,7 +62,7 @@ test('principal replacement aborts the old scope and ignores its late completed 
   const { createRoot } = await import('react-dom/client'); const root = createRoot(container as unknown as Element);
   try {
     await act(async () => root.render(<ClaudeDedicatedEnrollment administrator principalID="admin" onSelected={onSelected} />));
-    await click(container, 'Sign in to a Dedicated Profile'); await enter(container, 'original-code');
+    await click(container, 'Add Dedicated Profile'); await enter(container, 'original-code');
     await click(container, 'Complete Sign-In');
     await act(async () => root.render(<ClaudeDedicatedEnrollment administrator={false} principalID="other" onSelected={onSelected} />));
     await act(async () => { release?.(); }); expect(container.textContent).toBe(''); expect(selected).toBe(0);
@@ -73,7 +72,7 @@ test('manual code entry rejects a foreign callback URL without issuer submission
   const { createRoot } = await import('react-dom/client'); const root = createRoot(container as unknown as Element);
   try {
     await act(async () => root.render(<ClaudeDedicatedEnrollment administrator principalID="admin" onSelected={onSelected} />));
-    await click(container, 'Sign in to a Dedicated Profile');
+    await click(container, 'Add Dedicated Profile');
     await enter(container, 'https://foreign.invalid/oauth/code/callback?code=code&state=original-state');
     await click(container, 'Complete Sign-In');
     expect(calls.filter(call => call.path.includes('/complete'))).toHaveLength(0);
@@ -103,5 +102,30 @@ test('incomplete and unavailable enrollments retain healthy rows and explicit re
     await click(container, 'Recover and Use This Profile'); expect(selected).toBe(1);
     expect(calls.filter(call => call.method === 'POST')).toEqual([{ path: `/api/provider/anthropic/enrollment/${incomplete}/select`, method: 'POST', body: '{}', csrf: '1' }]);
     expect(opened).toHaveLength(0);
+  } finally { await act(async () => root.unmount()); }
+}));
+
+test('list, start and completion failures each say what failed instead of one recovery hint', async () => withDom(async container => {
+  let fail: 'list' | 'start' | 'complete' | 'update' = 'list';
+  globalThis.fetch = Object.assign(mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input), method = init?.method ?? 'GET';
+    if (method === 'GET') return fail === 'list' ? Response.json({ code: 'native_claude_enrollment_location_unreviewed' }, { status: 503 }) : Response.json({ accounts: [] });
+    if (path.includes('/complete')) return Response.json({ code: 'native_claude_enrollment_failed' }, { status: 409 });
+    if (fail === 'start') return Response.json({ code: 'native_claude_enrollment_refused' }, { status: 409 });
+    if (fail === 'update') return Response.json({ code: 'native_claude_enrollment_update_required' }, { status: 409 });
+    return Response.json({ enrollmentID: ID, status: 'pending', url: URL });
+  }), { preconnect: () => {} });
+  const alert = () => container.find(node => node.getAttribute('role') === 'alert')?.textContent;
+  const { createRoot } = await import('react-dom/client'); const root = createRoot(container as unknown as Element);
+  try {
+    await act(async () => root.render(<ClaudeDedicatedEnrollment administrator principalID="admin" onSelected={onSelected} />));
+    expect(alert()).toBe('Dedicated profiles couldn’t be loaded.');
+    fail = 'start'; await click(container, 'Add Dedicated Profile');
+    expect(alert()).toBe('Sign-in couldn’t start. Try again.'); expect(opened).toHaveLength(0);
+    fail = 'update'; await click(container, 'Add Dedicated Profile');
+    expect(alert()).toBe('Apply the bundled runtime update first.');
+    fail = 'complete'; await click(container, 'Add Dedicated Profile'); expect(opened).toEqual([URL]);
+    await enter(container, 'original-code'); await click(container, 'Complete Sign-In');
+    expect(alert()).toBe('Sign-in couldn’t be confirmed. Start again.');
   } finally { await act(async () => root.unmount()); }
 }));

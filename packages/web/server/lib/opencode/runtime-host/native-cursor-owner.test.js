@@ -38,7 +38,11 @@ test('Cursor retains admitted caller after 204, verifies native record scope and
   await native.withAcceptedOperation({...accepted,request:{text:'fixture'}},async()=>{
    native.updateAcceptedOperation({metadata:accepted.metadata,request});
    await expect(native.captureCursorAuthorization({...scope,modelID:'foreign'})).rejects.toMatchObject({code:'native_cursor_scope_invalid'});
+   const catalogCheck=await native.captureManagedCursorCatalogAuthorization({kind:'catalog',directory:scope.directory});
+   expect(typeof catalogCheck).toBe('function');await catalogCheck();
+   await expect(native.captureManagedCursorCatalogAuthorization({kind:'catalog',directory:'/foreign'})).rejects.toMatchObject({code:'native_cursor_catalog_scope_invalid'});
    owned=await owner.ownedPrompt(scope);
+   expect(owned.readOnly).toBe(false);
    await owned.run(async()=>{
     await persist(makeRecord('user'));await persist(makeRecord('assistant'));expect(tracked).toBe(1);
     await owner.withExecution({directory:scope.directory,sessionID:scope.sessionID,messageID:scope.userMessageID,assistantMessageID:scope.assistantMessageID},async()=>{

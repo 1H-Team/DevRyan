@@ -208,6 +208,11 @@ preserve identity when a rename also replaces the inode. Publication decisions
 and their results are committed together before materializing shared files.
 Recovery refuses to replace a file changed by a foreign writer after that intent.
 
+Repeated native session registration reads the committed ledger snapshot when
+the session already exists with the same parent and directory. New registrations
+and pending materialization recovery still take the owner lock and commit
+durably; the read path never bypasses lineage or directory validation.
+
 Ledger work runs on the host event loop, which in Electron is the window's main
 thread. Gitignored directories without tracked content are inputs: linked into
 views, never ingested or published, and fenced from history replay

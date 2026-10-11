@@ -46,7 +46,7 @@ const ownerAlive = record => {
 
 /** No other process may own the source bundle: no live owner or controller in
  * its managed-process registry and no live holder of its orchestration lock. */
-const assertNoLiveOwner = async launch => {
+export const assertNoLiveOwner = async launch => {
   for (const record of readManagedOpenCodeRegistry(registryOptions(launch))) {
     if (ownerAlive(record) || isProcessRunning(record.childPid)) throw fail('bundle_upgrade_owner_active');
   }

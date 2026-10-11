@@ -20,7 +20,7 @@ import { createNativeAuthorization } from '../../packages/web/server/lib/opencod
 import { createOpenAiOAuthCoordinator } from '../../packages/web/server/lib/opencode/openai-oauth-coordinator.js';
 
 const repository = path.resolve(import.meta.dirname, '../..');
-export async function prepareSourceOpenAiFixture({ databasePath, directory, profileRoot, expiresIn = { A: 3600, B: 3600 }, canaryPrefix, additionalIntegrations = [] }) {
+export async function prepareSourceOpenAiFixture({ databasePath, directory, profileRoot, expiresIn = { A: 3600, B: 3600 }, canaryPrefix, additionalIntegrations = [], retiredSeed = false }) {
   assert.ok(Array.isArray(additionalIntegrations) && new Set(additionalIntegrations).size === additionalIntegrations.length);
   assert.ok(additionalIntegrations.every(id => ['cursor-acp', 'opencode', 'opencode-go', 'xai'].includes(id)));
   if(canaryPrefix!==undefined)assert.match(canaryPrefix,/^[a-z0-9_-]{16,128}$/);
@@ -32,6 +32,41 @@ export async function prepareSourceOpenAiFixture({ databasePath, directory, prof
   const globals = Object.fromEntries(['home', 'data', 'cache', 'config', 'state', 'tmp', 'bin', 'log', 'repos'].map(key => [key, path.join(profileRoot, key)]));
   for (const value of Object.values(globals)) await fs.mkdir(value, { recursive: true, mode: 0o700 });
   assert.deepEqual(await fs.readdir(globals.config), [], 'Source preparation config must be empty');
+  if (retiredSeed) {
+    const accounts = [];
+    const run = prepare => Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      let credentials, integration;
+      const overrides = [Global.node.replace(Global.layerWith(globals)), ...configurationOverrides({}),
+        Credential.node.replace(Credential.node.mapLayer(original => Layer.effect(Credential.Service, Effect.gen(function* () {
+          credentials = yield* Credential.Service; return credentials;
+        })).pipe(Layer.provide(original)))),
+        Integration.node.replace(Integration.node.mapLayer(original => Layer.effect(Integration.Service, Effect.gen(function* () {
+          integration = yield* Integration.Service; return integration;
+        })).pipe(Layer.provide(original))))];
+      const sdk = yield* OpenCode.create({ database: { path: databasePath }, config: { project: false }, models: { fetch: false, snapshot: false },
+        fs: { filewatcher: false, fff: false }, events: { persist: false } }, { overrides });
+      yield* sdk.agent.list({ location: { directory } });
+      assert.ok(credentials && integration);
+      const proof = record => ({credentialID:record.id,methodID:record.value.methodID,accountID:record.value.metadata.accountID,
+        expectedFingerprint:credentialMutationFingerprint(record),valueFingerprint:credentialMutationFingerprint(record.value),expires:record.value.expires});
+      if (prepare) {
+        for (const current of ['A','B']) {
+          const record = yield* credentials.create({integrationID:'openai',activate:true,label:`Retired fixture ${current}`,value:{type:'oauth',methodID:'chatgpt-siwc',
+            access:`synthetic-retired-${current}`,refresh:`synthetic-retired-refresh-${current}`,expires:Date.now()+expiresIn[current]*1000,
+            metadata:{accountID:`owned-image-account-${current}`}}}).pipe(Effect.provide(Logger.layer([Logger.withConsoleError(Logger.formatLogFmt)], {mergeWithExisting:false})));
+          accounts.push(proof(record));
+        }
+        for (const integrationID of additionalIntegrations) yield* credentials.create({integrationID,activate:true,label:'Synthetic startup shape',
+          value:integrationID==='xai'?{type:'oauth',methodID:'device',access:'synthetic-xai-access',refresh:'synthetic-xai-refresh',expires:Date.now()-3600000}:{type:'key',key:`synthetic-${integrationID}-key`}});
+      }
+      const selected = yield* integration.connection.active('openai');
+      assert.equal(selected?.type,'credential');
+      return proof(yield* credentials.get(selected.id));
+    }).pipe(Effect.provide(Logger.layer([],{mergeWithExisting:false})))));
+    const before = await run(true), reopened = await run(false);assert.deepEqual(reopened,before);
+    return {source:'synthetic-retired-native-credential-source-sdk',nativeVersion:'2.0.26',accounts,reopened,
+      requestPhases:['A','B'].map(account => ({account,phase:'create'})),settledMutations:0,compiledOAuthCreation:false};
+  }
   const previousFetch = globalThis.fetch, requests = [], mutationsSeen = [], accounts = [];
   let account = 'A';
   globalThis.fetch = async (url, init = {}) => {

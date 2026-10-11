@@ -1,25 +1,88 @@
 # Native startup catalog diagnostics
 
+## Host helper and title ownership
+
+`native-configuration-snapshot.js` applies `runtime-helper-agents.js` after saved
+and Slim agent resolution. This installs the hidden, deny-all `devryan-title`,
+`devryan-commit` and `devryan-pr` roles without assigning a model or variant,
+and disables native `title`. The existing standard title coordinator owns
+generation, bounded retry/fallback and compare-before-rename persistence.
+Without those roles, `controller-webfetch.ts` rejects generation with
+`native_helper_agent_unavailable` before a provider request. The compiled
+controller-webfetch test now starts from resolver-produced configuration;
+the multipart Plan admission/projection/title regression checks that synthetic
+format instructions remain excluded while every real request part is retained.
+
+## Archiving sessions with recovered input
+
+`native-admission-owner.js` permits archive/unarchive through the recovered-input
+fence only after the private metadata reader verifies the session/directory and
+the exact archive-only replacement. Other metadata is preserved. The permit
+allows only its pinned `session.setMetadata` effect and retains fresh caller
+authorization, session holds and revision checks. `native-recovered-input.js`
+keeps retained inputs and their execution fence intact; archiving does not
+resume or discard them. Generic web operations, prompts and wakes remain fenced.
+
+## Managed Cursor catalog and inspection authority
+
+Managed start preparation has a 25-second deadline inside the existing 30-second
+bridge window and carries caller cancellation through catalog validation and
+scheduler admission. Native selection validation bounds catalog reads at 20
+seconds. The SDK catalog command uses the existing confined read-only worker,
+with a bounded projection of model IDs and exact string-valued variant parameters.
+Cancellation waits for the owned process termination receipt before releasing
+authority; an unconfirmed receipt remains `native_process_settlement_unconfirmed`.
+The signal stays local and is excluded from stored scopes, RPC and worker payloads.
+Authority refusals retain their safe native code; catalog deadline exhaustion is
+the separate transient `native_cursor_catalog_timeout`. Timed public discovery
+returns declared fallback metadata after cleanup, while admission never publishes a
+late cancelled result or admits a task after cancellation.
+
+`native-runtime-owner.js` exposes constructor-only `withManagedCursorCatalog`
+for exact directory/root/agent/provider/model/variant validation. Initial and
+agent-requested recovery validation run inside the private current
+`devryan_task` invocation installed by `managed-task-owner.js`; the admission
+owner rechecks its canonical call and permit. Detached automatic recovery must
+supply the task ID and cancellation generation, and the orchestration owner
+verifies the current pending recovery and exact configured backup selection.
+The separate `captureManagedCatalogAuthorization` checks the canonical root's
+current account access without manufacturing a browser principal or adding a
+public detached operation. Catalog grants recheck owner, controller epoch,
+canonical directory, archive/revert, holds and revision. SDK prompt-time discovery
+can use the already accepted exact native Cursor prompt permit; ordinary browser
+catalog reads and authenticated manual retry/resume overrides retain their original
+browser authorization. A generation-bearing automatic recovery never falls back
+to browser authority.
+
+Cursor prompt grants return immutable `{ run, close, readOnly }`. Managed
+`readOnly` comes from the verified current task lease, never prompt input, and a
+policy change revokes the grant. The SDK owner applies this captured policy to
+agent creation, resume and cached worker identity. Model and effort availability
+remain account-specific and fail closed; inspection authority does not grant a
+replacement model or permission to dispatch nested tasks.
+
 ## Provider request and account boundaries
 
-The [primary SIWC transport incident](../../../../../../docs/audits/2026-10-10/siwc-primary-transport/README.md)
-records the transport mismatch, synthetic reproduction and verification
-status.
+OpenAI new enrollment uses reviewed `opencode.provider.openai` / `chatgpt-browser`
+(**Codex browser (legacy)**). Existing `opencode.provider.chatgpt` /
+`chatgpt-token-sharing` credentials remain usable for chat. The catalog exposes
+only Codex browser and API key. `native-openai.ts` checks admission, this permit's
+selected credential proof, and the exact method-specific HTTP route: Codex
+`https://chatgpt.com/backend-api/codex/responses`, or token-sharing
+`https://api.openai.com/v1/responses`. It re-stamps bearer and actual Codex account
+headers without changing bodies or responses. Both OAuth flows strip prepared
+WebSocket options and refuse physical handshakes. API-key behavior is unchanged.
 
-`controller-providers.ts` removes the prepared WebSocket option when the OpenAI
-credential owner reports a current ChatGPT SIWC selection. This policy applies
-to all native request kinds; API-key requests retain their prepared transport.
-Credential values stay in `native-openai.ts`, and physical hooks still enforce
-account identity and route restrictions. `native-observation.ts` records bounded
-`provider-refusal` observations for physical OpenAI hooks using only reviewed
-codes, request kind and hook name alongside the common session identity.
-
-The shared SIWC response adapter accepts SSE keepalives and split frames, and
-accepts the observed direct-route response with an omitted Content-Type header
-while validating its framing and normalizing the downstream SSE header. It finishes at `response.completed` without waiting for EOF. Structured terminal
-provider failures reach the native parser intact. A cancelled consumer cancels
-the underlying response; premature EOF and malformed or oversized frames still
-fail. API-key requests bypass this SIWC normalization.
+OpenCode owns enrollment and refresh, under the host's serialized credential
+resolution commit shared with xAI. Unscoped plugin loads return stored values
+without renewal. Only a refresh commit writes OAuth values; startup method
+migrations remain logged no-ops. Catalog readers use metadata. Usage uses the
+existing private `openai-read-selected-owned` read under an `openai.integration`
+grant, verifies the active metadata ID, and forwards only Codex access/account
+fields to the usage fetcher. It never refreshes or forwards the refresh token.
+`openai.attempt` remains; `openai.access` is removed. The compatibility context
+pinning flag applies only to token-sharing; Codex retains OpenCode's model limits.
+See the [native Codex audit](../../../../../../docs/audits/2026-10-11/native-codex-signin/README.md).
 
 Provider credential resolution reads its selected snapshot inside the serialized
 mutation queue. Concurrent requests may advance only through a refresh committed
@@ -34,6 +97,13 @@ when there are several. An ambiguous selection stays unavailable. Ordinary
 shared credentials are read from their original owner without renewal or writes;
 expired shared credentials require reconnecting through Claude Code/Meridian.
 Dedicated enrollment is optional automatic renewal.
+
+Dedicated enrollment is global to the bundle. `native-claude-enrollment-location.js`
+binds a request to its own directory when that directory is a reviewed location,
+and to the default location (`locations[0]`) otherwise, so a registered project
+outside the bundle's project map can still list, start, complete and select
+enrollments. A bundle with no reviewed default location still refuses with
+`native_claude_enrollment_location_unreviewed`.
 
 ## Startup diagnostics
 
@@ -60,8 +130,9 @@ model stages, and schema failures. HTTP response-body schema failures use
 Arbitrary errors retain `cause_unavailable`; response text is never used to
 infer a cause.
 
-Retired OpenAI OAuth methods (`chatgpt-browser`, `chatgpt-headless`, and
-`chatgpt-token-sharing`) resolve as unavailable catalog connections. Their
+Retired OpenAI OAuth methods (`chatgpt-headless` and `chatgpt-siwc`) and
+`chatgpt-browser` rows carrying token-sharing `metadata.clientID` resolve as
+unavailable catalog connections. Their
 presence cannot prevent startup, refresh a credential or rewrite the database.
 Physical requests still refuse unsupported authentication before acquiring
 access. Other unsupported methods retain `openai_method_unsupported` in catalog
@@ -136,6 +207,14 @@ elapsed milliseconds and completion/failure outcomes only. Existing journal
 startup/failure records and recovery ordering remain authoritative. The timings
 are observations, never readiness or integrity shortcuts.
 
+Bundle upgrades additionally time artifact verification, artifact retention,
+database checkpointing, data copying, candidate preparation and selection.
+These are nested spans, not additive startup durations. Artifact and bundle
+copies request filesystem copy-on-write with ordinary-copy fallback; they never
+share writable inodes. Large file hashes stream through SHA-256 rather than
+buffering whole executables. Source/destination verification, signatures,
+SQLite snapshotting, checkpoint ownership and selector CAS remain mandatory.
+
 Startup binding reads sealed bundle documents with the same 32 MiB
 `BUNDLE_DOCUMENT_MAX_BYTES` limit used by bundle storage and native boot
 verification, checking both file metadata and bytes read. Hash, canonical-path
@@ -144,3 +223,28 @@ to its default appearance if selected-bundle settings cannot be read, preserving
 the original error and Retry action even after an upgrade changes selection.
 The [runtime preparation audit](../../../../../../docs/audits/2026-10-10/runtime-preparation/README.md)
 records the incident and isolated packaged regression evidence.
+
+### Abandoned control leases
+
+The startup upgrade and every launch verification run `inspectBundleHarness`,
+which refuses any ledger lease that is not `published`/`cancelled` or still has
+`cleanupPending` (`bundle_execution_unsettled`). In-runtime lease recovery runs
+only after launch. `native-bundle-lease-recovery.js` therefore settles the
+selected bundle's abandoned control leases first, inside the bootstrap lock and
+before setup-source removal and the startup upgrade
+(`recoverSelectedBundleLeasesAtStartup`, called from `native-default-bundle.js`).
+It qualifies only never-spawned control leases (`preparation: 'none'`) whose view
+lies inside their own ledger's `views/`, refuses while a live process owns the
+bundle (`assertNoLiveOwner`), skips every ledger when a materialization is
+pending, and is skipped on Windows. It cancels and cleans through the existing
+`recoverExecutionLeases` and logs the `bundle_lease_recovery` startup phase only
+when it has work. It never throws; process leases keep their termination-receipt
+rules, and anything left unsettled still fails the strict gate.
+
+Native managed control calls (`devryan_task`, `council_session`) record the
+execution-host owner on their lease. When `finish` fails, for example because a
+timeout or Stop retired the tool permit, `nativeManagedControl` cancels and
+cleans the exact scope-matched `ready` control lease and rethrows the original
+failure. `recoverExecutionLeases` also settles owner-less control leases left by
+earlier builds. The [incident audit](../../../../../../docs/audits/2026-10-11/bundle-execution-unsettled/README.md)
+records the evidence.

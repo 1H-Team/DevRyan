@@ -7,7 +7,7 @@ import yaml from 'yaml';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const AGENTS_DIR = path.resolve(__dirname, '../../default-config/agents');
 const PRE_TASK_ORCHESTRATOR_PROMPT_UTF8_BYTES = 15_902;
-const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 42_544;
+const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 43_219;
 const DEFAULT_SLIM_PROFILE_PATH = path.resolve(
   __dirname,
   '../../default-config/user-profile/oh-my-opencode-slim.json',
@@ -243,6 +243,11 @@ describe('packaged agent defaults', () => {
     expect(countOccurrences(body, 'Honor the DevRyan rationale-display reminder captured in the first user turn')).toBe(1);
     expect(countOccurrences(body, 'Explain why instead of merely repeating the tool action')).toBe(1);
     expect(countOccurrences(body, 'Never expose or claim to expose private chain-of-thought')).toBe(1);
+    expect(body).toContain('Before the first tool call of a new task, write a brief user-facing assessment in ordinary assistant text');
+    expect(body).toContain('identify the requested outcome and group its distinct concerns');
+    expect(body).toContain('This assessment comes before Explorer-first dispatch and is not a standalone todo operation.');
+    expect(body).toContain('Provider Default still includes the brief initial assessment');
+    expect(body).toContain('never redispatch unchanged work or switch agents or models to evade that boundary');
     expect(countOccurrences(body, 'Approval belongs only to the plan card lifecycle')).toBe(1);
     expect(body).toContain('Do not guess user-owned intent, ask about trivial, reversible mechanics, or request permission for already-approved mechanical steps; when the next step is clear, take it.');
     expect(body).not.toContain('**Clarify unresolved user intent.**');

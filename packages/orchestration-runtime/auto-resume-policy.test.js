@@ -278,6 +278,25 @@ describe('auto-resume attempt planning', () => {
     })).toMatchObject({ nextAttemptAt: NOW + 15 * MINUTE, target: { kind: 'original' } });
   });
 
+  test('requires host capability for read-only Cursor transport and usage backups', () => {
+    for (const trigger of ['provider_transport', 'provider_usage_limit']) {
+      for (const cursorReadOnly of [undefined, false, true]) {
+        const plan = planAutoResumeAttempt({
+          now: NOW, task: parkedTask({ readOnly: true }),
+          state: freshState({ trigger }), cursorReadOnly,
+          backup: { providerId: 'cursor-acp', modelId: 'composer', variant: null },
+        });
+        if (cursorReadOnly === true) {
+          expect(plan).toMatchObject({ state: 'scheduled', target: { kind: 'backup', providerId: 'cursor-acp' } });
+        } else if (trigger === 'provider_transport') {
+          expect(plan).toEqual({ state: 'exhausted', reason: 'backup_unavailable' });
+        } else {
+          expect(plan).toMatchObject({ state: 'scheduled', target: { kind: 'original' } });
+        }
+      }
+    }
+  });
+
   test('tries a distinct, compatible, unbroken backup immediately', () => {
     const state = freshState({ resetAt: NOW + 40 * MINUTE, resetSource: 'opencode_status' });
     expect(planAutoResumeAttempt({ now: NOW, task, state, backup })).toEqual({

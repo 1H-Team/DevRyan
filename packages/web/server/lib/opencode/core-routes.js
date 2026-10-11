@@ -719,10 +719,10 @@ const SHARED_JSON_50MB_PREFIXES = Object.freeze([
 // Unlisted /api paths stay raw so the OpenCode proxy can stream them; any
 // other /api route that reads req.body mounts its own bounded express.json
 // (enforced by api-json-body-coverage.test.js).
-const isSiwcEnrollmentPath = (pathname) => /^\/api\/provider\/openai\/siwc(?:\/|$)/i.test(pathname);
+const isOpenAiOAuthPath = (pathname) => /^\/api\/provider\/openai\/oauth(?:\/|$)/i.test(pathname);
 export const resolveSharedJsonBodyLimit = (pathname) => {
-  // Dedicated SIWC routes authorize local transport/admin/CSRF before parsing.
-  if (isSiwcEnrollmentPath(pathname)) return null;
+  // OpenAI OAuth routes authorize local transport/admin/CSRF before parsing.
+  if (isOpenAiOAuthPath(pathname)) return null;
   if (pathname.startsWith('/api/behavior')) return '1mb';
   if (SHARED_JSON_16KB_PREFIXES.some((prefix) => pathname.startsWith(prefix))) return '16kb';
   if (SHARED_JSON_50MB_PREFIXES.some((prefix) => pathname.startsWith(prefix))) return '50mb';
@@ -747,7 +747,7 @@ export const registerCommonRequestMiddleware = (app, dependencies) => {
   });
 
   const parseUrlEncoded = express.urlencoded({ extended: true, limit: '50mb' });
-  app.use((req, res, next) => isSiwcEnrollmentPath(req.path) ? next() : parseUrlEncoded(req, res, next));
+  app.use((req, res, next) => isOpenAiOAuthPath(req.path) ? next() : parseUrlEncoded(req, res, next));
 
   app.use((req, _res, next) => {
     if (verboseRequestLogs) {

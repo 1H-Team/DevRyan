@@ -56,6 +56,13 @@ const server = https.createServer({ key: await fs.readFile('/fixture-tls/key.pem
     assert.equal(req.headers.authorization, `Bearer fixture-access-${rotation}`);
     assert.equal(req.headers['chatgpt-account-id'], undefined);
     const body = JSON.parse(raw);
+    // The Responses API reads a role-less additional_tools item as a message and refuses the request.
+    const roleless = body.input.findIndex(item => item?.type === 'additional_tools' && item.role !== 'developer');
+    if (roleless >= 0) {
+      res.writeHead(400, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: { message: `Missing required parameter: 'input[${roleless}].role'.`, type: 'invalid_request_error', param: `input[${roleless}].role`, code: 'missing_required_parameter' } }));
+      return;
+    }
     if (JSON.stringify(body.input).includes('Attachment fixture')) {
       assert.ok(body.input.some(item => item.content?.some(part => part.type === 'input_image' && part.image_url?.startsWith('data:image/png;base64,'))));
       attachmentObserved = true;

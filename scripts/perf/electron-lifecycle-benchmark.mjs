@@ -60,6 +60,7 @@ const documentSnapshot = () => `(() => {
     navigation: navigation ? { type: navigation.type, domContentLoadedEventEnd: navigation.domContentLoadedEventEnd,
       loadEventEnd: navigation.loadEventEnd, duration: navigation.duration } : null,
     readinessGates: performance.getEntriesByType('mark').filter(e => /^devryan-startup-gate-(health|providers|agents|initialization|globalSync|directorySync|sessionList|responseStyle|worktree)-(idle|loading|ready|error)$/.test(e.name)).map(e => ({ name: e.name, elapsedMs: e.startTime })),
+    directoryRequests: performance.getEntriesByType('measure').filter(e => /^devryan-directory-(project|providers|config|path|status|sessions)$/.test(e.name)).map(e => ({ name: e.name, elapsedMs: e.duration, outcome: e.detail?.outcome })),
     paints: performance.getEntriesByType('paint').map(e => ({ name: e.name, startTime: e.startTime })) };
 })()`;
 
@@ -96,6 +97,20 @@ export const parseStartupPhaseLogs = logs => {
 
 export function assertStartupMode(startupMode) {
   assert.ok(startupMode === 'natural' || startupMode === 'foreground', 'startupMode must be natural or foreground');
+}
+
+export async function waitForStartupCatalog(origin, { checkAlive = () => {}, onResponse = () => {}, timeoutMs = 10_000 } = {}) {
+  const deadline = performance.now() + timeoutMs;
+  while (performance.now() < deadline) {
+    checkAlive();
+    const response = await fetch(`${origin}/api/provider`, { signal: AbortSignal.timeout(Math.max(1, Math.ceil(Math.min(5000, deadline - performance.now())))) });
+    onResponse(response.status);
+    if (response.status === 200) return response.json();
+    await response.body?.cancel();
+    assert.ok([500, 502, 503, 504].includes(response.status), `Startup fixture provider catalog failed (${response.status})`);
+    await pause(Math.min(100, Math.max(0, deadline - performance.now())));
+  }
+  throw new Error('Startup fixture provider catalog readiness timed out');
 }
 
 export async function captureFirstDocumentStartup({ cdp, fixture, origin, startedAt, milestones = {}, checkAlive, navigationAudit,
@@ -144,9 +159,9 @@ export async function captureFirstDocumentStartup({ cdp, fixture, origin, starte
       if (startup.state === 'failed') evidence.startupFailure = { observedAtMs: elapsedMs, ...startup };
     } });
     evidence.hostReadyMs = performance.now() - startedAt;
-    const response = await fetch(`${origin}/api/provider`, { signal: AbortSignal.timeout(5000) });
-    assert.equal(response.status, 200, 'Startup fixture provider catalog is unavailable');
-    const catalog = await response.json();
+    evidence.catalogResponses = [];
+    const catalog = await waitForStartupCatalog(origin, { checkAlive,
+      onResponse: status => evidence.catalogResponses.push({ status, elapsedMs: performance.now() - startedAt }) });
     assert.ok(catalog.connected?.includes(tuple.providerId) && catalog.all?.some(provider => provider.id === tuple.providerId && provider.models?.[tuple.modelId]),
       'Startup must use the expected fixture provider catalog');
     evidence.fixtureCatalogReadyMs = performance.now() - startedAt;

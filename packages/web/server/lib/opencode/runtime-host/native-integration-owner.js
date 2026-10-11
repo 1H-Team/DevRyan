@@ -4,7 +4,6 @@ import { createNativeOpenAiAuth } from './native-openai-auth.js';
 import { createNativeIntegrationAuthorization } from './native-integration-authorization.js';
 import { createNativeCredentialMutationOwner, credentialMutationFingerprint, parseCredentialResolutionBinding } from './native-credential-mutation-owner.js';
 import { reviewedMcpConfiguration } from './reviewed-mcp-configuration.js';
-import { hasSiwcPlanUsage } from '../chatgpt-siwc.js';
 import { NativeCommandRefusal } from './native-command-refusal.js';
 
 const fail = (code, status = 403) => Object.assign(new Error(code), { code, status, statusCode: status });
@@ -20,7 +19,6 @@ export function createNativeIntegrationOwner({ instanceID, snapshot, stateDirect
   const locations = new Map(snapshot.locations.map(location => [location.directory, location]));
   const mcp = reviewedMcpConfiguration(snapshot, [...locations.keys()]);
   let closed = false, settlement;
-  const signingOut = new Set();
   const live = () => { if (closed) throw fail('native_integration_grant_expired'); };
   const verifyBinding = async binding => {
     live();
@@ -43,11 +41,6 @@ export function createNativeIntegrationOwner({ instanceID, snapshot, stateDirect
       const original = await captureWebAuthorization(input);
       return async () => {
         live(); if (!isReady()) throw fail('native_runtime_not_ready', 503); await original();
-        if (input.expectedActiveFingerprint !== undefined) {
-          const selected = await ownedCall({ action: 'openai-read-selected-owned', directory: input.directory });
-          if (credentialMutationFingerprint(selected ?? null) !== input.expectedActiveFingerprint) throw fail('native_chatgpt_siwc_selection_changed', 409);
-        }
-        if (input.assertCurrent) await input.assertCurrent();
         live();
       };
     }, authorizeConfiguredConnection: verifyBinding });
@@ -67,7 +60,6 @@ export function createNativeIntegrationOwner({ instanceID, snapshot, stateDirect
   const auth = createNativeOpenAiAuth({ directory: snapshot.locations[0].directory,
     controllerIdentity: () => closed ? undefined : instanceID,
     readSelected: input => ownedCall({ action: 'openai-read-selected-owned', ...input }),
-    compareAndSwapSelected: input => ownedCall({ action: 'openai-cas-selected-owned', ...input }),
   });
   const coordinator = createOpenAiOAuthCoordinator({ asyncStorage: auth.asyncStorage, withMutationQueue,
     stateFile: path.join(stateDirectory, 'native-openai-oauth-state.json'), recordDiagnostic });
@@ -100,32 +92,22 @@ export function createNativeIntegrationOwner({ instanceID, snapshot, stateDirect
       const {integrationID,...attempt}=input;void integrationID;
       return admissionOwner.withProviderAttempt(attempt,async()=>{context.signal?.throwIfAborted();live();return null;});
     }
-    if (method === 'openai.attempt' || method === 'openai.access') {
+    if (method === 'openai.attempt') {
       if (!isReady() || input.controllerInstanceID !== instanceID || !locations.has(input.directory)
         || Object.keys(input).some(key => !['directory', 'controllerInstanceID', 'sessionID', 'kind', 'permit', 'credentialID'].includes(key))) {
         throw fail('native_provider_attempt_invalid');
       }
-      if (signingOut.has(input.credentialID)) throw fail('native_chatgpt_siwc_signed_out', 401);
       return admissionOwner.withProviderAttempt(input, async () => {
         context.signal?.throwIfAborted(); live();
-        const result = method === 'openai.access' ? await auth.access(coordinator, input) : null;
+        const result = null;
         context.signal?.throwIfAborted(); live();
-        if (signingOut.has(input.credentialID)) throw fail('native_chatgpt_siwc_signed_out', 401);
-        return result;
+          return result;
       });
     }
     throw fail('native_integration_operation_invalid');
   };
-  const requireSelectedAccess = async input => {
-    live();
-    const selected = await ownedCall({ action: 'openai-read-selected-owned', directory: snapshot.locations[0].directory });
-    if (selected && signingOut.has(selected.credentialID)) throw fail('native_chatgpt_siwc_signed_out', 401);
-    const result = await coordinator.access(input);
-    if (selected && signingOut.has(selected.credentialID)) throw fail('native_chatgpt_siwc_signed_out', 401);
-    return result;
-  };
   const publicCoordinator = Object.freeze({ getBindingAsync: () => coordinator.getBindingAsync(),
-    getAuthStateAsync: accountId => coordinator.getAuthStateAsync(accountId), access: requireSelectedAccess });
+    getAuthStateAsync: accountId => coordinator.getAuthStateAsync(accountId), access: input => coordinator.access(input) });
   return { getOpenAiOAuthCoordinator: () => { live(); return publicCoordinator; }, handleRpc, withCallerOperation: grants.withCallerOperation, requestHeaders: grants.requestHeaders,
     withImageGeneration:(invocation,action)=>admissionOwner.withImageGeneration(invocation,async recheck=>{
       let captured;
@@ -148,32 +130,18 @@ export function createNativeIntegrationOwner({ instanceID, snapshot, stateDirect
       action: 'credential-operation-owned', directory: operation.directory, mutation,
       requestAuthorization: grants.requestHeaders()['x-devryan-native-integration-grant'],
     })),
-    readOpenAiAccountSelection: operation => grants.withCallerOperation(operation, async () => {
-      if (operation.operation !== 'openai.integration') throw fail('native_integration_scope_invalid');
-      const selected = await ownedCall({ action: 'openai-read-selected-owned', directory: operation.directory });
-      if (selected && signingOut.has(selected.credentialID)) throw fail('native_chatgpt_siwc_signed_out', 401);
-      if (selected?.value?.methodID === 'chatgpt-siwc' && hasSiwcPlanUsage(selected.value.metadata?.scopes)) {
-        await auth.access(coordinator, { directory: operation.directory, credentialID: selected.credentialID });
-        const current = await ownedCall({ action: 'openai-read-selected-owned', directory: operation.directory });
-        if (signingOut.has(selected.credentialID)) throw fail('native_chatgpt_siwc_signed_out', 401);
-        if (current?.credentialID !== selected.credentialID) throw fail('native_chatgpt_siwc_selection_changed', 409);
-        return current;
-      }
-      return selected;
-    }),
-    holdOpenAiSelection: operation => grants.withCallerOperation(operation, () => withMutationQueue(async () => {
-      const selected = await ownedCall({ action: 'openai-read-selected-owned', directory: operation.directory });
-      if (!selected || credentialMutationFingerprint(selected) !== operation.expectedActiveFingerprint) throw fail('native_chatgpt_siwc_selection_changed', 409);
-      signingOut.add(selected.credentialID);
-      return cleared => { if (cleared) signingOut.delete(selected.credentialID); };
-    })),
     readOpenAiCredential: (operation, credentialID) => grants.withCallerOperation(operation, () => {
       if (operation.operation !== 'openai.integration' || typeof credentialID !== 'string' || !/^[A-Za-z0-9_-]{1,256}$/.test(credentialID)) throw fail('native_integration_scope_invalid');
       return ownedCall({ action: 'openai-read-credential-owned', directory: operation.directory, credentialID });
     }),
-    readOpenAiSelected: operation => grants.withCallerOperation(operation, () => {
+    readOpenAiSelected: operation => grants.withCallerOperation(operation, async () => {
       if (operation.operation !== 'openai.integration') throw fail('native_integration_scope_invalid');
-      return ownedCall({ action: 'openai-read-selected-owned', directory: operation.directory });
+      const selected = await ownedCall({ action: 'openai-read-selected-owned', directory: operation.directory });
+      live();
+      if (selected === undefined || selected === null) return undefined;
+      if (!record(selected) || selected.directory !== operation.directory || selected.controllerInstanceID !== instanceID
+        || selected.integrationID !== 'openai' || typeof selected.credentialID !== 'string' || !record(selected.value)) throw fail('native_integration_binding_invalid', 502);
+      return selected;
     }),
     readProviderSelected: operation => grants.withCallerOperation(operation, async () => {
       if (operation.operation !== 'provider.integration' || !['xai', 'opencode-go'].includes(operation.integrationID)) throw fail('native_integration_scope_invalid');

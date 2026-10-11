@@ -36,12 +36,8 @@ import {
   createMeridianClaudeContextUsageClient,
 } from './providers/claude-meridian.js';
 import { isAnthropicProviderId } from '../opencode/anthropic-provider-ids.js';
-import { CHATGPT_SIWC_METHOD_ID } from '../opencode/chatgpt-siwc.js';
 import { OPENCODE_GENERATION_INVALID } from '../opencode/opencode-generation.js';
 import { resolveClaudeCodeLaunch as resolveClaudeCodeLaunchDefault } from '../opencode/claude-cli-runtime.js';
-import { createCodexUsageConnection } from './codex-usage-connection.js';
-import { codexUsageError } from './codex-usage-rpc.js';
-import { isDirectLocalRequest } from '../security/direct-local-request.js';
 
 const jsonParser = express.json({ limit: MAX_QUOTA_CREDENTIAL_PAYLOAD_BYTES });
 const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
@@ -179,8 +175,6 @@ export function registerQuotaRoutes(app, {
   getNativeRuntimeOwner = () => null,
   buildAugmentedPath,
   openchamberDataDir,
-  codexUsageConnection: codexUsageConnectionOverride,
-  isProviderAdministrator = (req) => req.principal?.scope === 'local-admin' || req.principal?.role === 'admin',
   resolveClaudeCodeLaunch = resolveClaudeCodeLaunchDefault,
   ownsSession,
   claudeContextUsageClient: claudeContextUsageClientOverride,
@@ -195,40 +189,6 @@ export function registerQuotaRoutes(app, {
   const claudeContextUsageClient = claudeContextUsageClientOverride
     || createMeridianClaudeContextUsageClient();
   const nativeCredentials = createNativeQuotaCredentials({ getNativeRuntimeOwner, isExternalOpenCode });
-  const codexUsageConnection = codexUsageConnectionOverride ?? createCodexUsageConnection({
-    dataDirectory: openchamberDataDir,
-    pathValue: () => typeof buildAugmentedPath === 'function' ? buildAugmentedPath() : process.env.PATH ?? '',
-  });
-
-  // This private host profile is usable only from the local administrator UI.
-  // Host authentication middleware runs first; explicit CSRF also protects single-user mode.
-  const localUsageAccess = (req, res, next) => {
-    if (!isDirectLocalRequest(req) || !isProviderAdministrator(req) || isExternalOpenCode()) {
-      res.status(403).json({ error: 'This usage connection is available to a local administrator only.', code: 'forbidden' }); return;
-    }
-    if (req.method !== 'GET' && req.get('x-devryan-csrf') !== '1') {
-      res.status(403).json({ error: 'Missing CSRF request header', code: 'forbidden' }); return;
-    }
-    next();
-  };
-  const sendConnection = async (res, operation) => {
-    res.set('Cache-Control', 'no-store');
-    try { res.json(await operation()); }
-    catch (error) {
-      const safe = codexUsageError(error?.code);
-      res.status(error?.code === 'CODEX_INVALID_REQUEST' ? 400 : 200).json({
-        ...codexUsageConnection.status(), errorCode: safe.code, error: safe.message,
-      });
-    }
-  };
-  app.get('/api/quota/codex/connection', localUsageAccess, (_req, res) => sendConnection(res, () => codexUsageConnection.status()));
-  app.post('/api/quota/codex/connection/start', localUsageAccess, parseCredentialBody, (req, res) =>
-    sendConnection(res, () => codexUsageConnection.start(req.body?.method ?? 'device')));
-  app.post('/api/quota/codex/connection/cancel', localUsageAccess, parseCredentialBody, (req, res) =>
-    sendConnection(res, () => codexUsageConnection.cancel(typeof req.body?.flowId === 'string' ? req.body.flowId : '')));
-  app.delete('/api/quota/codex/connection', localUsageAccess, (_req, res) => sendConnection(res, () => codexUsageConnection.disconnect()));
-  const withUsageConnection = (providers) => codexUsageConnection.isConfigured() && !isExternalOpenCode()
-    ? [...new Set([...providers, 'codex'])] : providers;
 
   // Waits out a native runtime that has not published its first configuration snapshot.
   const awaitNativeMode = async () => {
@@ -310,42 +270,15 @@ export function registerQuotaRoutes(app, {
         ? nativeQuotaFailure(providerId, 'native_xai_token_renewal_pending', 'xAI usage updates after your next xAI request.')
         : result;
     }
-    let usageRefusalCode = null;
-    const baseFetch = options.fetchImpl ?? fetch;
-    const fetchImpl = async (...args) => {
-      const [url, init] = args;
-      const response = await baseFetch(url, { ...init, signal: init?.signal ?? AbortSignal.timeout(20_000) });
-      if (auth?.openai?.methodID === CHATGPT_SIWC_METHOD_ID && response?.status === 401 && typeof response.clone === 'function') {
-        try {
-          const clone = response.clone();
-          const reader = clone.body?.getReader?.();
-          if (reader) {
-            const chunks = []; let length = 0;
-            try {
-              for (;;) {
-                const chunk = await reader.read();
-                if (chunk.done) break;
-                length += chunk.value.length;
-                if (length > 4096) break;
-                chunks.push(chunk.value);
-              }
-            } finally { void reader.cancel().catch(() => {}); }
-            if (length <= 4096) {
-              const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-              if (body?.code === 'no_matching_rule' || body?.detail?.code === 'no_matching_rule' || body?.error?.code === 'no_matching_rule') usageRefusalCode = 'no_matching_rule';
-            }
-          }
-        } catch { /* Unknown auth failures retain the provider's original diagnosis. */ }
-      }
-      return response;
+    if (auth?.openai?.type === 'oauth' && auth.openai.methodID !== 'chatgpt-browser') return {
+      ...nativeQuotaFailure(providerId, 'siwc_usage_unavailable', 'Sign in again with Codex browser (legacy) to read ChatGPT plan usage.'),
+      source: auth.openai.methodID, connectionId: auth.openai.connectionId ?? null, account: null,
     };
-    const result = await fetchQuotaForProvider(providerId, { ...options, readAuth, fetchImpl });
-    const scoped = auth?.openai?.methodID === CHATGPT_SIWC_METHOD_ID
-      ? { source: 'chatgpt-siwc', connectionId: auth?.openai?.connectionId ?? null, account: auth?.openai?.account ?? null }
-      : {};
-    return { ...(!result?.ok && result?.configured && usageRefusalCode === 'no_matching_rule'
-      ? nativeQuotaFailure(providerId, 'siwc_usage_unavailable', 'This Sign in with ChatGPT connection cannot read usage. Connect a separate usage account.')
-      : result), ...scoped };
+    const result = await fetchQuotaForProvider(providerId, { ...options, readAuth });
+    const codexResult = providerId === 'codex' && result?.errorCode === 'REAUTHENTICATION_REQUIRED'
+      ? nativeQuotaFailure(providerId, 'native_openai_token_renewal_pending', 'ChatGPT usage updates after your next OpenAI request.') : result;
+    return providerId === 'codex' ? { ...codexResult, source: auth?.openai?.methodID ?? null,
+      connectionId: auth?.openai?.connectionId ?? null, account: null } : result;
   };
 
   const resolveQuotaDirectory = async (req) => {
@@ -402,16 +335,16 @@ export function registerQuotaRoutes(app, {
           res.status(503).json({ error: 'native_runtime_not_ready', code: 'native_runtime_not_ready' });
           return;
         }
-        res.json({ providers: withUsageConnection(providers) });
+        res.json({ providers });
         return;
       }
       const claudeProxyBaseUrl = await resolveClaudeProxyBaseUrl(workingDirectory);
       res.json({
-        providers: withUsageConnection(listConfiguredQuotaProviders({
+        providers: listConfiguredQuotaProviders({
           workingDirectory,
           isExternalRuntime: isExternalOpenCode(),
           claudeProxyBaseUrl,
-        })),
+        }),
       });
     } catch (error) {
       console.error('Failed to list quota providers:', error);
@@ -577,13 +510,6 @@ export function registerQuotaRoutes(app, {
       const forceRefresh = req.query.refresh === 'true';
       const workingDirectory = await resolveQuotaDirectory(req);
       const nativeProviderId = resolveProviderId?.(providerId);
-      if (nativeProviderId === 'codex' && codexUsageConnection.isConfigured() && !isExternalOpenCode()) {
-        let allowed = false;
-        localUsageAccess(req, res, () => { allowed = true; });
-        if (!allowed) return;
-        // Source precedence is explicit: disconnecting this account restores the model account source.
-        return res.json(await codexUsageConnection.fetchQuota());
-      }
       if (Object.hasOwn(NATIVE_QUOTA_PROVIDER_NAMES, nativeProviderId ?? '') && nativeCredentials.mode() !== 'legacy') {
         if (nativeCredentials.mode() === 'native-pending') {
           return res.json(nativeQuotaFailure(nativeProviderId, 'native_runtime_not_ready', 'The runtime is still starting. Usage will load shortly.'));
@@ -617,5 +543,4 @@ export function registerQuotaRoutes(app, {
       res.status(error.statusCode || 500).json({ error: error.message || 'Failed to fetch quota' });
     }
   });
-  return { close: () => codexUsageConnection.close() };
 }

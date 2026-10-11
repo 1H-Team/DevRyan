@@ -661,3 +661,9 @@ null/finite changes and other task identity changes are rejected. A completion
 carrying a renewed deadline settles the existing row even if its renewal event
 was missed, without waiting for root idle or remounting. No-op reconciliation
 preserves row references and terminal status cannot regress.
+
+Native ChatGPT quota results identify their source as `chatgpt-browser` and
+the selected credential with an opaque `connectionId`. Token-sharing or retired
+OAuth results identify their own method and expose no usage token. The existing
+source/connection comparison clears old readings on a switch; a missing provider
+window stays absent. No second usage enrollment is owned by the UI.

@@ -63,6 +63,7 @@ export function createNativeAdmissionOwner(options) {
   const interviewGrants = new Map();
   const controllerContext = new AsyncLocalStorage();
   const managedDispatchContext = new AsyncLocalStorage();
+  const managedCatalogInvocation = new AsyncLocalStorage();
   const primaryDispatchContext = new AsyncLocalStorage();
   const assertController = () => {
     if (disposed) throw fail('native_owner_stopped', 503);
@@ -75,7 +76,7 @@ export function createNativeAdmissionOwner(options) {
     const result = await action(); assertController(); return result;
   });
   const remember = (entry) => {
-    if(!entry.recoveredInputCancellation)entry.recoveredInputGrant??=options.assertRecoveredInputOperation?.(entry.request);
+    if(!entry.recoveredInputCancellation)entry.recoveredInputGrant??=options.assertRecoveredInputOperation?.(entry.request,entry.archiveMetadata?entry:undefined);
     assertController(); entry.controllerEpoch = controllerEpoch; active.set(entry.permit.token, entry);
   };
   const assertEntry = (entry) => {
@@ -195,9 +196,9 @@ export function createNativeAdmissionOwner(options) {
     const current = await options.verifyManagedTaskDispatch(copy(input));
     assertController();
     if (!record(current) || stable([current.owner, current.taskId, current.leaseToken, current.status, current.directory,
-      current.rootSessionId, current.dispatchCallId, current.childSessionId, current.providerId, current.modelId, current.agent, current.variant])
+      current.rootSessionId, current.dispatchCallId, current.childSessionId, current.providerId, current.modelId, current.agent, current.variant, current.readOnly])
       !== stable([task.owner, task.taskId, task.leaseToken, task.status, task.directory, task.rootSessionId, task.dispatchCallId,
-        task.childSessionId, task.providerId, task.modelId, task.agent, task.variant])) throw fail('native_managed_task_lease_invalid', 403);
+        task.childSessionId, task.providerId, task.modelId, task.agent, task.variant, task.readOnly])) throw fail('native_managed_task_lease_invalid', 403);
     return task;
   };
   const assertManagedRequest = async (entry, request) => {
@@ -1304,6 +1305,20 @@ export function createNativeAdmissionOwner(options) {
       }
       if (typeof options.captureWebAuthorization !== 'function') throw fail('native_web_authorization_required', 403);
       const session = web.sessionID ? await canonical(web.sessionID) : undefined;
+      const archiveMetadata = spec.operation === 'sessions.archive';
+      if (archiveMetadata) {
+        if (!session || typeof options.readSessionMetadata !== 'function') throw fail('native_archive_metadata_owner_required',503);
+        const raw = await options.readSessionMetadata({sessionID:session.id,directory:session.directory});
+        assertController();
+        if (raw?.id !== session.id || raw.directory !== session.directory || !record(raw.metadata)) throw fail('native_archive_scope_invalid',403);
+        const metadata = raw.metadata;
+        const devryan = record(metadata.devryan) ? metadata.devryan : {};
+        const archive = spec.body?.metadata?.devryan?.archive;
+        if (archive?.sessionID !== session.id || !(archive.at === null || Number.isFinite(archive.at))
+          || stable(spec.body) !== stable({metadata:{...metadata,devryan:{...devryan,archive:{sessionID:session.id,at:archive.at}}}})) {
+          throw fail('native_archive_scope_invalid',403);
+        }
+      }
       const directory = session?.directory ?? web.directory;
       if (!path.isAbsolute(directory ?? '') || (web.directory && web.directory !== directory)) throw fail('native_session_directory_mismatch', 403);
       const reauthorize = await options.captureWebAuthorization({ ...copy(spec), sessionID: web.sessionID, directory }, session);
@@ -1321,7 +1336,7 @@ export function createNativeAdmissionOwner(options) {
         throw fail('native_command_admission_owner_required', 503);
       }
       await reauthorize(); assertController();
-      const entry = { permit, request: { operation: 'web.operation', sessionID: web.sessionID }, directory, web, reauthorize,removalRetry:retry?.id,commandAdmission };
+      const entry = { permit, request: { operation: 'web.operation', sessionID: web.sessionID }, directory, web, reauthorize,removalRetry:retry?.id,commandAdmission,archiveMetadata };
       remember(entry);
       try { return await context.run(permit, action); }
       catch (cause) { await uncertainCommandPrompt(entry); throw cause; }
@@ -1399,6 +1414,61 @@ export function createNativeAdmissionOwner(options) {
       const recheck=()=>inController(()=>assertRequest(entry,entry.request));
       await recheck();return recheck;
     }),
+    withManagedTaskCatalogInvocation: (invocation, action) => inController(async () => {
+      await recheckExecution(invocation);
+      return managedCatalogInvocation.run(Object.freeze(copy(invocation)), async () => {
+        await recheckExecution(invocation);
+        const result = await action();
+        await recheckExecution(invocation); return result;
+      });
+    }),
+    captureManagedCursorCatalogAuthorization: input => inController(async () => {
+      const permit = context.getStore(), entry = permit && entryFor(permit), invocation = managedCatalogInvocation.getStore();
+      if (!record(input) || !path.isAbsolute(input.directory ?? '')) throw fail('native_cursor_catalog_scope_invalid', 403);
+      const epoch = controllerEpoch;
+      let authorize;
+      if (input.rootSessionId !== undefined) {
+        if (!validID(input.rootSessionId) || input.providerId !== 'cursor-acp' || typeof input.agent !== 'string' || !input.agent
+          || typeof input.modelId !== 'string' || !input.modelId || !(input.variant === null || typeof input.variant === 'string')) throw fail('native_cursor_catalog_scope_invalid', 403);
+        if (invocation) {
+          if (invocation.sessionID !== input.rootSessionId || invocation.directory !== input.directory || invocation.tool !== 'devryan_task') throw fail('native_cursor_catalog_scope_invalid', 403);
+          authorize = () => recheckExecution(invocation);
+        } else if (input.autoResumeGeneration === undefined) {
+          if (typeof options.captureWebAuthorization !== 'function') throw fail('native_cursor_catalog_owner_required', 403);
+          const session = await canonical(input.rootSessionId);
+          if (session.parentID || session.time?.archived || session.revert || session.directory !== input.directory) throw fail('native_cursor_catalog_scope_invalid', 403);
+          authorize = await options.captureWebAuthorization({ operation: 'cursor.readonly', sessionID: input.rootSessionId, directory: input.directory }, copy(session));
+          if (typeof authorize !== 'function') throw fail('native_web_authorization_required', 403);
+        } else {
+          if (!validID(input.taskId) || !Number.isSafeInteger(input.autoResumeGeneration) || input.autoResumeGeneration < 0
+            || typeof options.verifyManagedTaskCatalog !== 'function' || typeof options.captureManagedCatalogAuthorization !== 'function') throw fail('native_cursor_catalog_owner_required', 403);
+          authorize = async () => {
+            const task = await options.verifyManagedTaskCatalog(copy(input));
+            if (!record(task) || task.owner !== 'devryan' || task.taskId !== input.taskId || task.rootSessionId !== input.rootSessionId
+              || task.directory !== input.directory) throw fail('native_cursor_catalog_scope_invalid', 403);
+            const session = await canonical(input.rootSessionId);
+            const ownerRecheck = await options.captureManagedCatalogAuthorization(copy(session));
+            await ownerRecheck();
+          };
+        }
+      } else if (entry?.accepted && entry.request.operation === 'admission.prompt' && entry.metadata?.devryan?.providerID === 'cursor-acp') {
+        if (entry.directory !== input.directory) throw fail('native_cursor_catalog_scope_invalid', 403);
+        authorize = async () => { await assertRequest(entry, { operation: 'inbox.reconcile', sessionID: entry.permit.sessionID, messageID: entry.messageID }); assertEntry(entry); };
+      } else return null;
+      const sessionID = input.rootSessionId ?? entry.permit.sessionID;
+      await authorize();
+      const initial = await stateFor(sessionID);
+      if (initial.session.directory !== input.directory || initial.session.time?.archived || initial.session.revert || initial.state.held || initial.state.reverting) throw fail('native_cursor_catalog_scope_invalid', 403);
+      const recheck = () => inController(async () => {
+        if (controllerEpoch !== epoch) throw fail('native_permit_revoked');
+        await authorize();
+        const current = await stateFor(sessionID);
+        if (current.session.directory !== input.directory || current.session.time?.archived || current.session.revert || current.state.held
+          || current.state.reverting || current.state.revision !== initial.state.revision) throw fail('native_cursor_catalog_scope_revoked', 403);
+        await authorize(); if (controllerEpoch !== epoch) throw fail('native_permit_revoked');
+      });
+      await recheck(); return recheck;
+    }),
     captureCursorAuthorization:input=>inController(async()=>{
       const permit=context.getStore(),entry=permit&&entryFor(permit);
       if(!entry?.accepted||entry.request.operation!=='admission.prompt'||input?.sessionID!==entry.permit.sessionID
@@ -1411,8 +1481,9 @@ export function createNativeAdmissionOwner(options) {
       await assertRequest(entry,{operation:'inbox.reconcile',sessionID:input.sessionID,messageID:input.userMessageID});
       const epoch=controllerEpoch,revision=entry.permit.revision,scope=copy(input),accepted=copy(entry.accepted.request);
       const original=entry.reauthorize,managed=entry.managedDispatch&&copy(entry.managedDispatch);
+      const readOnly=managed ? (await verifyManagedDispatch(managed)).readOnly === true : false;
       if(typeof original!=='function'&&!managed)throw fail('native_cursor_caller_required',403);
-      const authorize=async()=>{if(original)await original();if(managed)await verifyManagedDispatch(managed);};
+      const authorize=async()=>{if(original)await original();if(managed&&((await verifyManagedDispatch(managed)).readOnly===true)!==readOnly)throw fail('native_cursor_scope_revoked',403);};
       const recheck=()=>inController(async()=>{
         if(controllerEpoch!==epoch)throw fail('native_permit_revoked');
         await authorize();const {session,state}=await stateFor(scope.sessionID);
@@ -1421,7 +1492,7 @@ export function createNativeAdmissionOwner(options) {
           ||(session.model.variant??'default')!==(scope.variant||'default'))throw fail('native_cursor_scope_revoked',403);
         await authorize();if(controllerEpoch!==epoch)throw fail('native_permit_revoked');
       });
-      await recheck();return Object.freeze({accepted,revision,recheck});
+      await recheck();return Object.freeze({accepted,revision,recheck,readOnly});
     }),
     captureSessionHookAuthorization: input => inController(async()=>{
       const entry=entryFor(input?.permit);

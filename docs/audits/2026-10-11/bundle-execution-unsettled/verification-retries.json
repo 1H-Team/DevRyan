@@ -1,0 +1,38 @@
+{
+  "fullValidationAttempts": [
+    {
+      "failure": "host-timer deadline fixture observed zero requests",
+      "isolatedRetry": "passed"
+    },
+    {
+      "failure": "evaluation memory-profile fixture did not observe failing baseline in time",
+      "serialRetry": "passed"
+    },
+    {
+      "failure": "offline importer timeout fixture PID marker absent",
+      "isolatedRetry": "3 tests passed"
+    }
+  ],
+  "nativeQualificationFirstAttempt": {
+    "status": "failed",
+    "error": "compiled_human_queue_timeout",
+    "cleanupError": "native_process_command_timeout",
+    "journalGapRecords": 0
+  },
+  "nativeQualificationRetry": {
+    "status": "passed",
+    "cases": 52,
+    "cleanupFailures": 0,
+    "sourceChangedPaths": []
+  },
+  "electronFirstAttempt": {
+    "status": "failed",
+    "error": "bootstrap path.get 503",
+    "journalGapRecords": 0
+  },
+  "electronRetry": {
+    "status": "passed",
+    "checks": 7,
+    "cleanupFailures": 0
+  }
+}

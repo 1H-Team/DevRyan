@@ -19,7 +19,7 @@ try {
   assert.equal(path.dirname(requestPath), request.profileRoot);
   assert.equal(path.dirname(proofPath), request.profileRoot);
   const { prepareSourceOpenAiFixture } = await import('./package-image-source-oauth.mjs');
-  const proof = await prepareSourceOpenAiFixture(request);
+  const proof = await prepareSourceOpenAiFixture({ ...request, retiredSeed: true });
   await fs.writeFile(proofPath, JSON.stringify(proof) + '\n', { flag: 'wx', mode: 0o600 });
 } catch {
   // Do not echo credential values, requests or nested SDK errors through this one-shot boundary.

@@ -7,3 +7,15 @@ export const startStartupTiming = (phase) => {
     }));
   };
 };
+
+export const timeStartupPhase = async (phase, operation) => {
+  const finish = startStartupTiming(phase);
+  try {
+    const result = await operation();
+    finish();
+    return result;
+  } catch (error) {
+    finish('failed');
+    throw error;
+  }
+};

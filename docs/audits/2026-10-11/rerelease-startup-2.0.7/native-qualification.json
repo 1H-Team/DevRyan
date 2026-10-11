@@ -1,0 +1,221 @@
+{
+  "status": "passed",
+  "caseCount": 52,
+  "cases": [
+    {
+      "id": "compiled-production-artifacts",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-current-build-inputs",
+      "status": "passed"
+    },
+    {
+      "id": "portable-artifact-tamper-refusal",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-assets-source-denied",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-empty-initialization-lost-ack-resume",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-empty-initialization-idempotent-replay",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-fresh-native-initialization",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-credential-target-contract-refusal",
+      "status": "passed"
+    },
+    {
+      "id": "fresh-v2-baseline-checkpoint",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-clone-layout-legacy",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-v2-derived-bundle-clone",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-claude-selected-profile-credential-ipc",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-ready-catalog",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-helper-hang-independent-native-conversation",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-human-queue-child-idle-and-await-race",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-human-explicit-steer-with-busy-child",
+      "status": "passed"
+    },
+    {
+      "id": "package-read",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-existing-workspace-write",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-existing-workspace-revert-redo",
+      "status": "passed"
+    },
+    {
+      "id": "package-write",
+      "status": "passed"
+    },
+    {
+      "id": "second-location-write",
+      "status": "passed"
+    },
+    {
+      "id": "second-location-read-isolation",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-retained-initial-input",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-retained-multiple-inputs",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-retained-input-discard-lost-ack",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-retained-shell-notification",
+      "status": "passed"
+    },
+    {
+      "id": "package-edit",
+      "status": "passed"
+    },
+    {
+      "id": "package-patch",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-formatter",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-formatter-subprocess",
+      "status": "passed"
+    },
+    {
+      "id": "cli-diagnostic-seed",
+      "status": "passed"
+    },
+    {
+      "id": "cli-diagnostic-fail",
+      "status": "passed"
+    },
+    {
+      "id": "cli-diagnostic-fix",
+      "status": "passed"
+    },
+    {
+      "id": "cli-diagnostic-pass",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-cli-diagnostic-fail-fix-pass",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-reviewed-command",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-manual-compaction",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-native-observation",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-after-replacement-write",
+      "status": "passed"
+    },
+    {
+      "id": "tracked-compiled-pending-replacement",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-todo-lost-ack-replacement",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-owned-subtree-removal",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-removal-startup-recovery",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-v2-credential-rollback-reconciliation",
+      "status": "passed"
+    },
+    {
+      "id": "candidate-work-rollback-retention",
+      "status": "passed"
+    },
+    {
+      "id": "rollback-selected-native-lifecycle",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-clone-layout-fresh-install",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-fresh-install-clone",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-fresh-install-rollback",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-seeded-credential-first-boot",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-parent-death-drain",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-durable-journal-roots",
+      "status": "passed"
+    }
+  ],
+  "remainingMandatoryGates": [],
+  "cleanupFailures": [],
+  "sourceDigest": "eb32e6dc2c65a5ef902c6ef7ca900553fc28690f1398fb663db8b49917f6dbaa",
+  "sourceCohort": {
+    "valid": true,
+    "changedPaths": []
+  }
+}

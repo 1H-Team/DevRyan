@@ -26,7 +26,7 @@ describe('collapsed provider authentication summary', () => {
       installed: true, loggedIn: false, authStatus: 'unavailable',
       error: 'Selected Claude account is unavailable.',
     } });
-    expect(markup).toContain('Claude Code status unavailable');
+    expect(markup).toContain('Status unavailable');
     expect(markup).toContain('Selected Claude account is unavailable.');
     expect(markup).not.toContain('Connected');
     expect(markup).not.toContain('status-success');
@@ -36,14 +36,15 @@ describe('collapsed provider authentication summary', () => {
   test('shows checking while the existing status request is pending or not loaded', () => {
     for (const props of [{}, { claudeStatus: authenticated, claudeLoading: true }]) {
       const markup = render(props);
-      expect(markup).toContain('Checking Claude Code');
+      expect(markup).toContain('Checking sign-in…');
       expect(markup).not.toContain('status-success');
     }
   });
 
   test('requires both authenticated status and loggedIn for a successful check mark', () => {
     const markup = render({ claudeStatus: authenticated });
-    expect(markup).toContain('Claude Code authenticated');
+    expect(markup).toContain('Signed in');
+    expect(markup).not.toContain('typography-meta');
     expect(markup).toContain('status-success');
     for (const claudeStatus of [
       { ...authenticated, loggedIn: false },
@@ -55,7 +56,7 @@ describe('collapsed provider authentication summary', () => {
 
   test('exposes a safe status error without claiming authentication', () => {
     const markup = render({ claudeStatus: { installed: true, authStatus: 'error', error: 'Status unavailable.' } });
-    expect(markup).toContain('Claude Code status unavailable');
+    expect(markup).toContain('Status unavailable');
     expect(markup).toContain('Status unavailable.');
     expect(markup).not.toContain('status-success');
   });
@@ -63,7 +64,7 @@ describe('collapsed provider authentication summary', () => {
   test('disconnect-pending and disconnected configuration win over a cached authenticated account', () => {
     for (const connectionState of ['disconnect_pending', 'not_connected'] as const) {
       const markup = render({ connectionState, claudeStatus: authenticated });
-      expect(markup).not.toContain('Claude Code authenticated');
+      expect(markup).not.toContain('Signed in');
       expect(markup).not.toContain('status-success');
       expect(markup).not.toContain('data-claude-auth-state');
     }
@@ -73,6 +74,12 @@ describe('collapsed provider authentication summary', () => {
     expect(render({ providerId: 'openai' })).toContain('Connected');
     expect(render({ providerId: 'cursor-acp' })).not.toContain('status-success');
     expect(render({ providerId: 'cursor-acp', cursorConfigured: true })).toContain('Connected');
+  });
+
+  test('OpenAI sign-in required state has no authenticated check mark', () => {
+    const markup = render({ providerId: 'openai', connectionState: 'not_connected' });
+    expect(markup).toContain('Not connected');
+    expect(markup).not.toContain('status-success');
   });
 
   test('Windows ARM64 availability takes precedence over a saved Cursor credential', () => {
@@ -94,7 +101,7 @@ test('stock Anthropic API-key preview does not advertise native Claude Code auth
   try {
     await act(async () => { root.render(<I18nProvider><ProviderAuthenticationSummary providerId="anthropic" connectionState="connected" cursorConfigured={false} claudeStatus={null} claudeLoading={false} /></I18nProvider>); });
     expect(container.textContent).toContain('Connected');
-    expect(container.textContent).not.toContain('Checking Claude Code');
+    expect(container.textContent).not.toContain('Checking sign-in…');
     expect(container.find((node) => node.hasAttribute('data-claude-auth-state'))).toBeNull();
   } finally { await act(async () => { root.unmount(); }); resetRuntimeCapabilitiesForTests(); }
 }));

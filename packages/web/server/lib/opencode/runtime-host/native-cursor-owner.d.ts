@@ -17,7 +17,7 @@ export function createNativeCursorOwner(options:{readonly instanceID:string;read
  readonly onStarted:(scope:NativeCursorScope,recheck:()=>Promise<void>)=>Promise<unknown>;
  readonly recovery?:NativeCursorRecovery;
 }):{
- readonly ownedPrompt:(scope:NativeCursorScope)=>Promise<{readonly run:<A>(action:()=>Promise<A>)=>Promise<A>;readonly close:()=>Promise<void>}>;
+ readonly ownedPrompt:(scope:NativeCursorScope)=>Promise<{readonly readOnly:boolean;readonly run:<A>(action:()=>Promise<A>)=>Promise<A>;readonly close:()=>Promise<void>}>;
  readonly withExecution:<A extends {readonly lease:MutationLease;readonly result:Promise<unknown>;readonly cancel?:()=>unknown}>(input:{readonly directory:string;readonly sessionID:string;readonly messageID:string;readonly assistantMessageID:string},action:()=>Promise<A>)=>Promise<A>;
  readonly persist:(input:{readonly sessionID:string;readonly directory:string;readonly record:NativeCursorRecord['record']})=>Promise<unknown>;
  readonly assertRecord:(input:NativeCursorRecordAuthorization)=>Promise<null>;

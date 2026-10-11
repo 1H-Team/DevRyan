@@ -9,17 +9,8 @@ const readAuth = () => ({
   },
 });
 
-const okResponse = (payload) => ({
-  ok: true,
-  status: 200,
-  json: async () => payload,
-});
-
-const failedResponse = (status = 404) => ({
-  ok: false,
-  status,
-  json: async () => ({}),
-});
+const okResponse = (payload) => Response.json(payload);
+const failedResponse = (status = 404) => Response.json({}, { status });
 
 const fetchUsagePayload = (payload) => async (url) => {
   if (url.endsWith('/wham/usage')) {

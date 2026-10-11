@@ -13,7 +13,6 @@ import {
   __resetGitHubCopilotModelDiscoveryCache,
   GITHUB_COPILOT_AUTO_MODEL,
 } from './github-copilot-models.js';
-import { clearSiwcAccountModelCache } from './openai-siwc-model-catalog.js';
 import { registerOpenCodeRoutes } from './routes.js';
 
 vi.mock('./auth.js', () => ({
@@ -26,88 +25,29 @@ vi.mock('./auth.js', () => ({
 
 const COPILOT_AUTO_MODEL = GITHUB_COPILOT_AUTO_MODEL;
 
-describe('dedicated SIWC routes', () => {
-  it('rejects LAN, remote hosts, origins and forwarding headers before parsing every SIWC route', async () => {
-    const owner = { status: vi.fn(), begin: vi.fn(), complete: vi.fn(), select: vi.fn(), cancel: vi.fn(), disconnect: vi.fn() };
-    const getOwner = vi.fn(() => owner);
-    const routes = [['get', ''], ['post', ''], ['post', '/attempt/complete'], ['post', '/attempt/select'], ['delete', '/attempt'], ['delete', '']];
-    const cases = [
-      { headers: { Host: 'public.example.test' } },
-      { headers: { Origin: 'https://other.example.test' } },
-      { headers: { Forwarded: 'for=203.0.113.1' } },
-      { headers: { 'X-Forwarded-For': '127.0.0.1' } },
-      { headers: { 'X-Forwarded-Proto': 'https' } },
-      { headers: { 'CF-Connecting-IP': '127.0.0.1' } },
-      { headers: { 'CF-Ray': 'fixture' } },
-      { headers: {}, address: '192.168.1.5' },
-    ];
-    for (const scenario of cases) {
-      const { app } = createApp({ getChatgptSiwcEnrollmentOwner: getOwner, isProviderAdministrator: () => true, useJsonParser: false, useCommonRequestMiddleware: true });
-      const transport = express();
-      if (scenario.address) transport.use((req, _res, next) => { Object.defineProperty(req.socket, 'remoteAddress', { value: scenario.address }); next(); });
-      transport.use(app);
-      for (const [method, suffix] of routes) {
-        const result = await request(transport)[method](`/api/provider/openai/siwc${suffix}`)
-          .set(scenario.headers).set('x-devryan-csrf', '1').set('Content-Type', 'application/json').send('{');
-        expect(result.status).toBe(403);
-        expect(result.body).toEqual({ code: 'native_chatgpt_siwc_local_required' });
+describe('built-in OpenAI OAuth gate', () => {
+  const createGate = (administrator = true) => {
+    const { app } = createApp({ isProviderAdministrator: () => administrator, useJsonParser: false, useCommonRequestMiddleware: true });
+    const effect = vi.fn((_req, res) => res.json({ status: 'pending' }));
+    app.post('/api/provider/openai/oauth/:operation', effect);
+    return { app, effect };
+  };
+  it('rejects remote hosts, origins and forwarded requests before parsing', async () => {
+    const { app, effect } = createGate();
+    for (const headers of [{Host:'public.example.test'}, {Origin:'https://other.example.test'}, {Forwarded:'for=203.0.113.1'}, {'X-Forwarded-For':'127.0.0.1'}, {'CF-Ray':'fixture'}]) {
+      for (const operation of ['authorize','callback','cancel']) {
+        const response = await request(app).post('/API/PROVIDER/OPENAI/OAUTH/'+operation).set(headers).set('x-devryan-csrf','1').set('Content-Type','application/json').send('{');
+        expect(response.status).toBe(403); expect(response.body.code).toBe('native_openai_oauth_local_required');
       }
     }
-    expect(getOwner).not.toHaveBeenCalled();
-    for (const callback of Object.values(owner)) expect(callback).not.toHaveBeenCalled();
+    expect(effect).not.toHaveBeenCalled();
   });
-  it('allows direct loopback administrator status without requiring mutation CSRF', async () => {
-    const status = vi.fn(async () => ({ connected: null, registrations: [] }));
-    const { app } = createApp({ getChatgptSiwcEnrollmentOwner: () => ({ status }), isProviderAdministrator: () => true });
-    await request(app).get('/api/provider/openai/siwc').expect(200);
-    expect(status).toHaveBeenCalledWith(expect.objectContaining({ directory: '/tmp/project' }));
-  });
-  it('rejects remote mixed-case SIWC routes before malformed or oversized JSON parsing', async () => {
-    const getOwner = vi.fn();
-    const { app } = createApp({ getChatgptSiwcEnrollmentOwner: getOwner, isProviderAdministrator: () => true, useJsonParser: false, useCommonRequestMiddleware: true });
-    // Express routes are case-insensitive by default, including the SIWC guard.
-    expect(app.enabled('case sensitive routing')).toBe(false);
-    for (const path of ['/api/provider/openai/SIWC', '/API/PROVIDER/OPENAI/SIWC/attempt/complete']) {
-      for (const body of ['{', JSON.stringify({ unexpected: 'x'.repeat(8192) })]) {
-        const result = await request(app).post(path).set('Host', 'public.example.test')
-          .set('x-devryan-csrf', '1').set('Content-Type', 'application/json').send(body);
-        expect(result.status).toBe(403);
-        expect(result.body).toEqual({ code: 'native_chatgpt_siwc_local_required' });
-      }
-    }
-    expect(getOwner).not.toHaveBeenCalled();
-  });
-  it('requires administrator and CSRF before enrollment or cancellation work', async () => {
-    const begin = vi.fn(), cancel = vi.fn();
-    const denied = createApp({ getChatgptSiwcEnrollmentOwner: () => ({ begin, cancel }), isProviderAdministrator: () => false, useJsonParser: false, useCommonRequestMiddleware: true });
-    expect((await request(denied.app).post('/api/provider/openai/siwc').set('Content-Type', 'application/json').send('{')).status).toBe(403);
-    const allowed = createApp({ getChatgptSiwcEnrollmentOwner: () => ({ begin, cancel }), isProviderAdministrator: () => true });
-    expect((await request(allowed.app).delete('/api/provider/openai/siwc/attempt')).status).toBe(403);
-    expect(begin).not.toHaveBeenCalled(); expect(cancel).not.toHaveBeenCalled();
-  });
-  it('carries only typed opaque registration and selection values to the scoped owner', async () => {
-    const registrationRef = '00000000-0000-4000-8000-000000000001';
-    const begin = vi.fn(async () => ({ status: 'pending' })), select = vi.fn(async () => ({ status: 'selected' })), cancel = vi.fn(async () => ({ status: 'cancelled' }));
-    const { app } = createApp({ getChatgptSiwcEnrollmentOwner: () => ({ begin, select, cancel }), isProviderAdministrator: () => true, useJsonParser: false, useCommonRequestMiddleware: true });
-    await request(app).post('/api/provider/openai/siwc').set('x-devryan-csrf', '1').send({ registrationRef, expectedActiveCredentialID: null }).expect(200);
-    expect(begin.mock.calls[0][0]).toMatchObject({ directory: '/tmp/project', registrationRef, expectedActiveCredentialID: null });
-    await request(app).post(`/api/provider/openai/siwc/${registrationRef}/select`).set('x-devryan-csrf', '1').send({ expectedActiveCredentialID: 'current-native' }).expect(200);
-    expect(select).toHaveBeenCalledWith(registrationRef, expect.objectContaining({ directory: '/tmp/project', expectedActiveCredentialID: 'current-native' }));
-    await request(app).delete('/api/provider/openai/siwc/attempt').set('x-devryan-csrf', '1').expect(200);
-    expect(cancel).toHaveBeenCalledWith('attempt', expect.objectContaining({ directory: '/tmp/project' }));
-    for (const body of [{ clientId: 'foreign' }, { subject: 'foreign' }, { registrationRef: 'subject@example.test' }, { expectedActiveCredentialID: {} }]) {
-      await request(app).post('/api/provider/openai/siwc').set('x-devryan-csrf', '1').send(body).expect(400);
-    }
-    expect(begin).toHaveBeenCalledOnce();
-    await request(app).post('/api/provider/openai/siwc/attempt/complete').set('x-devryan-csrf', '1').send({ scope: 'chatgpt.tokens.use.direct' }).expect(400);
-  });
-  it('preserves typed remote/local sign-out outcomes while redacting owner error details', async () => {
-    const disconnect = vi.fn(async () => { throw Object.assign(new Error('fixture-sensitive-token'), {
-      code: 'native_chatgpt_siwc_cleanup_failed', status: 503, remoteRevocation: 'unconfirmed', localCleanup: 'failed', token: 'fixture-sensitive-token',
-    }); });
-    const { app } = createApp({ getChatgptSiwcEnrollmentOwner: () => ({ disconnect }), isProviderAdministrator: () => true });
-    const result = await request(app).delete('/api/provider/openai/siwc').set('x-devryan-csrf', '1').send({ expectedActiveCredentialID: 'current-native' }).expect(503);
-    expect(result.body).toEqual({ code: 'native_chatgpt_siwc_cleanup_failed', remoteRevocation: 'unconfirmed', localCleanup: 'failed' });
+  it('requires direct-local administrator and CSRF for all operations', async () => {
+    const denied = createGate(false), allowed = createGate();
+    await request(denied.app).post('/api/provider/openai/oauth/authorize').send({}).expect(403);
+    await request(allowed.app).post('/api/provider/openai/oauth/cancel').send({}).expect(403);
+    await request(allowed.app).post('/api/provider/openai/oauth/callback').set('x-devryan-csrf','1').send({method:0}).expect(200);
+    expect(denied.effect).not.toHaveBeenCalled(); expect(allowed.effect).toHaveBeenCalledOnce();
   });
 });
 
@@ -132,12 +72,19 @@ describe('dedicated Claude enrollment routes',()=>{
     expect(select).toHaveBeenCalledOnce();
   });
   it('refuses client-provided selection authority and sanitizes owner errors',async()=>{
-    const select=vi.fn();const begin=vi.fn(async()=>{throw new Error('sensitive-issuer-body');});
-    const app=createApp({getClaudeEnrollmentOwner:()=>({select,begin}),isProviderAdministrator:()=>true,useJsonParser:false});
+    const select=vi.fn();const begin=vi.fn(async()=>{throw new Error('sensitive-issuer-body');}),recordDiagnostic=vi.fn();
+    const list=vi.fn(async()=>{throw Object.assign(new Error('private /path'),{code:'native_claude_enrollment_location_unreviewed',status:503});});
+    const app=createApp({getClaudeEnrollmentOwner:()=>({select,begin,list}),isProviderAdministrator:()=>true,useJsonParser:false,recordDiagnostic});
     const rejected=await request(app.app).post('/api/provider/anthropic/enrollment/id/select').set('x-devryan-csrf','1').send({service:'foreign'});
     expect(rejected.status).toBe(400);expect(select).not.toHaveBeenCalled();
     const failed=await request(app.app).post('/api/provider/anthropic/enrollment').set('x-devryan-csrf','1').send({});
     expect(failed.status).toBe(409);expect(failed.body).toEqual({code:'native_claude_enrollment_refused'});
+    expect((await request(app.app).get('/api/provider/anthropic/enrollment')).status).toBe(503);
+    expect(recordDiagnostic.mock.calls.map(call=>call[0])).toEqual([
+      {type:'lifecycle',event:'claude_enrollment_failed',payload:{action:'select',code:'native_claude_enrollment_request_invalid',statusCode:400}},
+      {type:'lifecycle',event:'claude_enrollment_failed',payload:{action:'begin',code:'native_claude_enrollment_refused',statusCode:409}},
+      {type:'lifecycle',event:'claude_enrollment_failed',payload:{action:'list',code:'native_claude_enrollment_location_unreviewed',statusCode:503}},
+    ]);
   });
   it('keeps setup usable with typed update requirement before capability is installed',async()=>{
     const app=createApp({isProviderAdministrator:()=>true,getClaudeEnrollmentOwner:()=>null});
@@ -340,6 +287,19 @@ describe('OpenCode provider routes', () => {
     expect(archive).toHaveBeenCalledTimes(1);
   });
 
+  it.each([123, 0])('journals bounded archive failure details without private error content (%s)', async (at) => {
+    const recordDiagnostic = vi.fn();
+    const archive = vi.fn(async () => { throw Object.assign(new Error('private /path and transcript'), { code: 'native_session_held', statusCode: 409 }); });
+    const { app } = createApp({ recordDiagnostic, openCodeClient: { generation: () => 2, sessions: { archive } } });
+    const response = await request(app).patch('/api/session/ses_1').send({ time: { archived: at } });
+    expect(response.status).toBe(409);
+    expect(recordDiagnostic).toHaveBeenCalledExactlyOnceWith({ type: 'lifecycle', event: 'session_archive_failed', sessionID: 'ses_1',
+      payload: { action: at === 0 ? 'unarchive' : 'archive', code: 'native_session_held', statusCode: 409 } });
+    archive.mockRejectedValueOnce(Object.assign(new Error('private'), { code: 'private /path', statusCode: 999 }));
+    await request(app).patch('/api/session/ses_1').send({ time: { archived: at } });
+    expect(recordDiagnostic.mock.calls[1][0].payload).toEqual({ action: at === 0 ? 'unarchive' : 'archive', code: 'opencode_unavailable', statusCode: 502 });
+  });
+
   it('preserves gen-2 Cursor message cursors and rejects invalid page queries without replay', async () => {
     const messages = vi.fn(async () => ({ records: [{ info: { id: 'msg_a' }, parts: [] }], cursor: 'v2:opaque' }));
     const { app } = createApp({
@@ -379,7 +339,6 @@ describe('OpenCode provider routes', () => {
 
   afterEach(() => {
     __resetGitHubCopilotModelDiscoveryCache();
-    clearSiwcAccountModelCache();
     vi.restoreAllMocks();
     vi.clearAllMocks();
     authModule.removeProviderAuth.mockImplementation(() => false);
@@ -817,253 +776,23 @@ describe('OpenCode provider routes', () => {
     fetchSpy.mockRestore();
   });
 
-  it('annotates SIWC OAuth authType without the retired Codex model matrix and without exposing credentials', async () => {
-    readAuthFile.mockReturnValue({
-      openai: {
-        type: 'oauth',
-        methodID: 'chatgpt-siwc',
-        access: 'secret-access-token',
-        refresh: 'secret-refresh-token',
-        clientId: 'oaiapp_fixture_client',
-        scopes: ['openid', 'profile', 'email', 'offline_access', 'resource.invoke', 'chatgpt.tokens.use.direct'],
-        accountId: 'fixture-account',
-      },
-    });
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
-      if (String(url) === 'https://api.openai.com/v1/models') {
-        return {
-          ok: true,
-          json: vi.fn(async () => ({
-            models: [
-              { slug: 'gpt-5.6-sol', visibility: 'list' },
-              { slug: 'gpt-5.6-luna', visibility: 'list' },
-              { slug: 'gpt-5.5', visibility: 'list' },
-            ],
-          })),
-        };
-      }
-      return {
-        ok: true,
-        json: vi.fn(async () => ({
-          providers: [{
-            id: 'openai',
-            name: 'OpenAI',
-            models: {
-              'gpt-5.6': { id: 'gpt-5.6', name: 'GPT-5.6' },
-              'gpt-5.6-pro': { id: 'gpt-5.6-pro', name: 'GPT-5.6 Pro' },
-              'gpt-5.6-sol': { id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol' },
-              'gpt-5.6-sol-fast': { id: 'gpt-5.6-sol-fast', name: 'GPT-5.6 Sol Fast' },
-              'gpt-5.6-sol-pro': { id: 'gpt-5.6-sol-pro', name: 'GPT-5.6 Sol Pro' },
-              'gpt-5.6-terra': { id: 'gpt-5.6-terra', name: 'GPT-5.6 Terra' },
-              'gpt-5.6-luna': {
-                id: 'gpt-5.6-luna',
-                name: 'GPT-5.6 Luna',
-                variants: { none: {}, low: {}, medium: {}, high: {}, xhigh: {} },
-              },
-              'gpt-5.6-luna-fast': {
-                id: 'gpt-5.6-luna-fast',
-                name: 'GPT-5.6 Luna Fast',
-                variants: { none: {}, low: {}, medium: {}, high: {}, xhigh: {} },
-              },
-              'gpt-5.5': { id: 'gpt-5.5', name: 'GPT-5.5' },
-            },
-          }],
-          default: { openai: 'gpt-5.6' },
-        })),
-      };
-    });
-    const { app } = createApp({
-      buildOpenCodeUrl: vi.fn((requestPath) => `http://opencode.test${requestPath}`),
-      cursorSdkRuntime: null,
-      getNativeRuntimeOwner: () => ({ isReady: () => true, getConfigurationSnapshot: () => ({ locations: [{ directory: '/tmp/project', configuration: { providers: {} } }] }), readOpenAiSelected: async () => ({ credentialID: 'native-fixture', value: readAuthFile().openai }) }),
-    });
-
-    const response = await request(app).get('/api/config/providers').expect(200);
-
-    expect(response.body.providers[0]).toMatchObject({
-      id: 'openai',
-      authType: 'oauth',
-      models: {
-        'gpt-5.6': {
-          id: 'gpt-5.6',
-          available: false,
-          unavailableReason: 'auth_type_unsupported',
-          requiredAuthType: 'api',
-        },
-        'gpt-5.6-luna': {
-          id: 'gpt-5.6-luna',
-          variants: { none: {}, low: {}, medium: {}, high: {}, xhigh: {} },
-        },
-        'gpt-5.6-sol': {
-          id: 'gpt-5.6-sol',
-        },
-        'gpt-5.6-sol-fast': {
-          available: false,
-          unavailableReason: 'auth_type_unsupported',
-          requiredAuthType: 'api',
-        },
-        'gpt-5.6-terra': {
-          available: false,
-          unavailableReason: 'auth_type_unsupported',
-          requiredAuthType: 'api',
-        },
-        'gpt-5.6-pro': {
-          available: false,
-          unavailableReason: 'auth_type_unsupported',
-          requiredAuthType: 'api',
-        },
-        'gpt-5.6-sol-pro': {
-          available: false,
-          unavailableReason: 'auth_type_unsupported',
-          requiredAuthType: 'api',
-        },
-        'gpt-5.5': {
-          id: 'gpt-5.5',
-        },
-      },
-    });
-    expect(response.body.providers[0].models['gpt-5.6-luna'].available).not.toBe(false);
-    expect(response.body.providers[0].models['gpt-5.6-sol'].available).not.toBe(false);
-    expect(response.body.providers[0].models['gpt-5.5'].available).not.toBe(false);
-    expect(JSON.stringify(response.body)).not.toContain('secret-access-token');
-    expect(JSON.stringify(response.body)).not.toContain('secret-refresh-token');
-    fetchSpy.mockRestore();
-  });
-
-  it('uses scoped native SIWC catalog order and names while refusing retired synthetic entries and runtime-missing slugs', async () => {
-    readAuthFile.mockReturnValue({ openai: { type: 'oauth', access: 'legacy-auth-file-token' } });
-    const selected = { credentialID: 'native-order', value: { type: 'oauth', methodID: 'chatgpt-siwc', access: 'native-account-token',
-      metadata: { clientId: 'issued-order', subject: 'subject-order', scopes: ['chatgpt.tokens.use.direct'] } } };
-    const read = vi.fn(async () => selected);
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, input) => {
-      if (String(url) === 'https://api.openai.com/v1/models') {
-        expect(input.headers.authorization).toBe('Bearer native-account-token');
-        return Response.json({ models: [{ slug: 'second', display_name: 'Account Second', visibility: 'list' },
-          { slug: 'missing', display_name: 'Runtime Missing', visibility: 'list' }, { slug: 'first', display_name: 'Account First', visibility: 'list' }] });
-      }
-      return Response.json({ providers: [{ id: 'openai', name: 'OpenAI', models: {
-        first: { id: 'first', name: 'Bundled First' }, second: { id: 'second', name: 'Bundled Second' },
-        'gpt-5.6-luna-fast': { id: 'gpt-5.6-luna-fast', name: 'Legacy Synthetic' },
-      } }], default: {} });
-    });
-    const { app } = createApp({ cursorSdkRuntime: null, getNativeRuntimeOwner: () => ({ isReady: () => true,
-      getConfigurationSnapshot: () => ({ locations: [{ directory: '/tmp/project', configuration: { providers: {} } }] }), readOpenAiSelected: read }) });
-    const result = await request(app).get('/api/config/providers').expect(200);
-    const provider = result.body.providers[0];
-    expect(Object.keys(provider.models)).toEqual(['second', 'missing', 'first', 'gpt-5.6-luna-fast']);
-    expect(provider.models.second.name).toBe('Account Second');
-    expect(provider.models.missing).toMatchObject({ name: 'Runtime Missing', available: false, unavailableReason: 'runtime_unsupported' });
-    expect(provider.models['gpt-5.6-luna-fast']).toMatchObject({ available: false, requiredAuthType: 'api' });
-    expect(read.mock.calls.every(([scope]) => scope.directory === '/tmp/project')).toBe(true);
-    expect(JSON.stringify(result.body)).not.toMatch(/native-account-token|legacy-auth-file-token|issued-order|subject-order/);
-    fetchSpy.mockRestore();
-  });
-
-  it('does not release a late account catalog after native selection changes', async () => {
-    let selected = { credentialID: 'native-first', value: { type: 'oauth', methodID: 'chatgpt-siwc', access: 'first-token',
-      metadata: { clientId: 'issued-first', subject: 'first-subject', scopes: ['chatgpt.tokens.use.direct'] } } };
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async url => {
-      if (String(url) === 'https://api.openai.com/v1/models') {
-        selected = { ...selected, credentialID: 'native-second', value: { ...selected.value, access: 'second-token', metadata: { ...selected.value.metadata, clientId: 'issued-second' } } };
-        return Response.json({ models: [{ slug: 'account-only', visibility: 'list' }] });
-      }
-      return Response.json({ providers: [{ id: 'openai', name: 'OpenAI', models: { 'account-only': { id: 'account-only', name: 'Account' } } }], default: {} });
-    });
-    const { app } = createApp({ cursorSdkRuntime: null, getNativeRuntimeOwner: () => ({ isReady: () => true,
-      getConfigurationSnapshot: () => ({ locations: [{ directory: '/tmp/project', configuration: { providers: {} } }] }), readOpenAiSelected: async () => selected }) });
-    const result = await request(app).get('/api/config/providers').expect(200);
-    expect(result.body.providers[0].models['account-only']).toMatchObject({ available: false, unavailableReason: 'account_models_unavailable' });
-    expect(result.body.providers[0].accountModelsStatus).toBe('unavailable'); fetchSpy.mockRestore();
-  });
-
-  it('keeps OpenAI Luna available for API-key authentication', async () => {
-    readAuthFile.mockReturnValue({ openai: { type: 'api', key: 'secret-api-key' } });
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
-      ok: true,
-      json: vi.fn(async () => ({
-        providers: [{
-          id: 'openai',
-          name: 'OpenAI',
-          models: {
-            'gpt-5.6-luna': { id: 'gpt-5.6-luna', name: 'GPT-5.6 Luna' },
-          },
-        }],
-        default: { openai: 'gpt-5.6-luna' },
-      })),
-    });
-    const { app } = createApp({
-      buildOpenCodeUrl: vi.fn((requestPath) => `http://opencode.test${requestPath}`),
-      cursorSdkRuntime: null,
-      getNativeRuntimeOwner: () => ({ isReady: () => true, getConfigurationSnapshot: () => ({ locations: [{ directory: '/tmp/project', configuration: { providers: {} } }] }), readOpenAiSelected: async () => ({ credentialID: 'native-key-fixture', value: { type: 'key', key: 'native-secret-api-key' } }) }),
-    });
-
-    const response = await request(app).get('/api/config/providers').expect(200);
-
-    expect(response.body.providers[0]).toMatchObject({
-      id: 'openai',
-      authType: 'api',
-      models: {
-        'gpt-5.6-luna': { id: 'gpt-5.6-luna' },
-      },
-    });
-    expect(response.body.providers[0].models['gpt-5.6-luna'].available).not.toBe(false);
-    expect(JSON.stringify(response.body)).not.toContain('secret-api-key');
-    fetchSpy.mockRestore();
-  });
-
-  it('resolves an unreviewed project directory to the default location for API-key availability reads', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
-      ok: true,
-      json: vi.fn(async () => ({
-        providers: [{ id: 'openai', name: 'OpenAI', models: { 'gpt-5.6-luna': { id: 'gpt-5.6-luna', name: 'GPT-5.6 Luna' } } }],
-        default: {},
-      })),
-    });
-    const readOpenAiSelected = vi.fn(async (scope) => {
+  it.each(['chatgpt-token-sharing','chatgpt-siwc','chatgpt-browser','chatgpt-headless','key'])('uses only native metadata for %s availability', async methodID => {
+    const models = { first: { id: 'first', name: 'Native First' }, second: { id: 'second', name: 'Native Second' } };
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ providers:[{id:'openai', name:'OpenAI', models}], default:{} }));
+    const credentialMetadata = vi.fn(async scope => {
       expect(scope.directory).toBe('/tmp/project');
-      return { credentialID: 'native-key-fixture', value: { type: 'key', key: 'native-secret-api-key' } };
+      return [{id:'selected',integrationID:'openai',active:true,valueType:methodID==='key'?'key':'oauth',...(methodID==='key'?{}:{methodID})}];
     });
-    const { app } = createApp({
-      buildOpenCodeUrl: vi.fn((requestPath) => `http://opencode.test${requestPath}`),
-      cursorSdkRuntime: null,
-      getNativeRuntimeOwner: () => ({ isReady: () => true, getConfigurationSnapshot: () => ({ locations: [{ directory: '/tmp/project', configuration: { providers: {} } }] }), readOpenAiSelected }),
-    });
-
-    const response = await request(app).get('/api/config/providers?directory=%2Ftmp%2Funreviewed').expect(200);
-
-    expect(readOpenAiSelected).toHaveBeenCalled();
-    expect(response.body.providers[0].authType).toBe('api');
-    expect(response.body.providers[0].models['gpt-5.6-luna'].available).not.toBe(false);
-    fetchSpy.mockRestore();
-  });
-
-  it('leaves the catalog untouched for API-key users when provider integration merging fails', async () => {
-    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
-    readAuthFile.mockImplementation(() => { throw new Error('auth read failed'); });
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
-      ok: true,
-      json: vi.fn(async () => ({
-        providers: [{ id: 'openai', name: 'OpenAI', models: { 'gpt-5.6-luna': { id: 'gpt-5.6-luna', name: 'GPT-5.6 Luna' } } }],
-        default: {},
-      })),
-    });
-    const keyOwner = { isReady: () => true, getConfigurationSnapshot: () => ({ locations: [{ directory: '/tmp/project', configuration: { providers: {} } }] }),
-      readOpenAiSelected: async () => ({ credentialID: 'native-key-fixture', value: { type: 'key', key: 'native-secret-api-key' } }) };
-    const oauthOwner = { ...keyOwner, readOpenAiSelected: async () => ({ credentialID: 'oauth-fixture', value: { type: 'oauth', methodID: 'chatgpt-siwc', access: 'a' } }) };
+    const owner = {isReady:()=>true,getConfigurationSnapshot:()=>({locations:[{directory:'/tmp/project',configuration:{providers:{}}}]}),credentialMetadata};
+    const {app} = createApp({cursorSdkRuntime:null,getNativeRuntimeOwner:()=>owner});
     try {
-      const keyApp = createApp({ buildOpenCodeUrl: vi.fn((requestPath) => `http://opencode.test${requestPath}`), cursorSdkRuntime: null, getNativeRuntimeOwner: () => keyOwner }).app;
-      const keyResponse = await request(keyApp).get('/api/config/providers').expect(200);
-      expect(keyResponse.body.providers[0].models['gpt-5.6-luna']).toEqual({ id: 'gpt-5.6-luna', name: 'GPT-5.6 Luna' });
-      expect(errors).toHaveBeenCalledWith('Failed to merge provider integrations:', expect.any(Error));
-      expect(keyResponse.body.providers[0].authType).toBe('api');
-      expect(keyResponse.body.providers[0].accountModelsStatus).toBeUndefined();
-      const oauthApp = createApp({ buildOpenCodeUrl: vi.fn((requestPath) => `http://opencode.test${requestPath}`), cursorSdkRuntime: null, getNativeRuntimeOwner: () => oauthOwner }).app;
-      const oauthResponse = await request(oauthApp).get('/api/config/providers').expect(200);
-      expect(oauthResponse.body.providers[0].accountModelsStatus).toBe('unavailable');
-    } finally {
-      errors.mockRestore();
-      fetchSpy.mockRestore();
-    }
+      const response = await request(app).get('/api/config/providers?directory=%2Ftmp%2Funreviewed').expect(200);
+      const provider = response.body.providers[0];
+      expect(credentialMetadata).toHaveBeenCalled(); expect(provider.authType).toBe(methodID==='key'?'api':'oauth');
+      if (methodID==='key'||methodID==='chatgpt-token-sharing'||methodID==='chatgpt-browser') expect(provider.models).toEqual(models);
+      else for(const model of Object.values(provider.models)) expect(model).toMatchObject({available:false,unavailableReason:'reauthorization_required'});
+      expect(fetchSpy.mock.calls.every(([url])=>!String(url).includes('api.openai.com'))).toBe(true);
+    } finally {fetchSpy.mockRestore();}
   });
 
   it('leaves external OpenCode OpenAI catalogs unchanged', async () => {

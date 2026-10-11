@@ -938,6 +938,62 @@ test('default startup never upgrades while another process owns the selected bun
  await fs.rm(registry);recordStartupBundleUpgradeFailure(null);
  expect(await u.launch(u.pinned)).toBe(u.controlRoot);expect(u.binding().selection.revision).toBe(2);
 },60_000);
+// A managed control call whose finish never ran (an earlier build, timeout or crash).
+const seedSelectedLease=async(u,lease)=>{
+ const launch=u.binding().descriptor.launch,directory=await fs.realpath(u.f.seed.projectMap[0].targetDirectory);
+ const native=resolveSqliteDriver().open(launch.opencodeDatabasePath),session={id:'ses_orphaned_control'};
+ const messages=[{id:'msg_orphaned_user'},{id:'msg_orphaned_assistant'}];
+ try{
+  const insertRow=(table,fixed)=>{
+   const columns=native.prepare(`PRAGMA table_info(${table})`).all()
+    .filter(column=>Object.hasOwn(fixed,column.name)||column.notnull&&column.dflt_value===null);
+   const values=columns.map(column=>Object.hasOwn(fixed,column.name)?fixed[column.name]:/INT|REAL|NUM/i.test(column.type)?1:'fixture');
+   native.prepare(`INSERT OR IGNORE INTO ${table}(${columns.map(column=>column.name).join(',')}) VALUES(${columns.map(()=>'?').join(',')})`).run(...values);
+  };
+  const parents={};
+  for(const key of native.prepare('PRAGMA foreign_key_list(session_v2)').all()){
+   parents[key.from]='fixture';insertRow(key.table,{[key.to]:'fixture'});
+  }
+  insertRow('session_v2',{...parents,id:session.id,directory});
+  const message=native.prepare('INSERT INTO session_message(id,session_id,type,seq,data,time_created,time_updated) VALUES(?,?,?,?,?,?,?)');
+  message.run(messages[0].id,session.id,'user',1,JSON.stringify({text:'Start a task',time:{created:1}}),1,1);
+  message.run(messages[1].id,session.id,'assistant',2,JSON.stringify({agent:'orchestrator',model:{providerID:'devryan-smoke',id:'smoke-write'},content:[],finish:'tool-calls',time:{created:2,completed:3}}),2,3);
+ }finally{native.close();}
+ const root=path.join(launch.webDataDirectory,'harness','session-mutations',changeKey(directory)),gitDir=path.join(root,'git');
+ await fs.mkdir(root,{recursive:true});try{await fs.access(path.join(gitDir,'HEAD'));}catch{await git(root,['init','--bare','--quiet',gitDir]);}
+ const db=await openChangeStore(root,gitDir),token='40000000-0000-4000-8000-000000000004',viewDirectory=path.join(root,'views',token,'worktree');
+ if(!await db.get('meta.json'))db.set('meta.json',{version:1,directory,sequence:0});
+ const scope={sessionID:session.id,userMessageID:messages[0].id,messageID:messages[1].id,callID:'call_orphaned_control'};
+ if(!await db.get(`sessions/${changeKey(session.id)}.json`))db.set(`sessions/${changeKey(session.id)}.json`,{id:session.id,parentID:null,generation:0,pending:null,directory});
+ db.set(`calls/${changeKey(`${session.id}\0${scope.callID}`)}.json`,{token});
+ db.set(`leases/${changeKey(token)}.json`,{token,scope,directory,projectDirectory:directory,viewDirectory,workingDirectory:viewDirectory,
+  auxiliaryDirectory:path.join(root,'context-cache'),generation:0,baseSequence:0,vcs:false,origins:{},promptSequence:0,parentCallID:null,
+  executionFingerprint:'a'.repeat(64),reservedAt:1,preparation:'none',executionKind:'control',state:'ready',...lease});
+ await db.commit();await fs.mkdir(viewDirectory,{recursive:true});
+ return {root,gitDir,token,viewDirectory};
+};
+test('default startup settles an abandoned control lease before verification, then upgrades and launches',async()=>{
+ const u=await startupUpgradeFixture('startup-orphaned-control-home'),seeded=await seedSelectedLease(u,{});
+ expect(await u.launch(u.pinned)).toBe(u.controlRoot);
+ expect(readStartupBundleUpgradeFailure()).toBe(null);expect(u.binding().selection.revision).toBe(2);
+ const db=await openChangeStore(seeded.root,seeded.gitDir);
+ expect(await db.get(`leases/${changeKey(seeded.token)}.json`)).toMatchObject({state:'cancelled',cleaned:true,cleanupPending:false});
+ expect(await fs.stat(seeded.viewDirectory).catch(error=>error.code)).toBe('ENOENT');
+},60_000);
+test('default startup leaves abandoned leases to the strict gate when a live owner holds the bundle or a process may still run',async()=>{
+ const u=await startupUpgradeFixture('startup-live-control-home'),launch=u.binding().descriptor.launch,seeded=await seedSelectedLease(u,{});
+ const lock=path.join(launch.webDataDirectory,'orchestration','owner.lock');await fs.mkdir(path.dirname(lock),{recursive:true});
+ await fs.writeFile(lock,JSON.stringify({version:1,token:'t'.repeat(32),pid:process.pid,acquiredAt:Date.now()}));
+ const {recoverSelectedBundleLeasesAtStartup}=await import('./native-bundle-lease-recovery.js');
+ expect(await recoverSelectedBundleLeasesAtStartup({controlRoot:u.controlRoot,log:{}})).toEqual({status:'failed',code:'bundle_upgrade_owner_active'});
+ expect(await (await openChangeStore(seeded.root,seeded.gitDir)).get(`leases/${changeKey(seeded.token)}.json`)).toMatchObject({state:'ready'});
+ await fs.rm(lock);
+ const running=await startupUpgradeFixture('startup-process-lease-home'),spawned=await seedSelectedLease(running,{executionKind:'process',preparation:undefined});
+ expect(await recoverSelectedBundleLeasesAtStartup({controlRoot:running.controlRoot,log:{}})).toEqual({status:'clean'});
+ expect(await running.launch(running.pinned)).toBe(running.controlRoot);
+ expect(readStartupBundleUpgradeFailure()).toBe('bundle_execution_unsettled');expect(running.binding().selection.revision).toBe(1);
+ expect(await (await openChangeStore(spawned.root,spawned.gitDir)).get(`leases/${changeKey(spawned.token)}.json`)).toMatchObject({state:'ready'});
+},90_000);
 test('default startup never downgrades and never upgrades to an unpinned shipped version',async()=>{
  const u=await startupUpgradeFixture('startup-pin-home');
  expect(await u.launch(await pinnedRelease(u.f,'2.0.24'))).toBe(u.controlRoot);

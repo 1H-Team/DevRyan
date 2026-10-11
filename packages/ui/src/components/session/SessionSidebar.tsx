@@ -634,7 +634,6 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
 
   const deleteSession = useSessionUIStore((state) => state.deleteSession);
   const deleteSessions = useSessionUIStore((state) => state.deleteSessions);
-  const archiveSession = useSessionUIStore((state) => state.archiveSession);
   const archiveSessions = useSessionUIStore((state) => state.archiveSessions);
   const unarchiveSession = useSessionUIStore((state) => state.unarchiveSession);
   const unarchiveSessions = useSessionUIStore((state) => state.unarchiveSessions);
@@ -700,7 +699,6 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     unshareSession,
     deleteSession,
     deleteSessions,
-    archiveSession,
     archiveSessions,
     unarchiveSession,
     unarchiveSessions,

@@ -46,7 +46,7 @@ const gates = createAdmissionGates(`);
     replace('  const client = createOpenCodeClient({ ...deps, getAdmission: () => admission });', '  const client = createOpenCodeClient({ ...deps, getAdmission: () => admission });observationClient=client;');
     replace('  await verifyModels();\n  const old=', `  const physical=attempts.filter(row=>row.stage!=='step'),steps=attempts.filter(row=>row.stage==='step');
   assert.ok(physical.some(row=>row.stage==='http.request'));
-  assert.equal(physical.some(row=>row.stage==='experimental.ws.send'),false,'SIWC plan usage does not use websocket Responses');
+  assert.equal(physical.some(row=>row.stage==='experimental.ws.send'),false,'Native Codex does not use websocket Responses');
   assert.ok(steps.length>=2);
   for(const row of physical){assert.ok(row.identity,'Actual native attempt span missing');
     assert.ok(steps.some(step=>step.sessionID===row.sessionID&&step.identity?.traceID===row.identity.traceID&&step.identity?.spanID===row.identity.spanID),'Physical request has no exact native Step.Started span');}
@@ -61,7 +61,7 @@ const gates = createAdmissionGates(`);
   assert.equal(JSON.stringify(records).includes('fixture.'),false);
   assert.equal(JSON.stringify(records).includes('Owned native primary prompt'),false);
   const trigger=records.find(row=>row.stage==='compaction-trigger'&&row.reason==='manual');assert.ok(trigger?.budget,'Original SDK budget witness missing');
-  assert.equal(trigger.budget.buffer,null);assert.equal(trigger.budget.keep,15000);const window=trigger.budget.limits.input||trigger.budget.limits.context;assert.equal(window,263500);assert.equal(trigger.budget.limits.context,1050000);assert.equal(trigger.budget.ceiling,window-Math.max(Math.floor(window*0.1),window>=32000?16000:0));assert.equal(trigger.budget.budget,trigger.budget.ceiling);
+  assert.equal(trigger.budget.buffer,null);assert.equal(trigger.budget.keep,15000);const window=trigger.budget.limits.input||trigger.budget.limits.context;assert.equal(window,272000);assert.equal(trigger.budget.limits.context,400000);assert.equal(trigger.budget.ceiling,window-Math.max(Math.floor(window*0.1),window>=32000?16000:0));assert.equal(trigger.budget.budget,trigger.budget.ceiling);
   assert.equal(trigger.budget.estimateContext,trigger.budget.estimatePrompt.measured+trigger.budget.estimatePrompt.estimated);
   assert.ok(records.some(row=>row.stage==='compaction-outcome'&&row.triggerID===trigger.triggerID&&row.status==='completed'));
   const ended=records.find(row=>row.stage==='compaction-event'&&row.triggerID===trigger.triggerID&&row.event==='ended');assert.ok(ended?.witness.text.bytes>0);

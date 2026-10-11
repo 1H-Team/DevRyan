@@ -9,6 +9,7 @@ import {captureNativePonytailDefault} from './native-ponytail-default.js';
 import { captureNativeTextSettings, verifyNativeTextSettings } from './native-text-settings.js';
 import {configuredNativeSkillDirectories,discoverConfiguredNativeSkills} from './native-configured-skills.js';
 import { isRetiredDevRyanPluginSpec } from '../managed-plugins.js';
+import { buildRuntimeHelperAgents } from '../runtime-helper-agents.js';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const fail = code => Object.assign(new Error(code), { code, status: 503 });
@@ -169,13 +170,15 @@ export function createNativeConfigurationSnapshotResolver({ loadLocation = loadC
         loaded.slim.nativeRuntime={runtimeChains:structuredClone(resolved.runtimeChains ?? {}),modelArrays:structuredClone(resolved.modelArrays ?? {}),fallback:structuredClone(resolved.fallback ?? {}),...resolved.backgroundJobs===undefined?{}:{backgroundJobs:structuredClone(resolved.backgroundJobs)}};
         if(resolved.defaultAgent!==undefined)loaded.legacy.default_agent=resolved.defaultAgent;
       }
+      // Apply host helpers after Slim so user role resolution cannot restore competing titles or tools.
+      Object.assign(textSettings.agents, buildRuntimeHelperAgents());
       const ponytail=await captureNativePonytailDefault({launch,environmentDefaultMode:ponytailDefaultMode});
       textSettings.textReferences.push(...ponytail.references);
       const aliases = reviewedSkillAliases(skills);
       const mcp = loaded.legacy.mcp ?? {};
       const requiredMCPs = Object.entries(mcp).filter(([, value]) => value?.enabled !== false).map(([id]) => id);
       const configuration = translateNativeSkillPermissions(translateNativeConfiguration({...loaded,agents:textSettings.agents,commands:textSettings.commands}),directory,skills);
-      const compatibility = { legacy: loaded.legacy, agents: activeSlim?textSettings.agents:loaded.agents, commands: loaded.commands, slim: loaded.slim, mcp,ponytail:{defaultMode:ponytail.defaultMode,source:ponytail.source} };
+      const compatibility = { legacy: loaded.legacy, agents: activeSlim?textSettings.agents:{...loaded.agents,...buildRuntimeHelperAgents()}, commands: loaded.commands, slim: loaded.slim, mcp,ponytail:{defaultMode:ponytail.defaultMode,source:ponytail.source} };
       locations.push({ directory, configuration, skills, aliases,
         instructions:textSettings.instructions,textReferences:textSettings.textReferences,
         activePlugins,activeRegistrationIDs, compatibility,

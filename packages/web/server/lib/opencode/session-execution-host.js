@@ -898,7 +898,10 @@ export function createSessionExecutionHost(options) {
         jobs.start(lease, input);
         return jobs.poll(lease, false);
       }
-      const lease = await executionPhase('lease_preparation', () => runtime.begin({ ...input, userMessageID: record.info.parentID, parentID: current.parentID, executionFingerprint }));
+      // The owner lets startup recovery settle this lease if the host dies before finish.
+      const { owner } = await preparations(); owner.assert();
+      const lease = await executionPhase('lease_preparation', () => runtime.begin({ ...input, userMessageID: record.info.parentID, parentID: current.parentID,
+        executionFingerprint, ownerID: owner.id }));
       try { checkExecutionAdmission(); await recheckNative?.(); }
       catch (cause) {
         if (recheckNative) {
@@ -1035,7 +1038,22 @@ export function createSessionExecutionHost(options) {
     const { invocation } = input, origin = invocation?.authorization?.input?.provenance;
     if (origin?.kind !== 'plugin' || !(invocation?.tool === 'devryan_task' && origin.id === 'devryan.managed-task'
       || invocation?.tool === 'council_session' && origin.id === 'devryan.council')) throw failure('invalid_capture_identity', 400);
-    return input.action === 'begin' ? acquireController(signal => nativeControl(input, signal)) : nativeControl(input);
+    if (input.action === 'begin') return acquireController(signal => nativeControl(input, signal));
+    try { return await nativeControl(input); }
+    catch (cause) { await settleFailedNativeControl(input).catch(() => {}); throw cause; }
+  };
+  // Finish needs the tool's live permit; a timeout or Stop retires it first.
+  // A ready control lease left behind blocks every later startup of the bundle.
+  // Cancelling only narrows authority, so it needs no permit.
+  const settleFailedNativeControl = async ({ invocation, token }) => {
+    if (!identity(token)) return;
+    const lease = await runtime.leaseForCall({ directory: invocation.directory, sessionID: invocation.sessionID, callID: invocation.callID });
+    if (lease?.token !== token || lease.state !== 'ready' || lease.executionKind !== 'control' || lease.preparation !== 'none'
+      || lease.scope?.sessionID !== invocation.sessionID || lease.scope.messageID !== invocation.messageID
+      || lease.scope.callID !== invocation.callID) return;
+    await runtime.cancelLease({ directory: lease.directory, token: lease.token });
+    await recordCancelled(lease, invocation.tool);
+    await cleanup(lease);
   };
   // Scheduler child registration may run after the tool permit is released.
   // Its durable authority is the exact real parent control call, not inherited

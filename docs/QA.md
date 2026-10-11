@@ -157,7 +157,7 @@ The default smoke does not cover new-session creation, attachments, queue policy
 ## Feature acceptance procedures
 
 `DEVRYAN_QA_SCENARIO=provider-usage bun run qa` runs the chat journey and renders
-weekly usage, source/account identity, reset expiries and unknown/zero inventories
+weekly usage, native sign-in source, reset expiries and unknown/zero inventories
 through the built Providers UI. Set `DEVRYAN_QA_RUNTIME=electron` for the native
 shell. A scoped `window.fetch` fixture is installed before the first module loads
 and quota discovery runs. Electron renderer execution waits for the isolated
@@ -169,7 +169,10 @@ Codex login.
 After explicit authorization for each provider prompt,
 `bun scripts/qa/provider-access-smoke.mjs --allow-live <bundle-root> <repo-cache-output> [openai|xai]`
 performs one short direct request per selected provider using the current access
-token in memory and the native response parser. It does not refresh tokens or
+token in memory and the native response parser. For OpenAI it then sends three
+tool-bearing requests built by the native request encoder (tools offered, a
+required tool call, and a follow-up after a tool result), because a plain prompt
+does not exercise native flat `tools` or a tool-result round trip. It does not refresh tokens or
 write credentials. Evidence includes only bounded safe diagnostics and whether
 the stored credential stayed unchanged; this is not an authenticated UI turn.
 
@@ -183,6 +186,19 @@ Per-feature acceptance procedures live with their audit records:
 - Cold web update-check comparison: [protocol and recipe](../scripts/perf/WEB_UPDATE_CHECK.md#reproducing-the-recorded-comparison).
 
 ## Local packaged Electron candidate
+
+`scripts/qa/native-startup-benchmark.mjs` measures first launch and a fresh-process
+reopen of the same private profile after creating 200 synthetic sessions through
+the local API. Reopen must preserve the selected bundle/revision, emit no upgrade
+or copy phase, and load the first 50 sessions. Comparison mode also accepts
+`--baseline-artifact-root <absolute>` to compare first-upgrade launches followed
+by unchanged reopens. Both cohorts use identical native artifacts and fixture
+inputs; UI directory-request measures are retained with existing readiness gates.
+Provider-catalog readiness waits at most ten seconds through HTTP 5xx warmup,
+records each response code, and includes that wait in usable-chat time. A valid
+catalog, visible composer/model, and live event stream remain required.
+See the [startup-speed audit](audits/2026-10-11/startup-speed/README.md) for
+verification results and measurement limitations.
 
 The opt-in macOS arm64 packager consumes a chosen web build and the matching native binaries from an existing repository-local `packages/electron/dist/mac-arm64/DevRyan.app`:
 
@@ -667,3 +683,9 @@ private empty source; same-version repair trials preserve their initialized
 source and synthetic credential record.
 
 - `startup-catalog-reproduction.mjs`: explicit read-only `--config` capture of Cursor model IDs, numeric prices and variant shapes into a synthetic loopback-only provider fixture. Optional `--config-overlay` captures Anthropic API-key presence with a synthetic replacement; `--legacy-oauth-columns` sets only synthetic OAuth rows' connector/method columns to NULL. `--output-root` confines captured fixtures to repository `.cache/sessions/`. Removes credentials, endpoints, labels and prompts before invoking the isolated compiled-native factory diagnostic; this does not establish installed-account or upgrade acceptance. Reviewed configuration imports run under Node even when the runner uses Bun.
+
+### Native Codex attended checkpoint
+
+`node scripts/qa/native-profile-factory-diagnostic.mjs --artifact-root <repo-artifact-root> --hold-chatgpt-signin` starts an isolated disposable host seeded with a retired SIWC credential. It prints the loopback origin, workspace, bundle root and journal directory and waits for SIGINT/SIGTERM. The installed app and its state remain untouched. Open the origin, verify OpenAI asks for sign-in, and consent once to **Codex browser (legacy)**. Run live prompts, tool round trips, the provider smoke and journal `show`/`gaps`; verify HTTP 200, Disconnect and a second sign-in. The earlier token-sharing checkpoint was waived. A later isolated native Codex SDK probe verified live chat and one returned allowance window; the complete UI/tool/disconnect journey and weekly figure remain unverified. See the [audit](audits/2026-10-11/native-codex-signin/README.md).
+
+`node scripts/qa/native-legacy-codex-probe.mjs` is an attended native SDK probe: it creates a disposable profile, refuses a busy callback port, waits for browser consent, tests a short chat and read-only usage, and deletes its runtime even after failure. It never discovers or imports an installed account. A successful probe requires chat completion and at least one valid provider allowance window; the weekly window is recorded separately. This command is not a deterministic test.

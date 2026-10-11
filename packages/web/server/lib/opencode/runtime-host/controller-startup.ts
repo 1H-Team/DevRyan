@@ -139,6 +139,8 @@ export async function startNativeController(boot:NativeProcessBoot,identity:{cor
     configurationSnapshot:boot.configurationSnapshot,rpc,registrationOrigin:remoteMcpOrigin,
     providerCompatibilityOrigin:providerOrigin,
     reviewedNativeProviderOrigin:nativePlugins.get('opencode.provider.xai'),
+    reviewedNativeOpenAiOrigin:nativePlugins.get('opencode.provider.chatgpt'),
+    reviewedNativeCodexOrigin:nativePlugins.get('opencode.provider.openai'),
     reviewedConfigurationOrigins:new Map([...nativePlugins].filter(([id])=>['opencode.config.mcp','opencode.mcp.codemode.defaults','opencode.provider.opencode','opencode.config.policy'].includes(id))),
     isBound:()=>bound,isExecutionReady:()=>executionReady,executeOwnedFallback:executeOwned,
     authorizeMcpCall:(invocation,_binding,action)=>routing.withControl(invocation,action),

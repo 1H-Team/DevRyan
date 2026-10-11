@@ -38,6 +38,8 @@ for(const generation of [2]) for(const agent of ['builder','orchestrator']) test
     assert.equal(profile.evidence.localElectronIPC,'not-qualified-by-wire');
     assert.equal(profile.env.GH_TOKEN,'');assert.equal(profile.env.GITHUB_TOKEN,'');
     const settings=JSON.parse(await readFile(path.join(profile.env.OPENCHAMBER_DATA_DIR,'settings.json'),'utf8'));
+    assert.equal(settings.homeDirectory,project.fixtureRoot);
+    assert.equal(settings.lastDirectory,project.fixtureRoot);
     assert.equal(settings.showReasoningTraces,true);
     assert.equal(settings.defaultModel,'fixture/fixture-model');
     assert.equal(settings.defaultAgent,agent === 'builder' ? 'build' : agent);

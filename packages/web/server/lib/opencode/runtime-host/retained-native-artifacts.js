@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import {createReadStream} from 'node:fs';
 import path from 'node:path';
 import {createHash,randomUUID} from 'node:crypto';
 import {executionArtifacts} from '../execution-artifacts.js';
@@ -10,6 +11,11 @@ import {nativeArtifactInventoryLimit,validWindowsArtifactPath} from './reviewed-
 
 const fail=()=>Object.assign(new Error('bundle_artifact_retention_invalid'),{code:'bundle_artifact_retention_invalid',status:503});
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
+const hashFile=async file=>{
+ const digest=createHash('sha256');
+ for await(const bytes of createReadStream(file,{highWaterMark:1024*1024}))digest.update(bytes);
+ return digest.digest('hex');
+};
 const RETAINED_SET=/^[a-f0-9]{64}$/,ABANDONED=/^\.(?:retaining|pruning)-[a-f0-9-]{36}$/;
 /** A set or abandoned copy younger than this is never removed: a retention that reused
  * or just created a set may not yet have written the bundle descriptor that references it. */
@@ -92,7 +98,7 @@ export async function retainNativeArtifacts({controlRoot,manifestPath,manifestSh
    for(const row of manifest.files){const file=path.join(directory,row.path);
     if(windows){const proof=await windowsOwner.largeFile(file);if(proof.size!==row.size||proof.token.split(':')[2]!==row.sha256)throw fail();continue;}
     const stat=await fs.lstat(file);
-    if(!stat.isFile()||stat.isSymbolicLink()||await fs.realpath(file)!==file||stat.size!==row.size||(stat.mode&0o777)!==row.mode||hash(await fs.readFile(file))!==row.sha256)throw fail();}
+    if(!stat.isFile()||stat.isSymbolicLink()||await fs.realpath(file)!==file||stat.size!==row.size||(stat.mode&0o777)!==row.mode||await hashFile(file)!==row.sha256)throw fail();}
    const file=path.join(directory,'native-bundle.json');
    if(windows){const proof=await windowsOwner.read(file);if(hash(proof.bytes)!==manifestSha256)throw fail();}
    else{const stat=await fs.lstat(file);
@@ -111,9 +117,9 @@ export async function retainNativeArtifacts({controlRoot,manifestPath,manifestSh
     if(windows){const destination=path.join(temporary,row.path);await windowsOwner.ensureDirectory(path.dirname(destination));
      await windowsOwner.streamFile(file,destination,{expectedSha256:row.sha256,expectedSize:row.size});continue;}
     const stat=await fs.lstat(file);
-    if(!stat.isFile()||stat.isSymbolicLink()||await fs.realpath(file)!==file||stat.size!==row.size||hash(await fs.readFile(file))!==row.sha256)throw fail();
+    if(!stat.isFile()||stat.isSymbolicLink()||await fs.realpath(file)!==file||stat.size!==row.size||await hashFile(file)!==row.sha256)throw fail();
     const destination=path.join(temporary,row.path);await fs.mkdir(path.dirname(destination),{recursive:true,mode:0o700});
-    await fs.copyFile(file,destination,fs.constants.COPYFILE_EXCL);await fs.chmod(destination,row.mode);
+    await fs.copyFile(file,destination,fs.constants.COPYFILE_EXCL|fs.constants.COPYFILE_FICLONE);await fs.chmod(destination,row.mode);
    }
    if(windows)await windowsOwner.write(path.join(temporary,'native-bundle.json'),bytes,{expected:null});
    else await fs.writeFile(path.join(temporary,'native-bundle.json'),bytes,{flag:'wx',mode:0o600});

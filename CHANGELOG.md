@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Fix startup failing with `bundle_execution_unsettled` after a managed task or Council call timed out or was stopped before its ledger lease settled. Such calls now cancel their own lease when completion is refused, record their owner for recovery, and startup settles abandoned control leases of the selected bundle before verification while process leases keep their termination checks. Evidence is in [the startup lease audit](docs/audits/2026-10-11/bundle-execution-unsettled/README.md).
+
+## [2.0.7] - 2026-10-11
+
+- Keep internal title, commit and pull request helpers tool-free across native hosts. Bound managed-agent admission and Cursor catalog discovery, propagate cancellation before task creation, and retain explicit native authority and process-settlement failures. Use native-supported read-only permissions and avoid repeated session-registration lock acquisition. Deterministic checks and deferred attended verification are recorded in [the delegation audit](docs/audits/2026-10-11/live-agent-qa.md).
+
+- Preserve exact Cursor reasoning-effort selections for managed agents and allow Plan-mode Explorer on native hosts with enforced read-only tools. Bind model discovery and recovery to verified native task authority. Implementation and deferred live checks are recorded in [the delegation audit](docs/audits/2026-10-11/live-agent-qa.md); replacement release checks are recorded in [the delegation release audit](docs/audits/2026-10-11/rerelease-delegation-2.0.7/README.md).
+
+- Load the session list alongside required directory startup requests, bound requests to 30 seconds, and expose Retry when preparation fails. Cancel obsolete bootstrap owners and preserve newer live session state. Isolated measurements show a 15.68% median improvement when reopening; first-launch improvement did not pass the stricter performance gate. Details are recorded in [the startup audit](docs/audits/2026-10-11/startup-speed/README.md).
+- Allow archive operations after recovered native input settles, while retaining authorization and active-work safeguards. Verification is recorded in [the session archive audit](docs/audits/2026-10-11/session-archive/README.md).
+- Startup and archive replacement qualification is recorded in [the release candidate audit](docs/audits/2026-10-11/rerelease-startup-2.0.7/README.md).
+
+- Use OpenCode’s native Codex browser sign-in for desktop/web chat and ChatGPT plan usage, removing the separate usage sign-in. Existing token-sharing connections keep their chat access; allowance data requires a Codex sign-in. Refresh remains owned by OpenCode under the host’s serialized queue. Live chat and one returned usage window are recorded in [the native Codex audit](docs/audits/2026-10-11/native-codex-signin/README.md); the weekly window remains unverified.
+
+- Fix adding a dedicated Claude profile from a project outside the runtime's reviewed project map, where every attempt failed before sign-in opened. Enrollment now binds to the default location, failures are journaled by code, and the page says whether loading, starting or confirming failed. Verification and its limits are recorded in [the dedicated sign-in audit](docs/audits/2026-10-11/claude-dedicated-signin/README.md).
+- Shorten the Claude provider page: compatibility mode moves into Connection Details, and the sign-in status and dedicated profile copy are reduced to one line each.
+- Retain structured archive failure details in the session UI and record bounded archive failures in the diagnostic journal. Native archive/unarchive verification and the original incident’s evidence limits are recorded in [the session archive audit](docs/audits/2026-10-11/session-archive/README.md).
+
+- Replacement qualification is recorded in [the replacement v2.0.7 audit](docs/audits/2026-10-11/rerelease-2.0.7/README.md). Original release qualification and hosted migration verification are recorded in [the v2.0.7 release audit](docs/audits/2026-10-11/release-2.0.7/README.md).
+- Use OpenCode’s built-in Sign in with ChatGPT for desktop/web, retaining host admission and serialized refresh while passing native requests and responses through. Stored SIWC and legacy Codex logins require a new sign-in. Usage uses the native Codex sign-in; images and Bots require an OpenAI API key. OAuth Bots/managed users await a follow-up pass. Deterministic verification and outstanding live checks are tracked in [the built-in sign-in audit](docs/audits/2026-10-11/builtin-chatgpt-signin/README.md).
+- Retire the desktop/web request rewriting that caused ChatGPT tool-bearing turns to fail with "Missing required parameter: 'input[1].role'". The earlier encoder repair and live reproduction are recorded in [the additional tools role audit](docs/audits/2026-10-11/siwc-additional-tools-role/README.md); the replacement built-in flow has not been verified against the live provider.
+
 ## [2.0.6] - 2026-10-10
 
 - Fix startup preparation when a sealed runtime manifest exceeds 4 MiB, using the shared 32 MiB limit while retaining integrity checks. Keep the original failure and Retry visible when startup settings cannot be read. Isolated packaged evidence is recorded in [the runtime preparation audit](docs/audits/2026-10-10/runtime-preparation/README.md).

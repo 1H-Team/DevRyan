@@ -1,6 +1,5 @@
-import { readNativeOpenAiSelection } from '../opencode/chatgpt-siwc-host.js';
+import { readNativeOpenAiMetadata } from '../opencode/openai-model-availability.js';
 import { credentialMutationFingerprint } from '../opencode/runtime-host/native-credential-mutation-owner.js';
-import { CHATGPT_SIWC_METHOD_ID } from '../opencode/chatgpt-siwc.js';
 
 /**
  * Quota credential source for the native runtime. Credentials live privately in
@@ -21,7 +20,7 @@ const isText = (value) => typeof value === 'string' && value.length > 0;
 export function createNativeQuotaCredentials({
   getNativeRuntimeOwner,
   isExternalOpenCode,
-  readOpenAiSelection = readNativeOpenAiSelection,
+  readOpenAiSelection = readNativeOpenAiMetadata,
 }) {
   const snapshotState = () => {
     if (isExternalOpenCode()) return { mode: 'legacy' };
@@ -78,24 +77,22 @@ export function createNativeQuotaCredentials({
   };
 
   const readOpenAi = async (state) => {
-    const selected = await readOpenAiSelection(getNativeRuntimeOwner, state.location.directory, { refresh: true });
-    if (!selected) return null;
-    if (!isRecord(selected) || !isRecord(selected.value)
-      || (selected.directory !== undefined && selected.directory !== state.location.directory)
-      || (selected.integrationID !== undefined && selected.integrationID !== 'openai')) {
-      throw fail('native_credential_invalid');
+    const selected = await readOpenAiSelection(getNativeRuntimeOwner, state.location.directory);
+    if (!selected || selected.type === 'key') return null;
+    if (selected.type !== 'oauth' || !isText(selected.methodID)) throw fail('native_credential_invalid');
+    if (selected.methodID === 'chatgpt-browser') {
+      if (typeof state.owner.readOpenAiSelected !== 'function') throw fail('native_credential_update_required');
+      const entry = QUOTA_INTEGRATIONS[0];
+      const current = await state.owner.readOpenAiSelected(scopeFor(state.location, entry));
+      if (!isRecord(current) || current.directory !== state.location.directory || current.integrationID !== 'openai'
+        || current.credentialID !== selected.credentialID || current.value?.type !== 'oauth'
+        || current.value.methodID !== 'chatgpt-browser' || !isText(current.value.access)
+        || typeof current.value.metadata?.clientID === 'string') throw fail('native_credential_invalid');
+      return { openai: { type: 'oauth', methodID: current.value.methodID, access: current.value.access,
+        ...(isText(current.value.metadata?.accountID) ? { accountId: current.value.metadata.accountID } : {}),
+        connectionId: current.credentialID } };
     }
-    const { value } = selected;
-    if (value.type === 'key') return null;
-    if (value.type !== 'oauth' || !isText(value.access) || !isText(value.methodID)) throw fail('native_credential_invalid');
-    // SIWC accountID is the identity subject, not a ChatGPT workspace header.
-    const accountId = value.methodID !== CHATGPT_SIWC_METHOD_ID && typeof value.metadata?.accountID === 'string'
-      ? value.metadata.accountID : undefined;
-    return { openai: { type: 'oauth', access: value.access, accountId, methodID: value.methodID,
-      connectionId: typeof selected.credentialID === 'string' ? selected.credentialID : null,
-      account: { email: typeof value.metadata?.email === 'string' ? value.metadata.email : null,
-        planType: typeof value.metadata?.planType === 'string' ? value.metadata.planType : null },
-    } };
+    return { openai: { type: 'oauth', methodID: selected.methodID, connectionId: selected.credentialID ?? null } };
   };
 
   const readProvider = async (state, entry) => {

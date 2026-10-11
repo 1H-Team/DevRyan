@@ -36,7 +36,7 @@ test('quota transport installs before page load and handles Request inputs and i
   assert.equal((await (await fetch('/api/quota/codex?refresh=true')).json()).usage.resetCredits.availableCount, null);
   await fixture.setMode('zero');
   assert.equal((await (await fetch('/api/quota/codex')).json()).usage.resetCredits.availableCount, 0);
-  assert.equal((await (await fetch('/api/quota/codex/connection')).json()).source, 'codex-app-server');
+  assert.equal((await (await fetch('/api/quota/codex')).json()).source, 'chatgpt-browser');
   await fixture.collect();
   assert.equal(fixture.requests.length, 5);
   assert.deepEqual(fixture.modes, ['available', 'unknown', 'zero']);

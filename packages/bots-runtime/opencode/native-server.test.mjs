@@ -148,7 +148,7 @@ test('native OAuth structured executor reuses SIWC projection and forwards other
   await Effect.runPromise(response.text);
   expect(sent).toHaveLength(1);
   expect(sent[0].body).toMatchObject({ store: false, stream: true, input: [{ role: 'developer' },
-    { type: 'additional_tools', tools: [{ type: 'function', name: 'generate_object' }] }] });
+    { type: 'additional_tools', role: 'developer', tools: [{ type: 'function', name: 'generate_object' }] }] });
   expect(sent[0].body.tools).toBeUndefined();expect(sent[0].body.temperature).toBeUndefined();
   expect(sent[0].headers.get('chatgpt-account-id')).toBeNull();
   const other = HttpClientRequest.post('https://provider.invalid/v1/responses');

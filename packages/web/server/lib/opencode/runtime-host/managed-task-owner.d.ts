@@ -5,7 +5,7 @@ export interface NativeManagedInvocation {
   authorization: Parameters<NativeAdmissionOwner['recheckExecution']>[0]['authorization'];
 }
 export interface NativeManagedDependencies {
-  admissionOwner: Pick<NativeAdmissionOwner, 'recheckExecution' | 'withPermit'>;
+  admissionOwner: Pick<NativeAdmissionOwner, 'recheckExecution' | 'withPermit' | 'withManagedTaskCatalogInvocation'>;
   taskContext: {
     authorizeNativeTaskInvocation(input: NativeManagedInvocation): Promise<{readOnly: boolean; objectiveID?: string}>;
     authorizeNativePlanInvocation(input: NativeManagedInvocation): Promise<void>;

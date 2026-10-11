@@ -44,6 +44,7 @@ export type SessionListStatus = "idle" | "loading" | "ready" | "error"
 /** Per-directory store state */
 export type State = {
   status: "loading" | "partial" | "complete"
+  bootstrapError?: string
   agent: Agent[]
   command: Command[]
   project: string

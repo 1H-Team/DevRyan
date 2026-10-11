@@ -5,7 +5,7 @@ import { PluginHooks } from '@opencode/core/plugin/hooks';
 import { SessionRunnerModel } from '@opencode/core/session/runner/model';
 import { Context, Effect, Layer, Option } from 'effect';
 import { OperationPermitRef, requestPermit, type OperationPermit } from './native-admission-contract.js';
-import { CredentialAuthorizationRef, CredentialMutationReauthorizeRef, isOwnedProviderIntegration,
+import { CredentialAuthorizationRef, CredentialMutationReauthorizeRef, CredentialResolutionScopeRef as Resolution, type CredentialResolutionScope as ResolutionScope, isOwnedProviderIntegration,
   type OwnedProviderIntegration, type CredentialMutationBinding, type CredentialResolutionBinding,
   type WithCredentialMutation, type WithCredentialResolution } from './credential-mutation-contract.js';
 import { credentialMutationFingerprint as fingerprint } from './native-credential-mutation-owner.js';
@@ -31,13 +31,11 @@ export interface ControllerProviderCredentialsOptions {
   readonly reviewedNativeProviderOrigin?: RegistrationOrigin;
   readonly ownsDelegatedIntegration: (id: string) => boolean;
 }
-interface ResolutionScope { readonly sessionID: string; readonly directory: string; readonly permit: OperationPermit; active: boolean }
 interface ResolutionCommit {
   readonly binding: CredentialResolutionBinding; readonly original: Credential.Info;
   readonly reauthorize: Effect.Effect<void>; readonly assertSelected: Effect.Effect<void>; readonly assertCurrent: () => void;
   result?: Credential.OAuth; committed: boolean; active: boolean;
 }
-const Resolution = Context.Reference<ResolutionScope | undefined>('DevRyan/ProviderCredentialResolution', { defaultValue: () => undefined });
 const Commit = Context.Reference<ResolutionCommit | undefined>('DevRyan/ProviderCredentialCommit', { defaultValue: () => undefined });
 const refuse = (code: string): never => { throw new HostRefusal(code, 403, 'credential.provider'); };
 

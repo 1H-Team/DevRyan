@@ -117,6 +117,7 @@ export const runNativeWriterAcceptance = async (options = {}) => {
       stopSessions: async ({ sessions }) => { for (const sessionID of sessions) await child.call({ action: 'hold', sessionID }); return { terminated: true, sessions }; } } });
   const ownerID = `native_${createHash('sha256').update(path.join(home, 'data/native.db')).digest('hex')}`;
   owner = createNativeAdmissionOwner({ runtime: host.runtime, directory, ownerID,
+    readSessionMetadata: input => privileged.readSessionMetadata(input.sessionID, { directory: input.directory }),
     withSessionLock: admission.withSessionLock,
     verifyQueuedPrimaryIdle:input=>child.call({action:'queued-primary-idle-owned',...input}),
     readQueuedPrimaryRecord:sessionID=>managed.primaryRuntime.readRecord(sessionID),
@@ -264,6 +265,11 @@ export const runNativeWriterAcceptance = async (options = {}) => {
     await child.call({ action: 'open' });
     await owner.recoverShellContinuations({ directory });
     const session = await client.sessions.create({ title: 'Native writer acceptance', model: { providerID: 'sim', modelID: 'm1' } }, { directory });
+    const archiveAt = Date.now();
+    assert.equal((await client.sessions.archive(session.id, archiveAt, { directory })).time.archived, archiveAt);
+    assert.equal((await client.sessions.get(session.id, { directory })).time.archived, archiveAt);
+    assert.equal((await client.sessions.archive(session.id, 0, { directory })).time.archived ?? 0, 0);
+    cases.push({ id: 'native-session-archive-unarchive', status: 'passed' });
     assert.ok(session?.id, 'Native session not created');
     const begin = async (scenario, options = {}) => {
       observations.push({ phase: 'scenario_begin', caseID: scenario.id, at: Date.now() });
@@ -309,6 +315,11 @@ export const runNativeWriterAcceptance = async (options = {}) => {
     const read = await invoke({ id: 'read', tool: 'read', input: { path: 'seed.txt' } });
     assert.equal(read.state.status, 'completed');
     assert.match(read.state.output, /native-read-marker/);
+    const completedArchiveAt = Date.now();
+    assert.equal((await client.sessions.archive(session.id, completedArchiveAt, { directory })).time.archived, completedArchiveAt);
+    assert.equal((await client.sessions.get(session.id, { directory })).time.archived, completedArchiveAt);
+    assert.equal((await client.sessions.archive(session.id, 0, { directory })).time.archived ?? 0, 0);
+    cases.push({ id: 'native-completed-session-archive-unarchive', status: 'passed' });
     const readLease = await host.runtime.leaseForCall({ directory, sessionID: session.id, callID: 'native_read' });
     assert.equal(readLease?.direct, true); assert.equal(readLease?.executionKind, 'control'); assert.equal(readLease?.state, 'published');
     assert.equal(readLease?.result?.files.length, 0); assert.ok(readLease.result.operationID);

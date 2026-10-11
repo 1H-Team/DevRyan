@@ -1,0 +1,54 @@
+[
+  {
+    "cohort": "baseline",
+    "reason": "Startup fixture provider catalog is unavailable\n\n500 !== 200\n",
+    "healthObservations": [
+      {
+        "observedAtMs": 22281.333500000008,
+        "state": "idle",
+        "attempt": 0,
+        "code": null
+      },
+      {
+        "observedAtMs": 22508.423165999993,
+        "state": "starting",
+        "attempt": 1,
+        "code": null
+      },
+      {
+        "observedAtMs": 34883.45166600001,
+        "state": "ready",
+        "attempt": 1,
+        "code": null
+      }
+    ],
+    "cleanupErrors": [],
+    "excludedFromPerformanceSummary": true
+  },
+  {
+    "cohort": "baseline",
+    "reason": "Startup fixture provider catalog is unavailable\n\n503 !== 200\n",
+    "healthObservations": [
+      {
+        "observedAtMs": 22510.667041999986,
+        "state": "idle",
+        "attempt": 0,
+        "code": null
+      },
+      {
+        "observedAtMs": 22740.476416999998,
+        "state": "starting",
+        "attempt": 1,
+        "code": null
+      },
+      {
+        "observedAtMs": 36439.56504199997,
+        "state": "ready",
+        "attempt": 1,
+        "code": null
+      }
+    ],
+    "cleanupErrors": [],
+    "excludedFromPerformanceSummary": true
+  }
+]

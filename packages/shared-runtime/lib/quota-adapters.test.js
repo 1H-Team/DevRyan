@@ -535,6 +535,7 @@ describe('ChatGPT shared quota adapter', () => {
     credential: { accessToken: 'access', accountId: 'account' },
     now,
     fetchImpl: async (url, init) => {
+      expect(init.redirect).toBe('error'); expect(init.signal).toBeInstanceOf(AbortSignal);
       if (url === CODEX_USAGE_URL) {
         expect(init.headers['ChatGPT-Account-Id']).toBe('account');
         return response(usagePayload);
@@ -542,6 +543,21 @@ describe('ChatGPT shared quota adapter', () => {
       expect(url).toBe(CODEX_RESET_CREDITS_URL);
       return resetPayload ? response(resetPayload) : response({}, 404);
     },
+  });
+
+  test('refuses oversized usage and preserves allowance when the optional reset lookup fails', async () => {
+    const payload = { rate_limit: { primary_window: { used_percent: 25, limit_window_seconds: 18000 } } };
+    const result = await fetchCodexQuotaAdapter({ credential: { accessToken: 'access' }, fetchImpl: async url =>
+      url === CODEX_USAGE_URL ? Response.json(payload) : new Response('x'.repeat(65537)) });
+    expect(result.ok).toBe(true); expect(result.usage.windows['5h'].usedPercent).toBe(25);
+    expect(result.usage.resetCredits).toBeUndefined();
+    const large = await fetchCodexQuotaAdapter({ credential: { accessToken: 'access' }, fetchImpl: async () => new Response('x'.repeat(65537)) });
+    expect(large.ok).toBe(false); expect(large.error).toContain('too large');
+  });
+
+  test('never exposes a malformed usage body in its error', async () => {
+    const result = await fetchCodexQuotaAdapter({ credential: { accessToken: 'access' }, fetchImpl: async () => new Response('private-provider-body') });
+    expect(result.ok).toBe(false); expect(JSON.stringify(result)).not.toContain('private-provider-body');
   });
 
   test('preserves both windows and reset credits while adding reached spend control', async () => {

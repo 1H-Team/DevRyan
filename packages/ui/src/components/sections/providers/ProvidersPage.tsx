@@ -55,8 +55,6 @@ import { useUsageOnlySelectionAvailable } from './useProviderUsage';
 import { useI18n } from '@/lib/i18n';
 import { useAuthPrincipal } from '@/lib/authSession';
 import { ClaudeDedicatedEnrollment } from './ClaudeDedicatedEnrollment';
-import { CodexUsageConnection } from './CodexUsageConnection';
-import { ChatgptSiwcEnrollment } from './ChatgptSiwcEnrollment';
 import { getProviderModelUnavailability } from '@/lib/providers/modelAvailability';
 import { BundledRuntimeUpdate } from './BundledRuntimeUpdate';
 import {
@@ -120,13 +118,21 @@ const claudeAuthenticationTitleKeys = {
 } as const;
 
 const claudeAuthenticationDescriptionKeys = {
-  loading: 'settings.providers.page.auth.checkingClaudeCliDescription',
+  loading: null,
   unavailable: 'settings.providers.page.auth.claudeCliMissingDescription',
   account_unavailable: 'settings.providers.page.auth.claudeStatusErrorDescription',
   error: 'settings.providers.page.auth.claudeStatusErrorDescription',
-  authenticated: 'settings.providers.page.auth.claudeAuthenticatedDescription',
+  authenticated: null,
   signed_out: 'settings.providers.page.auth.claudeLoginDescription',
 } as const;
+
+type ClaudeAuthenticationDescription = { text: string; key?: undefined } | { text?: undefined; key: NonNullable<typeof claudeAuthenticationDescriptionKeys[ClaudeAuthenticationState]> };
+
+const getClaudeAuthenticationDescription = (status: ClaudeAuthenticationState, claudeStatus: ClaudeCliStatus | null): ClaudeAuthenticationDescription | null => {
+  if ((status === 'error' || status === 'account_unavailable') && claudeStatus?.error) return { text: claudeStatus.error };
+  const key = claudeAuthenticationDescriptionKeys[status];
+  return key ? { key } : null;
+};
 
 export function ProviderAuthenticationSummary({ providerId, connectionState, cursorConfigured, cursorUnavailable = false, claudeStatus, claudeLoading }: {
   providerId: string;
@@ -145,15 +151,13 @@ export function ProviderAuthenticationSummary({ providerId, connectionState, cur
   }
   if (providerOAuth && isAnthropicOAuthProviderId(providerId) && connectionState !== 'disconnect_pending' && connectionState !== 'not_connected') {
     const status = getClaudeAuthenticationState(claudeStatus, claudeLoading);
+    const description = getClaudeAuthenticationDescription(status, claudeStatus);
     return (
       <div className="flex items-center gap-1.5 py-1.5" data-claude-auth-state={status}>
         {status === 'loading' ? <RiLoader4Line className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" aria-hidden="true" />
           : status === 'authenticated' ? <RiCheckLine className="w-4 h-4 text-[var(--status-success)] shrink-0" /> : null}
         <span className="typography-ui-label text-foreground">{t(claudeAuthenticationTitleKeys[status])}</span>
-        <span className="typography-meta text-muted-foreground ml-1">
-          {(status === 'error' || status === 'account_unavailable') && claudeStatus?.error
-            ? claudeStatus.error : t(claudeAuthenticationDescriptionKeys[status])}
-        </span>
+        {description ? <span className="typography-meta text-muted-foreground ml-1">{description.text ?? t(description.key)}</span> : null}
       </div>
     );
   }
@@ -252,7 +256,10 @@ const ProvidersPageContent: React.FC = () => {
   const [authLoading, setAuthLoading] = React.useState(false);
   const [apiKeyInputs, setApiKeyInputs] = React.useState<Record<string, string>>({});
   const [authBusyKey, setAuthBusyKey] = React.useState<string | null>(null);
-  const [openAiAuthRevision, setOpenAiAuthRevision] = React.useState(0);
+  const oauthAbort = React.useRef<AbortController | null>(null);
+  React.useEffect(() => () => oauthAbort.current?.abort(), []);
+  const canSignInOpenAi = principal.role === 'admin' && principal.scope !== 'tunnel-bot'
+    && ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);
   const [modelQuery, setModelQuery] = React.useState('');
   const pendingConnections = useProviderConnectionStore((state) => state.pending);
   const [pendingOAuth, setPendingOAuth] = React.useState<PendingProviderOAuth | null>(null);
@@ -599,8 +606,11 @@ const ProvidersPageContent: React.FC = () => {
   const selectedDisconnectPending = selectedProvider
     ? Object.prototype.hasOwnProperty.call(pendingRevisionByProvider, selectedProvider.id)
     : false;
+  const selectedRequiresSignIn = selectedProvider?.id === 'openai'
+    && selectedProvider.models.some(model => 'unavailableReason' in model && model.unavailableReason === 'reauthorization_required');
   const selectedConnectionState = selectedProvider
-    ? getProviderConnectionState(selectedProvider.id, selectedSources, selectedDisconnectPending)
+    ? selectedRequiresSignIn && !selectedDisconnectPending ? 'not_connected'
+      : getProviderConnectionState(selectedProvider.id, selectedSources, selectedDisconnectPending)
     : 'loading';
 
   const waitForProviderCatalog = React.useCallback(async (
@@ -709,7 +719,6 @@ const ProvidersPageContent: React.FC = () => {
 
       if (providerId === 'openai') {
         useQuotaStore.getState().invalidateProviderQuota('codex');
-        setOpenAiAuthRevision(value => value + 1);
       }
       toast.success(t('settings.providers.page.toast.apiKeySaved'));
       setApiKeyInputs((prev) => ({ ...prev, [providerId]: '' }));
@@ -740,6 +749,8 @@ const ProvidersPageContent: React.FC = () => {
     const codeKey = `${providerId}:${methodIndex}`;
     const busyKey = `oauth-complete:${providerId}:${methodIndex}`;
     setAuthBusyKey(busyKey);
+    const controller = new AbortController();
+    oauthAbort.current?.abort(); oauthAbort.current = controller;
 
     // Only the callback itself can fail the sign-in. Once it resolves the credentials are
     // persisted upstream, so nothing after this point may report failure to the user.
@@ -749,8 +760,10 @@ const ProvidersPageContent: React.FC = () => {
         methodIndex,
         code,
         fallbackError: t('settings.providers.page.toast.oauthCompleteFailed'),
+        signal: controller.signal,
       });
     } catch (error) {
+      if (controller.signal.aborted) return;
       const message = error instanceof Error
         ? error.message
         : t('settings.providers.page.toast.oauthCompleteFailed');
@@ -805,7 +818,7 @@ const ProvidersPageContent: React.FC = () => {
     try {
       const response = await fetch(`/api/provider/${encodeURIComponent(providerId)}/oauth/authorize`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-DevRyan-CSRF': '1' },
         body: JSON.stringify({ method: methodIndex }),
       });
 
@@ -852,6 +865,17 @@ const ProvidersPageContent: React.FC = () => {
     } finally {
       setAuthBusyKey(null);
     }
+  };
+
+  const handleOAuthCancel = async (providerId: string, methodIndex: number) => {
+    try {
+      const response = await fetch(`/api/provider/${encodeURIComponent(providerId)}/oauth/cancel`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-DevRyan-CSRF': '1' }, body: JSON.stringify({ method: methodIndex }),
+      });
+      if (!response.ok) throw new Error(t('settings.providers.page.toast.oauthCancelFailed'));
+      oauthAbort.current?.abort(); setPendingOAuth(null); setAuthBusyKey(null);
+      setOauthDetails(prev => { const next = { ...prev }; delete next[`${providerId}:${methodIndex}`]; return next; });
+    } catch { toast.error(t('settings.providers.page.toast.oauthCancelFailed')); }
   };
 
   const handleOAuthComplete = async (providerId: string, methodIndex: number) => {
@@ -989,7 +1013,6 @@ const ProvidersPageContent: React.FC = () => {
 
     try {
       const payload = await disconnectProvider(providerId, currentDirectory);
-      if (providerId === 'openai') setOpenAiAuthRevision(value => value + 1);
       const applyStatus = recordConfigMutationResponse(payload);
       markDisconnectRequested(providerId, payload);
       useProviderConnectionStore.getState().clear(providerId);
@@ -1040,13 +1063,12 @@ const ProvidersPageContent: React.FC = () => {
 
   const renderClaudeCodeAuth = () => {
     const status = getClaudeAuthenticationState(claudeCliStatus, claudeCliStatusLoading);
+    const description = getClaudeAuthenticationDescription(status, claudeCliStatus);
     return <>
       <div className="flex items-center justify-between gap-3 py-1.5">
         <div>
           <div className="typography-ui-label text-foreground">{t(claudeAuthenticationTitleKeys[status])}</div>
-          <div className="typography-meta text-muted-foreground">
-            {(status === 'error' || status === 'account_unavailable') && claudeCliStatus?.error ? claudeCliStatus.error : t(claudeAuthenticationDescriptionKeys[status])}
-          </div>
+          {description ? <div className="typography-meta text-muted-foreground">{description.text ?? t(description.key)}</div> : null}
         </div>
         {status !== 'loading' ? <Button variant="ghost" size="xs" className="!font-normal" onClick={refreshClaudeCliStatus}>
           {t('settings.providers.page.actions.refresh')}
@@ -1065,29 +1087,6 @@ const ProvidersPageContent: React.FC = () => {
       />
     </>;
   };
-
-  const renderChatgptSiwcAuth = () => (
-    <ChatgptSiwcEnrollment
-      refreshRevision={openAiAuthRevision}
-      catalogReady={providerCatalogHasOpenAiPlanModels(rawProviders) && providerCatalogHasOpenAiPlanModels(activeProviderCatalog)}
-      administrator={principal.role === 'admin' && principal.scope !== 'tunnel-bot'}
-      principalID={principal.id}
-      directory={currentDirectory}
-      onSelected={async (connection, signal) => {
-        await requestPostAuthConfigReload();
-        if (signal.aborted) return false;
-        if (connection === null || connection?.planUsage === false) {
-          const activeDirectory = currentDirectory?.trim() || null;
-          await Promise.all((activeDirectory ? [null, activeDirectory] : [null])
-            .map(directory => loadProviders({ directory, force: true })));
-          if (signal.aborted) return false;
-          quotaRefreshCoordinator.settingsChanged();
-          return true;
-        }
-        return finalizeProviderConnection('openai', { requireOpenAiPlanModels: true, signal });
-      }}
-    />
-  );
 
   const renderClaudeCompatibilityMode = () => (
     <div className="flex min-w-0 flex-col gap-2 py-1.5 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
@@ -1320,7 +1319,6 @@ const ProvidersPageContent: React.FC = () => {
                     </>
                   )}
 
-                  {providerOAuth && candidateProviderId === 'openai' && renderChatgptSiwcAuth()}
 
                   {activeCursorAcpProviderId === candidateProviderId && (
                     <div className="flex items-center justify-between gap-3 py-1.5">
@@ -1345,7 +1343,7 @@ const ProvidersPageContent: React.FC = () => {
                   {(() => {
                     const candidateSupportsApiKey = providerSupportsApiKey(candidateProviderId, providerOAuth);
                     const candidateAuthMethods = authMethodsByProvider[candidateProviderId] ?? [];
-                    const candidateOAuthMethods = !providerOAuth || isCursorAcpProviderId(candidateProviderId)
+                    const candidateOAuthMethods = !providerOAuth || isCursorAcpProviderId(candidateProviderId) || candidateProviderId === 'openai' && !canSignInOpenAi
                       ? []
                       : candidateAuthMethods.filter((method) => normalizeAuthType(method) === 'oauth');
 
@@ -1412,6 +1410,7 @@ const ProvidersPageContent: React.FC = () => {
                               )}
 
                               {renderOAuthAttemptStatus(candidateProviderId, index)}
+                              {activeAttempt?.phase === 'waiting' && <Button variant="outline" size="xs" onClick={() => handleOAuthCancel(candidateProviderId, index)}>{t('settings.providers.page.actions.cancelOAuth')}</Button>}
 
                               {activeAttempt?.method === 'code' && activeAttempt.phase === 'waiting' && (
                                 <div className="flex items-center gap-2 mt-2">
@@ -1472,7 +1471,7 @@ const ProvidersPageContent: React.FC = () => {
     : undefined;
   const providerAuthMethods = authMethodsByProvider[selectedProvider.id] ?? [];
   const oauthAuthMethods = providerAuthMethods.filter((method) => normalizeAuthType(method) === 'oauth');
-  const visibleOAuthAuthMethods = !providerOAuth || selectedProviderIsCursor ? [] : oauthAuthMethods;
+  const visibleOAuthAuthMethods = !providerOAuth || selectedProviderIsCursor || selectedProvider?.id === 'openai' && !canSignInOpenAi ? [] : oauthAuthMethods;
 
   const filteredModels = providerModels.filter((model) => {
     const name = typeof model?.name === 'string' ? model.name : '';
@@ -1520,7 +1519,8 @@ const ProvidersPageContent: React.FC = () => {
                 ? t('settings.providers.page.actions.hide')
                 : selectedProviderIsCursor
                   ? t('settings.providers.page.actions.setup')
-                  : t('settings.providers.page.actions.reconnect')}
+                  : selectedRequiresSignIn ? t('settings.providers.page.actions.signIn')
+                    : t('settings.providers.page.actions.reconnect')}
             </Button>
           </div>
 
@@ -1579,11 +1579,6 @@ const ProvidersPageContent: React.FC = () => {
                 {providerOAuth && isAnthropicOAuthProviderId(selectedProvider.id) && (
                   renderClaudeCodeAuth()
                 )}
-
-                {providerOAuth && selectedProvider.id === 'openai' && <>
-                  {renderChatgptSiwcAuth()}
-                  <CodexUsageConnection administrator={principal.role === 'admin' && principal.scope !== 'tunnel-bot'} principalID={principal.id} />
-                </>}
 
                 {activeCursorAcpProviderId === selectedProvider.id && (
                   <div className="flex items-center justify-between gap-3 py-1.5">
@@ -1664,6 +1659,7 @@ const ProvidersPageContent: React.FC = () => {
                           )}
 
                           {renderOAuthAttemptStatus(selectedProvider.id, index)}
+                          {activeAttempt?.phase === 'waiting' && <Button variant="outline" size="xs" onClick={() => handleOAuthCancel(selectedProvider.id, index)}>{t('settings.providers.page.actions.cancelOAuth')}</Button>}
 
                           {activeAttempt?.method === 'code' && activeAttempt.phase === 'waiting' && (
                             <div className="flex items-center gap-2 mt-2">
@@ -1698,19 +1694,6 @@ const ProvidersPageContent: React.FC = () => {
           </section>
         </div>
 
-        {providerOAuth && isAnthropicOAuthProviderId(selectedProvider.id) ? (
-          <div className="mb-8">
-            <div className="mb-1 px-1">
-              <h3 className="typography-ui-header font-medium text-foreground">
-                {t('settings.providers.page.claudeCompatibility.sectionTitle')}
-              </h3>
-            </div>
-            <section className="px-2 pb-2 pt-0">
-              {renderClaudeCompatibilityMode()}
-            </section>
-          </div>
-        ) : null}
-
         {/* Connection Details */}
         <div className="mb-8">
           <div className="mb-1 px-1">
@@ -1718,6 +1701,7 @@ const ProvidersPageContent: React.FC = () => {
           </div>
 
           <section className="px-2 pb-2 pt-0">
+            {providerOAuth && isAnthropicOAuthProviderId(selectedProvider.id) ? renderClaudeCompatibilityMode() : null}
             <div className="flex flex-col gap-2 py-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
               <div className="flex min-w-0 flex-col">
                 {selectedDisconnectPending ? (

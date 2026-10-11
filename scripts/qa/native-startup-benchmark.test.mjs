@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { test } from 'node:test';
 import { observeStartupBackgroundWork, assertNativeStartupPackageSource, assertNativeStartupUpgrade, assertNativeUpgradeBaseline, observeNativeStartupSubscription, parseNativeStartupArgs, readNativeStartupLogs,
-  parseStartupComparisonArgs, summarizeStartupComparison, assertStartupComparisonSources, summarizeNativeStartupRuns } from './native-startup-benchmark.mjs';
+  parseStartupComparisonArgs, summarizeStartupComparison, assertStartupComparisonSources, summarizeNativeStartupRuns, assertNativeStartupReopen } from './native-startup-benchmark.mjs';
 import { parseStartupPhaseLogs } from '../perf/electron-lifecycle-benchmark.mjs';
 import { runtimeUiBundleLayout } from './native-backend-ui-diagnostic.mjs';
 import { resolveRuntimeBundleRoot } from '../../packages/web/server/lib/opencode/runtime-host/runtime-bundle-root.js';
@@ -231,7 +231,7 @@ test('comparison requires five percent and all three pairs, with complete launch
   assert.throws(() => summarizeStartupComparison(runs([100, 110]), runs([90, 95, 100])));
 });
 
-test('comparison pins both receipts and permits only the two optimization files', () => {
+test('comparison pins both receipts and permits only the reviewed startup optimization files', () => {
   const source = entries => ({ entries, sha256: createHash('sha256').update(JSON.stringify(entries)).digest('hex') });
   const file = 'packages/ui/src/App.tsx';
   const baseline = source([{ file, sha256: 'a' }]), candidate = source([{ file, sha256: 'b' }]);
@@ -240,6 +240,17 @@ test('comparison pins both receipts and permits only the two optimization files'
   const foreign = source([...candidate.entries, { file: 'bun.lock', sha256: 'c' }]);
   assert.throws(() => assertStartupComparisonSources(baseline, foreign, foreign.sha256));
   assert.throws(() => assertStartupComparisonSources({ ...baseline, sha256: 'bad' }, candidate, candidate.sha256));
+});
+
+test('reopen proof rejects changed selection, absent timing and any repeat bundle mutation', () => {
+  const selected = { bundleID: 'prepared', revision: 2, artifactManifestSha256: 'a'.repeat(64) };
+  const listener = { phase: 'server_listen', outcome: 'completed', durationMs: 10 };
+  assert.doesNotThrow(() => assertNativeStartupReopen(selected, { ...selected }, [listener]));
+  assert.throws(() => assertNativeStartupReopen(selected, { ...selected, revision: 3 }, [listener]));
+  assert.throws(() => assertNativeStartupReopen(selected, selected, []));
+  for (const phase of ['bundle_upgrade', 'bundle_artifact_retention', 'bundle_data_copy', 'bundle_candidate_preparation', 'bundle_selection']) {
+    assert.throws(() => assertNativeStartupReopen(selected, selected, [listener, { phase, outcome: 'completed', durationMs: 1 }]));
+  }
 });
 
 test('comparison CLI defaults to natural and explicitly labels foreground mode', () => {

@@ -35,7 +35,7 @@ const restoreModel = (source, normalized) => {
 export function normalizeNativeOpenAiModels(models, { oauth, compactionReserved } = {}) {
   const original = models.map(model => Schema.decodeUnknownSync(Schema.toType(Model.Info))(model));
   const openai = original.filter(model => model.providerID === 'openai');
-  const normalized = normalizeOpenAIModels(Object.fromEntries(openai.map(model => [model.id, legacyModel(model)])), { oauth, compactionReserved });
+  const normalized = normalizeOpenAIModels(Object.fromEntries(openai.map(model => [model.id, legacyModel(model)])), { chatgpt: oauth, compactionReserved });
   const result = original.flatMap((model, index) => model.providerID !== 'openai' ? [models[index]]
     : normalized[model.id] ? [restoreModel(models[index], normalized[model.id])] : []);
   return result.length === models.length && result.every((model, index) => model === models[index]) ? models : result;

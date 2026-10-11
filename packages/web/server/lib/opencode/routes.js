@@ -15,9 +15,7 @@ import {
   listProviderCredentialEnvKeys,
   mergeGitHubCopilotProvider,
 } from './provider-integrations.js';
-import { annotateOpenAIModelAvailability } from './openai-model-availability.js';
-import { resolveSiwcAccountModels } from './openai-siwc-model-catalog.js';
-import { readNativeOpenAiSelection } from './chatgpt-siwc-host.js';
+import { annotateOpenAIModelAvailability, readNativeOpenAiMetadata } from './openai-model-availability.js';
 import { annotateModelDefaultThinking } from './model-default-thinking.js';
 import { stripMessageDiffContent } from './diff-summary.js';
 import { discoverGitHubCopilotModels } from './github-copilot-models.js';
@@ -76,6 +74,7 @@ const removeAntigravityAccounts = async (listAccountsPaths) => {
 };
 
 export const registerOpenCodeRoutes = (app, dependencies) => {
+  const recordDiagnostic = dependencies.recordDiagnostic ?? (() => {});
   const {
     crypto,
     clientReloadDelayMs,
@@ -102,7 +101,6 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     openCodeClient,
     getNativeRuntimeOwner = () => null,
     getClaudeEnrollmentOwner = () => null,
-    getChatgptSiwcEnrollmentOwner = () => null,
     isProviderAdministrator = () => false,
     getOpenCodeAuthHeaders = () => ({}),
     getOpenCodeWorkingDirectory = () => null,
@@ -445,73 +443,36 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
   const enrollmentCsrf=(req,res,next)=>req.get('x-devryan-csrf')==='1'?next():res.status(403).json({code:'native_claude_enrollment_csrf_required'});
   const enrollmentBody=limit=>{const parse=express.json({limit});return(req,res,next)=>parse(req,res,error=>error?res.status(400).json({code:'native_claude_enrollment_request_invalid'}):next());};
   const emptyEnrollmentBody=body=>body===undefined||body!==null&&typeof body==='object'&&!Array.isArray(body)&&Object.keys(body).length===0;
-  const enrollmentReply=async(req,res,action)=>{
+  // Failures are journaled by typed code only; request bodies, codes and URLs never are.
+  const enrollmentReply=async(req,res,operation,action)=>{
     try{
       const owner=getClaudeEnrollmentOwner();if(!owner) return res.status(409).json({code:'native_claude_enrollment_update_required'});
       const context={request:req,directory:await resolveRequestDirectory(req)};
       res.json(await action(owner,context));
     }catch(error){
       const code=/^native_claude_enrollment_[a-z_]+$/.test(error?.code??'')?error.code:'native_claude_enrollment_refused';
-      res.status([400,403,404,409,503].includes(error?.status)?error.status:409).json({code});
+      const statusCode=[400,403,404,409,503].includes(error?.status)?error.status:409;
+      try{recordDiagnostic({type:'lifecycle',event:'claude_enrollment_failed',payload:{action:operation,code,statusCode}});}catch{/* observation is best effort */}
+      res.status(statusCode).json({code});
     }
   };
-  app.get('/api/provider/anthropic/enrollment',enrollmentAdmin,(req,res)=>enrollmentReply(req,res,async(owner,context)=>({accounts:await owner.list(context)})));
-  app.post('/api/provider/anthropic/enrollment',enrollmentAdmin,enrollmentCsrf,enrollmentBody('12kb'),(req,res)=>enrollmentReply(req,res,async(owner,context)=>{
+  app.get('/api/provider/anthropic/enrollment',enrollmentAdmin,(req,res)=>enrollmentReply(req,res,'list',async(owner,context)=>({accounts:await owner.list(context)})));
+  app.post('/api/provider/anthropic/enrollment',enrollmentAdmin,enrollmentCsrf,enrollmentBody('12kb'),(req,res)=>enrollmentReply(req,res,'begin',async(owner,context)=>{
     if(!emptyEnrollmentBody(req.body))throw Object.assign(new Error('native_claude_enrollment_request_invalid'),{code:'native_claude_enrollment_request_invalid',status:400});
     return owner.begin(context);
   }));
-  app.post('/api/provider/anthropic/enrollment/:id/complete',enrollmentAdmin,enrollmentCsrf,enrollmentBody('12kb'),(req,res)=>enrollmentReply(req,res,(owner,context)=>owner.complete(req.params.id,req.body,context)));
-  app.post('/api/provider/anthropic/enrollment/:id/select',enrollmentAdmin,enrollmentCsrf,enrollmentBody('1kb'),(req,res)=>enrollmentReply(req,res,(owner,context)=>{
+  app.post('/api/provider/anthropic/enrollment/:id/complete',enrollmentAdmin,enrollmentCsrf,enrollmentBody('12kb'),(req,res)=>enrollmentReply(req,res,'complete',(owner,context)=>owner.complete(req.params.id,req.body,context)));
+  app.post('/api/provider/anthropic/enrollment/:id/select',enrollmentAdmin,enrollmentCsrf,enrollmentBody('1kb'),(req,res)=>enrollmentReply(req,res,'select',(owner,context)=>{
     if(!emptyEnrollmentBody(req.body))throw Object.assign(new Error('native_claude_enrollment_request_invalid'),{code:'native_claude_enrollment_request_invalid',status:400});
     return owner.select(req.params.id,context);
   }));
 
-  const siwcLocal=(req,res,next)=>isDirectLocalRequest(req)?next():res.status(403).json({code:'native_chatgpt_siwc_local_required'});
-  const siwcAdmin=(req,res,next)=>isProviderAdministrator(req)?next():res.status(403).json({code:'native_chatgpt_siwc_administrator_required'});
-  const siwcCsrf=(req,res,next)=>req.get('x-devryan-csrf')==='1'?next():res.status(403).json({code:'native_chatgpt_siwc_csrf_required'});
-  const siwcBody=limit=>{const parse=express.json({limit});return(req,res,next)=>parse(req,res,error=>error?res.status(400).json({code:'native_chatgpt_siwc_request_invalid'}):next());};
-  const emptySiwcBody=body=>body===undefined||body!==null&&typeof body==='object'&&!Array.isArray(body)&&Object.keys(body).length===0;
-  const siwcSelectionBody=(body,allowRegistration=false)=>{
-    if(body===undefined)body={};
-    if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).some(key=>key!=='expectedActiveCredentialID'&&(!allowRegistration||key!=='registrationRef'))
-      ||body.expectedActiveCredentialID!==undefined&&body.expectedActiveCredentialID!==null&&(typeof body.expectedActiveCredentialID!=='string'||!/^[A-Za-z0-9_-]{1,256}$/.test(body.expectedActiveCredentialID))
-      ||body.registrationRef!==undefined&&(typeof body.registrationRef!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(body.registrationRef)))
-      throw Object.assign(new Error('native_chatgpt_siwc_request_invalid'),{code:'native_chatgpt_siwc_request_invalid',status:400});
-    return body;
-  };
-  const siwcReply=async(req,res,action)=>{
-    try{
-      const owner=getChatgptSiwcEnrollmentOwner();
-      if(!owner) return res.status(409).json({code:'native_chatgpt_siwc_update_required'});
-      const context={request:req,directory:await resolveRequestDirectory(req)};
-      res.json(await action(owner,context));
-    }catch(error){
-      const code=/^native_chatgpt_siwc_[a-z_]+$/.test(error?.code??'')?error.code:'native_chatgpt_siwc_refused';
-      res.status([400,403,404,408,409,503].includes(error?.status)?error.status:409).json({code,
-        ...(['confirmed','unconfirmed','not_applicable'].includes(error?.remoteRevocation)?{remoteRevocation:error.remoteRevocation}:{}),
-        ...(['complete','failed'].includes(error?.localCleanup)?{localCleanup:error.localCleanup}:{}),
-      });
-    }
-  };
-  app.get('/api/provider/openai/siwc',siwcLocal,siwcAdmin,(req,res)=>siwcReply(req,res,async(owner,context)=>owner.status(context)));
-  app.post('/api/provider/openai/siwc',siwcLocal,siwcAdmin,siwcCsrf,siwcBody('4kb'),(req,res)=>siwcReply(req,res,async(owner,context)=>{
-    return owner.begin({...context,...siwcSelectionBody(req.body,true)});
-  }));
-  app.post('/api/provider/openai/siwc/:id/complete',siwcLocal,siwcAdmin,siwcCsrf,siwcBody('4kb'),(req,res)=>siwcReply(req,res,(owner,context)=>{
-    if(!emptySiwcBody(req.body))throw Object.assign(new Error('native_chatgpt_siwc_request_invalid'),{code:'native_chatgpt_siwc_request_invalid',status:400});
-    return owner.complete(req.params.id,req.body,context);
-  }));
-  app.post('/api/provider/openai/siwc/:id/select',siwcLocal,siwcAdmin,siwcCsrf,siwcBody('4kb'),(req,res)=>siwcReply(req,res,(owner,context)=>{
-    const body=siwcSelectionBody(req.body);
-    if(body.expectedActiveCredentialID===undefined)throw Object.assign(new Error('native_chatgpt_siwc_request_invalid'),{code:'native_chatgpt_siwc_request_invalid',status:400});
-    return owner.select(req.params.id,{...context,...body});
-  }));
-  app.delete('/api/provider/openai/siwc/:id',siwcLocal,siwcAdmin,siwcCsrf,(req,res)=>siwcReply(req,res,(owner,context)=>owner.cancel(req.params.id,context)));
-  app.delete('/api/provider/openai/siwc',siwcLocal,siwcAdmin,siwcCsrf,siwcBody('4kb'),(req,res)=>siwcReply(req,res,(owner,context)=>{
-    const body=siwcSelectionBody(req.body);
-    if(body.expectedActiveCredentialID===undefined)throw Object.assign(new Error('native_chatgpt_siwc_request_invalid'),{code:'native_chatgpt_siwc_request_invalid',status:400});
-    return owner.disconnect({...context,...body});
-  }));
+  app.use('/api/provider/openai/oauth', (req, res, next) => {
+    if (!isDirectLocalRequest(req)) return res.status(403).json({ code: 'native_openai_oauth_local_required' });
+    if (!isProviderAdministrator(req)) return res.status(403).json({ code: 'native_openai_oauth_administrator_required' });
+    if (req.get('x-devryan-csrf') !== '1') return res.status(403).json({ code: 'native_openai_oauth_csrf_required' });
+    return express.json({ limit: '4kb' })(req, res, next);
+  });
 
   app.get('/api/provider/anthropic/prompt-mode', (_req, res) => {
     if (isExternalOpenCode()) {
@@ -751,20 +712,9 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     });
     let withOpenAIAvailability = withGitHubCopilot;
     if (!isExternalOpenCode()) {
-      let selected, lookupUnavailable = false;
-      try { selected = await readNativeOpenAiSelection(getNativeRuntimeOwner, directory, { refresh: true, fallbackLocation: true }); } catch {
-        lookupUnavailable = true;
-        try { selected = await readNativeOpenAiSelection(getNativeRuntimeOwner, directory, { fallbackLocation: true }); } catch { /* Unknown ownership remains unavailable. */ }
-      }
-      let auth = selected?.value;
-      let accountModels = lookupUnavailable ? null : await resolveSiwcAccountModels(auth);
-      if (selected) {
-        try {
-          const current = await readNativeOpenAiSelection(getNativeRuntimeOwner, directory, { fallbackLocation: true });
-          if (JSON.stringify(current) !== JSON.stringify(selected)) { auth = current?.value; accountModels = null; lookupUnavailable = true; }
-        } catch { accountModels = null; lookupUnavailable = true; }
-      }
-      withOpenAIAvailability = annotateOpenAIModelAvailability(withGitHubCopilot, auth, { accountModels, unavailable: lookupUnavailable });
+      let auth, unavailable = false;
+      try { auth = await readNativeOpenAiMetadata(getNativeRuntimeOwner, directory); } catch { unavailable = true; }
+      withOpenAIAvailability = annotateOpenAIModelAvailability(withGitHubCopilot, auth, { unavailable });
     }
     return mergeCursorProvider(withOpenAIAvailability, { directory: await resolveRequestDirectory(req) });
   };
@@ -809,8 +759,8 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
         // An API-key account is not subject to ChatGPT availability; keep its catalog untouched.
         let keyAuth;
         try {
-          const selected = await readNativeOpenAiSelection(getNativeRuntimeOwner, undefined, { fallbackLocation: true });
-          if (['key', 'api'].includes(selected?.value?.type)) keyAuth = selected.value;
+          const selected = await readNativeOpenAiMetadata(getNativeRuntimeOwner);
+          if (selected?.type === 'key' || selected?.methodID === 'chatgpt-token-sharing') keyAuth = selected;
         } catch { /* Unknown ownership remains unavailable. */ }
         availablePayload = annotateOpenAIModelAvailability(upstreamPayload, keyAuth, keyAuth ? {} : { unavailable: true });
       }
@@ -1016,7 +966,18 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       }
       const session = await client.sessions.archive(req.params.sessionID, at, { directory: await resolveRequestDirectory(req) });
       return res.json(session);
-    } catch (error) { return sendOpenCodeFacadeError(res, error); }
+    } catch (error) {
+      const statusCode = error?.statusCode ?? error?.status;
+      recordDiagnostic({
+        type: 'lifecycle', event: 'session_archive_failed', sessionID: req.params.sessionID,
+        payload: {
+          action: req.body?.time?.archived === 0 ? 'unarchive' : 'archive',
+          code: typeof error?.code === 'string' && /^[a-z][a-z0-9_]{0,95}$/.test(error.code) ? error.code : 'opencode_unavailable',
+          statusCode: Number.isInteger(statusCode) && statusCode >= 400 && statusCode <= 599 ? statusCode : 502,
+        },
+      });
+      return sendOpenCodeFacadeError(res, error);
+    }
   });
 
   app.all('/api/session/:sessionID/message', async (req, res, next) => {

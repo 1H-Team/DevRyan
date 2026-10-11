@@ -6,7 +6,7 @@ export function UsageSourceDetails({ source, account }: UsageSourceMetadata) {
   if (!source) return null;
   return <p className="typography-micro text-muted-foreground break-words">
     {t(source === 'codex-app-server' ? 'settings.providers.codexUsage.source' : 'settings.providers.codexUsage.siwcSource')}
-    {' · '}{account?.email || t('settings.providers.codexUsage.unknownAccount')}
+    {account?.email ? ` · ${account.email}` : source === 'chatgpt-browser' ? '' : ` · ${t('settings.providers.codexUsage.unknownAccount')}`}
     {account?.planType ? ` · ${account.planType}` : ''}
   </p>;
 }

@@ -99,6 +99,11 @@ export const createWebManagedOpenCodeExecutor = (options = {}) => {
     async promptSession(input) {
       const client = resolveGen2OpenCodeClient(openCodeClient);
       const body = buildPromptBody(input);
+      const dispatch = action => options.nativeTaskDispatch
+        ? options.nativeTaskDispatch({ operation: 'prompt', taskId: input.taskId, leaseToken: input.leaseToken,
+          directory: input.directory, sessionID: input.sessionId, providerId: input.providerId,
+          modelId: input.modelId, agent: input.agent, variant: input.variant }, action)
+        : action();
       if (input.providerId === CURSOR_PROVIDER_ID) {
         if (!cursorSdkRuntime || typeof cursorSdkRuntime.handlePromptAsync !== 'function') {
           const error = new Error('Cursor managed orchestration is unavailable in this runtime');
@@ -106,11 +111,11 @@ export const createWebManagedOpenCodeExecutor = (options = {}) => {
           error.statusCode = 503;
           throw error;
         }
-        const result = await cursorSdkRuntime.handlePromptAsync({
+        const result = await dispatch(() => cursorSdkRuntime.handlePromptAsync({
           sessionID: input.sessionId,
           directory: input.directory,
           body,
-        });
+        }));
         const status = result?.status ?? 200;
         if (!result?.handled || status < 200 || status >= 300) {
           const error = new Error(
@@ -131,10 +136,7 @@ export const createWebManagedOpenCodeExecutor = (options = {}) => {
         timeoutMs: dispatchRequestTimeoutMs,
         ...(input.signal ? { signal: input.signal } : {}),
       });
-      if (options.nativeTaskDispatch) await options.nativeTaskDispatch({ operation: 'prompt',
-        taskId: input.taskId, leaseToken: input.leaseToken, directory: input.directory, sessionID: input.sessionId,
-        providerId: input.providerId, modelId: input.modelId, agent: input.agent, variant: input.variant }, promptNative);
-      else await promptNative();
+      await dispatch(promptNative);
       return;
     },
     async readSession(input) {
@@ -244,6 +246,7 @@ export const createWebManagedOpenCodeExecutor = (options = {}) => {
 
   return createManagedOpenCodeExecutor({
     transport,
+    cursorReadOnly: options.cursorReadOnly === true && typeof options.nativeTaskDispatch === 'function',
     subscribeAssistantActivity: options.subscribeAssistantActivity,
     bindAssistantActivity: options.bindAssistantActivity,
     subscribeSessionChanges: options.subscribeSessionChanges,

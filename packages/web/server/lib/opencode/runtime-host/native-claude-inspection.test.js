@@ -16,15 +16,15 @@ describe('unavailable Claude quota inspection', () => {
 
   it('gives short messages for expired and ambiguous accounts and keeps the status shape', () => {
     expect(unavailableClaudeInspection('quota', 'native_claude_account_ambiguous').error)
-      .toBe('More than one Claude account is connected. Usage needs a single selected account.');
+      .toBe('More than one Claude account is connected. Select one.');
     expect(unavailableClaudeInspection('quota', 'claude_credentials_expired').error)
-      .toBe('The Claude sign-in has expired. Reconnect the selected account in Claude Code or Meridian, then refresh. A dedicated connection is optional.');
+      .toBe('Claude sign-in expired. Reconnect in Claude Code or Meridian, then refresh.');
     expect(unavailableClaudeInspection('status', 'claude_credentials_expired')).toEqual({
       installed: true, path: null, loggedIn: false, authStatus: 'unavailable', errorCode: 'claude_credentials_expired', error: unavailableClaudeInspection('quota', 'claude_credentials_expired').error,
     });
     expect(unavailableClaudeInspection('status', 'native_claude_account_ambiguous').error)
       .toBe(unavailableClaudeInspection('quota', 'native_claude_account_ambiguous').error);
     expect(unavailableClaudeInspection('status', 'claude_credentials_missing').error)
-      .toBe('Sign in with your existing Claude Code or Meridian account, then refresh. A dedicated connection is optional.');
+      .toBe('Sign in with Claude Code or Meridian, then refresh.');
   });
 });

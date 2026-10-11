@@ -25,11 +25,11 @@ async function setup() {
       disabled: { type: 'remote', url: 'http://127.0.0.1:9/disabled', enabled: false } } } })) };
   const digest = reviewedMcpConfiguration(snapshot, ['/owned']).get('/owned').get('remote').configurationDigest;
   const records = new Map([
-    ['credential_openai', { id: 'credential_openai', integrationID: 'openai', label: 'Account', value: { type: 'oauth', methodID: 'chatgpt-siwc', access: 'synthetic-access', refresh: 'synthetic-refresh' } }],
+    ['credential_openai', { id: 'credential_openai', integrationID: 'openai', label: 'Account', value: { type: 'oauth', methodID: 'chatgpt-token-sharing', access: 'synthetic-access', refresh: 'synthetic-refresh' } }],
     ['credential_mcp', { id: 'credential_mcp', integrationID: 'mcp_remote', label: 'Remote', value: { type: 'oauth', methodID: 'mcp_method', access: 'synthetic-mcp-access' } }],
   ]);
   const info = id => ({ id, name: id === 'openai' ? 'OpenAI' : id === 'cursor-acp' ? 'Cursor' : 'remote', metadata: id === 'mcp_remote' ? { source: 'mcp' } : {},
-    methods: id === 'openai' ? [{ id: 'key', type: 'key', label: 'API key' }, { id: 'chatgpt-siwc', type: 'oauth', label: 'ChatGPT' }]
+    methods: id === 'openai' ? [{ id: 'key', type: 'key', label: 'API key' }, { id: 'chatgpt-browser', type: 'oauth', label: 'Codex browser (legacy)' }]
       : ['cursor-acp', 'opencode', 'opencode-go'].includes(id) ? [{ id: 'key', type: 'key', label: 'API key' }]
       : id === 'xai' ? [{ id: 'device', type: 'oauth', label: 'SuperGrok Subscription' }, { type: 'key', label: 'Manually enter API Key' }] : [{ id: 'mcp_method', type: 'oauth', label: 'Remote OAuth' }],
     connections: [...records.values()].filter(row => row.integrationID === id).map(row => ({ type: 'credential', id: row.id, label: row.label, method: row.value.type })) });
@@ -55,6 +55,11 @@ async function setup() {
       if (req.headers.authorization !== 'Bearer owned-native-http') throw denied('fixture_native_auth');
       if (req.method === 'GET' && req.path === '/api/mcp') return res.json([{ name: 'remote', integrationID: 'mcp_remote' }]);
       if (req.method === 'GET' && req.path === '/api/integration') return res.json([info('openai'), info('cursor-acp'), info('xai'), info('opencode'), info('opencode-go'), info('mcp_remote')]);
+      if (req.method === 'GET' && req.path.includes('/connect/oauth/')) {
+        const attempt = attempts.get(req.path.split('/').at(-1));
+        await grants.reauthorize({ authorizationID: attempt.grant.authorizationID, binding: attempt.bound });
+        return res.json({ status: attempt.status ?? 'pending' });
+      }
       if (req.method === 'GET' && req.path.startsWith('/api/integration/')) return res.json(info(req.path.split('/')[3]));
       if (req.path.startsWith('/api/experimental/mcp/')) {
         await grants.authorizeControl({ binding: binding('mcp', 'mcp_method', directory), operation: `mcp.${req.path.split('/').at(-1)}`,
@@ -67,7 +72,7 @@ async function setup() {
         if (startPause) { startEntered(); await startPause; }
         const attemptID = `attempt_${++starts}`; attempts.set(attemptID, { grant, bound });
         if (loseStartAcknowledgement) return res.status(503).json({ code: 'fixture_start_ack_lost', message: 'fixture_start_ack_lost' });
-        return res.json({ attemptID, mode: 'code', url: 'http://127.0.0.1:9/owned-issuer', expiresAt: Date.now() + 60_000 });
+        return res.json({ attemptID, mode: kind === 'openai' ? 'auto' : 'code', url: 'http://127.0.0.1:9/owned-issuer', expiresAt: Date.now() + 60_000 });
       }
       if (req.method === 'DELETE' && req.path.includes('/connect/oauth/')) {
         const attempt = attempts.get(req.path.split('/').at(-1));
@@ -108,7 +113,7 @@ async function setup() {
   app.use('/api', createOpenCodeV2FacadeRouter({ openCodeClient: { generation: () => 2 }, getOpenCodeRuntime: runtime,
     getNativeRuntimeOwner: () => owner, resolveRequestDirectory: () => '/owned',
     getOpenCodeAuthHeaders: () => ({ Authorization: 'Bearer owned-native-http', ...grants.requestHeaders() }) }));
-  return { app, original, records, nativeCalls, nativeLocations, mutations, starts: () => starts,
+  return { app, original, records, completeOAuth: status => { for(const attempt of attempts.values()) attempt.status = status; }, nativeCalls, nativeLocations, mutations, starts: () => starts,
     pauseStart: () => { startPause = new Promise(resolve => { releaseStart = resolve; }); return { entered: startBarrier, release: () => releaseStart() }; },
     allowStart: value => { allowStart = value; },
     allowForeign: () => { original.directories.add('/foreign'); },
@@ -119,6 +124,19 @@ async function setup() {
 }
 
 describe('native integration public facade with original caller grants', () => {
+  it('polls automatic OpenAI status without calling complete and supports cancel and restart', async () => {
+    const f = await setup();
+    expect((await request(f.app).post('/api/provider/openai/oauth/authorize').send({ method: 0 })).body.method).toBe('auto');
+    expect((await request(f.app).post('/api/provider/openai/oauth/callback').send({ method: 0 })).body).toEqual({ status: 'pending' });
+    f.completeOAuth('complete');
+    expect((await request(f.app).post('/api/provider/openai/oauth/callback').send({ method: 0 })).body).toEqual({ status: 'complete' });
+    expect(f.nativeCalls.some(call => call.path.endsWith('/complete'))).toBe(false);
+    expect((await request(f.app).post('/api/provider/openai/oauth/authorize').send({ method: 0 })).status).toBe(200);
+    expect((await request(f.app).post('/api/provider/openai/oauth/authorize').send({ method: 0 })).status).toBe(200);
+    expect((await request(f.app).post('/api/provider/openai/oauth/cancel').send({ method: 0 })).status).toBe(200);
+    expect(f.nativeCalls.filter(call => call.method === 'DELETE' && call.path.includes('/connect/oauth/'))).toHaveLength(2);
+  });
+
   it('preserves MCP routes and rejects disabled or foreign-location effects before dispatch', async () => {
     const f = await setup();
     expect((await request(f.app).post('/api/mcp/remote/connect').send({})).status).toBe(200);
@@ -133,7 +151,7 @@ describe('native integration public facade with original caller grants', () => {
   });
   it('maps provider methods and key creation without a public secret credential route', async () => {
     const f = await setup();
-    expect((await request(f.app).get('/api/provider/auth')).body).toEqual({ openai: [{ type: 'api', label: 'API key' }],
+    expect((await request(f.app).get('/api/provider/auth')).body).toEqual({ openai: [{ type: 'api', label: 'API key' }, { type: 'oauth', label: 'Codex browser (legacy)' }],
       xai: [{ type: 'oauth', label: 'SuperGrok Subscription' }, { type: 'api', label: 'Manually enter API Key' }],
       opencode: [{ type: 'api', label: 'API key' }], 'opencode-go': [{ type: 'api', label: 'API key' }], 'cursor-acp': [{ type: 'api', label: 'API key' }] });
     expect((await request(f.app).post('/api/provider/openai/oauth/authorize').send({ method: 1 })).status).toBe(400);
@@ -215,12 +233,10 @@ describe('native integration public facade with original caller grants', () => {
     expect(again.status).toBe(409); expect(again.body.code).toBe('native_integration_attempt_pending');
     expect(f.starts()).toBe(1);
   });
-  it('refuses generic OAuth removal and preserves native saved registrations', async () => {
+  it('normal Disconnect removes native OAuth credentials', async () => {
     const f = await setup();
-    const removed = await request(f.app).delete('/api/provider/openai/auth?scope=all');
-    expect(removed.status).toBe(409); expect(removed.body.code).toBe('native_chatgpt_siwc_disconnect_required');
-    expect(f.records.has('credential_openai')).toBe(true); expect(f.records.has('credential_mcp')).toBe(true);
-    expect(f.mutations).toEqual([]);
+    const removed = await request(f.app).delete('/api/provider/openai/auth?scope=auth');
+    expect(removed.status).toBe(200); expect(f.records.has('credential_openai')).toBe(false); expect(f.mutations).toEqual(['remove']);
   });
   it('refuses config-wide disconnect before any credential effect when prepared config would remain', async () => {
     const f = await setup(); f.configureProvider();

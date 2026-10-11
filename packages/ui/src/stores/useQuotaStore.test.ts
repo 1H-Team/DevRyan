@@ -81,12 +81,12 @@ describe('useQuotaStore refresh ownership', () => {
   });
 
   test('retains failed readings only for the same known source and account', async () => {
-    const previous = providerResult('codex', { source: 'codex-app-server', connectionId: 'account-a', account: { email: 'a@example.test', planType: 'pro' } });
+    const previous = providerResult('codex', { source: 'chatgpt-browser', connectionId: 'account-a', account: { email: 'a@example.test', planType: 'pro' } });
     const retainedTrend = [{ usedPercent: 10, fetchedAt: 1, resetAt: null }];
     for (const change of [
       {},
       { connectionId: 'account-b' },
-      { source: 'chatgpt-siwc' as const },
+      { source: 'chatgpt-token-sharing' as const },
       { account: { email: 'b@example.test', planType: 'pro' } },
       { connectionId: null },
       { source: null },

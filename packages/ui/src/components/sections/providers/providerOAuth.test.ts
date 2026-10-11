@@ -14,7 +14,7 @@ describe('provider OAuth helpers', () => {
   test('plan catalog readiness requires account discovery and a supported usable OAuth model', () => {
     expect(providerCatalogHasOpenAiPlanModels([{ id: 'openai', authType: 'api', models: [{ available: true }] }])).toBe(false);
     expect(providerCatalogHasOpenAiPlanModels([{ id: 'openai', authType: 'oauth', models: [{ available: false }] }])).toBe(false);
-    expect(providerCatalogHasOpenAiPlanModels([{ id: 'openai', authType: 'oauth', models: [{}] }])).toBe(false);
+    expect(providerCatalogHasOpenAiPlanModels([{ id: 'openai', authType: 'oauth', models: [{}] }])).toBe(true);
     expect(providerCatalogHasOpenAiPlanModels([{ id: 'openai', authType: 'oauth', models: [{ available: true }] }])).toBe(true);
   });
   test('parses SDK-wrapped automatic authorization details', () => {
@@ -52,6 +52,22 @@ describe('provider OAuth helpers', () => {
     expect(parseProviderOAuthAuthorization({})).toBeNull();
   });
 
+  test('polls pending auto attempts and aborts without another request', async () => {
+    const controller = new AbortController(); let calls = 0;
+    const fetchImpl: ProviderOAuthFetch = async () => { calls++; return {ok:true,json:async()=>({status:'pending'})}; };
+    const result = requestProviderOAuthCallback({providerId:'openai',methodIndex:0,fallbackError:'failed',signal:controller.signal,fetchImpl});
+    await new Promise(resolve=>setTimeout(resolve,10)); controller.abort();
+    await expect(result).rejects.toBeDefined(); expect(calls).toBe(1);
+  });
+  test('returns only when the automatic attempt completes', async () => {
+    let calls = 0;
+    const fetchImpl: ProviderOAuthFetch = async () => ({ok:true,json:async()=>({status:++calls===1?'pending':'complete'})});
+    await requestProviderOAuthCallback({providerId:'openai',methodIndex:0,fallbackError:'failed',fetchImpl});
+    expect(calls).toBe(2);
+  });
+  for (const status of ['failed','expired']) test(`reports terminal ${status} attempts`,async()=>{
+    await expect(requestProviderOAuthCallback({providerId:'openai',methodIndex:0,fallbackError:'failed',fetchImpl:async()=>({ok:true,json:async()=>({status})})})).rejects.toThrow('failed');
+  });
   test('submits automatic callbacks without an authorization code', async () => {
     const calls: Array<{ input: string; init: RequestInit }> = [];
     const fetchImpl: ProviderOAuthFetch = async (input, init) => {
