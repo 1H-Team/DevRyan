@@ -77,6 +77,15 @@ describe("resolveSubtaskAgentFromMessages", () => {
       variant: "high",
     })
   })
+
+  test("restores the flattened native Explorer tuple without mixing it with a nested model", () => {
+    const native = { id: "msg_native", role: "user", agent: "explorer", providerID: "cursor-acp", modelID: "grok-4.6", variant: "medium" }
+    expect(resolveLatestUserChoiceFromMessages([native])).toEqual({ id: "msg_native", agent: "explorer", providerID: "cursor-acp", modelID: "grok-4.6", variant: "medium" })
+    expect(resolveLatestUserChoiceFromMessages([{ ...native, model: { providerID: "openai", modelID: "gpt", variant: "high" } }])).toEqual({ id: "msg_native", agent: "explorer", providerID: "openai", modelID: "gpt", variant: "high" })
+    expect(resolveLatestUserChoiceFromMessages([{ ...native, model: { providerID: "openai" } }])?.modelID).toBeUndefined()
+    expect(resolveLatestUserChoiceFromMessages([{ ...native, providerID: 42 }])?.providerID).toBeUndefined()
+    expect(resolveLatestUserChoiceFromMessages([{ ...native, variant: "" }])?.variant).toBeNull()
+  })
   test("restores the native provider-default sentinel without treating it as inheritance", () => {
     expect(resolveLatestUserChoiceFromMessages([
       { id: "msg_default", role: "user", agent: "Builder", model: { providerID: "openai", modelID: "gpt", variant: "" }, variant: "high" },

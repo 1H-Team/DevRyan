@@ -166,7 +166,7 @@ jobs:
           tag_name: v${{ steps.get_version.outputs.version }}
           draft: true
           generate_release_notes: false
-          name: DevRyan v${{ steps.get_version.outputs.version }}
+          name: DevRyanv${{ steps.get_version.outputs.version }}
           body_path: ${{ steps.release_notes.outputs.path }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -174,7 +174,7 @@ jobs:
   publish-npm:
     outputs:
       sha256: ${{ steps.digest.outputs.sha256 }}
-    needs: [create-release, build-web-artifact, prepare-desktop-electron-macos]
+    needs: [create-release, build-web-artifact, prepare-desktop-electron-macos, qualify-release-startup]
     if: ${{ needs.create-release.outputs.scope == 'full' && !(github.event_name == 'workflow_dispatch' && inputs.prepare_bot_inputs_only == true) }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -754,9 +754,58 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  qualify-release-startup:
+    needs: [create-release, build-desktop-electron-macos]
+    runs-on: macos-26
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.14'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.1'
+      - name: Install qualification dependencies
+        env:
+          DEVRYAN_SKIP_INSTALL_PREPARE: '1'
+        run: bun install --frozen-lockfile --cpu '*' --os darwin
+      - name: Restore exact reviewed Claude executable
+        run: node scripts/hydrate-reviewed-claude.mjs
+      - uses: actions/download-artifact@v4
+        with:
+          name: DevRyan-macos-arm64-release
+          path: artifacts
+      - name: Qualify unchanged final DMG
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: >-
+          node scripts/qa/native-startup-benchmark.mjs
+          --release-dmg "$GITHUB_WORKSPACE/artifacts/DevRyan-${VERSION}-arm64.dmg"
+          --version "$VERSION" --source-commit "$GITHUB_SHA"
+          --receipt "$GITHUB_WORKSPACE/artifacts/DevRyan-startup-${VERSION}.json"
+      - name: Verify receipt against packaged digest
+        env:
+          VERSION: ${{ needs.create-release.outputs.version }}
+          DMG_SHA256: ${{ needs.build-desktop-electron-macos.outputs.sha256 }}
+        run: >-
+          node scripts/verify-release-startup.mjs --receipt "artifacts/DevRyan-startup-${VERSION}.json"
+          --version "$VERSION" --source-commit "$GITHUB_SHA" --dmg-sha256 "$DMG_SHA256"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: DevRyan-startup-qualification
+          path: artifacts/DevRyan-startup-${{ needs.create-release.outputs.version }}.json
+          if-no-files-found: error
+          retention-days: 90
+
   finalize-release:
-    needs: [create-release, publish-bot-runtime-images, verify-bot-runtime-topology, build-desktop-electron-macos, publish-npm]
-    if: ${{ always() && !cancelled() && !(github.event_name == 'workflow_dispatch' && inputs.prepare_bot_inputs_only == true) && needs.create-release.result == 'success' && needs.publish-bot-runtime-images.result == 'success' && needs.verify-bot-runtime-topology.result == 'success' && needs.build-desktop-electron-macos.result == 'success' && ((needs.create-release.outputs.scope == 'full' && needs.publish-npm.result == 'success') || (needs.create-release.outputs.scope == 'desktop-macos-arm64' && needs.publish-npm.result == 'skipped')) }}
+    needs: [create-release, publish-bot-runtime-images, verify-bot-runtime-topology, build-desktop-electron-macos, qualify-release-startup, publish-npm]
+    if: ${{ always() && !cancelled() && !(github.event_name == 'workflow_dispatch' && inputs.prepare_bot_inputs_only == true) && needs.create-release.result == 'success' && needs.publish-bot-runtime-images.result == 'success' && needs.verify-bot-runtime-topology.result == 'success' && needs.build-desktop-electron-macos.result == 'success' && needs.qualify-release-startup.result == 'success' && ((needs.create-release.outputs.scope == 'full' && needs.publish-npm.result == 'success') || (needs.create-release.outputs.scope == 'desktop-macos-arm64' && needs.publish-npm.result == 'skipped')) }}
     runs-on: ubuntu-latest
     environment: DevRyan Secrets
     env:
@@ -764,6 +813,18 @@ jobs:
       DISCORD_UPDATE_ROLE_ID: ${{ secrets.DISCORD_UPDATE_ROLE_ID }}
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: DevRyan-startup-qualification
+          path: startup-evidence
+      - name: Require final-DMG startup receipt before publication
+        env:
+          VERSION: ${{ needs.create-release.outputs.version }}
+          DMG_SHA256: ${{ needs.build-desktop-electron-macos.outputs.sha256 }}
+        run: >-
+          node scripts/verify-release-startup.mjs --receipt "startup-evidence/DevRyan-startup-${VERSION}.json"
+          --version "$VERSION" --source-commit "$GITHUB_SHA" --dmg-sha256 "$DMG_SHA256"
 
       - name: Setup Supabase CLI
         if: ${{ env.RELEASE_DRY_RUN != 'true' && env.RELEASE_BOT_INPUTS_ONLY != 'true' }}

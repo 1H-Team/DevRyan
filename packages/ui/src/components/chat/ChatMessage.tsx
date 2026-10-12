@@ -187,7 +187,6 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         );
     });
 
-    const providers = useConfigStore.getState().providers;
     const { showReasoningTraces, stickyUserHeader, showExpandedBashTools, showExpandedEditTools } = useUIStore(
         useShallow((state) => ({
             showReasoningTraces: state.showReasoningTraces,
@@ -378,45 +377,47 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         }
         return contextModelSelection?.modelId ?? null;
     }, [isUser, messageModelID, contextModelSelection]);
+    const providerCatalog = useConfigStore((state) => isUser ? undefined : state.providers.find(provider => provider.id === providerID));
 
-    const headerVariantRaw = !isUser
-        ? (turnGroupingContext?.userMessageVariant !== undefined
-            ? turnGroupingContext.userMessageVariant
-            : previousUserMetadata?.variant)
-        : undefined;
+    const assistantVariant = !isUser ? resolveUserMessageVariant(message.info) : undefined;
+    const parentVariant = previousMessage?.info.id === getMessageInfoProp(message.info, 'parentID')
+        ? previousUserMetadata?.variant : undefined;
+    // A same-session recovery can use a different effort from the original turn.
+    const headerVariantRaw = isUser ? undefined
+        : assistantVariant !== undefined ? assistantVariant
+            : parentVariant !== undefined ? parentVariant
+                : turnGroupingContext?.userMessageVariant !== undefined
+                    ? turnGroupingContext.userMessageVariant : previousUserMetadata?.variant;
 
     const modelVariantDisplayState = React.useMemo(() => {
-        if (isUser || !providerID || !modelID || providers.length === 0) {
+        if (isUser || !providerID || !modelID || !providerCatalog) {
             return null;
         }
 
-        const provider = providers.find((p) => p.id === providerID);
-        return getModelVariantDisplayState(provider, modelID, headerVariantRaw);
-    }, [headerVariantRaw, isUser, modelID, providerID, providers]);
+        return getModelVariantDisplayState(providerCatalog, modelID, headerVariantRaw);
+    }, [headerVariantRaw, isUser, modelID, providerID, providerCatalog]);
 
     const modelName = React.useMemo(() => {
         if (isUser) return undefined;
 
-        if (providerID && modelID && providers.length > 0) {
-            const provider = providers.find((p) => p.id === providerID);
-            if (provider?.models && Array.isArray(provider.models)) {
+        if (providerID && modelID) {
+            if (providerCatalog?.models && Array.isArray(providerCatalog.models)) {
                 const displayModelId = modelVariantDisplayState?.displayModelId ?? modelID;
-                const model = provider.models.find((m: Record<string, unknown>) => (m as Record<string, unknown>).id === displayModelId);
+                const model = providerCatalog.models.find((m: Record<string, unknown>) => (m as Record<string, unknown>).id === displayModelId);
                 const modelObj = model as Record<string, unknown> | undefined;
                 const name = modelObj?.name;
-                return typeof name === 'string' ? name : undefined;
+                return typeof name === 'string' && name.trim() ? name : modelID;
             }
         }
 
-        return undefined;
-    }, [isUser, providerID, modelID, modelVariantDisplayState, providers]);
+        return modelID ?? undefined;
+    }, [isUser, providerID, modelID, modelVariantDisplayState, providerCatalog]);
 
     const modelVariantOptions = React.useMemo(() => {
         if (isUser) return [];
         if (!providerID || !modelID) return [];
 
-        const provider = providers.find((p) => p.id === providerID);
-        if (!provider?.models || !Array.isArray(provider.models)) {
+        if (!providerCatalog?.models || !Array.isArray(providerCatalog.models)) {
             return [];
         }
 
@@ -424,12 +425,12 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
             return modelVariantDisplayState.visibleVariantOptions;
         }
 
-        const model = provider.models.find((m: Record<string, unknown>) => (m as Record<string, unknown>).id === modelID) as
+        const model = providerCatalog.models.find((m: Record<string, unknown>) => (m as Record<string, unknown>).id === modelID) as
             | { variants?: Record<string, unknown> }
             | undefined;
 
         return getOrderedThinkingVariants(model?.variants, { providerId: providerID });
-    }, [isUser, modelID, modelVariantDisplayState, providerID, providers]);
+    }, [isUser, modelID, modelVariantDisplayState, providerID, providerCatalog]);
 
     const displayAgentName = useStickyDisplayValue<string>(agentName);
     const displayProviderIDValue = useStickyDisplayValue<string>(providerID ?? undefined);

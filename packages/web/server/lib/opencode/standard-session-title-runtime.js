@@ -579,9 +579,13 @@ export const createStandardSessionTitleRuntime = ({
           const messages = await readSessionMessages(job.sessionID, job.directory);
           job = await observeInactiveStatus(job, messages);
           if (!job.idleConfirmedAt) {
-            await scheduleRetry(job, 'idle_confirmation', {
+            const inactiveObservationCount = job.inactiveObservationCount + 1;
+            await scheduleRetry({ ...job, inactiveObservationCount, lastInactiveObservedAt: now() }, 'idle_confirmation', {
               increment: false,
-              delayMs: Math.max(1, Number(inactiveConfirmationWindowMs) || INACTIVE_CONFIRMATION_WINDOW_MS),
+              delayMs: Math.max(
+                Number(inactiveConfirmationWindowMs) || INACTIVE_CONFIRMATION_WINDOW_MS,
+                retryDelayFor(inactiveObservationCount),
+              ),
             });
             return false;
           }

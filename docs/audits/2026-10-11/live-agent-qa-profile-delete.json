@@ -1,0 +1,51 @@
+{
+  "sourceSha256": "5429ab8ca96d6ee893c4123dec7eb3d5160f148b256220fff67ffc36099108ec",
+  "webArtifactSha256": "87b7cf6c3c92b7b281b5a221e52cee967f3a338d03fb057640de3076c03c698b",
+  "nativeArtifactSha256": "3b7526bc12176de11161ff576936dc74169e664246776796d8c4596d95256543",
+  "selectedBundleRevision": 4,
+  "before": [
+    {
+      "enrollmentID": "7cc2559d-c2d9-43aa-813b-a7d82caeff14",
+      "profileID": "devryan-7cc2559d-c2d9-43aa-813b-a7d82caeff14",
+      "status": "enrolled"
+    },
+    {
+      "enrollmentID": "f3966a20-8c8b-4f83-9076-a8954b372b11",
+      "profileID": "devryan-f3966a20-8c8b-4f83-9076-a8954b372b11",
+      "status": "incomplete"
+    },
+    {
+      "enrollmentID": "c42255ae-1a97-4f10-bc93-7800892e8165",
+      "profileID": "devryan-c42255ae-1a97-4f10-bc93-7800892e8165",
+      "status": "incomplete"
+    }
+  ],
+  "deleted": [
+    {
+      "enrollmentID": "f3966a20-8c8b-4f83-9076-a8954b372b11",
+      "profileID": "devryan-f3966a20-8c8b-4f83-9076-a8954b372b11",
+      "status": "deleted"
+    },
+    {
+      "enrollmentID": "c42255ae-1a97-4f10-bc93-7800892e8165",
+      "profileID": "devryan-c42255ae-1a97-4f10-bc93-7800892e8165",
+      "status": "deleted"
+    }
+  ],
+  "after": [
+    {
+      "enrollmentID": "7cc2559d-c2d9-43aa-813b-a7d82caeff14",
+      "profileID": "devryan-7cc2559d-c2d9-43aa-813b-a7d82caeff14",
+      "status": "enrolled"
+    }
+  ],
+  "claudeStatus": {
+    "installed": true,
+    "path": null,
+    "loggedIn": true,
+    "authStatus": "authenticated",
+    "authMethod": "oauth"
+  },
+  "journalGapScan": "passed",
+  "coverage": "direct isolated source; strict matrix did not run"
+}

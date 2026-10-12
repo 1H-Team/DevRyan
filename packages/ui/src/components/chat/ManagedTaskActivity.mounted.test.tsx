@@ -86,6 +86,46 @@ test('authentication failure before the first assistant part replaces startup wi
   });
 });
 
+test('real scheduler abandonment clears Model Recovery without remounting and stale events cannot restore it', async () => {
+  const scheduler = createManagedTaskScheduler({
+    executor: {
+      async start(_task, control) {
+        await control.setChildSessionId('ses_abandoned'); await control.markAccepted();
+        return { status: 'failed', failureReason: 'AI Model Not Found Invalid parameters for registry model: "missing"', resumable: true };
+      },
+      async abort() { return { aborted: true }; },
+      async reconcile() { return { state: 'unavailable' }; },
+      async readRecoverableResult() { return {}; },
+    },
+    publishEvent: event => { store.getState().ingestEvent(event); },
+  });
+  await withDom(async container => {
+    const { createRoot } = await import('react-dom/client'); const root = createRoot(container as unknown as Element);
+    try {
+      const task = await scheduler.submit({ idempotencyKey: 'abandonment', rootSessionId: 'ses_root', directory: '/workspace', mode: 'orchestrator', dispatchGroupId: 'msg_parent', providerId: 'fixture', modelId: 'missing', agent: 'explorer', variant: null, label: 'Map task domain', prompt: 'Inspect fixture', timeoutAt: null });
+      await scheduler.waitForTask(task.taskId); await scheduler.flush();
+      const failed = scheduler.getTask(task.taskId), original = scheduler.getResultEnvelope(task.taskId);
+      if (!failed || !original) throw new Error('Missing failed fixture');
+      await act(async () => root.render(<I18nProvider><ManagedTaskRow taskId={task.taskId} displayTitle="Map task domain" /></I18nProvider>));
+      const row = container.find(node => node.attributes['data-managed-task-id'] === task.taskId);
+      expect(row?.textContent).toContain('Model Recovery'); expect(row?.textContent).toContain('Try Again');
+      await act(async () => {
+        const handoff = await scheduler.confirmAgentHandoff({ rootSessionId: 'ses_root', fromMode: 'orchestrator', toMode: 'builder', idempotencyKey: 'explicit-handoff' });
+        expect(handoff.state).toBe('clear'); await scheduler.flush();
+      });
+      const acknowledged = scheduler.getResultEnvelope(task.taskId);
+      expect(acknowledged?.action).toBe('abandon'); expect(acknowledged?.sequence).toBeGreaterThan(original.sequence);
+      expect(container.find(node => node.attributes['data-managed-task-id'] === task.taskId)).toBe(row);
+      expect(row?.textContent).toContain('Error'); expect(row?.textContent).not.toContain('Model Recovery'); expect(row?.textContent).not.toContain('Try Again');
+      await act(async () => store.getState().ingestEvent(toManagedTaskEvent(failed, original)));
+      expect(row?.textContent).not.toContain('Model Recovery');
+      expect(storeModule.managedOrchestrationSelectors.hasManualRecoveryForRoot('ses_root')(store.getState())).toBe(false);
+    } finally {
+      await act(async () => { root.unmount(); store.getState().reset(); }); await scheduler.shutdown();
+    }
+  });
+});
+
 test('first Claude activity reaches the subscribed card and child copy before a blocked transcript completes', async () => {
   const registry = createManagedAssistantActivityRegistry();
   const read = deferred<Awaited<ReturnType<ManagedOpenCodeTransport['readMessages']>>>();

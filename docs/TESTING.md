@@ -1,5 +1,18 @@
 # DevRyan Testing
 
+## Startup release contract
+
+`bun run test:startup` runs deterministic startup, ownership, integrity,
+bundle retention/selection, Retry, cancellation, delayed bootstrap and event
+subscription contracts. `.github/workflows/startup-contract.yml` runs it on every
+PR without path filters, including changes unrelated to startup. It never uses
+installed application data, live accounts or OS service registration.
+
+Every release also requires the unchanged final-DMG qualification described in
+[QA](QA.md#final-dmg-startup-qualification). A successful isolated development
+package or a successful retry cannot replace that receipt. Full validation,
+build and bundle checks remain required alongside native qualification.
+
 ## Required gates
 
 - `bun run test:full` is the deterministic repository test gate. It recursively discovers repository script tests, runs every test-owning workspace package, and includes the locked legacy Tauri Cargo suite.

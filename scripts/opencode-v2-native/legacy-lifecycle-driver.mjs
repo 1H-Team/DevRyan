@@ -5,6 +5,11 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
 globalThis.console = new Console({ stdout: process.stderr, stderr: process.stderr });
+// Report the cause before Node prints potentially enormous encoded-module traces.
+process.on('uncaughtExceptionMonitor', error => {
+  const detail = error instanceof Error ? `${error.name}: ${error.message.slice(0, 1000)}` : 'Unknown fatal error';
+  process.stderr.write(`[native-lifecycle] ${detail}\n`);
+});
 let bytes = '';
 for await (const chunk of process.stdin) { bytes += chunk; assert.ok(Buffer.byteLength(bytes) <= 65536); }
 const input = JSON.parse(bytes);

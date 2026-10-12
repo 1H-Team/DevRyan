@@ -1,15 +1,16 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useI18n } from '@/lib/i18n';
 import { openExternalUrl } from '@/lib/url';
 
-interface Enrollment { enrollmentID: string; profileID: string; status: 'enrolled' | 'incomplete' | 'unavailable' }
+interface Enrollment { enrollmentID: string; profileID: string; status: 'enrolled' | 'incomplete' | 'unavailable' | 'deleting' }
 interface PendingEnrollment { enrollmentID: string; url: string; state: string }
 const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 const id = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value);
 const endpoint = '/api/provider/anthropic/enrollment';
-type EnrollmentError = 'load' | 'start' | 'confirm' | 'update' | 'callback' | 'capacity';
+type EnrollmentError = 'load' | 'start' | 'confirm' | 'update' | 'callback' | 'capacity' | 'delete' | 'selected' | 'refresh';
 const errorKeys = {
   load: 'settings.providers.enrollment.loadFailed',
   start: 'settings.providers.enrollment.startFailed',
@@ -17,6 +18,9 @@ const errorKeys = {
   update: 'settings.providers.enrollment.updateRequired',
   callback: 'settings.providers.enrollment.callbackInvalid',
   capacity: 'settings.providers.enrollment.capacity',
+  delete: 'settings.providers.enrollment.deleteFailed',
+  selected: 'settings.providers.enrollment.deleteSelected',
+  refresh: 'settings.providers.enrollment.deleteRefreshFailed',
 } as const;
 
 // The original manual flow accepts a callback URL or code#state. A plain code
@@ -46,12 +50,13 @@ export function ClaudeDedicatedEnrollment({ administrator, principalID, director
   const [code, setCode] = React.useState('');
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<EnrollmentError | null>(null);
+  const [deleting, setDeleting] = React.useState<Enrollment | null>(null);
   const active = React.useRef<AbortController | null>(null);
   const scope = directory?.trim() ? `?directory=${encodeURIComponent(directory.trim())}` : '';
 
   React.useEffect(() => {
     const controller = new AbortController(); active.current = controller;
-    setPending(null); setCode(''); setError(null); setAccounts([]); setBusy(false);
+    setPending(null); setCode(''); setError(null); setAccounts([]); setBusy(false); setDeleting(null);
     if (administrator) void (async () => {
       try {
         const response = await fetch(`${endpoint}${scope}`, { signal: controller.signal });
@@ -63,7 +68,7 @@ export function ClaudeDedicatedEnrollment({ administrator, principalID, director
         const rows: Enrollment[] = [];
         for (const row of data.accounts) {
           if (!isRecord(row) || !id(row.enrollmentID) || row.profileID !== `devryan-${row.enrollmentID}`
-            || (row.status !== 'enrolled' && row.status !== 'incomplete' && row.status !== 'unavailable')) throw new Error('response');
+            || (row.status !== 'enrolled' && row.status !== 'incomplete' && row.status !== 'unavailable' && row.status !== 'deleting')) throw new Error('response');
           rows.push({ enrollmentID: row.enrollmentID, profileID: row.profileID, status: row.status });
         }
         if (new Set(rows.map(row => row.enrollmentID)).size !== rows.length) throw new Error('response');
@@ -74,15 +79,16 @@ export function ClaudeDedicatedEnrollment({ administrator, principalID, director
   }, [administrator, principalID, scope]);
   const current = (controller: AbortController | null) => controller !== null && active.current === controller && !controller.signal.aborted;
 
-  const mutate = async (path: string, body: object): Promise<Record<string, unknown>> => {
+  const mutate = async (path: string, body: object, method: 'POST' | 'DELETE' = 'POST'): Promise<Record<string, unknown>> => {
     const signal = active.current?.signal;
     if (!signal || signal.aborted) throw new Error('scope');
-    const response = await fetch(`${endpoint}${path}${scope}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-devryan-csrf': '1' }, body: JSON.stringify(body), signal });
+    const response = await fetch(`${endpoint}${path}${scope}`, { method, headers: { 'Content-Type': 'application/json', 'x-devryan-csrf': '1' }, body: JSON.stringify(body), signal });
     const data: unknown = await response.json();
     if (signal.aborted) throw new Error('scope');
     if (!response.ok || !isRecord(data)) {
       if (isRecord(data) && data.code === 'native_claude_enrollment_update_required') setError('update');
       if (isRecord(data) && data.code === 'native_claude_enrollment_capacity') setError('capacity');
+      if (isRecord(data) && data.code === 'native_claude_enrollment_selected') setError('selected');
       throw new Error('response');
     }
     return data;
@@ -117,7 +123,7 @@ export function ClaudeDedicatedEnrollment({ administrator, principalID, director
     finally { if (current(controller)) setBusy(false); }
   };
   const select = async (row: Enrollment) => {
-    if (row.status === 'unavailable') return;
+    if (row.status === 'unavailable' || row.status === 'deleting') return;
     const controller = active.current;
     setBusy(true); setError(null);
     try {
@@ -128,6 +134,20 @@ export function ClaudeDedicatedEnrollment({ administrator, principalID, director
         await onSelected();
       }
     } catch { if (current(controller)) setError(value => value ?? 'confirm'); }
+    finally { if (current(controller)) setBusy(false); }
+  };
+  const remove = async () => {
+    const controller = active.current, row = deleting;
+    if (!row || busy) return;
+    setBusy(true); setError(null);
+    try {
+      const data = await mutate(`/${row.enrollmentID}`, {}, 'DELETE');
+      if (data.status !== 'deleted' || data.enrollmentID !== row.enrollmentID || data.profileID !== row.profileID) throw new Error('response');
+      if (!current(controller)) return;
+      setAccounts(rows => rows.filter(account => account.enrollmentID !== row.enrollmentID));
+      setDeleting(null);
+      try { await onSelected(); } catch { if (current(controller)) setError('refresh'); }
+    } catch { if (current(controller)) setError(value => value ?? 'delete'); }
     finally { if (current(controller)) setBusy(false); }
   };
   if (!administrator) return null;
@@ -142,9 +162,23 @@ export function ClaudeDedicatedEnrollment({ administrator, principalID, director
     </div> : null}
     {accounts.map(row => <div key={row.enrollmentID} className="flex flex-wrap items-center gap-2">
       <span className="typography-meta break-all">{row.profileID}</span>
-      {row.status === 'unavailable' ? <span className="typography-meta text-muted-foreground">{t('settings.providers.enrollment.unavailable')}</span> :
+      {row.status === 'unavailable' || row.status === 'deleting' ? <span className="typography-meta text-muted-foreground">{t(row.status === 'deleting' ? 'settings.providers.enrollment.cleanupPending' : 'settings.providers.enrollment.unavailable')}</span> :
         <Button size="xs" variant="outline" disabled={busy} onClick={() => void select(row)}>{t(row.status === 'incomplete' ? 'settings.providers.enrollment.recover' : 'settings.providers.enrollment.select')}</Button>}
+      <Button size="xs" variant="ghost" disabled={busy} onClick={() => { setError(null); setDeleting(row); }}>{t('settings.common.actions.delete')}</Button>
     </div>)}
-    {error ? <p role="alert" className="typography-meta text-[var(--status-error)]">{t(errorKeys[error])}</p> : null}
+    {error && !deleting ? <p role="alert" className="typography-meta text-[var(--status-error)]">{t(errorKeys[error])}</p> : null}
+    <Dialog open={deleting !== null} onOpenChange={open => { if (!open && !busy) { setDeleting(null); setError(null); } }}>
+      <DialogContent className="max-w-md" showCloseButton={!busy}>
+        <DialogHeader>
+          <DialogTitle>{t('settings.providers.enrollment.deleteTitle')}</DialogTitle>
+          <DialogDescription>{t('settings.providers.enrollment.deleteDescription', { profile: deleting?.profileID ?? '' })}</DialogDescription>
+        </DialogHeader>
+        {error ? <p role="alert" className="typography-meta text-[var(--status-error)]">{t(errorKeys[error])}</p> : null}
+        <DialogFooter>
+          <Button size="sm" variant="ghost" disabled={busy} onClick={() => { setDeleting(null); setError(null); }}>{t('settings.common.actions.cancel')}</Button>
+          <Button size="sm" variant="destructive" disabled={busy} onClick={() => void remove()}>{t('settings.providers.enrollment.deleteConfirm')}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </section>;
 }

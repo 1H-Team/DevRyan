@@ -187,6 +187,7 @@ const STARTUP_PHASE_LABELS = {
   globalSync: 'Syncing workspace',
   directorySync: 'Preparing directory',
   sessionList: 'Loading sessions',
+  eventStream: 'Connecting to the event stream',
   responseStyle: 'Loading chat settings',
   worktree: 'Priming worktree state',
 } satisfies Record<NonNullable<StartupReadinessSummary['phase']>, string>;
@@ -225,12 +226,14 @@ const StartupReadinessScreen: React.FC<{
   onRetry: () => void;
   isRetrying: boolean;
 }> = ({ summary, onRetry, isRetrying }) => {
+  const diagnostics = useConfigStore((state) => state.initializationDiagnostics);
   const statusText = getStartupStatusText(summary);
   const isError = Boolean(summary.error);
 
   return (
     <RuntimeLoadingScreen
       message={statusText}
+      diagnostics={diagnostics}
       state={isError ? 'error' : 'loading'}
       onRetry={isError ? onRetry : undefined}
       isRetrying={isRetrying}
@@ -272,6 +275,14 @@ const StartupReadinessGate: React.FC<{
   const initializationLoadError = useConfigStore((state) => state.initializationLoadError);
   const responseStyleInstructionLoaded = useConfigStore((state) => state.responseStyleInstructionLoaded);
   const globalReady = useGlobalSyncSelector((state) => state.ready);
+  const eventStreamReady = useGlobalSyncStore((state) => state.eventStreamReady);
+  const [eventStreamTimedOut, setEventStreamTimedOut] = React.useState(false);
+  React.useEffect(() => {
+    setEventStreamTimedOut(false);
+    if (!nativeExecution || !isInitialized || eventStreamReady || isRetrying) return;
+    const timer = window.setTimeout(() => setEventStreamTimedOut(true), 120_000);
+    return () => window.clearTimeout(timer);
+  }, [nativeExecution, isInitialized, eventStreamReady, isRetrying]);
   const globalError = useGlobalSyncSelector((state) => state.error?.message);
   const [directorySnapshot, setDirectorySnapshot] = React.useState<DirectoryStartupSnapshot>({
     status: currentDirectory ? 'loading' : 'complete',
@@ -410,6 +421,10 @@ const StartupReadinessGate: React.FC<{
     snapshot = withStartupReadinessPhase(snapshot, 'responseStyle', {
       status: responseStyleInstructionLoaded ? 'ready' : 'loading',
     });
+    snapshot = withStartupReadinessPhase(snapshot, 'eventStream', {
+      status: (nativeExecution ? eventStreamReady : isConnected) ? 'ready' : eventStreamTimedOut ? 'error' : 'loading',
+      error: eventStreamTimedOut ? 'The event stream did not become ready. Retry to reconnect.' : null,
+    });
     snapshot = withStartupReadinessPhase(snapshot, 'worktree', worktreePhase);
 
     return snapshot;
@@ -424,6 +439,9 @@ const StartupReadinessGate: React.FC<{
     directorySnapshot.status,
     globalError,
     globalReady,
+    eventStreamReady,
+    eventStreamTimedOut,
+    nativeExecution,
     isConnected,
     isDesktopRuntime,
     isInitialized,

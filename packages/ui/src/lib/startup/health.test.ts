@@ -74,3 +74,16 @@ describe('startup health polling', () => {
     await expect(waitForStartupHealth(async () => snapshot, options())).rejects.toThrow('OpenCode could not start.');
   });
 });
+
+test('artifact diagnostics survive health parsing and a terminal failure without raw host data', async () => {
+  const snapshot = parseStartupHealth({ openCodeStartup: { state: 'failed', attempt: 3, code: 'native_runtime_artifacts_unverified',
+    diagnostic: { stage: 'signature', reason: 'signature_failure', artifact: 'DevRyan-native-controller', purpose: 'current', secret: 'private' } },
+    lastOpenCodeError: '/private/account' });
+  expect(snapshot?.startup?.diagnostic).toEqual({ stage: 'signature', reason: 'signature_failure', artifact: 'DevRyan-native-controller', purpose: 'current' });
+  const failure = await waitForStartupHealth(async () => snapshot, options()).catch(error => error);
+  expect(failure).toMatchObject({
+    code: 'native_runtime_artifacts_unverified', attempt: 3,
+    diagnostic: snapshot?.startup?.diagnostic,
+  });
+  expect(failure.message).toContain('code signature');
+});

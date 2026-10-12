@@ -42,6 +42,7 @@ export async function relocateNativeSetupProfiles({profiles,sourceHome,targetHom
 export async function isVerifiedNativeClaudeEnrollmentProfile(profile,{controlRoot,home,claudeLifecycle}){
  if(!claudeLifecycle||!await isNativeClaudeEnrollmentDirectory(profile,{controlRoot,home}))return false;
  let state;try{state=parseClaudeLifecycle(claudeLifecycle);}catch{return false;}
+ if(state.unresolved.some(row=>row.phase==='deletion-prepared'&&row.profileID===profile.id))return false;
  return state.accounts.some(row=>row.profileID===profile.id&&row.configDirectory===profile.claudeConfigDir
   &&row.service===profile.keychainService&&row.enrollmentID===path.basename(profile.claudeConfigDir));
 }

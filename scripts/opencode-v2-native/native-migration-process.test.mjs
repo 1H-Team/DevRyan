@@ -55,15 +55,46 @@ test('offline migration rejects nonzero exit and a receipt for another bundle', 
   }
 });
 
-test('offline importer timeout and output overflow terminate only the owned child before rejecting', async () => {
+test('offline importer timeout and output overflow terminate only the owned child before rejecting', async t => {
   for (const [mode, code] of [['timeout', 'native_migration_timeout'], ['overflow', 'native_migration_output_bound']]) {
     await fixture(mode, async options => {
-      await assert.rejects(runNativeMigrationProcess({ ...options, timeoutMs: mode === 'timeout' ? 500 : 3000 }), error => error.code === code);
-      const pid = Number(await fs.readFile(path.join(options.root, 'owned-pid'), 'utf8'));
-      assert.throws(() => process.kill(pid, 0), error => error.code === 'ESRCH');
-      if (mode === 'timeout') {
-        const descendant = Number(await fs.readFile(path.join(options.root, 'descendant-pid'), 'utf8'));
-        assert.throws(() => process.kill(descendant, 0), error => error.code === 'ESRCH');
+      if (mode === 'timeout') t.mock.timers.enable({ apis: ['setTimeout'] });
+      const outcome = runNativeMigrationProcess({ ...options, timeoutMs: mode === 'timeout' ? 500 : 3000 });
+      void outcome.catch(() => {});
+      try {
+        if (mode === 'timeout') {
+          // Prove both owned processes started before advancing the importer deadline.
+          await new Promise((resolve, reject) => {
+            const deadline = Date.now() + 5000;
+            let checking = false;
+            const timer = setInterval(async () => {
+              if (checking) return;
+              if (Date.now() >= deadline) { clearInterval(timer); reject(new Error('Owned importer fixture did not start')); return; }
+              checking = true;
+              try {
+                const markers = await Promise.all(['owned-pid', 'descendant-pid'].map(name => fs.readFile(path.join(options.root, name), 'utf8')));
+                if (!markers.every(value => /^[1-9][0-9]*\s*$/.test(value))) return;
+                clearInterval(timer); resolve();
+              } catch (error) {
+                if (error.code !== 'ENOENT') { clearInterval(timer); reject(error); }
+              } finally { checking = false; }
+            }, 10);
+          });
+          t.mock.timers.tick(500);
+        }
+        await assert.rejects(outcome, error => error.code === code);
+        const pid = Number(await fs.readFile(path.join(options.root, 'owned-pid'), 'utf8'));
+        assert.throws(() => process.kill(pid, 0), error => error.code === 'ESRCH');
+        if (mode === 'timeout') {
+          const descendant = Number(await fs.readFile(path.join(options.root, 'descendant-pid'), 'utf8'));
+          assert.throws(() => process.kill(descendant, 0), error => error.code === 'ESRCH');
+        }
+      } finally {
+        if (mode === 'timeout') {
+          t.mock.timers.tick(500); t.mock.timers.tick(1000);
+          await outcome.catch(() => {});
+          t.mock.timers.reset();
+        }
       }
     });
   }

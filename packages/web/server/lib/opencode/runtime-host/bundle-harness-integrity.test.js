@@ -5,11 +5,13 @@ import path from 'node:path';
 import {git} from '../../../../../harness-runtime/lib/session-changes-git.js';
 import {openChangeStore,changeKey} from '../../../../../harness-runtime/lib/session-changes-store.js';
 import {inspectBundleHarness} from './bundle-harness-integrity.js';
+import {sha256} from './bundle-migration-inventory.js';
+import {createNativeProjectLocations} from './native-project-locations.js';
 
 const roots=[];
 afterEach(async()=>Promise.all(roots.splice(0).map(root=>fs.rm(root,{recursive:true,force:true}))));
 async function fixture({state='committed',acked=false,stage=true}={}) {
-  const root=await fs.mkdtemp(path.join(os.tmpdir(),'bundle-removal-'));roots.push(root);
+  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'bundle-removal-')));roots.push(root);
   const directory=path.join(root,'project'), web=path.join(root,'web');
   const storage=path.join(web,'harness','session-mutations',changeKey(directory)), gitDirectory=path.join(storage,'git');
   await fs.mkdir(storage,{recursive:true});await git(storage,['init','--bare','--quiet',gitDirectory]);
@@ -27,6 +29,57 @@ async function fixture({state='committed',acked=false,stage=true}={}) {
   return {web,db,intent,session,member,verify:options=>inspectBundleHarness(web,{sessionIDs:[],messageIDs:[],...options}),
     save:async()=>{db.set(`sessions/${changeKey(member.id)}.json`,session);db.set(`native-removals/${changeKey(id)}.json`,intent);await db.commit();}};
 }
+test('clone preserves the exact registered external project without changing its immutable baseline map',async()=>{
+  const f=await fixture(), baseline=path.join(path.dirname(f.web),'original-empty-workspace');
+  await fs.mkdir(baseline);await fs.mkdir(f.member.directory);
+  const projectMap=[{sourceDirectory:baseline,targetDirectory:baseline,mode:'identity'}];
+  const context={kind:'task',sessionID:f.member.id,directory:f.member.directory,model:'saved/model'};
+  const contextRoot=path.join(f.web,'harness','context');await fs.mkdir(contextRoot,{recursive:true});
+  const contextFile=path.join(contextRoot,`task_${sha256(`${f.member.id}:${f.member.directory}`)}.json`);
+  await fs.writeFile(contextFile,JSON.stringify(context));
+  await fs.writeFile(path.join(f.web,'settings.json'),JSON.stringify({projects:[{id:'external-qa-project',path:f.member.directory}]}));
+  const before=await f.verify();
+  const relocated=await f.verify({relocate:true,projectMap});
+  expect(relocated.sessionReferences).toEqual(before.sessionReferences);
+  expect(relocated.messageReferences).toEqual(before.messageReferences);
+  expect(await f.db.get('meta.json')).toMatchObject({directory:f.member.directory});
+  expect(JSON.parse(await fs.readFile(contextFile,'utf8'))).toEqual(context);
+  expect(projectMap).toEqual([{sourceDirectory:baseline,targetDirectory:baseline,mode:'identity'}]);
+});
+test('cold resume and clone preserve a removed registered project history without granting its executable location',async()=>{
+  const f=await fixture(),baseline=path.join(path.dirname(f.web),'baseline');
+  await fs.mkdir(baseline);await fs.mkdir(f.member.directory);
+  const projectMap=[{sourceDirectory:baseline,targetDirectory:baseline,mode:'identity'}],projects=[{path:f.member.directory}];
+  await fs.writeFile(path.join(f.web,'settings.json'),JSON.stringify({projects}));
+  const context={kind:'task',sessionID:f.member.id,directory:f.member.directory},contextRoot=path.join(f.web,'harness','context');
+  await fs.mkdir(contextRoot,{recursive:true});const contextFile=path.join(contextRoot,`task_${sha256(`${f.member.id}:${f.member.directory}`)}.json`);
+  await fs.writeFile(contextFile,JSON.stringify(context));
+  const before=await f.verify();await f.verify({relocate:true,projectMap});
+  await fs.rm(f.member.directory,{recursive:true});
+  const preservedRefs={checkpointID:'checkpoint',refs:before.refs};
+  expect((await f.verify({projectMap,preservedRefs})).sessionReferences).toEqual(before.sessionReferences);
+  await f.verify({relocate:true,projectMap,preservedRefs});
+  expect(await f.db.get('meta.json')).toMatchObject({directory:f.member.directory});
+  expect(JSON.parse(await fs.readFile(contextFile,'utf8'))).toEqual(context);
+  const launch={webDataDirectory:f.web,webConfigDirectory:f.web,opencodeConfigDirectory:f.web,global:{tmp:f.web,home:f.web}};
+  const locations=createNativeProjectLocations({baseLocations:[{directory:baseline,readRoots:[baseline],protectedRoots:[f.web]}],launch,getRegisteredProjects:async()=>projects});
+  expect((await locations()).map(row=>row.directory)).toEqual([baseline]);
+  await fs.writeFile(path.join(f.web,'settings.json'),JSON.stringify({projects:[]}));
+  await expect(f.verify({projectMap,preservedRefs})).rejects.toMatchObject({code:'bundle_harness_directory_unmapped'});
+  await fs.writeFile(path.join(f.web,'settings.json'),JSON.stringify({projects}));await fs.symlink(baseline,f.member.directory);
+  await expect(f.verify({projectMap,preservedRefs})).rejects.toMatchObject({code:'bundle_harness_registered_project_invalid'});
+});
+test.each(['sibling','parent','protected','symlink'])('registered project identity cannot authorize an unmapped %s scope',async kind=>{
+  const f=await fixture(),root=path.dirname(f.web),baseline=path.join(root,'baseline');await fs.mkdir(baseline);
+  let registered=f.member.directory;
+  if(kind==='sibling'){registered=registered+'-sibling';await fs.mkdir(registered);}
+  if(kind==='parent')registered=root;
+  if(kind==='protected')registered=f.web;
+  if(kind==='symlink'){registered=registered+'-alias';await fs.symlink(f.member.directory,registered);}
+  await fs.writeFile(path.join(f.web,'settings.json'),JSON.stringify({projects:[{path:registered}]}));
+  await expect(f.verify({relocate:true,projectMap:[{sourceDirectory:baseline,targetDirectory:baseline,mode:'identity'}]}))
+    .rejects.toMatchObject({code:kind==='protected'||kind==='symlink'?'bundle_harness_registered_project_invalid':'bundle_harness_directory_unmapped'});
+});
 test.each([{state:'committed',acked:false},{state:'committed',acked:true},{state:'completed',acked:true}])(
   'resume accepts exact durable $state removal with ACK=$acked',async options=>{
     const f=await fixture(options);

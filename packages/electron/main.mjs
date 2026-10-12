@@ -1,3 +1,4 @@
+import { artifactDiagnostic, describeArtifactFailure, startupDiagnosticSummary } from '../shared-runtime/startup-diagnostics.js';
 import {createNativeSettingsDirectory,readNativeShellBundleBinding} from './native-settings-directory.mjs';
 import { isWindowsPreview, WINDOWS_PREVIEW_APP_ID, WINDOWS_PREVIEW_NAME, createPreviewUpdater, isPreviewUnsupportedCommand } from './windows-preview.mjs';
 import {selectInheritedShellEnv,selectShellDataRoots} from './shell-env-inheritance.mjs';
@@ -8,7 +9,7 @@ import { createRuntimeMemoryMonitor } from './runtime-memory-monitor.mjs';
 import { installRendererRecovery } from './renderer-recovery.mjs';
 import { createDesktopMenu } from './desktop-menu.mjs';
 import { createNativeNotifications } from './native-notifications.mjs';
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, powerSaveBlocker, safeStorage, session, shell, systemPreferences, WebContentsView } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, powerSaveBlocker, safeStorage, session, shell, systemPreferences, WebContentsView } from 'electron';
 import contextMenu from 'electron-context-menu';
 import log from 'electron-log/main.js';
 import dgram from 'node:dgram';
@@ -907,7 +908,7 @@ const spawnLocalServer = () => {
 const startLocalServer = async () => {
   if(!runtimeBundleRecoveryRequired)inheritUserShellEnv();
 
-  if (!isPreview) await acquireRuntimeOwner(isRuntimeServiceMode ? 'service' : 'app_bound');
+  if (!isPreview) await runStartupPhase('ownership_resolved', () => acquireRuntimeOwner(isRuntimeServiceMode ? 'service' : 'app_bound'), log);
 
   const settings = readSettingsRoot();
   const productionBotsExecutionDisabled = isPreview || settings.productionBotsRuntimeMode === 'disabled';
@@ -2039,7 +2040,9 @@ const currentStartupSplashPalette = () => (
   resolveStartupSplashPalette(shellRuntimeBundleBindingError ? {} : readSettingsRoot(), nativeTheme.shouldUseDarkColors)
 );
 
+let lastStartupDiagnostic = null;
 const startupErrorDetails = (error) => {
+  const diagnostic = artifactDiagnostic(error);
   const cause = error?.cause;
   const message = error instanceof Error ? error.message : String(error || 'Unknown startup error');
   const code = typeof error?.code === 'string'
@@ -2054,11 +2057,14 @@ const startupErrorDetails = (error) => {
     code,
     causeMessage,
     ...(relativePath ? { relativePath } : {}),
-    displayMessage: code ? `${message} (${code})` : message,
+    ...(diagnostic ? { diagnostic } : {}),
+    displayMessage: code === 'native_runtime_artifacts_unverified' ? describeArtifactFailure(diagnostic)
+      : code && message !== code ? `${message} (${code})` : message,
   };
 };
 
 const buildStartupErrorHtml = (error) => {
+  lastStartupDiagnostic = startupDiagnosticSummary(error);
   const details = startupErrorDetails(error);
   let settings = {};
   // A failed runtime binding must not prevent its own error page from rendering.
@@ -2079,6 +2085,7 @@ const startupActionForUrl = (rawUrl) => {
   try {
     const parsed = new URL(rawUrl);
     if (parsed.protocol !== `${DEEP_LINK_PROTOCOL}:`) return null;
+    if (parsed.hostname === 'copy-startup-diagnostics') return 'copy-startup-diagnostics';
     if (parsed.hostname === STARTUP_RETRY_HOST) return 'retry-startup';
     if (parsed.hostname === BOT_RUNTIME_RETRY_HOST) return 'retry-bot-runtime';
     if (parsed.hostname === BOT_RUNTIME_CONTINUE_HOST) return 'continue-without-bots';
@@ -3164,6 +3171,11 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
 
   browserWindow.webContents.on('will-navigate', (event, url) => {
     const startupAction = startupActionForUrl(url);
+    if (startupAction === 'copy-startup-diagnostics') {
+      event.preventDefault();
+      if (desktopStartupFailed && lastStartupDiagnostic) clipboard.writeText(lastStartupDiagnostic);
+      return;
+    }
     if (startupAction === 'retry-startup') {
       event.preventDefault();
       routeStartupRetry({
@@ -3228,8 +3240,7 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
   });
 
   browserWindow.once('ready-to-show', () => {
-    browserWindow.show();
-    browserWindow.focus();
+    void runStartupPhase('shell_visible', () => { browserWindow.show(); browserWindow.focus(); }, log);
   });
 
   if (url) {

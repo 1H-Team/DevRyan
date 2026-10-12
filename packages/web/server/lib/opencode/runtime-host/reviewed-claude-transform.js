@@ -5,7 +5,7 @@ export const REVIEWED_CLAUDE_STARTUP = Object.freeze({
   sourceSha256: 'b3a32d1f03047f68e39874725bc9ed40fc42b59a773acdb815e8c9b7b4025aad',
 });
 export const REVIEWED_CLAUDE_ASSETS = Object.freeze({
-  claude: Object.freeze({path:'DevRyan-Claude-darwin-arm64',sha256:'625869b01e0050f260b2980fac248fd9cef9e462612bded4ec9d3d49ff8969a5',version:'2.1.251',mode:0o755}),
+  claude: Object.freeze({path:'DevRyan-Claude-darwin-arm64',sha256:'387a5c5dcdbb815085edf0baf79591f9d8894efe922bceaf3d75b1b08055229d',version:'2.1.280',mode:0o755}),
   libsql: Object.freeze({path:'DevRyan-libsql-darwin-arm64.node',sha256:'3fd9e58190311b5ee027c3e5452a6a410b31a5d610fd55853d797bb3c9f5db0c',version:'0.5.29',mode:0o644}),
 });
 
@@ -49,6 +49,11 @@ ${marker}`);
         if (typeof credentialResolver !== 'function') throw new Error('native_claude_credential_owner_required');
         let nativeCredential = await credentialResolver(c.req.raw, profile.id, 'request');
         if (nativeCredential) profile = {...profile, env:{...profile.env, CLAUDE_CODE_OAUTH_TOKEN:nativeCredential.accessToken}};`);
+  const diagnosticEnvironment='        const profileEnv = { ...sdkModelDefaults, ...cleanEnv, ...profile.env };';
+  if(output.split(diagnosticEnvironment).length!==2)throw new Error('native_meridian_source_shape_changed');
+  output=output.replace(diagnosticEnvironment,diagnosticEnvironment+`
+        const diagnosticBinding=Reflect.get(globalThis,'__DEVRYAN_CLAUDE_DIAGNOSTIC_BINDING');
+        if(typeof diagnosticBinding==='function')try{profileEnv.DEVRYAN_CLAUDE_DIAGNOSTIC_SCOPE=JSON.stringify({...diagnosticBinding(c.req.raw),profileID:profile.id});}catch{}`);
   output=output.replace('        const profileCredentialStore = credentialStoreForProfile(profile);',`        const profileCredentialStore = undefined;
         const renewNativeCredential = async () => {
           const next = await credentialResolver(c.req.raw, profile.id, 'authentication-retry', nativeCredential.fingerprint);
@@ -72,10 +77,9 @@ export function rewriteReviewedClaudeSpawn(source) {
   return text.slice(0,start)+`export function spawnConfinedProvider(options) {
   const transport=JSON.parse(process.env.DEVRYAN_PROVIDER_TRANSPORT || '{}');
   if(transport.protocol!==1||options.command!==transport.asset?.path||!Array.isArray(options.args))throw new Error('native_provider_transport_unverified');
-  const child=spawn(process.execPath,['--claude-transport-worker','--native-instance',transport.instanceID],{stdio:['pipe','pipe','pipe'],windowsHide:true,
-    env:{...options.env,DEVRYAN_PROVIDER_COMMAND:JSON.stringify({...transport,args:options.args,directory:options.cwd})}});
-  const cancel=()=>child.kill('SIGTERM');options.signal?.addEventListener('abort',cancel,{once:true});
-  child.once('close',()=>options.signal?.removeEventListener('abort',cancel));if(options.signal?.aborted)cancel();return child;
+  const spawnOwned=Reflect.get(globalThis,'__DEVRYAN_CLAUDE_TRANSPORT_SPAWN');
+  if(typeof spawnOwned!=='function')throw new Error('native_claude_transport_invalid');
+  return spawnOwned(options,options.env?.DEVRYAN_CLAUDE_DIAGNOSTIC_SCOPE);
 }\n`;
 }
 

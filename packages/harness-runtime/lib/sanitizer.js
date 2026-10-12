@@ -14,6 +14,9 @@ export const sanitizeNativeSchemaPath = value => typeof value === 'string' && va
   && value.split('.').every(key => schemaFields.has(key) || key === '<key>' || /^\[\d{1,10}\]$/.test(key));
 
 const REDACTED = '[REDACTED]';
+const CLAUDE_PROCESS_CLUES = new Set(['http_401', 'http_403', 'auth', 'model', 'unsupported_option', 'argument', 'config',
+  'permission', 'launcher', 'module', 'syntax', 'spawn', 'connection', 'native_receipt']);
+
 
 const RECORD_FIELDS = Object.freeze({
   open_code_event: new Set(['type', 'at', 'runtime', 'actor', 'directory', 'sessionID', 'coalesced', 'payload']),
@@ -329,6 +332,23 @@ export const createDiagnosticSanitizer = (options = {}) => {
     return parseNativeJournalObservation(visit(observation));
   };
 
+  const sanitizeClaudeProcessPayload = (candidate) => {
+    const output = {};
+    for (const [field, value] of Object.entries(asObject(candidate) || {})) {
+      if ((field === 'code' && (value === null || Number.isSafeInteger(value) && value >= 0 && value <= 255))
+        || (['signalPresent', 'truncated'].includes(field) && typeof value === 'boolean')
+        || (field === 'stderrBytes' && Number.isSafeInteger(value) && value >= 0 && value <= 1048576)
+        || (field === 'scannedBytes' && Number.isSafeInteger(value) && value >= 0 && value <= 32768)) output[field] = value;
+      else if ((field === 'attemptID' && typeof value === 'string' && /^[a-f0-9]{64}$/.test(value))
+        || (field === 'providerInstanceID' && typeof value === 'string' && /^[a-f0-9-]{32,64}$/.test(value))) output[field] = redactString(value, { highEntropy: false });
+      else if (field === 'clues' && Array.isArray(value) && value.length <= CLAUDE_PROCESS_CLUES.size) {
+        output[field] = [...new Set(value.filter(clue => CLAUDE_PROCESS_CLUES.has(clue)))];
+        report.droppedFields += value.filter(clue => !CLAUDE_PROCESS_CLUES.has(clue)).length;
+      } else report.droppedFields += 1;
+    }
+    return output;
+  };
+
   const sanitizeRecord = (candidate) => {
     const object = asObject(candidate);
     if (!object) throw new TypeError('diagnostic record must be an object');
@@ -380,6 +400,10 @@ export const createDiagnosticSanitizer = (options = {}) => {
           }
           return metadata.name || metadata._tag || metadata.msg ? [metadata] : [];
         });
+        continue;
+      }
+      if (key === 'payload' && type === 'lifecycle' && object.event === 'native_claude_process') {
+        output[key] = sanitizeClaudeProcessPayload(value);
         continue;
       }
       if (key === 'payload' && type === 'lifecycle' && object.event === 'opencode_process_exit') {
@@ -473,6 +497,10 @@ export const createDiagnosticSanitizer = (options = {}) => {
           || (key === 'v2Type' && !isSafeErrorType(nested))) continue;
         if (key === 'payload' && object.type === 'lifecycle' && object.event === 'native_observation') {
           output[key] = redactNativeObservation(parseNativeJournalObservation(nested));
+          continue;
+        }
+        if (key === 'payload' && object.type === 'lifecycle' && object.event === 'native_claude_process') {
+          output[key] = sanitizeClaudeProcessPayload(nested);
           continue;
         }
         if (key === 'payload' && object.type === 'lifecycle' && object.event === 'native_startup') {

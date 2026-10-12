@@ -3,9 +3,10 @@ import {constants} from 'node:fs';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {fileURLToPath,pathToFileURL} from 'node:url';
+import {createRequire} from 'node:module';
 import {Schema} from 'effect';
 import {ConfigCompaction} from '@opencode/schema/config/compaction';
-import {parseConfigJsonc} from '../../packages/web/server/lib/opencode/jsonc-config.js';
+import {parseConfigJsonc,InvalidJsoncError} from '../../packages/web/server/lib/opencode/jsonc-config.js';
 import {translateNativeConfiguration} from '../../packages/web/server/lib/opencode/runtime-host/native-configuration-data.js';
 import {defaultNativeRegistrations} from '../../packages/web/server/lib/opencode/runtime-host/native-default-bundle.js';
 import {verifyNativeRuntimeArtifacts} from '../../packages/web/server/lib/opencode/runtime-host/native-artifacts.js';
@@ -15,10 +16,11 @@ export const qaRepository=fileURLToPath(new URL('../../',import.meta.url)).repla
 export const qaCache=path.join(qaRepository,'.cache');
 export const qaHash=bytes=>createHash('sha256').update(bytes).digest('hex');
 const fail=code=>Object.assign(new Error(code),{code});
+const {parse:parseJsonc,stripComments}=createRequire(new URL('../../packages/web/package.json',import.meta.url))('jsonc-parser');
 const inside=(root,file)=>file.startsWith(root+path.sep);
 const relativePath=value=>typeof value==='string'&&value&&!path.isAbsolute(value)&&!value.split(/[\\/]/).some(part=>!part||part==='.'||part==='..');
 const omitted=new Set(['auth','credentials','credential','apiKey','api_key','accessToken','access_token','refreshToken','refresh_token','oauthToken','password','clientSecret','client_secret','sessionToken','usageSessionToken','managedRemoteTunnelToken','managedRemoteTunnelPresetTokens','keychainService','claudeConfigDir','activeConnector','key','token','refresh','access','secret','authorization','Authorization','cookie','Cookie','headers','httpHeaders','env','environment']);
-const eligible=file=>/^(opencode\/(?:agent|agents|command|commands|prompts|skill|skills)\/|home\/(?:\.agents\/skills|\.opencode\/(?:skill|skills))\/)/.test(file)
+export const isQaLiveSetupFile=file=>/^(opencode\/(?:agent|agents|command|commands|prompts|skill|skills)\/|home\/(?:\.agents\/skills|\.opencode\/(?:skill|skills))\/)/.test(file)
   ||['opencode/.openchamber/config.json','opencode/config.json','opencode/opencode.json','opencode/opencode.jsonc','opencode/oh-my-opencode-slim.json','opencode/oh-my-opencode-slim.jsonc','opencode/AGENTS.md','web-config/settings.json'].includes(file);
 
 export async function assertQaPrivateDirectory(directory){
@@ -50,6 +52,23 @@ export function removeQaLiveCredentials(value){
   if(Array.isArray(value))return value.map(removeQaLiveCredentials);
   if(value!==null&&typeof value==='object')return Object.fromEntries(Object.entries(value).filter(([key])=>!omitted.has(key)).map(([key,item])=>[key,removeQaLiveCredentials(item)]));
   return value;
+}
+
+export function projectQaLiveSetupFile(file,bytes){
+  if(!/\.jsonc?$/.test(file))return {bytes,disabledMcpEntries:0};
+  const source=bytes.toString('utf8'),diagnostics=[];
+  const config=/^opencode\/(?:\.openchamber\/config|config|opencode|oh-my-opencode-slim)\.jsonc?$/.test(file)||file==='web-config/settings.json';
+  const parsed=config?parseConfigJsonc(source,file):stripComments(source).trim()?parseJsonc(source,diagnostics,{allowTrailingComma:true}):{};
+  if(diagnostics.length)throw new InvalidJsoncError(file,diagnostics);
+  const value=removeQaLiveCredentials(parsed);let disabledMcpEntries=0;
+  if(file==='web-config/settings.json')for(const key of ['projects','approvedDirectories','lastDirectory','activeProjectId','selectedSessionId','selectedSessionID','sessions','drafts','tasks','desktopHosts','desktopSshInstances'])delete value[key];
+  if(value?.mcp){
+    if(typeof value.mcp!=='object'||Array.isArray(value.mcp))throw fail('qa_live_mirror_mcp_invalid');
+    for(const entry of Object.values(value.mcp)){
+      if(!entry||typeof entry!=='object'||Array.isArray(entry))throw fail('qa_live_mirror_mcp_invalid');entry.enabled=false;disabledMcpEntries++;
+    }
+  }
+  return {bytes:Buffer.from(JSON.stringify(value,null,2)+'\n'),disabledMcpEntries};
 }
 
 export function parseQaSavedGraph(graph){
@@ -102,20 +121,10 @@ export async function prepareLiveSetupMirror({inputFile,inputSha256,graphFile,gr
   try{
     for(const row of rows){
       if(!relativePath(row.path)||seen.has(row.path)||!/^[a-f0-9]{64}$/.test(row.sha256??'')||Object.keys(row).some(key=>!['path','sha256'].includes(key)))throw fail('qa_live_mirror_manifest_invalid');
-      seen.add(row.path);if(!eligible(row.path))continue;
+      seen.add(row.path);if(!isQaLiveSetupFile(row.path))continue;
       const bytes=await readQaPinnedFile(path.join(source,row.path),row.sha256);total+=bytes.length;if(total>16*1024*1024)throw fail('qa_live_mirror_size_limit');
-      let projected=bytes;
-      if(/\.jsonc?$/.test(row.path)){
-        const value=removeQaLiveCredentials(parseConfigJsonc(bytes.toString('utf8')));
-        if(row.path==='web-config/settings.json')for(const key of ['projects','approvedDirectories','lastDirectory','activeProjectId','selectedSessionId','selectedSessionID','sessions','drafts','tasks','desktopHosts','desktopSshInstances'])delete value[key];
-        if(value.mcp){
-          if(typeof value.mcp!=='object'||Array.isArray(value.mcp))throw fail('qa_live_mirror_mcp_invalid');
-          for(const entry of Object.values(value.mcp)){
-            if(!entry||typeof entry!=='object'||Array.isArray(entry))throw fail('qa_live_mirror_mcp_invalid');entry.enabled=false;disabledMcpEntries++;
-          }
-        }
-        projected=Buffer.from(JSON.stringify(value,null,2)+'\n');
-      }
+      const projection=projectQaLiveSetupFile(row.path,bytes),projected=projection.bytes;
+      disabledMcpEntries+=projection.disabledMcpEntries;
       records.push({path:row.path,sha256:await write(row.path,projected),sourceSha256:row.sha256,credentialProjection:!bytes.equals(projected)});
     }
     for(const directory of ['home','opencode','web-config'])await fs.mkdir(path.join(sourceHome,directory),{recursive:true,mode:0o700});

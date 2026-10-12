@@ -19,12 +19,13 @@ function parseStatus(value: unknown): BundleStatus {
 }
 
 /** Shared setup control: reading availability never selects a runtime. */
-export function BundledRuntimeUpdate() {
+export function BundledRuntimeUpdate({ refreshKey = 0, disabled = false, onBusyChange }: { refreshKey?: number; disabled?: boolean; onBusyChange?: (busy: boolean) => void } = {}) {
   const { t } = useI18n(), principal = useAuthPrincipal();
   const administrator = principal.role === 'admin' && principal.scope !== 'tunnel-bot';
   const [status, setStatus] = React.useState<BundleStatus | null>(null);
   const [busy, setBusy] = React.useState(false), [failed, setFailed] = React.useState(false);
   const active = React.useRef<AbortController | null>(null);
+  React.useEffect(() => { onBusyChange?.(busy); }, [busy, onBusyChange]);
   const refresh = async () => {
     const controller = active.current; if (!controller || controller.signal.aborted || busy) return;
     setBusy(true); setFailed(false);
@@ -43,9 +44,9 @@ export function BundledRuntimeUpdate() {
       const data = parseStatus(await response.json()); if (!controller.signal.aborted) setStatus(data);
     }).catch(() => { if (!controller.signal.aborted) setFailed(true); });
     return () => { controller.abort(); if (active.current === controller) active.current = null; };
-  }, [administrator, principal.id]);
+  }, [administrator, principal.id, refreshKey]);
   const transition = async (action: 'upgrade' | 'rollback') => {
-    if (!status || busy || !(action === 'upgrade' ? status.updateAvailable : status.rollbackAvailable)) return;
+    if (!status || busy || disabled || !(action === 'upgrade' ? status.updateAvailable : status.rollbackAvailable)) return;
     const signal = active.current?.signal; if (!signal || signal.aborted) return;
     setBusy(true); setFailed(false);
     try {
@@ -66,10 +67,10 @@ export function BundledRuntimeUpdate() {
     <p className="typography-ui-label">{t(status?.held ? 'settings.providers.runtimeUpdate.heldTitle' : 'settings.providers.runtimeUpdate.title')}</p>
     <p className="typography-meta text-muted-foreground">{t(description)}</p>
     {status?.held && status.reason ? <p className="typography-meta text-muted-foreground">{t('settings.providers.runtimeUpdate.heldReason', { reason: status.reason })}</p> : null}
-    {status?.updateAvailable ? <Button size="xs" variant="outline" disabled={busy} onClick={() => void transition('upgrade')}>{t('settings.providers.runtimeUpdate.apply')}</Button> : null}
-    {status?.rollbackAvailable ? <Button size="xs" variant="outline" disabled={busy} onClick={() => void transition('rollback')}>{t('settings.providers.runtimeUpdate.retryRollback')}</Button> : null}
+    {status?.updateAvailable ? <Button size="xs" variant="outline" disabled={busy || disabled} onClick={() => void transition('upgrade')}>{t('settings.providers.runtimeUpdate.apply')}</Button> : null}
+    {status?.rollbackAvailable ? <Button size="xs" variant="outline" disabled={busy || disabled} onClick={() => void transition('rollback')}>{t('settings.providers.runtimeUpdate.retryRollback')}</Button> : null}
     {status?.restartRequired ? <Button size="xs" variant="outline" onClick={() => window.location.reload()}>{t('settings.providers.runtimeUpdate.reload')}</Button> : null}
-    {failed || status?.held && !status.rollbackAvailable && !status.restartRequired ? <Button size="xs" variant="ghost" disabled={busy} onClick={() => void refresh()}>{t('settings.providers.page.actions.refresh')}</Button> : null}
+    {failed || status?.held && !status.rollbackAvailable && !status.restartRequired ? <Button size="xs" variant="ghost" disabled={busy || disabled} onClick={() => void refresh()}>{t('settings.providers.page.actions.refresh')}</Button> : null}
     {failed ? <p role="alert" className="typography-meta text-[var(--status-error)]">{t('settings.providers.runtimeUpdate.failed')}</p> : null}
   </section>;
 }

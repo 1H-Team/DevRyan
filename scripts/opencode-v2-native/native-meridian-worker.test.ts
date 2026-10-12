@@ -1,3 +1,7 @@
+import {EventEmitter} from 'node:events';
+import {PassThrough} from 'node:stream';
+import {createClaudeTransportChannel} from '../../packages/web/server/lib/opencode/runtime-host/native-claude-transport-channel.js';
+import type {ClaudeTransportRequest} from '../../packages/web/server/lib/opencode/runtime-host/native-claude-transport-protocol.js';
 import {expect,test} from 'bun:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -13,6 +17,27 @@ const fixture=async()=>{
   const saved=Object.fromEntries([...Object.keys(environment),'MERIDIAN_HOST','CLAUDE_PROXY_HOST','MERIDIAN_PASSTHROUGH','MERIDIAN_CLAUDE_PATH','DEVRYAN_EXECUTION_BOUNDARY','DEVRYAN_PROVIDER_TRANSPORT','DEVRYAN_PROVIDER_AUTHORIZATION'].map(name=>[name,process.env[name]]));Object.assign(process.env,environment);
   return {boot:{protocol:1 as const,type:'provider-boot' as const,provider:'anthropic' as const,requestAuthorization:'1'.repeat(64),instanceID:randomUUID(),buildId:'a'.repeat(64),globals,profiles:[],assets:{claude:{path:path.resolve(import.meta.dirname,'../../packages/web/runtime/reviewed-inputs/claude-1.8.0/assets',REVIEWED_CLAUDE_ASSETS.claude.path),sha256:REVIEWED_CLAUDE_ASSETS.claude.sha256},libsql:{path:path.resolve(import.meta.dirname,'../../packages/web/runtime/reviewed-inputs/claude-1.8.0/assets',REVIEWED_CLAUDE_ASSETS.libsql.path),sha256:REVIEWED_CLAUDE_ASSETS.libsql.sha256}},transport:{launcher:path.resolve(import.meta.dirname,'../../packages/web/runtime/darwin-arm64/DevRyan-execution-darwin-arm64'),storage:globals.state,directories:[globals.repos]}},async cleanup(){for(const [name,value] of Object.entries(saved)){if(value===undefined)delete process.env[name];else process.env[name]=value;}await fs.rm(root,{recursive:true,force:true});}};
 };
+test('the reviewed spawn hook brokers only live exact scope and finite SDK semantics without forwarding environment',async()=>{
+ const owned=await fixture(),frames:ClaudeTransportRequest[]=[],transport=createClaudeTransportChannel(frame=>frames.push(frame));
+ try{
+  const worker=await startNativeMeridianWorker(owned.boot,{buildId:owned.boot.buildId,transport,startup:{async startReviewedProxy(){return {port:3456,async close(){}};},async checkReviewedProxy(){return {ok:true,version:'1.62.6'};}}});
+  const binding={attemptID:'a'.repeat(64),sessionID:'ses_fixture',directory:owned.boot.globals.repos};
+  await worker.command({protocol:1,id:'admit',action:'authorize-attempt',...binding});
+  const spawn=Reflect.get(globalThis,'__DEVRYAN_CLAUDE_TRANSPORT_SPAWN');
+  const abort=new AbortController(),input={command:owned.boot.assets.claude.path,cwd:binding.directory,args:['--model','opus','--effort','medium'],signal:abort.signal,env:{ANTHROPIC_DEFAULT_OPUS_MODEL:'claude-opus-5-5',ENABLE_TOOL_SEARCH:'true',CLAUDE_CODE_OAUTH_TOKEN:'synthetic-private',HOME:'/foreign'}};
+  const raw=JSON.stringify({...binding,profileID:'default'}),child=spawn(input,raw);child.on('error',()=>{});
+  expect(frames[0]).toMatchObject({action:'start',...binding,profileID:'default',modelPins:{opus:'claude-opus-5-5'},toolSearch:true,args:input.args});
+  expect(JSON.stringify(frames)).not.toContain('synthetic-private');expect(JSON.stringify(frames)).not.toContain('/foreign');
+  for(const changed of [{command:'/bin/sh'},{cwd:owned.boot.globals.home}])expect(()=>spawn({...input,...changed},raw)).toThrow('transport_invalid');
+  expect(()=>spawn(input,JSON.stringify({...binding,profileID:'unowned'}))).toThrow('transport_invalid');
+  const id=frames[0]!.id;transport.accept({protocol:1,type:'claude-transport-reply',id,attemptID:binding.attemptID,action:'started',pid:123});
+  let released=false;const releasing=worker.command({protocol:1,id:'release',action:'release-attempt',...binding}).then(()=>released=true);
+  await Promise.resolve();expect(released).toBe(false);expect(frames.at(-1)!.action).toBe('cancel');expect(()=>spawn(input,raw)).toThrow('attempt_invalid');
+  transport.accept({protocol:1,type:'claude-transport-reply',id,attemptID:binding.attemptID,action:'settled',receipt:{terminated:true,confined:true,cancelled:true,exitCode:137}});await releasing;expect(released).toBe(true);
+  const frameCount=frames.length;abort.abort();expect(frames.length).toBe(frameCount);
+  await worker.close();expect(Reflect.get(globalThis,'__DEVRYAN_CLAUDE_TRANSPORT_SPAWN')).toBeUndefined();await transport.close();
+ }finally{await owned.cleanup();}
+});
 test('provider worker protocol rejects foreign bind, unknown controls, and duplicate profiles',async()=>{
   const owned=await fixture();try{
     expect(parseProviderBoot(owned.boot).globals).toEqual(owned.boot.globals);
@@ -178,5 +203,25 @@ test('marked access-only profiles use original selected-account IPC while legacy
    expect(await resolve(request,'legacy','request')).toBeUndefined();expect(reads).toBe(0);
    await expect(resolve(request,'marked','request')).rejects.toThrow('claude_credentials_expired');expect(reads).toBe(1);
   }finally{await worker.close();}
+ }finally{await owned.cleanup();}
+});
+
+test('compiled provider observation hooks bind finite child receipts to the exact admitted request and retire on close',async()=>{
+ const owned=await fixture(),receipts:unknown[]=[];
+ try{
+  const worker=await startNativeMeridianWorker(owned.boot,{buildId:owned.boot.buildId,onDiagnostic:value=>receipts.push(value),startup:{
+   async startReviewedProxy(){return {port:3456,async close(){}};},async checkReviewedProxy(){return {ok:true,version:'1.62.6'};}}});
+  const attempt={attemptID:'a'.repeat(64),sessionID:'ses_diagnostic',directory:owned.boot.globals.repos};
+  await worker.command({protocol:1,id:'authorize-diagnostic',action:'authorize-attempt',...attempt});
+  const request=new Request('http://127.0.0.1:3456/v1/messages',{method:'POST',headers:{authorization:'Bearer '+owned.boot.requestAuthorization,
+   'x-devryan-provider-attempt':attempt.attemptID,'x-opencode-session':attempt.sessionID,'x-devryan-directory':encodeURIComponent(attempt.directory),'x-opencode-directory':encodeURIComponent(attempt.directory)}});
+  const binding:unknown=Reflect.get(globalThis,'__DEVRYAN_CLAUDE_DIAGNOSTIC_BINDING')(request);expect(binding).toEqual(attempt);
+  const child=Object.assign(new EventEmitter(),{stderr:new PassThrough()});
+  Reflect.get(globalThis,'__DEVRYAN_CLAUDE_DIAGNOSTIC_SPAWN')(child,JSON.stringify(binding));
+  child.stderr.write('Unknown option --private-secret');child.emit('close',1,null);
+  expect(receipts).toEqual([{protocol:1,type:'claude-process-diagnostic',instanceID:owned.boot.instanceID,...attempt,
+   receipt:{code:1,signalPresent:false,stderrBytes:31,scannedBytes:31,truncated:false,clues:['unsupported_option']}}]);
+  expect(JSON.stringify(receipts)).not.toContain('private-secret');
+  await worker.close();expect(Reflect.get(globalThis,'__DEVRYAN_CLAUDE_DIAGNOSTIC_SPAWN')).toBeUndefined();expect(Reflect.get(globalThis,'__DEVRYAN_CLAUDE_DIAGNOSTIC_BINDING')).toBeUndefined();
  }finally{await owned.cleanup();}
 });

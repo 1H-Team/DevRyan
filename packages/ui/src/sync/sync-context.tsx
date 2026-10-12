@@ -69,6 +69,7 @@ import {
   unwrapSdkResult,
 } from "./reconnect-recovery"
 import { stopStalledProviderAndOfferRecovery } from "./provider-stall-recovery"
+import { createProviderCatalogRecovery } from "./provider-catalog-recovery"
 import { hasMessageRecordInfo, unwrapMessageRecordsResult } from "./message-fetch"
 import { messagesBefore, sortMessagesChronologically } from "./message-order"
 import { useUserMessageHistorySnapshot } from "./user-message-history"
@@ -3515,6 +3516,7 @@ export function SyncProvider(props: {
     [childStores, messageLoader, props.sdk, props.directory, resyncSession],
   )
 
+  const startupInitialized = useConfigStore((state) => state.isInitialized)
   const cancelDirectoryBootstrapRef = useRef<(directory: string) => void>(() => {})
 
   // Configure child store manager
@@ -3530,7 +3532,7 @@ export function SyncProvider(props: {
 
     childStores.configure({
       onBootstrap: (directory) => {
-        if (bootingDirs.has(directory)) return
+        if (!useConfigStore.getState().isInitialized || bootingDirs.has(directory)) return
         cancelBootstrap(directory)
         const bootstrapToken = new AbortController()
         bootstrapOwners.set(directory, bootstrapToken)
@@ -3655,13 +3657,17 @@ export function SyncProvider(props: {
     return () => {
       for (const directory of bootstrapOwners.keys()) cancelBootstrap(directory)
     }
-  }, [childStores, messageLoader, props.sdk, routingIndex])
+  }, [childStores, messageLoader, props.sdk, routingIndex, startupInitialized])
 
   // Bootstrap global state — set bootingRoot/bootedAt to suppress
   // redundant refresh events during startup. A bumped epoch (startup Retry)
   // reruns it after a non-retryable init failure.
   const globalBootstrapEpoch = useGlobalSyncStore((state) => state.bootstrapEpoch)
   useEffect(() => {
+    if (!startupInitialized) return
+    const controller = new AbortController()
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(120_000)])
+    const deadline = performance.now() + 120_000
     let active = true
     let retryTimer: ReturnType<typeof setTimeout> | undefined
     let retryAttempt = 0
@@ -3670,12 +3676,17 @@ export function SyncProvider(props: {
 
     const runGlobalBootstrap = () => {
       if (!active) return
-      void bootstrapGlobal(props.sdk, globalActions.set)
+      void bootstrapGlobal(props.sdk, globalActions.set, signal)
         .then((result) => {
           if (!active) return
           if (result.ready || !result.retryable) {
             bootedAt = Date.now()
             bootingRoot = false
+            return
+          }
+          if (performance.now() >= deadline) {
+            bootingRoot = false
+            globalActions.set({ ready: true, error: { type: "init", message: "Directory preparation timed out. Retry to reconnect." } })
             return
           }
           const delay = Math.min(
@@ -3698,13 +3709,14 @@ export function SyncProvider(props: {
 
     return () => {
       active = false
+      controller.abort()
       if (retryTimer) clearTimeout(retryTimer)
       if (bootingRoot) {
         bootedAt = Date.now()
         bootingRoot = false
       }
     }
-  }, [globalBootstrapEpoch, props.sdk])
+  }, [globalBootstrapEpoch, props.sdk, startupInitialized])
 
   // A directory bootstrap that failed while OpenCode was down stays partial.
   // The same startup Retry reruns it for the active directories.
@@ -3720,8 +3732,7 @@ export function SyncProvider(props: {
     }
   }, [childStores, globalBootstrapEpoch])
 
-  // Event pipeline — created once per mount. No class, no start/stop.
-  // Abort controller owned by the pipeline closure. Cleanup aborts + flushes.
+  // Startup Retry replaces the stream; cleanup aborts and fences late frames.
   useEffect(() => {
     const reconnectMaterializing = new Set<string>()
     const activeSessionRecoveriesInFlight = new Set<string>()
@@ -3957,6 +3968,13 @@ export function SyncProvider(props: {
       imagesSkipped: (eventID) => toast.warning("Images skipped", { id: eventID, description: IMAGES_SKIPPED_MESSAGE, duration: 10000 }),
       openBlocked: (eventID, retry) => toast.info("Interview ready", { id: eventID, description: "Open the interview in your browser.", action: { label: "Open interview", onClick: retry } }),
     })
+    const providerCatalogRecovery = createProviderCatalogRecovery({
+      directory: () => {
+        const key = useConfigStore.getState().activeDirectoryKey
+        return key === '__global__' ? '' : key
+      },
+      loadProviders: options => useConfigStore.getState().loadProviders(options),
+    })
     const { cleanup: cleanupPipeline, releaseDirectory: releasePipelineDirectory } = createEventPipeline({
       sdk: props.sdk,
       transport: messageStreamTransport,
@@ -3973,6 +3991,7 @@ export function SyncProvider(props: {
         useManagedOrchestrationStore.getState().ingestEvent(payload)
       },
       onIntegrationEvent: (directory, payload) => { integrationUI.handle(directory, payload) },
+      onProviderCatalogEvent: (directory, payload) => { providerCatalogRecovery.handle(directory, payload) },
       onUserNotificationEvent: (payload) => {
         handleUserNotificationEvent(payload)
       },
@@ -3983,6 +4002,7 @@ export function SyncProvider(props: {
         triggerRelevantDirectoryRecovery()
         void useManagedOrchestrationStore.getState().loadSnapshot()
       },
+      onSubscriptionReady: (ready) => { useGlobalSyncStore.setState({ eventStreamReady: ready }) },
       onDisconnect: (reason) => {
         invalidateRuntimeCapabilities()
         applyEventPipelineConnectionEvent({ type: "disconnected", reason })
@@ -4005,7 +4025,7 @@ export function SyncProvider(props: {
         void useManagedOrchestrationStore.getState().loadSnapshot()
       },
     })
-    const cleanup = () => { integrationUI.dispose(); cleanupPipeline() }
+    const cleanup = () => { providerCatalogRecovery.dispose(); integrationUI.dispose(); cleanupPipeline() }
     const releaseDirectory = (directory: string) => { integrationUI.releaseDirectory(directory); releasePipelineDirectory(directory) }
     releaseEventPipelineDirectoryRef.current = releaseDirectory
     return () => {
@@ -4021,7 +4041,7 @@ export function SyncProvider(props: {
       }
       cleanup()
     }
-  }, [props.sdk, childStores, messageLoader, routingIndex, messageStreamTransport, resyncSession])
+  }, [props.sdk, childStores, messageLoader, routingIndex, messageStreamTransport, resyncSession, globalBootstrapEpoch])
 
   // Ensure current directory's child store exists
   useEffect(() => {

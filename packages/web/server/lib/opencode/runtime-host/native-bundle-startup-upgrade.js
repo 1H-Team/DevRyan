@@ -4,13 +4,15 @@ import { createHash, randomBytes } from 'node:crypto';
 import { createRuntimeBundleLifecycle, nativeUpgradeBundleID } from './runtime-bundle-lifecycle.js';
 import { readRuntimeBundleBinding } from './runtime-bundle-binding.js';
 import { recordStartupBundleUpgradeFailure } from './bundle-startup-upgrade-status.js';
+import { artifactDiagnostic } from '@openchamber/shared-runtime/startup-diagnostics.js';
+import { readNativeRuntimeManifest } from './native-artifacts.js';
 import { isProcessRunning, readManagedOpenCodeRegistry, readProcessStartTime,
   reapOrphanedManagedOpenCodeProcesses } from '../managed-process-registry.js';
 import { resolveQaTargetOpenCodeVersion } from '../version-policy.js';
 
 const fail = code => Object.assign(new Error(code), { code, status: 503 });
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
-const finiteCode = error => /^bundle_[a-z0-9_]{1,100}$/.test(error?.code ?? '') ? error.code : 'bundle_startup_upgrade_failed';
+const finiteCode = error => error?.code === 'native_runtime_artifacts_unverified' || /^bundle_[a-z0-9_]{1,100}$/.test(error?.code ?? '') ? error.code : 'bundle_startup_upgrade_failed';
 const exists = async file => {
   try { await fs.lstat(file); return true; }
   catch (error) { if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return false; throw error; }
@@ -25,16 +27,9 @@ const newer = (left, right) => {
 
 /** Reads only the version and digest that decide whether to attempt the
  * upgrade. The lifecycle verifies both artifact sets before using either. */
-const readManifest = async file => {
-  try {
-    const stat = await fs.lstat(file);
-    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 4 * 1024 * 1024) return null;
-    const bytes = await fs.readFile(file), manifest = JSON.parse(bytes.toString('utf8'));
-    return { version: typeof manifest?.opencodeVersion === 'string' ? manifest.opencodeVersion : null, sha256: hash(bytes) };
-  } catch (error) {
-    if (error.code === 'ENOENT' || error instanceof SyntaxError) return null;
-    throw error;
-  }
+const readManifest = async (file, purpose = 'current') => {
+  const { bytes, manifest } = await readNativeRuntimeManifest(file, purpose);
+  return { version: typeof manifest?.opencodeVersion === 'string' ? manifest.opencodeVersion : null, sha256: hash(bytes) };
 };
 
 const registryOptions = launch => ({ registryPath: path.join(launch.global.state, 'managed-opencode-processes.json') });
@@ -80,13 +75,15 @@ const sweepUnsealedCandidate = async (controlRoot, bundleID) => {
 export async function upgradeSelectedNativeBundleAtStartup({ controlRoot, env = process.env, artifactDirectory,
   verifyArtifacts, credentialProcess, privatePersistence = {}, createLifecycle = createRuntimeBundleLifecycle, log = console }) {
   let upgradeStartedAt;
-  const refused = code => {
-    recordStartupBundleUpgradeFailure(code);
+  recordStartupBundleUpgradeFailure(null);
+  const refused = (code, error) => {
+    recordStartupBundleUpgradeFailure(code, error);
+    const diagnostic = artifactDiagnostic(error);
     log.warn?.(`[runtime-bundle] startup upgrade not applied: ${code}`);
     if (upgradeStartedAt !== undefined) log.warn?.('[runtime-bundle] startup phase', {
-      phase: 'bundle_upgrade', outcome: 'failed', elapsedMs: Date.now() - upgradeStartedAt, code,
+      phase: 'bundle_upgrade', outcome: 'failed', elapsedMs: Date.now() - upgradeStartedAt, code, ...(diagnostic ? { diagnostic } : {}),
     });
-    return { status: 'failed', code };
+    return { status: 'failed', code, ...(diagnostic ? { diagnostic } : {}) };
   };
   let expected;
   try { expected = resolveQaTargetOpenCodeVersion(env).version; } catch { return { status: 'skipped' }; }
@@ -94,7 +91,7 @@ export async function upgradeSelectedNativeBundleAtStartup({ controlRoot, env = 
     const binding = readRuntimeBundleBinding({ DEVRYAN_RUNTIME_BUNDLE_ROOT: controlRoot }, { allowHeldInspection: true });
     if (binding.admission === 'held' || binding.selection.reconciliationRequired) return { status: 'held' };
     const launch = binding.descriptor.launch;
-    const selected = await readManifest(launch.artifactManifestPath);
+    const selected = await readManifest(launch.artifactManifestPath, 'bundle-source');
     if (selected?.version === expected && binding.selection.transition === 'rollback') return { status: 'current' };
     const shipped = await readManifest(path.join(artifactDirectory, 'native-bundle.json'));
     if (selected?.version === expected && selected.sha256 === shipped?.sha256) return { status: 'current' };
@@ -115,6 +112,6 @@ export async function upgradeSelectedNativeBundleAtStartup({ controlRoot, env = 
     log.info?.('[runtime-bundle] startup phase', { phase: 'bundle_upgrade', outcome: 'completed', elapsedMs: Date.now() - upgradeStartedAt });
     return { status: 'upgraded', revision: result.revision, from: selected?.version ?? null, to: shipped.version };
   } catch (error) {
-    return refused(finiteCode(error));
+    return refused(finiteCode(error), error);
   }
 }

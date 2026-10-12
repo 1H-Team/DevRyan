@@ -208,6 +208,15 @@ test('home shim affects only its child and leaves HOME unchanged', async () => {
             `await import(${JSON.stringify(new URL('./isolated-home.mjs', import.meta.url).href)}); const os = await import('node:os'); console.log(JSON.stringify({home:os.homedir(),environment:process.env.HOME}));`],
         { env: { ...process.env, HOME: scratch, DEVRYAN_QA_HOME: home, DEVRYAN_EXECUTION_WORKER: '1' } });
         assert.deepEqual(JSON.parse(worker.stdout), { home: scratch, environment: scratch });
+        const scopedEnvironment = { ...process.env, HOME: scratch, DEVRYAN_EXECUTION_WORKER: '1' };
+        delete scopedEnvironment.DEVRYAN_QA_HOME;
+        const runScoped = (env) => promisify(execFile)(process.execPath, ['--input-type=module', '--eval',
+            `await import(${JSON.stringify(new URL('./isolated-home.mjs', import.meta.url).href)}); const os = await import('node:os'); console.log(JSON.stringify({home:os.homedir(),environment:process.env.HOME}));`], { env });
+        const scopedWorker = await runScoped(scopedEnvironment);
+        assert.deepEqual(JSON.parse(scopedWorker.stdout), { home: scratch, environment: scratch });
+        await assert.rejects(runScoped({ ...scopedEnvironment, HOME: 'relative' }), /Execution home must be absolute/);
+        await assert.rejects(runScoped({ ...scopedEnvironment, DEVRYAN_EXECUTION_WORKER: undefined }), /QA home must be an absolute owned directory/);
+        await assert.rejects(runScoped({ ...scopedEnvironment, DEVRYAN_EXECUTION_WORKER: undefined, DEVRYAN_QA_HOME: scratch }), /ENOENT/);
         assert.equal(process.env.HOME, originalHome);
     } finally { await rm(home, { recursive: true, force: true }); }
 });

@@ -3387,6 +3387,19 @@ export const createManagedTaskScheduler = (options = {}) => {
         return cloneTask(task);
       });
     },
+    verifyTaskSettlement(taskId, leaseToken) {
+      return runExclusive(() => {
+        const task = tasks.get(taskId);
+        // Cancellation fences new execution immediately, but the same live
+        // attempt still owns private cleanup and its final cancellation write.
+        if (!initialized || shutDown || removalHeld(task)
+          || !task || task.owner !== 'devryan' || !leaseToken || task.leaseToken !== leaseToken
+          || (task.status !== 'starting' && task.status !== 'running')) {
+          throw new ManagedOrchestrationError('native_managed_task_lease_invalid', 'Managed settlement has no current task lease');
+        }
+        return cloneTask(task);
+      });
+    },
     listTasks({ rootSessionId } = {}) {
       return [...tasks.values()]
         .filter((task) => !rootSessionId || task.rootSessionId === rootSessionId)

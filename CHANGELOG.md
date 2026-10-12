@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.8] - 2026-10-12
+
+- Wait for native health and the global event subscription before admitting chat, retry temporary startup failures, preserve setup preferences, and offer sanitized startup diagnostics. Publication now requires startup qualification of the final DMG; implementation checks are recorded in [the startup contract audit](docs/audits/2026-10-12/startup-contract/README.md).
+- Upgrade the reviewed Claude Code runtime to 2.1.280, expose its version and update status in About, and run Claude through the owned SDK transport with explicit cancellation, settlement, and sanitized diagnostics.
+- Recover Cursor model discovery after cold starts, preserve model and effort headers when reopening delegated sessions, and settle cancelled children promptly.
+- Keep skill preparation and completion on stable chat rows, preserve assistant reasoning and text during updates, and tighten orchestration handoff and task removal behavior.
+- Isolated live orchestration completion and its limits are recorded in [the final agent QA record](docs/audits/2026-10-12/live-agent-qa-final.md); earlier failures and repairs are recorded in [the investigation](docs/audits/2026-10-11/live-agent-qa-2309.md).
+- Release qualification and publication are tracked in [the v2.0.8 release record](docs/audits/2026-10-12/release-2.0.8/README.md).
+- Replacement preflight, including the initial validation failure and successful retries, is recorded in [the replacement v2.0.8 audit](docs/audits/2026-10-12/rerelease-2.0.8/README.md).
+
 - Fix startup failing with `bundle_execution_unsettled` after a managed task or Council call timed out or was stopped before its ledger lease settled. Such calls now cancel their own lease when completion is refused, record their owner for recovery, and startup settles abandoned control leases of the selected bundle before verification while process leases keep their termination checks. Evidence is in [the startup lease audit](docs/audits/2026-10-11/bundle-execution-unsettled/README.md).
 
 ## [2.0.7] - 2026-10-11

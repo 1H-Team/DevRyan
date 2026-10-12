@@ -53,7 +53,7 @@ export interface RuntimeBundleStoreOptions {
   readonly withQuiescedSource: <A>(source: RuntimeBundleSource, action: (checkpoint: RuntimeBundleCheckpoint,scope?:RuntimeBundleCheckpointScope) => Promise<A>) => Promise<A>;
   readonly runMigration: (request: MigrationRequest) => Promise<MigrationReceipt>;
   /** Constructor-owned verification result; new V2 clones require its compiled capability. Void remains valid only for non-clone fixture paths. */
-  readonly verifyArtifacts?: (input: { readonly generation: 2; readonly launch: RuntimeBundleArtifacts }) => Promise<void | { readonly manifest: { readonly compiledContracts?: readonly string[] } }>;
+  readonly verifyArtifacts?: (input: { readonly generation: 2; readonly launch: RuntimeBundleArtifacts; readonly purpose?: 'bundle-source' | 'bundle-rollback' }) => Promise<void | { readonly manifest: { readonly compiledContracts?: readonly string[] } }>;
   readonly verifyV2Compatibility?: (input:{readonly source:RuntimeBundleDescriptor;readonly artifacts:RuntimeBundleArtifacts})=>Promise<{readonly status:'compatible';readonly binding:{readonly protocol:'devryan-v2-clone/1';readonly sourceBundleID:string;readonly sourceManifestSha256:string;readonly targetManifestSha256:string}}|{readonly status:'blocked'}>;
   /** Captured/drained by the original credential owner before source shutdown;
    * private snapshots never enter bundle manifests, only their exact hashes. */
@@ -64,7 +64,7 @@ export interface RuntimeBundleStoreOptions {
 }
 export function createRuntimeBundleStore(options: RuntimeBundleStoreOptions): {
   prepare(input: PrepareRuntimeBundle): Promise<RuntimeBundleDescriptor>;
-  verify(input: { readonly bundleID: string; readonly phase: 'prepared' | 'resume' }): Promise<RuntimeBundleVerification>;
+  verify(input: { readonly bundleID: string; readonly phase: 'prepared' | 'resume'; readonly artifactPurpose?: 'bundle-source' | 'bundle-rollback' }): Promise<RuntimeBundleVerification>;
   resume(input:{readonly expectedRevision:number}):Promise<RuntimeBundleSelection>;
   readSelected(): Promise<{ readonly selection: RuntimeBundleSelection; readonly descriptor: RuntimeBundleDescriptor } | null>;
   /** Lifecycle stops/recomposes all owners; this does not open admission. */

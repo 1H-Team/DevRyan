@@ -6,14 +6,15 @@ const object=value=>value!==null&&typeof value==='object'&&!Array.isArray(value)
 const fields=['controllerInstanceID','directory','sessionID','userMessageID','assistantMessageID','agent','modelID','variant'];
 
 /** Private external-Cursor scope. The existing owner still runs and publishes its process. */
-export function createNativeCursorOwner({instanceID,admissionOwner,runtime,controller,isReady,abortAndWait,onStarted,recovery}){
+export function createNativeCursorOwner({instanceID,admissionOwner,runtime,controller,isReady,abortAndWait,onStarted,recovery,recordDiagnostic}){
  const context=new AsyncLocalStorage(),grants=new Map(),records=new Map(),settlements=new Map(),keyReads=new Map();let closing=false,closePromise;
  const readOnlyContext=new AsyncLocalStorage(),readOnlyKeys=new Map(),readOnlyGrants=new Set();
  const live=()=>{if(closing||!isReady()||controller().instanceID!==instanceID)throw fail('native_cursor_owner_expired');};
  const current=()=>{live();const grant=context.getStore();if(!grant||grant.closed||grants.get(grant.scope.sessionID)!==grant)throw fail('native_cursor_grant_required');return grant;};
- const check=async grant=>{
+ const check=async (grant,settlement=false)=>{
   live();if(grant.closed||grants.get(grant.scope.sessionID)!==grant)throw fail('native_cursor_grant_expired');
-  await grant.recheck();live();
+  const recheck=settlement ? grant.recheckSettlement??grant.recheck : grant.recheck;
+  await recheck();live();
   if(grant.execution){
    const lease=await runtime.leaseForCall({directory:grant.scope.directory,sessionID:grant.scope.sessionID,callID:`cursor_${grant.scope.assistantMessageID}`});
    const captured=await runtime.capturedSessionState(grant.scope);
@@ -21,14 +22,14 @@ export function createNativeCursorOwner({instanceID,admissionOwner,runtime,contr
     ||lease.scope.userMessageID!==grant.scope.userMessageID||lease.scope.messageID!==grant.scope.assistantMessageID
     ||!captured.captured||captured.pending||captured.generation!==lease.generation)throw fail('native_cursor_lease_invalid');
   }
-  await grant.recheck();live();
+  await recheck();live();
  };
  const assertRecord=async input=>{
   live();if(!object(input)||Object.keys(input).some(key=>![...fields,'permit','recordFingerprint'].includes(key)))throw fail('native_cursor_record_invalid');
   const entry=records.get(input.permit?.token);
   if(!entry||fingerprint(input.permit)!==fingerprint(entry.payload.permit)||input.recordFingerprint!==entry.fingerprint
     ||fields.some(field=>input[field]!==entry.payload[field]))throw fail('native_cursor_record_scope_invalid');
-  await check(entry.grant);return null;
+  await check(entry.grant,entry.settlement);return null;
  };
  const assertSettlement=async input=>{
   if(!object(input)||Object.keys(input).some(key=>![...fields,'permit'].includes(key)))throw fail('native_cursor_settlement_invalid');
@@ -158,22 +159,43 @@ export function createNativeCursorOwner({instanceID,admissionOwner,runtime,contr
     ||info.agent!==scope.agent||(info.variant||'default')!==(scope.variant||'default')||!Array.isArray(record.parts)
     ||info.role==='user'&&info.id!==scope.userMessageID||info.role==='assistant'&&(info.id!==scope.assistantMessageID||info.parentID!==scope.userMessageID))throw fail('native_cursor_record_scope_invalid');
    const terminal=info.role==='assistant'&&Number.isFinite(info.time?.completed);
+   const startedAt=Date.now(),diagnostic=(phase,error)=>{
+    if(!terminal)return;
+    try{recordDiagnostic?.({type:'lifecycle',event:'cursor_persistence',sessionID,directory,payload:{phase,startedAt,
+      elapsedMs:Math.max(0,Date.now()-startedAt),userMessageID:scope.userMessageID,assistantMessageID:scope.assistantMessageID,
+      ...error?{reason:typeof error.code==='string'&&/^(native_[a-z_]{1,80}|execution_cancelled|execution_reverted)$/.test(error.code)?error.code:'cursor_persistence_failed'}:{}}});}
+    catch{/* Diagnostics cannot change persistence. */}
+   };
+   diagnostic('native_entered');
+   try{
    if(grant.startError?.nativeProcessUnsettled)throw grant.startError;
+   diagnostic('native_start');
    if(grant.started&&!grant.startError)await grant.started.promise;
-   if(terminal&&grant.settlement)await grant.settlement;
-   if(!grant.execution&&info.role==='assistant'&&(record.parts.length||terminal&&!info.error))throw fail('native_cursor_process_required');
-   await check(grant);
+   diagnostic('native_receipt');
+   const outcome=terminal&&grant.settlement ? await grant.settlement : undefined;
+   // Cancellation only saves the final record after the owned process or no-launch cleanup has settled.
+   const settlement=terminal&&info.finish==='cancelled'&&(grant.execution
+    ? outcome?.ok===false&&['execution_cancelled','execution_reverted'].includes(outcome.error?.code)
+    : grant.startError?.code==='execution_cancelled');
+   if(!grant.execution&&info.role==='assistant'&&(record.parts.length||terminal&&!info.error&&!settlement))throw fail('native_cursor_process_required');
+   diagnostic('native_check');
+   await check(grant,settlement);
    if(terminal&&grant.execution){
+    diagnostic('native_lease');
     const lease=await runtime.leaseForCall({directory,sessionID,callID:`cursor_${scope.assistantMessageID}`});
     if(!['published','cancelled'].includes(lease?.state))throw fail('native_cursor_settlement_required');
    }
    const permit={token:randomBytes(32).toString('hex'),sessionID,revision:grant.revision};
    const payload={...scope,accepted:grant.accepted,record:structuredClone(record),permit};
-   const entry={grant,payload,fingerprint:fingerprint(payload.record)};records.set(permit.token,entry);
+   const entry={grant,payload,settlement,fingerprint:fingerprint(payload.record)};records.set(permit.token,entry);
    const work=(async()=>{
+    diagnostic('native_assert');
     await assertRecord({...scope,permit,recordFingerprint:entry.fingerprint});
+    diagnostic('native_call');
     const result=await controller().call({action:'cursor-record-owned',...payload});
-    await check(grant);
+    diagnostic('native_return');
+    diagnostic('native_recheck');
+    await check(grant,settlement);
     if(info.role==='assistant'&&!grant.tracked){
       if(terminal)throw fail('native_cursor_start_required');
       await onStarted(scope,()=>check(grant));grant.tracked=true;
@@ -181,7 +203,8 @@ export function createNativeCursorOwner({instanceID,admissionOwner,runtime,contr
     return result;
    })();
    grant.work.add(work);
-   try{return await work;}finally{records.delete(permit.token);grant.work.delete(work);}
+   try{const result=await work;diagnostic('native_settled');return result;}finally{records.delete(permit.token);grant.work.delete(work);}
+   }catch(error){diagnostic('native_failed',error);throw error;}
   },
   assertRecord,
   assertKey,

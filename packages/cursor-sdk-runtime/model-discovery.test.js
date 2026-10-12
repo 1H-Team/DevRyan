@@ -23,7 +23,7 @@ test('owned catalogs retain saved effort and settle cancellation, deadline and u
   for (const mode of ['success', 'cancel', 'deadline', 'uncertain']) {
     const timedOut = mode === 'deadline';
     const caller = new AbortController(), receipt = Promise.withResolvers(), started = Promise.withResolvers(), stopped = Promise.withResolvers();
-    const inputs = [];
+    const inputs = [], diagnostics = [], catalogEvents = [];
     let cancelled = 0, completed = false;
     const owner = createNativeCursorOwner({ instanceID: 'fixture', isReady: () => true, admissionOwner: {}, runtime: {},
       controller: () => ({ instanceID: 'fixture', call: async ({ action, ...input }) => {
@@ -31,6 +31,8 @@ test('owned catalogs retain saved effort and settle cancellation, deadline and u
         return { key: 'synthetic-owned-key', credentialID: 'fixture-key', expectedFingerprint: 'a'.repeat(64) };
       } }), abortAndWait: async () => {}, onStarted: async () => {} });
     const runtime = createCursorSdkRuntime({ env: {}, nativeWarming: false, nodeBinary: process.execPath,
+      emitEvent: event => catalogEvents.push(event),
+      recordDiagnostic: entry => { diagnostics.push(entry); if (mode === 'success') throw Error('fixture observer failure'); },
       resolveApiKey: scope => owner.resolveApiKey(scope),
       ownedReadOnly: (scope, action) => owner.withReadOnly({ kind: scope.kind, directory: scope.directory },
         { revision: 0, recheck: async () => scope.signal?.throwIfAborted() }, action),
@@ -60,11 +62,16 @@ test('owned catalogs retain saved effort and settle cancellation, deadline and u
       await started.promise;
       if (mode === 'success') {
         expect(completed).toBe(false);
+        expect(catalogEvents).toHaveLength(0);
         receipt.resolve({ confined: true, terminated: true, cancelled: false });
         const provider = await pending;
         expect(provider.models.chosen.variants.high.cursorSdkModel).toEqual({ id: 'chosen', params: [{ id: 'effort', value: 'high' }] });
-        expect(await runtime.validateModelSelection({ dir: '/fixture', modelID: 'chosen', variant: 'high' })).toBe(true);
+        expect(await runtime.validateModelSelection({ directory: '/fixture', modelID: 'chosen', variant: 'high' })).toBe(true);
         expect(inputs).toHaveLength(1); expect(cancelled).toBe(0);
+        expect(diagnostics.slice(0, 4).map(entry => entry.payload.phase)).toEqual(['key_resolved', 'worker_started', 'worker_result', 'settled']);
+        expect(diagnostics[3].payload.outcome).toBe('completed');
+        expect(catalogEvents).toHaveLength(1);
+        expect(catalogEvents[0].properties).toEqual({ providerID: 'cursor-acp', directory: '/fixture', source: 'sdk' });
         continue;
       }
       if (!timedOut) caller.abort(reason);
@@ -78,13 +85,137 @@ test('owned catalogs retain saved effort and settle cancellation, deadline and u
       else if (timedOut) await expect(pending).rejects.toMatchObject({ code: 'native_cursor_catalog_timeout' });
       else await expect(pending).rejects.toBe(reason);
       expect(runtime.getCachedVirtualProvider().models['late-success']).toBeUndefined();
+      expect(catalogEvents).toHaveLength(0);
       expect(runtime.getRuntimeStatus()).toMatchObject({ lastModelRefreshTimedOut: timedOut,
         lastModelRefreshError: timedOut ? 'native_cursor_catalog_timeout' : 'cursor_model_catalog_cancelled' });
+      expect(diagnostics.map(entry => entry.payload.phase)).toEqual(['key_resolved', 'worker_started', 'worker_result', 'settled']);
+      expect(diagnostics.at(-1).payload.outcome).toBe(timedOut ? 'timeout' : 'cancelled');
+      expect(diagnostics.every(entry => entry.type === 'lifecycle' && entry.event === 'cursor_catalog'
+        && Number.isFinite(entry.payload.elapsedMs) && entry.payload.elapsedMs >= 0)).toBe(true);
+      expect(JSON.stringify(diagnostics)).not.toContain('synthetic-owned-key');
     } finally { receipt.resolve({ confined: true, terminated: true, cancelled: true }); await runtime.dispose(); await owner.close(); }
   }
 });
 
 describe('Cursor SDK model discovery', () => {
+  test('scoped adoption notifies once when a global discovery commits before scoped credential resolution', async () => {
+    const listing = Promise.withResolvers(), releaseListing = Promise.withResolvers();
+    const scopedKey = Promise.withResolvers(), releaseScopedKey = Promise.withResolvers();
+    const events = [];
+    let calls = 0, deferScopedKey = true, key = 'owned-fixture';
+    const runtime = createCursorSdkRuntime({ env: {}, nativeWarming: false, modelDiscoveryTtlMs: 60_000,
+      resolveApiKey: async ({ directory }) => {
+        if (directory === '/owned/project' && deferScopedKey) {
+          scopedKey.resolve(); await releaseScopedKey.promise;
+        }
+        return key;
+      },
+      ownedReadOnly: async (_scope, action) => action(),
+      loadSdk: async () => ({ Cursor: { models: { list: async () => {
+        calls++; listing.resolve(); await releaseListing.promise;
+        return [{ id: 'sdk-chosen', displayName: 'Chosen' }];
+      } } } }),
+      emitEvent: event => {
+        expect(runtime.getCachedVirtualProvider().models['sdk-chosen']).toBeDefined();
+        events.push(event);
+      },
+    });
+    try {
+      const global = runtime.refreshVirtualProvider();
+      await listing.promise;
+      const scoped = runtime.refreshVirtualProvider({ directory: '/owned/project' });
+      // The synchronous providers route has already served its startup fallback.
+      expect(runtime.getCachedVirtualProvider().models['sdk-chosen']).toBeUndefined();
+      await scopedKey.promise;
+      releaseListing.resolve(); await global;
+      expect(events.map(event => event.properties.directory)).toEqual(['']);
+      deferScopedKey = false; releaseScopedKey.resolve();
+      expect((await scoped).models['sdk-chosen']).toBeDefined();
+      expect(calls).toBe(1);
+      expect(events.map(event => event.properties.directory)).toEqual(['', '/owned/project']);
+      await runtime.refreshVirtualProvider({ directory: '/owned/project' });
+      await runtime.refreshVirtualProvider();
+      expect(events).toHaveLength(2);
+      await runtime.refreshVirtualProvider({ directory: '/owned/project', force: true });
+      expect(calls).toBe(2); expect(events).toHaveLength(3);
+      // A new account may publish the same IDs, but has a distinct committed generation.
+      key = 'owned-other-fixture';
+      await runtime.refreshVirtualProvider({ directory: '/owned/project' });
+      expect(calls).toBe(3); expect(events).toHaveLength(4);
+      expect(JSON.stringify(events)).not.toContain('fixture');
+    } finally { releaseScopedKey.resolve(); releaseListing.resolve(); await runtime.dispose(); }
+  });
+
+  test('catalog invalidation follows SDK cache commit and excludes cached reads, fallback and failure', async () => {
+    for (const native of [true, false]) {
+      const entered = Promise.withResolvers(), release = Promise.withResolvers(), events = [];
+      let fail = false, calls = 0;
+      const runtime = createCursorSdkRuntime({ nativeWarming: false, modelDiscoveryTtlMs: 60_000,
+        ...(native ? { env: {}, resolveApiKey: async () => 'owned-fixture', ownedReadOnly: async (_scope, action) => action() }
+          : { env: { CURSOR_API_KEY: 'legacy-fixture' }, readAuth: () => ({}) }),
+        loadSdk: async () => ({ Cursor: { models: { list: async () => {
+          calls++; entered.resolve(); await release.promise;
+          if (fail) throw Error('Fixture catalog unavailable');
+          return [{ id: 'sdk-chosen', displayName: 'Chosen' }];
+        } } } }),
+        emitEvent: (event, context) => {
+          events.push({ event, context });
+          expect(runtime.getCachedVirtualProvider().models['sdk-chosen']).toBeDefined();
+        },
+      });
+      try {
+        expect(runtime.getCachedVirtualProvider().models['sdk-chosen']).toBeUndefined();
+        const pending = runtime.refreshVirtualProvider({ directory: '/owned/project' });
+        await entered.promise;
+        expect(events).toHaveLength(0);
+        release.resolve();
+        await pending;
+        expect(events).toEqual([{ event: { type: 'openchamber:provider-catalog',
+          properties: { providerID: 'cursor-acp', directory: '/owned/project', source: 'sdk' } },
+          context: { directory: '/owned/project', eventId: expect.any(String) } }]);
+        await runtime.refreshVirtualProvider({ directory: '/owned/project' });
+        expect(calls).toBe(1); expect(events).toHaveLength(1);
+        fail = true;
+        await runtime.refreshVirtualProvider({ directory: '/owned/project', force: true });
+        expect(calls).toBe(2); expect(events).toHaveLength(1);
+        fail = false;
+        await runtime.refreshVirtualProvider({ directory: '/owned/other', force: true });
+        expect(events).toHaveLength(2);
+        expect(events[1].event.properties.directory).toBe('/owned/other');
+        expect(events[1].context.directory).toBe('/owned/other');
+        await runtime.refreshVirtualProvider({ force: true });
+        expect(events[2].event.properties.directory).toBe('');
+        expect(events[2].context.directory).toBeUndefined();
+        expect(JSON.stringify(events)).not.toContain('fixture');
+        expect(events.every(({ event }) => !('models' in event.properties))).toBe(true);
+      } finally { release.resolve(); await runtime.dispose(); }
+    }
+    const events = [];
+    const fallback = createCursorSdkRuntime({ env: {}, nativeWarming: false, readAuth: () => ({}), emitEvent: event => events.push(event) });
+    try { await fallback.refreshVirtualProvider(); expect(events).toHaveLength(0); }
+    finally { await fallback.dispose(); }
+    const empty = createCursorSdkRuntime({ env: { CURSOR_API_KEY: 'legacy-fixture' }, nativeWarming: false,
+      readAuth: () => ({}), loadSdk: async () => ({ Cursor: { models: { list: async () => [] } } }),
+      emitEvent: event => events.push(event),
+    });
+    try { await empty.refreshVirtualProvider(); expect(events).toHaveLength(0); }
+    finally { await empty.dispose(); }
+  });
+
+  test('catalog invalidation observer failure cannot replace a committed SDK catalog', async () => {
+    let emitted = 0;
+    const runtime = createCursorSdkRuntime({ env: {}, nativeWarming: false,
+      resolveApiKey: async () => 'owned-fixture', ownedReadOnly: async (_scope, action) => action(),
+      loadSdk: async () => ({ Cursor: { models: { list: async () => [{ id: 'sdk-chosen' }] } } }),
+      emitEvent: () => { emitted++; throw Error('Fixture observer unavailable'); },
+    });
+    try {
+      expect((await runtime.refreshVirtualProvider({ directory: '/owned/project' })).models['sdk-chosen']).toBeDefined();
+      expect(runtime.getRuntimeStatus().modelsSource).toBe('sdk');
+      expect(emitted).toBe(1);
+    } finally { await runtime.dispose(); }
+  });
+
   test('native public timeout after an account switch returns declared fallback without prior-account evidence', async () => {
     let key = 'owned-account-a', readSignal;
     const calls = [];
@@ -890,4 +1021,89 @@ test('selection diagnostics expose bounded codes while authority failures retain
       expect(failures).toEqual([{ reason: code === 'native_web_principal_required' ? code : 'cursor_model_catalog_unavailable' }]);
     } finally { await runtime.dispose(); }
   }
+});
+
+
+test('terminal persistence diagnostics locate held ownership without changing busy settlement or exposing content', async () => {
+  const root = path.resolve(import.meta.dir, '../../.cache/v2-validation'); await mkdir(root, { recursive: true });
+  const storageDir = await mkdtemp(path.join(root, 'cursor-terminal-diagnostics-'));
+  const held = Promise.withResolvers(), entered = Promise.withResolvers(), diagnostics = [];
+  const agent = { agentId: 'fixture_agent', send: async () => ({ status: 'finished',
+    wait: async () => ({ status: 'finished', result: 'private provider response' }),
+    async *stream() { yield { type: 'status', status: 'FINISHED' }; } }) };
+  const runtime = createCursorSdkRuntime({ storageDir, env: { CURSOR_API_KEY: 'private fixture key' }, readAuth: () => ({}), writeAuth: () => {},
+    getWorkspaceDiff: async () => '', loadSdk: async () => ({ Cursor: { models: { list: async () => [{ id: 'fixture_model' }] } },
+      Agent: { create: async () => agent, resume: async () => agent } }),
+    recordDiagnostic: entry => { diagnostics.push(entry); throw Error('observer cannot change persistence'); },
+    onPersistRecord: async ({ record }) => { if (record.info.role === 'assistant' && record.info.time.completed) { entered.resolve(); await held.promise; } },
+  });
+  try {
+    await runtime.handlePromptAsync({ sessionID: 'ses_terminal_diagnostic', directory: storageDir, body: {
+      messageID: 'msg_terminal_diagnostic', model: { providerID: 'cursor-acp', modelID: 'fixture_model' }, parts: [{ type: 'text', text: 'private caller prompt' }],
+    } });
+    await entered.promise;
+    expect(runtime.getRuntimeStatus().activeRuns).toBe(0);
+    expect(runtime.getSessionStatus().ses_terminal_diagnostic.type).toBe('busy');
+    expect(diagnostics.map(entry => entry.payload.phase)).toEqual(['sdk_queued', 'sdk_started', 'sdk_owner_started']);
+    held.resolve(); await runtime.abortAndWait('ses_terminal_diagnostic');
+    expect(runtime.getSessionStatus().ses_terminal_diagnostic.type).toBe('idle');
+    expect(diagnostics.map(entry => entry.payload.phase)).toEqual(['sdk_queued', 'sdk_started', 'sdk_owner_started', 'sdk_owner_returned', 'sdk_stored', 'sdk_settled']);
+    for (const entry of diagnostics) {
+      expect(entry).toMatchObject({ type: 'lifecycle', event: 'cursor_persistence', sessionID: 'ses_terminal_diagnostic', directory: storageDir,
+        payload: { userMessageID: 'msg_terminal_diagnostic', assistantMessageID: 'msg_terminal_diagnostic_assistant' } });
+      expect(Object.keys(entry.payload).sort()).toEqual(['assistantMessageID', 'elapsedMs', 'phase', 'startedAt', 'userMessageID']);
+      expect(Number.isFinite(entry.payload.elapsedMs) && entry.payload.elapsedMs >= 0).toBe(true);
+    }
+    expect(JSON.stringify(diagnostics)).not.toMatch(/private|observer/);
+  } finally { held.resolve(); await runtime.dispose(); await rm(storageDir, { recursive: true, force: true }); }
+});
+
+
+test('slow owned persistence coalesces streaming snapshots while preserving tools and the final barrier', async () => {
+  const root = path.resolve(import.meta.dir, '../../.cache/v2-validation'); await mkdir(root, { recursive: true });
+  const storageDir = await mkdtemp(path.join(root, 'cursor-persist-backpressure-'));
+  const ownerEntered = Promise.withResolvers(), ownerRelease = Promise.withResolvers(), providerDone = Promise.withResolvers(), finalQueued = Promise.withResolvers();
+  const saved = []; let inFlightRecord, first = true;
+  const text = Array.from({ length: 30 }, (_, i) => `chunk-${i} `).join('');
+  const agent = { agentId: 'fixture_backpressure', send: async () => ({ status: 'running',
+    wait: async () => { await providerDone.promise; return { status: 'finished', result: text }; },
+    async *stream() {
+      yield { type: 'assistant', message: { content: [{ type: 'text', text: 'chunk-0 ' }] } };
+      await ownerEntered.promise;
+      for (let i = 1; i < 30; i++) yield { type: 'assistant', message: { content: [{ type: 'text', text: `chunk-${i} ` }] } };
+      yield { type: 'tool_call', call_id: 'fixture_read', name: 'read', status: 'running', args: { path: 'fixture.txt' } };
+      yield { type: 'tool_call', call_id: 'fixture_read', name: 'read', status: 'completed', result: 'retained tool output' };
+      providerDone.resolve(); yield { type: 'status', status: 'FINISHED' };
+    },
+  }) };
+  const runtime = createCursorSdkRuntime({ storageDir, env: { CURSOR_API_KEY: 'synthetic key' }, readAuth: () => ({}), writeAuth: () => {},
+    getWorkspaceDiff: async () => '', loadSdk: async () => ({ Cursor: { models: { list: async () => [{ id: 'fixture_model' }] } },
+      Agent: { create: async () => agent, resume: async () => agent } }),
+    recordDiagnostic: entry => { if (entry.event === 'cursor_persistence' && entry.payload.phase === 'sdk_queued') finalQueued.resolve(); },
+    onPersistRecord: async ({ record }) => {
+      if (record.info.role === 'assistant' && record.parts.length && first) {
+        first = false; inFlightRecord = record; ownerEntered.resolve(); await ownerRelease.promise;
+      }
+      saved.push(structuredClone(record));
+    },
+  });
+  try {
+    await runtime.handlePromptAsync({ sessionID: 'ses_backpressure', directory: storageDir, body: {
+      messageID: 'msg_backpressure', model: { providerID: 'cursor-acp', modelID: 'fixture_model' }, parts: [{ type: 'text', text: 'Inspect fixture' }],
+    } });
+    await finalQueued.promise;
+    expect(inFlightRecord.info.time.completed).toBeUndefined();
+    expect(inFlightRecord.parts.map(part => part.text).filter(Boolean).join('')).toBe('chunk-0 ');
+    expect(runtime.getSessionStatus().ses_backpressure.type).toBe('busy');
+    ownerRelease.resolve(); await runtime.abortAndWait('ses_backpressure');
+    const writes = saved.filter(record => record.info.role === 'assistant' && record.parts.length);
+    expect(writes.length).toBeLessThanOrEqual(3);
+    expect(writes.filter(record => record.info.time.completed)).toHaveLength(1);
+    const records = await runtime.getSessionMessages('ses_backpressure');
+    expect(records.map(record => record.info.role)).toEqual(['user', 'assistant']);
+    const final = records[1]; expect(final.info.finish).toBe('stop'); expect(final.info.time.completed).toBeNumber();
+    expect(final.parts.filter(part => part.type === 'text').map(part => part.text).join('')).toBe(text);
+    expect(final.parts.find(part => part.type === 'tool')).toMatchObject({ state: { status: 'completed', output: 'retained tool output' } });
+    expect(runtime.getSessionStatus().ses_backpressure.type).toBe('idle');
+  } finally { ownerRelease.resolve(); providerDone.resolve(); await runtime.abortAndWait('ses_backpressure'); await runtime.dispose(); await rm(storageDir, { recursive: true, force: true }); }
 });

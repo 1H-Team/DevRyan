@@ -4,12 +4,13 @@ import path from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {StringDecoder} from 'node:string_decoder';
 import {prepareSupervisedController} from './native-process.js';
-import {parseProviderBoot,parseProviderBound,parseProviderCommand,parseProviderCredentialRequest,parseProviderCredentialResult,NATIVE_CLAUDE_CREDENTIAL_ERRORS} from './native-provider-worker-protocol.js';
+import {parseProviderBoot,parseProviderBound,parseProviderDiagnostic,parseProviderCommand,parseProviderCredentialRequest,parseProviderCredentialResult,NATIVE_CLAUDE_CREDENTIAL_ERRORS} from './native-provider-worker-protocol.js';
+import {createNativeClaudeTransportHost} from './native-claude-transport-host.js';
 import {startParentDeathWatchdog} from '../parent-death-watchdog.js';
 import {registerManagedOpenCodeProcess,unregisterManagedOpenCodeProcess,reapOrphanedManagedOpenCodeProcesses} from '../managed-process-registry.js';
 const fail=code=>Object.assign(new Error(code),{code,status:503});
 /** Finite private worker commands run under the same accepted launcher and nonce ownership as the controller. */
-export async function createNativeProviderProcess({binary,cwd,environment,boot:input,databasePath,supervisor,timeoutMs=30000,onExit,resolveCredential}){
+export async function createNativeProviderProcess({binary,cwd,environment,boot:input,databasePath,supervisor,timeoutMs=30000,onExit,resolveCredential,onDiagnostic}){
   const boot=parseProviderBoot(input);
   if(!path.isAbsolute(binary??'')||!path.isAbsolute(cwd??'')||!path.isAbsolute(databasePath??'')||!Number.isSafeInteger(timeoutMs)||timeoutMs<1||timeoutMs>300000||!(await fs.stat(binary)).isFile())throw fail('native_provider_launch_invalid');
   const registry={registryPath:path.join(boot.globals.state,'managed-native-provider-processes.json')};
@@ -22,7 +23,12 @@ export async function createNativeProviderProcess({binary,cwd,environment,boot:i
   let resolveBound,rejectBound,resolveExit,rejectExit;
   const binding=new Promise((resolve,reject)=>{resolveBound=resolve;rejectBound=reject;});void binding.catch(()=>{});
   const exited=new Promise((resolve,reject)=>{resolveExit=resolve;rejectExit=reject;});void exited.catch(()=>{});
-  const terminate=()=>{if(!stopped)child.kill('SIGTERM');return exited;};
+  const transports=createNativeClaudeTransportHost({boot,environment,resolveCredential,deniedReadDirectories:supervisor.deniedReadDirectories,
+    send:reply=>new Promise((resolve,reject)=>{if(stopped||fatal){reject(fail('native_provider_owner_expired'));return;}
+      child.stdin.write(JSON.stringify(reply)+'\n',error=>error?reject(error):resolve());})});
+  let transportClose;
+  const closeTransports=()=>transportClose??=transports.close();
+  const terminate=()=>{void closeTransports().catch(()=>{});if(!stopped)child.kill('SIGTERM');return exited;};
   const failed=cause=>{fatal??=cause;credentialAbort.abort(fail('native_provider_owner_expired'));rejectBound(fatal);for(const item of pending.values())item.reject(fatal);pending.clear();void terminate().catch(()=>{});};
   child.on('error',failed);child.stdin.on('error',failed);
   const watchdog=startParentDeathWatchdog({childPid:child.pid,providerInstanceID:boot.instanceID});
@@ -35,14 +41,24 @@ export async function createNativeProviderProcess({binary,cwd,environment,boot:i
     if(receipt.terminated!==true||receipt.confined!==true||receipt.exitCode!==code||typeof receipt.cancelled!=='boolean'||signal!==null)throw fail('native_provider_termination_unconfirmed');
     if(child.pid)unregisterManagedOpenCodeProcess(child.pid,registry);
     await fs.rm(prepared.profile);
+    await closeTransports();
     await Promise.allSettled(credentialWork.values());
     const result={pid:child.pid,instanceID:boot.instanceID,code,signal,receipt:{path:prepared.receiptPath,...receipt},stderrBytes};
     await onExit?.(result);resolveExit(result);
   })().catch(rejectExit);});
   child.stdout.on('data',chunk=>{if(fatal)return;try{
-    buffer+=decoder.write(chunk);if(Buffer.byteLength(buffer)>65536)throw fail('native_provider_protocol_overflow');let newline;
+    buffer+=decoder.write(chunk);let newline;
     while((newline=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,newline);buffer=buffer.slice(newline+1);const reply=JSON.parse(line);
+      if(Buffer.byteLength(line)>(reply.type==='claude-transport'&&reply.action==='start'?1024*1024:65536))throw fail('native_provider_protocol_overflow');
+      if(reply.type==='claude-transport'){
+        if(!bound)throw fail('native_provider_response_uncorrelated');
+        void transports.accept(reply).catch(failed);continue;
+      }
       if(reply.type==='provider-bound'){if(bound)throw fail('native_provider_duplicate_bind');bound=parseProviderBound(reply);if(bound.instanceID!==boot.instanceID||bound.buildId!==boot.buildId)throw fail('native_provider_identity_mismatch');resolveBound(bound);continue;}
+      if(reply.type==='claude-process-diagnostic'){
+        try{const diagnostic=parseProviderDiagnostic(reply);if(bound&&diagnostic.instanceID===boot.instanceID&&boot.transport.directories.includes(diagnostic.directory))onDiagnostic?.(diagnostic);}
+        catch{/* Malformed observations cannot alter provider work. */}continue;
+      }
       if(reply.type==='credential-request'){
         if(!bound||!resolveCredential||credentialWork.size>=64||credentialWork.has(reply.id))throw fail('native_provider_response_uncorrelated');
         const request=parseProviderCredentialRequest(reply);
@@ -56,6 +72,7 @@ export async function createNativeProviderProcess({binary,cwd,environment,boot:i
       if(!bound||!request||reply.protocol!==1||typeof reply.ok!=='boolean'||Object.keys(reply).some(key=>!['protocol','id','ok','result','error'].includes(key)))throw fail('native_provider_response_uncorrelated');
       pending.delete(reply.id);if(reply.ok){if(request.action!=='health'?reply.result!==null:reply.result?.health!=='healthy'&&reply.result?.health!=='degraded')throw fail('native_provider_result_invalid');request.resolve(reply.result);}else request.reject(fail(typeof reply.error?.code==='string'&&/^[a-z][a-z0-9_]{0,95}$/.test(reply.error.code)?reply.error.code:'native_provider_command_failed'));
     }
+    if(Buffer.byteLength(buffer)>1024*1024)throw fail('native_provider_protocol_overflow');
   }catch(cause){failed(cause);}});
   const deadline=async(work,code)=>{let timer;try{return await Promise.race([work,new Promise((_,reject)=>{timer=setTimeout(()=>{const error=fail(code);failed(error);reject(error);},timeoutMs);})]);}finally{clearTimeout(timer);}};
   let commands=Promise.resolve();
@@ -71,6 +88,6 @@ export async function createNativeProviderProcess({binary,cwd,environment,boot:i
     child.stdin.write(JSON.stringify(boot)+'\n',error=>{if(error)failed(error);});
     await deadline(binding,'native_provider_boot_timeout');
   }catch(error){try{await terminate();}catch(cleanup){throw new AggregateError([error,cleanup],'native_provider_launch_unsettled');}throw error;}
-  return {bound,pid:child.pid,isFailed:()=>Boolean(fatal||stopped),health:()=>call('health'),authorizeAttempt:input=>call('authorize-attempt',input),releaseAttempt:input=>call('release-attempt',input),killAndWaitForExit:terminate,
-    close:()=>closeWork??=(async()=>{try{await call('close');child.stdin.end();const result=await deadline(exited,'native_provider_exit_unconfirmed');if(result.code!==0||result.signal)throw fail('native_provider_close_unconfirmed');return result;}catch(error){await terminate();throw error;}})()};
+  return {bound,pid:child.pid,isFailed:()=>Boolean(fatal||stopped),health:()=>call('health'),authorizeAttempt:async input=>{await call('authorize-attempt',input);transports.authorize(input);return null;},releaseAttempt:async input=>{await call('release-attempt',input);await transports.release(input);return null;},killAndWaitForExit:terminate,
+    close:()=>closeWork??=(async()=>{try{await closeTransports();await call('close');child.stdin.end();const result=await deadline(exited,'native_provider_exit_unconfirmed');if(result.code!==0||result.signal)throw fail('native_provider_close_unconfirmed');return result;}catch(error){await terminate();throw error;}})()};
 }

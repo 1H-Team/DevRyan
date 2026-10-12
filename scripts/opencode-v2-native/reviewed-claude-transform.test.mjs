@@ -1,8 +1,9 @@
+import {EventEmitter} from 'node:events';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import {rewriteReviewedClaudeStartup,rewriteReviewedMeridianLibsql,REVIEWED_CLAUDE_STARTUP} from '../../packages/web/server/lib/opencode/runtime-host/reviewed-claude-transform.js';
+import {rewriteReviewedClaudeStartup,rewriteReviewedMeridianLibsql,rewriteReviewedClaudeSpawn,REVIEWED_CLAUDE_STARTUP} from '../../packages/web/server/lib/opencode/runtime-host/reviewed-claude-transform.js';
 const repository=path.resolve(import.meta.dirname,'../..');
 const sourceFile=path.join(repository,'scripts/opencode-v2-native/fixtures/reviewed-claude-1.8.0.txt');
 test('reviewed Claude transform exposes exact original startup, health, profile and scrub functions',async()=>{
@@ -33,4 +34,19 @@ test('original health helper accepts only exact signed-out availability; drainin
  const inspect=async(status,payload)=>run(async()=>({status,json:async()=>payload}),()=> 'http://fixture',()=>({}),()=>'',{env:{}},AbortSignal)(3456);
  assert.deepEqual(await inspect(503,{status:'unhealthy',version:'1.62.6',auth:{loggedIn:false}}),{ok:true,version:'1.62.6',availability:'credential-unavailable'});
  for(const [status,payload] of [[200,{status:'unhealthy',version:'1.62.6',auth:{loggedIn:false}}],[503,{status:'draining',version:'1.62.6',auth:{loggedIn:false}}],[503,{status:'unhealthy',version:'wrong',auth:{loggedIn:false}}],[503,{status:'unhealthy',version:'1.62.6',auth:{loggedIn:true}}]])assert.equal((await inspect(status,payload)).ok,false);
+});
+
+test('reviewed confined spawn requires the exact host-owned transport hook and preserves SDK arguments',async()=>{
+ const file=path.join(repository,'packages/web/runtime/reviewed-inputs/claude-1.8.0/node_modules/@rynfar/meridian/dist/devryan-session-provider-spawn.js');
+ const transformed=rewriteReviewedClaudeSpawn(await fs.readFile(file));
+ const child=new EventEmitter(),calls=[];
+ const processFixture={env:{DEVRYAN_PROVIDER_TRANSPORT:JSON.stringify({protocol:1,asset:{path:'/fixture/claude'}})}};
+ const globals={__DEVRYAN_CLAUDE_TRANSPORT_SPAWN:(options,scope)=>{calls.push([options,scope]);return child;}};
+ const load=new Function('process','globalThis',transformed.replace("import { spawn } from 'node:child_process';",'').replace('export function','function')+';return spawnConfinedProvider;');
+ const invoke=load(processFixture,globals),options={command:'/fixture/claude',args:['--print'],cwd:'/fixture/project',env:{DEVRYAN_CLAUDE_DIAGNOSTIC_SCOPE:'owned IDs'},signal:new AbortController().signal};
+ assert.equal(invoke(options),child);assert.deepEqual(calls,[[options,'owned IDs']]);
+ assert.throws(()=>invoke({...options,command:'/bin/sh'}),/transport_unverified/);
+ assert.throws(()=>load(processFixture,{})(options),/transport_invalid/);
+ assert.doesNotMatch(transformed,/spawn\(process.execPath|--claude-transport-worker/);
+ assert.match(rewriteReviewedMeridianLibsql(await fs.readFile(path.join(path.dirname(file),'cli-wxk8xvd3.js'))),/profileID:profile.id/);
 });

@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import { observeStartupBackgroundWork, assertNativeStartupPackageSource, assertNativeStartupUpgrade, assertNativeUpgradeBaseline, observeNativeStartupSubscription, parseNativeStartupArgs, readNativeStartupLogs,
   parseStartupComparisonArgs, summarizeStartupComparison, assertStartupComparisonSources, summarizeNativeStartupRuns, assertNativeStartupReopen } from './native-startup-benchmark.mjs';
@@ -13,6 +15,15 @@ const encode = value => Buffer.from(value).toString('base64');
 const ready = 'event: devryan.subscription-ready\ndata: {"type":"ready","scope":"global"}\n\n';
 const response = requestId => ({ requestId, response: { url: 'http://127.0.0.1:4567/api/global/event', status: 200, mimeType: 'text/event-stream' } });
 const flush = () => new Promise(resolve => setImmediate(resolve));
+test('the release CLI reports argument failures without a circular top-level await', () => {
+  const command = fileURLToPath(new URL('./native-startup-benchmark.mjs', import.meta.url));
+  for (const flag of ['--release-dmg', '--reproduce-release-upgrade']) {
+    const result = spawnSync(process.execPath, [command, flag], { encoding: 'utf8', timeout: 15000 });
+    assert.equal(result.error, undefined);
+    assert.equal(result.status, 1);
+    assert.doesNotMatch(result.stderr, /unsettled top-level await/);
+  }
+});
 test('historical startup source is pinned only for the previous-policy baseline', () => {
   const previous='a'.repeat(64),current='b'.repeat(64);
   assert.doesNotThrow(()=>assertNativeStartupPackageSource(current,current,'optimized'));

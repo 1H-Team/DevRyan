@@ -715,6 +715,35 @@ describe('standard session title runtime', () => {
     await runtime.dispose();
   });
 
+  it('backs off missing idle evidence without treating absence as completion', async () => {
+    vi.useFakeTimers();
+    const fake = createFakeOpenCode({ status: null });
+    const startedAt = Date.now();
+    const outbox = createMemorySessionTitleOutbox({
+      initialJobs: [pendingJob({ attemptCount: 17, nextAttemptAt: startedAt })],
+    });
+    const runtime = createRuntime({ fake, outbox, watchdogEnabled: true });
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(fake.state.patches).toEqual([]);
+    expect(await outbox.list()).toEqual([
+      expect.objectContaining({
+        attemptCount: 17,
+        inactiveObservationCount: 6,
+        nextAttemptAt: startedAt + 113_001,
+      }),
+    ]);
+    const reads = fake.state.calls.length;
+    await vi.advanceTimersByTimeAsync(50_000);
+    expect(fake.state.calls).toHaveLength(reads);
+
+    await runtime.processOpenCodeEvent(idleEvent());
+    await vi.advanceTimersByTimeAsync(3_001);
+    expect(fake.state.patches).toHaveLength(1);
+    expect(await outbox.list()).toEqual([]);
+    await runtime.dispose();
+  });
+
   it('preserves a meaningful manual rename while the title is pending', async () => {
     const fake = createFakeOpenCode();
     const outbox = createMemorySessionTitleOutbox();

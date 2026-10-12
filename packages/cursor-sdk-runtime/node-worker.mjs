@@ -184,7 +184,7 @@ const main = async () => {
     // exceed SQLite's path budget for a deep private lease. Keep the original
     // SQLite store in this call's existing writable scratch instead.
     const { SqliteLocalAgentStore } = await import('@cursor/sdk/sqlite');
-    const store = await SqliteLocalAgentStore.open({ workspaceRef: directory || process.cwd(), stateRoot: path.join(home, 'cursor-sdk-state') });
+    const store = await SqliteLocalAgentStore.open({ workspaceRef: directory || process.cwd(), stateRoot: path.join(os.homedir(), 'cursor-sdk-state') });
     cursorSdk.configureCursorSdk({ local: { store } });
   }
   const { Agent } = cursorSdk;

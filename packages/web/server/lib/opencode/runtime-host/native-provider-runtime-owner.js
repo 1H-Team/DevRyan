@@ -95,7 +95,7 @@ export function createNativeClaudeCredentialOwner({profiles,home,withMutationQue
   const legacyFence=hasLegacyClaudeFence(current);let token=access(current);
   let state=lifecycle?parseClaudeLifecycle(await lifecycle.read()):emptyClaudeLifecycle();await check();
   const currentRefresh=current.claudeAiOauth?.refreshToken;
-  if(typeof currentRefresh==='string'&&state.unresolved.some(row=>row.phase==='enrollment-prepared'&&row.grantFingerprint===claudeGrantFingerprint(currentRefresh)))throw fail('native_claude_refresh_unsettled',401);
+  if(typeof currentRefresh==='string'&&state.unresolved.some(row=>['enrollment-prepared','deletion-prepared'].includes(row.phase)&&row.grantFingerprint===claudeGrantFingerprint(currentRefresh)))throw fail('native_claude_refresh_unsettled',401);
   const transition=async operation=>{
    if(!lifecycle)throw fail('native_claude_lifecycle_owner_required',503);
    const expected=transitionClaudeLifecycle(state,state.revision,operation);
@@ -183,10 +183,12 @@ export function createNativeClaudeCredentialOwner({profiles,home,withMutationQue
  * catalog reads have a separate constructor-owned capability, never an inference permit. */
 export function createNativeProviderRuntimeOwner({instanceID,snapshot,registrationOrigin,controller,isReady,withMutationQueue,admissionOwner,cursor,meridian,prepareMeridianProfiles,claudeCredentials,claudeSupported=false,fetchImpl=globalThis.fetch}){
   if(!snapshot||registrationOrigin?.kind!=='plugin'||registrationOrigin.id!=='devryan.provider-compat'||!/^[a-f0-9]{64}$/.test(registrationOrigin.manifestDigest)||typeof withMutationQueue!=='function')throw fail('native_provider_dependencies_required',503);
-  const locations=new Map(structuredClone(snapshot.locations).map(location=>[location.directory,location]));let closed=false,worker,starting,closing;const catalogs=new Set();const catalogControllers=new Set();const attempts=new Map();const attemptWork=new Set(),workerStartCancel=new AbortController();
+  const locations=new Map(structuredClone(snapshot.locations).map(location=>[location.directory,location]));let closed=false,worker,starting,closing,removingProfile=false,profileConfigurationChanged=false;const catalogs=new Set();const catalogControllers=new Set();const attempts=new Map();const attemptWork=new Set(),workerStartCancel=new AbortController();
   const credentialProfiles=claudeCredentials?.profiles??meridian?.boot.profiles;
   const resolveClaude=meridian?createNativeClaudeCredentialOwner({...claudeCredentials,profiles:credentialProfiles,home:meridian.boot.globals.home,withMutationQueue}):undefined;
   const inspectClaude=async(input,{recheck,signal}={})=>{
+    if(removingProfile)throw fail('native_claude_enrollment_busy',409);
+    if(profileConfigurationChanged)throw fail('native_claude_enrollment_configuration_changed',409);
     if(!claudeSupported)throw fail('native_claude_update_required',503);
     live();if(!record(input)||Object.keys(input).some(key=>!['directory','kind'].includes(key))||!locations.has(input.directory)||!['status','quota'].includes(input.kind)||typeof recheck!=='function')throw fail('native_claude_inspection_invalid');
     // Inspection uses the saved selection, never inference's priority/sticky routing.
@@ -253,6 +255,8 @@ export function createNativeProviderRuntimeOwner({instanceID,snapshot,registrati
     catalogs.add(work);void work.finally(()=>{catalogs.delete(work);catalogControllers.delete(cancel);}).catch(()=>{});return work;
   };
   const startMeridian=async()=>{
+    if(removingProfile)throw fail('native_claude_enrollment_busy',409);
+    if(profileConfigurationChanged)throw fail('native_claude_enrollment_configuration_changed',409);
     if(!claudeSupported)throw fail('native_claude_update_required',503);
     live();if(!meridian)throw fail('native_meridian_unavailable',503);
     if(worker&&!worker.isFailed())return worker;
@@ -304,6 +308,11 @@ export function createNativeProviderRuntimeOwner({instanceID,snapshot,registrati
   const endMeridian=async input=>{const attempt=boundAttempt(input);try{await attempt.release();}finally{attempt.finish();await attempt.work;attempts.delete(input.attemptID);}return null;};
   const cursorPrompt=(input,body)=>admissionOwner.withProviderAttempt(input,async()=>{live();if(!cursor||!locations.has(input.directory))throw fail('native_cursor_unavailable',503);input.signal?.throwIfAborted();const result=await cursor.handlePromptAsync({sessionID:input.sessionID,directory:input.directory,body});input.signal?.throwIfAborted();live();return result;});
   return {catalog,inspectClaude,withMeridian,beginMeridian,assertMeridian,endMeridian,cursorPrompt,abortCursor:async sessionID=>{if(!cursor)throw fail('native_cursor_unavailable',503);return cursor.abortAndWait(sessionID);},
+    invalidateClaudeProfile:profileID=>{live();if(!removingProfile)throw fail('native_claude_enrollment_owner_required',409);if(credentialProfiles?.some(profile=>profile.id===profileID))profileConfigurationChanged=true;},
+    withClaudeProfileRemoval:async action=>{
+      live();if(removingProfile||starting||attemptWork.size||catalogs.size)throw fail('native_claude_enrollment_busy',409);
+      removingProfile=true;try{return await action();}finally{removingProfile=false;}
+    },
     handleRpc:(method,input,context)=>{if(method==='provider.catalog')return catalog(input,context);if(method==='provider.meridian.begin')return beginMeridian(input,context);if(method==='provider.meridian.assert')return assertMeridian(input);if(method==='provider.meridian.end')return endMeridian(input);throw fail('native_provider_operation_invalid');},
     close:()=>closing??=(async()=>{closed=true;workerStartCancel.abort(fail('native_provider_owner_expired'));for(const cancel of catalogControllers)cancel.abort(fail('native_provider_owner_expired'));await Promise.allSettled([...attempts.values()].map(async attempt=>{try{await attempt.release();}finally{attempt.finish();}}));await Promise.allSettled([...catalogs,...attemptWork]);attempts.clear();let target=worker;try{target??=await starting;}catch{ /* Launch failure already settled its child. */ }if(target){if(target.isFailed())return target.killAndWaitForExit();try{return await target.close();}catch(error){if(!target.isFailed())throw error;return target.killAndWaitForExit();}}})()};
 }

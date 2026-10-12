@@ -32,7 +32,9 @@ const dom = { documents: 1, nodes: 20, jsEventListeners: 5 };
 
 test('catalog readiness records warmup errors and still requires a successful bounded response', async t => {
   let statuses = [503, 500, 200];
+  let holdResponse = false;
   const server = http.createServer((_request, response) => {
+    if (holdResponse) return;
     response.statusCode = statuses.length > 1 ? statuses.shift() : statuses[0];
     response.end(JSON.stringify({ connected: ['fixture'] }));
   });
@@ -44,6 +46,8 @@ test('catalog readiness records warmup errors and still requires a successful bo
   statuses = [403];
   await assert.rejects(waitForStartupCatalog(origin), /failed \(403\)/);
   statuses = [503];
+  await assert.rejects(waitForStartupCatalog(origin, { timeoutMs: 30 }), /readiness timed out/);
+  holdResponse = true;
   await assert.rejects(waitForStartupCatalog(origin, { timeoutMs: 30 }), /readiness timed out/);
 });
 

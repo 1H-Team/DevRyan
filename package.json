@@ -1,6 +1,6 @@
 {
   "name": "openchamber-monorepo",
-  "version": "2.0.7",
+  "version": "2.0.8",
   "description": "OpenChamber monorepo workspace for web, ui, and desktop runtimes",
   "private": true,
   "type": "module",
@@ -44,6 +44,7 @@
     "test": "bun run test:full",
     "test:affected": "node scripts/validate.mjs test-affected",
     "test:scripts": "node scripts/test-scripts.mjs",
+    "test:startup": "node scripts/test-startup-contract.mjs",
     "test:visual-fixture": "bun test tests/visual-production-bots/matrix.test.mjs",
     "test:full": "bun run test:scripts && bun run test:visual-fixture && bun run --cwd packages/bots-runtime test && bun run --cwd packages/bot-supervisor test && bun run --cwd packages/bot-engine-proxy test && bun run --cwd packages/bot-egress test && bun run --cwd packages/bot-computer test && bun run --cwd packages/bot-indexer test && bun run --cwd packages/bot-db test && bun run --cwd packages/shared-runtime test && bun run --cwd packages/harness-runtime test && bun run --cwd packages/orchestration-runtime test && bun run --cwd packages/cursor-sdk-runtime test && bun run --cwd packages/electron test && bun run --cwd packages/desktop test && bun run --cwd packages/ui test && bun run --cwd packages/web test",
     "validate:quick": "node scripts/validate.mjs quick",

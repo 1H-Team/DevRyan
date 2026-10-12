@@ -708,6 +708,7 @@ const cursorSdkRuntime = createCursorSdkRuntime({
     payload: { event: 'cursor.title.usage', sessionID, observation },
   }),
   recordTimingMark: (input) => turnTimingRuntime.recordClientMark(input),
+  recordDiagnostic: (entry) => harnessRuntime.record(entry),
   logger: console,
   resolveAgentPrompt: async ({ agent, directory }) => {
     const result = getAgentConfig(agent, directory);

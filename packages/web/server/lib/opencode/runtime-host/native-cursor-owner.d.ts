@@ -16,6 +16,9 @@ export function createNativeCursorOwner(options:{readonly instanceID:string;read
  readonly isReady:()=>boolean;readonly abortAndWait:(sessionID:string)=>Promise<unknown>;
  readonly onStarted:(scope:NativeCursorScope,recheck:()=>Promise<void>)=>Promise<unknown>;
  readonly recovery?:NativeCursorRecovery;
+ readonly recordDiagnostic?:(entry:{readonly type:'lifecycle';readonly event:'cursor_persistence';readonly sessionID:string;readonly directory:string;
+  readonly payload:{readonly phase:'native_entered'|'native_start'|'native_receipt'|'native_check'|'native_lease'|'native_assert'|'native_call'|'native_return'|'native_recheck'|'native_settled'|'native_failed';
+   readonly startedAt:number;readonly elapsedMs:number;readonly userMessageID:string;readonly assistantMessageID:string;readonly reason?:string}})=>void;
 }):{
  readonly ownedPrompt:(scope:NativeCursorScope)=>Promise<{readonly readOnly:boolean;readonly run:<A>(action:()=>Promise<A>)=>Promise<A>;readonly close:()=>Promise<void>}>;
  readonly withExecution:<A extends {readonly lease:MutationLease;readonly result:Promise<unknown>;readonly cancel?:()=>unknown}>(input:{readonly directory:string;readonly sessionID:string;readonly messageID:string;readonly assistantMessageID:string},action:()=>Promise<A>)=>Promise<A>;

@@ -30,6 +30,7 @@ async function readTokenResponse(response,signal){
 /** Only this completed, freshly issued code exchange can publish enrollment
  * authority. Neither a service name nor an imported credential is a receipt. */
 export function createNativeClaudeEnrollmentOwner({controlRoot,home,asset,lifecycle,withMutationQueue,captureBinding,recheckBinding,publishProfile,beforeEnrollment,
+ withProfileRemoval,assertProfileRemoval,removeProfile,recheckAfterRemoval,
  loadModule=()=>loadReviewedClaudeCredentials(asset),fetchImpl=globalThis.fetch,execute=runNativeClaudeCredentialCommand,account=userInfo().username,now=Date.now}){
  if(!path.isAbsolute(controlRoot??'')||!path.isAbsolute(home??'')||[withMutationQueue,captureBinding,recheckBinding,publishProfile].some(fn=>typeof fn!=='function')
   ||typeof lifecycle?.read!=='function'||typeof lifecycle?.transition!=='function')throw fail('native_claude_enrollment_owner_required',503);
@@ -60,7 +61,7 @@ export function createNativeClaudeEnrollmentOwner({controlRoot,home,asset,lifecy
   }});
   // The vendor store swallows command errors. Recheck authority and surface a
   // finite refusal after it settles, including an exclusive add that did write.
-  return {async read(){commandFailure=undefined;const value=await store.read();await check(item,context);if(commandFailure||!value)throw fail('native_claude_enrollment_persistence_failed');return value;},
+  return {async read(allowMissing=false){commandFailure=undefined;const value=await store.read();await check(item,context);if(allowMissing&&commandFailure?.code===44)return null;if(commandFailure||!value)throw fail('native_claude_enrollment_persistence_failed');return value;},
    async write(value){commandFailure=undefined;const result=await store.write(value);await check(item,context);if(commandFailure||!result)throw fail('native_claude_enrollment_persistence_failed');return result;}};
  };
  const unused=async(item,context,signal)=>{
@@ -100,10 +101,11 @@ export function createNativeClaudeEnrollmentOwner({controlRoot,home,asset,lifecy
  return {
   list:context=>guarded(async()=>{
    const binding=await captureBinding(context),state=parseClaudeLifecycle(await lifecycle.read());await recheckBinding(binding,context);live();
-   const result=[];for(const row of [...state.accounts,...state.unresolved.filter(row=>row.phase==='enrollment-prepared')]){
+   const deleting=state.unresolved.filter(row=>row.phase==='deletion-prepared');
+   const result=[];for(const row of [...state.accounts.filter(row=>!deleting.some(item=>item.enrollmentID===row.enrollmentID)),...state.unresolved.filter(row=>['enrollment-prepared','deletion-prepared'].includes(row.phase))]){
     if(row.configDirectory!==path.join(root,row.enrollmentID))continue;
-    let status=row.phase==='enrollment-prepared'?'incomplete':'enrolled';
-    try{await ownedDirectory(row);}catch{status='unavailable';}
+    let status=row.phase==='deletion-prepared'?'deleting':row.phase==='enrollment-prepared'?'incomplete':'enrolled';
+    try{await ownedDirectory(row);}catch{if(status!=='deleting')status='unavailable';}
     result.push({enrollmentID:row.enrollmentID,profileID:row.profileID,status});
    }
    await recheckBinding(binding,context);live();return result;
@@ -162,6 +164,7 @@ export function createNativeClaudeEnrollmentOwner({controlRoot,home,asset,lifecy
    // Selection is a new authorized mutation, including after host restart or
    // another configuration change. Pending OAuth state is never its authority.
    const binding=await captureBinding(context),snapshot=parseClaudeLifecycle(await lifecycle.read());await recheckBinding(binding,context);live();
+   if(snapshot.unresolved.some(row=>row.enrollmentID===id&&row.phase==='deletion-prepared'))throw fail('native_claude_enrollment_busy');
    const row=snapshot.accounts.find(row=>row.enrollmentID===id)??snapshot.unresolved.find(row=>row.enrollmentID===id&&row.phase==='enrollment-prepared');if(!row)throw fail('native_claude_enrollment_unknown',404);await ownedDirectory(row);
    const item={id,binding,configDirectory:row.configDirectory,service:row.service,profileID:row.profileID,generation:row.generation,deadline:now()+600000,status:'enrolled',cancel:new AbortController()};pending.set(id,item);
    await check(item,context);if(item.status!=='enrolled')throw fail('native_claude_enrollment_not_ready');
@@ -172,6 +175,43 @@ export function createNativeClaudeEnrollmentOwner({controlRoot,home,asset,lifecy
    await check(item,context);await publishProfile({id:item.profileID,type:'claude-max',claudeConfigDir:item.configDirectory,keychainService:item.service},item.binding,context);
    item.status='selected';return {enrollmentID:id,status:'selected',profileID:item.profileID};
   }),
+  remove:(id,context)=>{
+   live();if(pending.get(id)?.status==='exchanging')throw fail('native_claude_enrollment_busy');
+   if([withProfileRemoval,assertProfileRemoval,removeProfile,recheckAfterRemoval].some(fn=>typeof fn!=='function'))throw fail('native_claude_enrollment_owner_required',503);
+   return guarded(()=>withProfileRemoval(async()=>{
+    const binding=await captureBinding(context);let state=parseClaudeLifecycle(await lifecycle.read());await recheckBinding(binding,context);live();
+    let row=state.unresolved.find(row=>row.enrollmentID===id&&row.phase==='deletion-prepared');const retry=Boolean(row);
+    row??=state.accounts.find(row=>row.enrollmentID===id)??state.unresolved.find(row=>row.enrollmentID===id&&row.phase==='enrollment-prepared');
+    if(!row)throw fail('native_claude_enrollment_unknown',404);
+    if(state.unresolved.some(item=>item!==row&&item.enrollmentID===id&&!['enrollment-prepared','deletion-prepared'].includes(item.phase)))throw fail('native_claude_enrollment_busy');
+    const item={id,binding,configDirectory:row.configDirectory,service:row.service,profileID:row.profileID,generation:row.generation,deadline:now()+600000,status:'deleting',cancel:new AbortController()};
+    pending.set(id,item);const scope={profileID:row.profileID,service:row.service,configDirectory:row.configDirectory,enrollmentID:id,generation:row.generation};
+    const profile={id:row.profileID,type:'claude-max',claudeConfigDir:row.configDirectory,keychainService:row.service};
+    let identity;
+    try{identity=await ownedDirectory(row);}catch(error){if(error.code!=='ENOENT')throw error;await privateRoot();
+     if(!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(id)||row.configDirectory!==path.join(root,id)||row.profileID!==`devryan-${id}`||row.service!==claudeKeychainService(row.configDirectory,home))throw fail('native_claude_enrollment_receipt_invalid');
+     try{await fs.lstat(row.configDirectory);throw fail('native_claude_enrollment_receipt_invalid');}catch(absent){if(absent.code!=='ENOENT')throw absent;}}
+    if(retry&&identity&&(identity.dev!==row.directoryDevice||identity.ino!==row.directoryInode))throw fail('native_claude_enrollment_receipt_invalid');
+    await check(item,context);await assertProfileRemoval(profile,binding,context);
+    const store=await storeFor(item,context,item.cancel.signal),allowMissing=retry||row.phase==='enrollment-prepared';
+    const verify=async()=>{const value=await store.read(allowMissing);
+     if(value&&(claudeRecordFingerprint(value)!==row.recordFingerprint||claudeGrantFingerprint(value.claudeAiOauth?.refreshToken)!==row.grantFingerprint))throw fail('native_claude_enrollment_account_changed');return value;};
+    const value=await verify();await check(item,context);
+    if(!retry){state=await transition(state,{kind:'prepare-deletion',binding:scope,attemptID:randomUUID(),recordFingerprint:row.recordFingerprint,directoryDevice:identity?.dev??null,directoryInode:identity?.ino??null});row=state.unresolved.find(item=>item.enrollmentID===id&&item.phase==='deletion-prepared');}
+    if(value){await verify();await check(item,context);
+     try{await execute('/usr/bin/security',['delete-generic-password','-s',row.service,'-a',account],{timeout:5000,signal:item.cancel.signal});}
+     catch(error){if(error.code!==44)throw fail('native_claude_enrollment_deletion_failed');}
+     await check(item,context);if(await store.read(true))throw fail('native_claude_enrollment_account_changed');
+    }
+    await check(item,context);await removeProfile(profile,binding,context);
+    await recheckAfterRemoval(binding,context);live();
+    if(identity){const current=await ownedDirectory(row);if(current.dev!==row.directoryDevice||current.ino!==row.directoryInode)throw fail('native_claude_enrollment_receipt_invalid');await recheckAfterRemoval(binding,context);live();await fs.rmdir(row.configDirectory);}
+    state=parseClaudeLifecycle(await lifecycle.read());
+    await transition(state,{kind:'settle-deletion',binding:scope,attemptID:row.attemptID,recordFingerprint:row.recordFingerprint});
+    await recheckAfterRemoval(binding,context);live();pending.delete(id);
+    return {enrollmentID:id,profileID:row.profileID,status:'deleted'};
+   }));
+  },
   close:async()=>{closed=true;for(const item of pending.values())item.cancel.abort();await Promise.allSettled([...work]);for(const item of pending.values())await discardUnused(item);pending.clear();},
  };
 }

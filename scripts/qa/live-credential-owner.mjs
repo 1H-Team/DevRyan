@@ -26,10 +26,29 @@ import {createQaProcessOwnership} from './process-ownership.mjs';
 
 const fail=code=>Object.assign(new Error(code),{code});
 const finite=error=>/^(qa_|bundle_|native_)[a-z0-9_]{1,100}$/.test(error?.code??'')?error.code:'qa_live_owner_failed';
+// Error messages and command contents can contain account values. Keep only
+// built-in classes and finite platform codes for protocol failure diagnostics.
+export function liveOwnerFailureDiagnostic(error,phase){
+  const errorClass=['Error','TypeError','RangeError','SyntaxError','AbortError','AggregateError'].includes(error?.name)?error.name:'Error';
+  const errorCode=/^(ERR_[A-Z_]{1,80}|EIO|EBADF|EPIPE|EINTR|ECANCELED)$/.test(error?.code??'')?error.code:finite(error);
+  return {status:'refused',code:finite(error),phase:['source-start','command-input','command'].includes(phase)?phase:'source-start',errorClass,errorCode};
+}
 const scripts=fileURLToPath(new URL('../',import.meta.url)).replace(/\/$/,'');
 const inside=(root,file)=>file.startsWith(root+path.sep);
 const commands=['status','enroll-link','hold-and-verify','run','close'];
+let launcherAttendance=false;
 const hashFile=async file=>{const hash=createHash('sha256');for await(const bytes of createReadStream(file))hash.update(bytes);return hash.digest('hex');};
+
+export function waitLiveOwnerAttendance(channel=process,{parentPid=process.ppid,timeoutMs=10000}={}){
+  if(!channel.connected)return Promise.reject(fail('qa_live_owner_attendance_required'));
+  return new Promise((resolve,reject)=>{
+    const finish=error=>{clearTimeout(timer);channel.off('message',message);channel.off('disconnect',disconnected);error?reject(error):resolve();};
+    const disconnected=()=>finish(fail('qa_live_owner_attendance_required'));
+    const message=value=>finish(value?.status==='owner-attended'&&value.launcherPid===parentPid&&Number.isSafeInteger(parentPid)&&parentPid>0
+      &&Object.keys(value).length===2?undefined:fail('qa_live_owner_attendance_required'));
+    const timer=setTimeout(disconnected,timeoutMs);channel.once('message',message);channel.once('disconnect',disconnected);
+  });
+}
 
 export function parseLiveOwnerFlags(args){
   const flags=new Map(),allowed=['--artifact-root','--mirror','--mirror-sha256','--matrix','--matrix-sha256','--evidence-root','--reuse-source'];
@@ -153,7 +172,7 @@ async function retainCellRuntime(session,cell){
  * The live CLI has no flag for stores, grants, process owners or matrix adapters. */
 export async function runLiveCredentialOwner({sessionFile,input=process.stdin,emit=value=>process.stdout.write(JSON.stringify(value)+'\n'),rehearsal=false,
   startServer,anthropicOptions={},beforeStart,runMatrix,inspectLoopback=inspectOAuthLoopbackPort,now=Date.now}){
-  if(!rehearsal&&(!input.isTTY||!process.stdout.isTTY))throw fail('qa_live_owner_attendance_required');
+  if(!rehearsal&&(!(input.isTTY||input===process.stdin&&launcherAttendance&&process.connected)||!process.stdout.isTTY))throw fail('qa_live_owner_attendance_required');
   if(!rehearsal&&(startServer||beforeStart||runMatrix||Object.keys(anthropicOptions).length||inspectLoopback!==inspectOAuthLoopbackPort||now!==Date.now))throw fail('qa_live_constructor_invalid');
   const session=JSON.parse(await readQaPinnedFile(sessionFile,undefined,4*1024*1024));
   if(session.schema!==1||session.binding?.controlRoot!==process.env.DEVRYAN_RUNTIME_BUNDLE_ROOT||session.runtimeRoot!==process.env.DEVRYAN_QA_RUNTIME_ROOT
@@ -167,7 +186,7 @@ export async function runLiveCredentialOwner({sessionFile,input=process.stdin,em
   const sanitizer=createDiagnosticSanitizer({homeDir:session.binding.descriptor.launch.global.home,pathMappings:[{path:qaRepository,placeholder:'<REPOSITORY>'}]});
   const record=async(name,value)=>fs.writeFile(path.join(evidence,name),JSON.stringify(sanitizer.sanitizeExportValue(value),null,2)+'\n',{flag:'wx',mode:0o600});
   await record('identities.json',session.identities);
-  let grant,grantCount=0,handle,hostPort,failedStartStop,link,held,probe,state='awaiting-owner',matrixRun=false,summary,closing,stopRequested=false;
+  let grant,grantCount=0,handle,hostPort,failedStartStop,link,held,probe,state='awaiting-owner',matrixRun=false,summary,closing,stopRequested=false,phase='source-start';
   const retained=[],timings=[];
   const timed=async(name,action)=>{const started=performance.now();try{return await action();}finally{timings.push({name,elapsedMs:performance.now()-started});}};
   const close=()=>closing??=(async()=>{
@@ -229,39 +248,68 @@ export async function runLiveCredentialOwner({sessionFile,input=process.stdin,em
       const leakScan=await probe.scan(session.options.evidenceRoot);if(leakScan.hits)throw fail('qa_live_evidence_credential_leak');
       emit({status:'matrix-finished',outcome:summary.outcome,completed:summary.completed,planned:summary.planned,leakScan});
     };
-    let pending=Buffer.alloc(0);
+    phase='command-input';let pending=Buffer.alloc(0);
     for await(const bytes of input){
       if(stopRequested)break;
       pending=Buffer.concat([pending,Buffer.from(bytes)]);if(pending.length>65536)throw fail('qa_live_command_invalid');
       for(;;){const newline=pending.indexOf(10);if(newline<0)break;const line=pending.subarray(0,newline).toString('utf8');pending=pending.subarray(newline+1);
-        try{const value=parseLiveOwnerCommand(line);await command(value);}catch(error){emit({status:'refused',code:finite(error)});}
+        try{const value=parseLiveOwnerCommand(line);await command(value);}catch(error){emit(liveOwnerFailureDiagnostic(error,'command'));}
         if(closing)break;
       }
       if(closing)break;if(pending.length>1024)throw fail('qa_live_command_invalid');
     }
     if(pending.length&&!closing)emit({status:'refused',code:'qa_live_command_invalid'});
     return await close();
-  }catch(error){emit({status:'refused',code:finite(error)});return await close();}
-  finally{process.off('SIGINT',signal);process.off('SIGTERM',signal);}
+  }catch(error){const diagnostic=liveOwnerFailureDiagnostic(error,phase);emit(diagnostic);await record('failure.json',diagnostic);return await close();}
+  finally{input.pause?.();input.destroy?.();process.off('SIGINT',signal);process.off('SIGTERM',signal);}
+}
+
+// A returned owner has finished cleanup and recorded its failures. Background
+// metadata sockets must not prevent the launcher from settling owned processes.
+export async function settleLiveOwnerChild(child,{ownership=createQaProcessOwnership(child)}={}){
+  let exitCode=1,teardown='failed';
+  try{
+    exitCode=await new Promise((resolve,reject)=>{
+      const finish=value=>{child.off('error',onError);child.off('exit',onExit);child.off('message',onMessage);resolve(value);};
+      const onError=error=>{child.off('exit',onExit);child.off('message',onMessage);reject(error);};
+      const onExit=(code,signal)=>finish(signal?1:code??1);
+      const onMessage=value=>{if(value?.status==='owner-returned'&&[0,1].includes(value.exitCode)&&Object.keys(value).length===2)finish(value.exitCode);};
+      child.once('error',onError);child.once('exit',onExit);child.on('message',onMessage);
+      if(child.exitCode!==null||child.signalCode!==null)onExit(child.exitCode,child.signalCode);
+    });
+  }catch{exitCode=1;
+  }finally{
+    try{await ownership.refresh();await ownership.terminateRemaining();await ownership.auditStopped();teardown='passed';}catch{teardown='failed';}
+    finally{await ownership.closeTracking();}
+  }
+  return {exitCode,teardown,processes:ownership.getEvidence()};
 }
 
 async function launch(options){
   if(!process.stdin.isTTY||!process.stdout.isTTY)throw fail('qa_live_owner_attendance_required');
   const {sessionFile,env}=await prepareLiveCredentialSession(options);
-  const child=spawn(process.execPath,[fileURLToPath(import.meta.url),'--owner-child',sessionFile],{cwd:qaRepository,env,stdio:'inherit'});
-  const ownership=createQaProcessOwnership(child);
+  // Native startup must not acquire the launcher's controlling terminal. The
+  // attended launcher owns its TTY; its isolated child reads only this pipe.
+  const child=spawn(process.execPath,[fileURLToPath(import.meta.url),'--owner-child',sessionFile],{cwd:qaRepository,env,
+    detached:process.platform!=='win32',stdio:['pipe','inherit','inherit','ipc']});
+  let inputFailed=false;
   const interrupt=()=>{if(child.exitCode===null&&child.signalCode===null)child.kill('SIGINT');};
+  const inputError=()=>{inputFailed=true;interrupt();};
+  const pipeError=error=>{if(error.code!=='EPIPE'&&error.code!=='ERR_STREAM_DESTROYED')inputError();};
+  process.stdin.on('error',inputError);child.stdin.on('error',pipeError);
   process.on('SIGINT',interrupt);process.on('SIGTERM',interrupt);
-  let exitCode=1,teardown='failed';
-  try{
-    exitCode=await new Promise((resolve,reject)=>{child.once('error',reject);child.once('exit',(code,signal)=>resolve(signal?1:code??1));});
-  }catch{exitCode=1;
+  let settled;try{
+    const waiting=settleLiveOwnerChild(child);
+    child.send({status:'owner-attended',launcherPid:process.pid},error=>{if(error)inputError();});
+    process.stdin.pipe(child.stdin);
+    settled=await waiting;if(inputFailed)settled.exitCode=1;
   }finally{
-    try{await ownership.refresh();await ownership.terminateRemaining();await ownership.auditStopped();teardown='passed';}catch{teardown='failed';}
-    finally{await ownership.closeTracking();process.off('SIGINT',interrupt);process.off('SIGTERM',interrupt);}
+    process.stdin.unpipe(child.stdin);process.stdin.pause();process.stdin.off('error',inputError);child.stdin.off('error',pipeError);
+    process.off('SIGINT',interrupt);process.off('SIGTERM',interrupt);
   }
+  const {exitCode,teardown,processes}=settled;
   const sourceSummary=JSON.parse(await readQaPinnedFile(path.join(options.evidenceRoot,'live-owner/summary.json'),undefined,4*1024*1024));
-  const result={status:'launcher-closed',teardown,outcome:exitCode===0&&teardown==='passed'?'passed':'failed',processes:ownership.getEvidence(),
+  const result={status:'launcher-closed',teardown,outcome:exitCode===0&&teardown==='passed'?'passed':'failed',processes,
     evidencePublishable:exitCode===0&&teardown==='passed'&&sourceSummary.teardown==='passed'&&sourceSummary.leakScan?.hits===0&&sourceSummary.retained?.length===0};
   await fs.writeFile(path.join(options.evidenceRoot,'live-owner/launcher-summary.json'),JSON.stringify(result,null,2)+'\n',{flag:'wx',mode:0o600});
   process.stdout.write(JSON.stringify({status:result.status,teardown,outcome:result.outcome,evidencePublishable:result.evidencePublishable})+'\n');
@@ -270,6 +318,10 @@ async function launch(options){
 if(process.argv[1]&&import.meta.url===pathToFileURL(path.resolve(process.argv[1])).href){
   try{
     const args=process.argv.slice(2);
-    process.exitCode=args[0]==='--owner-child'&&args.length===2?(await runLiveCredentialOwner({sessionFile:args[1]})).exitCode:await launch(parseLiveOwnerFlags(args));
+    if(args[0]==='--owner-child'&&args.length===2){
+      await waitLiveOwnerAttendance();launcherAttendance=true;
+      process.exitCode=(await runLiveCredentialOwner({sessionFile:args[1]})).exitCode;
+      if(process.connected)await new Promise((resolve,reject)=>process.send({status:'owner-returned',exitCode:process.exitCode},error=>error?reject(error):resolve()));
+    }else process.exitCode=await launch(parseLiveOwnerFlags(args));
   }catch(error){process.stderr.write(JSON.stringify({status:'refused',code:finite(error)})+'\n');process.exitCode=1;}
 }

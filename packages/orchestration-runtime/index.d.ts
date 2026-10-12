@@ -782,6 +782,7 @@ export interface ManagedTaskScheduler {
   shutdown(): Promise<void>;
   getTask(taskId: string): ManagedTaskRecord | null;
   verifyTaskDispatch(taskId: string, leaseToken: string | null): Promise<ManagedTaskRecord>;
+  verifyTaskSettlement(taskId: string, leaseToken: string | null): Promise<ManagedTaskRecord>;
   listTasks(options?: { rootSessionId?: string }): ManagedTaskRecord[];
   withNativePromptContext<A>(input:{rootSessionId:string;directory:string;authorize:()=>Promise<void>},action:(state:{tasks:ManagedTaskRecord[];envelopes:ManagedTaskResultEnvelope[];markPromptObserved:(receipt:{taskId:string;attempt:number;sequence:number})=>void})=>Promise<A>):Promise<A>;
   getSnapshot(): ManagedOrchestrationState;

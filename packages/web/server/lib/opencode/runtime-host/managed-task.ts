@@ -6,12 +6,16 @@ import type { RegistrationOrigin } from './registration-origin.js';
 import type { ExecutionRpc } from './worker-protocol.js';
 
 export const MANAGED_TASK_PLUGIN_ID = 'devryan.managed-task';
-export const managedTaskInputSchema = Schema.Union([
+export const createManagedTaskInputSchema = (environment: Record<string, string | undefined> = process.env) => {
+  const staticSchema = environment.DEVRYAN_CAPABILITY_TOOL_SCHEMA === '0';
+  return Schema.Union([
   Schema.Struct({ action: Schema.Literal('start'), agent: Schema.String, prompt: Schema.String,
     label: Schema.optional(Schema.String), timeout_seconds: Schema.optional(Schema.Int), allow_duplicate: Schema.optional(Schema.Boolean),
     required_checks: Schema.optional(Schema.Array(Schema.Struct({ name: Schema.String, command: Schema.String, paths: Schema.Array(Schema.String) }))) }),
   Schema.Struct({ action: Schema.Literals(['status', 'wait']), task_id: Schema.String }),
-  Schema.Struct({ action: Schema.Literal('wait_any'), task_ids: Schema.Array(Schema.String), after_cursor: Schema.optional(Schema.String) }),
+  ...(staticSchema || environment.DEVRYAN_MANAGED_WAIT_ANY === '1' ? [
+    Schema.Struct({ action: Schema.Literal('wait_any'), task_ids: Schema.Array(Schema.String), after_cursor: Schema.optional(Schema.String) }),
+  ] : []),
   Schema.Struct({ action: Schema.Literal('read_result'), task_id: Schema.String, result_cursor: Schema.String }),
   Schema.Struct({ action: Schema.Literal('cancel'), task_id: Schema.String,
     reason: Schema.optional(Schema.String), cascade: Schema.optional(Schema.Boolean) }),
@@ -20,16 +24,21 @@ export const managedTaskInputSchema = Schema.Union([
     prompt: Schema.optional(Schema.String), label: Schema.optional(Schema.String), timeout_seconds: Schema.optional(Schema.Int) }),
   Schema.Struct({ action: Schema.Literal('plan_read') }),
   Schema.Struct({ action: Schema.Literal('plan_update'), expected_version: Schema.String, text: Schema.String }),
-  Schema.Struct({ action: Schema.Literals(['checkpoint', 'decisions']), query: Schema.optional(Schema.String) }),
-  Schema.Struct({ action: Schema.Literal('remember_decision'), decision: Schema.String, source_message_id: Schema.String,
-    decision_paths: Schema.optional(Schema.Array(Schema.String)), valid_until: Schema.optional(Schema.Number), supersedes: Schema.optional(Schema.String) }),
-]);
+  ...(staticSchema || environment.DEVRYAN_TASK_CONTEXT_PROJECTION === '1' ? [
+    Schema.Struct({ action: Schema.Literals(['checkpoint', 'decisions']), query: Schema.optional(Schema.String) }),
+    Schema.Struct({ action: Schema.Literal('remember_decision'), decision: Schema.String, source_message_id: Schema.String,
+      decision_paths: Schema.optional(Schema.Array(Schema.String)), valid_until: Schema.optional(Schema.Number), supersedes: Schema.optional(Schema.String) }),
+  ] : []),
+  ]);
+};
+// Keep decoding compatible with retained calls; host policies still authorize execution.
+export const managedTaskInputSchema = createManagedTaskInputSchema({ DEVRYAN_CAPABILITY_TOOL_SCHEMA: '0' });
 
 // The native registration describes the tool; the mandatory host dispatcher
 // supplies its authority and sends it to the existing managed scheduler.
 export const managedTaskPlugin = Plugin.define({ id: MANAGED_TASK_PLUGIN_ID,
-  effect: ({ tool }) => tool.transform(editor => editor.add({ name: 'devryan_task', input: managedTaskInputSchema,
-    description: 'Manage saved-model specialists, sourced project decisions and the selected Implement plan. Start independent work without an artificial concurrency cap. wait/wait_any stay attached through bounded host slices; status is nonblocking. Collect a terminal result before disposition. read_result uses each next cursor in order; required retained detail must be read before continue/retry/resume/abandon. Completed results accept only continue. Manual or scheduled Model Recovery stays unacknowledged. Required checks need real current content and exit receipts; collection never implies verification. Builder can only read or update its selected saved plan using plan_read/plan_update with expected_version and full text.',
+  effect: ({ tool }) => tool.transform(editor => editor.add({ name: 'devryan_task', input: createManagedTaskInputSchema(),
+    description: 'Manage saved-model specialists and the selected Implement plan. Start independent work without an artificial concurrency cap. Use only advertised actions; waits stay attached through bounded host slices; status is nonblocking. Collect a terminal result before disposition. read_result uses each next cursor in order; required retained detail must be read before continue/retry/resume/abandon. Completed results accept only continue. Manual or scheduled Model Recovery stays unacknowledged. Required checks need real current content and exit receipts; collection never implies verification. Builder can only read or update its selected saved plan using plan_read/plan_update with expected_version and full text.',
     options: { codemode: false }, execute: () => Effect.fail(new Tool.Error({ message: 'managed_task_host_required' })) })),
 });
 

@@ -11,6 +11,22 @@ const { opencodeClient } = await import('@/lib/opencode/client');
 const { createEventPipeline } = await import('./event-pipeline');
 const { useConfigStore } = await import('@/stores/useConfigStore');
 
+test('startup observes only the current global subscription acknowledgment and loses readiness on cleanup', async () => withDom(async () => {
+  const events = new EventTarget(); window.dispatchEvent = events.dispatchEvent.bind(events);
+  const stream = controlledStream(), observed: boolean[] = [];
+  const pipeline = createEventPipeline({ sdk: stream.sdk, transport: 'sse', onEvent: () => {}, onSubscriptionReady: ready => observed.push(ready) });
+  try {
+    await stream.attachment;
+    stream.frame({ event: 'heartbeat' });
+    stream.frame({ event: 'devryan.subscription-ready', data: { type: 'ready', scope: 'directory' } });
+    expect(observed).toEqual([]);
+    stream.ready(); expect(observed).toEqual([true]);
+    stream.ready(); expect(observed).toEqual([true]);
+    pipeline.cleanup(); expect(observed).toEqual([true, false]);
+    stream.ready(); expect(observed).toEqual([true, false]);
+  } finally { pipeline.cleanup(); }
+}));
+
 type Frame = { id?: unknown; event?: unknown; data?: unknown };
 const controlledStream = () => {
   let observe: (frame: Frame) => void = () => { throw Error('Stream not attached'); };

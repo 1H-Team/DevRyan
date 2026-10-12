@@ -213,6 +213,7 @@ ${renderLogoSvg()}
         <h1>Startup needs attention</h1>
         <p>${detail}</p>
         <a href="openchamber://retry-startup">Retry</a>
+        <a href="openchamber://copy-startup-diagnostics">Copy Diagnostics</a>
       </div>
     </main>
   </body>

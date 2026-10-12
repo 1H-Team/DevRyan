@@ -105,6 +105,27 @@ test('launch verifies once before lifecycle configuration and refuses its failur
  },undefined,options=>{options.bundle.verify=async()=>{events.push('verified');throw Error('verify refused');};});
 });
 
+test.each([false, true])('controller receives authoritative managed tool policies: %s', async enabled => {
+  await fixture(async ({ owner }) => {
+    let launch, exited = false;
+    transport.create.mockImplementation(async options => {
+      launch = options;
+      return { bound: { catalog: { asserted: true } }, hasExited: () => exited, call: async () => null,
+        close: async () => { exited = true; await options.afterExit({}); } };
+    });
+    await owner.start();
+    expect(launch.environment.DEVRYAN_MANAGED_WAIT_ANY).toBe(enabled ? '1' : '0');
+    expect(launch.environment.DEVRYAN_TASK_CONTEXT_PROJECTION).toBe(enabled ? '1' : '0');
+    await owner.close();
+  }, undefined, options => {
+    options.environment = { DEVRYAN_MANAGED_WAIT_ANY: enabled ? '0' : '1', DEVRYAN_TASK_CONTEXT_PROJECTION: enabled ? '0' : '1' };
+    options.getManagedRuntime = () => ({ handleRpc: async ({ method }) => {
+      expect(method).toBe('harness_capabilities');
+      return { policies: { waitAny: enabled, contextProjection: enabled } };
+    } });
+  });
+});
+
 test('startup passes fresh original Cursor declarations without account discovery or secret fields',async()=>{
  const cursor=createCursorSdkRuntime({storageDir:path.resolve(import.meta.dirname,'../../../../../../.cache/v2-validation/unused-cursor-declarations'),env:{},ripgrepPath:'/usr/bin/true',nativeWarming:false,
   readAuth:()=>{throw Error('Unexpected credential read');},loadSdk:async()=>{throw Error('Unexpected SDK load');}});
@@ -458,7 +479,7 @@ test('normal close retains the physical controller until the credential queue ha
  },undefined,options=>{options.withCredentialMutationQueue=async action=>{entered();await blocked;await action();order.push('queue-drained');};});
 });
 
-const loaderBinding=()=>({admission:'pending',descriptor:{bundleID:'selected',generation:2,
+const loaderBinding=()=>({admission:'pending',selection:{transition:'activate'},descriptor:{bundleID:'selected',generation:2,
   // A relative manifest path makes the artifact check refuse immediately after the bundle gate.
   launch:{artifactManifestPath:'relative-manifest.json',artifactManifestSha256:'0'.repeat(64)}}});
 

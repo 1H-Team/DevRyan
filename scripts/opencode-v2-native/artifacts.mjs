@@ -6,9 +6,9 @@ import { fileURLToPath } from 'node:url';
 import { verifySessionExecutionLauncher } from '../../packages/harness-runtime/lib/session-execution.js';
 
 export const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-export const DEFAULT_RG = path.join(repositoryRoot, '.cache/v2-spike/homes/g2-01-seam-smoke/cache/opencode/bin/rg');
+export const DEFAULT_RG = path.join(repositoryRoot, 'node_modules/.bun/node_modules/@cursor/sdk-darwin-arm64/bin/rg');
 export const DEFAULT_LAUNCHER = path.join(repositoryRoot, 'packages/web/runtime/darwin-arm64/DevRyan-execution-darwin-arm64');
-export const RG_SHA256 = '2a6f27b8be5df4cc93183328cbe91bb82ce358966f8ecc6f65823ce4f8a0323f';
+export const RG_SHA256 = 'e141c2b242084e53112ab7f722e6f5ef940fa1a03d05a5aaf992d55c7a302321';
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 export const hashNativeFixtureValue = value => hash(JSON.stringify(value));
 

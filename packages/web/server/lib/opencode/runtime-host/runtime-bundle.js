@@ -192,11 +192,11 @@ const checkpoint = (source,generation,value) => {
   }
   return value;
 };
-const verifyRuntimeBundleArtifacts = async ({generation,launch:value}) => {
+const verifyRuntimeBundleArtifacts = async ({generation,launch:value,purpose}) => {
   const directory=path.dirname(absolute(value.artifactManifestPath));
   if (generation!==2) throw fail('bundle_artifact_generation_mismatch');
   const verified=await verifyNativeRuntimeArtifacts({manifestPath:value.artifactManifestPath,
-    manifestSha256:value.artifactManifestSha256,launcher:executionArtifacts(directory).launcher});
+    manifestSha256:value.artifactManifestSha256,launcher:executionArtifacts(directory).launcher,purpose});
   if (verified.controller!==value.controllerBinary || verified.writer!==value.writerBinary) throw fail('bundle_artifact_generation_mismatch');
   return verified;
 };
@@ -244,8 +244,9 @@ export function createRuntimeBundleStore(options) {
     if (await fileHash(value.preparedManifestPath)!==current.preparedManifestSha256) throw fail('bundle_selected_evidence_changed');
     return {selection:current,descriptor:value};
   };
-  const verify = async ({bundleID,phase,allowOwnedContinuations=true}) => {
+  const verify = async ({bundleID,phase,allowOwnedContinuations=true,artifactPurpose}) => {
     if (!['prepared','resume'].includes(phase)) throw fail('bundle_verification_phase_invalid');
+    if (artifactPurpose !== undefined && (phase !== 'resume' || !['bundle-source','bundle-rollback'].includes(artifactPurpose))) throw fail('bundle_artifact_generation_mismatch');
     const value = await readDescriptor(bundleID), root = path.join(controlRoot,'bundles',bundleID);
     const manifest = await readBundleJSON(value.preparedManifestPath);
     if (!isRecord(manifest) || manifest.schema !== 1 || manifest.bundleID !== bundleID || manifest.checkpointID !== value.checkpoint.checkpointID
@@ -263,7 +264,7 @@ export function createRuntimeBundleStore(options) {
     if (!Array.isArray(manifest.artifactFiles) || canonicalJSON(manifest.artifactFiles.map(row=>row.path).sort())!==canonicalJSON(expectedArtifacts)
       || manifest.artifactFiles.find(row=>row.path===value.launch.artifactManifestPath)?.sha256!==value.launch.artifactManifestSha256) throw fail('bundle_manifest_invalid');
     for (const row of manifest.artifactFiles) if (!isRecord(row) || !validHash(row.sha256) || await fileHash(absolute(row.path))!==row.sha256) throw fail('bundle_artifact_changed');
-    const verifiedArtifacts = await verifyArtifacts({generation:value.generation,launch:value.launch});
+    const verifiedArtifacts = await verifyArtifacts({generation:value.generation,launch:value.launch,...artifactPurpose?{purpose:artifactPurpose}:{}});
     if (phase === 'prepared') {
       const initial=durable(manifest.initialFiles,root,value.launch);
       await verifyTree(root,initial);
@@ -342,7 +343,7 @@ export function createRuntimeBundleStore(options) {
     const root=path.join(controlRoot,'bundles',input.bundleID),inputSha256=sha256(canonicalJSON(input));
     return options.withQuiescedSource(input.source,async (stamp,scope)=>{
       const sourceCheckpoint=checkpoint(source.launch,2,stamp);
-      await verify({bundleID:source.bundleID,phase:'resume',allowOwnedContinuations:false});
+      await verify({bundleID:source.bundleID,phase:'resume',allowOwnedContinuations:false,artifactPurpose:'bundle-source'});
       if(typeof scope?.assertHeld!=='function')throw fail('bundle_credential_checkpoint_required');
       await scope.assertHeld();
       const credentials=await options.captureCredentials?.({descriptor:source,checkpoint:sourceCheckpoint,assertHeld:scope.assertHeld});
@@ -499,7 +500,8 @@ export function createRuntimeBundleStore(options) {
   const switchSelection = async ({bundleID,expectedRevision},transition,reconciliationRequired,previousBundleID,credentialBaseline) => lock(path.join(controlRoot,'selection.lock'),async () => {
     const current = await readSelected(), revision=current?.selection.revision ?? 0;
     if (!Number.isSafeInteger(expectedRevision) || expectedRevision !== revision) throw fail('bundle_selection_revision_conflict');
-    const verified=await verify({bundleID,phase:'resume',allowOwnedContinuations:false});
+    const verified=await verify({bundleID,phase:'resume',allowOwnedContinuations:false,
+      ...(transition==='rollback'?{artifactPurpose:'bundle-rollback'}:{})});
     const next={schema:1,revision:revision+1,selectedBundleID:bundleID,previousBundleID:previousBundleID ?? current?.selection.selectedBundleID ?? null,
       transition,reconciliationRequired,preparedManifestSha256:await fileHash(verified.descriptor.preparedManifestPath)};
     if(credentialBaseline)await saveBundleJSON(path.join(controlRoot,'rollback',bundleID+'.json'),credentialBaseline);
@@ -587,7 +589,7 @@ export function createRuntimeBundleStore(options) {
     // Static incompatibility never closes B admission or changes its selector.
     if(current.selection.revision!==expectedRevision)throw fail('bundle_selection_revision_conflict');
     if(retryHeld)throw fail('bundle_recovery_resume_required');
-    const targetArtifacts=await verifyArtifacts({generation:target.generation,launch:target.launch});
+    const targetArtifacts=await verifyArtifacts({generation:target.generation,launch:target.launch,purpose:'bundle-rollback'});
     const originBefore=await readBundleJSON(path.join(controlRoot,'rollback',candidate.bundleID+'.json')).catch(error=>{if(error.code!=='ENOENT')throw error;return null;});
     if(!targetArtifacts?.manifest.compiledContracts?.includes(NATIVE_BUNDLE_CREDENTIAL_CONTRACT)
       ||!isRecord(originBefore)||originBefore.schema!==1||originBefore.candidateBundleID!==candidate.bundleID||originBefore.targetBundleID!==target.bundleID
@@ -597,8 +599,8 @@ export function createRuntimeBundleStore(options) {
     const pending=readRollbackIntentSync(controlRoot);if(rollbackIntentUnresolved(pending,current.selection))throw fail('bundle_recovery_resume_required');
     return options.withQuiescedSource({kind:'bundle',bundleID:current.descriptor.bundleID},async (proof,scope) => {
       checkpoint(current.descriptor.launch,current.descriptor.generation,proof);
-      await verify({bundleID:candidate.bundleID,phase:'resume',allowOwnedContinuations:false});
-      await verify({bundleID:target.bundleID,phase:'resume',allowOwnedContinuations:false});
+      await verify({bundleID:candidate.bundleID,phase:'resume',allowOwnedContinuations:false,artifactPurpose:'bundle-source'});
+      await verify({bundleID:target.bundleID,phase:'resume',allowOwnedContinuations:false,artifactPurpose:'bundle-rollback'});
       let credentialBinding,capturedSource;
       let origin;try{origin=await readBundleJSON(path.join(controlRoot,'rollback',candidate.bundleID+'.json'));}catch(error){if(error.code!=='ENOENT')throw error;}
       if(isRecord(origin)&&origin.schema===1&&origin.candidateBundleID===candidate.bundleID&&origin.targetBundleID===target.bundleID

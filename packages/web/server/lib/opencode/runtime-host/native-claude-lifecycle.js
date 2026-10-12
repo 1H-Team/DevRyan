@@ -66,9 +66,10 @@ export function parseClaudeLifecycle(value){
   ||Buffer.byteLength(JSON.stringify(value))>CLAUDE_LIFECYCLE_LIMITS.bytes)fail('native_claude_lifecycle_invalid');
  for(const row of value.accounts){exact(row,accountFields);account(row);}
  for(const row of value.unresolved){
-  exact(row,[...accountFields,'attemptID','phase',...(row.phase==='replacement-prepared'?['replacementRecordFingerprint','replacementGrantFingerprint']:[])]);account(row);
-  if(!text(row.attemptID)||!['in-flight','replacement-prepared','blocked','enrollment-prepared'].includes(row.phase)
-   ||row.phase==='replacement-prepared'&&(!digest(row.replacementRecordFingerprint)||!digest(row.replacementGrantFingerprint)))fail('native_claude_lifecycle_invalid');
+  exact(row,[...accountFields,'attemptID','phase',...(row.phase==='replacement-prepared'?['replacementRecordFingerprint','replacementGrantFingerprint']:row.phase==='deletion-prepared'?['incomplete','directoryDevice','directoryInode']:[])]);account(row);
+  if(!text(row.attemptID)||!['in-flight','replacement-prepared','blocked','enrollment-prepared','deletion-prepared'].includes(row.phase)
+   ||row.phase==='replacement-prepared'&&(!digest(row.replacementRecordFingerprint)||!digest(row.replacementGrantFingerprint))
+   ||row.phase==='deletion-prepared'&&(typeof row.incomplete!=='boolean'||!((row.directoryDevice===null&&row.directoryInode===null)||[row.directoryDevice,row.directoryInode].every(value=>Number.isSafeInteger(value)&&value>=0))))fail('native_claude_lifecycle_invalid');
  }
  for(const key of ['profileID','service','configDirectory','enrollmentID','grantFingerprint'])if(new Set(value.accounts.map(row=>row[key])).size!==value.accounts.length)fail('native_claude_lifecycle_invalid');
  for(const key of ['attemptID','grantFingerprint'])if(new Set(value.unresolved.map(row=>row[key])).size!==value.unresolved.length)fail('native_claude_lifecycle_invalid');
@@ -89,6 +90,11 @@ export function parseClaudeLifecycleOperation(value){
  if(!record(value))fail('native_claude_lifecycle_invalid');
  if(value.kind==='enroll'){exact(value,['kind','account']);exact(value.account,accountFields);account(value.account);}
  else if(['begin','block-legacy','prepare-enrollment'].includes(value.kind)){exact(value,['kind','account','attemptID']);exact(value.account,accountFields);account(value.account);if(!text(value.attemptID))fail('native_claude_lifecycle_invalid');}
+ else if(['prepare-deletion','settle-deletion'].includes(value.kind)){
+  exact(value,['kind','binding','attemptID','recordFingerprint',...value.kind==='prepare-deletion'?['directoryDevice','directoryInode']:[]]);
+  exact(value.binding,bindingFields);binding(value.binding);
+  if(!text(value.attemptID)||!digest(value.recordFingerprint)||value.kind==='prepare-deletion'&&!((value.directoryDevice===null&&value.directoryInode===null)||[value.directoryDevice,value.directoryInode].every(item=>Number.isSafeInteger(item)&&item>=0)))fail('native_claude_lifecycle_invalid');
+ }
  else if(['prepare','settle','settle-enrollment','cancel-before-dispatch'].includes(value.kind)){
   exact(value,['kind','binding','attemptID',...(value.kind==='prepare'?['recordFingerprint','grantFingerprint']:['settle','settle-enrollment'].includes(value.kind)?['recordFingerprint']:[])]);
   exact(value.binding,bindingFields);binding(value.binding);
@@ -118,10 +124,22 @@ export function transitionClaudeLifecycle(value,expectedRevision,operation){
    if(state.accounts.some(row=>['profileID','service','configDirectory','enrollmentID','grantFingerprint'].some(key=>row[key]===action.account[key])))fail('native_claude_enrollment_conflict');
   }
   state.unresolved.push({...action.account,attemptID:action.attemptID,phase:action.kind==='begin'?'in-flight':action.kind==='prepare-enrollment'?'enrollment-prepared':'blocked'});
+ }else if(action.kind==='prepare-deletion'){
+  const selected=state.accounts.find(row=>sameClaudeEnrollment(row,action.binding));
+  const prepared=state.unresolved.find(row=>sameClaudeEnrollment(row,action.binding)&&row.phase==='enrollment-prepared');
+  const row=selected??prepared;
+  if(!row||row.recordFingerprint!==action.recordFingerprint||state.unresolved.some(item=>item!==prepared&&(sameClaudeEnrollment(item,action.binding)||item.attemptID===action.attemptID)))fail('native_claude_lifecycle_conflict');
+  if(prepared)state.unresolved.splice(state.unresolved.indexOf(prepared),1);
+  if(state.unresolved.length>=128)fail('native_claude_lifecycle_capacity');
+  const {attemptID:_attempt,phase:_phase,...account}=row;void _attempt;void _phase;
+  state.unresolved.push({...account,attemptID:action.attemptID,phase:'deletion-prepared',incomplete:!selected,directoryDevice:action.directoryDevice,directoryInode:action.directoryInode});
  }else{
   const index=state.unresolved.findIndex(row=>row.attemptID===action.attemptID&&sameClaudeEnrollment(row,action.binding));
   if(index<0)fail('native_claude_lifecycle_conflict');const pending=state.unresolved[index];
-  if(action.kind==='settle-enrollment'){
+  if(action.kind==='settle-deletion'){
+   if(pending.phase!=='deletion-prepared'||pending.recordFingerprint!==action.recordFingerprint)fail('native_claude_lifecycle_conflict');
+   state.accounts=state.accounts.filter(row=>!sameClaudeEnrollment(row,action.binding));state.unresolved.splice(index,1);
+  }else if(action.kind==='settle-enrollment'){
    if(pending.phase!=='enrollment-prepared'||pending.recordFingerprint!==action.recordFingerprint)fail('native_claude_lifecycle_conflict');
    const {attemptID,phase,...selected}=pending;void attemptID;void phase;
    state.accounts.push(selected);state.unresolved.splice(index,1);

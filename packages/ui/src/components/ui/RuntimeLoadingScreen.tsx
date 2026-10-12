@@ -1,6 +1,7 @@
 import React from 'react';
 
 import { Button } from '@/components/ui/button';
+import { copyTextToClipboard } from '@/lib/clipboard';
 import { cn } from '@/lib/utils';
 
 const DEVRYAN_ICON_CLIP_PATH = 'M48.18,50.68v425.54h497.18V50.68H48.18ZM346.33,85.39c-34.03,14.36-61.01,41.46-74.79,55.3-2.21,2.22-4.31,4.34-6.32,6.38-17.58,17.79-25.6,25.91-44.71,34.43-12.61,5.62-18.28,20.4-12.66,33.01,4.15,9.31,13.28,14.83,22.85,14.83,3.4,0,6.86-.7,10.16-2.17,27.72-12.35,41.23-26.03,59.94-44.97,1.96-1.99,4.01-4.06,6.18-6.24,8.23-8.26,22.56-22.65,39.36-33.88v18.52c-12.32,9.47-22.84,20.03-28.73,25.94-1.95,1.96-3.8,3.83-5.59,5.64l-.55.56c-19.11,19.34-34.2,34.62-64.5,48.12-5.17,2.3-10.64,3.47-16.27,3.47-15.78,0-30.13-9.31-36.55-23.73-8.98-20.15.11-43.84,20.26-52.82,16.54-7.37,22.96-13.88,40.14-31.27,2.03-2.05,4.13-4.19,6.36-6.42,15.32-15.39,45.92-46.11,85.42-60.88v16.16Z';
@@ -12,6 +13,7 @@ export interface RuntimeLoadingScreenProps {
   state?: 'loading' | 'error';
   onRetry?: () => void;
   isRetrying?: boolean;
+  diagnostics?: string;
 }
 
 const DevRyanLoadingMark: React.FC = () => (
@@ -49,8 +51,10 @@ export const RuntimeLoadingScreen: React.FC<RuntimeLoadingScreenProps> = ({
   state = 'loading',
   onRetry,
   isRetrying = false,
+  diagnostics,
 }) => {
   const isError = state === 'error';
+  const [copyStatus, setCopyStatus] = React.useState('Copy Diagnostics');
 
   return (
     <div
@@ -71,6 +75,12 @@ export const RuntimeLoadingScreen: React.FC<RuntimeLoadingScreenProps> = ({
             <p className="max-w-full [overflow-wrap:anywhere] typography-body text-destructive">
               {message}
             </p>
+            {diagnostics ? (
+              <Button type="button" variant="outline" onClick={async () => {
+                const result = await copyTextToClipboard(diagnostics);
+                setCopyStatus(result.ok ? "Copied" : "Copy failed — try again");
+              }}>{copyStatus}</Button>
+            ) : null}
             {onRetry ? (
               <Button type="button" className="mt-2" onClick={onRetry} disabled={isRetrying}>
                 {isRetrying ? 'Retrying…' : 'Retry'}

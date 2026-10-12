@@ -165,6 +165,8 @@ describe('multi-user policy', () => {
       ['/opencode/update-check', 'GET', 'about'],
       ['/config/opencode-resolution', 'GET', 'about'],
       ['/config/opencode-update-check', 'GET', 'about'],
+      ['/config/claude-update-check', 'GET', 'about'],
+      ['/config/claude-resolution', 'GET', 'about'],
       ['/projects/project-1/icon', 'PUT', 'projects'],
       ['/git/identities', 'GET', 'git'],
       ['/github/auth/start', 'POST', 'users'],

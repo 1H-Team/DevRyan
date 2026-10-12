@@ -4,12 +4,12 @@ vi.mock('./native-provider-process.js', () => ({ createNativeProviderProcess: pr
 import { createNativeProviderRuntimeOwner } from './native-provider-runtime-owner.js';
 
 beforeEach(() => processFactory.mockReset());
-const owner = () => createNativeProviderRuntimeOwner({ instanceID: 'controller', claudeSupported: true,
+const owner = (profiles=[]) => createNativeProviderRuntimeOwner({ instanceID: 'controller', claudeSupported: true,
   snapshot: { locations: [{ directory: '/synthetic-project', configuration: {} }] },
   registrationOrigin: { kind: 'plugin', id: 'devryan.provider-compat', manifestDigest: 'a'.repeat(64) },
   controller: () => ({ instanceID: 'controller' }), isReady: () => true, withMutationQueue: action => action(),
   admissionOwner: { withProviderAttempt: (_input, action) => action(async () => {}) },
-  meridian: { boot: { profiles: [], globals: { home: '/synthetic-home' }, requestAuthorization: 'b'.repeat(64) } } });
+  meridian: { boot: { profiles, globals: { home: '/synthetic-home' }, requestAuthorization: 'b'.repeat(64) } } });
 const input = { directory: '/synthetic-project', controllerInstanceID: 'controller', sessionID: 'session', kind: 'primary',
   permit: { token: 'c'.repeat(64), sessionID: 'session', revision: 0 } };
 const worker = () => {
@@ -57,4 +57,34 @@ test('an unconfirmed failed worker cannot be replaced or reported drained', asyn
   await expect(runtime.beginMeridian(input)).rejects.toMatchObject({ code: 'native_provider_termination_unconfirmed' });
   expect(processFactory).toHaveBeenCalledOnce();
   await expect(runtime.close()).rejects.toMatchObject({ code: 'native_provider_termination_unconfirmed' });
+});
+
+test('profile deletion refuses existing attempts and fences new attempts and inspection until settlement',async()=>{
+ const process=worker();processFactory.mockResolvedValue(process);const runtime=owner();
+ const attempt=await runtime.beginMeridian(input),action=vi.fn(async()=>{});
+ await expect(runtime.withClaudeProfileRemoval(action)).rejects.toMatchObject({code:'native_claude_enrollment_busy'});expect(action).not.toHaveBeenCalled();
+ await finish(runtime,attempt);
+ const entered=Promise.withResolvers(),finishDeletion=Promise.withResolvers();
+ const deletion=runtime.withClaudeProfileRemoval(async()=>{entered.resolve();await finishDeletion.promise;});
+ await entered.promise;
+ await expect(runtime.beginMeridian(input)).rejects.toMatchObject({code:'native_claude_enrollment_busy'});
+ await expect(runtime.inspectClaude({directory:input.directory,kind:'status'},{recheck:async()=>{}})).rejects.toMatchObject({code:'native_claude_enrollment_busy'});
+ finishDeletion.resolve();await deletion;
+ const next=await runtime.beginMeridian(input);await finish(runtime,next);
+ await runtime.close();
+});
+test('only removal of a cached profile invalidates the old provider configuration, including partial cleanup',async()=>{
+ for(const configured of [false,true]){
+  const runtime=owner([{id:'working',type:'claude-max'},...configured?[{id:'removed',type:'claude-max'}]:[]]);
+  await expect(Promise.resolve().then(()=>runtime.invalidateClaudeProfile('removed'))).rejects.toMatchObject({code:'native_claude_enrollment_owner_required'});
+  await expect(runtime.withClaudeProfileRemoval(async()=>{runtime.invalidateClaudeProfile('removed');throw Error('later cleanup failed');})).rejects.toThrow('later cleanup failed');
+  if(configured){
+   await expect(runtime.beginMeridian(input)).rejects.toMatchObject({code:'native_claude_enrollment_configuration_changed'});
+   await expect(runtime.inspectClaude({directory:input.directory,kind:'status'},{recheck:async()=>{}})).rejects.toMatchObject({code:'native_claude_enrollment_configuration_changed'});
+   expect(processFactory).not.toHaveBeenCalled();
+  }else{
+   processFactory.mockResolvedValue(worker());const attempt=await runtime.beginMeridian(input);await finish(runtime,attempt);processFactory.mockReset();
+  }
+  await runtime.close();
+ }
 });

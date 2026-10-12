@@ -426,7 +426,7 @@ describe('Cursor SDK worker runtime config', () => {
         publication.reject(Object.assign(new Error('execution_cancelled'), { code: 'execution_cancelled' }));
         await waitFor(() => closing);
         let completed = false;
-        const stopped = runtime.abortAndWait(sessionID).finally(() => { completed = true; });
+        const stopped = runtime.abortSession(sessionID).finally(() => { completed = true; });
         void stopped.catch(() => {});
         await new Promise(resolve => setTimeout(resolve, 10));
         expect(completed).toBe(false);
@@ -434,10 +434,89 @@ describe('Cursor SDK worker runtime config', () => {
           const uncertain = Object.assign(new Error('actual cleanup uncertainty'), { nativeProcessUnsettled: true });
           cleanup.reject(uncertain); await expect(stopped).rejects.toBe(uncertain);
         } else {
-          cleanup.resolve(); await expect(stopped).resolves.toEqual({ terminated: true, sessions: [sessionID] });
+          cleanup.resolve(); await expect(stopped).resolves.toBe(true);
         }
       } finally { cleanup.resolve(); await runtime.dispose(); }
     }
+  });
+
+  test('native stop cancels prompt-time catalog discovery before creating a worker', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-startup-stop-'));
+    const started = Promise.withResolvers();
+    let catalogSignal, workers = 0;
+    const runtime = createCursorSdkRuntime({ storageDir: tempDir, env: {}, nativeWarming: false,
+      resolveApiKey: async () => 'synthetic-fixture',
+      ownedReadOnly: async (scope, action) => { catalogSignal = scope.signal; return action(); },
+      loadSdk: async () => ({ Cursor: { models: { list: async () => {
+        started.resolve();
+        await new Promise(resolve => catalogSignal.addEventListener('abort', resolve, { once: true }));
+        return [{ id: 'fixture' }];
+      } } } }),
+      executionAdapter: { beforePrompt: async () => null, start: async () => { workers++; throw Error('Stopped prompt must not start'); } },
+    });
+    try {
+      const prompt = runtime.handlePromptAsync({ sessionID: 'ses_starting', directory: tempDir,
+        body: { messageID: 'msg_starting', model: { providerID: 'cursor-acp', modelID: 'fixture' }, parts: [{ type: 'text', text: 'Inspect' }] } });
+      void prompt.catch(() => {});
+      await started.promise;
+      expect(await runtime.abortSession('ses_starting')).toBe(true);
+      await expect(prompt).rejects.toMatchObject({ code: 'execution_cancelled' });
+      expect(workers).toBe(0);
+      expect(await runtime.abortSession('ses_starting')).toBe(false);
+      expect(runtime.getCachedVirtualProvider().models.fixture).toBeUndefined();
+    } finally { await runtime.dispose(); }
+  });
+
+  test('native stop retains busy until the owned worker and transcript have settled', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-owned-worker-stop-'));
+    const capture = { calls: [], input: null, hold: true }, receipt = Promise.withResolvers();
+    const events = [];
+    let cancelCalled = 0, closed = false, completed = false;
+    const runtime = createCursorSdkRuntime({ storageDir: tempDir, env: { CURSOR_API_KEY: 'synthetic-fixture' },
+      useNodeWorkerForPrompts: true, getWorkspaceDiff: async () => '', emitEvent: event => events.push(event),
+      ownedPrompt: async () => ({ run: action => action(), close: async () => { closed = true; } }),
+      executionAdapter: { beforePrompt: async () => null, start: async ({ command, args, inputForLease }) => {
+        const child = createFakeTitleWorkerSpawn(capture)(command, args, {}), terminate = child.kill;
+        return { child, lease: { workingDirectory: tempDir }, workerInput: inputForLease({ workingDirectory: tempDir }),
+          result: receipt.promise, cancel: () => { cancelCalled++; terminate('SIGTERM'); } };
+      } },
+    });
+    try {
+      await runtime.handlePromptAsync({ sessionID: 'ses_worker_stop', directory: tempDir,
+        body: { messageID: 'msg_worker_stop', model: { providerID: 'cursor-acp', modelID: 'composer-2.5' }, parts: [{ type: 'text', text: 'Inspect' }] } });
+      const stopped = runtime.abortSession('ses_worker_stop').finally(() => { completed = true; });
+      await waitFor(() => cancelCalled);
+      expect(completed).toBe(false);
+      expect(closed).toBe(false);
+      expect(runtime.getSessionStatus().ses_worker_stop.type).toBe('busy');
+      expect(events.some(event => event.type === 'session.status' && event.properties.status.type === 'idle')).toBe(false);
+      receipt.reject(Object.assign(Error('execution_cancelled'), { code: 'execution_cancelled' }));
+      expect(await stopped).toBe(true);
+      expect(cancelCalled).toBe(1);
+      expect(closed).toBe(true);
+      expect(runtime.getSessionStatus().ses_worker_stop.type).toBe('idle');
+      const assistant = (await runtime.getSessionMessages('ses_worker_stop')).find(record => record.info.role === 'assistant');
+      expect(assistant.info.finish).toBe('cancelled');
+    } finally { receipt.resolve({}); await runtime.dispose(); }
+  });
+
+  test.each(['empty', 'reasoning', 'assistant'])('first emitted text measures assistant answer only (%s)', async mode => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-first-answer-'));
+    const marks = [];
+    const capture = { calls: [], input: null, messages: mode === 'assistant'
+      ? [{ type: 'assistant', message: { content: [{ type: 'text', text: 'Answer' }] } }]
+      : mode === 'reasoning' ? [{ type: 'thinking', text: 'Reasoning' }] : [] };
+    const runtime = createCursorSdkRuntime({ storageDir: tempDir, env: { CURSOR_API_KEY: 'synthetic-fixture' },
+      useNodeWorkerForPrompts: true, usePersistentWorkerForPrompts: false,
+      getWorkspaceDiff: async () => '', spawnImpl: createFakeWorkerSpawn(capture),
+      recordTimingMark: entry => marks.push(entry),
+    });
+    try {
+      await runtime.handlePromptAsync({ sessionID: 'ses_timing', directory: tempDir,
+        body: { messageID: 'msg_timing', model: { providerID: 'cursor-acp', modelID: 'composer-2.5' }, parts: [{ type: 'text', text: 'Replay this user prompt' }] } });
+      await waitFor(() => runtime.getSessionStatus().ses_timing?.type === 'idle');
+      expect(marks.filter(entry => entry.mark === 'cursor_first_emitted_text_delta')).toHaveLength(mode === 'assistant' ? 1 : 0);
+    } finally { await runtime.dispose(); }
   });
 
   test('owned prompt closes after initial persistence failure without creating a worker', async () => {
@@ -454,6 +533,36 @@ describe('Cursor SDK worker runtime config', () => {
         body: { messageID: 'msg_owned_fail', model: { providerID: 'cursor-acp', modelID: 'composer-2.5' }, parts: [{ type: 'text', text: 'owned' }] } })).status).toBe(204);
       expect(closed).toBe(1); expect(runs).toBe(0);
     } finally { await runtime.dispose(); }
+  });
+
+  test('native abort reports terminal persistence failure after the owned receipt and cleanup settle', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-final-persist-failure-'));
+    const capture = { calls: [], input: null, hold: true }, receipt = Promise.withResolvers(), diagnostics = [];
+    const failure = Object.assign(Error('private fixture detail'), { code: 'native_managed_task_lease_invalid' });
+    let cancelled = false, closed = false;
+    const runtime = createCursorSdkRuntime({ storageDir: tempDir, env: { CURSOR_API_KEY: 'synthetic-fixture' },
+      useNodeWorkerForPrompts: true, getWorkspaceDiff: async () => '', logger: { error: () => {} },
+      recordDiagnostic: entry => diagnostics.push(entry),
+      ownedPrompt: async () => ({ run: action => action(), close: async () => { closed = true; } }),
+      onPersistRecord: async ({ record }) => { if (record.info.time.completed) throw failure; },
+      executionAdapter: { beforePrompt: async () => null, start: async ({ command, args, inputForLease }) => {
+        const child = createFakeTitleWorkerSpawn(capture)(command, args, {});
+        return { child, lease: { workingDirectory: tempDir }, workerInput: inputForLease({ workingDirectory: tempDir }),
+          result: receipt.promise, cancel: () => { cancelled = true; child.kill('SIGTERM'); } };
+      } },
+    });
+    try {
+      await runtime.handlePromptAsync({ sessionID: 'ses_persist_stop', directory: tempDir,
+        body: { messageID: 'msg_persist_stop', model: { providerID: 'cursor-acp', modelID: 'composer-2.5' }, parts: [{ type: 'text', text: 'Inspect' }] } });
+      const stopped = runtime.abortSession('ses_persist_stop'); void stopped.catch(() => {});
+      await waitFor(() => cancelled); expect(closed).toBe(false);
+      receipt.reject(Object.assign(Error('execution_cancelled'), { code: 'execution_cancelled' }));
+      await expect(stopped).rejects.toMatchObject({ errors: expect.arrayContaining([failure]) });
+      expect(closed).toBe(true);
+      expect(diagnostics.filter(entry => entry.payload.phase === 'failed')).toEqual([expect.objectContaining({ type: 'lifecycle', event: 'cursor_persistence', payload: expect.objectContaining({ phase: 'failed', reason: 'native_managed_task_lease_invalid' }) })]);
+      expect(diagnostics.some(entry => entry.payload.phase === 'sdk_failed' && entry.payload.reason === 'native_managed_task_lease_invalid')).toBe(true);
+      expect(JSON.stringify(diagnostics)).not.toContain('private fixture detail');
+    } finally { receipt.resolve({}); await runtime.dispose(); }
   });
 
   test('persists one conflict notice after native publication before reporting a successful Cursor run idle', async () => {

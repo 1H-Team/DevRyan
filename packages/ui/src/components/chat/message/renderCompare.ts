@@ -116,6 +116,7 @@ export const areRenderRelevantMessageInfoEqual = (left: Message, right: Message)
   return left.id === right.id
     && left.role === right.role
     && left.sessionID === right.sessionID
+    && (left as { parentID?: unknown }).parentID === (right as { parentID?: unknown }).parentID
     && (left as { finish?: unknown }).finish === (right as { finish?: unknown }).finish
     && (left as { status?: unknown }).status === (right as { status?: unknown }).status
     && (left as { mode?: unknown }).mode === (right as { mode?: unknown }).mode

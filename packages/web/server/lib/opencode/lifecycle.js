@@ -7,13 +7,16 @@ import { buildVisibleSkillPolicy } from './skill-policy.js';
 import { SLIM_REPLACED_AGENT_NAMES, resolveSlimConfig } from './slim-config.js';
 import { probe as probeOpenCodeRuntime, resolveExpectedOpenCodeVersion } from './readiness-probe.js';
 import { isNativeOpenCodeVersion } from './version-policy.js';
-import { readStartupBundleUpgradeFailure } from './runtime-host/bundle-startup-upgrade-status.js';
+import { readStartupBundleUpgradeFailure, readStartupBundleUpgradeDiagnostic } from './runtime-host/bundle-startup-upgrade-status.js';
+import { artifactDiagnostic, describeArtifactFailure } from '@openchamber/shared-runtime/startup-diagnostics.js';
 
 const unavailable=(code='native_runtime_bundle_required')=>Object.assign(new Error(code==='native_runtime_owner_mismatch'?'Inherited runtime process requires a fresh server owner':'Verified native runtime bundle required'),{code,status:503});
 // Readiness would refuse this runtime with version_mismatch; startup normally
 // upgrades it first (runtime-host/native-bundle-startup-upgrade.js).
 const upgradeRequired=(version,expected)=>{
   const failure=readStartupBundleUpgradeFailure();
+  const diagnostic=readStartupBundleUpgradeDiagnostic();
+  if(failure==='native_runtime_artifacts_unverified')return Object.assign(new Error(describeArtifactFailure(diagnostic)),{code:failure,status:503,...diagnostic?{diagnostic}:{}});
   return Object.assign(new Error(`Native runtime OpenCode ${version} must be upgraded to ${expected}${failure?`; the startup upgrade did not complete (${failure})`:''}. Restart DevRyan to retry the upgrade.`),{code:'bundle_upgrade_required',status:503});
 };
 function normalizeWorkingDirectoryCandidate(value) {
@@ -112,9 +115,10 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         const candidate = error?.code ?? error?.message;
         const code = typeof candidate === 'string' && /^(?:native|opencode|bundle)_[a-z0-9_]{1,95}$/.test(candidate)
           ? candidate : 'opencode_startup_failed';
-        state.openCodeStartup = { state: 'failed', attempt, code };
+        const diagnostic = artifactDiagnostic(error);
+        state.openCodeStartup = { state: 'failed', attempt, code, ...(diagnostic ? { diagnostic } : {}) };
         state.isOpenCodeReady = false;
-        state.lastOpenCodeError = error?.message ?? code;
+        state.lastOpenCodeError = diagnostic ? describeArtifactFailure(diagnostic) : error?.message ?? code;
         syncToHmrState();
       }
       throw error;
@@ -261,7 +265,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     if (!isNativeOpenCodeVersion(bundle.version)) throw unavailable();
     // An invalid QA override is left for the readiness probe to report.
     let expectedVersion=null;try{expectedVersion=resolveExpectedOpenCodeVersion(2);}catch{}
-    if(expectedVersion&&bundle.version!==expectedVersion)throw upgradeRequired(bundle.version,expectedVersion);
+    if(expectedVersion&&(bundle.version!==expectedVersion||readStartupBundleUpgradeFailure()))throw upgradeRequired(bundle.version,expectedVersion);
     state.openCodeWorkingDirectory=bundle.descriptor.projectMap[0].targetDirectory;
     const launchSettings=normalizeAgentRuntimeSettings(readAgentRuntimeSettings());
     state.openCodeGeneration=2;state.isExternalOpenCode=false;

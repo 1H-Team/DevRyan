@@ -1,0 +1,20 @@
+{
+  "version": "2.0.8",
+  "status": "passed",
+  "commands": [
+    "bun run build",
+    "bun run bundle:check",
+    "bun scripts/build-native-runtime.mjs --output-root <private candidate>",
+    "node scripts/verify-opencode-v2-package.mjs --artifact-root <private candidate>",
+    "bun run validate:full",
+    "bun run docs:validate",
+    "isolated web chat QA",
+    "isolated Electron chat QA (idle retry)"
+  ],
+  "uiTests": 4111,
+  "webTests": 6682,
+  "finalNativeBackendTests": 14,
+  "nativeQualificationCases": 52,
+  "installedAppUpdate": "not-run",
+  "newLiveProviderMatrix": "not-run"
+}

@@ -4,6 +4,7 @@ import {afterEach,expect,test,vi} from 'vitest';
 import {claudeKeychainService} from '../claude-credential-projection.js';
 import {relocateNativeSetupProfiles} from './native-setup-profiles.js';
 import {captureBundleCredentialOwners,assertBundleCredentialOwners} from './bundle-credential-owner-guard.js';
+import {transitionClaudeLifecycle} from './native-claude-lifecycle.js';
 const roots=[];afterEach(async()=>{for(const root of roots.splice(0))await fs.rm(root,{recursive:true,force:true});});
 async function fixture(){
  const root=await fs.mkdtemp(path.resolve('../../.cache/v2-validation/stable-enrollment-'));roots.push(root);await fs.chmod(root,0o700);
@@ -36,6 +37,13 @@ test('copied flags, absent/foreign native receipt, changed identity/service and 
   const copyAccount=vi.fn();await expect(relocateNativeSetupProfiles({profiles:[{...f.profile,devryanEnrolled:true}],sourceHome:f.home,targetHome:f.targetHome,controlRoot:f.controlRoot,claudeLifecycle:state,copyAccount})).rejects.toMatchObject({code:'native_setup_profiles_invalid'});expect(copyAccount).not.toHaveBeenCalled();
  }
  await fs.chmod(f.directory,0o755);await expect(relocateNativeSetupProfiles({profiles:[f.profile],sourceHome:f.home,targetHome:f.targetHome,controlRoot:f.controlRoot,claudeLifecycle:f.claudeLifecycle,copyAccount:vi.fn()})).rejects.toMatchObject({code:'native_setup_profiles_invalid'});
+});
+test('a durable deletion intent cannot be selected as stable bundle clone authority',async()=>{
+ const f=await fixture(),{grantFingerprint:_grant,recordFingerprint,...binding}=f.claudeLifecycle.accounts[0];void _grant;
+ const state=transitionClaudeLifecycle(f.claudeLifecycle,f.claudeLifecycle.revision,{kind:'prepare-deletion',binding,attemptID:'delete',recordFingerprint,directoryDevice:1,directoryInode:2});
+ const copyAccount=vi.fn();
+ await expect(relocateNativeSetupProfiles({profiles:[f.profile],sourceHome:f.home,targetHome:f.targetHome,controlRoot:f.controlRoot,claudeLifecycle:state,copyAccount})).rejects.toMatchObject({code:'native_setup_profiles_invalid'});
+ expect(copyAccount).not.toHaveBeenCalled();
 });
 test('first-seed mode drops invalid account paths, later duplicates and rows past 64; strict mode still fails closed',async()=>{
  const home='/fixture/home',targetHome='/fixture/target',copied=[],skipped=[];

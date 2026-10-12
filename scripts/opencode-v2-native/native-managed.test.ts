@@ -3,7 +3,7 @@ import { Effect, Schema } from 'effect';
 import { Location } from '@opencode/core/location';
 import { WorkerInput } from '../../packages/web/server/lib/opencode/runtime-host/worker-protocol.js';
 import type { OwnedToolInvocation } from '../../packages/web/server/lib/opencode/runtime-host/native-admission-contract.js';
-import { managedTaskInputSchema,withManagedTaskExecution } from '../../packages/web/server/lib/opencode/runtime-host/managed-task.js';
+import { createManagedTaskInputSchema,managedTaskInputSchema,withManagedTaskExecution } from '../../packages/web/server/lib/opencode/runtime-host/managed-task.js';
 import { councilInputSchema,withCouncilExecution } from '../../packages/web/server/lib/opencode/runtime-host/council.js';
 
 const origin={kind:'plugin',id:'devryan.managed-task',manifestDigest:'a'.repeat(64),capabilities:['managed-task']} as const;
@@ -28,6 +28,23 @@ test('native schemas expose the complete managed action contract and refuse call
   expect(()=>decode({action:'start',agent:'fixer',prompt:'Fix',provider_id:'caller'})).toThrow();
   expect(()=>decode({action:'plan_update',expected_version:1,text:'# Progress'})).toThrow();
   expect(()=>Schema.decodeUnknownSync(councilInputSchema)({prompt:'Compare',models:['caller']},{onExcessProperty:'error'})).toThrow();
+});
+test('native advertised actions follow host policy flags without changing compatibility decoding',()=>{
+  const contextActions=[{action:'checkpoint'},{action:'decisions',query:'scope'},
+    {action:'remember_decision',decision:'Keep scope.',source_message_id:'msg_user'}] as const;
+  for(const [environment,waitAny,contextProjection] of [
+    [{},false,false], [{DEVRYAN_MANAGED_WAIT_ANY:'1'},true,false],
+    [{DEVRYAN_TASK_CONTEXT_PROJECTION:'1'},false,true], [{DEVRYAN_CAPABILITY_TOOL_SCHEMA:'0'},true,true],
+  ] as const){
+    const decode=Schema.decodeUnknownSync(createManagedTaskInputSchema(environment));
+    for(const input of contextActions){
+      if(contextProjection)expect(decode(input)).toEqual(input);else expect(()=>decode(input)).toThrow();
+    }
+    const input={action:'wait_any',task_ids:['dvr_task_one']} as const;
+    if(waitAny)expect(decode(input)).toEqual(input);else expect(()=>decode(input)).toThrow();
+    expect(decode({action:'plan_read'})).toEqual({action:'plan_read'});
+    expect(decode({action:'start',agent:'explorer',prompt:'Locate ownership.'})).toMatchObject({action:'start'});
+  }
 });
 test('composed native executors retain exact reviewed provenance, canonical location and original recheck',async()=>{
   const calls:{method:string;input:Record<string,unknown>}[]=[];let checks=0;
@@ -118,7 +135,8 @@ test('real SDK activates managed and Council registrations with reviewed per-loc
   `;
   const child=Bun.spawn([process.execPath,'--eval',source],{cwd:path.resolve(import.meta.dirname,'../..'),env:{PATH:'/usr/bin:/bin',HOME:scratch,TMPDIR:path.join(scratch,'tmp'),
     XDG_CONFIG_HOME:path.join(scratch,'config'),XDG_DATA_HOME:path.join(scratch,'data'),XDG_CACHE_HOME:path.join(scratch,'cache'),XDG_STATE_HOME:path.join(scratch,'state'),
-    GIT_CEILING_DIRECTORIES:root,GIT_CONFIG_GLOBAL:'/dev/null',GIT_CONFIG_SYSTEM:'/dev/null',GIT_CONFIG_NOSYSTEM:'1',GIT_TERMINAL_PROMPT:'0',DEVRYAN_GRAPH_DIRECTORY:directory},stdin:'ignore',stdout:'pipe',stderr:'pipe'});
+    GIT_CEILING_DIRECTORIES:root,GIT_CONFIG_GLOBAL:'/dev/null',GIT_CONFIG_SYSTEM:'/dev/null',GIT_CONFIG_NOSYSTEM:'1',GIT_TERMINAL_PROMPT:'0',DEVRYAN_GRAPH_DIRECTORY:directory,
+    DEVRYAN_MANAGED_WAIT_ANY:'1'},stdin:'ignore',stdout:'pipe',stderr:'pipe'});
   const timer=setTimeout(()=>child.kill('SIGKILL'),20000);
   try{
     const out=child.stdout,err=child.stderr;if(!out||typeof out==='number'||!err||typeof err==='number')throw Error('Owned pipes required');

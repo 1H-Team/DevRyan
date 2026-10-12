@@ -1,0 +1,60 @@
+{
+  "outcome": "passed",
+  "runtime": "electron",
+  "scenario": "chat",
+  "checks": [
+    {
+      "name": "initial native runtime readiness",
+      "outcome": "passed",
+      "elapsedMs": 31384.649125
+    },
+    {
+      "name": "selected session and composer",
+      "outcome": "passed",
+      "elapsedMs": 876.6762500000041
+    },
+    {
+      "name": "four-session stream reaches selected transcript",
+      "outcome": "passed",
+      "elapsedMs": 1551.3812079999989
+    },
+    {
+      "name": "typing survives background streaming",
+      "outcome": "passed",
+      "elapsedMs": 508.1213330000028
+    },
+    {
+      "name": "send and reconcile a real composer submission",
+      "outcome": "passed",
+      "elapsedMs": 2412.2071670000005
+    },
+    {
+      "name": "cancel an active composer submission",
+      "outcome": "passed",
+      "elapsedMs": 183.07045800000196
+    },
+    {
+      "name": "reconnect and reopen without duplicate user messages",
+      "outcome": "passed",
+      "elapsedMs": 1332.8424169999998
+    }
+  ],
+  "consoleErrors": [
+    "[event-pipeline] SSE stream error TypeError: network error"
+  ],
+  "expectedFailures": [
+    {
+      "kind": "sse-disconnect",
+      "consoleStartOrdinal": 0,
+      "beforeConnections": 1,
+      "consoleEndOrdinal": 1,
+      "afterConnections": 2,
+      "recovery": "canonical-snapshots",
+      "sessionID": "ses_perfparent",
+      "messageID": "msg_12ea08a9c001f655S5nTUwTeKU",
+      "assistantMessageID": "msg_12ea08ac40040000000000006d"
+    }
+  ],
+  "cleanupErrors": [],
+  "visualReview": "passed: transcript, sidebar, composer and deliberate interruption visible"
+}

@@ -1,15 +1,19 @@
+import type {createClaudeTransportChannel} from './native-claude-transport-channel.js';
+import type {ClaudeTransportModelPins} from './native-claude-transport-protocol.js';
+import {observeClaudeProcessDiagnostic} from './native-claude-diagnostics.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createReadStream} from 'node:fs';
 import {createHash,randomUUID} from 'node:crypto';
 import {REVIEWED_CLAUDE_ASSETS,REVIEWED_CLAUDE_STARTUP} from './reviewed-claude-transform.js';
-import {parseProviderBoot,parseProviderCommand,parseProviderBound,parseProviderCredentialRequest,parseProviderCredentialReply,parseProviderCredentialResult} from './native-provider-worker-protocol.js';
-import type {NativeProviderBoot,NativeMeridianProfile,NativeProviderCredentialRequest,NativeProviderCredentialResult} from './native-provider-worker-protocol.js';
+import {parseProviderBoot,parseProviderCommand,parseProviderDiagnostic,parseProviderBound,parseProviderCredentialRequest,parseProviderCredentialReply,parseProviderCredentialResult} from './native-provider-worker-protocol.js';
+import type {NativeProviderBoot,NativeMeridianProfile,NativeProviderCredentialRequest,NativeProviderCredentialResult,NativeProviderDiagnostic} from './native-provider-worker-protocol.js';
 export interface ReviewedClaudeStartup {
   readonly startReviewedProxy:(input:{port:0;profiles:readonly NativeMeridianProfile[];defaultProfile?:string;log:(level:string,message:string)=>void})=>Promise<{port:number;close:()=>Promise<void>}>;
   readonly checkReviewedProxy:(port:number,log:(level:string,message:string)=>void)=>Promise<{ok:boolean;version?:string;message?:string;availability?:'credential-unavailable'}>;
 }
 const failure=(code:string)=>Object.assign(new Error(code),{code,status:503});
+const record=(value:unknown):value is Record<string,unknown>=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 /** The provider's existing stdin/stdout channel carries finite replies, never
  * ambient file/service names or refresh credentials. */
 export function createProviderCredentialChannel(write:(value:NativeProviderCredentialRequest)=>void,timeoutMs=30000){
@@ -58,10 +62,12 @@ export function createMeridianRequestAuthority(boot:NativeProviderBoot){
   if(closed||attempts.size>=128||attempts.has(input.attemptID)||!boot.transport.directories.includes(input.directory))throw failure('native_provider_attempt_invalid');attempts.set(input.attemptID,{sessionID:input.sessionID,directory:input.directory});
  },remove(input:{attemptID:string;sessionID:string;directory:string}){
   const current=attempts.get(input.attemptID);if(closed||!current||current.sessionID!==input.sessionID||current.directory!==input.directory)throw failure('native_provider_attempt_invalid');attempts.delete(input.attemptID);
+ },assert(input:{attemptID:string;sessionID:string;directory:string}){
+  const current=attempts.get(input.attemptID);if(closed||!current||current.sessionID!==input.sessionID||current.directory!==input.directory)throw failure('native_provider_attempt_invalid');
  },close(){closed=true;attempts.clear();}};
 }
 /** The compiled entry provides the hash-reviewed original startup module, never a runtime import path. */
-export async function startNativeMeridianWorker(input:unknown,options:{buildId:string;startup:ReviewedClaudeStartup|(()=>Promise<ReviewedClaudeStartup>);resolveCredential?:(input:Omit<NativeProviderCredentialRequest,'protocol'|'type'|'id'>)=>Promise<NativeProviderCredentialResult>}){
+export async function startNativeMeridianWorker(input:unknown,options:{buildId:string;startup:ReviewedClaudeStartup|(()=>Promise<ReviewedClaudeStartup>);resolveCredential?:(input:Omit<NativeProviderCredentialRequest,'protocol'|'type'|'id'>)=>Promise<NativeProviderCredentialResult>;onDiagnostic?:(diagnostic:NativeProviderDiagnostic)=>void;transport?:ReturnType<typeof createClaudeTransportChannel>}){
   const boot=parseProviderBoot(input);
   if(boot.buildId!==options.buildId)throw failure('native_provider_build_mismatch');
   const environments={HOME:boot.globals.home,XDG_CONFIG_HOME:boot.globals.config,XDG_DATA_HOME:boot.globals.data,XDG_STATE_HOME:boot.globals.state,XDG_CACHE_HOME:boot.globals.cache,TMPDIR:boot.globals.tmp};
@@ -100,13 +106,46 @@ export async function startNativeMeridianWorker(input:unknown,options:{buildId:s
     authority.binding(request);if(result.profileID!==profileID||result.expiresAt<=Date.now()+60000)throw failure('claude_credentials_expired');return result;
   };
   Object.defineProperty(globalThis,'__DEVRYAN_CLAUDE_CREDENTIAL',{value:credentials,configurable:true});
+  const diagnosticBinding=(request:Request)=>authority.binding(request);
+  const diagnosticSpawn=(child:Parameters<typeof observeClaudeProcessDiagnostic>[0],raw:unknown)=>{
+    if(typeof raw!=='string'||raw.length>16384)return;
+    try{
+      const binding:unknown=JSON.parse(raw);
+      if(!record(binding))return;
+      const identifiers=binding;
+      const scope=parseProviderDiagnostic({protocol:1,type:'claude-process-diagnostic',instanceID:boot.instanceID,attemptID:identifiers.attemptID,sessionID:identifiers.sessionID,directory:identifiers.directory,
+        receipt:{code:null,signalPresent:false,stderrBytes:0,scannedBytes:0,truncated:false,clues:[]}});
+      if(scope.instanceID!==boot.instanceID||!boot.transport.directories.includes(scope.directory))return;
+      observeClaudeProcessDiagnostic(child,receipt=>options.onDiagnostic?.(parseProviderDiagnostic({...scope,receipt})));
+    }catch{/* Diagnostics cannot affect the reviewed spawn. */}
+  };
+  const transportSpawn=(spawn:{command:string;args:readonly string[];cwd:string;signal?:AbortSignal;env?:Record<string,string|undefined>},raw:unknown)=>{
+    if(!options.transport||typeof raw!=='string'||raw.length>16384)throw failure('native_claude_transport_invalid');
+    const scope:unknown=JSON.parse(raw);
+    if(!record(scope)||Object.keys(scope).some(key=>!['attemptID','sessionID','directory','profileID'].includes(key)))throw failure('native_claude_transport_invalid');
+    const fields=scope;
+    if(typeof fields.attemptID!=='string'||typeof fields.sessionID!=='string'||typeof fields.directory!=='string'||typeof fields.profileID!=='string'
+      ||spawn.command!==boot.assets.claude.path||spawn.cwd!==fields.directory||!Array.isArray(spawn.args)
+      ||!boot.profiles.some(profile=>profile.id===fields.profileID)&&!(boot.profiles.length===0&&fields.profileID==='default'))throw failure('native_claude_transport_invalid');
+    const binding={attemptID:fields.attemptID,sessionID:fields.sessionID,directory:fields.directory};authority.assert(binding);
+    const modelPins:{-readonly [K in keyof ClaudeTransportModelPins]:ClaudeTransportModelPins[K]}={};
+    for(const tier of ['fable','opus','sonnet','haiku'] as const){const value=spawn.env?.[`ANTHROPIC_DEFAULT_${tier.toUpperCase()}_MODEL`];if(value!==undefined)modelPins[tier]=value;}
+    const toolSearch=spawn.env?.ENABLE_TOOL_SEARCH;
+    if(toolSearch!==undefined&&toolSearch!=='true'&&toolSearch!=='false')throw failure('native_claude_transport_invalid');
+    const child=options.transport.spawn({...binding,profileID:fields.profileID,args:spawn.args,modelPins,...toolSearch!==undefined?{toolSearch:toolSearch==='true'}:{}},spawn.signal);
+    diagnosticSpawn(child,raw);return child;
+  };
+  const diagnosticHooks=[['__DEVRYAN_CLAUDE_DIAGNOSTIC_BINDING',diagnosticBinding],['__DEVRYAN_CLAUDE_DIAGNOSTIC_SPAWN',diagnosticSpawn],['__DEVRYAN_CLAUDE_TRANSPORT_SPAWN',transportSpawn]] as const;
+  for(const [name,value] of diagnosticHooks)Object.defineProperty(globalThis,name,{value,configurable:true});
+  const removeDiagnostics=()=>{for(const [name,value] of diagnosticHooks)if(Reflect.get(globalThis,name)===value)Reflect.deleteProperty(globalThis,name);};
+
   const log=()=>{}; // Original messages may include provider content; structured health is retained below.
   let startup:ReviewedClaudeStartup,proxy:Awaited<ReturnType<ReviewedClaudeStartup['startReviewedProxy']>>;
   try{startup=typeof options.startup==='function'?await options.startup():options.startup;
     proxy=await startup.startReviewedProxy({port:0,profiles:boot.profiles,defaultProfile:boot.defaultProfile,log});
-  }catch(error){authority.close();if(Reflect.get(globalThis,'__DEVRYAN_CLAUDE_CREDENTIAL')===credentials)Reflect.deleteProperty(globalThis,'__DEVRYAN_CLAUDE_CREDENTIAL');throw error;}
+  }catch(error){removeDiagnostics();authority.close();if(Reflect.get(globalThis,'__DEVRYAN_CLAUDE_CREDENTIAL')===credentials)Reflect.deleteProperty(globalThis,'__DEVRYAN_CLAUDE_CREDENTIAL');throw error;}
   let closeWork:Promise<void>|undefined;
-  const close=()=>closeWork??=(async()=>{authority.close();if(Reflect.get(globalThis,'__DEVRYAN_CLAUDE_CREDENTIAL')===credentials)Reflect.deleteProperty(globalThis,'__DEVRYAN_CLAUDE_CREDENTIAL');await proxy.close();})();
+  const close=()=>closeWork??=(async()=>{removeDiagnostics();authority.close();await options.transport?.close();if(Reflect.get(globalThis,'__DEVRYAN_CLAUDE_CREDENTIAL')===credentials)Reflect.deleteProperty(globalThis,'__DEVRYAN_CLAUDE_CREDENTIAL');await proxy.close();})();
   const health=async()=>{
     const value=await startup.checkReviewedProxy(proxy.port,log);
     if(value.ok!==true||value.version!==REVIEWED_CLAUDE_STARTUP.meridianVersion)throw failure('native_provider_health_failed');
@@ -122,7 +161,7 @@ export async function startNativeMeridianWorker(input:unknown,options:{buildId:s
         authority.add(command);return null;
       }
       if(command.action==='release-attempt'){
-        authority.remove(command);return null;
+        authority.remove(command);await options.transport?.release(command.attemptID);return null;
       }
       return {health:await health()};
     }};

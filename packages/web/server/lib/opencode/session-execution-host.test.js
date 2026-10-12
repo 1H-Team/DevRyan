@@ -8,8 +8,10 @@ const mocks = vi.hoisted(() => ({
     begin: vi.fn(), claimLease: vi.fn(), leaseForCall: vi.fn(), finish: vi.fn(), cleanupLease: vi.fn(), drain: vi.fn(),
     assertAdmission: vi.fn(), registerChild: vi.fn(), cancelUnstartedCall: vi.fn(), cancelLease: vi.fn() },
   classify: vi.fn(),
+  resolveGit: vi.fn(),
   runtimeOptions: null,
 }));
+vi.mock('./execution-helper-command.js', () => ({ resolveControllerGitCommand: mocks.resolveGit }));
 vi.mock('@openchamber/harness-runtime', () => ({
   createSessionMutationRuntime: (options) => { mocks.runtimeOptions = options; return mocks.runtime; },
   createSessionRevertCoordinator: () => ({}),
@@ -34,6 +36,7 @@ const directory = process.cwd();
 const input = { directory, sessionID: 'ses_test', messageID: 'msg_test', callID: 'call_test',
   tool: 'skill', argsDigest: 'a'.repeat(64), protocol: 3 };
 function fixture({ tool = 'skill', sessionID = input.sessionID, ...options } = {}) {
+  mocks.resolveGit.mockImplementation(async command => command);
   const recordReceipt = vi.fn();
   const diagnostics = [];
   const host = createSessionExecutionHost({ dataDirectory: path.join(directory, '.cache/unused-host-fixture'),
@@ -312,6 +315,50 @@ test('native host helpers allow only bounded reviewed Git discovery with a fresh
   await expect(host.nativeExecution({ ...helper, cwd: path.dirname(directory) })).rejects.toMatchObject({ code: 'native_helper_directory_denied' });
   expect(native.runReadOnlySessionExecution).toHaveBeenCalledTimes(1);
   expect(mocks.runtime.reserve).not.toHaveBeenCalled();
+});
+
+test('native helpers share successful Git selection, retry failed discovery, and remain confined', async () => {
+  runReadOnlySessionExecution.mockResolvedValue({ receipt: { terminated: true, confined: true, cancelled: false, exitCode: 0 },
+    stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) });
+  const { host } = fixture({ nativeExecution: { helperRoots: [directory], gitCommand: '/usr/bin/git', socketDirectory: null } });
+  const helper = { action: 'helper', command: 'git', args: ['remote', 'get-url', 'origin'], cwd: directory };
+  mocks.resolveGit.mockRejectedValueOnce(Object.assign(new Error('unavailable'), { code: 'mutation_runtime_unsupported' }));
+  await expect(host.nativeExecution(helper)).rejects.toMatchObject({ code: 'mutation_runtime_unsupported' });
+  expect(runReadOnlySessionExecution).not.toHaveBeenCalled();
+  mocks.resolveGit.mockResolvedValue('/Applications/Xcode.app/Contents/Developer/usr/bin/git');
+  await Promise.all([host.nativeExecution(helper), host.nativeExecution(helper)]);
+  expect(mocks.resolveGit).toHaveBeenCalledTimes(2);
+  expect(runReadOnlySessionExecution).toHaveBeenCalledTimes(2);
+  expect(runReadOnlySessionExecution).toHaveBeenCalledWith(expect.objectContaining({
+    command: '/Applications/Xcode.app/Contents/Developer/usr/bin/git', workerBrowsers: false,
+  }));
+});
+
+test('a removed unrelated native helper root does not block a valid current project or widen discovery', async () => {
+  const native = await import('@openchamber/harness-runtime/lib/session-execution.js');
+  native.runReadOnlySessionExecution.mockResolvedValue({ receipt: { terminated: true, confined: true, cancelled: false, exitCode: 0 },
+    stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) });
+  const cache = path.resolve(import.meta.dirname, '../../../../../.cache/v2-validation');
+  await fs.mkdir(cache, { recursive: true });
+  const root = await fs.realpath(await fs.mkdtemp(path.join(cache, 'helper-roots-')));
+  try {
+    const current = path.join(root, 'current'), removed = path.join(root, 'removed'), sibling = path.join(root, 'unregistered');
+    await Promise.all([current, removed, sibling].map(directory => fs.mkdir(directory)));
+    const { host } = fixture({ nativeExecution: { helperRoots: [removed, current], gitCommand: '/usr/bin/git', socketDirectory: null } });
+    await fs.rm(removed, { recursive: true });
+    const helper = { action: 'helper', command: 'git', args: ['rev-parse', '--git-dir', '--git-common-dir', '--show-toplevel'], cwd: current };
+    expect((await host.nativeExecution(helper)).receipt.terminated).toBe(true);
+    expect(native.runReadOnlySessionExecution).toHaveBeenCalledWith(expect.objectContaining({ logicalDirectory: current,
+      env: expect.objectContaining({ GIT_CEILING_DIRECTORIES: root }) }));
+    await expect(host.nativeExecution({ ...helper, cwd: removed })).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(host.nativeExecution({ ...helper, cwd: sibling })).rejects.toMatchObject({ code: 'native_helper_directory_denied' });
+    const { host: noOwner } = fixture({ nativeExecution: { helperRoots: [removed] } });
+    await expect(noOwner.nativeExecution(helper)).rejects.toMatchObject({ code: 'native_helper_directory_denied' });
+    const file = path.join(root, 'invalid-root'); await fs.writeFile(file, 'owned fixture\n');
+    const { host: invalid } = fixture({ nativeExecution: { helperRoots: [current, path.join(file, 'child')] } });
+    await expect(invalid.nativeExecution(helper)).rejects.toMatchObject({ code: 'ENOTDIR' });
+    expect(native.runReadOnlySessionExecution).toHaveBeenCalledTimes(1);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
 
 test('native Git discovery stays inside the registered project when only an unregistered parent is a repository', async () => {

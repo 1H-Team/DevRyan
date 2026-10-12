@@ -6,6 +6,7 @@ export const STARTUP_READINESS_PHASES = [
   "globalSync",
   "directorySync",
   "sessionList",
+  "eventStream",
   "responseStyle",
   "worktree",
 ] as const

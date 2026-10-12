@@ -630,7 +630,8 @@ const mergeEnvelope = (
   incoming: ManagedTaskProjectedEnvelope,
 ): ManagedTaskProjectedEnvelope => {
   if (!current) return incoming;
-  if (current.envelopeId !== incoming.envelopeId || current.sequence !== incoming.sequence) return current;
+  // Disposition advances the same envelope's durable collection sequence.
+  if (current.envelopeId !== incoming.envelopeId || incoming.sequence < current.sequence) return current;
   if (sameEnvelope(current, incoming)) return current;
   if (current.action !== null) return current;
   if (incoming.action === null) {
@@ -1204,7 +1205,7 @@ export const createManagedOrchestrationStore = (options: {
               !nextEnvelope
               || !envelopeMatchesTask(task, nextEnvelope)
               || nextEnvelope.envelopeId !== envelope.envelopeId
-              || nextEnvelope.sequence !== envelope.sequence
+              || nextEnvelope.sequence < envelope.sequence
               || nextEnvelope.action !== action
               || nextEnvelope.acknowledgedAt === null
             ) {

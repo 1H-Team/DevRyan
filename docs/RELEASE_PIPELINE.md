@@ -80,7 +80,14 @@ every workspace's build script. Full validation remains separate from compilatio
    Electron consumes web assets, prepared native files, and the complete Bot
    manifest, then runs all existing packaged artifact gates.
 5. Each packaging job records its actual installer/tarball SHA-256. Finalize
-   only after every gate succeeds; finalization verifies the exact asset
+   only after every gate succeeds, including `qualify-release-startup` on a
+   disposable macOS ARM64 runner with the unchanged final DMG. The qualifier
+   uses Node 24.14.1, matching the pinned Electron 41.2.1 host, for the compiled
+   acceptance lifecycle and restores the same
+   dependency layout and reviewed Claude executable as native preparation. Its receipt
+   binds all ten startup scenarios to the source and installer digest, requires
+   zero journal gaps and complete cleanup, and rejects retried qualification.
+   Finalization verifies that receipt and the exact asset
    allowlist, uploaded state, non-empty size, and those packaging digests.
 
 macOS preparation builds and verifies the pinned native v2 runtime with Bun

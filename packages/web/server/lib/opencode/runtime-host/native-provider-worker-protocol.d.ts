@@ -12,3 +12,6 @@ export function parseProviderCredentialReply(value:unknown):NativeProviderCreden
 export function parseProviderBoot(value:unknown):NativeProviderBoot;
 export function parseProviderBound(value:unknown):NativeProviderBound;
 export function parseProviderCommand(value:unknown):NativeProviderCommand;
+
+export interface NativeProviderDiagnostic {readonly protocol:1;readonly type:'claude-process-diagnostic';readonly instanceID:string;readonly attemptID:string;readonly sessionID:string;readonly directory:string;readonly receipt:import('./native-claude-diagnostics.js').NativeClaudeProcessReceipt}
+export function parseProviderDiagnostic(value:unknown):NativeProviderDiagnostic;

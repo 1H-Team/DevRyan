@@ -608,7 +608,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     return task;
   };
 
-  // Constructor-only native dispatch proof. Queued tasks never borrow the
+  // Constructor-only native dispatch/settlement proof. Queued tasks never borrow the
   // original tool's transient permit, and this method is absent from RPC.
   const verifyNativeTaskDispatch = async (input) => {
     assertAvailable();
@@ -616,9 +616,12 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
       throw createRuntimeError('native_managed_task_lease_invalid', 'Native managed dispatch owner is unavailable', 403);
     }
     await persistence.verifyOwnership?.();
-    const task = typeof input?.taskId === 'string' ? await scheduler.verifyTaskDispatch(input.taskId, input.leaseToken) : null;
+    const settling = input?.operation === 'settle';
+    const task = typeof input?.taskId === 'string'
+      ? await (settling ? scheduler.verifyTaskSettlement(input.taskId, input.leaseToken) : scheduler.verifyTaskDispatch(input.taskId, input.leaseToken))
+      : null;
     assertAvailable();
-    assertWorkAdmission();
+    if (!settling) assertWorkAdmission();
     if (shutdownPromise || !ownershipAcquired || !task || task.owner !== 'devryan' || !input.leaseToken || task.leaseToken !== input.leaseToken
       || !['starting', 'running'].includes(task.status) || task.directory !== input.directory) {
       throw createRuntimeError('native_managed_task_lease_invalid', 'Native managed dispatch has no current task lease', 403);
@@ -628,7 +631,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         || !task.dispatchCallId || task.dispatchCallId !== input.parentCallID) {
         throw createRuntimeError('native_managed_task_scope_invalid', 'Native child creation does not match its task', 403);
       }
-    } else if (input.operation === 'prompt') {
+    } else if (input.operation === 'prompt' || settling) {
       if (!task.childSessionId || task.childSessionId !== input.sessionID
         || ['providerId', 'modelId', 'agent', 'variant'].some(key => task[key] !== input[key])) {
         throw createRuntimeError('native_managed_task_scope_invalid', 'Native child prompt does not match its task', 403);
@@ -745,12 +748,13 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
   };
 
   const handleRpcInternal = async ({ method, params = {} }, context = {}) => {
+    // Static tool advertising must not reconcile children before their controller starts.
+    if (method === 'harness_capabilities') return policyProjection();
     await ensureInitialized();
     const requestedResultMode = resolveManagedResultMode(params.resultMode);
     const resultMode = harnessPolicies.compactResults && params.resultContractVersion === 1 && requestedResultMode !== 'eager'
       ? 'compact' : requestedResultMode === 'compact' ? 'reference' : requestedResultMode;
     switch (method) {
-      case 'harness_capabilities': return policyProjection();
       case 'context_state': {
         // Read-only and scope-checked; compaction anchors use it regardless of
         // the context-projection policy, which gates only model-visible tools.

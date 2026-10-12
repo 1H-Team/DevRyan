@@ -1,3 +1,5 @@
+import { parseArtifactDiagnostic, describeArtifactFailure, type ArtifactDiagnostic } from '../../../../shared-runtime/startup-diagnostics.js';
+
 export interface StartupHealthSnapshot {
   ready: boolean;
   runtimeIdentity: string | null;
@@ -6,6 +8,7 @@ export interface StartupHealthSnapshot {
     state: 'idle' | 'starting' | 'ready' | 'failed';
     attempt: number;
     code: string | null;
+    diagnostic?: ArtifactDiagnostic;
   };
 }
 
@@ -20,8 +23,10 @@ export const parseStartupHealth = (value: unknown): StartupHealthSnapshot | null
     if ((item.state === 'idle' || item.state === 'starting' || item.state === 'ready' || item.state === 'failed')
       && typeof item.attempt === 'number' && Number.isSafeInteger(item.attempt) && item.attempt >= 0
       && (item.code === null || typeof item.code === 'string')) {
+      const diagnostic = parseArtifactDiagnostic(item.diagnostic);
       startup = { state: item.state, attempt: item.attempt,
-        code: typeof item.code === 'string' && /^[A-Za-z][A-Za-z0-9_]{0,127}$/.test(item.code) ? item.code : null };
+        code: typeof item.code === 'string' && /^[A-Za-z][A-Za-z0-9_]{0,127}$/.test(item.code) ? item.code : null,
+        ...(diagnostic ? { diagnostic } : {}) };
     }
   }
   return {
@@ -69,7 +74,10 @@ export const waitForStartupHealth = async (
       if (!health.startup || health.startup.attempt >= attempt) {
         attempt = health.startup?.attempt ?? attempt;
         if (health.startup?.state === 'failed') {
-          throw new Error(health.startup.code || 'OpenCode could not start.');
+          const { code, diagnostic } = health.startup;
+          throw Object.assign(new Error(code === 'native_runtime_artifacts_unverified'
+            ? describeArtifactFailure(diagnostic) : code || 'OpenCode could not start.'),
+          { code, attempt: health.startup.attempt, ...(diagnostic ? { diagnostic } : {}) });
         }
         if (health.ready) return;
       }

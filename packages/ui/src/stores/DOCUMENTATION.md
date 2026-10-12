@@ -240,6 +240,12 @@ Core model:
 - one serialized snapshot load per scope, reconciled against events received
   after that load began in one atomic store update
 
+Result envelope identity stays fixed while its collection `sequence` advances
+on disposition. Events, snapshots, and acknowledgement responses accept a
+nonregressing sequence for the same envelope; an established action remains
+immutable, and stale unacknowledged results cannot restore recovery controls.
+Same-sequence automatic-resume updates retain their separate revision guards.
+
 Task records carry a `waitingReason` field for ledger/wire compatibility
 (records written by v1.1.11 carry `waitingReason: null`). Ingestion still
 parses it, normalizes it to `null` for any non-queued status or malformed

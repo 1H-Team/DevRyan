@@ -20,6 +20,15 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - **Expandable tools** -> `ToolPart.tsx`
 - Shared tool icon mapping is centralized in `toolPresentation.tsx` (`getToolIcon`).
 
+Turn headers prefer the first substantive assistant output over leading
+error-only rows; an error-only turn retains its header and all errors remain
+visible. Header effort uses the owning assistant's recorded variant, then its
+own parent's variant, before the original turn fallback. Explicit default
+effort does not inherit an earlier attempt's level.
+Headers retain the recorded model ID while its catalog entry is unavailable
+and subscribe only to that provider's catalog record, so a later catalog name
+updates an existing header without replaying messages or changing the model.
+
 ## Which file controls what
 
 - `ProgressiveGroup.tsx`
@@ -128,6 +137,7 @@ chevron transition while preserving the same user-controlled open state.
 and is outside this performance contract.
 
 - `read` and most search/fetch tools are treated as **static tools** and passive lookup activity rolls up across reasoning text into one dropdown per kind until a hard tool boundary such as shell/question/task.
+- Skill calls keep individual part identities in both render modes. Their names use static text throughout loading and completion; an unknown pending name leaves only the loading status until the runtime supplies a human name. Completing a call updates the existing status node rather than remounting it. Sorted mode retains its normal seven-row collapsed preview.
 - `bash/edit/write/question/task` are **expandable tools** and render via `ToolPart`.
 - Bash rows show the bounded terminal transcript and a shared elapsed duration (`0.1s`, `m s`, or `h m s`). Active duration ticks are isolated to their narrow leaves; completed durations use stable start/end timestamps and invalid timing renders `Unavailable`.
 - Output-only `write/create/file_write` aliases remain expandable even when no structured diff is available.

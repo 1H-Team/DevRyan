@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { runStartupPhase } from './runtime-service-startup.mjs';
+import { startupDiagnosticSummary } from '../shared-runtime/startup-diagnostics.js';
 
 import {
   buildBotStartupAttentionHtml,
@@ -20,12 +21,14 @@ describe('Electron startup splash', () => {
     const calls = [];
     const error = Object.assign(new Error('Runtime preparation failed'), { code: 'runtime_bundle_binding_invalid' });
     const showFailure = new Function('owners', `
-      const { startupErrorDetails, readSettingsRoot, buildStartupErrorHtmlFromSettings, state, navigateWindow } = owners;
+      const { startupErrorDetails, startupDiagnosticSummary, readSettingsRoot, buildStartupErrorHtmlFromSettings, state, navigateWindow } = owners;
+      let lastStartupDiagnostic;
       const shellRuntimeBundleBindingError = null;
       ${build}
       ${show}
       return showStartupFailure;
     `)({
+      startupDiagnosticSummary,
       startupErrorDetails: value => ({ displayMessage: `${value.message} (${value.code})` }),
       readSettingsRoot: () => { throw new Error('Settings binding changed after upgrade'); },
       buildStartupErrorHtmlFromSettings: buildStartupErrorHtml,
@@ -34,6 +37,7 @@ describe('Electron startup splash', () => {
         const html = decodeURIComponent(url.split(',').slice(1).join(','));
         expect(html).toContain('Runtime preparation failed (runtime_bundle_binding_invalid)');
         expect(html).toContain('openchamber://retry-startup');
+        expect(html).toContain('openchamber://copy-startup-diagnostics');
         expect(html).not.toContain('Settings binding changed');
         calls.push('navigate');
       },

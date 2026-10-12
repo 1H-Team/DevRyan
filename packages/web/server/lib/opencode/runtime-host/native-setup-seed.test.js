@@ -5,6 +5,13 @@ import os from 'node:os';
 import net from 'node:net';
 import {execFileSync} from 'node:child_process';
 import {seedNativeSetup,projectNativeSetupSettings} from './native-setup-seed.js';
+
+it('setup preserves explicit service disablement without importing service ownership',()=>{
+ expect(projectNativeSetupSettings({productionBotsRuntimeServiceOptOut:true,productionBotsRuntimeMode:'disabled',
+  productionBotsRuntimeServiceAppVersion:'2.0.7',productionBotsRuntimeReregisterAfterUpdate:true})).toEqual({
+  productionBotsRuntimeServiceOptOut:true,productionBotsRuntimeMode:'disabled'});
+ expect(projectNativeSetupSettings({productionBotsRuntimeServiceOptOut:'true',productionBotsRuntimeMode:'service'})).toEqual({});
+});
 import {projectNativeSetupCredentials} from './native-setup-credential-data.js';
 import {resolveNativeProviderConfiguration} from './native-provider-configuration.js';
 import {relocateNativeSetupProfiles} from './native-setup-profiles.js';

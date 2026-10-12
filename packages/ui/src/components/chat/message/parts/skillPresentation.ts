@@ -12,7 +12,8 @@ const nonEmpty = (value: unknown): string | null => (
 
 /**
  * Human skill name for a skill tool part: `metadata.name`, else the loaded
- * `<skill_content name>`, else a non-hash `input.name`, else a generic label.
+ * `<skill_content name>`, else a non-hash `input.name`. Unknown active names
+ * stay empty so the loading status does not flash a generic name.
  */
 export function getSkillDisplayName(part: ToolPart): string {
     const state = part.state as { input?: Record<string, unknown>; metadata?: Record<string, unknown>; output?: unknown };
@@ -22,7 +23,7 @@ export function getSkillDisplayName(part: ToolPart): string {
     if (fromContent) return fromContent;
     const fromInput = nonEmpty(state.input?.name);
     if (fromInput && !REVIEWED_SKILL_ID.test(fromInput)) return fromInput;
-    return GENERIC_SKILL_NAME;
+    return part.state.status === 'pending' || part.state.status === 'running' ? '' : GENERIC_SKILL_NAME;
 }
 
 export function getSkillPresentation(parts: readonly ToolPart[]) {

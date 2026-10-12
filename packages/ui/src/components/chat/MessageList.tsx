@@ -782,16 +782,17 @@ const TurnBlock = React.memo(({
     // Agent Dispatch card, so they render empty. Without this pass each such turn
     // still stamped its own "<agent> · <model>" row, stacking identical headers.
     // The predicate is deliberately permissive — anything uncertain counts as content.
-    const contentBearingAssistantIds = React.useMemo(() => {
+    const { contentBearingAssistantIds, errorOnlyAssistantIds } = React.useMemo(() => {
         const activitySegmentAnchorIds = new Set(
             visibleActivitySegments.map((segment) => segment.anchorMessageId),
         );
         const ids = new Set<string>();
+        const errorOnlyIds = new Set<string>();
         visibleAssistantMessages.forEach((assistant, index) => {
             const messageId = assistant.info.id;
             const managedProjection = managedTaskProjectionsByMessageId.get(messageId);
             const finish = (assistant.info as { finish?: unknown }).finish;
-            const rendersContent = assistantRowRendersContent({
+            const contentInput = {
                 parts: assistant.parts,
                 messageFinish: typeof finish === 'string' ? finish : undefined,
                 lastTodoToolPartId: turnGroupingContextBase.lastTodoToolPartId,
@@ -809,16 +810,16 @@ const TurnBlock = React.memo(({
                 ownsAssistantImages: index === visibleAssistantMessages.length - 1
                     && assistantImageMessages.length > 0,
                 ownsActivityOutput: activitySegmentAnchorIds.has(messageId)
-                    || messageId === activityOwnerMessageId
                     || (activityPartsByMessageId.get(messageId)?.length ?? 0) > 0,
-            });
+            };
+            const rendersContent = assistantRowRendersContent(contentInput);
             if (rendersContent) {
                 ids.add(messageId);
+                if (contentInput.hasErrorSurface && !assistantRowRendersContent({ ...contentInput, hasErrorSurface: false })) errorOnlyIds.add(messageId);
             }
         });
-        return ids;
+        return { contentBearingAssistantIds: ids, errorOnlyAssistantIds: errorOnlyIds };
     }, [
-        activityOwnerMessageId,
         activityPartsByMessageId,
         assistantImageMessages,
         managedTaskProjectionsByMessageId,
@@ -833,8 +834,9 @@ const TurnBlock = React.memo(({
         () => selectAssistantHeaderTargetId(
             visibleAssistantMessages.map((assistant) => assistant.info.id),
             contentBearingAssistantIds,
+            errorOnlyAssistantIds,
         ),
-        [contentBearingAssistantIds, visibleAssistantMessages],
+        [contentBearingAssistantIds, errorOnlyAssistantIds, visibleAssistantMessages],
     );
 
     React.useEffect(() => {

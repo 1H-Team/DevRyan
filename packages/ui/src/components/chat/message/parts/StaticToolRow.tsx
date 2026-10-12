@@ -243,7 +243,6 @@ const StaticToolRowInner: React.FC<{
             </div>
             <MinDurationShineText
                 active={hasRunningActivity}
-                key={skill?.title}
                 minDurationMs={skill ? 0 : 1000}
                 className="typography-meta leading-5 font-medium inline-flex h-5 items-center flex-shrink-0 opacity-85"
                 style={{ color: skill?.failed ? 'var(--status-error)' : 'var(--tools-title)' }}
@@ -274,7 +273,7 @@ const StaticToolRowInner: React.FC<{
                 ? descriptions.map((desc, index) => (
                     <span key={`${desc}-${index}`} className="inline-flex min-w-0 flex-1">
                         <Text
-                            variant={animateTailText && (!skill || skill.running) ? 'generate-effect' : 'static'}
+                            variant={animateTailText && !skill ? 'generate-effect' : 'static'}
                             className="min-w-0 flex-1 truncate whitespace-nowrap typography-meta leading-5"
                             style={{ color: 'var(--tools-description)' }}
                             title={desc}
@@ -304,7 +303,7 @@ const StaticToolRowInner: React.FC<{
                 : null}
             {!isReadGroup && !isSearchGroup && !isFetchGroup && descriptions.length > 0 ? (
                 <Text
-                    variant={animateTailText && (!skill || skill.running) ? 'generate-effect' : 'static'}
+                    variant={animateTailText && !skill ? 'generate-effect' : 'static'}
                     className="min-w-0 flex-1 truncate whitespace-nowrap typography-meta leading-5"
                     style={{ color: 'var(--tools-description)' }}
                 >

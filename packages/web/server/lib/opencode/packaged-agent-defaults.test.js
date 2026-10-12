@@ -7,7 +7,7 @@ import yaml from 'yaml';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const AGENTS_DIR = path.resolve(__dirname, '../../default-config/agents');
 const PRE_TASK_ORCHESTRATOR_PROMPT_UTF8_BYTES = 15_902;
-const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 43_219;
+const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 43_215;
 const DEFAULT_SLIM_PROFILE_PATH = path.resolve(
   __dirname,
   '../../default-config/user-profile/oh-my-opencode-slim.json',
@@ -492,6 +492,19 @@ describe('packaged agent defaults', () => {
     expect(content).toContain('Explicit user requests for a specialist take precedence.');
     expect(content).toContain('if a required specialist remains unavailable after managed recovery, report the blocker');
     expect(content).not.toContain('Unknown codebase location: call');
+  });
+
+  it('splits independent discovery concerns and requires grounded synthesis without a fixed agent count', () => {
+    const { body } = readPackagedAgent('orchestrator');
+    expect(body).toContain('independently answerable concerns, including concerns within one subsystem');
+    expect(body).toContain('Start one bounded Explorer per independent concern in the same dispatch');
+    expect(body).toContain('distinct question, likely target area, and exclusions');
+    expect(body).toContain('One Explorer is enough for a single coherent concern');
+    expect(body).toContain('synthesize the returned paths, contracts, and gaps into one grounded plan');
+    expect(body).toContain('progress without findings does not establish discovery');
+    expect(body).toContain('bounded findings, source paths, unresolved gaps; no raw logs');
+    expect(body).toContain('tell parallel workers they are not alone and to preserve others\' changes');
+    expect(body).toContain('Only when the action is advertised and `contextProjection` is enabled');
   });
 
   it('explorer is constrained to context discovery only', () => {

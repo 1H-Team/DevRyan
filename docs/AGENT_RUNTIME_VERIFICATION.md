@@ -66,6 +66,46 @@ The [11 October Cursor Explorer QA investigation](audits/2026-10-11/live-agent-q
 records an interrupted native Plan-mode run, diagnostic evidence, and the proposed
 authorization, model-effort and read-only execution repairs.
 
+The [23:09 live orchestration QA](audits/2026-10-11/live-agent-qa-2309.md)
+records Cursor delegation startup failure, cancellation-state disagreement,
+context and resource observations from a subsequent interrupted plan run.
+Its isolated skill UI follow-up retains screenshots of
+[loading](audits/2026-10-11/live-agent-qa-skill-preparing.png),
+[failure after reload](audits/2026-10-11/live-agent-qa-skill-preparation-failed-reloaded.png),
+and [loaded](audits/2026-10-11/live-agent-qa-skill-loaded.png).
+The same investigation retains dedicated-profile deletion
+[API proof](audits/2026-10-11/live-agent-qa-profile-delete.json) and
+[visible controls](audits/2026-10-11/live-agent-qa-profile-delete.png), plus the
+direct live attempt's [task record](audits/2026-10-11/live-agent-qa-direct-attempt1.json)
+and [blocked planning view](audits/2026-10-11/live-agent-qa-cursor-model-failure.png).
+The requested Explorer model change has a
+[saved Cursor Grok view](audits/2026-10-11/live-agent-qa-explorer-grok.jpg).
+The fresh run captured [parallel Grok dispatch](audits/2026-10-11/live-agent-qa-grok-parallel.png).
+The separate Claude route rejection showed a [settled failed child](audits/2026-10-11/live-agent-qa-settled-failure.png) without a processing indicator.
+The [partial Grok journey record](audits/2026-10-11/live-agent-qa-grok-partial.json) separates completed backend checks from the blocked UI phase.
+The next [saved-plan replay record](audits/2026-10-11/live-agent-qa-missing-project.json) captures a missing registered-project helper failure before implementation.
+The [Claude version refusal](audits/2026-10-11/live-agent-qa-claude-version.json)
+records the upstream minimum-version requirement after the native launch repair.
+The [macOS CLI verification](audits/2026-10-12/claude-cli-2.1.280.json)
+records archive integrity, Apple signature and confined offline version checks.
+The [Claude process replay record](audits/2026-10-11/live-agent-qa-claude-partial.json)
+separates its [settled failure](audits/2026-10-11/live-agent-qa-claude-settled.jpg)
+from the [successfully reopened Fixer](audits/2026-10-11/live-agent-qa-fixer-open.jpg).
+The [stale Cursor picker](audits/2026-10-11/live-agent-qa-cursor-missing-model.jpg)
+records missing live models before a catalog refresh; the SDK receipt still
+identifies the actual executed Grok model and effort.
+The rebuilt UI shows the [corrected Explorer header](audits/2026-10-11/live-agent-qa-cursor-header-fixed.png)
+and [Grok choices under Cursor](audits/2026-10-11/live-agent-qa-cursor-picker-fixed.png).
+The [cold-start picker check](audits/2026-10-11/live-agent-qa-cursor-cold-start.png)
+records the same catalog after an owned runtime restart.
+The fresh upgraded run shows [Explorer dispatch and its first completion](audits/2026-10-12/live-agent-qa-final-parallel.png).
+The [completed fresh journey](audits/2026-10-12/live-agent-qa-final.md) has
+[sanitized proof](audits/2026-10-12/live-agent-qa-final.json),
+[final orchestration](audits/2026-10-12/live-agent-qa-final-complete.jpg),
+[settled Cursor output](audits/2026-10-12/live-agent-qa-final-explorer.jpg),
+[desktop behavior](audits/2026-10-12/live-agent-qa-final-board.jpg) and
+[mobile focus](audits/2026-10-12/live-agent-qa-final-mobile.jpg).
+
 ### Desktop runtime ownership after restart
 
 For slow startup, separate the Electron window, web listener, native runtime

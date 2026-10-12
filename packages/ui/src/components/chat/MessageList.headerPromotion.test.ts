@@ -15,7 +15,7 @@ describe('assistant header promotion', () => {
         expect(code).toContain(
             "import { assistantRowRendersContent, selectAssistantHeaderTargetId } from './message/assistantRowContent';",
         );
-        expect(code).toContain('const contentBearingAssistantIds = React.useMemo(');
+        expect(code).toContain('const { contentBearingAssistantIds, errorOnlyAssistantIds } = React.useMemo(');
         expect(code).toContain('const headerTargetAssistantMessageId = React.useMemo(');
     });
 

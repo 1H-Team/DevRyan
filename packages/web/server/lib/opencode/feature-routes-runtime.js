@@ -137,6 +137,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       persistSettings,
       sanitizeProjects,
       validateDirectoryPath,
+      ensureNativeDirectory: routeDependencies.ensureNativeDirectory,
       resolveProjectDirectory,
       getProviderSources,
       listProviderConfigFiles,

@@ -1,0 +1,33 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { RELEASE_STARTUP_SCENARIOS, assertReleaseStartupReceipt, selectReleaseStartupBaselines } from './release-startup-contract.mjs';
+const d = 'a'.repeat(64), sourceCommit = 'b'.repeat(40);
+const expectation = { sourceCommit, dmgSha256: d, version: '2.0.9' };
+const receipt = () => ({ protocol: 'devryan.release-startup/1', outcome: 'passed', ...expectation, manifestSha256: d, appSha256: d,
+  platform: 'darwin-arm64', runAttempt: 1, compiledNative: 'passed', guiPrerequisites: 'passed', cleanupErrors: [], scenarios: RELEASE_STARTUP_SCENARIOS.map((id,index) => ({
+    id, outcome: 'passed', attempts: 1, gapRecords: 0, cleanup: 'passed', elapsedMs: 1, manifestSha256: d,
+    usableChat: true, eventStream: 'acknowledged', submission: 'passed', baselineVersion: `2.0.${index}`, baselineDmgSha256: d, dataPreserved: true,
+    transition: 'upgraded', stableReopen: true, setupInterface: true, liveOwnerProtected: true,
+  })) });
+test('publication rejects incomplete, stale, substituted, retried and unavailable startup evidence', () => {
+  assertReleaseStartupReceipt(receipt(), expectation);
+  for (const change of [{ outcome: 'unavailable' }, { runAttempt: 2 }, { compiledNative: 'failed' }, { guiPrerequisites: 'unavailable' }, { sourceCommit: 'c'.repeat(40) },
+    { dmgSha256: 'c'.repeat(64) }, { cleanupErrors: ['owner_alive'] }, { platform: 'darwin-x64' }, { manifestSha256: null }])
+    assert.throws(() => assertReleaseStartupReceipt({ ...receipt(), ...change }, expectation));
+  for (const change of [{ attempts: 2 }, { gapRecords: 1 }, { cleanup: 'failed' }, { usableChat: false },
+    { submission: 'not-run' }, { eventStream: 'unavailable' }, { manifestSha256: 'c'.repeat(64) }, { elapsedMs: NaN }]) {
+    const value = receipt(); Object.assign(value.scenarios[0], change);
+    assert.throws(() => assertReleaseStartupReceipt(value, expectation));
+  }
+  for (const id of RELEASE_STARTUP_SCENARIOS) {
+    const value = receipt(); value.scenarios = value.scenarios.filter(row => row.id !== id);
+    assert.throws(() => assertReleaseStartupReceipt(value, expectation));
+  }
+});
+test('baseline selection requires the last two stable releases and their published installer digests', () => {
+  const release = version => ({ tag_name: `v${version}`, assets: [{ name: `DevRyan-${version}-arm64.dmg`, digest: `sha256:${d}` }] });
+  const releases = [release('2.0.6'), release('2.0.9'), release('2.0.7'), { ...release('2.0.10'), draft: true }, release('2.0.8')];
+  assert.deepEqual(selectReleaseStartupBaselines(releases, '2.0.9').map(row => row.version), ['2.0.8','2.0.7']);
+  releases.at(-1).assets[0].digest = null;
+  assert.throws(() => selectReleaseStartupBaselines(releases, '2.0.9'));
+});

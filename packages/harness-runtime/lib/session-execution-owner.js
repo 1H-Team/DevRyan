@@ -23,7 +23,7 @@ export function createSessionExecutionOwner({ runtime, launcher, stopSessions, v
     const controller = new AbortController();
     const signal = AbortSignal.any([controller.signal, ...[input.signal, hostOwner?.signal].filter(Boolean)]);
     const lease = await withExecutionAdmission(input,
-      () => runtime.reserve({ ...input, kind: 'process', executionFingerprint, ownerID: hostOwner?.id }), { signal });
+      () => runtime.reserve({ ...input, kind: 'process', executionFingerprint, ownerID: hostOwner?.id }), { signal, onDiagnostic });
     if (lease.state === 'published') return { lease, child: null, result: Promise.resolve({ ...await readSessionExecutionReceipt(lease, { launcher }), ...lease.result }) };
     if (hostOwner && lease.ownerID !== hostOwner.id) throw failure('execution_owner_lost');
     if (active.has(lease.token) || lease.executionKind) throw failure('execution_already_started');
@@ -33,7 +33,7 @@ export function createSessionExecutionOwner({ runtime, launcher, stopSessions, v
     owned.settled = (async () => {
       let handle;
       try {
-        const ready = await withExecutionPreparation(input, () => runtime.prepare(lease), { signal });
+        const ready = await withExecutionPreparation(input, () => runtime.prepare(lease), { signal, onDiagnostic });
         signal.throwIfAborted(); hostOwner?.assert();
         await runtime.claimLease({ directory: input.directory, token: lease.token, kind: 'process' });
         const workerInput = input.inputForLease ? await input.inputForLease(ready) : input.input;
@@ -65,7 +65,9 @@ export function createSessionExecutionOwner({ runtime, launcher, stopSessions, v
     // Streaming adapters may not await settlement until after their output
     // reader drains. Attach a rejection handler immediately without hiding it.
     void owned.settled.catch(() => {});
-    const handle = await started.promise;
+    let handle;
+    try { handle = await started.promise; }
+    catch (cause) { await owned.settled; throw cause; }
     return { ...handle, lease, result: owned.settled };
   };
   const execute = async (input) => (await start(input)).result;

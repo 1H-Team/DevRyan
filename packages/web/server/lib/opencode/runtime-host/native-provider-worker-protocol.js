@@ -1,3 +1,4 @@
+import {NATIVE_CLAUDE_DIAGNOSTIC_CLUES} from './native-claude-diagnostics.js';
 import path from 'node:path';
 const fail=()=>Object.assign(new Error('native_provider_protocol_invalid'),{code:'native_provider_protocol_invalid',status:400});
 const record=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
@@ -59,4 +60,16 @@ export function parseProviderBound(value){
   bounded(value,65536);keys(value,['protocol','type','instanceID','buildId','url','port','health']);
   if(value.protocol!==1||value.type!=='provider-bound'||!/^[a-f0-9-]{32,64}$/.test(text(value.instanceID))||!/^[a-f0-9]{64}$/.test(text(value.buildId))||!['healthy','degraded'].includes(value.health))throw fail();
   const url=new URL(text(value.url));if(url.protocol!=='http:'||url.hostname!=='127.0.0.1'||url.username||url.password||url.pathname!=='/'||url.search||url.hash||Number(url.port)!==value.port||!Number.isSafeInteger(value.port)||value.port<1||value.port>65535)throw fail();return value;
+}
+
+export function parseProviderDiagnostic(value){
+ bounded(value,4096);keys(value,['protocol','type','instanceID','attemptID','sessionID','directory','receipt']);
+ if(value.protocol!==1||value.type!=='claude-process-diagnostic'||!/^[a-f0-9-]{32,64}$/.test(text(value.instanceID))
+  ||!/^[a-f0-9]{64}$/.test(text(value.attemptID))||!/^ses[0-9A-Za-z_-]{1,128}$/.test(text(value.sessionID))||!path.isAbsolute(text(value.directory)))throw fail();
+ const receipt=value.receipt;keys(receipt,['code','signalPresent','stderrBytes','scannedBytes','truncated','clues']);
+ if(receipt.code!==null&&(!Number.isSafeInteger(receipt.code)||receipt.code<0||receipt.code>255)||typeof receipt.signalPresent!=='boolean'||typeof receipt.truncated!=='boolean'
+  ||!Number.isSafeInteger(receipt.stderrBytes)||receipt.stderrBytes<0||receipt.stderrBytes>1048576||!Number.isSafeInteger(receipt.scannedBytes)||receipt.scannedBytes<0||receipt.scannedBytes>32768||receipt.scannedBytes>receipt.stderrBytes
+  ||receipt.truncated!==(receipt.stderrBytes>receipt.scannedBytes)||!Array.isArray(receipt.clues)||receipt.clues.length>NATIVE_CLAUDE_DIAGNOSTIC_CLUES.length
+  ||new Set(receipt.clues).size!==receipt.clues.length||receipt.clues.some(clue=>!NATIVE_CLAUDE_DIAGNOSTIC_CLUES.includes(clue)))throw fail();
+ return structuredClone(value);
 }

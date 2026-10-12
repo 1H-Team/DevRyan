@@ -6,7 +6,7 @@ import {parseNativeCommand,encodeNativeProcessMessage,NATIVE_PROCESS_LIMITS} fro
 
 test('Cursor retains admitted caller after 204, verifies native record scope and waits actual process publication',async()=>{
  const scope={directory:'/fixture/cursor',sessionID:'ses_cursor',userMessageID:'msg_user',assistantMessageID:'msg_assistant',agent:'build',modelID:'composer',variant:'default'};
- let allowed=true,revision=0,lease,tracked=0;const calls=[];
+ let allowed=true,revision=0,lease,tracked=0;const calls=[],diagnostics=[];
  const runtime={registerNativeSession:async()=>{},nativeAdmissionState:async()=>({revision,held:false}),
   leaseForCall:async()=>lease,capturedSessionState:async()=>({captured:true,pending:false,generation:1})};
  const native=createNativeAdmissionOwner({directory:scope.directory,ownerID:'fixture',runtime,
@@ -27,7 +27,8 @@ test('Cursor retains admitted caller after 204, verifies native record scope and
   return {messageID:record.info.id};
  }};
  const owner=createNativeCursorOwner({instanceID:'fixture',admissionOwner:native,runtime,controller:()=>controller,isReady:()=>true,abortAndWait:async()=>{},
-  onStarted:async(input,recheck)=>{expect(input.userMessageID).toBe(scope.userMessageID);await recheck();tracked++;}});
+  onStarted:async(input,recheck)=>{expect(input.userMessageID).toBe(scope.userMessageID);await recheck();tracked++;},
+  recordDiagnostic:entry=>{diagnostics.push(entry);throw Error('private observer failure');}});
  const makeRecord=(role,complete=false)=>({info:{id:role==='user'?scope.userMessageID:scope.assistantMessageID,sessionID:scope.sessionID,role,
   ...(role==='assistant'?{parentID:scope.userMessageID}:{}),providerID:'cursor-acp',modelID:scope.modelID,agent:scope.agent,variant:'default',time:{created:1,...complete?{completed:2}:{}}},parts:[]});
  const persist=record=>owner.persist({sessionID:scope.sessionID,directory:scope.directory,record});
@@ -53,8 +54,17 @@ test('Cursor retains admitted caller after 204, verifies native record scope and
    });
   });
   await Promise.resolve();expect(calls).toHaveLength(2);
+  expect(diagnostics.map(entry=>entry.payload.phase)).toEqual(['native_entered','native_start','native_receipt']);
   lease.state='published';resolveProcess({terminated:true,confined:true});await terminal;expect(calls).toHaveLength(3);
   await owned.close();expect(tracked).toBe(1);
+  expect(diagnostics.map(entry=>entry.payload.phase)).toEqual(['native_entered','native_start','native_receipt','native_check','native_lease','native_assert','native_call','native_return','native_recheck','native_settled']);
+  for(const entry of diagnostics){
+   expect(entry).toMatchObject({type:'lifecycle',event:'cursor_persistence',sessionID:scope.sessionID,directory:scope.directory,
+    payload:{userMessageID:scope.userMessageID,assistantMessageID:scope.assistantMessageID}});
+   expect(Object.keys(entry.payload).sort()).toEqual(['assistantMessageID','elapsedMs','phase','startedAt','userMessageID']);
+   expect(Number.isFinite(entry.payload.elapsedMs)&&entry.payload.elapsedMs>=0).toBe(true);
+  }
+  expect(JSON.stringify(diagnostics)).not.toMatch(/private|permit|fingerprint|accepted|record|lease_cursor/);
   const last=calls.findLast(row=>row.action==='cursor-record-owned'),{record,accepted:_accepted,action:_action,protocol:_protocol,id:_id,...auth}=last;
   await expect(owner.assertRecord({...auth,recordFingerprint:fingerprint(record)})).rejects.toMatchObject({code:'native_cursor_record_scope_invalid'});
   let captured;

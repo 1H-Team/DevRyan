@@ -15,8 +15,8 @@ const failingSdk = (message = "Failed to fetch"): OpencodeClient => {
   } as unknown as OpencodeClient
 }
 
-const successfulSdk = (): OpencodeClient => ({
-  path: { get: async () => ({ data: { state: "/state", config: "/config", worktree: "/", directory: "/", home: "/home" } }) },
+const successfulSdk = (pathReady = Promise.resolve()): OpencodeClient => ({
+  path: { get: async () => { await pathReady; return { data: { state: "/state", config: "/config", worktree: "/", directory: "/", home: "/home" } } } },
   global: { config: { get: async () => ({ data: {} }) } },
   project: { list: async () => ({ data: [] }) },
   provider: { list: async () => ({ data: { all: [], connected: [], default: {} } }) },
@@ -75,4 +75,42 @@ describe("bootstrapGlobal", () => {
     expect(result).toEqual({ ready: true, retryable: false })
     expect(patches.at(-1)).toEqual({ ready: true, error: undefined })
   })
+})
+
+test('a delayed native startup remains retryable even before its process exists', async () => {
+  try {
+    globalThis.fetch = (async () => new Response(JSON.stringify({ openCodeRunning: false,
+      openCodeStartup: { state: 'starting', attempt: 1, code: null } }))) as typeof fetch
+    const { set, patches } = capturePatches()
+    expect(await bootstrapGlobal(failingSdk('503 warming up'), set)).toMatchObject({ ready: false, retryable: true })
+    expect(patches.at(-1)).toEqual({ ready: false, error: undefined })
+    expect(await bootstrapGlobal(successfulSdk(), set)).toEqual({ ready: true, retryable: false })
+  } finally { globalThis.fetch = originalFetch }
+})
+
+test('one transient path failure cannot publish global readiness', async () => {
+  try {
+    globalThis.fetch = (async () => new Response(JSON.stringify({ openCodeRunning: true,
+      openCodeStartup: { state: 'starting', attempt: 2, code: null } }))) as typeof fetch
+    const sdk = successfulSdk()
+    sdk.path.get = failingSdk('502 restarting').path.get
+    const { set, patches } = capturePatches()
+    expect(await bootstrapGlobal(sdk, set)).toMatchObject({ ready: false, retryable: true })
+    expect(patches.at(-1)?.ready).toBe(false)
+    expect(await bootstrapGlobal(successfulSdk(), set)).toMatchObject({ ready: true })
+  } finally { globalThis.fetch = originalFetch }
+})
+
+test('cancelled global bootstrap cannot publish late snapshots or failure', async () => {
+  const controller = new AbortController()
+  let release!: () => void
+  const sdk = successfulSdk(new Promise<void>(resolve => { release = resolve }))
+  const { set, patches } = capturePatches()
+  const pending = bootstrapGlobal(sdk, set, controller.signal).catch(error => error)
+  await new Promise(resolve => setTimeout(resolve, 0))
+  controller.abort()
+  const count = patches.length
+  release()
+  expect((await pending).name).toBe('AbortError')
+  expect(patches.length).toBe(count)
 })

@@ -235,3 +235,17 @@ test('retains turn timing summaries with bridge, ledger and provider request tim
     payload: { providerRequestID: 'req_native', requestPreparedAt: 1_000, requestSentAt: 1_400, transport: 'ws' } });
   expect(incident.payload).toEqual({ providerRequestID: 'req_native', requestPreparedAt: 1_000, requestSentAt: 1_400, transport: 'ws' });
 });
+
+
+test('Claude process receipt fields are bounded and scoped to their exact lifecycle event',()=>{
+ const sanitizer=createDiagnosticSanitizer();
+ const valid={attemptID:'a'.repeat(64),providerInstanceID:'b'.repeat(32),code:1,signalPresent:false,stderrBytes:90,scannedBytes:90,truncated:false,clues:['unsupported_option','module']};
+ const row={type:'lifecycle',event:'native_claude_process',payload:valid};
+ expect(sanitizer.sanitizeRecord(row).payload).toEqual(valid);expect(sanitizer.sanitizeExportValue(row).payload).toEqual(valid);
+ expect(sanitizer.sanitizeRecord({...row,event:'unrelated'}).payload).toEqual({code:1,truncated:false});
+ const invalid={attemptID:'private-token',providerInstanceID:'https://private.example',code:256,signalPresent:'private',stderrBytes:1048577,scannedBytes:32769,truncated:'private',
+  clues:['private-clue',{text:'private nested'}],stderr:'private raw',headers:{authorization:'private'}};
+ expect(sanitizer.sanitizeRecord({...row,payload:invalid}).payload).toEqual({clues:[]});
+ expect(sanitizer.sanitizeExportValue({...row,payload:invalid}).payload).toEqual({clues:[]});
+ expect(sanitizer.sanitizeRecord({...row,payload:{clues:Array(15).fill('auth'),code:null}}).payload).toEqual({code:null});
+});

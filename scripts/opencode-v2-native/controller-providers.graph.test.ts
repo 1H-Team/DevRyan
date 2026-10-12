@@ -5,7 +5,10 @@ import {pathToFileURL} from 'node:url';
 const repository=path.resolve(import.meta.dirname,'../..');
 /** Real native transport/parser/scope. The owned RPC peer uses the real admission
  * owner; the loopback responder stands in for Meridian, not for any SDK service. */
-for(const transport of [undefined,'websocket','http'] as const)test(`native provider middleware owns physical HTTP scope with ${transport??'omitted'} OpenAI transport`,async()=>{
+for(const {transport,anthropicBaseURL} of [
+ {transport:undefined,anthropicBaseURL:undefined},{transport:'websocket',anthropicBaseURL:undefined},{transport:'http',anthropicBaseURL:undefined},
+ {transport:undefined,anthropicBaseURL:'http://127.0.0.1:3456'},
+] as const)test(`native provider middleware owns physical HTTP scope with ${anthropicBaseURL?'saved root Anthropic URL':`${transport??'omitted'} OpenAI transport`}`,async()=>{
  const root=await fs.mkdtemp(path.join(repository,'.cache/v2-validation/provider-transport-')),home=path.join(root,'home'),tmp=path.join(home,'tmp');await fs.mkdir(tmp,{recursive:true});await fs.writeFile(path.join(tmp,'package.json'),'{}\n');let child:ReturnType<typeof Bun.spawn>|undefined;
  try{
   const sourcePath=path.join(repository,'scripts/opencode-v2-native/controller-integrations.graph-fixture.mjs');let source=await fs.readFile(sourcePath,'utf8');
@@ -21,7 +24,11 @@ for(const transport of [undefined,'websocket','http'] as const)test(`native prov
   replace('const rpc = async (method, input, context) => {',`const observations=[];const rpc = async (method, input, context) => {
     if(method==='execution.native.direct-admit')return {token:'owned-direct',generation:1};if(method==='execution.native.direct-finish')return {};
     if(method==='native.observation'){assert.ok(ownedTokens.has(input.permit.token));const row=parseNativeObservation(input.observation);assert.equal(row.controllerInstanceID,controller.instanceID);assert.equal(row.configurationDigest,snapshot.digest);observations.push(row);return null;}`);
-  replace('providers: { openai:',"providers: {anthropic:{package:'@opencode/ai/providers/anthropic',env:[],settings:{apiKey:'wrong-owned'},models:{'claude-owned':{capabilities:{tools:true,input:['text'],output:['text']},limit:{context:32768,input:16384,output:4096}}}}, openai:");
+  const anthropicSettings=JSON.stringify({apiKey:'wrong-owned',...anthropicBaseURL?{baseURL:anthropicBaseURL}:{}});
+  const ownedModel={capabilities:{tools:true,input:['text'],output:['text']},limit:{context:32768,input:16384,output:4096}};
+  const refusedBases={'claude-prefix':'http://127.0.0.1:3456/prefix/v1','claude-userinfo':'http://fixture@127.0.0.1:3456','claude-hash':'http://127.0.0.1:3456/#fixture'};
+  const anthropicModels=JSON.stringify({'claude-owned':ownedModel,...anthropicBaseURL?Object.fromEntries(Object.entries(refusedBases).map(([id,baseURL])=>[id,{...ownedModel,settings:{baseURL}}])):{}});
+  replace('providers: { openai:',`providers: {anthropic:{package:'@opencode/ai/providers/anthropic',env:[],settings:${anthropicSettings},models:${anthropicModels}}, openai:`);
   replace('compatibility: { legacy: {},','compatibility: { legacy: {compaction:{reserved:7500}},');
   replace("build: { mode: 'primary', model: 'openai/gpt-5.5' }","build: { mode: 'primary', model: 'openai/gpt-5.5',system:'You are OpenCode, the best coding agent on the planet.\\n\\nKeep owned tool policy.\\n' }");
   replace("    if (request.url === '/api/accounts/oauth/token')",`    if(new URL(request.url,'http://owned').pathname==='/v1/messages'){
@@ -75,6 +82,15 @@ for(const transport of [undefined,'websocket','http'] as const)test(`native prov
   assert.equal(meridianPrepared.length,3);for(const prepared of meridianPrepared){assert.equal(prepared.kind,'generate');assert.equal(prepared.execution.providerID,'anthropic');assert.equal(prepared.directory,directories[0]);const physical=observations.filter(row=>row.stage==='physical'&&row.requestID===prepared.requestID);assert.equal(physical.length,1);assert.equal(physical[0].transport,'http');assert.equal(physical[0].sessionID,prepared.sessionID);assert.equal(physical[0].directory,prepared.directory);}
   assert.ok(observations.some(row=>row.stage==='physical'&&row.transport==='http'),'native Codex OpenAI physical observations remain active');
   result.meridianMiddleware=true;result.providerObservationComposed=true;
+  await verifyModels();
+  const old=`);
+  if(anthropicBaseURL)replace('  await verifyModels();\n  const old=',`  for(const modelID of ${JSON.stringify(Object.keys(refusedBases))}){
+    const session=await callerContext.run(caller,()=>client.sessions.create({model:{providerID:'anthropic',modelID}},{directory:directories[0]}));
+    const permit=await admissionOwner.handleRpc('native.admission.authorize',{operation:'execution.resume',sessionID:session.id});ownedTokens.add(permit.token);const ended=meridianEnded.length;
+    try{await assert.rejects(()=>call(directories[0],'/api/session/'+session.id+'/generate','POST',{prompt:'Owned unreviewed route'},{'x-devryan-native-permit':JSON.stringify(permit)}),/500/);assert.equal(meridianEnded.length,ended+1,'Refused route still settles its owned attempt');}
+    finally{await admissionOwner.handleRpc('native.admission.release',permit);}
+  }
+  assert.equal((await fs.readFile(path.join(root,'reported-causes.jsonl'),'utf8')).trim().split('\\n').map(line=>JSON.parse(line)).filter(rows=>rows.some(row=>row.code==='native_meridian_route_unreviewed'||row.message?.includes('native_meridian_route_unreviewed'))).length,3,'Only prefix, userinfo and hash routes must be refused');
   await verifyModels();
   const old=`);
   replace('  await cleanup(() => factory.close());','  await cleanup(() => {compatibility.close();});\n  await cleanup(() => factory.close());');

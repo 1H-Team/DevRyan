@@ -1,0 +1,102 @@
+{
+  "schema": 1,
+  "coverage": "separate direct live attempt; strict matrix did not run",
+  "outcome": "blocked before saved plan",
+  "rootSessionId": "ses_ed2fb99dbffejGkvH5UPxYSpug",
+  "nativeManifestSha256": "3b7526bc12176de11161ff576936dc74169e664246776796d8c4596d95256543",
+  "servedIdentities": {
+    "sourceSha256": "2e179133d57154e46f0efc2e03204639fd6580c3ea867e28d3946bb5ff8079f8",
+    "webArtifactSha256": "87b7cf6c3c92b7b281b5a221e52cee967f3a338d03fb057640de3076c03c698b",
+    "recordedAt": "2026-10-11T22:07:54.680Z"
+  },
+  "tasks": [
+    {
+      "taskId": "dvr_task_0344b5a36806402b8cd2e09ed0154585",
+      "childSessionId": "ses_ed2fb42b4ffexkuOS9Aj71BiXw",
+      "agent": "explorer",
+      "providerId": "cursor-acp",
+      "modelId": "claude-haiku-5-5",
+      "variant": "medium",
+      "status": "failed",
+      "startedAt": 1791756645438,
+      "finishedAt": 1791756681386,
+      "firstAssistantPartAt": null,
+      "failureKind": "model_unavailable"
+    },
+    {
+      "taskId": "dvr_task_f9977b5881134c4fb7fd45f84c9a5264",
+      "childSessionId": "ses_ed2fb408bffeYyxJlOIGPIIfqS",
+      "agent": "explorer",
+      "providerId": "cursor-acp",
+      "modelId": "claude-haiku-5-5",
+      "variant": "medium",
+      "status": "failed",
+      "startedAt": 1791756647289,
+      "finishedAt": 1791756695659,
+      "firstAssistantPartAt": null,
+      "failureKind": null
+    },
+    {
+      "taskId": "dvr_task_ee8c88a4e1c74060a713b47e0ccbe2a3",
+      "childSessionId": "ses_ed2fa5eb3ffeVhoxjSgEbQ1bq6",
+      "agent": "explorer",
+      "providerId": "cursor-acp",
+      "modelId": "claude-haiku-5-5",
+      "variant": "medium",
+      "status": "failed",
+      "startedAt": 1791756705851,
+      "finishedAt": 1791756739043,
+      "firstAssistantPartAt": null,
+      "failureKind": "model_unavailable"
+    }
+  ],
+  "errors": [
+    {
+      "at": 1791756739039,
+      "sessionID": "ses_ed2fa5eb3ffeVhoxjSgEbQ1bq6",
+      "error": {
+        "name": "CursorProviderError",
+        "message": "AI Model Not Found Invalid parameters for registry model: \"claude-haiku-5-5\""
+      }
+    },
+    {
+      "at": 1791756695654,
+      "sessionID": "ses_ed2fb408bffeYyxJlOIGPIIfqS",
+      "error": {
+        "name": "CursorProviderError",
+        "message": "[unknown] Server error during API key exchange: <html>\r\n<head><title>502 Bad Gateway</title></head>\r\n<body>\r\n<center><h1>502 Bad Gateway</h1></center>\r\n</body>\r\n</html>"
+      }
+    },
+    {
+      "at": 1791756681380,
+      "sessionID": "ses_ed2fb42b4ffexkuOS9Aj71BiXw",
+      "error": {
+        "name": "CursorProviderError",
+        "message": "AI Model Not Found Invalid parameters for registry model: \"claude-haiku-5-5\""
+      }
+    }
+  ],
+  "journalGaps": [],
+  "recoveryObservation": {
+    "recordedAt": "2026-10-11T22:22:00Z",
+    "taskId": "dvr_task_44c5e9728b8b4a2aa7bb4efd27734452",
+    "childSessionId": "ses_ed2fa5eb3ffeVhoxjSgEbQ1bq6",
+    "executionKind": "retry_in_place",
+    "attempt": 4,
+    "provider": "cursor-acp",
+    "model": "composer-2.5",
+    "variant": null,
+    "savedAgentSettingsChanged": false,
+    "userMessageID": "msg_12d0c0202001OKN43TUqW2iQZt",
+    "childPromptedAt": 1791757139992,
+    "firstAssistantPartAt": 1791757150059,
+    "sdkRunFinishedAt": 1791757185262,
+    "canonicalAssistantCompletedAt": 1791757185264,
+    "canonicalAssistantFinish": "stop",
+    "journalTurnCompletedAndIdleAt": 1791757188401,
+    "authoritativeSessionStatus": "busy",
+    "managedTaskStatus": "running",
+    "parentState": "waiting for subagent output",
+    "outcome": "completed provider report but blocked handoff"
+  }
+}

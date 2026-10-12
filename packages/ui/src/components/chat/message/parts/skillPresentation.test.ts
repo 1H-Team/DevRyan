@@ -30,8 +30,8 @@ test('skill display name prefers metadata, then skill_content, then a non-hash i
     expect(getSkillDisplayName(skill({ status: 'completed', input: { id: hashed, name: hashed }, output: body, title: '', metadata: { name: 'From Metadata' }, time: { start: 1, end: 2 } }))).toBe('From Metadata');
     expect(getSkillDisplayName(skill({ status: 'completed', input: { id: hashed, name: hashed }, output: body, title: '', metadata: {}, time: { start: 1, end: 2 } }))).toBe('Superpowers');
     expect(getSkillDisplayName(skill({ status: 'running', input: { id: 'pdf', name: 'pdf' }, time: { start: 1 } }))).toBe('pdf');
-    expect(getSkillDisplayName(skill({ status: 'running', input: { id: hashed, name: hashed }, time: { start: 1 } }))).toBe('Skill');
-    expect(getSkillDisplayName(skill({ status: 'running', input: { id: hashed }, time: { start: 1 } }))).toBe('Skill');
-    expect(getSkillDisplayName(skill({ status: 'pending', input: {}, raw: '' }))).toBe('Skill');
+    expect(getSkillDisplayName(skill({ status: 'running', input: { id: hashed, name: hashed }, time: { start: 1 } }))).toBe('');
+    expect(getSkillDisplayName(skill({ status: 'running', input: { id: hashed }, time: { start: 1 } }))).toBe('');
+    expect(getSkillDisplayName(skill({ status: 'pending', input: {}, raw: '' }))).toBe('');
     expect(getSkillDisplayName(skill({ status: 'error', input: { name: hashed }, error: 'x', time: { start: 1, end: 2 } }))).toBe('Skill');
 });

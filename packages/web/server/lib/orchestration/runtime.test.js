@@ -68,6 +68,42 @@ const createPersistence = () => {
   };
 };
 
+it('reads startup tool capabilities without acquiring scheduler ownership or reconciling children', async () => {
+  const scheduler = { initialize: vi.fn(async () => { throw new Error('controller not ready'); }),
+    shutdown: vi.fn(async () => {}), flush: vi.fn(async () => {}), getDiagnostics: () => ({}) };
+  const persistence = { ...createPersistence(), acquireOwnership: vi.fn(async () => {}), verifyOwnership: vi.fn(async () => {}) };
+  const runtime = createWebManagedOrchestrationRuntime({ scheduler, persistence,
+    harnessPolicies: { waitAny: true, contextProjection: false } });
+  try {
+    expect(await runtime.handleRpc({ method: 'harness_capabilities' })).toMatchObject({ policies: { waitAny: true, contextProjection: false } });
+    expect(scheduler.initialize).not.toHaveBeenCalled();
+    expect(persistence.acquireOwnership).not.toHaveBeenCalled();
+    expect(persistence.verifyOwnership).not.toHaveBeenCalled();
+    await expect(runtime.handleRpc({ method: 'status', params: { taskId: 'dvr_task_one' } })).rejects.toThrow('controller not ready');
+    expect(scheduler.initialize).toHaveBeenCalledOnce();
+    expect(persistence.acquireOwnership).toHaveBeenCalledOnce();
+  } finally { await runtime.shutdown(); }
+});
+
+it('leaves a retained running child untouched until initialization after controller readiness', async () => {
+  const task = { ...createManagedTaskRecord({ ...submitParams(1), taskId: 'dvr_task_retained', sequence: 1,
+    attempt: 1, priorTaskId: null, executionKind: 'start', createdAt: 1_000, timeoutAt: null }),
+    status: 'running', childSessionId: 'ses_retained', leaseToken: 'dvr_lease_retained', startedAt: 1_000 };
+  const persistence = { ...createPersistence(), load: vi.fn(async () => ({ version: 1, tasks: [task], resultEnvelopes: [] })) };
+  const reconcile = vi.fn(async () => ({ state: 'terminal', result: { status: 'completed', recoverablePreview: 'Restored result' } }));
+  const runtime = createWebManagedOrchestrationRuntime({ persistence, executor: { reconcile,
+    start: vi.fn(async () => { throw new Error('must not replay retained work'); }) }, now: () => 2_000 });
+  try {
+    await runtime.handleRpc({ method: 'harness_capabilities' });
+    expect(persistence.load).not.toHaveBeenCalled();
+    expect(reconcile).not.toHaveBeenCalled();
+    await runtime.initialize();
+    expect(reconcile).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ taskId: task.taskId, status: 'running', childSessionId: 'ses_retained' }));
+    const result = await runtime.handleRpc({ method: 'status', params: { taskId: task.taskId, rootSessionId: task.rootSessionId, directory: task.directory } });
+    expect(result.task.status).toBe('completed');
+  } finally { await runtime.shutdown(); }
+});
+
 it('admits the native Plan Explorer with its exact Cursor selection under owned catalog authority', async () => {
   let authorized = false;
   const validate = vi.fn(async input => {
@@ -370,29 +406,41 @@ describe('web managed orchestration runtime', () => {
       await control.setChildSessionId('ses_native_child');
       const prompt = { operation: 'prompt', taskId: task.taskId, leaseToken: task.leaseToken, directory: task.directory,
         sessionID: 'ses_native_child', providerId: task.providerId, modelId: task.modelId, agent: task.agent, variant: task.variant };
+      const settle = { ...prompt, operation: 'settle' };
       await expect(runtime.verifyNativeTaskDispatch(create)).rejects.toMatchObject({ code: 'native_managed_task_scope_invalid' });
       await expect(runtime.verifyNativeTaskDispatch(prompt)).resolves.toMatchObject({ childSessionId: 'ses_native_child' });
       await control.markAccepted();
       await expect(runtime.verifyNativeTaskDispatch(prompt)).resolves.toMatchObject({ status: 'running' });
+      await expect(runtime.verifyNativeTaskDispatch(settle)).resolves.toMatchObject({ status: 'running' });
       for (const key of ['sessionID', 'providerId', 'modelId', 'agent', 'variant']) {
         await expect(runtime.verifyNativeTaskDispatch({ ...prompt, [key]: 'changed' })).rejects.toMatchObject({ code: 'native_managed_task_scope_invalid' });
+        await expect(runtime.verifyNativeTaskDispatch({ ...settle, [key]: 'changed' })).rejects.toMatchObject({ code: 'native_managed_task_scope_invalid' });
+      }
+      for (const patch of [{ taskId: 'dvr_missing' }, { leaseToken: null }, { leaseToken: 'dvr_stale' }, { directory: '/other' }]) {
+        await expect(runtime.verifyNativeTaskDispatch({ ...settle, ...patch })).rejects.toMatchObject({ code: 'native_managed_task_lease_invalid', statusCode: 403 });
       }
       owned = false;
       await expect(runtime.verifyNativeTaskDispatch(prompt)).rejects.toMatchObject({ code: 'owner_lost' });
+      await expect(runtime.verifyNativeTaskDispatch(settle)).rejects.toMatchObject({ code: 'owner_lost' });
       owned = true;
       blocked = true;
       await expect(runtime.verifyNativeTaskDispatch(prompt)).rejects.toMatchObject({ code: 'fixture_hold' });
+      await expect(runtime.verifyNativeTaskDispatch(settle)).resolves.toMatchObject({ status: 'running' });
       blocked = false;
       await expect(runtime.handleRpc({ method: 'verifyNativeTaskDispatch', params: prompt })).rejects.toMatchObject({ code: 'rpc_method_not_found' });
+      await expect(runtime.handleRpc({ method: 'verifyNativeTaskDispatch', params: settle })).rejects.toMatchObject({ code: 'rpc_method_not_found' });
       const cancellation = runtime.handleRpc({ method: 'cancel', params: { taskId: task.taskId, rootSessionId: task.rootSessionId, directory: task.directory } });
       await abortEntered.promise;
       expect((await runtime.getSnapshot({ rootSessionId: task.rootSessionId })).tasks[0].status).toBe('running');
       await expect(runtime.verifyNativeTaskDispatch(prompt)).rejects.toMatchObject({ code: 'native_managed_task_lease_invalid', statusCode: 403 });
+      await expect(runtime.verifyNativeTaskDispatch(settle)).resolves.toMatchObject({ status: 'running' });
       abortDone.resolve();
       await cancellation;
       await expect(runtime.verifyNativeTaskDispatch(prompt)).rejects.toMatchObject({ code: 'native_managed_task_lease_invalid', statusCode: 403 });
+      await expect(runtime.verifyNativeTaskDispatch(settle)).rejects.toMatchObject({ code: 'native_managed_task_lease_invalid', statusCode: 403 });
       await runtime.shutdown();
       await expect(runtime.verifyNativeTaskDispatch(prompt)).rejects.toMatchObject({ code: 'native_managed_task_lease_invalid', statusCode: 403 });
+      await expect(runtime.verifyNativeTaskDispatch(settle)).rejects.toMatchObject({ code: 'native_managed_task_lease_invalid', statusCode: 403 });
     } finally {
       owned = true;
       blocked = false;

@@ -1,6 +1,7 @@
 import type { OpencodeClient, PermissionRequest, Project, QuestionRequest, SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { filterSessionStatusSnapshotThroughAbortGuard } from "./abort-retry-guard"
 import { isTransientError, retry } from "./retry"
+import { parseStartupHealth } from "@/lib/startup/health"
 import { directoryBootstrapRequest } from "./directory-bootstrap-request"
 import { requestSignature } from "./request-signature"
 import { settleStreamingSessions } from "./streaming"
@@ -114,40 +115,48 @@ export async function syncQuestionSnapshot(input: {
 export async function bootstrapGlobal(
   sdk: OpencodeClient,
   set: (patch: Partial<GlobalState>) => void,
+  signal?: AbortSignal,
 ): Promise<{ ready: boolean; retryable: boolean; error?: string }> {
+  signal?.throwIfAborted()
+  const publish = (patch: Partial<GlobalState>) => { if (!signal?.aborted) set(patch) }
   const results = await Promise.allSettled([
-    retry(() => sdk.path.get().then((x) => set({ path: unwrap(x, "path.get") }))),
-    retry(() => sdk.global.config.get().then((x) => set({ config: unwrap(x, "global.config.get") }))),
+    retry(() => sdk.path.get(undefined, { signal }).then((x) => publish({ path: unwrap(x, "path.get") }))),
+    retry(() => sdk.global.config.get({ signal }).then((x) => publish({ config: unwrap(x, "global.config.get") }))),
     retry(() =>
-      sdk.project.list().then((x) => {
+      sdk.project.list(undefined, { signal }).then((x) => {
         const data = unwrap(x, "project.list")
         const projects = data
           .filter((p): p is Project => !!p?.id)
           .filter((p) => !!p.worktree && !p.worktree.includes("opencode-test"))
           .sort((a, b) => cmp(a.id, b.id))
-        set({ projects })
+        publish({ projects })
       }),
     ),
-    retry(() => sdk.provider.list().then((x) => set({ providers: unwrap(x, "provider.list") }))),
+    retry(() => sdk.provider.list(undefined, { signal }).then((x) => publish({ providers: unwrap(x, "provider.list") }))),
   ])
 
+  signal?.throwIfAborted()
   const errors = results
     .filter((r): r is PromiseRejectedResult => r.status === "rejected")
     .map((r) => r.reason)
 
-  // If ALL requests failed, OpenCode is likely down — fetch the OpenChamber
-  // health endpoint (outside the readiness gate) to get the actual error reason.
-  if (errors.length === results.length) {
+  // A partial bootstrap is not ready either: native readiness can change
+  // between the health gate and these requests. Only a terminal health state wins.
+  if (errors.length > 0) {
     let message = errors[0] instanceof Error ? errors[0].message : String(errors[0])
     let hasAuthoritativeHealthFailure = false
     try {
-      const healthRes = await fetch("/health", { signal: AbortSignal.timeout(4000) })
+      const healthRes = await fetch("/health", { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(4000)]) : AbortSignal.timeout(4000) })
       if (healthRes.ok) {
         const health = await healthRes.json()
-        if (health.lastOpenCodeError) {
+        const startup = parseStartupHealth(health)?.startup
+        if (startup?.state === "failed") {
+          message = startup.code || "OpenCode could not start"
+          hasAuthoritativeHealthFailure = true
+        } else if (!startup && health.lastOpenCodeError) {
           message = health.lastOpenCodeError
           hasAuthoritativeHealthFailure = true
-        } else if (!health.openCodeRunning) {
+        } else if (!startup && health.openCodeRunning === false) {
           message = "OpenCode process is not running"
           hasAuthoritativeHealthFailure = true
         }
@@ -155,19 +164,17 @@ export async function bootstrapGlobal(
     } catch {
       // health endpoint itself unreachable — use the original error
     }
+    signal?.throwIfAborted()
     if (!hasAuthoritativeHealthFailure && errors.every(isTransientError)) {
       console.warn("[bootstrap] global bootstrap transient failure; retrying", message)
-      set({ ready: false, error: undefined })
+      publish({ ready: false, error: undefined })
       return { ready: false, retryable: true, error: message }
     }
     console.error("[bootstrap] global bootstrap failed", errors[0])
-    set({ ready: true, error: { type: "init", message } })
+    publish({ ready: true, error: { type: "init", message } })
     return { ready: false, retryable: false, error: message }
   } else {
-    if (errors.length) {
-      console.error("[bootstrap] global bootstrap partially failed", errors[0])
-    }
-    set({ ready: true, error: undefined })
+    publish({ ready: true, error: undefined })
     return { ready: true, retryable: false }
   }
 }

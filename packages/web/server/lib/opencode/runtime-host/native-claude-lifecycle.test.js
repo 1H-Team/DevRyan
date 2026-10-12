@@ -10,6 +10,21 @@ const binding=({profileID,service,configDirectory,enrollmentID,generation})=>({p
 const next=(state,operation)=>transitionClaudeLifecycle(state,state.revision,operation);
 
 describe('Claude lifecycle contract',()=>{
+ it('durable deletion fences only its exact enrollment and settles through private typed commands',()=>{
+  for(const incomplete of [false,true]){
+   const selected=account(),other=account(2);let state=next(emptyClaudeLifecycle(),{kind:'enroll',account:other});
+   state=next(state,incomplete?{kind:'prepare-enrollment',account:selected,attemptID:'fresh'}:{kind:'enroll',account:selected});
+   const operation={kind:'prepare-deletion',binding:binding(selected),attemptID:'delete-owned',recordFingerprint:selected.recordFingerprint,directoryDevice:7,directoryInode:9};
+   const wire={protocol:1,id:'delete_call',action:'claude-lifecycle-transition-owned',controllerInstanceID:'owner',expectedRevision:state.revision,operation};
+   expect(parseNativeCommand(wire)).toEqual(wire);
+   expect(()=>next(state,{...operation,binding:{...operation.binding,generation:'foreign'}})).toThrow('native_claude_lifecycle_conflict');
+   const prepared=next(state,operation);expect(prepared.unresolved[0]).toMatchObject({phase:'deletion-prepared',incomplete,directoryDevice:7,directoryInode:9});
+   expect(()=>next(prepared,{kind:'begin',account:selected,attemptID:'renew'})).toThrow('native_claude_refresh_unsettled');
+   expect(()=>next(prepared,{kind:'settle-deletion',binding:binding(selected),attemptID:'foreign',recordFingerprint:selected.recordFingerprint})).toThrow('native_claude_lifecycle_conflict');
+   state=next(prepared,{kind:'settle-deletion',binding:binding(selected),attemptID:'delete-owned',recordFingerprint:selected.recordFingerprint});
+   expect(state.accounts).toEqual([other]);expect(state.unresolved).toEqual([]);
+  }
+ });
  it('checks byte and renewal capacity before issuer dispatch without creating authority or changing fences',()=>{
   let state=emptyClaudeLifecycle();
   for(let index=1;index<=64;index++){

@@ -27,7 +27,7 @@ vi.mock('@opencode-ai/plugin', () => {
     array: makeSchema,
     object: makeSchema,
     boolean: makeSchema,
-    enum: makeSchema,
+    enum: (values) => { const schema = makeSchema(); schema.values = values; return schema; },
     number: makeSchema,
     string: makeSchema,
   };
@@ -46,7 +46,7 @@ const originalUrl = process.env.DEVRYAN_ORCHESTRATION_URL;
 const originalToken = process.env.DEVRYAN_ORCHESTRATION_TOKEN;
 const originalAccountDefaults = process.env.DEVRYAN_ORCHESTRATION_ACCOUNT_DEFAULTS;
 const originalResultMode = process.env.DEVRYAN_MANAGED_RESULT_MODE;
-const POLICY_ENV_KEYS = ['DEVRYAN_TASK_AGENT_VALIDATION', 'DEVRYAN_MANAGED_WAIT_ANY', 'DEVRYAN_CAPABILITY_TOOL_SCHEMA'];
+const POLICY_ENV_KEYS = ['DEVRYAN_TASK_AGENT_VALIDATION', 'DEVRYAN_MANAGED_WAIT_ANY', 'DEVRYAN_TASK_CONTEXT_PROJECTION', 'DEVRYAN_CAPABILITY_TOOL_SCHEMA'];
 const originalPolicyEnvironment = Object.fromEntries(POLICY_ENV_KEYS.map((key) => [key, process.env[key]]));
 
 // Fixtures without an agent catalog model the provider_id/model_id compatibility
@@ -259,7 +259,29 @@ describe('wait-any collection protocol', () => {
   });
 });
 
-describe('wait_any advertisement', () => {
+describe('capability tool advertisement', () => {
+  it.each([
+    [{}, false, false],
+    [{ DEVRYAN_MANAGED_WAIT_ANY: '1' }, true, false],
+    [{ DEVRYAN_TASK_CONTEXT_PROJECTION: '1' }, false, true],
+    [{ DEVRYAN_CAPABILITY_TOOL_SCHEMA: '0' }, true, true],
+  ])('advertises only enabled actions and their arguments for %j', async (environment, waitAny, contextProjection) => {
+    Object.assign(process.env, environment);
+    const { args, description } = (await DevRyanManagedOrchestrationPlugin()).tool.devryan_task;
+    expect(args.action.values.includes('wait_any')).toBe(waitAny);
+    expect('task_ids' in args).toBe(waitAny);
+    for (const action of ['checkpoint', 'decisions', 'remember_decision']) {
+      expect(args.action.values.includes(action)).toBe(contextProjection);
+      expect(args.action.description.includes(action)).toBe(contextProjection);
+      expect(description.includes(action)).toBe(contextProjection);
+      expect(args.task_id.description.includes(action)).toBe(contextProjection);
+    }
+    for (const field of ['query', 'decision', 'source_message_id', 'decision_paths', 'valid_until', 'supersedes']) {
+      expect(field in args).toBe(contextProjection);
+    }
+    expect(args.action.values).toContain('plan_read');
+    expect(args.action.values).toContain('plan_update');
+  });
   const blockedRead = async () => {
     vi.stubGlobal('fetch', vi.fn(async () => rpcResponse({ state: 'active', taskIds: ['dvr_task_live'],
       capabilities: { policies: { waitAny: true } } })));

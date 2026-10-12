@@ -77,26 +77,49 @@ const removedReferences = async (db,directory,sessionIDs) => {
   }
   return {sessions,messages};
 };
-const mapDirectory = (directory,maps) => {
+const mapDirectory = async (directory,maps,getRegistered) => {
   if (typeof directory !== 'string') return directory;
   const mapping = maps.find(row => containsPath(row.sourceDirectory,directory));
   if (mapping) return path.join(mapping.targetDirectory,path.relative(mapping.sourceDirectory,directory));
   if (maps.some(row => containsPath(row.targetDirectory,directory))) return directory;
+  if ((await getRegistered()).has(directory)) return directory;
   throw bundleFailure('bundle_harness_directory_unmapped');
 };
-const relocateRecord = (record,maps,owned) => {
-  if (Array.isArray(record)) return record.map(item=>relocateRecord(item,maps,owned));
+const relocateRecord = async (record,maps,owned,getRegistered) => {
+  if (Array.isArray(record)) return Promise.all(record.map(item=>relocateRecord(item,maps,owned,getRegistered)));
   if (record===null || typeof record!=='object') return record;
   if (!isRecord(record)) throw bundleFailure('bundle_harness_record_invalid');
   const next = structuredClone(record);
-  for (const field of ['directory','projectDirectory']) if (typeof next[field] === 'string') next[field] = mapDirectory(next[field],maps);
+  for (const field of ['directory','projectDirectory']) if (typeof next[field] === 'string') next[field] = await mapDirectory(next[field],maps,getRegistered);
   for (const field of ['viewDirectory','workingDirectory','auxiliaryDirectory']) if (typeof next[field]==='string') {
     if (!owned || !containsPath(owned.source,next[field])) throw bundleFailure('bundle_execution_path_unknown');
     next[field]=path.join(owned.target,path.relative(owned.source,next[field]));
   }
   for (const [key,item] of Object.entries(next)) if (!['input','output','body','request','metadata','text','parts'].includes(key)
-    && (Array.isArray(item) || isRecord(item))) next[key]=relocateRecord(item,maps,owned);
+    && (Array.isArray(item) || isRecord(item))) next[key]=await relocateRecord(item,maps,owned,getRegistered);
   return next;
+};
+// Copied settings own additional projects; identity preservation never grants
+// their parent, siblings, or an arbitrary directory found in a harness record.
+const registeredIdentityDirectories=async(readJSON,webDataDirectory,sourceWebDataDirectory,maps)=>{
+  let settings;
+  try {settings=await readJSON(path.join(webDataDirectory,'settings.json'));}
+  catch(error){if(error.code==='ENOENT')return new Set();throw error;}
+  const projects=settings?.projects??[];
+  if(!Array.isArray(projects)||projects.length>128)throw bundleFailure('bundle_harness_registered_project_invalid');
+  const protectedRoots=[webDataDirectory,sourceWebDataDirectory,
+    ...[webDataDirectory,sourceWebDataDirectory].filter(directory=>path.basename(directory)==='web-data').map(directory=>path.dirname(directory))];
+  const registered=new Set();
+  for(const project of projects){
+    const directory=project?.path;
+    if(typeof directory!=='string'||!path.isAbsolute(directory)||path.resolve(directory)!==directory||/[\u0000-\u001f]/.test(directory))throw bundleFailure('bundle_harness_registered_project_invalid');
+    if(maps.some(row=>containsPath(row.sourceDirectory,directory)||containsPath(row.targetDirectory,directory)))continue;
+    if(protectedRoots.some(root=>containsPath(root,directory)))throw bundleFailure('bundle_harness_registered_project_invalid');
+    const stat=await fs.lstat(directory).catch(error=>{if(error.code==='ENOENT')return undefined;throw error;});
+    if(stat&&(!stat.isDirectory()||stat.isSymbolicLink()||await fs.realpath(directory)!==directory))throw bundleFailure('bundle_harness_registered_project_invalid');
+    registered.add(directory);
+  }
+  return registered;
 };
 /** Reads/reconciles the existing stores; it never creates an execution ledger. */
 export async function inspectBundleHarness(webDataDirectory,{projectMap=[],relocate=false,checkpointID='checkpoint',sessionIDs,messageIDs,
@@ -114,6 +137,8 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
    if(typeof runWindowsInspection!=='function')throw bundleFailure('private_windows_git_relocation_unavailable');
    return runWindowsInspection({projectMap,relocate,checkpointID,sessionIDs,messageIDs,sourceWebDataDirectory,preservedRefs,verifiedContinuations});
   }
+  let registered;
+  const getRegistered=()=>registered??=registeredIdentityDirectories(readBundleJSON,webDataDirectory,sourceWebDataDirectory,projectMap);
   for (const entry of storesToInspect) {
     if (!entry.isDirectory() || !/^[a-f0-9]{64}$/.test(entry.name)) throw bundleFailure('bundle_harness_layout_invalid');
     if(windows&&relocate&&!nativeFiles)throw bundleFailure('private_windows_git_relocation_unavailable');
@@ -126,7 +151,7 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
     const disposed=await removedReferences(db,meta.directory,sessionIDs);
     for(const id of disposed.sessions) removed.sessions.add(id);
     for(const id of disposed.messages) removed.messages.add(id);
-    const target=relocate?mapDirectory(meta.directory,projectMap):meta.directory,
+    const target=relocate?await mapDirectory(meta.directory,projectMap,getRegistered):meta.directory,
       targetRoot=path.join(storage,changeKey(target)), owned={source:path.join(sourceWebDataDirectory,'harness','session-mutations',entry.name),target:targetRoot};
     for (const ref of before) {
       const [name,oid] = ref.split(' ');
@@ -162,7 +187,7 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
           }
         }
         references(record,collected,null,shellException);
-        if (relocate) store.set(key,relocateRecord(record,projectMap,owned));
+        if (relocate) store.set(key,await relocateRecord(record,projectMap,owned,getRegistered));
       }
       if (relocate) await store.commit();
     }
@@ -175,7 +200,7 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
     }
   }
   if (preservedRefs) for (const expected of preservedRefs.refs) {
-    const directory=mapDirectory(expected.directory,projectMap), root=path.join(storage,changeKey(directory));
+    const directory=await mapDirectory(expected.directory,projectMap,getRegistered), root=path.join(storage,changeKey(directory));
     const ref=/^refs\/devryan\/(state|leases\/[a-f0-9-]{36})$/.test(expected.ref)
       ? `refs/devryan/migration/${preservedRefs.checkpointID}/${expected.ref.slice('refs/devryan/'.length)}`:expected.ref;
     const oid=(await runGit(root,['--git-dir',path.join(root,'git'),'rev-parse','--verify',ref])).toString().trim();
@@ -195,11 +220,13 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
     if (!isRecord(record)) throw bundleFailure('bundle_harness_record_invalid');
     references(record,collected,null,exception);
     if (relocate) {
-      const next = relocateRecord(record,projectMap);
+      const next = await relocateRecord(record,projectMap,undefined,getRegistered);
       if (directory === 'context' && record.kind === 'task') {
         // Derived task keys include the canonical directory. Without an exact
         // source scope, leave the candidate closed instead of losing its cache.
-        const sourceScope = projectMap.find(row => entry.name === `task_${sha256(`${record.sessionID}:${row.sourceDirectory}`)}.json`);
+        let sourceScope = projectMap.find(row => entry.name === `task_${sha256(`${record.sessionID}:${row.sourceDirectory}`)}.json`);
+        if(!sourceScope)sourceScope=[...await getRegistered()].map(directory=>({sourceDirectory:directory,targetDirectory:directory}))
+          .find(row => entry.name === `task_${sha256(`${record.sessionID}:${row.sourceDirectory}`)}.json`);
         if (!sourceScope) throw bundleFailure('bundle_context_scope_unknown');
         const targetFile = path.join(path.dirname(file),`task_${sha256(`${record.sessionID}:${sourceScope.targetDirectory}`)}.json`);
         const previous=windows&&!nativeFiles?await windowsOwner.read(file):undefined;await saveBundleJSON(targetFile,next); if (targetFile !== file){if(nativeFiles)await nativeFiles.deleteFile(file);else if(windows)await windowsOwner.delete(file,{expected:previous});else await fs.rm(file);}
@@ -219,7 +246,7 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
       if (!isRecord(task) || ['starting','running','cancelling'].includes(task.status)) throw bundleFailure('bundle_task_unsettled');
       references(task,collected);
     }
-    if (relocate) await saveBundleJSON(ledgerFile,{...ledger,tasks:ledger.tasks.map(task => relocateRecord(task,projectMap))});
+    if (relocate) await saveBundleJSON(ledgerFile,{...ledger,tasks:await Promise.all(ledger.tasks.map(task => relocateRecord(task,projectMap,undefined,getRegistered)))});
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
   for (const entry of await entries(path.join(webDataDirectory,'harness','evidence','records'))) {
     if(windows&&isWindowsPrivateControlName(entry.name))continue;
@@ -227,7 +254,7 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
     const file=path.join(webDataDirectory,'harness','evidence','records',entry.name),record=await readBundleJSON(file);
     if (!isRecord(record) || !['complete','gap'].includes(record.status)) throw bundleFailure('bundle_evidence_unsettled');
     references(record,collected);
-    if (relocate) await saveBundleJSON(file,relocateRecord(record,projectMap));
+    if (relocate) await saveBundleJSON(file,await relocateRecord(record,projectMap,undefined,getRegistered));
   }
   if (sessionIDs) for (const id of collected.sessions) if (!sessionIDs.includes(id) && !removed.sessions.has(id)) throw bundleFailure('bundle_session_reference_lost');
   if (messageIDs) for (const id of collected.messages) if (!messageIDs.includes(id)

@@ -1,4 +1,5 @@
 import { startStartupTiming } from '../startup-timing.js';
+import { artifactDiagnostic } from '@openchamber/shared-runtime/startup-diagnostics.js';
 import {captureNativeSetupCredentialSeed} from './native-setup-credential-ack.js';
 import {nativeBundleFileOperations} from './native-bundle-file-operations.js';
 import {createNativeHelperOwner} from './native-helper-owner.js';
@@ -76,7 +77,8 @@ export function createRuntimeBundleVerifier(binding, privatePersistence={}) {
     if (!selected || selected.selection.revision !== binding.selection.revision
       || selected.selection.selectedBundleID !== binding.descriptor.bundleID
       || JSON.stringify(selected.descriptor) !== JSON.stringify(binding.descriptor)) throw fail('runtime_bundle_recomposition_required');
-    const verified = await store.verify({ bundleID: binding.descriptor.bundleID, phase: 'resume' });
+    const verified = await store.verify({ bundleID: binding.descriptor.bundleID, phase: 'resume',
+      ...selected.selection.transition==='rollback'?{artifactPurpose:'bundle-rollback'}:{} });
     if (selected.selection.reconciliationRequired) throw fail('runtime_bundle_reconciliation_required');
     return verified;
   };
@@ -93,7 +95,8 @@ export async function loadNativeRuntimeBundle({ binding, launcher, verify = crea
   if (verified?.integrity !== 'verified' || verified.phase !== 'resume'
     || verified.descriptor?.bundleID !== binding.descriptor.bundleID) throw fail('runtime_bundle_recomposition_required');
   const descriptor = binding.descriptor, launch = descriptor.launch;
-  const artifacts = verified.artifacts ?? await verifyNativeRuntimeArtifacts({ manifestPath: launch.artifactManifestPath, manifestSha256: launch.artifactManifestSha256, launcher });
+  const artifacts = verified.artifacts ?? await verifyNativeRuntimeArtifacts({ manifestPath: launch.artifactManifestPath, manifestSha256: launch.artifactManifestSha256, launcher,
+    ...binding.selection.transition==='rollback'?{purpose:'bundle-rollback'}:{} });
   if (artifacts.manifestPath !== launch.artifactManifestPath || artifacts.manifestSha256 !== launch.artifactManifestSha256
     || artifacts.launcher !== launcher || artifacts.controller !== launch.controllerBinary || artifacts.writer !== launch.writerBinary) throw fail('native_runtime_artifacts_unverified');
   const reviewed = JSON.parse(await fs.readFile(launch.reviewedNativeConfigPath, 'utf8'));
@@ -114,7 +117,8 @@ export async function loadNativeRuntimeBundle({ binding, launcher, verify = crea
   await refreshLocations();
   const resolveConfiguration=createNativeConfigurationSnapshotResolver({resolveSlimAgents:reviewedConfiguration?.resolveSlimAgents,ponytailCommands:reviewedConfiguration?.ponytailCommands,
     ...(deriveLocations?{getRuntimeLocations:()=>deriveLocations()}:{} )});
-  return { descriptor, artifacts, controlRoot: binding.controlRoot, preparedManifestSha256: binding.selection.preparedManifestSha256, configuration: reviewed.configuration, locations,
+  return { descriptor, artifacts, controlRoot: binding.controlRoot, artifactPurpose: binding.selection.transition === 'rollback' ? 'bundle-rollback' : undefined,
+    preparedManifestSha256: binding.selection.preparedManifestSha256, configuration: reviewed.configuration, locations,
     reviewedConfiguration, refreshLocations, prepareLocations:deriveLocations??(async()=>locations),
     catalogRequirements: reviewed.catalogRequirements,
     reviewedPlugins: plugins.plugins.map(({ id, manifestDigest, capabilities }) => ({ id, manifestDigest, capabilities })), verify,
@@ -428,7 +432,8 @@ export function createNativeRuntimeOwner(options) {
       if (startupFailureRecorded) return;
       startupFailureRecorded = true;
       finishStage('failed');
-      startupDiagnostic('failed', startupFailureCode(cause), cause?.startupDiagnostics);
+      const diagnostic = artifactDiagnostic(cause);
+      startupDiagnostic('failed', startupFailureCode(cause), diagnostic ? { artifact: diagnostic } : cause?.startupDiagnostics);
     };
     startupDiagnostic('starting');
     starting = (async () => {
@@ -483,7 +488,7 @@ export function createNativeRuntimeOwner(options) {
         controller: () => child, isReady: () => nativeInstanceID === instanceID && phase === 'ready' && !stopping && !stopped && Boolean(child && !child.hasExited()),
         admissionOwner: nativeOwner, openCodeClient, recordDiagnostic: options.recordDiagnostic,
         onObservation: options.onNativeObservation }) : undefined;
-      cursor=createNativeCursorOwner({instanceID,admissionOwner:nativeOwner,runtime:executionHost.runtime,controller:active,recovery:cursorRecovery,
+      cursor=createNativeCursorOwner({instanceID,admissionOwner:nativeOwner,runtime:executionHost.runtime,controller:active,recovery:cursorRecovery,recordDiagnostic:options.recordDiagnostic,
         isReady:()=>nativeInstanceID===instanceID&&phase==='ready'&&!stopping,
         abortAndWait:sessionID=>options.cursorRuntime.abortAndWait(sessionID),onStarted:(scope,recheck)=>primaryStep.external(scope,recheck)});
       imageNotices.clear();
@@ -558,7 +563,11 @@ export function createNativeRuntimeOwner(options) {
         migrationEvidence: { path: descriptor.migrationReceiptPath, sha256: hash(receipt),
           ...(descriptor.sourceBundleID ? { clone: { preparedManifestPath: descriptor.preparedManifestPath,
             preparedManifestSha256: selectedPreparedManifestSha256 } } : {}) }, catalogRequirements: bundle.catalogRequirements };
+      const capabilities = await getManagedRuntime?.().handleRpc({ method: 'harness_capabilities' });
       const environment = { PATH: options.environment?.PATH ?? process.env.PATH, LANG: 'en_US.UTF-8', ...options.environment,
+        DEVRYAN_MANAGED_WAIT_ANY: capabilities?.policies?.waitAny === true ? '1' : '0',
+        DEVRYAN_TASK_CONTEXT_PROJECTION: capabilities?.policies?.contextProjection === true ? '1' : '0',
+        DEVRYAN_CAPABILITY_TOOL_SCHEMA: process.env.DEVRYAN_CAPABILITY_TOOL_SCHEMA === '0' ? '0' : '1',
         HOME: globals.home, XDG_CONFIG_HOME: globals.config, XDG_DATA_HOME: globals.data, XDG_STATE_HOME: globals.state,
         XDG_CACHE_HOME: globals.cache, TMPDIR: globals.tmp, TMP: globals.tmp, TEMP: globals.tmp };
       const providerOrigin=bundle.reviewedPlugins.find(row=>row.id==='devryan.provider-compat');
@@ -580,6 +589,8 @@ export function createNativeRuntimeOwner(options) {
           prepareMeridianProfiles:context=>projectNativeClaudeWorkerProfiles({profiles:profiles.profiles,globals,
             controlRoot:bundle.controlRoot,workerInstanceID:providerWorkerInstanceID,lifecycle:claudeLifecycle},context),
           meridian:{binary:artifacts.controller,cwd:boot.directory,environment,databasePath:boot.databasePath,
+            onDiagnostic:diagnostic=>{try{options.recordDiagnostic?.({type:'lifecycle',event:'native_claude_process',sessionID:diagnostic.sessionID,directory:diagnostic.directory,
+              payload:{attemptID:diagnostic.attemptID,providerInstanceID:diagnostic.instanceID,...diagnostic.receipt}});}catch{/* Observations cannot change provider settlement. */}},
             supervisor:{launcher:artifacts.launcher,deniedReadDirectories:options.supervisedController?.deniedReadDirectories??[]},
             boot:{protocol:1,type:'provider-boot',provider:'anthropic',instanceID:providerWorkerInstanceID,buildId:boot.buildId,
               requestAuthorization:randomBytes(32).toString('hex'),globals,profiles:profiles.profiles,...profiles.defaultProfile?{defaultProfile:profiles.defaultProfile}:{},
@@ -619,6 +630,17 @@ export function createNativeRuntimeOwner(options) {
               bindings.add(binding);await recheckBinding(binding,context);return binding;
             },
             recheckBinding,
+            withProfileRemoval:action=>{if(!providers)throw fail('native_claude_enrollment_owner_required');return providers.withClaudeProfileRemoval(action);},
+            assertProfileRemoval:async(profile,binding,context)=>{
+              await recheckBinding(binding,context);
+              await publication.assertRemoval(profile,binding.profileFilesBaseline,{recheck:()=>assertAuthority(binding,context)});
+            },
+            removeProfile:async(profile,binding,context)=>{
+              await recheckBinding(binding,context);
+              await publication.remove(profile,binding.profileFilesBaseline,{recheck:()=>assertAuthority(binding,context)});
+              if(!providers)throw fail('native_claude_enrollment_owner_required');providers.invalidateClaudeProfile(profile.id);
+            },
+            recheckAfterRemoval:assertAuthority,
             publishProfile:async(profile,binding,context)=>{
               await recheckBinding(binding,context);
               await publication.publish(profile,binding.profileFilesBaseline,{recheck:()=>assertAuthority(binding,context)});
@@ -633,7 +655,8 @@ export function createNativeRuntimeOwner(options) {
           deniedReadDirectories: options.supervisedController?.deniedReadDirectories ?? [] },
         timeoutMs: options.timeoutMs, logFile: path.join(globals.log, 'native-controller.jsonl'),
         beforeSpawn: async () => {
-          await verifyNativeRuntimeArtifacts({ manifestPath: artifacts.manifestPath, manifestSha256: artifacts.manifestSha256, launcher: artifacts.launcher });
+          await verifyNativeRuntimeArtifacts({ manifestPath: artifacts.manifestPath, manifestSha256: artifacts.manifestSha256, launcher: artifacts.launcher,
+            ...(bundle.artifactPurpose?{purpose:bundle.artifactPurpose}:{}) });
           await assertSelectedClone();
         },
         afterExit: exit => {

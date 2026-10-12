@@ -13,6 +13,13 @@ import {
 } from "./readiness"
 
 describe("startup readiness", () => {
+  test("an unacknowledged event stream blocks startup and a timeout exposes retry", () => {
+    const waiting = withStartupReadinessPhase(createStartupReadinessSnapshot("ready"), "eventStream", { status: "loading" })
+    expect(summarizeStartupReadiness(waiting).ready).toBe(false)
+    const timedOut = withStartupReadinessPhase(waiting, "eventStream", { status: "error", error: "Retry to reconnect." })
+    expect(summarizeStartupReadiness(timedOut).error).toBe("Retry to reconnect.")
+    expect(summarizeStartupReadiness(withStartupReadinessPhase(timedOut, "eventStream", { status: "ready" })).ready).toBe(true)
+  })
   test("timing is bounded across retries and never records error content or changes readiness", () => {
     const measured = new Set<string>()
     const failed = withStartupReadinessPhase(createStartupReadinessSnapshot("loading"), "providers", {
@@ -160,7 +167,7 @@ describe("startup readiness", () => {
   test("requires runtime and workspace state, without optional prewarming", () => {
     expect(STARTUP_READINESS_PHASES).toEqual([
       "health", "providers", "agents", "initialization", "globalSync",
-      "directorySync", "sessionList", "responseStyle", "worktree",
+      "directorySync", "sessionList", "eventStream", "responseStyle", "worktree",
     ])
     expect(summarizeStartupReadiness(createStartupReadinessSnapshot("ready")).ready).toBe(true)
   })

@@ -33,6 +33,7 @@ test('removal fences dispatch, requires exact native settlement, and disposes on
     const foreign = await scheduler.submit(input('foreign', 'ses_foreign'));
     await scheduler.cancelSessionsForRemoval({ ...scope, phase: 'fence' });
     await expect(scheduler.verifyTaskDispatch(target.taskId, target.leaseToken)).rejects.toMatchObject({ code: 'native_managed_task_lease_invalid' });
+    await expect(scheduler.verifyTaskSettlement(target.taskId, target.leaseToken)).rejects.toMatchObject({ code: 'native_managed_task_lease_invalid' });
     await expect(scheduler.submit(input('late'))).rejects.toMatchObject({ code: 'session_removal_pending' });
     await expect(scheduler.cancelSessionsForRemoval({ ...settle(scope), settled: { terminated: true, sessions: ['ses_root'] } }))
       .rejects.toMatchObject({ code: 'native_removal_settlement_required' });

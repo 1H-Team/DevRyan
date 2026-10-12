@@ -99,11 +99,17 @@ export function assertStartupMode(startupMode) {
   assert.ok(startupMode === 'natural' || startupMode === 'foreground', 'startupMode must be natural or foreground');
 }
 
-export async function waitForStartupCatalog(origin, { checkAlive = () => {}, onResponse = () => {}, timeoutMs = 10_000 } = {}) {
+export async function waitForStartupCatalog(origin, { checkAlive = () => {}, onResponse = () => {}, timeoutMs = 10_000, fetchCatalog = fetch } = {}) {
   const deadline = performance.now() + timeoutMs;
   while (performance.now() < deadline) {
     checkAlive();
-    const response = await fetch(`${origin}/api/provider`, { signal: AbortSignal.timeout(Math.max(1, Math.ceil(Math.min(5000, deadline - performance.now())))) });
+    const signal = AbortSignal.timeout(Math.max(1, Math.ceil(Math.min(5000, deadline - performance.now()))));
+    let response;
+    try { response = await fetchCatalog(`${origin}/api/provider`, { signal }); }
+    catch (error) {
+      if (signal.aborted && error === signal.reason && performance.now() >= deadline) break;
+      throw error;
+    }
     onResponse(response.status);
     if (response.status === 200) return response.json();
     await response.body?.cancel();
@@ -114,7 +120,7 @@ export async function waitForStartupCatalog(origin, { checkAlive = () => {}, onR
 }
 
 export async function captureFirstDocumentStartup({ cdp, fixture, origin, startedAt, milestones = {}, checkAlive, navigationAudit,
-  startupMode = 'natural', runtimeUiTuple, isEventStreamReady, readStartupPhases, foregroundWindow }) {
+  startupMode = 'natural', runtimeUiTuple, isEventStreamReady, readStartupPhases, foregroundWindow, fetchCatalog }) {
   assertStartupMode(startupMode);
   const audit = navigationAudit ?? observeStartupNavigation(cdp, startedAt, origin);
   const tuple = runtimeUiTuple ?? { providerId: 'fixture', modelId: 'fixture-model' };
@@ -160,7 +166,7 @@ export async function captureFirstDocumentStartup({ cdp, fixture, origin, starte
     } });
     evidence.hostReadyMs = performance.now() - startedAt;
     evidence.catalogResponses = [];
-    const catalog = await waitForStartupCatalog(origin, { checkAlive,
+    const catalog = await waitForStartupCatalog(origin, { checkAlive, fetchCatalog,
       onResponse: status => evidence.catalogResponses.push({ status, elapsedMs: performance.now() - startedAt }) });
     assert.ok(catalog.connected?.includes(tuple.providerId) && catalog.all?.some(provider => provider.id === tuple.providerId && provider.models?.[tuple.modelId]),
       'Startup must use the expected fixture provider catalog');

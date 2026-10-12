@@ -27,6 +27,7 @@ import { readFacadeMessagePage, resolveFacadeDirectory, sendOpenCodeFacadeError,
 import { createGlobalAgentsMdRuntime } from './global-agents-md-runtime.js';
 import { registerGlobalAgentsMdRoutes } from './global-agents-md-routes.js';
 import { createOpenCodeUpdateCheckHandler } from './opencode-update-check.js';
+import { createClaudeUpdateCheckHandler, readBundledClaudeVersion } from './claude-runtime-update.js';
 import {
   readMeridianPromptMode,
   setMeridianPromptCompatibilityMode,
@@ -335,6 +336,14 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
 
   // Read-only latest upstream release lookup; installs nothing.
   app.get('/api/config/opencode-update-check', createOpenCodeUpdateCheckHandler({ fetchImpl: openCodeUpdateCheckFetch }));
+  app.get('/api/config/claude-update-check', createClaudeUpdateCheckHandler({ fetchImpl: dependencies.claudeUpdateCheckFetch }));
+  app.get('/api/config/claude-resolution', async (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    try {
+      const version = isExternalOpenCode() ? null : await (dependencies.readBundledClaudeVersion ?? readBundledClaudeVersion)();
+      res.json({ source: version ? 'verified-native-bundle' : 'unavailable', version });
+    } catch { res.status(503).json({ code: 'claude_runtime_version_unavailable' }); }
+  });
 
   app.put('/api/config/settings', async (req, res) => {
     console.log('[API:PUT /api/config/settings] Received request');
@@ -465,6 +474,10 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
   app.post('/api/provider/anthropic/enrollment/:id/select',enrollmentAdmin,enrollmentCsrf,enrollmentBody('1kb'),(req,res)=>enrollmentReply(req,res,'select',(owner,context)=>{
     if(!emptyEnrollmentBody(req.body))throw Object.assign(new Error('native_claude_enrollment_request_invalid'),{code:'native_claude_enrollment_request_invalid',status:400});
     return owner.select(req.params.id,context);
+  }));
+  app.delete('/api/provider/anthropic/enrollment/:id',enrollmentAdmin,enrollmentCsrf,enrollmentBody('1kb'),(req,res)=>enrollmentReply(req,res,'delete',(owner,context)=>{
+    if(!emptyEnrollmentBody(req.body))throw Object.assign(new Error('native_claude_enrollment_request_invalid'),{code:'native_claude_enrollment_request_invalid',status:400});
+    return owner.remove(req.params.id,context);
   }));
 
   app.use('/api/provider/openai/oauth', (req, res, next) => {

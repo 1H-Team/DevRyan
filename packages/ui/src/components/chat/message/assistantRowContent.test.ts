@@ -153,6 +153,37 @@ describe('selectAssistantHeaderTargetId', () => {
         expect(selectAssistantHeaderTargetId(['a', 'b'], new Set(['a', 'b']))).toBe('a');
     });
 
+    test('promotes recovered output past empty failures while keeping an error-only fallback', () => {
+        const ids = ['haiku-error', 'haiku-retry-error', 'composer-result'];
+        const errors = new Set(ids.slice(0, 2));
+        expect(selectAssistantHeaderTargetId(ids, new Set(ids), errors)).toBe('composer-result');
+        expect(selectAssistantHeaderTargetId(ids, errors, errors)).toBe('haiku-error');
+        expect(assistantRowRendersContent({ parts: [], hasErrorSurface: true })).toBe(true);
+        expect(assistantRowRendersContent({ parts: [textPart('Useful partial work')], hasErrorSurface: true })).toBe(true);
+    });
+
+    test('completed empty failures cannot reclaim the header when recovery becomes idle', () => {
+        const messages = [
+            { id: 'haiku-original', parts: [] as Part[], finish: 'error', error: true },
+            { id: 'haiku-retry', parts: [] as Part[], finish: 'error', error: true },
+            { id: 'composer-result', parts: [textPart('Recovered result')], finish: 'stop', error: false },
+        ];
+        const select = (streamingId?: string) => {
+            const content = new Set<string>(), errors = new Set<string>();
+            for (const message of messages) {
+                const input = { parts: message.parts, messageFinish: message.finish, hasErrorSurface: message.error, isLiveStreamingRow: message.id === streamingId,
+                    // The idle fallback owner has no actual activity parts or anchors.
+                    ownsActivityOutput: false };
+                if (assistantRowRendersContent(input)) content.add(message.id);
+                if (message.error && !assistantRowRendersContent({ ...input, hasErrorSurface: false })) errors.add(message.id);
+            }
+            return selectAssistantHeaderTargetId(messages.map(message => message.id), content, errors);
+        };
+        expect(select('composer-result')).toBe('composer-result');
+        expect(select()).toBe('composer-result');
+        expect(assistantRowRendersContent({ parts: messages[0].parts, messageFinish: 'error', hasErrorSurface: true })).toBe(true);
+    });
+
     test('returns null when no row in the turn renders anything', () => {
         expect(selectAssistantHeaderTargetId(['a', 'b'], new Set())).toBeNull();
         expect(selectAssistantHeaderTargetId([], new Set(['a']))).toBeNull();

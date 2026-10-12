@@ -20,7 +20,8 @@ export async function runNativeBundleCredentialProcess({descriptor,action,assert
  if(typeof assertHeld!=='function'||!Number.isSafeInteger(timeoutMs)||timeoutMs<1||timeoutMs>300000)throw fail('bundle_credential_launch_invalid');
  await assertHeld();
  const launch=descriptor.launch;
- const original=await verifyArtifacts({manifestPath:launch.artifactManifestPath,manifestSha256:launch.artifactManifestSha256,launcher:executionArtifacts(path.dirname(launch.artifactManifestPath)).launcher});
+ const original=await verifyArtifacts({manifestPath:launch.artifactManifestPath,manifestSha256:launch.artifactManifestSha256,launcher:executionArtifacts(path.dirname(launch.artifactManifestPath)).launcher,
+  purpose:action.action==='capture'?'bundle-source':'bundle-rollback'});
  if(original.controller!==launch.controllerBinary)throw fail('bundle_credential_contract_incompatible');
  let artifacts=original;
  if(captureArtifacts!==undefined){

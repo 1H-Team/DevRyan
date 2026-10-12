@@ -70,6 +70,16 @@ shell does not erase the preceding completed measurement.
 
 ## Directory subscription bootstrap authority
 
+Initial global and directory bootstrap wait for config initialization's native
+health/catalog gate. Global bootstrap is owned by an AbortController and a
+120-second deadline; partial 502/503 failures remain unready and retry within
+that deadline. Cleanup aborts the owner before a replacement can publish.
+The global store's `eventStreamReady` comes only from the event pipeline's
+subscription acknowledgment and is revoked on disconnect/cleanup; native
+startup consumes it separately from connection health. Manual startup Retry
+advances the bootstrap epoch even without a global bootstrap error, replacing
+the stream and aborting its old callbacks while retaining loaded state references.
+
 Directory bootstrap starts its session list alongside project, provider, config,
 path and status requests. Every request carries its captured directory and a
 30-second deadline covering transient retries; a stalled transport cannot hold
@@ -915,6 +925,17 @@ New or refined canonical records become eligible after that matching send;
 unavailable models are not marked restored. These imperative markers do not
 publish store updates, reset on full reload, and clear with permanent session
 selection deletion. Archive preserves them with the other reversible choices.
+
+Native flattened user `providerID`/`modelID` fields restore the same exact choice
+as nested SDK user models; nested tuples retain precedence without mixing
+fields. They preserve the recorded choice while catalog discovery completes
+rather than substituting a startup default. Authoritative
+`openchamber:provider-catalog` events carry only the provider ID, accepted
+directory and `source: sdk`; `provider-catalog-recovery.ts` refreshes the matching
+visible configuration scope outside transcript stores. Concurrent invalidations
+coalesce. A forced read uses existing load tokens to fence any older fallback
+response still in flight. Fallback/error events, other directories and disposed
+pipelines cannot trigger this refresh; assistant deltas never poll catalogs.
 
 `ModelControls.hydration.test.tsx` mounts the real controls with real config,
 selection and directory stores. Native button events exercise delayed parts,

@@ -150,6 +150,8 @@ export const registerOpenCodeProxy = (app, deps) => {
       req.path.startsWith('/config/agents') ||
       req.path.startsWith('/config/opencode-resolution') ||
       req.path === '/config/opencode-update-check' ||
+      req.path === '/config/claude-update-check' ||
+      req.path === '/config/claude-resolution' ||
       req.path.startsWith('/config/settings') ||
       req.path.startsWith('/config/skills') ||
       req.path === '/config/reload' ||

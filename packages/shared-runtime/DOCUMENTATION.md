@@ -2,6 +2,15 @@
 
 `@openchamber/shared-runtime` contains dependency-light host logic that must behave identically in the web/Electron runtimes.
 
+## Startup integrity diagnostics
+
+`startup-diagnostics.js` owns the bounded artifact diagnostic shared by the verifier,
+health response, renderer and Electron splash. Only finite stage/reason/purpose
+labels and an approved artifact basename cross this boundary. The public code
+remains `native_runtime_artifacts_unverified`. `startupDiagnosticSummary` emits
+only that safe envelope plus a finite error code and optional attempt number;
+Copy Diagnostics never includes raw exceptions, credentials or paths.
+
 ## Plan storage identity
 
 `lib/plan-storage-id.js` preserves project IDs up to 255 ASCII characters as plan directory names. Longer encoded project IDs use `path_sha256_<full SHA-256 of the ID>` for the storage component only. This keeps long project roots within the filesystem component limit without changing public project identity or relocating any previously writable plan directory. Web/Electron and the injected UI storage helper share this rule.

@@ -1,0 +1,18 @@
+{
+  "protocol": "devryan.release-startup/1",
+  "outcome": "failed",
+  "sourceCommit": "652d3ab1434ccf00ae0bc89d5dce0fd82858380d",
+  "version": "2.0.8",
+  "runAttempt": 1,
+  "platform": "darwin-arm64",
+  "guiPrerequisites": "passed",
+  "dmgSha256": "3ef9ad049bffaa441082fbc1daa7a59b9daf8d022ffd8566e789b6f386295dcd",
+  "manifestSha256": "8e562cf516cdcc922eee05d2ff307ac2588bf838a0221a4ea88d4aade2eabe7c",
+  "appSha256": "62f5a17e13f16778e8b36212f5d44be3d1b14ec88e45118745237c35c271e75d",
+  "scenarios": [],
+  "cleanupErrors": [],
+  "error": "release_startup_contract_failed",
+  "reason": "Compiled native qualification failed",
+  "startedAt": "2026-10-12T10:39:12.897Z",
+  "finishedAt": "2026-10-12T10:41:49.628Z"
+}

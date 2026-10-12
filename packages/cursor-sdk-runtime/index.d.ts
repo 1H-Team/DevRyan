@@ -248,6 +248,12 @@ export function createCursorSdkRuntime(options: Record<string, unknown> & {
   ) => Promise<string | null>;
   ownedReadOnly?: <A>(input:{kind:'title'|'catalog'|'verify';directory?:string;sessionID?:string;signal?:AbortSignal},action:()=>Promise<A>)=>Promise<A>;
   nativeWarming?: false;
+  recordDiagnostic?: (entry: { type: 'lifecycle'; event: 'cursor_catalog'; directory?: string;
+    payload: { phase: 'key_resolved' | 'worker_started' | 'worker_result' | 'settled'; startedAt: number; elapsedMs: number;
+      outcome?: 'completed' | 'cancelled' | 'timeout' | 'failed' } }
+    | { type: 'lifecycle'; event: 'cursor_persistence'; sessionID: string; directory: string;
+      payload: { phase: 'failed' | 'sdk_queued' | 'sdk_started' | 'sdk_owner_started' | 'sdk_owner_returned' | 'sdk_stored' | 'sdk_settled' | 'sdk_failed';
+        userMessageID: string; assistantMessageID: string; startedAt?: number; elapsedMs?: number; reason?: string } }) => void;
   /** Retain the admitted caller through actual execution and persistence settlement. */
   ownedPrompt?: (input: { sessionID: string; directory: string; userMessageID: string;
     assistantMessageID: string; agent: string; modelID: string; variant?: string;

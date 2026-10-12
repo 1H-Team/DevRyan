@@ -60,6 +60,8 @@ export type EventPipelineInput = {
   routeDirectory?: (directory: string, payload: Event) => string
   /** Called after stream reconnects (visibility restore or heartbeat timeout). */
   onReconnect?: () => void
+  /** Acknowledged subscription readiness, independent of HTTP/heartbeat connectivity. */
+  onSubscriptionReady?: (ready: boolean) => void
   /** Called when the stream disconnects (heartbeat timeout, network error, or transport failure). */
   onDisconnect?: (reason: string) => void
   /** Called when transport switches (e.g. WS timeout → SSE fallback) without actual disconnection. */
@@ -76,6 +78,8 @@ export type EventPipelineInput = {
   onUserNotificationEvent?: (payload: unknown) => void
   /** Routes finite authenticated integration UI effects outside transcript stores. */
   onIntegrationEvent?: (directory: string, payload: unknown) => void
+  /** Routes authoritative provider catalog invalidation outside transcript stores. */
+  onProviderCatalogEvent?: (directory: string, payload: unknown) => void
   transport?: "auto" | "ws" | "sse"
   heartbeatTimeoutMs?: number
   reconnectDelayMs?: number
@@ -390,12 +394,14 @@ export function createEventPipeline(input: EventPipelineInput) {
     onEvent,
     onBatch,
     onReconnect,
+    onSubscriptionReady,
     onDisconnect,
     onTransportSwitch,
     onReplayGap,
     onManagedOrchestrationEvent,
     onUserNotificationEvent,
     onIntegrationEvent,
+    onProviderCatalogEvent,
     routeDirectory,
     transport = "auto",
     heartbeatTimeoutMs = DEFAULT_HEARTBEAT_TIMEOUT_MS,
@@ -408,6 +414,7 @@ export function createEventPipeline(input: EventPipelineInput) {
   let subscriptionReady = false
   const subscriptionWaiters = new Set<() => void>()
   const setSubscriptionReady = (ready: boolean) => {
+    if (subscriptionReady !== ready) onSubscriptionReady?.(ready)
     subscriptionReady = ready
     if (ready) hadSubscriptionReady = true
     for (const wake of subscriptionWaiters) wake()
@@ -710,6 +717,10 @@ export function createEventPipeline(input: EventPipelineInput) {
     }
     if (normalizedType === "openchamber:integration") {
       onIntegrationEvent?.(directory, normalizedPayload)
+      return
+    }
+    if (normalizedType === "openchamber:provider-catalog") {
+      onProviderCatalogEvent?.(directory, normalizedPayload)
       return
     }
     if (normalizedType === "openchamber:notification") {

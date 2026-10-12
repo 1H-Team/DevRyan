@@ -62,6 +62,12 @@ Designer owns visual/UX implementation, including approved plans and fully speci
 
 The scheduler owns explicit transitions, per-root builder/orchestrator mode exclusion, child-session and provider-acceptance checkpoints, isolated task/descendant cancellation, bounded provider-abort waits, execution deadlines, and the 60-second starting-lease reconciliation check. Reconciliation distinguishes transient owner unavailability from an authoritative missing child: transient checks schedule a lease-scoped retry against the same child without mutating task state or creating a result envelope, while the existing task deadline remains the upper bound. Both execution checkpoints return authoritative lease ownership: a late launch receives `false` after terminal settlement, lease replacement, or shutdown instead of mistaking an ignored durable write for success. Provider-native workers have no admission path into this package.
 
+`verifyTaskDispatch` rejects an attempt as soon as cancellation begins. The private
+`verifyTaskSettlement` proof retains only the same live attempt's cleanup authority
+during cancellation; terminal status, a changed lease, shutdown, or session removal
+revokes it. Hosts must bind settlement to the existing child and execution selection;
+it cannot authorize child creation, prompts, or tools.
+
 `waitForTask(taskId, { signal, timeoutMs? })` remains an unbounded terminal wait when `timeoutMs` is omitted. A positive finite timeout creates only a polling slice: expiry returns a cloned latest task snapshot, including a still-live `queued`, `starting`, or `running` status, without cancelling or mutating the task and without changing its execution deadline. Slice timers use the scheduler's injected clock and are released on expiry, terminal settlement, caller abort, or shutdown. Dispatch-barrier waits remain unbounded and do not opt into slices.
 
 `waitForResultAction(taskId, { signal })` is the abortable synchronization point for explicit result disposition. It returns a cloned envelope immediately when an action already exists; otherwise it remains pending until the durable acknowledgement commits. The compatibility RPC may still use it to observe a UI acknowledgement, but ordinary model-facing waits return a structured `manualRecoveryRequired` terminal result immediately instead of depending on a tool invocation surviving while the user selects a replacement model. The envelope remains unacknowledged and the dispatch barrier stays locked. Caller abort and scheduler shutdown remove and reject the waiter.

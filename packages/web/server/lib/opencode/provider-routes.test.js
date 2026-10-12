@@ -14,6 +14,8 @@ import {
   GITHUB_COPILOT_AUTO_MODEL,
 } from './github-copilot-models.js';
 import { registerOpenCodeRoutes } from './routes.js';
+import * as openCodeRoutes from './routes.js';
+import { createFeatureRoutesRuntime } from './feature-routes-runtime.js';
 
 vi.mock('./auth.js', () => ({
   OPENCODE_DATA_DIR: `${process.cwd()}/.cache/provider-auth-fixture`,
@@ -52,6 +54,17 @@ describe('built-in OpenAI OAuth gate', () => {
 });
 
 describe('dedicated Claude enrollment routes',()=>{
+  it('deletes only by administrator/CSRF scoped identity and rejects client supplied authority',async()=>{
+    const remove=vi.fn(async(id,context)=>{expect(id).toBe('owned-id');expect(context.directory).toBe('/tmp/project');expect(context.request.method).toBe('DELETE');return {enrollmentID:id,profileID:'owned-profile',status:'deleted'};});
+    const denied=createApp({getClaudeEnrollmentOwner:()=>({remove}),isProviderAdministrator:()=>false});
+    expect((await request(denied.app).delete('/api/provider/anthropic/enrollment/owned-id').set('x-devryan-csrf','1').send({})).status).toBe(403);
+    const allowed=createApp({getClaudeEnrollmentOwner:()=>({remove}),isProviderAdministrator:()=>true});
+    expect((await request(allowed.app).delete('/api/provider/anthropic/enrollment/owned-id').send({})).status).toBe(403);
+    expect((await request(allowed.app).delete('/api/provider/anthropic/enrollment/owned-id').set('x-devryan-csrf','1').send({service:'foreign'})).status).toBe(400);
+    expect(remove).not.toHaveBeenCalled();
+    const deleted=await request(allowed.app).delete('/api/provider/anthropic/enrollment/owned-id').set('x-devryan-csrf','1').send({});
+    expect(deleted.status).toBe(200);expect(deleted.body).toEqual({enrollmentID:'owned-id',profileID:'owned-profile',status:'deleted'});expect(remove).toHaveBeenCalledOnce();
+  });
   it('requires administrator and CSRF before any enrollment work',async()=>{
     const begin=vi.fn();const owner={begin};
     const denied=createApp({getClaudeEnrollmentOwner:()=>owner,isProviderAdministrator:()=>false,useJsonParser:false});
@@ -1857,6 +1870,32 @@ describe('OpenCode provider routes', () => {
 
 
 describe('native project directory preparation', () => {
+  it('passes the native preparation owner through feature composition before publishing project-open success', async () => {
+    let settings = { activeProjectId: 'old', lastDirectory: '/old', projects: [] }; let release;
+    const ensureNativeDirectory = vi.fn(() => new Promise(resolve => { release = resolve; }));
+    const { dependencies } = createApp({ readSettingsFromDisk: async () => settings,
+      persistSettings: async patch => (settings = { ...settings, ...patch }), ensureNativeDirectory });
+    const app = express(); app.use(express.json());
+    const composed = new Error('Focused route composition complete');
+    const registerOpenCodeRoutesOriginal = openCodeRoutes.registerOpenCodeRoutes;
+    const registrar = vi.spyOn(openCodeRoutes, 'registerOpenCodeRoutes').mockImplementation((target, forwarded) => {
+      registerOpenCodeRoutesOriginal(target, forwarded);
+      // The real provider routes are installed; unrelated feature routes need no fixtures.
+      throw composed;
+    });
+    try {
+      await expect(createFeatureRoutesRuntime({ clientReloadDelayMs: 0 }).registerRoutes(app, dependencies)).rejects.toBe(composed);
+      let finished = false;
+      const pending = request(app).post('/api/opencode/directory').send({ path: '/new' }).then(response => { finished = true; return response; });
+      await vi.waitFor(() => expect(ensureNativeDirectory).toHaveBeenCalledWith('/new'));
+      expect(finished).toBe(false);
+      expect(dependencies.setOpenCodeWorkingDirectory).not.toHaveBeenCalled();
+      release(); const response = await pending;
+      expect(response.status).toBe(200);
+      expect(dependencies.setOpenCodeWorkingDirectory).toHaveBeenCalledWith('/new');
+    } finally { registrar.mockRestore(); }
+  });
+
   it('does not publish project-open success until the exact registered directory is prepared', async () => {
     let settings = { activeProjectId: 'old', lastDirectory: '/old', projects: [] }; let release;
     const ensureNativeDirectory = vi.fn(() => new Promise(resolve => { release = resolve; }));

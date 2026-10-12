@@ -62,7 +62,9 @@ const readBoundedText = async (response, maxBytes) => {
  * `code` is one of OPENCODE_UPDATE_CHECK_CODES. Upstream error text is never
  * propagated.
  */
-export const checkLatestOpenCodeRelease = async ({
+export const checkLatestRegistryRelease = async ({
+  registryUrl,
+  isSupportedVersion,
   fetchImpl = globalThis.fetch,
   signal,
   timeoutMs = OPENCODE_UPDATE_TIMEOUT_MS,
@@ -77,7 +79,7 @@ export const checkLatestOpenCodeRelease = async ({
   try {
     let text;
     try {
-      const response = await fetchImpl(OPENCODE_UPDATE_REGISTRY_URL, {
+      const response = await fetchImpl(registryUrl, {
         method: 'GET',
         headers: { Accept: 'application/json' },
         credentials: 'omit',
@@ -96,7 +98,7 @@ export const checkLatestOpenCodeRelease = async ({
     if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata) || typeof metadata.version !== 'string') {
       throw fail(OPENCODE_UPDATE_CHECK_CODES.metadataInvalid);
     }
-    if (!isStableOpenCodeV2Version(metadata.version)) throw fail(OPENCODE_UPDATE_CHECK_CODES.versionUnsupported);
+    if (!isSupportedVersion(metadata.version)) throw fail(OPENCODE_UPDATE_CHECK_CODES.versionUnsupported);
     return { latestVersion: metadata.version };
   } finally {
     clearTimeout(timer);
@@ -104,25 +106,29 @@ export const checkLatestOpenCodeRelease = async ({
   }
 };
 
+export const checkLatestOpenCodeRelease = (options = {}) => checkLatestRegistryRelease({
+  ...options, registryUrl: OPENCODE_UPDATE_REGISTRY_URL, isSupportedVersion: isStableOpenCodeV2Version,
+});
+
 export const openCodeUpdateCheckFailureBody = (error) => ({
   error: 'opencode_update_check_failed',
   code: KNOWN_CODES.has(error?.code) ? error.code : OPENCODE_UPDATE_CHECK_CODES.registryUnavailable,
 });
 
 /** Express handler for `GET /api/config/opencode-update-check`. */
-export const createOpenCodeUpdateCheckHandler = ({ fetchImpl, timeoutMs } = {}) => async (_req, res) => {
+export const createOpenCodeUpdateCheckHandler = ({ fetchImpl, timeoutMs, checkRelease = checkLatestOpenCodeRelease, failureBody = openCodeUpdateCheckFailureBody } = {}) => async (_req, res) => {
   const clientGone = new AbortController();
   const onClose = () => { if (!res.writableEnded) clientGone.abort(); };
   res.on('close', onClose);
   try {
-    const result = await checkLatestOpenCodeRelease({ fetchImpl, timeoutMs, signal: clientGone.signal });
+    const result = await checkRelease({ fetchImpl, timeoutMs, signal: clientGone.signal });
     if (clientGone.signal.aborted || res.writableEnded) return;
     res.setHeader('Cache-Control', 'no-store');
     res.status(200).json(result);
   } catch (error) {
     if (clientGone.signal.aborted || res.writableEnded) return;
     res.setHeader('Cache-Control', 'no-store');
-    res.status(503).json(openCodeUpdateCheckFailureBody(error));
+    res.status(503).json(failureBody(error));
   } finally {
     res.off('close', onClose);
   }

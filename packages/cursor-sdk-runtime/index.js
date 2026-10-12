@@ -1760,23 +1760,56 @@ export function createCursorSdkRuntime(options = {}) {
   };
 
   const persistQueues = new Map();
+  const pendingStreamingPersists = new Map();
   const executionDirectories = new Map();
   const settlingRuns = new Map();
   const startingRuns = new Map();
 
-  const enqueuePersist = (sessionID, record, options = {}) => {
+  const enqueuePersist = (sessionID, record, persistOptions = {}) => {
+    const terminal = record.info.role === 'assistant' && Number.isFinite(record.info.time?.completed);
+    const replaceable = persistOptions.replaceable === true && record.info.role === 'assistant' && !terminal && !record.info.error;
+    const pending = pendingStreamingPersists.get(sessionID);
+    // Producers replace info/parts rather than mutating their published values.
+    // Retain those references cheaply; clone only a snapshot that actually writes.
+    const snapshot = { ...record };
+    if (replaceable && pending?.record.info.id === record.info.id) {
+      pending.record = snapshot;
+      return persistOptions.propagateError === true ? pending.writePromise : pending.handledPromise;
+    }
+    // Only the pending tail can be replaced: another message or awaited barrier
+    // must keep its original position in this session's persistence order.
+    pendingStreamingPersists.delete(sessionID);
+    const slot = { record: snapshot, writePromise: null, handledPromise: null };
+    if (replaceable) pendingStreamingPersists.set(sessionID, slot);
     const previous = persistQueues.get(sessionID) || Promise.resolve();
+    const startedAt = now();
+    const diagnostic = (phase, error) => {
+      if (!terminal) return;
+      try { options.recordDiagnostic?.({ type: 'lifecycle', event: 'cursor_persistence', sessionID,
+        directory: executionDirectories.get(sessionID), payload: { phase, startedAt, elapsedMs: Math.max(0, now() - startedAt),
+          userMessageID: record.info.parentID, assistantMessageID: record.info.id,
+          ...(error ? { reason: typeof error.code === 'string' && /^(native_[a-z_]{1,80}|execution_cancelled|execution_reverted)$/.test(error.code)
+            ? error.code : 'cursor_persistence_failed' } : {}) } }); }
+      catch { /* Diagnostics cannot change persistence. */ }
+    };
+    diagnostic('sdk_queued');
     const writePromise = previous
       .catch(() => {})
-      .then(() => appendOrReplaceRecord(sessionID, record));
+      .then(async () => {
+        if (pendingStreamingPersists.get(sessionID) === slot) pendingStreamingPersists.delete(sessionID);
+        diagnostic('sdk_started');
+        try { const result = await appendOrReplaceRecord(sessionID, structuredClone(slot.record), diagnostic); diagnostic('sdk_settled'); return result; }
+        catch (error) { diagnostic('sdk_failed', error); throw error; }
+      });
     const handledPromise = writePromise.catch((error) => {
       logger.error?.('[CursorSDK] persist failed:', error);
     });
+    slot.writePromise = writePromise; slot.handledPromise = handledPromise;
     persistQueues.set(sessionID, handledPromise);
-    return options.propagateError === true ? writePromise : handledPromise;
+    return persistOptions.propagateError === true ? writePromise : handledPromise;
   };
 
-  const appendOrReplaceRecord = async (sessionID, record) => {
+  const appendOrReplaceRecord = async (sessionID, record, diagnostic = () => {}) => {
     const state = await readSessionState(sessionID);
     const records = Array.isArray(state.records) ? state.records : [];
     const index = records.findIndex((entry) => entry?.info?.id === record.info.id);
@@ -1784,8 +1817,11 @@ export function createCursorSdkRuntime(options = {}) {
     if (index >= 0) nextRecords[index] = record;
     nextRecords.sort((left, right) => String(left?.info?.id || '').localeCompare(String(right?.info?.id || '')));
     const nextState = { ...state, records: nextRecords };
+    diagnostic('sdk_owner_started');
     await options.onPersistRecord?.({ sessionID, directory: executionDirectories.get(sessionID), record });
+    diagnostic('sdk_owner_returned');
     await writeSessionState(sessionID, nextState);
+    diagnostic('sdk_stored');
     return nextState;
   };
 
@@ -1930,16 +1966,29 @@ export function createCursorSdkRuntime(options = {}) {
 
   const nativeModelCatalogs = new Map();
   const modelCatalogEvidence = new WeakMap();
+  const notifiedCatalogDirectories = new WeakMap();
   const modelSelectionCredentials = new WeakMap();
   const selectionError = (code, modelID, variant, statusCode = 409) => Object.assign(
     new Error(`${code}: cursor-acp/${modelID}${variant ? ` (${variant})` : ''}`), { code, statusCode });
+  const emitCatalogCommitted = (directory, records) => {
+    const scope = trimString(directory);
+    let notified = notifiedCatalogDirectories.get(records);
+    if (!notified) notifiedCatalogDirectories.set(records, notified = new Set());
+    if (notified.has(scope)) return;
+    notified.add(scope);
+    try {
+      emit({ type: 'openchamber:provider-catalog', properties: {
+        providerID: CURSOR_PROVIDER_ID, directory: scope, source: 'sdk',
+      } }, directory);
+    } catch { /* Catalog observers cannot change a successful cache commit. */ }
+  };
   const assertSelectionCredential = (selection, apiKey) => {
     const identity = modelSelectionCredentials.get(selection);
     if (identity && identity !== credentialCacheIdentity(apiKey)) {
       throw selectionError('cursor_model_account_changed', selection.id, undefined);
     }
   };
-  const refreshModels = async ({ force = false, reason = 'refresh', directory, signal } = {}) => {
+  const refreshModels = async ({ force = false, reason = 'refresh', directory, signal, onCatalogPhase } = {}) => {
     assertHostSupported();
     if (typeof options.resolveApiKey === 'function') {
       signal?.throwIfAborted();
@@ -1947,10 +1996,16 @@ export function createCursorSdkRuntime(options = {}) {
       const sdk = workerCatalog ? null : await loadSdk();
       signal?.throwIfAborted();
       const apiKey = await resolveApiKey({ kind: 'catalog', directory });
+      onCatalogPhase?.('key_resolved');
       signal?.throwIfAborted();
       const identity = apiKey ? credentialCacheIdentity(apiKey) : null;
       const cached = identity ? nativeModelCatalogs.get(identity) : null;
-      if (!force && cached && (modelDiscoveryTtlMs === 0 || now() - cached.completedAt < modelDiscoveryTtlMs)) return cached.records;
+      if (!force && cached && (modelDiscoveryTtlMs === 0 || now() - cached.completedAt < modelDiscoveryTtlMs)) {
+        lastModelRecords = cached.records;
+        lastModelsSource = 'sdk';
+        emitCatalogCommitted(directory, cached.records);
+        return cached.records;
+      }
       const startedAt = now();
       lastModelRefreshStartedAt = startedAt;
       lastModelRefreshReason = reason;
@@ -1958,7 +2013,7 @@ export function createCursorSdkRuntime(options = {}) {
       try {
         if (!apiKey) throw new Error('Cursor SDK API key is not configured.');
         const models = workerCatalog ? await generateReadOnlyWorker({ mode: 'catalog', keyKind: 'catalog',
-          text: '', directory, apiKey, signal }) : await sdk.Cursor.models.list({ apiKey });
+          text: '', directory, apiKey, signal, onCatalogPhase }) : await sdk.Cursor.models.list({ apiKey });
         signal?.throwIfAborted();
         if (!Array.isArray(models)) throw new Error('Cursor model catalog is unavailable.');
         const records = normalizeSdkModelRecords(models, { declaredFallback: false });
@@ -1968,6 +2023,7 @@ export function createCursorSdkRuntime(options = {}) {
         lastModelRecords = records;
         lastModelsSource = 'sdk';
         lastModelRefreshError = null;
+        emitCatalogCommitted(directory, records);
         return records;
       } catch (error) {
         if (signal?.aborted || error?.nativeProcessUnsettled || /^native_[a-z_]{1,80}$/.test(error?.code ?? '')) throw error;
@@ -2013,6 +2069,9 @@ export function createCursorSdkRuntime(options = {}) {
         lastModelsSource = 'sdk';
         lastError = null;
         lastModelRefreshError = null;
+        if (Array.isArray(models) && models.some(model => isPlainObject(model) && trimString(model.id))) {
+          emitCatalogCommitted(directory, lastModelRecords);
+        }
         return lastModelRecords;
       } catch (error) {
         if (lastModelsSource !== 'sdk') {
@@ -2035,14 +2094,22 @@ export function createCursorSdkRuntime(options = {}) {
 
   const refreshVirtualProviderNow = async ({ force = false, reason = 'refresh', timeoutMs = 0, directory, signal } = {}) => {
     if (typeof options.resolveApiKey === 'function') {
+      const startedAt = now();
+      let outcome = 'completed';
+      const onCatalogPhase = phase => {
+        try { options.recordDiagnostic?.({ type: 'lifecycle', event: 'cursor_catalog', directory,
+          payload: { phase, startedAt, elapsedMs: Math.max(0, now() - startedAt), ...(phase === 'settled' ? { outcome } : {}) } }); }
+        catch { /* Diagnostics cannot change admission or settlement. */ }
+      };
       const deadline = AbortSignal.timeout(timeoutMs > 0 ? timeoutMs : 20_000);
       const boundedSignal = signal ? AbortSignal.any([signal, deadline]) : deadline;
       try {
         const models = await withReadOnly({ kind: 'catalog', directory, signal: boundedSignal },
-          () => refreshModels({ force, reason, directory, signal: boundedSignal }));
+          () => refreshModels({ force, reason, directory, signal: boundedSignal, onCatalogPhase }));
         boundedSignal.throwIfAborted();
         return buildVirtualProvider(models);
       } catch (error) {
+        outcome = signal?.aborted ? 'cancelled' : deadline.aborted ? 'timeout' : 'failed';
         if (boundedSignal.aborted) {
           lastModelRefreshTimedOut = deadline.aborted && !signal?.aborted;
           lastModelRefreshError = lastModelRefreshTimedOut ? 'native_cursor_catalog_timeout' : 'cursor_model_catalog_cancelled';
@@ -2059,6 +2126,8 @@ export function createCursorSdkRuntime(options = {}) {
           throw Object.assign(new Error('native_cursor_catalog_timeout'), { code: 'native_cursor_catalog_timeout', statusCode: 503 });
         }
         throw error;
+      } finally {
+        onCatalogPhase('settled');
       }
     }
     const refreshPromise = withReadOnly({ kind: 'catalog', directory }, () => refreshModels({ force, reason, directory }));
@@ -2365,7 +2434,7 @@ export function createCursorSdkRuntime(options = {}) {
     });
   };
 
-  const generateReadOnlyWorker = async ({ text, directory, sessionID, apiKey: selectedKey, onUsage, mode = 'title', keyKind = mode, modelSelection = { id: 'auto' }, signal }) => {
+  const generateReadOnlyWorker = async ({ text, directory, sessionID, apiKey: selectedKey, onUsage, mode = 'title', keyKind = mode, modelSelection = { id: 'auto' }, signal, onCatalogPhase }) => {
     signal?.throwIfAborted();
     const promptText = mode === 'text' ? text : trimString(text);
     if (!promptText && mode !== 'catalog') return null;
@@ -2388,6 +2457,7 @@ export function createCursorSdkRuntime(options = {}) {
         ...workerEnv,
       },
     });
+    onCatalogPhase?.('worker_started');
     let stderr = '';
     child.stderr.setEncoding('utf8');
     child.stderr.on('data', (chunk) => {
@@ -2418,6 +2488,7 @@ export function createCursorSdkRuntime(options = {}) {
         continue;
       }
       if (mode === 'catalog' && payload?.type === 'catalog-result') {
+        if (title === null) onCatalogPhase?.('worker_result');
         title = cursorCatalogModels(payload.models);
       } else if (mode === 'text' && payload?.type === 'text-result') {
         if (typeof payload.text !== 'string' || Buffer.byteLength(payload.text) > 262144) workerError = 'Cursor helper output is invalid.';
@@ -3682,7 +3753,7 @@ export function createCursorSdkRuntime(options = {}) {
 
     const modelID = normalizeModelId(body?.model?.modelID);
     const variant = trimString(body?.variant);
-    const modelSelection = await resolveCursorSdkModelSelection({ modelID, variant, directory });
+    const modelSelection = await resolveCursorSdkModelSelection({ modelID, variant, directory, signal });
 
     // Defensive: if a prior run for this session is still active (e.g. a rapid
     // stop + model switch + resend before the previous run finished tearing
@@ -3926,7 +3997,7 @@ export function createCursorSdkRuntime(options = {}) {
       const nextText = typeof part.text === 'string' ? part.text : '';
       const previousText = previousPart && typeof previousPart.text === 'string' ? previousPart.text : '';
       const markOpenCodeTextEmitted = () => {
-        if (emittedOpenCodeTextTiming || !nextText) return;
+        if (emittedOpenCodeTextTiming || !nextText || messageID !== assistantMessageID || part.type !== 'text') return;
         emittedOpenCodeTextTiming = true;
         recordTimingMark?.({
           sessionId: sessionID,
@@ -4015,7 +4086,7 @@ export function createCursorSdkRuntime(options = {}) {
       if (messageInfoAfterParts) emitMessageInfo();
 
       if (!persistBeforeEmit) {
-        const persistPromise = enqueuePersist(sessionID, record, { propagateError: propagatePersistError });
+        const persistPromise = enqueuePersist(sessionID, record, { propagateError: propagatePersistError, replaceable: !awaitPersist });
         if (awaitPersist) {
           await persistPromise;
         }
@@ -4420,6 +4491,11 @@ export function createCursorSdkRuntime(options = {}) {
           ? error.message
           : 'Cursor SDK could not persist the completed response.';
         lastError = persistenceMessage;
+        try { options.recordDiagnostic?.({ type: 'lifecycle', event: 'cursor_persistence', sessionID, directory,
+          payload: { phase: 'failed', userMessageID, assistantMessageID,
+            reason: typeof error?.code === 'string' && /^(native_[a-z_]{1,80}|execution_cancelled|execution_reverted)$/.test(error.code)
+              ? error.code : 'cursor_persistence_failed' } }); }
+        catch { /* Diagnostics cannot replace the persistence failure. */ }
         emit({
           type: 'session.error',
           properties: {
@@ -4432,6 +4508,7 @@ export function createCursorSdkRuntime(options = {}) {
         }, directory);
         sessionStatuses.set(sessionID, { type: 'idle' });
         emit({ type: 'session.status', properties: { sessionID, status: { type: 'idle' } } }, directory);
+        if (options.executionAdapter) throw error;
         return false;
       }
       if (finish === 'error') {
@@ -4531,14 +4608,14 @@ export function createCursorSdkRuntime(options = {}) {
       });
     } catch (error) {
       const text = error instanceof Error ? error.message : 'Cursor SDK run failed.';
-      applyFinalAssistantText(`Cursor SDK error: ${text}`);
-      lastError = text;
+      const cancelled = signal?.aborted && error?.code === 'execution_cancelled';
+      if (!cancelled) { applyFinalAssistantText(`Cursor SDK error: ${text}`); lastError = text; }
       questionRuntime.revokeSessionScope(sessionID, {
         identity: trimString(questionMcp?.identity),
         messageID: userMessageID,
         reason: 'the Cursor provider failed to start',
       });
-      await finalizeAssistantRun('error', now(), text);
+      await finalizeAssistantRun(cancelled ? 'cancelled' : 'error', now(), cancelled ? '' : text);
       return {
         handled: true,
         status: 204,
@@ -5094,9 +5171,9 @@ export function createCursorSdkRuntime(options = {}) {
   const abortAndWait = async (sessionID) => {
     const starts = [...(startingRuns.get(sessionID) ?? [])];
     for (const start of starts) start.controller.abort(Object.assign(new Error('execution_cancelled'), { code: 'execution_cancelled' }));
-    releaseActiveRun(sessionID, { source: 'user_abort', emitIdle: true });
+    releaseActiveRun(sessionID, { source: 'user_abort', emitIdle: !options.executionAdapter });
     const started = await Promise.allSettled(starts.map((start) => start.settled));
-    releaseActiveRun(sessionID, { source: 'user_abort', emitIdle: true });
+    releaseActiveRun(sessionID, { source: 'user_abort', emitIdle: !options.executionAdapter });
     const results = await Promise.allSettled([...(settlingRuns.get(sessionID) ?? [])]);
     for (const result of [...started, ...results]) if (result.status === 'rejected'
       && !['execution_cancelled', 'execution_reverted', 'session_reverting'].includes(result.reason?.code)) throw result.reason;
@@ -5254,6 +5331,11 @@ export function createCursorSdkRuntime(options = {}) {
       return runPrompt(input);
     },
     async abortSession(sessionID) {
+      if (options.executionAdapter) {
+        const running = startingRuns.has(sessionID) || settlingRuns.has(sessionID) || activeRuns.has(sessionID);
+        await abortAndWait(sessionID);
+        return running;
+      }
       // Free the session and return immediately; the underlying cancel runs in
       // the background (bounded) so the stop button never hangs and a follow-up
       // model switch / prompt cannot race a run that is still cancelling.

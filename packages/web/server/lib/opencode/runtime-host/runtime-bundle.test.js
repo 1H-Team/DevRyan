@@ -27,6 +27,8 @@ import { TARGET_OPENCODE_VERSION } from '../version-policy.js';
 import { BUNDLE_DOCUMENT_MAX_BYTES } from './bundle-document-limits.js';
 
 const execute=promisify(execFile), roots=[];
+// Git and SQLite fixtures need headroom on hosted macOS runners.
+vi.setConfig({testTimeout:30_000});
 // Store composition seam; native-bundle-credentials.test.ts exercises the
 // original Credential/Database/KV operations against disposable native stores.
 const emptyCredentialSnapshot={protocol:NATIVE_BUNDLE_CREDENTIAL_CONTRACT,credentials:[],refreshBlockState:null,claudeLifecycle:null};
@@ -34,6 +36,7 @@ const captureCredentials=async()=>({protocol:NATIVE_BUNDLE_CREDENTIAL_CONTRACT,s
 const reconciledCredentials=async({credentialBinding})=>({status:'reconciled',credentialReceipt:{protocol:NATIVE_BUNDLE_CREDENTIAL_CONTRACT,status:'projected',...credentialBinding,appliedSha256:credentialBinding.sourceSha256}});
 afterEach(async () => { await Promise.all(roots.splice(0).map(root=>fs.rm(root,{recursive:true,force:true}))); });
 async function fixture({ compiledContracts = ['devryan.bundle.credential-owners/2',NATIVE_BUNDLE_CREDENTIAL_CONTRACT] } = {}) {
+  await fs.mkdir(path.resolve(import.meta.dirname,'../../../../../../.cache/v2-validation'),{recursive:true});
   const root=await fs.mkdtemp(path.resolve(import.meta.dirname,'../../../../../../.cache/v2-validation/runtime-bundle-')); roots.push(root);
   const seed=await createMigrationFixture({root});
   const artifacts=path.join(root,'artifacts'); await fs.mkdir(artifacts);
@@ -884,6 +887,85 @@ const startupUpgradeFixture=async name=>{
  return {f,home,older,pinned,controlRoot,captures,credentialProcess,launch:(release,process=credentialProcess)=>launchPinned(f,home,release,process),
   binding:()=>readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot})};
 };
+test('cold owner upgrades the reviewed previous Claude asset while target verification stays current-only',async()=>{
+ const {isReviewedPreviousClaudeAsset,REVIEWED_PREVIOUS_CLAUDE_ASSET}=await import('./native-artifacts.js');
+ const {REVIEWED_CLAUDE_ASSETS}=await import('./reviewed-claude-transform.js');
+ const {provisionDefaultNativeBundle}=await import('./native-default-bundle.js');
+ const {upgradeSelectedNativeBundleAtStartup}=await import('./native-bundle-startup-upgrade.js');
+ const f=await fixture(),home=path.join(f.root,'claude-pin-home'),old=await pinnedRelease(f,TARGET_OPENCODE_VERSION);
+ const target=path.join(f.root,'claude-current-target');await fs.cp(old,target,{recursive:true});
+ const targetManifestPath=path.join(target,'native-bundle.json'),targetManifest=JSON.parse(await fs.readFile(targetManifestPath,'utf8'));
+ targetManifest.fixtureHostUpdate=true;await fs.writeFile(targetManifestPath,JSON.stringify(targetManifest)+'\n');
+ const writeClaude=async(directory,row)=>{
+  const file=path.join(directory,'native-bundle.json'),manifest=JSON.parse(await fs.readFile(file,'utf8'));
+  manifest.fixtureClaudeIdentity=row;
+  await fs.writeFile(file,JSON.stringify(manifest)+'\n');
+ };
+ const previous={role:'asset',...REVIEWED_PREVIOUS_CLAUDE_ASSET},current={role:'asset',...REVIEWED_CLAUDE_ASSETS.claude,size:217254576};
+ await writeClaude(old,previous);await writeClaude(target,current);await fs.mkdir(home);
+ let previousApplication=true;const calls=[];
+ // Real copied stores and selector; dummy executables retain the standard fixture seam.
+ // The production source/target identity policy decides each artifact acceptance.
+ const verifyArtifacts=async({manifestPath,manifestSha256,launcher,purpose})=>{
+  const bytes=await fs.readFile(manifestPath),manifest=JSON.parse(bytes.toString('utf8')),directory=path.dirname(manifestPath);
+  expect(sha256(bytes)).toBe(manifestSha256);
+  const asset=manifest.fixtureClaudeIdentity;calls.push({sha256:asset.sha256,purpose});
+  const isCurrent=['path','sha256','mode'].every(key=>asset[key]===current[key]);
+  if(!isCurrent&&!(previousApplication&&asset.sha256===previous.sha256)&&!isReviewedPreviousClaudeAsset(asset,purpose,'darwin','arm64'))
+   throw Object.assign(Error('native_runtime_artifacts_unverified'),{code:'native_runtime_artifacts_unverified'});
+  return {directory,manifestPath,manifestSha256,launcher,controller:path.join(directory,'DevRyan-controller'),writer:path.join(directory,'DevRyan-writer'),manifest};
+ };
+ const credentialProcess=async({action,assertHeld})=>{await assertHeld();expect(action.action).toBe('capture');return captureCredentials();};
+ const controlRoot=await provisionDefaultNativeBundle({env:{PATH:process.env.PATH},home,cwd:f.seed.projectMap[0].targetDirectory,
+  artifactDirectory:old,verifyArtifacts,runMigration:f.runMigration,credentialProcess});
+ previousApplication=false;const before=readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot});
+ await expect(f.store.verify({bundleID:'baseline',phase:'prepared',artifactPurpose:'bundle-source'})).rejects.toMatchObject({code:'bundle_artifact_generation_mismatch'});
+ const sourceDb=resolveSqliteDriver().open(before.descriptor.launch.opencodeDatabasePath,{readonly:true});
+ let sessions;try{sessions=sourceDb.prepare('SELECT id FROM session_v2 ORDER BY id').all();}finally{sourceDb.close();}
+ const invoke=()=>upgradeSelectedNativeBundleAtStartup({controlRoot,artifactDirectory:target,env:{PATH:process.env.PATH},verifyArtifacts,credentialProcess,log:{info(){},warn(){}}});
+ await expect(verifyArtifacts({manifestPath:before.descriptor.launch.artifactManifestPath,manifestSha256:before.descriptor.launch.artifactManifestSha256,
+  launcher:path.join(path.dirname(before.descriptor.launch.artifactManifestPath),'DevRyan-execution-darwin-arm64')})).rejects.toMatchObject({code:'native_runtime_artifacts_unverified'});
+ // An old pin cannot masquerade as a new target, even though it is reviewed as a source.
+ await writeClaude(target,previous);expect(await invoke()).toMatchObject({status:'failed'});
+ expect(readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot}).selection.revision).toBe(1);
+ await writeClaude(target,{...current,sha256:'0'.repeat(64)});expect(await invoke()).toMatchObject({status:'failed'});
+ expect(readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot}).selection.revision).toBe(1);
+ await writeClaude(target,current);expect(await invoke()).toMatchObject({status:'upgraded',revision:2});
+ const after=readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot});
+ expect(after.selection.previousBundleID).toBe(before.descriptor.bundleID);
+ expect(after.descriptor.launch.artifactManifestSha256).toBe(sha256(await fs.readFile(path.join(target,'native-bundle.json'))));
+ const copied=resolveSqliteDriver().open(after.descriptor.launch.opencodeDatabasePath,{readonly:true});
+ try{expect(copied.prepare('SELECT id FROM session_v2 ORDER BY id').all()).toEqual(sessions);}finally{copied.close();}
+ expect(calls.some(call=>call.sha256===previous.sha256&&call.purpose==='bundle-source')).toBe(true);
+ expect(calls.some(call=>call.sha256===current.sha256&&call.purpose===undefined)).toBe(true);
+},60_000);
+test('explicit rollback keeps the reviewed prior Claude purpose through final selector verification',async()=>{
+ const {isReviewedPreviousClaudeAsset,REVIEWED_PREVIOUS_CLAUDE_ASSET}=await import('./native-artifacts.js');
+ const f=await recoveryFixture(reconciledCredentials),priorWeb=path.join(f.controlRoot,'bundles','baseline','web-data');
+ const previous={role:'asset',...REVIEWED_PREVIOUS_CLAUDE_ASSET};
+ const scoped=createRuntimeBundleStore({...f.options,reconcileRollback:reconciledCredentials,verifyArtifacts:async input=>{
+  if(input.launch.webDataDirectory===priorWeb&&!isReviewedPreviousClaudeAsset(previous,input.purpose,'darwin','arm64'))
+   throw Object.assign(Error('native_runtime_artifacts_unverified'),{code:'native_runtime_artifacts_unverified'});
+  return f.verifyArtifacts(input);
+ }});
+ const rolled=await scoped.rollback({targetBundleID:'baseline',expectedRevision:2});
+ expect(rolled.selection).toMatchObject({revision:3,transition:'rollback',selectedBundleID:'baseline',reconciliationRequired:false});
+ await expect(scoped.select({bundleID:'baseline',expectedRevision:3})).rejects.toMatchObject({code:'native_runtime_artifacts_unverified'});
+ expect((await scoped.readSelected()).selection.revision).toBe(3);
+});
+test('resume cannot activate a retained previous-Claude candidate using source verification authority',async()=>{
+ const {isReviewedPreviousClaudeAsset,REVIEWED_PREVIOUS_CLAUDE_ASSET}=await import('./native-artifacts.js');
+ const f=await recoveryFixture(async()=>({status:'blocked',reason:'bundle_credential_conflict'}));
+ await f.store.rollback({targetBundleID:'baseline',expectedRevision:2});
+ const previous={role:'asset',...REVIEWED_PREVIOUS_CLAUDE_ASSET},candidateWeb=f.candidate.launch.webDataDirectory;
+ const scoped=createRuntimeBundleStore({...f.options,verifyArtifacts:async input=>{
+  if(input.launch.webDataDirectory===candidateWeb&&!isReviewedPreviousClaudeAsset(previous,input.purpose,'darwin','arm64'))
+   throw Object.assign(Error('native_runtime_artifacts_unverified'),{code:'native_runtime_artifacts_unverified'});
+  return f.verifyArtifacts(input);
+ }});
+ await expect(scoped.resume({expectedRevision:3})).rejects.toMatchObject({code:'native_runtime_artifacts_unverified'});
+ expect((await scoped.readSelected()).selection).toMatchObject({revision:3,reconciliationRequired:true});
+});
 test('default startup upgrades a selected bundle below the version pin through the cold lifecycle and keeps it for rollback',async()=>{
  const u=await startupUpgradeFixture('startup-upgrade-home'),before=u.binding();
  expect(before.descriptor.bundleID).toBe('default-native');
@@ -923,6 +1005,22 @@ test('cold startup activates repaired host artifacts at the same OpenCode versio
  await u.launch(u.pinned,async()=>{throw Error('Explicit rollback must be retained');});
  expect(u.binding().selection).toMatchObject({revision:4,selectedBundleID:before.descriptor.bundleID,transition:'rollback'});
 },60_000);
+test('cold upgrade preserves artifact diagnostics and never publishes a failed candidate',async()=>{
+ const u=await startupUpgradeFixture('startup-diagnostic-home'),before=u.binding().selection;
+ const {upgradeSelectedNativeBundleAtStartup}=await import('./native-bundle-startup-upgrade.js');
+ const {readStartupBundleUpgradeDiagnostic}=await import('./bundle-startup-upgrade-status.js');
+ const diagnostic={stage:'signature',reason:'signature_failure',artifact:'DevRyan-native-controller',purpose:'current'};
+ const error=Object.assign(Error('private exception text'),{code:'native_runtime_artifacts_unverified',diagnostic});
+ const result=await upgradeSelectedNativeBundleAtStartup({controlRoot:u.controlRoot,artifactDirectory:u.pinned,env:{},verifyArtifacts:u.f.verifyArtifacts,
+  createLifecycle:()=>({upgrade:async()=>{throw error;}}),log:{}});
+ expect(result).toEqual({status:'failed',code:error.code,diagnostic});
+ expect(readStartupBundleUpgradeDiagnostic()).toEqual(diagnostic);
+ expect(u.binding().selection).toEqual(before);
+ await fs.unlink(path.join(u.pinned,'native-bundle.json'));
+ const missing=await upgradeSelectedNativeBundleAtStartup({controlRoot:u.controlRoot,artifactDirectory:u.pinned,env:{},log:{}});
+ expect(missing).toMatchObject({status:'failed',code:error.code,diagnostic:{stage:'manifest',reason:'manifest_missing',purpose:'current'}});
+ expect(u.binding().selection).toEqual(before);
+});
 test('default startup never upgrades while another process owns the selected bundle and reports the refusal',async()=>{
  const u=await startupUpgradeFixture('startup-owner-home'),launch=u.binding().descriptor.launch;
  const lock=path.join(launch.webDataDirectory,'orchestration','owner.lock');await fs.mkdir(path.dirname(lock),{recursive:true});
@@ -1115,7 +1213,7 @@ test('a bootstrap lock whose pid a later process reused, or whose holder died, i
 test('a live original bootstrap holder is waited for however old its lock reads, even after a system sleep',async()=>{
  const f=await fixture(),release=await releaseArtifacts(f,'A');
  // This process and launchd both started before their locks were written; a sleep only advances the clock.
- for(const [pid,createdAt,clock] of [[process.pid,Date.now(),11*60_000],[1,Date.now()-11*60_000,0]]){
+ for(const [pid,createdAt,clock] of [[process.pid,Date.now(),11*60_000],[1,Date.now(),11*60_000]]){
   const home=path.join(f.root,`live-lock-${pid}`);await plantLock(home,{pid,createdAt});
   const now=Date.now,clockJump=vi.spyOn(Date,'now').mockImplementation(()=>now()+clock);
   try{

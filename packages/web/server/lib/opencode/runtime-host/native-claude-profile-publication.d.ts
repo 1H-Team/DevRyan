@@ -12,5 +12,7 @@ export interface ClaudeEnrollmentProfile {
 }
 export function createNativeClaudeProfilePublication(options:{readonly home:string;readonly controlRoot:string;readonly windowsOwner?:WindowsPrivateFileOwner;readonly windowsLauncher?:string}):{
  snapshot():Promise<ClaudeProfileFilesBaseline>;
+ assertRemoval(profile:ClaudeEnrollmentProfile,expected:ClaudeProfileFilesBaseline,context:{readonly recheck:()=>Promise<void>}):Promise<void>;
+ remove(profile:ClaudeEnrollmentProfile,expected:ClaudeProfileFilesBaseline,context:{readonly recheck:()=>Promise<void>}):Promise<void>;
  publish(profile:ClaudeEnrollmentProfile,expected:ClaudeProfileFilesBaseline,context:{readonly recheck:()=>Promise<void>}):Promise<void>;
 };

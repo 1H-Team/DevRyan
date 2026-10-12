@@ -68,8 +68,32 @@ export function createNativeClaudeProfilePublication({home,controlRoot,writeAtom
  };
  const baseline=value=>({profilesSha256:digest(value.profiles),settingsSha256:digest(value.settings),selectedProfileID:typeof value.value.activeProfile==='string'?value.value.activeProfile:null});
  const matches=(value,expected)=>JSON.stringify(baseline(value))===JSON.stringify(expected);
+ const removal=async(profile,expected,{recheck},apply)=>{
+  const enrollmentID=profile?.id?.slice('devryan-'.length);
+  if(profile?.id!==`devryan-${enrollmentID}`||!uuid.test(enrollmentID)||profile.type!=='claude-max'
+    ||profile.claudeConfigDir!==path.join(controlRoot,'claude-enrollments',enrollmentID)
+    ||profile.keychainService!==claudeKeychainService(profile.claudeConfigDir,home)
+    ||Object.keys(profile).some(key=>!['id','type','claudeConfigDir','keychainService'].includes(key)))throw fail('native_claude_enrollment_receipt_invalid');
+  await recheck();await guard(files.profiles);await guard(files.settings);
+  return withCrossProcessFileLock(path.join(directory,'profiles.lock'),async()=>{
+   await recheck();const before=await load();
+   if(!matches(before,expected))throw fail('native_claude_enrollment_configuration_changed');
+   const selected=before.value.activeProfile??before.rows[0]?.id;
+   if(selected===profile.id)throw fail('native_claude_enrollment_selected');
+   const prior=before.rows.find(row=>row.id===profile.id);
+   if(prior&&(Object.keys(prior).length!==Object.keys(profile).length||Object.keys(profile).some(key=>prior[key]!==profile[key])))throw fail('native_claude_enrollment_account_changed');
+   if(!apply||!prior)return;
+   const profiles=Buffer.from(JSON.stringify(before.rows.filter(row=>row.id!==profile.id))+'\n');
+   await recheck();await write(files.profiles,profiles);
+   const after=await load();
+   if(digest(after.profiles)!==digest(profiles)||digest(after.settings)!==digest(before.settings))throw fail('native_claude_enrollment_deletion_uncertain');
+   await recheck();
+  },{windowsLauncher});
+ };
  return {
   snapshot:async()=>baseline(await load()),
+  assertRemoval:(profile,expected,context)=>removal(profile,expected,context,false),
+  remove:(profile,expected,context)=>removal(profile,expected,context,true),
   publish:async(profile,expected,{recheck})=>{
    const enrollmentID=profile?.id?.slice('devryan-'.length);
    if(profile?.id!==`devryan-${enrollmentID}`||!uuid.test(enrollmentID)||profile.type!=='claude-max'

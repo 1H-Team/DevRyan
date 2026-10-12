@@ -174,7 +174,7 @@ export function createNativeAdmissionOwner(options) {
     if (input.operation === 'create') {
       if (task.status !== 'starting' || task.childSessionId || task.rootSessionId !== input.parentID
         || task.dispatchCallId !== input.parentCallID) throw fail('native_managed_task_scope_invalid', 403);
-    } else if (input.operation === 'prompt') {
+    } else if (['prompt', 'settle'].includes(input.operation)) {
       if (task.childSessionId !== input.sessionID || ['providerId', 'modelId', 'agent', 'variant'].some(key => task[key] !== input[key])) {
         throw fail('native_managed_task_scope_invalid', 403);
       }
@@ -1483,16 +1483,16 @@ export function createNativeAdmissionOwner(options) {
       const original=entry.reauthorize,managed=entry.managedDispatch&&copy(entry.managedDispatch);
       const readOnly=managed ? (await verifyManagedDispatch(managed)).readOnly === true : false;
       if(typeof original!=='function'&&!managed)throw fail('native_cursor_caller_required',403);
-      const authorize=async()=>{if(original)await original();if(managed&&((await verifyManagedDispatch(managed)).readOnly===true)!==readOnly)throw fail('native_cursor_scope_revoked',403);};
-      const recheck=()=>inController(async()=>{
+      const authorize=async(settlement)=>{if(original)await original();if(managed&&((await verifyManagedDispatch(settlement?{...managed,operation:'settle'}:managed)).readOnly===true)!==readOnly)throw fail('native_cursor_scope_revoked',403);};
+      const recheck=(settlement=false)=>inController(async()=>{
         if(controllerEpoch!==epoch)throw fail('native_permit_revoked');
-        await authorize();const {session,state}=await stateFor(scope.sessionID);
+        await authorize(settlement);const {session,state}=await stateFor(scope.sessionID);
         if(session.directory!==scope.directory||session.time?.archived||session.revert||state.held||state.reverting||state.revision!==revision
           ||session.agent!==scope.agent||session.model?.providerID!=='cursor-acp'||session.model.id!==scope.modelID
           ||(session.model.variant??'default')!==(scope.variant||'default'))throw fail('native_cursor_scope_revoked',403);
-        await authorize();if(controllerEpoch!==epoch)throw fail('native_permit_revoked');
+        await authorize(settlement);if(controllerEpoch!==epoch)throw fail('native_permit_revoked');
       });
-      await recheck();return Object.freeze({accepted,revision,recheck,readOnly});
+      await recheck();return Object.freeze({accepted,revision,recheck:()=>recheck(),recheckSettlement:()=>recheck(true),readOnly});
     }),
     captureSessionHookAuthorization: input => inController(async()=>{
       const entry=entryFor(input?.permit);

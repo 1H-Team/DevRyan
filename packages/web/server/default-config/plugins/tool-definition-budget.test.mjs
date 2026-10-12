@@ -12,7 +12,7 @@ import { CouncilSessionPlugin } from './council-session.js';
 // it is measured by the runtime context budget instead.
 const MAX_SLACK_RATIO = 0.1;
 const TOOL_DEFINITION_BUDGETS = {
-  devryan_task: { maxBytes: 3430, rationale: 'Measured 2026-09-24 with the default-off waitAny policy (3268 bytes) plus ~5% headroom.' },
+  devryan_task: { maxBytes: 3165, rationale: 'Measured 2026-10-11 with default-off waitAny and context projection (3014 bytes) plus ~5% headroom; tightened after capability filtering.' },
   devryan_document: { maxBytes: 650, rationale: 'Measured 2026-09-24 (620 bytes) plus ~5% headroom.' },
   council_session: { maxBytes: 330, rationale: 'Measured 2026-09-24 (311 bytes) plus ~5% headroom.' },
 };
@@ -20,11 +20,26 @@ const TOOL_DEFINITION_BUDGETS = {
 const TOOL_DEFINITION_VARIANT_BUDGETS = {
   'devryan_task+waitAny': {
     environment: { DEVRYAN_MANAGED_WAIT_ANY: '1' },
+    maxBytes: 3317,
+    rationale: 'Measured 2026-10-11 with waitAny enabled and context projection disabled (3159 bytes) plus ~5% headroom; tightened after capability filtering.',
+  },
+  'devryan_task+contextProjection': {
+    environment: { DEVRYAN_TASK_CONTEXT_PROJECTION: '1' },
+    maxBytes: 3430,
+    rationale: 'Measured 2026-10-11 with context projection enabled and waitAny disabled (3415 bytes), retaining the previous default ceiling.',
+  },
+  'devryan_task+waitAny+contextProjection': {
+    environment: { DEVRYAN_MANAGED_WAIT_ANY: '1', DEVRYAN_TASK_CONTEXT_PROJECTION: '1' },
     maxBytes: 3600,
-    rationale: 'Measured 2026-09-24 with DEVRYAN_MANAGED_WAIT_ANY=1 (3429 bytes) plus ~5% headroom.',
+    rationale: 'Measured 2026-10-11 with both optional policies enabled (3560 bytes), retaining the previous waitAny ceiling.',
+  },
+  'devryan_task+staticSchema': {
+    environment: { DEVRYAN_CAPABILITY_TOOL_SCHEMA: '0' },
+    maxBytes: 3600,
+    rationale: 'Measured 2026-10-11 with capability filtering disabled (3560 bytes), matching the full-policy definition ceiling.',
   },
 };
-const POLICY_ENV_KEYS = ['DEVRYAN_MANAGED_WAIT_ANY', 'DEVRYAN_CAPABILITY_TOOL_SCHEMA'];
+const POLICY_ENV_KEYS = ['DEVRYAN_MANAGED_WAIT_ANY', 'DEVRYAN_TASK_CONTEXT_PROJECTION', 'DEVRYAN_CAPABILITY_TOOL_SCHEMA'];
 
 const definitionBytes = (definition) => Buffer.byteLength(definition.description)
   + Buffer.byteLength(JSON.stringify(z.toJSONSchema(z.object(definition.args))));
@@ -83,10 +98,13 @@ describe('bundled tool definition budgets', () => {
     }
   });
 
-  it('advertises wait_any and its arguments only when the host policy enables it', async () => {
+  it('advertises optional actions and wait_any arguments only when their host policies enable them', async () => {
     const actionsOf = (definition) => z.toJSONSchema(z.object(definition.args)).properties.action.enum;
     const disabled = (await DevRyanManagedOrchestrationPlugin()).tool.devryan_task;
     expect(actionsOf(disabled)).not.toContain('wait_any');
+    for (const action of ['checkpoint', 'decisions', 'remember_decision']) {
+      expect(actionsOf(disabled)).not.toContain(action);
+    }
     expect(Object.keys(disabled.args)).not.toEqual(expect.arrayContaining(['task_ids']));
     expect(Object.keys(disabled.args)).not.toEqual(expect.arrayContaining(['after_cursor']));
     expect(`${disabled.description} ${disabled.args.action.description} ${disabled.args.task_id.description}`)
@@ -95,14 +113,24 @@ describe('bundled tool definition budgets', () => {
     process.env.DEVRYAN_MANAGED_WAIT_ANY = '1';
     const enabled = (await DevRyanManagedOrchestrationPlugin()).tool.devryan_task;
     expect(actionsOf(enabled)).toContain('wait_any');
+    for (const action of ['checkpoint', 'decisions', 'remember_decision']) {
+      expect(actionsOf(enabled)).not.toContain(action);
+    }
     expect(Object.keys(enabled.args)).toEqual(expect.arrayContaining(['task_ids', 'after_cursor']));
     expect(enabled.description).toContain('Use wait_any for the first collectable result');
 
-    // Kill switch: the static schema advertises wait_any regardless of policy.
+    process.env.DEVRYAN_TASK_CONTEXT_PROJECTION = '1';
+    const fullPolicySchema = (await DevRyanManagedOrchestrationPlugin()).tool.devryan_task;
+    expect(actionsOf(fullPolicySchema)).toEqual(expect.arrayContaining(['wait_any', 'checkpoint', 'decisions', 'remember_decision']));
+
+    // Kill switch: the static schema advertises all optional actions regardless of policy.
     delete process.env.DEVRYAN_MANAGED_WAIT_ANY;
+    delete process.env.DEVRYAN_TASK_CONTEXT_PROJECTION;
     process.env.DEVRYAN_CAPABILITY_TOOL_SCHEMA = '0';
     const staticSchema = (await DevRyanManagedOrchestrationPlugin()).tool.devryan_task;
-    expect(actionsOf(staticSchema)).toContain('wait_any');
-    expect(definitionBytes(staticSchema)).toBe(definitionBytes(enabled));
+    expect(actionsOf(staticSchema)).toEqual(actionsOf(fullPolicySchema));
+    expect(z.toJSONSchema(z.object(staticSchema.args))).toEqual(z.toJSONSchema(z.object(fullPolicySchema.args)));
+    expect(staticSchema.description).toBe(fullPolicySchema.description);
+    expect(definitionBytes(staticSchema)).toBe(definitionBytes(fullPolicySchema));
   });
 });

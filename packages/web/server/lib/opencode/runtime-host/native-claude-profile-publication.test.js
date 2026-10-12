@@ -29,6 +29,27 @@ test('explicit publication preserves existing profiles and unrelated settings',(
  expect(JSON.parse(await fs.readFile(profiles,'utf8'))).toEqual([{id:'shared',type:'claude-max',priority:17},profile]);
  expect(JSON.parse(await fs.readFile(settings,'utf8'))).toEqual({activeProfile:profile.id,theme:'dark',unknown:{retain:true}});
 }));
+test('deletion preserves other profile fields and settings and refuses explicit or implicit selection',()=>fixture(async({owner,profile,profiles,settings,originalSettings})=>{
+ await fs.writeFile(profiles,JSON.stringify([{id:'shared',type:'claude-max',priority:17},profile]));
+ const baseline=await owner.snapshot();await owner.assertRemoval(profile,baseline,{recheck:async()=>{}});
+ await owner.remove(profile,baseline,{recheck:async()=>{}});
+ expect(JSON.parse(await fs.readFile(profiles,'utf8'))).toEqual([{id:'shared',type:'claude-max',priority:17}]);
+ expect(await fs.readFile(settings)).toEqual(originalSettings);
+ for(const explicit of [false,true]){
+  await fs.writeFile(profiles,JSON.stringify([profile,{id:'shared',type:'claude-max'}]));await fs.writeFile(settings,JSON.stringify(explicit?{activeProfile:profile.id}:{theme:'dark'}));
+  const beforeProfiles=await fs.readFile(profiles),beforeSettings=await fs.readFile(settings);
+  await expect(owner.remove(profile,await owner.snapshot(),{recheck:async()=>{}})).rejects.toMatchObject({code:'native_claude_enrollment_selected'});
+  expect(await fs.readFile(profiles)).toEqual(beforeProfiles);expect(await fs.readFile(settings)).toEqual(beforeSettings);
+ }
+}));
+test('deletion refuses changed profile identity and stale settings before writing',()=>fixture(async({owner,profile,profiles,settings})=>{
+ await fs.writeFile(profiles,JSON.stringify([{id:'shared'}, {...profile,keychainService:'Claude Code-credentials'}]));
+ const before=await fs.readFile(profiles);
+ await expect(owner.remove(profile,await owner.snapshot(),{recheck:async()=>{}})).rejects.toMatchObject({code:'native_claude_enrollment_account_changed'});
+ expect(await fs.readFile(profiles)).toEqual(before);
+ await fs.writeFile(profiles,JSON.stringify([{id:'shared'},profile]));const baseline=await owner.snapshot();await fs.appendFile(settings,' ');
+ await expect(owner.assertRemoval(profile,baseline,{recheck:async()=>{}})).rejects.toMatchObject({code:'native_claude_enrollment_configuration_changed'});
+}));
 test('stale file bytes refuse even when the parsed selection is unchanged',()=>fixture(async({owner,profile,profiles})=>{
  const baseline=await owner.snapshot();await fs.appendFile(profiles,' ');const changed=await fs.readFile(profiles);
  await expect(owner.publish(profile,baseline,{recheck:async()=>{}})).rejects.toMatchObject({code:'native_claude_enrollment_configuration_changed'});

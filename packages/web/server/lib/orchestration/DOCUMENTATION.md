@@ -18,6 +18,12 @@ This module owns the single DevRyan-managed scheduler for the web server process
 
 The private host binds `127.0.0.1:0`, requires a random bearer token, caps JSON input, exposes only `/rpc`, and is stopped before provider runtimes during graceful shutdown. URL/token values are never returned by diagnostics, UI routes, events, or routine logs.
 
+Constructor-only native `settle` verification binds cleanup to the existing child,
+provider/model/agent/variant and current scheduler attempt lease. It survives the
+cancellation dispatch fence and an admission hold so final cancellation persistence
+can complete, but never grants prompt/tool execution or an RPC capability. Terminal
+tasks, removal fences, lost ownership and shutdown remain denied.
+
 Private task-result RPCs accept `resultMode: "eager" | "reference"`; omission is eager for UI routes, Council, older plugins, and compatibility callers. Reference mode lazifies only a matching retained preview above 8,192 UTF-8 bytes and exposes the first page beside the existing wrapper. `read_result` requires exact task/root/directory scope plus the opaque `resultCursor`, performs no scheduler mutation, and returns only the next `resultReference`. Malformed cursors use `invalid_result_cursor` (400), retained identity/payload changes use `result_reference_mismatch` (409), and existing scope/result 403/404 errors remain authoritative. Snapshots and UI routes remain eager.
 
 ## Persistence and recovery
@@ -44,6 +50,23 @@ roster. Missing ownership or assignment evidence fails closed instead of
 guessing from the current browser.
 
 ## Contracts
+
+The bundled Orchestrator maps broad goals into independent discovery questions,
+including concerns within one subsystem, and dispatches bounded Explorer briefs
+together. A single coherent concern keeps one Explorer. The parent synthesizes
+paths, contracts, and unresolved gaps before presenting the plan; empty or failed
+child output cannot ground it. Parallel implementation briefs name sibling
+ownership and shared interfaces, preserving existing specialist ownership and
+the optional late Oracle review gate.
+
+Both managed tool registrations hide policy-disabled optional actions and their
+arguments. The compatibility plugin follows inherited harness flags; the native
+controller receives `waitAny` and `contextProjection` from the authoritative
+scheduler projection. `DEVRYAN_CAPABILITY_TOOL_SCHEMA=0` keeps the full rollout
+schema; existing host authorization and policy checks remain mandatory.
+The static `harness_capabilities` projection does not initialize the scheduler,
+acquire ledger ownership, or reconcile children. Native startup can read it before
+controller readiness; stateful scheduler RPCs still require initialization.
 
 Submission carries the private caller's cancellation signal through exact agent
 and native catalog validation to the scheduler's pre-persistence gate. Native

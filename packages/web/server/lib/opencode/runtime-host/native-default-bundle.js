@@ -5,7 +5,8 @@ import {createHash,randomBytes} from 'node:crypto';
 import {executionArtifacts} from '../execution-artifacts.js';
 import {resolveSqliteDriver} from '../db-maintenance-core.js';
 import {DEVRYAN_MANAGED_PLUGINS} from '../managed-plugins.js';
-import {verifyNativeRuntimeArtifacts} from './native-artifacts.js';
+import {verifyNativeRuntimeArtifacts,readNativeRuntimeManifest} from './native-artifacts.js';
+import {timeStartupPhase} from '../startup-timing.js';
 import {runNativeMigrationProcess} from './native-migration-process.js';
 import {createRuntimeBundleStore} from './runtime-bundle.js';
 import {createPrivatePersistenceFromVerifiedArtifacts} from './native-private-persistence.js';
@@ -123,9 +124,8 @@ export async function provisionDefaultNativeBundle({env=process.env,home=os.home
  if(process.platform==='win32'){
   // Windows cannot create even bootstrap state using POSIX permission bits.
   // Complete accepted-artifact verification precedes protected root creation.
-  const manifestPath=path.join(artifactDirectory,'native-bundle.json'),stat=await fs.lstat(manifestPath);
-  if(!stat.isFile()||stat.isSymbolicLink()||stat.size>4*1024*1024)throw fail('native_runtime_artifacts_unverified');
-  const bytes=await fs.readFile(manifestPath);
+  const manifestPath=path.join(artifactDirectory,'native-bundle.json');
+  const {bytes}=await readNativeRuntimeManifest(manifestPath);
   const artifacts=await verifyArtifacts({manifestPath,manifestSha256:hash(bytes),launcher:executionArtifacts(artifactDirectory).launcher});
   privatePersistence=createPrivatePersistenceFromVerifiedArtifacts({artifacts,roots:[controlRoot,sourceRoot]});
   await privatePersistence.windowsOwner.ensureDirectory(controlRoot);
@@ -146,9 +146,9 @@ export async function provisionDefaultNativeBundle({env=process.env,home=os.home
    if(await exists(sourceRoot))await removeNativeSetupSource({controlRoot,sourceRoot,...privatePersistence,verifySelected:async()=>{
     const store=createRuntimeBundleStore({...privatePersistence,controlRoot,allowRecoveredInputStartup:true,runMigration:async()=>{throw fail('bundle_migration_generation_invalid');},
      withQuiescedSource:async()=>{throw fail('bundle_quiescence_unverified');},
-     verifyArtifacts:async({launch:value})=>{const verified=await verifyArtifacts({manifestPath:value.artifactManifestPath,manifestSha256:value.artifactManifestSha256,launcher:executionArtifacts(path.dirname(value.artifactManifestPath)).launcher});
+     verifyArtifacts:async({launch:value,purpose})=>{const verified=await verifyArtifacts({manifestPath:value.artifactManifestPath,manifestSha256:value.artifactManifestSha256,launcher:executionArtifacts(path.dirname(value.artifactManifestPath)).launcher,...purpose?{purpose}:{}});
       if(verified.controller!==value.controllerBinary||verified.writer!==value.writerBinary)throw fail('bundle_artifact_generation_mismatch');}});
-    await store.verify({bundleID:selected.descriptor.bundleID,phase:'resume'});
+    await store.verify({bundleID:selected.descriptor.bundleID,phase:'resume',artifactPurpose:'bundle-source'});
    }});
    // An application update can pin a newer OpenCode than the selected bundle runs.
    // Windows owners hold OS locks this cold owner check cannot observe.
@@ -158,13 +158,10 @@ export async function provisionDefaultNativeBundle({env=process.env,home=os.home
   }
   await sweepStaleDrafts(controlRoot,privatePersistence);
   const manifestPath=path.join(artifactDirectory,'native-bundle.json');
-  const manifestStat=await fs.lstat(manifestPath).catch(()=>{throw fail('native_runtime_artifacts_unverified');});
-  if(!manifestStat.isFile()||manifestStat.isSymbolicLink()||manifestStat.size>4*1024*1024)throw fail('native_runtime_artifacts_unverified');
-  const manifestBytes=await fs.readFile(manifestPath);
-  if(manifestBytes.length>4*1024*1024)throw fail('native_runtime_artifacts_unverified');
+  const {bytes:manifestBytes}=await readNativeRuntimeManifest(manifestPath);
   const manifestSha256=hash(manifestBytes),launcher=executionArtifacts(artifactDirectory).launcher;
   await verifyArtifacts({manifestPath,manifestSha256,launcher});
-  const artifacts=await retainNativeArtifacts({controlRoot,manifestPath,manifestSha256,verifyArtifacts,...privatePersistence});
+  const artifacts=await timeStartupPhase('bundle_artifact_retention',()=>retainNativeArtifacts({controlRoot,manifestPath,manifestSha256,verifyArtifacts,...privatePersistence}));
   const retainedManifestPath=artifacts.manifestPath;
   const retainedLauncher=artifacts.launcher;
   const launch={opencodeDatabasePath:operations.windows?path.join(sourceRoot,'opencode','empty.db'):path.join(sourceRoot,'empty.db'),webDataDirectory:path.join(sourceRoot,'web-data'),
@@ -220,8 +217,8 @@ export async function provisionDefaultNativeBundle({env=process.env,home=os.home
    plugins:defaultNativeRegistrations(artifacts.manifest.inputs.reviewedPlugins)})+'\n');
   // This includes copied defaults created by copyFile, before any native spawn.
   await protectNativeSetupSource({controlRoot,sourceRoot,...privatePersistence});
-  candidate=await store.prepare(input);
-  await store.select({bundleID:candidate.bundleID,expectedRevision:0});
+  candidate=await timeStartupPhase('bundle_candidate_preparation',()=>store.prepare(input));
+  await timeStartupPhase('bundle_selection',()=>store.select({bundleID:candidate.bundleID,expectedRevision:0}));
   await removeNativeSetupSource({controlRoot,sourceRoot,...privatePersistence,verifySelected:async()=>{
    const selected=await store.readSelected();if(selected?.descriptor.bundleID!==candidate.bundleID)throw fail('bundle_selection_revision_conflict');
    await store.verify({bundleID:candidate.bundleID,phase:'resume'});

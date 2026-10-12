@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   createManagedTaskRecord,
   createManagedTaskResultEnvelope,
+  createManagedTaskScheduler,
   toManagedTaskEvent,
   type ManagedTaskEvent,
   type ManagedTaskEventRecord,
@@ -60,6 +61,63 @@ const taskRecord = (
 const projectedTask = (...args: Parameters<typeof taskRecord>) => (
   toManagedTaskEvent(taskRecord(...args)).properties.task
 );
+
+test('real scheduler acknowledgement advances envelope sequence and stale snapshots cannot undo disposition', async () => {
+  const scheduler = createManagedTaskScheduler({
+    executor: {
+      async start(_task, control) { await control.setChildSessionId('ses_child'); await control.markAccepted(); return { status: 'completed', recoverablePreview: 'Done' }; },
+      async abort() { return { aborted: true }; },
+      async reconcile() { return { state: 'unavailable' }; },
+      async readRecoverableResult() { return {}; },
+    },
+  });
+  try {
+    const task = await scheduler.submit({ idempotencyKey: 'sequence', rootSessionId: 'ses_root', directory: '/workspace', mode: 'orchestrator', providerId: 'fixture', modelId: 'model', agent: 'explorer', variant: null, label: 'Exact task', prompt: 'Inspect fixture', timeoutAt: null });
+    await scheduler.waitForTask(task.taskId);
+    const finished = scheduler.getTask(task.taskId), original = scheduler.getResultEnvelope(task.taskId);
+    if (!finished || !original) throw new Error('Missing terminal fixture');
+    const projected = toManagedTaskEvent(finished, original).properties.task;
+    const store = createManagedOrchestrationStore({ api: fakeApi({
+      getSnapshot: async () => emptySnapshot({ tasks: [projected], resultEnvelopes: [original] }),
+      acknowledgeTask: async (taskId, body) => {
+        const result = await scheduler.acknowledgeResult(taskId, body);
+        return { resultEnvelope: result.envelope, followUpTask: null };
+      },
+    }) });
+    store.getState().ingestEvent(toManagedTaskEvent(finished, original));
+    await store.getState().acknowledgeTask(task.taskId, 'continue');
+    const saved = store.getState().resultEnvelopesByTaskId[task.taskId];
+    expect(saved.sequence).toBeGreaterThan(original.sequence);
+    expect(saved.action).toBe('continue');
+    expect(store.getState().actionErrorByTaskId[task.taskId]).toBeUndefined();
+    expect(managedOrchestrationSelectors.hasUndispositionedTasksForRoot(task.rootSessionId)(store.getState())).toBe(false);
+    await store.getState().loadSnapshot();
+    for (const envelope of [original, { ...saved, action: 'abandon' as const }, { ...saved, sequence: saved.sequence + 1, action: 'abandon' as const }]) {
+      store.getState().ingestEvent(toManagedTaskEvent(finished, envelope));
+    }
+    expect(store.getState().resultEnvelopesByTaskId[task.taskId]).toBe(saved);
+    expect(managedOrchestrationSelectors.hasUndispositionedTasksForRoot(task.rootSessionId)(store.getState())).toBe(false);
+  } finally { await scheduler.shutdown(); }
+});
+
+test('older disposition and conflicting equal-sequence actions cannot replace the retained envelope', async () => {
+  const failed = taskRecord(1, 'failed', { childSessionId: 'ses_child', failureReason: 'model not found' });
+  const original = createManagedTaskResultEnvelope(failed, { sequence: 8, createdAt: 4_000, resumable: true });
+  const store = createManagedOrchestrationStore({ api: fakeApi({ acknowledgeTask: async () => ({
+    resultEnvelope: { ...original, sequence: 7, acknowledgedAt: 5_000, action: 'abandon', followUpTaskId: null }, followUpTask: null,
+  }) }) });
+  store.getState().ingestEvent(toManagedTaskEvent(failed, original));
+  const retained = store.getState().resultEnvelopesByTaskId[failed.taskId];
+  await store.getState().acknowledgeTask(failed.taskId, 'abandon');
+  expect(store.getState().actionErrorByTaskId[failed.taskId]).toContain('did not match');
+  store.getState().ingestEvent(toManagedTaskEvent(failed, { ...original, sequence: 7, acknowledgedAt: 5_000, action: 'abandon' }));
+  expect(store.getState().resultEnvelopesByTaskId[failed.taskId]).toBe(retained);
+  store.getState().ingestEvent(toManagedTaskEvent(failed, { ...original, sequence: 9, acknowledgedAt: 5_000, action: 'abandon' }));
+  const disposed = store.getState().resultEnvelopesByTaskId[failed.taskId];
+  expect(disposed.action).toBe('abandon'); expect(disposed.sequence).toBe(9);
+  store.getState().ingestEvent(toManagedTaskEvent(failed, { ...original, sequence: 9, acknowledgedAt: 5_000, action: 'continue' }));
+  expect(store.getState().resultEnvelopesByTaskId[failed.taskId]).toBe(disposed);
+});
 
 test('configuration rejection survives snapshot hydration and keeps recovery actions available', async () => {
   const failed = taskRecord(1, 'failed', { childSessionId: 'ses_configuration',

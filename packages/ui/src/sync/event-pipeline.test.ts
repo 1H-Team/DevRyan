@@ -751,6 +751,21 @@ test('routes authenticated integration events outside transcript batches with th
   finally { pipeline.cleanup() }
 })
 
+test('routes SDK catalog success outside transcript queues with its exact directory', () => {
+  const event = { type: 'openchamber:provider-catalog', properties: { providerID: 'cursor-acp', directory: '/repo', source: 'sdk' } } as unknown as OpencodeEvent
+  const routed: unknown[][] = [], transcript: unknown[] = []
+  const pipeline = createEventPipeline({ sdk: createSdk([], () => undefined), transport: 'sse',
+    onEvent: (_directory, payload) => { transcript.push(payload) },
+    onProviderCatalogEvent: (directory, payload) => { routed.push([directory, payload]) },
+  })
+  try {
+    pipeline.enqueueEvent('/repo', event)
+    expect(routed).toEqual([['/repo', event]])
+    expect(transcript).toEqual([])
+    expect(pipeline.getDirectoryQueueCount()).toBe(0)
+  } finally { pipeline.cleanup() }
+})
+
 test('original SDK quiet ACK reconnects without a cursor through bounded replay before input readiness', async () => {
   const { createOpencodeClient } = await import('@opencode-ai/sdk/v2');
   const { opencodeClient } = await import('@/lib/opencode/client');

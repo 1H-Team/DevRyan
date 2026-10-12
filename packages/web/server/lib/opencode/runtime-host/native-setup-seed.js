@@ -56,7 +56,10 @@ export const projectNativeSetupState=input=>Array.isArray(input)?input.map(proje
  .filter(([key])=>!stateKeys.has(key)).map(([key,item])=>[key,projectNativeSetupState(item)])):input;
 export function projectNativeSetupSettings(value){
  if(!record(value))throw fail('native_setup_settings_invalid');
- return projectNativeSetupState(Object.fromEntries(Object.entries(value).filter(([key])=>settingsKeys.has(key))));
+ // Losing explicit disablement would automatically register a service on the next launch.
+ return {...projectNativeSetupState(Object.fromEntries(Object.entries(value).filter(([key])=>settingsKeys.has(key)))),
+  ...(value.productionBotsRuntimeServiceOptOut===true?{productionBotsRuntimeServiceOptOut:true}:{}),
+  ...(value.productionBotsRuntimeMode==='disabled'?{productionBotsRuntimeMode:'disabled'}:{})};
 }
 
 

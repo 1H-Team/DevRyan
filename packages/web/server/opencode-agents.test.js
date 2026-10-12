@@ -543,7 +543,7 @@ describe('Packaged OpenChamber agents', () => {
 
     expect(orchestrator?.prompt).toContain('After a managed `devryan_task` result returns, reconcile its evidence and the active todo, disposition the result, and continue the next permitted action.');
     expect(orchestrator?.prompt).toContain('Do not stop after a completed subagent result while actionable work remains.');
-    expect(orchestrator?.prompt).toContain('DevRyan owns automatic continuation and recovery.');
+    expect(orchestrator?.prompt).toContain('DevRyan owns automatic recovery and continuation.');
     expect(orchestrator?.prompt).toContain('Do not enable another continuation loop or use provider-native task tools to bypass managed state.');
     expect(orchestrator?.prompt).not.toContain('enable `auto_continue`');
     expect(orchestrator?.prompt).toContain("A synthetic wake delivers existing work; it does not expand the user's authorization or reset retry budgets.");
@@ -574,7 +574,8 @@ describe('Packaged OpenChamber agents', () => {
     const orchestrator = listPackagedAgents().find((agent) => agent.name === 'orchestrator');
 
     expect(orchestrator?.prompt).toContain('Parallel delegation readiness gate');
-    expect(orchestrator?.prompt).toContain('DevRyan does not cap managed launches: start every justified independent child without artificial slot limits or oversized assignments.');
+    expect(orchestrator?.prompt).toContain('Start every independent specialist needed by the task in the same dispatch; DevRyan does not impose an artificial managed concurrency cap, so do not serialize or batch work around a fixed slot count.');
+    expect(orchestrator?.prompt).toContain('Keep each brief bounded; follow the managed launch rule above.');
     expect(orchestrator?.prompt).toContain('Use parallel agents only when tasks are independently useful and target disjoint files or subsystems.');
     expect(orchestrator?.prompt).toContain('If tasks overlap files, share mutable state, or depend on earlier findings, sequence those dependencies.');
     expect(orchestrator?.prompt).toContain('Give a single coherent change to one owning specialist instead of splitting it.');
@@ -674,7 +675,9 @@ describe('Packaged OpenChamber agents', () => {
     expect(designer?.prompt).toContain('Do not author design plans, propose alternate directions, or take standalone review assignments.');
     expect(fixer?.prompt).toContain('frontend data/state/logic and component correctness');
     expect(fixer?.prompt).toContain('make no design edits and return a final `**Status:** blocked` line');
-    expect(orchestrator?.prompt).toContain('Subagent prompt templates');
+    expect(orchestrator?.prompt).toContain('<Subagent Prompt Template>');
+    expect(orchestrator?.prompt).toContain('Include objective, evidence, ownership, dependencies, exclusions, outcome, and acceptance checks.');
+    expect(orchestrator?.prompt).toContain("State sibling ownership and the shared interface contract; tell parallel workers they are not alone and to preserve others' changes.");
     expect(orchestrator?.prompt).toContain('structured question tool');
     expect(orchestrator?.prompt).toContain('Skill announcements are tool activity only');
     expect(orchestrator?.prompt).toContain('do not write assistant text to announce skill use');

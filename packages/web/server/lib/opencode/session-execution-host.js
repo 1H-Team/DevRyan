@@ -18,6 +18,7 @@ import { isOpenCodeNotFoundError } from './opencode-client/index.js';
 import { createCapabilityAbsentError, resolveOpenCodeGeneration } from './opencode-generation.js';
 import { toV1ToolName } from './v2/projection/tools.js';
 import { isReviewedControllerGitArgs } from './execution-helper-policy.js';
+import { resolveControllerGitCommand } from './execution-helper-command.js';
 import { executeNativeContextAssets } from './runtime-host/native-context-assets.js';
 import { executeNativeInterviewDocument } from './runtime-host/native-interview-document.js';
 
@@ -289,6 +290,7 @@ export function createSessionExecutionHost(options) {
     job.events.push({ cursor: ++job.cursor, ...event }); job.bytes += bytes;
     for (const wake of job.waiters) wake(); job.waiters.clear();
   };
+  let nativeGitCommand;
   const executeNativeExecution = async (input, { signal } = {}) => {
     options.assertExecutionReady?.();
     if (input.action === 'context-assets') {
@@ -302,7 +304,10 @@ export function createSessionExecutionHost(options) {
       if (input.timeoutMs !== undefined && (!Number.isSafeInteger(input.timeoutMs) || input.timeoutMs < 1 || input.timeoutMs > 10_000)) throw failure('native_helper_timeout_invalid', 400);
       if (!path.isAbsolute(input.cwd ?? '') || !Array.isArray(nativeOptions.helperRoots)) throw failure('native_helper_directory_denied', 403);
       const cwd = await fs.realpath(input.cwd);
-      const roots = await Promise.all(nativeOptions.helperRoots.map((root) => fs.realpath(root)));
+      const roots = (await Promise.all(nativeOptions.helperRoots.map((root) => fs.realpath(root).catch((error) => {
+        if (error.code !== 'ENOENT') throw error;
+        return null;
+      })))).filter((root) => root !== null);
       const owning = roots.filter((root) => cwd === root || cwd.startsWith(`${root}${path.sep}`));
       if (!owning.length) throw failure('native_helper_directory_denied', 403);
       // Discovery never walks above the outermost registered root that owns cwd: a registered
@@ -310,7 +315,8 @@ export function createSessionExecutionHost(options) {
       // is outside every helper root and would be refused), while a registered repository
       // root keeps discovery for itself and its nested registered folders.
       const ceiling = path.dirname(owning.reduce((outer, root) => (root.length < outer.length ? root : outer)));
-      const command = nativeOptions.gitCommand ?? '/usr/bin/git';
+      const command = await (nativeGitCommand ??= resolveControllerGitCommand(nativeOptions.gitCommand ?? '/usr/bin/git')
+        .catch(cause => { nativeGitCommand = undefined; throw cause; }));
       if (!path.isAbsolute(command) || !await verifySessionExecutionLauncher({ launcher: launcher() })) throw failure('mutation_runtime_unsupported');
       signal?.throwIfAborted();
       const controller = new AbortController(), handle = randomUUID();

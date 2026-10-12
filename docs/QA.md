@@ -359,6 +359,8 @@ The original sealed resolver must preserve saved role models, effort, prompts an
 
 ## Tracked live credential owner
 
+For explicit approved installed configuration roots, first run `node scripts/qa/live-setup-capture.mjs --opencode-directory <abs-config-opencode> --web-config-directory <abs-config-openchamber> --artifact-root <abs-artifacts> --output-root <new-abs-private-cache-output>`. It captures only the mirror's eligible setup files, removes credential fields and personal project/session state, disables MCP entries, and derives the exact saved role/backup/Council/compaction graph through the production resolver in a disposable never-started native bundle. Runtime configuration JSON must contain objects; skill JSON data can contain arrays or scalars with the same recursive credential removal, and malformed JSON always refuses capture. It emits the approved preparation path and hash for the live owner below. Source roots must be canonical and user-owned; symlinks, hardlinks, writable or oversized files refuse capture. Credential-like entries inside eligible trees, including `.env*`, account/vault folders and private-key files, are refused before reading. It never discovers an ambient home, starts a provider session, or reads account stores. Only these explicit global configuration roots are captured: separately compare the emitted graph with the requested project's live configuration before paid QA, because project-local overrides and home skills are outside this capture scope.
+
 Prepare the approved nonsecret mirror with `scripts/qa/live-setup-mirror.mjs`.
 Its `--input` is a repository-cache file containing `preparedInput.sourceHome`
 and the explicit `{path, sha256}` inventory. Its `--graph` contains only the
@@ -384,6 +386,10 @@ Run the live owner from an attended terminal. It starts a fresh private host and
 prints a one-use, ten-minute, loopback-only owner link and an isolated Claude
 login command. The owner opens the link and performs provider sign-ins. Never
 record the link, cookie, sign-in transcript or credential values in evidence.
+The launcher retains the controlling terminal and attests attendance through
+its owned IPC channel. Its runtime child reads a pipe in a separate process
+session so native startup cannot take foreground terminal ownership. A directly
+launched child without the exact parent attendance message is refused.
 The command protocol accepts exactly one `command` per JSON line:
 
 ```json
@@ -413,6 +419,9 @@ lifecycle inventory and is refused in this default lane.
 Closing drains owned runtime state, closes listeners, audits retained PID/start
 identities from the launcher, rechecks inputs, and scans evidence for keyed raw,
 base64 and URL-encoded credential windows. Scan results contain counts only.
+After the owner finishes cleanup and records its summary, a private IPC notice
+lets the launcher settle remaining owned background handles and audit process
+exit; the owner's failed checks and exit code remain failures.
 Retained candidate runtimes move outside evidence into the private source root.
 They block evidence publication until the owner reviews exact paths and sizes
 and authorizes cleanup. The owner also signs out independent accounts and
@@ -664,6 +673,47 @@ Generation-2 manual and natural compaction grading reads the same journal. Each 
 - `native-startup-benchmark.mjs`: three packaged app-bound launches using fresh private profiles, an explicit verified native artifact and a local model fixture. Optional `--baseline-artifact-root` exercises production startup upgrade and verifies the selector revision, previous bundle and exact packaged candidate. Requires the native catalog, composer, exact model/agent tuple, sessions and the renderer's global event-stream readiness acknowledgment. Records first-document timings without reloading; foreground service registration scenarios remain unavailable in this isolated harness. `DEVRYAN_QA_CATALOG_CONFIG` may point to a sanitized reproduction `providers.json` under repository `.cache/sessions/`; the runner sanitizes its shapes again and requires every supplied Cursor model in the packaged catalog.
   For matched optimization comparisons, pass `--baseline-package-evidence <absolute> --candidate-package-evidence <absolute> --artifact-root <absolute>` instead. The runner executes B1/C1/C2/B2/B3/C3 with fresh profiles, pins one synthetic catalog for all launches, checks matching native/dependency identities and unchanged source, and accepts only a median reduction of at least 5% with all three pairs faster. Only the reviewed App and feature-route import candidates may differ between the source receipts. Natural startup is the default; `--startup-mode foreground` is explicitly qualified separately. Startup phase logs and bounded renderer readiness marks expose stage durations without configuration or message content. Each launch verifies journal health and runs the offline gap scan before deleting its private payload.
 
+
+### Final-DMG startup qualification
+
+`native-startup-benchmark.mjs --release-dmg <absolute-dmg> --version <version>
+--source-commit <40-character-commit> --receipt <absolute-json>` qualifies the
+unchanged distributed macOS arm64 app. The release workflow runs it after DMG
+creation; publication and npm publishing depend on success. It mounts the DMG
+read-only, verifies signatures and the production native inventory, and copies
+the app without rebuilding or signing it. Source commit, DMG hash, app identity,
+native manifest digest and compiled-native acceptance are bound into the receipt.
+
+The runner uses private HOME/XDG/profile roots and loopback-only provider fixtures.
+The [implementation audit](audits/2026-10-12/startup-contract/README.md) records
+local checks, historical trial failures and the remaining GUI acceptance limit.
+The app performs its own first provisioning and selector changes. It requires
+empty-profile setup, unchanged reopen, the last two published stable installers,
+a signed same-OpenCode-version/different-artifact baseline, warm/cold registered
+service attachment, guarded stale-owner recovery, interrupted retention and a
+rejected candidate. An identical native manifest across releases correctly keeps
+the selection unchanged. Changed artifacts must advance it exactly once and
+retain the previous bundle. Each usable-chat result includes the real catalog,
+model/agent, sessions, composer, global subscription ACK and a completed local
+fixture submission; upgrades/reopens preserve the saved response.
+
+Only an ephemeral GitHub-hosted macOS GUI runner may register the service or
+change its launchd environment. The existing GUI probe is mandatory. Missing GUI,
+service approval, historical asset digest or a required baseline blocks the gate.
+No local workstation may claim that acceptance. A prior failed qualification job
+for the same source commit blocks another qualification, and workflow reruns are
+rejected. Investigate the retained failure and commit the correction first.
+Every case and all process/provider/service/environment cleanup must pass. Gap
+scans verify the actual journal records. Passing runs delete private app/runtime
+payloads; small receipts remain workflow artifacts under `DevRyan-*` names and
+are not added to the public release asset allowlist.
+
+For incident reproduction only, `native-startup-benchmark.mjs
+--reproduce-release-upgrade 2.0.7 2.0.8` downloads and verifies those published DMGs
+and uses the same readiness checks on a disposable GUI runner. Historical builds
+may automatically register a service, so workstation launches are refused before
+spawning the app. Its diagnostic receipt cannot qualify a release. Failed trials remain failed
+even when a corrected fixture or app passes a later diagnostic run.
 
 The native startup constructor also supports a `startupPolicy: 'previous'`
 comparison cohort using an explicitly recorded prior UI build. Candidate cohorts

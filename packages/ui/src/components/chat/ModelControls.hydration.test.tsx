@@ -1,10 +1,11 @@
 import React, { act } from 'react';
-import { describe, expect, mock, test } from 'bun:test';
+import { describe, expect, mock, spyOn, test } from 'bun:test';
 import { useStore } from 'zustand';
 import type { AssistantMessage, Model, Part, Session, TextPart, UserMessage } from '@opencode-ai/sdk/v2';
 import { withDom, type HostElement } from '@/components/bots/chat/botMountedDom';
 import { ChildStoreManager } from '@/sync/child-store';
 import type { State } from '@/sync/types';
+import { createProviderCatalogRecovery } from '@/sync/provider-catalog-recovery';
 
 const directory = '/Users/zoubair/Repositories/DevRyan/.cache/qa/model-controls-hydration';
 const sessionID = 'ses_choice_a';
@@ -62,6 +63,21 @@ const model: Model = {
   limit: { context: 1000, output: 100 }, status: 'active',
   options: {}, headers: {}, release_date: '2026-01-01', variants: { low: {}, medium: {}, high: {} },
 };
+const cachedCatalog = async (options?: { directory?: string | null }) => {
+  if (options?.directory && options.directory !== directory) throw new Error('Unexpected fixture catalog scope');
+  return { providers: useConfigStore.getState().providers.map(({ models, ...provider }) => ({
+    ...provider, models: Object.fromEntries(models.map(item => [item.id, item])),
+  })), default: {} };
+};
+let readCatalog: typeof opencodeClient.getProviders = cachedCatalog;
+let catalogReads: Array<{ directory?: string | null } | undefined> = [];
+spyOn(opencodeClient, 'getProviders').mockImplementation(async options => {
+  catalogReads.push(options); return readCatalog(options);
+});
+spyOn(globalThis, 'fetch').mockImplementation(async input => {
+  if (String(input) !== '/api/openchamber/models-metadata') throw new Error('Unexpected fixture request');
+  return Response.json({});
+});
 
 const user = (id: string, variant: string): UserMessage => ({
   id, sessionID, role: 'user', agent: 'builder', time: { created: id === olderUserID ? 1 : 2 },
@@ -82,6 +98,7 @@ const assistant = (id: string, parentID: string): AssistantMessage => ({
 });
 
 const prepare = () => {
+  catalogReads = []; readCatalog = cachedCatalog;
   useSelectionStore.getState().clearSessionSelection(sessionID);
   useSelectionStore.getState().clearSessionSelection('ses_choice_b');
   useContextStore.setState({ hasHydrated: true });
@@ -90,7 +107,7 @@ const prepare = () => {
     providers: [{ id: 'fixture', name: 'Fixture', source: 'custom', options: {}, env: [], models: [model, { ...model, id: 'alternate', name: 'Alternate Model', variants: {} }] }],
     agents: ['builder', 'orchestrator'].map(name => ({ name, mode: 'primary', model: { providerID: 'fixture', modelID: 'model' }, permission: [], options: {} })),
     currentProviderId: 'fixture', currentModelId: 'model', currentAgentName: 'builder', currentVariant: null,
-    isInitialized: true, isConnected: true,
+    isInitialized: true, isConnected: true, providersLoadStatus: 'ready',
   });
   useUIStore.setState({ favoriteModels: [], hiddenModels: [], isModelSelectorOpen: false });
   useSessionUIStore.setState({ currentSessionId: sessionID, currentDraftId: null, planModeUserMessages: new Set(), newSessionDraft: { open: false, directoryOverride: null, parentID: null } });
@@ -184,6 +201,64 @@ const deliverNewCanonicalChoice = (variant: string) => directoryStore.setState(s
 });
 
 describe('ModelControls delayed user-part hydration', () => {
+  test('SDK catalog success refreshes a cold native Explorer and fences a late fallback response', async () => {
+    const fallback = deferred();
+    let catalogCall = 0;
+    await withControls(async (container, remount) => {
+    expect(currentChoice()).toMatchObject({ providerID: 'cursor-acp', modelID: 'grok-4.6', agent: 'explorer', variant: 'medium' });
+    expect(useConfigStore.getState().currentAgentName).toBe('explorer');
+    expect(variantTrigger(container).textContent).toBe('Medium · Unconfirmed');
+    expect(catalogReads).toHaveLength(0);
+    const recovery = createProviderCatalogRecovery({ directory: () => useConfigStore.getState().activeDirectoryKey,
+      loadProviders: options => useConfigStore.getState().loadProviders(options),
+    });
+    let initial: Promise<void> = Promise.resolve();
+    try {
+      await act(async () => { initial = useConfigStore.getState().loadProviders({ directory }); });
+      expect(catalogReads).toHaveLength(1);
+      await act(async () => {
+        const event = { type: 'openchamber:provider-catalog', properties: { providerID: 'cursor-acp', directory, source: 'sdk' } };
+        recovery.handle(directory, event); recovery.handle(directory, event);
+      });
+      expect(catalogReads).toHaveLength(2);
+      expect(catalogReads.every(options => options?.directory === directory)).toBe(true);
+      await act(async () => { fallback.resolve(); await initial; });
+    expect(useConfigStore.getState().providers.find(provider => provider.id === 'cursor-acp')?.models.some(item => item.id === 'grok-4.6')).toBe(true);
+    expect(variantTrigger(container).textContent).toBe('Medium');
+    await remount('model');
+    expect(container.textContent).toContain('Grok 4.6');
+    expect(currentChoice()).toMatchObject({ providerID: 'cursor-acp', modelID: 'grok-4.6', agent: 'explorer', variant: 'medium' });
+    await act(async () => directoryStore.setState(state => ({ part: { ...state.part, msg_native_assistant: [{ ...textPart('msg_native_assistant'), text: 'Another streamed token' }] } })));
+    expect(catalogReads).toHaveLength(2);
+    const captured = currentChoice();
+    await act(async () => { await dispatch(captured); });
+    expect(directoryStore.getState().message[sessionID]?.at(-1)).toMatchObject({ role: 'user', agent: 'explorer',
+      model: { providerID: 'cursor-acp', modelID: 'grok-4.6', variant: 'medium' },
+    });
+    } finally { fallback.resolve(); await initial; recovery.dispose(); }
+  }, () => {
+    const sol = { ...model, id: 'gpt-6.1-sol', providerID: 'openai', name: 'GPT-6.1 Sol' };
+    const composer = { ...model, id: 'composer-2.5', providerID: 'cursor-acp', name: 'Composer 2.5' };
+    const grok = { ...model, id: 'grok-4.6', providerID: 'cursor-acp', name: 'Grok 4.6' };
+    const provider = (id: string, models: Model[]) => ({ id, name: id, source: 'custom' as const, options: {}, env: [], models });
+    useConfigStore.setState({ providers: [provider('openai', [sol]), provider('cursor-acp', [composer])],
+      currentProviderId: 'openai', currentModelId: sol.id, currentAgentName: 'fixer', currentVariant: 'medium',
+      agents: [{ name: 'fixer', mode: 'primary', model: { providerID: 'openai', modelID: sol.id }, permission: [], options: {} },
+        { name: 'explorer', mode: 'subagent', model: { providerID: 'cursor-acp', modelID: grok.id }, permission: [], options: {} }],
+    });
+    const nativeUser = { ...user(pendingUserID, 'medium'), agent: 'explorer', providerID: 'cursor-acp', modelID: grok.id, variant: 'medium' };
+    // The native canonical payload uses flattened fields despite the SDK user type.
+    Reflect.deleteProperty(nativeUser, 'model');
+    directoryStore.setState(state => ({ session: state.session.map(session => ({ ...session, parentID: 'ses_root' })),
+      message: { [sessionID]: [nativeUser] }, part: { [pendingUserID]: [textPart(pendingUserID)] },
+    }));
+    readCatalog = async () => {
+      const initial = ++catalogCall === 1;
+      if (initial) await fallback.promise;
+      return { providers: [provider('openai', [sol]), provider('cursor-acp', initial ? [composer] : [composer, grok])].map(({ models, ...entry }) => ({ ...entry, models: Object.fromEntries(models.map(item => [item.id, item])) })), default: {} };
+    };
+  }); });
+
   test('cold restore keeps human Plan through a managed wake and captures Plan on the next actual send', async () => withControls(async () => {
     let sentPlanMode: boolean | undefined;
     const captured = currentChoice();

@@ -1,3 +1,4 @@
+import { startupDiagnosticSummary } from '../../../shared-runtime/startup-diagnostics.js';
 import { getChatThinkingState, resolveChatThinkingVariant } from '@/lib/providers/chatThinking';
 import { getCursorAcpVariantState, resolveCursorAcpVariantSelection } from '@/lib/providers/cursorThinking';
 import { useMemo } from "react";
@@ -630,6 +631,7 @@ interface ConfigStore {
     isInitialized: boolean;
     initializationLoadStatus: ConfigLoadStatus;
     initializationLoadError: string | undefined;
+    initializationDiagnostics: string | undefined;
     initializationRetryable: boolean;
     providersLoadStatus: ConfigLoadStatus;
     providersLoadError: string | undefined;
@@ -824,6 +826,7 @@ export const useConfigStore = create<ConfigStore>()(
                 isInitialized: false,
                 initializationLoadStatus: "idle",
                 initializationLoadError: undefined,
+                initializationDiagnostics: undefined,
                 initializationRetryable: true,
                 providersLoadStatus: "idle",
                 providersLoadError: undefined,
@@ -2214,6 +2217,7 @@ export const useConfigStore = create<ConfigStore>()(
                                 isInitialized: false,
                                 initializationLoadStatus: "loading",
                                 initializationLoadError: undefined,
+                                initializationDiagnostics: undefined,
                                 initializationRetryable: true,
                             });
                             const debug = streamDebugEnabled();
@@ -2262,6 +2266,7 @@ export const useConfigStore = create<ConfigStore>()(
                                 isInitialized: true,
                                 initializationLoadStatus: "ready",
                                 initializationLoadError: undefined,
+                                initializationDiagnostics: undefined,
                                 isConnected: true,
                                 hasEverConnected: true,
                                 connectionPhase: "connected",
@@ -2278,6 +2283,7 @@ export const useConfigStore = create<ConfigStore>()(
                                 isInitialized: false,
                                 initializationLoadStatus: "error",
                                 initializationLoadError: message || "Failed to initialize DevRyan",
+                                initializationDiagnostics: startupDiagnosticSummary(error),
                                 initializationRetryable: !options?.startup || connectionConfirmed,
                                 isConnected: connectionConfirmed,
                                 connectionPhase: connectionConfirmed

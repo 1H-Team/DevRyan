@@ -169,6 +169,11 @@ describe('areRenderRelevantMessagesEqual', () => {
       { info: streamingInfo, parts: [] },
       { info: completedInfo, parts: [] },
     )).toBe(false);
+    const ownParentInfo = { ...streamingInfo, parentID: 'recovery-user' };
+    expect(areRenderRelevantMessagesEqual(
+      { info: streamingInfo, parts: [] },
+      { info: ownParentInfo, parts: [] },
+    )).toBe(false);
   });
 
   test('treats final tool part state as render-relevant', () => {

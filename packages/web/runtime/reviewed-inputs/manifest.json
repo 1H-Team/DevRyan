@@ -5961,8 +5961,8 @@
       "files": [
         {
           "path": "assets/DevRyan-Claude-darwin-arm64",
-          "sha256": "625869b01e0050f260b2980fac248fd9cef9e462612bded4ec9d3d49ff8969a5",
-          "size": 197171680
+          "sha256": "387a5c5dcdbb815085edf0baf79591f9d8894efe922bceaf3d75b1b08055229d",
+          "size": 217254576
         },
         {
           "path": "assets/DevRyan-libsql-darwin-arm64.node",
@@ -6001,7 +6001,7 @@
         },
         {
           "path": "node_modules/@anthropic-ai/claude-code-darwin-arm64/package.json",
-          "sha256": "12fc8f1b6f5f3f11c891fa19dedd77ee4a32f54861e73ffecf8e7022eeb771a5",
+          "sha256": "2303b4717683f6abc739b20b0c9ff29bf0f537b439543d08f8365b6551d08183",
           "size": 277
         },
         {
@@ -6211,8 +6211,8 @@
         },
         {
           "path": "provenance.json",
-          "sha256": "c57713dad30af9f8bb7762a37af9cdbbf5be95436e27a5635d3e10ca2e59b875",
-          "size": 1605
+          "sha256": "b6b5941df4290566196ca1836eaafa816676a69535bfd33041828b0cc7aa4689",
+          "size": 2310
         },
         {
           "path": "resolutions.json",

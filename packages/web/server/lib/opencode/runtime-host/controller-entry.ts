@@ -32,10 +32,6 @@ const lines=inputLines();
 let close:()=>Promise<void>=async()=>{};
 let credentialIdentity:Pick<NativeBundleCredentialBoot,'protocol'|'requestID'|'instanceID'|'buildID'>|undefined;
 try {
-  if(args[0]==='--claude-transport-worker'&&args.length===3&&args[1]==='--native-instance'&&/^[a-f0-9-]{32,64}$/i.test(args[2]??'')){
-    const {runNativeClaudeTransport}=await import('./native-claude-transport-worker.js');
-    process.exitCode=(await runNativeClaudeTransport({instanceID:args[2]!,buildId:DEVRYAN_NATIVE_BUILD_ID})).exitCode;
-  }else{
   const first=await lines.next();if(first.done) throw new Error('native_boot_missing');
   if(args.length===1 && args[0]==='--verify-assets') {
     const request=parseNativeAssetRequest(first.value);
@@ -65,12 +61,15 @@ try {
     const request=parseProviderBoot(first.value);
     if(request.instanceID!==args[2]||request.buildId!==DEVRYAN_NATIVE_BUILD_ID)throw new Error('native_provider_identity_mismatch');
     const {startNativeMeridianWorker,createProviderCredentialChannel}=await import('./native-meridian-worker.js');
+    const {createClaudeTransportChannel}=await import('./native-claude-transport-channel.js');
     const credentials=createProviderCredentialChannel(write);
-    close=async()=>{credentials.close();};
-    const host=await startNativeMeridianWorker(request,{buildId:DEVRYAN_NATIVE_BUILD_ID,startup:()=>import('devryan:reviewed-claude-startup'),resolveCredential:input=>credentials.request(input)});
+    const transport=createClaudeTransportChannel(write);
+    close=async()=>{credentials.close();await transport.close();};
+    const host=await startNativeMeridianWorker(request,{buildId:DEVRYAN_NATIVE_BUILD_ID,startup:()=>import('devryan:reviewed-claude-startup'),resolveCredential:input=>credentials.request(input),onDiagnostic:write,transport});
     let commands=Promise.resolve(),queued=0;
-    close=async()=>{credentials.close();await host.close();await commands;};write(host.bound);
+    close=async()=>{credentials.close();await transport.close();await host.close();await commands;};write(host.bound);
     for await(const value of lines){
+      if(value&&typeof value==='object'&&'type'in value&&value.type==='claude-transport-reply'){transport.accept(value);continue;}
       const command=parseProviderCommand(value);
       if(command.action==='credential-reply'){credentials.accept(command);continue;}
       if(command.action==='close')credentials.close();
@@ -98,7 +97,6 @@ try {
     const dispatcher=createNativeCommandDispatcher({run:host.command,closeStartup:host.closeStartup,respond:(id,result)=>write({protocol:1,id,...result})});
     for await(const value of lines) dispatcher.dispatch(parseNativeCommand(value));
     host.closeStartup();await close();await dispatcher.drain();
-  }
   }
 } catch(error) {
   if(args[0]==='--verify-assets') console.error(JSON.stringify({mode:'verify-assets',name:error instanceof Error?error.name:'unknown',message:String(error).slice(0,2048),stack:error instanceof Error?error.stack?.slice(0,4096):undefined}));

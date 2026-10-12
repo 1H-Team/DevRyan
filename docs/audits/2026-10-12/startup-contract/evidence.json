@@ -1,0 +1,339 @@
+{
+  "protocol": "devryan.startup-implementation-audit/1",
+  "date": "2026-10-12",
+  "releaseQualified": false,
+  "baseCommit": "936b5444c00f4445479d352b912313212c0d6f43",
+  "workingTreeChanges": true,
+  "candidate": {
+    "buildId": "d8b50b55e6d365ac8dcd0f1e8f6a6d45dedc99203ebbb38d6e2f9772f7e0b6cd",
+    "manifestSha256": "e7aeabde82747c6d00f9bfca647bf4662189e5038e0c4deac6016d697de86968"
+  },
+  "checks": {
+    "fullValidation": "passed",
+    "productionBuild": "passed",
+    "bundleBudgets": "passed",
+    "uiTypeCheck": "passed",
+    "releaseContracts": {
+      "passed": 13,
+      "failed": 0
+    },
+    "compiledNative": {
+      "outcome": "passed",
+      "cases": [
+        {
+          "id": "compiled-production-artifacts",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-current-build-inputs",
+          "status": "passed"
+        },
+        {
+          "id": "portable-artifact-tamper-refusal",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-assets-source-denied",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-empty-initialization-lost-ack-resume",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-empty-initialization-idempotent-replay",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-fresh-native-initialization",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-credential-target-contract-refusal",
+          "status": "passed"
+        },
+        {
+          "id": "fresh-v2-baseline-checkpoint",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-clone-layout-legacy",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-v2-derived-bundle-clone",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-claude-selected-profile-credential-ipc",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-ready-catalog",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-helper-hang-independent-native-conversation",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-human-queue-child-idle-and-await-race",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-human-explicit-steer-with-busy-child",
+          "status": "passed"
+        },
+        {
+          "id": "package-read",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-existing-workspace-write",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-existing-workspace-revert-redo",
+          "status": "passed"
+        },
+        {
+          "id": "package-write",
+          "status": "passed"
+        },
+        {
+          "id": "second-location-write",
+          "status": "passed"
+        },
+        {
+          "id": "second-location-read-isolation",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-retained-initial-input",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-retained-multiple-inputs",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-retained-input-discard-lost-ack",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-retained-shell-notification",
+          "status": "passed"
+        },
+        {
+          "id": "package-edit",
+          "status": "passed"
+        },
+        {
+          "id": "package-patch",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-formatter",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-formatter-subprocess",
+          "status": "passed"
+        },
+        {
+          "id": "cli-diagnostic-seed",
+          "status": "passed"
+        },
+        {
+          "id": "cli-diagnostic-fail",
+          "status": "passed"
+        },
+        {
+          "id": "cli-diagnostic-fix",
+          "status": "passed"
+        },
+        {
+          "id": "cli-diagnostic-pass",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-cli-diagnostic-fail-fix-pass",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-reviewed-command",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-manual-compaction",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-native-observation",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-after-replacement-write",
+          "status": "passed"
+        },
+        {
+          "id": "tracked-compiled-pending-replacement",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-todo-lost-ack-replacement",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-owned-subtree-removal",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-removal-startup-recovery",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-v2-credential-rollback-reconciliation",
+          "status": "passed"
+        },
+        {
+          "id": "candidate-work-rollback-retention",
+          "status": "passed"
+        },
+        {
+          "id": "rollback-selected-native-lifecycle",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-clone-layout-fresh-install",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-fresh-install-clone",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-fresh-install-rollback",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-seeded-credential-first-boot",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-parent-death-drain",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-durable-journal-roots",
+          "status": "passed"
+        }
+      ],
+      "cleanupFailures": [],
+      "sourceDigest": "5275418f8f6ddf58e5eb500e0dc98a836a0397f81d6efdf368f4aeee8888a467",
+      "remainingMandatoryGates": [],
+      "journals": [
+        {
+          "id": "candidate",
+          "status": "passed",
+          "records": 401,
+          "gapRecords": 0
+        },
+        {
+          "id": "baseline",
+          "status": "passed",
+          "records": 28,
+          "gapRecords": 0
+        },
+        {
+          "id": "parent-death",
+          "status": "passed",
+          "records": 123,
+          "gapRecords": 0
+        }
+      ]
+    },
+    "finalDmg": {
+      "outcome": "unavailable",
+      "reason": "ephemeral GitHub-hosted macOS ARM64 GUI runner required"
+    },
+    "finalChangedLint": "passed",
+    "documentation": "passed",
+    "startupContracts": {
+      "outcome": "passed",
+      "nodeTests": 143,
+      "sharedTests": 1,
+      "uiTests": 74,
+      "webTests": 148
+    },
+    "webSuite": {
+      "outcome": "passed",
+      "vitestTests": 6689,
+      "bunTests": 14
+    },
+    "legacyCompatibility": {
+      "outcome": "passed",
+      "tests": 39
+    }
+  },
+  "historical": {
+    "artifacts": [
+      {
+        "version": "2.0.7",
+        "dmgSha256": "a79c6feba9541a92ad9544cf37014ca872da60ed0469e3a19e20d71f9f08def3",
+        "appSha256": "83e9c3ce19f7cccd0660b86dce6746e437ea9a32a0e69e6ad0526a92fbe804e3",
+        "manifestSha256": "da0024416be697594c01bee3aeb0a9b7765d1542d7f0c271d64dd89f40396880"
+      },
+      {
+        "version": "2.0.8",
+        "dmgSha256": "8077227eb74f5bee1aa3be1e654737446dcf0a75ac9a1e8a7b41385e09697970",
+        "appSha256": "88262d745ebae5355a602257abb1f5433f7aa09cd4a2e59b411bef58bf8a32e3",
+        "manifestSha256": "8cab76147e3a3577de1657a036f35e0b4987a26e6c7dd5b767619437d8fb73ed"
+      }
+    ],
+    "firstTrial": "failed_catalog_readiness_fixture_home_git_boundary",
+    "secondTrial": {
+      "readiness": "passed",
+      "fixtureSubmission": "passed",
+      "gapRecords": 0,
+      "baseline": {
+        "bundleID": "default-native",
+        "revision": 1,
+        "previousBundleID": null,
+        "opencodeVersion": "2.0.26",
+        "artifactManifestSha256": "da0024416be697594c01bee3aeb0a9b7765d1542d7f0c271d64dd89f40396880"
+      },
+      "candidate": {
+        "bundleID": "native-8cab76147e3a3577de1657a0-r1",
+        "revision": 2,
+        "previousBundleID": "default-native",
+        "opencodeVersion": "2.0.26",
+        "artifactManifestSha256": "8cab76147e3a3577de1657a036f35e0b4987a26e6c7dd5b767619437d8fb73ed"
+      },
+      "isolation": "invalid_unexpected_service_launch",
+      "releaseQualified": false
+    },
+    "cleanup": {
+      "observedTestProcessesExited": true,
+      "launchdServiceLabelAbsent": true,
+      "installedProfileFilesInspected": false
+    }
+  },
+  "compiledHistoricalTrial": {
+    "outcome": "failed",
+    "reason": "source_only_historical_asset_refused_as_current_target",
+    "cleanupFailures": []
+  },
+  "performanceOptimization": "none",
+  "cleanup": {
+    "outcome": "passed",
+    "taskOwnedRunDirectoriesRemoved": 7,
+    "serviceLabelAbsent": true,
+    "installedDataDeleted": false,
+    "cacheReport": "passed",
+    "cachePrunePreview": "passed_no_deletions_applied",
+    "cacheUsageGiB": 40.47,
+    "cacheBudgetGiB": 50,
+    "freeDiskGiB": 169.09
+  }
+}

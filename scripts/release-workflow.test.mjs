@@ -23,6 +23,16 @@ test('release graph shares one web build and gates packaging on complete inputs'
   assert.equal(upload.with['include-hidden-files'], true);
 });
 
+test('startup qualification restores the same source inputs as native preparation', () => {
+  const { jobs } = YAML.parse(fs.readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8'));
+  const preparation = jobs['prepare-desktop-electron-macos'].steps.find(step => step.name === 'Install target dependencies');
+  const qualification = jobs['qualify-release-startup'].steps;
+  assert.equal(qualification.find(step => step.uses?.startsWith('actions/setup-node@')).with['node-version'], '24.14.1');
+  assert.equal(qualification.find(step => step.name === 'Install qualification dependencies').run, preparation.run);
+  assert.ok(qualification.some(step => step.run === 'node scripts/hydrate-reviewed-claude.mjs'));
+  assert.match(qualification.find(step => step.name === 'Qualify unchanged final DMG').run, /^node scripts\/qa\/native-startup-benchmark.mjs/);
+});
+
 test('desktop-only release skips npm while requiring all desktop and image gates', () => {
   const workflow = YAML.parse(fs.readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8'));
   const { jobs } = workflow;
@@ -31,8 +41,8 @@ test('desktop-only release skips npm while requiring all desktop and image gates
   const finalize = jobs['finalize-release'];
   assert.match(finalize.if, /always\(\)/);
   assert.match(finalize.if, /outputs.scope == 'desktop-macos-arm64' && needs.publish-npm.result == 'skipped'/);
-  assert.deepEqual(finalize.needs, ['create-release', 'publish-bot-runtime-images', 'verify-bot-runtime-topology', 'build-desktop-electron-macos', 'publish-npm']);
-  for (const prerequisite of ['create-release', 'publish-bot-runtime-images', 'verify-bot-runtime-topology', 'build-desktop-electron-macos']) {
+  assert.deepEqual(finalize.needs, ['create-release', 'publish-bot-runtime-images', 'verify-bot-runtime-topology', 'build-desktop-electron-macos', 'qualify-release-startup', 'publish-npm']);
+  for (const prerequisite of ['create-release', 'publish-bot-runtime-images', 'verify-bot-runtime-topology', 'build-desktop-electron-macos', 'qualify-release-startup']) {
     assert.ok(finalize.if.includes(`needs.${prerequisite}.result == 'success'`));
   }
   assert.equal(jobs['combine-electron-manifests'], undefined);

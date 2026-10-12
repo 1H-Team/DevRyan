@@ -45,7 +45,7 @@ test('preview main keeps origin protections and avoids native bootstrap before w
   const entry = await fs.readFile(new URL('../windows-preview-entry.mjs', import.meta.url), 'utf8');
   assert.ok(entry.indexOf('configureWindowsPreview({') < entry.indexOf("await import('./main.mjs')"));
   assert.match(main, /!isPreview && !isRuntimeServiceControlProbe.*await import\('@openchamber\/web\/server\/lib\/opencode\/runtime-host\/runtime-bundle-binding.js'\)/);
-  assert.match(main, /if \(!isPreview\) await acquireRuntimeOwner/);
+  assert.match(main, /if \(!isPreview\) await runStartupPhase\('ownership_resolved', \(\) => acquireRuntimeOwner/);
   assert.match(main, /isPreview \? createPreviewUpdater\(\) : createDesktopUpdater/);
   assert.match(main, /!isPreview && !app.isDefaultProtocolClient/);
   assert.match(main, /contextIsolation: true/);

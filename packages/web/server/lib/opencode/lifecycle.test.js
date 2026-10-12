@@ -240,3 +240,16 @@ it('a supported runtime below the version pin refuses before launch and names th
  finally{recordStartupBundleUpgradeFailure(null);}
  expect(f.native.start).not.toHaveBeenCalled();
 });
+
+it('a failed same-version artifact upgrade is terminal and keeps its diagnostic',async()=>{
+ const {recordStartupBundleUpgradeFailure}=await import('./runtime-host/bundle-startup-upgrade-status.js');
+ const diagnostic={stage:'reviewed_asset',reason:'reviewed_asset_mismatch',artifact:'DevRyan-Claude-darwin-arm64',purpose:'bundle-source'};
+ recordStartupBundleUpgradeFailure('native_runtime_artifacts_unverified',{diagnostic});
+ try {
+  const f=fixture();
+  await expect(f.runtime.bootstrapOpenCodeAtStartup()).rejects.toMatchObject({code:'native_runtime_artifacts_unverified',diagnostic});
+  expect(f.native.start).not.toHaveBeenCalled();
+  expect(f.state.openCodeStartup).toMatchObject({state:'failed',diagnostic});
+  expect(f.state.isOpenCodeReady).toBe(false);
+ }finally{recordStartupBundleUpgradeFailure(null);}
+});

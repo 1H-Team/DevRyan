@@ -1,6 +1,7 @@
 import {afterEach,expect,test} from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import {userInfo} from 'node:os';
 import {createNativeClaudeEnrollmentOwner} from './native-claude-enrollment.js';
 import {emptyClaudeLifecycle,transitionClaudeLifecycle} from './native-claude-lifecycle.js';
 import {rewriteReviewedClaudeCredentials} from './reviewed-claude-transform.js';
@@ -12,28 +13,106 @@ async function fixture(){
  const source=await fs.readFile(new URL('../../../../runtime/reviewed-inputs/claude-1.8.0/node_modules/@rynfar/meridian/dist/cli-khhjyk04.js',import.meta.url));
  const module=await import('data:text/javascript;base64,'+Buffer.from(rewriteReviewedClaudeCredentials(source)).toString('base64'));
  const records=new Map(),calls=[],published=[];let state=emptyClaudeLifecycle(),valid=true,exchanges=0,beforeExchange=async()=>{},beforeWrite=async()=>{},afterWrite=async()=>{},afterTransition=async()=>{},transitionFault;
- let token={access_token:'fresh-access',refresh_token:'fresh-grant',expires_in:3600,scope:'user:profile user:inference'};
+ let token={access_token:'fresh-access',refresh_token:'fresh-grant',expires_in:3600,scope:'user:profile user:inference'},beforeDelete=async()=>{},removalFault;
  let queue=Promise.resolve();const mutation=action=>{const work=queue.then(action);queue=work.catch(()=>{});return work;};
  const execute=async(file,args)=>{
   expect(file).toBe('/usr/bin/security');const service=args[args.indexOf('-s')+1];calls.push(args[0]);
   if(args[0]==='find-generic-password'){if(!records.has(service))throw Object.assign(new Error('missing'),{code:44});return{stdout:args.includes('-w')?JSON.stringify(records.get(service)):''};}
+  if(args[0]==='delete-generic-password'){expect(args).toEqual(['delete-generic-password','-s',service,'-a',fAccount]);await beforeDelete();if(!records.delete(service))throw Object.assign(Error('missing'),{code:44});return{stdout:''};}
   expect(args[0]).toBe('add-generic-password');expect(args).not.toContain('-U');await beforeWrite(service);
   if(records.has(service))throw Object.assign(new Error('collision'),{code:45});records.set(service,JSON.parse(args[args.indexOf('-w')+1]));await afterWrite();return{stdout:''};
  };
- const options={controlRoot:root,home:root,asset:{},lifecycle:{read:async()=>structuredClone(state),transition:async(revision,action)=>{if(transitionFault)await transitionFault(action);state=transitionClaudeLifecycle(state,revision,action);await afterTransition(action);return state;}},withMutationQueue:mutation,
+ const fAccount=userInfo().username;
+ const options={controlRoot:root,home:root,account:fAccount,asset:{},lifecycle:{read:async()=>structuredClone(state),transition:async(revision,action)=>{if(transitionFault)await transitionFault(action);state=transitionClaudeLifecycle(state,revision,action);await afterTransition(action);return state;}},withMutationQueue:mutation,
   captureBinding:async()=>({principal:'admin',revision:1}),recheckBinding:async()=>{if(!valid)throw Object.assign(new Error('revoked'),{code:'web_authorization_revoked',status:403});},
   publishProfile:async profile=>published.push(profile),loadModule:async()=>module,execute,
+  withProfileRemoval:action=>action(),assertProfileRemoval:async profile=>{if(published.at(-1)?.id===profile.id)throw Object.assign(Error('selected'),{code:'native_claude_enrollment_selected'});},
+  removeProfile:async profile=>{if(removalFault)await removalFault();for(let i=published.length-1;i>=0;i--)if(published[i].id===profile.id)published.splice(i,1);},
+  recheckAfterRemoval:async()=>{if(!valid)throw Object.assign(Error('revoked'),{status:403});},
   fetchImpl:async(url,request)=>{expect(url).toBe('https://platform.claude.com/v1/oauth/token');exchanges++;await beforeExchange();const body=JSON.parse(request.body);expect(body.grant_type).toBe('authorization_code');expect(body.code_verifier).toHaveLength(43);return new Response(JSON.stringify(token));},
  };
  const owner=createNativeClaudeEnrollmentOwner(options);
  const start=async()=>{const pending=await owner.begin({});return{...pending,code:'original-user-code',state:new URL(pending.url).searchParams.get('state')};};
- return{owner,options,start,records,calls,published,get state(){return state;},replaceState:value=>{state=structuredClone(value);},get exchanges(){return exchanges;},revoke:()=>{valid=false;},restore:()=>{valid=true;},token:value=>{token=value;},afterTransition:fn=>{afterTransition=fn;},beforeExchange:fn=>{beforeExchange=fn;},beforeWrite:fn=>{beforeWrite=fn;},afterWrite:fn=>{afterWrite=fn;},transitionFault:fn=>{transitionFault=fn;}};
+ return{owner,options,start,records,calls,published,get state(){return state;},replaceState:value=>{state=structuredClone(value);},get exchanges(){return exchanges;},revoke:()=>{valid=false;},restore:()=>{valid=true;},token:value=>{token=value;},afterTransition:fn=>{afterTransition=fn;},beforeExchange:fn=>{beforeExchange=fn;},beforeWrite:fn=>{beforeWrite=fn;},afterWrite:fn=>{afterWrite=fn;},transitionFault:fn=>{transitionFault=fn;},beforeDelete:fn=>{beforeDelete=fn;},removalFault:fn=>{removalFault=fn;}};
 }
 
 const fullLifecycle=()=>({protocol:'devryan.claude-lifecycle/1',revision:1,unresolved:[],accounts:Array.from({length:64},(_,index)=>({
  profileID:'existing-'+index,service:'Claude Code-credentials-'+index.toString(16).padStart(8,'0'),configDirectory:'/owned/existing/'+index,
  enrollmentID:'existing-'+index,generation:'generation-'+index,grantFingerprint:index.toString(16).padStart(64,'0'),recordFingerprint:(index+64).toString(16).padStart(64,'0'),
 }))});
+
+test('deletes one exact unselected enrollment while retaining the working account and selection',async()=>{
+ const f=await fixture(),first=await f.start();await f.owner.complete(first.enrollmentID,{code:first.code,state:first.state},{});
+ f.token({access_token:'working-access',refresh_token:'working-grant',expires_in:3600});
+ const working=await f.start();await f.owner.complete(working.enrollmentID,{code:working.code,state:working.state},{});await f.owner.select(working.enrollmentID,{});
+ const preserved=structuredClone(f.state.accounts[1]),record=structuredClone(f.records.get(preserved.service));
+ expect(await f.owner.remove(first.enrollmentID,{})).toEqual({enrollmentID:first.enrollmentID,profileID:`devryan-${first.enrollmentID}`,status:'deleted'});
+ expect(f.state.accounts).toEqual([preserved]);expect(f.state.unresolved).toEqual([]);expect(f.records.get(preserved.service)).toEqual(record);
+ expect(f.published.at(-1).id).toBe(preserved.profileID);expect(f.exchanges).toBe(2);
+ await expect(f.owner.remove(working.enrollmentID,{})).rejects.toMatchObject({code:'native_claude_enrollment_selected'});
+ expect(f.records.get(preserved.service)).toEqual(record);await f.owner.close();
+});
+
+test.each([false,true])('deletes incomplete enrollment with missing credential=%s without exchanging or renewing',async missing=>{
+ const f=await fixture(),p=await f.start();f.transitionFault(action=>{if(action.kind==='settle-enrollment')throw Error('fixture interrupted enrollment');});
+ await expect(f.owner.complete(p.enrollmentID,{code:p.code,state:p.state},{})).rejects.toMatchObject({code:'native_claude_enrollment_failed'});
+ if(missing)f.records.clear();f.transitionFault(undefined);
+ expect((await f.owner.list({}))[0].status).toBe('incomplete');
+ expect((await f.owner.remove(p.enrollmentID,{})).status).toBe('deleted');expect(f.state.unresolved).toEqual([]);expect(f.records.size).toBe(0);expect(f.exchanges).toBe(1);await f.owner.close();
+});
+
+test('partial deletion remains listed and retryable after restart, without deleting a changed credential',async()=>{
+ const f=await fixture(),p=await f.start();await f.owner.complete(p.enrollmentID,{code:p.code,state:p.state},{});
+ const original=structuredClone(f.state.accounts[0]);f.removalFault(()=>{throw Error('profile write failed');});
+ await expect(f.owner.remove(p.enrollmentID,{})).rejects.toMatchObject({code:'native_claude_enrollment_failed'});
+ expect(f.state.unresolved[0].phase).toBe('deletion-prepared');expect(f.records.size).toBe(0);await f.owner.close();
+ const restarted=createNativeClaudeEnrollmentOwner(f.options);expect((await restarted.list({}))[0].status).toBe('deleting');
+ f.records.set(original.service,{claudeAiOauth:{accessToken:'foreign',refreshToken:'foreign-grant'}});
+ await expect(restarted.remove(p.enrollmentID,{})).rejects.toMatchObject({code:'native_claude_enrollment_account_changed'});
+ expect(f.records.get(original.service).claudeAiOauth.accessToken).toBe('foreign');
+ f.records.clear();f.removalFault(undefined);expect((await restarted.remove(p.enrollmentID,{})).status).toBe('deleted');
+ expect(f.state.accounts).toEqual([]);expect(f.state.unresolved).toEqual([]);await restarted.close();
+});
+
+test('unavailable missing directory retains exact credential deletion authority, while dangling links refuse',async()=>{
+ for(const linked of [false,true]){
+  const f=await fixture(),p=await f.start();await f.owner.complete(p.enrollmentID,{code:p.code,state:p.state},{});
+  const row=f.state.accounts[0];await fs.rmdir(row.configDirectory);
+  if(linked)await fs.symlink(path.join(f.options.controlRoot,'absent-foreign'),row.configDirectory);
+  expect((await f.owner.list({}))[0].status).toBe('unavailable');
+  if(linked){await expect(f.owner.remove(p.enrollmentID,{})).rejects.toMatchObject({code:'native_claude_enrollment_receipt_invalid'});expect(f.records.size).toBe(1);}
+  else{expect((await f.owner.remove(p.enrollmentID,{})).status).toBe('deleted');expect(f.records.size).toBe(0);}
+  await f.owner.close();
+ }
+});
+
+test('refuses refresh intents, foreign service and record edits before credential deletion',async()=>{
+ for(const fault of ['refresh','service','record']){
+  const f=await fixture(),p=await f.start();await f.owner.complete(p.enrollmentID,{code:p.code,state:p.state},{});const row=f.state.accounts[0];
+  if(fault==='refresh')f.replaceState(transitionClaudeLifecycle(f.state,f.state.revision,{kind:'begin',account:row,attemptID:'active-refresh'}));
+  if(fault==='service')f.replaceState({...f.state,accounts:[{...row,service:'Claude Code-credentials'}]});
+  if(fault==='record')f.records.set(row.service,{claudeAiOauth:{accessToken:'changed',refreshToken:'changed'}});
+  await expect(f.owner.remove(p.enrollmentID,{})).rejects.toMatchObject({code:fault==='refresh'?'native_claude_enrollment_busy':fault==='service'?'native_claude_enrollment_receipt_invalid':'native_claude_enrollment_account_changed'});
+  expect(f.calls).not.toContain('delete-generic-password');expect(f.records.size).toBe(1);await f.owner.close();
+ }
+});
+
+test('nonempty directories and replaced deletion directories remain fenced for explicit recovery',async()=>{
+ const f=await fixture(),p=await f.start();await f.owner.complete(p.enrollmentID,{code:p.code,state:p.state},{});const row=f.state.accounts[0];
+ await fs.writeFile(path.join(row.configDirectory,'unexpected'),'preserve');
+ await expect(f.owner.remove(p.enrollmentID,{})).rejects.toMatchObject({code:'native_claude_enrollment_failed'});
+ expect(await fs.readFile(path.join(row.configDirectory,'unexpected'),'utf8')).toBe('preserve');
+ await fs.rename(row.configDirectory,row.configDirectory+'-original');await fs.mkdir(row.configDirectory,{mode:0o700});
+ await expect(f.owner.remove(p.enrollmentID,{})).rejects.toMatchObject({code:'native_claude_enrollment_receipt_invalid'});
+ expect(f.state.unresolved[0].phase).toBe('deletion-prepared');await f.owner.close();
+});
+test('incomplete deletion distinguishes proved missing credentials from unreadable records',async()=>{
+ const f=await fixture(),p=await f.start();f.transitionFault(action=>{if(action.kind==='settle-enrollment')throw Error('incomplete');});
+ await f.owner.complete(p.enrollmentID,{code:p.code,state:p.state},{}).catch(()=>{});f.transitionFault(undefined);
+ const row=f.state.unresolved[0];f.records.set(row.service,null);
+ await expect(f.owner.remove(p.enrollmentID,{})).rejects.toMatchObject({code:'native_claude_enrollment_persistence_failed'});
+ expect(f.calls).not.toContain('delete-generic-password');expect(f.state.unresolved[0].phase).toBe('enrollment-prepared');await f.owner.close();
+});
 
 test('capacity refusal precedes a URL or issuer exchange and retains every existing account',async()=>{
  const f=await fixture(),full=fullLifecycle();f.replaceState(full);

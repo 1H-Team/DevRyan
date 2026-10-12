@@ -15,6 +15,8 @@ export interface NativeMeridianAttempt extends NativeMeridianAttemptBinding {rea
 export interface NativeCatalogController {readonly instanceID:string;readonly call:(input:{readonly action:'provider-catalog-selection-owned'}&NativeProviderCatalogBinding)=>Promise<unknown>}
 export interface NativeProviderRuntimeOptions {readonly instanceID:string;readonly snapshot:NativeConfigurationSnapshot;readonly registrationOrigin:RegistrationOrigin;readonly controller:()=>NativeCatalogController;readonly isReady:()=>boolean;readonly withMutationQueue:<A>(action:()=>Promise<A>)=>Promise<A>;readonly admissionOwner:Pick<NativeAdmissionOwner,'withProviderAttempt'>;readonly cursor?:CursorSdkRuntime;readonly meridian?:NativeProviderProcessOptions;readonly prepareMeridianProfiles?:(context:{readonly recheck:()=>Promise<void>;readonly signal:AbortSignal})=>Promise<readonly NativeMeridianProfile[]>;readonly claudeCredentials?:NativeClaudeCredentialOptions;readonly claudeSupported?:boolean;readonly fetchImpl?:typeof fetch}
 export function createNativeProviderRuntimeOwner(options:NativeProviderRuntimeOptions):{
+ readonly withClaudeProfileRemoval:<A>(action:()=>Promise<A>)=>Promise<A>;
+ readonly invalidateClaudeProfile:(profileID:string)=>void;
  readonly inspectClaude:(input:{readonly directory:string;readonly kind:'status'|'quota'},context:{readonly recheck:()=>Promise<void>;readonly signal?:AbortSignal})=>Promise<object>;
  readonly catalog:(input:NativeProviderCatalogBinding,context?:{readonly signal?:AbortSignal})=>Promise<readonly unknown[]|null>;
  readonly handleRpc:(method:string,input:unknown,context?:{readonly signal?:AbortSignal})=>Promise<unknown>;

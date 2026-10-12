@@ -164,9 +164,10 @@ test('a canceled attempt cannot read/renew and queued revoked work never exchang
 });
 
 test('native transport accepts only issued access environment and never reads saved credential sources',async()=>{
- const source=await fs.readFile(path.join(repository,'packages/web/server/lib/opencode/runtime-host/native-claude-transport-worker.ts'),'utf8');
+ const source=await fs.readFile(path.join(repository,'packages/web/server/lib/opencode/runtime-host/native-claude-transport-host.js'),'utf8');
  assert.doesNotMatch(source,/prepareClaudeTransportEnvironment|readClaudeAccessToken|\.credentials\.json/);
- assert.match(source,/const env=\{\.\.\.process.env,CLAUDE_CONFIG_DIR:state,DEVRYAN_EXECUTION_WORKER:'1'\}/);
+ assert.match(source,/env\.CLAUDE_CODE_OAUTH_TOKEN = credential\.accessToken/);
+ assert.match(source,/env\.CLAUDE_CONFIG_DIR = state/);
 });
 
 
@@ -242,6 +243,15 @@ test('status/quota resolution does not renew, write credentials, migrate fences 
  assert.equal((await owned.owner({profileID:'one',purpose:'request'},{...owned.context(),readOnly:true})).accessToken,'token-A');
  assert.deepEqual(owned.state(),before);assert.equal(owned.exchanges(),0);assert.ok(owned.operations.every(([operation])=>operation==='find-generic-password'));
  const expired=fixture({expiresAt:Date.now()-1});await assert.rejects(expired.owner({profileID:'one',purpose:'request'},{...expired.context(),readOnly:true}),/claude_credentials_expired/);assert.equal(expired.exchanges(),0);
+});
+test('durable profile deletion refuses cached inference and inspection credential access without renewal',async()=>{
+ const owned=fixture(),account=owned.state().accounts.find(row=>row.profileID==='one');
+ const {grantFingerprint:_grant,recordFingerprint,...binding}=account;void _grant;
+ await owned.lifecycle.transition(owned.state().revision,{kind:'prepare-deletion',binding,attemptID:'delete-one',recordFingerprint,directoryDevice:1,directoryInode:2});
+ const before=owned.state();
+ for(const readOnly of [false,true])await assert.rejects(owned.owner({profileID:'one',purpose:'request'},{...owned.context(),readOnly}),/native_claude_refresh_unsettled/);
+ assert.equal((await owned.owner({profileID:'two',purpose:'request'},owned.context())).accessToken,'other-A');
+ assert.deepEqual(owned.state(),before);assert.equal(owned.exchanges(),0);assert.ok(owned.operations.every(([operation])=>operation==='find-generic-password'));
 });
 test('prepared publication failure never writes a vendor credential or repeats issuer exchange',async()=>{
  const owned=fixture({expiresAt:Date.now()+1000});owned.onTransition(operation=>{if(operation.kind==='prepare')throw new Error('synthetic_kv_prepare_failure');});

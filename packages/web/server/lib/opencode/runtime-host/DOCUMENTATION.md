@@ -1,5 +1,40 @@
 # Native startup catalog diagnostics
 
+## Mandatory startup contract
+
+`native-artifacts.js` bounds manifest reads and keeps every integrity check before
+execution. Verification failures retain the public code
+`native_runtime_artifacts_unverified` and a sanitized stage, reason, basename and
+verification purpose. The same manifest reader covers first provisioning and
+cold upgrade detection. Early failures emit the safe envelope before a journal
+exists; composed native failures add it to the bundle/controller journal event.
+`bundle-startup-upgrade-status.js` carries it to lifecycle health, including a
+failed repair at the same OpenCode version. A recorded failed repair cannot
+silently launch the old selected runtime as though startup succeeded.
+
+First-run setup preserves explicit background-service opt-out and disabled Bot
+runtime preferences. It still excludes prior service registration and ownership
+state, so provisioning cannot silently turn a user's opt-out into registration.
+
+Existing startup timing records now include manifest payload hashing, signature
+verification, first-install artifact retention/preparation/selection and binding.
+Shell visibility and ownership resolution precede binding/controller readiness;
+renderer directory/session readiness and the global event-stream ACK complete
+the contract. These observations do not bypass checks or cache verification.
+The existing matched benchmark still requires at least 5% median improvement and
+every candidate pair faster before retaining a performance optimization.
+
+## Managed tool capability advertising
+
+`managed-task.ts` registers only the enabled optional actions: `wait_any` follows
+`waitAny`; `checkpoint`, `decisions`, and `remember_decision` follow
+`contextProjection`. `native-runtime-owner.js` supplies these flags from the
+managed scheduler's capability projection at controller startup, overriding
+caller environment values. Disabled actions and their fields never enter the
+model's tool schema. `DEVRYAN_CAPABILITY_TOOL_SCHEMA=0` retains the full schema
+for rollout compatibility; host policy checks still govern execution. Retained
+calls decode against the complete contract without acquiring new authority.
+
 ## Host helper and title ownership
 
 `native-configuration-snapshot.js` applies `runtime-helper-agents.js` after saved
@@ -33,10 +68,45 @@ with a bounded projection of model IDs and exact string-valued variant parameter
 Cancellation waits for the owned process termination receipt before releasing
 authority; an unconfirmed receipt remains `native_process_settlement_unconfirmed`.
 The signal stays local and is excluded from stored scopes, RPC and worker payloads.
+`cursor_catalog` journal phases (`key_resolved`, `worker_started`, `worker_result`,
+`settled`) report elapsed time from the same start and a bounded settlement outcome,
+including admission reads with no session. Native Stop also cancels prompt-time
+catalog startup and awaits worker termination, transcript persistence and grant
+cleanup before confirming success. It keeps busy until that settlement; compatibility
+hosts retain their immediate abort behavior. First emitted text timing counts only
+assistant answer text, excluding replayed user input and reasoning.
+Preparation forwards cancellation and journal phase observations through the
+execution owner, and a rejected start waits for no-launch cleanup before releasing
+its grant. Parent cancellation fences new dispatch immediately; only the completed
+cancelled transcript, after the owned termination outcome or no-launch cleanup,
+uses the same live task lease's private settlement proof. Scope, controller epoch,
+revision, generation and execution selection remain checked, and terminal tasks
+cannot reuse this proof. `cursor_persistence` failure diagnostics retain only
+allowlisted error codes and message identities. Native abort propagates final
+transcript persistence failure after cleanup rather than confirming success. Terminal-only `cursor_persistence` phases locate the SDK queue,
+owner callback and local save (`sdk_queued` through `sdk_settled`) and the native
+start/receipt/check/lease/assert/call/recheck boundaries (`native_entered` through
+`native_settled`). Each marker contains only session/message IDs, phase, start
+time, elapsed time and an optional bounded failure code. Observer failures do
+not affect settlement; canonical idle can precede the final persistence reply
+and these markers do not change the authoritative busy/idle boundary. SDK
+persistence replaces only a pending tail snapshot for the same assistant message;
+user records, distinct messages and awaited terminal/error writes keep their
+ordered barriers. The executing snapshot is immutable, so a later completion
+cannot turn an earlier streaming write into a terminal record. Full cloning
+occurs only when a queued snapshot actually writes, rather than on every delta.
 Authority refusals retain their safe native code; catalog deadline exhaustion is
 the separate transient `native_cursor_catalog_timeout`. Timed public discovery
 returns declared fallback metadata after cleanup, while admission never publishes a
 late cancelled result or admits a task after cancellation.
+
+After an SDK catalog successfully commits, Cursor emits the existing host SSE
+event `openchamber:provider-catalog` with only `providerID: cursor-acp`, the
+accepted request `directory` and `source: sdk`. An empty directory identifies
+the compatibility global scope. The first admitted directory adoption of each
+committed SDK records generation also emits; repeated cached reads, declared
+fallback and failed or cancelled discovery stay silent. UI consumers invalidate only their matching
+active directory. Observer failure cannot replace the committed catalog.
 
 `native-runtime-owner.js` exposes constructor-only `withManagedCursorCatalog`
 for exact directory/root/agent/provider/model/variant validation. Initial and
@@ -91,6 +161,13 @@ revoked authorization and unrelated credential replacement still fail. Session
 correlation includes the credential request's binding, allowing title and primary
 request resolution to be traced independently.
 
+Anthropic requests retain their native parser and physical-attempt scope. The
+controller accepts only `/v1/messages` and the native `/messages` alias produced
+by saved legacy root base URLs; both target `/v1/messages` on the owned Meridian
+origin. Other path prefixes, token-count routes, user information and fragments
+remain refused. Owned headers replace prepared credentials, and the attempt is
+released on completion, refusal or cancellation.
+
 Claude inspection uses the implicit default account when there are no saved
 profiles, the sole profile when there is one, and the exact configured default
 when there are several. An ambiguous selection stays unavailable. Ordinary
@@ -104,6 +181,71 @@ and to the default location (`locations[0]`) otherwise, so a registered project
 outside the bundle's project map can still list, start, complete and select
 enrollments. A bundle with no reviewed default location still refuses with
 `native_claude_enrollment_location_unreviewed`.
+
+Dedicated profile deletion uses the same administrator binding and credential
+mutation queue. It refuses selected profiles, including the implicit first saved
+profile; the user must explicitly select another first. The private provider fence
+refuses active attempts, inspection or worker startup and blocks new Claude work
+until deletion settles. Only the exact lifecycle enrollment, generation, canonical
+directory and derived credential service confer deletion authority. Reviewed store
+reads must match both saved record and grant fingerprints before the exact owned
+Keychain service/account is deleted; deletion performs no renewal or issuer revoke.
+A missing incomplete credential is allowed, while unreadable or changed records
+remain refused. An absent directory can still have an owned credential; dangling
+links and recreated directory identities refuse.
+
+`prepare-deletion` records a durable `deletion-prepared` intent before mutation,
+retaining fingerprints and the observed directory identity. It fences credential
+access, selection and bundle clone authority. The profile file owner checks its
+original byte baseline and preserves other profiles and settings; directories are
+removed nonrecursively. Partial failures stay listed as `deleting` and can be retried
+with fresh administrator authority. `settle-deletion` removes only the matching
+enrollment after cleanup. Successful UI deletion refreshes the runtime configuration.
+Removal of a profile present in the provider's saved configuration invalidates
+that cache as soon as the profile file mutation succeeds, including partial cleanup.
+Claude attempts and inspection then refuse until reconfiguration retires the owner.
+Deleting an unpublished incomplete profile does not invalidate the working provider.
+
+The reviewed macOS Claude Code asset is pinned to 2.1.280, the minimum version
+required by the saved Opus 5.5 selection. The existing npm hydrator verifies the
+archive integrity and exact binary hash/size; native build/startup signature checks
+remain required. Meridian and Agent SDK versions are unchanged. Windows retains
+its separately qualified executable pins.
+
+Claude subprocesses launch through `native-claude-transport-host.js` on the host,
+using the provider worker's existing private IPC. Applying a second execution
+supervisor inside the already confined Meridian worker fails at `setpgid` before
+the Claude executable starts. The host admits only an issued attempt for its exact
+session, directory and profile, verifies the immutable executable, and resolves
+access credentials itself. Workers cannot supply a command or environment.
+The original model pins, effort arguments, quiet settings and account/directory
+state key remain intact. Every launch uses the accepted read-only supervisor,
+including its protected read roots, scoped state writes and termination receipt.
+The synchronous SDK child adapter streams bounded chunks; stdin advances only
+after host write acknowledgments. Cancellation, attempt retirement and shutdown
+await the physical supervisor. Infrastructure refusals retain finite transport
+errors and exit 125 instead of becoming a misleading generic exit-one auth error.
+The obsolete nested `--claude-transport-worker` entry is no longer accepted.
+
+New builds and activation candidates require the current reviewed Claude pin.
+Bundle cloning and explicit rollback alone may verify the exact previously
+reviewed macOS ARM64 Claude 2.1.251 identity (digest, size, mode and signature).
+These constructor-owned `bundle-source`/`bundle-rollback` purposes never come
+from HTTP metadata; prepared targets and retained-candidate resume stay current-only.
+An explicit rollback selector grants its historical purpose at load and before
+spawn. Cold upgrades use `upgradeSelectedNativeBundleAtStartup` inside the existing
+bootstrap file lock, before any controller or data owner starts, preserving the
+verified source and credential checkpoint through the ordinary lifecycle.
+
+Claude stderr is drained into a finite, constructor-scoped process receipt
+reported as `native_claude_process` through the existing diagnostic journal.
+Receipts retain exit code, signal presence, bounded byte counts and allowlisted
+clues for explicit HTTP/auth, model/argument/configuration, launcher/module/syntax,
+permission, connection and native receipt failures. Numeric matching state spans
+chunks without retaining stderr text. Unknown text stays unknown; exit code 1
+does not establish an auth failure. Diagnostics do not change provider errors,
+streams, credentials or process cleanup. Updated compiled provider workers are
+required to emit this private protocol observation; older workers remain usable.
 
 ## Startup diagnostics
 
@@ -215,6 +357,16 @@ share writable inodes. Large file hashes stream through SHA-256 rather than
 buffering whole executables. Source/destination verification, signatures,
 SQLite snapshotting, checkpoint ownership and selector CAS remain mandatory.
 
+Harness relocation retains the immutable baseline `projectMap`. Additional
+projects registered through the normal project settings owner are preserved at
+their exact canonical directory, using the checkpointed settings copied into
+the candidate. This identity allowance covers harness records and derived task
+context keys; it grants no parent, sibling or descendant scope. Symlinks and
+private source/candidate bundle paths remain closed, and an unregistered
+directory still fails with `bundle_harness_directory_unmapped`.
+Removed registered projects retain these historical identities without becoming
+executable locations; recreated symlink or noncanonical directories still refuse.
+
 Startup binding reads sealed bundle documents with the same 32 MiB
 `BUNDLE_DOCUMENT_MAX_BYTES` limit used by bundle storage and native boot
 verification, checking both file metadata and bytes read. Hash, canonical-path
@@ -248,3 +400,15 @@ cleans the exact scope-matched `ready` control lease and rethrows the original
 failure. `recoverExecutionLeases` also settles owner-less control leases left by
 earlier builds. The [incident audit](../../../../../../docs/audits/2026-10-11/bundle-execution-unsettled/README.md)
 records the evidence.
+
+## Claude updates in About
+
+The shared UI's `ClaudeCodeVersionSection.tsx` displays the running bundle's
+Claude identity through `../claude-runtime-update.js`. The public registry check
+is informational. Applying a verified bundle reuses `BundledRuntimeUpdate.tsx`
+and the existing runtime bundle lifecycle; no runtime pin, executable integrity
+check, credential checkpoint or rollback rule is relaxed. The reusable update
+control accepts a refresh key after an explicit About check and reports pending
+mutations so About cannot refresh away an in-flight transition. It disables its
+mutations while About is checking. App-delivered Claude upgrades use the ordinary
+DevRyan update dialog and its existing download/restart path.

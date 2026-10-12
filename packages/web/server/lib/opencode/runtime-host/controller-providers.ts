@@ -70,11 +70,11 @@ export function createControllerProviders(options:ControllerProvidersOptions){
     const finalHandler:typeof handler=sent=>Effect.gen(function*(){
      yield* rpc('provider.meridian.assert',binding(owned.binding));current(location.directory);
      const physical=yield* HttpClientRequest.toWeb(sent);const url=new URL(physical.url);
-     if(url.username||url.password||url.hash||url.pathname!=='/v1/messages')fail('native_meridian_route_unreviewed');
+     if(url.username||url.password||url.hash||!['/v1/messages','/messages'].includes(url.pathname))fail('native_meridian_route_unreviewed');
      const headers=new Headers(physical.headers);headers.delete('anthropic-beta');headers.delete('x-api-key');headers.set('authorization','Bearer '+owned.binding.authorization);headers.set('x-devryan-provider-attempt',owned.binding.attemptID);
      headers.set('x-devryan-directory',encodeURIComponent(location.directory));headers.set('x-opencode-directory',encodeURIComponent(location.directory));
      headers.set('x-opencode-session',input.session.id);headers.set('x-opencode-request',owned.requestID);headers.set('x-opencode-agent-name',owned.agentName);headers.set('x-opencode-agent-mode',owned.agentMode);
-     const target=new Request(owned.binding.origin+url.pathname+url.search,new Request(physical,{headers}));
+     const target=new Request(owned.binding.origin+'/v1/messages'+url.search,new Request(physical,{headers}));
      let next=HttpClientRequest.fromWeb(target);if(target.body)next=HttpClientRequest.bodyUint8Array(next,new Uint8Array(yield* Effect.promise(()=>target.clone().arrayBuffer())),target.headers.get('content-type')??undefined);
      return yield* handler(next);
     });

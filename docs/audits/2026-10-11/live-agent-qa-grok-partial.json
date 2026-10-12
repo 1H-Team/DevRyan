@@ -1,0 +1,236 @@
+{
+  "qualification": "partial-live-journey; UI implementation blocked before generation",
+  "rootSessionId": "ses_ed2a9fa10ffecC3CGNFm9t0MJF",
+  "sourceSha256": "6b8d8d865d4e12f32917c936d3db3c4cc4234c485b65082ec75b639e052ef6ec",
+  "nativeBundleRevision": 5,
+  "nativeManifestSha256": "ba5962b369c19b03fc08c18554ae9ab4a5cdcb1e685979dd176a0fe0662bed69",
+  "plan": {
+    "sha256": "20130e231aadfba1d5085981bde267522ce49c240f7ddec20cb0c2c1705fd428",
+    "sourceMessageId": "msg_12d59b6dd001HaZR346sWCcYUM",
+    "userMessageId": "msg_12d596ec000173j6RDfNsF7aVO",
+    "checks": [
+      {
+        "id": "project.user-edit-and-requirements",
+        "passed": true
+      },
+      {
+        "id": "project.no-added-dependencies",
+        "passed": true
+      },
+      {
+        "id": "project.original-tests-retained",
+        "passed": true
+      },
+      {
+        "id": "project.branch-and-history",
+        "passed": true
+      },
+      {
+        "id": "project.plan-only",
+        "passed": true
+      },
+      {
+        "id": "project.saved-plan",
+        "passed": true
+      }
+    ]
+  },
+  "tools": [
+    {
+      "requestId": "msg_12d560689001t9Bn5wNIdnUvtz",
+      "callId": "call_QmYgjhIdTLT6GihTqgqljHNn",
+      "tool": "read",
+      "status": "completed",
+      "time": {
+        "start": 1791762137483,
+        "end": 1791762137896
+      },
+      "assertionFailure": false
+    },
+    {
+      "requestId": "msg_12d560689001t9Bn5wNIdnUvtz",
+      "callId": "call_b82bc64aedef40e79967aafc851a3380",
+      "tool": "bash",
+      "status": "completed",
+      "command": "node --test test/tasks.test.mjs",
+      "time": {
+        "start": 1791762150182,
+        "end": 1791762151605
+      },
+      "exit": 1,
+      "assertionFailure": false
+    },
+    {
+      "requestId": "msg_12d5bd443001U75F2VMZPHBHUt",
+      "callId": "call_83f69cb30f2a45ff9c617db9a48056b8",
+      "tool": "bash",
+      "status": "completed",
+      "command": "node --test test/tasks.test.mjs",
+      "time": {
+        "start": 1791762362721,
+        "end": 1791762364188
+      },
+      "exit": 1,
+      "assertionFailure": true
+    },
+    {
+      "requestId": "msg_12d5bd443001U75F2VMZPHBHUt",
+      "callId": "call_0d774a4045994de0801f232bff967106",
+      "tool": "read",
+      "status": "completed",
+      "time": {
+        "start": 1791762650448,
+        "end": 1791762651656
+      },
+      "assertionFailure": false
+    },
+    {
+      "requestId": "msg_12d5bd443001U75F2VMZPHBHUt",
+      "callId": "call_YDGsSCep8rgSo6ynXdokRyYG",
+      "tool": "bash",
+      "status": "completed",
+      "command": "node --test test/tasks.test.mjs",
+      "time": {
+        "start": 1791762656789,
+        "end": 1791762658356
+      },
+      "exit": 0,
+      "assertionFailure": false
+    },
+    {
+      "requestId": "msg_12d5bd443001U75F2VMZPHBHUt",
+      "callId": "call_b082b3a0ed394d5d90190031bc4e9b94",
+      "tool": "bash",
+      "status": "completed",
+      "command": "npm test",
+      "time": {
+        "start": 1791762663208,
+        "end": 1791762666128
+      },
+      "exit": 0,
+      "assertionFailure": false
+    }
+  ],
+  "tasks": [
+    {
+      "taskId": "dvr_task_e94eaa1c0fae472ca889001db7396527",
+      "childSessionId": "ses_ed2a9b6ddffeUh0W7wJoNzWWU1",
+      "agent": "explorer",
+      "providerId": "cursor-acp",
+      "modelId": "grok-4.6",
+      "variant": "medium",
+      "status": "completed",
+      "startedAt": 1791761990633,
+      "finishedAt": 1791762105747,
+      "failureReason": null
+    },
+    {
+      "taskId": "dvr_task_ca3ea576faad4a7ba3e54445f4bab8b5",
+      "childSessionId": "ses_ed2a9b5b8ffebOj9wiiAWFDhsz",
+      "agent": "explorer",
+      "providerId": "cursor-acp",
+      "modelId": "grok-4.6",
+      "variant": "medium",
+      "status": "completed",
+      "startedAt": 1791761991691,
+      "finishedAt": 1791762101701,
+      "failureReason": null
+    },
+    {
+      "taskId": "dvr_task_01f19dfd7ffa42cebf95d283237a5e30",
+      "childSessionId": "ses_ed2a2af51ffeDietc30x6AihM6",
+      "agent": "fixer",
+      "providerId": "openai",
+      "modelId": "gpt-6.1-sol",
+      "variant": "medium",
+      "status": "completed",
+      "startedAt": 1791762451611,
+      "finishedAt": 1791762614203,
+      "failureReason": null
+    },
+    {
+      "taskId": "dvr_task_eaa1ea922d324ae19b1213a23ed53266",
+      "childSessionId": "ses_ed2a2ae05ffeJ63GYgkcZdc467",
+      "agent": "designer",
+      "providerId": "anthropic",
+      "modelId": "claude-opus-5-5",
+      "variant": "medium",
+      "status": "failed",
+      "startedAt": 1791762452295,
+      "finishedAt": 1791762457667,
+      "failureReason": "DevRyan refused controller.providers: native_meridian_route_unreviewed"
+    }
+  ],
+  "cursorTerminalPersistence": [
+    {
+      "taskId": "dvr_task_e94eaa1c0fae472ca889001db7396527",
+      "totalMs": 4536,
+      "nativeTerminalWrites": 1,
+      "managedCompletionDelayMs": 4
+    },
+    {
+      "taskId": "dvr_task_ca3ea576faad4a7ba3e54445f4bab8b5",
+      "totalMs": 6231,
+      "nativeTerminalWrites": 1,
+      "managedCompletionDelayMs": 3
+    }
+  ],
+  "explorerRunningOverlapMinimumMs": 101324,
+  "backendChecks": [
+    {
+      "id": "project.user-edit-and-requirements",
+      "passed": true
+    },
+    {
+      "id": "project.no-added-dependencies",
+      "passed": true
+    },
+    {
+      "id": "project.original-tests-retained",
+      "passed": true
+    },
+    {
+      "id": "project.branch-and-history",
+      "passed": true
+    },
+    {
+      "id": "project.independent-probe-completed",
+      "passed": true
+    },
+    {
+      "id": "project.summary",
+      "passed": true
+    },
+    {
+      "id": "project.monotonic-events",
+      "passed": true
+    },
+    {
+      "id": "project.priority-domain",
+      "passed": true
+    },
+    {
+      "id": "project.persistence",
+      "passed": true
+    },
+    {
+      "id": "project.http-and-restart",
+      "passed": true
+    }
+  ],
+  "changedPaths": [
+    "src/store.mjs",
+    "src/tasks.mjs",
+    "test/http-priorities.test.mjs",
+    "test/store-priorities.test.mjs",
+    "test/task-priorities.test.mjs"
+  ],
+  "uiImplemented": false,
+  "journalGaps": 0,
+  "cleanup": {
+    "rootObserved": true,
+    "observationErrors": [],
+    "remainingProcessIds": [],
+    "trackingClosed": true
+  }
+}

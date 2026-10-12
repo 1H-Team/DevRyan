@@ -14,6 +14,15 @@ with relocated projects and private configuration/data roots. The runtime payloa
 failed attempts keep everything, under `.cache/v2-validation/package-*/result.json`; incomplete
 mandatory lanes, changed source or incomplete cleanup keep the exit nonzero.
 This command does not activate a bundle in the installed app.
+The Darwin ARM64 ripgrep fixture comes from the frozen Bun install's
+`@cursor/sdk-darwin-arm64` package, with its exact SHA-256 asserted before use.
+Qualification never depends on a previous QA run's cached executable.
+
+Release startup invokes this same qualification against the final DMG's extracted
+native inventory. Historical upgrade profiles are created by their own unchanged
+released apps in the GUI lane; the compiled lane never admits an old source-only
+asset as a new current target. The release receipt requires this lane
+and the unchanged app's GUI startup scenarios; either lane alone is insufficient.
 
 Every compiled host (the package process, each fresh lifecycle driver and the
 parent-death owner) also writes the production web diagnostic journal into its

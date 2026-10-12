@@ -72,7 +72,8 @@ export async function runSelectedNativeLifecycle({ controlRoot, descriptor, conf
   assert.equal(records.some(record => alive(record.childPid)), false, 'Selected native lifecycle left a companion process alive');
   if (failure) throw failure;
   assert.equal(timedOut, false, 'Selected native lifecycle timed out'); assert.ok(bytes <= 65536);
-  assert.equal(exit.code, 0, `Selected native lifecycle failed; inspect ${logFile}`); assert.equal(exit.signal, null);
+  const childError = Buffer.concat(errors).toString('utf8').split('\n').find(line => line.startsWith('[native-lifecycle] '));
+  assert.equal(exit.code, 0, childError ?? `Selected native lifecycle failed; inspect ${logFile}`); assert.equal(exit.signal, null);
   const lines = Buffer.concat(chunks).toString('utf8').trim().split('\n'); assert.equal(lines.length, 1);
   const result = JSON.parse(lines[0]); assert.equal(result.status, 'passed'); assert.ok(records.length === 2);
   return { ...result, hostIdentity, exit, controllerPIDs: records.map(record => record.childPid), actualExitConfirmed: true };
