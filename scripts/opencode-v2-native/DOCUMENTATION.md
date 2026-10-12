@@ -84,6 +84,9 @@ exactly one canonical continuation, and another real writer after replacement.
 The separate parent-death fixture waits for a real confined shell, kills only
 its owned Node process, and checks every observed descendant plus both real
 controller and worker termination receipts before requiring no publication.
+The real-tool readiness budget is five minutes because it includes cold sealed
+bundle provisioning. Once the owner is killed, receipt and descendant checks
+retain their separate fifteen-second deadlines.
 Its explicit constructor-owned local grant is smoke-test policy; it does not
 substitute for production authentication contract tests. Release signing and
 other-platform support remain separate qualification gates.

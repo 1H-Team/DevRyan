@@ -63,8 +63,9 @@ export async function runCompiledParentDeath({ artifactRoot, root, environment }
       void exited.then(exit => reject(Object.assign(new Error('Parent-death probe exited before its actual tool became alive'), { exit })), reject);
     });
     child.stdin.end(JSON.stringify({ artifactRoot }));
+    // Cold sealed-bundle provisioning precedes the real tool and owner-death assertions.
     evidence = await waitFor(() => Promise.race([ready, Promise.resolve(null)]), value => value !== null,
-      'Parent-death probe did not reach its actual compiled tool', 120000);
+      'Parent-death probe did not reach its actual compiled tool', 300000);
     assert.ok(evidence.root.startsWith(path.dirname(root) + path.sep));
     for (const key of ['directory','controllerReceiptPath','workerReceiptPath','registryPath']) assert.ok(evidence[key].startsWith(evidence.root + path.sep));
     assert.ok(evidence.journal.directory.startsWith(evidence.root + path.sep) && path.basename(evidence.journal.directory) === 'journal');

@@ -23,6 +23,35 @@ checks passed. The completed initial run also passed all 4,117 UI tests and ever
 other test-owning workspace. These rechecks complete the failed invocation's
 coverage; the original `validate:full` invocation is not reported as a pass.
 
+## First release candidate
+
+The [first qualification receipt](qualification-attempt-1.json) belongs to source
+`abbb535526ce2d527fffced7224af55f23c37ecb` and
+[workflow 38317426952](https://github.com/1H-Team/DevRyan/actions/runs/38317426952).
+Packaging, signed Bot images and topology checks passed. The final-DMG gate
+passed GUI prerequisites and fifty compiled cases, then failed while waiting
+120 seconds for the parent-death child to reach its actual compiled-tool barrier.
+No GUI startup scenario ran, and the release remained a draft.
+
+That child log and its journal roots were not retained in the CI artifact;
+their gap checks are unavailable. No conclusion about that child's internal
+runtime failure is claimed. The exact failed DMG was downloaded, hash-checked,
+mounted read-only and copied into a private repository fixture. Its isolated
+parent-death lane passed in 66.8 seconds, including real confined supervisor
+termination receipts, descendant exit, empty registry and no publication.
+The [sanitized reproduction receipt](parent-death-reproduction.json) records
+122 journal records, ten sealed chunks, reconciled writer evidence and a
+successful `gaps --verify` command with zero gaps.
+
+The fixture readiness allowance now includes up to five minutes of cold sealed
+bundle provisioning. Actual-tool, owner-death, termination, publication and
+journal assertions are unchanged, including the fifteen-second termination
+deadlines. This is a fixture timing correction; it does not establish the cause
+of the missing CI child evidence or qualify the entire installer locally.
+The corrected source must receive a fresh complete release qualification.
+The full script suite and documentation validation passed after the readiness
+budget correction; no assertions or qualification cases were removed.
+
 ## Hosted migrations
 
 The [migration receipt](migration-verification.json) records the successful

@@ -1,0 +1,32 @@
+{
+  "outcome": "passed",
+  "source": "abbb535526ce2d527fffced7224af55f23c37ecb",
+  "installerSha256": "72142fd6c1a4e518fa8ac008dca4e628d508047b45d0cfa20fad5ded5c0c7a98",
+  "elapsedMs": 66764.56495900001,
+  "scope": "isolated compiled parent-death lane from exact failed installer; not full release qualification",
+  "supervisorReceipts": [
+    {
+      "confined": true,
+      "cancelled": true,
+      "terminated": true,
+      "exitCode": 137
+    },
+    {
+      "confined": true,
+      "cancelled": true,
+      "terminated": true,
+      "exitCode": 137
+    }
+  ],
+  "terminatedDescendants": 7,
+  "registryEmpty": true,
+  "journal": {
+    "status": "passed",
+    "records": 122,
+    "chunks": 10,
+    "openChunks": 0,
+    "gapCommandExitCode": 0,
+    "gapRecords": 0,
+    "teeReasons": []
+  }
+}
