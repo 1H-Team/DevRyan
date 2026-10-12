@@ -121,7 +121,7 @@ export function createExecutionPreparations({ runtime, onDiagnostic, owner, poll
 }
 
 /** One uncertain lease must not prevent unrelated recoverable work settling. */
-export async function recoverExecutionLeases({ runtime, directory, ownerLost, onFailure }) {
+export async function recoverExecutionLeases({ runtime, directory, launcher, ownerLost, onFailure }) {
   const abandoned = async (lease) => {
     if (!lease.ownerID) {
       // Earlier builds reserved native control leases without an owner. Such a
@@ -135,7 +135,7 @@ export async function recoverExecutionLeases({ runtime, directory, ownerLost, on
   for (const lease of await runtime.activeLeases({ directory })) {
     try {
       if (!await abandoned(lease)) continue;
-      if (lease.executionKind === 'process') await readSessionExecutionReceipt(lease);
+      if (lease.executionKind === 'process') await readSessionExecutionReceipt(lease, { launcher });
       await runtime.cancelLease(lease);
     } catch (cause) { onFailure(cause); }
   }

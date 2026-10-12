@@ -18,6 +18,20 @@ processes.
 Host packages inject storage roots and platform effects. The shared UI never
 imports this package; it consumes HTTP bridge contracts.
 
+`lib/session-reboot-recovery.js` owns the versioned
+`devryan.session-reboot-recovery/1` lease attestation. A cold native host must
+first establish an exact locked fence and a changed kernel boot identity. The
+helper accepts only a claimed ready process lease matching its original hash,
+records a terminal cancelled lease with an uncertain outcome, and retains its
+private view. The `cleaned` terminal marker disables ordinary deletion; the
+`retained` proof states why the view remains. This is not a supervisor receipt:
+it asserts neither confinement, exit code, success nor non-execution. Stable
+token/owner/scope identity survives bundle relocation. Original-record hashing
+is used only to resume the same partially applied recovery fence. Historical
+lease refs are retained by the native host under its explicit recovery ref.
+Execution outcome queries never report this lease as `never_started`, and
+`cancelUnstartedCall` refuses to reclassify its uncertainty.
+
 ## Storage
 
 `createHarnessPaths({ rootDir })` creates a `harness/` namespace below a host

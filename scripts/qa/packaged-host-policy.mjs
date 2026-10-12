@@ -54,7 +54,7 @@ export async function preparePackagedQaHost({ app, env = process.env, resourcesP
   // Global OS protocol ownership is outside this private Coding Agents fixture.
   app.isDefaultProtocolClient = () => true;
   app.setAsDefaultProtocolClient = () => false;
-  const evidence = { isPackaged: app.isPackaged, packagedMain: 'dist-bundle/main.mjs',
+  const evidence = { isPackaged: app.isPackaged, packagedMain: 'dist-bundle/entry.mjs',
     webDist: env.OPENCHAMBER_DIST_DIR, privateHome: home, privateProfile: profile, logs,
     globalProtocolRegistration: 'suppressed-for-qa', backgroundBotService: 'disabled-for-qa',
     personalShellConfiguration: 'excluded-by-private-ZDOTDIR', operatingSystemKeychain: 'mocked-for-qa' };

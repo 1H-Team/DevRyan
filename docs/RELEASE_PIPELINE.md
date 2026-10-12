@@ -85,7 +85,7 @@ every workspace's build script. Full validation remains separate from compilatio
    uses Node 24.14.1, matching the pinned Electron 41.2.1 host, for the compiled
    acceptance lifecycle and restores the same
    dependency layout and reviewed Claude executable as native preparation. Its receipt
-   binds all ten startup scenarios to the source and installer digest, requires
+   binds all eleven startup scenarios to the source and installer digest, requires
    zero journal gaps and complete cleanup, and rejects retried qualification.
    Finalization verifies that receipt and the exact asset
    allowlist, uploaded state, non-empty size, and those packaging digests.

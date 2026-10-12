@@ -671,7 +671,7 @@ Generation-2 manual and natural compaction grading reads the same journal. Each 
 - `packaged-service-smoke.mjs`: directly launches the actual packaged `--runtime-service` three times in a private repository fixture, verifies PID/start identity and owner/descriptor generation, unauthenticated handshake/bootstrap/lease refusal, no model sends before a desktop lease, physical drain and restart. Package/source identities are checked before and after; it never registers a launchd job. Registration, authenticated desktop leases and live providers remain separate gates.
 
 - `native-startup-benchmark.mjs`: three packaged app-bound launches using fresh private profiles, an explicit verified native artifact and a local model fixture. Optional `--baseline-artifact-root` exercises production startup upgrade and verifies the selector revision, previous bundle and exact packaged candidate. Requires the native catalog, composer, exact model/agent tuple, sessions and the renderer's global event-stream readiness acknowledgment. Records first-document timings without reloading; foreground service registration scenarios remain unavailable in this isolated harness. `DEVRYAN_QA_CATALOG_CONFIG` may point to a sanitized reproduction `providers.json` under repository `.cache/sessions/`; the runner sanitizes its shapes again and requires every supplied Cursor model in the packaged catalog.
-  For matched optimization comparisons, pass `--baseline-package-evidence <absolute> --candidate-package-evidence <absolute> --artifact-root <absolute>` instead. The runner executes B1/C1/C2/B2/B3/C3 with fresh profiles, pins one synthetic catalog for all launches, checks matching native/dependency identities and unchanged source, and accepts only a median reduction of at least 5% with all three pairs faster. Only the reviewed App and feature-route import candidates may differ between the source receipts. Natural startup is the default; `--startup-mode foreground` is explicitly qualified separately. Startup phase logs and bounded renderer readiness marks expose stage durations without configuration or message content. Each launch verifies journal health and runs the offline gap scan before deleting its private payload.
+  For matched optimization comparisons, pass `--baseline-package-evidence <absolute> --candidate-package-evidence <absolute> --artifact-root <absolute>` instead. The runner executes B1/C1/C2/B2/B3/C3 with fresh profiles, pins one synthetic catalog for all launches, checks matching native/dependency identities and unchanged source, and accepts only a median reduction of at least 5% with all three pairs faster. Source differences must remain within the reviewed startup allowlist recorded by the benchmark; the repair comparison changes only the early entrypoint, catalog request ordering and immediate source-verification reuse. Natural startup is the default; `--startup-mode foreground` is explicitly qualified separately. Startup phase logs and bounded renderer readiness marks expose stage durations without configuration or message content. Each launch verifies journal health and runs the offline gap scan before deleting its private payload.
 
 
 ### Final-DMG startup qualification
@@ -696,6 +696,24 @@ the selection unchanged. Changed artifacts must advance it exactly once and
 retain the previous bundle. Each usable-chat result includes the real catalog,
 model/agent, sessions, composer, global subscription ACK and a completed local
 fixture submission; upgrades/reopens preserve the saved response.
+
+The unsettled-process case seeds a claimed lease in the disposable historical
+ledger after a genuine native owner lock has been held and released. Its missing
+termination receipt must produce `bundle_execution_unsettled`; the visible
+**Prepare recovery for restart** action must prepare recovery without changing
+the selected runtime or saved database. Reopening on the same OS boot must show
+`bundle_reboot_required`. Screenshots come from the actual renderer, carry the
+candidate's commit/DMG/app/manifest identity, and are hash-checked at publication.
+
+Actual OS reboot qualification is not a publication gate. The final-DMG runner
+checks preparation and same-boot refusal; recovery after an actual OS reboot
+remains unverified. App-only restarts and synthetic UUID tests do not prove it.
+
+The local `startup-recovery-ui.mjs` diagnostic labels its receipt development-only.
+It observes native failure before server import, so the web diagnostic journal
+does not exist for that launch; its screenshots and owned main-process log are
+the available evidence. It checks visible Retry, the real prepare action and an
+owned same-boot reopen, but does not click Retry or perform an OS reboot.
 
 Only an ephemeral GitHub-hosted macOS GUI runner may register the service or
 change its launchd environment. The existing GUI probe is mandatory. Missing GUI,
@@ -733,6 +751,16 @@ private empty source; same-version repair trials preserve their initialized
 source and synthetic credential record.
 
 - `startup-catalog-reproduction.mjs`: explicit read-only `--config` capture of Cursor model IDs, numeric prices and variant shapes into a synthetic loopback-only provider fixture. Optional `--config-overlay` captures Anthropic API-key presence with a synthetic replacement; `--legacy-oauth-columns` sets only synthetic OAuth rows' connector/method columns to NULL. `--output-root` confines captured fixtures to repository `.cache/sessions/`. Removes credentials, endpoints, labels and prompts before invoking the isolated compiled-native factory diagnostic; this does not establish installed-account or upgrade acceptance. Reviewed configuration imports run under Node even when the runner uses Bun.
+
+For startup repair development checks, `startup-repair-comparison.mjs` builds a
+correctness-preserving baseline and candidate, restores exact source bytes, and
+runs the existing three-pair native benchmark. Inputs are explicit repository
+native artifacts and a repository-owned Electron donor app. Source conflicts
+refuse rather than overwrite concurrent edits. `startup-recovery-ui.mjs` uses a
+current QA package and private native fixture to exercise recovery preparation
+and same-boot refusal without rebooting the host. It reports Retry as visible
+but unclicked. Neither command qualifies a release; see the
+[startup repair audit](audits/2026-10-12/startup-repair/README.md).
 
 ### Native Codex attended checkpoint
 

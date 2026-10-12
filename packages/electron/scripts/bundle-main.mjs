@@ -54,6 +54,9 @@ export async function bundleElectronMain({ outdir = path.join(root, 'dist-bundle
       'node-pty',
       'better-sqlite3',
     ],
+    plugins: [{ name: 'shared-early-startup', setup(build) {
+      build.onResolve({ filter: /(?:^|\/)early-startup\.mjs$/ }, () => ({ path: './early-startup.mjs', external: true }));
+    } }],
     minify: false,
     sourcemap: 'none',
     naming: '[name].mjs',
@@ -70,7 +73,8 @@ export async function bundleElectronMain({ outdir = path.join(root, 'dist-bundle
   const hash = bytes => createHash('sha256').update(bytes).digest('hex');
   const inventory = async result => {
     const files = new Set([...Object.keys(result.metafile.inputs), 'bun.lock',
-      path.relative(repository, fileURLToPath(import.meta.url))]);
+      path.relative(repository, fileURLToPath(import.meta.url)),
+      ...['entry.mjs', 'early-startup.mjs', 'startup-splash.mjs'].map(name => path.relative(repository, path.join(root, name)))]);
     const inputs = [];
     for (const file of files) {
       const absolute = await fs.realpath(path.resolve(repository, file));
@@ -84,11 +88,15 @@ export async function bundleElectronMain({ outdir = path.join(root, 'dist-bundle
   const inputs = await inventory(await build());
   const final = await build();
   if (JSON.stringify(await inventory(final)) !== JSON.stringify(inputs)) throw new Error('Electron bundle inputs changed during build');
+  for (const name of ['entry.mjs', 'early-startup.mjs', 'startup-splash.mjs']) await fs.copyFile(path.join(root, name), path.join(outdir, name));
   const main = path.join(outdir, 'main.mjs');
   await fs.writeFile(path.join(outdir, 'main.inputs.json'), JSON.stringify({ schema: 1,
     workingDirectory: repository, bunVersion: Bun.version, bunRevision: Bun.revision,
     entrypoint: path.relative(repository, settings.entrypoints[0]),
     mainSha256: hash(await fs.readFile(main)),
+    entrySha256: hash(await fs.readFile(path.join(outdir, 'entry.mjs'))),
+    earlyStartupSha256: hash(await fs.readFile(path.join(outdir, 'early-startup.mjs'))),
+    startupSplashSha256: hash(await fs.readFile(path.join(outdir, 'startup-splash.mjs'))),
     installerSha256: hash(await fs.readFile(path.join(outdir, 'desktop-update-install.mjs'))),
     windowsInstallerSha256: hash(await fs.readFile(path.join(outdir, 'desktop-update-install-windows.mjs'))), inputs }, null, 2) + '\n');
   return main;

@@ -12,6 +12,15 @@ exists; composed native failures add it to the bundle/controller journal event.
 failed repair at the same OpenCode version. A recorded failed repair cannot
 silently launch the old selected runtime as though startup succeeded.
 
+The thin runtime entry asserts that cold upgrade succeeded before assigning its
+inherited bundle root, binding data owners or importing the application. This
+preserves the original refusal (for example `bundle_execution_unsettled`) instead
+of masking it with a current-pin check against the retained old runtime. Cold
+upgrade preflights the selected harness after owner checks and before artifact
+retention; the full final verifier still runs. Compatibility checking shares its
+fresh source result only with the immediately following upgrade decision, never
+across checkpoint, mutation or spawn boundaries.
+
 First-run setup preserves explicit background-service opt-out and disabled Bot
 runtime preferences. It still excludes prior service registration and ownership
 state, so provisioning cannot silently turn a user's opt-out into registration.
@@ -376,7 +385,7 @@ the original error and Retry action even after an upgrade changes selection.
 The [runtime preparation audit](../../../../../../docs/audits/2026-10-10/runtime-preparation/README.md)
 records the incident and isolated packaged regression evidence.
 
-### Abandoned control leases
+### Abandoned execution leases and explicit reboot recovery
 
 The startup upgrade and every launch verification run `inspectBundleHarness`,
 which refuses any ledger lease that is not `published`/`cancelled` or still has
@@ -385,13 +394,44 @@ only after launch. `native-bundle-lease-recovery.js` therefore settles the
 selected bundle's abandoned control leases first, inside the bootstrap lock and
 before setup-source removal and the startup upgrade
 (`recoverSelectedBundleLeasesAtStartup`, called from `native-default-bundle.js`).
-It qualifies only never-spawned control leases (`preparation: 'none'`) whose view
-lies inside their own ledger's `views/`, refuses while a live process owns the
-bundle (`assertNoLiveOwner`), skips every ledger when a materialization is
-pending, and is skipped on Windows. It cancels and cleans through the existing
+It qualifies never-spawned control leases (`preparation: 'none'`) whose view
+lies inside their own ledger's `views/`. Orphan process leases additionally
+require a verified source launcher, a released native execution-owner lock and
+their genuine supervisor termination receipt. It refuses while a live process
+owns the bundle (`assertNoLiveOwner`), refuses pending materialization, and is
+skipped on Windows. It cancels and cleans through the existing
 `recoverExecutionLeases` and logs the `bundle_lease_recovery` startup phase only
 when it has work. It never throws; process leases keep their termination-receipt
 rules, and anything left unsettled still fails the strict gate.
+`assertSelectedBundleLeasesSettled` reads lease records before expensive cold
+upgrade work; full bundle verification still owns admission.
+
+The trusted native action `beginNativeBundleRebootRecovery` in
+`native-bundle-reboot-recovery.js` prepares `recovery/reboot.json` under the
+bootstrap, selection and ledger locks (in that order). It only accepts a claimed `ready` process lease
+whose supervisor receipt is absent, after native owner proof. Invalid receipts
+and genuine available receipts do not qualify. The private versioned fence
+pins the exact selector/descriptor, ledger records, lease hashes, active lease
+Git refs and private view hashes, plus the macOS kernel boot-session UUID.
+It neither reboots nor changes the lease. Repeated preparation must match the
+same evidence.
+
+`finishNativeBundleRebootRecoveryAtStartup` requires its caller to hold
+`bootstrap.lock`; it acquires selection ownership before ledger locks. A different kernel boot UUID establishes termination of
+pre-fence processes. The original selector, ledgers and views must still match;
+same-boot retries, live owners, materialization and changed evidence refuse.
+Recovery records `devryan.session-reboot-recovery/1`, cancels the lease with an
+explicit `uncertain` outcome, and retains its private view. The terminal
+`cleaned` marker prevents normal cleanup from deleting retained evidence; it
+does not claim the view was removed. Its active lease snapshot moves atomically
+to `refs/devryan/reboot/<fenceID>/<token>` with the exact original OID, so cloning
+preserves the historical evidence without treating its old snapshot as live.
+No command is replayed, no result published and no termination receipt forged.
+Partial completion is idempotent, including an additional reboot before retry.
+The strict harness verifier recognizes only the exact terminal attestation;
+relocation preserves its stable token/owner/scope identity. Runtime outcome
+queries keep the call uncertain, and never-started cancellation cannot
+reclassify it.
 
 Native managed control calls (`devryan_task`, `council_session`) record the
 execution-host owner on their lease. When `finish` fails, for example because a

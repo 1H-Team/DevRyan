@@ -799,7 +799,9 @@ jobs:
         if: always()
         with:
           name: DevRyan-startup-qualification
-          path: artifacts/DevRyan-startup-${{ needs.create-release.outputs.version }}.json
+          path: |
+            artifacts/DevRyan-startup-${{ needs.create-release.outputs.version }}.json
+            artifacts/DevRyan-startup-*.png
           if-no-files-found: error
           retention-days: 90
 

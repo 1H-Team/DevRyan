@@ -9,6 +9,7 @@ import { readNativeRuntimeManifest } from './native-artifacts.js';
 import { isProcessRunning, readManagedOpenCodeRegistry, readProcessStartTime,
   reapOrphanedManagedOpenCodeProcesses } from '../managed-process-registry.js';
 import { resolveQaTargetOpenCodeVersion } from '../version-policy.js';
+import { assertSelectedBundleLeasesSettled } from './native-bundle-lease-recovery.js';
 
 const fail = code => Object.assign(new Error(code), { code, status: 503 });
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -102,6 +103,7 @@ export async function upgradeSelectedNativeBundleAtStartup({ controlRoot, env = 
     const reaped = await reapOrphanedManagedOpenCodeProcesses(registryOptions(launch));
     if (reaped.kept.length || reaped.reaped.some(entry => !entry.terminated)) throw fail('bundle_upgrade_owner_active');
     await assertNoLiveOwner(launch);
+    await assertSelectedBundleLeasesSettled({ controlRoot });
     await sweepUnsealedCandidate(controlRoot, nativeUpgradeBundleID(shipped.sha256, binding.selection.revision));
     const lifecycle = createLifecycle({ binding, neverStarted: true, getController: () => null,
       closeAdmission: async () => {}, assertAdmissionClosed: () => assertNoLiveOwner(launch),

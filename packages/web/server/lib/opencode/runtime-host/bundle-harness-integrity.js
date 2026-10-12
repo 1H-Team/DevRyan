@@ -4,6 +4,7 @@ import path from 'node:path';
 import { readBundleRecoveryEnvelope } from './bundle-owned-continuations.js';
 import { git } from '../../../../../harness-runtime/lib/session-changes-git.js';
 import { openChangeStore, changeKey } from '../../../../../harness-runtime/lib/session-changes-store.js';
+import { isRebootRecoveredLease } from '../../../../../harness-runtime/lib/session-reboot-recovery.js';
 import { bundleFailure, containsPath, isRecord, readBundleJSON as readBundleJSONOwned, saveBundleJSON as saveBundleJSONOwned, sha256, canonicalJSON } from './bundle-migration-inventory.js';
 
 const entries = async directory => fs.readdir(directory,{withFileTypes:true}).catch(error => {
@@ -172,7 +173,10 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
         if (key.startsWith('sessions/') && record.pending) throw bundleFailure('migration_revert_pending');
         if (key.startsWith('leases/') && (!['published','cancelled'].includes(record.state) || record.cleanupPending)) throw bundleFailure('bundle_execution_unsettled');
         let shellException;
-        if (key.startsWith('leases/') && record.executionKind==='process' && !record.cancelledBeforeStart) {
+        if (key.startsWith('leases/') && record.rebootRecovery && !isRebootRecoveredLease(record)) throw bundleFailure('bundle_execution_unsettled');
+        if (key.startsWith('leases/') && isRebootRecoveredLease(record)
+          && (typeof record.viewDirectory !== 'string' || !containsPath(owned.source, record.viewDirectory))) throw bundleFailure('bundle_execution_path_unknown');
+        if (key.startsWith('leases/') && record.executionKind==='process' && !record.cancelledBeforeStart && !isRebootRecoveredLease(record)) {
           if (typeof record.viewDirectory!=='string' || !containsPath(owned.source,record.viewDirectory)) throw bundleFailure('bundle_execution_path_unknown');
           const file=path.join(root,path.relative(owned.source,path.dirname(record.viewDirectory)),'termination.json'), receipt=await readBundleJSON(file);
           if (!isRecord(receipt) || receipt.terminated!==true || receipt.confined!==true || !Number.isInteger(receipt.exitCode)

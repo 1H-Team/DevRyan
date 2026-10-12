@@ -1,11 +1,11 @@
 {
   "name": "@openchamber/electron",
-  "version": "2.0.8",
+  "version": "2.0.9",
   "private": true,
   "description": "Electron desktop runtime for DevRyan",
   "author": "DevRyan",
   "type": "module",
-  "main": "./dist-bundle/main.mjs",
+  "main": "./dist-bundle/entry.mjs",
   "dependencies": {
     "@openchamber/bot-egress": "workspace:*",
     "@openchamber/bot-db": "workspace:*",
@@ -50,6 +50,9 @@
     "appId": "dev.openchamber.desktop",
     "productName": "DevRyan",
     "files": [
+      "dist-bundle/entry.mjs",
+      "dist-bundle/early-startup.mjs",
+      "dist-bundle/startup-splash.mjs",
       "dist-bundle/main.mjs",
       "dist-bundle/desktop-update-install.mjs",
       "dist-bundle/desktop-update-install-windows.mjs",

@@ -9,7 +9,8 @@ import { requireDisposableMacRunner, probeDisposableMacGui } from './macos-gui-p
 import { inspectReleaseDmg, downloadReleaseStartupBaselines, hashReleaseFile, assertNoPriorStartupFailure } from './release-startup-artifacts.mjs';
 import { assertReleaseStartupReceipt } from './release-startup-contract.mjs';
 import { createReleaseStartupProfile } from './release-startup-profile.mjs';
-import { launchReleaseStartup, verifyReleaseJournal, waitReleaseStartup } from './release-startup-launch.mjs';
+import { launchReleaseStartup, verifyReleaseJournal, waitReleaseStartup, captureReleaseStartupScreenshot, assertReleaseRetainedSession } from './release-startup-launch.mjs';
+import { seedReleaseUnsettledProcess, releaseFixtureScope } from './release-startup-unsettled.mjs';
 import { prepareReleaseService, releaseServiceStatus, seedStaleReleaseOwner } from './release-startup-service.mjs';
 import { readBundleStartupState, assertNativeStartupUpgrade, assertNativeStartupReopen, readNativeStartupLogs } from './native-startup-benchmark.mjs';
 import { captureQaElectronAppIdentity } from './artifact-evidence.mjs';
@@ -66,14 +67,7 @@ export async function runReleaseStartup({ dmg, version, sourceCommit, receiptPat
     active = await launchReleaseStartup(artifact, profile, { ...options, serviceEnvironmentManaged: profile === serviceProfile }); return active;
   };
   active = null;
-  const retainedSession = async (launch, profile, id) => {
-    const result = await launch.request('/api/session?directory=' + encodeURIComponent(profile.workspace) + '&roots=true&limit=50');
-    assert.equal(result.status, 200); assert.ok(result.body.some(row => row.id === id), 'Saved history disappeared');
-    const messages = await launch.request(`/api/session/${encodeURIComponent(id)}/message?directory=${encodeURIComponent(profile.workspace)}`);
-    assert.equal(messages.status, 200);
-    assert.ok(messages.body.some(row => row.info?.role === 'assistant' && row.parts?.some(part => part.text?.includes('DevRyan live QA ready.'))),
-      'Saved fixture response disappeared');
-  };
+  const retainedSession = assertReleaseRetainedSession;
   const scenario = async (id, operation) => {
     const row = { id, outcome: 'failed', attempts: 1, cleanup: 'pending' }, started = performance.now();
     receipt.scenarios.push(row);
@@ -87,6 +81,10 @@ export async function runReleaseStartup({ dmg, version, sourceCommit, receiptPat
     return row;
   };
   let candidate;
+  const screenshot = async (row, launch, label = row.id) => {
+    row.screenshots ??= [];
+    row.screenshots.push(await captureReleaseStartupScreenshot(launch, path.dirname(receiptPath), `DevRyan-startup-${label}.png`, receipt));
+  };
   const prove = async (row, profile, { priorSession } = {}) => {
     const launch = await start(candidate, profile);
     if (priorSession) { await retainedSession(launch, profile, priorSession); row.dataPreserved = true; }
@@ -95,6 +93,7 @@ export async function runReleaseStartup({ dmg, version, sourceCommit, receiptPat
     assert.equal(state.artifactManifestSha256, candidate.manifestSha256);
     row.manifestSha256 = state.artifactManifestSha256;
     row.usableChat = true; row.eventStream = 'acknowledged'; row.submission = 'passed'; row.startup = launch.startup;
+    await screenshot(row, launch);
     await stop(); row.gapRecords = await verifyReleaseJournal(profile);
     return { id, state };
   };
@@ -160,6 +159,32 @@ export async function runReleaseStartup({ dmg, version, sourceCommit, receiptPat
     assert.ok(sameVersion, 'A signed baseline with the same OpenCode version and different host artifacts is required');
     await upgrade('same-runtime-upgrade', sameVersion);
 
+    await scenario('unsettled-process-upgrade', async row => {
+      const profile = await newProfile(row.id);
+      const old = await start(baselines[0], profile), id = await old.submit();
+      const scope = await releaseFixtureScope(old, profile, id);
+      await stop(); await profile.configure({ selected: true });
+      const initial = readBundleStartupState(profile.controlRoot);
+      const database = profile.binding().descriptor.launch.opencodeDatabasePath;
+      const before = await hashReleaseFile(database);
+      await seedReleaseUnsettledProcess(profile, scope);
+      const failed = await start(candidate, profile, { expectedFailure: 'bundle_execution_unsettled' });
+      await screenshot(row, failed, `${row.id}-failure`);
+      await failed.ui.click({ selector: 'a[href="openchamber://prepare-reboot-recovery"]', text: 'Prepare recovery for restart' });
+      await failed.ui.waitVisibleText('Restart your computer to continue');
+      await screenshot(row, failed, `${row.id}-prepared`);
+      await stop();
+      assert.deepEqual(readBundleStartupState(profile.controlRoot), initial);
+      const refused = await start(candidate, profile, { expectedFailure: 'bundle_reboot_required' });
+      await screenshot(row, refused, `${row.id}-same-boot`);
+      await stop();
+      assert.deepEqual(readBundleStartupState(profile.controlRoot), initial);
+      assert.equal(await hashReleaseFile(database), before);
+      Object.assign(row, { failureCode: 'bundle_execution_unsettled', recoveryPrepared: true, sameBootRefused: true,
+        selectionPreserved: true, dataPreserved: true, manifestSha256: candidate.manifestSha256 });
+      row.gapRecords = await verifyReleaseJournal(profile);
+    });
+
     await upgrade('interrupted-upgrade', baselines[0], async (profile, initial) => {
       const environment = await prepareReleaseService(profile);
       const app = startOwnedProcess(candidate.binary, ['--use-mock-keychain'], { cwd: profile.workspace, env: profile.env });
@@ -209,6 +234,7 @@ export async function runReleaseStartup({ dmg, version, sourceCommit, receiptPat
       const journal = await ready.request('/api/diagnostics/status');
       assert.equal(journal.status, 200); assert.equal(journal.body.gapRecords, 0); assert.ok(!journal.body.lastError);
       row.gapRecords = 0;
+      await screenshot(row, ready);
     });
     await scenario('service-cold', async row => {
       await service.cold();
@@ -217,6 +243,7 @@ export async function runReleaseStartup({ dmg, version, sourceCommit, receiptPat
       assert.equal(status.connected, true); assert.notEqual(status.handshake?.instanceId, warmIdentity);
       await retainedSession(ready, serviceProfile, warmSession); await ready.submit();
       Object.assign(row, { manifestSha256: candidate.manifestSha256, usableChat: true, eventStream: 'acknowledged', submission: 'passed', startup: ready.startup });
+      await screenshot(row, ready);
       await service.cleanup(ready); service = null;
       await stop(); row.gapRecords = await verifyReleaseJournal(serviceProfile);
     });

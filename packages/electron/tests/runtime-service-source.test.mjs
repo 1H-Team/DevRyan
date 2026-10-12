@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { describe, test } from 'node:test';
 
+const earlySource = fs.readFileSync(new URL('../early-startup.mjs', import.meta.url), 'utf8');
 const mainSource = fs.readFileSync(new URL('../main.mjs', import.meta.url), 'utf8');
 const packageManifest = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 const releaseWorkflow = fs.readFileSync(new URL('../../../.github/workflows/release.yml', import.meta.url), 'utf8');
@@ -107,8 +108,8 @@ describe('runtime-service desktop bootstrap source contract', () => {
   });
 
   test('headless service processes stay out of the macOS Dock; the foreground app does not', () => {
-    const lockIndex = mainSource.indexOf('app.requestSingleInstanceLock()');
-    const preReady = mainSource.slice(0, lockIndex);
+    const lockIndex = earlySource.indexOf('app.requestSingleInstanceLock()');
+    const preReady = earlySource.slice(0, lockIndex);
     assert.match(preReady, /if \(isRuntimeServiceMode \|\| isRuntimeServiceControlProbe\) \{\s+hideHeadlessProcessFromDock\(\);/);
     assert.match(preReady, /app\.dock\?\.hide\(\)/);
 
@@ -123,7 +124,7 @@ describe('runtime-service desktop bootstrap source contract', () => {
 
     const foregroundPath = mainSource.slice(mainSource.indexOf('nativeTheme.themeSource = readThemeSource();'));
     assert.doesNotMatch(foregroundPath, /setActivationPolicy\(|dock\?\.hide\(|dock\.hide\(/);
-    assert.equal(mainSource.match(/app\.dock\?\.hide\(\)/g)?.length, 1);
+    assert.equal(earlySource.match(/app\.dock\?\.hide\(\)/g)?.length, 1);
     assert.equal(mainSource.match(/setActivationPolicy\(/g)?.length, 1);
   });
 

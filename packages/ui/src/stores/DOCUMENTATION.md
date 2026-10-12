@@ -58,6 +58,12 @@ when a later bootstrap phase fails, while the non-persisted initialization statu
 error let the startup gate identify the actual failing phase and retry it without an
 unnecessary runtime restart.
 
+Startup overlaps provider loading with agent/config/default HTTP requests. The
+`loadAgents` constructor options `providersReady` and `signal` gate agent/default
+resolution and persistence on the committed provider catalog and the same active
+directory. Failed providers, cancellation or a directory change discard the
+agent result. A replacement startup does not reuse an aborted in-flight loader.
+
 Applying a default agent updates its agent, configured provider/model, and thinking
 variant in one store transition. Only an explicit draft model selection (including
 legacy drafts that persist both provider and model) may preserve a different model;

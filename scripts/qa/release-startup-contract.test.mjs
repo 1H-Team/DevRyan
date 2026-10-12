@@ -3,11 +3,13 @@ import assert from 'node:assert/strict';
 import { RELEASE_STARTUP_SCENARIOS, assertReleaseStartupReceipt, selectReleaseStartupBaselines } from './release-startup-contract.mjs';
 const d = 'a'.repeat(64), sourceCommit = 'b'.repeat(40);
 const expectation = { sourceCommit, dmgSha256: d, version: '2.0.9' };
+const screenshot = () => ({ name: 'DevRyan-startup-fixture.png', sha256: d, ...expectation, manifestSha256: d, appSha256: d });
 const receipt = () => ({ protocol: 'devryan.release-startup/1', outcome: 'passed', ...expectation, manifestSha256: d, appSha256: d,
   platform: 'darwin-arm64', runAttempt: 1, compiledNative: 'passed', guiPrerequisites: 'passed', cleanupErrors: [], scenarios: RELEASE_STARTUP_SCENARIOS.map((id,index) => ({
     id, outcome: 'passed', attempts: 1, gapRecords: 0, cleanup: 'passed', elapsedMs: 1, manifestSha256: d,
     usableChat: true, eventStream: 'acknowledged', submission: 'passed', baselineVersion: `2.0.${index}`, baselineDmgSha256: d, dataPreserved: true,
     transition: 'upgraded', stableReopen: true, setupInterface: true, liveOwnerProtected: true,
+    screenshots: [screenshot()], failureCode: 'bundle_execution_unsettled', recoveryPrepared: true, sameBootRefused: true, selectionPreserved: true,
   })) });
 test('publication rejects incomplete, stale, substituted, retried and unavailable startup evidence', () => {
   assertReleaseStartupReceipt(receipt(), expectation);
@@ -23,6 +25,11 @@ test('publication rejects incomplete, stale, substituted, retried and unavailabl
     const value = receipt(); value.scenarios = value.scenarios.filter(row => row.id !== id);
     assert.throws(() => assertReleaseStartupReceipt(value, expectation));
   }
+});
+test('publication rejects screenshots from another source without requiring reboot evidence', () => {
+  assertReleaseStartupReceipt(receipt(), expectation);
+  const replacedImage = receipt(); replacedImage.scenarios[0].screenshots[0].sourceCommit = 'c'.repeat(40);
+  assert.throws(() => assertReleaseStartupReceipt(replacedImage, expectation));
 });
 test('baseline selection requires the last two stable releases and their published installer digests', () => {
   const release = version => ({ tag_name: `v${version}`, assets: [{ name: `DevRyan-${version}-arm64.dmg`, digest: `sha256:${d}` }] });

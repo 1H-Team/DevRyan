@@ -7,3 +7,8 @@ let diagnostic;
 export const recordStartupBundleUpgradeFailure = (code, error) => { failure = code; diagnostic = artifactDiagnostic(error); };
 export const readStartupBundleUpgradeFailure = () => failure;
 export const readStartupBundleUpgradeDiagnostic = () => diagnostic;
+
+// Stop before selected-bundle composition can mask a failed upgrade with an old-pin rejection.
+export const assertStartupBundleUpgradeSucceeded = () => {
+  if (failure) throw Object.assign(new Error(failure), { code: failure, status: 503, ...(diagnostic ? { diagnostic } : {}) });
+};

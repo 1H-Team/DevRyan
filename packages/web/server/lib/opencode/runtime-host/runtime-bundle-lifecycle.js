@@ -63,14 +63,14 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
   const compatible = async ({ source, artifacts }) => {
     const [left, right] = await Promise.all([verifyLaunch(source.launch,'bundle-source'), verifyLaunch(artifacts)]);
     verifyNativeCloneCompatibility({ left: left.manifest, right: right.manifest, databasePath: source.launch.opencodeDatabasePath });
-    return { status: 'compatible', binding: { protocol: cloneContract, sourceBundleID: source.bundleID,
-      sourceManifestSha256: source.launch.artifactManifestSha256, targetManifestSha256: artifacts.artifactManifestSha256 } };
+    return { source: left, proof: { status: 'compatible', binding: { protocol: cloneContract, sourceBundleID: source.bundleID,
+      sourceManifestSha256: source.launch.artifactManifestSha256, targetManifestSha256: artifacts.artifactManifestSha256 } } };
   };
   const store = storeFactory({ ...privatePersistence, controlRoot: binding.controlRoot, allowRecoveredInputStartup: true,
     withQuiescedSource: withCheckpoint,
     runMigration: async () => { throw fail('bundle_migration_generation_invalid'); },
     verifyArtifacts: async ({ launch,purpose }) => verifyLaunch(launch,purpose),
-    verifyV2Compatibility: compatible,
+    verifyV2Compatibility: async input => (await compatible(input)).proof,
     captureCredentials: async ({ descriptor, assertHeld }) => {
       const captured = await credentialProcess({ descriptor, assertHeld,
         ...(captureArtifacts ? { captureArtifacts } : {}),
@@ -165,8 +165,7 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
       const launchArtifacts = { controllerBinary: retained.controller, writerBinary: retained.writer,
         artifactManifestPath: retained.manifestPath, artifactManifestSha256: retained.manifestSha256,
         reviewedNativeConfigPath: current.descriptor.launch.reviewedNativeConfigPath, reviewedPluginManifestPath };
-      await compatible({ source: current.descriptor, artifacts: launchArtifacts });
-      const original = await verifyLaunch(current.descriptor.launch,'bundle-source');
+      const { source: original } = await compatible({ source: current.descriptor, artifacts: launchArtifacts });
       captureArtifacts = original.manifest.opencodeVersion === retained.manifest.opencodeVersion
         && original.manifest.inputs.coreDigest === retained.manifest.inputs.coreDigest
         ? { manifestPath: retained.manifestPath, manifestSha256: retained.manifestSha256 } : undefined;

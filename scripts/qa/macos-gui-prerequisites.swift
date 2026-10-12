@@ -1,10 +1,29 @@
 import AppKit
 import CoreGraphics
 
-// This executable is launched only by the GitHub-hosted runner owner.
+// GUI qualification runs only on the disposable GitHub runner; the PID-only observation mode is read-only local QA.
 func emit(_ value: [String: Any]) {
     let bytes = try! JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
     FileHandle.standardOutput.write(bytes + Data([10]))
+}
+
+if CommandLine.arguments.dropFirst().first == "--observe-owned-window" {
+    guard CommandLine.arguments.count == 3, let ownerPID = Int32(CommandLine.arguments[2]), ownerPID > 0 else {
+        exit(64)
+    }
+    let rows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+    let ids = rows.compactMap { row -> Int? in
+        guard (row[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == ownerPID,
+            (row[kCGWindowLayer as String] as? NSNumber)?.intValue == 0,
+            (row[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 0 > 0,
+            let bounds = row[kCGWindowBounds as String] as? [String: Any],
+            (bounds["Width"] as? NSNumber)?.doubleValue ?? 0 > 0,
+            (bounds["Height"] as? NSNumber)?.doubleValue ?? 0 > 0,
+            let number = row[kCGWindowNumber as String] as? NSNumber, number.intValue > 0 else { return nil }
+        return number.intValue
+    }
+    emit(["protocol": "devryan.owned-window-visibility/1", "ownerPID": ownerPID, "windowIDs": ids.sorted()])
+    exit(0)
 }
 
 let session = CGSessionCopyCurrentDictionary() as? [String: Any]

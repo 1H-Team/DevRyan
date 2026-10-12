@@ -5,7 +5,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
-import { observeStartupBackgroundWork, assertNativeStartupPackageSource, assertNativeStartupUpgrade, assertNativeUpgradeBaseline, observeNativeStartupSubscription, parseNativeStartupArgs, readNativeStartupLogs,
+import { readNativeWindowObservation, observeNativeStartupVisibility, submitNativeStartupFixture, observeStartupBackgroundWork, assertNativeStartupPackageSource, assertNativeStartupUpgrade, assertNativeUpgradeBaseline, observeNativeStartupSubscription, parseNativeStartupArgs, readNativeStartupLogs,
   parseStartupComparisonArgs, summarizeStartupComparison, assertStartupComparisonSources, summarizeNativeStartupRuns, assertNativeStartupReopen } from './native-startup-benchmark.mjs';
 import { parseStartupPhaseLogs } from '../perf/electron-lifecycle-benchmark.mjs';
 import { runtimeUiBundleLayout } from './native-backend-ui-diagnostic.mjs';
@@ -271,4 +271,66 @@ test('comparison CLI defaults to natural and explicitly labels foreground mode',
   for (const invalid of [args.slice(0, 4), [...args, '--reload', 'true'], [...args, '--startup-mode', 'hidden'], args.map(value => value === '/repo/native' ? 'relative' : value)]) {
     assert.throws(() => parseStartupComparisonArgs(invalid));
   }
+});
+
+test('native visibility records a bounded parent observation, not a paint timestamp', async () => {
+  let now = 20, reads = 0;
+  const result = await observeNativeStartupVisibility({ startedAt: 10, clock: () => now,
+    wait: async ms => { now += ms; }, checkAlive() {}, readVisibility: async () => (++reads === 1 ? [] : [{ windowID: 7, visible: true }]) });
+  assert.equal(result.firstVisibleObservedMs, 110);
+  assert.equal(result.windowID, 7);
+  assert.match(result.measurement, /not first painted pixels/);
+  now = 0;
+  await assert.rejects(observeNativeStartupVisibility({ startedAt: 0, clock: () => now, timeoutMs: 50,
+    wait: async ms => { now += ms; }, checkAlive() {}, readVisibility: async () => [] }), /visibility_timeout/);
+  await assert.rejects(observeNativeStartupVisibility({ startedAt: 0, checkAlive() {},
+    readVisibility: async () => [{ visible: true }, { visible: true }] }), /at most one native window/);
+});
+
+test('startup fixture completion requires an observed provider call and completed assistant, preserving both latency clocks', async () => {
+  const observations = [], visible = []; let now = 50, sent = false;
+  const request = async route => {
+    if (route.includes('/message?')) return { status: 200, body: [
+      { info: { role: 'user', id: 'user' }, parts: [{ type: 'text', text: 'DevRyan live QA ready.' }] },
+      { info: { role: 'assistant', id: 'assistant', time: { completed: 1 } }, parts: [{ type: 'text', text: 'DevRyan live QA ready.' }] },
+    ] };
+    return { status: 200, body: sent ? [{ id: 'existing' }, { id: 'new' }] : [{ id: 'existing' }] };
+  };
+  const ui = { click: async () => { now = 60; }, send: async () => { sent = true; now = 75; },
+    waitVisibleText: async (...args) => { visible.push(args); now = 100; },
+    waitFor: async (_label, read) => {
+      assert.equal(await read(), null, 'User text alone cannot count as completed provider response');
+      observations.push({}); now = 90; return read();
+    } };
+  const result = await submitNativeStartupFixture({ ui, request, workspace: '/fixture', providerRequests: observations,
+    startedAt: 10, clock: () => now });
+  assert.equal(result.sessionID, 'new'); assert.equal(result.messageID, 'assistant');
+  assert.equal(result.completeResponseSinceSpawnMs, 80); assert.equal(result.completeResponseSinceSubmitMs, 30);
+  assert.equal(result.renderedCompleteSinceSpawnMs, 90);
+  assert.deepEqual(visible, [['DevRyan live QA ready.', '[data-message-id="assistant"]']]);
+});
+
+
+test('OS visibility output pins the owned PID and rejects malformed or multiple-window claims', () => {
+  const frame = { protocol: 'devryan.owned-window-visibility/1', ownerPID: 123, windowIDs: [7] };
+  assert.deepEqual(readNativeWindowObservation(JSON.stringify(frame), 123), [{ windowID: 7, visible: true }]);
+  assert.deepEqual(readNativeWindowObservation(JSON.stringify({ ...frame, windowIDs: [] }), 123), []);
+  for (const change of [{ ownerPID: 456 }, { protocol: 'wrong' }, { windowIDs: [0] }, { windowIDs: [7, 8] }, { windowIDs: ['7'] }])
+    assert.throws(() => readNativeWindowObservation(JSON.stringify({ ...frame, ...change }), 123));
+  assert.throws(() => readNativeWindowObservation('x'.repeat(4097), 123));
+});
+
+test('native observation retries only timed-out helper invocation and still requires owned visibility before deadline', async () => {
+  let now = 0, calls = 0; const errors = [];
+  const result = await observeNativeStartupVisibility({ startedAt: 0, clock: () => now, wait: async ms => { now += ms; }, checkAlive() {},
+    onObservationError: error => errors.push(error), readVisibility: async () => {
+      if (calls++ === 0) throw Object.assign(new Error('bounded timeout'), { killed: true, signal: 'SIGTERM', code: null });
+      return [{ windowID: 12, visible: true }];
+    } });
+  assert.equal(result.windowID, 12); assert.equal(result.firstVisibleObservedMs, 100);
+  assert.deepEqual(errors, [{ code: null, signal: 'SIGTERM', killed: true }]);
+  await assert.rejects(observeNativeStartupVisibility({ startedAt: now, clock: () => now, wait: async ms => { now += ms; }, timeoutMs: 200, checkAlive() {},
+    readVisibility: async () => { throw Object.assign(new Error('timeout'), { killed: true, signal: 'SIGTERM' }); } }), /visibility_timeout/);
+  await assert.rejects(observeNativeStartupVisibility({ startedAt: now, clock: () => now, checkAlive() {},
+    readVisibility: async () => { throw Object.assign(new Error('helper exit'), { code: 1, killed: false }); } }), /helper exit/);
 });

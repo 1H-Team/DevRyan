@@ -125,14 +125,14 @@ test('held recovery navigation stays canonical for existing and newly created wi
   }
 });
 
-function relaunchCallback(environment, relaunch) {
+function relaunchCallback(environment, relaunch, originalBundleRoot) {
   const start = mainSource.indexOf('const relaunchWithHostDataRoot = () => {');
   const end = mainSource.indexOf('const firstExistingPath =', start);
   assert.ok(start >= 0 && end > start);
-  return new Function('app', 'process', 'hostDataRootDirectory', `
+  return new Function('app', 'process', 'hostDataRootDirectory', 'hostRuntimeBundleRoot', `
     ${mainSource.slice(start, end)}
     return relaunchWithHostDataRoot;
-  `)({ relaunch }, { env: environment }, '/fixture/shell-data');
+  `)({ relaunch }, { env: environment }, '/fixture/shell-data', originalBundleRoot);
 }
 
 test('relaunch inherits the shell root and always restores the current parent environment', () => {
@@ -187,4 +187,23 @@ test('bounded ordinary restart preserves parent environment even while timed-out
   timeout();
   assert.equal(await operation, 'forced');
   assert.deepEqual(calls, ['cleanup', 'relaunch', 'exit']);
+});
+
+
+test('Retry removes only the attempt-injected bundle root and preserves an explicit launch root', () => {
+  for (const original of [undefined, '/fixture/user-selected-control']) for (const fails of [false, true]) {
+    const environment = { OPENCHAMBER_DATA_DIR: '/fixture/selected-web', DEVRYAN_RUNTIME_BUNDLE_ROOT: '/fixture/attempt-control' };
+    const parent = { ...environment };
+    let inherited;
+    const relaunch = relaunchCallback(environment, () => {
+      inherited = { ...environment };
+      if (fails) throw new Error('fixture retry failed');
+    }, original);
+    if (fails) assert.throws(relaunch, /fixture retry failed/);
+    else relaunch();
+    assert.equal(inherited.OPENCHAMBER_DATA_DIR, '/fixture/shell-data');
+    assert.equal(inherited.DEVRYAN_RUNTIME_BUNDLE_ROOT, original);
+    assert.equal(Object.hasOwn(inherited, 'DEVRYAN_RUNTIME_BUNDLE_ROOT'), original !== undefined);
+    assert.deepEqual(environment, parent);
+  }
 });

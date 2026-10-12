@@ -1,3 +1,4 @@
+import { configureEarlyStartup, createStartupWindowOptions, takeEarlyStartupWindow, takeEarlyAppLinks } from './early-startup.mjs';
 import { artifactDiagnostic, describeArtifactFailure, startupDiagnosticSummary } from '../shared-runtime/startup-diagnostics.js';
 import {createNativeSettingsDirectory,readNativeShellBundleBinding} from './native-settings-directory.mjs';
 import { isWindowsPreview, WINDOWS_PREVIEW_APP_ID, WINDOWS_PREVIEW_NAME, createPreviewUpdater, isPreviewUnsupportedCommand } from './windows-preview.mjs';
@@ -132,50 +133,8 @@ const BOT_RUNTIME_RETRY_HOST = 'retry-bot-runtime';
 const BOT_RUNTIME_CONTINUE_HOST = 'continue-without-bots';
 const APP_USER_MODEL_ID = isPreview ? WINDOWS_PREVIEW_APP_ID : process.platform === 'win32' ? 'dev.devryan.desktop' : 'dev.openchamber.desktop';
 
-if (typeof process.env.OPENCHAMBER_ELECTRON_USER_DATA_DIR === 'string') {
-  const configuredUserDataDirectory = process.env.OPENCHAMBER_ELECTRON_USER_DATA_DIR;
-  if (!path.isAbsolute(configuredUserDataDirectory) || /[\u0000-\u001f]/.test(configuredUserDataDirectory)) {
-    throw new Error('Electron user data directory must be an absolute path');
-  }
-  const devUserDataDirectory = path.resolve(configuredUserDataDirectory);
-  fs.mkdirSync(devUserDataDirectory, { recursive: true });
-  // A packaged development binary otherwise contends with the installed app's
-  // single-instance lock and Chromium profile. Isolate both before acquiring
-  // the lock so visual verification never disrupts the user's running app.
-  app.setPath('userData', devUserDataDirectory);
-}
-
-// The background runtime service and the status probe run from the same app
-// bundle as the foreground window. Without this, macOS registers them as
-// regular apps and shows a second "DevRyan" in the Dock.
-const hideHeadlessProcessFromDock = () => {
-  if (process.platform !== 'darwin') return;
-  try {
-    app.dock?.hide();
-  } catch {
-  }
-};
-
-if (isRuntimeServiceMode || isRuntimeServiceControlProbe) {
-  hideHeadlessProcessFromDock();
-}
-
-if (isRuntimeServiceMode) {
-  const serviceUserDataDirectory = `${app.getPath('userData')}-runtime-service`;
-  fs.mkdirSync(serviceUserDataDirectory, { recursive: true });
-  app.setPath('userData', serviceUserDataDirectory);
-}
-
-if (!isRuntimeServiceControlProbe && !app.requestSingleInstanceLock()) {
-  app.exit(0);
-  process.exit(0);
-}
-
-// Set the product name early so electron-log derives its log directory as
-// ~/Library/Logs/DevRyan/ (not ~/Library/Logs/@openchamber/electron/).
-app.setName(isPreview ? WINDOWS_PREVIEW_NAME : 'DevRyan');
-app.setAppUserModelId(APP_USER_MODEL_ID);
-app.commandLine.appendSwitch('proxy-bypass-list', '<-loopback>');
+if (!configureEarlyStartup({ app, isPreview, WINDOWS_PREVIEW_NAME, APP_USER_MODEL_ID,
+  isRuntimeServiceMode, isRuntimeServiceControlProbe })) process.exit(0);
 
 try {
   process.chdir(os.homedir());
@@ -564,6 +523,7 @@ if (!isRuntimeServiceControlProbe) {
 // The binding changes OPENCHAMBER_DATA_DIR during module evaluation. Capture
 // shell ownership first; a static import would run before this in packaged ESM.
 const hostDataRootDirectory=path.resolve(process.env.OPENCHAMBER_DATA_DIR||path.join(os.homedir(),'.config','openchamber'));
+const hostRuntimeBundleRoot = process.env.DEVRYAN_RUNTIME_BUNDLE_ROOT;
 let readRuntimeBundleBinding, shellRuntimeBundleBindingError;
 const bindingFailed = () => {
   shellRuntimeBundleBindingError = Object.assign(new Error('The selected runtime bundle could not be verified.'), { code: 'runtime_bundle_binding_invalid' });
@@ -593,7 +553,10 @@ const dataRootDirectory = () => hostDataRootDirectory;
 
 const relaunchWithHostDataRoot = () => {
   const runtimeDataDirectory = process.env.OPENCHAMBER_DATA_DIR;
+  const runtimeBundleRoot = process.env.DEVRYAN_RUNTIME_BUNDLE_ROOT;
   process.env.OPENCHAMBER_DATA_DIR = hostDataRootDirectory;
+  if (hostRuntimeBundleRoot === undefined) delete process.env.DEVRYAN_RUNTIME_BUNDLE_ROOT;
+  else process.env.DEVRYAN_RUNTIME_BUNDLE_ROOT = hostRuntimeBundleRoot;
   try {
     // Electron synchronously starts its relaunch helper with the current env.
     app.relaunch();
@@ -602,6 +565,8 @@ const relaunchWithHostDataRoot = () => {
     // bound to its selected runtime even if scheduling the relaunch fails.
     if (runtimeDataDirectory === undefined) delete process.env.OPENCHAMBER_DATA_DIR;
     else process.env.OPENCHAMBER_DATA_DIR = runtimeDataDirectory;
+    if (runtimeBundleRoot === undefined) delete process.env.DEVRYAN_RUNTIME_BUNDLE_ROOT;
+    else process.env.DEVRYAN_RUNTIME_BUNDLE_ROOT = runtimeBundleRoot;
   }
 };
 
@@ -2041,6 +2006,8 @@ const currentStartupSplashPalette = () => (
 );
 
 let lastStartupDiagnostic = null;
+let startupRecoveryFailure = null;
+let startupFailurePageUrl = null;
 const startupErrorDetails = (error) => {
   const diagnostic = artifactDiagnostic(error);
   const cause = error?.cause;
@@ -2071,6 +2038,8 @@ const buildStartupErrorHtml = (error) => {
   try { if (!shellRuntimeBundleBindingError) settings = readSettingsRoot(); } catch { /* Use the default appearance. */ }
   return buildStartupErrorHtmlFromSettings(settings, {
     message: details.displayMessage,
+    rebootRecovery: !isPreview && process.platform === 'darwin' && details.code === 'bundle_execution_unsettled',
+    rebootRequired: details.code === 'bundle_reboot_required',
   });
 };
 
@@ -2085,6 +2054,7 @@ const startupActionForUrl = (rawUrl) => {
   try {
     const parsed = new URL(rawUrl);
     if (parsed.protocol !== `${DEEP_LINK_PROTOCOL}:`) return null;
+    if (parsed.hostname === 'prepare-reboot-recovery') return 'prepare-reboot-recovery';
     if (parsed.hostname === 'copy-startup-diagnostics') return 'copy-startup-diagnostics';
     if (parsed.hostname === STARTUP_RETRY_HOST) return 'retry-startup';
     if (parsed.hostname === BOT_RUNTIME_RETRY_HOST) return 'retry-bot-runtime';
@@ -2987,44 +2957,13 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
   const desktopHome = os.homedir() || '';
   const desktopMacosMajor = String(macosMajorVersion());
   const startupSplashPalette = currentStartupSplashPalette();
-  const options = {
-    title: 'DevRyan',
-    width: useSaved ? Math.max(saved.width, MIN_RESTORE_WINDOW_WIDTH) : 1280,
-    height: useSaved ? Math.max(saved.height, MIN_RESTORE_WINDOW_HEIGHT) : 800,
-    minWidth: MIN_WINDOW_WIDTH,
-    minHeight: MIN_WINDOW_HEIGHT,
-    show: false,
-    backgroundColor: startupSplashPalette.background,
-    // Tauri used an overlay title bar with explicit traffic-light placement.
-    // Electron's hiddenInset adds its own extra inset, which leaves the controls
-    // visibly lower than the app header. Use a plain hidden title bar instead.
-    titleBarStyle: process.platform === 'darwin' ? 'hidden' : 'default',
-    trafficLightPosition: process.platform === 'darwin' ? { x: 16, y: 17 } : undefined,
-    webPreferences: {
-      additionalArguments: [
-        `--devryan-runtime-mode=${isPreview ? 'standard-preview' : 'native'}`,
-        `--openchamber-local-origin=${desktopLocalOrigin}`,
-        `--openchamber-server-origin=${desktopServerOrigin}`,
-        `--openchamber-home=${desktopHome}`,
-        `--openchamber-macos-major=${desktopMacosMajor}`,
-        `--openchamber-boot-outcome=${JSON.stringify(state.bootOutcome || null)}`,
-      ],
-      preload: isDev ? path.join(__dirname, 'preload.mjs') : path.join(app.getAppPath(), 'preload.mjs'),
-      backgroundThrottling: false,
-      contextIsolation: true,
-      nodeIntegration: false,
-      // sandbox must stay off: the preload uses contextBridge + ipcRenderer
-      // from Electron's Node layer. contextIsolation + nodeIntegration:false
-      // keep the renderer world walled off from Node. Do NOT flip to true —
-      // the preload would fail to load and __TAURI__ would go undefined.
-      sandbox: false,
-      // Required for the context panel's browser pane. Guests are hardened in
-      // will-attach-webview (preload stripped, sandboxed, pinned partition).
-      webviewTag: true,
-    },
-  };
-
-  const browserWindow = new BrowserWindow(options);
+  const options = createStartupWindowOptions({ app, isPreview, palette: startupSplashPalette,
+    localOrigin: desktopLocalOrigin, serverOrigin: desktopServerOrigin,
+    bootOutcome: state.bootOutcome || null, macosMajor: desktopMacosMajor });
+  const early = label === 'main' ? takeEarlyStartupWindow() : null;
+  const browserWindow = early || new BrowserWindow(options);
+  if (early) browserWindow.setBackgroundColor(startupSplashPalette.background);
+  if (useSaved) browserWindow.setSize(Math.max(saved.width, MIN_RESTORE_WINDOW_WIDTH), Math.max(saved.height, MIN_RESTORE_WINDOW_HEIGHT));
   browserWindow.__ocLabel = label || nextWindowLabel();
 
   if (useSaved && Number.isFinite(saved.x) && Number.isFinite(saved.y)) {
@@ -3174,6 +3113,13 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
     if (startupAction === 'copy-startup-diagnostics') {
       event.preventDefault();
       if (desktopStartupFailed && lastStartupDiagnostic) clipboard.writeText(lastStartupDiagnostic);
+      return;
+    }
+    if (startupAction === 'prepare-reboot-recovery') {
+      event.preventDefault();
+      if (browserWindow === state.mainWindow && browserWindow.webContents.getURL() === startupFailurePageUrl) {
+        void prepareStartupRebootRecovery();
+      }
       return;
     }
     if (startupAction === 'retry-startup') {
@@ -3657,13 +3603,34 @@ const installPowerResumeHook = () => {
 const showStartupFailure = async (error) => {
   const mainWindow = state.mainWindow;
   if (!mainWindow || mainWindow.isDestroyed()) return;
+  startupRecoveryFailure = error;
+  startupFailurePageUrl = `data:text/html;charset=utf-8,${encodeURIComponent(buildStartupErrorHtml(error))}`;
   await navigateWindow(
     mainWindow,
-    `data:text/html;charset=utf-8,${encodeURIComponent(buildStartupErrorHtml(error))}`,
+    startupFailurePageUrl,
     { allowAbort: true },
   );
   mainWindow.show();
   mainWindow.focus();
+};
+
+let preparingStartupRebootRecovery = false;
+const prepareStartupRebootRecovery = async () => {
+  if (preparingStartupRebootRecovery || isPreview || isRuntimeServiceMode || process.platform !== 'darwin'
+    || startupErrorDetails(startupRecoveryFailure).code !== 'bundle_execution_unsettled') return;
+  preparingStartupRebootRecovery = true;
+  try {
+    const binding = readNativeShellBundleBinding({ environment: { ...process.env }, home: os.homedir(),
+      existsSync: fs.existsSync, readRuntimeBundleBinding });
+    if (!binding) throw Object.assign(new Error('The retained runtime could not be inspected.'), { code: 'runtime_bundle_binding_invalid' });
+    const { beginNativeBundleRebootRecovery } = await import('@openchamber/web/server/lib/opencode/runtime-host/native-bundle-reboot-recovery.js');
+    await beginNativeBundleRebootRecovery({ controlRoot: binding.controlRoot, expectedRevision: binding.selection.revision });
+    await showStartupFailure(Object.assign(new Error('Recovery is prepared and requires a computer restart.'), { code: 'bundle_reboot_required' }));
+  } catch (error) {
+    await showStartupFailure(error);
+  } finally {
+    preparingStartupRebootRecovery = false;
+  }
 };
 
 const showBotStartupAttention = async (error) => {
@@ -5142,6 +5109,9 @@ app.on('open-url', (event, url) => {
   event.preventDefault();
   handleDeepLinks([url]);
 });
+
+const earlyLinks = takeEarlyAppLinks();
+if (earlyLinks.length) handleDeepLinks(earlyLinks);
 
 app.on('activate', async () => {
   const windows = BrowserWindow.getAllWindows().filter((window) => !window.isDestroyed());

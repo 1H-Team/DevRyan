@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.9] - 2026-10-13
+
+- Preserve the original startup upgrade failure and add guarded macOS restart recovery for abandoned process leases. Recovery requires a different OS boot, retains private views and Git pins, and does not invent process termination evidence or apply uncertain project changes.
+- Show the startup splash before loading the Electron main bundle, overlap provider and agent requests, and reuse source verification within one upgrade operation. End-to-end performance acceptance remains unmet; no launch-speed improvement is claimed.
+- Require final-installer startup, history, response, screenshot, journal and cleanup evidence before publication, including recovery preparation and same-boot refusal. Actual OS reboot qualification is not a publication gate.
+
+Implementation, local verification and remaining release prerequisites are recorded in [the startup repair audit](docs/audits/2026-10-12/startup-repair/README.md).
+Hosted migration verification and publication status are recorded in [the v2.0.9 release record](docs/audits/2026-10-13/release-2.0.9/README.md).
+
 ## [2.0.8] - 2026-10-12
 
 - Wait for native health and the global event subscription before admitting chat, retry temporary startup failures, preserve setup preferences, and offer sanitized startup diagnostics. Publication now requires startup qualification of the final DMG; implementation checks are recorded in [the startup contract audit](docs/audits/2026-10-12/startup-contract/README.md).

@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
+import fs from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { CdpConnection, discoverPageTarget, evaluate } from './cdp.mjs';
 import { startOwnedProcess, reservePort } from './process.mjs';
 import { createQaUiDriver } from './ui-driver.mjs';
@@ -28,7 +30,31 @@ export async function releaseRendererRequest(cdp, pathname, init = {}) {
     return {status: response.status, body: await response.json()}; })()`);
 }
 
-export async function launchReleaseStartup(artifact, profile, { setupOnly = false, serviceEnvironmentManaged = false } = {}) {
+export async function captureReleaseStartupScreenshot(launch, directory, name, identity) {
+  assert.match(name, /^DevRyan-[a-z0-9.-]+\.png$/);
+  const result = await launch.cdp.send('Page.captureScreenshot', { format: 'png' });
+  const bytes = Buffer.from(result.data, 'base64');
+  assert.ok(bytes.length > 1024 && bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])));
+  await fs.mkdir(directory, { recursive: true });
+  await fs.writeFile(path.join(directory, name), bytes, { mode: 0o600, flag: 'wx' });
+  const { sourceCommit, dmgSha256, manifestSha256, appSha256 } = identity;
+  return { name, sha256: createHash('sha256').update(bytes).digest('hex'), sourceCommit, dmgSha256, manifestSha256, appSha256 };
+}
+
+export async function assertReleaseRetainedSession(launch, profile, id) {
+  const result = await launch.request('/api/session?directory=' + encodeURIComponent(profile.workspace) + '&roots=true&limit=50');
+  assert.equal(result.status, 200);
+  const session = result.body.find(row => row.id === id);
+  assert.ok(session, 'Saved history disappeared');
+  const messages = await launch.request(`/api/session/${encodeURIComponent(id)}/message?directory=${encodeURIComponent(profile.workspace)}`);
+  assert.equal(messages.status, 200);
+  assert.ok(messages.body.some(row => row.info?.role === 'assistant' && row.info?.time?.completed
+    && row.parts?.some(part => part.type === 'text' && part.text?.includes('DevRyan live QA ready.'))), 'Completed fixture response disappeared');
+  await launch.ui.click({ selector: `[data-session-row=${JSON.stringify(id)}] [data-session-select]` });
+  await launch.ui.waitVisibleText('DevRyan live QA ready.');
+}
+
+export async function launchReleaseStartup(artifact, profile, { setupOnly = false, serviceEnvironmentManaged = false, expectedFailure } = {}) {
   // Released builds can automatically register a service before the renderer exists.
   requireDisposableMacRunner();
   const startedAt = performance.now(), debugPort = await reservePort();
@@ -54,11 +80,17 @@ export async function launchReleaseStartup(artifact, profile, { setupOnly = fals
     removeErrors = cdp.on('Runtime.exceptionThrown', () => { exceptions++; });
     await Promise.all([cdp.send('Page.enable'), cdp.send('Runtime.enable'), cdp.send('Network.enable')]);
     const check = () => { app.check(); profile.check(); subscription.check(); };
+    const ui = createQaUiDriver(cdp, { checkAlive: check, timeoutMs: 60_000 });
+    if (expectedFailure) {
+      await ui.waitVisibleText(expectedFailure);
+      assert.equal(await evaluate(cdp, 'Boolean(document.querySelector("textarea"))'), false, 'Failed startup exposed a composer');
+      assert.equal(exceptions, 0);
+      return { cdp, app, ui, check, stop, startup: { outcome: 'failed', code: expectedFailure } };
+    }
     const origin = await waitReleaseStartup('production renderer', async () => {
       const href = await evaluate(cdp, 'location.href').catch(() => '');
       return /^http:\/\/127\.0\.0\.1:\d+\//.test(href) ? new URL(href).origin : null;
     }, check);
-    const ui = createQaUiDriver(cdp, { checkAlive: check, timeoutMs: 60_000 });
     const request = (route, init) => releaseRendererRequest(cdp, route, init);
     let startup;
     if (setupOnly) {

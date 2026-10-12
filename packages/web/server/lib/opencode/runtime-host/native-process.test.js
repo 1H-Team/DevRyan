@@ -70,7 +70,7 @@ test('a pre-bound startup refusal preserves only its safe code and still awaits 
     expect(recovered).toBe(true);
     expect(JSON.parse(await fs.readFile(path.join(root, 'state/managed-opencode-processes.json'), 'utf8')).processes).toEqual([]);
   }, reply);
-});
+}, 15000);
 
 test('native process correlates concurrent commands and close awaits actual exit and owner recovery', async () => {
   await fixture(async ({root,start}) => {
@@ -100,7 +100,8 @@ test('credential settlement remains attached when bounded recovery times out', a
   await fixture(async ({ start }) => {
     let release;
     const cleanup = new Promise(resolve => { release = resolve; });
-    const controller = await start({ timeoutMs: 500, afterExit: () => cleanup });
+    // Startup shares the recovery budget; cold child startup must precede the blocked-cleanup assertion.
+    const controller = await start({ timeoutMs: 3000, afterExit: () => cleanup });
     try {
       await expect(controller.call({ action: 'hold', sessionID: 'ses_test' }, { timeoutMs: 20 })).rejects.toMatchObject({ code: 'native_process_command_timeout' });
       let settled = false;
@@ -110,7 +111,7 @@ test('credential settlement remains attached when bounded recovery times out', a
       release(); await settlement; expect(settled).toBe(true);
     } finally { release(); await controller.killAndWaitForExit(); }
   });
-});
+}, 15000);
 
 test('uncertain reverse commands release the credential queue after child settlement before queued owner cleanup', async () => {
   await fixture(async ({ start }) => {

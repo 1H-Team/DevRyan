@@ -155,7 +155,7 @@ ${renderLogoSvg()}
   </html>`;
 };
 
-export const buildStartupErrorHtml = (settings = {}, { message = '' } = {}) => {
+export const buildStartupErrorHtml = (settings = {}, { message = '', rebootRecovery = false, rebootRequired = false } = {}) => {
   const splashBgLight = readColorSetting(settings, 'splashBgLight', DEFAULT_SPLASH_BG_LIGHT);
   const splashFgLight = readColorSetting(settings, 'splashFgLight', DEFAULT_SPLASH_FG_LIGHT);
   const splashBgDark = readColorSetting(settings, 'splashBgDark', DEFAULT_SPLASH_BG_DARK);
@@ -210,9 +210,9 @@ export const buildStartupErrorHtml = (settings = {}, { message = '' } = {}) => {
     <main>
 ${renderLogoSvg()}
       <div class="error-content" role="alert">
-        <h1>Startup needs attention</h1>
+        <h1>${rebootRequired ? 'Restart your computer to continue' : 'Startup needs attention'}</h1>
         <p>${detail}</p>
-        <a href="openchamber://retry-startup">Retry</a>
+        ${rebootRecovery ? '<p>A previous execution has not been safely settled. Prepare recovery to check whether a computer restart can resolve it. Your sessions and retained work will be preserved.</p><a href="openchamber://retry-startup">Retry</a><a href="openchamber://prepare-reboot-recovery">Prepare recovery for restart</a>' : rebootRequired ? '<p>Recovery is prepared. Restart your computer, then reopen DevRyan. Restarting only the app cannot finish this recovery.</p>' : '<a href="openchamber://retry-startup">Retry</a>'}
         <a href="openchamber://copy-startup-diagnostics">Copy Diagnostics</a>
       </div>
     </main>

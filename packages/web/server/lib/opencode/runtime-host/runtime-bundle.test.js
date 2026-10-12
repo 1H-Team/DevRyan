@@ -1087,7 +1087,9 @@ test('default startup leaves abandoned leases to the strict gate when a live own
  expect(await (await openChangeStore(seeded.root,seeded.gitDir)).get(`leases/${changeKey(seeded.token)}.json`)).toMatchObject({state:'ready'});
  await fs.rm(lock);
  const running=await startupUpgradeFixture('startup-process-lease-home'),spawned=await seedSelectedLease(running,{executionKind:'process',preparation:undefined});
- expect(await recoverSelectedBundleLeasesAtStartup({controlRoot:running.controlRoot,log:{}})).toEqual({status:'clean'});
+ expect(await recoverSelectedBundleLeasesAtStartup({controlRoot:running.controlRoot,log:{},
+  verifyArtifacts:async()=>({controller:running.binding().descriptor.launch.controllerBinary})}))
+  .toEqual({status:'failed',code:'mutation_termination_unconfirmed'});
  expect(await running.launch(running.pinned)).toBe(running.controlRoot);
  expect(readStartupBundleUpgradeFailure()).toBe('bundle_execution_unsettled');expect(running.binding().selection.revision).toBe(1);
  expect(await (await openChangeStore(spawned.root,spawned.gitDir)).get(`leases/${changeKey(spawned.token)}.json`)).toMatchObject({state:'ready'});

@@ -1,12 +1,13 @@
 // Three fresh packaged app-bound starts against the actual native backend and a
 // local HTTP model fixture. No launchd, installed state, or external OpenCode.
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createDiagnosticSanitizer } from '../../packages/harness-runtime/lib/sanitizer.js';
 import { readRuntimeBundleBinding } from '../../packages/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js';
@@ -21,6 +22,7 @@ import { reservePort, startOwnedProcess } from './process.mjs';
 import { createRunRoot } from './run-root.mjs';
 import { syntheticCursorProvider, syntheticAnthropicProvider } from './startup-catalog-reproduction.mjs';
 
+const execute = promisify(execFile);
 const repository = fileURLToPath(new URL('../../', import.meta.url)).replace(/\/$/, '');
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -52,6 +54,69 @@ export function parseStartupComparisonArgs(argv) {
   assertStartupMode(startupMode);
   return { baselinePackageEvidence: argv[1], candidatePackageEvidence: argv[3], artifactRoot: argv[5], startupMode,
     ...(baselineArtifactRoot ? { baselineArtifactRoot } : {}) };
+}
+
+export function readNativeWindowObservation(raw, ownedPid) {
+  assert.ok(Number.isSafeInteger(ownedPid) && ownedPid > 0);
+  assert.ok(typeof raw === 'string' && Buffer.byteLength(raw) <= 4096);
+  const value = JSON.parse(raw);
+  assert.equal(value.protocol, 'devryan.owned-window-visibility/1');
+  assert.equal(value.ownerPID, ownedPid, 'OS observation must name the exact owned Electron child');
+  assert.ok(Array.isArray(value.windowIDs) && value.windowIDs.length <= 1
+    && value.windowIDs.every(id => Number.isSafeInteger(id) && id > 0));
+  return value.windowIDs.map(windowID => ({ windowID, visible: true }));
+}
+
+/** Native visibility is a parent-clock observation upper bound, not a pixel-paint timestamp. */
+export async function observeNativeStartupVisibility({ startedAt, readVisibility, checkAlive,
+  clock = () => performance.now(), wait = pause, timeoutMs = 45000, onObservationError = () => {} }) {
+  const deadline = clock() + timeoutMs;
+  while (clock() < deadline) {
+    checkAlive();
+    let windows;
+    try { windows = await readVisibility(); } catch (error) {
+      onObservationError({ code: typeof error.code === 'number' || typeof error.code === 'string' ? error.code : null,
+        signal: typeof error.signal === 'string' ? error.signal : null, killed: error.killed === true });
+      // A bounded invocation timeout is pending evidence; only eventual owned-window proof succeeds.
+      if (error.killed !== true || error.signal !== 'SIGTERM') throw error;
+    }
+    if (windows) {
+      assert.ok(Array.isArray(windows) && windows.length <= 1, 'Owned startup must have at most one native window');
+      if (windows[0]?.visible === true) return { firstVisibleObservedMs: clock() - startedAt,
+        windowID: windows[0].windowID, clock: 'parent-monotonic', measurement: 'CGWindowList on-screen normal-layer owned-PID metadata observation upper bound; includes helper invocation and polling latency; not first painted pixels' };
+    }
+    await wait(100);
+  }
+  throw new Error('qa_startup_native_visibility_timeout');
+}
+
+/** Same real UI submission and completed-assistant checks as final-DMG startup qualification. */
+export async function submitNativeStartupFixture({ ui, request, workspace, providerRequests, startedAt,
+  clock = () => performance.now() }) {
+  const route = '/api/session?directory=' + encodeURIComponent(workspace) + '&roots=true&limit=50';
+  const before = await request(route);
+  assert.equal(before.status, 200);
+  const beforeIds = new Set(before.body.map(row => row.id));
+  await ui.click({ label: 'New Chat' });
+  const calls = providerRequests.length, submittedAt = clock();
+  await ui.send('DevRyan live QA ready.');
+  const completed = await ui.waitFor('completed startup fixture response', async () => {
+    if (providerRequests.length <= calls) return null;
+    const sessions = await request(route); assert.equal(sessions.status, 200);
+    const session = sessions.body.find(row => !beforeIds.has(row.id));
+    if (!session) return null;
+    const messages = await request(`/api/session/${encodeURIComponent(session.id)}/message?directory=${encodeURIComponent(workspace)}`);
+    assert.equal(messages.status, 200);
+    const assistant = messages.body.find(row => row.info?.role === 'assistant' && row.info?.time?.completed
+      && row.parts?.some(part => part.type === 'text' && part.text?.includes('DevRyan live QA ready.')));
+    return assistant ? { sessionID: session.id, messageID: assistant.info.id } : null;
+  });
+  const completedAt = clock();
+  await ui.waitVisibleText('DevRyan live QA ready.', `[data-message-id=${JSON.stringify(completed.messageID)}]`);
+  return { ...completed, outcome: 'passed', completeResponseSinceSpawnMs: completedAt - startedAt,
+    completeResponseSinceSubmitMs: completedAt - submittedAt, renderedCompleteSinceSpawnMs: clock() - startedAt,
+    renderedCompleteSinceSubmitMs: clock() - submittedAt, submissionClockOrigin: 'before real UI send',
+    clock: 'parent-monotonic', providerRequestObserved: true };
 }
 
 export function assertNativeStartupUpgrade(initial, final, candidate) {
@@ -214,8 +279,9 @@ export async function runNativeStartupBenchmark(options) {
   return runStartupLaunches(options);
 }
 
-async function runStartupLaunches({ packageEvidence, artifactRoot, baselineArtifactRoot, startupMode = 'natural', startupPolicy = 'optimized', baselineSourceSha256 }, comparisonSource, comparisonCatalog) {
+async function runStartupLaunches({ packageEvidence, artifactRoot, baselineArtifactRoot, startupMode = 'natural', startupPolicy = 'optimized', baselineSourceSha256, diagnosticSingle = false }, comparisonSource, comparisonCatalog) {
   assertStartupMode(startupMode);
+  assert.equal(typeof diagnosticSingle, 'boolean');
   assert.ok(['optimized','previous'].includes(startupPolicy), 'Explicit startup comparison policy required');
   if (process.platform !== 'darwin' || process.arch !== 'arm64' || !globalThis.Bun) throw new Error('Native packaged startup measurement requires pinned Bun on Darwin ARM64');
   const before = await captureQaSourceIdentity(repository);
@@ -239,20 +305,32 @@ async function runStartupLaunches({ packageEvidence, artifactRoot, baselineArtif
   assert.equal(await fs.realpath(fixtures), fixtures);
   let activeStop = async () => {};
   const run = createRunRoot({ parent: path.join(repository, '.cache/qa'), prefix: 'native-startup-',
-    owner: 'scripts/qa/native-startup-benchmark.mjs', onInterrupt: () => activeStop() });
+    owner: 'scripts/qa/native-startup-benchmark.mjs', extraPayloads: ['native-visibility'], onInterrupt: () => activeStop() });
   const launchScope = comparisonSource ? 'one fresh process/profile' : 'three fresh processes/profiles';
   const evidence = { schemaVersion: 1, kind: candidate ? 'packaged-native-app-bound-startup-upgrade' : 'packaged-native-app-bound-startup', outcome: 'failed',
     scope: candidate ? 'three fresh baseline profiles; production app-bound native startup upgrade; local HTTP model fixture; natural first usable renderer'
       : `${launchScope}; prepared native bundle; local HTTP model fixture; natural first usable renderer`,
     ...(candidate ? { candidate } : {}),
-    launches: comparisonSource ? 1 : 3,
+    launches: comparisonSource || diagnosticSingle ? 1 : 3,
     startupMode, ...(startupMode === 'foreground' ? { scope: candidate ? 'three fresh baseline profiles; production startup upgrade; local HTTP model fixture; foreground-controlled admission' : `${launchScope}; prepared native bundle; local HTTP model fixture; foreground-controlled admission`, timingQualification: 'foreground-controlled admission, not natural startup latency' } : {}),
     sourceSha256: before.sha256, packageSourceSha256: packaged.evidence.source.sha256, archiveSha256: packaged.evidence.archiveSha256, startupPolicy, legacyOpenAiBrowser, runs: [],
     catalogFixtureSha256: hash(JSON.stringify(catalogProviders ?? null)),
     unavailable: ['foreground warm service', 'foreground cold service', 'foreground stale-owner recovery', 'foreground service upgrade'],
     excluded: ['launchd/SMAppService registration', 'installed state', 'paid providers', 'first native-bundle provisioning', 'cold OS caches'] };
   try {
-    for (let iteration = 0; iteration < (comparisonSource ? 1 : 3); iteration++) {
+    const visibilityDirectory = path.join(run.dir, 'native-visibility');
+    await fs.mkdir(visibilityDirectory, { mode: 0o700 });
+    const visibilitySource = path.join(repository, 'scripts/qa/macos-gui-prerequisites.swift');
+    const visibilityBinary = path.join(visibilityDirectory, 'DevRyan-owned-window-visibility');
+    await execute('/usr/bin/xcrun', ['swiftc', visibilitySource, '-module-cache-path', path.join(visibilityDirectory, 'module-cache'), '-o', visibilityBinary],
+      { timeout: 60000, maxBuffer: 65536 });
+    evidence.nativeVisibilityHelper = { sourceSha256: hash(await fs.readFile(visibilitySource)), binarySha256: hash(await fs.readFile(visibilityBinary)) };
+    if (diagnosticSingle) {
+      evidence.kind = 'packaged-native-startup-single-diagnostic';
+      evidence.scope = 'single isolated native startup and reopen diagnostic; local HTTP model fixture';
+      evidence.qualification = 'single diagnostic only; not a three-trial comparison or release qualification';
+    }
+    for (let iteration = 0; iteration < (comparisonSource || diagnosticSingle ? 1 : 3); iteration++) {
       const directory = path.join(run.dir, `run-${iteration + 1}`);
       await fs.mkdir(directory, { mode: 0o700 });
       const runtimeRoot = run.own(await fs.mkdtemp(path.join(fixtures, 'native-startup-')));
@@ -284,7 +362,7 @@ async function runStartupLaunches({ packageEvidence, artifactRoot, baselineArtif
           assert.equal(prepared.env.DEVRYAN_RUNTIME_BUNDLE_ROOT, undefined);
           assert.equal(prepared.env.XDG_STATE_HOME, path.join(runtimeRoot, 'state'));
         }
-        const profile = path.join(runtimeRoot, 'profile'), port = await reservePort(), debugPort = await reservePort();
+        const profile = path.join(runtimeRoot, 'profile'), port = await reservePort();
         const settingsPath = path.join(prepared.env.OPENCHAMBER_DATA_DIR, 'settings.json');
         const settings = JSON.parse(await fs.readFile(settingsPath, 'utf8'));
         await fs.writeFile(settingsPath, JSON.stringify({ ...settings, desktopLocalPort: port,
@@ -293,9 +371,20 @@ async function runStartupLaunches({ packageEvidence, artifactRoot, baselineArtif
           GIT_CEILING_DIRECTORIES: fixtures };
         delete env.NODE_OPTIONS;
         const captureLaunch = async launchRecord => {
+          const debugPort = await reservePort();
           const logOffset = readNativeStartupLogs(null, prepared.env.DEVRYAN_QA_HOME).length;
           const startedAt = performance.now();
           app = startOwnedProcess(packaged.binary, [`--remote-debugging-port=${debugPort}`, `--user-data-dir=${profile}`], { cwd: workspace, env });
+          const visibility = observeNativeStartupVisibility({ startedAt, checkAlive: () => app.check(),
+            onObservationError: failure => {
+              launchRecord.nativeVisibilityInvocationErrors ??= [];
+              if (launchRecord.nativeVisibilityInvocationErrors.length < 24) launchRecord.nativeVisibilityInvocationErrors.push({ ...failure, observedAtMs: performance.now() - startedAt });
+            }, readVisibility: async () => {
+            const { stdout } = await execute(visibilityBinary, ['--observe-owned-window', String(app.child.pid)], { timeout: 2000, maxBuffer: 4096 });
+            return readNativeWindowObservation(stdout, app.child.pid);
+          } }).then(value => { launchRecord.nativeVisibility = value; return { value }; }, error => {
+            launchRecord.nativeVisibility = { outcome: 'failed', reason: 'native_visibility_unavailable' }; return { error };
+          });
           const target = await discoverPageTarget(debugPort);
           const cdpTargetMs = performance.now() - startedAt;
           cdp = await CdpConnection.connect(target.webSocketDebuggerUrl);
@@ -306,14 +395,34 @@ async function runStartupLaunches({ packageEvidence, artifactRoot, baselineArtif
           await Promise.all([cdp.send('Page.enable'), cdp.send('Runtime.enable'), cdp.send('Network.enable')]);
           const checkAlive = () => { app.check(); subscription.check(); };
           const deadline = performance.now() + 45_000;
+          launchRecord.visualObservations = [];
+          const prefix = launchRecord === record ? 'startup' : 'reopen';
+          const captureVisual = async (label, status) => {
+            try {
+              const screenshot = await cdp.send('Page.captureScreenshot', { format: 'png' });
+              const bytes = Buffer.from(screenshot.data, 'base64'), name = `${prefix}-${label}.png`;
+              await fs.writeFile(path.join(directory, name), bytes, { mode: 0o600 });
+              launchRecord.visualObservations.push({ name, sha256: hash(bytes), observedAtMs: performance.now() - startedAt,
+                status: sanitize.sanitizeText(String(status ?? '').slice(0, 200), { highEntropy: false }), outcome: 'captured' });
+            } catch { launchRecord.visualObservations.push({ stage: label, outcome: 'unavailable', reason: 'early_document_capture_unavailable' }); }
+          };
+          await captureVisual('early-document', await evaluate(cdp, 'document.getElementById("startup-status")?.textContent ?? document.getElementById("initial-loading")?.textContent ?? "early splash not observed"').catch(() => 'document changing'));
+          let lastProgress;
           let origin;
           while (!origin) {
             checkAlive();
             const href = await evaluate(cdp, 'location.href').catch(() => '');
             if (/^http:\/\/127\.0\.0\.1:\d+\//.test(href)) origin = new URL(href).origin;
+            if (!origin && launchRecord.visualObservations.length < 4) {
+              const status = await evaluate(cdp, 'document.getElementById("startup-status")?.textContent').catch(() => null);
+              if (status && status !== lastProgress) { lastProgress = status; await captureVisual(`progress-${launchRecord.visualObservations.length}`, status); }
+            }
             if (performance.now() > deadline) throw new Error('qa_startup_renderer_origin_timeout');
             if (!origin) await pause(100);
           }
+          const observed = await visibility;
+          if (observed.error) throw observed.error;
+          launchRecord.nativeVisibility = observed.value;
           launchRecord.startup = await captureFirstDocumentStartup({ cdp, origin, startedAt, checkAlive, navigationAudit: audit, startupMode,
             ...(startupMode === 'foreground' ? { foregroundWindow: { method: 'desktop_focus_main_window', activate: async () => {
               const result = await evaluate(cdp, 'window.__TAURI__.core.invoke("desktop_focus_main_window", {})');
@@ -323,12 +432,27 @@ async function runStartupLaunches({ packageEvidence, artifactRoot, baselineArtif
             runtimeUiTuple: { providerId: runtimeUiTuple.providerID, modelId: runtimeUiTuple.modelID, agent: 'builder' },
             isEventStreamReady: subscription.isReady,
             readStartupPhases: () => parseStartupPhaseLogs(readNativeStartupLogs(app, prepared.env.DEVRYAN_QA_HOME, logOffset)),
-            milestones: { cdpTargetMs, loopbackOriginMs: performance.now() - startedAt } });
+            milestones: { cdpTargetMs, firstVisibleObservedMs: observed.value.firstVisibleObservedMs, loopbackOriginMs: performance.now() - startedAt } });
           launchRecord.subscription = subscription.evidence;
           assert.equal(launchRecord.startup.outcome, 'passed', launchRecord.startup.error);
-          return { origin, checkAlive };
+          return { origin, checkAlive, startedAt };
         };
-        const { origin, checkAlive } = await captureLaunch(record);
+        const { origin, checkAlive, startedAt } = await captureLaunch(record);
+        const ui = createQaUiDriver(cdp, { checkAlive, timeoutMs: 45000 });
+        const request = route => evaluate(cdp, `(async()=>{const response=await fetch(${JSON.stringify(route)},{signal:AbortSignal.timeout(10000)});return {status:response.status,body:await response.json()};})()`);
+        // Prepare populated history before the measured submission so its completed session remains in the first page.
+        const historySize = 200;
+        for (let index = 0; index < historySize; index++) {
+          const response = await fetch(new URL('/api/session?directory=' + encodeURIComponent(workspace), origin), {
+            method: 'POST', headers: { 'content-type': 'application/json', 'X-DevRyan-CSRF': '1' },
+            body: JSON.stringify({ title: `Synthetic startup history ${index}` }), signal: AbortSignal.timeout(10_000),
+          });
+          assert.equal(response.status, 200, 'Synthetic history creation failed');
+          assert.ok((await response.json()).id, 'Synthetic session needs a stable ID');
+        }
+        record.response = await submitNativeStartupFixture({ ui, request, workspace,
+          providerRequests: prepared.evidence.providerRequests, startedAt });
+        record.response.spawnTimingIncludes = '200-session history fixture setup before submission; not earliest first-response latency';
         if (catalogProviders) {
           const response = await fetch(new URL('/api/provider?directory=' + encodeURIComponent(workspace), origin), { signal: AbortSignal.timeout(10000) });
           assert.equal(response.status, 200);
@@ -376,16 +500,6 @@ async function runStartupLaunches({ packageEvidence, artifactRoot, baselineArtif
         await prepared.verifyInputs();
         const screenshot = await cdp.send('Page.captureScreenshot', { format: 'png' });
         await fs.writeFile(path.join(directory, 'startup.png'), Buffer.from(screenshot.data, 'base64'), { mode: 0o600 });
-        // Exercise real persisted session listing on the next process, without model calls.
-        const historySize = 200;
-        for (let index = 0; index < historySize; index++) {
-          const response = await fetch(new URL('/api/session?directory=' + encodeURIComponent(workspace), origin), {
-            method: 'POST', headers: { 'content-type': 'application/json', 'X-DevRyan-CSRF': '1' },
-            body: JSON.stringify({ title: `Synthetic startup history ${index}` }), signal: AbortSignal.timeout(10_000),
-          });
-          assert.equal(response.status, 200, 'Synthetic history creation failed');
-          assert.ok((await response.json()).id, 'Synthetic session needs a stable ID');
-        }
         removeRuntimeErrors?.(); audit.complete(); subscription.close(); background.close(); cdp.close();
         await app.stop();
         record.firstCleanup = app.getCleanupEvidence();
@@ -403,6 +517,15 @@ async function runStartupLaunches({ packageEvidence, artifactRoot, baselineArtif
         const listed = await response.json();
         assert.equal(listed.length, 50, 'Reopened app must load the first page of populated history');
         record.reopen.listedSessions = listed.length;
+        const messages = await evaluate(cdp, `(async()=>{const response=await fetch(${JSON.stringify('/api/session/' + encodeURIComponent(record.response.sessionID) + '/message?directory=' + encodeURIComponent(workspace))},{signal:AbortSignal.timeout(10000)});return {status:response.status,body:await response.json()};})()`);
+        assert.equal(messages.status, 200);
+        assert.ok(messages.body.some(row => row.info?.id === record.response.messageID && row.info?.time?.completed
+          && row.parts?.some(part => part.type === 'text' && part.text?.includes('DevRyan live QA ready.'))), 'Completed startup response disappeared on reopen');
+        const reopenUi = createQaUiDriver(cdp, { checkAlive: reopened.checkAlive, timeoutMs: 15000 });
+        await reopenUi.click({ selector: `[data-session-row=${JSON.stringify(record.response.sessionID)}] [data-session-select]` });
+        await reopenUi.waitExpression('exact restored conversation selected', `new URL(location.href).searchParams.get('session') === ${JSON.stringify(record.response.sessionID)}`);
+        await reopenUi.waitVisibleText('DevRyan live QA ready.', `[data-message-id=${JSON.stringify(record.response.messageID)}]`);
+        record.reopen.restoredCompletedResponse = { sessionID: record.response.sessionID, messageID: record.response.messageID, outcome: 'passed' };
         assert.equal(rendererExceptions, 0, 'Reopened renderer threw during startup');
         const reopenScreenshot = await cdp.send('Page.captureScreenshot', { format: 'png' });
         await fs.writeFile(path.join(directory, 'reopen.png'), Buffer.from(reopenScreenshot.data, 'base64'), { mode: 0o600 });
@@ -446,7 +569,7 @@ async function runStartupLaunches({ packageEvidence, artifactRoot, baselineArtif
     assert.equal((await loadQaPackagedArtifact({ root: repository, evidencePath: packageEvidence })).evidence.archiveSha256, packaged.evidence.archiveSha256);
     if (candidate) assert.equal(hash(await fs.readFile(path.join(packaged.evidence.appPath,
       'Contents/Resources/revert-runtime/darwin-arm64/native-bundle.json'))), candidate.artifactManifestSha256, 'Packaged native candidate changed during measurement');
-    if (!comparisonSource) {
+    if (!comparisonSource && !diagnosticSingle) {
       evidence.summary = summarizeNativeStartupRuns(evidence.runs);
       evidence.reopenSummary = summarizeNativeStartupRuns(evidence.runs.map(record => record.reopen));
     }
@@ -483,6 +606,11 @@ export function assertStartupComparisonSources(baseline, candidate, current) {
   assert.ok(changed.length > 0, 'Comparison requires an actual candidate');
   const allowed = [
     'packages/ui/src/App.tsx', 'packages/web/server/lib/opencode/feature-routes-runtime.js',
+    'packages/ui/src/stores/useConfigStore.ts', 'packages/ui/src/stores/useConfigStore.bootstrap-status.test.ts',
+    'packages/ui/src/stores/DOCUMENTATION.md',
+    'packages/electron/entry.mjs', 'packages/electron/early-startup.mjs', 'packages/electron/main.mjs',
+    'packages/electron/package.json', 'packages/electron/scripts/bundle-main.mjs',
+    'packages/electron/tests/early-startup.test.mjs',
     'packages/ui/src/sync/bootstrap.ts', 'packages/ui/src/sync/bootstrap-session-list.test.ts',
     'packages/ui/src/sync/child-store.ts', 'packages/ui/src/sync/child-store.status-subscription.test.ts',
     'packages/ui/src/sync/directory-bootstrap-request.ts', 'packages/ui/src/sync/directory-bootstrap-request.test.ts',

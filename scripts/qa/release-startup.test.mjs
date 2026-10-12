@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import fs from 'node:fs';
+import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { releaseStartupEnvironment } from './release-startup-profile.mjs';
 import { parseReleaseStartupArgs, summarizeCompiledQualification } from './release-startup.mjs';
 import { createDiagnosticSanitizer } from '../../packages/harness-runtime/lib/sanitizer.js';
-import { launchReleaseStartup } from './release-startup-launch.mjs';
+import { launchReleaseStartup, captureReleaseStartupScreenshot } from './release-startup-launch.mjs';
 
 test('native lifecycle children report a bounded fatal cause before their default trace', () => {
   const command = fileURLToPath(new URL('../opencode-v2-native/legacy-lifecycle-driver.mjs', import.meta.url));
@@ -51,6 +53,24 @@ test('production app launches refuse a workstation before reading the artifact o
   if (process.env.CI === 'true') return;
   await assert.rejects(launchReleaseStartup(null, null), /ephemeral GitHub-hosted macOS ARM64 runner/);
 });
+test('captured screenshot evidence hashes written pixels and copies only exact artifact identity', async () => {
+  const parent = fileURLToPath(new URL('../../.cache/release-startup-tests/', import.meta.url));
+  fs.mkdirSync(parent, { recursive: true });
+  const root = fs.mkdtempSync(path.join(parent, 'screenshot-'));
+  try {
+    const bytes = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), Buffer.alloc(2048)]);
+    const identity = { sourceCommit: 'a'.repeat(40), dmgSha256: 'b'.repeat(64), manifestSha256: 'c'.repeat(64), appSha256: 'd'.repeat(64),
+      privateField: 'must-not-copy', scenarios: [] };
+    const launch = { cdp: { send: async method => { assert.equal(method, 'Page.captureScreenshot'); return { data: bytes.toString('base64') }; } } };
+    const evidence = await captureReleaseStartupScreenshot(launch, root, 'DevRyan-startup-fixture.png', identity);
+    assert.deepEqual(fs.readFileSync(path.join(root, evidence.name)), bytes);
+    assert.equal(evidence.sha256, createHash('sha256').update(bytes).digest('hex'));
+    assert.equal(evidence.privateField, undefined); assert.equal(evidence.scenarios, undefined);
+    assert.equal(evidence.sourceCommit, identity.sourceCommit);
+    await assert.rejects(captureReleaseStartupScreenshot(launch, root, '../unsafe.png', identity));
+    await assert.rejects(captureReleaseStartupScreenshot(launch, root, 'DevRyan-startup-fixture.png', identity), { code: 'EEXIST' });
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
 test('every PR runs startup contracts and every release publication depends on final-DMG qualification', () => {
   const read = file => fs.readFileSync(new URL('../../' + file, import.meta.url), 'utf8');
   const pr = read('.github/workflows/startup-contract.yml'), release = read('.github/workflows/release.yml');
@@ -61,4 +81,5 @@ test('every PR runs startup contracts and every release publication depends on f
   }
   assert.equal((release.match(/node scripts\/verify-release-startup.mjs/g) ?? []).length, 2);
   assert.match(release, /--release-dmg/);
+  assert.doesNotMatch(release, /reboot_qualification_run_id|--reboot-receipt|DevRyan-reboot-qualification|stage_startup_installer_only|staged_desktop_run_id/);
 });

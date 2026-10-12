@@ -3,8 +3,15 @@ import assert from 'node:assert/strict';
 export const RELEASE_STARTUP_SCENARIOS = Object.freeze([
   'empty-profile', 'unchanged-reopen', 'upgrade-previous', 'upgrade-second-previous',
   'same-runtime-upgrade', 'service-cold', 'service-warm', 'stale-owner', 'interrupted-upgrade', 'rejected-candidate',
+  'unsettled-process-upgrade',
 ]);
 const digest = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+
+export function assertReleaseScreenshot(row, identity) {
+  assert.match(row?.name ?? '', /^DevRyan-[a-z0-9.-]+\.png$/);
+  assert.ok(digest(row.sha256));
+  for (const key of ['sourceCommit', 'dmgSha256', 'manifestSha256', 'appSha256']) assert.equal(row[key], identity[key]);
+}
 
 /** Publication consumes only the exact DMG's complete, non-retried receipt. */
 export function assertReleaseStartupReceipt(receipt, { sourceCommit, dmgSha256, version }) {
@@ -29,6 +36,16 @@ export function assertReleaseStartupReceipt(receipt, { sourceCommit, dmgSha256, 
     assert.ok(Number.isFinite(row.elapsedMs) && row.elapsedMs >= 0, row.id);
     assert.ok(digest(row.manifestSha256), row.id);
     assert.equal(row.manifestSha256, receipt.manifestSha256, row.id);
+    assert.ok(Array.isArray(row.screenshots) && row.screenshots.length > 0, row.id);
+    for (const screenshot of row.screenshots) assertReleaseScreenshot(screenshot, receipt);
+    if (row.id === 'unsettled-process-upgrade') {
+      assert.equal(row.failureCode, 'bundle_execution_unsettled');
+      assert.equal(row.recoveryPrepared, true);
+      assert.equal(row.sameBootRefused, true);
+      assert.equal(row.selectionPreserved, true);
+      assert.equal(row.dataPreserved, true);
+      continue;
+    }
     assert.equal(row.usableChat, true, row.id);
     assert.equal(row.submission, 'passed', row.id);
     assert.equal(row.eventStream, 'acknowledged', row.id);

@@ -21,6 +21,8 @@ import {protectNativeSetupSource,removeNativeSetupSource,resetAbandonedNativeSet
 import {canonicalJSON,isRecord,readBundleJSON,sha256} from './bundle-migration-inventory.js';
 import {reclaimReusedLock} from './native-setup-local-owners.js';
 import {upgradeSelectedNativeBundleAtStartup} from './native-bundle-startup-upgrade.js';
+import {finishNativeBundleRebootRecoveryAtStartup} from './native-bundle-reboot-recovery.js';
+import {recordStartupBundleUpgradeFailure} from './bundle-startup-upgrade-status.js';
 import {recoverSelectedBundleLeasesAtStartup} from './native-bundle-lease-recovery.js';
 
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
@@ -114,6 +116,7 @@ export function defaultNativeRegistrations(origins) {
 export async function provisionDefaultNativeBundle({env=process.env,home=os.homedir(),cwd=process.cwd(),
  artifactDirectory=executionArtifacts().directory,verifyArtifacts=verifyNativeRuntimeArtifacts,runMigration,credentialProcess,
  defaultConfigRoot=new URL('../../../default-config/',import.meta.url),captureLogicalSetup}={}) {
+ recordStartupBundleUpgradeFailure(null);
  if(env.OPENCODE_DB!==undefined&&!path.isAbsolute(env.OPENCODE_DB)||env.OPENCODE_HOST||env.OPENCODE_SKIP_START==='true'||env.OPENCHAMBER_SKIP_OPENCODE_START==='true'||env.OPENCODE_BINARY
   ||env.DEVRYAN_OPENCODE_GENERATION!==undefined&&env.DEVRYAN_OPENCODE_GENERATION!=='2')throw fail('native_runtime_configuration_unsupported');
  const controlRoot=resolveRuntimeBundleRoot(env,home);
@@ -141,8 +144,9 @@ export async function provisionDefaultNativeBundle({env=process.env,home=os.home
   if(await exists(path.join(controlRoot,'selection.json'))){
    const selected=readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot},{allowHeldInspection:true});
    if(selected.admission==='held'||selected.selection.reconciliationRequired)return controlRoot;
+   if(!operations.windows)await finishNativeBundleRebootRecoveryAtStartup({controlRoot,verifyArtifacts});
    // Every verification below refuses an unsettled lease of the selected bundle.
-   if(!operations.windows)await recoverSelectedBundleLeasesAtStartup({controlRoot});
+   if(!operations.windows)await recoverSelectedBundleLeasesAtStartup({controlRoot,verifyArtifacts});
    if(await exists(sourceRoot))await removeNativeSetupSource({controlRoot,sourceRoot,...privatePersistence,verifySelected:async()=>{
     const store=createRuntimeBundleStore({...privatePersistence,controlRoot,allowRecoveredInputStartup:true,runMigration:async()=>{throw fail('bundle_migration_generation_invalid');},
      withQuiescedSource:async()=>{throw fail('bundle_quiescence_unverified');},

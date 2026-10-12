@@ -6,7 +6,18 @@ let getProvidersImpl: (options?: { directory?: string | null }) => Promise<unkno
 let listAgentsStrictImpl: () => Promise<unknown>
 let providerCallOptions: Array<{ directory?: string | null } | undefined>
 let settingsDefaultAgent: string | undefined
+let settingsZenModel: string | undefined
+type SettingsUpdate = Parameters<typeof import('@/lib/persistence').updateDesktopSettings>[0]
+let settingsUpdates: SettingsUpdate[]
 let readHealthImpl: () => Promise<import('@/lib/startup/health').StartupHealthSnapshot | null>
+
+const actualPersistenceModule = await import("@/lib/persistence")
+mock.module("@/lib/persistence", () => ({
+  ...actualPersistenceModule,
+  updateDesktopSettings: async (changes: SettingsUpdate) => {
+    settingsUpdates.push(changes)
+  },
+}))
 
 const actualOpencodeClientModule = await import("@/lib/opencode/client")
 mock.module("@/lib/opencode/client", () => ({
@@ -76,6 +87,8 @@ describe("useConfigStore startup load status", () => {
     console.error = mock(() => {}) as unknown as typeof console.error
     providerCallOptions = []
     settingsDefaultAgent = undefined
+    settingsZenModel = undefined
+    settingsUpdates = []
     getProvidersImpl = () => Promise.resolve({ providers: [], default: {} })
     listAgentsStrictImpl = () => Promise.resolve([])
     readHealthImpl = () => Promise.resolve({ ready: true, runtimeIdentity: 'fixture:1', error: null,
@@ -91,6 +104,7 @@ describe("useConfigStore startup load status", () => {
           responseStylePreset: "concise",
           responseStyleCustomInstructions: "",
           defaultAgent: settingsDefaultAgent,
+          zenModel: settingsZenModel,
         }), { status: 200 }))
       }
       return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }))
@@ -106,6 +120,8 @@ describe("useConfigStore startup load status", () => {
       agentsLoadStatus: "idle",
       agentsLoadError: undefined,
       responseStyleInstructionLoaded: false,
+      settingsDefaultAgent: undefined,
+      settingsZenModel: undefined,
       isConnected: true,
       isInitialized: false,
       initializationLoadStatus: "idle",
@@ -417,25 +433,105 @@ describe("useConfigStore startup load status", () => {
     expect(providerCallOptions).toHaveLength(1)
   })
 
-  test('startup initialization deduplicates health and loads agents only after providers finish', async () => {
+  test('startup deduplicates health and overlaps agent reads while defaults await providers', async () => {
+    settingsDefaultAgent = 'builder'
+    settingsZenModel = 'retired-model'
     let healthCalls = 0
     let releaseHealth!: (value: import('@/lib/startup/health').StartupHealthSnapshot) => void
     readHealthImpl = () => { healthCalls++; return new Promise(resolve => { releaseHealth = resolve }) }
     let releaseProviders!: (value: unknown) => void
     getProvidersImpl = () => new Promise(resolve => { releaseProviders = resolve })
     let agentCalls = 0
-    listAgentsStrictImpl = async () => { agentCalls++; return [] }
+    listAgentsStrictImpl = async () => { agentCalls++; return [{ name: 'builder', mode: 'primary', permission: [], options: {} }] }
     const first = useConfigStore.getState().initializeApp({ startup: true })
     const second = useConfigStore.getState().initializeApp({ startup: true })
     expect(healthCalls).toBe(1)
     releaseHealth({ ready: true, runtimeIdentity: 'fixture:1', error: null })
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(providerCallOptions).toHaveLength(1)
-    expect(agentCalls).toBe(0)
-    releaseProviders({ providers: [], default: {} })
+    expect(agentCalls).toBe(1)
+    expect(useConfigStore.getState().agents).toEqual([])
+    expect(useConfigStore.getState().settingsDefaultAgent).toBeUndefined()
+    expect(useConfigStore.getState().settingsZenModel).toBeUndefined()
+    expect(settingsUpdates).toEqual([])
+    releaseProviders({ providers: [{ id: 'zen', name: 'Zen', source: 'custom', options: {}, env: [],
+      models: { 'big-pickle': { ...selectionModel('big-pickle'), providerID: 'zen' } } }], default: {} })
     await Promise.all([first, second])
     expect(agentCalls).toBe(1)
     expect(useConfigStore.getState().isInitialized).toBe(true)
+    expect(useConfigStore.getState().settingsDefaultAgent).toBe('builder')
+    expect(useConfigStore.getState().settingsZenModel).toBe('big-pickle')
+    expect(settingsUpdates).toEqual([{ zenModel: 'big-pickle', gitProviderId: '', gitModelId: '' }])
+  })
+
+  test('provider failure prevents prefetched agents from committing or repairing defaults', async () => {
+    settingsDefaultAgent = 'removed-agent'
+    settingsZenModel = 'retired-model'
+    getProvidersImpl = async () => { throw new Error('provider bootstrap failed') }
+    listAgentsStrictImpl = async () => [{ name: 'builder', mode: 'primary', permission: [], options: {} }]
+    await useConfigStore.getState().initializeApp({ startup: true })
+    expect(useConfigStore.getState().agents).toEqual([])
+    expect(useConfigStore.getState().settingsDefaultAgent).toBeUndefined()
+    expect(useConfigStore.getState().settingsZenModel).toBeUndefined()
+    expect(settingsUpdates).toEqual([])
+    expect(useConfigStore.getState().initializationLoadError).toBe('provider bootstrap failed')
+  })
+
+  test('startup supersedes an ungated agent refresh before provider-dependent defaults commit', async () => {
+    settingsDefaultAgent = 'builder'
+    let releaseOldAgents!: (value: unknown) => void
+    let calls = 0
+    listAgentsStrictImpl = () => ++calls === 1
+      ? new Promise(resolve => { releaseOldAgents = resolve })
+      : Promise.resolve([{ name: 'builder', mode: 'primary', permission: [], options: {} }])
+    const old = useConfigStore.getState().loadAgents()
+    let releaseProviders!: (value: unknown) => void
+    getProvidersImpl = () => new Promise(resolve => { releaseProviders = resolve })
+    const startup = useConfigStore.getState().initializeApp({ startup: true })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    releaseOldAgents([{ name: 'stale', mode: 'primary', permission: [], options: {} }])
+    expect(await old).toBe(false)
+    expect(useConfigStore.getState().agents).toEqual([])
+    expect(useConfigStore.getState().settingsDefaultAgent).toBeUndefined()
+    releaseProviders({ providers: [], default: {} })
+    await startup
+    expect(calls).toBe(2)
+    expect(useConfigStore.getState().agents.map(agent => agent.name)).toEqual(['builder'])
+    expect(useConfigStore.getState().isInitialized).toBe(true)
+  })
+
+  test('a directory switch discards prefetched startup defaults and active agent commits', async () => {
+    settingsDefaultAgent = 'removed-agent'
+    let releaseProviders!: (value: unknown) => void
+    getProvidersImpl = () => new Promise(resolve => { releaseProviders = resolve })
+    listAgentsStrictImpl = async () => [{ name: 'builder', mode: 'primary', permission: [], options: {} }]
+    const loading = useConfigStore.getState().initializeApp({ startup: true })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    useConfigStore.setState({ activeDirectoryKey: '/new-repo', settingsDefaultAgent: 'new-default' })
+    releaseProviders({ providers: [], default: {} })
+    await loading
+    expect(useConfigStore.getState().agents).toEqual([])
+    expect(useConfigStore.getState().settingsDefaultAgent).toBe('new-default')
+    expect(useConfigStore.getState().directoryScoped.__global__?.agents).toEqual([])
+    expect(useConfigStore.getState().isInitialized).toBe(false)
+    expect(settingsUpdates).toEqual([])
+  })
+
+  test('cancelled startup discards prefetched defaults after providers finish', async () => {
+    settingsDefaultAgent = 'removed-agent'
+    let releaseProviders!: (value: unknown) => void
+    getProvidersImpl = () => new Promise(resolve => { releaseProviders = resolve })
+    listAgentsStrictImpl = async () => [{ name: 'builder', mode: 'primary', permission: [], options: {} }]
+    const controller = new AbortController()
+    const loading = useConfigStore.getState().initializeApp({ startup: true, signal: controller.signal })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    controller.abort()
+    releaseProviders({ providers: [], default: {} })
+    await loading
+    expect(useConfigStore.getState().agents).toEqual([])
+    expect(useConfigStore.getState().settingsDefaultAgent).toBeUndefined()
+    expect(useConfigStore.getState().isInitialized).toBe(false)
+    expect(settingsUpdates).toEqual([])
   })
 
   test('a replaced startup owner cannot publish its late failed health response', async () => {
@@ -453,5 +549,25 @@ describe("useConfigStore startup load status", () => {
     expect(useConfigStore.getState().isInitialized).toBe(true)
     expect(useConfigStore.getState().initializationLoadError).toBeUndefined()
     expect(providerCallOptions).toHaveLength(1)
+  })
+
+  test('replacing a cancelled startup agent read does not reuse its cancelled commit gate', async () => {
+    let releaseOldAgents!: (value: unknown) => void
+    let calls = 0
+    listAgentsStrictImpl = () => {
+      calls++
+      return calls === 1 ? new Promise(resolve => { releaseOldAgents = resolve }) : Promise.resolve([])
+    }
+    const controller = new AbortController()
+    const old = useConfigStore.getState().initializeApp({ startup: true, signal: controller.signal })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    controller.abort()
+    await useConfigStore.getState().initializeApp({ startup: true })
+    releaseOldAgents([{ name: 'stale', mode: 'primary', permission: [], options: {} }])
+    await old
+    expect(calls).toBe(2)
+    expect(useConfigStore.getState().agents).toEqual([])
+    expect(useConfigStore.getState().isInitialized).toBe(true)
+    expect(useConfigStore.getState().initializationLoadError).toBeUndefined()
   })
 })

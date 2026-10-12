@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { bundleElectronMain } from '../../packages/electron/scripts/bundle-main.mjs';
 import { captureQaArtifactIdentity, captureQaSourceIdentity } from './artifact-evidence.mjs';
 import { createRunRoot } from './run-root.mjs';
+import { verifyNativeRuntimeArtifacts, readNativeRuntimeManifest } from '../../packages/web/server/lib/opencode/runtime-host/native-artifacts.js';
 import { restoreRevertRuntimeExecutableModes } from '../verify-revert-runtime-artifacts.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -18,16 +19,28 @@ const asar = requireBuilder('@electron/asar');
 const sha256 = value => createHash('sha256').update(value).digest('hex');
 const inside = (parent, target) => target.startsWith(`${parent.replace(/\/$/, '')}${path.sep}`);
 
+export const qaNativeRuntimeResource = directory => ({ from: directory, to: 'revert-runtime/darwin-arm64',
+  filter: ['native-bundle.json', 'DevRyan-*', '!**/DevRyan-opencode*'] });
+
 // Explicit local QA build. Native modules are copied only after matching the
 // existing local package's Electron version, architecture and npm versions.
 // This avoids rebuilding binaries in the user's shared node_modules tree.
-export async function packageQaElectron({ webDist, nativeSourceApp } = {}) {
+export async function packageQaElectron({ webDist, nativeSourceApp, nativeRuntimeRoot } = {}) {
   if (process.platform !== 'darwin' || process.arch !== 'arm64') throw new Error('This local QA packager currently supports macOS arm64 only');
   if (!globalThis.Bun) throw new Error('Run the QA packager with the repository Bun runtime');
   const canonicalRoot = await realpath(root);
   const canonicalDist = await realpath(webDist);
   const nativeApp = await realpath(nativeSourceApp || path.join(electronRoot, 'dist/mac-arm64/DevRyan.app'));
   if (!inside(canonicalRoot, canonicalDist) || !inside(canonicalRoot, nativeApp)) throw new Error('QA inputs must stay inside the repository');
+  let nativeRuntimeManifestSha256;
+  if (nativeRuntimeRoot !== undefined) {
+    if (!path.isAbsolute(nativeRuntimeRoot) || await realpath(nativeRuntimeRoot) !== nativeRuntimeRoot
+      || !inside(canonicalRoot, nativeRuntimeRoot)) throw new Error('QA native runtime must be canonical and inside the repository');
+    const manifestPath = path.join(nativeRuntimeRoot, 'native-bundle.json');
+    nativeRuntimeManifestSha256 = sha256((await readNativeRuntimeManifest(manifestPath)).bytes);
+    await verifyNativeRuntimeArtifacts({ manifestPath, manifestSha256: nativeRuntimeManifestSha256,
+      launcher: path.join(nativeRuntimeRoot, 'DevRyan-execution-darwin-arm64') });
+  }
   const packageJson = JSON.parse(await readFile(path.join(electronRoot, 'package.json'), 'utf8'));
   const installedElectron = requireElectron('electron/package.json').version;
   const packagedElectron = execFileSync('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleVersion',
@@ -79,16 +92,17 @@ export async function packageQaElectron({ webDist, nativeSourceApp } = {}) {
       electronVersion: installedElectron,
       directories: { ...packageJson.build.directories, output: path.join(output, 'app') },
       files: [
-        ...packageJson.build.files.filter(file => !['dist-bundle/main.mjs', 'dist-bundle/desktop-update-install.mjs', 'dist-bundle/desktop-update-install-windows.mjs'].includes(file)),
+        ...packageJson.build.files.filter(file => !['dist-bundle/main.mjs', 'dist-bundle/entry.mjs', 'dist-bundle/early-startup.mjs', 'dist-bundle/startup-splash.mjs', 'dist-bundle/desktop-update-install.mjs', 'dist-bundle/desktop-update-install-windows.mjs'].includes(file)),
         // Deterministic suites create and remove private fixtures while QA builds.
         '!node_modules/**/.tmp{,/**/*}',
-        { from: path.dirname(main), to: 'dist-bundle', filter: ['main.mjs', 'desktop-update-install.mjs', 'desktop-update-install-windows.mjs'] },
+        { from: path.dirname(main), to: 'dist-bundle', filter: ['main.mjs', 'entry.mjs', 'early-startup.mjs', 'startup-splash.mjs', 'desktop-update-install.mjs', 'desktop-update-install-windows.mjs'] },
         { from: path.join(root, 'scripts/qa'), to: '.', filter: ['packaged-host.mjs', 'packaged-host-policy.mjs', 'isolated-home.mjs'] },
       ],
       extraMetadata: { main: './packaged-host.mjs' },
       extraResources: [...packageJson.build.extraResources, ...packageJson.build.mac.extraResources]
         .filter(resource => ['web-dist', 'native', 'revert-runtime'].includes(resource.to))
-        .map(resource => resource.to === 'web-dist' ? { from: canonicalDist, to: 'web-dist' } : resource),
+        .map(resource => resource.to === 'web-dist' ? { from: canonicalDist, to: 'web-dist' }
+          : resource.to === 'revert-runtime' && nativeRuntimeRoot ? qaNativeRuntimeResource(nativeRuntimeRoot) : resource),
       extraFiles: [],
       mac: { ...packageJson.build.mac, extraResources: [], extraFiles: [], target: ['dir'], identity: null, hardenedRuntime: false, notarize: false },
       publish: null,
@@ -108,11 +122,16 @@ export async function packageQaElectron({ webDist, nativeSourceApp } = {}) {
     }
     const resources = path.join(appPath, 'Contents/Resources');
     await restoreRevertRuntimeExecutableModes({ directory: path.join(resources, 'revert-runtime') });
+    if (nativeRuntimeRoot && (sha256(await readFile(path.join(resources, 'revert-runtime/darwin-arm64/native-bundle.json'))) !== nativeRuntimeManifestSha256
+      || sha256(await readFile(path.join(nativeRuntimeRoot, 'native-bundle.json'))) !== nativeRuntimeManifestSha256)) {
+      throw new Error('QA native runtime manifest changed during packaging');
+    }
     const archive = path.join(resources, 'app.asar');
     const packagedMain = asar.extractFile(archive, 'dist-bundle/main.mjs');
     if (sha256(packagedMain) !== sha256(await readFile(main))) throw new Error('Packaged Electron main differs from the fresh bundle');
-    for (const [file, expected] of [['desktop-update-install.mjs', mainInputs.installerSha256], ['desktop-update-install-windows.mjs', mainInputs.windowsInstallerSha256]]) {
-      if (sha256(asar.extractFile(archive, `dist-bundle/${file}`)) !== expected) throw new Error('Packaged update helper differs from the fresh bundle');
+    for (const [file, expected] of [['entry.mjs', mainInputs.entrySha256], ['early-startup.mjs', mainInputs.earlyStartupSha256],
+      ['startup-splash.mjs', mainInputs.startupSplashSha256], ['desktop-update-install.mjs', mainInputs.installerSha256], ['desktop-update-install-windows.mjs', mainInputs.windowsInstallerSha256]]) {
+      if (sha256(asar.extractFile(archive, `dist-bundle/${file}`)) !== expected) throw new Error(`Packaged startup/helper differs from the fresh bundle: ${file}`);
     }
     for (const input of mainInputs.inputs) {
       const absolute = path.resolve(canonicalRoot, input.file);
@@ -173,6 +192,7 @@ export async function packageQaElectron({ webDist, nativeSourceApp } = {}) {
       bootstrapPolicySha256: sha256(asar.extractFile(archive, 'packaged-host-policy.mjs')),
       packagerSha256: sha256(await readFile(fileURLToPath(import.meta.url))),
       nativeSourceApp: nativeApp, nativeArtifacts, nativeSmoke,
+      ...(nativeRuntimeRoot ? { nativeRuntimeRoot, nativeRuntimeManifestSha256 } : {}),
       signing: 'disabled', publication: 'disabled', nativeRebuild: 'not-run; matched local packaged binaries copied into owned output',
       excludedAcceptance: ['signing/notarization', 'updater installation', 'global protocol registration', 'OS keychain integration', 'background Bot service', 'legacy Tauri'] };
     await writeFile(path.join(output, 'package-evidence.json'), `${JSON.stringify(evidence, null, 2)}\n`);

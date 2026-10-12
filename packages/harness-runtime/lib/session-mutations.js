@@ -1953,7 +1953,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       if (lease && lease.directory === repo.logicalDirectory && lease.scope.sessionID === input.sessionID
         && lease.scope.messageID === call.messageID && lease.scope.callID === call.callID) {
         if (lease.state === 'published') outcome = 'finished';
-        else if (lease.state === 'cancelled' && lease.cleaned && !lease.cleanupPending
+        else if (!lease.rebootRecovery && lease.state === 'cancelled' && lease.cleaned && !lease.cleanupPending
           && (lease.cancelledBeforeStart || !lease.executionKind)) outcome = 'never_started';
       } else if (!pointer && cancelled?.messageID === call.messageID) outcome = 'never_started';
       outcomes.push({ sessionID: input.sessionID, messageID: call.messageID, callID: call.callID, outcome });
@@ -2095,6 +2095,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       const lease = await repo.db.get(key('leases', call.token));
       if (!lease || lease.scope.messageID !== input.messageID || input.token && lease.token !== input.token) throw changeError('capture_identity_mismatch');
       if (lease.state === 'published') throw changeError('execution_already_published');
+      if (lease.rebootRecovery) throw changeError('execution_already_started');
       lease.cancelledBeforeStart = true;
       lease.state = 'cancelled'; lease.cleanupPending = !lease.cleaned; repo.db.set(key('leases', lease.token), lease);
     }

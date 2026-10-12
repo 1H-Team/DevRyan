@@ -1,0 +1,12 @@
+{
+  "status": "passed",
+  "source": "70447f1525b9eeada26f344dac2bd5bec8cb4758",
+  "workflow": "https://github.com/1H-Team/DevRyan/actions/runs/38314829074",
+  "dryRun": "Remote database is up to date.",
+  "deployment": "Remote database is up to date.",
+  "pendingMigrationsApplied": 0,
+  "historyCount": 56,
+  "historyMatches": true,
+  "schemaVersion": "20260908182901",
+  "candidateMigrationFilesUnchanged": true
+}

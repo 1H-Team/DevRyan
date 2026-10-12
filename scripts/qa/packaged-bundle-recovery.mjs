@@ -109,7 +109,7 @@ export async function runQaPackagedBundleRecovery({controlRoot,environment,direc
   const ui=createQaUiDriver(cdp,{checkAlive:()=>child.check()});
   await ui.waitExpression('actual packaged cold recovery page',`location.protocol==='http:'&&location.hostname==='127.0.0.1'&&location.pathname==='/'&&document.querySelector('h1')?.textContent==='Runtime recovery is required'&&typeof window.__TAURI__?.core?.invoke==='function'`,90000);
   const host=JSON.parse(await fs.readFile(path.join(output,'packaged-host.json'),'utf8'));
-  assert.equal(host.isPackaged,true);assert.equal(host.packagedMain,'dist-bundle/main.mjs');
+  assert.equal(host.isPackaged,true);assert.equal(host.packagedMain,'dist-bundle/entry.mjs');
   const inspected=await evaluate(cdp,`fetch('/api/runtime/bundle').then(r=>r.json())`);
   assertQaColdRecoveryState(inspected,crashProof.revision);result.inspection=inspected;
   const health=await evaluate(cdp,`fetch('/api/health').then(async r=>({status:r.status,value:await r.json()}))`);

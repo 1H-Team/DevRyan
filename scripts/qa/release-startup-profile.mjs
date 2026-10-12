@@ -22,7 +22,7 @@ export function releaseStartupEnvironment(root, base = process.env) {
     GIT_CEILING_DIRECTORIES: root, GIT_TERMINAL_PROMPT: '0', NO_PROXY: 'localhost,127.0.0.1', no_proxy: 'localhost,127.0.0.1' };
 }
 
-export async function createReleaseStartupProfile(root, { fixtureSetup = true } = {}) {
+export async function createReleaseStartupProfile(root, { fixtureSetup = true, resume = false } = {}) {
   const env = releaseStartupEnvironment(root), workspace = path.join(root, 'workspace');
   for (const directory of [root, workspace, env.HOME, env.ZDOTDIR, env.TMPDIR, env.OPENCHAMBER_DATA_DIR,
     env.OPENCHAMBER_ELECTRON_USER_DATA_DIR, path.join(env.XDG_CONFIG_HOME, 'opencode')]) await fs.mkdir(directory, { recursive: true, mode: 0o700 });
@@ -51,10 +51,13 @@ export async function createReleaseStartupProfile(root, { fixtureSetup = true } 
     if (selected) await writeJson(path.join(binding().descriptor.launch.webDataDirectory, 'settings.json'), modelSettings);
   };
   try {
-    await writeJson(path.join(env.OPENCHAMBER_DATA_DIR, 'settings.json'), settings);
-    if (fixtureSetup) await configure();
-    assert.equal(await fs.stat(path.join(controlRoot, 'selection.json')).then(() => true, () => false), false,
-      'Release startup must perform its own bundle provisioning');
+    assert.equal(await fs.stat(path.join(controlRoot, 'selection.json')).then(() => true, () => false), resume,
+      resume ? 'Reboot qualification must retain the original provisioned profile' : 'Release startup must perform its own bundle provisioning');
+    if (resume) await configure({ selected: true });
+    else {
+      await writeJson(path.join(env.OPENCHAMBER_DATA_DIR, 'settings.json'), settings);
+      if (fixtureSetup) await configure();
+    }
     return { root, env, workspace, port, controlRoot, binding, configure, provider,
       close: () => provider.close(), check: () => provider.check() };
   } catch (error) { await provider.close(); throw error; }

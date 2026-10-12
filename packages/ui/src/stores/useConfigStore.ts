@@ -708,7 +708,7 @@ interface ConfigStore {
     activateDirectory: (directory: string | null | undefined) => Promise<void>;
 
     loadProviders: (options?: { directory?: string | null; force?: boolean }) => Promise<void>;
-    loadAgents: (options?: { directory?: string | null }) => Promise<boolean>;
+    loadAgents: (options?: { directory?: string | null; providersReady?: Promise<boolean>; signal?: AbortSignal }) => Promise<boolean>;
     invalidateModelMetadataCache: () => void;
     setProvider: (providerId: string) => void;
     setProviderModel: (
@@ -797,7 +797,7 @@ declare global {
 const _inFlightProviders = new Map<string, Promise<void>>();
 const _providerLoadTokens = new Map<string, object>();
 const PROVIDER_CATALOG_INCOMPLETE_ERROR = "OpenCode provider catalog unavailable";
-const _inFlightAgents = new Map<string, Promise<boolean>>();
+const _inFlightAgents = new Map<string, { promise: Promise<boolean>; signal?: AbortSignal; providersReady?: Promise<boolean> }>();
 let _initializeAppInFlight: Promise<void> | null = null;
 let _initializeAppSignal: AbortSignal | undefined;
 
@@ -1563,11 +1563,13 @@ export const useConfigStore = create<ConfigStore>()(
 
                     // Dedup: if a load is already in-flight for this directory, reuse it
                     const existing = _inFlightAgents.get(directoryKey);
-                    if (existing) return existing;
+                    if (existing && !existing.signal?.aborted
+                        && (!options?.providersReady || existing.providersReady === options.providersReady)) return existing.promise;
                     if (get().activeDirectoryKey === directoryKey) {
                         set({ agentsLoadStatus: "loading", agentsLoadError: undefined });
                     }
 
+                    const request: { promise?: Promise<boolean> } = {};
                     const promise = (async (): Promise<boolean> => {
                     const existingSnapshot = get().directoryScoped[directoryKey];
                     const previousAgents = existingSnapshot?.agents ?? (get().activeDirectoryKey === directoryKey ? get().agents : []);
@@ -1582,6 +1584,14 @@ export const useConfigStore = create<ConfigStore>()(
                                 fetchConfigAgentsSnapshot(directory),
                                 fetchOpenChamberDefaults(),
                             ]);
+
+                            // Startup overlaps HTTP reads, but model/default resolution needs the committed catalog.
+                            if (options?.providersReady && (!await options.providersReady || get().activeDirectoryKey !== directoryKey)) {
+                                return false;
+                            }
+                            if (options?.signal?.aborted || _inFlightAgents.get(directoryKey)?.promise !== request.promise) {
+                                return false;
+                            }
 
                             const safeAgents = mergeRuntimeAgentsWithConfigOverrides(
                                 Array.isArray(agents) ? agents : [],
@@ -1730,12 +1740,14 @@ export const useConfigStore = create<ConfigStore>()(
 
                             return true;
                         } catch (error) {
+                            if (options?.signal?.aborted || _inFlightAgents.get(directoryKey)?.promise !== request.promise) return false;
                             lastError = error;
                             const waitMs = 200 * (attempt + 1);
                             await new Promise((resolve) => setTimeout(resolve, waitMs));
                         }
                     }
 
+                    if (options?.signal?.aborted || _inFlightAgents.get(directoryKey)?.promise !== request.promise) return false;
                     console.error("Failed to load agents:", lastError);
                     const errorMessage = getErrorMessage(lastError, "Failed to load agents");
 
@@ -1769,9 +1781,12 @@ export const useConfigStore = create<ConfigStore>()(
                     });
 
                     return false;
-                    })().finally(() => _inFlightAgents.delete(directoryKey));
+                    })().finally(() => {
+                        if (_inFlightAgents.get(directoryKey)?.promise === promise) _inFlightAgents.delete(directoryKey);
+                    });
 
-                    _inFlightAgents.set(directoryKey, promise);
+                    request.promise = promise;
+                    _inFlightAgents.set(directoryKey, { promise, signal: options?.signal, providersReady: options?.providersReady });
                     return promise;
                 },
 
@@ -2248,16 +2263,21 @@ export const useConfigStore = create<ConfigStore>()(
                             }
                             connectionConfirmed = true;
 
-                            if (debug) console.log("Loading providers...");
-                            await get().loadProviders();
+                            const directoryKey = get().activeDirectoryKey;
+                            const directory = fromDirectoryKey(directoryKey);
+                            if (debug) console.log("Loading providers and agents...");
+                            const providersReady = get().loadProviders({ directory }).then(() => (
+                                !signal?.aborted && get().activeDirectoryKey === directoryKey && get().providersLoadStatus === "ready"
+                            ));
+                            const [, agentsReady] = await Promise.all([
+                                providersReady,
+                                get().loadAgents({ directory, providersReady, signal }),
+                            ]);
                             signal?.throwIfAborted();
+                            if (get().activeDirectoryKey !== directoryKey) return;
                             if (get().providersLoadStatus === "error") {
                                 throw new Error(get().providersLoadError || "Failed to load providers");
                             }
-
-                            if (debug) console.log("Loading agents...");
-                            const agentsReady = await get().loadAgents();
-                            signal?.throwIfAborted();
                             if (!agentsReady || get().agentsLoadStatus === "error") {
                                 throw new Error(get().agentsLoadError || "Failed to load agents");
                             }

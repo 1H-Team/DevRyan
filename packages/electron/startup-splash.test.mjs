@@ -22,7 +22,8 @@ describe('Electron startup splash', () => {
     const error = Object.assign(new Error('Runtime preparation failed'), { code: 'runtime_bundle_binding_invalid' });
     const showFailure = new Function('owners', `
       const { startupErrorDetails, startupDiagnosticSummary, readSettingsRoot, buildStartupErrorHtmlFromSettings, state, navigateWindow } = owners;
-      let lastStartupDiagnostic;
+      let lastStartupDiagnostic, startupRecoveryFailure, startupFailurePageUrl;
+      const isPreview = false;
       const shellRuntimeBundleBindingError = null;
       ${build}
       ${show}
@@ -117,7 +118,8 @@ describe('Electron startup splash', () => {
   it('keeps the BrowserWindow and renderer navigation on the same palette', () => {
     const source = mainSource();
 
-    expect(source).toContain('backgroundColor: startupSplashPalette.background');
+    expect(source).toContain('palette: startupSplashPalette');
+    expect(readFileSync(new URL('./early-startup.mjs', import.meta.url), 'utf8')).toContain('backgroundColor: palette.background');
     expect(source).toContain('mainWindow.setBackgroundColor(startupSplashPalette.background)');
     expect(source).toContain('withStartupSplashPalette(url, localOrigin, startupSplashPalette)');
     expect(source).toContain('navigateWindow(mainWindow, startupUrl');
@@ -240,4 +242,60 @@ describe('Electron startup splash', () => {
         : ['prepare-foreground', 'activate', 'power-hook', 'resume-native', 'prepare-bots']);
     }
   });
+});
+
+
+describe('native startup reboot recovery', () => {
+  it('offers restart preparation only for the guarded recovery screen and does not offer an ineffective app retry afterward', () => {
+    const waiting = buildStartupErrorHtml({}, { message: 'bundle_execution_unsettled', rebootRecovery: true });
+    expect(waiting).toContain('openchamber://prepare-reboot-recovery');
+    expect(waiting).toContain('Your sessions and retained work will be preserved.');
+    expect(waiting).toContain('openchamber://retry-startup');
+    const fenced = buildStartupErrorHtml({}, { message: 'bundle_reboot_required', rebootRequired: true });
+    expect(fenced).toContain('Restart your computer to continue');
+    expect(fenced).not.toContain('openchamber://prepare-reboot-recovery');
+    expect(fenced).not.toContain('openchamber://retry-startup');
+    expect(fenced).toContain('Copy Diagnostics');
+  });
+
+  it('native recovery accepts only its own displayed failure and rereads authoritative root and revision', () => {
+    const source = mainSource();
+    expect(source).toContain("browserWindow === state.mainWindow && browserWindow.webContents.getURL() === startupFailurePageUrl");
+    expect(source).toContain("startupErrorDetails(startupRecoveryFailure).code !== 'bundle_execution_unsettled'");
+    expect(source).toContain('controlRoot: binding.controlRoot, expectedRevision: binding.selection.revision');
+    expect(source).not.toContain("shell.openExternal('openchamber://prepare-reboot-recovery')");
+  });
+});
+
+it('native restart preparation rejects unrelated failures and derives authority from the selected binding', async () => {
+  const source = mainSource();
+  const recovery = source.slice(source.indexOf('let preparingStartupRebootRecovery ='), source.indexOf('const showBotStartupAttention ='))
+    .replace("await import('@openchamber/web/server/lib/opencode/runtime-host/native-bundle-reboot-recovery.js')", 'await loadRecovery()');
+  const failure = { code: 'native_runtime_artifacts_unverified' };
+  const calls = [];
+  let finish;
+  const pending = new Promise(resolve => { finish = resolve; });
+  const prepare = new Function('owners', `
+    const { readNativeShellBundleBinding, loadRecovery, showStartupFailure, startupRecoveryFailure } = owners;
+    const isPreview = false, isRuntimeServiceMode = false;
+    const process = { platform: 'darwin', env: {} }, os = { homedir: () => '/fixture' }, fs = { existsSync: () => true };
+    const readRuntimeBundleBinding = () => {};
+    const startupErrorDetails = error => ({ code: error.code });
+    ${recovery}
+    return prepareStartupRebootRecovery;
+  `)({
+    startupRecoveryFailure: failure,
+    readNativeShellBundleBinding: () => ({ controlRoot: '/fixture/selected', selection: { revision: 7 } }),
+    loadRecovery: async () => ({ beginNativeBundleRebootRecovery: async value => { calls.push(value); await pending; } }),
+    showStartupFailure: async error => { calls.push(error.code); },
+  });
+  await prepare();
+  expect(calls).toEqual([]);
+  failure.code = 'bundle_execution_unsettled';
+  const first = prepare();
+  await Promise.resolve();
+  await prepare();
+  finish();
+  await first;
+  expect(calls).toEqual([{ controlRoot: '/fixture/selected', expectedRevision: 7 }, 'bundle_reboot_required']);
 });

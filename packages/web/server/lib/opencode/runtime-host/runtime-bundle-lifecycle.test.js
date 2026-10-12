@@ -101,7 +101,7 @@ async function fixture({ unknownController = false, unsettledController = false,
       if (failDrain || remainingDrainFailures-- > 0) throw Object.assign(Error('failed'), { code: 'bundle_stores_unsettled' });
     },
   });
-  return { lifecycle, events, credentialProcess, binding, restart, candidateHash, retained, gate, artifactDirectory, callbacks: () => callbacks,
+  return { lifecycle, events, credentialProcess, verifyArtifacts, binding, restart, candidateHash, retained, gate, artifactDirectory, callbacks: () => callbacks,
     changeSelection: value => { selected.selection = { ...selected.selection, ...value }; } };
 }
 
@@ -114,6 +114,7 @@ test('production lifecycle detects only the app artifact and holds the actual or
   expect(value.events).toEqual(['retain', 'admission-close', 'quiesce', 'producers-stop', 'credentials-drain', 'controller-close',
     'execution-drain', 'owner-close', 'stores-drain', 'prepare', 'capture', 'capture', 'select']);
   expect(value.credentialProcess.mock.calls[0][0].captureArtifacts.manifestSha256).toBe(value.candidateHash);
+  expect(value.verifyArtifacts.mock.calls.filter(([input]) => input.manifestSha256 === 'a'.repeat(64))).toHaveLength(1);
   expect(value.restart).not.toHaveBeenCalled();
   await value.lifecycle.recompose(); expect(value.restart).toHaveBeenCalledOnce();
   await expect(value.lifecycle.upgrade({ expectedRevision: 1 })).rejects.toMatchObject({ code: 'bundle_selection_revision_conflict' });

@@ -1,4 +1,5 @@
 import type {WindowsPrivateFileOwner} from './windows-private-files.js';
+import type {RebootRecoveryProof} from './session-reboot-recovery.js';
 export interface NativeRemovalMember { id: string; parentID: string | null; directory: string; generation: number }
 export interface NativeRemovalDisposition { sessionID: string; inboxIDs: string[]; pendingIDs: string[] }
 export interface NativeRemovalIntent {
@@ -61,6 +62,8 @@ export interface MutationLease {
   result?: MutationPublication;
   cleanupPending?: boolean;
   cleaned?: boolean;
+  /** Terminal uncertain outcome. Its private view and historical Git pin remain evidence. */
+  rebootRecovery?: RebootRecoveryProof;
   nativeShellJob?: { jobID: string; command: string; notificationID?: string; itemHash?:string;itemDelivery?:'queue'|'steer'; deliveredID?: string; continuedID?: string; continuedAssistantID?: string };
 }
 export interface MutationTarget { id: string; targetMessageID: string; callID?: string }

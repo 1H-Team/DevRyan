@@ -22,3 +22,27 @@ it.each(['ready','held-A','pending-B'])('actual thin entry awaits bootstrap and 
   const imported=await import(pathToFileURL(path.join(root,'entry.mjs')).href);expect(imported).toMatchObject({gracefulShutdown:1,setupProxy:2,restartOpenCode:3,startWebUiServer:4,parseArgs:5});expect(globalThis.__fixtureEntryFilename).toBe(path.join(root,'entry.mjs'));
  }finally{delete globalThis.__fixtureEntryBound;delete globalThis.__fixtureEntryFilename;await fs.rm(root,{recursive:true,force:true});}
 });
+
+it('failed cold upgrade stops the actual bootstrap before binding or setup restoration',async()=>{
+ const root=await fs.realpath(await fs.mkdtemp(path.resolve('../../.cache/v2-validation/native-entry-failed-')));
+ const priorRoot=process.env.DEVRYAN_RUNTIME_BUNDLE_ROOT;
+ try{
+  const bootstrap=await fs.readFile(new URL('./runtime-entry-bootstrap.js',import.meta.url),'utf8');
+  await fs.writeFile(path.join(root,'entry.mjs'),bootstrap
+   .replace("'./native-default-bundle.js'","'./provision.mjs'")
+   .replace("'./runtime-bundle-binding.js'","'./binding.mjs'")
+   .replace("'./native-setup-local-owners.js'","'./setup.mjs'")
+   .replace("'../startup-timing.js'","'./timing.mjs'")
+   .replace("'./bundle-startup-upgrade-status.js'",JSON.stringify(new URL('./bundle-startup-upgrade-status.js',import.meta.url).href)));
+  const statusUrl=new URL('./bundle-startup-upgrade-status.js',import.meta.url).href;
+  await fs.writeFile(path.join(root,'provision.mjs'),`import {recordStartupBundleUpgradeFailure} from ${JSON.stringify(statusUrl)};export const provisionDefaultNativeBundle=async()=>{recordStartupBundleUpgradeFailure('bundle_execution_unsettled');return '/unused';};`);
+  await fs.writeFile(path.join(root,'binding.mjs'),"export const initializeRuntimeBundleBinding=()=>{throw Error('binding_must_not_run');};");
+  await fs.writeFile(path.join(root,'setup.mjs'),"export const captureNativeSetupOwners=()=>{};export const restoreNativeSetupOwners=()=>{throw Error('setup_must_not_run');};");
+  await fs.writeFile(path.join(root,'timing.mjs'),"export const timeStartupPhase=(_phase,action)=>action();");
+  await expect(import(pathToFileURL(path.join(root,'entry.mjs')).href)).rejects.toMatchObject({code:'bundle_execution_unsettled'});
+  expect(process.env.DEVRYAN_RUNTIME_BUNDLE_ROOT).toBe(priorRoot);
+ }finally{
+  const {recordStartupBundleUpgradeFailure}=await import('./bundle-startup-upgrade-status.js');recordStartupBundleUpgradeFailure(null);
+  await fs.rm(root,{recursive:true,force:true});
+ }
+});
