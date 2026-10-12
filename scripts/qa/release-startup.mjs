@@ -64,7 +64,27 @@ export async function runReleaseStartup({ dmg, version, sourceCommit, receiptPat
   };
   const start = async (artifact, profile, options) => {
     assert.equal(active, null, 'A prior foreground owner must stop before launching');
-    active = await launchReleaseStartup(artifact, profile, { ...options, serviceEnvironmentManaged: profile === serviceProfile }); return active;
+    try {
+      active = await launchReleaseStartup(artifact, profile, { ...options, serviceEnvironmentManaged: profile === serviceProfile,
+        onFailure: async launch => {
+          const row = receipt.scenarios.at(-1);
+          if (!row) return;
+          row.failureInterface = launch.interfaceState;
+          row.failureScreenshot = 'unavailable';
+          if (launch.cdp) {
+            await screenshot(row, launch, `${row.id}-launch-failure`);
+            row.failureScreenshot = 'captured';
+          }
+        } });
+      return active;
+    } catch (error) {
+      const row = receipt.scenarios.at(-1);
+      if (row) {
+        try { row.failureJournal = { outcome: 'passed', gapRecords: await verifyReleaseJournal(profile) }; }
+        catch (journalError) { row.failureJournal = { outcome: 'failed', reason: sanitizer.sanitizeText(String(journalError.message), { highEntropy: true }).slice(0, 256) }; }
+      }
+      throw error;
+    }
   };
   active = null;
   const retainedSession = assertReleaseRetainedSession;

@@ -5,10 +5,36 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { runInNewContext } from 'node:vm';
 import { releaseStartupEnvironment } from './release-startup-profile.mjs';
 import { parseReleaseStartupArgs, summarizeCompiledQualification } from './release-startup.mjs';
 import { createDiagnosticSanitizer } from '../../packages/harness-runtime/lib/sanitizer.js';
-import { launchReleaseStartup, captureReleaseStartupScreenshot } from './release-startup-launch.mjs';
+import { launchReleaseStartup, captureReleaseStartupScreenshot, readReleaseSetupInterfaceState } from './release-startup-launch.mjs';
+
+test('empty setup requires ready visible controls without provider-dependent welcome text', () => {
+  const control = () => ({ disabled: false, getBoundingClientRect: () => ({ width: 100, height: 30 }) });
+  const controls = { textarea: [control()], 'button[aria-label="New Chat"]': [control()], '.model-controls__model-trigger': [control()] };
+  const context = { window: { __openchamberStartupReady: true }, document: { readyState: 'complete', visibilityState: 'visible',
+    body: { innerText: 'Start new chat Not selected' }, querySelectorAll: selector => controls[selector] ?? [] },
+    getComputedStyle: element => element.style ?? { display: 'block', visibility: 'visible', opacity: '1' } };
+  const state = () => runInNewContext(`(${readReleaseSetupInterfaceState.toString()})()`, context);
+  const ready = () => Object.values(state()).every(Boolean);
+  assert.equal(ready(), true);
+  context.window.__openchamberStartupReady = false; assert.equal(ready(), false);
+  context.window.__openchamberStartupReady = true;
+  context.document.readyState = 'loading'; assert.equal(ready(), false);
+  context.document.readyState = 'complete';
+  context.document.visibilityState = 'hidden'; assert.equal(ready(), false);
+  context.document.visibilityState = 'visible';
+  controls.textarea[0].disabled = true; assert.equal(ready(), false);
+  controls.textarea[0].disabled = false;
+  controls['button[aria-label="New Chat"]'][0].getBoundingClientRect = () => ({ width: 0, height: 0 });
+  assert.equal(ready(), false);
+  controls['button[aria-label="New Chat"]'] = [control()];
+  controls['.model-controls__model-trigger'][0].parentElement = { style: { display: 'block', visibility: 'visible', opacity: '0' } };
+  assert.equal(ready(), false);
+  controls['.model-controls__model-trigger'] = []; assert.equal(ready(), false);
+});
 
 test('native lifecycle children report a bounded fatal cause before their default trace', () => {
   const command = fileURLToPath(new URL('../opencode-v2-native/legacy-lifecycle-driver.mjs', import.meta.url));

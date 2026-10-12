@@ -52,6 +52,33 @@ The corrected source must receive a fresh complete release qualification.
 The full script suite and documentation validation passed after the readiness
 budget correction; no assertions or qualification cases were removed.
 
+## Second release candidate
+
+The [second qualification receipt](qualification-attempt-2.json) belongs to source
+`cc940fadcf75419d2c8a49cb46f79cba2281e0f7` and
+[workflow 38320691230](https://github.com/1H-Team/DevRyan/actions/runs/38320691230).
+All 52 compiled cases passed, including real parent-death drain and the three
+durable journal roots. Cleanup and source-cohort checks passed. The first GUI
+scenario then timed out waiting for its empty-profile setup predicate after
+native health became ready. No renderer snapshot or profile journal was retained
+for that failure, so its exact renderer state and gap check are unavailable.
+
+Inspection found a predicate mismatch: the current empty UI renders "Start new
+chat" and the model control "Not selected", while the qualifier required body
+text matching `connect|provider|model|welcome`. The predicate now requires the
+ready document to be visible, the startup-ready flag, and visible enabled
+composer, New Chat and model-picker controls. A regression checks no-account
+copy, loading, hidden documents, disabled controls and hidden ancestors.
+Readiness and native health requirements remain enforced. Failed launches now
+capture interface fields and an artifact-bound screenshot before stopping, then
+check the actual profile journal after owned shutdown. These diagnostics cannot
+replace or suppress the original launch failure. A fresh complete qualification
+is required; the exact cause of the unretained second-candidate renderer state
+is not claimed.
+The focused setup/receipt regressions, full script suite (1,365 Node tests and
+native graph tests), documentation validation and whitespace checks passed after
+this correction.
+
 ## Hosted migrations
 
 The [migration receipt](migration-verification.json) records the successful

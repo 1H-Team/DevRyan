@@ -54,7 +54,25 @@ export async function assertReleaseRetainedSession(launch, profile, id) {
   await launch.ui.waitVisibleText('DevRyan live QA ready.');
 }
 
-export async function launchReleaseStartup(artifact, profile, { setupOnly = false, serviceEnvironmentManaged = false, expectedFailure } = {}) {
+/** Runs in the renderer; setup has no selected model or provider-dependent copy. */
+export function readReleaseSetupInterfaceState() {
+  const visible = element => {
+    const rect = element.getBoundingClientRect();
+    if (element.disabled || rect.width <= 0 || rect.height <= 0) return false;
+    for (let parent = element; parent; parent = parent.parentElement) {
+      const style = getComputedStyle(parent);
+      if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) <= 0) return false;
+    }
+    return true;
+  };
+  const available = selector => [...document.querySelectorAll(selector)].some(visible);
+  return { documentReady: document.readyState === 'complete', documentVisible: document.visibilityState === 'visible',
+    startupReady: window.__openchamberStartupReady === true,
+    composer: available('textarea'), newChat: available('button[aria-label="New Chat"]'),
+    modelPicker: available('.model-controls__model-trigger') };
+}
+
+export async function launchReleaseStartup(artifact, profile, { setupOnly = false, serviceEnvironmentManaged = false, expectedFailure, onFailure } = {}) {
   // Released builds can automatically register a service before the renderer exists.
   requireDisposableMacRunner();
   const startedAt = performance.now(), debugPort = await reservePort();
@@ -99,9 +117,7 @@ export async function launchReleaseStartup(artifact, profile, { setupOnly = fals
         assert.notEqual(body.openCodeStartup?.state, 'failed', 'Empty-profile startup failed');
         return body.openCodeStartup?.state === 'ready';
       }, check);
-      await ui.waitExpression('empty-profile setup interface', `document.readyState==='complete'
-        && window.__openchamberStartupReady===true && document.querySelector('textarea')
-        && /connect|provider|model|welcome/i.test(document.body.innerText)`);
+      await ui.waitExpression('empty-profile setup interface', `Object.values((${readReleaseSetupInterfaceState.toString()})()).every(Boolean)`);
       startup = { outcome: 'passed', setupInterface: true, uiReadyMs: performance.now() - startedAt };
     } else {
       startup = await captureFirstDocumentStartup({ cdp, origin, startedAt, checkAlive: check, navigationAudit: audit,
@@ -140,7 +156,13 @@ export async function launchReleaseStartup(artifact, profile, { setupOnly = fals
         assert.equal(exceptions, 0);
         return sessionID;
       } };
-  } catch (error) { await stop(); throw error; }
+  } catch (error) {
+    if (onFailure) {
+      const interfaceState = cdp ? await evaluate(cdp, `(${readReleaseSetupInterfaceState.toString()})()`).catch(() => null) : null;
+      try { await onFailure({ cdp, interfaceState }); } catch { /* Evidence cannot replace the original startup failure. */ }
+    }
+    await stop(); throw error;
+  }
 }
 
 export async function verifyReleaseJournal(profile) {

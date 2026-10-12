@@ -696,6 +696,10 @@ the selection unchanged. Changed artifacts must advance it exactly once and
 retain the previous bundle. Each usable-chat result includes the real catalog,
 model/agent, sessions, composer, global subscription ACK and a completed local
 fixture submission; upgrades/reopens preserve the saved response.
+Empty-profile setup requires a visible ready document, enabled composer, New
+Chat and model-picker controls; it does not depend on provider-specific welcome
+copy. Failed launches retain interface readiness fields, an artifact-bound
+screenshot when CDP is available, and a journal check after owned shutdown.
 
 The unsettled-process case seeds a claimed lease in the disposable historical
 ledger after a genuine native owner lock has been held and released. Its missing
