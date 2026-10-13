@@ -246,3 +246,22 @@ The released DMG must be `DevRyan-2.0.9-arm64.dmg`, 390572156 bytes, SHA-256
 Migration workflow 38314829074 passed; no Supabase migration or production
 schema-marker source changed between its source and this artifact. Existing
 56-entry parity and marker `20260908182901` remain the migration evidence.
+
+
+Published successfully on 2026-10-13 through
+[the approved-artifact publication run](https://github.com/1H-Team/DevRyan/actions/runs/38373125334).
+The [publication proof](publication.json) confirms a public, non-prerelease
+[v2.0.9 release](https://github.com/1H-Team/DevRyan/releases/tag/v2.0.9), exact tag
+commit `88cf8599c3ce567100749dca4f2658f33db2f10e`, and the sole approved DMG
+with its packaging digest. Main includes that source and the audit commits.
+The one-off promotion workflow is removed after successful publication;
+its immutable run and commit preserve the execution record. It verified all
+52 compiled cases, successful signed-image/topology jobs, source identity,
+local artifact hashing and the uploaded asset allowlist/digest before publishing.
+No new app build or changed qualification assertion was substituted.
+
+Cleanup removed all four owned remote scratch refs, the three local sample
+branches, and 17 downloaded artifact/retry directories after retaining sanitized
+proof. No extra worktree existed. The cache report and cleanup preview were
+rerun; broad cache deletion was not applied. The local release tag was refreshed
+to match the verified published source without changing the remote tag again.
