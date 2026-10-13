@@ -99,6 +99,31 @@ symlink and ignored only `context-cache/`. No other symlink or special file
 existed in the bundle. The directory was moved out of the bundle, intact, to
 unblock the installed 2.0.9 app; the copy now ignores it.
 
+## Third blocker, after installing 2.0.10
+
+With 2.0.10 installed, the runtime upgrade completed at 17:43:00 (selection
+revision 13, bundle `native-6e75eefd835a150e4e499166-r12`, cloned from r11).
+Runtime recovery then failed:
+
+```
+[runtime-bundle] startup phase {"phase":"native_recovery","outcome":"failed",…}
+[electron] deferred OpenCode startup failed { code: 'native_cursor_recovery_owner_mismatch' … }
+```
+
+`harness/native-cursor/` held one write-ahead intent for the same Cursor turn,
+phase `bound` to lease `ac1af5a2-…`. Intents are stamped with the bundle ID that
+wrote them, and the upgrade copied it into the new bundle unchanged, so the new
+bundle rejected it. The intent's owner was rewritten by hand to the new bundle
+ID on the affected installation, with a backup. `createNativeCursorRecovery`
+now accepts intents of the verified source bundle and re-stamps them under its
+lock (`native-cursor-recovery.test.js`).
+
+## Outcome on the affected installation
+
+After the three repairs, the installed 2.0.10 app opened at 17:57:36 (UTC+4):
+`native_recovery` and `native_open` completed, the owner confirmed the UI, and
+the Cursor intent file was gone, settled by recovery.
+
 ## Verification
 
 Local, on disposable fixtures:
@@ -119,9 +144,8 @@ Local, on disposable fixtures:
 
 ## Not done or not verified
 
-- The installed app had not been relaunched after the overlay was moved when
-  this note was written, so reaching the UI on the affected installation is
-  unconfirmed. No fixed packaged build has been run there.
+- The fix for the third blocker has not been run as a packaged build; the
+  affected installation was unblocked by the manual re-stamp described above.
 - Restart recovery after an actual OS reboot remains unverified.
 - No shutdown-time sweep of a host's own never-started leases was added; the
   owner fix and cold recovery cover the observed path.
@@ -130,4 +154,5 @@ Local, on disposable fixtures:
   design. The native launcher was not changed.
 - Unsettled lease shapes other than the one above (for example a prepared,
   unclaimed lease whose owner died) are still left to the strict gate.
-- The signed-baseline release scenario `unsettled-process-upgrade` was not run.
+- The signed-baseline release scenario `unsettled-process-upgrade` passed in the
+  v2.0.10 release run; see the [release record](../release-2.0.10/README.md).

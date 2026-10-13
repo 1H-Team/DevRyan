@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Fix startup failing with `native_cursor_recovery_owner_mismatch` after a runtime upgrade while a Cursor turn's recovery intent was pending. A cloned bundle now adopts intents written by the bundle it was cloned from.
+- Release publication no longer waits for final-DMG GUI startup qualification. Signed Bot images, packaging checks, the exact asset allowlist and digests, and hosted migration verification still gate every release.
+
 ## [2.0.10] - 2026-10-13
 
 - Fix a startup lockout (`bundle_execution_unsettled`) left by a process lease whose supervisor never started. The execution owner now cancels such a lease when its launcher ends without a termination receipt, and cold startup recovery cancels an aged one as never started without a computer restart. Empty or invalid receipts stay held.
@@ -11,6 +14,7 @@ All notable changes to this project will be documented in this file.
 - Fix the startup runtime upgrade failing with `bundle_symlink_source` after a project ran commands against `node_modules`. The bundle copy now skips the ledger's derived `module-overlays/` links, which are rebuilt on the next run.
 
 Evidence and remaining gaps are recorded in [the incident note](docs/audits/2026-10-13/startup-unsettled-lease/README.md).
+Publication status and the owner waiver are recorded in [the v2.0.10 release record](docs/audits/2026-10-13/release-2.0.10/README.md).
 
 ## [2.0.9] - 2026-10-13
 

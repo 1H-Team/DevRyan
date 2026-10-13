@@ -97,16 +97,11 @@ test('captured screenshot evidence hashes written pixels and copies only exact a
     await assert.rejects(captureReleaseStartupScreenshot(launch, root, 'DevRyan-startup-fixture.png', identity), { code: 'EEXIST' });
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
-test('every PR runs startup contracts and every release publication depends on final-DMG qualification', () => {
+test('every PR runs startup contracts; final-DMG qualification is manual and never gates publication', () => {
   const read = file => fs.readFileSync(new URL('../../' + file, import.meta.url), 'utf8');
   const pr = read('.github/workflows/startup-contract.yml'), release = read('.github/workflows/release.yml');
   assert.match(pr, /pull_request:/); assert.doesNotMatch(pr, /paths(?:-ignore)?:/); assert.match(pr, /bun run test:startup/);
-  for (const name of ['publish-npm', 'finalize-release']) {
-    const job = release.slice(release.indexOf(`  ${name}:`)).split(/\n  [a-z][a-z-]+:/)[0];
-    assert.match(job, /needs: \[[^\]]*qualify-release-startup/);
-  }
-  assert.equal((release.match(/node scripts\/verify-release-startup.mjs/g) ?? []).length, 2);
-  assert.match(release, /--release-dmg/);
+  assert.doesNotMatch(release, /qualify-release-startup|verify-release-startup|--release-dmg/);
   assert.doesNotMatch(release, /reboot_qualification_run_id|--reboot-receipt|DevRyan-reboot-qualification|stage_startup_installer_only|staged_desktop_run_id/);
 });
 

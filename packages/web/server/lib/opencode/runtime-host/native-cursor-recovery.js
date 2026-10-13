@@ -19,9 +19,12 @@ const checked=value=>{
 };
 
 /** Write-ahead lifecycle identities only. Existing ledger and launcher receipts
- * remain the sole process/publication authority. An uncertain intent is retained. */
-export function createNativeCursorRecovery({directory,ownerID,runtime,windowsOwner,windowsLauncher}){
+ * remain the sole process/publication authority. An uncertain intent is retained.
+ * `sourceOwnerID` is the verified bundle this one was cloned from: its copied
+ * intents are adopted under the lock, so an upgrade never strands them. */
+export function createNativeCursorRecovery({directory,ownerID,sourceOwnerID,runtime,windowsOwner,windowsLauncher}){
  if(!path.isAbsolute(directory)||typeof ownerID!=='string'||!ownerID)throw fail('native_cursor_recovery_configuration');
+ const owned=value=>value.ownerID===ownerID||typeof sourceOwnerID==='string'&&sourceOwnerID!==''&&value.ownerID===sourceOwnerID;
  const pending=new Set();
  const ensureDirectory=async()=>{
   if(process.platform==='win32'){
@@ -44,13 +47,13 @@ export function createNativeCursorRecovery({directory,ownerID,runtime,windowsOwn
    let prior;try{prior=await windowsOwner.read(name);}catch(error){if(error.code==='ENOENT'){observed.set(name,null);return null;}throw error;}
    if(prior.bytes.length>64*1024)throw fail('native_cursor_recovery_invalid');
    const value=checked(JSON.parse(prior.bytes.toString('utf8')));
-   if(value.ownerID!==ownerID||name!==file(value.scope))throw fail('native_cursor_recovery_owner_mismatch');
+   if(!owned(value)||name!==file(value.scope))throw fail('native_cursor_recovery_owner_mismatch');
    observed.set(name,prior);return value;
   }
   let stat;try{stat=await fs.lstat(name);}catch(error){if(error.code==='ENOENT')return null;throw error;}
   if(!stat.isFile()||stat.size>64*1024)throw fail('native_cursor_recovery_invalid');
   const value=checked(JSON.parse(await fs.readFile(name,'utf8')));
-  if(value.ownerID!==ownerID||name!==file(value.scope))throw fail('native_cursor_recovery_owner_mismatch');return value;
+  if(!owned(value)||name!==file(value.scope))throw fail('native_cursor_recovery_owner_mismatch');return value;
  };
  const locked=(scope,action)=>{
   checked({version:1,ownerID,scope,revision:0,phase:'pending'});
@@ -68,12 +71,14 @@ export function createNativeCursorRecovery({directory,ownerID,runtime,windowsOwn
   await fs.rm(name);
  };
  const change=(scope,action)=>locked(scope,async name=>{
-  const value=await read(name);if(!value||fingerprint(value.scope)!==fingerprint(scope))throw fail('native_cursor_recovery_scope_invalid');
+  let value=await read(name);if(!value||fingerprint(value.scope)!==fingerprint(scope))throw fail('native_cursor_recovery_scope_invalid');
+  if(value.ownerID!==ownerID){value={...value,ownerID};await save(name,value);if(process.platform==='win32')await read(name);}
   return action(name,value);
  });
  return {
   stage:({scope,revision})=>locked(scope,async name=>{
    const existing=await read(name);
+   if(existing&&existing.ownerID!==ownerID){await save(name,{...existing,ownerID});if(process.platform==='win32')await read(name);}
    if(existing){if(fingerprint(existing.scope)!==fingerprint(scope)||existing.revision!==revision)throw fail('native_cursor_recovery_scope_invalid');return;}
    if((await fs.readdir(directory)).filter(name=>/^[a-f0-9]{64}\.json$/.test(name)).length>=128)throw fail('native_cursor_recovery_limit');
    await save(name,{version:1,ownerID,scope,revision,phase:'pending'});

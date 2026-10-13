@@ -42,6 +42,10 @@ export const SessionCreationStatus = React.memo(function SessionCreationStatus({
     onRetry: () => void;
 }) {
     const attempt = useSessionCreationStore((state) => draftId ? state.attempts[draftId] : undefined);
-    if (!attempt || attempt.phase === 'failed' || attempt.phase === 'preparing' || attempt.phase === 'creating') return null;
+    const sendPending = useSessionUIStore((state) => Boolean(
+        draftId && (state.abortControllers.has(`draft:${draftId}`)
+            || (attempt?.sessionId && state.abortControllers.has(attempt.sessionId))),
+    ));
+    if (sendPending || !attempt || attempt.phase === 'failed' || attempt.phase === 'preparing' || attempt.phase === 'creating') return null;
     return <SessionCreationRecoveryStatus attempt={attempt} onRetry={onRetry} />;
 });

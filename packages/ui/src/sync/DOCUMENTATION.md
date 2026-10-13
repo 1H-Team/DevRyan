@@ -144,9 +144,10 @@ Promotion cannot select a session over another selected target or delete a draft
 edited during creation. Text/attachments remain in their existing local draft
 stores until authoritative creation; session sends and revert transactions retain
 their existing optimistic rollback behavior. `SessionCreationStatus` subscribes
-only to the current draft's attempt, stays hidden during ordinary preparation
-and creation, and renders retained-draft recovery controls only for unknown or
-late-created outcomes.
+to the current draft's attempt and a boolean pending-send selector for its draft
+or created session controller. It stays hidden during preparation, creation and
+the active send handoff, then renders retained-draft recovery controls for unknown
+or late-created outcomes. See the [banner verification](../../../../docs/audits/2026-10-13/session-creation-banner/README.md).
 Flush raw composer text before taking the submission snapshot. Promotion compares
 that raw text and the attachment mutation revision, not the transformed prompt.
 Late persistence cannot recreate a deleted/promoted draft, and a failed first

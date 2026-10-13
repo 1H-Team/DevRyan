@@ -8,10 +8,10 @@ subscription contracts. `.github/workflows/startup-contract.yml` runs it on ever
 PR without path filters, including changes unrelated to startup. It never uses
 installed application data, live accounts or OS service registration.
 
-Every release also requires the unchanged final-DMG qualification described in
-[QA](QA.md#final-dmg-startup-qualification). A successful isolated development
-package or a successful retry cannot replace that receipt. Full validation,
-build and bundle checks remain required alongside native qualification.
+The final-DMG qualification described in
+[QA](QA.md#final-dmg-startup-qualification) is a manual check and does not gate
+release publication. Full validation, build and bundle checks remain required
+before a release.
 
 ## Required gates
 

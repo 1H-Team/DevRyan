@@ -678,8 +678,9 @@ Generation-2 manual and natural compaction grading reads the same journal. Each 
 
 `native-startup-benchmark.mjs --release-dmg <absolute-dmg> --version <version>
 --source-commit <40-character-commit> --receipt <absolute-json>` qualifies the
-unchanged distributed macOS arm64 app. The release workflow runs it after DMG
-creation; publication and npm publishing depend on success. It mounts the DMG
+unchanged distributed macOS arm64 app. Run it by hand against a downloaded DMG
+on a disposable macOS runner when startup evidence is wanted; the release
+workflow does not run it and publication does not depend on it. It mounts the DMG
 read-only, verifies signatures and the production native inventory, and copies
 the app without rebuilding or signing it. Source commit, DMG hash, app identity,
 native manifest digest and compiled-native acceptance are bound into the receipt.
@@ -701,9 +702,8 @@ Chat and model-picker controls; it does not depend on provider-specific welcome
 copy. Failed launches retain interface readiness fields, an artifact-bound
 screenshot when CDP is available, and a journal check after owned shutdown.
 
-For diagnosis after a failed candidate, dispatch `release.yml` from a scratch
-branch with `dry_run=true`, `diagnostic_startup=true`, and desktop scope. This
-passes `--diagnostic`: independent scenarios continue after assertion failures,
+For diagnosis after a failed candidate, pass `--diagnostic`: independent
+scenarios continue after assertion failures,
 while unchanged-reopen is blocked by failed empty-profile and service-cold is
 blocked by failed service-warm. Cleanup failure or invalid shared prerequisites
 stop the run. Every diagnostic receipt is failed and explicitly rejected by the

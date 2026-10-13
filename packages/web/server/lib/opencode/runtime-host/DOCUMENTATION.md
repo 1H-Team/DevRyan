@@ -448,6 +448,12 @@ relocation preserves its stable token/owner/scope identity. Runtime outcome
 queries keep the call uncertain, and never-started cancellation cannot
 reclassify it.
 
+`native-cursor-recovery.js` keeps one write-ahead intent per Cursor turn under
+`harness/native-cursor/`, stamped with the bundle ID that wrote it. A bundle
+upgrade copies pending intents into the clone. The clone accepts intents of its
+verified `sourceBundleID`, re-stamps them under the recovery lock and settles
+them as its own; any other owner is `native_cursor_recovery_owner_mismatch`.
+
 Native managed control calls (`devryan_task`, `council_session`) record the
 execution-host owner on their lease. When `finish` fails, for example because a
 timeout or Stop retired the tool permit, `nativeManagedControl` cancels and

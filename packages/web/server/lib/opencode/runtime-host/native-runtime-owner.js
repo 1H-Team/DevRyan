@@ -146,7 +146,7 @@ export function createNativeRuntimeOwner(options) {
       || hash(await fs.readFile(descriptor.preparedManifestPath)) !== selectedPreparedManifestSha256) throw fail('native_clone_evidence_invalid');
   };
   const cursorRecovery=createNativeCursorRecovery({directory:path.join(descriptor.launch.webDataDirectory,'harness','native-cursor'),
-    ownerID:descriptor.bundleID,runtime:executionHost.runtime,...options.privatePersistence});
+    ownerID:descriptor.bundleID,sourceOwnerID:descriptor.sourceBundleID,runtime:executionHost.runtime,...options.privatePersistence});
   let child, starting, primaryStep, stopping = false, stopped = false, phase = 'closed', checkpointHeld = false;
   let recoveredInputs;
   let claudeEnrollment;

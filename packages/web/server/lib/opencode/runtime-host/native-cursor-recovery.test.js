@@ -48,6 +48,14 @@ test('Cursor recovery refuses symlinked storage and corrupted ownership without 
   const directory=path.join(root,'intents'),owner=createNativeCursorRecovery({directory,ownerID:'one',runtime});await owner.stage({scope,revision:0});
   await expect(createNativeCursorRecovery({directory,ownerID:'two',runtime}).recover({directory:root,settle:async()=>{throw Error('unreachable');}})).rejects.toMatchObject({code:'native_cursor_recovery_owner_mismatch'});
   expect((await fs.readdir(directory)).filter(name=>name.endsWith('.json'))).toHaveLength(1);
+  // A bundle cloned from `one` adopts its copied intent; later clones then see their own source.
+  const intent=path.join(directory,(await fs.readdir(directory)).find(name=>name.endsWith('.json')));
+  await expect(createNativeCursorRecovery({directory,ownerID:'three',sourceOwnerID:'two',runtime}).recover({directory:root,settle:async()=>{}})).rejects.toMatchObject({code:'native_cursor_recovery_owner_mismatch'});
+  await expect(createNativeCursorRecovery({directory,ownerID:'two',sourceOwnerID:'one',runtime}).recover({directory:root,settle:async()=>{throw Error('lost native ACK');}})).rejects.toThrow('lost native ACK');
+  expect(JSON.parse(await fs.readFile(intent,'utf8')).ownerID).toBe('two');
+  let settled=0;await createNativeCursorRecovery({directory,ownerID:'three',sourceOwnerID:'two',runtime}).recover({directory:root,settle:async()=>{settled++;}});
+  expect(settled).toBe(1);expect((await fs.readdir(directory)).filter(name=>name.endsWith('.json'))).toHaveLength(0);
+  await owner.stage({scope,revision:0});
   const alias=path.join(root,'alias');await fs.symlink(directory,alias);
   await expect(createNativeCursorRecovery({directory:alias,ownerID:'one',runtime}).stage({scope,revision:0})).rejects.toMatchObject({code:'native_cursor_recovery_path_invalid'});
   const child=path.join(alias,'must-not-create');
