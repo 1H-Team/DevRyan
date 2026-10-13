@@ -192,3 +192,35 @@ The authentication observer and receipt checks passed 25 focused harness tests;
 production build, bundle checks and documentation validation passed. All eight
 image input inventories were recomputed again and remain unchanged. The next
 three hosted diagnostics must still demonstrate the corrected behavior.
+
+The [second stability round](stability-round-2.json) tested parent
+`5e1ad04fd1de47811a6136566ca671548bfd5c02`, tree
+`fe56bf063e1bd8015944ffc96eb7535795996d50`, with distinct empty sample commits.
+All three passed GUI prerequisites, all 52 compiled cases, empty-profile startup
+and unchanged reopen. Each directly recorded the local-admin storage event and
+its subsequent authentication reload. Candidate shutdown evidence consistently
+shows the mutation lock missing; none of these observed candidate stops left
+a malformed lock. This is evidence for the implemented correction, not three
+complete clean samples.
+
+| Sample | Workflow | Passed scenarios | Blocking evidence |
+| --- | --- | --- | --- |
+| 1 | [38368340216](https://github.com/1H-Team/DevRyan/actions/runs/38368340216) | 3 | v2.0.7 boot timed out twice; v2.0.8 left a zero-byte mutation lock in same-runtime-upgrade |
+| 2 | [38368340065](https://github.com/1H-Team/DevRyan/actions/runs/38368340065) | 2 | v2.0.8 left a zero-byte mutation lock in upgrade-previous |
+| 3 | [38368339944](https://github.com/1H-Team/DevRyan/actions/runs/38368339944) | 6 | v2.0.8 left a zero-byte mutation lock in interrupted-upgrade |
+
+Sample 3 booted v2.0.7 on its first attempt and passed both upgrade baselines,
+same-runtime upgrade and unsettled-process recovery. The historical v2.0.7
+failure is therefore intermittent, not a demonstrated inability to boot.
+All three malformed-lock stops exited with code zero and no surviving owned
+processes; each lock was zero bytes and had no parseable PID. No live unrelated
+lock holder was observed. Cleanup refusal stopped the remaining cases, leaving
+tampered-app rejection and service handoff unverified in this round.
+
+There are still zero complete clean samples. The strict baseline cleanup rule
+remains active. A proposed baseline-only allowance would retain an observed
+zero-byte lock untouched after verified shutdown and require the candidate to
+recover using the existing 30-second stale threshold; candidate cleanup and
+retry limits would stay strict. This changes the user's explicit requirement
+and is pending their decision. No main update, tag move or publication is
+approved. The cache report and cleanup preview completed without deletion.
