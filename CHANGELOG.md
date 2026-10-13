@@ -4,10 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.12] - 2026-10-13
+
 - Startup no longer refuses over finished or derived records. A defective completed deletion, a settled lease with missing evidence, stray files, uncopyable links in derived folders and a Cursor recovery note that cannot be settled are set aside and reported in the app; a running command, a half-done delete or a pending revert still blocks.
 - A refused runtime upgrade no longer stops the app when the OpenCode version is unchanged and the current runtime is healthy. It opens on that runtime, shows a notice, and retries the upgrade at the next start.
 - Startup failures keep their original code in logs and the journal, and Copy Diagnostics names the affected ledger and leases.
-
 - Fix the startup runtime upgrade failing with `bundle_native_removal_invalid` after a sub-agent (child) session was deleted. The bundle verifier now accepts a removed session record that has no recorded directory, as the runtime already does.
 
 ## [2.0.11] - 2026-10-13
