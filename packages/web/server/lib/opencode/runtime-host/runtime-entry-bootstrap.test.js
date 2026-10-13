@@ -23,7 +23,7 @@ it.each(['ready','held-A','pending-B'])('actual thin entry awaits bootstrap and 
  }finally{delete globalThis.__fixtureEntryBound;delete globalThis.__fixtureEntryFilename;await fs.rm(root,{recursive:true,force:true});}
 });
 
-it('failed cold upgrade stops the actual bootstrap before binding or setup restoration',async()=>{
+it('a refused cold upgrade still binds the selected bundle and restores setup',async()=>{
  const root=await fs.realpath(await fs.mkdtemp(path.resolve('../../.cache/v2-validation/native-entry-failed-')));
  const priorRoot=process.env.DEVRYAN_RUNTIME_BUNDLE_ROOT;
  try{
@@ -33,16 +33,20 @@ it('failed cold upgrade stops the actual bootstrap before binding or setup resto
    .replace("'./runtime-bundle-binding.js'","'./binding.mjs'")
    .replace("'./native-setup-local-owners.js'","'./setup.mjs'")
    .replace("'../startup-timing.js'","'./timing.mjs'")
-   .replace("'./bundle-startup-upgrade-status.js'",JSON.stringify(new URL('./bundle-startup-upgrade-status.js',import.meta.url).href)));
+   );
   const statusUrl=new URL('./bundle-startup-upgrade-status.js',import.meta.url).href;
-  await fs.writeFile(path.join(root,'provision.mjs'),`import {recordStartupBundleUpgradeFailure} from ${JSON.stringify(statusUrl)};export const provisionDefaultNativeBundle=async()=>{recordStartupBundleUpgradeFailure('bundle_execution_unsettled');return '/unused';};`);
-  await fs.writeFile(path.join(root,'binding.mjs'),"export const initializeRuntimeBundleBinding=()=>{throw Error('binding_must_not_run');};");
-  await fs.writeFile(path.join(root,'setup.mjs'),"export const captureNativeSetupOwners=()=>{};export const restoreNativeSetupOwners=()=>{throw Error('setup_must_not_run');};");
+  await fs.writeFile(path.join(root,'provision.mjs'),`import {recordStartupBundleUpgradeFailure} from ${JSON.stringify(statusUrl)};export const provisionDefaultNativeBundle=async()=>{recordStartupBundleUpgradeFailure('bundle_symlink_source');return '/selected';};`);
+  await fs.writeFile(path.join(root,'binding.mjs'),"export const initializeRuntimeBundleBinding=()=>{globalThis.__fixtureRefusedUpgradeBound=true;return {admission:'open',descriptor:{launch:{webDataDirectory:'/selected/web-data'}}};};");
+  await fs.writeFile(path.join(root,'setup.mjs'),"export const captureNativeSetupOwners=()=>{};export const restoreNativeSetupOwners=directory=>{globalThis.__fixtureRefusedUpgradeRestored=directory;};");
   await fs.writeFile(path.join(root,'timing.mjs'),"export const timeStartupPhase=(_phase,action)=>action();");
-  await expect(import(pathToFileURL(path.join(root,'entry.mjs')).href)).rejects.toMatchObject({code:'bundle_execution_unsettled'});
-  expect(process.env.DEVRYAN_RUNTIME_BUNDLE_ROOT).toBe(priorRoot);
+  await import(pathToFileURL(path.join(root,'entry.mjs')).href);
+  expect(process.env.DEVRYAN_RUNTIME_BUNDLE_ROOT).toBe('/selected');
+  expect(globalThis.__fixtureRefusedUpgradeBound).toBe(true);expect(globalThis.__fixtureRefusedUpgradeRestored).toBe('/selected/web-data');
+  const {readStartupBundleUpgradeFailure}=await import('./bundle-startup-upgrade-status.js');expect(readStartupBundleUpgradeFailure()).toBe('bundle_symlink_source');
  }finally{
   const {recordStartupBundleUpgradeFailure}=await import('./bundle-startup-upgrade-status.js');recordStartupBundleUpgradeFailure(null);
+  delete globalThis.__fixtureRefusedUpgradeBound;delete globalThis.__fixtureRefusedUpgradeRestored;
+  if(priorRoot===undefined)delete process.env.DEVRYAN_RUNTIME_BUNDLE_ROOT;else process.env.DEVRYAN_RUNTIME_BUNDLE_ROOT=priorRoot;
   await fs.rm(root,{recursive:true,force:true});
  }
 });

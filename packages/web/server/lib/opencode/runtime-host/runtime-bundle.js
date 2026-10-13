@@ -17,6 +17,7 @@ import { assertNoPendingMigration, assertBundlePendingInput, bundleFailure, cano
 import { verifyBundleOwnedContinuations } from './bundle-owned-continuations.js';
 import {verifyBundleRecoveredInputs} from './bundle-recovered-inputs.js';
 import { inspectBundleHarness } from './bundle-harness-integrity.js';
+import { recordStartupFindings } from './startup-notices.js';
 import {BUNDLE_CREDENTIAL_OWNER_PROTOCOL,isBundleCredentialOwnerEvidence,captureBundleCredentialOwners,assertBundleCredentialOwners} from './bundle-credential-owner-guard.js';
 
 import {NATIVE_BUNDLE_CREDENTIAL_CONTRACT} from './native-bundle-credential-contract.js';
@@ -84,9 +85,17 @@ const ignored = relative => relative === 'orchestration/owner.lock' || relative 
   || /^harness\/session-mutations\/[a-f0-9]{64}\/(owner\.lock|git\/index[^/]*)$/.test(relative)
   || /^harness\/(provider-recovery|context)\/[^/]+\.lock$/.test(relative)
   || /(^|\/)[^/]+\.tmp-[^/]+$/.test(relative);
-const copyTreeOwned = async (source,target,{ignore=false,relative='',windowsOwner}={}) => {
+// Links inside a project ledger are derived by its owner and rebuilt on use.
+const derivedLedgerPath = relative => /^harness\/session-mutations\/[a-f0-9]{64}\//.test(relative);
+/** `derivedLinks(relative)` names trees whose links are not data. Those, and
+ * sockets or FIFOs anywhere below the root, are left behind and reported
+ * through `onSkip`; every other link still refuses. */
+const copyTreeOwned = async (source,target,{ignore=false,relative='',windowsOwner,derivedLinks,onSkip}={}) => {
   const operations=nativeBundleFileOperations({windowsOwner});
   const stat = await fs.lstat(source);
+  if (relative && !operations.windows && (stat.isSocket() || stat.isFIFO() || stat.isSymbolicLink() && derivedLinks?.(relative))) {
+    onSkip?.(relative); return;
+  }
   if (stat.isSymbolicLink()) throw fail('bundle_symlink_source');
   if(await fs.realpath(source)!==source)throw fail('bundle_symlink_source');
   if (ignore && ignored(relative)) return;
@@ -99,7 +108,7 @@ const copyTreeOwned = async (source,target,{ignore=false,relative='',windowsOwne
   }
   if (stat.isDirectory()) {
     await fs.mkdir(target,{recursive:true,mode:0o700});
-    for (const name of (await fs.readdir(source)).sort()) await copyTreeOwned(path.join(source,name),path.join(target,name),{ignore,windowsOwner,relative:relative ? relative+'/'+name:name});
+    for (const name of (await fs.readdir(source)).sort()) await copyTreeOwned(path.join(source,name),path.join(target,name),{ignore,windowsOwner,derivedLinks,onSkip,relative:relative ? relative+'/'+name:name});
   } else if (stat.isFile()) { await fs.mkdir(path.dirname(target),{recursive:true,mode:0o700}); await fs.copyFile(source,target,fs.constants.COPYFILE_FICLONE); await fs.chmod(target,stat.mode & 0o777); }
   else throw fail('bundle_special_file_source');
 };
@@ -227,7 +236,8 @@ export function createRuntimeBundleStore(options) {
   const readBundleJSON=file=>readBundleJSONOwned(file,documentOptions);
   const saveBundleJSON=(file,value)=>saveBundleJSONOwned(file,value,documentOptions);
   const fileHash=file=>operations.windows&&containsPath(controlRoot,file)?options.windowsOwner.largeFile(file).then(value=>value.token.split(':')[2]):fileHashOwned(file);
-  const inspectHarness=(directory,input,artifacts)=>inspectBundleHarness(directory,{...input,windowsOwner:options.windowsOwner,windowsLedgerOwner:options.windowsLedgerOwner,
+  const inspectHarness=async(directory,input,artifacts)=>{const result=await inspectBundleHarnessOwned(directory,input,artifacts);recordStartupFindings('bundle_verifier',result?.findings);return result;};
+  const inspectBundleHarnessOwned=(directory,input,artifacts)=>inspectBundleHarness(directory,{...input,windowsOwner:options.windowsOwner,windowsLedgerOwner:options.windowsLedgerOwner,
     runWindowsInspection:request=>runNativeHarnessRelocationProcess({binary:artifacts.controllerBinary,controlRoot,windowsOwner:options.windowsOwner,
       request:{protocol:'devryan-native-harness-relocation/1',requestID:'harness_'+sha256(canonicalJSON({directory,...request})).slice(0,32),webDataDirectory:directory,...request},
       beforeSpawn:()=>verifyArtifacts({generation:2,launch:artifacts})})});
@@ -368,10 +378,13 @@ export function createRuntimeBundleStore(options) {
         await timeStartupPhase('bundle_database_checkpoint',()=>operations.withSqliteOutput(path.join(root,'opencode','opencode.db'),file=>db.backup(file)));
       }finally{db.raw.close();}
       await timeStartupPhase('bundle_data_copy',async()=>{
-        await copyTree(source.launch.webDataDirectory,path.join(root,'web-data'),{ignore:true});
-        await copyTree(source.launch.webConfigDirectory,path.join(root,'config','openchamber'));
-        await copyTree(source.launch.opencodeConfigDirectory,globals.config);
-        for(const [key,directory] of Object.entries(source.launch.global))if(key!=='config')await copyTree(directory,globals[key],{ignore:true});
+        const skipped=scope=>relative=>recordStartupFindings('bundle_copy',[{code:'bundle_copy_entry_skipped',scope,key:relative}]);
+        await copyTree(source.launch.webDataDirectory,path.join(root,'web-data'),{ignore:true,derivedLinks:derivedLedgerPath,onSkip:skipped('web-data')});
+        await copyTree(source.launch.webConfigDirectory,path.join(root,'config','openchamber'),{onSkip:skipped('config')});
+        await copyTree(source.launch.opencodeConfigDirectory,globals.config,{onSkip:skipped('config')});
+        // Home and data may hold user configuration behind a link; only disposable trees drop theirs.
+        for(const [key,directory] of Object.entries(source.launch.global))if(key!=='config')await copyTree(directory,globals[key],
+          {ignore:true,onSkip:skipped(`global/${key}`),...['cache','tmp','log'].includes(key)?{derivedLinks:()=>true}:{}});
       });
       let copiedHomeToken=operations.windows?await options.windowsOwner.tree(globals.home):undefined;
       // Relocate only the existing typed account profile paths, never arbitrary JSON strings.

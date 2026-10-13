@@ -56,6 +56,21 @@ test('Cursor recovery refuses symlinked storage and corrupted ownership without 
   let settled=0;await createNativeCursorRecovery({directory,ownerID:'three',sourceOwnerID:'two',runtime}).recover({directory:root,settle:async()=>{settled++;}});
   expect(settled).toBe(1);expect((await fs.readdir(directory)).filter(name=>name.endsWith('.json'))).toHaveLength(0);
   await owner.stage({scope,revision:0});
+  // With a session hold available, an intent this owner cannot settle pauses its session and recovery continues.
+  const other={...scope,sessionID:'ses_other',assistantMessageID:'msg_other'};await owner.stage({scope:other,revision:0});
+  await fs.writeFile(path.join(directory,'f'.repeat(64)+'.json'),'{not json');
+  const held=[],isolatedRows=[];let recovered=0;
+  const holding={...runtime,holdNativeAdmission:async input=>{held.push([input.sessionID,input.ownerID]);}};
+  const foreign=createNativeCursorRecovery({directory,ownerID:'four',sourceOwnerID:'three',runtime:holding});
+  expect(foreign.holdOwnerIDs).toEqual(['four-cursor-recovery','three-cursor-recovery']);
+  await foreign.recover({directory:root,settle:async()=>{recovered++;},onIsolated:row=>isolatedRows.push(row.code)});
+  expect(recovered).toBe(0);expect(held.sort()).toEqual([['ses_cursor','four-cursor-recovery'],['ses_other','four-cursor-recovery']]);
+  expect(isolatedRows.sort()).toEqual(['native_cursor_recovery_invalid','native_cursor_recovery_owner_mismatch','native_cursor_recovery_owner_mismatch']);
+  expect((await fs.readdir(directory)).filter(name=>name.endsWith('.json'))).toHaveLength(3);
+  // The owning bundle still settles its own intents beside the unreadable one.
+  await createNativeCursorRecovery({directory,ownerID:'one',runtime:holding}).recover({directory:root,settle:async()=>{recovered++;},onIsolated:row=>isolatedRows.push(row.code)});
+  expect(recovered).toBe(2);expect((await fs.readdir(directory)).filter(name=>name.endsWith('.json'))).toEqual(['f'.repeat(64)+'.json']);
+  await fs.rm(path.join(directory,'f'.repeat(64)+'.json'));await owner.stage({scope,revision:0});
   const alias=path.join(root,'alias');await fs.symlink(directory,alias);
   await expect(createNativeCursorRecovery({directory:alias,ownerID:'one',runtime}).stage({scope,revision:0})).rejects.toMatchObject({code:'native_cursor_recovery_path_invalid'});
   const child=path.join(alias,'must-not-create');

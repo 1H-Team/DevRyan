@@ -14,3 +14,13 @@ test('startup diagnostics retain only bounded labels and packaged basenames', ()
   expect(startupDiagnosticSummary({ code: '/private/token', attempt: -1 })).not.toContain('private');
   expect(describeArtifactFailure(diagnostic)).toContain('does not match');
 });
+
+test('a refusal names its ledger and leases by identifier only', () => {
+  const detail = { ledger: '8a7eca4fb393', secret: 'private', leases: [{ token: 'ac1af5a2-b846-40d3-80fb-a50fbbbadd2d', state: 'ready', kind: 'process', cleanupPending: false, scope: { text: 'private' } },
+    { token: '/private/path', state: 'ready', kind: 'process' }] };
+  const summary = startupDiagnosticSummary({ code: 'bundle_execution_unsettled', cause: { detail } });
+  expect(JSON.parse(summary)).toEqual({ code: 'bundle_execution_unsettled',
+    detail: { ledger: '8a7eca4fb393', leases: [{ token: 'ac1af5a2-b846-40d3-80fb-a50fbbbadd2d', state: 'ready', kind: 'process', cleanupPending: false }] } });
+  expect(summary).not.toContain('private');
+  expect(JSON.parse(startupDiagnosticSummary({ code: 'bundle_execution_unsettled', detail: { ledger: '../x', leases: [] } }))).toEqual({ code: 'bundle_execution_unsettled' });
+});

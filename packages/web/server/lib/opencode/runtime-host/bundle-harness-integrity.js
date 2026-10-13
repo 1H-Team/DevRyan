@@ -33,7 +33,9 @@ const references = (value, collected, sessionID=null, exception, route=[]) => {
 };
 // A native delete may commit before its Node ACK. The existing durable intent
 // and staged disposition permit startup recovery; a missing row alone does not.
-const removedReferences = async (db,directory,sessionIDs) => {
+// A `completed` removal is history: a defect in it is reported through `report`
+// and it keeps excusing only the references it can still prove.
+const removedReferences = async (db,directory,sessionIDs,report) => {
   const sessions=new Set(), messages=new Set();
   const invalid=()=>{throw bundleFailure('bundle_native_removal_invalid');};
   const ids=value=>Array.isArray(value) && value.every(id=>typeof id==='string' && id.length>0)
@@ -46,28 +48,30 @@ const removedReferences = async (db,directory,sessionIDs) => {
       if (sessionIDs && intent.members?.some(member=>!sessionIDs.includes(member.id))) throw bundleFailure('bundle_session_reference_lost');
       continue;
     }
+    const defect=()=>{if(intent.state!=='completed'||!report)invalid();report('bundle_native_removal_invalid',key);};
     if (!Array.isArray(intent.members) || !intent.members.length || intent.members.length>10000
       || !ids(intent.members.map(member=>member?.id)) || !ids(intent.removed) || !Array.isArray(intent.dispositions)
-      || !ids(intent.dispositions.map(row=>row?.sessionID))) invalid();
+      || !ids(intent.dispositions.map(row=>row?.sessionID))) { defect(); continue; }
     const members=new Map(intent.members.map(member=>[member.id,member]));
     if (!members.has(intent.rootSessionID) || intent.removed.some(id=>!members.has(id))
       || intent.dispositions.some(row=>!members.has(row.sessionID) || !ids(row.inboxIDs) || !ids(row.pendingIDs))
-      || intent.state==='completed' && intent.removed.length!==members.size) invalid();
+      || intent.state==='completed' && intent.removed.length!==members.size) { defect(); continue; }
     for (const member of intent.members) {
-      if (member.directory!==directory || !Number.isInteger(member.generation) || member.generation<0) invalid();
+      if (member.directory!==directory || !Number.isInteger(member.generation) || member.generation<0) defect();
       if (sessionIDs && !sessionIDs.includes(member.id)
         && intent.members.some(child=>child.parentID===member.id && sessionIDs.includes(child.id))) invalid();
       const seen=new Set();
       for(let current=member;current.id!==intent.rootSessionID;current=members.get(current.parentID)) {
-        if(seen.has(current.id) || !members.has(current.parentID)) invalid(); seen.add(current.id);
+        if(seen.has(current.id) || !members.has(current.parentID)) { defect(); break; } seen.add(current.id);
       }
       const session=await db.get(`sessions/${changeKey(member.id)}.json`), acked=intent.removed.includes(member.id);
       const disposition=intent.dispositions.find(row=>row.sessionID===member.id);
-      if (!session || session.id!==member.id || session.directory!==directory || session.generation!==member.generation
+      // A child session registered by its parent's call carries no directory until it is next touched.
+      if (!session || session.id!==member.id || session.directory!==undefined&&session.directory!==directory || session.generation!==member.generation
         || (session.parentID ?? null)!==(member.parentID ?? null) || session.pending
         || !session.nativeAdmission?.holds?.some(hold=>hold.removalID===intent.id && hold.ownerID===`native-removal:${intent.id}`)
         || (acked ? session.nativeRemoved!==intent.id || !disposition || session.nativeAdmission.continuations?.length
-          : session.nativeRemoved!==undefined && session.nativeRemoved!==null)) invalid();
+          : session.nativeRemoved!==undefined && session.nativeRemoved!==null)) defect();
       if (acked && sessionIDs?.includes(member.id)) invalid();
       if (sessionIDs && !sessionIDs.includes(member.id) && !disposition) throw bundleFailure('bundle_session_reference_lost');
       if (sessionIDs && !sessionIDs.includes(member.id) && disposition) {
@@ -131,6 +135,15 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
   const runGit=gitRunner?.git??git;
   if(windows&&!nativeFiles&&typeof windowsOwner?.tree!=='function')throw bundleFailure('private_windows_storage_authority_unavailable');
   const collected = {sessions:new Set(),messages:new Set(),messageScopes:new Map()}, refs = [];
+  // Refuse only in-flight or foreign state. A defect in a terminal record or a
+  // stray entry is a finding: identifiers only, reported by the caller. Moving
+  // records to another directory still needs every one of them to be exact.
+  const findings=[],strict=relocate&&projectMap.some(row=>row.sourceDirectory!==row.targetDirectory);
+  const finding=(code,ledger,key)=>{
+    if(strict)throw bundleFailure(code);
+    const row={code,ledger:String(ledger).slice(0,12),key:String(key).replace(/[^A-Za-z0-9._/-]/g,'_').slice(0,160)};
+    if(findings.length<256&&!findings.some(item=>item.code===row.code&&item.ledger===row.ledger&&item.key===row.key))findings.push(row);
+  };
   const removed={sessions:new Set(),messages:new Set()}, verifiedFiles=new Set(),shellPins=[];
   const storage = path.join(webDataDirectory,'harness','session-mutations');
   const storesToInspect=(await entries(storage)).filter(entry=>!windows||!isWindowsPrivateControlName(entry.name));
@@ -141,7 +154,7 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
   let registered;
   const getRegistered=()=>registered??=registeredIdentityDirectories(readBundleJSON,webDataDirectory,sourceWebDataDirectory,projectMap);
   for (const entry of storesToInspect) {
-    if (!entry.isDirectory() || !/^[a-f0-9]{64}$/.test(entry.name)) throw bundleFailure('bundle_harness_layout_invalid');
+    if (!entry.isDirectory() || !/^[a-f0-9]{64}$/.test(entry.name)) { finding('bundle_harness_layout_invalid','session-mutations',entry.name); continue; }
     if(windows&&relocate&&!nativeFiles)throw bundleFailure('private_windows_git_relocation_unavailable');
     const root = path.join(storage,entry.name), gitDirectory = path.join(root,'git');
     const before = (await runGit(root,['--git-dir',gitDirectory,'for-each-ref','--format=%(refname) %(objectname)'])).toString().trim().split('\n').filter(Boolean);
@@ -149,7 +162,7 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
     if (!db.exists || await db.get('materialization.json')) throw bundleFailure('bundle_materialization_pending');
     const meta = await db.get('meta.json');
     if (!meta || meta.version !== 1 || changeKey(meta.directory) !== entry.name) throw bundleFailure('bundle_harness_layout_invalid');
-    const disposed=await removedReferences(db,meta.directory,sessionIDs);
+    const disposed=await removedReferences(db,meta.directory,sessionIDs,(code,key)=>finding(code,entry.name,key));
     for(const id of disposed.sessions) removed.sessions.add(id);
     for(const id of disposed.messages) removed.messages.add(id);
     const target=relocate?await mapDirectory(meta.directory,projectMap,getRegistered):meta.directory,
@@ -173,14 +186,17 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
         if (key.startsWith('sessions/') && record.pending) throw bundleFailure('migration_revert_pending');
         if (key.startsWith('leases/') && (!['published','cancelled'].includes(record.state) || record.cleanupPending)) throw bundleFailure('bundle_execution_unsettled');
         let shellException;
-        if (key.startsWith('leases/') && record.rebootRecovery && !isRebootRecoveredLease(record)) throw bundleFailure('bundle_execution_unsettled');
-        if (key.startsWith('leases/') && isRebootRecoveredLease(record)
-          && (typeof record.viewDirectory !== 'string' || !containsPath(owned.source, record.viewDirectory))) throw bundleFailure('bundle_execution_path_unknown');
-        if (key.startsWith('leases/') && record.executionKind==='process' && !record.cancelledBeforeStart && !isRebootRecoveredLease(record)) {
-          if (typeof record.viewDirectory!=='string' || !containsPath(owned.source,record.viewDirectory)) throw bundleFailure('bundle_execution_path_unknown');
-          const file=path.join(root,path.relative(owned.source,path.dirname(record.viewDirectory)),'termination.json'), receipt=await readBundleJSON(file);
+        // The lease is already terminal here, so its evidence is history.
+        const leaseEvidence=key.startsWith('leases/')&&(record.rebootRecovery&&!isRebootRecoveredLease(record)?'bundle_execution_unsettled'
+          :(isRebootRecoveredLease(record)||record.executionKind==='process'&&!record.cancelledBeforeStart)
+            &&(typeof record.viewDirectory!=='string'||!containsPath(owned.source,record.viewDirectory))?'bundle_execution_path_unknown':null);
+        if (leaseEvidence) finding(leaseEvidence,entry.name,key);
+        else if (key.startsWith('leases/') && record.executionKind==='process' && !record.cancelledBeforeStart && !isRebootRecoveredLease(record)) {
+          const file=path.join(root,path.relative(owned.source,path.dirname(record.viewDirectory)),'termination.json');
+          const receipt=await readBundleJSON(file).catch(error=>{if(error.code==='ENOENT')return null;throw error;});
           if (!isRecord(receipt) || receipt.terminated!==true || receipt.confined!==true || !Number.isInteger(receipt.exitCode)
-            || typeof receipt.cancelled!=='boolean') throw bundleFailure('bundle_execution_unsettled');
+            || typeof receipt.cancelled!=='boolean') finding('bundle_execution_unsettled',entry.name,key);
+          else {
           const session=await store.get(`sessions/${changeKey(record.scope?.sessionID??'')}.json`),shell=record.nativeShellJob;
           const pending=verifiedContinuations.find(proof=>proof.inboxSha256!==null&&proof.sessionID===record.scope?.sessionID&&proof.directory===meta.directory
             &&proof.id===shell?.notificationID&&proof.itemProof?.type==='synthetic'&&proof.itemProof.hash===shell.itemHash&&proof.itemProof.delivery===shell.itemDelivery);
@@ -188,6 +204,7 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
             &&Number.isSafeInteger(record.generation)&&record.generation>=0&&typeof shell.itemHash==='string'&&/^[a-f0-9]{64}$/.test(shell.itemHash)
             &&(shell.deliveredID===undefined||shell.deliveredID===shell.notificationID)&&['queue','steer'].includes(shell.itemDelivery)){shellException=[{...pending,paths:['nativeShellJob.notificationID']}];
             shellPins.push({root,gitDirectory,ref,key,sessionKey:`sessions/${changeKey(record.scope.sessionID)}.json`,file,recordHash:sha256(canonicalJSON(record)),sessionHash:sha256(canonicalJSON(session)),receiptHash:sha256(canonicalJSON(receipt))});
+          }
           }
         }
         references(record,collected,null,shellException);
@@ -254,14 +271,15 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
   for (const entry of await entries(path.join(webDataDirectory,'harness','evidence','records'))) {
     if(windows&&isWindowsPrivateControlName(entry.name))continue;
-    if (!entry.isFile() || !entry.name.endsWith('.json')) throw bundleFailure('bundle_evidence_layout_invalid');
+    if (!entry.isFile() || !entry.name.endsWith('.json')) { finding('bundle_evidence_layout_invalid','evidence',entry.name); continue; }
     const file=path.join(webDataDirectory,'harness','evidence','records',entry.name),record=await readBundleJSON(file);
-    if (!isRecord(record) || !['complete','gap'].includes(record.status)) throw bundleFailure('bundle_evidence_unsettled');
+    if (!isRecord(record) || !['complete','gap'].includes(record.status)) finding('bundle_evidence_unsettled','evidence',entry.name);
+    if (!isRecord(record)) continue;
     references(record,collected);
     if (relocate) await saveBundleJSON(file,await relocateRecord(record,projectMap,undefined,getRegistered));
   }
   if (sessionIDs) for (const id of collected.sessions) if (!sessionIDs.includes(id) && !removed.sessions.has(id)) throw bundleFailure('bundle_session_reference_lost');
   if (messageIDs) for (const id of collected.messages) if (!messageIDs.includes(id)
     && ![...collected.messageScopes.get(id)].every(owner=>owner===null ? removed.messages.has(id) : removed.sessions.has(owner))) throw bundleFailure('bundle_message_reference_lost');
-  return {refs,sessionReferences:[...collected.sessions].sort(),messageReferences:[...collected.messages].sort()};
+  return {refs,sessionReferences:[...collected.sessions].sort(),messageReferences:[...collected.messages].sort(),findings};
 }

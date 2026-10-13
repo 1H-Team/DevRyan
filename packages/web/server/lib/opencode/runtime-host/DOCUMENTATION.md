@@ -9,13 +9,45 @@ verification purpose. The same manifest reader covers first provisioning and
 cold upgrade detection. Early failures emit the safe envelope before a journal
 exists; composed native failures add it to the bundle/controller journal event.
 `bundle-startup-upgrade-status.js` carries it to lifecycle health, including a
-failed repair at the same OpenCode version. A recorded failed repair cannot
-silently launch the old selected runtime as though startup succeeded.
+failed repair at the same OpenCode version.
 
-The thin runtime entry asserts that cold upgrade succeeded before assigning its
-inherited bundle root, binding data owners or importing the application. This
-preserves the original refusal (for example `bundle_execution_unsettled`) instead
-of masking it with a current-pin check against the retained old runtime. Cold
+### What refuses startup and what is isolated
+
+Startup refuses only for in-flight or foreign state: unsettled leases, pending
+materialization or revert, `committed` removals, running tasks, lost session,
+message or Git references, descriptor, manifest, artifact, credential and
+checkpoint failures, and any relocation to a different directory. A defect in a
+record that is already finished, or in a derived tree, is isolated and
+reported instead:
+
+- `inspectBundleHarness` returns `findings` (`{ code, ledger, key }`,
+  identifiers only, at most 256) for a `completed` native removal that fails a
+  shape check, a terminal lease whose receipt, attestation or view path is not
+  exact, a stray entry in `session-mutations/` or `evidence/records`, and an
+  evidence record outside `complete`/`gap`. A completed removal keeps excusing
+  only the sessions it still proves, so a session it cannot excuse still fails
+  as `bundle_session_reference_lost`. With a non-identity project map every
+  finding throws.
+- The clone copy leaves behind sockets and FIFOs anywhere, and symlinks inside
+  a project ledger and under `global/{cache,tmp,log}`. Links under config,
+  `global/home` and `global/data` still refuse with `bundle_symlink_source`.
+- Cursor recovery pauses the one session whose intent it cannot settle
+  (invalid, foreign owner, scope mismatch, unconfirmed termination) with a
+  `<bundleID>-cursor-recovery` hold, keeps the intent, and continues. The
+  native owner releases those holds at each startup before recovery
+  re-examines the intents. An unreadable intent names no session and is only
+  reported. Other recovery steps stay all-or-nothing.
+
+`startup-notices.js` collects these for the process. The health snapshot
+exposes them as `startupNotices`, and the UI shows a persistent warning.
+
+A refused cold upgrade is recorded, not thrown. When the selected runtime
+still meets the OpenCode version pin and passes its own launch verification,
+it launches and the upgrade retries at the next start. When that verification
+fails too, `startupUpgradeFailureOver` reports the refused upgrade with the
+verification error as its cause, so an old-pin rejection of the retained
+runtime cannot mask the original refusal. A version below the pin always
+refuses. Cold
 upgrade preflights the selected harness after owner checks and before artifact
 retention; the full final verifier still runs. Compatibility checking shares its
 fresh source result only with the immediately following upgrade decision, never

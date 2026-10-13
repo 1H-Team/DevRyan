@@ -19,6 +19,7 @@ const commands = [
     'server/lib/opencode/execution-helper-command.test.js', 'server/lib/opencode/session-execution-host.test.js',
     'server/lib/opencode/lifecycle.test.js', 'server/lib/opencode/runtime-host/native-artifacts.test.js',
     'server/lib/opencode/runtime-host/bundle-startup-upgrade-status.test.js',
+    'server/lib/opencode/runtime-host/bundle-harness-integrity.test.js', 'server/lib/opencode/runtime-host/native-cursor-recovery.test.js',
     'server/lib/opencode/runtime-host/runtime-entry-bootstrap.test.js',
     'server/lib/opencode/runtime-host/native-bundle-reboot-recovery.test.js',
     'server/lib/opencode/runtime-host/retained-native-artifacts.test.js', 'server/lib/opencode/runtime-host/runtime-bundle.test.js',

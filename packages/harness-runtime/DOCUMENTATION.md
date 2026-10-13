@@ -43,6 +43,9 @@ execution owner then records the same no-launch attestation as a failed start
 (`cancelUnstartedCall` and cleanup) instead of leaving a claimed `ready` lease.
 Any other receipt failure stays unconfirmed and held.
 
+Session records created by `registerChild` carry no `directory` until the
+session is next touched; every consumer treats the field as optional.
+
 ## Storage
 
 `createHarnessPaths({ rootDir })` creates a `harness/` namespace below a host

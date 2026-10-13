@@ -118,6 +118,44 @@ ID on the affected installation, with a backup. `createNativeCursorRecovery`
 now accepts intents of the verified source bundle and re-stamps them under its
 lock (`native-cursor-recovery.test.js`).
 
+## Fourth blocker, after installing 2.0.11
+
+The 2.0.11 startup upgrade refused at 20:00:23 and 20:01:06 (UTC+4) with
+`bundle_native_removal_invalid`. Two sessions deleted that afternoon were child
+sessions created by `registerChild`, whose ledger records carry no `directory`.
+`session-mutations.js` treats that field as optional, but
+`bundle-harness-integrity.js` required it to equal the ledger directory for
+every removed member. Both records were given the ledger directory on the
+affected installation, under the ledger lock with no runtime owner alive, and
+the verifier now accepts an absent directory
+(`bundle-harness-integrity.test.js`). Whether the app then opened is not yet
+confirmed.
+
+## Design change after the fourth blocker
+
+All four blockers were one pattern: each release clones the runtime bundle, and
+a strict verifier or recovery step refused the whole launch over one record it
+did not expect. Startup now refuses only for in-flight or foreign state and
+isolates defects in finished or derived records, and a refused same-version
+upgrade opens the existing runtime. The contract is in
+`packages/web/server/lib/opencode/runtime-host/DOCUMENTATION.md`.
+
+`runtime-bundle.test.js` now upgrades one ledger carrying this incident's
+shapes together: a settled process lease without its receipt, a deleted child
+session with no directory and no hold, `.DS_Store`, `module-overlays` links, a
+cache link and FIFO, and a stray evidence file. It asserts the upgrade applies,
+the exact findings, and that a `committed` removal and a `ready` lease in the
+same ledger still refuse. Native recovery against a real controller is not part
+of that test; Cursor isolation is covered in `native-cursor-recovery.test.js`.
+
+Verification of the design change: `bun run validate:full`, `bun run build`,
+`bun run bundle:check`, `bun run docs:validate` and `bun run test:startup`
+passed. The isolated web QA smoke (`bun run qa`, fresh native artifacts) booted
+the real server and native runtime through the changed startup path and passed
+its seven chat checks. Not run: the Electron QA lane, a host seeded with
+leftover records (the in-app warning is covered by a mounted component test
+only), Windows inspection, and a packaged upgrade.
+
 ## Outcome on the affected installation
 
 After the three repairs, the installed 2.0.10 app opened at 17:57:36 (UTC+4):

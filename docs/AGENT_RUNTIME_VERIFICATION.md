@@ -129,6 +129,10 @@ as never started. `startup upgrade not applied: bundle_execution_unsettled`
 is followed by the ledger prefix and the token, state and kind of each held
 lease. `[electron] restart recovery preparation failed` records why **Prepare
 recovery for restart** was refused.
+`startup isolated a record instead of refusing: {…}` names a finished or
+derived record that startup set aside (source, code, ledger prefix and key).
+After `startup upgrade not applied`, a launch that continues is running the
+previous runtime; `/health` lists both conditions under `startupNotices`.
 Correlate those with the selected-bundle journal's native startup records;
 do not add concurrent phase durations as if every phase were sequential.
 A stale service descriptor stops connection retries early only when a fresh

@@ -33,7 +33,8 @@ export async function readBundleLeaseInventory(launch, { allRecords = false, int
   catch (error) { if (error.code === 'ENOENT') return []; throw error; }
   const ledgers = [], inventory = createHash('sha256').update('[');
   for (const entry of names.sort((a, b) => a.name.localeCompare(b.name))) {
-    if (!entry.isDirectory() || !/^[a-f0-9]{64}$/.test(entry.name)) throw Object.assign(Error('bundle_harness_layout_invalid'), { code: 'bundle_harness_layout_invalid' });
+    // A stray entry is reported by the bundle verifier; it holds no leases.
+    if (!entry.isDirectory() || !/^[a-f0-9]{64}$/.test(entry.name)) continue;
     const root = path.join(storage, entry.name);
     if (await fs.realpath(root) !== root) throw Object.assign(Error('bundle_path_invalid'), { code: 'bundle_path_invalid' });
     const gitDirectory = path.join(root, 'git'), gitStat = await fs.lstat(gitDirectory);

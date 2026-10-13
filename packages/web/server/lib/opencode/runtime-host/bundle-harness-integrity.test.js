@@ -99,8 +99,14 @@ test.each(['tombstone-without-ack','ack-without-tombstone','wrong-hold','wrong-g
     if(defect==='wrong-generation')f.session.generation++;
     if(defect==='missing-member')f.intent.members=[];
     if(defect==='completed-without-ack'){f.intent.state='completed';f.intent.removed=[];delete f.session.nativeRemoved;}
-    await f.save();await expect(f.verify()).rejects.toMatchObject({code:'bundle_native_removal_invalid'});
+    // A completed removal that no longer proves its session is reported, and the session it cannot excuse is lost.
+    await f.save();await expect(f.verify()).rejects.toMatchObject({code:defect==='completed-without-ack'?'bundle_session_reference_lost':'bundle_native_removal_invalid'});
   });
+test('a removed child session without a recorded directory is valid; a foreign directory is not',async()=>{
+  const f=await fixture({acked:true});delete f.session.directory;await f.save();
+  expect((await f.verify()).sessionReferences).toEqual(['ses_removed']);
+  f.session.directory='/elsewhere';await f.save();await expect(f.verify()).rejects.toMatchObject({code:'bundle_native_removal_invalid'});
+});
 test('ACKed tombstone cannot authorize a native session that still exists',async()=>{
   const f=await fixture({acked:true});await expect(f.verify({sessionIDs:['ses_removed']})).rejects.toMatchObject({code:'bundle_native_removal_invalid'});
 });

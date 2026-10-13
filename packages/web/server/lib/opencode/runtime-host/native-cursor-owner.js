@@ -1,4 +1,5 @@
 import {AsyncLocalStorage} from 'node:async_hooks';
+import {recordStartupFindings} from './startup-notices.js';
 import {randomBytes} from 'node:crypto';
 import {credentialMutationFingerprint as fingerprint} from './native-credential-mutation-owner.js';
 const fail=code=>Object.assign(new Error(code),{code,status:403,statusCode:403});
@@ -255,7 +256,7 @@ export function createNativeCursorOwner({instanceID,admissionOwner,runtime,contr
     const input={...scope,controllerInstanceID:instanceID,permit:{token:randomBytes(32).toString('hex'),sessionID:scope.sessionID,revision}};
     settlements.set(input.permit.token,input);
     try{await target.call({action:'cursor-settle-owned',...input});}finally{settlements.delete(input.permit.token);}
-   }});
+   },onIsolated:finding=>recordStartupFindings('cursor_recovery',[{...finding,scope:'native-cursor'}])});
   },
   close(){
    if(closePromise)return closePromise;closing=true;

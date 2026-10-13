@@ -25,6 +25,7 @@ import { nativeUpgradeBundleID } from './runtime-bundle-lifecycle.js';
 import { readStartupBundleUpgradeFailure, recordStartupBundleUpgradeFailure } from './bundle-startup-upgrade-status.js';
 import { TARGET_OPENCODE_VERSION } from '../version-policy.js';
 import { BUNDLE_DOCUMENT_MAX_BYTES } from './bundle-document-limits.js';
+import { readStartupFindings, resetStartupFindings, startupNotices } from './startup-notices.js';
 
 const execute=promisify(execFile), roots=[];
 // Git and SQLite fixtures need headroom on hosted macOS runners.
@@ -1085,6 +1086,52 @@ test('default startup settles an abandoned control lease before verification, th
  expect(await db.get(`leases/${changeKey(seeded.token)}.json`)).toMatchObject({state:'cancelled',cleaned:true,cleanupPending:false});
  expect(await fs.stat(seeded.viewDirectory).catch(error=>error.code)).toBe('ENOENT');
 },60_000);
+// The shapes that locked out a used installation on 2026-10-13, together in one
+// ledger: none of them is in flight, so startup upgrades and reports them.
+test('a used ledger with finished and derived leftovers upgrades and reports them instead of refusing',async()=>{
+ resetStartupFindings();
+ const u=await startupUpgradeFixture('startup-used-ledger-home'),seeded=await seedSelectedLease(u,{}),launch=u.binding().descriptor.launch;
+ const directory=await fs.realpath(u.f.seed.projectMap[0].targetDirectory),storage=path.dirname(seeded.root);
+ const db=await openChangeStore(seeded.root,seeded.gitDir),scope={sessionID:'ses_orphaned_control',userMessageID:'msg_orphaned_user',messageID:'msg_orphaned_assistant'};
+ // A settled process lease whose supervisor receipt is gone.
+ const settled='50000000-0000-4000-8000-000000000005',settledView=path.join(seeded.root,'views',settled,'worktree');
+ db.set(`leases/${changeKey(settled)}.json`,{token:settled,scope:{...scope,callID:'call_settled_process'},directory,projectDirectory:directory,viewDirectory:settledView,workingDirectory:settledView,
+  auxiliaryDirectory:path.join(seeded.root,'context-cache'),generation:0,baseSequence:0,vcs:false,origins:{},promptSequence:0,parentCallID:null,
+  executionFingerprint:'b'.repeat(64),reservedAt:1,executionKind:'process',state:'cancelled',cleaned:true,cleanupPending:false});
+ // A deleted child session: no recorded directory, and its removal hold already gone.
+ const removal='60000000-0000-4000-8000-000000000006',child={id:'ses_deleted_child',parentID:null,directory,generation:0};
+ db.set(`sessions/${changeKey(child.id)}.json`,{id:child.id,generation:0,pending:null,parentID:null,nativeAdmission:{revision:2,holds:[]},nativeRemoved:removal});
+ db.set(`native-removals/${changeKey(removal)}.json`,{id:removal,directory,rootSessionID:child.id,ownerID:'earlier-bundle',state:'completed',members:[child],removed:[child.id],
+  dispositions:[{sessionID:child.id,inboxIDs:[],pendingIDs:[]}]});
+ db.set('operations/deleted-child.json',{scope:{sessionID:child.id,messageID:'msg_deleted_child'}});
+ await db.commit();
+ await fs.writeFile(path.join(storage,'.DS_Store'),'finder');
+ const overlay=path.join(seeded.root,'module-overlays','0123456789abcdef');await fs.mkdir(overlay,{recursive:true});
+ await fs.symlink(path.join(u.controlRoot,'missing-dependency'),path.join(overlay,'dependency'));
+ await fs.mkdir(path.join(seeded.root,'scratch-links'));await fs.symlink('/nonexistent/derived',path.join(seeded.root,'scratch-links','link'));
+ await fs.mkdir(launch.global.cache,{recursive:true});await fs.symlink('/nonexistent/cache',path.join(launch.global.cache,'cache-link'));
+ await promisify(execFile)('/usr/bin/mkfifo',[path.join(launch.global.cache,'pipe')]);
+ const evidence=path.join(launch.webDataDirectory,'harness','evidence','records');await fs.mkdir(evidence,{recursive:true});await fs.writeFile(path.join(evidence,'notes.txt'),'stray');
+ expect(await u.launch(u.pinned)).toBe(u.controlRoot);
+ expect(readStartupBundleUpgradeFailure()).toBe(null);expect(u.binding().selection.revision).toBe(2);
+ const found=readStartupFindings().map(row=>`${row.source}:${row.code}:${row.key.split('/')[0]}`);
+ expect([...new Set(found)].sort()).toEqual(['bundle_copy:bundle_copy_entry_skipped:cache-link','bundle_copy:bundle_copy_entry_skipped:harness','bundle_copy:bundle_copy_entry_skipped:pipe',
+  'bundle_verifier:bundle_evidence_layout_invalid:notes.txt','bundle_verifier:bundle_execution_unsettled:leases','bundle_verifier:bundle_harness_layout_invalid:.DS_Store',
+  'bundle_verifier:bundle_native_removal_invalid:native-removals']);
+ expect(startupNotices()).toMatchObject([{code:'startup_records_isolated'}]);
+ const upgraded=u.binding().descriptor.launch,ledger=path.join(upgraded.webDataDirectory,path.relative(launch.webDataDirectory,seeded.root));
+ expect(ledger).not.toBe(seeded.root);
+ for(const gone of [path.join(ledger,'module-overlays'),path.join(ledger,'scratch-links','link'),path.join(upgraded.global.cache,'cache-link'),path.join(upgraded.global.cache,'pipe')])
+  await expect(fs.lstat(gone)).rejects.toMatchObject({code:'ENOENT'});
+ // In-flight state in the same ledger still refuses.
+ resetStartupFindings();
+ const next=await openChangeStore(ledger,path.join(ledger,'git')),key=`native-removals/${changeKey(removal)}.json`;
+ next.set(key,{...await next.get(key),state:'committed'});await next.commit();
+ const ids={sessionIDs:[scope.sessionID],messageIDs:[scope.userMessageID,scope.messageID]};
+ await expect(inspectBundleHarness(upgraded.webDataDirectory,ids)).rejects.toMatchObject({code:'bundle_native_removal_invalid'});
+ next.set(key,{...await next.get(key),state:'completed'});next.set(`leases/${changeKey(settled)}.json`,{...await next.get(`leases/${changeKey(settled)}.json`),state:'ready'});await next.commit();
+ await expect(inspectBundleHarness(upgraded.webDataDirectory,ids)).rejects.toMatchObject({code:'bundle_execution_unsettled'});
+},120_000);
 test('default startup leaves abandoned leases to the strict gate when a live owner holds the bundle or a process may still run',async()=>{
  const u=await startupUpgradeFixture('startup-live-control-home'),launch=u.binding().descriptor.launch,seeded=await seedSelectedLease(u,{});
  const lock=path.join(launch.webDataDirectory,'orchestration','owner.lock');await fs.mkdir(path.dirname(lock),{recursive:true});

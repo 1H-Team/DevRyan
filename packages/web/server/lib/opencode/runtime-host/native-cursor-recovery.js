@@ -25,6 +25,12 @@ const checked=value=>{
 export function createNativeCursorRecovery({directory,ownerID,sourceOwnerID,runtime,windowsOwner,windowsLauncher}){
  if(!path.isAbsolute(directory)||typeof ownerID!=='string'||!ownerID)throw fail('native_cursor_recovery_configuration');
  const owned=value=>value.ownerID===ownerID||typeof sourceOwnerID==='string'&&sourceOwnerID!==''&&value.ownerID===sourceOwnerID;
+ // One intent this owner cannot settle must not stop every other session. Its
+ // session is paused under a hold the native owner releases at each startup,
+ // before recovery re-examines the retained intent.
+ const holdOwnerIDs=[ownerID,sourceOwnerID].filter(id=>typeof id==='string'&&id).map(id=>`${id}-cursor-recovery`);
+ const isolated=error=>error instanceof SyntaxError?'native_cursor_recovery_invalid'
+  :['native_cursor_recovery_invalid','native_cursor_recovery_owner_mismatch','native_cursor_recovery_scope_invalid','native_cursor_recovery_termination_unconfirmed'].includes(error?.code)?error.code:null;
  const pending=new Set();
  const ensureDirectory=async()=>{
   if(process.platform==='win32'){
@@ -47,13 +53,13 @@ export function createNativeCursorRecovery({directory,ownerID,sourceOwnerID,runt
    let prior;try{prior=await windowsOwner.read(name);}catch(error){if(error.code==='ENOENT'){observed.set(name,null);return null;}throw error;}
    if(prior.bytes.length>64*1024)throw fail('native_cursor_recovery_invalid');
    const value=checked(JSON.parse(prior.bytes.toString('utf8')));
-   if(!owned(value)||name!==file(value.scope))throw fail('native_cursor_recovery_owner_mismatch');
+   if(!owned(value)||name!==file(value.scope))throw Object.assign(fail('native_cursor_recovery_owner_mismatch'),{intent:value});
    observed.set(name,prior);return value;
   }
   let stat;try{stat=await fs.lstat(name);}catch(error){if(error.code==='ENOENT')return null;throw error;}
   if(!stat.isFile()||stat.size>64*1024)throw fail('native_cursor_recovery_invalid');
   const value=checked(JSON.parse(await fs.readFile(name,'utf8')));
-  if(!owned(value)||name!==file(value.scope))throw fail('native_cursor_recovery_owner_mismatch');return value;
+  if(!owned(value)||name!==file(value.scope))throw Object.assign(fail('native_cursor_recovery_owner_mismatch'),{intent:value});return value;
  };
  const locked=(scope,action)=>{
   checked({version:1,ownerID,scope,revision:0,phase:'pending'});
@@ -92,14 +98,34 @@ export function createNativeCursorRecovery({directory,ownerID,sourceOwnerID,runt
    await save(name,{...value,phase:'bound',leaseToken:lease.token,leaseGeneration:lease.generation});
   }),
   complete:scope=>change(scope,name=>remove(name)),
-  async recover({directory:projectDirectory,settle}){
+  holdOwnerIDs,
+  async recover({directory:projectDirectory,settle,onIsolated}){
    await Promise.allSettled([...pending]);
    if(await fs.realpath(projectDirectory)!==projectDirectory)throw fail('native_cursor_recovery_path_invalid');await ensureDirectory();
    const names=await fs.readdir(directory);if(names.filter(name=>/^[a-f0-9]{64}\.json$/.test(name)).length>128)throw fail('native_cursor_recovery_limit');
+   const pause=async(scope,name,error)=>{
+    if(!isolated(error)||typeof onIsolated!=='function'||typeof runtime.holdNativeAdmission!=='function')throw error;
+    try{await runtime.holdNativeAdmission({directory:scope.directory,sessionID:scope.sessionID,ownerID:holdOwnerIDs[0]});}catch{throw error;}
+    onIsolated({code:isolated(error),key:name});
+   };
    for(const name of names.filter(name=>/^[a-f0-9]{64}\.json$/.test(name)).sort()){
-    const value=await read(path.join(directory,name));if(!value||value.scope.directory!==projectDirectory)continue;
+    let value;
+    try{value=await read(path.join(directory,name));}
+    catch(error){
+     if(!isolated(error)||typeof onIsolated!=='function')throw error;
+     // A foreign owner's intent still names its session; an unreadable one
+     // names nothing, so it is only reported and left in place.
+     if(error.intent){if(error.intent.scope.directory===projectDirectory)await pause(error.intent.scope,name,error);}
+     else onIsolated({code:isolated(error),key:name});
+     continue;
+    }
+    if(!value||value.scope.directory!==projectDirectory)continue;
+    let verified=false;
+    try{await change(value.scope,async()=>{});verified=true;}catch(error){await pause(value.scope,name,error);}
+    if(!verified)continue;
     await change(value.scope,async(filename,current)=>{
      const scope=current.scope,callID=`cursor_${scope.assistantMessageID}`;
+     try{
      const lease=await runtime.leaseForCall({directory:scope.directory,sessionID:scope.sessionID,callID});
      if(lease){
       if(current.phase==='pending'||current.phase==='bound'&&(lease.token!==current.leaseToken||lease.generation!==current.leaseGeneration)
@@ -112,6 +138,7 @@ export function createNativeCursorRecovery({directory,ownerID,sourceOwnerID,runt
       const [outcome]=await runtime.executionOutcomes({directory:scope.directory,sessionID:scope.sessionID,calls:[{callID,messageID:scope.assistantMessageID}]});
       if(outcome?.outcome!=='never_started')throw fail('native_cursor_recovery_termination_unconfirmed');
      }
+     }catch(error){await pause(scope,name,error);return;}
      await settle(scope,current.revision);await remove(filename);
     });
    }

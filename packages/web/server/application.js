@@ -1,6 +1,8 @@
 import { selectedRuntimeBundle, getRuntimeHome } from './lib/opencode/runtime-host/runtime-bundle-binding.js';
 import {createNativePrivatePersistence} from './lib/opencode/runtime-host/native-private-persistence.js';
 import { loadNativeRuntimeBundle, createNativeRuntimeOwner, createRuntimeBundleVerifier } from './lib/opencode/runtime-host/native-runtime-owner.js';
+import { startupUpgradeFailureOver } from './lib/opencode/runtime-host/bundle-startup-upgrade-status.js';
+import { startupNotices } from './lib/opencode/runtime-host/startup-notices.js';
 import { createRuntimeBundleLifecycle, createRuntimeBundleAdmissionGate, createRuntimeBundleWorkFence, registerRuntimeBundleLifecycleRoutes } from './lib/opencode/runtime-host/runtime-bundle-lifecycle.js';
 import { createNativeAuthorization } from './lib/opencode/runtime-host/native-authorization.js';
 import { writeOpenCodeRuntimeSelection } from './lib/opencode/runtime-selection.js';
@@ -193,7 +195,7 @@ const privatePersistence = selectedRuntimeBundle ? await createNativePrivatePers
 const verifySelectedRuntimeBundle = selectedRuntimeBundle ? createRuntimeBundleVerifier(selectedRuntimeBundle, privatePersistence) : null;
 // Boot verifies once, before any setup, and passes the result to loadNativeRuntimeBundle.
 // No await separates the two, so a second ledger scan would see the same state.
-const bootVerifiedRuntimeBundle = verifySelectedRuntimeBundle ? await verifySelectedRuntimeBundle() : undefined;
+const bootVerifiedRuntimeBundle = verifySelectedRuntimeBundle ? await verifySelectedRuntimeBundle().catch(error => { throw startupUpgradeFailureOver(error); }) : undefined;
 const configuredDefaultConfigRoot = typeof process.env.DEVRYAN_DEFAULT_CONFIG_ROOT === 'string'
   ? process.env.DEVRYAN_DEFAULT_CONFIG_ROOT.trim()
   : '';
@@ -2313,6 +2315,7 @@ async function main(options = {}) {
         lastOpenCodeError,
         openCodeStartup: openCodeLifecycleState.openCodeStartup,
         openCodeProfileNotices,
+        startupNotices: startupNotices(),
         openCodeProbe: openCodeLifecycleState.openCodeProbe ?? null,
         lastOpenCodeLaunchDiagnostics,
         executionRuntime: { state: executionReadiness.state, code: executionReadiness.diagnostic?.code ?? null },

@@ -4,6 +4,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { createRuntimeBundleLifecycle, nativeUpgradeBundleID } from './runtime-bundle-lifecycle.js';
 import { readRuntimeBundleBinding } from './runtime-bundle-binding.js';
 import { recordStartupBundleUpgradeFailure } from './bundle-startup-upgrade-status.js';
+import { recordStartupFindings } from './startup-notices.js';
 import { artifactDiagnostic } from '@openchamber/shared-runtime/startup-diagnostics.js';
 import { readNativeRuntimeManifest } from './native-artifacts.js';
 import { isProcessRunning, readManagedOpenCodeRegistry, readProcessStartTime,
@@ -13,7 +14,8 @@ import { assertSelectedBundleLeasesSettled } from './native-bundle-lease-recover
 
 const fail = code => Object.assign(new Error(code), { code, status: 503 });
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
-const finiteCode = error => error?.code === 'native_runtime_artifacts_unverified' || /^bundle_[a-z0-9_]{1,100}$/.test(error?.code ?? '') ? error.code : 'bundle_startup_upgrade_failed';
+// Any finite code is kept: collapsing it hid which check refused.
+const finiteCode = error => /^[a-z][a-z0-9_]{1,100}$/.test(error?.code ?? '') ? error.code : 'bundle_startup_upgrade_failed';
 const exists = async file => {
   try { await fs.lstat(file); return true; }
   catch (error) { if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return false; throw error; }
@@ -79,6 +81,7 @@ export async function upgradeSelectedNativeBundleAtStartup({ controlRoot, env = 
   recordStartupBundleUpgradeFailure(null);
   const refused = (code, error) => {
     recordStartupBundleUpgradeFailure(code, error);
+    recordStartupFindings('bundle_upgrade', [{ code, scope: 'upgrade', key: 'not-applied' }], {});
     const diagnostic = artifactDiagnostic(error);
     log.warn?.(`[runtime-bundle] startup upgrade not applied: ${code}${error?.detail ? ` ${JSON.stringify(error.detail)}` : ''}`);
     if (upgradeStartedAt !== undefined) log.warn?.('[runtime-bundle] startup phase', {

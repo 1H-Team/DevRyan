@@ -197,6 +197,7 @@ it('forwards the native lifecycle version into original application health and H
     ENV_DESKTOP_NOTIFY: false,
     PLAN_MODE_EXPERIMENT_ENABLED: false,
     multiUserRuntime: { enabled: false },
+    startupNotices: () => [],
   });
   const f = fixture({ state: composition.state, syncToHmrState: composition.syncToHmrState });
   expect(composition.getHealthSnapshot()).toMatchObject({ openCodeVersion: null, openCodeRunning: false,
@@ -241,15 +242,17 @@ it('a supported runtime below the version pin refuses before launch and names th
  expect(f.native.start).not.toHaveBeenCalled();
 });
 
-it('a failed same-version artifact upgrade is terminal and keeps its diagnostic',async()=>{
+it('a refused same-version upgrade launches the retained runtime; a version below the pin still refuses with its diagnostic',async()=>{
  const {recordStartupBundleUpgradeFailure}=await import('./runtime-host/bundle-startup-upgrade-status.js');
  const diagnostic={stage:'reviewed_asset',reason:'reviewed_asset_mismatch',artifact:'DevRyan-Claude-darwin-arm64',purpose:'bundle-source'};
  recordStartupBundleUpgradeFailure('native_runtime_artifacts_unverified',{diagnostic});
  try {
   const f=fixture();
-  await expect(f.runtime.bootstrapOpenCodeAtStartup()).rejects.toMatchObject({code:'native_runtime_artifacts_unverified',diagnostic});
-  expect(f.native.start).not.toHaveBeenCalled();
-  expect(f.state.openCodeStartup).toMatchObject({state:'failed',diagnostic});
-  expect(f.state.isOpenCodeReady).toBe(false);
+  await f.runtime.bootstrapOpenCodeAtStartup();
+  expect(f.native.start).toHaveBeenCalledTimes(1);expect(f.state.isOpenCodeReady).toBe(true);
+  const below=fixture();below.bundle.version='2.0.20';
+  await expect(below.runtime.bootstrapOpenCodeAtStartup()).rejects.toMatchObject({code:'native_runtime_artifacts_unverified',diagnostic});
+  expect(below.native.start).not.toHaveBeenCalled();
+  expect(below.state.openCodeStartup).toMatchObject({state:'failed',diagnostic});
  }finally{recordStartupBundleUpgradeFailure(null);}
 });

@@ -62,7 +62,8 @@ const catalogCauseCodes = 'helper_directory_denied|helper_denied|helper_timeout_
 const catalogStartupCode = new RegExp(`^native_catalog_(?:construction_failed|read_failed_(?:agent|plugin|model)_(?:http_[45][0-9]{2}|refusal_(?:403|409|503)))_(?:${catalogCauseCodes})$`);
 const startupFailureCode = cause => {
   const code = cause?.code ?? cause?.message;
-  return typeof code === 'string' && (startupFailureCodes.has(code) || catalogStartupCode.test(code)) ? code : 'native_startup_failed';
+  // Any finite code is journaled; collapsing it hid which step refused.
+  return typeof code === 'string' && (startupFailureCodes.has(code) || catalogStartupCode.test(code) || /^[a-z][a-z0-9_]{1,100}$/.test(code)) ? code : 'native_startup_failed';
 };
 
 /** Every launch rechecks the frozen selection and the complete bundle. */
@@ -721,7 +722,8 @@ export function createNativeRuntimeOwner(options) {
             if (descriptor.checkpoint.ownerID !== descriptor.sourceBundleID) throw fail('native_clone_evidence_invalid');
             holdOwners.add(descriptor.checkpoint.ownerID);
           }
-          for (const ownerID of holdOwners) await executionHost.runtime.recoverNativeTransientHolds({ directory: location.directory, ownerID });
+          // Cursor recovery re-pauses a session whose intent it still cannot settle.
+          for (const ownerID of [...holdOwners, ...cursorRecovery.holdOwnerIDs]) await executionHost.runtime.recoverNativeTransientHolds({ directory: location.directory, ownerID });
           await nativeOwner.recoverTransactionHolds({ directory: location.directory });
           await nativeOwner.recoverShellContinuations({ directory: location.directory });
           await cursor.recover({ directory: location.directory });

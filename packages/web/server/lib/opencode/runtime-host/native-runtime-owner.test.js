@@ -158,7 +158,9 @@ test('verified replacement recovers only current and proved source holds before 
       expect(input.directory).toBe(root); events.push(`recover:${input.ownerID}`); return 0;
     });
     await owner.start();
-    expect(events).toEqual(['verified', 'bound', 'open-recovery', 'recover:fixture', 'recover:original-A', 'open']);
+    // Each owner also releases the session pauses its Cursor recovery placed, before recovery re-examines them.
+    expect(events).toEqual(['verified', 'bound', 'open-recovery', 'recover:fixture', 'recover:original-A',
+      'recover:fixture-cursor-recovery', 'recover:original-A-cursor-recovery', 'open']);
     await owner.close();
   }, undefined, async options => {
     const descriptor = options.bundle.descriptor;
