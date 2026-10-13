@@ -632,17 +632,33 @@ describe('native quota discovery and fetch', () => {
     expect(owner.readProviderSelected).not.toHaveBeenCalled();
   });
 
-  it('reports xAI renewal as pending instead of a re-authentication prompt', async () => {
-    const owner = readyOwner({ readProviderSelected: async () => ({ directory, integrationID: 'xai', credentialID: 'c', value: { type: 'oauth', methodID: 'device', access: 'xa', refresh: 'xr', expires: 5 } }) });
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(response({}, 401));
-    try {
-      const app = register({ owner, quota: await import('./providers/index.js') });
-      const body = (await request(app).get('/api/quota/xai').expect(200)).body;
-      expect(body).toMatchObject({ ok: false, configured: true, errorCode: 'native_xai_token_renewal_pending', error: 'xAI usage updates after your next xAI request.' });
-      expect(fetchSpy).toHaveBeenCalledTimes(1);
-    } finally {
-      fetchSpy.mockRestore();
-    }
+  it('renews native xAI and retries usage once without a model request', async () => {
+    let access = 'expired';
+    const owner = readyOwner({
+      readProviderSelected: async () => ({ directory, integrationID: 'xai', credentialID: 'c', expectedFingerprint: 'a'.repeat(64), value: { type: 'oauth', methodID: 'device', access } }),
+      refreshProviderSelected: vi.fn(async () => { access = 'renewed'; }),
+    });
+    const fetchQuotaForProvider = vi.fn(async (_id, options) => options.readAuth().xai.access === 'expired'
+      ? { ok: false, configured: true, errorCode: 'REAUTHENTICATION_REQUIRED' }
+      : { ok: true, configured: true, providerId: 'xai', usage: { windows: {} } });
+    const body = (await request(register({ owner, quota: { fetchQuotaForProvider } })).get('/api/quota/xai').expect(200)).body;
+    expect(body.ok).toBe(true); expect(fetchQuotaForProvider).toHaveBeenCalledTimes(2);
+    expect(owner.refreshProviderSelected).toHaveBeenCalledTimes(1);
+    expect(owner.refreshProviderSelected.mock.calls[0][0]).toMatchObject({ operation: 'provider.usage', credentialID: 'c', expectedFingerprint: 'a'.repeat(64) });
+  });
+
+  it.each(['native_xai_usage_unavailable', 'native_xai_reauthentication_required', 'repeated_401', 'valid'])('bounds xAI usage renewal for %s', async outcome => {
+    const owner = readyOwner({
+      readProviderSelected: async () => ({ directory, integrationID: 'xai', credentialID: 'c', expectedFingerprint: 'a'.repeat(64), value: { type: 'oauth', methodID: 'device', access: 'access' } }),
+      refreshProviderSelected: vi.fn(async () => { if (outcome.startsWith('native_')) throw Object.assign(new Error('private failure'), { code: outcome }); }),
+    });
+    const fetchQuotaForProvider = vi.fn(async () => outcome === 'valid' ? { ok: true, configured: true } : { ok: false, configured: true, errorCode: 'REAUTHENTICATION_REQUIRED' });
+    const body = (await request(register({ owner, quota: { fetchQuotaForProvider } })).get('/api/quota/xai').expect(200)).body;
+    expect(owner.refreshProviderSelected).toHaveBeenCalledTimes(outcome === 'valid' ? 0 : 1);
+    expect(fetchQuotaForProvider).toHaveBeenCalledTimes(outcome === 'repeated_401' ? 2 : 1);
+    expect(body).toMatchObject(outcome === 'valid' ? { ok: true } : { ok: false, configured: true, errorCode: outcome === 'native_xai_usage_unavailable' ? outcome : 'REAUTHENTICATION_REQUIRED' });
+    expect(JSON.stringify(body)).not.toContain('private failure');
+    expect(JSON.stringify(body)).not.toContain('next xAI request');
   });
 
   it.each(['chatgpt-token-sharing', 'chatgpt-siwc', 'chatgpt-headless'])('reports unavailable usage for %s without a network call', async methodID => {

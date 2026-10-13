@@ -241,6 +241,7 @@ export async function startNativeController(boot:NativeProcessBoot,identity:{cor
       case 'claude-lifecycle-transition-owned':return requireIntegrations(input.controllerInstanceID).transitionClaudeLifecycleOwned(input);
       case 'openai-read-credential-owned':return requireIntegrations(input.controllerInstanceID).readOpenAiCredentialOwned(input);
       case 'openai-read-selected-owned':return requireIntegrations(input.controllerInstanceID).readSelectedOwned(input);
+      case 'provider-refresh-selected-owned':return requireIntegrations(input.controllerInstanceID).refreshProviderSelectedOwned(input);
       case 'provider-read-selected-owned':return requireIntegrations(input.controllerInstanceID).readProviderSelectedOwned(input);
       case 'openai-cas-selected-owned':return requireIntegrations(input.controllerInstanceID).compareAndSwapSelectedOwned(input);
       case 'provider-catalog-selection-owned':{

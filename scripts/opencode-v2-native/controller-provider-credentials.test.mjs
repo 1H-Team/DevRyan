@@ -13,8 +13,11 @@ import {XAIPlugin} from '@opencode/core/plugin/provider/xai';
 import {Global} from '@opencode/util/global';
 import {LayerNode} from '@opencode/util/effect/layer-node';
 import {Cause,Effect,Fiber,Layer,Schema,Semaphore} from 'effect';
+import {createControllerIntegrations} from '../../packages/web/server/lib/opencode/runtime-host/controller-integrations.js';
+import {createNativeIntegrationOwner} from '../../packages/web/server/lib/opencode/runtime-host/native-integration-owner.js';
 import {createControllerProviderCredentials} from '../../packages/web/server/lib/opencode/runtime-host/controller-provider-credentials.ts';
 import {CredentialMutationReauthorizeRef} from '../../packages/web/server/lib/opencode/runtime-host/credential-mutation-contract.ts';
+import {credentialMutationFingerprint as fingerprint} from '../../packages/web/server/lib/opencode/runtime-host/native-credential-mutation-owner.js';
 import {OperationPermitRef} from '../../packages/web/server/lib/opencode/runtime-host/native-admission-contract.ts';
 import {provideRegistrationOrigin} from '../../packages/web/server/lib/opencode/runtime-host/registration-origin.ts';
 import {runWithHostRefusal} from '../../packages/web/server/lib/opencode/runtime-host/host-refusal.ts';
@@ -40,7 +43,7 @@ async function fixture(action,{fetchResponse,reauthorize,beforeRead,beforeResolu
   };
   const assert=Effect.promise(async()=>{checks++;if(!allowed)throw Error('fixture_revoked');await reauthorize?.();});
   const adapter=createControllerProviderCredentials({controllerInstanceID:'fixture-controller',reviewedNativeProviderOrigin:origin,
-    withCredentialMutation:(_binding,body)=>body.pipe(Effect.provideService(CredentialMutationReauthorizeRef,assert)),
+    withCredentialMutation:(_binding,body)=>resolutionQueue.withPermits(1)(body.pipe(Effect.provideService(CredentialMutationReauthorizeRef,assert))),
     withCredentialResolution:(_binding,check,body)=>{
       const ordinal=++queued;
       return resolutionQueue.withPermits(1)(Effect.promise(async()=>{await beforeResolution?.(ordinal);}).pipe(Effect.andThen(check),Effect.andThen(body),Effect.tap(()=>check)));
@@ -71,7 +74,7 @@ async function fixture(action,{fetchResponse,reauthorize,beforeRead,beforeResolu
       })},location);
       const resolve=(provider='xai')=>runner(provider).resolve({id:'ses_fixture',location},()=>Effect.succeed([]))
         .pipe(refreshScope?Effect.provideService(OperationPermitRef,permit):effect=>effect);
-      return yield* action(Object.assign(state,{credentials,integration,resolve,hooks}));
+      return yield* action(Object.assign(state,{credentials,integration,resolve,hooks,refreshUsage:(record,expected=fingerprint(record))=>adapter.refreshForUsage(root,record.id,expected)}));
     }).pipe(Effect.provide(layer),Effect.provide(FetchHttpClient.layer),Effect.provideService(Location.Service,location))));
   }finally{globalThis.fetch=actualFetch;await fs.rm(root,{recursive:true,force:true});}
 }
@@ -307,4 +310,106 @@ test('old native Integration cannot borrow a replacement location acquisition fo
     yield* raw.create({integrationID:id('xai'),value:value({type:'key',key:'fixture'})});
     reacquire();expect((yield* Effect.exit(resolve()))._tag).toBe('Failure');
   }));
+});
+
+
+test('usage renews the selected native OAuth without a session and reuses its renewal receipt',async()=>{
+  await fixture(state=>Effect.gen(function*(){
+    const created=yield* state.raw.create({integrationID:id('xai'),value:{...stale,expires:Date.now()+3600000}});
+    yield* state.refreshUsage(created);
+    expect((yield* state.credentials.get(created.id)).value.access).toBe('fixture-rotated');
+    yield* state.refreshUsage(created);
+    expect(state.fetches).toBe(1);
+    yield* state.raw.update(created.id,{value:{...stale,access:'unrelated'}});
+    const failed=yield* Effect.exit(state.refreshUsage(created));
+    expect(failed._tag).toBe('Failure');expect(state.fetches).toBe(1);
+  }),{refreshScope:false});
+});
+
+for(const first of ['usage','chat'])test('concurrent usage and chat reuse '+first+' renewal',async()=>{
+  let entered,release;
+  const started=new Promise(resolve=>{entered=resolve;}),gate=new Promise(resolve=>{release=resolve;});
+  await fixture(state=>Effect.gen(function*(){
+    const created=yield* state.raw.create({integrationID:id('xai'),value:stale});
+    const run=kind=>kind==='usage'?state.refreshUsage(created):state.resolve();
+    const one=yield* Effect.forkChild(run(first).pipe(Effect.exit));
+    yield* Effect.promise(()=>started);
+    const two=yield* Effect.forkChild(run(first==='usage'?'chat':'usage').pipe(Effect.exit));
+    yield* Effect.sleep('10 millis');release();
+    expect((yield* Fiber.join(one))._tag).toBe('Success');
+    expect((yield* Fiber.join(two))._tag).toBe('Success');expect(state.fetches).toBe(1);
+  }),{fetchResponse:async()=>{entered();await gate;return Response.json({access_token:'fixture-rotated',refresh_token:'fixture-next',expires_in:3600});}});
+});
+
+for(const failure of ['revoke','replace','switch','shutdown'])test('usage refuses '+failure+' while renewal is pending',async()=>{
+  let entered,release;
+  const started=new Promise(resolve=>{entered=resolve;}),gate=new Promise(resolve=>{release=resolve;});
+  await fixture(state=>Effect.gen(function*(){
+    const created=yield* state.raw.create({integrationID:id('xai'),value:stale});
+    const pending=yield* Effect.forkChild(state.refreshUsage(created).pipe(Effect.exit));
+    yield* Effect.promise(()=>started);
+    if(failure==='revoke')state.revoke();
+    if(failure==='shutdown')state.replace();
+    if(failure==='replace')yield* state.raw.update(created.id,{value:{...stale,access:'unrelated'}});
+    if(failure==='switch')yield* state.raw.create({integrationID:id('xai'),value:{...stale,access:'other-account'}});
+    release();expect((yield* Fiber.join(pending))._tag).toBe('Failure');
+    expect((yield* state.raw.get(created.id)).value.access).toBe(failure==='replace'?'unrelated':'fixture-access');
+  }),{fetchResponse:async()=>{entered();await gate;return Response.json({access_token:'must-not-persist',refresh_token:'must-not-persist',expires_in:3600});}});
+});
+
+for(const status of [400,401,429,503])test('usage renewal HTTP '+status+' retains credentials and reports a bounded failure',async()=>{
+  await fixture(state=>Effect.gen(function*(){
+    const created=yield* state.raw.create({integrationID:id('xai'),value:stale});
+    const failed=yield* Effect.exit(state.refreshUsage(created));expect(failed._tag).toBe('Failure');
+    if(failed._tag!=='Failure')throw Error('Rejected renewal succeeded');
+    expect(String(Cause.squash(failed.cause))).toContain(status===400||status===401?'native_xai_reauthentication_required':'native_xai_usage_unavailable');
+    expect((yield* state.raw.get(created.id)).value).toEqual(stale);expect(state.fetches).toBe(1);
+  }),{fetchResponse:async()=>Response.json({error:status===400?'invalid_grant':'unavailable'},{status})});
+});
+
+
+test('usage renewal traverses the original caller grant, reverse mutation queue and native xAI owner',async()=>{
+  const config={locations:[{directory:path.resolve('.cache/v2-validation/controller-integrations'),configuration:{},compatibility:{}}]},directory=config.locations[0].directory,location=Schema.decodeUnknownSync(Location.Info)({directory,project:{id:'global',directory,canonical:directory}}),state=await fs.mkdtemp(path.resolve('.cache/v2-validation/xai-usage-'));
+  const origin={kind:'native',id:'opencode.provider.xai',manifestDigest:'c'.repeat(64),capabilities:['provider']};
+  let queue=Promise.resolve(),fetches=0,commits=0;
+  const originalFetch=globalThis.fetch;
+  globalThis.fetch=async input=>{
+    expect(String(input instanceof Request?input.url:input)).toBe('https://auth.x.ai/oauth2/token');fetches++;
+    return Response.json({access_token:'fixture-new',refresh_token:'fixture-next',expires_in:3600});
+  };
+  const node=createNativeIntegrationOwner({instanceID:'controller-one',snapshot:config,stateDirectory:state,
+    controller:()=>({instanceID:'controller-one',call:async input=>{
+      if(input.action==='credential-commit-owned'){commits++;return factory.commitCredentialOwned(input);}
+      if(input.action==='provider-read-selected-owned')return factory.readProviderSelectedOwned(input);
+      if(input.action==='provider-refresh-selected-owned')return factory.refreshProviderSelectedOwned(input);
+      throw Error('Unexpected native control');
+    },killAndWaitForExit:async()=>{throw Error('Unexpected native process failure');},killAndWaitForTermination:async()=>{throw Error('Unexpected native process failure');}}),isReady:()=>true,
+    withMutationQueue:action=>{const result=queue.then(action);queue=result.then(()=>undefined,()=>undefined);return result;},
+    captureWebAuthorization:async()=>async()=>{},
+    admissionOwner:{withProviderResolution:async(_i,a)=>a(async()=>{}),withProviderAttempt:(_i,a)=>a(async()=>{}),withImageGeneration:async()=>{throw Error('Outside fixture');}}});
+  const factory=createControllerIntegrations({controllerInstanceID:'controller-one',configurationSnapshot:config,
+    registrationOrigin:{kind:'native',id:'devryan.remote-mcp',manifestDigest:'c'.repeat(64),capabilities:['network']},reviewedConfigurationOrigins:new Map(),reviewedNativeProviderOrigin:origin,
+    bootstrapCredentials:()=>Effect.gen(function*(){const credentials=yield* Credential.Service;
+      yield* credentials.create({integrationID:Integration.ID.make('xai'),value:{type:'oauth',methodID:'device',access:'fixture-old',refresh:'fixture-private',expires:1}});}),
+    isBound:()=>true,isExecutionReady:()=>true,rpc:(method,input,context)=>node.handleRpc(method,input,context),
+    executeOwnedFallback:i=>i.executeNative(),authorizeMcpCall:(_i,_b,a)=>a});
+  const layer=LayerNode.compile(LayerNode.group([Credential.node,Integration.node]),{replacements:[...factory.overrides,
+    Global.node.replace(Global.layerWith({home:state,data:state,cache:state,config:state,state,tmp:state,bin:state,log:state,repos:state}))]});
+  try{
+    await Effect.runPromise(Effect.scoped(Effect.gen(function*(){
+      const credentials=yield* Credential.Service,integration=yield* Integration.Service;
+      yield* provideRegistrationOrigin(origin,XAIPlugin.effect({app:{name:'DevRyan',version:'2.0.26',channel:'test'},integration:{transform:integration.transform},provider:{transform:()=>Effect.void}}));
+      const scope={kind:'provider',directory,integrationID:'xai',configurationDigest:fingerprint({}),operation:'provider.integration',method:'GET',path:'/api/integration/xai'};
+      const selected=yield* Effect.promise(()=>node.readProviderSelected(scope));
+      if(!selected||typeof selected.expectedFingerprint!=='string')throw Error('Selected native receipt missing');
+      expect(JSON.stringify(selected)).not.toContain('fixture-private');
+      const operation={...scope,operation:'provider.usage',path:'/api/quota/xai',methodID:'device',credentialID:selected.credentialID,expectedFingerprint:selected.expectedFingerprint,
+        requestedFingerprint:fingerprint({id:selected.credentialID,renew:true})};
+      yield* Effect.promise(()=>node.refreshProviderSelected(operation));
+      expect((yield* credentials.get(Credential.ID.make(selected.credentialID)))?.value).toMatchObject({access:'fixture-new',refresh:'fixture-next'});
+      expect(fetches).toBe(1);expect(commits).toBe(1);
+      const latest=yield* Effect.promise(()=>node.readProviderSelected(scope));
+      expect(latest?.value.access).toBe('fixture-new');
+    }).pipe(Effect.provide(layer),Effect.provide(FetchHttpClient.layer),Effect.provideService(Location.Service,location))));
+  }finally{globalThis.fetch=originalFetch;await factory.close();await node.invalidate();await fs.rm(state,{recursive:true,force:true});}
 });

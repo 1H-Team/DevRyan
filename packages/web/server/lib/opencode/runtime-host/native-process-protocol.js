@@ -151,6 +151,7 @@ export function parseNativeCommand(value) {
     'openai-read-credential-owned': ['directory', 'controllerInstanceID', 'credentialID'],
     'openai-read-selected-owned': ['directory', 'controllerInstanceID'],
     'provider-read-selected-owned': ['directory', 'controllerInstanceID', 'integrationID'],
+    'provider-refresh-selected-owned': ['directory', 'controllerInstanceID', 'credentialID', 'expectedFingerprint', 'requestAuthorization'],
     'openai-cas-selected-owned': ['directory', 'controllerInstanceID', 'expected', 'next'],
     'interview-action-owned':['sessionID','permit','kind','body'],
     'cursor-record-owned':['controllerInstanceID','directory','sessionID','userMessageID','assistantMessageID','agent','modelID','variant','accepted','record','permit'],
@@ -172,7 +173,7 @@ export function parseNativeCommand(value) {
     else if(field==='cancellationReceiptVersion'){if(value[field]!==1)throw invalid();}
     else if (field === 'permit') permit(value[field]);
     else if (field === 'directory') absolute(value[field]);
-    else if (field === 'bindingFingerprint' || field === 'requestAuthorization' || field === 'configurationDigest'||field==='payloadHash') digest(value[field]);
+    else if (field === 'expectedFingerprint' || field === 'bindingFingerprint' || field === 'requestAuthorization' || field === 'configurationDigest'||field==='payloadHash') digest(value[field]);
     else if (field === 'origin') { keys(value.origin, ['id', 'manifestDigest']); if (value.origin.id !== 'devryan.provider-compat') throw invalid(); digest(value.origin.manifestDigest); }
     else if(field==='kind'){if(!(value.action==='cursor-readonly-key-owned'?['title','text','catalog','verify']:['rename','notify','continue']).includes(value.kind))throw invalid();
       if(value.action==='cursor-readonly-key-owned'&&(value.kind==='title'?!value.sessionID:value.sessionID!==undefined))throw invalid();}

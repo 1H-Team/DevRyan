@@ -178,3 +178,22 @@ test('native XAI device acquisition pins its original caller while Go OAuth and 
   await expect(f.owner.reauthorize({authorizationID,binding:{...owned,acquisitionID:'replacement'}})).rejects.toMatchObject({code:'native_integration_grant_mismatch'});
   f.revoke();await expect(grant.reauthorize()).rejects.toThrow('original_caller_revoked');
 });
+
+
+test('xAI usage caller authorizes one exact renewal and cannot create, remove or activate credentials', async () => {
+  const f=fixture(),owned={...openaiBinding,kind:'provider',integrationID:'xai',methodID:'device'};
+  const mutation={kind:'provider',integrationID:'xai',methodID:'device',directory:owned.directory,controllerInstanceID:owned.controllerInstanceID,
+    valueType:'oauth',operation:'update',credentialID:'selected',expectedFingerprint:'c'.repeat(64),requestedFingerprint:credentialMutationFingerprint({id:'selected',renew:true})};
+  const spec={...owned,...mutation,operation:'provider.usage',method:'GET',path:'/api/quota/xai'};
+  let authorizationID;
+  await f.owner.withCallerOperation(spec,async()=>{
+    ({authorizationID}=await f.owner.capture({binding:{...owned,...mutation},operation:'mutation',requestAuthorization:f.owner.requestHeaders()['x-devryan-native-integration-grant']}));
+  });
+  for(const patch of [{operation:'create'},{operation:'remove'},{operation:'activate'},{credentialID:'other'},{expectedFingerprint:'d'.repeat(64)},{requestedFingerprint:'d'.repeat(64)}]){
+    await expect(f.owner.resolveMutation({authorizationID,binding:{...mutation,...patch}})).rejects.toMatchObject({code:'native_credential_mutation_denied'});
+  }
+  const grant=await f.owner.resolveMutation({authorizationID,binding:mutation});await grant.reauthorize();
+  await expect(f.owner.resolveMutation({authorizationID,binding:mutation})).rejects.toMatchObject({code:'native_credential_mutation_denied'});
+  f.revoke();await expect(grant.reauthorize()).rejects.toThrow('original_caller_revoked');
+  await expect(f.owner.withCallerOperation({...spec,path:'/api/integration/xai'},async()=>{})).rejects.toMatchObject({code:'native_integration_scope_invalid'});
+});

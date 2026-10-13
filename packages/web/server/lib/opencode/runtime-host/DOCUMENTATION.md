@@ -473,3 +473,8 @@ control accepts a refresh key after an explicit About check and reports pending
 mutations so About cannot refresh away an in-flight transition. It disables its
 mutations while About is checking. App-delivered Claude upgrades use the ordinary
 DevRyan update dialog and its existing download/restart path.
+
+
+### xAI usage renewal
+
+`provider-refresh-selected-owned` is an exact-field controller operation for the selected xAI device OAuth credential. It carries the original usage caller grant, controller/location identity, credential ID and expected fingerprint, never credential values. The `provider.usage` GET scope authorizes one update with the fixed renewal-intent fingerprint; create, activate, remove and other providers remain refused. The registered native xAI implementation renews inside the existing reverse credential mutation queue and rechecks caller, acquisition and selected record before commit. Usage and admitted model resolutions share pending renewal observations; one bounded prior-renewal receipt per reviewed location permits reuse of this owner's renewal without accepting unrelated writes. Quota reads remain read-only until their usage request is rejected. Refresh tokens never cross into the web fetcher. The default launch quota refresh therefore loads usage without a chat request.

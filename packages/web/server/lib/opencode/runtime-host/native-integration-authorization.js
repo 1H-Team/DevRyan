@@ -30,6 +30,11 @@ function operation(spec) {
   switch (spec.operation) {
     case 'mcp.status': method = 'GET'; route = '/api/mcp'; break;
     case 'mcp.integration': case 'openai.integration': case 'cursor.integration': case 'provider.integration': method = 'GET'; route = integration(); break;
+    case 'provider.usage':
+      if (spec.kind !== 'provider' || spec.integrationID !== 'xai' || spec.methodID !== 'device'
+        || !id(spec.credentialID) || !sha(spec.expectedFingerprint)
+        || spec.requestedFingerprint !== digest({ id: spec.credentialID, renew: true })) throw fail('native_integration_scope_invalid');
+      method = 'GET'; route = '/api/quota/xai'; break;
     case 'mcp.connect': case 'mcp.disconnect':
       method = 'POST'; route = `/api/experimental/mcp/${encodeURIComponent(spec.server)}/${spec.operation.slice(4)}`; break;
     case 'mcp.oauth.start': case 'openai.oauth.start': case 'provider.oauth.start':
@@ -144,6 +149,10 @@ export function createNativeIntegrationAuthorization({ controllerIdentity, verif
         if (requested === 'oauth' && request.spec.operation === `${scope.kind}.oauth.start` && request.spec.methodID === scope.methodID) mode = 'oauth';
         else if (requested === 'remove' && request.spec.operation === 'mcp.oauth.remove'
           && request.spec.credentialID === binding.credentialID) mode = 'remove';
+        else if (requested === 'mutation' && scope.kind === 'provider' && scope.integrationID === 'xai'
+          && request.spec.operation === 'provider.usage' && binding.operation === 'update' && binding.valueType === 'oauth'
+          && binding.methodID === 'device' && request.spec.credentialID === binding.credentialID
+          && request.spec.expectedFingerprint === binding.expectedFingerprint && request.spec.requestedFingerprint === binding.requestedFingerprint) mode = 'mutation';
         else if (requested === 'mutation' && ['openai', 'cursor', 'provider'].includes(scope.kind) && request.spec.operation === `${scope.kind}.credential.${binding.operation}`
           && request.spec.valueType === binding.valueType && request.spec.methodID === binding.methodID
           && request.spec.credentialID === binding.credentialID && request.spec.expectedFingerprint === binding.expectedFingerprint

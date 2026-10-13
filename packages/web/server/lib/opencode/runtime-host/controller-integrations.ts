@@ -291,8 +291,15 @@ export function createControllerIntegrations(options:ControllerIntegrationsOptio
       if(!current||current.type!=='credential'||current.id!==connection.id||credentialMutationFingerprint(latest)!==credentialMutationFingerprint(credential))return refuse('native_credential_changed');
       // Usage reads never renew: the refresh grant stays inside the controller.
       const selected=value.type==='oauth'?{type:value.type,methodID:value.methodID,access:value.access,expires:value.expires}:value.type==='key'?{type:value.type,key:value.key}:refuse('native_integration_binding_invalid');
-      return {directory:input.directory,controllerInstanceID:options.controllerInstanceID,integrationID:id,credentialID:credential.id,value:selected};
+      return {directory:input.directory,controllerInstanceID:options.controllerInstanceID,integrationID:id,credentialID:credential.id,...(id==='xai'?{expectedFingerprint:credentialMutationFingerprint(credential)}:{}),value:selected};
     }).pipe(Effect.provideService(Location.Service,acquisition.location),Effect.provide(Logger.layer([],{mergeWithExisting:false}))));
+  };
+  const refreshProviderSelectedOwned=async(input:{readonly directory:string;readonly controllerInstanceID:string;readonly credentialID:string;readonly expectedFingerprint:string;readonly requestAuthorization:string})=>{
+    if(input.controllerInstanceID!==options.controllerInstanceID)return refuse('native_integration_binding_invalid');
+    const acquisition=acquisitions.get(input.directory);if(!acquisition)return refuse('native_integration_acquisition_expired');
+    assertAcquisition(acquisition);
+    return runWithIntegrationGrant(new Headers({'x-devryan-native-integration-grant':input.requestAuthorization}),()=>Effect.runPromise(provider.refreshForUsage(input.directory,Credential.ID.make(input.credentialID),input.expectedFingerprint)
+      .pipe(Effect.provideService(Location.Service,acquisition.location),Effect.provide(Logger.layer([],{mergeWithExisting:false})))));
   };
   const catalogBinding=(directory:string)=>{
     const acquisition=acquisitions.get(directory),origin=options.providerCompatibilityOrigin;
@@ -357,5 +364,5 @@ export function createControllerIntegrations(options:ControllerIntegrationsOptio
       if(!claudeLifecycle)return refuse('native_claude_lifecycle_owner_expired');return claudeLifecycle.transitionOwned(input);
     },
     requiresOpenAiHttp:openai.requiresOpenAiHttp,isOpenAiTokenSharing:openai.isOpenAiTokenSharing,readSelectedOwned:openai.readSelectedOwned,compareAndSwapSelectedOwned:openai.compareAndSwapSelectedOwned,
-    discoverCopilot,readCatalogSelectionOwned,readSelectedCursorKeyOwned,readCursorReadOnlyKeyOwned,commitCredentialOwned:mutation.commitOwned,credentialOwned,credentialMetadataOwned,readProviderSelectedOwned,readOpenAiCredentialOwned,close};
+    discoverCopilot,readCatalogSelectionOwned,readSelectedCursorKeyOwned,readCursorReadOnlyKeyOwned,commitCredentialOwned:mutation.commitOwned,credentialOwned,credentialMetadataOwned,readProviderSelectedOwned,refreshProviderSelectedOwned,readOpenAiCredentialOwned,close};
 }

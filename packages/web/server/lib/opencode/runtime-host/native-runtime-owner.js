@@ -869,6 +869,10 @@ export function createNativeRuntimeOwner(options) {
       if (!integrations) throw fail('native_integration_owner_unavailable');
       return integrations.readProviderSelected(operation);
     },
+    refreshProviderSelected: operation => {
+      if (!integrations) throw fail('native_integration_owner_unavailable');
+      return integrations.refreshProviderSelected(operation);
+    },
     credentialMetadata: operation => {
       if (!integrations) throw fail('native_integration_owner_unavailable');
       return integrations.credentialMetadata(operation);

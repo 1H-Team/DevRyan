@@ -30,7 +30,9 @@ test('quota transport installs before page load and handles Request inputs and i
   assert.equal(commands[0].name, 'Page.addScriptToEvaluateOnNewDocument');
   vm.runInContext(commands[0].input.source, context);
   const fetch = pathname => window.fetch(new Request(new URL(pathname, location)));
-  assert.deepEqual(await (await fetch('/api/quota/providers')).json(), { providers: ['codex'] });
+  assert.deepEqual(await (await fetch('/api/quota/providers')).json(), { providers: ['codex', 'xai'] });
+  const xai = await (await fetch('/api/quota/xai')).json();
+  assert.equal(xai.providerId, 'xai'); assert.equal(xai.usage.windows.weekly.usedPercent, 37);
   assert.equal((await (await fetch('/api/quota/codex')).json()).usage.resetCredits.availableCount, 3);
   await fixture.setMode('unknown');
   assert.equal((await (await fetch('/api/quota/codex?refresh=true')).json()).usage.resetCredits.availableCount, null);
@@ -38,7 +40,8 @@ test('quota transport installs before page load and handles Request inputs and i
   assert.equal((await (await fetch('/api/quota/codex')).json()).usage.resetCredits.availableCount, 0);
   assert.equal((await (await fetch('/api/quota/codex')).json()).source, 'chatgpt-browser');
   await fixture.collect();
-  assert.equal(fixture.requests.length, 5);
+  assert.equal(fixture.requests.length, 6);
+  assert.equal(fixture.xaiStartupBeforePrompt, true);
   assert.deepEqual(fixture.modes, ['available', 'unknown', 'zero']);
   assert.deepEqual(fixture.failures, []);
   await window.fetch('/assets/main.js');
@@ -62,4 +65,16 @@ test('quota transport does not touch unsupported origins', async () => {
   const window = { fetch: originalFetch };
   vm.runInNewContext(source, { window, location: new URL('about:blank') });
   assert.equal(window.fetch, originalFetch);
+});
+
+
+test('startup evidence refuses a usage fetch that follows a prompt', async () => {
+  let source;
+  await setupProviderUsageQa({send:async(_name,input)=>{source=input.source;return {identifier:'fixture'};}});
+  const window={fetch:async()=>new Response('original')},location=new URL('http://127.0.0.1:1234/');
+  vm.runInNewContext(source,{window,location,URL,Request,Response,DOMException,Promise});
+  await window.fetch('/api/session/ses_fixture/prompt_async',{method:'POST'});
+  await window.fetch('/api/quota/xai');
+  assert.equal(window.__DEVRYAN_QA_PROVIDER_USAGE__.promptRequests,1);
+  assert.equal(window.__DEVRYAN_QA_PROVIDER_USAGE__.xaiStartupBeforePrompt,false);
 });

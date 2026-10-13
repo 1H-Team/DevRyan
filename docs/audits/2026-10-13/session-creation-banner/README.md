@@ -22,9 +22,13 @@ navigation and duplicate-session confirmation keep their existing behavior.
 - Inspected [recovery screenshot](recovery.png): retained-draft recovery and the
   duplicate-session confirmation remain visible.
 - `bun run validate:affected` expanded to full validation because of pre-existing
-  release/workflow changes. Workspace lint, type checks and documentation
-  validation passed; deterministic suites were still running when this record
-  was first written.
+  release/workflow changes and passed with exit code 0. Workspace lint, type
+  checks, documentation validation and all deterministic suites passed. The UI
+  batch passed 4,120 tests; the final web suite passed 6,712 Vitest tests and 14
+  native-host tests.
+- Cache reporting and the cleanup preview passed. The temporary browser tabs,
+  fixture servers and compiled fixture output were removed; only the small
+  sanitized screenshots remain in this audit.
 
 ## Limits
 

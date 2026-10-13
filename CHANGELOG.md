@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ## [2.0.11] - 2026-10-13
 
+- Renew a rejected xAI access token through the native controller and retry usage once, so xAI usage loads on app launch. Evidence: [xAI startup usage audit](docs/audits/2026-10-13/xai-startup-usage/README.md).
+- Stop showing the session recovery banner during the normal handoff after a session is created. Evidence: [session creation banner audit](docs/audits/2026-10-13/session-creation-banner/README.md).
 - Fix startup failing with `native_cursor_recovery_owner_mismatch` after a runtime upgrade while a Cursor turn's recovery intent was pending. A cloned bundle now adopts intents written by the bundle it was cloned from.
 - Release publication no longer waits for final-DMG GUI startup qualification. Signed Bot images, packaging checks, the exact asset allowlist and digests, and hosted migration verification still gate every release.
 

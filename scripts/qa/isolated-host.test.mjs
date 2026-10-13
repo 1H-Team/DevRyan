@@ -17,9 +17,10 @@ test('development QA selects the mock keychain before importing the production E
     await writeFile(path.join(root, 'credentials.env.json'), '{}');
     const electron = `export const app = {
       commandLine: { appendSwitch(value) { if (value !== 'use-mock-keychain') throw new Error('Unexpected switch'); globalThis.qaMockKeychain = true; } },
+      setAppPath(value) { if (!globalThis.qaMockKeychain || !value.endsWith('/packages/electron')) throw new Error('Incorrect isolated Electron app root'); globalThis.qaAppRoot = value; },
       setPath() { if (!globalThis.qaMockKeychain) throw new Error('Keychain isolation missing before Electron setup'); }, setAppLogsPath() {}
     };`;
-    const host = `if (!globalThis.qaMockKeychain) throw new Error('Production host reached the real keychain'); console.log('qa-keychain-isolated');`;
+    const host = `if (!globalThis.qaAppRoot) throw new Error('Production preload root missing'); if (!globalThis.qaMockKeychain) throw new Error('Production host reached the real keychain'); console.log('qa-keychain-isolated');`;
     const dataUrl = source => `data:text/javascript,${encodeURIComponent(source)}`;
     const loader = `export async function resolve(specifier, context, next) {
       if (specifier === 'electron') return { url: ${JSON.stringify(dataUrl(electron))}, shortCircuit: true };

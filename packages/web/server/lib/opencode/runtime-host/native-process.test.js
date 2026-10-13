@@ -201,3 +201,10 @@ test('provider-read-selected-owned is limited to xAI and OpenCode Go with exact 
   expect(() => parseNativeCommand({ ...base, integrationID: 'xai', credentialID: 'cred' })).toThrow();
   expect(() => parseNativeCommand({ ...base })).toThrow();
 });
+
+
+test('usage renewal control has exact identity, fingerprint and caller grant fields', () => {
+  const command={protocol:1,id:'cmd',action:'provider-refresh-selected-owned',directory:'/tmp/project',controllerInstanceID:'controller-one',credentialID:'selected',expectedFingerprint:'a'.repeat(64),requestAuthorization:'b'.repeat(64)};
+  expect(parseNativeCommand(command)).toEqual(command);
+  for(const patch of [{integrationID:'openai'},{expectedFingerprint:'bad'},{requestAuthorization:undefined},{refresh:'secret'}])expect(()=>parseNativeCommand({...command,...patch})).toThrow();
+});

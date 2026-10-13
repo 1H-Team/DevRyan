@@ -21,7 +21,7 @@ export async function setupProviderUsageQa(cdp) {
   const source = `(() => {
     if (location.protocol !== 'http:' || location.hostname !== '127.0.0.1') return;
     const modes = ${JSON.stringify(modes)};
-    const state = { mode: 'available', requests: [], modes: ['available'], closed: false };
+    const state = { mode: 'available', requests: [], modes: ['available'], closed: false, promptRequests: 0, xaiStartupBeforePrompt: false };
     window[${JSON.stringify(key)}] = state;
     const originalFetch = window.fetch.bind(window);
     window.fetch = function(input, init) {
@@ -29,11 +29,14 @@ export async function setupProviderUsageQa(cdp) {
       const request = input instanceof Request ? input : null;
       const url = new URL(request ? request.url : String(input), location.href);
       const method = String(init?.method ?? request?.method ?? 'GET').toUpperCase();
+      if (url.origin === location.origin && method === 'POST' && /\\/session\\/[^/]+\\/(message|prompt|prompt_async)$/.test(url.pathname)) state.promptRequests++;
       if (url.origin !== location.origin || method !== 'GET') return originalFetch(input, init);
       const result = modes[state.mode];
-      const payload = url.pathname === '/api/quota/providers' ? { providers: ['codex'] }
-        : url.pathname === '/api/quota/codex' ? result : undefined;
+      const payload = url.pathname === '/api/quota/providers' ? { providers: ['codex', 'xai'] }
+        : url.pathname === '/api/quota/codex' ? result
+        : url.pathname === '/api/quota/xai' ? { providerId: 'xai', providerName: 'xAI', ok: true, configured: true, fetchedAt: result.fetchedAt, usage: { windows: result.usage.windows } } : undefined;
       if (!payload) return originalFetch(input, init);
+      if (url.pathname === '/api/quota/xai' && !state.requests.includes(url.pathname)) state.xaiStartupBeforePrompt = state.promptRequests === 0;
       const signal = init?.signal ?? request?.signal;
       if (signal?.aborted) return Promise.reject(signal.reason ?? new DOMException('Aborted', 'AbortError'));
       if (state.requests.length < 500) state.requests.push(url.pathname);
@@ -44,7 +47,8 @@ export async function setupProviderUsageQa(cdp) {
   const { identifier } = await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source });
   const requests = [];
   const observedModes = [];
-  return { requests, failures: [], modes: observedModes,
+  let xaiStartupBeforePrompt = false;
+  return { get xaiStartupBeforePrompt() { return xaiStartupBeforePrompt; }, requests, failures: [], modes: observedModes,
     setMode: async mode => {
       assert.ok(Object.hasOwn(modes, mode));
       await evaluate(cdp, `(() => { const state = window[${JSON.stringify(key)}];
@@ -53,7 +57,7 @@ export async function setupProviderUsageQa(cdp) {
     },
     collect: async () => {
       const state = await evaluate(cdp, `window[${JSON.stringify(key)}]`);
-      if (state) { requests.splice(0, requests.length, ...state.requests); observedModes.splice(0, observedModes.length, ...state.modes); }
+      if (state) { xaiStartupBeforePrompt = state.xaiStartupBeforePrompt; requests.splice(0, requests.length, ...state.requests); observedModes.splice(0, observedModes.length, ...state.modes); }
     },
     close: async () => {
       await evaluate(cdp, `if (window[${JSON.stringify(key)}]) window[${JSON.stringify(key)}].closed = true`);
@@ -66,6 +70,16 @@ export async function runProviderUsageQa({ cdp, check, screenshot, fixture }) {
   const ui = createQaUiDriver(cdp);
   await ui.key(',', { code: 'Comma', modifiers: process.platform === 'darwin' ? 4 : 2, windowsVirtualKeyCode: 188 });
   await ui.click({ text: 'Providers', exact: false, selector: 'button' });
+  await ui.waitExpression('usage-only xAI provider', `document.body.innerText.includes('xAI')`);
+  await fixture.collect();
+  await check('xAI usage loads at startup before any prompt', async () => {
+    assert.ok(fixture.requests.includes('/api/quota/xai'));
+    assert.equal(fixture.xaiStartupBeforePrompt, true);
+    await ui.click({ text: 'xAI', exact: true, selector: 'button' });
+    await ui.waitExpression('xAI weekly usage', `document.body.innerText.includes('Weekly') && document.body.innerText.includes('37%')`);
+    assert.doesNotMatch(await evaluate(cdp, 'document.body.innerText'), /next xAI request/);
+    await screenshot('provider-usage-xai-startup');
+  });
   await ui.waitExpression('usage-only ChatGPT provider', `document.body.innerText.includes('ChatGPT')`);
   await ui.click({ text: 'ChatGPT', exact: false, selector: 'button' });
   await check('weekly usage, native source and reset expiry render', async () => {
@@ -93,5 +107,5 @@ export async function runProviderUsageQa({ cdp, check, screenshot, fixture }) {
   assert.deepEqual(fixture.modes, ['available', 'unknown', 'zero']);
   assert.ok(fixture.requests.includes('/api/quota/providers') && fixture.requests.includes('/api/quota/codex'));
   await ui.click({ text: 'Back', selector: 'button' });
-  return { source: 'synthetic quota transport with built product UI', requests: fixture.requests.length, modes: fixture.modes, liveProvider: false };
+  return { source: 'synthetic quota transport with built product UI', requests: fixture.requests.length, modes: fixture.modes, xaiStartupBeforePrompt: fixture.xaiStartupBeforePrompt, liveProvider: false };
 }

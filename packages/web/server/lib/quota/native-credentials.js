@@ -22,6 +22,7 @@ export function createNativeQuotaCredentials({
   isExternalOpenCode,
   readOpenAiSelection = readNativeOpenAiMetadata,
 }) {
+  const xaiReads = new WeakMap();
   const snapshotState = () => {
     if (isExternalOpenCode()) return { mode: 'legacy' };
     const owner = getNativeRuntimeOwner();
@@ -116,13 +117,28 @@ export function createNativeQuotaCredentials({
     }
     if (!isText(value.access)) throw fail('native_credential_invalid');
     // The refresh token is deliberately not forwarded: only the native runtime may rotate it.
-    return {
+    const auth = {
       xai: {
         type: 'oauth',
         access: value.access,
         ...(Number.isSafeInteger(value.expires) ? { expires: value.expires } : {}),
       },
     };
+    xaiReads.set(auth, { state, selected });
+    return auth;
+  };
+
+  const refreshXai = async (auth) => {
+    const read = auth && xaiReads.get(auth);
+    const state = requireReady();
+    if (!read || read.state.owner !== state.owner || read.state.location.directory !== state.location.directory
+      || !isText(read.selected.credentialID) || !/^[a-f0-9]{64}$/.test(read.selected.expectedFingerprint ?? '')
+      || typeof state.owner.refreshProviderSelected !== 'function') throw fail('native_credential_update_required');
+    const { credentialID, expectedFingerprint } = read.selected;
+    await state.owner.refreshProviderSelected({ ...scopeFor(state.location, entryFor('xai')),
+      operation: 'provider.usage', path: '/api/quota/xai', methodID: 'device', credentialID, expectedFingerprint,
+      requestedFingerprint: credentialMutationFingerprint({ id: credentialID, renew: true }) });
+    return readAuth('xai');
   };
 
   const readAuth = async (quotaId) => {
@@ -136,5 +152,6 @@ export function createNativeQuotaCredentials({
     mode: () => snapshotState().mode,
     listConfigured,
     readAuth,
+    refreshXai,
   });
 }

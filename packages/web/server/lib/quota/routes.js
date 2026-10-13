@@ -265,10 +265,18 @@ export function registerQuotaRoutes(app, {
       return fetchQuotaForProvider(providerId, { ...options, readAuth, mutateAuth: () => {}, deleteManagedCredential: () => {} });
     }
     if (providerId === 'xai') {
-      const result = await fetchQuotaForProvider(providerId, { ...options, readAuth, writeAuth: () => {} });
+      let result = await fetchQuotaForProvider(providerId, { ...options, readAuth, writeAuth: () => {} });
+      if (result?.errorCode !== 'REAUTHENTICATION_REQUIRED') return result;
+      try {
+        auth = await nativeCredentials.refreshXai(auth);
+      } catch (error) {
+        return error?.code === 'native_xai_reauthentication_required'
+          ? nativeQuotaFailure(providerId, 'REAUTHENTICATION_REQUIRED', 'Reconnect xAI to load usage.')
+          : nativeQuotaFailure(providerId, 'native_xai_usage_unavailable', 'xAI usage is temporarily unavailable. Try refreshing again.');
+      }
+      result = await fetchQuotaForProvider(providerId, { ...options, readAuth, writeAuth: () => {} });
       return result?.errorCode === 'REAUTHENTICATION_REQUIRED'
-        ? nativeQuotaFailure(providerId, 'native_xai_token_renewal_pending', 'xAI usage updates after your next xAI request.')
-        : result;
+        ? nativeQuotaFailure(providerId, 'REAUTHENTICATION_REQUIRED', 'Reconnect xAI to load usage.') : result;
     }
     if (auth?.openai?.type === 'oauth' && auth.openai.methodID !== 'chatgpt-browser') return {
       ...nativeQuotaFailure(providerId, 'siwc_usage_unavailable', 'Sign in again with Codex browser (legacy) to read ChatGPT plan usage.'),

@@ -151,6 +151,12 @@ export function createNativeIntegrationOwner({ instanceID, snapshot, stateDirect
         || selected.integrationID !== operation.integrationID || typeof selected.credentialID !== 'string' || !selected.value || typeof selected.value !== 'object') throw fail('native_integration_binding_invalid', 502);
       return selected;
     }),
+    refreshProviderSelected: operation => grants.withCallerOperation(operation, () => {
+      if (operation.operation !== 'provider.usage' || operation.integrationID !== 'xai') throw fail('native_integration_scope_invalid');
+      return ownedCall({ action: 'provider-refresh-selected-owned', directory: operation.directory,
+        credentialID: operation.credentialID, expectedFingerprint: operation.expectedFingerprint,
+        requestAuthorization: grants.requestHeaders()['x-devryan-native-integration-grant'] });
+    }),
     credentialMetadata: operation => grants.withCallerOperation(operation, () => {
       if (!['openai.integration', 'mcp.integration', 'cursor.integration', 'provider.integration'].includes(operation.operation)) throw fail('native_integration_scope_invalid');
       return ownedCall({ action: 'credential-metadata-owned', directory: operation.directory, integrationID: operation.integrationID });

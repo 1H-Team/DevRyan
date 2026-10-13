@@ -32,7 +32,7 @@ export interface ControllerProviderCredentialsOptions {
   readonly ownsDelegatedIntegration: (id: string) => boolean;
 }
 interface ResolutionCommit {
-  readonly binding: CredentialResolutionBinding; readonly original: Credential.Info;
+  readonly original: Credential.Info;
   readonly reauthorize: Effect.Effect<void>; readonly assertSelected: Effect.Effect<void>; readonly assertCurrent: () => void;
   result?: Credential.OAuth; committed: boolean; active: boolean;
 }
@@ -43,9 +43,20 @@ const refuse = (code: string): never => { throw new HostRefusal(code, 403, 'cred
  * admitted resolution may refresh, and all writes share the existing queue. */
 export function createControllerProviderCredentials(options: ControllerProviderCredentialsOptions) {
   let credentials: Credential.Interface | undefined;
+  let usageCredentials: Credential.Interface | undefined;
   const integrations = new Map<string, Integration.Interface>();
   // Only waiting resolutions inherit a refresh committed by this owner; unrelated writes still refuse.
   const pendingOAuthResolutions = new Set<{ record: Credential.Info }>();
+  const usageRefreshers = new Map<string, NonNullable<Integration.OAuthImplementation['refresh']>>();
+  const lastRenewals = new Map<string, { before: string; after: string }>();
+  const publishRenewal = (directory: string, original: Credential.Info, expected: Credential.OAuth) => {
+    const previous = fingerprint(original), refreshed = structuredClone({ ...original, value: expected });
+    for (const waiting of pendingOAuthResolutions) {
+      if (fingerprint(waiting.record) === previous) waiting.record = refreshed;
+    }
+    lastRenewals.set(directory, { before: previous, after: fingerprint(refreshed) });
+    return refreshed;
+  };
   // Observations belong to this exact admitted Effect object. They issue no
   // authority and disappear with its caller; never key them by Session ID.
   const selections = new WeakMap<OperationPermit, Map<OwnedProviderIntegration, {
@@ -116,7 +127,7 @@ export function createControllerProviderCredentials(options: ControllerProviderC
       }
       return yield* mutate(operation, before, before.integrationID, value ?? before.value, request, action);
     });
-    return { ...inner,
+    const decorated: Credential.Interface = { ...inner,
       create: input => { const copy = structuredClone(input); return Effect.gen(function* () {
         if (isOwnedProviderIntegration(copy.integrationID)) return yield* mutate('create', undefined, copy.integrationID, copy.value, copy, inner.create(copy));
         if (!options.ownsDelegatedIntegration(copy.integrationID)) return refuse('native_credential_mutation_denied');
@@ -126,6 +137,8 @@ export function createControllerProviderCredentials(options: ControllerProviderC
       activate: id => existing('activate', id, { id }, inner.activate(id)),
       remove: id => existing('remove', id, { id }, inner.remove(id)),
     };
+    usageCredentials = decorated;
+    return decorated;
   };
   const assertSelected = (directory: string, original: Credential.Info, expected: Credential.Value = original.value) => Effect.gen(function* () {
     if (!isOwnedProviderIntegration(original.integrationID)) return refuse('native_provider_resolution_scope_required');
@@ -183,6 +196,8 @@ export function createControllerProviderCredentials(options: ControllerProviderC
             commit.result = structuredClone(result); return result;
           }) } : {}),
         };
+        if (wrapped.refresh) usageRefreshers.set(location.directory, wrapped.refresh);
+        else usageRefreshers.delete(location.directory);
         editor.method.update(wrapped);
       },
     } }));
@@ -218,18 +233,14 @@ export function createControllerProviderCredentials(options: ControllerProviderC
           binding = { ...binding, expectedFingerprint: fingerprint(original) };
         }
         yield* reauthorize; yield* assertSelected(location.directory, original);
-        const commit: ResolutionCommit = { binding, original, reauthorize, assertSelected: assertSelected(location.directory, original), assertCurrent: capture.assertCurrent, active: true, committed: false };
+        const commit: ResolutionCommit = { original, reauthorize, assertSelected: assertSelected(location.directory, original), assertCurrent: capture.assertCurrent, active: true, committed: false };
         return yield* Effect.gen(function* () {
           const result = yield* inner.connection.resolve(connection).pipe(Effect.provideService(Commit, commit));
           if (commit.result && !commit.committed) return refuse('native_provider_resolution_not_committed');
           expected = commit.result ?? original.value;
           yield* assertSelected(location.directory, original, expected); yield* reauthorize;
           if (commit.result) {
-            const previous = fingerprint(original), refreshed = structuredClone({ ...original, value: expected });
-            for (const waiting of pendingOAuthResolutions) {
-              if (fingerprint(waiting.record) === previous) waiting.record = refreshed;
-            }
-            original = refreshed;
+            original = publishRenewal(location.directory, original, commit.result);
           }
           return result;
         }).pipe(Effect.ensuring(Effect.sync(() => { commit.active = false; })));
@@ -322,5 +333,44 @@ export function createControllerProviderCredentials(options: ControllerProviderC
       })));
     }),
   });
-  return { overrides, decorateCredential, decorateIntegration, decorateSessionRunnerModel, decorateHooks };
+  const refreshForUsage = (directory: string, credentialID: Credential.ID, expectedFingerprint: string) => Effect.gen(function* () {
+    const store = usageCredentials, refresh = usageRefreshers.get(directory);
+    if (!store || !refresh) return refuse('native_provider_method_unsupported');
+    const capture = options.captureLocation(directory, 'xai'); capture.assertCurrent();
+    const observed = yield* store.get(credentialID);
+    if (!observed || observed.integrationID !== 'xai' || observed.value.type !== 'oauth'
+      || observed.value.methodID !== 'device') return refuse('native_credential_changed');
+    const receipt = lastRenewals.get(directory), observedFingerprint = fingerprint(observed);
+    const reused = observedFingerprint !== expectedFingerprint;
+    if (reused && (receipt?.before !== expectedFingerprint || receipt.after !== observedFingerprint)) return refuse('native_credential_changed');
+    const pending = { record: observed };
+    pendingOAuthResolutions.add(pending);
+    const binding: CredentialMutationBinding = { kind: 'provider', integrationID: 'xai', valueType: 'oauth', methodID: 'device',
+      directory, controllerInstanceID: options.controllerInstanceID, operation: 'update', credentialID, expectedFingerprint,
+      requestedFingerprint: fingerprint({ id: credentialID, renew: true }) };
+    return yield* options.withCredentialMutation(binding, Effect.gen(function* () {
+      const authorization = yield* CredentialMutationReauthorizeRef;
+      if (!authorization) return refuse('native_credential_mutation_authorization_required');
+      const reauthorize = Effect.sync(capture.assertCurrent).pipe(Effect.andThen(authorization), Effect.tap(() => Effect.sync(capture.assertCurrent)));
+      yield* reauthorize;
+      const original = pending.record;
+      yield* assertSelected(directory, original); yield* reauthorize;
+      if (reused || fingerprint(original) !== observedFingerprint) return;
+      if (original.value.type !== 'oauth') return refuse('native_credential_changed');
+      const oauthValue = original.value;
+      const commit: ResolutionCommit = { original, reauthorize, assertSelected: assertSelected(directory, original),
+        assertCurrent: capture.assertCurrent, active: true, committed: false };
+      yield* Effect.gen(function* () {
+        const renewed = yield* refresh(oauthValue).pipe(Effect.catch(error => Effect.sync(() => {
+          // The pinned native xAI implementation reports rejected token exchanges this way.
+          return refuse(error instanceof Error && /^xAI request failed \((401|403)\)|^xAI request failed \(400\).*invalid_grant/.test(error.message)
+            ? 'native_xai_reauthentication_required' : 'native_xai_usage_unavailable');
+        })));
+        yield* store.update(credentialID, { value: renewed });
+        yield* assertSelected(directory, original, renewed); yield* reauthorize;
+        publishRenewal(directory, original, renewed);
+      }).pipe(Effect.provideService(Commit, commit), Effect.ensuring(Effect.sync(() => { commit.active = false; })));
+    })).pipe(Effect.ensuring(Effect.sync(() => { pendingOAuthResolutions.delete(pending); })));
+  });
+  return { overrides, decorateCredential, decorateIntegration, decorateSessionRunnerModel, decorateHooks, refreshForUsage };
 }

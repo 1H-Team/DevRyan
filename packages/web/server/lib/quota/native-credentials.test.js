@@ -102,3 +102,15 @@ describe('native quota credentials', () => {
     await expect(create(createOwner({ isReady: () => false })).readAuth('xai')).rejects.toMatchObject({ code: 'native_runtime_not_ready' });
   });
 });
+
+
+it('renews only an auth snapshot read by this native quota owner and keeps refresh tokens private', async () => {
+  let access = 'old';
+  const owner = createOwner({readProviderSelected: async () => ({directory,integrationID:'xai',credentialID:'selected',expectedFingerprint:'a'.repeat(64),value:{type:'oauth',access,refresh:'private-refresh'}}),
+    refreshProviderSelected: vi.fn(async () => {access='new';})});
+  const credentials=create(owner),auth=await credentials.readAuth('xai');
+  expect(await credentials.refreshXai(auth)).toEqual({xai:{type:'oauth',access:'new'}});
+  expect(owner.refreshProviderSelected.mock.calls[0][0]).toMatchObject({operation:'provider.usage',path:'/api/quota/xai',credentialID:'selected',expectedFingerprint:'a'.repeat(64)});
+  expect(JSON.stringify(owner.refreshProviderSelected.mock.calls)).not.toContain('private-refresh');
+  await expect(credentials.refreshXai({...auth})).rejects.toMatchObject({code:'native_credential_update_required'});
+});

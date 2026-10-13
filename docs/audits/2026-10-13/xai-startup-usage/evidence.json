@@ -1,0 +1,188 @@
+{
+  "date": "2026-10-13",
+  "nativeCredentialTests": {
+    "outcome": "passed",
+    "count": 30
+  },
+  "build": "passed",
+  "nativeBuild": "passed",
+  "bundleCheck": "passed",
+  "fullValidation": "passed",
+  "liveProvider": "not-run",
+  "reportedIncidentJournal": "unavailable within repository",
+  "qa": {
+    "web": {
+      "outcome": "passed",
+      "checks": [
+        {
+          "name": "initial native runtime readiness",
+          "outcome": "passed",
+          "elapsedMs": 1851.1185409999998
+        },
+        {
+          "name": "selected session and composer",
+          "outcome": "passed",
+          "elapsedMs": 277.9238750000004
+        },
+        {
+          "name": "four-session stream reaches selected transcript",
+          "outcome": "passed",
+          "elapsedMs": 1544.188333
+        },
+        {
+          "name": "typing survives background streaming",
+          "outcome": "passed",
+          "elapsedMs": 508.41825000000244
+        },
+        {
+          "name": "send and reconcile a real composer submission",
+          "outcome": "passed",
+          "elapsedMs": 2483.9918749999997
+        },
+        {
+          "name": "cancel an active composer submission",
+          "outcome": "passed",
+          "elapsedMs": 72.60679199999868
+        },
+        {
+          "name": "reconnect and reopen without duplicate user messages",
+          "outcome": "passed",
+          "elapsedMs": 1182.4648329999982
+        },
+        {
+          "name": "xAI usage loads at startup before any prompt",
+          "outcome": "passed",
+          "elapsedMs": 99.43883399999686
+        },
+        {
+          "name": "weekly usage, native source and reset expiry render",
+          "outcome": "passed",
+          "elapsedMs": 56.687957999998616
+        },
+        {
+          "name": "reset inventory unknown renders distinctly",
+          "outcome": "passed",
+          "elapsedMs": 179.54666700000234
+        },
+        {
+          "name": "reset inventory zero renders distinctly",
+          "outcome": "passed",
+          "elapsedMs": 157.5556660000002
+        }
+      ],
+      "usage": {
+        "source": "synthetic quota transport with built product UI",
+        "requests": 7,
+        "modes": [
+          "available",
+          "unknown",
+          "zero"
+        ],
+        "xaiStartupBeforePrompt": true,
+        "liveProvider": false
+      },
+      "unexpectedConsoleErrors": [],
+      "cleanupErrors": [],
+      "visualReview": "passed: all five screenshots inspected",
+      "journalGapCheck": "passed: no gap records"
+    },
+    "electron": {
+      "outcome": "passed",
+      "checks": [
+        {
+          "name": "initial native runtime readiness",
+          "outcome": "passed",
+          "elapsedMs": 32257.786249999997
+        },
+        {
+          "name": "selected session and composer",
+          "outcome": "passed",
+          "elapsedMs": 1243.8041669999948
+        },
+        {
+          "name": "four-session stream reaches selected transcript",
+          "outcome": "passed",
+          "elapsedMs": 1530.245415999998
+        },
+        {
+          "name": "typing survives background streaming",
+          "outcome": "passed",
+          "elapsedMs": 506.3836670000019
+        },
+        {
+          "name": "send and reconcile a real composer submission",
+          "outcome": "passed",
+          "elapsedMs": 2370.887791000001
+        },
+        {
+          "name": "cancel an active composer submission",
+          "outcome": "passed",
+          "elapsedMs": 262.93283299999894
+        },
+        {
+          "name": "reconnect and reopen without duplicate user messages",
+          "outcome": "passed",
+          "elapsedMs": 1213.2455000000045
+        },
+        {
+          "name": "xAI usage loads at startup before any prompt",
+          "outcome": "passed",
+          "elapsedMs": 96.80408300000272
+        },
+        {
+          "name": "weekly usage, native source and reset expiry render",
+          "outcome": "passed",
+          "elapsedMs": 71.15366699999868
+        },
+        {
+          "name": "reset inventory unknown renders distinctly",
+          "outcome": "passed",
+          "elapsedMs": 189.27224999999453
+        },
+        {
+          "name": "reset inventory zero renders distinctly",
+          "outcome": "passed",
+          "elapsedMs": 168.5393750000003
+        }
+      ],
+      "usage": {
+        "source": "synthetic quota transport with built product UI",
+        "requests": 7,
+        "modes": [
+          "available",
+          "unknown",
+          "zero"
+        ],
+        "xaiStartupBeforePrompt": true,
+        "liveProvider": false
+      },
+      "unexpectedConsoleErrors": [],
+      "cleanupErrors": [],
+      "visualReview": "passed: all five screenshots inspected",
+      "journalGapCheck": "passed: no gap records"
+    }
+  },
+  "electronInitialAttempt": {
+    "outcome": "failed",
+    "reason": "QA launcher used scripts/qa as the app path, so the startup window could not load the production preload. Fixed the private launcher app path; regression test and final Electron QA passed."
+  },
+  "nativeBuildId": "678fe5665ac4d14f9ccfc0c4dbc10381d913f182aba7795ee37f4d22507bfa3f",
+  "uiTests": {
+    "outcome": "passed",
+    "count": 4120
+  },
+  "webTests": {
+    "outcome": "passed",
+    "count": 6712,
+    "files": 547
+  },
+  "additionalNativeHostTests": {
+    "outcome": "passed",
+    "count": 14
+  },
+  "finalQaHarnessTests": {
+    "outcome": "passed",
+    "count": 5
+  },
+  "cleanup": "task-owned QA runs and native artifact removed; cache report and prune preview completed without applying unrelated cleanup"
+}
