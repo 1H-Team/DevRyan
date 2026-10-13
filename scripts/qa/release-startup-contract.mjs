@@ -7,6 +7,24 @@ export const RELEASE_STARTUP_SCENARIOS = Object.freeze([
 ]);
 const digest = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 
+export function assertReleaseNavigationPhase(phase) {
+  assert.equal(phase.limit, phase.name === 'startup' ? 3 : phase.name === 'terminal-startup' ? 2 : 1);
+  const authentication = phase.documents.filter(row => row.authenticationReload);
+  assert.ok(authentication.length <= (phase.name === 'startup' ? 1 : 0), 'Excess authentication reloads');
+  for (const document of authentication) {
+    const evidence = document.authenticationReload;
+    assert.equal(evidence.principal, 'local-admin');
+    assert.ok(['missing', 'anonymous'].includes(evidence.previousPrincipal));
+    assert.match(evidence.origin, /^http:\/\/127\.0\.0\.1:\d+$/);
+    assert.equal(new URL(document.url).origin, evidence.origin);
+    const index = phase.documents.indexOf(document);
+    assert.ok(index > 0 && document.loaderId && evidence.sourceLoaderId);
+    assert.equal(phase.documents[index - 1].loaderId, evidence.sourceLoaderId);
+    assert.notEqual(document.loaderId, evidence.sourceLoaderId);
+  }
+  assert.ok(phase.documents.length - authentication.length <= phase.limit, `Excess committed documents during ${phase.name}`);
+}
+
 export function assertReleaseTrialEvidence(receipt) {
   assert.equal(receipt.forcedServiceCleanup, false, 'Forced cleanup rejects a sample');
   assert.ok([0, 1].includes(receipt.baselineRelaunches));
@@ -28,7 +46,7 @@ export function assertReleaseTrialEvidence(receipt) {
       assert.deepEqual(evidence.process?.observationErrors, [], row.id);
       assert.equal(evidence.process?.trackingClosed, true, row.id);
       assert.ok(Array.isArray(launch.navigation) && launch.navigation.length > 0, row.id);
-      for (const phase of launch.navigation) assert.ok(phase.documents.length <= phase.limit, row.id);
+      for (const phase of launch.navigation) assertReleaseNavigationPhase(phase);
       if (launch.baselineRelaunchAuthorized) {
         relaunches++;
         assert.equal(launch.terminalCode, 'native_process_boot_timeout');

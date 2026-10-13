@@ -44,3 +44,41 @@ test('navigation retries do not extend a caller deadline', async () => {
   } }, 'true', { deadline: performance.now() + 20 }), /deadline expired/);
   assert.ok(calls >= 1 && calls <= 3);
 });
+
+test('one authentication reload requires principal initialization on the current local application origin', () => {
+  const setup = (options = {}) => {
+    const listeners = new Map();
+    const audit = observeReleaseNavigation({ on: (name, listener) => {
+      listeners.set(name, listener); return () => listeners.delete(name);
+    } }, 'data:startup', { initialLoaderId: 'splash', ...options });
+    const frame = id => listeners.get('Page.frameNavigated')({ frame: { url: 'http://127.0.0.1:1234/', loaderId: id } });
+    const event = { storageId: { isLocalStorage: true, securityOrigin: 'http://127.0.0.1:1234' },
+      key: 'devryan.auth.principalId', newValue: 'local-admin' };
+    const initialize = (override = {}, updated = false) => listeners.get(`DOMStorage.domStorageItem${updated ? 'Updated' : 'Added'}`)({ ...event, ...override });
+    return { audit, frame, initialize, listeners };
+  };
+  for (const updated of [false, true]) {
+    const { audit, frame, initialize, listeners } = setup();
+    frame('app'); initialize(updated ? { oldValue: 'anonymous' } : {}, updated);
+    frame('auth'); frame('readiness'); audit.check();
+    assert.equal(audit.phases[0].documents[2].authenticationReload.principal, 'local-admin');
+    initialize(); frame('loop'); assert.throws(audit.check, /Excess committed/);
+    audit.complete(); assert.equal(listeners.size, 0);
+  }
+  for (const override of [
+    { key: 'another-key' }, { newValue: 'another-user' },
+    { storageId: { isLocalStorage: false, securityOrigin: 'http://127.0.0.1:1234' } },
+    { storageId: { isLocalStorage: true, securityOrigin: 'http://127.0.0.1:9999' } },
+    { oldValue: 'local-admin' }, { oldValue: 'another-user' },
+  ]) {
+    const { audit, frame, initialize } = setup();
+    frame('app'); initialize(override, 'oldValue' in override); frame('reload'); frame('extra');
+    assert.throws(audit.check, /Excess committed/);
+  }
+  for (const terminal of [false, true]) {
+    const { audit, frame, initialize } = setup({ terminal });
+    if (!terminal) audit.handoff('service-enable');
+    frame('first'); initialize(); frame('extra');
+    assert.throws(audit.check, /Excess committed/);
+  }
+});

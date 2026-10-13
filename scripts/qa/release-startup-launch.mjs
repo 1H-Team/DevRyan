@@ -106,7 +106,7 @@ export async function launchReleaseStartup(artifact, profile, { setupOnly = fals
     });
     subscription = observeNativeStartupSubscription(cdp, startedAt);
     removeErrors = cdp.on('Runtime.exceptionThrown', () => { exceptions++; });
-    await Promise.all([cdp.send('Page.enable'), cdp.send('Runtime.enable'), cdp.send('Network.enable')]);
+    await Promise.all([cdp.send('Page.enable'), cdp.send('Runtime.enable'), cdp.send('Network.enable'), cdp.send('DOMStorage.enable')]);
     const check = () => { app.check(); profile.check(); subscription.check(); navigation.check(); };
     const ui = createQaUiDriver(cdp, { checkAlive: check, timeoutMs: 60_000, navigationReads: true });
     if (expectedFailure) {

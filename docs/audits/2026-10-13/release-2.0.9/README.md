@@ -162,3 +162,33 @@ the complete web suite (6,702 Vitest plus 14 Bun tests) passed. These rechecks
 complete the failed invocation's coverage; the original invocation is not a
 pass. Production build and bundle budgets passed. Focused ownership, atomic-lock,
 service cleanup, navigation and baseline-policy checks passed.
+
+The [first stability round](stability-round-1.json) has zero qualifying samples.
+Runs 38362443401 and 38362443361 passed 52 compiled cases, but ordinary launch
+navigation exceeded the budget. Candidate startup redundantly navigated the
+adopted early splash window; this is now removed and regression-tested. The
+published v2.0.8 baseline also committed one splash and three application
+loader identities. Source contains separate authentication and native-readiness
+reloads. With explicit user approval, the observer now allows one additional
+authentication reload only after directly observing local-admin principal
+initialization on the current application origin; source inference alone does
+not qualify the transition.
+
+Both runs exhausted the one allowed v2.0.7 baseline relaunch with
+`native_process_boot_timeout`; the published native-controller boot deadline
+expired after approximately 31–32 seconds. Both attempts remain failed evidence.
+Sample 2 also left a zero-byte mutation lock after stopping v2.0.8 and halted on
+cleanup failure. Sample 1 completed cleanup and continued independent cases,
+but their prerequisite launches failed the navigation budget; tampered-app
+integrity rejection and service handoff are therefore still unproven.
+Run 38362444154 failed GUI prerequisites before qualification; its old receipt
+omitted probe detail. New receipts retain the prerequisite probe result.
+No candidate malformed mutation lock or live unrelated lock holder was observed.
+The three-sample count must restart after corrections; no tag is authorized.
+
+After the splash correction, a new complete `bun run validate:full` invocation
+passed, including 4,117 UI tests and 6,702 Vitest plus 14 Bun web tests.
+The authentication observer and receipt checks passed 25 focused harness tests;
+production build, bundle checks and documentation validation passed. All eight
+image input inventories were recomputed again and remain unchanged. The next
+three hosted diagnostics must still demonstrate the corrected behavior.

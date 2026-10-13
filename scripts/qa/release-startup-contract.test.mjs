@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RELEASE_STARTUP_SCENARIOS, assertReleaseStartupReceipt, selectReleaseStartupBaselines } from './release-startup-contract.mjs';
+import { RELEASE_STARTUP_SCENARIOS, assertReleaseNavigationPhase, assertReleaseStartupReceipt, selectReleaseStartupBaselines } from './release-startup-contract.mjs';
 const d = 'a'.repeat(64), sourceCommit = 'b'.repeat(40);
 const expectation = { sourceCommit, dmgSha256: d, version: '2.0.9' };
 const screenshot = () => ({ name: 'DevRyan-startup-fixture.png', sha256: d, ...expectation, manifestSha256: d, appSha256: d });
@@ -43,4 +43,29 @@ test('baseline selection requires the last two stable releases and their publish
   assert.deepEqual(selectReleaseStartupBaselines(releases, '2.0.9').map(row => row.version), ['2.0.8','2.0.7']);
   releases.at(-1).assets[0].digest = null;
   assert.throws(() => selectReleaseStartupBaselines(releases, '2.0.9'));
+});
+
+
+test('receipt validation rejects unauthenticated navigation allowance and inflated limits', () => {
+  const phase = { name: 'startup', limit: 3, documents: [
+    { url: 'data:startup-document', loaderId: 'splash' },
+    { url: 'http://127.0.0.1:1234/', loaderId: 'app' },
+    { url: 'http://127.0.0.1:1234/', loaderId: 'auth', authenticationReload: {
+      origin: 'http://127.0.0.1:1234', previousPrincipal: 'missing', principal: 'local-admin', sourceLoaderId: 'app',
+    } },
+    { url: 'http://127.0.0.1:1234/', loaderId: 'ready' },
+  ] };
+  assertReleaseNavigationPhase(phase);
+  for (const change of [
+    row => { row.limit = 4; },
+    row => { delete row.documents[2].authenticationReload; },
+    row => { row.documents[2].authenticationReload.principal = 'another-user'; },
+    row => { row.documents[2].authenticationReload.previousPrincipal = 'local-admin'; },
+    row => { row.documents[2].authenticationReload.sourceLoaderId = 'different'; },
+    row => { row.documents[2].authenticationReload.origin = 'http://127.0.0.1:9999'; },
+    row => { row.documents.push({ ...row.documents[2], loaderId: 'loop' }); },
+  ]) {
+    const changed = structuredClone(phase); change(changed);
+    assert.throws(() => assertReleaseNavigationPhase(changed));
+  }
 });

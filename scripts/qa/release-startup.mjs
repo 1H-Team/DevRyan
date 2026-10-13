@@ -193,6 +193,7 @@ export async function runReleaseStartup({ dmg, version, sourceCommit, receiptPat
     assert.equal(receipt.runAttempt, 1, 'A rerun cannot erase a failed startup trial');
     await assertNoPriorStartupFailure(sourceCommit, process.env.GITHUB_RUN_ID);
     const gui = await probeDisposableMacGui(); receipt.guiPrerequisites = gui.status;
+    receipt.guiPrerequisiteEvidence = gui;
     assert.equal(gui.status, 'passed', 'Disposable GUI prerequisites unavailable');
     candidate = await inspectReleaseDmg({ dmg, version, directory: path.join(run.dir, 'installations/candidate') });
     receipt.manifestSha256 = candidate.manifestSha256; receipt.appSha256 = candidate.appSha256;

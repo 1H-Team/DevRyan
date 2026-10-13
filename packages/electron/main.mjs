@@ -3191,11 +3191,13 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
     void navigateWindow(browserWindow, url);
   } else {
     state.startupSplashActive = true;
-    void navigateWindow(
-      browserWindow,
-      `data:text/html;charset=utf-8,${encodeURIComponent(buildStartupSplashHtml())}`,
-      { allowAbort: true },
-    );
+    if (!early) {
+      void navigateWindow(
+        browserWindow,
+        `data:text/html;charset=utf-8,${encodeURIComponent(buildStartupSplashHtml())}`,
+        { allowAbort: true },
+      );
+    }
   }
 
   return browserWindow;

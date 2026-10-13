@@ -14,6 +14,21 @@ import {
 const mainSource = () => readFileSync(new URL('./main.mjs', import.meta.url), 'utf8');
 
 describe('Electron startup splash', () => {
+  it('adopts the already visible early splash without committing a second startup document', () => {
+    const source = mainSource();
+    const start = source.indexOf('  if (url) {\n    void navigateWindow(browserWindow, url);');
+    const navigate = new Function('early', 'url', 'state', 'browserWindow', 'navigateWindow', 'buildStartupSplashHtml',
+      source.slice(start, source.indexOf('  return browserWindow;', start)));
+    for (const early of [{}, null]) {
+      const state = {}, calls = [];
+      navigate(early, null, state, {}, (_window, url) => calls.push(url), () => '<p>Starting</p>');
+      expect(state.startupSplashActive).toBe(true);
+      expect(calls.length).toBe(early ? 0 : 1);
+    }
+    const calls = [];
+    navigate({}, 'http://127.0.0.1:3000', {}, {}, (_window, url) => calls.push(url), () => { throw Error('Unused splash'); });
+    expect(calls).toEqual(['http://127.0.0.1:3000']);
+  });
   it('replaces the splash with the original failure and Retry when selected-bundle settings become unreadable', async () => {
     const source = mainSource();
     const build = source.slice(source.indexOf('const buildStartupErrorHtml ='), source.indexOf('const buildBotStartupAttentionHtml ='));
