@@ -7,16 +7,20 @@ import { fileURLToPath } from 'node:url';
 import { createRunRoot, removeRunPayloads } from './run-root.mjs';
 import { requireDisposableMacRunner, probeDisposableMacGui } from './macos-gui-prerequisites.mjs';
 import { inspectReleaseDmg, downloadReleaseStartupBaselines, hashReleaseFile, assertNoPriorStartupFailure } from './release-startup-artifacts.mjs';
-import { assertReleaseStartupReceipt } from './release-startup-contract.mjs';
+import { assertReleaseStartupReceipt, assertReleaseTrialEvidence } from './release-startup-contract.mjs';
 import { createReleaseStartupProfile } from './release-startup-profile.mjs';
 import { launchReleaseStartup, verifyReleaseJournal, waitReleaseStartup, captureReleaseStartupScreenshot, assertReleaseRetainedSession } from './release-startup-launch.mjs';
 import { seedReleaseUnsettledProcess, releaseFixtureScope } from './release-startup-unsettled.mjs';
 import { prepareReleaseService, releaseServiceStatus, seedStaleReleaseOwner, runReleaseCleanup } from './release-startup-service.mjs';
 import { readBundleStartupState, assertNativeStartupUpgrade, assertNativeStartupReopen, readNativeStartupLogs } from './native-startup-benchmark.mjs';
 import { captureQaElectronAppIdentity } from './artifact-evidence.mjs';
-import { startOwnedProcess } from './process.mjs';
+import { startOwnedProcess, reservePort } from './process.mjs';
+import { CdpConnection, discoverPageTarget, evaluate } from './cdp.mjs';
 import { createDiagnosticSanitizer } from '../../packages/harness-runtime/lib/sanitizer.js';
 import { readRuntimeServiceOwner } from '../../packages/electron/runtime-service.mjs';
+import { captureReleaseLocks } from './release-startup-evidence.mjs';
+import { allowBaselineRelaunch } from './release-baseline-relaunch.mjs';
+import { parseStartupPhaseLogs } from '../perf/electron-lifecycle-benchmark.mjs';
 
 const exec = promisify(execFile);
 const repository = fileURLToPath(new URL('../../', import.meta.url)).replace(/\/$/, '');
@@ -43,7 +47,7 @@ export function assertReleaseDiagnosticEnvironment(diagnostic, env = process.env
   assert.equal(env.RELEASE_DRY_RUN, 'true', 'Diagnostics cannot publish');
 }
 
-export function createReleaseScenarioRunner({ receipt, stop, diagnostic, sanitizeReason }) {
+export function createReleaseScenarioRunner({ receipt, stop, diagnostic, sanitizeReason, onFailure = async () => {} }) {
   return async (id, operation, { dependsOn = [] } = {}) => {
     const blockedBy = dependsOn.filter(dependency => !receipt.scenarios.some(row => row.id === dependency && row.outcome === 'passed'));
     const row = { id, outcome: blockedBy.length ? 'blocked' : 'failed', attempts: blockedBy.length ? 0 : 1, cleanup: 'pending' };
@@ -52,7 +56,11 @@ export function createReleaseScenarioRunner({ receipt, stop, diagnostic, sanitiz
     const started = performance.now();
     let failure;
     try { await operation(row); row.outcome = 'passed'; }
-    catch (error) { failure = error; row.reason = sanitizeReason(error.message); }
+    catch (error) {
+      failure = error; row.reason = sanitizeReason(error.message);
+      try { await onFailure(row); }
+      catch { row.evidenceError = 'failure_evidence_unavailable'; }
+    }
     finally {
       try { await stop(); row.cleanup = 'passed'; }
       catch { row.cleanup = 'failed'; receipt.cleanupErrors.push(`${id}_foreground_cleanup_failed`); }
@@ -79,10 +87,10 @@ export async function runReleaseStartup({ dmg, version, sourceCommit, receiptPat
   const receipt = { protocol: 'devryan.release-startup/1', outcome: 'failed', sourceCommit, version,
     runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT), ...(diagnostic ? { diagnostic: true } : {}),
     platform: `${process.platform}-${process.arch}`, startedAt: new Date().toISOString(), guiPrerequisites: 'not-run',
-    dmgSha256: await hashReleaseFile(dmg), scenarios: [], cleanupErrors: [] };
+    dmgSha256: await hashReleaseFile(dmg), scenarios: [], cleanupErrors: [], baselineRelaunches: 0 };
   let active, service, serviceProfile;
   const profiles = [];
-  const stop = async () => { const current = active; active = null; if (current) await current.stop(); };
+  const stop = async () => { const current = active; active = null; if (current) await runReleaseCleanup(() => current.stop()); };
   const run = createRunRoot({ parent: path.join(repository, '.cache/release-startup'), prefix: 'release-',
     owner: 'release-startup', extraPayloads: ['installations', 'downloads', 'profiles', 'negative-control'],
     onInterrupt: async () => {
@@ -96,24 +104,44 @@ export async function runReleaseStartup({ dmg, version, sourceCommit, receiptPat
   };
   const start = async (artifact, profile, options) => {
     assert.equal(active, null, 'A prior foreground owner must stop before launching');
+    const row = receipt.scenarios.at(-1);
+    const launchRecord = { artifact: { version: artifact.version, dmgSha256: artifact.dmgSha256, manifestSha256: artifact.manifestSha256 },
+      profile: path.basename(profile.root), outcome: 'failed' };
+    row.launches ??= []; row.launches.push(launchRecord);
     try {
       active = await launchReleaseStartup(artifact, profile, { ...options, serviceEnvironmentManaged: profile === serviceProfile,
+        onStop: async launch => {
+          launchRecord.afterStop = await captureReleaseLocks(profile, launch.app, sanitizer);
+          launchRecord.navigation = launch.navigation;
+          launchRecord.forcedCleanup = profile.forcedServiceCleanup === true;
+          assert.ok(!launchRecord.forcedCleanup, 'Forced service cleanup rejects the sample');
+          assert.ok(Object.values(launchRecord.afterStop.locks).every(lock => ['missing', 'valid'].includes(lock.state)), 'Malformed lock after stop');
+        },
         onFailure: async launch => {
-          const row = receipt.scenarios.at(-1);
-          if (!row) return;
+          launchRecord.beforeFailureStop = await captureReleaseLocks(profile, launch.app, sanitizer);
+          launchRecord.failureLog = sanitizer.sanitizeText(launch.log, { highEntropy: true }).slice(-16000);
+          launchRecord.terminalPhases = parseStartupPhaseLogs(launch.log).filter(phase => phase.outcome === 'failed');
+          const codes = new Set(launchRecord.terminalPhases.map(phase => phase.code).filter(Boolean));
+          launchRecord.terminalCode = codes.size === 1 ? [...codes][0] : null;
           row.failureInterface = launch.interfaceState;
           row.failureArtifact = { version: artifact.version, dmgSha256: artifact.dmgSha256, manifestSha256: artifact.manifestSha256 };
           row.failureLog = sanitizer.sanitizeText(launch.log, { highEntropy: true }).slice(-16000);
           row.failureScreenshot = 'unavailable';
           if (launch.cdp) {
-            await screenshot(row, launch, `${row.id}-launch-failure`);
+            await screenshot(row, launch, `${row.id}-launch-${row.launches.length}-failure`);
             row.failureScreenshot = 'captured';
           }
         } });
+      launchRecord.outcome = 'started';
+      active.captureFailureEvidence = async () => {
+        launchRecord.beforeFailureStop = await captureReleaseLocks(profile, active.app, sanitizer);
+      };
       return active;
     } catch (error) {
       const row = receipt.scenarios.at(-1);
       if (row) {
+        launchRecord.reason = sanitizer.sanitizeText(String(error.message), { highEntropy: true }).slice(0, 1000);
+        if (error.evidenceError) launchRecord.evidenceError = 'failure_evidence_unavailable';
         try { row.failureJournal = { outcome: 'passed', gapRecords: await verifyReleaseJournal(profile) }; }
         catch (journalError) { row.failureJournal = { outcome: 'failed', reason: sanitizer.sanitizeText(String(journalError.message), { highEntropy: true }).slice(0, 256) }; }
       }
@@ -123,8 +151,24 @@ export async function runReleaseStartup({ dmg, version, sourceCommit, receiptPat
   active = null;
   const retainedSession = assertReleaseRetainedSession;
   const scenario = createReleaseScenarioRunner({ receipt, stop, diagnostic,
+    onFailure: async () => { await active?.captureFailureEvidence(); },
     sanitizeReason: message => sanitizer.sanitizeText(String(message), { highEntropy: true }).slice(0, 1000) });
   let candidate;
+  const startBaseline = async (artifact, id) => {
+    let profile = await newProfile(id);
+    const row = receipt.scenarios.at(-1);
+    row.baselineLaunchAttempts = 1;
+    try { return { profile, launch: await start(artifact, profile) }; }
+    catch (error) {
+      const failure = row.launches.at(-1);
+      if (!allowBaselineRelaunch({ receipt, artifact, candidate, failure, error })) throw error;
+      receipt.baselineRelaunches++;
+      row.baselineLaunchAttempts++;
+      failure.baselineRelaunchAuthorized = true;
+      profile = await newProfile(`${id}-baseline-relaunch`);
+      return { profile, launch: await start(artifact, profile) };
+    }
+  };
   const screenshot = async (row, launch, label = row.id) => {
     row.screenshots ??= [];
     row.screenshots.push(await captureReleaseStartupScreenshot(launch, path.dirname(receiptPath), `DevRyan-startup-${label}.png`, receipt));
@@ -150,8 +194,8 @@ export async function runReleaseStartup({ dmg, version, sourceCommit, receiptPat
     receipt.manifestSha256 = candidate.manifestSha256; receipt.appSha256 = candidate.appSha256;
     const baselineDownloads = await downloadReleaseStartupBaselines({ version, directory: path.join(run.dir, 'downloads') });
     const baselines = [];
-    for (const baseline of baselineDownloads) baselines.push(await inspectReleaseDmg({ ...baseline,
-      expectedSha256: baseline.sha256, directory: path.join(run.dir, 'installations', baseline.version), purpose: 'bundle-source' }));
+    for (const baseline of baselineDownloads) baselines.push({ ...await inspectReleaseDmg({ ...baseline,
+      expectedSha256: baseline.sha256, directory: path.join(run.dir, 'installations', baseline.version), purpose: 'bundle-source' }), publishedTag: baseline.tag });
     const { runNativePackageAcceptance } = await import('../verify-opencode-v2-package.mjs');
     const compiled = await runNativePackageAcceptance({ artifactRoot: candidate.artifactRoot });
     receipt.compiledQualification = summarizeCompiledQualification(compiled, sanitizer);
@@ -175,14 +219,13 @@ export async function runReleaseStartup({ dmg, version, sourceCommit, receiptPat
     }, { dependsOn: ['empty-profile'] });
 
     const upgrade = async (id, baseline, fault) => scenario(id, async row => {
-      const profile = await newProfile(id);
-      const old = await start(baseline, profile), session = await old.submit();
+      const { profile, launch: old } = await startBaseline(baseline, id), session = await old.submit();
       await stop();
       // Older releases dropped the initial service opt-out during setup projection.
       await profile.configure({ selected: true });
       const initial = readBundleStartupState(profile.controlRoot);
       row.baselineVersion = baseline.version; row.baselineDmgSha256 = baseline.dmgSha256;
-      if (fault) await fault(profile, initial);
+      if (fault) await fault(profile, initial, row);
       const final = await prove(row, profile, { priorSession: session });
       if (initial.artifactManifestSha256 === candidate.manifestSha256) {
         assertNativeStartupReopen(initial, final.state, row.startup.electronStartupPhases.records);
@@ -204,8 +247,7 @@ export async function runReleaseStartup({ dmg, version, sourceCommit, receiptPat
     await upgrade('same-runtime-upgrade', sameVersion);
 
     await scenario('unsettled-process-upgrade', async row => {
-      const profile = await newProfile(row.id);
-      const old = await start(baselines[0], profile), id = await old.submit();
+      const { profile, launch: old } = await startBaseline(baselines[0], row.id), id = await old.submit();
       const scope = await releaseFixtureScope(old, profile, id);
       await stop(); await profile.configure({ selected: true });
       const initial = readBundleStartupState(profile.controlRoot);
@@ -229,7 +271,7 @@ export async function runReleaseStartup({ dmg, version, sourceCommit, receiptPat
       row.gapRecords = await verifyReleaseJournal(profile);
     });
 
-    await upgrade('interrupted-upgrade', baselines[0], async (profile, initial) => {
+    await upgrade('interrupted-upgrade', baselines[0], async (profile, initial, row) => {
       const environment = await prepareReleaseService(profile);
       const app = startOwnedProcess(candidate.binary, ['--use-mock-keychain'], { cwd: profile.workspace, env: profile.env });
       try {
@@ -237,9 +279,14 @@ export async function runReleaseStartup({ dmg, version, sourceCommit, receiptPat
           (await fs.readdir(path.join(profile.controlRoot, 'artifacts'))).some(name => name.startsWith('.retaining-')), app.check);
         app.child.kill('SIGKILL'); await app.stop();
         assert.deepEqual(readBundleStartupState(profile.controlRoot), initial, 'Interrupted retention changed selection');
-      } finally { await runReleaseCleanup(async () => { try { await app.stop(); } finally { await environment.cleanup(); } }); }
+      } finally { await runReleaseCleanup(async () => {
+        try { await app.stop(); } finally {
+          try { await environment.cleanup(); }
+          finally { row.interruptedStop = await captureReleaseLocks(profile, app, sanitizer); }
+        }
+      }); }
     });
-    await upgrade('rejected-candidate', baselines[0], async (profile, initial) => {
+    await upgrade('rejected-candidate', baselines[0], async (profile, initial, row) => {
       // A separate tampered copy is only a negative control. All successful starts use the unchanged installer app.
       const badApp = path.join(run.dir, 'negative-control/DevRyan.app');
       await fs.mkdir(path.dirname(badApp), { recursive: true });
@@ -249,11 +296,38 @@ export async function runReleaseStartup({ dmg, version, sourceCommit, receiptPat
       await fs.truncate(path.join(badApp, 'Contents/Resources/revert-runtime/darwin-arm64', payload.path), 4);
       const database = profile.binding().descriptor.launch.opencodeDatabasePath, before = await hashReleaseFile(database);
       const environment = await prepareReleaseService(profile);
-      const app = startOwnedProcess(path.join(badApp, 'Contents/MacOS/DevRyan'), ['--use-mock-keychain'], { cwd: profile.workspace, env: profile.env });
+      const logOffset = readNativeStartupLogs(null, profile.env.HOME).length;
+      const debugPort = await reservePort();
+      const app = startOwnedProcess(path.join(badApp, 'Contents/MacOS/DevRyan'), [`--remote-debugging-port=${debugPort}`, '--use-mock-keychain'], { cwd: profile.workspace, env: profile.env });
       try {
         await waitReleaseStartup('terminal integrity rejection', () =>
-          readNativeStartupLogs(app, profile.env.HOME).includes('native_runtime_artifacts_unverified'), app.check);
-      } finally { await runReleaseCleanup(async () => { try { await app.stop(); } finally { await environment.cleanup(); } }); }
+          readNativeStartupLogs(app, profile.env.HOME, logOffset).includes('native_runtime_artifacts_unverified'), app.check);
+      } finally {
+        try {
+          const log = readNativeStartupLogs(app, profile.env.HOME, logOffset);
+          row.tampered = { log: sanitizer.sanitizeText(log, { highEntropy: true }).slice(-16000),
+            terminalPhases: parseStartupPhaseLogs(log).filter(phase => phase.outcome === 'failed'),
+            processAlive: app.child.exitCode === null && app.child.signalCode === null,
+            integrityRejected: log.includes('native_runtime_artifacts_unverified'),
+            selectionPreserved: JSON.stringify(readBundleStartupState(profile.controlRoot)) === JSON.stringify(initial),
+            databaseBefore: before, databaseAfter: await hashReleaseFile(database),
+            beforeStop: await captureReleaseLocks(profile, app, sanitizer) };
+          let cdp;
+          try {
+            const target = await discoverPageTarget(debugPort, 2000);
+            cdp = await CdpConnection.connect(target.webSocketDebuggerUrl);
+            row.tampered.usable = await evaluate(cdp, 'window.__openchamberStartupReady === true && Boolean(document.querySelector("textarea:not(:disabled)"))', { timeoutMs: 2000 });
+          } catch { row.tampered.usable = 'unavailable'; }
+          finally { cdp?.close(); }
+        } finally { await runReleaseCleanup(async () => {
+          try { await app.stop(); } finally {
+            try { await environment.cleanup(); }
+            finally { row.tampered ??= {}; row.tampered.afterStop = await captureReleaseLocks(profile, app, sanitizer); }
+          }
+        }); }
+        if (row.tampered.usable === true || row.tampered.selectionPreserved === false || row.tampered.databaseAfter !== before)
+          throw Object.assign(Error('Tampered app violated protected startup state'), { code: 'release_startup_prerequisite_failed' });
+      }
       assert.deepEqual(readBundleStartupState(profile.controlRoot), initial);
       assert.equal(await hashReleaseFile(database), before, 'Rejected candidate modified saved conversation data');
     });
@@ -293,6 +367,8 @@ export async function runReleaseStartup({ dmg, version, sourceCommit, receiptPat
     }, { dependsOn: ['service-warm'] });
     assert.equal((await captureQaElectronAppIdentity(candidate.appPath)).sha256, candidate.appSha256, 'Distributed app was modified');
     assert.equal(await hashReleaseFile(dmg), receipt.dmgSha256, 'Distributed DMG was modified');
+    receipt.forcedServiceCleanup = profiles.some(profile => profile.forcedServiceCleanup === true);
+    assertReleaseTrialEvidence(receipt);
     assert.ok(!diagnostic, 'Diagnostic receipts cannot qualify a release');
     receipt.outcome = 'passed';
     assertReleaseStartupReceipt(receipt, { sourceCommit, dmgSha256: receipt.dmgSha256, version });
@@ -308,6 +384,7 @@ export async function runReleaseStartup({ dmg, version, sourceCommit, receiptPat
       receipt.cleanupErrors.push('service_owner_survived_cleanup');
     for (const profile of profiles) { try { await profile.close(); } catch { receipt.cleanupErrors.push('provider_cleanup_failed'); } }
     if (receipt.cleanupErrors.length) receipt.outcome = 'failed';
+    receipt.forcedServiceCleanup = profiles.some(profile => profile.forcedServiceCleanup === true);
     if (receipt.outcome === 'passed' && !run.keepArtifacts) {
       try {
         const payloads = ['installations', 'downloads', 'profiles', 'negative-control'];

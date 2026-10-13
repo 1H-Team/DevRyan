@@ -7,6 +7,48 @@ export const RELEASE_STARTUP_SCENARIOS = Object.freeze([
 ]);
 const digest = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 
+export function assertReleaseTrialEvidence(receipt) {
+  assert.equal(receipt.forcedServiceCleanup, false, 'Forced cleanup rejects a sample');
+  assert.ok([0, 1].includes(receipt.baselineRelaunches));
+  let relaunches = 0;
+  for (const row of receipt.scenarios) {
+    assert.equal(row.evidenceError, undefined, row.id);
+    assert.ok(Array.isArray(row.launches) && row.launches.length > 0, row.id);
+    for (const launch of row.launches) {
+      assert.equal(launch.evidenceError, undefined, row.id);
+      assert.equal(launch.forcedCleanup, false, row.id);
+      const evidence = launch.afterStop;
+      assert.ok(evidence?.locks?.owner && evidence.locks.mutation, row.id);
+      for (const lock of Object.values(evidence.locks)) assert.ok(['missing', 'valid'].includes(lock.state), 'Malformed lock after stop');
+      assert.deepEqual(evidence.process?.remainingProcessIds, [], row.id);
+      assert.deepEqual(evidence.process?.observationErrors, [], row.id);
+      assert.equal(evidence.process?.trackingClosed, true, row.id);
+      assert.ok(Array.isArray(launch.navigation) && launch.navigation.length > 0, row.id);
+      for (const phase of launch.navigation) assert.ok(phase.documents.length <= phase.limit, row.id);
+      if (launch.baselineRelaunchAuthorized) {
+        relaunches++;
+        assert.equal(launch.terminalCode, 'native_process_boot_timeout');
+        assert.notEqual(launch.artifact.version, receipt.version);
+        assert.notEqual(launch.artifact.dmgSha256, receipt.dmgSha256);
+        assert.equal(row.baselineLaunchAttempts, 2);
+        for (const lock of Object.values(evidence.locks)) assert.notEqual(lock.alive, true);
+      }
+    }
+    for (const evidence of [row.interruptedStop, row.tampered?.afterStop].filter(Boolean)) {
+      assert.deepEqual(evidence.process?.remainingProcessIds, [], row.id);
+      for (const lock of Object.values(evidence.locks)) assert.ok(['missing', 'valid'].includes(lock.state), 'Malformed lock after stop');
+    }
+    if (row.id === 'rejected-candidate') {
+      assert.equal(row.tampered?.integrityRejected, true);
+      assert.notEqual(row.tampered.usable, true);
+      assert.equal(row.tampered.selectionPreserved, true);
+      assert.ok(digest(row.tampered.databaseBefore));
+      assert.equal(row.tampered.databaseAfter, row.tampered.databaseBefore);
+    }
+  }
+  assert.equal(relaunches, receipt.baselineRelaunches);
+}
+
 export function assertReleaseScreenshot(row, identity) {
   assert.match(row?.name ?? '', /^DevRyan-[a-z0-9.-]+\.png$/);
   assert.ok(digest(row.sha256));
@@ -28,6 +70,7 @@ export function assertReleaseStartupReceipt(receipt, { sourceCommit, dmgSha256, 
   assert.equal(receipt.platform, 'darwin-arm64');
   assert.equal(receipt.guiPrerequisites, 'passed');
   assert.deepEqual(receipt.cleanupErrors, []);
+  assertReleaseTrialEvidence(receipt);
   assert.deepEqual(receipt.scenarios.map(row => row.id).sort(), [...RELEASE_STARTUP_SCENARIOS].sort());
   for (const row of receipt.scenarios) {
     assert.equal(row.outcome, 'passed', row.id);

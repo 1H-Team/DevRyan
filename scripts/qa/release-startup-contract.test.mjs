@@ -4,11 +4,17 @@ import { RELEASE_STARTUP_SCENARIOS, assertReleaseStartupReceipt, selectReleaseSt
 const d = 'a'.repeat(64), sourceCommit = 'b'.repeat(40);
 const expectation = { sourceCommit, dmgSha256: d, version: '2.0.9' };
 const screenshot = () => ({ name: 'DevRyan-startup-fixture.png', sha256: d, ...expectation, manifestSha256: d, appSha256: d });
+const launchEvidence = () => ({ forcedCleanup: false, afterStop: {
+  locks: { owner: { state: 'missing' }, mutation: { state: 'missing' } },
+  process: { remainingProcessIds: [], observationErrors: [], trackingClosed: true },
+}, navigation: [{ name: 'startup', limit: 3, documents: [{}] }] });
 const receipt = () => ({ protocol: 'devryan.release-startup/1', outcome: 'passed', ...expectation, manifestSha256: d, appSha256: d,
+  forcedServiceCleanup: false, baselineRelaunches: 0,
   platform: 'darwin-arm64', runAttempt: 1, compiledNative: 'passed', guiPrerequisites: 'passed', cleanupErrors: [], scenarios: RELEASE_STARTUP_SCENARIOS.map((id,index) => ({
     id, outcome: 'passed', attempts: 1, gapRecords: 0, cleanup: 'passed', elapsedMs: 1, manifestSha256: d,
     usableChat: true, eventStream: 'acknowledged', submission: 'passed', baselineVersion: `2.0.${index}`, baselineDmgSha256: d, dataPreserved: true,
     transition: 'upgraded', stableReopen: true, setupInterface: true, liveOwnerProtected: true,
+    launches: [launchEvidence()], tampered: { integrityRejected: true, usable: false, selectionPreserved: true, databaseBefore: d, databaseAfter: d },
     screenshots: [screenshot()], failureCode: 'bundle_execution_unsettled', recoveryPrepared: true, sameBootRefused: true, selectionPreserved: true,
   })) });
 test('publication rejects incomplete, stale, substituted, retried and unavailable startup evidence', () => {

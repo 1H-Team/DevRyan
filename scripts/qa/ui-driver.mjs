@@ -1,4 +1,5 @@
 import { evaluate } from './cdp.mjs';
+import { readThroughNavigation } from './navigation-tolerant.mjs';
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 const visible = `e => { const r=e.getBoundingClientRect(); if(r.width<=0||r.height<=0)return false;for(let p=e;p;p=p.parentElement){const s=getComputedStyle(p);if(s.display==='none'||s.visibility==='hidden'||Number(s.opacity)<=0)return false;}return true; }`;
@@ -11,19 +12,21 @@ export const isQaRevealRectVisible = (rect, bounds, fullyVisible) => Boolean(rec
   && rect.left+rect.width/2>=bounds.left && rect.left+rect.width/2<=bounds.right
   && (!fullyVisible || (rect.top>=bounds.top && rect.bottom<=bounds.bottom && rect.left>=bounds.left && rect.right<=bounds.right)));
 
-export function createQaUiDriver(cdp, { timeoutMs = 30000, checkAlive = () => {} } = {}) {
+export function createQaUiDriver(cdp, { timeoutMs = 30000, checkAlive = () => {}, navigationReads = false } = {}) {
   const waitFor = async (label, predicate, timeout = timeoutMs) => {
     const deadline = performance.now() + timeout;
     while (true) {
       checkAlive();
-      const result = await predicate();
+      const result = await predicate(deadline);
       if (result) return result;
       if (performance.now() > deadline) throw new Error(`Timed out: ${label}`);
       await delay(100);
     }
   };
   const waitExpression = (label, expression, timeout) => waitFor(label, () => evaluate(cdp, expression), timeout);
-  const waitVisibleText = (text, selector = 'body') => waitExpression(`visible text ${text}`, `(() => {
+  const waitReadExpression = (label, expression, timeout) => waitFor(label,
+    deadline => readThroughNavigation(cdp, expression, { deadline, check: checkAlive }), timeout);
+  const waitVisibleText = (text, selector = 'body') => (navigationReads ? waitReadExpression : waitExpression)(`visible text ${text}`, `(() => {
     const root=document.querySelector(${JSON.stringify(selector)}); if(!root) return false;
     const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
     for(let node=walker.nextNode();node;node=walker.nextNode()) {
@@ -157,5 +160,5 @@ export function createQaUiDriver(cdp, { timeoutMs = 30000, checkAlive = () => {}
     await cdp.send('DOM.setFileInputFiles', { nodeId, files });
   };
   const inspectControls = () => evaluate(cdp, `[...document.querySelectorAll('button,[role="button"],[role="menuitem"],input')].filter(${visible}).map(e=>({role:e.getAttribute('role'),label:e.getAttribute('aria-label'),text:e.innerText?.slice(0,120),placeholder:e.getAttribute('placeholder')})).slice(-100)`);
-  return { waitFor, waitExpression, waitVisibleText, click, key, type, send, reveal, revealText, reload, attach, inspectControls, pointer };
+  return { waitFor, waitExpression, waitReadExpression, waitVisibleText, click, key, type, send, reveal, revealText, reload, attach, inspectControls, pointer };
 }

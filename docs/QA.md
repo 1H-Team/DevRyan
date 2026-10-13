@@ -713,6 +713,32 @@ launches also retain a sanitized bounded host-log tail and the launched artifact
 identity, distinguishing a historical baseline failure from a candidate failure.
 Signed-image reuse is unchanged; a dry run cannot build missing image inputs.
 
+Release read-only probes retry only `Inspected target navigated or closed`, under
+their original deadline. Browser actions remain single-attempt. The committed
+top-level document budget is three for ordinary startup (startup, application,
+one readiness reload), two for terminal startup, and one per service handoff.
+Service commands are invoked once; authoritative registration and owner state
+establish completion. Forced owned-label cleanup rejects the sample.
+
+Receipts retain bounded sanitized owner/mutation lock contents and metadata,
+PID liveness and process start identity, tracked ancestry, shutdown timing,
+exit status and escalation signals. Arguments and environments are excluded.
+Failure evidence is captured before shutdown and after each launch stops;
+malformed locks after shutdown reject the sample. Tampered-app trials retain
+logs, terminal phases, UI usability, selection comparison and database hashes
+even on timeout; a different terminal error does not establish integrity rejection.
+
+Only a verified published baseline's `native_process_boot_timeout` may receive
+one recorded relaunch per receipt, with a fresh profile after verified shutdown,
+no surviving owned processes and acceptable locks. Both launch identities and
+the first failure remain recorded; scenario attempts stay one. Candidate,
+ownership, integrity and cleanup failures never receive this allowance.
+Before tagging v2.0.9, require three independent clean diagnostic receipts from
+the same fixed tree: all eleven cases passed, zero journal gaps, no forced cleanup
+or malformed locks, and compliance with this baseline allowance. A failure
+restarts the three-sample count after correction. Actual reboot recovery remains
+outside this verification.
+
 The unsettled-process case seeds a claimed lease in the disposable historical
 ledger after a genuine native owner lock has been held and released. Its missing
 termination receipt must produce `bundle_execution_unsettled`; the visible

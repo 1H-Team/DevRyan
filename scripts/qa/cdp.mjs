@@ -37,14 +37,14 @@ export class CdpConnection {
     return new CdpConnection(socket);
   }
 
-  send(method, params = {}) {
+  send(method, params = {}, { timeoutMs = 30_000 } = {}) {
     const id = this.nextID;
     this.nextID += 1;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error(`Timed out waiting for CDP ${method}`));
-      }, 30_000);
+      }, Math.max(1, Math.min(30_000, timeoutMs)));
       this.pending.set(id, {
         resolve: (result) => {
           clearTimeout(timer);
@@ -106,12 +106,12 @@ export const discoverPageTarget = async (debugPort, timeoutMs = 45_000) => {
   throw new Error(`Electron CDP target did not appear${lastError ? `: ${lastError.message}` : ''}`);
 };
 
-export const evaluate = async (cdp, expression) => {
+export const evaluate = async (cdp, expression, options) => {
   const result = await cdp.send('Runtime.evaluate', {
     expression,
     awaitPromise: true,
     returnByValue: true,
-  });
+  }, options);
   if (result.exceptionDetails) {
     throw new Error(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text ?? 'Renderer evaluation failed');
   }

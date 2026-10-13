@@ -1,0 +1,20 @@
+{
+  "runId": "38327197691",
+  "url": "https://github.com/1H-Team/DevRyan/actions/runs/38327197691",
+  "sourceCommit": "ed98c70bb3f4b54cbfc7b2ac95fa05283123ea61",
+  "diagnostic": true,
+  "outcome": "failed",
+  "dmgSha256": "6ea787d267adb73c2a620308fa58cce8e7d63e4a97e1b1a96856bf16e0f0c1ba",
+  "compiledChecksPassed": 52,
+  "passed": ["empty-profile", "unchanged-reopen", "upgrade-second-previous", "same-runtime-upgrade", "stale-owner"],
+  "failed": {
+    "upgrade-previous": "Candidate stable reopen reported runtime_service_owner_busy; lock contents and prior exit identity were not retained, so the cause remains unproven.",
+    "unsettled-process-upgrade": "Expected bundle_reboot_required was logged; the read probe failed with Inspected target navigated or closed.",
+    "interrupted-upgrade": "Read probe failed with Inspected target navigated or closed during native readiness navigation.",
+    "rejected-candidate": "Expected integrity rejection wait timed out; direct-launch logs and protected-state comparisons were not retained.",
+    "service-warm": "Awaited renderer command timed out during service handoff."
+  },
+  "blocked": ["service-cold"],
+  "cleanupErrors": ["service_cleanup_failed"],
+  "conclusion": "Does not qualify publication. v2.0.7 booted in this run; its prior failure does not establish deterministic inability to boot."
+}

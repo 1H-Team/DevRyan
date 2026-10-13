@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { requireDisposableMacRunner } from './macos-gui-prerequisites.mjs';
-import { evaluate } from './cdp.mjs';
+import { readThroughNavigation } from './navigation-tolerant.mjs';
 import { waitReleaseStartup } from './release-startup-launch.mjs';
 import { readRuntimeServiceOwner, createRuntimeServiceCoordinator, waitForRuntimeServiceOwnerStopped } from '../../packages/electron/runtime-service.mjs';
 import { startOwnedProcess } from './process.mjs';
@@ -14,10 +14,36 @@ export async function runReleaseCleanup(operation) {
   try { return await operation(); }
   catch (error) { throw Object.assign(new Error('Release cleanup failed', { cause: error }), { code: 'release_startup_cleanup_failed' }); }
 }
-export async function releaseServiceStatus(launch) {
-  const result = await evaluate(launch.cdp, 'window.__TAURI__.core.invoke("desktop_runtime_service_status", {})');
+export async function releaseServiceStatus(launch, deadline = performance.now() + 30_000) {
+  const result = await readThroughNavigation(launch.cdp, 'window.__TAURI__.core.invoke("desktop_runtime_service_status", {})', { deadline, check: launch.check });
   assert.equal(result?.ok, true, 'Runtime service status failed');
   return result.status;
+}
+
+export async function invokeReleaseServiceHandoff(launch, command, args, poll) {
+  assert.ok(['enable', 'disable'].includes(command));
+  const binding = `releaseService${command}`;
+  let failure;
+  const remove = launch.cdp.on('Runtime.bindingCalled', event => {
+    if (event.name !== binding) return;
+    try {
+      const result = JSON.parse(event.payload);
+      if (result?.ok !== true) failure = Error(`Service ${command} returned a failure`);
+    } catch { failure = Error(`Service ${command} returned invalid completion evidence`); }
+  });
+  try {
+    await launch.cdp.send('Runtime.addBinding', { name: binding });
+    launch.navigation.handoff(`service-${command}`);
+    // The promise belongs to a disappearing document; its failures use a CDP binding.
+    const result = await launch.cdp.send('Runtime.evaluate', { awaitPromise: false, returnByValue: true,
+      expression: `void window.__TAURI__.core.invoke("desktop_runtime_service_${command}", ${JSON.stringify(args)})
+        .then(result => window[${JSON.stringify(binding)}](JSON.stringify(result)),
+          () => window[${JSON.stringify(binding)}](JSON.stringify({ok:false})))` });
+    assert.ok(!result.exceptionDetails, `Service ${command} invocation failed`);
+    return await waitReleaseStartup(`service ${command} handoff`, poll, () => {
+      launch.check(); if (failure) throw failure;
+    });
+  } finally { remove(); }
 }
 
 /** Only the disposable runner may alter the per-user service registration or launchd environment. */
@@ -42,32 +68,36 @@ export async function prepareReleaseService(profile) {
   }
   return {
     enable: async launch => {
-      // A successful ownership handoff replaces the document executing this invocation.
-      await evaluate(launch.cdp, 'window.__TAURI__.core.invoke("desktop_runtime_service_enable", {allowLegacy:true})')
-        .catch(error => { if (!/context.*destroyed|Cannot find context/i.test(error.message)) throw error; });
-      return waitReleaseStartup('registered service attachment', async () => {
-        const status = await releaseServiceStatus(launch).catch(() => null);
+      return invokeReleaseServiceHandoff(launch, 'enable', { allowLegacy: true }, async deadline => {
+        const status = await releaseServiceStatus(launch, deadline);
         if (status?.registration?.state === 'requires_approval') throw Error('Service registration requires GUI approval');
-        return status?.connected && status.registration.state === 'enabled' ? status : null;
-      }, launch.check);
+        const owner = await readRuntimeServiceOwner({ dataDirectory: profile.env.OPENCHAMBER_DATA_DIR });
+        return status?.connected && status.registration.state === 'enabled'
+          && owner.state === 'valid' && owner.owner.mode === 'service'
+          && owner.owner.instanceId === status.handshake?.instanceId ? status : null;
+      });
     },
     cold: () => launchctl(['kickstart', '-k', service()]),
     cleanup: launch => runReleaseCleanup(async () => {
       let failure;
       try {
         if (launch) {
-          await evaluate(launch.cdp, 'window.__TAURI__.core.invoke("desktop_runtime_service_disable", {})')
-            .catch(error => { if (!/context.*destroyed|Cannot find context/i.test(error.message)) throw error; });
-          await waitReleaseStartup('service unregister', async () => {
-            const status = await releaseServiceStatus(launch).catch(() => null);
-            return status?.registration?.state === 'not_registered' && !status.connected;
-          }, launch.check);
+          await invokeReleaseServiceHandoff(launch, 'disable', {}, async deadline => {
+            const status = await releaseServiceStatus(launch, deadline);
+            const owner = await readRuntimeServiceOwner({ dataDirectory: profile.env.OPENCHAMBER_DATA_DIR });
+            return status?.registration?.state === 'not_registered' && !status.connected
+              && owner.state === 'valid' && owner.owner.mode === 'app_bound' && owner.owner.pid === launch.app.child.pid;
+          });
         }
         assert.equal(await launchctl(['print', service()]).then(() => true, () => false), false, 'Registered service survived cleanup');
       } catch (error) {
         failure = error;
         // This label was proved absent before this run registered it.
         await launchctl(['bootout', service()]).catch(() => {});
+        profile.forcedServiceCleanup = true;
+        assert.equal(await waitForRuntimeServiceOwnerStopped({ dataDirectory: profile.env.OPENCHAMBER_DATA_DIR, timeoutMs: 30_000 }), true,
+          'Service owner survived forced cleanup');
+        assert.equal(await launchctl(['print', service()]).then(() => true, () => false), false, 'Owned label survived bootout');
       } finally { await restore(); }
       if (failure) throw failure;
     }),

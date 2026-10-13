@@ -29,17 +29,24 @@ export const startOwnedProcess = (command, args, options) => {
   child.stderr.on('data', capture);
   child.on('error', (error) => { spawnError = error; });
   const ownership = createQaProcessOwnership(child);
+  let exitAt = null, shutdownStartedAt = null, shutdownFinishedAt = null;
+  const parentSignals = [];
+  child.once('exit', () => { exitAt = Date.now(); });
+  const evidence = () => ({ ...ownership.getEvidence(), exitCode: child.exitCode, exitSignal: child.signalCode, exitAt,
+    shutdownStartedAt, shutdownDurationMs: shutdownStartedAt === null ? null : (shutdownFinishedAt ?? Date.now()) - shutdownStartedAt,
+    parentSignals: [...parentSignals] });
   let cleanup;
   return {
     child,
     getLog: () => log,
-    getCleanupEvidence: () => ownership.getEvidence(),
+    getCleanupEvidence: evidence,
     auditStopped: () => ownership.auditStopped(),
     check: () => {
       if (spawnError) throw spawnError;
       if (child.exitCode !== null || child.signalCode !== null) throw new Error(`QA child exited: ${child.exitCode ?? child.signalCode}`);
     },
     stop: () => cleanup ??= (async () => {
+      shutdownStartedAt = Date.now();
       // Host shutdown drains the journal and managed scheduler before stopping
       // its separately detached OpenCode process. Give that cleanup time to
       // finish before the generic short escalation kills the host owner.
@@ -49,13 +56,15 @@ export const startOwnedProcess = (command, args, options) => {
         // Signal the actual ChildProcess handle while it is alive, then use
         // retained identities for descendants. An old numeric PGID can be
         // reused after its group exits and must not authorize a later kill.
-        if (child.exitCode === null && child.signalCode === null) child.kill('SIGINT');
+        if (child.exitCode === null && child.signalCode === null) {
+          child.kill('SIGINT'); parentSignals.push({ signal: 'SIGINT', at: Date.now() });
+        }
         await waitForOwnedParentExit(child);
         try { await ownership.terminateRemaining(); } catch (error) { failures.push(error); }
         try { await ownership.auditStopped(); } catch (error) { failures.push(error); }
-      } finally { await ownership.closeTracking(); }
+      } finally { await ownership.closeTracking(); shutdownFinishedAt = Date.now(); }
       if (failures.length) throw new AggregateError(failures, failures.map(error => error.message).join('; '));
-      return ownership.getEvidence();
+      return evidence();
     })(),
   };
 };

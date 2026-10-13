@@ -1,6 +1,7 @@
 import { scrollQaHistoryTop } from '../qa/history-scroll.mjs';
 import assert from 'node:assert/strict';
 import { evaluate } from '../qa/cdp.mjs';
+import { readThroughNavigation } from '../qa/navigation-tolerant.mjs';
 import { createQaUiDriver } from '../qa/ui-driver.mjs';
 import { projectQaStartupHealth, waitForQaHostReady } from '../qa/host-readiness.mjs';
 
@@ -28,12 +29,12 @@ export function observeStartupNavigation(cdp, startedAt, initialUrl = '') {
     if (frame && !frame.parentId) record(frame.url, frame.loaderId, 'native-top-frame-navigation');
   });
   const originalSend = cdp.send;
-  const guardedSend = function(method, params) {
+  const guardedSend = function(method, params, options) {
     if (['Page.navigate', 'Page.reload', 'Page.navigateToHistoryEntry', 'Page.setDocumentContent'].includes(method)) {
       attempts.push({ method, elapsedMs: performance.now() - startedAt });
       return Promise.reject(new Error('Benchmark-forced navigation cannot count toward native startup'));
     }
-    return originalSend.call(this, method, params);
+    return originalSend.call(this, method, params, options);
   };
   cdp.send = guardedSend;
   return { transitions, attempts, hasOverflow: () => overflow, complete: () => {
@@ -120,7 +121,7 @@ export async function waitForStartupCatalog(origin, { checkAlive = () => {}, onR
 }
 
 export async function captureFirstDocumentStartup({ cdp, fixture, origin, startedAt, milestones = {}, checkAlive, navigationAudit,
-  startupMode = 'natural', runtimeUiTuple, isEventStreamReady, readStartupPhases, foregroundWindow, fetchCatalog }) {
+  startupMode = 'natural', runtimeUiTuple, isEventStreamReady, readStartupPhases, foregroundWindow, fetchCatalog, navigationReads = false }) {
   assertStartupMode(startupMode);
   const audit = navigationAudit ?? observeStartupNavigation(cdp, startedAt, origin);
   const tuple = runtimeUiTuple ?? { providerId: 'fixture', modelId: 'fixture-model' };
@@ -136,8 +137,10 @@ export async function captureFirstDocumentStartup({ cdp, fixture, origin, starte
       : `fresh-process/fresh-profile; ${backendScope}`,
     clock: 'parent performance.now; elapsed milliseconds since spawn invocation', pollIntervalMs: 100,
     forcedNavigations: 0, documents: [], healthObservations: [], nativeStartupObservation: 'unavailable', ...milestones };
-  const observe = async () => {
-    const snapshot = await evaluate(cdp, documentSnapshot());
+  const observe = async (deadline) => {
+    const snapshot = await (navigationReads
+      ? readThroughNavigation(cdp, documentSnapshot(), { deadline, check: checkAlive })
+      : evaluate(cdp, documentSnapshot()));
     evidence.lastObservedDocument = snapshot;
     if (!evidence.firstSelectedModel && snapshot.selectedModel?.providerId && snapshot.selectedModel?.modelId) {
       evidence.firstSelectedModel = { observedAtMs: performance.now() - startedAt, ...snapshot.selectedModel };
@@ -149,7 +152,7 @@ export async function captureFirstDocumentStartup({ cdp, fixture, origin, starte
     return snapshot;
   };
   try {
-    evidence.firstObservedDocument = await observe();
+    evidence.firstObservedDocument = await observe(performance.now() + 45000);
     await waitForQaHostReady({ origin, checkAlive, onHealth: health => {
       const elapsedMs = performance.now() - startedAt;
       evidence.hostAvailableMs ??= elapsedMs;
@@ -173,11 +176,11 @@ export async function captureFirstDocumentStartup({ cdp, fixture, origin, starte
     evidence.fixtureCatalogReadyMs = performance.now() - startedAt;
     const ui = createQaUiDriver(cdp, { checkAlive, timeoutMs: 45000 });
     const foregroundDeadline = startupMode === 'foreground' ? performance.now() + 45000 : null;
-    evidence.document = await ui.waitFor('first usable UI after native startup documents', async () => {
+    evidence.document = await ui.waitFor('first usable UI after native startup documents', async deadline => {
       if (foregroundDeadline !== null && performance.now() > foregroundDeadline) {
         throw new Error('Timed out: first usable UI after native startup documents');
       }
-      const snapshot = await observe();
+      const snapshot = await observe(deadline);
       assert.equal(audit.attempts.length, 0, 'Benchmark-forced navigation was attempted during startup');
       if (foregroundDeadline !== null && performance.now() > foregroundDeadline) {
         throw new Error('Timed out: first usable UI after native startup documents');

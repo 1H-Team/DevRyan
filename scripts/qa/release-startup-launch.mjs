@@ -11,23 +11,26 @@ import { observeNativeStartupSubscription, readNativeStartupLogs } from './nativ
 import { collectGapPaths, readRecordsFromPaths } from '../journal.mjs';
 import { requireDisposableMacRunner } from './macos-gui-prerequisites.mjs';
 import { prepareReleaseService } from './release-startup-service.mjs';
+import { readThroughNavigation, observeReleaseNavigation } from './navigation-tolerant.mjs';
 
 export const waitReleaseStartup = async (label, read, check = () => {}, timeoutMs = 120_000) => {
   const deadline = performance.now() + timeoutMs;
   for (;;) {
-    check(); const result = await read(); if (result) return result;
+    check(); const result = await read(deadline); check();
     assert.ok(performance.now() < deadline, `Timed out: ${label}`);
+    if (result) return result;
     await new Promise(resolve => setTimeout(resolve, 50));
   }
 };
 
 /** Use the renderer's authenticated same-origin transport; never extract a cookie or bootstrap token. */
-export async function releaseRendererRequest(cdp, pathname, init = {}) {
+export async function releaseRendererRequest(cdp, pathname, init = {}, { deadline = performance.now() + 30_000, check } = {}) {
   assert.ok(pathname.startsWith('/api/') || pathname === '/health');
-  return evaluate(cdp, `(async () => { const response = await fetch(${JSON.stringify(pathname)}, {
+  const expression = `(async () => { const response = await fetch(${JSON.stringify(pathname)}, {
     ...${JSON.stringify(init)}, signal: AbortSignal.timeout(10000),
     headers: {'content-type':'application/json','X-DevRyan-CSRF':'1'} });
-    return {status: response.status, body: await response.json()}; })()`);
+    return {status: response.status, body: await response.json()}; })()`;
+  return !init.method || init.method === 'GET' ? readThroughNavigation(cdp, expression, { deadline, check }) : evaluate(cdp, expression);
 }
 
 export async function captureReleaseStartupScreenshot(launch, directory, name, identity) {
@@ -72,20 +75,23 @@ export function readReleaseSetupInterfaceState() {
     modelPicker: available('.model-controls__model-trigger') };
 }
 
-export async function launchReleaseStartup(artifact, profile, { setupOnly = false, serviceEnvironmentManaged = false, expectedFailure, onFailure } = {}) {
+export async function launchReleaseStartup(artifact, profile, { setupOnly = false, serviceEnvironmentManaged = false, expectedFailure, onFailure, onStop } = {}) {
   // Released builds can automatically register a service before the renderer exists.
   requireDisposableMacRunner();
   const startedAt = performance.now(), debugPort = await reservePort();
   const logOffset = readNativeStartupLogs(null, profile.env.HOME).length;
-  let app, serviceEnvironment, stopping, cdp, audit, subscription, exceptions = 0, removeErrors;
+  let app, serviceEnvironment, stopping, cdp, audit, navigation, subscription, exceptions = 0, removeErrors;
   const stop = () => stopping ??= (async () => {
-    removeErrors?.(); audit?.complete(); subscription?.close(); cdp?.close();
+    removeErrors?.(); audit?.complete(); navigation?.complete(); subscription?.close(); cdp?.close();
     try {
       if (app) {
         await app.stop(); await app.auditStopped();
         assert.deepEqual(app.getCleanupEvidence().remainingProcessIds, []);
       }
-    } finally { await serviceEnvironment?.cleanup(); }
+    } finally {
+      try { await serviceEnvironment?.cleanup(); }
+      finally { await onStop?.({ app, navigation: navigation?.phases ?? [] }); }
+    }
   })();
   try {
     serviceEnvironment = serviceEnvironmentManaged ? null : await prepareReleaseService(profile);
@@ -94,33 +100,34 @@ export async function launchReleaseStartup(artifact, profile, { setupOnly = fals
     const target = await discoverPageTarget(debugPort);
     cdp = await CdpConnection.connect(target.webSocketDebuggerUrl);
     audit = observeStartupNavigation(cdp, startedAt, target.url);
+    navigation = observeReleaseNavigation(cdp, target.url, { terminal: Boolean(expectedFailure) });
     subscription = observeNativeStartupSubscription(cdp, startedAt);
     removeErrors = cdp.on('Runtime.exceptionThrown', () => { exceptions++; });
     await Promise.all([cdp.send('Page.enable'), cdp.send('Runtime.enable'), cdp.send('Network.enable')]);
-    const check = () => { app.check(); profile.check(); subscription.check(); };
-    const ui = createQaUiDriver(cdp, { checkAlive: check, timeoutMs: 60_000 });
+    const check = () => { app.check(); profile.check(); subscription.check(); navigation.check(); };
+    const ui = createQaUiDriver(cdp, { checkAlive: check, timeoutMs: 60_000, navigationReads: true });
     if (expectedFailure) {
       await ui.waitVisibleText(expectedFailure);
-      assert.equal(await evaluate(cdp, 'Boolean(document.querySelector("textarea"))'), false, 'Failed startup exposed a composer');
+      assert.equal(await readThroughNavigation(cdp, 'Boolean(document.querySelector("textarea"))', { deadline: performance.now() + 60_000, check }), false, 'Failed startup exposed a composer');
       assert.equal(exceptions, 0);
-      return { cdp, app, ui, check, stop, startup: { outcome: 'failed', code: expectedFailure } };
+      return { cdp, app, ui, check, stop, navigation, startup: { outcome: 'failed', code: expectedFailure } };
     }
-    const origin = await waitReleaseStartup('production renderer', async () => {
-      const href = await evaluate(cdp, 'location.href').catch(() => '');
+    const origin = await waitReleaseStartup('production renderer', async deadline => {
+      const href = await readThroughNavigation(cdp, 'location.href', { deadline, check });
       return /^http:\/\/127\.0\.0\.1:\d+\//.test(href) ? new URL(href).origin : null;
     }, check);
-    const request = (route, init) => releaseRendererRequest(cdp, route, init);
+    const request = (route, init, deadline) => releaseRendererRequest(cdp, route, init, { deadline, check });
     let startup;
     if (setupOnly) {
-      await waitReleaseStartup('empty-profile native health', async () => {
-        const { body } = await request('/health');
+      await waitReleaseStartup('empty-profile native health', async deadline => {
+        const { body } = await request('/health', undefined, deadline);
         assert.notEqual(body.openCodeStartup?.state, 'failed', 'Empty-profile startup failed');
         return body.openCodeStartup?.state === 'ready';
       }, check);
-      await ui.waitExpression('empty-profile setup interface', `Object.values((${readReleaseSetupInterfaceState.toString()})()).every(Boolean)`);
+      await ui.waitReadExpression('empty-profile setup interface', `Object.values((${readReleaseSetupInterfaceState.toString()})()).every(Boolean)`);
       startup = { outcome: 'passed', setupInterface: true, uiReadyMs: performance.now() - startedAt };
     } else {
-      startup = await captureFirstDocumentStartup({ cdp, origin, startedAt, checkAlive: check, navigationAudit: audit,
+      startup = await captureFirstDocumentStartup({ cdp, origin, startedAt, checkAlive: check, navigationAudit: audit, navigationReads: true,
         runtimeUiTuple: { providerId: runtimeUiTuple.providerID, modelId: runtimeUiTuple.modelID, agent: 'builder' },
         isEventStreamReady: subscription.isReady,
         fetchCatalog: async () => { const result = await request('/api/provider'); return new Response(JSON.stringify(result.body), { status: result.status }); },
@@ -133,7 +140,7 @@ export async function launchReleaseStartup(artifact, profile, { setupOnly = fals
       assert.equal(sessions.status, 200); assert.ok(Array.isArray(sessions.body));
     }
     assert.equal(exceptions, 0, 'Renderer exception during production startup');
-    return { cdp, app, ui, check, request, startup, subscription: subscription.evidence, stop,
+    return { cdp, app, ui, check, request, startup, navigation, subscription: subscription.evidence, stop,
       submit: async () => {
         const before = await request('/api/session?directory=' + encodeURIComponent(profile.workspace) + '&roots=true&limit=50');
         assert.equal(before.status, 200);
@@ -142,13 +149,13 @@ export async function launchReleaseStartup(artifact, profile, { setupOnly = fals
         const calls = profile.provider.observations.length;
         await ui.send('DevRyan live QA ready.');
         await ui.waitVisibleText('DevRyan live QA ready.');
-        const sessionID = await waitReleaseStartup('fixture completion and persisted session', async () => {
+        const sessionID = await waitReleaseStartup('fixture completion and persisted session', async deadline => {
           if (profile.provider.observations.length <= calls) return null;
-          const result = await request('/api/session?directory=' + encodeURIComponent(profile.workspace) + '&roots=true&limit=50');
+          const result = await request('/api/session?directory=' + encodeURIComponent(profile.workspace) + '&roots=true&limit=50', undefined, deadline);
           assert.equal(result.status, 200);
           const session = result.body.find(row => !beforeIds.has(row.id));
           if (!session) return null;
-          const messages = await request(`/api/session/${encodeURIComponent(session.id)}/message?directory=${encodeURIComponent(profile.workspace)}`);
+          const messages = await request(`/api/session/${encodeURIComponent(session.id)}/message?directory=${encodeURIComponent(profile.workspace)}`, undefined, deadline);
           assert.equal(messages.status, 200);
           return messages.body.some(row => row.info?.role === 'assistant' && row.info?.time?.completed
             && row.parts?.some(part => part.type === 'text' && part.text.includes('DevRyan live QA ready.'))) ? session.id : null;
@@ -159,7 +166,8 @@ export async function launchReleaseStartup(artifact, profile, { setupOnly = fals
   } catch (error) {
     if (onFailure) {
       const interfaceState = cdp ? await evaluate(cdp, `(${readReleaseSetupInterfaceState.toString()})()`).catch(() => null) : null;
-      try { await onFailure({ cdp, interfaceState, log: readNativeStartupLogs(app, profile.env.HOME, logOffset) }); } catch { /* Evidence cannot replace the original startup failure. */ }
+      try { await onFailure({ cdp, app, interfaceState, log: readNativeStartupLogs(app, profile.env.HOME, logOffset) }); }
+      catch (evidenceError) { error.evidenceError = evidenceError; }
     }
     try { await stop(); }
     catch (cleanupError) { throw Object.assign(new Error('Failed launch cleanup', { cause: cleanupError }), { code: 'release_startup_cleanup_failed' }); }
