@@ -815,8 +815,9 @@ admitting work for the same data directory. The renderer connects through a
 one-time OS-sealed bootstrap, then uses an HttpOnly SameSite cookie and CSRF
 header; stale or unsupported protocol generations are rejected.
 
-On macOS 13 and later, first launch asks the in-process native bridge to register
-the bundled LaunchAgent via `SMAppService`. If macOS requires approval, Bots
+Background service is opt-in: fresh and app-bound installations never register
+automatically. Enabling it on macOS 13 and later asks the in-process native bridge
+to register the bundled LaunchAgent via `SMAppService`. If macOS requires approval, Bots
 remain available while DevRyan is open and Settings shows the exact Login Items
 action. If an unsigned build reports `not_found` while the bundled definition is
 physically present, DevRyan automatically uses the same private mode-0600
@@ -826,6 +827,10 @@ definition stays a fail-closed installation error. The handoff checkpoints Bot w
 starts and verifies the service, connects the short-lived desktop-host broker,
 and reloads. Failure unregisters the service and restores the in-process owner only
 after proving the service owner stopped; uncertain ownership remains fail-closed.
+Explicitly configured service installations retain their upgrade/re-registration
+paths and stored service preference during guarded recovery. Non-service startup
+unregisters a stray app-owned registration left by an interrupted handoff and
+verifies owner exit before taking app-bound ownership.
 
 Release packaging must build the N-API service-control bridge for the same
 architecture as the Electron artifact and place it at
@@ -858,8 +863,8 @@ Settings → Bots → **Global Settings** has a **Background Runtime Service** s
 work, unregisters the LaunchAgent (including a registration still awaiting Login
 Items approval), and returns ownership to the app: Bots keep running while
 DevRyan is open and the runtime exits when the app quits. The choice is stored
-as `productionBotsRuntimeServiceOptOut`, which stops the first-launch automatic
-registration on every later launch; switching it on clears the flag and
+as `productionBotsRuntimeServiceOptOut`; subsequent launches stay app-bound.
+Switching it on clears the flag and
 registers the service. The older `productionBotsRuntimeMode: "disabled"` state,
 which also blocks Bot execution, is still honored for installs that set it.
 

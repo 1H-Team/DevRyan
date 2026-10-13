@@ -130,6 +130,30 @@ const removeObservedLock = async (fsApi, lockPath, observedRaw, observedOwnerTok
   }
 };
 
+const publishLock = async (fsApi, lockPath, owner) => {
+  const temporary = `${lockPath}.tmp-${process.pid}-${crypto.randomUUID()}`;
+  const raw = `${JSON.stringify(owner)}\n`;
+  let handle;
+  try {
+    handle = await fsApi.open(temporary, 'wx', 0o600);
+    await handle.writeFile(raw, 'utf8');
+    await handle.sync();
+    await handle.close();
+    handle = undefined;
+    try { await fsApi.link(temporary, lockPath); }
+    catch (error) {
+      // Permission and I/O errors must not silently change publication semantics.
+      if (!['ENOSYS', 'ENOTSUP', 'EOPNOTSUPP'].includes(error?.code)) throw error;
+      handle = await fsApi.open(lockPath, 'wx', 0o600);
+      await handle.writeFile(raw, 'utf8');
+      await handle.sync();
+    }
+  } finally {
+    try { await handle?.close(); }
+    finally { await fsApi.rm(temporary, { force: true }); }
+  }
+};
+
 export const withCrossProcessFileLock = async (lockPath, callback, options = {}) => {
   if (typeof callback !== 'function') throw new TypeError('Lock callback is required');
   const fsApi = options.fs ?? fs;
@@ -173,16 +197,10 @@ export const withCrossProcessFileLock = async (lockPath, callback, options = {})
   await fsApi.mkdir(directory, { recursive: true, mode: 0o700 });
   while (true) {
     options.signal?.throwIfAborted();
-    let handle;
     try {
-      handle = await fsApi.open(lockPath, 'wx', 0o600);
-      await handle.writeFile(`${JSON.stringify(owner)}\n`, 'utf8');
-      await handle.sync();
-      await handle.close();
-      handle = undefined;
+      await publishLock(fsApi, lockPath, owner);
       break;
     } catch (error) {
-      await handle?.close().catch(() => undefined);
       if (error?.code !== 'EEXIST') throw error;
 
       let observedRaw = '';

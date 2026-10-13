@@ -1,0 +1,62 @@
+{
+  "comparedWith": "8ad231460347a33f984044f7f4fb3cbfe8653936",
+  "recipeChanged": false,
+  "images": [
+    {
+      "key": "supervisor",
+      "digest": "sha256:7abe3cea0de66c923136d8fda498defc92eb21c28a0ec7ebf9019b794d351589",
+      "fileCount": 17,
+      "affectedFiles": [],
+      "includesAtomicFile": false
+    },
+    {
+      "key": "engine-proxy",
+      "digest": "sha256:a3a4af300ecfcde193ac1d295e73d64555b9672d16c68168f874c22d6f46303e",
+      "fileCount": 19,
+      "affectedFiles": [],
+      "includesAtomicFile": false
+    },
+    {
+      "key": "egress",
+      "digest": "sha256:14d768feeffad595d502fc7d9ab0a5d7b3a47b2afe8f0f18286a43e0da349d6f",
+      "fileCount": 11,
+      "affectedFiles": [],
+      "includesAtomicFile": false
+    },
+    {
+      "key": "indexer",
+      "digest": "sha256:582fd7ac115c810d5db07969cb916f3ba5f18c4522503e9898a2c89b618a3240",
+      "fileCount": 10,
+      "affectedFiles": [],
+      "includesAtomicFile": false
+    },
+    {
+      "key": "opencode",
+      "digest": "sha256:8d67e40a6e9d88c20767d2c732dd946de0c2d0c17e2920322e6891ecdef46b89",
+      "fileCount": 19,
+      "affectedFiles": [],
+      "includesAtomicFile": false
+    },
+    {
+      "key": "computer",
+      "digest": "sha256:6b627ba1d5f28e9f19d007992e5b2c88dbbca1ef12fe36d48f5f3b520ee2cd5a",
+      "fileCount": 28,
+      "affectedFiles": [],
+      "includesAtomicFile": false
+    },
+    {
+      "key": "database",
+      "digest": "sha256:b034da9bcaa4e52763c9cecce73d4e3536b3543b24a403712282d60b2c22a1ea",
+      "fileCount": 6,
+      "affectedFiles": [],
+      "includesAtomicFile": false
+    },
+    {
+      "key": "rest",
+      "digest": "sha256:f139844a101ecb7228e3a2789553f565e8e712c5d21ac858df6cde9f45907c8e",
+      "fileCount": 2,
+      "affectedFiles": [],
+      "includesAtomicFile": false
+    }
+  ]
+}

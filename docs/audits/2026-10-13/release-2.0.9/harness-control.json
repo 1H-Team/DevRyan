@@ -1,0 +1,800 @@
+{
+  "workflow": "https://github.com/1H-Team/DevRyan/actions/runs/38358849025",
+  "sourceCommit": "8ad231460347a33f984044f7f4fb3cbfe8653936",
+  "dmgSha256": "2e473f3b92ed06da55d62bb4456a60f21c3a70c478dae679e3788f06c7d98e64",
+  "outcome": "failed",
+  "reason": "Expected values to be strictly equal:\n\n'failed' !== 'passed'\n",
+  "compiled": {
+    "outcome": "passed",
+    "cases": [
+      {
+        "id": "compiled-production-artifacts",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-current-build-inputs",
+        "status": "passed"
+      },
+      {
+        "id": "portable-artifact-tamper-refusal",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-assets-source-denied",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-empty-initialization-lost-ack-resume",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-empty-initialization-idempotent-replay",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-fresh-native-initialization",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-credential-target-contract-refusal",
+        "status": "passed"
+      },
+      {
+        "id": "fresh-v2-baseline-checkpoint",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-clone-layout-legacy",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-v2-derived-bundle-clone",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-claude-selected-profile-credential-ipc",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-ready-catalog",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-helper-hang-independent-native-conversation",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-human-queue-child-idle-and-await-race",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-human-explicit-steer-with-busy-child",
+        "status": "passed"
+      },
+      {
+        "id": "package-read",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-existing-workspace-write",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-existing-workspace-revert-redo",
+        "status": "passed"
+      },
+      {
+        "id": "package-write",
+        "status": "passed"
+      },
+      {
+        "id": "second-location-write",
+        "status": "passed"
+      },
+      {
+        "id": "second-location-read-isolation",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-retained-initial-input",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-retained-multiple-inputs",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-retained-input-discard-lost-ack",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-retained-shell-notification",
+        "status": "passed"
+      },
+      {
+        "id": "package-edit",
+        "status": "passed"
+      },
+      {
+        "id": "package-patch",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-formatter",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-formatter-subprocess",
+        "status": "passed"
+      },
+      {
+        "id": "cli-diagnostic-seed",
+        "status": "passed"
+      },
+      {
+        "id": "cli-diagnostic-fail",
+        "status": "passed"
+      },
+      {
+        "id": "cli-diagnostic-fix",
+        "status": "passed"
+      },
+      {
+        "id": "cli-diagnostic-pass",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-cli-diagnostic-fail-fix-pass",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-reviewed-command",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-manual-compaction",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-native-observation",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-after-replacement-write",
+        "status": "passed"
+      },
+      {
+        "id": "tracked-compiled-pending-replacement",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-todo-lost-ack-replacement",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-owned-subtree-removal",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-removal-startup-recovery",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-v2-credential-rollback-reconciliation",
+        "status": "passed"
+      },
+      {
+        "id": "candidate-work-rollback-retention",
+        "status": "passed"
+      },
+      {
+        "id": "rollback-selected-native-lifecycle",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-clone-layout-fresh-install",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-fresh-install-clone",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-fresh-install-rollback",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-seeded-credential-first-boot",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-parent-death-drain",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-durable-journal-roots",
+        "status": "passed"
+      }
+    ],
+    "cleanupFailures": 0,
+    "changedSources": 0,
+    "reason": ""
+  },
+  "cleanupErrors": [
+    "same-runtime-upgrade_launch_cleanup_failed"
+  ],
+  "scenarios": [
+    {
+      "id": "empty-profile",
+      "outcome": "failed",
+      "reason": "Excess committed documents during startup",
+      "failureInterface": {
+        "documentReady": false,
+        "documentVisible": true,
+        "startupReady": false,
+        "composer": false,
+        "newChat": false,
+        "modelPicker": false
+      },
+      "failureJournal": {
+        "outcome": "passed",
+        "gapRecords": 0
+      },
+      "launches": [
+        {
+          "artifact": {
+            "version": "2.0.9",
+            "dmgSha256": "2e473f3b92ed06da55d62bb4456a60f21c3a70c478dae679e3788f06c7d98e64",
+            "manifestSha256": "cab8f41c944673cdbbb3affae3407e19e226cc71b1d9c59d698d183752921736"
+          },
+          "profile": "empty-profile",
+          "outcome": "failed",
+          "beforeFailureStop": {
+            "observedAt": "2026-10-13T07:15:27.108Z",
+            "locks": {
+              "owner": {
+                "state": "valid",
+                "size": 151,
+                "mtimeMs": 1791875698851.5461,
+                "content": "{\"version\":1,\"instanceId\":\"c1f1bffa-4890-4422-bc30-42ff3f316838\",\"pid\":84631,\"generation\":1,\"mode\":\"app_bound\",\"createdAt\":\"2026-10-13T07:14:58.832Z\"}\n",
+                "truncated": false,
+                "pid": 84631,
+                "alive": true,
+                "processName": "DevRyan",
+                "startIdentity": "Tue Oct 13 07:14:53 2026",
+                "relation": "tracked"
+              },
+              "mutation": {
+                "state": "missing"
+              }
+            },
+            "process": {
+              "source": "retained-os-process-ancestry-and-start-identities",
+              "rootPid": 84631,
+              "rootObserved": true,
+              "observationIntervalMs": 500,
+              "observationErrors": [],
+              "remainingProcessIds": [
+                84631,
+                85022,
+                85023,
+                87281
+              ],
+              "signals": [],
+              "trackingClosed": false,
+              "exitCode": null,
+              "exitSignal": null,
+              "exitAt": null,
+              "shutdownStartedAt": null,
+              "shutdownDurationMs": null,
+              "parentSignals": []
+            }
+          },
+          "failureLog": "\nDevTools listening on ws://127.0.0.1:[REDACTED]:high_entropy\n\n[2026-10-13 07:14:58.393] [info]  [runtime-memory] {\n  pid: 84631,\n  role: 'foreground',\n  version: '2.0.9',\n  electron: '41.2.1',\n  pressure: false,\n  rss: 202899456,\n  heapUsed: 7144228,\n  heapLimit: 2248146944,\n  external: 5381453,\n  arrayBuffers: 0,\n  eventLoopDelayMaxMs: 0,\n  active: 0,\n  queued: 0,\n  scopes: 0,\n  activeResponses: 0,\n  responseBytes: 0,\n  peakResponseBytes: 0,\n  stalls: 0,\n  stalledMs: 0,\n  longestStallMs: 0\n}\n[2026-10-13 07:14:58.425] [info]  [electron] startup phase { phase: 'shell_environment', outcome: 'completed', elapsedMs: 28 }\n[2026-10-13 07:14:58.724] [info]  [electron] app starting { version: '2.0.9', packaged: true, platform: 'darwin', arch: 'arm64' }\n[2026-10-13 07:14:58.764] [info]  [electron] desktop keep awake updated { enabled: false, active: false }\n[2026-10-13 07:14:58.802] [info]  [electron] startup phase {\n  phase: 'foreground_preparation',\n  outcome: 'completed',\n  elapsedMs: 16\n}\n[2026-10-13 07:14:58.860] [info]  [electron] startup phase { phase: 'ownership_resolved', outcome: 'completed', elapsedMs: 57 }\n[2026-10-13 07:14:59.150] [info]  [electron] startup phase { phase: 'shell_visible', outcome: 'completed', elapsedMs: 2 }\n[2026-10-13 07:15:00.873] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":1302.6615430000002}\n[2026-10-13 07:15:00.873] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":493.370417000001}\n[2026-10-13 07:15:02.330] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":1000.9026680000006}\n[2026-10-13 07:15:02.331] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":448.4519990000017}\n[2026-10-13 07:15:05.872] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":1616.1360840000016}\n[2026-10-13 07:15:05.874] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":490.27808500000356}\n[2026-10-13 07:15:08.256] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":1381.331914999997}\n[2026-10-13 07:15:08.257] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":542.0556660000038}\n[2026-10-13 07:15:08.258] [info]  [runtime-bundle] startup phase {\"phase\":\"bundle_artifact_retention\",\"outcome\":\"completed\",\"elapsedMs\":7384.187667}\n[2026-10-13 07:15:09.935] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":1090.974667999997}\n[2026-10-13 07:15:09.942] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":513.0187940000014}\n[2026-10-13 07:15:11.560] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":1064.4907920000005}\n[2026-10-13 07:15:11.560] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":477.3024149999983}\n[2026-10-13 07:15:14.381] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":1176.2586680000022}\n[2026-10-13 07:15:14.383] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":518.0573339999901}\n[2026-10-13 07:15:14.437] [info]  [runtime-bundle] startup phase {\"phase\":\"bundle_candidate_preparation\",\"outcome\":\"completed\",\"elapsedMs\":6124.301584000003}\n[2026-10-13 07:15:16.253] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":1175.3716680000034}\n[2026-10-13 07:15:16.254] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":456.5933349999941}\n[2026-10-13 07:15:16.268] [info]  [runtime-bundle] startup phase {\"phase\":\"bundle_selection\",\"outcome\":\"completed\",\"elapsedMs\":1830.2689169999976}\n[2026-10-13 07:15:18.199] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":1190.3819169999952}\n[2026-10-13 07:15:18.200] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":549.7740430000013}\n[2026-10-13 07:15:18.243] [info]  [runtime-bundle] startup phase {\"phase\":\"bundle_prepared_bound\",\"outcome\":\"completed\",\"elapsedMs\":2.4315409999981057}\n[2026-10-13 07:15:18.249] [info]  [runtime-bundle] startup phase {\"phase\":\"bundle_preparation\",\"outcome\":\"completed\",\"elapsedMs\":19351.378958}\n[2026-10-13 07:15:20.769] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":1187.059540000002}\n[2026-10-13 07:15:20.770] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":472.6079170000012}\n[2026-10-13 07:15:21.181] [info]  [runtime-bundle] startup phase {\"phase\":\"application_import\",\"outcome\":\"completed\",\"elapsedMs\":2931.6490830000002}\n[2026-10-13 07:15:21.182] [info]  [electron] startup phase { phase: 'server_import', outcome: 'completed', elapsedMs: 22286 }\n[2026-10-13 07:15:21.185] [info]  Starting OpenChamber on port 52831\n[2026-10-13 07:15:21.185] [info]  [startup] phase=services elapsedMs=0\n[2026-10-13 07:15:21.198] [info]  [startup] phase=identity elapsedMs=13\n[2026-10-13 07:15:21.632] [info]  [zen] No model configured, setting default to \"big-pickle\"\n[2026-10-13 07:15:21.633] [info]  [persistSettings] Called with changes: zenModel\n[2026-10-13 07:15:21.634] [info]  [persistSettings] Current projects count: 1\n[2026-10-13 07:15:21.638] [info]  [persistSettings] Successfully saved 1 projects to disk\n[2026-10-13 07:15:22.607] [info]  macOS Say TTS available with 183 voices\n[2026-10-13 07:15:22.669] [info]  [startup] phase=listener elapsedMs=1484\n[2026-10-13 07:15:22.672] [info]  Serving static files from <QA>/installations/candidate/DevRyan.app/Contents/Resources/web-dist\n[2026-10-13 07:15:22.673] [info]  OpenChamber server listening on 127.0.0.1:52831\n[2026-10-13 07:15:22.673] [info]  Health check: http://127.0.0.1:52831/health\n[2026-10-13 07:15:22.673] [info]  Web interface: http://127.0.0.1:52831\n[2026-10-13 07:15:22.676] [info]  [startup] phase=ready elapsedMs=1491\n[2026-10-13 07:15:22.677] [info]  [electron] startup phase { phase: 'server_listen', outcome: 'completed', elapsedMs: 1494 }\n[2026-10-13 07:15:25.073] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":1817.59666499999}\n[2026-10-13 07:15:25.073] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":556.3084180000005}\n[2026-10-13 07:15:25.073] [info]  [runtime-bundle] startup phase {\"phase\":\"bundle_artifact_verification\",\"outcome\":\"completed\",\"elapsedMs\":2382.8254589999997}\n[2026-10-13 07:15:25.092] [info]  [electron] startup phase { phase: 'initial_url', outcome: 'completed', elapsedMs: 26290 }\n[2026-10-13 07:15:26.582] [info]  [electron] startup phase { phase: 'renderer_navigation', outcome: 'completed', elapsedMs: 1488 }\n[2026-10-13 07:15:26.601] [info]  [runtime-bundle] startup phase {\"phase\":\"native_settlement\",\"outcome\":\"completed\",\"elapsedMs\":1.4160000000047148}\n",
+          "terminalPhases": [],
+          "terminalCode": null,
+          "afterStop": {
+            "observedAt": "2026-10-13T07:15:38.817Z",
+            "locks": {
+              "owner": {
+                "state": "missing"
+              },
+              "mutation": {
+                "state": "missing"
+              }
+            },
+            "process": {
+              "source": "retained-os-process-ancestry-and-start-identities",
+              "rootPid": 84631,
+              "rootObserved": true,
+              "observationIntervalMs": 500,
+              "observationErrors": [],
+              "remainingProcessIds": [],
+              "signals": [],
+              "trackingClosed": true,
+              "exitCode": 0,
+              "exitSignal": null,
+              "exitAt": 1791875738475,
+              "shutdownStartedAt": 1791875728352,
+              "shutdownDurationMs": 10214,
+              "parentSignals": [
+                {
+                  "signal": "SIGINT",
+                  "at": 1791875728442
+                }
+              ]
+            }
+          },
+          "navigation": [
+            {
+              "name": "startup",
+              "limit": 3,
+              "documents": [
+                {
+                  "url": "data:startup-document",
+                  "loaderId": null
+                },
+                {
+                  "url": "data:startup-document",
+                  "loaderId": "2516EE58DD471A6A63573767D49A1202"
+                },
+                {
+                  "url": "http://127.0.0.1:52831/",
+                  "loaderId": "A5FD36A651E0686C7751D285C46291C0"
+                },
+                {
+                  "url": "http://127.0.0.1:52831/",
+                  "loaderId": "588C28ED24E694F788190A1F097513CF"
+                }
+              ]
+            }
+          ],
+          "forcedCleanup": false,
+          "reason": "Excess committed documents during startup"
+        }
+      ]
+    },
+    {
+      "id": "unchanged-reopen",
+      "outcome": "blocked"
+    },
+    {
+      "id": "upgrade-previous",
+      "outcome": "failed",
+      "reason": "Excess committed documents during startup\n\n'failed' !== 'passed'\n",
+      "failureInterface": {
+        "documentReady": true,
+        "documentVisible": true,
+        "startupReady": false,
+        "composer": false,
+        "newChat": false,
+        "modelPicker": false
+      },
+      "failureJournal": {
+        "outcome": "passed",
+        "gapRecords": 0
+      },
+      "launches": [
+        {
+          "artifact": {
+            "version": "2.0.8",
+            "dmgSha256": "33e53e52a362c457a31b4ce47daf8e0d3f1c9e8f4bddb8e722b6a3cea54a6227",
+            "manifestSha256": "44b604ae701328be9fd3c0cda88ead6c1047ebf4751b25acc41c1259adbc1902"
+          },
+          "profile": "upgrade-previous",
+          "outcome": "failed",
+          "beforeFailureStop": {
+            "observedAt": "2026-10-13T07:16:19.731Z",
+            "locks": {
+              "owner": {
+                "state": "valid",
+                "size": 151,
+                "mtimeMs": 1791875741769.129,
+                "content": "{\"version\":1,\"instanceId\":\"55d109f3-45e2-4b5a-8bb6-7d5325542206\",\"pid\":88575,\"generation\":1,\"mode\":\"app_bound\",\"createdAt\":\"2026-10-13T07:15:41.745Z\"}\n",
+                "truncated": false,
+                "pid": 88575,
+                "alive": true,
+                "processName": "DevRyan",
+                "startIdentity": "Tue Oct 13 07:15:39 2026",
+                "relation": "tracked"
+              },
+              "mutation": {
+                "state": "missing"
+              }
+            },
+            "process": {
+              "source": "retained-os-process-ancestry-and-start-identities",
+              "rootPid": 88575,
+              "rootObserved": true,
+              "observationIntervalMs": 500,
+              "observationErrors": [],
+              "remainingProcessIds": [
+                88575,
+                88898,
+                88899,
+                90670,
+                91300,
+                91301,
+                91306
+              ],
+              "signals": [],
+              "trackingClosed": false,
+              "exitCode": null,
+              "exitSignal": null,
+              "exitAt": null,
+              "shutdownStartedAt": null,
+              "shutdownDurationMs": null,
+              "parentSignals": []
+            }
+          },
+          "failureLog": "\nDevTools listening on ws://127.0.0.1:[REDACTED]:high_entropy\n07:16:19.237 › [CursorSDK] Failed to refresh Cursor provider metadata: Error: native_cursor_credential_required\n    at Socket.<anonymous> (file://<QA>/installations/2.0.8/DevRyan.app/Contents/Resources/app.asar/node_modules/@openchamber/web/server/lib/opencode/runtime-host/native-process.js:170:29)\n    at Socket.emit (node:events:508:28)\n    at addChunk (node:internal/streams/readable:563:12)\n    at readableAddChunkPushByteMode (node:internal/streams/readable:514:3)\n    at Readable.push (node:internal/streams/readable:394:5)\n    at Pipe.onStreamRead (node:internal/stream_base_commons:189:23)\n\n[2026-10-13 07:15:40.715] [info]  [runtime-memory] {\n  pid: 88575,\n  role: 'foreground',\n  version: '2.0.8',\n  electron: '41.2.1',\n  pressure: false,\n  rss: 145489920,\n  heapUsed: 7374464,\n  heapLimit: 2248146944,\n  external: 5384315,\n  arrayBuffers: 0,\n  eventLoopDelayMaxMs: 0,\n  active: 0,\n  queued: 0,\n  scopes: 0,\n  activeResponses: 0,\n  responseBytes: 0,\n  peakResponseBytes: 0,\n  stalls: 0,\n  stalledMs: 0,\n  longestStallMs: 0\n}\n[2026-10-13 07:15:40.741] [info]  [electron] startup phase { phase: 'shell_environment', outcome: 'completed', elapsedMs: 22 }\n[2026-10-13 07:15:41.266] [info]  [electron] app starting { version: '2.0.8', packaged: true, platform: 'darwin', arch: 'arm64' }\n[2026-10-13 07:15:41.490] [info]  [electron] desktop keep awake updated { enabled: false, active: false }\n[2026-10-13 07:15:41.705] [info]  [electron] startup phase {\n  phase: 'foreground_preparation',\n  outcome: 'completed',\n  elapsedMs: 16\n}\n[2026-10-13 07:15:41.772] [info]  [electron] startup phase { phase: 'ownership_resolved', outcome: 'completed', elapsedMs: 67 }\n[2026-10-13 07:15:42.159] [info]  [electron] startup phase { phase: 'shell_visible', outcome: 'completed', elapsedMs: 19 }\n[2026-10-13 07:15:44.292] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":1772.861292000001}\n[2026-10-13 07:15:44.292] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":496.67775100000017}\n[2026-10-13 07:15:45.882] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":1102.6737089999997}\n[2026-10-13 07:15:45.883] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":473.0840419999995}\n[2026-10-13 07:15:49.381] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":1439.927959999999}\n[2026-10-13 07:15:49.382] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":455.4295009999987}\n[2026-10-13 07:15:51.608] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":1271.4873350000034}\n[2026-10-13 07:15:51.609] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":552.1362930000014}\n[2026-10-13 07:15:51.610] [info]  [runtime-bundle] startup phase {\"phase\":\"bundle_artifact_retention\",\"outcome\":\"completed\",\"elapsedMs\":7317.188166999999}\n[2026-10-13 07:15:53.247] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":1117.996583}\n[2026-10-13 07:15:53.248] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":451.3931679999987}\n[2026-10-13 07:15:54.813] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":1049.9772089999988}\n[2026-10-13 07:15:54.814] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":449.1390390000015}\n[2026-10-13 07:15:57.283] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":1069.4541269999954}\n[2026-10-13 07:15:57.284] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":468.37550300000294}\n[2026-10-13 07:15:57.330] [info]  [runtime-bundle] startup phase {\"phase\":\"bundle_candidate_preparation\",\"outcome\":\"completed\",\"elapsedMs\":5664.941999999999}\n[2026-10-13 07:15:59.041] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":1089.2407900000035}\n[2026-10-13 07:15:59.042] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":431.3044160000063}\n[2026-10-13 07:15:59.056] [info]  [runtime-bundle] startup phase {\"phase\":\"bundle_selection\",\"outcome\":\"completed\",\"elapsedMs\":1725.5790000000015}\n[2026-10-13 07:16:00.711] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":1040.8894180000025}\n[2026-10-13 07:16:00.712] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":425.4499160000014}\n[2026-10-13 07:16:00.743] [info]  [runtime-bundle] startup phase {\"phase\":\"bundle_prepared_bound\",\"outcome\":\"completed\",\"elapsedMs\":1.7374999999992724}\n[2026-10-13 07:16:00.749] [info]  [runtime-bundle] startup phase {\"phase\":\"bundle_preparation\",\"outcome\":\"completed\",\"elapsedMs\":18960.361458}\n[2026-10-13 07:16:03.408] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":1340.2827070000021}\n[2026-10-13 07:16:03.409] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":502.9437079999989}\n[2026-10-13 07:16:03.938] [info]  [runtime-bundle] startup phase {\"phase\":\"application_import\",\"outcome\":\"completed\",\"elapsedMs\":3188.93275}\n[2026-10-13 07:16:03.939] [info]  [electron] startup phase { phase: 'server_import', outcome: 'completed', elapsedMs: 22153 }\n[2026-10-13 07:16:03.943] [info]  Starting OpenChamber on port 52914\n[2026-10-13 07:16:03.944] [info]  [startup] phase=services elapsedMs=0\n[2026-10-13 07:16:03.966] [info]  [startup] phase=identity elapsedMs=22\n[2026-10-13 07:16:04.341] [info]  [zen] No model configured, setting default to \"big-pickle\"\n[2026-10-13 07:16:04.343] [info]  [persistSettings] Called with changes: zenModel\n[2026-10-13 07:16:04.344] [info]  [persistSettings] Current projects count: 1\n[2026-10-13 07:16:04.349] [info]  [persistSettings] Successfully saved 1 projects to disk\n[2026-10-13 07:16:05.223] [info]  macOS Say TTS available with 183 voices\n[2026-10-13 07:16:05.297] [info]  [startup] phase=listener elapsedMs=1353\n[2026-10-13 07:16:05.301] [info]  Serving static files from <QA>/installations/2.0.8/DevRyan.app/Contents/Resources/web-dist\n[2026-10-13 07:16:05.303] [info]  OpenChamber server listening on 127.0.0.1:52914\n[2026-10-13 07:16:05.303] [info]  Health check: http://127.0.0.1:52914/health\n[2026-10-13 07:16:05.303] [info]  Web interface: http://127.0.0.1:52914\n[2026-10-13 07:16:05.306] [info]  [startup] phase=ready elapsedMs=1362\n[2026-10-13 07:16:05.306] [info]  [electron] startup phase { phase: 'server_listen', outcome: 'completed', elapsedMs: 1366 }\n[2026-10-13 07:16:07.378] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":1541.5221239999992}\n[2026-10-13 07:16:07.379] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":519.2021669999958}\n[2026-10-13 07:16:07.379] [info]  [runtime-bundle] startup phase {\"phase\":\"bundle_artifact_verification\",\"outcome\":\"completed\",\"elapsedMs\":2068.276249999999}\n[2026-10-13 07:16:07.396] [info]  [electron] startup phase { phase: 'initial_url', outcome: 'completed', elapsedMs: 25691 }\n[2026-10-13 07:16:07.900] [info]  [electron] startup phase { phase: 'renderer_navigation', outcome: 'completed', elapsedMs: 504 }\n[2026-10-13 07:16:07.907] [info]  [runtime-bundle] startup phase {\"phase\":\"native_settlement\",\"outcome\":\"completed\",\"elapsedMs\":0.5553749999999127}\n[2026-10-13 07:16:08.949] [info]  [API:PUT /api/config/settings] Received request\n[2026-10-13 07:16:08.949] [info]  [persistSettings] Called with changes: homeDirectory, lastDirectory\n[2026-10-13 07:16:08.953] [info]  [persistSettings] Current projects count: 1\n[2026-10-13 07:16:08.954] [info]  [persistSettings] Successfully saved 1 projects to disk\n[2026-10-13 07:16:08.955] [info]  [API:PUT /api/config/settings] Success, returning 1 projects\n[2026-10-13 07:16:09.340] [info]  [API:PUT /api/config/settings] Received request\n[2026-10-13 07:16:09.341] [info]  [persistSettings] Called with changes: lastDirectory\n[2026-10-13 07:16:09.342] [info]  [persistSettings] Current projects count: 1\n[2026-10-13 07:16:09.343] [info]  [persistSettings] Successfully saved 1 projects to disk\n[2026-10-13 07:16:09.344] [info]  [API:PUT /api/config/settings] Success, returning 1 projects\n[2026-10-13 07:16:10.859] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":1338.3949590000047}\n[2026-10-13 07:16:10.860] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":552.1436680000006}\n[2026-10-13 07:16:10.866] [info]  [runtime-bundle] startup phase {\"phase\":\"native_verification\",\"outcome\":\"completed\",\"elapsedMs\":2959.623334}\n[2026-10-13 07:16:11.001] [info]  [OpenCode] Synced packaged agents {\n  written: [\n    'builder',\n    'council',\n    'designer',\n    'explorer',\n    'fixer',\n    'librarian',\n    'oracle',\n    'orchestrator',\n    'plan'\n  ],\n  updated: [],\n  removed: []\n}\n[2026-10-13 07:16:11.002] [info]  [OpenCode] Synced runtime agent overlays {\n  written: [\n    'builder',\n    'council',\n    'designer',\n    'explorer',\n    'fixer',\n    'librarian',\n    'oracle',\n    'orchestrator',\n    'plan'\n  ],\n  updated: [],\n  removed: [],\n  targetConfigDirectory: '<QA>/profiles/upgrade-previous/home/.local/state/devryan/runtime-bundles/bundles/default-native/config/opencode/.[REDACTED]:high_entropy'\n}\n[2026-10-13 07:16:11.003] [info]  [runtime-bundle] startup phase {\"phase\":\"native_configuration_sync\",\"outcome\":\"completed\",\"elapsedMs\":136.2397090000013}\n[2026-10-13 07:16:12.817] [info]  [runtime-bundle] startup phase {\"phase\":\"native_configuration\",\"outcome\":\"completed\",\"elapsedMs\":1813.8508329999968}\n[2026-10-13 07:16:14.924] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":1606.9721249999857}\n[2026-10-13 07:16:14.925] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":480.5029569999897}\n[2026-10-13 07:16:18.249] [info]  [runtime-bundle] startup phase {\"phase\":\"native_controller\",\"outcome\":\"completed\",\"elapsedMs\":5431.375584000001}\n[2026-10-13 07:16:18.936] [info]  [runtime-bundle] startup phase {\"phase\":\"native_recovery\",\"outcome\":\"completed\",\"elapsedMs\":687.3169169999965}\n[2026-10-13 07:16:18.938] [info]  [runtime-bundle] startup phase {\"phase\":\"native_open\",\"outcome\":\"completed\",\"elapsedMs\":1.7327079999959096}\n[2026-10-13 07:16:19.237] [warn]  [CursorSDK] Failed to refresh Cursor provider metadata: Error: native_cursor_credential_required\n    at Socket.<anonymous> (file://<QA>/installations/2.0.8/DevRyan.app/Contents/Resources/app.asar/node_modules/@openchamber/web/server/lib/opencode/runtime-host/native-process.js:170:29)\n    at Socket.emit (node:events:508:28)\n    at addChunk (node:internal/streams/readable:563:12)\n    at readableAddChunkPushByteMode (node:internal/streams/readable:514:3)\n    at Readable.push (node:internal/streams/readable:394:5)\n    at Pipe.onStreamRead (node:internal/stream_base_commons:189:23)\n[2026-10-13 07:16:19.324] [info]  [PushWatcher] connected\n[2026-10-13 07:16:19.389] [info]  [electron] hosts config updated, recomputed bootOutcome { target: 'local', status: 'ok' }\n",
+          "terminalPhases": [],
+          "terminalCode": null,
+          "afterStop": {
+            "observedAt": "2026-10-13T07:16:30.752Z",
+            "locks": {
+              "owner": {
+                "state": "valid",
+                "size": 151,
+                "mtimeMs": 1791875741769.129,
+                "content": "{\"version\":1,\"instanceId\":\"55d109f3-45e2-4b5a-8bb6-7d5325542206\",\"pid\":88575,\"generation\":1,\"mode\":\"app_bound\",\"createdAt\":\"2026-10-13T07:15:41.745Z\"}\n",
+                "truncated": false,
+                "pid": 88575,
+                "alive": false,
+                "processName": null,
+                "startIdentity": null,
+                "relation": "absent"
+              },
+              "mutation": {
+                "state": "valid",
+                "size": 88,
+                "mtimeMs": 1791875790203.2542,
+                "content": "{\"ownerToken\":\"<redacted>\",\"pid\":88575,\"createdAt\":1791875790167}\n",
+                "truncated": false,
+                "pid": 88575,
+                "alive": false,
+                "processName": null,
+                "startIdentity": null,
+                "relation": "absent"
+              }
+            },
+            "process": {
+              "source": "retained-os-process-ancestry-and-start-identities",
+              "rootPid": 88575,
+              "rootObserved": true,
+              "observationIntervalMs": 500,
+              "observationErrors": [],
+              "remainingProcessIds": [],
+              "signals": [],
+              "trackingClosed": true,
+              "exitCode": 0,
+              "exitSignal": null,
+              "exitAt": 1791875790408,
+              "shutdownStartedAt": 1791875780097,
+              "shutdownDurationMs": 10376,
+              "parentSignals": [
+                {
+                  "signal": "SIGINT",
+                  "at": 1791875780130
+                }
+              ]
+            }
+          },
+          "navigation": [
+            {
+              "name": "startup",
+              "limit": 3,
+              "documents": [
+                {
+                  "url": "data:startup-document",
+                  "loaderId": null
+                },
+                {
+                  "url": "http://127.0.0.1:52914/",
+                  "loaderId": "BA597449D875A6AA9EE792259593219C"
+                },
+                {
+                  "url": "http://127.0.0.1:52914/",
+                  "loaderId": "CA99F0775AC79924585EA4844CF66CCB"
+                },
+                {
+                  "url": "http://127.0.0.1:52914/",
+                  "loaderId": "9CC5970989DF5A3F334537C86292F1BE"
+                }
+              ]
+            }
+          ],
+          "forcedCleanup": false,
+          "reason": "Excess committed documents during startup\n\n'failed' !== 'passed'\n"
+        }
+      ]
+    },
+    {
+      "id": "upgrade-second-previous",
+      "outcome": "failed",
+      "reason": "QA host readiness failed: native_process_boot_timeout\n\n'failed' !== 'passed'\n",
+      "failureInterface": {
+        "documentReady": true,
+        "documentVisible": true,
+        "startupReady": false,
+        "composer": false,
+        "newChat": false,
+        "modelPicker": false
+      },
+      "failureJournal": {
+        "outcome": "passed",
+        "gapRecords": 0
+      },
+      "launches": [
+        {
+          "artifact": {
+            "version": "2.0.7",
+            "dmgSha256": "a79c6feba9541a92ad9544cf37014ca872da60ed0469e3a19e20d71f9f08def3",
+            "manifestSha256": "da0024416be697594c01bee3aeb0a9b7765d1542d7f0c271d64dd89f40396880"
+          },
+          "profile": "upgrade-second-previous",
+          "outcome": "failed",
+          "beforeFailureStop": {
+            "observedAt": "2026-10-13T07:17:33.894Z",
+            "locks": {
+              "owner": {
+                "state": "valid",
+                "size": 151,
+                "mtimeMs": 1791875793605.9873,
+                "content": "{\"version\":1,\"instanceId\":\"[REDACTED]:high_entropy\",\"pid\":93023,\"generation\":1,\"mode\":\"app_bound\",\"createdAt\":\"2026-10-13T07:16:33.585Z\"}\n",
+                "truncated": false,
+                "pid": 93023,
+                "alive": true,
+                "processName": "DevRyan",
+                "startIdentity": "Tue Oct 13 07:16:31 2026",
+                "relation": "tracked"
+              },
+              "mutation": {
+                "state": "missing"
+              }
+            },
+            "process": {
+              "source": "retained-os-process-ancestry-and-start-identities",
+              "rootPid": 93023,
+              "rootObserved": true,
+              "observationIntervalMs": 500,
+              "observationErrors": [],
+              "remainingProcessIds": [
+                93023,
+                93106,
+                93107,
+                94789,
+                95376,
+                95377,
+                97167,
+                97582
+              ],
+              "signals": [],
+              "trackingClosed": false,
+              "exitCode": null,
+              "exitSignal": null,
+              "exitAt": null,
+              "shutdownStartedAt": null,
+              "shutdownDurationMs": null,
+              "parentSignals": []
+            }
+          },
+          "failureLog": "\nDevTools listening on ws://127.0.0.1:[REDACTED]:high_entropy\n07:17:33.688 › [electron] deferred OpenCode startup failed {\n  message: 'native_process_boot_timeout',\n  code: 'native_process_boot_timeout',\n  causeMessage: '',\n  displayMessage: 'native_process_boot_timeout (native_process_boot_timeout)'\n}\n\n[2026-10-13 07:16:32.508] [info]  [runtime-memory] {\n  pid: 93023,\n  role: 'foreground',\n  version: '2.0.7',\n  electron: '41.2.1',\n  pressure: false,\n  rss: 144850944,\n  heapUsed: 7294420,\n  heapLimit: 2248146944,\n  external: 5376481,\n  arrayBuffers: 0,\n  eventLoopDelayMaxMs: 0,\n  active: 0,\n  queued: 0,\n  scopes: 0,\n  activeResponses: 0,\n  responseBytes: 0,\n  peakResponseBytes: 0,\n  stalls: 0,\n  stalledMs: 0,\n  longestStallMs: 0\n}\n[2026-10-13 07:16:32.528] [info]  [electron] startup phase { phase: 'shell_environment', outcome: 'completed', elapsedMs: 17 }\n[2026-10-13 07:16:33.067] [info]  [electron] app starting { version: '2.0.7', packaged: true, platform: 'darwin', arch: 'arm64' }\n[2026-10-13 07:16:33.204] [info]  [electron] desktop keep awake updated { enabled: false, active: false }\n[2026-10-13 07:16:33.520] [info]  [electron] startup phase {\n  phase: 'foreground_preparation',\n  outcome: 'completed',\n  elapsedMs: 15\n}\n[2026-10-13 07:16:51.676] [info]  [runtime-bundle] startup phase {\"phase\":\"bundle_preparation\",\"outcome\":\"completed\",\"elapsedMs\":18048.05225}\n[2026-10-13 07:16:54.339] [info]  [runtime-bundle] startup phase {\"phase\":\"application_import\",\"outcome\":\"completed\",\"elapsedMs\":2661.540541999999}\n[2026-10-13 07:16:54.340] [info]  [electron] startup phase { phase: 'server_import', outcome: 'completed', elapsedMs: 20714 }\n[2026-10-13 07:16:54.343] [info]  Starting OpenChamber on port 53021\n[2026-10-13 07:16:54.343] [info]  [startup] phase=services elapsedMs=0\n[2026-10-13 07:16:54.357] [info]  [startup] phase=identity elapsedMs=14\n[2026-10-13 07:16:54.885] [info]  [zen] No model configured, setting default to \"big-pickle\"\n[2026-10-13 07:16:54.886] [info]  [persistSettings] Called with changes: zenModel\n[2026-10-13 07:16:54.886] [info]  [persistSettings] Current projects count: 1\n[2026-10-13 07:16:54.889] [info]  [persistSettings] Successfully saved 1 projects to disk\n[2026-10-13 07:16:55.349] [info]  macOS Say TTS available with 183 voices\n[2026-10-13 07:16:55.403] [info]  [startup] phase=listener elapsedMs=1060\n[2026-10-13 07:16:55.406] [info]  Serving static files from <QA>/installations/2.0.7/DevRyan.app/Contents/Resources/web-dist\n[2026-10-13 07:16:55.408] [info]  OpenChamber server listening on 127.0.0.1:53021\n[2026-10-13 07:16:55.408] [info]  Health check: http://127.0.0.1:53021/health\n[2026-10-13 07:16:55.408] [info]  Web interface: http://127.0.0.1:53021\n[2026-10-13 07:16:55.413] [info]  [startup] phase=ready elapsedMs=1070\n[2026-10-13 07:16:55.414] [info]  [electron] startup phase { phase: 'server_listen', outcome: 'completed', elapsedMs: 1073 }\n[2026-10-13 07:16:57.006] [info]  [runtime-bundle] startup phase {\"phase\":\"bundle_artifact_verification\",\"outcome\":\"completed\",\"elapsedMs\":1586.9315830000014}\n[2026-10-13 07:16:57.022] [info]  [electron] startup phase { phase: 'initial_url', outcome: 'completed', elapsedMs: 23501 }\n[2026-10-13 07:16:57.457] [info]  [electron] startup phase { phase: 'renderer_navigation', outcome: 'completed', elapsedMs: 434 }\n[2026-10-13 07:16:57.464] [info]  [runtime-bundle] startup phase {\"phase\":\"native_settlement\",\"outcome\":\"completed\",\"elapsedMs\":0.44512500000200816}\n[2026-10-13 07:16:58.353] [info]  [API:PUT /api/config/settings] Received request\n[2026-10-13 07:16:58.354] [info]  [persistSettings] Called with changes: homeDirectory, lastDirectory\n[2026-10-13 07:16:58.356] [info]  [persistSettings] Current projects count: 1\n[2026-10-13 07:16:58.362] [info]  [persistSettings] Successfully saved 1 projects to disk\n[2026-10-13 07:16:58.363] [info]  [API:PUT /api/config/settings] Success, returning 1 projects\n[2026-10-13 07:16:58.681] [info]  [API:PUT /api/config/settings] Received request\n[2026-10-13 07:16:58.681] [info]  [persistSettings] Called with changes: lastDirectory\n[2026-10-13 07:16:58.682] [info]  [persistSettings] Current projects count: 1\n[2026-10-13 07:16:58.684] [info]  [persistSettings] Successfully saved 1 projects to disk\n[2026-10-13 07:16:58.684] [info]  [API:PUT /api/config/settings] Success, returning 1 projects\n[2026-10-13 07:17:00.066] [info]  [runtime-bundle] startup phase {\"phase\":\"native_verification\",\"outcome\":\"completed\",\"elapsedMs\":2602.0812499999993}\n[2026-10-13 07:17:00.200] [info]  [OpenCode] Synced packaged agents {\n  written: [\n    'builder',\n    'council',\n    'designer',\n    'explorer',\n    'fixer',\n    'librarian',\n    'oracle',\n    'orchestrator',\n    'plan'\n  ],\n  updated: [],\n  removed: []\n}\n[2026-10-13 07:17:00.201] [info]  [OpenCode] Synced runtime agent overlays {\n  written: [\n    'builder',\n    'council',\n    'designer',\n    'explorer',\n    'fixer',\n    'librarian',\n    'oracle',\n    'orchestrator',\n    'plan'\n  ],\n  updated: [],\n  removed: [],\n  targetConfigDirectory: '<QA>/profiles/upgrade-second-previous/home/.local/state/devryan/runtime-bundles/bundles/default-native/config/opencode/.[REDACTED]:high_entropy'\n}\n[2026-10-13 07:17:00.201] [info]  [runtime-bundle] startup phase {\"phase\":\"native_configuration_sync\",\"outcome\":\"completed\",\"elapsedMs\":134.80754199999865}\n[2026-10-13 07:17:01.993] [info]  [runtime-bundle] startup phase {\"phase\":\"native_configuration\",\"outcome\":\"completed\",\"elapsedMs\":1791.504708999997}\n[2026-10-13 07:17:32.514] [info]  [runtime-memory] {\n  pid: 93023,\n  role: 'foreground',\n  version: '2.0.7',\n  electron: '41.2.1',\n  pressure: false,\n  rss: 508477440,\n  heapUsed: 186742712,\n  heapLimit: 2248146944,\n  external: 10191888,\n  arrayBuffers: 0,\n  eventLoopDelayMaxMs: 625,\n  active: 0,\n  queued: 0,\n  scopes: 0,\n  activeResponses: 0,\n  responseBytes: 0,\n  peakResponseBytes: 0,\n  stalls: 0,\n  stalledMs: 0,\n  longestStallMs: 0\n}\n[2026-10-13 07:17:33.687] [info]  [runtime-bundle] startup phase {\"phase\":\"native_controller\",\"outcome\":\"failed\",\"elapsedMs\":31693.169167}\n[2026-10-13 07:17:33.688] [error] [electron] deferred OpenCode startup failed {\n  message: 'native_process_boot_timeout',\n  code: 'native_process_boot_timeout',\n  causeMessage: '',\n  displayMessage: 'native_process_boot_timeout (native_process_boot_timeout)'\n}\n",
+          "terminalPhases": [
+            {
+              "phase": "native_controller",
+              "outcome": "failed",
+              "elapsedMs": 31693.169167
+            }
+          ],
+          "terminalCode": null,
+          "afterStop": {
+            "observedAt": "2026-10-13T07:17:34.963Z",
+            "locks": {
+              "owner": {
+                "state": "missing"
+              },
+              "mutation": {
+                "state": "missing"
+              }
+            },
+            "process": {
+              "source": "retained-os-process-ancestry-and-start-identities",
+              "rootPid": 93023,
+              "rootObserved": true,
+              "observationIntervalMs": 500,
+              "observationErrors": [],
+              "remainingProcessIds": [],
+              "signals": [],
+              "trackingClosed": true,
+              "exitCode": 0,
+              "exitSignal": null,
+              "exitAt": 1791875854535,
+              "shutdownStartedAt": 1791875854007,
+              "shutdownDurationMs": 649,
+              "parentSignals": [
+                {
+                  "signal": "SIGINT",
+                  "at": 1791875854028
+                }
+              ]
+            }
+          },
+          "navigation": [
+            {
+              "name": "startup",
+              "limit": 3,
+              "documents": [
+                {
+                  "url": "data:startup-document",
+                  "loaderId": null
+                },
+                {
+                  "url": "http://127.0.0.1:53021/",
+                  "loaderId": "703694C0577D36A55C66ABDF5256391D"
+                },
+                {
+                  "url": "http://127.0.0.1:53021/",
+                  "loaderId": "B0B5752C5CF67099F9C55AC58DCBC3AF"
+                }
+              ]
+            }
+          ],
+          "forcedCleanup": false,
+          "reason": "QA host readiness failed: native_process_boot_timeout\n\n'failed' !== 'passed'\n"
+        }
+      ]
+    },
+    {
+      "id": "same-runtime-upgrade",
+      "outcome": "failed",
+      "reason": "Failed launch cleanup",
+      "failureInterface": {
+        "documentReady": true,
+        "documentVisible": true,
+        "startupReady": false,
+        "composer": false,
+        "newChat": false,
+        "modelPicker": false
+      },
+      "failureJournal": {
+        "outcome": "passed",
+        "gapRecords": 0
+      },
+      "launches": [
+        {
+          "artifact": {
+            "version": "2.0.8",
+            "dmgSha256": "33e53e52a362c457a31b4ce47daf8e0d3f1c9e8f4bddb8e722b6a3cea54a6227",
+            "manifestSha256": "44b604ae701328be9fd3c0cda88ead6c1047ebf4751b25acc41c1259adbc1902"
+          },
+          "profile": "same-runtime-upgrade",
+          "outcome": "failed",
+          "beforeFailureStop": {
+            "observedAt": "2026-10-13T07:18:13.833Z",
+            "locks": {
+              "owner": {
+                "state": "valid",
+                "size": 151,
+                "mtimeMs": 1791875857995.1804,
+                "content": "{\"version\":1,\"instanceId\":\"[REDACTED]:high_entropy\",\"pid\":98120,\"generation\":1,\"mode\":\"app_bound\",\"createdAt\":\"2026-10-13T07:17:37.971Z\"}\n",
+                "truncated": false,
+                "pid": 98120,
+                "alive": true,
+                "processName": "DevRyan",
+                "startIdentity": "Tue Oct 13 07:17:35 2026",
+                "relation": "tracked"
+              },
+              "mutation": {
+                "state": "missing"
+              }
+            },
+            "process": {
+              "source": "retained-os-process-ancestry-and-start-identities",
+              "rootPid": 98120,
+              "rootObserved": true,
+              "observationIntervalMs": 500,
+              "observationErrors": [],
+              "remainingProcessIds": [
+                98120,
+                98286,
+                98287,
+                176,
+                1177,
+                1178,
+                1183
+              ],
+              "signals": [],
+              "trackingClosed": false,
+              "exitCode": null,
+              "exitSignal": null,
+              "exitAt": null,
+              "shutdownStartedAt": null,
+              "shutdownDurationMs": null,
+              "parentSignals": []
+            }
+          },
+          "failureLog": "\nDevTools listening on ws://127.0.0.1:[REDACTED]:high_entropy\n07:18:13.165 › [CursorSDK] Failed to refresh Cursor provider metadata: Error: native_cursor_credential_required\n    at Socket.<anonymous> (file://<QA>/installations/2.0.8/DevRyan.app/Contents/Resources/app.asar/node_modules/@openchamber/web/server/lib/opencode/runtime-host/native-process.js:170:29)\n    at Socket.emit (node:events:508:28)\n    at addChunk (node:internal/streams/readable:563:12)\n    at readableAddChunkPushByteMode (node:internal/streams/readable:514:3)\n    at Readable.push (node:internal/streams/readable:394:5)\n    at Pipe.onStreamRead (node:internal/stream_base_commons:189:23)\n\n[2026-10-13 07:17:36.557] [info]  [runtime-memory] {\n  pid: 98120,\n  role: 'foreground',\n  version: '2.0.8',\n  electron: '41.2.1',\n  pressure: false,\n  rss: 144900096,\n  heapUsed: 7344028,\n  heapLimit: 2248146944,\n  external: 5384315,\n  arrayBuffers: 0,\n  eventLoopDelayMaxMs: 0,\n  active: 0,\n  queued: 0,\n  scopes: 0,\n  activeResponses: 0,\n  responseBytes: 0,\n  peakResponseBytes: 0,\n  stalls: 0,\n  stalledMs: 0,\n  longestStallMs: 0\n}\n[2026-10-13 07:17:36.591] [info]  [electron] startup phase { phase: 'shell_environment', outcome: 'completed', elapsedMs: 27 }\n[2026-10-13 07:17:37.396] [info]  [electron] app starting { version: '2.0.8', packaged: true, platform: 'darwin', arch: 'arm64' }\n[2026-10-13 07:17:37.542] [info]  [electron] desktop keep awake updated { enabled: false, active: false }\n[2026-10-13 07:17:37.875] [info]  [electron] startup phase {\n  phase: 'foreground_preparation',\n  outcome: 'completed',\n  elapsedMs: 22\n}\n[2026-10-13 07:17:38.000] [info]  [electron] startup phase { phase: 'ownership_resolved', outcome: 'completed', elapsedMs: 123 }\n[2026-10-13 07:17:38.402] [info]  [electron] startup phase { phase: 'shell_visible', outcome: 'completed', elapsedMs: 24 }\n[2026-10-13 07:17:40.428] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":1678.1922489999988}\n[2026-10-13 07:17:40.429] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":509.99733500000275}\n[2026-10-13 07:17:41.956] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":1083.0157489999974}\n[2026-10-13 07:17:41.957] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":431.9949170000018}\n[2026-10-13 07:17:44.961] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":1186.056623999999}\n[2026-10-13 07:17:44.962] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":480.43070799999896}\n[2026-10-13 07:17:47.028] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":1205.1367070000015}\n[2026-10-13 07:17:47.028] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":436.731749999999}\n[2026-10-13 07:17:47.029] [info]  [runtime-bundle] startup phase {\"phase\":\"bundle_artifact_retention\",\"outcome\":\"completed\",\"elapsedMs\":6599.793875}\n[2026-10-13 07:17:48.593] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":1054.7431709999983}\n[2026-10-13 07:17:48.594] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":433.4081240000014}\n[2026-10-13 07:17:50.090] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":987.1351679999989}\n[2026-10-13 07:17:50.091] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":444.0041659999988}\n[2026-10-13 07:17:52.415] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":960.6831269999984}\n[2026-10-13 07:17:52.415] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":443.3821679999983}\n[2026-10-13 07:17:52.468] [info]  [runtime-bundle] startup phase {\"phase\":\"bundle_candidate_preparation\",\"outcome\":\"completed\",\"elapsedMs\":5376.772500000001}\n[2026-10-13 07:17:53.988] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":886.5223759999935}\n[2026-10-13 07:17:53.989] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":443.24879199999486}\n[2026-10-13 07:17:54.003] [info]  [runtime-bundle] startup phase {\"phase\":\"bundle_selection\",\"outcome\":\"completed\",\"elapsedMs\":1534.6316669999978}\n[2026-10-13 07:17:55.810] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":1144.85225}\n[2026-10-13 07:17:55.811] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":464.62562400000024}\n[2026-10-13 07:17:55.844] [info]  [runtime-bundle] startup phase {\"phase\":\"bundle_prepared_bound\",\"outcome\":\"completed\",\"elapsedMs\":2.038250000001426}\n[2026-10-13 07:17:55.850] [info]  [runtime-bundle] startup phase {\"phase\":\"bundle_preparation\",\"outcome\":\"completed\",\"elapsedMs\":17831.530416}\n[2026-10-13 07:17:58.150] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":1016.706542999993}\n[2026-10-13 07:17:58.150] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":421.50562600000194}\n[2026-10-13 07:17:58.620] [info]  [runtime-bundle] startup phase {\"phase\":\"application_import\",\"outcome\":\"completed\",\"elapsedMs\":2769.042957999998}\n[2026-10-13 07:17:58.620] [info]  [electron] startup phase { phase: 'server_import', outcome: 'completed', elapsedMs: 20604 }\n[2026-10-13 07:17:58.624] [info]  Starting OpenChamber on port 53087\n[2026-10-13 07:17:58.624] [info]  [startup] phase=services elapsedMs=0\n[2026-10-13 07:17:58.639] [info]  [startup] phase=identity elapsedMs=15\n[2026-10-13 07:17:59.087] [info]  [zen] No model configured, setting default to \"big-pickle\"\n[2026-10-13 07:17:59.087] [info]  [persistSettings] Called with changes: zenModel\n[2026-10-13 07:17:59.101] [info]  [persistSettings] Current projects count: 1\n[2026-10-13 07:17:59.105] [info]  [persistSettings] Successfully saved 1 projects to disk\n[2026-10-13 07:17:59.655] [info]  macOS Say TTS available with 183 voices\n[2026-10-13 07:17:59.706] [info]  [startup] phase=listener elapsedMs=1082\n[2026-10-13 07:17:59.708] [info]  Serving static files from <QA>/installations/2.0.8/DevRyan.app/Contents/Resources/web-dist\n[2026-10-13 07:17:59.710] [info]  OpenChamber server listening on 127.0.0.1:53087\n[2026-10-13 07:17:59.710] [info]  Health check: http://127.0.0.1:53087/health\n[2026-10-13 07:17:59.710] [info]  Web interface: http://127.0.0.1:53087\n[2026-10-13 07:17:59.714] [info]  [startup] phase=ready elapsedMs=1090\n[2026-10-13 07:17:59.714] [info]  [electron] startup phase { phase: 'server_listen', outcome: 'completed', elapsedMs: 1093 }\n[2026-10-13 07:18:01.705] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":1494.8615009999994}\n[2026-10-13 07:18:01.706] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":478.45891799999663}\n[2026-10-13 07:18:01.706] [info]  [runtime-bundle] startup phase {\"phase\":\"bundle_artifact_verification\",\"outcome\":\"completed\",\"elapsedMs\":1983.337707999999}\n[2026-10-13 07:18:01.722] [info]  [electron] startup phase { phase: 'initial_url', outcome: 'completed', elapsedMs: 23847 }\n[2026-10-13 07:18:02.189] [info]  [electron] startup phase { phase: 'renderer_navigation', outcome: 'completed', elapsedMs: 466 }\n[2026-10-13 07:18:02.194] [info]  [runtime-bundle] startup phase {\"phase\":\"native_settlement\",\"outcome\":\"completed\",\"elapsedMs\":0.48804200000085984}\n[2026-10-13 07:18:03.137] [info]  [API:PUT /api/config/settings] Received request\n[2026-10-13 07:18:03.137] [info]  [persistSettings] Called with changes: homeDirectory, lastDirectory\n[2026-10-13 07:18:03.146] [info]  [persistSettings] Current projects count: 1\n[2026-10-13 07:18:03.208] [info]  [persistSettings] Successfully saved 1 projects to disk\n[2026-10-13 07:18:03.210] [info]  [API:PUT /api/config/settings] Success, returning 1 projects\n[2026-10-13 07:18:03.441] [info]  [API:PUT /api/config/settings] Received request\n[2026-10-13 07:18:03.441] [info]  [persistSettings] Called with changes: lastDirectory\n[2026-10-13 07:18:03.442] [info]  [persistSettings] Current projects count: 1\n[2026-10-13 07:18:03.443] [info]  [persistSettings] Successfully saved 1 projects to disk\n[2026-10-13 07:18:03.443] [info]  [API:PUT /api/config/settings] Success, returning 1 projects\n[2026-10-13 07:18:04.907] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":1791.667292999995}\n[2026-10-13 07:18:04.908] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":462.2406689999989}\n[2026-10-13 07:18:04.915] [info]  [runtime-bundle] startup phase {\"phase\":\"native_verification\",\"outcome\":\"completed\",\"elapsedMs\":2721.1340420000015}\n[2026-10-13 07:18:05.042] [info]  [OpenCode] Synced packaged agents {\n  written: [\n    'builder',\n    'council',\n    'designer',\n    'explorer',\n    'fixer',\n    'librarian',\n    'oracle',\n    'orchestrator',\n    'plan'\n  ],\n  updated: [],\n  removed: []\n}\n[2026-10-13 07:18:05.043] [info]  [OpenCode] Synced runtime agent overlays {\n  written: [\n    'builder',\n    'council',\n    'designer',\n    'explorer',\n    'fixer',\n    'librarian',\n    'oracle',\n    'orchestrator',\n    'plan'\n  ],\n  updated: [],\n  removed: [],\n  targetConfigDirectory: '<QA>/profiles/same-runtime-upgrade/home/.local/state/devryan/runtime-bundles/bundles/default-native/config/opencode/.[REDACTED]:high_entropy'\n}\n[2026-10-13 07:18:05.044] [info]  [runtime-bundle] startup phase {\"phase\":\"native_configuration_sync\",\"outcome\":\"completed\",\"elapsedMs\":128.1984999999986}\n[2026-10-13 07:18:07.172] [info]  [runtime-bundle] startup phase {\"phase\":\"native_configuration\",\"outcome\":\"completed\",\"elapsedMs\":2127.8097080000007}\n[2026-10-13 07:18:08.879] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_hashing\",\"outcome\":\"completed\",\"elapsedMs\":1220.406208000004}\n[2026-10-13 07:18:08.879] [info]  [runtime-bundle] startup phase {\"phase\":\"artifact_signatures\",\"outcome\":\"completed\",\"elapsedMs\":474.8351259999981}\n[2026-10-13 07:18:11.787] [info]  [runtime-bundle] startup phase {\"phase\":\"native_controller\",\"outcome\":\"completed\",\"elapsedMs\":4614.810999999998}\n[2026-10-13 07:18:12.337] [info]  [runtime-bundle] startup phase {\"phase\":\"native_recovery\",\"outcome\":\"completed\",\"elapsedMs\":549.4913329999981}\n[2026-10-13 07:18:12.338] [info]  [runtime-bundle] startup phase {\"phase\":\"native_open\",\"outcome\":\"completed\",\"elapsedMs\":1.3940409999995609}\n[2026-10-13 07:18:12.564] [info]  [PushWatcher] connected\n[2026-10-13 07:18:13.165] [warn]  [CursorSDK] Failed to refresh Cursor provider metadata: Error: native_cursor_credential_required\n    at Socket.<anonymous> (file://<QA>/installations/2.0.8/DevRyan.app/Contents/Resources/app.asar/node_modules/@openchamber/web/server/lib/opencode/runtime-host/native-process.js:170:29)\n    at Socket.emit (node:events:508:28)\n    at addChunk (node:internal/streams/readable:563:12)\n    at readableAddChunkPushByteMode (node:internal/streams/readable:514:3)\n    at Readable.push (node:internal/streams/readable:394:5)\n    at Pipe.onStreamRead (node:internal/stream_base_commons:189:23)\n[2026-10-13 07:18:13.612] [info]  [electron] hosts config updated, recomputed bootOutcome { target: 'local', status: 'ok' }\n",
+          "terminalPhases": [],
+          "terminalCode": null,
+          "afterStop": {
+            "observedAt": "2026-10-13T07:18:24.599Z",
+            "locks": {
+              "owner": {
+                "state": "valid",
+                "size": 151,
+                "mtimeMs": 1791875857995.1804,
+                "content": "{\"version\":1,\"instanceId\":\"[REDACTED]:high_entropy\",\"pid\":98120,\"generation\":1,\"mode\":\"app_bound\",\"createdAt\":\"2026-10-13T07:17:37.971Z\"}\n",
+                "truncated": false,
+                "pid": 98120,
+                "alive": false,
+                "processName": null,
+                "startIdentity": null,
+                "relation": "absent"
+              },
+              "mutation": {
+                "state": "malformed",
+                "size": 0,
+                "mtimeMs": 1791875904088.9402,
+                "content": "",
+                "truncated": false,
+                "pid": null,
+                "alive": false,
+                "processName": null,
+                "startIdentity": null,
+                "relation": "absent"
+              }
+            },
+            "process": {
+              "source": "retained-os-process-ancestry-and-start-identities",
+              "rootPid": 98120,
+              "rootObserved": true,
+              "observationIntervalMs": 500,
+              "observationErrors": [],
+              "remainingProcessIds": [],
+              "signals": [],
+              "trackingClosed": true,
+              "exitCode": 0,
+              "exitSignal": null,
+              "exitAt": 1791875904333,
+              "shutdownStartedAt": 1791875894024,
+              "shutdownDurationMs": 10361,
+              "parentSignals": [
+                {
+                  "signal": "SIGINT",
+                  "at": 1791875894050
+                }
+              ]
+            }
+          },
+          "navigation": [
+            {
+              "name": "startup",
+              "limit": 3,
+              "documents": [
+                {
+                  "url": "data:startup-document",
+                  "loaderId": null
+                },
+                {
+                  "url": "http://127.0.0.1:53087/",
+                  "loaderId": "F288186A32EB6B86741426FB61BC2CC0"
+                },
+                {
+                  "url": "http://127.0.0.1:53087/",
+                  "loaderId": "EA3BD5CC6001EDDB2E1B75BEF96B360A"
+                },
+                {
+                  "url": "http://127.0.0.1:53087/",
+                  "loaderId": "040FB8413EC03D9CE062C53CF033AD42"
+                }
+              ]
+            }
+          ],
+          "forcedCleanup": false,
+          "reason": "Failed launch cleanup"
+        }
+      ]
+    }
+  ]
+}

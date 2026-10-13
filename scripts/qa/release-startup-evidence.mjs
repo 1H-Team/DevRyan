@@ -48,5 +48,5 @@ export async function captureReleaseLocks(profile, app, sanitizer) {
   return { observedAt: new Date().toISOString(), locks, process: app?.getCleanupEvidence() ?? null };
 }
 
-export const acceptableReleaseLocks = evidence => evidence && Object.values(evidence.locks).every(lock =>
-  lock.state === 'missing' || lock.state === 'valid' && !lock.alive);
+export const acceptableReleaseLocks = evidence => Boolean(evidence?.locks?.owner && evidence.locks.mutation
+  && Object.values(evidence.locks).every(lock => lock.state === 'missing' || lock.state === 'valid' && lock.alive === false));

@@ -13,6 +13,10 @@ export function assertReleaseTrialEvidence(receipt) {
   let relaunches = 0;
   for (const row of receipt.scenarios) {
     assert.equal(row.evidenceError, undefined, row.id);
+    if (row.failureJournal) {
+      assert.equal(row.failureJournal.outcome, 'passed', row.id);
+      assert.equal(row.failureJournal.gapRecords, 0, row.id);
+    }
     assert.ok(Array.isArray(row.launches) && row.launches.length > 0, row.id);
     for (const launch of row.launches) {
       assert.equal(launch.evidenceError, undefined, row.id);

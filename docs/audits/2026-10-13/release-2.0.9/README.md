@@ -113,3 +113,52 @@ The diagnostic scratch branch adds a manual dry-run-only continue mode, blocked
 dependent scenarios, and bounded sanitized host logs. It changes no Bot image
 signature checks or input recipes, and every diagnostic receipt remains
 ineligible for publication. Ordinary final-DMG qualification remains fail-fast.
+
+## Startup reliability changes
+
+The follow-up publishes POSIX mutation locks from a synced private file with an
+exclusive hard link. Unsupported hard links alone permit the existing exclusive
+write fallback. Legacy malformed locks retain their thirty-second threshold.
+Foreground ownership waits within a forty-five-second budget, retrying only
+ownership contention and awaiting each acquisition to completion.
+
+Fresh and app-bound installations no longer register a background service.
+Explicit service configurations retain their upgrade paths. Stray registrations
+are removed and their owners must stop before foreground ownership is acquired;
+recovery preserves an explicitly configured service preference.
+
+The [recomputed image inventories](startup-image-inventories.json) show unchanged
+input digests for all eight Bot images. None includes the modified atomic-file
+module. Image signing, the build recipe and ordinary publication guards remain
+unchanged.
+
+The harness-only control is
+[workflow 38358849025](https://github.com/1H-Team/DevRyan/actions/runs/38358849025),
+at source `8ad231460347a33f984044f7f4fb3cbfe8653936`. It packages the unchanged
+product with bounded navigation reads, service handoff handling, ownership
+evidence and the restricted baseline relaunch allowance. Its receipt must be
+inspected before drawing conclusions about the ownership-busy mechanism.
+
+The [control evidence](harness-control.json) passed all 52 compiled cases, then
+hit navigation-budget failures and stopped on malformed-lock cleanup evidence.
+After the v2.0.8 same-runtime baseline stopped, its mutation lock was zero bytes,
+with mtime `2026-10-13T07:18:24.088Z`. The app exited with code zero after 10.361
+seconds following SIGINT; no owned processes survived. This demonstrates the
+malformed-lock shutdown path in a published baseline, but does not prove that
+the earlier unobserved ownership-busy failure had the same cause. No live
+unrelated mutation-lock holder was observed. Tampered-app and service cases
+were not reached.
+
+The navigation observer now seeds its document identity from `Page.getFrameTree`
+instead of counting a target-list URL with no loader identity. Baseline timeout
+classification retains authoritative failed health evidence, since older
+startup phase logs omit the terminal code. Navigation limits, candidate launch
+attempts and cleanup refusal remain unchanged.
+
+Full validation passed lint, type checks, documentation and every package except
+three web fixture assertions that intercepted the previous lock publication
+method. After correcting that fault injection, all 75 runtime-bundle tests and
+the complete web suite (6,702 Vitest plus 14 Bun tests) passed. These rechecks
+complete the failed invocation's coverage; the original invocation is not a
+pass. Production build and bundle budgets passed. Focused ownership, atomic-lock,
+service cleanup, navigation and baseline-policy checks passed.

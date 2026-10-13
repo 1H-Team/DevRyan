@@ -22,12 +22,12 @@ export async function readThroughNavigation(cdp, expression, { deadline, check =
 }
 
 /** Count committed top-level documents, not provisional requests or subframes. */
-export function observeReleaseNavigation(cdp, initialUrl, { terminal = false } = {}) {
+export function observeReleaseNavigation(cdp, initialUrl, { terminal = false, initialLoaderId = null } = {}) {
   const phases = [];
   let phase;
   const begin = (name, limit, initial = false) => {
     check();
-    phase = { name, limit, documents: initial ? [{ url: sanitizeUrl(initialUrl), loaderId: null }] : [] };
+    phase = { name, limit, documents: initial && initialLoaderId ? [{ url: sanitizeUrl(initialUrl), loaderId: initialLoaderId }] : [] };
     phases.push(phase);
   };
   const check = () => {

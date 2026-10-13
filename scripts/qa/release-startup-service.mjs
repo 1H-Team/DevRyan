@@ -28,7 +28,11 @@ export async function invokeReleaseServiceHandoff(launch, command, args, poll) {
     if (event.name !== binding) return;
     try {
       const result = JSON.parse(event.payload);
-      if (result?.ok !== true) failure = Error(`Service ${command} returned a failure`);
+      if (result?.ok !== true) {
+        const code = /^(?:runtime_service_|smappservice_)[a-z_]{1,100}$/.test(result?.error?.code ?? '')
+          ? result.error.code : 'runtime_service_request_failed';
+        failure = Object.assign(Error(`Service ${command} failed: ${code}`), { code });
+      }
     } catch { failure = Error(`Service ${command} returned invalid completion evidence`); }
   });
   try {
@@ -44,6 +48,23 @@ export async function invokeReleaseServiceHandoff(launch, command, args, poll) {
       launch.check(); if (failure) throw failure;
     });
   } finally { remove(); }
+}
+
+export async function cleanupReleaseService({ disable, isRegistered, bootout, waitForStopped, restore, onForced }) {
+  return runReleaseCleanup(async () => {
+    let failure;
+    try {
+      await disable();
+      assert.equal(await isRegistered(), false, 'Registered service survived cleanup');
+    } catch (error) {
+      failure = error;
+      onForced();
+      await bootout();
+      assert.equal(await waitForStopped(), true, 'Service owner survived forced cleanup');
+      assert.equal(await isRegistered(), false, 'Owned label survived bootout');
+    } finally { await restore(); }
+    if (failure) throw failure;
+  });
 }
 
 /** Only the disposable runner may alter the per-user service registration or launchd environment. */
@@ -78,9 +99,8 @@ export async function prepareReleaseService(profile) {
       });
     },
     cold: () => launchctl(['kickstart', '-k', service()]),
-    cleanup: launch => runReleaseCleanup(async () => {
-      let failure;
-      try {
+    cleanup: launch => cleanupReleaseService({
+      disable: async () => {
         if (launch) {
           await invokeReleaseServiceHandoff(launch, 'disable', {}, async deadline => {
             const status = await releaseServiceStatus(launch, deadline);
@@ -89,17 +109,13 @@ export async function prepareReleaseService(profile) {
               && owner.state === 'valid' && owner.owner.mode === 'app_bound' && owner.owner.pid === launch.app.child.pid;
           });
         }
-        assert.equal(await launchctl(['print', service()]).then(() => true, () => false), false, 'Registered service survived cleanup');
-      } catch (error) {
-        failure = error;
-        // This label was proved absent before this run registered it.
-        await launchctl(['bootout', service()]).catch(() => {});
-        profile.forcedServiceCleanup = true;
-        assert.equal(await waitForRuntimeServiceOwnerStopped({ dataDirectory: profile.env.OPENCHAMBER_DATA_DIR, timeoutMs: 30_000 }), true,
-          'Service owner survived forced cleanup');
-        assert.equal(await launchctl(['print', service()]).then(() => true, () => false), false, 'Owned label survived bootout');
-      } finally { await restore(); }
-      if (failure) throw failure;
+      },
+      isRegistered: () => launchctl(['print', service()]).then(() => true, () => false),
+      // This label was proved absent before this run registered it.
+      bootout: () => launchctl(['bootout', service()]).catch(() => {}),
+      waitForStopped: () => waitForRuntimeServiceOwnerStopped({ dataDirectory: profile.env.OPENCHAMBER_DATA_DIR, timeoutMs: 30_000 }),
+      restore,
+      onForced: () => { profile.forcedServiceCleanup = true; },
     }),
   };
 }

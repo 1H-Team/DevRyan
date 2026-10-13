@@ -1133,8 +1133,8 @@ test('the stale sweep keeps a matching sealed draft',async()=>{
  expect(await fs.readdir(bundles)).toEqual(['default-native']);expect(await fs.readFile(preparation)).toEqual(sealed);
 });
 const killedBeforeSelect=async(f,home,release)=>{
- const open=fs.open;fs.open=async(file,...rest)=>{if(path.basename(String(file))==='selection.lock')throw Object.assign(Error('killed before select'),{code:'EKILLED'});return open.call(fs,file,...rest);};
- try{await expect(launchDefault(f,home,release)).rejects.toMatchObject({code:'EKILLED'});}finally{fs.open=open;}
+ const link=fs.link;fs.link=async(source,target)=>{if(path.basename(String(target))==='selection.lock')throw Object.assign(Error('killed before select'),{code:'EKILLED'});return link.call(fs,source,target);};
+ try{await expect(launchDefault(f,home,release)).rejects.toMatchObject({code:'EKILLED'});}finally{fs.link=link;}
  expect(await fs.stat(path.join(draftRoot(home),'prepared.json')).then(stat=>stat.isFile())).toBe(true);
 };
 test('a sealed default draft whose migrated database was reopened before selection relaunches',async()=>{

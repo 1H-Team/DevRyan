@@ -19,6 +19,8 @@ test('only one published baseline boot timeout can receive a fresh launch', () =
     value => { value.failure.terminalCode = 'runtime_service_owner_busy'; },
     value => { value.failure.terminalCode = 'native_runtime_artifacts_unverified'; },
     value => { value.error.code = 'release_startup_cleanup_failed'; },
+    value => { value.error.code = 'runtime_service_owner_busy'; },
+    value => { value.error.code = 'native_runtime_artifacts_unverified'; },
     value => { value.failure.forcedCleanup = true; },
     value => { value.failure.evidenceError = 'unavailable'; },
     value => { value.failure.afterStop.process.remainingProcessIds = [123]; },
@@ -27,6 +29,7 @@ test('only one published baseline boot timeout can receive a fresh launch', () =
     value => { value.failure.afterStop.process.exitCode = null; },
     value => { value.failure.afterStop.locks.mutation = { state: 'malformed' }; },
     value => { value.failure.afterStop.locks.owner.alive = true; },
+    value => { value.failure.afterStop.locks = {}; },
   ]) {
     const value = trial(); mutate(value); assert.equal(allowBaselineRelaunch(value), false);
   }

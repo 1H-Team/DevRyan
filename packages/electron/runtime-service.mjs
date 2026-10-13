@@ -154,8 +154,8 @@ const reportBlockedRecovery = (reason, onDiagnostic) => {
 
 // Both observation/proof writes and lifetime-owner mutations share this guard.
 // Callers must not nest it; the stopped-owner polling delay stays outside it.
-const withOwnerMutation = (dataDirectory, fsPromises, callback) => withCrossProcessFileLock(
-  `${runtimeServiceOwnerPath(dataDirectory)}.mutation`, callback, { fs: fsPromises },
+const withOwnerMutation = (dataDirectory, fsPromises, callback, timeoutMs) => withCrossProcessFileLock(
+  `${runtimeServiceOwnerPath(dataDirectory)}.mutation`, callback, { fs: fsPromises, timeoutMs },
 ).catch((error) => {
   if (error?.code === 'LOCK_TIMEOUT') {
     fail('Runtime ownership is busy. Wait briefly and retry.', 'runtime_service_owner_busy');
@@ -643,8 +643,8 @@ export async function createRuntimeServiceCoordinator({
 
   // Use the shared cross-process mutation guard, separately from the lifetime
   // owner. It serializes reclamation and release as well as acquisition.
-  const mutateOwner = (callback) => withOwnerMutation(dataDirectory, fsPromises, callback);
-  const acquire = async ({ mode = 'service' } = {}) => mutateOwner(async () => {
+  const mutateOwner = (callback, timeoutMs) => withOwnerMutation(dataDirectory, fsPromises, callback, timeoutMs);
+  const acquire = async ({ mode = 'service', timeoutMs } = {}) => mutateOwner(async () => {
     if (owner) return owner;
     if (!['app_bound', 'service'].includes(mode)) {
       fail('Runtime service owner mode is invalid', 'runtime_service_config_invalid');
@@ -731,7 +731,7 @@ export async function createRuntimeServiceCoordinator({
       await handle?.close().catch(() => undefined);
       await fsPromises.unlink(temporary).catch(() => undefined);
     }
-  });
+  }, timeoutMs);
 
   const start = async ({ port, health = 'starting' } = {}) => {
     if (!owner) fail('Runtime service owner must be acquired first', 'runtime_service_owner_required');

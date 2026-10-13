@@ -150,7 +150,7 @@ describe('runtime-service desktop bootstrap source contract', () => {
     const readyBranch = mainSource.slice(
       mainSource.indexOf('app.whenReady().then(async () => {'),
     );
-    assert.match(mainSource, /const automaticRuntime = await autoEnableBackgroundRuntimeOnFirstLaunch\(\)/);
+    assert.match(mainSource, /const automaticRuntime = await prepareConfiguredBackgroundRuntime\(\)/);
     assert.match(mainSource, /if \(automaticRuntime\.mode === 'service'\)/);
     assert.doesNotMatch(readyBranch, /await clearElectronRuntimeCaches\(/);
     assert.match(mainSource, /deferOpenCodeStartup: true/);

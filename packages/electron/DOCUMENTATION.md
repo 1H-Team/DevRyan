@@ -11,3 +11,9 @@ On macOS, an authoritative `bundle_execution_unsettled` startup failure exposes 
 `tests/early-startup.test.mjs` covers window adoption, security guards, early close and deferred links. `startup-splash.test.mjs` covers recovery presentation and action authority. Native GUI first-paint and final signed installer verification remain separate acceptance gates.
 
 Relaunch temporarily restores the shell-owned data root and original explicit runtime root. An automatically injected runtime root is omitted from the child, while an explicitly supplied root is preserved. Parent runtime variables are restored even if scheduling relaunch fails.
+
+Runtime ownership acquisition has a 45-second budget, passed through to each mutation-lock attempt. Only `runtime_service_owner_busy` is retried; each pending acquisition is awaited to settlement. The splash reports “Waiting for the previous DevRyan to finish closing…”. Other ownership failures and the existing forced-exit deadline are unchanged.
+
+Background service is opt-in through `enableBackgroundBots`. Fresh and app-bound startup never register it. Explicit service installations retain upgrade/re-registration and their stored configuration during guarded app-bound recovery. Non-service startup removes a stray registration left by an interrupted handoff and proves its owner stopped before app-bound acquisition. Uncertain owner absence fails closed. Registration inspection and app-bound startup do not depend on Docker availability.
+
+Connect Remote remains available for connecting the desktop interface to an existing remote DevRyan server.

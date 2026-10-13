@@ -1,11 +1,10 @@
-export const describeRuntimeServiceStatus = ({ platform, isPackaged, configuredMode,
-  optedOut, registrationMode, registration, handshake, settingsUrl }) => {
+export const describeRuntimeServiceStatus = ({ platform, configuredMode,
+  registrationMode, registration, handshake, settingsUrl }) => {
   const supported = platform === 'darwin';
   const connected = supported && Boolean(handshake);
   return Object.freeze({
     configuredMode,
-    serviceEnabled: supported && (connected || configuredMode === 'service'
-      || (configuredMode !== 'disabled' && optedOut !== true && isPackaged === true)),
+    serviceEnabled: supported && (connected || configuredMode === 'service'),
     registrationMode: registrationMode || 'unsupported',
     registration,
     connected,
@@ -17,52 +16,29 @@ export const describeRuntimeServiceStatus = ({ platform, isPackaged, configuredM
 
 export const prepareAutomaticRuntimeService = async ({
   currentMode,
-  optedOut = false,
   platform,
   isPackaged,
   registration,
-  setMode,
-  log,
+  waitForStopped,
 } = {}) => {
-  // A user who switched the background service off keeps app-bound ownership:
-  // the runtime exits with the app and is never re-registered automatically.
-  if (optedOut === true || currentMode === 'disabled' || currentMode === 'service'
-    || platform !== 'darwin' || isPackaged !== true) {
+  if (currentMode === 'service' || platform !== 'darwin' || isPackaged !== true) {
     return Object.freeze({ mode: currentMode || 'app_bound', state: 'skipped', code: null });
   }
-
-  const useAppBoundMode = async (state, code) => {
-    if (currentMode !== 'app_bound') await setMode('app_bound');
-    return Object.freeze({ mode: 'app_bound', state, code });
-  };
-
+  // Registration can survive a crash before enableBackgroundBots persists service mode.
   const current = await registration.status();
-  if (current.state === 'requires_approval') {
-    return useAppBoundMode(current.state, current.code);
-  }
-  if (current.state === 'not_found' || current.state === 'unavailable' || current.ok === false) {
-    log?.warn?.('[runtime-service] automatic registration preflight unavailable', {
-      state: current.state,
-      code: current.code,
+  if (current?.ok !== true || !['not_registered', 'enabled', 'requires_approval'].includes(current.state)) {
+    throw Object.assign(new Error('Background runtime registration could not be established'), {
+      code: 'runtime_service_registration_unavailable',
     });
-    return useAppBoundMode(current.state, current.code);
   }
-
-  let registered = current;
-  if (current.state === 'not_registered') {
-    try {
-      registered = await registration.register({ allowLegacy: true });
-    } catch (error) {
-      const code = error?.code || 'runtime_service_registration_failed';
-      log?.warn?.('[runtime-service] automatic registration failed', { code });
-      return useAppBoundMode('registration_failed', code);
+  if (current.state !== 'not_registered') {
+    const removed = await registration.unregister();
+    if (removed?.ok !== true) {
+      throw Object.assign(new Error('Stray background runtime registration could not be removed'), { code: 'runtime_service_unregister_failed' });
     }
+    if (await waitForStopped() !== true) throw Object.assign(new Error('The previous background runtime is still active'), { code: 'runtime_service_owner_active' });
   }
-  if (registered.state !== 'enabled') {
-    return useAppBoundMode(registered.state, registered.code);
-  }
-  await setMode('service');
-  return Object.freeze({ mode: 'service', state: 'enabled', code: null });
+  return Object.freeze({ mode: currentMode || 'app_bound', state: 'not_registered', code: null });
 };
 
 // Service mode relies on a launchd registration. Without one nothing will ever
@@ -258,7 +234,21 @@ export const retireMismatchedRuntimeService = async ({
 
 // Publish only acquired coordinators. A rejected attempt must not make Retry
 // believe it already owns the server, and simultaneous callers share one claim.
-export const createRuntimeOwnerAcquirer = ({ getCoordinator, setCoordinator, createCoordinator }) => {
+export const acquireRuntimeServiceOwnership = async ({ acquire, onWaiting, timeoutMs = 45_000,
+  now = Date.now, wait = ms => new Promise(resolve => setTimeout(resolve, ms)) }) => {
+  const deadline = now() + timeoutMs;
+  onWaiting?.();
+  for (;;) {
+    try { return await acquire({ timeoutMs: Math.max(0, deadline - now()) }); }
+    catch (error) {
+      if (error?.code !== 'runtime_service_owner_busy' || now() >= deadline) throw error;
+      await wait(Math.min(25, deadline - now()));
+      if (now() >= deadline) throw error;
+    }
+  }
+};
+
+export const createRuntimeOwnerAcquirer = ({ getCoordinator, setCoordinator, createCoordinator, onWaiting }) => {
   let pending = null;
   return async (mode) => {
     const existing = getCoordinator();
@@ -266,7 +256,7 @@ export const createRuntimeOwnerAcquirer = ({ getCoordinator, setCoordinator, cre
     if (pending) return pending;
     pending = (async () => {
       const coordinator = await createCoordinator();
-      await coordinator.acquire({ mode });
+      await acquireRuntimeServiceOwnership({ acquire: options => coordinator.acquire({ mode, ...options }), onWaiting });
       setCoordinator(coordinator);
       return coordinator;
     })();
@@ -287,7 +277,7 @@ const diagnosticState = (state) => [
 ].includes(state) ? state : null;
 
 export const recoverAppBoundRuntime = async ({
-  connectionError, unregister, waitForStopped, acquire, setMode, release, log,
+  connectionError, configuredMode, unregister, waitForStopped, acquire, setMode, release, log,
 }) => {
   let acquired = false;
   let phase = 'unregister';
@@ -311,8 +301,10 @@ export const recoverAppBoundRuntime = async ({
     phase = 'acquire_app_bound';
     await runStartupPhase('service_acquire_app_bound', acquire, log);
     acquired = true;
-    phase = 'persist_app_bound';
-    await runStartupPhase('service_persist_app_bound', setMode, log);
+    if (configuredMode !== 'service') {
+      phase = 'persist_app_bound';
+      await runStartupPhase('service_persist_app_bound', setMode, log);
+    }
     log?.warn?.('[runtime-service] startup recovered', {
       phase: 'app_bound_acquired', code: 'runtime_service_startup_recovered',
       registrationState, registrationCode,

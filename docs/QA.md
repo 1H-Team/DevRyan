@@ -717,6 +717,8 @@ Release read-only probes retry only `Inspected target navigated or closed`, unde
 their original deadline. Browser actions remain single-attempt. The committed
 top-level document budget is three for ordinary startup (startup, application,
 one readiness reload), two for terminal startup, and one per service handoff.
+The explicit Prepare recovery action has a separate one-document transition;
+it does not extend the preceding terminal-startup budget.
 Service commands are invoked once; authoritative registration and owner state
 establish completion. Forced owned-label cleanup rejects the sample.
 

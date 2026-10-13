@@ -849,6 +849,7 @@ const inheritUserShellEnv = () => {
 };
 
 const acquireRuntimeOwner = createRuntimeOwnerAcquirer({
+  onWaiting: () => updateStartupSplashStatus('Waiting for the previous DevRyan to finish closing…'),
   getCoordinator: () => state.runtimeServiceCoordinator,
   setCoordinator: (coordinator) => { state.runtimeServiceCoordinator = coordinator; },
   createCoordinator: () => createRuntimeServiceCoordinator({
@@ -1691,6 +1692,7 @@ const waitForRuntimeServiceOwnerStopped = (timeoutMs = 15_000) => waitForOwnerSt
 
 const recoverStartupToAppBound = (connectionError) => recoverAppBoundRuntime({
   connectionError,
+  configuredMode: readSettingsRoot().productionBotsRuntimeMode,
   unregister: () => getRuntimeServiceRegistration().unregister(),
   waitForStopped: () => waitForRuntimeServiceOwnerStopped(),
   acquire: () => acquireRuntimeOwner('app_bound'),
@@ -1817,18 +1819,14 @@ const reregisterBackgroundRuntimeAfterManualUpgrade = () => reregisterRuntimeSer
   log,
 });
 
-const autoEnableBackgroundRuntimeOnFirstLaunch = async () => {
+const prepareConfiguredBackgroundRuntime = async () => {
   const settings = readSettingsRoot();
   return prepareAutomaticRuntimeService({
     currentMode: settings.productionBotsRuntimeMode,
-    optedOut: settings.productionBotsRuntimeServiceOptOut === true,
     platform: process.platform,
     isPackaged: app.isPackaged,
     registration: getRuntimeServiceRegistration(),
-    setMode: (mode) => mutateSettingsRoot((root) => {
-      root.productionBotsRuntimeMode = mode;
-    }),
-    log,
+    waitForStopped: () => waitForRuntimeServiceOwnerStopped(),
   });
 };
 
@@ -3743,7 +3741,7 @@ const prepareBotRuntimeInBackground = () => {
 const prepareForegroundRuntime = async () => {
   if(isPreview || runtimeBundleRecoveryRequired)return;
   if (state.runtimeServiceClient || state.runtimeServiceCoordinator?.getOwner()) return;
-  const automaticRuntime = await autoEnableBackgroundRuntimeOnFirstLaunch();
+  const automaticRuntime = await prepareConfiguredBackgroundRuntime();
   if (automaticRuntime.mode === 'service') {
     try {
       updateStartupSplashStatus('Preparing the background runtime…');

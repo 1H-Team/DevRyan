@@ -226,6 +226,7 @@ describe('startup owner-state regression coverage', () => {
     const dataDirectory = await temporaryDirectory();
     let inspected = false;
     const fsPromises = { ...fs, link: async (source, target) => {
+      if (target !== runtimeServiceOwnerPath(dataDirectory)) return fs.link(source, target);
       assert.equal((await readRuntimeServiceOwner({ dataDirectory })).state, 'missing');
       assert.equal(JSON.parse(await fs.readFile(source, 'utf8')).pid, process.pid);
       inspected = true;
@@ -236,6 +237,18 @@ describe('startup owner-state regression coverage', () => {
     assert.equal(inspected, true);
     assert.equal((await readRuntimeServiceOwner({ dataDirectory })).state, 'valid');
     await coordinator.release();
+  });
+
+  test('acquisition forwards the remaining startup budget into the mutation lock', async () => {
+    const dataDirectory = await temporaryDirectory();
+    const lock = `${runtimeServiceOwnerPath(dataDirectory)}.mutation`;
+    await fs.mkdir(path.dirname(lock), { recursive: true });
+    await fs.writeFile(lock, JSON.stringify({ ownerToken: 'budget-fixture', pid: process.pid, createdAt: Date.now() }));
+    const coordinator = await coordinatorFor(dataDirectory);
+    const started = performance.now();
+    await assert.rejects(coordinator.acquire({ timeoutMs: 20 }), { code: 'runtime_service_owner_busy' });
+    assert.ok(performance.now() - started < 2000, 'The attempt ignored the remaining budget');
+    assert.equal(JSON.parse(await fs.readFile(lock, 'utf8')).ownerToken, 'budget-fixture');
   });
 
   test('failed writes leave no empty owner or temporary and a later retry succeeds', async () => {
@@ -289,6 +302,7 @@ describe('startup owner-state regression coverage', () => {
     const raw = JSON.stringify({ version: 1, instanceId: '123e4567-e89b-42d3-a456-426614174000',
       pid: process.pid, generation: 22, mode: 'service', createdAt: new Date().toISOString() });
     const coordinator = await coordinatorFor(dataDirectory, { fsPromises: { ...fs, link: async (source, target) => {
+      if (target !== runtimeServiceOwnerPath(dataDirectory)) return fs.link(source, target);
       await fs.writeFile(target, raw, { flag: 'wx' });
       return fs.link(source, target);
     } } });
@@ -892,6 +906,7 @@ describe('process identity ownership', () => {
     let failOnce = true;
     const options = { platform: 'linux', getBootSessionId: async () => firstBoot, getProcessStartIdentity: async () => 'linux:100' };
     const coordinator = await coordinatorFor(dataDirectory, { ...options, fsPromises: { ...fs, link: async (source, target) => {
+      if (target !== runtimeServiceOwnerPath(dataDirectory)) return fs.link(source, target);
       const candidate = JSON.parse(await fs.readFile(source, 'utf8'));
       const saved = JSON.parse(await fs.readFile(identityPath(dataDirectory), 'utf8'));
       assert.equal(saved.instanceId, candidate.instanceId);

@@ -5,9 +5,9 @@ export function allowBaselineRelaunch({ receipt, artifact, candidate, failure, e
   return receipt.baselineRelaunches === 0 && artifact.publishedTag === `v${artifact.version}`
     && artifact.version !== candidate.version && artifact.dmgSha256 !== candidate.dmgSha256
     && failure?.terminalCode === 'native_process_boot_timeout'
-    && error?.code !== 'release_startup_cleanup_failed' && !failure.evidenceError && !failure.forcedCleanup
+    && (!error?.code || error.code === 'native_process_boot_timeout') && !failure.evidenceError && !failure.forcedCleanup
     && process?.trackingClosed === true && process.rootObserved === true
     && process.observationErrors.length === 0 && process.remainingProcessIds.length === 0
-    && (process.exitCode !== null || process.exitSignal !== null)
+    && (Number.isInteger(process.exitCode) || typeof process.exitSignal === 'string')
     && acceptableReleaseLocks(failure.afterStop);
 }

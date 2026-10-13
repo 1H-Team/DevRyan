@@ -80,7 +80,7 @@ export async function launchReleaseStartup(artifact, profile, { setupOnly = fals
   requireDisposableMacRunner();
   const startedAt = performance.now(), debugPort = await reservePort();
   const logOffset = readNativeStartupLogs(null, profile.env.HOME).length;
-  let app, serviceEnvironment, stopping, cdp, audit, navigation, subscription, exceptions = 0, removeErrors;
+  let app, serviceEnvironment, stopping, cdp, audit, navigation, subscription, startup, exceptions = 0, removeErrors;
   const stop = () => stopping ??= (async () => {
     removeErrors?.(); audit?.complete(); navigation?.complete(); subscription?.close(); cdp?.close();
     try {
@@ -100,7 +100,10 @@ export async function launchReleaseStartup(artifact, profile, { setupOnly = fals
     const target = await discoverPageTarget(debugPort);
     cdp = await CdpConnection.connect(target.webSocketDebuggerUrl);
     audit = observeStartupNavigation(cdp, startedAt, target.url);
-    navigation = observeReleaseNavigation(cdp, target.url, { terminal: Boolean(expectedFailure) });
+    const { frameTree } = await cdp.send('Page.getFrameTree');
+    navigation = observeReleaseNavigation(cdp, frameTree.frame.url, {
+      terminal: Boolean(expectedFailure), initialLoaderId: frameTree.frame.loaderId,
+    });
     subscription = observeNativeStartupSubscription(cdp, startedAt);
     removeErrors = cdp.on('Runtime.exceptionThrown', () => { exceptions++; });
     await Promise.all([cdp.send('Page.enable'), cdp.send('Runtime.enable'), cdp.send('Network.enable')]);
@@ -117,7 +120,6 @@ export async function launchReleaseStartup(artifact, profile, { setupOnly = fals
       return /^http:\/\/127\.0\.0\.1:\d+\//.test(href) ? new URL(href).origin : null;
     }, check);
     const request = (route, init, deadline) => releaseRendererRequest(cdp, route, init, { deadline, check });
-    let startup;
     if (setupOnly) {
       await waitReleaseStartup('empty-profile native health', async deadline => {
         const { body } = await request('/health', undefined, deadline);
@@ -132,6 +134,9 @@ export async function launchReleaseStartup(artifact, profile, { setupOnly = fals
         isEventStreamReady: subscription.isReady,
         fetchCatalog: async () => { const result = await request('/api/provider'); return new Response(JSON.stringify(result.body), { status: result.status }); },
         readStartupPhases: () => parseStartupPhaseLogs(readNativeStartupLogs(app, profile.env.HOME, logOffset)) });
+      if (startup.outcome !== 'passed' && startup.startupFailure?.state === 'failed' && startup.startupFailure.code) {
+        throw Object.assign(Error(startup.error), { code: startup.startupFailure.code });
+      }
       assert.equal(startup.outcome, 'passed', startup.error);
       assert.ok(startup.healthObservations.every(row => row.state !== 'failed'), 'A failed startup attempt cannot be erased by recovery');
       assert.ok(new Set(startup.healthObservations.filter(row => row.attempt > 0).map(row => row.attempt)).size <= 1,
@@ -166,7 +171,8 @@ export async function launchReleaseStartup(artifact, profile, { setupOnly = fals
   } catch (error) {
     if (onFailure) {
       const interfaceState = cdp ? await evaluate(cdp, `(${readReleaseSetupInterfaceState.toString()})()`).catch(() => null) : null;
-      try { await onFailure({ cdp, app, interfaceState, log: readNativeStartupLogs(app, profile.env.HOME, logOffset) }); }
+      try { await onFailure({ cdp, app, interfaceState, startupFailure: startup?.startupFailure,
+        log: readNativeStartupLogs(app, profile.env.HOME, logOffset) }); }
       catch (evidenceError) { error.evidenceError = evidenceError; }
     }
     try { await stop(); }

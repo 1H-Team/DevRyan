@@ -146,6 +146,58 @@ describe('atomic file primitives', () => {
     expect(JSON.parse(await fs.readFile(lockPath, 'utf8')).ownerToken).toBe('live');
   });
 
+  test('publishes only a synced complete inode and cleans temporary files after contention', async () => {
+    const directory = await temporaryDirectory(), lockPath = path.join(directory, 'atomic.lock');
+    let synced = false, links = 0;
+    const fsApi = { ...fs,
+      open: async (...args) => {
+        const handle = await fs.open(...args);
+        const sync = handle.sync.bind(handle);
+        handle.sync = async () => { await sync(); synced = true; };
+        return handle;
+      },
+      link: async (source, destination) => {
+        links++;
+        expect(synced).toBe(true);
+        expect(JSON.parse(await fs.readFile(source, 'utf8')).ownerToken).toBe('atomic-owner');
+        await expect(fs.stat(destination)).rejects.toMatchObject({ code: 'ENOENT' });
+        return fs.link(source, destination);
+      },
+    };
+    await withCrossProcessFileLock(lockPath, async () => {
+      expect(JSON.parse(await fs.readFile(lockPath, 'utf8')).ownerToken).toBe('atomic-owner');
+    }, { fs: fsApi, randomToken: () => 'atomic-owner' });
+    expect(links).toBe(1); expect(await fs.readdir(directory)).toEqual([]);
+    await fs.writeFile(lockPath, JSON.stringify({ ownerToken: 'other', pid: process.pid, createdAt: 0 }));
+    await expect(withCrossProcessFileLock(lockPath, () => {}, { timeoutMs: 0 })).rejects.toMatchObject({ code: 'LOCK_TIMEOUT' });
+    expect(await fs.readdir(directory)).toEqual(['atomic.lock']);
+  });
+
+  test('only unsupported hard links allow exclusive-create fallback; permission and I/O errors propagate', async () => {
+    const directory = await temporaryDirectory(), lockPath = path.join(directory, 'fallback.lock');
+    for (const code of ['ENOSYS', 'ENOTSUP', 'EOPNOTSUPP', 'EPERM', 'EACCES', 'EIO', 'ENOSPC']) {
+      let entered = false;
+      const operation = withCrossProcessFileLock(lockPath, () => { entered = true; }, {
+        fs: { ...fs, link: async () => { throw Object.assign(Error(code), { code }); } },
+      });
+      if (['ENOSYS', 'ENOTSUP', 'EOPNOTSUPP'].includes(code)) {
+        await operation; expect(entered).toBe(true);
+      } else { await expect(operation).rejects.toMatchObject({ code }); expect(entered).toBe(false); }
+      expect(await fs.readdir(directory)).toEqual([]);
+    }
+  });
+
+  test('legacy malformed mutation locks keep the default thirty-second threshold', async () => {
+    const directory = await temporaryDirectory(), lockPath = path.join(directory, 'legacy.lock');
+    await fs.writeFile(lockPath, '{');
+    let now = (await fs.stat(lockPath)).mtimeMs;
+    const start = now;
+    await withCrossProcessFileLock(lockPath, () => { expect(now - start).toBe(30000); }, {
+      timeoutMs: 45000, now: () => now, wait: async ms => { now += ms; },
+    });
+    expect(await fs.readdir(directory)).toEqual([]);
+  });
+
   test('waits on fresh malformed locks and recovers stale malformed locks', async () => {
     const directory = await temporaryDirectory();
     const lockPath = path.join(directory, 'project.lock');

@@ -8,12 +8,17 @@ turn-evidence primitives. It also owns the host-neutral persisted command-
 deadline controller used by web/Electron.
 
 `lib/atomic-file.js` also exports a dependency-free cross-process lock. Locks
-are acquired with exclusive `wx` creation and private mode, carry a random
+on POSIX publish a synced private temporary inode with exclusive `link()`, so a
+process killed while writing cannot expose a partial lock. Only explicitly
+unsupported hard links (`ENOSYS`, `ENOTSUP`, `EOPNOTSUPP`) fall back to exclusive
+`wx`; permission and I/O failures propagate. Locks carry a random
 token plus PID/timestamp, reclaim only proven-dead or safely stale malformed
 owners, time out deterministically around live owners, and delete only when the
 release token still matches. Project configuration uses this primitive to
 serialize scheduler claims and ordinary mutations across web/Electron server
 processes.
+The legacy malformed-lock threshold remains 30 seconds; existing lock records
+keep their format. Windows continues to use its execution-host owner.
 
 Host packages inject storage roots and platform effects. The shared UI never
 imports this package; it consumes HTTP bridge contracts.

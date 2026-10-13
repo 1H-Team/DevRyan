@@ -122,6 +122,10 @@ export async function runReleaseStartup({ dmg, version, sourceCommit, receiptPat
           launchRecord.failureLog = sanitizer.sanitizeText(launch.log, { highEntropy: true }).slice(-16000);
           launchRecord.terminalPhases = parseStartupPhaseLogs(launch.log).filter(phase => phase.outcome === 'failed');
           const codes = new Set(launchRecord.terminalPhases.map(phase => phase.code).filter(Boolean));
+          if (launch.startupFailure?.state === 'failed' && launch.startupFailure.code) {
+            launchRecord.startupFailure = launch.startupFailure;
+            codes.add(launch.startupFailure.code);
+          }
           launchRecord.terminalCode = codes.size === 1 ? [...codes][0] : null;
           row.failureInterface = launch.interfaceState;
           row.failureArtifact = { version: artifact.version, dmgSha256: artifact.dmgSha256, manifestSha256: artifact.manifestSha256 };
@@ -256,6 +260,7 @@ export async function runReleaseStartup({ dmg, version, sourceCommit, receiptPat
       await seedReleaseUnsettledProcess(profile, scope);
       const failed = await start(candidate, profile, { expectedFailure: 'bundle_execution_unsettled' });
       await screenshot(row, failed, `${row.id}-failure`);
+      failed.navigation.handoff('reboot-recovery');
       await failed.ui.click({ selector: 'a[href="openchamber://prepare-reboot-recovery"]', text: 'Prepare recovery for restart' });
       await failed.ui.waitVisibleText('Restart your computer to continue');
       await screenshot(row, failed, `${row.id}-prepared`);
@@ -277,7 +282,7 @@ export async function runReleaseStartup({ dmg, version, sourceCommit, receiptPat
       try {
         await waitReleaseStartup('in-progress artifact retention', async () =>
           (await fs.readdir(path.join(profile.controlRoot, 'artifacts'))).some(name => name.startsWith('.retaining-')), app.check);
-        app.child.kill('SIGKILL'); await app.stop();
+        app.child.kill('SIGKILL'); await runReleaseCleanup(() => app.stop());
         assert.deepEqual(readBundleStartupState(profile.controlRoot), initial, 'Interrupted retention changed selection');
       } finally { await runReleaseCleanup(async () => {
         try { await app.stop(); } finally {

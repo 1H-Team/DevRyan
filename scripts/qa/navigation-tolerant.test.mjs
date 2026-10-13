@@ -24,12 +24,13 @@ test('readiness loops and terminal or service excess transitions cannot be hidde
   let listener;
   const cdp = { on: (_event, callback) => { listener = callback; return () => {}; }, send: async () => ({ result: { value: true } }) };
   const frame = (id, parentId) => listener({ frame: { url: 'http://127.0.0.1/', loaderId: id, parentId } });
-  const audit = observeReleaseNavigation(cdp, 'data:startup');
+  const audit = observeReleaseNavigation(cdp, 'data:startup', { initialLoaderId: 'startup' });
+  frame('startup');
   frame('subframe', 'parent'); frame('app'); frame('app'); frame('reload'); audit.check();
   assert.equal(audit.phases[0].documents.length, 3);
   frame('loop');
   await assert.rejects(readThroughNavigation(cdp, 'true', { deadline: performance.now() + 1000, check: audit.check }), /Excess committed/);
-  const terminal = observeReleaseNavigation(cdp, 'data:startup', { terminal: true });
+  const terminal = observeReleaseNavigation(cdp, 'data:startup', { terminal: true, initialLoaderId: 'startup' });
   frame('failure'); terminal.check(); frame('loop'); assert.throws(terminal.check, /terminal-startup/);
   const handoff = observeReleaseNavigation(cdp, 'http://127.0.0.1/');
   handoff.handoff('service-enable'); frame('handoff'); handoff.check(); frame('extra');
