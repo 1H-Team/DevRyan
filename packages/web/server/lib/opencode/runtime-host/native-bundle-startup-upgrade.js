@@ -80,7 +80,7 @@ export async function upgradeSelectedNativeBundleAtStartup({ controlRoot, env = 
   const refused = (code, error) => {
     recordStartupBundleUpgradeFailure(code, error);
     const diagnostic = artifactDiagnostic(error);
-    log.warn?.(`[runtime-bundle] startup upgrade not applied: ${code}`);
+    log.warn?.(`[runtime-bundle] startup upgrade not applied: ${code}${error?.detail ? ` ${JSON.stringify(error.detail)}` : ''}`);
     if (upgradeStartedAt !== undefined) log.warn?.('[runtime-bundle] startup phase', {
       phase: 'bundle_upgrade', outcome: 'failed', elapsedMs: Date.now() - upgradeStartedAt, code, ...(diagnostic ? { diagnostic } : {}),
     });

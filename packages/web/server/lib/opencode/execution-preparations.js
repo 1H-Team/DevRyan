@@ -120,8 +120,17 @@ export function createExecutionPreparations({ runtime, onDiagnostic, owner, poll
     drain: () => Promise.allSettled([...jobs.values()].map(abandon)) };
 }
 
-/** One uncertain lease must not prevent unrelated recoverable work settling. */
-export async function recoverExecutionLeases({ runtime, directory, launcher, ownerLost, onFailure }) {
+const NEVER_STARTED_MARGIN_MS = 10 * 60_000;
+/** The supervisor creates its receipt exclusively before it forks, and the
+ * confined command cannot write beside its view. With the owner gone and no
+ * receipt long after reservation, no supervisor reached that point. */
+const neverStartedProcessLease = (lease) => lease.executionKind === 'process' && lease.state === 'ready'
+  && Number.isFinite(lease.reservedAt) && Date.now() - lease.reservedAt > NEVER_STARTED_MARGIN_MS;
+
+/** One uncertain lease must not prevent unrelated recoverable work settling.
+ * `settleNeverStarted` is for cold recovery only, where no owner of the bundle
+ * is alive to launch a late supervisor. */
+export async function recoverExecutionLeases({ runtime, directory, launcher, ownerLost, onFailure, settleNeverStarted = false }) {
   const abandoned = async (lease) => {
     if (!lease.ownerID) {
       // Earlier builds reserved native control leases without an owner. Such a
@@ -135,7 +144,15 @@ export async function recoverExecutionLeases({ runtime, directory, launcher, own
   for (const lease of await runtime.activeLeases({ directory })) {
     try {
       if (!await abandoned(lease)) continue;
-      if (lease.executionKind === 'process') await readSessionExecutionReceipt(lease, { launcher });
+      if (lease.executionKind === 'process') {
+        try { await readSessionExecutionReceipt(lease, { launcher }); }
+        catch (cause) {
+          if (!settleNeverStarted || cause?.code !== 'ENOENT' || !neverStartedProcessLease(lease)) throw cause;
+          await runtime.cancelUnstartedCall({ ...lease.scope, directory: lease.directory, token: lease.token });
+          if ((await runtime.activeLeases({ directory })).some(active => active.token === lease.token)) throw failure('mutation_termination_unconfirmed');
+          continue;
+        }
+      }
       await runtime.cancelLease(lease);
     } catch (cause) { onFailure(cause); }
   }

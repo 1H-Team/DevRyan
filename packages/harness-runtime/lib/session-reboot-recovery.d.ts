@@ -12,6 +12,7 @@ export interface RebootRecoveryProof {
   outcome: 'uncertain';
   retained: true;
 }
+export function rebootRecoveryCanonical(value: unknown): string;
 export function rebootRecoveryHash(value: unknown): string;
 export function isRebootRecoveredLease(value: unknown): value is MutationLease & { rebootRecovery: RebootRecoveryProof };
 export function recoverProcessLeaseAfterReboot(lease: MutationLease, proof: Pick<RebootRecoveryProof,

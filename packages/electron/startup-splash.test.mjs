@@ -40,6 +40,7 @@ describe('Electron startup splash', () => {
       let lastStartupDiagnostic, startupRecoveryFailure, startupFailurePageUrl;
       const isPreview = false;
       const shellRuntimeBundleBindingError = null;
+      const rebootRecoveryPreparable = () => false;
       ${build}
       ${show}
       return showStartupFailure;
@@ -276,7 +277,8 @@ describe('native startup reboot recovery', () => {
   it('native recovery accepts only its own displayed failure and rereads authoritative root and revision', () => {
     const source = mainSource();
     expect(source).toContain("browserWindow === state.mainWindow && browserWindow.webContents.getURL() === startupFailurePageUrl");
-    expect(source).toContain("startupErrorDetails(startupRecoveryFailure).code !== 'bundle_execution_unsettled'");
+    expect(source).toContain("!rebootRecoveryPreparable(startupErrorDetails(startupRecoveryFailure).code)");
+    expect(source).toContain("const rebootRecoveryPreparable = (code) => code === 'bundle_execution_unsettled' || code === 'bundle_reboot_recovery_changed';");
     expect(source).toContain('controlRoot: binding.controlRoot, expectedRevision: binding.selection.revision');
     expect(source).not.toContain("shell.openExternal('openchamber://prepare-reboot-recovery')");
   });
@@ -288,10 +290,11 @@ it('native restart preparation rejects unrelated failures and derives authority 
     .replace("await import('@openchamber/web/server/lib/opencode/runtime-host/native-bundle-reboot-recovery.js')", 'await loadRecovery()');
   const failure = { code: 'native_runtime_artifacts_unverified' };
   const calls = [];
-  let finish;
+  let finish, refuse;
   const pending = new Promise(resolve => { finish = resolve; });
   const prepare = new Function('owners', `
-    const { readNativeShellBundleBinding, loadRecovery, showStartupFailure, startupRecoveryFailure } = owners;
+    const { readNativeShellBundleBinding, loadRecovery, showStartupFailure, startupRecoveryFailure, log } = owners;
+    const rebootRecoveryPreparable = code => code === 'bundle_execution_unsettled' || code === 'bundle_reboot_recovery_changed';
     const isPreview = false, isRuntimeServiceMode = false;
     const process = { platform: 'darwin', env: {} }, os = { homedir: () => '/fixture' }, fs = { existsSync: () => true };
     const readRuntimeBundleBinding = () => {};
@@ -301,8 +304,9 @@ it('native restart preparation rejects unrelated failures and derives authority 
   `)({
     startupRecoveryFailure: failure,
     readNativeShellBundleBinding: () => ({ controlRoot: '/fixture/selected', selection: { revision: 7 } }),
-    loadRecovery: async () => ({ beginNativeBundleRebootRecovery: async value => { calls.push(value); await pending; } }),
-    showStartupFailure: async error => { calls.push(error.code); },
+    loadRecovery: async () => ({ beginNativeBundleRebootRecovery: async value => { calls.push(value); await pending; if (refuse) throw refuse; } }),
+    showStartupFailure: async (error, options) => { calls.push(options?.retainRecovery ? [error.code, 'retained'] : error.code); },
+    log: { error: (_message, details) => { calls.push(['logged', details.code]); } },
   });
   await prepare();
   expect(calls).toEqual([]);
@@ -313,4 +317,11 @@ it('native restart preparation rejects unrelated failures and derives authority 
   finish();
   await first;
   expect(calls).toEqual([{ controlRoot: '/fixture/selected', expectedRevision: 7 }, 'bundle_reboot_required']);
+  // A refused preparation is logged and leaves the launch failure preparable.
+  calls.length = 0; refuse = { code: 'bundle_upgrade_owner_active' };
+  await prepare();
+  expect(calls.slice(1)).toEqual([['logged', 'bundle_upgrade_owner_active'], ['bundle_upgrade_owner_active', 'retained']]);
+  failure.code = 'bundle_reboot_recovery_changed'; calls.length = 0; refuse = undefined;
+  await prepare();
+  expect(calls.at(-1)).toBe('bundle_reboot_required');
 });

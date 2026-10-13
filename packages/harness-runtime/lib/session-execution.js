@@ -548,11 +548,15 @@ export async function startSessionExecution({ launcher, lease, command, args = [
   signal?.addEventListener('abort', cancel, { once: true });
   if (signal?.aborted) cancel();
   const result = new Promise((resolve, reject) => {
-    child.once('error', reject);
+    // No pid: the launcher itself was never created.
+    child.once('error', cause => reject(child.pid === undefined ? Object.assign(cause, { neverStarted: true }) : cause));
     child.once('close', async (code, signal) => {
       const unconfirmed = () => Object.assign(error('mutation_termination_unconfirmed'), { exitCode: code, signal });
       let value;
-      try { value = await readSessionExecutionReceipt(lease, { launcher }); } catch { reject(unconfirmed()); return; }
+      // The supervisor creates its receipt before forking: absent once it has
+      // closed, the confined command never existed.
+      try { value = await readSessionExecutionReceipt(lease, { launcher }); }
+      catch (cause) { reject(Object.assign(unconfirmed(), cause?.code === 'ENOENT' ? { neverStarted: true } : {})); return; }
       if (code !== value.exitCode) {
         reject(unconfirmed()); return;
       }

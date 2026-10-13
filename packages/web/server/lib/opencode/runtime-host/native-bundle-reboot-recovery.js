@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import { withCrossProcessFileLock } from '../../../../../harness-runtime/lib/atomic-file.js';
 import { readSessionExecutionReceipt } from '../../../../../harness-runtime/lib/session-execution.js';
 import { executionHostOwnerLost } from '../../../../../harness-runtime/lib/execution-host-owner.js';
-import { isRebootRecoveredLease, originalRebootLease, recoverProcessLeaseAfterReboot, rebootRecoveryHash } from '../../../../../harness-runtime/lib/session-reboot-recovery.js';
+import { isRebootRecoveredLease, recoverProcessLeaseAfterReboot, rebootRecoveryCanonical, rebootRecoveryHash } from '../../../../../harness-runtime/lib/session-reboot-recovery.js';
 import { readRuntimeBundleBinding } from './runtime-bundle-binding.js';
 import { readBundleLeaseInventory } from './native-bundle-lease-recovery.js';
 import { assertNoLiveOwner } from './native-bundle-startup-upgrade.js';
@@ -46,9 +46,6 @@ const selected = controlRoot => {
 const bindingHash = binding => rebootRecoveryHash({ descriptor: binding.descriptor, selection: binding.selection });
 const lockLedgers = (ledgers, action, index = 0) => index === ledgers.length ? action()
   : withCrossProcessFileLock(path.join(ledgers[index].root, 'owner.lock'), () => lockLedgers(ledgers, action, index + 1));
-const inventoryHash = (ledgers, intent) => rebootRecoveryHash(ledgers.map(ledger => ({ root: ledger.root, directory: ledger.directory,
-  records: ledger.records.map(row => ({ key: row.key, value: row.value?.rebootRecovery?.fenceID === intent?.fenceID
-    && intent?.leases.some(entry => entry.root === ledger.root && entry.key === row.key) ? originalRebootLease(row.value) : row.value })) })));
 
 async function assertLeasePins(ledgers, intent) {
   for (const ledger of ledgers) {
@@ -73,22 +70,23 @@ async function retainLeasePins(ledger, intent) {
   }
 }
 
-/** Hash private evidence without following symlinks or exposing its contents. */
+/** Hash private evidence without following symlinks or exposing its contents.
+ * The digest is the canonical hash of the row list, built without retaining it:
+ * a view holds every project file, and its scratch may hold sockets. */
 async function viewHash(ledgerRoot, lease) {
   const parent = path.dirname(lease.viewDirectory ?? '');
   if (!path.isAbsolute(lease.viewDirectory ?? '') || !containsPath(path.join(ledgerRoot, 'views'), parent)
     || parent === path.join(ledgerRoot, 'views') || await fs.realpath(parent) !== parent) throw fail('bundle_execution_path_unknown');
-  const rows = []; let bytes = 0;
+  const digest = createHash('sha256').update('['); let count = 0;
+  const rows = { push: row => digest.update(`${count++ ? ',' : ''}${rebootRecoveryCanonical(row)}`) };
   const walk = async (directory, relative = '') => {
     if (await fs.realpath(directory) !== directory) throw fail('bundle_execution_path_unknown');
     for (const entry of (await fs.readdir(directory, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
-      if (rows.length >= 32768) throw fail('bundle_reboot_recovery_inventory_invalid');
       const file = path.join(directory, entry.name), name = relative ? `${relative}/${entry.name}` : entry.name;
       const stat = await fs.lstat(file);
       if (stat.isSymbolicLink()) rows.push({ path: name, link: await fs.readlink(file) });
       else if (stat.isDirectory()) { rows.push({ path: name, directory: true }); await walk(file, name); }
       else if (stat.isFile()) {
-        if ((bytes += stat.size) > 16 * 1024 ** 3) throw fail('bundle_reboot_recovery_inventory_invalid');
         const handle = await fs.open(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
         try {
           const before = await handle.stat(), hash = createHash('sha256');
@@ -99,11 +97,11 @@ async function viewHash(ledgerRoot, lease) {
             || after.mtimeMs !== before.mtimeMs || after.ctimeMs !== before.ctimeMs) throw fail('bundle_reboot_recovery_changed');
           rows.push({ path: name, mode: stat.mode & 0o777, sha256: hash.digest('hex') });
         } finally { await handle.close(); }
-      } else throw fail('bundle_reboot_recovery_inventory_invalid');
+      } else rows.push({ path: name, special: stat.mode & constants.S_IFMT });
     }
   };
   await walk(parent);
-  return rebootRecoveryHash(rows);
+  return digest.update(']').digest('hex');
 }
 
 async function readIntent(controlRoot) {
@@ -139,20 +137,28 @@ export async function beginNativeBundleRebootRecovery({ controlRoot, expectedRev
     const launcher = executionArtifacts(path.dirname(launch.artifactManifestPath)).launcher;
     const artifacts = await verifyArtifacts({ manifestPath: launch.artifactManifestPath, manifestSha256: launch.artifactManifestSha256, launcher, purpose: 'bundle-source' });
     if (artifacts.controller !== launch.controllerBinary) throw fail('bundle_artifact_generation_mismatch');
-    const before = await readBundleLeaseInventory(launch, { allRecords: true });
+    const before = await readBundleLeaseInventory(launch);
     return lockLedgers(before, async () => {
+      if (prior?.state === 'prepared') {
+        let held = false;
+        try {
+          const ledgers = await readBundleLeaseInventory(launch, { allRecords: true, intent: prior });
+          held = prior.bindingSha256 === bindingHash(binding) && prior.previousBoot === previousBoot && ledgers.inventorySha256 === prior.inventorySha256
+            && canonicalJSON(before.map(row => row.root)) === canonicalJSON(ledgers.map(row => row.root));
+          if (held) await assertLeasePins(ledgers, prior);
+          for (const entry of held ? prior.leases : []) {
+            const ledger = ledgers.find(row => row.root === entry.root), row = ledger?.records.find(row => row.key === entry.key);
+            if (!row || await viewHash(ledger.root, row.value) !== entry.viewSha256) throw fail('bundle_reboot_recovery_changed');
+          }
+        } catch (error) { if (error.code !== 'bundle_reboot_recovery_changed') throw error; held = false; }
+        if (held) return { status: 'reboot_required', protocol, revision: expectedRevision, leaseCount: prior.leases.length };
+        // The evidence under an unfinished fence changed, so it can never
+        // complete. Leases it already recovered stay recovered; retire it and
+        // fence the current evidence instead of refusing every later launch.
+        await fs.rename(intentPath(controlRoot), path.join(controlRoot, 'recovery', `reboot-superseded-${prior.fenceID}.json`));
+      }
       const ledgers = await readBundleLeaseInventory(launch, { allRecords: true });
       if (canonicalJSON(before.map(row => row.root)) !== canonicalJSON(ledgers.map(row => row.root))) throw fail('bundle_reboot_recovery_changed');
-      if (prior?.state === 'prepared') {
-        if (prior.bindingSha256 !== bindingHash(binding) || prior.previousBoot !== previousBoot || inventoryHash(ledgers, prior) !== prior.inventorySha256)
-          throw fail('bundle_reboot_recovery_changed');
-        await assertLeasePins(ledgers, prior);
-        for (const entry of prior.leases) {
-          const ledger = ledgers.find(row => row.root === entry.root), row = ledger?.records.find(row => row.key === entry.key);
-          if (!row || await viewHash(ledger.root, row.value) !== entry.viewSha256) throw fail('bundle_reboot_recovery_changed');
-        }
-        return { status: 'reboot_required', protocol, revision: expectedRevision, leaseCount: prior.leases.length };
-      }
       const leases = [];
       for (const ledger of ledgers) for (const row of ledger.records) {
         if (!row.key.startsWith('leases/') || !unsettled(row.value)) continue;
@@ -172,7 +178,7 @@ export async function beginNativeBundleRebootRecovery({ controlRoot, expectedRev
         ...(leases.some(entry => entry.root === ledger.root && ledger.records.find(row => row.key === entry.key)?.value.token === pin.ref.split('/').at(-1))
           ? { archiveRef: `refs/devryan/reboot/${fenceID}/${pin.ref.split('/').at(-1)}` } : {}) })));
       const intent = { protocol, fenceID, state: 'prepared', previousBoot, revision: expectedRevision,
-        bindingSha256: bindingHash(binding), inventorySha256: inventoryHash(ledgers), leases, leasePins };
+        bindingSha256: bindingHash(binding), inventorySha256: ledgers.inventorySha256, leases, leasePins };
       await fs.mkdir(path.join(controlRoot, 'recovery'), { recursive: true, mode: 0o700 });
       await privateRoot(path.join(controlRoot, 'recovery'));
       await saveBundleJSON(intentPath(controlRoot), intent);
@@ -198,11 +204,11 @@ export async function finishNativeBundleRebootRecoveryAtStartup({ controlRoot, r
   const artifacts = await verifyArtifacts({ manifestPath: launch.artifactManifestPath, manifestSha256: launch.artifactManifestSha256,
     launcher, purpose: 'bundle-source' });
   if (artifacts.controller !== launch.controllerBinary) throw fail('bundle_artifact_generation_mismatch');
-  const before = await readBundleLeaseInventory(launch, { allRecords: true });
+  const before = await readBundleLeaseInventory(launch);
   return lockLedgers(before, async () => {
-    const ledgers = await readBundleLeaseInventory(launch, { allRecords: true });
+    const ledgers = await readBundleLeaseInventory(launch, { allRecords: true, intent });
     if (canonicalJSON(before.map(row => row.root)) !== canonicalJSON(ledgers.map(row => row.root))
-      || inventoryHash(ledgers, intent) !== intent.inventorySha256) throw fail('bundle_reboot_recovery_changed');
+      || ledgers.inventorySha256 !== intent.inventorySha256) throw fail('bundle_reboot_recovery_changed');
     await assertLeasePins(ledgers, intent);
     for (const entry of intent.leases) {
       const ledger = ledgers.find(row => row.root === entry.root), row = ledger?.records.find(row => row.key === entry.key);

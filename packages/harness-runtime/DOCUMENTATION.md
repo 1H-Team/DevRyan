@@ -37,6 +37,12 @@ lease refs are retained by the native host under its explicit recovery ref.
 Execution outcome queries never report this lease as `never_started`, and
 `cancelUnstartedCall` refuses to reclassify its uncertainty.
 
+`startSessionExecution` marks its rejection `neverStarted` when the launcher
+could not be created, or closed without creating its termination receipt. The
+execution owner then records the same no-launch attestation as a failed start
+(`cancelUnstartedCall` and cleanup) instead of leaving a claimed `ready` lease.
+Any other receipt failure stays unconfirmed and held.
+
 ## Storage
 
 `createHarnessPaths({ rootDir })` creates a `harness/` namespace below a host

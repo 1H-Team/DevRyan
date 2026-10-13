@@ -2006,6 +2006,8 @@ const currentStartupSplashPalette = () => (
 let lastStartupDiagnostic = null;
 let startupRecoveryFailure = null;
 let startupFailurePageUrl = null;
+// A fence whose evidence changed is retired by preparing again.
+const rebootRecoveryPreparable = (code) => code === 'bundle_execution_unsettled' || code === 'bundle_reboot_recovery_changed';
 const startupErrorDetails = (error) => {
   const diagnostic = artifactDiagnostic(error);
   const cause = error?.cause;
@@ -2028,7 +2030,7 @@ const startupErrorDetails = (error) => {
   };
 };
 
-const buildStartupErrorHtml = (error) => {
+const buildStartupErrorHtml = (error, { retainRecovery = false } = {}) => {
   lastStartupDiagnostic = startupDiagnosticSummary(error);
   const details = startupErrorDetails(error);
   let settings = {};
@@ -2036,7 +2038,7 @@ const buildStartupErrorHtml = (error) => {
   try { if (!shellRuntimeBundleBindingError) settings = readSettingsRoot(); } catch { /* Use the default appearance. */ }
   return buildStartupErrorHtmlFromSettings(settings, {
     message: details.displayMessage,
-    rebootRecovery: !isPreview && process.platform === 'darwin' && details.code === 'bundle_execution_unsettled',
+    rebootRecovery: !isPreview && process.platform === 'darwin' && (retainRecovery || rebootRecoveryPreparable(details.code)),
     rebootRequired: details.code === 'bundle_reboot_required',
   });
 };
@@ -3600,11 +3602,13 @@ const installPowerResumeHook = () => {
   });
 };
 
-const showStartupFailure = async (error) => {
+// `retainRecovery` reports a failed preparation while the launch failure it
+// answers stays recoverable from the same page.
+const showStartupFailure = async (error, { retainRecovery = false } = {}) => {
   const mainWindow = state.mainWindow;
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  startupRecoveryFailure = error;
-  startupFailurePageUrl = `data:text/html;charset=utf-8,${encodeURIComponent(buildStartupErrorHtml(error))}`;
+  if (!retainRecovery) startupRecoveryFailure = error;
+  startupFailurePageUrl = `data:text/html;charset=utf-8,${encodeURIComponent(buildStartupErrorHtml(error, { retainRecovery }))}`;
   await navigateWindow(
     mainWindow,
     startupFailurePageUrl,
@@ -3617,7 +3621,7 @@ const showStartupFailure = async (error) => {
 let preparingStartupRebootRecovery = false;
 const prepareStartupRebootRecovery = async () => {
   if (preparingStartupRebootRecovery || isPreview || isRuntimeServiceMode || process.platform !== 'darwin'
-    || startupErrorDetails(startupRecoveryFailure).code !== 'bundle_execution_unsettled') return;
+    || !rebootRecoveryPreparable(startupErrorDetails(startupRecoveryFailure).code)) return;
   preparingStartupRebootRecovery = true;
   try {
     const binding = readNativeShellBundleBinding({ environment: { ...process.env }, home: os.homedir(),
@@ -3627,7 +3631,8 @@ const prepareStartupRebootRecovery = async () => {
     await beginNativeBundleRebootRecovery({ controlRoot: binding.controlRoot, expectedRevision: binding.selection.revision });
     await showStartupFailure(Object.assign(new Error('Recovery is prepared and requires a computer restart.'), { code: 'bundle_reboot_required' }));
   } catch (error) {
-    await showStartupFailure(error);
+    log.error('[electron] restart recovery preparation failed', startupErrorDetails(error));
+    await showStartupFailure(error, { retainRecovery: true });
   } finally {
     preparingStartupRebootRecovery = false;
   }

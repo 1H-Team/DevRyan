@@ -122,8 +122,13 @@ import/listen, runtime-service connection/recovery and renderer navigation.
 `[runtime-bundle] startup phase` records the verified bundle upgrade duration.
 A `bundle_lease_recovery` phase means startup settled abandoned control leases
 of the selected bundle before verification; `abandoned control leases not
-settled: <code>` means a remaining lease will refuse launch with
-`bundle_execution_unsettled`.
+settled: <codes>` means a remaining lease will refuse launch with
+`bundle_execution_unsettled`. `bundle_lease_recovery_failed:ENOENT` there is a
+process lease with no termination receipt that is not yet old enough to cancel
+as never started. `startup upgrade not applied: bundle_execution_unsettled`
+is followed by the ledger prefix and the token, state and kind of each held
+lease. `[electron] restart recovery preparation failed` records why **Prepare
+recovery for restart** was refused.
 Correlate those with the selected-bundle journal's native startup records;
 do not add concurrent phase durations as if every phase were sequential.
 A stale service descriptor stops connection retries early only when a fresh

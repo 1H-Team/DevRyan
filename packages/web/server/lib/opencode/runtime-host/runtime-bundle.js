@@ -78,7 +78,9 @@ const sqlite = file => {
     all:(sql,params=[]) => raw.prepare(sql).all(...params), run:() => { throw fail('bundle_read_only'); } };
 };
 const ignored = relative => relative === 'orchestration/owner.lock' || relative === 'harness/provider-recovery/runtime-owner.lock'
-  || /^harness\/session-mutations\/[a-f0-9]{64}\/context-cache(\/|$)/.test(relative)
+  // Derived per-project state: execution caches, and dependency link overlays
+  // that preparation re-syncs from the project (links only, never copied).
+  || /^harness\/session-mutations\/[a-f0-9]{64}\/(context-cache|module-overlays)(\/|$)/.test(relative)
   || /^harness\/session-mutations\/[a-f0-9]{64}\/(owner\.lock|git\/index[^/]*)$/.test(relative)
   || /^harness\/(provider-recovery|context)\/[^/]+\.lock$/.test(relative)
   || /(^|\/)[^/]+\.tmp-[^/]+$/.test(relative);

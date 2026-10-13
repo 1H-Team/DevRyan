@@ -397,14 +397,23 @@ before setup-source removal and the startup upgrade
 It qualifies never-spawned control leases (`preparation: 'none'`) whose view
 lies inside their own ledger's `views/`. Orphan process leases additionally
 require a verified source launcher, a released native execution-owner lock and
-their genuine supervisor termination receipt. It refuses while a live process
+their genuine supervisor termination receipt or the host's
+`cancelledBeforeStart` attestation. A claimed `ready` process lease whose
+receipt file is absent, reserved more than ten minutes earlier, is cancelled as
+never started: the supervisor creates its receipt exclusively before it forks,
+the confined command cannot write beside its view, and no owner of the bundle is
+alive to launch a late supervisor. An existing but empty or invalid receipt
+means the command may have run and stays held. It refuses while a live process
 owns the bundle (`assertNoLiveOwner`), refuses pending materialization, and is
 skipped on Windows. It cancels and cleans through the existing
 `recoverExecutionLeases` and logs the `bundle_lease_recovery` startup phase only
-when it has work. It never throws; process leases keep their termination-receipt
-rules, and anything left unsettled still fails the strict gate.
+when it has work. It never throws; anything left unsettled still fails the
+strict gate. Its log line lists every distinct failure and names system errors
+(`bundle_lease_recovery_failed:ENOENT`).
 `assertSelectedBundleLeasesSettled` reads lease records before expensive cold
-upgrade work; full bundle verification still owns admission.
+upgrade work; full bundle verification still owns admission. Its refusal carries
+identifier-only `detail` (ledger prefix, lease token, state, kind), which the
+startup upgrade writes to the log.
 
 The trusted native action `beginNativeBundleRebootRecovery` in
 `native-bundle-reboot-recovery.js` prepares `recovery/reboot.json` under the
@@ -413,8 +422,14 @@ whose supervisor receipt is absent, after native owner proof. Invalid receipts
 and genuine available receipts do not qualify. The private versioned fence
 pins the exact selector/descriptor, ledger records, lease hashes, active lease
 Git refs and private view hashes, plus the macOS kernel boot-session UUID.
-It neither reboots nor changes the lease. Repeated preparation must match the
-same evidence.
+It neither reboots nor changes the lease. The ledger and view digests are
+computed as streams with no record, entry or byte limit, since a ledger holds
+several records per project file; `readBundleLeaseInventory` returns only lease
+records with the digest. Sockets and FIFOs in a view are recorded by type.
+Repeated preparation that matches the same evidence returns the same fence.
+When the evidence under an unfinished fence has changed, preparation renames it
+to `recovery/reboot-superseded-<fenceID>.json` and fences the current evidence;
+leases the old fence already recovered stay recovered.
 
 `finishNativeBundleRebootRecoveryAtStartup` requires its caller to hold
 `bootstrap.lock`; it acquires selection ownership before ledger locks. A different kernel boot UUID establishes termination of

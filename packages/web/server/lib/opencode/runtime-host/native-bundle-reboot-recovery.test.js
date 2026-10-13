@@ -4,11 +4,13 @@ import path from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import { git } from '../../../../../harness-runtime/lib/session-changes-git.js';
 import { openChangeStore, changeKey } from '../../../../../harness-runtime/lib/session-changes-store.js';
-import { isRebootRecoveredLease } from '../../../../../harness-runtime/lib/session-reboot-recovery.js';
+import { isRebootRecoveredLease, rebootRecoveryHash } from '../../../../../harness-runtime/lib/session-reboot-recovery.js';
 import { createSessionMutationRuntime } from '../../../../../harness-runtime/lib/session-mutations.js';
 import { withCrossProcessFileLock } from '../../../../../harness-runtime/lib/atomic-file.js';
 import { beginNativeBundleRebootRecovery, finishNativeBundleRebootRecoveryAtStartup } from './native-bundle-reboot-recovery.js';
-import { assertSelectedBundleLeasesSettled, recoverAbandonedControlLeases } from './native-bundle-lease-recovery.js';
+import { assertSelectedBundleLeasesSettled, readBundleLeaseInventory, recoverAbandonedControlLeases } from './native-bundle-lease-recovery.js';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { inspectBundleHarness } from './bundle-harness-integrity.js';
 
 const roots = [], oldBoot = '10000000-0000-4000-8000-000000000001', newBoot = '20000000-0000-4000-8000-000000000002';
@@ -174,3 +176,60 @@ test('both native actions hold selector ownership before observing or mutating l
   expect(observed.length).toBeGreaterThanOrEqual(4);
   await expect(fs.access(path.join(f.controlRoot, 'selection.lock'))).rejects.toMatchObject({ code: 'ENOENT' });
 });
+
+test('a ledger and view beyond the former inventory caps still prepare, with the released digest', async () => {
+  const f = await fixture(), db = await f.open();
+  for (let index = 0; index < 34000; index++) db.set(`files/${String(index).padStart(6, '0')}.json`, { index, nested: { b: 1, a: [index] } });
+  await db.commit();
+  await promisify(execFile)('/usr/bin/mkfifo', [path.join(path.dirname(f.lease.viewDirectory), 'pipe')]);
+  const rows = []; for await (const { key, value } of (await f.open()).records()) rows.push({ key, value });
+  expect(rows.length).toBeGreaterThan(32768);
+  const ledgers = await readBundleLeaseInventory(f.launch, { allRecords: true });
+  // Intents prepared by 2.0.9 hashed the materialized list; the digest must not move.
+  expect(ledgers.inventorySha256).toBe(rebootRecoveryHash([{ root: f.ledgerRoot, directory: f.lease.directory, records: rows }]));
+  expect(ledgers[0].records.map(row => row.key)).toEqual([f.key]);
+  expect(await beginNativeBundleRebootRecovery(f.options)).toMatchObject({ status: 'reboot_required', leaseCount: 1 });
+  expect(await f.finish()).toMatchObject({ status: 'completed', recoveredLeases: 1 });
+}, 120000);
+
+test('a new preparation retires a fence whose evidence changed', async () => {
+  const f = await fixture(); await beginNativeBundleRebootRecovery(f.options);
+  const intentFile = path.join(f.controlRoot, 'recovery', 'reboot.json'), first = JSON.parse(await fs.readFile(intentFile, 'utf8'));
+  await fs.writeFile(path.join(f.lease.viewDirectory, 'proof.txt'), 'changed');
+  await expect(f.finish()).rejects.toMatchObject({ code: 'bundle_reboot_recovery_changed' });
+  expect(await beginNativeBundleRebootRecovery({ ...f.options, readBootIdentity: async () => newBoot })).toMatchObject({ status: 'reboot_required', leaseCount: 1 });
+  const second = JSON.parse(await fs.readFile(intentFile, 'utf8'));
+  expect(second.fenceID).not.toBe(first.fenceID); expect(second.previousBoot).toBe(newBoot);
+  expect(JSON.parse(await fs.readFile(path.join(f.controlRoot, 'recovery', `reboot-superseded-${first.fenceID}.json`), 'utf8'))).toEqual(first);
+  expect(await f.finish({ readBootIdentity: async () => '30000000-0000-4000-8000-000000000003' })).toMatchObject({ status: 'completed' });
+});
+
+test('cold recovery cancels an aged receiptless process lease as never started; young or started ones stay held', async () => {
+  const f = await fixture(), initial = await f.open(); initial.remove(f.key); await initial.commit();
+  const project = f.lease.directory; await git(project, ['init', '--quiet']); await fs.writeFile(path.join(project, 'input.txt'), 'project unchanged');
+  const storage = path.join(f.launch.webDataDirectory, 'harness', 'session-mutations');
+  const seed = async (callID) => {
+    const runtime = createSessionMutationRuntime({ directory: storage });
+    const reserved = await runtime.reserve({ directory: project, sessionID: 'real-session', userMessageID: 'real-user', messageID: 'real-message', callID, ownerID: randomUUID() });
+    const lease = await runtime.claimLease({ directory: project, token: (await runtime.prepare(reserved)).token, kind: 'process' });
+    await runtime.drain(); return { lease, key: `leases/${changeKey(lease.token)}.json` };
+  };
+  const age = async ({ key }) => { const db = await f.open(); db.set(key, { ...await db.get(key), reservedAt: Date.now() - 11 * 60_000 }); await db.commit(); };
+  const recover = () => recoverAbandonedControlLeases({ ...f.options, launch: f.launch });
+  const young = await seed('young-call');
+  expect(await recover()).toEqual({ status: 'failed', code: 'bundle_lease_recovery_failed:ENOENT' });
+  expect((await (await f.open()).get(young.key)).state).toBe('ready');
+  await age(young);
+  expect(await recoverAbandonedControlLeases({ ...f.options, launch: f.launch, ownerLost: async () => false })).toMatchObject({ status: 'failed' });
+  expect(await recover()).toEqual({ status: 'recovered' });
+  expect(await (await f.open()).get(young.key)).toMatchObject({ state: 'cancelled', cancelledBeforeStart: true, cleaned: true, cleanupPending: false });
+  await expect(fs.access(young.lease.viewDirectory)).rejects.toMatchObject({ code: 'ENOENT' });
+  await assertSelectedBundleLeasesSettled(f);
+  await inspectBundleHarness(f.launch.webDataDirectory, { sessionIDs: ['real-session'], messageIDs: ['real-user', 'real-message'] });
+  // The supervisor created its receipt: the command may have run.
+  const started = await seed('started-call'); await age(started);
+  await fs.writeFile(path.join(path.dirname(started.lease.viewDirectory), 'termination.json'), '', { mode: 0o600 });
+  expect(await recover()).toEqual({ status: 'failed', code: 'mutation_termination_unconfirmed' });
+  expect((await (await f.open()).get(started.key)).state).toBe('ready');
+  expect(await fs.readFile(path.join(project, 'input.txt'), 'utf8')).toBe('project unchanged');
+}, 60000);

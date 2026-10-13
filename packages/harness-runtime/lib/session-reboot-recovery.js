@@ -4,9 +4,9 @@ import { changeError } from './session-changes-git.js';
 export const SESSION_REBOOT_RECOVERY_PROTOCOL = 'devryan.session-reboot-recovery/1';
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const digest = /^[a-f0-9]{64}$/;
-const canonical = value => JSON.stringify(value, (_key, item) => item && typeof item === 'object' && !Array.isArray(item)
+export const rebootRecoveryCanonical = value => JSON.stringify(value, (_key, item) => item && typeof item === 'object' && !Array.isArray(item)
   ? Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]])) : item);
-export const rebootRecoveryHash = value => createHash('sha256').update(canonical(value)).digest('hex');
+export const rebootRecoveryHash = value => createHash('sha256').update(rebootRecoveryCanonical(value)).digest('hex');
 const identity = lease => ({ token: lease.token, ownerID: lease.ownerID, scope: lease.scope,
   generation: lease.generation, executionKind: lease.executionKind });
 const validIdentity = lease => uuid.test(lease?.token) && uuid.test(lease?.ownerID)

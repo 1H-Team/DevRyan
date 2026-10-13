@@ -1072,8 +1072,15 @@ const seedSelectedLease=async(u,lease)=>{
 };
 test('default startup settles an abandoned control lease before verification, then upgrades and launches',async()=>{
  const u=await startupUpgradeFixture('startup-orphaned-control-home'),seeded=await seedSelectedLease(u,{});
+ // A node_modules input leaves a link overlay in the ledger; the upgrade copy must skip it.
+ const overlay=path.join(seeded.root,'module-overlays','0123456789abcdef');await fs.mkdir(overlay,{recursive:true});
+ await fs.symlink(path.join(u.controlRoot,'missing-dependency'),path.join(overlay,'dependency'));
+ const ledger=path.relative(u.binding().descriptor.launch.webDataDirectory,seeded.root);
  expect(await u.launch(u.pinned)).toBe(u.controlRoot);
  expect(readStartupBundleUpgradeFailure()).toBe(null);expect(u.binding().selection.revision).toBe(2);
+ const upgraded=path.join(u.binding().descriptor.launch.webDataDirectory,ledger);
+ expect(upgraded).not.toBe(seeded.root);expect((await fs.stat(path.join(upgraded,'git'))).isDirectory()).toBe(true);
+ await expect(fs.lstat(path.join(upgraded,'module-overlays'))).rejects.toMatchObject({code:'ENOENT'});
  const db=await openChangeStore(seeded.root,seeded.gitDir);
  expect(await db.get(`leases/${changeKey(seeded.token)}.json`)).toMatchObject({state:'cancelled',cleaned:true,cleanupPending:false});
  expect(await fs.stat(seeded.viewDirectory).catch(error=>error.code)).toBe('ENOENT');

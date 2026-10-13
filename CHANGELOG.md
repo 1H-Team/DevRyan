@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.10] - 2026-10-13
+
+- Fix a startup lockout (`bundle_execution_unsettled`) left by a process lease whose supervisor never started. The execution owner now cancels such a lease when its launcher ends without a termination receipt, and cold startup recovery cancels an aged one as never started without a computer restart. Empty or invalid receipts stay held.
+- Remove the record, entry and size limits that made **Prepare recovery for restart** fail with `bundle_reboot_recovery_inventory_invalid` on large project ledgers. Refused preparations are logged, keep the action available, and a fence whose evidence changed can be replaced.
+- Fix the startup runtime upgrade failing with `bundle_symlink_source` after a project ran commands against `node_modules`. The bundle copy now skips the ledger's derived `module-overlays/` links, which are rebuilt on the next run.
+
+Evidence and remaining gaps are recorded in [the incident note](docs/audits/2026-10-13/startup-unsettled-lease/README.md).
+
 ## [2.0.9] - 2026-10-13
 
 - Preserve the original startup upgrade failure and add guarded macOS restart recovery for abandoned process leases. Recovery requires a different OS boot, retains private views and Git pins, and does not invent process termination evidence or apply uncertain project changes.

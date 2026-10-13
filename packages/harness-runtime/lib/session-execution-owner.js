@@ -52,7 +52,17 @@ export function createSessionExecutionOwner({ runtime, launcher, stopSessions, v
         });
         throw signal.aborted ? failure('execution_cancelled') : cause;
       }
-      const receipt = await handle.result;
+      let receipt;
+      try { receipt = await handle.result; }
+      catch (cause) {
+        if (!cause?.neverStarted) throw cause;
+        // The supervisor ended before creating its receipt, so nothing ran.
+        await withoutExecutionDeadline(async () => {
+          await runtime.cancelUnstartedCall({ ...input, token: lease.token });
+          await cleanupExecutionLease(runtime, { directory: input.directory, token: lease.token }, onDiagnostic);
+        });
+        throw signal.aborted ? failure('execution_cancelled') : cause;
+      }
       if (receipt.cancelled || signal.aborted || !receipt.confined) {
         await runtime.cancelLease({ directory: input.directory, token: lease.token });
         await cleanupExecutionLease(runtime, { directory: input.directory, token: lease.token }, onDiagnostic);
