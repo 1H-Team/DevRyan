@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.11] - 2026-10-13
+
 - Fix startup failing with `native_cursor_recovery_owner_mismatch` after a runtime upgrade while a Cursor turn's recovery intent was pending. A cloned bundle now adopts intents written by the bundle it was cloned from.
 - Release publication no longer waits for final-DMG GUI startup qualification. Signed Bot images, packaging checks, the exact asset allowlist and digests, and hosted migration verification still gate every release.
 
