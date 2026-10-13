@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { runInNewContext } from 'node:vm';
 import { releaseStartupEnvironment } from './release-startup-profile.mjs';
-import { parseReleaseStartupArgs, summarizeCompiledQualification } from './release-startup.mjs';
+import { parseReleaseStartupArgs, summarizeCompiledQualification, createReleaseScenarioRunner, assertReleaseDiagnosticEnvironment } from './release-startup.mjs';
 import { createDiagnosticSanitizer } from '../../packages/harness-runtime/lib/sanitizer.js';
 import { launchReleaseStartup, captureReleaseStartupScreenshot, readReleaseSetupInterfaceState } from './release-startup-launch.mjs';
 
@@ -108,4 +108,58 @@ test('every PR runs startup contracts and every release publication depends on f
   assert.equal((release.match(/node scripts\/verify-release-startup.mjs/g) ?? []).length, 2);
   assert.match(release, /--release-dmg/);
   assert.doesNotMatch(release, /reboot_qualification_run_id|--reboot-receipt|DevRyan-reboot-qualification|stage_startup_installer_only|staged_desktop_run_id/);
+});
+
+
+test('diagnostics continue independent failures, block dependents and never retry a case', async () => {
+  const receipt = { scenarios: [], cleanupErrors: [] };
+  let stops = 0, calls = 0;
+  const scenario = createReleaseScenarioRunner({ receipt, diagnostic: true, stop: async () => { stops++; }, sanitizeReason: () => 'sanitized' });
+  await scenario('empty-profile', async () => { calls++; throw new Error('private failure'); });
+  await scenario('unchanged-reopen', async () => { calls++; }, { dependsOn: ['empty-profile'] });
+  await scenario('upgrade-previous', async () => { calls++; });
+  await scenario('service-warm', async () => { calls++; throw new Error('service failure'); });
+  await scenario('service-cold', async () => { calls++; }, { dependsOn: ['service-warm'] });
+  assert.deepEqual(receipt.scenarios.map(row => row.outcome), ['failed', 'blocked', 'passed', 'failed', 'blocked']);
+  assert.deepEqual(receipt.scenarios.map(row => row.attempts), [1, 0, 1, 1, 0]);
+  assert.deepEqual(receipt.scenarios[1].blockedBy, ['empty-profile']);
+  assert.deepEqual(receipt.scenarios[4].blockedBy, ['service-warm']);
+  assert.equal(receipt.scenarios[0].reason, 'sanitized');
+  assert.equal(stops, 3); assert.equal(calls, 3);
+});
+
+test('normal qualification stays fail-fast and diagnostics stop on failed cleanup', async () => {
+  for (const diagnostic of [false, true]) {
+    const receipt = { scenarios: [], cleanupErrors: [] };
+    const scenario = createReleaseScenarioRunner({ receipt, diagnostic, stop: async () => {}, sanitizeReason: String });
+    const error = new Error('failure');
+    if (diagnostic) error.code = 'release_startup_cleanup_failed';
+    await assert.rejects(scenario('fixture', async () => { throw error; }));
+    assert.equal(receipt.scenarios[0].outcome, 'failed');
+  }
+  const receipt = { scenarios: [], cleanupErrors: [] };
+  const scenario = createReleaseScenarioRunner({ receipt, diagnostic: true, stop: async () => { throw new Error('owner survived'); }, sanitizeReason: String });
+  await assert.rejects(scenario('fixture', async () => {}));
+  assert.equal(receipt.scenarios[0].cleanup, 'failed');
+  assert.deepEqual(receipt.cleanupErrors, ['fixture_foreground_cleanup_failed']);
+});
+
+test('diagnostics require a manual dry run and are explicitly rejected by publication', async () => {
+  const { assertReleaseStartupReceipt } = await import('./release-startup-contract.mjs');
+  assertReleaseDiagnosticEnvironment(true, { GITHUB_EVENT_NAME: 'workflow_dispatch', RELEASE_DRY_RUN: 'true' });
+  for (const env of [{}, { GITHUB_EVENT_NAME: 'push', RELEASE_DRY_RUN: 'true' }, { GITHUB_EVENT_NAME: 'workflow_dispatch', RELEASE_DRY_RUN: 'false' }])
+    assert.throws(() => assertReleaseDiagnosticEnvironment(true, env));
+  assert.throws(() => assertReleaseStartupReceipt({ protocol: 'devryan.release-startup/1', diagnostic: true, outcome: 'passed' }, {}), /Diagnostic receipts/);
+  const source = fs.readFileSync(new URL('./release-startup.mjs', import.meta.url), 'utf8');
+  assert.match(source, /assert.equal\(receipt.runAttempt, 1/);
+  assert.match(source, /await assertNoPriorStartupFailure\(sourceCommit/);
+  assert.match(source, /assert.ok\(!diagnostic, 'Diagnostic receipts cannot qualify a release'\)/);
+});
+
+
+test('diagnostic cleanup wrappers and shared prerequisite failures stop the run', async () => {
+  const { runReleaseCleanup } = await import('./release-startup-service.mjs');
+  await assert.rejects(runReleaseCleanup(async () => { throw new Error('fixture cleanup'); }), { code: 'release_startup_cleanup_failed' });
+  const scenario = createReleaseScenarioRunner({ receipt: { scenarios: [], cleanupErrors: [] }, diagnostic: true, stop: async () => {}, sanitizeReason: String });
+  await assert.rejects(scenario('fixture', async () => { throw Object.assign(new Error('shared prerequisite'), { code: 'release_startup_prerequisite_failed' }); }), { code: 'release_startup_prerequisite_failed' });
 });

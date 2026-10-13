@@ -96,3 +96,20 @@ disposable GitHub-hosted macOS ARM64 runner. The user's installed application an
 running runtime are outside this verification path. Recovery preparation and
 same-boot refusal are checked; recovery after an actual OS reboot remains
 unverified. No performance improvement is claimed.
+
+## Third candidate and diagnostic follow-up
+
+[Workflow 38323996942](https://github.com/1H-Team/DevRyan/actions/runs/38323996942)
+failed at the initial v2.0.7 baseline launch in upgrade-second-previous. The
+[receipt summary](qualification-attempt-3.json) records all 52 compiled checks,
+empty-profile, unchanged-reopen and upgrade-previous passing. The failure was
+`native_process_boot_timeout`; its journal gap check and owned cleanup passed.
+The [retained screenshot](DevRyan-startup-upgrade-second-previous-launch-failure.png)
+shows the bundled runtime unavailable. No raw profile journal or host log was
+retained for this attempt, so the underlying boot cause remains undetermined.
+
+The release remains a draft at source `ff8620109c73e4642db90762b440da1365792e52`.
+The diagnostic scratch branch adds a manual dry-run-only continue mode, blocked
+dependent scenarios, and bounded sanitized host logs. It changes no Bot image
+signature checks or input recipes, and every diagnostic receipt remains
+ineligible for publication. Ordinary final-DMG qualification remains fail-fast.

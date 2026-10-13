@@ -159,9 +159,11 @@ export async function launchReleaseStartup(artifact, profile, { setupOnly = fals
   } catch (error) {
     if (onFailure) {
       const interfaceState = cdp ? await evaluate(cdp, `(${readReleaseSetupInterfaceState.toString()})()`).catch(() => null) : null;
-      try { await onFailure({ cdp, interfaceState }); } catch { /* Evidence cannot replace the original startup failure. */ }
+      try { await onFailure({ cdp, interfaceState, log: readNativeStartupLogs(app, profile.env.HOME, logOffset) }); } catch { /* Evidence cannot replace the original startup failure. */ }
     }
-    await stop(); throw error;
+    try { await stop(); }
+    catch (cleanupError) { throw Object.assign(new Error('Failed launch cleanup', { cause: cleanupError }), { code: 'release_startup_cleanup_failed' }); }
+    throw error;
   }
 }
 

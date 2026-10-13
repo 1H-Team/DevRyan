@@ -701,6 +701,18 @@ Chat and model-picker controls; it does not depend on provider-specific welcome
 copy. Failed launches retain interface readiness fields, an artifact-bound
 screenshot when CDP is available, and a journal check after owned shutdown.
 
+For diagnosis after a failed candidate, dispatch `release.yml` from a scratch
+branch with `dry_run=true`, `diagnostic_startup=true`, and desktop scope. This
+passes `--diagnostic`: independent scenarios continue after assertion failures,
+while unchanged-reopen is blocked by failed empty-profile and service-cold is
+blocked by failed service-warm. Cleanup failure or invalid shared prerequisites
+stop the run. Every diagnostic receipt is failed and explicitly rejected by the
+publication verifier, even when all scenarios pass. Ordinary qualification stays
+fail-fast; first-attempt and prior-failure guards apply in both modes. Failed
+launches also retain a sanitized bounded host-log tail and the launched artifact's
+identity, distinguishing a historical baseline failure from a candidate failure.
+Signed-image reuse is unchanged; a dry run cannot build missing image inputs.
+
 The unsettled-process case seeds a claimed lease in the disposable historical
 ledger after a genuine native owner lock has been held and released. Its missing
 termination receipt must produce `bundle_execution_unsettled`; the visible

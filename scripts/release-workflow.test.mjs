@@ -150,3 +150,15 @@ test('Bot input preparation excludes automatic releases and every application pu
     assert.equal(jobs[name].if, undefined);
   }
 });
+
+
+test('startup diagnostics are opt-in, dry-run-only and retain normal qualification', () => {
+  const workflow = YAML.parse(fs.readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8'));
+  assert.equal(workflow.on.workflow_dispatch.inputs.diagnostic_startup.default, false);
+  const version = workflow.jobs['create-release'].steps.find(step => step.name === 'Get version');
+  assert.match(version.run, /RELEASE_DRY_RUN !== 'true'/);
+  assert.match(version.run, /scope !== 'desktop-macos-arm64'/);
+  const qualify = workflow.jobs['qualify-release-startup'].steps.find(step => step.name === 'Qualify unchanged final DMG');
+  assert.match(qualify.run, /RELEASE_STARTUP_DIAGNOSTIC == 'true' && '--diagnostic'/);
+  assert.match(workflow.jobs['finalize-release'].if, /needs.qualify-release-startup.result == 'success'/);
+});

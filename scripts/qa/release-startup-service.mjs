@@ -10,6 +10,10 @@ import { startOwnedProcess } from './process.mjs';
 const exec = promisify(execFile);
 const service = () => `gui/${process.getuid()}/dev.openchamber.desktop.runtime-service`;
 const launchctl = args => exec('/bin/launchctl', args, { timeout: 15_000, maxBuffer: 64 * 1024 });
+export async function runReleaseCleanup(operation) {
+  try { return await operation(); }
+  catch (error) { throw Object.assign(new Error('Release cleanup failed', { cause: error }), { code: 'release_startup_cleanup_failed' }); }
+}
 export async function releaseServiceStatus(launch) {
   const result = await evaluate(launch.cdp, 'window.__TAURI__.core.invoke("desktop_runtime_service_status", {})');
   assert.equal(result?.ok, true, 'Runtime service status failed');
@@ -19,21 +23,22 @@ export async function releaseServiceStatus(launch) {
 /** Only the disposable runner may alter the per-user service registration or launchd environment. */
 export async function prepareReleaseService(profile) {
   requireDisposableMacRunner();
-  assert.equal(await launchctl(['print', service()]).then(() => true, () => false), false, 'Runner already owns a service');
+  if (await launchctl(['print', service()]).then(() => true, () => false))
+    throw Object.assign(new Error('Runner already owns a service'), { code: 'release_startup_prerequisite_failed' });
   const saved = new Map();
   try {
     for (const [key, value] of Object.entries(profile.env)) {
       saved.set(key, await launchctl(['getenv', key]).then(result => result.stdout.replace(/\n$/, ''), () => ''));
       await launchctl(['setenv', key, value]);
     }
-  } catch (error) { await restore(); throw error; }
+  } catch (error) { await restore(); throw Object.assign(new Error('Launchd environment unavailable', { cause: error }), { code: 'release_startup_prerequisite_failed' }); }
   async function restore() {
     const errors = [];
     for (const [key, value] of saved) {
       try { await launchctl(value ? ['setenv', key, value] : ['unsetenv', key]); }
       catch { errors.push('launchd_environment_restore_failed'); }
     }
-    assert.deepEqual(errors, []);
+    await runReleaseCleanup(async () => assert.deepEqual(errors, []));
   }
   return {
     enable: async launch => {
@@ -47,7 +52,7 @@ export async function prepareReleaseService(profile) {
       }, launch.check);
     },
     cold: () => launchctl(['kickstart', '-k', service()]),
-    cleanup: async launch => {
+    cleanup: launch => runReleaseCleanup(async () => {
       let failure;
       try {
         if (launch) {
@@ -65,7 +70,7 @@ export async function prepareReleaseService(profile) {
         await launchctl(['bootout', service()]).catch(() => {});
       } finally { await restore(); }
       if (failure) throw failure;
-    },
+    }),
   };
 }
 
@@ -87,5 +92,5 @@ export async function seedStaleReleaseOwner(profile) {
     const owner = await readRuntimeServiceOwner({ dataDirectory });
     assert.equal(owner.state, 'valid', 'The crashed owner record must remain for guarded recovery');
     assert.equal(await waitForRuntimeServiceOwnerStopped({ dataDirectory, timeoutMs: 0 }), true);
-  } finally { await child.stop(); }
+  } finally { await runReleaseCleanup(() => child.stop()); }
 }

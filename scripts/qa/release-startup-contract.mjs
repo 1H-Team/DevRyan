@@ -16,6 +16,7 @@ export function assertReleaseScreenshot(row, identity) {
 /** Publication consumes only the exact DMG's complete, non-retried receipt. */
 export function assertReleaseStartupReceipt(receipt, { sourceCommit, dmgSha256, version }) {
   assert.equal(receipt?.protocol, 'devryan.release-startup/1');
+  assert.notEqual(receipt.diagnostic, true, 'Diagnostic receipts cannot qualify a release');
   assert.equal(receipt.outcome, 'passed');
   assert.equal(receipt.runAttempt, 1);
   assert.equal(receipt.compiledNative, 'passed');

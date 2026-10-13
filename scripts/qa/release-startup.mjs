@@ -11,7 +11,7 @@ import { assertReleaseStartupReceipt } from './release-startup-contract.mjs';
 import { createReleaseStartupProfile } from './release-startup-profile.mjs';
 import { launchReleaseStartup, verifyReleaseJournal, waitReleaseStartup, captureReleaseStartupScreenshot, assertReleaseRetainedSession } from './release-startup-launch.mjs';
 import { seedReleaseUnsettledProcess, releaseFixtureScope } from './release-startup-unsettled.mjs';
-import { prepareReleaseService, releaseServiceStatus, seedStaleReleaseOwner } from './release-startup-service.mjs';
+import { prepareReleaseService, releaseServiceStatus, seedStaleReleaseOwner, runReleaseCleanup } from './release-startup-service.mjs';
 import { readBundleStartupState, assertNativeStartupUpgrade, assertNativeStartupReopen, readNativeStartupLogs } from './native-startup-benchmark.mjs';
 import { captureQaElectronAppIdentity } from './artifact-evidence.mjs';
 import { startOwnedProcess } from './process.mjs';
@@ -28,16 +28,48 @@ export function summarizeCompiledQualification(result, sanitizer) {
 }
 export function parseReleaseStartupArgs(args) {
   const { values, positionals } = parseArgs({ args, options: {
-    'release-dmg': { type: 'string' }, version: { type: 'string' }, 'source-commit': { type: 'string' }, receipt: { type: 'string' },
+    'release-dmg': { type: 'string' }, version: { type: 'string' }, 'source-commit': { type: 'string' }, receipt: { type: 'string' }, diagnostic: { type: 'boolean', default: false },
   }, strict: true, allowPositionals: false });
   assert.equal(positionals.length, 0);
   assert.match(values.version ?? '', /^2\.\d+\.\d+$/);
   assert.match(values['source-commit'] ?? '', /^[a-f0-9]{40}$/);
   for (const value of [values['release-dmg'], values.receipt]) assert.ok(path.isAbsolute(value ?? ''), 'Absolute DMG and receipt paths required');
-  return { dmg: values['release-dmg'], version: values.version, sourceCommit: values['source-commit'], receiptPath: values.receipt };
+  return { dmg: values['release-dmg'], version: values.version, sourceCommit: values['source-commit'], receiptPath: values.receipt, diagnostic: values.diagnostic };
 }
 
-export async function runReleaseStartup({ dmg, version, sourceCommit, receiptPath }) {
+export function assertReleaseDiagnosticEnvironment(diagnostic, env = process.env) {
+  if (!diagnostic) return;
+  assert.equal(env.GITHUB_EVENT_NAME, 'workflow_dispatch', 'Diagnostics require a manual dry run');
+  assert.equal(env.RELEASE_DRY_RUN, 'true', 'Diagnostics cannot publish');
+}
+
+export function createReleaseScenarioRunner({ receipt, stop, diagnostic, sanitizeReason }) {
+  return async (id, operation, { dependsOn = [] } = {}) => {
+    const blockedBy = dependsOn.filter(dependency => !receipt.scenarios.some(row => row.id === dependency && row.outcome === 'passed'));
+    const row = { id, outcome: blockedBy.length ? 'blocked' : 'failed', attempts: blockedBy.length ? 0 : 1, cleanup: 'pending' };
+    receipt.scenarios.push(row);
+    if (blockedBy.length) { row.blockedBy = blockedBy; row.cleanup = 'not-run'; return row; }
+    const started = performance.now();
+    let failure;
+    try { await operation(row); row.outcome = 'passed'; }
+    catch (error) { failure = error; row.reason = sanitizeReason(error.message); }
+    finally {
+      try { await stop(); row.cleanup = 'passed'; }
+      catch { row.cleanup = 'failed'; receipt.cleanupErrors.push(`${id}_foreground_cleanup_failed`); }
+      if (failure?.code === 'release_startup_cleanup_failed') {
+        row.cleanup = 'failed'; receipt.cleanupErrors.push(`${id}_launch_cleanup_failed`);
+      }
+      row.elapsedMs = performance.now() - started;
+    }
+    assert.equal(row.cleanup, 'passed');
+    assert.deepEqual(receipt.cleanupErrors, [], 'A cleanup failure stops diagnostics');
+    if (failure && (!diagnostic || failure.code === 'release_startup_prerequisite_failed')) throw failure;
+    return row;
+  };
+}
+
+export async function runReleaseStartup({ dmg, version, sourceCommit, receiptPath, diagnostic = false }) {
+  assertReleaseDiagnosticEnvironment(diagnostic);
   requireDisposableMacRunner();
   assert.ok(dmg.startsWith(repository + path.sep) && receiptPath.startsWith(repository + path.sep));
   assert.equal(await fs.realpath(dmg), dmg);
@@ -45,7 +77,7 @@ export async function runReleaseStartup({ dmg, version, sourceCommit, receiptPat
   assert.equal(process.env.GITHUB_SHA, sourceCommit);
   assert.equal((await exec('git', ['status', '--porcelain', '--untracked-files=no'], { cwd: repository })).stdout.trim(), '', 'Release source must be frozen');
   const receipt = { protocol: 'devryan.release-startup/1', outcome: 'failed', sourceCommit, version,
-    runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT),
+    runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT), ...(diagnostic ? { diagnostic: true } : {}),
     platform: `${process.platform}-${process.arch}`, startedAt: new Date().toISOString(), guiPrerequisites: 'not-run',
     dmgSha256: await hashReleaseFile(dmg), scenarios: [], cleanupErrors: [] };
   let active, service, serviceProfile;
@@ -70,6 +102,8 @@ export async function runReleaseStartup({ dmg, version, sourceCommit, receiptPat
           const row = receipt.scenarios.at(-1);
           if (!row) return;
           row.failureInterface = launch.interfaceState;
+          row.failureArtifact = { version: artifact.version, dmgSha256: artifact.dmgSha256, manifestSha256: artifact.manifestSha256 };
+          row.failureLog = sanitizer.sanitizeText(launch.log, { highEntropy: true }).slice(-16000);
           row.failureScreenshot = 'unavailable';
           if (launch.cdp) {
             await screenshot(row, launch, `${row.id}-launch-failure`);
@@ -88,18 +122,8 @@ export async function runReleaseStartup({ dmg, version, sourceCommit, receiptPat
   };
   active = null;
   const retainedSession = assertReleaseRetainedSession;
-  const scenario = async (id, operation) => {
-    const row = { id, outcome: 'failed', attempts: 1, cleanup: 'pending' }, started = performance.now();
-    receipt.scenarios.push(row);
-    try { await operation(row); row.outcome = 'passed'; }
-    finally {
-      try { await stop(); row.cleanup = 'passed'; }
-      catch { row.cleanup = 'failed'; receipt.cleanupErrors.push(`${id}_foreground_cleanup_failed`); }
-      row.elapsedMs = performance.now() - started;
-    }
-    assert.equal(row.cleanup, 'passed');
-    return row;
-  };
+  const scenario = createReleaseScenarioRunner({ receipt, stop, diagnostic,
+    sanitizeReason: message => sanitizer.sanitizeText(String(message), { highEntropy: true }).slice(0, 1000) });
   let candidate;
   const screenshot = async (row, launch, label = row.id) => {
     row.screenshots ??= [];
@@ -148,7 +172,7 @@ export async function runReleaseStartup({ dmg, version, sourceCommit, receiptPat
     await scenario('unchanged-reopen', async row => {
       const final = await prove(row, empty, { priorSession: first.id });
       assertNativeStartupReopen(first.state, final.state, row.startup.electronStartupPhases.records);
-    });
+    }, { dependsOn: ['empty-profile'] });
 
     const upgrade = async (id, baseline, fault) => scenario(id, async row => {
       const profile = await newProfile(id);
@@ -213,7 +237,7 @@ export async function runReleaseStartup({ dmg, version, sourceCommit, receiptPat
           (await fs.readdir(path.join(profile.controlRoot, 'artifacts'))).some(name => name.startsWith('.retaining-')), app.check);
         app.child.kill('SIGKILL'); await app.stop();
         assert.deepEqual(readBundleStartupState(profile.controlRoot), initial, 'Interrupted retention changed selection');
-      } finally { try { await app.stop(); } finally { await environment.cleanup(); } }
+      } finally { await runReleaseCleanup(async () => { try { await app.stop(); } finally { await environment.cleanup(); } }); }
     });
     await upgrade('rejected-candidate', baselines[0], async (profile, initial) => {
       // A separate tampered copy is only a negative control. All successful starts use the unchanged installer app.
@@ -229,7 +253,7 @@ export async function runReleaseStartup({ dmg, version, sourceCommit, receiptPat
       try {
         await waitReleaseStartup('terminal integrity rejection', () =>
           readNativeStartupLogs(app, profile.env.HOME).includes('native_runtime_artifacts_unverified'), app.check);
-      } finally { try { await app.stop(); } finally { await environment.cleanup(); } }
+      } finally { await runReleaseCleanup(async () => { try { await app.stop(); } finally { await environment.cleanup(); } }); }
       assert.deepEqual(readBundleStartupState(profile.controlRoot), initial);
       assert.equal(await hashReleaseFile(database), before, 'Rejected candidate modified saved conversation data');
     });
@@ -266,9 +290,10 @@ export async function runReleaseStartup({ dmg, version, sourceCommit, receiptPat
       await screenshot(row, ready);
       await service.cleanup(ready); service = null;
       await stop(); row.gapRecords = await verifyReleaseJournal(serviceProfile);
-    });
+    }, { dependsOn: ['service-warm'] });
     assert.equal((await captureQaElectronAppIdentity(candidate.appPath)).sha256, candidate.appSha256, 'Distributed app was modified');
     assert.equal(await hashReleaseFile(dmg), receipt.dmgSha256, 'Distributed DMG was modified');
+    assert.ok(!diagnostic, 'Diagnostic receipts cannot qualify a release');
     receipt.outcome = 'passed';
     assertReleaseStartupReceipt(receipt, { sourceCommit, dmgSha256: receipt.dmgSha256, version });
   } catch (error) {

@@ -17,6 +17,10 @@ on:
         required: false
         default: false
         type: boolean
+      diagnostic_startup:
+        description: 'Collect independent startup failures; requires dry_run and never qualifies publication'
+        default: false
+        type: boolean
       scope:
         description: 'Distribution scope (v2 currently supports macOS Apple silicon desktop)'
         required: true
@@ -42,6 +46,7 @@ env:
   CARGO_INCREMENTAL: 0
   RUST_BACKTRACE: short
   RELEASE_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true }}
+  RELEASE_STARTUP_DIAGNOSTIC: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic_startup == true }}
   RELEASE_BOT_INPUTS_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.prepare_bot_inputs_only == true }}
 
 permissions:
@@ -72,6 +77,7 @@ jobs:
           const scope = process.env.SCOPE_INPUT;
           if (!RELEASE_VERSION_PATTERN.test(version) || !['desktop-macos-arm64', 'full'].includes(scope) || !Object.hasOwn(RELEASE_SCOPES, scope)) throw new Error('Invalid release version or scope');
           assertBotInputPreparation(process.env, version);
+          if (process.env.RELEASE_STARTUP_DIAGNOSTIC === 'true' && (process.env.RELEASE_DRY_RUN !== 'true' || scope !== 'desktop-macos-arm64' || process.env.RELEASE_BOT_INPUTS_ONLY === 'true')) throw new Error('Startup diagnostics require a desktop dry run');
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\nscope=${scope}\n`);
           NODE
 
@@ -788,6 +794,7 @@ jobs:
           --release-dmg "$GITHUB_WORKSPACE/artifacts/DevRyan-${VERSION}-arm64.dmg"
           --version "$VERSION" --source-commit "$GITHUB_SHA"
           --receipt "$GITHUB_WORKSPACE/artifacts/DevRyan-startup-${VERSION}.json"
+          ${{ env.RELEASE_STARTUP_DIAGNOSTIC == 'true' && '--diagnostic' || '' }}
       - name: Verify receipt against packaged digest
         env:
           VERSION: ${{ needs.create-release.outputs.version }}
