@@ -1,0 +1,30 @@
+{
+  "version": "2.0.9",
+  "authorization": "Release owner explicitly requested immediate publication and removal of remaining release blockers on 2026-10-13.",
+  "scope": "desktop-macos-arm64",
+  "sourceCommit": "88cf8599c3ce567100749dca4f2658f33db2f10e",
+  "workflowRun": 38368339944,
+  "waived": [
+    "three-clean-diagnostic-samples",
+    "ordinary-final-DMG-GUI-qualification"
+  ],
+  "preserved": [
+    "signed-Bot-image-verification",
+    "exact-public-asset-allowlist",
+    "packaging-digest-verification",
+    "migration-parity-and-schema-marker"
+  ],
+  "compiledCasesPassed": 52,
+  "guiScenariosPassed": [
+    "empty-profile",
+    "unchanged-reopen",
+    "upgrade-previous",
+    "upgrade-second-previous",
+    "same-runtime-upgrade",
+    "unsettled-process-upgrade"
+  ],
+  "diagnosticOutcome": "failed",
+  "dmgSha256": "2cb0a55e3b89e87fc6dcf2b228c3cd874ae5b99b2cf3675e2c92d139bbb26760",
+  "manifestSha256": "087dd7943f49144ecfda2697adb2e11ae36c55a5a1ae7cd55cbe5f4a8ca18934",
+  "appSha256": "bf4424897b265e8cb15ae56815d7a07c3c3a54477116b03275ab1bd83c251ad5"
+}

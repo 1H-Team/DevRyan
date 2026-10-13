@@ -224,3 +224,25 @@ recover using the existing 30-second stale threshold; candidate cleanup and
 retry limits would stay strict. This changes the user's explicit requirement
 and is pending their decision. No main update, tag move or publication is
 approved. The cache report and cleanup preview completed without deletion.
+
+
+The release owner subsequently authorized immediate publication of v2.0.9 and
+explicitly waived the remaining blocking rules. This supersedes the pending
+baseline-policy question, three-clean-sample requirement and ordinary GUI gate
+for this release only. Failed diagnostic receipts remain failed; no assertion
+or historical result is relabeled as passed. Signed-image verification and
+exact asset allowlist/digest verification remain required.
+
+The selected artifact is sample 3 from workflow 38368339944, source
+`88cf8599c3ce567100749dca4f2658f33db2f10e`. It passed all 52 compiled cases and
+six GUI scenarios, including both published-version upgrades and unsettled
+process recovery. A published v2.0.8 cleanup defect stopped subsequent cases.
+Tampered-app GUI rejection, interrupted-upgrade completion, stale-owner and
+service scenarios therefore lack a complete passing receipt. Actual reboot
+and Windows qualification remain outside the verified scope.
+
+The released DMG must be `DevRyan-2.0.9-arm64.dmg`, 390572156 bytes, SHA-256
+`2cb0a55e3b89e87fc6dcf2b228c3cd874ae5b99b2cf3675e2c92d139bbb26760`.
+Migration workflow 38314829074 passed; no Supabase migration or production
+schema-marker source changed between its source and this artifact. Existing
+56-entry parity and marker `20260908182901` remain the migration evidence.

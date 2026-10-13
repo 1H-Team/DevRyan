@@ -741,10 +741,14 @@ one recorded relaunch per receipt, with a fresh profile after verified shutdown,
 no surviving owned processes and acceptable locks. Both launch identities and
 the first failure remain recorded; scenario attempts stay one. Candidate,
 ownership, integrity and cleanup failures never receive this allowance.
-Before tagging v2.0.9, require three independent clean diagnostic receipts from
+The original v2.0.9 plan required three independent clean diagnostic receipts from
 the same fixed tree: all eleven cases passed, zero journal gaps, no forced cleanup
 or malformed locks, and compliance with this baseline allowance. A failure
-restarts the three-sample count after correction. Actual reboot recovery remains
+restarts the three-sample count after correction. The release owner subsequently
+waived that requirement and the final GUI publication gate for v2.0.9 only;
+see the [release waiver evidence](audits/2026-10-13/release-2.0.9/README.md).
+The failed receipts remain failed, and signed-image and exact-asset checks remain
+required. Actual reboot recovery remains
 outside this verification.
 
 The unsettled-process case seeds a claimed lease in the disposable historical
