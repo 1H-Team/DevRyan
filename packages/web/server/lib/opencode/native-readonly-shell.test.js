@@ -60,7 +60,10 @@ if (process.platform === 'darwin') it('macOS confined shell allows inspection an
   expect(await fs.readFile(paths[0], 'utf8')).toBe('approved implementation');
   expect(await fs.readFile(paths[1], 'utf8')).toBe('canonical');
 });
-if (process.platform === 'darwin') it('macOS Plan shell denies actual local POST and git push while permitting reviewed inspection', async () => {
+// With SIP disabled (GitHub macOS runners) libuv's posix_spawn aborts with ENOSYS inside the
+// sandbox, so this real-network probe only runs where user Macs run it: with SIP enabled.
+const sipEnabled = process.platform === 'darwin' && /enabled/.test(spawnSync('/usr/bin/csrutil', ['status'], { encoding: 'utf8' }).stdout ?? '');
+if (sipEnabled) it('macOS Plan shell denies actual local POST and git push while permitting reviewed inspection', async () => {
   const f = await fixture(), lease = await readOnlyShellLease(f.lease);
   const scratchDirectory = path.join(f.root, 'scratch'); await fs.mkdir(scratchDirectory);
   const gitEnv = { ...process.env, HOME:scratchDirectory, GIT_CONFIG_NOSYSTEM:'1', GIT_CONFIG_GLOBAL:'/dev/null', GIT_TEMPLATE_DIR:'', GIT_TERMINAL_PROMPT:'0', NO_PROXY:'127.0.0.1', no_proxy:'127.0.0.1' };
@@ -79,10 +82,10 @@ if (process.platform === 'darwin') it('macOS Plan shell denies actual local POST
       const push=spawnSync('/usr/bin/git',['-c','credential.helper=','-c','core.hooksPath=/dev/null','push',${JSON.stringify(url + '/repo')},'HEAD'],{encoding:'utf8',timeout:2000});
       console.log(JSON.stringify({read:fs.readFileSync('tracked','utf8'),post:post.status,push:push.status}));`;
     const result = spawnSync('/usr/bin/sandbox-exec', ['-p', profile, process.execPath, '-e', script], { cwd: f.snapshot,
-      env: gitEnv, encoding: 'utf8', timeout: 30000 }); // busy CI runners exceed 5 s
-    expect(result.status).toBe(0);
+      env: gitEnv, encoding: 'utf8', timeout:5000 });
+    expect(result.status, `signal=${result.signal} stdout=${result.stdout} stderr=${result.stderr}`).toBe(0);
     const outcomes = JSON.parse(result.stdout);
     expect(outcomes.read).toBe('original'); expect(outcomes.post).toBe(7); expect(outcomes.push).toBe(128);
     expect(requests).toBe(0);
   } finally { await new Promise(resolve => server.close(resolve)); }
-}, 60_000);
+});
