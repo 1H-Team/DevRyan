@@ -18,7 +18,7 @@ jobs:
   checks:
     # DevRyan ships for macOS only; native runtime tests use darwin-arm64 binaries.
     runs-on: macos-26
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -32,6 +32,10 @@ jobs:
       - name: Restore reviewed Claude executable
         # Gitignored; native runtime input tests verify it like the release build does.
         run: node scripts/hydrate-reviewed-claude.mjs
+      - name: Build and verify native v2 runtime
+        # Native graph tests run the real session-execution launcher from packages/web/runtime.
+        timeout-minutes: 20
+        run: bun scripts/build-native-runtime.mjs
       - name: Build
         run: bun run build
       - name: Lint, type-check, test, docs and bundle budgets
