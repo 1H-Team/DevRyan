@@ -1,301 +1,48 @@
 name: Release
 
+# A vX.Y.Z tag push builds DevRyan-X.Y.Z-arm64.dmg, attaches it to a draft and publishes it.
+# A manual run is a dry run of the same graph on its ref: it builds everything and publishes nothing.
+# Retry a failed release on the same version: re-run the failed jobs, or move the tag to a fixed
+# commit (`git tag -f vX.Y.Z <sha> && git push -f origin vX.Y.Z`); `admit` reuses the draft.
+# See docs/RELEASE_PIPELINE.md.
 on:
   push:
     tags:
-      - 'v*'
-      - '!v*-bot-inputs-*'
-      - '!v*-windows-preview.*'
+      - 'v[0-9]+.[0-9]+.[0-9]+'
   workflow_dispatch:
-    inputs:
-      version:
-        description: 'Stable version; candidate runs derive it from frozen package metadata'
-        required: false
-        type: string
-      dry_run:
-        description: 'Dry run (skip publishing)'
-        required: false
-        default: false
-        type: boolean
-      scope:
-        description: 'Distribution scope (v2 currently supports macOS Apple silicon desktop)'
-        required: true
-        default: desktop-macos-arm64
-        type: choice
-        options: [desktop-macos-arm64, full]
-      candidate:
-        description: 'Read-only rehearsal from frozen package metadata and the exact intended tag SHA'
-        default: false
-        type: boolean
-      announce:
-        description: 'Send the release announcement to the configured Discord webhook'
-        default: false
-        type: boolean
-      rebuild_bot_images:
-        description: 'Rebuild every Bot image even when a verified image with identical inputs exists'
-        required: false
-        default: false
-        type: boolean
-      prepare_bot_inputs_only:
-        description: 'Prepare signed Bot inputs only from v<version>-bot-inputs-<source SHA prefix>; creates no app release'
-        required: false
-        default: false
-        type: boolean
 
 env:
-  CARGO_INCREMENTAL: 0
-  RUST_BACKTRACE: short
-  RELEASE_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && (inputs.dry_run == true || inputs.candidate == true) }}
-  RELEASE_CANDIDATE: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate == true }}
-  RELEASE_BOT_INPUTS_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.prepare_bot_inputs_only == true }}
+  RELEASE_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' }}
 
 permissions:
   contents: read
-  actions: read
 
 concurrency:
-  group: release-${{ inputs.version && format('v{0}', inputs.version) || github.ref_name }}
-  cancel-in-progress: false
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: true
 
 jobs:
-  create-release:
+  admit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: write
-      actions: read
-    runs-on: ubuntu-latest
     outputs:
-      release_id: ${{ steps.create_release.outputs.id }}
-      source: ${{ steps.create_release.outputs.source }}
-      published_noop: ${{ steps.create_release.outputs.published_noop }}
-      candidate_run: ${{ steps.create_release.outputs.candidate_run }}
-      candidate_attempt: ${{ steps.create_release.outputs.candidate_attempt }}
-      version: ${{ steps.get_version.outputs.version }}
-      scope: ${{ steps.get_version.outputs.scope }}
+      version: ${{ steps.admit.outputs.version }}
+      release_id: ${{ steps.admit.outputs.release_id }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Get version
-        id: get_version
-        env:
-          VERSION_INPUT: ${{ github.event.inputs.version }}
-          SCOPE_INPUT: ${{ github.event.inputs.scope || 'desktop-macos-arm64' }}
-        run: |
-          node --input-type=module - <<'NODE'
-          import fs from 'node:fs';
-          import { RELEASE_VERSION_PATTERN, RELEASE_SCOPES } from './packages/electron/release-assets.mjs';
-          import { assertBotInputPreparation } from './scripts/release-artifacts.mjs';
-          const frozen = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
-          const version = process.env.RELEASE_CANDIDATE === 'true' ? frozen : process.env.VERSION_INPUT || (process.env.GITHUB_REF || '').replace(/^refs\/tags\/v/, '');
-          if (process.env.VERSION_INPUT && process.env.VERSION_INPUT !== frozen) throw new Error('Release version differs from frozen metadata');
-          const scope = process.env.SCOPE_INPUT;
-          if (!RELEASE_VERSION_PATTERN.test(version) || !['desktop-macos-arm64', 'full'].includes(scope) || !Object.hasOwn(RELEASE_SCOPES, scope)) throw new Error('Invalid release version or scope');
-          assertBotInputPreparation(process.env, version);
-          fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\nscope=${scope}\n`);
-          NODE
-
-      - name: Verify package versions match release tag
-        env:
-          VERSION: ${{ steps.get_version.outputs.version }}
-        run: |
-          node - <<'NODE'
-          const fs = require('fs');
-
-          const expected = process.env.VERSION;
-          const packageFiles = [
-            'package.json',
-            'packages/bot-computer/package.json',
-            'packages/bot-db/package.json',
-            'packages/bot-engine-proxy/package.json',
-            'packages/bot-egress/package.json',
-            'packages/bot-indexer/package.json',
-            'packages/bot-supervisor/package.json',
-            'packages/bots-runtime/package.json',
-            'packages/cursor-sdk-runtime/package.json',
-            'packages/harness-runtime/package.json',
-            'packages/orchestration-runtime/package.json',
-            'packages/shared-runtime/package.json',
-            'packages/ui/package.json',
-            'packages/web/package.json',
-            'packages/desktop/package.json',
-            'packages/electron/package.json',
-          ];
-          const jsonFiles = [
-            ...packageFiles,
-            'packages/desktop/src-tauri/tauri.conf.json',
-          ];
-
-          const mismatches = [];
-          for (const file of jsonFiles) {
-            const version = JSON.parse(fs.readFileSync(file, 'utf8')).version;
-            if (version !== expected) mismatches.push(`${file}: ${version}`);
-          }
-
-          const cargoToml = fs.readFileSync('packages/desktop/src-tauri/Cargo.toml', 'utf8');
-          const cargoVersion = cargoToml.match(/^version = "([^"]+)"/m)?.[1];
-          if (cargoVersion !== expected) mismatches.push(`packages/desktop/src-tauri/Cargo.toml: ${cargoVersion ?? 'missing'}`);
-
-          const cargoLock = fs.readFileSync('packages/desktop/src-tauri/Cargo.lock', 'utf8');
-          const lockMatch = cargoLock.match(/name = "openchamber-desktop"\nversion = "([^"]+)"/);
-          const lockVersion = lockMatch?.[1];
-          if (lockVersion !== expected) mismatches.push(`packages/desktop/src-tauri/Cargo.lock: ${lockVersion ?? 'missing'}`);
-
-          if (mismatches.length > 0) {
-            throw new Error(`Release version ${expected} does not match metadata versions:\n${mismatches.join('\n')}\nRun: node scripts/bump-version.mjs ${expected}`);
-          }
-          NODE
-
-      - name: Prepare release notes
-        id: release_notes
-        env:
-          VERSION: ${{ steps.get_version.outputs.version }}
-          RELEASE_NOTES_PATH: ${{ runner.temp }}/release-notes.md
-        run: |
-          node - <<'NODE'
-          const fs = require('fs');
-
-          const version = process.env.VERSION;
-          const outputPath = process.env.RELEASE_NOTES_PATH;
-          const changelog = fs.readFileSync('CHANGELOG.md', 'utf8');
-          const heading = `## [${version}]`;
-          const start = changelog.indexOf(heading);
-          if (start === -1) {
-            throw new Error(`CHANGELOG.md does not contain release notes for ${version}`);
-          }
-
-          const sectionStart = changelog.indexOf('\n', start);
-          const nextSection = changelog.indexOf('\n## ', sectionStart + 1);
-          const body = changelog
-            .slice(sectionStart + 1, nextSection === -1 ? undefined : nextSection)
-            .trim();
-
-          if (!body) {
-            throw new Error(`CHANGELOG.md release notes for ${version} are empty`);
-          }
-
-          fs.writeFileSync(outputPath, `${body}\n`);
-          NODE
-          echo "path=${RELEASE_NOTES_PATH}" >> "$GITHUB_OUTPUT"
-
-      - name: Admit immutable release source before heavy work
-        if: ${{ env.RELEASE_BOT_INPUTS_ONLY != 'true' }}
-        id: create_release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_OPERATION: source-admit
-          RELEASE_SCOPE: ${{ steps.get_version.outputs.scope }}
-          RELEASE_NOTES_PATH: ${{ steps.release_notes.outputs.path }}
-        run: node scripts/release-ci.mjs
-      - uses: actions/upload-artifact@v4
-        if: ${{ always() && env.RELEASE_BOT_INPUTS_ONLY != 'true' && steps.create_release.outputs.published_noop != 'true' }}
-        with:
-          name: DevRyan-release-history-${{ github.run_attempt }}
-          path: artifacts/history-classification.json
-          if-no-files-found: warn
-          retention-days: 90
-      - uses: actions/upload-artifact@v4
-        if: ${{ env.RELEASE_BOT_INPUTS_ONLY != 'true' && steps.create_release.outputs.admission_retained != 'true' }}
-        with:
-          name: DevRyan-release-admission
-          path: |
-            artifacts/admission.json
-            artifacts/baseline.json
-          if-no-files-found: error
-          retention-days: 90
-
-  publish-npm:
-    outputs:
-      sha256: ${{ steps.digest.outputs.sha256 }}
-    needs: [create-release, build-web-artifact, prepare-desktop-electron-macos]
-    if: ${{ needs.create-release.outputs.published_noop != 'true' && needs.create-release.outputs.scope == 'full' && !(github.event_name == 'workflow_dispatch' && inputs.prepare_bot_inputs_only == true) }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.create-release.outputs.source || github.sha }}
-
-      - name: Setup bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: '1.3.14'
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          registry-url: 'https://registry.npmjs.org'
-
-      - name: Install dependencies
+      - name: Check version metadata and create or reuse the draft
+        id: admit
         env:
-          DEVRYAN_SKIP_INSTALL_PREPARE: '1'
-        run: bun install --frozen-lockfile
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/release.mjs admit
 
-      - uses: actions/download-artifact@v4
-        with:
-          name: web-release
-          path: artifacts
-
-      - name: Download verified ARM64 Revert runtime
-        uses: actions/download-artifact@v4
-        with:
-          name: revert-runtime-darwin-arm64
-          path: packages/web/runtime/darwin-arm64
-      - name: Verify and stage web artifact
-        env:
-          RELEASE_OPERATION: web-stage
-        run: node scripts/release-ci.mjs
-
-      - name: Create npm tarball with private workspace closure
-        env:
-          RELEASE_OPERATION: web-pack
-        run: node scripts/release-ci.mjs
-
-      - name: Verify npm packaged orchestration config
-        run: |
-          set -euo pipefail
-          TARBALL=$(find packages/web -maxdepth 1 -type f -name '*.tgz' -print -quit)
-          test -n "$TARBALL"
-          EXTRACT_ROOT="$RUNNER_TEMP/devryan-web-npm"
-          rm -rf "$EXTRACT_ROOT"
-          mkdir -p "$EXTRACT_ROOT"
-          tar -xzf "$TARBALL" -C "$EXTRACT_ROOT"
-          ARTIFACT_ROOT="$EXTRACT_ROOT/package/server/default-config"
-          node scripts/verify-default-config-artifact.mjs \
-            --source packages/web/server/default-config \
-            --artifact-root "$ARTIFACT_ROOT"
-          node scripts/smoke-packaged-orchestration-config.mjs --config-root "$ARTIFACT_ROOT"
-
-      - name: Stage branded npm tarball for GitHub Release
-        env:
-          VERSION: ${{ needs.create-release.outputs.version }}
-        run: |
-          set -euo pipefail
-          mapfile -t TARBALLS < <(find packages/web -maxdepth 1 -type f -name '*.tgz' -print)
-          if [ "${#TARBALLS[@]}" -ne 1 ]; then
-            echo "Error: expected exactly one npm tarball, found ${#TARBALLS[@]}."
-            printf '%s\n' "${TARBALLS[@]}"
-            exit 1
-          fi
-          mkdir -p artifacts
-          cp "${TARBALLS[0]}" "artifacts/DevRyan-web-${VERSION}.tgz"
-
-      - name: Record packaged web digest
-        id: digest
-        env:
-          RELEASE_OPERATION: asset-describe
-          RELEASE_ASSET_PLATFORM: web
-          RELEASE_ASSET_DIRECTORY: artifacts
-        run: node scripts/release-ci.mjs
-      - uses: actions/upload-artifact@v4
-        with:
-          name: DevRyan-web-release
-          path: artifacts/DevRyan-web-${{ needs.create-release.outputs.version }}.tgz
-          if-no-files-found: error
-          retention-days: 1
-
-  build-web-artifact:
-    needs: create-release
-    if: ${{ needs.create-release.outputs.published_noop != 'true' && (needs.create-release.outputs.scope == 'full' || (github.event_name == 'workflow_dispatch' && inputs.candidate == true)) && !(github.event_name == 'workflow_dispatch' && inputs.prepare_bot_inputs_only == true) }}
+  web:
+    needs: admit
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -310,9 +57,9 @@ jobs:
         env:
           DEVRYAN_SKIP_INSTALL_PREPARE: '1'
         run: bun install --frozen-lockfile
-      - name: Validate shared UI types
+      - name: Type-check shared UI
         run: bun run type-check:ui
-      - name: Compile web assets once
+      - name: Build web assets and check bundle budgets
         env:
           VITE_ENABLE_REACT_SCAN: 'false'
         run: bun run build:web && bun run bundle:check
@@ -331,12 +78,55 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  resolve-bot-runtime-images:
-    needs: create-release
-    if: ${{ needs.create-release.outputs.published_noop != 'true' }}
+  electron-prepare:
+    needs: admit
+    runs-on: macos-26
+    # A stalled native build fails the release instead of holding it open.
+    timeout-minutes: 35
+    env:
+      ELECTRON_BUILDER_ARCH: arm64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.14'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install target dependencies
+        # Web assets come from the web job and native inputs are built below.
+        env:
+          DEVRYAN_SKIP_INSTALL_PREPARE: '1'
+        run: bun install --frozen-lockfile --cpu '*' --os darwin
+      - name: Restore reviewed Claude executable
+        run: node scripts/hydrate-reviewed-claude.mjs
+      - name: Build and verify native v2 runtime
+        timeout-minutes: 20
+        run: bun scripts/build-native-runtime.mjs
+      - name: Prepare native helpers
+        working-directory: packages/electron
+        run: bun run build:native-helpers
+      - name: Bundle main process
+        run: bun run build:electron
+      - name: Rebuild native bindings
+        working-directory: packages/electron
+        run: bun run rebuild:native
+      - name: Export prepared app inputs
+        env:
+          RELEASE_OPERATION: prepare-export
+        run: node scripts/release-ci.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: electron-prepared-arm64
+          path: artifacts/prepared.*
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 1
+
+  bot-resolve:
+    needs: admit
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
+    timeout-minutes: 10
     outputs:
       build: ${{ steps.resolve.outputs.build }}
     steps:
@@ -346,11 +136,10 @@ jobs:
           node-version: '22'
       - uses: docker/setup-buildx-action@v4
       - uses: sigstore/cosign-installer@v4.1.2
-      - name: Resolve all verified image inputs once
+      - name: Reuse verified images with unchanged inputs; list the rest
         id: resolve
         env:
           RELEASE_OPERATION: image-resolve
-          REBUILD_BOT_IMAGES: ${{ github.event.inputs.rebuild_bot_images == 'true' }}
         run: node scripts/release-ci.mjs
       - uses: actions/upload-artifact@v4
         with:
@@ -359,10 +148,12 @@ jobs:
           if-no-files-found: warn
           retention-days: 1
 
-  build-bot-runtime-image:
-    needs: [create-release, resolve-bot-runtime-images]
-    if: ${{ needs.create-release.outputs.published_noop != 'true' }}
+  bot-build:
+    name: bot-build (${{ matrix.image }})
+    needs: [admit, bot-resolve]
+    if: ${{ needs.bot-resolve.outputs.build != '[]' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
@@ -371,7 +162,7 @@ jobs:
       fail-fast: false
       max-parallel: 3
       matrix:
-        image: [supervisor, engine-proxy, egress, indexer, opencode, computer, database, rest]
+        image: ${{ fromJSON(needs.bot-resolve.outputs.build) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -385,20 +176,14 @@ jobs:
         run: node scripts/release-ci.mjs
       - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: bot-images-resolved
-          path: artifacts
       - uses: docker/login-action@v4
-        if: ${{ env.RELEASE_DRY_RUN != 'true' && contains(fromJSON(needs.resolve-bot-runtime-images.outputs.build), matrix.image) }}
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: sigstore/cosign-installer@v4.1.2
-      - name: Build and attest image
+      - name: Build and push image
         id: build
-        if: ${{ env.RELEASE_DRY_RUN != 'true' && contains(fromJSON(needs.resolve-bot-runtime-images.outputs.build), matrix.image) }}
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -408,14 +193,13 @@ jobs:
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ needs.create-release.outputs.version }}
-          push: ${{ env.RELEASE_DRY_RUN != 'true' }}
+            org.opencontainers.image.version=${{ needs.admit.outputs.version }}
+          push: true
           provenance: mode=max
           sbom: true
           cache-from: type=gha,scope=devryan-bot-${{ matrix.image }}
           cache-to: type=gha,scope=devryan-bot-${{ matrix.image }},mode=max
-      - name: Sign and verify image metadata
-        if: ${{ env.RELEASE_DRY_RUN != 'true' && contains(fromJSON(needs.resolve-bot-runtime-images.outputs.build), matrix.image) }}
+      - name: Sign image and tag its inputs
         env:
           RELEASE_OPERATION: image-sign
           IMAGE_KEY: ${{ matrix.image }}
@@ -423,16 +207,18 @@ jobs:
         run: node scripts/release-ci.mjs
       - uses: actions/upload-artifact@v4
         with:
-          name: bot-image-${{ matrix.image }}
+          name: bot-images-built-${{ matrix.image }}
           path: artifacts/${{ matrix.image }}.json
-          overwrite: true
           if-no-files-found: error
           retention-days: 1
 
-  publish-bot-runtime-images:
-    needs: [create-release, build-bot-runtime-image]
-    if: ${{ needs.create-release.outputs.published_noop != 'true' }}
+  bot-publish:
+    needs: [admit, bot-resolve, bot-build]
+    if: ${{ !cancelled() && needs.bot-resolve.result == 'success' && (needs.bot-build.result == 'success' || needs.bot-build.result == 'skipped') }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      VERSION: ${{ needs.admit.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -441,823 +227,183 @@ jobs:
       - uses: docker/setup-buildx-action@v4
       - uses: actions/download-artifact@v4
         with:
-          pattern: bot-image-*
+          pattern: bot-images-*
           merge-multiple: true
           path: artifacts
-      - name: Assemble complete Bot runtime manifest
+      - name: Assemble the Bot runtime manifest
         env:
           RELEASE_OPERATION: image-assemble
         run: node scripts/release-ci.mjs
       - name: Verify anonymous image access
-        env:
-          VERSION: ${{ needs.create-release.outputs.version }}
-          SOURCE_REVISION: ${{ github.sha }}
-          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
         run: |
           set -euo pipefail
           REPOSITORY_PREFIX="ghcr.io/$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
-          MANIFEST="artifacts/DevRyan-bot-runtime-images-${VERSION}.json"
-          node scripts/verify-bot-runtime-images.mjs --manifest "$MANIFEST" --version "$VERSION" --revision "$SOURCE_REVISION" --repository-prefix "$REPOSITORY_PREFIX" --check-anonymous
-
-      - name: Upload Bot runtime manifest for Electron release builds
-        uses: actions/upload-artifact@v4
-        with:
-          name: bot-runtime-images
-          path: artifacts/DevRyan-bot-runtime-images-${{ needs.create-release.outputs.version }}.json
-          if-no-files-found: error
-          retention-days: 1
-
-  verify-bot-runtime-topology:
-    needs: [create-release, publish-bot-runtime-images]
-    if: ${{ needs.create-release.outputs.published_noop != 'true' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - uses: actions/download-artifact@v4
-        with:
-          name: bot-runtime-images
-          path: artifacts
-      - name: Verify isolated production topology
-        env:
-          VERSION: ${{ needs.create-release.outputs.version }}
+          node scripts/verify-bot-runtime-images.mjs --manifest "artifacts/DevRyan-bot-runtime-images-${VERSION}.json" \
+            --version "$VERSION" --revision "$GITHUB_SHA" --repository-prefix "$REPOSITORY_PREFIX" --check-anonymous
+      - name: Smoke the isolated production topology
         run: node scripts/smoke-bot-runtime-images.mjs --manifest "artifacts/DevRyan-bot-runtime-images-${VERSION}.json"
-
-  prepare-desktop-electron-macos:
-    needs: create-release
-    if: ${{ needs.create-release.outputs.published_noop != 'true' && (needs.create-release.outputs.scope == 'full' || (github.event_name == 'workflow_dispatch' && inputs.candidate == true)) && !(github.event_name == 'workflow_dispatch' && inputs.prepare_bot_inputs_only == true) }}
-    runs-on: ${{ matrix.runner }}
-    # A stalled native fixture must fail the release instead of holding it open.
-    timeout-minutes: 35
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: aarch64-apple-darwin
-            runner: macos-26
-            arch: arm64
-            platform: darwin-aarch64
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        id: bun
-        with:
-          bun-version: '1.3.14'
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Install target dependencies
-        # Web assets come from the shared web artifact and native inputs are
-        # built by the steps below; skip the duplicate install-time prepare.
-        env:
-          DEVRYAN_SKIP_INSTALL_PREPARE: '1'
-        run: bun install --frozen-lockfile --cpu '*' --os darwin
-      - name: Restore exact reviewed Claude executable
-        run: node scripts/hydrate-reviewed-claude.mjs
-      - name: Build and verify native v2 runtime
-        timeout-minutes: 20
-        run: bun scripts/build-native-runtime.mjs
       - uses: actions/upload-artifact@v4
         with:
-          name: revert-runtime-darwin-${{ matrix.arch }}
-          path: packages/web/runtime/darwin-${{ matrix.arch }}
-          if-no-files-found: error
-          retention-days: 1
-      - name: Prepare native helpers
-        working-directory: packages/electron
-        env:
-          ELECTRON_BUILDER_ARCH: ${{ matrix.arch }}
-        run: bun run build:native-helpers
-      - name: Bundle main process
-        run: bun run build:electron
-      - name: Rebuild native bindings
-        working-directory: packages/electron
-        env:
-          ELECTRON_BUILDER_ARCH: ${{ matrix.arch }}
-        run: bun run rebuild:native
-      - name: Export prepared architecture
-        env:
-          RELEASE_OPERATION: prepare-export
-          ELECTRON_BUILDER_ARCH: ${{ matrix.arch }}
-        run: node scripts/release-ci.mjs
-      - uses: actions/upload-artifact@v4
-        with:
-          name: electron-prepared-${{ matrix.arch }}
-          path: artifacts/prepared.*
-          compression-level: 0
+          name: bot-runtime-images
+          path: artifacts/DevRyan-bot-runtime-images-${{ needs.admit.outputs.version }}.json
           if-no-files-found: error
           retention-days: 1
 
-  build-desktop-electron-macos:
-    outputs:
-      sha256: ${{ steps.digest.outputs.sha256 }}
-    needs: [create-release, prepare-desktop-electron-macos, build-web-artifact, publish-bot-runtime-images]
-    if: ${{ always() && !cancelled() && needs.create-release.result == 'success' && needs.create-release.outputs.published_noop != 'true' && needs.publish-bot-runtime-images.result == 'success' && ((needs.prepare-desktop-electron-macos.result == 'success' && needs.build-web-artifact.result == 'success') || (needs.create-release.outputs.scope == 'desktop-macos-arm64' && !(github.event_name == 'workflow_dispatch' && inputs.candidate == true) && needs.prepare-desktop-electron-macos.result == 'skipped' && needs.build-web-artifact.result == 'skipped')) && !(github.event_name == 'workflow_dispatch' && inputs.prepare_bot_inputs_only == true) }}
+  electron-package:
+    needs: [admit, web, electron-prepare, bot-publish]
+    if: ${{ !cancelled() && needs.web.result == 'success' && needs.electron-prepare.result == 'success' && needs.bot-publish.result == 'success' }}
     runs-on: macos-26
     timeout-minutes: 25
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: aarch64-apple-darwin
-            arch: arm64
-            platform: darwin-aarch64
+    env:
+      ELECTRON_BUILDER_ARCH: arm64
+      VERSION: ${{ needs.admit.outputs.version }}
+      APP_DIR: packages/electron/dist/mac-arm64
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        if: ${{ env.RELEASE_CANDIDATE == 'true' }}
         with:
           node-version: '22'
       - uses: actions/download-artifact@v4
-        if: ${{ env.RELEASE_CANDIDATE == 'true' }}
         with:
-          name: electron-prepared-${{ matrix.arch }}
+          name: electron-prepared-arm64
           path: artifacts
-      - name: Verify and import prepared architecture
-        if: ${{ env.RELEASE_CANDIDATE == 'true' }}
+      - name: Import prepared app inputs
         env:
           RELEASE_OPERATION: prepare-import
-          ELECTRON_BUILDER_ARCH: ${{ matrix.arch }}
         run: node scripts/release-ci.mjs
       - uses: actions/download-artifact@v4
-        if: ${{ env.RELEASE_CANDIDATE == 'true' }}
         with:
           name: web-release
           path: web-artifact
-      - name: Verify and stage shared web assets
-        if: ${{ env.RELEASE_CANDIDATE == 'true' }}
+      - name: Stage web assets
         env:
           RELEASE_OPERATION: web-stage
           RELEASE_ARTIFACT_DIR: web-artifact
           RELEASE_WEB_TARGET: electron
         run: node scripts/release-ci.mjs
-      - name: Download signed Bot runtime image manifest
-        if: ${{ env.RELEASE_CANDIDATE == 'true' }}
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: bot-runtime-images
           path: ${{ runner.temp }}/bot-runtime-images
-      - name: Package prepared Electron app
-        if: ${{ env.RELEASE_CANDIDATE == 'true' }}
+      - name: Package the app
         working-directory: packages/electron
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-          ELECTRON_BUILDER_ARCH: ${{ matrix.arch }}
-          DEVRYAN_BOT_RUNTIME_MANIFEST_PATH: ${{ runner.temp }}/bot-runtime-images/DevRyan-bot-runtime-images-${{ needs.create-release.outputs.version }}.json
+          DEVRYAN_BOT_RUNTIME_MANIFEST_PATH: ${{ runner.temp }}/bot-runtime-images/DevRyan-bot-runtime-images-${{ needs.admit.outputs.version }}.json
           DEVRYAN_BOT_RUNTIME_SOURCE_REVISION: ${{ github.sha }}
           DEVRYAN_BOT_RUNTIME_REPOSITORY_PREFIX: ghcr.io/1h-team
-        run: node scripts/package-prepared.mjs --mac --${{ matrix.arch }} --publish=never -c.mac.identity=null -c.mac.notarize=false -c.dmg.sign=false
-
-      - name: Verify Electron Cursor SDK native artifacts
-        if: ${{ env.RELEASE_CANDIDATE == 'true' }}
+        run: node scripts/package-prepared.mjs --mac --arm64 --publish=never -c.mac.identity=null -c.mac.notarize=false -c.dmg.sign=false
+      - name: Check Cursor SDK native artifacts
         run: |
           set -euo pipefail
-
-          case "${{ matrix.arch }}" in
-            arm64)
-              APP_DIR="packages/electron/dist/mac-arm64"
-              CURSOR_SDK_PLATFORM_PACKAGE="sdk-darwin-arm64"
-              ;;
-            *)
-              echo "Error: unsupported Electron architecture: ${{ matrix.arch }}"
-              exit 1
-              ;;
-          esac
-
           APP_PATH=$(find "$APP_DIR" -maxdepth 2 -name "*.app" -print -quit)
-          if [ -z "$APP_PATH" ]; then
-            echo "Error: .app not found under $APP_DIR"
-            ls -la packages/electron/dist/
-            exit 1
-          fi
-
-          CURSOR_PLATFORM_PATH="$APP_PATH/Contents/Resources/app.asar.unpacked/node_modules/@cursor/$CURSOR_SDK_PLATFORM_PACKAGE"
-          if [ ! -d "$CURSOR_PLATFORM_PATH" ]; then
-            echo "Error: Cursor SDK platform package missing: $CURSOR_PLATFORM_PATH"
-            find "$APP_PATH/Contents/Resources/app.asar.unpacked/node_modules/@cursor" -maxdepth 4 -print 2>/dev/null || true
-            exit 1
-          fi
-          for executable in \
-            "$CURSOR_PLATFORM_PATH/bin/rg" \
-            "$CURSOR_PLATFORM_PATH/bin/cursorsandbox"
-          do
-            if [ ! -x "$executable" ]; then
-              echo "Error: executable Cursor SDK artifact missing: $executable"
-              find "$APP_PATH/Contents/Resources/app.asar.unpacked/node_modules/@cursor" -maxdepth 4 -print 2>/dev/null || true
-              exit 1
-            fi
+          test -n "$APP_PATH" || { echo "Error: .app not found under $APP_DIR"; ls -la packages/electron/dist/; exit 1; }
+          CURSOR="$APP_PATH/Contents/Resources/app.asar.unpacked/node_modules/@cursor/sdk-darwin-arm64"
+          for file in "$CURSOR/bin/rg" "$CURSOR/bin/cursorsandbox"; do
+            test -x "$file" || { echo "Error: executable Cursor SDK artifact missing: $file"; exit 1; }
           done
-          for binding in \
-            "$CURSOR_PLATFORM_PATH/vendor/tree-sitter/binding.node" \
-            "$CURSOR_PLATFORM_PATH/vendor/tree-sitter-bash/binding.node"
-          do
-            if [ ! -f "$binding" ]; then
-              echo "Error: Cursor SDK native binding missing: $binding"
-              find "$APP_PATH/Contents/Resources/app.asar.unpacked/node_modules/@cursor" -maxdepth 4 -print 2>/dev/null || true
-              exit 1
-            fi
+          for file in "$CURSOR/vendor/tree-sitter/binding.node" "$CURSOR/vendor/tree-sitter-bash/binding.node"; do
+            test -f "$file" || { echo "Error: Cursor SDK native binding missing: $file"; exit 1; }
           done
-
-      - name: Verify packaged Electron orchestration config
-        if: ${{ env.RELEASE_CANDIDATE == 'true' }}
+      - name: Check packaged orchestration config
         run: |
           set -euo pipefail
-
-          case "${{ matrix.arch }}" in
-            arm64) APP_DIR="packages/electron/dist/mac-arm64" ;;
-            *) echo "Error: unsupported Electron architecture: ${{ matrix.arch }}"; exit 1 ;;
-          esac
           APP_PATH=$(find "$APP_DIR" -maxdepth 2 -name "*.app" -print -quit)
-          test -n "$APP_PATH"
-          ASAR_PATH="$APP_PATH/Contents/Resources/app.asar"
-          test -f "$ASAR_PATH"
-          EXTRACT_ROOT="$RUNNER_TEMP/devryan-electron-asar-${{ matrix.arch }}"
+          EXTRACT_ROOT="$RUNNER_TEMP/devryan-electron-asar"
           rm -rf "$EXTRACT_ROOT"
           ASAR_CLI=$(find node_modules/.bun -path '*/@electron+asar@*/node_modules/@electron/asar/bin/asar.js' -print -quit)
-          if [ -z "$ASAR_CLI" ]; then
-            echo "Error: installed Electron asar CLI not found in the Bun dependency tree."
-            exit 1
-          fi
-          node "$ASAR_CLI" extract "$ASAR_PATH" "$EXTRACT_ROOT"
+          test -n "$ASAR_CLI" || { echo "Error: installed Electron asar CLI not found in the Bun dependency tree."; exit 1; }
+          node "$ASAR_CLI" extract "$APP_PATH/Contents/Resources/app.asar" "$EXTRACT_ROOT"
           ARTIFACT_ROOT="$EXTRACT_ROOT/node_modules/@openchamber/web/server/default-config"
-          node scripts/verify-default-config-artifact.mjs \
-            --source packages/web/server/default-config \
-            --artifact-root "$ARTIFACT_ROOT"
+          node scripts/verify-default-config-artifact.mjs --source packages/web/server/default-config --artifact-root "$ARTIFACT_ROOT"
           node scripts/smoke-packaged-orchestration-config.mjs --config-root "$ARTIFACT_ROOT"
-
-      - name: Verify packaged Electron Bot runtime image manifest
-        if: ${{ env.RELEASE_CANDIDATE == 'true' }}
-        env:
-          VERSION: ${{ needs.create-release.outputs.version }}
-          SOURCE_REVISION: ${{ github.sha }}
+      - name: Check packaged Bot runtime manifest
         run: |
           set -euo pipefail
-
-          case "${{ matrix.arch }}" in
-            arm64) APP_DIR="packages/electron/dist/mac-arm64" ;;
-            *) echo "Error: unsupported Electron architecture: ${{ matrix.arch }}"; exit 1 ;;
-          esac
           APP_PATH=$(find "$APP_DIR" -maxdepth 2 -name "*.app" -print -quit)
-          test -n "$APP_PATH"
-          PACKAGED_MANIFEST="$APP_PATH/Contents/Resources/bot-runtime/images.release.json"
-          SOURCE_MANIFEST="$RUNNER_TEMP/bot-runtime-images/DevRyan-bot-runtime-images-${VERSION}.json"
-          test -f "$PACKAGED_MANIFEST"
-          cmp "$SOURCE_MANIFEST" "$PACKAGED_MANIFEST"
-          node scripts/verify-bot-runtime-images.mjs \
-            --manifest "$PACKAGED_MANIFEST" \
-            --version "$VERSION" \
-            --revision "$SOURCE_REVISION" \
-            --repository-prefix ghcr.io/1h-team
-
-      - name: Verify Electron macOS usage descriptions
-        if: ${{ env.RELEASE_CANDIDATE == 'true' }}
+          PACKAGED="$APP_PATH/Contents/Resources/bot-runtime/images.release.json"
+          cmp "$RUNNER_TEMP/bot-runtime-images/DevRyan-bot-runtime-images-${VERSION}.json" "$PACKAGED"
+          node scripts/verify-bot-runtime-images.mjs --manifest "$PACKAGED" --version "$VERSION" --revision "$GITHUB_SHA" --repository-prefix ghcr.io/1h-team
+      - name: Check macOS usage descriptions
         run: |
           set -euo pipefail
-
-          APP_DIR="packages/electron/dist/mac"
-          [ -d "packages/electron/dist/mac-arm64" ] && APP_DIR="packages/electron/dist/mac-arm64"
-
           APP_PATH=$(find "$APP_DIR" -maxdepth 2 -name "*.app" -print -quit)
-          if [ -z "$APP_PATH" ]; then
-            echo "Error: .app not found under packages/electron/dist/mac*"
-            ls -la packages/electron/dist/
-            exit 1
-          fi
-
-          INFO_PLIST="$APP_PATH/Contents/Info.plist"
-          for key in \
-            NSAppleEventsUsageDescription \
-            NSDesktopFolderUsageDescription \
-            NSDocumentsFolderUsageDescription \
-            NSDownloadsFolderUsageDescription
-          do
-            value=$(/usr/libexec/PlistBuddy -c "Print :$key" "$INFO_PLIST" 2>/dev/null || true)
-            if [ -z "$value" ]; then
-              echo "Error: required Info.plist usage description missing: $key"
-              exit 1
-            fi
+          for key in NSAppleEventsUsageDescription NSDesktopFolderUsageDescription NSDocumentsFolderUsageDescription NSDownloadsFolderUsageDescription; do
+            value=$(/usr/libexec/PlistBuddy -c "Print :$key" "$APP_PATH/Contents/Info.plist" 2>/dev/null || true)
+            test -n "$value" || { echo "Error: required Info.plist usage description missing: $key"; exit 1; }
           done
-
-      - name: Download exact admitted candidate installer
-        if: ${{ env.RELEASE_CANDIDATE != 'true' }}
-        uses: actions/download-artifact@v4
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ needs.create-release.outputs.candidate_run }}
-          name: DevRyan-macos-arm64-release
-          path: packages/electron/dist
-      - name: Download frozen candidate metadata
-        if: ${{ env.RELEASE_CANDIDATE != 'true' }}
-        uses: actions/download-artifact@v4
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ needs.create-release.outputs.candidate_run }}
-          name: DevRyan-macos-arm64-packaging
-          path: retained-candidate
-      - name: Verify retained candidate source version and installer bytes
-        if: ${{ env.RELEASE_CANDIDATE != 'true' }}
-        env:
-          RELEASE_OPERATION: candidate-verify
-          RELEASE_CANDIDATE_METADATA: retained-candidate/candidate.json
-          RELEASE_ASSET_DIRECTORY: packages/electron/dist
-        run: node scripts/release-ci.mjs
-
-      # The public release carries only the verified installer DMG.
-      - name: Record packaged DMG digest
-        id: digest
-        env:
-          RELEASE_OPERATION: asset-describe
-          RELEASE_ASSET_PLATFORM: macos-arm64
-          RELEASE_ASSET_DIRECTORY: packages/electron/dist
-        run: node scripts/release-ci.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: DevRyan-macos-arm64-release
-          path: packages/electron/dist/DevRyan-${{ needs.create-release.outputs.version }}-arm64.dmg
+          path: packages/electron/dist/DevRyan-${{ needs.admit.outputs.version }}-arm64.dmg
           if-no-files-found: error
-          retention-days: 14
-      - uses: actions/upload-artifact@v4
-        with:
-          name: DevRyan-macos-arm64-packaging
-          path: |
-            artifacts/macos-arm64-asset.json
-            artifacts/candidate.json
-          if-no-files-found: error
-          retention-days: 90
+          retention-days: 7
 
-  candidate-startup:
-    name: candidate-startup-${{ matrix.sample }}
-    needs: [create-release, build-desktop-electron-macos]
-    if: ${{ needs.create-release.outputs.published_noop != 'true' && github.event_name == 'workflow_dispatch' && inputs.candidate == true }}
-    runs-on: macos-26
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        sample: [1, 2, 3]
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.create-release.outputs.source }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: '1.3.14'
-      - name: Install frozen QA dependencies
-        env:
-          DEVRYAN_SKIP_INSTALL_PREPARE: '1'
-        run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@v4
-        with:
-          name: DevRyan-macos-arm64-release
-          path: release-assets
-      - uses: actions/download-artifact@v4
-        with:
-          name: DevRyan-macos-arm64-packaging
-          path: release-metadata
-      - uses: actions/download-artifact@v4
-        if: ${{ github.run_attempt > 1 }}
-        continue-on-error: true
-        with:
-          pattern: DevRyan-startup-attempt-*
-          path: prior-attempts
-      - name: Rehearse unchanged extracted candidate
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node scripts/qa/release-startup-smoke.mjs --dmg "$(pwd)/release-assets/DevRyan-${{ needs.create-release.outputs.version }}-arm64.dmg" --metadata release-metadata/candidate.json --rehearsal --sample ${{ matrix.sample }} --receipt "$(pwd)/receipts/candidate-startup-${{ matrix.sample }}.json" ${{ github.run_attempt > 1 && '--prior prior-attempts' || '' }}
-      - uses: actions/upload-artifact@v4
-        if: ${{ always() }}
-        with:
-          name: DevRyan-startup-attempt-${{ github.run_attempt }}-candidate-${{ matrix.sample }}
-          path: receipts/*
-          if-no-files-found: error
-          retention-days: 90
-
-  candidate-upgrade-rollback:
-    needs: [create-release, build-desktop-electron-macos]
-    if: ${{ needs.create-release.outputs.published_noop != 'true' && github.event_name == 'workflow_dispatch' && inputs.candidate == true }}
-    runs-on: macos-26
-    timeout-minutes: 40
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.create-release.outputs.source }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: '1.3.14'
-      - name: Install frozen QA dependencies
-        env:
-          DEVRYAN_SKIP_INSTALL_PREPARE: '1'
-        run: bun install --frozen-lockfile
-      # Package acceptance verifies build inputs against the source tree,
-      # which includes this gitignored reviewed executable.
-      - name: Restore exact reviewed Claude executable
-        run: node scripts/hydrate-reviewed-claude.mjs
-      - uses: actions/download-artifact@v4
-        with:
-          name: DevRyan-release-admission
-          path: release-admission
-      - uses: actions/download-artifact@v4
-        with:
-          name: DevRyan-macos-arm64-release
-          path: release-assets
-      - uses: actions/download-artifact@v4
-        with:
-          name: DevRyan-macos-arm64-packaging
-          path: release-metadata
-      - name: Qualify actual retained baseline upgrade and rollback
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node scripts/qa/release-startup-upgrade-rollback.mjs --dmg "$(pwd)/release-assets/DevRyan-${{ needs.create-release.outputs.version }}-arm64.dmg" --metadata release-metadata/candidate.json --baseline release-admission/baseline.json --receipt "$(pwd)/receipts/upgrade-rollback.json"
-      - uses: actions/upload-artifact@v4
-        if: ${{ always() }}
-        with:
-          name: DevRyan-upgrade-rollback
-          path: receipts/upgrade-rollback.json
-          if-no-files-found: error
-          retention-days: 90
-
-  candidate-budget:
-    needs: [create-release, candidate-startup, candidate-upgrade-rollback]
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate == true }}
-    permissions:
-      contents: read
-      actions: read
+  publish:
+    needs: [admit, electron-package]
+    if: ${{ !cancelled() && needs.electron-package.result == 'success' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.create-release.outputs.source }}
-      - name: Freeze feasible exact-source candidate budget before tagging
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_OPERATION: candidate-budget
-        run: node scripts/release-ci.mjs
-      - uses: actions/upload-artifact@v4
-        with:
-          name: DevRyan-candidate-smoke-budget
-          path: artifacts/smoke-limits.json
-          if-no-files-found: error
-          retention-days: 90
-
-  final-dmg-smoke:
-    outputs:
-      attempt: ${{ steps.receipt.outputs.attempt }}
-    needs: [create-release, build-desktop-electron-macos]
-    if: ${{ needs.create-release.outputs.published_noop != 'true' && !(github.event_name == 'workflow_dispatch' && (inputs.candidate == true || inputs.prepare_bot_inputs_only == true)) }}
-    runs-on: macos-26
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.create-release.outputs.source }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: '1.3.14'
-      - name: Install frozen QA dependencies
-        env:
-          DEVRYAN_SKIP_INSTALL_PREPARE: '1'
-        run: bun install --frozen-lockfile
-      - name: Resolve three exact-source rehearsals
-        id: candidate
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_OPERATION: candidate-resolve
-          RELEASE_CANDIDATE_RUN: ${{ needs.create-release.outputs.candidate_run }}
-        run: node scripts/release-ci.mjs
-      - uses: actions/download-artifact@v4
-        with:
-          name: DevRyan-macos-arm64-release
-          path: release-assets
-      - uses: actions/download-artifact@v4
-        with:
-          name: DevRyan-macos-arm64-packaging
-          path: release-metadata
-      - uses: actions/download-artifact@v4
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ steps.candidate.outputs.run }}
-          name: DevRyan-startup-attempt-${{ steps.candidate.outputs.sample1_attempt }}-candidate-1
-          path: candidate-receipts
-      - uses: actions/download-artifact@v4
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ steps.candidate.outputs.run }}
-          name: DevRyan-startup-attempt-${{ steps.candidate.outputs.sample2_attempt }}-candidate-2
-          path: candidate-receipts
-      - uses: actions/download-artifact@v4
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ steps.candidate.outputs.run }}
-          name: DevRyan-startup-attempt-${{ steps.candidate.outputs.sample3_attempt }}-candidate-3
-          path: candidate-receipts
-      - uses: actions/download-artifact@v4
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ steps.candidate.outputs.run }}
-          name: DevRyan-upgrade-rollback
-          path: candidate-receipts
-      - name: Freeze measured phase deadlines
-        env:
-          RELEASE_OPERATION: smoke-budget
-          RELEASE_CANDIDATE_RECEIPTS: candidate-receipts
-        run: node scripts/release-ci.mjs
-      - uses: actions/download-artifact@v4
-        if: ${{ github.run_attempt > 1 }}
-        continue-on-error: true
-        with:
-          pattern: DevRyan-startup-attempt-*
-          path: prior-attempts
-      - name: Qualify exact final tag DMG
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node scripts/qa/release-startup-smoke.mjs --dmg "$(pwd)/release-assets/DevRyan-${{ needs.create-release.outputs.version }}-arm64.dmg" --metadata release-metadata/candidate.json --limits artifacts/smoke-limits.json --identity artifacts/smoke-identity.json --receipt "$(pwd)/receipts/final-dmg-smoke.json" ${{ github.run_attempt > 1 && '--prior prior-attempts' || '' }}
-      - name: Retain successful smoke attempt
-        id: receipt
-        run: echo "attempt=${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
-      - name: Retain qualified final smoke identity and phase budgets
-        uses: actions/upload-artifact@v4
-        with:
-          name: DevRyan-final-smoke-contract-${{ github.run_attempt }}
-          path: |
-            artifacts/smoke-limits.json
-            artifacts/smoke-identity.json
-          if-no-files-found: error
-          retention-days: 90
-      - uses: actions/upload-artifact@v4
-        if: ${{ always() }}
-        with:
-          name: DevRyan-startup-attempt-${{ github.run_attempt }}-final
-          path: receipts/*
-          if-no-files-found: error
-          retention-days: 90
-
-  finalize-release:
+    timeout-minutes: 20
+    environment: DevRyan Secrets
     permissions:
       contents: write
-      actions: read
-    needs: [create-release, publish-bot-runtime-images, verify-bot-runtime-topology, build-desktop-electron-macos, publish-npm, final-dmg-smoke]
-    if: ${{ always() && !cancelled() && needs.create-release.result == 'success' && !(github.event_name == 'workflow_dispatch' && (inputs.candidate == true || inputs.prepare_bot_inputs_only == true)) && (needs.create-release.outputs.published_noop == 'true' || (needs.final-dmg-smoke.result == 'success' && needs.publish-bot-runtime-images.result == 'success' && needs.verify-bot-runtime-topology.result == 'success' && needs.build-desktop-electron-macos.result == 'success' && ((needs.create-release.outputs.scope == 'full' && needs.publish-npm.result == 'success') || (needs.create-release.outputs.scope == 'desktop-macos-arm64' && needs.publish-npm.result == 'skipped')))) }}
-    runs-on: ubuntu-latest
-    environment: DevRyan Secrets
     env:
-      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-      DISCORD_UPDATE_ROLE_ID: ${{ secrets.DISCORD_UPDATE_ROLE_ID }}
+      RELEASE_ID: ${{ needs.admit.outputs.release_id }}
+      RELEASE_ASSET_DIRECTORY: release-assets
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          ref: ${{ needs.create-release.outputs.source || github.sha }}
-
-      - name: Verify original published finalization without writes
-        if: ${{ needs.create-release.outputs.published_noop == 'true' }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_OPERATION: release-noop
-          RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
-          RELEASE_SCOPE: ${{ needs.create-release.outputs.scope }}
-        run: node scripts/release-ci.mjs
-
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: DevRyan-macos-arm64-release
+          path: release-assets
+      - name: Check the DMG and attach it to the draft
+        run: node scripts/release.mjs upload
       - name: Setup Supabase CLI
-        if: ${{ needs.create-release.outputs.published_noop != 'true' && env.RELEASE_DRY_RUN != 'true' && env.RELEASE_BOT_INPUTS_ONLY != 'true' }}
+        if: ${{ github.event_name == 'push' }}
         uses: supabase/setup-cli@v1
         with:
           version: 2.115.0
-
-      - uses: actions/download-artifact@v4
-        if: ${{ needs.create-release.outputs.published_noop != 'true' }}
-        with:
-          pattern: DevRyan-*-release
-          merge-multiple: true
-          path: release-assets
-      - uses: actions/download-artifact@v4
-        if: ${{ needs.create-release.outputs.published_noop != 'true' }}
-        with:
-          name: DevRyan-startup-attempt-${{ needs.final-dmg-smoke.outputs.attempt }}-final
-          merge-multiple: true
-          path: release-smoke
-      - uses: actions/download-artifact@v4
-        if: ${{ needs.create-release.outputs.published_noop != 'true' }}
-        with:
-          name: DevRyan-final-smoke-contract-${{ needs.final-dmg-smoke.outputs.attempt }}
-          path: release-smoke-contract
-      - name: Verify required release assets before publish
-        if: ${{ needs.create-release.outputs.published_noop != 'true' }}
-        env:
-          VERSION: ${{ needs.create-release.outputs.version }}
-          RELEASE_SCOPE: ${{ needs.create-release.outputs.scope }}
-          RELEASE_SHA256_MACOS_ARM64: ${{ needs.build-desktop-electron-macos.outputs.sha256 }}
-          RELEASE_SHA256_WEB: ${{ needs.publish-npm.outputs.sha256 }}
-        run: node scripts/verify-release-assets.mjs --directory release-assets
-
-      - name: Verify exact final smoke evidence before external writes
-        if: ${{ needs.create-release.outputs.published_noop != 'true' }}
-        env:
-          RELEASE_OPERATION: release-prepublish
-          RELEASE_SCOPE: ${{ needs.create-release.outputs.scope }}
-          RELEASE_SHA256_MACOS_ARM64: ${{ needs.build-desktop-electron-macos.outputs.sha256 }}
-          RELEASE_SHA256_WEB: ${{ needs.publish-npm.outputs.sha256 }}
-          RELEASE_ASSET_DIRECTORY: release-assets
-          RELEASE_SMOKE_RECEIPT: release-smoke/final-dmg-smoke.json
-          RELEASE_SMOKE_IDENTITY: release-smoke-contract/smoke-identity.json
-          RELEASE_SMOKE_LIMITS: release-smoke-contract/smoke-limits.json
-          RELEASE_SMOKE_ATTEMPT: ${{ needs.final-dmg-smoke.outputs.attempt }}
-        run: node scripts/release-ci.mjs
-
-      - name: Recheck admitted draft before external writes
-        if: ${{ needs.create-release.outputs.published_noop != 'true' && env.RELEASE_DRY_RUN != 'true' && env.RELEASE_BOT_INPUTS_ONLY != 'true' }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
-          RELEASE_SCOPE: ${{ needs.create-release.outputs.scope }}
-        run: |
-          node --input-type=module - <<'NODE'
-          import { githubReleaseClient, assertAdmittedRelease } from './scripts/release-publication.mjs';
-          import { releaseIdentity } from './scripts/release-artifacts.mjs';
-          const client = githubReleaseClient();
-          const identity = await releaseIdentity(process.cwd(), process.env.GITHUB_SHA);
-          await client.frozenTag(identity.release, identity.revision);
-          assertAdmittedRelease(await client.request(`/releases/${process.env.RELEASE_ID}`), { source: identity.revision, version: identity.release, scope: process.env.RELEASE_SCOPE, releaseID: process.env.RELEASE_ID });
-          NODE
-
       - name: Deploy and verify Supabase configuration and migrations
-        if: ${{ needs.create-release.outputs.published_noop != 'true' && env.RELEASE_DRY_RUN != 'true' && env.RELEASE_BOT_INPUTS_ONLY != 'true' }}
+        if: ${{ github.event_name == 'push' }}
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
         run: |
           set -euo pipefail
-
           for name in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD SUPABASE_PROJECT_ID; do
             if [ -z "${!name:-}" ]; then
               echo "Error: required release secret ${name} is not configured."
               exit 1
             fi
           done
-
           supabase link --project-ref "$SUPABASE_PROJECT_ID" --yes
           node scripts/sync-supabase-auth-password-policy.mjs
           supabase db push --linked --dry-run
           supabase db push --linked --yes
-
           MIGRATION_STATUS_PATH="${RUNNER_TEMP}/supabase-migrations.json"
           SCHEMA_STATUS_PATH="${RUNNER_TEMP}/supabase-bot-schema.json"
           supabase migration list --linked --output-format json > "$MIGRATION_STATUS_PATH"
           supabase db query --linked --agent=no --output json \
             "select public.devryan_bot_schema_version() as schema_version;" \
             > "$SCHEMA_STATUS_PATH"
-          MIGRATION_STATUS_PATH="$MIGRATION_STATUS_PATH" \
-          SCHEMA_STATUS_PATH="$SCHEMA_STATUS_PATH" \
-          node - <<'NODE'
+          MIGRATION_STATUS_PATH="$MIGRATION_STATUS_PATH" SCHEMA_STATUS_PATH="$SCHEMA_STATUS_PATH" node - <<'NODE'
           const fs = require('fs');
-
           const migrations = JSON.parse(fs.readFileSync(process.env.MIGRATION_STATUS_PATH, 'utf8'));
-          const drift = (migrations.migrations || []).filter((entry) => (
-            !entry.local || !entry.remote || entry.local !== entry.remote
-          ));
-          if (drift.length > 0) {
-            throw new Error(`Supabase migration history diverged for ${drift.length} migration(s).`);
-          }
-
+          const drift = (migrations.migrations || []).filter((entry) => !entry.local || !entry.remote || entry.local !== entry.remote);
+          if (drift.length > 0) throw new Error(`Supabase migration history diverged for ${drift.length} migration(s).`);
           const source = fs.readFileSync('packages/web/server/lib/multi-user/auth-compat.js', 'utf8');
           const expected = source.match(/PRODUCTION_BOTS_MIGRATION = '(\d{14})'/)?.[1];
           const schema = JSON.parse(fs.readFileSync(process.env.SCHEMA_STATUS_PATH, 'utf8'));
-          const schemaRows = Array.isArray(schema) ? schema : schema.rows;
-          const actual = schemaRows?.[0]?.schema_version;
+          const actual = (Array.isArray(schema) ? schema : schema.rows)?.[0]?.schema_version;
           if (!expected || actual !== expected) {
             throw new Error(`Production Bot schema marker mismatch: expected ${expected || 'missing'}, received ${actual || 'missing'}.`);
           }
           NODE
-
-      - uses: actions/setup-node@v4
-        if: ${{ needs.create-release.outputs.published_noop != 'true' && needs.create-release.outputs.scope == 'full' && env.RELEASE_DRY_RUN != 'true' && env.RELEASE_BOT_INPUTS_ONLY != 'true' }}
-        with:
-          node-version: '22'
-          registry-url: https://registry.npmjs.org
-      - name: Publish verified full-scope npm package
-        if: ${{ needs.create-release.outputs.published_noop != 'true' && needs.create-release.outputs.scope == 'full' && env.RELEASE_DRY_RUN != 'true' && env.RELEASE_BOT_INPUTS_ONLY != 'true' }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          VERSION: ${{ needs.create-release.outputs.version }}
-        run: |
-          test -n "${NODE_AUTH_TOKEN:-}"
-          node --input-type=module - <<'NODE'
-          import fs from 'node:fs';
-          import { createHash } from 'node:crypto';
-          import { execFileSync } from 'node:child_process';
-          const version = process.env.VERSION;
-          const file = `release-assets/DevRyan-web-${version}.tgz`;
-          const integrity = `sha512-${createHash('sha512').update(fs.readFileSync(file)).digest('base64')}`;
-          let published;
-          try { published = JSON.parse(execFileSync('npm', ['view', `@openchamber/web@${version}`, 'dist.integrity', '--json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })); }
-          catch { /* A missing version is published below; registry failure remains an npm failure. */ }
-          if (published !== undefined) {
-            if (published !== integrity) throw new Error('Published npm bytes conflict with frozen packaging');
-          } else execFileSync('npm', ['publish', file, '--access', 'public'], { stdio: 'inherit' });
-          NODE
-
-      - name: Publish release
-        if: ${{ needs.create-release.outputs.published_noop != 'true' && env.RELEASE_DRY_RUN != 'true' && env.RELEASE_BOT_INPUTS_ONLY != 'true' }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_OPERATION: release-finalize
-          RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
-          RELEASE_SCOPE: ${{ needs.create-release.outputs.scope }}
-          RELEASE_SHA256_MACOS_ARM64: ${{ needs.build-desktop-electron-macos.outputs.sha256 }}
-          RELEASE_SHA256_WEB: ${{ needs.publish-npm.outputs.sha256 }}
-          RELEASE_ASSET_DIRECTORY: release-assets
-          RELEASE_SMOKE_RECEIPT: release-smoke/final-dmg-smoke.json
-          RELEASE_SMOKE_IDENTITY: release-smoke-contract/smoke-identity.json
-          RELEASE_SMOKE_LIMITS: release-smoke-contract/smoke-limits.json
-          RELEASE_SMOKE_ATTEMPT: ${{ needs.final-dmg-smoke.outputs.attempt }}
-          RELEASE_DEPLOYMENT_VERIFIED: 'true'
-        run: node scripts/release-ci.mjs
-
-      - name: Retain original finalization and deployment proof
-        uses: actions/upload-artifact@v4
-        if: ${{ always() && env.RELEASE_CANDIDATE != 'true' && env.RELEASE_DRY_RUN != 'true' && env.RELEASE_BOT_INPUTS_ONLY != 'true' && needs.create-release.outputs.published_noop != 'true' }}
-        with:
-          name: DevRyan-release-finalization-${{ github.run_attempt }}
-          path: artifacts/finalization.json
-          if-no-files-found: error
-          retention-days: 90
-
-      - name: Send release to Discord
-        if: ${{ needs.create-release.outputs.published_noop != 'true' && env.RELEASE_DRY_RUN != 'true' && env.RELEASE_BOT_INPUTS_ONLY != 'true' && github.event.inputs.announce == 'true' && env.DISCORD_WEBHOOK_URL != '' }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ needs.create-release.outputs.version }}
-          REPOSITORY: ${{ github.repository }}
-          UPDATE_ROLE_ID: ${{ env.DISCORD_UPDATE_ROLE_ID }}
-        run: |
-          node - <<'NODE'
-          (async () => {
-            const tag = `v${process.env.VERSION}`;
-            const repo = process.env.REPOSITORY;
-            const rawRoleId = (process.env.UPDATE_ROLE_ID || '').trim();
-            const updateRoleId = /^\d+$/.test(rawRoleId) ? rawRoleId : '';
-
-            const releaseRes = await fetch(`https://api.github.com/repos/${repo}/releases/tags/${tag}`, {
-              headers: {
-                Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
-                Accept: 'application/vnd.github+json',
-              },
-            });
-
-            if (!releaseRes.ok) {
-              const body = await releaseRes.text();
-              throw new Error(`Failed to fetch release ${tag}: ${releaseRes.status} ${body}`);
-            }
-
-            const release = await releaseRes.json();
-            const description = (release.body || `OpenChamber ${tag} released.`).slice(0, 4096);
-            const mention = updateRoleId ? `<@&${updateRoleId}>` : '';
-
-            const payload = {
-              username: 'OpenChamber Releases',
-              ...(mention ? { content: mention } : {}),
-              ...(updateRoleId
-                ? {
-                    allowed_mentions: {
-                      roles: [updateRoleId],
-                    },
-                  }
-                : {}),
-              embeds: [
-                {
-                  title: release.name || `OpenChamber ${tag}`,
-                  url: release.html_url,
-                  description,
-                  color: 2105893,
-                  footer: { text: 'OpenChamber Changelog' },
-                },
-              ],
-            };
-
-            const discordRes = await fetch(process.env.DISCORD_WEBHOOK_URL, {
-              method: 'POST',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify(payload),
-            });
-
-            if (!discordRes.ok) {
-              const body = await discordRes.text();
-              throw new Error(`Failed to send Discord release: ${discordRes.status} ${body}`);
-            }
-          })().catch((error) => {
-            console.error(error);
-            process.exit(1);
-          });
-          NODE
+      - name: Publish and confirm the in-app updater discovers the DMG
+        if: ${{ github.event_name == 'push' }}
+        run: node scripts/release.mjs publish

@@ -1,7 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { RELEASE_VERSION_PATTERN } from '../packages/electron/release-assets.mjs';
 
 export const hash = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
 export const WEB_BUILD_OPTIONS = Object.freeze({ mode: 'production', reactScan: false });
@@ -10,24 +9,6 @@ export function assertReleaseWritesAllowed(environment = process.env) {
   if (![undefined, 'false'].includes(environment.RELEASE_DRY_RUN) || ![undefined, 'false'].includes(environment.RELEASE_CANDIDATE)) {
     throw Object.assign(new Error('Release dry runs prohibit external publication and tagging'), { code: 'release_dry_run_write_forbidden' });
   }
-  assertBotInputPreparation(environment);
-}
-
-export function assertBotInputPreparation(environment = process.env, version) {
-  const mode = environment.RELEASE_BOT_INPUTS_ONLY;
-  if (mode === undefined || mode === 'false') return false;
-  const revision = environment.GITHUB_SHA;
-  const match = /^refs\/tags\/v(.+)-bot-inputs-([a-f0-9]{12})$/.exec(environment.GITHUB_REF || '');
-  if (mode !== 'true' || environment.GITHUB_ACTIONS !== 'true'
-    || environment.GITHUB_EVENT_NAME !== 'workflow_dispatch'
-    || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(revision || '')
-    || !match || !RELEASE_VERSION_PATTERN.test(match[1])
-    || (version !== undefined && match[1] !== version) || match[2] !== revision.slice(0, 12)
-    || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(environment.GITHUB_REPOSITORY || '')
-    || environment.GITHUB_WORKFLOW_REF !== `${environment.GITHUB_REPOSITORY}/.github/workflows/release.yml@${environment.GITHUB_REF}`) {
-    throw Object.assign(new Error('Bot input preparation requires its immutable version/source tag and a manual release.yml run'), { code: 'bot_input_preparation_identity_invalid' });
-  }
-  return true;
 }
 
 export async function releaseIdentity(root, revision) {
@@ -91,9 +72,3 @@ export function verifyPreparedMetadata(metadata, identity, arch, archiveHash) {
     || metadata.archiveHash !== archiveHash) throw new Error('Prepared Electron artifact mismatch');
 }
 
-export function verifyRetainedCandidateMetadata(metadata, identity, dmgSha256) {
-  if (metadata?.protocol !== 'devryan.release-candidate/1' || metadata.sourceCommit !== identity.revision
-    || metadata.version !== identity.release || metadata.lockfile !== identity.lockfile || metadata.dmgSha256 !== dmgSha256
-    || !/^[a-f0-9]{64}$/.test(dmgSha256)) throw new Error('Retained candidate source, version, lockfile or installer bytes differ');
-  return metadata;
-}

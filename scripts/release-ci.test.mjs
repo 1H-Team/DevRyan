@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
@@ -20,9 +21,7 @@ const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.
 const revision = 'a'.repeat(40);
 
 async function checkout(t, extra = []) {
-  const parent = path.join(repository, '.cache/test-fixtures');
-  await fs.mkdir(parent, { recursive: true });
-  const root = await fs.mkdtemp(path.join(parent, 'release-ci-'));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-release-ci-'));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   for (const file of [
     'package.json', 'bun.lock', 'scripts/release-ci.mjs',
@@ -46,34 +45,6 @@ function run(root, operation, environment = {}) {
       RELEASE_OPERATION: operation, ...environment },
   });
 }
-
-test('history diagnostic uses only bounded gh GETs and retains incomplete pagination without credentials or writers', async t => {
-  const root = await checkout(t, ['scripts/release-publication.mjs']), bin = path.join(root, 'fake-gh');
-  await fs.mkdir(bin); await fs.writeFile(path.join(bin, 'package.json'), '{"type":"commonjs"}');
-  const log = path.join(root, 'history-requests.jsonl');
-  await fs.writeFile(path.join(bin, 'gh'), `#!${process.execPath}\nconst fs = require('node:fs');
-const args = process.argv.slice(2);
-if (args[0] !== 'api' || args[1] !== '--method' || args[2] !== 'GET') process.exit(2);
-fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + '\\n');
-console.log(JSON.stringify(args[3].includes('/workflow') ? {workflow_runs: process.env.HISTORY_FIXTURE === 'full-page' ? Array(100).fill({}) : []} : []));
-`, { mode: 0o755 });
-  const environment = { PATH: bin, GITHUB_REPOSITORY: '1H-Team/DevRyan' };
-  const green = run(root, 'history-read', environment);
-  assert.equal(green.status, 0, green.stderr);
-  const file = path.join(root, 'artifacts/history-classification.json');
-  const complete = JSON.parse(await fs.readFile(file, 'utf8'));
-  assert.equal(complete.complete, true); assert.equal(complete.failureTallyComplete, true);
-  assert.equal(complete.requestCount, 2); assert.deepEqual(complete.runs, []);
-  const incomplete = run(root, 'history-read', { ...environment, HISTORY_FIXTURE: 'full-page' });
-  assert.equal(incomplete.status, 1, incomplete.stderr);
-  const stopped = JSON.parse(await fs.readFile(file, 'utf8'));
-  assert.equal(stopped.complete, false); assert.equal(stopped.requestCount, 10); assert.equal(stopped.requestLimit, 120);
-  assert.equal(stopped.failureTallyComplete, false);
-  assert.equal(stopped.error, 'release_history_incomplete');
-  const calls = (await fs.readFile(log, 'utf8')).trim().split('\n').map(JSON.parse);
-  assert.equal(calls.length, 12); assert.ok(calls.every(args => args.slice(0, 3).join(' ') === 'api --method GET'));
-  assert.deepEqual(await fs.readdir(path.join(root, 'artifacts')), ['history-classification.json']);
-});
 
 test('image planning succeeds in a checkout without installed runtime dependencies', async t => {
   const root = await checkout(t), output = path.join(root, 'image-output');
@@ -153,45 +124,6 @@ process.exit(2);`), { mode: 0o755 });
 
 const version = JSON.parse(readFileSync(path.join(repository, 'package.json'), 'utf8')).version;
 const workflow = { GITHUB_REPOSITORY: '1H-Team/DevRyan', GITHUB_REF: `refs/tags/v${version}`, GITHUB_WORKFLOW_REF: `1H-Team/DevRyan/.github/workflows/release.yml@refs/tags/v${version}` };
-const inputRef = `refs/tags/v${version}-bot-inputs-${revision.slice(0, 12)}`;
-const preparation = { ...workflow, RELEASE_BOT_INPUTS_ONLY: 'true', GITHUB_ACTIONS: 'true', GITHUB_EVENT_NAME: 'workflow_dispatch',
-  GITHUB_REF: inputRef, GITHUB_WORKFLOW_REF: `1H-Team/DevRyan/.github/workflows/release.yml@${inputRef}` };
-
-test('Bot-only preparation plans immutable image tags and refuses every application operation before writing', async t => {
-  const root = await checkout(t), output = path.join(root, 'image-output');
-  let result = run(root, 'image-plan', { ...preparation, IMAGE_KEY: 'rest', GITHUB_OUTPUT: output });
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(await fs.readFile(output, 'utf8'), new RegExp(`tags=ghcr.io/1h-team/devryan-bot-rest:sha-${revision.slice(0, 12)}\\n$`));
-  await fs.rm(output);
-  for (const operation of ['asset-describe', 'web-pack', 'web-describe', 'web-stage', 'prepare-export', 'prepare-import']) {
-    result = run(root, operation, { ...preparation, GITHUB_OUTPUT: output });
-    assert.notEqual(result.status, 0);
-    assert.match(result.stderr, /Bot input preparation prohibits application release operations/);
-    assert.equal(await fs.stat(path.join(root, 'artifacts')).catch(() => null), null);
-    assert.equal(await fs.stat(output).catch(() => null), null);
-  }
-  result = run(root, 'image-plan', { ...preparation, GITHUB_SHA: 'b'.repeat(40), IMAGE_KEY: 'rest', GITHUB_OUTPUT: output });
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /Bot input preparation requires/);
-  assert.equal(await fs.stat(output).catch(() => null), null);
-});
-
-test('Bot-only preparation signs trusted input tags and dry runs still make no registry writes', async t => {
-  const root = await imageCheckout(t), registry = await fakeRegistry(root);
-  const signing = { ...preparation, ACTIONS_ID_TOKEN_REQUEST_URL: 'https://fixture.invalid/token', ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'fixture',
-    IMAGE_KEY: 'rest', IMAGE_DIGEST: registry.indexDigest, PATH: registry.PATH };
-  const result = run(root, 'image-sign', signing);
-  assert.equal(result.status, 0, result.stderr);
-  assert.ok(new RegExp(botRuntimeImageSignerIdentity('1H-Team/DevRyan')).test(`https://github.com/${preparation.GITHUB_WORKFLOW_REF}`));
-  const { digest } = await readBotRuntimeImageInputs({ key: 'rest', root });
-  assert.ok((await registry.calls()).some(call => call.includes(`ghcr.io/1h-team/devryan-bot-rest:${botRuntimeImageInputTag(digest)}`)));
-  await fs.rm(path.join(root, 'fake-registry/calls.log'));
-  for (const change of [{ RELEASE_DRY_RUN: 'true' }, { GITHUB_REF: workflow.GITHUB_REF }, { GITHUB_EVENT_NAME: 'push' }]) {
-    const refused = run(root, 'image-sign', { ...signing, ...change });
-    assert.notEqual(refused.status, 0);
-    assert.deepEqual(await registry.calls(), []);
-  }
-});
 
 test('image resolution reuses a verified input-tagged image as an image-sign result', async t => {
   const root = await imageCheckout(t), output = path.join(root, 'image-output');
@@ -268,33 +200,6 @@ test('dry-run image resolution is read-only and signing refuses before reaching 
   assert.notEqual(result.status, 0);assert.match(result.stderr, /dry runs prohibit external publication/);
   assert.deepEqual(await registry.calls(), []);
   result = run(root, 'image-resolve', { ...workflow, RELEASE_DRY_RUN: 'true', REBUILD_BOT_IMAGES: 'true', IMAGE_KEY: 'rest', GITHUB_OUTPUT: output, PATH: registry.PATH });
-  assert.notEqual(result.status, 0);assert.match(result.stderr, /Dry run cannot publish new Bot images/);
+  assert.notEqual(result.status, 0);assert.match(result.stderr, /Bot image inputs changed \(rest\)\. A dry run never publishes images/);
   assert.deepEqual(await registry.calls(), []);
-});
-
-test('packaged asset description emits the actual SHA-256 and refuses escaped directories', async t => {
-  const root = await checkout(t), output = path.join(root, 'asset-output'), directory = path.join(root, 'installers');
-  await fs.mkdir(directory);
-  const version = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8')).version;
-  const bytes = Buffer.from('disposable installer');
-  await fs.writeFile(path.join(directory, `DevRyan-${version}-arm64.dmg`), bytes);
-  const result = run(root, 'asset-describe', { RELEASE_ASSET_PLATFORM: 'macos-arm64', RELEASE_ASSET_DIRECTORY: directory, GITHUB_OUTPUT: output });
-  assert.equal(result.status, 0, result.stderr);
-  assert.equal(await fs.readFile(output, 'utf8'), `sha256=${digestOf(bytes).slice(7)}\n`);
-  const receipt = JSON.parse(await fs.readFile(path.join(root, 'artifacts/macos-arm64-asset.json'), 'utf8'));
-  assert.equal(receipt.protocol, 'devryan.release-asset/1');
-  assert.equal(receipt.source, revision);
-  assert.equal(receipt.version, version);
-  assert.equal(receipt.name, `DevRyan-${version}-arm64.dmg`);
-  assert.equal(receipt.size, bytes.length);
-  assert.equal(receipt.sha256, digestOf(bytes).slice(7));
-  assert.notEqual(run(root, 'asset-describe', { RELEASE_ASSET_PLATFORM: 'macos-arm64', RELEASE_ASSET_DIRECTORY: repository, GITHUB_OUTPUT: output }).status, 0);
-});
-
-test('full release preflight refuses unsupported native targets in a bare checkout before admission or heavy work', async t => {
-  const root = await checkout(t, ['scripts/verify-revert-runtime-artifacts.mjs', 'scripts/release-publication.mjs']);
-  const result = run(root, 'source-admit', { RELEASE_SCOPE: 'full', GITHUB_REPOSITORY: '1H-Team/DevRyan', GITHUB_TOKEN: 'synthetic-fixture-token' });
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /Universal native web release unavailable/);
-  assert.doesNotMatch(result.stderr, /Cannot find package/);
 });

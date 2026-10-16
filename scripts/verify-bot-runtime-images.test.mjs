@@ -349,6 +349,7 @@ describe('Bot runtime release integration', () => {
     const [
       workflow,
       bumpScript,
+      releaseScript,
       rootPackageSource,
       electronPackageSource,
       electronManifestStage,
@@ -356,6 +357,7 @@ describe('Bot runtime release integration', () => {
     ] = await Promise.all([
       fs.readFile(path.join(repositoryRoot, '.github/workflows/release.yml'), 'utf8'),
       fs.readFile(path.join(repositoryRoot, 'scripts/bump-version.mjs'), 'utf8'),
+      fs.readFile(path.join(repositoryRoot, 'scripts/release.mjs'), 'utf8'),
       fs.readFile(path.join(repositoryRoot, 'package.json'), 'utf8'),
       fs.readFile(path.join(repositoryRoot, 'packages/electron/package.json'), 'utf8'),
       fs.readFile(
@@ -370,7 +372,7 @@ describe('Bot runtime release integration', () => {
     const rootPackage = JSON.parse(rootPackageSource);
     const electronPackage = JSON.parse(electronPackageSource);
     for (const definition of Object.values(BOT_RUNTIME_IMAGE_DEFINITIONS)) {
-      assert.match(workflow, new RegExp(definition.packageJson.replaceAll('/', '\\/')));
+      assert.equal(releaseScript.includes(`'${definition.packageJson}'`), true);
       assert.equal(bumpScript.includes(`'${definition.packageJson}'`), true);
       const packageDirectory = path.dirname(definition.packageJson);
       assert.equal(
@@ -382,7 +384,7 @@ describe('Bot runtime release integration', () => {
     assert.match(workflow, /docker\/setup-qemu-action@v4/);
     assert.match(workflow, /cosign-installer@v4\.1\.2/);
     assert.match(workflow, /--check-anonymous/);
-    assert.match(workflow, /DevRyan-bot-runtime-images-\$\{\{ needs\.create-release\.outputs\.version \}\}\.json/);
+    assert.match(workflow, /DevRyan-bot-runtime-images-\$\{\{ needs\.admit\.outputs\.version \}\}\.json/);
     assert.equal(electronPackage.scripts['package:prepared'], 'node ./scripts/package-prepared.mjs');
     assert.match(electronManifestStage, /stageVerifiedBotRuntimeImagesManifest/);
     assert.match(electronManifestStage, /readAndVerifyBotRuntimeImagesManifest/);

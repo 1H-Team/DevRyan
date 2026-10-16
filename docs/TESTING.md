@@ -1,131 +1,14 @@
 # DevRyan Testing
 
-## Startup release contract
+## Startup contract
 
 `bun run test:startup` runs deterministic startup, ownership, integrity,
 bundle retention/selection, Retry, cancellation, delayed bootstrap and event
-subscription contracts. `.github/workflows/startup-contract.yml` runs it on every
-PR without path filters, including changes unrelated to startup. It never uses
-installed application data, live accounts or OS service registration.
+subscription contracts. The `startup` job in `.github/workflows/ci.yml` runs it on
+macOS for every push to `main` and every pull request. It never uses installed
+application data, live accounts or OS service registration.
 
-The mandatory short final-DMG smoke described in
-[QA](QA.md#mandatory-short-final-dmg-smoke) gates release publication after three
-same-artifact, exact-source candidate rehearsals. The separate eleven-scenario
-[qualification](QA.md#final-dmg-startup-qualification) remains manual. Full validation, build and bundle checks remain required
-before a release.
-
-## Required gates
-
-- `bun run test:full` is the deterministic repository test gate. It recursively discovers repository script tests, runs every test-owning workspace package, and includes the locked legacy Tauri Cargo suite.
-- `bun run validate:quick` selects checks from the current changed-file set for fast local feedback.
-- `bun run validate:affected` expands validation to affected packages and shared-runtime dependents.
-- `bun run validate:full` runs workspace lint, type checks, documentation validation, and the full deterministic test gate.
-
-`bun run test:scripts` gives the suite a private per-run `TMPDIR` inside the
-caller's `TMPDIR` (or the system temporary directory) and removes it afterwards,
-so test leaks cannot accumulate. If you point `TMPDIR` into this checkout, use a
-per-run subdirectory under `.cache/test-fixtures/` (for example
-`mktemp -d .cache/test-fixtures/run-XXXXXX`) and delete it when the command
-finishes; never reuse one shared directory across runs. `bun run cache:prune`
-removes leftover `.cache/test-fixtures/*` after 24 hours.
-
-When disposable fixtures use a `TMPDIR` inside this checkout, set
-`GIT_CEILING_DIRECTORIES` to that same canonical fixture directory for the test
-command. This prevents fixtures without their own Git metadata from discovering
-the enclosing DevRyan checkout. The fixture's own Git repositories still work;
-non-Git assertions must not be changed to accept the parent repository.
-- Release verification also runs `bun run build` and `bun run bundle:check`.
-
-A fresh macOS ARM64 checkout needs the exact reviewed Claude input, accepted
-supervisor, generated Electron web assets and retained legacy Tauri test
-sidecar before the full suite. Prepare them through their existing owners:
-
-```sh
-node scripts/hydrate-reviewed-claude.mjs
-node scripts/build-session-execution.mjs packages/web/runtime/darwin-arm64 --verify
-bun run build
-bun run --cwd packages/electron build:web-assets
-node -e "require('node:fs').cpSync('packages/web/dist', 'packages/desktop/src-tauri/resources/web-dist', { recursive: true })"
-bun build --compile packages/web/server/index.js --outfile packages/desktop/src-tauri/sidecars/openchamber-server-aarch64-apple-darwin
-```
-
-Prepare only the missing sidecar. The legacy `build:sidecar` command also
-refreshes frozen tracked configuration assets and makes their contract checks
-fail; do not use it to prepare this suite. These prerequisites do not launch
-either app or add Tauri feature backports.
-
-Keep the repository-owned fixture path short enough for macOS Unix sockets;
-a deeply nested worktree may use the main checkout's ignored fixture directory
-with the matching Git ceiling. These checks do not use the installed app.
-The managed Rust-browser case additionally requires the preserved, reviewed
-agent-browser 0.38.1 fixture under `.cache/browser-upgrade/current`; it refuses
-missing inputs rather than substituting the installed browser.
-
-The full gate rejects skipped or todo tests, undiscovered JavaScript/TypeScript test files, test-owning workspace packages omitted from `test:full`, and stale paths in the checked feature matrix.
-
-Documentation-only changes select `docs:validate`. Packaged agent/skill Markdown
-is runtime configuration and also selects its owning contract suite. Manifests
-and lockfiles require full validation even in quick mode; `test:affected` selects
-the full test gate for those inputs. Shared-runtime changes include web tests in
-affected mode. See the command planner in `scripts/validate.mjs`.
-
-The documentation check scans current Markdown/MDX local links, reference-link
-definitions, HTML `src`/`href`, and explicit repository source paths in inline
-code. It ignores code examples, remote URLs, and same-page fragments; it checks
-file existence, not heading anchors. Historical reports under `docs/audits/` and
-`CHANGELOG.md` report missing old targets as warnings. Known generated build/runtime paths are
-reported as unchecked. It does not contact external sites.
-
-`docs:validate` also runs `scripts/docs/doc-retention.mjs` (standalone: `node scripts/docs/doc-retention.mjs`):
-
-- Codemaps were removed: any `codemap.md` or `CODEMAP.md` is an error, except vendored files under `packages/web/runtime/reviewed-inputs/`. Module contracts go in the nearest `DOCUMENTATION.md`.
-- Every `docs/audits/<YYYY-MM-DD>/<slug>/` needs a `README.md`. Entries (and loose files in a date folder) must be cited from `CHANGELOG.md`, a top-level `docs/*.md` or a `DOCUMENTATION.md`. Legacy `<date>-<slug>` names are grandfathered.
-- Audits may not keep `.jsonl`, `.log`, `.webm`, `.mp4` or `.mjs` files, nor any file over 200 KB, except the hash-pinned `live-acceptance.json` files listed in `AUDIT_PINNED_EVIDENCE` in that module.
-
-## Suite ownership
-
-### Typecheck memory and incremental state
-
-`bun run type-check` runs workspace checks sequentially to bound overlap within
-that invocation. UI and web retain separate checks because their ambient types
-and compiler contexts differ, even though both include the shared UI. Each uses
-its own incremental build-info file under ignored `.cache/typecheck/`; deleting
-that cache directory forces fresh checks. Cached checks still report type errors
-and invalidate affected results when sources change. Independent agent commands
-can still overlap; avoid launching multiple full typechecks at once.
-
-For a fresh memory diagnostic, run one target at a time:
-
-```bash
-bun run type-check:diagnose ui
-bun run type-check:diagnose web
-```
-
-These commands print Node/TypeScript versions, the effective V8 heap limit,
-host memory, TypeScript extended diagnostics, elapsed time, peak RSS and exit
-status. They use fresh disposable caches without replacing the normal caches.
-Peak RSS and TypeScript's memory counter measure different things. Host memory
-is not a container allowance. Environment values are not printed. A fatal abort
-or forced kill may prevent the final summary and cache cleanup; retain stderr
-and the shell's exit status, and remove any leftover `diagnose-*` cache directory.
-
-No command raises the heap limit or retries automatically. Only after confirming
-a V8 heap-exhaustion diagnostic, choose a limit that fits the host/container
-budget and apply it to the failing command, for example:
-
-```bash
-NODE_OPTIONS=--max-old-space-size=4096 bun run type-check:diagnose ui
-```
-
-4096 is an example in MiB, not necessarily an increase over the runtime default.
-A process kill, timeout, or exit code 134 alone does not prove heap exhaustion.
-For failures inside DevRyan tools, follow the journal correlation and gap checks
-in [runtime verification](AGENT_RUNTIME_VERIFICATION.md).
-
-### Package suites
-
-| Surface | Command or runner | Ownership |
-| --- | --- | --- |
+--- | --- | --- |
 | Repository, release, and project-plugin tooling | `bun run test:scripts` | Recursive script tests and `.opencode/plugins/**/*.test.mjs`; `scripts/test-scripts.mjs` routes declared `bun:test` suites to explicit paths in separate processes, including the native OpenCode host checks and tests shipped in the pinned reviewed runtime inputs. Fixtures do not share resolver/loader state, and matching files outside the discovered inventory are excluded. |
 | Harness runtime | `bun run --cwd packages/harness-runtime test` | Diagnostics journal, evidence, worktree, lifecycle, and process contracts |
 | Managed orchestration | `bun run --cwd packages/orchestration-runtime test` | Shared managed-task admission, scheduling, cancellation, and recovery |
@@ -342,8 +225,4 @@ Use [QA.md](QA.md) for the web/Electron fixture entrypoint, responsive screensho
 
 ## Release handoff verification
 
-See [Release pipeline](RELEASE_PIPELINE.md) for separate compilation/preparation/packaging commands and artifact invariants. `scripts/release-artifacts.test.mjs` covers stale/corrupt inputs and packaging gates; `scripts/release-workflow.test.mjs` checks shared-build, source admission,
-candidate isolation and mandatory gate wiring. `scripts/release-publication.test.mjs`
-checks draft IDs, immutable tags, same-digest retries and published no-op proof;
-`release-startup-smoke.test.mjs` covers timing, native correlation, GUI-only
-retries and distinct compiled upgrade/rollback evidence. Bot image aggregation/signing cases extend the existing image verifier suite. Root `build` now compiles web and Electron JavaScript explicitly; source-only UI validation remains `type-check:ui`.
+See [Release pipeline](RELEASE_PIPELINE.md). `scripts/release.test.mjs` covers draft creation and reuse, published-version refusal, moved tags, the asset allowlist and updater discovery; `scripts/release-artifacts.test.mjs` and `scripts/release-ci.test.mjs` cover the web and prepared-tree handoffs and Bot image reuse.

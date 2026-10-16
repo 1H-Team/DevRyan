@@ -11,15 +11,15 @@ test('names every installable platform with DevRyan branding', () => {
 
 test('scopes are exact lists', () => {
   assert.deepEqual(releaseAssetNames('desktop-macos-arm64', '2.0.2'), ['DevRyan-2.0.2-arm64.dmg']);
-  assert.deepEqual(releaseAssetNames('desktop', '2.0.2'), ['DevRyan-2.0.2-arm64.dmg', 'DevRyan-2.0.2-win-x64.exe', 'DevRyan-2.0.2-win-arm64.exe']);
-  assert.deepEqual(releaseAssetNames('full', '2.0.2'), ['DevRyan-2.0.2-arm64.dmg', 'DevRyan-web-2.0.2.tgz']);
-  assert.ok(Object.isFrozen(RELEASE_SCOPES) && Object.isFrozen(RELEASE_SCOPES.desktop));
+  assert.deepEqual(Object.keys(RELEASE_SCOPES), ['desktop-macos-arm64']);
+  assert.ok(Object.isFrozen(RELEASE_SCOPES) && Object.isFrozen(RELEASE_SCOPES['desktop-macos-arm64']));
 });
 
 test('refuses unknown platforms, scopes and non x.y.z versions', () => {
   assert.throws(() => releaseAssetName('linux-x64', '2.0.2'), /platform/);
   assert.throws(() => releaseAssetName('toString', '2.0.2'), /platform/);
   assert.throws(() => releaseAssetNames('everything', '2.0.2'), /scope/);
+  assert.throws(() => releaseAssetNames('full', '2.0.2'), /scope/);
   for (const version of ['2.0.2-beta.1', 'v2.0.2', '2.0.2/../../x', '', null]) assert.throws(() => releaseAssetName('macos-arm64', version), /x\.y\.z/);
 });
 

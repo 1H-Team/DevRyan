@@ -1,6 +1,24 @@
 import assert from 'node:assert/strict';
 import { evaluate } from './cdp.mjs';
-import { assertReleaseNavigationPhase } from './release-startup-contract.mjs';
+
+/** A startup phase commits at most its limit of top-level documents plus one local-admin authentication reload. */
+export function assertReleaseNavigationPhase(phase) {
+  assert.equal(phase.limit, phase.name === 'startup' ? 3 : phase.name === 'terminal-startup' ? 2 : 1);
+  const authentication = phase.documents.filter(row => row.authenticationReload);
+  assert.ok(authentication.length <= (phase.name === 'startup' ? 1 : 0), 'Excess authentication reloads');
+  for (const document of authentication) {
+    const evidence = document.authenticationReload;
+    assert.equal(evidence.principal, 'local-admin');
+    assert.ok(['missing', 'anonymous'].includes(evidence.previousPrincipal));
+    assert.match(evidence.origin, /^http:\/\/127\.0\.0\.1:\d+$/);
+    assert.equal(new URL(document.url).origin, evidence.origin);
+    const index = phase.documents.indexOf(document);
+    assert.ok(index > 0 && document.loaderId && evidence.sourceLoaderId);
+    assert.equal(phase.documents[index - 1].loaderId, evidence.sourceLoaderId);
+    assert.notEqual(document.loaderId, evidence.sourceLoaderId);
+  }
+  assert.ok(phase.documents.length - authentication.length <= phase.limit, `Excess committed documents during ${phase.name}`);
+}
 
 /** Only callers that own a read-only expression may use this retry path. */
 export async function readThroughNavigation(cdp, expression, { deadline, check = () => {} }) {

@@ -40,7 +40,7 @@ const ADDRESSABLE_RUN_MOUNTS = new Set(['cache', 'tmpfs', 'secret', 'ssh']);
 export const BOT_RUNTIME_IMAGE_SIGNER_ISSUER = 'https://token.actions.githubusercontent.com';
 
 // The release workflow's docker/build-push-action inputs that shape image content;
-// scripts/release-workflow.test.mjs pins the workflow to these values.
+// scripts/test-runner-utils.test.mjs pins the workflow to these values.
 export const BOT_RUNTIME_IMAGE_BUILD_RECIPE = Object.freeze({
   context: '.',
   platforms: BOT_RUNTIME_RELEASE_PLATFORM_KEYS,

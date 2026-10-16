@@ -251,112 +251,30 @@ describe('release workflow', () => {
     );
   });
 
-  test('deploys and verifies Supabase Auth configuration and pending migrations at the final publish boundary', () => {
-    const workflow = readFileSync(new URL('.github/workflows/release.yml', repoRoot), 'utf8');
-    const finalizeReleaseJobMatch = workflow.match(/  finalize-release:\n(?<job>[\s\S]*?)(?:\n  [a-zA-Z0-9_-]+:\n|\n$)/);
-    assert.ok(finalizeReleaseJobMatch?.groups?.job, 'finalize-release job not found');
+  test('builds Bot images with the input-hashing recipe and publishes only through release.mjs', async () => {
+    const { BOT_RUNTIME_IMAGE_BUILD_RECIPE } = await import('./bot-runtime-image-inputs.mjs');
+    const workflow = YAML.parse(readFileSync(new URL('.github/workflows/release.yml', repoRoot), 'utf8'));
+    const build = workflow.jobs['bot-build'].steps.find((step) => step.uses === 'docker/build-push-action@v6').with;
+    assert.equal(build.context, BOT_RUNTIME_IMAGE_BUILD_RECIPE.context);
+    assert.equal(build.platforms, BOT_RUNTIME_IMAGE_BUILD_RECIPE.platforms.join(','));
+    assert.equal(build.provenance, BOT_RUNTIME_IMAGE_BUILD_RECIPE.provenance);
+    assert.equal(build.sbom, BOT_RUNTIME_IMAGE_BUILD_RECIPE.sbom);
 
-    const job = finalizeReleaseJobMatch.groups.job;
-    const assetStep = job.indexOf('- name: Verify required release assets before publish');
-    const migrationStep = job.indexOf('- name: Deploy and verify Supabase configuration and migrations');
-    const releaseStep = job.indexOf('- name: Publish release');
+    assert.ok(workflow.jobs['electron-prepare'].steps.some((step) => step.run === "bun install --frozen-lockfile --cpu '*' --os darwin"));
+    const packaging = workflow.jobs['electron-package'].steps.find((step) => step.name === 'Package the app');
+    assert.equal(packaging.env.CSC_IDENTITY_AUTO_DISCOVERY, 'false');
+    assert.match(packaging.run, /-c\.mac\.identity=null -c\.mac\.notarize=false -c\.dmg\.sign=false/);
 
-    assert.notEqual(migrationStep, -1, 'database migration release step not found');
-    assert.ok(assetStep < migrationStep, 'database migrations must run after release asset verification');
-    assert.ok(migrationStep < releaseStep, 'database migrations must run immediately before release publication');
-    assert.match(job, /uses: supabase\/setup-cli@v1/);
-    assert.match(job, /version: 2\.115\.0/);
-    assert.equal(YAML.parse(workflow).env.RELEASE_DRY_RUN, "${{ github.event_name == 'workflow_dispatch' && (inputs.dry_run == true || inputs.candidate == true) }}");
-    assert.match(
-      job.slice(migrationStep, releaseStep),
-      /^- name: Deploy and verify Supabase configuration and migrations\n        if: \$\{\{ needs\.create-release\.outputs\.published_noop != 'true' && env\.RELEASE_DRY_RUN != 'true' && env\.RELEASE_BOT_INPUTS_ONLY != 'true' \}\}/,
-    );
-    assert.match(job, /SUPABASE_ACCESS_TOKEN: \$\{\{ secrets\.SUPABASE_ACCESS_TOKEN \}\}/);
-    assert.match(job, /SUPABASE_DB_PASSWORD: \$\{\{ secrets\.SUPABASE_DB_PASSWORD \}\}/);
-    assert.match(job, /SUPABASE_PROJECT_ID: \$\{\{ secrets\.SUPABASE_PROJECT_ID \}\}/);
-    assert.match(job, /supabase link --project-ref "\$SUPABASE_PROJECT_ID" --yes/);
-    assert.match(job, /node scripts\/sync-supabase-auth-password-policy\.mjs/);
-    assert.match(job, /supabase db push --linked --dry-run/);
-    assert.match(job, /supabase db push --linked --yes/);
-    assert.match(job, /supabase migration list --linked --output-format json/);
-    assert.match(job, /supabase db query --linked --agent=no --output json/);
-    assert.match(job, /const schemaRows = Array\.isArray\(schema\) \? schema : schema\.rows/);
-    assert.match(job, /entry\.local !== entry\.remote/);
-    assert.match(job, /actual !== expected/);
-    assert.ok(
-      job.indexOf('node scripts/sync-supabase-auth-password-policy.mjs')
-        > job.indexOf('supabase link --project-ref "$SUPABASE_PROJECT_ID" --yes'),
-      'Auth configuration must sync after the hosted project is linked',
-    );
-    assert.ok(
-      job.indexOf('node scripts/sync-supabase-auth-password-policy.mjs')
-        < job.indexOf('supabase db push --linked --dry-run'),
-      'Auth configuration must sync before database migrations',
-    );
-    assert.doesNotMatch(
-      workflow.match(/  create-release:\n(?<job>[\s\S]*?)(?:\n  [a-zA-Z0-9_-]+:\n|\n$)/)?.groups?.job || '',
-      /supabase db push/,
-    );
-  });
-
-  test('uses one admitted release owner for draft uploads and final publication', () => {
-    const source = readFileSync(new URL('.github/workflows/release.yml', repoRoot), 'utf8');
-    const workflow = YAML.parse(source);
-    const operations = Object.entries(workflow.jobs).flatMap(([job, value]) => value.steps
-      .filter((step) => step.env?.RELEASE_OPERATION)
-      .map((step) => ({ job, step })));
-    const admissions = operations.filter(({ step }) => step.env.RELEASE_OPERATION === 'source-admit');
-    const finalizers = operations.filter(({ step }) => step.env.RELEASE_OPERATION === 'release-finalize');
-    assert.equal(admissions.length, 1, 'source must have one admission owner');
-    assert.equal(admissions[0].job, 'create-release');
-    assert.equal(admissions[0].step.run, 'node scripts/release-ci.mjs');
-    assert.equal(finalizers.length, 1, 'release must have one finalization owner');
-    const { job, step } = finalizers[0];
-    assert.equal(job, 'finalize-release');
-    assert.equal(step.run, 'node scripts/release-ci.mjs');
-    assert.equal(step.env.RELEASE_ID, '${{ needs.create-release.outputs.release_id }}');
-    assert.equal(step.env.RELEASE_SCOPE, '${{ needs.create-release.outputs.scope }}');
-    assert.equal(step.env.RELEASE_ASSET_DIRECTORY, 'release-assets');
-    assert.equal(step.env.RELEASE_SMOKE_RECEIPT, 'release-smoke/final-dmg-smoke.json');
-    assert.equal(step.env.RELEASE_DEPLOYMENT_VERIFIED, 'true');
-    for (const guard of ["needs.create-release.outputs.published_noop != 'true'", "env.RELEASE_DRY_RUN != 'true'", "env.RELEASE_BOT_INPUTS_ONLY != 'true'"]) {
-      assert.ok(step.if.includes(guard), `finalization must fence ${guard}`);
-    }
-    assert.doesNotMatch(source, /softprops\/action-gh-release|gh release (?:create|upload|edit)|RELEASE_OPERATION: release-upload/,
-      'workflow steps must not bypass the admitted draft upload/finalization owner');
-    const owner = readFileSync(new URL('scripts/release-publication.mjs', repoRoot), 'utf8');
-    assert.match(owner, /if \(!release\.draft\) \{ const proof = await verifyPublishedFinalization/);
-    assert.match(owner, /assertAdmittedRelease\(release, identity\);/);
-    assert.match(owner, /Conflicting asset bytes cannot be replaced/);
-    assert.match(owner, /if \(current\.some\(row => row\.name === local\.name\)\) continue/);
-    assert.ok(owner.indexOf('assertAdmittedRelease(release, identity);', owner.indexOf('for (const local of staged)'))
-      < owner.indexOf('https://uploads.github.com/'), 'each upload must recheck the admitted draft before writing');
-    const proof = workflow.jobs[job].steps.find((entry) => entry.name === 'Retain original finalization and deployment proof');
-    assert.equal(proof?.uses, 'actions/upload-artifact@v4');
-    assert.equal(proof.with.path, 'artifacts/finalization.json');
-    assert.equal(proof.with['retention-days'], 90);
-  });
-
-  test('installs Electron macOS optional dependencies for runner and package target architectures', () => {
-    const workflow = readFileSync(new URL('.github/workflows/release.yml', repoRoot), 'utf8');
-    const preparation = YAML.parse(workflow).jobs['prepare-desktop-electron-macos'];
-    assert.ok(preparation, 'Electron preparation job not found');
-    assert.ok(preparation.steps.some((step) => step.run === "bun install --frozen-lockfile --cpu '*' --os darwin"));
-
-  });
-
-  test('keeps Electron macOS releases permanently unsigned', () => {
-    const workflow = readFileSync(new URL('.github/workflows/release.yml', repoRoot), 'utf8');
-    const electronJobMatch = workflow.match(/  build-desktop-electron-macos:\n(?<job>[\s\S]*?)(?:\n  [a-zA-Z0-9_-]+:\n|\n$)/);
-    assert.ok(electronJobMatch?.groups?.job, 'build-desktop-electron-macos job not found');
-
-    const job = electronJobMatch.groups.job;
-    assert.match(job, /CSC_IDENTITY_AUTO_DISCOVERY: 'false'/);
-    assert.match(job, /-c\.mac\.identity=null -c\.mac\.notarize=false -c\.dmg\.sign=false/);
-    assert.doesNotMatch(job, /--require-developer-id/);
-    assert.doesNotMatch(job, /Install Apple Certificate/);
-    assert.doesNotMatch(job, /secrets\.APPLE_/);
-    assert.doesNotMatch(job, /Verify signature \+ entitlements \+ notarization/);
+    const steps = workflow.jobs.publish.steps;
+    const index = (name) => steps.findIndex((step) => step.name === name);
+    const upload = index('Check the DMG and attach it to the draft');
+    const supabase = index('Deploy and verify Supabase configuration and migrations');
+    const publish = index('Publish and confirm the in-app updater discovers the DMG');
+    assert.ok(upload >= 0 && upload < supabase && supabase < publish, 'publish order: attach DMG, deploy Supabase, publish');
+    assert.equal(steps[upload].run, 'node scripts/release.mjs upload');
+    assert.equal(steps[publish].run, 'node scripts/release.mjs publish');
+    for (const step of [steps[supabase], steps[publish]]) assert.equal(step.if, "${{ github.event_name == 'push' }}");
+    assert.match(steps[supabase].run, /node scripts\/sync-supabase-auth-password-policy\.mjs\n\s*supabase db push --linked --dry-run/);
   });
 });
 

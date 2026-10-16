@@ -100,9 +100,26 @@ if (fs.existsSync(cargoLockPath)) {
   console.log(`Cargo.lock not found at ${CARGO_LOCK}, skipping lock update`);
 }
 
+// Update the workspace versions recorded in bun.lock so `bun install --frozen-lockfile` passes.
+const BUN_LOCK = 'bun.lock';
+const bunLockPath = path.join(ROOT, BUN_LOCK);
+let bunLock = fs.readFileSync(bunLockPath, 'utf8');
+let bunLockUpdates = 0;
+for (const pkgPath of PACKAGES) {
+  const workspace = path.dirname(pkgPath) === '.' ? '' : path.dirname(pkgPath);
+  const pattern = new RegExp(`("${workspace.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}": \\{\\s*"name": "[^"]+",\\s*"version": ")[^"]+(")`);
+  if (pattern.test(bunLock)) {
+    bunLock = bunLock.replace(pattern, `$1${newVersion}$2`);
+    bunLockUpdates++;
+  }
+}
+fs.writeFileSync(bunLockPath, bunLock);
+console.log(`  ${BUN_LOCK}: ${bunLockUpdates} workspace versions -> ${newVersion}`);
+
 console.log(`\nVersion bumped to ${newVersion}`);
-console.log('\nNext steps:');
-console.log(`  git add -A`);
+console.log('\nNext steps (see docs/RELEASE_PIPELINE.md):');
+console.log('  add a "## [' + newVersion + ']" section to CHANGELOG.md');
+console.log('  git add <the version files above> CHANGELOG.md bun.lock');
 console.log(`  git commit -m "release v${newVersion}"`);
-console.log(`  git tag v${newVersion}`);
-console.log(`  git push origin main --tags`);
+console.log('  git push origin main');
+console.log(`  git tag v${newVersion} && git push origin v${newVersion}`);

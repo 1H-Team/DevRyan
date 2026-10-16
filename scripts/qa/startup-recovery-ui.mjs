@@ -3,6 +3,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { execFile } from 'node:child_process';
+import { createReadStream } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { promisify, parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { prepareRuntimeUiProfile } from './native-backend-ui-diagnostic.mjs';
@@ -12,14 +14,29 @@ import { createRunRoot, removeRunPayloads } from './run-root.mjs';
 import { reservePort, startOwnedProcess } from './process.mjs';
 import { CdpConnection, discoverPageTarget, evaluate } from './cdp.mjs';
 import { createQaUiDriver } from './ui-driver.mjs';
-import { captureReleaseStartupScreenshot } from './release-startup-launch.mjs';
-import { hashReleaseFile } from './release-startup-artifacts.mjs';
 import { readBundleStartupState } from './native-startup-benchmark.mjs';
 import { readRuntimeBundleBinding } from '../../packages/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js';
 import { createExecutionHostOwner, executionHostOwnerLost } from '../../packages/harness-runtime/lib/execution-host-owner.js';
 import { createSessionMutationRuntime } from '../../packages/harness-runtime/lib/session-mutations.js';
 import { readMacosBootIdentity } from '../../packages/web/server/lib/opencode/runtime-host/native-bundle-reboot-recovery.js';
 import { prepareOwnedQaDirectory } from './owned-output.mjs';
+
+async function hashReleaseFile(file, { signal } = {}) {
+  const hash = createHash('sha256');
+  for await (const bytes of createReadStream(file, { signal })) hash.update(bytes);
+  return hash.digest('hex');
+}
+
+async function captureReleaseStartupScreenshot(launch, directory, name, identity) {
+  assert.match(name, /^DevRyan-[a-z0-9.-]+\.png$/);
+  const result = await launch.cdp.send('Page.captureScreenshot', { format: 'png' });
+  const bytes = Buffer.from(result.data, 'base64');
+  assert.ok(bytes.length > 1024 && bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])));
+  await fs.mkdir(directory, { recursive: true });
+  await fs.writeFile(path.join(directory, name), bytes, { mode: 0o600, flag: 'wx' });
+  const { sourceCommit, dmgSha256, manifestSha256, appSha256 } = identity;
+  return { name, sha256: createHash('sha256').update(bytes).digest('hex'), sourceCommit, dmgSha256, manifestSha256, appSha256 };
+}
 
 const exec = promisify(execFile), repository = fileURLToPath(new URL('../../', import.meta.url)).replace(/\/$/, '');
 export function parseStartupRecoveryUiArgs(args) {

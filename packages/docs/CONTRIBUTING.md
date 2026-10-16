@@ -46,8 +46,8 @@ Rules:
 
 ## Package docs source
 
-`.github/workflows/docs-source.yml` validates and packages this directory as a
-`DevRyan-docs-source-*.tar.gz` artifact for release or manual distribution.
+CI (`.github/workflows/ci.yml`) validates this directory with `bun run docs:validate`;
+see [DEPLOYMENT.md](DEPLOYMENT.md) for handing the source to a website.
 A website integration must be configured explicitly for the intended destination;
 this repository does not authorize access to any upstream website checkout.
 

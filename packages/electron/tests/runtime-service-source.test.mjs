@@ -166,7 +166,7 @@ describe('runtime-service desktop bootstrap source contract', () => {
     assert.match(releaseWorkflow, /bun run build:native-helpers/);
     assert.match(
       releaseWorkflow,
-      /node scripts\/package-prepared\.mjs --mac --\$\{\{ matrix\.arch \}\}/,
+      /node scripts\/package-prepared\.mjs --mac --arm64 /,
     );
     assert.match(releaseWorkflow, /-c\.mac\.identity=null -c\.mac\.notarize=false -c\.dmg\.sign=false/);
     assert.doesNotMatch(releaseWorkflow, /--require-developer-id/);

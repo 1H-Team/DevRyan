@@ -6,7 +6,7 @@ const commands = [
   ['node', ['--test', 'packages/electron/tests/startup-retry.test.mjs', 'packages/electron/tests/early-startup.test.mjs', 'packages/electron/tests/runtime-service-startup.test.mjs',
     'packages/electron/tests/runtime-service-source.test.mjs', 'packages/electron/tests/windows-preview.test.mjs',
     'packages/electron/tests/runtime-service.test.mjs', 'packages/electron/tests/runtime-bundle-bootstrap.test.mjs',
-    'scripts/qa/release-startup-contract.test.mjs', 'scripts/qa/release-startup-smoke.test.mjs', 'scripts/qa/release-startup.test.mjs', 'scripts/qa/native-startup-benchmark.test.mjs',
+    'scripts/qa/native-startup-benchmark.test.mjs',
     'scripts/qa/host-readiness.test.mjs', 'scripts/opencode-v2-native/artifacts.test.mjs']],
   ['bun', ['test', 'packages/shared-runtime/startup-diagnostics.test.js', 'packages/harness-runtime/lib/session-reboot-recovery.test.js']],
   ['node', ['scripts/test-ui.mjs', 'src/lib/startup/health.test.ts', 'src/lib/startup/readiness.test.ts',

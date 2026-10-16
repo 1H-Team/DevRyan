@@ -690,11 +690,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
   // Finish exporting helpers before loading runners that import this module.
   void (async () => {
     const argv = process.argv.slice(2);
-    const release = argv[0] === '--release-dmg' ? await import('./release-startup.mjs') : null;
-    const historical = argv[0] === '--reproduce-release-upgrade' ? await import('./release-upgrade-diagnostic.mjs') : null;
-    if (historical) assert.equal(argv.length, 3, 'Usage: --reproduce-release-upgrade <from-version> <to-version>');
-    const result = historical ? await historical.runReleaseUpgradeDiagnostic(argv[1], argv[2])
-      : release ? await release.runReleaseStartup(release.parseReleaseStartupArgs(argv)) : argv[0] === '--baseline-package-evidence'
+    const result = argv[0] === '--baseline-package-evidence'
       ? await runNativeStartupComparison(parseStartupComparisonArgs(argv))
       : await runNativeStartupBenchmark(parseNativeStartupArgs(argv));
     process.stdout.write(JSON.stringify({ outcome: result.outcome, output: result.output, summary: result.summary, error: result.error }) + '\n');

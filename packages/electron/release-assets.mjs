@@ -13,8 +13,6 @@ const ASSETS = Object.freeze({
 
 export const RELEASE_SCOPES = Object.freeze({
   'desktop-macos-arm64': Object.freeze(['macos-arm64']),
-  desktop: Object.freeze(['macos-arm64', 'win-x64', 'win-arm64']),
-  full: Object.freeze(['macos-arm64', 'web']),
 });
 
 const assertVersion = (version) => {
