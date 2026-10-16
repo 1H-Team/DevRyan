@@ -4,7 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [2.0.13] - 2026-10-16
+## [2.0.14] - 2026-10-16
+
+Version 2.0.13 was admitted by a release rehearsal but never published; its contents ship in 2.0.14.
 
 - Update the bundled OpenCode host and Bot runtime from 2.0.26 to 2.0.30 with Effect 4.0.1, refreshed native asset pins and API schema, and migration-aware upgrade protection.
 - Fix startup failing with `bundle_message_reference_lost` after a session was deleted that had a tool call cancelled before it started. The marker left by that cancellation is now reported instead of refusing launch.
@@ -13,6 +15,7 @@ All notable changes to this project will be documented in this file.
 - Share helper model selection across naming and Git drafts, preserve Default reasoning, and bound title persistence and missing-idle recovery across restart.
 - Reduce result-v2 pagination and dormant Docker polling while preserving scalar compatibility, durable acknowledgements and explicit controls.
 - Bind release qualification to exact source, candidate bytes, fresh runners and executed retries; require final installer and updater evidence before publication succeeds.
+- Keep release-history admission within its request budget by taking tag-push versions from the trusted ref, and sync `bun.lock` for frozen installs.
 
 ## [2.0.12] - 2026-10-13
 
