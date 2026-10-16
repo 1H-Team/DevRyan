@@ -23,7 +23,7 @@ A docs-only change runs only `docs:validate`. Both validate modes fail if the ru
 
 ## CI
 
-`.github/workflows/ci.yml` runs on every push to `main` and every pull request: job `checks` (ubuntu) installs and runs `bun run validate:full`; job `startup` (macos-26) runs `bun run test:startup`. The other workflows are `release.yml`, `release-cache.yml` and `supabase-migrate.yml` (see [Release pipeline](RELEASE_PIPELINE.md)).
+`.github/workflows/ci.yml` runs on every push to `main` and every pull request: job `checks` (macos-26) installs and runs `bun run validate:full`; job `startup` (macos-26) runs `bun run test:startup`. The other workflows are `release.yml`, `release-cache.yml` and `supabase-migrate.yml` (see [Release pipeline](RELEASE_PIPELINE.md)).
 
 ## Startup contract
 
