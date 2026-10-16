@@ -570,6 +570,25 @@ test('trusted legacy dispatch source metadata classifies actual branch shapes an
     await assert.rejects(readReleaseGateHistory(process.cwd(), client, [{ ...runs[0], ...change }], 51));
 });
 
+test('stable tag pushes take their version from the trusted ref without a package metadata read', async () => {
+  const sourceReads = [];
+  const runs = [
+    { id: 30, head_sha: 'c'.repeat(40), head_branch: 'v2.0.12', event: 'push' },
+    { id: 20, head_sha: 'b'.repeat(40), head_branch: 'v2.0.12', event: 'push' },
+    { id: 10, head_sha: 'a'.repeat(40), head_branch: 'scratch/v2.0.9-sample-2', event: 'workflow_dispatch' },
+  ].map(run => ({ ...run, path: '.github/workflows/release.yml', head_repository: { full_name: environment.GITHUB_REPOSITORY } }));
+  const client = { sourceVersion: async commit => { sourceReads.push(commit); return '2.0.9'; },
+    pages: async route => (route === '/releases' || route.endsWith('/artifacts') ? []
+      : [{ id: 42, run_attempt: 1, name: 'final-dmg-smoke', conclusion: 'success', runner_id: 7 }]) };
+  const history = await readReleaseGateHistory(process.cwd(), client, runs, 51);
+  assert.deepEqual(sourceReads, ['a'.repeat(40)], 'Only dispatches read package metadata');
+  assert.deepEqual(history.runs.map(run => run.releaseVersion), ['2.0.12', '2.0.12', '2.0.9']);
+  // A conflicting retained admission proof still fails closed.
+  const conflicting = { ...client, pages: async route => (route.endsWith('/artifacts') ? [{ id: 9, name: 'DevRyan-release-admission', expired: false }] : client.pages(route)),
+    readAdmissionProof: async (_artifact, run) => ({ source: run.head_sha, version: '2.0.11', scope: 'desktop-macos-arm64' }) };
+  await assert.rejects(readReleaseGateHistory(process.cwd(), conflicting, runs.slice(0, 1), 51), /Historical admission identities conflict/);
+});
+
 test('history pagination and immutable source reads have finite budgets and report incomplete exhaustion', async () => {
   let requests = 0;
   const client = githubReleaseClient(environment, async () => { requests++; return { ok: true, json: async () => ({ workflow_runs: Array.from({ length: 100 }, () => ({})) }) }; });

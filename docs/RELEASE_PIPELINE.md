@@ -181,7 +181,9 @@ from the immutable admission artifact (or exact-source retained legacy gate
 receipt), including candidate dispatches from branches such as `main`; changing
 source or dispatch branch cannot discard those failures. Legacy `workflow_dispatch`
 branches also use `package.json` at the exact source SHA, after trusted repository,
-workflow path and event checks. This establishes identity only; it grants no
+workflow path and event checks. Stable `vX.Y.Z` tag pushes take that version from
+the push ref instead, so re-cut tag commits cost no metadata read; a retained
+admission proof that disagrees still fails closed. This establishes identity only; it grants no
 failure pardon. The scan classifies the bounded run inventory first, then reads
 jobs for the ten most recent versions with executed gates, all older runs of those
 versions, and the intended source/version. Admission-only versions do not consume

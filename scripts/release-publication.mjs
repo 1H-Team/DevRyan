@@ -233,7 +233,11 @@ export async function readReleaseGateHistory(root, client, allRuns, currentRunID
       assert.equal(run.path, '.github/workflows/release.yml', 'Historical release workflow changed');
       assert.equal(run.head_repository?.full_name, RELEASE_REPOSITORY, 'Historical release repository changed');
       assert.ok(['push', 'workflow_dispatch'].includes(run.event), 'Historical release event unavailable');
-      const version = await client.sourceVersion(run.head_sha);
+      // GitHub's push ref names the stable version that tag released; reading
+      // package metadata for each of hundreds of re-cut tag commits exhausts
+      // the request budget. Admission proofs still must agree with it.
+      const tagged = run.event === 'push' && /^v\d+\.\d+\.\d+$/.test(run.head_branch ?? '') ? run.head_branch.slice(1) : null;
+      const version = tagged ?? await client.sourceVersion(run.head_sha);
       remember(run.id, run.head_sha, version);
     }
   }
