@@ -1,7 +1,0 @@
-{
-  "qualification": "synthetic-factory-and-actual-isolated-host-startup-only",
-  "status": "passed",
-  "artifactManifestSha256": "50516de2eded7ef6aca19d5c7351186dc73a367baf830ab01043f13f904f0556",
-  "cleanupFailures": [],
-  "realProviderRequests": 0
-}

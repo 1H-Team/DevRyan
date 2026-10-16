@@ -65,10 +65,6 @@ captured admission revision into the ledger transaction. The guarded store
 commit rechecks before the ref CAS and afterward under the same lock, rolls back
 revocation, and reports a failed rollback as committed uncertainty. Other store
 commits retain their existing behavior.
-The [focused owner proof](../../docs/audits/2026-10-14/native-plan-undo-owner-corrections.json)
-records the corrected reproductions and the remaining compiled qualification.
-The [sanitized Plan incident](../../docs/audits/2026-10-14/native-plan-denied-change-coverage.json)
-separates this coverage correction from the scoped-revert fixture control.
 
 `lib/session-reboot-recovery.js` owns the versioned
 `devryan.session-reboot-recovery/1` lease attestation. A cold native host must
@@ -372,10 +368,6 @@ unsupported-runtime behavior.
 ### Session title correlation
 
 Selected-project ledger warming may refresh an existing ledger within its file/byte budget. Warm budgets must be positive safe integers within the production caps (20,000 files and 512 MiB); directory enumeration also stops after four times the file budget, including empty directories, before inspecting file contents. A foreground observation supersedes the advisory pass at its next checked enumeration or batch boundary; already committed batches remain, and an interrupted install uses the same guarded commit and rollback as other owner changes. Host replacement cancels queued warming through its captured lifetime before any new pass starts. Advisory refresh batches identical-content restamps while preserving device/inode/size/time/mode identities and install rechecks. A real reservation still requires an authoritative observation started after reservation; a warm pass cannot supply admission proof. Process settlement, publication, Cursor receipt drain and native save have separate diagnostic phases and do not set early completion timestamps.
-
-[Local preparation qualification](../../docs/audits/2026-10-14/preparation-performance-qualification.json) retains five repetitions of the existing isolated scenarios and five paired scalar/V2 result measurements. V2 host latency and CPU still regress; moving work to prewarm and reducing result bytes do not establish a total-speed improvement. Native host, provider and return-to-idle performance remain unmeasured by these fixtures.
-
-The [quiet-window result transport rerun](../../docs/audits/2026-10-15/managed-result-transport-rerun.json) retains the historical measurements and again observes V2 host latency and CPU regressions across five cold and five warm pairs. Source hashes match the second historical run; different absolute timings and observed ambient load do not establish a code improvement. All twenty workers exited naturally; application return-to-idle latency remains unmeasured.
 
 The web host emits `session_title_generation` lifecycle records with the target session in top-level `sessionID` and the hidden helper in `payload.helperSessionID`. The event-specific sanitizer preserves stable IDs, enumerated stage/outcome/source/selection mode/refusal codes, nonnegative bounded lengths and timing, strict equality/provenance booleans, and valid provider/model/status/attempt metadata. Native/candidate/expected title comparison evidence survives both journaling and export. Title text, raw errors, source prompts and title/source hashes are excluded even when injected into this event; these extra comparison fields do not widen unrelated payloads.
 

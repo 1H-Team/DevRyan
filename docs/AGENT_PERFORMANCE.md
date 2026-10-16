@@ -106,8 +106,3 @@ A single store with N properties means every subscriber re-evaluates on every st
 - When handling optimistic updates, ask: where is rollback, reconciliation, and duplicate prevention?
 - When changing shared routes or state contracts, ask: what breaks in web and desktop?
 - When fixing a bug with a heuristic, prefer narrowing the heuristic over widening it.
-
-History: [ledger preparation profile](audits/2026-09-27/ledger-preparation-profile/README.md).
-
-The [registered-project qualification resource receipt](audits/2026-10-15/receipt-resource-registered-project.json)
-records five matched pairs and their timing, sampling and scope limits.

@@ -1,2 +1,0 @@
-101a102
-> POST /api/integration/{integrationID}/connect/external integration.connect.external

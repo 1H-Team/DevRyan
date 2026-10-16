@@ -1,8 +1,0 @@
-{
-  "status": "passed",
-  "workflowRun": "https://github.com/1H-Team/DevRyan/actions/runs/38162689092",
-  "dryRun": true,
-  "pendingMigrations": 0,
-  "schemaVersion": "20260908182901",
-  "migrationFilesModifiedOrUntracked": false
-}

@@ -10,8 +10,7 @@ source proof as editing the QA driver or provider grader.
 Ordinary native tool prompts read and explicitly submit the exact active root
 session's canonical selected agent. Omitting the agent preserves the runtime's
 implicit primary-admission opt-out and cannot establish the objective proof
-required by native Plan policy. The [retained compiled negative](../../docs/audits/2026-10-14/compiled-package-primary-admission.json)
-records that refusal and the fixture correction without weakening policy.
+required by native Plan policy. The compiled package refuses such admission, and the fixture correction does not weaken policy.
 Both relocated tool roots are created with the source-configured primary after
 checking their actual native catalogs, then enrolled against their own location.
 The fixture binds accepted prompt receipts to that enrolled location and rereads
@@ -61,11 +60,8 @@ The Darwin ARM64 ripgrep fixture comes from the frozen Bun install's
 `@cursor/sdk-darwin-arm64` package, with its exact SHA-256 asserted before use.
 Qualification never depends on a previous QA run's cached executable.
 
-Release startup invokes this same qualification against the final DMG's extracted
-native inventory. Historical upgrade profiles are created by their own unchanged
-released apps in the GUI lane; the compiled lane never admits an old source-only
-asset as a new current target. The release receipt requires this lane
-and the unchanged app's GUI startup scenarios; either lane alone is insufficient.
+Historical upgrade profiles are created by their own unchanged released apps in the
+GUI lane; the compiled lane never admits an old source-only asset as a new current target.
 
 Every compiled host (the package process, each fresh lifecycle driver and the
 parent-death owner) also writes the production web diagnostic journal into its
@@ -181,8 +177,7 @@ references using the production core/scheduler and a disposable atomic ledger.
 Five paired cold/warm samples count exact minified model bytes, logical calls,
 RPCs, commits and host CPU/latency/RSS. Completed canonical tool parts are
 fixture supplied; the native publication gate above remains separate. The
-[numeric audit](../../docs/audits/2026-10-14/managed-result-transport.json)
-records fewer bytes/calls and increased host CPU/latency, without provider-token
+measurement shows fewer bytes/calls and increased host CPU/latency, without provider-token
 or speed claims.
 
 `package-model-title-lane.mjs` enrolls its fresh root through the existing
@@ -246,8 +241,6 @@ to a separate session-change owner and cannot stand in for scoped restoration.
 The file-only Undo checkpoint clicks its exact enabled confirmation dialog before
 requiring the real card's Redo state; Redo dispatches directly. A cancelled,
 ambiguous or unrelated dialog cannot qualify the file-restoration checkpoint.
-The [file Undo checkpoint audit](../../docs/audits/2026-10-15/plan-file-undo-confirmation.json)
-records the missing confirmation and journal coverage from the failed actual run.
 Positive file-restoration screenshots recheck the exact enabled card after each
 theme, viewport and tab transition; pending loading or button paint cannot
 qualify. A displayed summary-read failure fails the capture without automatic
@@ -265,30 +258,10 @@ the owned page-load waiter before navigation within the existing phase deadline.
 The new document then supplies hit-ready Settings, Open Sessions, or hydrated
 settings navigation; rect-only controls in closed drawers and the old textarea
 cannot establish fresh shell readiness. Navigation uses those existing controls,
-including opening the responsive session sidebar when necessary. The
-[restart/helper navigation incident](../../docs/audits/2026-10-15/plan-restart-helper-navigation.json)
-retains the observed timeout and actual successful summary recovery without
-claiming which navigation race caused the failure. The
-[capture boundary audit](../../docs/audits/2026-10-15/plan-capture-boundaries.json)
-distinguishes observed UI read failures from successful file-owner restoration.
+including opening the responsive session sidebar when necessary.
 Synthetic responder/transport unit tests do not qualify this lifecycle.
 The later retained actual lane passed all 60 captures and helper HTTP save/reload
-checks on unchanged source. Its [qualified Plan record](../../docs/audits/2026-10-15/plan-implement-qualified/README.md)
-and [sanitized identity/journal proof](../../docs/audits/2026-10-15/plan-implement-qualified/proof.json)
-retain seven actual images, all screenshot hashes, the independent zero-gap scan
-and empty owned process registry. Root removed only the owned profile/workspace
-after evidence copying and preserved all 70 light proof files;
-synthetic application acceptance does not qualify paid helpers or release assets.
-The subsequent [consensus finishing plan](../../docs/audits/2026-10-15/consensus-finishing-plan.md)
-records the remaining corrections and frozen-source gates, with Codex owning implementation.
-Its [review record](../../docs/audits/2026-10-15/codex-claude-handoff-review.json)
-retains evidence provenance and the [visible reviewer consensus](../../docs/audits/2026-10-15/claude-consensus.jpg).
-The [new supplemental image review](../../docs/audits/2026-10-15/plan-implement-qualified/visual-review-supplement.json)
-adds 32 individually inspected original captures to the prior documented 28;
-it does not retroactively expand the earlier review or qualify pending source fixes.
-The [retained approval evidence](../../docs/audits/2026-10-14/plan-approval/README.md)
-records the historical failed dispatch-capture run; the later complete application
-qualification is retained above.
+checks on unchanged source; synthetic application acceptance does not qualify paid helpers or release assets.
 
 `node scripts/verify-opencode-v2-native.mjs --plan-only` runs the source SDK
 invocation-fence subset with real native tools/processes: write/edit and shell

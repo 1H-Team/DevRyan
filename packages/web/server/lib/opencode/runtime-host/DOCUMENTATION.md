@@ -111,12 +111,11 @@ constructor-owned v2 scope; a result's own version flag cannot upgrade v1's
 coverage and later-Step disposition checks remain separate and mandatory.
 Repeated publication checks still reread canonical payloads and fresh primary
 and authority state; no immutable history-version receipt currently permits
-payload reuse. The [page evaluation](../../../../../../docs/audits/2026-10-15/managed-result-page-evaluation/README.md)
-records reduced calls and the unqualified latency results.
+payload reuse. The page evaluation
+recorded reduced calls and unqualified latency results.
 Long sessions do not require a full transcript scan. Bounded disposition barrier
 inspection stays under the disposition permit; the long-running result-read
 permit remains limited to status, wait, wait_any and read_result.
-Focused proof: [managed results and Plan cleanup](../../../../../../docs/audits/2026-10-14/managed-results-plan-cleanup.json).
 
 The actual Plan application gate retains its 480-second absolute limit and
 reserves two existing 30-second cleanup allowances. It owns browsers before
@@ -319,8 +318,6 @@ Effect test clock for these bounds, prove frame-driven idle resets, and verify
 that interrupting the stream closes its socket. They qualify transport Stop,
 not a live provider or the desktop Stop control. No 900-second WebSocket total
 cap or new 120-second post-output policy is claimed.
-The [focused fixture proof](../../../../../../docs/audits/2026-10-15/native-stream-websocket-qualification.json)
-records source hashes, separate subgates and the remaining qualification limits.
 
 Native preparation records the actual `prepared.request.tools.length`. Each
 linked physical send retains that count and projects the final materialized
@@ -337,8 +334,7 @@ Only typed input-array controls are inspected; message content is never examined
 The strict QA grader retains this provenance and still requires exact accepted,
 prepared and canonical-step selection. Default helper qualification refuses any
 update evidence. These observations neither rewrite requests nor explain away
-provider authentication failures. The [focused correction proof](../../../../../../docs/audits/2026-10-15/effort-update-observation-correction.json)
-records deterministic source/compiled coverage and the outstanding fresh cohort.
+provider authentication failures.
 `withProviderAttempt` supplies optional observation metadata from its private
 helper entry. Only a retained captured selection can supply mode/revision;
 constructors without selection capture refuse helper admission. The Node
@@ -350,8 +346,7 @@ helper observation to its own prepared request, exact permit, tuple and tool
 count; cross-helper or evicted request IDs produce a diagnostic gap. The table
 never grants execution and never exports its permit identity.
 Authorized active-session fallback keeps its distinct tuple.
-This metadata supplies no execution or credential authority. See the focused
-[helper observation proof](../../../../../../docs/audits/2026-10-14/qa1-provider-qualification.json).
+This metadata supplies no execution or credential authority.
 
 Finalizing presentation uses a separate read-only observation at the pinned
 native step's post-model, post-tool-join settlement seam. The SHA-guarded
@@ -390,7 +385,6 @@ grant, verifies the active metadata ID, and forwards only Codex access/account
 fields to the usage fetcher. It never refreshes or forwards the refresh token.
 `openai.attempt` remains; `openai.access` is removed. The compatibility context
 pinning flag applies only to token-sharing; Codex retains OpenCode's model limits.
-See the [native Codex audit](../../../../../../docs/audits/2026-10-11/native-codex-signin/README.md).
 
 Provider credential resolution reads its selected snapshot inside the serialized
 mutation queue. Concurrent requests may advance only through a refresh committed
@@ -428,8 +422,6 @@ host-owned selected credential. Catalog visibility alone grants neither.
 The compiled provider owner is registered independently of the legacy plugin
 list. Disabling legacy plugins does not disconnect that native account or stop
 this metadata bridge; the saved plugin list is preserved.
-The [catalog regression audit](../../../../../../docs/audits/2026-10-14/claude-provider-catalog.json)
-separates deterministic source/compiled proof from pending live verification.
 
 Dedicated enrollment is global to the bundle. `native-claude-enrollment-location.js`
 binds a request to its own directory when that directory is a reviewed location,
@@ -599,8 +591,7 @@ selection-view subprocesses run under Node even when the CLI runs under Bun;
 the compiled native controller remains the supplied verified artifact.
 
 See [runtime verification](../../../../../../docs/AGENT_RUNTIME_VERIFICATION.md)
-and the [2026-10-10 incident audit](../../../../../../docs/audits/2026-10-10/model-catalog/README.md)
-for isolation rules and the limits of the reproduced evidence.
+for isolation rules.
 
 ### Startup timing
 
@@ -637,8 +628,6 @@ verification, checking both file metadata and bytes read. Hash, canonical-path
 and symlink checks remain required. Electron's startup failure page falls back
 to its default appearance if selected-bundle settings cannot be read, preserving
 the original error and Retry action even after an upgrade changes selection.
-The [runtime preparation audit](../../../../../../docs/audits/2026-10-10/runtime-preparation/README.md)
-records the incident and isolated packaged regression evidence.
 
 ### Abandoned execution leases and explicit reboot recovery
 
@@ -714,8 +703,7 @@ execution-host owner on their lease. When `finish` fails, for example because a
 timeout or Stop retired the tool permit, `nativeManagedControl` cancels and
 cleans the exact scope-matched `ready` control lease and rethrows the original
 failure. `recoverExecutionLeases` also settles owner-less control leases left by
-earlier builds. The [incident audit](../../../../../../docs/audits/2026-10-11/bundle-execution-unsettled/README.md)
-records the evidence.
+earlier builds.
 
 ## Claude updates in About
 
@@ -751,9 +739,6 @@ the captured read-only policy; prompt text cannot grant write authority.
 Plan admission requires its canonical-policy and implementation-validation
 hooks; an Implement marker also requires validation. Missing hooks refuse Plan
 before dispatch while ordinary non-Plan admission remains available.
-The [focused restore/Plan safety proof](../../../../../../docs/audits/2026-10-15/restore-plan-safety-qualification.json)
-records the legacy-agent, pruned-child, exact restore-cache and unfinished-retry
-fixtures, with their remaining physical and compiled qualification limits.
 Plan shell runs from the original snapshot under the read-only host boundary.
 Its macOS profile denies network operations, including localhost POST/push;
 Linux adds a private network namespace. Other execution modes retain their
@@ -817,8 +802,6 @@ Latest-human capture compares the exact canonical ordered source parts, includin
 attachments, alongside the private accepted-user record. Session `time.updated`
 alone is volatile during stream activity; other session fields remain compared.
 `native_managed_title_source_invalid` is an enumerated content-free title refusal.
-Focused helper/title evidence is recorded in
-[the sanitized owner proof](../../../../../../docs/audits/2026-10-14/helper-title-owner-corrections.json).
 The three-purpose HTTP/controller tests use actual admission, provider-attempt
 authorization and settlement; fresh compiled provider qualification is a separate gate.
 
@@ -867,6 +850,4 @@ Before another enrollment, legacy migration skips profiles already proved by
 the existing canonical lifecycle and private enrollment directory validator.
 They have no legacy fence to import. Actual legacy/default migration keeps its
 original command backend and inherited HOME.
-The [deterministic proof](../../../../../../docs/audits/2026-10-14/claude-owned-security-home.json)
-records the owning tests and explicitly leaves actual OS Keychain behavior
-unverified until the authorized isolated sign-in.
+Actual OS Keychain behavior remains unverified until the authorized isolated sign-in.

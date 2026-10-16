@@ -8,8 +8,7 @@ fire and the turn expires only at the total transport deadline. Recovery
 therefore watches semantic progress rather than bytes. The mechanism is
 verified; its involvement in any one historical request cannot be proven
 without a wire trace. Recovery does not change provider settings of the
-running application. Incident evidence is in the
-[verification history](audits/2026-10-09/provider-recovery-history/README.md).
+running application.
 
 ## Ownership and policy
 
@@ -96,7 +95,7 @@ changed by this work.
 
 A finalized Claude `UnknownError` carrying the upstream stall envelope is a
 classified chunk timeout, but the incident that exposed it
-([history](audits/2026-10-09/provider-recovery-history/README.md)) shows a
+shows a
 pending tool may already have run. A finalized failure with any unresolved tool yields
 `recovery_tool_outcome_unknown` with zero automatic attempts. The user must
 review the outcome and explicitly continue; tool-error labels alone never prove
@@ -208,8 +207,7 @@ The browser fixture at `tests/visual-provider-recovery` mounts the real componen
 with an isolated API adapter. It covers recovery status, Stop, blocked actions,
 disconnect/reconnect and explicit continuation without provider access.
 
-Verification of each reviewed release is recorded as a paragraph in the
-[verification history](audits/2026-10-09/provider-recovery-history/README.md):
+Verification of each reviewed release is covered by
 the isolated loopback-provider fixture (`tests/provider-recovery/runtime-conformance.mjs`)
 runs heartbeat-only, silent-SSE, non-SSE, missing-header and Anthropic
 upstream-timeout traffic, each expected to complete exactly one recovery, and

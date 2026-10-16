@@ -1,228 +1,90 @@
 # DevRyan Testing
 
+## Commands
+
+| Command | Use |
+| --- | --- |
+| `bun run validate` | The local gate before every push and release tag. Diffs against the upstream branch (override with `VALIDATE_BASE`) and runs only what the change touches. |
+| `bun run validate:full` | Lint, type-check, `docs:validate`, build, `bundle:check` and `test:full`. This is what CI runs. |
+| `bun run test:startup` | Curated startup and user-data contract. |
+| `bun run test:full` | Scripts, the visual fixture and every package suite. |
+| `bun run docs:validate` | Markdown links and inline-code paths. |
+
+`bun run validate` runs:
+
+- ESLint on changed files;
+- type-check of changed packages and their dependents (everything when root `package.json`, `bun.lock`, `eslint.config.js`, `tsconfig.json`, `vite-theme-plugin.ts` or `.opencode/opencode.json` change);
+- tests of changed packages and their dependents;
+- `test:scripts` when `scripts/`, `.github/` or `.opencode/agents|plugins` change;
+- `docs:validate` when Markdown changes;
+- `test:startup`, always.
+
+A docs-only change runs only `docs:validate`. Both validate modes fail if the run left new entries in `.cache/` (see [STORAGE_CLEANUP.md](STORAGE_CLEANUP.md)).
+
+## CI
+
+`.github/workflows/ci.yml` runs on every push to `main` and every pull request: job `checks` (ubuntu) installs and runs `bun run validate:full`; job `startup` (macos-26) runs `bun run test:startup`. The other workflows are `release.yml`, `release-cache.yml` and `supabase-migrate.yml` (see [Release pipeline](RELEASE_PIPELINE.md)).
+
 ## Startup contract
 
-`bun run test:startup` runs deterministic startup, ownership, integrity,
-bundle retention/selection, Retry, cancellation, delayed bootstrap and event
-subscription contracts. The `startup` job in `.github/workflows/ci.yml` runs it on
-macOS for every push to `main` and every pull request. It never uses installed
-application data, live accounts or OS service registration.
+`scripts/test-startup-contract.mjs` runs the startup and user-data tests: runtime bundle startup, selection and upgrade, ledger and session integrity, Retry, cancellation, delayed bootstrap, event subscription, and Electron startup and ownership. It uses disposable fixtures only: no installed-app data, live accounts or OS service registration.
 
---- | --- | --- |
-| Repository, release, and project-plugin tooling | `bun run test:scripts` | Recursive script tests and `.opencode/plugins/**/*.test.mjs`; `scripts/test-scripts.mjs` routes declared `bun:test` suites to explicit paths in separate processes, including the native OpenCode host checks and tests shipped in the pinned reviewed runtime inputs. Fixtures do not share resolver/loader state, and matching files outside the discovered inventory are excluded. |
-| Harness runtime | `bun run --cwd packages/harness-runtime test` | Diagnostics journal, evidence, worktree, lifecycle, and process contracts |
-| Managed orchestration | `bun run --cwd packages/orchestration-runtime test` | Shared managed-task admission, scheduling, cancellation, and recovery |
-| Production Bots runtime | `bun run --cwd packages/bots-runtime test` | Strict JSON contracts, lifecycle/policy state, scope isolation, leases, action hashing, and routine recovery |
-| Production Bot engine proxy | `bun run --cwd packages/bot-engine-proxy test` | Eleven Engine-operation schemas, API-version/path hardening, ownership labels, response bounds, and proof that the supervisor has no socket mount |
-| Production Bot computer | `bun run --cwd packages/bot-computer test` | Authenticated reviewed Chromium commands, profile/scratch ownership, accessibility refs, control, screencast, and gateway file transfer |
-| Production Bot retrieval index | `bun run --cwd packages/bot-indexer test` | Deterministic chunks, offline embeddings, SQLite FTS/vector ranking, namespace isolation, rebuild/recovery, and authenticated host API |
-| Cursor SDK runtime | `bun run --cwd packages/cursor-sdk-runtime test` | Cursor execution, question bridge, tool calls, auth, and usage contracts |
-| Electron | `bun run --cwd packages/electron test` | Recursively discovers Electron `*.test.*` outside generated/package output; dispatches Node, Bun, and Vitest suites to their declared runner, isolates Bun module/global mocks, and reports Docker and macOS native installer acceptance as separate opt-in gates below |
-| Legacy Tauri | `bun run --cwd packages/desktop test` | Locked Rust unit and local integration tests in `src-tauri` |
-| Shared UI | `bun run --cwd packages/ui test` | UI, store, sync, Git, tool presentation, and policy tests; global mocks run in isolated processes |
-| Web | `bun run --cwd packages/web test` | Web runtime adapters, Express APIs, libraries, CLI, packaging, and integration contracts; reviewed runtime input tests run through `test:scripts` with their declared runner |
+## Suites and runners
 
-Runner, discovery, validation-selection, and release-gate changes belong to `scripts/`. Feature tests belong beside their source unless an integration contract spans packages.
+`test:full` runs everything below except the frozen legacy Tauri package (`packages/desktop`: lint and types only, its cargo tests are not run).
 
-## Checked feature matrix
+| Suite | Command | Runner |
+| --- | --- | --- |
+| Scripts, `.opencode/agents` and `.opencode/plugins` tests, reviewed runtime inputs | `bun run test:scripts` | `scripts/test-scripts.mjs`: files importing `bun:test` run one per `bun test` process, the rest in one `node --test` run. `DEVRYAN_SCRIPT_TEST_CONCURRENCY` sets node concurrency. |
+| Visual fixture | `bun run test:visual-fixture` | `bun test` |
+| Shared UI | `bun run --cwd packages/ui test` | `scripts/test-ui.mjs`: `bun test`, with global-mock files in isolated processes |
+| Web | `bun run --cwd packages/web test` | `vitest` (one worker), plus three native-host files under `bun test`. Native host scripts: `bun run --cwd packages/web test:native-host`. |
+| Electron | `bun run --cwd packages/electron test` | `scripts/test-electron.mjs` routes by import: `node:test` to Node, `vitest` to Vitest, the rest to `bun test` (isolated when they mock globals) |
+| `bots-runtime`, `bot-supervisor`, `bot-engine-proxy`, `bot-egress`, `bot-computer`, `bot-db`, `shared-runtime`, `harness-runtime`, `orchestration-runtime`, `cursor-sdk-runtime` | `bun run --cwd packages/<name> test` | `bun test` |
+| `bot-indexer` | `bun run --cwd packages/bot-indexer test` | `node --test` |
 
-`scripts/feature-test-matrix.mjs` is the executable source of truth connecting current source anchors to deterministic test anchors. Its contract test covers these feature families:
+Runner and discovery changes belong in `scripts/`. Feature tests live beside their source unless a contract spans packages.
 
-- shared UI, chat, session, and event synchronization;
-- web/server APIs and web `RuntimeAPIs` parity;
-- Electron integrations and legacy Tauri compatibility;
-- Cursor SDK, managed orchestration, and Production Bots runtime contracts;
-- diagnostics, evidence, worktrees, providers, and quota;
-- Git, GitHub, terminal, skills, plugins, MCP, notifications, and TTS;
-- browser preview/CDP, CLI/tunnels/auth, packaging, release branding, validation, bundle budgets, and agent evaluations;
-- product-tool discovery, permission aliases, provider prompt policy, presentation families, state/target rendering, activity grouping, unknown-tool fallback, and managed-task replacement cards.
+## Test-suite contract
 
-Tool tests intentionally describe stable policy and presentation families instead of enumerating every possible plugin tool. A newly discovered tool must remain visible through the safe generic fallback.
+`scripts/test-suite-contract.test.mjs` fails when a test file is not discovered by its package runner, when a deterministic test uses `skip` or `todo`, or when the feature matrix is stale. Do not silence a scenario: delete tests for removed behavior or rewrite them for the current contract. Opt-in gates below are reported as not run, never skipped.
+
+`scripts/feature-test-matrix.mjs` maps feature families to source and test anchors; the contract test checks that every anchor exists. Add a row when you add a feature family. Tool tests describe stable policy and presentation families, not every plugin tool; a new tool must stay visible through the generic fallback.
 
 ## Fixture rules
 
-Deterministic suites must use temporary directories, injected dependencies, or loopback-only fake services. Tests must not require credentials, live providers, external network access, the user's configuration, or installed-app state. Always clean up temporary files and child processes, including failure paths.
+- Use temporary directories in the OS temp dir, injected dependencies or loopback-only fakes. Never require credentials, live providers, external network, the user's configuration or installed-app state.
+- Clean up temp files and child processes on pass, failure and interruption. Never write scratch under `.cache/`.
+- `scripts/qa/run-root.mjs` `createRunRoot` removes a run directory (`<os tmpdir>/devryan-<family>`) unless `--keep-artifacts` or `DEVRYAN_KEEP_ARTIFACTS=1` is set.
+- Preserve compatibility identifiers (`@openchamber/*`, `OPENCHAMBER_*`, `openchamber://`, config paths). DevRyan branding assertions apply to public release filenames and metadata.
 
-Use narrow fixtures that state the contract being exercised. Preserve public compatibility identifiers such as `@openchamber/*`, `OPENCHAMBER_*`, `openchamber://`, config paths, and event names. DevRyan branding assertions apply to public release filenames and user-facing release metadata.
+## Opt-in groups
 
-Do not silence a deterministic scenario with `skip` or `todo`. Remove tests for deleted behavior, or rewrite them around the current contract. Nondeterministic/manual validation belongs in release or audit documentation, not the required unit/integration gate.
-
-## macOS native installer acceptance
-
-After building the runtime-service bridge on macOS, run:
+Docker, Chromium and native installer tests are excluded from the deterministic gate. Run them on a host with a healthy Docker Engine, or macOS for the installer; they use disposable containers and volumes (`devryan-it-<hex>` Compose projects) and refuse production resource names.
 
 ```sh
-bun run --cwd packages/electron build:runtime-service-control
-DEVRYAN_RUN_DMG_INSTALLER_NATIVE_TESTS=1 bun run --cwd packages/electron test
-```
-
-This gate kills owned helper subprocesses after the actual native atomic install
-and rollback exchanges, then verifies identity-based recovery. It also checks
-the reopening host's pinned-helper handoff. App data, signature replies and
-startup acknowledgements are synthetic in these fixtures; the gate does not
-qualify a packaged DMG launch or update the user's installation. Other platforms
-are unavailable for this gate and fail when explicitly invoked. The ordinary
-deterministic runner reports it as not run, with no silent skip declarations.
-
-## Production Bots Docker and acceptance gates
-
-The normal deterministic gate never requires Docker. Four opt-in groups use
-only disposable test containers/volumes and must be run on a release host with a
-healthy Docker Engine:
-
-```bash
 DEVRYAN_RUN_DOCKER_TESTS=1 bun test packages/bot-supervisor
 DEVRYAN_RUN_BROWSER_TESTS=1 bun test packages/bot-computer/src/browser.test.js
 DEVRYAN_RUN_BOT_INDEXER_DOCKER_TESTS=1 bun run --cwd packages/bot-indexer test
 DEVRYAN_RUN_BOT_DB_DOCKER_TESTS=1 bun test --cwd packages/electron tests/bot-catalog.docker.test.mjs --timeout 600000
+bun run --cwd packages/electron build:runtime-service-control
+DEVRYAN_RUN_DMG_INSTALLER_NATIVE_TESTS=1 bun run --cwd packages/electron test
 ```
 
-The local Bot catalog group needs the development catalog images
-(`docker build -f packages/bot-db/docker/database/Dockerfile -t devryan/bot-database:dev .`
-and the same for `rest`). Every run uses a unique `devryan-it-<hex>` Compose
-project, namespace and data directory and refuses production resource names,
-so it never touches an installed runtime. It verifies initialization,
-migrations, the REST boundary, backup → verified candidate → validation →
-journaled swap → commit, rollback of an uncommitted replacement, newer-schema
-refusal, Start Empty, cold restart, and a hosted-catalog import against a
-GET-only fake cloud: drift rejection, a resumable 402 block, a disjoint merge
-with regenerated identities, owner mappings and the activation hold, and a
-conflicting re-import that changes nothing.
+| Group | Covers |
+| --- | --- |
+| Supervisor | Docker-socket round trip through the engine proxy, owned-resource confinement, internal/public network split, egress failure closure, runsc replacement when gVisor is available |
+| Browser | Chromium fixture image: authenticated proxying, network policy, token rotation, login persistence, ref fencing, control contention, profile reset |
+| Bot indexer | Pinned offline-model image: namespace isolation, persistence across container replacement, `rebuild_required` after volume loss |
+| Bot catalog | Local PostgreSQL/PostgREST catalog: migrations, backup, validated swap and rollback, newer-schema refusal, Start Empty, restart, hosted-catalog import. Build the dev images first: `docker build -f packages/bot-db/docker/database/Dockerfile -t devryan/bot-database:dev .` (and the same for `rest`). |
+| DMG installer (macOS only) | Native atomic install/rollback exchanges and identity-based recovery with synthetic app data. It does not launch a packaged DMG. |
 
-The supervisor group verifies the real Docker-socket round trip through the
-engine proxy, owned-resource confinement, internal/public network split,
-browser-egress failure closure, and standard/runsc replacement when the host
-advertises gVisor. The engine-proxy deterministic suite covers all eleven
-version-normalized operations plus malformed bodies, path/query smuggling,
-upgrades, ownership, image/network/volume scope, and unavailable-proxy behavior.
-The Chromium group builds the fixture image and verifies authenticated explicit
-proxying, public/private/metadata/redirect/rebinding policy, token rotation,
-login persistence, ref fencing, control contention, profile reset, private file
-transfer, and graceful flush. The indexer group builds the pinned offline-model
-image and verifies exact namespace isolation, persistence across container
-replacement, and `rebuild_required` after deleting its disposable volume.
+Never stop the user's Docker Engine to run these. Operational and security boundaries are in [BOTS_RUNTIME.md](BOTS_RUNTIME.md).
 
-The Production Bots release acceptance gate is:
+Production Bots visual fixture (test-only, not in the app bundle): `bun run visual:bots:capture -- --output <dir>` drives the real Bot UI through Electron CDP and writes screenshots and JSON; `visual:bots:capture:packaged` and `visual:bots:acceptance` use a packaged test shell and also run a native pointer smoke that needs macOS Accessibility access. Pass an `--output` outside `.cache/`.
 
-```bash
-bun run validate:full
-bun run build
-bun run electron:build
-bun run release:test:arm
-bun run release:test:intel
-git diff --check
-```
+Live multi-user checks use the password-free accounts in [Agent runtime verification](AGENT_RUNTIME_VERIFICATION.md). Database migration checks run on an isolated local Supabase stack only: `supabase db reset`, then `supabase db lint --local`. Never use `--linked`.
 
-`electron:build` is expected to reject a release build without the
-release-generated, signature-verified `bot-runtime/images.release.json`. Do not
-copy the development manifest into that location or record that safety failure
-as a pass. Build and sign the multi-architecture images through the release
-workflow, verify their SBOM/provenance/signatures, then rerun packaging.
+## Isolated QA and releases
 
-The local Tauri compatibility smokes still build the app and DMG when release
-signing secrets are unavailable, but omit updater artifacts and code signing in
-that case. Supplying `TAURI_SIGNING_PRIVATE_KEY` retains the signed updater path;
-the unsigned local smoke is compilation/packaging evidence, not release-signing
-evidence.
-
-Run the Docker matrix on both Apple Silicon and Intel macOS. An Apple Silicon
-host is not evidence for an Intel Docker/packaging pass (or vice versa); when a
-platform is unavailable locally, record the exact command as unavailable and
-require the matching release-CI job. Include Docker-running and Docker-stopped
-preflight behavior, setup/repair/update/rollback, Team and Personalized scopes,
-browser uncertainty/reconciliation, index rebuild, launchd-owned routine recovery,
-Skill materialization, local/remote MCP manifest drift and uncertain writes,
-and recovery/purge partial-failure behavior. Never stop a user's active Docker
-Engine merely to satisfy an audit; use an isolated host or record the live case
-as unavailable and retain deterministic test evidence separately.
-
-Live multi-user verification uses the password-free `agent_test` accounts from
-[the runtime verification runbook](AGENT_RUNTIME_VERIFICATION.md). Build the current UI/server first, then start an isolated data root
-on a spare port when the user's app already owns the normal runtime. Confirm the
-target Supabase deployment contains migration `20260830150000` before creating a
-synthetic Bot. If the migration is missing, retain the `migration_required`
-evidence, create no fixture, and mark membership/transcript/ACL/runtime cases
-unavailable rather than bypassing the control plane.
-
-The committed test-only fixture in `tests/visual-production-bots/` renders the
-real Bot settings, policy, transcript, operations rail, dialogs, and narrow
-stores without entering the production bundle. Its Electron-CDP capture is:
-
-```bash
-bun run visual:bots:capture -- --output .cache/e2e/production-bots-visual/reviewed
-```
-
-The release-candidate variant first packages the dedicated test shell with the
-pinned Electron runtime and then drives that packaged application through CDP.
-The shell is emitted only under ignored `.cache/e2e/`; neither the shell nor the
-fixture enters the DevRyan application bundle:
-
-```bash
-bun run visual:bots:capture:packaged -- --output .cache/e2e/production-bots-visual/packaged
-```
-
-Visual acceptance covers light and dark themes, 1280×800 and 390×844
-viewports, 220/280/500px rails, the mobile drawer, OpenCode/AG-UI connection
-states, signed-spec trust/binding/diff failures, matcher/quota states,
-browser-egress and runsc failures, runtime-service lifecycle, exact transcript
-Activity/Approval focus, partial failures, paused/retired Bots, and
-administrator/developer presentation. It also covers the persistent optimistic/
-canonical acknowledgment before a final-only result and the decoded Computer
-canvas in connecting, live, disconnected, owned, view-only, and conflicting
-control states. Durable control-wait scenes cover owner Return Control and
-another-operator presentation. Generated-image scenes cover loading, decoded
-ready, and error/retry states independently of Shared publication. These are
-deterministic component fixtures, not evidence of a live OAuth generation.
-The capture blocks on clipping/overflow,
-stale scroll origin, focused-row visibility, keyboard Tab/Enter/Escape, focus
-rings, unnamed dialogs, secret sentinels, console errors, and unhandled
-rejections. Browser-network scenes also block unless the real network/isolation
-fieldset is inside the screenshot viewport. It always writes screenshots and JSON evidence; cross-machine pixel
-baselines are not blocking.
-
-Store only sanitized, reviewed evidence under a dated `docs/audits/` directory.
-The 2026-08-27 matrix and assertions are documented in
-`docs/audits/2026-08-27-agent-agnostic-bots/README.md`. See
-`docs/BOTS_RUNTIME.md` for the operational and security boundaries that the
-matrix must preserve.
-
-The macOS Bot Catalog click must also pass the native hit-test smoke:
-
-```bash
-bun run electron:test:native-pointer -- --output docs/audits/<date>-bot-settings/native-pointer
-```
-
-This command builds the current Electron web assets, launches a separate
-temporary DevRyan/Chromium profile, uses the password-free Test Administrator,
-and posts a real CoreGraphics mouse click at the enabled Catalog `+` bounds. It
-passes only when the `Create Bot` dialog appears and writes a PNG, bounded
-Electron log, and safe JSON evidence. It deliberately fails on non-macOS hosts,
-missing agent-test configuration, or missing Accessibility event-posting access;
-do not turn those prerequisites into a skipped unit test. Hosted CI requires a
-managed interactive macOS runner before this command can become a release gate.
-
-After `bun run electron:build`, the release-candidate pairing uses the packaged
-DevRyan application for that same isolated, loopback-only native test:
-
-```bash
-bun run electron:test:native-pointer:packaged -- --output .cache/e2e/bot-catalog-native-pointer/packaged
-```
-
-`bun run visual:bots:acceptance` runs the packaged fixture matrix followed by
-the packaged native-pointer smoke. It intentionally fails when the signed app,
-agent-test configuration, interactive session, or Accessibility permission is
-missing; release operators must record that prerequisite failure rather than
-silently replacing the native test with a synthetic click.
-
-Database migration verification is local-only: run an isolated Supabase stack,
-apply `supabase db reset`, assert forced RLS and browser-role revocations for
-`bot_skill_packages`/`bot_mcp_bindings`, then run `supabase db lint --local`.
-Never use `--linked` or target the production database for this check.
-
-## Isolated runtime audit QA
-
-Use [QA.md](QA.md) for the web/Electron fixture entrypoint, responsive screenshot review, explicit live-provider HTTP smoke and journal correlation workflow. This audit excludes VS Code runtime acceptance; the ordinary full validation contract remains unchanged.
-
-## Release handoff verification
-
-See [Release pipeline](RELEASE_PIPELINE.md). `scripts/release.test.mjs` covers draft creation and reuse, published-version refusal, moved tags, the asset allowlist and updater discovery; `scripts/release-artifacts.test.mjs` and `scripts/release-ci.test.mjs` cover the web and prepared-tree handoffs and Bot image reuse.
+[QA.md](QA.md) covers the isolated web and Electron runner, packaged-app smokes and benchmarks. Release handoff is in [Release pipeline](RELEASE_PIPELINE.md): `scripts/release.test.mjs` covers draft creation and reuse, published-version refusal, moved tags, the asset allowlist and updater discovery; `scripts/release-artifacts.test.mjs` and `scripts/release-ci.test.mjs` cover the web and prepared-tree handoffs and Bot image reuse.

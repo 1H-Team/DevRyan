@@ -3,9 +3,6 @@
 ## Purpose
 This module fetches quota and usage signals for supported providers in the web server runtime.
 
-The [October 10 provider repair audit](../../../../../docs/audits/2026-10-10/provider-repairs/README.md)
-records incident evidence and verification boundaries.
-
 ## Entrypoints and structure
 - `packages/web/server/lib/quota/index.js`: public entrypoint imported by `packages/web/server/index.js`.
 - `packages/web/server/lib/quota/routes.js`: Express route registration for quota endpoints.
@@ -62,11 +59,9 @@ private usage profiles are not imported, migrated or deleted automatically.
 
 Existing `chatgpt-token-sharing` and retired OAuth rows remain metadata-only for
 usage. They return compatible `siwc_usage_unavailable` with a Codex sign-in hint,
-without a provider request. The [built-in credential investigation](../../../../../docs/audits/2026-10-11/builtin-chatgpt-usage/README.md)
+without a provider request. The built-in credential investigation
 returned HTTP 401 `no_matching_rule`; the subsequent isolated native Codex
 probe passed chat and returned HTTP 200 with one recognized allowance window.
-See [the native Codex audit](../../../../../docs/audits/2026-10-11/native-codex-signin/README.md)
-for verification limits.
 
 External OpenCode's compatible OAuth entry (`openai`, `codex`, or `chatgpt`)
 continues to use the existing legacy usage fetcher. This does not establish
@@ -224,5 +219,3 @@ measuring refresh behavior. Request counts and status codes are sufficient.
 
 
 xAI native usage renewal binds the initial in-memory auth snapshot to its selected credential ID and fingerprint through a private WeakMap. `refreshXai` rejects copied snapshots or a replaced runtime owner. The existing startup quota coordinator invokes this same path; it creates no session or model request. Legacy/external-runtime OAuth renewal retains its existing fetcher behavior.
-
-Verification: [xAI startup usage audit](../../../../../docs/audits/2026-10-13/xai-startup-usage/README.md).

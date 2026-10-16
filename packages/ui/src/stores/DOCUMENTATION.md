@@ -50,9 +50,7 @@ existing coalesced trailing refresh when a new change arrived during the read.
 Ordinary hints arriving between retry reads keep the existing transient timer
 intact, so they neither shorten its backoff nor postpone its deadline. Explicit
 immediate refresh remains the existing manual request path.
-The [restart recovery proof](../../../../docs/audits/2026-10-15/session-changes-restart-recovery.json)
-records the observed restart window, exact bounds and focused regressions; actual
-rebuilt runtime qualification remains separate.
+Actual rebuilt runtime qualification remains separate.
 
 ### UI state stores
 

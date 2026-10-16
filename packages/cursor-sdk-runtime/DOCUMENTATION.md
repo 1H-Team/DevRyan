@@ -11,10 +11,9 @@ settlement. It does not inherit the public quick-discovery cap (1.5 seconds by
 default); legacy verification and quick public reads retain that cap. Successful
 account-scoped SDK catalogs still reuse the existing five-minute cache only
 after resolving the current selected credential. This correction adds no
-warming, credential mutation or inference request. The sanitized
-[QA1 incident evidence](../../docs/audits/2026-10-14/qa1-cursor-catalog-timeout.json)
-records the successful 3.781-second discovery and 1.516-second Verify timeout;
-it does not claim a retained physical termination receipt.
+warming, credential mutation or inference request. The QA1 incident
+recorded a successful 3.781-second discovery and a 1.516-second Verify timeout;
+no physical termination receipt was retained.
 
 ## Conversation ownership and completion
 
@@ -106,4 +105,3 @@ these boundaries after persisted reload and actual journal write/read/export.
 `worker-writer.test.js` qualifies delayed and
 failed callbacks plus both bounds. These deterministic checks do not qualify a
 fresh packaged/native build or live provider request.
-Sanitized source and owner proof: [Cursor rectification](../../docs/audits/2026-10-14/cursor-result-rectification.json).

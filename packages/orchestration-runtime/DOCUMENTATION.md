@@ -48,7 +48,6 @@ including fixed metadata, other batch rows and framing. V1 defaults remain
 8 KiB, and native collection derives its ceiling from the constructor-owned
 result contract rather than a returned version flag. This reduces transport
 volume for the measured two-result fixture; latency qualification remains unmet.
-See the [page evaluation](../../docs/audits/2026-10-15/managed-result-page-evaluation/README.md).
 
 Acknowledgement accepts a constructor-only final authorization callback and a
 durable acknowledgement identity. Duplicate acknowledgement succeeds only for
@@ -249,9 +248,6 @@ probe quota reset times, or enter the quota backoff ladder.
   transitions are published on the existing managed-task event channel; terminal
   Error Log context includes bounded phase/cause/count and message/event IDs.
 
-The September 9 incident and verification are recorded in
-[the investigation](../../docs/audits/2026-09-09-managed-transport-recovery.md).
-
 ### Assignment preservation during recovery
 
 Every same-child resume, model switch, transport recovery, empty-output recovery,
@@ -292,7 +288,6 @@ control to the model. An unchanged parked child with a running sibling remains
 attached across bounded private slices. Scalar v1 ready/attention behavior stays
 unchanged. The composed regression is in
 `packages/web/server/lib/opencode/runtime-host/managed-task-attached.test.js`.
-Focused proof: [managed results and Plan cleanup](../../docs/audits/2026-10-14/managed-results-plan-cleanup.json).
 
 Owner adapters provide atomic `load()` and `save()` operations. Legacy records missing `dispatchGroupId` or `dispatchWaveId` hydrate to `null`, and records predating plan-mode task policy hydrate with `readOnly: false`, before validation so upgrades do not quarantine historical ledgers or lock old results. Before every save, the core removes the oldest unreferenced terminal history to enforce 2,000 terminal records, 14 days, and 20 MiB of UTF-8 serialized state. Every task transition clones, validates and serializes the whole ledger, so its size is a per-transition cost; 90 days of history had reached 1,670 records and the 20 MiB cap. Each successfully persisted removal is published before the task event whose commit caused it, and a task removed by its own terminal commit is not republished. This lets long-lived renderers release the same projection without polling or retaining tombstones. Nonterminal work, auto-resuming results, unacknowledged grouped results of an active conversation, and retained attempt lineage are never compacted; new work is rejected honestly when protected state alone cannot fit the byte boundary. A conversation is active while it has unfinished work or while any of its tasks or results changed within the age bound; an unacknowledged result in a conversation idle for longer ages out like other history (`expireUnacknowledged: false`, or `DEVRYAN_ORCHESTRATION_UNACKNOWLEDGED_EXPIRY=0` in the scheduler, keeps it until collected).
 

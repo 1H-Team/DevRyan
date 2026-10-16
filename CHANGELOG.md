@@ -26,8 +26,8 @@ Versions 2.0.13 and 2.0.14 were never published; their contents ship in 2.0.15.
 
 ## [2.0.11] - 2026-10-13
 
-- Renew a rejected xAI access token through the native controller and retry usage once, so xAI usage loads on app launch. Evidence: [xAI startup usage audit](docs/audits/2026-10-13/xai-startup-usage/README.md).
-- Stop showing the session recovery banner during the normal handoff after a session is created. Evidence: [session creation banner audit](docs/audits/2026-10-13/session-creation-banner/README.md).
+- Renew a rejected xAI access token through the native controller and retry usage once, so xAI usage loads on app launch. Evidence: xAI startup usage audit.
+- Stop showing the session recovery banner during the normal handoff after a session is created. Evidence: session creation banner audit.
 - Fix startup failing with `native_cursor_recovery_owner_mismatch` after a runtime upgrade while a Cursor turn's recovery intent was pending. A cloned bundle now adopts intents written by the bundle it was cloned from.
 - Release publication no longer waits for final-DMG GUI startup qualification. Signed Bot images, packaging checks, the exact asset allowlist and digests, and hosted migration verification still gate every release.
 
@@ -37,8 +37,8 @@ Versions 2.0.13 and 2.0.14 were never published; their contents ship in 2.0.15.
 - Remove the record, entry and size limits that made **Prepare recovery for restart** fail with `bundle_reboot_recovery_inventory_invalid` on large project ledgers. Refused preparations are logged, keep the action available, and a fence whose evidence changed can be replaced.
 - Fix the startup runtime upgrade failing with `bundle_symlink_source` after a project ran commands against `node_modules`. The bundle copy now skips the ledger's derived `module-overlays/` links, which are rebuilt on the next run.
 
-Evidence and remaining gaps are recorded in [the incident note](docs/audits/2026-10-13/startup-unsettled-lease/README.md).
-Publication status and the owner waiver are recorded in [the v2.0.10 release record](docs/audits/2026-10-13/release-2.0.10/README.md).
+Evidence and remaining gaps are recorded in the incident note.
+Publication status and the owner waiver are recorded in the v2.0.10 release record.
 
 ## [2.0.9] - 2026-10-13
 
@@ -46,51 +46,51 @@ Publication status and the owner waiver are recorded in [the v2.0.10 release rec
 - Show the startup splash before loading the Electron main bundle, overlap provider and agent requests, and reuse source verification within one upgrade operation. End-to-end performance acceptance remains unmet; no launch-speed improvement is claimed.
 - Require final-installer startup, history, response, screenshot, journal and cleanup evidence before publication, including recovery preparation and same-boot refusal. Actual OS reboot qualification is not a publication gate.
 
-Implementation, local verification and remaining release prerequisites are recorded in [the startup repair audit](docs/audits/2026-10-12/startup-repair/README.md).
-Hosted migration verification and publication status are recorded in [the v2.0.9 release record](docs/audits/2026-10-13/release-2.0.9/README.md).
+Implementation, local verification and remaining release prerequisites are recorded in the startup repair audit.
+Hosted migration verification and publication status are recorded in the v2.0.9 release record.
 
 ## [2.0.8] - 2026-10-12
 
-- Wait for native health and the global event subscription before admitting chat, retry temporary startup failures, preserve setup preferences, and offer sanitized startup diagnostics. Publication now requires startup qualification of the final DMG; implementation checks are recorded in [the startup contract audit](docs/audits/2026-10-12/startup-contract/README.md).
+- Wait for native health and the global event subscription before admitting chat, retry temporary startup failures, preserve setup preferences, and offer sanitized startup diagnostics. Publication now requires startup qualification of the final DMG; implementation checks are recorded in the startup contract audit.
 - Upgrade the reviewed Claude Code runtime to 2.1.280, expose its version and update status in About, and run Claude through the owned SDK transport with explicit cancellation, settlement, and sanitized diagnostics.
 - Recover Cursor model discovery after cold starts, preserve model and effort headers when reopening delegated sessions, and settle cancelled children promptly.
 - Keep skill preparation and completion on stable chat rows, preserve assistant reasoning and text during updates, and tighten orchestration handoff and task removal behavior.
-- Isolated live orchestration completion and its limits are recorded in [the final agent QA record](docs/audits/2026-10-12/live-agent-qa-final.md); earlier failures and repairs are recorded in [the investigation](docs/audits/2026-10-11/live-agent-qa-2309.md).
-- Release qualification and publication are tracked in [the v2.0.8 release record](docs/audits/2026-10-12/release-2.0.8/README.md).
-- Replacement preflight, including the initial validation failure and successful retries, is recorded in [the replacement v2.0.8 audit](docs/audits/2026-10-12/rerelease-2.0.8/README.md).
+- Isolated live orchestration completion and its limits are recorded in the final agent QA record; earlier failures and repairs are recorded in the investigation.
+- Release qualification and publication are tracked in the v2.0.8 release record.
+- Replacement preflight, including the initial validation failure and successful retries, is recorded in the replacement v2.0.8 audit.
 
-- Fix startup failing with `bundle_execution_unsettled` after a managed task or Council call timed out or was stopped before its ledger lease settled. Such calls now cancel their own lease when completion is refused, record their owner for recovery, and startup settles abandoned control leases of the selected bundle before verification while process leases keep their termination checks. Evidence is in [the startup lease audit](docs/audits/2026-10-11/bundle-execution-unsettled/README.md).
+- Fix startup failing with `bundle_execution_unsettled` after a managed task or Council call timed out or was stopped before its ledger lease settled. Such calls now cancel their own lease when completion is refused, record their owner for recovery, and startup settles abandoned control leases of the selected bundle before verification while process leases keep their termination checks. Evidence is in the startup lease audit.
 
 ## [2.0.7] - 2026-10-11
 
-- Keep internal title, commit and pull request helpers tool-free across native hosts. Bound managed-agent admission and Cursor catalog discovery, propagate cancellation before task creation, and retain explicit native authority and process-settlement failures. Use native-supported read-only permissions and avoid repeated session-registration lock acquisition. Deterministic checks and deferred attended verification are recorded in [the delegation audit](docs/audits/2026-10-11/live-agent-qa.md).
+- Keep internal title, commit and pull request helpers tool-free across native hosts. Bound managed-agent admission and Cursor catalog discovery, propagate cancellation before task creation, and retain explicit native authority and process-settlement failures. Use native-supported read-only permissions and avoid repeated session-registration lock acquisition. Deterministic checks and deferred attended verification are recorded in the delegation audit.
 
-- Preserve exact Cursor reasoning-effort selections for managed agents and allow Plan-mode Explorer on native hosts with enforced read-only tools. Bind model discovery and recovery to verified native task authority. Implementation and deferred live checks are recorded in [the delegation audit](docs/audits/2026-10-11/live-agent-qa.md); replacement release checks are recorded in [the delegation release audit](docs/audits/2026-10-11/rerelease-delegation-2.0.7/README.md).
+- Preserve exact Cursor reasoning-effort selections for managed agents and allow Plan-mode Explorer on native hosts with enforced read-only tools. Bind model discovery and recovery to verified native task authority. Implementation and deferred live checks are recorded in the delegation audit; replacement release checks are recorded in the delegation release audit.
 
-- Load the session list alongside required directory startup requests, bound requests to 30 seconds, and expose Retry when preparation fails. Cancel obsolete bootstrap owners and preserve newer live session state. Isolated measurements show a 15.68% median improvement when reopening; first-launch improvement did not pass the stricter performance gate. Details are recorded in [the startup audit](docs/audits/2026-10-11/startup-speed/README.md).
-- Allow archive operations after recovered native input settles, while retaining authorization and active-work safeguards. Verification is recorded in [the session archive audit](docs/audits/2026-10-11/session-archive/README.md).
-- Startup and archive replacement qualification is recorded in [the release candidate audit](docs/audits/2026-10-11/rerelease-startup-2.0.7/README.md).
+- Load the session list alongside required directory startup requests, bound requests to 30 seconds, and expose Retry when preparation fails. Cancel obsolete bootstrap owners and preserve newer live session state. Isolated measurements show a 15.68% median improvement when reopening; first-launch improvement did not pass the stricter performance gate. Details are recorded in the startup audit.
+- Allow archive operations after recovered native input settles, while retaining authorization and active-work safeguards. Verification is recorded in the session archive audit.
+- Startup and archive replacement qualification is recorded in the release candidate audit.
 
-- Use OpenCode’s native Codex browser sign-in for desktop/web chat and ChatGPT plan usage, removing the separate usage sign-in. Existing token-sharing connections keep their chat access; allowance data requires a Codex sign-in. Refresh remains owned by OpenCode under the host’s serialized queue. Live chat and one returned usage window are recorded in [the native Codex audit](docs/audits/2026-10-11/native-codex-signin/README.md); the weekly window remains unverified.
+- Use OpenCode’s native Codex browser sign-in for desktop/web chat and ChatGPT plan usage, removing the separate usage sign-in. Existing token-sharing connections keep their chat access; allowance data requires a Codex sign-in. Refresh remains owned by OpenCode under the host’s serialized queue. Live chat and one returned usage window are recorded in the native Codex audit; the weekly window remains unverified.
 
-- Fix adding a dedicated Claude profile from a project outside the runtime's reviewed project map, where every attempt failed before sign-in opened. Enrollment now binds to the default location, failures are journaled by code, and the page says whether loading, starting or confirming failed. Verification and its limits are recorded in [the dedicated sign-in audit](docs/audits/2026-10-11/claude-dedicated-signin/README.md).
+- Fix adding a dedicated Claude profile from a project outside the runtime's reviewed project map, where every attempt failed before sign-in opened. Enrollment now binds to the default location, failures are journaled by code, and the page says whether loading, starting or confirming failed. Verification and its limits are recorded in the dedicated sign-in audit.
 - Shorten the Claude provider page: compatibility mode moves into Connection Details, and the sign-in status and dedicated profile copy are reduced to one line each.
-- Retain structured archive failure details in the session UI and record bounded archive failures in the diagnostic journal. Native archive/unarchive verification and the original incident’s evidence limits are recorded in [the session archive audit](docs/audits/2026-10-11/session-archive/README.md).
+- Retain structured archive failure details in the session UI and record bounded archive failures in the diagnostic journal. Native archive/unarchive verification and the original incident’s evidence limits are recorded in the session archive audit.
 
-- Replacement qualification is recorded in [the replacement v2.0.7 audit](docs/audits/2026-10-11/rerelease-2.0.7/README.md). Original release qualification and hosted migration verification are recorded in [the v2.0.7 release audit](docs/audits/2026-10-11/release-2.0.7/README.md).
-- Use OpenCode’s built-in Sign in with ChatGPT for desktop/web, retaining host admission and serialized refresh while passing native requests and responses through. Stored SIWC and legacy Codex logins require a new sign-in. Usage uses the native Codex sign-in; images and Bots require an OpenAI API key. OAuth Bots/managed users await a follow-up pass. Deterministic verification and outstanding live checks are tracked in [the built-in sign-in audit](docs/audits/2026-10-11/builtin-chatgpt-signin/README.md).
-- Retire the desktop/web request rewriting that caused ChatGPT tool-bearing turns to fail with "Missing required parameter: 'input[1].role'". The earlier encoder repair and live reproduction are recorded in [the additional tools role audit](docs/audits/2026-10-11/siwc-additional-tools-role/README.md); the replacement built-in flow has not been verified against the live provider.
+- Replacement qualification is recorded in the replacement v2.0.7 audit. Original release qualification and hosted migration verification are recorded in the v2.0.7 release audit.
+- Use OpenCode’s built-in Sign in with ChatGPT for desktop/web, retaining host admission and serialized refresh while passing native requests and responses through. Stored SIWC and legacy Codex logins require a new sign-in. Usage uses the native Codex sign-in; images and Bots require an OpenAI API key. OAuth Bots/managed users await a follow-up pass. Deterministic verification and outstanding live checks are tracked in the built-in sign-in audit.
+- Retire the desktop/web request rewriting that caused ChatGPT tool-bearing turns to fail with "Missing required parameter: 'input[1].role'". The earlier encoder repair and live reproduction are recorded in the additional tools role audit; the replacement built-in flow has not been verified against the live provider.
 
 ## [2.0.6] - 2026-10-10
 
-- Fix startup preparation when a sealed runtime manifest exceeds 4 MiB, using the shared 32 MiB limit while retaining integrity checks. Keep the original failure and Retry visible when startup settings cannot be read. Isolated packaged evidence is recorded in [the runtime preparation audit](docs/audits/2026-10-10/runtime-preparation/README.md).
-- Route Sign in with ChatGPT primary turns through HTTP, including requests prepared for WebSocket transport, and record sanitized provider refusal reasons. Transport regression and isolated startup evidence are recorded in [the primary transport audit](docs/audits/2026-10-10/siwc-primary-transport/README.md).
+- Fix startup preparation when a sealed runtime manifest exceeds 4 MiB, using the shared 32 MiB limit while retaining integrity checks. Keep the original failure and Retry visible when startup settings cannot be read. Isolated packaged evidence is recorded in the runtime preparation audit.
+- Route Sign in with ChatGPT primary turns through HTTP, including requests prepared for WebSocket transport, and record sanitized provider refusal reasons. Transport regression and isolated startup evidence are recorded in the primary transport audit.
 - Repair Sign in with ChatGPT responses when the provider omits the SSE content type, while retaining stream validation and completion checks. Prevent concurrent xAI requests from racing the same credential refresh, and restore inspection of ordinary Claude accounts.
 - Add an optional Codex connection for OpenAI usage without changing the selected inference sign-in. Show usage source and account identity, weekly windows, and reset-credit expiry; distinguish unavailable inventory from a confirmed zero balance.
 - Preserve useful provider failure reasons in live and restored sessions, and redact sensitive provider metadata from diagnostics.
 - Add startup phase timings and renderer readiness diagnostics. About keeps the app version and OpenCode update status together. Startup import experiments remain unapplied; no launch-speed improvement is claimed.
 
-Provider verification and limitations are recorded in [the provider repair audit](docs/audits/2026-10-10/provider-repairs/README.md). Startup diagnostics are recorded in [the startup import evaluation](docs/audits/2026-10-10/startup-imports/README.md). Original release qualification is recorded in [the v2.0.6 release evidence](docs/audits/2026-10-10/release-2.0.6/README.md); replacement qualification is recorded in [the replacement release evidence](docs/audits/2026-10-10/rerelease-2.0.6/README.md).
+Provider verification and limitations are recorded in the provider repair audit. Startup diagnostics are recorded in the startup import evaluation. Original release qualification is recorded in the v2.0.6 release evidence; replacement qualification is recorded in the replacement release evidence.
 
 ## [2.0.5] - 2026-10-10
 
@@ -98,31 +98,31 @@ Provider verification and limitations are recorded in [the provider repair audit
 - With Sign in with ChatGPT, Settings → Providers lists and counts only the OpenAI models the account can use. A saved default that needs an API key resolves to a usable OpenAI model. API-key accounts keep their full list when a ChatGPT account lookup fails or the project directory is not a reviewed location.
 - Accept xAI sign-in rows when reading provider credential metadata.
 
-Source verification is recorded in [the usage and model list record](docs/audits/2026-10-10/usage-models/README.md); real-account verification is pending.
+Source verification is recorded in the usage and model list record; real-account verification is pending.
 
-- Recover a stale background-service owner immediately, report native startup health and preparation phases, and stop renderer polling when startup fails. Manual Retry starts a fresh attempt. Native catalog failures now record sanitized failure stages. Three isolated packaged launches and three first launches after a 2.0.20 → 2.0.26 upgrade reached usable chat. Scope, measurements and limitations are recorded in [the startup reliability audit](docs/audits/2026-10-09/startup-reliability/README.md).
-- Let startup finish when a saved OpenAI login uses a retired authentication method. Reconnect through Sign in with ChatGPT before using that provider. Deliver repaired native host code even when the OpenCode version stays the same, retaining the previous bundle for rollback. Defer optional agent/chat warmup until the app is usable and automatic update discovery until its normal interval. Isolated startup and same-version delivery checks are recorded in [the model catalog repair audit](docs/audits/2026-10-10/model-catalog/README.md).
+- Recover a stale background-service owner immediately, report native startup health and preparation phases, and stop renderer polling when startup fails. Manual Retry starts a fresh attempt. Native catalog failures now record sanitized failure stages. Three isolated packaged launches and three first launches after a 2.0.20 → 2.0.26 upgrade reached usable chat. Scope, measurements and limitations are recorded in the startup reliability audit.
+- Let startup finish when a saved OpenAI login uses a retired authentication method. Reconnect through Sign in with ChatGPT before using that provider. Deliver repaired native host code even when the OpenCode version stays the same, retaining the previous bundle for rollback. Defer optional agent/chat warmup until the app is usable and automatic update discovery until its normal interval. Isolated startup and same-version delivery checks are recorded in the model catalog repair audit.
 - Expand isolated startup, model-catalog and retained-bundle upgrade verification, including packaged headless service launches.
-- Remove old disposable QA and synthetic benchmark payloads while preserving source, retained evidence and installed-app data. Details are in [the storage cleanup record](docs/audits/2026-10-09/storage-cleanup/README.md).
-- Remove generated codemaps, finished plans and unreferenced audit evidence, and make `docs:validate` reject codemaps and unretained audit files. Details are in [the documentation cleanup record](docs/audits/2026-10-09/docs-cleanup/README.md).
+- Remove old disposable QA and synthetic benchmark payloads while preserving source, retained evidence and installed-app data. Details are in the storage cleanup record.
+- Remove generated codemaps, finished plans and unreferenced audit evidence, and make `docs:validate` reject codemaps and unretained audit files. Details are in the documentation cleanup record.
 - Accept a retained native runtime bundle of any OpenCode 2.x release for rollback, running its own controller, instead of only the listed 2.0.20, 2.0.24 and 2.0.26 releases. Cross-release clones still require a reviewed release pair.
 
-Release verification for the current candidate is recorded in [the usage repair release evidence](docs/audits/2026-10-10/rerelease-usage-2.0.5/README.md). Prior release verification is recorded in [the replacement v2.0.5 release evidence](docs/audits/2026-10-10/rerelease-2.0.5/README.md); [the earlier publication evidence](docs/audits/2026-10-10/release-2.0.5/README.md) is retained as history.
+Release verification for the current candidate is recorded in the usage repair release evidence. Prior release verification is recorded in the replacement v2.0.5 release evidence; the earlier publication evidence is retained as history.
 
 ## [2.0.4] - 2026-10-09
 
-- OpenCode Storage (Settings → About → Data & Storage) is now read-only and says so. A native OpenCode 2 database is reported as needing no cleanup instead of as an unknown layout. Compact Now and the "Cleanup runs before every OpenCode launch" notice are removed: DevRyan runs OpenCode 2, and since the move to the native runtime the OpenCode 1 cleanup no longer ran, because nothing called its pre-launch hook. For an OpenCode 1 database, Dry Run still reports what a cleanup would remove. Details are in [the storage audit](docs/audits/2026-10-09/opencode-storage-v2/README.md).
+- OpenCode Storage (Settings → About → Data & Storage) is now read-only and says so. A native OpenCode 2 database is reported as needing no cleanup instead of as an unknown layout. Compact Now and the "Cleanup runs before every OpenCode launch" notice are removed: DevRyan runs OpenCode 2, and since the move to the native runtime the OpenCode 1 cleanup no longer ran, because nothing called its pre-launch hook. For an OpenCode 1 database, Dry Run still reports what a cleanup would remove. Details are in the storage audit.
 
-- Upgrade a retained native runtime at startup when a DevRyan update pins a newer OpenCode version, instead of failing with "Native runtime is not ready: version_mismatch". The selected bundle is cloned onto the shipped runtime before any controller starts, and the previous bundle stays as the rollback target. Clones now also qualify fresh-install databases, which never carry the legacy migration table. A runtime that still misses the pin is refused before launch with the version pair and the recorded upgrade failure. Evidence is in [the startup upgrade audit](docs/audits/2026-10-09/startup-bundle-upgrade/README.md).
+- Upgrade a retained native runtime at startup when a DevRyan update pins a newer OpenCode version, instead of failing with "Native runtime is not ready: version_mismatch". The selected bundle is cloned onto the shipped runtime before any controller starts, and the previous bundle stays as the rollback target. Clones now also qualify fresh-install databases, which never carry the legacy migration table. A runtime that still misses the pin is refused before launch with the version pair and the recorded upgrade failure. Evidence is in the startup upgrade audit.
 
-- Upgrade the bundled native runtime and Bot image to OpenCode 2.0.26. Retained 2.0.24 and 2.0.20 bundles keep their own controller; a 2.0.26 database never clones into an older release. The bundled runtime keeps the 2.0.24 external-directory permission prompt that OpenCode 2.0.26 removed from agent defaults, and still loads OpenCode's configuration policy plugin. Qualification is recorded in [the runtime upgrade evidence](docs/audits/2026-10-09/opencode-2.0.26/README.md).
+- Upgrade the bundled native runtime and Bot image to OpenCode 2.0.26. Retained 2.0.24 and 2.0.20 bundles keep their own controller; a 2.0.26 database never clones into an older release. The bundled runtime keeps the 2.0.24 external-directory permission prompt that OpenCode 2.0.26 removed from agent defaults, and still loads OpenCode's configuration policy plugin. Qualification is recorded in the runtime upgrade evidence.
 - Add Check for Updates to the OpenCode section of Settings → About. It reports the latest upstream stable 2.x release on request; bundled runtime updates still arrive through DevRyan updates.
-- Reduce mutation ledger storage by sharing untouched file baselines with existing content objects, compacting older baseline records, and reclaiming unreachable Git objects. Existing Revert and Redo history is preserved; older hosts refuse the compacted records. Measurements and retention limits are recorded in [the ledger evidence](docs/audits/2026-10-09/ledger-retention/README.md).
+- Reduce mutation ledger storage by sharing untouched file baselines with existing content objects, compacting older baseline records, and reclaiming unreachable Git objects. Existing Revert and Redo history is preserved; older hosts refuse the compacted records. Measurements and retention limits are recorded in the ledger evidence.
 - Avoid verifying the same harness ledger twice during runtime startup while retaining verification for every launch, and enable the reviewed provider recovery policy for OpenCode 2.0.26.
 - Keep development Electron QA on Chromium's mock keychain so its private profile cannot trigger a macOS login-keychain reset dialog.
 - Start standalone web/Electron QA through the verified private native bundle and synthetic wire facade used by matrix QA, replacing retired external-runtime flags that caused startup rejection. Missing native artifacts fail before an app launches.
 
-Release verification is recorded in [the release evidence](docs/audits/2026-10-09/release-2.0.4/README.md) and [the re-release evidence](docs/audits/2026-10-09/rerelease-2.0.4/README.md).
+Release verification is recorded in the release evidence and the re-release evidence.
 
 ## [2.0.3] - 2026-10-08
 
@@ -130,13 +130,13 @@ Release verification is recorded in [the release evidence](docs/audits/2026-10-0
 - Clean up disposable QA, test and benchmark runtime payloads after successful or interrupted runs, with isolated profiles and shared dependency caches.
 - Add cache reporting and pruning with retention rules that preserve cited evidence, pinned runs, active packages and required build inputs. Preview scans tolerate entries removed during enumeration.
 
-Release verification is recorded in [the release evidence](docs/audits/2026-10-08/release-2.0.3/README.md).
+Release verification is recorded in the release evidence.
 
 ## [2.0.2] - 2026-10-08
 
-Candidate qualification is tracked in [the release evidence](docs/audits/2026-10-05-release-2.0.2/README.md). This entry does not establish publication or installed-platform acceptance.
+Candidate qualification is tracked in the release evidence. This entry does not establish publication or installed-platform acceptance.
 
-- Upgrade the bundled native runtime to OpenCode 2.0.24. Retained 2.0.20 bundles keep their own controller and guarded credential recovery. Additional qualification and remaining live acceptance are recorded in [the runtime upgrade evidence](docs/audits/2026-10-07-opencode-2.0.24/README.md).
+- Upgrade the bundled native runtime to OpenCode 2.0.24. Retained 2.0.20 bundles keep their own controller and guarded credential recovery. Additional qualification and remaining live acceptance are recorded in the runtime upgrade evidence.
 - Import hosted Bot configuration and current avatars into the local catalog while preserving local history and files. Imported Bots, routines and integrations stay inactive until their local resources and credentials are ready; interrupted transfers can resume.
 - Show local Bot hosting and Docker status in About, restore admitted account authentication through background-service tunnels, and make ChatGPT enrollment recoverable when the first saved credential is selected before completion.
 - Add DevRyan-owned Sign in with ChatGPT for eligible plan usage, with separate OpenAI API-key authentication. Saved registrations remain distinct across workspaces; sign-in without plan permission stays signed in and requires explicit reauthorization before subscription inference. Legacy Codex OAuth requires reconnect.

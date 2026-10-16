@@ -1,7 +1,6 @@
 // Historical verified release profiles; all are stale after the 0.38.1 browser plugin change.
-// Original hashes/evidence are retained; live requalification is required. Evidence: docs/audits/2026-09-24-duplicate-routes/<route>/ (current: companion 2.1.0
-// on OpenCode 1.18.32, matched by companion build identity), docs/audits/2026-09-24-companion-requalification/
-// and docs/audits/2026-09-20-context-deduplication/live-acceptance.json (stale predecessors).
+// Original hashes are retained; live requalification is required (current profile: companion 2.1.0
+// on OpenCode 1.18.32, matched by companion build identity; the others are stale predecessors).
 // Changing plugin bytes, native executable, model, effort or transport requires qualification.
 const profiles = [
   {

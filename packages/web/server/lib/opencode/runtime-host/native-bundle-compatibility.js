@@ -33,7 +33,7 @@ export const REVIEWED_NATIVE_CLONE_LAYOUT = Object.freeze({
 // Every 2.x install creates its database from an empty source, without that
 // table. The actual 2.0.20 controller's fresh database and a fresh 2.0.26
 // database have this identical DDL; their `migration` rows differ only by the
-// 2.0.26 data-only migration (docs/audits/2026-10-09/startup-bundle-upgrade).
+// 2.0.26 data-only migration.
 export const REVIEWED_NATIVE_FRESH_CLONE_LAYOUT = Object.freeze({
   schemaSha256: '32957fae72f298bc107761ba6b9e3336fdee06a70f9be26e189a54e72f7898ec',
   migrationsSha256: null,

@@ -9,8 +9,7 @@ control flags remain unknown until an explicit refresh. Healthy statuses retain
 the normal TTL. Focus checks use the cache; explicit Retry, internal execution
 recovery and Bot controls retain live probing. Invalidation drops the cached negative.
 This proves a narrow demand suppression, not global Bot inactivity, and never
-disables active work. Source/owner checks are recorded in
-[compatibility and receipt progress](../../../../../docs/audits/2026-10-14/native-compatibility-receipt-progress.json).
+disables active work.
 
 The local catalog keeps its required initial startup/retention attempt for an
 existing installation. After a typed Docker stopped/not-installed result it
@@ -26,12 +25,10 @@ OpenAI OAuth (`chatgpt-browser`, `chatgpt-token-sharing` and retired methods) is
 
 The cross-component operator and security runbook is `docs/BOTS_RUNTIME.md`.
 This document remains the implementation contract for the server control plane.
-Retry repair verification and outstanding live acceptance are recorded in
-[the safe retry repair record](../../../../../docs/audits/2026-08-30-bot-failure-repair/safe-retry-repair.md).
 
 ## Current simplified product boundary
 
-The "Current simplified product contract" section of `docs/BOTS_RUNTIME.md` is the current user-facing contract (history: [simplification research](../../../../../docs/audits/2026-08-27/bots-simplification/README.md)).
+The "Current simplified product contract" section of `docs/BOTS_RUNTIME.md` is the current user-facing contract.
 New and newly saved Bots are OpenCode-only, receive server-enforced file,
 runtime, public-internet, and persistent-computer defaults, and clear MCP plus
 operating/prohibited/advanced instruction layers. Optional per-Bot Skills remain

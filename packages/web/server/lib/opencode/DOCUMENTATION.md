@@ -32,8 +32,6 @@ neither an admission nor a new watchdog or diagnostic heartbeat.
 The controller's provider policy reads translated native
 `configuration.compaction.buffer` before legacy compatibility `reserved`,
 including explicit zero. The legacy projector remains a separate boundary.
-Focused compatibility and progress evidence is recorded in
-[the compatibility slice](../../../../../docs/audits/2026-10-14/native-compatibility-receipt-progress.json).
 
 Cursor runtime-status reads authentication presence through the selected native
 integration's credential-metadata owner at the exact registered directory.
@@ -52,7 +50,7 @@ Only the selected native generation-2 bundle can execute work. Scoped Revert/Red
 
 The native conversation port uses stage/clear with `files: false`, under an exact current mutation-ledger transaction and admission-owner permission. The ledger owns file publication, acknowledged target cancellation, conflict checks and recovery. Unrelated sessions can continue during qualified owned reverts. Imported history and receipts remain inspectable, but pre-capture edits without a native ledger transaction cannot be undone or redone. An interrupted compatibility-only record remains recovery-required; it does not authorize replay on the native runtime.
 
-See the [execution contract](../../../../../docs/CONCURRENT_REVERT.md). Historical verification audits describe their original runtime, not current native qualification.
+See the [execution contract](../../../../../docs/CONCURRENT_REVERT.md).
 
 ## Native Stop during primary handoff
 
@@ -236,7 +234,6 @@ refresh or a second enrollment. Other OAuth methods return usage unavailable.
 Usage publishes only provider windows and opaque connection identity, never a
 credential. Bots and managed users on OAuth still fail with
 `bot_opencode_provider_authentication` (401); API-key Bots are unaffected.
-See the [native Codex audit](../../../../../docs/audits/2026-10-11/native-codex-signin/README.md).
 
 - `readAuthFile()`: Reads and parses `~/.local/share/opencode/auth.json`.
 - `writeAuthFile(auth)`: Writes auth file with automatic backup.
@@ -825,8 +822,7 @@ preserves unchanged object references and never merges metadata into options.
 
 Regression coverage lives in the handoff, HTTP-hotfix, model-default-thinking and
 mounted ModelControls hydration tests. The opt-in isolated live comparison is
-`scripts/qa/meridian-designer-continuity.mjs`; see
-`docs/audits/2026-09-06-designer-continuity.md` for evidence and limitations.
+`scripts/qa/meridian-designer-continuity.mjs`.
 
 ## Harness skill discovery
 
@@ -848,23 +844,18 @@ The shared title coordinator uses one 30-second deadline for configured selectio
 
 A resolved model or final derived candidate enters the existing atomic outbox before projection. Failed persistence pauses after three cycles with 1s/2s retry delays. Busy or missing-idle waiting does not count. Reopening requires a canonical user record and the private native accepted-input metadata (`origin: human`), not caller text or replay of the last accepted ID. A newly verified human input can replace the source authorization for the remaining pending persistence cycle without resetting its attempts; only a paused cycle reopens. Native rename compares the title it replaces, and manual rename remains authoritative during pause and restart recovery.
 
-Managed native child titles enroll from the canonical accepted-user event after the constructor-owned dispatch seals the original source. The private managed source binding preserves its actual origin, which may be `unknown`; it grants nothing alone. `native-managed-title-owner.js` requires the exact durable assignment, originating assistant/control-call identities, current root objective and cancellation generation, controller/configuration, child selection, permissions, and the ordered canonical source. Starting, running, completed and failed assignments may title their accepted source while cancellation and replacement refuse it. Root and child human persistence reopening use a separate exact latest-human witness, bounded ancestry and fresh root/child permissions. Canonical reads and asynchronous scope checks repeat at physical helper/rename boundaries. The optional helper rename source ID is strictly typed and remains private. Managed witness checks share the original generation deadline and cannot buy another model budget after refusal. An unresolved delegated candidate whose source controller/configuration no longer matches after restart retains its candidate, source and attempts, then pauses after the existing three persistence cycles with `native_managed_title_source_invalid`. Historical source markers cannot renew authority; a fresh latest canonical human source or manual rename is required. Persisted titles restore without another helper request. The [sanitized title scope audit](../../../../../docs/audits/2026-10-14/native-title-scope.json) records this limit and the pending compiled gates.
+Managed native child titles enroll from the canonical accepted-user event after the constructor-owned dispatch seals the original source. The private managed source binding preserves its actual origin, which may be `unknown`; it grants nothing alone. `native-managed-title-owner.js` requires the exact durable assignment, originating assistant/control-call identities, current root objective and cancellation generation, controller/configuration, child selection, permissions, and the ordered canonical source. Starting, running, completed and failed assignments may title their accepted source while cancellation and replacement refuse it. Root and child human persistence reopening use a separate exact latest-human witness, bounded ancestry and fresh root/child permissions. Canonical reads and asynchronous scope checks repeat at physical helper/rename boundaries. The optional helper rename source ID is strictly typed and remains private. Managed witness checks share the original generation deadline and cannot buy another model budget after refusal. An unresolved delegated candidate whose source controller/configuration no longer matches after restart retains its candidate, source and attempts, then pauses after the existing three persistence cycles with `native_managed_title_source_invalid`. Historical source markers cannot renew authority; a fresh latest canonical human source or manual rename is required. Persisted titles restore without another helper request.
 
-The private `readUserMessage` boundary preserves the exact validated native user text alongside its original metadata. Managed title recollection checks those bytes against the sealed source; the public projection cannot supply that proof. Dropping or normalizing the private text would reject a valid managed source. Accepted-command and human-input callers retain their metadata, session and directory checks. The [source-text boundary audit](../../../../../docs/audits/2026-10-14/native-managed-title-source-text.json) records the canonical incident proof and separates targeted qualification from the compiled lifecycle gate.
+The private `readUserMessage` boundary preserves the exact validated native user text alongside its original metadata. Managed title recollection checks those bytes against the sealed source; the public projection cannot supply that proof. Dropping or normalizing the private text would reject a valid managed source. Accepted-command and human-input callers retain their metadata, session and directory checks.
 
 `session_title_generation` records safe IDs, candidate/native/expected lengths, equality and provenance flags, model tuple/source, timings, bounded failure reasons and enumerated native refusal codes. Managed input capture failures, including accepted-user event triggers, retain the attempted source ID and the allowlisted refusal code instead of failing silently. Neither titles, raw exceptions nor source/job hashes enter diagnostics. `package-model-title-lane.mjs` makes actual compiled helper inference → one native rename → supervised restart restoration mandatory for full package shipping qualification; derived-only evidence fails.
-
-## History
-
-History: the OpenCode 2 upgrade plans are archived in [audits/2026-10-05/opencode-v2-handoff](../../../../../docs/audits/2026-10-05/opencode-v2-handoff/README.md).
 
 ## Archive diagnostics
 
 Archive facade failures emit `session_archive_failed` to the diagnostic journal,
 correlated by session ID. The payload contains only the archive/unarchive action,
 a bounded machine error code, and HTTP status; messages, directories, and session
-content are omitted. The [archive investigation](../../../../../docs/audits/2026-10-11/session-archive/README.md)
-records live diagnostic limits and isolated native archive/unarchive coverage.
+content are omitted.
 
 ## Native startup and retained versions
 
@@ -919,6 +910,3 @@ startup evidence even when Effect marks them ignored for general reporting.
 The project archive migration raises the clone migration level to 2: existing
 reviewed 2.0.20/24/26 source layouts can upgrade, but migrated 2.0.30 databases
 cannot clone into an older release. Rollback retains the original database.
-
-The 2.0.30 compiled upgrade and rollback evidence is retained in
-[the upgrade audit](../../../../../docs/audits/2026-10-16/opencode-2.0.30/README.md).

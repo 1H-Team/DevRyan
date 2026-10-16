@@ -263,8 +263,6 @@ The real dispatcher journey is `scripts/verify-concurrent-revert-execution.mjs`.
 Its isolated bootstrap uses a mock OS keychain, private profile and home, and
 disables background Bots and protocol registration. Web and packaged-Electron
 Revert UI journeys run through `scripts/qa/run.mjs` (see [QA.md](QA.md)).
-Verification results and platform availability are recorded in the
-[implementation audit](audits/2026-09-20-concurrent-revert/README.md).
 
 ## Execution admission deadlines
 
@@ -313,9 +311,6 @@ sanitized failure notice even when no assistant exists or provider recovery is
 unavailable. Viewed state does not hide it; a newer authoritative successful
 completion resolves it. Sanitized classifications survive reload in the bounded
 notification store. Failed grouped tools are labelled as failures.
-
-See the [2026-09-21 implementation report](audits/2026-09-21-plan-implementation/README.md)
-for current validation, platform limits and rollback guidance.
 
 Preparation polling spends the same request budget on identity checks, lease lookup and waiting. Poll waits reserve one second for the response and return `preparing` when the remaining budget is exhausted. Completed enumeration, unchanged-file checks and reconciliation batches advance the progress meter. Bounded `identity_lookup`, `lease_lookup` and `poll_wait` diagnostic phases distinguish polling overhead from reconciliation. Cleanup failures are reported separately without replacing the preparation error. Compact skill rows retain the skill name and show loaded or failed outcomes, including sanitized preparation errors.
 

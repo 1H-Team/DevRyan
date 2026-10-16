@@ -42,9 +42,6 @@ revision/bundle, recovery, or advanced-instruction configuration.
 - **Confirmations** — consequential actions and reconciliation.
 - **Shared** — files produced or shared in the current conversation.
 
-History: [simplification research and acceptance criteria](audits/2026-08-27/bots-simplification/README.md).
-History: [bot upgrade implementation and verification](audits/2026-08-31/bot-upgrade-verification/README.md).
-
 ### Conversation
 
 The conversation is shaped like a messaging thread. The sidebar row shows

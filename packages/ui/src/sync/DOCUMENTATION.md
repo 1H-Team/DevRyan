@@ -157,7 +157,7 @@ their existing optimistic rollback behavior. `SessionCreationStatus` subscribes
 to the current draft's attempt and a boolean pending-send selector for its draft
 or created session controller. It stays hidden during preparation, creation and
 the active send handoff, then renders retained-draft recovery controls for unknown
-or late-created outcomes. See the [banner verification](../../../../docs/audits/2026-10-13/session-creation-banner/README.md).
+or late-created outcomes.
 Flush raw composer text before taking the submission snapshot. Promotion compares
 that raw text and the attachment mutation revision, not the transformed prompt.
 Late persistence cannot recreate a deleted/promoted draft, and a failed first
@@ -921,7 +921,7 @@ const useInputStore = create(() => ({ pendingInput: "" }))
 
 ### Reducer lookup measurement
 
-Part snapshot and delta handlers reuse one owning-message lookup for assistant normalization. The exact-session presence check remains separate from legacy unscoped lookup so incomplete-snapshot recovery is unchanged. `bun run perf:reducer` measures this path without rendering; reviewed before/after measurements live in `docs/audits/2026-09-05-cleanup/performance.md`. The session-branch subscription test uses a real Zustand store to reject unrelated notifications and verify unsubscribe.
+Part snapshot and delta handlers reuse one owning-message lookup for assistant normalization. The exact-session presence check remains separate from legacy unscoped lookup so incomplete-snapshot recovery is unchanged. `bun run perf:reducer` measures this path without rendering. The session-branch subscription test uses a real Zustand store to reject unrelated notifications and verify unsubscribe.
 
 ## Captured thinking selection
 
@@ -973,5 +973,3 @@ session switching/remounts, explicit Default, model changes and the actual
 optimistic dispatch boundary with controlled transport promises.
 
 Session error notifications persist only bounded classifications and safe display text alongside completion read state. Raw exception stacks and provider bodies are never persisted. Viewing a session does not resolve its failure notice. A newer canonical user turn (including a Plan retry) supersedes proven older same-session failures; live user parts and canonical history pages provide this authority, while optimistic rows and synthetic maintenance wakes do not. Persisted owning user IDs/server timestamps avoid comparing server chronology with renderer receipt clocks. Legacy keyed failures can use canonical history order; uncorrelated legacy notices and uncorrelated delayed error events remain conservative until successful completion. A newer authoritative successful completion also resolves captured older failures.
-
-History: [session creation verification record](../../../../docs/audits/2026-09-24/session-creation/README.md).

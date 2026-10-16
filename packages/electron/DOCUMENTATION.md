@@ -26,10 +26,7 @@ Background service is opt-in through `enableBackgroundBots`. Fresh and app-bound
 
 Connect Remote remains available for connecting the desktop interface to an existing remote DevRyan server.
 
-The stable release workflow admits one immutable version/source and draft release
-ID before preparation. The existing finalizer alone uploads exact branded scope
-assets; it requires the final DMG's short native GUI smoke. Three read-only
-macOS candidate rehearsals and separate frozen-baseline compiled upgrade/rollback
-qualification precede the tag run. Public docs archives remain workflow artifacts.
-See [release pipeline](../../docs/RELEASE_PIPELINE.md) for retry, digest and retention
-contracts; the eleven-scenario startup qualification retains its separate receipt.
+A release is one tag push: `.github/workflows/release.yml` builds, packages and publishes
+the single branded `DevRyan-<version>-arm64.dmg` asset. See
+[release pipeline](../../docs/RELEASE_PIPELINE.md) for the job graph, retries and
+updater contract.

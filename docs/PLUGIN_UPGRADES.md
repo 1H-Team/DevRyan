@@ -102,8 +102,7 @@ tools. Synthetic token values cannot establish real cache or quota performance.
 Do not disable process-identity or lock checks to accommodate a restricted host.
 Linux evidence is supplemental to unavailable macOS/native acceptance.
 
-Only after those checks pass, use the existing isolated quota-study tools and
-the [September 7 investigation](audits/2026-09-07-claude-quota.md). For an upgrade
+Only after those checks pass, use the existing isolated quota-study tools. For an upgrade
 comparison adapt their version-specific preparation and entrypoints, retaining
 the corrected baseline patch. Keep the same model, effort, prompt mode and
 authored editing workload across arms. Require independently verified completed

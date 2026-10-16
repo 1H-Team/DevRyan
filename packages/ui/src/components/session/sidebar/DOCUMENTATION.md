@@ -3,7 +3,7 @@
 ## Refactor result
 
 - `SessionSidebar.tsx` now acts mainly as orchestration; core logic moved to focused hooks/components.
-- Sidebar is now a single multi-project tree: `recent` top section, then projects, then worktrees/archived groups, then sessions.
+- Sidebar is now a single multi-project tree: projects, then worktrees/archived groups, then sessions.
 - `NavRail` is no longer part of sidebar/navigation flow.
 - Git projects render the primary checkout branch as a normal icon-bearing group; non-Git sessions remain directly under the project without a synthetic group label.
 - Worktree group headers are branch-only. They never fetch, render, link, or decorate GitHub pull requests; pull-request presentation belongs exclusively to the right-sidebar PR tab.
@@ -26,7 +26,6 @@
 ### Components
 
 - `SidebarHeader.tsx`: Top header UI for add-project, session search, and display mode.
-- `SidebarActivitySections.tsx`: Global top section renderer; currently used for the `recent` section only.
 - `SidebarFooter.tsx`: Static footer with icon-only settings, shortcuts, and about actions.
 - `SidebarProjectsList.tsx`: Main scrollable tree renderer for projects, root sessions, worktrees/groups, and empty/search states.
 - `SessionGroupSection.tsx`: Renders a single worktree/archived group, collapse/expand, folder subtree, and group-level controls.
@@ -62,7 +61,6 @@
 ### Types and utilities
 
 - `types.ts`: Shared sidebar types (`SessionNode`, `SessionGroup`, summary/search metadata).
-- `activitySections.ts`: Persisted top-section storage/helpers for the current `recent` session list.
 - `utils.tsx`: Shared sidebar utilities (path normalization and hint-first session routing, prompt-recency sorting, dedupe, archived scope keys, project relation checks, text highlight, and date labels used outside session rows).
 
 ## Directory activation boundary

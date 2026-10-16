@@ -34,9 +34,7 @@ projections consume that cap.
 Publication payloads remain freshly read on every review/staging check. The
 current constructor reader has no immutable canonical-history revision receipt;
 a primary revision alone does not prove that an earlier completed output stayed
-unchanged. No whole-snapshot or authorization memoization is admitted. The
-[measured page evaluation](../../../../../docs/audits/2026-10-15/managed-result-page-evaluation/README.md)
-retains the v2 CPU/latency regression and the smaller transport-call improvement.
+unchanged. No whole-snapshot or authorization memoization is admitted. The v2 CPU/latency regression and the smaller transport-call improvement are retained.
 
 ## Purpose
 

@@ -9,8 +9,7 @@ reconnecting does not fix this unsupported path. API-key Bots remain supported.
 Bot OAuth gateway/container integration is a separate follow-up pass.
 
 The sections below document the retained compatibility coordinator and Bot
-implementation, not the current desktop/web sign-in contract. See the
-[built-in migration audit](audits/2026-10-11/builtin-chatgpt-signin/README.md).
+implementation, not the current desktop/web sign-in contract.
 
 ## Ownership and safety
 

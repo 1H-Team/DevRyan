@@ -1,10 +1,10 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
-// Audit evidence describes a past checkout. Report its missing targets without
+// The changelog describes past checkouts. Report its missing targets without
 // rewriting the historical record or blocking maintenance of current guidance.
 export function isHistoricalDocument(file) {
-  return file.startsWith('docs/audits/') || file === 'CHANGELOG.md';
+  return file === 'CHANGELOG.md';
 }
 
 export function withoutCodeBlocks(source) {
