@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { assertQa1NativeQualification, readQa1NativeQualification, assertQa1ExerciseAdmission, projectQa1ExerciseAPIResponse,
-  QA1_EXERCISE_SELECTIONS, collectQa1ExerciseCatalog, createQa1ExplorerSelectionOwner, gradeQa1ProfileFiles, prepareQa1IndependentFiles, verifyQa1HeldOut, projectQa1CausalRepair, runQa1ProfileExercise, preserveQa1StartupFailure, runQa1AdditionalAgentTasks, QA1_ADDITIONAL_AGENT_CASES } from './qa1-profile-exercise.mjs';
+  QA1_EXERCISE_SELECTIONS, collectQa1ExerciseCatalog, createQa1ExplorerSelectionOwner, gradeQa1ProfileFiles, prepareQa1IndependentFiles, qa1PermissionDeniesNetwork, verifyQa1HeldOut, projectQa1CausalRepair, runQa1ProfileExercise, preserveQa1StartupFailure, runQa1AdditionalAgentTasks, QA1_ADDITIONAL_AGENT_CASES } from './qa1-profile-exercise.mjs';
 import { createQaProfileProjectFixture, finishQaProfileProjectFixture } from './profile-project-fixture.mjs';
 import { DEFAULT_HELPER_MODEL_SELECTION } from '../../packages/shared-runtime/lib/helper-model-selection.js';
 
@@ -233,7 +233,15 @@ test('Plan preserves dirty user fixture and refuses implementation or original-t
 });
 
 test('three heldouts and unchanged seeded suite execute without filesystem writes, network or children', async t => {
-  const fixture = await withFixture(t), independent = await prepareQa1IndependentFiles(fixture);
+  const fixture = await withFixture(t);
+  assert.equal(qa1PermissionDeniesNetwork('24.21.0'), false);
+  assert.equal(qa1PermissionDeniesNetwork('25.0.0'), true);
+  if (!qa1PermissionDeniesNetwork()) {
+    // Without socket denial the suite cannot promise "no network", so the tool refuses to run it.
+    await assert.rejects(prepareQa1IndependentFiles(fixture), { code: 'qa_profile_node_permission_network_unavailable' });
+    return;
+  }
+  const independent = await prepareQa1IndependentFiles(fixture);
   assert.equal(independent.baselineFailed, true);
   const source = path.join(fixture.fixtureRoot, 'src/profile-appearance.mjs');
   const bytes = (await fs.readFile(source, 'utf8')).replace('16 + 64 + Math.max(0, layoutViewportHeight - visualViewportHeight)', '16 + (signedIn ? 64 : 0)')

@@ -407,8 +407,12 @@ async function openBrowser({ origin, root, authenticate, signal, deadline }) {
   } catch (error) { return preserveQa1StartupFailure(error, close); }
 }
 
+/** Node's permission model denies sockets only from v25; before that the "no network" guarantee cannot hold. */
+export const qa1PermissionDeniesNetwork = (version = process.versions.node) => Number(version.split('.')[0]) >= 25;
+
 export async function prepareQa1IndependentFiles(fixture, signal) {
   await assertQaProfileProjectFixtureOwned(fixture);
+  if (!qa1PermissionDeniesNetwork()) throw fail('qa_profile_node_permission_network_unavailable');
   const env = createQaHostLaunchEnvironment({ HOME: fixture.fixtureRoot, TMPDIR: fixture.evidenceDirectory,
     GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' });
   const permissions = ['--permission', `--allow-fs-read=${fixture.fixtureRoot}`];
