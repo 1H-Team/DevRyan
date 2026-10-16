@@ -4,9 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [2.0.14] - 2026-10-16
+## [2.0.15] - 2026-10-16
 
-Version 2.0.13 was admitted by a release rehearsal but never published; its contents ship in 2.0.14.
+Versions 2.0.13 and 2.0.14 were never published; their contents ship in 2.0.15.
 
 - Update the bundled OpenCode host and Bot runtime from 2.0.26 to 2.0.30 with Effect 4.0.1, refreshed native asset pins and API schema, and migration-aware upgrade protection.
 - Fix startup failing with `bundle_message_reference_lost` after a session was deleted that had a tool call cancelled before it started. The marker left by that cancellation is now reported instead of refusing launch.
@@ -14,8 +14,8 @@ Version 2.0.13 was admitted by a release rehearsal but never published; its cont
 - Enforce read-only Plan execution in the host, verify native continuation and automatic-compaction lineage, and retain exact result publication and later-step review before child disposition.
 - Share helper model selection across naming and Git drafts, preserve Default reasoning, and bound title persistence and missing-idle recovery across restart.
 - Reduce result-v2 pagination and dormant Docker polling while preserving scalar compatibility, durable acknowledgements and explicit controls.
-- Bind release qualification to exact source, candidate bytes, fresh runners and executed retries; require final installer and updater evidence before publication succeeds.
-- Keep release-history admission within its request budget by taking tag-push versions from the trusted ref, and sync `bun.lock` for frozen installs.
+- Simplify the release pipeline back to one tag-push workflow: admission, web build, input-addressed Bot images, Electron prepare and package, and publication with an in-app updater discovery check. Rehearsals, release-history scanning and version burning are gone; a failed attempt is retried on the same version.
+- Run lint, type checks, the full test suite and docs validation on every push to `main`, and stop running Windows qualification on every push.
 
 ## [2.0.12] - 2026-10-13
 
