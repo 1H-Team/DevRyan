@@ -9,6 +9,8 @@ import { openChangeStore, changeKey } from './session-changes-store.js';
 import { prepareSessionExecution, removeExecutionSocketDirectory, sessionExecutionProfile } from './session-execution.js';
 import { writableInputDirectories } from './execution-inputs.js';
 
+const withoutSpawnLibrary = ({ DYLD_INSERT_LIBRARIES: _spawnLibrary, ...environment }) => environment;
+
 // Gitignored directories are inputs: linked into views, never ingested, never
 // published, and fenced from history replay. Dependencies stay read-only; on
 // macOS ignored output folders are written through to the project.
@@ -249,7 +251,9 @@ bunTest.skipIf(process.platform !== 'darwin')('confined calls write through igno
   finally { await removeExecutionSocketDirectory(lease); }
   const viewDirectory = await fs.realpath(lease.viewDirectory);
   const run = (script) => spawnSync('/usr/bin/sandbox-exec', ['-f', prepared.profile, '/bin/sh', '-c', script],
-    { cwd: viewDirectory, encoding: 'utf8', env: { PATH: process.env.PATH, ...prepared.environment } });
+    // The fixture launcher has no spawn library beside it. With SIP off (GitHub macOS runners)
+    // dyld would honour DYLD_INSERT_LIBRARIES for /bin/sh; this test covers the sandbox rules only.
+    { cwd: viewDirectory, encoding: 'utf8', env: { PATH: process.env.PATH, ...withoutSpawnLibrary(prepared.environment) } });
   // The incident: Vite re-optimizing a cacheDir under .artifacts, and a log beside it.
   const outputs = run('rm .artifacts/vite-cache/deps/old.js && echo new > .artifacts/vite-cache/deps/new.js && echo log > .artifacts/run.log && echo x > cache/new');
   expect(outputs.stderr).toBe('');
