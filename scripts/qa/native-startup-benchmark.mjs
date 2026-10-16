@@ -19,7 +19,7 @@ import { prepareRuntimeUiProfile, runtimeUiTuple } from './native-backend-ui-dia
 import { loadQaPackagedArtifact } from './packaged-artifact.mjs';
 import { createQaUiDriver } from './ui-driver.mjs';
 import { reservePort, startOwnedProcess } from './process.mjs';
-import { createRunRoot } from './run-root.mjs';
+import { createRunRoot, scratchParent } from './run-root.mjs';
 import { syntheticCursorProvider, syntheticAnthropicProvider } from './startup-catalog-reproduction.mjs';
 
 const execute = promisify(execFile);
@@ -304,7 +304,7 @@ async function runStartupLaunches({ packageEvidence, artifactRoot, baselineArtif
   await fs.mkdir(fixtures, { recursive: true, mode: 0o700 });
   assert.equal(await fs.realpath(fixtures), fixtures);
   let activeStop = async () => {};
-  const run = createRunRoot({ parent: path.join(repository, '.cache/qa'), prefix: 'native-startup-',
+  const run = createRunRoot({ parent: scratchParent('qa'), prefix: 'native-startup-',
     owner: 'scripts/qa/native-startup-benchmark.mjs', extraPayloads: ['native-visibility'], onInterrupt: () => activeStop() });
   const launchScope = comparisonSource ? 'one fresh process/profile' : 'three fresh processes/profiles';
   const evidence = { schemaVersion: 1, kind: candidate ? 'packaged-native-app-bound-startup-upgrade' : 'packaged-native-app-bound-startup', outcome: 'failed',
@@ -655,7 +655,7 @@ export async function runNativeStartupComparison({ baselinePackageEvidence, cand
   const nativeDigest = await nativeManifest(baseline);
   assert.equal(await nativeManifest(candidate), nativeDigest, 'Native runtime versions must match');
   assert.equal(hash(await fs.readFile(path.join(artifactRoot, 'native-bundle.json'))), nativeDigest, 'Fixture must match packaged native runtime');
-  const run = createRunRoot({ parent: path.join(repository, '.cache/qa'), prefix: 'startup-comparison-', owner: 'scripts/qa/native-startup-benchmark.mjs' });
+  const run = createRunRoot({ parent: scratchParent('qa'), prefix: 'startup-comparison-', owner: 'scripts/qa/native-startup-benchmark.mjs' });
   const evidence = { outcome: 'failed', startupMode, changed, nativeDigest, catalogFixtureSha256: hash(JSON.stringify(catalogProviders ?? null)), order: ['B1', 'C1', 'C2', 'B2', 'B3', 'C3'],
     baselineSourceSha256: baseline.evidence.source.sha256, candidateSourceSha256: candidate.evidence.source.sha256,
     baselineArchiveSha256: baseline.evidence.archiveSha256, candidateArchiveSha256: candidate.evidence.archiveSha256,

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {assertCompiledAstReceipt,createCompiledSlimFetchFixture,runCompiledSlimTools} from './package-slim-tools-lane.mjs';
 import {createOpenCodeAdmission} from '../../packages/web/server/lib/opencode/v2/admission.js';
@@ -9,7 +10,7 @@ import {createOpenCodeClient} from '../../packages/web/server/lib/opencode/openc
 
 test('Slim permissions use actual private admission creation before enrollment and tool dispatch; public creation stays refused',async()=>{
  const repository=fileURLToPath(new URL('../..',import.meta.url));
- const directory=await fs.mkdtemp(path.join(repository,'.cache/v2-validation/slim-tool-admission-'));
+ const directory=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-slim-tool-admission-')));
  const permissions=['write','ast_grep_search','ast_grep_replace','webfetch'].map(action=>({action,resource:'*',effect:'allow'}));
  const input={title:'Compiled original Slim leaf tools',agent:'orchestrator',model:{providerID:'devryan-smoke',modelID:'smoke-write'},permissions};
  const calls=[];let authorized=false,enrolled=false;

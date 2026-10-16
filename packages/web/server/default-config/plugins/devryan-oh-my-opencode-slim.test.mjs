@@ -1,18 +1,17 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { DevRyanOhMyOpenCodeSlimPlugin } from './devryan-oh-my-opencode-slim.mjs';
 
 const originalConfigDirectory = process.env.DEVRYAN_OPENCODE_USER_CONFIG_DIR;
 const originalBridge = Object.fromEntries(['DEVRYAN_ORCHESTRATION_URL', 'DEVRYAN_ORCHESTRATION_TOKEN'].map((key) => [key, process.env[key]]));
-const testCache = fileURLToPath(new URL('../../../../../.cache/slim-wrapper-tests/', import.meta.url));
+const testCache = os.tmpdir();
 let temporaryRoot = null;
 
 const createInstalledPlugin = (source) => {
-  fs.mkdirSync(testCache, { recursive: true });
-  temporaryRoot = fs.mkdtempSync(path.join(testCache, 'installed-'));
+  temporaryRoot = fs.mkdtempSync(path.join(testCache, 'devryan-slim-wrapper-installed-'));
   process.env.DEVRYAN_OPENCODE_USER_CONFIG_DIR = temporaryRoot;
   const packageRoot = path.join(temporaryRoot, 'node_modules', 'oh-my-opencode-slim');
   const entrypointPath = path.join(packageRoot, 'dist', 'index.js');
@@ -70,8 +69,7 @@ describe('DevRyan Oh My OpenCode Slim wrapper', () => {
     expect(await plugin.event()).toBe('standalone');
   });
   it('fails visibly instead of falling back to package resolution', async () => {
-    fs.mkdirSync(testCache, { recursive: true });
-    temporaryRoot = fs.mkdtempSync(path.join(testCache, 'missing-'));
+    temporaryRoot = fs.mkdtempSync(path.join(testCache, 'devryan-slim-wrapper-missing-'));
     process.env.DEVRYAN_OPENCODE_USER_CONFIG_DIR = temporaryRoot;
 
     await expect(DevRyanOhMyOpenCodeSlimPlugin({})).rejects.toThrow(

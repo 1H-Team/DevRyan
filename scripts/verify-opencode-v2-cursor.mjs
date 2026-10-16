@@ -14,7 +14,7 @@ import {createRunRoot} from './qa/run-root.mjs';
 
 const evidence=error=>({code:error.code??error.name,message:error.message,...error.missingCatalog?{missingCatalog:error.missingCatalog}:{},...error.errors?{causes:Array.from(error.errors,evidence)}:{}});
 export async function runCompiledCursorDiagnostic({artifactRoot}){
- const run=createRunRoot({parent:path.join(repositoryRoot,'.cache/v2-validation'),prefix:'compiled-cursor-',owner:'scripts/verify-opencode-v2-cursor.mjs'});
+ const run=createRunRoot({parent:path.join(repositoryRoot, '.cache/v2-validation'),prefix:'compiled-cursor-',owner:'scripts/verify-opencode-v2-cursor.mjs'});
  const root=await fs.realpath(run.dir),source=await captureNativeAcceptanceSource();
  const observations=[],diagnostics=[],cases=[],cleanupFailures=[];let fixture,provider,failure,selectedApiKey='owned-loopback-account-b';
  const originalBackend=process.env.CURSOR_BACKEND_URL;

@@ -1,11 +1,12 @@
 import {test,expect} from 'bun:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 const repository=path.resolve(import.meta.dirname,'../..');
 test('the captured SDK consumes the broker child interface through final assistant/result and real receipt',async()=>{
- const root=await fs.mkdtemp(path.join(repository,'.cache/v2-validation/claude-sdk-channel-'));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-claude-sdk-channel-')));
  try{
   const entry=path.join(root,'entry.ts');
   await fs.writeFile(entry,`

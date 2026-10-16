@@ -1,12 +1,12 @@
 import { expect, test } from 'bun:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {pathToFileURL} from 'node:url';
 import {rewriteReviewedSlimServer} from '../../packages/web/server/lib/opencode/runtime-host/reviewed-package-transforms.js';
 
 test('pinned Slim native setup preserves two location catalogs across tool reload and disposes its native scope', async () => {
-  const base = path.resolve(import.meta.dirname, '../../.cache/v2-validation');
-  const root = await fs.mkdtemp(path.join(base, 'native-slim-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-native-slim-')));
   let child: ReturnType<typeof Bun.spawn> | undefined;
   try {
     const home = path.join(root, 'home'), tmp = path.join(home, 'tmp'), config = path.join(home, 'config');

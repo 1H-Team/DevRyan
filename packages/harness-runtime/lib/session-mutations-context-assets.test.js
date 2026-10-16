@@ -1,11 +1,10 @@
 import {test,expect} from 'bun:test';
-import fs from 'node:fs/promises';import path from 'node:path';
+import fs from 'node:fs/promises';import os from 'node:os';import path from 'node:path';
 import {createSessionMutationRuntime} from './session-mutations.js';
 import {git} from './session-changes-git.js';
-const repository=path.resolve(import.meta.dirname,'../../..');
 
 test('fixed context-image policy survives reopen, rejects replay changes and refuses ALL publication on unrelated output',async()=>{
- const root=await fs.mkdtemp(path.join(repository,'.cache/v2-validation/context-policy-'));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-context-policy-')));
  try{
   const directory=path.join(root,'project'),storage=path.join(root,'ledger');await fs.mkdir(directory);await git(directory,['init','--quiet']);
   await fs.writeFile(path.join(directory,'keep.txt'),'Original bytes');
@@ -33,7 +32,7 @@ test('fixed context-image policy survives reopen, rejects replay changes and ref
 },30_000);
 
 test('context-image publication is fixed to its actual working subdirectory and never publishes symlinks',async()=>{
- const root=await fs.mkdtemp(path.join(repository,'.cache/v2-validation/context-subdir-'));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-context-subdir-')));
  try{
   const project=path.join(root,'project'),directory=path.join(project,'nested');await fs.mkdir(directory,{recursive:true});await git(project,['init','--quiet']);
   const runtime=createSessionMutationRuntime({directory:path.join(root,'ledger')});
@@ -55,7 +54,7 @@ test('context-image publication is fixed to its actual working subdirectory and 
 },30_000);
 
 test('interview policy seals one Markdown target durably and refuses any unrelated contribution before publication',async()=>{
- const root=await fs.mkdtemp(path.join(repository,'.cache/v2-validation/interview-policy-'));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-interview-policy-')));
  try{
   const directory=path.join(root,'project'),storage=path.join(root,'ledger');await fs.mkdir(directory);await git(directory,['init','--quiet']);
   await fs.writeFile(path.join(directory,'keep.txt'),'Preserve original');

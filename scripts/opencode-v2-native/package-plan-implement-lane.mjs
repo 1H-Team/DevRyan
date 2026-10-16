@@ -19,7 +19,7 @@ import { reapOrphanedManagedOpenCodeProcesses, readManagedOpenCodeRegistry } fro
 import { readSessionExecutionReceipt } from '../../packages/harness-runtime/lib/session-execution.js';
 import { prepareRuntimeUiProfile, readRuntimeUiLease } from '../qa/native-backend-ui-diagnostic.mjs';
 import { waitFor } from './process-lanes.mjs';
-import { createRunRoot } from '../qa/run-root.mjs';
+import { createRunRoot, scratchParent } from '../qa/run-root.mjs';
 import { captureQaSourceIdentity } from '../qa/artifact-evidence.mjs';
 import { captureNativeAcceptanceSource, repositoryRoot } from './artifacts.mjs';
 import { capturePerfJournal } from '../perf/electron-run-evidence.mjs';
@@ -905,7 +905,7 @@ export async function runPlanImplementApplicationAcceptance({ artifactRoot, root
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const { values } = parseArgs({ options: { 'artifact-root': { type: 'string' }, background: { type: 'boolean', default: false } } });
   assert.ok(values['artifact-root'], 'Explicit current owned artifact root required');
-  const run = createRunRoot({ parent: fileURLToPath(new URL('../../.cache/qa/', import.meta.url)), prefix: 'native-plan-implement-', owner: 'actual-native-plan-implement', extraPayloads: ['workspace'] });
+  const run = createRunRoot({ parent: scratchParent('qa'), prefix: 'native-plan-implement-', owner: 'actual-native-plan-implement', extraPayloads: ['workspace'] });
   try {
     const result = await runPlanImplementApplicationAcceptance({ artifactRoot: path.resolve(values['artifact-root']), root: run.dir, showBrowser: !values.background });
     run.finish('passed'); process.stdout.write(JSON.stringify({ status: result.status, root: run.dir, sessionID: result.sessionID }) + '\n');

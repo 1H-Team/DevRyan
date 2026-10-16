@@ -1,11 +1,12 @@
 import {test,expect,afterEach} from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {runNativeBundleCredentialProcess} from './native-bundle-credential-process.js';
 import {parseNativeBundleCredentialBoot,NATIVE_BUNDLE_CREDENTIAL_CONTRACT,nativeBundleCredentialFingerprint} from './native-bundle-credential-contract.js';
 const roots=[];afterEach(async()=>{for(const root of roots.splice(0))await fs.rm(root,{recursive:true,force:true});});
 const fixture=async()=>{
- const root=await fs.mkdtemp(path.resolve('../../.cache/v2-validation/credential-process-'));roots.push(root);
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-credential-process-')));roots.push(root);
  const global=Object.fromEntries(['home','config','data','state','cache','tmp','bin','log','repos'].map(key=>[key,path.join(root,key==='config'?'config/opencode':'global/'+key)]));
  for(const value of Object.values(global))await fs.mkdir(value,{recursive:true});
  await fs.mkdir(path.join(root,'opencode'));await fs.writeFile(path.join(root,'opencode','opencode.db'),'fixture only');await fs.mkdir(path.join(root,'web-data'));

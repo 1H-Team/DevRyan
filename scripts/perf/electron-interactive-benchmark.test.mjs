@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import vm from 'node:vm';
-import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gunzipSync } from 'node:zlib';
@@ -258,9 +259,7 @@ test('fixed-cadence inputs may overlap pending frames while retaining every obse
 });
 
 test('trace streaming preserves mixed-encoding chunks and closes the handle even when its byte bound fails', async () => {
-  const cache = fileURLToPath(new URL('../../.cache/perf/', import.meta.url));
-  await mkdir(cache, { recursive: true });
-  const directory = await mkdtemp(path.join(cache, 'interactive-trace-test-'));
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'devryan-interactive-trace-test-'));
   const makeCdp = () => {
     const calls = [];
     const responses = [{ data: '{"traceEvents":[' },
@@ -367,9 +366,7 @@ const typingScenarioHarness = (failure) => {
 test('typing scope completes trace/probe cleanup and propagates every finalization failure', async t => {
   let clock = 0;
   t.mock.method(performance, 'now', () => { clock += 100; return clock; });
-  const cache = fileURLToPath(new URL('../../.cache/perf/', import.meta.url));
-  await mkdir(cache, { recursive: true });
-  const directory = await mkdtemp(path.join(cache, 'interactive-typing-test-'));
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'devryan-interactive-typing-test-'));
   try {
     for (const failure of [undefined, 'trace loss', 'trace overflow', 'pending probe', 'probe overflow', 'probe cleanup',
       'long tasks unavailable', 'selection before inputs', 'selection after inputs']) {

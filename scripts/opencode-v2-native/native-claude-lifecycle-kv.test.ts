@@ -1,6 +1,7 @@
 import {test,expect} from 'bun:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {KV} from '@opencode/core/kv';
 import {Database} from '@opencode/core/database/database';
 import {Global} from '@opencode/util/global';
@@ -10,7 +11,7 @@ import {readNativeClaudeLifecycle,transitionNativeClaudeLifecycle} from '../../p
 import {CLAUDE_LIFECYCLE_KEY,type ClaudeLifecycleAccount} from '../../packages/web/server/lib/opencode/runtime-host/native-claude-lifecycle.js';
 const account:ClaudeLifecycleAccount={profileID:'selected',service:'Claude Code-credentials-01234567',configDirectory:'/owned/enrolled/one',enrollmentID:'enrollment-one',generation:'generation-one',recordFingerprint:'1'.repeat(64),grantFingerprint:'2'.repeat(64)};
 const fixture=async()=>{
- const root=await fs.mkdtemp(path.resolve('.cache/v2-validation/claude-lifecycle-kv-'));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-claude-lifecycle-kv-')));
  const layer=LayerNode.compile(LayerNode.group([KV.node,Database.node]),{replacements:[
   Global.node.replace(Global.layerWith({home:root,data:root,cache:root,config:root,state:root,tmp:root,bin:root,log:root,repos:root})),
   Database.node.replace(Database.configured({path:path.join(root,'native.db')})),

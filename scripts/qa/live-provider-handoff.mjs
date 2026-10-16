@@ -11,7 +11,7 @@ import { prepareQaNativeBundle, createQaNativeLaunchEnvironment } from './native
 import { createQaHostLaunchEnvironment } from './launch-environment.mjs';
 import { createLiveOwnerLink, waitLiveOwnerAttendance, settleLiveOwnerChild } from './live-credential-owner.mjs';
 import { assertQaPrivateDirectory, readQaPinnedFile } from './live-setup-mirror.mjs';
-import { createRunRoot } from './run-root.mjs';
+import { createRunRoot, scratchParent } from './run-root.mjs';
 import { waitForQaHostReady } from './host-readiness.mjs';
 import { readRuntimeBundleBinding } from '../../packages/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js';
 import { translateNativeConfiguration } from '../../packages/web/server/lib/opencode/runtime-host/native-configuration-data.js';
@@ -621,7 +621,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
       let stateFile, run, qualificationReport;
       if (args[0] === '--artifact-root' && args.length === 2) {
         if (await readRegisteredProviderHandoff()) throw fail('qa_handoff_profile_already_registered');
-        run = createRunRoot({ parent: path.join(repository, '.cache/qa'), prefix: 'live-provider-handoff-',
+        run = createRunRoot({ parent: scratchParent('qa'), prefix: 'live-provider-handoff-',
           owner: 'scripts/qa/live-provider-handoff.mjs', keepArtifacts: true, signals: 'exit' });
         ({ stateFile } = await prepareProviderHandoff({ artifactRoot: path.resolve(args[1]), root: run.dir }));
         await registerProviderHandoffProfile(stateFile);

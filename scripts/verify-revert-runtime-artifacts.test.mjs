@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { verifyRevertRuntimeArtifacts, restoreRevertRuntimeExecutableModes, SUPPORTED_NATIVE_RUNTIME_TARGETS } from './verify-revert-runtime-artifacts.mjs';
@@ -8,7 +9,7 @@ import { verifyRevertRuntimeArtifacts, restoreRevertRuntimeExecutableModes, SUPP
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 test('native packaging rejects retired runtime artifacts and unavailable targets before payload reads', async t => {
   assert.deepEqual(SUPPORTED_NATIVE_RUNTIME_TARGETS, ['darwin-arm64']);
-  const directory = await fs.mkdtemp(path.resolve('.cache/native-packaging-'));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-native-packaging-'));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   await assert.rejects(verifyRevertRuntimeArtifacts({ directory, platform: 'darwin', arch: 'x64' }), /unavailable/);
   await assert.rejects(verifyRevertRuntimeArtifacts({ directory, platform: 'linux', arch: 'arm64' }), /unavailable/);
@@ -23,7 +24,7 @@ test('native packaging rejects retired runtime artifacts and unavailable targets
 
 test('mode restoration refuses changed or unmanifested bytes before mutating any payload', async t => {
   if (process.platform !== 'darwin' || process.arch !== 'arm64') { t.skip('Actual native target unavailable'); return; }
-  const directory = await fs.mkdtemp(path.resolve('.cache/native-modes-'));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-native-modes-'));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   const location = path.join(directory, 'darwin-arm64'); await fs.mkdir(location);
   const filename = 'DevRyan-native-controller', target = path.join(location, filename);

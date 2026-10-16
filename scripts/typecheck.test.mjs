@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
@@ -23,8 +24,7 @@ test('diagnostic command rejects missing, unknown, and extra arguments', () => {
 
 test('package incremental checks retain errors and invalidate cached results after edits', () => {
   const parent = path.join(root, '.cache', 'typecheck');
-  mkdirSync(parent, { recursive: true });
-  const fixture = mkdtempSync(path.join(parent, 'test-'));
+  const fixture = mkdtempSync(path.join(os.tmpdir(), 'devryan-typecheck-test-'));
   try {
     const caches = new Set();
     for (const target of ['ui', 'web']) {

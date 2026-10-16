@@ -125,82 +125,26 @@ describe('stopChildTree', () => {
 });
 
 describe('affected validation planning', () => {
+  const labels = (files) => buildPlan('fast', files).commands.map((entry) => entry.label);
+
   test('runs Cursor tests and dependent host validation for Cursor runtime code', () => {
-    const plan = buildPlan('affected', [
-      'packages/cursor-sdk-runtime/persistent-worker.mjs',
-    ]);
-
-    assert.deepEqual(plan.commands.map((entry) => entry.label), [
-      'typeCheck:web',
-      'test:cursor',
-      'test:web',
-    ]);
-    assert.deepEqual(plan.commands.find((entry) => entry.label === 'test:cursor')?.args, [
-      'test',
-      'packages/cursor-sdk-runtime',
-    ]);
+    const plan = buildPlan('fast', ['packages/cursor-sdk-runtime/persistent-worker.mjs']);
+    assert.deepEqual(plan.commands.map((entry) => entry.label), ['typeCheck:web', 'test:cursor', 'test:web', 'test:startup']);
+    assert.deepEqual(plan.commands.find((entry) => entry.label === 'test:cursor')?.args, ['test', 'packages/cursor-sdk-runtime']);
   });
 
-  test('still runs the Cursor package suite in quick mode', () => {
-    const plan = buildPlan('quick', [
-      'packages/cursor-sdk-runtime/agent-cache.js',
-    ]);
-
-    assert.deepEqual(plan.commands.map((entry) => entry.label), ['test:cursor']);
+  test('runs the Electron suite for shell code', () => {
+    assert.deepEqual(labels(['packages/electron/scripts/native-module-paths.mjs']), ['typeCheck:electron', 'test:electron', 'test:startup']);
   });
 
-  test('runs the Electron suite for affected shell code', () => {
-    const plan = buildPlan('affected', [
-      'packages/electron/scripts/native-module-paths.mjs',
-    ]);
-
-    assert.deepEqual(plan.commands.map((entry) => entry.label), [
-      'lint:electron',
-      'typeCheck:electron',
-      'test:electron',
-    ]);
-  });
-
-  test('runs the legacy Tauri suite for Rust compatibility code', () => {
-    const affected = buildPlan('affected', [
-      'packages/desktop/src-tauri/src/main.rs',
-    ]);
-    const quick = buildPlan('quick', [
-      'packages/desktop/src-tauri/Cargo.toml',
-    ]);
-
-    assert.deepEqual(affected.commands.map((entry) => entry.label), [
-      'lint:desktop',
-      'typeCheck:desktop',
-      'test:desktop',
-    ]);
-    assert.deepEqual(quick.commands.map((entry) => entry.label), [
-      'lint:full',
-      'type-check:full',
-      'docs:validate',
-      'test:full',
-    ]);
+  test('type-checks the frozen legacy Tauri package without running its cargo tests', () => {
+    assert.deepEqual(labels(['packages/desktop/src-tauri/src/main.rs']), ['typeCheck:desktop', 'test:startup']);
+    assert.deepEqual(labels(['packages/desktop/src-tauri/Cargo.toml']), ['typeCheck:desktop', 'test:startup']);
   });
 
   test('runs orchestration tests and every dependent runtime for orchestration core changes', () => {
-    const plan = buildPlan('affected', [
-      'packages/orchestration-runtime/scheduler.js',
+    assert.deepEqual(labels(['packages/orchestration-runtime/scheduler.js']), [
+      'typeCheck:ui', 'typeCheck:web', 'test:orchestration', 'test:ui', 'test:web', 'test:startup',
     ]);
-
-    assert.deepEqual(plan.commands.map((entry) => entry.label), [
-      'typeCheck:ui',
-      'typeCheck:web',
-      'test:orchestration',
-      'test:ui',
-      'test:web',
-    ]);
-  });
-
-  test('still runs the orchestration package suite in quick mode', () => {
-    const plan = buildPlan('quick', [
-      'packages/orchestration-runtime/contract.js',
-    ]);
-
-    assert.deepEqual(plan.commands.map((entry) => entry.label), ['test:orchestration']);
   });
 });

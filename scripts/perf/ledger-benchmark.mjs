@@ -44,7 +44,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { startOwnedProcess } from '../qa/process.mjs';
-import { createRunRoot } from '../qa/run-root.mjs';
+import { createRunRoot, scratchParent } from '../qa/run-root.mjs';
 
 const execute = promisify(execFile);
 const repositoryRoot = fileURLToPath(new URL('../../', import.meta.url));
@@ -286,7 +286,7 @@ export async function runLedgerBenchmark(options) {
   if (options.seedCalls > 0 && !options.prewarm) {
     console.error('ledger-benchmark: --seed-calls without --prewarm seeds a ledger with no file records (not production-shaped); add --prewarm');
   }
-  const benchRoot = path.join(repositoryRoot, '.cache/perf/ledger-bench');
+  const benchRoot = path.join(scratchParent('perf'), 'ledger-bench');
   await fs.mkdir(benchRoot, { recursive: true });
   const iterations = [];
   for (let iteration = 0; iteration < options.iterations; iteration += 1) {
@@ -400,7 +400,7 @@ export async function runLedgerBenchmark(options) {
 // initialization from earlier cases cannot silently affect the next sample.
 export async function runPreparationProfile(options) {
   if (options.fixtureFiles !== null) options = { ...options, repo: await ensureFixtureRepository(options.fixtureFiles) };
-  const cacheRoot = path.join(repositoryRoot, '.cache/perf/ledger-profile');
+  const cacheRoot = path.join(scratchParent('perf'), 'ledger-profile');
   await fs.mkdir(cacheRoot, { recursive: true });
   const run = createRunRoot({ parent: cacheRoot, prefix: 'run-', owner: 'scripts/perf/ledger-benchmark.mjs',
     keepArtifacts: options.keep, heavyNames: ['fixture', 'home'] });

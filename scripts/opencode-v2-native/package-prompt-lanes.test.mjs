@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {readCompiledConfiguredPrimaryAgent,readCompiledPromptAgent,runCompiledPromptLanes} from './package-prompt-lanes.mjs';
 import {createNativeManagedFixture} from './managed-fixture.mjs';
 
@@ -64,8 +65,7 @@ test('reviewed command root enrolment finishes before model or command effects',
 });
 
 test('compiled root enrollment binds accepted prompts to each owned location',async t=>{
- const cache=path.resolve('.cache/v2-validation');await fs.mkdir(cache,{recursive:true});
- const dataDirectory=await fs.mkdtemp(path.join(cache,'prompt-root-test-'));
+ const dataDirectory=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-prompt-root-test-')));
  t.after(()=>fs.rm(dataDirectory,{recursive:true,force:true}));
  const alpha='/owned/alpha',beta='/owned/beta',calls=[];
  let session={id:'ses_beta',directory:beta};

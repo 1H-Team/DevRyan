@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest';
 import { createCursorExecutionReceipts } from './cursor-execution-receipts.js';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createSessionMutationRuntime } from '@openchamber/harness-runtime/lib/session-mutations.js';
@@ -80,9 +81,7 @@ test('unknown tools retain evidence and conflicting call identities refuse befor
 });
 
 test('published confinement covers native tasks through exact aliases while the outer receipt owns all bytes', async () => {
-  const root=path.resolve(import.meta.dirname,'../../../../../.cache/qa');
-  await fs.mkdir(root,{recursive:true});
-  const base=await fs.mkdtemp(path.join(root,'cursor-task-receipt-'));
+  const base=await fs.mkdtemp(path.join(os.tmpdir(),'devryan-cursor-task-receipt-'));
   const directory=path.join(base,'project'); await fs.mkdir(directory);
   execFileSync('git',['init','-q'],{cwd:directory});
   const runtime=createSessionMutationRuntime({directory:path.join(base,'private')});

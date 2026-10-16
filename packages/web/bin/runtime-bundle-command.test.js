@@ -2,6 +2,8 @@ import {expect,test,vi} from 'vitest';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import path from 'node:path';
+import fs from 'node:fs/promises';
+import os from 'node:os';
 import {parseArgs} from './cli.js';
 import {runRuntimeBundleCommand} from './runtime-bundle-command.js';
 import {readNativeShellBundleBinding} from '../../electron/native-settings-directory.mjs';
@@ -28,11 +30,12 @@ test('unsupported flags/IDs/paths and duplicate revision cannot choose a recover
  await expect(runRuntimeBundleCommand({positionals:['runtime','bundle','resume'],expectedRevision:'2',environment:{DEVRYAN_RUNTIME_BUNDLE_ROOT:'relative'},resume})).rejects.toMatchObject({code:'bundle_recovery_owner_required'});
 });
 test('original dispatcher noninteractive invalid JSON/quiet commands fail deterministically before local owner access',async()=>{
- for(const flags of [[],['--quiet'],['-q'],['--json']]){
-  let error;try{await run(process.execPath,[path.join(import.meta.dirname,'cli.js'),'runtime','bundle','resume','--expected-revision','0',...flags],{env:{PATH:process.env.PATH,HOME:path.resolve(import.meta.dirname,'../../../.cache/v2-validation/unused-cli-home')},timeout:10000});}catch(cause){error=cause;}
+ const home=await fs.mkdtemp(path.join(os.tmpdir(),'devryan-unused-cli-home-'));
+ try{for(const flags of [[],['--quiet'],['-q'],['--json']]){
+  let error;try{await run(process.execPath,[path.join(import.meta.dirname,'cli.js'),'runtime','bundle','resume','--expected-revision','0',...flags],{env:{PATH:process.env.PATH,HOME:home},timeout:10000});}catch(cause){error=cause;}
   expect(error?.code).toBe(2);expect(error.stderr+error.stdout).toContain('bundle_selection_revision_conflict');
   if(flags.includes('--json'))expect(JSON.parse(error.stdout)).toMatchObject({status:'error',error:{code:'bundle_selection_revision_conflict'}});
- }
+ }}finally{await fs.rm(home,{recursive:true,force:true});}
 });
 
 test('CLI and Electron share canonical bundle roots and refuse relative authority before owner access', async () => {

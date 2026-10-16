@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {afterEach,expect,test,vi} from 'vitest';
 import {claudeKeychainService} from '../claude-credential-projection.js';
 import {relocateNativeSetupProfiles} from './native-setup-profiles.js';
@@ -7,7 +8,7 @@ import {captureBundleCredentialOwners,assertBundleCredentialOwners} from './bund
 import {transitionClaudeLifecycle} from './native-claude-lifecycle.js';
 const roots=[];afterEach(async()=>{for(const root of roots.splice(0))await fs.rm(root,{recursive:true,force:true});});
 async function fixture(){
- const root=await fs.mkdtemp(path.resolve('../../.cache/v2-validation/stable-enrollment-'));roots.push(root);await fs.chmod(root,0o700);
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-stable-enrollment-')));roots.push(root);await fs.chmod(root,0o700);
  const controlRoot=path.join(root,'control');await fs.mkdir(controlRoot,{mode:0o700});
  const enrollmentID='00000000-0000-4000-8000-000000000001',directory=path.join(controlRoot,'claude-enrollments',enrollmentID);await fs.mkdir(path.dirname(directory),{mode:0o700});await fs.mkdir(directory,{mode:0o700});
  const home=path.join(controlRoot,'bundles/A/global/home'),targetHome=path.join(controlRoot,'bundles/B/global/home');await fs.mkdir(home,{recursive:true});await fs.mkdir(targetHome,{recursive:true});

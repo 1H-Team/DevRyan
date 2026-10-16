@@ -1,6 +1,7 @@
 import {test,expect} from 'bun:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {Credential} from '@opencode/core/credential';
 import {Database} from '@opencode/core/database/database';
 import {KV} from '@opencode/core/kv';
@@ -17,7 +18,7 @@ const copilot=Schema.decodeUnknownSync(Integration.ID)('github-copilot');
 const oauth=(generation:string)=>Schema.decodeUnknownSync(Credential.Value)({type:'oauth',methodID:'device',refresh:`fixture-refresh-${generation}`,access:`fixture-access-${generation}`,expires:1000});
 const blocked={fingerprint:'a'.repeat(64),generation:'11111111-1111-1111-1111-111111111111',blocked:true,refreshing:true,refreshFingerprint:'b'.repeat(64),blockedRefreshFingerprints:['b'.repeat(64)]};
 const fixture=async()=>{
- const root=await fs.mkdtemp(path.resolve('.cache/v2-validation/bundle-credentials-'));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-bundle-credentials-')));
  const layer=LayerNode.compile(LayerNode.group([Credential.node,KV.node,Database.node]),{replacements:[
   Global.node.replace(Global.layerWith({home:root,data:root,cache:root,config:root,state:root,tmp:root,bin:root,log:root,repos:root})),
   Database.node.replace(Database.configured({path:path.join(root,'native.db')})),

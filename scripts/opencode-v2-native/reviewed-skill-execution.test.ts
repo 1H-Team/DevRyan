@@ -1,6 +1,7 @@
 import {afterEach,expect,test} from 'bun:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {createHash} from 'node:crypto';
 import type {SessionContext} from '@opencode/plugin/effect/session';
 import {Location} from '@opencode/core/location';
@@ -13,7 +14,7 @@ import type {NativeConfigurationSnapshot} from '../../packages/web/server/lib/op
 const roots:string[]=[];
 afterEach(async()=>{await Promise.all(roots.splice(0).map(root=>fs.rm(root,{recursive:true,force:true})));});
 async function fixture(){
- const root=await fs.mkdtemp(path.resolve('.cache/v2-validation/reviewed-skill-'));roots.push(root);
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-reviewed-skill-')));roots.push(root);
  const file=path.join(root,'SKILL.md'),body='exact reviewed skill body\n';await fs.writeFile(file,body);
  const resource=path.join(root,'support.txt');await fs.writeFile(resource,'asset');
  const snapshot:NativeConfigurationSnapshot={schema:1,revision:1,sourceStamp:'a'.repeat(64),digest:'b'.repeat(64),registrationManifestDigest:'c'.repeat(64),locations:[{

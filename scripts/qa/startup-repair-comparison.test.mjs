@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
@@ -10,8 +11,7 @@ const files = ['packages/electron/entry.mjs', 'packages/ui/src/stores/useConfigS
 const originals = await Promise.all(files.map(file => fs.readFile(path.join(root, file))));
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 async function fixture(operation) {
-  const parent = path.join(root, '.cache/test-fixtures'); await fs.mkdir(parent, { recursive: true });
-  const directory = await fs.mkdtemp(path.join(parent, 'startup-comparison-'));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-startup-comparison-'));
   try {
     for (let index = 0; index < files.length; index++) {
       await fs.mkdir(path.dirname(path.join(directory, files[index])), { recursive: true });

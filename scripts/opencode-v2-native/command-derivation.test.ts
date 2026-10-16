@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test';
+import { afterAll, expect, test } from 'bun:test';
 import { Effect, Layer } from 'effect';
 import { Command } from '@opencode/core/command';
 import { Config } from '@opencode/core/config';
@@ -6,11 +6,16 @@ import { Config as ConfigSchema } from '@opencode/schema/config';
 import { SessionSchema } from '@opencode/core/session/schema';
 import { LayerNode } from '@opencode/util/effect/layer-node';
 import { Global } from '@opencode/util/global';
+import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { createCommandDerivation } from '../../packages/web/server/lib/opencode/runtime-host/command-derivation.js';
 import { provideRegistrationOrigin } from '../../packages/web/server/lib/opencode/runtime-host/registration-origin.js';
 import { OperationPermitRef, type NativeAdmissionBridge } from '../../packages/web/server/lib/opencode/runtime-host/native-admission-contract.js';
 import { HostRefusal, runWithHostRefusal } from '../../packages/web/server/lib/opencode/runtime-host/host-refusal.js';
+const scratchRoots: string[] = [];
+afterAll(() => Promise.all(scratchRoots.map(root => fs.rm(root, { recursive: true, force: true }))));
+const scratch = async (name: string) => { const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), `devryan-${name}-`))); scratchRoots.push(root); return root; };
 
 // Real native Command state/transform/dispatch; the private bridge is the
 // boundary under test, not a substitute native command implementation.
@@ -31,7 +36,7 @@ test('only a sealed configured executor receives derivation and its inner hooks 
     expect(input).toEqual({directory:'/fixture/commands',name:'reviewed',invocation});expect(yield* derivation.requestMarker()).toBe(token);beforeCommands++;
   }),reviewedConfigurationForDirectory:directory=>directory==='/fixture/commands'?document.info:undefined,reviewedBehaviorCommands:
     ['deepwork','foreign','forged-description','override'].map(name=>({origin:behaviorOrigin,name,definition:declaration})) });
-  const root = path.resolve('.cache/v2-validation/native-command-lock');
+  const root = await scratch('native-command-lock');
   const layer = LayerNode.compile(Command.node, { replacements: [
     Global.node.replace(Global.layerWith({ home: root, data: root, cache: root, config: root, state: root, tmp: root, bin: root, log: root, repos: root })),
     Command.node.replace(Command.node.mapLayer(inner => Layer.effect(Command.Service,

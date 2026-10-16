@@ -1,8 +1,8 @@
 import {test,expect} from 'bun:test';
-import fs from 'node:fs/promises';import path from 'node:path';import {createHash} from 'node:crypto';import {createRequire} from 'node:module';
+import fs from 'node:fs/promises';import path from 'node:path';import os from 'node:os';import {createHash} from 'node:crypto';import {createRequire} from 'node:module';
 import {prepareReviewedNativeInputs,reviewedNativeInputPlugin} from '../native-runtime-assets.mjs';
-const repository=path.resolve(import.meta.dirname,'../..'),parent=path.join(repository,'.cache/v2-validation');await fs.mkdir(parent,{recursive:true});
-const root=await fs.mkdtemp(path.join(parent,'native-doc-'));const entry=path.join(root,'entry.ts'),bundle=path.join(root,'bundle.mjs');
+const repository=path.resolve(import.meta.dirname,'../..');
+const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-native-doc-')));const entry=path.join(root,'entry.ts'),bundle=path.join(root,'bundle.mjs');
 await fs.writeFile(entry,`export * from ${JSON.stringify(path.join(repository,'packages/web/server/lib/opencode/runtime-host/native-document.ts'))};
 export * from ${JSON.stringify(path.join(repository,'packages/web/server/default-config/plugins/devryan-document-reader.mjs'))};`);
 const built=await Bun.build({entrypoints:[entry],target:'bun',plugins:[reviewedNativeInputPlugin(await prepareReviewedNativeInputs(repository))]});

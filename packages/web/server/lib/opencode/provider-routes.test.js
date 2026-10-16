@@ -25,8 +25,8 @@ import { createNativeManagedTitleOwner } from './runtime-host/native-managed-tit
 import { createStandardSessionTitleRuntime } from './standard-session-title-runtime.js';
 import { createMemorySessionTitleOutbox } from './session-title-outbox.js';
 
-vi.mock('./auth.js', () => ({
-  OPENCODE_DATA_DIR: `${process.cwd()}/.cache/provider-auth-fixture`,
+vi.mock('./auth.js', async () => ({
+  OPENCODE_DATA_DIR: (await import('node:path')).join((await import('node:os')).tmpdir(), 'devryan-provider-auth-fixture'),
   readAuthFile: vi.fn(() => ({})),
   writeAuthFile: vi.fn(),
   getProviderAuth: vi.fn(() => null),
@@ -1987,9 +1987,7 @@ describe('registered-project Cursor runtime status', () => {
   const metadata = () => ({ id: 'cursor-fixture', integrationID: 'cursor-acp', valueType: 'key',
     active: true, expectedFingerprint: 'a'.repeat(64), label: 'private account label' });
   const fixture = ({ rows = [metadata()], hold = false, afterRead } = {}) => {
-    const base = join(import.meta.dirname, '../../../../../.cache/v2-validation');
-    mkdirSync(base, { recursive: true });
-    const root = mkdtempSync(join(base, 'cursor-status-'));
+    const root = mkdtempSync(join(tmpdir(), 'devryan-cursor-status-'));
     const directory = join(root, 'new-project'); mkdirSync(directory);
     const snapshot = { locations: [{ directory: root, configuration: {}, compatibility: { mcp: {} } },
       { directory, configuration: { providers: { 'cursor-acp': { name: 'project-specific fixture' } } }, compatibility: { mcp: {} } }] };

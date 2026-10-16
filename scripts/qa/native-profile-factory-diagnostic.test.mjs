@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { createDiagnosticSanitizer } from '../../packages/harness-runtime/lib/sanitizer.js';
 import { archiveQaNativeHostLog } from './native-profile-factory-diagnostic.mjs';
 
 test('failed host startup logs retain bounded private sanitized evidence', async () => {
-  const root = await fs.mkdtemp(path.resolve('.cache/qa-native-host-log-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-qa-native-host-log-')));
   const secret = 'synthetic-diagnostic-only-secret';
   const sanitizer = createDiagnosticSanitizer({ homeDir: root, knownSecrets: [secret] });
   try {

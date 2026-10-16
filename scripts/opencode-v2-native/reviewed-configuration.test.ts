@@ -1,11 +1,12 @@
 import {test,expect} from 'bun:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {prepareReviewedNativeInputs,reviewedNativeInputPlugin,rewriteSealedNodeRequire} from '../native-runtime-assets.mjs';
 
 test('sealed reviewed configuration imports under Node and builds original roles without ambient IO',async()=>{
  const repository=path.resolve(import.meta.dirname,'../..');
- const root=await fs.mkdtemp(path.join(repository,'.cache/v2-validation/reviewed-config-'));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-reviewed-config-')));
  try{
   const reviewed=await prepareReviewedNativeInputs(repository);
   const output=path.join(root,'DevRyan-native-configuration.mjs');

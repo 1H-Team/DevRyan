@@ -5,9 +5,9 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { warnIfCacheOverBudget } from './storage-policy.mjs';
+import { cacheGrowthFailure, snapshotCache } from './cache-guard.mjs';
 
-const mode = process.argv[2] ?? 'affected';
+const mode = process.argv[2] ?? 'fast';
 
 const workspaceRoot = process.cwd();
 const tsLikeExtensions = new Set(['.ts', '.tsx']);
@@ -33,10 +33,10 @@ const packages = {
     test: ['bun', ['run', '--cwd', 'packages/electron', 'test']],
   },
   desktop: {
+    // Frozen legacy Tauri package: lint and types only; its cargo tests are not run.
     prefix: 'packages/desktop/',
     lint: ['bun', ['run', 'lint:desktop']],
     typeCheck: ['bun', ['run', 'type-check:desktop']],
-    test: ['bun', ['run', '--cwd', 'packages/desktop', 'test']],
   },
   bots: {
     prefix: 'packages/bots-runtime/',
@@ -84,20 +84,15 @@ const packages = {
   },
 };
 
-const fullValidationFiles = new Set([
+// Shared configuration: a change re-checks lint and types everywhere.
+const sharedConfigFiles = new Set([
   'package.json',
   'bun.lock',
   'eslint.config.js',
   'tsconfig.json',
   'vite-theme-plugin.ts',
   '.opencode/opencode.json',
-  'scripts/validate.mjs',
 ]);
-
-const fullValidationPrefixes = [
-  '.github/',
-  'scripts/',
-];
 
 const docsOnlyExtensions = new Set(['.md', '.mdx', '.txt']);
 
@@ -118,7 +113,8 @@ function runGit(args, options = {}) {
 }
 
 function changedFilesFromGit() {
-  const base = process.env.VALIDATE_BASE;
+  // Committed but unpushed work counts: compare with the upstream branch unless VALIDATE_BASE is set.
+  const base = process.env.VALIDATE_BASE || runGit(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'], { ignoreErrors: true }).trim();
   const outputs = [];
 
   if (base) {
@@ -142,8 +138,13 @@ function packageForFile(file) {
   return Object.entries(packages).find(([, config]) => file.startsWith(config.prefix))?.[0] ?? null;
 }
 
-function isFullValidationFile(file) {
-  return /(?:^|\/)(?:package\.json|package-lock\.json|bun\.lock|Cargo\.toml|Cargo\.lock)$/.test(file) || fullValidationFiles.has(file) || fullValidationPrefixes.some((prefix) => file.startsWith(prefix));
+function isSharedConfigFile(file) {
+  return sharedConfigFiles.has(file);
+}
+
+function isScriptsFile(file) {
+  return file.startsWith('scripts/') || file.startsWith('.github/')
+    || file.startsWith('.opencode/agents/') || file.startsWith('.opencode/plugins/');
 }
 
 function isRuntimeGuidance(file) {
@@ -161,13 +162,9 @@ function isLintableFile(file) {
   return tsLikeExtensions.has(path.extname(file));
 }
 
-function isUiTestRelevant(file, quick) {
+function isUiTestRelevant(file) {
   if (!file.startsWith('packages/ui/src/')) return false;
   if (testFilePattern.test(file)) return true;
-  if (quick) return false;
-
-  // Decision: quick mode intentionally skips non-test UI tests to keep small,
-  // likely-safe UI edits light; affected mode runs tests for state/sync/code paths.
   return [
     'packages/ui/src/sync/',
     'packages/ui/src/stores/',
@@ -177,30 +174,16 @@ function isUiTestRelevant(file, quick) {
   ].some((prefix) => file.startsWith(prefix));
 }
 
-function isWebTestRelevant(file, quick) {
+function isWebTestRelevant(file) {
   if (!file.startsWith('packages/web/')) return false;
-  if (isRuntimeGuidance(file)) return true;
-  if (testFilePattern.test(file)) return true;
-  if (quick) return false;
-
+  if (isRuntimeGuidance(file) || testFilePattern.test(file)) return true;
   return file.startsWith('packages/web/server/') || file.startsWith('packages/web/bin/');
 }
 
-
-function isElectronTestRelevant(file, quick) {
+function isElectronTestRelevant(file) {
   if (!file.startsWith('packages/electron/')) return false;
   if (testFilePattern.test(file)) return true;
-  if (quick) return false;
   return ['.js', '.mjs'].includes(path.extname(file)) || file === 'packages/electron/package.json';
-}
-
-function isDesktopTestRelevant(file) {
-  if (!file.startsWith('packages/desktop/')) return false;
-  return file.startsWith('packages/desktop/src-tauri/src/')
-    || file === 'packages/desktop/src-tauri/Cargo.toml'
-    || file === 'packages/desktop/src-tauri/Cargo.lock'
-    || file === 'packages/desktop/src-tauri/tauri.conf.json'
-    || file === 'packages/desktop/package.json';
 }
 
 function isCursorTestRelevant(file) {
@@ -299,108 +282,18 @@ function fullCommands() {
     command('lint:full', 'bun', ['run', 'lint']),
     command('type-check:full', 'bun', ['run', 'type-check']),
     command('docs:validate', 'bun', ['run', 'docs:validate']),
+    command('build', 'bun', ['run', 'build']),
+    command('bundle:check', 'bun', ['run', 'bundle:check']),
     command('test:full', 'bun', ['run', 'test:full']),
   ];
 }
 
-export function buildPlan(requestedMode, providedFiles) {
-  const files = providedFiles ?? changedFilesFromGit();
-  const changedPackages = new Set(files.map(packageForFile).filter(Boolean));
-  const fullRequired = files.some((file) => isFullValidationFile(file));
-  const codeFiles = files.filter((file) => !isDocsOnlyFile(file));
-
-  if (requestedMode === 'full') {
-    return { files, commands: fullCommands(), reason: 'full validation requested' };
-  }
-
-  if (requestedMode === 'lint-changed') {
-    return { files, commands: changedLintCommand(files), reason: 'changed-file lint requested' };
-  }
-
-  if (requestedMode === 'type-check-affected') {
-    const typeCheckPackages = affectedTypeCheckPackages(changedPackages, true);
-    return { files, commands: packageCommands(typeCheckPackages, 'typeCheck'), reason: 'affected type-check requested' };
-  }
-
-  if (requestedMode === 'test-affected') {
-    if (fullRequired) return { files, commands: [command('test:full', 'bun', ['run', 'test:full'])], reason: 'shared configuration requires full test coverage' };
-    const tests = new Set();
-    for (const file of files) {
-      if (isUiTestRelevant(file, false)) tests.add('ui');
-      if (isWebTestRelevant(file, false)) tests.add('web');
-      if (isElectronTestRelevant(file, false)) tests.add('electron');
-      if (isDesktopTestRelevant(file)) tests.add('desktop');
-      if (isBotsTestRelevant(file)) tests.add('bots');
-      if (isBotServiceTestRelevant(file, 'packages/bot-supervisor/')) tests.add('botSupervisor');
-      if (isBotServiceTestRelevant(file, 'packages/bot-engine-proxy/')) tests.add('botEngineProxy');
-      if (isBotServiceTestRelevant(file, 'packages/bot-egress/')) tests.add('botEgress');
-      if (isBotServiceTestRelevant(file, 'packages/bot-computer/')) tests.add('botComputer');
-      if (isBotServiceTestRelevant(file, 'packages/bot-indexer/')) tests.add('botIndexer');
-      if (isBotDbTestRelevant(file)) tests.add('botDb');
-      if (isCursorTestRelevant(file)) tests.add('cursor');
-      if (isOrchestrationTestRelevant(file)) tests.add('orchestration');
-      if (file.startsWith('packages/shared-runtime/')) tests.add('shared');
-      if (isHarnessTestRelevant(file)) tests.add('harness');
-    }
-    if (tests.has('cursor')) tests.add('web');
-    if (tests.has('bots')) {
-      tests.add('electron');
-      tests.add('ui');
-      tests.add('web');
-    }
-    if (tests.has('botSupervisor') || tests.has('botEngineProxy') || tests.has('botEgress')
-      || tests.has('botComputer') || tests.has('botIndexer')) {
-      tests.add('electron');
-    }
-    if (tests.has('botDb')) {
-      tests.add('electron');
-      tests.add('web');
-    }
-    if (tests.has('orchestration')) {
-      tests.add('ui');
-      tests.add('web');
-    }
-    if (tests.has('shared')) tests.add('web');
-    if (tests.has('harness')) {
-      tests.add('web');
-    }
-    const commands = packageCommands(tests, 'test');
-    if (files.some(file => file.startsWith('.opencode/agents/') || file.startsWith('.opencode/plugins/'))) commands.push(command('test:scripts', 'bun', ['run', 'test:scripts']));
-    return { files, commands, reason: 'affected tests requested' };
-  }
-
-  if (requestedMode !== 'quick' && requestedMode !== 'affected') {
-    throw new Error(`Unknown validation mode: ${requestedMode}`);
-  }
-
-  if (files.length === 0 || codeFiles.length === 0) {
-    return { files, commands: files.length === 0 ? [] : [command('docs:validate', 'bun', ['run', 'docs:validate'])], reason: files.length === 0 ? 'no changed files detected' : 'docs-only changes detected' };
-  }
-
-  if (fullRequired) {
-    return { files, commands: fullCommands(), reason: 'shared validation config changed; using full validation' };
-  }
-
-  const commands = [];
-  if (files.some(file => /\.mdx?$/.test(file))) commands.push(command('docs:validate', 'bun', ['run', 'docs:validate']));
-  if (files.some(file => file.startsWith('.opencode/agents/') || file.startsWith('.opencode/plugins/'))) commands.push(command('test:scripts', 'bun', ['run', 'test:scripts']));
-  const quick = requestedMode === 'quick';
-
-  if (quick) {
-    commands.push(...changedLintCommand(files));
-  } else {
-    commands.push(...packageCommands(changedPackages, 'lint'));
-  }
-
-  const typeCheckPackages = affectedTypeCheckPackages(changedPackages, !quick);
-  commands.push(...packageCommands(typeCheckPackages, 'typeCheck'));
-
+function affectedTests(files) {
   const tests = new Set();
   for (const file of files) {
-    if (isUiTestRelevant(file, quick)) tests.add('ui');
-    if (isWebTestRelevant(file, quick)) tests.add('web');
-    if (isElectronTestRelevant(file, quick)) tests.add('electron');
-    if (isDesktopTestRelevant(file)) tests.add('desktop');
+    if (isUiTestRelevant(file)) tests.add('ui');
+    if (isWebTestRelevant(file)) tests.add('web');
+    if (isElectronTestRelevant(file)) tests.add('electron');
     if (isBotsTestRelevant(file)) tests.add('bots');
     if (isBotServiceTestRelevant(file, 'packages/bot-supervisor/')) tests.add('botSupervisor');
     if (isBotServiceTestRelevant(file, 'packages/bot-engine-proxy/')) tests.add('botEngineProxy');
@@ -412,34 +305,55 @@ export function buildPlan(requestedMode, providedFiles) {
     if (isOrchestrationTestRelevant(file)) tests.add('orchestration');
     if (file.startsWith('packages/shared-runtime/')) tests.add('shared');
     if (isHarnessTestRelevant(file)) tests.add('harness');
+    // A package manifest or nested lockfile change re-runs that package's tests.
+    if (/(?:^|\/)(?:package\.json|package-lock\.json)$/.test(file)) {
+      const name = packageForFile(file);
+      if (name && packages[name].test) tests.add(name);
+    }
   }
-  if (!quick && tests.has('cursor')) tests.add('web');
-  if (!quick && tests.has('bots')) {
-    tests.add('electron');
-    tests.add('ui');
-    tests.add('web');
-  }
-  if (!quick && (tests.has('botSupervisor') || tests.has('botEngineProxy') || tests.has('botEgress')
-    || tests.has('botComputer') || tests.has('botIndexer'))) {
-    tests.add('electron');
-  }
-  if (!quick && tests.has('botDb')) {
-    tests.add('electron');
-    tests.add('web');
-  }
-  if (!quick && tests.has('orchestration')) {
-    tests.add('ui');
-    tests.add('web');
-  }
-  if (!quick && tests.has('shared')) tests.add('web');
-  if (!quick && tests.has('harness')) {
-    tests.add('web');
-  }
-  commands.push(...packageCommands(tests, 'test'));
-
-  return { files, commands, reason: `${requestedMode} validation for changed files` };
+  // Dependents: packages whose behaviour runs through the changed one.
+  if (tests.has('cursor')) tests.add('web');
+  if (tests.has('bots')) ['electron', 'ui', 'web'].forEach((name) => tests.add(name));
+  if (['botSupervisor', 'botEngineProxy', 'botEgress', 'botComputer', 'botIndexer'].some((name) => tests.has(name))) tests.add('electron');
+  if (tests.has('botDb')) ['electron', 'web'].forEach((name) => tests.add(name));
+  if (tests.has('orchestration')) ['ui', 'web'].forEach((name) => tests.add(name));
+  if (tests.has('shared')) tests.add('web');
+  if (tests.has('harness')) tests.add('web');
+  return tests;
 }
 
+/**
+ * `fast` (default, `bun run validate`): the local gate before a push or a release tag.
+ * Lint and type-check what changed (everything when shared config changed), run the
+ * affected package tests and the scripts suite, and always the startup contract.
+ * `full` (`bun run validate:full`, CI): every check including the full test suite.
+ */
+export function buildPlan(requestedMode, providedFiles) {
+  if (requestedMode === 'full') {
+    return { files: providedFiles ?? [], commands: fullCommands(), reason: 'full validation requested' };
+  }
+  if (requestedMode !== 'fast') throw new Error(`Unknown validation mode: ${requestedMode} (use fast or full)`);
+
+  const files = providedFiles ?? changedFilesFromGit();
+  const codeFiles = files.filter((file) => !isDocsOnlyFile(file));
+  const docs = files.some((file) => /\.mdx?$/.test(file)) ? [command('docs:validate', 'bun', ['run', 'docs:validate'])] : [];
+  if (files.length === 0) return { files, commands: [command('test:startup', 'bun', ['run', 'test:startup'])], reason: 'no changed files; startup contract only' };
+  if (codeFiles.length === 0) return { files, commands: docs, reason: 'docs-only changes' };
+
+  const changedPackages = new Set(files.map(packageForFile).filter(Boolean));
+  const shared = files.some(isSharedConfigFile);
+  const commands = [...docs];
+  if (shared) {
+    commands.push(command('lint:full', 'bun', ['run', 'lint']), command('type-check:full', 'bun', ['run', 'type-check']));
+  } else {
+    commands.push(...changedLintCommand(files));
+    commands.push(...packageCommands(affectedTypeCheckPackages(changedPackages, true), 'typeCheck'));
+  }
+  if (files.some(isScriptsFile)) commands.push(command('test:scripts', 'bun', ['run', 'test:scripts']));
+  commands.push(...packageCommands(affectedTests(files), 'test'));
+  commands.push(command('test:startup', 'bun', ['run', 'test:startup']));
+  return { files, commands, reason: shared ? 'shared configuration changed; lint and type-check everything' : 'changed files' };
+}
 function printPlan(plan) {
   console.log(`Validation mode: ${mode}`);
   console.log(`Reason: ${plan.reason}`);
@@ -484,9 +398,13 @@ if (isDirectExecution) {
   try {
     const plan = buildPlan(mode);
     printPlan(plan);
-    // Heavy QA fills .cache and the disk: warn (never fail) before a full run.
-    if (mode === 'full') warnIfCacheOverBudget(workspaceRoot);
+    const cacheBefore = snapshotCache(workspaceRoot);
     runCommands(plan.commands);
+    const growth = cacheGrowthFailure(workspaceRoot, cacheBefore);
+    if (growth) {
+      console.error(`\n${growth}`);
+      process.exit(1);
+    }
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);

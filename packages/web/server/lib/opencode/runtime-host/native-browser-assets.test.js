@@ -1,12 +1,13 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { createHash } from 'node:crypto';
 import { expect, it } from 'vitest';
 import { readNativeBrowserAssets } from './native-browser-assets.js';
 import { AGENT_BROWSER_VERSION } from '../../agent-browser/install.js';
 
 it('seals only an existing canonical managed installation and rejects changed layout/config/version/symlinks', async () => {
-  const root = await fs.mkdtemp(path.resolve(import.meta.dirname, '../../../../../../.cache/v2-validation/browser-assets-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-browser-assets-')));
   const pkg = path.join(root, 'node_modules/agent-browser'), config = path.join(root, 'devryan-agent-browser.json');
   const binary = path.join(pkg, 'bin', `agent-browser-${process.platform}-${process.arch}${process.platform === 'win32' ? '.exe' : ''}`);
   const descriptor = { name: 'agent-browser', version: AGENT_BROWSER_VERSION };

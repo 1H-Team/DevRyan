@@ -20,8 +20,7 @@ const roots=[];
 let warn;beforeEach(()=>{warn=vi.spyOn(console,'warn').mockImplementation(()=>{});});
 afterEach(async()=>{warn.mockRestore();await Promise.all(roots.splice(0).map(root=>fs.rm(root,{recursive:true,force:true})));});
 async function fixture(){
- const base=path.resolve(import.meta.dirname,'../../../../../../.cache/v2-validation');await fs.mkdir(base,{recursive:true});
- const root=await fs.mkdtemp(path.join(base,'native-setup-'));roots.push(root);
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-native-setup-')));roots.push(root);
  const launch=base=>({webDataDirectory:path.join(base,'web'),webConfigDirectory:path.join(base,'web-config'),opencodeConfigDirectory:path.join(base,'config'),opencodeDataDirectory:path.join(base,'data'),home:path.join(base,'home'),global:{home:path.join(base,'home')}});
  const source=launch(path.join(root,'source')),target=launch(path.join(root,'target'));
  for(const value of [source,target])for(const dir of [value.webDataDirectory,value.webConfigDirectory,value.opencodeConfigDirectory,value.opencodeDataDirectory,value.home])await fs.mkdir(dir,{recursive:true});
@@ -286,8 +285,7 @@ it('pins generated credential, Meridian and owner rows before project records an
  await expect(seedNativeSetup(g)).rejects.toMatchObject({code:'native_setup_source_too_large',relativePath:'auth.json'});
  expect(await fs.stat(path.join(g.target.webDataDirectory,'native-setup-seed.json')).catch(error=>error.code)).toBe('ENOENT');
 },60_000);
-const caseInsensitive=await(async()=>{const base=path.resolve(import.meta.dirname,'../../../../../../.cache/v2-validation');await fs.mkdir(base,{recursive:true});
- const probe=await fs.mkdtemp(path.join(base,'case-'));try{await fs.writeFile(path.join(probe,'a'),'');return await fs.lstat(path.join(probe,'A')).then(()=>true,()=>false);}finally{await fs.rm(probe,{recursive:true,force:true});}})();
+const caseInsensitive=await(async()=>{const probe=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-case-')));try{await fs.writeFile(path.join(probe,'a'),'');return await fs.lstat(path.join(probe,'A')).then(()=>true,()=>false);}finally{await fs.rm(probe,{recursive:true,force:true});}})();
 it.skipIf(!caseInsensitive)('treats a case-only stored name as the requested entry and keeps the canonical destination name',async()=>{
  const f=await fixture(),config=f.source.opencodeConfigDirectory;
  await f.text(path.join(config,'agents.md'),'rules');await f.write(path.join(config,'OpenCode.json'),{stored:true});await f.text(path.join(config,'Skills','a','SKILL.md'),'skill');

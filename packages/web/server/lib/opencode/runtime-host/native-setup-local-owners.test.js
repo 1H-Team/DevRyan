@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { spawn } from 'node:child_process';
 import { createSessionVault } from '../../multi-user/vault.js';
 import { createLocalBotOwner } from '../../bots/local-owner.js';
@@ -8,8 +9,7 @@ import { createSupabaseConnection } from '../../multi-user/supabase-connection.j
 import { captureNativeSetupOwners, restoreNativeSetupOwners } from './native-setup-local-owners.js';
 
 const fixture = async action => {
- const base=path.resolve('../../.cache/v2-validation');await fs.mkdir(base,{recursive:true});
- const root=await fs.mkdtemp(path.join(base,'setup-owner-'));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-setup-owner-')));
  try{await action(root);}finally{await fs.rm(root,{recursive:true,force:true});}
 };
 test('logical setup preserves original durable owners through the vault without session grants',async()=>fixture(async root=>{

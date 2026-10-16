@@ -1,12 +1,13 @@
 import {expect,test} from 'bun:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {rewriteNativeFinalizationObservation} from '../native-finalization-observation-transform.mjs';
 import {createNativeAssetFixturePlugin,writeNativeFixtureOutputs} from './native-asset-fixture.mjs';
 import {prepareReviewedNativeInputs,reviewedNativeInputPlugin} from '../native-runtime-assets.mjs';
 const repository=path.resolve(import.meta.dirname,'../..');
 for(const compiled of [false,true])test(`actual native post-model mandatory IO success/error/cancellation ${compiled?'compiled':'source'} witness`,async()=>{
- const root=await fs.mkdtemp(path.join(repository,'.cache/v2-validation/finalization-'));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-finalization-')));
  let child:ReturnType<typeof Bun.spawn>|undefined,timer:ReturnType<typeof setTimeout>|undefined,failure:unknown;
  try{
   const observation:Bun.BunPlugin={name:'pinned-native-finalization',setup(builder){builder.onLoad({filter:/instance-r0d06n1c\.js$/},async event=>({

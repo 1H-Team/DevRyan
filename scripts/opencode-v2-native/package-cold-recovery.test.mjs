@@ -2,12 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {EventEmitter} from 'node:events';
 import {armCompiledRollbackCrash,withRollbackProofControl} from './package-cold-recovery.mjs';
 
-const cache=path.resolve('.cache/v2-validation');await fs.mkdir(cache,{recursive:true});
 async function fixture(){
- const root=await fs.mkdtemp(path.join(cache,'cold-recovery-control-')),digest='a'.repeat(64),candidateRoot=path.join(root,'bundles/B');
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-cold-recovery-control-'))),digest='a'.repeat(64),candidateRoot=path.join(root,'bundles/B');
  await fs.mkdir(path.join(root,'rollback'),{mode:0o700});
  const candidate={bundleID:'B',sourceBundleID:'A',launch:{opencodeDatabasePath:path.join(candidateRoot,'opencode/opencode.db'),artifactManifestSha256:digest}};
  const intent={protocol:'devryan.bundle.rollback-intent/1',state:'pending',revision:2,candidateBundleID:'B',targetBundleID:'A',candidateDescriptorSha256:digest,candidatePreparedSha256:digest,candidateManifestSha256:digest,targetDescriptorSha256:digest,targetPreparedSha256:digest,targetManifestSha256:digest,expectedTargetCredentialSha256:digest,nativeCredentialSha256:digest,

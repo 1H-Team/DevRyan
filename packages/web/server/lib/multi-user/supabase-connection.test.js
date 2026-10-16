@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import express from 'express';
@@ -22,9 +23,7 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 const fixture = async (enabled = true, fetchImpl = vi.fn()) => {
-  const base = path.resolve('../../.cache/supabase-test');
-  await fs.mkdir(base, { recursive: true });
-  const root = await fs.mkdtemp(path.join(base, 'fixture-')); roots.push(root);
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-supabase-test-')); roots.push(root);
   const config = { configured: true, enabled, dataDirectory: root, url: 'https://supabase.invalid', publishableKey: 'fixture-public', secretKey: 'fixture-secret' };
   const connection = await createSupabaseConnection({ config, fetchImpl }); connections.push(connection);
   return { connection, config, root, fetchImpl };

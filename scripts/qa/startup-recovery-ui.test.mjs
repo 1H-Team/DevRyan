@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { parseStartupRecoveryUiArgs, runStartupRecoveryUi } from './startup-recovery-ui.mjs';
 import { prepareOwnedQaDirectory } from './owned-output.mjs';
 
@@ -15,9 +15,7 @@ test('local recovery diagnostic requires explicit absolute owned artifact inputs
 });
 
 test('QA output creation rejects traversal and symlink parents before creating escaped files', async () => {
-  const family = fileURLToPath(new URL('../../.cache/qa-output-tests', import.meta.url));
-  fs.mkdirSync(family, { recursive: true });
-  const root = fs.mkdtempSync(path.join(family, 'trial-'));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-qa-output-trial-')));
   const owned = path.join(root, 'owned'), other = path.join(root, 'other');
   try {
     fs.mkdirSync(owned); fs.mkdirSync(other);

@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createNativeProviderConfigurationOperation } from './native-provider-configuration-operation.js';
@@ -6,7 +7,7 @@ import { createNativeProviderConfigurationOperation } from './native-provider-co
 const fixtures=[];
 afterEach(()=>{for(const root of fixtures.splice(0))fs.rmSync(root,{recursive:true,force:true});});
 function fixture(providerID='openai') {
-  const root=fs.realpathSync(fs.mkdtempSync(path.join(process.env.TMPDIR ?? path.resolve('.cache'),'provider-config-')));fixtures.push(root);
+  const root=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'devryan-provider-config-')));fixtures.push(root);
   const config=path.join(root,'config'),project=path.join(root,'project');fs.mkdirSync(config);fs.mkdirSync(project);
   const snapshot={locations:[{directory:project,configuration:{providers:{[providerID]:{models:{saved:{}}}}}}]};
   let current=snapshot,ready=true,authorized=true;

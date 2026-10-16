@@ -1,13 +1,14 @@
 import {test,expect} from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {createHash} from 'node:crypto';
 import {createWindowsPrivateFilesFixture} from '../../../../../harness-runtime/lib/windows-private-files.fixture.js';
 import {retainNativeArtifacts,pruneRetainedNativeArtifacts} from './retained-native-artifacts.js';
 import {REVIEWED_WINDOWS_GIT_ARCHIVES,REVIEWED_WINDOWS_GIT_VERSION} from './reviewed-windows-git.js';
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 async function fixture(action){
- const base=path.resolve('../../.cache/test-fixtures');await fs.mkdir(base,{recursive:true});const root=await fs.mkdtemp(path.join(base,'windows-retention-'));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-windows-retention-')));
  const native=createWindowsPrivateFilesFixture(root),controlRoot=path.join(root,'control'),source=path.join(root,'resources');await native.owner.ensureDirectory(controlRoot);await fs.mkdir(source);
  const bytes=Buffer.alloc(17*1024*1024,42),files=[{path:'DevRyan-controller',sha256:hash(bytes),size:bytes.length,mode:0o755},{path:'DevRyan-writer',sha256:hash('writer'),size:6,mode:0o755}];
  await fs.writeFile(path.join(source,files[0].path),bytes);await fs.writeFile(path.join(source,files[1].path),'writer');

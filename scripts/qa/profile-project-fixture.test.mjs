@@ -75,7 +75,8 @@ test('ownership refuses forged or replaced fixtures, pinned seed tampering, and 
   await fs.writeFile(value.seedManifestPath, seed);
   await finishQaProfileProjectFixture(value, 'passed');
   await assert.rejects(fs.lstat(value.fixtureRoot), { code: 'ENOENT' });
-  assert.equal((await fs.lstat(value.seedManifestPath)).isFile(), true);
+  // A finished run without --keep-artifacts removes its whole run directory, seed manifest included.
+  await assert.rejects(fs.lstat(value.evidenceDirectory), { code: 'ENOENT' });
   await assert.rejects(finishQaProfileProjectFixture(value), /qa_profile_fixture_owner_invalid/);
 });
 

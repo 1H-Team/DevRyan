@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { readQaNativeObservations, flushQaNativeObservationJournal } from './native-observation-evidence.mjs';
@@ -16,9 +17,7 @@ const closers = new WeakMap();
 // Closers run before the fixture removal: closing a journal recreates files.
 const closeBeforeCleanup = (t, close) => closers.get(t).push(close);
 async function fixture(t) {
-  const base = path.resolve('.cache/v2-validation');
-  await mkdir(base, { recursive: true });
-  const runtimeRoot = await mkdtemp(path.join(base, 'journal-reader-'));
+  const runtimeRoot = await realpath(await mkdtemp(path.join(os.tmpdir(), 'devryan-journal-reader-')));
   closers.set(t, []);
   t.after(async () => {
     for (const close of closers.get(t)) await close();

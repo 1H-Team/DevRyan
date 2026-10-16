@@ -36,7 +36,7 @@ const createRuntime = (loginShellPath, options = {}) => createServerUtilsRuntime
 describe('server utils runtime', () => {
   it('uses the selected runtime home for settings and helper paths without changing process HOME', () => {
     const originalHome = process.env.HOME;
-    const homeDirectory = path.resolve('.cache/selected-runtime-home');
+    const homeDirectory = path.join(os.tmpdir(), 'devryan-selected-runtime-home');
     process.env.PATH = '/usr/bin';
     const runtime = createRuntime('/bin', { homeDirectory });
     const settings = createSettingsNormalizationRuntime({ os, path, processLike: process, homeDirectory });

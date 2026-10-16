@@ -7,7 +7,7 @@ import { createLoopbackOpenCodeFixtureForGeneration } from '../perf/loopback-ope
 import { resolveQaFixtureGeneration } from './runtime-target.mjs';
 import { reservePort, startOwnedProcess } from './process.mjs';
 import { CdpConnection, discoverPageTarget, evaluate } from './cdp.mjs';
-import { createRunRoot } from './run-root.mjs';
+import { createRunRoot, scratchParent } from './run-root.mjs';
 const root = path.resolve(import.meta.dirname, '../..');
 const require = createRequire(path.join(root, 'packages/electron/package.json'));
 // Only repository-local artifacts are accepted; this runner never uses installed-app state.
@@ -35,7 +35,7 @@ const localPath = async value => {
 const baseline = options.baseline ? await localPath(options.baseline) : null;
 const nativeBinary = options.electron ? await localPath(options.electron) : null;
 const runtime = nativeBinary ? 'electron' : 'web';
-const run = createRunRoot({ parent: path.join(root, '.cache/settings-loading'), prefix: `${runtime}-`, owner: 'scripts/qa/settings-loading.mjs', heavyNames: ['profile'] });
+const run = createRunRoot({ parent: scratchParent('settings-loading'), prefix: `${runtime}-`, owner: 'scripts/qa/settings-loading.mjs', heavyNames: ['profile'] });
 const output = run.dir;
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 const results = [];

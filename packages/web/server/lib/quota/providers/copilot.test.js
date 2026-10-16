@@ -3,8 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { readAuthFile } from '../../opencode/auth.js';
 import { fetchQuotaForProvider } from './index.js';
 
-vi.mock('../../opencode/auth.js', () => ({
-  OPENCODE_DATA_DIR: new URL('../../../../../../.cache/v2-validation/quota-fixtures/copilot/data', import.meta.url).pathname,
+vi.mock('../../opencode/auth.js', async () => ({
+  OPENCODE_DATA_DIR: (await import('node:path')).join((await import('node:os')).tmpdir(), 'devryan-quota-fixtures', 'copilot', 'data'),
   readAuthFile: vi.fn(() => ({})),
 }));
 

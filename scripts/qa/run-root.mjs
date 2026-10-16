@@ -1,11 +1,14 @@
 // Shared run-directory lifecycle for QA, validation and perf producers.
 //
-// A run directory gets `run.json` ({ schemaVersion, owner, createdAt,
-// completedAt, status, pinned }). On pass and on interrupt the heavy payloads
-// (runtime, home, profile, apps, node_modules, runtime bundles, copied native
-// binaries) are deleted; evidence files stay. On failure everything stays.
-// `--keep-artifacts` or DEVRYAN_KEEP_ARTIFACTS=1 keeps payloads in every case.
+// Run directories live in the OS temp dir (see `scratchParent`), never in the
+// repository. A run directory gets `run.json` ({ schemaVersion, owner,
+// createdAt, completedAt, status, pinned }). On any terminal status (passed,
+// failed, interrupted) the WHOLE run directory and its `external` paths are
+// removed. A failed run first prints a one-line hint to stderr. Producers whose
+// payload is a deliverable (`keepOnPass`) keep the directory on pass only.
+// `--keep-artifacts` or DEVRYAN_KEEP_ARTIFACTS=1 keeps everything in every case.
 import { constants as fsConstants, copyFileSync, cpSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 export const RUN_MANIFEST = 'run.json';
@@ -15,6 +18,12 @@ export const HEAVY_TOP_LEVEL = Object.freeze(['runtime', 'home', 'profile']);
 /** Directory names removed at any depth. */
 export const HEAVY_ANYWHERE = Object.freeze(['node_modules', 'runtime-bundles']);
 const SIGNAL_CODES = { SIGINT: 130, SIGTERM: 143 };
+
+/** OS-temp parent directory for a scratch family, e.g. `<tmpdir>/devryan-qa`. */
+export function scratchParent(family) {
+  if (typeof family !== 'string' || !/^[a-z0-9-]+$/.test(family)) throw new TypeError(`Invalid scratch family: ${String(family)}`);
+  return path.join(os.tmpdir(), `devryan-${family}`);
+}
 
 export function keepArtifactsRequested({ argv = process.argv, env = process.env, keep = false } = {}) {
   return Boolean(keep) || argv.includes('--keep-artifacts') || env.DEVRYAN_KEEP_ARTIFACTS === '1';
@@ -64,14 +73,13 @@ function lstatOrNull(target) { try { return lstatSync(target); } catch { return 
 /**
  * Create `<parent>/<prefix>XXXXXX` with a run manifest and lifecycle handlers.
  * `finish('passed'|'failed')` is idempotent; the first terminal status wins.
- * `extraPayloads` are extra paths (relative to the run dir, or absolute inside
- * it) removed alongside the standard heavy subtrees, e.g. copied binaries.
- * `heavyNames` are extra directory names removed at any depth (e.g. per-trial `fixture`).
+ * `extraPayloads` and `heavyNames` are retained for caller compatibility; the whole
+ * directory is removed on a terminal status, so they only matter to `removeRunPayloads`.
  * `external` are paths outside the run dir owned by this run (a tmpdir runtime).
  * `dir` adopts an existing run directory created by a shared fixture helper.
  * `name` uses a fixed directory name instead of a unique `prefix` suffix.
  * `keepOnPass` is for producers whose payload is the deliverable (a packaged app
- * consumed by later runs): a pass keeps it, an interrupt still removes it.
+ * consumed by later runs): a pass keeps it, a failure or interrupt removes it.
  * `signals: 'exit'` installs only the exit hook, for producers that handle
  * SIGINT/SIGTERM themselves and then call `finish('interrupted')`.
  * `onInterrupt` runs before interrupt cleanup so owned processes can stop.
@@ -90,6 +98,7 @@ export function createRunRoot({ parent, prefix = 'run-', name, dir: adoptedDir, 
   const handlers = [];
   let finished = false;
   let payloadsRemoved = [];
+  let removed = false;
 
   const finishSync = status => {
     if (finished) return manifest.status;
@@ -97,13 +106,16 @@ export function createRunRoot({ parent, prefix = 'run-', name, dir: adoptedDir, 
     finished = true;
     manifest.status = status;
     manifest.completedAt = new Date().toISOString();
-    if (!keep && status !== 'failed' && !(keepOnPass && status === 'passed')) {
+    if (!keep && !(keepOnPass && status === 'passed')) {
+      if (status === 'failed') process.stderr.write(`[run-root] ${owner} failed; its files were removed. Re-run with --keep-artifacts to keep ${dir}.\n`);
       try {
-        payloadsRemoved = removeRunPayloads(dir, { extra: extraPayloads, anywhere: [...HEAVY_ANYWHERE, ...heavyNames] });
         for (const target of externalPaths) { rmSync(target, { recursive: true, force: true }); payloadsRemoved.push(target); }
-      } catch { /* evidence stays; the prune tool retries */ }
+        rmSync(dir, { recursive: true, force: true });
+        payloadsRemoved.push(dir);
+        removed = true;
+      } catch { /* the prune tool retries */ }
     }
-    try { writeManifest(manifestPath, manifest); } catch { /* run dir already removed */ }
+    if (!removed) { try { writeManifest(manifestPath, manifest); } catch { /* run dir already removed */ } }
     dispose();
     return status;
   };

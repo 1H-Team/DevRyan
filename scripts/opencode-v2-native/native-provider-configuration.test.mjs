@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import {existsSync,readFileSync} from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import vm from 'node:vm';
 import {createHash} from 'node:crypto';
 import {resolveNativeProviderConfiguration,hasConfiguredNativeClaudeProfile} from '../../packages/web/server/lib/opencode/runtime-host/native-provider-configuration.js';
@@ -10,7 +11,7 @@ import {REVIEWED_CLAUDE_STARTUP} from '../../packages/web/server/lib/opencode/ru
 import {claudeKeychainService} from '../../packages/web/server/lib/opencode/claude-credential-projection.js';
 const repository=path.resolve(import.meta.dirname,'../..');
 const fixture=async action=>{
- const root=await fs.mkdtemp(path.join(repository,'.cache/v2-validation/meridian-configuration-'));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-meridian-configuration-')));
  try{const globals=Object.fromEntries(['home','config','data','state','cache','bin','log','repos','tmp'].map(name=>[name,path.join(root,name)]));for(const directory of Object.values(globals))await fs.mkdir(directory,{recursive:true});await fs.mkdir(path.join(globals.home,'.config/meridian'),{recursive:true});await action({root,globals});}finally{await fs.rm(root,{recursive:true,force:true});}
 };
 test('Claude catalog metadata uses only an unambiguous configured CLI profile',()=>{

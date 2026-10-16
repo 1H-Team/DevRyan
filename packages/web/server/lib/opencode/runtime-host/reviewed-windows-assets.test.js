@@ -1,6 +1,7 @@
 import {test,expect} from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {createHash} from 'node:crypto';
 import {REVIEWED_WINDOWS_EXECUTABLES,REVIEWED_WINDOWS_LIBSQL_COMMIT,REVIEWED_WINDOWS_LIBSQL_INPUTS,REVIEWED_WINDOWS_LIBSQL_EVIDENCE,reviewedWindowsRuntimeAsset,verifyWindowsLibsqlEvidence,assertWindowsBinaryArchitecture,readWindowsLibsqlEvidence} from './reviewed-windows-assets.js';
 
@@ -37,8 +38,7 @@ test('native PE inspection refuses the opposite architecture and malformed heade
 });
 
 test('libsql source evidence cannot change between inventory hashing and parsing',async()=>{
- const base=path.resolve('../../.cache/test-fixtures');await fs.mkdir(base,{recursive:true});
- const directory=await fs.mkdtemp(path.join(base,'libsql-evidence-')),file=path.join(directory,REVIEWED_WINDOWS_LIBSQL_EVIDENCE);
+ const directory=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-libsql-evidence-'))),file=path.join(directory,REVIEWED_WINDOWS_LIBSQL_EVIDENCE);
  const evidence={schema:1,status:'asset-candidate-passed',stage:'complete',version:'0.5.29',sourceCommit:REVIEWED_WINDOWS_LIBSQL_COMMIT,target:'x86_64-pc-windows-msvc',toolchain:'1.85.1-x86_64-pc-windows-msvc',cmakeGenerator:'NMake Makefiles',inputs:REVIEWED_WINDOWS_LIBSQL_INPUTS,inputSha256:REVIEWED_WINDOWS_LIBSQL_INPUTS,binary:'DevRyan-libsql-win32-x64.node',sha256:'a'.repeat(64),smokes:['node','bun'].map(runtime=>({status:'passed',platform:'win32',arch:'x64',runtime,version:runtime==='bun'?'1.3.14':'22.23.3'}))};
  const bytes=Buffer.from(JSON.stringify(evidence)),row={size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')};
  try{

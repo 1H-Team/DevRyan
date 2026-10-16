@@ -1,16 +1,15 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { hydrateReviewedClaude } from './hydrate-reviewed-claude.mjs';
 import { REVIEWED_CLAUDE_ASSETS } from '../packages/web/server/lib/opencode/runtime-host/reviewed-claude-transform.js';
 
-const cache = new URL('../.cache/release-2.0.0/', import.meta.url);
 const relative = 'packages/web/runtime/reviewed-inputs/claude-1.8.0/assets/DevRyan-Claude-darwin-arm64';
 
 test('a changed existing binary is preserved and never replaced by a download', async () => {
-  await fs.mkdir(cache, { recursive: true });
-  const repository = await fs.mkdtemp(new URL('hydrate-existing-', cache));
+  const repository = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-hydrate-existing-'));
   try {
     const destination = path.join(repository, relative);
     await fs.mkdir(path.dirname(destination), { recursive: true });
@@ -21,8 +20,7 @@ test('a changed existing binary is preserved and never replaced by a download', 
 });
 
 test('a corrupt download installs no executable and removes temporary bytes', async () => {
-  await fs.mkdir(cache, { recursive: true });
-  const repository = await fs.mkdtemp(new URL('hydrate-corrupt-', cache));
+  const repository = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-hydrate-corrupt-'));
   try {
     await assert.rejects(hydrateReviewedClaude({ repository, fetchImpl: async (url, options) => {
       assert.equal(url, 'https://registry.npmjs.org/@anthropic-ai/claude-code-darwin-arm64/-/claude-code-darwin-arm64-2.1.280.tgz');

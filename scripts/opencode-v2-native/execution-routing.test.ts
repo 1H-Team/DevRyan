@@ -15,6 +15,7 @@ import { nativeVcsGitFlags } from '../../packages/web/server/lib/opencode/execut
 import { runWithHostRefusal } from '../../packages/web/server/lib/opencode/runtime-host/host-refusal.ts';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { createNativeReadGuard } from '../../packages/web/server/lib/opencode/runtime-host/execution-read-guard.ts';
 import { captureReviewedSkill } from '../../packages/web/server/lib/opencode/runtime-host/reviewed-skills.js';
@@ -155,9 +156,7 @@ test('helper transport and malformed receipts remain host refusals through nativ
 });
 
 test('native read guard resolves symlinks and rejects external/protected/Git targets', async () => {
-  const base = path.resolve(import.meta.dirname, '../../.cache/v2-validation');
-  await fs.mkdir(base, { recursive: true });
-  const root = await fs.mkdtemp(path.join(base, 'read-guard-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-read-guard-')));
   try {
     const project = path.join(root, 'project'), protectedRoot = path.join(project, 'owned-host'), outside = path.join(root, 'external');
     await Promise.all([fs.mkdir(protectedRoot, { recursive: true }), fs.mkdir(outside)]);
@@ -181,9 +180,7 @@ test('native read guard resolves symlinks and rejects external/protected/Git tar
 });
 
 test('explicit native instruction loading cannot import symlinked or unreviewed AGENTS files', async () => {
-  const base = path.resolve(import.meta.dirname, '../../.cache/v2-validation');
-  await fs.mkdir(base, { recursive: true });
-  const root = await fs.mkdtemp(path.join(base, 'instruction-guard-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-instruction-guard-')));
   const project = path.join(root, 'project'), external = path.join(root, 'external');
   await Promise.all([fs.mkdir(path.join(project, 'nested'), { recursive: true }), fs.mkdir(external)]);
   const routing = createExecutionRouting({ directory: project, bridge, rpc: async () => { throw new Error('instruction load must not invoke execution'); } });
@@ -212,7 +209,7 @@ test('explicit native instruction loading cannot import symlinked or unreviewed 
 });
 
 test('actual Environment serves only verified skill files through the current direct read scope', async () => {
-  const root = await fs.mkdtemp(path.resolve('.cache/v2-validation/skill-read-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-skill-read-')));
   const project = path.join(root, 'project'), protectedRoot = path.join(root, 'private'), skillRoot = path.join(protectedRoot, 'skill');
   await Promise.all([fs.mkdir(project), fs.mkdir(skillRoot, { recursive: true })]);
   const file = path.join(skillRoot, 'SKILL.md'), support = path.join(skillRoot, 'support.txt');
@@ -254,9 +251,7 @@ test('actual Environment serves only verified skill files through the current di
 
 test('the explicit writer entry refuses empty input with a failed protocol reply', async () => {
   const repository = path.resolve(import.meta.dirname, '../..');
-  const base = path.join(repository, '.cache/v2-validation');
-  await fs.mkdir(base, { recursive: true });
-  const root = await fs.mkdtemp(path.join(base, 'writer-entry-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-writer-entry-')));
   try {
     const env = Object.fromEntries(['PATH', 'SystemRoot', 'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'PATHEXT']
       .filter(key => typeof process.env[key] === 'string').map(key => [key, process.env[key]!]));
@@ -273,9 +268,7 @@ test('the explicit writer entry refuses empty input with a failed protocol reply
 }, 20_000);
 
 test('fresh private SDK awaits real native write/edit/patch registration', async () => {
-  const base = path.resolve(import.meta.dirname, '../../.cache/v2-validation');
-  await fs.mkdir(base, { recursive: true });
-  const root = await fs.mkdtemp(path.join(base, 'writer-registry-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-writer-registry-')));
   let child: ReturnType<typeof Bun.spawn> | undefined;
   try {
     const project = path.join(root, 'project'), scratch = path.join(root, 'scratch');

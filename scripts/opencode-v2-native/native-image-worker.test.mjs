@@ -1,5 +1,5 @@
 import {test,expect,afterAll} from 'bun:test';
-import fs from 'node:fs/promises';import path from 'node:path';import {randomUUID,createHash} from 'node:crypto';
+import fs from 'node:fs/promises';import path from 'node:path';import os from 'node:os';import {randomUUID,createHash} from 'node:crypto';
 import {prepareReviewedNativeInputs,reviewedNativeInputPlugin} from '../native-runtime-assets.mjs';
 import {createNativeAssetFixturePlugin,writeNativeFixtureOutputs} from './native-asset-fixture.mjs';
 import {createSessionExecutionHost} from '../../packages/web/server/lib/opencode/session-execution-host.js';
@@ -10,7 +10,7 @@ import {toLLMMessages as toLLMMessages2} from '@opencode/core/session/runner/to-
 import {git} from '../../packages/harness-runtime/lib/session-changes-git.js';
 import {createSessionChangeHost} from '../../packages/harness-runtime/lib/session-changes-host.js';
 const repository=path.resolve(import.meta.dirname,'../..');
-const root=await fs.mkdtemp(path.join(repository,'.cache/v2-validation/image-worker-'));
+const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-image-worker-')));
 const built=await Bun.build({entrypoints:[path.join(repository,'packages/web/server/lib/opencode/runtime-host/writer-worker.ts')],external:['effect','@opencode/core/*','@opencode/schema/*','@opencode/plugin/*','@opencode/util/*'],target:'bun',outdir:root,naming:{entry:'worker.mjs',asset:'[name]-[hash].[ext]'},plugins:[await createNativeAssetFixturePlugin(repository),{name:'owned-sdk-source-entry',setup(builder){builder.onResolve({filter:/^@opencode\/sdk\/effect$/},async()=>({path:await fs.realpath(path.join(repository,'packages/web/node_modules/@opencode/sdk/dist/effect/index.js'))}));}},reviewedNativeInputPlugin(await prepareReviewedNativeInputs(repository))]});
 if(!built.success)throw new AggregateError(built.logs,'Original image worker graph failed');
 const bundle=path.join(root,'worker.mjs');await writeNativeFixtureOutputs(built.outputs);

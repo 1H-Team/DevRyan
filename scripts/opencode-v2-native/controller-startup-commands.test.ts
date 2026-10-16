@@ -1,12 +1,13 @@
 import {expect,test} from 'bun:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {prepareReviewedNativeInputs,reviewedNativeInputPlugin} from '../native-runtime-assets.mjs';
 import {createNativeAssetFixturePlugin,writeNativeFixtureOutputs} from './native-asset-fixture.mjs';
 
 const repository=path.resolve(import.meta.dirname,'../..');
 test('production controller forwards actual reviewed Slim and Ponytail declarations to native command gates',async()=>{
- const root=await fs.mkdtemp(path.join(repository,'.cache/v2-validation/controller-commands-'));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-controller-commands-')));
  let child:ReturnType<typeof Bun.spawn>|undefined;
  try{
   const host=path.join(repository,'packages/web/server/lib/opencode/runtime-host');

@@ -1,13 +1,14 @@
 import {expect,test} from 'bun:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {pathToFileURL} from 'node:url';
 import {rewriteReviewedSlimServer} from '../../packages/web/server/lib/opencode/runtime-host/reviewed-package-transforms.js';
 import {createReviewedSlimInterviewService,type NativeSlimInterviewDocuments,type NativeSlimInterviewRecord} from '../../packages/web/server/lib/opencode/runtime-host/native-slim-interview.ts';
 import type {ReviewedSlimCommandPart} from '../../packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js';
 
 test('actual interview state machine delegates every document/browser/session effect to its constructor owners',async()=>{
- const root=await fs.mkdtemp(path.resolve('.cache/v2-validation/slim-interview-'));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-slim-interview-')));
  try{
   const original=new URL('../../packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js',import.meta.url);
   const entry=path.join(root,'reviewed.mjs');await fs.writeFile(entry,rewriteReviewedSlimServer(await fs.readFile(original)).contents);
@@ -37,7 +38,7 @@ test('actual interview state machine delegates every document/browser/session ef
 
 test('original native interview bridge binds accepted canonical command before state changes and retains text lifecycle',async()=>{
  const {createOwnedSlimInterviewBridge}=await import('../../packages/web/server/lib/opencode/runtime-host/native-slim-interview-bridge.js');
- const root=await fs.mkdtemp(path.resolve('.cache/v2-validation/slim-interview-bridge-'));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-slim-interview-bridge-')));
  try{
   const entry=path.join(root,'reviewed.mjs');await fs.writeFile(entry,rewriteReviewedSlimServer(await fs.readFile(new URL('../../packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js',import.meta.url))).contents);
   const originals:typeof import('../../packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js')=await import(pathToFileURL(entry).href);
@@ -63,7 +64,7 @@ test('original native interview bridge binds accepted canonical command before s
 
 test('original interview UI handler uses existing HTTP owner and injected exact resume candidates',async()=>{
  const {createServer}=await import('node:http');
- const root=await fs.mkdtemp(path.resolve('.cache/v2-validation/slim-interview-http-'));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-slim-interview-http-')));
  const reviewedEntry=path.join(root,'reviewed.mjs');
  await fs.writeFile(reviewedEntry,rewriteReviewedSlimServer(await fs.readFile(new URL('../../packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js',import.meta.url))).contents);
  const reviewed:typeof import('../../packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js')=await import(pathToFileURL(reviewedEntry).href);

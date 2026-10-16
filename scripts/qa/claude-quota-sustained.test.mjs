@@ -1,11 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { seedSustainedFixture, sustainedFileHashes, verifySustainedFixture } from './claude-quota-sustained.mjs';
 import { fixtureGit, isolatedClaudeEnvironment } from './claude-quota-fixture.mjs';
 
+// seedSustainedFixture requires the workspace inside the repository .cache (requireCacheDirectory).
 test('the sustained fixture runs real React tests and rejects unchanged, unimplemented work', async () => {
   const root = path.resolve(import.meta.dirname, '../../.cache/qa');
   await fs.mkdir(root, { recursive: true });
@@ -28,7 +30,7 @@ test('the sustained fixture runs real React tests and rejects unchanged, unimple
 });
 
 test('native CLI state is scoped outside the editable Git fixture', () => {
-  const root = path.resolve(import.meta.dirname, '../../.cache/qa/claude-env-contract');
+  const root = path.join(os.tmpdir(), 'devryan-claude-env-contract');
   const environment = isolatedClaudeEnvironment({ root, workspace: path.join(root, 'workspace'), config: path.join(root, 'config') }, '/fixture/claude');
   for (const key of ['CLAUDE_CONFIG_DIR', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_STATE_HOME', 'XDG_CACHE_HOME']) {
     assert.ok(environment[key].startsWith(`${root}${path.sep}`));

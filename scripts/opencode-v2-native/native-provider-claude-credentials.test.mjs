@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {createHash} from 'node:crypto';
 import {createNativeClaudeCredentialOwner,migrateNativeClaudeLegacyFences} from '../../packages/web/server/lib/opencode/runtime-host/native-provider-runtime-owner.js';
 import {rewriteReviewedClaudeCredentials,REVIEWED_CLAUDE_CREDENTIALS} from '../../packages/web/server/lib/opencode/runtime-host/reviewed-claude-transform.js';
@@ -9,7 +10,6 @@ import {loadReviewedClaudeCredentials} from '../../packages/web/server/lib/openc
 import {emptyClaudeLifecycle,transitionClaudeLifecycle,claudeRecordFingerprint,claudeGrantFingerprint} from '../../packages/web/server/lib/opencode/runtime-host/native-claude-lifecycle.js';
 import {credentialMutationFingerprint as fingerprint} from '../../packages/web/server/lib/opencode/runtime-host/native-credential-mutation-owner.js';
 const repository=path.resolve(import.meta.dirname,'../..');
-await fs.mkdir(path.join(repository,'.cache/v2-validation/claude-host-renewal'),{recursive:true});
 const original=await fs.readFile(path.join(repository,'packages/web/runtime/reviewed-inputs/claude-1.8.0/node_modules/@rynfar/meridian/dist/cli-khhjyk04.js'));
 const transformed=rewriteReviewedClaudeCredentials(original),module=await import('data:text/javascript;base64,'+Buffer.from(transformed).toString('base64'));
 const serviceA='Claude Code-credentials-01234567',serviceB='Claude Code-credentials-89abcdef';
@@ -65,7 +65,7 @@ test('sealed host module uses exact reviewed bytes, restricted exports and expli
  assert.equal(createHash('sha256').update(transformed).digest('hex'),REVIEWED_CLAUDE_CREDENTIALS.sha256);
  assert.deepEqual(Object.keys(module).sort(),['createPlatformCredentialStore','ensureFreshToken','refreshOAuthToken']);
  assert.throws(()=>module.createPlatformCredentialStore({serviceName:'unreviewed-service'}),/native_claude_service_invalid/);
- const root=await fs.mkdtemp(path.join(repository,'.cache/v2-validation/claude-host-renewal/asset-'));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-claude-host-renewal-asset-')));
  const file=path.join(root,REVIEWED_CLAUDE_CREDENTIALS.path);try{
   await fs.writeFile(file,transformed,{mode:0o644});assert.equal(typeof(await loadReviewedClaudeCredentials({path:file,sha256:REVIEWED_CLAUDE_CREDENTIALS.sha256})).refreshOAuthToken,'function');
   await fs.appendFile(file,'\n');await assert.rejects(loadReviewedClaudeCredentials({path:file,sha256:REVIEWED_CLAUDE_CREDENTIALS.sha256}),/native_claude_credentials_unverified/);
@@ -189,7 +189,7 @@ test('marked access-only token uses only configured expiry and refuses retry wit
 });
 test('original credential command waits exact subprocess close on request cancellation',async()=>{
  const {runNativeClaudeCredentialCommand}=await import('../../packages/web/server/lib/opencode/runtime-host/native-provider-runtime-owner.js');
- const root=await fs.mkdtemp(path.join(repository,'.cache/v2-validation/claude-command-'));const file=path.join(root,'pid.json');
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-claude-command-')));const file=path.join(root,'pid.json');
  const abort=new AbortController();let work;
  try{
   work=runNativeClaudeCredentialCommand(process.execPath,['-e',"require('fs').writeFileSync(process.argv[1],JSON.stringify(process.pid));process.on('SIGTERM',()=>{});setInterval(()=>{},1000)",file],{signal:abort.signal});

@@ -1,6 +1,7 @@
 import {expect,test} from 'bun:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {execFileSync} from 'node:child_process';
 import {Effect,Schema} from 'effect';
 import {Message} from '@opencode/ai';
@@ -24,7 +25,7 @@ import {Bus} from '@opencode/core/bus';
 // Real pinned projector/database/history; no fake history reader or copied
 // compatibility predicate. This tests checkpoint replay, not provider inference.
 test('native checkpoint history replays only the exact provider/model/endpoint and preserves the original local transcript',async()=>{
- const repository=path.resolve(import.meta.dirname,'../..'),root=await fs.mkdtemp(path.join(repository,'.cache/v2-validation/checkpoint-switch-'));
+ const repository=path.resolve(import.meta.dirname,'../..'),root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-checkpoint-switch-')));
  const directory=path.join(root,'project');await fs.mkdir(directory);execFileSync('git',['init','--quiet'],{cwd:directory});
  const layer=LayerNode.compile(LayerNode.group([Database.node,Project.node,SessionStore.node,SessionProjector.node,SessionInbox.node,Bus.node]),{
   replacements:[Global.node.replace(Global.layerWith({home:root,data:root,cache:root,config:root,state:root,tmp:root,bin:root,log:root,repos:root}))],

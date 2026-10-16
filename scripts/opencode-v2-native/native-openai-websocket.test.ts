@@ -1,12 +1,13 @@
 import {expect,test} from 'bun:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {execFileSync} from 'node:child_process';
 import {createNativeAssetFixturePlugin,writeNativeFixtureOutputs} from './native-asset-fixture.mjs';
 
 const repository=path.resolve(import.meta.dirname,'../..');
 for(const compiled of [false,true])test(`pinned API-key Session WebSocket connect, effective idle, frame reset and Stop compiled=${compiled}`,async()=>{
- const root=await fs.mkdtemp(path.join(repository,'.cache/v2-validation/native-websocket-'));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-native-websocket-')));
  let child:ReturnType<typeof Bun.spawn>|undefined;
  try{
   const entry=path.join(repository,'scripts/opencode-v2-native/native-openai-websocket-fixture.mjs');

@@ -1,6 +1,7 @@
 import {expect,test} from 'bun:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {Credential} from '@opencode/core/credential';
 import {Integration} from '@opencode/core/integration';
 import {PluginHooks} from '@opencode/core/plugin/hooks';
@@ -28,7 +29,7 @@ const value=Schema.decodeUnknownSync(Credential.Value);
 const permit={token:'a'.repeat(64),revision:0,sessionID:'ses_fixture'};
 const stale=value({type:'oauth',methodID:'device',access:'fixture-access',refresh:'fixture-refresh',expires:1});
 async function fixture(action,{fetchResponse,reauthorize,beforeRead,beforeResolution,allowConsole=false,refreshScope=true}={}){
-  const root=await fs.mkdtemp(path.resolve('.cache/v2-validation/provider-native-'));
+  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-provider-native-')));
   const location=Schema.decodeUnknownSync(Location.Info)({directory:root,project:{id:'global',directory:root,canonical:root}});
   let raw,originalIntegration,reads=0,checks=0,current=true,allowed=true,fetches=0,queued=0,generation=0;
   const resolutionQueue=Semaphore.makeUnsafe(1);
@@ -369,7 +370,7 @@ for(const status of [400,401,429,503])test('usage renewal HTTP '+status+' retain
 
 
 test('usage renewal traverses the original caller grant, reverse mutation queue and native xAI owner',async()=>{
-  const config={locations:[{directory:path.resolve('.cache/v2-validation/controller-integrations'),configuration:{},compatibility:{}}]},directory=config.locations[0].directory,location=Schema.decodeUnknownSync(Location.Info)({directory,project:{id:'global',directory,canonical:directory}}),state=await fs.mkdtemp(path.resolve('.cache/v2-validation/xai-usage-'));
+  const config={locations:[{directory:path.resolve('.cache/v2-validation/controller-integrations'),configuration:{},compatibility:{}}]},directory=config.locations[0].directory,location=Schema.decodeUnknownSync(Location.Info)({directory,project:{id:'global',directory,canonical:directory}}),state=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-xai-usage-')));
   const origin={kind:'native',id:'opencode.provider.xai',manifestDigest:'c'.repeat(64),capabilities:['provider']};
   let queue=Promise.resolve(),fetches=0,commits=0;
   const originalFetch=globalThis.fetch;

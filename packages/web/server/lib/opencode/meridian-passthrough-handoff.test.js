@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { settlePassthroughQuery, validatePersistedCheckpoint, verifyPersistedCheckpoint, sdkProjectDirectory } from './meridian-passthrough-handoff.js';
 
@@ -196,9 +197,7 @@ describe('durable native checkpoint proof', () => {
 });
 
 it('verifies the exact native file and rejects torn or missing persistence', async () => {
-  const cache = path.resolve(import.meta.dirname, '../../../../../.cache/qa');
-  await fs.mkdir(cache, { recursive: true });
-  const root = await fs.mkdtemp(path.join(cache, 'native-checkpoint-'));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-native-checkpoint-'));
   try {
     const cwd = (await fs.realpath(root)).normalize('NFC');
     const sessionId = '11111111-1111-4111-8111-111111111111';

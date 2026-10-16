@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -25,9 +26,7 @@ const read = (options) => readClaudeAccessToken({ account, home, username: 'fixt
 
 const roots = [];
 const stateFixture = () => {
-  const cache = path.resolve(import.meta.dirname, '../../../../../.cache/qa');
-  fs.mkdirSync(cache, { recursive: true });
-  const root = fs.mkdtempSync(path.join(cache, 'claude-credential-projection-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-claude-credential-projection-'));
   roots.push(root);
   return root;
 };

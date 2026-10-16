@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {afterEach,expect,test} from 'vitest';
 import {parseRollbackIntent,rollbackIntentUnresolved,captureRollbackFiles,captureRollbackRegistries,assertPrivateBundleControlRoot,saveRollbackIntent,readRollbackIntentSync} from './bundle-rollback-intent.js';
 import {NATIVE_BUNDLE_CREDENTIAL_CONTRACT} from './native-bundle-credential-contract.js';
@@ -23,7 +24,7 @@ test('missing drains, unsuccessful receipt, foreign checkpoint, malformed files 
  for(const mutate of [p=>delete p.settlement,p=>p.settlement.credentialDrained=false,p=>p.settlement.storesDrained=false,p=>p.settlement.controller.receipt.cancelled=true,p=>p.settlement.controller.code=1,p=>p.checkpoint.ownerID='A',p=>p.files[0].path='../A/database',p=>p.settlement.controller.receipt.extra='foreign',p=>p.callerAck=true]){const intent=proof();mutate(intent);expect(()=>parseRollbackIntent(intent)).toThrow('bundle_rollback_proof_invalid');}
 });
 test('bounded closed inventory preserves main DB/WAL and credential bytes, excludes only transient controller/scratch/WAL-index sources',async()=>{
- const root=await fs.mkdtemp(path.resolve('../../.cache/v2-validation/rollback-proof-'));roots.push(root);
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-rollback-proof-')));roots.push(root);
  for(const [name,value] of Object.entries({'opencode/opencode.db':'db','opencode/opencode.db-wal':'wal','opencode/opencode.db-shm':'index','web-data/quota/cursor-acp.json':'credentials','global/log/log.txt':'transient','.native-controller/id/termination.json':'controller','global/home/.claude/.credentials.json':'account'})){const file=path.join(root,name);await fs.mkdir(path.dirname(file),{recursive:true});await fs.writeFile(file,value);}
  const before=await captureRollbackFiles(root);expect(before.map(row=>row.path)).toEqual(['global/home/.claude/.credentials.json','opencode/opencode.db','opencode/opencode.db-wal','web-data/quota/cursor-acp.json']);
  await fs.writeFile(path.join(root,'opencode/opencode.db-shm'),'different index');expect(await captureRollbackFiles(root)).toEqual(before);
@@ -31,13 +32,13 @@ test('bounded closed inventory preserves main DB/WAL and credential bytes, exclu
  await fs.symlink(path.join(root,'opencode/opencode.db'),path.join(root,'foreign'));await expect(captureRollbackFiles(root)).rejects.toMatchObject({code:'bundle_recovery_inventory_invalid'});
 });
 test('original registry publication is retained; any live child or malformed registry refuses closure proof',async()=>{
- const root=await fs.mkdtemp(path.resolve('../../.cache/v2-validation/rollback-registry-'));roots.push(root);
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-rollback-registry-')));roots.push(root);
  expect((await captureRollbackRegistries(root)).every(row=>row.sha256===null)).toBe(true);
  const file=path.join(root,'managed-opencode-processes.json');await fs.writeFile(file,JSON.stringify({version:2,processes:[{childPid:10}]}));await expect(captureRollbackRegistries(root)).rejects.toMatchObject({code:'bundle_recovery_exit_unverified'});
  await fs.writeFile(file,JSON.stringify({version:2,processes:[]}));expect((await captureRollbackRegistries(root))[0].sha256).toMatch(/^[a-f0-9]{64}$/);
 });
 test('local authority requires same-UID private canonical control files and preserves corrupt proof as held failure',async()=>{
- const root=await fs.mkdtemp(path.resolve('../../.cache/v2-validation/rollback-authority-'));roots.push(root);
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-rollback-authority-')));roots.push(root);
  await fs.chmod(root,0o700);await fs.writeFile(path.join(root,'selection.json'),'{}',{mode:0o600});await saveRollbackIntent(root,proof());
  await expect(assertPrivateBundleControlRoot(root)).resolves.toBeUndefined();expect(readRollbackIntentSync(root).candidateBundleID).toBe('B');
  await expect(assertPrivateBundleControlRoot(root,(process.getuid?.()??0)+1)).rejects.toMatchObject({code:'bundle_recovery_owner_required'});

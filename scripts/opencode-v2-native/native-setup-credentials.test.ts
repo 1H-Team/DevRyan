@@ -1,6 +1,7 @@
 import {test,expect} from 'bun:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {createHash} from 'node:crypto';
 import {Credential} from '@opencode/core/credential';
 import {Database} from '@opencode/core/database/database';
@@ -10,7 +11,7 @@ import {LayerNode} from '@opencode/util/effect/layer-node';
 import {Effect} from 'effect';
 import {bootstrapNativeSetupCredentials,NATIVE_SETUP_CREDENTIAL_STAMP} from '../../packages/web/server/lib/opencode/runtime-host/native-setup-credentials.ts';
 test('Windows seed transaction retains its input for host CAS and validates SHA/count before activation and on lost-ACK retry',async()=>{
- const root=await fs.mkdtemp(path.resolve('.cache/v2-validation/setup-credentials-')),seedPath=path.join(root,'native-setup-credentials.json');
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-setup-credentials-'))),seedPath=path.join(root,'native-setup-credentials.json');
  try{
   const layer=LayerNode.compile(LayerNode.group([Credential.node,KV.node,Database.node]),{replacements:[Global.node.replace(Global.layerWith({home:root,data:root,cache:root,config:root,state:root,tmp:root,bin:root,log:root,repos:root})),Database.node.replace(Database.configured({path:path.join(root,'native.db')}))]});
   const bytes=JSON.stringify({schema:1,credentials:[{integrationID:'openai',value:{type:'key',key:'isolated-fixture-key'}}]});await fs.writeFile(seedPath,bytes);
@@ -28,7 +29,7 @@ test('Windows seed transaction retains its input for host CAS and validates SHA/
  }finally{await fs.rm(root,{recursive:true,force:true});}
 });
 test('original native credential activation and setup stamp commit once; later selections survive restart',async()=>{
- const root=await fs.mkdtemp(path.resolve('.cache/v2-validation/setup-credentials-')),seedPath=path.join(root,'native-setup-credentials.json');
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-setup-credentials-'))),seedPath=path.join(root,'native-setup-credentials.json');
  try{
   const layer=LayerNode.compile(LayerNode.group([Credential.node,KV.node,Database.node]),{replacements:[Global.node.replace(Global.layerWith({home:root,data:root,cache:root,config:root,state:root,tmp:root,bin:root,log:root,repos:root})),Database.node.replace(Database.configured({path:path.join(root,'native.db')}))]});
   const seed={schema:1,credentials:[{integrationID:'openai',label:'Imported account',value:{type:'key',key:'isolated-fixture-key'}}]};await fs.writeFile(seedPath,JSON.stringify(seed));
@@ -48,7 +49,7 @@ test('original native credential activation and setup stamp commit once; later s
  }finally{await fs.rm(root,{recursive:true,force:true});}
 });
 test('failed setup activation rolls back both original credentials and stamp, then retries exactly once',async()=>{
- const root=await fs.mkdtemp(path.resolve('.cache/v2-validation/setup-credentials-')),seedPath=path.join(root,'native-setup-credentials.json');
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-setup-credentials-'))),seedPath=path.join(root,'native-setup-credentials.json');
  try{
   const layer=LayerNode.compile(LayerNode.group([Credential.node,KV.node,Database.node]),{replacements:[Global.node.replace(Global.layerWith({home:root,data:root,cache:root,config:root,state:root,tmp:root,bin:root,log:root,repos:root})),Database.node.replace(Database.configured({path:path.join(root,'native.db')}))]});
   await fs.writeFile(seedPath,JSON.stringify({schema:1,credentials:[{integrationID:'openai',value:{type:'key',key:'isolated-fixture-key'}},{integrationID:'github-copilot',value:{type:'oauth',methodID:'device',access:'',refresh:'isolated-fixture-refresh',expires:0}}]}));

@@ -166,12 +166,11 @@ test('actual OS observer includes Node-owned supervised siblings while host RSS/
 
 
 test('copied snapshot preserves exact native provider and benchmark tuple without ambient discovery', async () => {
-  const fs = await import('node:fs/promises'), path = await import('node:path');
-  const { repositoryRoot } = await import('../opencode-v2-native/artifacts.mjs');
+  const fs = await import('node:fs/promises'), path = await import('node:path'), os = await import('node:os');
   const { loadPerformanceLocation, performanceRole, performanceSha256 } = await import('../opencode-v2-native/performance-fixture.mjs');
   const { createHttpProviderConfiguration } = await import('../opencode-v2-native/http-provider.mjs');
   const { createNativeConfigurationSnapshotResolver } = await import('../../packages/web/server/lib/opencode/runtime-host/native-configuration-snapshot.js');
-  const root = await fs.mkdtemp(path.join(repositoryRoot, '.cache/v2-validation/performance-snapshot-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-performance-snapshot-')));
   const directory = path.join(root, 'project'), opencodeConfigDirectory = path.join(root, 'opencode');
   const launch = { opencodeConfigDirectory, webConfigDirectory: path.join(root, 'web'), global: { home: path.join(root, 'home'), config: opencodeConfigDirectory },
     reviewedPluginManifestPath: path.join(root, 'plugins.json'), reviewedNativeConfigPath: path.join(root, 'reviewed.json') };

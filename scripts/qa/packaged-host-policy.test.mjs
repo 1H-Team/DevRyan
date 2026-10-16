@@ -1,14 +1,12 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import { preparePackagedQaHost } from './packaged-host-policy.mjs';
 
-const cache = fileURLToPath(new URL('../../.cache/qa/', import.meta.url));
 const createFixture = async () => {
-  await mkdir(cache, { recursive: true });
-  const runtimeRoot = await mkdtemp(path.join(cache, 'packaged-policy-test-'));
+  const runtimeRoot = await realpath(await mkdtemp(path.join(os.tmpdir(), 'devryan-packaged-policy-test-')));
   const home = path.join(runtimeRoot, 'home');
   const data = path.join(home, '.config/openchamber');
   await mkdir(data, { recursive: true });
@@ -49,7 +47,7 @@ test('packaged QA rejects a development shell and profile symlink before persona
   const fixture = await createFixture();
   try {
     await assert.rejects(preparePackagedQaHost({ ...fixture, app: { ...fixture.app, isPackaged: false } }), /actual packaged/);
-    await symlink(cache, fixture.env.OPENCHAMBER_ELECTRON_USER_DATA_DIR);
+    await symlink(path.dirname(fixture.runtimeRoot), fixture.env.OPENCHAMBER_ELECTRON_USER_DATA_DIR);
     await assert.rejects(preparePackagedQaHost(fixture), /escaped/);
     assert.deepEqual(fixture.paths, {});
     assert.equal(JSON.parse(await readFile(path.join(fixture.env.OPENCHAMBER_DATA_DIR, 'settings.json'), 'utf8')).productionBotsRuntimeMode, 'service');

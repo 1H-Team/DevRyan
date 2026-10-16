@@ -11,7 +11,7 @@ import { captureQaSourceIdentity } from '../qa/artifact-evidence.mjs';
 import { readQa1NativeQualification } from '../qa/qa1-profile-exercise.mjs';
 import { readQa1ProviderJournal } from '../qa/qa1-provider-qualification.mjs';
 import { readRuntimeBundleBinding } from '../../packages/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js';
-import { createRunRoot } from '../qa/run-root.mjs';
+import { createRunRoot, scratchParent } from '../qa/run-root.mjs';
 import { reservePort, startOwnedProcess } from '../qa/process.mjs';
 import { createQaHostLaunchEnvironment } from '../qa/launch-environment.mjs';
 import { waitForQaHostReady } from '../qa/host-readiness.mjs';
@@ -323,7 +323,7 @@ export async function runNativeReceiptResourceBenchmark(options) {
     packageEvidenceSha256: hash(await fs.readFile(options.packageEvidence)) };
   for (const file of ['scripts/perf/native-receipt-resource-benchmark.mjs', 'scripts/perf/multi-session-sampler.mjs', 'scripts/perf/native-upgrade-benchmark.mjs',
     'scripts/perf/receipt-ui-settlement.mjs', 'scripts/qa/process-ownership.mjs']) assert.ok(source.sources[file], 'Transitive measurement owner missing from source pin');
-  let stop = async () => {}; const run = createRunRoot({ parent: path.join(repository, '.cache/perf'), prefix: 'native-receipt-resource-',
+  let stop = async () => {}; const run = createRunRoot({ parent: scratchParent('perf'), prefix: 'native-receipt-resource-',
     owner: 'scripts/perf/native-receipt-resource-benchmark.mjs', onInterrupt: () => stop() });
   const result = { schemaVersion: 1, status: 'failed', protocol: PAIR_PROTOCOL, cohort, source, pairs: [],
     measurement: { hostScope: PAIR_PROTOCOL.hostScope, resourceScope: 'synthetic loopback responder/collector Node plus owned web/native and Electron browser descendants', footprintScope: 'surviving retained descendants at settled turn boundary',

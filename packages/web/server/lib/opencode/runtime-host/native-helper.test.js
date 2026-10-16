@@ -8,6 +8,7 @@ import {createControllerHelperText} from './controller-helper-text.ts';
 import {runWithRequestPermit} from './native-admission-contract.ts';
 import {createNativeAuthorization} from './native-authorization.js';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 
 const input={directory:'/fixture',agent:'devryan-title',providerID:'fixture',modelID:'chosen',selectionMode:'configured',selectionRevision:'fixture',prompt:'exact'};
@@ -91,8 +92,7 @@ test('title source identity rejects coercible values before admission',()=>{
  expect(nativeHelperTitleInput({...request,sourceMessageID:'msg_valid'}).sourceMessageID).toBe('msg_valid');
 });
 test('native rename accepts only the exact private title permit under the real generic authorization policy',async()=>{
- const cache=path.resolve(import.meta.dirname,'../../../../../../.cache/v2-validation');await fs.mkdir(cache,{recursive:true});
- const directory=await fs.mkdtemp(path.join(cache,'title-admission-'));
+ const directory=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-title-admission-')));
  let allowed=true,revision=0,currentTitle='Initial';
  const session=()=>({id:'ses_title_owned',directory,title:currentTitle,agent:'build',model:{providerID:'fixture',id:'chosen'}});
  const authorization=createNativeAuthorization({locations:[{directory}],manifest:{inputs:{nativeRegistrations:[],reviewedPlugins:[]}},

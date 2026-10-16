@@ -1,7 +1,7 @@
 import {afterEach,expect,test} from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import {userInfo} from 'node:os';
+import os,{userInfo} from 'node:os';
 import {createNativeClaudeEnrollmentOwner} from './native-claude-enrollment.js';
 import {emptyClaudeLifecycle,transitionClaudeLifecycle} from './native-claude-lifecycle.js';
 import {rewriteReviewedClaudeCredentials} from './reviewed-claude-transform.js';
@@ -9,7 +9,7 @@ import {rewriteReviewedClaudeCredentials} from './reviewed-claude-transform.js';
 const roots=[];
 afterEach(async()=>{for(const root of roots.splice(0))await fs.rm(root,{recursive:true,force:true});});
 async function fixture(){
- const base=await fs.realpath(path.resolve('../../.cache/v2-validation'));const root=await fs.mkdtemp(path.join(base,'claude-enrollment-'));roots.push(root);
+ const base=await fs.realpath(os.tmpdir());const root=await fs.mkdtemp(path.join(base,'devryan-claude-enrollment-'));roots.push(root);
  const source=await fs.readFile(new URL('../../../../runtime/reviewed-inputs/claude-1.8.0/node_modules/@rynfar/meridian/dist/cli-khhjyk04.js',import.meta.url));
  const module=await import('data:text/javascript;base64,'+Buffer.from(rewriteReviewedClaudeCredentials(source)).toString('base64'));
  const records=new Map(),calls=[],published=[];let state=emptyClaudeLifecycle(),valid=true,exchanges=0,beforeExchange=async()=>{},beforeWrite=async()=>{},afterWrite=async()=>{},afterTransition=async()=>{},transitionFault;

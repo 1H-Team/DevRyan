@@ -1,5 +1,6 @@
 import {expect,test} from 'bun:test';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {Effect,Exit,Fiber,Schema} from 'effect';
@@ -18,7 +19,7 @@ import {AbsolutePath} from '@opencode/schema/schema';
 import {quietNativeRetention} from './native-retention-quiet.js';
 
 test('original native transaction/Inbox protect quiet archive and reject queued, claimed, changed subtrees',async()=>{
- const root=await fs.mkdtemp(path.resolve('.cache/v2-validation/quiet-native-'));const directory=path.join(root,'project');await fs.mkdir(directory);execFileSync('git',['init','--quiet'],{cwd:directory});
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-quiet-native-')));const directory=path.join(root,'project');await fs.mkdir(directory);execFileSync('git',['init','--quiet'],{cwd:directory});
  const layer=LayerNode.compile(LayerNode.group([SessionInbox.node,SessionStore.node,SessionProjector.node,Bus.node,Database.node,Project.node]),{replacements:[Global.node.replace(Global.layerWith({home:root,data:root,cache:root,config:root,state:root,tmp:root,bin:root,log:root,repos:root}))]});
  try{await Effect.runPromise(Effect.scoped(Effect.gen(function*(){
   const bus=yield* Bus.Service,store=yield* SessionStore.Service,database=yield* Database.Service,inbox=yield* SessionInbox.Service;

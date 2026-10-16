@@ -5,12 +5,12 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { createCursorHttpProvider } from './cursor-http-provider.mjs';
 import { DEFAULT_RG, repositoryRoot } from './artifacts.mjs';
 
 test('original Cursor SDK verifies the current loopback key using the pinned user response shape', async () => {
-  await fs.mkdir(path.join(repositoryRoot, '.cache/v2-validation'), { recursive: true });
-  const root = await fs.realpath(await fs.mkdtemp(path.join(repositoryRoot, '.cache/v2-validation/cursor-verify-')));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-cursor-verify-')));
   const requests = [], key = 'owned-current-account';
   const provider = await createCursorHttpProvider({ expectedApiKey: () => key, onRequest: row => requests.push(row) });
   try {
@@ -28,14 +28,14 @@ test('original Cursor SDK verifies the current loopback key using the pinned use
 });
 
 test('original Cursor SDK performs actual loopback model discovery and Connect inference', async () => {
-  const cache = path.join(repositoryRoot, '.cache/v2-validation'); await fs.mkdir(cache, { recursive: true });
-  const root = await fs.realpath(await fs.mkdtemp(path.join(cache, 'cursor-http-')));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-cursor-http-')));
   const home = path.join(root, 'home'), project = path.join(root, 'project');
   await fs.mkdir(home); await fs.mkdir(project);
   const requests = [], provider = await createCursorHttpProvider({ onRequest: row => requests.push(row) });
   let child;
   try {
-    child = spawn(process.execPath, [path.join(repositoryRoot, 'packages/cursor-sdk-runtime/node-worker.mjs')], {
+    // Node 22 reports node:sqlite as experimental on stderr; the assertion below is about SDK output.
+    child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', path.join(repositoryRoot, 'packages/cursor-sdk-runtime/node-worker.mjs')], {
       env: { PATH: process.env.PATH, HOME: home, TMPDIR: root, CURSOR_BACKEND_URL: provider.baseURL,
         OPENCHAMBER_CURSOR_SETTING_SOURCES: 'none', CURSOR_SDK_RIPGREP_PATH: DEFAULT_RG },
     });

@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createCursorSdkRuntime } from '@openchamber/cursor-sdk-runtime';
 import { createManagedTaskScheduler } from '@openchamber/orchestration-runtime';
@@ -12,8 +13,7 @@ import { createNativeConsumerFixture } from '../test-native-consumer-client.js';
 import { createWebManagedOpenCodeExecutor } from '../../orchestration/open-code-executor.js';
 
 test('parent Stop cancels Cursor preparation and persists cancellation before making the task terminal', async () => {
- const fixtureRoot=join(import.meta.dirname,'../../../../../../.cache/qa');mkdirSync(fixtureRoot,{recursive:true});
- const directory=mkdtempSync(join(fixtureRoot,'cursor-parent-stop-'));
+ const directory=realpathSync(mkdtempSync(join(tmpdir(),'devryan-cursor-parent-stop-')));
  const preparing=Promise.withResolvers(),cleaning=Promise.withResolvers(),cleanup=Promise.withResolvers();
  let processLease,claims=0,finished=false,scheduler;const records=[],events=[];
  const ledger={registerNativeSession:async()=>{},nativeAdmissionState:async()=>({revision:0,held:false}),

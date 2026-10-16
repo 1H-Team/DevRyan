@@ -1,10 +1,11 @@
 import {test,expect}from'bun:test';
 import fs from'node:fs/promises';import path from'node:path';
+import os from 'node:os';
 import {prepareReviewedNativeInputs,reviewedNativeInputPlugin,rewriteSealedNodeRequire}from'../native-runtime-assets.mjs';
 
 test('compiled original DOM parses HTML with no ambient IO and refuses unapproved sync XHR before IO',async()=>{
  const repository=path.resolve(import.meta.dirname,'../..');
- const root=await fs.mkdtemp(path.join(repository,'.cache/v2-validation/compiled-dom-'));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-compiled-dom-')));
  try{
   const reviewed=await prepareReviewedNativeInputs(repository);
   const entry=path.join(root,'entry.ts'),original=path.join(repository,'packages/web/runtime/reviewed-inputs/jsdom-30.1.1/node_modules/jsdom/lib/api.js');

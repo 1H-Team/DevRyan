@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from 'vitest';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import { git } from '../../../../../harness-runtime/lib/session-changes-git.js';
@@ -18,9 +19,7 @@ const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => fs.rm(root, { recursive: true, force: true }))); });
 
 async function fixture() {
-  const parent = path.resolve(import.meta.dirname, '../../../../../../.cache/test-fixtures');
-  await fs.mkdir(parent, { recursive: true });
-  const root = await fs.mkdtemp(path.join(parent, 'reboot-recovery-')); roots.push(root);
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-reboot-recovery-'))); roots.push(root);
   const controlRoot = path.join(root, 'control'); await fs.mkdir(controlRoot, { mode: 0o700 });
   const bundleRoot = path.join(controlRoot, 'bundles', 'selected'), project = path.join(root, 'project');
   await fs.mkdir(project);

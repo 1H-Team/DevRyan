@@ -5,12 +5,13 @@ import type {ClaudeTransportRequest} from '../../packages/web/server/lib/opencod
 import {expect,test} from 'bun:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {randomUUID} from 'node:crypto';
 import {REVIEWED_CLAUDE_ASSETS} from '../../packages/web/server/lib/opencode/runtime-host/reviewed-claude-transform.js';
 import {startNativeMeridianWorker,createMeridianRequestAuthority,createProviderCredentialChannel} from '../../packages/web/server/lib/opencode/runtime-host/native-meridian-worker.js';
 import {parseProviderBoot,parseProviderBound,parseProviderCommand} from '../../packages/web/server/lib/opencode/runtime-host/native-provider-worker-protocol.js';
 const fixture=async()=>{
-  const root=await fs.mkdtemp(path.join(path.resolve(import.meta.dirname,'../..'),'.cache/v2-validation/meridian-protocol-'));
+  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-meridian-protocol-')));
   const globals=Object.fromEntries(['home','config','data','state','cache','bin','log','repos','tmp'].map(name=>[name,path.join(root,name)])) as Record<'home'|'config'|'data'|'state'|'cache'|'bin'|'log'|'repos'|'tmp',string>;
   await Promise.all(Object.values(globals).map(directory=>fs.mkdir(directory)));
   const environment={HOME:globals.home,XDG_CONFIG_HOME:globals.config,XDG_DATA_HOME:globals.data,XDG_STATE_HOME:globals.state,XDG_CACHE_HOME:globals.cache,TMPDIR:globals.tmp};

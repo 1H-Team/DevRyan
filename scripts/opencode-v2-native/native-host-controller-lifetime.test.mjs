@@ -2,12 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { createSessionExecutionHost } from '../../packages/web/server/lib/opencode/session-execution-host.js';
 
 // Diagnostic of the actual host contract, not a simulated process receipt.
 test('terminal host drain permanently fences context assets even with a fresh controller grant', async () => {
   const repository = path.resolve(import.meta.dirname, '../..');
-  const root = await fs.mkdtemp(path.join(repository, '.cache/v2-validation/host-lifetime-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-host-lifetime-')));
   let captures = 0, generation = 1;
   const marker = Object.assign(Error('captured_current_controller'), { code: 'captured_current_controller' });
   const host = createSessionExecutionHost({ dataDirectory: root, openCodeClient: { generation: () => 2 },

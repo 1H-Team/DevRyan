@@ -1,6 +1,7 @@
 import { afterEach, expect, test, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {createHash} from 'node:crypto';
 import {verifyNativeBootMigration} from './native-boot-migration.js';
 import {resolveSqliteDriver} from '../db-maintenance-core.js';
@@ -23,7 +24,7 @@ vi.mock('../../orchestration/private-host.js', () => ({ createManagedOrchestrati
 afterEach(() => vi.resetAllMocks());
 
 const fixture = async (action, cursorRuntime, configure) => {
-  const root = await fs.mkdtemp(path.resolve(import.meta.dirname, '../../../../../../.cache/v2-validation/native-owner-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-native-owner-')));
   try {
     const opencodeDatabasePath=path.join(root,'native.db');await fs.writeFile(opencodeDatabasePath,'');const db=resolveSqliteDriver().open(opencodeDatabasePath);db.exec(`CREATE TABLE session_v2(id TEXT,directory TEXT,time_archived INTEGER,revert TEXT);CREATE TABLE session_inbox(id TEXT,session_id TEXT,enqueued_seq INTEGER);CREATE TABLE session_message(id TEXT,session_id TEXT,type TEXT,seq INTEGER,data TEXT);CREATE TABLE session_pending(id TEXT);`);db.close();
     const migrationReceiptPath = path.join(root, 'migration.json'); await fs.writeFile(migrationReceiptPath, '{}');
@@ -127,7 +128,7 @@ test.each([false, true])('controller receives authoritative managed tool policie
 });
 
 test('startup passes fresh original Cursor declarations without account discovery or secret fields',async()=>{
- const cursor=createCursorSdkRuntime({storageDir:path.resolve(import.meta.dirname,'../../../../../../.cache/v2-validation/unused-cursor-declarations'),env:{},ripgrepPath:'/usr/bin/true',nativeWarming:false,
+ const cursor=createCursorSdkRuntime({storageDir:path.join(os.tmpdir(),'devryan-unused-cursor-declarations'),env:{},ripgrepPath:'/usr/bin/true',nativeWarming:false,
   readAuth:()=>{throw Error('Unexpected credential read');},loadSdk:async()=>{throw Error('Unexpected SDK load');}});
  try{await fixture(async({owner})=>{
   let launch,exited=false;
@@ -486,7 +487,7 @@ const loaderBinding=()=>({admission:'pending',selection:{transition:'activate'},
   launch:{artifactManifestPath:'relative-manifest.json',artifactManifestSha256:'0'.repeat(64)}}});
 
 test('fresh verified artifacts are reused only for the exact selected launch and supervisor',async()=>{
- const root=await fs.mkdtemp(path.resolve(import.meta.dirname,'../../../../../../.cache/v2-validation/native-loader-'));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-native-loader-')));
  const verifyArtifacts=vi.spyOn(nativeArtifacts,'verifyNativeRuntimeArtifacts').mockRejectedValue(Error('unexpected artifact rescan'));
  try{
   const launch={artifactManifestPath:path.join(root,'native-bundle.json'),artifactManifestSha256:'a'.repeat(64),controllerBinary:path.join(root,'controller'),writerBinary:path.join(root,'writer'),

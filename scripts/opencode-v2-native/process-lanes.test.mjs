@@ -2,13 +2,14 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { assertNativeCancellationSettled } from './process-lanes.mjs';
 
 const runFile = promisify(execFile);
 test('native cancellation query binds exact assistant call and its later idle', async () => {
-  const root = await fs.mkdtemp(path.resolve('.cache/v2-validation/tmp/cancel-native-query-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-cancel-native-query-')));
   const databasePath = path.join(root, 'native.db');
   try {
     const data = JSON.stringify({ time: { completed: 1000 }, error: { type: 'aborted' },

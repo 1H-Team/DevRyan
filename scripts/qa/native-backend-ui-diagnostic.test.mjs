@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { execFileSync } from 'node:child_process';
@@ -13,7 +14,7 @@ import { runtimeUiConfiguration, runtimeUiNativeConfiguration, runtimeUiTuple, r
 
 test('private UI pins survive the original packaged agent producer and exact native catalog requirements', async t => {
   const repository = fileURLToPath(new URL('../../', import.meta.url));
-  const root = await fs.realpath(await fs.mkdtemp(path.join(repository, '.cache/qa-ui-agent-pins-')));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-qa-ui-agent-pins-')));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const directory = path.join(root, 'project'), config = path.join(root, '.config/opencode');
   await fs.mkdir(directory); await fs.mkdir(path.join(config, '.openchamber'), { recursive: true });
@@ -103,7 +104,7 @@ test('owned packet transport exposes a live streamed body and settles an actual 
 });
 
 test('publication oracle refuses prose, stale scope, failed tool and unconfirmed termination', async t => {
-  const directory = await fs.realpath(await fs.mkdtemp(path.resolve('.cache/qa-ui-publication-')));
+  const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-qa-ui-publication-')));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   await fs.writeFile(path.join(directory, 'runtime-ui-proof.txt'), 'DevRyan actual backend publication\n');
   const sessionID = 'ses_owned', rows = ['read', 'write'].map((tool, index) => ({ info: { id: `msg_${index}`, sessionID },

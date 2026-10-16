@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { access, mkdir, mkdtemp, readFile, readlink, rm, symlink, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, readlink, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
@@ -8,10 +9,9 @@ import { test } from 'node:test';
 import { assertQaLaunchEnvironmentOwned, assertQaSelectedProviderAccess, assertQaSelectedProviderDuration, createQaLaunchEnvironment, pinQaAgents, qaMeridianClaudePaths, preserveQaOrchestration, prepareQaPluginHomeWrapper, prepareQaProfile, projectQaAuth, provisionQaRipgrep,
     buildQaMirroredMcp, classifyQaPersonalPluginEntries,  mirrorQaPersonalSetup, normalizeQaMirrorPersonalSetup, orderQaMirroredPlugins, selectQaPersonalPluginDirectoryEntries, wrapQaPackagePluginEntries } from './profile-preparation.mjs';
 
-const root = fileURLToPath(new URL('../../', import.meta.url));
 
 test('reusing a private QA dependency tree does not recursively replace plugin originals', async () => {
-    const directory = await mkdtemp(path.join(root, '.cache/qa/wrapper-reuse-'));
+    const directory = await realpath(await mkdtemp(path.join(os.tmpdir(), 'devryan-wrapper-reuse-')));
     try {
         const entry = path.join(directory, 'index.mjs');
         const source = 'export default () => ({});\n';
@@ -192,9 +192,7 @@ test('explicit specialist assignments reject disabled roles instead of reporting
 });
 
 test('home shim affects only its child and leaves HOME unchanged', async () => {
-    const cache = path.join(root, '.cache/qa');
-    await mkdir(cache, { recursive: true });
-    const home = await mkdtemp(path.join(cache, 'home-shim-test-'));
+    const home = await realpath(await mkdtemp(path.join(os.tmpdir(), 'devryan-home-shim-test-')));
     const originalHome = process.env.HOME;
     try {
         await writeFile(path.join(home, '.devryan-qa-home'), 'owned test\n');
@@ -222,9 +220,7 @@ test('home shim affects only its child and leaves HOME unchanged', async () => {
 });
 
 test('private home preload preserves descriptor and named server exports', async () => {
-    const cache = path.join(root, '.cache/qa');
-    await mkdir(cache, { recursive: true });
-    const home = await mkdtemp(path.join(cache, 'plugin-home-test-'));
+    const home = await realpath(await mkdtemp(path.join(os.tmpdir(), 'devryan-plugin-home-test-')));
     try {
         await writeFile(path.join(home, '.devryan-qa-home'), 'owned QA home\n');
         const entry = path.join(home, 'plugin.mjs');
@@ -264,7 +260,7 @@ test('preserved orchestration retains presets, efforts, model refs and backups w
 });
 
 test('private profiles reuse the installed ripgrep so read/grep/skill tools work without a download', async () => {
-    const scratch = await mkdtemp(path.join(root, '.cache/qa-ripgrep-'));
+    const scratch = await realpath(await mkdtemp(path.join(os.tmpdir(), 'devryan-qa-ripgrep-')));
     try {
         const sourceHome = path.join(scratch, 'source-home');
         const cacheHome = path.join(scratch, 'private-home/.cache');
@@ -289,9 +285,9 @@ const hostileBaseEnvironment = (realHome) => ({ PATH: process.env.PATH, HOME: re
     MERIDIAN_PROFILES: '[{"id":"qa","type":"claude-max"}]', MERIDIAN_DEFAULT_PROFILE: 'qa', CLAUDE_CODE_OAUTH_TOKEN: 'owner-token' });
 
 test('prepared launch env resolves every Meridian/Claude config path under the owned QA home', () => {
-    const runtimeRoot = path.join(root, '.cache/qa/synthetic-launch-env/runtime');
+    const runtimeRoot = path.join(os.tmpdir(), 'devryan-synthetic-launch-env/runtime');
     const home = path.join(runtimeRoot, 'home');
-    const realHome = path.join(root, '.cache/qa/synthetic-launch-env/real-home');
+    const realHome = path.join(os.tmpdir(), 'devryan-synthetic-launch-env/real-home');
     const base = hostileBaseEnvironment(realHome);
     const prepared = createQaLaunchEnvironment({ runtimeRoot, home, opencodeBinary: '/synthetic/opencode', baseEnvironment: base });
     const launch = { ...prepared, ...qaCredentialsEnvironment };
@@ -321,7 +317,7 @@ test('prepared launch env resolves every Meridian/Claude config path under the o
 });
 
 test('Meridian profile paths stay owned inside the Bun host where the home shim cannot rebind named imports', async () => {
-    const scratch = await mkdtemp(path.join(root, '.cache/qa/meridian-bun-home-'));
+    const scratch = await realpath(await mkdtemp(path.join(os.tmpdir(), 'devryan-meridian-bun-home-')));
     try {
         const runtimeRoot = path.join(scratch, 'runtime');
         const home = path.join(runtimeRoot, 'home');
@@ -438,8 +434,7 @@ test('mirrored MCP definitions are inert by default and evidence carries no endp
 });
 
 test('personal setup mirroring copies personal plugins, skills, MCP definitions, agents and commands without touching the source', async () => {
-    await mkdir(path.join(root, '.cache/qa'), { recursive: true });
-    const scratch = await mkdtemp(path.join(root, '.cache/qa/mirror-personal-'));
+    const scratch = await realpath(await mkdtemp(path.join(os.tmpdir(), 'devryan-mirror-personal-')));
     try {
         const sourceHome = path.join(scratch, 'source-home');
         const sourceConfig = path.join(sourceHome, '.config/opencode');
@@ -558,8 +553,7 @@ test('personal setup mirroring copies personal plugins, skills, MCP definitions,
 });
 
 test('mirroring refuses escaping and unresolved links in plugins, skill resources and commands before publishing registrations', async () => {
-    await mkdir(path.join(root, '.cache/qa'), { recursive: true });
-    const scratch = await mkdtemp(path.join(root, '.cache/qa/mirror-links-'));
+    const scratch = await realpath(await mkdtemp(path.join(os.tmpdir(), 'devryan-mirror-links-')));
     try {
         const outside = path.join(scratch, 'owner-resource');
         await mkdir(outside);
@@ -591,8 +585,7 @@ test('mirroring refuses escaping and unresolved links in plugins, skill resource
 });
 
 test('mirrored local registrations must resolve within copied plugin directories, including parent traversal and symlinks', async () => {
-    await mkdir(path.join(root, '.cache/qa'), { recursive: true });
-    const scratch = await mkdtemp(path.join(root, '.cache/qa/mirror-registration-'));
+    const scratch = await realpath(await mkdtemp(path.join(os.tmpdir(), 'devryan-mirror-registration-')));
     try {
         const sourceHome = path.join(scratch, 'source');
         await mkdir(path.join(sourceHome, '.config/opencode/plugins'), { recursive: true });

@@ -1,13 +1,14 @@
 import {test,expect,afterEach} from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {createRuntimeBundleCheckpoint} from './bundle-checkpoint.js';
 
 const roots=[];
 afterEach(async()=>{for(const root of roots.splice(0))await fs.rm(root,{recursive:true,force:true});});
 
 test('original checkpoint captures before controller stop and expires the closed copy scope',async()=>{
- const root=await fs.mkdtemp(path.resolve('../../.cache/v2-validation/bundle-checkpoint-'));roots.push(root);
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-bundle-checkpoint-')));roots.push(root);
  const launch=Object.fromEntries(['opencodeDatabasePath','webDataDirectory','webConfigDirectory','opencodeConfigDirectory'].map(key=>[key,path.join(root,key)]));
  for(const value of Object.values(launch))await fs.mkdir(value);
  const order=[];let exited=false,held=false,current;
@@ -41,7 +42,7 @@ test('unknown previously started source cannot receive a never-started checkpoin
 });
 
 test('settlement scope uses returned successful original close receipt and both drained registries after original queues',async()=>{
- const root=await fs.mkdtemp(path.resolve('../../.cache/v2-validation/bundle-checkpoint-'));roots.push(root);
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-bundle-checkpoint-')));roots.push(root);
  const launch=Object.fromEntries(['opencodeDatabasePath','webDataDirectory','webConfigDirectory','opencodeConfigDirectory'].map(key=>[key,path.join(root,key)]));
  for(const directory of Object.values(launch))await fs.mkdir(directory);launch.global={state:path.join(root,'state')};await fs.mkdir(launch.global.state);
  let exited=false,drained=false;const order=[];

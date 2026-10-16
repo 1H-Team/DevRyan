@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -8,7 +9,6 @@ import { test } from 'node:test';
 import { assertClaudeQuotaLaunchEnvironmentOwned, createClaudeQuotaLaunchEnvironment, startClaudeQuotaRuntime } from './claude-quota-runtime.mjs';
 import { assertQaLaunchEnvironmentOwned, qaMeridianClaudePaths } from './profile-preparation.mjs';
 
-const root = fileURLToPath(new URL('../../', import.meta.url));
 const quotaProfile = { MERIDIAN_PROFILES: JSON.stringify([{ id: 'quota', type: 'oauth-token' }]), MERIDIAN_DEFAULT_PROFILE: 'quota' };
 const syntheticLaunch = (scratch) => {
     const runtimeRoot = path.join(scratch, 'runtime');
@@ -20,7 +20,7 @@ const syntheticLaunch = (scratch) => {
 
 test('quota launch env owns HOME and every Meridian/Claude path instead of inheriting the parent home', () => {
     const parentHome = process.env.HOME;
-    const { qaHome, env } = syntheticLaunch(path.join(root, '.cache/qa/synthetic-quota-env'));
+    const { qaHome, env } = syntheticLaunch(path.join(os.tmpdir(), 'devryan-synthetic-quota-env'));
     assert.equal(env.HOME, qaHome);
     assert.notEqual(env.HOME, parentHome);
     assert.equal(env.CLAUDE_CONFIG_DIR, path.join(qaHome, '.claude'));
@@ -38,8 +38,8 @@ test('quota launch env owns HOME and every Meridian/Claude path instead of inher
 });
 
 test('quota launch guard rejects a missing or foreign HOME and only exempts the absolute Claude executable', () => {
-    const { qaHome, env } = syntheticLaunch(path.join(root, '.cache/qa/synthetic-quota-guard'));
-    const realHome = path.join(root, '.cache/qa/synthetic-quota-guard/real-home');
+    const { qaHome, env } = syntheticLaunch(path.join(os.tmpdir(), 'devryan-synthetic-quota-guard'));
+    const realHome = path.join(os.tmpdir(), 'devryan-synthetic-quota-guard/real-home');
     const { HOME: _home, ...legacy } = env;
     assert.throws(() => assertClaudeQuotaLaunchEnvironmentOwned(legacy, qaHome), /must set HOME/);
     assert.throws(() => assertClaudeQuotaLaunchEnvironmentOwned({ ...env, HOME: realHome }, qaHome), /must set HOME/);
@@ -51,7 +51,7 @@ test('quota launch guard rejects a missing or foreign HOME and only exempts the 
 });
 
 test('a saved profile without an owned HOME fails before any quota runtime process starts', async () => {
-    const scratch = path.join(root, '.cache/qa/synthetic-quota-legacy');
+    const scratch = path.join(os.tmpdir(), 'devryan-synthetic-quota-legacy');
     const { runtimeRoot, qaHome, env } = syntheticLaunch(scratch);
     const { HOME: _home, ...legacyEnv } = env;
     const profile = { runtimeRoot, qaHome, env: legacyEnv, opencodeExecutable: path.join(scratch, 'missing-opencode') };
@@ -59,8 +59,7 @@ test('a saved profile without an owned HOME fails before any quota runtime proce
 });
 
 test('quota Meridian profile paths stay owned inside the Bun host where the home shim cannot rebind named imports', async () => {
-    await mkdir(path.join(root, '.cache/qa'), { recursive: true });
-    const scratch = await mkdtemp(path.join(root, '.cache/qa/quota-bun-home-'));
+    const scratch = await mkdtemp(path.join(os.tmpdir(), 'devryan-quota-bun-home-'));
     try {
         const { qaHome, env } = syntheticLaunch(scratch);
         await mkdir(qaHome, { recursive: true });
@@ -86,6 +85,6 @@ test('quota Meridian profile paths stay owned inside the Bun host where the home
 });
 
  test('a lawful owned profile cannot start the retired v1 quota transport', async () => {
-  const { runtimeRoot, qaHome, env } = syntheticLaunch(path.join(root, '.cache/qa/synthetic-quota-retired'));
+  const { runtimeRoot, qaHome, env } = syntheticLaunch(path.join(os.tmpdir(), 'devryan-synthetic-quota-retired'));
   await assert.rejects(startClaudeQuotaRuntime({ runtimeRoot, qaHome, env }), { code: 'qa_native_diagnostic_unavailable' });
 });

@@ -119,7 +119,7 @@ fs.mkdtemp = async (...args) => {
 };
 `, { flag: 'wx', mode: 0o600 });
     recorder = await fs.open(recordedRoots, 'wx', 0o600);
-    const environment = createQaHostLaunchEnvironment({ HOME: fixture, TMPDIR: fixture,
+    const environment = createQaHostLaunchEnvironment({ HOME: fixture, TMPDIR: fixture, DEVRYAN_KEEP_ARTIFACTS: '1',
       GIT_CEILING_DIRECTORIES: repository, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0' });
     const child = spawn(process.execPath, ['--import', preload,
       path.join(repository, 'scripts/opencode-v2-native/package-managed-interval-lane.mjs'), '--artifact-root', artifactRoot],

@@ -2,6 +2,7 @@ import {expect,test} from 'bun:test';
 import {Effect,Schema} from 'effect';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {execFileSync} from 'node:child_process';
 import {LayerNode} from '@opencode/util/effect/layer-node';
 import {Global} from '@opencode/util/global';
@@ -23,7 +24,7 @@ import {OperationPermitRef,type NativeAdmissionBridge} from '../../packages/web/
 
 const deferred=()=>{let resolve!:()=>void;const promise=new Promise<void>(done=>{resolve=done;});return {promise,resolve};};
 test('actual native promotion waits for sealed command primary reservation and committed verification can reenter the inbox',async()=>{
- const root=await fs.mkdtemp(path.resolve('.cache/v2-validation/command-admission-'));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-command-admission-')));
  const directory=path.join(root,'project');await fs.mkdir(directory);execFileSync('git',['init','--quiet'],{cwd:directory});
  const runtime=createSessionMutationRuntime({directory:path.join(root,'ledger')});
  const unavailable=async()=>{throw Error('Unexpected observation in admission-only fixture');};

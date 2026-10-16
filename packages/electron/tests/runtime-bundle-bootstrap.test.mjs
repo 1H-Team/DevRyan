@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -37,9 +38,7 @@ process.stdout.write(JSON.stringify({ hostRoot: hostDataRootDirectory, selectedR
 }
 
 test('source and packaged ESM capture the shell root before bundle binding changes the environment', async (t) => {
-  const cache = path.join(repository, '.cache');
-  await fs.mkdir(cache, { recursive: true });
-  const fixture = await fs.mkdtemp(path.join(cache, 'electron-bundle-bootstrap-'));
+  const fixture = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-electron-bundle-bootstrap-'));
   try {
     const outdir = path.join(fixture, 'bundle');
     const build = spawnSync('bun', ['packages/electron/scripts/bundle-main.mjs', '--outdir', outdir], {

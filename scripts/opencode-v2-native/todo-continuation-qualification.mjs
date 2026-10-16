@@ -27,7 +27,7 @@ const waitFor=async(read,predicate,label)=>{const deadline=Date.now()+30_000;for
 /** Focused real native qualification. No provider traffic or installed-app state. */
 export async function qualifyNativeTodoContinuation(){
  const artifacts=await verifyNativeAcceptanceArtifacts();
- const run=createRunRoot({parent:path.join(repositoryRoot,'.cache/v2-validation'),prefix:'native-todo-',owner:'scripts/opencode-v2-native/todo-continuation-qualification.mjs'});
+ const run=createRunRoot({parent:path.join(repositoryRoot, '.cache/v2-validation'),prefix:'native-todo-',owner:'scripts/opencode-v2-native/todo-continuation-qualification.mjs'});
  const root=await fs.realpath(run.dir);
  const directory=path.join(root,'project'),home=path.join(root,'home'),tmp=path.join(root,'tmp'),dataDirectory=path.join(root,'web-data');
  for(const folder of [directory,tmp,dataDirectory,...['config','data','state','cache','git-template'].map(name=>path.join(home,name))])await fs.mkdir(folder,{recursive:true});

@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFile, realpath, writeFile } from 'node:fs/promises';
+import { readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -64,7 +64,11 @@ export async function packageQaElectron({ webDist, nativeSourceApp, nativeRuntim
   // The packaged app is this producer's deliverable (consumed by later QA runs and
   // pruned as a rebuildable family), so a pass keeps the app; an interrupt
   // removes the partial build and the run manifest records the outcome.
-  const run = createRunRoot({ parent: path.join(root, '.cache/qa'), prefix: 'packaged-electron-', owner: 'scripts/qa/package-electron.mjs', keepOnPass: true });
+  // One fixed slot: the previous package is replaced, so packages never accumulate.
+  // It stays under the repository because loadQaPackagedArtifact requires the app inside it.
+  const packageParent = path.join(root, '.cache/qa');
+  await rm(path.join(packageParent, 'packaged-electron-current'), { recursive: true, force: true });
+  const run = createRunRoot({ parent: packageParent, name: 'packaged-electron-current', owner: 'scripts/qa/package-electron.mjs', keepOnPass: true });
   const output = run.dir;
   const createdAt = new Date().toISOString();
   const retentionFile = path.join(output, 'storage-retention.json');

@@ -35,7 +35,7 @@ afterEach(async () => {
 
 describe('web harness prompt admission', () => {
   it('passes only canonical idle events to the native TODO observer after existing liveness observation', async () => {
-    const directory = await mkdtemp(path.resolve(import.meta.dirname, '../../../../../.cache/v2-validation/idle-observer-'));
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'devryan-idle-observer-'));
     temporaryDirectories.push(directory);
     const runtime = createWebHarnessRuntime({ dataDirectory: directory, runtime: 'test' });
     const events = [];

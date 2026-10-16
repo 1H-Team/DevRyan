@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { Effect, Exit, Schema } from 'effect';
 import { LayerNode } from '@opencode/util/effect/layer-node';
@@ -23,7 +24,7 @@ import { persistRecoveredCancellation,dropRecoveredCancellationReceipts,Recovere
 import { OperationPermitRef, type NativeAdmissionBridge } from '../../packages/web/server/lib/opencode/runtime-host/native-admission-contract.js';
 
 test('original inbox mutations validate the whole batch before commit and exact cancellation does not reacquire its mutex', async () => {
-  const root = await fs.mkdtemp(path.resolve('.cache/v2-validation/recovered-publication-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-recovered-publication-')));
   const directory = path.join(root, 'project'); await fs.mkdir(directory);
   execFileSync('git', ['init', '--quiet'], { cwd: directory });
   const sessionID = SessionSchema.ID.make('ses_retained_graph');
@@ -121,7 +122,7 @@ test('original inbox mutations validate the whole batch before commit and exact 
 });
 
 test('selective receipt coexists with original persisted versioned event and session deletion removes only its derived aggregate',async()=>{
- const root=await fs.mkdtemp(path.resolve('.cache/v2-validation/recovered-persisted-'));const directory=path.join(root,'project');await fs.mkdir(directory);execFileSync('git',['init','--quiet'],{cwd:directory});
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-recovered-persisted-')));const directory=path.join(root,'project');await fs.mkdir(directory);execFileSync('git',['init','--quiet'],{cwd:directory});
  const sessionID=SessionSchema.ID.make('ses_persisted_receipt'),id=SessionMessage.ID.make('msg_persisted_receipt');
  const layer=LayerNode.compile(LayerNode.group([SessionInbox.node,SessionStore.node,SessionProjector.node,Bus.node,Database.node,Project.node]),{replacements:[
   Global.node.replace(Global.layerWith({home:root,data:root,cache:root,config:root,state:root,tmp:root,bin:root,log:root,repos:root})),Bus.node.replace(Bus.configured({persist:true}))]});

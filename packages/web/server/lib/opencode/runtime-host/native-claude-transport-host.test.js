@@ -1,5 +1,6 @@
 import { beforeEach, afterEach, expect, test, vi } from 'vitest';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { PassThrough, Writable } from 'node:stream';
@@ -18,8 +19,7 @@ const admit = input => host.authorize({ attemptID: input.attemptID, sessionID: i
 const started = async input => { await host.accept(input); await vi.waitFor(() => expect(frames.some(f => f.id === input.id && f.action === 'started')).toBe(true)); };
 beforeEach(async () => {
   startReadOnlySessionExecution.mockReset();
-  const family = path.resolve(import.meta.dirname, '../../../../../../.cache/v2-validation'); await fs.mkdir(family, { recursive: true });
-  root = await fs.mkdtemp(path.join(family, 'claude-host-'));
+  root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-claude-host-')));
   const globals = Object.fromEntries(['home', 'config', 'data', 'state', 'cache', 'bin', 'log', 'repos', 'tmp'].map(k => [k, path.join(root, 'global', k)]));
   await Promise.all(Object.values(globals).map(p => fs.mkdir(p, { recursive: true })));
   const storage = path.join(root, 'transport'); await fs.mkdir(storage);

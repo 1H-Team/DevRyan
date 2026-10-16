@@ -1,11 +1,11 @@
 import { expect, test } from 'bun:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 
 test('owned Cursor cumulative records use the actual native projector and preserve REST/SSE IDs', async () => {
   const repository = path.resolve(import.meta.dirname, '../..');
-  const base = path.join(repository, '.cache/v2-validation'); await fs.mkdir(base, { recursive: true });
-  const root = await fs.mkdtemp(path.join(base, 'cursor-ingress-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-cursor-ingress-')));
   const home = path.join(root, 'home'), tmp = path.join(home, 'tmp'), directory = path.join(root, 'project');
   await Promise.all([tmp, path.join(directory, '.git')].map(value => fs.mkdir(value, { recursive: true })));
   await fs.writeFile(path.join(tmp, 'package.json'), '{"type":"commonjs"}\n');

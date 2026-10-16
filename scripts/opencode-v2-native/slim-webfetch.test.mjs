@@ -1,10 +1,10 @@
 import {test,expect} from 'bun:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {prepareReviewedNativeInputs,reviewedNativeInputPlugin} from '../native-runtime-assets.mjs';
 const repository=path.resolve(import.meta.dirname,'../..');
-const parent=path.join(repository,'.cache/v2-validation');await fs.mkdir(parent,{recursive:true});
-const root=await fs.mkdtemp(path.join(parent,'slim-fetch-'));
+const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-slim-fetch-')));
 const entry=path.join(root,'entry.ts'),output=path.join(root,'bundle.mjs');
 await fs.writeFile(entry,`export * from ${JSON.stringify(path.join(repository,'packages/web/server/lib/opencode/runtime-host/native-slim-webfetch.ts'))};
 export * from ${JSON.stringify(path.join(repository,'packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js'))};

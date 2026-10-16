@@ -1,11 +1,11 @@
 import {test,expect} from 'vitest';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import {createNativeCursorRecovery} from './native-cursor-recovery.js';
 
 test('Cursor recovery retains uncertain start and exact receipt-backed intent until native cleanup ACK',async()=>{
- const cache=path.resolve('.cache/v2-validation');await fs.mkdir(cache,{recursive:true});
- const root=await fs.realpath(await fs.mkdtemp(path.join(cache,'cursor-recovery-'))),project=path.join(root,'project');await fs.mkdir(project);
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-cursor-recovery-'))),project=path.join(root,'project');await fs.mkdir(project);
  const scope={controllerInstanceID:'old-instance',directory:project,sessionID:'ses_cursor',userMessageID:'msg_user',assistantMessageID:'msg_assistant',agent:'build',modelID:'composer'};
  let lease,neverStarted=false,settled=0;
  const runtime={leaseForCall:async()=>lease,executionOutcomes:async()=>[{outcome:neverStarted?'never_started':'uncertain'}]};
@@ -40,8 +40,7 @@ test('Cursor recovery retains uncertain start and exact receipt-backed intent un
 });
 
 test('Cursor recovery refuses symlinked storage and corrupted ownership without deleting evidence',async()=>{
- const cache=path.resolve('.cache/v2-validation');await fs.mkdir(cache,{recursive:true});
- const root=await fs.realpath(await fs.mkdtemp(path.join(cache,'cursor-recovery-path-')));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-cursor-recovery-path-')));
  const scope={controllerInstanceID:'old',directory:root,sessionID:'ses_cursor',userMessageID:'msg_user',assistantMessageID:'msg_assistant',agent:'build',modelID:'composer'};
  const runtime={leaseForCall:async()=>null,executionOutcomes:async()=>[]};
  try{

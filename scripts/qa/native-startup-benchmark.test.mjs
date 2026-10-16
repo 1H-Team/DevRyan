@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -137,8 +138,7 @@ test('native startup observes the real renderer global WebSocket ready frame and
 });
 
 test('native phase observation uses owned private-home main.log and captured child output', async t => {
-  const fixtures = path.resolve('.cache/test-fixtures'); await fs.mkdir(fixtures, { recursive: true });
-  const home = await fs.mkdtemp(path.join(fixtures, 'native-phase-log-'));
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-native-phase-log-'));
   t.after(() => fs.rm(home, { recursive: true, force: true }));
   const app = { getLog: () => '[electron] startup phase { phase: "server_import", outcome: "completed", elapsedMs: 125 }' };
   assert.deepEqual(parseStartupPhaseLogs(readNativeStartupLogs(app, home)), [{ phase: 'server_import', outcome: 'completed', elapsedMs: 125, code: undefined }]);

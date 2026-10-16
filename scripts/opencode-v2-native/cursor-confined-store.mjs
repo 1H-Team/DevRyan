@@ -10,7 +10,7 @@ import {createRunRoot} from '../qa/run-root.mjs';
 /** Native prerequisite check: original SDK store and transport in a long,
  * confined private lease. Unavailable launchers fail this explicit check. */
 export async function verifyConfinedCursorStore({artifactRoot}){
- const run=createRunRoot({parent:path.join(repositoryRoot,'.cache/v2-validation'),prefix:'cursor-confined-store-',owner:'scripts/opencode-v2-native/cursor-confined-store.mjs'});
+ const run=createRunRoot({parent:path.join(repositoryRoot, '.cache/v2-validation'),prefix:'cursor-confined-store-',owner:'scripts/opencode-v2-native/cursor-confined-store.mjs'});
  const root=await fs.realpath(run.dir);
  const storage=path.join(root,'bundles/bundles/candidate/web-data/harness/session-mutations', 'a'.repeat(64),'views');
  const requests=[],provider=await createCursorHttpProvider({expectedApiKey:()=> 'owned-loopback-store-key',onRequest:row=>requests.push(row),

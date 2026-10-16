@@ -1,12 +1,13 @@
 import {test,expect} from 'bun:test';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import {createDiagnosticJournal} from './journal.js';
 import {createWindowsJournalFiles} from './windows-journal-files.js';
 import {createDiagnosticSanitizer} from './sanitizer.js';
 import {createWindowsPrivateFilesFixture} from './windows-private-files.fixture.js';
 async function fixture(action){
- const base=path.resolve('../../.cache/test-fixtures');await fs.mkdir(base,{recursive:true});const root=await fs.mkdtemp(path.join(base,'windows-journal-'));
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'devryan-windows-journal-'));
  const native=createWindowsPrivateFilesFixture(root),directory=path.join(root,'journal'),sanitizer=createDiagnosticSanitizer({homeDir:root,dataDir:root});
  const create=(options={})=>createDiagnosticJournal({directory,sanitizer,platform:'win32',windowsOwner:native.owner,fs:native.metadata,trim:false,maxAgeMs:Number.MAX_SAFE_INTEGER,...options});
  try{await action({...native,root,directory,create});}finally{await fs.rm(root,{recursive:true,force:true});}

@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createHarnessTaskContextHost as createHarnessTaskContextHostNative } from './harness-task-context.js';
 import { createNativeConsumerFixture } from './test-native-consumer-client.js';
@@ -49,8 +49,7 @@ describe('selected saved-plan root authority', () => {
   const rpc = (value, extra = {}) => value.handlePlanRpc({ action: 'plan_read', ...scope, messageID: 'msg_assistant', callID: 'call_plan', ...extra });
   const update = (value, version, text = '# Plan\n- Updated step\n') => rpc(value, { action: 'plan_update', expectedVersion: version, text });
   beforeEach(async () => {
-    const fixtures = fileURLToPath(new URL('../../../../../.cache/test-fixtures/', import.meta.url));
-    await fs.mkdir(fixtures, { recursive: true }); root = await fs.mkdtemp(path.join(fixtures, 'devryan-plan-authority-'));
+    root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-plan-authority-'));
     directory = path.join(root, 'project'); await fs.mkdir(directory); directory = await fs.realpath(directory);
     scope = { sessionID: 'ses_root', directory };
     primary = { ...scope, anchorID: 'msg_user', agent: 'builder', state: 'observing', cancellationGeneration: 2, stepID: 'msg_assistant', guardedIDs: [] };

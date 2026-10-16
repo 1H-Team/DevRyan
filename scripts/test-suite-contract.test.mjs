@@ -37,6 +37,8 @@ describe('full test-suite contract', () => {
     assert.deepEqual(files, [...files].sort());
   });
 
+  // packages/desktop is frozen legacy Tauri: its cargo suite is deliberately not run.
+  const excludedFromFull = new Set(['desktop']);
   test('includes every test-owning workspace package in the full gate', () => {
     const rootPackage = JSON.parse(readFileSync(path.join(repositoryRoot, 'package.json'), 'utf8'));
     const fullCommand = rootPackage.scripts['test:full'];
@@ -49,7 +51,7 @@ describe('full test-suite contract', () => {
       const manifestPath = path.join(repositoryRoot, 'packages', name, 'package.json');
       if (!existsSync(manifestPath)) return false;
       const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
-      return typeof manifest.scripts?.test === 'string';
+      return typeof manifest.scripts?.test === 'string' && !excludedFromFull.has(name);
     });
 
     for (const packageName of testPackages) {

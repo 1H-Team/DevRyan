@@ -7,7 +7,7 @@ import {pruneRetainedNativeArtifacts,retainNativeArtifacts} from './retained-nat
 const roots=[];afterEach(async()=>{vi.restoreAllMocks();for(const root of roots.splice(0))await fs.rm(root,{recursive:true,force:true});});
 const hash=value=>createHash('sha256').update(value).digest('hex');
 test('retains the complete manifest-owned inventory, modes and Claude asset independently of Resources',async()=>{
- const root=await fs.mkdtemp(path.resolve('../../.cache/v2-validation/artifact-retention-'));roots.push(root);
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-artifact-retention-')));roots.push(root);
  const source=path.join(root,'resources'),controlRoot=path.join(root,'control');await fs.mkdir(source);await fs.mkdir(controlRoot);
  const names=['DevRyan-controller','DevRyan-writer','DevRyan-Claude-credentials.mjs'],files=[];
  for(const name of names){const file=path.join(source,name),bytes=name+' fixture bytes';await fs.writeFile(file,bytes,{mode:name.endsWith('.mjs')?0o644:0o755});files.push({path:name,sha256:hash(bytes),size:Buffer.byteLength(bytes),mode:name.endsWith('.mjs')?0o644:0o755});}
@@ -26,7 +26,7 @@ test('retains the complete manifest-owned inventory, modes and Claude asset inde
 });
 
 test.each([false,true])('clone-copy fallback preserves verification and cleans a corrupted candidate: %s',async corrupt=>{
- const root=await fs.mkdtemp(path.resolve('../../.cache/v2-validation/artifact-retention-'));roots.push(root);
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-artifact-retention-')));roots.push(root);
  const source=path.join(root,'source'),controlRoot=path.join(root,'control');await fs.mkdir(source);
  const bytes=Buffer.alloc(4*1024*1024,42),file=path.join(source,'DevRyan-controller');await fs.writeFile(file,bytes,{mode:0o755});
  const manifestPath=path.join(source,'native-bundle.json');

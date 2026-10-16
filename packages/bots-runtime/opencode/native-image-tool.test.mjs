@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createBotNativeImageTool } from '../../web/server/lib/bots/native-image-tool.mjs';
@@ -7,9 +8,7 @@ import { prepareReviewedNativeInputs, reviewedNativeInputPlugin } from '../../..
 
 test('API-key Bot image wrapper retains original transport and paths while refusing OAuth', async () => {
   const repository = fileURLToPath(new URL('../../../', import.meta.url));
-  const parent = path.join(repository, '.cache/bot-native-tests');
-  await fs.mkdir(parent, { recursive: true });
-  const root = await fs.mkdtemp(path.join(parent, 'image-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-bot-native-image-')));
   const directory = path.join(root, 'workspace');
   await fs.mkdir(directory);
   const modulePath = path.join(root, 'reviewed.mjs');

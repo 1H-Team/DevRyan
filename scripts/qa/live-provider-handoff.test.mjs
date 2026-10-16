@@ -11,7 +11,7 @@ import { qa1ExerciseRequestTimeout, qa1ExerciseHttpFailure, parseHandoffCommand,
 import { waitLiveOwnerAttendance, createLiveOwnerLink } from './live-credential-owner.mjs';
 import { nativeUpgradeBundleID } from '../../packages/web/server/lib/opencode/runtime-host/runtime-bundle-lifecycle.js';
 import { canonicalJSON } from '../../packages/web/server/lib/opencode/runtime-host/bundle-migration-inventory.js';
-import { readRunMeta } from '../storage-policy.mjs';
+import { isPinnedRun } from '../storage.mjs';
 
 test('shared child cleanup preserves startup as cause while independently attempting failed link and handle cleanup', async () => {
   const primary = Object.assign(Error('original startup failure'), { code: 'qa_handoff_checkpoint_invalid' });
@@ -190,7 +190,7 @@ test('reusable profile retention remains pinned after ordinary run completion an
   await fs.writeFile(path.join(root, 'run.json'), JSON.stringify(run), { mode: 0o600 });
   await pinProviderHandoff(root);
   await fs.writeFile(path.join(root, 'run.json'), JSON.stringify({ ...run, status: 'interrupted', completedAt: run.createdAt }));
-  assert.equal(readRunMeta(root).pinned, true, 'Existing pruning policy must preserve the persistent profile');
+  assert.equal(isPinnedRun(root), true, 'cache:prune must keep the persistent profile');
   await pinProviderHandoff(root);
   await fs.writeFile(path.join(root, 'run.json'), JSON.stringify({ ...run, owner: 'foreign' }));
   await assert.rejects(pinProviderHandoff(root), /qa_handoff_identity_invalid/);

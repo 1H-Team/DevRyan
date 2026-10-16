@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import { PassThrough, Writable } from 'node:stream';
@@ -24,8 +25,7 @@ vi.mock('../managed-process-registry.js', () => ({ reapOrphanedManagedOpenCodePr
 const defer = () => { let resolve; const promise = new Promise(yes => { resolve = yes; }); return { promise, resolve }; };
 
 test.each(['killAndWaitForExit', 'close'])('provider private channel handles batched transport frames and %s waits both confined child receipts', async stop => {
-  const family = path.resolve(import.meta.dirname, '../../../../../../.cache/v2-validation'); await fs.mkdir(family, { recursive: true });
-  const root = await fs.mkdtemp(path.join(family, 'provider-transport-')), runs = [];
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-provider-transport-'))), runs = [];
   let owner;
   const globals = Object.fromEntries(['home', 'config', 'data', 'state', 'cache', 'bin', 'log', 'repos', 'tmp'].map(key => [key, path.join(root, key)]));
   await Promise.all(Object.values(globals).map(p => fs.mkdir(p)));

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { execFile } from 'node:child_process';
@@ -213,7 +214,7 @@ test('lost native helper hold after ACK refuses publication and releases the acq
 });
 test('relocated self-contained Windows helper bundle loads in a real isolated Node process', async () => {
   const root = fileURLToPath(new URL('../../../', import.meta.url));
-  const directory = await fs.mkdtemp(path.join(root, '.cache/test-fixtures/windows-helper-bundle-'));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-windows-helper-bundle-'));
   try {
     const output = path.join(directory, 'relocated-install.mjs');
     await promisify(execFile)('bun', ['build', fileURLToPath(new URL('../desktop-update-install-windows.mjs', import.meta.url)), '--target', 'node', '--outfile', output], { cwd: root, maxBuffer: 65536 });

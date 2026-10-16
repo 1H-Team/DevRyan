@@ -17,7 +17,7 @@ import { CdpConnection, discoverPageTarget, evaluate } from './cdp.mjs';
 import { createQaIsolatedRuntimeEnvironment, qaPlatformEnvironment } from './launch-environment.mjs';
 import { loadQaPackagedArtifact } from './packaged-artifact.mjs';
 import { reservePort, startOwnedProcess } from './process.mjs';
-import { createRunRoot } from './run-root.mjs';
+import { createRunRoot, scratchParent } from './run-root.mjs';
 
 const repository = fileURLToPath(new URL('../../', import.meta.url)).replace(/\/$/, '');
 const execFileAsync = promisify(execFile);
@@ -422,7 +422,7 @@ const loopback = origin => /^http:\/\/(127\.0\.0\.1|localhost|\[::1\]):\d+$/.tes
 
 export async function runFirstLaunchSmoke(options) {
   const startedAt = new Date(), started = performance.now();
-  const outputRoot = path.join(repository, '.cache/qa');
+  const outputRoot = scratchParent('qa');
   await mkdir(outputRoot, { recursive: true, mode: 0o700 });
   const run = createRunRoot({ parent: outputRoot, prefix: `first-launch-${options.scenario}-`, owner: 'scripts/qa/first-launch-smoke.mjs',
     keepArtifacts: options.keepRuntime, signals: 'exit' });

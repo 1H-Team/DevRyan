@@ -1,11 +1,11 @@
 import { expect, test } from 'bun:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 
 test('actual SDK remote MCP services bind two locations, OAuth refresh and reload lifetimes', async () => {
   const repository = path.resolve(import.meta.dirname, '../..');
-  const base = path.join(repository, '.cache/v2-validation'); await fs.mkdir(base, { recursive: true });
-  const root = await fs.mkdtemp(path.join(base, 'remote-mcp-graph-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-remote-mcp-graph-')));
   const home = path.join(root, 'home'), tmp = path.join(home, 'tmp');
   const directories = [path.join(root, 'one'), path.join(root, 'two')];
   await Promise.all([tmp, ...directories].map(directory => fs.mkdir(directory, { recursive: true })));

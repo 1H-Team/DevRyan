@@ -1,5 +1,6 @@
 import {expect,test} from 'bun:test';
 import path from 'node:path';
+import os from 'node:os';
 import fs from 'node:fs/promises';
 import {Credential} from '@opencode/core/credential';
 import {Database} from '@opencode/core/database/database';
@@ -25,7 +26,7 @@ function snapshot():NativeConfigurationSnapshot{return {schema:1,revision:1,sour
   requiredCatalogs:{agents:[],plugins:[],tools:[],models:[],skills:[],commands:[],mcp:[]}}]};}
 
 test('controller startup seeds the original credential graph with its shared database and KV before decoration',async()=>{
-  const state=await fs.mkdtemp(path.resolve('.cache/v2-validation/controller-setup-'));
+  const state=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-controller-setup-')));
   const seedPath=path.join(state,'native-setup-credentials.json');
   let database:Database.Interface|undefined,kv:KV.Interface|undefined,bootstraps=0;
   await fs.writeFile(seedPath,JSON.stringify({schema:1,credentials:[{integrationID:'openai',value:{type:'key',key:'synthetic-setup-key'}}]}));
@@ -53,7 +54,7 @@ test('controller startup seeds the original credential graph with its shared dat
 
 test('actual Node original-caller grants and shared queue reach the single native Credential graph without lending a stale acquisition',async()=>{
   const observations:{method:string;input:unknown}[]=[];
-  const state=await fs.mkdtemp(path.resolve('.cache/v2-validation/integration-state-'));
+  const state=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-integration-state-')));
   const configuration=snapshot();let ready=false,originalChecks=0;
   let queue:Promise<void>=Promise.resolve();
   const withMutationQueue=<A>(action:()=>A|Promise<A>)=>{const result=queue.then(action);queue=result.then(()=>undefined,()=>undefined);return result;};
@@ -124,7 +125,7 @@ test('saved remote MCP definitions are reviewed from compatibility snapshot and 
 
 test('Cursor key reads use the actual selected native Credential and refuse closed acquisitions',async()=>{
   const config=snapshot();
-  const state=await fs.mkdtemp(path.resolve('.cache/v2-validation/cursor-native-keys-'));
+  const state=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-cursor-native-keys-')));
   let allowed=true,checks=0;let queue:Promise<void>=Promise.resolve();
   const node=createNativeIntegrationOwner({instanceID:'controller-one',snapshot:config,stateDirectory:state,
     controller:()=>({instanceID:'controller-one',call:async input=>{
@@ -177,7 +178,7 @@ test('Cursor key reads use the actual selected native Credential and refuse clos
 });
 
 test('private Claude lifecycle commands use original KV during held admission without reverse host queue callbacks',async()=>{
- const state=await fs.mkdtemp(path.resolve('.cache/v2-validation/controller-claude-lifecycle-'));let bound=false;
+ const state=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-controller-claude-lifecycle-')));let bound=false;
  const factory=createControllerIntegrations({controllerInstanceID:'controller-claude',configurationSnapshot:snapshot(),
   registrationOrigin:{kind:'native',id:'devryan.remote-mcp',manifestDigest:'c'.repeat(64),capabilities:['network']},reviewedConfigurationOrigins:new Map(),
   isBound:()=>bound,isExecutionReady:()=>false,rpc:async()=>{throw Error('Lifecycle KV must never reenter host credential queue');},
@@ -200,7 +201,7 @@ test('private Claude lifecycle commands use original KV during held admission wi
 
 test('provider selected reads return the active native key and refuse stale, foreign or out-of-scope requests',async()=>{
   const config=snapshot();
-  const state=await fs.mkdtemp(path.resolve('.cache/v2-validation/provider-native-read-'));
+  const state=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-provider-native-read-')));
   let queue:Promise<void>=Promise.resolve();
   const node=createNativeIntegrationOwner({instanceID:'controller-one',snapshot:config,stateDirectory:state,
     controller:()=>({instanceID:'controller-one',call:async input=>{

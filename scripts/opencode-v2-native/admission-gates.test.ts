@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test';
+import { afterAll, expect, test } from 'bun:test';
 import { Cause, Effect, Layer, Schema } from 'effect';
 import { Tool } from '@opencode/core/tool';
 import { Model } from '@opencode/core/model';
@@ -14,7 +14,7 @@ import { Agent } from '@opencode/core/agent';
 import { LayerNode } from '@opencode/util/effect/layer-node';
 import { Global } from '@opencode/util/global';
 import path from 'node:path';
-import {fileURLToPath} from 'node:url';
+import os from 'node:os';
 import fs from 'node:fs/promises';
 import { createSessionMutationRuntime } from '../../packages/harness-runtime/lib/session-mutations.js';
 import type { SessionMutationRuntime } from '../../packages/harness-runtime/lib/session-mutations.js';
@@ -29,6 +29,9 @@ import { OperationPermitRef, requestPermit, runWithRequestPermit } from '../../p
 import { HostRefusal, refuseHost, runWithHostRefusal } from '../../packages/web/server/lib/opencode/runtime-host/host-refusal.js';
 import { createNativeAdmissionOwner } from '../../packages/web/server/lib/opencode/runtime-host/native-admission-owner.js';
 import { createNativePlanDenialOwner } from '../../packages/web/server/lib/opencode/runtime-host/native-plan-denial-owner.js';
+const scratchRoots: string[] = [];
+afterAll(() => Promise.all(scratchRoots.map(root => fs.rm(root, { recursive: true, force: true }))));
+const scratch = async (name: string) => { const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), `devryan-${name}-`))); scratchRoots.push(root); return root; };
 
 const origin = { kind: 'plugin', id: 'fixture.reviewed', manifestDigest: 'a'.repeat(64), capabilities: ['read'] } as const;
 const invocation: Parameters<Tool.Snapshot['execute']>[0] = { sessionID: Schema.decodeUnknownSync(SessionSchema.ID)('ses_fixture'),
@@ -176,7 +179,7 @@ test('committed native inbox verification releases its lock before synchronous r
       if (refused) throw new HostRefusal('native_permit_invalid', 403, 'inbox.verify', invocation.sessionID);
     }
   } });
-  const home = path.resolve('.cache/v2-validation/client-tmp/native-inbox-lock');
+  const home = await scratch('native-inbox-lock');
   const layer = LayerNode.compile(SessionInbox.node, { replacements: [
     Global.node.replace(Global.layerWith({ home, data: home, cache: home, config: home, state: home, tmp: home,
       bin: home, log: home, repos: home })), ...f.gates.overrides,
@@ -231,8 +234,7 @@ test('permission-filtered registered Plan writers reach the original negative ad
   let readOnly = true; const cancelled: unknown[] = [], released: unknown[] = [];
   const child = { id: invocation.sessionID, parentID: 'ses_parent', directory: '/fixture/project' };
   const request = { ...invocation, call: { ...invocation.call, name: 'write' } };
-  const cache = fileURLToPath(new URL('../../.cache/v2-validation/', import.meta.url)); await fs.mkdir(cache, {recursive:true});
-  const storage = await fs.mkdtemp(path.join(cache,'plan-denial-types-'));
+  const storage = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-plan-denial-types-')));
   const state = () => ({ held: false, revision: 0, reverting: false, holds: [] });
   const runtime: SessionMutationRuntime = { ...createSessionMutationRuntime({directory:storage}),
     registerNativeSession: async () => state(), nativeAdmissionState: async () => state(),
@@ -353,7 +355,7 @@ test('public form effects bind actual pending session while native scope cleanup
   let denied=false;
   const authorize=f.bridge.authorize;
   Object.assign(f.bridge,{authorize:async (request:OperationRequest)=>{if(denied) throw new HostRefusal('native_permit_invalid',403,request.operation,request.sessionID);return authorize(request);}});
-  const home=path.resolve('.cache/v2-validation/client-tmp/native-form-gate');
+  const home=await scratch('native-form-gate');
   const layer=LayerNode.compile(Form.node,{replacements:[Global.node.replace(Global.layerWith({home,data:home,cache:home,config:home,state:home,tmp:home,bin:home,log:home,repos:home})),...f.gates.overrides]});
   await Effect.runPromise(Effect.scoped(Effect.gen(function*(){
     const forms=yield* Form.Service;

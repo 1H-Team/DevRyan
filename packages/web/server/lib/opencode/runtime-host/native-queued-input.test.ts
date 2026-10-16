@@ -1,5 +1,6 @@
 import {test,expect} from 'bun:test';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {Effect,Exit,Schema} from 'effect';
@@ -18,9 +19,8 @@ import {LayerNode} from '@opencode/util/effect/layer-node';
 import {primaryStepOverride} from './primary-step.js';
 import {assertQueuedInputIdle,isQueuedPrimaryInput,queuedPublicationWitnesses,wakeQueuedInputParents,QueuedInputWitnesses,type QueuedInputDependencies} from './native-queued-input.js';
 
-const repo=path.resolve(import.meta.dir,'../../../../../..');
 test('original native enqueue/delivery transactions fence busy/unknown descendants and recheck after PRE awaits',async()=>{
- const root=await fs.mkdtemp(path.join(repo,'.cache/v2-validation/native-queue-graph-'));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-native-queue-graph-')));
  const directory=path.join(root,'work');await fs.mkdir(directory);execFileSync('git',['init','--quiet'],{cwd:directory});
  const parentID=SessionSchema.ID.make('ses_queueParent'),childID=SessionSchema.ID.make('ses_queueChild'),grandchildID=SessionSchema.ID.make('ses_queueGrandchild');
  let dependencies:QueuedInputDependencies&{inbox:Pick<SessionInbox.Interface,'list'>}|undefined;

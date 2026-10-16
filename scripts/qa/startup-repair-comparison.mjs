@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { execFileSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { captureQaSourceIdentity } from './artifact-evidence.mjs';
-import { createRunRoot, removeRunPayloads } from './run-root.mjs';
+import { createRunRoot, removeRunPayloads, scratchParent } from './run-root.mjs';
 import { withCrossProcessFileLock } from '../../packages/harness-runtime/lib/atomic-file.js';
 
 const repository = fileURLToPath(new URL('../../', import.meta.url)).replace(/\/$/, '');
@@ -77,12 +77,12 @@ export async function buildStartupRepairComparison({ artifactRoot, nativeSourceA
     assert.equal(await fs.realpath(directory), directory, 'Comparison inputs must be canonical');
   }
   execFileSync('df', ['-h', '.'], { cwd: repository, stdio: 'inherit' });
-  await fs.mkdir(path.join(repository, '.cache/qa'), { recursive: true, mode: 0o700 });
-  assert.equal(await fs.realpath(path.join(repository, '.cache/qa')), path.join(repository, '.cache/qa'), 'Comparison cache must not follow a symlink');
+  await fs.mkdir(scratchParent('qa'), { recursive: true, mode: 0o700 });
+  assert.equal(await fs.realpath(scratchParent('qa')), scratchParent('qa'), 'Comparison cache must not follow a symlink');
   return withCrossProcessFileLock(path.join(repository, '.cache/qa/startup-repair-comparison.lock'), async () => {
     let restore = () => Promise.resolve();
     const abort = new AbortController();
-    const run = createRunRoot({ parent: path.join(repository, '.cache/qa'), prefix: 'startup-repair-comparison-',
+    const run = createRunRoot({ parent: scratchParent('qa'), prefix: 'startup-repair-comparison-',
       owner: 'scripts/qa/startup-repair-comparison.mjs', extraPayloads: ['baseline-web', 'candidate-web', 'sources'],
       onInterrupt: async () => {
         abort.abort();

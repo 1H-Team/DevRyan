@@ -1,13 +1,12 @@
 import { expect, test } from 'bun:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import type { Location } from '@opencode/core/location';
 import type { RegistrationOrigin } from '../../packages/web/server/lib/opencode/runtime-host/registration-origin.js';
 
 test('real SDK plugin activation seals each host location before native snapshot execution', async () => {
-  const base = path.resolve(import.meta.dirname, '../../.cache/v2-validation');
-  await fs.mkdir(base, { recursive: true });
-  const root = await fs.mkdtemp(path.join(base, 'trusted-plugin-graph-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-trusted-plugin-graph-')));
   let child: ReturnType<typeof Bun.spawn> | undefined;
   try {
     const scratch = path.join(root, 'scratch'), tmp = path.join(scratch, 'tmp');

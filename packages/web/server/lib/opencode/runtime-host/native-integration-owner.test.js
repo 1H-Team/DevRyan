@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { createNativeIntegrationOwner } from './native-integration-owner.js';
 import { credentialMutationFingerprint as fingerprint } from './native-credential-mutation-owner.js';
 import { NativeCommandRefusal } from './native-command-refusal.js';
@@ -10,7 +11,7 @@ test.each([
   ['native_credential_mutation_failed', 'reply'],
   ['native_process_busy', 'not-dispatched'],
 ])('a proven finite credential refusal keeps its controller alive: %s', async (code, settlement) => {
-  const root = await fs.mkdtemp(path.resolve(import.meta.dirname, '../../../../../../.cache/v2-validation/integration-refusal-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-integration-refusal-')));
   let kills = 0; const instanceID = 'controller-fixture';
   const controller = { instanceID, call: async () => { throw new NativeCommandRefusal(code, 403, settlement); },
     killAndWaitForTermination: async () => { kills++; }, killAndWaitForExit: async () => { kills++; } };
@@ -27,7 +28,7 @@ test.each([
 });
 
 test('a timed-out reverse credential commit holds the shared queue through actual controller exit', async () => {
-  const root = await fs.mkdtemp(path.resolve(import.meta.dirname, '../../../../../../.cache/v2-validation/integration-owner-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-integration-owner-')));
   let releaseExit, entered;
   const exited = new Promise(resolve => { releaseExit = resolve; });
   const started = new Promise(resolve => { entered = resolve; });
@@ -64,7 +65,7 @@ test('a timed-out reverse credential commit holds the shared queue through actua
 });
 
 test('manual credential dispatch retains its browser grant through native capture and refuses revoked callers', async () => {
-  const root = await fs.mkdtemp(path.resolve(import.meta.dirname, '../../../../../../.cache/v2-validation/integration-operation-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-integration-operation-')));
   const instanceID = 'controller-fixture';
   let revoked = false, calls = 0, owner;
   const input = { integrationID: 'openai', value: { type: 'key', key: 'synthetic-fixture' } };
@@ -94,7 +95,7 @@ test('manual credential dispatch retains its browser grant through native captur
 
 
 test('finite physical and resolution checks use the original admitted caller, exact controller and reviewed location', async () => {
-  const root=await fs.mkdtemp(path.resolve(import.meta.dirname,'../../../../../../.cache/v2-validation/provider-attempt-owner-'));
+  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-provider-attempt-owner-')));
   const instanceID='controller-fixture';let ready=true,revoked=false,attempts=0,resolutions=0;
   const permit={token:'a'.repeat(64),revision:0,sessionID:'ses_fixture'};
   const recheck=()=>{if(revoked)throw Object.assign(Error('caller_revoked'),{code:'caller_revoked'});};
@@ -122,7 +123,7 @@ test('finite physical and resolution checks use the original admitted caller, ex
 });
 
 test('OpenAI attempt RPC remains available but host token access is removed', async () => {
-  const root = await fs.mkdtemp(path.resolve(import.meta.dirname, '../../../../../../.cache/v2-validation/builtin-owner-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-builtin-owner-')));
   const owner = createNativeIntegrationOwner({ instanceID: 'controller-fixture', stateDirectory: root,
     snapshot: { locations: [{ directory: root, configuration: { providers: {} }, compatibility: { mcp: {} } }] },
     controller: () => ({ instanceID: 'controller-fixture', call: async () => { throw Error('Unexpected credential read'); } }),
@@ -136,7 +137,7 @@ test('OpenAI attempt RPC remains available but host token access is removed', as
 });
 
 test('native image access retains selected key and admission proof through final settlement', async () => {
-  const root = await fs.mkdtemp(path.resolve(import.meta.dirname, '../../../../../../.cache/v2-validation/image-key-owner-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-image-key-owner-')));
   const instanceID = 'controller-fixture', invocation = { directory: root };
   let ready = true, revoked = false, checks = 0;
   let selected = { directory: root, controllerInstanceID: instanceID, credentialID: 'fixture-image-key', integrationID: 'openai',
@@ -169,7 +170,7 @@ test('native image access retains selected key and admission proof through final
 });
 
 test('expired SIWC image access refuses before OAuth refresh, provider traffic or native mutation', async () => {
-  const root = await fs.mkdtemp(path.resolve(import.meta.dirname, '../../../../../../.cache/v2-validation/image-siwc-refusal-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-image-siwc-refusal-')));
   const instanceID = 'controller-fixture', originalFetch = globalThis.fetch;
   let network = 0, mutations = 0, commands = 0;
   globalThis.fetch = async () => { network++; throw Error('image_siwc_must_not_contact_provider'); };
@@ -190,7 +191,7 @@ test('expired SIWC image access refuses before OAuth refresh, provider traffic o
 });
 
 test('provider selected reads are limited to xAI and OpenCode Go under the caller grant', async () => {
-  const root = await fs.mkdtemp(path.resolve(import.meta.dirname, '../../../../../../.cache/v2-validation/provider-read-owner-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-provider-read-owner-')));
   const instanceID = 'controller-fixture'; let reply, calls = [];
   const owner = createNativeIntegrationOwner({ instanceID, stateDirectory: root,
     snapshot: { locations: [{ directory: root, configuration: { providers: {} }, compatibility: { mcp: {} } }] },
@@ -214,7 +215,7 @@ test('provider selected reads are limited to xAI and OpenCode Go under the calle
 
 
 test('OpenAI selected usage reads refuse foreign identities and never enter the mutation queue', async () => {
-  const root = await fs.mkdtemp(path.resolve(import.meta.dirname, '../../../../../../.cache/v2-validation/openai-read-owner-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-openai-read-owner-')));
   const instanceID = 'controller-fixture'; let reply, queues = 0;
   const owner = createNativeIntegrationOwner({ instanceID, stateDirectory: root,
     snapshot: { locations: [{ directory: root, configuration: { providers: {} }, compatibility: { mcp: {} } }] },

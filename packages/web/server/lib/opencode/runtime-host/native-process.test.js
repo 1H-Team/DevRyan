@@ -1,15 +1,14 @@
 import { expect, test } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { createNativeControllerProcess, prepareSupervisedController } from './native-process.js';
 import {parseNativeBoot,parseNativeCommand,parseNativeReply} from './native-process-protocol.js';
 
 const fixture = async (action, bootReply, stderr = '') => {
-  const base = path.resolve(import.meta.dirname, '../../../../../../.cache/v2-validation');
-  await fs.mkdir(base, { recursive: true });
-  const root = await fs.mkdtemp(path.join(base, 'native-process-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-native-process-')));
   const binary = path.join(root, 'DevRyan-protocol-fixture');
   await fs.writeFile(binary, `#!/usr/bin/env node
 import readline from 'node:readline';
@@ -167,9 +166,7 @@ const nativeLauncher = path.join(process.env.DEVRYAN_EXECUTION_ARTIFACTS
   || path.resolve(import.meta.dirname, '../../../../runtime/darwin-arm64'), 'DevRyan-execution-darwin-arm64');
 const launcherPresent = process.platform === 'darwin' && await fs.access(nativeLauncher).then(() => true, () => false);
 test.skipIf(!launcherPresent)('the supervised controller may unlink only the setup credential seed in its read-only config', async () => {
-  const base = path.resolve(import.meta.dirname, '../../../../../../.cache/v2-validation');
-  await fs.mkdir(base, { recursive: true });
-  const root = await fs.realpath(await fs.mkdtemp(path.join(base, 'native-process-seed-')));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-native-process-seed-')));
   try {
     const bundle = path.join(root, 'bundle'), global = path.join(bundle, 'global');
     const globals = Object.fromEntries(['home', 'data', 'state', 'cache', 'bin', 'log', 'repos', 'tmp'].map(key => [key, path.join(global, key)]));

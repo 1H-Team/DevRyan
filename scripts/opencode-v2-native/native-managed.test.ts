@@ -121,8 +121,8 @@ test('settled waits wake only for changed v2 attention while v1 attention keeps 
 
 test('real SDK activates managed and Council registrations with reviewed per-location authority',async()=>{
   const fs=await import('node:fs/promises'),path=await import('node:path');
-  const base=path.resolve(import.meta.dirname,'../../.cache/v2-validation');
-  const root=await fs.mkdtemp(path.join(base,'native-managed-registry-')),scratch=path.join(root,'scratch'),directory=path.join(root,'project');
+  const {tmpdir}=await import('node:os');
+  const root=await fs.realpath(await fs.mkdtemp(path.join(tmpdir(),'devryan-native-managed-registry-'))),scratch=path.join(root,'scratch'),directory=path.join(root,'project');
   await fs.mkdir(path.join(scratch,'tmp'),{recursive:true});await fs.mkdir(directory);
   await fs.writeFile(path.join(scratch,'tmp','package.json'),'{"type":"commonjs"}\n');
   const host=new URL('../../packages/web/server/lib/opencode/runtime-host/',import.meta.url).href;

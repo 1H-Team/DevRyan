@@ -1,5 +1,6 @@
 import { expect, spyOn, test } from 'bun:test';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { prepareSessionExecution, removeExecutionSocketDirectory, sessionExecutionProfile } from './session-execution.js';
 
@@ -9,9 +10,7 @@ test('read denial is bounded, canonical, and only emitted by an accepted platfor
   for (const deniedReadDirectories of [['relative'], ['/bad\npath'], Array(33).fill('/owned/source'), 'invalid']) {
     expect(() => sessionExecutionProfile({ ...directories, deniedReadDirectories })).toThrow('invalid_execution_path');
   }
-  const base = path.resolve(import.meta.dirname, '../../../.cache/v2-validation');
-  await fs.mkdir(base, { recursive: true });
-  const root = await fs.mkdtemp(path.join(base, 'read-denial-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-read-denial-')));
   try {
     const viewDirectory = path.join(root, 'worktree'), source = path.join(root, 'source');
     await fs.mkdir(viewDirectory); await fs.mkdir(source); await fs.symlink(source, path.join(root, 'alias'));
@@ -29,9 +28,7 @@ test('read denial is bounded, canonical, and only emitted by an accepted platfor
 });
 
 test('explicit no-socket preparation and cleanup stay in the owned execution view', async () => {
-  const base = path.resolve(import.meta.dirname, '../../../.cache/v2-validation');
-  await fs.mkdir(base, { recursive: true });
-  const root = await fs.mkdtemp(path.join(base, 'no-socket-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-no-socket-')));
   try {
     const viewDirectory = path.join(root, 'worktree');
     await fs.mkdir(viewDirectory);

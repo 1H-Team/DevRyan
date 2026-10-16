@@ -1,11 +1,12 @@
 import {test,expect} from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {createHash} from 'node:crypto';
 import {loadNativeReviewedConfiguration} from './native-reviewed-configuration.js';
 
 test('configuration import executes only sealed bytes and validates its exact native declarations',async()=>{
- const root=await fs.mkdtemp(path.resolve(import.meta.dirname,'../../../../../../.cache/v2-validation/config-asset-'));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-config-asset-')));
  const filename=path.join(root,'DevRyan-native-configuration.mjs'),buildId='a'.repeat(64);
  const source=`export const nativeBuildID=${JSON.stringify(buildId)};
  export const reviewedImagegenOriginals={withReviewedImagegenOwner(){},callReviewedImagegenResponses(){}};

@@ -8,7 +8,7 @@ import { execFileSync } from 'node:child_process';
 import { prepareRuntimeUiProfile, runtimeUiTuple } from './native-backend-ui-diagnostic.mjs';
 import { loadQaPackagedArtifact } from './packaged-artifact.mjs';
 import { reservePort, startOwnedProcess } from './process.mjs';
-import { createRunRoot } from './run-root.mjs';
+import { createRunRoot, scratchParent } from './run-root.mjs';
 import { CdpConnection, discoverPageTarget, evaluate } from './cdp.mjs';
 import { readRuntimeBundleBinding } from '../../packages/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js';
 import { captureFirstDocumentStartup, observeStartupNavigation } from '../perf/electron-lifecycle-benchmark.mjs';
@@ -18,7 +18,7 @@ const root = fileURLToPath(new URL('../../', import.meta.url)).replace(/\/$/, ''
 assert.equal(process.argv.length, 3, 'Usage: bun scripts/qa/runtime-binding-smoke.mjs <package-evidence>');
 const packaged = await loadQaPackagedArtifact({ root, evidencePath: process.argv[2] });
 let stop = async () => {};
-const run = createRunRoot({ parent: path.join(root, '.cache/qa'), prefix: 'runtime-binding-',
+const run = createRunRoot({ parent: scratchParent('qa'), prefix: 'runtime-binding-',
   owner: 'scripts/qa/runtime-binding-smoke.mjs', onInterrupt: () => stop() });
 const evidence = { outcome: 'failed', archiveSha256: packaged.evidence.archiveSha256, scenarios: [] };
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');

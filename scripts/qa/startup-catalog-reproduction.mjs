@@ -5,7 +5,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { createRunRoot } from './run-root.mjs';
+import { createRunRoot, scratchParent } from './run-root.mjs';
 import { runQaNativeFactoryDiagnostic } from './native-profile-factory-diagnostic.mjs';
 
 const repository = fileURLToPath(new URL('../../', import.meta.url));
@@ -63,7 +63,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   }
   const outputRoot = values['output-root'] ? path.resolve(values['output-root']) : undefined;
   if (outputRoot) assert.ok(outputRoot.startsWith(path.join(repository, '.cache/sessions') + path.sep));
-  const run = createRunRoot({ parent: outputRoot ? path.dirname(outputRoot) : path.join(repository, '.cache/qa'), name: outputRoot ? path.basename(outputRoot) : undefined, prefix: 'startup-catalog-shape-',
+  const run = createRunRoot({ parent: outputRoot ? path.dirname(outputRoot) : scratchParent('qa'), name: outputRoot ? path.basename(outputRoot) : undefined, prefix: 'startup-catalog-shape-',
     owner: 'scripts/qa/startup-catalog-reproduction.mjs' });
   await fs.writeFile(path.join(run.dir, 'providers.json'), JSON.stringify(providers, null, 2) + '\n', { mode: 0o600 });
   await fs.writeFile(path.join(run.dir, 'opencode.json'), JSON.stringify({ provider: { 'cursor-acp': providers['cursor-acp'] } }) + '\n', { mode: 0o600 });

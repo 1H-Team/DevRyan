@@ -1,17 +1,19 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { test } from 'node:test';
 import { verifyPackageBuildInputs } from './package-lanes.mjs';
 import { snapshotOwnedTree } from './package-rollback-lane.mjs';
 import { repositoryRoot } from './artifacts.mjs';
 import { fixtureSha256 } from './migration-fixture.mjs';
 
-const temporaryRoot = path.join(repositoryRoot, '.cache/v2-validation/tmp');
-await fs.mkdir(temporaryRoot, { recursive: true });
+const temporaryRoot = await fs.realpath(os.tmpdir());
 
 test('qualification rejects changed source bytes even when output verification remains portable', async () => {
-  const root = await fs.mkdtemp(path.join(temporaryRoot, 'package-build-input-'));
+  // Build inputs are repository-relative files, so this fixture stays in the repository cache and is removed below.
+  const repositoryScratch = path.join(repositoryRoot, '.cache/v2-validation/tmp'); await fs.mkdir(repositoryScratch, { recursive: true });
+  const root = await fs.mkdtemp(path.join(repositoryScratch, 'package-build-input-'));
   try {
     const file = path.join(root, 'linked.js'); await fs.writeFile(file, 'export const value = 1;\n');
     const manifest = { inputs: { lockSha256: fixtureSha256(await fs.readFile(path.join(repositoryRoot, 'bun.lock'))),
@@ -23,7 +25,7 @@ test('qualification rejects changed source bytes even when output verification r
 });
 
 test('rollback inventory detects changed private candidate bytes without traversing symlink targets', async () => {
-  const root = await fs.mkdtemp(path.join(temporaryRoot, 'package-retention-'));
+  const root = await fs.mkdtemp(path.join(temporaryRoot, 'devryan-package-retention-'));
   try {
     const inner = path.join(root, 'candidate'); await fs.mkdir(inner);
     const target = path.join(root, 'synthetic-protected.txt'); await fs.writeFile(target, 'private sentinel');

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -65,8 +66,7 @@ test('native row disposal checks pending input and history as well as the sessio
 
 test('independent read-only SQLite inspection scopes every table to the exact subtree', async () => {
     const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-    const tmp = path.join(root, '.cache/v2-validation/tmp'); await fs.mkdir(tmp, { recursive: true });
-    const fixture = await fs.mkdtemp(path.join(tmp, 'removal-oracle-'));
+    const fixture = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-removal-oracle-')));
     const databasePath = path.join(fixture, 'native.db');
     const environment = { PATH: '/usr/bin:/bin', HOME: fixture, TMPDIR: fixture };
     try {

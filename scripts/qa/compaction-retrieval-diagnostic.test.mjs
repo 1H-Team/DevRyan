@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createQaProjectFixture } from './project-fixture.mjs';
@@ -159,7 +159,13 @@ test('diagnostic adapter cannot be used as a manual/natural/fixture acceptance a
 });
 
 async function exerciseAdapter(kind, { pendingQuestion = false, uncorrelated = false } = {}) {
-  const fixture = createQaProjectFixture({ outputRoot: fileURLToPath(new URL('../../.cache/qa/retrieval-diagnostic-unit', import.meta.url)), runId: 'adapter-' + kind });
+  // createQaProjectFixture only accepts output inside the repository .cache; the unique parent is removed below.
+  const qaCache = fileURLToPath(new URL('../../.cache/qa/', import.meta.url));
+  await mkdir(qaCache, { recursive: true });
+  const outputRoot = await mkdtemp(path.join(qaCache, 'retrieval-diagnostic-unit-'));
+  let fixture;
+  try { fixture = createQaProjectFixture({ outputRoot, runId: 'adapter-' + kind }); }
+  catch (error) { await rm(outputRoot, { recursive: true, force: true }); throw error; }
   const rows = [];
   const prompts = [];
   const commands = [];
@@ -239,7 +245,7 @@ async function exerciseAdapter(kind, { pendingQuestion = false, uncorrelated = f
     } catch (error) { failure = error; }
     const persisted = JSON.parse(await readFile(path.join(fixture.evidenceDirectory, 'retrieval-diagnostic.json'), 'utf8'));
     return { prompts, commands, screenshots, evidence: recorded, persisted, failure };
-  } finally { await rm(fixture.evidenceDirectory, { recursive: true, force: true }); }
+  } finally { await rm(outputRoot, { recursive: true, force: true }); }
 }
 
 test('adapter uses identical ordinary prompts and only compacted arm invokes the real UI compact contract', async () => {

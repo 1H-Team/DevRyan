@@ -4,8 +4,8 @@ import { fetchGoogleQuota } from './index.js';
 import { resolveGoogleAuthSources } from './auth.js';
 
 // Never read the real OpenCode auth store from a deterministic test.
-vi.mock('../../../opencode/auth.js', () => ({
-  OPENCODE_DATA_DIR: new URL('../../../../../../../.cache/v2-validation/quota-fixtures/google/data', import.meta.url).pathname,
+vi.mock('../../../opencode/auth.js', async () => ({
+  OPENCODE_DATA_DIR: (await import('node:path')).join((await import('node:os')).tmpdir(), 'devryan-quota-fixtures', 'google', 'data'),
   readAuthFile: vi.fn(() => ({
     google: { type: 'oauth', refresh: 'fixture-refresh|fixture-project', access: 'fixture-access', expires: 0 },
   })),

@@ -1,12 +1,12 @@
 import { expect, test } from 'bun:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { prepareReviewedNativeInputs, reviewedNativeInputPlugin } from '../native-runtime-assets.mjs';
 
 const repository = path.resolve(import.meta.dirname, '../..');
 for (const compiled of [false, true]) test(`Plan admission, permission aliases and saved source proof compiled=${compiled}`, async () => {
-  const base = path.join(repository, '.cache/v2-validation'); await fs.mkdir(base, { recursive: true });
-  const root = await fs.mkdtemp(path.join(base, 'native-plan-policy-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-native-plan-policy-')));
   let child: ReturnType<typeof Bun.spawn> | undefined;
   try {
     const entry = path.join(root, 'fixture.mjs');

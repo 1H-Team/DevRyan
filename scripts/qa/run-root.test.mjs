@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
-import { cloneFile, cloneTree, createRunRoot, keepArtifactsRequested, removeRunPayloads } from './run-root.mjs';
+import { cloneFile, cloneTree, createRunRoot, keepArtifactsRequested, removeRunPayloads, scratchParent } from './run-root.mjs';
 
 const helper = fileURLToPath(new URL('./run-root.mjs', import.meta.url));
 const scratch = () => mkdtempSync(path.join(os.tmpdir(), 'run-root-test-'));
@@ -28,32 +28,39 @@ test('run.json starts running and carries the fixed contract', () => {
   rmSync(parent, { recursive: true });
 });
 
-test('pass deletes heavy payloads and keeps evidence', () => {
+test('scratchParent lives in the OS temp dir and validates the family', () => {
+  assert.equal(scratchParent('qa'), path.join(os.tmpdir(), 'devryan-qa'));
+  for (const bad of ['', 'Q A', '../x', 'a/b', undefined]) assert.throws(() => scratchParent(bad), TypeError);
+});
+
+test('pass removes the whole run directory', () => {
   const parent = scratch(); const run = create(parent); seed(run.dir);
   run.finish('passed'); run.finish('failed');
-  assert.equal(manifestOf(run).status, 'passed'); assert.ok(manifestOf(run).completedAt);
-  for (const gone of ['runtime', 'home', 'profile', 'app/DevRyan QA.app', 'sub/node_modules', 'home2/runtime-bundles']) assert.equal(existsSync(path.join(run.dir, gone)), false, gone);
-  for (const kept of ['evidence.json', 'logs/run.log', 'shots/a.png', 'native/copied-binary']) assert.ok(existsSync(path.join(run.dir, kept)), kept);
+  assert.equal(run.status, 'passed');
+  assert.equal(existsSync(run.dir), false);
   rmSync(parent, { recursive: true });
 });
 
-test('failure keeps everything', () => {
+test('failure removes the whole run directory and prints a hint to stderr', () => {
   const parent = scratch(); const run = create(parent); seed(run.dir);
-  run.finish('failed');
-  assert.equal(manifestOf(run).status, 'failed');
-  assert.ok(existsSync(path.join(run.dir, 'runtime/bin/tool')));
+  const chunks = []; const original = process.stderr.write;
+  process.stderr.write = chunk => { chunks.push(String(chunk)); return true; };
+  try { run.finish('failed'); } finally { process.stderr.write = original; }
+  assert.equal(run.status, 'failed');
+  assert.equal(existsSync(run.dir), false);
+  assert.equal(chunks.join(''), `[run-root] test failed; its files were removed. Re-run with --keep-artifacts to keep ${run.dir}.\n`);
   rmSync(parent, { recursive: true });
 });
 
-test('interrupt cleans like a pass and records the status', () => {
+test('interrupt removes the whole run directory', () => {
   const parent = scratch(); const run = create(parent); seed(run.dir);
   run.finish('interrupted');
-  assert.equal(manifestOf(run).status, 'interrupted');
-  assert.equal(existsSync(path.join(run.dir, 'home')), false);
+  assert.equal(run.status, 'interrupted');
+  assert.equal(existsSync(run.dir), false);
   rmSync(parent, { recursive: true });
 });
 
-test('keep flag, argv and env keep payloads on pass', () => {
+test('keep flag, argv and env keep the run directory on pass and failure', () => {
   assert.equal(keepArtifactsRequested({ argv: [], env: {} }), false);
   assert.equal(keepArtifactsRequested({ argv: ['--keep-artifacts'], env: {} }), true);
   assert.equal(keepArtifactsRequested({ argv: [], env: { DEVRYAN_KEEP_ARTIFACTS: '1' } }), true);
@@ -62,6 +69,12 @@ test('keep flag, argv and env keep payloads on pass', () => {
     const parent = scratch(); const run = create(parent, options); seed(run.dir);
     run.finish('passed');
     assert.ok(existsSync(path.join(run.dir, 'runtime/bin/tool')));
+    assert.equal(manifestOf(run).status, 'passed');
+    const failed = create(parent, options); seed(failed.dir);
+    const original = process.stderr.write; process.stderr.write = () => true;
+    try { failed.finish('failed'); } finally { process.stderr.write = original; }
+    assert.ok(existsSync(path.join(failed.dir, 'runtime/bin/tool')));
+    assert.equal(manifestOf(failed).status, 'failed');
     rmSync(parent, { recursive: true });
   }
 });
@@ -69,27 +82,40 @@ test('keep flag, argv and env keep payloads on pass', () => {
 test('an existing fixture directory can be adopted', () => {
   const parent = scratch(); const adopted = path.join(parent, 'fixture'); mkdirSync(adopted); seed(adopted);
   const run = createRunRoot({ dir: adopted, owner: 'test', signals: false, env: {}, argv: [] });
-  assert.equal(run.dir, adopted); run.finish('passed');
-  assert.equal(manifestOf(run).status, 'passed'); assert.equal(existsSync(path.join(adopted, 'home')), false);
+  assert.equal(run.dir, adopted); assert.equal(manifestOf(run).status, 'running'); run.finish('passed');
+  assert.equal(existsSync(adopted), false);
   rmSync(parent, { recursive: true });
 });
 
-test('keepOnPass keeps a delivered payload on pass but not on interrupt', () => {
+test('keepOnPass keeps a delivered payload on pass only', () => {
   const parent = scratch(); const passed = create(parent, { keepOnPass: true }); seed(passed.dir);
-  passed.finish('passed'); assert.ok(existsSync(path.join(passed.dir, 'runtime/bin/tool')));
+  passed.finish('passed'); assert.ok(existsSync(path.join(passed.dir, 'runtime/bin/tool'))); assert.equal(manifestOf(passed).status, 'passed');
   const interrupted = create(parent, { keepOnPass: true }); seed(interrupted.dir);
-  interrupted.finish('interrupted'); assert.equal(existsSync(path.join(interrupted.dir, 'runtime')), false);
+  interrupted.finish('interrupted'); assert.equal(existsSync(interrupted.dir), false);
+  const failed = create(parent, { keepOnPass: true }); seed(failed.dir);
+  const original = process.stderr.write; process.stderr.write = () => true;
+  try { failed.finish('failed'); } finally { process.stderr.write = original; }
+  assert.equal(existsSync(failed.dir), false);
   rmSync(parent, { recursive: true });
 });
 
-test('extra payloads and external paths are removed; escapes are ignored', () => {
+test('external paths are removed with the run; paths outside stay', () => {
   const parent = scratch(); const outside = scratch(); writeFileSync(path.join(outside, 'keep.txt'), 'x');
   const external = scratch(); writeFileSync(path.join(external, 'big'), 'x');
-  const run = create(parent, { extraPayloads: ['native', outside], external: [external] }); seed(run.dir);
+  const owned = scratch();
+  const run = create(parent, { extraPayloads: [outside], external: [external] }); run.own(owned); seed(run.dir);
   run.finish('passed');
-  assert.equal(existsSync(path.join(run.dir, 'native')), false); assert.equal(existsSync(external), false);
+  assert.equal(existsSync(run.dir), false); assert.equal(existsSync(external), false); assert.equal(existsSync(owned), false);
   assert.ok(existsSync(path.join(outside, 'keep.txt')));
   rmSync(parent, { recursive: true }); rmSync(outside, { recursive: true });
+});
+
+test('removeRunPayloads removes heavy subtrees and extras but not evidence', () => {
+  const dir = scratch(); seed(dir);
+  removeRunPayloads(dir, { extra: ['native'] });
+  for (const gone of ['runtime', 'home', 'profile', 'app/DevRyan QA.app', 'sub/node_modules', 'home2/runtime-bundles', 'native']) assert.equal(existsSync(path.join(dir, gone)), false, gone);
+  for (const kept of ['evidence.json', 'logs/run.log', 'shots/a.png']) assert.ok(existsSync(path.join(dir, kept)), kept);
+  rmSync(dir, { recursive: true });
 });
 
 test('payload removal never follows symlinks', () => {
@@ -112,31 +138,38 @@ test('clone helpers copy files and trees', () => {
 const childScript = (parent, mode) => `
   import { createRunRoot } from ${JSON.stringify(helper)};
   import { mkdirSync, writeFileSync } from 'node:fs';
-  const run = createRunRoot({ parent: ${JSON.stringify(parent)}, owner: 'child', env: {}, argv: [] });
+  const run = createRunRoot({ parent: ${JSON.stringify(parent)}, owner: 'child', argv: [] });
   mkdirSync(run.dir + '/home', { recursive: true }); writeFileSync(run.dir + '/home/big', 'x'); writeFileSync(run.dir + '/result.json', '{}');
   console.log(run.dir);
   ${mode === 'hang' ? 'setInterval(() => {}, 1000);' : mode === 'crash' ? 'throw new Error("boom");' : 'run.finish("passed");'}
 `;
-const runChild = (parent, mode, signal) => new Promise(resolve => {
-  const child = spawn(process.execPath, ['--input-type=module', '-e', childScript(parent, mode)], { stdio: ['ignore', 'pipe', 'ignore'] });
-  let out = '';
+const runChild = (parent, mode, signal, env = {}) => new Promise(resolve => {
+  const child = spawn(process.execPath, ['--input-type=module', '-e', childScript(parent, mode)], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, DEVRYAN_KEEP_ARTIFACTS: '0', ...env } });
+  let out = ''; let err = '';
+  child.stderr.on('data', chunk => { err += chunk; });
   child.stdout.on('data', chunk => { out += chunk; if (signal && out.includes('\n')) child.kill(signal); });
-  child.on('close', (code, sig) => resolve({ dir: out.trim(), code, sig }));
+  child.on('close', (code, sig) => resolve({ dir: out.trim(), code, sig, stderr: err }));
 });
 
-test('SIGINT and SIGTERM remove payloads and mark interrupted', async () => {
+test('SIGINT and SIGTERM remove the run directory', async () => {
   for (const [signal, code] of [['SIGINT', 130], ['SIGTERM', 143]]) {
     const parent = scratch(); const result = await runChild(parent, 'hang', signal);
     assert.equal(result.code, code);
-    assert.equal(existsSync(path.join(result.dir, 'home')), false); assert.ok(existsSync(path.join(result.dir, 'result.json')));
-    assert.equal(JSON.parse(readFileSync(path.join(result.dir, 'run.json'), 'utf8')).status, 'interrupted');
+    assert.equal(existsSync(result.dir), false);
     rmSync(parent, { recursive: true });
   }
 });
 
-test('an unfinished crash is recorded as failed and keeps payloads', async () => {
+test('an unfinished crash is recorded as failed, hinted on stderr and removed', async () => {
   const parent = scratch(); const result = await runChild(parent, 'crash');
   assert.notEqual(result.code, 0);
+  assert.equal(existsSync(result.dir), false);
+  assert.match(result.stderr, /\[run-root\] child failed; its files were removed\. Re-run with --keep-artifacts to keep /);
+  rmSync(parent, { recursive: true });
+});
+
+test('a crash with DEVRYAN_KEEP_ARTIFACTS=1 keeps the run directory as failed', async () => {
+  const parent = scratch(); const result = await runChild(parent, 'crash', undefined, { DEVRYAN_KEEP_ARTIFACTS: '1' });
   assert.ok(existsSync(path.join(result.dir, 'home/big')));
   assert.equal(JSON.parse(readFileSync(path.join(result.dir, 'run.json'), 'utf8')).status, 'failed');
   rmSync(parent, { recursive: true });

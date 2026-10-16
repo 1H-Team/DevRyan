@@ -1,5 +1,5 @@
 import {test,expect} from 'bun:test';
-import fs from 'node:fs/promises';import path from 'node:path';import {pathToFileURL} from 'node:url';
+import fs from 'node:fs/promises';import path from 'node:path';import os from 'node:os';import {pathToFileURL} from 'node:url';
 import {createManagedTaskScheduler} from '../../packages/orchestration-runtime/index.js';
 import {createPrimaryRecoveryController,createPrimaryRecoveryHost} from '../../packages/harness-runtime/index.js';
 import {createNativeSlimContextOwner} from '../../packages/web/server/lib/opencode/runtime-host/native-slim-context-owner.js';
@@ -7,7 +7,7 @@ import {nativeStepPermitSha256} from '../../packages/web/server/lib/opencode/run
 import {rewriteReviewedSlimServer} from '../../packages/web/server/lib/opencode/runtime-host/reviewed-package-transforms.js';
 import type * as ReviewedSlim from '../../packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js';
 const directory='/workspace';
-async function originalFixture(){const root=await fs.mkdtemp(path.resolve('.cache/v2-validation/slim-owner-'));const file=path.join(root,'reviewed.mjs');await fs.writeFile(file,rewriteReviewedSlimServer(await fs.readFile(new URL('../../packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js',import.meta.url))).contents);const originals:typeof ReviewedSlim=await import(pathToFileURL(file).href);return {root,originals};}
+async function originalFixture(){const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-slim-owner-')));const file=path.join(root,'reviewed.mjs');await fs.writeFile(file,rewriteReviewedSlimServer(await fs.readFile(new URL('../../packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js',import.meta.url))).contents);const originals:typeof ReviewedSlim=await import(pathToFileURL(file).href);return {root,originals};}
 test('Node context owner runs the original taskboard against real terminal envelope CAS without collecting results',async()=>{
  const f=await originalFixture();let saved:unknown,live=true,child=false;
  const scheduler=createManagedTaskScheduler({persistence:{load:async()=>null,save:async value=>{saved=structuredClone(value)}},executor:{start:async(_task,control)=>{await control.setChildSessionId('ses_child');await control.markAccepted();return {status:'completed',recoverablePreview:'Actual completed result'};},abort:async()=>({aborted:true}),reconcile:async()=>({state:'unavailable'}),readRecoverableResult:async()=>{throw new Error('context_cannot_collect_result')}}});

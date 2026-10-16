@@ -2,11 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { createHash } from 'node:crypto';
 import { assertCompiledHelperAgents, compiledHelperAgentIDs, createCompiledHelperAgentFixture } from './package-helper-agent-fixture.mjs';
 
 test('helper fixture retains original owner definitions without provider or model selection', async () => {
-  const root = await fs.realpath(await fs.mkdtemp(path.resolve('.cache/v2-validation/helper-agent-fixture-')));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-helper-agent-fixture-')));
   try {
     const result = await createCompiledHelperAgentFixture({ root });
     const bytes = await fs.readFile(result.evidence.configurationPath);
@@ -29,7 +30,7 @@ test('helper fixture retains original owner definitions without provider or mode
 });
 
 test('missing production helper or changed tool/model permissions refuses fixture admission', async () => {
-  const root = await fs.realpath(await fs.mkdtemp(path.resolve('.cache/v2-validation/helper-agent-refusal-')));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-helper-agent-refusal-')));
   try {
     const { agents } = await createCompiledHelperAgentFixture({ root });
     for (const mutate of [

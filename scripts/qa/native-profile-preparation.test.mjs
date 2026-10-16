@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
@@ -112,7 +113,7 @@ test('the offline source home must exist canonically inside the private runtime'
 });
 
 test('native launch environment runs the real home preload and isolated-host rejects missing bundle admission', async () => {
-  const root = await fs.realpath(await fs.mkdtemp(path.resolve('.cache/qa-native-host-'))), home = path.join(root, 'home');
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-qa-native-host-'))), home = path.join(root, 'home');
   await fs.mkdir(home); await fs.writeFile(path.join(home, '.devryan-qa-home'), 'owned native host fixture\n');
   await fs.mkdir(path.join(root, 'missing-bundle'));
   await fs.writeFile(path.join(root, 'credentials.env.json'), '{}\n');

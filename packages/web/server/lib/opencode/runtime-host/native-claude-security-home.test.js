@@ -2,7 +2,7 @@ import {afterEach,expect,test} from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
-import {userInfo} from 'node:os';
+import os,{userInfo} from 'node:os';
 import {createNativeClaudeSecurityHome} from './native-claude-security-home.js';
 import {createNativeClaudeCredentialOwner,migrateNativeClaudeLegacyFences} from './native-provider-runtime-owner.js';
 import {createNativeClaudeEnrollmentOwner} from './native-claude-enrollment.js';
@@ -15,7 +15,7 @@ afterEach(async()=>{for(const root of roots.splice(0))await fs.rm(root,{recursiv
 const source=await fs.readFile(new URL('../../../../runtime/reviewed-inputs/claude-1.8.0/node_modules/@rynfar/meridian/dist/cli-khhjyk04.js',import.meta.url));
 const module=await import('data:text/javascript;base64,'+Buffer.from(rewriteReviewedClaudeCredentials(source)).toString('base64'));
 async function fixture({expired=false}={}){
- const base=await fs.realpath(path.resolve('../../.cache/v2-validation')),root=await fs.mkdtemp(path.join(base,'claude-security-home-'));roots.push(root);
+ const base=await fs.realpath(os.tmpdir()),root=await fs.mkdtemp(path.join(base,'devryan-claude-security-home-'));roots.push(root);
  const controlRoot=path.join(root,'control'),home=path.join(root,'home');await fs.mkdir(controlRoot,{mode:0o700});await fs.mkdir(home,{mode:0o700});
  const parent=path.join(controlRoot,'claude-enrollments');await fs.mkdir(parent,{mode:0o700});
  const enrollmentID=randomUUID(),configDirectory=path.join(parent,enrollmentID);await fs.mkdir(configDirectory,{mode:0o700});

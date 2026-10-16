@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { Credential } from '@opencode/core/credential';
 import { Integration } from '@opencode/core/integration';
 import { Agent } from '@opencode/core/agent';
@@ -28,8 +29,7 @@ const oauth = (method = methodID): Credential.OAuth => Schema.decodeUnknownSync(
 async function fixture(action: (input: { adapter: ReturnType<typeof createNativeOpenAi>; raw: Credential.Interface;
   integration: Integration.Interface; hooks: PluginHooks.Interface; directory: string; location: Location.Interface;
   refreshed: () => number; writes: () => number }) => Effect.Effect<void, unknown, Credential.Service | Scope.Scope>, options: Partial<NativeOpenAiOptions> = {}) {
-  const parent = path.resolve('.cache/v2-validation'); await fs.mkdir(parent, { recursive: true });
-  const directory = await fs.mkdtemp(path.join(parent, 'builtin-openai-'));
+  const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-builtin-openai-')));
   const location = Schema.decodeUnknownSync(Location.Info)({ directory, project: { id: 'global', directory, canonical: directory } });
   let raw: Credential.Interface | undefined, refreshes = 0, writes = 0;
   const adapter = createNativeOpenAi({ controllerIdentity: () => 'controller-fixture', isBound: () => true, isExecutionReady: () => true,

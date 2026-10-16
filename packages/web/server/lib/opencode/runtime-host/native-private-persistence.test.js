@@ -1,4 +1,5 @@
 import {test,expect,vi} from 'vitest';
+import os from 'node:os';
 import path from 'node:path';
 
 const operations=vi.hoisted(()=>[]);
@@ -15,7 +16,7 @@ vi.mock('../../../../../harness-runtime/lib/windows-private-files.js',()=>({
  }
 }));
 import {createNativePrivatePersistence} from './native-private-persistence.js';
-const directory=path.resolve('.cache/test-fixtures/verified-runtime');
+const directory=path.join(os.tmpdir(),'devryan-verified-runtime');
 const binding={controlRoot:directory,descriptor:{launch:{artifactManifestPath:path.join(directory,'native-bundle.json'),artifactManifestSha256:'a'.repeat(64),
  controllerBinary:path.join(directory,'controller'),writerBinary:path.join(directory,'writer')}}};
 const verified={controller:binding.descriptor.launch.controllerBinary,writer:binding.descriptor.launch.writerBinary,launcher:path.join(directory,'verified-launcher')};
@@ -50,11 +51,11 @@ test('nested private directories start at the constructing host root and refuse 
  const {windowsOwner}=await createNativePrivatePersistence(binding,{platform:'win32',verifyArtifacts:async()=>verified});
  const nested=path.join(directory,'harness','context');await windowsOwner.ensureDirectory(nested);
  expect(operations.slice(2)).toEqual([['ensureDirectory',directory],['ensureDirectory',path.join(directory,'harness')],['ensureDirectory',nested]]);
- operations.length=0;await expect(windowsOwner.ensureDirectory(path.resolve('.cache/test-fixtures/foreign'))).rejects.toMatchObject({code:'private_windows_storage_scope_invalid'});expect(operations).toEqual([]);
+ operations.length=0;await expect(windowsOwner.ensureDirectory(path.join(os.tmpdir(),'devryan-foreign'))).rejects.toMatchObject({code:'private_windows_storage_scope_invalid'});expect(operations).toEqual([]);
 });
 test('Windows bootstrap artifact refusal precedes creating any persistence root',async()=>{
  const fs=await import('node:fs/promises');const {provisionDefaultNativeBundle}=await import('./native-default-bundle.js');
- const base=path.resolve('../../.cache/test-fixtures');await fs.mkdir(base,{recursive:true});const root=await fs.mkdtemp(path.join(base,'windows-bootstrap-refusal-'));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-windows-bootstrap-refusal-')));
  const descriptor=Object.getOwnPropertyDescriptor(process,'platform');
  try{
   const resources=path.join(root,'resources');await fs.mkdir(resources);await fs.writeFile(path.join(resources,'native-bundle.json'),'{}');

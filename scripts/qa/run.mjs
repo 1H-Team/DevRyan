@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,12 +13,13 @@ import { createQaHostLaunchEnvironment } from './launch-environment.mjs';
 import { prepareQaFixtureProfile } from './fixture-scenarios.mjs';
 import { gradeQaRendererErrors, navigateQaElectronWireFacade } from './matrix-runner.mjs';
 import { waitForQaHostReady } from './host-readiness.mjs';
+import { createRunRoot, scratchParent } from './run-root.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const requireElectron = createRequire(new URL('../../packages/electron/package.json', import.meta.url));
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export async function runQa({ runtime = 'web', scenario = 'chat', generation, artifactRoot = process.env.QA_NATIVE_ARTIFACT_ROOT, outputRoot = path.join(root, '.cache/qa'), holdMs = 0 } = {}) {
+export async function runQa({ runtime = 'web', scenario = 'chat', generation, artifactRoot = process.env.QA_NATIVE_ARTIFACT_ROOT, outputRoot = scratchParent('qa'), holdMs = 0 } = {}) {
   if (!Number.isSafeInteger(holdMs) || holdMs < 0 || holdMs > 300000) throw new Error('QA inspection hold must be 0–300000 milliseconds');
   if (!['web', 'electron'].includes(runtime)) throw new Error('QA runtime must be web or electron');
   if (!['chat', 'mobile', 'recovery', 'thinking', 'grok-plan', 'session-changes', 'execution-failure', 'skill-loading', 'navigation', 'provider-usage'].includes(scenario) || (scenario === 'mobile' && runtime !== 'web')) throw new Error('QA scenario must be chat, recovery, thinking, grok-plan, session-changes, execution-failure, skill-loading, navigation, provider-usage, or mobile on web');
@@ -31,8 +32,10 @@ export async function runQa({ runtime = 'web', scenario = 'chat', generation, ar
     ]);
     if (webIndex !== stagedIndex) throw new Error('Electron staged UI is stale; run bun run --cwd packages/electron build:web-assets before QA');
   }
-  await mkdir(outputRoot, { recursive: true, mode: 0o700 });
-  const output = await mkdtemp(path.join(outputRoot, `${runtime}-${scenario}-`));
+  // The whole run directory is removed on pass, fail and interrupt unless --keep-artifacts
+  // or DEVRYAN_KEEP_ARTIFACTS=1; SIGINT/SIGTERM only flag the run, which then unwinds and finishes below.
+  const run = createRunRoot({ parent: outputRoot, prefix: `${runtime}-${scenario}-`, owner: 'qa-run', signals: 'exit' });
+  const output = run.dir;
   const temporary = path.join(output, 'runtime');
   let data, profile;
   const workspace = path.join(temporary, 'workspace');
@@ -411,6 +414,7 @@ export async function runQa({ runtime = 'web', scenario = 'chat', generation, ar
     await writeFile(path.join(output, 'result.json'), JSON.stringify({ ...sanitizer.sanitizeExportValue(evidence), revision: evidence.revision }, null, 2));
     process.removeListener('SIGINT', onInterrupt);
     process.removeListener('SIGTERM', onInterrupt);
+    run.finish(interrupted ? 'interrupted' : evidence.outcome === 'passed' ? 'passed' : 'failed');
   }
   console.log(JSON.stringify({ output, outcome: evidence.outcome, error: evidence.error }));
   return evidence;

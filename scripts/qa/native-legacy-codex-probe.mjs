@@ -5,13 +5,13 @@ import path from 'node:path';
 import net from 'node:net';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { createRunRoot } from './run-root.mjs';
+import { createRunRoot, scratchParent } from './run-root.mjs';
 import { createQaHostLaunchEnvironment } from './launch-environment.mjs';
 
 const repository = fileURLToPath(new URL('../../', import.meta.url));
 if (process.argv[2] !== '--child') {
   assert.equal(process.argv.length, 2, 'This attended probe takes no credential/profile arguments');
-  const run = createRunRoot({ parent: path.join(repository, '.cache/sessions/2026-10-11-native-legacy-codex'),
+  const run = createRunRoot({ parent: scratchParent('native-legacy-codex'),
     prefix: 'probe-', owner: 'scripts/qa/native-legacy-codex-probe.mjs', signals: 'exit' });
   const runtime = path.join(run.dir, 'runtime');
   const globals = Object.fromEntries(['home', 'config', 'data', 'state', 'cache', 'tmp', 'bin', 'log', 'repos'].map(key => [key, path.join(runtime, key)]));
@@ -28,7 +28,7 @@ if (process.argv[2] !== '--child') {
   process.exitCode = code;
 } else {
   const root = await fs.realpath(process.argv[3]);
-  assert.ok(root.startsWith(path.join(repository, '.cache/sessions/2026-10-11-native-legacy-codex') + path.sep));
+  assert.ok(root.startsWith(scratchParent('native-legacy-codex') + path.sep));
   const manifest = JSON.parse(await fs.readFile(path.join(root, 'run.json'), 'utf8'));
   assert.equal(manifest.owner, 'scripts/qa/native-legacy-codex-probe.mjs');
   const runtime = path.join(root, 'runtime');

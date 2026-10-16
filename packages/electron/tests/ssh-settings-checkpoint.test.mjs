@@ -2,14 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { createDesktopSettings } from '../desktop-settings.mjs';
 import { ElectronSshManager } from '../ssh-manager.mjs';
 
-const fixtureBase = path.resolve('.cache/v2-validation');
 async function withFixture(run) {
-  await fsp.mkdir(fixtureBase, { recursive: true });
-  const directory = await fsp.mkdtemp(path.join(fixtureBase, 'ssh-settings-checkpoint-'));
+  const directory = await fsp.mkdtemp(path.join(os.tmpdir(), 'devryan-ssh-settings-checkpoint-'));
   try { await run(directory); }
   finally { await fsp.rm(directory, { recursive: true, force: true }); }
 }

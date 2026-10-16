@@ -1,10 +1,11 @@
 import {it,expect} from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {pathToFileURL} from 'node:url';
 it.each(['ready','held-A','pending-B'])('actual thin entry awaits bootstrap and selects %s before composition',async state=>{
  const held=state!=='ready';
- const root=await fs.realpath(await fs.mkdtemp(path.resolve('../../.cache/v2-validation/native-entry-')));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-native-entry-')));
  try{
   const entry=await fs.readFile(new URL('../../../index.js',import.meta.url),'utf8');
   await fs.writeFile(path.join(root,'entry.mjs'),entry
@@ -24,7 +25,7 @@ it.each(['ready','held-A','pending-B'])('actual thin entry awaits bootstrap and 
 });
 
 it('a refused cold upgrade still binds the selected bundle and restores setup',async()=>{
- const root=await fs.realpath(await fs.mkdtemp(path.resolve('../../.cache/v2-validation/native-entry-failed-')));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-native-entry-failed-')));
  const priorRoot=process.env.DEVRYAN_RUNTIME_BUNDLE_ROOT;
  try{
   const bootstrap=await fs.readFile(new URL('./runtime-entry-bootstrap.js',import.meta.url),'utf8');

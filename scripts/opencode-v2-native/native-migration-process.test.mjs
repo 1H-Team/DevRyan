@@ -1,16 +1,16 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { test } from 'node:test';
 import { runNativeMigrationProcess } from '../../packages/web/server/lib/opencode/runtime-host/native-migration-process.js';
 import { repositoryRoot } from './artifacts.mjs';
 import { createQaHostLaunchEnvironment } from '../qa/launch-environment.mjs';
 
-const temporaryRoot = path.join(repositoryRoot, '.cache/v2-validation/tmp');
-await fs.mkdir(temporaryRoot, { recursive: true });
+const temporaryRoot = await fs.realpath(os.tmpdir());
 
 const fixture = async (mode, run) => {
-  const root = await fs.mkdtemp(path.join(temporaryRoot, 'native-migration-process-'));
+  const root = await fs.mkdtemp(path.join(temporaryRoot, 'devryan-native-migration-process-'));
   await fs.writeFile(path.join(root, 'package.json'), '{"type":"commonjs"}\n');
   const binary = path.join(root, 'DevRyan-migration-protocol-fixture');
   await fs.writeFile(binary, `#!/usr/bin/env node

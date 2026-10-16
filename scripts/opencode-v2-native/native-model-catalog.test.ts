@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { Effect, Layer } from 'effect';
 import { HttpClient } from 'effect/http';
 import { KV } from '@opencode/core/kv';
@@ -15,7 +16,7 @@ const catalogPath:unknown=catalogFile;
 if(typeof catalogPath!=='string')throw new Error('invalid_test_asset');
 
 async function catalogFixture(action:(fixture:{run:(cached:{updatedAt:number;body:string}|undefined,file?:string)=>Promise<readonly ModelsDev.Snapshot[]>;traffic:()=>number;cacheReads:()=>number;root:string})=>Promise<void>) {
-  const root = await fs.mkdtemp(path.resolve('.cache/v2-validation/catalog-file-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-catalog-file-')));
   const globals = {home:root,data:root,cache:root,config:root,state:root,tmp:root,bin:root,log:root,repos:root};
   let traffic = 0, cacheReads = 0;
   const run = (cached:{updatedAt:number;body:string}|undefined,file?:string) => {

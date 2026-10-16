@@ -17,14 +17,12 @@ test('the previous reviewed Claude identity is source/rollback only and never a 
 
 // These fixtures never launch a controller or read installed application state.
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const fixture = async operation => {
-  const parent = fileURLToPath(new URL('../../../../../../.cache/test-fixtures/', import.meta.url));
-  await fs.mkdir(parent, { recursive: true });
-  const root = await fs.mkdtemp(path.join(parent, 'artifact-diagnostics-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-artifact-diagnostics-')));
   const row = { path: 'DevRyan-test', role: 'asset', size: 4, mode: 0o600, sha256: digest('test'), signing: { mode: 'unsigned' } };
   const manifest = { schema: 1, buildId: 'a'.repeat(64), opencodeVersion: '2.0.26', bunVersion: '1.3.14', target: `bun-${process.platform}-${process.arch}`,
     inputs: { coreDigest: 'a'.repeat(64), lockSha256: 'a'.repeat(64), reviewedPlugins: [], nativeRegistrations: [{ id: 'test', manifestDigest: 'a'.repeat(64), capabilities: [] }] },

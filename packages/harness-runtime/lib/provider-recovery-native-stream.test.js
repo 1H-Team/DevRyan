@@ -1,5 +1,6 @@
 import {afterEach,expect,test} from 'bun:test';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {createPrimaryRecoveryController} from './provider-recovery.js';
@@ -12,7 +13,7 @@ const text='The previous response was interrupted. Continue from where you left 
 const fingerprint=createHash('sha256').update(text).digest('hex');
 const assistant=(id,parentID)=>({info:{id,sessionID:'ses_test',role:'assistant',parentID,...execution,time:{}},parts:[],turnOwnership:{source:'native-sequence',userMessageID:parentID}});
 async function fixture(){
- const root=path.resolve('.cache/v2-validation');await fs.mkdir(root,{recursive:true});const directory=await fs.mkdtemp(path.join(root,'stream-owner-'));cleanup.push(()=>fs.rm(directory,{recursive:true,force:true}));
+ const directory=await fs.mkdtemp(path.join(os.tmpdir(),'devryan-stream-owner-'));cleanup.push(()=>fs.rm(directory,{recursive:true,force:true}));
  let authorized=true;
  let time=10_000;
  const state={session:{id:'ses_test',directory:'/project'},complete:true,status:'busy',blocked:false,managedBarrierState:'clear',executionOutcomes:[],

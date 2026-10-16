@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { fileURLToPath } from 'node:url';
 import { Effect, Layer } from 'effect';
 import { Global } from '@opencode/util/global';
 import { Tool } from '@opencode/core/tool';
@@ -32,9 +32,7 @@ const remove = async root => {
 };
 
 test.each([{ fileTools: ['write'] }, { fileTools: ['edit'] }])('native Bot honors exact $fileTools tools, retained skills, and scoped subagents', async ({ fileTools }) => {
-  const parent = fileURLToPath(new URL('../../../.cache/bot-native-tests/', import.meta.url));
-  await fs.mkdir(parent, { recursive: true });
-  const root = await fs.mkdtemp(path.join(parent, 'tool-policy-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-bot-native-tool-policy-')));
   const directory = path.join(root, 'workspace'), configDirectory = path.join(root, 'config'), output = path.join(directory, 'result.txt');
   await fs.mkdir(directory); await fs.mkdir(configDirectory);
   let runtime, tools, agents, skills;

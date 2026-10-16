@@ -1,4 +1,5 @@
 import { afterEach, expect, test, vi } from 'vitest';
+import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
@@ -541,9 +542,7 @@ test('a removed unrelated native helper root does not block a valid current proj
   const native = await import('@openchamber/harness-runtime/lib/session-execution.js');
   native.runReadOnlySessionExecution.mockResolvedValue({ receipt: { terminated: true, confined: true, cancelled: false, exitCode: 0 },
     stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) });
-  const cache = path.resolve(import.meta.dirname, '../../../../../.cache/v2-validation');
-  await fs.mkdir(cache, { recursive: true });
-  const root = await fs.realpath(await fs.mkdtemp(path.join(cache, 'helper-roots-')));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-helper-roots-')));
   try {
     const current = path.join(root, 'current'), removed = path.join(root, 'removed'), sibling = path.join(root, 'unregistered');
     await Promise.all([current, removed, sibling].map(directory => fs.mkdir(directory)));
@@ -649,9 +648,7 @@ test('Node helper independently validates pinned VCS info flags before launching
 
 test('real ledger preserves a committed publication across interrupted materialization and restart', async () => {
   const { createSessionMutationRuntime: createActualRuntime } = await vi.importActual('@openchamber/harness-runtime/lib/session-mutations.js');
-  const base = path.resolve(import.meta.dirname, '../../../../../.cache/v2-validation');
-  await fs.mkdir(base, { recursive: true });
-  const root = await fs.mkdtemp(path.join(base, 'publication-recovery-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-publication-recovery-')));
   const project = path.join(root, 'project'), home = path.join(root, 'home'), temporary = path.join(root, 'tmp'), storage = path.join(root, 'ledger');
   await Promise.all([fs.mkdir(project), fs.mkdir(home), fs.mkdir(temporary)]);
   await fs.writeFile(path.join(temporary, 'package.json'), '{"type":"commonjs"}\n');

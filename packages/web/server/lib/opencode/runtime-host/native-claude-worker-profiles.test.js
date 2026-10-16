@@ -1,5 +1,6 @@
 import {afterEach,expect,test} from 'vitest';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {projectNativeClaudeWorkerProfiles} from './native-claude-worker-profiles.js';
@@ -9,8 +10,8 @@ import {claudeKeychainService} from '../claude-credential-projection.js';
 const roots=[];
 afterEach(async()=>{for(const root of roots.splice(0))await fs.rm(root,{recursive:true,force:true});});
 async function fixture(){
- const base=await fs.realpath(path.resolve('../../.cache/v2-validation'));
- const root=await fs.mkdtemp(path.join(base,'claude-worker-profiles-'));roots.push(root);
+ const base=await fs.realpath(os.tmpdir());
+ const root=await fs.mkdtemp(path.join(base,'devryan-claude-worker-profiles-'));roots.push(root);
  const globals=Object.fromEntries(['home','config','data'].map(key=>[key,path.join(root,key)]));
  for(const directory of Object.values(globals))await fs.mkdir(directory,{mode:0o700});
  const controlRoot=path.join(root,'control');await fs.mkdir(controlRoot,{mode:0o700});

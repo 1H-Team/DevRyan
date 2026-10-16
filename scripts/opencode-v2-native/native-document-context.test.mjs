@@ -1,9 +1,9 @@
 import {test,expect} from 'bun:test';
-import fs from 'node:fs/promises';import path from 'node:path';import {createHash} from 'node:crypto';
+import fs from 'node:fs/promises';import path from 'node:path';import os from 'node:os';import {createHash} from 'node:crypto';
 import {prepareReviewedNativeInputs,reviewedNativeInputPlugin} from '../native-runtime-assets.mjs';
 const repository=path.resolve(import.meta.dirname,'../..');
 test('actual reviewed schema and native media/text/omitted document conversion keep unrelated context',async()=>{
- const root=await fs.mkdtemp(path.join(repository,'.cache/v2-validation/document-context-'));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-document-context-')));
  try{
   const entry=path.join(root,'entry.ts');await fs.writeFile(entry,`export {applyNativeDocumentContext} from ${JSON.stringify(path.join(repository,'packages/web/server/lib/opencode/runtime-host/native-document-plugin.ts'))};\nexport {reviewedDocumentInputSchema} from ${JSON.stringify(path.join(repository,'packages/web/server/default-config/plugins/devryan-document-reader.mjs'))};`);
   const build=await Bun.build({entrypoints:[entry],target:'bun',external:['effect','@opencode/core/*','@opencode/schema/*','@opencode/plugin/*','@opencode/util/*'],plugins:[reviewedNativeInputPlugin(await prepareReviewedNativeInputs(repository))]});

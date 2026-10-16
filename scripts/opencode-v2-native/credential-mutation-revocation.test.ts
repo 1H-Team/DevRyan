@@ -1,4 +1,6 @@
-import {expect,test}from'bun:test';
+import {afterAll,expect,test}from'bun:test';
+import fs from'node:fs/promises';
+import os from'node:os';
 import path from'node:path';
 import {Credential}from'@opencode/core/credential';
 import {Integration}from'@opencode/core/integration';
@@ -12,9 +14,11 @@ import {createNativeOpenAi}from'../../packages/web/server/lib/opencode/runtime-h
 import {createNativeCredentialMutationOwner}from'../../packages/web/server/lib/opencode/runtime-host/native-credential-mutation-owner.js';
 
 const instance='00000000-0000-4000-8000-000000000001';
+const scratchRoots:string[]=[];
+afterAll(()=>Promise.all(scratchRoots.map(root=>fs.rm(root,{recursive:true,force:true}))));
 function deferred(){let resolve!:()=>void;const promise=new Promise<void>(done=>{resolve=done;});return {promise,resolve};}
 for(const kind of ['cursor','openai']as const)test(`${kind} key mutation rechecks original grant after the queued actual Credential CAS reread`,async()=>{
- const directory=path.resolve('.cache/v2-validation/credential-revocation-'+kind);
+ const directory=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-credential-revocation-'+kind+'-')));scratchRoots.push(directory);
  const location=Schema.decodeUnknownSync(Location.Info)({directory,project:{id:'global',directory,canonical:directory}});
  const layer=LayerNode.compile(LayerNode.group([Credential.node,Integration.node]),{replacements:[
   Global.node.replace(Global.layerWith({home:directory,data:directory,cache:directory,config:directory,state:directory,tmp:directory,bin:directory,log:directory,repos:directory})),

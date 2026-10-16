@@ -3,9 +3,9 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable, Writable } from 'node:stream';
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import {
-  createCursorSdkRuntime,
+  createCursorSdkRuntime as createUntrackedCursorSdkRuntime,
   resolveCursorSdkWorkerRuntimeConfig,
 } from './index.js';
 import { normalizeInteractionUpdateToSdkMessage } from './interaction-update-normalize.js';
@@ -19,15 +19,45 @@ const PACKAGED_RIPGREP_PATH = join(PACKAGED_RIPGREP_ROOT,
 mkdirSync(join(PACKAGED_RIPGREP_PATH, '..'), { recursive: true });
 writeFileSync(PACKAGED_RIPGREP_PATH, '#!/bin/sh\nexit 0\n');
 chmodSync(PACKAGED_RIPGREP_PATH, 0o755);
-process.once('exit', () => rmSync(PACKAGED_RIPGREP_ROOT, { recursive: true, force: true }));
+// Bun's test runner does not reliably emit process 'exit' handlers, so remove
+// the staged tree with the suite lifecycle instead.
+afterAll(() => rmSync(PACKAGED_RIPGREP_ROOT, { recursive: true, force: true }));
 
+// Some tests create more than one scratch directory, so track every one and
+// remove them all after each test rather than only the last assignment.
 let tempDir = null;
+const tempDirs = [];
+const makeTempDir = (prefix) => {
+  const directory = mkdtempSync(join(tmpdir(), prefix));
+  tempDirs.push(directory);
+  return directory;
+};
 
-afterEach(() => {
-  if (tempDir) {
-    rmSync(tempDir, { recursive: true, force: true });
-    tempDir = null;
+// Runs a test leaves in flight keep persisting session state into its storage
+// directory, which would recreate the scratch after removal. Settle every
+// runtime a test created before removing its directories.
+const runtimes = [];
+const createCursorSdkRuntime = (options) => {
+  const runtime = createUntrackedCursorSdkRuntime(options);
+  runtimes.push(runtime);
+  return runtime;
+};
+const settleWithin = (promise, timeoutMs = 2000) => {
+  let timer;
+  return Promise.race([
+    Promise.resolve(promise).catch(() => {}),
+    new Promise((resolve) => { timer = setTimeout(resolve, timeoutMs); }),
+  ]).finally(() => clearTimeout(timer));
+};
+
+afterEach(async () => {
+  for (const runtime of runtimes.splice(0)) {
+    const sessions = Object.keys(runtime.getSessionStatus?.() ?? {});
+    await Promise.all(sessions.map((sessionID) => settleWithin(runtime.abortAndWait(sessionID))));
+    await settleWithin(runtime.dispose());
   }
+  for (const directory of tempDirs.splice(0)) rmSync(directory, { recursive: true, force: true });
+  tempDir = null;
 });
 
 const createFakeWorkerSpawn = (capture) => (command, args, options) => {
@@ -274,7 +304,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('passes configured worker process settings to spawned prompt workers', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-worker-'));
+    tempDir = makeTempDir('cursor-sdk-worker-');
     const capture = { calls: [], input: null };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -315,7 +345,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test.each([false, true])('uses only host policy in one-shot and persistent workers (persistent=%s)', async persistent => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-policy-wire-'));
+    tempDir = makeTempDir('cursor-policy-wire-');
     const capture = { calls: [], children: [], commands: [], input: null };
     let readOnly = true;
     const runtime = createCursorSdkRuntime({ storageDir: tempDir, env: { CURSOR_API_KEY: 'synthetic' },
@@ -339,7 +369,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('owned prompt retains original scope through physical settlement and final persistence', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-owned-lifetime-'));
+    tempDir = makeTempDir('cursor-owned-lifetime-');
     const capture = { calls: [], input: null }, phases = [];
     let publish, persisted, releasePersist;
     const publication = new Promise(resolve => { publish = resolve; });
@@ -403,7 +433,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('owned cancellation waits for final persistence and owned cleanup, preserving cleanup failure', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-owned-cancel-'));
+    tempDir = makeTempDir('cursor-owned-cancel-');
     for (const cleanupFails of [false, true]) {
       const capture = { calls: [], input: null };
       const publication = Promise.withResolvers(), cleanup = Promise.withResolvers();
@@ -444,7 +474,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('native stop cancels prompt-time catalog discovery before creating a worker', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-startup-stop-'));
+    tempDir = makeTempDir('cursor-startup-stop-');
     const started = Promise.withResolvers();
     let catalogSignal, workers = 0;
     const runtime = createCursorSdkRuntime({ storageDir: tempDir, env: {}, nativeWarming: false,
@@ -471,7 +501,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('native stop retains busy until the owned worker and transcript have settled', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-owned-worker-stop-'));
+    tempDir = makeTempDir('cursor-owned-worker-stop-');
     const capture = { calls: [], input: null, hold: true }, receipt = Promise.withResolvers();
     const events = [];
     let cancelCalled = 0, closed = false, completed = false;
@@ -504,7 +534,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('one-shot worker forwards create and provider-send timing under the owned session without payload content', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-worker-timing-'));
+    tempDir = makeTempDir('cursor-worker-timing-');
     const marks = [], timings = ['cursor_run_created', 'cursor_provider_send_started', 'cursor_provider_send_accepted']
       .map(mark => ({ mark, metadata: { cacheHit: false, text: 'private fixture content' } }));
     const runtime = createCursorSdkRuntime({ storageDir: tempDir, env: { CURSOR_API_KEY: 'synthetic-fixture' },
@@ -524,7 +554,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test.each(['empty', 'reasoning', 'assistant'])('first emitted text measures assistant answer only (%s)', async mode => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-first-answer-'));
+    tempDir = makeTempDir('cursor-first-answer-');
     const marks = [];
     const capture = { calls: [], input: null, messages: mode === 'assistant'
       ? [{ type: 'assistant', message: { content: [{ type: 'text', text: 'Answer' }] } }]
@@ -543,7 +573,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('owned prompt closes after initial persistence failure without creating a worker', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-owned-persist-failure-'));
+    tempDir = makeTempDir('cursor-owned-persist-failure-');
     let closed = 0, runs = 0;
     const runtime = createCursorSdkRuntime({ storageDir: tempDir, env: {},
       readAuth: () => ({ 'cursor-acp': { key: 'fixture-key' } }), getWorkspaceDiff: async () => '',
@@ -559,7 +589,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('native abort reports terminal persistence failure after the owned receipt and cleanup settle', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-final-persist-failure-'));
+    tempDir = makeTempDir('cursor-final-persist-failure-');
     const capture = { calls: [], input: null, hold: true }, receipt = Promise.withResolvers(), diagnostics = [];
     const failure = Object.assign(Error('private fixture detail'), { code: 'native_managed_task_lease_invalid' });
     let cancelled = false, closed = false;
@@ -589,7 +619,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('persists one conflict notice after native publication before reporting a successful Cursor run idle', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-publication-conflict-'));
+    tempDir = makeTempDir('cursor-sdk-publication-conflict-');
     const capture = { calls: [], input: null };
     const events = [];
     let publish;
@@ -644,7 +674,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('generates OpenCode-compatible message identities when the caller omits one', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-worker-generated-id-'));
+    tempDir = makeTempDir('cursor-sdk-worker-generated-id-');
     const capture = { calls: [], input: null };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -679,7 +709,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('raw helper worker preserves selected model and settles owned cancellation before release', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-helper-worker-'));
+    tempDir = makeTempDir('cursor-helper-worker-');
     const capture = { calls: [], input: null, hold: true }; let finish, closed = false, scope;
     const receipt = new Promise(resolve => { finish = resolve; });
     const runtime = createCursorSdkRuntime({ storageDir: tempDir, env: {}, readAuth: () => ({'cursor-acp':{key:'fixture'}}),
@@ -699,7 +729,7 @@ describe('Cursor SDK worker runtime config', () => {
     } finally { finish({terminated:true,confined:true,cancelled:true});await runtime.dispose(); }
   });
   test('raw Cursor title helper uses title owner without detached catalog refresh or title normalization', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-helper-title-'));const capture={calls:[],input:null};const scopes=[];
+    tempDir = makeTempDir('cursor-helper-title-');const capture={calls:[],input:null};const scopes=[];
     const runtime=createCursorSdkRuntime({storageDir:tempDir,env:{},readAuth:()=>({'cursor-acp':{key:'fixture'}}),
       ownedReadOnly:async(scope,action)=>{scopes.push(scope);return action();},loadSdk:async()=>{throw Error('Detached title must not refresh catalog');},spawnImpl:createFakeTitleWorkerSpawn(capture)});
     try{expect(await runtime.generateText({text:'Exact title prompt',directory:tempDir,sessionID:'ses_title',modelID:'auto',titleHelper:true})).toBe('# Raw multiline\n\nBody preserved.');
@@ -708,7 +738,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('generates titles through an ephemeral one-shot Cursor Auto worker request', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-title-worker-'));
+    tempDir = makeTempDir('cursor-sdk-title-worker-');
     const capture = { calls: [], input: null };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -738,7 +768,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('generates titles through the persistent worker without a prompt session request', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-title-'));
+    tempDir = makeTempDir('cursor-sdk-persistent-title-');
     const capture = { calls: [], commands: [], children: [] };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -766,7 +796,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('passes inherited Cursor SDK subagent definitions to one-shot prompt workers', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-worker-'));
+    tempDir = makeTempDir('cursor-sdk-worker-');
     const capture = { calls: [], input: null };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -804,7 +834,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('passes explicit Cursor SDK subagent models to one-shot prompt workers', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-worker-'));
+    tempDir = makeTempDir('cursor-sdk-worker-');
     const capture = { calls: [], input: null };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -842,7 +872,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('marks an open worker stdout partial instead of applying an early final result', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-worker-'));
+    tempDir = makeTempDir('cursor-sdk-worker-');
     const capture = { calls: [], input: null };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -883,7 +913,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('passes data URL image attachments to prompt workers as Cursor data images', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-worker-'));
+    tempDir = makeTempDir('cursor-sdk-worker-');
     const capture = { calls: [], input: null };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -922,7 +952,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('encodes non-base64 data URL image attachments for prompt workers', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-worker-'));
+    tempDir = makeTempDir('cursor-sdk-worker-');
     const capture = { calls: [], input: null };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -961,7 +991,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('direct Cursor SDK runs send data URL image attachments as Cursor data images', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-direct-'));
+    tempDir = makeTempDir('cursor-sdk-direct-');
     let sentMessage = null;
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -1008,7 +1038,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('preserves provider-native task output and its failure reason when a run fails', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-partial-tool-failure-'));
+    tempDir = makeTempDir('cursor-sdk-partial-tool-failure-');
     const events = [];
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -1093,7 +1123,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('emits busy before output and publishes durable final parts before terminal metadata and idle', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-lifecycle-order-'));
+    tempDir = makeTempDir('cursor-sdk-lifecycle-order-');
     const events = [];
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -1174,7 +1204,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('clears busy with an error and never emits success metadata when final persistence fails', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-final-persist-failure-'));
+    tempDir = makeTempDir('cursor-sdk-final-persist-failure-');
     const events = [];
     let releaseFinalization;
     const finalizationGate = new Promise((resolve) => { releaseFinalization = resolve; });
@@ -1239,7 +1269,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('non-data image URLs are rejected before calling the Cursor SDK', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-url-image-'));
+    tempDir = makeTempDir('cursor-sdk-url-image-');
     let promptRunCalled = false;
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -1284,7 +1314,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('non-image attachments still produce the unsupported Cursor attachment message', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-pdf-'));
+    tempDir = makeTempDir('cursor-sdk-pdf-');
     let promptRunCalled = false;
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -1328,7 +1358,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('reuses one persistent worker across sequential Composer 2.5 prompts', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-worker-'));
+    tempDir = makeTempDir('cursor-sdk-persistent-worker-');
     const capture = { calls: [], children: [], commands: [] };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -1396,7 +1426,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('isolates persistent Node workers by project directory', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-directories-'));
+    tempDir = makeTempDir('cursor-sdk-persistent-directories-');
     const capture = { calls: [], children: [], commands: [] };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -1435,7 +1465,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('caps simultaneous cold persistent workers and falls back to one-shot for the fourth directory', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-cold-cap-'));
+    tempDir = makeTempDir('cursor-sdk-persistent-cold-cap-');
     const capture = { calls: [], children: [], commands: [], input: null };
     const persistentSpawn = createFakePersistentWorkerSpawn(capture, { autoReady: false });
     const oneShotSpawn = createFakeWorkerSpawn(capture);
@@ -1474,7 +1504,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('falls back to one-shot when three directory workers all have active prompts', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-busy-cap-'));
+    tempDir = makeTempDir('cursor-sdk-persistent-busy-cap-');
     const capture = { calls: [], children: [], commands: [], input: null };
     const persistentSpawn = createFakePersistentWorkerSpawn(capture, { autoRespond: false });
     const oneShotSpawn = createFakeWorkerSpawn(capture);
@@ -1522,7 +1552,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('does not evict reused workers while prompt admission is still registering requests', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-admission-cap-'));
+    tempDir = makeTempDir('cursor-sdk-persistent-admission-cap-');
     const capture = { calls: [], children: [], commands: [] };
     const admissionReleases = new Map();
     let pauseAdmissions = false;
@@ -1579,7 +1609,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('prewarms a session through the persistent worker prepare command', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-worker-'));
+    tempDir = makeTempDir('cursor-sdk-persistent-worker-');
     const capture = { calls: [], children: [], commands: [] };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -1618,7 +1648,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('releases persistent worker Agent entries when session state is deleted', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-release-'));
+    tempDir = makeTempDir('cursor-sdk-persistent-release-');
     const capture = { calls: [], children: [], commands: [] };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -1647,7 +1677,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('passes inherited Cursor SDK subagent definitions to persistent prompt workers', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-worker-'));
+    tempDir = makeTempDir('cursor-sdk-persistent-worker-');
     const capture = { calls: [], children: [], commands: [] };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -1688,7 +1718,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('passes explicit Cursor SDK subagent models to persistent prompt workers', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-worker-'));
+    tempDir = makeTempDir('cursor-sdk-persistent-worker-');
     const capture = { calls: [], children: [], commands: [] };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -1729,7 +1759,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('routes interleaved persistent worker events by request id', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-routing-'));
+    tempDir = makeTempDir('cursor-sdk-persistent-routing-');
     const capture = { calls: [], children: [], commands: [] };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -1798,7 +1828,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test.each(['finished', 'error', 'cancelled'])('settles unreported parent and nested tool results honestly after %s', async (finish) => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-unreported-tools-'));
+    tempDir = makeTempDir('cursor-sdk-unreported-tools-');
     const capture = { calls: [], children: [], commands: [] };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir, readAuth: () => ({ 'cursor-acp': { key: 'fixture-key' } }),
@@ -1853,7 +1883,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('routes persistent-worker Cursor subagent activity into the parent task metadata', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-task-activity-'));
+    tempDir = makeTempDir('cursor-sdk-persistent-task-activity-');
     const capture = { calls: [], children: [], commands: [] };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -1935,7 +1965,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   for (const persistent of [false, true]) test(`preserves private native edit receipts through the ${persistent ? 'persistent' : 'one-shot'} worker transport`, async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-worker-receipts-'));
+    tempDir = makeTempDir('cursor-sdk-worker-receipts-');
     const diff = '--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-old\n+' + 'x'.repeat(5000) + '\n';
     const messages = [
       { type: 'tool_call', name: 'task', call_id: 'task_1', status: 'running' },
@@ -1974,7 +2004,7 @@ describe('Cursor SDK worker runtime config', () => {
   }, 15_000);
 
   test('sends persistent worker cancel commands for active prompts', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-cancel-'));
+    tempDir = makeTempDir('cursor-sdk-persistent-cancel-');
     const capture = { calls: [], children: [], commands: [] };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -2006,7 +2036,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('abortSession frees the session immediately even when the underlying cancel never settles', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-abort-nonblock-'));
+    tempDir = makeTempDir('cursor-sdk-abort-nonblock-');
     const events = [];
     let cancelInvoked = false;
     const runtime = createCursorSdkRuntime({
@@ -2051,7 +2081,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('abortSession preserves provider-native task output and stops consuming cancel-tail events', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-abort-partial-task-'));
+    tempDir = makeTempDir('cursor-sdk-abort-partial-task-');
     const events = [];
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -2111,7 +2141,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('a new prompt supersedes and cancels a prior active run for the same session', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-supersede-'));
+    tempDir = makeTempDir('cursor-sdk-supersede-');
     const created = [];
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -2151,7 +2181,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('falls back to the one-shot worker when persistent worker startup fails before prompt submission', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-fallback-'));
+    tempDir = makeTempDir('cursor-sdk-persistent-fallback-');
     const capture = { calls: [], input: null };
     const spawnImpl = (command, args, options) => {
       if (capture.calls.length === 0) {
@@ -2227,7 +2257,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('passes question MCP configuration through one-shot worker commands', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-question-one-shot-'));
+    tempDir = makeTempDir('cursor-sdk-question-one-shot-');
     const capture = { calls: [], input: null };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -2275,7 +2305,7 @@ describe('Cursor SDK worker runtime config', () => {
   });
 
   test('passes question MCP configuration through persistent prompt and prewarm commands', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-question-persistent-'));
+    tempDir = makeTempDir('cursor-sdk-question-persistent-');
     const capture = { calls: [], children: [], commands: [] };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -2330,7 +2360,7 @@ describe('Cursor SDK worker runtime config', () => {
     await runtime.dispose();
   });
   test('freezes Cursor worker input before owned preparation and checks the remapped payload before spawn', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-frozen-'));
+    tempDir = makeTempDir('cursor-sdk-frozen-');
     const capture = { calls: [], input: null };
     const definitions = { Helper: { description: 'fixture', prompt: 'original', model: 'inherit' } };
     let preflight;
@@ -2358,7 +2388,7 @@ describe('Cursor SDK worker runtime config', () => {
 
   test('Cursor rejects oversized history before admission and oversized final input before spawn', async () => {
     for (const stage of ['preflight', 'final']) {
-      tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-bound-'));
+      tempDir = makeTempDir('cursor-sdk-bound-');
       let admissions = 0, spawns = 0;
       const events = [];
       const runtime = createCursorSdkRuntime({ storageDir: tempDir, env: {},

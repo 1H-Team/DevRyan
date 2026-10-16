@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parse as parseJsonc } from 'jsonc-parser';
 
@@ -19,9 +19,6 @@ import {
 import { DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC } from './slim-config.js';
 import { createHash } from 'node:crypto';
 import { createNativeConfigurationSnapshotResolver } from './runtime-host/native-configuration-snapshot.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(__dirname, '../../../../..');
 
 const writeAgentMarkdown = async (agentDirectory, name, frontmatterLines) => {
   await fs.mkdir(agentDirectory, { recursive: true });
@@ -60,8 +57,7 @@ describe('agent model overrides', () => {
   let userConfigPath;
 
   beforeEach(async () => {
-    await fs.mkdir(path.join(repoRoot, '.cache'), { recursive: true });
-    tempRoot = await fs.mkdtemp(path.join(repoRoot, '.cache', 'agent-model-overrides-'));
+    tempRoot = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-agent-model-overrides-')));
     projectDirectory = path.join(tempRoot, 'project');
     userConfigPath = path.join(tempRoot, 'opencode-config', 'config.json');
     await fs.mkdir(path.dirname(userConfigPath), { recursive: true });
@@ -428,8 +424,7 @@ describe('agent backup models', () => {
   let sidecarPath;
 
   beforeEach(async () => {
-    await fs.mkdir(path.join(repoRoot, '.cache'), { recursive: true });
-    tempRoot = await fs.mkdtemp(path.join(repoRoot, '.cache', 'agent-backup-models-'));
+    tempRoot = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-agent-backup-models-')));
     projectDirectory = path.join(tempRoot, 'project');
     userConfigPath = path.join(tempRoot, 'opencode-config', 'config.json');
     sidecarPath = path.join(path.dirname(userConfigPath), '.openchamber', 'config.json');
@@ -644,8 +639,7 @@ describe('shadowed sidecar agent overrides', () => {
   };
 
   beforeEach(async () => {
-    await fs.mkdir(path.join(repoRoot, '.cache'), { recursive: true });
-    tempRoot = await fs.mkdtemp(path.join(repoRoot, '.cache', 'agent-shadowed-overrides-'));
+    tempRoot = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-agent-shadowed-overrides-')));
     projectDirectory = path.join(tempRoot, 'project');
     userConfigPath = path.join(tempRoot, 'opencode-config', 'config.json');
     slimConfigDirectory = path.dirname(userConfigPath);

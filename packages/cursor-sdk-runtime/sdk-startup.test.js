@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
-import { copyFile, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readdir, realpath, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 
 const waitForPersistentWorkerReady = () => new Promise((resolve, reject) => {
@@ -42,9 +43,7 @@ const waitForPersistentWorkerReady = () => new Promise((resolve, reject) => {
 
 describe('Cursor SDK startup compatibility', () => {
   test('confined one-shot worker initializes SQLite in its private scratch before sending the prompt', async () => {
-    const root = path.resolve(import.meta.dirname, '../../.cache/qa');
-    await mkdir(root, { recursive: true });
-    const directory = await mkdtemp(path.join(root, 'cursor-confined-worker-'));
+    const directory = await realpath(await mkdtemp(path.join(os.tmpdir(), 'devryan-cursor-confined-worker-')));
     let child;
     try {
       for (const name of await readdir(import.meta.dirname)) {

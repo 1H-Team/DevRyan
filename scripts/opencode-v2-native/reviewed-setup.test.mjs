@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import fs from 'node:fs/promises';import path from 'node:path';import {createHash} from 'node:crypto';
+import fs from 'node:fs/promises';import path from 'node:path';import os from 'node:os';import {createHash} from 'node:crypto';
 import {createReviewedSetupSession,reviewedSetupFamilies,reviewedSetupRegistrations,assertReviewedSetupBoot,attachReviewedSetup} from './reviewed-setup.mjs';
 import {createHttpProviderConfiguration} from './http-provider.mjs';
 import {compiledHelperAgentIDs,createCompiledHelperAgentFixture} from './package-helper-agent-fixture.mjs';
@@ -27,7 +27,7 @@ test('browser is explicit fixture activation, never an added saved personal fami
 });
 
 test('snapshot preserves genuine saved overrides but does not self-shadow Slim/interview factories',async()=>{
- const root=await fs.mkdtemp(path.resolve('.cache/v2-validation/reviewed-command-config-'));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-reviewed-command-config-')));
  try{
   const directory=path.join(root,'project'),config=path.join(root,'config'),home=path.join(root,'home');
   await Promise.all([directory,config,home].map(value=>fs.mkdir(value)));

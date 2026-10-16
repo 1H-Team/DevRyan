@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { resolveSqliteDriver } from '../../packages/web/server/lib/opencode/db-maintenance-core.js';
 import { NATIVE_BUNDLE_CREDENTIAL_CONTRACT, nativeBundleCredentialFingerprint as fingerprint, parseNativeBundleCredentialBoot } from '../../packages/web/server/lib/opencode/runtime-host/native-bundle-credential-contract.js';
 import { runSelectedNativeLifecycle } from './package-rollback-lane.mjs';
@@ -11,7 +12,7 @@ import { REVIEWED_NATIVE_CLONE_RELEASES } from '../../packages/web/server/lib/op
 
 const protocol = NATIVE_BUNDLE_CREDENTIAL_CONTRACT;
 async function fixture() {
-  const root = await fs.mkdtemp(path.resolve('.cache/v2-validation/bundle-upgrade-contract-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-bundle-upgrade-contract-')));
   const states = new Map(), intents = new Map(), observations = [], actions = [];
   const credentialProcess = async ({ descriptor, assertHeld, action }) => {
     await assertHeld();
@@ -197,7 +198,7 @@ test('selected lifecycle inspection and rollback keep fixed budgets and settle t
 
 
 test('each clone source kind keeps its own layout; only a cross-release pair must match the exact reviewed layout', async () => {
-  const root = await fs.mkdtemp(path.resolve('.cache/v2-validation/bundle-clone-layout-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-bundle-clone-layout-')));
   const release = version => ({ opencodeVersion: version, inputs: { coreDigest: REVIEWED_NATIVE_CLONE_RELEASES[version] } });
   const database = async (name, sql) => {
     const file = path.join(root, name); await fs.writeFile(file, '');

@@ -1,4 +1,5 @@
 import {test} from 'bun:test';import assert from 'node:assert/strict';import fs from 'node:fs/promises';import {createRequire} from 'node:module';import {createHash} from 'node:crypto';import path from 'node:path';
+import os from 'node:os';
 import {rewriteNativeAsset,rewriteNativeAgentDefaults,NATIVE_AGENT_DEFAULTS_SOURCE_SHA256,rewriteUnavailableNativePty,NATIVE_ASSET_SOURCE_SHA,prepareReviewedNativeInputs,REVIEWED_PONYTAIL_MODULE,REVIEWED_AST_FILENAME} from '../native-runtime-assets.mjs';
 import {execFileSync} from 'node:child_process';
 const repository=path.resolve(import.meta.dirname,'../..'),core=await fs.realpath(path.join(repository,'node_modules/@opencode/core'));
@@ -14,7 +15,7 @@ test('FFI verification embeds the native library from the locked core dependency
  assert.ok(source.includes(`if(hash(ffiBytes)!=='${hash(await fs.readFile(expected))}')`));
 });
 test('Windows-style Git checkout preserves byte-pinned reviewed resources',async()=>{
- const fixture=await fs.mkdtemp(path.join(repository,'.cache/test-fixtures/reviewed-checkout-'));
+ const fixture=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-reviewed-checkout-')));
  const files=['packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js',
   'packages/web/server/default-config/plugins/devryan-document-reader.mjs','packages/web/server/default-config/plugins/devryan-browser.mjs'];
  try{

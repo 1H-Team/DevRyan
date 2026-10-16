@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { EventEmitter } from 'events';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'path';
@@ -330,7 +331,7 @@ describe('CLI PID lifecycle validation', () => {
 
 describe('bundled runtime help', () => {
   it('describes the bundled runtime without unsupported external runtime controls', async () => {
-    const root = await fs.mkdtemp(path.resolve(import.meta.dirname, '../../../.cache/v2-validation/cli-help-'));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-cli-help-'));
     try {
       const { stdout } = await promisify(execFile)(process.execPath, [path.join(import.meta.dirname, 'cli.js'), 'serve', '--help'], {
         cwd: root, env: { PATH: process.env.PATH, HOME: root, XDG_CONFIG_HOME: path.join(root, 'config'),

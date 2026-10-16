@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { createRunRoot } from './run-root.mjs';
+import { createRunRoot, scratchParent } from './run-root.mjs';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { captureQaSourceIdentity } from './artifact-evidence.mjs';
@@ -29,7 +29,7 @@ export async function runPackagedServiceSmoke({ packageEvidence, artifactRoot })
   await fs.mkdir(fixtures, { recursive: true, mode: 0o700 });
   assert.equal(await fs.realpath(fixtures), fixtures);
   let activeStop = async () => {};
-  const run = createRunRoot({ parent: path.join(repository, '.cache/qa'), prefix: 'packaged-service-',
+  const run = createRunRoot({ parent: scratchParent('qa'), prefix: 'packaged-service-',
     owner: 'scripts/qa/packaged-service-smoke.mjs', onInterrupt: () => activeStop() });
   const output = run.dir;
   const runtimeRoot = run.own(await fs.mkdtemp(path.join(fixtures, 'packaged-service-')));

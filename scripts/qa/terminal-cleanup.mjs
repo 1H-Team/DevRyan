@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import { spawn } from 'node:child_process';
@@ -16,9 +17,7 @@ if (process.argv[2] === '--fixture-child' || process.argv[2] === '--sentinel') {
   if (!['darwin', 'linux'].includes(process.platform)) {
     throw new Error(`Native PTY cleanup unavailable on ${process.platform}`);
   }
-  const root = path.resolve(path.dirname(file), '../..');
-  fs.mkdirSync(path.join(root, '.cache/qa'), { recursive: true });
-  const directory = fs.mkdtempSync(path.join(root, '.cache/qa/terminal-cleanup-'));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'terminal-cleanup-'));
   const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
   const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
   const waitFor = async (predicate) => {

@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { createHash } from 'node:crypto';
 import { verifyNativeBootMigration } from './native-boot-migration.js';
 
@@ -8,7 +9,7 @@ const roots = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => fs.rm(root, { recursive: true, force: true }))); });
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 async function fixture() {
-  const root = await fs.mkdtemp(path.resolve(import.meta.dirname, '../../../../../../.cache/v2-validation/clone-boot-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-clone-boot-')));
   roots.push(root); await fs.mkdir(path.join(root, 'sources')); await fs.mkdir(path.join(root, 'opencode'));
   const write = async (file, value) => { const bytes = Buffer.from(JSON.stringify(value)); await fs.writeFile(path.join(root, file), bytes); return hash(bytes); };
   const databasePath = path.join(root, 'opencode/opencode.db');

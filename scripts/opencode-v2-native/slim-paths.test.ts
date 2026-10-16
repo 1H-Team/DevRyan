@@ -1,9 +1,9 @@
-import {test,expect} from 'bun:test';import fs from 'node:fs/promises';import path from 'node:path';import {pathToFileURL} from 'node:url';
+import {test,expect} from 'bun:test';import fs from 'node:fs/promises';import path from 'node:path';import os from 'node:os';import {pathToFileURL} from 'node:url';
 import {rewriteReviewedSlimServer} from '../../packages/web/server/lib/opencode/runtime-host/reviewed-package-transforms.js';
 import {createReviewedSlimPathHooks} from '../../packages/web/server/lib/opencode/runtime-host/native-slim-paths.js';
 
 test('original Slim path hooks rescue paths, guard searches and rewrite patch context through checked owned IO',async()=>{
- const repository=path.resolve(import.meta.dirname,'../..'),root=await fs.mkdtemp(path.join(repository,'.cache/v2-validation/slim-path-'));
+ const repository=path.resolve(import.meta.dirname,'../..'),root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-slim-path-')));
  try{
   const entry=path.join(root,'original.mjs');await fs.writeFile(entry,rewriteReviewedSlimServer(await fs.readFile(path.join(repository,'packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js'))).contents);
   const originals=await import(pathToFileURL(entry).href),directory=path.join(root,'workspace');await fs.mkdir(directory);const file=path.join(directory,'source.txt');await fs.writeFile(file,'  exact old text  \n');

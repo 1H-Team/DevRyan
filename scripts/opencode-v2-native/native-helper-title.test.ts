@@ -1,5 +1,6 @@
 import {expect,test} from 'bun:test';
 import fs from 'node:fs/promises';import path from 'node:path';
+import os from 'node:os';
 import {Effect,Exit,Schema,Layer} from 'effect';
 import {LayerNode} from '@opencode/util/effect/layer-node';import {Global} from '@opencode/util/global';
 import {Project} from '@opencode/core/project';import {AbsolutePath} from '@opencode/schema/schema';
@@ -10,7 +11,7 @@ import {NativeHelperTitleRef,assertNativeHelperTitle} from '../../packages/web/s
 import {primaryStepOverride} from '../../packages/web/server/lib/opencode/runtime-host/primary-step.js';
 
 test('generated title uses the sole native Bus transaction and loses safely to a manual rename',async()=>{
- const root=await fs.mkdtemp(path.resolve('.cache/v2-validation/helper-title-'));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-helper-title-')));
  const sessionID=SessionSchema.ID.make('ses_helper_title');
  let database:Database.Interface|undefined;
  const capture=Database.node.replace(Database.node.mapLayer(layer=>Layer.effect(Database.Service,Effect.gen(function*(){database=yield* Database.Service;return database;})).pipe(Layer.provide(layer))));

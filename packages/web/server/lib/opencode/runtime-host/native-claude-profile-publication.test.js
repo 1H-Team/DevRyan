@@ -1,13 +1,14 @@
 import {test,expect} from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {randomUUID} from 'node:crypto';
 import {writeFileAtomic} from '../../../../../harness-runtime/lib/atomic-file.js';
 import {claudeKeychainService} from '../claude-credential-projection.js';
 import {createNativeClaudeProfilePublication} from './native-claude-profile-publication.js';
 
 async function fixture(action,writeAtomic){
- const root=await fs.mkdtemp(path.resolve(import.meta.dirname,'../../../../../../.cache/v2-validation/claude-publication-'));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-claude-publication-')));
  try{
   const home=path.join(root,'home'),controlRoot=path.join(root,'control'),directory=path.join(home,'.config','meridian');
   await fs.mkdir(directory,{recursive:true,mode:0o700});await fs.mkdir(controlRoot,{mode:0o700});

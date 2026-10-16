@@ -1,5 +1,7 @@
 import React, { act } from 'react';
 import { describe, expect, mock, spyOn, test } from 'bun:test';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { useStore } from 'zustand';
 import type { AssistantMessage, Model, Part, Session, TextPart, UserMessage } from '@opencode-ai/sdk/v2';
 import { withDom, type HostElement } from '@/components/bots/chat/botMountedDom';
@@ -7,7 +9,9 @@ import { ChildStoreManager } from '@/sync/child-store';
 import type { State } from '@/sync/types';
 import { createProviderCatalogRecovery } from '@/sync/provider-catalog-recovery';
 
-const directory = '/Users/zoubair/Repositories/DevRyan/.cache/qa/model-controls-hydration';
+// Logical session directory key only: this fixture never creates or writes it,
+// so it is a per-process path under the system temp root, not repository scratch.
+const directory = join(tmpdir(), `devryan-model-controls-hydration-${process.pid}`);
 const sessionID = 'ses_choice_a';
 const olderUserID = 'msg_choice_1';
 const pendingUserID = 'msg_choice_2';

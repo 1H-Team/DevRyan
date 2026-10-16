@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { createEncryptedFileStorage } from './encrypted-files.mjs';
@@ -8,9 +9,7 @@ const bucket = 'devryan-bot-objects';
 const name = 'objects/aa000000-0000-4000-8000-000000000001.bin';
 const maximumBytes = 32;
 async function fixture(t) {
-  const base = path.resolve(import.meta.dirname, '../../.cache');
-  await mkdir(base, { recursive: true });
-  const directory = await mkdtemp(path.join(base, 'encrypted-file-test-'));
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'devryan-encrypted-file-test-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   return { directory, store: await createEncryptedFileStorage(directory) };
 }

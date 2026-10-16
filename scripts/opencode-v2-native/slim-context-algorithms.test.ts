@@ -1,10 +1,10 @@
-import {test,expect} from 'bun:test';import fs from 'node:fs/promises';import path from 'node:path';import {pathToFileURL} from 'node:url';
+import {test,expect} from 'bun:test';import fs from 'node:fs/promises';import path from 'node:path';import os from 'node:os';import {pathToFileURL} from 'node:url';
 import {rewriteReviewedSlimServer} from '../../packages/web/server/lib/opencode/runtime-host/reviewed-package-transforms.js';
 import {createOwnedSlimTaskBoardRenderer} from '../../packages/web/server/lib/opencode/runtime-host/native-slim-context-algorithms.js';
 import type * as ReviewedSlim from '../../packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js';
 
 test('original pure retry selector preserves chain order, rearm and exhaustion without a fallback manager',async()=>{
- const root=await fs.mkdtemp(path.resolve('.cache/v2-validation/slim-context-'));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-slim-context-')));
  try{
   const entry=path.join(root,'reviewed.mjs');await fs.writeFile(entry,rewriteReviewedSlimServer(await fs.readFile(new URL('../../packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js',import.meta.url))).contents);
   const originals:typeof ReviewedSlim=await import(pathToFileURL(entry).href);
@@ -20,7 +20,7 @@ test('original pure retry selector preserves chain order, rearm and exhaustion w
 });
 
 test('original taskboard renderer uses canonical owner formatting and exact terminal CAS inside existing fence',async()=>{
- const root=await fs.mkdtemp(path.resolve('.cache/v2-validation/slim-board-'));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-slim-board-')));
  try{
   const entry=path.join(root,'reviewed.mjs');await fs.writeFile(entry,rewriteReviewedSlimServer(await fs.readFile(new URL('../../packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js',import.meta.url))).contents);
   const originals:typeof ReviewedSlim=await import(pathToFileURL(entry).href);
@@ -38,7 +38,7 @@ test('original taskboard renderer uses canonical owner formatting and exact term
 });
 
 test('fresh image workers restore only bounded per-location original presentation state',async()=>{
- const root=await fs.mkdtemp(path.resolve('.cache/v2-validation/slim-image-state-'));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-slim-image-state-')));
  try{
   const entry=path.join(root,'reviewed.mjs'),view=path.join(root,'view');await fs.mkdir(view);await fs.writeFile(entry,rewriteReviewedSlimServer(await fs.readFile(new URL('../../packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js',import.meta.url))).contents);
   const script=path.join(root,'worker.mjs');await fs.writeFile(script,`import * as original from ${JSON.stringify(pathToFileURL(entry).href)};

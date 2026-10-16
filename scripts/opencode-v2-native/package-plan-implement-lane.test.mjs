@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { createHash } from 'node:crypto';
 import { runInNewContext } from 'node:vm';
 import { createPlanImplementResponder, settleApplicationPlanBrowser, cleanupApplicationPlanResources, awaitApplicationPlanExit,
@@ -18,8 +19,7 @@ const request = content => ({ id: 'http_test', body: { model: 'smoke-write', mes
 const result = (body, id, value) => body.messages.push({ role: 'tool', tool_call_id: id, content: JSON.stringify(value) });
 
 async function planJournalFixture(t, { lines = [{ type: 'lifecycle' }], manifestGaps = 0 } = {}) {
-  const cache = path.resolve('.cache/test-fixtures'); await fs.mkdir(cache, { recursive: true });
-  const root = await fs.mkdtemp(path.join(cache, 'plan-journal-')); t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-plan-journal-'))); t.after(() => fs.rm(root, { recursive: true, force: true }));
   const journalDirectory = path.join(root, 'profile/harness/journal');
   await fs.mkdir(path.join(journalDirectory, 'runtime'), { recursive: true });
   await fs.writeFile(path.join(journalDirectory, 'runtime/manifest.json'), JSON.stringify({ title: 'private title', gapCount: manifestGaps }));
@@ -414,8 +414,7 @@ test('failure cleanup passes its bounded phase to real async closers and settles
  assert.ok(phase<=deadline);assert.equal(physicalCloseSettled,true);
 });
 test('a stalled browser opener publishes its physical closer before readiness and failure cleanup drains it without late readiness',async()=>{
- const cache=new URL('../../.cache/v2-validation/',import.meta.url);await fs.mkdir(cache,{recursive:true});
- const root=await fs.mkdtemp(new URL('plan-opener-',cache)),profile=path.join(root,'chromium');await fs.mkdir(profile);
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-plan-opener-'))),profile=path.join(root,'chromium');await fs.mkdir(profile);
  const lifetime=new AbortController(),primary=Error('original work deadline');
  let closePhysical,entered,physicallyClosed=false,lateReady=false,phase;
  const composerRead=new Promise(resolve=>{entered=resolve;});
@@ -436,8 +435,7 @@ test('a stalled browser opener publishes its physical closer before readiness an
  }finally{lifetime.abort(primary);await closePhysical?.();await opening;await fs.rm(root,{recursive:true,force:true});}
 });
 test('source verification checks native source, runner, TSX and UI asset identity on success and failure without replacing the primary error',async()=>{
- const cache=new URL('../../.cache/v2-validation/',import.meta.url);await fs.mkdir(cache,{recursive:true});
- const repository=await fs.mkdtemp(new URL('plan-source-',cache));
+ const repository=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-plan-source-')));
  const runner='scripts/opencode-v2-native/package-plan-implement-lane.mjs',tsx='packages/ui/src/Fixture.tsx',asset='packages/web/dist/assets/fixture.js',native='packages/web/server/lib/opencode/native.js';
  const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
  try{

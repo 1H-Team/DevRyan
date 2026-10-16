@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import crypto from 'node:crypto';
+import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import express from 'express';
@@ -41,8 +42,7 @@ async function listenOnLoopback(server) {
   return server;
 }
 async function fixture(mode = 'absent', ownerAccess = false) {
-  const base = path.resolve('../../.cache/tunnel-access-tests'); await fs.mkdir(base, { recursive: true });
-  const root = await fs.mkdtemp(path.join(base, 'fixture-')); roots.push(root);
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-tunnel-access-')); roots.push(root);
   const config = { dataDirectory: root, configured: mode !== 'absent', enabled: mode === 'on' };
   const connection = await createSupabaseConnection({ config, fetchImpl: () => { throw new Error('Cloud calls forbidden in this test'); } });
   disposers.push(() => connection.dispose());

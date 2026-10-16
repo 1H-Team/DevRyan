@@ -2,13 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {createHash} from 'node:crypto';
 import {capturePackageSkillData,preparePackageSkillData,packageSkillsForLaunch,runCompiledSkillChecks} from './package-skill-lane.mjs';
 import {captureReviewedSkill} from '../../packages/web/server/lib/opencode/runtime-host/reviewed-skills.js';
 
 test('captured personal skills preserve nested original data and refuse changed bytes or path escapes',async()=>{
-  const base=path.resolve('.cache/v2-validation');await fs.mkdir(base,{recursive:true});
-  const root=await fs.mkdtemp(path.join(base,'package-skills-'));
+  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-package-skills-')));
   try{
     const source=path.join(root,'original/.agents/skills'),outputRoot=path.join(root,'captured');
     const rows=[['Group/Exact/SKILL.md','skill','---\nname: Exact original\n---\nOriginal body\n'],['Group/Exact/references/data.txt','support','Original supporting bytes\n']];
@@ -41,8 +41,7 @@ test('captured personal skills preserve nested original data and refuse changed 
 });
 
 test('support permission expectations distinguish canonical config data from home and prefix neighbors',async()=>{
-  const base=path.resolve('.cache/v2-validation');await fs.mkdir(base,{recursive:true});
-  const root=await fs.mkdtemp(path.join(base,'package-skill-permissions-'));
+  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-package-skill-permissions-')));
   try{
     for(const [name,kind,homeName,approveExternal]of [['config','opencode','home',false],['home','agents','home',true],['prefix-neighbor','agents','config-neighbor',true]]){
       const fixture=path.join(root,name),directory=path.join(fixture,'project');

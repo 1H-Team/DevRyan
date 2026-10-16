@@ -1,6 +1,7 @@
 import {test,expect} from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {REVIEWED_WINDOWS_GIT_ARCHIVES,REVIEWED_WINDOWS_GIT_VERSION,nativeArtifactInventoryLimit,validWindowsArtifactPath,verifyWindowsGitInventory,verifyWindowsGitMetadata} from './reviewed-windows-git.js';
 const metadata=arch=>({protocol:'devryan.windows-mingit/1',version:REVIEWED_WINDOWS_GIT_VERSION,arch,directory:'git',executable:'git/cmd/git.exe',archiveSha256:REVIEWED_WINDOWS_GIT_ARCHIVES[arch].sha256,archiveUrl:REVIEWED_WINDOWS_GIT_ARCHIVES[arch].url});
 const acceptedRows=JSON.parse(await fs.readFile(new URL('../../../../../../scripts/opencode-v2-native/fixtures/reviewed-windows-git-x64.json',import.meta.url),'utf8'));
@@ -23,7 +24,7 @@ test('Windows inventory paths reject alternate separators, streams, DOS devices 
  for(const value of ['git\\cmd\\git.exe','git/cmd/git.exe:stream','git/NUL','git/con.txt','git/COM1.dll','git/cmd./git.exe','git/cmd /git.exe','git//git.exe','git/../git.exe'])expect(validWindowsArtifactPath(value)).toBe(false);
 });
 async function fixture(action){
- const base=path.resolve('../../.cache/test-fixtures');await fs.mkdir(base,{recursive:true});const directory=await fs.realpath(await fs.mkdtemp(path.join(base,'git-inventory-')));
+ const directory=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-git-inventory-')));
  const files=acceptedRows.map(row=>({...row,role:'asset',signing:{mode:'unsigned'}}));
  for(const row of files){const target=path.join(directory,row.path);await fs.mkdir(path.dirname(target),{recursive:true});await fs.writeFile(target,row.path);}
  const manifest={windowsGit:metadata('x64'),files};try{await action({directory,manifest});}finally{await fs.rm(directory,{recursive:true,force:true});}

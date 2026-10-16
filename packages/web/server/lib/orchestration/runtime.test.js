@@ -576,8 +576,7 @@ describe('web managed orchestration runtime', () => {
   it.each(['clear', 'awaiting_acknowledgement'])('validates a fresh saved Implement plan through its scoped %s barrier while prompt admission owns the scheduler lock', async barrierState => {
     const { createHash } = await import('node:crypto');
     const { resolveSessionPlanRevision } = await import('../plans/routes.js');
-    const fixtureRoot = path.resolve('../../.cache/test-fixtures'); await fs.mkdir(fixtureRoot, { recursive: true });
-    const dataDirectory = await fs.mkdtemp(path.join(fixtureRoot, 'native-plan-barrier-'));
+    const dataDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-native-plan-barrier-'));
     const scope = { rootSessionId: 'ses_root', directory: '/project' };
     let generation = 1, revoked = false;
     const primary = { sessionID: 'ses_root', directory: '/project', anchorID: 'msg_plan_user', objectiveID: 'msg_plan_user',

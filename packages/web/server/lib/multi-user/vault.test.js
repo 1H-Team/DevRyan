@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -12,7 +13,7 @@ afterEach(async () => {
 
 describe('encrypted Supabase session vault', () => {
   it('stores tokens encrypted at rest with private file permissions', async () => {
-    const directory = await fs.mkdtemp(path.resolve(import.meta.dirname, '../../../../../.cache/v2-validation/devryan-vault-'));
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(),'devryan-vault-'));
     temporaryDirectories.push(directory);
     const vault = await createSessionVault({ dataDirectory: directory });
     await vault.set('app-session', {
@@ -43,7 +44,7 @@ describe('encrypted Supabase session vault', () => {
 
 const ownerRecord=()=>({principal:{id:'11111111-1111-4111-8111-111111111111',role:'admin',scope:'local-admin',assignments:[],policy:{}},sessions:[{tokenHash:'synthetic-hash',expiresAt:123456789}]});
 async function fingerprintFixture(){
- const directory=await fs.mkdtemp(path.resolve(import.meta.dirname,'../../../../../.cache/v2-validation/vault-fingerprint-'));temporaryDirectories.push(directory);
+ const directory=await fs.mkdtemp(path.join(os.tmpdir(),'devryan-vault-fingerprint-'));temporaryDirectories.push(directory);
  const vault=await createSessionVault({dataDirectory:directory});await vault.set('supabase-local-owner',ownerRecord());
  const fingerprint=async()=>fingerprintSessionVaultCredentials({keyBytes:await fs.readFile(vault.paths.keyPath),vaultBytes:await fs.readFile(vault.paths.vaultPath)});
  return {vault,directory,fingerprint};

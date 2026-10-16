@@ -1,12 +1,13 @@
 import {test,expect,vi} from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {createNativeAdmissionOwner} from './native-admission-owner.js';
 import {createNativeSlimOwner} from './native-slim-owner.js';
 import {captureReviewedSkill} from './reviewed-skills.js';
 
 test('Ponytail state and hook reads retain exact native session, private command derivation and original caller',async()=>{
- const root=await fs.mkdtemp(path.resolve(import.meta.dirname,'../../../../../../.cache/v2-validation/slim-owner-'));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-slim-owner-')));
  const sessionID='ses_slim',origin={kind:'plugin',id:'devryan.ponytail',manifestDigest:'a'.repeat(64),capabilities:['control']};
  const definition={description:'original',template:'original $ARGUMENTS'},invocation={sessionID,prompt:{text:'ultra'},delivery:'queue'};
  let allowed=true,messageSession=sessionID;
@@ -42,7 +43,7 @@ test('Ponytail state and hook reads retain exact native session, private command
 });
 
 test('original path hooks retain canonical tool lineage, bounded project IO and revocable runner grants',async()=>{
- const root=await fs.mkdtemp(path.resolve(import.meta.dirname,'../../../../../../.cache/v2-validation/slim-path-'));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-slim-path-')));
  const directory=path.join(root,'project'),secret=path.join(root,'private'),sessionID='ses_paths',messageID='msg_paths',callID='call_paths';
  await fs.mkdir(directory);await fs.mkdir(secret);await fs.mkdir(path.join(directory,'.GiT'));
  await fs.writeFile(path.join(directory,'file.txt'),'exact patch source');await fs.writeFile(path.join(secret,'secret'),'denied');
@@ -74,7 +75,7 @@ test('original path hooks retain canonical tool lineage, bounded project IO and 
 });
 
 test('read rescue metadata admits only an unchanged exact reviewed resource under the current canonical hook',async()=>{
- const root=await fs.mkdtemp(path.resolve(import.meta.dirname,'../../../../../../.cache/v2-validation/slim-resource-owner-'));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-slim-resource-owner-')));
  const directory=path.join(root,'project'),privateRoot=path.join(root,'private'),skillRoot=path.join(privateRoot,'skill');
  await fs.mkdir(directory);await fs.mkdir(skillRoot,{recursive:true});
  const file=path.join(skillRoot,'SKILL.md'),support=path.join(skillRoot,'support.txt'),unlisted=path.join(skillRoot,'unlisted.txt');

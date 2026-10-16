@@ -1,13 +1,13 @@
 import {test,expect} from 'bun:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {prepareReviewedNativeInputs,reviewedNativeInputPlugin,REVIEWED_PONYTAIL_MODULE} from '../native-runtime-assets.mjs';
 
 test('actual reviewed Slim static import and Ponytail builder virtual module bundle without ambient discovery',async()=>{
  const repository=path.resolve(import.meta.dirname,'../..');
  const inputs=await prepareReviewedNativeInputs(repository);
- const parent=path.join(repository,'.cache/v2-validation');await fs.mkdir(parent,{recursive:true});
- const root=await fs.mkdtemp(path.join(parent,'reviewed-build-'));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-reviewed-build-')));
  try{
   const entry=path.join(root,'entry.ts');
   const slim=path.join(repository,'packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js');

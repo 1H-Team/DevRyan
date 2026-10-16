@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { checkQuotaAdmission, compareQuota, projectNativeAssistant, projectQuota,
   readNativeAssistants, summarizeNativeAssistants } from './claude-quota-evidence.mjs';
@@ -40,9 +41,7 @@ test('native sampling separates time windows and responses already present at ba
 });
 
 test('native readers report torn records and malformed usage without disclosing their contents', async () => {
-  const cache = path.resolve(import.meta.dirname, '../../.cache/qa');
-  await fs.mkdir(cache, { recursive: true });
-  const root = await fs.mkdtemp(path.join(cache, 'claude-usage-fixture-'));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-claude-usage-fixture-'));
   try {
     const file = path.join(root, 'session.jsonl');
     await fs.writeFile(file, [JSON.stringify(assistant()), JSON.stringify(assistant({ message: {

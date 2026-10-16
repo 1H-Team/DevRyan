@@ -4,8 +4,8 @@ import { readAuthFile } from '../../opencode/auth.js';
 import { fetchQuotaForProvider } from './index.js';
 import { fetchCursorAcpQuota, resolveCursorQuotaCredential } from './cursor-acp.js';
 
-vi.mock('../../opencode/auth.js', () => ({
-  OPENCODE_DATA_DIR: new URL('../../../../../../.cache/v2-validation/quota-fixtures/cursor-acp/data', import.meta.url).pathname,
+vi.mock('../../opencode/auth.js', async () => ({
+  OPENCODE_DATA_DIR: (await import('node:path')).join((await import('node:os')).tmpdir(), 'devryan-quota-fixtures', 'cursor-acp', 'data'),
   readAuthFile: vi.fn(() => ({})),
 }));
 vi.mock('../credentials/providers.js', () => ({

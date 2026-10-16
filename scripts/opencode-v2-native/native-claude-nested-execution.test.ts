@@ -1,6 +1,7 @@
 import {expect, test} from 'bun:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {spawnSync,spawn} from 'node:child_process';
 import {createHash,randomUUID} from 'node:crypto';
 import {createInterface} from 'node:readline';
@@ -12,7 +13,7 @@ const repository = path.resolve(import.meta.dirname, '../..');
 const launcher = path.join(repository, 'packages/web/runtime/darwin-arm64/DevRyan-execution-darwin-arm64');
 
 test.skipIf(process.platform !== 'darwin')('an inherited controller sandbox refuses a nested supervisor before its command starts', async () => {
-  const root = await fs.realpath(await fs.mkdtemp(path.join(repository, '.cache/v2-validation/claude-nested-')));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-claude-nested-')));
   try {
     const bundle = path.join(root, 'bundle'), global = path.join(bundle, 'global');
     const globals = {home:path.join(global,'home'),data:path.join(global,'data'),state:path.join(global,'state'),cache:path.join(global,'cache'),
@@ -41,7 +42,7 @@ test.skipIf(process.platform !== 'darwin')('an inherited controller sandbox refu
 }, 10000);
 
 for(const cancel of [false,true]) test.skipIf(process.platform !== 'darwin')(`a confined worker brokers readonly execution and ${cancel?'cancellation waits for real termination':'preserves write and credential protection'}`, async()=>{
- const root=await fs.realpath(await fs.mkdtemp(path.join(repository,'.cache/v2-validation/claude-broker-')));
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-claude-broker-')));
  let child:ReturnType<typeof spawn>|undefined,broker:ReturnType<typeof createNativeClaudeTransportHost>|undefined;
  try{
   const bundle=path.join(root,'bundle'),global=path.join(bundle,'global');

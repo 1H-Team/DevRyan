@@ -2,18 +2,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { openApplicationStopStream } from './package-application-stop-stream.mjs';
 import { finishApplicationLifecycleEvidence } from './package-application-evidence.mjs';
 
-const temporaryRoot = path.resolve('.cache/v2-validation/tmp');
-await fs.mkdir(temporaryRoot, { recursive: true });
+const temporaryRoot = await fs.realpath(os.tmpdir());
 
 const options = (directory, profile) => ({ directory, profile, mode: 'upgrade', completed: false, results: [],
   exits: [{ mode: 'upgrade', pid: 321, code: null, signal: 'SIGTERM', private: 'must-not-persist' }],
   processEvidence: [{ mode: 'upgrade', pid: 321, start: 'Sun Oct  4 05:13:33 2026', private: 'must-not-persist' }], issues: [] });
 
 test('failed upgrade persists after-close observations and actual exits without replacing the primary assertion', async () => {
-  const directory = await fs.mkdtemp(path.join(temporaryRoot, 'application-evidence-'));
+  const directory = await fs.mkdtemp(path.join(temporaryRoot, 'devryan-application-evidence-'));
   const primary = Object.assign(new Error('canonical assistant did not settle'), { code: 'ERR_ASSERTION' });
   const profile = { env: { secret: 'must-not-persist' }, evidence: { providerRequests: [] }, close: async () => {
     profile.evidence.providerRequests.push({ requestID: 'http_2', model: 'smoke-write', startedAt: 42,
@@ -38,7 +38,7 @@ test('failed upgrade persists after-close observations and actual exits without 
 });
 
 test('evidence write failure annotates an existing failure and remains nonzero after a successful lifecycle', async () => {
-  const directory = await fs.mkdtemp(path.join(temporaryRoot, 'application-evidence-write-'));
+  const directory = await fs.mkdtemp(path.join(temporaryRoot, 'devryan-application-evidence-write-'));
   const profile = { evidence: { providerRequests: [] }, close: async () => {} };
   try {
     await fs.mkdir(path.join(directory, 'application-lifecycle-evidence.json'));
@@ -51,7 +51,7 @@ test('evidence write failure annotates an existing failure and remains nonzero a
 });
 
 test('provider inventory is bounded and unknown payload fields are not serialized', async () => {
-  const directory = await fs.mkdtemp(path.join(temporaryRoot, 'application-evidence-bound-'));
+  const directory = await fs.mkdtemp(path.join(temporaryRoot, 'devryan-application-evidence-bound-'));
   const profile = { close: async () => {}, evidence: { providerRequests: Array.from({ length: 65 }, () => ({
     requestID: 'must-not-persist', model: 'must-not-persist', startedAt: Infinity, completedAt: 'must-not-persist',
     requestSha256: 'must-not-persist', reason: 'must-not-persist', aborted: 'must-not-persist', error: 'must-not-persist',

@@ -1,10 +1,11 @@
 import {test,expect} from 'bun:test';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import {createCursorSdkRuntime} from './index.js';
 
 test('original offline declarations are fresh and independent of mutable account discovery cache',async()=>{
- const root=await fs.mkdtemp(path.resolve(import.meta.dirname,'../../.cache/v2-validation/cursor-declared-'));
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'devryan-cursor-declared-'));
  let reads=0,loads=0;
  const runtime=createCursorSdkRuntime({storageDir:root,env:{},ripgrepPath:'/usr/bin/true',nativeWarming:false,
   readAuth:()=>{reads++;throw Error('Unexpected credential read');},loadSdk:async()=>{loads++;throw Error('Unexpected SDK load');}});

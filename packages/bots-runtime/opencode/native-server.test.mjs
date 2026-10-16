@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { Global } from '@opencode/util/global';
 import { Effect } from 'effect';
 import { HttpClientRequest } from 'effect/http';
@@ -14,9 +14,7 @@ const environment = { DEVRYAN_BOT_GATEWAY_URL: 'http://egress:43121', DEVRYAN_BO
   DEVRYAN_BOT_REVISION_ID: '33333333-3333-4333-8333-333333333333', DEVRYAN_BOT_CHATGPT_IMAGE_GENERATION: '0' };
 
 test('API-key native Bot startup, structured requests, cancellation, persistence and isolation retain the actual v2 graph', async () => {
-  const parent = fileURLToPath(new URL('../../../.cache/bot-native-tests', import.meta.url));
-  await fs.mkdir(parent, { recursive: true });
-  const root = await fs.mkdtemp(path.join(parent, 'runtime-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-bot-native-runtime-')));
   const directory = path.join(root, 'workspace'), configDirectory = path.join(root, 'config');
   await fs.mkdir(directory); await fs.mkdir(configDirectory);
   const bodies = [];

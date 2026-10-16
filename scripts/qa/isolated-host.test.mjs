@@ -1,15 +1,14 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { test } from 'node:test';
 
 test('development QA selects the mock keychain before importing the production Electron host', async () => {
-  const cache = fileURLToPath(new URL('../../.cache/qa/', import.meta.url));
-  await mkdir(cache, { recursive: true });
-  const root = await mkdtemp(path.join(cache, 'isolated-host-test-'));
+  const root = await mkdtemp(path.join(os.tmpdir(), 'devryan-isolated-host-test-'));
   try {
     const home = path.join(root, 'home');
     await mkdir(home);

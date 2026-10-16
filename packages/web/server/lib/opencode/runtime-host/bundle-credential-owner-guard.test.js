@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {afterEach,expect,test} from 'vitest';
 import {captureBundleCredentialOwners,assertBundleCredentialOwners} from './bundle-credential-owner-guard.js';
 import {createSessionVault} from '../../multi-user/vault.js';
@@ -10,7 +11,7 @@ const roots=[];
 afterEach(async()=>{for(const root of roots.splice(0))await fs.rm(root,{recursive:true,force:true});});
 const put=async(file,value)=>{await fs.mkdir(path.dirname(file),{recursive:true});await fs.writeFile(file,typeof value==='string'?value:JSON.stringify(value));};
 async function fixture(){
- const root=await fs.mkdtemp(path.resolve(import.meta.dirname,'../../../../../../.cache/v2-validation/credential-owner-'));roots.push(root);
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-credential-owner-')));roots.push(root);
  const descriptor=name=>({bundleID:name,...name==='B'?{sourceBundleID:'A'}:{},launch:{global:{home:path.join(root,name,'home')},webDataDirectory:path.join(root,name,'web')}});
  const target=descriptor('A'),candidate=descriptor('B');
  for(const d of [target,candidate])for(const p of [d.launch.global.home,d.launch.webDataDirectory])await fs.mkdir(p,{recursive:true});
@@ -84,7 +85,7 @@ test('revocation after awaited owner capture prevents a fingerprint from qualify
 });
 
 test('original runtime session.created persists candidate ownership without changing rollback credentials',async()=>{
- const root=await fs.mkdtemp(path.resolve(import.meta.dirname,'../../../../../../.cache/v2-validation/owner-event-'));roots.push(root);const active=[];
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-owner-event-')));roots.push(root);const active=[];
  const descriptor=id=>({bundleID:id,...id==='B'?{sourceBundleID:'A'}:{},launch:{global:{home:path.join(root,id,'home')},webDataDirectory:path.join(root,id,'web')}});
  const A=descriptor('A'),B=descriptor('B');let requests=0;
  const make=async d=>{const runtime=await createMultiUserRuntime({dataDirectory:d.launch.webDataDirectory,botsExecutionEnabled:false,fetchImpl:async()=>{requests++;throw Error('unexpected_external_request');},logger:{warn(){}}});active.push(runtime);await runtime.botsRuntime.start();return runtime;};

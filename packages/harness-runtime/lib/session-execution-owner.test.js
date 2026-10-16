@@ -40,9 +40,8 @@ test('stop during preparation cancels before launch and waits for cleanup withou
 });
 
 test('a supervisor that ends before creating its receipt is settled as never started', async () => {
-  const fs = await import('node:fs/promises'), path = await import('node:path');
-  const parent = path.resolve(import.meta.dirname, '../../../.cache/test-fixtures'); await fs.mkdir(parent, { recursive: true });
-  const root = await fs.realpath(await fs.mkdtemp(path.join(parent, 'never-started-')));
+  const fs = await import('node:fs/promises'), path = await import('node:path'), os = await import('node:os');
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-never-started-')));
   const viewDirectory = path.join(root, 'worktree'); await fs.mkdir(viewDirectory);
   const lease = { token: 'fixture', state: 'preparing', directory: '/fixture', scope: {}, viewDirectory };
   const settled = [];

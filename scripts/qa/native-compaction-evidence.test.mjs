@@ -89,13 +89,13 @@ test('manual/natural adapters use native evidence and never fall back to v1 life
 });
 
 test('actual shared journal sanitizer roundtrip retains raw native compaction witness and budget', async t => {
-  const { mkdir, mkdtemp, rm } = await import('node:fs/promises');
+  const { mkdir, mkdtemp, realpath, rm } = await import('node:fs/promises');
   const path = await import('node:path');
   const { createDiagnosticJournal } = await import('../../packages/harness-runtime/lib/journal.js');
   const { createDiagnosticSanitizer } = await import('../../packages/harness-runtime/lib/sanitizer.js');
   const { readQaNativeObservations } = await import('./native-observation-evidence.mjs');
-  const base = path.resolve('.cache/v2-validation'); await mkdir(base, { recursive: true });
-  const runtimeRoot = await mkdtemp(path.join(base, 'compaction-journal-'));
+  const { tmpdir } = await import('node:os');
+  const runtimeRoot = await realpath(await mkdtemp(path.join(tmpdir(), 'devryan-compaction-journal-')));
   const directory = path.join(runtimeRoot, 'project'); await mkdir(directory);
   const journalDirectory = path.join(runtimeRoot, 'harness/journal');
   const sanitizer = createDiagnosticSanitizer({ homeDir: runtimeRoot, worktreeRoots: [directory] });

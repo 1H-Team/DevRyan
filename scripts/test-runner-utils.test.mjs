@@ -23,8 +23,7 @@ describe('script framework dispatch', () => {
   });
 
   test('isolates discovered Bun paths and propagates their failures', () => {
-    mkdirSync(new URL('.cache/', repoRoot), { recursive: true });
-    const root = mkdtempSync(fileURLToPath(new URL('.cache/script-runner-', repoRoot)));
+    const root = mkdtempSync(path.join(os.tmpdir(), 'devryan-script-runner-'));
     const environment = { ...process.env };
     delete environment.NODE_TEST_CONTEXT;
     const run = () => spawnSync(process.execPath, ['--input-type=module', '-e',
@@ -71,8 +70,7 @@ describe('isIsolatedUiTestSource', () => {
 
 describe('test file discovery', () => {
   test('keeps the requested Git root and normal nested tests while excluding descendant checkouts', () => {
-    mkdirSync(new URL('.cache/test-fixtures/', repoRoot), { recursive: true });
-    const root = mkdtempSync(fileURLToPath(new URL('.cache/test-fixtures/test-discovery-', repoRoot)));
+    const root = mkdtempSync(path.join(os.tmpdir(), 'devryan-test-discovery-'));
     try {
       mkdirSync(path.join(root, '.git'));
       mkdirSync(path.join(root, 'tests/nested'), { recursive: true });
@@ -150,8 +148,7 @@ describe('test file discovery', () => {
 
 describe('Electron framework dispatch', () => {
   test('uses real Node for nested tests and isolates Bun module mocks from sibling suites', () => {
-    mkdirSync(new URL('.cache/', repoRoot), { recursive: true });
-    const root = mkdtempSync(fileURLToPath(new URL('.cache/electron-runner-', repoRoot)));
+    const root = mkdtempSync(path.join(os.tmpdir(), 'devryan-electron-runner-'));
     const environment = { ...process.env, DEVRYAN_RUN_BOT_DB_DOCKER_TESTS: '', DEVRYAN_RUN_DMG_INSTALLER_NATIVE_TESTS: '' };
     delete environment.NODE_TEST_CONTEXT;
     const run = () => spawnSync(process.execPath, ['--input-type=module', '-e',
@@ -242,13 +239,9 @@ describe('release workflow', () => {
     );
   });
 
-  test('includes the legacy Tauri package suite in the full test gate', () => {
+  test('leaves the frozen legacy Tauri cargo suite out of the full test gate', () => {
     const packageJson = JSON.parse(readFileSync(new URL('package.json', repoRoot), 'utf8'));
-
-    assert.match(
-      packageJson.scripts['test:full'],
-      /bun run --cwd packages\/desktop test/,
-    );
+    assert.doesNotMatch(packageJson.scripts['test:full'], /packages\/desktop/);
   });
 
   test('builds Bot images with the input-hashing recipe and publishes only through release.mjs', async () => {
@@ -279,11 +272,10 @@ describe('release workflow', () => {
 });
 
 describe('Bots affected validation planning', () => {
-  test('runs Bots plus web, Electron, and UI dependents for core changes', () => {
-    const plan = buildPlan('affected', [
-      'packages/bots-runtime/run-state.js',
-    ]);
+  const tests = (files) => buildPlan('fast', files).commands.map((entry) => entry.label).filter((label) => label.startsWith('test:'));
 
+  test('runs Bots plus web, Electron, and UI dependents for core changes', () => {
+    const plan = buildPlan('fast', ['packages/bots-runtime/run-state.js']);
     assert.deepEqual(plan.commands.map((entry) => entry.label), [
       'typeCheck:electron',
       'typeCheck:ui',
@@ -292,100 +284,78 @@ describe('Bots affected validation planning', () => {
       'test:electron',
       'test:ui',
       'test:web',
+      'test:startup',
     ]);
   });
 
-  test('still runs the Bots package suite in quick mode', () => {
-    const plan = buildPlan('quick', [
-      'packages/bots-runtime/policy.js',
-    ]);
-
-    assert.deepEqual(plan.commands.map((entry) => entry.label), ['test:bots']);
-  });
-
-  test('runs confined service suites and the Electron host for affected changes', () => {
-    const plan = buildPlan('affected', [
+  test('runs confined service suites and the Electron host', () => {
+    assert.deepEqual(tests([
       'packages/bot-supervisor/src/docker.js',
       'packages/bot-engine-proxy/src/server.js',
       'packages/bot-egress/src/connect-policy.js',
       'packages/bot-computer/src/browser.js',
       'packages/bot-indexer/src/index-store.js',
-    ]);
-
-    assert.deepEqual(plan.commands.map((entry) => entry.label), [
+    ]), [
       'test:botComputer',
       'test:botEgress',
       'test:botEngineProxy',
       'test:botIndexer',
       'test:botSupervisor',
       'test:electron',
+      'test:startup',
     ]);
   });
 
-  test('runs the local Bot catalog suite and its Electron and web consumers for affected changes', () => {
-    const plan = buildPlan('affected', ['packages/bot-db/sql/bootstrap-database.sql']);
-    const labels = plan.commands.map((entry) => entry.label);
+  test('runs the local Bot catalog suite and its Electron and web consumers', () => {
+    const labels = tests(['packages/bot-db/sql/bootstrap-database.sql']);
     for (const label of ['test:botDb', 'test:electron', 'test:web']) assert.ok(labels.includes(label), label);
-    assert.deepEqual(
-      buildPlan('quick', ['packages/bot-db/src/inventory.js']).commands.map((entry) => entry.label)
-        .filter((label) => label.startsWith('test:')),
-      ['test:botDb'],
-    );
-  });
-
-  test('keeps each confined service suite in quick mode', () => {
-    const plan = buildPlan('quick', [
-      'packages/bot-supervisor/src/server.js',
-      'packages/bot-engine-proxy/src/server.js',
-      'packages/bot-egress/src/server.js',
-      'packages/bot-computer/src/server.js',
-      'packages/bot-indexer/src/server.js',
-    ]);
-
-    assert.deepEqual(plan.commands.map((entry) => entry.label), [
-      'test:botComputer',
-      'test:botEgress',
-      'test:botEngineProxy',
-      'test:botIndexer',
-      'test:botSupervisor',
-    ]);
   });
 });
 
-
 describe('maintenance validation selection', () => {
   test('checks documentation without running unrelated code suites', () => {
-    assert.deepEqual(buildPlan('quick', ['docs/TESTING.md']).commands.map(c => c.label), ['docs:validate']);
-    assert.deepEqual(buildPlan('quick', []).commands, []);
+    assert.deepEqual(buildPlan('fast', ['docs/TESTING.md']).commands.map(c => c.label), ['docs:validate']);
+    assert.deepEqual(buildPlan('fast', []).commands.map(c => c.label), ['test:startup']);
+  });
+
+  test('always ends a code change with the startup contract', () => {
+    for (const file of ['packages/ui/src/lib/format.ts', 'scripts/release.mjs', 'packages/shared-runtime/safe-archive.js']) {
+      assert.equal(buildPlan('fast', [file]).commands.at(-1).label, 'test:startup', file);
+    }
   });
 
   test('treats shipped and project agent prompts as executable configuration', () => {
-    const bundled = buildPlan('quick', ['packages/web/server/default-config/agents/explorer.md']);
-    assert.ok(bundled.commands.some(c => c.label === 'test:web'));
-    const skill = buildPlan('test-affected', ['packages/web/server/lib/agent-browser/assets/agent-browser/SKILL.md']);
-    assert.ok(skill.commands.some(c => c.label === 'test:web'));
-    const project = buildPlan('quick', ['.opencode/agents/explorer.md']);
-    assert.ok(project.commands.some(c => c.label === 'test:scripts'));
-    const plugin = buildPlan('quick', ['.opencode/plugins/orchestrator-autoresume.mjs']);
-    assert.ok(plugin.commands.some(c => c.label === 'test:scripts'));
-    assert.ok(buildPlan('quick', ['.opencode/opencode.json']).commands.some(c => c.label === 'test:full'));
+    assert.ok(buildPlan('fast', ['packages/web/server/default-config/agents/explorer.md']).commands.some(c => c.label === 'test:web'));
+    assert.ok(buildPlan('fast', ['packages/web/server/lib/agent-browser/assets/agent-browser/SKILL.md']).commands.some(c => c.label === 'test:web'));
+    assert.ok(buildPlan('fast', ['.opencode/agents/explorer.md']).commands.some(c => c.label === 'test:scripts'));
+    assert.ok(buildPlan('fast', ['.opencode/plugins/orchestrator-autoresume.mjs']).commands.some(c => c.label === 'test:scripts'));
+  });
+
+  test('runs the scripts suite for script and workflow changes instead of everything', () => {
+    for (const file of ['scripts/release.mjs', '.github/workflows/release.yml']) {
+      const labels = buildPlan('fast', [file]).commands.map(c => c.label);
+      assert.ok(labels.includes('test:scripts'), file);
+      assert.ok(!labels.includes('test:full'), file);
+    }
   });
 
   test('includes shared-runtime behavior and its web dependent', () => {
-    assert.deepEqual(buildPlan('quick', ['packages/shared-runtime/safe-archive.js']).commands.map(c => c.label), ['test:shared']);
-    for (const mode of ['affected', 'test-affected']) {
-      const labels = buildPlan(mode, ['packages/shared-runtime/safe-archive.js']).commands.map(c => c.label);
-      assert.ok(labels.includes('test:shared'));
-      assert.ok(labels.includes('test:web'));
-    }
+    const labels = buildPlan('fast', ['packages/shared-runtime/safe-archive.js']).commands.map(c => c.label);
+    assert.ok(labels.includes('test:shared'));
+    assert.ok(labels.includes('test:web'));
   });
 
-  test('requires full validation for workspace manifests and nested lockfiles', () => {
-    for (const file of ['packages/ui/package.json', 'packages/bot-indexer/package-lock.json', 'packages/desktop/src-tauri/Cargo.lock']) {
-      const labels = buildPlan('quick', [file]).commands.map(c => c.label);
-      assert.ok(labels.includes('test:full'));
-      assert.ok(labels.includes('docs:validate'));
-      assert.deepEqual(buildPlan('test-affected', [file]).commands.map(c => c.label), ['test:full']);
+  test('lints and type-checks everything for shared configuration, and re-tests a package for its own manifest', () => {
+    for (const file of ['package.json', 'bun.lock', '.opencode/opencode.json']) {
+      const labels = buildPlan('fast', [file]).commands.map(c => c.label);
+      assert.ok(labels.includes('lint:full') && labels.includes('type-check:full'), file);
     }
+    assert.ok(buildPlan('fast', ['packages/ui/package.json']).commands.some(c => c.label === 'test:ui'));
+    assert.ok(buildPlan('fast', ['packages/bot-indexer/package-lock.json']).commands.some(c => c.label === 'test:botIndexer'));
+  });
+
+  test('runs every check in full mode and refuses unknown modes', () => {
+    assert.deepEqual(buildPlan('full').commands.map(c => c.label), ['lint:full', 'type-check:full', 'docs:validate', 'build', 'bundle:check', 'test:full']);
+    assert.throws(() => buildPlan('quick', []), /Unknown validation mode/);
   });
 });

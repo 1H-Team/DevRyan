@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { PassThrough, Writable } from 'node:stream';
@@ -846,9 +847,7 @@ describe('Composer 2.5 mode normalization', () => {
 
 
 test('Composer 2.5 sequential prompts switch SDK mode and restore saved Fast selection', async () => {
-  const cacheRoot = path.resolve(import.meta.dir, '../../.cache');
-  await mkdir(cacheRoot, { recursive: true });
-  const storageDir = await mkdtemp(path.join(cacheRoot, 'composer-mode-test-'));
+  const storageDir = await mkdtemp(path.join(os.tmpdir(), 'devryan-composer-mode-test-'));
   const selections = [];
   const makeAgent = () => ({
     agentId: 'fixture_composer_agent',
@@ -901,8 +900,7 @@ test('Composer 2.5 sequential prompts switch SDK mode and restore saved Fast sel
 });
 
 test('native prompt selections refresh account-specific SDK parameters while preserving requested effort and directory', async () => {
-  const root = path.resolve(import.meta.dir, '../../.cache');await mkdir(root, { recursive: true });
-  const directory = await mkdtemp(path.join(root, 'native-cursor-model-selection-'));
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'devryan-native-cursor-model-selection-'));
   let key = 'owned-a';const requests = [], selections = [], scopes = [];
   const runtime = createCursorSdkRuntime({
     storageDir: directory, env: { CURSOR_API_KEY: 'forbidden-ambient' },
@@ -943,9 +941,7 @@ test('native prompt selections refresh account-specific SDK parameters while pre
 });
 
 test('native exact effort failures and unknown catalogs never create an agent or helper worker', async () => {
-  const cacheRoot = path.resolve(import.meta.dir, '../../.cache');
-  await mkdir(cacheRoot, { recursive: true });
-  const directory = await mkdtemp(path.join(cacheRoot, 'cursor-exact-unavailable-'));
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'devryan-cursor-exact-unavailable-'));
   try {
     for (const mode of ['unsupported', 'empty', 'failed']) {
       let physicalCalls = 0;
@@ -979,9 +975,7 @@ test('native exact effort failures and unknown catalogs never create an agent or
 });
 
 test('changing the selected account between discovery and prompt dispatch refuses the frozen selection', async () => {
-  const cacheRoot = path.resolve(import.meta.dir, '../../.cache');
-  await mkdir(cacheRoot, { recursive: true });
-  const directory = await mkdtemp(path.join(cacheRoot, 'cursor-selection-binding-'));
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'devryan-cursor-selection-binding-'));
   let physicalCalls = 0;
   const runtime = createCursorSdkRuntime({
     storageDir: directory, env: {}, nativeWarming: false,
@@ -1049,8 +1043,7 @@ test('selection diagnostics expose bounded codes while authority failures retain
 
 
 test('terminal persistence diagnostics locate held ownership without changing busy settlement or exposing content', async () => {
-  const root = path.resolve(import.meta.dir, '../../.cache/v2-validation'); await mkdir(root, { recursive: true });
-  const storageDir = await mkdtemp(path.join(root, 'cursor-terminal-diagnostics-'));
+  const storageDir = await mkdtemp(path.join(os.tmpdir(), 'devryan-cursor-terminal-diagnostics-'));
   const held = Promise.withResolvers(), entered = Promise.withResolvers(), diagnostics = [];
   const agent = { agentId: 'fixture_agent', send: async () => ({ status: 'finished',
     wait: async () => ({ status: 'finished', result: 'private provider response' }),
@@ -1085,8 +1078,7 @@ test('terminal persistence diagnostics locate held ownership without changing bu
 
 
 test('slow owned persistence coalesces streaming snapshots while preserving tools and the final barrier', async () => {
-  const root = path.resolve(import.meta.dir, '../../.cache/v2-validation'); await mkdir(root, { recursive: true });
-  const storageDir = await mkdtemp(path.join(root, 'cursor-persist-backpressure-'));
+  const storageDir = await mkdtemp(path.join(os.tmpdir(), 'devryan-cursor-persist-backpressure-'));
   const ownerEntered = Promise.withResolvers(), ownerRelease = Promise.withResolvers(), providerDone = Promise.withResolvers(), finalQueued = Promise.withResolvers();
   const saved = []; let inFlightRecord, first = true;
   const text = Array.from({ length: 30 }, (_, i) => `chunk-${i} `).join('');

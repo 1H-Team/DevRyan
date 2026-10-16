@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { chmod, mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
@@ -10,8 +11,7 @@ import { createDiagnosticSanitizer } from '../../packages/harness-runtime/lib/sa
 const cache = fileURLToPath(new URL('../../.cache/qa/', import.meta.url));
 
 test('Electron donor identity pins framework aliases and bytes while generic artifacts refuse them', async () => {
-  await mkdir(cache, { recursive: true });
-  const output = await realpath(await mkdtemp(path.join(cache, 'app-identity-test-')));
+  const output = await realpath(await mkdtemp(path.join(os.tmpdir(), 'devryan-app-identity-test-')));
   const app = path.join(output, 'DevRyan QA.app'), framework = path.join(app, 'Contents/Frameworks/Electron.framework');
   try {
     await mkdir(path.join(framework, 'Versions/A'), { recursive: true });
@@ -63,6 +63,7 @@ test('written long mobile screenshot basenames survive real sanitization without
   }
 });
 
+// createQaProjectFixture only accepts output inside the repository .cache.
 test('evidence preserves new implementation and test files omitted from git diff', async () => {
   await mkdir(cache, { recursive: true });
   const output = await mkdtemp(path.join(cache, 'archive-test-'));

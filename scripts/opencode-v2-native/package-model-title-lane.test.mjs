@@ -2,11 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { runCompiledModelTitle } from './package-model-title-lane.mjs';
 
 const fixture = async (reply, action) => {
-  const cache = path.resolve('.cache/v2-validation'); await fs.mkdir(cache, { recursive: true });
-  const root = await fs.mkdtemp(path.join(cache, 'model-title-gate-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-model-title-gate-')));
   const directory = root;
   let responder, modelCalls = 0, renameCalls = 0, controllerID = 'original';
   const sessions = new Map(), sources = new Map(), enrolled = new Set();

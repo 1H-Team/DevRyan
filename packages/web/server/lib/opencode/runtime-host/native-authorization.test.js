@@ -1,6 +1,7 @@
 import { test, expect } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { createNativeAuthorization } from './native-authorization.js';
 import { createSupabaseConnection } from '../../multi-user/supabase-connection.js';
 import { getRequestPrincipal, runWithRequestPrincipal } from '../../multi-user/request-context.js';
@@ -9,7 +10,7 @@ import { createOpenCodeClient } from '../opencode-client/index.js';
 import { createOpenCodeAdmission } from '../v2/admission.js';
 
 const fixture = async action => {
-  const root = await fs.mkdtemp(path.resolve(import.meta.dirname, '../../../../../../.cache/v2-validation/native-auth-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-native-auth-')));
   try { await action(root); } finally { await fs.rm(root, { recursive: true, force: true }); }
 };
 const manifest = { inputs: { nativeRegistrations: [{ id: 'opencode.tool.read', manifestDigest: 'a'.repeat(64), capabilities: ['read'] }], reviewedPlugins: [] } };

@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
@@ -14,9 +15,7 @@ const anchors = `      pathToClaudeCodeExecutable: claudeExecutable,\nasync func
 const source = `${cwdAnchor}\n${anchors}`;
 const sha256 = text => crypto.createHash('sha256').update(text).digest('hex');
 const fixture = (version = '1.62.6') => {
-  const cache = path.resolve(import.meta.dirname, '../../../../../.cache/qa');
-  fs.mkdirSync(cache, { recursive: true });
-  const root = fs.mkdtempSync(path.join(cache, 'meridian-http-hotfix-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-meridian-http-hotfix-'));
   roots.push(root);
   const dist = path.join(root, 'node_modules/@rynfar/meridian/dist');
   fs.mkdirSync(dist, { recursive: true });

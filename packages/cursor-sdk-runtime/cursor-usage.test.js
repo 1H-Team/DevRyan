@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdtemp, rm, readdir, copyFile, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, realpath, rm, readdir, copyFile, mkdir, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
@@ -93,9 +94,7 @@ for (const mode of ['direct', 'persistent', 'fallback']) {
     const failing = outcome === 'failure';
     const cancelling = outcome === 'cancellation';
     test(`${mode}: cumulative usage is not doubled or used as context after ${outcome}`, async () => {
-      const qaDirectory = path.resolve(import.meta.dirname, '../../.cache/qa');
-      await mkdir(qaDirectory, { recursive: true });
-      const directory = await mkdtemp(path.join(qaDirectory, 'cursor-usage-unit-'));
+      const directory = await realpath(await mkdtemp(path.join(os.tmpdir(), 'devryan-cursor-usage-unit-')));
       let runtime;
       try {
         for (const name of await readdir(import.meta.dirname)) {

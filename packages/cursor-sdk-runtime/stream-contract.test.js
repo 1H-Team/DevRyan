@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { copyFile, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readdir, realpath, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createCursorSdkRuntime } from './index.js';
@@ -110,9 +111,7 @@ const fixture = `
 `;
 
 const setup = async (mode, timeoutMs = 500, options = {}) => {
-  const root = path.resolve(import.meta.dirname, '../../.cache/qa');
-  await mkdir(root, { recursive: true });
-  const directory = await mkdtemp(path.join(root, 'cursor-stream-contract-'));
+  const directory = await realpath(await mkdtemp(path.join(os.tmpdir(), 'devryan-cursor-stream-contract-')));
   try {
   for (const name of await readdir(import.meta.dirname)) {
     if (/\.(mjs|js)$/.test(name) && !name.includes('.test.')) await copyFile(path.join(import.meta.dirname, name), path.join(directory, name));

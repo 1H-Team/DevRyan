@@ -1,5 +1,6 @@
 import {afterEach,expect,test} from 'vitest';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import {runNativeHarnessRelocationProcess,validateNativeGitConfig} from './native-harness-relocation.js';
 import {runNativeMigrationProcess} from './native-migration-process.js';
@@ -9,7 +10,7 @@ import {openChangeStore,changeKey} from '../../../../../harness-runtime/lib/sess
 import {inspectBundleHarness} from './bundle-harness-integrity.js';
 const roots=[];
 afterEach(async()=>{for(const root of roots.splice(0))await fs.rm(root,{recursive:true,force:true});});
-async function fixture(){const parent=path.resolve('../../.cache/test-fixtures');await fs.mkdir(parent,{recursive:true});const root=await fs.mkdtemp(path.join(parent,'native-relocation-'));roots.push(root);return root;}
+async function fixture(){const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-native-relocation-')));roots.push(root);return root;}
 const digest='a'.repeat(64),gitDigest='b'.repeat(64);
 const request=root=>({protocol:'devryan-native-harness-relocation/1',requestID:'harness_test',webDataDirectory:path.join(root,'web'),sourceWebDataDirectory:path.join(root,'source'),checkpointID:'test',projectMap:[],relocate:false});
 function ownedFixture(root){
