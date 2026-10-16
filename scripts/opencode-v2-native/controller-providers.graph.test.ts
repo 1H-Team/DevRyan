@@ -13,7 +13,7 @@ for(const {transport,anthropicBaseURL,claudeCatalog,compiled} of [
  {transport:undefined,anthropicBaseURL:'http://127.0.0.1:3456'},
  {transport:undefined,anthropicBaseURL:undefined,claudeCatalog:true,compiled:false},
  {transport:undefined,anthropicBaseURL:undefined,claudeCatalog:true,compiled:true},
-] as const)test.skipIf(compiled&&process.platform!=='darwin')(`native provider middleware owns physical HTTP scope with ${claudeCatalog?`selected Claude catalog compiled=${compiled}`:anthropicBaseURL?'saved root Anthropic URL':`${transport??'omitted'} OpenAI transport`}`,async()=>{
+] as const)test.skipIf(compiled===true&&process.platform!=='darwin')(`native provider middleware owns physical HTTP scope with ${claudeCatalog?`selected Claude catalog compiled=${compiled}`:anthropicBaseURL?'saved root Anthropic URL':`${transport??'omitted'} OpenAI transport`}`,async()=>{
  const root=await fs.mkdtemp(path.join(repository,'.cache/v2-validation/provider-transport-')),home=path.join(root,'home'),tmp=path.join(home,'tmp');await fs.mkdir(tmp,{recursive:true});await fs.writeFile(path.join(tmp,'package.json'),'{}\n');let child:ReturnType<typeof Bun.spawn>|undefined;
  try{
   const sourcePath=path.join(repository,'scripts/opencode-v2-native/controller-integrations.graph-fixture.mjs');let source=await fs.readFile(sourcePath,'utf8');
