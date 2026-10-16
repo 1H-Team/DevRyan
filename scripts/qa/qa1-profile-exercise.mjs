@@ -519,7 +519,7 @@ export async function runQa1AdditionalAgentTasks({ root, api, origin, signal, de
     const files = testRelativePath ? [testRelativePath] : ['src/smoke.test.mjs'];
     try {
       const result = await execute(process.execPath, ['--permission', `--allow-fs-read=${directory}`, '--test-isolation=none', '--test', ...files],
-        { cwd: directory, env, signal, timeout: Math.max(1, Math.min(30000, timeoutMs, deadline - performance.now())), maxBuffer: 65536 });
+        { cwd: directory, env, signal, timeout: Math.max(1, Math.ceil(Math.min(30000, timeoutMs, deadline - performance.now()))), maxBuffer: 65536 });
       return { exitCode: 0, timedOut: false, stdout: result.stdout, stderr: result.stderr, outputTruncated: false };
     } catch (error) {
       return { exitCode: Number.isInteger(error.code) ? error.code : null, timedOut: error.killed === true,

@@ -857,6 +857,10 @@ jobs:
         env:
           DEVRYAN_SKIP_INSTALL_PREPARE: '1'
         run: bun install --frozen-lockfile
+      # Package acceptance verifies build inputs against the source tree,
+      # which includes this gitignored reviewed executable.
+      - name: Restore exact reviewed Claude executable
+        run: node scripts/hydrate-reviewed-claude.mjs
       - uses: actions/download-artifact@v4
         with:
           name: DevRyan-release-admission

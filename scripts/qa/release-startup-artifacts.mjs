@@ -30,7 +30,7 @@ export async function hashReleaseFile(file, { signal } = {}) {
 /** Extract only the signed app from the immutable installer; never refresh its manifest or signature. */
 export async function inspectReleaseDmg({ dmg, directory, purpose = 'current', expectedSha256, version, deadline, signal }) {
   const check = () => { signal?.throwIfAborted(); if (deadline !== undefined) assert.ok(performance.now() < deadline, 'Installer inspection deadline expired'); };
-  const execute = (command, args, options = {}) => { check(); return exec(command, args, { ...options, signal, timeout: deadline === undefined ? options.timeout : Math.max(1, Math.min(options.timeout ?? 30000, deadline - performance.now())) }); };
+  const execute = (command, args, options = {}) => { check(); return exec(command, args, { ...options, signal, timeout: deadline === undefined ? options.timeout : Math.max(1, Math.ceil(Math.min(options.timeout ?? 30000, deadline - performance.now()))) }); };
   check();
   assert.ok(path.isAbsolute(dmg) && path.isAbsolute(directory));
   const dmgSha256 = await hashReleaseFile(dmg, { signal });

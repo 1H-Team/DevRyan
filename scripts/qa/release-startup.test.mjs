@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { runInNewContext } from 'node:vm';
-import { releaseStartupEnvironment } from './release-startup-profile.mjs';
+import { releaseStartupEnvironment, createReleaseStartupProfile } from './release-startup-profile.mjs';
 import { parseReleaseStartupArgs, summarizeCompiledQualification, createReleaseScenarioRunner, assertReleaseDiagnosticEnvironment } from './release-startup.mjs';
 import { createDiagnosticSanitizer } from '../../packages/harness-runtime/lib/sanitizer.js';
 import { launchReleaseStartup, captureReleaseStartupScreenshot, readReleaseSetupInterfaceState } from './release-startup-launch.mjs';
@@ -159,4 +159,15 @@ test('diagnostic cleanup wrappers and shared prerequisite failures stop the run'
   await assert.rejects(runReleaseCleanup(async () => { throw new Error('fixture cleanup'); }), { code: 'release_startup_cleanup_failed' });
   const scenario = createReleaseScenarioRunner({ receipt: { scenarios: [], cleanupErrors: [] }, diagnostic: true, stop: async () => {}, sanitizeReason: String });
   await assert.rejects(scenario('fixture', async () => { throw Object.assign(new Error('shared prerequisite'), { code: 'release_startup_prerequisite_failed' }); }), { code: 'release_startup_prerequisite_failed' });
+});
+
+test('profile setup accepts the fractional deadlines release phases pass', async () => {
+  // child_process rejects non-integer timeouts; this failed every candidate rehearsal at firstReady.
+  const parent = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../.cache/release-startup-smoke');
+  fs.mkdirSync(parent, { recursive: true });
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(parent, 'fractional-')));
+  try {
+    const profile = await createReleaseStartupProfile(root, { fixtureSetup: true, deadline: performance.now() + 60_000.5, signal: AbortSignal.timeout(60_000) });
+    await profile.close();
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });

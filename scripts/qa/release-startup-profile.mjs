@@ -30,7 +30,7 @@ export async function createReleaseStartupProfile(root, { fixtureSetup = true, r
     env.OPENCHAMBER_ELECTRON_USER_DATA_DIR, path.join(env.XDG_CONFIG_HOME, 'opencode')]) await fs.mkdir(directory, { recursive: true, mode: 0o700 });
   assert.equal(await fs.realpath(root), root);
   // Electron starts in HOME; fence both discovery roots from the enclosing checkout.
-  for (const directory of [env.HOME, workspace]) await exec('git', ['init', '--quiet', '--initial-branch=main', '--template=', directory], { env, signal, timeout: deadline === undefined ? undefined : Math.max(1, deadline - performance.now()) });
+  for (const directory of [env.HOME, workspace]) await exec('git', ['init', '--quiet', '--initial-branch=main', '--template=', directory], { env, signal, timeout: deadline === undefined ? undefined : Math.max(1, Math.ceil(deadline - performance.now())) });
   check();
   const port = await reservePort(), provider = await createRuntimeUiProvider({ generation: 2, directory: workspace });
   const settings = { desktopLocalPort: port, desktopLanAccessEnabled: false,
