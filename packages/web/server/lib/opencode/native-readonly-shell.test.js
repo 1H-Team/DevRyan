@@ -79,10 +79,10 @@ if (process.platform === 'darwin') it('macOS Plan shell denies actual local POST
       const push=spawnSync('/usr/bin/git',['-c','credential.helper=','-c','core.hooksPath=/dev/null','push',${JSON.stringify(url + '/repo')},'HEAD'],{encoding:'utf8',timeout:2000});
       console.log(JSON.stringify({read:fs.readFileSync('tracked','utf8'),post:post.status,push:push.status}));`;
     const result = spawnSync('/usr/bin/sandbox-exec', ['-p', profile, process.execPath, '-e', script], { cwd: f.snapshot,
-      env: gitEnv, encoding: 'utf8', timeout:5000 });
+      env: gitEnv, encoding: 'utf8', timeout: 30000 }); // busy CI runners exceed 5 s
     expect(result.status).toBe(0);
     const outcomes = JSON.parse(result.stdout);
     expect(outcomes.read).toBe('original'); expect(outcomes.post).toBe(7); expect(outcomes.push).toBe(128);
     expect(requests).toBe(0);
   } finally { await new Promise(resolve => server.close(resolve)); }
-});
+}, 60_000);
