@@ -91,8 +91,11 @@ test('professional live editor shares dark credential appearance',()=>{const val
 export async function createQaProfileProjectFixture({ outputRoot = path.join(repository, '.cache/qa'), runId = 'profile-original', keepArtifacts = true } = {}) {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/.test(runId)) throw fail('qa_profile_fixture_input_invalid');
   outputRoot = path.resolve(outputRoot);
-  // A fresh checkout has no .cache/qa yet: create the default parent privately.
-  if (outputRoot === path.join(repository, '.cache/qa')) await fs.mkdir(outputRoot, { recursive: true, mode: 0o700 });
+  // A fresh checkout may lack .cache/qa, or another tool may have created it 0755: make the default parent private.
+  if (outputRoot === path.join(repository, '.cache/qa')) {
+    await fs.mkdir(outputRoot, { recursive: true, mode: 0o700 });
+    await fs.chmod(outputRoot, 0o700);
+  }
   await assertQaPrivateDirectory(outputRoot);
   const run = createRunRoot({ parent: outputRoot, prefix: `${runId}-`, owner: 'scripts/qa/profile-project-fixture.mjs',
     keepArtifacts, extraPayloads: ['project'], signals: false });

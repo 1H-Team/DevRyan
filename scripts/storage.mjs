@@ -72,18 +72,22 @@ export function auditCache(root = repository, { now = Date.now() } = {}) {
   return { families, removals, kept, totalBytes: total(families), reclaimableBytes: total(removals) };
 }
 
+/** Deletes each entry (with retries); returns the ones that could not be deleted, with the reason. */
 export function applyRemovals(root, removals) {
   const cache = path.join(root, '.cache');
+  const failed = [];
   for (const { path: relative } of removals) {
     const target = path.resolve(root, relative);
     if (!target.startsWith(cache + path.sep)) throw new Error(`Refusing to delete outside .cache: ${relative}`);
-    fs.rmSync(target, { recursive: true, force: true });
+    try { fs.rmSync(target, { recursive: true, force: true, maxRetries: 3 }); }
+    catch (error) { failed.push({ path: relative, error: error.code ?? error.message }); }
   }
   // Remove family folders the clean emptied.
   for (const family of entries(cache)) {
     const absolute = path.join(cache, family.name);
     if (family.isDirectory() && !KEPT_CACHE_FAMILIES.includes(family.name) && entries(absolute).length === 0) fs.rmdirSync(absolute);
   }
+  return failed;
 }
 
 const human = (bytes) => {
@@ -101,10 +105,11 @@ export function storageMain(argv, root = repository, log = console.log) {
   }
   const audit = auditCache(root);
   const apply = flags.includes('--apply');
-  if (apply) applyRemovals(root, audit.removals);
+  const failed = apply ? applyRemovals(root, audit.removals) : [];
+  for (const row of failed) console.error(`Could not delete ${row.path}: ${row.error}`);
   if (flags.includes('--json')) {
-    log(JSON.stringify({ ...audit, applied: apply }, null, 2));
-    return 0;
+    log(JSON.stringify({ ...audit, applied: apply, failed }, null, 2));
+    return failed.length ? 1 : 0;
   }
   if (command === 'report') {
     log(`.cache total ${human(audit.totalBytes)}; reclaimable ${human(audit.reclaimableBytes)}`);
@@ -118,7 +123,7 @@ export function storageMain(argv, root = repository, log = console.log) {
   if (audit.removals.length > 15) log(`  … and ${audit.removals.length - 15} more`);
   if (audit.kept.length) log(`Kept ${audit.kept.length} entries (recent, pinned, symlinks or young session notes).`);
   if (!apply && audit.removals.length) log('Run `bun run cache:prune -- --apply` to delete them.');
-  return 0;
+  return failed.length ? 1 : 0;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
