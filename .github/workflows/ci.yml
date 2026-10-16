@@ -28,6 +28,9 @@ jobs:
           node-version-file: .nvmrc
       - name: Install dependencies
         run: bun install --frozen-lockfile
+      - name: Restore reviewed Claude executable
+        # Gitignored; native runtime input tests verify it like the release build does.
+        run: node scripts/hydrate-reviewed-claude.mjs
       - name: Build
         run: bun run build
       - name: Lint, type-check, test, docs and bundle budgets
