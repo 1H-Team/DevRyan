@@ -1,0 +1,13 @@
+{
+  "protocol": "devryan.release-history-diagnostic/1",
+  "source": "8dd32145509b08134c3a47248dd365cc6d84119e",
+  "version": "2.0.13",
+  "complete": false,
+  "failureTallyComplete": false,
+  "requestLimit": 120,
+  "requestCount": 13,
+  "runs": [],
+  "unexplainedGateFailures": 0,
+  "error": "release_history_evidence_unavailable",
+  "stoppedAt": "/contents/package.json?ref=00f47cafc5163b924aaf36fea8cfa53b62d2f5c7"
+}

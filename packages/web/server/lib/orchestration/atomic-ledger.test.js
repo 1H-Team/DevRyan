@@ -134,6 +134,38 @@ describe('Windows native managed ledger constructor', () => {
 });
 
 describe('atomic managed orchestration ledger', () => {
+  it('reports real write/sync/rename boundaries without confirming a blocked mandatory file sync', async () => {
+    const dataDirectory = await createTemporaryDirectory();
+    let started, release;
+    const entered = new Promise(resolve => { started = resolve; }), blocked = new Promise(resolve => { release = resolve; });
+    const progress = [];
+    const fsApi = { ...fs, open: async (file, ...args) => {
+      const handle = await fs.open(file, ...args);
+      if (!String(file).includes('ledger.json.tmp-')) return handle;
+      return new Proxy(handle, { get(target, field) {
+        if (field === 'sync') return async () => { started(); await blocked; return target.sync(); };
+        const value = target[field]; return typeof value === 'function' ? value.bind(target) : value;
+      } });
+    } };
+    const ledger = await createOwnedLedger({ dataDirectory, fs: fsApi });
+    let completed = false;
+    const saving = ledger.save(snapshot([queuedTask(1)]), { onProgress: event => {
+      progress.push(event); if (event.phase === 'rename') throw Error('diagnostic-only failure');
+    } }).then(() => { completed = true; });
+    await entered;
+    expect(progress.at(-1)).toEqual({ phase: 'file_sync', state: 'started' });
+    expect(progress).toContainEqual({ phase: 'write', state: 'completed' });
+    expect(progress.some(event => event.phase === 'rename')).toBe(false);
+    expect(ledger.getDiagnostics().writeCount).toBe(0); expect(completed).toBe(false);
+    release(); await saving;
+    expect(progress.filter(event => event.state === 'completed').map(event => event.phase)).toEqual([
+      'owner_verify', 'backup', 'directory_create', 'temporary_cleanup', 'temporary_open', 'write', 'file_sync', 'file_close',
+      'rename', 'permissions', 'directory_sync', 'commit_confirm',
+    ]);
+    expect(ledger.getDiagnostics().writeCount).toBe(1);
+    expect((await ledger.load()).tasks[0].taskId).toBe('dvr_task_1');
+    await ledger.releaseOwnership();
+  });
   it('atomically persists and restores a private JSON snapshot', async () => {
     const dataDirectory = await createTemporaryDirectory();
     const ledger = await createOwnedLedger({ dataDirectory });

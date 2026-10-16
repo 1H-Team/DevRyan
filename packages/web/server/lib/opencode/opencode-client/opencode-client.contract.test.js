@@ -94,7 +94,7 @@ describe('openCodeClient contract (native v2 fixture)', () => {
     expect(Object.keys(client.interaction.permissions).sort()).toEqual(['list', 'reply']);
     expect(Object.keys(client.interaction.questions).sort()).toEqual(['list', 'reject', 'reply']);
     expect(Object.keys(privileged).sort()).toEqual(['createChildSession', 'externalMessage', 'instructions', 'locationReload',
-      'readCanonicalUserPage', 'readSessionMetadata', 'readUserMessage', 'revert', 'setMetadata', 'setPermissions', 'switchAgent', 'switchModel', 'synthetic']);
+      'readCanonicalPlanSequence', 'readCanonicalUserPage', 'readSessionMetadata', 'readUserMessage', 'revert', 'setMetadata', 'setPermissions', 'switchAgent', 'switchModel', 'synthetic']);
   });
 
   it.each([undefined, null, 1, 3, '2'])('refuses runtime identity %s before any I/O', async generation => {
@@ -429,6 +429,45 @@ describe('openCodeClient contract (native v2 fixture)', () => {
       }
       expect(fetchImpl.mock.calls).toHaveLength(fetchedBeforeInvalidBudget);
     });
+    it('private Plan sequence preserves native automatic-compaction identity and exact parents across pages', async () => {
+      const sessionID='ses_private_plan',info={id:sessionID,location:{directory},agent:'build',model:{providerID:'fixture',id:'fixture'}};
+      const user={id:'msg_original',type:'user',text:'Plan it',time:{created:1}};
+      const prefix={id:'msg_prefix',type:'assistant',agent:'build',model:{providerID:'fixture',id:'fixture'},finish:'tool-calls',content:[{type:'text',text:'<!--plan-->\n# Plan\n- Original '}],time:{created:2,completed:3}};
+      const compaction={id:'msg_auto',type:'compaction',status:'completed',reason:'auto',summary:'PRIVATE SUMMARY',recent:'PRIVATE RECENT',providerContext:{private:'PRIVATE PROVIDER'},time:{created:4}};
+      const tail={...prefix,id:'msg_tail',finish:'stop',content:[{type:'text',text:'tail'}],time:{created:5,completed:6}};
+      const filler=Array.from({length:198},(_,index)=>({id:`msg_idle_${index}`,type:'idle',time:{created:5}}));
+      let raw=[tail,...filler.reverse(),compaction],requests=0;
+      const client=createPrivilegedOpenCodeClient({getRuntime:()=>({generation:2,baseUrl:'http://127.0.0.1:1'}),fetchImpl:async url=>{
+        const parsed=new URL(url);if(!parsed.pathname.endsWith('/message'))return Response.json({data:info});
+        requests++;return Response.json(parsed.searchParams.has('cursor')?{data:[prefix,user]}:{data:raw,cursor:{next:'older'}});
+      }});
+      const result=await client.readCanonicalPlanSequence(sessionID,{directory});
+      expect(requests).toBe(2);
+      expect(result.nativeSequence).toHaveLength(202);
+      expect(result.nativeSequence[2]).toEqual({id:'msg_auto',type:'compaction',ordinal:2,turnParent:true,status:'completed',reason:'auto'});
+      expect(result.records.find(row=>row.info.id==='msg_tail')).toMatchObject({info:{parentID:'msg_auto'},turnOwnership:{source:'native-sequence',userMessageID:'msg_auto'}});
+      expect(JSON.stringify(result.nativeSequence)).not.toMatch(/PRIVATE|summary|providerContext|recent/);
+      raw=[{...compaction,type:'synthetic',text:'compaction_anchor',metadata:{reason:'auto',status:'completed'}},tail].reverse();requests=0;
+      const forged=await client.readCanonicalPlanSequence(sessionID,{directory});
+      expect(requests).toBe(2);
+      expect(forged.nativeSequence.find(row=>row.id==='msg_auto')).toEqual({id:'msg_auto',type:'synthetic',ordinal:2,turnParent:true});
+      raw=[tail,tail];await expect(client.readCanonicalPlanSequence(sessionID,{directory})).rejects.toMatchObject({code:C.invalidResponse});
+    });
+    it('private Plan sequence refuses repeated cursors, incomplete bounded history and foreign scope',async()=>{
+      const sessionID='ses_plan_bounds';let pages=0,mode='cycle';
+      const client=createPrivilegedOpenCodeClient({getRuntime:()=>({generation:2,baseUrl:'http://127.0.0.1:1'}),fetchImpl:async url=>{
+        const parsed=new URL(url);
+        if(!parsed.pathname.endsWith('/message'))return Response.json({data:{id:sessionID,location:{directory:mode==='foreign'?'/foreign':directory}}});
+        pages++;return Response.json({data:mode==='empty'?[]:Array.from({length:200},(_,index)=>({id:`msg_idle_${pages}_${index}`,type:'idle',time:{created:1}})),cursor:{next:mode==='cycle'?'repeated':`older_${pages}`}});
+      }});
+      await expect(client.readCanonicalPlanSequence(sessionID,{directory})).rejects.toMatchObject({code:C.invalidResponse});expect(pages).toBe(2);
+      mode='bounded';pages=0;
+      await expect(client.readCanonicalPlanSequence(sessionID,{directory})).rejects.toMatchObject({code:C.invalidResponse});expect(pages).toBe(10);
+      mode='empty';pages=0;
+      await expect(client.readCanonicalPlanSequence(sessionID,{directory})).rejects.toMatchObject({code:C.invalidResponse});expect(pages).toBe(20);
+      mode='foreign';pages=0;
+      await expect(client.readCanonicalPlanSequence(sessionID,{directory})).rejects.toMatchObject({code:C.invalidResponse});expect(pages).toBe(0);
+    });
 
     it('privileged operations reach the host and fold into the projected session', async () => {
       const { client, privileged } = h[2];
@@ -446,6 +485,11 @@ describe('openCodeClient contract (native v2 fixture)', () => {
       await expect(privileged.readSessionMetadata(CHILD_ONE)).rejects.toMatchObject({ code: C.invalidInput });
       await expect(privileged.readUserMessage(CHILD_ONE, `msg_user_${CHILD_ONE}`, { directory })).resolves.toMatchObject({
         id: `msg_user_${CHILD_ONE}`, type: 'user', sessionID: CHILD_ONE, directory });
+      const nativeResponse = await fetch(`${h[2].fixture.origin}/api/session/${CHILD_ONE}/message/msg_user_${CHILD_ONE}`, { headers: h[2].fixture.authHeaders });
+      const nativeUser = (await nativeResponse.json()).data;
+      const privateUser = await privileged.readUserMessage(CHILD_ONE, `msg_user_${CHILD_ONE}`, { directory });
+      expect(nativeUser.text.length).toBeGreaterThan(0);expect(privateUser.text).toBe(nativeUser.text);
+      expect(createHash('sha256').update(privateUser.text).digest('hex')).toBe(createHash('sha256').update(nativeUser.text).digest('hex'));
       await expect(privileged.readUserMessage(CHILD_ONE, `msg_user_${CHILD_ONE}`, { directory: path.join(directory, 'other') }))
         .rejects.toMatchObject({ code: C.invalidResponse });
       await expect(privileged.readUserMessage(CHILD_ONE, '../foreign', { directory })).rejects.toMatchObject({ code: C.invalidInput });

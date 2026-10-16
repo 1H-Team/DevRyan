@@ -10,6 +10,7 @@ import { createV2MessageId } from '../../packages/web/server/lib/opencode/v2/adm
 import { createQaHostLaunchEnvironment } from '../qa/launch-environment.mjs';
 import { readManagedOpenCodeRegistry, reapOrphanedManagedOpenCodeProcesses } from '../../packages/web/server/lib/opencode/managed-process-registry.js';
 import { createFixtureJournal } from './fixture-journal.mjs';
+import { readCompiledPromptAgent } from './package-prompt-lanes.mjs';
 
 const exec = promisify(execFile);
 const alive = pid => { try { process.kill(pid, 0); return true; } catch (error) { if (error.code === 'ESRCH') return false; throw error; } };
@@ -19,8 +20,9 @@ export async function prepareCompiledParentDeathProbe({ root, provider, client, 
   const callID = 'native_compiled-parent-death', turn = toolTurn('shell', {
     command: "printf '%s' $$ > owner-death.pid; sleep 120; printf 'must not publish\\n' > owner-death-published.txt",
   }, 'compiled-parent-death');
+  const agent = await readCompiledPromptAgent({ client, sessionID, directory });
   await provider.setResponder(turn.responder);
-  await client.prompts.prompt(sessionID, { messageID: createV2MessageId(), variant: 'default',
+  await client.prompts.prompt(sessionID, { messageID: createV2MessageId(), agent, variant: 'default',
     model: { providerID: 'devryan-smoke', modelID: 'smoke-write' }, parts: [{ type: 'text', text: turn.marker }] },
   { directory, origin: 'native_acceptance', timeoutMs: 30000 });
   const lease = await waitFor(() => host.runtime.leaseForCall({ directory, sessionID, callID }), value => value?.state === 'ready',

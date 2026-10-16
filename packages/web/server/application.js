@@ -143,6 +143,7 @@ import {
   walkSkillMdFiles,
 } from './lib/opencode/shared.js';
 import { CURSOR_PROVIDER_ID, createCursorSdkRuntime } from '@openchamber/cursor-sdk-runtime';
+import { PLAN_MODE_SYSTEM_INSTRUCTIONS } from '@openchamber/orchestration-runtime';
 import { createScheduledTasksRuntime } from './lib/scheduled-tasks/runtime.js';
 import { createServerStartupRuntime } from './lib/opencode/server-startup-runtime.js';
 import { createTunnelWiringRuntime } from './lib/opencode/tunnel-wiring-runtime.js';
@@ -688,6 +689,8 @@ const capturedExecutions = capturedExecutionEnvironment.DEVRYAN_EXECUTION_BOUNDA
 
 const sessionActivityGate = createSessionActivityGate();
 const cursorSdkRuntime = createCursorSdkRuntime({
+  onPresentationProgress: input => sessionRuntime.updateSessionPresentation(input),
+  onPresentationOwnerRetired: ownerID => sessionRuntime.clearSessionPresentationOwner(ownerID),
   ...(nativeBundle?{ownedPrompt:input=>nativeRuntime.ownedCursorPrompt(input),resolveApiKey:input=>nativeRuntime.resolveCursorApiKey(input),
     ownedReadOnly:(input,action)=>nativeRuntime.withCursorReadOnly(input,action),nativeWarming:false}:{}),
   // A degraded host runs plain OpenCode, so Cursor runs unconfined as in
@@ -714,7 +717,11 @@ const cursorSdkRuntime = createCursorSdkRuntime({
   logger: console,
   resolveAgentPrompt: async ({ agent, directory }) => {
     const result = getAgentConfig(agent, directory);
-    return typeof result?.config?.prompt === 'string' ? result.config.prompt : '';
+    const config = result?.config;
+    const prompt = typeof config?.prompt === 'string' ? config.prompt : '';
+    return config?.mode === 'primary' && agent !== 'plan' && !config.hidden && !config.disable && !config.disabled
+      ? [prompt, 'For a turn explicitly requesting Plan mode, apply the following shared planning instructions:',
+        PLAN_MODE_SYSTEM_INSTRUCTIONS].filter(Boolean).join('\n\n') : prompt;
   },
   resolveAgentDefinitions: resolveCursorSdkAgentDefinitions,
 });
@@ -794,6 +801,7 @@ let managedOrchestrationRuntime = null;
 let nativeRuntime = null;
 let browserLeaseRuntime = null;
 let managedBrowserEnvironmentProvider = null;
+let nativeClaudeSecurityHome;
 let botEncryptionKeyProvider = null;
 let botEncryptionKeyInstaller = null;
 let botRuntimeStatusProvider = null;
@@ -1103,8 +1111,13 @@ notificationTemplateRuntime = createNotificationTemplateRuntime({
 
 const standardSessionTitleRuntime = createStandardSessionTitleRuntime({
   openCodeClient,
+  isStartupReadinessPending: () => openCodeLifecycleRuntime.isStartupReadinessPending(),
   generateHelperText: request => nativeRuntime.generateHelperText(request),
   renameGeneratedTitle: request => nativeRuntime.renameGeneratedTitle(request),
+  resolveHelperSelection: request => nativeRuntime.resolveHelperSelection(request),
+  verifyAcceptedTitleInput: request => nativeRuntime.verifyTitleAcceptedInput(request),
+  captureManagedTitleInput: request => nativeRuntime.captureManagedTitleInput(request),
+  captureAcceptedHumanTitleInput: request => nativeRuntime.captureAcceptedHumanTitleInput(request),
   cursorRuntime: cursorSdkRuntime,
   fetchImpl: fetch,
   buildOpenCodeUrl,
@@ -1128,6 +1141,7 @@ const standardSessionTitleRuntime = createStandardSessionTitleRuntime({
 
 const notificationTriggerRuntime = createNotificationTriggerRuntime({
   openCodeClient,
+  readCanonicalPlanIdentity: input => harnessTaskContext.readCanonicalPlanIdentity(input),
   readSettingsFromDisk,
   prepareNotificationLastMessage,
   summarizeText,
@@ -1564,12 +1578,16 @@ harnessRuntime.setPrimaryRecoveryRuntime(primaryRecoveryRuntime);
 const OPERATOR_STOP_SOURCES = new Set(['stop_button', 'double_escape', 'status_row', 'session_removal', 'unknown']);
 harnessRuntime.setControlObserver(({ action, sessionID, source, res }) => {
   if (action !== 'abort') return;
+  const clearAbortedPresentation = sessionRuntime.captureSessionPresentationClear(sessionID);
   turnTimingRuntime.recordAbortRequested({ sessionID });
   const operatorStop = OPERATOR_STOP_SOURCES.has(source)
     ? managedOrchestrationRuntime?.recordOperatorAbort?.({ sessionId: sessionID, requestedAt: Date.now() }) ?? null
     : null;
   res.once('finish', () => {
-    if (res.statusCode >= 200 && res.statusCode < 300) return;
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      clearAbortedPresentation();
+      return;
+    }
     turnTimingRuntime.withdrawAbortRequest({ sessionID });
     if (operatorStop) managedOrchestrationRuntime?.withdrawOperatorAbort?.(operatorStop);
   });
@@ -1589,6 +1607,10 @@ const harnessTaskContext = createHarnessTaskContextHost({
   openCodeClient,
   dataDirectory: OPENCHAMBER_DATA_DIR, buildOpenCodeUrl, getOpenCodeAuthHeaders,
   readPrimaryRecord: (sessionID) => primaryRecoveryRuntime.readRecord(sessionID),
+  nativeStreamContinuationReceipts: (sessionID, objectiveID) => primaryRecoveryRuntime.nativeStreamContinuationReceipts(sessionID, objectiveID),
+  readCanonicalPlanSequence: input => nativeRuntime.readCanonicalPlanSequence(input),
+  readOnlyInvocation: input => nativeRuntime.nativeOwner.readOnlyExecution(input),
+  verifyPlanSourceSettled: input => nativeRuntime.verifyPlanSourceSettled(input),
   getManagedRuntime: () => managedOrchestrationRuntime,
   sanitizeText: (text) => harnessRuntime.sanitizer.sanitizeContextText(text),
   recordDiagnostic: (entry) => harnessRuntime.record(entry),
@@ -1618,6 +1640,7 @@ const sessionChangeHost = createSessionChangeHost({
   buildOpenCodeUrl: (pathname) => buildOpenCodeUrl(pathname, ''),
   getOpenCodeAuthHeaders,
   reconcileExecutionReceipts: (input) => cursorSdkRuntime.reconcileSessionChanges(input),
+  executionOutcomes: (input) => sessionExecutionHost.runtime.executionOutcomes(input),
 });
 harnessRuntime.setSessionChangeHost(sessionChangeHost);
 const sessionExecutionHost = createSessionExecutionHost({
@@ -1648,10 +1671,12 @@ const sessionExecutionHost = createSessionExecutionHost({
     browserOperation: (invocation, event, context) => nativeRuntime.browserOperation(invocation, event, context),
     imageGeneration:(invocation,args,context)=>nativeRuntime.imageGeneration(invocation,args,context),
     cursor:{persist:input=>nativeRuntime.persistCursorRecord(input),withExecution:(input,action)=>nativeRuntime.withCursorExecution(input,action)},
-    workerBrowsers: false, recheckPermit: input => nativeRuntime.nativeOwner.recheckExecution(input),
+    workerBrowsers: false, readOnlyInvocation: input => nativeRuntime.nativeOwner.readOnlyExecution(input),
+    recheckPermit: input => nativeRuntime.nativeOwner.recheckExecution(input),
     stopSessions: input => nativeRuntime.stopSessions(input),
   } } : {}),
   recordReceipt: (input) => sessionChangeHost.recordReceipt(input),
+  recordReceipts: (inputs) => sessionChangeHost.recordReceipts(inputs),
   // Uncaptured change evidence lets Revert adopt conversations that ran while
   // the companion was unavailable (compare-and-swap, never overwriting).
   legacyChanges: { history: (input) => sessionChangeHost.legacyHistory(input), blob: (input) => sessionChangeHost.legacyBlob(input) },
@@ -1669,9 +1694,12 @@ if (selectedRuntimeBundle && (ENV_SKIP_OPENCODE_START || ENV_CONFIGURED_OPENCODE
 }
 if (nativeBundle) {
   nativeRuntime = createNativeRuntimeOwner({ privatePersistence, bundle: nativeBundle, openCodeClient, admission: openCodeAdmission,
+    onPresentationProgress: input => sessionRuntime.updateSessionPresentation(input),
+    onPresentationOwnerRetired: ownerID => sessionRuntime.clearSessionPresentationOwner(ownerID),
     getRequestPrincipal,
     clientDependencies: openCodeClientDeps,
     getManagedBrowserEnvironment: async () => managedBrowserEnvironmentProvider?.(),
+    getNativeClaudeSecurityHome: () => nativeClaudeSecurityHome,
     getBrowserLeaseRuntime: () => browserLeaseRuntime,
     getWebBaseURL: () => { const address=server?.address();if(!address||typeof address==='string')throw new Error('native_interview_web_owner_required');return `http://127.0.0.1:${address.port}`; },
     emitIntegrationEvent: event => broadcastGlobalUiEvent({type:'openchamber:integration',properties:{...event,eventID:crypto.randomUUID()}},{directory:event.directory}),
@@ -1702,7 +1730,7 @@ if (nativeBundle) {
     onProviderTiming: timing => nativeProviderTiming.response(timing),
     getManagedRuntime: () => managedOrchestrationRuntime,
     authorization: createNativeAuthorization({ locations: nativeBundle.locations, manifest: nativeBundle.artifacts.manifest,
-      getRequestPrincipal, getMultiUserRuntime: () => multiUserRuntime,
+      getRequestPrincipal, getMultiUserRuntime: () => multiUserRuntime, readHelperSettings: readSettingsFromDiskMigrated,
       captureLocalAuthorization: principal => tunnelAuthController.captureAuthorization(principal)
         ?? uiAuthController?.captureAuthorization?.(principal) }),
     onBound: child => {
@@ -1979,6 +2007,8 @@ async function main(options = {}) {
       });
     return deferredOpenCodeStartupPromise;
   };
+  if(options.nativeClaudeSecurityHome!==undefined&&(typeof options.nativeClaudeSecurityHome!=='string'||!path.isAbsolute(options.nativeClaudeSecurityHome)||path.resolve(options.nativeClaudeSecurityHome)!==options.nativeClaudeSecurityHome))throw new Error('native_claude_owned_store_invalid');
+  nativeClaudeSecurityHome=options.nativeClaudeSecurityHome;
   managedBrowserEnvironmentProvider = typeof options.getManagedBrowserEnvironment === 'function'
     ? options.getManagedBrowserEnvironment
     : null;
@@ -2529,6 +2559,8 @@ async function main(options = {}) {
     },
     onBarrierChange: (state) => harnessRuntime.record({ type: 'lifecycle', event: 'managed_workspace_barrier',
       sessionID: state.rootSessionId, at: state.at, payload: { state: state.state, count: state.taskCount } }),
+    onPersistenceObservation: (record) => harnessRuntime.record({ type: 'lifecycle', event: 'managed_persistence',
+      sessionID: record.rootSessionId, at: record.at, payload: record }),
     onFirstAssistantActivity: (activity) => {
       harnessRuntime.record({
         type: 'lifecycle', event: 'managed_task.first_assistant_activity',
@@ -2796,6 +2828,7 @@ async function main(options = {}) {
     cursorSdkRuntime:cursorPromptRuntime,
     standardSessionTitleRuntime,
     getOpenCodePort: () => openCodePort,
+    isStartupReadinessPending: () => openCodeLifecycleRuntime.isStartupReadinessPending(),
     getOpenCodeWorkingDirectory: () => openCodeWorkingDirectory,
     ensureNativeDirectory,
     setOpenCodeWorkingDirectory: (directory) => {
@@ -2818,6 +2851,7 @@ async function main(options = {}) {
     xaiToolCatalogRuntime,
     resolveZenModelNonBlocking,
     generateHelperText: request => nativeRuntime.generateHelperText(request),
+    resolveHelperSelection: request => nativeRuntime.resolveHelperSelection(request),
     cursorTextRuntime: cursorSdkRuntime,
     recordCommitTiming: (req, payload) => harnessRuntime.record(buildGitGenerationTimingRecord(req, payload)),
     resolveManagedProject: multiUserRuntime.resolveManagedProject?.bind(multiUserRuntime),

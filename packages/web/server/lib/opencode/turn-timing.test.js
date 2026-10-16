@@ -2,6 +2,7 @@ import express from 'express';
 import request from '../../test-supertest.js';
 import { describe, expect, it } from 'vitest';
 
+import { createDiagnosticSanitizer } from '../../../../harness-runtime/lib/sanitizer.js';
 import { createTurnTimingRuntime, registerTurnTimingRoutes } from './turn-timing.js';
 
 describe('turn timing runtime', () => {
@@ -93,8 +94,8 @@ describe('turn timing runtime', () => {
       send_started_to_first_text_delta: 10_000,
     }));
     expect(record.diagnostics.bridge).toEqual({ count: 3, durationMs: 1_300, maxMs: 900, reusedCount: 1, failedCount: 2,
-      methods: [{ method: 'native.admission.authorize', count: 2, durationMs: 1_200, maxMs: 900 },
-        { method: 'native.observation', count: 1, durationMs: 100, maxMs: 100 }] });
+      methods: [{ method: 'native.admission.authorize', count: 2, durationMs: 1_200, maxMs: 900, failedCount: 1 },
+        { method: 'native.observation', count: 1, durationMs: 100, maxMs: 100, failedCount: 1 }] });
     expect(record.diagnostics.ledger).toEqual({ count: 2, waitMs: 7_720, holdMs: 70, maxWaitMs: 7_700, maxHoldMs: 40, failedCount: 1,
       operations: [{ action: 'registerNativeSession', count: 1, waitMs: 7_700, holdMs: 40 },
         { action: 'finishDirect', count: 1, waitMs: 20, holdMs: 30 }] });
@@ -115,6 +116,42 @@ describe('turn timing runtime', () => {
     const journaled = JSON.stringify([marks, settled]);
     expect(journaled).not.toContain('private');
     expect(journaled).not.toContain('secret response text');
+  });
+
+  it('journals status-only per-method failures while retaining the 32-method coverage bound', () => {
+    const sanitizer = createDiagnosticSanitizer();
+    const journal = [];
+    const runtime = createTurnTimingRuntime({ onTurnSettled: entry => journal.push(sanitizer.sanitizeRecord({
+      type: 'timing', at: entry.at, sessionID: entry.sessionId, messageID: entry.userMessageId,
+      mark: 'turn.summary', payload: entry.payload,
+    })) });
+    runtime.recordClientMark({ sessionId: 'ses_bridge', messageId: 'msg_user', mark: 'send_started' });
+    const call = (method, statusCode) => runtime.recordBridgeCall({
+      sessionId: 'ses_bridge', method, durationMs: 1, statusCode,
+      input: 'private input', output: 'private output', error: 'private error',
+    });
+    call('native.success', 200);
+    call('native.http_failure', 503);
+    call('native.incomplete_close', null);
+    for (let index = 3; index < 32; index += 1) call(`native.method_${index}`, 200);
+    call('native.dropped', 503);
+    call('native.success', null); // A retained method still updates after the cap.
+    runtime.processOpenCodeEvent({ type: 'session.status', properties: { sessionID: 'ses_bridge', status: { type: 'idle' } } });
+
+    expect(journal).toHaveLength(1);
+    const bridge = journal[0].payload.bridge;
+    expect(bridge).toMatchObject({ count: 34, failedCount: 4 });
+    expect(bridge.methods).toHaveLength(32);
+    expect(bridge.methods.slice(0, 3)).toEqual([
+      { method: 'native.success', count: 2, durationMs: 2, maxMs: 1, failedCount: 1 },
+      { method: 'native.http_failure', count: 1, durationMs: 1, maxMs: 1, failedCount: 1 },
+      { method: 'native.incomplete_close', count: 1, durationMs: 1, maxMs: 1, failedCount: 1 },
+    ]);
+    expect(bridge.methods.slice(3).every(method => method.failedCount === 0)).toBe(true);
+    expect(bridge.methods.some(method => method.method === 'native.dropped')).toBe(false);
+    expect(bridge.count - bridge.methods.reduce((sum, method) => sum + method.count, 0)).toBe(1);
+    expect(bridge.failedCount - bridge.methods.reduce((sum, method) => sum + method.failedCount, 0)).toBe(1);
+    expect(JSON.stringify(journal)).not.toContain('private');
   });
 
   it('refuses late provider responses from an earlier turn', () => {
@@ -1292,4 +1329,19 @@ describe('turn timing runtime', () => {
       { ordinal: 1, tool: 'read', status: 'completed', final: true },
     ]);
   });
+});
+
+it('records headers separately from pulled HTTP body byte and gap observations without payload text',()=>{
+ const marks=[];let now=1;
+ const runtime=createTurnTimingRuntime({now:()=>now,onTurnMark:entry=>marks.push(entry)});
+ runtime.recordClientMark({sessionId:'ses_body',messageId:'msg_body',mark:'send_started'});
+ runtime.recordSessionMark({sessionId:'ses_body',mark:'provider_request_prepared',metadata:{requestID:'req_body'}});
+ runtime.recordSessionMark({sessionId:'ses_body',mark:'provider_request_sent',metadata:{requestID:'req_body'}});
+ now=2;expect(runtime.recordSessionMark({sessionId:'ses_body',mark:'provider_response_headers',metadata:{requestID:'req_body',transport:'http',statusCode:200}})).toBe(true);
+ now=4;expect(runtime.recordSessionMark({sessionId:'ses_body',mark:'provider_first_byte',metadata:{requestID:'req_body',transport:'http'}})).toBe(true);
+ now=7;expect(runtime.recordSessionMark({sessionId:'ses_body',mark:'provider_body_end',metadata:{requestID:'req_body',bytes:42,chunks:3,maxGapMs:4,text:'private',headers:'private'}})).toBe(true);
+ expect(marks.find(row=>row.mark==='provider_body_end').payload).toEqual({elapsedMs:6,requestID:'req_body',bytes:42,chunks:3,maxGapMs:4});
+ expect(runtime.recordClientMark({sessionId:'ses_body',messageId:'msg_body',mark:'provider_body_end'})).toBe(false);
+ expect(runtime.recordSessionMark({sessionId:'ses_body',mark:'provider_response_headers',metadata:{requestID:'foreign'}})).toBe(false);
+ expect(JSON.stringify(marks)).not.toContain('private');
 });

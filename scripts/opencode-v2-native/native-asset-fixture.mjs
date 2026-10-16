@@ -8,7 +8,7 @@ import {rewriteNativeAsset,rewriteNativeAgentDefaults} from '../native-runtime-a
 export async function createNativeAssetFixturePlugin(repository){
  const core=await fs.realpath(path.join(repository,'node_modules/@opencode/core'));
  const require=createRequire(path.join(core,'package.json'));
- const ptyBinding=path.join(core,'dist/chunks/location-services-dajrwvna.js');
+ const ptyBinding=path.join(core,'dist/chunks/instance-dajrwvna.js');
  const ptyBinary=path.join(path.dirname(require.resolve('@opencode-ai/pty-darwin-arm64/package.json')),'bin/opencode-pty');
  const photon=require.resolve('@silvia-odwyer/photon-node'),agentDefaults=await fs.realpath(path.join(path.dirname(core),'schema/dist/agent.js'));
  const sha256=createHash('sha256').update(await fs.readFile(ptyBinary)).digest('hex');
@@ -18,7 +18,7 @@ export async function createNativeAssetFixturePlugin(repository){
   [agentDefaults,rewriteNativeAgentDefaults(await fs.readFile(agentDefaults))],
  ]);
  return {name:'production-pinned-native-assets',setup(builder){
-  builder.onLoad({filter:/(location-services-dajrwvna|photon_rs|@opencode[\\/]schema[\\/]dist[\\/]agent)\.js$/},event=>{
+  builder.onLoad({filter:/(instance-dajrwvna|photon_rs|@opencode[\\/]schema[\\/]dist[\\/]agent)\.js$/},event=>{
    const contents=rewrites.get(path.resolve(event.path));
    if(contents===undefined)throw Error('Unexpected native asset resolver');
    return {contents,loader:'js'};

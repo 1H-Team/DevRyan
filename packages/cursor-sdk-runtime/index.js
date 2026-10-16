@@ -1,4 +1,6 @@
 import { serializeWorkerPayload, cursorReadOnlyOptions, cursorCatalogModels, assertWorkerPayloadBytes } from './worker-payload.js';
+import { cursorFinalText, cursorFinalTextTarget } from './final-result.js';
+import { cursorProviderFailure, cursorErrorDetails, cursorWorkerFailure } from './sdk-error.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
@@ -354,16 +356,6 @@ const mergeToolDataIntoState = (part) => {
   return changed ? { part: { ...part, state: nextState }, changed: true } : { part, changed: false };
 };
 
-const mergeTextDelta = (existing, incoming) => {
-  const previous = typeof existing === 'string' ? existing : '';
-  const next = typeof incoming === 'string' ? incoming : '';
-  if (!next) return previous;
-  if (!previous) return next;
-  if (next.startsWith(previous)) return next;
-  const needsSentenceBoundary = /[.!?)]$/.test(previous) && /^[A-Z0-9"`]/.test(next);
-  return `${previous}${needsSentenceBoundary ? ' ' : ''}${next}`;
-};
-
 export const computeIncrementalTextDelta = (previousText, nextText) => {
   const previous = typeof previousText === 'string' ? previousText : '';
   const next = typeof nextText === 'string' ? nextText : '';
@@ -374,92 +366,8 @@ export const computeIncrementalTextDelta = (previousText, nextText) => {
   return null;
 };
 
-const mergeFinalText = (existing, incoming) => {
-  const previous = typeof existing === 'string' ? existing : '';
-  const next = typeof incoming === 'string' ? incoming : '';
-  if (!next) return previous;
-  if (!previous) return next;
-  if (next === previous || previous.includes(next)) return previous;
-  if (next.startsWith(previous)) return next;
-  return mergeTextDelta(previous, next);
-};
-
-// Streamed deltas can lose fragments (the SDK delivers text via both the
-// delta callback and the stream, and cross-source dedupe occasionally drops a
-// legitimate repeat), leaving streamed text that is an in-order subset of the
-// final run result. Appending the final text on top of it would show the
-// message twice — once garbled, once clean — so that shape must be replaced.
-export const isLossyStreamedTextVariant = (streamedText, finalText) => {
-  const candidate = typeof streamedText === 'string' ? streamedText : '';
-  const full = typeof finalText === 'string' ? finalText : '';
-  if (!candidate || !full || candidate.length >= full.length) return false;
-  if (candidate.length < 16 || candidate.length * 2 < full.length) return false;
-  let index = 0;
-  for (const char of full) {
-    if (char === candidate[index]) index += 1;
-    if (index === candidate.length) return true;
-  }
-  return false;
-};
-
-const getSdkMessageTextFingerprint = (message) => {
-  if (!isPlainObject(message)) return '';
-  if (message.type === 'assistant') {
-    const content = Array.isArray(message.message?.content) ? message.message.content : [];
-    const text = content
-      .filter((block) => block?.type === 'text' && typeof block.text === 'string')
-      .map((block) => block.text)
-      .join('');
-    return text ? `assistant:${text}` : '';
-  }
-  if (message.type === 'thinking') {
-    const text = typeof message.text === 'string' ? message.text : '';
-    return text ? `thinking:${text}` : '';
-  }
-  return '';
-};
-
-const createCrossSourceMessageDedupe = (limit = 80) => {
-  const recent = [];
-  return (source, message) => {
-    const fingerprint = getSdkMessageTextFingerprint(message);
-    if (!fingerprint) return false;
-    const duplicate = recent.some((entry) => (
-      entry.fingerprint === fingerprint && entry.source !== source
-    ));
-    recent.push({ source, fingerprint });
-    if (recent.length > limit) {
-      recent.splice(0, recent.length - limit);
-    }
-    return duplicate;
-  };
-};
-
-const DANGLING_REASONING_LIST_MARKER_PATTERN = /(?:\n\s*)+(?:[-*]|\d+[.)])\s*$/;
-const SENTENCE_BOUNDARY_PATTERN = /[.!?][)"'\]]?(?=\s|$)/g;
 const TOOL_ONLY_COMPLETION_SUMMARY = 'Completed the requested work. See the tool activity above for details.';
 const POST_TASK_EMPTY_FINISH_DIAGNOSTIC = 'Cursor ended the parent run immediately after a subagent task completed, with no parent follow-up. DevRyan preserved the subagent output above.';
-
-const trimDanglingReasoningFragment = (value) => {
-  if (typeof value !== 'string' || value.trim().length === 0) {
-    return value;
-  }
-
-  const withoutDanglingMarker = value.replace(DANGLING_REASONING_LIST_MARKER_PATTERN, '').trimEnd();
-  if (withoutDanglingMarker === value) {
-    return value;
-  }
-
-  let lastBoundaryEnd = -1;
-  for (const match of withoutDanglingMarker.matchAll(SENTENCE_BOUNDARY_PATTERN)) {
-    lastBoundaryEnd = match.index + match[0].length;
-  }
-  if (lastBoundaryEnd > 0 && lastBoundaryEnd < withoutDanglingMarker.length) {
-    return withoutDanglingMarker.slice(0, lastBoundaryEnd).trim();
-  }
-
-  return withoutDanglingMarker;
-};
 
 const withTimeout = async (promise, timeoutMs) => {
   if (!promise) return null;
@@ -478,10 +386,16 @@ const withTimeout = async (promise, timeoutMs) => {
   }
 };
 
+const CURSOR_STREAM_PARTIAL_CODES = ['CURSOR_STREAM_DRAIN_TIMEOUT', 'CURSOR_STREAM_QUEUE_OVERFLOW', 'CURSOR_STREAM_DRAIN_FAILED', 'CURSOR_STREAM_FINAL_TIMEOUT', 'CURSOR_STREAM_STALE_GENERATION', 'CURSOR_STREAM_FINAL_ASSOCIATION_INVALID'];
+const cursorStreamError = (code) => Object.assign(new Error(`Cursor stream incomplete (${code}).`), { code });
+const cursorWorkerError = (message, code, details) => cursorWorkerFailure(message, { ...details, ...(code ? { code } : {}) });
+
 const createAsyncQueue = () => {
   const values = [];
   const waiters = [];
   let closed = false;
+  let bytes = 0;
+  let failure = null;
 
   return {
     push(value) {
@@ -491,7 +405,14 @@ const createAsyncQueue = () => {
         waiter({ done: false, value });
         return;
       }
-      values.push(value);
+      const size = Buffer.byteLength(JSON.stringify(value));
+      if (values.length >= 4096 || bytes + size > 8 * 1024 * 1024) {
+        failure = cursorStreamError('CURSOR_STREAM_QUEUE_OVERFLOW');
+        closed = true;
+        return;
+      }
+      bytes += size;
+      values.push({ value, size });
     },
     close() {
       if (closed) return;
@@ -503,8 +424,11 @@ const createAsyncQueue = () => {
     },
     next() {
       if (values.length > 0) {
-        return Promise.resolve({ done: false, value: values.shift() });
+        const entry = values.shift();
+        bytes -= entry.size;
+        return Promise.resolve({ done: false, value: entry.value });
       }
+      if (failure) return Promise.reject(failure);
       if (closed) {
         return Promise.resolve({ done: true, value: undefined });
       }
@@ -1717,13 +1641,30 @@ export function createCursorSdkRuntime(options = {}) {
   const resolveAgentDefinitions = typeof options.resolveAgentDefinitions === 'function' ? options.resolveAgentDefinitions : null;
   const streamIdleTimeoutMs = Math.max(0, Number(options.streamIdleTimeoutMs) || 45000);
   const finalResultWaitTimeoutMs = Math.max(0, Number(options.finalResultWaitTimeoutMs) || 1000);
-  const finalResultStreamDrainGraceMs = Math.max(0, Number(options.finalResultStreamDrainGraceMs) || 10);
   const modelDiscoveryTtlMs = Math.max(0, Number(options.modelDiscoveryTtlMs) || DEFAULT_MODEL_DISCOVERY_TTL_MS);
   const modelDiscoveryTimeoutMs = Math.max(0, Number(options.modelDiscoveryTimeoutMs) || DEFAULT_MODEL_DISCOVERY_TIMEOUT_MS);
   const recordTimingMark = typeof options.recordTimingMark === 'function' ? options.recordTimingMark : null;
   const MAX_CACHED_AGENTS = 32;
   const MAX_PERSISTENT_WORKERS = 3;
   const activeRuns = new Map();
+  const presentationOwnerID = createId('cursor_presentation');
+  const presentationRuns = new Map();
+  let presentationSequence = 0, presentationRetired = false;
+  const observePresentation = (token, phase) => {
+    try {
+      void Promise.resolve(options.onPresentationProgress?.({ provider: 'cursor', ownerID: presentationOwnerID,
+        sessionID: token.sessionID, generation: token.generation, sequence: ++presentationSequence,
+        objectiveID: token.userMessageID, assistantID: token.assistantMessageID,
+        stepID: null, attemptID: null, phase, progress: token.progress })).catch(() => {});
+    } catch { /* Presentation cannot change execution or persistence. */ }
+  };
+  const clearPresentation = (token) => {
+    if (!token) return;
+    if (presentationRuns.get(token.sessionID) === token) presentationRuns.delete(token.sessionID);
+    if (token.cancelled) return;
+    token.cancelled = true;
+    if (token.presented) observePresentation(token, 'cleared');
+  };
   const sessionStatuses = new Map();
   const agentsBySession = new Map();
   let releaseSessionFromPersistentWorkers = () => false;
@@ -1834,6 +1775,7 @@ export function createCursorSdkRuntime(options = {}) {
   const deleteSessionState = async (sessionID) => {
     const id = trimString(sessionID);
     if (!id || deletedSessionIds.has(id)) return false;
+    clearPresentation(presentationRuns.get(id));
     deletedSessionIds.add(id);
     await questionRuntime.deleteSession(id);
     agentsBySession.delete(id);
@@ -1889,6 +1831,7 @@ export function createCursorSdkRuntime(options = {}) {
   // a slow or hung SDK cancel can never wedge the session.
   const releaseActiveRun = (sessionID, { source = 'user_abort', emitIdle = false } = {}) => {
     const active = activeRuns.get(sessionID);
+    if (source !== 'superseded') clearPresentation(presentationRuns.get(sessionID));
     if (!active?.run) return false;
     active.markAbortRequested?.(source);
     questionRuntime.revokeSessionScope(sessionID, {
@@ -2282,7 +2225,7 @@ export function createCursorSdkRuntime(options = {}) {
       model,
       onDelta: (event) => {
         const sdkMessage = normalizeInteractionUpdateToSdkMessage(event);
-        if (sdkMessage) {
+        if (sdkMessage && ['usage', 'task_activity', 'session_change'].includes(sdkMessage.type)) {
           deltaQueue.push(sdkMessage.type === 'usage'
             ? { type: 'usage', tokens: sdkMessage.tokens }
             : { type: 'message', message: sdkMessage });
@@ -2295,22 +2238,23 @@ export function createCursorSdkRuntime(options = {}) {
     deltaQueue.push({ type: 'usage-observation', observation: cursorRunUsageObservation(run) });
     const waitPromise = typeof run.wait === 'function'
       ? run.wait()
-        .then((result) => ({
+        .then(async (result) => ({
           ok: true,
           result,
           usageObservation: cursorRunUsageObservation(run, result),
           finalStatus: finalStatusFromSdkStatus(sdkStatusFromRunStatus(result?.status || run.status)),
-          finalText: trimString(result?.result),
+          ...await cursorFinalText(result, run),
         }))
         .catch((error) => ({
           ok: false,
-          error,
+          error: cursorWorkerFailure(error instanceof Error ? error.message : 'Cursor SDK run failed.', { ...cursorErrorDetails(error), ...(CURSOR_STREAM_PARTIAL_CODES.includes(error?.code) ? {} : { source: 'provider' }) }),
           usageObservation: cursorRunUsageObservation(run),
           finalStatus: 'error',
           finalText: '',
         }))
       : null;
     return {
+      finalResultAvailable: Boolean(waitPromise),
       getUsageObservation: () => cursorRunUsageObservation(run),
       async cancel() {
         if (typeof run.cancel === 'function') {
@@ -2323,96 +2267,36 @@ export function createCursorSdkRuntime(options = {}) {
       },
       async *stream() {
         const iterator = run.stream()[Symbol.asyncIterator]();
-        const shouldSkipDuplicateMessage = createCrossSourceMessageDedupe();
-        const waitEventPromise = waitPromise
-          ? waitPromise.then((result) => ({ source: 'wait', result }))
-          : null;
         let streamDone = false;
         let deltaDone = false;
-        let nextStreamPromise = iterator.next().then((next) => ({ source: 'stream', next }));
-        let nextDeltaPromise = deltaQueue.next().then((next) => ({ source: 'delta', next }));
-
-        async function* yieldSdkMessage(source, sdkMessage) {
-          if (shouldSkipDuplicateMessage(source, sdkMessage)) return;
-          yield { type: 'message', message: sdkMessage };
-        }
-
-        async function* yieldPromptEvent(source, promptEvent) {
-          if (promptEvent?.type !== 'message') {
-            yield promptEvent;
-            return;
-          }
-          yield* yieldSdkMessage(source, promptEvent.message);
-        }
-
-        async function* yieldWaitResult(result) {
-          if (!result) return;
-          if (result.usageObservation) {
-            yield { type: 'usage-observation', observation: result.usageObservation };
-          }
-          if (result.ok === false) {
-            throw result.error || new Error('Cursor SDK run failed.');
-          }
-          if (trimString(result.finalText)) {
-            yield* yieldSdkMessage('wait', {
-              type: 'assistant',
-              message: {
-                role: 'assistant',
-                content: [{ type: 'text', text: result.finalText }],
-              },
-            });
-          }
-          if (result.finalStatus) {
-            yield* yieldSdkMessage('wait', {
-              type: 'status',
-              status: sdkStatusFromRunStatus(result.result?.status || run.status),
-            });
-          }
-        }
-
-        for (;;) {
-          const pending = [];
-          if (!streamDone) pending.push(nextStreamPromise);
-          if (!deltaDone) pending.push(nextDeltaPromise);
-          if (waitEventPromise) pending.push(waitEventPromise);
-          if (pending.length === 0) {
-            break;
-          }
-          const event = await Promise.race(pending);
-
-          if (event.source === 'wait') {
-            nextStreamPromise.catch(() => {});
-            nextDeltaPromise.catch(() => {});
-            deltaQueue.close();
-            if (typeof iterator.return === 'function') {
-              iterator.return().catch(() => {});
+        let nextStreamPromise = iterator.next().then(next => ({ source: 'stream', next }));
+        let nextDeltaPromise = deltaQueue.next().then(next => ({ source: 'delta', next }));
+        try {
+          while (!streamDone || !deltaDone) {
+            const event = await Promise.race([
+              ...(!streamDone ? [nextStreamPromise] : []),
+              ...(!deltaDone ? [nextDeltaPromise] : []),
+            ]);
+            if (event.source === 'delta') {
+              deltaDone = event.next.done;
+              if (!deltaDone) {
+                nextDeltaPromise = deltaQueue.next().then(next => ({ source: 'delta', next }));
+                yield event.next.value;
+              }
+            } else {
+              streamDone = event.next.done;
+              if (streamDone) deltaQueue.close();
+              else {
+                nextStreamPromise = iterator.next().then(next => ({ source: 'stream', next }));
+                yield { type: 'message', message: event.next.value };
+              }
             }
-            yield* yieldWaitResult(event.result);
-            return;
           }
-
-          if (event.source === 'delta') {
-            if (event.next?.done) {
-              deltaDone = true;
-              continue;
-            }
-            nextDeltaPromise = deltaQueue.next().then((next) => ({ source: 'delta', next }));
-            yield* yieldPromptEvent('delta', event.next?.value);
-            continue;
-          }
-
-          if (event.next?.done) {
-            streamDone = true;
-            deltaQueue.close();
-            continue;
-          }
-          nextStreamPromise = iterator.next().then((next) => ({ source: 'stream', next }));
-          yield* yieldSdkMessage('stream', event.next?.value);
-        }
-
-        deltaQueue.close();
-        if (waitPromise) {
-          yield* yieldWaitResult(await withTimeout(waitPromise, finalResultWaitTimeoutMs));
+        } finally {
+          deltaQueue.close();
+          nextStreamPromise.catch(() => {});
+          nextDeltaPromise.catch(() => {});
+          if (!streamDone && typeof iterator.return === 'function') void iterator.return().catch(() => {});
         }
       },
     };
@@ -2672,11 +2556,13 @@ export function createCursorSdkRuntime(options = {}) {
             try {
               payload = JSON.parse(line);
             } catch {
-              continue;
+              throw cursorStreamError('CURSOR_STREAM_DRAIN_FAILED');
             }
             recordFirstWorkerEvent();
 
-            if (payload?.type === 'agent' && trimString(payload.agentID)) {
+            if (payload?.type === 'timing') {
+              recordTimingMark?.({ sessionId: sessionID, messageId: trimString(messageID), mark: trimString(payload.mark), directory: trimString(directory) || undefined, metadata: { ...markMetadata, ...(typeof payload.metadata?.cacheHit === 'boolean' ? { cacheHit: payload.metadata.cacheHit } : {}) } });
+            } else if (payload?.type === 'agent' && trimString(payload.agentID)) {
               eventQueue.push({ type: 'agent', agentID: trimString(payload.agentID) });
             } else if (payload?.type === 'usage') {
               eventQueue.push({ type: 'usage', tokens: payload.tokens });
@@ -2694,14 +2580,13 @@ export function createCursorSdkRuntime(options = {}) {
               settleFinalResult({
                 ok: true,
                 finalStatus: finalStatusFromSdkStatus(sdkStatusFromRunStatus(payload.status)),
-                finalText: '',
               });
-              break;
+              continue;
             } else if (payload?.type === 'error') {
-              workerError = trimString(payload.error) || 'Cursor SDK worker failed.';
+              workerError = cursorWorkerError(trimString(payload.error) || 'Cursor SDK worker failed.', payload.code, payload.errorDetails);
               settleFinalResult({
                 ok: false,
-                error: new Error(workerError),
+                error: workerError,
                 finalStatus: 'error',
                 finalText: '',
               });
@@ -2718,11 +2603,12 @@ export function createCursorSdkRuntime(options = {}) {
           const exit = await exitPromise;
           if (owned) await owned.result;
           if (workerError) {
-            throw new Error(workerError);
+            throw workerError;
           }
           if (exit.error) {
             throw exit.error;
           }
+          if (exit.signal) throw cursorStreamError('CURSOR_STREAM_DRAIN_FAILED');
           if (exit.code && exit.code !== 0) {
             const detail = trimString(stderr);
             throw new Error(detail ? `Cursor SDK worker exited with code ${exit.code}: ${detail}` : `Cursor SDK worker exited with code ${exit.code}.`);
@@ -2855,7 +2741,6 @@ export function createCursorSdkRuntime(options = {}) {
         setRequestFinalResult(request, {
           ok: true,
           finalStatus: 'success',
-          finalText: '',
         });
       }
       request.eventQueue.close();
@@ -2969,7 +2854,7 @@ export function createCursorSdkRuntime(options = {}) {
         if (result?.ok === false && !(result.error instanceof Error)) {
           setRequestFinalResult(request, {
             ...result,
-            error: new Error(trimString(result.error) || 'Cursor SDK persistent worker failed.'),
+            error: cursorWorkerError(trimString(result.error) || 'Cursor SDK persistent worker failed.', result.code, result.errorDetails),
           });
           return;
         }
@@ -2981,13 +2866,12 @@ export function createCursorSdkRuntime(options = {}) {
         closeRequest(requestID, {
           ok: true,
           finalStatus: finalStatusFromSdkStatus(sdkStatusFromRunStatus(payload.status)),
-          finalText: '',
         });
         return;
       }
 
       if (payload.type === 'error') {
-        failRequest(requestID, new Error(trimString(payload.error) || 'Cursor SDK worker failed.'));
+        failRequest(requestID, cursorWorkerError(trimString(payload.error) || 'Cursor SDK worker failed.', payload.code, payload.errorDetails));
       }
     };
 
@@ -3001,7 +2885,7 @@ export function createCursorSdkRuntime(options = {}) {
             try {
               payload = JSON.parse(line);
             } catch {
-              continue;
+              throw cursorStreamError('CURSOR_STREAM_DRAIN_FAILED');
             }
             if (!lastWorkerTiming?.firstEventAt) {
               const firstEventAt = now();
@@ -3471,7 +3355,6 @@ export function createCursorSdkRuntime(options = {}) {
     : useNodeWorkerForPrompts
       ? (usePersistentWorkerForPrompts ? createPersistentWorkerPromptRun : createNodeWorkerPromptRun)
       : createDirectPromptRun;
-  const shouldRaceFinalResultBeforeStream = Boolean(options.executionAdapter) || typeof options.createPromptRun === 'function' || useNodeWorkerForPrompts;
 
   const recordCursorTimingMark = ({
     sessionID,
@@ -3751,6 +3634,12 @@ export function createCursorSdkRuntime(options = {}) {
       };
     }
 
+    clearPresentation(presentationRuns.get(sessionID));
+    const presentation = { sessionID, generation: createId('cursor_run'), progress: 0,
+      presented: false, cancelled: presentationRetired, userMessageID: '', assistantMessageID: '' };
+    if (!presentationRetired) presentationRuns.set(sessionID, presentation);
+    let lifetimeTransferred = false;
+    try {
     const modelID = normalizeModelId(body?.model?.modelID);
     const variant = trimString(body?.variant);
     const modelSelection = await resolveCursorSdkModelSelection({ modelID, variant, directory, signal });
@@ -3778,6 +3667,8 @@ export function createCursorSdkRuntime(options = {}) {
 
     const userMessageID = trimString(body?.messageID) || createId('msg');
     const assistantMessageID = createAssistantMessageId(userMessageID);
+    presentation.userMessageID = userMessageID;
+    presentation.assistantMessageID = assistantMessageID;
     let hasNativeChanges = false, changeCaptureFailed = false;
     const captureNativeChange = async (event) => {
       if (options.executionAdapter) return;
@@ -3946,6 +3837,10 @@ export function createCursorSdkRuntime(options = {}) {
     const emittedMessageInfo = new Map();
     const emittedParts = new Map();
     const rawAssistantTextByPartId = new Map();
+    const sdkAssistantPartIDs = [];
+    let providerFailureDetails = null;
+    let finalAssistantResultPresent = false;
+    let streamPartialCode = null;
     const planTextPartIdsByToolPartId = new Map();
     let emittedOpenCodeTextTiming = false;
 
@@ -4224,99 +4119,35 @@ export function createCursorSdkRuntime(options = {}) {
       await syncWorkspacePatchPart(completed);
     };
 
-    const applyFinalAssistantText = (text) => {
-      const finalText = trimString(text);
-      if (!finalText) return false;
-
-      const textParts = assistantRecord.parts.filter((part) => part?.type === 'text');
-      const getComparableText = (part) => (
-        rawAssistantTextByPartId.get(part?.id) || (typeof part?.text === 'string' ? part.text : '')
-      );
-      const combinedText = textParts
-        .map((part) => getComparableText(part))
-        .join('');
-      const combinedTextWithBreaks = textParts
-        .map((part) => getComparableText(part))
-        .filter(Boolean)
-        .join('\n');
-      if (
-        combinedText === finalText
-        || combinedTextWithBreaks === finalText
-        || combinedText.includes(finalText)
-        || combinedTextWithBreaks.includes(finalText)
-      ) {
-        return false;
-      }
-
-      const textPart = textParts[textParts.length - 1] || null;
-      const textPartIndex = textPart
-        ? assistantRecord.parts.findIndex((part) => part?.id === textPart.id)
-        : -1;
-      const hasContentAfterTextPart = textPartIndex >= 0 && textPartIndex < assistantRecord.parts.length - 1;
-      if (hasContentAfterTextPart) {
-        const finalContainsExistingText =
-          (Boolean(combinedText) && finalText.startsWith(combinedText))
-          || (Boolean(combinedTextWithBreaks) && finalText.startsWith(combinedTextWithBreaks));
-        if (finalContainsExistingText) {
-          const textPartIds = new Set(textParts.map((part) => part.id).filter(Boolean));
-          assistantRecord.parts = assistantRecord.parts.filter((part) => {
-            if (!textPartIds.has(part?.id)) return true;
-            rawAssistantTextByPartId.delete(part.id);
-            return false;
-          });
-        }
-
-        const finalPartId = nextPartID('text', 'final_summary');
-        rawAssistantTextByPartId.set(finalPartId, finalText);
-        assistantRecord.parts = [
-          ...assistantRecord.parts,
-          {
-            id: finalPartId,
-            sessionID,
-            messageID: assistantMessageID,
-            type: 'text',
-            text: finalText,
-            time: { start: now() },
-          },
-        ];
-        normalizeAssistantPlanParts();
-        return true;
-      }
-
-      const existingText = getComparableText(textPart);
-      const enrichedFinalText = combinedText && finalText.startsWith(combinedText)
-        ? `${existingText}${finalText.slice(combinedText.length)}`
-        : combinedTextWithBreaks && finalText.startsWith(combinedTextWithBreaks)
-          ? `${existingText}${finalText.slice(combinedTextWithBreaks.length)}`
-          : finalText;
-      const nextText = isLossyStreamedTextVariant(existingText, enrichedFinalText)
-        ? enrichedFinalText
-        : mergeFinalText(existingText, enrichedFinalText);
-      if (nextText === existingText) return false;
-
-      const nextPartId = textPart?.id || nextPartID('text');
-      rawAssistantTextByPartId.set(nextPartId, nextText);
-      const partChanged = upsertAssistantPart({
-        ...(textPart || {
-          id: nextPartId,
-          sessionID,
-          messageID: assistantMessageID,
-          type: 'text',
-          time: { start: now() },
-        }),
-        text: nextText,
+    const applyLocalFailureText = text => upsertAssistantPart({ id: nextPartID('text', 'local_error'),
+      sessionID, messageID: assistantMessageID, type: 'text', text, time: { start: now() } });
+    const applyFinalAssistantText = (text, witness) => {
+      if (typeof text !== 'string') return false;
+      const index = cursorFinalTextTarget(witness, sdkAssistantPartIDs.length);
+      const partIDAtIndex = sdkAssistantPartIDs[index];
+      const part = partIDAtIndex ? assistantRecord.parts.find((entry) => entry.id === partIDAtIndex) : null;
+      if (partIDAtIndex && !part) throw cursorStreamError('CURSOR_STREAM_FINAL_ASSOCIATION_INVALID');
+      finalAssistantResultPresent = true;
+      try { void Promise.resolve(options.recordDiagnostic?.({ type: 'lifecycle', event: 'cursor_final_association', sessionID, directory,
+        payload: { assistantMessageID, ...(part ? { partID: part.id } : {}), assistantOrdinal: witness.assistantOrdinal,
+          streamedParts: sdkAssistantPartIDs.length, previousLength: part?.text?.length ?? 0, finalLength: text.length,
+          equal: part?.text === text, state: part ? 'matched' : 'final_only' } })).catch(()=>{}); } catch { /* Observer only. */ }
+      const partID = part?.id || nextPartID('text');
+      rawAssistantTextByPartId.set(partID, text);
+      return upsertAssistantPart({
+        ...(part || { id: partID, sessionID, messageID: assistantMessageID, type: 'text', time: { start: now() } }),
+        text,
       });
-      const normalizedChanged = normalizeAssistantPlanParts();
-      if (!partChanged && !normalizedChanged) {
-        return false;
-      }
-      return true;
     };
 
     const waitForFinalRunResult = async (timeoutMs = finalResultWaitTimeoutMs) => {
-      if (!run || typeof run.waitFinalResult !== 'function') return null;
-      const result = await run.waitFinalResult({ timeoutMs });
-      if (!result) return null;
+      if (!run || run.finalResultAvailable === false || typeof run.waitFinalResult !== 'function') return null;
+      let result;
+      try { result = await run.waitFinalResult({ timeoutMs }); } catch (error) {
+        if (CURSOR_STREAM_PARTIAL_CODES.includes(error?.code)) throw error;
+        throw cursorWorkerFailure(error instanceof Error ? error.message : 'Cursor SDK run failed.', {...cursorErrorDetails(error),source:'provider'});
+      }
+      if (!result) throw cursorStreamError('CURSOR_STREAM_FINAL_TIMEOUT');
       observeRunUsage(result.usageObservation);
       if (result.ok === false) {
         throw result.error || new Error('Cursor SDK run failed.');
@@ -4327,7 +4158,9 @@ export function createCursorSdkRuntime(options = {}) {
     const applyFinalRunResult = (result) => {
       if (!result) return null;
       observeRunUsage(result.usageObservation);
-      applyFinalAssistantText(result.finalText);
+      if (!cancellationSource && result.finalStatus !== 'cancelled' && result.finalStatus !== 'error' && activeRuns.get(sessionID)?.run === run) {
+        applyFinalAssistantText(result.finalText, result.finalTextWitness);
+      }
       if (result.publication?.outcome === 'partial') partialPublication = result.publication;
       return result.finalStatus || null;
     };
@@ -4349,6 +4182,7 @@ export function createCursorSdkRuntime(options = {}) {
       observeRunUsage(run?.getUsageObservation?.());
       // A final-result/stream-close race cannot undo an accepted Stop request.
       const finish = normalizeFinish(cancellationSource ? 'cancelled' : finalStatus);
+      if (finish !== 'stop') clearPresentation(presentation);
       if (finish === 'cancelled' || cancellationSource) {
         lastCancellation = {
           sessionID,
@@ -4369,7 +4203,7 @@ export function createCursorSdkRuntime(options = {}) {
       const hasTaskToolActivity = assistantRecord.parts.some((part) => (
         part?.type === 'tool' && isCursorTaskTool(part.tool)
       ));
-      if (finish === 'stop' && !hasAssistantText && hasToolActivity) {
+      if (finish === 'stop' && !hasAssistantText && hasToolActivity && !finalAssistantResultPresent) {
         const summaryText = hasTaskToolActivity
           ? POST_TASK_EMPTY_FINISH_DIAGNOSTIC
           : TOOL_ONLY_COMPLETION_SUMMARY;
@@ -4429,12 +4263,9 @@ export function createCursorSdkRuntime(options = {}) {
         }
 
         if (part?.type === 'reasoning') {
-          const text = typeof part.text === 'string' ? part.text : '';
-          const trimmedText = trimDanglingReasoningFragment(text);
-          if (trimmedText !== text || typeof part?.time?.end !== 'number') {
+          if (typeof part?.time?.end !== 'number') {
             return {
               ...part,
-              text: trimmedText,
               time: {
                 ...(part.time || {}),
                 end: completed,
@@ -4471,6 +4302,7 @@ export function createCursorSdkRuntime(options = {}) {
       assistantRecord.info = {
         ...assistantRecord.info,
         finish,
+        ...(streamPartialCode ? { error: { name: 'CursorStreamPartialError', message: `Cursor stream incomplete (${streamPartialCode}).` } } : finish === 'error' ? { error: { name: providerFailureDetails?.name || 'CursorProviderError', ...(providerFailureDetails?.code ? { code: providerFailureDetails.code } : {}), message: failureReason || 'Cursor SDK run failed.' } } : {}),
         ...(lastUsageTokens ? { tokens: lastUsageTokens } : {}),
         ...(lastUsageObservation ? { cursorUsage: lastUsageObservation } : {}),
         time: {
@@ -4486,7 +4318,12 @@ export function createCursorSdkRuntime(options = {}) {
           messageInfoAfterParts: true,
           propagatePersistError: true,
         });
+        if (presentation.presented && !presentation.cancelled && presentationRuns.get(sessionID) === presentation) {
+          presentation.progress++;
+          observePresentation(presentation, 'finalizing');
+        }
       } catch (error) {
+        clearPresentation(presentation);
         const persistenceMessage = error instanceof Error
           ? error.message
           : 'Cursor SDK could not persist the completed response.';
@@ -4511,14 +4348,16 @@ export function createCursorSdkRuntime(options = {}) {
         if (options.executionAdapter) throw error;
         return false;
       }
+      clearPresentation(presentation);
       if (finish === 'error') {
         emit({
           type: 'session.error',
           properties: {
             sessionID,
             error: {
-              name: 'CursorProviderError',
-              message: failureReason || 'Cursor SDK run failed.',
+              name: streamPartialCode ? 'CursorStreamPartialError' : providerFailureDetails?.name || 'CursorProviderError',
+              ...(providerFailureDetails?.code ? { code: providerFailureDetails.code } : {}),
+              message: streamPartialCode ? `Cursor stream incomplete (${streamPartialCode}).` : failureReason || 'Cursor SDK run failed.',
             },
           },
         }, directory);
@@ -4532,7 +4371,6 @@ export function createCursorSdkRuntime(options = {}) {
     const ownedPrompt = await options.ownedPrompt?.({ sessionID, directory, userMessageID,
       assistantMessageID, agent: requestedAgent || 'build', modelID,
       ...(variant ? { variant } : {}), modelSelection });
-    let lifetimeTransferred = false;
     const dispatch = async () => {
     try {
     if (typeof options.resolveApiKey === 'function') {
@@ -4579,7 +4417,7 @@ export function createCursorSdkRuntime(options = {}) {
     }
 
     if (unsupportedMessage) {
-      applyFinalAssistantText(unsupportedMessage);
+      applyLocalFailureText(unsupportedMessage);
       await finalizeAssistantRun('error', now(), unsupportedMessage);
       return {
         handled: true,
@@ -4609,7 +4447,8 @@ export function createCursorSdkRuntime(options = {}) {
     } catch (error) {
       const text = error instanceof Error ? error.message : 'Cursor SDK run failed.';
       const cancelled = signal?.aborted && error?.code === 'execution_cancelled';
-      if (!cancelled) { applyFinalAssistantText(`Cursor SDK error: ${text}`); lastError = text; }
+      if (cursorProviderFailure(error)) providerFailureDetails = cursorErrorDetails(error);
+      if (!cancelled) { applyLocalFailureText(`Cursor SDK error: ${text}`); lastError = text; }
       questionRuntime.revokeSessionScope(sessionID, {
         identity: trimString(questionMcp?.identity),
         messageID: userMessageID,
@@ -4629,6 +4468,7 @@ export function createCursorSdkRuntime(options = {}) {
       assistantMessageID,
       directory,
       markAbortRequested: (source = 'user_abort') => {
+        clearPresentation(presentation);
         cancellationSource = source;
         resolveAbortRequested?.();
       },
@@ -4637,91 +4477,34 @@ export function createCursorSdkRuntime(options = {}) {
     const pump = (async () => {
       let finalStatus = 'success';
       let runFailureReason = '';
-      const finalResultPromise = shouldRaceFinalResultBeforeStream && typeof run.waitFinalResult === 'function'
-        ? waitForFinalRunResult(0)
-          .then((result) => ({ finalResult: result }))
-          .catch((error) => ({ finalError: error }))
+      let terminalObserved = false;
+      const terminalObservation = run.finalResultAvailable !== false && typeof run.waitFinalResult === 'function'
+        ? waitForFinalRunResult(0).then(() => { terminalObserved = true; return { terminal: true }; }, () => { terminalObserved = true; return { terminal: true }; })
         : null;
-      let finalResultConsumed = false;
-
-      const shouldFinishOnIdle = () => {
-        const assistantText = assistantRecord.parts
-          .filter((part) => part?.type === 'text' && typeof part.text === 'string')
-          .map((part) => part.text)
-          .join('\n')
-          .trim();
-        const hasRunningTool = assistantRecord.parts.some((part) => (
-          part?.type === 'tool' && (part?.state?.status === 'running' || part?.state?.status === 'pending')
-        ));
-        const hasCompletedTool = assistantRecord.parts.some((part) => (
-          part?.type === 'tool' && part?.state?.status && part.state.status !== 'running' && part.state.status !== 'pending'
-        ));
-        return !hasRunningTool && (assistantText.length > 0 || hasCompletedTool);
-      };
-
       const readNextStreamEvent = async (iterator) => {
-        const nextPromise = iterator.next();
-        const finalPromise = finalResultPromise && !finalResultConsumed ? finalResultPromise : null;
-        const preferReadyStreamEvent = async (result) => {
-          if (!('finalResult' in result) && !('finalError' in result)) {
-            return result;
+        const nextPromise = iterator.next().then(next => ({ next }));
+        let timer;
+        try {
+          const idleEligible = !terminalObserved && !assistantRecord.parts.some(part => part?.type === 'tool' && ['running', 'pending'].includes(part.state?.status))
+            && assistantRecord.parts.some(part => part?.type === 'text' || part?.type === 'tool');
+          if (!terminalObserved && !idleEligible) {
+            const event = await Promise.race([
+              nextPromise, abortRacePromise, ...(terminalObservation ? [terminalObservation] : []),
+            ]);
+            if (!event.terminal) return event;
           }
-
-          const next = await withTimeout(nextPromise, finalResultStreamDrainGraceMs);
-          if (next && !next.done) {
-            return { next, idle: false };
-          }
-
-          nextPromise.catch(() => {});
-          return result;
-        };
-        if (!streamIdleTimeoutMs || !shouldFinishOnIdle()) {
-          const racers = [nextPromise.then((next) => ({ next, idle: false })), abortRacePromise];
-          if (finalPromise) {
-            racers.push(finalPromise);
-          }
-          const result = await Promise.race(racers);
-          if (result.aborted) {
-            nextPromise.catch(() => {});
-            return result;
-          }
-          if ('finalResult' in result && !result.finalResult) {
-            finalResultConsumed = true;
-            return { next: await nextPromise, idle: false };
-          }
-          return preferReadyStreamEvent(result);
-        }
-
-        let timeout = null;
-        const idlePromise = new Promise((resolve) => {
-          timeout = setTimeout(() => resolve({ next: null, idle: true }), streamIdleTimeoutMs);
-          timeout.unref?.();
-        });
-        const pending = [
-          nextPromise.then((next) => ({ next, idle: false })),
-          idlePromise,
-          abortRacePromise,
-        ];
-        if (finalPromise) {
-          pending.push(finalPromise);
-        }
-        const result = await Promise.race(pending);
-        if (timeout) clearTimeout(timeout);
-        if (result.aborted) {
-          nextPromise.catch(() => {});
-          return result;
-        }
-        if ('finalResult' in result && !result.finalResult) {
-          finalResultConsumed = true;
-          return { next: await nextPromise, idle: false };
-        }
-        if ('finalResult' in result || 'finalError' in result) {
-          return preferReadyStreamEvent(result);
-        }
-        if (result.idle) {
+          return await Promise.race([
+            nextPromise,
+            abortRacePromise,
+            new Promise((_, reject) => {
+              timer = setTimeout(() => reject(cursorStreamError('CURSOR_STREAM_DRAIN_TIMEOUT')), streamIdleTimeoutMs);
+              timer.unref?.();
+            }),
+          ]);
+        } finally {
+          clearTimeout(timer);
           nextPromise.catch(() => {});
         }
-        return result;
       };
 
       try {
@@ -4767,7 +4550,7 @@ export function createCursorSdkRuntime(options = {}) {
         };
 
         const applyCursorTaskSummary = async (text) => {
-          const summary = trimString(text);
+          const summary = typeof text === 'string' ? text : '';
           if (!summary || !lastCursorTaskToolPartID) return false;
           const existing = assistantRecord.parts.find((part) => part.id === lastCursorTaskToolPartID);
           if (!existing || existing.type !== 'tool') return false;
@@ -4860,30 +4643,8 @@ export function createCursorSdkRuntime(options = {}) {
             finalStatus = 'cancelled';
             break;
           }
-          if ('finalError' in streamRead) {
-            finalResultConsumed = true;
-            throw streamRead.finalError || new Error('Cursor SDK run failed.');
-          }
-          if ('finalResult' in streamRead) {
-            finalResultConsumed = true;
-            if (!streamRead.finalResult) {
-              continue;
-            }
-            finalStatus = applyFinalRunResult(streamRead.finalResult) || 'success';
-            if (typeof iterator.return === 'function') {
-              iterator.return().catch(() => {});
-            }
-            break;
-          }
-          const { next, idle } = streamRead;
-          if (idle) {
-            const result = await waitForFinalRunResult(finalResultWaitTimeoutMs);
-            finalStatus = applyFinalRunResult(result) || 'success';
-            if (typeof iterator.return === 'function') {
-              iterator.return().catch(() => {});
-            }
-            break;
-          }
+          if (activeRuns.get(sessionID)?.run !== run && !cancellationSource) throw cursorStreamError('CURSOR_STREAM_STALE_GENERATION');
+          const { next } = streamRead;
           if (next?.done) break;
           const event = next?.value;
           if (event?.type === 'usage-observation') {
@@ -4912,10 +4673,11 @@ export function createCursorSdkRuntime(options = {}) {
             if (text) {
               if (previousContentKind !== 'assistant' || !activeTextPartID) {
                 activeTextPartID = nextPartID('text');
+                sdkAssistantPartIDs.push(activeTextPartID);
               }
               const existing = assistantRecord.parts.find((part) => part.id === activeTextPartID);
               const existingText = rawAssistantTextByPartId.get(activeTextPartID) || existing?.text || '';
-              const nextText = mergeTextDelta(existingText, text);
+              const nextText = existingText + text;
               rawAssistantTextByPartId.set(activeTextPartID, nextText);
               const partChanged = upsertAssistantPart({
                 ...(existing || {
@@ -4935,7 +4697,7 @@ export function createCursorSdkRuntime(options = {}) {
             }
           } else if (message.type === 'thinking') {
             const text = typeof message.text === 'string' ? message.text : '';
-            if (text) {
+            if (text || typeof message.thinking_duration_ms !== 'number') {
               if (previousContentKind !== 'thinking' || !activeReasoningPartID) {
                 activeReasoningPartID = nextPartID('reasoning');
               }
@@ -4958,13 +4720,16 @@ export function createCursorSdkRuntime(options = {}) {
                   providerID: CURSOR_PROVIDER_ID,
                   cursorSdk: true,
                 },
-                text: mergeTextDelta(existingText, text),
+                text: existingText + text,
               };
               const partChanged = upsertAssistantPart(reasoningPart);
               previousContentKind = 'thinking';
               if (partChanged) {
                 await emitRecordDelta(assistantRecord);
               }
+            }
+            if (!text && typeof message.thinking_duration_ms === 'number') {
+              await finalizeActiveReasoningPart();
             }
           } else if (message.type === 'thinking_completed') {
             await finalizeActiveReasoningPart();
@@ -4974,9 +4739,6 @@ export function createCursorSdkRuntime(options = {}) {
             await applyCursorTaskActivity(message);
           } else if (message.type === 'tool_call') {
             if (message.name === 'task') await captureNativeChange(cursorSessionChangeObservation(message));
-            if (previousContentKind === 'thinking') {
-              await finalizeActiveReasoningPart();
-            }
             const partID = getToolPartID(message.call_id);
             const existing = assistantRecord.parts.find((part) => part.id === partID);
             const existingState = isPlainObject(existing?.state) ? existing.state : {};
@@ -4988,6 +4750,7 @@ export function createCursorSdkRuntime(options = {}) {
             const existingStatus = trimString(existingState.status);
             const existingIsTerminal = existingStatus && existingStatus !== 'running' && existingStatus !== 'pending';
             const incomingIsTerminal = incomingStatus !== 'running' && incomingStatus !== 'pending';
+            if (incomingIsTerminal && previousContentKind === 'thinking') await finalizeActiveReasoningPart();
             const status = existingIsTerminal && !incomingIsTerminal ? existingStatus : incomingStatus;
             const existingTime = isPlainObject(existingState.time) ? existingState.time : {};
             const startedAt = existingTime.start || now();
@@ -5056,7 +4819,7 @@ export function createCursorSdkRuntime(options = {}) {
             const planTextChanged = isTerminalToolStatus
               ? upsertAssistantPlanTextFromToolPart(toolPart)
               : false;
-            previousContentKind = 'tool';
+            if (incomingIsTerminal) previousContentKind = 'tool';
             if (partChanged || planTextChanged) {
               cursorTaskActivityDirty = false;
               lastCursorTaskActivityEmitAt = now();
@@ -5074,41 +4837,61 @@ export function createCursorSdkRuntime(options = {}) {
               if (terminalStatus !== 'success') {
                 runFailureReason = trimString(message.message) || runFailureReason;
               }
-              const result = await waitForFinalRunResult(finalResultWaitTimeoutMs);
-              applyFinalRunResult(result);
+              terminalObserved = true;
               finalStatus = terminalStatus;
-              break;
             }
           }
         }
         await flushCursorTaskActivity();
-        const result = await waitForFinalRunResult(finalResultWaitTimeoutMs);
-        finalStatus = applyFinalRunResult(result) || finalStatus;
+        if (!cancellationSource || options.executionAdapter) {
+          const result = await waitForFinalRunResult(finalResultWaitTimeoutMs);
+          finalStatus = applyFinalRunResult(result) || finalStatus;
+          if (result?.finalStatus === 'success' && !cancellationSource && !signal?.aborted
+            && !presentation.cancelled && !presentationRetired && !deletedSessionIds.has(sessionID)
+            && presentationRuns.get(sessionID) === presentation && activeRuns.get(sessionID)?.run === run) {
+            presentation.presented = true;
+            observePresentation(presentation, 'finalizing');
+          }
+        }
       } catch (error) {
         finalStatus = 'error';
+        if (!cancellationSource) {
+          if (CURSOR_STREAM_PARTIAL_CODES.includes(error?.code)) {
+            streamPartialCode = error.code;
+            if (error.code === 'CURSOR_STREAM_FINAL_ASSOCIATION_INVALID') try {
+              void Promise.resolve(options.recordDiagnostic?.({type:'lifecycle',event:'cursor_final_association',sessionID,directory,
+                payload:{assistantMessageID,streamedParts:sdkAssistantPartIDs.length,state:'unavailable',reason:error.reason || 'mismatch',code:error.code}})).catch(()=>{});
+            } catch { /* Observer only. */ }
+          }
+          else if (cursorProviderFailure(error)) providerFailureDetails = cursorErrorDetails(error);
+          else streamPartialCode = 'CURSOR_STREAM_DRAIN_FAILED';
+        }
+        void Promise.resolve(run?.cancel?.()).catch(() => {});
         const text = error instanceof Error ? error.message : 'Cursor SDK run failed.';
         runFailureReason = text;
         const hasAssistantText = assistantRecord.parts.some((part) => (
           part?.type === 'text' && trimString(part.text)
         ));
         if (!hasAssistantText) {
-          applyFinalAssistantText(`Cursor SDK error: ${text}`);
+          upsertAssistantPart({ id: nextPartID('text', 'stream_error'), sessionID, messageID: assistantMessageID, type: 'text', text: `Cursor SDK error: ${text}`, time: { start: now() } });
         }
         lastError = text;
       } finally {
-        if (hasNativeChanges) await captureNativeChange({ phase: 'run-settled', captureFailed: changeCaptureFailed });
-        // releaseActiveRun already drops this entry on abort, and a fast resend may
-        // have installed a new run for the same session — only clear it when it
-        // still points at this run so we never evict a freshly-started one.
-        if (activeRuns.get(sessionID)?.run === run) {
-          activeRuns.delete(sessionID);
-        }
-        questionRuntime.revokeSessionScope(sessionID, {
-          identity: trimString(questionMcp?.identity),
-          messageID: userMessageID,
-          reason: 'the Cursor run ended before the question was answered',
-        });
-        await finalizeAssistantRun(finalStatus, now(), runFailureReason);
+        try {
+          if (hasNativeChanges) await captureNativeChange({ phase: 'run-settled', captureFailed: changeCaptureFailed });
+          // releaseActiveRun already drops this entry on abort, and a fast resend may
+          // have installed a new run for the same session — only clear it when it
+          // still points at this run so we never evict a freshly-started one.
+          if (activeRuns.get(sessionID)?.run === run) {
+            activeRuns.delete(sessionID);
+          }
+          questionRuntime.revokeSessionScope(sessionID, {
+            identity: trimString(questionMcp?.identity),
+            messageID: userMessageID,
+            reason: 'the Cursor run ended before the question was answered',
+          });
+          await finalizeAssistantRun(finalStatus, now(), runFailureReason);
+        } finally { clearPresentation(presentation); }
       }
     })();
 
@@ -5148,7 +4931,10 @@ export function createCursorSdkRuntime(options = {}) {
       }
     }
     };
-    return ownedPrompt ? ownedPrompt.run(dispatch) : dispatch();
+    return await (ownedPrompt ? ownedPrompt.run(dispatch) : dispatch());
+    } finally {
+      if (!lifetimeTransferred) clearPresentation(presentation);
+    }
   };
 
   const runPrompt = async (input) => {
@@ -5222,7 +5008,9 @@ export function createCursorSdkRuntime(options = {}) {
           force: true,
           reason: 'verify_connection',
           directory: scope.directory,
-          timeoutMs: modelDiscoveryTimeoutMs,
+          // Explicit native verification owns metadata-worker settlement; use
+          // its existing catalog budget rather than the quick public read cap.
+          ...(typeof options.resolveApiKey === 'function' ? {} : { timeoutMs: modelDiscoveryTimeoutMs }),
         });
         if (options.nativeWarming !== false && useNodeWorkerForPrompts && usePersistentWorkerForPrompts) {
           persistentWorkerRuntime.prewarm({ apiKey }).catch((error) => {
@@ -5315,7 +5103,7 @@ export function createCursorSdkRuntime(options = {}) {
       if (input.titleHelper && !sessionID) throw new Error('cursor_helper_title_session_required');
       const modelSelection = await resolveCursorSdkModelSelection({ modelID: input.modelID, variant: input.variant, directory });
       signal.throwIfAborted();
-      return withReadOnly({ kind: input.titleHelper ? 'title' : 'text', directory, ...(sessionID ? { sessionID } : {}), ...(input.titleHelper ? { modelID: input.modelID, ...(input.variant ? { variant: input.variant } : {}) } : {}) }, () => generateReadOnlyWorker({
+      return withReadOnly({ kind: input.titleHelper ? 'title' : 'text', directory, ...(sessionID ? { sessionID } : {}), ...((input.titleHelper || input.helperAgent) ? { modelID: input.modelID, ...(input.variant ? { variant: input.variant } : {}), ...(input.helperAgent ? { helperAgent: input.helperAgent, selectionMode: input.selectionMode, selectionRevision: input.selectionRevision } : {}) } : {}) }, () => generateReadOnlyWorker({
         text: input.text, directory, sessionID, mode: 'text', keyKind: input.titleHelper ? 'title' : 'text', modelSelection, signal,
         onUsage: observation => options.onTitleUsageObservation?.({ sessionID: sessionID || null, directory, observation }),
       }));
@@ -5350,6 +5138,12 @@ export function createCursorSdkRuntime(options = {}) {
       return deleteSessionState(sessionID);
     },
     async dispose() {
+      if (!presentationRetired) {
+        presentationRetired = true;
+        for (const token of presentationRuns.values()) clearPresentation(token);
+        try { void Promise.resolve(options.onPresentationOwnerRetired?.(presentationOwnerID)).catch(() => {}); }
+        catch { /* Presentation retirement cannot veto cleanup. */ }
+      }
       if (options.executionAdapter) await Promise.all([...new Set([...startingRuns.keys(), ...settlingRuns.keys(), ...activeRuns.keys()])].map(abortAndWait));
       await questionRuntime.dispose();
       await persistentWorkerRuntime.dispose();

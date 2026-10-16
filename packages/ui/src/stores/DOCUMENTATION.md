@@ -29,6 +29,31 @@ These are the most performance-sensitive.
 
 These stores act like centralized keyed caches. UI should consume narrow slices from them instead of re-fetching the same data in multiple places.
 
+`useSessionTreeChangesStore.ts` owns subscribed, read-only session-tree summaries,
+keyed by runtime, principal, directory and root session. A typed HTTP 503 uses
+the existing pending-summary timer lifecycle and transient classifier for at most
+five retries after the first GET: 500, 1,000, 2,000, 4,000 and 8,000 milliseconds
+(15.5 seconds of waiting, plus request time). This covers native restart while
+the web/SSE connection remains alive without relying on a reconnect event.
+The previous rows and revision remain visible with loading set; restoration stays
+disabled until an authoritative summary succeeds. Retry exhaustion, authentication,
+permission, conflict and other failures retain the rows and expose the existing
+load-failed/Retry state. Only a typed 503 summary failure enters this budget;
+Undo/Redo and other mutation requests are never retried by it. Unsubscribe, scope
+cleanup and account change cancel its timers/reads, and delayed callbacks recheck
+the captured runtime/principal key before starting another read. Successful
+pending-reconciliation responses keep their existing separate backoff behavior.
+Queued hints yield to a scheduled recovery timer and drain at a settled failure,
+so they cannot bypass its delay or reopen an exhausted budget. A later explicit
+refresh can start a new cycle; successful settled reads still perform their
+existing coalesced trailing refresh when a new change arrived during the read.
+Ordinary hints arriving between retry reads keep the existing transient timer
+intact, so they neither shorten its backoff nor postpone its deadline. Explicit
+immediate refresh remains the existing manual request path.
+The [restart recovery proof](../../../../docs/audits/2026-10-15/session-changes-restart-recovery.json)
+records the observed restart window, exact bounds and focused regressions; actual
+rebuilt runtime qualification remains separate.
+
 ### UI state stores
 
 Examples:
@@ -679,3 +704,31 @@ the selected credential with an opaque `connectionId`. Token-sharing or retired
 OAuth results identify their own method and expose no usage token. The existing
 source/connection comparison clears old readings on a switch; a missing provider
 window stays absent. No second usage enrollment is owned by the UI.
+
+`useConfigStore.settingsHelperModelSelection` holds the shared typed helper tuple
+and revision, independently of primary selection, notification Zen, and legacy
+Git preferences. Settings → Agents → Session Defaults uses the existing
+`ModelSelector` above Cleanup. Save persists a new revision; personal reset
+removes only this override. Low-frequency settings load and account reset restore
+the host or personal tuple through the shared parser. Helpers use Default
+reasoning and never modify composer selection.
+The revision uses the existing UUID-or-opaque-fallback convention when
+`crypto.randomUUID` is unavailable. Revision creation stays inside the save
+try/finally so a failure releases the disabled selector and uses the existing toast.
+Helper saves use the existing immediate acknowledged settings operation, holding
+the selector disabled through HTTP/runtime settlement. A null response or a
+different model/revision fails before the local selection changes; the general
+debounced settings writer remains for its existing callers.
+
+Plan file records retain the saved SHA-256 version, canonical content and
+sanitized server source identity. Plan approval requires a successful current
+settled source and the exact saved version. A validation attempt is tied to
+the tail message and authoritative status observation; a transient settlement
+refusal is retried on a new observation, without polling. Late saves/refusals
+from an older attempt cannot replace a newer record. Plan View acknowledges
+actual returned content/version after read or edit.
+
+Session-tree change reads keep their captured runtime/account key through
+coalescing and recovery. Scope switches and selection release clear loading only
+for the retired key; a late response cannot clear a reopened request or trigger
+a trailing read against the new runtime. Other entries retain their references.

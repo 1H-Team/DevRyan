@@ -1,0 +1,51 @@
+{
+  "qualification": "retained isolated negative plus corrected primary/read/write/recovery cases passed in refreshed full run; complete package remains failed",
+  "artifactBuildID": "32177f047ef55f1122990d896f568d822efaa9f5a5a035e9b78bfba7dc28c0e4",
+  "priorPassedCases": 16,
+  "failedCall": {
+    "sessionID": "ses_ec6e5cd7bffeURnSEmPKVtPbfk",
+    "assistantMessageID": "msg_1391a71650013MeM4y40R5mLS4",
+    "callID": "native_package-read",
+    "tool": "read",
+    "canonicalExecuted": false,
+    "canonicalStatus": "error",
+    "refusalCode": "native_plan_policy_unavailable"
+  },
+  "cause": "The ordinary fixture omitted its explicit agent, triggering the existing implicit-primary admission opt-out. No primary objective record existed for the canonical tool policy reader.",
+  "correction": "Each location's root is created with the verified configured primary. Each invocation preserves its exact canonical agent, and enrollment/receipts remain bound to the owned location. Production policy and implicit admission opt-out remain unchanged.",
+  "actualFreshCompiledRun": {
+    "packageRun": "package-JYniTH",
+    "buildID": "97e1f5c31f54cb25a70cf1f76600a78d7a4d8567f6edd0bd2371a67eea3431f9",
+    "host": "Node",
+    "passedCases": 44,
+    "primaryReadWriteAndSecondLocationIsolation": "passed",
+    "retainedShellNotification": {
+      "status": "passed",
+      "continuationRequests": 1,
+      "executionRequested": 1,
+      "terminationVerified": 1,
+      "published": 1,
+      "supervisedReplacements": 2,
+      "receiptRetained": true,
+      "fileUnchanged": true,
+      "gateAndObserversRestored": true
+    },
+    "modelTitlePersistOnceAndRestartRestore": "passed",
+    "sourceCohortValid": true,
+    "cleanupFailures": 0,
+    "candidateJournalGapVerifyExitCode": 0,
+    "candidateJournalGapRecords": 0,
+    "fullGateFailure": "Selected native lifecycle timed out"
+  },
+  "passed": {
+    "owningPromptAndNodeHostTests": 6,
+    "journalGapVerifyExitCode": 0,
+    "journalGapRecords": 0,
+    "sourceCohortValid": true,
+    "cleanupFailures": 0
+  },
+  "remaining": [
+    "Complete compiled-package retry after selected native lifecycle diagnosis",
+    "Full approved Plan to Implement application and visual gate"
+  ]
+}

@@ -821,6 +821,7 @@ export const dict = {
   'gitView.commit.selectFilesHint': 'Stage changes to enable commit.',
   'gitView.commit.title': 'Commit',
   'gitView.toast.generateCommitMessageFallback': 'Created a local commit draft',
+  'gitView.toast.activeModelFallback': 'Used the active chat model for this draft',
   'gitView.generatedCommitPlan.blockedTitle': 'Commit plan blocked',
   'gitView.generatedCommitPlan.confirm': 'Create Commits',
   'gitView.generatedCommitPlan.description': 'Review the generated commit groups before any changes are staged, committed, or pushed.',

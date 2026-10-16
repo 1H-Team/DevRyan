@@ -153,7 +153,7 @@ export function createSessionChangeHost(options) {
     let limit = 100;
     const visited = new Set();
     const importRecords = async (records) => {
-      const receipts = [], messages = [], terminalCalls = [];
+      const receipts = [], messages = [], terminalCalls = [], failedCalls = [];
       for (const record of records) {
         if (!record.info?.id || typeof record.info.time?.created !== 'number') throw error('invalid_session_history', 503);
         visited.add(record.info.id);
@@ -174,10 +174,25 @@ export function createSessionChangeHost(options) {
           if (receipt) receipts.push({ ...receipt, sessionID: id, callID, messageID: record.info.id,
             userMessageID: record.info.parentID, createdAt: part.state?.time?.start ?? record.info.time.created,
             directory, source: record.info.providerID === 'cursor-acp' ? 'cursor' : 'opencode' });
+          else if (part.state?.status === 'error') failedCalls.push({ messageID: record.info.id, callID });
           if (['completed', 'error'].includes(part.state?.status)) terminalCalls.push({ directory, sessionID: id, messageID: record.info.id, callID });
         }
         messages.push({ id: record.info.id, createdAt: record.info.time.created, calls });
         if (record.info.role === 'user' && (!state.first || record.info.time.created < state.first.createdAt)) state.first = { id: record.info.id, createdAt: record.info.time.created };
+      }
+      if (failedCalls.length && options.executionOutcomes) {
+        const outcomes = await options.executionOutcomes({ directory, sessionID: id, calls: failedCalls });
+        if (!Array.isArray(outcomes) || outcomes.length !== failedCalls.length
+          || outcomes.some((outcome, index) => outcome?.sessionID !== id || outcome.messageID !== failedCalls[index].messageID
+            || outcome.callID !== failedCalls[index].callID || !['never_started', 'finished', 'uncertain'].includes(outcome.outcome))) {
+          throw error('capture_identity_mismatch', 503);
+        }
+        // Only the constructor's durable no-start attestation can repair a
+        // failed call without file metadata; error text never proves no edits.
+        await runtime.recordReceipts(outcomes.filter(outcome => outcome.outcome === 'never_started').map(outcome => ({
+          directory, sessionID: id, messageID: outcome.messageID, callID: outcome.callID,
+          files: [], complete: true, source: 'confined-execution',
+        })));
       }
       await runtime.importHistorical(receipts);
       for (const call of terminalCalls) await runtime.settleHistoricalCall(call);

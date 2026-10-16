@@ -192,7 +192,7 @@ const SETTINGS_FIELDS_BY_PAGE = Object.freeze({
   ],
   sessions: [
     'autoDeleteEnabled', 'autoDeleteAfterDays', 'sessionRetentionAction', 'defaultModel',
-    'defaultVariant', 'defaultAgent', 'defaultPlanMode', 'autoCreateWorktree', 'zenModel',
+    'defaultVariant', 'defaultAgent', 'defaultPlanMode', 'helperModelSelection', 'autoCreateWorktree', 'zenModel',
     'messageStreamTransport', 'messageLimit', 'favoriteModels', 'favoriteModelsUpdatedAt',
     'hiddenModels', 'hiddenModelsUpdatedAt', 'agentModelSelections',
   ],

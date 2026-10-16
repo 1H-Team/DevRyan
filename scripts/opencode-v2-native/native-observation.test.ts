@@ -10,7 +10,7 @@ import {Agent} from '@opencode/core/agent';
 import {Model} from '@opencode/schema/model';
 import {parseNativeObservation,parseNativeJournalObservation,type NativeObservation} from '../../packages/shared-runtime/lib/native-observation.js';
 import {createNativeObservationOwner} from '../../packages/web/server/lib/opencode/runtime-host/native-observation-owner.js';
-import {createNativeObservation,projectNativeWireReasoningOptions,NATIVE_OBSERVATION_WIRE_BYTES} from '../../packages/web/server/lib/opencode/runtime-host/native-observation.js';
+import {createNativeObservation,projectNativeWireReasoningOptions,projectNativeWireObservation,NATIVE_OBSERVATION_WIRE_BYTES} from '../../packages/web/server/lib/opencode/runtime-host/native-observation.js';
 import {HostRefusal} from '../../packages/web/server/lib/opencode/runtime-host/host-refusal.js';
 import {OperationPermitRef} from '../../packages/web/server/lib/opencode/runtime-host/native-admission-contract.js';
 import {registerNativeCompactionObservation,observeNativeCompactionBudget} from '../../packages/web/server/lib/opencode/runtime-host/native-compaction-observation.js';
@@ -40,6 +40,23 @@ test('provider refusals preserve only finite kind, hook and local code through t
  await owner.handleRpc('native.observation',{controllerInstanceID:common.controllerInstanceID,permit:{},observation});
  expect(kinds).toEqual(['primary']);expect(records).toEqual([{type:'lifecycle',event:'native_observation',sessionID:common.sessionID,directory:common.directory,payload:observation}]);
 });
+
+test('private recovery observation requires its exact session grant and live controller through the final recheck',async()=>{
+ let grant=true,controller='controller_1',revokeDuringAttempt=false;const records:unknown[]=[];
+ const owner=createNativeObservationOwner({instanceID:common.controllerInstanceID,snapshot:{digest:common.configurationDigest,locations:[{directory:common.directory}]},
+  controller:()=>({instanceID:controller}),isReady:sessionID=>grant&&sessionID===common.sessionID,
+  admissionOwner:{withProviderAttempt:async<A>(_input:unknown,action:(recheck:()=>Promise<void>)=>Promise<A>)=>action(async()=>{if(revokeDuringAttempt)grant=false;})},
+  openCodeClient:{sessions:{message:async()=>undefined}},recordDiagnostic:entry=>records.push(entry)});
+ const observation:Extract<NativeObservation,{stage:'provider-refusal'}>={...common,stage:'provider-refusal',kind:'primary',hook:'http.request',code:'native_openai_route_unreviewed'};
+ const input={controllerInstanceID:common.controllerInstanceID,permit:{},observation};
+ await expect(owner.handleRpc('native.observation',{...input,observation:{...observation,sessionID:'ses_foreign'}})).rejects.toThrow('native_observation_controller_expired');
+ grant=false;await expect(owner.handleRpc('native.observation',input)).rejects.toThrow('native_observation_controller_expired');
+ grant=true;controller='stale';await expect(owner.handleRpc('native.observation',input)).rejects.toThrow('native_observation_controller_expired');
+ expect(records).toHaveLength(0);
+ controller='controller_1';revokeDuringAttempt=true;await expect(owner.handleRpc('native.observation',input)).rejects.toThrow('native_observation_controller_expired');
+ expect(records).toHaveLength(1);expect(records[0]).toMatchObject({type:'gap'});
+ grant=true;revokeDuringAttempt=false;await owner.handleRpc('native.observation',input);expect(records[1]).toMatchObject({payload:observation});
+});
 test('outer provider hooks record known local refusals before wrapping and preserve original defects when diagnostics fail',async()=>{
  const records:NativeObservation[]=[];let failObserver=false;
  let fault:Error=new HostRefusal('native_openai_route_unreviewed',503,'provider.openai');
@@ -64,7 +81,7 @@ test('outer provider hooks record known local refusals before wrapping and prese
  }
 });
 test('only the exact native source gets one observation insertion; removal reproduces original bytes',async()=>{
- const original=await fs.readFile(path.resolve(import.meta.dirname,'../../node_modules/@opencode/core/dist/chunks/location-services-qhaz1dgr.js'),'utf8');
+ const original=await fs.readFile(path.resolve(import.meta.dirname,'../../node_modules/@opencode/core/dist/chunks/instance-7khw7vys.js'),'utf8');
  const helper=path.resolve(import.meta.dirname,'../../packages/web/server/lib/opencode/runtime-host/native-compaction-observation.ts');const result=rewriteNativeCompactionObservation(original,helper);
  expect(result.originalSha256).toBe(NATIVE_COMPACTION_SOURCE_SHA256);
  expect(result.transformedSha256).toBe(createHash('sha256').update(result.contents).digest('hex'));
@@ -104,3 +121,36 @@ test('wire evidence is finite named JSON controls, bounded by actual bytes, with
  expect(projectNativeWireReasoningOptions('malformed')).toBeNull();let consumed=false;
  expect(projectNativeWireReasoningOptions({async *[Symbol.asyncIterator](){consumed=true;yield '{}';}})).toBeNull();expect(consumed).toBe(false);
 });
+test('optional helper tool and captured selection diagnostics are finite, backward compatible and wire-count actual materialized tools',()=>{
+ const prepared:Extract<NativeObservation,{stage:'model-prepared'}>={...common,stage:'model-prepared',requestID:'req_helper',kind:'generate',execution:{agent:'devryan-commit',providerID:'opencode',modelID:'deepseek-v4.1-flash',variant:null},options:{},hookOptions:{},modelLimits:{context:1000,input:null,output:100}};
+ expect(parseNativeObservation(prepared)).toEqual(prepared);
+ const enriched:typeof prepared={...prepared,toolCount:0,helperSelectionMode:'configured',helperSelectionRevision:'default'};
+ expect(parseNativeObservation(enriched)).toEqual(enriched);
+ expect(parseNativeJournalObservation({...enriched,directory:'<WORKTREE_123456abcdef>'})).toMatchObject({toolCount:0,helperSelectionRevision:'default'});
+ for(const extra of [{toolCount:-1},{toolCount:1.5},{toolCount:65537},{helperSelectionMode:'unknown',helperSelectionRevision:'default'},
+   {helperSelectionMode:'configured'}, {helperSelectionRevision:'default'}, {helperSelectionMode:'configured',helperSelectionRevision:'private whitespace'}, {wireToolCount:0}])expect(()=>parseNativeObservation({...prepared,...extra})).toThrow('native_observation_invalid');
+ expect(projectNativeWireObservation('{"input":"private","tools":[],"reasoning":{"effort":"high"}}')).toEqual({options:{reasoning:{effort:'high'}},toolCount:0});
+ expect(projectNativeWireObservation('{"input":"private","tools":[{"private":"tool body"}]}')).toEqual({options:{},toolCount:1});
+ expect(projectNativeWireObservation('{}')).toEqual({options:{},toolCount:0});
+ expect(projectNativeWireObservation('{"tools":null}')).toEqual({options:{},toolCount:null});
+ expect(projectNativeWireObservation('{"tools":{}}')).toEqual({options:{},toolCount:null});
+ expect(projectNativeWireObservation('{"type":"response.create","response":{"tools":[{"private":"tool body"}],"reasoning":{"effort":"high"}}}')).toEqual({options:{reasoning:{effort:'high'}},toolCount:1});
+ expect(projectNativeWireObservation('{"type":"response.create","response":{"tools":[]}}')).toEqual({options:{},toolCount:0});
+ expect(projectNativeWireObservation('{"type":"response.create"}')).toBeNull();expect(projectNativeWireObservation('{"type":"unknown.frame"}')).toBeNull();
+ expect(projectNativeWireObservation('[]')).toBeNull();expect(projectNativeWireObservation('bad')).toBeNull();
+});
+
+ test('actual configuration-update controls retain finite ordered effort evidence separately from top-level options',()=>{
+ const update=(effort:unknown)=>({type:'configuration_update',reasoning:{effort}});
+ const project=(input:unknown,extra={})=>projectNativeWireObservation(JSON.stringify({input,...extra}));
+ expect(project([update('medium')],{reasoning:{summary:'detailed'}})).toEqual({options:{reasoning:{summary:'detailed'}},toolCount:0,effortUpdates:{count:1,effort:'medium'}});
+ expect(project([update('low'),{type:'message',content:'private'},update('high')])).toEqual({options:{},toolCount:0,effortUpdates:{count:2,effort:'high'}});
+ expect(project([{type:'message',content:JSON.stringify(update('high'))}])).toEqual({options:{},toolCount:0});
+ for(const input of [[update('unknown')],[update(null)],[{type:'configuration_update'}],[{...update('high'),effort:'low'}],Array.from({length:257},()=>update('high'))])expect(project(input)?.effortUpdates).toBeNull();
+ for(const extra of [{reasoning:{effort:42}},{reasoningEffort:'high',reasoning:{effort:'medium'}},{reasoning:null}])expect(project([update('high')],extra)?.effortUpdates).toBeNull();
+ const value:Extract<NativeObservation,{stage:'physical'}>={...common,stage:'physical',requestID:'req_1',kind:'primary',transport:'http',ordinal:1,attempt:null,wireOptions:{},wireEffortUpdates:{count:2,effort:'medium'}};
+ expect(parseNativeObservation(value)).toEqual(value);
+ expect(parseNativeJournalObservation({...value,directory:'<WORKTREE_123456abcdef>'})).toMatchObject({wireEffortUpdates:value.wireEffortUpdates});
+ for(const wireEffortUpdates of [{count:0,effort:'high'},{count:257,effort:'high'},{count:1.5,effort:'high'},{count:1,effort:'unknown'},{count:1,effort:'high',text:'private'}])expect(()=>parseNativeObservation({...value,wireEffortUpdates})).toThrow('native_observation_invalid');
+ expect(parseNativeObservation({...value,wireEffortUpdates:null})).toMatchObject({wireEffortUpdates:null});
+ });

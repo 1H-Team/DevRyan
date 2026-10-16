@@ -93,6 +93,11 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
   };
   const emitStartupStatus=text=>onStartupStatus(text);
   state.openCodeStartup ??= { state: 'idle', attempt: 0, code: null };
+  let readinessWindow;
+  const isStartupReadinessPending = () => Boolean(readinessWindow
+    && readinessWindow.pending
+    && state.openCodeStartup.state === 'starting' && state.openCodeStartup.attempt === readinessWindow.attempt
+    && Date.now() < readinessWindow.deadline);
   const assertCurrentStartup = (attempt) => {
     if (state.openCodeStartup.attempt !== attempt) {
       throw Object.assign(new Error('OpenCode startup was superseded'), { code: 'opencode_startup_superseded' });
@@ -103,6 +108,8 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     state.openCodeStartup = { state: 'starting', attempt, code: null };
     state.lastOpenCodeError = null;
     state.isOpenCodeReady = false;
+    const window = { attempt, deadline: Date.now() + 20_000, pending: true };
+    readinessWindow = window;
     try {
       const result = await operation(attempt);
       assertCurrentStartup(attempt);
@@ -122,6 +129,8 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         syncToHmrState();
       }
       throw error;
+    } finally {
+      window.pending = false;
     }
   };
   const getAgentRuntimeApplicationState=()=>({runtimeMode:'managed',appliedLsp:typeof state.appliedAgentRuntimeSettings?.lsp==='boolean'?state.appliedAgentRuntimeSettings.lsp:null});
@@ -375,7 +384,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     }
   };
 
-  return {startOpenCode,restartOpenCode,waitForOpenCodeReady,waitForAgentPresence,applyOpenCodeConfigChanges,
+  return {startOpenCode,restartOpenCode,waitForOpenCodeReady,waitForAgentPresence,isStartupReadinessPending,applyOpenCodeConfigChanges,
     syncManagedAgentRuntimeConfig,getAgentRuntimeApplicationState,getPackagedAgentPrompts,restorePackagedAgentPrompt,
     bootstrapOpenCodeAtStartup,startHealthMonitoring,triggerHealthCheck};
 };

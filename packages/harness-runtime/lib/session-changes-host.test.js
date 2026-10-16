@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createSessionChangeHost } from './session-changes-host.js';
+import { createSessionMutationRuntime } from './session-mutations.js';
 import { createNativeConsumerFixture } from '../../web/server/lib/opencode/test-native-consumer-client.js';
 
 const createFixtureHost = options => createSessionChangeHost({ ...options, openCodeClient: options.openCodeClient ?? createNativeConsumerFixture({ readFixture: options.fetchImpl }) });
@@ -62,6 +63,59 @@ test('missing hooks cannot report complete coverage after a successful prompt re
   const result = await host.handleRequest('GET', endpoint());
   expect(result.body.coverage).toBe('partial'); expect(result.body.reasons).toContain('missing_capture');
   expect(result.body.files).toEqual([]);
+});
+
+const hostWithOutcomes = executionOutcomes => createFixtureHost({ dataDirectory: base, executionOutcomes,
+  fetchImpl: async raw => {
+    const url = new URL(raw);
+    if (url.pathname.endsWith('/children')) return Response.json([]);
+    if (url.pathname.endsWith('/message')) return Response.json(messages);
+    return Response.json({ id: 'ses_a', directory });
+  },
+});
+
+test('exact durable no-start outcomes repair denied writer coverage and survive reopening', async () => {
+  const storage = path.join(base, 'mutations');
+  let mutations = createSessionMutationRuntime({ directory: storage });
+  const denied = tool('denied'); denied.parts[0].tool = 'write'; denied.parts[0].state.status = 'error';
+  messages.push(denied);
+  await mutations.cancelUnstartedCall({ directory, sessionID: 'ses_a', messageID: denied.info.id, callID: 'denied', requireAbsent: true });
+  mutations = createSessionMutationRuntime({ directory: storage });
+  const owned = hostWithOutcomes(input => mutations.executionOutcomes(input));
+  const first = await owned.handleRequest('GET', endpoint());
+  expect(first.body).toMatchObject({ coverage: 'complete', reasons: [], fileCount: 0 });
+  const second = await owned.handleRequest('GET', endpoint());
+  expect(second.body.revision).toBe(first.body.revision);
+  await owned.drain();
+});
+
+test('error text, absent outcomes, mismatched durable identity and nonterminal calls cannot repair coverage', async () => {
+  const mutations = createSessionMutationRuntime({ directory: path.join(base, 'mutations') });
+  for (const [callID, status] of [['unknown', 'error'], ['mismatch', 'error'], ['unfinished', 'running'], ['successful', 'completed']]) {
+    const record = tool(callID); record.parts[0].tool = 'write'; record.parts[0].state.status = status;
+    record.parts[0].state.error = 'native_plan_write_denied'; messages.push(record);
+  }
+  await mutations.cancelUnstartedCall({ directory, sessionID: 'ses_a', messageID: 'different_message', callID: 'mismatch', requireAbsent: true });
+  for (const callID of ['unfinished', 'successful']) await mutations.cancelUnstartedCall({ directory, sessionID: 'ses_a', messageID: `msg_${callID}`, callID, requireAbsent: true });
+  const owned = hostWithOutcomes(input => mutations.executionOutcomes(input));
+  expect((await owned.handleRequest('GET', endpoint())).body).toMatchObject({ coverage: 'partial', reasons: ['missing_capture'] });
+  expect((await host.handleRequest('GET', endpoint())).body.coverage).toBe('partial');
+  await owned.drain();
+});
+
+test('rejects a constructor outcome batch with different canonical call identity', async () => {
+  const denied = tool('denied'); denied.parts[0].tool = 'write'; denied.parts[0].state.status = 'error'; messages.push(denied);
+  const owned = hostWithOutcomes(async () => [{ sessionID: 'ses_a', messageID: denied.info.id, callID: 'other', outcome: 'never_started' }]);
+  const response = await owned.handleRequest('GET', endpoint());
+  expect(response).toMatchObject({ status: 503, body: { code: 'capture_identity_mismatch' } });
+  await owned.drain();
+});
+
+test('a finished execution without its edit receipt remains incomplete', async () => {
+  const failed = tool('finished'); failed.parts[0].tool = 'write'; failed.parts[0].state.status = 'error'; messages.push(failed);
+  const owned = hostWithOutcomes(async ({ sessionID, calls }) => calls.map(call => ({ ...call, sessionID, outcome: 'finished' })));
+  expect((await owned.handleRequest('GET', endpoint())).body).toMatchObject({ coverage: 'partial', reasons: ['missing_capture'] });
+  await owned.drain();
 });
 
 test('rejects mismatched session identity and directory before filesystem capture', async () => {

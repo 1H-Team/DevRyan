@@ -28,8 +28,8 @@ export class CdpConnection {
     });
   }
 
-  static async connect(url) {
-    const socket = new WebSocket(url, { maxPayload: 256 * 1024 * 1024, handshakeTimeout: 5000 });
+  static async connect(url, { timeoutMs = 5000 } = {}) {
+    const socket = new WebSocket(url, { maxPayload: 256 * 1024 * 1024, handshakeTimeout: Math.max(1, Math.min(5000, timeoutMs)) });
     await new Promise((resolve, reject) => {
       socket.once('open', resolve);
       socket.once('error', reject);

@@ -52,6 +52,197 @@ memory-only snapshots and private candidate CAS. It never discovers installed
 accounts. Managed-user tests still require the separate non-production
 Supabase prerequisites below.
 
+For an attended sign-in handoff while host corrections are still being qualified,
+run `node scripts/qa/live-provider-handoff.mjs --artifact-root <verified-repo-cache-artifact>`
+from an attended terminal. It creates a persistent private profile under
+`.cache/qa`, using the existing native preparation factory, selected bundle,
+constructor checkpoint and one-use local-owner link. It supplies a fresh
+nonsecret OpenAI/Cursor Grok configuration and the Default Zen helper; it does
+not read installed setup or accounts. Native health must be ready before the
+owner link is printed. The human opens that link and signs in through Providers.
+Keep the link, cookie and sign-in screens out of evidence.
+
+The attended workflow accepts `status`, `owner-link`, `restart`, `close` and the
+explicitly qualified `exercise` and `qualify-providers` JSON commands described below. Sign-in/status
+commands do not run inference. It has no credential snapshot, copy or matrix command.
+Status reports readiness and owner-session issuance. After the existing issuer
+creates the human owner session, its memory-only callback can report connection
+flags and model counts for OpenAI, Cursor, Zen and Anthropic, catalog completeness,
+and Claude's installed/logged-in booleans with known auth/error codes. Catalog and
+Claude inspection fail independently with bounded codes. Provider entries, account
+identifiers, paths, raw errors and credentials stay inside the callback. Catalog
+flags are availability metadata; the status command makes no account-verification claim.
+Startup and upgrade child refusals use only an exact `status`/`code` IPC record
+with the existing bounded error-code policy. They are sent before the returned
+owner can be settled; resume forwards them once, and upgrade preserves the cause
+after physical teardown confirms. Missing receipts and failed teardown remain
+refusals. Raw child stdout/stderr, stacks and account output remain discarded.
+After a host rebuild, `restart` physically settles the owned child and imports
+current host/UI code into the same selected private profile. It issues a new
+human owner link; no principal or checkpoint is serialized as an account grant.
+Close credential-entry flows before restarting. After launcher exit, resume with
+`node scripts/qa/live-provider-handoff.mjs --resume <private-profile>/handoff.json`.
+The private `.cache/qa/provider-handoff-current.json` selector registers that
+exact retained profile as `V1` / `QA1`; these are human profile labels, not runtime
+versions. `--resume-current` uses it. Once registered, `--artifact-root` and a
+different `--resume` path refuse replacement, preserving the existing sign-ins.
+Registration is an atomic, directory-synced, no-clobber publication and contains
+only paths and labels. It cannot supply an account, principal or checkpoint.
+After the original full Node package qualification passes, resume the same registered
+profile with `--resume-current --qualification-report <absolute-original-package-result.json>`.
+The report must be the original private `.cache/v2-validation/package-*/result.json`
+with its passed owner run record, every mandatory full-package case, empty cleanup
+and remaining-gate lists, exact selected build/manifest, current source inventory
+and runner hash. Diagnostic, preflight and retained-only reports refuse. The
+native source inventory includes QA scripts, agent-eval scripts and Cursor runtime;
+the exercise checks it again immediately before inference and approval.
+
+Consume the new one-use owner link through the normal browser sign-in flow.
+With the owner's standing QA authorization recorded in `AGENTS.md`, the agent
+may complete that sign-in through computer use without asking for another click.
+Otherwise the human consumes it manually. The existing issuer keeps its cookie
+in memory; only a post-validation successful admission enables
+its exercise closures. Failed or expired issuance cannot replace a prior admitted
+exercise session. Enter `{"command":"exercise"}` only in the original attended
+launcher. It refuses absent admission/qualification, a busy or incomplete
+catalog, changed artifact/selection, a missing restorable project directory, wrong
+saved Grok 4.6 Explorer model, or unavailable Astra Medium and Default helper.
+The [standing-authorized QA1 view](audits/2026-10-15/qa1-standing-admission.png)
+records a normal isolated sign-in; it is not provider or release qualification.
+The [effort-observation correction](audits/2026-10-15/effort-update-observation-correction.json)
+records pinned GPT-6 input controls separately from literal top-level wire options;
+its focused proof does not qualify a provider account or the updated release.
+The collector keeps native `/api/provider` connections and metadata for non-Cursor
+providers, and reads Cursor virtual models from `/api/config/providers`. Cursor
+requires successful existing Configure/Verify (`success`, `ok`, `configured`, SDK
+models), known configured SDK authentication from runtime status, and the exact
+merged Grok 4.6 Medium variant; declared fallback models cannot qualify. Configure
+has a 25-second issuer request bound around the existing 20-second native owner.
+The exercise captures the exact Explorer override and a clean managed Apply
+baseline before temporarily selecting Medium through the existing override route.
+It applies only the captured agents-only revision with `when-idle`, then requires
+clean Apply status and the exact live Explorer selection. Restoration uses the
+same checks after PUT, or DELETE for an originally absent override. Apply requests
+have a 40-second bound; subsequent live convergence has a 20-second window.
+HTTP refusals from fixed, reviewed QA endpoints retain an enumerated operation
+and numeric status in their existing bounded error code. Unknown routes remain
+generic; query values, request/response bodies and provider account fields are
+never included. Apply-specific refusal codes and optional-resource 404 handling
+remain unchanged.
+Cleanup has an independent 60-second bound and refuses newer changes or an Apply
+still in progress, reporting incomplete restoration instead of overlapping
+restarts or overwriting a human change. Other agent defaults stay intact.
+Saved helper UUID revisions are retained. Builder and Orchestrator use supported
+Astra Medium per-turn selections, preserving saved primary model defaults; actual
+canonical user and child records must prove the requested model and effort.
+
+`scripts/qa/qa1-profile-exercise.mjs` runs the exact supplied original prompt in a
+new disposable profile-site analogue, preserves its dirty user note and existing
+tests, verifies no implementation changes in Plan mode, and clicks the actual
+saved Plan card for approval. It joins timed native reads, failing original tests,
+mutation, passing original tests and full suite with the exact private published
+lease and retained physical termination receipt. The inspector is constructor-only
+and exports IDs and bounded proof values. It uses the existing agent-eval runner
+for three further tasks: `inspect` and `repair-and-test` with Builder, followed by
+`managed-independent` with Orchestrator. Those are separate from the three input
+regression sets and thirteen unauthenticated browser scenes. Independent test
+processes cannot write files, spawn children or access network/account roots.
+
+The run has a fifteen-minute absolute bound, existing per-case budgets and owned
+session-tree cancellation. Cleanup drains the exercise before host shutdown,
+settles browser processes independently, preserves primary failure plus cleanup
+failure, and restores the runtime directory through its existing owner before
+restoring settings, provided no newer human directory selection intervened.
+Sanitized results and screenshots stay in its owned `.cache/qa` run; the retained
+V1 / QA1 account profile remains unchanged. Physical helper sampling, live provider
+silence and actual mobile browser-chrome movement remain separate mandatory
+checks; a successful exercise does not claim full live qualification.
+`{"command":"qualify-providers"}` uses the same validated issuer, qualification
+report and single active-work guard. It samples three bounded Astra High turns
+and uses the completed original Medium turn retained only in child memory,
+plus the existing title/commit/PR helper operations with the actual saved helper
+revision. Its constructor journal reader flushes through the original owner,
+checks the exact selected descriptor path and health, reads only bounded owned
+session/directory windows, then rechecks selection/readiness. Generated helper
+titles and bodies are reduced to response-validity facts inside the original
+issuer. Missing/expired/gapped evidence remains unqualified. See the
+[implementation proof](audits/2026-10-14/qa1-exercise-implementation.json).
+The [registered-project Cursor status correction](audits/2026-10-15/cursor-registered-project-status.json)
+retains its failed preflight, exact-location status checks and qualification scope.
+The retained Medium sample is validated before any paid High/helper dispatch.
+Missing or unqualified Medium evidence refuses the run; it is never replaced by
+a newly generated sample or transferred to another issuer.
+
+The separate `qualify-providers` attended command runs
+`scripts/qa/qa1-provider-qualification.mjs` through the same validated human
+issuer and exact fresh full-native source/artifact/runner pin. It creates a
+disposable project, submits three bounded Astra High inspection tasks, and calls
+only the commit-message and PR-description draft endpoints. Each inspection
+uses canonical Plan admission and each paid dispatch checks fresh idle state.
+Ordinary naming waits up to its existing thirty-second budget for exact owned
+model-generation and source-message-bound durable persistence diagnostics.
+Projection alone cannot finish this wait; failed persistence attempts may recover
+within the existing budget, while pause, cancellation or deadline ends it. Saved model defaults
+and the actual helper revision are preserved; the original exercise's Medium
+request is retained only in issuer memory and is never replaced by a new sample.
+Every silence sample joins the exact accepted input and canonical native step to
+its prepared model, physical HTTP request, wire effort and body-end counters.
+These are measured stream gaps, not a deliberate silence injection. WebSocket,
+missing/ambiguous timing, incomplete journal coverage or gaps remain unqualified.
+The product timeout stays at 300 seconds.
+Every canonical step for the sampled user is checked before effort filtering.
+Other turns, including Implement traffic in the Medium window, are excluded only
+when their physical requests are attributable to another accepted canonical turn.
+Unlinked requests remain explicit scope gaps.
+
+The original issuer flushes its own journal before a bounded private reader
+projects IDs, fixed model tuples, reasoning enums and numeric counters. Content,
+titles, account fields, paths and hashes never enter the qualification result.
+Helpers qualify only when actual prepared and serialized physical tool counts
+are zero, both observations carry the exact Node-owner-captured configured
+helper revision, and default reasoning and ordinary naming settlement are
+observed. Older records, unknown wire counts, active-session fallback or missing
+revision proof remain explicit gaps. Session cancellation and directory
+restoration use independent cleanup budgets. See the source-only
+[provider qualification proof](audits/2026-10-14/qa1-provider-qualification.json).
+Helper operations remain serialized within bounded session/agent windows. Every
+applicable prepared request and physical retry is validated, with unique positive
+send ordinals. Default reasoning means no variant and no reviewed reasoning keys;
+the projection's `reasoningOptionsEmpty` fields do not claim all private provider
+options are empty. Unattributable sends or ambiguous same-agent concurrency cannot
+qualify. Naming persistence and projection are separate stages; a diagnostic is
+not a substitute for the compiled owner's exact native mutation-count proof.
+
+The original provider owners retain their account stores in that profile. A
+`storage-retention.json` pin protects this reusable profile from ordinary pruning,
+including after the run metadata changes on close; automatic finish cleanup also
+retains it. Removing the profile requires an explicit owner decision, not a QA
+retry cleanup. Owner-session issuance does not prove the human completed sign-in:
+link previews can consume a GET link. Use a fresh manual link or the already
+authorized application origin and keep account verification pending.
+A changed native artifact or held selection is refused; it requires the original
+bundle upgrade/handoff workflow rather than editing the state record. After the
+qualified package gate passes and all credential-entry flows and the old attended
+host are closed, the attended `--upgrade-current --artifact-root <target>
+--build-id <exact-build> --manifest-sha256 <exact-hash>` command invokes the
+original runtime lifecycle upgrade. The native owner verifies, checkpoints,
+clones and selects within the same control root; the previous bundle remains its
+rollback target. This workflow never recreates source settings or edits provider
+stores. It adopts only the exact selected/previous/source/checkpoint, next
+revision, target artifact and unchanged workspace lineage, after physical child
+settlement. Project-map fingerprints use native `canonicalJSON`: object-key
+insertion order does not alter identity, while exact fields, paths, modes and
+array order remain pinned. See the [QA1 lineage incident proof](audits/2026-10-14/qa1-upgrade-lineage-correction.json). Repeating the same exact command can recover a committed native
+transition whose nonsecret handoff identity update was interrupted. No mutable
+intent file or account grant is serialized. A truthful needs-resume result keeps
+the committed selection explicit. Then use `--resume-current` for a new human
+owner link. Paid QA and credential admission still require the qualified frozen
+live owner above; deterministic lineage tests do not qualify a live upgrade.
+The handoff child passes the actual OS-user home through the reviewed
+`nativeClaudeSecurityHome` constructor option. Private QA HOME remains unchanged;
+only the owner-validated isolated Claude enrollment/lifecycle service uses that
+command-local security home. Default and legacy installed services are excluded.
+
 ## Diagnostic journal (check it before theorizing)
 
 Whenever the user reports a DevRyan runtime issue — stuck or hung sessions, missing or duplicated events, failed/rejected prompts, aborts that did not take effect, streaming or sync anomalies, worktree or evidence lifecycle issues — inspect the journal before forming a code-only theory. Start from the repository root:
@@ -61,6 +252,12 @@ bun scripts/journal.mjs list
 bun scripts/journal.mjs show <sessionID> --tail 200
 bun scripts/journal.mjs gaps
 ```
+
+The [13 October OpenCode 2 live agent QA](audits/2026-10-13/opencode-v2-live-qa/README.md)
+records slow Cursor admission and settlement, corrupted child reports, repeated
+result delivery, and a failed partial plan/retry. Its implementation audit links
+the corrections and current qualification evidence; source and native package
+passes remain separate from live, visual and release qualification.
 
 The [11 October Cursor Explorer QA investigation](audits/2026-10-11/live-agent-qa.md)
 records an interrupted native Plan-mode run, diagnostic evidence, and the proposed

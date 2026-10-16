@@ -156,7 +156,7 @@ export const createPrivilegedOpenCodeClient = (deps) => {
     return { id: sessionID, directory: options.directory, metadata: structuredClone(session.metadata ?? {}) };
   });
 
-  /** Internal accepted-command evidence; the public message projection hides this map. */
+  /** Canonical text and metadata remain private to accepted-source owners; no UI projection supplies either. */
   const readUserMessage = gen2('readUserMessage', async (sessionID, messageID, options = {}) => {
     if (!/^ses[A-Za-z0-9_-]{1,128}$/.test(sessionID ?? '') || !/^msg[A-Za-z0-9_-]{1,128}$/.test(messageID ?? '')
       || !path.isAbsolute(options.directory ?? '') || options.directory.includes('\0')) {
@@ -170,7 +170,7 @@ export const createPrivilegedOpenCodeClient = (deps) => {
     const message = unwrapData(body);
     if (!isRecord(message) || message.id !== messageID || message.type !== 'user' || typeof message.text !== 'string'
       || message.metadata !== undefined && !isRecord(message.metadata)) throw createInvalidResponseError({ label: 'readUserMessage', generation: 2 });
-    return { id: messageID, type: 'user', sessionID, directory: options.directory, metadata: structuredClone(message.metadata ?? {}) };
+    return { id: messageID, type: 'user', sessionID, directory: options.directory, text: message.text, metadata: structuredClone(message.metadata ?? {}) };
   });
 
   /**
@@ -220,6 +220,44 @@ export const createPrivilegedOpenCodeClient = (deps) => {
     }
     return { records, ...(latestTurnParent ? { latestTurnParent } : {}), cursor: body.data.length === limit && body.cursor?.next ? encodeMessageCursor(body.cursor.next) : undefined,
       scannedCount: body.data.length, scannedBytes: Buffer.byteLength(JSON.stringify(body)) };
+  });
+
+  /** Bounded native order and maintenance identities for Plan lineage only.
+   * Projection runs once over the complete sequence, including page boundaries.
+   * @returns {Promise<{records:import('../v2/projection/messages.js').V1MessageRecord[],nativeSequence:Array<{id:string,type:string,ordinal:number,turnParent:boolean,status?:string,reason?:string}>}|null>}
+   */
+  const readCanonicalPlanSequence = gen2('readCanonicalPlanSequence', async (sessionID, options = {}) => {
+    if (!/^ses[A-Za-z0-9_-]{1,128}$/.test(sessionID ?? '') || !path.isAbsolute(options.directory ?? '') || options.directory.includes('\0')) {
+      throw invalidInput('readCanonicalPlanSequence', 'canonical session and directory are required');
+    }
+    const infoBody = await request({ ...pass(options,'readCanonicalPlanSequence'), directory:options.directory,
+      method:'GET', path:sessionPath(sessionID), maxResponseBytes:1024*1024 });
+    if (infoBody === null) return null;
+    const info=unwrapData(infoBody), context=sessionMessageContext(info);
+    const invalid=()=>createInvalidResponseError({label:'readCanonicalPlanSequence',generation:2});
+    if (!context || info.id!==sessionID || info.location?.directory!==options.directory) throw invalid();
+    const messages=[], cursors=new Set(); let cursor, bytes=0, pages=0;
+    do {
+      if(++pages>20)throw invalid();
+      const body=await request({...pass(options,'readCanonicalPlanSequence'),directory:options.directory,allowNotFound:false,
+        method:'GET',path:sessionPath(sessionID,'/message'),query:cursor?{cursor,limit:200}:{order:'desc',limit:200},maxResponseBytes:8*1024*1024-bytes});
+      if (!isRecord(body)||!Array.isArray(body.data)||body.data.length>200||body.cursor!=null&&!isRecord(body.cursor)
+        ||body.cursor?.next!=null&&!isNonEmptyString(body.cursor.next)) throw invalid();
+      bytes+=Buffer.byteLength(JSON.stringify(body));
+      if(bytes>8*1024*1024||messages.length+body.data.length>2000)throw invalid();
+      messages.unshift(...[...body.data].reverse());
+      cursor=body.cursor?.next;
+      if(cursor){if(cursor.length>8192||cursors.has(cursor)||messages.length>=2000||bytes>=8*1024*1024)throw invalid();cursors.add(cursor);}
+    }while(cursor);
+    const ids=new Set();
+    const nativeSequence=messages.map((row,ordinal)=>{
+      if(!isRecord(row)||!/^msg[A-Za-z0-9_-]{1,128}$/.test(row.id??'')||typeof row.type!=='string'
+        ||ids.has(row.id))throw invalid();
+      ids.add(row.id);
+      return {id:row.id,type:row.type,ordinal,turnParent:isNativeTurnParent(row),
+        ...(row.type==='compaction'?{status:typeof row.status==='string'?row.status:'unavailable',reason:typeof row.reason==='string'?row.reason:'unavailable'}:{})};
+    });
+    return {records:projectMessagePage(messages,context).records,nativeSequence};
   });
 
   const switchAgent = gen2('switchAgent', async (sessionID, agent, options = {}) => {
@@ -285,6 +323,7 @@ export const createPrivilegedOpenCodeClient = (deps) => {
     readSessionMetadata,
     readUserMessage,
     readCanonicalUserPage,
+    readCanonicalPlanSequence,
     switchAgent,
     switchModel,
     locationReload,

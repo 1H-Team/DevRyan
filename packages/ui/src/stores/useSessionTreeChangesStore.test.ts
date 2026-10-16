@@ -1,6 +1,6 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 
-import type { SessionTreeChanges } from '@/lib/opencode/client'
+import { opencodeClient, requestSessionTreeChanges, ScopedRevertError, type SessionTreeChanges } from '@/lib/opencode/client'
 import { sessionEvents } from '@/lib/sessionEvents'
 import { getAuthPrincipal, setAuthPrincipal } from '@/lib/authSession'
 import {
@@ -32,6 +32,10 @@ const makeChanges = (overrides: Partial<SessionTreeChanges> = {}): SessionTreeCh
 const file = (path: string) => ({ path, status: 'modified' as const, additions: 1, deletions: 0, sessions: ['ses_root'] })
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+const waitUntil = async (predicate: () => boolean) => {
+  for (let i = 0; i < 300 && !predicate(); i++) await wait(5)
+  expect(predicate()).toBe(true)
+}
 
 type Deferred = { promise: Promise<SessionTreeChanges>; resolve: (value: SessionTreeChanges) => void; reject: (error: unknown) => void }
 const createDeferred = (): Deferred => {
@@ -98,6 +102,51 @@ describe('useSessionTreeChangesStore', () => {
     previous.resolve(makeChanges({ revision: 'old', files: [file('old.ts')] }))
     await wait(0)
     expect(useSessionTreeChangesStore.getState().entries.get(getSessionTreeChangesKey('/repo', 'ses_root'))?.revision).toBe('current')
+    releaseCurrent()
+  })
+
+  test('a runtime switch clears only the old loading entry and cannot carry a queued read into the new scope', async () => {
+    let base = opencodeClient.getBaseUrl()
+    const baseSpy = spyOn(opencodeClient, 'getBaseUrl').mockImplementation(() => base)
+    const previous = createDeferred(), current = createDeferred()
+    try {
+      respond = () => previous.promise
+      const oldKey = getSessionTreeChangesKey('/repo', 'ses_root')
+      const oldRead = refreshSessionTreeChanges('/repo', 'ses_root')
+      void refreshSessionTreeChanges('/repo', 'ses_root')
+      base = 'http://other-runtime.invalid/api'
+      respond = () => current.promise
+      const newKey = getSessionTreeChangesKey('/repo', 'ses_root')
+      const newRead = refreshSessionTreeChanges('/repo', 'ses_root')
+      const currentEntry = useSessionTreeChangesStore.getState().entries.get(newKey)
+      previous.resolve(makeChanges({ files: [file('old.ts')] }))
+      await oldRead
+      expect(calls).toHaveLength(2)
+      expect(useSessionTreeChangesStore.getState().entries.get(oldKey)?.loading).toBe(false)
+      expect(useSessionTreeChangesStore.getState().entries.get(oldKey)?.files).toEqual([])
+      expect(useSessionTreeChangesStore.getState().entries.get(newKey)).toBe(currentEntry)
+      expect(currentEntry?.loading).toBe(true)
+      current.resolve(makeChanges({ revision: 'current' }))
+      await newRead
+      expect(useSessionTreeChangesStore.getState().entries.get(newKey)?.revision).toBe('current')
+    } finally { baseSpy.mockRestore() }
+  })
+
+  test('releasing a selection clears its loading state without clearing a reopened request', async () => {
+    const previous = createDeferred(), current = createDeferred()
+    respond = () => previous.promise
+    const key = getSessionTreeChangesKey('/repo', 'ses_root')
+    const release = subscribeSessionTreeChanges('/repo', 'ses_root')
+    release()
+    expect(useSessionTreeChangesStore.getState().entries.get(key)?.loading).toBe(false)
+    respond = () => current.promise
+    const releaseCurrent = subscribeSessionTreeChanges('/repo', 'ses_root')
+    previous.resolve(makeChanges({ revision: 'stale' }))
+    await wait(0)
+    expect(useSessionTreeChangesStore.getState().entries.get(key)?.loading).toBe(true)
+    current.resolve(makeChanges({ revision: 'current' }))
+    await wait(0)
+    expect(useSessionTreeChangesStore.getState().entries.get(key)?.revision).toBe('current')
     releaseCurrent()
   })
 
@@ -251,6 +300,213 @@ describe('useSessionTreeChangesStore', () => {
     expect(entry?.error).toBe('offline')
     expect(entry?.loading).toBe(false)
     expect(entry?.files.map((entryFile) => entryFile.path)).toEqual(['src/a.ts'])
+  })
+
+  test('idle subscribed summary recovers from restart 503s without events and retains rows until authoritative success', async () => {
+    const key = getSessionTreeChangesKey('/repo', 'ses_root')
+    respond = () => Promise.resolve(makeChanges({ revision: 'before', files: [file('before.ts')], coverage: 'complete', restoreAvailable: true }))
+    const release = subscribeSessionTreeChanges('/repo', 'ses_root')
+    await waitUntil(() => useSessionTreeChangesStore.getState().entries.get(key)?.revision === 'before')
+    const retainedFiles = useSessionTreeChangesStore.getState().entries.get(key)?.files
+    calls.length = 0
+    const response = createDeferred()
+    // At production delays, this fourth read occurs after 3.5 seconds: beyond
+    // the observed 3.092-second native startup, unlike three total attempts.
+    respond = () => calls.length < 4 ? Promise.reject(new ScopedRevertError('restart', { status: 503 })) : response.promise
+    await refreshSessionTreeChanges('/repo', 'ses_root')
+    await waitUntil(() => calls.length === 4)
+    const recovering = useSessionTreeChangesStore.getState().entries.get(key)
+    expect(recovering?.loading).toBe(true)
+    expect(recovering?.error).toBeNull()
+    expect(recovering?.files).toBe(retainedFiles)
+    expect(recovering?.revision).toBe('before')
+    response.resolve(makeChanges({ revision: 'after', files: [file('after.ts')], coverage: 'complete', restoreAvailable: true }))
+    await waitUntil(() => useSessionTreeChangesStore.getState().entries.get(key)?.revision === 'after')
+    expect(useSessionTreeChangesStore.getState().entries.get(key)?.loading).toBe(false)
+    expect(useSessionTreeChangesStore.getState().entries.get(key)?.error).toBeNull()
+    await wait(DEBOUNCE_MS * 3)
+    expect(calls).toHaveLength(4)
+    release()
+  })
+
+  test('six total 503 reads exhaust recovery and expose failure without polling or dropping retained rows', async () => {
+    const key = getSessionTreeChangesKey('/repo', 'ses_root')
+    respond = () => Promise.resolve(makeChanges({ revision: 'before', files: [file('before.ts')] }))
+    const release = subscribeSessionTreeChanges('/repo', 'ses_root')
+    await waitUntil(() => useSessionTreeChangesStore.getState().entries.get(key)?.revision === 'before')
+    calls.length = 0
+    respond = () => Promise.reject(new ScopedRevertError('restart unavailable', { status: 503 }))
+    await refreshSessionTreeChanges('/repo', 'ses_root')
+    await waitUntil(() => useSessionTreeChangesStore.getState().entries.get(key)?.error === 'restart unavailable')
+    expect(calls).toHaveLength(6)
+    expect(useSessionTreeChangesStore.getState().entries.get(key)?.loading).toBe(false)
+    expect(useSessionTreeChangesStore.getState().entries.get(key)?.revision).toBe('before')
+    expect(useSessionTreeChangesStore.getState().entries.get(key)?.files.map(row => row.path)).toEqual(['before.ts'])
+    await wait(DEBOUNCE_MS * 4)
+    expect(calls).toHaveLength(6)
+    release()
+  })
+
+  test('queued immediate hints cannot bypass 503 backoff or reopen the exhausted read budget', async () => {
+    const started: number[] = []
+    respond = () => {
+      started.push(performance.now())
+      // Reproduce the public-store feedback loop: this marks the current read
+      // dirty while the failure is still awaiting its scheduled retry.
+      requestSessionTreeChangesRefresh('/repo', 'ses_root', { immediate: true })
+      requestSessionTreeChangesRefresh('/repo', 'ses_root', { delayMs: DEBOUNCE_MS })
+      return Promise.reject(new ScopedRevertError('restart unavailable', { status: 503 }))
+    }
+    const release = subscribeSessionTreeChanges('/repo', 'ses_root')
+    const key = getSessionTreeChangesKey('/repo', 'ses_root')
+    await waitUntil(() => useSessionTreeChangesStore.getState().entries.get(key)?.error === 'restart unavailable')
+    expect(calls).toHaveLength(6)
+    for (let i = 1; i < started.length; i++) {
+      expect(started[i] - started[i - 1] >= DEBOUNCE_MS * 2 ** (i - 1) - 2).toBe(true)
+    }
+    await wait(DEBOUNCE_MS * 4)
+    expect(calls).toHaveLength(6)
+    // A later explicit user refresh is a new bounded attempt, not a queued
+    // stale hint. The successful owner still clears the visible failure.
+    respond = () => Promise.resolve(makeChanges({ revision: 'manual-ready' }))
+    await refreshSessionTreeChanges('/repo', 'ses_root')
+    expect(calls).toHaveLength(7)
+    expect(useSessionTreeChangesStore.getState().entries.get(key)?.error).toBeNull()
+    expect(useSessionTreeChangesStore.getState().entries.get(key)?.revision).toBe('manual-ready')
+    release()
+  })
+
+  test('settled forbidden failure drains queued hints while pending reconciliation keeps its scheduled follow-up', async () => {
+    const key = getSessionTreeChangesKey('/repo', 'ses_root')
+    respond = () => {
+      requestSessionTreeChangesRefresh('/repo', 'ses_root', { immediate: true })
+      return Promise.reject(new ScopedRevertError('forbidden', { status: 403 }))
+    }
+    const release = subscribeSessionTreeChanges('/repo', 'ses_root')
+    await waitUntil(() => useSessionTreeChangesStore.getState().entries.get(key)?.error === 'forbidden')
+    await wait(DEBOUNCE_MS * 3)
+    expect(calls).toHaveLength(1)
+    release()
+    resetSessionTreeChangesForTests(); calls.length = 0
+    const started: number[] = []
+    respond = () => {
+      started.push(performance.now())
+      if (calls.length === 1) {
+        requestSessionTreeChangesRefresh('/repo', 'ses_root', { immediate: true })
+        return Promise.resolve(makeChanges({ revision: 'pending', reconciliationState: 'pending', reasons: ['capture_pending'] }))
+      }
+      return Promise.resolve(makeChanges({ revision: 'captured', coverage: 'complete', reconciliationState: 'settled' }))
+    }
+    const releasePending = subscribeSessionTreeChanges('/repo', 'ses_root')
+    await waitUntil(() => useSessionTreeChangesStore.getState().entries.get(key)?.revision === 'captured')
+    expect(calls).toHaveLength(2)
+    expect(started[1] - started[0] >= DEBOUNCE_MS - 2).toBe(true)
+    releasePending()
+  })
+
+  test('ordinary hints between 503 reads preserve the original timer without shortening or extending its deadline', async () => {
+    const started: number[] = []
+    respond = () => {
+      started.push(performance.now())
+      return calls.length < 4 ? Promise.reject(new ScopedRevertError('restart', { status: 503 }))
+        : Promise.resolve(makeChanges({ revision: 'ready' }))
+    }
+    const release = subscribeSessionTreeChanges('/repo', 'ses_root')
+    await waitUntil(() => calls.length === 2)
+    await wait(5)
+    // The second 503 has scheduled the 40-ms test backoff, and no fetch is
+    // active. Real ambient hints must leave that very timer intact.
+    const schedule = spyOn(globalThis, 'setTimeout')
+    const cancel = spyOn(globalThis, 'clearTimeout')
+    try {
+      sessionEvents.requestGitRefresh({ directory: '/repo', sessionChanges: true })
+      requestSessionTreeChangesRefresh('/repo', 'ses_root')
+      expect(schedule).toHaveBeenCalledTimes(0)
+      expect(cancel).toHaveBeenCalledTimes(0)
+    } finally { schedule.mockRestore(); cancel.mockRestore() }
+    await waitUntil(() => useSessionTreeChangesStore.getState().entries.get(getSessionTreeChangesKey('/repo', 'ses_root'))?.revision === 'ready')
+    expect(calls).toHaveLength(4)
+    expect(started[2] - started[1] >= DEBOUNCE_MS * 2 - 2).toBe(true)
+    expect(started[3] - started[2] >= DEBOUNCE_MS * 4 - 2).toBe(true)
+    release()
+  })
+
+  test('auth, forbidden, conflicts and untyped errors do not enter the restart retry budget', async () => {
+    for (const error of [new ScopedRevertError('unauthenticated', { status: 401 }), new ScopedRevertError('forbidden', { status: 403 }),
+      new ScopedRevertError('conflict', { status: 409 }), new Error('503 private-looking untyped error')]) {
+      resetSessionTreeChangesForTests(); calls.length = 0
+      respond = () => Promise.reject(error)
+      const release = subscribeSessionTreeChanges('/repo', 'ses_root')
+      const key = getSessionTreeChangesKey('/repo', 'ses_root')
+      await waitUntil(() => useSessionTreeChangesStore.getState().entries.get(key)?.error === error.message)
+      await wait(DEBOUNCE_MS * 3)
+      expect(calls).toHaveLength(1)
+      expect(useSessionTreeChangesStore.getState().entries.get(key)?.loading).toBe(false)
+      release()
+    }
+  })
+
+  test('selection release cancels delayed restart recovery and a late successful read cannot replace a reopened selection', async () => {
+    respond = () => Promise.reject(new ScopedRevertError('restart', { status: 503 }))
+    const release = subscribeSessionTreeChanges('/repo', 'ses_root')
+    await wait(0)
+    release()
+    await wait(DEBOUNCE_MS * 3)
+    expect(calls).toHaveLength(1)
+    const late = createDeferred()
+    let priorSignal: AbortSignal | undefined
+    setSessionTreeChangesFetcher((_root, _directory, signal) => { priorSignal = signal; return late.promise })
+    const releaseLate = subscribeSessionTreeChanges('/repo', 'ses_root')
+    releaseLate()
+    expect(priorSignal?.aborted).toBe(true)
+    setSessionTreeChangesFetcher(() => Promise.resolve(makeChanges({ revision: 'new-selected' })))
+    const releaseNew = subscribeSessionTreeChanges('/repo', 'ses_root')
+    await wait(0)
+    late.resolve(makeChanges({ revision: 'stale-retry-success' }))
+    await wait(0)
+    expect(useSessionTreeChangesStore.getState().entries.get(getSessionTreeChangesKey('/repo', 'ses_root'))?.revision).toBe('new-selected')
+    releaseNew()
+  })
+
+  test('delayed restart retry stays bound to its captured runtime and principal', async () => {
+    const initialBase = opencodeClient.getBaseUrl()
+    let base = initialBase
+    const baseSpy = spyOn(opencodeClient, 'getBaseUrl').mockImplementation(() => base)
+    const principal = getAuthPrincipal()
+    try {
+      respond = () => Promise.reject(new ScopedRevertError('restart', { status: 503 }))
+      const release = subscribeSessionTreeChanges('/repo', 'ses_root')
+      const oldKey = getSessionTreeChangesKey('/repo', 'ses_root')
+      await wait(0)
+      base = 'http://other-runtime.invalid/api'
+      await wait(DEBOUNCE_MS * 3)
+      expect(calls).toHaveLength(1)
+      expect(useSessionTreeChangesStore.getState().entries.get(oldKey)?.loading).toBe(false)
+      release()
+      base = initialBase
+      const releaseAccount = subscribeSessionTreeChanges('/repo', 'ses_root')
+      await wait(0)
+      const before = calls.length
+      setAuthPrincipal({ ...principal, id: 'changed-principal' })
+      await wait(DEBOUNCE_MS * 3)
+      expect(calls).toHaveLength(before)
+      expect(useSessionTreeChangesStore.getState().entries.size).toBe(0)
+      releaseAccount()
+    } finally { setAuthPrincipal(principal); baseSpy.mockRestore() }
+  })
+
+  test('restart recovery retries only the actual read-only summary URL, never a mutation', async () => {
+    const requests: Array<{ url: string; method: string }> = []
+    setSessionTreeChangesFetcher((root, directory, signal) => requestSessionTreeChanges({ baseUrl: 'http://fixture.invalid/api', sessionId: root, directory, signal,
+      fetchImpl: async (input, options) => {
+        requests.push({ url: String(input), method: options?.method ?? 'GET' })
+        return requests.length === 1 ? Response.json({ code: 'native_controller_starting' }, { status: 503 })
+          : Response.json(makeChanges({ revision: 'ready', coverage: 'complete', directory }))
+      } }))
+    const release = subscribeSessionTreeChanges('/repo', 'ses_root')
+    await waitUntil(() => useSessionTreeChangesStore.getState().entries.get(getSessionTreeChangesKey('/repo', 'ses_root'))?.revision === 'ready')
+    expect(requests).toEqual([1, 2].map(() => ({ url: 'http://fixture.invalid/api/openchamber/session/ses_root/changes?directory=%2Frepo', method: 'GET' })))
+    release()
   })
 
   test('clears every entry owned by a directory', async () => {

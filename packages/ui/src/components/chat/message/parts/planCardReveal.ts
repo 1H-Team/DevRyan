@@ -1,5 +1,14 @@
 import type { StreamPhase } from '../types';
 import { getPlanBlockId, getPlanImplementationKey } from '@/lib/messages/actionablePlan';
+import type { Notification } from '@/sync/notification-store';
+
+/** A persisted, identity-bound failed/stopped turn can restrict presentation
+ * even when native refused continuation before updating the assistant row. */
+export const hasPlanRevisionFailure = (notifications: readonly Notification[], sessionId: string, userMessageId: string | undefined, hasSuccessfulSavedSource = false): boolean => (
+  !hasSuccessfulSavedSource && Boolean(userMessageId) && notifications.some(notification => notification.type === 'error'
+    && notification.session === sessionId && !notification.resolvedByMessageId
+    && notification.failedUserMessageId === userMessageId)
+);
 
 const MIN_SKELETON_LINES = 8;
 const MAX_SKELETON_LINES = 48;
@@ -56,6 +65,7 @@ export const getPlanCardActionState = ({
   isLatestPlan,
   isRevisionSettled = true,
   isGenerationSuccessful = true,
+  hasTerminalFailure = false,
 }: {
   streamPhase: StreamPhase;
   hasPlanText: boolean;
@@ -64,11 +74,12 @@ export const getPlanCardActionState = ({
   /** False while any assistant sibling in the plan revision is still running. */
   isRevisionSettled?: boolean;
   isGenerationSuccessful?: boolean;
+  hasTerminalFailure?: boolean;
 }): PlanCardActionState => {
   if (!isLatestPlan) {
     return {
       canImplement: false,
-      disabledReason: 'Superseded by a newer plan.',
+      disabledReason: 'This plan is no longer current.',
     };
   }
 
@@ -77,6 +88,10 @@ export const getPlanCardActionState = ({
       canImplement: false,
       disabledReason: 'Implementation already started.',
     };
+  }
+
+  if (hasTerminalFailure) {
+    return { canImplement: false, disabledReason: 'The response did not finish successfully.' };
   }
 
   if (!isRevisionSettled) {

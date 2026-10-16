@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { createLoopbackOpenCodeFixtureForGeneration } from '../../../../../../scripts/perf/loopback-opencode-fixtures.mjs';
 import { PERF_PARENT_SESSION_ID } from '../../../../../../scripts/perf/fixture-session-seeds.mjs';
+import crypto from 'node:crypto';
 import { OPENCODE_CLIENT_ERROR_CODES } from '../opencode-client/errors.js';
 import { createOpenCodeClient } from '../opencode-client/index.js';
 import { createPrivilegedOpenCodeClient } from '../opencode-client/privileged.js';
@@ -24,6 +25,7 @@ import {
   toV2PermissionRuleset,
   V2_ATTACHMENT_MAX_BYTES,
   validateDevryanPromptMetadata,
+  validateCanonicalDevryanPromptMetadata,
 } from './admission.js';
 import { createPrimaryRecoveryHost } from '../../../../../harness-runtime/lib/provider-recovery-host.js';
 import { resolveProviderPromptTools } from '../../../../../orchestration-runtime/provider-prompt-tools.js';
@@ -796,6 +798,36 @@ describe('durable accepted-operation identity and native permissions', () => {
     await expect(store.fresh({nativeOwner,beforePromptDispatch:async()=>{calls++}}).prompt(store.session.id,{...original(),delivery:'queue'},originalOptions()))
       .rejects.toMatchObject({code:'native_queued_input_blocked',statusCode:409});
     expect(staged).toBe(true);expect(calls).toBe(0);expect(store.turns.size).toBe(0);
+  });
+
+  it('reconciles a sealed canonical managed child and replay while keeping its marker private and public input strict', async () => {
+    const store = nativeAdmissionStore(); let binding;
+    store.setPost(body => {
+      binding = { v: 1, taskId: 'dvr_task_child', rootSessionId: 'ses_root', parentSessionId: 'ses_root', childSessionId: store.session.id,
+        directory: '/workspace', dispatchCallId: 'call_start', dispatchGroupId: 'msg_step', attempt: 1, sequence: 2,
+        agent: 'build', providerId: MODEL.providerID, modelId: MODEL.modelID, variant: 'default', readOnly: true,
+        anchorID: 'msg_root', objectiveID: 'msg_root', cancellationGeneration: 1, generation: 1, admissionRevision: 0,
+        controllerInstanceID: 'controller_owned', configurationDigest: 'a'.repeat(64), sourceMessageID: body.id,
+        fingerprint: body.metadata.devryan.admission.fingerprint, textSha256: crypto.createHash('sha256').update(body.text).digest('hex') };
+      const turn = { id: body.id, sessionID: store.session.id, type: 'user', payload: { text: body.text, metadata: { devryan: { ...body.metadata.devryan, managedTitle: binding } } } };
+      store.turns.set(body.id, turn); return Response.json({ data: turn });
+    });
+    const input = original(); input.metadata = { devryan: { managedTitle: { forged: true } } };
+    await expect(store.fresh().prompt(store.session.id, input, originalOptions())).resolves.toBeNull();
+    const accepted = store.turns.get(input.messageID).payload;
+    expect(validateDevryanPromptMetadata(accepted.metadata.devryan, { text: accepted.text }).ok).toBe(false);
+    expect(validateCanonicalDevryanPromptMetadata(accepted.metadata.devryan, { text: accepted.text })).toEqual({ ok: true });
+    expect(store.calls.find(row => row.path.endsWith('/prompt')).body.metadata.devryan).not.toHaveProperty('managedTitle');
+    expect(() => buildDevryanPromptMetadata({ ...accepted.metadata.devryan })).toThrow('constructor-owned');
+    expect(readDevryanPromptSelection(accepted.metadata)).toMatchObject({ agent: 'build', providerID: MODEL.providerID, modelID: MODEL.modelID });
+    expect(readDevryanPartDescriptors(accepted.metadata)).not.toBeNull();
+    expect(toV1UserMetadata(accepted.metadata)).toEqual({});
+    store.setTranscript(true); store.replaceRuntime(); store.calls.length = 0;
+    await expect(store.fresh().prompt(store.session.id, original(), originalOptions())).resolves.toBeNull(); expect(writes(store.calls)).toEqual([]);
+    for (const corrupt of [{ ...binding, extra: true }, { ...binding, generation: -1 }, { ...binding, sourceMessageID: ['msg_identity'] }, { ...binding, textSha256: 'f'.repeat(64) }, { ...binding, sourceMessageID: 'msg_foreign' }, { ...binding, childSessionId: 'ses_foreign' }, { ...binding, fingerprint: 'f'.repeat(64) }]) {
+      accepted.metadata.devryan.managedTitle = corrupt;
+      await expect(store.fresh().prompt(store.session.id, original(), originalOptions())).rejects.toMatchObject({ code: ADMISSION_ERROR_CODES.identityUncertain });
+    }
   });
 
   it.each(['inbox', 'transcript'])('reconciles an unchanged %s after restart/relocation without selection effects', async (state) => {

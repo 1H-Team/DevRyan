@@ -105,7 +105,9 @@ test('QA facade uses original native client/proxy, passes product features and s
     const query=new URLSearchParams({directory:f.workspace,sessionCreated:String(canonical.time.created),sessionSlug:canonical.slug});
     const planPath=`/api/session/${session.body.id}/plan-revisions/${source.info.id}`;
     const plan=await f.request(planPath,{directory:f.workspace,sessionCreated:canonical.time.created,sessionSlug:canonical.slug,markdown:'# Actual route test'});
-    assert.equal(plan.status,200);assert.match((await f.request(planPath+'?'+query)).body.content,/Actual route test/);
+    assert.equal(plan.status,409);assert.equal(plan.body.code,'qa_fixture_plan_authority_unavailable');
+    assert.equal((await f.request(planPath+'?'+query)).status,409);
+    assert.deepEqual(await fs.readdir(path.join(f.root,'data')),[],'Synthetic transport must not create a successful saved plan');
     assert.equal((await f.request(planPath,{directory:f.workspace,sessionCreated:canonical.time.created,sessionSlug:'foreign',markdown:'no'})).status,409);
     assert.deepEqual(f.fixture.getState().unknownRoutes,[]);assert.deepEqual(f.facade.unexpected,[]);
   } finally {await f.close();}

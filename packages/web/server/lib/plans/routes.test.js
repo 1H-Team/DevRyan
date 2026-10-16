@@ -98,6 +98,22 @@ describe('session plan revision routes', () => {
   });
 
 
+  it('saves canonical creation content and returns the actual edited revision on update and ensure', async () => {
+    const sourceIdentity = { sessionID: 'session-a', sourceMessageID: 'msg-plan-1', rootUserMessageID: 'msg-user',
+      memberUserMessageIDs: ['msg-user'], memberAssistantMessageIDs: ['msg-plan-1'], currentSourceMessageID: 'msg-plan-1',
+      successful: true, settled: true, current: true };
+    const app = createApp({ dataDirectory, readCanonicalPlanIdentity: async () => ({ ...identity, content: '# Canonical', sourceIdentity }) });
+    const route = '/api/session/session-a/plan-revisions/msg-plan-1';
+    const created = await request(app).post(route).send({ ...identity, markdown: '# Forged browser text' });
+    expect(created.status).toBe(200);
+    expect(created.body).toMatchObject({ content: '# Canonical', sourceIdentity });
+    expect(await fs.readFile(created.body.path, 'utf8')).toBe('# Canonical');
+    const updated = await request(app).put(route).send({ ...identity, markdown: '# Owned edit', expectedVersion: created.body.version });
+    expect(updated.body).toMatchObject({ saved: true, content: '# Owned edit', sourceIdentity });
+    const ensured = await request(app).post(route).send({ ...identity, markdown: '# Assistant original' });
+    expect(ensured.body).toMatchObject({ created: false, content: '# Owned edit', version: updated.body.version, sourceIdentity });
+  });
+
   it('requires the version and preserves a concurrent winner', async () => {
     const app = createApp({ dataDirectory });
     const route = '/api/session/session-a/plan-revisions/msg-cas';
@@ -359,4 +375,14 @@ describe('session plan revision routes', () => {
       .send({ ...identity, markdown: '# Plan' });
     expect(collision.status).toBe(409);
   });
+});
+
+it('returns a truthful saved receipt when diagnostic or event projection fails after rename', async () => {
+  const dataDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-plan-observer-'));
+  try {
+    const app = createApp({ dataDirectory, recordDiagnostic: () => { throw Error('observer failed'); }, publishEvent: () => { throw Error('projection failed'); } });
+    const response = await request(app).post('/api/session/session-a/plan-revisions/msg-plan').send({ ...identity, markdown: '# Committed' });
+    expect(response.status).toBe(200); expect(response.body.created).toBe(true);
+    expect(await fs.readFile(response.body.path, 'utf8')).toBe('# Committed');
+  } finally { await fs.rm(dataDirectory, { recursive: true, force: true }); }
 });

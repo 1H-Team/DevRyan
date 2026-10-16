@@ -17,6 +17,7 @@ import {
   type SessionSummaryDiffStats,
 } from "../lib/sessionDiffStats"
 import { Binary } from "./binary"
+import { hasNativeCursorTextProvenance } from "../lib/messages/nativeCursorText"
 import type { FileDiff, GlobalState, State } from "./types"
 import { dropSessionCaches } from "./session-cache"
 import { stripSessionDiffSnapshots } from "./sanitize"
@@ -376,6 +377,7 @@ function insertProvisionalAssistantMessageForLivePart(draft: State, part: Part):
 }
 
 function normalizeAssistantTextPart(part: Part): Part {
+  if (hasNativeCursorTextProvenance(part)) return part
   if (part.type !== "text" && part.type !== "reasoning") {
     return part
   }
@@ -737,14 +739,15 @@ export function applyDirectoryEvent(
         if (shouldPreserveExistingPart(previous, incomingPart)) {
           return false
         }
-        const dedupeFields = getUpdatedDeltaFields(previous, incomingPart)
+        const exactCursorText = hasNativeCursorTextProvenance(incomingPart)
+        const dedupeFields = exactCursorText ? [] : getUpdatedDeltaFields(previous, incomingPart)
         // A still-streaming snapshot can arrive stale — generated before deltas
         // the client already applied — and replacing wholesale would truncate
         // the accumulated text mid-stream. Keep the longer local value when the
         // snapshot is a strict prefix of it, mirroring mergeMaterializedPart's
         // guard on the refetch path. Ended snapshots stay server-authoritative.
         let merged = incomingPart
-        if (getPartEndTime(incomingPart) === undefined) {
+        if (!exactCursorText && getPartEndTime(incomingPart) === undefined) {
           for (const field of DELTA_OVERLAP_FIELDS) {
             const previousValue = (previous as Record<string, unknown>)[field]
             const incomingValue = (incomingPart as Record<string, unknown>)[field]
@@ -849,7 +852,10 @@ export function applyDirectoryEvent(
         )
       // Create new Part object + new array so React detects the change
       const next = [...parts]
-      const appendedValue = shouldDedupe
+      const exactCursorText = props.field === "text" && hasNativeCursorTextProvenance(existing)
+      const appendedValue = exactCursorText
+        ? (existingValue ?? "") + props.delta
+        : shouldDedupe
         ? appendNonOverlappingDelta(existingValue, props.delta, {
           messageID: props.messageID,
           partID: props.partID,
@@ -858,7 +864,7 @@ export function applyDirectoryEvent(
         : DELTA_OVERLAP_FIELDS.includes(props.field as typeof DELTA_OVERLAP_FIELDS[number])
           ? appendStreamingTextDelta(existingValue, props.delta)
           : (existingValue ?? "") + props.delta
-      const nextValue = shouldSanitizeAssistantText
+      const nextValue = shouldSanitizeAssistantText && !exactCursorText
         ? normalizeAssistantPartText(appendedValue, typeof existing.type === "string" ? existing.type : undefined)
         : appendedValue
 

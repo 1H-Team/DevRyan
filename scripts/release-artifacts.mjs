@@ -7,7 +7,7 @@ export const hash = (bytes) => crypto.createHash('sha256').update(bytes).digest(
 export const WEB_BUILD_OPTIONS = Object.freeze({ mode: 'production', reactScan: false });
 
 export function assertReleaseWritesAllowed(environment = process.env) {
-  if (![undefined, 'false'].includes(environment.RELEASE_DRY_RUN)) {
+  if (![undefined, 'false'].includes(environment.RELEASE_DRY_RUN) || ![undefined, 'false'].includes(environment.RELEASE_CANDIDATE)) {
     throw Object.assign(new Error('Release dry runs prohibit external publication and tagging'), { code: 'release_dry_run_write_forbidden' });
   }
   assertBotInputPreparation(environment);
@@ -89,4 +89,11 @@ export function verifyPreparedMetadata(metadata, identity, arch, archiveHash) {
     || metadata.arch !== arch || metadata.revision !== identity.revision
     || metadata.release !== identity.release || metadata.lockfile !== identity.lockfile
     || metadata.archiveHash !== archiveHash) throw new Error('Prepared Electron artifact mismatch');
+}
+
+export function verifyRetainedCandidateMetadata(metadata, identity, dmgSha256) {
+  if (metadata?.protocol !== 'devryan.release-candidate/1' || metadata.sourceCommit !== identity.revision
+    || metadata.version !== identity.release || metadata.lockfile !== identity.lockfile || metadata.dmgSha256 !== dmgSha256
+    || !/^[a-f0-9]{64}$/.test(dmgSha256)) throw new Error('Retained candidate source, version, lockfile or installer bytes differ');
+  return metadata;
 }

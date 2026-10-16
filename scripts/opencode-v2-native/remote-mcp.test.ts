@@ -120,7 +120,7 @@ test('only exact reviewed native configuration origins can perform sealed no-op 
 });
 
 
-test('the 2.0.26 configuration policy origin may only list and remove reviewed MCP servers', async () => {
+test('the 2.0.30 configuration policy origin may only list and remove reviewed MCP servers', async () => {
   const { provideRegistrationOrigin } = await import('../../packages/web/server/lib/opencode/runtime-host/registration-origin.js');
   const { createReviewedNativePluginRegistry } = await import('../../packages/web/server/lib/opencode/runtime-host/native-plugin-registry.js');
   const registry = createReviewedNativePluginRegistry('b'.repeat(64));

@@ -10,6 +10,11 @@ const source = readFileSync(
 );
 
 describe('PullRequestSection PR description generation', () => {
+  test('identifies an active chat model fallback without replacing the generated draft', () => {
+    expect(source).toContain("if (generated.source === 'session_model')");
+    expect(source).toContain("toast.info(t('gitView.toast.activeModelFallback'), { description: generated.model ?? undefined })");
+    expect(dict['gitView.toast.activeModelFallback']).toBe('Used the active chat model for this draft');
+  });
   test('names the cause of a failed generation per error code', () => {
     for (const [code, key] of [
       ['FREE_ZEN_EXHAUSTED', 'gitView.pr.toast.generateDescriptionCause.exhausted'],

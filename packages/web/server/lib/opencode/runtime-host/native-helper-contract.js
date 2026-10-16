@@ -5,12 +5,14 @@ const id = value => typeof value === 'string' && value.length > 0 && value.lengt
 /** This constructor boundary carries supplied text only, never history or tool permissions. */
 export function nativeHelperInput(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)
-    || Object.keys(input).some(key => !['operationID','directory','sessionID','agent','providerID','modelID','variant','prompt','system','timeoutMs','maxOutputTokens'].includes(key))
+    || Object.keys(input).some(key => !['operationID','directory','sessionID','agent','providerID','modelID','variant','selectionMode','selectionRevision','prompt','system','timeoutMs','maxOutputTokens'].includes(key))
     || input.operationID !== undefined && !id(input.operationID)
     || !path.isAbsolute(input.directory ?? '') || path.resolve(input.directory) !== input.directory || input.directory.includes('\0')
-    || input.sessionID !== undefined && !/^ses[a-zA-Z0-9_-]{1,128}$/.test(input.sessionID)
+    || input.sessionID !== undefined && (typeof input.sessionID !== 'string' || !/^ses[a-zA-Z0-9_-]{1,128}$/.test(input.sessionID))
     || !['devryan-title','devryan-commit','devryan-pr'].includes(input.agent)
     || !id(input.providerID) || !id(input.modelID) || input.variant !== undefined && !id(input.variant)
+    || input.selectionMode !== undefined && !['configured','active'].includes(input.selectionMode)
+    || input.selectionRevision !== undefined && !id(input.selectionRevision)
     || typeof input.prompt !== 'string' || !input.prompt.trim() || Buffer.byteLength(input.prompt) > 262144
     || input.system !== undefined && (typeof input.system !== 'string' || Buffer.byteLength(input.system) > 262144)
     || !Number.isSafeInteger(input.timeoutMs ?? 60000) || (input.timeoutMs ?? 60000) < 1 || (input.timeoutMs ?? 60000) > 120000
@@ -19,10 +21,11 @@ export function nativeHelperInput(input) {
 }
 
 export function nativeHelperTitleInput(input) {
- if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(key=>!['operationID','directory','sessionID','title','expectedTitle'].includes(key))
+ if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(key=>!['operationID','directory','sessionID','title','expectedTitle','sourceMessageID'].includes(key))
   ||input.operationID!==undefined&&!id(input.operationID)
-  ||!path.isAbsolute(input.directory??'')||path.resolve(input.directory)!==input.directory||input.directory.includes('\0')||!/^ses[a-zA-Z0-9_-]{1,128}$/.test(input.sessionID)
+  ||!path.isAbsolute(input.directory??'')||path.resolve(input.directory)!==input.directory||input.directory.includes('\0')||typeof input.sessionID!=='string'||!/^ses[a-zA-Z0-9_-]{1,128}$/.test(input.sessionID)
   ||typeof input.title!=='string'||!input.title.trim()||input.title.length>80||/[\x00-\x1f\x7f]/.test(input.title)
   ||typeof input.expectedTitle!=='string'||input.expectedTitle.length>1024)throw fail();
+ if(input.sourceMessageID!==undefined&&(typeof input.sourceMessageID!=='string'||!/^msg_[A-Za-z0-9_-]{1,128}$/.test(input.sourceMessageID)))throw fail();
  return Object.freeze({...input});
 }

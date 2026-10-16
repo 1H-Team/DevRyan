@@ -1,5 +1,43 @@
 # Web Managed Orchestration
 
+Native model RPCs capture `maxOutputBytes` from their reviewed configuration generation. Result projection bounds the escaped serialized output, including metadata and references. Submit and disposition reserve receipt capacity before scheduler mutations; disposition also checks the current retained projection first. If projection fails after a durable mutation, the tool returns a bounded `committed` receipt with the exact task/envelope/action identities and an enumerated projection failure. Callers must read current status rather than repeat a committed operation as new work. Ordinary UI/API reads retain their existing eager shape.
+
+Constructor-only `withSubmissionPreparation` resolves the exact agent/model tuple
+outside the parent mutation lock. Its asynchronous local scope is consumed once
+by the same serialized submission; it does not cache credentials, permits or
+physical-use authorization. The locked commit rechecks captured Plan policy and
+the live native invocation. Scheduler reservation and durable insertion both run
+the constructor's authorization callback, so Stop or changed configuration during
+preparation cannot leave a queued task. Child registration and the parent control
+lease retain their existing mutation ownership.
+
+Native `status`, `wait`, `wait_any` and `read_result` use the constructor-owned
+`withManagedResultRead` scope. It checks the exact managed-tool permit before and
+after the read without retaining the parent mutation lock. Stop remains available
+while a read waits; a revoked read cannot return data under stale authority.
+Starts, cancellation and dispositions keep their separate mutation lock.
+
+Version 2 model reads reserve response capacity across report pages, typed
+metadata pages, references and batch framing. `read_result` accepts exact
+task/cursor pairs; unreturned batch items remain explicit and require another
+read. V2's raw page ceiling is 24 KiB; the full escaped JSON reply must still fit
+`min(48 KiB, native byte limit - 2 KiB)`. V1 retains its 8 KiB ceiling. The native owner stages exact publication candidates only after a bounded
+response is ready. It grants collection and later-Step review from canonical
+completed native tool parts through the constructor reader, then supplies a
+private final recheck to scheduler acknowledgement. JSON RPC parameters cannot
+manufacture that review grant. Bulk continuation reserves lean receipt capacity
+before each state effect and preserves committed truth if Stop or an observer
+failure happens after a durable acknowledgement. Internal barrier/snapshot reads
+do not apply the model cap to full retained sibling reports; only returned model
+projections consume that cap.
+
+Publication payloads remain freshly read on every review/staging check. The
+current constructor reader has no immutable canonical-history revision receipt;
+a primary revision alone does not prove that an earlier completed output stayed
+unchanged. No whole-snapshot or authorization memoization is admitted. The
+[measured page evaluation](../../../../../docs/audits/2026-10-15/managed-result-page-evaluation/README.md)
+retains the v2 CPU/latency regression and the smaller transport-call improvement.
+
 ## Purpose
 
 Canonical OpenCode and Cursor synthetic message events feed the shared active-child
@@ -27,6 +65,23 @@ tasks, removal fences, lost ownership and shutdown remain denied.
 Private task-result RPCs accept `resultMode: "eager" | "reference"`; omission is eager for UI routes, Council, older plugins, and compatibility callers. Reference mode lazifies only a matching retained preview above 8,192 UTF-8 bytes and exposes the first page beside the existing wrapper. `read_result` requires exact task/root/directory scope plus the opaque `resultCursor`, performs no scheduler mutation, and returns only the next `resultReference`. Malformed cursors use `invalid_result_cursor` (400), retained identity/payload changes use `result_reference_mismatch` (409), and existing scope/result 403/404 errors remain authoritative. Snapshots and UI routes remain eager.
 
 ## Persistence and recovery
+
+The atomic ledger reports content-free physical progress to its constructor
+save observer: write completion, file sync, rename, directory sync and final
+owner verification. Windows reports its native CAS commit as one physical
+boundary. The scheduler's independent `managed_persistence` journal observation
+can require attention while a save holds the mutation queue. It retains uncertain
+write ownership and leaves terminal/action publication withheld until actual
+settlement; a healthy process heartbeat does not count as write progress. This
+diagnostic adds no task status or presentation threshold.
+
+`withNativePromptContext` privately scopes that readonly barrier reader through
+the current asynchronous constructor action. Only exact `barrier_status` reads
+for its captured root and directory use it; other RPCs retain normal ownership.
+Native Plan settlement includes directory in its request and still requires a
+clear barrier, idle native statuses, settled process leases and current source,
+controller/configuration and cancellation-generation checks. JSON parameters
+cannot create a prompt context or turn the read into mutation authority.
 
 Managed OpenCode retry status preserves optional structured action metadata. The shared executor treats the exact `action.reason: free_tier_limit` signal as immediate provider exhaustion, falls back to normalized usage-limit message wording for compatibility, and never waits for the provider's multi-hour `next` timestamp before exposing Model Recovery.
 
@@ -161,3 +216,11 @@ owner rechecks the configured execution and catalog availability; unavailable
 backups leave manual recovery. This policy uses `autoResume.trigger =
 provider_transport` and never probes quota or marks a provider quota-limited.
 See [the shared recovery contract](../../../../orchestration-runtime/DOCUMENTATION.md).
+
+The constructor-only `readManagedTitleAssignment` returns a frozen bounded child
+assignment tuple, without prompts, reports, lease tokens or a public RPC. It
+rechecks persistence ownership and work admission after each ownership await,
+then compares the complete immutable assignment again. The scheduler reader uses
+the durable read view during uncommitted saves; equal creation times use the
+existing sequence so a cancelled newer child assignment cannot reveal an older
+title grant. This read does not change task, control-lease or cancellation state.

@@ -6,6 +6,7 @@ const fail=code=>Object.assign(new Error(code),{code,status:503});
 export async function captureConfigurationSourceStamp({launch,directories,skillSources=[],additionalPaths=[]}) {
  const roots=[launch.opencodeConfigDirectory,launch.webConfigDirectory,
    path.join(launch.global.home,'.agents','skills'),path.join(launch.global.home,'.opencode'),
+   ...['profiles.json','settings.json'].map(name=>path.join(launch.global.home,'.config','meridian',name)),
    launch.reviewedPluginManifestPath,launch.reviewedNativeConfigPath,
    ...directories.flatMap(directory=>[path.join(directory,'.opencode'),path.join(directory,'.agents','skills')]),
    ...skillSources.map(source=>source.directory),...additionalPaths].filter(Boolean);

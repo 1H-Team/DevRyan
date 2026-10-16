@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "scope": "canonical managed child source text at the private OpenCode client boundary",
+  "incident": {
+    "ownedRun": "native-plan-implement-P1I3UF",
+    "children": ["ses_ec669c6a6ffej3CADdJpjU4y2V", "ses_ec66ac490ffeKQCF2YySaGD0w9"],
+    "journalGapVerification": "passed",
+    "observed": "Managed children accepted their source and completed their native work, but retained placeholder titles without physical title requests.",
+    "canonicalManagedMetadataPresent": true,
+    "sourceAndChildIdentityMatch": true,
+    "assignmentAndSelectionMatch": true,
+    "sealedTextMatchesCanonicalText": true,
+    "sealedFingerprintMatchesCanonicalAdmission": true,
+    "rawTextTitlesHashesAndAccountsIncluded": false
+  },
+  "cause": "The private readUserMessage method validated the native user text but omitted it from its return value. Managed title recollection therefore compared the sealed source text against empty text and refused a valid accepted source.",
+  "change": "Return the exact validated native text alongside private metadata. Preserve all session, directory, message-type and metadata checks. Input capture failures retain only allowlisted refusal codes, bounded reasons and source IDs. Failure-only diagnostic selection excludes ordinary root and confirmed Synthetic-only probes and grants no source authority.",
+  "verification": {
+    "actualClientNativeTitleAndCoordinatorTests": {"passed": 137, "failed": 0},
+    "command": "cd packages/web && node node_modules/vitest/vitest.mjs run server/lib/opencode/opencode-client/opencode-client.contract.test.js server/lib/opencode/runtime-host/native-managed-title-owner.test.js server/lib/opencode/standard-session-title-runtime.test.js --no-file-parallelism --maxWorkers=1",
+    "assertions": ["actual private client preserves canonical user text bytes", "real native title owner recollects through the private client", "changed source text still refuses the captured proof", "unknown raw codes and exceptions do not enter diagnostics", "ordinary root and confirmed Synthetic-only events do not create managed title failure records", "known child failures remain visible when the projected source row is unavailable"],
+    "freshNativeArtifactRequired": true,
+    "linkedChangedInput": "packages/web/server/lib/opencode/opencode-client/privileged.js",
+    "actualCompiledPlanTitleLifecycle": "pending parent task fresh artifact and full UI acceptance lane"
+  },
+  "limitations": "Targeted tests qualify the private client and title-owner contracts. They do not replace the actual compiled helper inference, rename, restart and Plan approval lifecycle gate. No canonical source guard or execution authorization was relaxed."
+}

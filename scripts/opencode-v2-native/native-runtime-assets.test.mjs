@@ -30,7 +30,7 @@ test('Windows-style Git checkout preserves byte-pinned reviewed resources',async
 });
 test('asset rewrites require exact pinned sources and embed only reviewed native paths',async()=>{
  const require=createRequire(path.join(core,'package.json'));
- const pty=await fs.readFile(path.join(core,'dist/chunks/location-services-dajrwvna.js'));
+ const pty=await fs.readFile(path.join(core,'dist/chunks/instance-dajrwvna.js'));
  assert.equal(hash(pty),NATIVE_ASSET_SOURCE_SHA.pty);
  const assetPath=path.join(path.dirname(require.resolve('@opencode-ai/pty-darwin-arm64/package.json')),'bin/opencode-pty');
  const assetSha256=hash(await fs.readFile(assetPath));
@@ -86,7 +86,15 @@ test('reviewed original closure and exact constructor transforms are inventoried
  assert.equal(reviewed.resolutions.has(path.join(domRoot,'browser/Window.js')+'\0whatwg-url'),true);
  const jsoncMain=Bun.resolveSync('jsonc-parser',path.join(repository,'packages/web'));
  const jsoncPackage=path.resolve(path.dirname(jsoncMain),'../../package.json');
+ const workspace=reviewed.workspaceResolutions.get(path.join(repository,'packages/shared-runtime'));
+ assert.equal(workspace.get('adm-zip'),Bun.resolveSync('adm-zip',path.join(repository,'packages/shared-runtime')));
+ assert.equal(workspace.has('undeclared-fixture-package'),false);
+ assert.equal(reviewed.inputFiles.get(path.join(repository,'packages/shared-runtime/package.json')),hash(await fs.readFile(path.join(repository,'packages/shared-runtime/package.json'))));
+ assert.equal(reviewed.inputFiles.get(path.join(repository,'bun.lock')),hash(await fs.readFile(path.join(repository,'bun.lock'))));
  assert.equal(reviewed.inputFiles.get(jsoncPackage),hash(await fs.readFile(jsoncPackage)));
  assert.equal(reviewed.transforms.find(item=>item.reason==='pinned-jsonc-original-esm-module-resolution').sha256,hash(await fs.readFile(jsoncMain)));
- assert.equal([...reviewed.inputFiles].every(([file])=>file.startsWith(root+path.sep)||file===jsoncPackage||file===path.join(repository,'packages/web/server/default-config/plugins/devryan-document-reader.mjs')||file===path.join(repository,'packages/web/server/default-config/plugins/devryan-document-reader.d.mts')||file===path.join(repository,'packages/web/server/default-config/plugins/devryan-browser.mjs')||file===path.join(repository,'packages/web/server/default-config/plugins/devryan-browser.d.mts')),true);
+ const workspaceManifest=new Set([...reviewed.workspaceResolutions.keys()].map(directory=>path.join(directory,'package.json')));
+ assert.equal([...reviewed.inputFiles].every(([file])=>file.startsWith(root+path.sep)||file===jsoncPackage||file===path.join(repository,'bun.lock')||workspaceManifest.has(file)
+  ||file.startsWith(path.join(repository,'node_modules/.bun')+path.sep)&&path.basename(file)==='package.json'
+  ||file===path.join(repository,'packages/web/server/default-config/plugins/devryan-document-reader.mjs')||file===path.join(repository,'packages/web/server/default-config/plugins/devryan-document-reader.d.mts')||file===path.join(repository,'packages/web/server/default-config/plugins/devryan-browser.mjs')||file===path.join(repository,'packages/web/server/default-config/plugins/devryan-browser.d.mts')),true);
 });

@@ -47,6 +47,34 @@ function run(root, operation, environment = {}) {
   });
 }
 
+test('history diagnostic uses only bounded gh GETs and retains incomplete pagination without credentials or writers', async t => {
+  const root = await checkout(t, ['scripts/release-publication.mjs']), bin = path.join(root, 'fake-gh');
+  await fs.mkdir(bin); await fs.writeFile(path.join(bin, 'package.json'), '{"type":"commonjs"}');
+  const log = path.join(root, 'history-requests.jsonl');
+  await fs.writeFile(path.join(bin, 'gh'), `#!${process.execPath}\nconst fs = require('node:fs');
+const args = process.argv.slice(2);
+if (args[0] !== 'api' || args[1] !== '--method' || args[2] !== 'GET') process.exit(2);
+fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + '\\n');
+console.log(JSON.stringify(args[3].includes('/workflow') ? {workflow_runs: process.env.HISTORY_FIXTURE === 'full-page' ? Array(100).fill({}) : []} : []));
+`, { mode: 0o755 });
+  const environment = { PATH: bin, GITHUB_REPOSITORY: '1H-Team/DevRyan' };
+  const green = run(root, 'history-read', environment);
+  assert.equal(green.status, 0, green.stderr);
+  const file = path.join(root, 'artifacts/history-classification.json');
+  const complete = JSON.parse(await fs.readFile(file, 'utf8'));
+  assert.equal(complete.complete, true); assert.equal(complete.failureTallyComplete, true);
+  assert.equal(complete.requestCount, 2); assert.deepEqual(complete.runs, []);
+  const incomplete = run(root, 'history-read', { ...environment, HISTORY_FIXTURE: 'full-page' });
+  assert.equal(incomplete.status, 1, incomplete.stderr);
+  const stopped = JSON.parse(await fs.readFile(file, 'utf8'));
+  assert.equal(stopped.complete, false); assert.equal(stopped.requestCount, 10); assert.equal(stopped.requestLimit, 120);
+  assert.equal(stopped.failureTallyComplete, false);
+  assert.equal(stopped.error, 'release_history_incomplete');
+  const calls = (await fs.readFile(log, 'utf8')).trim().split('\n').map(JSON.parse);
+  assert.equal(calls.length, 12); assert.ok(calls.every(args => args.slice(0, 3).join(' ') === 'api --method GET'));
+  assert.deepEqual(await fs.readdir(path.join(root, 'artifacts')), ['history-classification.json']);
+});
+
 test('image planning succeeds in a checkout without installed runtime dependencies', async t => {
   const root = await checkout(t), output = path.join(root, 'image-output');
   const result = run(root, 'image-plan', { IMAGE_KEY: 'computer', GITHUB_OUTPUT: output });
@@ -261,4 +289,12 @@ test('packaged asset description emits the actual SHA-256 and refuses escaped di
   assert.equal(receipt.size, bytes.length);
   assert.equal(receipt.sha256, digestOf(bytes).slice(7));
   assert.notEqual(run(root, 'asset-describe', { RELEASE_ASSET_PLATFORM: 'macos-arm64', RELEASE_ASSET_DIRECTORY: repository, GITHUB_OUTPUT: output }).status, 0);
+});
+
+test('full release preflight refuses unsupported native targets in a bare checkout before admission or heavy work', async t => {
+  const root = await checkout(t, ['scripts/verify-revert-runtime-artifacts.mjs', 'scripts/release-publication.mjs']);
+  const result = run(root, 'source-admit', { RELEASE_SCOPE: 'full', GITHUB_REPOSITORY: '1H-Team/DevRyan', GITHUB_TOKEN: 'synthetic-fixture-token' });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Universal native web release unavailable/);
+  assert.doesNotMatch(result.stderr, /Cannot find package/);
 });

@@ -1,0 +1,187 @@
+{
+  "schemaVersion": 1,
+  "status": "failed-incomplete-measurement",
+  "testedRun": "native-receipt-resource-fvpbSd",
+  "reportSha256": "7129b3c9166591ee89056df97ce4713735058469b768c3bdba0de8678098ab4e",
+  "executionAttestation": "Parent directly observed exec87538 exit 1; author independently inspected retained result and exact owned pair-3 journal.",
+  "failure": {
+    "stage": "repeat",
+    "errorName": "AssertionError",
+    "code": "native_receipt_resource_incomplete",
+    "reason": "assertion-failed"
+  },
+  "rendererFailure": {
+    "status": "gap",
+    "reason": "receipt-probe-unavailable"
+  },
+  "originalAssertionCause": "unestablished; the runner retained neither assertion text nor a narrower pre-submission stage",
+  "journalInspection": {
+    "scope": "Exact selected pair-3 candidate journal after owned cleanup; bounded 142-record read.",
+    "gapCheck": {
+      "command": "bun scripts/journal.mjs --dir <exact-owned-pair-3-selected-journal> gaps --verify",
+      "authorObservedExitCode": 0,
+      "explicitGapRows": 0
+    },
+    "available": true,
+    "complete": true,
+    "chunks": 3,
+    "buckets": 3,
+    "records": 142,
+    "gapRecords": 0,
+    "manifestGapRecords": 0,
+    "errorRecords": 0,
+    "errorLogUuidResolution": "No Error Log records found; no administrator detail lookup required.",
+    "freshSessionID": "ses_ebfc704c8ffeWPqG5NtqfugGQO",
+    "freshRecordCount": 91,
+    "repeatSessionID": "ses_ebfc6e007ffeov4KG616TrHXlV",
+    "repeatRecords": [
+      {
+        "at": 1792078848131,
+        "type": "timing",
+        "mark": "session.creation.acknowledged"
+      },
+      {
+        "at": 1792078848132,
+        "type": "open_code_event",
+        "nativeEventType": "session.created"
+      }
+    ],
+    "repeatPromptRecords": 0,
+    "repeatProviderObservationRecords": 0,
+    "repeatExecutionRecords": 0,
+    "rawJournalReplay": "Author read retained exact scoped journal records; no raw content, bodies, titles, paths or credentials are copied into this proof."
+  },
+  "completedTurns": [
+    {
+      "pair": 1,
+      "condition": "fresh",
+      "settlement": "matched",
+      "journalCoverage": {
+        "complete": true,
+        "gapCount": 0,
+        "projectedRecords": 14
+      },
+      "physicalPrimarySends": 3,
+      "bridgeRPC": {
+        "status": "observed",
+        "count": 70,
+        "failedCount": 0
+      }
+    },
+    {
+      "pair": 1,
+      "condition": "repeat",
+      "settlement": "matched",
+      "journalCoverage": {
+        "complete": true,
+        "gapCount": 0,
+        "projectedRecords": 14
+      },
+      "physicalPrimarySends": 3,
+      "bridgeRPC": {
+        "status": "observed",
+        "count": 70,
+        "failedCount": 0
+      }
+    },
+    {
+      "pair": 2,
+      "condition": "fresh",
+      "settlement": "matched",
+      "journalCoverage": {
+        "complete": true,
+        "gapCount": 0,
+        "projectedRecords": 14
+      },
+      "physicalPrimarySends": 3,
+      "bridgeRPC": {
+        "status": "observed",
+        "count": 70,
+        "failedCount": 0
+      }
+    },
+    {
+      "pair": 2,
+      "condition": "repeat",
+      "settlement": "matched",
+      "journalCoverage": {
+        "complete": true,
+        "gapCount": 0,
+        "projectedRecords": 14
+      },
+      "physicalPrimarySends": 3,
+      "bridgeRPC": {
+        "status": "observed",
+        "count": 70,
+        "failedCount": 0
+      }
+    },
+    {
+      "pair": 3,
+      "condition": "fresh",
+      "settlement": "matched",
+      "journalCoverage": {
+        "complete": true,
+        "gapCount": 0,
+        "projectedRecords": 14
+      },
+      "physicalPrimarySends": 3,
+      "bridgeRPC": {
+        "status": "observed",
+        "count": 70,
+        "failedCount": 0
+      }
+    }
+  ],
+  "pairCleanup": [
+    {
+      "pair": 1,
+      "complete": true,
+      "failures": []
+    },
+    {
+      "pair": 2,
+      "complete": true,
+      "failures": []
+    },
+    {
+      "pair": 3,
+      "complete": true,
+      "failures": []
+    }
+  ],
+  "interpretation": "The repeat session was created and no repeat prompt/provider/execution record exists. The secondary unavailable receipt probe cannot establish navigation, calibration or another precise cause. Five complete pairs and performance threshold acceptance were not achieved.",
+  "diagnosticCorrection": {
+    "scope": "Benchmark-only stage/error evidence; no causal fix, retry, calibration tolerance, receipt join or threshold change.",
+    "oldRunnerSha256": "863ae288a79ebd8c0e520759b4c499dac8a30d92ae650781acc8c7ebe65e8a6b",
+    "newRunnerSha256": "caee9b4a70c798ff3200224b4316a09051bd35590950a70b77ebcb9cc664bc78",
+    "newStages": [
+      "cohort",
+      "output-reset",
+      "session-create",
+      "navigation",
+      "composer-ready",
+      "probe-start",
+      "sampler-start",
+      "prompt-send"
+    ],
+    "knownAssertionReasons": [
+      "receipt-clock-host-step",
+      "receipt-clock-renderer-offset",
+      "turn-deadline"
+    ],
+    "unknownAssertions": "assertion-failed without raw message or stack",
+    "tests": {
+      "command": "node --test scripts/perf/native-receipt-resource-benchmark.test.mjs",
+      "authorObservedExitCode": 0,
+      "tests": 11,
+      "passed": 11,
+      "failed": 0,
+      "skipped": 0
+    },
+    "nativeAcceptanceCohortAffected": false,
+    "planCohortAffected": false,
+    "rerun": "pending-parent-review-and-bounded-rerun"
+  },
+  "freshLiveQualification": false
+}

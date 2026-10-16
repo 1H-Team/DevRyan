@@ -64,7 +64,7 @@ export async function prepareSourceOpenAiFixture({ databasePath, directory, prof
       return proof(yield* credentials.get(selected.id));
     }).pipe(Effect.provide(Logger.layer([],{mergeWithExisting:false})))));
     const before = await run(true), reopened = await run(false);assert.deepEqual(reopened,before);
-    return {source:'synthetic-retired-native-credential-source-sdk',nativeVersion:'2.0.26',accounts,reopened,
+    return {source:'synthetic-retired-native-credential-source-sdk',nativeVersion:'2.0.30',accounts,reopened,
       requestPhases:['A','B'].map(account => ({account,phase:'create'})),settledMutations:0,compiledOAuthCreation:false};
   }
   const previousFetch = globalThis.fetch, requests = [], mutationsSeen = [], accounts = [];
@@ -215,7 +215,7 @@ export async function prepareSourceOpenAiFixture({ databasePath, directory, prof
     assert.deepEqual(requests.map(row => `${row.account}:${row.phase}`), ['A:create','B:create']);
     // Native Credential.create activates atomically; no separate activation is emitted.
     assert.equal(mutationsSeen.length, 2);
-    return { source: 'synthetic-siwc-native-credential-create-source-sdk-shared-queue', nativeVersion: '2.0.26',
+    return { source: 'synthetic-siwc-native-credential-create-source-sdk-shared-queue', nativeVersion: '2.0.30',
       accounts, reopened, requestPhases: requests, settledMutations: mutationsSeen.length, compiledOAuthCreation: false };
   } finally { globalThis.fetch = previousFetch; }
 }

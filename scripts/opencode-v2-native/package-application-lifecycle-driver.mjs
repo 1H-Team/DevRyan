@@ -19,11 +19,20 @@ process.send({type:'application-owner-session-ready'});
 let bytes = '';
 for await (const chunk of process.stdin) { bytes += chunk; assert.ok(Buffer.byteLength(bytes) <= 65536); }
 const input = JSON.parse(bytes);
-assert.ok(['upgrade', 'rollback', 'rollback-crash', 'inspection', 'resumed-inspection', 'parent-death'].includes(input.mode));
+assert.ok(['upgrade', 'rollback', 'rollback-crash', 'inspection', 'resumed-inspection', 'parent-death', 'plan-implement'].includes(input.mode));
 const { selectedRuntimeBundle: binding } = await import('../../packages/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js');
 assert.ok(binding && binding.admission !== 'held');
 const { startWebUiServer } = await import('../../packages/web/server/index.js');
 let server, result, stopProof, candidateStopHistory, stopStream;
+const planCheckpoint = requested => new Promise((resolve, reject) => {
+  const timer = setTimeout(() => { process.off('message', receive); reject(Error('Actual Plan visual checkpoint timed out')); }, 90000);
+  const receive = message => {
+    if (message?.type !== 'application-plan-checkpoint-done' || message.phase !== requested.phase) return;
+    clearTimeout(timer); process.off('message', receive); resolve();
+  };
+  process.on('message', receive);
+  process.send({ type: 'application-plan-checkpoint', input: requested });
+});
 try {
   // Actual entry imports and application owners, not a hand-built native graph.
   server = await startWebUiServer({ host: '127.0.0.1', port: 0, attachSignals: false });
@@ -94,7 +103,25 @@ try {
     await stopStream.close();stopStream=undefined;
     return stopped;
   };
-  if (input.mode === 'upgrade') {
+  if (input.mode === 'plan-implement') {
+    const { runApplicationPlanImplementation } = await import('./package-plan-implement-lane.mjs');
+    result = await runApplicationPlanImplementation({ api, messages, directory: input.directory, dataDirectory: binding.descriptor.launch.webDataDirectory,
+      checkpoint: requested => planCheckpoint({ origin, ...requested }),
+      restart: async () => { await server.restartOpenCode(); await waitFor(() => server.isReady(), Boolean, 'Plan restart never became ready', 120000); },
+      approvePlan: async requested => {
+        const approved = new Promise((resolve, reject) => {
+          const timer = setTimeout(() => { process.off('message', receive); reject(Error('Actual Plan UI approval timed out')); }, 90000);
+          const receive = message => {
+            if (message?.type !== 'application-plan-approved') return;
+            clearTimeout(timer); process.off('message', receive); resolve(message.approval);
+          };
+          process.on('message', receive);
+        });
+        process.send({ type: 'application-plan-ready', input: { origin, ...requested } });
+        return approved;
+      },
+    });
+  } else if (input.mode === 'upgrade') {
     const session = await api('/api/session?directory=' + encodeURIComponent(input.directory), {
       title: 'Production application owned conversation', model: { providerID: 'devryan-smoke', modelID: 'smoke-write', variant: 'high' }, agent: 'builder' });
     await prompt(session.id,'Reply exactly: DevRyan live QA ready.');
@@ -141,6 +168,13 @@ try {
 } catch(error) {
   result={status:'failed',mode:input.mode,error:{name:error.name,code:error.code??null,message:error.message},...(stopProof?{stopProof}:{}),...(candidateStopHistory?{candidateStopHistory}:{})};process.exitCode=1;
 } finally {
+  if (input.mode === 'plan-implement') {
+    try { await planCheckpoint({ phase: 'browser-settlement' }); }
+    catch {
+      if(result?.status!=='failed')result={status:'failed',mode:input.mode,error:{name:'Error',code:'application_plan_browser_cleanup_failed',message:'Actual Plan browser cleanup failed'}};
+      result.cleanup={...result.cleanup,browser:'failed'};process.exitCode=1;
+    }
+  }
   if(stopStream) {
     try { await stopStream.close(); }
     catch {

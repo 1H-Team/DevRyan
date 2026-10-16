@@ -4,6 +4,78 @@ import { createDiagnosticSanitizer } from './sanitizer.js';
 import { parseNativeJournalObservation } from '../../shared-runtime/lib/native-observation.js';
 
 describe('diagnostic sanitizer', () => {
+  test('Cursor final association retains only finite content-free metadata through journal and export', () => {
+    const sanitizer = createDiagnosticSanitizer();
+    const payload = { assistantMessageID: 'msg_fixture_assistant', partID: 'msg_fixture_assistant_part_000003_text',
+      assistantOrdinal: 2, streamedParts: 2, previousLength: 1, finalLength: 1, equal: true, state: 'matched' };
+    const record = { type: 'lifecycle', event: 'cursor_final_association', sessionID: 'ses_fixture', payload: {
+      ...payload, text: 'private text', result: 'private final', hash: 'private hash', reason: 'private reason', extra: 'private',
+    } };
+    const saved = sanitizer.sanitizeRecord(record);
+    expect(saved.payload).toEqual(payload);
+    expect(sanitizer.sanitizeExportValue(saved)).toEqual(saved);
+    expect(sanitizer.sanitizeExportValue(record).payload).toEqual(payload);
+    for (const reason of ['missing', 'unavailable', 'limit', 'shape', 'mismatch']) {
+      expect(sanitizer.sanitizeRecord({ ...record, payload: { state: 'unavailable', reason,
+        code: 'CURSOR_STREAM_FINAL_ASSOCIATION_INVALID' } }).payload).toEqual({ state: 'unavailable', reason, code: 'CURSOR_STREAM_FINAL_ASSOCIATION_INVALID' });
+    }
+    expect(sanitizer.sanitizeRecord({ ...record, payload: { partID: 'private value', assistantOrdinal: 0,
+      streamedParts: 4097, previousLength: -1, finalLength: 16 * 1024 * 1024 + 1, equal: 'true',
+      state: 'private', reason: 'private', code: 'private', raw: 'private' } }).payload).toEqual({});
+    expect(sanitizer.sanitizeRecord({ ...record, event: 'unrelated', payload: { partID: payload.partID,
+      assistantOrdinal: 2, streamedParts: 2, previousLength: 1, finalLength: 1, equal: true } }).payload).toEqual({});
+  });
+  test('mandatory persistence attention retains only typed owner timing and scope', () => {
+    const sanitizer = createDiagnosticSanitizer();
+    const record = sanitizer.sanitizeRecord({ type: 'lifecycle', event: 'managed_persistence', sessionID: 'ses_root', payload: {
+      state: 'needs_attention', code: 'managed_persistence_stalled', ownerID: 'dvr_save_one', taskId: 'dvr_task_one', rootSessionId: 'ses_root',
+      phase: 'file_sync', reason: 'task_deadline', at: 100, elapsedMs: 50, idleMs: 20, taskCount: 2,
+      prompt: 'private content', path: '/private/ledger.json', token: 'private token', phaseOverride: 'finalizing',
+    } });
+    expect(record.payload).toEqual({ state: 'needs_attention', code: 'managed_persistence_stalled', ownerID: 'dvr_save_one', taskId: 'dvr_task_one',
+      rootSessionId: 'ses_root', phase: 'file_sync', reason: 'task_deadline', at: 100, elapsedMs: 50, idleMs: 20, taskCount: 2 });
+    expect(sanitizer.sanitizeExportValue(record)).toEqual(record);
+    expect(sanitizer.sanitizeRecord({ type: 'lifecycle', event: 'managed_persistence', payload: {
+      phase: 'private text', idleMs: -1, outcome: 'assumed committed', ownerID: 'untrusted',
+    } }).payload).toEqual({});
+  });
+  test('receipt diagnostics retain booleans and bounded counts only in their owned records', () => {
+    const sanitizer = createDiagnosticSanitizer();
+    const receipt = sanitizer.sanitizeRecord({ type: 'log', event: 'session_changes_capture', payload: {
+      code: 'exact_tool_receipt', hasChanges: false, private: 'private title',
+    } });
+    expect(receipt.payload).toEqual({ code: 'exact_tool_receipt', hasChanges: false });
+    expect(sanitizer.sanitizeExportValue(receipt)).toEqual(receipt);
+    expect(sanitizer.sanitizeRecord({ type: 'lifecycle', event: 'session_execution', payload: {
+      phase: 'cursor_receipts', calls: 107, receipts: 1, private: 'private title',
+    } }).payload).toEqual({ phase: 'cursor_receipts', calls: 107, receipts: 1 });
+    expect(sanitizer.sanitizeRecord({ type: 'lifecycle', event: 'session_execution', payload: {
+      phase: 'cursor_receipts', calls: 'private title', receipts: -1, hasChanges: 'private title',
+    } }).payload).toEqual({ phase: 'cursor_receipts' });
+    expect(sanitizer.sanitizeRecord({ type: 'lifecycle', event: 'unrelated', payload: { hasChanges: true, calls: 1 } }).payload).toEqual({});
+  });
+  test('title lifecycle preserves bounded mismatch metadata and rejects raw titles and hashes through journal and export', () => {
+    const sanitizer = createDiagnosticSanitizer();
+    const safe = { stage: 'rename_refused', outcome: 'different', providerID: 'opencode', modelID: 'deepseek-v4.1-flash',
+      source: 'session_model', selectionMode: 'configured', sourceMessageID: 'msg_source', sourceIdentityPresent: true,
+      helperSessionID: 'ses_helper', nativeLength: 0, expectedLength: 27, candidateLength: 32,
+      nativeEqualsCandidate: false, nativeEqualsExpected: true, refusalCode: 'native_helper_title_conflict', attempt: 3, durationMs: 4.5, status: 409 };
+    const row = { type: 'lifecycle', event: 'session_title_generation', sessionID: 'ses_target', title: 'private top-level title', titleHash: 'd'.repeat(64), payload: {
+      ...safe, title: 'private generated title', nativeTitle: 'private native title', candidateTitle: 'private candidate',
+      titleHash: 'a'.repeat(64), sourceHash: 'b'.repeat(64), hash: 'c'.repeat(64), text: 'raw request', error: 'raw error',
+    } };
+    expect(sanitizer.sanitizeRecord(row).payload).toEqual(safe);
+    expect(sanitizer.sanitizeRecord({ ...row, payload: { ...safe, refusalCode: 'native_managed_title_source_invalid' } }).payload.refusalCode).toBe('native_managed_title_source_invalid');
+    expect(sanitizer.sanitizeExportValue(row).payload).toEqual(safe);
+    expect(sanitizer.sanitizeExportValue(row)).not.toHaveProperty('title');
+    expect(sanitizer.sanitizeExportValue(row)).not.toHaveProperty('titleHash');
+    expect(sanitizer.sanitizeExportValue(sanitizer.sanitizeRecord(row)).payload).toEqual(safe);
+    expect(sanitizer.sanitizeRecord({ ...row, payload: { stage: 'raw title', outcome: 'raw title', reason: 'raw title', refusalCode: 'raw title',
+      selectionMode: 'raw title', sourceMessageID: 'private title', candidateLength: -1, nativeLength: NaN, expectedLength: 'title',
+      nativeEqualsCandidate: 'private title', nativeEqualsExpected: 1, sourceIdentityPresent: 'true', durationMs: Infinity, status: 999, attempt: 1.5 } }).payload).toEqual({});
+    expect(sanitizer.sanitizeRecord({ type: 'lifecycle', event: 'unrelated', payload: { candidateLength: 1, nativeEqualsCandidate: true, refusalCode: 'native_helper_title_conflict' } }).payload).toEqual({});
+  });
+
   test('retains only allowlisted provider failure details through journal and export', () => {
     const sanitizer = createDiagnosticSanitizer();
     const row = { type: 'open_code_event', payload: { type: 'session.error', properties: { sessionID: 'ses_fixture',
@@ -52,6 +124,16 @@ describe('diagnostic sanitizer', () => {
     expect(sanitizer.sanitizeRecord({ type: 'lifecycle', event: 'native_observation_gap', payload: {
       stage: 'controller', controllerInstanceID: 'instance-1', message: 'private error detail',
     } }).payload).toEqual({ code: 'native_observation_unavailable', stage: 'controller', controllerInstanceID: 'instance-1' });
+  });
+  test('helper physical observations retain only prepared/wire counts and captured revision through journal and export',()=>{
+    const sanitizer=createDiagnosticSanitizer({worktreeRoots:['/fixture/project']});
+    const payload={schema:1,stage:'physical',controllerInstanceID:'instance-helper',configurationDigest:'a'.repeat(64),sessionID:'ses_helper',directory:'/fixture/project',
+      requestID:'request-helper',kind:'generate',transport:'http',wireOptions:{},ordinal:1,attempt:null,toolCount:0,wireToolCount:0,
+      helperSelectionMode:'configured',helperSelectionRevision:'helper_4f460d83-389a-42a5-93cb-23cd7c5dbd64'};
+    const row={type:'lifecycle',event:'native_observation',sessionID:payload.sessionID,directory:payload.directory,payload};
+    const saved=sanitizer.sanitizeRecord(row);expect(saved.payload).toMatchObject({toolCount:0,wireToolCount:0,helperSelectionRevision:payload.helperSelectionRevision});
+    expect(parseNativeJournalObservation(saved.payload)).toEqual(saved.payload);expect(sanitizer.sanitizeExportValue(saved)).toEqual(saved);
+    for(const extra of [{tools:[{name:'private-tool'}]},{body:'private-body'},{helperSelectionRevision:'private whitespace'},{wireToolCount:-1}])expect(()=>sanitizer.sanitizeRecord({...row,payload:{...payload,...extra}})).toThrow('native_observation_invalid');
   });
   test('preserves finite local provider refusal codes through journaling and export', () => {
     const sanitizer = createDiagnosticSanitizer({ worktreeRoots: ['/fixture/project'] });
@@ -248,4 +330,24 @@ test('Claude process receipt fields are bounded and scoped to their exact lifecy
  expect(sanitizer.sanitizeRecord({...row,payload:invalid}).payload).toEqual({clues:[]});
  expect(sanitizer.sanitizeExportValue({...row,payload:invalid}).payload).toEqual({clues:[]});
  expect(sanitizer.sanitizeRecord({...row,payload:{clues:Array(15).fill('auth'),code:null}}).payload).toEqual({code:null});
+});
+
+test('raw HTTP body timing keeps bounded numeric observations only in its typed timing payload',()=>{
+ const sanitizer=createDiagnosticSanitizer(),payload={elapsedMs:20,requestID:'request-safe',transport:'http',kind:'primary',statusCode:200,bytes:42,chunks:3,maxGapMs:9};
+ const record=sanitizer.sanitizeRecord({type:'timing',mark:'turn.provider_body_end',payload:{...payload,text:'private',headers:'private',nested:{body:'private'}}});
+ expect(record.payload).toEqual(payload);expect(sanitizer.sanitizeExportValue(record).payload).toEqual(payload);
+ expect(sanitizer.sanitizeRecord({type:'lifecycle',event:'other',payload:{chunks:3,maxGapMs:9}}).payload).toEqual({});
+ const invalid=sanitizer.sanitizeRecord({type:'timing',mark:'turn.provider_body_end',payload:{bytes:'private',chunks:-1,maxGapMs:Infinity}});
+ expect(invalid.payload).toEqual({});
+ expect(sanitizer.sanitizeExportValue({type:'timing',mark:'turn.provider_body_end',payload:{chunks:1.5,maxGapMs:'private',text:'private'}}).payload).toEqual({});
+});
+test('Claude credential command diagnostics retain phase and bounded exit only through journal and export', () => {
+  const sanitizer = createDiagnosticSanitizer();
+  const row = { type: 'lifecycle', event: 'native_claude_credential_command', payload: { phase: 'write', exitCode: 36,
+    stdout: 'synthetic private token', stderr: 'private system text', args: ['secret'], service: 'private-service', account: 'private-account', code: 'private', home: '/private', outcome: 'failed' } };
+  expect(sanitizer.sanitizeRecord(row).payload).toEqual({ phase: 'write', exitCode: 36 });
+  expect(sanitizer.sanitizeExportValue(row).payload).toEqual({ phase: 'write', exitCode: 36 });
+  expect(sanitizer.sanitizeExportValue(sanitizer.sanitizeRecord(row)).payload).toEqual({ phase: 'write', exitCode: 36 });
+  for (const exitCode of [-1, 256, 1.2, '36', Infinity]) expect(sanitizer.sanitizeRecord({ ...row, payload: { phase: 'raw private value', exitCode } }).payload).toEqual({});
+  expect(sanitizer.sanitizeRecord({ ...row, payload: { phase: 'read', exitCode: null } }).payload).toEqual({ phase: 'read', exitCode: null });
 });

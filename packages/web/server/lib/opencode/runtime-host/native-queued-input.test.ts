@@ -22,9 +22,9 @@ const repo=path.resolve(import.meta.dir,'../../../../../..');
 test('original native enqueue/delivery transactions fence busy/unknown descendants and recheck after PRE awaits',async()=>{
  const root=await fs.mkdtemp(path.join(repo,'.cache/v2-validation/native-queue-graph-'));
  const directory=path.join(root,'work');await fs.mkdir(directory);execFileSync('git',['init','--quiet'],{cwd:directory});
- const parentID=SessionSchema.ID.make('ses_queueParent'),childID=SessionSchema.ID.make('ses_queueChild');
+ const parentID=SessionSchema.ID.make('ses_queueParent'),childID=SessionSchema.ID.make('ses_queueChild'),grandchildID=SessionSchema.ID.make('ses_queueGrandchild');
  let dependencies:QueuedInputDependencies&{inbox:Pick<SessionInbox.Interface,'list'>}|undefined;
- let busy=false,unknown=false,race=false,selectionRace=false;let observedBus:Bus.Interface|undefined;
+ let busy=false,unknown=false,race=false,selectionRace=false,grandchildBusy=false;let observedBus:Bus.Interface|undefined;
  const guard=primaryStepOverride(async()=>{throw Error('No inference');},inner=>Effect.sync(()=>{observedBus=inner;return inner;}),undefined,undefined,undefined,undefined,undefined,
   events=>Effect.gen(function*(){
    if(!dependencies)return [];
@@ -47,9 +47,9 @@ test('original native enqueue/delivery transactions fence busy/unknown descendan
  try{
  await Effect.runPromise(Effect.scoped(Effect.gen(function*(){
   const bus=yield* Bus.Service,inbox=yield* SessionInbox.Service,store=yield* SessionStore.Service,database=yield* Database.Service;
-  dependencies={store,inbox,database,execution:{isActive:id=>unknown&&id===childID?Effect.die(Error('Unavailable child state')):Effect.succeed(id===childID&&busy)}};
+  dependencies={store,inbox,database,execution:{isActive:id=>unknown&&id===childID?Effect.die(Error('Unavailable child state')):Effect.succeed(id===childID&&busy||id===grandchildID&&grandchildBusy)}};
   const project=yield* (yield* Project.Service).resolve(AbsolutePath.make(directory));
-  for(const [sessionID,parent]of [[parentID,undefined],[childID,parentID]]as const)
+  for(const [sessionID,parent]of [[parentID,undefined],[childID,parentID],[grandchildID,childID]]as const)
    yield* bus.publish(SessionEvent.Created,Schema.decodeUnknownSync(SessionEvent.Created.data)({sessionID,...parent?{parentID:parent}:{},projectID:project.id,location:{directory},slug:sessionID,agent:'orchestrator',model:{providerID:'fixture',id:'exact'},version:'2.0.20'}));
   const item=(delivery:'queue'|'steer')=>Schema.decodeUnknownSync(SessionInbox.Item)({type:'user',delivery,payload:{text:'exact',metadata:{devryan:{origin:'human',agent:'orchestrator',providerID:'fixture',modelID:'exact',variant:'default'}}}});
   expect(isQueuedPrimaryInput(item('queue'))).toBe(true);expect(isQueuedPrimaryInput(item('steer'))).toBe(false);
@@ -97,6 +97,30 @@ test('original native enqueue/delivery transactions fence busy/unknown descendan
   expect(wakes).toEqual([parentID]);
   yield* bus.publish(SessionEvent.InboxDelivered,{sessionID:parentID,inboxID:SessionMessage.ID.make('msg_exact')});
   expect(yield* inbox.list(parentID)).toHaveLength(0);expect((yield* store.message(SessionMessage.ID.make('msg_exact')))?.message.type).toBe('user');
+  // Root and immediate child stay idle throughout. Keep the SAME human ID
+  // across busy, native retry suspension and unknown grandchild ancestry.
+  const retainedID=SessionMessage.ID.make('msg_grandchild_retained');
+  yield* inbox.admit({sessionID:parentID,id:retainedID,item:item('queue')});
+  const retained=yield* inbox.list(parentID);
+  const refusedDelivery=()=>Effect.gen(function*(){
+   expect(Exit.isFailure(yield* Effect.exit(bus.publish(SessionEvent.InboxDelivered,{sessionID:parentID,inboxID:retainedID})))).toBe(true);
+   expect(yield* inbox.list(parentID)).toEqual(retained);
+   expect(yield* store.message(retainedID)).toBeUndefined();
+  });
+  grandchildBusy=true;yield* refusedDelivery();grandchildBusy=false;
+  yield* database.db.$client.unsafe('UPDATE session_v2 SET time_suspended=? WHERE id=?',[Date.now(),grandchildID]).pipe(Effect.orDie);
+  yield* refusedDelivery();
+  yield* database.db.$client.unsafe('UPDATE session_v2 SET time_suspended=NULL WHERE id=?',[grandchildID]).pipe(Effect.orDie);
+  const grandchildWakes:string[]=[];
+  const unknownLineage={...dependencies,store:{...store,get:(id:typeof SessionSchema.ID.Type)=>id===childID?Effect.succeed(undefined):store.get(id)},
+   execution:{...dependencies.execution,awaitIdle:()=>Effect.void}};
+  yield* wakeQueuedInputParents(unknownLineage,grandchildID,id=>Effect.sync(()=>{grandchildWakes.push(id)}));
+  expect(grandchildWakes).toEqual([]);expect(yield* inbox.list(parentID)).toEqual(retained);
+  yield* wakeQueuedInputParents({...dependencies,execution:{...dependencies.execution,awaitIdle:()=>Effect.void}},grandchildID,id=>Effect.sync(()=>{grandchildWakes.push(id)}));
+  expect(grandchildWakes).toEqual([parentID]);
+  yield* bus.publish(SessionEvent.InboxDelivered,{sessionID:parentID,inboxID:retainedID});
+  expect(yield* inbox.list(parentID)).toHaveLength(0);
+  expect((yield* store.message(retainedID))?.message).toMatchObject({id:retainedID,type:'user',text:'exact',metadata:{devryan:{origin:'human'}}});
   yield* bus.publish(SessionEvent.ModelSelected,Schema.decodeUnknownSync(SessionEvent.ModelSelected.data)({sessionID:parentID,model:{providerID:'fixture',id:'exact',variant:'xhigh'}}));
   const inherited=Schema.decodeUnknownSync(SessionInbox.Item)({type:'user',delivery:'queue',payload:{text:'inherited',metadata:{devryan:{origin:'human',agent:'orchestrator',providerID:'fixture',modelID:'exact'}}}});
   yield* inbox.admit({sessionID:parentID,id:SessionMessage.ID.make('msg_inherited'),item:inherited});

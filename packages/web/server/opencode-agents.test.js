@@ -696,7 +696,10 @@ describe('Packaged OpenChamber agents', () => {
     });
 
     for (const agent of [orchestrator, builder, fixer, designer, explorer, oracle, librarian, plan]) {
-      expect(agent?.prompt).toContain('structured question tool');
+      if (agent?.name === 'explorer') {
+        expect(agent.prompt).toContain('return `**Status:** blocked` with the missing scope or access');
+        expect(agent.prompt).not.toContain('structured question tool');
+      } else expect(agent?.prompt).toContain('structured question tool');
       expect(agent?.prompt).not.toContain('Skill to use:');
       expect(agent?.prompt).not.toContain('Skills to use:');
       expect(agent?.prompt).not.toContain('Skill plan:');

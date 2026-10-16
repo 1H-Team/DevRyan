@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { useSessionPlanFileStore } from '@/stores/useSessionPlanFileStore';
 
 import { persistSessionPlanRevision } from './sessionPlanPersistence';
+import { registerRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
+import type { RuntimeAPIs } from '@/lib/api/types';
 import type { SessionPlanFileStorage } from './sessionPlanFile';
 
 const identity = {
@@ -118,6 +120,36 @@ describe('session plan persistence coordinator', () => {
     expect(skipped).toEqual(failed);
     expect(retried.status).toBe('saved');
     expect(attempts).toBe(2);
+  });
+
+  test('retries a transient settlement refusal only after a new authoritative validation attempt', async () => {
+    let writes = 0;
+    const storage = createStorage({ writeFile: async () => { if (++writes === 1) throw new Error('plan_source_unsettled'); } });
+    const input = { sessionId: 'session-a', identity, markdown: '# Plan' };
+    expect((await persistSessionPlanRevision(input, { storage, validationAttempt: 'tail:busy-1' })).status).toBe('error');
+    expect((await persistSessionPlanRevision(input, { storage, validationAttempt: 'tail:busy-1' })).status).toBe('error');
+    expect(writes).toBe(1);
+    expect((await persistSessionPlanRevision(input, { storage, validationAttempt: 'tail:idle-2' })).status).toBe('saved');
+    expect(writes).toBe(2);
+  });
+
+  test('a late same-source validation cannot overwrite a newer successful settlement', async () => {
+    let release = () => {};
+    let started = () => {};
+    let calls = 0;
+    const writeStarted = new Promise<void>(resolve => { started = resolve; });
+    registerRuntimeAPIs({ sessionPlans: { ensureRevision: async () => {
+      if (++calls === 1) await new Promise<void>(resolve => { release = resolve; started(); });
+      return { path: '/plans/owned.md', created: false, version: 'a'.repeat(64) };
+    } } } as unknown as RuntimeAPIs);
+    try {
+      const input = { sessionId: 'session-a', identity, markdown: '# Plan' };
+      const first = persistSessionPlanRevision(input, { validationAttempt: 'old' });
+      await writeStarted;
+      await persistSessionPlanRevision(input, { validationAttempt: 'new' });
+      release(); await first;
+      expect(useSessionPlanFileStore.getState().recordsBySession['session-a']).toMatchObject({ status: 'saved', validationAttempt: 'new' });
+    } finally { release(); registerRuntimeAPIs(null); }
   });
 
   test('does not let a late older revision replace the latest saved pointer', async () => {

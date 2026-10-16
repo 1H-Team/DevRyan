@@ -1,3 +1,4 @@
+import { PLAN_MODE_SYSTEM_INSTRUCTIONS } from "@openchamber/orchestration-runtime"
 import { beforeEach, describe, expect, mock, test } from "bun:test"
 
 const bunTestHooks = (await import("bun:test")) as unknown as {
@@ -608,27 +609,30 @@ const waitForCompletionIndicatorSettlement = async () => {
 const expectPlanModeInstructionContract = (text: string) => {
   expect(text.startsWith("User has requested to enter plan mode.")).toBe(true)
   expect(text).toContain("<!--plan-->")
-  expect(text).toContain("Plan output format")
-  expect(text).toContain("# <Plan title — short noun phrase, no \"Implementation Plan:\" prefix>")
-  expect(text).toContain("## Context")
-  expect(text).toContain("## Critical files")
-  expect(text).toContain("**Files modified**")
-  expect(text).toContain("**Files read (no edit) for behavior reuse**")
-  expect(text).toContain("## Implementation")
-  expect(text).toContain("### Phase 1: <name>")
+  expect(new TextEncoder().encode(text).byteLength).toBeLessThan(256)
+  expect(text).toContain("[devryan-plan-turn:v1] planMode=true")
+  const instructions = PLAN_MODE_SYSTEM_INSTRUCTIONS
+  expect(instructions).toContain("Plan output format")
+  expect(instructions).toContain("# <Plan title — short noun phrase, no \"Implementation Plan:\" prefix>")
+  expect(instructions).toContain("## Context")
+  expect(instructions).toContain("## Critical files")
+  expect(instructions).toContain("**Files modified**")
+  expect(instructions).toContain("**Files read (no edit) for behavior reuse**")
+  expect(instructions).toContain("## Implementation")
+  expect(instructions).toContain("### Phase 1: <name>")
   // Lets the implementer dispatch independent phases together.
-  expect(text).toContain("write one line `Owner: <specialist>; Depends on: <Phase N | none>`")
-  expect(text).toContain("Each phase must contain multiple related tasks")
-  expect(text).toContain("Count only actionable implementation tasks as tasks")
-  expect(text).toContain("## Verification")
-  expect(text).toContain("The plan card provides the implementation action")
-  expect(text).not.toContain("End the message with a single approval question")
-  expect(text).toContain("Do not wrap it in a code fence")
-  expect(text).toContain("same-session planning history")
-  expect(text).toContain("Treat the latest visible user prompt as a revision")
-  expect(text).toContain("Preserve every prior requirement, decision, constraint, and file reference")
-  expect(text).toContain("complete, self-contained replacement plan")
-  expect(text).toContain("Never return only a patch, diff, addendum, or abbreviated delta")
+  expect(instructions).toContain("write one line `Owner: <specialist>; Depends on: <Phase N | none>`")
+  expect(instructions).toContain("Each phase must contain multiple related tasks")
+  expect(instructions).toContain("Count only actionable implementation tasks as tasks")
+  expect(instructions).toContain("## Verification")
+  expect(instructions).toContain("The plan card provides the implementation action")
+  expect(instructions).not.toContain("End the message with a single approval question")
+  expect(instructions).toContain("Do not wrap it in a code fence")
+  expect(instructions).toContain("same-session planning history")
+  expect(instructions).toContain("Treat the latest visible user prompt as a revision")
+  expect(instructions).toContain("Preserve every prior requirement, decision, constraint, and file reference")
+  expect(instructions).toContain("complete, self-contained replacement plan")
+  expect(instructions).toContain("Never return only a patch, diff, addendum, or abbreviated delta")
 }
 
 const createPdfAttachment = () => ({

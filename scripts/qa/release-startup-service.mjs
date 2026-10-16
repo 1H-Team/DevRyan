@@ -68,21 +68,28 @@ export async function cleanupReleaseService({ disable, isRegistered, bootout, wa
 }
 
 /** Only the disposable runner may alter the per-user service registration or launchd environment. */
-export async function prepareReleaseService(profile) {
+export async function prepareReleaseService(profile, { deadline, signal } = {}) {
+  const boundedLaunchctl = (args, options = {}) => {
+    const limit = options.deadline ?? deadline;
+    options.signal?.throwIfAborted();
+    if (limit !== undefined && performance.now() >= limit) throw Object.assign(Error('Release service deadline expired'), { code: 'release_service_deadline' });
+    return exec('/bin/launchctl', args, { timeout: limit === undefined ? 15000 : Math.max(1, Math.min(15000, limit - performance.now())), signal: options.signal, maxBuffer: 64 * 1024 });
+  };
+  const missing = error => { if (error.code === 'release_service_deadline' || error.name === 'AbortError' || error.killed || error.signal) throw error; return false; };
   requireDisposableMacRunner();
-  if (await launchctl(['print', service()]).then(() => true, () => false))
+  if (await boundedLaunchctl(['print', service()]).then(() => true, missing))
     throw Object.assign(new Error('Runner already owns a service'), { code: 'release_startup_prerequisite_failed' });
   const saved = new Map();
   try {
     for (const [key, value] of Object.entries(profile.env)) {
-      saved.set(key, await launchctl(['getenv', key]).then(result => result.stdout.replace(/\n$/, ''), () => ''));
-      await launchctl(['setenv', key, value]);
+      saved.set(key, await boundedLaunchctl(['getenv', key], { signal }).then(result => result.stdout.replace(/\n$/, ''), error => { missing(error); return ''; }));
+      await boundedLaunchctl(['setenv', key, value], { signal });
     }
-  } catch (error) { await restore(); throw Object.assign(new Error('Launchd environment unavailable', { cause: error }), { code: 'release_startup_prerequisite_failed' }); }
-  async function restore() {
+  } catch (error) { await restore().catch(() => {}); throw Object.assign(new Error('Launchd environment unavailable', { cause: error }), { code: 'release_startup_prerequisite_failed', restore }); }
+  async function restore(options = {}) {
     const errors = [];
     for (const [key, value] of saved) {
-      try { await launchctl(value ? ['setenv', key, value] : ['unsetenv', key]); }
+      try { await boundedLaunchctl(value ? ['setenv', key, value] : ['unsetenv', key], options); }
       catch { errors.push('launchd_environment_restore_failed'); }
     }
     await runReleaseCleanup(async () => assert.deepEqual(errors, []));
@@ -98,8 +105,8 @@ export async function prepareReleaseService(profile) {
           && owner.owner.instanceId === status.handshake?.instanceId ? status : null;
       });
     },
-    cold: () => launchctl(['kickstart', '-k', service()]),
-    cleanup: launch => cleanupReleaseService({
+    cold: () => boundedLaunchctl(['kickstart', '-k', service()]),
+    cleanup: (launch, options = {}) => cleanupReleaseService({
       disable: async () => {
         if (launch) {
           await invokeReleaseServiceHandoff(launch, 'disable', {}, async deadline => {
@@ -110,11 +117,11 @@ export async function prepareReleaseService(profile) {
           });
         }
       },
-      isRegistered: () => launchctl(['print', service()]).then(() => true, () => false),
+      isRegistered: () => boundedLaunchctl(['print', service()], options).then(() => true, missing),
       // This label was proved absent before this run registered it.
-      bootout: () => launchctl(['bootout', service()]).catch(() => {}),
-      waitForStopped: () => waitForRuntimeServiceOwnerStopped({ dataDirectory: profile.env.OPENCHAMBER_DATA_DIR, timeoutMs: 30_000 }),
-      restore,
+      bootout: () => boundedLaunchctl(['bootout', service()], options).catch(error => { missing(error); }),
+      waitForStopped: () => waitForRuntimeServiceOwnerStopped({ dataDirectory: profile.env.OPENCHAMBER_DATA_DIR, timeoutMs: options.deadline === undefined ? 30000 : Math.max(1, Math.min(30000, options.deadline - performance.now())) }),
+      restore: () => restore(options),
       onForced: () => { profile.forcedServiceCleanup = true; },
     }),
   };

@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-14",
+  "status": "deterministic-local-qualification-passed-native-full-cohort-pending",
+  "changes": ["Budget advisory enumeration including empty directories before full workspace traversal", "Foreground observations supersede advisory warming; committed batches are retained, pending installs use guarded commit rollback", "Capture the host cancellation lifetime for queued warm work", "Synthetic benchmark termination receipts use exclusive creation and mode 0600"],
+  "verification": {"webHostTests": 57, "warmAndDirectStageTests": 4, "immutableStoreAndRollbackTests": 9, "benchmarkAndPlanFixtureNodeTests": 24, "failed": 0},
+  "managedResult": {
+    "command": "node scripts/perf/managed-result-transport-benchmark.mjs",
+    "evidence": ".cache/perf/managed-result-transport-YH1tDz/result.json",
+    "fiveColdPairs": true, "fiveWarmPairs": true, "freshWorkers": 20, "allPassed": true,
+    "baseline": "Current scalar V1 compatibility owner on the same source cohort; not original live QA performance",
+    "coldMedian": {"v1": {"hostLatencyMs": 55.665833, "hostCpuMs": 49.126, "sampledPeakRssBytes": 157974528}, "v2": {"hostLatencyMs": 84.5555, "hostCpuMs": 62.124, "sampledPeakRssBytes": 158580736}},
+    "warmMedian": {"v1": {"hostLatencyMs": 43.561416, "hostCpuMs": 31.856, "sampledPeakRssBytes": 169295872}, "v2": {"hostLatencyMs": 55.549125, "hostCpuMs": 43.559, "sampledPeakRssBytes": 170508288}},
+    "exactEachSample": {"v1": {"modelInputBytes": 1994, "modelOutputBytes": 119614, "logicalCalls": 12, "coreRpcCalls": 14, "durableCommits": 2}, "v2": {"modelInputBytes": 2340, "modelOutputBytes": 92500, "logicalCalls": 7, "coreRpcCalls": 10, "durableCommits": 2}},
+    "finding": "V2 host latency and CPU still regress. Fewer result bytes and logical calls do not establish a speed improvement.",
+    "priorRegression": "managed-result-transport.json retains the earlier independent regression; neither result is overwritten"
+  },
+  "preparation": {
+    "command": "node scripts/perf/ledger-benchmark.mjs --fixture-files 16 --iterations 5 --warm-calls 1 --profile --timeout-ms 60000 --out .cache/perf/preparation-qualification.json",
+    "evidence": ".cache/perf/preparation-qualification.json",
+    "freshWorkers": 20, "trackedFixtureFiles": 18, "fiveSamplesPerScenario": true, "allPassed": true,
+    "median": {
+      "cold": {"foregroundPreparationMs": 1505.2, "wallMs": 2714.4, "hostCpuMs": 491.9, "hostPeakRssMiB": 66.5, "queueWaitMs": 0, "ledgerCommitMs": 724, "ledgerCommitCount": 9},
+      "warm": {"separatePrewarmMs": 730.1, "foregroundPreparationMs": 892.1, "wallMs": 2178, "hostCpuMs": 342, "hostPeakRssMiB": 67.8, "queueWaitMs": 0, "ledgerCommitMs": 538, "ledgerCommitCount": 8},
+      "metadataOnly": {"separatePrewarmMs": 980.4, "foregroundPreparationMs": 1416.1, "wallMs": 2639.2, "hostCpuMs": 380.1, "hostPeakRssMiB": 65.8, "queueWaitMs": 1, "ledgerCommitMs": 642, "ledgerCommitCount": 9},
+      "changedContent": {"separatePrewarmMs": 776.5, "foregroundPreparationMs": 1424.5, "wallMs": 2613.5, "hostCpuMs": 401.8, "hostPeakRssMiB": 66.9, "queueWaitMs": 0, "ledgerCommitMs": 642, "ledgerCommitCount": 9}
+    },
+    "finding": "Prewarming moves work before foreground preparation; these small same-source cases do not measure before/after optimization or total speed improvement.",
+    "sourceHashes": {"session-mutations.js": "dfd79bd55269314c5eba61a112e341b5864edadf6265caed5833fcf5e6bc5260", "session-mutation-files.js": "ffa63f69c85e246b24e4a24c025cc202d7e1597266bf5e1ed785cb82fa35917a", "execution-admission.js": "8f539a3076552fe9b5059a2cf94904b085c5a804ed06b22eef396bf88e8db08f"}
+  },
+  "unqualifiedAttempts": {"initialConcurrentBenchmarks": "Overlapped each other; excluded from comparison", "preparationWorkerReceiptFailure": {"failed": 11, "completed": 9, "code": "mutation_termination_unconfirmed", "evidence": ".cache/perf/preparation-before.json"}, "rootBunxVitest": "Wrong cached runner and root discovery, excluded; package manifests and repository lockfile unchanged"},
+  "readAndLockBoundary": "Immutable files-tree identity gates parsed snapshot reuse; installation repeats exact device/inode/size/time/mode checks under the owner lock. No canonical history cache added and no authority read removed.",
+  "review": "Read-only independent review found no concrete changed-path defect in compound ACK/launch, native later-Step publication, atomic page rollback, bounded message window or file Undo/Redo/cleanup; full compiled/live qualification remains separate.",
+  "limits": ["Small deterministic disposable fixtures; no installed app or provider", "Nested phase totals overlap and cannot be added", "Host CPU and RSS exclude child-process CPU and exact process-tree peak", "No measured provider latency, token usage, transport result-return, return-to-idle latency or native host comparison", "No heavy graphs, full validation, build, bundle checks or QA1 mutation"],
+  "qa1": {"sameOriginalProfile": true, "ready": true, "ownerAdmissions": 0, "accountVerification": "not-run", "inference": "not-run", "accountCopy": "not-run"},
+  "laterRerun": { "proof": "../2026-10-15/managed-result-transport-rerun.json", "historicalMeasurementsUnchanged": true, "hostLatencyAndCPURegressionRetained": true, "returnToIdleLatencyMeasured": false }
+}

@@ -46,21 +46,27 @@ export function observePerfBrowserErrors(cdp, { runDirectory, repositoryRoot }) 
 
 // Read the preserved, sanitized journal only after the owned host has exited and
 // drained it. Bound the retained details independently of the streamed records.
-export async function capturePerfJournal(journalDirectory) {
+export async function capturePerfJournal(journalDirectory, { signal } = {}) {
+  signal?.throwIfAborted();
   await stat(journalDirectory);
+  signal?.throwIfAborted();
   const rows = await listJournalRows(journalDirectory);
+  signal?.throwIfAborted();
   const paths = await collectJournalPaths(journalDirectory);
+  signal?.throwIfAborted();
   const result = { path: journalDirectory, available: true, complete: true, rows, chunks: paths.length,
     records: 0, gapRecords: 0, gaps: [], errorRecords: 0, errors: [], maximumRecords: 100_000 };
   let bytes = 0;
   for await (const record of readRecordsFromPaths(paths)) {
+    // Throwing inside the loop closes the reader's streams before rejection.
+    signal?.throwIfAborted();
     bytes += Buffer.byteLength(JSON.stringify(record));
     if (result.records >= result.maximumRecords || bytes > 256 * 1024 * 1024) { result.complete = false; result.limitReached = true; break; }
     result.records += 1;
-    if (record.type === 'gap') {
+    if (record.type === 'gap' || record.event === 'native_observation_gap') {
       result.gapRecords += 1;
       if (result.gaps.length < 50) result.gaps.push({ at: record.at, sessionID: record.sessionID ?? null,
-        reason: record.reason, count: record.count, source: record.source });
+        reason: record.event === 'native_observation_gap' ? 'native_observation_gap' : record.reason, count: record.count, source: record.source });
     }
     if (record.type === 'log' && record.level === 'error') {
       result.errorRecords += 1;
@@ -68,6 +74,7 @@ export async function capturePerfJournal(journalDirectory) {
         source: record.source, message: String(record.message ?? '').slice(0, MAX_ERROR_TEXT) });
     }
   }
+  signal?.throwIfAborted();
   result.uncompressedBytesScanned = bytes;
   return result;
 }

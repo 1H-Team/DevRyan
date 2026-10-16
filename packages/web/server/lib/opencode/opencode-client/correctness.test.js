@@ -278,3 +278,10 @@ it('single-message lookbehind crosses an entire status-only native page without 
   expect(record.turnOwnership).toEqual({source:'native-sequence',userMessageID:'msg_original'});
   expect(requests.filter(url=>url.pathname.endsWith('/message'))).toHaveLength(2);
 });
+
+it('LocationNotFoundError/404 stays a canonical not-found response and never provider authentication', async () => {
+  const client = createOpenCodeClient({ getRuntime: () => runtime,
+    fetchImpl: async () => Response.json({ _tag: 'LocationNotFoundError', message: 'Location unavailable' }, { status: 404 }) });
+  await expect(client.sessions.get('ses_a', { directory: '/fixture' })).rejects.toMatchObject({ code: 'opencode_not_found', statusCode: 404, tag: 'LocationNotFoundError' });
+  expect(await client.sessions.get('ses_a', { directory: '/fixture', allowNotFound: true })).toBeNull();
+});

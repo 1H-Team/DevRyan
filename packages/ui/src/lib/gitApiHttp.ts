@@ -14,6 +14,7 @@ import type {
   GenerateGitCommitMessageDraftRequest,
   GeneratedCommitMessage,
   GeneratedCommitWorkflowResult,
+  GeneratedPullRequestDescription,
   GitWorktreeInfo,
   CreateGitWorktreePayload,
   GitWorktreeCreateResult,
@@ -452,7 +453,12 @@ export async function generateCommitMessage(
         .map((item) => (item as string).trim())
     : [];
 
-  return { subject, highlights };
+  return { subject, highlights,
+    ...(typeof data.source === 'string' ? { source: data.source } : {}),
+    ...(data.selectionMode === 'configured' || data.selectionMode === 'active' ? { selectionMode: data.selectionMode } : {}),
+    ...(data.model === null || typeof data.model === 'string' ? { model: data.model } : {}),
+    ...(Array.isArray(data.warnings) ? { warnings: data.warnings.filter((warning: unknown): warning is string => typeof warning === 'string') } : {}),
+  };
 }
 
 export async function generateCommitMessageDraft(
@@ -527,9 +533,9 @@ export class PullRequestGenerationError extends Error {
 
 export async function generatePullRequestDescription(
   directory: string,
-  payload: { base: string; head: string; context?: string; prompt?: string; providerId?: string; modelId?: string }
-): Promise<{ title: string; body: string }> {
-  const { base, head, context, prompt, providerId, modelId } = payload;
+  payload: { base: string; head: string; context?: string; prompt?: string; providerId?: string; modelId?: string; sessionID?: string }
+): Promise<GeneratedPullRequestDescription> {
+  const { base, head, context, prompt, providerId, modelId, sessionID } = payload;
   if (!base || !head) {
     throw new Error('base and head are required');
   }
@@ -541,7 +547,8 @@ export async function generatePullRequestDescription(
     prompt?: string;
     providerId?: string;
     modelId?: string;
-  } = { base, head };
+    sessionID?: string;
+  } = { base, head, ...(sessionID ? { sessionID } : {}) };
   if (context?.trim()) {
     requestBody.context = context.trim();
   }
@@ -585,7 +592,16 @@ export async function generatePullRequestDescription(
     if (!title && !body) {
       throw new PullRequestGenerationError('Malformed PR description response', { status: response.status });
     }
-    return { title, body };
+    return { title, body,
+      ...(data.source === 'zen' || data.source === 'helper_model' || data.source === 'session_model' ? { source: data.source } : {}),
+      ...(data.selectionMode === 'configured' || data.selectionMode === 'active' ? { selectionMode: data.selectionMode } : {}),
+      ...(data.model === null || typeof data.model === 'string' ? { model: data.model } : {}),
+      ...(Array.isArray(data.attempts) ? { attempts: data.attempts.filter((attempt: unknown): attempt is PullRequestGenerationAttempt =>
+        typeof attempt === 'object' && attempt !== null && 'tier' in attempt && typeof attempt.tier === 'string'
+        && 'model' in attempt && (attempt.model === null || typeof attempt.model === 'string')
+        && 'reason' in attempt && (attempt.reason === null || typeof attempt.reason === 'string')
+        && (!('durationMs' in attempt) || typeof attempt.durationMs === 'number' && Number.isFinite(attempt.durationMs) && attempt.durationMs >= 0)) } : {}),
+    };
   } catch (error) {
     if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
       throw new PullRequestGenerationError(

@@ -1,3 +1,4 @@
+import { parseHelperModelSelection } from '@openchamber/shared-runtime';
 // Each hidden model stores up to three alias refs (see ui modelVisibility.ts),
 // so 64 refs dropped toggles after roughly 20 models. Keep in sync with
 // HIDDEN_MODEL_REFS_LIMIT in packages/ui/src/lib/persistence.ts.
@@ -323,6 +324,9 @@ export const createSettingsHelpers = (dependencies) => {
     if (typography) {
       result.typographySizes = typography;
     }
+
+    const helperSelection = parseHelperModelSelection(candidate.helperModelSelection);
+    if (helperSelection) result.helperModelSelection = helperSelection;
 
     if (typeof candidate.defaultModel === 'string') {
       const trimmed = candidate.defaultModel.trim();

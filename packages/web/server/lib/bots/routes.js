@@ -114,9 +114,10 @@ const queryFlag = (value) => {
 
 // `botHost.getStatus()` is a Docker probe (several `docker` spawns) and the UI
 // polls the capabilities route, so one probe result serves every read for a
-// short window: concurrent misses share a single probe, a rejected probe is
-// never cached, `refresh` forces a new probe, and the runtime invalidates the
-// entry whenever its execution state changes. One host per cache.
+// short window. Passive metadata reads may retain only a real stopped-Docker
+// result beyond that window; live execution callers and explicit refresh probe.
+// Rejected probes are never cached. Invalidation drops even the retained
+// negative result. One host per cache.
 export function createBotHostStatusCache({ ttlMs = BOT_STATUS_CACHE_TTL_MS, now = Date.now } = {}) {
   if (!Number.isFinite(ttlMs) || ttlMs < 0 || typeof now !== 'function') {
     throw new TypeError('Bot host status cache configuration is invalid');
@@ -124,10 +125,11 @@ export function createBotHostStatusCache({ ttlMs = BOT_STATUS_CACHE_TTL_MS, now 
   let entry = null;
   let inflight = null;
   return Object.freeze({
-    async getStatus(botHost, { refresh = false } = {}) {
+    async getStatus(botHost, { refresh = false, reuseStopped = false } = {}) {
       if (typeof botHost?.getStatus !== 'function') throw new TypeError('Bot host status is unavailable');
       if (!refresh) {
-        if (entry && entry.host === botHost && entry.expiresAt > now()) return entry.status;
+        if (entry && entry.host === botHost && (entry.expiresAt > now()
+          || reuseStopped && entry.status?.state === 'docker_unavailable')) return entry.status;
         if (inflight && inflight.host === botHost) return inflight.promise;
       }
       const probe = { host: botHost, promise: null };
@@ -173,6 +175,7 @@ export const resolveBotCapabilities = async ({
   startupState = 'ready',
   statusCache = null,
   refreshStatus = false,
+  cacheStoppedStatus = false,
   platform = process.platform,
 } = {}) => {
   if (platform === 'win32') {
@@ -226,6 +229,17 @@ export const resolveBotCapabilities = async ({
     encryptionKey?.fill(0);
     if (Buffer.isBuffer(providedKey) || providedKey instanceof Uint8Array) providedKey.fill(0);
   }
+  if (catalog && database.state !== 'ready' && cacheStoppedStatus && !refreshStatus) {
+    const dormantStates = {
+      bot_runtime_docker_unavailable: 'docker_stopped',
+      bot_runtime_docker_not_installed: 'docker_not_installed',
+      bot_runtime_setup_required: 'setup_required',
+      bot_database_setup_required: 'setup_required',
+      bot_runtime_update_required: 'image_update_available',
+    };
+    const state = Object.hasOwn(dormantStates, database.code) ? dormantStates[database.code] : null;
+    if (state) return result({ state, code: database.code });
+  }
   if (typeof botHost?.getStatus !== 'function') {
     return result({ state: 'runtime_unavailable', code: 'bot_runtime_unavailable' });
   }
@@ -233,7 +247,7 @@ export const resolveBotCapabilities = async ({
   let runtime;
   try {
     runtime = statusCache
-      ? await statusCache.getStatus(botHost, { refresh: refreshStatus === true })
+      ? await statusCache.getStatus(botHost, { refresh: refreshStatus === true, reuseStopped: cacheStoppedStatus === true })
       : await botHost.getStatus();
   } catch (error) {
     return result({
@@ -436,6 +450,7 @@ export function registerBotRoutes(app, {
             startupState: getStartupState(),
             statusCache,
             refreshStatus: refresh,
+            cacheStoppedStatus: !refresh,
           });
       return res.json({
         ...resolved,

@@ -7,6 +7,7 @@ import { createV2Requester } from '../opencode-client/v2.js';
 import { unwrapList } from '../opencode-client/envelope.js';
 import { createNativeIntegrationFacade } from './native-integration-facade.js';
 import { toV1Projects } from './projection/catalog.js';
+import { PROMPT_ORIGIN_HEADER } from './admission.js';
 import { checkBrowserSessionPatchBody, evaluateOpenCodeV2Request, normalizeOpenCodeV2Path } from './route-policy.js';
 
 const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -205,6 +206,8 @@ export const createOpenCodeV2FacadeRouter = (deps) => {
   route('get', '/session/:sessionID/diff', (client, req, _res, options) => client.sessions.diff(req.params.sessionID, { messageID: stringQuery(req, 'messageID') }, options));
   route('get', '/session/:sessionID/todo', (client, req, _res, options) => client.sessions.todo(req.params.sessionID, options));
   route('post', '/session/:sessionID/prompt_async', async (client, req, res, options) => {
+    // Browser callers may identify human input, never constructor origins.
+    if (req.headers[PROMPT_ORIGIN_HEADER] === 'human') options.headers[PROMPT_ORIGIN_HEADER] = 'human';
     await client.prompts.prompt(req.params.sessionID, req.body, options);
     res.status(204).end();
   });

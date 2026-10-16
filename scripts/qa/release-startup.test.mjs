@@ -97,10 +97,12 @@ test('captured screenshot evidence hashes written pixels and copies only exact a
     await assert.rejects(captureReleaseStartupScreenshot(launch, root, 'DevRyan-startup-fixture.png', identity), { code: 'EEXIST' });
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
-test('every PR runs startup contracts; final-DMG qualification is manual and never gates publication', () => {
+test('every PR runs startup contracts; short exact-DMG smoke gates publication while the legacy suite remains distinct', () => {
   const read = file => fs.readFileSync(new URL('../../' + file, import.meta.url), 'utf8');
   const pr = read('.github/workflows/startup-contract.yml'), release = read('.github/workflows/release.yml');
   assert.match(pr, /pull_request:/); assert.doesNotMatch(pr, /paths(?:-ignore)?:/); assert.match(pr, /bun run test:startup/);
+  assert.match(release, /needs.final-dmg-smoke.result == 'success'/);
+  assert.match(release, /release-startup-smoke.mjs/);
   assert.doesNotMatch(release, /qualify-release-startup|verify-release-startup|--release-dmg/);
   assert.doesNotMatch(release, /reboot_qualification_run_id|--reboot-receipt|DevRyan-reboot-qualification|stage_startup_installer_only|staged_desktop_run_id/);
 });

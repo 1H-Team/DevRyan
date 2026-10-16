@@ -9,7 +9,7 @@ import {createNativeSessionRemoval} from './native-session-removal.js';
 
 const roots=[];
 afterEach(async()=>{await Promise.all(roots.splice(0).map(root=>fs.rm(root,{recursive:true,force:true})));});
-async function fixture(){
+async function fixture({discardStreamReceipts}={}){
   const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'native-removal-')));roots.push(root);
   const directory=path.join(root,'project'),storage=path.join(root,'ledger');await fs.mkdir(directory);await git(directory,['init','--quiet']);
   await fs.writeFile(path.join(directory,'published.txt'),'published bytes');
@@ -29,7 +29,7 @@ async function fixture(){
     return {members:[...sessions.values()].filter(row=>ids.has(row.id)),states:[...ids].map(id=>({sessionID:id,exists:sessions.has(id),active:false,claimed:false,
       inboxIDs:sessions.has(id)?[`inbox_${id}`]:[],pendingIDs:sessions.has(id)?[`pending_${id}`]:[]}))};
   };
-  const coordinator=createNativeSessionRemoval({runtime,admissionOwner:owner,ownerID:'owned-bundle',inspectRemovalOwned,
+  const coordinator=createNativeSessionRemoval({runtime,admissionOwner:owner,ownerID:'owned-bundle',inspectRemovalOwned,discardStreamReceipts,
     removeLeafOwned:async({intentID,sessionID,permit})=>{
       await rpc('authorize',{operation:'removal.delete',sessionID,input:{intentID},existingPermit:permit});
       if(sessions.has(sessionID)){sessions.delete(sessionID);removed.push(sessionID);}
@@ -62,6 +62,19 @@ test('exact held subtree deletion registers idle children, disposes pending IDs 
   expect(await f.reopen().nativeRemovals({directory:f.directory})).toEqual([]);
   await expect(f.runtime.assertAdmission({directory:f.directory,sessionID:'ses_child'})).rejects.toMatchObject({code:'native_session_held'});
   expect((await f.runtime.nativeAdmissionState({directory:f.directory,sessionID:'ses_child'})).held).toBe(true);
+});
+
+test('stream proof cleanup follows acknowledged leaf deletion and remains retryable under the committed removal decision',async()=>{
+ let calls=0;
+ const f=await fixture({discardStreamReceipts:async intent=>{
+  expect(intent.state).toBe('committed');expect(intent.removed.length).toBe(intent.members.length);
+  expect(f.sessions.size).toBe(0);calls++;
+  if(calls===1)throw Error('Proof cleanup unavailable');
+ }});
+ await expect(f.remove()).rejects.toThrow('Proof cleanup unavailable');
+ expect((await f.reopen().nativeRemovals({directory:f.directory}))[0].state).toBe('committed');
+ await f.coordinator.recover({directory:f.directory});expect(calls).toBe(2);
+ expect(await f.reopen().nativeRemovals({directory:f.directory})).toEqual([]);
 });
 
 test('lost native leaf acknowledgement recovers only sealed IDs after controller invalidation',async()=>{

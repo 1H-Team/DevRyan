@@ -38,7 +38,7 @@ test('generation is byte-stable across runs and across key order', () => {
   const second = generateOpenCodeV2RoutesModule(sourceBytes()).content;
   assert.equal(first, second);
   const sha = crypto.createHash('sha256').update(sourceBytes()).digest('hex');
-  const reordered = renderOpenCodeV2RoutesModule({ version: '2.0.26', sourceSha256: sha, operations: extractOpenCodeV2Operations(reverseKeys(sourceDoc())) });
+  const reordered = renderOpenCodeV2RoutesModule({ version: '2.0.30', sourceSha256: sha, operations: extractOpenCodeV2Operations(reverseKeys(sourceDoc())) });
   assert.equal(reordered, first);
   assert.match(first, new RegExp(`OPENCODE_V2_OPENAPI_SHA256 = "${sha}"`));
 });
@@ -86,7 +86,7 @@ test('malformed documents fail instead of producing a smaller table', () => {
     () => extractOpenCodeV2Operations({ paths: { '/a/{id}': { get: { operationId: 'a', parameters: [] } } } }),
     /path parameters that differ/,
   );
-  assert.throws(() => renderOpenCodeV2RoutesModule({ version: '2.0.26', sourceSha256: 'nope', operations: [] }), /sha256/);
+  assert.throws(() => renderOpenCodeV2RoutesModule({ version: '2.0.30', sourceSha256: 'nope', operations: [] }), /sha256/);
   assert.throws(() => generateOpenCodeV2RoutesModule(Buffer.from('{not json')), SyntaxError);
 });
 

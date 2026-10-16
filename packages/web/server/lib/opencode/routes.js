@@ -16,10 +16,11 @@ import {
   mergeGitHubCopilotProvider,
 } from './provider-integrations.js';
 import { annotateOpenAIModelAvailability, readNativeOpenAiMetadata } from './openai-model-availability.js';
+import { credentialMutationFingerprint } from './runtime-host/native-credential-mutation-owner.js';
 import { annotateModelDefaultThinking } from './model-default-thinking.js';
 import { stripMessageDiffContent } from './diff-summary.js';
 import { discoverGitHubCopilotModels } from './github-copilot-models.js';
-import { createCursorSessionTitleRuntime } from './cursor-session-title-runtime.js';
+import { createV2MessageId, PROMPT_MESSAGE_ID_HEADER } from './v2/admission.js';
 import { createStandardSessionTitleRuntime } from './standard-session-title-runtime.js';
 import { registerQuestionRoutes } from './question-routes.js';
 import { resolveGen2OpenCodeClient } from './opencode-client-seam.js';
@@ -101,6 +102,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     buildOpenCodeUrl,
     openCodeClient,
     getNativeRuntimeOwner = () => null,
+    isStartupReadinessPending = null,
     getClaudeEnrollmentOwner = () => null,
     isProviderAdministrator = () => false,
     getOpenCodeAuthHeaders = () => ({}),
@@ -109,7 +111,6 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     isExternalOpenCode = () => false,
     cursorSdkRuntime = null,
     processesRuntime = null,
-    cursorSessionTitleRuntime: injectedCursorSessionTitleRuntime = null,
     standardSessionTitleRuntime: injectedStandardSessionTitleRuntime = null,
     xaiToolCatalogRuntime = null,
     globalAgentsMdRuntime: injectedGlobalAgentsMdRuntime = null,
@@ -120,19 +121,16 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     setClaudePromptCompatibilityMode = setMeridianPromptCompatibilityMode,
   } = dependencies;
 
-  const cursorSessionTitleRuntime = injectedCursorSessionTitleRuntime || createCursorSessionTitleRuntime({
-    openCodeClient,
-    cursorSdkRuntime,
-    fetchImpl: fetch,
-    buildOpenCodeUrl,
-    getOpenCodeAuthHeaders,
-    logger: console,
-  });
   const standardSessionTitleRuntime = injectedStandardSessionTitleRuntime || createStandardSessionTitleRuntime({
     openCodeClient,
-    fetchImpl: fetch,
-    buildOpenCodeUrl,
-    getOpenCodeAuthHeaders,
+    isStartupReadinessPending,
+    generateHelperText: input => getNativeRuntimeOwner().generateHelperText(input),
+    renameGeneratedTitle: input => getNativeRuntimeOwner().renameGeneratedTitle(input),
+    resolveHelperSelection: input => getNativeRuntimeOwner().resolveHelperSelection(input),
+    verifyAcceptedTitleInput: input => getNativeRuntimeOwner().verifyTitleAcceptedInput(input),
+    captureManagedTitleInput: input => getNativeRuntimeOwner().captureManagedTitleInput(input),
+    captureAcceptedHumanTitleInput: input => getNativeRuntimeOwner().captureAcceptedHumanTitleInput(input),
+    cursorRuntime: cursorSdkRuntime,
     logger: console,
   });
   const globalAgentsMdRuntime = injectedGlobalAgentsMdRuntime || createGlobalAgentsMdRuntime({
@@ -553,8 +551,26 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       const native = nativeProviderOwner(CURSOR_ACP_PROVIDER_ID);
       if (!native) return res.json(status);
       const directory = await resolveRequestDirectory(req);
-      const auth = await native.withProviderConfigurationAuthorization({ providerID: CURSOR_ACP_PROVIDER_ID, directory, scope: 'read' }, owner => owner.readAuthenticationSource());
-      return res.json({ ...status, sdkAuthConfigured: auth.exists, authObservation: 'known' });
+      const snapshot = native.getConfigurationSnapshot?.();
+      if (!native.isReady?.() || !snapshot || typeof native.credentialMetadata !== 'function') {
+        throw Object.assign(new Error('native_runtime_not_ready'), { code: 'native_runtime_not_ready', statusCode: 503 });
+      }
+      const location = snapshot.locations.find(row => row.directory === directory);
+      if (!location) throw Object.assign(new Error('native_provider_configuration_location_unreviewed'),
+        { code: 'native_provider_configuration_location_unreviewed', statusCode: 403 });
+      const rows = await native.credentialMetadata({ kind: 'cursor', directory: location.directory, integrationID: CURSOR_ACP_PROVIDER_ID,
+        configurationDigest: credentialMutationFingerprint(location.configuration?.providers?.[CURSOR_ACP_PROVIDER_ID] ?? {}),
+        operation: 'cursor.integration', method: 'GET', path: '/api/integration/cursor-acp' });
+      if (getNativeRuntimeOwner() !== native || !native.isReady() || native.getConfigurationSnapshot() !== snapshot) {
+        throw Object.assign(new Error('native_provider_configuration_runtime_changed'), { code: 'native_provider_configuration_runtime_changed', statusCode: 503 });
+      }
+      if (!Array.isArray(rows) || rows.length > 256 || rows.some(row => !row || typeof row !== 'object' || Array.isArray(row)
+        || row.integrationID !== CURSOR_ACP_PROVIDER_ID || row.valueType !== 'key' || row.methodID !== undefined
+        || typeof row.active !== 'boolean' || typeof row.id !== 'string' || !/^[A-Za-z0-9_-]{1,256}$/.test(row.id)
+        || typeof row.expectedFingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(row.expectedFingerprint)) || new Set(rows.map(row => row.id)).size !== rows.length) {
+        throw Object.assign(new Error('native_credential_metadata_invalid'), { code: 'native_credential_metadata_invalid', statusCode: 502 });
+      }
+      return res.json({ ...status, sdkAuthConfigured: rows.length > 0, authObservation: 'known' });
     } catch (error) {
       console.error('Failed to read Cursor runtime status:', error);
       return res.status(error.statusCode ?? error.status ?? 500).json({ error: error.message || 'Failed to read Cursor runtime status', code: error.code });
@@ -792,6 +808,10 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
   });
 
   app.post('/api/session/:sessionID/prompt_async', (req, _res, next) => {
+    if (req.body && typeof req.body === 'object' && !Array.isArray(req.body) && req.body.messageID === undefined) {
+      const fromHeader = req.headers[PROMPT_MESSAGE_ID_HEADER];
+      req.body.messageID = typeof fromHeader === 'string' && fromHeader ? fromHeader : createV2MessageId();
+    }
     const providerID = typeof req.body?.model?.providerID === 'string'
       ? req.body.model.providerID.trim()
       : '';
@@ -874,6 +894,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
             sessionID,
             directory,
             text,
+            acceptedInputID: typeof req.body?.messageID === 'string' ? req.body.messageID : undefined,
             providerID,
             modelID,
             variant: typeof req.body?.variant === 'string' ? req.body.variant.trim() : undefined,
@@ -909,9 +930,10 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       });
       const handledStatus = result.status || 200;
       if (handledStatus >= 200 && handledStatus < 300) {
-        void cursorSessionTitleRuntime.schedule({
-          sessionID: req.params.sessionID,
-          directory,
+        void standardSessionTitleRuntime.schedule({
+          sessionID: req.params.sessionID, directory,
+          text: (Array.isArray(req.body?.parts) ? req.body.parts : []).filter(part => part?.type === 'text' && part.synthetic !== true).map(part => typeof part.text === 'string' ? part.text.trim() : '').filter(Boolean).join(' '),
+          acceptedInputID: req.body?.messageID,
         });
       }
       if (result.status === 204) {

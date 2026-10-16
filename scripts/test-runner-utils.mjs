@@ -29,9 +29,11 @@ export function discoverTestFiles(directory, rootDirectory, options = {}) {
 
   function walk(currentDirectory) {
     if (!existsSync(currentDirectory)) return;
+    // Nested checkouts own their test inventory; the explicitly requested root still runs.
+    if (currentDirectory !== directory && existsSync(path.join(currentDirectory, '.git'))) return;
 
     for (const entry of readdirSync(currentDirectory)) {
-      if (ignoredDirectories.has(entry)) continue;
+      if (entry === '.git' || ignoredDirectories.has(entry)) continue;
 
       const absolutePath = path.join(currentDirectory, entry);
       const stats = statSync(absolutePath);

@@ -134,7 +134,7 @@ export interface SessionMutationRuntime {
   prepareRevert(input: { directory: string; sessionID: string; messageID: string; scope?: 'tree' | 'session' }): Promise<MutationTransaction>;
   prepareRedo(input: { directory: string; sessionID: string }): Promise<MutationTransaction>;
   prepareFileRestore(input: { directory: string; sessionID: string; revision: string; redo?: boolean;
-    calls: Array<{ sessionID: string; callID: string; messageID?: string }> }): Promise<MutationTransaction>;
+    calls: Array<{ sessionID: string; callID: string; messageID: string }> }): Promise<MutationTransaction>;
   settleRevert(input: MutationTransactionReference & { commit: boolean }): Promise<MutationRevertResult>;
   transaction(input: MutationTransactionReference): Promise<MutationTransaction | null>;
   updateTransaction(input: MutationTransactionReference & {
@@ -149,7 +149,9 @@ export interface SessionMutationRuntime {
   leaseForCall(input: Pick<MutationScope, 'directory' | 'sessionID' | 'callID'>): Promise<MutationLease | null>;
   executionOutcomes(input: {directory:string;sessionID:string;calls:readonly {callID:string;messageID:string}[]}): Promise<{sessionID:string;messageID:string;callID:string;outcome:'finished'|'never_started'|'uncertain'}[]>;
   cancelLease(input: { directory: string; token: string }): Promise<void>;
-  cancelUnstartedCall(input: { directory: string; sessionID: string; messageID: string; callID: string; token?: string }): Promise<void>;
+  cancelUnstartedCall(input: { directory: string; sessionID: string; messageID: string; callID: string; token?: string; requireAbsent?: true;
+    /** Constructor-only owner fence, checked under the ledger lock and atomic commit. */
+    guard?: { readonly assertCurrent: () => void; readonly admissionRevision: number } }): Promise<void>;
   activeLeases(input: { directory: string; sessions?: string[] }): Promise<MutationLease[]>;
   pendingCleanup(input: { directory: string }): Promise<MutationLease[]>;
   drain(): Promise<PromiseSettledResult<unknown>[]>;

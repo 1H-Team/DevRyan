@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.13] - 2026-10-16
+
+- Update the bundled OpenCode host and Bot runtime from 2.0.26 to 2.0.30 with Effect 4.0.1, refreshed native asset pins and API schema, and migration-aware upgrade protection.
+- Fix startup failing with `bundle_message_reference_lost` after a session was deleted that had a tool call cancelled before it started. The marker left by that cancellation is now reported instead of refusing launch.
+- Preserve Cursor text and reasoning exactly through streaming, final results and worker transport, and keep completion tied to durable receipts and native saves.
+- Enforce read-only Plan execution in the host, verify native continuation and automatic-compaction lineage, and retain exact result publication and later-step review before child disposition.
+- Share helper model selection across naming and Git drafts, preserve Default reasoning, and bound title persistence and missing-idle recovery across restart.
+- Reduce result-v2 pagination and dormant Docker polling while preserving scalar compatibility, durable acknowledgements and explicit controls.
+- Bind release qualification to exact source, candidate bytes, fresh runners and executed retries; require final installer and updater evidence before publication succeeds.
+
 ## [2.0.12] - 2026-10-13
 
 - Startup no longer refuses over finished or derived records. A defective completed deletion, a settled lease with missing evidence, stray files, uncopyable links in derived folders and a Cursor recovery note that cannot be settled are set aside and reported in the app; a running command, a half-done delete or a pending revert still blocks.

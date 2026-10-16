@@ -1,9 +1,13 @@
-import { isTerminalManagedTaskStatus, MANAGED_RESULT_PAGE_MAX_BYTES } from '@openchamber/orchestration-runtime';
+import { createHash } from 'node:crypto';
+import { isTerminalManagedTaskStatus, MANAGED_RESULT_PAGE_MAX_BYTES, MANAGED_RESULT_V2_PAGE_MAX_BYTES } from '@openchamber/orchestration-runtime';
 
 const fault = code => Object.assign(new Error(code), { code, statusCode: 409 });
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const key = (scope, taskID) => `${scope.directory}\0${scope.rootSessionId}\0${taskID}`;
 const live = new Set(['queued', 'starting', 'running']);
+const stable=value=>JSON.stringify(value,(_key,item)=>record(item)?Object.fromEntries(Object.keys(item).sort().map(key=>[key,item[key]])):item);
+const hash=value=>createHash('sha256').update(value).digest('hex');
+const samePublicationScope=(left,right)=>['controllerInstanceID','configurationDigest','objectiveID','cancellationGeneration'].every(field=>left?.[field]===right?.[field]);
 export function validateNativeManagedResult(result, scope, taskID) {
   if (!record(result?.task) || result.task.taskId !== taskID || result.task.rootSessionId !== scope.rootSessionId
     || result.task.directory !== scope.directory || !(live.has(result.task.status) || isTerminalManagedTaskStatus(result.task.status))) {
@@ -16,7 +20,7 @@ export function validateNativeManagedResult(result, scope, taskID) {
 }
 const page = (value, expected) => {
   if (!record(value) || value.taskId !== expected.taskID || value.envelopeId !== expected.envelopeID
-    || typeof value.text !== 'string' || Buffer.byteLength(value.text) > MANAGED_RESULT_PAGE_MAX_BYTES || !Number.isSafeInteger(value.totalBytes) || value.totalBytes < 0
+    || typeof value.text !== 'string' || Buffer.byteLength(value.text) > (expected.maxPageBytes ?? MANAGED_RESULT_PAGE_MAX_BYTES) || !Number.isSafeInteger(value.totalBytes) || value.totalBytes < 0
     || !Number.isSafeInteger(value.returnedBytes) || value.returnedBytes < 0 || value.returnedBytes > value.totalBytes
     || typeof value.complete !== 'boolean' || !(value.nextCursor === null || typeof value.nextCursor === 'string' && value.nextCursor.length > 0 && value.nextCursor.length <= 4096)
     || value.complete !== (value.nextCursor === null) || value.complete !== (value.returnedBytes === value.totalBytes)
@@ -31,7 +35,10 @@ const page = (value, expected) => {
 export function createNativeManagedResultCollection() {
   const collected = new Map();
   return {
-    collect(result, scope, taskID) {
+    publicationMessageIDs(scope, taskIDs) {
+      return [...new Set(taskIDs.flatMap(taskID => (collected.get(key(scope, taskID))?.publications ?? []).map(value => value.messageID)))];
+    },
+    collect(result, scope, taskID, reset = false) {
       validateNativeManagedResult(result, scope, taskID);
       if (!isTerminalManagedTaskStatus(result.task.status)) throw fault('native_task_wait_not_terminal');
       const envelope = result.resultEnvelope;
@@ -60,25 +67,78 @@ export function createNativeManagedResultCollection() {
           || check.evidence?.exitCode !== 0 || typeof check.coverage?.contentHash !== 'string'
           || check.coverage.contentHash !== check.evidence.checkedContentHash)
         || !Number.isSafeInteger(header.detail?.bytes) || header.detail.bytes >= 64 * 1024)) throw fault('native_task_result_header_invalid');
-      const reference = result.resultReference ? page(result.resultReference, { taskID, envelopeID: envelope.envelopeId }) : undefined;
+      const maxPageBytes=scope.resultContractVersion===2?MANAGED_RESULT_V2_PAGE_MAX_BYTES:MANAGED_RESULT_PAGE_MAX_BYTES;
+      const reference = result.resultReference ? page(result.resultReference, { taskID, envelopeID: envelope.envelopeId, maxPageBytes }) : undefined;
+      const metadata=result.metadataReference?page(result.metadataReference,{taskID,envelopeID:envelope.envelopeId,maxPageBytes}):undefined;
+      if(metadata&&(result.resultContractVersion!==2||metadata.section!=='metadata'||!/^[a-f0-9]{64}$/.test(metadata.identitySha256??'')))throw fault('native_task_result_page_invalid');
       if (compact && reference?.totalBytes !== header.detail?.bytes) throw fault('native_task_result_header_invalid');
-      if (!reference && typeof envelope.recoverablePreview !== 'string') throw fault('native_task_result_detail_missing');
+      if (!reference && !metadata && typeof envelope.recoverablePreview !== 'string') throw fault('native_task_result_detail_missing');
       const existing = collected.get(key(scope, taskID));
-      if (existing?.envelopeID === envelope.envelopeId) return;
+      if (!reset && existing?.envelopeID === envelope.envelopeId) return;
       collected.set(key(scope, taskID), { envelopeID: envelope.envelopeId, status: result.task.status, detailRequired,
-        reference, complete: reference?.complete ?? true });
+        reference, metadata, maxPageBytes, complete: reference?.complete ?? true });
+    },
+    stagePublication(scope, taskIDs, invocation, identity, output) {
+      if(!record(identity)||!record(identity.attempt)||typeof identity.permitSha256!=='string')throw fault('native_task_publication_scope_invalid');
+      const candidate={identity:structuredClone(identity),messageID:invocation.messageID,callID:invocation.callID,
+        inputSha256:hash(stable(invocation.input)),outputSha256:hash(JSON.stringify(output))};
+      for(const taskID of taskIDs){
+        const value=collected.get(key(scope,taskID));if(!value)throw fault('native_task_wait_required');
+        const prior=value.publications??[];
+        if(prior.some(item=>!samePublicationScope(item.identity,identity)))throw fault('native_task_publication_scope_changed');
+        const repeated=prior.find(item=>item.messageID===candidate.messageID&&item.callID===candidate.callID);
+        if(repeated){if(repeated.inputSha256!==candidate.inputSha256||repeated.outputSha256!==candidate.outputSha256)throw fault('native_task_publication_changed');continue;}
+        if(prior.length>1)throw fault('native_task_publication_pending');
+        collected.set(key(scope,taskID),{...value,publications:[...prior,candidate]});
+      }
+    },
+    assertPublished(scope, taskID, snapshot, review = false) {
+      const value=collected.get(key(scope,taskID));
+      if(!value?.publications?.length)throw fault('native_task_result_not_published');
+      if(!Array.isArray(snapshot?.messages)||!samePublicationScope(value.publications[0].identity,snapshot.identity))throw fault('native_task_publication_scope_changed');
+      const currentIndex=snapshot.messages.findIndex(message=>message.info?.id===snapshot.identity.stepID);
+      if(currentIndex<0||snapshot.messages[currentIndex].info.role!=='assistant')throw fault('native_task_review_step_required');
+      for(const candidate of value.publications){
+        const index=snapshot.messages.findIndex(message=>message.info?.id===candidate.messageID),message=snapshot.messages[index];
+        const part=message?.parts?.find(part=>part.type==='tool'&&part.tool==='devryan_task'&&part.callID===candidate.callID);
+        if(index<0||message.info.role!=='assistant'||message.info.sessionID!==scope.rootSessionId
+          ||part?.state?.status!=='completed'||part.state.metadata?.truncated===true
+          ||hash(stable(part.state.input))!==candidate.inputSha256||typeof part.state.output!=='string'
+          ||hash(part.state.output)!==candidate.outputSha256)throw fault('native_task_result_not_published');
+        if(review&&currentIndex<=index)throw fault('native_task_later_review_step_required');
+      }
+      // Each next page requires this check first. Retain its latest canonical
+      // delivery witness rather than a transcript-sized history of candidates.
+      collected.set(key(scope,taskID),{...value,publications:value.publications.slice(-1)});
     },
     next(scope, taskID, cursor) {
       const value = collected.get(key(scope, taskID));
       if (!value) throw fault('native_task_wait_required');
-      if (value.complete || value.reference?.nextCursor !== cursor) throw fault('native_task_result_cursor_mismatch');
+      const expected=value.metadata&&!value.metadata.complete?value.metadata.nextCursor:value.complete?null:value.reference?.nextCursor;
+      if (expected!==cursor||expected===null) throw fault('native_task_result_cursor_mismatch');
       return structuredClone(value);
     },
     acceptPage(scope, taskID, cursor, result) {
       const current = this.next(scope, taskID, cursor);
+      if(current.metadata&&!current.metadata.complete){
+        const metadata=page(result?.metadataReference,{taskID,envelopeID:current.envelopeID,totalBytes:current.metadata.totalBytes,returnedBytes:current.metadata.returnedBytes,maxPageBytes:current.maxPageBytes});
+        if(metadata.section!=='metadata'||metadata.identitySha256!==current.metadata.identitySha256)throw fault('native_task_result_page_invalid');
+        collected.set(key(scope,taskID),{...current,metadata});return;
+      }
       const reference = page(result?.resultReference, { taskID, envelopeID: current.envelopeID,
-        totalBytes: current.reference.totalBytes, returnedBytes: current.reference.returnedBytes });
+        totalBytes: current.reference.totalBytes, returnedBytes: current.reference.returnedBytes, maxPageBytes: current.maxPageBytes });
       collected.set(key(scope, taskID), { ...current, reference, complete: reference.complete });
+    },
+    acceptPublishedPages(scope, reads, invocation, identity, output) {
+      const previous = new Map(reads.map(read => [key(scope, read.taskID), collected.get(key(scope, read.taskID))]));
+      try {
+        for (const read of reads) this.acceptPage(scope, read.taskID, read.cursor, read.result);
+        this.stagePublication(scope, reads.map(read => read.taskID), invocation, identity, output);
+      } catch (error) {
+        // No await or observer separates page advancement from its candidate.
+        for (const [id, value] of previous) value ? collected.set(id, value) : collected.delete(id);
+        throw error;
+      }
     },
     assertDisposition(scope, taskID, action, current) {
       validateNativeManagedResult(current, scope, taskID);
@@ -89,7 +149,8 @@ export function createNativeManagedResultCollection() {
       if (value.status === 'completed' && action !== 'continue') throw fault('native_task_completed_requires_continue');
       if (current.task.manualRecoveryRequired === true || current.resultEnvelope.autoResume?.enabled === true
         && ['planning','scheduled','attempting'].includes(current.resultEnvelope.autoResume.state)) throw fault('manual_model_recovery_required');
-      if (value.detailRequired && !value.complete) throw fault('native_task_result_detail_required');
+      if ((value.detailRequired||current.resultHeader?.detail?.requiredBeforeDisposition===true) && !value.complete) throw fault('native_task_result_detail_required');
+      if(value.metadata&&!value.metadata.complete)throw fault('native_task_result_metadata_required');
     },
     dispose(scope, taskID) { collected.delete(key(scope, taskID)); },
   };

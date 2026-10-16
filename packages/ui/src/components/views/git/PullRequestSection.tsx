@@ -1493,6 +1493,9 @@ export const PullRequestSection: React.FC<{
       // to a stale body (or vice versa).
       setTitle(nextTitle);
       setBody(nextBody);
+      if (generated.source === 'session_model') {
+        toast.info(t('gitView.toast.activeModelFallback'), { description: generated.model ?? undefined });
+      }
       if (!nextTitle || !nextBody) {
         toast.warning(t('gitView.pr.toast.generateDescriptionPartial'), {
           description: t(nextTitle

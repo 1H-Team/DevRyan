@@ -255,6 +255,7 @@ export type ManagedTaskEventRecord = Omit<ManagedTaskRecord,
   };
 
 export interface ManagedTaskResultEnvelope {
+  acknowledgementIdentity?: string;
   owner: 'devryan';
   envelopeId: string;
   taskId: string;
@@ -295,6 +296,13 @@ export interface ManagedResultReference {
   nextCursor: string | null;
   complete: boolean;
 }
+export interface ManagedMetadataReference extends ManagedResultReference {section: 'metadata'; identitySha256: string}
+export function isManagedMetadataCursor(cursor: unknown): boolean;
+export function sliceManagedResultText(value: string, stringOffset: number, maxBytes?: number): {text: string; nextOffset: number; pageBytes: number};
+export function prepareManagedResultMetadata(value: Record<string, unknown>): Promise<{
+  project(maxPageBytes?: number, resultReference?: ManagedResultReference): Record<string, unknown>;
+  read(resultCursor: string, maxPageBytes?: number): {metadataReference: ManagedMetadataReference; resultContractVersion: 2};
+}>;
 
 export class ManagedResultReferenceError extends Error {
   code: 'invalid_result_cursor' | 'result_reference_mismatch';
@@ -512,7 +520,22 @@ export interface ManagedOrchestrationState {
 
 export interface ManagedOrchestrationPersistence {
   load(): Promise<ManagedOrchestrationState | null>;
-  save(state: ManagedOrchestrationState): Promise<void>;
+  save(state: ManagedOrchestrationState, observation?: { onProgress(input: { phase: string; state: 'started' | 'completed' }): void }): Promise<void>;
+}
+
+export interface ManagedPersistenceObservation {
+  ownerID: string;
+  state: 'needs_attention' | 'settled';
+  code: 'managed_persistence_stalled';
+  phase: string;
+  at: number;
+  elapsedMs: number;
+  idleMs?: number;
+  reason?: 'task_deadline' | 'owner_progress_timeout';
+  outcome?: 'committed' | 'failed';
+  taskCount: number;
+  taskId?: string;
+  rootSessionId?: string;
 }
 
 export interface ManagedTaskAutoResumeAttemptParams {
@@ -593,6 +616,9 @@ export interface ManagedTaskSchedulerOptions {
   cursorReadOnly?: boolean;
   onBarrierChange?(input: { rootSessionId: string; state: string; at: number; taskCount: number }): void;
   onRequiredCheckReceipt?(input: { task: ManagedTaskRecord; receipt: RequiredCheckReceipt }): void;
+  onPersistenceObservation?(input: ManagedPersistenceObservation): void | Promise<void>;
+  onMutationTiming?(input: Readonly<{ waitMs: number; holdMs: number; failed: boolean }>): void | Promise<void>;
+  persistenceStallMs?: number;
   executor: ManagedTaskExecutor;
   persistence?: ManagedOrchestrationPersistence;
   now?: () => number;
@@ -639,6 +665,7 @@ export interface ManagedTaskSchedulerDiagnostics {
   compactedTaskCount: number;
   serializedBytes: number;
   shutDown: boolean;
+  persistence: { state: 'writing' | 'needs_attention'; phase: string; elapsedMs: number; idleMs: number } | null;
 }
 
 export interface ManagedAgentHandoffScope {
@@ -705,13 +732,13 @@ export function projectManagedWaitSnapshot(input: { rootSessionId: string; tasks
 export interface ManagedTaskScheduler {
   waitForResultCommit(options: { directory: string; afterCursor?: string | null; signal?: AbortSignal; timeoutMs?: number }): Promise<{ cursor: string; cursorReset: boolean; rootSessionIds: string[] }>;
   waitForAnyTask(options: { rootSessionId: string; taskIds: string[]; afterCursor?: string | null;
-    signal?: AbortSignal; timeoutMs?: number }): Promise<ManagedWaitSnapshot>;
+    signal?: AbortSignal; timeoutMs?: number; until?: 'settled' }): Promise<ManagedWaitSnapshot>;
   initialize(): Promise<void>;
   getRequiredCheckTask(childSessionId: string, directory: string): Pick<ManagedTaskRecord, 'taskId' | 'leaseToken' | 'directory' | 'requiredChecks'> | null;
   getChildAssignment(childSessionId: string, directory: string): ManagedTaskRecord | null;
   recordRequiredCheck(taskId: string, leaseToken: string, receipt: RequiredCheckReceipt, phase: 'start' | 'bind' | 'complete'): Promise<boolean>;
   recordRequiredChecks(taskId: string, leaseToken: string, receipts: RequiredCheckReceipt[], phase: 'start' | 'bind' | 'complete'): Promise<boolean>;
-  submit(input: ManagedTaskSubmitInput, options?: { signal?: AbortSignal }): Promise<ManagedTaskRecord>;
+  submit(input: ManagedTaskSubmitInput, options?: { signal?: AbortSignal; authorize?:()=>Promise<void> }): Promise<ManagedTaskRecord>;
   cancelTask(taskId: string, options?: { cascade?: false; reason?: string }): Promise<ManagedTaskRecord>;
   cancelTask(taskId: string, options: { cascade: true; reason?: string }): Promise<ManagedTaskRecord[]>;
   waitForTask(taskId: string, options?: {
@@ -753,6 +780,8 @@ export interface ManagedTaskScheduler {
     idempotencyKey: string;
   }): Promise<ManagedAgentHandoffResult>;
   acknowledgeResult(taskId: string, options: {
+    acknowledgementIdentity?: string;
+    authorize?:()=>Promise<void>;
     action: ManagedTaskResultAction;
     idempotencyKey: string;
     providerId?: string;
@@ -784,7 +813,9 @@ export interface ManagedTaskScheduler {
   verifyTaskDispatch(taskId: string, leaseToken: string | null): Promise<ManagedTaskRecord>;
   verifyTaskSettlement(taskId: string, leaseToken: string | null): Promise<ManagedTaskRecord>;
   listTasks(options?: { rootSessionId?: string }): ManagedTaskRecord[];
-  withNativePromptContext<A>(input:{rootSessionId:string;directory:string;authorize:()=>Promise<void>},action:(state:{tasks:ManagedTaskRecord[];envelopes:ManagedTaskResultEnvelope[];markPromptObserved:(receipt:{taskId:string;attempt:number;sequence:number})=>void})=>Promise<A>):Promise<A>;
+  withNativePromptContext<A>(input:{rootSessionId:string;directory:string;authorize:()=>Promise<void>},action:(state:{tasks:ManagedTaskRecord[];envelopes:ManagedTaskResultEnvelope[];
+    readBarrier(scope:{rootSessionId:string;directory:string}):Promise<{state:'clear'|'active'|'awaiting_acknowledgement';taskIds:string[]}>;
+    markPromptObserved:(receipt:{taskId:string;attempt:number;sequence:number})=>void})=>Promise<A>):Promise<A>;
   getSnapshot(): ManagedOrchestrationState;
   getResultEnvelope(taskId: string): ManagedTaskResultEnvelope | null;
   listResultEnvelopes(options?: { rootSessionId?: string }): ManagedTaskResultEnvelope[];
@@ -885,7 +916,16 @@ export function buildAutoResumeAcknowledgeParams(input: {
 }): ManagedTaskAutoResumeAttemptParams;
 export function validateManagedTaskAutoResume(value: unknown): ManagedTaskAutoResume | null;
 export const MANAGED_RESULT_PAGE_MAX_BYTES: number;
+export const MANAGED_RESULT_V2_PAGE_MAX_BYTES: number;
 export const MANAGED_RESULT_MODES: readonly ManagedResultMode[];
+export const NATIVE_TOOL_OUTPUT_DEFAULTS: Readonly<{max_bytes: number; max_lines: number}>;
+export const MANAGED_TOOL_OUTPUT_MAX_BYTES: number;
+export const PLAN_MODE_SYSTEM_INSTRUCTIONS: string;
+export function nativeToolOutputLimits(value?: unknown): {max_bytes: number; max_lines: number};
+export function managedToolOutputBudget(limits?: {max_bytes?: number; max_lines?: number}): number;
+export function compactManagedTaskToolResult<T>(value: T): T;
+export function assertManagedToolOutputSize<T>(value: T, maxBytes?: number): T;
+export function fitManagedToolOutput<T>(factory: (maxPageBytes: number) => T, maxBytes?: number, maxPageBytes?: number): T;
 
 export function formatManagedTaskDisplayName(label: string): string;
 export function isManagedTaskPlaceholderSession(session: unknown): boolean;
@@ -898,6 +938,7 @@ export function projectManagedTaskResult<TTask extends Record<string, unknown>>(
   task: TTask,
   resultEnvelope: ManagedTaskResultEnvelope | null | undefined,
   resultMode?: ManagedResultMode,
+  maxPageBytes?: number,
 ): {
   task: TTask | Omit<TTask, 'recoverablePreview'>;
   resultEnvelope?: ManagedTaskResultEnvelope | Omit<ManagedTaskResultEnvelope, 'recoverablePreview'>;
@@ -907,6 +948,7 @@ export function projectManagedResultEnvelope(
   task: Partial<ManagedTaskRecord> | ManagedTaskEventRecord,
   resultEnvelope: ManagedTaskResultEnvelope,
   resultMode?: ManagedResultMode,
+  maxPageBytes?: number,
 ): {
   resultEnvelope: ManagedTaskResultEnvelope | Omit<ManagedTaskResultEnvelope, 'recoverablePreview'>;
   resultReference?: ManagedResultReference;
@@ -915,6 +957,7 @@ export function readManagedResultReference(input: {
   task: Partial<ManagedTaskRecord> | ManagedTaskEventRecord;
   resultEnvelope: ManagedTaskResultEnvelope;
   resultCursor: string;
+  maxPageBytes?: number;
 }): ManagedResultReference;
 export function waitForSharedOperation<T>(operation: T | PromiseLike<T>, options?: { signal?: AbortSignal }): Promise<T>;
 export function createKeyedSingleFlight(): {

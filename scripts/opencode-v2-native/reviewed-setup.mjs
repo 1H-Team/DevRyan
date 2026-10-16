@@ -32,7 +32,9 @@ export function attachReviewedSetup({bundle,binding,registrationBytes,configurat
  const original=bundle.reviewedConfiguration;
  assert.equal(typeof original?.resolveSlimAgents,'function');assert.equal(typeof original?.ponytailCommands?.ponytail?.template,'string');
  const roles=['orchestrator','fixer','designer','council','oracle','explorer','librarian','builder'];
- const agents={...structuredClone(configuration.agents??{}),...Object.fromEntries(roles.map(name=>[name,{model:'devryan-smoke/smoke-write',variant:'default',mode:name==='orchestrator'||name==='builder'?'primary':'subagent'}]))};
+ const agents={...structuredClone(configuration.agents??{}),...Object.fromEntries(roles.map(name=>[name,{model:'devryan-smoke/smoke-write',variant:'default',mode:name==='orchestrator'||name==='builder'?'primary':'subagent',
+  ...(typeof configuration.agents?.[name]?.temperature==='number'?{temperature:configuration.agents[name].temperature}:{}),
+  ...(typeof configuration.agents?.[name]?.top_p==='number'?{top_p:configuration.agents[name].top_p}:{})}]))};
  if(councilMembers!==undefined){
   assert.deepEqual(councilMembers,compiledCouncilMembers,'Only declared local Council diagnostic members are supported');
   agents.council.councillors=structuredClone(councilMembers);

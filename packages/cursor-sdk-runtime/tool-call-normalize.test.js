@@ -2,6 +2,11 @@ import { describe, expect, test } from 'bun:test';
 import { normalizeInteractionUpdateToSdkMessage } from './index.js';
 
 describe('normalizeInteractionUpdateToSdkMessage: tool calls', () => {
+  test('keeps empty thinking deltas distinct from completion markers and malformed updates', () => {
+    expect(normalizeInteractionUpdateToSdkMessage({ type: 'thinking-delta', text: '' })).toEqual({ type: 'thinking', text: '' });
+    expect(normalizeInteractionUpdateToSdkMessage({ type: 'thinking-completed' })).toEqual({ type: 'thinking_completed' });
+    expect(normalizeInteractionUpdateToSdkMessage({ type: 'thinking-delta' })).toBeNull();
+  });
   test('preserves an explicit error status on a completed tool-call update', () => {
     const result = { status: 'error', error: { message: 'write denied' } };
 

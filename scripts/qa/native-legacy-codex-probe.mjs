@@ -73,7 +73,7 @@ if (process.argv[2] !== '--child') {
     assert.ok(response.ok, `native_route_refused_${response.status}`);
     const value = await response.json(); return value?.location && Object.hasOwn(value, 'data') ? value.data : value;
   };
-  const report = { qualification: 'isolated-native-sdk-live-provider-probe', nativeVersion: '2.0.26', methodID: 'chatgpt-browser',
+  const report = { qualification: 'isolated-native-sdk-live-provider-probe', nativeVersion: '2.0.30', methodID: 'chatgpt-browser',
     transport: 'http', enrollment: 'pending', chat: 'not-run', usage: 'not-run', installedStateAccess: false };
   let attempt;
   try {

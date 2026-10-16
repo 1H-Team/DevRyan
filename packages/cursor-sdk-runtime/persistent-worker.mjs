@@ -1,3 +1,6 @@
+import { cursorFinalText } from './final-result.js';
+import { createCursorWorkerWriter } from './worker-writer.js';
+import { cursorErrorDetails, cursorWorkerFailure } from './sdk-error.js';
 import { cursorReadOnlyOptions } from './worker-payload.js';
 import { createInterface } from 'node:readline';
 import process from 'node:process';
@@ -14,6 +17,10 @@ import { normalizeInteractionUpdateToSdkMessage } from './interaction-update-nor
 import { assertCursorSdkNodeCompatibility } from './node-version.js';
 import { credentialCacheIdentity } from './credential-cache-identity.js';
 import { cursorRunUsageObservation } from './cursor-usage.js';
+import { Console } from 'node:console';
+
+// The SDK's default logger must never enter the stdout protocol.
+globalThis.console = new Console(process.stderr, process.stderr);
 
 const trimString = (value) => (typeof value === 'string' ? value.trim() : '');
 
@@ -72,39 +79,6 @@ const finalStatusFromSdkStatus = (status) => {
   return null;
 };
 
-const getSdkMessageTextFingerprint = (message) => {
-  if (!isPlainObject(message)) return '';
-  if (message.type === 'assistant') {
-    const content = Array.isArray(message.message?.content) ? message.message.content : [];
-    const text = content
-      .filter((block) => block?.type === 'text' && typeof block.text === 'string')
-      .map((block) => block.text)
-      .join('');
-    return text ? `assistant:${text}` : '';
-  }
-  if (message.type === 'thinking') {
-    const text = typeof message.text === 'string' ? message.text : '';
-    return text ? `thinking:${text}` : '';
-  }
-  return '';
-};
-
-const createCrossSourceMessageDedupe = (limit = 80) => {
-  const recent = [];
-  return (source, message) => {
-    const fingerprint = getSdkMessageTextFingerprint(message);
-    if (!fingerprint) return false;
-    const duplicate = recent.some((entry) => (
-      entry.fingerprint === fingerprint && entry.source !== source
-    ));
-    recent.push({ source, fingerprint });
-    if (recent.length > limit) {
-      recent.splice(0, recent.length - limit);
-    }
-    return duplicate;
-  };
-};
-
 const normalizeModelSelectionParams = (params) => {
   if (!Array.isArray(params)) return [];
   const normalized = [];
@@ -150,12 +124,11 @@ const stableJson = (value) => {
 
 const isMissingCursorAgentError = (error) => /Agent .* not found/i.test(error instanceof Error ? error.message : String(error || ''));
 
-const writeEvent = (event) => {
-  process.stdout.write(`${JSON.stringify(event)}\n`);
-};
+const output = createCursorWorkerWriter(process.stdout);
+const writeEvent = event => output.write(event);
 
 const writeRequestEvent = (requestID, event) => {
-  writeEvent({ requestID, ...event });
+  return writeEvent({ requestID, ...event });
 };
 
 const agentCache = createAgentCache({
@@ -277,13 +250,14 @@ const handlePrepare = async (command) => {
       readOnly: command.readOnly === true,
     });
     writeTiming('cursor_agent_prepared', { cacheHit: prepared.cacheHit === true });
-    writeRequestEvent(requestID, {
+    await output.drain();
+    await writeRequestEvent(requestID, {
       type: 'prepared',
       agentID: trimString(prepared.agent?.agentId),
       cacheHit: prepared.cacheHit === true,
     });
   } catch (error) {
-    writeRequestEvent(requestID, {
+    await output.report({ requestID,
       type: 'error',
       error: error instanceof Error ? error.message : 'Cursor SDK worker prepare failed.',
     });
@@ -299,7 +273,7 @@ const handleTitle = async (command) => {
   if (!requestID) return;
   if (!apiKey) throw new Error('Cursor SDK API key is not configured.');
   if (!text) {
-    writeRequestEvent(requestID, { type: 'title-result', title: null });
+    await writeRequestEvent(requestID, { type: 'title-result', title: null });
     return;
   }
 
@@ -311,12 +285,13 @@ const handleTitle = async (command) => {
       directory,
       onUsage: (observation) => writeRequestEvent(requestID, { type: 'usage-observation', observation }),
     });
-    writeRequestEvent(requestID, {
+    await output.drain();
+    await writeRequestEvent(requestID, {
       type: 'title-result',
       title,
     });
   } catch (error) {
-    writeRequestEvent(requestID, {
+    await output.report({ requestID,
       type: 'error',
       error: error instanceof Error ? error.message : 'Cursor SDK title generation failed.',
     });
@@ -349,10 +324,8 @@ const handlePrompt = async (command) => {
   let activeAgentCacheKey = '';
   activeRuns.set(requestID, state);
 
-  const shouldSkipDuplicateMessage = createCrossSourceMessageDedupe();
-  const writeSdkMessage = (sdkMessage, source = 'stream') => {
-    if (shouldSkipDuplicateMessage(source, sdkMessage)) return;
-    writeRequestEvent(requestID, { type: 'message', message: sdkMessage });
+  const writeSdkMessage = (sdkMessage) => {
+    return writeRequestEvent(requestID, { type: 'message', message: sdkMessage });
   };
 
   const writeTiming = (mark, metadata) => {
@@ -403,7 +376,7 @@ const handlePrompt = async (command) => {
           sawSdkDelta = true;
           writeTiming('cursor_first_sdk_delta');
         }
-        writeSdkMessage(sdkMessage, 'delta');
+        if (sdkMessage.type === 'task_activity' || sdkMessage.type === 'session_change') writeSdkMessage(sdkMessage);
       },
     });
     state.run = run;
@@ -414,16 +387,18 @@ const handlePrompt = async (command) => {
     }
 
     let doneEmitted = false;
-    const writeDone = (status) => {
+    const writeDone = async (status) => {
       if (doneEmitted) return;
       doneEmitted = true;
-      writeSdkMessage({
+      await writeSdkMessage({
         type: 'status',
         agent_id: run.agentId,
         run_id: run.id,
         status: sdkStatusFromRunStatus(status),
       });
-      writeRequestEvent(requestID, { type: 'done', status });
+      await output.drain();
+      await writeRequestEvent(requestID, { type: 'done', status });
+      await output.drain();
     };
 
     const closeStreamIterator = async () => {
@@ -437,53 +412,10 @@ const handlePrompt = async (command) => {
     // is idempotent, so this is safe alongside the natural completion path.
     state.finishCancelled = () => {
       writeRequestEvent(requestID, { type: 'usage-observation', observation: cursorRunUsageObservation(run) });
-      writeDone('cancelled');
-      void closeStreamIterator();
+      return writeDone('cancelled').finally(() => { void closeStreamIterator().catch(() => {}); });
     };
 
-    const waitPromise = run.wait()
-      .then((result) => {
-        const finalText = trimString(result?.result);
-        const finalStatus = finalStatusFromSdkStatus(sdkStatusFromRunStatus(result?.status || run.status));
-        writeRequestEvent(requestID, {
-          type: 'final-result',
-          result: {
-            ok: true,
-            usageObservation: cursorRunUsageObservation(run, result),
-            finalStatus,
-            finalText,
-          },
-        });
-        if (finalText) {
-          writeSdkMessage({
-            type: 'assistant',
-            agent_id: run.agentId,
-            run_id: run.id,
-            message: {
-              role: 'assistant',
-              content: [{ type: 'text', text: finalText }],
-            },
-          }, 'wait');
-        }
-        writeDone(result?.status || run.status);
-        void closeStreamIterator();
-      })
-      .catch((error) => {
-        writeRequestEvent(requestID, {
-          type: 'final-result',
-          result: {
-            ok: false,
-            usageObservation: cursorRunUsageObservation(run),
-            finalStatus: 'error',
-            finalText: '',
-            error: error instanceof Error ? error.message : 'Cursor SDK run failed.',
-          },
-        });
-        writeRequestEvent(requestID, {
-          type: 'error',
-          error: error instanceof Error ? error.message : 'Cursor SDK run failed.',
-        });
-      });
+    const waitPromise = run.wait().then(result => ({ result }), error => ({ error }));
 
     let sawStreamEvent = false;
     state.streamIterator = run.stream()[Symbol.asyncIterator]();
@@ -494,23 +426,42 @@ const handlePrompt = async (command) => {
         sawStreamEvent = true;
         writeTiming('cursor_first_stream_event');
       }
-      writeSdkMessage(next.value, 'stream');
+      if (state.cancelRequested) break;
+      await writeSdkMessage(next.value);
     }
 
-    await waitPromise;
-    writeDone(run.status);
+    if (state.cancelRequested) return;
+    const settled = await waitPromise;
+    if (settled.error) {
+      await writeRequestEvent(requestID, { type: 'usage-observation', observation: cursorRunUsageObservation(run) });
+      throw cursorWorkerFailure(settled.error instanceof Error ? settled.error.message : 'Cursor SDK run failed.', { ...cursorErrorDetails(settled.error), source: 'provider' });
+    }
+    const result = settled.result;
+    const finalText = await cursorFinalText(result, run);
+    await output.drain();
+    await writeRequestEvent(requestID, { type: 'final-result', result: {
+      ok: true,
+      usageObservation: cursorRunUsageObservation(run, result),
+      finalStatus: finalStatusFromSdkStatus(sdkStatusFromRunStatus(result?.status || run.status)),
+      ...finalText,
+    } });
+    await writeDone(result?.status || run.status);
   } catch (error) {
-    writeRequestEvent(requestID, {
+    if (state.run?.status === 'running' && typeof state.run.cancel === 'function') {
+      await withTimeout(Promise.resolve().then(() => state.run.cancel()), CANCEL_TIMEOUT_MS);
+    }
+    await output.report({ requestID,
       type: 'final-result',
       result: {
         ok: false,
         finalStatus: 'error',
-        finalText: '',
+        ...cursorErrorDetails(error), errorDetails: cursorErrorDetails(error),
         error: error instanceof Error ? error.message : 'Cursor SDK worker failed.',
       },
     });
-    writeRequestEvent(requestID, {
+    await output.report({ requestID,
       type: 'error',
+      ...cursorErrorDetails(error), errorDetails: cursorErrorDetails(error),
       error: error instanceof Error ? error.message : 'Cursor SDK worker failed.',
     });
   } finally {
@@ -518,6 +469,7 @@ const handlePrompt = async (command) => {
       agentCache.markInactive(activeAgentCacheKey);
     }
     activeRuns.delete(requestID);
+    if (output.failed) { process.exitCode = 1; lines.close(); process.stdin.destroy(); agentCache.clear(); }
   }
 };
 
@@ -531,7 +483,7 @@ const cancelRun = async (requestID) => {
   }
   // Always emit a terminal done so the host never waits forever for a stream
   // that stopped producing events after cancellation.
-  active.finishCancelled?.();
+  await active.finishCancelled?.();
 };
 
 const shutdown = async () => {
@@ -539,6 +491,7 @@ const shutdown = async () => {
     await cancelRun(requestID);
   }
   agentCache.clear();
+  try { await output.drain(); } catch { process.exit(1); }
   process.exit(0);
 };
 
@@ -565,6 +518,7 @@ const handleWarm = async (command) => {
   }
 };
 
+const failOutput = () => { process.exitCode = 1; lines.close(); process.stdin.destroy(); agentCache.clear(); };
 const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
 for await (const line of lines) {
   if (!trimString(line)) continue;
@@ -579,13 +533,13 @@ for await (const line of lines) {
     catch (error) { writeRequestEvent(trimString(command.requestID), { type: 'error', error: error.message }); continue; }
   }
   if (command?.type === 'prompt') {
-    void handlePrompt(command);
+    void handlePrompt(command).catch(failOutput);
   } else if (command?.type === 'prepare') {
-    void handlePrepare(command);
+    void handlePrepare(command).catch(failOutput);
   } else if (command?.type === 'title') {
-    void handleTitle(command);
+    void handleTitle(command).catch(failOutput);
   } else if (command?.type === 'cancel') {
-    void cancelRun(trimString(command.requestID));
+    void cancelRun(trimString(command.requestID)).catch(failOutput);
   } else if (command?.type === 'release-session') {
     agentCache.releaseSession(trimString(command.sessionID));
   } else if (command?.type === 'warm') {

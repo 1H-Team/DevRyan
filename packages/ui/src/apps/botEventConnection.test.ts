@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { BOT_SNAPSHOT_PART_KIND, encodeBotSnapshot, splitBotSnapshot } from '../../../bots-runtime/event-snapshot.js';
+import { botCapabilityCanStream, botCapabilityIsTransient } from './botCapabilityStream';
 
 import {
   createBotCapabilityConnectionController,
@@ -374,6 +375,23 @@ describe('Bot capability connection controller', () => {
     pending.shift()?.();
     await flushAsync();
     expect(options.at(-1)).toEqual({ refresh: true });
+    controller.dispose();
+  });
+
+  test('known stopped Docker suspends automatic root retries but focus, control and an available catalog remain live', async () => {
+    const loads: Array<{refresh?:boolean}|undefined>=[], timers: Array<()=>void>=[];
+    let available=false, streams=0;
+    const controller=createBotCapabilityConnectionController({
+      loadCapabilities:async options=>{loads.push(options);return {state:'docker_stopped',catalogAvailable:available};},
+      getCapabilitiesErrorCode:()=>null, canStream:botCapabilityCanStream,isTransient:botCapabilityIsTransient,
+      createConnection:()=>({start:()=>{streams++;},retry:()=>{},dispose:()=>{}}),setConnectionState:()=>{},
+      setTimeoutImpl:((callback:()=>void)=>{timers.push(callback);return timers.length as unknown as ReturnType<typeof setTimeout>;}) as typeof setTimeout,
+      clearTimeoutImpl:(()=>{}) as unknown as typeof clearTimeout,
+    });
+    controller.start(); await flushAsync(); expect(loads).toEqual([undefined]); expect(timers).toEqual([]);
+    controller.recheck(); await flushAsync(); expect(loads).toEqual([undefined,undefined]); expect(timers).toEqual([]);
+    available=true; controller.retry(); await flushAsync();
+    expect(loads.at(-1)).toEqual({refresh:true}); expect(streams).toBe(1); expect(timers).toEqual([]);
     controller.dispose();
   });
 

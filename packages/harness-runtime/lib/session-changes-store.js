@@ -38,6 +38,15 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,s
   let tree = refs || null;
   const oidLength = tree?.length ?? ((await run(['rev-parse', '--show-object-format'])).toString().trim() === 'sha256' ? 64 : 40);
   const pending = new Map();
+  let staging = false;
+  // One failed direct receipt must not leave staged rows in its shared commit.
+  const stage = async (action) => {
+    if (staging) throw changeError('invalid_change_record');
+    const saved = new Map(pending); staging = true;
+    try { return await action(); }
+    catch (error) { pending.clear(); for (const [key, value] of saved) pending.set(key, value); throw error; }
+    finally { staging = false; }
+  };
   // Serialized values read from the current tree in this store. Rewriting one
   // unchanged (or removing a key read as absent) stages nothing, so a
   // read-mostly transaction does not create a Git commit.
@@ -163,7 +172,9 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,s
     }
     flush();
   };
-  const commit = async () => {
+  const commit = async ({ assertCurrent } = {}) => {
+    assertCurrent?.();
+    if (staging) throw changeError('invalid_change_record');
     if (!pending.size) return;
     // Objects this transaction references are durable before it is.
     await syncObjects(cwd);
@@ -195,7 +206,17 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,s
       };
       await run(['update-index', '-z', '--index-info'], { env, input: updates(), timeoutMs: 120_000 });
       const next = (await run(['write-tree'], { env })).toString().trim();
+      assertCurrent?.();
       await run(['update-ref', ref, next, tree ?? '0'.repeat(oidLength)]);
+      try { assertCurrent?.(); }
+      catch (cause) {
+        // The caller still holds the ledger lock. Undo this CAS before a
+        // revoked scope can expose its staged negative admission proof.
+        try { await run(tree ? ['update-ref', ref, tree, next] : ['update-ref', '-d', ref, next]); }
+        catch (rollback) { throw Object.assign(new AggregateError([cause, rollback], 'Guarded ledger commit rollback failed'),
+          { code: 'ledger_guard_rollback_failed', committed: true, rollbackFailed: true }); }
+        throw cause;
+      }
       tree = next;
       pending.clear();
       baseline.clear();
@@ -241,6 +262,6 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,s
     }
     return result;
   };
-  return { get, set, remove, entries, records, list, setList, commit, leaseRef, pin, release, importPrefix, prefixIdentity, prefixIdentities,
+  return { get, set, remove, entries, records, list, setList, commit, stage, leaseRef, pin, release, importPrefix, prefixIdentity, prefixIdentities,
     get tree() { return tree; }, get exists() { return tree !== null; }, get pendingCount() { return pending.size; } };
 }

@@ -46,6 +46,7 @@
 // handlers; the openCodeClient reaches it through `deps.getAdmission`.
 // ---------------------------------------------------------------------------
 
+import { isCanonicalManagedTitleMetadata } from './managed-title-metadata.js';
 import crypto from 'node:crypto';
 
 import { unwrapData } from '../opencode-client/envelope.js';
@@ -222,6 +223,16 @@ export const validateDevryanPromptMetadata = (value, options = {}) => {
   return errors.length === 0 ? { ok: true } : { ok: false, errors };
 };
 
+/** Validate native readback without making private bindings public inputs. */
+export const validateCanonicalDevryanPromptMetadata = (value, options = {}) => {
+  if (!isRecord(value) || !Object.hasOwn(value, 'managedTitle')) return validateDevryanPromptMetadata(value, options);
+  const { managedTitle, ...publicMetadata } = value;
+  if (!isCanonicalManagedTitleMetadata(managedTitle) || managedTitle.fingerprint !== publicMetadata.admission?.fingerprint
+    || typeof options.text === 'string' && managedTitle.textSha256 !== crypto.createHash('sha256').update(options.text).digest('hex'))
+    return { ok: false, errors: ['managedTitle canonical binding is invalid'] };
+  return validateDevryanPromptMetadata(publicMetadata, options);
+};
+
 /**
  * Builds a valid `metadata.devryan` block. Throws on invalid input (a DevRyan
  * bug, never user data: segments come from {@link buildV2PromptContent}).
@@ -231,6 +242,7 @@ export const validateDevryanPromptMetadata = (value, options = {}) => {
  * @param {{ text?: string }} [options]
  */
 export const buildDevryanPromptMetadata = (input, options = {}) => {
+  if (Object.hasOwn(input, 'managedTitle')) throw new TypeError('managedTitle is constructor-owned canonical metadata');
   const metadata = { v: DEVRYAN_PROMPT_METADATA_VERSION, origin: input.origin };
   if (isNonEmptyString(input.agent)) metadata.agent = input.agent;
   if (isNonEmptyString(input.providerID)) metadata.providerID = input.providerID;
@@ -756,7 +768,8 @@ export const createOpenCodeAdmission = (deps, options = {}) => {
     if (row.type !== 'user') throw reusedId(id);
     const payload = isRecord(row.payload) ? row.payload : row;
     const metadata = payload.metadata?.[DEVRYAN_PROMPT_METADATA_KEY];
-    if (typeof payload.text !== 'string' || !validateDevryanPromptMetadata(metadata, { text: payload.text }).ok || !metadata.admission) {
+    if (typeof payload.text !== 'string' || !validateCanonicalDevryanPromptMetadata(metadata, { text: payload.text }).ok || !metadata.admission
+      || metadata.managedTitle && (metadata.managedTitle.sourceMessageID !== id || metadata.managedTitle.childSessionId !== sessionID)) {
       throw uncertainIdentity(id);
     }
     if (metadata.admission.fingerprint !== contentKey) throw reusedId(id);

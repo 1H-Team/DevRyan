@@ -49,12 +49,19 @@ export const cleanupStaleAtomicFiles = async (filePath, options = {}) => {
 };
 
 export const writeFileAtomic = async (filePath, data, options = {}) => {
+  const observed = async (phase, action) => {
+    const report = state => { try { options.onProgress?.({ phase, state }); } catch { /* Observation only. */ } };
+    report('started');
+    const result = await action();
+    report('completed');
+    return result;
+  };
   if (process.platform === 'win32') {
     if (typeof options.windowsOwner?.write !== 'function') throw Object.assign(new Error('private_windows_publication_authority_unavailable'), {
       code: 'private_windows_publication_authority_unavailable',
     });
     const bytes = typeof data === 'string' ? Buffer.from(data, options.encoding ?? 'utf8') : Buffer.from(data);
-    return options.windowsOwner.write(filePath, bytes);
+    return observed('native_commit', () => options.windowsOwner.write(filePath, bytes));
   }
   const fsApi = options.fs ?? fs;
   const now = options.now ?? Date.now;
@@ -65,22 +72,22 @@ export const writeFileAtomic = async (filePath, data, options = {}) => {
   const temporaryPath = `${filePath}.tmp-${process.pid}-${now()}-${randomId()}`;
   let handle;
 
-  await fsApi.mkdir(directory, { recursive: true, mode: directoryMode });
-  await cleanupStaleAtomicFiles(filePath, {
+  await observed('directory_create', () => fsApi.mkdir(directory, { recursive: true, mode: directoryMode }));
+  await observed('temporary_cleanup', () => cleanupStaleAtomicFiles(filePath, {
     fs: fsApi,
     now,
     staleAfterMs: options.staleTmpAgeMs,
-  });
+  }));
 
   try {
-    handle = await fsApi.open(temporaryPath, 'wx', mode);
-    await handle.writeFile(data, options.encoding ?? (typeof data === 'string' ? 'utf8' : undefined));
-    await handle.sync();
-    await handle.close();
+    handle = await observed('temporary_open', () => fsApi.open(temporaryPath, 'wx', mode));
+    await observed('write', () => handle.writeFile(data, options.encoding ?? (typeof data === 'string' ? 'utf8' : undefined)));
+    await observed('file_sync', () => handle.sync());
+    await observed('file_close', () => handle.close());
     handle = undefined;
-    await fsApi.rename(temporaryPath, filePath);
-    await fsApi.chmod(filePath, mode);
-    await syncDirectory(fsApi, directory);
+    await observed('rename', () => fsApi.rename(temporaryPath, filePath));
+    await observed('permissions', () => fsApi.chmod(filePath, mode));
+    await observed('directory_sync', () => syncDirectory(fsApi, directory));
   } catch (error) {
     await handle?.close().catch(() => undefined);
     await fsApi.rm(temporaryPath, { force: true }).catch(() => undefined);

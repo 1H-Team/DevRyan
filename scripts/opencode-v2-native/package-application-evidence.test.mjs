@@ -69,22 +69,33 @@ test('provider inventory is bounded and unknown payload fields are not serialize
 // This tests fixture ordering and evidence retention, not native Stop settlement.
 async function runDriver({ mode = 'upgrade', cleanupFails = false, settleStop = false, rollbackFails = false,
   parts = [{ type: 'text', text: '1. Synthetic cancellation case.\n' }], oldText = false,
-  parentID, completed = false, stream = 'valid' } = {}) {
+  parentID, completed = false, stream = 'valid', browserAck = true, planFails = false } = {}) {
   let source = await fs.readFile(new URL('./package-application-lifecycle-driver.mjs', import.meta.url), 'utf8');
   source = source.replace(/^import .*;\n/gm, '')
     .replace("await import('../../packages/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js')", 'runtimeBinding')
-    .replace("await import('../../packages/web/server/index.js')", 'webServer');
+    .replace("await import('../../packages/web/server/index.js')", 'webServer')
+    .replace("await import('./package-plan-implement-lane.mjs')", 'planImplementation');
   const output = [], phases = [], crashMessages=[], rollbackMode=mode==='rollback'||mode==='rollback-crash', sessionID = mode === 'upgrade' ? 'ses_owned' : 'ses_candidate', assistantID = 'msg_active';
   const oldHistory = { ses_old: ['msg_old_user', 'msg_old_assistant'] };
   let accepted = 0, activeUserID, abortCalls = 0, stopCalls = 0, disconnected = false, restarted = false, completedAt;
+  const messageListeners = new Set();
   const fakeProcess = { pid: 321, stdin: (async function* () { yield JSON.stringify({ mode, directory: '/owned',
-    ...(rollbackMode ? { sessionIDs: ['ses_old'], history: oldHistory } : {}) }); })(), stderr: {}, stdout: { write: value => output.push(value) },
+    ...(rollbackMode ? { sessionIDs: ['ses_old'], history: oldHistory } : {}) }); })(), stderr: {}, stdout: { write: value => { output.push(value); if(mode==='plan-implement')phases.push('result'); } },
+    on: (event, callback) => { assert.equal(event, 'message'); messageListeners.add(callback); },
+    off: (event, callback) => { assert.equal(event, 'message'); messageListeners.delete(callback); },
     once: (event, callback) => { assert.equal(event, 'message'); queueMicrotask(() => callback({ type: 'application-owner-session',
       owner: rollbackMode ? { name: 'fixture', value: 'must-not-persist' } : null })); },
-    send: (value, callback) => {if(value.type==='application-rollback-crash-ready'){crashMessages.push(value);phases.push('crash-ready');}callback?.();}, disconnect: () => { disconnected = true; } };
+    send: (value, callback) => {
+      if(value.type==='application-rollback-crash-ready'){crashMessages.push(value);phases.push('crash-ready');}
+      if(value.type==='application-plan-checkpoint') {
+        assert.equal(value.input.phase,'browser-settlement'); phases.push('browser-settlement-request');
+        if(browserAck)queueMicrotask(()=>{phases.push('browser-settlement-ack');for(const receive of messageListeners)receive({type:'application-plan-checkpoint-done',phase:value.input.phase});});
+      }
+      callback?.();
+    }, disconnect: () => { disconnected = true; } };
   const server = { getPort: () => 12345, isReady: () => true, issueLocalOwnerSession: () => ({ name: 'fixture', value: 'must-not-persist' }),
     restartOpenCode: async () => { restarted = true; phases.push('restart'); },
-    stop: async () => { stopCalls++; if (cleanupFails) throw new Error('must-not-persist'); } };
+    stop: async () => { stopCalls++; if(mode==='plan-implement')phases.push('server-stop'); if (cleanupFails) throw new Error('must-not-persist'); } };
   let streamController, streamClosed = false, streamOpened = false, readyBeforeSubmit = false, abortSawEmptyText = false;
   const encoder = new TextEncoder();
   const emit = (type, properties, eventDirectory = '/owned') => streamController?.enqueue(encoder.encode(
@@ -165,18 +176,42 @@ async function runDriver({ mode = 'upgrade', cleanupFails = false, settleStop = 
   };
   const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
   await new AsyncFunction('assert', 'Console', 'fs', 'path', 'waitFor', 'readBundleConversationRows', 'createV2MessageId',
-    'readManagedOpenCodeRegistry', 'openApplicationStopStream', 'process', 'fetch', 'globalThis', 'runtimeBinding', 'webServer', source)(
+    'readManagedOpenCodeRegistry', 'openApplicationStopStream', 'process', 'fetch', 'globalThis', 'runtimeBinding', 'webServer', 'planImplementation', 'setTimeout', source)(
     assert, class {}, fs, path, waitFor, readBundleConversationRows,
     () => `msg_user_${accepted + 1}`, () => [{ ownerPid: 321, childPid: restarted ? 987 : 654 }],
     options => openApplicationStopStream({ ...options, fetchImpl: fetch, ...(stream === 'no-ready' ? { deadline: Date.now() + 20 } : {}) }), fakeProcess, fetch, {},
     { selectedRuntimeBundle: { admission: 'open', descriptor: { bundleID: mode === 'upgrade' ? 'bundle_A' : 'bundle_B',
       launch: { global: { state: '/owned' }, artifactManifestSha256: (mode === 'upgrade' ? 'a' : 'b').repeat(64) } } } },
-    { startWebUiServer: async () => server });
+    { startWebUiServer: async () => server },
+    { runApplicationPlanImplementation: async () => { phases.push('plan-complete'); if(planFails)throw Error('Actual Plan acceptance failed'); return {status:'passed'}; } },
+    (callback, milliseconds) => {
+      if(mode==='plan-implement'){assert.equal(milliseconds,90000);return setTimeout(callback,browserAck?milliseconds:0);}
+      return setTimeout(callback,milliseconds);
+    });
   assert.equal(output.length, 1); assert.equal(disconnected, true); assert.equal(stopCalls, 1);
   assert.equal(output[0].includes('must-not-persist'), false);
   if (streamOpened) assert.equal(streamClosed, true, 'Every driver exit must close its owned stream');
   return { readyBeforeSubmit, abortSawEmptyText, result: JSON.parse(output[0]), phases, sessionID, assistantID, accepted, abortCalls, exitCode: fakeProcess.exitCode, oldHistory,crashMessages };
 }
+
+test('actual driver waits for private browser settlement before normal server cleanup and result', async () => {
+  const { result, phases, exitCode } = await runDriver({ mode:'plan-implement' });
+  assert.equal(result.status,'passed'); assert.equal(exitCode,undefined);
+  assert.deepEqual(phases,['plan-complete','browser-settlement-request','browser-settlement-ack','server-stop','result']);
+});
+
+test('missing Plan browser ACK fails the driver while retaining normal server cleanup', async () => {
+  const { result, phases, exitCode } = await runDriver({ mode:'plan-implement',browserAck:false });
+  assert.equal(result.status,'failed'); assert.equal(result.error.code,'application_plan_browser_cleanup_failed');
+  assert.deepEqual(result.cleanup,{browser:'failed'}); assert.equal(exitCode,1);
+  assert.deepEqual(phases,['plan-complete','browser-settlement-request','server-stop','result']);
+});
+
+test('Plan acceptance failure still settles the browser before normal server cleanup', async () => {
+  const { result, phases, exitCode } = await runDriver({ mode:'plan-implement',planFails:true });
+  assert.equal(result.status,'failed'); assert.equal(result.error.message,'Actual Plan acceptance failed'); assert.equal(exitCode,1);
+  assert.deepEqual(phases,['plan-complete','browser-settlement-request','browser-settlement-ack','server-stop','result']);
+});
 
 test('rollback crash driver publishes only settled B history before the real route and fails if the crash barrier is missed',async()=>{
  const {result,phases,crashMessages,oldHistory}=await runDriver({mode:'rollback-crash',settleStop:true});

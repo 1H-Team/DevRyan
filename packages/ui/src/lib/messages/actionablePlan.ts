@@ -19,6 +19,7 @@ export type PlanImplementationRequest = {
   sourceMessageId: string;
   planIndex: number;
   projectDirectory?: string;
+  version?: string;
 };
 
 const PLAN_MODE_SECTION_HEADINGS = new Set([
@@ -128,6 +129,7 @@ export const buildPlanImplementationRequestMarker = ({
   sourceMessageId,
   planIndex,
   projectDirectory,
+  version,
 }: Omit<PlanImplementationRequest, 'action'>): string => {
   return `${PLAN_IMPLEMENTATION_REQUEST_PREFIX}${JSON.stringify({
     action: 'implement',
@@ -135,6 +137,7 @@ export const buildPlanImplementationRequestMarker = ({
     sourceMessageId,
     planIndex,
     ...(projectDirectory !== undefined ? { projectDirectory } : {}),
+    ...(version !== undefined ? { version } : {}),
   })}`;
 };
 
@@ -155,6 +158,7 @@ export const parsePlanImplementationRequestPart = (
       sourceMessageId?: unknown;
       planIndex?: unknown;
       projectDirectory?: unknown;
+      version?: unknown;
     };
     if (parsed.action !== 'implement') return null;
     if (typeof parsed.sourceSessionId !== 'string' || parsed.sourceSessionId.trim().length === 0) {
@@ -173,6 +177,7 @@ export const parsePlanImplementationRequestPart = (
       sourceSessionId: parsed.sourceSessionId,
       sourceMessageId: parsed.sourceMessageId,
       planIndex: parsed.planIndex as number,
+      ...(typeof parsed.version === 'string' ? { version: parsed.version } : {}),
       ...(typeof parsed.projectDirectory === 'string' ? { projectDirectory: parsed.projectDirectory } : {}),
     };
   } catch {

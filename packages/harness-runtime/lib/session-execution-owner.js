@@ -13,6 +13,10 @@ export function createSessionExecutionOwner({ runtime, launcher, stopSessions, v
   const active = new Map();
   const supported = () => verifyLauncher({ launcher, platform: process.platform });
   const start = async (input) => {
+    const report = (phase, state, elapsedMs) => {
+      try { onDiagnostic?.({ event: 'session_execution', sessionID: input.sessionID, messageID: input.messageID,
+        callID: input.callID, phase, state, ...(elapsedMs === undefined ? {} : { elapsedMs }) }); } catch { /* Observer only. */ }
+    };
     input.signal?.throwIfAborted();
     if (!await supported()) throw failure('mutation_runtime_unsupported');
     const environment = Object.entries(input.env ?? {}).sort(([a], [b]) => a.localeCompare(b));
@@ -53,8 +57,10 @@ export function createSessionExecutionOwner({ runtime, launcher, stopSessions, v
         throw signal.aborted ? failure('execution_cancelled') : cause;
       }
       let receipt;
-      try { receipt = await handle.result; }
+      const processStarted = Date.now();
+      try { receipt = await handle.result; report('process_settlement', 'completed', Date.now() - processStarted); }
       catch (cause) {
+        report('process_settlement', 'failed', Date.now() - processStarted);
         if (!cause?.neverStarted) throw cause;
         // The supervisor ended before creating its receipt, so nothing ran.
         await withoutExecutionDeadline(async () => {
@@ -68,7 +74,13 @@ export function createSessionExecutionOwner({ runtime, launcher, stopSessions, v
         await cleanupExecutionLease(runtime, { directory: input.directory, token: lease.token }, onDiagnostic);
         throw failure(receipt.cancelled || signal.aborted ? 'execution_cancelled' : 'mutation_runtime_unsupported');
       }
-      const publication = await runtime.finish({ directory: input.directory, token: lease.token });
+      const publicationStarted = Date.now();
+      report('publication', 'started');
+      let publication;
+      try {
+        publication = await runtime.finish({ directory: input.directory, token: lease.token });
+        report('publication', 'completed', Date.now() - publicationStarted);
+      } catch (cause) { report('publication', 'failed', Date.now() - publicationStarted); throw cause; }
       await cleanupExecutionLease(runtime, { directory: input.directory, token: lease.token }, onDiagnostic);
       return { ...receipt, ...publication };
     })().finally(() => { if (active.get(lease.token) === owned) active.delete(lease.token); });

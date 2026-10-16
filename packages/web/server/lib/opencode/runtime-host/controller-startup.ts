@@ -178,7 +178,7 @@ export async function startNativeController(boot:NativeProcessBoot,identity:{cor
   const sessionContext=contextOrigin?createNativeSessionContext({origin:contextOrigin,rpc,executeOwned}):undefined;
   if(sessionContext)executeOwned=sessionContext.withPrimaryToolExecution(sessionContext.executeOwned);
   if(!boot.configurationSnapshot)throw new Error('native_configuration_snapshot_required');
-  const observation=createNativeObservation({controllerInstanceID:boot.instanceID,configurationDigest:boot.configurationSnapshot.digest,rpc,decorateModelRequests:providers?.decorateModelRequests});
+  const observation=createNativeObservation({controllerInstanceID:boot.instanceID,configurationDigest:boot.configurationSnapshot.digest,rpc,streamContinuation:true,decorateModelRequests:providers?.decorateModelRequests,decorateLlmClient:webfetch.captureLlmClient});
   try {
     host=await createNativeRuntimeHost({helperText,databasePath:boot.databasePath,token:boot.httpToken,configuration:boot.configuration,configurationSnapshot:boot.configurationSnapshot,cursorCatalog:boot.cursorCatalog,globals:boot.globals,
       plugins,nativePlugins,reviewedBehaviorCommands:origins.flatMap(origin=>{

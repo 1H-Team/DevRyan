@@ -1,0 +1,415 @@
+{
+  "schemaVersion": 1,
+  "status": "source-correction-reviewed-focused-passes-user-ended-fresh-qualification",
+  "source": {
+    "schemaVersion": 1,
+    "prior": {
+      "nativeSourceDigest": "e881dda5fdf20ef9d7cac77430ea5fc6f50de3a8e50dfc39e708d87a1b73e447",
+      "packageSourceDigest": "67ca86a7d1b0baacd49b08910b429fc7e9ac3dedddbc9812b50ee005eac5055f"
+    },
+    "current": {
+      "nativeSourceDigest": "82b7377b848307b5f6e1a91292364c90a611412ab4ad53f92f87ecd782036ad9",
+      "nativeSourceFiles": 1057,
+      "packageSourceDigest": "7ce90d357d73ed11c6e9597926296402f6e01bc19f126d65ed2f8d012f92bced",
+      "packageSourceFiles": 6624
+    },
+    "changedNative": [
+      "packages/web/server/lib/opencode/routes.js",
+      "packages/web/server/lib/opencode/runtime-host/native-integration-authorization.js",
+      "scripts/qa/live-provider-handoff.mjs"
+    ],
+    "changedPackage": [
+      "packages/web/server/lib/opencode/DOCUMENTATION.md",
+      "packages/web/server/lib/opencode/provider-routes.test.js",
+      "packages/web/server/lib/opencode/routes.js",
+      "packages/web/server/lib/opencode/runtime-host/DOCUMENTATION.md",
+      "packages/web/server/lib/opencode/runtime-host/native-integration-authorization.js",
+      "packages/web/server/lib/opencode/runtime-host/native-integration-authorization.test.js"
+    ]
+  },
+  "incident": {
+    "exerciseReport": ".cache/qa/qa1-original-profile-iuSN4a/exercise-result.json",
+    "sha256": "bd66b473cf9640fa427dd3fbcab67a73c8e7f8b22c06c6504dfa0bcc2f4af2bc",
+    "code": "qa_profile_api_failed",
+    "paidDriverInference": "not-run",
+    "originalFailedRoute": "not recorded; not inferred from the later reproduction",
+    "journalProofSha256": "67dc3c34ca742b525620cbd84104065ad4b1382fd7d928b0dd59c9c67c8e5715",
+    "journalGaps": 0
+  },
+  "correction": {
+    "statusRead": "Exact registered snapshot location via existing credentialMetadata owner; no raw credential values or config-source reads.",
+    "authority": "Original caller reauthorized after awaited integration read; controller/snapshot/readiness fences retained. Mutating operations retain truthful committed receipts.",
+    "configurationOwner": "Unchanged; no fallback project or broader configuration authority.",
+    "qaDiagnostic": "Finite reviewed operation/status code allowlist; no query/body/error interpolation; generic 404 and Apply semantics retained."
+  },
+  "owningVerification": {
+    "runtime": {
+      "tests": 155,
+      "files": 3,
+      "runner": "actual package Vitest",
+      "exitCode": 0,
+      "logSha256": "b389e2aae0c6a3ef04a56624b1a517aa75dde90075f87b9f50d250e5c03ae0ef"
+    },
+    "qa": {
+      "tests": 72,
+      "runner": "Node test",
+      "exitCode": 0,
+      "logSha256": "d96c2de5c15a798dd4686c3318c977c464e50c77f3102f7cf3aa6e1ff8b2867f"
+    },
+    "runnerMistake": "Initial root invocation used a nonexistent binary path and exited127; corrected invocation passed without source changes.",
+    "independentReview": "Connected route and authorization owners reviewed by separate agents."
+  },
+  "actualHost": {
+    "report": ".cache/sessions/2026-10-15-consensus-finishing/dynamic-directory-host-positive-9lRquN/result.json",
+    "sha256": "37ec5f40e024e41b09d7660b44d41c1d4f97382a146b8e6a060041f74b04e213",
+    "status": "completed",
+    "artifact": {
+      "manifestSha256": "b6eeb7a64d982c18827cde4a870aef9f1a1a2f0d2dc56ec0c62e1046bfbdff77",
+      "buildId": "20fb64d8cbead7063d32c58494b867e05698c30c120a869219ae8d9d04049af1"
+    },
+    "requests": [
+      {
+        "method": "GET",
+        "route": "/api/provider/cursor-acp/runtime-status?directory=<new-project>",
+        "status": 200,
+        "authentication": {
+          "observation": "known",
+          "sdkAuthConfigured": false
+        }
+      },
+      {
+        "method": "GET",
+        "route": "/api/provider/cursor-acp/runtime-status?directory=<unregistered>",
+        "status": 403,
+        "authentication": {
+          "observation": null,
+          "sdkAuthConfigured": null
+        }
+      },
+      {
+        "method": "POST",
+        "route": "/api/session?directory=<new-project>",
+        "status": 200
+      }
+    ],
+    "providerRequestCount": 0,
+    "journal": {
+      "available": true,
+      "complete": true,
+      "records": 24,
+      "chunks": 2,
+      "gapRecords": 0,
+      "manifestGaps": 0,
+      "errorRecords": 0
+    },
+    "cleanup": {
+      "complete": true,
+      "remainingProcessIds": [],
+      "trackingClosed": true
+    },
+    "limits": [
+      "No credential or account was present, read or configured by this probe.",
+      "No Configure endpoint, prompt, SDK verification or paid provider operation was invoked.",
+      "Caller revocation/controller replacement guards are covered by focused owner tests; this actual-host probe establishes exact project known absence and unknown-directory refusal only.",
+      "Original QA1 generic failure route is not established by this isolated reproduction."
+    ]
+  },
+  "qualification": {
+    "full": {
+      "status": "passed",
+      "session": 88221,
+      "exitCode": 0,
+      "logSha256": "6f43d2a5a945dbf32351260e8f814316940c49db1c2a7421c26f1389f87188a1",
+      "mainUi": 4161,
+      "webVitest": 7100,
+      "trailingNativeHost": 34,
+      "scope": "Respective batches plus all remaining full validation suites; no aggregate count invented.",
+      "nodeScriptBatch": 1614
+    },
+    "buildAndBundle": {
+      "status": "passed",
+      "session": 72884,
+      "exitCode": 0,
+      "logSha256": "15c3c6006efe7d120974049266fb0bd21126f649da1770ff404bf2fcbdadbac5",
+      "afterBuild": {
+        "nativeSourceDigest": "82b7377b848307b5f6e1a91292364c90a611412ab4ad53f92f87ecd782036ad9",
+        "nativeSourceFiles": 1057,
+        "packageSourceDigest": "7ce90d357d73ed11c6e9597926296402f6e01bc19f126d65ed2f8d012f92bced",
+        "packageSourceFiles": 6624,
+        "uiArtifactDigest": "52338b31c00ffe6e31439ca6df1c2b926f6f1b12bf6e8e858c4b0a2dcaf545cc",
+        "uiArtifactFiles": 672,
+        "electronMainSha256": "699148b4c6e68c425347a079e4932af81fe7b72cc87aaa726bdf2d838af2e0de"
+      }
+    },
+    "native53": {
+      "status": "passed",
+      "session": 22021,
+      "exitCode": 0,
+      "report": ".cache/v2-validation/package-OL3XJg/result.json",
+      "sha256": "a3e9491b36ce00748d9f330d1c8a840b077f8f1fa24a62728aa9c8af24d73c08",
+      "cases": 53,
+      "sameOriginalIDsAndOrder": true,
+      "allPassed": true,
+      "sourceCohortValid": true,
+      "changedPaths": [],
+      "cleanupFailures": [],
+      "remainingMandatoryGatesWithinScope": []
+    },
+    "planImplementAndVisual": {
+      "status": "standard-repeat-passed-earlier-reveal-timeout-retained",
+      "session": 96107,
+      "run": "native-plan-implement-qp2RCS",
+      "phase": "helper-restore-trigger-reveal-after-60-captures",
+      "sourceUnchanged": true,
+      "journal": {
+        "records": 959,
+        "chunks": 5,
+        "gapCheckExitCode": 0,
+        "gaps": 0,
+        "errors": 0
+      },
+      "persistence": "Exact helper selection/revision read matched before reveal timed out",
+      "finalNaturalExitQualified": false,
+      "followup": "One bounded read-only geometry diagnostic run; no product/runner source change or timeout increase",
+      "diagnosticRepeat": {
+        "session": 2092,
+        "exitCode": 0,
+        "run": "native-plan-reveal-diagnostic-ZkGVgg",
+        "sha256": "a2b0a9c0a7938b8f87bad7ad2c28653243ee8842f356b543982b6b3e62c49b8e",
+        "sourceUnchanged": true,
+        "checks": 60,
+        "helperRestored": true,
+        "journal": {
+          "records": 951,
+          "chunks": 5,
+          "gaps": 0,
+          "errors": 0
+        },
+        "instrumentation": "Bounded read-only geometry plus latest screenshot, original lane/deadlines unchanged; no product code change.",
+        "result": "Earlier helper reveal timeout not reproduced; cause remains unestablished."
+      },
+      "standardRepeat": {
+        "session": 14903,
+        "status": "passed",
+        "exitCode": 0,
+        "run": "native-plan-implement-KIuR6t",
+        "sha256": "c3a1f976ae9bf2c55f59d5932770a533a217d957e12607578388e8a7df2a1362",
+        "captures": 60,
+        "checks": 60,
+        "helperRestoredAndHydrated": true,
+        "sourceUnchanged": true,
+        "journal": {
+          "records": 952,
+          "chunks": 5,
+          "gaps": 0,
+          "errors": 0
+        },
+        "visualReview": {
+          "status": "all60-reviewed-no-blocking-defect",
+          "partition": [
+            {
+              "file": "finishing-visual-review-first.md",
+              "sha256": "f31fa2804cca7fc2e2966c7fb42b39ce5145b2d76cd90fcd8f73892905cabcc5",
+              "count": 32,
+              "allNamesAndActualImageHashesMatched": true
+            },
+            {
+              "file": "finishing-visual-review-second.md",
+              "sha256": "18e0bb2d0f288cf8ab3cefe99a106a6dc21c4253d05646287ce894454b687314",
+              "count": 28,
+              "allNamesAndActualImageHashesMatched": true
+            }
+          ],
+          "rootRepresentativeCount": 5,
+          "limits": "Single-frame dark mobile Redone loading footer; previous helper reveal timeout not reproduced or declared fixed."
+        }
+      }
+    },
+    "resourcePairs": {
+      "status": "measured",
+      "session": 42003,
+      "exitCode": 0,
+      "run": "native-receipt-resource-fBxtRl",
+      "sha256": "d39fdadd69711a5c5a34ea51daa8d58519e50810dad98263939e8fc9cf6010ed",
+      "pairs": 5,
+      "turns": 10,
+      "bridgeRPCs": 790,
+      "failedRPCs": 0,
+      "matchedReceiptJoins": 10,
+      "cleanupsPassed": 5,
+      "historicalImprovement": false,
+      "timingThresholdClearance": "not established; intervals span1s",
+      "totalDurableCommitCountQualified": false,
+      "independentReceipt": "receipt-resource-registered-project.json",
+      "independentReceiptSha256": "5c5cc1a29ebf5d01bb6a5d54e7aa28a2f3eeb2b23a5e95f00e31718d49fef861"
+    },
+    "paid": "original Medium failed physical HTTP401; ordinary saved-account reconnect succeeded; inference retest pending fresh source/native qualification",
+    "release": "not qualified; no tag/publication",
+    "firstFullAttempt": {
+      "session": 78405,
+      "exitCode": 1,
+      "logSha256": "3a2c30c2ed69ce71cd5eaf9c91aed797e24747faeaf5f188b8c13485cda5663b",
+      "cause": "New audit lacked direct top-level documentation citation; citation added to runtime verification guide. Lint and type checks passed; test batch not reached."
+    },
+    "nativeArtifactReuse": {
+      "proof": "native-header-bound-artifact.json",
+      "sha256": "b35af28baf2e51cafd75abbe21b6c14d7dafa0f0e0acedb16b16a329bc50bbd9",
+      "status": "independent structural inspection passed",
+      "runtimeQualification": "pending; structural reuse does not qualify execution"
+    },
+    "qaPackage": {
+      "status": "passed",
+      "session": 59353,
+      "exitCode": 0,
+      "run": "packaged-electron-IL4Aqx",
+      "sha256": "5876263eaf174a815a920865563077f5de72ee5d323aac878d891cb4ae5a1668",
+      "sourceDigest": "7ce90d357d73ed11c6e9597926296402f6e01bc19f126d65ed2f8d012f92bced",
+      "scope": "QA package and module smokes; excludes packaged-shell startup and release publication"
+    },
+    "finalLocalSourceCheck": {
+      "nativeSourceDigest": "82b7377b848307b5f6e1a91292364c90a611412ab4ad53f92f87ecd782036ad9",
+      "nativeSourceFiles": 1057,
+      "packageSourceDigest": "7ce90d357d73ed11c6e9597926296402f6e01bc19f126d65ed2f8d012f92bced",
+      "packageSourceFiles": 6624
+    },
+    "documentation": {
+      "status": "passed",
+      "exitCode": 0,
+      "logSha256": "b99c59f8b37db50316e45d661e8c3f03e8560862e8e860586fd233fd3a9750bb"
+    },
+    "diffCheck": {
+      "status": "passed",
+      "exitCode": 0,
+      "scope": "Current correction files and corresponding contract guides; untracked source separately read and tested."
+    },
+    "paidCurrentAttempt": {
+      "status": "failed",
+      "issuerSession": 81444,
+      "ownerAdmissions": 1,
+      "run": "qa1-original-profile-sAcJJF",
+      "reportSha256": "b06e3e7db58b5bd9104d01dadcf412214d05665c391e14da5bb95af1f30a3000",
+      "code": "qa_profile_turn_failed",
+      "sessionID": "ses_ebc71f850ffe8ZH9tDS4g5S5gi",
+      "physicalPrimaryRequests": 1,
+      "physicalHTTPStatus": 401,
+      "canonicalError": "ProviderAuthError / provider.auth",
+      "cleanup": "passed; cancellation followed the provider error",
+      "journalGapCheckExitCode": 0,
+      "journalProofSha256": "7d1ad15e3cb28ce09962ecf3356851dfe32355d5b6806d78d3e92d915576abab",
+      "mediumQualified": false,
+      "highOrHelperCalls": "not-run",
+      "causeLimit": "Credential/account/endpoint cause unestablished; no raw request body or Error Log UUID retained.",
+      "followup": "Normal saved-account OpenAI browser reconnect completed; Connected and refreshed usage observed. No successful model request after reconnect yet. Supported OAuth route independently reviewed without a proven defect."
+    },
+    "subsequentCorrection": {
+      "kind": "finite-configuration-update-effort-observation",
+      "requestContentChanged": false,
+      "owningTests": {
+        "observation": 10,
+        "qualification": 19,
+        "parentIndependentlyPassed": true,
+        "sourceAndCompiledGraph": 2,
+        "focusedTypecheck": "passed"
+      },
+      "independentReview": "clear",
+      "currentFullBuildNativePaid": "Full interrupted at explicit wrap-up; downstream gates not run"
+    },
+    "versionAvailability": {
+      "observedAt": "2026-10-16T07:51:03Z",
+      "repository": "1H-Team/DevRyan",
+      "repositoryGetStatus": 200,
+      "proposedVersion": "2.0.13",
+      "tagGetStatus": 404,
+      "releaseByTagGetStatus": 404,
+      "scope": "GET-only current availability; no release admission, draft, tag, build or publication proof"
+    }
+  },
+  "profile": {
+    "labels": [
+      "V1",
+      "QA1"
+    ],
+    "savedSignIns": "retained",
+    "previousIssuer": "closed with natural EOF after owned host cleanup",
+    "currentIssuer": {
+      "session": 81444,
+      "state": "closed-cleanly-after-normal-account-renewal",
+      "ownerAdmissions": 1,
+      "artifactUnchanged": true,
+      "qa1SavedSignIns": "retained",
+      "standingAuthorization": "Latest direct human instruction on 2026-10-16; standing paid agents-only QA permission recorded in AGENTS.md.",
+      "admission": "Normal one-use loopback sign-in consumed through computer use; no credential extraction, grant transfer or authentication-code change.",
+      "ordinaryApplicationOrigin": "http://127.0.0.1:56270",
+      "uiProof": "qa1-standing-admission.png",
+      "uiProofSha256": "603b4f4e8405951522fff561ee15a587e367c6ebca3a8c2f5f0d07b36e4c3e7a",
+      "paidInference": "one OpenAI HTTP401; High/helper not run; renewed account inference not yet retested",
+      "close": {
+        "hostExitCode": 0,
+        "teardown": "passed",
+        "journalGapCheckExitCode": 0,
+        "profile": "retained for owned upgrade; no credential store edits"
+      }
+    }
+  },
+  "wrapUp": {
+    "observedAt": "2026-10-16T07:58:41.607Z",
+    "reason": "Explicit user request: wrap it up",
+    "source": {
+      "nativeSourceDigest": "88d415f1c6e4e514b55f153eba24ea4b3d51c9bb275d1f85dda244dbf659faf8",
+      "nativeSourceFiles": 1057,
+      "packageSourceDigest": "091245f33d730453658f49b7c7d72f3bc4f3d46016b2306122e2ff1b70824bdd",
+      "packageSourceFiles": 6624,
+      "unchangedSinceFreeze": true
+    },
+    "fullValidation": {
+      "status": "interrupted-at-explicit-user-wrap-up",
+      "session": 82637,
+      "exitCode": 130,
+      "complete": false,
+      "logSha256": "3337521e2d5d38083ee4c238edc3c1aa814b2d9fdff9f344a9243da1afab0155",
+      "completedScriptBatch": {
+        "tests": 1617,
+        "passed": 1617,
+        "failed": 0
+      },
+      "stage": "workspace harness-runtime suites; full UI/web batches not completed",
+      "processGroup": 52271,
+      "processGroupSettlement": "independent ps returned no remaining members after scoped SIGINT",
+      "interpretation": "Not a full-validation pass or a product regression. Prior full passes remain historical."
+    },
+    "focused": {
+      "observation": 10,
+      "grader": 19,
+      "sourceAndCompiledGraph": 2,
+      "nativeHostTypecheck": "passed",
+      "independentReview": "clear"
+    },
+    "documentation": {
+      "exitCode": 0,
+      "logSha256": "5385d22610925a4134bad2dd84980fc219c93ec4b820f220d4822636d9825e09"
+    },
+    "qa1": {
+      "profile": "V1 / QA1",
+      "savedSignIns": "retained including ordinary OpenAI browser renewal",
+      "hostExitCode": 0,
+      "teardown": "passed",
+      "journalGapCheckExitCode": 0,
+      "modelCallAfterRenewal": "not run",
+      "standingAuthorization": "recorded in AGENTS.md; no repeated approval questions"
+    },
+    "pending": [
+      "fresh full validation",
+      "production build/bundle",
+      "fresh native artifact and original53 package gate",
+      "fresh Plan60 and resource qualification",
+      "same-keeper successful Medium before High/helper paid qualification",
+      "exact committed-source hosted candidate/final-DMG/release qualification"
+    ],
+    "releaseQualified": false,
+    "publication": "not run",
+    "unexplainedHistoricalFailures": [
+      "helper reveal timeout after reload; subsequent unchanged repeats passed without established cause",
+      "one OpenAI HTTP401; ordinary reconnect succeeded, physical inference not retested"
+    ]
+  }
+}

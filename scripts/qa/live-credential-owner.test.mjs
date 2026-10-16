@@ -7,6 +7,23 @@ import {EventEmitter} from 'node:events';
 import {createQaProcessOwnership} from './process-ownership.mjs';
 import {parseLiveOwnerCommand,parseLiveOwnerFlags,createLiveOwnerLink,runLiveCredentialOwner,settleLiveOwnerChild,liveOwnerFailureDiagnostic,waitLiveOwnerAttendance} from './live-credential-owner.mjs';
 
+test('post-validation admission stays absent when a synthetic challenge expires while its cookie is issued', async () => {
+  let clock = 0, admitted = 0, release, entered;
+  const gate = new Promise(resolve => { release = resolve; });
+  const issuing = new Promise(resolve => { entered = resolve; });
+  const link = await createLiveOwnerLink({ hostOrigin: 'http://127.0.0.1:43210', isHeld: () => false, now: () => clock,
+    onAdmission: () => { admitted++; }, handle: { issueLocalOwnerSession: async () => { entered(); await gate; return { name: 'devryan_local_owner', value: 'x'.repeat(43), maxAge: 3600 }; } } });
+  try {
+    const challenge = link.issue(), response = fetch(challenge.link, { redirect: 'manual' });
+    await issuing; clock = challenge.expiresAt; release();
+    assert.equal((await response).status, 403); assert.equal(admitted, 0);
+    clock = 0;
+    const accepted = link.issue();
+    assert.equal((await fetch(accepted.link, { redirect: 'manual' })).status, 302); assert.equal(admitted, 1);
+    assert.equal((await fetch(accepted.link, { redirect: 'manual' })).status, 403); assert.equal(admitted, 1);
+  } finally { await link.close(); }
+});
+
 test('piped owner attendance requires its connected launcher identity and exact finite attestation',async()=>{
   for(const value of [{status:'owner-attended',launcherPid:10},{status:'owner-attended',launcherPid:11},
     {status:'owner-attended',launcherPid:10,credential:'private'},{status:'other',launcherPid:10}]){

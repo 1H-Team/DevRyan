@@ -121,7 +121,7 @@ export async function waitForStartupCatalog(origin, { checkAlive = () => {}, onR
 }
 
 export async function captureFirstDocumentStartup({ cdp, fixture, origin, startedAt, milestones = {}, checkAlive, navigationAudit,
-  startupMode = 'natural', runtimeUiTuple, isEventStreamReady, readStartupPhases, foregroundWindow, fetchCatalog, navigationReads = false }) {
+  startupMode = 'natural', runtimeUiTuple, isEventStreamReady, readStartupPhases, foregroundWindow, fetchCatalog, navigationReads = false, deadline: phaseDeadline, signal }) {
   assertStartupMode(startupMode);
   const audit = navigationAudit ?? observeStartupNavigation(cdp, startedAt, origin);
   const tuple = runtimeUiTuple ?? { providerId: 'fixture', modelId: 'fixture-model' };
@@ -152,8 +152,8 @@ export async function captureFirstDocumentStartup({ cdp, fixture, origin, starte
     return snapshot;
   };
   try {
-    evidence.firstObservedDocument = await observe(performance.now() + 45000);
-    await waitForQaHostReady({ origin, checkAlive, onHealth: health => {
+    evidence.firstObservedDocument = await observe(Math.min(performance.now() + 45000, phaseDeadline ?? Infinity));
+    await waitForQaHostReady({ origin, checkAlive, timeoutMs: Math.min(120000, (phaseDeadline ?? Infinity) - performance.now()), requestTimeoutMs: Math.max(1, Math.min(5000, (phaseDeadline ?? Infinity) - performance.now())), onHealth: health => {
       const elapsedMs = performance.now() - startedAt;
       evidence.hostAvailableMs ??= elapsedMs;
       const startup = projectQaStartupHealth(health);
@@ -169,12 +169,12 @@ export async function captureFirstDocumentStartup({ cdp, fixture, origin, starte
     } });
     evidence.hostReadyMs = performance.now() - startedAt;
     evidence.catalogResponses = [];
-    const catalog = await waitForStartupCatalog(origin, { checkAlive, fetchCatalog,
+    const catalog = await waitForStartupCatalog(origin, { checkAlive, fetchCatalog, timeoutMs: Math.max(1, Math.min(10000, (phaseDeadline ?? Infinity) - performance.now())),
       onResponse: status => evidence.catalogResponses.push({ status, elapsedMs: performance.now() - startedAt }) });
     assert.ok(catalog.connected?.includes(tuple.providerId) && catalog.all?.some(provider => provider.id === tuple.providerId && provider.models?.[tuple.modelId]),
       'Startup must use the expected fixture provider catalog');
     evidence.fixtureCatalogReadyMs = performance.now() - startedAt;
-    const ui = createQaUiDriver(cdp, { checkAlive, timeoutMs: 45000 });
+    const ui = createQaUiDriver(cdp, { checkAlive, timeoutMs: 45000, deadline: phaseDeadline, signal });
     const foregroundDeadline = startupMode === 'foreground' ? performance.now() + 45000 : null;
     evidence.document = await ui.waitFor('first usable UI after native startup documents', async deadline => {
       if (foregroundDeadline !== null && performance.now() > foregroundDeadline) {

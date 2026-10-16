@@ -23,7 +23,7 @@ export const NATIVE_ASSET_SOURCE_SHA=Object.freeze({pty:'fe38312cd4acdfb067f520d
 /** Windows has no approved persistent PTY. Refuse before resolving a command,
  * creating an installation directory, or reading an environment override. */
 export function rewriteUnavailableNativePty(source) {
- if(hash(source)!=='839d0be2ff23f4e023365d25a492acd4f375650af77e4b912a87a2dca0a677ec')throw new Error('Pinned native PTY resolver changed');
+ if(hash(source)!=='402fd56e8a94f6693b117bf9e8b18e3cf9fc9114ad7b8e2635d4e5c09f47db38')throw new Error('Pinned native PTY resolver changed');
  return 'async function resolveBinary(){throw new Error("native_pty_platform_unsupported");}\nexport {resolveBinary};\n';
 }
 /** Build-only transformations require the exact pinned bytes before rewriting. */
@@ -41,7 +41,7 @@ export function rewriteNativeAsset(kind,source,{assetPath,assetSha256}={}) {
 
 /** OpenCode 2.0.26 removed the default external-directory ask from Agent.Info.default.
  * Restore the 2.0.24 rule at its original position so later agent rules still win. */
-export const NATIVE_AGENT_DEFAULTS_SOURCE_SHA256='0327d7211fb85ccbf4aa9de4b134ba2928872b8529548fa7efefa07222748023';
+export const NATIVE_AGENT_DEFAULTS_SOURCE_SHA256='77b986c1ef47ac2417157b6bd93881bf73655476765f9c43c560c81aac7731a0';
 export function rewriteNativeAgentDefaults(source) {
  const text=Buffer.from(source).toString('utf8'),anchor='            { action: "*", resource: "*", effect: "allow" },\n';
  if(hash(source)!==NATIVE_AGENT_DEFAULTS_SOURCE_SHA256||text.split(anchor).length!==2) throw new Error('Pinned native agent defaults changed');
@@ -54,6 +54,29 @@ export const REVIEWED_AST_FILENAME='DevRyan-ast-grep-darwin-arm64';
 export async function prepareReviewedNativeInputs(repository,{target='darwin-arm64'}={}) {
  const root=path.join(repository,'packages/web/runtime/reviewed-inputs');
  const inputFiles=new Map();
+ // Resolve declared workspace roots before entering Bun.build's callback.
+ // Bun 1.3.14 can lose an uncached workspace symlink lookup inside nested builds.
+ const workspaceResolutions=new Map();
+ const manifests=[path.join(repository,'package.json'),...(await fs.readdir(path.join(repository,'packages'),{withFileTypes:true}))
+  .filter(entry=>entry.isDirectory()).map(entry=>path.join(repository,'packages',entry.name,'package.json'))];
+ for(const manifestPath of manifests){
+  const bytes=await fs.readFile(manifestPath).catch(error=>{if(error.code==='ENOENT')return null;throw error;});
+  if(!bytes)continue;const info=JSON.parse(bytes.toString('utf8')),directory=path.dirname(manifestPath),resolved=new Map();
+  inputFiles.set(manifestPath,hash(bytes));
+  for(const [name,version] of Object.entries(info.dependencies??{})){
+   if(typeof version!=='string'||version.startsWith('workspace:')||name.startsWith('@types/'))continue;
+   const packagePath=path.join(directory,'node_modules',name,'package.json');
+   const packageBytes=await fs.readFile(packagePath),metadata=JSON.parse(packageBytes.toString('utf8'));
+   inputFiles.set(await fs.realpath(packagePath),hash(packageBytes));
+   // Packages exposing subpaths only have no root import to pre-resolve.
+   if(metadata.exports&&typeof metadata.exports==='object'&&!Array.isArray(metadata.exports)
+    &&Object.keys(metadata.exports).some(key=>key.startsWith('.'))&&!Object.hasOwn(metadata.exports,'.'))continue;
+   try{resolved.set(name,Bun.resolveSync(name,directory));}
+   catch{/* Some SDKs advertise an absent root entry; an actual root import still fails in the build callback. */}
+  }
+  workspaceResolutions.set(directory,resolved);
+ }
+ inputFiles.set(path.join(repository,'bun.lock'),hash(await fs.readFile(path.join(repository,'bun.lock'))));
  const jsoncMain=Bun.resolveSync('jsonc-parser',path.join(repository,'packages/web'));
  const jsonc=await resolvePinnedJsonc(jsoncMain);
  inputFiles.set(jsonc.packagePath,hash(jsonc.packageBytes));
@@ -177,13 +200,13 @@ export async function prepareReviewedNativeInputs(repository,{target='darwin-arm
  transforms.push({path:path.relative(repository,credentialPath),sha256:hash(credentialOriginal),outputSha256:hash(credentialContents),reason:'sealed-host-selected-claude-renewal'});
  transforms.push({path:path.relative(repository,jsoncMain),sha256:hash(await fs.readFile(jsoncMain)),outputSha256:hash(await fs.readFile(jsonc.modulePath)),reason:'pinned-jsonc-original-esm-module-resolution'},
   {path:path.relative(repository,xhrPath),sha256:hash(xhrOriginal),outputSha256:hash(xhrContents),reason:'compiled-dom-sync-xhr-lazy-original-worker-resolver'});
- return {inputFiles,resolutions,rewrites:new Map([[imagegenPath,imagegen.contents],[imagegenDebugPath,imagegenDebug],[slimPath,slim.contents],[jsdomPath,jsdomContents],[stylePath,styleContents],[xhrPath,xhrContents],[documentPath,document.contents],[browserPath,browser.contents],[claudePath,claudeContents],[libsqlPath,libsqlContents],[spawnPath,spawnContents],[httpPath,httpContents]]),virtualModules:new Map([[REVIEWED_PONYTAIL_MODULE,ponytail.moduleSource],['devryan:reviewed-claude-startup',`export {startReviewedProxy,checkReviewedProxy,scrubReviewedSystem} from ${JSON.stringify(claudePath)};`],['devryan:reviewed-claude-scrub',`export {scrubOpencodeFingerprints} from ${JSON.stringify(path.join(root,'claude-1.8.0/node_modules/@rynfar/meridian-plugin-opencode-scrub/dist/scrub.js'))};`]]),transforms,claudeAssets,claudeCredentials,
+ return {inputFiles,resolutions,workspaceResolutions,rewrites:new Map([[imagegenPath,imagegen.contents],[imagegenDebugPath,imagegenDebug],[slimPath,slim.contents],[jsdomPath,jsdomContents],[stylePath,styleContents],[xhrPath,xhrContents],[documentPath,document.contents],[browserPath,browser.contents],[claudePath,claudeContents],[libsqlPath,libsqlContents],[spawnPath,spawnContents],[httpPath,httpContents]]),virtualModules:new Map([[REVIEWED_PONYTAIL_MODULE,ponytail.moduleSource],['devryan:reviewed-claude-startup',`export {startReviewedProxy,checkReviewedProxy,scrubReviewedSystem} from ${JSON.stringify(claudePath)};`],['devryan:reviewed-claude-scrub',`export {scrubOpencodeFingerprints} from ${JSON.stringify(path.join(root,'claude-1.8.0/node_modules/@rynfar/meridian-plugin-opencode-scrub/dist/scrub.js'))};`]]),transforms,claudeAssets,claudeCredentials,
   provenance:manifest.inputs.map(({id,version,sourceKind,sourceLocation,license})=>({id,version,sourceKind,sourceLocation,license})),
   ast:{source:astPath,path:REVIEWED_AST_FILENAME,sha256:REVIEWED_AST_ASSET_SHA256}};
 }
 
 /** Resolves only explicit modules and exact reviewed rewrite paths. */
-export function reviewedNativeInputPlugin({rewrites,virtualModules,inputFiles,resolutions}) {
+export function reviewedNativeInputPlugin({rewrites,virtualModules,inputFiles,resolutions,workspaceResolutions}) {
  return {name:'devryan-reviewed-static-inputs',setup(builder){
   // Workspace lock resolution must not substitute a different package for the captured nested closure.
   builder.onResolve({filter:/^[^./]/},async event=>{
@@ -202,7 +225,9 @@ export function reviewedNativeInputPlugin({rewrites,virtualModules,inputFiles,re
    // Bun 1.3.14 drops barrel namespace exports when a matching onResolve
    // callback falls through. Explicit default Bun resolution preserves the
    // actual locked package path and module identity without rewriting sources.
-   const resolved=Bun.resolveSync(event.path,path.dirname(event.importer));
+   const workspace=[...workspaceResolutions??[]].sort(([a],[b])=>b.length-a.length).find(([directory])=>importer.startsWith(directory+path.sep)
+    &&!importer.slice(directory.length+1).split(path.sep).includes('node_modules'));
+   const resolved=workspace?.[1].get(event.path)??Bun.resolveSync(event.path,path.dirname(event.importer));
    // Bun.resolveSync selects JSONC's UMD main, whose factory-scoped require
    // survives bundling. Use the same pinned original ESM entry Bun.build uses.
    return {path:event.path==='jsonc-parser'?(await resolvePinnedJsonc(resolved)).modulePath:resolved};

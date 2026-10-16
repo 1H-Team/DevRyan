@@ -1,5 +1,10 @@
 # OpenCode 2 compatibility boundary: contracts
 
+Ephemeral `shell.created`, `shell.exited` and `shell.deleted` intentionally project to no public
+session event and emit no unsupported-event diagnostic. Durable shell jobs keep
+their existing session/message ownership; ephemeral notifications cannot
+impersonate those records.
+
 This directory adapts the pinned OpenCode 2 responses (`TARGET_OPENCODE_VERSION` in
 `../version-policy.js`) to the existing DevRyan application contract. It does not
 implement the native execution host or certify plugin, confinement, migration or
@@ -29,6 +34,13 @@ performance parity. Remaining gates are in [the OpenCode module documentation](.
   preflight and native 200/409 responses must prove equivalence. Missing or
   legacy evidence returns nonretryable identity uncertainty. Runtime epoch and
   physical database path are lifetime fences, not durable turn identity.
+  Canonical readback may additionally contain the constructor-sealed private
+  `managedTitle` tuple. `managed-title-metadata.js` validates its exact bounded
+  shape; `validateCanonicalDevryanPromptMetadata` checks the source text/fingerprint
+  and then applies the unchanged public metadata validator. Acceptance still
+  requires the original operation fingerprint and exact child/source IDs. Public
+  builders reject that reserved field, projections remove it, and only the live
+  managed title owner can use its independently rechecked assignment witness.
   `buildV2PromptFingerprint` shares the exact accepted-operation recipe with
   read-only bundle resume checks; those checks cannot authorize dispatch.
   A trusted pre-dispatch callback supplies the effective canonical selection to
@@ -40,8 +52,12 @@ performance parity. Remaining gates are in [the OpenCode module documentation](.
   including background recovery outside the web prompt context. Its implicit
   selection opt-out still applies when no selection changes; child admission
   keeps its existing scope. A refused switch cannot dispatch using a stale tuple.
-- `facade-routes.js` serves application routes through the native client. Session
-  creation retains its deadline and content-free attempt timing; an ambiguous
+- `facade-routes.js` serves application routes through the native client. Prompts
+  retain only the exact `x-devryan-prompt-origin: human` UI marker;
+  absent, malformed and constructor-origin markers remain unknown. The marker
+  does not replace principal or native admission authorization, and private
+  canonical metadata remains constructor-owned.
+  Session creation retains its deadline and content-free attempt timing; an ambiguous
   dispatched write is never retried. `sse-routes.js` maps live native frames and
   requests reconciliation on stream loss. Its active global subscriber owns the
   opt-in `X-DevRyan-Subscription-Ready: 1` handshake: an ID-less named

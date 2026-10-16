@@ -51,7 +51,7 @@ export function createNativePrimaryStepOwner({ admissionOwner, openCodeClient, p
         if (typeof primaryRuntime.adoptOwnedNativeContinuation !== 'function') throw fail();
         await recheck();
         primary = await primaryRuntime.adoptOwnedNativeContinuation({ instanceID, sessionID: session.id,
-          userMessageID: assistant.info.parentID, assistantMessageID: assistant.info.id, execution });
+          userMessageID: assistant.info.parentID, assistantMessageID: assistant.info.id, execution,...witness });
         if (currentObjectiveUser(primary) !== assistant.info.parentID) throw fail();
       }
       await recheck();

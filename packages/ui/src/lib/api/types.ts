@@ -500,6 +500,10 @@ export interface GeneratedCommitMessage {
   subject: string;
   highlights: string[];
   files?: string[];
+  source?: string;
+  selectionMode?: 'configured' | 'active';
+  model?: string | null;
+  warnings?: string[];
 }
 
 export interface GitCommitMessageFileContext {
@@ -525,12 +529,14 @@ export interface GitCommitMessageContext {
 }
 
 export interface GenerateGitCommitMessageRequest {
+  sessionID?: string;
   context: GitCommitMessageContext;
   guidance?: string;
   zenModel?: string;
 }
 
 export interface GenerateGitCommitMessageDraftRequest {
+  sessionID?: string;
   selectedFiles: string[];
   stagedOnly?: boolean;
   guidance?: string;
@@ -542,11 +548,18 @@ export interface GeneratedCommitWorkflowResult {
   commits: GeneratedCommitMessage[];
   message?: string;
   warnings?: string[];
+  source?: string;
+  selectionMode?: 'configured' | 'active';
+  model?: string | null;
 }
 
 export interface GeneratedPullRequestDescription {
   title: string;
   body: string;
+  source?: 'zen' | 'helper_model' | 'session_model';
+  selectionMode?: 'configured' | 'active';
+  model?: string | null;
+  attempts?: Array<{ tier: string; model: string | null; reason: string | null; durationMs?: number }>;
 }
 
 export interface GitWorktreeAPI {
@@ -585,7 +598,7 @@ export interface GitAPI {
   ): Promise<GeneratedCommitWorkflowResult>;
   generatePullRequestDescription(
     directory: string,
-    payload: { base: string; head: string; context?: string; prompt?: string }
+    payload: { base: string; head: string; context?: string; prompt?: string; sessionID?: string }
   ): Promise<GeneratedPullRequestDescription>;
   listGitWorktrees(directory: string): Promise<GitWorktreeInfo[]>;
   getPrimaryWorktreeRoot?(directory: string): Promise<string>;
@@ -739,6 +752,18 @@ export interface FilesAPI {
   downloadFile?(path: string, options?: FileReadOptions): Promise<void>;
 }
 
+export interface SessionPlanSourceIdentity {
+  sessionID: string;
+  sourceMessageID: string;
+  rootUserMessageID: string;
+  memberUserMessageIDs: string[];
+  memberAssistantMessageIDs: string[];
+  currentSourceMessageID: string;
+  successful: true;
+  settled: true;
+  current: boolean;
+}
+
 export interface SessionPlanRevisionIdentity {
   sessionId: string;
   sourceMessageId: string;
@@ -756,9 +781,9 @@ export interface SessionPlanRevisionUpdate extends SessionPlanRevisionWrite {
 }
 
 export interface SessionPlansAPI {
-  ensureRevision(input: SessionPlanRevisionWrite): Promise<{ path: string; created: boolean; version: string }>;
-  readRevision(input: SessionPlanRevisionIdentity): Promise<{ path: string; content: string; version: string }>;
-  updateRevision(input: SessionPlanRevisionUpdate): Promise<{ path: string; saved: boolean; version: string }>;
+  ensureRevision(input: SessionPlanRevisionWrite): Promise<{ path: string; created: boolean; version: string; sourceIdentity?: SessionPlanSourceIdentity; content?: string }>;
+  readRevision(input: SessionPlanRevisionIdentity): Promise<{ path: string; content: string; version: string; sourceIdentity?: SessionPlanSourceIdentity }>;
+  updateRevision(input: SessionPlanRevisionUpdate): Promise<{ path: string; saved: boolean; version: string; sourceIdentity?: SessionPlanSourceIdentity; content?: string }>;
 }
 
 export interface ProjectEntry {

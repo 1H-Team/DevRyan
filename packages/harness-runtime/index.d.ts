@@ -110,6 +110,7 @@ export function writeFileAtomic(
     now?: () => number;
     randomId?: () => string;
     fs?: unknown;
+    onProgress?(input: { phase: string; state: 'started' | 'completed' }): void;
   },
 ): Promise<void>;
 
@@ -812,7 +813,25 @@ export type NativeFallbackIdentity = {sessionID:string;userMessageID:string;inst
   & ({assistantMessageID:string;attempt?:NativeFallbackAttempt;permitSha256?:string}
     | {assistantMessageID:null;previousStepID:string|null;attempt:NativeFallbackAttempt;permitSha256:string});
 export interface NativeFallbackOwner {authorize():Promise<void>;choose(state:{tried:string[];exhaustion:0|1|2}):Promise<{tried:readonly string[];exhaustion:0|1|2;execution?:NativeFallbackExecution}>}
+export interface NativeStreamReservation extends NativeFallbackWitness {
+  instanceID:string;configurationDigest:string;cancellationGeneration:number;anchorID:string;objectiveID:string;
+  sourceUserMessageID:string;previousStepID:string;requestID:string;outputEventID:string;fingerprint:string;toolPolicySha256:string;
+  reservedAt:number;preparedAt?:number;
+  eventID?:string;eventSeq?:number;userMessageID?:string;syntheticFingerprint?:string;preparedRequestID?:string;successorAttempt?:NativeFallbackAttempt;
+}
+export interface NativeStreamTransition {
+  action:'prepare'|'send'|'reserve'|'bind'|'progress';sessionID:string;directory:string;instanceID:string;configurationDigest:string;
+  permitSha256:string;requestID:string;execution:NativeFallbackExecution;attempt?:NativeFallbackAttempt;outputEventID?:string;
+  assistantMessageID?:string;fingerprint?:string;eventID?:string;eventSeq?:number;userMessageID?:string;observedUnits?:number;
+}
+export interface NativeStreamContinuationReceipt extends NativeStreamReservation {assistantMessageID:string;ordinal:1|2}
 export interface PrimaryRecoveryController {
+  /** Constructor-owned bounded native interrupted-stream continuation; no public action protocol. */
+  nativeStreamContinuation(input:NativeStreamTransition,authorize:()=>Promise<void>):Promise<boolean>;
+  /** Saved constructor proof; caller must authorize the read and verify canonical message identities. */
+  nativeStreamContinuationReceipts(sessionID:string,objectiveID:string):Promise<NativeStreamContinuationReceipt[]>;
+  /** Completed canonical leaf disposal under the committed native removal owner decision only. */
+  discardNativeStreamContinuationReceipts(input:{directory:string;sessions:readonly string[]},authorize:()=>Promise<void>):Promise<void>;
   /** Original accepted-item commit pins status proof in existing live dispatch state. */
   bindNativeRecoveryDispatchInput(input:{sessionID:string;messageID:string;instanceID:string;itemHash:string}):void;
   /** Constructor-only restart inspection/adoption/disposition; absent from plugin actions. */
@@ -830,7 +849,7 @@ export interface PrimaryRecoveryController {
     record: PrimaryRecoveryExecutionRecord; prompt: NativePrimaryContinuationPrompt; recheck:()=>Promise<void>}>;
   /** Trusted host-only adoption at canonical native Step.Started; absent from plugin/HTTP actions. */
   adoptOwnedNativeContinuation(input: { sessionID: string; userMessageID: string; assistantMessageID: string; instanceID: string;
-    execution: { providerID: string; modelID: string; agent: string; variant?: string | null } }): Promise<PrimaryRecoveryExecutionRecord>;
+    execution: { providerID: string; modelID: string; agent: string; variant?: string | null };nativeAttempt?:NativeFallbackAttempt;nativePermitSha256?:string }): Promise<PrimaryRecoveryExecutionRecord>;
   markPromptDispatchUncertain(input: { sessionID: string; messageID: string }): Promise<unknown>;
   observeProgress(input: { sessionID: string; messageID?: string; taskCreatedAt?: number; kind: ObjectiveProgressKind; identity: string }): Promise<unknown>;
   readRecord(sessionID: string): Promise<PrimaryRecoveryExecutionRecord | null>;
@@ -950,6 +969,7 @@ export type SessionChangeExecution = {
 };
 export interface SessionChangeDiagnostic {
   code: string; phase: string; sessionID: string; callID?: string; source?: string; evidence?: SessionChangeEvidenceKind;
+  hasChanges?: boolean;
 }
 export interface SessionChangePage {
   nextCursor: string | null; previousCursor: string | null; pageIndex: number;
@@ -968,6 +988,8 @@ export interface SessionChangeRuntime {
   begin(input: SessionChangeIdentity & { messageID: string; callID: string }): Promise<void>;
   finish(input: SessionChangeIdentity & { callID: string }): Promise<void>;
   recordReceipt(input: SessionChangeReceipt): Promise<void>;
+  /** Trusted in-process batch; all receipts must belong to the same project. */
+  recordReceipts(inputs: SessionChangeReceipt[]): Promise<void>;
   recordExecution(input: SessionChangeExecution & { parentID?: string | null; receipt?: ReturnType<typeof sessionChangeReceipt> }): Promise<void>;
   findCall(input: SessionChangeIdentity & { callID: string }): Promise<string | null>;
   unresolvedHistory(input: SessionChangeIdentity & { cursor?: string | null }): Promise<{ messages: Array<{ id: string; cursor: string }>; more: boolean }>;
@@ -999,6 +1021,8 @@ export function createSessionChangeRuntime(options: { directory: string; maxByte
   onChange?: (scope: { directory: string; sessionID: string }) => void | Promise<void> }): SessionChangeRuntime;
 export interface SessionChangeHost {
   recordReceipt(input: SessionChangeReceipt): Promise<unknown>;
+  /** Trusted in-process batch, never exposed through the HTTP/plugin bridge. */
+  recordReceipts(inputs: SessionChangeReceipt[]): Promise<void>;
   acceptExecution(input: SessionChangeExecution): Promise<{ acknowledged: true }>;
   plugin(input: Record<string, unknown>): Promise<unknown>;
   /** Private native observation; the original caller is rechecked immediately before durable rejection counts change. */
@@ -1012,7 +1036,7 @@ export interface SessionChangeHost {
     current: { mode: string; oid: string } | null; previous: { mode: string; oid: string } | null }>>;
   legacyBlob(input: { directory: string; oid: string }): Promise<Uint8Array>;
 }
-export function createSessionChangeHost(options: Pick<PrimaryRecoveryHostOptions, 'dataDirectory' | 'publishEvent' | 'openCodeClient'> & {
+export function createSessionChangeHost(options: Pick<PrimaryRecoveryHostOptions, 'dataDirectory' | 'publishEvent' | 'openCodeClient' | 'executionOutcomes'> & {
   restoreOwned?: (input: SessionOwnedRestoreRequest) => Promise<unknown>;
   /** Without the ownership ledger, rejects restoring a conversation the ledger owns. */
   assertLegacyRestore?: (input: { directory: string; sessionID: string }) => Promise<void>;
@@ -1046,7 +1070,9 @@ export interface PrimaryRecoveryExecutionRecord {
     & ({stepID:string;pending?:never}|{stepID:null;pending:NativeFallbackPending});
   recoveryExecution?:NativeFallbackExecution;
   recoveryPrompt?:{messageID:string;model:{providerID:string;modelID:string};agent:string;variant:string;parts:readonly unknown[];tools:Record<string,boolean>};
-  ownedNativeContinuation?: { kind: 'native-shell' | 'native-compaction'; sourceUserMessageID: string; userMessageID: string; assistantMessageID: string };
+  ownedNativeContinuation?: { kind: 'native-shell' | 'native-compaction' | 'native-stream'; sourceUserMessageID: string; userMessageID: string; assistantMessageID: string };
+  nativeStream?:{consumed:number;pending?:NativeStreamReservation;committed?:NativeStreamReservation};
+  nativeStreamReceipts?:NativeStreamContinuationReceipt[];
   rejections?: ObjectiveRejection[]; progress?: ObjectiveProgress; failureKind?: string | null;
   continuationID?: string; activeUserID?: string; recoverySourceUserID?: string; todoContinuationCount?: number;
   nativeContinuation?: {messageID:string;sourceUserMessageID:string;sourceAssistantMessageID:string;cancellationGeneration:number;

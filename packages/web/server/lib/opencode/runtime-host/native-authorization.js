@@ -1,12 +1,13 @@
+import { DEFAULT_HELPER_MODEL_SELECTION, parseHelperModelSelection } from '@openchamber/shared-runtime';
 import fs from 'node:fs/promises';
 
-const fail = code => Object.assign(new Error(code), { code, status: 403, statusCode: 403 });
+const fail = (code, status = 403) => Object.assign(new Error(code), { code, status, statusCode: status });
 const stable = value => JSON.stringify(value, (_key, item) => item && typeof item === 'object' && !Array.isArray(item)
   ? Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]])) : item);
 const DETACHED = new Set(['runner.drain','store.claim','store.countResume','execution.resume']);
 
 /** Original web callers and detached native work have separate, fresh grant checks. */
-export function createNativeAuthorization({ locations, manifest, getRequestPrincipal, getMultiUserRuntime, captureLocalAuthorization }) {
+export function createNativeAuthorization({ locations, manifest, getRequestPrincipal, getMultiUserRuntime, captureLocalAuthorization, readHelperSettings }) {
   if (!Array.isArray(locations) || !locations.length || !Array.isArray(manifest.inputs?.nativeRegistrations)
     || typeof getRequestPrincipal !== 'function' || typeof getMultiUserRuntime !== 'function') throw fail('native_authorization_configuration_invalid');
   const origins = new Map([...manifest.inputs.nativeRegistrations.map(origin => [{ kind: 'native', ...origin }, origin.id]),
@@ -30,13 +31,13 @@ export function createNativeAuthorization({ locations, manifest, getRequestPrinc
     // With local authentication the verified bundle and canonical session own
     // detached work; a missing HTTP principal never creates a web grant.
   };
-  return {
+  const authorization = {
     captureManagedCatalogAuthorization: async session => {
       if (!session?.id || session.parentID || session.time?.archived || session.revert) throw fail('native_managed_catalog_scope_invalid');
       await detached(session); return () => detached(session);
     },
     captureTitleHelperAuthorization: async session=>{
-      if(session?.revert||!session?.model?.providerID||!(session.model.id??session.model.modelID))throw fail('native_title_scope_invalid');
+      if(session?.revert)throw fail('native_title_scope_invalid');
       await detached(session);return ()=>detached(session);
     },
     captureWebAuthorization: async (request, session) => {
@@ -67,6 +68,42 @@ export function createNativeAuthorization({ locations, manifest, getRequestPrinc
           throw fail('native_web_principal_denied');
         }
       };
+    },
+    captureHelperSelection: async (input, session) => {
+      const title = input.agent === 'devryan-title';
+      if (!['devryan-title', 'devryan-commit', 'devryan-pr'].includes(input.agent)
+        || !['configured', 'active'].includes(input.selectionMode ?? 'configured') || title && !session) throw fail('native_helper_selection_invalid');
+      const principal = title ? null : structuredClone(getRequestPrincipal());
+      const reauthorize = title ? await (async () => { await detached(session); return () => detached(session); })()
+        : await (async () => {
+          // Capture before any async settings read; reuse the exact web grant.
+          const original = getRequestPrincipal();
+          if (!original) throw fail('native_web_principal_required');
+          return authorization.captureWebAuthorization({ operation: 'helper.generate', directory: input.directory, sessionID: input.sessionID }, session);
+        })();
+      const read = async () => {
+        await reauthorize();
+        if (input.selectionMode === 'active') {
+          if (!session?.model?.providerID || !(session.model.id ?? session.model.modelID)) throw fail('native_helper_active_selection_required');
+          return { providerID: session.model.providerID, modelID: session.model.id ?? session.model.modelID, revision: 'active-session' };
+        }
+        const multiUser = getMultiUserRuntime();
+        if (!multiUser?.enabled && typeof readHelperSettings !== 'function') throw fail('native_helper_settings_unavailable', 503);
+        const settings = multiUser?.enabled
+          ? await multiUser.resolveNativeHelperSettings?.({ sessionID: session?.id, directory: input.directory, principal, detached: title })
+          : await readHelperSettings?.();
+        if (!settings) throw fail('native_helper_settings_unavailable', 503);
+        await reauthorize();
+        const saved = settings?.helperModelSelection;
+        const selection = parseHelperModelSelection(saved);
+        if (saved !== undefined && !selection) throw fail('native_helper_selection_invalid', 400);
+        return selection ?? DEFAULT_HELPER_MODEL_SELECTION;
+      };
+      const selection = Object.freeze(await read());
+      return { selection, recheck: async () => {
+        if (stable(await read()) !== stable(selection)) throw fail('native_helper_selection_changed');
+        await reauthorize();
+      } };
     },
     /** Constructor-only document ancestry read. A parent ID never grants another owner's data. */
     authorizeRelatedSessionRead: async ({session, source, parent}) => {
@@ -105,4 +142,5 @@ export function createNativeAuthorization({ locations, manifest, getRequestPrinc
       await detached(session);
     },
   };
+  return authorization;
 }

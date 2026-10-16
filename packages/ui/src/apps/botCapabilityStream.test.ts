@@ -20,7 +20,9 @@ describe('Bot capability stream policy', () => {
     expect(botCapabilityIsTransient({ state: 'unsupported_host' })).toBe(false);
     expect(botCapabilityIsTransient({ state: 'catalog_unavailable', database: { state: 'starting' } })).toBe(true);
     expect(botCapabilityIsTransient({ state: 'bots_maintenance', database: { state: 'maintenance' } })).toBe(true);
-    expect(botCapabilityIsTransient({ state: 'docker_stopped', database: { state: 'unavailable' } })).toBe(true);
+    expect(botCapabilityIsTransient({ state: 'docker_stopped', database: { state: 'unavailable' } })).toBe(false);
+    // An unknown catalog outage does not prove Docker or Bot work is inactive.
+    expect(botCapabilityIsTransient({ state: 'catalog_unavailable', database: { state: 'unavailable' } })).toBe(true);
     expect(botCapabilityIsTransient({ state: 'bots_starting' })).toBe(true);
   });
 });

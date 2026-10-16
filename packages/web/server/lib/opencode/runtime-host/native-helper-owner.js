@@ -64,21 +64,32 @@ export function createNativeHelperOwner({ admissionOwner, current, headers, fetc
       if ([...operations.values()].filter(entry => entry.unsettled).length >= 4) throw fail('native_helper_unsettled');
       let resolveVisible, rejectVisible;
       const visible = new Promise((resolve, reject) => { resolveVisible = resolve; rejectVisible = reject; });
+      const deadline = Date.now() + (input.timeoutMs ?? 30000);
+      const remaining = limit => Math.max(1, Math.min(limit, deadline - Date.now()));
       const entry = { providerID: input.providerID, abort: new AbortController(), unsettled: false, cancelled: false, exited: false };
       operations.set(input.operationID, entry);
+      const deadlineTimer = setTimeout(() => {
+        entry.unsettled = true; entry.cancelled = true;
+        entry.abort.abort(fail('native_helper_deadline_expired'));
+        rejectVisible(fail('native_helper_unsettled'));
+      }, Math.max(1, deadline - Date.now()));
+      const checkDeadline = () => {
+        if (Date.now() >= deadline) throw fail('native_helper_deadline_expired');
+        entry.abort.signal.throwIfAborted();
+      };
       // Keep the admission callback alive until ACK/exit, even after visible rejects.
       const work = Promise.resolve().then(() => (titleOperation ? admissionOwner.withHelperTitleOperation : admissionOwner.withHelperOperation)(input, async permit => {
-        entry.abort.signal.throwIfAborted(); // No dispatch means there is no provider ACK to wait for.
+        checkDeadline(); // No dispatch means there is no provider ACK to wait for.
         entry.target = current();
         entry.permit = permit;
         const settled = new Promise(resolve => { entry.resolve = resolve; });
         pending.set(permit.token, entry);
-        const signals = [entry.abort.signal, AbortSignal.timeout(input.timeoutMs ?? 30000)];
+        const signals = [entry.abort.signal, AbortSignal.timeout(remaining(input.timeoutMs ?? 30000))];
         if (callerSignal) signals.push(callerSignal);
         const signal = AbortSignal.any(signals);
         let failure, result;
         try {
-          const response = await abortable(Promise.resolve().then(() => { signal.throwIfAborted(); return fetchImpl(`${entry.target.url}${titleOperation ? '/devryan/helper-title' : '/devryan/helper-text'}`, {
+          const response = await abortable(Promise.resolve().then(() => { checkDeadline(); signal.throwIfAborted(); return fetchImpl(`${entry.target.url}${titleOperation ? '/devryan/helper-title' : '/devryan/helper-text'}`, {
             method: 'POST', headers: { ...headers(), 'content-type': 'application/json' }, body: JSON.stringify(input), signal,
           }); }), signal);
           const payload = await abortable(readResponseBody(response, { signal, maxResponseBytes: 524288 }), signal);
@@ -88,12 +99,13 @@ export function createNativeHelperOwner({ admissionOwner, current, headers, fetc
           result = titleOperation ? { title: payload.value.title } : { text: payload.value.text };
         } catch (error) { failure = error; }
         try {
-          if (failure && !entry.exited) {
+          if (failure && !entry.exited && Date.now() < deadline) {
             entry.cancelled = true;
             // Request cancellation while the real permit remains in this context.
-            const cancelSignal = AbortSignal.timeout(cancellationTimeoutMs);
+            const cancelSignal = AbortSignal.timeout(remaining(cancellationTimeoutMs));
             try {
               await abortable(Promise.resolve().then(() => {
+                if (Date.now() >= deadline) throw fail('native_helper_deadline_expired');
                 if (current() !== entry.target) throw fail('native_helper_expired');
                 return fetchImpl(`${entry.target.url}/devryan/helper-text/cancel`, {
                   method: 'POST', headers: headers(), signal: cancelSignal,
@@ -103,7 +115,7 @@ export function createNativeHelperOwner({ admissionOwner, current, headers, fetc
           }
           let timer;
           const confirmed = await Promise.race([settled.then(() => true), new Promise(resolve => {
-            timer = setTimeout(() => resolve(false), settlementTimeoutMs);
+            timer = setTimeout(() => resolve(false), remaining(settlementTimeoutMs));
           })]);
           clearTimeout(timer);
           if (!confirmed) {
@@ -121,9 +133,11 @@ export function createNativeHelperOwner({ admissionOwner, current, headers, fetc
         } finally { pending.delete(permit.token); }
       }));
       entry.work = Promise.resolve(work).then(result => {
+        clearTimeout(deadlineTimer);
         operations.delete(input.operationID);
         if (!entry.unsettled) resolveVisible(result);
       }, error => {
+        clearTimeout(deadlineTimer);
         operations.delete(input.operationID);
         rejectVisible(error);
       });

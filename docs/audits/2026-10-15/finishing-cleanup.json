@@ -1,0 +1,211 @@
+{
+  "schemaVersion": 1,
+  "status": "passed",
+  "scope": "six explicitly owned superseded failed measurement runtime payloads",
+  "rows": [
+    {
+      "run": "VG3TzZ",
+      "status": "removed-owned-runtime-only",
+      "openFileActivity": "none-observed",
+      "resultSha256": "1c0a7dda8c4c47e4c58e5b62f92c78eca259e9ca834086484d08ae27510e2fc7",
+      "proofRetained": true
+    },
+    {
+      "run": "720YHv",
+      "status": "removed-owned-runtime-only",
+      "openFileActivity": "none-observed",
+      "resultSha256": "a4bac033192be6e29ad1c2c5362b85c588cfb7e85b7baa6da7f31bfac64edf8b",
+      "proofRetained": true
+    },
+    {
+      "run": "3Cwm0o",
+      "status": "removed-owned-runtime-only",
+      "openFileActivity": "none-observed",
+      "resultSha256": "05c7b2a5246194e5d1cf01fc0da862663caf1545b42e7362ab03e0dc24edc77c",
+      "proofRetained": true
+    },
+    {
+      "run": "tDkGZZ",
+      "status": "removed-owned-runtime-only",
+      "openFileActivity": "none-observed",
+      "resultSha256": "5e499452ff85ded0914abb8fc15b4cb5d5b207680bb4761a2d405a3c30ffd30e",
+      "proofRetained": true
+    },
+    {
+      "run": "Qu6RN6",
+      "status": "removed-owned-runtime-only",
+      "openFileActivity": "none-observed",
+      "resultSha256": "4be7b8f4512bc7e58abba43739e54bd348331d851ea35b0a874b3003b02935cc",
+      "proofRetained": true
+    },
+    {
+      "run": "cEvMNX",
+      "status": "removed-owned-runtime-only",
+      "openFileActivity": "none-observed",
+      "resultSha256": "614f26920c2ec98d0a30ee8a1a1b55348a64dddac9d164da6b6261cbef3f95d2",
+      "proofRetained": true
+    }
+  ],
+  "preserved": [
+    "result.json",
+    "run.json",
+    "V1 / QA1",
+    "current artifacts",
+    "user worktrees"
+  ],
+  "globalPruneApplied": false,
+  "cacheBeforeSelectiveCleanup": {
+    "usageGiB": 55.14,
+    "budgetGiB": 50,
+    "freeDiskGiB": 126.52,
+    "previewEligibleGiB": 14.23,
+    "reportSha256": "de06fe87df99b087632501c124d248c98599bba9c5724bee4ff61a3e05afaba7",
+    "previewSha256": "8246f6e848877459f990fdde261839309e54f090672844f3fc8dd04f293b91da"
+  },
+  "remainingScope": "No global prune applied; preview candidates outside these six explicitly owned runtime payloads remain untouched.",
+  "postDrainCheck": {
+    "status": "report-and-preview-passed",
+    "cacheReport": {
+      "execSession": 75868,
+      "exitCode": 0,
+      "sha256": "ca0df4cafe61662c8513b1aca2b8694eef549da5cb195b6345ce7b1b01f199fe",
+      "cacheGiB": 59.58,
+      "budgetGiB": 50,
+      "freeGiB": 138.98
+    },
+    "prunePreview": {
+      "execSession": 33719,
+      "exitCode": 0,
+      "sha256": "547e41194f49b28aa45063d6a04beff2350743216e7c687212de5a77f8f99707",
+      "mode": "preview-only",
+      "policyReclaimGiB": 14.29
+    },
+    "globalPruneApplied": false,
+    "ownedPayloadsRemovedThisCorrection": [],
+    "preserved": [
+      "V1 / QA1 private profile and saved sign-ins",
+      "active attended QA1 issuer",
+      "current and cited native/package/screenshot/journal proof",
+      "unrelated registered Claude worktree and concurrent workloads",
+      "installed-app state, Docker and required runtime assets"
+    ],
+    "limits": "Policy preview is not proof of this session owning every candidate. No global or unowned deletion was performed."
+  },
+  "cursorStatusCorrection": {
+    "source": "82b7377b848307b5f6e1a91292364c90a611412ab4ad53f92f87ecd782036ad9",
+    "cacheGiB": 60.81,
+    "budgetGiB": 50,
+    "freeDiskGiB": 137.13,
+    "report": {
+      "exitCode": 0,
+      "sha256": "560fb6db1cb4cdd137e3e7af1c039f3f511f554d00557c1d7c6c157f8aff3f08"
+    },
+    "prunePreview": {
+      "exitCode": 0,
+      "eligibleGiB": 14.29,
+      "tooRecentUnits": 311,
+      "sha256": "96452587b96ce9c4bf066d24a9d0308a9080a6430b987e27e4078ce3f053a5ed",
+      "applied": false
+    },
+    "ownedPayloads": "Passing native and Plan run owners removed runtime payloads after finite journal capture; failed qp2RCS retained for unresolved reveal evidence. Current QA package retained.",
+    "worktreesCreated": 0,
+    "otherWorktree": "Preserved unrelated .claude/worktrees/adoring-matsumoto-fc2b21",
+    "profile": "V1 / QA1 saved sign-ins preserved",
+    "issuer": "New owned issuer running for manual owner admission; no paid inference. Earlier failed issuer cleanly closed.",
+    "globalPruneApplied": false
+  },
+  "currentQa1": {
+    "issuerSession": 81444,
+    "origin": "http://127.0.0.1:56270",
+    "state": "owned-host-closed-cleanly",
+    "savedSignIns": "retained including normal OpenAI browser renewal",
+    "standingAuthorization": "AGENTS.md; no repeated approval requests",
+    "currentAction": "Preserved offline for later owned upgrade/resume; no more test runs after wrap-up",
+    "globalPruneApplied": false,
+    "close": {
+      "exitCode": 0,
+      "teardown": "passed",
+      "profileRetained": true
+    }
+  },
+  "wrapUp": {
+    "observedAt": "2026-10-16T07:58:41.607Z",
+    "reason": "Explicit user request: wrap it up",
+    "source": {
+      "nativeSourceDigest": "88d415f1c6e4e514b55f153eba24ea4b3d51c9bb275d1f85dda244dbf659faf8",
+      "nativeSourceFiles": 1057,
+      "packageSourceDigest": "091245f33d730453658f49b7c7d72f3bc4f3d46016b2306122e2ff1b70824bdd",
+      "packageSourceFiles": 6624,
+      "unchangedSinceFreeze": true
+    },
+    "fullValidation": {
+      "status": "interrupted-at-explicit-user-wrap-up",
+      "session": 82637,
+      "exitCode": 130,
+      "complete": false,
+      "logSha256": "3337521e2d5d38083ee4c238edc3c1aa814b2d9fdff9f344a9243da1afab0155",
+      "completedScriptBatch": {
+        "tests": 1617,
+        "passed": 1617,
+        "failed": 0
+      },
+      "stage": "workspace harness-runtime suites; full UI/web batches not completed",
+      "processGroup": 52271,
+      "processGroupSettlement": "independent ps returned no remaining members after scoped SIGINT",
+      "interpretation": "Not a full-validation pass or a product regression. Prior full passes remain historical."
+    },
+    "focused": {
+      "observation": 10,
+      "grader": 19,
+      "sourceAndCompiledGraph": 2,
+      "nativeHostTypecheck": "passed",
+      "independentReview": "clear"
+    },
+    "documentation": {
+      "exitCode": 0,
+      "logSha256": "5385d22610925a4134bad2dd84980fc219c93ec4b820f220d4822636d9825e09"
+    },
+    "qa1": {
+      "profile": "V1 / QA1",
+      "savedSignIns": "retained including ordinary OpenAI browser renewal",
+      "hostExitCode": 0,
+      "teardown": "passed",
+      "journalGapCheckExitCode": 0,
+      "modelCallAfterRenewal": "not run",
+      "standingAuthorization": "recorded in AGENTS.md; no repeated approval questions"
+    },
+    "pending": [
+      "fresh full validation",
+      "production build/bundle",
+      "fresh native artifact and original53 package gate",
+      "fresh Plan60 and resource qualification",
+      "same-keeper successful Medium before High/helper paid qualification",
+      "exact committed-source hosted candidate/final-DMG/release qualification"
+    ],
+    "releaseQualified": false,
+    "publication": "not run",
+    "unexplainedHistoricalFailures": [
+      "helper reveal timeout after reload; subsequent unchanged repeats passed without established cause",
+      "one OpenAI HTTP401; ordinary reconnect succeeded, physical inference not retested"
+    ]
+  },
+  "wrapUpStorage": {
+    "cacheGiB": 60.82,
+    "cacheBudgetGiB": 50,
+    "freeDiskGiB": 136.35,
+    "reportExitCode": 0,
+    "reportSha256": "812b724b4b39991797bffce62e10021d6b197f7d5e340a674d4bf61bc3ea66b5",
+    "prunePreviewExitCode": 0,
+    "prunePreviewSha256": "7c85f4285e2da8416c257261ff6457fd17d30cd5b5e3064a64d2ebd17eca2e50",
+    "previewEligibleGiB": 14.29,
+    "pruneApplied": false,
+    "preservation": "Reusable QA1, cited evidence, required native runtime, user app/data and unrelated worktree retained; no root-created worktrees or downloaded CI assets to remove",
+    "validationGroupSettled": true,
+    "browserViewportReset": true,
+    "qaTab": "already absent from browser session at attempted cleanup; no unrelated tabs closed"
+  },
+  "wrapUpDocumentation": {
+    "exitCode": 0,
+    "logSha256": "5385d22610925a4134bad2dd84980fc219c93ec4b820f220d4822636d9825e09"
+  }
+}

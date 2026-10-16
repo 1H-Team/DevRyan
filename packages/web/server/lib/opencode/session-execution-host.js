@@ -1,4 +1,5 @@
-import { executionSignal, checkExecutionAdmission, executionPhase, executionStep, timedExecutionStep, withExecutionAdmission, withExecutionObservation, withExecutionPreparation, withExecutionSummary } from '@openchamber/harness-runtime/lib/execution-admission.js';
+import { readOnlyShellLease } from './native-readonly-shell.js';
+import { executionSignal, executionProgress, withExecutionMeter, checkExecutionAdmission, executionPhase, executionStep, timedExecutionStep, withExecutionAdmission, withExecutionObservation, withExecutionPreparation, withExecutionSummary } from '@openchamber/harness-runtime/lib/execution-admission.js';
 import { classifySessionChangeTool } from '@openchamber/harness-runtime/lib/session-changes-tools.js';
 import { cleanupExecutionLease } from '@openchamber/harness-runtime/lib/execution-cleanup.js';
 import { createHash, randomUUID } from 'node:crypto';
@@ -21,6 +22,7 @@ import { isReviewedControllerGitArgs } from './execution-helper-policy.js';
 import { resolveControllerGitCommand } from './execution-helper-command.js';
 import { executeNativeContextAssets } from './runtime-host/native-context-assets.js';
 import { executeNativeInterviewDocument } from './runtime-host/native-interview-document.js';
+import { createCursorExecutionReceipts } from './cursor-execution-receipts.js';
 
 const failure = (code, status = 409) => Object.assign(new Error(code), { code, status, statusCode: status });
 // Built-in tools the companion may run with a direct receipt: audited
@@ -459,6 +461,8 @@ export function createSessionExecutionHost(options) {
     if (input.kind === 'writer' && !ast && !browser && !imagegen && !['write', 'edit', 'patch'].includes(input.tool)) throw failure('native_execution_input_invalid', 400);
     if (input.kind === 'read' && (!['glob', 'grep'].includes(input.tool) || !['rg', 'rg.exe'].includes(path.basename(input.command ?? '')))) throw failure('native_execution_input_invalid', 400);
     if (input.kind === 'writer' && (!path.isAbsolute(nativeOptions.workerCommand ?? '') || !Array.isArray(nativeOptions.workerArgs))) throw failure('native_writer_unavailable', 503);
+    const readOnly = await nativeOptions.readOnlyInvocation?.(input) === true;
+    if (readOnly && input.kind === 'writer') throw failure('native_plan_write_denied', 403);
     const current = await session(input);
     const record = await readMessage(input.sessionID, input.messageID, input.directory);
     const call = record?.parts?.find((part) => part.type === 'tool' && part.callID === input.callID);
@@ -519,6 +523,26 @@ export function createSessionExecutionHost(options) {
       signal?.addEventListener('abort', abort, { once: true });
       if (signal?.aborted) abort();
       let launched = false, published = false;
+      // Timing only: an admission wrapper would recheck its inherited deadline
+      // after commit or replace the original error. Cleanup keeps its own owner.
+      const publish = async () => {
+        const started = Date.now(); let completed = false;
+        try {
+          const publication = await runtime.finish({ directory: input.directory, token: lease.token });
+          published = true;
+          try { nativeOptions.onOutcome?.({ ...job.lease.scope, token: lease.token, state: 'published' }); } catch { /* Observer only. */ }
+          await options.recordReceipt?.({ ...await runtime.executionReceipt({ directory: input.directory, token: lease.token }), tool: toV1ToolName(input.tool) });
+          completed = true;
+          return publication;
+        } finally {
+          try {
+            const elapsedMs = Date.now() - started;
+            if (!completed || elapsedMs >= Math.max(0, Number(options.admissionSummaryMinMs ?? 250) || 0)) options.onDiagnostic?.({ event: 'session_execution', sessionID: input.sessionID, messageID: input.messageID,
+              callID: input.callID, phase: 'finish', state: completed ? 'completed' : 'failed', elapsedMs,
+              ...(!completed ? { code: 'local_execution_failed' } : {}) });
+          } catch { /* Observer only. */ }
+        }
+      };
       try {
         job.controller.signal.throwIfAborted();
         jobs.start(lease, input);
@@ -640,6 +664,9 @@ export function createSessionExecutionHost(options) {
           if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw failure('invalid_execution_path');
           executionLease = { ...job.lease, workingDirectory: path.join(job.lease.viewDirectory, relative) };
         }
+        if (readOnly && input.kind === 'shell') {
+          executionLease = await readOnlyShellLease(executionLease);
+        }
         const started = await startSessionExecution({ launcher: launcher(), lease: executionLease,
           command: input.kind === 'writer' ? nativeOptions.workerCommand : input.command,
           args: input.kind === 'writer' ? nativeOptions.workerArgs : input.args,
@@ -662,10 +689,7 @@ export function createSessionExecutionHost(options) {
           return;
         }
         await nativeRecheck({ ...input, phase: 'publication', token: lease.token }); // Exact lease authority survives a background Tool return.
-        const publication = await runtime.finish({ directory: input.directory, token: lease.token });
-        published = true;
-        try { nativeOptions.onOutcome?.({ ...job.lease.scope, token: lease.token, state: 'published' }); } catch { /* Observer only. */ }
-        await options.recordReceipt?.({ ...await runtime.executionReceipt({ directory: input.directory, token: lease.token }), tool: toV1ToolName(input.tool) });
+        const publication = await publish();
         await cleanupAfterPublication(job.lease);
         nativeEvent(job, { type: 'settled', ok: true, receipt, result: nativePublicationResult(job.result?.result, publication, job.lease,input.tool) }, true);
       } catch (cause) {
@@ -684,9 +708,7 @@ export function createSessionExecutionHost(options) {
           const durable = await runtime.leaseForCall(input);
           if (durable?.state === 'published') {
             published = true;
-            const publication = await runtime.finish({ directory: input.directory, token: lease.token });
-            try { nativeOptions.onOutcome?.({ ...job.lease.scope, token: lease.token, state: 'published' }); } catch { /* Observer only. */ }
-            await options.recordReceipt?.({ ...await runtime.executionReceipt({ directory: input.directory, token: lease.token }), tool: toV1ToolName(input.tool) });
+            const publication = await publish();
             await cleanupAfterPublication(job.lease);
             nativeEvent(job, { type: 'settled', ok: true, receipt, result: nativePublicationResult(job.result?.result, publication, job.lease,input.tool) }, true);
             return;
@@ -783,23 +805,25 @@ export function createSessionExecutionHost(options) {
   const persistCursorRecord = async ({ sessionID, directory, record }) => {
     generation();
     if (typeof nativeOptions?.cursor?.persist !== 'function') throw failure('native_cursor_owner_unavailable', 503);
-    const result = await nativeOptions.cursor.persist({ sessionID, directory, record });
-    if (record?.info?.role === 'assistant') {
-      const lease = await runtime.leaseForCall({ directory, sessionID, callID: `cursor_${record.info.id}` });
-      if (lease?.state === 'published') await cursorReceipts(lease, record);
-    }
-    return result;
+    return withExecutionMeter(async () => {
+      const result = await withExecutionObservation({ sessionID, directory, messageID: record?.info?.id },
+        () => nativeOptions.cursor.persist({ sessionID, directory, record }),
+        { phase: 'native_save', onDiagnostic: options.onDiagnostic, minMs: 0 });
+      if (record?.info?.role === 'assistant') {
+        const lease = await runtime.leaseForCall({ directory, sessionID, callID: `cursor_${record.info.id}` });
+        if (lease?.state === 'published') {
+          const committed = await withExecutionObservation({sessionID,directory,messageID:record.info.id}, () => cursorReceipts(lease, record),
+            {phase:'cursor_receipts',onDiagnostic:options.onDiagnostic,minMs:0});
+          // The trusted published batch has committed. A start/timer/diagnostic
+          // never supplies progress, and failure leaves the meter untouched.
+          if (committed) executionProgress();
+        }
+      }
+      return result;
+    });
   };
-  const cursorReceipts = async (lease, record) => {
-    const receipt = await runtime.executionReceipt({ directory: lease.directory, token: lease.token });
-    await options.recordReceipt?.({ ...receipt, tool: 'cursor_sdk' });
-    const calls = record.parts.filter((part) => part.type === 'tool');
-    await runtime.aliasCalls({ directory: lease.directory, token: lease.token, calls: calls.map((part) => part.callID) });
-    // The SDK is one confined turn. Its internal tool rows share that owned
-    // publication; empty attestations close observation windows without
-    // counting the same bytes once per internal tool.
-    for (const part of calls) await options.recordReceipt?.({ ...receipt, callID: part.callID, tool: part.tool, files: [] });
-  };
+  const cursorReceipts = createCursorExecutionReceipts({ runtime, recordReceipt: options.recordReceipt,
+    recordReceipts: options.recordReceipts, onDiagnostic: options.onDiagnostic });
   const startCursor = async (input) => {
     options.assertExecutionReady?.();
     generation();
@@ -1088,8 +1112,8 @@ export function createSessionExecutionHost(options) {
   // Background first build of a project's ledger, so its first confined call
   // does not stall. One build at a time per host: opening another project
   // cancels the current one (committed batches are kept and resumed by the
-  // next observation), and host drain cancels it. A real call arriving
-  // meanwhile joins the in-flight pass. Kill switch: DEVRYAN_LEDGER_PREWARM=0.
+  // next observation), and host drain cancels it. Foreground observations
+  // supersede advisory work and retain their own proof. Kill switch: DEVRYAN_LEDGER_PREWARM=0.
   let ledgerWarm = null;
   const warmLedger = ({ directory } = {}) => {
     contextAssetLifetime.signal.throwIfAborted();
@@ -1100,11 +1124,12 @@ export function createSessionExecutionHost(options) {
     ledgerWarm?.controller.abort(Object.assign(new Error('ledger_warm_superseded'), { code: 'ledger_warm_superseded' }));
     const previous = ledgerWarm?.work ?? Promise.resolve();
     const entry = { directory, controller: new AbortController() };
+    const signal = AbortSignal.any([contextAssetLifetime.signal, entry.controller.signal]);
     entry.work = previous.then(async () => {
-      entry.controller.signal.throwIfAborted();
+      signal.throwIfAborted();
       if (!await isConfined({ directory })) return { skipped: 'not-confined' };
-      const result = await withExecutionPreparation({}, () => runtime.warm({ directory }),
-        { signal: entry.controller.signal, onDiagnostic: options.onDiagnostic });
+      const result = await withExecutionPreparation({}, () => runtime.warm({ directory, refresh: true }),
+        { signal, onDiagnostic: options.onDiagnostic });
       try { options.onDiagnostic?.({ event: 'session_execution', phase: 'ledger_warm', state: 'completed', ...result }); } catch { /* Observer only. */ }
       return result;
     }).catch((cause) => ({ failed: cause?.code ?? 'ledger_warm_failed' }))

@@ -93,8 +93,9 @@ export function windowsSessionExecutionProfile({ viewDirectory, scratchDirectory
   return bytes;
 }
 
-export function sessionExecutionProfile({ viewDirectory, scratchDirectory, auxiliaryDirectory, socketDirectory, writableDirectories = [], deniedReadDirectories = [], chromiumRendezvous = false }) {
+export function sessionExecutionProfile({ viewDirectory, scratchDirectory, auxiliaryDirectory, socketDirectory, writableDirectories = [], deniedReadDirectories = [], chromiumRendezvous = false, readOnly = false }) {
   validateDeniedReadDirectories(deniedReadDirectories);
+  if (readOnly && writableDirectories.length) throw error('invalid_execution_path');
   const writeThrough = writableDirectories.map((directory) => `(require-not (subpath ${sbString(directory)}))`).join(' ');
   return `(version 1)
 (allow default)
@@ -104,14 +105,14 @@ ${chromiumRendezvous ? `; Headless Chromium's helpers fetch their IPC ports from
 ; that launched them; its rendezvous server hands ports only to its own
 ; children. This is the one mach service a confined process may look up.
 (allow mach-lookup (global-name-regex #"^org\\.chromium\\.Chromium\\.MachPortRendezvousServer\\.[0-9]+$"))
-` : ''}(deny network-outbound (remote unix-socket))
+` : ''}${readOnly ? '(deny network*)\n' : `(deny network-outbound (remote unix-socket))
 ; TCP stays available, so name resolution must too: the system resolver socket
 ; is the only local daemon a confined process may reach (no other mach services).
 (allow network-outbound (remote unix-socket (path-literal "/private/var/run/mDNSResponder")))
 ${socketDirectory ? `; Sockets this execution's own processes create (for example the agent-browser
 ; daemon) live in its private short directory; no host daemon can be reached there.
 (allow network-outbound (remote unix-socket (subpath ${sbString(socketDirectory)})))
-` : ''}(deny process-info-setcontrol)
+` : ''}`}(deny process-info-setcontrol)
 (deny signal)
 (allow signal (target same-sandbox))
 (deny process-info*)
@@ -261,6 +262,7 @@ const ledgerStorageOf = (viewDirectory) => {
 export async function prepareSessionExecution({ launcher, lease, socketDirectory: requestedSocketDirectory, workerBrowsers = true, deniedReadDirectories = [] }) {
   if (!['darwin', 'linux', 'win32'].includes(process.platform)) throw error('mutation_platform_unsupported');
   if (!path.isAbsolute(launcher ?? '')) throw error('mutation_runtime_unsupported');
+  if (lease.readOnly === true && process.platform === 'win32') throw error('native_plan_confinement_unavailable');
   validateDeniedReadDirectories(deniedReadDirectories);
   if (deniedReadDirectories.length && !['darwin', 'win32'].includes(process.platform)) throw error('mutation_platform_unsupported');
   const deniedRoots = await Promise.all(deniedReadDirectories.map(async directory => {
@@ -290,7 +292,7 @@ export async function prepareSessionExecution({ launcher, lease, socketDirectory
   // Session-scoped tool calls on macOS may launch headless Chromium (a
   // project's Playwright check); provider transports never can.
   const sessionScoped = process.platform === 'darwin' && typeof lease.scope?.sessionID === 'string' && lease.scope.sessionID.length > 0;
-  const browsers = sessionScoped && workerBrowsers && workerBrowsersEnabled();
+  const browsers = sessionScoped && lease.readOnly !== true && workerBrowsers && workerBrowsersEnabled();
   // A detached child's group can be signalled (see native/session-group-darwin.h).
   const groupSignals = sessionScoped && workerGroupSignalsEnabled();
   if (process.platform === 'darwin') {
@@ -306,7 +308,7 @@ export async function prepareSessionExecution({ launcher, lease, socketDirectory
   const sessionTemporaryDirectory = await prepareSessionTemporaryDirectory(auxiliaryDirectory, lease, launcher);
   // Only the macOS profile grants write-through; the Linux and Windows
   // launchers are not approved for production and keep inputs read-only.
-  const writableDirectories = process.platform === 'darwin' ? await writableInputDirectories({
+  const writableDirectories = process.platform === 'darwin' && lease.readOnly !== true ? await writableInputDirectories({
     inputs: lease.inputs, projectDirectory: lease.projectDirectory,
     protectedDirectories: [ledgerStorageOf(viewDirectory), auxiliaryDirectory],
   }) : [];
@@ -320,11 +322,12 @@ export async function prepareSessionExecution({ launcher, lease, socketDirectory
     }
     await createWindowsPrivateFile(launcher, profile, windowsSessionExecutionProfile({ viewDirectory, scratchDirectory, auxiliaryDirectory }));
   } else await writeFileAtomic(profile, sessionExecutionProfile({ viewDirectory, scratchDirectory, auxiliaryDirectory, socketDirectory, writableDirectories,
-    deniedReadDirectories: deniedRoots, chromiumRendezvous: browsers }));
+    deniedReadDirectories: deniedRoots, chromiumRendezvous: browsers, readOnly: lease.readOnly === true }));
   const cancelEvent = `Local\\DevRyan-execution-${randomUUID()}`;
   return { launcher, arguments: [viewDirectory, scratchDirectory, profile, path.join(root, 'termination.json'), '--'],
     cwd: workingDirectory, profile, scratchDirectory, socketDirectory,
     environment: { DEVRYAN_EXECUTION_WORKER: '1', HOME: scratchDirectory,
+      DEVRYAN_EXECUTION_READ_ONLY: lease.readOnly === true ? '1' : '0',
       ...(process.platform === 'win32' ? { USERPROFILE: scratchDirectory, LOCALAPPDATA: scratchDirectory, APPDATA: scratchDirectory } : {}),
       DEVRYAN_EXECUTION_CWD: lease.logicalWorkingDirectory ?? workingDirectory, DEVRYAN_EXECUTION_CANCEL_EVENT: cancelEvent,
       DEVRYAN_EXECUTION_CACHE: auxiliaryDirectory,

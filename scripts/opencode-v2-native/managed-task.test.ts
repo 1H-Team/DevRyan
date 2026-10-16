@@ -7,6 +7,8 @@ import { Agent } from '@opencode/schema/agent';
 import { Tool } from '@opencode/schema/tool';
 import { withManagedTaskExecution } from '../../packages/web/server/lib/opencode/runtime-host/managed-task.ts';
 import type { OwnedToolInvocation } from '../../packages/web/server/lib/opencode/runtime-host/native-admission-contract.ts';
+import {evaluate} from '@opencode/core/permission';
+import {translateNativeConfiguration} from '../../packages/web/server/lib/opencode/runtime-host/native-configuration-data.js';
 
 test('managed tool dispatch seals native call identity and refuses spoofed registrations', async () => {
   const requests: unknown[] = [];
@@ -27,4 +29,19 @@ test('managed tool dispatch seals native call identity and refuses spoofed regis
   await expect(Effect.runPromise(execute({ ...call, provenance: { ...origin, manifestDigest: 'c'.repeat(64) } }))).rejects.toThrow('managed_task_origin_mismatch');
   await expect(Effect.runPromise(execute({ ...call, input: { action: 'start', agent: 'fixer', prompt: 'Inspect', readOnly: false } }))).rejects.toThrow();
   expect(requests).toHaveLength(1);
+});
+
+test('pinned native permission evaluation preserves boolean tool restrictions and explicit precedence',()=>{
+ const configuration=translateNativeConfiguration({legacy:{tools:{bash:false,write:false,task:false},permission:{bash:{'git *':'allow'}}},
+  agents:{reader:{tools:{bash:false,edit:false},permission:{bash:{'git status':'allow'}}}}});
+ const rules=Schema.decodeUnknownSync(Schema.Array(Schema.Struct({action:Schema.String,resource:Schema.String,effect:Schema.Literals(['allow','deny','ask'])})))(configuration.permissions);
+ expect(evaluate('shell','rm file',rules).effect).toBe('deny');
+ expect(evaluate('shell','git status',rules).effect).toBe('allow');
+ expect(evaluate('edit','file',rules).effect).toBe('deny');expect(evaluate('subagent','explorer',rules).effect).toBe('deny');
+ const agent=configuration.agents;
+ if(!agent||typeof agent!=='object'||!('reader' in agent)||!agent.reader||typeof agent.reader!=='object'||!('permissions' in agent.reader))throw Error('Missing reader permissions');
+ const agentRules=Schema.decodeUnknownSync(Schema.Array(Schema.Struct({action:Schema.String,resource:Schema.String,effect:Schema.Literals(['allow','deny','ask'])})))(agent.reader.permissions);
+ expect(evaluate('shell','git status',rules,agentRules).effect).toBe('allow');
+ expect(evaluate('shell','git diff',agentRules).effect).toBe('ask');
+ expect(evaluate('edit','file',rules,agentRules).effect).toBe('deny');
 });

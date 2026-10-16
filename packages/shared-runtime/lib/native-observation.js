@@ -60,17 +60,22 @@ function parse(value, journal) {
       if (!id(value.messageID) || !hash(value.fingerprint)) throw failure();
       intent(value.intent); if (value.execution !== undefined) tuple(value.execution); break;
     case 'model-prepared':
-      exact(value, [...common, 'requestID', 'kind', 'execution', 'options', 'hookOptions', 'modelLimits']);
+      exact(value, [...common, 'requestID', 'kind', 'execution', 'options', 'hookOptions', 'modelLimits'], ['toolCount','helperSelectionMode','helperSelectionRevision']);
       if (!id(value.requestID) || !['primary','title','compaction','generate'].includes(value.kind)) throw failure();
       tuple(value.execution); exact(value.modelLimits, ['context', 'input', 'output']);
       if (!number(value.modelLimits.context) || !number(value.modelLimits.output) || value.modelLimits.input !== null && !number(value.modelLimits.input) || !object(value.options)
         || JSON.stringify(projectNativeReasoningOptions(value.options)) !== JSON.stringify(value.options)
         || !object(value.hookOptions) || JSON.stringify(projectNativeReasoningOptions(value.hookOptions)) !== JSON.stringify(value.hookOptions)) throw failure(); break;
     case 'physical':
-      exact(value, [...common, 'requestID', 'kind', 'transport', 'wireOptions', 'ordinal', 'attempt']);
+      exact(value, [...common, 'requestID', 'kind', 'transport', 'wireOptions', 'ordinal', 'attempt'], ['toolCount','wireToolCount','wireEffortUpdates','helperSelectionMode','helperSelectionRevision']);
       if (!id(value.requestID) || !['primary','title','compaction','generate'].includes(value.kind)
         || !['http','ws'].includes(value.transport) || !Number.isSafeInteger(value.ordinal) || value.ordinal < 1) throw failure();
       if(value.wireOptions!==null&&(!object(value.wireOptions)||JSON.stringify(projectNativeReasoningOptions(value.wireOptions))!==JSON.stringify(value.wireOptions)))throw failure();
+      if(Object.hasOwn(value,'wireEffortUpdates')&&value.wireEffortUpdates!==null){
+        exact(value.wireEffortUpdates,['count','effort']);
+        if(!Number.isSafeInteger(value.wireEffortUpdates.count)||value.wireEffortUpdates.count<1||value.wireEffortUpdates.count>256
+          ||!['none','minimal','low','medium','high','xhigh','max','ultra'].includes(value.wireEffortUpdates.effort))throw failure();
+      }
       attempt(value.attempt); break;
     case 'provider-refusal':
       exact(value, [...common, 'kind', 'hook', 'code']);
@@ -107,6 +112,13 @@ function parse(value, journal) {
       for(const item of Object.values(value.witness)){if(item===null)continue;exact(item,['sha256','bytes']);if(!hash(item.sha256)||!Number.isSafeInteger(item.bytes)||item.bytes<0)throw failure();}
       break;
     default: throw failure();
+  }
+  if (value.stage==='model-prepared'||value.stage==='physical') {
+    if (value.toolCount!==undefined&&(!Number.isSafeInteger(value.toolCount)||value.toolCount<0||value.toolCount>65536)
+      ||Object.hasOwn(value,'wireToolCount')&&(value.stage!=='physical'||value.wireToolCount!==null
+        &&(!Number.isSafeInteger(value.wireToolCount)||value.wireToolCount<0||value.wireToolCount>65536))) throw failure();
+    if(Object.hasOwn(value,'helperSelectionMode')!==Object.hasOwn(value,'helperSelectionRevision')
+      ||value.helperSelectionMode!==undefined&&(!['configured','active'].includes(value.helperSelectionMode)||value.kind!=='generate'||!id(value.helperSelectionRevision)))throw failure();
   }
   return structuredClone(value);
 }

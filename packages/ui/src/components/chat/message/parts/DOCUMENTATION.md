@@ -105,6 +105,12 @@ updates an existing header without replaying messages or changing the model.
   - Turn projection classifies non-final `text` from tool/non-stop assistant steps as justification in both Live and Sorted modes; final `stop` text remains normal assistant Markdown.
   - Preserves natural Markdown and streaming updates. A leading bold activity title that is directly joined to prose receives render-only paragraph separation; persisted and copied message text remain unchanged.
 
+Native Cursor text uses its existing provider-state part identity for exact
+render/copy preservation. Adjacent distinct Cursor parts are neither collapsed
+by string similarity nor joined with fabricated whitespace; whitespace-only
+seams survive. Content-based legacy status/orphan narration cleanup does not
+discard those published parts. Typed tool/reasoning structure remains separate.
+
 ## Current important behavior
 
 ### Streaming paint ownership
@@ -175,6 +181,13 @@ Why: in current pipeline Perplexity is static/grouped, so `StaticToolRow` is the
   - `bun run build`
 
 ## Quick map of files in this folder
+
+`PlanCard` keeps approval disabled until the saved current source is verified.
+An explicit terminal error or unresolved persisted error/stopped notice bound
+to the exact revision user, plus authoritative session idle, displays a failed
+response explanation even when the failed native message lacks a completion
+stamp. Busy/retry continuation still displays the pending explanation; neither
+presentation grants implementation authority.
 
 - Text: `AssistantTextPart.tsx`, `UserTextPart.tsx`
 - Tools: `ToolPart.tsx`, `ProgressiveGroup.tsx`, `toolPresentation.tsx`, `toolRenderUtils.ts`, `ToolRevealOnMount.tsx`

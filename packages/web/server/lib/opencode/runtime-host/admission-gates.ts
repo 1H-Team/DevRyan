@@ -260,6 +260,7 @@ export function createAdmissionGates(options: AdmissionGateOptions) {
       : refuseHost(new HostRefusal('native_tool_location_expired', 409, 'tool.execute'));
     const wrappers = new WeakMap<NativeExecutor, NativeExecutor>();
     const sealed = new WeakSet<NativeExecutor>();
+    const excludedWriterAdmission = new WeakMap<NativeExecutor, (input: Parameters<Tool.Snapshot['execute']>[0]) => Effect.Effect<void>>();
     const wrap = (toolID: string, nativeToolID: string, executor: NativeExecutor, provenance: RegistrationOrigin | undefined, permission: { readonly assert: Permission.Interface['assert'] } | undefined, location: Location.Interface | undefined): NativeExecutor => {
       const executeNative = wrappers.get(executor) ?? executor;
       const execute: NativeExecutor = (input: unknown, nativeContext) => {
@@ -289,6 +290,18 @@ export function createAdmissionGates(options: AdmissionGateOptions) {
       };
       wrappers.set(execute, executeNative);
       sealed.add(execute);
+      if (provenance && location && ['write', 'edit', 'patch', 'apply_patch', 'ast_grep_replace', 'gpt_imagegen'].includes(nativeToolID)) {
+        excludedWriterAdmission.set(execute, input => requireCurrent().pipe(Effect.andThen(Effect.gen(function* () {
+          const current = yield* inner.list();
+          yield* requireCurrent();
+          if (!current.some(entry => effectiveID(entry) === toolID && entry.id === nativeToolID && entry.execute === execute)) return;
+          // A permission-filtered writer never enters its executor. Run only
+          // admission so the original Plan owner can attest its denied call.
+          yield* operation({ operation: 'tool.execute', sessionID: input.sessionID, messageID: input.messageID,
+            input: { toolID, ...(nativeToolID === toolID ? {} : { nativeToolID }), callID: input.call.id,
+              provenance, input: input.call.input } }, Effect.void);
+        }))));
+      }
       return execute;
     };
     const copy = (tool: ToolSchema.Info & { readonly id: string }) => Object.freeze({ ...tool, options: Object.freeze(directOptions(tool.options)) });
@@ -326,8 +339,13 @@ export function createAdmissionGates(options: AdmissionGateOptions) {
         }
         const snapshot = yield* inner.snapshot([...(permissions ?? []), { action: 'execute', resource: '*', effect: 'deny' }]);
         return { definitions: snapshot.definitions.filter((definition) => definition.name !== 'execute'),
-          execute: (input) => input.call.name === 'execute'
-            ? Effect.fail(new Tool.Error({ message: 'DevRyan Code Mode is disabled' })) : snapshot.execute(input) } satisfies Tool.Snapshot;
+          execute: (input) => {
+            if (input.call.name === 'execute') return Effect.fail(new Tool.Error({ message: 'DevRyan Code Mode is disabled' }));
+            const excluded = !snapshot.definitions.some(definition => definition.name === input.call.name)
+              && tools.find(tool => effectiveID(tool) === input.call.name);
+            const admission = excluded ? excludedWriterAdmission.get(excluded.execute) : undefined;
+            return admission ? admission(input).pipe(Effect.andThen(() => snapshot.execute(input))) : snapshot.execute(input);
+          } } satisfies Tool.Snapshot;
       }),
     });
   };

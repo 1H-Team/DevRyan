@@ -87,5 +87,8 @@ export const resolveSelectedPlanRevision = async ({ plan, context, readSession, 
     }
   }
   if (found.length !== 1) throw planError(409, 'plan_selection_required', 'Reselect the saved plan to identify its project');
-  return { ...found[0], source, ownerKey, sourceMessageID: plan.sourceMessageId };
+  if (typeof options.readCanonicalPlanIdentity !== 'function') throw planError(503, 'plan_identity_unavailable');
+  const { sourceIdentity } = await options.readCanonicalPlanIdentity({ sessionID: source.id, sourceMessageID: plan.sourceMessageId,
+    directory: found[0].projectDirectory, allowSelected: current.id === source.id });
+  return { ...found[0], source, sourceIdentity, ownerKey, sourceMessageID: plan.sourceMessageId };
 };

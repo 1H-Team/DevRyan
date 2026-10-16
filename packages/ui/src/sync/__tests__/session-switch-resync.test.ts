@@ -1,6 +1,28 @@
-import { describe, expect, test, beforeEach, mock } from "bun:test"
+import { describe, expect, test, beforeEach, afterEach, mock } from "bun:test"
 import { create, type StoreApi } from "zustand"
 import type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2/client"
+
+import { registerRuntimeAPIs } from '@/contexts/runtimeAPIRegistry'
+import type { RuntimeAPIs } from '@/lib/api/types'
+import { useProjectsStore } from '@/stores/useProjectsStore'
+import { useSessionPlanFileStore } from '@/stores/useSessionPlanFileStore'
+const originalProjects = useProjectsStore.getState().projects
+const originalFetch = globalThis.fetch
+beforeEach(() => {
+  globalThis.fetch = async () => Response.json({})
+})
+afterEach(() => { globalThis.fetch = originalFetch })
+const registerSuccessfulPlan = (sessionID: string, userID: string, assistantID: string, content: string) => {
+  useProjectsStore.setState({ projects: [{ id: 'repo', path: '/repo', label: 'Repo' }] })
+  useSessionPlanFileStore.setState({ recordsBySession: {} })
+  registerRuntimeAPIs({ sessionPlans: {
+    ensureRevision: async () => ({ path: '/plans/fixture.md', created: false, version: 'a'.repeat(64), content,
+      sourceIdentity: { sessionID, sourceMessageID: assistantID, rootUserMessageID: userID,
+        memberUserMessageIDs: [userID], memberAssistantMessageIDs: [assistantID], currentSourceMessageID: assistantID,
+        successful: true, settled: true, current: true } }),
+  } } as unknown as RuntimeAPIs)
+}
+afterEach(() => { registerRuntimeAPIs(null); useProjectsStore.setState({ projects: originalProjects }) })
 
 const listPendingQuestionsCalls: Array<{ directories?: Array<string | null | undefined> }> = []
 const listPendingPermissionsCalls: Array<{ directories?: Array<string | null | undefined> }> = []
@@ -43,6 +65,7 @@ mock.module("@/lib/opencode/client", () => ({
       return pendingPermissionsResponse
     }),
     getDirectory: () => "/repo",
+    getBaseUrl: () => "http://fixture.invalid/api",
     getScopedSdkClient: () => ({
       session: {
         status: mock(() => {
@@ -405,6 +428,7 @@ describe("resyncDirectoryAfterReconnect", () => {
       sessionID,
       role: "assistant",
       providerID: "cursor-acp",
+      finish: "stop",
       time: { created: 2, completed: 3 },
     } as State["message"][string][number]
     const planModePart = {
@@ -428,7 +452,7 @@ describe("resyncDirectoryAfterReconnect", () => {
     } as State["part"][string][number]
     const session = {
       id: sessionID,
-      title: "Background plan",
+      title: "Background plan", slug: "background-plan", directory: "/repo",
       time: { created: 1, updated: 3 },
       version: "1",
     } as State["session"][number]
@@ -459,6 +483,7 @@ describe("resyncDirectoryAfterReconnect", () => {
     }
     const previousParts = store.getState().part[assistantMessageID]
 
+    registerSuccessfulPlan(sessionID, userMessageID, assistantMessageID, planText)
     useSessionUIStore.getState().recordUserMessagePlanMode(sessionID, userMessageID, true)
     setActiveSession("/repo", sessionID)
 
@@ -658,7 +683,7 @@ describe("resyncDirectoryAfterReconnect", () => {
     } as State["part"][string][number]
     const session = {
       id: sessionID,
-      title: sessionID,
+      title: sessionID, slug: "background-plan", directory: "/repo",
       time: { created: 1, updated: 3 },
       version: "1",
     } as State["session"][number]
@@ -727,7 +752,7 @@ describe("resyncDirectoryAfterReconnect", () => {
     } as State["part"][string][number]
     const completedAssistant = {
       ...sessionMessagesResponse[sessionID][1].info,
-      providerID: "cursor-acp",
+      providerID: "cursor-acp", finish: "stop",
     } as State["message"][string][number]
     sessionMessagesResponse = {
       [sessionID]: [
@@ -744,6 +769,7 @@ describe("resyncDirectoryAfterReconnect", () => {
         },
       ],
     }
+    registerSuccessfulPlan(sessionID, userMessageID, assistantMessageID, planText)
     useSessionUIStore.getState().recordUserMessagePlanMode(sessionID, userMessageID, true)
 
     try {

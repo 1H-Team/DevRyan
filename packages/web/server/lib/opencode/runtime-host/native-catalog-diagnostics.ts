@@ -1,5 +1,5 @@
 import { Context, Effect, ErrorReporter, Schema, type SchemaIssue, type Cause } from 'effect';
-import { HttpApiSchemaError } from 'effect/unstable/httpapi/HttpApiError';
+import { HttpApiSchemaError } from 'effect/http-api/HttpApiError';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { sanitizeNativeSchemaPath } from '@openchamber/harness-runtime/lib/sanitizer.js';
 import { HostRefusal, refuseHost } from './host-refusal.js';
@@ -90,7 +90,9 @@ export function createNativeCatalogDiagnostics() {
     }
   };
   // SDK endpoints capture construction context; direct its reporter to the active request.
-  const reporter = ErrorReporter.make(({ cause: reported }) => (catalogRequest.getStore() ?? capture)(reported));
+  // HTTP schema errors are ignored by Effect's general reporter but are startup evidence.
+  const reporter: ErrorReporter.ErrorReporter = { [ErrorReporter.TypeId]: ErrorReporter.TypeId,
+    report: ({ cause: reported }) => (catalogRequest.getStore() ?? capture)(reported) };
   return { context: Context.make(ErrorReporter.CurrentErrorReporters, new Set([reporter])), capture, cause: () => cause, paths: () => paths,
     run: <A>(work: () => Promise<A>) => catalogRequest.run(capture, work) };
 }

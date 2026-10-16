@@ -3,6 +3,7 @@ import { parseSseEventEnvelope } from './protocol.js';
 export const DEFAULT_UPSTREAM_STALL_TIMEOUT_MS = 20_000;
 export const UPSTREAM_STALL_TIMEOUT_CONCURRENT_MS = DEFAULT_UPSTREAM_STALL_TIMEOUT_MS * 3;
 export const DEFAULT_UPSTREAM_RECONNECT_DELAY_MS = 250;
+export const MAX_UPSTREAM_RECONNECT_DELAY_MS = 10_000;
 // Gen 2 (OpenCode 2.x) heartbeats every 15 s with comment frames, so a 20 s
 // window would trip on one late heartbeat (DESIGN.md B.7).
 export const GEN2_UPSTREAM_STALL_TIMEOUT_MS = 45_000;
@@ -78,6 +79,9 @@ export function createUpstreamSseReader({
   let stopped = false;
   let activeController = null;
   let lastEventId = typeof initialLastEventId === 'string' ? initialLastEventId : '';
+  let reconnectFailures = 0;
+  const reconnect = () => waitForReconnectDelay(Math.min(MAX_UPSTREAM_RECONNECT_DELAY_MS,
+    reconnectDelayMs * 2 ** Math.min(reconnectFailures++, 16)), signal);
 
   const stop = () => {
     stopped = true;
@@ -151,7 +155,7 @@ export function createUpstreamSseReader({
               response,
             });
             await cancelResponseBody(response);
-            await waitForReconnectDelay(reconnectDelayMs, signal);
+            await reconnect();
             continue;
           }
 
@@ -190,6 +194,7 @@ export function createUpstreamSseReader({
             }
 
             resetStallTimer();
+            reconnectFailures = 0;
             buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
 
             // A single frame should never approach this; a runaway upstream
@@ -231,7 +236,7 @@ export function createUpstreamSseReader({
         }
 
         if (!stopped && !signal?.aborted) {
-          await waitForReconnectDelay(reconnectDelayMs, signal);
+          await reconnect();
         }
       }
     })().finally(() => {

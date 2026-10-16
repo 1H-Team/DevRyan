@@ -73,6 +73,16 @@ describe('session title outbox', () => {
     await outbox.dispose();
   });
 
+  it('durably restores paused candidate, original source identity, accepted input identity and failure count', async () => {
+    const prefix = path.resolve(import.meta.dirname, '../../../../../.cache/v2-validation/title-paused-');
+    await fs.mkdir(path.dirname(prefix), { recursive: true });
+    const root = await fs.mkdtemp(prefix); roots.push(root);
+    const filePath = path.join(root, 'outbox.json');
+    const candidate = job({ state: 'paused', attemptCount: 3, nextAttemptAt: 0, sourceMessageID: 'msg_original', lastAcceptedInputID: 'msg_next' });
+    const writer = createFileSessionTitleOutbox({ filePath }); await writer.upsert(candidate); await writer.dispose();
+    const reader = createFileSessionTitleOutbox({ filePath }); expect(await reader.list()).toEqual([candidate]); await reader.dispose();
+  });
+
   it('rejects malformed jobs without overwriting valid state', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-title-invalid-'));
     roots.push(root);

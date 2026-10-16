@@ -409,7 +409,7 @@ export const toV1AssistantInfo = (message, context) => {
   if (typeof model?.variant === 'string') info.variant = model.variant;
   if (typeof message.finish === 'string') info.finish = message.finish;
   const error = toV1Error(message.error, context.errorOptions);
-  if (error) info.error = error;
+  if (error) { info.error = error; info.finish ??= error.name === 'MessageAbortedError' ? 'cancelled' : 'error'; }
   // LOSS(assistant-retry): `retry` is not a record field; status.js derives the retry status.
   // LOSS(assistant-streamed): `time.streamed`, `rawFinish` and `providerState` are dropped.
   return info;
@@ -591,6 +591,11 @@ export const toV1ShellRecord = (message, context) => {
         : { status: message.status },
       time: { start, end: completed ?? start },
     };
+  const cancelled = message.status === 'killed';
+  const failed = cancelled || message.status === 'timeout' || message.status !== 'running' && (message.status !== 'exited' || message.exit !== 0);
+  const failureMessage = cancelled ? 'Shell cancelled.' : message.status === 'timeout' ? 'Shell timed out.'
+    : `Shell exited unsuccessfully${isFiniteNumber(message.exit) ? ` (exit ${message.exit})` : ''}.`;
+  if (failed) { state.status = 'error'; state.error = `${failureMessage}${state.output ? `\n${state.output}` : ''}`; }
   const agent = context.agent ?? '';
   return {
     info: {
@@ -604,6 +609,8 @@ export const toV1ShellRecord = (message, context) => {
       modelID: context.model?.id ?? '',
       path: context.path,
       time: assistantTimes(context.created, completed),
+      ...(failed ? { finish: cancelled ? 'cancelled' : 'error', error: { name: cancelled ? 'MessageAbortedError' : 'UnknownError', data: { message: failureMessage } } }
+        : message.status === 'exited' ? { finish: 'stop' } : {}),
       cost: 0,
       tokens: toV1Tokens(undefined),
     },

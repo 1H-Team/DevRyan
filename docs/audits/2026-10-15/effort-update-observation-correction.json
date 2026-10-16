@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-16",
+  "status": "focused-correction-passed-fresh-integrated-cohort-pending",
+  "scope": "Finite observation and strict QA grading correction; no provider request, credential, model-selection or execution-authority change.",
+  "changedFilesSha256": {
+    "packages/web/server/lib/opencode/runtime-host/native-observation.ts": "1a0d2794e6fd1da0ebf62d649292656836c114c43eb381f9ea1b7f7d07de5b8c",
+    "packages/shared-runtime/lib/native-observation.js": "c3f892cc77764bb39e1cc28b960b58f2bbb5f9ff0f2c41e46ad640bd4c91fbd9",
+    "packages/shared-runtime/lib/native-observation.d.ts": "8a2d8df59fb066ded9594bd48d27019110b9f5fcfe509e812375953a1e901d34",
+    "scripts/opencode-v2-native/native-observation.test.ts": "9465a64c07b31040e07f50d8b7bbdfe0772e254e98d76bedca9870a7fbc58c75",
+    "scripts/opencode-v2-native/native-observation.graph.test.ts": "e9a3ee933949c4d3f1c8ec0dd50cc67630b4d45dc76f3c78c0bf384b75a730dc",
+    "scripts/qa/qa1-provider-qualification.mjs": "f4a6258d7e081285f5a9c477a6cbd6cbd55d68ec205ddb88e95cb3212f68bfbd",
+    "scripts/qa/qa1-provider-qualification.test.mjs": "827375841276ed46933f1831fe5a24b6f2c2dcb0f4094f00f90e523528af9cf3",
+    "packages/web/server/lib/opencode/runtime-host/DOCUMENTATION.md": "c01a1a6f0084553ae897ad1cecdfe2da54db6317ad691c59227c3034e3c0ff5a",
+    "packages/shared-runtime/DOCUMENTATION.md": "1ffe5910aab72d9c96afbcdffeaaea2cdd0939afba549b701972eeaff958f852"
+  },
+  "pinnedContract": {
+    "runtimeVersion": "2.0.26",
+    "sourceSha256": {
+      "node_modules/@opencode/ai/dist/effort-updates.js": "bd8b6d6e7aeaad0fb67c4ffb9fe942050aca7766bdb4b2ac2ac727a252ca1ccc",
+      "node_modules/@opencode/ai/dist/protocols/openai-responses.js": "85bc51169bbcfde04ae87a664af7f1fd5f9c60494e223bc7bbf8ab633bf1763b",
+      "node_modules/@opencode/ai/dist/protocols/open-responses.js": "cdf681df33eb0cb95e47ad98b0b9e0d401e0dcb057212e9877017f36a915fe79",
+      "node_modules/@opencode/core/dist/chunks/location-services-he27pt63.js": "d9190a4e852a135a395f9a0c60c5b58c502363de7da5e6237ab71d4a548a6795"
+    },
+    "mapping": [
+      "Canonical same-model variant transition creates a system effort marker with the previous effort.",
+      "SDK supports effort updates for the reviewed GPT6 Responses route; resolveEffortUpdates retains the original top-level base effort when the final marker agrees with the requested effort.",
+      "Responses lowers markers into ordered input configuration_update controls; consecutive updates are collapsed by the SDK. The final retained update supplies effective effort.",
+      "Actual HTTP post-hook materialized request body is observed once; wireOptions remains the literal finite top-level projection."
+    ],
+    "physicalLiveBodyRetained": false
+  },
+  "observationContract": {
+    "optionalField": "wireEffortUpdates",
+    "validShape": {
+      "count": "safe integer 1..256",
+      "effort": [
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra"
+      ]
+    },
+    "provenance": "Only actual parsed input-array items whose type is configuration_update; message content and string input are never interpreted as controls.",
+    "ordering": "Last valid control effort governs; differing sequential efforts are legitimate.",
+    "refusal": "Malformed, unknown or excessive controls and conflicting/malformed top-level effort aliases produce null update evidence; strict grading refuses it. Shared parser rejects unexpected fields, unknown enums and invalid counts.",
+    "qualification": "wireEffort retains top-level provenance; wireEffectiveEffort, source and update count remain separate. Canonical accepted/prepared/step selection and exact physical joins are unchanged. Per-request report retains finite effortEvidence. Default helper qualification refuses any update evidence.",
+    "privacy": "No raw input, messages, request bodies, titles, tokens or credential values retained; existing sanitizer validates the finite schema."
+  },
+  "negativeWitnesses": [
+    {
+      "command": "bun test scripts/opencode-v2-native/native-observation.test.ts",
+      "execution": "Author executed; parent subsequently reported independent focused observation/grader passes separately.",
+      "log": ".cache/sessions/2026-10-15-consensus-finishing/effort-updates-observation-red.log",
+      "logSha256": "3b309a10b43d96a94b151306383493f03b223b4cb1d408b3b44b3dfcb3c45366",
+      "observedExitCode": 1,
+      "passed": 9,
+      "failed": 1,
+      "meaning": "Actual wire projection dropped valid configuration-update evidence."
+    },
+    {
+      "command": "node --test scripts/qa/qa1-provider-qualification.test.mjs",
+      "execution": "Author executed; parent subsequently reported independent focused observation/grader passes separately.",
+      "log": ".cache/sessions/2026-10-15-consensus-finishing/effort-updates-qualification-red.log",
+      "logSha256": "2d6deaa4ac67eb424a1f0642859dfd697fca0572ac6f83764fed2bee802eaccc",
+      "observedExitCode": 1,
+      "passed": 16,
+      "failed": 2,
+      "meaning": "Existing exact parser rejected the new finite field before the correction."
+    }
+  ],
+  "focusedQualification": [
+    {
+      "command": "bun test scripts/opencode-v2-native/native-observation.test.ts",
+      "execution": "Author executed; parent subsequently reported independent focused observation/grader passes separately.",
+      "log": ".cache/sessions/2026-10-15-consensus-finishing/effort-updates-observation-green.log",
+      "logSha256": "380a0cf5f3fa690b02241ab9d69e7ec83e336a87b66a3dfdf41297c85492e089",
+      "observedExitCode": 0,
+      "passed": 10,
+      "failed": 0
+    },
+    {
+      "command": "node --test scripts/qa/qa1-provider-qualification.test.mjs",
+      "execution": "Author executed; parent subsequently reported independent focused observation/grader passes separately.",
+      "log": ".cache/sessions/2026-10-15-consensus-finishing/effort-updates-qualification-green.log",
+      "logSha256": "02637710cfaf4149503722f3228f0fb7e1f326a2d5b59acde9cf78e5cc75aff6",
+      "observedExitCode": 0,
+      "passed": 19,
+      "failed": 0
+    },
+    {
+      "command": "bun test scripts/opencode-v2-native/native-observation.graph.test.ts",
+      "execution": "Author executed; parent subsequently reported independent focused observation/grader passes separately.",
+      "log": ".cache/sessions/2026-10-15-consensus-finishing/effort-updates-native-source-compiled.log",
+      "logSha256": "fbfa88e5833f314d107ea4fc207f9258bc7dc3bc010060a1967b3960aed1aa17",
+      "observedExitCode": 0,
+      "passed": 2,
+      "failed": 0,
+      "processSessionID": 2404,
+      "sourceMilliseconds": 11738.54,
+      "compiledMilliseconds": 13156.72,
+      "physicalWitness": "Actual GPT6 default-to-Medium canonical selection produced one HTTP configuration_update Medium and no top-level effort; exact prepared/physical/committed Step identity checked. Existing GPT5.5 top-level High, compaction and Finalizing original-permit coverage retained.",
+      "limits": "Constructor fixture uses readPrimaryRecord:null; this is not managed-primary cancellation-state or live-provider qualification."
+    },
+    {
+      "command": "../../node_modules/.bin/tsc -p server/lib/opencode/runtime-host/tsconfig.json",
+      "cwd": "packages/web",
+      "execution": "Author executed; observed process session42524 exit0.",
+      "log": ".cache/sessions/2026-10-15-consensus-finishing/effort-updates-native-typecheck.log",
+      "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "observedExitCode": 0
+    }
+  ],
+  "independentReview": {
+    "reviewer": "cursor_finish",
+    "disposition": "Parent reported peer review CLEAR and accepted.",
+    "scope": "Connected pinned SDK semantics, finite projection/parser/sanitizer, exact qualification fences, privacy and preserved graph coverage.",
+    "parentFocusedExecution": "Parent directly reported independently passing 10 observation and 19 grader tests; author did not execute those parent runs."
+  },
+  "limits": [
+    "No model request rewrite, reasoning injection, timeout/admission relaxation, credentials change or authentication workaround.",
+    "Earlier live request body was not retained; this correction cannot retroactively prove its nested controls or qualify that Medium sample. Its observed 401 remains an independent authentication failure.",
+    "Parent reports normal saved-account reconnect succeeded; fresh physical Medium and subsequent paid qualification remain untested by this proof.",
+    "Fresh full validation, production native artifact/build, native53, Plan/UI/package/resource and live qualification remain pending for the corrected source; earlier artifact20fb/b6ee is not a freshly compiled witness for this producer.",
+    "No release or hosted-platform qualification inferred."
+  ],
+  "cleanup": "Actual source/compiled graph owned temporary payload roots removed by existing bounded finally cleanup; small finite logs remain. No paid/provider traffic or user profile access by author."
+}

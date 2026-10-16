@@ -18,6 +18,15 @@ const CLAUDE_PROCESS_CLUES = new Set(['http_401', 'http_403', 'auth', 'model', '
   'permission', 'launcher', 'module', 'syntax', 'spawn', 'connection', 'native_receipt']);
 
 
+const TITLE_DIAGNOSTIC_ENUMS = Object.freeze({
+  stage: new Set(['input','helper_create','session_model','outbox','projection','comparison','rename_refused','verification_comparison','persistence','manual_title','session_read','post_generation_read','status_read','idle_confirmation','pre_patch_read','verification']),
+  outcome: new Set(['complete','failed','equal','different','won','paused','retry_scheduled','corrupt_recovered','session_deleted']),
+  source: new Set(['derived','session_model','free_zen','local_fallback']),
+  selectionMode: new Set(['configured','active']),
+  reason: new Set(['timeout','cancelled','unsettled','unauthorized','model_unavailable','free_tier_rejected','capability_unavailable','empty_response','empty_output','validation_rejection','invalid_output','request_failure','request_failed','upstream_error','rate_limited','runtime_unavailable','selection_unavailable']),
+  refusalCode: new Set(['native_helper_title_conflict','native_managed_title_source_invalid','native_title_scope_invalid','native_session_access_revoked','native_helper_scope_revoked','native_runtime_not_ready','native_helper_unsettled','native_helper_expired','native_helper_deadline_expired','request_failure']),
+});
+
 const RECORD_FIELDS = Object.freeze({
   open_code_event: new Set(['type', 'at', 'runtime', 'actor', 'directory', 'sessionID', 'coalesced', 'payload']),
   prompt: new Set(['type', 'at', 'runtime', 'actor', 'directory', 'sessionID', 'messageID', 'payload']),
@@ -332,6 +341,16 @@ export const createDiagnosticSanitizer = (options = {}) => {
     return parseNativeJournalObservation(visit(observation));
   };
 
+  const sanitizeClaudeCredentialCommand = candidate => {
+    const output = {};
+    for (const [field, value] of Object.entries(asObject(candidate) || {})) {
+      if ((field === 'phase' && ['probe', 'read', 'write', 'delete'].includes(value))
+        || (field === 'exitCode' && (value === null || Number.isSafeInteger(value) && value >= 0 && value <= 255))) output[field] = value;
+      else report.droppedFields += 1;
+    }
+    return output;
+  };
+
   const sanitizeClaudeProcessPayload = (candidate) => {
     const output = {};
     for (const [field, value] of Object.entries(asObject(candidate) || {})) {
@@ -345,6 +364,37 @@ export const createDiagnosticSanitizer = (options = {}) => {
         output[field] = [...new Set(value.filter(clue => CLAUDE_PROCESS_CLUES.has(clue)))];
         report.droppedFields += value.filter(clue => !CLAUDE_PROCESS_CLUES.has(clue)).length;
       } else report.droppedFields += 1;
+    }
+    return output;
+  };
+
+  const sanitizeTitleDiagnostic = candidate => {
+    const output = {};
+    for (const [field, value] of Object.entries(asObject(candidate) || {})) {
+      if (TITLE_DIAGNOSTIC_ENUMS[field]?.has(value)) output[field] = value;
+      else if (['nativeLength','expectedLength','candidateLength','attempt'].includes(field) && Number.isSafeInteger(value) && value >= 0 && value <= 1_048_576) output[field] = value;
+      else if (field === 'durationMs' && Number.isFinite(value) && value >= 0 && value <= 86_400_000) output[field] = value;
+      else if (field === 'status' && Number.isSafeInteger(value) && (value === 0 || value >= 100 && value <= 599)) output[field] = value;
+      else if (['nativeEqualsCandidate','nativeEqualsExpected','sourceIdentityPresent'].includes(field) && typeof value === 'boolean') output[field] = value;
+      else if (field === 'sourceMessageID' && typeof value === 'string' && /^msg[A-Za-z0-9_-]{1,128}$/.test(value)
+        || field === 'helperSessionID' && typeof value === 'string' && /^ses[A-Za-z0-9_-]{1,128}$/.test(value)
+        || ['providerID','modelID','titleModel'].includes(field) && typeof value === 'string' && /^[A-Za-z0-9_:/#@.+-]{1,256}$/.test(value)) output[field] = redactString(value, { highEntropy: false });
+      else report.droppedFields += 1;
+    }
+    return output;
+  };
+
+  const sanitizeCursorFinalAssociation = candidate => {
+    const output = {};
+    for (const [field, value] of Object.entries(asObject(candidate) || {})) {
+      if (['assistantMessageID', 'partID'].includes(field) && typeof value === 'string' && /^[A-Za-z0-9_-]{1,256}$/.test(value)) output[field] = redactString(value, { highEntropy: false });
+      else if (['assistantOrdinal', 'streamedParts'].includes(field) && Number.isSafeInteger(value) && value >= (field === 'assistantOrdinal' ? 1 : 0) && value <= 4096) output[field] = value;
+      else if (['previousLength', 'finalLength'].includes(field) && Number.isSafeInteger(value) && value >= 0 && value <= 16 * 1024 * 1024) output[field] = value;
+      else if (field === 'equal' && typeof value === 'boolean'
+        || field === 'state' && ['matched', 'final_only', 'unavailable'].includes(value)
+        || field === 'reason' && ['missing', 'unavailable', 'limit', 'shape', 'mismatch'].includes(value)
+        || field === 'code' && value === 'CURSOR_STREAM_FINAL_ASSOCIATION_INVALID') output[field] = value;
+      else report.droppedFields += 1;
     }
     return output;
   };
@@ -374,6 +424,54 @@ export const createDiagnosticSanitizer = (options = {}) => {
         output[key] = key === 'payload' ? nativeObservation : nativeObservation.directory;
         continue;
       }
+      if (key === 'payload' && type === 'lifecycle' && object.event === 'session_title_generation') {
+        output[key] = sanitizeTitleDiagnostic(value); continue;
+      }
+      if (key === 'payload' && type === 'lifecycle' && object.event === 'cursor_final_association') {
+        output[key] = sanitizeCursorFinalAssociation(value); continue;
+      }
+      if(key==='payload'&&type==='timing'&&['provider_body_end','turn.provider_body_end'].includes(object.mark)){
+        const metadata={};
+        for(const [field,nested] of Object.entries(asObject(value)||{})){
+          if(['bytes','chunks','maxGapMs'].includes(field)&&Number.isSafeInteger(nested)&&nested>=0
+            ||field==='elapsedMs'&&Number.isFinite(nested)&&nested>=0
+            ||field==='statusCode'&&Number.isSafeInteger(nested)&&nested>=100&&nested<=599)metadata[field]=nested;
+          else if(['assistantMessageID','requestID'].includes(field)&&typeof nested==='string'&&/^[A-Za-z0-9_:/.-]{1,256}$/.test(nested))metadata[field]=redactString(nested,{highEntropy:false});
+          else if(field==='transport'&&['http','ws'].includes(nested)||field==='kind'&&['primary','title','compaction','generate'].includes(nested))metadata[field]=nested;
+          else report.droppedFields+=1;
+        }
+        output[key]=metadata;continue;
+      }
+      if (key === 'payload' && (type === 'log' && object.event === 'session_changes_capture'
+        || type === 'lifecycle' && object.event === 'session_execution')) {
+        output[key] = sanitizeNested(value);
+        const diagnostic = asObject(value);
+        if (diagnostic?.code === 'exact_tool_receipt' && typeof diagnostic.hasChanges === 'boolean') {
+          output[key].hasChanges = diagnostic.hasChanges;
+        }
+        if (diagnostic?.phase === 'cursor_receipts') for (const field of ['calls', 'receipts']) {
+          if (Number.isSafeInteger(diagnostic[field]) && diagnostic[field] >= 0 && diagnostic[field] <= 1_000_000) output[key][field] = diagnostic[field];
+        }
+        continue;
+      }
+      if (key === 'payload' && type === 'lifecycle' && object.event === 'managed_persistence') {
+        const metadata = {};
+        for (const [field, nested] of Object.entries(asObject(value) || {})) {
+          if (['at', 'elapsedMs', 'idleMs', 'taskCount'].includes(field) && Number.isSafeInteger(nested) && nested >= 0) metadata[field] = nested;
+          else if ((field === 'state' && ['needs_attention', 'settled'].includes(nested))
+            || (field === 'code' && nested === 'managed_persistence_stalled')
+            || (field === 'reason' && ['task_deadline', 'owner_progress_timeout'].includes(nested))
+            || (field === 'outcome' && ['committed', 'failed'].includes(nested))
+            || (field === 'phase' && ['queued', 'owner_verify', 'previous_read', 'backup', 'directory_create', 'temporary_cleanup', 'temporary_open',
+              'write', 'file_sync', 'file_close', 'rename', 'permissions', 'directory_sync', 'native_commit', 'commit_confirm'].includes(nested))
+            || (field === 'taskId' && /^dvr_task_[A-Za-z0-9_-]{1,160}$/.test(nested ?? ''))
+            || (field === 'ownerID' && /^dvr_save_[A-Za-z0-9_-]{1,160}$/.test(nested ?? ''))
+            || (field === 'rootSessionId' && /^ses_[A-Za-z0-9_-]{1,160}$/.test(nested ?? ''))) metadata[field] = nested;
+          else report.droppedFields += 1;
+        }
+        output[key] = metadata;
+        continue;
+      }
       if (key === 'payload' && type === 'lifecycle' && object.event === 'native_observation_gap') {
         const gap = asObject(value);
         output[key] = { code: 'native_observation_unavailable',
@@ -401,6 +499,9 @@ export const createDiagnosticSanitizer = (options = {}) => {
           return metadata.name || metadata._tag || metadata.msg ? [metadata] : [];
         });
         continue;
+      }
+      if (key === 'payload' && type === 'lifecycle' && object.event === 'native_claude_credential_command') {
+        output[key] = sanitizeClaudeCredentialCommand(value); continue;
       }
       if (key === 'payload' && type === 'lifecycle' && object.event === 'native_claude_process') {
         output[key] = sanitizeClaudeProcessPayload(value);
@@ -488,6 +589,7 @@ export const createDiagnosticSanitizer = (options = {}) => {
       if (Array.isArray(value)) return value.map((entry) => visit(entry, field, seen));
       const object = asObject(value);
       if (!object) return null;
+      if (object.type === 'lifecycle' && ['session_title_generation', 'cursor_final_association'].includes(object.event)) return sanitizeRecord(object);
       if (seen.has(object)) throw new TypeError('diagnostic export value contains a cycle');
       seen.add(object);
       const output = {};
@@ -499,9 +601,18 @@ export const createDiagnosticSanitizer = (options = {}) => {
           output[key] = redactNativeObservation(parseNativeJournalObservation(nested));
           continue;
         }
+        if (key === 'payload' && object.type === 'lifecycle' && object.event === 'native_claude_credential_command') {
+          output[key] = sanitizeClaudeCredentialCommand(nested); continue;
+        }
         if (key === 'payload' && object.type === 'lifecycle' && object.event === 'native_claude_process') {
           output[key] = sanitizeClaudeProcessPayload(nested);
           continue;
+        }
+        if (key === 'payload' && object.type === 'lifecycle' && object.event === 'session_title_generation') {
+          output[key] = sanitizeTitleDiagnostic(nested); continue;
+        }
+        if(key==='payload'&&object.type==='timing'&&['provider_body_end','turn.provider_body_end'].includes(object.mark)){
+          output[key]=sanitizeRecord({type:'timing',mark:object.mark,payload:nested}).payload;continue;
         }
         if (key === 'payload' && object.type === 'lifecycle' && object.event === 'native_startup') {
           output[key] = sanitizeRecord({ type: 'lifecycle', event: 'native_startup', payload: nested }).payload;

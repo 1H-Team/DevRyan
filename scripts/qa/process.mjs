@@ -11,10 +11,10 @@ export const reservePort = async () => {
   return port;
 };
 
-const waitForOwnedParentExit = child => new Promise(resolve => {
+const waitForOwnedParentExit = (child, timeoutMs = 30000) => new Promise(resolve => {
   if (!child.pid || child.exitCode !== null || child.signalCode !== null) { resolve(); return; }
   const finish = () => { clearTimeout(timer); child.off('exit', finish); child.off('error', finish); resolve(); };
-  const timer = setTimeout(finish, 30_000);
+  const timer = setTimeout(finish, timeoutMs);
   child.once('exit', finish); child.once('error', finish);
 });
 
@@ -45,7 +45,7 @@ export const startOwnedProcess = (command, args, options) => {
       if (spawnError) throw spawnError;
       if (child.exitCode !== null || child.signalCode !== null) throw new Error(`QA child exited: ${child.exitCode ?? child.signalCode}`);
     },
-    stop: () => cleanup ??= (async () => {
+    stop: ({ deadline } = {}) => cleanup ??= (async () => {
       shutdownStartedAt = Date.now();
       // Host shutdown drains the journal and managed scheduler before stopping
       // its separately detached OpenCode process. Give that cleanup time to
@@ -59,10 +59,11 @@ export const startOwnedProcess = (command, args, options) => {
         if (child.exitCode === null && child.signalCode === null) {
           child.kill('SIGINT'); parentSignals.push({ signal: 'SIGINT', at: Date.now() });
         }
-        await waitForOwnedParentExit(child);
-        try { await ownership.terminateRemaining(); } catch (error) { failures.push(error); }
+        await waitForOwnedParentExit(child, deadline === undefined ? 30000 : Math.max(0, Math.min(30000, deadline - performance.now() - 10000)));
+        try { await ownership.terminateRemaining({ deadline }); } catch (error) { failures.push(error); }
         try { await ownership.auditStopped(); } catch (error) { failures.push(error); }
       } finally { await ownership.closeTracking(); shutdownFinishedAt = Date.now(); }
+      if (deadline !== undefined && performance.now() >= deadline) failures.push(Error('Owned process cleanup exceeded its phase deadline'));
       if (failures.length) throw new AggregateError(failures, failures.map(error => error.message).join('; '));
       return evidence();
     })(),

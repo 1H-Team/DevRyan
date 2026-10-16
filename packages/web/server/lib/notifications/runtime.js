@@ -675,7 +675,7 @@ export const createNotificationTriggerRuntime = (deps) => {
 
   const isCompletedAssistantMessage = (payload) => {
     const info = payload?.properties?.info;
-    if (!info || info.role !== 'assistant' || info.finish !== 'stop') {
+    if (!info || info.role !== 'assistant' || info.error || info.finish !== 'stop') {
       return false;
     }
 
@@ -695,7 +695,7 @@ export const createNotificationTriggerRuntime = (deps) => {
 
   const isSettledAssistantTurnUpdate = (payload) => {
     const info = payload?.properties?.info;
-    if (!info || info.role !== 'assistant' || info.streaming === true || info.finish === 'error') {
+    if (!info || info.role !== 'assistant' || info.error || info.streaming === true || ['error', 'cancelled'].includes(info.finish)) {
       return false;
     }
     const status = typeof info.status === 'string' ? info.status.trim().toLowerCase() : '';
@@ -737,7 +737,8 @@ export const createNotificationTriggerRuntime = (deps) => {
       }
       if (parent?.info?.id !== parentId || parent.info.role !== 'user'
         || parent.info.sessionID !== sessionId || !Array.isArray(parent.parts)) return undefined;
-      return isPlanReadySuppressedUserMessage(parent) ? null : revision;
+      return isPlanReadySuppressedUserMessage(parent)
+        || parent.parts.length && parent.parts.every(part => part.synthetic === true) ? null : revision;
     } catch {
       return undefined;
     }
@@ -749,7 +750,23 @@ export const createNotificationTriggerRuntime = (deps) => {
     const cachedParent = cachedMessages.find((message) => message.info.id === info?.parentID);
     // Known parent intent also governs the payload-only sentinel fallback.
     if (isPlanReadySuppressedUserMessage(cachedParent)) return null;
-    const cachedRevision = detectPlanReadyRevision(cachedMessages);
+    // Native source authority can recover a heading-free continuation tail.
+    // A successful canonical proof is independent of presentation heuristics.
+    if (typeof deps.readCanonicalPlanIdentity === 'function' && info?.id) {
+      try {
+        const session = await fetchSessionInfo(sessionId);
+        const canonical = await deps.readCanonicalPlanIdentity({ sessionID: sessionId, sourceMessageID: info.id, directory: session.directory });
+        return { sourceMessageId: canonical.sourceIdentity.sourceMessageID,
+          sourceParentMessageId: canonical.sourceIdentity.rootUserMessageID, planText: canonical.content };
+      } catch { return null; }
+    }
+    // The bounded event cache may hold only a synthetic Plan instruction, not
+    // the original user's full parts. Omit that partial content for candidate
+    // classification; the mandatory exact parent read above decides identity.
+    const classificationMessages = cachedMessages.map(message => message === cachedParent
+      && message.parts.length && message.parts.every(part => part.synthetic === true)
+      ? { ...message, parts: [] } : message);
+    const cachedRevision = detectPlanReadyRevision(classificationMessages);
     if (cachedRevision) return verifyPlanRevisionParent(cachedRevision, sessionId);
 
     const payloadParts = info?.parts || payload.properties?.parts;

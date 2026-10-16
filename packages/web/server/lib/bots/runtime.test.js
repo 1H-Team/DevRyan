@@ -207,6 +207,16 @@ describe('Production Bots runtime composition', () => {
     });
     expect(runtime.dispatcher).toBeNull();
 
+    const handlers=new Map();
+    const app=Object.fromEntries(['get','post','put','patch','delete'].map(method=>[method,
+      (route,...middleware)=>handlers.set(`${method.toUpperCase()} ${route}`,middleware.at(-1))]));
+    app.use=()=>{}; runtime.registerRoutes(app);
+    const response={payload:null,status(){return this;},json(payload){this.payload=payload;return this;}};
+    for(let index=0;index<2;index++) await handlers.get('GET /api/bots/capabilities')({query:{},
+      principal:{id:'a0000000-0000-4000-8000-000000000001',role:'admin',scope:'managed'}},response);
+    expect(runtime.getExecutionFailure()).toMatchObject({code:'bot_runtime_docker_unavailable'});
+    expect(runtime.dispatcher).toBeNull(); expect(statusAttempts).toBe(1);
+
     const ensureRuntime = vi.fn(async () => ({ state: 'healthy' }));
     const startupStatus = vi.fn();
     const prepared = await runtime.prepareStartup({
@@ -319,6 +329,7 @@ describe('Production Bots runtime composition', () => {
 describe('Production Bots catalog retry', () => {
   it('restarts an unavailable local catalog only when capabilities are refreshed', async () => {
     const dataDirectory = await makeDirectory();
+    vi.useFakeTimers();
     const stopped = () => Object.assign(new Error('Docker is stopped'), { code: 'bot_runtime_docker_unavailable' });
     const botHost = {
       owner: 'electron',
@@ -360,13 +371,16 @@ describe('Production Bots catalog retry', () => {
       expect(await read()).toMatchObject({ catalogAvailable: false, database: { state: 'unavailable' } });
       const attempts = botHost.catalog.ensure.mock.calls.length;
       expect(attempts).toBeGreaterThan(0);
+      await vi.advanceTimersByTimeAsync(180_000);
       await read();
       expect(botHost.catalog.ensure).toHaveBeenCalledTimes(attempts);
+      expect(botHost.getStatus).not.toHaveBeenCalled();
 
       expect(await read({ refresh: '1' })).toMatchObject({ catalogAvailable: false });
       await vi.waitFor(() => expect(botHost.catalog.ensure).toHaveBeenCalledTimes(attempts + 1));
     } finally {
       await runtime.shutdown();
+      vi.useRealTimers();
     }
   });
 });

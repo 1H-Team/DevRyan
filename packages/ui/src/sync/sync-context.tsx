@@ -70,6 +70,7 @@ import {
 } from "./reconnect-recovery"
 import { stopStalledProviderAndOfferRecovery } from "./provider-stall-recovery"
 import { createProviderCatalogRecovery } from "./provider-catalog-recovery"
+import { hydrateSessionPresentations, useSessionPresentationStore } from "./session-presentation"
 import { hasMessageRecordInfo, unwrapMessageRecordsResult } from "./message-fetch"
 import { messagesBefore, sortMessagesChronologically } from "./message-order"
 import { useUserMessageHistorySnapshot } from "./user-message-history"
@@ -1160,7 +1161,7 @@ let _activeDirectory = ""
 let _activeSession = ""
 let _activeSessionTrackingKey = ""
 const externallyViewedSessions = new Map<string, number>()
-const lastStatusEventAtBySessionKey = new Map<string, { at?: number }>()
+const lastStatusEventAtBySessionKey = new Map<string, { at?: number; revision?: number }>()
 const lastOutputEventAtBySessionKey = new Map<string, number>()
 const lastRecoveryAtBySessionKey = new Map<string, number>()
 const recoveryFailureCountBySessionKey = new Map<string, number>()
@@ -1187,7 +1188,8 @@ function markStatusEventObserved(
 ) {
   if (!directory || !sessionId || directory === "global") return
   const key = statusTrackingKey(directory, sessionId)
-  rememberBoundedObservation(lastStatusEventAtBySessionKey, key, { at: timestamp })
+  rememberBoundedObservation(lastStatusEventAtBySessionKey, key, { at: timestamp,
+    revision: (lastStatusEventAtBySessionKey.get(key)?.revision ?? 0) + (resetRecovery ? 1 : 0) })
   if (!resetRecovery) return
   lastRecoveryAtBySessionKey.delete(key)
   recoveryFailureCountBySessionKey.delete(key)
@@ -1313,6 +1315,7 @@ const retireDeletedSessionSyncOwnership = (
   recoveryFailureCountBySessionKey.delete(trackingKey)
   useProviderStallStore.getState().clearStall(sessionID)
   useLongRunningToolStore.getState().clearTool(sessionID)
+  useSessionPresentationStore.getState().removeSession(directory, sessionID)
   clearAbortGuard(sessionID)
   clearCommittedRevertResendsForSessions([sessionID])
 
@@ -1351,6 +1354,7 @@ const releaseDirectoryOwnedSyncState = (
   clearDirectoryPrefixedEntries(recoveryFailureCountBySessionKey, directory)
   useProviderStallStore.getState().clearDirectory(directory)
   useLongRunningToolStore.getState().clearDirectory(directory)
+  useSessionPresentationStore.getState().clearDirectory(directory)
 
   const releasedSessionIDs = releaseDirectoryRoutingIndex(routingIndex, directory, snapshot)
   for (const sessionID of [
@@ -1581,8 +1585,6 @@ async function detectAndMarkPlanLifecycle(
   })
   if (!candidate) return
 
-  sessionUI.markPlanProposed(sessionID, candidate.sourceMessageId)
-
   // Saving is owned by the lifecycle rather than the rendered PlanCard so a
   // completed background chat has its authoritative file ready before opening.
   const { useProjectsStore } = await import("@/stores/useProjectsStore")
@@ -1601,7 +1603,7 @@ async function detectAndMarkPlanLifecycle(
   )
   if (!project || typeof sessionCreated !== "number" || !sessionSlug) return
 
-  await persistSessionPlanRevision({
+  const savedPlan = await persistSessionPlanRevision({
     sessionId: sessionID,
     identity: {
       projectPath: project.path,
@@ -1610,7 +1612,10 @@ async function detectAndMarkPlanLifecycle(
       sourceMessageId: candidate.sourceMessageId,
     },
     markdown: candidate.markdown,
-  })
+  }, { validationAttempt: `${state.message[sessionID]?.at(-1)?.id ?? candidate.sourceMessageId}:${lastStatusEventAtBySessionKey.get(statusTrackingKey(directory, sessionID))?.revision ?? 0}` })
+  if (isCurrent() && savedPlan.status === 'saved' && savedPlan.sourceIdentity?.successful === true && savedPlan.sourceIdentity.current === true) {
+    sessionUI.markPlanProposed(sessionID, candidate.sourceMessageId)
+  }
 }
 
 export function setActiveSession(directory: string, sessionId: string) {
@@ -1890,6 +1895,7 @@ const getSessionIdFromPayload = (event: Event): string | null => {
     || event.type === "question.rejected"
     || event.type === "session.deleted"
     || eventType === "session.compacted"
+    || eventType === "openchamber:session-activity"
   ) {
     const sessionID = props.sessionID
     if (typeof sessionID === "string" && sessionID.length > 0) return sessionID
@@ -2554,6 +2560,7 @@ export async function resyncDirectoryAfterReconnect(
   options?: {
     candidateSessionIds?: Iterable<string>
     restoreSessionLifecycleFor?: string
+    isCurrent?: () => boolean
   },
 ) {
   const current = store.getState()
@@ -2571,6 +2578,7 @@ export async function resyncDirectoryAfterReconnect(
   reconnectSnapshotRevisions.set(store, requestRevision)
   const lifecycleRevision = captureDirectorySessionListRevision(directory)
   const isCurrent = () => reconnectSnapshotRevisions.get(store) === requestRevision
+    && (options?.isCurrent?.() ?? true)
   const isSessionCurrent = (sessionID: string) => {
     if (!isCurrent()) return false
     const overlay = directorySessionLifecycleOverlays.get(normalizeEventDirectory(directory))
@@ -2790,6 +2798,13 @@ export async function resyncDirectoryAfterReconnect(
       materializeAndRestoreSessionLifecycle(directory, sessionId, store, true),
     ))
   }
+  void hydrateSessionPresentations({
+    directory,
+    baseURL: opencodeClient.getBaseUrl(),
+    sessionIDs: candidateSessionIds,
+    isCurrent: isSessionCurrent,
+    isBusy: sessionID => store.getState().session_status[sessionID]?.type === "busy",
+  })
 }
 
 function handleEvent(
@@ -2901,6 +2916,18 @@ function handleEvent(
     return
   }
 
+  if (String(payload.type) === "openchamber:session-activity") {
+    const sessionID = getSessionIdFromPayload(payload)
+    if (sessionID && stateContainsSessionData(store.getState(), sessionID)) {
+      const presentation = useSessionPresentationStore.getState()
+      presentation.accept(resolvedDirectory, sessionID, payload.properties)
+      if (store.getState().session_status[sessionID]?.type !== "busy") {
+        presentation.clear(resolvedDirectory, sessionID)
+      }
+    }
+    return
+  }
+
   if (batch?.source === store) store = batch.staged
 
   if (payload.type === "session.created" || payload.type === "session.updated") {
@@ -2946,6 +2973,7 @@ function handleEvent(
       markStatusEventObserved(resolvedDirectory, sessionID, statusChanged)
       const statusType = nextStatus?.type
       if (statusType !== "busy") {
+        useSessionPresentationStore.getState().clear(resolvedDirectory, sessionID)
         useProviderStallStore.getState().clearStall(sessionID)
         useLongRunningToolStore.getState().clearTool(sessionID)
       }
@@ -2955,6 +2983,7 @@ function handleEvent(
   if (payload.type === "session.idle" || payload.type === "session.error") {
     const sessionID = getSessionIdFromPayload(payload)
     if (sessionID) {
+      useSessionPresentationStore.getState().clear(resolvedDirectory, sessionID)
       markStatusEventObserved(resolvedDirectory, sessionID, true)
       useProviderStallStore.getState().clearStall(sessionID)
       useLongRunningToolStore.getState().clearTool(sessionID)
@@ -3016,6 +3045,15 @@ function handleEvent(
           onClick: () => openSessionFromToast(permission.sessionID, resolvedDirectory),
         },
       })
+    }
+  }
+
+  if (payload.type === "message.updated") {
+    const info = (payload.properties as { info: Message }).info
+    if (info.role === "user") {
+      const presentation = useSessionPresentationStore.getState()
+      const current = presentation.directories[resolvedDirectory]?.[info.sessionID]?.presentation
+      if (current && current.objectiveID !== info.id) presentation.clear(resolvedDirectory, info.sessionID)
     }
   }
 
@@ -3500,6 +3538,7 @@ export function SyncProvider(props: {
       await resyncDirectoryAfterReconnect(directory, store, routingIndex, {
         candidateSessionIds: [sessionID],
         restoreSessionLifecycleFor: sessionID,
+        isCurrent: () => childStores.getChild(directory) === store,
       })
     },
     [childStores, props.directory, routingIndex],
@@ -3617,6 +3656,14 @@ export function SyncProvider(props: {
             },
           })
           if (!isOwned()) return
+          void hydrateSessionPresentations({
+            directory,
+            baseURL: opencodeClient.getBaseUrl(),
+            sessionIDs: store.getState().session.map(session => session.id),
+            isCurrent: sessionID => isOwned() && store.getState().session.some(session => session.id === sessionID),
+            isBusy: sessionID => store.getState().session_status[sessionID]?.type === "busy",
+            signal: bootstrapToken.signal,
+          })
           void restorePersistedSessionIndicatorsForDirectory(directory, store).catch(() => undefined)
         }
 
@@ -3746,6 +3793,7 @@ export function SyncProvider(props: {
       void resyncDirectoryAfterReconnect(directory, store, routingIndex, {
         candidateSessionIds: activeSessionID ? [activeSessionID] : undefined,
         restoreSessionLifecycleFor: activeSessionID || undefined,
+        isCurrent: () => childStores.getChild(directory) === store,
       })
         .catch(() => {
           // Transient failure during materialization — next SSE event, transport switch,

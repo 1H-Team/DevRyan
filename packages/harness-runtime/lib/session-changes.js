@@ -275,16 +275,19 @@ export function createSessionChangeRuntime(options) {
     });
   };
   const recordReceipts = async (inputs, historical) => {
+    if (!Array.isArray(inputs)) throw failure('invalid_change_receipt', 400);
     if (!inputs.length) return;
+    // Validate the entire trusted batch before any transaction state changes.
+    for (const input of inputs) if (!input || input.directory !== inputs[0].directory
+      || ![input.sessionID, input.messageID, input.callID].every((id) => typeof id === 'string' && id.length > 0 && id.length <= 512)
+      || !input.files || typeof input.files[Symbol.iterator] !== 'function' && typeof input.files[Symbol.asyncIterator] !== 'function') throw failure('invalid_change_receipt', 400);
     const directory = await resolveDirectory(inputs[0].directory), inputDirectory = await fs.realpath(inputs[0].directory);
     return serialize(directory, async () => {
       const repo = await load(directory);
       const changed = new Set();
       const diagnostics = [];
+      const settled = new Set(), nativeSettled = new Set();
       for (const input of inputs) {
-        if (input.directory !== inputs[0].directory
-          || ![input.sessionID, input.messageID, input.callID].every((id) => typeof id === 'string' && id.length > 0 && id.length <= 512)
-          || !input.files || typeof input.files[Symbol.iterator] !== 'function' && typeof input.files[Symbol.asyncIterator] !== 'function') throw failure('invalid_change_receipt', 400);
         const id = hash(`${input.sessionID}\0${input.callID}`), existing = await repo.db.get(operationKey(id));
         await noteSession(repo, input);
         if (existing?.messageID && existing.messageID !== input.messageID) {
@@ -316,7 +319,7 @@ export function createSessionChangeRuntime(options) {
         try {
           const op = await storeSessionChangeReceipt(repo, { ...input, historical, receiptInputFingerprint: inputFingerprint }, prior, inputDirectory);
           if (!op) continue;
-          active.delete(id); nativeActive.delete(id); putOperation(repo, op); changed.add(input.sessionID);
+          settled.add(id); nativeSettled.add(id); putOperation(repo, op); changed.add(input.sessionID);
           diagnostics.push({ code: 'exact_tool_receipt', phase: historical ? 'history' : 'receipt',
             sessionID: input.sessionID, messageID: input.messageID, callID: input.callID, source: op.source, evidence: 'exact', hasChanges: op.hasChanges === true });
         } catch (error) {
@@ -327,11 +330,12 @@ export function createSessionChangeRuntime(options) {
               createdAt: existing?.createdAt ?? input.createdAt ?? Date.now(), state: 'unavailable', evidence: 'snapshot',
               errorCode: 'invalid_change_receipt', rejectedReceiptFingerprint: rejectedFingerprint,
               source: input.source ?? 'native-tool' });
-            active.delete(id); changed.add(input.sessionID);
+            settled.add(id); changed.add(input.sessionID);
             diagnostics.push({ code: 'invalid_change_receipt', phase: 'history', sessionID: input.sessionID, callID: input.callID });
             continue;
           }
           if (error.code !== 'receipt_conflict') throw error;
+          if (existing?.receiptConflict === true) continue;
           // Conflicting content is permanent for this call, not for unrelated
           // calls or messages hidden by conversation rewind.
           putOperation(repo, { ...existing, receiptConflict: true });
@@ -340,6 +344,8 @@ export function createSessionChangeRuntime(options) {
         }
       }
       await repo.db.commit();
+      for (const id of settled) active.delete(id);
+      for (const id of nativeSettled) nativeActive.delete(id);
       for (const event of diagnostics) await diagnostic(event);
       await notifyChanges(repo, changed);
     });
@@ -937,7 +943,7 @@ export function createSessionChangeRuntime(options) {
     const id = hash(`${input.sessionID}\0${input.callID}`);
     if (active.has(id)) await finish(input);
   };
-  return { begin, finish, recordReceipt, recordExecution, importHistorical, registerSession, summarize, summaryPage, diff, restore, deleteSession, historyState, findCall, unresolvedHistory, settleHistoricalCall,
+  return { begin, finish, recordReceipt, recordReceipts: inputs => recordReceipts(inputs, false), recordExecution, importHistorical, registerSession, summarize, summaryPage, diff, restore, deleteSession, historyState, findCall, unresolvedHistory, settleHistoricalCall,
     legacyHistory, legacyBlob,
     async drain() { await Promise.all([...tails.values()]); },
     async observe(event, directory) {

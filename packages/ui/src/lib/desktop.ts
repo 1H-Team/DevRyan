@@ -1,3 +1,4 @@
+import type { HelperModelSelection } from '@/lib/helperModelSelection';
 import type { ProjectEntry } from '@/lib/api/types';
 import type { MobileKeyboardMode } from '@/lib/mobileKeyboardMode';
 import { getAuthPrincipal } from '@/lib/authSession';
@@ -135,6 +136,7 @@ export type DesktopSettings = {
   agentModelSelections?: Record<string, AgentModelSelection>;
   defaultAgent?: string;
   defaultPlanMode?: boolean;
+  helperModelSelection?: HelperModelSelection;
   defaultGitIdentityId?: string; // ''/undefined = unset, 'global' or profile id
   openInAppId?: string;
   autoCreateWorktree?: boolean;

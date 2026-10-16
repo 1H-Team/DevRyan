@@ -122,7 +122,7 @@ export async function measurePreparation(options) {
         const toolStarted = clock();
         await fs.writeFile(path.join(lease.workingDirectory, 'profile-result.txt'), 'Fixture complete.\n');
         report.metrics.toolExecutionMs = round(clock() - toolStarted);
-        await fs.writeFile(path.join(path.dirname(lease.viewDirectory), 'termination.json'), JSON.stringify({ terminated: true, confined: true, exitCode: 0, cancelled: false }));
+        await fs.writeFile(path.join(path.dirname(lease.viewDirectory), 'termination.json'), JSON.stringify({ terminated: true, confined: true, exitCode: 0, cancelled: false }), { flag: 'wx', mode: 0o600 });
         const finishStarted = clock();
         await context(() => runtime.finish({ directory, token: lease.token }));
         report.metrics.publicationMs = round(clock() - finishStarted);
@@ -168,7 +168,7 @@ export async function measurePreparation(options) {
         const lease = await context(() => runtime.begin(input), true);
         await context(() => runtime.claimLease({ directory, token: lease.token, kind: 'process' }));
         await fs.writeFile(path.join(lease.workingDirectory, `profile-burst-${call}.txt`), 'Fixture complete.\n');
-        await fs.writeFile(path.join(path.dirname(lease.viewDirectory), 'termination.json'), JSON.stringify({ terminated: true, confined: true, exitCode: 0, cancelled: false }));
+        await fs.writeFile(path.join(path.dirname(lease.viewDirectory), 'termination.json'), JSON.stringify({ terminated: true, confined: true, exitCode: 0, cancelled: false }), { flag: 'wx', mode: 0o600 });
         await context(() => runtime.finish({ directory, token: lease.token }));
         await context(() => runtime.cleanupLease({ directory, token: lease.token }));
       };

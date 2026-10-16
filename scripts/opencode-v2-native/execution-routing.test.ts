@@ -5,7 +5,7 @@ import { Tool } from '@opencode/core/tool';
 import { SessionInstructions } from '@opencode/core/session/instructions';
 import { Environment } from '@opencode/core/environment/index';
 import { LayerNode } from '@opencode/util/effect/layer-node';
-import { ChildProcess } from 'effect/unstable/process';
+import { ChildProcess } from 'effect/process';
 import { createControllerHelper } from '../../packages/web/server/lib/opencode/runtime-host/controller-processes.ts';
 import { createExecutionRouting } from '../../packages/web/server/lib/opencode/runtime-host/execution-routing.ts';
 import { WorkerInput, ExecutionBatch } from '../../packages/web/server/lib/opencode/runtime-host/worker-protocol.ts';

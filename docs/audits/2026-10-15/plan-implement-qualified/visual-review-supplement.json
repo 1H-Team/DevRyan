@@ -1,0 +1,339 @@
+{
+  "schemaVersion": 1,
+  "reviewDate": "2026-10-15",
+  "status": "supplemental-individual-image-review-complete",
+  "reviewer": {
+    "agent": "/root/review_remaining_qa",
+    "model": "GPT-6.1 Sol",
+    "reasoningEffort": "High"
+  },
+  "scope": "New independent visual inspection of the 32 original synthetic PNGs outside the seven phases documented in the prior review. No paid providers, account/profile access or runtime interaction.",
+  "manifest": {
+    "file": "proof.json",
+    "sha256": "d38597ceaf8b7e9ae4d7dee305d58ef8a0b5d8c03ee3956c8241a98186a6a307"
+  },
+  "retainedRun": ".cache/qa/native-plan-implement-8FHU3C",
+  "method": {
+    "manifestBytesAndSha256VerifiedBeforeInspection": true,
+    "actualIndividualImagesInspected": 32,
+    "tool": "view_image",
+    "inspectionCalls": 32,
+    "contactSheetOnly": false,
+    "producerAssertionsUsedAsImageSubstitute": false
+  },
+  "coverage": {
+    "phases": [
+      "continued-plan-incomplete",
+      "continued-plan",
+      "approval-before",
+      "approval-after",
+      "dispatch",
+      "result-fixer",
+      "result-designer",
+      "partial-outcome"
+    ],
+    "sizes": [
+      "1280x800",
+      "390x844"
+    ],
+    "themes": [
+      "light",
+      "dark"
+    ],
+    "newSupplementalReviewCount": 32,
+    "priorDocumentedReviewCount": 28,
+    "priorDocumentedReviewer": "claude_provider",
+    "priorDocumentedPhases": [
+      "restart-restored",
+      "recovered-outcome",
+      "file-undo",
+      "file-redo",
+      "reverted",
+      "redone",
+      "helper-settings"
+    ],
+    "distinctFilenameUnionCount": 60,
+    "overlappingFilenameCount": 0,
+    "statement": "This new 32-image review plus the prior documented 28-image review covers 60 distinct filenames. It does not retroactively claim that the prior reviewer inspected all 60."
+  },
+  "findings": [
+    {
+      "phases": [
+        "continued-plan-incomplete"
+      ],
+      "finding": "In all four images, Implement Plan is muted and disabled, with no-longer-current wording. The historical provider stream error is readable."
+    },
+    {
+      "phases": [
+        "continued-plan",
+        "approval-before"
+      ],
+      "finding": "In all eight images, the Plan card has an enabled green Implement Plan control. Historical provider-error wording remains below the card."
+    },
+    {
+      "phases": [
+        "approval-after"
+      ],
+      "finding": "In all four images, the old Plan control is disabled with no-longer-current wording and the Implement plan user request is visible."
+    },
+    {
+      "phases": [
+        "dispatch",
+        "result-fixer"
+      ],
+      "finding": "In all eight images, the Fixer task card and Open Subtask link are readable and the task is Complete. The dispatch captures already show a terminal task; they do not independently demonstrate its running appearance."
+    },
+    {
+      "phases": [
+        "result-designer"
+      ],
+      "finding": "In all four images, both Fixer and Designer task cards are readable and Complete, with visible Open Subtask links."
+    },
+    {
+      "phases": [
+        "partial-outcome"
+      ],
+      "finding": "In all four images, the reply explicitly retains partial implementation and says the repair check failed. The Edited 2 files card lists designer.txt and fixer.txt and exposes Undo."
+    }
+  ],
+  "visualAssessment": {
+    "blockingVisualDefectObserved": false,
+    "reviewedTargetsReadable": true,
+    "obviousHorizontalOverflowObserved": false,
+    "unexpectedClosingOverlayOrLoadingPlaceholderObserved": false
+  },
+  "caveats": [
+    "Historical provider-error banners remain visible alongside the continued actionable Plan; these pixels alone do not establish canonical successful continuation ownership.",
+    "Mobile scroll position and fade crop earlier historical Plan/task content; current reviewed controls and outcomes remain visible.",
+    "A Plan badge remains visible beside the composer during implementation; screenshots do not establish the canonical submitted Plan mode.",
+    "Identical continued-plan and approval-before bytes in three corresponding pairs are retained distinct filenames with equivalent visible preapproval states, not independent state transitions.",
+    "Static screenshots do not prove click behavior, file bytes, history identities, permits, physical confinement, durable publication receipts or return-to-idle latency. Those remain separate production-runner evidence.",
+    "This supplement inspects only the 32 listed images. The other 28 are accounted for by the prior documented review, not reinspected in this task."
+  ],
+  "screenshots": [
+    {
+      "file": "continued-plan-incomplete-1280x800-light.png",
+      "sha256": "8b582d3b0f6af0ef57c982728e21ba01138c5ce9f30f977e278c89b1851b7fc7",
+      "bytes": 82016,
+      "matchedManifest": true,
+      "individuallyViewed": true
+    },
+    {
+      "file": "continued-plan-incomplete-390x844-light.png",
+      "sha256": "7352106672fcf2ee2b8033a6391a3fc5553c1192efb0fd0a6bba2263dea56042",
+      "bytes": 57897,
+      "matchedManifest": true,
+      "individuallyViewed": true
+    },
+    {
+      "file": "continued-plan-incomplete-1280x800-dark.png",
+      "sha256": "d918e312ad7fe57679549612670e22f210763ed834e1138fe4fdbbb719236dc6",
+      "bytes": 86150,
+      "matchedManifest": true,
+      "individuallyViewed": true
+    },
+    {
+      "file": "continued-plan-incomplete-390x844-dark.png",
+      "sha256": "ac02bbca262044c1d82cc534b44ec2d30c603e80d28ea8248b8f0a7f2d1abbd1",
+      "bytes": 60481,
+      "matchedManifest": true,
+      "individuallyViewed": true
+    },
+    {
+      "file": "continued-plan-1280x800-light.png",
+      "sha256": "c03e48cb55e240a229a85731e9a3c92739726835162499083c7c83db9f2c2072",
+      "bytes": 78864,
+      "matchedManifest": true,
+      "individuallyViewed": true
+    },
+    {
+      "file": "continued-plan-390x844-light.png",
+      "sha256": "c63b0d9e45e42de80bda76a303b58e022540cc7fbe5995ece5fa728fb1e726f0",
+      "bytes": 56614,
+      "matchedManifest": true,
+      "individuallyViewed": true
+    },
+    {
+      "file": "continued-plan-1280x800-dark.png",
+      "sha256": "d4434a7c6fae5bf8f558b3e5ddc48ad5ddb6013ee729bd1af4142c0405be6b9c",
+      "bytes": 82433,
+      "matchedManifest": true,
+      "individuallyViewed": true
+    },
+    {
+      "file": "continued-plan-390x844-dark.png",
+      "sha256": "b77f4996a0ab2d74c724149160ebed72a3e980afd195541300ecd939759d0b84",
+      "bytes": 59708,
+      "matchedManifest": true,
+      "individuallyViewed": true
+    },
+    {
+      "file": "approval-before-1280x800-light.png",
+      "sha256": "c03e48cb55e240a229a85731e9a3c92739726835162499083c7c83db9f2c2072",
+      "bytes": 78864,
+      "matchedManifest": true,
+      "individuallyViewed": true
+    },
+    {
+      "file": "approval-before-390x844-light.png",
+      "sha256": "45aef8a8f55805e13e63c9d8d11b395fcdd0473095f26e648c58e7f992587bbd",
+      "bytes": 56613,
+      "matchedManifest": true,
+      "individuallyViewed": true
+    },
+    {
+      "file": "approval-before-1280x800-dark.png",
+      "sha256": "d4434a7c6fae5bf8f558b3e5ddc48ad5ddb6013ee729bd1af4142c0405be6b9c",
+      "bytes": 82433,
+      "matchedManifest": true,
+      "individuallyViewed": true
+    },
+    {
+      "file": "approval-before-390x844-dark.png",
+      "sha256": "b77f4996a0ab2d74c724149160ebed72a3e980afd195541300ecd939759d0b84",
+      "bytes": 59708,
+      "matchedManifest": true,
+      "individuallyViewed": true
+    },
+    {
+      "file": "approval-after-1280x800-light.png",
+      "sha256": "cff6f82bdc8bc3b0491fc4bbe06072021eacbc986bf89cff66e5330a8b9de63f",
+      "bytes": 78810,
+      "matchedManifest": true,
+      "individuallyViewed": true
+    },
+    {
+      "file": "approval-after-390x844-light.png",
+      "sha256": "d2d78df3218aaa70f224a85fde7687c97ae99bc1406e17a3ed6271f26140c47a",
+      "bytes": 52012,
+      "matchedManifest": true,
+      "individuallyViewed": true
+    },
+    {
+      "file": "approval-after-1280x800-dark.png",
+      "sha256": "4f0c629d701bc52846a9e77fe2df17c6586ccfec7ab9ce6b7296e961ac2bad63",
+      "bytes": 79687,
+      "matchedManifest": true,
+      "individuallyViewed": true
+    },
+    {
+      "file": "approval-after-390x844-dark.png",
+      "sha256": "4130c8810a77965a9ba5da2946cc326c90e1072744ce83f19bc99c43803a200f",
+      "bytes": 52866,
+      "matchedManifest": true,
+      "individuallyViewed": true
+    },
+    {
+      "file": "dispatch-1280x800-light.png",
+      "sha256": "36478ea3a99146666b92521c1dd766b371d9a06a06605211b3d0b80dffb5d235",
+      "bytes": 70995,
+      "matchedManifest": true,
+      "individuallyViewed": true
+    },
+    {
+      "file": "dispatch-390x844-light.png",
+      "sha256": "7e32d2d0e484be70c56704416a745e480c51b3df57db978b2a29eda24d26c730",
+      "bytes": 42328,
+      "matchedManifest": true,
+      "individuallyViewed": true
+    },
+    {
+      "file": "dispatch-1280x800-dark.png",
+      "sha256": "64c9dc17eba56d05a7d375528baf7191cd0aa5657f4550d72916b317ef949cdc",
+      "bytes": 75653,
+      "matchedManifest": true,
+      "individuallyViewed": true
+    },
+    {
+      "file": "dispatch-390x844-dark.png",
+      "sha256": "7e95e4766b7b1215f5f911d4e7b7cbcc04ff8da229ca17e0dfb4751b17710f3f",
+      "bytes": 45316,
+      "matchedManifest": true,
+      "individuallyViewed": true
+    },
+    {
+      "file": "result-fixer-1280x800-light.png",
+      "sha256": "7d334c52744aa466e9ae18bc3c6dbcac9441ae57d0789293405aa5bd219983c4",
+      "bytes": 70506,
+      "matchedManifest": true,
+      "individuallyViewed": true
+    },
+    {
+      "file": "result-fixer-390x844-light.png",
+      "sha256": "a924dc80527233ee6004789ca0f7c97fe6b87504fe31a2c01ba15afe0c8c817f",
+      "bytes": 41685,
+      "matchedManifest": true,
+      "individuallyViewed": true
+    },
+    {
+      "file": "result-fixer-1280x800-dark.png",
+      "sha256": "e4389ff45ecb2047cd3bf205455a2cd7403deed83db61455123e9b0ef96ebbe8",
+      "bytes": 74979,
+      "matchedManifest": true,
+      "individuallyViewed": true
+    },
+    {
+      "file": "result-fixer-390x844-dark.png",
+      "sha256": "dda11aff8c554712caa92eb5fcc8a6ea0ddcff1d69cbb26506a9ad99b0a1ca58",
+      "bytes": 45558,
+      "matchedManifest": true,
+      "individuallyViewed": true
+    },
+    {
+      "file": "result-designer-1280x800-light.png",
+      "sha256": "e01a701f0c1729b5052ca09b42c314fc77de31707496c0874999c6d11ca84180",
+      "bytes": 70235,
+      "matchedManifest": true,
+      "individuallyViewed": true
+    },
+    {
+      "file": "result-designer-390x844-light.png",
+      "sha256": "22fe11c282a10361ee7dc59384b6733e1fd1c98abc3278cc249c165670472e3c",
+      "bytes": 42884,
+      "matchedManifest": true,
+      "individuallyViewed": true
+    },
+    {
+      "file": "result-designer-1280x800-dark.png",
+      "sha256": "feda5135c639a1875c8dc00e12cd1cc69d34445f989435e4f69d64d6ab13456a",
+      "bytes": 73053,
+      "matchedManifest": true,
+      "individuallyViewed": true
+    },
+    {
+      "file": "result-designer-390x844-dark.png",
+      "sha256": "864106057838e482c1d338180cb3ab3df8e9f9d6778adf6e6ed19a1f7f28970a",
+      "bytes": 45972,
+      "matchedManifest": true,
+      "individuallyViewed": true
+    },
+    {
+      "file": "partial-outcome-1280x800-light.png",
+      "sha256": "197acdcf7daea0567f12d1d97e441b09ebf15622d8fc20ca93048f94be327d66",
+      "bytes": 65602,
+      "matchedManifest": true,
+      "individuallyViewed": true
+    },
+    {
+      "file": "partial-outcome-390x844-light.png",
+      "sha256": "f6a96257ebba14e120d22a59e8d174e4ba5a0eaadc85fb24362362e1ade7faad",
+      "bytes": 43096,
+      "matchedManifest": true,
+      "individuallyViewed": true
+    },
+    {
+      "file": "partial-outcome-1280x800-dark.png",
+      "sha256": "c02d3b9f96f7fab4a5bfdcf4f40afafc03a4520558c9f4ee36d9676c8f86970a",
+      "bytes": 69522,
+      "matchedManifest": true,
+      "individuallyViewed": true
+    },
+    {
+      "file": "partial-outcome-390x844-dark.png",
+      "sha256": "7b0ca7728051c57367469676925faff68371802e860d65720943e57b501dfa6d",
+      "bytes": 46662,
+      "matchedManifest": true,
+      "individuallyViewed": true
+    }
+  ]
+}

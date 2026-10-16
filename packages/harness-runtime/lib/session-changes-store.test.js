@@ -15,6 +15,64 @@ async function store() {
   return { root, gitDir, open: () => openChangeStore(root, gitDir) };
 }
 
+for(const baseline of [false,true])test(`guarded commit rolls back post-CAS revocation with ${baseline?'existing':'absent'} state ref`,async()=>{
+  const s=await store();
+  if(baseline){const initial=await s.open();initial.set('sessions/keep.json',{value:'keep'});await initial.commit();}
+  let revoked=false;
+  const cause=Object.assign(Error('owner revoked'),{code:'native_permit_revoked'});
+  const db=await openChangeStore(s.root,s.gitDir,{gitRunner:{git:async(root,command,options)=>{
+    const result=await git(root,command,options);
+    if(command.includes('update-ref')&&!revoked)revoked=true;
+    return result;
+  }}});
+  db.set('cancelled-calls/proof.json',{sessionID:'a',messageID:'denied'});
+  await expect(db.commit({assertCurrent:()=>{if(revoked)throw cause;}})).rejects.toBe(cause);
+  const reopened=await s.open();expect(await reopened.get('cancelled-calls/proof.json')).toBeNull();
+  expect(await reopened.get('sessions/keep.json')).toEqual(baseline?{value:'keep'}:null);
+});
+
+test('guarded commit checks owner after staged IO and before the actual ref update',async()=>{
+  const s=await store();let revoked=false,refWrites=0;
+  const cause=Object.assign(Error('owner revoked'),{code:'native_permit_revoked'});
+  const db=await openChangeStore(s.root,s.gitDir,{gitRunner:{git:async(root,command,options)=>{
+    if(command.includes('update-ref'))refWrites++;
+    const result=await git(root,command,options);if(command.includes('write-tree'))revoked=true;return result;
+  }}});
+  db.set('cancelled-calls/proof.json',{sessionID:'a',messageID:'denied'});
+  await expect(db.commit({assertCurrent:()=>{if(revoked)throw cause;}})).rejects.toBe(cause);
+  expect(refWrites).toBe(0);expect(await (await s.open()).get('cancelled-calls/proof.json')).toBeNull();
+});
+
+test('guarded commit rollback failure truthfully reports the committed CAS and never claims revocation rolled back',async()=>{
+  const s=await store();let revoked=false;
+  const db=await openChangeStore(s.root,s.gitDir,{gitRunner:{git:async(root,command,options)=>{
+    if(command.includes('update-ref')&&revoked)throw Error('rollback unavailable');
+    const result=await git(root,command,options);if(command.includes('update-ref'))revoked=true;return result;
+  }}});
+  db.set('cancelled-calls/proof.json',{sessionID:'a',messageID:'denied'});
+  await expect(db.commit({assertCurrent:()=>{if(revoked)throw Error('owner revoked');}})).rejects.toMatchObject({code:'ledger_guard_rollback_failed',committed:true,rollbackFailed:true});
+  expect(await (await s.open()).get('cancelled-calls/proof.json')).toEqual({sessionID:'a',messageID:'denied'});
+});
+
+test('staged call failure restores earlier pending rows and cannot commit inside its savepoint', async () => {
+  const s = await store(), db = await s.open();
+  db.set('sessions/first.json', { value: 'keep' });
+  await expect(db.stage(async () => {
+    db.set('sessions/first.json', { value: 'replace' });
+    db.set('sessions/failed.json', { value: 'discard' });
+    throw new Error('fixture refused');
+  })).rejects.toThrow('fixture refused');
+  expect(await db.get('sessions/first.json')).toEqual({ value: 'keep' });
+  expect(await db.get('sessions/failed.json')).toBeNull();
+  await expect(db.stage(() => db.commit())).rejects.toMatchObject({ code: 'invalid_change_record' });
+  await db.stage(async () => db.set('sessions/last.json', { value: 'accepted' }));
+  await db.commit();
+  const reopened = await s.open();
+  expect(await reopened.get('sessions/first.json')).toEqual({ value: 'keep' });
+  expect(await reopened.get('sessions/last.json')).toEqual({ value: 'accepted' });
+  expect(await reopened.get('sessions/failed.json')).toBeNull();
+});
+
 test('rewriting a value unchanged since it was read stages nothing and commits nothing', async () => {
   const s = await store();
   const first = await s.open();

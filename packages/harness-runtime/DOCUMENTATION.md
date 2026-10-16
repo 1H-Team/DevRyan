@@ -20,8 +20,55 @@ processes.
 The legacy malformed-lock threshold remains 30 seconds; existing lock records
 keep their format. Windows continues to use its execution-host owner.
 
+Atomic writes accept an optional content-free progress observer. Started phases
+describe pending physical work; only completed write/sync/rename boundaries
+prove progress. Observer failures cannot interrupt or confirm persistence.
+Managed ledger watchdogs consume these constructor observations while retaining
+uncertain mandatory-write ownership until settlement.
+
 Host packages inject storage roots and platform effects. The shared UI never
 imports this package; it consumes HTTP bridge contracts.
+
+`SessionChangeRuntime.recordReceipts` and the host's matching method are trusted
+in-process batches for one project. They use the same exact-evidence validation,
+single commit and meaningful-change notification rules as scalar receipts; the
+HTTP/plugin bridge does not expose a batch writer. Empty complete receipts may
+repair coverage and therefore still notify. Identical evidence does not.
+Snapshot and native call ownership remain active until that batch commits;
+a later receipt or durable-write failure leaves both available for late calls
+and a retry without marking the pending capture interrupted.
+
+Canonical history can repair a failed tool without file metadata only through
+the constructor-injected mutation ledger's exact session/message/call
+`never_started` outcome. The host validates the whole returned identity batch
+before recording empty complete receipts. Missing, uncertain, finished,
+mismatched and nonterminal calls remain incomplete; error text is not evidence
+of non-execution. This attests no start, not process termination.
+File-only restore skips an exact durable cancelled no-start call because it has
+no operation to restore. Missing or mismatched evidence cannot skip a call;
+published operations still require their original lease and operation identity.
+A request containing only no-start calls cannot create a restore transaction.
+Outcome queries and file restore share one predicate: an absent execution
+pointer needs its exact session/message cancelled-call receipt; an existing
+pointer needs an exact, clean cancelled prelaunch lease, even without that
+receipt. Dirty, started, reboot-recovered and mismatched leases remain uncertain.
+Cached restore retries revalidate these identities before returning the original
+transaction.
+Every file-restore call requires a valid message ID, including published and
+cached selections. The cached fingerprint includes session, message and call ID.
+Older cache receipts without the message identity refuse with
+`capture_identity_mismatch`; they cannot mutate or replace the prior transaction.
+Negative outcome batches share the writer's owner lock so a guarded
+commit awaiting recheck or rollback cannot become history authority.
+Constructor-owned denial cancellation carries a synchronous owner fence and
+captured admission revision into the ledger transaction. The guarded store
+commit rechecks before the ref CAS and afterward under the same lock, rolls back
+revocation, and reports a failed rollback as committed uncertainty. Other store
+commits retain their existing behavior.
+The [focused owner proof](../../docs/audits/2026-10-14/native-plan-undo-owner-corrections.json)
+records the corrected reproductions and the remaining compiled qualification.
+The [sanitized Plan incident](../../docs/audits/2026-10-14/native-plan-denied-change-coverage.json)
+separates this coverage correction from the scoped-revert fixture control.
 
 `lib/session-reboot-recovery.js` owns the versioned
 `devryan.session-reboot-recovery/1` lease attestation. A cold native host must
@@ -143,6 +190,10 @@ file-fsync/rename/parent-fsync sequence. Invalid JSON records are moved to a
   `opencode_process_exit` payloads retain only typed PID, exit code, signal,
   non-negative safe-integer uptime, expected-exit flag, and a redacted stderr
   tail clipped to 16,384 characters. Other payload fields are excluded.
+  `cursor_final_association` retains only assistant/part IDs, ordinals and counts
+  capped at 4,096, lengths capped at 16 MiB, equality, fixed association states
+  and the finite inner refusal reason/code. Its dedicated journal/export
+  projection excludes response text and hashes without widening other events.
 - `bot.memory.extraction.*` lifecycle payloads use a separate content-free
   projection: correlation IDs, bounded counters, outcome/reason/validator labels,
   and a fixed rejection histogram. Conversation, memory, input and arbitrary
@@ -226,6 +277,31 @@ cancellation across web/Electron. OpenAI defaults to observe; Anthropic has a pr
 safety, protocol, storage, rollout and rollback contracts are documented in
 [`docs/PROVIDER_RECOVERY.md`](../../docs/PROVIDER_RECOVERY.md).
 
+For the exact pinned native 2.0.30 controller, constructor-only
+`nativeStreamContinuation` owns interrupted-stream reserve, canonical Synthetic
+binding, successor preparation/send and Step adoption. Pending plus consumed
+reservations never exceed two per original objective; preparation consumes the
+reservation before any physical successor. Lost or stale proofs expire on the
+existing provider progress timeout, extended only by new bytes/frames from the
+exact owned successor attempt. Failure preserves the budget and enters
+`needs_attention`/`provider_stream_interrupted`; Stop clears pending authority.
+Plain native Retry does not reserve a Continue.
+
+`nativeStreamContinuationReceipts(sessionID, objectiveID)` reads the consumed
+canonical chain for that exact objective. Current records keep at most two
+receipts; the existing record-store primitive archives each settled objective
+separately under `harness/provider-stream` before later human admission or
+primary pruning. The archive also keeps consumed budget without an adopted Step
+receipt; explicit admission of the same original objective retains that budget
+across anchor replacement or historical reload. There is no session lifetime
+continuation cap. Receipts retain
+the predecessor/successor assistant and Synthetic event/user identities,
+selection/permit/controller fingerprints and ordinal. The read API supplies
+proof candidates; a consumer must still authorize and verify canonical saved
+source. Native session removal discards current and archived receipts only after
+its durable decision is committed and every selected canonical session was
+removed. Cleanup failure keeps that removal retryable.
+
 ## Session-owned changes
 
 `lib/session-changes.js` owns always-on execution receipts, private Git snapshots, cumulative net summaries, paged stored revisions retained until deletion, and conflict-checked file-only Undo/Redo. It is independent of optional diagnostic evidence. `lib/session-changes-host.js` validates canonical session identity, lineage and directory; consumes and repairs paginated history; acknowledges private native execution receipts; reconciles pending observations before summary and restore; and exposes the same plugin/HTTP contract in web/Electron. The focused `session-changes-{git,snapshot,store}.js` modules own bounded Git I/O, scoped raw capture/stat caching, and atomic individually indexed metadata. Full contract, operational limits and verification: `docs/SESSION_CHANGES.md`.
@@ -257,9 +333,15 @@ Dependencies (`node_modules`, `.venv`, `__pycache__`, `vendor`, virtualenvs),
 hidden folders other than known output locations (so `.husky/_`, `.opencode/`
 and `.claude/` stay read-only), and anything resolving elsewhere stay
 read-only; Linux and Windows keep every input read-only
-(`DEVRYAN_IGNORED_WRITE_THROUGH=0` restores that on macOS). An ignored folder a
-call creates in its view is published like any other output. A `node_modules`
-input links instead to a
+(`DEVRYAN_IGNORED_WRITE_THROUGH=0` restores that on macOS).
+Plan shell instead marks its execution lease read-only: preparation suppresses
+all input write grants and browser allowances, macOS denies networking, and the
+Linux launcher creates a private network namespace before its acknowledgement.
+The original snapshot remains visible as its logical working directory under
+the read-only host mount/profile. Windows refuses this mode because its current
+LPAC policy lacks equivalent read-only workspace and isolated-network grants.
+An ignored folder a call creates in its view is published like any other output.
+A `node_modules` input links instead to a
 host-owned overlay under the ledger's `module-overlays/`: one link per project
 entry, re-synced from the project listing at each preparation, with `.vite`,
 `.vite-temp`, and `.cache` linked into the project's writable execution cache
@@ -289,13 +371,28 @@ unsupported-runtime behavior.
 
 ### Session title correlation
 
-The web host emits `session_title_generation` lifecycle records with the target session in top-level `sessionID` and the hidden helper in `payload.helperSessionID`. The sanitizer preserves both identifiers along with stage, outcome, reason, provider/model, status, attempt, and duration. Title text and source prompts are excluded by the producer.
+Selected-project ledger warming may refresh an existing ledger within its file/byte budget. Warm budgets must be positive safe integers within the production caps (20,000 files and 512 MiB); directory enumeration also stops after four times the file budget, including empty directories, before inspecting file contents. A foreground observation supersedes the advisory pass at its next checked enumeration or batch boundary; already committed batches remain, and an interrupted install uses the same guarded commit and rollback as other owner changes. Host replacement cancels queued warming through its captured lifetime before any new pass starts. Advisory refresh batches identical-content restamps while preserving device/inode/size/time/mode identities and install rechecks. A real reservation still requires an authoritative observation started after reservation; a warm pass cannot supply admission proof. Process settlement, publication, Cursor receipt drain and native save have separate diagnostic phases and do not set early completion timestamps.
 
-Parent collection may request host-owned `executionOutcomes` for failed tools. The mutation ledger returns `never_started`, `finished`, or `uncertain`, scoped to exact session/message/call identities. A cancelled call without execution, or a cancelled and fully cleaned pre-launch lease, proves `never_started`; a published lease proves `finished`. Missing, mismatched, or unsettled evidence stays uncertain. Only managed result collection accepts settled errors; normal recovery never treats error text as execution evidence or replays those commands. Existing collection idempotency, stop and supersession fences remain in force.
+[Local preparation qualification](../../docs/audits/2026-10-14/preparation-performance-qualification.json) retains five repetitions of the existing isolated scenarios and five paired scalar/V2 result measurements. V2 host latency and CPU still regress; moving work to prewarm and reducing result bytes do not establish a total-speed improvement. Native host, provider and return-to-idle performance remain unmeasured by these fixtures.
+
+The [quiet-window result transport rerun](../../docs/audits/2026-10-15/managed-result-transport-rerun.json) retains the historical measurements and again observes V2 host latency and CPU regressions across five cold and five warm pairs. Source hashes match the second historical run; different absolute timings and observed ambient load do not establish a code improvement. All twenty workers exited naturally; application return-to-idle latency remains unmeasured.
+
+The web host emits `session_title_generation` lifecycle records with the target session in top-level `sessionID` and the hidden helper in `payload.helperSessionID`. The event-specific sanitizer preserves stable IDs, enumerated stage/outcome/source/selection mode/refusal codes, nonnegative bounded lengths and timing, strict equality/provenance booleans, and valid provider/model/status/attempt metadata. Native/candidate/expected title comparison evidence survives both journaling and export. Title text, raw errors, source prompts and title/source hashes are excluded even when injected into this event; these extra comparison fields do not widen unrelated payloads.
+
+Parent collection and native stream-continuation admission may request host-owned `executionOutcomes` for failed tools. The mutation ledger returns `never_started`, `finished`, or `uncertain`, scoped to exact session/message/call identities. A cancelled call without execution, or a cancelled and fully cleaned pre-launch lease, proves `never_started`; a published lease proves `finished`. Initial negative native Plan admission uses `cancelUnstartedCall` with `requireAbsent: true`: an existing execution pointer or mismatched receipt is refused without rewriting a lease. Missing, mismatched, or unsettled evidence stays uncertain. Neither collection nor recovery treats error text as execution evidence or replays those commands. Existing collection idempotency, stop and supersession fences remain in force.
 
 The session execution owner forwards its caller signal and diagnostic observer
 through admission and preparation. A rejected start waits for all preparation I/O,
 the no-launch cancellation attestation and lease cleanup before rejecting to the
 provider; it never releases provider authority while cleanup is still pending.
+
+Concurrent native read-only `finishDirect` calls for the same requested directory
+and execution signal share a commit in groups of at most 64. Each call keeps its captured execution
+scope, cancellation, generation and exact identity checks. Private store staging
+rolls back a refused call without losing accepted siblings; every caller waits
+for the shared durable commit before receiving its own acknowledgment. A failed
+commit acknowledges none of them, leaving the original tokens retryable. Queued
+callers follow the actual lock holder's progress, and mandatory commit I/O settles
+before ownership is released.
 
 Read-only lease and outcome queries retain the owner lock and durable recovery checks, but do not stage unchanged metadata or rebuild the Git index. `lock_wait`, `ledger_open`, `ledger_recovery`, `ledger_transaction`, and `ledger_commit` diagnostics identify work inside the lock; they are journaled only when a phase fails or takes at least 250 ms, because every tool call takes this lock. Every confined worker receives its own scratch `HOME`, temporary paths, and execution-worker marker, including Cursor and read-only provider workers. On macOS each execution also gets a short private runtime directory, exported as `XDG_RUNTIME_DIR` and spelled `/tmp/dr-<uid>/<lease digest>`, because the scratch path exceeds the 104-byte Unix socket limit. The agent-browser daemon socket therefore fits with its full lease session name (budget: 26 bytes for the directory). The profile lets the execution create and reach sockets only there, plus the system resolver. Cleanup removes it, and host recovery sweeps orphans older than a day. The parent must be a real directory owned by the user with mode 0700, or preparation fails closed. Every session-scoped execution also gets `DEVRYAN_SESSION_TMP`, `context-cache/session-tmp/<session digest>`: unlike the per-call scratch it survives between the session's calls, so logs and reproduction output remain readable. Preparation never follows a link planted at either level, and directories idle for a week are swept at most hourly per project. `/tmp` itself stays unwritable. Session-scoped executions on macOS can also run headless Chromium (a project's Playwright check): `PLAYWRIGHT_BROWSERS_PATH` names the host's `~/Library/Caches/ms-playwright` (read and execute only; an explicit host value is kept), a `NODE_OPTIONS` preload (`$HOME/.devryan-node-spawn.cjs`) restores the verified spawn adapter that macOS strips when `npm run` passes through `/usr/bin/env` and `/bin/sh`, and the profile allows exactly one mach lookup, `org.chromium.Chromium.MachPortRendezvousServer.<pid>`, which Chromium's helpers need for their IPC ports. Provider transports never get these. `DEVRYAN_WORKER_BROWSERS=0` restores the previous environment and profile exactly. A detached child cannot get its own process group inside the boundary, so a starter that stops it with `process.kill(-pid)` (Playwright's `webServer`, bounded test wrappers) used to signal nothing and wait for an exit that never came. The preload names the group of each detached child in `DEVRYAN_SPAWN_GROUP` and delivers a group signal through the verified launcher's `--signal-group` mode; the spawn adapter does the same for processes that have it. Signals stay inside the execution's own sandbox. `DEVRYAN_WORKER_GROUP_SIGNALS=0` turns this off in the preload and the adapter. WebKit, Firefox, the Google Chrome channel, headed mode and `chromiumSandbox: true` remain unsupported.

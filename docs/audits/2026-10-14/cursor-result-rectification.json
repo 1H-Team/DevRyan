@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-14",
+  "scope": "Cursor final association, provider failure classification, callback output settlement and native task receipt coverage",
+  "sdkVersion": "1.0.28",
+  "sourceWitness": {
+    "module": "src/agent/run-interaction-accumulator.ts",
+    "owningTest": "packages/cursor-sdk-runtime/final-result.test.js",
+    "method": "execute the shipped pinned module offline, without SDK connection",
+    "semantics": "last assistantMessage, skipping trailing tools and reasoning, including an explicit empty new step",
+    "qualifiedCases": ["absent", "empty", "final-only", "text-tool", "text-tool-empty", "text-tool-nonempty", "reasoning"],
+    "privateWitness": "assistant ordinal and count of earlier nonempty assistant steps only",
+    "contentOwner": "ordered run.stream",
+    "missingInconsistentOversized": "typed partial failure preserving buffered stream"
+  },
+  "producerQualification": {
+    "owningTest": "packages/cursor-sdk-runtime/stream-contract.test.js",
+    "paths": ["direct", "persistent", "one-shot"],
+    "testsPassed": 65,
+    "authQuota": "SDK provider names and bounded codes survive final wait and worker transport",
+    "callbackOutput": "count/byte overflow is observed before terminal completion; only bounded negative reporting remains permitted"
+  },
+  "receiptQualification": {
+    "owningTest": "packages/web/server/lib/opencode/cursor-execution-receipts.test.js",
+    "realOwners": ["createSessionMutationRuntime", "createSessionChangeHost"],
+    "unpublishedRefusal": "execution_unavailable",
+    "publishedTaskAliases": "exact aliases cover native task and internal edit; the outer process receipt retains all bytes",
+    "outerCollision": "constructor-owned outer call excluded from internal empty receipts",
+    "reopenedCoverage": "complete, one changed file",
+    "unknownRestoreCallRefusal": "mutation_history_unavailable",
+    "fileUndoRedo": "actual owner restore removes then restores the published file"
+  },
+  "focusedVerification": {
+    "bunTests": 172,
+    "bunFiles": 6,
+    "vitestTests": 66,
+    "vitestFiles": 2,
+    "gitDiffCheck": "passed",
+    "postReviewPrimaryCleanupCases": 2,
+    "postReviewAuthQuotaCasesRepeated": 6,
+    "primaryCleanupFailure": "typed primary SDK name/code retained with visible cleanup failure; independent cleanup branches settle"
+  },
+  "progressBoundary": {
+    "caller": "session-execution-host.js:persistCursorRecord",
+    "observedNativeSave": "withExecutionObservation wraps native persistence",
+    "receiptBatch": "awaited after native-save observation wrapper",
+    "receiptDiagnostic": "started/completed/failed without progress authority",
+    "qualification": "receipt meter wiring requires separate owner review; diagnostics do not feed orchestration save watchdog"
+  },
+  "notQualified": ["fresh native artifact", "fresh host build and bundle", "live Cursor inference", "platform and release gates"],
+  "notQualifiedScope": "Historical initial Cursor correction cohort; current qualification is recorded separately below",
+  "currentQualification": {
+    "updatedDate": "2026-10-15",
+    "nativeVerifyCorrection": {
+      "source": "packages/cursor-sdk-runtime/index.js:verifyConnection",
+      "behavior": "Only explicit native Verify omits the quick public cap and uses the existing 20000ms owned catalogue budget",
+      "publicAndLegacyDiscoveryMs": 1500,
+      "rootModelDiscovery": { "passed": 38, "assertions": 360 },
+      "independentNativeGateModelDiscovery": { "passed": 38, "assertions": 360 },
+      "cancellationAndSettlement": "Owning real NativeCursorOwner metadata-worker cancellation, deadline and uncertain-receipt cases passed",
+      "noGenericStartupLatencyClaim": true,
+      "warmingCredentialOrInferenceChanges": false,
+      "currentLiveFixVerified": false,
+      "journalObservation": {
+        "records": 538,
+        "gaps": 0,
+        "errorRecords": 0,
+        "priorCompletedCatalogueMs": 3781,
+        "incidentVerifyTimeoutMs": 1516,
+        "incidentWorkerResultObserved": false,
+        "retainedPhysicalTerminationReceiptObserved": false
+      },
+      "incidentEvidence": "docs/audits/2026-10-14/qa1-cursor-catalog-timeout.json"
+    },
+    "nativeArtifactClosure": {
+      "buildID": "9d4ae1ee07773c2fdf8cd2a5af500f416ce20a8bfc85000319a8d163416255ee",
+      "manifestSha256": "37f21fcbd9c5385b5c7510da4b505cb43cd5f91e3b2aa07d94e02a4b7701248e",
+      "recomputedIdentityMatches": true,
+      "cursorCompiledInputs": ["packages/cursor-sdk-runtime/package.json"],
+      "cursorCompiledPackageHashMatches": true,
+      "changedCursorIndexLinked": false,
+      "verifyCorrectionRequiresNativeRebuild": false,
+      "scope": "Manifest identity and exact Cursor compiled-input closure; not a new payload/signing/live verification"
+    },
+    "rootFinalGraphs": { "passed": 23, "total": 23, "scope": "Reported root graph qualification; no graph rerun by this audit task" },
+    "lastFullNativePackage": { "passed": 53, "status": "historical", "reason": "Current Cursor Verify and QA source patches postdate that exact source cohort" },
+    "pending": [
+      "Current final full validation and fresh full-native package qualification",
+      "Fresh host startup and actual QA1 Verify correction verification",
+      "Original Grok Medium replay and actual provider/helper observations",
+      "Complete 52 Plan captures plus 8 file controls after confirmation-fixture correction",
+      "Platform and release qualification"
+    ],
+    "paidActivityByThisCorrection": "not-run",
+    "newHumanClaudeConsensusClaim": false
+  }
+}

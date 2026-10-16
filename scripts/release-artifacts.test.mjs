@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { describeWebArtifact, stageWebArtifact, verifyWebArtifact, verifyPreparedMetadata, assertBotInputPreparation, assertReleaseWritesAllowed } from './release-artifacts.mjs';
+import { describeWebArtifact, stageWebArtifact, verifyWebArtifact, verifyPreparedMetadata, assertBotInputPreparation, assertReleaseWritesAllowed, verifyRetainedCandidateMetadata } from './release-artifacts.mjs';
 import { packagePrepared } from '../packages/electron/scripts/package-prepared.mjs';
 
 const identity = { revision: 'a'.repeat(40), release: '1.2.3', lockfile: 'b'.repeat(64) };
@@ -64,4 +64,11 @@ test('packaging requires verified manifest before invoking builder and verifies 
   await assert.rejects(packagePrepared({ ...options, verifyRuntime: async () => { throw new Error('unverified runtime'); } }), /unverified runtime/);
   assert.deepEqual(calls, ['manifest']);
   await assert.rejects(packagePrepared({ ...options, execute: () => { throw new Error('builder failed'); } }), /builder failed/);
+});
+
+test('a stable tag reuses exact admitted candidate bytes, version, full source and lockfile without a rebuild fallback', () => {
+  const digest = 'c'.repeat(64), metadata = { protocol: 'devryan.release-candidate/1', sourceCommit: identity.revision, version: identity.release, lockfile: identity.lockfile, dmgSha256: digest };
+  verifyRetainedCandidateMetadata(metadata, identity, digest);
+  for (const change of [{ sourceCommit: 'd'.repeat(40) }, { version: '1.2.4' }, { lockfile: 'e'.repeat(64) }, { dmgSha256: 'f'.repeat(64) }])
+    assert.throws(() => verifyRetainedCandidateMetadata({ ...metadata, ...change }, identity, digest), /Retained candidate/);
 });

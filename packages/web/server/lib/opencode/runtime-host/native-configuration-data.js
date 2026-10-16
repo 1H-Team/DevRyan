@@ -1,6 +1,7 @@
 import {ConfigProvider} from '@opencode/schema/config/provider';
 import {ConfigCompaction} from '@opencode/schema/config/compaction';
 import {Schema} from 'effect';
+import {nativeToolOutputLimits,PLAN_MODE_SYSTEM_INSTRUCTIONS} from '@openchamber/orchestration-runtime';
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const fail = code => Object.assign(new Error(code), { code, status: 503 });
 
@@ -21,17 +22,50 @@ export function nativeModelSelection(model, variant, hasVariant = false) {
 }
 
 export function nativePermissionRules(input) {
-  if (Array.isArray(input)) return input.map(rule => {
+  const rules = Array.isArray(input) ? input.map(rule => {
     if (!record(rule)) throw fail('native_permissions_invalid');
-    if ('permission' in rule) return { action: rule.permission, resource: rule.pattern, effect: rule.action };
-    return { ...rule };
+    const legacy = Object.hasOwn(rule, 'permission');
+    if (Object.keys(rule).some(key => !(legacy ? ['permission', 'pattern', 'action'] : ['action', 'resource', 'effect']).includes(key))) throw fail('native_permissions_invalid');
+    return legacy ? { action: rule.permission, resource: rule.pattern, effect: rule.action } : { ...rule };
+  }) : typeof input === 'string' ? [{ action: '*', resource: '*', effect: input }]
+    : record(input) ? Object.entries(input).flatMap(([action, value]) => typeof value === 'string'
+      ? [{ action, resource: '*', effect: value }]
+      : record(value) ? Object.entries(value).map(([resource, effect]) => ({ action, resource, effect }))
+        : (() => { throw fail('native_permissions_invalid'); })())
+      : (() => { throw fail('native_permissions_invalid'); })();
+  const aliases = { bash: 'shell', task: 'subagent', write: 'edit', patch: 'edit', apply_patch: 'edit' };
+  const collapsed = new Map();
+  return rules.map(rule => {
+    if (typeof rule.action !== 'string' || !rule.action || typeof rule.resource !== 'string' || !rule.resource
+      || !['allow', 'deny', 'ask'].includes(rule.effect)) throw fail('native_permissions_invalid');
+    const action = Object.hasOwn(aliases, rule.action) ? aliases[rule.action] : rule.action;
+    const key = JSON.stringify([action, rule.resource]), previous = collapsed.get(key) ?? new Map();
+    if ([...previous].some(([original, effect]) => original !== rule.action && effect !== rule.effect)) throw fail('native_permission_alias_conflict');
+    previous.set(rule.action, rule.effect); collapsed.set(key, previous);
+    return { action, resource: rule.resource, effect: rule.effect };
   });
-  if (typeof input === 'string') return [{ action: '*', resource: '*', effect: input }];
-  if (!record(input)) throw fail('native_permissions_invalid');
-  return Object.entries(input).flatMap(([action, value]) => typeof value === 'string'
-    ? [{ action, resource: '*', effect: value }]
-    : record(value) ? Object.entries(value).map(([resource, effect]) => ({ action, resource, effect }))
-      : (() => { throw fail('native_permissions_invalid'); })());
+}
+
+function configuredPermissions(value, agent = false) {
+  const legacy = value.permission === undefined ? undefined : nativePermissionRules(value.permission);
+  const native = value.permissions === undefined ? undefined : nativePermissionRules(value.permissions);
+  if (legacy && native && JSON.stringify(legacy) !== JSON.stringify(native)) throw fail('native_permission_shapes_conflict');
+  if (value.tools === undefined) return native ?? legacy;
+  if (!record(value.tools) || Object.values(value.tools).some(enabled => typeof enabled !== 'boolean')) throw fail('native_legacy_tools_invalid');
+  const tools = Object.create(null);
+  for (const [name, enabled] of Object.entries(value.tools)) {
+    // Pinned 2.0.26 agent normalization merges edit tools before explicit permissions.
+    const action = agent && ['write', 'edit', 'patch'].includes(name) ? 'edit' : name;
+    const effect = enabled ? 'allow' : 'deny';
+    if (Object.hasOwn(tools, action) && tools[action] !== effect) throw fail('native_legacy_tools_alias_conflict');
+    tools[action] = effect;
+  }
+  const toolRules = nativePermissionRules(tools);
+  if (agent && value.permission !== undefined && !Array.isArray(value.permission)) {
+    const permission = typeof value.permission === 'string' ? { '*': value.permission } : value.permission;
+    return nativePermissionRules({ ...tools, ...permission });
+  }
+  return [...toolRules, ...(native ?? legacy ?? [])];
 }
 
 // Data-only mapping from pinned 2.0.20 ConfigMigrateV1.migrateProvider.
@@ -133,6 +167,7 @@ function nativeCompaction(input) {
 export function translateNativeConfiguration({ legacy, agents, commands = {} }) {
   if (!record(legacy) || !record(agents) || !record(commands)) throw fail('native_configuration_invalid');
   const configuration = {};
+  configuration.tool_output = nativeToolOutputLimits(legacy.tool_output);
   for (const key of ['$schema', 'shell', 'username', 'default_agent', 'formatter', 'lsp', 'watcher']) {
     if (legacy[key] !== undefined) configuration[key] = structuredClone(legacy[key]);
   }
@@ -143,7 +178,8 @@ export function translateNativeConfiguration({ legacy, agents, commands = {} }) 
     if (!record(legacy.providers) || legacy.provider !== undefined) throw fail('native_provider_shapes_conflict');
     configuration.providers = structuredClone(legacy.providers);
   }
-  if (legacy.permission !== undefined) configuration.permissions = nativePermissionRules(legacy.permission);
+  const permissions = configuredPermissions(legacy);
+  if (permissions !== undefined) configuration.permissions = permissions;
   configuration.agents = Object.fromEntries(Object.entries(agents).map(([name, agent]) => {
     if (!record(agent)) throw fail('native_agent_invalid');
     const info = {};
@@ -151,6 +187,10 @@ export function translateNativeConfiguration({ legacy, agents, commands = {} }) 
     if (agent.disable !== undefined || agent.disabled !== undefined) info.disabled = agent.disabled ?? agent.disable;
     if (agent.steps !== undefined || agent.maxSteps !== undefined) info.steps = agent.steps ?? agent.maxSteps;
     if (agent.prompt !== undefined) { if (typeof agent.prompt !== 'string') throw fail('native_agent_prompt_invalid'); info.system = agent.prompt; }
+    if (agent.mode === 'primary' && name !== 'plan' && !agent.hidden && !info.disabled) {
+      info.system = [info.system, 'For a turn explicitly requesting Plan mode, apply the following shared planning instructions:',
+        PLAN_MODE_SYSTEM_INSTRUCTIONS].filter(Boolean).join('\n\n');
+    }
     if (agent.model !== undefined) info.model = nativeModelSelection(agent.model, agent.variant, Object.hasOwn(agent, 'variant'));
     else if (Object.hasOwn(agent, 'variant')) {
       if (legacy.model === undefined) throw fail('native_variant_without_model');
@@ -159,8 +199,8 @@ export function translateNativeConfiguration({ legacy, agents, commands = {} }) 
     const body = { ...(record(agent.options) ? agent.options : {}) };
     for (const key of ['temperature', 'top_p', 'reasoningEffort', 'thinking']) if (agent[key] !== undefined) body[key] = agent[key];
     if (Object.keys(body).length) info.request = { body };
-    if (agent.permission !== undefined) info.permissions = nativePermissionRules(agent.permission);
-    if (agent.permissions !== undefined) info.permissions = nativePermissionRules(agent.permissions);
+    const permissions = configuredPermissions(agent, true);
+    if (permissions !== undefined) info.permissions = permissions;
     return [name, info];
   }));
   configuration.commands = Object.fromEntries(Object.entries(commands).map(([name, command]) => {

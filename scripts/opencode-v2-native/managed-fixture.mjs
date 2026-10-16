@@ -12,7 +12,7 @@ import { createV2MessageId } from '../../packages/web/server/lib/opencode/v2/adm
 import { assertWriterOutcome } from './assertions.mjs';
 
 /** Real product owners with disposable state and an explicitly selected fixture model. */
-export function createNativeManagedFixture({ client, admissionOwner, executionHost, directory, dataDirectory,
+export function createNativeManagedFixture({ client, admissionOwner, executionHost, directory, directories = [directory], dataDirectory,
   buildOpenCodeUrl, getOpenCodeAuthHeaders, environment, observations, diagnostics, journal,
   isNativeFallbackError, dispatchNativeRecovery, eventReconcileIntervalMs, resolveProviderRequest,
   executionModel = { providerID: 'sim', modelID: 'm1', variant: 'default' } }) {
@@ -21,15 +21,18 @@ export function createNativeManagedFixture({ client, admissionOwner, executionHo
     && typeof executionModel.variant === 'string' && executionModel.variant, 'Explicit fixture model selection required');
   const model = { providerID: executionModel.providerID, modelID: executionModel.modelID };
   let managed;
-  const roots = new Set();
+  const roots = new Map();
+  const ownedDirectories = new Set(directories);
+  assert.ok(ownedDirectories.has(directory), 'Primary fixture directory must be owned');
   const fixtureOwner = randomUUID();
   const primary = createWebPrimaryRecoveryRuntime({ openCodeClient: client, dataDirectory,
     buildOpenCodeUrl, getOpenCodeAuthHeaders, isManaged: () => true, mode: 'observe',
     isNativeFallbackError, dispatchNativeRecovery, eventReconcileIntervalMs, resolveProviderRequest,
     getManagedRuntime: () => managed, getMultiUserRuntime: () => ({ canSessionTokenHashAccess: async (owner, sessionID) => {
       if (owner !== fixtureOwner || !roots.has(sessionID)) return false;
-      const session = await client.sessions.get(sessionID, { directory });
-      return session.id === sessionID && session.directory === directory && !session.parentID && !session.time?.archived;
+      const rootDirectory = roots.get(sessionID);
+      const session = await client.sessions.get(sessionID, { directory: rootDirectory });
+      return session?.id === sessionID && session.directory === rootDirectory && !session.parentID && !session.time?.archived;
     } }),
     verifyOwnedNativeContinuation: createNativeShellContinuationVerifier({ runtime: executionHost.runtime,
       getShellJobReceipt: input => executionHost.nativeShellJobReceipt(input) }),
@@ -39,6 +42,7 @@ export function createNativeManagedFixture({ client, admissionOwner, executionHo
   });
   const taskContext = createHarnessTaskContextHost({ openCodeClient: client, dataDirectory,
     buildOpenCodeUrl, getOpenCodeAuthHeaders, readPrimaryRecord: sessionID => primary.readRecord(sessionID),
+    readOnlyInvocation: input => admissionOwner.readOnlyExecution(input),
     getManagedRuntime: () => managed, sanitizeText: text => text, isManaged: () => false,
   });
   managed = createWebManagedOrchestrationRuntime({ openCodeClient: client, dataDirectory,
@@ -59,10 +63,11 @@ export function createNativeManagedFixture({ client, admissionOwner, executionHo
   const step = createNativePrimaryStepOwner({ admissionOwner, openCodeClient: client, primaryRuntime: primary,
     instanceID: randomUUID(), directory });
   const task = createNativeManagedTaskOwner({ admissionOwner, taskContext, executionHost, getManagedRuntime: () => managed });
-  const admitPrimary = async sessionID => {
-    const session = await client.sessions.get(sessionID, { directory });
-    assert.equal(session.id, sessionID); assert.equal(session.directory, directory); assert.ok(!session.parentID);
-    roots.add(sessionID);
+  const admitPrimary = async (sessionID, rootDirectory = directory) => {
+    assert.ok(ownedDirectories.has(rootDirectory), 'Primary fixture directory must be owned');
+    const session = await client.sessions.get(sessionID, { directory: rootDirectory });
+    assert.equal(session?.id, sessionID); assert.equal(session.directory, rootDirectory); assert.ok(!session.parentID && !session.time?.archived);
+    roots.set(sessionID, rootDirectory);
   };
   return {
     primaryRuntime: primary, taskContext, getManagedRuntime: () => managed,
@@ -71,9 +76,9 @@ export function createNativeManagedFixture({ client, admissionOwner, executionHo
     admitPrimary,
     // Enrolment is fixture ownership only. The actual accepted native prompt
     // freezes the effective selection before any primary record is admitted.
-    admitNativePrompt: (receipt, context) => roots.has(receipt.sessionID)
+    admitNativePrompt: (receipt, context) => roots.has(receipt.sessionID) && roots.get(receipt.sessionID) === receipt.directory
       ? primary.admitNativePrompt(receipt, { owner: fixtureOwner, ...(typeof context==='function'?{authorizeWrite:context}:context) }) : undefined,
-    markNativePromptUncertain: receipt => roots.has(receipt.sessionID)
+    markNativePromptUncertain: receipt => roots.has(receipt.sessionID) && roots.get(receipt.sessionID) === receipt.directory
       ? primary.markNativePromptUncertain(receipt) : undefined,
     readPrimaryRecord: sessionID => primary.readRecord(sessionID),
     verifyNativeTaskDispatch: input => managed.verifyNativeTaskDispatch(input),

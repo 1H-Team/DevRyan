@@ -1,4 +1,5 @@
 import type { Part, ToolPart as ToolPartType } from '@opencode-ai/sdk/v2';
+import { hasNativeCursorTextProvenance } from '@/lib/messages/nativeCursorText';
 
 import {
     collapseSupersededTodoWrites,
@@ -55,7 +56,7 @@ export const projectAssistantDisplayParts = ({
 
     let removedStatusText = false;
     const filtered = visibleParts.filter((part) => {
-        if (part.type !== 'text') {
+        if (part.type !== 'text' || hasNativeCursorTextProvenance(part)) {
             return true;
         }
         const shouldSuppress = shouldSuppressIntermediateAssistantStatusText({
@@ -108,7 +109,7 @@ export const projectAssistantVisibleParts = (
         .filter((part, index, arr) => {
             // Drop short mid-sentence narration fragments wedged between
             // tool/reasoning activity (composer choppy-narration noise).
-            if (part.type !== 'text') return true;
+            if (part.type !== 'text' || hasNativeCursorTextProvenance(part)) return true;
             return !isOrphanNarrationFragment(
                 extractTextContent(part),
                 arr[index - 1]?.type,

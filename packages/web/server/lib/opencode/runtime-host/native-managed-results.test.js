@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { projectManagedTaskResult, readManagedResultReference, createCompactResultHeader } from '@openchamber/orchestration-runtime';
+import { projectManagedTaskResult, readManagedResultReference, createCompactResultHeader, prepareManagedResultMetadata, fitManagedToolOutput } from '@openchamber/orchestration-runtime';
 import { createNativeManagedResultCollection } from './native-managed-results.js';
 
 const scope = {rootSessionId:'ses_root',directory:'/project'};
@@ -39,4 +39,102 @@ test('missing collection, oversized/foreign pages and changed byte coverage fail
   const cursor=result.resultReference.nextCursor,page=readManagedResultReference({task,resultEnvelope:envelope,resultCursor:cursor});
   for(const changed of [{...page,taskId:'dvr_task_other'},{...page,totalBytes:page.totalBytes+1},{...page,text:'x'.repeat(9000)}])
     expect(()=>collection.acceptPage(scope,task.taskId,cursor,{resultReference:changed})).toThrow('page_invalid');
+});
+
+test('only a v2 owner scope admits larger pages and keeps that ceiling through later reads',()=>{
+ const preview='🙂'.repeat(16000),largeTask={...task,recoverablePreview:preview},largeEnvelope={...envelope,recoverablePreview:preview};
+ const result=projectManagedTaskResult(largeTask,largeEnvelope,'reference',24*1024),collection=createNativeManagedResultCollection();
+ expect(()=>collection.collect({...result,resultContractVersion:2},scope,task.taskId)).toThrow('page_invalid');
+ const v2={...scope,resultContractVersion:2};collection.collect(result,v2,task.taskId);
+ let cursor=result.resultReference.nextCursor;
+ while(cursor){
+  const next=readManagedResultReference({task:largeTask,resultEnvelope:largeEnvelope,resultCursor:cursor,maxPageBytes:24*1024});
+  const oversized={...next,text:'x'.repeat(24*1024+1)};
+  expect(()=>collection.acceptPage(v2,task.taskId,cursor,{resultReference:oversized})).toThrow('page_invalid');
+  collection.acceptPage(v2,task.taskId,cursor,{resultReference:next});cursor=next.nextCursor;
+ }
+ expect(()=>collection.assertDisposition(v2,task.taskId,'retry',result)).not.toThrow();
+});
+
+test('larger v2 metadata pages preserve all references and cannot satisfy missing report coverage',async()=>{
+ const refs=Array.from({length:600},(_,index)=>({type:'message',id:`msg_${index}`,description:'a'.repeat(64)}));
+ const retainedTask={...task,canonicalRefs:refs},retainedEnvelope={...envelope,canonicalRefs:refs};
+ const metadata=await prepareManagedResultMetadata(projectManagedTaskResult(retainedTask,retainedEnvelope,'compact'));
+ const first=fitManagedToolOutput(size=>metadata.project(size),48*1024,24*1024),v2={...scope,resultContractVersion:2};
+ expect(Buffer.byteLength(first.metadataReference.text)).toBeGreaterThan(8*1024);
+ const collection=createNativeManagedResultCollection();collection.collect(first,v2,task.taskId);
+ let text=first.metadataReference.text,cursor=first.metadataReference.nextCursor;
+ while(cursor){
+  const next=fitManagedToolOutput(size=>metadata.read(cursor,size),48*1024,24*1024);
+  expect(Buffer.byteLength(JSON.stringify(next))).toBeLessThanOrEqual(48*1024);
+  collection.acceptPage(v2,task.taskId,cursor,next);text+=next.metadataReference.text;cursor=next.metadataReference.nextCursor;
+ }
+ expect(JSON.parse(text).resultEnvelope.canonicalRefs).toEqual(refs);
+ expect(()=>collection.assertDisposition(v2,task.taskId,'retry',first)).toThrow('detail_required');
+});
+
+const identity={controllerInstanceID:'controller',configurationDigest:'a'.repeat(64),objectiveID:'msg_objective',cancellationGeneration:1,
+  stepID:'msg_delivery',attempt:{traceID:'b'.repeat(32),spanID:'c'.repeat(16)},permitSha256:'d'.repeat(64)};
+const invocation={messageID:'msg_delivery',callID:'call_wait',input:{action:'wait',task_id:task.taskId}};
+const canonical=(output,overrides={})=>({info:{id:'msg_delivery',sessionID:scope.rootSessionId,role:'assistant'},parts:[{type:'tool',tool:'devryan_task',callID:'call_wait',
+  state:{status:'completed',input:invocation.input,output:JSON.stringify(output),metadata:{},...overrides}}]});
+test('v2 handler returns are only candidates; exact completed publication and a later ordered Step are required',()=>{
+ const collection=createNativeManagedResultCollection(),result=projected();collection.collect(result,scope,task.taskId);
+ collection.stagePublication(scope,[task.taskId],invocation,identity,result);
+ collection.stagePublication(scope,[task.taskId],invocation,identity,result);
+ expect(()=>collection.stagePublication(scope,[task.taskId],invocation,identity,{...result,changed:true})).toThrow('publication_changed');
+ const snapshot={identity,messages:[canonical(result)]};
+ for(const state of [{status:'running'},{metadata:{truncated:true}},{output:JSON.stringify(result)+' '},{input:{action:'status',task_id:task.taskId}}])
+  expect(()=>collection.assertPublished(scope,task.taskId,{identity,messages:[canonical(result,state)]})).toThrow('not_published');
+ expect(()=>collection.assertPublished(scope,task.taskId,snapshot)).not.toThrow();
+ expect(()=>collection.assertPublished(scope,task.taskId,snapshot,true)).toThrow('later_review_step_required');
+ const later={info:{id:'msg_review',sessionID:scope.rootSessionId,role:'assistant'},parts:[]};
+ const reviewed={identity:{...identity,stepID:'msg_review'},messages:[canonical(result),later]};
+ expect(()=>collection.assertPublished(scope,task.taskId,reviewed,true)).not.toThrow();
+ expect(()=>collection.assertPublished(scope,task.taskId,{...reviewed,messages:[later,canonical(result)]},true)).toThrow('later_review_step_required');
+ for(const changed of [{objectiveID:'msg_new'},{cancellationGeneration:2},{controllerInstanceID:'new'},{configurationDigest:'e'.repeat(64)}])
+  expect(()=>collection.assertPublished(scope,task.taskId,{...reviewed,identity:{...reviewed.identity,...changed}},true)).toThrow('scope_changed');
+});
+test('v2 last needed page publication cannot inherit review authority from an earlier Step; recollection after restart is explicit',()=>{
+ const collection=createNativeManagedResultCollection(),result=projected();collection.collect(result,scope,task.taskId);
+ collection.stagePublication(scope,[task.taskId],invocation,identity,result);
+ const cursor=result.resultReference.nextCursor,page=readManagedResultReference({task,resultEnvelope:envelope,resultCursor:cursor});
+ collection.acceptPage(scope,task.taskId,cursor,{resultReference:page});
+ const read={messageID:'msg_page',callID:'call_page',input:{action:'read_result',task_id:task.taskId,result_cursor:cursor}},output={resultReference:page};
+ collection.stagePublication(scope,[task.taskId],read,{...identity,stepID:'msg_page'},output);
+ const publishedPage={info:{id:'msg_page',sessionID:scope.rootSessionId,role:'assistant'},parts:[{type:'tool',tool:'devryan_task',callID:'call_page',state:{status:'completed',input:read.input,output:JSON.stringify(output),metadata:{}}}]};
+ const snapshot={identity:{...identity,stepID:'msg_page'},messages:[canonical(result),publishedPage]};
+ expect(()=>collection.assertPublished(scope,task.taskId,snapshot,true)).toThrow('later_review_step_required');
+ expect(()=>createNativeManagedResultCollection().assertPublished(scope,task.taskId,snapshot,true)).toThrow('not_published');
+ collection.collect(result,scope,task.taskId,true);
+ expect(()=>collection.assertPublished(scope,task.taskId,snapshot,true)).toThrow('not_published');
+ expect(()=>collection.next(scope,task.taskId,page.nextCursor)).toThrow('cursor_mismatch');
+});
+test('v2 metadata/reference coverage cannot skip to a report cursor or disposition before all required sections',async()=>{
+ const result=projectManagedTaskResult(task,envelope,'compact'),metadata=await prepareManagedResultMetadata(result),first=metadata.project(100),collection=createNativeManagedResultCollection();
+ collection.collect(first,scope,task.taskId);
+ expect(()=>collection.next(scope,task.taskId,first.resultReference.nextCursor)).toThrow('cursor_mismatch');
+ expect(()=>collection.assertDisposition(scope,task.taskId,'retry',first)).toThrow('detail_required');
+ let joined=first.metadataReference.text,cursor=first.metadataReference.nextCursor;
+ while(cursor){const next=metadata.read(cursor,100);joined+=next.metadataReference.text;collection.acceptPage(scope,task.taskId,cursor,next);cursor=next.metadataReference.nextCursor;}
+ expect(JSON.parse(joined).resultEnvelope.canonicalRefs).toEqual(envelope.canonicalRefs);
+ cursor=first.resultReference.nextCursor;
+ while(cursor){const next=readManagedResultReference({task,resultEnvelope:envelope,resultCursor:cursor});collection.acceptPage(scope,task.taskId,cursor,{resultReference:next});cursor=next.nextCursor;}
+ expect(()=>collection.assertDisposition(scope,task.taskId,'retry',first)).not.toThrow();
+});
+
+test('page advancement rolls back when publication staging rejects, including an earlier valid sibling',()=>{
+ const collection=createNativeManagedResultCollection(),result=projected();
+ collection.collect(result,scope,task.taskId);collection.stagePublication(scope,[task.taskId],invocation,identity,result);
+ const cursor=result.resultReference.nextCursor,reference=readManagedResultReference({task,resultEnvelope:envelope,resultCursor:cursor});
+ const read={taskID:task.taskId,cursor,result:{resultReference:reference}};
+ const current={...invocation,messageID:'msg_page',callID:'call_page'};
+ expect(()=>collection.acceptPublishedPages(scope,[read],current,{...identity,objectiveID:'changed'},read.result)).toThrow('scope_changed');
+ expect(collection.next(scope,task.taskId,cursor).reference).toEqual(result.resultReference);
+ expect(()=>collection.acceptPublishedPages(scope,[read,{...read,taskID:'dvr_task_missing'}],current,identity,read.result)).toThrow('wait_required');
+ expect(collection.next(scope,task.taskId,cursor).reference).toEqual(result.resultReference);
+ collection.acceptPublishedPages(scope,[read],current,{...identity,stepID:current.messageID},read.result);
+ expect(collection.publicationMessageIDs(scope,[task.taskId])).toEqual(['msg_delivery','msg_page']);
+ expect(()=>collection.assertPublished(scope,task.taskId,{identity:{...identity,stepID:'msg_review'},messages:[canonical(result),
+  {info:{id:'msg_review',sessionID:scope.rootSessionId,role:'assistant'},parts:[]}]},true)).toThrow('not_published');
 });

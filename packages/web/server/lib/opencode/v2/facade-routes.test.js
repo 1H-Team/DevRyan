@@ -2,6 +2,7 @@ import express from 'express';
 import request from '../../../test-supertest.js';
 import { describe, expect, it, vi } from 'vitest';
 import { createOpenCodeV2FacadeRouter } from './facade-routes.js';
+import { buildDevryanPromptMetadata, buildV2PromptContent, buildV2PromptFingerprint, createOpenCodeAdmission, PROMPT_ORIGIN_HEADER } from './admission.js';
 
 const setup = (overrides = {}) => {
   const client = {
@@ -61,6 +62,37 @@ describe('gen-2 browser facade', () => {
     expect((await request(app).post('/api/session/ses_a/prompt_async').set('x-openchamber-message-id', 'msg_a').send(prompt)).status).toBe(204);
     expect(client.prompts.prompt).toHaveBeenCalledWith('ses_a', prompt, expect.objectContaining({ headers: { 'x-openchamber-message-id': 'msg_a' } }));
   });
+
+  it.each(['human', undefined, 'managed-primary', 'native', 'Human Being', ['human', 'human']])(
+    'carries only the exact UI human marker into real admission (%j)', async header => {
+      const sessionID = 'ses_origin', messageID = 'msg_origin';
+      const origin = header === 'human' ? 'human' : 'unknown';
+      const body = { messageID, parts: [{ type: 'text', text: 'Accepted input' }] };
+      const content = buildV2PromptContent(body.parts);
+      const fingerprint = buildV2PromptFingerprint({ sessionID, messageID, content, selection: {}, origin,
+        resume: true, delivery: 'queue', planMode: false });
+      const canonical = { id: messageID, sessionID, type: 'user', text: content.text,
+        metadata: { devryan: buildDevryanPromptMetadata({ origin, parts: content.segments, admission: { v: 1, fingerprint } }, { text: content.text }) } };
+      const fetchImpl = vi.fn(async (url, init = {}) => {
+        expect(init.method ?? 'GET').toBe('GET');
+        const path = new URL(url).pathname;
+        if (path.endsWith('/inbox')) return Response.json({ data: [] });
+        expect(path).toBe(`/api/session/${sessionID}/message/${messageID}`);
+        return Response.json({ data: canonical });
+      });
+      const admission = createOpenCodeAdmission({ getRuntime: () => ({ generation: 2, baseUrl: 'http://fixture.invalid' }), fetchImpl });
+      const prompt = vi.fn(admission.prompt);
+      const { app } = setup({ openCodeClient: { generation: () => 2, prompts: { prompt } } });
+      const sending = request(app).post(`/api/session/${sessionID}/prompt_async`);
+      if (header !== undefined) sending.set(PROMPT_ORIGIN_HEADER, header);
+      expect((await sending.send(body)).status).toBe(204);
+      expect(prompt).toHaveBeenCalledOnce();
+      const options = prompt.mock.calls[0][2];
+      expect(options.headers[PROMPT_ORIGIN_HEADER]).toBe(header === 'human' ? 'human' : undefined);
+      expect(options.origin).toBeUndefined();
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+    },
+  );
 
   it('allows only title updates and rejects create privilege injection', async () => {
     const { app, client } = setup();

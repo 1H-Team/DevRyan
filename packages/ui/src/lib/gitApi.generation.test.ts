@@ -547,7 +547,7 @@ describe("git generation routing", () => {
     expect(deleteSessionCalls).toHaveLength(0)
   })
 
-  test("sends the resolvable session model as a fallback hint with the PR prompt", async () => {
+  test("sends only the active session identity for server-authorized PR fallback", async () => {
     currentSessionId = "active-session"
     sessionModelSelections.set("active-session", {
       providerId: "provider-active",
@@ -556,12 +556,13 @@ describe("git generation routing", () => {
     await generatePullRequestDescriptionQuietly("/repo", { base: "main", head: "feature/hint" })
 
     expect(directGenerationRequests).toHaveLength(1)
-    expect(directGenerationRequests[0]?.providerId).toBe("provider-active")
-    expect(directGenerationRequests[0]?.modelId).toBe("model-active")
+    expect(directGenerationRequests[0]?.sessionID).toBe("active-session")
+    expect(directGenerationRequests[0]?.providerId).toBeUndefined()
+    expect(directGenerationRequests[0]?.modelId).toBeUndefined()
     expect(String(directGenerationRequests[0]?.prompt)).toContain("hidden pr prompt")
   })
 
-  test("omits the fallback model hint when no model is resolvable", async () => {
+  test("omits active fallback identity when no chat is selected", async () => {
     currentProviderId = null
     currentModelId = null
     await generatePullRequestDescriptionQuietly("/repo", { base: "main", head: "feature/no-hint" })

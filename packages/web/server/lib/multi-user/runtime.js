@@ -2830,6 +2830,23 @@ export async function createMultiUserRuntime({
     return context ? { ...context, ownerKey: `user:${owner.user_id}` } : null;
   };
 
+  // Constructor-only helper settings: title jobs use the canonical session
+  // owner; foreground Git helpers retain the exact authenticated caller.
+  const resolveNativeHelperSettings = async ({ sessionID, directory, principal, detached = false }) => {
+    let current;
+    if (detached) {
+      const owner = await sessionOwnership(sessionID);
+      if (!owner?.user_id || owner.archived_at) return null;
+      current = await loadPrincipal(owner.user_id, null, { includeSettings: true });
+      if (!current || !await resolveOwnedSessionPlanContext(current, sessionID, directory)) return null;
+    } else {
+      if (!await resolveCurrentNativeOperationContext({ principal, sessionID, directory })) return null;
+      current = await loadPrincipal(principal.id, null, { includeSettings: true });
+      if (!current) return null;
+    }
+    return buildEffectiveSettings({ principal: current, hostSettings: await readSettingsFromDiskMigrated(), userOverrides: current.settingsOverrides || {} });
+  };
+
   const resolveCurrentOwnedSessionPlanContext = async (principal, sessionID, directory = '') => {
     if (principal?.scope !== 'managed' || !principal.id) return null;
     // Never restore authority from the request's cached assignments or from
@@ -5330,8 +5347,8 @@ export async function createMultiUserRuntime({
       app.delete('/api/config/settings/overrides/:field', async (req, res) => {
         if (!requirePersonalSettingsAccount(req, res)) return;
         const field = String(req.params.field || '');
-        if (!['defaultAgent', 'defaultPlanMode'].includes(field)) {
-          return jsonError(res, 400, 'Only defaultAgent and defaultPlanMode can be reset here');
+        if (!['defaultAgent', 'defaultPlanMode', 'helperModelSelection'].includes(field)) {
+          return jsonError(res, 400, 'Only session defaults can be reset here');
         }
         try {
           const hostSettings = await readSettingsFromDiskMigrated();
@@ -5800,6 +5817,7 @@ export async function createMultiUserRuntime({
     resolveCurrentOwnedSessionPlanContext,
     resolveCurrentNativeOperationContext,
     resolveSessionPlanContext,
+    resolveNativeHelperSettings,
     resolveSessionAgentExecution,
     resolveSessionOwnerKey,
     resolveSessionAgentBackupExecution,

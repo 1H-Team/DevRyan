@@ -32,9 +32,15 @@ export function readGuiPrerequisite(raw) {
   return value;
 }
 
-export async function probeDisposableMacGui() {
+export async function probeDisposableMacGui({ deadline = performance.now() + 180_000, signal } = {}) {
   requireDisposableMacRunner();
-  const sourceCommit = (await exec('git', ['rev-parse', 'HEAD'], { cwd: repo })).stdout.trim();
+  const remaining = () => {
+    signal?.throwIfAborted();
+    assert.ok(performance.now() < deadline, 'GUI setup deadline expired');
+    return Math.max(1, Math.ceil(deadline - performance.now()));
+  };
+  const execute = (command, args, options = {}) => exec(command, args, { ...options, signal, timeout: Math.min(options.timeout ?? 30_000, remaining()) });
+  const sourceCommit = (await execute('git', ['rev-parse', 'HEAD'], { cwd: repo })).stdout.trim();
   assert.equal(sourceCommit, process.env.GITHUB_SHA);
   const output = path.join(repo, '.cache/macos-gui-prerequisites');
   await fs.mkdir(path.dirname(output), { mode: 0o700 }).catch(error => { if (error.code !== 'EEXIST') throw error; });
@@ -43,21 +49,20 @@ export async function probeDisposableMacGui() {
   assert.equal(await fs.realpath(output), output);
   const source = path.join(repo, 'scripts/qa/macos-gui-prerequisites.swift'), binary = path.join(output, 'DevRyan-gui-prerequisite');
   const evidence = { protocol, sourceCommit, runner: process.env.RUNNER_OS, arch: process.arch,
-    status: 'failed', continuity: 'not-run', sourceSha256: hash(await fs.readFile(source)), checks: {} };
+    status: 'failed', safeCleanup: false, continuity: 'not-run', sourceSha256: hash(await fs.readFile(source)), checks: {} };
   let child, closed, timer;
   try {
-    evidence.os = (await exec('/usr/bin/sw_vers', ['-productVersion'])).stdout.trim();
-    evidence.consoleOwner = Number((await exec('/usr/bin/stat', ['-f', '%u', '/dev/console'])).stdout.trim());
+    evidence.os = (await execute('/usr/bin/sw_vers', ['-productVersion'])).stdout.trim();
+    evidence.consoleOwner = Number((await execute('/usr/bin/stat', ['-f', '%u', '/dev/console'])).stdout.trim());
+    remaining();
     if (evidence.consoleOwner !== process.getuid() || evidence.consoleOwner === 0) {
-      evidence.status = 'unavailable'; evidence.reason = 'No owned console login'; return evidence;
+      evidence.status = 'unavailable'; evidence.failureClass = 'pre_app_gui_unavailable'; evidence.reason = 'No owned console login'; return evidence;
     }
-    const bootstrap = await exec('/bin/launchctl', ['print', `gui/${process.getuid()}`], { timeout: 5000, maxBuffer: 1048576 })
-      .then(() => true, () => false);
-    evidence.checks.guiBootstrap = bootstrap;
-    if (!bootstrap) { evidence.status = 'unavailable'; evidence.reason = 'GUI bootstrap unavailable'; return evidence; }
-    await exec('/usr/bin/xcrun', ['swiftc', source, '-o', binary], { timeout: 60000, maxBuffer: 65536 });
+    await execute('/bin/launchctl', ['print', `gui/${process.getuid()}`], { timeout: 5000, maxBuffer: 1048576 });
+    evidence.checks.guiBootstrap = true;
+    await execute('/usr/bin/xcrun', ['swiftc', source, '-o', binary], { timeout: 60000, maxBuffer: 65536 });
     evidence.binarySha256 = hash(await fs.readFile(binary));
-    child = spawn(binary, [], { stdio: ['pipe', 'pipe', 'pipe'] });
+    remaining(); child = spawn(binary, [], { stdio: ['pipe', 'pipe', 'pipe'], signal });
     child.stderr.resume();
     closed = new Promise((resolve, reject) => { child.once('error', reject); child.once('close', code => resolve(code)); });
     const result = await new Promise((resolve, reject) => {
@@ -69,28 +74,30 @@ export async function probeDisposableMacGui() {
       });
       child.once('error', reject);
       void closed.then(() => { if (!raw.includes('\n')) reject(Error('GUI probe exited before readiness')); }, reject);
-      timer = setTimeout(() => reject(Error('GUI readiness timed out')), 15000);
+      timer = setTimeout(() => reject(Error('GUI readiness timed out')), Math.min(15000, remaining()));
     });
-    clearTimeout(timer); evidence.probe = result;
-    if (result.status === 'unavailable') { evidence.status = 'unavailable'; evidence.reason = 'WindowServer or capture prerequisite unavailable'; return evidence; }
+    clearTimeout(timer); remaining(); evidence.probe = result;
+    if (result.status === 'unavailable') { evidence.status = 'unavailable'; evidence.failureClass = 'pre_app_gui_unavailable'; evidence.reason = 'WindowServer or capture prerequisite unavailable'; return evidence; }
     const screenshot = path.join(output, 'DevRyan-gui-prerequisite.png');
-    await exec('/usr/sbin/screencapture', ['-x', '-l', String(result.windowId), screenshot], { timeout: 5000, maxBuffer: 65536 });
+    await execute('/usr/sbin/screencapture', ['-x', '-l', String(result.windowId), screenshot], { timeout: 5000, maxBuffer: 65536 });
     const bytes = await fs.readFile(screenshot);
     assert.ok(bytes.length > 1024); assert.ok(bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])));
     evidence.screenshot = { name: path.basename(screenshot), size: bytes.length, sha256: hash(bytes) };
-    evidence.status = 'passed';
+    remaining(); evidence.status = 'passed';
     return evidence;
   } catch (error) {
     evidence.reason = error instanceof Error ? error.message : 'GUI probe failed'; return evidence;
   } finally {
+    let cleanupFailed = false;
     clearTimeout(timer);
     if (child) {
       child.stdin.end();
       try {
         await Promise.race([closed, new Promise((_, reject) => { timer = setTimeout(() => reject(Error('GUI probe cleanup timed out')), 5000); })]);
-      } catch { evidence.status = 'failed'; evidence.reason = 'GUI probe cleanup failed'; child.kill('SIGKILL'); await closed.catch(() => {}); }
+      } catch { cleanupFailed = true; evidence.status = 'failed'; delete evidence.failureClass; evidence.reason = 'GUI probe cleanup failed'; child.kill('SIGKILL'); await closed.catch(() => {}); }
       finally { clearTimeout(timer); }
     }
+    evidence.safeCleanup = !cleanupFailed;
     await fs.writeFile(path.join(output, 'result.json'), JSON.stringify(evidence, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
   }
 }

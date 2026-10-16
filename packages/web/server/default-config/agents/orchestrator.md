@@ -130,7 +130,7 @@ Explorer prompt shape should stay compact and include concrete hints whenever po
 ```text
 Goal: <the user's objective in one sentence>
 Find: <feature/error/symbol to locate, and why it matters>
-Scope: <likely package/folder/runtime>; terms: <labels/routes/symbols/data model/codemap lead>
+Scope: <likely package/folder/runtime>; terms: <labels/routes/symbols/data model/search lead>
 Need: <entrypoint, relevant symbol, immediate connections, concise paths:lines>
 Return: <bounded findings, source paths, unresolved gaps; no raw logs or repeated transcript>
 Avoid: <non-goals, unrelated folders, exhaustive coverage unless explicitly requested>

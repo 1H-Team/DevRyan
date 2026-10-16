@@ -1,3 +1,4 @@
+import { parseHelperModelSelection } from '@/lib/helperModelSelection';
 import { getSafeStorage } from '@/stores/utils/safeStorage';
 import type { DesktopSettings } from '@/lib/desktop';
 import { createProjectIdFromPath } from '@/lib/projectId';
@@ -810,6 +811,9 @@ export const sanitizeWebSettings = (payload: unknown): DesktopSettings | null =>
   if (managedRemoteTunnelPresetTokens) {
     result.managedRemoteTunnelPresetTokens = managedRemoteTunnelPresetTokens;
   }
+  const helperSelection = parseHelperModelSelection(candidate.helperModelSelection);
+  if (helperSelection) result.helperModelSelection = helperSelection;
+
   if (typeof candidate.defaultModel === 'string' && candidate.defaultModel.length > 0) {
     result.defaultModel = candidate.defaultModel;
   }

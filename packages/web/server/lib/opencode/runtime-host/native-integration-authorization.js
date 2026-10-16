@@ -131,8 +131,15 @@ export function createNativeIntegrationAuthorization({ controllerIdentity, verif
       const reauthorize = await captureWebAuthorization(selected); await reauthorize(); current(instanceID);
       const authorizationID = token();
       requests.set(authorizationID, { spec: selected, instanceID, reauthorize });
-      try { return await context.run(authorizationID, action); }
-      finally { requests.delete(authorizationID); }
+      try {
+        const result = await context.run(authorizationID, action);
+        // Read results require the original caller after awaited I/O. Mutating
+        // operations retain their committed result without a new admission check.
+        if (selected.operation === `${selected.kind}.integration`) {
+          await reauthorize(); current(instanceID);
+        }
+        return result;
+      } finally { requests.delete(authorizationID); }
     },
     requestHeaders: () => context.getStore() ? { [HEADER]: context.getStore() } : {},
     capture: async ({ binding, operation: requested, requestAuthorization }) => {

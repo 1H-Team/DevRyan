@@ -64,6 +64,8 @@ export function createNativeSessionRemoval(options) {
       if(result?.removed!==true || result.sessionID!==member.id) throw fail('native_removal_unconfirmed');
       intent=await runtime.acknowledgeNativeRemoval({directory:intent.directory,intentID:intent.id,ownerID,...disposition});
     }
+    // Keep a failed proof cleanup retryable under the already committed removal decision.
+    await options.discardStreamReceipts?.(intent);
     await runtime.completeNativeRemoval({directory:intent.directory,intentID:intent.id,ownerID});
     return true;
   };

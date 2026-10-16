@@ -69,7 +69,7 @@ export const runNativeWriterAcceptance = async (options = {}) => {
   let nativeRequestCount = 0, privateRpcCount = 0, managedWakeAttribution;
   let capturedPrompt;
   const controllerRestarts = [];
-  const deps = { getRuntime: () => ({ generation: 2, baseUrl: nativeUrl, version: '2.0.26', epoch: nativeEpoch,
+  const deps = { getRuntime: () => ({ generation: 2, baseUrl: nativeUrl, version: '2.0.30', epoch: nativeEpoch,
     paths: { home, config: env.XDG_CONFIG_HOME, data: env.XDG_DATA_HOME, state: env.XDG_STATE_HOME, cache: env.XDG_CACHE_HOME } }),
     getAuthHeaders: () => ({ authorization: `Bearer ${token}`, ...owner?.requestHeaders() }), recordDiagnostic: record => diagnostics.push(record),
     withNativeWebOperation: (spec, action) => owner.withWebOperation(spec, action),
@@ -112,6 +112,7 @@ export const runNativeWriterAcceptance = async (options = {}) => {
       socketDirectory: null, workerBrowsers: false, helperRoots: [directory], gitCommand: '/usr/bin/git', workerCommand: bun,
       workerArgs: [path.join(repositoryRoot, 'packages/web/server/lib/opencode/runtime-host/writer-worker.ts')], workerEnvironment: env,
       recheckPermit: input => owner.recheckExecution(input),
+      readOnlyInvocation: input => owner.readOnlyExecution(input),
       onTermination: record => observations.push({ ...record, phase: 'termination_verified' }),
       onOutcome: record => observations.push({ ...record, phase: record.state === 'published' ? 'published' : 'discarded' }),
       stopSessions: async ({ sessions }) => { for (const sessionID of sessions) await child.call({ action: 'hold', sessionID }); return { terminated: true, sessions }; } } });
@@ -119,6 +120,9 @@ export const runNativeWriterAcceptance = async (options = {}) => {
   owner = createNativeAdmissionOwner({ runtime: host.runtime, directory, ownerID,
     readSessionMetadata: input => privileged.readSessionMetadata(input.sessionID, { directory: input.directory }),
     withSessionLock: admission.withSessionLock,
+    readPlanPolicy: async input => (await managed.readPrimaryRecord(input.sessionID))
+      ? managed.taskContext.readNativePlanPolicy(input, scope => privileged.readUserMessage(scope.sessionID,scope.messageID,{ directory: scope.directory }))
+      : { readOnly: false },
     verifyQueuedPrimaryIdle:input=>child.call({action:'queued-primary-idle-owned',...input}),
     readQueuedPrimaryRecord:sessionID=>managed.primaryRuntime.readRecord(sessionID),
     captureQueuedPrimaryAdmission:sessionID=>managed.primaryRuntime.captureNativePromptAdmission(sessionID),
@@ -273,7 +277,7 @@ export const runNativeWriterAcceptance = async (options = {}) => {
     assert.ok(session?.id, 'Native session not created');
     const begin = async (scenario, options = {}) => {
       observations.push({ phase: 'scenario_begin', caseID: scenario.id, at: Date.now() });
-      const command = await child.call({ action: 'scenario', caseID: scenario.id, tool: scenario.tool, input: scenario.input,
+      const command = await child.call({ action: options.planMode ? 'scenario-plan' : 'scenario', caseID: scenario.id, tool: scenario.tool, input: scenario.input,
         deniedInventory: scenario.deniedInventory === true,
         backgroundRestart: options.backgroundRestart === true,
         parallel: options.parallel === true, sameFile: options.sameFile === true, background: options.background === true });
@@ -283,6 +287,7 @@ export const runNativeWriterAcceptance = async (options = {}) => {
       // The pinned native patch plugin selects patch versus edit/write from
       // the model ID. Declare both simulated routes and use its real hook.
       await client.prompts.prompt(sessionID, { messageID,
+        ...(options.planMode === undefined ? {} : { planMode: options.planMode }),
         ...(options.agent ? { agent: options.agent } : {}), ...(options.variant ? { variant: options.variant } : {}),
         model: { providerID: 'sim', modelID: scenario.tool === 'patch' ? 'gpt-5-native-fixture' : 'm1' },
         parts: [{ type: 'text', text: command.marker }] },
@@ -312,6 +317,35 @@ export const runNativeWriterAcceptance = async (options = {}) => {
     };
     const invoke = async (scenario, flags = false) => { const options = typeof flags === 'boolean' ? { parallel: flags } : flags;
       await begin(scenario, options); return settle(scenario, options); };
+    if (options.planOnly) {
+      const planned = await client.sessions.create({ title: 'Actual source SDK Plan invocation fence', agent: 'orchestrator', model: { providerID: 'sim', modelID: 'm1' } }, { directory });
+      await managed.admitPrimary(planned.id);
+      const planInvoke = scenario => invoke(scenario, { sessionID: planned.id, agent: 'orchestrator', planMode: true });
+      for (const [id, tool, input] of [['plan-write', 'write', { path: 'source-plan-forbidden.txt', content: 'must not publish' }],
+        ['plan-edit', 'edit', { path: 'seed.txt', oldString: 'native-read-marker', newString: 'must not publish' }],
+        ['plan-shell-write', 'shell', { command: "printf forbidden > source-plan-shell-forbidden.txt" }],
+        ['plan-shell-delete', 'shell', { command: 'rm seed.txt' }],
+        ['plan-shell-rename', 'shell', { command: 'mv seed.txt source-plan-renamed.txt' }]]) {
+        const part = await planInvoke({ id, tool, input });
+        if (tool === 'shell') assert.ok(part.state.status === 'error' || Number.isSafeInteger(part.state.metadata?.exit) && part.state.metadata.exit !== 0, `Actual source SDK ${id} gained write authority`);
+        else { assert.equal(part.state.status, 'error'); assert.match(part.state.error, /native_plan_write_denied/); }
+        assert.equal(await fs.readFile(path.join(directory, 'seed.txt'), 'utf8'), 'native-read-marker\n');
+        cases.push({ id: `source-native-${id}-denied`, status: 'passed', source: 'actual-source-SDK-native-tool-invocation-fence' });
+      }
+      for (const file of ['source-plan-forbidden.txt','source-plan-shell-forbidden.txt','source-plan-renamed.txt'])
+        await assert.rejects(fs.readFile(path.join(directory,file)), error => error.code === 'ENOENT');
+      const inspected = await planInvoke({ id: 'plan-shell-inspect', tool: 'shell', input: { command: 'cat seed.txt' } });
+      assert.equal(inspected.state.status, 'completed'); assert.match(inspected.state.output, /native-read-marker/);
+      const safeLease = await host.runtime.leaseForCall({ directory, sessionID: planned.id, callID: 'native_plan-shell-inspect' });
+      assert.equal(safeLease.state, 'published'); assert.deepEqual(safeLease.result.files, []);
+      cases.push({ id: 'source-native-plan-safe-shell-inspection', status: 'passed', source: 'actual-source-SDK-confined-shell-publication' });
+      const implemented = await invoke({ id: 'source-implementation-write', tool: 'write', input: { path: 'source-implementation.txt', content: 'fresh accepted writable objective\n' } },
+        { sessionID: planned.id, agent: 'orchestrator', planMode: false });
+      assert.equal(implemented.state.status, 'completed');
+      await assertWriterOutcome({ runtime: host.runtime, directory, sessionID: planned.id, callID: 'native_source-implementation-write', observations, succeeded: true });
+      assert.equal(await fs.readFile(path.join(directory,'source-implementation.txt'),'utf8'), 'fresh accepted writable objective\n');
+      cases.push({ id: 'source-native-fresh-nonplan-objective-writable', status: 'passed', source: 'actual-source-SDK-fresh-authority-after-Plan' });
+    } else {
     const read = await invoke({ id: 'read', tool: 'read', input: { path: 'seed.txt' } });
     assert.equal(read.state.status, 'completed');
     assert.match(read.state.output, /native-read-marker/);
@@ -450,6 +484,7 @@ export const runNativeWriterAcceptance = async (options = {}) => {
       onPassedCase: row => cases.push(row),
       configureFormatter: async formatter => { writerConfig.formatter = formatter;
         observations.push({ phase: 'formatter_configuration', sha256: hashNativeFixtureValue(formatter) }); } });
+    }
   } catch (error) { runError = error; }
   finally {
     observations.push({ phase: 'cleanup_begin', at: Date.now() });
@@ -521,9 +556,9 @@ export const runNativeWriterAcceptance = async (options = {}) => {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
     const args = process.argv.slice(2).filter(argument => argument !== '--keep-artifacts');
-    assert.ok(args.length === 0 || args.length === 1 && args[0] === '--managed-wake-attribution',
-      'Usage: node scripts/verify-opencode-v2-native.mjs [--managed-wake-attribution]');
-    const result = await runNativeWriterAcceptance({ managedWakeAttribution: args.length === 1 });
+    assert.ok(args.length === 0 || args.length === 1 && ['--managed-wake-attribution','--plan-only'].includes(args[0]),
+      'Usage: node scripts/verify-opencode-v2-native.mjs [--managed-wake-attribution|--plan-only]');
+    const result = await runNativeWriterAcceptance({ managedWakeAttribution: args[0] === '--managed-wake-attribution', planOnly: args[0] === '--plan-only' });
     console.log(JSON.stringify({ lane: result.lane, status: result.status, cases: result.cases.length, artifact: path.join(result.root, 'result.json'), remainingMandatoryGate: result.remainingMandatoryGate }));
   } catch (error) { console.error(JSON.stringify({ status: 'failed', error: error.message, artifact: error.artifact })); process.exitCode = 1; }
 }

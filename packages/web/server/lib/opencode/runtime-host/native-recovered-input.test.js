@@ -151,9 +151,18 @@ test('restored shell grant compares immutable owner item hash without persisted 
  f.db.prepare('UPDATE session_inbox SET type=?,payload=?').run(item.type,JSON.stringify(item.payload));expect(f.db.prepare('SELECT * FROM event').all()).toEqual([]);const owner=f.owner();await owner.install('epoch');
  expect((await owner.snapshot(f.sessionID)).inputs[0].canDiscard).toBe(false);await expect(owner.action(f.sessionID,'discard-input',f.scope(await owner.snapshot(f.sessionID)),{owner:null})).rejects.toMatchObject({statusCode:409});expect(f.calls()).toBe(0);
  await expect(owner.automatic({sessionID:f.sessionID,messageID:f.messageID,shellReceipt:{...receipt,itemDelivery:'queue',itemHash:'0'.repeat(64)}},null,async()=>{},async()=>{})).rejects.toMatchObject({statusCode:409});
- await expect(owner.automatic({sessionID:f.sessionID,messageID:f.messageID,shellReceipt:{...receipt,itemDelivery:'queue',itemHash:recoveredInputHash(item)}},null,async()=>{},async()=>{})).resolves.toBeUndefined();
+ expect(owner.hasCurrentGrant(f.sessionID,'epoch')).toBe(false);
+ await expect(owner.automatic({sessionID:f.sessionID,messageID:f.messageID,shellReceipt:{...receipt,itemDelivery:'queue',itemHash:recoveredInputHash(item)}},null,async()=>{},async()=>{
+  expect(owner.hasCurrentGrant(f.sessionID,'epoch')).toBe(true);
+  expect(owner.hasCurrentGrant('ses_unknown','epoch')).toBe(false);
+  expect(owner.hasCurrentGrant(f.sessionID,'stale')).toBe(false);
+ })).resolves.toBeUndefined();
+ await owner.install('replacement');expect(owner.hasCurrentGrant(f.sessionID,'epoch')).toBe(false);expect(owner.hasCurrentGrant(f.sessionID,'replacement')).toBe(false);
  const replacement=f.owner();f.db.prepare('DELETE FROM session_inbox').run();f.message(f.messageID,'synthetic',2,item.payload);await replacement.install('next');const promotedItem={...item,delivery:'steer'};
  await expect(replacement.automatic({sessionID:f.sessionID,messageID:f.messageID,shellReceipt:{...receipt,itemDelivery:'steer',itemHash:recoveredInputHash(promotedItem)}},null,async()=>{},async()=>{})).resolves.toBeUndefined();
+ expect(replacement.hasCurrentGrant(f.sessionID,'next')).toBe(true);
+ f.message('msg_consumed','assistant',3,{time:{created:101,completed:102},agent:'build',model:{providerID:'devryan-smoke',id:'smoke-write',variant:'default'},content:[],finish:'stop'});
+ await replacement.published(f.sessionID);expect(replacement.hasCurrentGrant(f.sessionID,'next')).toBe(false);
 });
 test('cancel PRE publication rechecks fresh principal and old Step cannot consume pending reservation',async()=>{
  const f=await fixture(),owner=f.owner();await owner.install('epoch');const hash=(await owner.snapshot(f.sessionID)).inputs[0].payloadHash;

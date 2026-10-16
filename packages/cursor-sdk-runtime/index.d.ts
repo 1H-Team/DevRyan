@@ -1,3 +1,7 @@
+/** Failed drain preserves partial content and uses assistant info.error. */
+export type CursorStreamPartialCode = 'CURSOR_STREAM_DRAIN_TIMEOUT' | 'CURSOR_STREAM_QUEUE_OVERFLOW' | 'CURSOR_STREAM_DRAIN_FAILED' | 'CURSOR_STREAM_FINAL_TIMEOUT' | 'CURSOR_STREAM_STALE_GENERATION' | 'CURSOR_STREAM_FINAL_ASSOCIATION_INVALID';
+export type CursorStreamPartialError = { name: 'CursorStreamPartialError'; message: `Cursor stream incomplete (${CursorStreamPartialCode}).` };
+
 /** Consumption across an SDK run; reasoning is already included in output. */
 export type CursorTokenUsage = {
   inputTokens: number;
@@ -164,7 +168,7 @@ export type CursorSdkRuntime = {
   getDeclaredVirtualProvider(): { id: string; name: string; models: Record<string, CursorModelRecord> };
   refreshVirtualProvider(options?: { force?: boolean; reason?: string; timeoutMs?: number; directory?:string; signal?:AbortSignal }): Promise<{ id: string; name: string; models: Record<string, CursorModelRecord> }>;
   validateModelSelection(input: { directory?: string; modelID: string; variant?: string | null; signal?: AbortSignal; onFailure?: (failure: { reason: string }) => void }): Promise<boolean | null>;
-  generateText(input: { titleHelper?: boolean; text: string; directory: string; sessionID?: string; modelID: string; variant?: string; signal?: AbortSignal; timeoutMs?: number }): Promise<string | null>;
+  generateText(input: { titleHelper?: boolean; helperAgent?:'devryan-title'|'devryan-commit'|'devryan-pr'; selectionMode?:'configured'|'active'; selectionRevision?:string; text: string; directory: string; sessionID?: string; modelID: string; variant?: string; signal?: AbortSignal; timeoutMs?: number }): Promise<string | null>;
   generateTitle(input: {
     text: string;
     directory?: string | null;
@@ -195,7 +199,6 @@ export type WorkspaceDiffFile = {
 };
 
 export function filterWorkspaceDiffFilesAgainstBaseline(baselineDiff: string, currentDiff: string): WorkspaceDiffFile[];
-export function isLossyStreamedTextVariant(streamedText: string, finalText: string): boolean;
 export const MAX_UNTRACKED_FILE_BYTES: number;
 export function resetUntrackedDiffCacheForTests(): void;
 export function defaultGetWorkspaceDiff(directory: string): Promise<string>;
@@ -233,7 +236,15 @@ export function resolveCursorSdkWorkerRuntimeConfig(options?: {
   workerCwd: string;
   workerEnv: Record<string, string>;
 };
+export interface CursorPresentationProgress {
+  provider: 'cursor'; ownerID: string; sessionID: string; generation: string; sequence: number;
+  objectiveID: string; assistantID: string; stepID: null; attemptID: null;
+  phase: 'finalizing' | 'cleared'; progress: number;
+}
 export function createCursorSdkRuntime(options: Record<string, unknown> & {
+  /** Trusted presentation observer only; cannot grant execution authority. */
+  onPresentationProgress?: (input: CursorPresentationProgress) => void;
+  onPresentationOwnerRetired?: (ownerID: string) => void;
   /** Constructor-only host identity; defaults to the actual process. */
   platform?: NodeJS.Platform;
   arch?: string;
@@ -246,7 +257,7 @@ export function createCursorSdkRuntime(options: Record<string, unknown> & {
     | { kind: 'catalog' | 'verify'; directory?:string }
     | { kind: 'prewarm'; directory?: string; sessionID?: string }
   ) => Promise<string | null>;
-  ownedReadOnly?: <A>(input:{kind:'title'|'catalog'|'verify';directory?:string;sessionID?:string;signal?:AbortSignal},action:()=>Promise<A>)=>Promise<A>;
+  ownedReadOnly?: <A>(input:{kind:'title'|'text'|'catalog'|'verify';directory?:string;sessionID?:string;signal?:AbortSignal;modelID?:string;variant?:string;helperAgent?:'devryan-title'|'devryan-commit'|'devryan-pr';selectionMode?:'configured'|'active';selectionRevision?:string},action:()=>Promise<A>)=>Promise<A>;
   nativeWarming?: false;
   recordDiagnostic?: (entry: { type: 'lifecycle'; event: 'cursor_catalog'; directory?: string;
     payload: { phase: 'key_resolved' | 'worker_started' | 'worker_result' | 'settled'; startedAt: number; elapsedMs: number;

@@ -24,6 +24,12 @@ const permissions = (entry) => !entry || entry.deleted || entry.mode === '120000
 const equal = (a, b) => (a?.hash ?? null) === (b?.hash ?? null) && (a?.mode ?? null) === (b?.mode ?? null)
   && permissions(a) === permissions(b);
 const validID = (id) => typeof id === 'string' && id.length > 0 && id.length <= 1024 && !id.includes('\0');
+// Both history coverage and restore use this exact durable no-start proof.
+const neverStartedCall = ({ directory, sessionID, messageID, callID, pointer, lease, cancelled }) => validID(messageID) && (
+  !pointer ? cancelled?.sessionID === sessionID && cancelled.messageID === messageID
+    : lease?.directory === directory && lease.scope.sessionID === sessionID && lease.scope.messageID === messageID
+      && lease.scope.callID === callID && lease.state === 'cancelled' && !lease.rebootRecovery
+      && lease.cleaned === true && !lease.cleanupPending && (lease.cancelledBeforeStart === true || !lease.executionKind));
 const scopeFields = ['sessionID', 'messageID', 'userMessageID', 'callID'];
 const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
 // Dependency inputs: see execution-inputs.js. Ignored output folders among
@@ -301,7 +307,8 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   // Callers queued behind a repository's lock follow its current holder's
   // progress, so waiting behind productive work is not reported as a stall.
   const queueMeters = new Map();
-  const locked = async (requested, fn, { requireExisting = false, operation: explicitOperation, sessionID: explicitSessionID } = {}) => {
+  const locked = async (requested, fn, { requireExisting = false, operation: explicitOperation, sessionID: explicitSessionID, assertCurrent } = {}) => {
+    assertCurrent?.();
     checkExecutionAdmission();
     const label = lockOperation.getStore();
     const operation = explicitOperation ?? label?.operation ?? 'ledger', sessionID = explicitSessionID ?? label?.sessionID;
@@ -364,14 +371,16 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         if (meta.version !== 1 || meta.directory !== directory) throw changeError('invalid_change_record');
         const repo = { directory, logicalDirectory, root, gitDir, db, meta, vcs };
         await withoutExecutionDeadline(() => quietExecutionPhase('ledger_recovery', () => recover(repo)));
+        assertCurrent?.();
         checkExecutionAdmission();
         const result = await quietExecutionPhase('ledger_transaction', () => fn(repo));
+        assertCurrent?.();
         checkExecutionAdmission();
         // A lease lookup must not stage an unchanged blob and rebuild Git's
         // index under the owner lock. Mutations still commit atomically.
         if (JSON.stringify(meta) !== originalMeta) db.set('meta.json', meta);
         const wrote = db.pendingCount > 0;
-        await withoutExecutionDeadline(() => quietExecutionPhase('ledger_commit', () => db.commit()));
+        await withoutExecutionDeadline(() => quietExecutionPhase('ledger_commit', () => db.commit({ assertCurrent })));
         if (wrote) noteLedgerCommit(root);
         timing.wrote = wrote;
         return result;
@@ -639,12 +648,16 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   // inputs) is skipped without classification.
   async function* walkFiles(root, walk = {}) {
     walk.inputs ??= new Set();
+    let visited = 0;
     for (let level = ['']; level.length;) {
       const directories = [];
       for (const relative of level) {
+        walk.assertCurrent?.();
         for (const entry of await fs.readdir(path.join(root, relative), { withFileTypes: true })) {
           checkExecutionAdmission();
+          walk.assertCurrent?.();
           if (entry.name === '.git' || path.resolve(root, relative, entry.name) === storage) continue;
+          if (++visited > (walk.maxEntries ?? Infinity)) throw changeError('ledger_warm_budget', 409);
           const file = path.posix.join(relative, entry.name);
           if (walk.excluded?.has(file)) continue;
           if (inputDirectories.has(entry.name)) { walk.inputs.add(file); continue; }
@@ -673,7 +686,10 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   // neither inspected nor installed.
   const observedNames = async (directory, paths, walk) => {
     const found = [];
-    for await (const file of walkFiles(directory, walk)) if (safeChangePath(file)) found.push(file);
+    for await (const file of walkFiles(directory, walk)) if (safeChangePath(file)) {
+      found.push(file);
+      if (found.length > (walk.maxFiles ?? Infinity)) throw changeError('ledger_warm_budget', 409);
+    }
     const names = new Set();
     for (const file of paths.keys()) if (!underInput(file, walk.inputs)) names.add(file);
     for (const file of found) names.add(file);
@@ -704,11 +720,12 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   const observations = new Map();
   // A warm pass is a best-effort background build: one pass, budgeted, and it
   // skips files that change mid-pass. It never certifies a real call's
-  // observation; a real call may wait for it, then runs or joins an
+  // observation; a real call supersedes it, then runs or joins an
   // authoritative pass that started after its reservation.
-  const observe = async (lease, { warm = false, maxFiles = Infinity, maxBytes = Infinity } = {}) => {
+  const observe = async (lease, { warm = false, refresh = false, maxFiles = Infinity, maxBytes = Infinity } = {}) => {
     const joinable = (pass) => pass && (warm || (pass.authoritative && pass.started >= lease.reservedAt));
     const previous = observations.get(lease.projectDirectory);
+    if (!warm && previous && !previous.authoritative) previous.superseded = true;
     if (joinable(previous)) {
       try { return await waitForExecutionQueue(previous.work, previous.progress); }
       catch { checkExecutionAdmission(); } // The observing caller may have been cancelled independently.
@@ -717,11 +734,18 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     // Recheck after waiting: another reservation may have installed the next
     // sufficiently fresh pass while this caller was queued.
     const current = observations.get(lease.projectDirectory);
+    if (!warm && current && current !== previous && !current.authoritative) {
+      current.superseded = true;
+      await waitForExecutionQueue(current.work.catch(() => {}), current.progress);
+    }
     if (current && current !== previous && joinable(current)) {
       try { return await waitForExecutionQueue(current.work, current.progress); }
       catch { checkExecutionAdmission(); }
     }
     const pass = { started: Date.now(), work: null, progress: executionProgressMeter(), authoritative: !warm };
+    const assertCurrent = () => {
+      if (warm && pass.superseded) throw changeError('ledger_warm_superseded', 409);
+    };
     pass.work = (async () => {
       const root = rootFor(lease.projectDirectory), gitDir = path.join(root, 'git');
       let dirty, attempts = 0, installed = 0, recorded = 0, restamped = 0, ingestedBytes = 0, skipped = null, inputs = new Set();
@@ -731,11 +755,12 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         const snapshot = { directory: lease.projectDirectory, root, gitDir, db: await openChangeStore(root, gitDir, { syncObjects }) };
         // Read-only here: reuse the listing cached by immutable `files` tree identity.
         const paths = await snapshotPaths(snapshot);
-        const walk = { classifier: await classifierFor(snapshot.directory, lease.vcs !== false, warm), strict: warm, inputs: new Set() };
+        const walk = { classifier: await classifierFor(snapshot.directory, lease.vcs !== false, warm), strict: warm, inputs: new Set(),
+          ...(warm ? { maxFiles, maxEntries: maxFiles * 4, assertCurrent } : {}) };
         const names = await observedNames(snapshot.directory, paths, walk);
         inputs = walk.inputs;
         if (names.size > maxFiles) { skipped = 'too-large'; break; }
-        const fast = fastIngest(), restamp = fast && !warm && restampBatching();
+        const fast = fastIngest(), restamp = fast && (!warm || refresh) && restampBatching();
         const batchRows = fast && (paths.size === 0 || restamp) ? INITIAL_INSTALL_BATCH : INSTALL_BATCH;
         const changedBatchRows = fast && paths.size === 0 ? INITIAL_INSTALL_BATCH : INSTALL_BATCH;
         // The walk just listed these directories; each is checked for symlinks
@@ -745,6 +770,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         let rows = [], rowBytes = 0, changedRows = 0, carried = null;
         const install = async () => {
           if (!rows.length) return;
+          assertCurrent();
           let written = null;
           await locked(lease.directory, async (repo) => {
             // While no other writer has committed since this pass's previous
@@ -774,7 +800,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
               executionProgress();
             }
             written = { db: repo.db, latest, disabled };
-          }, { operation: warm ? 'ledger_warm_install' : 'observation_install' });
+          }, { operation: warm ? 'ledger_warm_install' : 'observation_install', ...(warm ? { assertCurrent } : {}) });
           // The store's tree is the one this batch committed (or read, if it
           // changed nothing); the next batch reuses state only from that tree.
           carried = fast && written ? { tree: written.db.tree, latest: written.latest, disabled: written.disabled } : null;
@@ -785,6 +811,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         };
         const ordered = [...names];
         for (let start = 0; start < ordered.length && !skipped; start += 64) {
+          assertCurrent();
           await yieldToEventLoop();
           const observed = await mapBounded(ordered.slice(start, start + 64), async (file) => {
             checkExecutionAdmission();
@@ -821,7 +848,12 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       // A large first build leaves one loose object per record: pack now.
       if (installed >= maintenanceLimits.looseObjects) void maintainLedger(root);
       return { inputs: [...inputs].sort(), ...(skipped ? { skipped } : {}) };
-    })();
+    })().catch(cause => {
+      if (warm && ['ledger_warm_budget', 'ledger_warm_superseded'].includes(cause?.code)) {
+        return { skipped: cause.code === 'ledger_warm_budget' ? 'too-large' : 'foreground' };
+      }
+      throw cause;
+    });
     observations.set(lease.projectDirectory, pass);
     try { return await pass.work; }
     finally { if (observations.get(lease.projectDirectory) === pass) observations.delete(lease.projectDirectory); }
@@ -1313,12 +1345,49 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     if (await repo.db.get(key('calls', scopeKey))) throw changeError('execution_already_started');
     return { generation };
   });
+  const directFinishQueues = new Map();
   const finishDirect = (input) => {
     if (!scopeFields.every((field) => validID(input[field])) || !/^[a-f0-9-]{36}$/.test(input.token ?? '')
       || !Number.isSafeInteger(input.generation) || !/^[a-f0-9]{64}$/.test(input.executionFingerprint ?? '')) {
       return Promise.reject(changeError('invalid_capture_identity', 400));
     }
-    return locked(input.directory, async (repo) => {
+    const captured = structuredClone(input), run = AsyncLocalStorage.snapshot(), meter = executionProgressMeter(), signal = executionSignal();
+    return new Promise((resolve, reject) => {
+      let queued = directFinishQueues.get(captured.directory);
+      if (!queued || queued.signal !== signal || queued.items.length >= 64) {
+        queued = { signal, items: [] }; directFinishQueues.set(captured.directory, queued);
+        const batch = queued.items;
+        setImmediate(async () => {
+          if (directFinishQueues.get(captured.directory) === queued) directFinishQueues.delete(captured.directory);
+          const holder = executionProgressMeter();
+          for (const item of batch) if (item.meter && item.meter !== holder) item.meter.following = holder;
+          try {
+            const outcomes = await locked(captured.directory, async repo => {
+              const results = [];
+              for (const item of batch) {
+                const previousMeta = structuredClone(repo.meta);
+                try {
+                  const value = await item.run(() => repo.db.stage(async () => {
+                    checkExecutionAdmission();
+                    const value = await stageDirectFinish(repo, item.input);
+                    checkExecutionAdmission();
+                    return value;
+                  }));
+                  results.push({ value });
+                } catch (error) { Object.assign(repo.meta, previousMeta); results.push({ error }); }
+              }
+              return results;
+            }, { operation: 'finishDirect' });
+            // The shared durable commit finishes before any call is acknowledged.
+            outcomes.forEach((outcome, index) => outcome.error ? batch[index].reject(outcome.error) : batch[index].resolve(outcome.value));
+          } catch (error) { for (const item of batch) item.reject(error); }
+          finally { for (const item of batch) if (item.meter && item.meter.following === holder) item.meter.following = undefined; }
+        });
+      }
+      queued.items.push({ input: captured, run, meter, resolve, reject });
+    });
+  };
+  const stageDirectFinish = async (repo, input) => {
       const scopeKey = `${input.sessionID}\0${input.callID}`;
       const existing = await repo.db.get(key('calls', scopeKey));
       if (existing) {
@@ -1346,7 +1415,6 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       repo.db.set(key('leases', lease.token), lease);
       repo.db.set(key('calls', scopeKey), { token: lease.token });
       return lease.result;
-    });
   };
   const snapshotPaths = (repo) => process.env.DEVRYAN_LEDGER_SNAPSHOT_REUSE === '0'
     ? readActivePaths(repo) : cachedRecords(repo, 'files', readActivePaths, (paths) => paths);
@@ -1507,14 +1575,17 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   // Builds a missing ledger ahead of the first confined call (95-105 s on a
   // 5.6k-file repository). The caller bounds it (one build at a time, cancelled
   // with its signal); batches already committed are kept and resumed. A real
-  // call arriving meanwhile queues behind this pass and then stamps quickly.
+  // call arriving meanwhile supersedes advisory work at the next checked
+  // boundary, then performs its own authoritative observation.
   // Ownership is unchanged: every observation outside a lease stays external.
-  const warm = async ({ directory, maxFiles = WARM_MAX_FILES, maxBytes = WARM_MAX_BYTES }) => {
+  const warm = async ({ directory, refresh = false, maxFiles = WARM_MAX_FILES, maxBytes = WARM_MAX_BYTES }) => {
+    if (typeof refresh !== 'boolean' || !Number.isSafeInteger(maxFiles) || maxFiles < 1 || maxFiles > WARM_MAX_FILES
+      || !Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > WARM_MAX_BYTES) throw changeError('invalid_warm_request', 400);
     checkExecutionAdmission();
     const { logicalDirectory, directory: projectDirectory, vcs } = await resolveRepository(directory);
     if (!vcs) return { skipped: 'not-git' };
     if (projectDirectory === await fs.realpath(os.homedir()).catch(() => os.homedir())) return { skipped: 'home-directory' };
-    try { await fs.access(path.join(rootFor(projectDirectory), 'observed')); return { skipped: 'already-built' }; }
+    try { await fs.access(path.join(rootFor(projectDirectory), 'observed')); if (!refresh) return { skipped: 'already-built' }; }
     catch (cause) { if (cause.code !== 'ENOENT') throw cause; }
     // A cheap lower bound (tracked plus untracked, non-ignored files) before
     // walking; the pass enforces the exact eligible count. A budget that
@@ -1526,7 +1597,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     // Creates the ledger root and store exactly as a reservation would.
     await locked(logicalDirectory, async () => {});
     const started = Date.now();
-    const result = await observe({ directory: logicalDirectory, projectDirectory, vcs, reservedAt: Date.now() }, { warm: true, maxFiles, maxBytes });
+    const result = await observe({ directory: logicalDirectory, projectDirectory, vcs, reservedAt: Date.now() }, { warm: true, refresh, maxFiles, maxBytes });
     if (result.skipped) return { skipped: result.skipped };
     return { built: true, files, elapsedMs: Date.now() - started };
   };
@@ -1880,24 +1951,28 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   });
   const prepareFileRestore = (input) => locked(input.directory, async (repo) => {
     if (!validID(input.sessionID) || !validID(input.revision) || !Array.isArray(input.calls)
-      || !input.calls.length || input.calls.some((call) => !validID(call.sessionID) || !validID(call.callID))) {
+      || !input.calls.length || input.calls.some((call) => !validID(call.sessionID) || !validID(call.callID) || !validID(call.messageID))) {
       throw changeError('mutation_history_unavailable');
     }
     const identity = JSON.stringify([input.sessionID, input.revision, input.redo === true]);
     const receipt = await repo.db.get(key('file-restores', identity));
-    const fingerprint = digest(Buffer.from(JSON.stringify(input.calls.map((call) => [call.sessionID, call.callID]).sort())));
+    const fingerprint = digest(Buffer.from(JSON.stringify(input.calls.map((call) => [call.sessionID, call.messageID, call.callID]).sort())));
+    let previous;
     if (receipt) {
       if (receipt.fingerprint !== fingerprint) throw changeError('capture_identity_mismatch');
-      const previous = await repo.db.get(key('transactions', receipt.id));
+      previous = await repo.db.get(key('transactions', receipt.id));
       if (!previous) throw changeError('mutation_recovery_failed');
-      if (previous.state !== 'cancelled') return previous;
     }
     const members = new Set([input.sessionID]), operations = new Set();
     for (const call of input.calls) {
       const entry = await repo.db.get(key('calls', `${call.sessionID}\0${call.callID}`));
       const lease = entry && await repo.db.get(key('leases', entry.token));
+      const cancelled = await repo.db.get(key('cancelled-calls', `${call.sessionID}\0${call.callID}`));
+      // No-start receipts have no operation to restore. Missing calls alone
+      // never provide this authority, and a published lease remains mandatory.
+      if (neverStartedCall({ ...call, directory: repo.logicalDirectory, pointer: entry, lease, cancelled })) continue;
       if (lease?.state !== 'published' || !lease.result?.operationID) throw changeError('mutation_history_unavailable');
-      if (call.messageID && call.messageID !== lease.scope.messageID) throw changeError('capture_identity_mismatch');
+      if (call.messageID !== lease.scope.messageID) throw changeError('capture_identity_mismatch');
       let id = call.sessionID;
       const seen = new Set();
       while (id !== input.sessionID) {
@@ -1907,6 +1982,9 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       }
       operations.add(lease.result.operationID);
     }
+    if (!operations.size) throw changeError('mutation_history_unavailable');
+    // Cached idempotence never substitutes for current exact call identities.
+    if (previous && previous.state !== 'cancelled') return previous;
     const id = randomUUID();
     // A hidden descendant may still publish through an older parent call.
     // Fence the entire selected review tree before waiting for termination.
@@ -1939,7 +2017,9 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   });
   // Read only host-owned durable evidence. A tool error or a missing lease is
   // never proof that a command did not execute. Batch one transcript per lock.
-  const executionOutcomes = (input) => snapshotOrLocked(input.directory, async (repo) => {
+  // Negative proof must not observe a guarded CAS awaiting owner recheck or
+  // rollback. Share the writer's owner lock, including across processes.
+  const executionOutcomes = (input) => locked(input.directory, async (repo) => {
     if (!validID(input.sessionID) || !Array.isArray(input.calls) || input.calls.length > 10_000
       || input.calls.some(call => !validID(call.callID) || !validID(call.messageID))) throw changeError('invalid_capture_identity');
     if (!repo) return input.calls.map(call => ({ sessionID: input.sessionID, messageID: call.messageID, callID: call.callID, outcome: 'uncertain' }));
@@ -1953,9 +2033,9 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       if (lease && lease.directory === repo.logicalDirectory && lease.scope.sessionID === input.sessionID
         && lease.scope.messageID === call.messageID && lease.scope.callID === call.callID) {
         if (lease.state === 'published') outcome = 'finished';
-        else if (!lease.rebootRecovery && lease.state === 'cancelled' && lease.cleaned && !lease.cleanupPending
-          && (lease.cancelledBeforeStart || !lease.executionKind)) outcome = 'never_started';
-      } else if (!pointer && cancelled?.messageID === call.messageID) outcome = 'never_started';
+      }
+      if (outcome !== 'finished' && neverStartedCall({ ...call, sessionID: input.sessionID,
+        directory: repo.logicalDirectory, pointer, lease, cancelled })) outcome = 'never_started';
       outcomes.push({ sessionID: input.sessionID, messageID: call.messageID, callID: call.callID, outcome });
     }
     return outcomes;
@@ -2089,8 +2169,22 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     lease.state = 'cancelled'; lease.cleanupPending = !lease.cleaned; repo.db.set(key('leases', lease.token), lease);
   });
   const cancelUnstartedCall = (input) => locked(input.directory, async (repo) => {
+    input.guard?.assertCurrent();
+    if (input.guard) {
+      const admission = await nativeAdmission(repo, input.sessionID);
+      input.guard.assertCurrent();
+      if (admission.held || admission.revision !== input.guard.admissionRevision) throw changeError('native_permit_revoked');
+    }
     if (!validID(input.sessionID) || !validID(input.callID) || !validID(input.messageID)) throw changeError('invalid_capture_identity');
     const scopeKey = `${input.sessionID}\0${input.callID}`, call = await repo.db.get(key('calls', scopeKey));
+    input.guard?.assertCurrent();
+    // Constructor-proved negative admission must never rewrite an execution lease.
+    if (input.requireAbsent === true) {
+      if (call) throw changeError('execution_already_started');
+      const previous = await repo.db.get(key('cancelled-calls', scopeKey));
+      input.guard?.assertCurrent();
+      if (previous && previous.messageID !== input.messageID) throw changeError('capture_identity_mismatch');
+    }
     if (call) {
       const lease = await repo.db.get(key('leases', call.token));
       if (!lease || lease.scope.messageID !== input.messageID || input.token && lease.token !== input.token) throw changeError('capture_identity_mismatch');
@@ -2099,8 +2193,8 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       lease.cancelledBeforeStart = true;
       lease.state = 'cancelled'; lease.cleanupPending = !lease.cleaned; repo.db.set(key('leases', lease.token), lease);
     }
-    repo.db.set(key('cancelled-calls', scopeKey), { messageID: input.messageID });
-  });
+    repo.db.set(key('cancelled-calls', scopeKey), { sessionID: input.sessionID, messageID: input.messageID });
+  }, { assertCurrent: input.guard?.assertCurrent });
   const activeLeases = (input) => locked(input.directory, async (repo) => {
     const entries = [];
     for await (const { value } of repo.db.entries('leases')) {

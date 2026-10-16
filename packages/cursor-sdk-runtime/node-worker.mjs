@@ -1,3 +1,6 @@
+import { cursorFinalText } from './final-result.js';
+import { createCursorWorkerWriter } from './worker-writer.js';
+import { cursorErrorDetails, cursorWorkerFailure, cursorProviderFailure } from './sdk-error.js';
 import { generateCursorHelperText } from './text-generation.js';
 import { assertWorkerPayloadBytes, cursorReadOnlyOptions, cursorCatalogModels } from './worker-payload.js';
 import process from 'node:process';
@@ -14,6 +17,10 @@ import {
 import { normalizeInteractionUpdateToSdkMessage } from './interaction-update-normalize.js';
 import { cursorRunUsageObservation } from './cursor-usage.js';
 import { assertCursorSdkNodeCompatibility } from './node-version.js';
+import { Console } from 'node:console';
+
+// The SDK's default logger must never enter the stdout protocol.
+globalThis.console = new Console(process.stderr, process.stderr);
 
 const readStdin = async () => {
   let raw = '', bytes = 0;
@@ -59,9 +66,8 @@ const normalizeModelSelection = (selection, fallbackModelID) => {
 
 const isMissingCursorAgentError = (error) => /Agent .* not found/i.test(error instanceof Error ? error.message : String(error || ''));
 
-const writeEvent = (event) => {
-  process.stdout.write(`${JSON.stringify(event)}\n`);
-};
+const output = createCursorWorkerWriter(process.stdout);
+const writeEvent = event => output.write(event);
 
 const writeTiming = (mark, metadata) => {
   writeEvent({
@@ -95,39 +101,6 @@ const finalStatusFromSdkStatus = (status) => {
   if (status === 'ERROR') return 'error';
   if (status === 'CANCELLED') return 'cancelled';
   return null;
-};
-
-const getSdkMessageTextFingerprint = (message) => {
-  if (!isPlainObject(message)) return '';
-  if (message.type === 'assistant') {
-    const content = Array.isArray(message.message?.content) ? message.message.content : [];
-    const text = content
-      .filter((block) => block?.type === 'text' && typeof block.text === 'string')
-      .map((block) => block.text)
-      .join('');
-    return text ? `assistant:${text}` : '';
-  }
-  if (message.type === 'thinking') {
-    const text = typeof message.text === 'string' ? message.text : '';
-    return text ? `thinking:${text}` : '';
-  }
-  return '';
-};
-
-const createCrossSourceMessageDedupe = (limit = 80) => {
-  const recent = [];
-  return (source, message) => {
-    const fingerprint = getSdkMessageTextFingerprint(message);
-    if (!fingerprint) return false;
-    const duplicate = recent.some((entry) => (
-      entry.fingerprint === fingerprint && entry.source !== source
-    ));
-    recent.push({ source, fingerprint });
-    if (recent.length > limit) {
-      recent.splice(0, recent.length - limit);
-    }
-    return duplicate;
-  };
 };
 
 const main = async () => {
@@ -247,7 +220,6 @@ const main = async () => {
   }
 
   const message = images.length > 0 ? { text: prompt, images } : { text: prompt };
-  const shouldSkipDuplicateMessage = createCrossSourceMessageDedupe();
   writeTiming('cursor_provider_send_started');
   let run;
   run = await agent.send(message, {
@@ -262,15 +234,14 @@ const main = async () => {
         });
         return;
       }
-      writeSdkMessage(sdkMessage, 'delta');
+      if (sdkMessage.type === 'task_activity' || sdkMessage.type === 'session_change') writeSdkMessage(sdkMessage);
     },
   });
   writeTiming('cursor_provider_send_accepted');
   writeEvent({ type: 'usage-observation', observation: cursorRunUsageObservation(run) });
   let doneEmitted = false;
-  function writeSdkMessage(sdkMessage, source = 'stream') {
-    if (shouldSkipDuplicateMessage(source, sdkMessage)) return;
-    writeEvent({ type: 'message', message: sdkMessage });
+  function writeSdkMessage(sdkMessage) {
+    return writeEvent({ type: 'message', message: sdkMessage });
   }
   const streamIterator = run.stream()[Symbol.asyncIterator]();
   let streamIteratorClosed = false;
@@ -281,10 +252,10 @@ const main = async () => {
       await streamIterator.return();
     }
   };
-  const writeDone = (status) => {
+  const writeDone = async (status) => {
     if (doneEmitted) return;
     doneEmitted = true;
-    writeEvent({
+    await writeEvent({
       type: 'message',
       message: {
         type: 'status',
@@ -293,7 +264,9 @@ const main = async () => {
         status: sdkStatusFromRunStatus(status),
       },
     });
-    writeEvent({ type: 'done', status });
+    await output.drain();
+    await writeEvent({ type: 'done', status });
+    await output.drain();
   };
 
   const disposeStatusListener = typeof run.onDidChangeStatus === 'function'
@@ -310,55 +283,7 @@ const main = async () => {
     })
     : () => {};
 
-  const waitPromise = run.wait()
-    .then((result) => {
-      const finalText = trimString(result?.result);
-      const finalStatus = finalStatusFromSdkStatus(sdkStatusFromRunStatus(result?.status || run.status));
-      writeEvent({
-        type: 'final-result',
-        result: {
-          ok: true,
-          usageObservation: cursorRunUsageObservation(run, result),
-          finalStatus,
-          finalText,
-        },
-      });
-      if (finalText) {
-        writeSdkMessage({
-          type: 'assistant',
-          agent_id: run.agentId,
-          run_id: run.id,
-          message: {
-            role: 'assistant',
-            content: [{ type: 'text', text: finalText }],
-          },
-        }, 'wait');
-      }
-      writeDone(result?.status || run.status);
-      void closeStreamIterator();
-      setTimeout(() => process.exit(0), 25).unref?.();
-    })
-    .catch((error) => {
-      writeEvent({
-        type: 'final-result',
-        result: {
-          ok: false,
-          usageObservation: cursorRunUsageObservation(run),
-          finalStatus: 'error',
-          finalText: '',
-          error: error instanceof Error ? error.message : 'Cursor SDK run failed.',
-        },
-      });
-      writeEvent({
-        type: 'error',
-        error: error instanceof Error ? error.message : 'Cursor SDK run failed.',
-      });
-      process.exitCode = 1;
-      setTimeout(() => process.exit(1), 25).unref?.();
-    })
-    .finally(() => {
-      disposeStatusListener();
-    });
+  const waitPromise = run.wait().then(result => ({ result }), error => ({ error }));
 
   let shuttingDown = false;
   const cancel = async () => {
@@ -369,7 +294,8 @@ const main = async () => {
         await run.cancel();
       }
     } finally {
-      writeEvent({ type: 'usage-observation', observation: cursorRunUsageObservation(run) });
+      void closeStreamIterator().catch(() => {});
+      await writeEvent({ type: 'usage-observation', observation: cursorRunUsageObservation(run) });
       process.exit(130);
     }
   };
@@ -381,20 +307,49 @@ const main = async () => {
     void cancel();
   });
 
-  for (;;) {
-    const next = await streamIterator.next();
-    if (next.done) break;
-    writeSdkMessage(next.value, 'stream');
-  }
+  let primaryFailure;
+  try {
+    for (;;) {
+      const next = await streamIterator.next();
+      if (next.done) break;
+      await writeSdkMessage(next.value);
+    }
 
-  await waitPromise;
-  writeDone(run.status);
+    const settled = await waitPromise;
+    if (settled.error) {
+      await writeEvent({ type: 'usage-observation', observation: cursorRunUsageObservation(run) });
+      throw cursorWorkerFailure(settled.error instanceof Error ? settled.error.message : 'Cursor SDK run failed.', { ...cursorErrorDetails(settled.error), source: 'provider' });
+    }
+    const result = settled.result;
+    const finalText = await cursorFinalText(result, run);
+    await output.drain();
+    await writeEvent({ type: 'final-result', result: {
+      ok: true,
+      usageObservation: cursorRunUsageObservation(run, result),
+      finalStatus: finalStatusFromSdkStatus(sdkStatusFromRunStatus(result?.status || run.status)),
+      ...finalText,
+    } });
+    await writeDone(result?.status || run.status);
+  } catch (error) {
+    primaryFailure = error;
+    throw error;
+  } finally {
+    const cleanup = await Promise.allSettled([Promise.resolve().then(() => disposeStatusListener()),
+      Promise.resolve().then(() => agent.close?.())]);
+    const failures = cleanup.filter(result => result.status === 'rejected').map(result => result.reason);
+    if (failures.length) {
+      if (!primaryFailure) throw new AggregateError(failures, 'Cursor SDK cleanup failed.');
+      throw Object.assign(new AggregateError([primaryFailure, ...failures],
+        `${primaryFailure instanceof Error ? primaryFailure.message : 'Cursor SDK run failed.'} Cursor SDK cleanup also failed.`),
+        cursorErrorDetails(primaryFailure), cursorProviderFailure(primaryFailure) ? {cursorFailureSource:'provider'} : {});
+    }
+  }
 };
 
-main().catch((error) => {
-  writeEvent({
-    type: 'error',
-    error: error instanceof Error ? error.message : 'Cursor SDK worker failed.',
-  });
+main().then(() => output.drain()).catch(async (error) => {
   process.exitCode = 1;
+  try {
+    await output.report({ type: 'error', ...cursorErrorDetails(error), errorDetails: cursorErrorDetails(error),
+      error: error instanceof Error ? error.message : 'Cursor SDK worker failed.' });
+  } catch { /* The failed pipe cannot report itself; process failure remains authoritative. */ }
 });

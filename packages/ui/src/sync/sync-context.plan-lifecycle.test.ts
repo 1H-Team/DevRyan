@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 
 const clearSessionAutoAcceptCalls: string[] = []
 
@@ -68,6 +68,14 @@ import * as sessionActions from "./session-actions"
 import { registerRuntimeAPIs } from "@/contexts/runtimeAPIRegistry"
 import type { RuntimeAPIs } from "@/lib/api/types"
 import { useStreamingStore } from "./streaming"
+import { useSessionPresentationStore } from "./session-presentation"
+
+const originalFetch = globalThis.fetch
+beforeEach(() => {
+  useSessionPresentationStore.setState({ directories: {} })
+  globalThis.fetch = async () => Response.json({})
+})
+afterEach(() => { globalThis.fetch = originalFetch })
 
 const DIRECTORY = "/repo"
 const SESSION_ID = "ses_1"
@@ -94,6 +102,13 @@ const structuredPlanBody = [
   "1. Run tests.",
 ].join("\n")
 
+const savedPlanResponse = () => ({
+  path: '/plans/plan.md', created: true, version: 'a'.repeat(64), content: structuredPlanBody,
+  sourceIdentity: { sessionID: SESSION_ID, sourceMessageID: ASSISTANT_MESSAGE_ID, rootUserMessageID: USER_MESSAGE_ID,
+    memberUserMessageIDs: [USER_MESSAGE_ID], memberAssistantMessageIDs: [ASSISTANT_MESSAGE_ID],
+    currentSourceMessageID: ASSISTANT_MESSAGE_ID, successful: true as const, settled: true as const, current: true },
+})
+
 const userMessage = (): Message => ({
   id: USER_MESSAGE_ID,
   sessionID: SESSION_ID,
@@ -106,6 +121,7 @@ const assistantMessage = (): Message => ({
   sessionID: SESSION_ID,
   role: "assistant",
   providerID: "cursor-acp",
+  finish: "stop",
   time: { created: 2, completed: 3 },
 } as Message)
 
@@ -264,7 +280,8 @@ describe("sync plan lifecycle on message.part.delta", () => {
   beforeEach(() => {
     useProviderRecoveryStore.getState().reset()
     usePrimaryRecoveryStore.setState({ snapshots: {} })
-    registerRuntimeAPIs(null)
+    registerRuntimeAPIs({ sessionPlans: { ensureRevision: async () => savedPlanResponse() } } as unknown as RuntimeAPIs)
+    useProjectsStore.setState({ projects: [{ id: "repo", path: DIRECTORY, label: "Repo" }] })
     resetGlobalSessionLifecycleOverlayForTest()
     resetDirectorySessionLifecycleOverlaysForTest()
     resetSessionMaterializationStateForTest()
@@ -1489,6 +1506,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
     const session = {
       id: SESSION_ID,
       title: "Plan session",
+      slug: "plan-session", directory: DIRECTORY,
       time: { created: 1, updated: 2 },
     } as Session
 
@@ -1527,7 +1545,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
       sessionPlans: {
         ensureRevision: async () => {
           writes += 1
-          return { path: '/plans/plan.md', created: true, version: 'fixture-version' }
+          return savedPlanResponse()
         },
       },
     } as unknown as RuntimeAPIs)
@@ -1581,7 +1599,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
     const store = childStores.ensureChild(DIRECTORY)
     store.setState({
       ...INITIAL_STATE,
-      session: [{ id: SESSION_ID, title: "Plan session", time: { created: 1, updated: 3 } } as Session],
+      session: [{ id: SESSION_ID, title: "Plan session", slug: "plan-session", directory: DIRECTORY, time: { created: 1, updated: 3 } } as Session],
       message: {
         [SESSION_ID]: [userMessage(), assistantMessage()],
       },
@@ -1718,7 +1736,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
     const originalProjects = useProjectsStore.getState().projects
     registerRuntimeAPIs({
       sessionPlans: {
-        ensureRevision: async () => ({ path: '/plans/plan.md', created: false, version: 'fixture-version' }),
+        ensureRevision: async () => ({ ...savedPlanResponse(), created: false }),
       },
     } as unknown as RuntimeAPIs)
     useProjectsStore.setState({
@@ -1805,7 +1823,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
 
     store.setState({
       ...INITIAL_STATE,
-      session: [{ id: SESSION_ID, title: "Plan session", time: { created: 1, updated: 2 } } as Session],
+      session: [{ id: SESSION_ID, title: "Plan session", slug: "plan-session", directory: DIRECTORY, time: { created: 1, updated: 2 } } as Session],
       message: {
         [SESSION_ID]: [userMessage(), assistantMessage()],
       },
@@ -1843,6 +1861,33 @@ describe("sync plan lifecycle on message.part.delta", () => {
     expect(store.getState().session_status[SESSION_ID]).toEqual({ type: "idle" })
   })
 
+  test("revalidates a transient settlement refusal on a new authoritative idle transition", async () => {
+    let attempts = 0
+    registerRuntimeAPIs({ sessionPlans: { ensureRevision: async () => {
+      if (++attempts === 1) throw new Error('plan_source_unsettled')
+      return savedPlanResponse()
+    } } } as unknown as RuntimeAPIs)
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    store.setState({ ...INITIAL_STATE,
+      session: [{ id: SESSION_ID, title: 'Plan', slug: 'plan-session', directory: DIRECTORY, time: { created: 1, updated: 2 } } as Session],
+      message: { [SESSION_ID]: [userMessage(), assistantMessage()] },
+      part: { [USER_MESSAGE_ID]: [planModePart()], [ASSISTANT_MESSAGE_ID]: [textPart(structuredPlanBody)] },
+      session_status: { [SESSION_ID]: { type: 'idle' } as SessionStatus },
+    })
+    useSessionUIStore.getState().recordUserMessagePlanMode(SESSION_ID, USER_MESSAGE_ID, true)
+    await restorePersistedSessionIndicatorsForDirectory(DIRECTORY, store)
+    expect(useSessionPlanFileStore.getState().recordsBySession[SESSION_ID]?.status).toBe('error')
+    expect(useSessionUIStore.getState().sessionPlanIndicator.get(SESSION_ID)).toBeUndefined()
+    await restorePersistedSessionIndicatorsForDirectory(DIRECTORY, store)
+    expect(attempts).toBe(1)
+    applySyncEventForTest(DIRECTORY, sessionStatusEvent({ type: 'busy' } as SessionStatus), childStores, routingIndexFor())
+    applySyncEventForTest(DIRECTORY, sessionStatusEvent({ type: 'idle' } as SessionStatus), childStores, routingIndexFor())
+    await flushAsync()
+    expect(attempts).toBe(2)
+    expect(useSessionUIStore.getState().sessionPlanIndicator.get(SESSION_ID)).toEqual({ state: 'proposed', sourceMessageId: ASSISTANT_MESSAGE_ID })
+  })
+
   test("renders plan-ready yellow only after part, message, and authoritative idle updates settle the plan", async () => {
     const childStores = new ChildStoreManager()
     const store = childStores.ensureChild(DIRECTORY)
@@ -1854,7 +1899,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
 
     store.setState({
       ...INITIAL_STATE,
-      session: [{ id: SESSION_ID, title: "Plan session", time: { created: 1, updated: 2 } } as Session],
+      session: [{ id: SESSION_ID, title: "Plan session", slug: "plan-session", directory: DIRECTORY, time: { created: 1, updated: 2 } } as Session],
       message: {
         [SESSION_ID]: [userMessage(), incompleteAssistantMessage],
       },
@@ -1964,7 +2009,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
     const staleAssistantPart = textPart("Still preparing the plan.")
     store.setState({
       ...INITIAL_STATE,
-      session: [{ id: SESSION_ID, title: "Background plan", time: { created: 1, updated: 2 } } as Session],
+      session: [{ id: SESSION_ID, title: "Background plan", slug: "background-plan", directory: backgroundDirectory, time: { created: 1, updated: 2 } } as Session],
       message: {
         [SESSION_ID]: [userMessage(), assistantMessage()],
       },
@@ -2376,7 +2421,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
 
     store.setState({
       ...INITIAL_STATE,
-      session: [{ id: SESSION_ID, title: "Plan session", time: { created: 1, updated: 2 } } as Session],
+      session: [{ id: SESSION_ID, title: "Plan session", slug: "plan-session", directory: DIRECTORY, time: { created: 1, updated: 2 } } as Session],
       message: {
         [SESSION_ID]: [
           userMessage(),
@@ -3080,7 +3125,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
 
     store.setState({
       ...INITIAL_STATE,
-      session: [{ id: SESSION_ID, title: "Plan session", time: { created: 1, updated: 2 } } as Session],
+      session: [{ id: SESSION_ID, title: "Plan session", slug: "plan-session", directory: DIRECTORY, time: { created: 1, updated: 2 } } as Session],
       message: {
         [SESSION_ID]: [
           userMessage(),
@@ -3148,7 +3193,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
 
     store.setState({
       ...INITIAL_STATE,
-      session: [{ id: SESSION_ID, title: "Plan session", time: { created: 1, updated: 2 } } as Session],
+      session: [{ id: SESSION_ID, title: "Plan session", slug: "plan-session", directory: DIRECTORY, time: { created: 1, updated: 2 } } as Session],
       message: {
         [SESSION_ID]: [
           userMessage(),
@@ -3202,7 +3247,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
 
     store.setState({
       ...INITIAL_STATE,
-      session: [{ id: SESSION_ID, title: "Plan session", time: { created: 1, updated: 2 } } as Session],
+      session: [{ id: SESSION_ID, title: "Plan session", slug: "plan-session", directory: DIRECTORY, time: { created: 1, updated: 2 } } as Session],
       message: {
         [SESSION_ID]: [
           userMessage(),
@@ -3270,7 +3315,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
 
     store.setState({
       ...INITIAL_STATE,
-      session: [{ id: SESSION_ID, title: "Plan session", time: { created: 1, updated: 2 } } as Session],
+      session: [{ id: SESSION_ID, title: "Plan session", slug: "plan-session", directory: DIRECTORY, time: { created: 1, updated: 2 } } as Session],
       message: {
         [SESSION_ID]: [
           userMessage(),
@@ -3326,7 +3371,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
 
     store.setState({
       ...INITIAL_STATE,
-      session: [{ id: SESSION_ID, title: "Plan session", time: { created: 1, updated: 2 } } as Session],
+      session: [{ id: SESSION_ID, title: "Plan session", slug: "plan-session", directory: DIRECTORY, time: { created: 1, updated: 2 } } as Session],
       message: {
         [SESSION_ID]: [
           userMessage(),
@@ -3452,7 +3497,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
 
     store.setState({
       ...INITIAL_STATE,
-      session: [{ id: SESSION_ID, title: "Plan session", time: { created: 1, updated: 2 } } as Session],
+      session: [{ id: SESSION_ID, title: "Plan session", slug: "plan-session", directory: DIRECTORY, time: { created: 1, updated: 2 } } as Session],
       message: {
         [SESSION_ID]: [
           userMessage(),
@@ -3581,7 +3626,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
 
     store.setState({
       ...INITIAL_STATE,
-      session: [{ id: SESSION_ID, title: "Plan session", time: { created: 1, updated: 2 } } as Session],
+      session: [{ id: SESSION_ID, title: "Plan session", slug: "plan-session", directory: DIRECTORY, time: { created: 1, updated: 2 } } as Session],
       message: {
         [SESSION_ID]: [
           userMessage(),
@@ -3642,7 +3687,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
 
     store.setState({
       ...INITIAL_STATE,
-      session: [{ id: SESSION_ID, title: "Plan session", time: { created: 1, updated: 2 } } as Session],
+      session: [{ id: SESSION_ID, title: "Plan session", slug: "plan-session", directory: DIRECTORY, time: { created: 1, updated: 2 } } as Session],
       message: {
         [SESSION_ID]: [userMessage(), assistantMessage()],
       },
@@ -3680,7 +3725,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
 
     store.setState({
       ...INITIAL_STATE,
-      session: [{ id: SESSION_ID, title: "Plan session", time: { created: 1, updated: 2 } } as Session],
+      session: [{ id: SESSION_ID, title: "Plan session", slug: "plan-session", directory: DIRECTORY, time: { created: 1, updated: 2 } } as Session],
       message: {
         [SESSION_ID]: [userMessage(), assistantMessage()],
       },
@@ -3723,7 +3768,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
 
     store.setState({
       ...INITIAL_STATE,
-      session: [{ id: SESSION_ID, title: "Plan session", time: { created: 1, updated: 2 } } as Session],
+      session: [{ id: SESSION_ID, title: "Plan session", slug: "plan-session", directory: DIRECTORY, time: { created: 1, updated: 2 } } as Session],
       message: {
         [SESSION_ID]: [
           userMessage(),
@@ -3777,7 +3822,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
 
     store.setState({
       ...INITIAL_STATE,
-      session: [{ id: SESSION_ID, title: "Plan session", time: { created: 1, updated: 2 } } as Session],
+      session: [{ id: SESSION_ID, title: "Plan session", slug: "plan-session", directory: DIRECTORY, time: { created: 1, updated: 2 } } as Session],
       message: {
         [SESSION_ID]: [
           userMessage(),

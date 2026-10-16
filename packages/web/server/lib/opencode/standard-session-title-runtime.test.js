@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import {NativeCommandRefusal} from './runtime-host/native-command-refusal.js';
 
 import { createFileSessionTitleOutbox, createMemorySessionTitleOutbox } from './session-title-outbox.js';
 import { buildV2PromptContent, buildDevryanPromptMetadata } from './v2/admission.js';
@@ -139,6 +140,7 @@ const createRuntime = ({
     buildOpenCodeUrl: (requestPath) => `http://opencode.test${requestPath}`,
     getOpenCodeAuthHeaders: () => ({}),
     generateSessionModelTitle,
+    verifyAcceptedTitleInput: async () => true,
     outbox: outbox || createMemorySessionTitleOutbox({ now }),
     onTitleGenerated: vi.fn(async (input) => projected.push(input)),
     recordDiagnostic: vi.fn(async (input) => diagnostics.push(input)),
@@ -205,6 +207,67 @@ afterEach(async () => {
 });
 
 describe('standard session title runtime', () => {
+  it('preserves an outboxed model candidate through known startup reads without renewing its source or inference',async()=>{
+    vi.useFakeTimers();const fake=createFakeOpenCode({status:'idle',completed:true}),outbox=createMemorySessionTitleOutbox();
+    const client=createFakeOpenCodeClient(fake);let blocked=false;
+    const get=client.sessions.get.getMockImplementation();
+    client.sessions.get.mockImplementation(async(...args)=>{if(blocked)throw Object.assign(Error('startup'),{code:'native_startup_held'});return get(...args);});
+    const generator=vi.fn(async()=>{blocked=true;return 'Reliable Session Title Summaries';});
+    const deadline=Date.now()+20_000;
+    const runtime=createRuntime({fake,outbox,openCodeClient:client,watchdogEnabled:true,generateSessionModelTitle:generator,isStartupReadinessPending:()=>Date.now()<deadline});
+    try{await runtime.schedule({sessionID:'ses_1',directory:'/tmp/project'});await vi.advanceTimersByTimeAsync(10_000);
+      expect((await outbox.list())[0]).toMatchObject({state:'pending_idle',attemptCount:0});expect(generator).toHaveBeenCalledOnce();
+      blocked=false;await vi.advanceTimersByTimeAsync(5_000);expect(await outbox.list()).toEqual([]);expect(generator).toHaveBeenCalledOnce();
+    }finally{await runtime.dispose();}
+  });
+  it.each(['startup','busy'])('positively known %s defers title persistence without consuming failure cycles or renewing inference',async kind=>{
+    vi.useFakeTimers();const fake=createFakeOpenCode({status:'idle',completed:true}),outbox=createMemorySessionTitleOutbox();
+    let blocked=true;const generator=vi.fn(async()=> 'Reliable Session Title Summaries');
+    const renameGeneratedTitle=vi.fn(async request=>{
+      if(blocked)throw kind==='startup'?Object.assign(Error('startup'),{code:'native_runtime_not_ready'}):new NativeCommandRefusal('native_process_busy',503,'not-dispatched');
+      fake.state.sessions.get(request.sessionID).title=request.title;
+    });
+    const deadline=Date.now()+20_000;
+    const runtime=createRuntime({fake,outbox,watchdogEnabled:true,generateSessionModelTitle:generator,renameGeneratedTitle,isStartupReadinessPending:()=>Date.now()<deadline});
+    try{await runtime.schedule({sessionID:'ses_1',directory:'/tmp/project'});await vi.advanceTimersByTimeAsync(10_000);
+      expect((await outbox.list())[0]).toMatchObject({state:'pending_idle',attemptCount:0});expect(generator).toHaveBeenCalledTimes(1);
+      blocked=false;await vi.advanceTimersByTimeAsync(5_000);expect(await outbox.list()).toEqual([]);expect(generator).toHaveBeenCalledTimes(1);
+    }finally{await runtime.dispose();}
+  });
+  it.each(['absent','false','failed','expired','replaced'])('persistent startup failure with %s readiness authority consumes the original three-cycle budget',async state=>{
+    vi.useFakeTimers();const fake=createFakeOpenCode({status:'idle',completed:true}),outbox=createMemorySessionTitleOutbox();
+    const deadline=Date.now()+20_000;let active=true;
+    const generator=vi.fn(async()=> 'Reliable Session Title Summaries');
+    const renameGeneratedTitle=vi.fn(async()=>{throw Object.assign(Error('not ready'),{code:'native_runtime_not_ready'});});
+    const runtime=createRuntime({fake,outbox,watchdogEnabled:true,generateSessionModelTitle:generator,renameGeneratedTitle,
+      ...(state==='absent'?{}:{isStartupReadinessPending:()=>active&&state!=='false'&&Date.now()<deadline})});
+    try{
+      await runtime.schedule({sessionID:'ses_1',directory:'/tmp/project'});
+      if(['failed','expired','replaced'].includes(state)){
+        await vi.advanceTimersByTimeAsync(10_000);expect((await outbox.list())[0]).toMatchObject({state:'pending_idle',attemptCount:0});
+        if(state!=='expired')active=false;
+      }
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect((await outbox.list())[0]).toMatchObject({state:'paused',attemptCount:3});expect(generator).toHaveBeenCalledOnce();
+      const calls=renameGeneratedTitle.mock.calls.length;await vi.advanceTimersByTimeAsync(60_000);expect(renameGeneratedTitle).toHaveBeenCalledTimes(calls);
+    }finally{await runtime.dispose();}
+  });
+  it.each(['unknown','reply','unprovedBusy'])('an %s persistence refusal still pauses after three cycles',async kind=>{
+    vi.useFakeTimers();const fake=createFakeOpenCode({status:'idle',completed:true}),outbox=createMemorySessionTitleOutbox();
+    const renameGeneratedTitle=vi.fn(async()=>{throw kind==='reply'?new NativeCommandRefusal('native_process_busy',503,'reply')
+      : Object.assign(Error('refused'),{code:kind==='unprovedBusy'?'native_process_busy':'unknown'});});
+    const runtime=createRuntime({fake,outbox,watchdogEnabled:true,renameGeneratedTitle});
+    try{await runtime.schedule({sessionID:'ses_1',directory:'/tmp/project'});await vi.advanceTimersByTimeAsync(60_000);
+      expect((await outbox.list())[0]).toMatchObject({state:'paused',attemptCount:3});expect(renameGeneratedTitle).toHaveBeenCalledTimes(3);
+    }finally{await runtime.dispose();}
+  });
+  it('pauses unknown status after three cycles rather than treating it as known busy',async()=>{
+    vi.useFakeTimers();const fake=createFakeOpenCode({status:'unknown',completed:true}),outbox=createMemorySessionTitleOutbox();
+    const runtime=createRuntime({fake,outbox,watchdogEnabled:true});
+    try{await runtime.schedule({sessionID:'ses_1',directory:'/tmp/project'});await vi.advanceTimersByTimeAsync(60_000);
+      expect((await outbox.list())[0]).toMatchObject({state:'paused',attemptCount:3});expect(fake.state.patches).toEqual([]);
+    }finally{await runtime.dispose();}
+  });
   it('titles the complete real request after the current multipart Plan prompt round-trip', async () => {
     const preface = loadPlanModeInstruction();
     const requests = ['Fix mobile chat positioning and dark tab selection.', 'Match certification fills and remove scrolling breadcrumb backgrounds.'];
@@ -258,7 +321,7 @@ describe('standard session title runtime', () => {
     expect(fake.state.patches).toEqual([]);
   });
 
-  it('fences a late timed-out answer while preserving the delayed retry', async () => {
+  it('fences a late timed-out answer and never dispatches another model after unconfirmed settlement', async () => {
     vi.useFakeTimers();
     const fake = createFakeOpenCode();
     let finish;
@@ -271,9 +334,11 @@ describe('standard session title runtime', () => {
     await scheduled;
     finish('Late Answer Must Not Win');
     await vi.advanceTimersByTimeAsync(1);
-    expect(projected).toEqual([]);
+    expect(projected).toHaveLength(1);
+    expect(projected[0]).toMatchObject({ title: 'Reliable Session Title Summaries', source: 'derived' });
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(projected[0]?.title).toBe('Recovered Sidebar Title Summaries');
+    expect(generator).toHaveBeenCalledOnce();
+    expect(projected[0]?.title).not.toBe('Late Answer Must Not Win');
     await runtime.dispose();
   });
 
@@ -350,9 +415,10 @@ describe('standard session title runtime', () => {
     expect(generateSessionModelTitle).toHaveBeenCalledTimes(1);
     expect(generateSessionModelTitle).toHaveBeenCalledWith(expect.objectContaining({
       text: prompt,
-      providerID: 'openai',
-      modelID: 'gpt-5.6-sol',
-      timeoutMs: 30_000,
+      providerID: 'opencode',
+      modelID: 'deepseek-v4.1-flash',
+      selectionMode: 'configured',
+      timeoutMs: expect.any(Number),
     }));
     expect(await outbox.list()).toEqual([expect.objectContaining({
       candidateTitle: 'Neutral Title Generation Pipeline',
@@ -438,14 +504,14 @@ describe('standard session title runtime', () => {
 
     boundTimer().callback();
     await expect(scheduled).resolves.toBe(true);
-    expect(projected).toHaveLength(0);
+    expect(projected[0]).toMatchObject({ source: 'derived' });
     expect(diagnostics.map(({ payload }) => payload)).toContainEqual(expect.objectContaining({
       stage: 'session_model',
       outcome: 'failed',
-      reason: 'timeout',
+      reason: 'unsettled',
       attempt: 1,
     }));
-    expect(timers.filter(({ delay }) => delay === 60_000)).toHaveLength(1);
+    expect(timers.filter(({ delay }) => delay === 60_000)).toHaveLength(0);
     await runtime.dispose();
   });
 
@@ -459,89 +525,137 @@ describe('standard session title runtime', () => {
     await runtime.dispose();
   });
 
-  it('publishes a final fallback only after both model attempts fail', async () => {
-    const fake = createFakeOpenCode();
-    const projected = [];
-    const diagnostics = [];
-    const outbox = createMemorySessionTitleOutbox();
-    const { timers, setTimer, clearTimer } = captureTimers();
-    const generateSessionModelTitle = vi.fn(async () => null);
-    const runtime = createRuntime({ fake, projected, diagnostics, outbox, generateSessionModelTitle, setTimer, clearTimer });
-    const retryTimers = () => timers.filter(({ delay }) => delay === 60_000);
-
-    await expect(runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' })).resolves.toBe(true);
-    expect(projected).toEqual([]);
-    expect(await outbox.list()).toEqual([]);
-    expect(generateSessionModelTitle).toHaveBeenCalledTimes(1);
-    expect(retryTimers()).toHaveLength(1);
-
-    // A re-entrant schedule (the next prompt) must not spend the retry early.
-    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
-    expect(generateSessionModelTitle).toHaveBeenCalledTimes(1);
-
-    retryTimers()[0].callback();
-    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
-    expect(generateSessionModelTitle).toHaveBeenCalledTimes(2);
-    expect(retryTimers()).toHaveLength(1);
-
-    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
-    expect(generateSessionModelTitle).toHaveBeenCalledTimes(2);
-    expect(projected.length).toBeGreaterThan(0);
-    expect(new Set(projected.map(({ title }) => title))).toEqual(new Set(['Reliable Session Title Summaries']));
-    expect(projected.every(({ source }) => source === 'derived')).toBe(true);
-    expect(stageOutcomes(diagnostics, 'session_model', 'generation_retry')).toEqual([
-      'session_model:failed',
-      'generation_retry:retry_scheduled',
-      'session_model:failed',
+  it('tries the configured helper then authorized active model within one total budget', async () => {
+    let clock = 100;
+    const fake = createFakeOpenCode(), projected = [], diagnostics = [];
+    const resolver = vi.fn(async ({ selectionMode }) => selectionMode === 'configured'
+      ? { providerID: 'opencode', modelID: 'flash', selectionRevision: 'revision-1' }
+      : { providerID: 'anthropic', modelID: 'active', variant: 'high', selectionRevision: 'active-session' });
+    const generator = vi.fn(async input => { clock += 7_000; return input.selectionMode === 'configured' ? null : 'Authorized Active Model Title'; });
+    const runtime = createRuntime({ fake, projected, diagnostics, now: () => clock, resolveHelperSelection: resolver, generateSessionModelTitle: generator });
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project', providerID: 'foreign', modelID: 'untrusted-history' });
+    expect(generator.mock.calls.map(([input]) => [input.selectionMode, input.providerID, input.modelID, input.timeoutMs])).toEqual([
+      ['configured', 'opencode', 'flash', 30_000], ['active', 'anthropic', 'active', 23_000],
     ]);
+    expect(generator.mock.calls[0][0]).not.toHaveProperty('variant');
+    expect(generator.mock.calls[1][0]).not.toHaveProperty('variant');
+    expect(projected[0]).toMatchObject({ title: 'Authorized Active Model Title', source: 'session_model' });
+    expect(stageOutcomes(diagnostics, 'session_model')).toEqual(['session_model:failed', 'session_model:complete']);
+    await runtime.dispose();
+  });
+
+  it.each(['selection','request','result'])('does not acquire fallback authority after a helper selection change during %s', async stage => {
+    const fake=createFakeOpenCode(),diagnostics=[],projected=[];
+    const error=()=>Object.assign(Error('selection changed'),{code:'native_helper_selection_changed',statusCode:403});
+    const resolver=vi.fn(async()=>{if(stage==='selection')throw error();return {providerID:'opencode',modelID:'flash',selectionRevision:'revision-1'};});
+    const generator=vi.fn(async()=>{if(stage==='request')throw error();return {title:null,reason:'selection_changed'};});
+    const runtime=createRuntime({fake,diagnostics,projected,resolveHelperSelection:resolver,generateSessionModelTitle:generator});
+    try{
+      await runtime.schedule({sessionID:'ses_1',directory:'/tmp/project'});
+      expect(resolver).toHaveBeenCalledOnce();expect(generator).toHaveBeenCalledTimes(stage==='selection'?0:1);
+      expect(diagnostics.map(row=>row.payload)).toContainEqual(expect.objectContaining({reason:'selection_changed'}));
+      expect(projected[0]).toMatchObject({source:'derived'});
+    }finally{await runtime.dispose();}
+  });
+
+  it('derives only after both settled attempts fail and refuses a third attempt', async () => {
+    const fake = createFakeOpenCode(), projected = [];
+    const generator = vi.fn(async () => null);
+    const resolver = vi.fn(async ({ selectionMode }) => ({ providerID: selectionMode, modelID: 'valid', selectionRevision: '1' }));
+    const runtime = createRuntime({ fake, projected, generateSessionModelTitle: generator, resolveHelperSelection: resolver });
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    expect(generator).toHaveBeenCalledTimes(2);
+    expect(projected[0]).toMatchObject({ title: 'Reliable Session Title Summaries', source: 'derived' });
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    expect(generator).toHaveBeenCalledTimes(2);
     await runtime.processOpenCodeEvent(idleEvent());
     expect(fake.state.sessions.get('ses_1').title).toBe('Reliable Session Title Summaries');
     await runtime.dispose();
   });
 
-  it('publishes only the successful retry title, even when the session is idle', async () => {
-    const fake = createFakeOpenCode({ status: 'idle', completed: true });
-    const outbox = createMemorySessionTitleOutbox();
-    const { timers, setTimer, clearTimer } = captureTimers();
-    const generateSessionModelTitle = vi.fn(async () => null);
-    const runtime = createRuntime({ fake, outbox, generateSessionModelTitle, setTimer, clearTimer });
-
+  it('preserves a human rename during the authorized fallback request', async () => {
+    const fake = createFakeOpenCode({ status: 'idle', completed: true }), projected = [];
+    const resolver = vi.fn(async ({ selectionMode }) => ({ providerID: selectionMode, modelID: 'valid', selectionRevision: '1' }));
+    const generator = vi.fn(async input => {
+      if (input.selectionMode === 'configured') return null;
+      fake.state.sessions.get('ses_1').title = 'User Typed Session Name';
+      return 'Authorized Active Model Title';
+    });
+    const runtime = createRuntime({ fake, projected, resolveHelperSelection: resolver, generateSessionModelTitle: generator });
     await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    expect(generator).toHaveBeenCalledTimes(2);
+    expect(projected).toEqual([]);
     expect(fake.state.patches).toEqual([]);
-    expect(fake.state.sessions.get('ses_1').title).toBe(PLACEHOLDER);
-    expect(await outbox.list()).toEqual([]);
+    expect(fake.state.sessions.get('ses_1').title).toBe('User Typed Session Name');
+    await runtime.dispose();
+  });
 
-    generateSessionModelTitle.mockResolvedValue('Upgraded Session Model Title');
-    timers.find(({ delay }) => delay === 60_000).callback();
-    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
-    expect(generateSessionModelTitle).toHaveBeenCalledTimes(2);
-    await settleAfterPatches(fake, 1);
-    expect(fake.state.patches).toEqual([
-      { sessionID: 'ses_1', title: 'Upgraded Session Model Title' },
-    ]);
-    expect(fake.state.sessions.get('ses_1').title).toBe('Upgraded Session Model Title');
+  it('shares one budget across concurrent schedules and never requests fallback after budget exhaustion', async () => {
+    let clock = 0, finish;
+    const fake = createFakeOpenCode(), projected = [];
+    const resolver = vi.fn(async ({ selectionMode }) => ({ providerID: selectionMode, modelID: 'valid', selectionRevision: '1' }));
+    const generator = vi.fn(() => new Promise(resolve => { finish = resolve; }));
+    const runtime = createRuntime({ fake, projected, now: () => clock, generateSessionModelTitle: generator, resolveHelperSelection: resolver });
+    const first = runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    const second = runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    expect(second).toBe(first);
+    await vi.waitFor(() => expect(generator).toHaveBeenCalledOnce());
+    clock = 30_000; finish(null); await first;
+    expect(resolver).toHaveBeenCalledOnce();
+    expect(generator).toHaveBeenCalledOnce();
+    expect(projected[0]).toMatchObject({ source: 'derived' });
+    await runtime.dispose();
+  });
+
+  it('pauses after three failed persistence cycles, survives restart, and reopens once for canonical accepted human input', async () => {
+    vi.useFakeTimers();
+    const fake = createFakeOpenCode({ status: 'idle', completed: true, patchFailures: 20 });
+    const outbox = createMemorySessionTitleOutbox();
+    let runtime = createRuntime({ fake, outbox, watchdogEnabled: true });
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project', text: 'Fix reliable session title summaries', acceptedInputID: 'msg_user' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect((await outbox.list())[0]).toMatchObject({ attemptCount: 1, sourceMessageID: 'msg_user' });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect((await outbox.list())[0].attemptCount).toBe(2);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect((await outbox.list())[0]).toMatchObject({ state: 'paused', attemptCount: 3, nextAttemptAt: 0 });
+    expect(fake.state.patches).toHaveLength(3);
+    await runtime.dispose();
+    runtime = createRuntime({ fake, outbox, watchdogEnabled: true });
+    await runtime.schedulePlaceholderRecovery({ directory: '/tmp/project' });
+    await runtime.processOpenCodeEvent(idleEvent());
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project', text: 'Unverified new input', acceptedInputID: 'msg_missing' });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fake.state.patches).toHaveLength(3);
+    const next = userMessage('Accepted next human request'); next.info.id = 'msg_next';
+    fake.state.messages.get('ses_1').push(next);
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project', text: 'Accepted next human request', acceptedInputID: 'msg_next' });
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(fake.state.patches).toHaveLength(6);
+    expect((await outbox.list())[0]).toMatchObject({ state: 'paused', attemptCount: 3, sourceMessageID: 'msg_user', lastAcceptedInputID: 'msg_next' });
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project', text: 'Accepted next human request', acceptedInputID: 'msg_next' });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fake.state.patches).toHaveLength(6);
+    fake.state.sessions.get('ses_1').title = 'Manual Rename Wins';
+    await runtime.processOpenCodeEvent({ type: 'session.updated', properties: { info: fake.state.sessions.get('ses_1') } });
     expect(await outbox.list()).toEqual([]);
     await runtime.dispose();
   });
 
-  it('never upgrades a user-typed title', async () => {
-    const fake = createFakeOpenCode({ status: 'idle', completed: true });
-    const outbox = createMemorySessionTitleOutbox();
-    const { timers, setTimer, clearTimer } = captureTimers();
-    const generateSessionModelTitle = vi.fn(async () => null);
-    const runtime = createRuntime({ fake, outbox, generateSessionModelTitle, setTimer, clearTimer });
-
+  it('records native mismatch and bounded refusal metadata without titles, hashes or private errors', async () => {
+    const fake = createFakeOpenCode({ status: 'idle', completed: true }), diagnostics = [], warnings = [];
+    const runtime = createRuntime({ fake, diagnostics, logger: { warn: (...args) => warnings.push(args) },
+      renameGeneratedTitle: async () => { throw Object.assign(new Error('private generated title must never escape'), { code: 'native_helper_title_conflict' }); } });
     await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
-    expect(fake.state.patches).toEqual([]);
-    fake.state.sessions.get('ses_1').title = 'User Typed Session Name';
-
-    generateSessionModelTitle.mockResolvedValue('Upgraded Session Model Title');
-    timers.find(({ delay }) => delay === 60_000).callback();
-    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
-    expect(generateSessionModelTitle).toHaveBeenCalledTimes(1);
-    expect(fake.state.patches).toHaveLength(0);
-    expect(fake.state.sessions.get('ses_1').title).toBe('User Typed Session Name');
-    expect(await outbox.list()).toEqual([]);
+    for (let index = 0; index < 20 && !diagnostics.some(row => row.payload.stage === 'rename_refused'); index++) await Promise.resolve();
+    expect(diagnostics.map(row => row.payload)).toContainEqual(expect.objectContaining({ stage: 'rename_refused', refusalCode: 'native_helper_title_conflict',
+      nativeEqualsCandidate: false, nativeEqualsExpected: true, nativeLength: PLACEHOLDER.length, candidateLength: 'Reliable Session Title Summaries'.length,
+      sourceMessageID: 'msg_user', sourceIdentityPresent: true }));
+    const serialized = JSON.stringify({ diagnostics, warnings });
+    expect(serialized).not.toContain('private generated title');
+    expect(serialized).not.toContain('Reliable Session Title Summaries');
+    expect(serialized).not.toContain('sourceHash');
     await runtime.dispose();
   });
 
@@ -582,9 +696,11 @@ describe('standard session title runtime', () => {
     const fake = createFakeOpenCode();
     const projected = [];
     const backing = createMemorySessionTitleOutbox();
+    const generator = vi.fn(async () => 'Reliable Session Title Summaries');
     const runtime = createRuntime({
       fake,
       projected,
+      generateSessionModelTitle: generator,
       outbox: {
         ...backing,
         upsert: vi.fn(async () => {
@@ -594,6 +710,8 @@ describe('standard session title runtime', () => {
     });
 
     await expect(runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' })).resolves.toBe(false);
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    expect(generator).toHaveBeenCalledOnce();
     expect(projected).toEqual([]);
     expect(fake.state.patches).toEqual([]);
     await runtime.dispose();
@@ -715,14 +833,14 @@ describe('standard session title runtime', () => {
     await runtime.dispose();
   });
 
-  it('backs off missing idle evidence without treating absence as completion', async () => {
+  it('pauses missing idle evidence after the bounded observation ladder and retains its candidate across restart', async () => {
     vi.useFakeTimers();
     const fake = createFakeOpenCode({ status: null });
     const startedAt = Date.now();
     const outbox = createMemorySessionTitleOutbox({
       initialJobs: [pendingJob({ attemptCount: 17, nextAttemptAt: startedAt })],
     });
-    const runtime = createRuntime({ fake, outbox, watchdogEnabled: true });
+    let runtime = createRuntime({ fake, outbox, watchdogEnabled: true });
     await vi.advanceTimersByTimeAsync(60_000);
 
     expect(fake.state.patches).toEqual([]);
@@ -730,17 +848,18 @@ describe('standard session title runtime', () => {
       expect.objectContaining({
         attemptCount: 17,
         inactiveObservationCount: 6,
-        nextAttemptAt: startedAt + 113_001,
+        state: 'paused',
+        nextAttemptAt: 0,
       }),
     ]);
     const reads = fake.state.calls.length;
     await vi.advanceTimersByTimeAsync(50_000);
     expect(fake.state.calls).toHaveLength(reads);
 
-    await runtime.processOpenCodeEvent(idleEvent());
-    await vi.advanceTimersByTimeAsync(3_001);
-    expect(fake.state.patches).toHaveLength(1);
-    expect(await outbox.list()).toEqual([]);
+    const paused = await outbox.list();
+    await runtime.dispose();runtime = createRuntime({ fake, outbox, watchdogEnabled: true });
+    await runtime.processOpenCodeEvent(idleEvent());await vi.advanceTimersByTimeAsync(60_000);
+    expect(fake.state.patches).toEqual([]);expect(await outbox.list()).toEqual(paused);
     await runtime.dispose();
   });
 
@@ -758,6 +877,27 @@ describe('standard session title runtime', () => {
     expect(fake.state.patches).toEqual([]);
     expect(await outbox.list()).toEqual([]);
     await runtime.dispose();
+  });
+
+  it('only a new accepted human input reopens a bounded missing-idle cycle', async () => {
+    vi.useFakeTimers();
+    const fake=createFakeOpenCode({status:null}),outbox=createMemorySessionTitleOutbox();
+    const generateSessionModelTitle=vi.fn(async()=> 'Reliable Session Title Summaries');
+    const runtime=createRuntime({fake,outbox,watchdogEnabled:true,generateSessionModelTitle});
+    try{
+      await runtime.schedule({sessionID:'ses_1',directory:'/tmp/project'});await vi.advanceTimersByTimeAsync(60_000);
+      const paused=(await outbox.list())[0];expect(paused).toMatchObject({state:'paused',attemptCount:0,inactiveObservationCount:6});
+      const next=userMessage('Accepted next request');next.info.id='msg_next';fake.state.messages.get('ses_1').push(next);
+      await runtime.schedule({sessionID:'ses_1',directory:'/tmp/project',text:'Accepted next request',acceptedInputID:'msg_next'});
+      await vi.advanceTimersByTimeAsync(0);
+      expect((await outbox.list())[0]).toMatchObject({state:'pending_idle',attemptCount:0,inactiveObservationCount:1,
+        sourceHash:paused.sourceHash,sourceMessageID:paused.sourceMessageID,candidateTitle:paused.candidateTitle,lastAcceptedInputID:'msg_next'});
+      await vi.advanceTimersByTimeAsync(60_000);expect((await outbox.list())[0].state).toBe('paused');
+      const calls=fake.state.calls.length;
+      await runtime.schedule({sessionID:'ses_1',directory:'/tmp/project',text:'Accepted next request',acceptedInputID:'msg_next'});
+      const afterSchedule=fake.state.calls.length;expect(afterSchedule).toBeGreaterThan(calls);
+      await vi.advanceTimersByTimeAsync(60_000);expect(fake.state.calls).toHaveLength(afterSchedule);expect(generateSessionModelTitle).toHaveBeenCalledOnce();
+    }finally{await runtime.dispose();}
   });
 
   it('preserves a manual rename that lands while the session model is still running', async () => {
@@ -1217,11 +1357,10 @@ describe('standard session title runtime on OpenCode 2 (openCodeClient)', () => 
     await runtime.dispose();
   });
 
-  it('admits the native title helper with the session variant from the prompt and from history', async () => {
-    // Mirrors the native admission owner: a title helper must use the session's exact selection.
-    const selection = { providerID: 'openai', modelID: 'gpt-5.6-sol', variant: 'medium' };
+  it('uses the configured helper independently of prompt and history selection with Default reasoning', async () => {
+    const selection = { providerID: 'opencode', modelID: 'deepseek-v4.1-flash' };
     const generateHelperText = vi.fn(async (request) => {
-      if (request.providerID !== selection.providerID || request.modelID !== selection.modelID || request.variant !== selection.variant) {
+      if (request.providerID !== selection.providerID || request.modelID !== selection.modelID || Object.hasOwn(request, 'variant')) {
         throw Object.assign(new Error('native_title_selection_changed'), { code: 'native_title_selection_changed', status: 403, statusCode: 403 });
       }
       return { text: 'Native Helper Session Title' };
@@ -1293,4 +1432,192 @@ describe('standard session title runtime on OpenCode 2 (openCodeClient)', () => 
     expect(fake.state.patches).toEqual([]);
     await runtime.dispose();
   });
+});
+
+const createManagedTitleFake = (options = {}) => createFakeOpenCode({ ...options, sessions: [{ id: 'ses_1', parentID: 'ses_root', agent: 'fixer', directory: '/tmp/project', title: 'Managed Fixer Task', time: { updated: 1 } }] });
+const titleUserEvent = messageID => ({ type: 'message.updated', properties: { info: { id: messageID, sessionID: 'ses_1', role: 'user' } } });
+const managedSource = recheck => ({ sessionID: 'ses_1', directory: '/tmp/project', sourceMessageID: 'msg_user', recheck });
+
+it.each(['native_managed_title_source_invalid','untrusted_private_code'])('records bounded managed input refusal %s without raw source or exception content',async code=>{
+ const fake=createManagedTitleFake(),diagnostics=[],generator=vi.fn();
+ const runtime=createRuntime({fake,diagnostics,generateSessionModelTitle:generator,
+  captureManagedTitleInput:async()=>{throw Object.assign(Error('private source text and title must not escape'),{code});}});
+ try{
+  expect(await runtime.schedule({sessionID:'ses_1',directory:'/tmp/project'})).toBe(false);
+  expect(await runtime.processOpenCodeEvent(titleUserEvent('msg_user'))).toBe(false);
+  const input=diagnostics.filter(row=>row.payload.stage==='input');expect(input).toHaveLength(2);
+  expect(input.every(row=>row.payload.sourceMessageID==='msg_user'&&row.payload.sourceIdentityPresent)).toBe(true);
+  expect(input.every(row=>row.payload.refusalCode===(code==='native_managed_title_source_invalid'?code:'request_failure'))).toBe(true);
+  expect(JSON.stringify(diagnostics)).not.toContain('private source');expect(JSON.stringify(diagnostics)).not.toContain('untrusted_private_code');
+  expect(generator).not.toHaveBeenCalled();
+ }finally{await runtime.dispose();}
+});
+
+it.each(['root','synthetic'])('keeps expected %s input probes out of managed title failure diagnostics',async kind=>{
+ const fake=kind==='root'?createFakeOpenCode():createManagedTitleFake(),diagnostics=[];
+ if(kind==='synthetic')fake.state.messages.get('ses_1').push({info:{id:'msg_synthetic',role:'user'},parts:[{type:'text',text:'Maintenance',synthetic:true}]});
+ const runtime=createRuntime({fake,diagnostics,captureManagedTitleInput:async()=>{throw Object.assign(Error('refused'),{code:'native_managed_title_source_invalid'});}});
+ try{expect(await runtime.processOpenCodeEvent(titleUserEvent(kind==='root'?'msg_user':'msg_synthetic'))).toBe(false);expect(diagnostics).toEqual([]);}
+ finally{await runtime.dispose();}
+});
+
+it('records a known child input refusal when its projected source row is unavailable',async()=>{
+ const fake=createManagedTitleFake(),diagnostics=[];fake.state.messages.set('ses_1',[]);
+ const runtime=createRuntime({fake,diagnostics,captureManagedTitleInput:async()=>{throw Object.assign(Error('refused'),{code:'native_managed_title_source_invalid'});}});
+ try{await runtime.processOpenCodeEvent(titleUserEvent('msg_user'));expect(diagnostics.map(row=>row.payload)).toContainEqual(expect.objectContaining({stage:'input',sourceMessageID:'msg_user',refusalCode:'native_managed_title_source_invalid'}));}
+ finally{await runtime.dispose();}
+});
+
+it('enrolls an initial managed title only after the exact accepted user event and does not regenerate on replay', async () => {
+  const fake = createManagedTitleFake({ status: 'idle', completed: true });
+  let accepted = false; const generator = vi.fn(async () => 'Resolved Child Task Title');
+  const runtime = createRuntime({ fake, generateSessionModelTitle: generator,
+    captureManagedTitleInput: async ({ messageID }) => { if (!accepted || messageID && messageID !== 'msg_user') throw Error('No accepted source'); return managedSource(async () => {}); } });
+  try {
+    expect(await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' })).toBe(false);
+    expect(generator).not.toHaveBeenCalled(); accepted = true;
+    expect(await runtime.processOpenCodeEvent(titleUserEvent('msg_user'))).toBe(true);
+    await vi.waitFor(() => expect(fake.state.sessions.get('ses_1').title).toBe('Resolved Child Task Title'));
+    await runtime.processOpenCodeEvent(titleUserEvent('msg_user'));
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    expect(generator).toHaveBeenCalledOnce();
+  } finally { await runtime.dispose(); }
+});
+it('does not dispatch a model after its managed witness consumes the shared deadline', async () => {
+  const fake = createManagedTitleFake(); let clock = 0, checks = 0;
+  const generator = vi.fn(async () => 'Late Title');
+  const runtime = createRuntime({ fake, now: () => clock, generateSessionModelTitle: generator,
+    captureManagedTitleInput: async () => managedSource(async () => { if (++checks === 2) clock = 30_000; }) });
+  try { await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' }); expect(generator).not.toHaveBeenCalled(); }
+  finally { await runtime.dispose(); }
+});
+it('retains the consumed model budget when permissions are revoked after generation and restored before reschedule', async () => {
+  const fake = createManagedTitleFake(); let allowed = true;
+  const generator = vi.fn(async () => { allowed = false; return 'Resolved Child Task Title'; });
+  const projected = [], outbox = createMemorySessionTitleOutbox();
+  const runtime = createRuntime({ fake, outbox, projected, generateSessionModelTitle: generator,
+    captureManagedTitleInput: async () => managedSource(async () => { if (!allowed) throw Error('Owner revoked'); }) });
+  try {
+    expect(await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' })).toBe(false);
+    allowed = true; await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    expect(generator).toHaveBeenCalledOnce(); expect(projected).toEqual([]); expect(await outbox.list()).toEqual([]);
+  } finally { await runtime.dispose(); }
+});
+it('uses a fresh human source during the remaining pending child persistence cycle without resetting attempts or model budget', async () => {
+  vi.useFakeTimers();
+  const fake = createManagedTitleFake({ status: 'idle', completed: true }); const outbox = createMemorySessionTitleOutbox();
+  const generator = vi.fn(async () => 'Resolved Child Task Title'); let first = true, entered, release;
+  const started = new Promise(resolve => { entered = resolve; }), gate = new Promise(resolve => { release = resolve; });
+  const renames = []; let secondJob;
+  const runtime = createRuntime({ fake, outbox, watchdogEnabled: true, generateSessionModelTitle: generator,
+    captureManagedTitleInput: async () => managedSource(async () => {}),
+    captureAcceptedHumanTitleInput: async ({ messageID }) => { if (messageID !== 'msg_next') throw Error('Not human'); return { ...managedSource(async () => {}), sourceMessageID: messageID, text: 'Accepted next request' }; },
+    renameGeneratedTitle: async input => { renames.push(input); if (first) { first = false; entered(); await gate; throw Error('Retry'); } secondJob = (await outbox.list())[0]; fake.state.sessions.get('ses_1').title = input.title; } });
+  try {
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' }); await started;
+    const next = userMessage('Accepted next request'); next.info.id = 'msg_next'; fake.state.messages.get('ses_1').push(next);
+    expect(await runtime.processOpenCodeEvent(titleUserEvent('msg_next'))).toBe(true); release();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(secondJob).toMatchObject({ attemptCount: 2, lastAcceptedInputID: 'msg_next', sourceMessageID: 'msg_user' });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(generator).toHaveBeenCalledOnce(); expect(renames).toHaveLength(2);
+    expect(renames[1].sourceMessageID).toBe('msg_next'); expect(await outbox.list()).toEqual([]);
+  } finally { release(); await runtime.dispose(); }
+});
+it('only a new human can reopen a paused child cycle and manual rename still wins', async () => {
+  vi.useFakeTimers(); const fake = createManagedTitleFake({ status: 'idle', completed: true, patchFailures: 20 });
+  const outbox = createMemorySessionTitleOutbox(), generator = vi.fn(async () => 'Resolved Child Task Title');
+  const runtime = createRuntime({ fake, outbox, watchdogEnabled: true, generateSessionModelTitle: generator,
+    captureManagedTitleInput: async () => managedSource(async () => {}),
+    captureAcceptedHumanTitleInput: async ({ messageID }) => { if (messageID !== 'msg_next') throw Error('Not human'); return { ...managedSource(async () => {}), sourceMessageID: messageID, text: 'Accepted next request' }; } });
+  try {
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' }); await vi.advanceTimersByTimeAsync(3_000);
+    expect((await outbox.list())[0]).toMatchObject({ state: 'paused', attemptCount: 3 });
+    expect(await runtime.processOpenCodeEvent(titleUserEvent('msg_synthetic'))).toBe(false);
+    const next = userMessage('Accepted next request'); next.info.id = 'msg_next'; fake.state.messages.get('ses_1').push(next);
+    await runtime.processOpenCodeEvent(titleUserEvent('msg_next')); await vi.advanceTimersByTimeAsync(3_000);
+    expect(fake.state.patches).toHaveLength(6);
+    await runtime.processOpenCodeEvent(titleUserEvent('msg_next')); await vi.advanceTimersByTimeAsync(60_000);
+    expect(fake.state.patches).toHaveLength(6); expect(generator).toHaveBeenCalledOnce();
+    fake.state.sessions.get('ses_1').title = 'Manual Rename Wins';
+    await runtime.processOpenCodeEvent({ type: 'session.updated', properties: { info: fake.state.sessions.get('ses_1') } });
+    expect(await outbox.list()).toEqual([]);
+  } finally { await runtime.dispose(); }
+});
+
+for (const manual of [false, true]) it(`serializes a held human source verifier against idle persistence${manual ? ' and manual removal' : ''}`, async () => {
+  const fake = createManagedTitleFake({ status: 'idle', completed: true, patchFailures: 20 });
+  const outbox = createMemorySessionTitleOutbox(), generator = vi.fn(async () => 'Resolved Child Task Title');
+  let entered, release;
+  const began = new Promise(resolve => { entered = resolve; }), gate = new Promise(resolve => { release = resolve; });
+  const runtime = createRuntime({ fake, outbox, generateSessionModelTitle: generator,
+    captureManagedTitleInput: async () => managedSource(async () => {}),
+    verifyAcceptedTitleInput: async () => { entered(); await gate; return true; } });
+  try {
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    await vi.waitFor(async () => expect((await outbox.list())[0]?.attemptCount).toBe(1));
+    const next = userMessage('Accepted next request'); next.info.id = 'msg_next'; fake.state.messages.get('ses_1').push(next);
+    const adoption = runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project', acceptedInputID: 'msg_next', text: 'Accepted next request' });
+    await began;
+    const idle = runtime.processOpenCodeEvent(idleEvent());
+    if (manual) { fake.state.sessions.get('ses_1').title = 'Manual Rename Wins'; await runtime.processOpenCodeEvent({ type: 'session.updated', properties: { info: fake.state.sessions.get('ses_1') } }); }
+    expect(fake.state.patches).toHaveLength(1); release(); await adoption; await idle;
+    if (manual) { expect(await outbox.list()).toEqual([]); expect(fake.state.patches).toHaveLength(1); }
+    else { await vi.waitFor(async () => expect((await outbox.list())[0]?.attemptCount).toBe(2)); expect(fake.state.patches).toHaveLength(2); }
+    expect(generator).toHaveBeenCalledOnce();
+  } finally { release(); await runtime.dispose(); }
+});
+
+it('adopts the latest human B after a held human A schedule without buying another model or persistence budget', async () => {
+  const fake = createManagedTitleFake({ status: 'idle', completed: true }), outbox = createMemorySessionTitleOutbox();
+  const generator = vi.fn(async () => 'Resolved Child Task Title'); let latest = 'msg_user', entered, release, thirdJob;
+  const began = new Promise(resolve => { entered = resolve; }), gate = new Promise(resolve => { release = resolve; });
+  const renames = [];
+  const runtime = createRuntime({ fake, outbox, generateSessionModelTitle: generator,
+    captureManagedTitleInput: async () => managedSource(async () => {}),
+    captureAcceptedHumanTitleInput: async ({ messageID }) => ({ ...managedSource(async () => { if (latest !== messageID) throw Error('Stale human'); }), sourceMessageID: messageID, text: messageID === 'msg_B' ? 'Accepted human B' : 'Accepted human A' }),
+    verifyAcceptedTitleInput: async ({ messageID }) => { if (messageID === 'msg_A') { entered(); await gate; } return true; },
+    renameGeneratedTitle: async input => {
+      renames.push(input); if (renames.length === 1 || input.sourceMessageID !== latest) throw Error('Refused');
+      thirdJob = (await outbox.list())[0]; fake.state.sessions.get('ses_1').title = input.title;
+    } });
+  try {
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    await vi.waitFor(async () => expect((await outbox.list())[0]?.attemptCount).toBe(1));
+    const A = userMessage('Accepted human A'); A.info.id = 'msg_A'; fake.state.messages.get('ses_1').push(A); latest = 'msg_A';
+    const adoptingA = runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project', acceptedInputID: 'msg_A', text: 'Accepted human A' }); await began;
+    const B = userMessage('Accepted human B'); B.info.id = 'msg_B'; fake.state.messages.get('ses_1').push(B); latest = 'msg_B';
+    const acceptingB = runtime.processOpenCodeEvent(titleUserEvent('msg_B'));
+    release(); await adoptingA; expect(await acceptingB).toBe(true);
+    await vi.waitFor(() => expect(fake.state.sessions.get('ses_1').title).toBe('Resolved Child Task Title'));
+    expect(renames).toHaveLength(3); expect(renames[2].sourceMessageID).toBe('msg_B');
+    expect(thirdJob).toMatchObject({ attemptCount: 3, sourceMessageID: 'msg_user', lastAcceptedInputID: 'msg_B' });
+    expect(generator).toHaveBeenCalledOnce(); expect(await outbox.list()).toEqual([]);
+  } finally { release(); await runtime.dispose(); }
+});
+it('retains and pauses a reloaded delegated candidate when its original controller proof cannot renew', async () => {
+  vi.useFakeTimers();
+  const fake = createManagedTitleFake({ status: 'busy', completed: true }), outbox = createMemorySessionTitleOutbox();
+  const generator = vi.fn(async () => 'Resolved Child Task Title'), diagnostics = [];
+  let controller = 'original', renameCalls = 0;
+  const source = managedSource(async () => {
+    if (controller !== 'original') throw Object.assign(Error('native_managed_title_source_invalid'), { code: 'native_managed_title_source_invalid' });
+  });
+  const options = { fake, outbox, diagnostics, generateSessionModelTitle: generator,
+    captureManagedTitleInput: async () => source,
+    renameGeneratedTitle: async input => { renameCalls++; await source.recheck(); fake.state.sessions.get('ses_1').title = input.title; } };
+  let runtime = createRuntime(options);
+  try {
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' }); await vi.advanceTimersByTimeAsync(0);
+    const pending = (await outbox.list())[0]; expect(pending).toMatchObject({ state: 'pending_idle', attemptCount: 0, sourceMessageID: 'msg_user' });
+    expect(renameCalls).toBe(0); await runtime.dispose();
+    controller = 'replacement'; fake.state.statuses.set('ses_1', 'idle');
+    runtime = createRuntime({ ...options, watchdogEnabled: true });
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' }); await vi.advanceTimersByTimeAsync(3_000);
+    expect((await outbox.list())[0]).toMatchObject({ state: 'paused', attemptCount: 3, sourceMessageID: pending.sourceMessageID, candidateTitle: pending.candidateTitle, sourceHash: pending.sourceHash });
+    expect(renameCalls).toBe(3); expect(generator).toHaveBeenCalledOnce();
+    expect(fake.state.sessions.get('ses_1').title).toBe('Managed Fixer Task');
+    expect(diagnostics.some(row => row.payload.refusalCode === 'native_managed_title_source_invalid')).toBe(true);
+    await runtime.processOpenCodeEvent(idleEvent()); await vi.advanceTimersByTimeAsync(60_000); expect(renameCalls).toBe(3);
+  } finally { await runtime.dispose(); }
 });

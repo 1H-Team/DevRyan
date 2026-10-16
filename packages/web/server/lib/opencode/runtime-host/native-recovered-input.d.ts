@@ -25,6 +25,7 @@ export function createNativeRecoveredInputOwner(options:{
  readonly runOwned:(input:{readonly action:'resume'|'discard';readonly input:RecoveredNativeInput;readonly recheck:()=>Promise<void>})=>Promise<unknown>;
 }):RecoveredInputOwner&{
  install(instanceID:string):Promise<string[]>;
+ hasCurrentGrant(sessionID:string,instanceID:string):boolean;
  automatic<A>(input:{readonly sessionID:string;readonly messageID:string;readonly expectedItem?:unknown;
   readonly shellReceipt?:{readonly token:string;readonly jobID:string;readonly command:string;readonly exitCode:number;readonly itemHash?:string;readonly itemDelivery?:'queue'|'steer'}},record:PrimaryRecoveryExecutionRecord|null,
   authorize:()=>Promise<void>,action:(recheck:()=>Promise<void>)=>Promise<A>):Promise<A>;

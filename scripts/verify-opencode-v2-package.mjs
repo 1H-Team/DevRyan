@@ -30,11 +30,12 @@ import { runCompiledAssetAcceptance } from './opencode-v2-native/compiled-proces
 import { runTrackedCompiledReplacement } from './opencode-v2-native/package-restart-lane.mjs';
 import { runCompiledTodoReplacement } from './opencode-v2-native/package-todo-lane.mjs';
 import { runCompiledRecoveredInputs } from './opencode-v2-native/package-recovered-input-lane.mjs';
+import { runCompiledRecoveredShell } from './opencode-v2-native/package-recovered-shell-lane.mjs';
 import { capturePackageFailureEvents } from './opencode-v2-native/package-failure-events.mjs';
 import { runPortableArtifactTampering, runCompiledFormatter, verifyPackageBuildInputs } from './opencode-v2-native/package-lanes.mjs';
 import { runCompiledMigrationReplay } from './opencode-v2-native/migration-lanes.mjs';
 import { snapshotOwnedTree, runSelectedNativeLifecycle } from './opencode-v2-native/package-rollback-lane.mjs';
-import { reviewedCommandConfiguration, runCompiledPromptLanes, runCompiledWorkspaceRevert } from './opencode-v2-native/package-prompt-lanes.mjs';
+import { reviewedCommandConfiguration, readCompiledConfiguredPrimaryAgent, readCompiledPromptAgent, runCompiledPromptLanes, runCompiledWorkspaceRevert } from './opencode-v2-native/package-prompt-lanes.mjs';
 import { prepareCompiledParentDeathProbe, runCompiledParentDeath } from './opencode-v2-native/package-parent-death.mjs';
 import {runCompiledDiagnostics} from './opencode-v2-native/package-diagnostics-lane.mjs';
 import {createReviewedSetupSession,reviewedSetupRegistrations,attachReviewedSetup,assertReviewedSetupBoot,runReviewedSetupCommands} from './opencode-v2-native/reviewed-setup.mjs';
@@ -55,6 +56,7 @@ import { runCompiledHumanQueue } from './opencode-v2-native/package-human-queue-
 import { assertBundleCloneLayout, createCompiledBundleUpgradeLane, snapshotClosedBundleSource, snapshotCheckpointedBundleSource, snapshotRetainedBundleWork, verifyCompiledCloneCompatibility } from './opencode-v2-native/package-bundle-upgrade-lane.mjs';
 import { runCompiledFreshInstallUpgrade } from './opencode-v2-native/package-fresh-install-upgrade-lane.mjs';
 import { runCompiledClaudeCredentialBridge } from './opencode-v2-native/compiled-claude-credentials.mjs';
+import { runCompiledModelTitle } from './opencode-v2-native/package-model-title-lane.mjs';
 import { runCompiledHelperIsolation } from './opencode-v2-native/package-helper-isolation-lane.mjs';
 import { createCompiledHelperAgentFixture } from './opencode-v2-native/package-helper-agent-fixture.mjs';
 import { createFixtureJournal } from './opencode-v2-native/fixture-journal.mjs';
@@ -69,10 +71,15 @@ const errorEvidence = error => ({ name: error.name, code: error.code, message: e
   ...(error.protocolEvidence ? { protocolEvidence: error.protocolEvidence } : {}),
   ...(error.missingCatalog ? { missingCatalog: error.missingCatalog } : {}),
   ...(error.errors ? { causes: Array.from(error.errors, errorEvidence) } : {}) });
+const nodeHostRequired = 'native_package_node_host_required: Run node scripts/verify-opencode-v2-package.mjs';
 
 /** Qualified production binaries and real web owners; model replies alone are fixture data. */
-export async function runNativePackageAcceptance({ artifactRoot = path.join(repositoryRoot, '.cache/v2-validation/native-artifact'), baselineArtifactRoot, diagnostic = false, reviewedSetup = false, browser = false, preflight = false, skillDataRoot, onParentDeathReady, managedInterval, eventReconcileIntervalMs, managedCorrectness = false } = {}) {
+export async function runNativePackageAcceptance({ artifactRoot = path.join(repositoryRoot, '.cache/v2-validation/native-artifact'), baselineArtifactRoot, diagnostic = false, reviewedSetup = false, browser = false, preflight = false, skillDataRoot, onParentDeathReady, managedInterval, eventReconcileIntervalMs, managedCorrectness = false, retainedShellDiagnostic = false } = {}) {
+  if (process.versions.bun) throw Object.assign(new Error(nodeHostRequired), { code: 'native_package_node_host_required' });
   validateEventReconcileInterval(eventReconcileIntervalMs);
+  assert.equal(typeof retainedShellDiagnostic, 'boolean');
+  if (retainedShellDiagnostic) assert.ok(diagnostic && !managedCorrectness && !managedInterval && !reviewedSetup && !browser && !preflight && !skillDataRoot && !onParentDeathReady,
+    'Retained shell diagnostic is a separate compiled qualification');
   assert.equal(typeof managedCorrectness, 'boolean');
   if (managedCorrectness) assert.ok(!managedInterval && !reviewedSetup && !browser && !preflight && !skillDataRoot && !onParentDeathReady,
     'Managed interval correctness is a separate compiled qualification');
@@ -111,7 +118,7 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
       baselineManifestPath = path.join(baselineArtifactRoot, 'native-bundle.json');
       baselineManifestSha256 = fixtureSha256(await fs.readFile(baselineManifestPath));
       baselineArtifacts = await verifyNativeRuntimeArtifacts({ manifestPath: baselineManifestPath, manifestSha256: baselineManifestSha256,
-        launcher: path.join(baselineArtifactRoot, 'DevRyan-execution-darwin-arm64') });
+        launcher: path.join(baselineArtifactRoot, 'DevRyan-execution-darwin-arm64'), purpose: 'bundle-source' });
     }
     observations.push({ phase: 'qualified_release_pair', baselineVersion: baselineArtifacts.manifest.opencodeVersion,
       baselineManifestSha256, candidateVersion: artifacts.manifest.opencodeVersion, candidateManifestSha256: manifestSha256 });
@@ -145,6 +152,8 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
     if (!managedInterval && !managedCorrectness) {
       const helperFixture = await createCompiledHelperAgentFixture({ root });
       Object.assign(configuration.agents, helperFixture.agents);
+      // Qualified compatible-chat fixture defaults: verify native generation at the physical provider.
+      Object.assign(configuration.agents.orchestrator, { temperature: 0, top_p: 0.37 });
       observations.push({ phase: 'compiled_helper_agent_configuration', ...helperFixture.evidence });
     }
     if (managedCorrectness) {
@@ -173,7 +182,7 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
     let nativeURL, epoch = 0, descriptor, currentController, baselineSnapshot;
     const nativeTransport = { fetch: globalThis.fetch };
     const intervalReads = { active: 0, history: 0, total: 0 };
-    const deps = { getRuntime: () => ({ generation: 2, baseUrl: nativeURL, version: '2.0.26', epoch }),
+    const deps = { getRuntime: () => ({ generation: 2, baseUrl: nativeURL, version: '2.0.30', epoch }),
       fetchImpl: (url, input) => {
         if (managedInterval) {
           intervalReads.total++;
@@ -211,7 +220,7 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
       return runNativeMigrationProcess({ binary: selected.controller, request, cwd: root,
       environment: privateEnvironment(Object.fromEntries(['home', 'config', 'data', 'state', 'cache', 'tmp', 'bin', 'log', 'repos']
         .map(key => [key, path.join(request.isolatedRoot, key)])), fixture.environment),
-      beforeSpawn: () => verifyNativeRuntimeArtifacts({ manifestPath: selectedManifestPath, manifestSha256: selectedManifestSha256, launcher: selected.launcher }) });
+      beforeSpawn: () => verifyNativeRuntimeArtifacts({ manifestPath: selectedManifestPath, manifestSha256: selectedManifestSha256, launcher: selected.launcher, purpose: request.bundleID === 'baseline' ? 'bundle-source' : 'current' }) });
     };
 
     let loseImportAck = true, actualImports = 0;
@@ -398,8 +407,9 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
         onOutcome: row => observations.push({ ...row, phase: row.state === 'published' ? 'published' : 'discarded' }),
       } });
     const ownerDelegate = { withManagedTaskDispatch: (input, action) => runtimeOwner.nativeOwner.withManagedTaskDispatch(input, action),
+      readOnlyExecution: input => runtimeOwner.nativeOwner.readOnlyExecution(input),
       withPermit: (permit, action) => runtimeOwner.nativeOwner.withPermit(permit, action) };
-    managed = createNativeManagedFixture({ client, admissionOwner: ownerDelegate, executionHost: host, directory,
+    managed = createNativeManagedFixture({ client, admissionOwner: ownerDelegate, executionHost: host, directory, directories: locations.map(row => row.directory),
       ...(eventReconcileIntervalMs !== undefined || managedInterval
         ? { eventReconcileIntervalMs: eventReconcileIntervalMs ?? managedInterval.intervalMs } : {}),
       dataDirectory: descriptor.launch.webDataDirectory, buildOpenCodeUrl, getOpenCodeAuthHeaders: deps.getAuthHeaders,
@@ -411,6 +421,7 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
     const fixturePrincipal = Object.freeze({ scope: 'local-admin', id: 'local-admin' });
     const authorization = createNativeAuthorization({ locations, manifest: artifacts.manifest,
       getRequestPrincipal: () => fixturePrincipal,
+      readHelperSettings: async () => ({ helperModelSelection: { providerID: 'devryan-smoke', modelID: 'smoke-write', revision: 'compiled-fixture' } }),
       captureLocalAuthorization: original => original === fixturePrincipal ? () => true : null,
       getMultiUserRuntime: () => ({ enabled: false, connection: { configured: false, isLocalAccessActive: () => true } }) });
     if (browser && !preflight) browserLane = await createCompiledBrowserLane({ root, client });
@@ -467,7 +478,15 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
       assert.equal(response.status, 200, 'Compiled plugin catalog unavailable');
       return response.json();
     } }));
-    if (managedCorrectness) {
+    if (retainedShellDiagnostic) {
+      await failureEvents.close();
+      cases.push(await runCompiledRecoveredShell({ provider, client, managed, runtimeOwner,
+        getController: () => currentController, directory, databasePath: descriptor.launch.opencodeDatabasePath,
+        executionHost: host, observations, recordDiagnostic: row => { diagnostics.push(row); journal.ownerDiagnostic(row); },
+        onExit: exit => observations.push({ phase: 'recovered_input_controller_exit', ...exit }) }));
+      result = { status: 'retained-shell-diagnostic-passed', qualification: 'compiled-retained-shell-diagnostic-only',
+        artifact: { buildId: artifacts.manifest.buildId, manifestSha256 }, remainingMandatoryGates: ['full-package-qualification'] };
+    } else if (managedCorrectness) {
       cases.push(...await runCompiledIntervalCorrectness({ intervalMs: eventReconcileIntervalMs ?? 750, client, managed, provider,
         executionHost: host, directory, observations, getAuthHeaders: () => runtimeOwner.getAuthHeaders(),
         databasePath: descriptor.launch.opencodeDatabasePath, environment, nativeTransport }));
@@ -490,18 +509,27 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
       result = { status: 'interval-diagnostic-passed', artifact: { buildId: artifacts.manifest.buildId, manifestSha256 },
         managedInterval: arm, remainingMandatoryGates: ['full-seven-workload-matrix', 'interval-missed-event-deadline-cancel-correctness'] };
     } else {
-    if (!preflight) cases.push(await runCompiledHelperIsolation({ runtimeOwner, client, provider, directory }));
-    const sessionInput={ title: 'Compiled native writer qualification', model: { providerID: 'devryan-smoke', modelID: 'smoke-write' } };
+    let modelTitleProof;
+    if (!preflight) {
+      cases.push(await runCompiledHelperIsolation({ runtimeOwner, client, provider, directory }));
+      modelTitleProof = await runCompiledModelTitle({ runtimeOwner, client, provider, directory, root, getRuntimeOwner: () => runtimeOwner,
+        enrollPrimary: sessionID => managed.admitPrimary(sessionID),
+        recordDiagnostic: row => { diagnostics.push(row); journal.ownerDiagnostic(row); } });
+    }
+    const initialAgent=await readCompiledConfiguredPrimaryAgent({client,directory,configuration});
+    const sessionInput={ title: 'Compiled native writer qualification', agent:initialAgent, model: { providerID: 'devryan-smoke', modelID: 'smoke-write' } };
     const session = reviewedSetup
       ? await createReviewedSetupSession({client,directory,input:sessionInput,admitPrimary:managed.admitPrimary})
       : await client.sessions.create(sessionInput,{directory});
+    if (!reviewedSetup) await managed.admitPrimary(session.id);
     const invoke = async (scenario, options = {}) => {
       const operationDirectory = options.directory ?? directory, sessionID = options.sessionID ?? session.id;
       const foreignBefore = scenario.deniedBeforePermission ? await fs.readFile(scenario.input.path) : undefined;
+      const agent = await readCompiledPromptAgent({client,sessionID,directory:operationDirectory});
       const turn = toolTurn(scenario.tool, scenario.input, scenario.id);
       await provider.setResponder(options.transformResponder ? options.transformResponder(turn.responder) : turn.responder);
       await client.prompts.prompt(sessionID, { messageID: createV2MessageId(), variant: 'default',
-        ...(reviewedSetup?{agent:'orchestrator'}:{}),
+        agent,
         model: { providerID: 'devryan-smoke', modelID: scenario.tool === 'patch' ? 'gpt-5-native-smoke' : 'smoke-write' },
         parts: [{ type: 'text', text: turn.marker }, ...(options.parts ?? [])] }, { directory: operationDirectory, origin: 'native_acceptance', timeoutMs: 30_000 });
       if (scenario.approveExternal) {
@@ -511,9 +539,16 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
         assert.equal(request.permission, 'external_directory', 'Compiled read requested a different native permission');
         await client.interaction.permissions.reply(request.id, { reply: 'once' }, { directory: operationDirectory, sessionID });
       }
-      const messages = await waitFor(() => client.sessions.messages(sessionID, {}, { directory: operationDirectory }),
-        page => page.records.some(row => row.parts?.some(part => part.type === 'text' && part.text === `completed ${scenario.id}`)),
-        `Compiled ${scenario.id} did not reach its real HTTP continuation`, 60_000);
+      const settled = await waitFor(async () => {
+        const page = await client.sessions.messages(sessionID, {}, { directory: operationDirectory });
+        const statuses = await client.sessions.status({ directory: operationDirectory });
+        return { page, statuses };
+      }, ({ page, statuses }) => page.records.some(row => row.info.role === 'assistant' && !row.info.error
+        && Number.isSafeInteger(row.info.time?.completed) && row.info.time.completed > 0
+        && row.parts?.some(part => part.type === 'text' && part.text === `completed ${scenario.id}`))
+        && (!statuses[sessionID] || statuses[sessionID].type === 'idle'),
+      `Compiled ${scenario.id} did not settle its real HTTP continuation and native execution`, 60_000);
+      const messages = settled.page;
       const call = messages.records.flatMap(row => row.parts ?? []).find(part => part.type === 'tool' && part.callID === turn.callID);
       assert.equal(call?.state.status, scenario.expectedError ? 'error' : 'completed');
       if (scenario.expectedError) assert.match(call.state.error, scenario.expectedError);
@@ -564,7 +599,9 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
     }
     if (reviewedSetup) cases.push(await runCompiledCouncil({ invoke, runtime: host.runtime, client, managed, directory, runtimeOwner }));
     const secondDirectory = locations[1].directory;
-    const secondSession = await client.sessions.create({ title: 'Second relocated native location', model: { providerID: 'devryan-smoke', modelID: 'smoke-write' } }, { directory: secondDirectory });
+    const secondAgent = await readCompiledConfiguredPrimaryAgent({client,directory:secondDirectory,configuration});
+    const secondSession = await client.sessions.create({ title: 'Second relocated native location', agent: secondAgent, model: { providerID: 'devryan-smoke', modelID: 'smoke-write' } }, { directory: secondDirectory });
+    await managed.admitPrimary(secondSession.id, secondDirectory);
     if (!preflight) {
       await invoke({ id: 'second-location-write', tool: 'write', input: { path: 'second-location.txt', content: 'second relocated compiled write\n' } }, { directory: secondDirectory, sessionID: secondSession.id });
       assert.equal(await fs.readFile(path.join(secondDirectory, 'second-location.txt'), 'utf8'), 'second relocated compiled write\n');
@@ -580,6 +617,7 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
     await runCompiledRecoveredInputs({ provider, client, managed, runtimeOwner, nativeTransport, executionHost: host,
       databasePath: descriptor.launch.opencodeDatabasePath, observations,
       getController: () => currentController, directory, reviewedSetup,
+      recordDiagnostic: row => { diagnostics.push(row); journal.ownerDiagnostic(row); },
       onCase: row => cases.push(row), onExit: exit => observations.push({ phase: 'recovered_input_controller_exit', ...exit }) });
     if (preflight) result = packagePreflightResult({ buildId: artifacts.manifest.buildId, manifestSha256 });
     else {
@@ -642,6 +680,8 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
       assert.equal(runtimeOwner.isReady(), false);
       const recoveredController = await runtimeOwner.start();
       assert.notEqual(recoveredController.instanceID, oldRemovalInstance); assert.equal(runtimeOwner.isReady(), true);
+      assert.ok(modelTitleProof, 'Full shipping qualification requires an actual model title');
+      cases.push(await modelTitleProof.assertRestored());
       assertNativeRemovalAbsent(await readNativeRemovalRows({ databasePath: descriptor.launch.opencodeDatabasePath, environment, sessions: interruptedIDs }));
       assertCompletedRemoval(await host.runtime.nativeRemoval({ directory, intentID: interruptedIntent }), interruptedIDs);
       cases.push({ id: 'compiled-removal-startup-recovery', status: 'passed', intentID: interruptedIntent, sessions: interruptedIDs,
@@ -757,25 +797,27 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
   const changedPaths = [...new Set([...Object.keys(source.sources), ...Object.keys(after.sources)])]
     .filter(file => source.sources[file] !== after.sources[file]);
   if (fixtureSha256(await fs.readFile(fileURLToPath(import.meta.url))) !== runnerSha256) changedPaths.push('scripts/verify-opencode-v2-package.mjs');
-  result = { ...result, root, diagnostic, reviewedSetup, browser, preflight, managedCorrectness,
+  result = { ...result, root, diagnostic, reviewedSetup, browser, preflight, managedCorrectness, retainedShellDiagnostic,
     eventReconcileIntervalMs: eventReconcileIntervalMs ?? managedInterval?.intervalMs ?? 750,
-    cases, observations, diagnostics, cleanupFailures, source,
+    cases, observations, diagnostics, cleanupFailures, source, runnerSha256,
     sourceCohort: { valid: changedPaths.length === 0, changedPaths } };
   if (cleanupFailures.length || changedPaths.length) result.status = 'failed';
   await fs.writeFile(path.join(root, 'result.json'), JSON.stringify(result, null, 2) + '\n');
-  run.finish(['passed', 'preflight-passed', 'interval-correctness-passed'].includes(result.status) ? 'passed' : 'failed');
+  run.finish(['passed', 'preflight-passed', 'interval-correctness-passed', 'retained-shell-diagnostic-passed'].includes(result.status) ? 'passed' : 'failed');
   return result;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const {values}=parseArgs({options:{diagnostic:{type:'boolean'},'reviewed-setup':{type:'boolean'},browser:{type:'boolean'},preflight:{type:'boolean'},'artifact-root':{type:'string'},'baseline-artifact-root':{type:'string'},'skill-data':{type:'string'},'managed-correctness':{type:'boolean'},'keep-artifacts':{type:'boolean'},'event-reconcile-interval-ms':{type:'string'}}});
+  if (process.versions.bun) { process.stderr.write(nodeHostRequired + '\n'); process.exit(1); }
+  const {values}=parseArgs({options:{diagnostic:{type:'boolean'},'reviewed-setup':{type:'boolean'},browser:{type:'boolean'},preflight:{type:'boolean'},'artifact-root':{type:'string'},'baseline-artifact-root':{type:'string'},'skill-data':{type:'string'},'managed-correctness':{type:'boolean'},'retained-shell-diagnostic':{type:'boolean'},'keep-artifacts':{type:'boolean'},'event-reconcile-interval-ms':{type:'string'}}});
   if (values['event-reconcile-interval-ms'] !== undefined) assert.match(values['event-reconcile-interval-ms'], /^(750|1500)$/,
     '--event-reconcile-interval-ms must be 750 or 1500');
   const result = await runNativePackageAcceptance({ diagnostic:values.diagnostic??false,reviewedSetup:values['reviewed-setup']??false,browser:values.browser??false,preflight:values.preflight??false,
     managedCorrectness: values['managed-correctness'] ?? false,
+    retainedShellDiagnostic: values['retained-shell-diagnostic'] ?? false,
     ...(values['event-reconcile-interval-ms'] === undefined ? {} : { eventReconcileIntervalMs: Number(values['event-reconcile-interval-ms']) }),
     ...(values['baseline-artifact-root'] ? { baselineArtifactRoot: path.resolve(values['baseline-artifact-root']) } : {}),
     ...(values['artifact-root']?{artifactRoot:path.resolve(values['artifact-root'])}:{}),...(values['skill-data']?{skillDataRoot:path.resolve(values['skill-data'])}:{}) });
   process.stdout.write(JSON.stringify({ status: result.status, artifact: path.join(result.root, 'result.json'), cases: result.cases }) + '\n');
-  if (!['passed', 'preflight-passed', 'interval-correctness-passed'].includes(result.status)) process.exitCode = 1;
+  if (!['passed', 'preflight-passed', 'interval-correctness-passed', 'retained-shell-diagnostic-passed'].includes(result.status)) process.exitCode = 1;
 }

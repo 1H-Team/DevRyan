@@ -444,6 +444,7 @@ export async function generateCommitMessageDraft(
   const startedAt = Date.now();
   const request: import('./api/types').GenerateGitCommitMessageDraftRequest = {
     selectedFiles: files,
+    ...(useSessionUIStore.getState().currentSessionId ? { sessionID: useSessionUIStore.getState().currentSessionId ?? undefined } : {}),
     stagedOnly: options?.stagedOnly === true,
     ...(options?.commitMessageGuidance?.trim()
       ? { guidance: options.commitMessageGuidance.trim() }
@@ -547,6 +548,7 @@ export async function executeApprovedCommitPlan(
 }
 
 type PullRequestGenerationRequest = {
+  sessionID?: string;
   base: string;
   head: string;
   context?: string;
@@ -560,9 +562,7 @@ export async function generatePullRequestDescription(
   payload: { base: string; head: string; context?: string }
 ): Promise<import('./api/types').GeneratedPullRequestDescription> {
   const startedAt = Date.now();
-  // Hint for the server's session-model fallback tier (it prefers its own
-  // Builder resolution, so this only matters for hosts without one).
-  const fallbackModel = resolveGenerationModel(useSessionUIStore.getState().currentSessionId, 'builder');
+  const activeSessionID = useSessionUIStore.getState().currentSessionId;
 
   const commitLog = await getGitLog(directory, {
     from: payload.base,
@@ -607,7 +607,7 @@ export async function generatePullRequestDescription(
     head: payload.head,
     commits: commits.length,
     changedFiles: changedFiles.length,
-    fallbackModel: fallbackModel ? `${fallbackModel.providerId}/${fallbackModel.modelId}` : null,
+    activeSessionID,
   });
 
   const hiddenPrompt = await renderMagicPrompt('git.pr.generate.instructions', {
@@ -623,7 +623,7 @@ export async function generatePullRequestDescription(
     head: payload.head,
     ...(payload.context?.trim() ? { context: payload.context.trim() } : {}),
     prompt: hiddenPrompt,
-    ...(fallbackModel ? { providerId: fallbackModel.providerId, modelId: fallbackModel.modelId } : {}),
+    ...(activeSessionID ? { sessionID: activeSessionID } : {}),
   };
 
   try {

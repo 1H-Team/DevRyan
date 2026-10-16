@@ -334,6 +334,10 @@ export const StatusRowContainer: React.FC = React.memo(() => {
         assistantStatusText = compactionStatusText;
         assistantIsGenericStatus = false;
     }
+    if (working.isFinalizing) {
+        assistantStatusText = working.statusText;
+        assistantIsGenericStatus = false;
+    }
     const display = resolveStatusRowAssistantDisplay({
         isRevertPending,
         revertingText: t('chat.statusRow.revertingChat'),
@@ -408,7 +412,7 @@ export const StatusRowContainer: React.FC = React.memo(() => {
     }, [childStores, currentSessionId, resyncSession]);
     return (
         <StatusRow
-            assistantStatusKey={`${currentPromptId ?? ''}:${managedDelegationPhase ?? ''}:${working.compaction ?? ''}`}
+            assistantStatusKey={`${currentPromptId ?? ''}:${managedDelegationPhase ?? ''}:${working.compaction ?? ''}:${working.isFinalizing ? 'finalizing' : ''}`}
             isWorking={display.isWorking}
             statusText={display.statusText}
             isGenericStatus={display.isGenericStatus}
@@ -434,7 +438,7 @@ export const StatusRowContainer: React.FC = React.memo(() => {
             longRunningToolError={longRunningTool?.actionError ?? null}
             onStopLongRunningTool={longRunningPresentation?.actionable ? stopCurrentLongRunningTool : undefined}
             showAssistantStatus
-            suppressAssistantStatusText={activeReasoningDisclosure && !working.compaction}
+            suppressAssistantStatusText={activeReasoningDisclosure && !working.compaction && !working.isFinalizing}
             showTodos={false}
             agentName={currentAgentName}
         />

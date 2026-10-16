@@ -1,4 +1,5 @@
 export const MANAGED_RESULT_PAGE_MAX_BYTES = 8 * 1024;
+export const MANAGED_RESULT_V2_PAGE_MAX_BYTES = 24 * 1024;
 export const MANAGED_RESULT_MODES = Object.freeze(['eager', 'reference', 'compact']);
 
 const CURSOR_PREFIX = 'dvr_result_cursor_v1.';
@@ -156,14 +157,15 @@ const isCodePointBoundary = (value, offset) => {
   return !(previous >= 0xD800 && previous <= 0xDBFF && current >= 0xDC00 && current <= 0xDFFF);
 };
 
-const sliceUtf8Page = (value, stringOffset) => {
+export const sliceManagedResultText = (value, stringOffset, maxBytes = MANAGED_RESULT_PAGE_MAX_BYTES) => {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 4 || maxBytes > MANAGED_RESULT_V2_PAGE_MAX_BYTES) throw invalidCursor('managed result page size is invalid');
   let nextOffset = stringOffset;
   let pageBytes = 0;
   while (nextOffset < value.length) {
     const codePoint = value.codePointAt(nextOffset);
     const width = codePoint > 0xFFFF ? 2 : 1;
     const codePointBytes = utf8CodePointByteLength(codePoint);
-    if (pageBytes + codePointBytes > MANAGED_RESULT_PAGE_MAX_BYTES) break;
+    if (pageBytes + codePointBytes > maxBytes) break;
     pageBytes += codePointBytes;
     nextOffset += width;
   }
@@ -177,9 +179,9 @@ const sliceUtf8Page = (value, stringOffset) => {
   };
 };
 
-const createReferencePage = ({ taskId, envelopeId, preview, stringOffset, returnedBytes }) => {
+const createReferencePage = ({ taskId, envelopeId, preview, stringOffset, returnedBytes, maxBytes }) => {
   const totalBytes = utf8ByteLength(preview);
-  const page = sliceUtf8Page(preview, stringOffset);
+  const page = sliceManagedResultText(preview, stringOffset, maxBytes);
   const cumulativeBytes = returnedBytes + page.pageBytes;
   const complete = page.nextOffset === preview.length;
   return {
@@ -201,15 +203,16 @@ const createReferencePage = ({ taskId, envelopeId, preview, stringOffset, return
   };
 };
 
-const createInitialReference = (task, resultEnvelope) => createReferencePage({
+const createInitialReference = (task, resultEnvelope, maxBytes) => createReferencePage({
   taskId: task.taskId,
   envelopeId: resultEnvelope.envelopeId,
   preview: resultEnvelope.recoverablePreview,
   stringOffset: 0,
   returnedBytes: 0,
+  maxBytes,
 });
 
-export const projectManagedTaskResult = (task, resultEnvelope, resultMode) => {
+export const projectManagedTaskResult = (task, resultEnvelope, resultMode, maxPageBytes = MANAGED_RESULT_PAGE_MAX_BYTES) => {
   const mode = resolveManagedResultMode(resultMode);
   const eager = {
     task,
@@ -219,7 +222,7 @@ export const projectManagedTaskResult = (task, resultEnvelope, resultMode) => {
     (mode !== 'reference' && mode !== 'compact')
     || !isRecord(resultEnvelope)
     || typeof resultEnvelope.recoverablePreview !== 'string'
-    || (mode !== 'compact' && utf8ByteLength(resultEnvelope.recoverablePreview) <= MANAGED_RESULT_PAGE_MAX_BYTES)
+    || (mode !== 'compact' && utf8ByteLength(resultEnvelope.recoverablePreview) <= maxPageBytes)
     || !managedResultPayloadMatches(task, resultEnvelope)
   ) {
     return eager;
@@ -236,7 +239,7 @@ export const projectManagedTaskResult = (task, resultEnvelope, resultMode) => {
       ? { taskId: task.taskId, envelopeId: resultEnvelope.envelopeId, totalBytes, text: '', returnedBytes: 0,
           nextCursor: totalBytes ? encodeCursor({ taskId: task.taskId, envelopeId: resultEnvelope.envelopeId,
             stringOffset: 0, returnedBytes: 0, totalBytes }) : null, complete: totalBytes === 0 }
-      : createInitialReference(task, resultEnvelope);
+      : createInitialReference(task, resultEnvelope, maxPageBytes);
   } catch (error) {
     if (error instanceof ManagedResultReferenceError) return eager;
     throw error;
@@ -248,15 +251,15 @@ export const projectManagedTaskResult = (task, resultEnvelope, resultMode) => {
   };
 };
 
-export const projectManagedResultEnvelope = (task, resultEnvelope, resultMode) => {
-  const projected = projectManagedTaskResult(task, resultEnvelope, resultMode);
+export const projectManagedResultEnvelope = (task, resultEnvelope, resultMode, maxPageBytes) => {
+  const projected = projectManagedTaskResult(task, resultEnvelope, resultMode, maxPageBytes);
   return {
     resultEnvelope: projected.resultEnvelope,
     ...(projected.resultReference ? { resultReference: projected.resultReference } : {}),
   };
 };
 
-export const readManagedResultReference = ({ task, resultEnvelope, resultCursor }) => {
+export const readManagedResultReference = ({ task, resultEnvelope, resultCursor, maxPageBytes }) => {
   if (!managedResultPayloadMatches(task, resultEnvelope)) {
     throw referenceMismatch('retained task and result envelope do not match');
   }
@@ -293,5 +296,6 @@ export const readManagedResultReference = ({ task, resultEnvelope, resultCursor 
     preview,
     stringOffset: cursor.stringOffset,
     returnedBytes: cursor.returnedBytes,
+    maxBytes: maxPageBytes,
   });
 };

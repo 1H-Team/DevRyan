@@ -8,7 +8,7 @@ import {Location} from '@opencode/core/location';
 import {OpencodePlugin} from '@opencode/core/plugin/provider/opencode';
 import {Bus} from '@opencode/core/bus';
 import {ManagedPolicy} from '@opencode/core/managed-policy';
-import {FetchHttpClient} from 'effect/unstable/http';
+import {FetchHttpClient} from 'effect/http';
 import {XAIPlugin} from '@opencode/core/plugin/provider/xai';
 import {Global} from '@opencode/util/global';
 import {LayerNode} from '@opencode/util/effect/layer-node';
@@ -398,7 +398,7 @@ test('usage renewal traverses the original caller grant, reverse mutation queue 
   try{
     await Effect.runPromise(Effect.scoped(Effect.gen(function*(){
       const credentials=yield* Credential.Service,integration=yield* Integration.Service;
-      yield* provideRegistrationOrigin(origin,XAIPlugin.effect({app:{name:'DevRyan',version:'2.0.26',channel:'test'},integration:{transform:integration.transform},provider:{transform:()=>Effect.void}}));
+      yield* provideRegistrationOrigin(origin,XAIPlugin.effect({app:{name:'DevRyan',version:'2.0.30',channel:'test'},integration:{transform:integration.transform},provider:{transform:()=>Effect.void}}));
       const scope={kind:'provider',directory,integrationID:'xai',configurationDigest:fingerprint({}),operation:'provider.integration',method:'GET',path:'/api/integration/xai'};
       const selected=yield* Effect.promise(()=>node.readProviderSelected(scope));
       if(!selected||typeof selected.expectedFingerprint!=='string')throw Error('Selected native receipt missing');

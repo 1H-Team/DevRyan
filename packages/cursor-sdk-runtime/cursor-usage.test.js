@@ -76,6 +76,9 @@ const sdkFixture = `
         run.usage=total; run.status=failing?'error':'finished'; finish();
       },
       async wait(){await complete;if(failing)throw new Error('fixture failure');return {id:run.id,requestId:run.requestId,status:run.status,model,usage:run.usage,result:'done'};},
+      // SDK 1.0.28 result is its last assistantMessage. This usage-only stream
+      // exercises the supported final-only completion with its exact witness.
+      async conversation(){return [{type:'agentConversationTurn',turn:{steps:[{type:'assistantMessage',message:{text:'done'}}]}}];},
       // Deliberately race native success against the already accepted local Stop.
       async cancel(){run.status='finished';finish();}
     }; return run;
@@ -154,6 +157,8 @@ for (const mode of ['direct', 'persistent', 'fallback']) {
         expect(assistant.info.finish).toBe(cancelling ? 'cancelled' : failing ? 'error' : 'stop');
         if (!cancelling) expect(assistant.info.cursorUsage.source).toBe(failing ? 'sdk-run-snapshot' : 'sdk-run-result');
         if (!failing && !cancelling) {
+          expect(assistant.info.error).toBeUndefined();
+          expect(assistant.parts.filter(part => part.type === 'text').map(part => part.text)).toEqual(['done']);
           expect(await runtime.generateTitle({ text: 'Generate a title', sessionID: 'ses_fixture', directory })).toBe('Fixture title');
           expect(titleObservations).toHaveLength(1);
           expect(titleObservations[0]).toMatchObject({ sessionID: 'ses_fixture', directory, observation: {

@@ -6,6 +6,8 @@ import { afterEach, expect, it } from 'vitest';
 import { createNativeConfigurationSnapshotResolver, nativeCatalogModels, nativeCatalogSelections } from './native-configuration-snapshot.js';
 import { buildRuntimeHelperAgents } from '../runtime-helper-agents.js';
 import { readReviewedSkillResource, resolveReviewedSkillAlias, lookupReviewedSkillResourcePath } from './reviewed-skills.js';
+import {parseMdFile} from '../shared.js';
+import {getAgentConfig} from '../agents.js';
 
 const roots = [];
 
@@ -88,6 +90,57 @@ it('freezes exact effective roles, ordered rules, commands, resources and disabl
   f.loaded.agents.builder.variant = 'high';
   const changed = await f.resolver({ ...f.input, revision: 2 });
   expect(changed.digest).not.toBe(first.digest); expect(first.locations[0].configuration.agents.builder.model.variant).toBe('default');
+});
+
+it('carries actual agent frontmatter tools through the settings loader and frozen native snapshot',async()=>{
+ const f=await fixture(),folder=path.join(f.directory,'.opencode','agents');await fs.mkdir(folder,{recursive:true});
+ const file=path.join(folder,'restricted-fixture.md');
+ await fs.writeFile(file,'---\nmode: subagent\ntools:\n  bash: false\n  write: false\n  patch: false\n  task: false\npermission:\n  bash:\n    "git *": allow\n---\nInspect only.\n');
+ expect(parseMdFile(file).frontmatter.tools).toEqual({bash:false,write:false,patch:false,task:false});
+ f.loaded.legacy.tools={edit:false};
+ f.loaded.agents={'restricted-fixture':getAgentConfig('restricted-fixture',f.directory,{userConfigPath:path.join(f.root,'absent.json'),slimConfigDirectory:f.input.binding.descriptor.launch.opencodeConfigDirectory}).config};
+ const location=(await f.resolver(f.input)).locations[0];
+ expect(location.configuration.permissions).toEqual([{action:'edit',resource:'*',effect:'deny'}]);
+ expect(location.configuration.agents['restricted-fixture'].permissions).toEqual([{action:'shell',resource:'git *',effect:'allow'},
+  {action:'edit',resource:'*',effect:'deny'},{action:'subagent',resource:'*',effect:'deny'}]);
+ expect(location.compatibility.agents['restricted-fixture'].tools).toEqual({bash:false,write:false,patch:false,task:false});
+});
+
+it('activates selected Claude catalog metadata only through the registered compatibility owner',async()=>{
+ const f=await fixture(),manifestFile=f.input.binding.descriptor.launch.reviewedPluginManifestPath;
+ const manifest={schema:1,plugins:[{id:'devryan.provider-compat',legacySpecs:['./plugins/fixture.mjs']}]};
+ await fs.writeFile(manifestFile,JSON.stringify(manifest));f.input.expectedRegistrationDigest=createHash('sha256').update(JSON.stringify(manifest)).digest('hex');
+ let configured=true,reads=0;
+ const resolver=createNativeConfigurationSnapshotResolver({hasConfiguredClaudeProfile:async()=>{reads++;return configured;},
+  loadLocation:async()=>({...structuredClone({...f.loaded,parseMarkdown:undefined}),parseMarkdown:f.loaded.parseMarkdown})});
+ expect((await resolver(f.input)).locations[0].configuration.providers.anthropic).toEqual({});expect(reads).toBe(1);
+ f.loaded.legacy.provider={anthropic:{options:{timeout:1234},models:{saved:{name:'Saved model'}}}};
+ const saved=(await resolver({...f.input,revision:2})).locations[0].configuration.providers.anthropic;
+ expect(saved).toMatchObject({settings:{timeout:1234},models:{saved:{name:'Saved model'}}});expect(saved.settings.apiKey).toBeUndefined();
+ delete f.loaded.legacy.provider;
+ for(const policy of [{disabled_providers:['anthropic']},{enabled_providers:['openai']}]){
+  const original=f.loaded.legacy;f.loaded.legacy={...original,...policy};
+  expect((await resolver(f.input)).locations[0].configuration.providers).toBeUndefined();f.loaded.legacy=original;
+ }
+ f.loaded.legacy.plugin=[];
+ const withoutLegacyPlugins=(await resolver(f.input)).locations[0];
+ expect(withoutLegacyPlugins.activeRegistrationIDs).toEqual([]);expect(withoutLegacyPlugins.configuration.providers.anthropic).toEqual({});
+ expect(withoutLegacyPlugins.compatibility.legacy.plugin).toEqual([]);
+ configured=false;expect((await resolver(f.input)).locations[0].configuration.providers).toBeUndefined();
+ const unregistered={schema:1,plugins:[]};await fs.writeFile(manifestFile,JSON.stringify(unregistered));
+ f.input.expectedRegistrationDigest=createHash('sha256').update(JSON.stringify(unregistered)).digest('hex');configured=true;
+ const before=reads;expect((await resolver(f.input)).locations[0].configuration.providers).toBeUndefined();expect(reads).toBe(before);
+});
+
+it('retries Claude selection changes during capture without retaining the prior catalog activation',async()=>{
+ const f=await fixture(),manifest={schema:1,plugins:[{id:'devryan.provider-compat',legacySpecs:['./plugins/fixture.mjs']}]};
+ await fs.writeFile(f.input.binding.descriptor.launch.reviewedPluginManifestPath,JSON.stringify(manifest));
+ f.input.expectedRegistrationDigest=createHash('sha256').update(JSON.stringify(manifest)).digest('hex');
+ const settings=path.join(f.input.binding.descriptor.launch.global.home,'.config','meridian','settings.json');await fs.mkdir(path.dirname(settings),{recursive:true});
+ await fs.writeFile(settings,'selected');let reads=0;
+ const resolver=createNativeConfigurationSnapshotResolver({hasConfiguredClaudeProfile:async()=>{reads++;return reads===1;},
+  loadLocation:async()=>{if(reads===1)await fs.writeFile(settings,'unselected');return {...f.loaded,parseMarkdown:f.loaded.parseMarkdown};}});
+ const snapshot=await resolver(f.input);expect(reads).toBe(2);expect(snapshot.locations[0].configuration.providers).toBeUndefined();
 });
 
 it('derives enabled native agents while preserving every explicit catalog requirement',async()=>{

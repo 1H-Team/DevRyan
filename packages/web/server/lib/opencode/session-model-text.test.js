@@ -41,5 +41,17 @@ describe('native model-text boundary', () => {
     expect(await generateTextWithSessionModel({openCodeClient:{generation:()=>2,sessions:{create}},cursorRuntime:{generateText},directory:'/fixture',providerID:'cursor-acp',modelID:'selected',agent:'devryan-commit',prompt:'Exact'})).toMatchObject({ok:true,value:'# Raw\n\nBody'});
     expect(generateText).toHaveBeenCalledWith(expect.objectContaining({modelID:'selected',text:'Exact'}));expect(create).not.toHaveBeenCalled();
   });
+  it.each([
+    ['native_helper_selection_changed',403,'selection_changed'],
+    ['native_session_access_revoked',403,'authorization_revoked'],
+    ['native_helper_settings_unavailable',503,'upstream_error'],
+    ['native_helper_model_unavailable',404,'model_unavailable'],
+    ['native_helper_provider_failed',403,'unauthorized'],
+  ])('preserves helper refusal classification for %s',async(code,statusCode,reason)=>{
+    const generateHelperText=vi.fn(async()=>{throw Object.assign(Error('private detail'),{code,statusCode});});
+    expect(await generateTextWithSessionModel({openCodeClient:{generation:()=>2},generateHelperText,directory:'/fixture',providerID:'saved',modelID:'selected',agent:'devryan-pr',prompt:'Draft',repairPrompt:'Repair'}))
+      .toMatchObject({ok:false,attempts:1,code,status:statusCode,reason});
+    expect(generateHelperText).toHaveBeenCalledTimes(1);
+  });
 
 });

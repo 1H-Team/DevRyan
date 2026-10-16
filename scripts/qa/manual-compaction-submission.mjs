@@ -52,9 +52,11 @@ export function observeQaManualCompactionRequest({ cdp, origin, sessionID, deadl
   let armed = false, closed = false, requestTimer, resolveAcknowledgement;
   const acknowledgement = new Promise(resolve => { resolveAcknowledgement = resolve; });
   const wake = () => resolveAcknowledgement();
-  const fail = reason => { receipt.failure = reason; receipt.outcome = 'failed'; wake(); };
+  const fail = reason => { if (receipt.failure) return; receipt.failure = reason; receipt.outcome = 'failed'; wake(); };
   const failMissingRequest = () => {
-    if (receipt.matchingRequestCount || receipt.failure) return;
+    if (closed || receipt.matchingRequestCount || receipt.failure) return;
+    const remaining = receipt.requestDeadline - Date.now();
+    if (remaining > 0) { requestTimer = setTimeout(failMissingRequest, Math.max(1, remaining)); return; }
     receipt.requestFailureObservedAt = Date.now();
     fail('summarize-request-unobserved-at-request-deadline');
   };
@@ -63,7 +65,9 @@ export function observeQaManualCompactionRequest({ cdp, origin, sessionID, deadl
   receipt.outcome = 'not-submitted';
   const unsubscribers = [
     cdp.on('Network.requestWillBeSent', event => {
-      if (!armed || event.request?.method !== 'POST' || !matches(event.request?.url)) return;
+      if (closed || !armed || event.request?.method !== 'POST' || !matches(event.request?.url)) return;
+      if (!receipt.matchingRequestCount && Date.now() >= receipt.requestDeadline) { failMissingRequest(); return; }
+      if (Date.now() >= deadline) { onDeadline(); return; }
       receipt.matchingRequestCount = Math.min(3, receipt.matchingRequestCount + 1);
       if (receipt.matchingRequestCount === 1) clearTimeout(requestTimer);
       if (receipt.matchingRequestCount > 1) fail('duplicate-summarize-request');
@@ -75,8 +79,10 @@ export function observeQaManualCompactionRequest({ cdp, origin, sessionID, deadl
       else if (!receipt.failure) receipt.outcome = 'request-observed';
     }),
     cdp.on('Network.responseReceived', event => {
+      if (closed) return;
       const request = receipt.requests.find(item => item.requestId === event.requestId);
       if (!request) return;
+      if (Date.now() >= deadline) { onDeadline(); return; }
       if (!matches(event.response?.url)) { fail('response-origin-or-session-mismatch'); return; }
       const status = event.response?.status;
       request.response = { observedAt: Date.now(), timestamp: timestamp(event.timestamp),
@@ -93,12 +99,14 @@ export function observeQaManualCompactionRequest({ cdp, origin, sessionID, deadl
       fail('summarize-network-failed');
     }),
   ];
-  const timer = setTimeout(() => {
-    if (receipt.outcome !== 'http-accepted' && !receipt.failure) {
-      if (armed && !receipt.matchingRequestCount) failMissingRequest();
-      else fail(receipt.matchingRequestCount ? 'summarize-response-unobserved-at-deadline' : 'summarize-request-unobserved-at-deadline');
-    }
-  }, Math.max(1, deadline - Date.now()));
+  const onDeadline = () => {
+    if (closed || receipt.outcome === 'http-accepted' || receipt.failure) return;
+    const remaining = deadline - Date.now();
+    if (remaining > 0) { timer = setTimeout(onDeadline, Math.max(1, remaining)); return; }
+    if (armed && !receipt.matchingRequestCount) failMissingRequest();
+    else fail(receipt.matchingRequestCount ? 'summarize-response-unobserved-at-deadline' : 'summarize-request-unobserved-at-deadline');
+  };
+  let timer = setTimeout(onDeadline, Math.max(1, deadline - Date.now()));
   const assertHealthy = () => { assert.equal(receipt.failure, undefined, `Manual compaction submission failed: ${receipt.failure}`); };
   return {
     arm: () => {

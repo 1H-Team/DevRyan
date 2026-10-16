@@ -1,11 +1,10 @@
 import type { RegistrationCapability, RegistrationOrigin } from './registration-origin.js';
 
-/** Exact PluginInternal pre/post inventory reviewed from @opencode/core 2.0.26. */
-export const NATIVE_PLUGIN_VERSION = '2.0.26';
+/** Exact PluginInternal pre/post inventory reviewed from @opencode/core 2.0.30. */
+export const NATIVE_PLUGIN_VERSION = '2.0.30';
 export const REVIEWED_NATIVE_PLUGIN_IDS: readonly string[] = Object.freeze([
   'opencode.tool.input.repair',
   'opencode.config.worktree',
-  'opencode.browser',
   'opencode.config.mcp',
   'opencode.mcp.codemode.defaults',
   'opencode.wellknown',
@@ -23,9 +22,8 @@ export const REVIEWED_NATIVE_PLUGIN_IDS: readonly string[] = Object.freeze([
   'opencode.provider.cloudflare.ai.gateway',
   'opencode.provider.cloudflare.workers.ai',
   'opencode.provider.cohere',
+  'opencode.provider.databricks',
   'opencode.provider.digitalocean',
-  'opencode.provider.dynamic',
-  'opencode.provider.gateway',
   'opencode.provider.github.copilot',
   'opencode.provider.gitlab',
   'opencode.provider.google.vertex',
@@ -33,21 +31,22 @@ export const REVIEWED_NATIVE_PLUGIN_IDS: readonly string[] = Object.freeze([
   'opencode.provider.llmgateway',
   'opencode.provider.lmstudio',
   'opencode.provider.modal',
+  'opencode.provider.neon',
   'opencode.provider.nvidia',
   'opencode.provider.ollama',
-  'opencode.provider.openai',
-  'opencode.provider.snowflake.cortex',
   'opencode.provider.opencode',
+  'opencode.provider.snowflake.cortex',
+  'opencode.provider.openai',
   'opencode.provider.openrouter',
   'opencode.provider.perplexity',
   'opencode.provider.poe',
   'opencode.provider.prompt-cache-key',
   'opencode.provider.sap.ai.core',
   'opencode.provider.vercel',
-  'opencode.provider.venice',
   'opencode.provider.vllm',
   'opencode.provider.xai',
   'opencode.provider.zenmux',
+  'opencode.provider.dynamic',
   'opencode.websearch.exa',
   'opencode.websearch.firecrawl',
   'opencode.websearch.parallel',
@@ -78,6 +77,7 @@ export const REVIEWED_NATIVE_PLUGIN_IDS: readonly string[] = Object.freeze([
   'opencode.config.instruction',
   'opencode.config.reference',
   'opencode.config.agent',
+  'opencode.browser',
   'opencode.config.command',
   'opencode.config.compaction',
   'opencode.config.formatter',

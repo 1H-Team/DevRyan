@@ -5,7 +5,7 @@ import {Location} from '@opencode/core/location';
 import {SessionModelRequest} from '@opencode/core/session/model-request';
 import type {HttpMiddleware} from '@opencode/ai/route';
 import {Context,Effect,Layer,Option} from 'effect';
-import {HttpClientRequest} from 'effect/unstable/http';
+import {HttpClientRequest} from 'effect/http';
 import {OperationPermitRef,requestPermit} from './native-admission-contract.js';
 import {HostRefusal} from './host-refusal.js';
 import {createNativeProviderCompatibility} from './native-provider-compat-plugin.js';
@@ -13,6 +13,7 @@ import type {createControllerIntegrations} from './controller-integrations.js';
 import type {NativeConfigurationSnapshot} from './native-configuration-snapshot.js';
 import type {NativeMeridianAttempt,NativeMeridianAttemptBinding,NativeProviderAttempt} from './native-provider-runtime-owner.js';
 import type {RegistrationOrigin} from './registration-origin.js';
+import {nativeCompactionReserve} from './native-compaction-policy.js';
 
 export interface ControllerProvidersOptions{
  readonly controllerInstanceID:string;
@@ -37,10 +38,7 @@ export function createControllerProviders(options:ControllerProvidersOptions){
  const locations=new Map(structuredClone(options.configurationSnapshot.locations).map(location=>[location.directory,location]));let closed=false;
  const current=(directory:string)=>{if(closed||!locations.has(directory)||!options.isBound()||!options.isExecutionReady())fail('native_provider_location_expired');};
  const compatibility=createNativeProviderCompatibility({isOpenAiOAuth:options.integrations.isOpenAiTokenSharing,scrubAnthropicSystem:options.scrubSystem,discoverCopilot:options.integrations.discoverCopilot,policyForDirectory:directory=>{
-  const configuration=locations.get(directory)?.compatibility.legacy;
-  const compaction=record(configuration?.compaction)?configuration.compaction:{};
-  const reserved=compaction.reserved;
-  return {compactionReserved:typeof reserved==='number'&&Number.isFinite(reserved)?reserved:undefined};
+  return {compactionReserved:nativeCompactionReserve(locations.get(directory))};
  }});
  interface OwnedAttempt{readonly binding:NativeMeridianAttempt;readonly agentName:string;readonly agentMode:'primary'|'subagent'|'all';readonly requestID:string}
  const Attempt=Context.Reference<OwnedAttempt|undefined>('DevRyan/PhysicalMeridianAttempt',{defaultValue:()=>undefined});

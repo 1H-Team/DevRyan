@@ -154,6 +154,7 @@ describe('local Bot catalog transport', () => {
       ['bot_runtime_update_required', 'update_required'],
       ['bot_runtime_operation_busy', 'starting'],
       ['bot_runtime_docker_unavailable', 'unavailable'],
+      ['bot_runtime_docker_not_installed', 'unavailable'],
     ]) {
       const timers = manualTimers();
       const failing = createLocalBotCatalogTransport({
@@ -169,7 +170,7 @@ describe('local Bot catalog transport', () => {
       expect(failing.getState()).toMatchObject({ state, code });
       failing.scheduleStart();
       // Recovery requires the owner; it is never retried automatically.
-      expect(timers.pending.length > 0).toBe(state !== 'recovery_required');
+      expect(timers.pending.length > 0).toBe(state === 'starting');
     }
   });
 
@@ -197,17 +198,37 @@ describe('local Bot catalog transport', () => {
     await expect(transport.ensureStarted()).rejects.toMatchObject({ code: 'bot_runtime_docker_unavailable' });
     expect(transport.getState()).toMatchObject({ state: 'unavailable' });
 
-    // A retry while Docker is still stopped fails and leaves one backoff timer.
+    // An explicit retry still probes, but an inactive profile stays dormant.
     expect(transport.retryNow()).toBe(true);
-    await vi.waitFor(() => expect(timers.pending).toHaveLength(1));
-    expect(ensure).toHaveBeenCalledTimes(2);
+    await vi.waitFor(() => expect(ensure).toHaveBeenCalledTimes(2));
+    expect(timers.pending).toHaveLength(0);
     expect(transport.getState()).toMatchObject({ state: 'unavailable' });
 
     dockerRunning = true;
     expect(transport.retryNow()).toBe(true);
     await vi.waitFor(() => expect(transport.getState()).toMatchObject({ state: 'ready' }));
-    expect(timers.pending).toHaveLength(1);
+    expect(timers.pending).toHaveLength(0);
     expect(transport.retryNow()).toBe(false);
+  });
+
+  it('preserves owned active-work retries and rechecks activity before a scheduled Docker probe', async () => {
+    const timers = manualTimers();
+    let active = false;
+    const ensure = vi.fn(async () => { throw Object.assign(new Error('stopped'), { code: 'bot_runtime_docker_unavailable' }); });
+    const transport = createLocalBotCatalogTransport({
+      catalog: { getContext: vi.fn(async () => { throw Object.assign(new Error('not ready'), { code: 'bot_database_unavailable' }); }), ensure },
+      objectStorage: objectStorage(), hasActiveWork: () => active, logger: null, ...timers,
+    });
+    await expect(transport.ensureStarted()).rejects.toMatchObject({ code: 'bot_runtime_docker_unavailable' });
+    transport.scheduleStart(); expect(timers.pending).toHaveLength(0);
+    active = true; transport.scheduleStart(); expect(timers.pending).toHaveLength(1);
+    timers.pending.shift().callback();
+    await vi.waitFor(() => expect(ensure).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(timers.pending).toHaveLength(1));
+    active = false; timers.pending.shift().callback();
+    await Promise.resolve();
+    expect(ensure).toHaveBeenCalledTimes(2); expect(timers.pending).toHaveLength(0);
+    transport.dispose();
   });
 
   it('never restarts a catalog that needs an owner action', async () => {

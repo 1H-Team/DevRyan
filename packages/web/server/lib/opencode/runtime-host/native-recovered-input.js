@@ -230,6 +230,7 @@ export function createNativeRecoveredInputOwner({databasePath,primaryRuntime,cap
       return [...sessions.keys()];
     },
     has:sessionID=>sessions.has(sessionID),
+    hasCurrentGrant:(sessionID,instanceID)=>sessions.has(sessionID)&&epoch===instanceID&&grants.get(sessionID)?.epoch===instanceID,
     async snapshot(sessionID){if(!sessions.has(sessionID))return undefined;
       const inputs=await refresh(sessionID);if(!sessions.has(sessionID))return undefined;
       const r=await primaryRuntime.readRecord(sessionID),grant=grants.get(sessionID);

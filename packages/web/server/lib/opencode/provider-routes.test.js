@@ -16,6 +16,14 @@ import {
 import { registerOpenCodeRoutes } from './routes.js';
 import * as openCodeRoutes from './routes.js';
 import { createFeatureRoutesRuntime } from './feature-routes-runtime.js';
+import { createOpenCodeV2FacadeRouter } from './v2/facade-routes.js';
+import { buildDevryanPromptMetadata, buildV2PromptContent, buildV2PromptFingerprint, createOpenCodeAdmission, PROMPT_ORIGIN_HEADER } from './v2/admission.js';
+import { createNativeAdmissionOwner } from './runtime-host/native-admission-owner.js';
+import { createNativeIntegrationOwner } from './runtime-host/native-integration-owner.js';
+import { credentialMutationFingerprint } from './runtime-host/native-credential-mutation-owner.js';
+import { createNativeManagedTitleOwner } from './runtime-host/native-managed-title-owner.js';
+import { createStandardSessionTitleRuntime } from './standard-session-title-runtime.js';
+import { createMemorySessionTitleOutbox } from './session-title-outbox.js';
 
 vi.mock('./auth.js', () => ({
   OPENCODE_DATA_DIR: `${process.cwd()}/.cache/provider-auth-fixture`,
@@ -220,7 +228,15 @@ const createApp = (overrides = {}) => {
       disconnectCredentials: vi.fn(async (committed, started) => { started(); committed(); }),
       removeConfiguration: vi.fn(async () => {}),
     };
-    dependencies.getNativeRuntimeOwner = () => ({ withProviderConfigurationAuthorization: async (_input, run) => run(owner) });
+    const snapshot = { locations: [{ directory: '/tmp/project', configuration: { providers: {} } }] };
+    const native = { withProviderConfigurationAuthorization: async (_input, run) => run(owner),
+      isReady: () => true, getConfigurationSnapshot: () => snapshot,
+      credentialMetadata: async scope => {
+        if (scope.kind !== 'cursor') throw Error('Provider metadata fixture is unavailable');
+        return dependencies.cursorSdkRuntime?.getRuntimeStatus?.()?.sdkAuthConfigured === true
+          ? [{ id: 'cursor-fixture', integrationID: 'cursor-acp', valueType: 'key', active: true, expectedFingerprint: 'a'.repeat(64) }] : [];
+      } };
+    dependencies.getNativeRuntimeOwner = () => native;
   }
   if (!Object.hasOwn(overrides, 'openCodeClient')) {
     dependencies.openCodeClient = createNativeConsumerFixture({ readFixture: (...args) => globalThis.fetch(...args), headers: dependencies.getOpenCodeAuthHeaders });
@@ -278,12 +294,10 @@ describe('OpenCode provider routes', () => {
     const response = await request(f.app).delete('/api/provider/openai/auth?scope=all');
     expect(response.status).toBe(500); expect(response.body.recoveryRequired).toBe(true); expect(response.body.removedSources.auth).toBe(true); expect(response.body.success).toBe(false);
   });
-  it('reads native Cursor source/status through fresh exact-directory metadata', async () => {
+  it('reads native Cursor sources through the configuration owner', async () => {
     const f = nativeFixture({ readAuthenticationSource: vi.fn(async () => ({ exists: true, path: null })) });
     const source = await request(f.app).get('/api/provider/cursor-acp/source?directory=/tmp/project');
     expect(source.status).toBe(200); expect(source.body.sources.auth).toEqual({ exists: true, path: null });
-    const status = await request(f.app).get('/api/provider/cursor-acp/runtime-status?directory=/tmp/project');
-    expect(status.status).toBe(200); expect(status.body.sdkAuthConfigured).toBe(true); expect(status.body.authObservation).toBe('known');
     expect(f.run.mock.calls.every(([input]) => input.directory === '/tmp/project' && input.scope === 'read')).toBe(true);
   });
 
@@ -1446,7 +1460,7 @@ describe('OpenCode provider routes', () => {
   it('schedules Cursor title generation without delaying the accepted prompt response', async () => {
     const schedule = vi.fn(() => new Promise(() => {}));
     const { app } = createApp({
-      cursorSessionTitleRuntime: { schedule },
+      standardSessionTitleRuntime: { schedule },
       cursorSdkRuntime: {
         getRuntimeStatus: vi.fn(),
         verifyConnection: vi.fn(),
@@ -1468,15 +1482,14 @@ describe('OpenCode provider routes', () => {
       .expect(204);
 
     expect(schedule).toHaveBeenCalledWith({
-      sessionID: 'ses_1',
-      directory: '/tmp/project',
+      sessionID: 'ses_1', directory: '/tmp/project', text: 'hello', acceptedInputID: 'msg_1',
     });
   });
 
   it('does not schedule Cursor title generation for a handled prompt error', async () => {
     const schedule = vi.fn();
     const { app } = createApp({
-      cursorSessionTitleRuntime: { schedule },
+      standardSessionTitleRuntime: { schedule },
       cursorSdkRuntime: {
         getRuntimeStatus: vi.fn(),
         verifyConnection: vi.fn(),
@@ -1667,10 +1680,111 @@ describe('OpenCode provider routes', () => {
       sessionID,
       directory: '/tmp/project',
       text: visibleText,
+      acceptedInputID: 'msg_1',
       providerID,
       modelID,
       variant: providerID === 'openai' ? 'medium' : undefined,
     });
+  });
+
+  it('does not reopen a paused title cycle for historical prompt replay or a human superseded during final authorization', async () => {
+    const directory = '/tmp/project';
+    const session = { id: 'ses_title_replay', directory, title: 'New session - 2026-10-14T00:00:00.000Z',
+      agent: 'builder', model: { providerID: 'opencode', id: 'fixture-model' } };
+    const bodies = new Map(), users = new Map(), records = [], reads = [];
+    const accept = (messageID, text) => {
+      const body = { messageID, agent: session.agent, model: { providerID: session.model.providerID, modelID: session.model.id }, parts: [{ type: 'text', text }] };
+      const content = buildV2PromptContent(body.parts);
+      const fingerprint = buildV2PromptFingerprint({ sessionID: session.id, messageID, content,
+        selection: { agent: body.agent, model: body.model }, origin: 'human', resume: true, delivery: 'queue', planMode: false });
+      bodies.set(messageID, body);
+      // A promoted canonical user has no inbox delivery property. Its original
+      // admission fingerprint still proves an idempotent successful HTTP replay.
+      users.set(messageID, { id: messageID, type: 'user', sessionID: session.id, directory, text,
+        metadata: { devryan: buildDevryanPromptMetadata({ origin: 'human', agent: body.agent,
+          providerID: session.model.providerID, modelID: session.model.id, parts: content.segments,
+          admission: { v: 1, fingerprint } }, { text }) } });
+      records.push({ info: { id: messageID, sessionID: session.id, role: 'user' }, parts: body.parts });
+    };
+    accept('msg_A', 'First accepted human request');
+    const readUser = async ({ messageID }) => structuredClone(users.get(messageID));
+    const sourceOwner = createNativeManagedTitleOwner({
+      readConfiguration: () => ({ controllerInstanceID: 'controller_original', configurationDigest: 'b'.repeat(64) }),
+      readSession: async () => structuredClone(session),
+      readPrimary: async () => ({ directory, anchorID: records.at(-1).info.id, objectiveID: records.at(-1).info.id, cancellationGeneration: 1, state: 'observing' }),
+      readState: async () => ({ revision: 0, held: false, reverting: false }),
+      readCaptured: async () => ({ captured: true, pending: false, generation: 1 }),
+      captureAuthorization: async () => async () => {}, readUsers: async () => structuredClone(records), readUser,
+    });
+    let holdFinal = false, checks = 0, entered, release;
+    const began = new Promise(resolve => { entered = resolve; });
+    const gate = new Promise(resolve => { release = resolve; });
+    const nativeOwner = createNativeAdmissionOwner({ directory, ownerID: 'fixture', runtime: { registerNativeSession: async () => {} },
+      getSession: async () => structuredClone(session), authorizeOperation: async () => {}, readUserMessage: readUser,
+      captureTitleHelperAuthorization: async () => async () => { if (holdFinal && ++checks === 3) { entered(); await gate; } },
+      captureAcceptedHumanTitleInput: input => sourceOwner.captureHuman(input),
+    });
+    let clock = 1_000;
+    const outbox = createMemorySessionTitleOutbox({ now: () => clock });
+    const generate = vi.fn(async () => 'Reliable Session Title Request');
+    const rename = vi.fn(async () => { throw Error('fixture persistence failure'); });
+    const client = { generation: () => 2, sessions: { get: async () => structuredClone(session),
+      messages: async () => ({ records: structuredClone(records) }), status: async () => ({}), list: async () => [structuredClone(session)] } };
+    const titles = createStandardSessionTitleRuntime({ outbox, now: () => clock, watchdogEnabled: false,
+      logger: { warn() {} }, openCodeClient: client, generateSessionModelTitle: generate,
+      verifyAcceptedTitleInput: input => nativeOwner.verifyTitleAcceptedInput(input), renameGeneratedTitle: rename });
+    const runtime = { generation: 2, baseUrl: 'http://fixture.invalid' };
+    const admission = createOpenCodeAdmission({ getRuntime: () => runtime, fetchImpl: async (url, init = {}) => {
+      const path = new URL(url).pathname;
+      reads.push({ method: init.method ?? 'GET', path });
+      if (path.endsWith('/inbox')) return Response.json({ data: [] });
+      const user = users.get(path.split('/').at(-1));
+      if (path.includes('/message/') && user) return Response.json({ data: user });
+      throw Error('Unexpected fixture native write or read');
+    } }, { client, nativeOwner });
+    client.prompts = admission;
+    const scheduled = [];
+    const { app } = createApp({ openCodeClient: client, standardSessionTitleRuntime: { schedule: input => {
+      const pending = titles.schedule(input); scheduled.push(pending); return pending;
+    } } });
+    app.use('/api', createOpenCodeV2FacadeRouter({ openCodeClient: client, getOpenCodeRuntime: () => runtime, resolveRequestDirectory: () => directory }));
+    const post = async messageID => {
+      const response = await request(app).post(`/api/session/${session.id}/prompt_async?directory=%2Ftmp%2Fproject`)
+        .set(PROMPT_ORIGIN_HEADER, 'human').send(bodies.get(messageID));
+      expect({ status: response.status, body: response.body }).toEqual({ status: 204, body: {} });
+    };
+    const settle = async () => { await Promise.all(scheduled); for (let turn = 0; turn < 20; turn++) await new Promise(resolve => setImmediate(resolve)); };
+    const pause = async () => {
+      for (let cycle = 0; cycle < 3; cycle++) {
+        clock += 5_000;
+        titles.processOpenCodeEvent({ type: 'session.idle', properties: { sessionID: session.id } });
+        await settle();
+      }
+      expect(await outbox.list()).toMatchObject([{ state: 'paused', attemptCount: 3 }]);
+    };
+    try {
+      await post('msg_A'); await settle(); await pause();
+      expect(rename).toHaveBeenCalledTimes(3);
+      accept('msg_B', 'Next accepted human request');
+      await post('msg_B'); await settle(); await pause();
+      expect(rename).toHaveBeenCalledTimes(6);
+      for (const messageID of ['msg_A', 'msg_B', 'msg_A']) { await post(messageID); await settle(); }
+      expect(await outbox.list()).toMatchObject([{ state: 'paused', attemptCount: 3, sourceMessageID: 'msg_A', lastAcceptedInputID: 'msg_B' }]);
+      expect(rename).toHaveBeenCalledTimes(6);
+
+      accept('msg_C', 'Human request before held authorization');
+      holdFinal = true;
+      await post('msg_C'); await began;
+      expect(await outbox.list()).toMatchObject([{ state: 'paused', attemptCount: 3, lastAcceptedInputID: 'msg_B' }]);
+      accept('msg_D', 'Newer human request during final authorization');
+      release(); await settle();
+      expect(await outbox.list()).toMatchObject([{ state: 'paused', attemptCount: 3, lastAcceptedInputID: 'msg_B' }]);
+      expect(rename).toHaveBeenCalledTimes(6);
+      expect(generate).toHaveBeenCalledOnce();
+      expect(scheduled).toHaveLength(6);
+      expect(reads).toHaveLength(12);
+      expect(reads.every(read => read.method === 'GET')).toBe(true);
+    } finally { release(); await titles.dispose(); nativeOwner.dispose(); }
   });
 
   it('applies cached Grok duplicate-tool overrides without awaiting catalog refresh', async () => {
@@ -1868,6 +1982,103 @@ describe('OpenCode provider routes', () => {
   });
 });
 
+
+describe('registered-project Cursor runtime status', () => {
+  const metadata = () => ({ id: 'cursor-fixture', integrationID: 'cursor-acp', valueType: 'key',
+    active: true, expectedFingerprint: 'a'.repeat(64), label: 'private account label' });
+  const fixture = ({ rows = [metadata()], hold = false, afterRead } = {}) => {
+    const base = join(import.meta.dirname, '../../../../../.cache/v2-validation');
+    mkdirSync(base, { recursive: true });
+    const root = mkdtempSync(join(base, 'cursor-status-'));
+    const directory = join(root, 'new-project'); mkdirSync(directory);
+    const snapshot = { locations: [{ directory: root, configuration: {}, compatibility: { mcp: {} } },
+      { directory, configuration: { providers: { 'cursor-acp': { name: 'project-specific fixture' } } }, compatibility: { mcp: {} } }] };
+    const state = { snapshot, ready: true, allowed: true };
+    const entered = Promise.withResolvers(), pending = Promise.withResolvers();
+    const call = vi.fn(async () => { entered.resolve(); if (hold) await pending.promise; afterRead?.(state); return rows; });
+    const reauthorize = vi.fn(async () => { if (!state.allowed) throw Object.assign(new Error('web_authorization_revoked'), { code: 'web_authorization_revoked', statusCode: 403 }); });
+    const captureWebAuthorization = vi.fn(async () => reauthorize);
+    const integration = createNativeIntegrationOwner({ instanceID: 'controller-fixture', snapshot, stateDirectory: root,
+      controller: () => ({ instanceID: 'controller-fixture', call }), isReady: () => state.ready,
+      withMutationQueue: action => action(), captureWebAuthorization, admissionOwner: {} });
+    // The immutable configuration-source map deliberately contains only root.
+    const projectMap = [{ targetDirectory: root }];
+    const configuration = vi.fn(async input => {
+      if (!projectMap.some(row => row.targetDirectory === input.directory)) throw Object.assign(new Error('native_provider_configuration_location_unreviewed'),
+        { code: 'native_provider_configuration_location_unreviewed', statusCode: 403 });
+      throw Error('Status must not inspect configuration sources');
+    });
+    const credentialMetadata = vi.fn(operation => integration.credentialMetadata(operation));
+    const native = { isReady: () => state.ready, getConfigurationSnapshot: () => state.snapshot,
+      credentialMetadata, withProviderConfigurationAuthorization: configuration };
+    const { app } = createApp({ getNativeRuntimeOwner: () => native, getOpenCodeWorkingDirectory: () => directory });
+    return { app, directory, snapshot, state, call, configuration, credentialMetadata, captureWebAuthorization, reauthorize,
+      entered: entered.promise, release: pending.resolve,
+      close: async () => { await integration.invalidate(); rmSync(root, { recursive: true, force: true }); } };
+  };
+
+  it.each([false, true])('uses exact registered project metadata beyond the immutable source map (explicit=%s)', async explicit => {
+    const f = fixture();
+    try {
+      const response = await request(f.app).get('/api/provider/cursor-acp/runtime-status' + (explicit ? `?directory=${encodeURIComponent(f.directory)}` : ''));
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({ sdkAuthConfigured: true, authObservation: 'known', usageAuthConfigured: false });
+      const operation = { kind: 'cursor', directory: f.directory, integrationID: 'cursor-acp',
+        configurationDigest: credentialMutationFingerprint(f.snapshot.locations[1].configuration.providers['cursor-acp']),
+        operation: 'cursor.integration', method: 'GET', path: '/api/integration/cursor-acp' };
+      expect(f.credentialMetadata).toHaveBeenCalledExactlyOnceWith(operation);
+      expect(f.captureWebAuthorization).toHaveBeenCalledExactlyOnceWith(operation);
+      expect(f.reauthorize.mock.calls.length).toBeGreaterThanOrEqual(2);
+      expect(f.call).toHaveBeenCalledExactlyOnceWith({ action: 'credential-metadata-owned', directory: f.directory,
+        integrationID: 'cursor-acp', controllerInstanceID: 'controller-fixture' });
+      expect(f.configuration).not.toHaveBeenCalled();
+      expect(JSON.stringify(response.body)).not.toMatch(/private|cursor-fixture|expectedFingerprint/);
+    } finally { await f.close(); }
+  });
+
+  it('reports absent metadata as known absence without resolving a credential', async () => {
+    const f = fixture({ rows: [] });
+    try { const response = await request(f.app).get('/api/provider/cursor-acp/runtime-status');
+      expect(response.status).toBe(200); expect(response.body).toMatchObject({ sdkAuthConfigured: false, authObservation: 'known' });
+      expect(f.call).toHaveBeenCalledOnce();
+    } finally { await f.close(); }
+  });
+
+  it('refuses an unknown directory before metadata or configuration access', async () => {
+    const f = fixture();
+    try { const response = await request(f.app).get('/api/provider/cursor-acp/runtime-status?directory=%2Funregistered');
+      expect(response.status).toBe(403); expect(response.body.code).toBe('native_provider_configuration_location_unreviewed');
+      expect(f.call).not.toHaveBeenCalled(); expect(f.captureWebAuthorization).not.toHaveBeenCalled(); expect(f.configuration).not.toHaveBeenCalled();
+    } finally { await f.close(); }
+  });
+
+  it.each([null, {}, [{ ...metadata(), integrationID: 'foreign' }], [{ ...metadata(), valueType: 'oauth' }],
+    [{ ...metadata(), expectedFingerprint: 'invalid' }], [{ ...metadata(), active: 'true' }], [{ ...metadata(), id: 123 }],
+    [{ ...metadata(), methodID: 'unexpected' }],
+    [metadata(), metadata()], Array.from({ length: 257 }, (_, index) => ({ ...metadata(), id: `cursor-${index}` }))])('rejects malformed or over-bound metadata %#', async rows => {
+    const f = fixture({ rows });
+    try { const response = await request(f.app).get('/api/provider/cursor-acp/runtime-status');
+      expect(response.status).toBe(502); expect(response.body).toEqual({ error: 'native_credential_metadata_invalid', code: 'native_credential_metadata_invalid' });
+    } finally { await f.close(); }
+  });
+
+  it('reauthorizes the actual metadata caller after a held read before publishing status', async () => {
+    const f = fixture({ hold: true });
+    try { const response = request(f.app).get('/api/provider/cursor-acp/runtime-status').then(value => value);
+      await f.entered; f.state.allowed = false; f.release();
+      const denied = await response; expect(denied.status).toBe(403); expect(denied.body.code).toBe('web_authorization_revoked');
+      expect(denied.body.sdkAuthConfigured).toBeUndefined(); expect(f.reauthorize.mock.calls.length).toBeGreaterThanOrEqual(2);
+    } finally { f.release(); await f.close(); }
+  });
+
+  it.each(['readiness', 'snapshot'])('refuses status when the %s changes during metadata read', async change => {
+    const f = fixture({ afterRead: state => { if (change === 'readiness') state.ready = false; else state.snapshot = { ...state.snapshot }; } });
+    try { const response = await request(f.app).get('/api/provider/cursor-acp/runtime-status');
+      expect(response.status).toBe(503); expect(['native_runtime_not_ready', 'native_provider_configuration_runtime_changed']).toContain(response.body.code);
+      expect(response.body.sdkAuthConfigured).toBeUndefined();
+    } finally { await f.close(); }
+  });
+});
 
 describe('native project directory preparation', () => {
   it('passes the native preparation owner through feature composition before publishing project-open success', async () => {

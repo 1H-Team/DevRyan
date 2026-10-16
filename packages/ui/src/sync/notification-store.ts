@@ -196,11 +196,14 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
       return
     }
     const current = get().list
-    if (notification.messageId && notification.session) {
+    const attempt = notification.messageId ?? (notification.type === "error" ? notification.failedUserMessageId : undefined)
+    if (attempt && notification.session) {
       const duplicate = current.some((existing) => (
         existing.type === notification.type
         && existing.session === notification.session
-        && existing.messageId === notification.messageId
+        && (existing.messageId ?? (existing.type === "error" ? existing.failedUserMessageId : undefined)) === attempt
+        && (existing.type !== "error" || notification.type !== "error"
+          || describeSessionFailure(existing.error).code === describeSessionFailure(notification.error).code)
       ))
       if (duplicate) return
     }

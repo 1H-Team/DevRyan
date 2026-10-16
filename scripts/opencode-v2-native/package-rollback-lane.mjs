@@ -46,7 +46,9 @@ export async function runSelectedNativeLifecycle({ controlRoot, descriptor, conf
   child.stdout.on('data', chunk => { bytes += chunk.length; if (bytes <= 65536) chunks.push(chunk); else child.kill('SIGTERM'); });
   child.stderr.on('data', chunk => { if (errors.reduce((n, value) => n + value.length, 0) < 4 * 1024 * 1024) errors.push(chunk); });
   child.stdin.on('error', error => { failure ??= error; terminate(); });
-  const timer = setTimeout(() => { timedOut = true; child.kill('SIGTERM'); }, 120000);
+  // Two cold starts plus checkpoint and real credential reconciliation need separate wall time from inspection alone.
+  const timeoutMs = rollback ? 240000 : 120000;
+  const timer = setTimeout(() => { timedOut = true; terminate(); }, timeoutMs);
   let exit;
   try {
     assert.ok(child.pid, 'Selected native lifecycle spawn did not create a process');
@@ -60,7 +62,7 @@ export async function runSelectedNativeLifecycle({ controlRoot, descriptor, conf
   } finally { clearTimeout(timer); clearTimeout(force); }
   await fs.writeFile(logFile, Buffer.concat(errors));
   await fs.writeFile(logFile + '.exit.json', JSON.stringify({ pid: child.pid ?? null,
-    hostIdentity: hostIdentity ?? null, ...exit, spawnError: spawnError?.code ?? null, timedOut,
+    hostIdentity: hostIdentity ?? null, ...exit, spawnError: spawnError?.code ?? null, timedOut, timeoutMs,
     failure: failure ? 'selected_native_lifecycle_failed' : null }) + '\n');
   // The product watchdog handles unexpected parent death. Check independently
   // that every real native controller PID captured by the private driver is now gone.

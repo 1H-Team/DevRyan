@@ -7,6 +7,7 @@ import { git } from './session-changes-git.js';
 import { createSessionMutationRuntime } from './session-mutations.js';
 import { createSessionChangeRuntime } from './session-changes.js';
 import { openChangeStore, changeKey } from './session-changes-store.js';
+import { withExecutionAdmission } from './execution-admission.js';
 
 const roots = [];
 const test = (name, body) => bunTest(name, body, 60_000);
@@ -44,6 +45,21 @@ test('execution outcomes survive restart and never infer non-execution from miss
   await f.runtime.claimLease({ directory: f.directory, token: done.token, kind: 'control' });
   await f.finish(done);
   expect((await reopened.executionOutcomes({ ...query, calls: [{ messageID: 'pb-assistant', callID: 'cb' }] }))[0].outcome).toBe('finished');
+});
+
+test('constructor negative admission persists exact non-execution only while no execution pointer exists', async () => {
+  const f = await fixture();
+  const input = { directory: f.directory, sessionID: 'a', messageID: 'pa-assistant', callID: 'denied', requireAbsent: true };
+  await f.runtime.cancelUnstartedCall(input);
+  const reopened = createSessionMutationRuntime({ directory: f.storage });
+  const query = { directory: f.directory, sessionID: 'a', calls: [{ messageID: input.messageID, callID: input.callID }] };
+  expect((await reopened.executionOutcomes(query))[0].outcome).toBe('never_started');
+  await expect(reopened.cancelUnstartedCall({ ...input, messageID: 'other-assistant' })).rejects.toMatchObject({ code: 'capture_identity_mismatch' });
+  const active = { directory: f.directory, sessionID: 'a', userMessageID: 'pa', messageID: 'pa-assistant', callID: 'active', kind: 'control' };
+  const lease = await f.runtime.begin(active);
+  await expect(f.runtime.cancelUnstartedCall({ ...active, requireAbsent: true })).rejects.toMatchObject({ code: 'execution_already_started' });
+  expect((await f.runtime.executionOutcomes({ ...query, calls: [{ messageID: active.messageID, callID: active.callID }] }))[0].outcome).toBe('uncertain');
+  await f.runtime.cancelLease(lease); await f.runtime.cleanupLease(lease);
 });
 
 test('read-only lease and outcome lookups do not stage Git metadata, while mutations remain durable', async () => {
@@ -356,11 +372,13 @@ test('file Undo and conversation Revert retain independent decisions over the sa
   const f = await fixture(); await f.write('x', 'a=1; b=2');
   const a = await f.begin('a', 'pa', 'ca'); await fs.writeFile(path.join(a.viewDirectory, 'x'), 'a=3; b=2'); await f.finish(a);
   const b = await f.begin('b', 'pb', 'cb'); await fs.writeFile(path.join(b.viewDirectory, 'x'), 'a=3; b=4');
-  const selection = { directory: f.directory, sessionID: 'a', revision: 'review-1', calls: [{ sessionID: 'a', callID: 'ca' }] };
+  const selection = { directory: f.directory, sessionID: 'a', revision: 'review-1', calls: [{ sessionID: 'a', messageID:'pa-assistant', callID: 'ca' }] };
   const undo = await f.runtime.prepareFileRestore(selection);
   await f.runtime.settleRevert({ directory: f.directory, transactionID: undo.id, commit: true });
   await f.finish(b); expect(await f.read('x')).toBe('a=1; b=4');
   expect((await f.runtime.prepareFileRestore(selection)).id).toBe(undo.id);
+  await expect(f.runtime.prepareFileRestore({...selection,calls:[{sessionID:'a',callID:'ca'}]})).rejects.toMatchObject({code:'mutation_history_unavailable'});
+  await expect(f.runtime.prepareFileRestore({...selection,calls:[{sessionID:'a',messageID:'wrong',callID:'ca'}]})).rejects.toMatchObject({code:'capture_identity_mismatch'});
   await f.revert('a', 'pa');
   const redo = await f.runtime.prepareRedo({ directory: f.directory, sessionID: 'a' });
   await f.runtime.settleRevert({ directory: f.directory, transactionID: redo.id, commit: true });
@@ -368,6 +386,107 @@ test('file Undo and conversation Revert retain independent decisions over the sa
   const fileRedo = await f.runtime.prepareFileRestore({ ...selection, revision: 'review-2', redo: true });
   await f.runtime.settleRevert({ directory: f.directory, transactionID: fileRedo.id, commit: true });
   expect(await f.read('x')).toBe('a=3; b=4');
+});
+
+test('file restore skips only exact durable no-start calls alongside real published operations', async () => {
+  const f = await fixture(); await f.write('x', 'before');
+  const lease = await f.begin('a', 'pa', 'write'); await fs.writeFile(path.join(lease.viewDirectory, 'x'), 'after'); await f.finish(lease);
+  const denied = { directory: f.directory, sessionID: 'a', messageID: 'denied-message', callID: 'denied' };
+  await f.runtime.cancelUnstartedCall({ ...denied, requireAbsent: true });
+  const calls = [{ sessionID: 'a', messageID: 'pa-assistant', callID: 'write' }, denied];
+  for (const failed of [{ ...denied, callID: 'unknown' }, { ...denied, messageID: 'wrong' }]) {
+    await expect(f.runtime.prepareFileRestore({ directory: f.directory, sessionID: 'a', revision: 'bad', calls: [calls[0], failed] }))
+      .rejects.toMatchObject({ code: 'mutation_history_unavailable' });
+    expect(await f.read('x')).toBe('after');
+  }
+  await expect(f.runtime.prepareFileRestore({ directory: f.directory, sessionID: 'a', revision: 'only-no-start', calls: [denied] }))
+    .rejects.toMatchObject({ code: 'mutation_history_unavailable' });
+  const undo = await f.runtime.prepareFileRestore({ directory: f.directory, sessionID: 'a', revision: 'review', calls });
+  expect((await f.runtime.prepareFileRestore({ directory:f.directory,sessionID:'a',revision:'review',calls })).id).toBe(undo.id);
+  for(const invalid of [{...denied,messageID:'wrong'},{sessionID:'a',callID:denied.callID}])await expect(f.runtime.prepareFileRestore({directory:f.directory,sessionID:'a',revision:'review',calls:[calls[0],invalid]})).rejects.toMatchObject({code:invalid.messageID?'capture_identity_mismatch':'mutation_history_unavailable'});
+  await f.runtime.settleRevert({ directory: f.directory, transactionID: undo.id, commit: true }); expect(await f.read('x')).toBe('before');
+  const redo = await f.runtime.prepareFileRestore({ directory: f.directory, sessionID: 'a', revision: 'redo', redo: true, calls });
+  await f.runtime.settleRevert({ directory: f.directory, transactionID: redo.id, commit: true }); expect(await f.read('x')).toBe('after');
+});
+test('a cached file restore cannot reuse a new exact denial under the same provider call ID',async()=>{
+  const f=await fixture();await f.write('x','before');
+  const writer=await f.begin('a','writer','write');await fs.writeFile(path.join(writer.viewDirectory,'x'),'after');await f.finish(writer);
+  const denied={directory:f.directory,sessionID:'a',messageID:'first-denial',callID:'reused'};
+  await f.runtime.cancelUnstartedCall({...denied,requireAbsent:true});
+  const writerCall={sessionID:'a',messageID:'writer-assistant',callID:'write'};
+  const selection={directory:f.directory,sessionID:'a',revision:'review',calls:[writerCall,denied]};
+  const original=await f.runtime.prepareFileRestore(selection);
+  expect((await f.runtime.prepareFileRestore(selection)).id).toBe(original.id);
+  const reopened=createSessionMutationRuntime({directory:f.storage});
+  expect((await reopened.prepareFileRestore(selection)).id).toBe(original.id);
+  const later={...denied,messageID:'later-denial'};await f.runtime.cancelUnstartedCall(later);
+  expect((await f.runtime.executionOutcomes({directory:f.directory,sessionID:'a',calls:[later]}))[0].outcome).toBe('never_started');
+  await expect(f.runtime.prepareFileRestore({...selection,calls:[writerCall,later]})).rejects.toMatchObject({code:'capture_identity_mismatch'});
+  expect(await f.runtime.transaction({directory:f.directory,transactionID:original.id})).toEqual(original);
+  expect(await f.read('x')).toBe('after');
+});
+test('a legacy cached restore without message identities refuses rather than changing its transaction',async()=>{
+  const f=await fixture();await f.write('x','before');
+  const writer=await f.begin('a','writer','write');await fs.writeFile(path.join(writer.viewDirectory,'x'),'after');await f.finish(writer);
+  const selection={directory:f.directory,sessionID:'a',revision:'review',calls:[{sessionID:'a',messageID:'writer-assistant',callID:'write'}]};
+  const original=await f.runtime.prepareFileRestore(selection);
+  const root=path.join(f.storage,changeKey(await fs.realpath(f.directory))),db=await openChangeStore(root,path.join(root,'git'));
+  const identity=JSON.stringify(['a','review',false]),receiptKey=`file-restores/${changeKey(identity)}.json`;
+  const receipt=await db.get(receiptKey);
+  db.set(receiptKey,{...receipt,fingerprint:createHash('sha256').update(JSON.stringify([['a','write']])).digest('hex')});await db.commit();
+  await expect(f.runtime.prepareFileRestore(selection)).rejects.toMatchObject({code:'capture_identity_mismatch'});
+  expect(await f.runtime.transaction({directory:f.directory,transactionID:original.id})).toEqual(original);
+  expect(await f.read('x')).toBe('after');
+});
+test('reused provider call IDs do not borrow publication or cancellation authority from another message',async()=>{
+  const f=await fixture(),published=await f.begin('a','first','published',{kind:'control'});
+  await f.runtime.claimLease({directory:f.directory,token:published.token,kind:'control'});await f.finish(published);
+  await expect(f.begin('a','later','published',{kind:'control'})).rejects.toMatchObject({code:'capture_identity_mismatch'});
+  await f.runtime.cancelUnstartedCall({directory:f.directory,sessionID:'a',messageID:'first-assistant',callID:'cancelled',requireAbsent:true});
+  await expect(f.begin('a','later','cancelled',{kind:'control'})).rejects.toMatchObject({code:'execution_cancelled'});
+  expect((await f.runtime.executionOutcomes({directory:f.directory,sessionID:'a',calls:[{messageID:'later-assistant',callID:'published'},{messageID:'later-assistant',callID:'cancelled'}]})).map(row=>row.outcome)).toEqual(['uncertain','uncertain']);
+});
+test('clean cancelled prelaunch leases without a tombstone have the same no-start restore authority as outcome queries',async()=>{
+  const f=await fixture();await f.write('x','before');
+  const writer=await f.begin('a','write-user','write');await fs.writeFile(path.join(writer.viewDirectory,'x'),'after');await f.finish(writer);
+  const cancelled=await f.begin('a','cancel-user','cancel',{kind:'process'});
+  await f.runtime.cancelLease(cancelled);
+  const denied={sessionID:'a',messageID:'cancel-user-assistant',callID:'cancel'};
+  const query={directory:f.directory,sessionID:'a',calls:[denied]};
+  expect((await f.runtime.executionOutcomes(query))[0].outcome).toBe('uncertain');
+  const calls=[{sessionID:'a',messageID:'write-user-assistant',callID:'write'},denied];
+  await expect(f.runtime.prepareFileRestore({directory:f.directory,sessionID:'a',revision:'dirty',calls})).rejects.toMatchObject({code:'mutation_history_unavailable'});
+  await f.runtime.cleanupLease(cancelled);
+  expect((await f.runtime.executionOutcomes(query))[0].outcome).toBe('never_started');
+  for(const invalid of [{...denied,messageID:'wrong'},{...denied,callID:'unknown'}])await expect(f.runtime.prepareFileRestore({directory:f.directory,sessionID:'a',revision:'mismatch',calls:[calls[0],invalid]})).rejects.toMatchObject({code:'mutation_history_unavailable'});
+  await expect(f.runtime.prepareFileRestore({directory:f.directory,sessionID:'a',revision:'only-no-start',calls:[denied]})).rejects.toMatchObject({code:'mutation_history_unavailable'});
+  const undo=await f.runtime.prepareFileRestore({directory:f.directory,sessionID:'a',revision:'clean',calls});await f.runtime.settleRevert({directory:f.directory,transactionID:undo.id,commit:true});expect(await f.read('x')).toBe('before');
+  const redo=await f.runtime.prepareFileRestore({directory:f.directory,sessionID:'a',revision:'redo-clean',redo:true,calls});await f.runtime.settleRevert({directory:f.directory,transactionID:redo.id,commit:true});expect(await f.read('x')).toBe('after');
+});
+test('guarded negative cancellation rechecks queued authority and leaves no durable proof after revocation',async()=>{
+  const f=await fixture();let revoked=false;
+  const cause=Object.assign(Error('revoked'),{code:'native_permit_revoked'});
+  const input={directory:f.directory,sessionID:'a',messageID:'denied',callID:'denied',requireAbsent:true,
+    guard:{admissionRevision:0,assertCurrent:()=>{if(revoked)throw cause;queueMicrotask(()=>{revoked=true;});}}};
+  await expect(f.runtime.cancelUnstartedCall(input)).rejects.toBe(cause);
+  expect((await f.runtime.executionOutcomes({directory:f.directory,sessionID:'a',calls:[{messageID:'denied',callID:'denied'}]}))[0].outcome).toBe('uncertain');
+});
+test('guarded no-start admission refuses a changed durable session hold revision',async()=>{
+  const f=await fixture();await f.runtime.registerNativeSession({directory:f.directory,sessionID:'a'});
+  await f.runtime.holdNativeAdmission({directory:f.directory,sessionID:'a',ownerID:'other-owner'});
+  await expect(f.runtime.cancelUnstartedCall({directory:f.directory,sessionID:'a',messageID:'denied',callID:'denied',requireAbsent:true,
+    guard:{admissionRevision:0,assertCurrent:()=>{}}})).rejects.toMatchObject({code:'native_permit_revoked'});
+  expect((await f.runtime.executionOutcomes({directory:f.directory,sessionID:'a',calls:[{messageID:'denied',callID:'denied'}]}))[0].outcome).toBe('uncertain');
+});
+test('a clean cancelled already-claimed control call remains uncertain and cannot be skipped by restore',async()=>{
+  const f=await fixture();await f.write('x','before');
+  const writer=await f.begin('a','writer','writer');await fs.writeFile(path.join(writer.viewDirectory,'x'),'after');await f.finish(writer);
+  const started=await f.begin('a','started','started',{kind:'control'});
+  await f.runtime.claimLease({directory:f.directory,token:started.token,kind:'control'});
+  await f.runtime.cancelLease(started);await f.runtime.cleanupLease(started);
+  const call={sessionID:'a',messageID:'started-assistant',callID:'started'};
+  expect((await f.runtime.executionOutcomes({directory:f.directory,sessionID:'a',calls:[call]}))[0].outcome).toBe('uncertain');
+  await expect(f.runtime.prepareFileRestore({directory:f.directory,sessionID:'a',revision:'started',calls:[{sessionID:'a',messageID:'writer-assistant',callID:'writer'},call]})).rejects.toMatchObject({code:'mutation_history_unavailable'});
 });
 
 test('an already reverted session boundary can expand to its descendants without losing Redo', async () => {
@@ -445,7 +564,7 @@ test('file Undo fences hidden descendants and call aliases select one publicatio
   await f.runtime.registerChild({ directory: f.directory, sessionID: 'hidden', parentID: 'a', parentCallID: 'turn' });
   const child = await f.begin('hidden', 'pc', 'cc', { parentID: 'a' });
   const tx = await f.runtime.prepareFileRestore({ directory: f.directory, sessionID: 'a', revision: 'review',
-    calls: ['tool-1', 'tool-2'].map((callID) => ({ sessionID: 'a', callID })) });
+    calls: ['tool-1', 'tool-2'].map((callID) => ({ sessionID: 'a', messageID:'pa-assistant', callID })) });
   expect(tx.members).toContain('hidden');
   await expect(f.runtime.assertAdmission({ directory: f.directory, sessionID: 'hidden' })).rejects.toMatchObject({ code: 'session_reverting' });
   await expect(f.finish(child)).rejects.toMatchObject({ code: 'execution_reverted' });
@@ -1092,14 +1211,70 @@ test('warm builds a missing ledger once, skips non-repositories, and a real call
   expect((await f.finish(lease)).files).toEqual([{ path: 'd1/e1/f1.txt', status: 'modified' }]);
 });
 
-bunTest('a call that starts while a warm build runs joins it and sees a complete view', async () => {
+bunTest('a call that starts while a warm build runs supersedes advisory work and sees a complete view', async () => {
   const f = await fixture(); await manyFiles(f, 600);
   const warming = f.runtime.warm({ directory: f.directory });
   const lease = await f.begin('a', 'pa', 'ca');
   expect(await fs.readFile(path.join(lease.viewDirectory, 'd4/e4/f599.txt'), 'utf8')).toBe('line 599\n'.repeat(4));
-  expect(await warming).toMatchObject({ built: true });
+  const result = await warming;
+  expect(result.built === true || result.skipped === 'foreground').toBe(true);
   expect(Object.keys(await ledgerState(f)).length).toBe(603);
 }, 600_000);
+
+test('warm enumeration is bounded even for empty directories omitted by Git', async () => {
+  const f = await fixture();
+  const project = await fs.realpath(f.directory);
+  await Promise.all(Array.from({ length: 50 }, (_, index) => fs.mkdir(path.join(f.directory, `empty-${index}`))));
+  let reads = 0;
+  const readdir = fs.readdir.bind(fs), observer = spyOn(fs, 'readdir').mockImplementation(async (...args) => {
+    if (String(args[0]).startsWith(project)) reads++;
+    return readdir(...args);
+  });
+  try {
+    expect(await f.runtime.warm({ directory: f.directory, maxFiles: 5 })).toEqual({ skipped: 'too-large' });
+    expect(reads).toBe(1);
+    await expect(f.runtime.warm({ directory: f.directory, maxFiles: Infinity })).rejects.toMatchObject({ code: 'invalid_warm_request' });
+  } finally { observer.mockRestore(); await f.runtime.drain(); }
+});
+
+test('foreground observation stops a slow warm walk before unrelated directories and proves current bytes', async () => {
+  const f = await fixture();
+  const project = await fs.realpath(f.directory);
+  await f.write('keep.txt', 'before');
+  for (let index = 0; index < 12; index++) {
+    await fs.mkdir(path.join(f.directory, `d${index}`));
+    await f.write(`d${index}/file`, 'original');
+  }
+  let entered, release;
+  const paused = new Promise(resolve => { entered = resolve; });
+  const gate = new Promise(resolve => { release = resolve; });
+  let pausedOnce = false, warmReads = 0;
+  const readdir = fs.readdir.bind(fs), observer = spyOn(fs, 'readdir').mockImplementation(async (...args) => {
+    if (String(args[0]).startsWith(project) && !pausedOnce) {
+      pausedOnce = true; entered(); await gate;
+    }
+    if (String(args[0]).startsWith(project) && !released) warmReads++;
+    return readdir(...args);
+  });
+  let released = false;
+  const warming = f.runtime.warm({ directory: f.directory });
+  try {
+    await paused;
+    await f.write('keep.txt', 'after reservation');
+    let observing;
+    const observed = new Promise(resolve => { observing = resolve; });
+    const preparing = withExecutionAdmission({}, () => f.begin('foreground', 'p1', 'c1'), {
+      onDiagnostic: record => { if (record.phase === 'reconciliation' && record.state === 'started') observing(); },
+    });
+    await observed;
+    released = true; release();
+    const lease = await preparing;
+    expect(await warming).toEqual({ skipped: 'foreground' });
+    expect(warmReads).toBe(0);
+    expect(await fs.readFile(path.join(lease.viewDirectory, 'keep.txt'), 'utf8')).toBe('after reservation');
+    await f.runtime.cancelLease(lease); await f.runtime.cleanupLease(lease);
+  } finally { release(); observer.mockRestore(); await f.runtime.drain(); }
+});
 
 test('record caching is invisible: edits, reverts and outcomes match with the cache disabled', async () => {
   const run = async () => {
@@ -1308,6 +1483,67 @@ describe('direct receipts for native read-only tools', () => {
   const scope = (f, call, user = 'pd') => ({ directory: f.directory, sessionID: 's', userMessageID: user, messageID: `${user}-assistant`, callID: call });
   const outcome = async (f, call, user = 'pd') => (await f.runtime.executionOutcomes({ directory: f.directory, sessionID: 's',
     calls: [{ messageID: `${user}-assistant`, callID: call }] }))[0].outcome;
+
+  test('queued finish pins its directory and identity before caller mutation, including calls without a meter', async () => {
+    const f = await fixture(), other = await fixture();
+    const input = { ...scope(f, 'captured'), token: randomUUID(), generation: 0, executionFingerprint: digest };
+    const original = { ...input }, receipt = f.runtime.finishDirect(input);
+    input.directory = other.directory; input.sessionID = 'foreign'; input.callID = 'foreign'; input.token = randomUUID();
+    expect((await receipt).operationID).toBeString();
+    await new Promise(resolve => setImmediate(resolve));
+    expect(await outcome(f, original.callID)).toBe('finished');
+    expect((await f.runtime.executionOutcomes({ directory: other.directory, sessionID: original.sessionID,
+      calls: [{ messageID: original.messageID, callID: original.callID }] }))[0].outcome).toBe('uncertain');
+  });
+
+  test('parallel finishes share one durable commit while a failed call leaves no staged prompt or sequence', async () => {
+    const timings = [], f = await fixture({ onLockTiming: record => timings.push(record) });
+    await f.runtime.registerPrompt({ ...scope(f, 'seed'), userMessageID: 'pd' });
+    timings.length = 0;
+    const input = call => ({ ...scope(f, call), token: randomUUID(), generation: 0, executionFingerprint: digest });
+    const good = [input('c1'), input('c2'), input('c3')];
+    const bad = { ...input('bad'), userMessageID: 'failed-new-prompt', messageID: 'failed-new-prompt-assistant', generation: 9 };
+    const results = await Promise.allSettled([f.runtime.finishDirect(good[0]), f.runtime.finishDirect(bad),
+      f.runtime.finishDirect(good[1]), f.runtime.finishDirect(good[2])]);
+    expect(results.map(row => row.status)).toEqual(['fulfilled', 'rejected', 'fulfilled', 'fulfilled']);
+    expect(results[1].reason.code).toBe('execution_reverted');
+    expect(timings.filter(row => row.operation === 'finishDirect' && row.wrote)).toHaveLength(1);
+    const restarted = createSessionMutationRuntime({ directory: f.storage });
+    for (const item of good) expect((await restarted.executionOutcomes({ directory: f.directory, sessionID: 's',
+      calls: [{ messageID: item.messageID, callID: item.callID }] }))[0].outcome).toBe('finished');
+    const root = path.join(f.storage, changeKey(await fs.realpath(f.directory)));
+    const db = await openChangeStore(root, path.join(root, 'git'));
+    expect(await db.get(`prompts/${changeKey('s\0failed-new-prompt')}.json`)).toBeNull();
+    expect((await db.get('meta.json')).sequence).toBe(4);
+  });
+
+  test('a failed shared commit acknowledges no call and all original tokens remain retryable', async () => {
+    const f = await fixture(); await f.runtime.registerPrompt(scope(f, 'seed'));
+    const inputs = ['c1', 'c2'].map(call => ({ ...scope(f, call), token: randomUUID(), generation: 0, executionFingerprint: digest }));
+    const write = fs.writeFile.bind(fs), blocked = spyOn(fs, 'writeFile').mockImplementation(async (file, ...args) => {
+      if (String(file).includes('.metadata-index.blobs')) throw new Error('fixture commit unavailable');
+      return write(file, ...args);
+    });
+    try {
+      const failed = await Promise.allSettled(inputs.map(input => f.runtime.finishDirect(input)));
+      expect(failed.every(row => row.status === 'rejected' && row.reason.message === 'fixture commit unavailable')).toBe(true);
+    } finally { blocked.mockRestore(); }
+    for (const input of inputs) expect(await outcome(f, input.callID)).toBe('uncertain');
+    const results = await Promise.all(inputs.map(input => f.runtime.finishDirect(input)));
+    expect(results).toHaveLength(2);
+    for (const input of inputs) expect(await outcome(f, input.callID)).toBe('finished');
+  });
+
+  test('one caller cancellation cannot cancel another finish or acknowledge its own receipt', async () => {
+    const f = await fixture(); await f.runtime.registerPrompt(scope(f, 'seed'));
+    const controller = new AbortController();
+    const input = call => ({ ...scope(f, call), token: randomUUID(), generation: 0, executionFingerprint: digest });
+    const cancelled = withExecutionAdmission({}, () => f.runtime.finishDirect(input('cancelled')), { signal: controller.signal });
+    controller.abort(Object.assign(new Error('fixture cancelled'), { code: 'fixture_cancelled' }));
+    const results = await Promise.allSettled([cancelled, f.runtime.finishDirect(input('valid'))]);
+    expect(results[0].status).toBe('rejected'); expect(results[1].status).toBe('fulfilled');
+    expect(await outcome(f, 'cancelled')).toBe('uncertain'); expect(await outcome(f, 'valid')).toBe('finished');
+  });
 
   test('admission commits nothing; one finish records a finished, cleaned receipt; retries are idempotent', async () => {
     const f = await fixture(); await f.write('a.txt', 'a');

@@ -1,0 +1,30 @@
+{
+  "date": "2026-10-14",
+  "scope": "Helper model saves and title persistence/source ownership",
+  "qualification": "Focused owner and mounted tests; fresh compiled provider and shipping qualification remain required",
+  "redReproductions": [
+    "Canonical time.updated alone advancing during awaited human title authorization incorrectly refused capture",
+    "Attachment source-part replacement incorrectly retained human title authority"
+  ],
+  "corrections": [
+    "Only session time.updated is excluded from volatile session comparison; other fields remain exact",
+    "Latest accepted human source binds exact canonical ordered source parts including attachments",
+    "Startup codes defer only within the lifecycle owner's same current startup attempt and original absolute readiness deadline; absence, failure, expiry and replacement restore the original three-cycle budget",
+    "Private not-dispatched busy holds defer existing persistence while the process retains its bounded command deadlines, with no new inference or source renewal",
+    "Unknown statuses, errors and correlated busy replies retain three-cycle pause",
+    "Helper model revision creation is inside save try/finally and supports missing randomUUID",
+    "Helper UI waits for acknowledged immediate settings save and rejects null or foreign provider/model/revision before local change"
+  ],
+  "focusedResults": {
+    "titleGitReadinessAndSeamWebTests": { "passed": 187, "failed": 0, "files": 8 },
+    "helperHttpAndUiRevisionTests": { "passed": 28, "failed": 0, "files": 3 },
+    "mountedHelperSaveTests": { "passed": 5, "failed": 0, "files": 1 }
+  },
+  "dispatchCoverage": {
+    "purposes": ["devryan-title", "devryan-commit", "devryan-pr"],
+    "owners": "Actual helper admission, HTTP controller, provider-attempt authorization, recheck and settlement; inference callback is a fixture",
+    "assertions": "Configured selected model, absent variant, unchanged primary High selection, foreign model/variant/revision refusal before dispatch"
+  },
+  "fixtureCorrection": "Unsettled saturation test now explicitly fails dispatched transport without ACK, retaining original two-millisecond settlement fence and all permit retention/capacity/late ACK/exit assertions; avoids an unrelated pre-dispatch deadline race",
+  "remaining": ["Fresh compiled physical provider qualification", "Build and actual isolated UI save/reload acceptance", "Full shipping gates and complete cleanup"]
+}

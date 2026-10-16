@@ -32,6 +32,7 @@ describe('projected gen-2 SSE', () => {
     const context = setup({ req: { headers: { 'last-event-id': 'old' } },
       hub: { replayAfter: vi.fn(() => ({ events: [entry('cursor-1'), entry('cursor-2')], gap: true })) } });
     await context.handler(context.req, context.res);
+    expect(context.res.headers['Cache-Control']).toBe('no-cache, no-transform');
     context.emit(entry('cursor-3'));
     await tick();
     expect(context.hub.replayAfter).toHaveBeenCalledWith('old', { directory: undefined });

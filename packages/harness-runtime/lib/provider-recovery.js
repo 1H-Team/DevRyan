@@ -10,7 +10,7 @@ import { withCrossProcessFileLock } from './atomic-file.js';
 import { currentObjectiveUser, isManagedMaintenancePrompt, observesNativeContinuation } from './objective-identity.js';
 import {
   classifyPrimaryTransportError, inspectRecoveryTurn, recoveryError,
-  RECOVERY_READ_TOOLS, PROVIDER_PROGRESS_TIMEOUT_MS, validatePrimaryRecoveryRecord,
+  RECOVERY_READ_TOOLS, PROVIDER_PROGRESS_TIMEOUT_MS, validatePrimaryRecoveryRecord,validateNativeStreamReceiptRecord,
   isProviderRecoverySupportedRuntimeVersion, isNativePrimaryRuntimeVersion, isPrimaryRecoveryProvider, primaryRecoveryMode,
 } from './provider-recovery-policy.js';
 
@@ -30,13 +30,33 @@ const progressSignature = (part) => ['text', 'reasoning'].includes(part.type) ? 
 export function createPrimaryRecoveryController(options) {
   const now = options.now ?? Date.now;
   const store = options.store ?? createRecordStore({ directory: options.directory, validateRecord: validatePrimaryRecoveryRecord, maxReadBytes: 128 * 1024, windowsOwner: options.windowsOwner });
+  const streamReceipts=createRecordStore({directory:path.join(path.dirname(store.directory),'provider-stream'),validateRecord:validateNativeStreamReceiptRecord,
+    maxReadBytes:16*1024,windowsOwner:options.windowsOwner});
+  const streamReceiptKey=(sessionID,objectiveID)=>crypto.createHash('sha256').update(sessionID+'\0'+objectiveID).digest('hex');
+  const archiveNativeStreamReceipts=async r=>{
+    if(!r?.nativeStream)return;
+    const objectiveID=r.objectiveID??r.anchorID,key=streamReceiptKey(r.sessionID,objectiveID);
+    const archived=await streamReceipts.readRecord(key),record={sessionID:r.sessionID,directory:r.directory,objectiveID,
+      consumed:r.nativeStream.consumed,receipts:r.nativeStreamReceipts??[]};
+    if(archived&&(archived.directory!==r.directory||archived.consumed>record.consumed
+      ||archived.receipts.some((receipt,index)=>JSON.stringify(receipt)!==JSON.stringify(record.receipts[index]))))throw recoveryError('native_stream_continuation_fenced');
+    if(!archived||JSON.stringify(archived)!==JSON.stringify(record))await streamReceipts.writeRecord(key,record);
+  };
   if ([options.mode, options.anthropicMode].some((value) => value !== undefined && !['off', 'observe', 'enforce'].includes(value))) throw new TypeError('Invalid provider recovery mode');
   const progressTimeoutMs = options.progressTimeoutMs ?? PROVIDER_PROGRESS_TIMEOUT_MS;
+  const streamProofTimeoutMs=progressTimeoutMs===false?PROVIDER_PROGRESS_TIMEOUT_MS:progressTimeoutMs;
   if (progressTimeoutMs !== false && (!Number.isSafeInteger(progressTimeoutMs) || progressTimeoutMs < 1)) {
     throw new TypeError('Invalid provider progress timeout');
   }
   const records = new Map();
   const live = new Map();
+  const streamProofExpired=r=>{
+    const proof=r?.nativeStream?.committed??r?.nativeStream?.pending;if(!proof)return false;
+    const progress=live.get(r.sessionID)?.nativeStreamProgress;
+    const at=progress&&progress.requestID===proof.preparedRequestID&&nativeWitnessMatches({attempt:progress.attempt,permitSha256:proof.permitSha256},proof.successorAttempt,proof.permitSha256)
+      ?progress.at:proof.preparedAt??proof.reservedAt;
+    return !Number.isFinite(at)||now()-at>=streamProofTimeoutMs;
+  };
   const pending = new Map();
   const reschedule = new Map();
   const generations = new Map();
@@ -121,6 +141,7 @@ export function createPrimaryRecoveryController(options) {
       const removed = await lock(record.sessionID, async () => {
         const current = await store.readRecord(key);
         if (!current || current.revision !== record.revision || pending.has(record.sessionID)) return false;
+        await archiveNativeStreamReceipts(current);
         await store.deleteRecord(key);
         records.delete(record.sessionID); live.delete(record.sessionID); generations.delete(record.sessionID);
         return true;
@@ -161,14 +182,23 @@ export function createPrimaryRecoveryController(options) {
       if (r && ['recovery_reserved', 'recovering', 'stopping'].includes(r.state)) throw recoveryError('recovery_in_progress');
       if ((r?.guardedIDs.length ?? 0) >= 128 || Buffer.byteLength(JSON.stringify(body.tools ?? {})) > 16_384) throw recoveryError('recovery_storage_full', 507);
       await authorizeWrite?.();
-      invalidate(input.sessionID);
-      live.delete(input.sessionID);
       // An explicit continuation is DevRyan-authored text: the objective it
       // continues stays the one compaction re-anchors.
       const objectiveID = typeof input.objectiveID === 'string' && /^msg_[a-zA-Z0-9]+$/.test(input.objectiveID)
         && input.objectiveID !== body.messageID ? input.objectiveID : undefined;
+      const sameObjective=r&&(r.objectiveID??r.anchorID)===(objectiveID??body.messageID);
+      if(sameObjective&&(r.nativeStream?.pending||r.nativeStream?.committed))throw recoveryError('native_stream_continuation_fenced');
+      if(!sameObjective)await archiveNativeStreamReceipts(r);
+      const archived=sameObjective?null:await streamReceipts.readRecord(streamReceiptKey(input.sessionID,objectiveID??body.messageID));
+      if(archived&&archived.directory!==input.directory)throw recoveryError('native_stream_continuation_fenced');
+      const retainedStream=sameObjective?r?.nativeStream:archived;
+      const retainedReceipts=sameObjective?r?.nativeStreamReceipts:archived?.receipts;
+      invalidate(input.sessionID);
+      live.delete(input.sessionID);
       return {
         version: 1, sessionID: input.sessionID, directory: input.directory, anchorID: body.messageID, ...(objectiveID ? { objectiveID } : {}),
+        ...(retainedStream?{nativeStream:{consumed:retainedStream.consumed}}:{}),
+        ...(retainedReceipts?.length?{nativeStreamReceipts:retainedReceipts}:{}),
         providerID: body.model.providerID, modelID: body.model.modelID, agent: body.agent,
         variant: body.variant ?? null, tools: body.tools ?? {}, owner: input.owner ?? null,
         ...(input.executionGeneration === 2 ? { executionGeneration: 2 } : {}),
@@ -186,6 +216,7 @@ export function createPrimaryRecoveryController(options) {
       if (!record) return null;
       if (expectedRevision !== undefined && record.revision !== expectedRevision) throw recoveryError('recovery_revision_conflict');
       return { ...record, state: action === 'intent' ? 'observing' : action === 'supersede' ? 'superseded' : 'cancelled', reason: action,
+        ...(record.nativeStream&&action==='stop'?{nativeStream:{consumed:record.nativeStream.consumed}}:{}),
         recoverySuppressed: action === 'intent' || record.recoverySuppressed === true,
         cancellationGeneration: (record.cancellationGeneration ?? 0) + 1 };
     });
@@ -234,6 +265,9 @@ export function createPrimaryRecoveryController(options) {
     // alone never supplies that authority, and partial history cannot do so.
     inspectRecoveryTurn(record, observation);
     if (observation.messages.filter(message => message.info?.role === 'user' && !isNativeStatusRecord(message)).at(-1)?.info.id !== targetUserID) return null;
+    const stream=record.nativeStream?.committed;
+    if(stream?.userMessageID===targetUserID&&stream.successorAttempt&&stream.sourceUserMessageID===currentObjectiveUser(record)
+      &&stream.cancellationGeneration===record.cancellationGeneration&&stream.previousStepID===record.stepID)return {kind:'native-stream'};
     const source = currentObjectiveUser(record) === targetUserID && record.ownedNativeContinuation?.userMessageID === targetUserID
       ? { ...record, activeUserID: record.ownedNativeContinuation.sourceUserMessageID } : record;
     if (observesNativeContinuation(source, observation, targetUserID)) return { kind: 'native-compaction' };
@@ -259,12 +293,17 @@ export function createPrimaryRecoveryController(options) {
       || !handshake || handshake.instanceID !== input.instanceID) throw recoveryError('native_continuation_fenced');
     const generation = generations.get(input.sessionID) ?? 0;
     const current = () => !draining && handshake?.instanceID === input.instanceID && (generations.get(input.sessionID) ?? 0) === generation;
+    let expired=false,expiredRecord;
     const result = await mutate(input.sessionID, async (next) => {
       const execution=next?.recoveryID&&next.recoveryExecution?next.recoveryExecution:next;
       if (!next || !current() || next.nativeFallback?.pending || !['observing', 'completed', 'recovering'].includes(next.state)
         || execution.providerID !== input.execution?.providerID || execution.modelID !== input.execution?.modelID
         || execution.agent !== input.execution?.agent || execution.variant !== (input.execution?.variant ?? null)) throw recoveryError('native_continuation_fenced');
-      const observation = await observeBounded(next);
+      if(streamProofExpired(next)){
+        if(!await authorizeBounded(next)||!current())throw recoveryError('native_stream_continuation_fenced');
+        expired=true;expiredRecord=next;return {...next,state:'needs_attention',reason:'provider_stream_interrupted'};
+      }
+      const observation = await observeBounded(next,undefined,false,Boolean(next.nativeStream?.committed));
       const proof = await verifyOwnedNativeContinuation(next, observation, input.userMessageID);
       const assistant = observation.messages.find(message => message.info?.id === input.assistantMessageID);
       if (!proof || (next.state === 'completed' && proof.kind !== 'native-shell')
@@ -280,20 +319,120 @@ export function createPrimaryRecoveryController(options) {
         return next;
       }
       if (assistant.info.time?.completed || next.guardedIDs.length >= 128) throw recoveryError('native_continuation_fenced');
-      if (proof.kind === 'native-shell') {
+      if (proof.kind === 'native-shell'||proof.kind==='native-stream') {
         const previous = observation.messages.find(message => message.info?.id === next.stepID);
         if (!previous || previous.info.role !== 'assistant' || previous.info.parentID !== currentObjectiveUser(next)
-          || !previous.info.time?.completed || observation.messages.indexOf(previous) >= observation.messages.indexOf(assistant)) throw recoveryError('native_continuation_fenced');
+          || !previous.info.time?.completed || proof.kind==='native-stream'&&!previous.info.error
+          || observation.messages.indexOf(previous) >= observation.messages.indexOf(assistant)) throw recoveryError('native_continuation_fenced');
+      }
+      if(proof.kind==='native-stream'){
+        const stream=next.nativeStream.committed;
+        const inspected=inspectRecoveryTurn({...next,activeUserID:input.userMessageID},observation,{allowSettledToolFailures:true});
+        if(inspected.superseded||inspected.unresolved||observation.blocked||observation.executionOutcomesUnavailable
+          ||!nativeWitnessMatches({attempt:stream.successorAttempt,permitSha256:stream.permitSha256},input.nativeAttempt,input.nativePermitSha256))throw recoveryError('native_stream_continuation_fenced');
       }
       invalidate(next.sessionID);
       live.delete(next.sessionID);
       return { ...next, activeUserID: input.userMessageID, stepID: null, requestedAt: null,
+        ...(proof.kind==='native-stream'?{nativeStream:{...next.nativeStream,committed:undefined},
+          nativeStreamReceipts:[...next.nativeStreamReceipts??[],{...next.nativeStream.committed,
+            assistantMessageID:input.assistantMessageID,ordinal:next.nativeStream.consumed}]}:{}),
         state: next.recoveryID ? 'recovering' : 'observing',
         ownedNativeContinuation: { kind: proof.kind, sourceUserMessageID: currentObjectiveUser(next), userMessageID: input.userMessageID, assistantMessageID: input.assistantMessageID },
         guardedIDs: next.recoveryID || next.guardedIDs.length ? [...new Set([...next.guardedIDs, input.userMessageID])] : next.guardedIDs };
-    });
+    },async()=>{if(expired&&(!current()||!await authorizeBounded(expiredRecord)||!current()))throw recoveryError('native_stream_continuation_fenced');});
+    if(expired)throw recoveryError('provider_stream_interrupted');
     diagnostic('objective_owned_native_continued', result, { activeUserMessageID: result.activeUserID });
     return result;
+  };
+
+  // Only the constructor-owned Prepared.retry/Bus path calls these transitions.
+  // Reservations survive uncertain publication; neither history text nor diagnostics release one.
+  const nativeStreamContinuation=async(input,authorize)=>{
+    await ready;
+    const generation=generations.get(input.sessionID)??0;
+    const current=()=>!draining&&ownsRuntime&&storageHealthy&&options.isManaged()&&['2.0.26','2.0.30'].includes(handshake?.version)
+      &&handshake.instanceID===input.instanceID&&(generations.get(input.sessionID)??0)===generation;
+    const fence=()=>recoveryError('native_stream_continuation_fenced');
+    let allowed=true;
+    const result=await mutate(input.sessionID,async r=>{
+      if(!current())throw fence();
+      // Managed descendants have a separate objective/task owner and never acquire primary replay authority.
+      if(!r){if(input.action==='prepare'||input.action==='send')return r;allowed=false;return r;}
+      const execution=r.recoveryID&&r.recoveryExecution?r.recoveryExecution:r;
+      if(r.executionGeneration!==2||r.directory!==input.directory||TERMINAL.has(r.state)||r.nativeFallback?.pending
+        ||['providerID','modelID','agent','variant'].some(key=>execution[key]!==input.execution[key]))throw fence();
+      await authorize();if(!current()||!await authorizeBounded(r))throw fence();
+      const stream=r.nativeStream??{consumed:0},reservation=stream.pending;
+      if(streamProofExpired(r)){allowed=false;return {...r,state:'needs_attention',reason:'provider_stream_interrupted'};}
+      const exact=p=>p&&p.instanceID===input.instanceID&&p.configurationDigest===input.configurationDigest
+        &&p.permitSha256===input.permitSha256&&p.cancellationGeneration===r.cancellationGeneration
+        &&p.anchorID===r.anchorID&&p.objectiveID===(r.objectiveID??r.anchorID)
+        &&p.sourceUserMessageID===currentObjectiveUser(r)&&p.previousStepID===r.stepID
+        &&p.toolPolicySha256===crypto.createHash('sha256').update(JSON.stringify(r.tools)).digest('hex');
+      const inspect=async target=>{
+        const observation=await observeBounded(r,undefined,false,true);
+        const inspected=inspectRecoveryTurn(target?{...r,activeUserID:target}:r,observation,{allowSettledToolFailures:true});
+        if(inspected.superseded||inspected.unresolved||observation.blocked||observation.executionOutcomesUnavailable
+          ||observation.managedBarrierState!=='clear')throw fence();
+        await authorize();if(!current())throw fence();
+        return {observation,inspected};
+      };
+      if(input.action==='prepare'){
+        if(stream.committed)throw fence();
+        if(!reservation)return r;
+        if(!exact(reservation)||!reservation.eventID||!reservation.userMessageID)throw fence();
+        const {inspected}=await inspect(reservation.userMessageID);
+        if(inspected.last)throw fence();
+        return {...r,nativeStream:{consumed:stream.consumed+1,committed:{...reservation,preparedRequestID:input.requestID,preparedAt:now()},pending:undefined}};
+      }
+      if(input.action==='send'){
+        if(reservation)throw fence();
+        if(!stream.committed)return r;
+        if(!exact(stream.committed)||stream.committed.preparedRequestID!==input.requestID)throw fence();
+        await inspect(stream.committed.userMessageID);
+        return {...r,nativeStream:{...stream,committed:{...stream.committed,successorAttempt:structuredClone(input.attempt)}}};
+      }
+      if(input.action==='progress'){
+        if(reservation||!exact(stream.committed)||stream.committed.preparedRequestID!==input.requestID
+          ||!nativeWitnessMatches({attempt:stream.committed.successorAttempt,permitSha256:stream.committed.permitSha256},input.attempt,input.permitSha256)
+          ||!Number.isSafeInteger(input.observedUnits)||input.observedUnits<=0)throw fence();
+        const activity=remember(r),previous=activity.nativeStreamProgress;
+        if(previous?.requestID===input.requestID&&nativeWitnessMatches({attempt:previous.attempt,permitSha256:input.permitSha256},input.attempt,input.permitSha256)
+          &&input.observedUnits<=previous.units)throw fence();
+        activity.nativeStreamProgress={requestID:input.requestID,attempt:structuredClone(input.attempt),units:input.observedUnits,at:now()};
+        return r;
+      }
+      if(input.action==='reserve'){
+        if(reservation||stream.committed||!validNativeWitness(input.attempt,input.permitSha256)
+          ||!nativeWitnessMatches(r.nativeStepWitness,input.attempt,input.permitSha256)||r.stepID!==input.assistantMessageID)throw fence();
+        await inspect();
+        if(stream.consumed>=2){allowed=false;return {...r,state:'needs_attention',reason:'provider_stream_interrupted'};}
+        if(r.recoverySuppressed){allowed=false;return r;}
+        return {...r,nativeStream:{...stream,pending:{instanceID:input.instanceID,configurationDigest:input.configurationDigest,
+          permitSha256:input.permitSha256,cancellationGeneration:r.cancellationGeneration,anchorID:r.anchorID,objectiveID:r.objectiveID??r.anchorID,
+          sourceUserMessageID:currentObjectiveUser(r),previousStepID:r.stepID,attempt:structuredClone(input.attempt),requestID:input.requestID,
+          outputEventID:input.outputEventID,fingerprint:input.fingerprint,reservedAt:now(),
+          toolPolicySha256:crypto.createHash('sha256').update(JSON.stringify(r.tools)).digest('hex')}}};
+      }
+      if(input.action==='bind'){
+        if(!exact(reservation)||reservation.requestID!==input.requestID||input.userMessageID!==input.eventID?.replace(/^evt_/,'msg_'))throw fence();
+        const {observation}=await inspect(input.userMessageID);
+        const previous=observation.messages.find(message=>message.info?.id===reservation.previousStepID);
+        const synthetic=observation.messages.find(message=>message.info?.id===input.userMessageID);
+        if(!previous?.info.time?.completed||!previous.info.error||previous.info.parentID!==reservation.sourceUserMessageID
+          ||!synthetic||synthetic.info.role!=='user'||!synthetic.parts.length
+          ||synthetic.parts.some(part=>part.type!=='text'||part.synthetic!==true)
+          ||crypto.createHash('sha256').update(synthetic.parts.map(part=>part.text).join('')).digest('hex')!==input.fingerprint)throw fence();
+        if(reservation.eventID&&(reservation.eventID!==input.eventID||reservation.eventSeq!==input.eventSeq
+          ||reservation.userMessageID!==input.userMessageID||reservation.syntheticFingerprint!==input.fingerprint))throw fence();
+        return {...r,nativeStream:{...stream,pending:{...reservation,eventID:input.eventID,eventSeq:input.eventSeq,
+          userMessageID:input.userMessageID,syntheticFingerprint:input.fingerprint}}};
+      }
+      throw fence();
+    },async()=>{await authorize();if(!current())throw fence();});
+    if(result&&input.action!=='progress')diagnostic('native_stream_continuation',result,{action:input.action});
+    return allowed;
   };
 
   // Private native hook transition, never a plugin/RPC action. The failed
@@ -364,6 +503,14 @@ export function createPrimaryRecoveryController(options) {
     if (before.state === 'observing' && !before.requestedAt && !before.failureObserved && !before.recoveryID) return;
     const generation = generations.get(id) ?? 0;
     const current = () => !draining && (generations.get(id) ?? 0) === generation;
+    if(before.nativeStream?.pending||before.nativeStream?.committed){
+      const reservation=before.nativeStream.pending??before.nativeStream.committed;
+      if((reservation.instanceID!==handshake?.instanceID||streamProofExpired(before))&&current()){
+        await attention(id,'provider_stream_interrupted',before);
+        await options.abortSession(before).catch(()=>diagnostic('provider_recovery_abort_failed',before));
+      }
+      return;
+    }
     const liveness = remember(before);
     // A queued watchdog signal may belong to a superseded invocation. Recheck
     // the current step's deadline before any observation or stop decision.
@@ -988,6 +1135,8 @@ export function createPrimaryRecoveryController(options) {
   async function reconcile() {
     const relaxed = advisory();
     await Promise.allSettled([...records.values()].filter((r) => !TERMINAL.has(r.state)).map((r) => {
+      const streamProof=r.nativeStream?.pending??r.nativeStream?.committed;
+      if(streamProof)return streamProofExpired(r)||streamProof.instanceID!==handshake?.instanceID?schedule(r.sessionID,false):undefined;
       const l = remember(r);
       const watchdog = progressTimeoutMs !== false && l.phase === 'provider' && !l.calls.size && !l.blockers.size
         && now() - l.at >= progressTimeoutMs && (!relaxed || (active(r) && supported(r)));
@@ -1005,7 +1154,29 @@ export function createPrimaryRecoveryController(options) {
         || dispatch.itemHash && dispatch.itemHash!==itemHash)throw recoveryError('native_primary_continuation_fenced');
       dispatch.itemHash=itemHash;
     },
-    admit, control, plugin, observe, observeProgress, reconcile, adoptOwnedNativeContinuation, reserveNativeFallback,
+    admit, control, plugin, observe, observeProgress, reconcile, adoptOwnedNativeContinuation, reserveNativeFallback,nativeStreamContinuation,
+    async nativeStreamContinuationReceipts(sessionID,objectiveID){
+      await ready;const record=await store.readRecord(keyFor(sessionID));
+      const receipts=(record?.nativeStreamReceipts??[]).filter(receipt=>receipt.objectiveID===objectiveID);
+      if(receipts.length)return structuredClone(receipts);
+      const archived=await streamReceipts.readRecord(streamReceiptKey(sessionID,objectiveID));
+      if(archived&&(archived.sessionID!==sessionID||archived.objectiveID!==objectiveID))throw recoveryError('native_stream_continuation_fenced');
+      return structuredClone(archived?.receipts??[]);
+    },
+    async discardNativeStreamContinuationReceipts({directory,sessions},authorize){
+      await ready;
+      if(typeof authorize!=='function'||typeof directory!=='string'||!Array.isArray(sessions)||sessions.some(id=>!/^ses_[A-Za-z0-9]+$/.test(id)))throw recoveryError('native_stream_continuation_fenced');
+      await authorize();const selected=new Set(sessions);
+      for(const sessionID of selected)await mutate(sessionID,record=>record?.directory===directory&&record.nativeStreamReceipts
+        ?{...record,nativeStreamReceipts:undefined}:record,authorize);
+      const entries=await fs.opendir(streamReceipts.directory).catch(error=>{if(error.code==='ENOENT')return null;throw error;});
+      if(!entries)return;
+      for await(const entry of entries){
+        if(!entry.isFile()||!/^[a-f0-9]{64}\.json$/.test(entry.name))continue;
+        const key=entry.name.slice(0,-5),record=await streamReceipts.readRecord(key);
+        if(record?.directory===directory&&selected.has(record.sessionID)){await authorize();await streamReceipts.deleteRecord(key);}
+      }
+    },
     async nativeStartupRecords() { await ready; return [...records.values()].filter(r=>r.executionGeneration===2).map(r=>structuredClone(r)); },
     async adoptRecoveredInput(input, authorizeWrite) {
       await ready;
@@ -1181,7 +1352,7 @@ export function createPrimaryRecoveryController(options) {
     },
     async drain() {
       draining = true; clearInterval(timer);
-      await Promise.allSettled([...pending.values()]); await store.drain();
+      await Promise.allSettled([...pending.values()]); await store.drain();await streamReceipts.drain();
       releaseOwner?.(); await ownerTask; ownsRuntime = false;
     },
   };

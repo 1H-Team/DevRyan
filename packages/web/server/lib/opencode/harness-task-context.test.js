@@ -1,5 +1,7 @@
 import { createNativeConsumerFixture } from './test-native-consumer-client.js';
 const createHarnessTaskContextHost = (options = {}) => createHarnessTaskContextHostNative({
+  readOnlyInvocation: async () => false,
+  verifyPlanSourceSettled: async () => {},
   ...options, openCodeClient: options.openCodeClient ?? createNativeConsumerFixture({
     readFixture: options.fetchImpl ?? ((...args) => globalThis.fetch(...args)), headers: options.getOpenCodeAuthHeaders,
   }),
@@ -10,6 +12,10 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { formatManagedAssignmentContext } from '@openchamber/orchestration-runtime';
 import { createHarnessTaskContextHost as createHarnessTaskContextHostNative } from './harness-task-context.js';
+import {createNativeAdmissionOwner} from './runtime-host/native-admission-owner.js';
+
+const savedSource = sessionID => ({ info: { id: 'msg_plan', sessionID, role: 'assistant', parentID: 'msg_plan_user', finish: 'stop', time: { completed: 10 } }, turnOwnership: { source: 'native-sequence', userMessageID: 'msg_plan_user' }, parts: [{ type: 'text', text: '<!--plan-->\n# Saved plan\n' }] });
+const sourceHistory = sessionID => [{ info: { id: 'msg_plan_user', sessionID, role: 'user' }, parts: [{ type: 'text', text: 'Plan it' }] }, savedSource(sessionID)];
 
 describe('native canonical task-context adapter', () => {
   let directory, host, enabled, primary, routes, requests, owners;
@@ -84,6 +90,8 @@ describe('native canonical task-context adapter', () => {
   });
   it('builds a compaction anchor with the policy disabled, including the approved plan outline', async () => {
     enabled = false;
+    routes['/session/ses_root/message/msg_plan'] = savedSource('ses_root');
+    routes['/session/ses_root/message'] = sourceHistory('ses_root');
     routes['/session/ses_root'] = { ...routes['/session/ses_root'], slug: 'calm-river', time: { created: 1700000000000 } };
     routes['/session/ses_root/message/msg_user'].parts.push({ type: 'text', synthetic: true,
       text: '[openchamber-plan-action:v1] {"action":"implement","sourceSessionId":"ses_root","sourceMessageId":"msg_plan","planIndex":0}' });
@@ -100,6 +108,28 @@ describe('native canonical task-context adapter', () => {
     expect(result.text).not.toContain('Context prose');
     expect(await fs.readdir(path.join(directory, 'harness', 'context')).catch(() => [])).toEqual([]);
   });
+  it('requires the exact saved version before a fresh Implement admission and rejects a later replacement', async () => {
+    const { resolveSessionPlanRevision } = await import('../plans/routes.js');
+    const { createHash } = await import('node:crypto');
+    routes['/session/ses_root/message/msg_plan'] = savedSource('ses_root');
+    routes['/session/ses_root/message'] = sourceHistory('ses_root');
+    routes['/session/ses_root'] = { ...routes['/session/ses_root'], slug: 'calm-river', time: { created: 1700000000000 } };
+    const revision = await resolveSessionPlanRevision({ dataDirectory: directory, directory: '/project', sessionCreated: 1700000000000,
+      sessionSlug: 'calm-river', sourceMessageID: 'msg_plan', path });
+    const content = '# Actual owned edit';
+    await fs.mkdir(revision.directory, { recursive: true }); await fs.writeFile(revision.path, content);
+    const version = createHash('sha256').update(content).digest('hex');
+    const accepted = selectedVersion => ({ ...scope, intent: { parts: [{ type: 'text', synthetic: true,
+      text: '[openchamber-plan-action:v1] ' + JSON.stringify({ action: 'implement', sourceSessionId: 'ses_root', sourceMessageId: 'msg_plan', planIndex: 0, version: selectedVersion }) }] } });
+    await expect(host.validatePlanImplementation(accepted(undefined))).rejects.toThrow('plan_saved_version_required');
+    await expect(host.validatePlanImplementation(accepted('b'.repeat(64)))).rejects.toThrow('plan_version_conflict');
+    await expect(host.validatePlanImplementation(accepted(version))).resolves.toBeUndefined();
+    await fs.writeFile(revision.path, '# A newer owned edit');
+    await expect(host.validatePlanImplementation(accepted(version))).rejects.toThrow('plan_version_conflict');
+    routes['/session/ses_root/message'].push({ ...savedSource('ses_root'), info: { ...savedSource('ses_root').info, id: 'msg_replacement' } });
+    await expect(host.validatePlanImplementation(accepted(createHash('sha256').update('# A newer owned edit').digest('hex')))).rejects.toThrow('plan_source_stale');
+  });
+
   it('anchors compaction to the objective an explicit continuation continued', async () => {
     routes['/session/ses_root/message/msg_explicit'] = { info: { id: 'msg_explicit', sessionID: 'ses_root', role: 'user' },
       parts: [{ type: 'text', text: 'Continue from the existing progress and completed tool results.' }] };
@@ -113,6 +143,8 @@ describe('native canonical task-context adapter', () => {
     const { resolveSessionPlanRevision } = await import('../plans/routes.js');
     routes['/session/ses_root/message/msg_user'].parts.push({ type: 'text', synthetic: true,
       text: '[openchamber-plan-action:v1] {"action":"implement","sourceSessionId":"ses_plan","sourceMessageId":"msg_plan","planIndex":0}' });
+    routes['/session/ses_plan/message/msg_plan'] = savedSource('ses_plan');
+    routes['/session/ses_plan/message'] = sourceHistory('ses_plan');
     routes['/session/ses_plan'] = { id: 'ses_plan', directory: '/other', projectID: 'project_a', slug: 'quiet-lake', time: { created: 1700000000000 } };
     const revision = await resolveSessionPlanRevision({ dataDirectory: directory, directory: '/other', sessionCreated: 1700000000000,
       sessionSlug: 'quiet-lake', sourceMessageID: 'msg_plan', path });
@@ -164,6 +196,7 @@ describe('native canonical task-context adapter on OpenCode 2', () => {
       generation: () => generation,
       sessions: {
         get: async (sessionID, options) => answer('sessions.get', `session:${sessionID}`, options),
+        messages: async (sessionID, _query, options) => ({ records: await answer('sessions.messages', `messages:${sessionID}`, options) }),
         message: async (sessionID, messageID, options) => answer('sessions.message', `message:${sessionID}/${messageID}`, options),
         todo: async (sessionID, options) => answer('sessions.todo', `todo:${sessionID}`, options),
       },
@@ -172,7 +205,7 @@ describe('native canonical task-context adapter on OpenCode 2', () => {
       },
     };
   };
-  const createHost = (openCodeClient, primaryRecord = primary) => createHarnessTaskContextHost({ dataDirectory: directory,
+  const createHost = (openCodeClient, primaryRecord = primary, overrides = {}) => createHarnessTaskContextHost({ dataDirectory: directory,
     buildOpenCodeUrl: pathname => `http://127.0.0.1:3000${pathname}`,
     readPrimaryRecord: async () => primaryRecord,
     getManagedRuntime: () => ({ handleRpc: async input => input.method === 'harness_capabilities'
@@ -185,6 +218,7 @@ describe('native canonical task-context adapter on OpenCode 2', () => {
       fetchCalls.push(new URL(raw).pathname);
       return Response.json(null, { status: 404 });
     },
+    ...overrides,
   });
   beforeEach(async () => {
     directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-context-host-v2-'));
@@ -199,7 +233,93 @@ describe('native canonical task-context adapter on OpenCode 2', () => {
   });
   afterEach(async () => { await fs.rm(directory, { recursive: true, force: true }); });
 
+  it('reads bounded ordered pages and refuses cyclic cursors for canonical Plan identity', async () => {
+    routes['session:ses_root'] = { ...routes['session:ses_root'], slug: 'paged-plan', time: { created: 1700000000000 } };
+    routes['message:ses_root/msg_plan'] = savedSource('ses_root');
+    const client = fakeClient(), queries = [];
+    client.sessions.messages = async (_id, query) => {
+      queries.push(query);
+      return query.before ? { records: Array.from({ length: 200 }, (_, index) => ({ info: { id: `msg_old_${index}`, sessionID: 'ses_root', role: 'user' }, parts: [{ type: 'text', text: 'old' }] })) }
+        : { records: sourceHistory('ses_root'), cursor: 'older' };
+    };
+    const host = createHost(client);
+    expect(await host.readCanonicalPlanIdentity({ ...scope, sourceMessageID: 'msg_plan' })).toMatchObject({ sourceIdentity: { sourceMessageID: 'msg_plan', current: true } });
+    expect(queries).toEqual([{ limit: 200 }, { limit: 200, before: 'older' }]);
+    client.sessions.messages = async () => ({ records: sourceHistory('ses_root'), cursor: 'loop' });
+    await expect(host.readCanonicalPlanIdentity({ ...scope, sourceMessageID: 'msg_plan' })).rejects.toMatchObject({ code: 'plan_source_unavailable' });
+    await host.drain();
+  });
+  it('uses only the private native sequence for automatic-compaction Plan membership', async () => {
+    routes['session:ses_root']={...routes['session:ses_root'],slug:'auto-plan',time:{created:1700000000000}};
+    routes['message:ses_root/msg_plan']=savedSource('ses_root');
+    const records=sourceHistory('ses_root');records[1].info.finish='tool-calls';
+    records.push({info:{id:'msg_compact',sessionID:'ses_root',role:'user'},parts:[{type:'compaction',auto:true}]},
+      {...savedSource('ses_root'),info:{...savedSource('ses_root').info,id:'msg_tail',parentID:'msg_compact'},
+        turnOwnership:{source:'native-sequence',userMessageID:'msg_compact'},parts:[{type:'text',text:'- Continuation\n'}]});
+    const nativeSequence=[{id:'msg_plan_user',type:'user'},{id:'msg_plan',type:'assistant'},
+      {id:'msg_compact',type:'compaction',status:'completed',reason:'auto'},{id:'msg_tail',type:'assistant'}].map((row,ordinal)=>({...row,ordinal,turnParent:row.type!=='assistant'}));
+    let reads=0;
+    const client=fakeClient();client.sessions.messages=async()=>{throw Error('Projected pages are not lineage proof');};
+    const host=createHost(client,primary,{readCanonicalPlanSequence:async input=>{expect(input).toEqual(scope);reads++;return {records,nativeSequence};}});
+    try {
+      const result=await host.readCanonicalPlanIdentity({...scope,sourceMessageID:'msg_plan'});
+      expect(result.content).toBe('# Saved plan\n- Continuation\n');
+      expect(result.sourceIdentity).toMatchObject({rootUserMessageID:'msg_plan_user',memberUserMessageIDs:['msg_plan_user','msg_compact'],currentSourceMessageID:'msg_tail'});
+      expect(reads).toBe(1);
+      nativeSequence[2].reason='manual';
+      await expect(host.readCanonicalPlanIdentity({...scope,sourceMessageID:'msg_plan'})).rejects.toThrow();
+    }finally{await host.drain();}
+  });
+  it('captures canonical native Plan restrictions for children even when projected markers are absent', async () => {
+    const active = { ...primary, agent: 'orchestrator', stepID: 'msg_assistant', state: 'working' };
+    routes['message:ses_root/msg_assistant'] = { info: { id: 'msg_assistant', sessionID: 'ses_root', role: 'assistant', parentID: 'msg_user' },
+      turnOwnership: { source: 'native-sequence', userMessageID: 'msg_user' }, parts: [{ type: 'tool', tool: 'devryan_task', callID: 'call_task', state: { status: 'running' } }] };
+    const input = { ...scope, messageID: 'msg_assistant', callID: 'call_task' };
+    const host = createHost(fakeClient(), active, { readOnlyInvocation: async value => { expect(value).toBe(input); return true; } });
+    expect(await host.authorizeNativeTaskInvocation(input)).toEqual({ objectiveID: 'msg_user', readOnly: true });
+    const raw = { id: 'msg_user', type: 'user', sessionID: 'ses_root', directory: '/project', metadata: { devryan: { planMode: true } } };
+    expect(await host.readNativePlanPolicy(scope, async () => raw)).toEqual({ objectiveID: 'msg_user', readOnly: true });
+    raw.metadata.devryan.managedTitle = { v: 1, readOnly: false };
+    expect(await host.readNativePlanPolicy(scope, async () => raw)).toEqual({ objectiveID: 'msg_user', readOnly: true });
+    raw.metadata.devryan.planMode = false;
+    routes['message:ses_root/msg_user'].parts.push({ type: 'text', synthetic: true, text: 'User has requested to enter plan mode.' });
+    expect(await host.readNativePlanPolicy(scope, async () => raw)).toMatchObject({ readOnly: true });
+    await host.drain();
+  });
+  it('keeps the legacy Plan agent read-only when API selection omitted Plan metadata and markers',async()=>{
+    const host=createHost(fakeClient(),{...primary,agent:'plan'});
+    const raw={id:'msg_user',type:'user',sessionID:scope.sessionID,metadata:{devryan:{planMode:false}}};
+    try{expect(await host.readNativePlanPolicy(scope,async()=>raw)).toEqual({objectiveID:'msg_user',readOnly:true});}
+    finally{await host.drain();}
+  });
+  it('keeps verified non-managed or pruned children confined to reviewed reads when their assignment is absent',async()=>{
+    routes['session:ses_child']={id:'ses_child',directory:scope.directory,projectID:'project_a',parentID:'ses_root'};
+    const client=fakeClient(),host=createHost(client,null);
+    const owner=createNativeAdmissionOwner({directory:scope.directory,ownerID:'fixture',getSession:id=>client.sessions.get(id,{directory:scope.directory}),
+      runtime:{registerNativeSession:async()=>{},nativeAdmissionState:async()=>({revision:0,held:false})},authorizeOperation:async()=>{},
+      readPlanPolicy:input=>host.readNativePlanPolicy(input,async()=>{throw Error('A missing root objective cannot grant writes');})});
+    const request=toolID=>({operation:'tool.execute',sessionID:'ses_child',messageID:'msg_child',input:{toolID,callID:'call_child',provenance:{kind:'native',id:`opencode.tool.${toolID}`}}});
+    try{
+      expect(await host.readNativePlanPolicy({...scope,sessionID:'ses_child'},async()=>undefined)).toEqual({readOnly:true});
+      expect((await owner.handleRpc('native.admission.authorize',request('read'))).sessionID).toBe('ses_child');
+      const shell=request('shell'),permit=await owner.handleRpc('native.admission.authorize',shell);
+      expect(await owner.readOnlyExecution({directory:scope.directory,sessionID:'ses_child',messageID:'msg_child',callID:'call_child',tool:'shell',authorization:shell,permit})).toBe(true);
+      for(const toolID of ['write','unknown_mutator'])await expect(owner.handleRpc('native.admission.authorize',request(toolID))).rejects.toMatchObject({code:'native_plan_write_denied'});
+      const parent=routes['session:ses_root'];
+      for(const invalid of [{...parent,id:'ses_foreign'},{...parent,directory:'/foreign'},{...parent,projectID:'project_foreign'}]){
+        routes['session:ses_root']=invalid;
+        await expect(owner.handleRpc('native.admission.authorize',request('read'))).rejects.toMatchObject({code:invalid.id===parent.id?'context_project_scope_mismatch':'native_session_identity_uncertain'});
+      }
+      routes['session:ses_root']=parent;
+      const unavailable=createHost(client,null,{getManagedRuntime:()=>({handleRpc:async()=>({})})});
+      try{await expect(unavailable.readNativePlanPolicy({...scope,sessionID:'ses_child'},async()=>undefined)).rejects.toMatchObject({code:'native_plan_policy_unavailable'});}
+      finally{await unavailable.drain();}
+    }finally{owner.dispose();await host.drain();}
+  });
+
   it('requires exact sequence proof before a v2 plan tool can read its selected plan', async () => {
+    routes['message:ses_root/msg_plan'] = savedSource('ses_root');
+    routes['messages:ses_root'] = sourceHistory('ses_root');
     routes['session:ses_root'] = { ...routes['session:ses_root'], slug: 'proof-plan', time: { created: 1700000000000 } };
     routes['message:ses_root/msg_user'].parts.push({ type: 'text', synthetic: true,
       text: '[openchamber-plan-action:v1] {"action":"implement","sourceSessionId":"ses_root","sourceMessageId":"msg_plan","planIndex":0}' });
@@ -217,9 +337,20 @@ describe('native canonical task-context adapter on OpenCode 2', () => {
       sessionCreated: 1700000000000, sessionSlug: 'proof-plan', sourceMessageID: 'msg_plan', path });
     await fs.mkdir(revision.directory, { recursive: true });
     await fs.writeFile(revision.path, '# Selected plan\n');
+    await fs.writeFile(revision.path, '# Large saved plan\n' + '\\😀'.repeat(1000));
+    await expect(host.handleNativePlanRpc(input, async () => {}, { maxBytes: 1024 })).rejects.toMatchObject({ code: 'plan_tool_output_too_large' });
+    await fs.writeFile(revision.path, '# Selected plan\n');
     const selected = await host.handlePlanRpc(input);
     expect(selected).toMatchObject({ content: '# Selected plan\n' });
     await host.authorizeNativePlanInvocation({ ...input, tool: 'devryan_task' });
+    const originalHistory = routes['messages:ses_root'];
+    routes['messages:ses_root'] = [originalHistory[0], ...Array.from({ length: 30 }, (_, index) => ({ ...savedSource('ses_root'),
+      info: { ...savedSource('ses_root').info, id: `msg_before_${index}_${'x'.repeat(60)}`, parentID: 'msg_plan_user', finish: 'tool-calls' } })), originalHistory[1]];
+    await expect(host.handleNativePlanRpc({ ...input, action: 'plan_update', expectedVersion: selected.version, text: '# Must not commit' }, async () => {}, { maxBytes: 1024 }))
+      .rejects.toMatchObject({ code: 'plan_tool_output_too_large' });
+    expect(await fs.readFile(revision.path, 'utf8')).toBe('# Selected plan\n');
+    routes['messages:ses_root'] = originalHistory;
+
     await expect(host.handleNativePlanRpc({ ...input, action: 'plan_update', expectedVersion: selected.version, text: '# Changed plan\n' },
       async () => { throw Object.assign(Error('original grant revoked'), { code: 'original_grant_revoked' }); }))
       .rejects.toMatchObject({ code: 'original_grant_revoked' });

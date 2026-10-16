@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-15",
+  "status": "consensus-reached-implementation-outstanding",
+  "requestedImplementationOwner": "Codex",
+  "consensus": {
+    "reviewer": "Claude",
+    "chat": "OpenCode V2 QA and optimization",
+    "statement": "Constraints A-F resolve the debate. No remaining substantive disagreement; Codex implements and presents the plan.",
+    "proofImage": "claude-consensus.jpg",
+    "proofImageSha256": "5feda6b9d5177d3748ba8087c58656c951bb7878b58684dc5589c88dd29a2097",
+    "plan": "consensus-finishing-plan.md",
+    "planSha256": "e0c39350ad173c7552c2db90d040f547d4414adea345ccf3300e7404f3ecfb84",
+    "finalDockerScopeConfirmation": "Claude withdrew the no-install-only narrowing: cover no installation and installed-inactive Agents profiles; preserve active work, required retention, mounted Bots surfaces and explicit controls. Other consensus decisions stand."
+  },
+  "scope": "Read-only implementation review and handoff; only supplemental audit notes changed during this review",
+  "paidInferenceDuringReview": "not-run",
+  "evidence": {
+    "fullValidation": {
+      "log": ".cache/sessions/2026-10-14-consensus-implementation/validate-full-ui-recovery-final.log",
+      "logSha256": "0163de7a5b28adbecb45402c700e28963e39c03bc951bfdcfa5256c4e0f7952d",
+      "exitCode": 0,
+      "provenance": "Root directly observed exit code zero from owned execution session 84433. This retained attestation is not an independently retained raw process-exit receipt; success was not inferred from silent log output.",
+      "uiTestsPassed": 4147,
+      "webTestsPassed": 6977,
+      "additionalNativeHostTestsPassed": 24
+    },
+    "fullNativePackage": {
+      "report": ".cache/v2-validation/package-2fuxyb/result.json",
+      "reportSha256": "70dbf8da7748cab2ed3b064e6a85c5cc208149c40df3c9f0b8e37d50afb22e34",
+      "owner": "scripts/verify-opencode-v2-package.mjs",
+      "passedCases": 53,
+      "sourceDigest": "6736aa6e9a7adaabbeacb7ca4a00083f30836016f5245f8ffb455cfa7efb8411",
+      "remainingMandatoryPackageGates": 0,
+      "cleanupFailures": 0,
+      "scope": "Historical current-source local package qualification, not paid-provider or release qualification"
+    },
+    "application": {
+      "proof": "plan-implement-qualified/proof.json",
+      "retainedLightEvidence": ".cache/qa/native-plan-implement-8FHU3C",
+      "removedPayload": "Only the owned profile and workspace were removed after independent journal scans; this note does not claim those removed inputs remain re-executable.",
+      "journalProvenance": "Root and NativeGate independently observed the actual existing five sealed streams and zero-gap command before cleanup: 946 records. Retained proof is a sanitized observation and manifest, not surviving raw journal data.",
+      "visualSupplement": "plan-implement-qualified/visual-review-supplement.json",
+      "visualSupplementSha256": "cbd82c87e0950f023296d2e2451caa0c6512586233a35855b3a2e617f571bcfd",
+      "newIndividuallyViewedImages": 32,
+      "priorDocumentedIndividuallyViewedImages": 28,
+      "distinctFilenameUnion": 60,
+      "rootVerification": "Verified all 32 supplemental files against the full original manifest and actual SHA-256/byte counts; independently viewed four representative actual PNGs. The supplement is a new review, not a retroactive assertion about earlier review coverage."
+    }
+  },
+  "limits": [
+    "Any subsequent runtime or QA source correction requires qualification for its new source cohort.",
+    "Paid original replay, held-out tasks, helper physical requests, matched application resource/idle measurements and hosted release gates remain outstanding.",
+    "QA1 remains the reusable V1 profile; its sign-ins and data were not copied or modified by this review. Owner admission is scoped to the running issuer and cannot transfer between agent processes.",
+    "The user's latest instruction assigns implementation and presentation of the final consensus plan to Codex; Claude remains the critical reviewer.",
+    "The existing storage owner was checked after adding explicit report/log citations: both exact evidence paths are fully protected and block removal. This does not replace copying final small sanitized evidence into the audit."
+  ]
+}

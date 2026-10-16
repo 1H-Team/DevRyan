@@ -1,0 +1,2021 @@
+{
+  "schemaVersion": 1,
+  "status": "passed",
+  "scope": "complete-original-53-case-native-package-gate-with-pending-title-extension",
+  "reportSha256": "a3e9491b36ce00748d9f330d1c8a840b077f8f1fa24a62728aa9c8af24d73c08",
+  "supersededTestedCohorts": [
+    {
+      "run": "package-qPv1PW",
+      "status": "passed",
+      "caseCount": 53,
+      "supersededScope": "before-journal-coverage-correction",
+      "reportSha256": "e84b710aeeef4adab3b65a610ef7e06825b488205199663d4725e938baf14b90",
+      "sourceDigest": "845866df9fb3b4e8fe5fd738ff58f4358e6a761736355a5354ebdf3247cd3582"
+    },
+    {
+      "run": "package-GNAUvE",
+      "status": "passed",
+      "caseCount": 53,
+      "supersededScope": "before-receipt-status-omission-correction",
+      "reportSha256": "19f8e3ce7430f4c6b88ba3244b16b172bf0a8a763fdfd7bfd31160a81b6354ee",
+      "sourceDigest": "23afa6729b0ace1d985246250c5a04a1e1838b627243eb5e21916f736b080de0"
+    },
+    {
+      "run": "package-zY1S70",
+      "status": "passed",
+      "caseCount": 53,
+      "supersededScope": "before-rpc-summary-projection-correction",
+      "reportSha256": "34f3a9d2a693fdca905c898c02ad6f7e10d1834db1860cbedb598931fdb257dc",
+      "sourceDigest": "1811490b3350c11507c4593578b6f34b427a7f6409b2142002bfd1f729e470c8"
+    },
+    {
+      "run": "package-vp970n",
+      "status": "passed",
+      "caseCount": 53,
+      "supersededScope": "before-native-durable-finish-timing-correction",
+      "reportSha256": "eb23bb1e7f49a2905020cb673ab79a3843b4a5e081b30ba5c45b4a5d8efba169",
+      "sourceDigest": "63703c2a1215bd9527c159509dfccc1201cc0c28cc254b83a689877ac80cc52e"
+    },
+    {
+      "run": "package-vo4xeA",
+      "status": "passed",
+      "caseCount": 53,
+      "supersededScope": "before-native-local-header-build-identity-binding",
+      "reportSha256": "d5d3ddfa675e42b43d987a1de107e96a131a4c8e4ec44e4c2b5295fb06b5f0c7",
+      "sourceDigest": "8a2c2f71e43dbe5336c601b816465ea83ba1da44a1609e39c2227f647df6bc81"
+    }
+  ],
+  "buildID": "20fb64d8cbead7063d32c58494b867e05698c30c120a869219ae8d9d04049af1",
+  "artifactManifestSha256": "b6eeb7a64d982c18827cde4a870aef9f1a1a2f0d2dc56ec0c62e1046bfbdff77",
+  "sourceDigest": "82b7377b848307b5f6e1a91292364c90a611412ab4ad53f92f87ecd782036ad9",
+  "runnerSha256": "49f3f8abd50418d58b22263afa887ce3c8e36f9d2d98f48be8eb8fc5e05a4951",
+  "sourceCohort": {
+    "valid": true,
+    "changedPaths": []
+  },
+  "caseCount": 53,
+  "cases": [
+    {
+      "id": "compiled-production-artifacts",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-current-build-inputs",
+      "status": "passed"
+    },
+    {
+      "id": "portable-artifact-tamper-refusal",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-assets-source-denied",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-empty-initialization-lost-ack-resume",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-empty-initialization-idempotent-replay",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-fresh-native-initialization",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-credential-target-contract-refusal",
+      "status": "passed"
+    },
+    {
+      "id": "fresh-v2-baseline-checkpoint",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-clone-layout-legacy",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-v2-derived-bundle-clone",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-claude-selected-profile-credential-ipc",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-ready-catalog",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-helper-hang-independent-native-conversation",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-human-queue-child-idle-and-await-race",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-human-explicit-steer-with-busy-child",
+      "status": "passed"
+    },
+    {
+      "id": "package-read",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-existing-workspace-write",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-existing-workspace-revert-redo",
+      "status": "passed"
+    },
+    {
+      "id": "package-write",
+      "status": "passed"
+    },
+    {
+      "id": "second-location-write",
+      "status": "passed"
+    },
+    {
+      "id": "second-location-read-isolation",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-retained-initial-input",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-retained-multiple-inputs",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-retained-input-discard-lost-ack",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-retained-shell-notification",
+      "status": "passed"
+    },
+    {
+      "id": "package-edit",
+      "status": "passed"
+    },
+    {
+      "id": "package-patch",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-formatter",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-formatter-subprocess",
+      "status": "passed"
+    },
+    {
+      "id": "cli-diagnostic-seed",
+      "status": "passed"
+    },
+    {
+      "id": "cli-diagnostic-fail",
+      "status": "passed"
+    },
+    {
+      "id": "cli-diagnostic-fix",
+      "status": "passed"
+    },
+    {
+      "id": "cli-diagnostic-pass",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-cli-diagnostic-fail-fix-pass",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-reviewed-command",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-manual-compaction",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-native-observation",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-after-replacement-write",
+      "status": "passed"
+    },
+    {
+      "id": "tracked-compiled-pending-replacement",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-todo-lost-ack-replacement",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-owned-subtree-removal",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-model-title-persist-once-restart-restore",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-removal-startup-recovery",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-v2-credential-rollback-reconciliation",
+      "status": "passed"
+    },
+    {
+      "id": "candidate-work-rollback-retention",
+      "status": "passed"
+    },
+    {
+      "id": "rollback-selected-native-lifecycle",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-clone-layout-fresh-install",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-fresh-install-clone",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-fresh-install-rollback",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-seeded-credential-first-boot",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-parent-death-drain",
+      "status": "passed"
+    },
+    {
+      "id": "compiled-durable-journal-roots",
+      "status": "passed"
+    }
+  ],
+  "pendingTitle": {
+    "sessionID": "ses_ebc976aa1ffekZ7n4Jxk6PZnTE",
+    "userMessageID": "msg_1436895c4001iZ14ebmkDYNLSB",
+    "helperRequests": 1,
+    "conversationRequests": 1,
+    "fixtureRefusals": 1,
+    "renameCount": 1,
+    "pendingAttemptCount": 1,
+    "originalControllerID": "d1254eaa-a431-4099-bd30-846947e21b74",
+    "replacementControllerID": "14c88ca2-5223-4b8e-be9e-1fa74a7b8058",
+    "outboxCleared": true,
+    "source": "durable-pending-candidate-fresh-controller-native-rename-without-regeneration"
+  },
+  "modelTitle": {
+    "sessionID": "ses_ebc976fcaffe6h7qz46Wz8Jc64",
+    "userMessageID": "msg_14368909d001k1ntxISzcxndHg",
+    "helperRequests": 1,
+    "conversationRequests": 1,
+    "renameCount": 1,
+    "source": "actual-compiled-no-tools-model-title-native-rename-and-supervised-restart-restore"
+  },
+  "cleanupFailureCount": 0,
+  "remainingMandatoryGates": [],
+  "priorTestedCohorts": [
+    {
+      "schemaVersion": 1,
+      "status": "passed",
+      "scope": "complete-original-53-case-native-package-gate-with-pending-title-extension",
+      "reportSha256": "359bf7942832c152536c7c0d20534b64988910c5f0e509523dac39a282e602e9",
+      "supersededTestedCohorts": [
+        {
+          "run": "package-qPv1PW",
+          "status": "passed",
+          "caseCount": 53,
+          "supersededScope": "before-journal-coverage-correction",
+          "reportSha256": "e84b710aeeef4adab3b65a610ef7e06825b488205199663d4725e938baf14b90",
+          "sourceDigest": "845866df9fb3b4e8fe5fd738ff58f4358e6a761736355a5354ebdf3247cd3582"
+        },
+        {
+          "run": "package-GNAUvE",
+          "status": "passed",
+          "caseCount": 53,
+          "supersededScope": "before-receipt-status-omission-correction",
+          "reportSha256": "19f8e3ce7430f4c6b88ba3244b16b172bf0a8a763fdfd7bfd31160a81b6354ee",
+          "sourceDigest": "23afa6729b0ace1d985246250c5a04a1e1838b627243eb5e21916f736b080de0"
+        },
+        {
+          "run": "package-zY1S70",
+          "status": "passed",
+          "caseCount": 53,
+          "supersededScope": "before-rpc-summary-projection-correction",
+          "reportSha256": "34f3a9d2a693fdca905c898c02ad6f7e10d1834db1860cbedb598931fdb257dc",
+          "sourceDigest": "1811490b3350c11507c4593578b6f34b427a7f6409b2142002bfd1f729e470c8"
+        },
+        {
+          "run": "package-vp970n",
+          "status": "passed",
+          "caseCount": 53,
+          "supersededScope": "before-native-durable-finish-timing-correction",
+          "reportSha256": "eb23bb1e7f49a2905020cb673ab79a3843b4a5e081b30ba5c45b4a5d8efba169",
+          "sourceDigest": "63703c2a1215bd9527c159509dfccc1201cc0c28cc254b83a689877ac80cc52e"
+        },
+        {
+          "run": "package-vo4xeA",
+          "status": "passed",
+          "caseCount": 53,
+          "supersededScope": "before-native-local-header-build-identity-binding",
+          "reportSha256": "d5d3ddfa675e42b43d987a1de107e96a131a4c8e4ec44e4c2b5295fb06b5f0c7",
+          "sourceDigest": "8a2c2f71e43dbe5336c601b816465ea83ba1da44a1609e39c2227f647df6bc81"
+        }
+      ],
+      "buildID": "20fb64d8cbead7063d32c58494b867e05698c30c120a869219ae8d9d04049af1",
+      "artifactManifestSha256": "b6eeb7a64d982c18827cde4a870aef9f1a1a2f0d2dc56ec0c62e1046bfbdff77",
+      "sourceDigest": "e881dda5fdf20ef9d7cac77430ea5fc6f50de3a8e50dfc39e708d87a1b73e447",
+      "runnerSha256": "49f3f8abd50418d58b22263afa887ce3c8e36f9d2d98f48be8eb8fc5e05a4951",
+      "sourceCohort": {
+        "valid": true,
+        "changedPaths": []
+      },
+      "caseCount": 53,
+      "cases": [
+        {
+          "id": "compiled-production-artifacts",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-current-build-inputs",
+          "status": "passed"
+        },
+        {
+          "id": "portable-artifact-tamper-refusal",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-assets-source-denied",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-empty-initialization-lost-ack-resume",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-empty-initialization-idempotent-replay",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-fresh-native-initialization",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-credential-target-contract-refusal",
+          "status": "passed"
+        },
+        {
+          "id": "fresh-v2-baseline-checkpoint",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-clone-layout-legacy",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-v2-derived-bundle-clone",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-claude-selected-profile-credential-ipc",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-ready-catalog",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-helper-hang-independent-native-conversation",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-human-queue-child-idle-and-await-race",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-human-explicit-steer-with-busy-child",
+          "status": "passed"
+        },
+        {
+          "id": "package-read",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-existing-workspace-write",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-existing-workspace-revert-redo",
+          "status": "passed"
+        },
+        {
+          "id": "package-write",
+          "status": "passed"
+        },
+        {
+          "id": "second-location-write",
+          "status": "passed"
+        },
+        {
+          "id": "second-location-read-isolation",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-retained-initial-input",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-retained-multiple-inputs",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-retained-input-discard-lost-ack",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-retained-shell-notification",
+          "status": "passed"
+        },
+        {
+          "id": "package-edit",
+          "status": "passed"
+        },
+        {
+          "id": "package-patch",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-formatter",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-formatter-subprocess",
+          "status": "passed"
+        },
+        {
+          "id": "cli-diagnostic-seed",
+          "status": "passed"
+        },
+        {
+          "id": "cli-diagnostic-fail",
+          "status": "passed"
+        },
+        {
+          "id": "cli-diagnostic-fix",
+          "status": "passed"
+        },
+        {
+          "id": "cli-diagnostic-pass",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-cli-diagnostic-fail-fix-pass",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-reviewed-command",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-manual-compaction",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-native-observation",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-after-replacement-write",
+          "status": "passed"
+        },
+        {
+          "id": "tracked-compiled-pending-replacement",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-todo-lost-ack-replacement",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-owned-subtree-removal",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-model-title-persist-once-restart-restore",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-removal-startup-recovery",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-v2-credential-rollback-reconciliation",
+          "status": "passed"
+        },
+        {
+          "id": "candidate-work-rollback-retention",
+          "status": "passed"
+        },
+        {
+          "id": "rollback-selected-native-lifecycle",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-clone-layout-fresh-install",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-fresh-install-clone",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-fresh-install-rollback",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-seeded-credential-first-boot",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-parent-death-drain",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-durable-journal-roots",
+          "status": "passed"
+        }
+      ],
+      "pendingTitle": {
+        "sessionID": "ses_ebd813738ffe0Lt6HWDS2kkEQ2",
+        "userMessageID": "msg_1427ec92d0016e7X8qsol8Im5B",
+        "helperRequests": 1,
+        "conversationRequests": 1,
+        "fixtureRefusals": 1,
+        "renameCount": 1,
+        "pendingAttemptCount": 1,
+        "originalControllerID": "06cd0f5e-d7d1-4129-80f1-5d7834260309",
+        "replacementControllerID": "78e48148-86bd-4b2a-81c4-df9427fa9cea",
+        "outboxCleared": true,
+        "source": "durable-pending-candidate-fresh-controller-native-rename-without-regeneration"
+      },
+      "modelTitle": {
+        "sessionID": "ses_ebd813c17ffe1HyUil1s0Mb88d",
+        "userMessageID": "msg_1427ec457001Smr5txSoMKdrq6",
+        "helperRequests": 1,
+        "conversationRequests": 1,
+        "renameCount": 1,
+        "source": "actual-compiled-no-tools-model-title-native-rename-and-supervised-restart-restore"
+      },
+      "cleanupFailureCount": 0,
+      "remainingMandatoryGates": [],
+      "testedRun": "package-c6ibgl",
+      "inspection": {
+        "scope": "Independent read-only inspection of emitted report/run metadata, all exact original53case IDs in order, internally recomputed source digest and every current listed source hash, runner hash, physical native manifest and retained finite journal gap/tee report; no independently executed native qualification.",
+        "executionAttestation": "Parent directly observed exec78743 exit0.",
+        "reportOwner": "scripts/verify-opencode-v2-package.mjs",
+        "runStatus": "passed",
+        "original53CaseIDsUnchanged": true,
+        "original53CaseOrderUnchanged": true,
+        "sourceDigestInternallyVerified": true,
+        "sourceFileCount": 1057,
+        "currentSourceFilesHashed": 1057,
+        "changedCurrentSourceFiles": 0,
+        "missingCurrentSourceFiles": 0,
+        "runnerHashMatches": true,
+        "nativeManifestHashMatches": true,
+        "compiledCurrentBuildInputs": 4832,
+        "diagnostic": false,
+        "preflight": false
+      },
+      "journalScope": {
+        "source": "Emitted compiled-durable-journal-roots case plus independently reread empty retained gap-command logs and tee reconciliation; no raw journal replay claimed.",
+        "required": 3,
+        "checked": 3,
+        "passed": 3,
+        "unavailable": 0,
+        "roots": [
+          {
+            "id": "candidate",
+            "status": "passed",
+            "records": 695,
+            "chunks": 22,
+            "gapCommandExitCode": 0,
+            "explicitGapRecords": 0,
+            "gapLogBytes": 0,
+            "gapLogSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "reconciledLabels": 4,
+            "allLabelsReconciled": true,
+            "writerModes": [
+              "inherited",
+              "sealed"
+            ],
+            "rawJournalDirectoryPresentAtInspection": false
+          },
+          {
+            "id": "baseline",
+            "status": "passed",
+            "records": 30,
+            "chunks": 3,
+            "gapCommandExitCode": 0,
+            "explicitGapRecords": 0,
+            "gapLogBytes": 0,
+            "gapLogSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "reconciledLabels": 2,
+            "allLabelsReconciled": true,
+            "writerModes": [
+              "sealed"
+            ],
+            "rawJournalDirectoryPresentAtInspection": false
+          },
+          {
+            "id": "parent-death",
+            "status": "passed",
+            "records": 228,
+            "chunks": 12,
+            "gapCommandExitCode": 0,
+            "explicitGapRecords": 0,
+            "gapLogBytes": 0,
+            "gapLogSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "reconciledLabels": 2,
+            "allLabelsReconciled": true,
+            "writerModes": [
+              "crashed",
+              "inherited",
+              "sealed"
+            ],
+            "rawJournalDirectoryPresentAtInspection": true
+          }
+        ],
+        "sumRootRecords": 953,
+        "sumRootChunks": 37,
+        "limits": "Counts are per-root and include inherited/cloned records, not a unique fresh-event total. Crashed writer reconciliation is a reported lower-bound fence; intentional failure scenarios are not a zero-error assertion. Raw runtime payload cleanup is independent from retained finite report coverage."
+      },
+      "negativeIntegrationWitness": {
+        "run": "package-a1SwYF",
+        "reportSha256": "43a1cc3ba2deb1f17467b7307bba24376ca85ccdb50292875fe99d96c5f9ee03",
+        "status": "failed",
+        "passedCases": 27,
+        "lastPassedCase": "package-edit",
+        "errorName": "OpenCodeClientError",
+        "errorCode": "selection_change_while_busy",
+        "sourceDigest": "1a4455d7ea9066baaa6597d69cbef6d6ee7461e27f022b6a1f8dc736910c1d2e",
+        "runnerSha256": "7dcf4e46f8df1eb5f1f880eebd270311d161208386d39a894022a8f3ffa23e11",
+        "sourceCohortValid": true,
+        "changedPaths": [],
+        "cleanupFailureCount": 0,
+        "finiteJournalProof": {
+          "path": ".cache/sessions/2026-10-15-consensus-finishing/journal53-drain-failure.json",
+          "sha256": "fa708fe67ac1b444fa34d2350dfa561288d28a3dc67176b05c0ea2a69f98d111",
+          "identity": {
+            "sessionID": "ses_ebd8602a7ffeYUZxARGQQPzgFR",
+            "userMessageID": "msg_1427acd48001W8WiMm7wwettMd",
+            "assistantMessageID": "msg_1427ad7340015v1hgm5Jwfo5BG",
+            "stepEventID": "evt_1427ad817001uxpDG37YC3025y",
+            "attemptSpanID": "892ed60fd4a77bb0",
+            "controllerInstanceID": "b2444b03-0b7b-433e-850f-70e8b912750d"
+          },
+          "journalCoverage": [
+            {
+              "id": "candidate",
+              "directory": ".cache/v2-validation/package-a1SwYF/bundles/bundles/candidate/web-data/harness/journal",
+              "available": true,
+              "readComplete": true,
+              "records": 400,
+              "chunks": 17,
+              "manifestRows": 16,
+              "manifestRecords": 400,
+              "manifestGaps": 0,
+              "explicitAndObservationGapRecords": 0,
+              "errorRows": 0,
+              "recordTypes": {
+                "lifecycle": 400
+              },
+              "gapCheck": {
+                "command": "node scripts/journal.mjs --dir .cache/v2-validation/package-a1SwYF/bundles/bundles/candidate/web-data/harness/journal gaps --verify",
+                "observedExitCode": 0,
+                "stdoutBytes": 0,
+                "scope": "Independently executed before journal interpretation; no gap output."
+              }
+            },
+            {
+              "id": "baseline",
+              "directory": ".cache/v2-validation/package-a1SwYF/bundles/bundles/baseline/web-data/harness/journal",
+              "available": true,
+              "readComplete": true,
+              "records": 18,
+              "chunks": 2,
+              "manifestRows": 2,
+              "manifestRecords": 18,
+              "manifestGaps": 0,
+              "explicitAndObservationGapRecords": 0,
+              "errorRows": 0,
+              "recordTypes": {
+                "lifecycle": 18
+              },
+              "gapCheck": {
+                "command": "node scripts/journal.mjs --dir .cache/v2-validation/package-a1SwYF/bundles/bundles/baseline/web-data/harness/journal gaps --verify",
+                "observedExitCode": 0,
+                "stdoutBytes": 0,
+                "scope": "Independently executed before journal interpretation; no gap output."
+              }
+            }
+          ],
+          "canonicalDatabase": {
+            "readOnly": true,
+            "assistants": [
+              {
+                "id": "msg_1427ace1e001QW6R23GvQ0zJ5w",
+                "seq": 55,
+                "type": "assistant",
+                "time_created": 1792116706966,
+                "time_updated": 1792116709048,
+                "completed": 1792116709048,
+                "finish": "tool-calls",
+                "toolCount": 1,
+                "unsettledToolCount": 0
+              },
+              {
+                "id": "msg_1427ad7340015v1hgm5Jwfo5BG",
+                "seq": 62,
+                "type": "assistant",
+                "time_created": 1792116709300,
+                "time_updated": 1792116709522,
+                "completed": 1792116709522,
+                "finish": "stop",
+                "toolCount": 0,
+                "unsettledToolCount": 0
+              }
+            ],
+            "idleSuccessors": [
+              {
+                "id": "msg_1427ad8dc001W7JW8Kd3AU3JfI",
+                "seq": 67,
+                "type": "idle",
+                "time_created": 1792116709596,
+                "time_updated": 1792116709596,
+                "outcome": "succeeded"
+              }
+            ],
+            "session": [
+              {
+                "id": "ses_ebd8602a7ffeYUZxARGQQPzgFR",
+                "time_updated": 1792116709522,
+                "time_idle": 1792116709596,
+                "idle_outcome": "succeeded",
+                "time_suspended": null
+              }
+            ],
+            "completionToIdleMs": 74,
+            "rawStepEndedEventRetained": false,
+            "scope": "Persisted canonical assistant completion and idle successor projection. The event table retains cancellation receipts, not this raw Step.Ended event; no reconstructed raw event is claimed."
+          },
+          "ownedExitMetadata": [
+            {
+              "event": "native-process-exit",
+              "pid": 68715,
+              "code": 0,
+              "signal": null,
+              "expected": true,
+              "instanceID": "b2444b03-0b7b-433e-850f-70e8b912750d",
+              "startedAt": 1792116704902,
+              "stderrBytes": 3307,
+              "receipt": {
+                "terminated": true,
+                "confined": true,
+                "cancelled": false,
+                "exitCode": 0
+              }
+            }
+          ],
+          "errorLog": {
+            "identifiedRelevantUUID": null,
+            "administratorDetailLookup": "not applicable: no relevant Error Log UUID exposed by retained failure or journal evidence"
+          },
+          "conclusion": {
+            "established": [
+              "Latest final assistant stop/completion precedes the exact succeeded native idle successor by74ms.",
+              "Latest writer tool assistant was completed with one settled tool before the final assistant.",
+              "Latest human has no objective-completed or authoritative idle notification in retained lifecycle journal; canonical database supplies the later idle record.",
+              "Observed selection_change_while_busy is retained; journal/report do not timestamp its exact admission check."
+            ],
+            "notEstablished": [
+              "The exact refusal timestamp relative to canonical completion/idle.",
+              "That all time between completed assistant and idle was presentation drain rather than other mandatory runner work."
+            ],
+            "codeCorrelation": "Parent independently identified marker-only QA invoke followed by model-changing patch request; this inspection establishes the canonical completion-before-idle window without changing admission authority."
+          }
+        },
+        "correction": {
+          "scope": "QA-only scenario settlement predicate; production admission, compiled runtime and native artifact unchanged.",
+          "currentRunnerSha256": "49f3f8abd50418d58b22263afa887ce3c8e36f9d2d98f48be8eb8fc5e05a4951",
+          "currentNativeAcceptanceSourceDigest": "e881dda5fdf20ef9d7cac77430ea5fc6f50de3a8e50dfc39e708d87a1b73e447",
+          "predicate": "Exact scenario final marker in an error-free assistant with positive safe completion timestamp AND canonical native session status idle/omitted, within the existing60second wait.",
+          "integrationEvidence": "Original27-case busy-selection refusal followed by complete original53-case passing runtime gate. Separately reported9focused caller tests do not themselves prove the marker-to-idle race; no unit wait-race claim is made."
+        }
+      },
+      "qualificationLimits": {
+        "runtimeVsStatic": "This complete original53 gate is real supervised compiled runtime acceptance. Static closure/signature proof remains separately retained in native-header-bound-artifact.json; it does not substitute for this run.",
+        "packageSourceSha256": "67ca86a7d1b0baacd49b08910b429fc7e9ac3dedddbc9812b50ee005eac5055f",
+        "packageSourceEvidence": "Root-retained frozen packaged production identity; this native report directly carries native acceptance source digest only.",
+        "previousIntegratedFull": {
+          "rootSession": 47915,
+          "rootObservedExitCode": 0,
+          "nativeAcceptanceSourceSha256": "1a4455d7ea9066baaa6597d69cbef6d6ee7461e27f022b6a1f8dc736910c1d2e",
+          "scope": "Passed production/native source before the QA-only strict scenario wait correction; no new production rebuild required solely for this runner change."
+        },
+        "freshFullCurrentNativeAcceptanceSource": "pending for current e881dda5 cohort",
+        "freshPlan": "running per parent6080756; no completed current pass inspected",
+        "freshResourceFivePairs": "pending",
+        "freshQaPackage": "pending",
+        "livePaidAndHosted": "pending"
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "status": "passed",
+      "scope": "complete-original-53-case-native-package-gate-with-pending-title-extension",
+      "reportSha256": "3dc453c28e056b3176e5670dd509ea2309386732853861834f0273427a77b841",
+      "supersededTestedCohorts": [
+        {
+          "run": "package-qPv1PW",
+          "status": "passed",
+          "caseCount": 53,
+          "supersededScope": "before-journal-coverage-correction",
+          "reportSha256": "e84b710aeeef4adab3b65a610ef7e06825b488205199663d4725e938baf14b90",
+          "sourceDigest": "845866df9fb3b4e8fe5fd738ff58f4358e6a761736355a5354ebdf3247cd3582"
+        },
+        {
+          "run": "package-GNAUvE",
+          "status": "passed",
+          "caseCount": 53,
+          "supersededScope": "before-receipt-status-omission-correction",
+          "reportSha256": "19f8e3ce7430f4c6b88ba3244b16b172bf0a8a763fdfd7bfd31160a81b6354ee",
+          "sourceDigest": "23afa6729b0ace1d985246250c5a04a1e1838b627243eb5e21916f736b080de0"
+        },
+        {
+          "run": "package-zY1S70",
+          "status": "passed",
+          "caseCount": 53,
+          "supersededScope": "before-rpc-summary-projection-correction",
+          "reportSha256": "34f3a9d2a693fdca905c898c02ad6f7e10d1834db1860cbedb598931fdb257dc",
+          "sourceDigest": "1811490b3350c11507c4593578b6f34b427a7f6409b2142002bfd1f729e470c8"
+        },
+        {
+          "run": "package-vp970n",
+          "status": "passed",
+          "caseCount": 53,
+          "supersededScope": "before-native-durable-finish-timing-correction",
+          "reportSha256": "eb23bb1e7f49a2905020cb673ab79a3843b4a5e081b30ba5c45b4a5d8efba169",
+          "sourceDigest": "63703c2a1215bd9527c159509dfccc1201cc0c28cc254b83a689877ac80cc52e"
+        },
+        {
+          "run": "package-vo4xeA",
+          "status": "passed",
+          "caseCount": 53,
+          "supersededScope": "before-native-local-header-build-identity-binding",
+          "reportSha256": "d5d3ddfa675e42b43d987a1de107e96a131a4c8e4ec44e4c2b5295fb06b5f0c7",
+          "sourceDigest": "8a2c2f71e43dbe5336c601b816465ea83ba1da44a1609e39c2227f647df6bc81"
+        }
+      ],
+      "buildID": "1233d8092c176dd5cdf9066e5d82bce49390fd919c16f85c948884807ac339c0",
+      "artifactManifestSha256": "0af9e6eb1f540d6e228a2d1e217929be04571b02e9d81ae9e7517f7190df9725",
+      "sourceDigest": "4d7dc496b369b2160f3b0b0812dd54d2e006f8a93d89543d688648be53014465",
+      "runnerSha256": "7dcf4e46f8df1eb5f1f880eebd270311d161208386d39a894022a8f3ffa23e11",
+      "sourceCohort": {
+        "valid": true,
+        "changedPaths": []
+      },
+      "caseCount": 53,
+      "cases": [
+        {
+          "id": "compiled-production-artifacts",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-current-build-inputs",
+          "status": "passed"
+        },
+        {
+          "id": "portable-artifact-tamper-refusal",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-assets-source-denied",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-empty-initialization-lost-ack-resume",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-empty-initialization-idempotent-replay",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-fresh-native-initialization",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-credential-target-contract-refusal",
+          "status": "passed"
+        },
+        {
+          "id": "fresh-v2-baseline-checkpoint",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-clone-layout-legacy",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-v2-derived-bundle-clone",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-claude-selected-profile-credential-ipc",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-ready-catalog",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-helper-hang-independent-native-conversation",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-human-queue-child-idle-and-await-race",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-human-explicit-steer-with-busy-child",
+          "status": "passed"
+        },
+        {
+          "id": "package-read",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-existing-workspace-write",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-existing-workspace-revert-redo",
+          "status": "passed"
+        },
+        {
+          "id": "package-write",
+          "status": "passed"
+        },
+        {
+          "id": "second-location-write",
+          "status": "passed"
+        },
+        {
+          "id": "second-location-read-isolation",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-retained-initial-input",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-retained-multiple-inputs",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-retained-input-discard-lost-ack",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-retained-shell-notification",
+          "status": "passed"
+        },
+        {
+          "id": "package-edit",
+          "status": "passed"
+        },
+        {
+          "id": "package-patch",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-formatter",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-formatter-subprocess",
+          "status": "passed"
+        },
+        {
+          "id": "cli-diagnostic-seed",
+          "status": "passed"
+        },
+        {
+          "id": "cli-diagnostic-fail",
+          "status": "passed"
+        },
+        {
+          "id": "cli-diagnostic-fix",
+          "status": "passed"
+        },
+        {
+          "id": "cli-diagnostic-pass",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-cli-diagnostic-fail-fix-pass",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-reviewed-command",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-manual-compaction",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-native-observation",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-after-replacement-write",
+          "status": "passed"
+        },
+        {
+          "id": "tracked-compiled-pending-replacement",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-todo-lost-ack-replacement",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-owned-subtree-removal",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-model-title-persist-once-restart-restore",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-removal-startup-recovery",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-v2-credential-rollback-reconciliation",
+          "status": "passed"
+        },
+        {
+          "id": "candidate-work-rollback-retention",
+          "status": "passed"
+        },
+        {
+          "id": "rollback-selected-native-lifecycle",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-clone-layout-fresh-install",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-fresh-install-clone",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-fresh-install-rollback",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-seeded-credential-first-boot",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-parent-death-drain",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-durable-journal-roots",
+          "status": "passed"
+        }
+      ],
+      "pendingTitle": {
+        "sessionID": "ses_ebdbe179bffehqRJQjAVdQMAqH",
+        "userMessageID": "msg_14241e8db001zSY2aT3uwAB0IL",
+        "helperRequests": 1,
+        "conversationRequests": 1,
+        "fixtureRefusals": 1,
+        "renameCount": 1,
+        "pendingAttemptCount": 1,
+        "originalControllerID": "1621e1bf-ce9b-417b-9f5d-4456da117a84",
+        "replacementControllerID": "a034e292-b318-43e8-8d4b-4103642b4030",
+        "outboxCleared": true,
+        "source": "durable-pending-candidate-fresh-controller-native-rename-without-regeneration"
+      },
+      "cleanupFailureCount": 0,
+      "remainingMandatoryGates": [],
+      "testedRun": "package-gqaiJw",
+      "inspection": {
+        "scope": "Independent read-only inspection of emitted report/run metadata, exact original53case IDs, internally recomputed source digest, current selected QA/runner hashes and native manifest; no independently executed native qualification.",
+        "executionAttestation": "Parent directly observed exec26138 exit0.",
+        "reportOwner": "scripts/verify-opencode-v2-package.mjs",
+        "runStatus": "passed",
+        "original53CaseIDsUnchanged": true,
+        "sourceDigestInternallyVerified": true,
+        "sourceFileCount": 1057,
+        "currentQaModulesMatch": true,
+        "runnerHashMatches": true,
+        "nativeManifestHashMatches": true,
+        "diagnostic": false,
+        "preflight": false
+      },
+      "journalScope": {
+        "source": "Emitted compiled-durable-journal-roots case; retained report evidence, not an independently rerun journal scan.",
+        "required": 3,
+        "checked": 3,
+        "passed": 3,
+        "unavailable": 0,
+        "roots": [
+          {
+            "id": "candidate",
+            "status": "passed",
+            "records": 702,
+            "chunks": 22,
+            "gapCommandExitCode": 0,
+            "explicitGapRecords": 0,
+            "reconciledLabels": 4,
+            "allLabelsReconciled": true,
+            "writerModes": [
+              "inherited",
+              "sealed"
+            ],
+            "rawJournalDirectoryPresentAtInspection": false
+          },
+          {
+            "id": "baseline",
+            "status": "passed",
+            "records": 30,
+            "chunks": 3,
+            "gapCommandExitCode": 0,
+            "explicitGapRecords": 0,
+            "reconciledLabels": 2,
+            "allLabelsReconciled": true,
+            "writerModes": [
+              "sealed"
+            ],
+            "rawJournalDirectoryPresentAtInspection": false
+          },
+          {
+            "id": "parent-death",
+            "status": "passed",
+            "records": 229,
+            "chunks": 12,
+            "gapCommandExitCode": 0,
+            "explicitGapRecords": 0,
+            "reconciledLabels": 2,
+            "allLabelsReconciled": true,
+            "writerModes": [
+              "crashed",
+              "inherited",
+              "sealed"
+            ],
+            "rawJournalDirectoryPresentAtInspection": true
+          }
+        ],
+        "sumRootRecords": 961,
+        "sumRootChunks": 37,
+        "limits": "Counts are per-root and include inherited/cloned records, not a unique fresh-event total. Crashed writer reconciliation is a reported lower-bound fence; intentional failure scenarios are not a zero-error assertion. Raw runtime payload cleanup is independent from retained finite report coverage."
+      },
+      "qualificationLimits": {
+        "runtimeVsStatic": "This complete original53 gate is real supervised compiled runtime acceptance. Static closure/signature proof remains separately retained in native-header-bound-artifact.json; it does not substitute for this run.",
+        "packageSourceSha256": "74e62eb9b9aa5694ce10f4ebe634302aa806fc0a254b23374049edc3973487b0",
+        "packageSourceEvidence": "Parent retained frozen integrated qualification identity; this native report directly carries native acceptance source digest only.",
+        "freshPlan": "running per parent6047991; no completed pass inspected",
+        "freshResourceFivePairs": "pending",
+        "freshQaPackage": "pending",
+        "livePaidAndHosted": "pending"
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "status": "passed",
+      "scope": "complete-original-53-case-native-package-gate-with-pending-title-extension",
+      "reportSha256": "340e70b23eab5516c41751ec6c080a40a104a5018f315b3192372098adca33fc",
+      "supersededTestedCohorts": [
+        {
+          "run": "package-qPv1PW",
+          "status": "passed",
+          "caseCount": 53,
+          "supersededScope": "before-journal-coverage-correction",
+          "reportSha256": "e84b710aeeef4adab3b65a610ef7e06825b488205199663d4725e938baf14b90",
+          "sourceDigest": "845866df9fb3b4e8fe5fd738ff58f4358e6a761736355a5354ebdf3247cd3582"
+        },
+        {
+          "run": "package-GNAUvE",
+          "status": "passed",
+          "caseCount": 53,
+          "supersededScope": "before-receipt-status-omission-correction",
+          "reportSha256": "19f8e3ce7430f4c6b88ba3244b16b172bf0a8a763fdfd7bfd31160a81b6354ee",
+          "sourceDigest": "23afa6729b0ace1d985246250c5a04a1e1838b627243eb5e21916f736b080de0"
+        },
+        {
+          "run": "package-zY1S70",
+          "status": "passed",
+          "caseCount": 53,
+          "supersededScope": "before-rpc-summary-projection-correction",
+          "reportSha256": "34f3a9d2a693fdca905c898c02ad6f7e10d1834db1860cbedb598931fdb257dc",
+          "sourceDigest": "1811490b3350c11507c4593578b6f34b427a7f6409b2142002bfd1f729e470c8"
+        },
+        {
+          "run": "package-vp970n",
+          "status": "passed",
+          "caseCount": 53,
+          "supersededScope": "before-native-durable-finish-timing-correction",
+          "reportSha256": "eb23bb1e7f49a2905020cb673ab79a3843b4a5e081b30ba5c45b4a5d8efba169",
+          "sourceDigest": "63703c2a1215bd9527c159509dfccc1201cc0c28cc254b83a689877ac80cc52e"
+        },
+        {
+          "run": "package-vo4xeA",
+          "status": "passed",
+          "caseCount": 53,
+          "supersededScope": "before-native-local-header-build-identity-binding",
+          "reportSha256": "d5d3ddfa675e42b43d987a1de107e96a131a4c8e4ec44e4c2b5295fb06b5f0c7",
+          "sourceDigest": "8a2c2f71e43dbe5336c601b816465ea83ba1da44a1609e39c2227f647df6bc81"
+        }
+      ],
+      "buildID": "812a54d1d6535678982f1149148635347924d0be5a9457deb61bf231c1d92213",
+      "artifactManifestSha256": "7521b6bed25ff441a3587c2ff6a7ee81ae50ac0cd5c775d9d390101d0856427b",
+      "sourceDigest": "25d21ea2af71098f0b626dc0bdf86bbf085fe67096d95387e297837dd51b232c",
+      "runnerSha256": "7dcf4e46f8df1eb5f1f880eebd270311d161208386d39a894022a8f3ffa23e11",
+      "sourceCohort": {
+        "valid": true,
+        "changedPaths": []
+      },
+      "caseCount": 53,
+      "cases": [
+        {
+          "id": "compiled-production-artifacts",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-current-build-inputs",
+          "status": "passed"
+        },
+        {
+          "id": "portable-artifact-tamper-refusal",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-assets-source-denied",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-empty-initialization-lost-ack-resume",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-empty-initialization-idempotent-replay",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-fresh-native-initialization",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-credential-target-contract-refusal",
+          "status": "passed"
+        },
+        {
+          "id": "fresh-v2-baseline-checkpoint",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-clone-layout-legacy",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-v2-derived-bundle-clone",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-claude-selected-profile-credential-ipc",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-ready-catalog",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-helper-hang-independent-native-conversation",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-human-queue-child-idle-and-await-race",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-human-explicit-steer-with-busy-child",
+          "status": "passed"
+        },
+        {
+          "id": "package-read",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-existing-workspace-write",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-existing-workspace-revert-redo",
+          "status": "passed"
+        },
+        {
+          "id": "package-write",
+          "status": "passed"
+        },
+        {
+          "id": "second-location-write",
+          "status": "passed"
+        },
+        {
+          "id": "second-location-read-isolation",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-retained-initial-input",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-retained-multiple-inputs",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-retained-input-discard-lost-ack",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-retained-shell-notification",
+          "status": "passed"
+        },
+        {
+          "id": "package-edit",
+          "status": "passed"
+        },
+        {
+          "id": "package-patch",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-formatter",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-formatter-subprocess",
+          "status": "passed"
+        },
+        {
+          "id": "cli-diagnostic-seed",
+          "status": "passed"
+        },
+        {
+          "id": "cli-diagnostic-fail",
+          "status": "passed"
+        },
+        {
+          "id": "cli-diagnostic-fix",
+          "status": "passed"
+        },
+        {
+          "id": "cli-diagnostic-pass",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-cli-diagnostic-fail-fix-pass",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-reviewed-command",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-manual-compaction",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-native-observation",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-after-replacement-write",
+          "status": "passed"
+        },
+        {
+          "id": "tracked-compiled-pending-replacement",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-todo-lost-ack-replacement",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-owned-subtree-removal",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-model-title-persist-once-restart-restore",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-removal-startup-recovery",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-v2-credential-rollback-reconciliation",
+          "status": "passed"
+        },
+        {
+          "id": "candidate-work-rollback-retention",
+          "status": "passed"
+        },
+        {
+          "id": "rollback-selected-native-lifecycle",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-clone-layout-fresh-install",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-fresh-install-clone",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-fresh-install-rollback",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-seeded-credential-first-boot",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-parent-death-drain",
+          "status": "passed"
+        },
+        {
+          "id": "compiled-durable-journal-roots",
+          "status": "passed"
+        }
+      ],
+      "pendingTitle": {
+        "sessionID": "ses_ebfd04029ffe1pBgpmADk5vHvC",
+        "userMessageID": "msg_1402fc048001iSD733UAFYYBgr",
+        "helperRequests": 1,
+        "conversationRequests": 1,
+        "fixtureRefusals": 1,
+        "renameCount": 1,
+        "pendingAttemptCount": 1,
+        "originalControllerID": "02f273ce-8d17-4626-b41f-98594943cc08",
+        "replacementControllerID": "6e426aa2-f028-4257-a0a4-7a1e4cd120b3",
+        "outboxCleared": true,
+        "source": "durable-pending-candidate-fresh-controller-native-rename-without-regeneration"
+      },
+      "cleanupFailureCount": 0,
+      "remainingMandatoryGates": [],
+      "priorTestedCohorts": [
+        {
+          "schemaVersion": 1,
+          "status": "passed",
+          "scope": "complete-original-53-case-native-package-gate-with-pending-title-extension",
+          "reportSha256": "54219f8bbeda419dc4b3710f82a33d9ee724e36261f44ba2a01212d10028c289",
+          "buildID": "812a54d1d6535678982f1149148635347924d0be5a9457deb61bf231c1d92213",
+          "artifactManifestSha256": "7521b6bed25ff441a3587c2ff6a7ee81ae50ac0cd5c775d9d390101d0856427b",
+          "sourceDigest": "8670acb43b2d0c850e52c6e7e15198b8ebd0225a48fc0f64ecc0359bed3c3b72",
+          "runnerSha256": "7dcf4e46f8df1eb5f1f880eebd270311d161208386d39a894022a8f3ffa23e11",
+          "sourceCohort": {
+            "valid": true,
+            "changedPaths": []
+          },
+          "caseCount": 53,
+          "cases": [
+            {
+              "id": "compiled-production-artifacts",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-current-build-inputs",
+              "status": "passed"
+            },
+            {
+              "id": "portable-artifact-tamper-refusal",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-assets-source-denied",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-empty-initialization-lost-ack-resume",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-empty-initialization-idempotent-replay",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-fresh-native-initialization",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-credential-target-contract-refusal",
+              "status": "passed"
+            },
+            {
+              "id": "fresh-v2-baseline-checkpoint",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-clone-layout-legacy",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-v2-derived-bundle-clone",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-claude-selected-profile-credential-ipc",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-ready-catalog",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-helper-hang-independent-native-conversation",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-human-queue-child-idle-and-await-race",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-human-explicit-steer-with-busy-child",
+              "status": "passed"
+            },
+            {
+              "id": "package-read",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-existing-workspace-write",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-existing-workspace-revert-redo",
+              "status": "passed"
+            },
+            {
+              "id": "package-write",
+              "status": "passed"
+            },
+            {
+              "id": "second-location-write",
+              "status": "passed"
+            },
+            {
+              "id": "second-location-read-isolation",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-retained-initial-input",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-retained-multiple-inputs",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-retained-input-discard-lost-ack",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-retained-shell-notification",
+              "status": "passed"
+            },
+            {
+              "id": "package-edit",
+              "status": "passed"
+            },
+            {
+              "id": "package-patch",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-formatter",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-formatter-subprocess",
+              "status": "passed"
+            },
+            {
+              "id": "cli-diagnostic-seed",
+              "status": "passed"
+            },
+            {
+              "id": "cli-diagnostic-fail",
+              "status": "passed"
+            },
+            {
+              "id": "cli-diagnostic-fix",
+              "status": "passed"
+            },
+            {
+              "id": "cli-diagnostic-pass",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-cli-diagnostic-fail-fix-pass",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-reviewed-command",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-manual-compaction",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-native-observation",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-after-replacement-write",
+              "status": "passed"
+            },
+            {
+              "id": "tracked-compiled-pending-replacement",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-todo-lost-ack-replacement",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-owned-subtree-removal",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-model-title-persist-once-restart-restore",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-removal-startup-recovery",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-v2-credential-rollback-reconciliation",
+              "status": "passed"
+            },
+            {
+              "id": "candidate-work-rollback-retention",
+              "status": "passed"
+            },
+            {
+              "id": "rollback-selected-native-lifecycle",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-clone-layout-fresh-install",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-fresh-install-clone",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-fresh-install-rollback",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-seeded-credential-first-boot",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-parent-death-drain",
+              "status": "passed"
+            },
+            {
+              "id": "compiled-durable-journal-roots",
+              "status": "passed"
+            }
+          ],
+          "pendingTitle": {
+            "sessionID": "ses_ec02adf44ffeU3KlJc74nhRf6s",
+            "userMessageID": "msg_13fd52133001Uo37WYI5nvwS0a",
+            "helperRequests": 1,
+            "conversationRequests": 1,
+            "fixtureRefusals": 1,
+            "renameCount": 1,
+            "pendingAttemptCount": 1,
+            "originalControllerID": "23933b29-8d64-498e-a4f5-26d99df88b81",
+            "replacementControllerID": "5fd31773-b268-4fb3-9377-89e3e562d323",
+            "outboxCleared": true,
+            "source": "durable-pending-candidate-fresh-controller-native-rename-without-regeneration"
+          },
+          "cleanupFailureCount": 0,
+          "remainingMandatoryGates": [],
+          "evidenceStatus": "historical",
+          "currentQualification": false,
+          "testedRun": "package-0gwnbE",
+          "historicalScope": "Passed with the header-bound artifact before the QA1 staged/live apply correction. All formerly current proof fields remain here; this cohort cannot admit the corrected QA runner."
+        }
+      ],
+      "testedRun": "package-4fG93B",
+      "inspection": {
+        "scope": "Independent read-only inspection of the emitted report and run metadata, current QA module hashes, runner hash and native manifest hash; no independently executed native gate.",
+        "executionAttestation": "Parent directly observed exec19946 exit 0.",
+        "reportOwner": "scripts/verify-opencode-v2-package.mjs",
+        "runStatus": "passed",
+        "original53CaseIDsUnchanged": true,
+        "sourceDigestInternallyVerified": true,
+        "currentQaModulesMatch": true,
+        "runnerHashMatches": true,
+        "nativeManifestHashMatches": true
+      }
+    }
+  ],
+  "testedRun": "package-OL3XJg",
+  "inspection": {
+    "scope": "Independent read-only inspection of emitted report/run metadata, all exact original53case IDs in order, internally recomputed source digest and every current listed source hash, runner hash, physical native manifest and retained finite journal gap/tee report; no independently executed native qualification.",
+    "executionAttestation": "Parent directly observed exec22021 exit0; this reader independently inspected the emitted report rather than rerunning qualification.",
+    "reportOwner": "scripts/verify-opencode-v2-package.mjs",
+    "runStatus": "passed",
+    "original53CaseIDsUnchanged": true,
+    "original53CaseOrderUnchanged": true,
+    "sourceDigestInternallyVerified": true,
+    "sourceFileCount": 1057,
+    "currentSourceFilesHashed": 1057,
+    "changedCurrentSourceFiles": 0,
+    "missingCurrentSourceFiles": 0,
+    "runnerHashMatches": true,
+    "nativeManifestHashMatches": true,
+    "compiledCurrentBuildInputs": 4832,
+    "diagnostic": false,
+    "preflight": false
+  },
+  "journalScope": {
+    "source": "Emitted compiled-durable-journal-roots case plus independently reread empty retained gap-command logs and tee reconciliation; no raw journal replay claimed.",
+    "required": 3,
+    "checked": 3,
+    "passed": 3,
+    "unavailable": 0,
+    "roots": [
+      {
+        "id": "candidate",
+        "status": "passed",
+        "records": 698,
+        "chunks": 22,
+        "gapCommandExitCode": 0,
+        "explicitGapRecords": 0,
+        "gapLogBytes": 0,
+        "gapLogSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "reconciledLabels": 4,
+        "allLabelsReconciled": true,
+        "writerModes": [
+          "inherited",
+          "sealed"
+        ],
+        "rawJournalDirectoryPresentAtInspection": false
+      },
+      {
+        "id": "baseline",
+        "status": "passed",
+        "records": 30,
+        "chunks": 3,
+        "gapCommandExitCode": 0,
+        "explicitGapRecords": 0,
+        "gapLogBytes": 0,
+        "gapLogSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "reconciledLabels": 2,
+        "allLabelsReconciled": true,
+        "writerModes": [
+          "sealed"
+        ],
+        "rawJournalDirectoryPresentAtInspection": false
+      },
+      {
+        "id": "parent-death",
+        "status": "passed",
+        "records": 229,
+        "chunks": 12,
+        "gapCommandExitCode": 0,
+        "explicitGapRecords": 0,
+        "gapLogBytes": 0,
+        "gapLogSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "reconciledLabels": 2,
+        "allLabelsReconciled": true,
+        "writerModes": [
+          "crashed",
+          "inherited",
+          "sealed"
+        ],
+        "rawJournalDirectoryPresentAtInspection": true
+      }
+    ],
+    "sumRootRecords": 957,
+    "sumRootChunks": 37,
+    "limits": "Counts are per-root and include inherited/cloned records, not a unique fresh-event total. Crashed writer reconciliation is a reported lower-bound fence; intentional failure scenarios are not a zero-error assertion. Raw runtime payload cleanup is independent from retained finite report coverage."
+  },
+  "negativeIntegrationWitness": {
+    "run": "package-a1SwYF",
+    "reportSha256": "43a1cc3ba2deb1f17467b7307bba24376ca85ccdb50292875fe99d96c5f9ee03",
+    "status": "failed",
+    "passedCases": 27,
+    "lastPassedCase": "package-edit",
+    "errorName": "OpenCodeClientError",
+    "errorCode": "selection_change_while_busy",
+    "sourceDigest": "1a4455d7ea9066baaa6597d69cbef6d6ee7461e27f022b6a1f8dc736910c1d2e",
+    "runnerSha256": "7dcf4e46f8df1eb5f1f880eebd270311d161208386d39a894022a8f3ffa23e11",
+    "sourceCohortValid": true,
+    "changedPaths": [],
+    "cleanupFailureCount": 0,
+    "finiteJournalProof": {
+      "path": ".cache/sessions/2026-10-15-consensus-finishing/journal53-drain-failure.json",
+      "sha256": "fa708fe67ac1b444fa34d2350dfa561288d28a3dc67176b05c0ea2a69f98d111",
+      "identity": {
+        "sessionID": "ses_ebd8602a7ffeYUZxARGQQPzgFR",
+        "userMessageID": "msg_1427acd48001W8WiMm7wwettMd",
+        "assistantMessageID": "msg_1427ad7340015v1hgm5Jwfo5BG",
+        "stepEventID": "evt_1427ad817001uxpDG37YC3025y",
+        "attemptSpanID": "892ed60fd4a77bb0",
+        "controllerInstanceID": "b2444b03-0b7b-433e-850f-70e8b912750d"
+      },
+      "journalCoverage": [
+        {
+          "id": "candidate",
+          "directory": ".cache/v2-validation/package-a1SwYF/bundles/bundles/candidate/web-data/harness/journal",
+          "available": true,
+          "readComplete": true,
+          "records": 400,
+          "chunks": 17,
+          "manifestRows": 16,
+          "manifestRecords": 400,
+          "manifestGaps": 0,
+          "explicitAndObservationGapRecords": 0,
+          "errorRows": 0,
+          "recordTypes": {
+            "lifecycle": 400
+          },
+          "gapCheck": {
+            "command": "node scripts/journal.mjs --dir .cache/v2-validation/package-a1SwYF/bundles/bundles/candidate/web-data/harness/journal gaps --verify",
+            "observedExitCode": 0,
+            "stdoutBytes": 0,
+            "scope": "Independently executed before journal interpretation; no gap output."
+          }
+        },
+        {
+          "id": "baseline",
+          "directory": ".cache/v2-validation/package-a1SwYF/bundles/bundles/baseline/web-data/harness/journal",
+          "available": true,
+          "readComplete": true,
+          "records": 18,
+          "chunks": 2,
+          "manifestRows": 2,
+          "manifestRecords": 18,
+          "manifestGaps": 0,
+          "explicitAndObservationGapRecords": 0,
+          "errorRows": 0,
+          "recordTypes": {
+            "lifecycle": 18
+          },
+          "gapCheck": {
+            "command": "node scripts/journal.mjs --dir .cache/v2-validation/package-a1SwYF/bundles/bundles/baseline/web-data/harness/journal gaps --verify",
+            "observedExitCode": 0,
+            "stdoutBytes": 0,
+            "scope": "Independently executed before journal interpretation; no gap output."
+          }
+        }
+      ],
+      "canonicalDatabase": {
+        "readOnly": true,
+        "assistants": [
+          {
+            "id": "msg_1427ace1e001QW6R23GvQ0zJ5w",
+            "seq": 55,
+            "type": "assistant",
+            "time_created": 1792116706966,
+            "time_updated": 1792116709048,
+            "completed": 1792116709048,
+            "finish": "tool-calls",
+            "toolCount": 1,
+            "unsettledToolCount": 0
+          },
+          {
+            "id": "msg_1427ad7340015v1hgm5Jwfo5BG",
+            "seq": 62,
+            "type": "assistant",
+            "time_created": 1792116709300,
+            "time_updated": 1792116709522,
+            "completed": 1792116709522,
+            "finish": "stop",
+            "toolCount": 0,
+            "unsettledToolCount": 0
+          }
+        ],
+        "idleSuccessors": [
+          {
+            "id": "msg_1427ad8dc001W7JW8Kd3AU3JfI",
+            "seq": 67,
+            "type": "idle",
+            "time_created": 1792116709596,
+            "time_updated": 1792116709596,
+            "outcome": "succeeded"
+          }
+        ],
+        "session": [
+          {
+            "id": "ses_ebd8602a7ffeYUZxARGQQPzgFR",
+            "time_updated": 1792116709522,
+            "time_idle": 1792116709596,
+            "idle_outcome": "succeeded",
+            "time_suspended": null
+          }
+        ],
+        "completionToIdleMs": 74,
+        "rawStepEndedEventRetained": false,
+        "scope": "Persisted canonical assistant completion and idle successor projection. The event table retains cancellation receipts, not this raw Step.Ended event; no reconstructed raw event is claimed."
+      },
+      "ownedExitMetadata": [
+        {
+          "event": "native-process-exit",
+          "pid": 68715,
+          "code": 0,
+          "signal": null,
+          "expected": true,
+          "instanceID": "b2444b03-0b7b-433e-850f-70e8b912750d",
+          "startedAt": 1792116704902,
+          "stderrBytes": 3307,
+          "receipt": {
+            "terminated": true,
+            "confined": true,
+            "cancelled": false,
+            "exitCode": 0
+          }
+        }
+      ],
+      "errorLog": {
+        "identifiedRelevantUUID": null,
+        "administratorDetailLookup": "not applicable: no relevant Error Log UUID exposed by retained failure or journal evidence"
+      },
+      "conclusion": {
+        "established": [
+          "Latest final assistant stop/completion precedes the exact succeeded native idle successor by74ms.",
+          "Latest writer tool assistant was completed with one settled tool before the final assistant.",
+          "Latest human has no objective-completed or authoritative idle notification in retained lifecycle journal; canonical database supplies the later idle record.",
+          "Observed selection_change_while_busy is retained; journal/report do not timestamp its exact admission check."
+        ],
+        "notEstablished": [
+          "The exact refusal timestamp relative to canonical completion/idle.",
+          "That all time between completed assistant and idle was presentation drain rather than other mandatory runner work."
+        ],
+        "codeCorrelation": "Parent independently identified marker-only QA invoke followed by model-changing patch request; this inspection establishes the canonical completion-before-idle window without changing admission authority."
+      }
+    },
+    "correction": {
+      "scope": "QA-only scenario settlement predicate; production admission, compiled runtime and native artifact unchanged.",
+      "currentRunnerSha256": "49f3f8abd50418d58b22263afa887ce3c8e36f9d2d98f48be8eb8fc5e05a4951",
+      "currentNativeAcceptanceSourceDigest": "e881dda5fdf20ef9d7cac77430ea5fc6f50de3a8e50dfc39e708d87a1b73e447",
+      "predicate": "Exact scenario final marker in an error-free assistant with positive safe completion timestamp AND canonical native session status idle/omitted, within the existing60second wait.",
+      "integrationEvidence": "Original27-case busy-selection refusal followed by complete original53-case passing runtime gate. Separately reported9focused caller tests do not themselves prove the marker-to-idle race; no unit wait-race claim is made."
+    }
+  },
+  "qualificationLimits": {
+    "runtimeVsStatic": "This complete original53 gate is real supervised compiled runtime acceptance. Static closure/signature proof remains separately retained in native-header-bound-artifact.json; it does not substitute for this run.",
+    "packageSourceSha256": "7ce90d357d73ed11c6e9597926296402f6e01bc19f126d65ed2f8d012f92bced",
+    "packageSourceEvidence": "Current root-frozen packaged source identity from cursor-status-source-freeze.json; the native report directly carries only the native acceptance source digest.",
+    "freshFullCurrentNativeAcceptanceSource": "Separate root-owned validation; not established by this report inspection.",
+    "freshPlan": "Root session96107 running at task dispatch; no completed current Plan pass inspected.",
+    "freshResourceFivePairs": "pending for this current cohort at task dispatch",
+    "freshQaPackage": "pending for this current cohort at task dispatch",
+    "livePaidAndHosted": "pending; this deterministic compiled fixture gate makes no live or release admission claim."
+  }
+}

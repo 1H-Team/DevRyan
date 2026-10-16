@@ -1,3 +1,5 @@
+import { DEFAULT_HELPER_MODEL_SELECTION, createHelperModelRevision, parseHelperModelSelection } from '@/lib/helperModelSelection';
+import { ModelSelector } from './ModelSelector';
 import React from 'react';
 import { RiAiAgentLine, RiArrowRightSLine, RiChatHistoryLine } from '@remixicon/react';
 import type { Agent } from '@opencode-ai/sdk/v2';
@@ -26,7 +28,7 @@ import {
 } from '@/lib/agentSelection';
 import { canAccessSettingsPage, canEditPersonalAgentModels, useAuthPrincipal } from '@/lib/authSession';
 import { useI18n } from '@/lib/i18n';
-import { updateDesktopSettings } from '@/lib/persistence';
+import { updateDesktopSettings, saveDesktopSettingsNow } from '@/lib/persistence';
 import { getModelDisplayName } from '@/lib/providers/modelIdentity';
 import { filterVisibleAgentSelectorOptions, filterVisibleSettingsAgents, useAgentsStore } from '@/stores/useAgentsStore';
 import { useConfigStore } from '@/stores/useConfigStore';
@@ -229,6 +231,58 @@ const NewSessionDefaults: React.FC = () => {
   );
 };
 
+export const HelperModelSettings: React.FC = () => {
+  const { t } = useI18n();
+  const principal = useAuthPrincipal();
+  const selection = useConfigStore((state) => state.settingsHelperModelSelection);
+  const overrideKeys = useConfigStore((state) => state.settingsOverrideKeys);
+  const resetOverride = useConfigStore((state) => state.resetPersonalSettingsOverride);
+  const isPersonal = principal.scope === 'managed' && principal.role !== 'admin';
+  const hasOverride = overrideKeys.includes('helperModelSelection');
+  const [saving, setSaving] = React.useState(false);
+  const save = async (providerID: string, modelID: string) => {
+    setSaving(true);
+    try {
+      const helperModelSelection = { providerID, modelID, revision: createHelperModelRevision() };
+      const persisted = parseHelperModelSelection((await saveDesktopSettingsNow({ helperModelSelection }))?.helperModelSelection);
+      if (!persisted || persisted.providerID !== providerID || persisted.modelID !== modelID || persisted.revision !== helperModelSelection.revision) {
+        throw new Error('Helper model save was not acknowledged');
+      }
+      useConfigStore.setState((state) => ({
+        settingsHelperModelSelection: persisted,
+        ...(isPersonal ? { settingsOverrideKeys: [...new Set([...state.settingsOverrideKeys, 'helperModelSelection'])].sort() } : {}),
+      }));
+    } catch {
+      toast.error(t('settings.sessionDefaults.helper.saveFailed'));
+    } finally { setSaving(false); }
+  };
+  const reset = async () => {
+    setSaving(true);
+    try { await resetOverride('helperModelSelection'); }
+    catch { toast.error(t('settings.sessionDefaults.helper.saveFailed')); }
+    finally { setSaving(false); }
+  };
+  const chosen = selection ?? DEFAULT_HELPER_MODEL_SELECTION;
+  return (
+    <SettingsDetailSection title={t('settings.sessionDefaults.helper.title')}>
+      <div data-helper-model-settings="true" className="flex flex-col gap-2 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <span className="typography-ui-label text-foreground">{t('settings.sessionDefaults.helper.model')}</span>
+          <span className="typography-meta text-muted-foreground">{t('settings.sessionDefaults.helper.description')}</span>
+          <span className="typography-meta text-muted-foreground">{t('settings.sessionDefaults.helper.reasoning')}</span>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {isPersonal ? <>
+            <SettingsBadge tone={hasOverride ? 'accent' : 'neutral'}>{t(hasOverride ? 'settings.sessionDefaults.badge.personal' : 'settings.sessionDefaults.badge.inherited')}</SettingsBadge>
+            <Button size="xs" variant="outline" disabled={saving || !hasOverride} onClick={() => { void reset(); }}>{t('settings.common.actions.reset')}</Button>
+          </> : null}
+          <ModelSelector providerId={chosen.providerID} modelId={chosen.modelID} disabled={saving} onChange={(providerID, modelID) => { void save(providerID, modelID); }} />
+        </div>
+      </div>
+    </SettingsDetailSection>
+  );
+};
+
 type AgentModelRow = {
   agent: Agent;
   selection: ResolvedAgentDefault | null;
@@ -344,6 +398,7 @@ export const SessionDefaultsPage: React.FC = () => {
       />
       <NewSessionDefaults />
       {canReadAgents ? <AgentModelsSummary /> : null}
+      <HelperModelSettings />
       <SettingsDetailSection title={t('settings.sessionDefaults.section.cleanup')}>
         <SessionCleanupSettings />
       </SettingsDetailSection>

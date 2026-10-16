@@ -46,6 +46,18 @@ test('clone preserves the exact registered external project without changing its
   expect(JSON.parse(await fs.readFile(contextFile,'utf8'))).toEqual(context);
   expect(projectMap).toEqual([{sourceDirectory:baseline,targetDirectory:baseline,mode:'identity'}]);
 });
+
+test('native stream history retains every objective and predecessor reference through migration inspection',async()=>{
+ const f=await fixture({state:'completed',acked:true});
+ const directory=path.join(f.web,'harness','provider-stream');await fs.mkdir(directory,{recursive:true});
+ const ids=['msg_objective','msg_source','msg_previous','msg_synthetic','msg_successor'];
+ await fs.writeFile(path.join(directory,'history.json'),JSON.stringify({sessionID:'ses_live',directory:f.member.directory,
+  objectiveID:ids[0],receipts:[{anchorID:ids[0],objectiveID:ids[0],sourceUserMessageID:ids[1],previousStepID:ids[2],
+   userMessageID:ids[3],assistantMessageID:ids[4]}]}));
+ await expect(f.verify({sessionIDs:['ses_live'],messageIDs:ids})).resolves.toBeDefined();
+ for(const missing of ids) await expect(f.verify({sessionIDs:['ses_live'],messageIDs:ids.filter(id=>id!==missing)}))
+  .rejects.toMatchObject({code:'bundle_message_reference_lost'});
+});
 test('cold resume and clone preserve a removed registered project history without granting its executable location',async()=>{
   const f=await fixture(),baseline=path.join(path.dirname(f.web),'baseline');
   await fs.mkdir(baseline);await fs.mkdir(f.member.directory);
@@ -107,6 +119,18 @@ test('a removed child session without a recorded directory is valid; a foreign d
   expect((await f.verify()).sessionReferences).toEqual(['ses_removed']);
   f.session.directory='/elsewhere';await f.save();await expect(f.verify()).rejects.toMatchObject({code:'bundle_native_removal_invalid'});
 });
+test.each([{messageID:'msg_gone_assistant'},{sessionID:'ses_gone',messageID:'msg_gone_assistant'}])(
+  'a cancelled-call marker whose message or session is gone is reported, not refused: %o',async marker=>{
+    const f=await fixture({acked:true});f.db.set('cancelled-calls/marker.json',marker);await f.db.commit();
+    const result=await f.verify();
+    expect(result.findings.map(row=>[row.code,row.key])).toEqual([
+      ...marker.sessionID?[['bundle_session_reference_lost','cancelled-calls/marker.json']]:[],
+      ['bundle_message_reference_lost','cancelled-calls/marker.json']]);
+    expect(result.messageReferences).toEqual(['msg_removed_history']);
+    // The same lost message on a record that is not a marker still refuses.
+    f.db.set('operations/other.json',{messageID:'msg_gone_assistant'});await f.db.commit();
+    await expect(f.verify()).rejects.toMatchObject({code:'bundle_message_reference_lost'});
+  });
 test('ACKed tombstone cannot authorize a native session that still exists',async()=>{
   const f=await fixture({acked:true});await expect(f.verify({sessionIDs:['ses_removed']})).rejects.toMatchObject({code:'bundle_native_removal_invalid'});
 });

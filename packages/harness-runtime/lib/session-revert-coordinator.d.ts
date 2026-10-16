@@ -25,7 +25,7 @@ export interface SessionRevertCoordinator {
   }>;
   recover(input: { directory: string }): Promise<void>;
   restoreFiles(input: MutationSessionReference & { revision: string; redo?: boolean;
-    calls: Array<{ sessionID: string; callID: string; messageID?: string }> }): Promise<{
+    calls: Array<{ sessionID: string; callID: string; messageID: string }> }): Promise<{
     files: MutationFile[]; sessions: MutationTarget[]; redoAvailable: boolean;
   }>;
 }

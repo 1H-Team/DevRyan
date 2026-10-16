@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "kind": "read-only-owned-qa-host-incident",
+  "observedAt": "2026-10-15T09:11:25.713Z",
+  "process": {
+    "pid": 99743,
+    "parentPID": 1,
+    "startLocal": "Thu Oct 15 03:19:07 2026",
+    "startIdentityRechecked": true,
+    "entry": "scripts/qa/live-provider-handoff.mjs",
+    "mode": "--child",
+    "ownedProfile": ".cache/qa/live-provider-handoff-8XGaZY",
+    "fourExpectedJournalFilesOpen": true,
+    "cpuPercentObserved": [
+      81,
+      84.4
+    ]
+  },
+  "journal": {
+    "owner": "scripts/journal.mjs",
+    "method": "collectGapPaths({verify:true}) + readRecordsFromPaths",
+    "chunks": 13,
+    "bytes": 154246,
+    "records": 847,
+    "explicitOrParseGaps": 0,
+    "activeWriterFlushed": false,
+    "snapshotCoverageOnly": true,
+    "firstAt": "2026-10-14T04:58:36.307Z",
+    "lastAt": "2026-10-15T06:38:09.674Z",
+    "unchangedAt": "2026-10-15T09:10:47.752Z",
+    "lastNativeExit": {
+      "pid": 99959,
+      "at": "2026-10-15T06:38:09.674Z",
+      "code": 137,
+      "expected": true,
+      "uptimeMs": 26337610
+    },
+    "nativeObservationCount": 17,
+    "controllerInstanceID": "ce3538b9-a059-451c-a83c-77c80843e6fc",
+    "sessions": [
+      {
+        "sessionID": "ses_ec216aeb8ffeFqU4ViCJe43tzf",
+        "records": 4,
+        "lastAt": "2026-10-15T04:54:48.146Z",
+        "terminalObservation": "not-retained-in-this-session-bucket"
+      },
+      {
+        "sessionID": "ses_ec216f292ffeC2tkbJLoq9bBbf",
+        "records": 143,
+        "lastAt": "2026-10-15T04:54:48.127Z",
+        "abortedAt": "2026-10-15T04:54:26.990Z",
+        "abortReason": "assistant_error",
+        "subsequentObjectiveIdleAt": "2026-10-15T04:54:34.811Z"
+      },
+      {
+        "sessionID": "ses_ec21643a2ffen9nE8P1NIMuf0y",
+        "records": 63,
+        "lastAt": "2026-10-15T04:54:58.676Z",
+        "completedObjectiveIdleAt": "2026-10-15T04:54:56.673Z"
+      }
+    ]
+  },
+  "assessment": {
+    "ownedOrphanConfirmed": true,
+    "cpuCause": "unproven",
+    "noCurrentOwnerProgressInRetainedJournal": true,
+    "cleanupRecommended": "root-reviewed-exact-pid-SIGTERM-after-start-identity-and-owned-path-recheck-then-bounded-exit-observation",
+    "cleanupConfirmed": false,
+    "signalSent": true,
+    "retainedProfileMustBePreserved": true,
+    "unownedPID96037Untouched": true,
+    "credentialCookieOrOwnerGrantAccess": false,
+    "qualificationClaim": false,
+    "physicalExitObserved": true,
+    "cleanHandleStopConfirmed": false
+  },
+  "runbook": "docs/AGENT_RUNTIME_VERIFICATION.md",
+  "rootCleanupAction": {
+    "actor": "root-agent",
+    "signal": "SIGTERM",
+    "targetPID": 99743,
+    "startIdentityAndOwnedPathFenceRechecked": true,
+    "physicalExitObserved": true,
+    "observedExitWithinMs": 253,
+    "observationBudgetMs": 10000,
+    "SIGKILLSent": false,
+    "processGroupSignalled": false,
+    "unownedPID96037Untouched": true,
+    "retainedProfilePreserved": true
+  },
+  "postExitInspection": {
+    "at": "2026-10-15T09:23:13.888Z",
+    "pid99743Present": false,
+    "priorNativePID99959Present": false,
+    "retainedProfilePresent": true,
+    "journal": {
+      "method": "collectGapPaths({verify:true}) + readRecordsFromPaths",
+      "chunks": 13,
+      "records": 847,
+      "explicitOrParseGaps": 0,
+      "lastAt": "2026-10-15T06:38:09.674Z",
+      "postSignalShutdownDiagnosticObserved": false,
+      "openChunks": 4,
+      "finalFlushConfirmed": false,
+      "runtimeManifest": {
+        "records": 636,
+        "actualRecords": 637,
+        "lastAt": "2026-10-15T05:55:14.162Z",
+        "actualLastAt": "2026-10-15T06:38:09.674Z",
+        "gapCount": 0
+      },
+      "sessionManifestRecordCountsMatch": true
+    },
+    "ownedNativeRegistry": {
+      "relativePath": "runtime/native-bundles/bundles/native-37f21fcbd9c5385b5c7510da-r1/global/state/managed-opencode-processes.json",
+      "version": 2,
+      "processes": 0,
+      "ownedEntries": 0
+    },
+    "cleanHandleStopConfirmed": false
+  }
+}

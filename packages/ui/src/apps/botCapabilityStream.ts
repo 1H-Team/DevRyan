@@ -14,15 +14,16 @@ export const botCapabilityCanStream = (capabilities: BotCapabilitySummary): bool
     ].includes(capabilities.state)
 );
 
-// States that need an explicit owner action (Setup, Restore, Start Empty) or
-// that this host can never serve. Polling them is futile; they are rechecked
-// on focus and after the action completes.
+// States rechecked on owner action or focus. A stopped Docker host does not
+// need a root capability retry loop while ordinary Agents are being used;
+// an available catalog still opens its stream before this policy is consulted.
 const FINAL_CAPABILITY_STATES = new Set([
   'unsupported_host',
   'database_recovery_required',
   'encryption_unavailable',
   'setup_required',
   'docker_not_installed',
+  'docker_stopped',
   'supabase_disconnected',
   'supabase_not_configured',
 ]);

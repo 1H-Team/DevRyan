@@ -23,6 +23,12 @@ const profiles=value=>!Array.isArray(value)?[]:value.flatMap(row=>{
   return [profile];
 });
 
+/** Catalog metadata follows inspection's exact saved selection, never inference routing. */
+export function hasConfiguredNativeClaudeProfile({profiles,defaultProfile}){
+ const selected=profiles.length===1?profiles[0]:profiles.find(profile=>profile.id===defaultProfile);
+ return Boolean(selected&&(selected.type===undefined||selected.type==='claude-max')&&!selected.apiKey&&!selected.oauthToken);
+}
+
 /** Resolve the original saved Meridian setup within the selected private bundle.
  * Explicit environment input is required; process HOME and installed files are
  * never consulted. Secrets remain solely in the returned private worker boot. */

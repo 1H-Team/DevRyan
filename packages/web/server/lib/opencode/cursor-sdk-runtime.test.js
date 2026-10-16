@@ -224,6 +224,7 @@ describe('Cursor SDK runtime', () => {
             ok: true,
             finalStatus: 'success',
             finalText: 'done',
+          finalTextWitness: {assistantOrdinal: 1, priorNonempty: 0},
           }),
           stream: async function* stream() {},
         };
@@ -258,6 +259,7 @@ describe('Cursor SDK runtime', () => {
             agentId: 'agent-test',
             send: async () => ({
               stream: async function* stream() {},
+              conversation: async () => [{type:'agentConversationTurn',turn:{steps:[{type:'assistantMessage',message:{text:'All tests have passed successfully.'}}]}}],
               wait: async () => ({
                 status: 'finished',
                 result: 'All tests have passed successfully.',
@@ -290,11 +292,12 @@ describe('Cursor SDK runtime', () => {
     expect(records?.[1]?.parts?.find((part) => part.type === 'text')?.text).toBe('All tests have passed successfully.');
   });
 
-  it('surfaces Cursor final text while the SDK stream remains pending', async () => {
+  it('marks a final result partial while the SDK stream remains pending', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-runtime-'));
     const emitted = [];
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
+      streamIdleTimeoutMs: 20,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
       env: {},
       emitEvent: (event) => emitted.push(event),
@@ -304,6 +307,7 @@ describe('Cursor SDK runtime', () => {
           ok: true,
           finalStatus: 'success',
           finalText: 'Finished while the Cursor stream is quiet.',
+          finalTextWitness: {assistantOrdinal: 1, priorNonempty: 0},
         }),
         stream: async function* stream() {
           await new Promise(() => {});
@@ -339,18 +343,19 @@ describe('Cursor SDK runtime', () => {
       && event.properties?.status?.type === 'idle'
     ));
 
-    expect(textEvents.at(-1)?.properties?.part?.text).toBe('Finished while the Cursor stream is quiet.');
-    expect(records?.[1]?.info.finish).toBe('stop');
-    expect(records?.[1]?.parts?.find((part) => part.type === 'text')?.text).toBe('Finished while the Cursor stream is quiet.');
+    expect(textEvents.at(-1)?.properties?.part?.text).toContain('CURSOR_STREAM_DRAIN_TIMEOUT');
+    expect(records?.[1]?.info.finish).toBe('error');
+    expect(records?.[1]?.info.error).toMatchObject({ name: 'CursorStreamPartialError', message: expect.stringContaining('CURSOR_STREAM_DRAIN_TIMEOUT') });
     expect(idleEvents).toHaveLength(1);
     expect(runtime.getRuntimeStatus().activeRuns).toBe(0);
   });
 
-  it('finalizes open-stream Cursor edit tool activity when the SDK wait result finishes', async () => {
+  it('marks open-stream Cursor edit activity partial after drain timeout', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-runtime-'));
     const emitted = [];
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
+      streamIdleTimeoutMs: 20,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
       env: {},
       emitEvent: (event) => emitted.push(event),
@@ -360,6 +365,7 @@ describe('Cursor SDK runtime', () => {
           ok: true,
           finalStatus: 'success',
           finalText: 'Edited the file and finished.',
+          finalTextWitness: {assistantOrdinal: 1, priorNonempty: 0},
         }),
         stream: async function* stream() {
           yield {
@@ -405,9 +411,9 @@ describe('Cursor SDK runtime', () => {
 
     expect(runtime.getRuntimeStatus().activeRuns).toBe(0);
     expect(runtime.getSessionStatus?.().ses_open_stream_edit).toEqual({ type: 'idle' });
-    expect(assistant?.info.finish).toBe('stop');
-    expect(assistant?.parts?.find((part) => part.type === 'text')?.text).toBe('Edited the file and finished.');
-    expect(editTool?.state).toMatchObject({ status: 'error', error: 'Cursor ended without reporting a result for this tool.' });
+    expect(assistant?.info.finish).toBe('error');
+    expect(assistant?.info.error).toMatchObject({ name: 'CursorStreamPartialError' });
+    expect(editTool?.state).toMatchObject({ status: 'error', error: 'Cursor stream incomplete (CURSOR_STREAM_DRAIN_TIMEOUT).'  });
     expect(typeof editTool?.state?.time?.end).toBe('number');
     expect(idleEvents).toHaveLength(1);
   });
@@ -526,6 +532,7 @@ describe('Cursor SDK runtime', () => {
                     },
                   };
                 },
+                conversation: async () => [{type:'agentConversationTurn',turn:{steps:[{type:'assistantMessage',message:{text:''}}]}}],
                 wait: async () => ({ status: 'finished', result: '' }),
               }),
             };
@@ -597,6 +604,7 @@ describe('Cursor SDK runtime', () => {
                     },
                   };
                 },
+                conversation: async () => [{type:'agentConversationTurn',turn:{steps:[{type:'assistantMessage',message:{text:''}}]}}],
                 wait: async () => ({ status: 'finished', result: '' }),
               }),
             };
@@ -667,6 +675,7 @@ describe('Cursor SDK runtime', () => {
                     },
                   };
                 },
+                conversation: async () => [{type:'agentConversationTurn',turn:{steps:[{type:'assistantMessage',message:{text:''}}]}}],
                 wait: async () => ({ status: 'finished', result: '' }),
               }),
             };
@@ -699,10 +708,11 @@ describe('Cursor SDK runtime', () => {
     });
   });
 
-  it('uses the direct Cursor SDK wait result when the stream remains open', async () => {
+  it('refuses a direct Cursor SDK final result until stream EOF', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-runtime-'));
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
+      streamIdleTimeoutMs: 20,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
       env: {},
       emitEvent: () => {},
@@ -714,6 +724,7 @@ describe('Cursor SDK runtime', () => {
               stream: async function* stream() {
                 await new Promise(() => {});
               },
+              conversation: async () => [{type:'agentConversationTurn',turn:{steps:[{type:'assistantMessage',message:{text:'Final result from wait.'}}]}}],
               wait: async () => ({
                 status: 'finished',
                 result: 'Final result from wait.',
@@ -742,11 +753,11 @@ describe('Cursor SDK runtime', () => {
     });
 
     expect(runtime.getRuntimeStatus().activeRuns).toBe(0);
-    expect(records?.[1]?.info.finish).toBe('stop');
-    expect(records?.[1]?.parts?.find((part) => part.type === 'text')?.text).toBe('Final result from wait.');
+    expect(records?.[1]?.info.finish).toBe('error');
+    expect(records?.[1]?.info.error).toMatchObject({ name: 'CursorStreamPartialError', message: expect.stringContaining('CURSOR_STREAM_DRAIN_TIMEOUT') });
   });
 
-  it('streams Cursor SDK onDelta text before the final wait result', async () => {
+  it('streams Cursor SDK iterator text before the final wait result', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-runtime-'));
     const emitted = [];
     const timingMarks = [];
@@ -771,8 +782,11 @@ describe('Cursor SDK runtime', () => {
               }, 5);
               return {
                 stream: async function* stream() {
-                  await new Promise(() => {});
+                  await new Promise(resolve => setTimeout(resolve, 5));
+                  yield { type: 'assistant', message: { content: [{ type: 'text', text: 'First streamed chunk. ' }] } };
+                  await new Promise(resolve => setTimeout(resolve, 25));
                 },
+                conversation: async () => [{type:'agentConversationTurn',turn:{steps:[{type:'assistantMessage',message:{text:'First streamed chunk. Final answer.'}}]}}],
                 wait: async () => {
                   await new Promise((resolve) => setTimeout(resolve, 20));
                   return {
@@ -826,7 +840,7 @@ describe('Cursor SDK runtime', () => {
     }));
   });
 
-  it('deduplicates Cursor onDelta text mirrored by the legacy stream', async () => {
+  it('ignores duplicate Cursor onDelta text mirrored by the SDK stream', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-runtime-'));
     const emitted = [];
     const runtime = createCursorSdkRuntime({
@@ -857,6 +871,7 @@ describe('Cursor SDK runtime', () => {
                     },
                   };
                 },
+                conversation: async () => [{type:'agentConversationTurn',turn:{steps:[{type:'assistantMessage',message:{text:'Mirrored streamed chunk. Final answer.'}}]}}],
                 wait: async () => {
                   await new Promise((resolve) => setTimeout(resolve, 40));
                   return {
@@ -920,6 +935,7 @@ describe('Cursor SDK runtime', () => {
                   },
                 };
               },
+              conversation: async () => [{type:'agentConversationTurn',turn:{steps:[{type:'assistantMessage',message:{text:'All tests have passed successfully.'}}]}}],
               wait: async () => ({
                 status: 'finished',
                 result: 'All tests have passed successfully.',
@@ -951,7 +967,7 @@ describe('Cursor SDK runtime', () => {
     expect(records?.[1]?.parts?.find((part) => part.type === 'text')?.text).toBe('All tests have passed successfully.');
   });
 
-  it('places the final Cursor wait summary after tool activity instead of merging into progress text', async () => {
+  it('replaces only the last SDK assistant part in place across tool activity', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-runtime-'));
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -964,6 +980,7 @@ describe('Cursor SDK runtime', () => {
           ok: true,
           finalStatus: 'success',
           finalText: 'Upgraded OpenCode to v1.17.8 and verified the installed version.',
+          finalTextWitness: {assistantOrdinal: 1, priorNonempty: 0},
         }),
         stream: async function* stream() {
           yield {
@@ -989,7 +1006,7 @@ describe('Cursor SDK runtime', () => {
               result: 'Upgraded to v1.17.8',
             },
           };
-          await new Promise(() => {});
+
         },
       }),
     });
@@ -1021,11 +1038,11 @@ describe('Cursor SDK runtime', () => {
 
     expect(assistant?.info.finish).toBe('stop');
     expect(textParts.map((part) => part.text)).toEqual([
-      'Checking how opencode is installed and what version currently on the system.',
       'Upgraded OpenCode to v1.17.8 and verified the installed version.',
     ]);
     expect(toolIndex).toBeGreaterThanOrEqual(0);
-    expect(finalTextIndex).toBeGreaterThan(toolIndex);
+    expect(finalTextIndex).toBeLessThan(toolIndex);
+    expect(textParts[0]?.id).toBe('msg_wait_summary_after_tool_user_assistant_part_000001_text');
   });
 
   it('sends synthetic context to the SDK without storing it in the visible user message', async () => {
@@ -1663,10 +1680,11 @@ describe('Cursor SDK runtime', () => {
     expect(readEvents.map((event) => event.properties.part.state.status)).toEqual(['running', 'error']);
   });
 
-  it('finishes the assistant turn when Cursor emits a terminal status before closing the stream', async () => {
+  it('marks terminal status partial when the SDK stream never closes', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-runtime-'));
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
+      streamIdleTimeoutMs: 20,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
       env: {},
       emitEvent: () => {},
@@ -1722,14 +1740,14 @@ describe('Cursor SDK runtime', () => {
     });
 
     expect(runtime.getRuntimeStatus().activeRuns).toBe(0);
-    expect(records?.[1]?.info.finish).toBe('stop');
+    expect(records?.[1]?.info.finish).toBe('error');
     expect(records?.[1]?.parts?.find((part) => part.type === 'text')?.text).toBe('done');
     expect(records?.[1]?.parts?.find((part) => part.type === 'tool')?.state).toMatchObject({
-      status: 'error', error: 'Cursor ended without reporting a result for this tool.',
+      status: 'error', error: 'Cursor stream incomplete (CURSOR_STREAM_DRAIN_TIMEOUT).' ,
     });
   });
 
-  it('finishes quiet Cursor streams after substantial assistant text and completed tool activity', async () => {
+  it('preserves substantial assistant text after a partial drain', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-runtime-'));
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -1786,11 +1804,11 @@ describe('Cursor SDK runtime', () => {
     });
 
     expect(runtime.getRuntimeStatus().activeRuns).toBe(0);
-    expect(records?.[1]?.info.finish).toBe('stop');
+    expect(records?.[1]?.info.finish).toBe('error');
     expect(records?.[1]?.parts?.find((part) => part.type === 'tool')?.state?.status).toBe('completed');
   });
 
-  it('finishes quiet Cursor streams after a short assistant summary and completed tool activity', async () => {
+  it('preserves a short assistant summary after a partial drain', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-runtime-'));
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -1844,7 +1862,7 @@ describe('Cursor SDK runtime', () => {
     });
 
     expect(runtime.getRuntimeStatus().activeRuns).toBe(0);
-    expect(records?.[1]?.info.finish).toBe('stop');
+    expect(records?.[1]?.info.finish).toBe('error');
     expect(records?.[1]?.parts?.find((part) => part.type === 'text')?.text).toBe('All tests have passed successfully.');
     expect(records?.[1]?.parts?.find((part) => part.type === 'tool')?.state?.status).toBe('completed');
   });
@@ -1951,7 +1969,7 @@ describe('Cursor SDK runtime', () => {
     });
 
     const assistantParts = records?.[1]?.parts ?? [];
-    expect(assistantParts.find((part) => part.type === 'reasoning')?.text).toBe('I will inspect the files. The button is gone.');
+    expect(assistantParts.find((part) => part.type === 'reasoning')?.text).toBe('I will inspect the files.The button is gone.');
 
     const tool = assistantParts.find((part) => part.type === 'tool');
     expect(tool?.input).toEqual({ pattern: 'Open request form' });
@@ -2081,7 +2099,7 @@ describe('Cursor SDK runtime', () => {
     });
   });
 
-  it('removes dangling Cursor thinking fragments left before tool activity', async () => {
+  it('preserves dangling Cursor thinking fragments exactly before tool activity', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-runtime-'));
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -2140,7 +2158,7 @@ describe('Cursor SDK runtime', () => {
     });
 
     const reasoning = records?.[1]?.parts?.find((part) => part.type === 'reasoning');
-    expect(reasoning?.text).toBe('Good.');
+    expect(reasoning?.text).toBe('Good. So for the professional dashboard, the required changes are:\n\n1.');
   });
 
   it('preserves Cursor stream order across text, tools, thinking, and final plan text', async () => {
@@ -2240,7 +2258,7 @@ describe('Cursor SDK runtime', () => {
     ]);
   });
 
-  it('normalizes Cursor plan-mode delta output into a plan card and returns to idle', async () => {
+  it('normalizes Cursor plan-mode SDK stream output into a plan card and returns to idle', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-runtime-'));
     const structuredPlanBody = [
       '# Cursor Streaming Plan',
@@ -2277,8 +2295,9 @@ describe('Cursor SDK runtime', () => {
               }, 5);
               return {
                 stream: async function* stream() {
-                  await new Promise(() => {});
+                  yield { type: 'assistant', message: { content: [{ type: 'text', text: structuredPlanBody }] } };
                 },
+                conversation: async () => [{type:'agentConversationTurn',turn:{steps:[{type:'assistantMessage',message:{text:structuredPlanBody}}]}}],
                 wait: async () => {
                   await new Promise((resolve) => setTimeout(resolve, 20));
                   return {
@@ -3116,7 +3135,7 @@ describe('Cursor SDK runtime', () => {
     expect(taskPart?.output).not.toContain('conversationSteps');
   });
 
-  it('surfaces a diagnostic when Cursor ends the parent run immediately after a task', async () => {
+  it('surfaces a diagnostic when Cursor ends the parent run after a task without an assistant result', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-runtime-'));
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
@@ -3128,7 +3147,6 @@ describe('Cursor SDK runtime', () => {
         waitFinalResult: async () => ({
           ok: true,
           finalStatus: 'success',
-          finalText: '',
         }),
         stream: async function* stream() {
           yield {

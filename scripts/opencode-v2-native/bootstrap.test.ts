@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { Effect } from 'effect';
-import { ChildProcess } from 'effect/unstable/process';
+import { ChildProcess } from 'effect/process';
 import { Config } from '@opencode/core/config';
 import { ConfigPluginSource } from '@opencode/core/config/plugin/source';
 import { AppProcess } from '@opencode/util/process';

@@ -1143,3 +1143,13 @@ it.each(['synthetic','user'])('history and Revert preserve exact %s status prove
   const events=projector.project({id:'evt_step',created:5,type:'session.step.started',location:{directory:DIR},data:{sessionID:SID,assistantMessageID:'msg_next',agent:'build',model:{id:'m',providerID:'p'}}});
   expect(ofType(events,'message.updated').find(row=>row.info.id==='msg_next').info.parentID).toBe(type==='synthetic'?'msg_original':'msg_notice');
 });
+
+it('ephemeral shell.created/exited/deleted never impersonate durable session shell records', () => {
+  const { projector, diagnostics } = createProjector();
+  for (const event of [
+    { type: 'shell.created', data: { info: { id: 'sh_fixture', command: 'pwd', status: 'running', cursor: 0, size: 0, time: { created: 1, updated: 1 } } } },
+    { type: 'shell.exited', data: { id: 'sh_fixture', status: 'exited', exit: 0 } },
+    { type: 'shell.deleted', data: { id: 'sh_fixture' } },
+  ]) expect(projector.project({ id: 'evt_shell', ...event })).toBe(EMPTY_PROJECTION);
+  expect(diagnostics).toEqual([]);
+});

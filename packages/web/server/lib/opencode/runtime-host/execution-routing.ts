@@ -8,7 +8,7 @@ import { SessionInstructions } from '@opencode/core/session/instructions';
 import type { LayerNode } from '@opencode/util/effect/layer-node';
 import { Cause, Context, Deferred, Effect, Exit, Layer, Queue, Schema, Sink, Stream } from 'effect';
 import { systemError } from 'effect/PlatformError';
-import { make as makeSpawner, makeHandle, ProcessId, ExitCode } from 'effect/unstable/process/ChildProcessSpawner';
+import { make as makeSpawner, makeHandle, ProcessId, ExitCode } from 'effect/process/ChildProcessSpawner';
 import type { NativeAdmissionBridge, ExecuteOwned, OwnedToolInvocation } from './native-admission-contract.js';
 import { ExecutionBatch, StartResult } from './worker-protocol.js';
 import type { ExecutionRpc, ExecutionSpecification } from './worker-protocol.js';

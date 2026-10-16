@@ -8,9 +8,10 @@ subscription contracts. `.github/workflows/startup-contract.yml` runs it on ever
 PR without path filters, including changes unrelated to startup. It never uses
 installed application data, live accounts or OS service registration.
 
-The final-DMG qualification described in
-[QA](QA.md#final-dmg-startup-qualification) is a manual check and does not gate
-release publication. Full validation, build and bundle checks remain required
+The mandatory short final-DMG smoke described in
+[QA](QA.md#mandatory-short-final-dmg-smoke) gates release publication after three
+same-artifact, exact-source candidate rehearsals. The separate eleven-scenario
+[qualification](QA.md#final-dmg-startup-qualification) remains manual. Full validation, build and bundle checks remain required
 before a release.
 
 ## Required gates
@@ -341,4 +342,8 @@ Use [QA.md](QA.md) for the web/Electron fixture entrypoint, responsive screensho
 
 ## Release handoff verification
 
-See [Release pipeline](RELEASE_PIPELINE.md) for separate compilation/preparation/packaging commands and artifact invariants. `scripts/release-artifacts.test.mjs` covers stale/corrupt inputs and packaging gates; `scripts/release-workflow.test.mjs` checks shared-build and prerequisite wiring. Bot image aggregation/signing cases extend the existing image verifier suite. Root `build` now compiles web and Electron JavaScript explicitly; source-only UI validation remains `type-check:ui`.
+See [Release pipeline](RELEASE_PIPELINE.md) for separate compilation/preparation/packaging commands and artifact invariants. `scripts/release-artifacts.test.mjs` covers stale/corrupt inputs and packaging gates; `scripts/release-workflow.test.mjs` checks shared-build, source admission,
+candidate isolation and mandatory gate wiring. `scripts/release-publication.test.mjs`
+checks draft IDs, immutable tags, same-digest retries and published no-op proof;
+`release-startup-smoke.test.mjs` covers timing, native correlation, GUI-only
+retries and distinct compiled upgrade/rollback evidence. Bot image aggregation/signing cases extend the existing image verifier suite. Root `build` now compiles web and Electron JavaScript explicitly; source-only UI validation remains `type-check:ui`.

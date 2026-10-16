@@ -10,6 +10,7 @@ import {hydrateWindowsReviewedExecutables} from './build-windows-reviewed-execut
 import {hydrateWindowsGit} from './build-windows-git.mjs';
 import {assertWindowsBinaryArchitecture,readWindowsReviewedLibsqlAsset} from './build-windows-reviewed-libsql.mjs';
 import {createReviewedNativePluginRegistry} from '../packages/web/server/lib/opencode/runtime-host/native-plugin-registry.ts';
+import {rewriteNativeFinalizationObservation} from './native-finalization-observation-transform.mjs';
 import {rewriteNativeCompactionObservation} from './native-compaction-observation-transform.mjs';
 import {CLAUDE_LIFECYCLE_PROTOCOL} from '../packages/web/server/lib/opencode/runtime-host/native-claude-lifecycle.js';
 import {NATIVE_BUNDLE_CREDENTIAL_CONTRACT} from '../packages/web/server/lib/opencode/runtime-host/native-bundle-credential-contract.js';
@@ -28,12 +29,12 @@ if(Bun.version!=='1.3.14' || (windowsCandidate?process.platform!=='win32'||!['x6
 const target=`${process.platform}-${process.arch}`,compileTarget=windowsCandidate?`bun-windows-${process.arch}`:'bun-darwin-arm64';
 const host=path.join(repository,'packages/web/server/lib/opencode/runtime-host');
 const buildSources=await Promise.all(['scripts/build-native-runtime.mjs','scripts/native-runtime-assets.mjs',
-  'scripts/native-compaction-observation-transform.mjs',
+  'scripts/native-compaction-observation-transform.mjs','scripts/native-finalization-observation-transform.mjs',
   'scripts/build-session-execution.mjs','scripts/verify-session-execution.mjs',
   'scripts/build-windows-reviewed-executables.mjs','scripts/build-windows-reviewed-libsql.mjs','scripts/build-windows-git.mjs',
   'packages/web/server/lib/opencode/runtime-host/reviewed-windows-assets.js',
   ...(windowsCandidate?['packages/harness-runtime/native/session-execution-windows.c']:[]),
-  'packages/harness-runtime/native/session-execution.c','packages/harness-runtime/native/session-spawn-darwin.c',
+  'packages/harness-runtime/native/session-execution.c','packages/harness-runtime/native/session-spawn-darwin.c','packages/harness-runtime/native/session-group-darwin.h',
   'packages/web/server/lib/opencode/runtime-host/reviewed-package-transforms.js',
   'packages/web/server/lib/opencode/runtime-host/reviewed-document-transform.js',
   'packages/web/server/lib/opencode/runtime-host/reviewed-browser-transform.js',
@@ -60,7 +61,7 @@ if(windowsCandidate){
 }
 const entries=[['controller',path.join(host,'controller-entry.ts')],['writer',path.join(host,'writer-entry.ts')]];
 const configurationEntry=path.join(host,'reviewed-configuration-entry.ts');
-const ptyBinding=path.join(coreRoot,windowsCandidate?'dist/persistent-pty/binary.bun.js':'dist/chunks/location-services-dajrwvna.js');
+const ptyBinding=path.join(coreRoot,windowsCandidate?'dist/persistent-pty/binary.bun.js':'dist/chunks/instance-dajrwvna.js');
 const photonFile=createRequire(path.join(coreRoot,'package.json')).resolve('@silvia-odwyer/photon-node');
 let ptySource;
 if(windowsCandidate)ptySource=rewriteUnavailableNativePty(await fs.readFile(ptyBinding));
@@ -70,14 +71,16 @@ else{
   ptySource=rewriteNativeAsset('pty',await fs.readFile(ptyBinding),{assetPath:ptyBinary,assetSha256:hash(await fs.readFile(ptyBinary))});
 }
 const photonSource=rewriteNativeAsset('photon',await fs.readFile(photonFile));
-const compactionFile=path.join(coreRoot,'dist/chunks/location-services-qhaz1dgr.js');
+const compactionFile=path.join(coreRoot,'dist/chunks/instance-7khw7vys.js');
 const compaction=rewriteNativeCompactionObservation(await fs.readFile(compactionFile,'utf8'),path.join(host,'native-compaction-observation.ts'));
+const finalizationFile=path.join(coreRoot,'dist/chunks/instance-r0d06n1c.js');
+const finalization=rewriteNativeFinalizationObservation(await fs.readFile(finalizationFile,'utf8'),path.join(host,'native-finalization-observation.ts'));
 // Core's own @opencode/schema dependency; its exports are import-only.
 const agentDefaultsFile=await fs.realpath(path.join(path.dirname(coreRoot),'schema/dist/agent.js'));
-const rewrites=new Map([[ptyBinding,ptySource],[photonFile,photonSource],[compactionFile,compaction.contents],[agentDefaultsFile,rewriteNativeAgentDefaults(await fs.readFile(agentDefaultsFile))]]);
+const rewrites=new Map([[ptyBinding,ptySource],[photonFile,photonSource],[compactionFile,compaction.contents],[finalizationFile,finalization.contents],[agentDefaultsFile,rewriteNativeAgentDefaults(await fs.readFile(agentDefaultsFile))]]);
 for(const [file,contents] of rewrites) transforms.push({path:path.relative(repository,file),sha256:hash(await fs.readFile(file)),outputSha256:hash(contents),
-  reason:file===ptyBinding?(windowsCandidate?'windows-persistent-pty-unavailable':'compiled-dynamic-package-resolve-unavailable'):file===compactionFile?'pinned-native-compaction-read-only-observation':file===agentDefaultsFile?'pinned-native-external-directory-default-ask':'compiled-photon-source-wasm-read-denied'});
-const assetFilter=windowsCandidate?/(location-services-qhaz1dgr|persistent-pty[\\/]binary\.bun|photon_rs|@opencode[\\/]schema[\\/]dist[\\/]agent)\.js$/:/(location-services-dajrwvna|location-services-qhaz1dgr|photon_rs|@opencode[\\/]schema[\\/]dist[\\/]agent)\.js$/;
+  reason:file===ptyBinding?(windowsCandidate?'windows-persistent-pty-unavailable':'compiled-dynamic-package-resolve-unavailable'):file===compactionFile?'pinned-native-compaction-read-only-observation':file===finalizationFile?'pinned-native-finalization-read-only-observation':file===agentDefaultsFile?'pinned-native-external-directory-default-ask':'compiled-photon-source-wasm-read-denied'});
+const assetFilter=windowsCandidate?/(instance-7khw7vys|instance-r0d06n1c|persistent-pty[\\/]binary\.bun|photon_rs|@opencode[\\/]schema[\\/]dist[\\/]agent)\.js$/:/(instance-dajrwvna|instance-7khw7vys|instance-r0d06n1c|photon_rs|@opencode[\\/]schema[\\/]dist[\\/]agent)\.js$/;
 const plugin={name:'devryan-pinned-asset-resolvers',setup(builder){builder.onLoad({filter:assetFilter},event=>{const contents=rewrites.get(path.resolve(event.path));if(contents===undefined) throw new Error('Unexpected native asset resolver');return {contents,loader:'js'};});}};
 const settings={target:'bun',minify:true,conditions:['bun'],sourcemap:'none',metafile:true,plugins:[plugin,reviewedNativeInputPlugin(reviewed)]};
 await fs.mkdir(path.dirname(output),{recursive:true});
@@ -149,7 +152,7 @@ try {
   const inputs={buildSources,lockSha256:hash(lockBytes),coreDigest,hostDigest,sourceFiles,resolvedPackages,
     reviewedInputProvenance:reviewed.provenance,
     nativeRegistrations:[...createReviewedNativePluginRegistry(coreDigest,{hostDigest}).values()].map(({id,manifestDigest,capabilities})=>({id,manifestDigest,capabilities})),reviewedPlugins,transforms};
-  const identity={bunVersion:Bun.version,bunRevision:Bun.revision,opencodeVersion:'2.0.26',target:`bun-${target}`,compiledContracts:[NATIVE_BUNDLE_CREDENTIAL_CONTRACT,CLAUDE_LIFECYCLE_PROTOCOL,'devryan-v2-clone/1','devryan.primary-step-stop/1','devryan.bundle.credential-owners/2'],inputs,
+  const identity={bunVersion:Bun.version,bunRevision:Bun.revision,opencodeVersion:'2.0.30',target:`bun-${target}`,compiledContracts:[NATIVE_BUNDLE_CREDENTIAL_CONTRACT,CLAUDE_LIFECYCLE_PROTOCOL,'devryan-v2-clone/1','devryan.primary-step-stop/1','devryan.bundle.credential-owners/2'],inputs,
     ...(windowsGitResource?{windowsGit:windowsGitResource.windowsGit}:{})};
   const buildId=hash(JSON.stringify(identity));
   const files=[];
@@ -265,12 +268,9 @@ try {
     await fs.writeFile(path.join(stage,'native-candidate.json'),JSON.stringify(candidate,null,2)+'\n',{flag:'wx'});
     process.stdout.write(JSON.stringify({output,buildId,status:candidate.status,admission:false,candidateSha256:hash(await fs.readFile(path.join(output,'native-candidate.json')))})+'\n');
   }else{
-  // Explicit qualification outputs retain the accepted supervisor. A clean
-  // production build compiles and verifies that same confined launcher owner.
+  // Acceptance belongs to these source bytes, including the confinement helper.
   const launcher='DevRyan-execution-darwin-arm64';
-  const launcherSource=path.join(repository,'packages/web/runtime/darwin-arm64');
-  const haveLauncher=await fs.lstat(path.join(launcherSource,launcher+'.json')).then(()=>true,error=>{if(error.code==='ENOENT')return false;throw error;});
-  if(!haveLauncher){
+  {
     const built=spawnSync(process.execPath,['scripts/build-session-execution.mjs',stage,'--verify'],{cwd:repository,encoding:'utf8',maxBuffer:4*1024*1024});
     if(built.error||built.status!==0)throw built.error??new Error('Confined launcher acceptance failed: '+built.stderr);
     for(const filename of [launcher,launcher+'-spawn.dylib']){
@@ -282,7 +282,7 @@ try {
     await fs.writeFile(policyPath,JSON.stringify(policy,null,2)+'\n');
   }
   for(const filename of [launcher,`${launcher}.json`,`${launcher}-spawn.dylib`]) {
-    const target=path.join(stage,filename);if(haveLauncher)await fs.copyFile(path.join(launcherSource,filename),target);
+    const target=path.join(stage,filename);
     const stat=await fs.stat(target),bytes=await fs.readFile(target);
     let signing={mode:'unsigned',verified:false};
     if(!filename.endsWith('.json')) {
@@ -293,6 +293,9 @@ try {
     }
     files.push({role:'asset',path:filename,size:bytes.length,sha256:hash(bytes),mode:stat.mode&0o777,signing});
   }
+  for(const [file,digest] of loaded)if(hash(await fs.readFile(file))!==digest)throw new Error('Native build source changed');
+  for(const source of buildSources)if(hash(await fs.readFile(path.join(repository,source.path)))!==source.sha256)throw new Error('Native build helper changed');
+  if(hash(await fs.readFile(path.join(repository,'bun.lock')))!==hash(lockBytes))throw new Error('Native build lock changed');
   const manifest={schema:1,buildId,...identity,files,acceptedLauncher:{path:launcher}};
   await fs.writeFile(path.join(stage,'native-bundle.json'),JSON.stringify(manifest,null,2)+'\n');
   await fs.rm(path.join(stage,'inventory'),{recursive:true,force:true});

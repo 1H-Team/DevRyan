@@ -101,7 +101,7 @@ try {
     try {
       if (command.action === 'open') { await host.openStartup(); write({ id: command.id, ok: true }); }
       else if(command.action==='queued-primary-idle-owned'){const input=command;await runWithRequestPermit(new Headers({'x-devryan-native-permit':JSON.stringify(input.permit)}),async()=>{const permit=requestPermit();if(!permit)throw Error('fixture_permit_required');await host!.queuedPrimaryIdleOwned({sessionID:string(input.sessionID,'sessionID'),messageID:input.messageID===undefined?undefined:string(input.messageID,'messageID'),permit});});write({id:command.id,ok:true});}
-      else if (command.action === 'scenario') {
+      else if (command.action === 'scenario' || command.action === 'scenario-plan') {
         const caseID = string(command.caseID, 'caseID');
         const turn = command.backgroundRestart === true ? backgroundRestartTurn(caseID, command.input)
           : command.parallel === true ? parallelWriterTurn(caseID) : command.sameFile === true ? sameFileWriterTurn(caseID)

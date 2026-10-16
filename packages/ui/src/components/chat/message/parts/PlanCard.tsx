@@ -19,6 +19,7 @@ import { useConfigStore } from '@/stores/useConfigStore';
 import { useSelectionStore } from '@/sync/selection-store';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSessionStatus } from '@/sync/sync-context';
+import { useNotificationStore } from '@/sync/notification-store';
 import {
   CHAT_PRESERVE_SCROLL_ANCHOR_EVENT,
   requestChatScrollToBottom,
@@ -33,6 +34,7 @@ import {
   PLAN_CARD_COLLAPSED_MAX_HEIGHT_PX,
   getPlanCardImplementationKey,
   getPlanCardActionState,
+  hasPlanRevisionFailure,
   getPlanCardDataState,
   getPlanSkeletonRevealState,
   getStableSkeletonLineCount,
@@ -64,12 +66,15 @@ const PlanCard: React.FC<PlanCardProps> = ({
   sessionId,
   sourceMessageId,
   streamPhase,
-  planText,
+  planText: draftPlanText,
   projectPath,
   sessionDirectory,
   sessionCreated,
   sessionSlug,
 }) => {
+  const savedPlan = useSessionPlanFileStore(state => state.recordsBySession[sessionId]);
+  const planText = savedPlan?.sourceMessageId === sourceMessageId && savedPlan.canonicalContent
+    ? savedPlan.canonicalContent : draftPlanText;
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [isExpanded, setIsExpanded] = React.useState(false);
   const [contentHeight, setContentHeight] = React.useState(0);
@@ -112,13 +117,14 @@ const PlanCard: React.FC<PlanCardProps> = ({
     ),
   );
   const traceEntry = usePlanTurnTraceEntry(sourceMessageId);
+  const isGenerationSuccessful = traceEntry?.isActionable ?? false;
+  const hasTurnFailure = useNotificationStore(state => hasPlanRevisionFailure(state.list, sessionId, traceEntry?.userMessageId, isGenerationSuccessful));
   const sessionStatus = useSessionStatus(sessionId, sessionDirectory);
   const isLatestPlan = traceEntry?.isLatestPlan === true;
   // Unsettled revision = another assistant sibling is still running; the card
   // stays visible but disabled until the whole revision settles.
-  const isRevisionSettled = (traceEntry?.isSettled ?? true)
+  const isRevisionSettled = (traceEntry?.isSettled ?? false)
     && sessionStatus?.type !== 'busy' && sessionStatus?.type !== 'retry';
-  const isGenerationSuccessful = traceEntry?.isActionable ?? true;
   const planFileRecord = useSessionPlanFileStore((state) => state.recordsBySession[sessionId]);
   const currentPlanFileRecord = planFileRecord?.sourceMessageId === sourceMessageId
     ? planFileRecord
@@ -127,18 +133,25 @@ const PlanCard: React.FC<PlanCardProps> = ({
     streamPhase,
     hasPlanText: planText.trim().length > 0,
     isImplementationRequested,
-    isLatestPlan: traceEntry?.isLatestPlan ?? true,
+    isLatestPlan: traceEntry?.isLatestPlan ?? false,
     isRevisionSettled,
     isGenerationSuccessful,
+    hasTerminalFailure: (traceEntry?.hasTerminalError === true || hasTurnFailure)
+      && sessionStatus?.type === 'idle',
   });
   const shouldPersist = shouldPersistPlanCard({
     streamPhase,
     hasPlanText: planText.trim().length > 0,
     isLatestPlan,
     isRevisionSettled,
-    isGenerationSuccessful,
+    isGenerationSuccessful: true, // The server validates a failed prefix before granting recovered authority.
   });
-  const isPlanFileReady = currentPlanFileRecord?.status === 'saved' && Boolean(currentPlanFileRecord.path);
+  const isPlanFileReady = currentPlanFileRecord?.status === 'saved' && Boolean(currentPlanFileRecord.path)
+    && currentPlanFileRecord.sourceIdentity?.sourceMessageID === sourceMessageId
+    && currentPlanFileRecord.sourceIdentity.sessionID === sessionId
+    && currentPlanFileRecord.sourceIdentity.successful === true && currentPlanFileRecord.sourceIdentity.settled === true
+    && currentPlanFileRecord.sourceIdentity.current === true
+    && /^[a-f0-9]{64}$/.test(currentPlanFileRecord.version ?? '');
   const canImplement = actionState.canImplement && isPlanFileReady;
   const planFileDisabledReason = actionState.canImplement && !isPlanFileReady
     ? currentPlanFileRecord?.status === 'error'
@@ -268,7 +281,7 @@ const PlanCard: React.FC<PlanCardProps> = ({
 
   const handleImplement = React.useCallback(async () => {
     const planPath = currentPlanFileRecord?.status === 'saved' ? currentPlanFileRecord.path : null;
-    if (isSubmitting || !actionState.canImplement || !planPath) return;
+    if (isSubmitting || !canImplement || !planPath) return;
     setIsSubmitting(true);
     requestChatScrollToBottom(sessionId);
     let implementationMessageId: string | undefined;
@@ -286,6 +299,7 @@ const PlanCard: React.FC<PlanCardProps> = ({
         sourceSessionId: sessionId,
         sourceMessageId,
         projectDirectory: currentPlanFileRecord?.revisionIdentity?.directory,
+        version: currentPlanFileRecord?.version,
         instructions,
       });
 
@@ -360,7 +374,7 @@ const PlanCard: React.FC<PlanCardProps> = ({
       const rawMessage = error instanceof Error ? error.message.trim() : '';
       toast.error(rawMessage.length > 0 ? rawMessage : 'Failed to start implementing the plan.');
     }
-  }, [actionState.canImplement, currentPlanFileRecord?.path, currentPlanFileRecord?.revisionIdentity?.directory, currentPlanFileRecord?.status, implementationKey, isSubmitting, planText, sessionId, sourceMessageId]);
+  }, [canImplement, currentPlanFileRecord?.version, currentPlanFileRecord?.path, currentPlanFileRecord?.revisionIdentity?.directory, currentPlanFileRecord?.status, implementationKey, isSubmitting, planText, sessionId, sourceMessageId]);
 
   // The text container's minHeight only matters during the initial skeleton
   // phase, to prevent a height pop the instant the skeleton swaps for the
@@ -452,7 +466,7 @@ const PlanCard: React.FC<PlanCardProps> = ({
             </>
           ) : null}
           {implementDisabledReason ? (
-            <span id={disabledReasonId} className="sr-only">
+            <span id={disabledReasonId} className="text-muted-foreground">
               {implementDisabledReason}
             </span>
           ) : null}

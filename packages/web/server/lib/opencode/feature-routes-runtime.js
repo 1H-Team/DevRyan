@@ -89,6 +89,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       xaiToolCatalogRuntime,
       recordCommitTiming,
       generateHelperText,
+      resolveHelperSelection,
       cursorTextRuntime,
       resolveManagedProject,
       ownsSession,
@@ -158,6 +159,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       processesRuntime,
       standardSessionTitleRuntime,
       emitSyntheticOpenCodeEvent,
+      isStartupReadinessPending: routeDependencies.isStartupReadinessPending,
       resolveZenModel,
       resolveZenModelNonBlocking,
       xaiToolCatalogRuntime,
@@ -348,6 +350,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
     registerGitRoutes(app, {
       openCodeClient,
       generateHelperText,
+      resolveHelperSelection,
       cursorRuntime: cursorTextRuntime,
       recordCommitTiming,
       // Native Zen helper sessions, plus PR description tier 2 (session model).

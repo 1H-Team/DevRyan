@@ -1,0 +1,33 @@
+{
+  "date": "2026-10-14",
+  "scope": "Plan negative admission and file-only Undo owner corrections",
+  "qualification": "focused owner verification; fresh source/compiled graphs and shipping gates remain required",
+  "actualOwnerReproduction": {
+    "controllerReplacementBeforeCancellation": {
+      "before": { "outcome": "stale_no_start_recorded", "cancelCount": 1, "throws": "native_permit_revoked" },
+      "after": { "outcome": "revocation_fenced", "cancelCount": 0, "throws": "native_permit_revoked" },
+      "persistence": "in-memory substitutes; actual admission and denial owners; no physical execution"
+    },
+    "publicMutationMethods": {
+      "sequence": "published operation plus begin(process), cancelLease, cleanupLease, executionOutcomes, prepareFileRestore",
+      "before": { "outcome": "never_started", "restoreCode": "mutation_history_unavailable" },
+      "after": { "outcome": "never_started", "restoreCode": null },
+      "fixture": "disposable repository cache; no executor or direct ledger writes; removed after verification"
+    }
+  },
+  "regressionCoverage": [
+    "mixed published operation and exact clean prelaunch lease Undo and Redo",
+    "wrong or omitted no-start message identity on cached retries; identical retry retains transaction",
+    "dirty, unknown and already-claimed calls remain uncertain; no-op-only restore refuses",
+    "controller replacement during policy, canonical message and admission-state reads",
+    "queued cancellation, retained guard outside async context and changed durable hold revision",
+    "guarded commit checks before CAS, revocation rollback with absent and existing refs, truthful rollback failure",
+    "unknown MCP/plugin annotations cannot grant Plan effects; trusted reads and separate owned tools remain available",
+    "actual retry decoration preserves pre-output retry and vetoes missing attempt after output"
+  ],
+  "remaining": [
+    "source and compiled missing-attempt graph: verify third physical request is vetoed",
+    "fresh artifact and full native package qualification",
+    "actual Plan application and UI lane with natural exit and complete cleanup"
+  ]
+}

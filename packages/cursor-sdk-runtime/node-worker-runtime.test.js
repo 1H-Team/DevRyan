@@ -51,6 +51,7 @@ const createFakeWorkerSpawn = (capture) => (command, args, options) => {
             type: 'assistant',
             message: { content: [{ type: 'text', text: 'worker ok' }] },
         }];
+        for (const timing of capture.timings ?? []) child.stdout.push(`${JSON.stringify({ type: 'timing', ...timing })}\n`);
         for (const message of messages) child.stdout.push(`${JSON.stringify({ type: 'message', message })}\n`);
         child.stdout.push(`${JSON.stringify({ type: 'done', status: 'finished' })}\n`);
         child.stdout.push(null);
@@ -93,6 +94,7 @@ const createFinalResultBeforeStreamWorkerSpawn = (capture) => (command, args, op
             ok: true,
             finalStatus: 'success',
             finalText: 'worker final text before stream completion',
+            finalTextWitness: {assistantOrdinal: 1, priorNonempty: 0},
           },
         })}\n`);
       });
@@ -101,6 +103,7 @@ const createFinalResultBeforeStreamWorkerSpawn = (capture) => (command, args, op
   });
   child.kill = (signal) => {
     child.killed = true;
+    child.stdout.push(null);
     child.exitCode = signal === 'SIGKILL' ? 137 : 130;
     queueMicrotask(() => child.emit('close', child.exitCode, signal));
     return true;
@@ -187,7 +190,7 @@ const createFakePersistentWorkerSpawn = (capture, options = {}) => (command, arg
             child.stdout.push(`${JSON.stringify({
               requestID: commandPayload.requestID,
               type: 'final-result',
-              result: { ok: true, finalStatus: 'success', finalText: '' },
+              result: { ok: true, finalStatus: 'success' },
             })}\n`);
             child.stdout.push(`${JSON.stringify({
               requestID: commandPayload.requestID,
@@ -498,6 +501,26 @@ describe('Cursor SDK worker runtime config', () => {
       const assistant = (await runtime.getSessionMessages('ses_worker_stop')).find(record => record.info.role === 'assistant');
       expect(assistant.info.finish).toBe('cancelled');
     } finally { receipt.resolve({}); await runtime.dispose(); }
+  });
+
+  test('one-shot worker forwards create and provider-send timing under the owned session without payload content', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-worker-timing-'));
+    const marks = [], timings = ['cursor_run_created', 'cursor_provider_send_started', 'cursor_provider_send_accepted']
+      .map(mark => ({ mark, metadata: { cacheHit: false, text: 'private fixture content' } }));
+    const runtime = createCursorSdkRuntime({ storageDir: tempDir, env: { CURSOR_API_KEY: 'synthetic-fixture' },
+      useNodeWorkerForPrompts: true, usePersistentWorkerForPrompts: false, getWorkspaceDiff: async () => '',
+      spawnImpl: createFakeWorkerSpawn({ calls: [], timings }), recordTimingMark: entry => marks.push(entry) });
+    try {
+      await runtime.handlePromptAsync({ sessionID: 'ses_worker_timing', directory: tempDir,
+        body: { messageID: 'msg_worker_timing', model: { providerID: 'cursor-acp', modelID: 'composer-2.5' }, parts: [{ type: 'text', text: 'fixture prompt' }] } });
+      await waitFor(() => runtime.getSessionStatus().ses_worker_timing?.type === 'idle');
+      expect(marks.filter(entry => timings.some(timing => timing.mark === entry.mark)).map(entry => entry.mark)).toEqual(timings.map(timing => timing.mark));
+      for (const mark of marks.filter(entry => timings.some(timing => timing.mark === entry.mark))) {
+        expect(mark).toMatchObject({ sessionId: 'ses_worker_timing', messageId: 'msg_worker_timing',
+          metadata: { providerID: 'cursor-acp', modelID: 'composer-2.5', cacheHit: false } });
+        expect(mark.metadata).not.toHaveProperty('text');
+      }
+    } finally { await runtime.dispose(); }
   });
 
   test.each(['empty', 'reasoning', 'assistant'])('first emitted text measures assistant answer only (%s)', async mode => {
@@ -818,11 +841,12 @@ describe('Cursor SDK worker runtime config', () => {
     });
   });
 
-  test('applies worker final result while stdout stream remains open', async () => {
+  test('marks an open worker stdout partial instead of applying an early final result', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-worker-'));
     const capture = { calls: [], input: null };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
+      streamIdleTimeoutMs: 20,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
       env: { OPENCHAMBER_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
@@ -853,8 +877,8 @@ describe('Cursor SDK worker runtime config', () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
 
-    expect(records?.[1]?.info.finish).toBe('stop');
-    expect(records?.[1]?.parts?.find((part) => part.type === 'text')?.text).toBe('worker final text before stream completion');
+    expect(records?.[1]?.info.finish).toBe('error');
+    expect(records?.[1]?.info.error).toEqual({ name: 'CursorStreamPartialError', message: 'Cursor stream incomplete (CURSOR_STREAM_DRAIN_TIMEOUT).' });
     expect(runtime.getRuntimeStatus().activeRuns).toBe(0);
   });
 
@@ -1102,6 +1126,7 @@ describe('Cursor SDK worker runtime config', () => {
           ok: true,
           finalStatus: 'success',
           finalText: 'Implementation complete.',
+            finalTextWitness: {assistantOrdinal: 1, priorNonempty: 0},
         }),
       }),
     });
@@ -1172,6 +1197,7 @@ describe('Cursor SDK worker runtime config', () => {
           ok: true,
           finalStatus: 'success',
           finalText: 'This must not look successful.',
+            finalTextWitness: {assistantOrdinal: 1, priorNonempty: 0},
         }),
       }),
     });

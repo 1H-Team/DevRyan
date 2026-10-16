@@ -17,6 +17,7 @@ const TOKEN_REFRESH_MARGIN_MS = 60_000;
 const START_RETRY_MIN_MS = 2_000;
 const START_RETRY_MAX_MS = 60_000;
 const SAFE_METHODS = new Set(['GET', 'HEAD']);
+const DORMANT_DOCKER_CODES = new Set(['bot_runtime_docker_unavailable', 'bot_runtime_docker_not_installed']);
 const JWT_REJECTION_CODES = new Set(['PGRST301', 'PGRST302', 'PGRST303']);
 
 const connectionCode = (error) => {
@@ -85,6 +86,7 @@ export function createLocalBotCatalogTransport({
   setTimer = setTimeout,
   clearTimer = clearTimeout,
   logger = console,
+  hasActiveWork = () => false,
 } = {}) {
   if (typeof catalog?.getContext !== 'function' || typeof catalog?.ensure !== 'function') {
     throw new TypeError('The local Bot catalog provider is required');
@@ -94,6 +96,7 @@ export function createLocalBotCatalogTransport({
     || typeof objectStorage?.storageDelete !== 'function') {
     throw new TypeError('The local Bot object storage is required');
   }
+  if (typeof hasActiveWork !== 'function') throw new TypeError('The Bot catalog activity owner is required');
   const traffic = createSupabaseTraffic({ now });
   const listeners = new Set();
   let current = null;
@@ -118,6 +121,8 @@ export function createLocalBotCatalogTransport({
   };
 
   const markReady = (generation) => {
+    if (retryTimer) clearTimer(retryTimer);
+    retryTimer = null;
     retryDelayMs = START_RETRY_MIN_MS;
     publish({ state: 'ready', code: null, generation });
   };
@@ -271,11 +276,15 @@ export function createLocalBotCatalogTransport({
   }
 
   function scheduleStart() {
-    if (disposed || retryTimer || state.state === 'recovery_required' || state.state === 'maintenance') return;
+    const canRetry = () => !disposed
+      && !['recovery_required', 'maintenance', 'setup_required', 'update_required'].includes(state.state)
+      && (!DORMANT_DOCKER_CODES.has(state.code) || hasActiveWork());
+    if (retryTimer || !canRetry()) return;
     const delay = retryDelayMs;
     retryDelayMs = Math.min(START_RETRY_MAX_MS, retryDelayMs * 2);
     retryTimer = setTimer(() => {
       retryTimer = null;
+      if (!canRetry()) return;
       void ensureStarted().catch((error) => {
         if (state.state !== 'recovery_required' && state.state !== 'setup_required') scheduleStart();
         logger?.debug?.('[BotsCatalog] catalog start deferred', { code: error?.code || 'bot_database_unavailable' });

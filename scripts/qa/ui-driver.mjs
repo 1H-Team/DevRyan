@@ -12,12 +12,18 @@ export const isQaRevealRectVisible = (rect, bounds, fullyVisible) => Boolean(rec
   && rect.left+rect.width/2>=bounds.left && rect.left+rect.width/2<=bounds.right
   && (!fullyVisible || (rect.top>=bounds.top && rect.bottom<=bounds.bottom && rect.left>=bounds.left && rect.right<=bounds.right)));
 
-export function createQaUiDriver(cdp, { timeoutMs = 30000, checkAlive = () => {}, navigationReads = false } = {}) {
+export function createQaUiDriver(connection, { timeoutMs = 30000, checkAlive: alive = () => {}, navigationReads = false, deadline: phaseDeadline, signal } = {}) {
+  const checkAlive = () => { alive(); signal?.throwIfAborted(); if (phaseDeadline !== undefined && performance.now() >= phaseDeadline) throw Error('QA UI phase deadline expired'); };
+  const cdp = phaseDeadline === undefined && !signal ? connection : { send: (method, params, options = {}) => {
+    checkAlive(); return connection.send(method, params, { ...options, timeoutMs: Math.min(options.timeoutMs ?? 30000, phaseDeadline === undefined ? 30000 : phaseDeadline - performance.now()) });
+  }, waitFor: (method, timeout = 30000) => { checkAlive(); return connection.waitFor(method, Math.min(timeout, phaseDeadline === undefined ? timeout : phaseDeadline - performance.now())); } };
   const waitFor = async (label, predicate, timeout = timeoutMs) => {
-    const deadline = performance.now() + timeout;
+    const deadline = Math.min(performance.now() + timeout, phaseDeadline ?? Infinity);
     while (true) {
       checkAlive();
       const result = await predicate(deadline);
+      checkAlive();
+      if (phaseDeadline !== undefined && performance.now() > deadline) throw new Error(`Timed out: ${label}`);
       if (result) return result;
       if (performance.now() > deadline) throw new Error(`Timed out: ${label}`);
       await delay(100);

@@ -302,6 +302,28 @@ describe('Cursor SDK model discovery', () => {
       expect(phases).toEqual(['scope:verify', 'sdk', 'key:verify:/owned/project', 'me', 'scope:catalog', 'sdk', 'key:catalog:/owned/project', 'models']);
     } finally { await runtime.dispose(); }
   });
+  test('explicit native verification completes beyond the quick public cap under the existing owned catalog deadline', async () => {
+    const started=Promise.withResolvers(),release=Promise.withResolvers(),signals=[],diagnostics=[];
+    let settled=false,lists=0;
+    const runtime=createCursorSdkRuntime({nativeWarming:false,modelDiscoveryTimeoutMs:10,
+      resolveApiKey:async()=> 'owned-verification-fixture',
+      ownedReadOnly:async(scope,action)=>{if(scope.kind==='catalog')signals.push(scope.signal);return action();},
+      recordDiagnostic:entry=>diagnostics.push(entry),
+      loadSdk:async()=>({Cursor:{me:async()=>{},models:{list:async()=>{lists++;started.resolve();await release.promise;
+        return [{id:'grok-4.6',variants:[{params:[{id:'effort',value:'medium'}]}]}];}}}}),
+    });
+    let pending;
+    try{
+      pending=runtime.verifyConnection({directory:'/owned/project'}).finally(()=>{settled=true;});
+      await started.promise;await new Promise(resolve=>setTimeout(resolve,30));
+      expect(signals).toHaveLength(1);expect(signals[0].aborted).toBe(false);expect(settled).toBe(false);
+      release.resolve();expect(await pending).toMatchObject({ok:true,configured:true,modelCount:1,modelsSource:'sdk',lastModelRefreshTimedOut:false});
+      expect(runtime.getCachedVirtualProvider().models['grok-4.6'].variants.medium).toBeDefined();
+      expect(lists).toBe(1);expect(diagnostics.at(-1).payload.outcome).toBe('completed');
+      // Ordinary public discovery still uses the caller's quick cap. Its
+      // account switch cannot reuse this completed account's catalog.
+    }finally{release.resolve();await pending;await runtime.dispose();}
+  });
 
   test('maps fallback Composer fast rows to SDK fast parameter selections', async () => {
     const runtime = createRuntimeForModels([]);
@@ -833,6 +855,7 @@ test('Composer 2.5 sequential prompts switch SDK mode and restore saved Fast sel
     send: async () => ({
       status: 'finished',
       wait: async () => ({ status: 'finished', result: 'done' }),
+      conversation: async () => [{ type: 'agentConversationTurn', turn: { steps: [{type:'assistantMessage',message:{text:'done'}}] } }],
       async *stream() { yield { type: 'status', status: 'FINISHED' }; },
     }),
   });
@@ -893,7 +916,8 @@ test('native prompt selections refresh account-specific SDK parameters while pre
       }]; } } },
       Agent: { create: async input => {
         selections.push({ key: input.apiKey, model: input.model });return { agentId: `agent_${selections.length}`, send: async () => ({
-          status: 'finished', wait: async () => ({ status: 'finished', result: 'done' }), async *stream() { yield { type: 'status', status: 'FINISHED' }; },
+          status: 'finished', wait: async () => ({ status: 'finished', result: 'done' }),
+      conversation: async () => [{ type: 'agentConversationTurn', turn: { steps: [{type:'assistantMessage',message:{text:'done'}}] } }], async *stream() { yield { type: 'status', status: 'FINISHED' }; },
         }) };
       } },
     }),
@@ -1030,6 +1054,7 @@ test('terminal persistence diagnostics locate held ownership without changing bu
   const held = Promise.withResolvers(), entered = Promise.withResolvers(), diagnostics = [];
   const agent = { agentId: 'fixture_agent', send: async () => ({ status: 'finished',
     wait: async () => ({ status: 'finished', result: 'private provider response' }),
+      conversation: async () => [{ type: 'agentConversationTurn', turn: { steps: [{type:'assistantMessage',message:{text:'private provider response'}}] } }],
     async *stream() { yield { type: 'status', status: 'FINISHED' }; } }) };
   const runtime = createCursorSdkRuntime({ storageDir, env: { CURSOR_API_KEY: 'private fixture key' }, readAuth: () => ({}), writeAuth: () => {},
     getWorkspaceDiff: async () => '', loadSdk: async () => ({ Cursor: { models: { list: async () => [{ id: 'fixture_model' }] } },
@@ -1044,11 +1069,11 @@ test('terminal persistence diagnostics locate held ownership without changing bu
     await entered.promise;
     expect(runtime.getRuntimeStatus().activeRuns).toBe(0);
     expect(runtime.getSessionStatus().ses_terminal_diagnostic.type).toBe('busy');
-    expect(diagnostics.map(entry => entry.payload.phase)).toEqual(['sdk_queued', 'sdk_started', 'sdk_owner_started']);
+    expect(diagnostics.filter(entry => entry.event === 'cursor_persistence').map(entry => entry.payload.phase)).toEqual(['sdk_queued', 'sdk_started', 'sdk_owner_started']);
     held.resolve(); await runtime.abortAndWait('ses_terminal_diagnostic');
     expect(runtime.getSessionStatus().ses_terminal_diagnostic.type).toBe('idle');
-    expect(diagnostics.map(entry => entry.payload.phase)).toEqual(['sdk_queued', 'sdk_started', 'sdk_owner_started', 'sdk_owner_returned', 'sdk_stored', 'sdk_settled']);
-    for (const entry of diagnostics) {
+    expect(diagnostics.filter(entry => entry.event === 'cursor_persistence').map(entry => entry.payload.phase)).toEqual(['sdk_queued', 'sdk_started', 'sdk_owner_started', 'sdk_owner_returned', 'sdk_stored', 'sdk_settled']);
+    for (const entry of diagnostics.filter(entry => entry.event === 'cursor_persistence')) {
       expect(entry).toMatchObject({ type: 'lifecycle', event: 'cursor_persistence', sessionID: 'ses_terminal_diagnostic', directory: storageDir,
         payload: { userMessageID: 'msg_terminal_diagnostic', assistantMessageID: 'msg_terminal_diagnostic_assistant' } });
       expect(Object.keys(entry.payload).sort()).toEqual(['assistantMessageID', 'elapsedMs', 'phase', 'startedAt', 'userMessageID']);
@@ -1067,6 +1092,7 @@ test('slow owned persistence coalesces streaming snapshots while preserving tool
   const text = Array.from({ length: 30 }, (_, i) => `chunk-${i} `).join('');
   const agent = { agentId: 'fixture_backpressure', send: async () => ({ status: 'running',
     wait: async () => { await providerDone.promise; return { status: 'finished', result: text }; },
+    conversation: async () => [{type:'agentConversationTurn',turn:{steps:[{type:'assistantMessage',message:{text}},{type:'toolCall'}]}}],
     async *stream() {
       yield { type: 'assistant', message: { content: [{ type: 'text', text: 'chunk-0 ' }] } };
       await ownerEntered.promise;

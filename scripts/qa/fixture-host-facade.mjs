@@ -12,8 +12,6 @@ import { createOpenCodeAdmission } from '../../packages/web/server/lib/opencode/
 import { createV2AudienceRequester } from '../../packages/web/server/lib/opencode/opencode-client/requester.js';
 import { createGlobalMessageStreamHub } from '../../packages/web/server/lib/event-stream/global-hub.js';
 import { registerOpenCodeProxy } from '../../packages/web/server/lib/opencode/proxy.js';
-import { registerSessionPlanRoutes } from '../../packages/web/server/lib/plans/routes.js';
-import { createHarnessTaskContextHost } from '../../packages/web/server/lib/opencode/harness-task-context.js';
 import { registerConfigEntityRoutes } from '../../packages/web/server/lib/opencode/config-entity-routes.js';
 import { listConfigAgents } from '../../packages/web/server/lib/opencode/agents.js';
 import { readAgentRuntimeSettings, writeAgentRuntimeSettings } from '../../packages/web/server/lib/opencode/agent-runtime-settings.js';
@@ -55,8 +53,6 @@ export async function createQaFixtureHostFacade({ fixture, realOrigin, workspace
   const client = createOpenCodeClient({ ...deps,getAdmission:()=>admission });
   admission=createOpenCodeAdmission(deps,{client});
   const hub = createGlobalMessageStreamHub({ openCodeClient: client, getOpenCodeRuntime: getRuntime, getOpenCodeAuthHeaders: getAuthHeaders });
-  const context = createHarnessTaskContextHost({ openCodeClient: client, dataDirectory, isManaged: () => false,
-    getRegisteredProjects: async () => [{ path: workspace }] });
   const app = express(), server = createServer(app), active = new Set(), unexpected = [];
   let origin, closed = false;
   const resolveDirectory = req => {
@@ -71,9 +67,11 @@ export async function createQaFixtureHostFacade({ fixture, realOrigin, workspace
     next();
   });
   const features = express.Router();
-  registerSessionPlanRoutes(features, { dataDirectory, fsPromises: fs, path,
-    readCanonicalPlanIdentity: context.readCanonicalPlanIdentity,
-    publishEvent: (payload, options) => hub.publishSyntheticEvent({ payload, directory: options.directory }) });
+  // Synthetic transport IDs have no physical native owner/settlement proof.
+  // This facade cannot approve or persist an authoritative Plan revision.
+  features.all('/api/session/:sessionID/plan-revisions/:sourceMessageID', (_req, res) => res.status(409).json({
+    error: 'Plan authority requires the actual isolated native application lifecycle', code: 'qa_fixture_plan_authority_unavailable',
+  }));
   registerConfigEntityRoutes(features, { resolveProjectDirectory: async req => ({ directory: resolveDirectory(req) }),
     listConfigAgents: directory => listConfigAgents(directory, { userConfigPath, env: {},
       readOpenCodeConfig: () => JSON.parse(require('node:fs').readFileSync(userConfigPath, 'utf8')) }),

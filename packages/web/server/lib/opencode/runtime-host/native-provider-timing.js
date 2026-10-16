@@ -9,7 +9,7 @@
 const MAX_ENTRIES = 256;
 const KINDS = new Set(['primary', 'title', 'compaction', 'generate']);
 const TRANSPORTS = new Set(['http', 'ws']);
-const EVENTS = new Map([['first-byte', 'provider_first_byte'], ['response-created', 'provider_response_created']]);
+const EVENTS = new Map([['headers','provider_response_headers'],['first-byte', 'provider_first_byte'], ['response-created', 'provider_response_created'],['body-end','provider_body_end']]);
 const PAYLOAD_KEYS = ['controllerInstanceID', 'sessionID', 'requestID', 'kind', 'transport', 'event', 'statusCode'];
 
 const invalid = () => Object.assign(new Error('native_provider_timing_invalid'), { code: 'native_provider_timing_invalid', statusCode: 400 });
@@ -23,10 +23,12 @@ const remember = (map, key, value) => {
 
 /** Exact controller payload; anything else is refused. */
 export function parseNativeProviderTiming(value) {
-  if (!object(value) || Object.keys(value).length !== PAYLOAD_KEYS.length || PAYLOAD_KEYS.some((key) => !Object.hasOwn(value, key))) throw invalid();
+  if (!object(value) || Object.keys(value).length !== PAYLOAD_KEYS.length+Number(value.event==='body-end') || PAYLOAD_KEYS.some((key) => !Object.hasOwn(value, key))) throw invalid();
   if (!id(value.controllerInstanceID) || !id(value.sessionID) || !id(value.requestID) || !KINDS.has(value.kind)
     || !TRANSPORTS.has(value.transport) || !EVENTS.has(value.event)
     || (value.statusCode !== null && (!Number.isSafeInteger(value.statusCode) || value.statusCode < 100 || value.statusCode > 599))) throw invalid();
+  if(value.event==='body-end'&&(!object(value.body)||Object.keys(value.body).length!==3
+    ||!['bytes','chunks','maxGapMs'].every(key=>Number.isSafeInteger(value.body[key])&&value.body[key]>=0)))throw invalid();
   return { ...value };
 }
 
@@ -53,7 +55,7 @@ export function createNativeProviderTiming(options = {}) {
       if (observation.stage !== 'physical') return;
       const at = now();
       const request = requests.get(observation.requestID) ?? { requestID: observation.requestID, sessionID: observation.sessionID, kind: observation.kind,
-        transport: observation.transport, preparedAt: prepared.get(observation.requestID) ?? null, sentAt: at, firstByteAt: null };
+        transport: observation.transport, preparedAt: prepared.get(observation.requestID) ?? null, sentAt: at, headersAt:null,firstByteAt: null };
       remember(requests, observation.requestID, request);
       const key = attemptKey(observation.sessionID, observation.attempt);
       if (key && !attempts.has(key)) remember(attempts, key, request);
@@ -64,9 +66,11 @@ export function createNativeProviderTiming(options = {}) {
       const request = requests.get(timing.requestID);
       if (!request || request.sessionID !== timing.sessionID || request.kind !== timing.kind) return;
       if (timing.event === 'first-byte' && request && request.firstByteAt === null) request.firstByteAt = now();
+      if(timing.event==='headers'&&request.headersAt===null)request.headersAt=now();
       if (timing.kind !== 'primary') return;
       mark({ sessionId: timing.sessionID, mark: EVENTS.get(timing.event),
-        metadata: { kind: timing.kind, transport: timing.transport, requestID: timing.requestID, ...(timing.statusCode === null ? {} : { statusCode: timing.statusCode }) } });
+        metadata: { kind: timing.kind, transport: timing.transport, requestID: timing.requestID, ...(timing.statusCode === null ? {} : { statusCode: timing.statusCode }),
+          ...timing.event==='body-end'?timing.body:{} } });
     },
     /** The physical request of a native attempt span, or null when unobserved. */
     resolve({ sessionID, attempt } = {}) {

@@ -172,6 +172,59 @@ for(const submitted of [false,true])test(`absolute deadline classifies ${submitt
   assert.equal(cdp.count(),0);
 });
 
+for(const submitted of [false,true])test(`an early ${submitted?'response':'request'} timer rearms only the remaining absolute budget`,async context=>{
+  context.mock.timers.enable({apis:['Date'],now:1_000_000});
+  const timers=new Map();
+  context.mock.method(globalThis,'setTimeout',(callback,delay)=>{
+    const timer={callback,delay};timers.set(timer,timer);return timer;
+  });
+  context.mock.method(globalThis,'clearTimeout',timer=>timers.delete(timer));
+  const {cdp,receipt,observer}=setup(120_000);
+  const fire=timer=>{assert.ok(timers.delete(timer));timer.callback();};
+  try {
+    observer.arm();if(submitted)request(cdp);
+    const requestDeadline=receipt.requestDeadline,targetDeadline=submitted?1_120_000:requestDeadline;
+    const original=[...timers.values()].find(timer=>timer.delay===targetDeadline-Date.now());
+    assert.ok(original);
+    context.mock.timers.tick(targetDeadline-Date.now()-1);
+    fire(original);
+    observer.assertHealthy();assert.equal(receipt.requestFailureObservedAt,undefined);
+    assert.equal(receipt.requestDeadline,requestDeadline,'Rearming cannot reset the request budget');
+    const remaining=[...timers.values()].find(timer=>timer.delay===1);assert.ok(remaining);
+    context.mock.timers.tick(1);fire(remaining);
+    await assert.rejects(observer.waitForAcknowledgement(),submitted?/summarize-response-unobserved-at-deadline/:/summarize-request-unobserved-at-request-deadline/);
+    if(!submitted)assert.equal(receipt.requestFailureObservedAt,requestDeadline);
+  } finally {
+    observer.close();assert.equal(cdp.count(),0);assert.equal(timers.size,0,'Close must clear every owned timer');
+    context.mock.restoreAll();context.mock.timers.reset();
+  }
+});
+
+for(const kind of ['request','response','request-after-cell-deadline'])test(`a late ${kind} cannot beat an unfired deadline timer`,async context=>{
+  context.mock.timers.enable({apis:['Date'],now:1_000_000});
+  const timers=new Set();
+  context.mock.method(globalThis,'setTimeout',callback=>{timers.add(callback);return callback;});
+  context.mock.method(globalThis,'clearTimeout',timer=>timers.delete(timer));
+  const {cdp,receipt,observer}=setup(120_000);
+  try {
+    observer.arm();
+    if(kind==='response')request(cdp);
+    context.mock.timers.tick(kind==='request'?30_000:120_000);
+    if(kind!=='response')request(cdp);
+    response(cdp);
+    const failure=kind==='response'?'summarize-response-unobserved-at-deadline':'summarize-request-unobserved-at-request-deadline';
+    await assert.rejects(observer.waitForAcknowledgement(),error=>error.message.includes(failure));
+    assert.equal(receipt.failure,failure);assert.equal(receipt.outcome,'failed');
+    if(kind==='response')assert.equal(receipt.requests[0].response,undefined);
+    else {assert.equal(receipt.matchingRequestCount,0);assert.deepEqual(receipt.requests,[]);}
+    cdp.emit('Network.loadingFailed',{requestId:'42.1',errorText:'net::ERR_ABORTED'});
+    assert.equal(receipt.failure,failure,'Later network evidence must not overwrite the original deadline cause');
+  } finally {
+    observer.close();assert.equal(cdp.count(),0);assert.equal(timers.size,0);
+    context.mock.restoreAll();context.mock.timers.reset();
+  }
+});
+
 test('request observation gets 30 seconds from arm while a matched request keeps the original response deadline',async context=>{
   context.mock.timers.enable({apis:['Date','setTimeout'],now:1_000_000});
   const missing=setup(120_000),matched=setup(120_000),capped=setup(50_000);

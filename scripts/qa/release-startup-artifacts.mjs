@@ -21,35 +21,40 @@ export async function assertNoPriorStartupFailure(sourceCommit, runId) {
       'A prior startup trial failed for this source commit; investigate and commit the correction before qualification');
   }
 }
-export async function hashReleaseFile(file) {
+export async function hashReleaseFile(file, { signal } = {}) {
   const hash = createHash('sha256');
-  for await (const bytes of createReadStream(file)) hash.update(bytes);
+  for await (const bytes of createReadStream(file, { signal })) hash.update(bytes);
   return hash.digest('hex');
 }
 
 /** Extract only the signed app from the immutable installer; never refresh its manifest or signature. */
-export async function inspectReleaseDmg({ dmg, directory, purpose = 'current', expectedSha256, version }) {
+export async function inspectReleaseDmg({ dmg, directory, purpose = 'current', expectedSha256, version, deadline, signal }) {
+  const check = () => { signal?.throwIfAborted(); if (deadline !== undefined) assert.ok(performance.now() < deadline, 'Installer inspection deadline expired'); };
+  const execute = (command, args, options = {}) => { check(); return exec(command, args, { ...options, signal, timeout: deadline === undefined ? options.timeout : Math.max(1, Math.min(options.timeout ?? 30000, deadline - performance.now())) }); };
+  check();
   assert.ok(path.isAbsolute(dmg) && path.isAbsolute(directory));
-  const dmgSha256 = await hashReleaseFile(dmg);
+  const dmgSha256 = await hashReleaseFile(dmg, { signal });
   if (expectedSha256) assert.equal(dmgSha256, expectedSha256, 'Published installer digest differs');
   await fs.mkdir(directory, { recursive: true, mode: 0o700 });
   const mount = path.join(directory, 'mount'), appPath = path.join(directory, 'DevRyan.app');
   await fs.mkdir(mount);
-  await exec('/usr/bin/hdiutil', ['attach', '-nobrowse', '-readonly', '-mountpoint', mount, dmg], { timeout: 60_000 });
+  await execute('/usr/bin/hdiutil', ['attach', '-nobrowse', '-readonly', '-mountpoint', mount, dmg], { timeout: 60_000 });
   try {
     const source = path.join(mount, 'DevRyan.app');
-    await exec('/usr/bin/codesign', ['--verify', '--deep', '--strict', source], { timeout: 60_000 });
-    await exec('/usr/bin/ditto', [source, appPath], { timeout: 120_000 });
+    await execute('/usr/bin/codesign', ['--verify', '--deep', '--strict', source], { timeout: 60_000 });
+    await execute('/usr/bin/ditto', [source, appPath], { timeout: 120_000 });
   } finally { await exec('/usr/bin/hdiutil', ['detach', mount], { timeout: 30_000 }); }
-  await exec('/usr/bin/codesign', ['--verify', '--deep', '--strict', appPath], { timeout: 60_000 });
-  const { stdout } = await exec('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleShortVersionString', path.join(appPath, 'Contents/Info.plist')]);
+  await execute('/usr/bin/codesign', ['--verify', '--deep', '--strict', appPath], { timeout: 60_000 });
+  const { stdout } = await execute('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleShortVersionString', path.join(appPath, 'Contents/Info.plist')]);
   assert.equal(stdout.trim(), version, 'Installer version differs');
   const artifactRoot = path.join(appPath, 'Contents/Resources/revert-runtime/darwin-arm64');
   const manifestPath = path.join(artifactRoot, 'native-bundle.json'), manifestSha256 = await hashReleaseFile(manifestPath);
   const native = await verifyNativeRuntimeArtifacts({ manifestPath, manifestSha256,
     launcher: path.join(artifactRoot, 'DevRyan-execution-darwin-arm64'), purpose });
+  check();
   const appSha256 = (await captureQaElectronAppIdentity(appPath)).sha256;
-  assert.equal(await hashReleaseFile(dmg), dmgSha256);
+  assert.equal(await hashReleaseFile(dmg, { signal }), dmgSha256);
+  check();
   return { dmg, dmgSha256, appPath, appSha256, version, manifestSha256, artifactRoot,
     opencodeVersion: native.manifest.opencodeVersion, binary: path.join(appPath, 'Contents/MacOS/DevRyan') };
 }

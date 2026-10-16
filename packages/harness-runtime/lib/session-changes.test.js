@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { createSessionChangeRuntime } from './session-changes.js';
 import { withExecutionSummary } from './execution-admission.js';
 import { finishFixtureMutation } from '../test/session-change-fixture.js';
+import {changeKey,openChangeStore} from './session-changes-store.js';
 
 // Real Git integration can share the host with builds; keep a bounded budget
 // that does not tear down a live fixture at Bun's five-second default.
@@ -34,6 +35,69 @@ describe('session changes', () => {
       { phase: 'direct_finish', onDiagnostic: (record) => records.push(record) });
     expect(records).toHaveLength(1);
     expect(records[0].steps).toMatch(/^changes_queue_wait:1\/\d+,changes_transaction:1\/\d+$/);
+  });
+  test('trusted batches notify once, suppress identical evidence, and publish coverage improvements without file changes', async () => {
+    const changes = [];
+    runtime = createSessionChangeRuntime({ directory: storage, onChange: event => changes.push(event) });
+    const one = { ...input(), source: 'confined-execution', complete: false, files: [] };
+    const two = { ...input(), source: 'confined-execution', complete: true, files: [] };
+    await runtime.recordReceipts([one, two]);
+    expect(changes).toHaveLength(1);
+    await runtime.recordReceipts([one, two]);
+    expect(changes).toHaveLength(1);
+    await runtime.recordReceipts([{ ...one, complete: true }]);
+    expect(changes).toHaveLength(2);
+    expect((await summary()).files).toEqual([]);
+  });
+  test('trusted batches reject mixed directories or malformed identities before recording any call', async () => {
+    const valid = { ...input(), source: 'confined-execution', files: [] };
+    await expect(runtime.recordReceipts([valid, { ...input(), files: null }])).rejects.toMatchObject({ code: 'invalid_change_receipt' });
+    expect(await runtime.findCall(valid)).toBeNull();
+    await expect(runtime.recordReceipts([valid, { ...input(), directory: '/another', files: [] }])).rejects.toMatchObject({ code: 'invalid_change_receipt' });
+    expect(await runtime.findCall(valid)).toBeNull();
+  });
+  test('a later receipt failure preserves active snapshot and native calls until retry commits',async()=>{
+    const snapshot=input(),native=input();
+    await runtime.begin(snapshot);
+    await runtime.recordExecution({...native,phase:'tool',tool:'edit',state:'running'});
+    const valid={...snapshot,source:'confined-execution',files:[]};
+    const invalid={...input(),files:(async function*(){throw Object.assign(Error('later receipt failed'),{code:'EIO'});})()};
+    await expect(runtime.recordReceipts([valid,{...native,source:'confined-execution',files:[]},invalid])).rejects.toMatchObject({code:'EIO'});
+    const operation=async op=>{
+      const db=await openChangeStore(storage,path.join(storage,changeKey(await fs.realpath(directory)),'git'));
+      return db.get(`operations/${changeKey(`${op.sessionID}\0${op.callID}`)}.json`);
+    };
+    // A fresh load must not mark either still-owned pending call interrupted.
+    await runtime.findCall(snapshot);
+    expect((await operation(snapshot)).state).toBe('pending');expect((await operation(native)).state).toBe('pending');
+    await runtime.recordExecution({...native,phase:'tool',tool:'edit',state:'running'});
+    expect((await operation(native)).state).toBe('pending');
+    await runtime.recordReceipts([valid,{...native,source:'confined-execution',files:[]}]);
+    await runtime.finish(snapshot);await runtime.recordExecution({...native,phase:'tool',tool:'edit',state:'running'});
+    expect(await operation(snapshot)).toMatchObject({state:'complete',evidence:'exact'});
+    expect(await operation(native)).toMatchObject({state:'complete',evidence:'exact'});
+  });
+  test('a failed receipt commit keeps snapshot and native ownership for late calls and retry',async()=>{
+    const snapshot=input(),native=input();
+    await runtime.begin(snapshot);
+    await runtime.recordExecution({...native,phase:'tool',tool:'edit',state:'running'});
+    const gitDir=path.join(storage,changeKey(await fs.realpath(directory)),'git');
+    const lock=path.join(gitDir,'refs','devryan','state.lock');
+    const receipts=[snapshot,native].map(op=>({...op,source:'confined-execution',files:[]}));
+    // Introduce the real ref-write failure after load, at receipt staging.
+    const files=(async function*(){await fs.writeFile(lock,'fixture\n',{flag:'wx'});})();
+    try { await expect(runtime.recordReceipts([receipts[0],{...receipts[1],files}])).rejects.toThrow(); }
+    finally { await fs.rm(lock,{force:true}); }
+    const operation=async op=>(await openChangeStore(storage,gitDir)).get(`operations/${changeKey(`${op.sessionID}\0${op.callID}`)}.json`);
+    await runtime.findCall(snapshot);
+    await runtime.recordExecution({...native,phase:'tool',tool:'edit',state:'running'});
+    expect((await operation(snapshot)).state).toBe('pending');
+    expect((await operation(native)).state).toBe('pending');
+    await runtime.recordReceipts(receipts);
+    await runtime.finish(snapshot);
+    await runtime.recordExecution({...native,phase:'tool',tool:'edit',state:'running'});
+    expect(await operation(snapshot)).toMatchObject({state:'complete',evidence:'exact'});
+    expect(await operation(native)).toMatchObject({state:'complete',evidence:'exact'});
   });
   test('captures exact fixture changes with a dirty staged baseline, preserving index and HEAD', async () => {
     await write('a.txt', 'base\nuser\n'); command('add', 'a.txt');

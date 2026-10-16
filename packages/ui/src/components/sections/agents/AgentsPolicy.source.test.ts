@@ -29,11 +29,14 @@ describe('managed Agent settings presentation', () => {
     expect(pageSource).toContain('Reset to Host');
   });
 
-  test('summarizes agent models on Session Defaults without a second model editor', () => {
+  test('summarizes agent models without another per-agent editor beside the shared helper selector', () => {
     expect(sessionDefaultsSource).toContain('resolveAgentDefaultSelection({');
     expect(sessionDefaultsSource).toContain("useUIStore.getState().setSettingsPage('agents');");
     expect(sessionDefaultsSource).toContain("{canReadAgents ? <AgentModelsSummary /> : null}");
-    expect(sessionDefaultsSource).not.toContain('ModelSelector');
+    const summarySource = sessionDefaultsSource.slice(sessionDefaultsSource.indexOf('const AgentModelsSummary'), sessionDefaultsSource.indexOf('export const SessionDefaultsPage'));
+    expect(summarySource).not.toContain('ModelSelector');
+    expect(sessionDefaultsSource).toContain('<HelperModelSettings />');
+    expect(sessionDefaultsSource.indexOf('<HelperModelSettings />')).toBeLessThan(sessionDefaultsSource.indexOf("title={t('settings.sessionDefaults.section.cleanup')}"));
     expect(sessionDefaultsSource).not.toContain('persistAgentModelSelection');
     expect(sessionDefaultsSource).not.toContain('resetAgentModelSelection');
   });

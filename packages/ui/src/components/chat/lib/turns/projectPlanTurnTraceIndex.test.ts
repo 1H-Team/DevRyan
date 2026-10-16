@@ -3,6 +3,7 @@ import type { Message, Part } from '@opencode-ai/sdk/v2';
 import { buildPlanImplementationRequestMarker } from '@/lib/messages/actionablePlan';
 import { projectTurnRecords } from './projectTurnRecords';
 import type { ChatMessageEntry } from './types';
+import { getPlanCardActionState, hasPlanRevisionFailure } from '../../message/parts/planCardReveal';
 
 function createMessageEntry({
     id,
@@ -25,6 +26,7 @@ function createMessageEntry({
         info: {
             id,
             role,
+            ...(role === 'assistant' ? { finish: 'stop' } : {}),
             sessionID: 'session-1',
             ...(parentID ? { parentID } : {}),
             ...(planMode ? { mode: 'plan' } : {}),
@@ -106,26 +108,35 @@ describe('projectPlanTurnTraceIndex plan revisions', () => {
         final.info.error = { name: 'MessageAbortedError', data: { message: 'Aborted' } };
         for (const messages of [[human, draft, final], structuredClone([human, draft, final])]) {
             expect(projectTurnRecords(messages).planTraceIndex.entries[0]).toMatchObject({
-                assistantSourceMessageId: 'final', isSettled: true, isActionable: false,
+                assistantSourceMessageId: 'final', isSettled: true, hasTerminalError: true, isActionable: false,
             });
         }
     });
 
-    test('recovered planning keeps one actionable revision and effective rendering intent', () => {
-        const messages = [
-            createMessageEntry({ id: 'human', role: 'user', createdAt: 1, planMode: true }),
-            createMessageEntry({ id: 'waiting', role: 'assistant', parentID: 'human', createdAt: 2, completedAt: 3, parts: [createTextPart('waiting', 'Waiting for discovery.')] }),
-            createMessageEntry({ id: 'wake', role: 'user', createdAt: 4, parts: [createTextPart('wake', '[devryan-provider-recovery:v1:task_fixture]\nCollect result.', true)] }),
-            createMessageEntry({ id: 'recovered', role: 'assistant', parentID: 'wake', createdAt: 5, completedAt: 6, parts: [createTextPart('recovered', planText('Recovered Plan'))] }),
-        ];
-        const index = projectTurnRecords(messages).planTraceIndex;
-        expect(index.entries).toHaveLength(1);
-        expect(index.byTurnId.get('wake')).toBe(index.byTurnId.get('human'));
-        expect(index.byTurnId.get('wake')).toMatchObject({ isActionable: true, userMessageId: 'human' });
-        expect(index.turnIntentById.get('wake')).toBe('plan');
-        expect(index.messageRoleById.get('recovered')).toBe('source');
-        expect(projectTurnRecords(structuredClone(messages)).planTraceIndex.latestPlanSourceMessageId).toBe('recovered');
+    test('verified saved source is required before a failed prefix and native tail become actionable', () => {
+        const human = createMessageEntry({ id: 'human', role: 'user', createdAt: 1, planMode: true, parts: [createTextPart('human', 'Plan it')] });
+        const prefix = createMessageEntry({ id: 'prefix', role: 'assistant', parentID: 'human', createdAt: 2, completedAt: 3, parts: [createTextPart('prefix', '<!--plan-->\n# Partial ')] });
+        if (prefix.info.role !== 'assistant') throw Error('fixture'); prefix.info.error = { name: 'APIError', data: { message: 'interrupted', isRetryable: false } };
+        const native = syntheticContinuationUser('native', 4);
+        const tail = createMessageEntry({ id: 'tail', role: 'assistant', parentID: 'native', createdAt: 5, completedAt: 6, parts: [createTextPart('tail', 'tail without headings')] });
+        const messages = [human, prefix, native, tail];
+        expect(projectTurnRecords(messages).planTraceIndex.bySourceMessageId.get('prefix')?.isActionable).toBe(false);
+        const sourceIdentity = { sessionID: 'session-1', sourceMessageID: 'prefix', rootUserMessageID: 'human', memberUserMessageIDs: ['human', 'native'], memberAssistantMessageIDs: ['prefix', 'tail'], currentSourceMessageID: 'tail', successful: true as const, settled: true as const, current: true };
+        for (const history of [messages, structuredClone(messages)]) {
+          const index = projectTurnRecords(history, { sourceIdentity, canonicalContent: '# Partial tail without headings' }).planTraceIndex;
+          expect(index.bySourceMessageId.get('prefix')).toMatchObject({ isActionable: true, memberTurnIds: ['human', 'native'], isSettled: true });
+          const entry = index.bySourceMessageId.get('prefix');
+          if (!entry) throw Error('Verified Plan entry unavailable');
+          const failedPrefixNotice = { type: 'error' as const, session: 'session-1', failedUserMessageId: 'human', time: 3, viewed: true };
+          expect(getPlanCardActionState({ streamPhase: 'completed', hasPlanText: true,
+            isImplementationRequested: false, isLatestPlan: entry.isLatestPlan,
+            isRevisionSettled: entry.isSettled, isGenerationSuccessful: entry.isActionable,
+            hasTerminalFailure: entry.hasTerminalError || hasPlanRevisionFailure([failedPrefixNotice], 'session-1', entry.userMessageId, entry.isActionable),
+          }).canImplement).toBe(true);
+        }
+        expect(projectTurnRecords([...messages, createMessageEntry({ id: 'later', role: 'user', createdAt: 7 })], { sourceIdentity }).planTraceIndex.bySourceMessageId.get('prefix')?.isActionable).toBe(false);
     });
+
     test('open-todo maintenance cannot supersede the saved Plan or become a new actionable card', () => {
         const messages = [
             createMessageEntry({ id: 'human', role: 'user', createdAt: 1, planMode: true, parts: [createTextPart('human', 'Create the plan.')] }),
@@ -149,67 +160,24 @@ describe('projectPlanTurnTraceIndex plan revisions', () => {
         ]).planTraceIndex;
         expect(fresh.entries).toHaveLength(2);
         expect(fresh.latestPlanSourceMessageId).toBe('revision-plan');
-        expect(fresh.byTurnId.get('revision-user')?.isActionable).toBe(true);
+        expect(fresh.byTurnId.get('revision-user')?.isActionable).toBe(false); // Saved server proof is still pending.
     });
-    test('folds compaction and synthetic continuation turns into one revision with a single source', () => {
-        // Regression fixture for the observed history: a user-authored plan
-        // request, compaction, two synthetic continuation turns, three plan
-        // sentinels across overlapping assistants, and a trailing epilogue.
-        const messages: ChatMessageEntry[] = [
-            createMessageEntry({ id: 'u1', role: 'user', createdAt: 1, planMode: true, parts: [createTextPart('u1', 'Plan the fix')] }),
-            createMessageEntry({ id: 'a1', role: 'assistant', parentID: 'u1', createdAt: 2, completedAt: 3, parts: [createTextPart('a1', 'Exploring the code.')] }),
-            compactionUser('u2', 4),
-            createMessageEntry({ id: 'a2', role: 'assistant', parentID: 'u2', createdAt: 5, completedAt: 6, parts: [createTextPart('a2', 'Summary of prior context.')] }),
-            syntheticContinuationUser('u3', 7),
-            createMessageEntry({ id: 'a3', role: 'assistant', parentID: 'u3', createdAt: 8, completedAt: 9, parts: [createTextPart('a3', planText('Plan v1'))] }),
-            createMessageEntry({ id: 'a4', role: 'assistant', parentID: 'u3', createdAt: 10, completedAt: 11, parts: [createTextPart('a4', planText('Plan v2'))] }),
-            syntheticContinuationUser('u4', 12),
-            createMessageEntry({ id: 'a5', role: 'assistant', parentID: 'u4', createdAt: 13, completedAt: 14, parts: [createTextPart('a5', planText('Plan final'))] }),
-            createMessageEntry({ id: 'a6', role: 'assistant', parentID: 'u4', createdAt: 15, completedAt: 16, parts: [createTextPart('a6', 'The plan is ready — let me know how to proceed.')] }),
-        ];
-
-        const projection = projectTurnRecords(messages);
-        const index = projection.planTraceIndex;
-
-        expect(index.entries).toHaveLength(1);
-        const entry = index.entries[0]!;
-        expect(entry.turnId).toBe('u1');
-        expect(entry.userMessageId).toBe('u1');
-        expect(entry.memberTurnIds).toEqual(['u1', 'u2', 'u3', 'u4']);
-        expect(entry.sourceTurnId).toBe('u4');
-        expect(entry.assistantSourceMessageId).toBe('a5');
-        expect(entry.isPlanModeRevision).toBe(true);
-        expect(entry.isSettled).toBe(true);
-        expect(entry.isActionable).toBe(true);
-
-        expect(index.byTurnId.get('u2')).toBe(entry);
-        expect(index.byTurnId.get('u3')).toBe(entry);
-        expect(index.byTurnId.get('u4')).toBe(entry);
-        expect(index.bySourceMessageId.get('a5')).toBe(entry);
-        expect(index.latestPlanSourceMessageId).toBe('a5');
-        expect(index.pendingPlanTurnId).toBeNull();
-
-        expect(index.messageRoleById.get('a3')).toBe('before-source');
-        expect(index.messageRoleById.get('a4')).toBe('before-source');
-        expect(index.messageRoleById.get('a5')).toBe('source');
-        expect(index.messageRoleById.get('a6')).toBe('after-source');
-        expect(index.suppressedTurnIds.size).toBe(0);
-    });
-
-    test('suppresses continuation turns that follow the source turn entirely', () => {
-        const messages: ChatMessageEntry[] = [
-            createMessageEntry({ id: 'u1', role: 'user', createdAt: 1, planMode: true, parts: [createTextPart('u1', 'Plan the fix')] }),
-            createMessageEntry({ id: 'a1', role: 'assistant', parentID: 'u1', createdAt: 2, completedAt: 3, parts: [createTextPart('a1', planText('Plan'))] }),
-            syntheticContinuationUser('u2', 4),
-            createMessageEntry({ id: 'a2', role: 'assistant', parentID: 'u2', createdAt: 5, completedAt: 6, parts: [createTextPart('a2', 'Epilogue text.')] }),
-        ];
-
+    test('arbitrary synthetic and compaction turns cannot borrow saved source authority', () => {
+        const messages = [createMessageEntry({ id: 'u1', role: 'user', createdAt: 1, planMode: true }),
+          createMessageEntry({ id: 'a1', role: 'assistant', parentID: 'u1', createdAt: 2, completedAt: 3, parts: [createTextPart('a1', planText('Plan'))] }),
+          compactionUser('u2', 4), syntheticContinuationUser('u3', 5)];
         const index = projectTurnRecords(messages).planTraceIndex;
+        expect(index.entries[0]?.memberTurnIds).toEqual(['u1']); expect(index.entries[0]?.isActionable).toBe(false);
+        expect(index.byTurnId.has('u2')).toBe(false); expect(index.byTurnId.has('u3')).toBe(false);
+    });
 
-        expect(index.entries).toHaveLength(1);
-        expect(index.entries[0]?.assistantSourceMessageId).toBe('a1');
-        expect(index.suppressedTurnIds.has('u2')).toBe(true);
-        expect(index.messageRoleById.get('a2')).toBe('after-source');
+    test('unverified tail text remains visible and keeps an earlier source disabled', () => {
+        const messages = [createMessageEntry({ id: 'u1', role: 'user', createdAt: 1, planMode: true }),
+          createMessageEntry({ id: 'a1', role: 'assistant', parentID: 'u1', createdAt: 2, completedAt: 3, parts: [createTextPart('a1', planText('Plan'))] }),
+          syntheticContinuationUser('u2', 4), createMessageEntry({ id: 'a2', role: 'assistant', parentID: 'u2', createdAt: 5, completedAt: 6, parts: [createTextPart('a2', 'Tail')] })];
+        const index = projectTurnRecords(messages).planTraceIndex;
+        expect(index.suppressedTurnIds.has('u2')).toBe(false); expect(index.messageRoleById.has('a2')).toBe(false);
+        expect(index.entries[0]?.isActionable).toBe(false);
     });
 
     test('marks the revision unsettled and non-actionable while a sibling assistant is streaming', () => {
@@ -296,7 +264,7 @@ describe('projectPlanTurnTraceIndex plan revisions', () => {
         // The plan revision stays settled and actionable: the implementation
         // turn is not one of its siblings.
         expect(entry.isSettled).toBe(true);
-        expect(entry.isActionable).toBe(true);
+        expect(entry.isActionable).toBe(false);
         expect(index.latestPlanSourceMessageId).toBe('a1');
 
         expect(index.byTurnId.has('u2')).toBe(false);
@@ -337,9 +305,9 @@ describe('projectPlanTurnTraceIndex plan revisions', () => {
         );
 
         expect(next.planTraceIndex).not.toBe(previous.planTraceIndex);
-        expect(next.planTraceIndex.entries[0]?.memberTurnIds).toEqual(['u1', 'u2']);
-        expect(next.planTraceIndex.byTurnId.has('u2')).toBe(true);
-        expect(next.planTraceIndex.suppressedTurnIds.has('u2')).toBe(true);
+        expect(next.planTraceIndex.entries[0]?.memberTurnIds).toEqual(['u1']);
+        expect(next.planTraceIndex.byTurnId.has('u2')).toBe(false);
+        expect(next.planTraceIndex.suppressedTurnIds.has('u2')).toBe(false);
     });
 
     test('invalidates the memo when a turn intent changes', () => {

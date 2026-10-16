@@ -1,4 +1,5 @@
 import type { Part } from '@opencode-ai/sdk/v2';
+import { hasNativeCursorTextProvenance } from '@/lib/messages/nativeCursorText';
 
 type PartWithText = Part & { text?: string; content?: string; value?: string };
 
@@ -24,6 +25,7 @@ export const isEmptyTextPart = (part: Part): boolean => {
         return false;
     }
     const text = extractTextContent(part);
+    if (hasNativeCursorTextProvenance(part)) return text.length === 0;
     return !text || text.trim().length === 0;
 };
 
@@ -109,7 +111,7 @@ export const collapseExactDuplicateAdjacentTextParts = (parts: Part[]): Part[] =
     let previousId: string | null = null;
 
     for (const part of parts) {
-        if (part.type !== 'text') {
+        if (part.type !== 'text' || hasNativeCursorTextProvenance(part)) {
             collapsed.push(part);
             previousText = null;
             previousId = null;
@@ -226,7 +228,8 @@ export const mergeConsecutiveTextParts = (parts: Part[]): Part => {
     // break when the split point carries none. Trimming the seams used to
     // manufacture markdown artifacts — a list split right after its marker
     // rendered an empty "1." item, and mid-sentence splits lost their space.
-    const mergedText = displayParts
+    const exactCursorText = displayParts.every(hasNativeCursorTextProvenance);
+    const mergedText = exactCursorText ? displayParts.map(extractTextContent).join('') : displayParts
         .map((part) => extractTextContent(part))
         .filter((text) => text.trim().length > 0)
         .reduce((accumulated, text) => {

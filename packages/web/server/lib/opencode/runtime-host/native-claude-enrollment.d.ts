@@ -20,6 +20,7 @@ export function createNativeClaudeEnrollmentOwner(options:{
  readonly captureBinding:(context:unknown)=>Promise<unknown>;
  readonly recheckBinding:(binding:unknown,context:unknown)=>Promise<void>;
  readonly publishProfile:(profile:{readonly id:string;readonly type:'claude-max';readonly claudeConfigDir:string;readonly keychainService:string},binding:unknown,context:unknown)=>Promise<unknown>;
+ readonly bindOwnedCommand?:import('./native-claude-security-home.js').NativeClaudeOwnedCommandBinder;
  readonly beforeEnrollment?:(input:{readonly recheck:()=>Promise<void>;readonly signal:AbortSignal})=>Promise<void>;
  readonly withProfileRemoval?:<T>(action:()=>Promise<T>)=>Promise<T>;
  readonly assertProfileRemoval?:(profile:import('./native-claude-profile-publication.js').ClaudeEnrollmentProfile,binding:unknown,context:unknown)=>Promise<void>;

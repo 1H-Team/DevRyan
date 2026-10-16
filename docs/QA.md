@@ -1,5 +1,48 @@
 # Isolated Electron and web QA
 
+The [finishing implementation record](audits/2026-10-15/finishing-implementation-progress.md)
+separates current focused checks from historical qualification. The
+[frozen-source local qualification](audits/2026-10-15/finishing-local-qualification.json)
+retains full-validation, build and artifact identities. The
+[selective cleanup receipt](audits/2026-10-15/finishing-cleanup.json) records the
+cache preview and preserved evidence. The
+[QA1 Explorer preflight](audits/2026-10-15/qa1-explorer-preflight.json) records a
+subsequent runner correction and its qualification boundary. The
+[GET-only release-history diagnostic](audits/2026-10-15/release-history-live/README.md)
+retains its incomplete-evidence result; it does not establish release admission.
+
+The [conditional Finalizing implementation proof](audits/2026-10-15/finalizing-presentation-implementation.json)
+records its measured trigger, presentation-only boundaries, focused checks and
+pending integrated qualification.
+The finishing evidence also retains the [53-case native package qualification](audits/2026-10-15/finishing-native-package.json),
+[current Plan qualification and its historical cohorts](audits/2026-10-15/finishing-plan-implementation.json),
+[resource rehearsal results](audits/2026-10-15/finishing-resource-rehearsals.json),
+[five measured resource pairs](audits/2026-10-15/receipt-resource-five-pairs.json),
+[later repeat-submission measurement failure](audits/2026-10-15/finishing-resource-repeat-failure.json),
+and [header-bound native artifact](audits/2026-10-15/native-header-bound-artifact.json).
+The [first visual review](audits/2026-10-15/finishing-visual-review-first.md),
+[second visual review](audits/2026-10-15/finishing-visual-review-second.md), and
+[retained representative screenshots](audits/2026-10-15/finishing-visual/README.md)
+record their current and historical runs and viewport limits. The
+[orphan QA host incident](audits/2026-10-15/qa1-orphan-host-99743.json) and
+[receipt resource measurement gap](audits/2026-10-15/receipt-resource-measurement-gap.json)
+retain the observed failures and qualification limits.
+
+The actual native Plan → Implement lane now exercises both file Undo/Redo via
+the real changes card and conversation Revert/Redo. File restoration verifies
+all implementation files and unchanged root/child message identities. Its
+existing 52-capture desktop/mobile/theme matrix gains eight restoration captures.
+All queued captures drain before shutdown; failed browser opening rejects
+readiness. Browser, synthetic provider and orphan cleanup each run after a prior
+failure, retaining the original error and bounded cleanup errors within the
+480-second lane deadline. The final 60 seconds reserve the existing cleanup
+allowances; partially opened browsers are owned immediately and opening/capture
+work drains on failure. Native and UI source, runner and actual loaded entry
+bytes are checked before and after, including failed runs. Helper reload must
+restore the exact provider/model/revision and enabled selector.
+Functional output alone cannot pass natural process
+exit and registry settlement. [Focused correction proof](audits/2026-10-14/managed-results-plan-cleanup.json)
+
 The [startup import evaluation](audits/2026-10-10/startup-imports/README.md)
 records the October 10 diagnostic probes and deferred timing acceptance.
 
@@ -93,17 +136,20 @@ as runnable acceptance artifacts; rebuild them or select a retained package.
 
 ## OpenCode 2 compiled package
 
-Build a fresh candidate and run the separate package qualification with pinned
-Bun 1.3.14 on Darwin arm64:
+Build a fresh candidate with pinned Bun 1.3.14 on Darwin arm64, then run package
+qualification with Node to match the shipped web/Electron host:
 
 ```sh
 bun scripts/build-native-runtime.mjs --output-root .cache/v2-validation/native-artifact-candidate
 node scripts/verify-opencode-v2-package.mjs --artifact-root .cache/v2-validation/native-artifact-candidate
 ```
 
+The qualification entrypoint refuses a Bun host before starting a fixture or
+native subprocess. The compiled OpenCode controller still uses pinned Bun.
+
 The output directory must be new. The build records the actual linked source
-and dependency graph, asset rewrites, output hashes and signing state. It copies
-the previously accepted execution supervisor without changing its bytes.
+and dependency graph, asset rewrites, output hashes and signing state. It builds
+and verifies the execution supervisor from the current source for every candidate.
 Development ad-hoc signing does not establish release signing or support on
 another platform.
 
@@ -674,13 +720,36 @@ Generation-2 manual and natural compaction grading reads the same journal. Each 
   For matched optimization comparisons, pass `--baseline-package-evidence <absolute> --candidate-package-evidence <absolute> --artifact-root <absolute>` instead. The runner executes B1/C1/C2/B2/B3/C3 with fresh profiles, pins one synthetic catalog for all launches, checks matching native/dependency identities and unchanged source, and accepts only a median reduction of at least 5% with all three pairs faster. Source differences must remain within the reviewed startup allowlist recorded by the benchmark; the repair comparison changes only the early entrypoint, catalog request ordering and immediate source-verification reuse. Natural startup is the default; `--startup-mode foreground` is explicitly qualified separately. Startup phase logs and bounded renderer readiness marks expose stage durations without configuration or message content. Each launch verifies journal health and runs the offline gap scan before deleting its private payload.
 
 
+### Mandatory short final-DMG smoke
+
+`release.yml` runs three independent read-only `macos-26` rehearsals of the same
+candidate artifact, then one mandatory `final-dmg-smoke` on the exact final tag
+DMG. `scripts/qa/release-startup-smoke.mjs` uses
+`createReleaseStartupProfile({fixtureSetup:true})` and `launchReleaseStartup`:
+private HOME/XDG/profile, the unchanged extracted app and its actual native
+backend, and the ordinary `devryan-smoke/smoke-write` OpenAI-compatible loopback
+HTTP model with `env:[]` and no API key. It requires exact DMG/app/native-manifest
+identity, first usable UI and SSE readiness, an observed provider request,
+canonical completed assistant persistence, rendered response, reopen of the same
+history, native accepted-user → step-link → model-prepared → physical span
+correlation, a journal gap check and safe owned cleanup. A host facade cannot
+qualify this gate. The phase budgets and narrowly permitted pre-app GUI retries
+are defined in [Release pipeline](RELEASE_PIPELINE.md).
+
+The separate `candidate-upgrade-rollback` job freezes a published baseline SHA
+and DMG digest at admission and runs the existing compiled package acceptance
+against the two extracted native artifacts. Its original-owner clone and actual
+rollback cases have their own `devryan.release-upgrade-rollback/1` receipt. The
+short GUI receipt makes no upgrade or rollback claim.
+
 ### Final-DMG startup qualification
 
 `native-startup-benchmark.mjs --release-dmg <absolute-dmg> --version <version>
 --source-commit <40-character-commit> --receipt <absolute-json>` qualifies the
 unchanged distributed macOS arm64 app. Run it by hand against a downloaded DMG
-on a disposable macOS runner when startup evidence is wanted; the release
-workflow does not run it and publication does not depend on it. It mounts the DMG
+on a disposable macOS runner for the separate eleven-scenario qualification;
+the mandatory short smoke above has a distinct receipt and deadline. The release
+workflow does not run this longer suite. It mounts the DMG
 read-only, verifies signatures and the production native inventory, and copies
 the app without rebuilding or signing it. Source commit, DMG hash, app identity,
 native manifest digest and compiled-native acceptance are bound into the receipt.
@@ -707,7 +776,7 @@ scenarios continue after assertion failures,
 while unchanged-reopen is blocked by failed empty-profile and service-cold is
 blocked by failed service-warm. Cleanup failure or invalid shared prerequisites
 stop the run. Every diagnostic receipt is failed and explicitly rejected by the
-publication verifier, even when all scenarios pass. Ordinary qualification stays
+legacy receipt verifier, even when all scenarios pass. Ordinary qualification stays
 fail-fast; first-attempt and prior-failure guards apply in both modes. Failed
 launches also retain a sanitized bounded host-log tail and the launched artifact's
 identity, distinguishing a historical baseline failure from a candidate failure.

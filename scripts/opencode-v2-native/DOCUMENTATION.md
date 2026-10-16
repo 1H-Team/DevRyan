@@ -2,7 +2,50 @@
 
 Contract notes for the compiled-package qualification run by `node scripts/verify-opencode-v2-package.mjs`. Commands and the build step are in [QA](../../docs/QA.md#opencode-2-compiled-package); the case implementations live in the lane modules in this directory (`package-*-lane.mjs`) and in `scripts/verify-opencode-v2-package.mjs`.
 
+The acceptance source cohort also pins the attended QA receipt-to-idle/UI
+measurement owner and its transitive interactive, lifecycle and stable fixture
+helpers under `scripts/perf`. Editing those owners invalidates the same frozen
+source proof as editing the QA driver or provider grader.
+
+Ordinary native tool prompts read and explicitly submit the exact active root
+session's canonical selected agent. Omitting the agent preserves the runtime's
+implicit primary-admission opt-out and cannot establish the objective proof
+required by native Plan policy. The [retained compiled negative](../../docs/audits/2026-10-14/compiled-package-primary-admission.json)
+records that refusal and the fixture correction without weakening policy.
+Both relocated tool roots are created with the source-configured primary after
+checking their actual native catalogs, then enrolled against their own location.
+The fixture binds accepted prompt receipts to that enrolled location and rereads
+the canonical selected agent on every invocation, including reviewed setup.
+
 ## Compiled package lanes
+
+`native-stream-continuation.graph.test.ts` runs the real pinned 2.0.30
+publisher, retry loop, Synthetic bus and Step with production constructor
+owners against disposable loopback provider fixtures. Run it with
+`bun test scripts/opencode-v2-native/native-stream-continuation.graph.test.ts`.
+It covers fail-after-output continuation with Slim disabled/enabled, plain
+Retry, Stop during publication, two continuations and the third physical-send
+veto. Its default suite includes both source graph bundles and an actual Bun
+compiled executable; a bundled `.mjs` alone is not compiled-binary proof.
+Separate source and compiled silence cases leave the HTTP response body open
+after output and set only the fixture request's original `chunkTimeout` to
+250 ms. They require native `Transport` / `Timeout` / operation `read` and
+observe `retry: true` after output before the constructor restriction. They do
+not qualify live provider latency or change production transport defaults.
+Source and compiled denied-tool cases first call an advertised native patch
+tool under canonical Plan restrictions, require its durable `never_started`
+receipt and absent target file, then interrupt a later output stream. The real
+retry, Synthetic and successor Step must complete exactly one continuation.
+
+The five native output-start setter fixtures include empty starts. A narrow
+fixture-only LLM delivery seam in our constructor module supplies raw events
+that the HTTP adapter otherwise normalizes away; native publisher/retry/Step
+code is unchanged. Set `DEVRYAN_NATIVE_STREAM_COMPILED_SETTERS=1` to execute all
+five setter cases as native binaries too. Reviewed workspace dependencies are
+resolved outside Bun build callbacks from declared package manifests and the
+frozen lock; undeclared/missing imports and captured native closure imports
+retain their strict failure behavior. Fixtures delete their runtime roots on
+completion and never access installed-app state or live credentials/providers.
 
 Package qualification uses the compiled controller and writer with the real
 web admission owner, scheduler, ledger and supervisor. Only HTTP model responses
@@ -65,6 +108,14 @@ The exact reviewed layout and release pair are asserted only when the versions
 differ. A same-release run checks only that each kind has or lacks the legacy
 journal, and its gate result says so.
 
+Fresh selected-lifecycle inspection keeps a 120-second absolute fixture limit.
+Rollback has a 240-second absolute limit for two cold starts, inspection,
+checkpoint, repeated real credential capture/projection and retention checks.
+Completed native startup phases do not reset either deadline. Content-free
+`native-lifecycle-phase` markers identify the active artifact, startup,
+inspection, rollback credential, retention or cleanup wait; exit evidence records
+the chosen limit. Product-owner timeouts and release smoke deadlines are unchanged.
+
 The migration fixture contains two independent relocated Git projects, exact
 conversation/tool IDs, compaction dispositions, attachment bytes, ordered
 permissions, and separate web/native configuration trees. A lost import
@@ -81,8 +132,10 @@ compaction, formatter subprocess, per-location read boundaries, and a tracked
 primary background notice resumed after controller replacement. The latter
 requires the original objective and saved selection, a fresh runtime handshake,
 exactly one canonical continuation, and another real writer after replacement.
-The separate parent-death fixture waits for a real confined shell, kills only
-its owned Node process, and checks every observed descendant plus both real
+The separate parent-death fixture explicitly submits the root's canonical agent
+so its new probe prompt owns the primary objective. It waits for a real confined
+shell, kills only its owned Node process, and checks every observed descendant
+plus both real
 controller and worker termination receipts before requiring no publication.
 The real-tool readiness budget is five minutes because it includes cold sealed
 bundle provisioning. Once the owner is killed, receipt and descendant checks
@@ -91,6 +144,14 @@ Its explicit constructor-owned local grant is smoke-test policy; it does not
 substitute for production authentication contract tests. Release signing and
 other-platform support remain separate qualification gates.
 
+Use `node scripts/verify-opencode-v2-package.mjs --diagnostic
+--retained-shell-diagnostic --artifact-root <verified-artifact-root>` for a
+focused compiled shell replacement run. It retains the same exact consumption,
+physical execution and second-replacement assertions, and leaves full package
+qualification mandatory. Bounded typed admission/provider refusal codes for
+that fixture's exact session are teed into the production diagnostic journal;
+exception messages, RPC payloads and stderr are excluded.
+
 ## Synthetic provider catalog preflight
 
 Preflight also seeds active synthetic OpenAI, Cursor and GitHub Copilot
@@ -98,3 +159,168 @@ credentials through the baseline's compiled SDK, preserves them across the
 clone, and asserts their model rows in both locations on both releases.
 Copilot discovery uses a fixture HTTP server restricted to loopback;
 no external credential or provider is used by this check.
+
+`native-plan-policy.compiled.test.ts` runs native Plan admission, permission
+translation and canonical-source policy functions from source and a compiled
+Bun executable using reviewed disposable inputs. It proves those function
+contracts only; it does not qualify the real SDK Plan-to-Implement lifecycle,
+managed writer execution, restart/recovery, Revert/Redo or visual acceptance.
+
+`native-result-publication.graph.test.ts` qualifies managed result delivery with
+the actual pinned native graph in a source bundle and a compiled Bun executable.
+Its loopback provider first attempts a same-Step continuation, then reads the
+canonical result page and continues from a later native Step. It checks the
+durable acknowledgement identity and exact completed tool output. The fixture
+uses disposable inputs and an explicit constructor-owned local role grant;
+production admission scope/race tests remain separate. This is deterministic
+publication qualification, not live provider or packaged application evidence.
+
+`../perf/managed-result-transport-benchmark.mjs` compares current scalar v1
+compatibility with v2 for the same two retained 35 KiB reports and 256 canonical
+references using the production core/scheduler and a disposable atomic ledger.
+Five paired cold/warm samples count exact minified model bytes, logical calls,
+RPCs, commits and host CPU/latency/RSS. Completed canonical tool parts are
+fixture supplied; the native publication gate above remains separate. The
+[numeric audit](../../docs/audits/2026-10-14/managed-result-transport.json)
+records fewer bytes/calls and increased host CPU/latency, without provider-token
+or speed claims.
+
+`package-model-title-lane.mjs` enrolls its fresh root through the existing
+constructor-owned managed fixture before submitting an `origin: human` source
+prompt. Enrollment grants fixture ownership only; native accepted input, Step,
+provider completion, model-derived title, single rename/outbox and replacement
+restore remain mandatory. The lane refuses a missing enrollment callback.
+Its second root human session retains a real compiled model candidate after one
+fixture refusal before native rename. The existing controller replacement must
+restore that exact pending outbox/source through fresh native admission, rename
+once, and clear the outbox without another model request. This extends the same
+case ID; the original package cases remain mandatory. It does not authorize stale
+delegated title proofs, whose controller-change refusal remains a separate test.
+
+`package-plan-implement-lane.mjs` is the focused actual application acceptance
+lane. It requires a current verified native artifact under `.cache`, current
+web dist, installed Electron, and the normal macOS confined-execution
+prerequisites. Run `node scripts/opencode-v2-native/package-plan-implement-lane.mjs
+--artifact-root <absolute-artifact-root>`. Its constructor-only loopback model
+uses a larger context budget for the full packaged Orchestrator instructions;
+the normal UI fixture default remains unchanged. Its private saved helper setting
+uses only the declared loopback model with Default reasoning. The responder
+accepts title inference only for its known delegated child sources without tools;
+real accepted-source authorization and native rename remain product-owned.
+An owned CDP browser clicks
+the enabled latest Plan Card. A finite downstream transport cut retains a real
+Plan prefix and omits its terminal stop/DONE packets once; the actual native
+owner must create the continuation successor and complete its heading-free
+tail before the revision can become current. The browser remains open through
+continued/incomplete Plan, approval, dispatch/results, partial/recovered outcome,
+restart, Revert/Redo and helper-settings captures. Each checkpoint uses the real
+appearance control in both themes at 1280×800 and 390×844. Mobile proof
+enables touch, selects the
+actual mobile Chat tab and verifies the target stays within the viewport without
+horizontal overflow. Results use exact task/message identities so an older Plan
+above the fold cannot count as an outcome capture. Enabled approval captures
+precede one 25-second live inspection pause within the existing overall deadline;
+visual failures cancel the owned application rather than stall its provider.
+After the final capture, a Plan-only private IPC checkpoint settles capture and
+approval work, then physically stops the owned browser and removes its profile
+before acknowledging application shutdown. Failure still attempts browser
+cleanup and cannot acknowledge settlement. Parent-finally cleanup is idempotent.
+The driver then awaits the normal production cleanup and must exit naturally
+with code zero inside the unchanged 480-second lane deadline; an emitted
+successful application result alone cannot qualify the lane.
+After the owned host exits, an independent cleanup step scans its drained journal
+within the existing cleanup deadline and writes `plan-journal-coverage.json`
+before profile pruning. Qualification requires complete, nonempty coverage and
+zero explicit or manifest gaps. The retained summary contains finite counts and
+fixed gap/error codes only; deliberate error records remain counted and do not
+by themselves fail this gate. Capture or evidence-write failure refuses the
+lane while preserving its original failure and attempting the other cleanup.
+The runner never
+creates an Implement marker; it independently verifies the actual canonical
+accepted source/version. Native root/child tool restrictions, writer leases,
+termination receipts, exact checks, restart/history, retained partial check
+failure recovery and tree Revert/Redo are verified through product owners.
+Scoped Revert/Redo captures reload the canonical conversation and verify the
+reverted suffix is absent, then restored. File-only Undo/Redo controls belong
+to a separate session-change owner and cannot stand in for scoped restoration.
+The file-only Undo checkpoint clicks its exact enabled confirmation dialog before
+requiring the real card's Redo state; Redo dispatches directly. A cancelled,
+ambiguous or unrelated dialog cannot qualify the file-restoration checkpoint.
+The [file Undo checkpoint audit](../../docs/audits/2026-10-15/plan-file-undo-confirmation.json)
+records the missing confirmation and journal coverage from the failed actual run.
+Positive file-restoration screenshots recheck the exact enabled card after each
+theme, viewport and tab transition; pending loading or button paint cannot
+qualify. A displayed summary-read failure fails the capture without automatic
+Retry. Bounded `session-changes-network.json` evidence retains only this owned
+session's changes-route kinds, request IDs, directory-match flags, status codes
+and timing, never bodies, raw URLs or headers. The helper save uses the existing
+desktop DIV trigger and responsive mobile button, derives its model label from
+the live exact catalog tuple, and reselects the unique current row in that
+trigger's own menu. HTTP acknowledgment, fresh fallback revision, enabled
+controls and exact persisted provider/model/revision after reload remain
+mandatory. Before the helper capture, the exact captured menu must be closed
+(`aria-expanded=false`), absent or fully nonpainted, and free of running/pending
+closing animations; two animation frames recheck that same menu. Reload arms
+the owned page-load waiter before navigation within the existing phase deadline.
+The new document then supplies hit-ready Settings, Open Sessions, or hydrated
+settings navigation; rect-only controls in closed drawers and the old textarea
+cannot establish fresh shell readiness. Navigation uses those existing controls,
+including opening the responsive session sidebar when necessary. The
+[restart/helper navigation incident](../../docs/audits/2026-10-15/plan-restart-helper-navigation.json)
+retains the observed timeout and actual successful summary recovery without
+claiming which navigation race caused the failure. The
+[capture boundary audit](../../docs/audits/2026-10-15/plan-capture-boundaries.json)
+distinguishes observed UI read failures from successful file-owner restoration.
+Synthetic responder/transport unit tests do not qualify this lifecycle.
+The later retained actual lane passed all 60 captures and helper HTTP save/reload
+checks on unchanged source. Its [qualified Plan record](../../docs/audits/2026-10-15/plan-implement-qualified/README.md)
+and [sanitized identity/journal proof](../../docs/audits/2026-10-15/plan-implement-qualified/proof.json)
+retain seven actual images, all screenshot hashes, the independent zero-gap scan
+and empty owned process registry. Root removed only the owned profile/workspace
+after evidence copying and preserved all 70 light proof files;
+synthetic application acceptance does not qualify paid helpers or release assets.
+The subsequent [consensus finishing plan](../../docs/audits/2026-10-15/consensus-finishing-plan.md)
+records the remaining corrections and frozen-source gates, with Codex owning implementation.
+Its [review record](../../docs/audits/2026-10-15/codex-claude-handoff-review.json)
+retains evidence provenance and the [visible reviewer consensus](../../docs/audits/2026-10-15/claude-consensus.jpg).
+The [new supplemental image review](../../docs/audits/2026-10-15/plan-implement-qualified/visual-review-supplement.json)
+adds 32 individually inspected original captures to the prior documented 28;
+it does not retroactively expand the earlier review or qualify pending source fixes.
+The [retained approval evidence](../../docs/audits/2026-10-14/plan-approval/README.md)
+records the historical failed dispatch-capture run; the later complete application
+qualification is retained above.
+
+`node scripts/verify-opencode-v2-native.mjs --plan-only` runs the source SDK
+invocation-fence subset with real native tools/processes: write/edit and shell
+write/delete/rename are denied in canonical Plan mode, confined inspection
+succeeds without changed files, and a fresh writable objective publishes. Its
+remaining full writer/recovery gates stay explicitly reported; it does not
+replace the compiled application/UI approval lane.
+
+The wire-only `fixture-host-facade.mjs` refuses Plan revision operations with
+`qa_fixture_plan_authority_unavailable` (409). Synthetic transport IDs have no
+native controller/primary/lease settlement authority, so that facade cannot
+persist a successful Plan or qualify approval. The real application lane owns
+that acceptance.
+
+## Focused V2 compatibility regressions
+
+`native-queued-input.test.ts` uses the original native database/projector/inbox
+for an idle root and child with a busy or retry-suspended grandchild. It retains
+one human queue ID through blocked delivery and an unavailable ancestry wake.
+`native-compaction-checkpoint.graph.test.ts` exercises original committed
+provider-window history across model, provider and configured endpoint changes;
+wrong provenance restores the local transcript without destroying the checkpoint.
+It does not claim a physical provider compaction run.
+
+The provider middleware graph checks exact ordered instruction blocks at the
+actual transport in both locations and preserves GPT high-effort sampling
+omission. A fiber-local token-sharing metadata seam checks native compaction
+buffers of 0/12,000 over legacy 7,500 through the actual controller catalog,
+without changing physical browser authorization; it does not qualify an actual
+token-sharing credential flow. The controller webfetch graph starts a helper before any catalog route,
+uses the shipping configured-instructions plugin for supported compatible-chat
+zero sampling/top-p, and holds a real native cancellation finalizer before the
+production helper route can acknowledge settlement. The compiled helper isolation
+lane also requires actual compatible-chat sampling bytes; its receipt cannot
+replace the full compiled package qualification.

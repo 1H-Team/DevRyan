@@ -1,5 +1,27 @@
 # Production Bots server control plane
 
+Ordinary capability GETs are passive metadata demand. They may reuse only an
+actual previously probed `docker_unavailable` status beyond the normal status
+TTL, and do not automatically retry failed execution startup. A typed stopped,
+uninstalled, setup or update catalog result also answers passive capabilities
+without another Docker probe; unknown failures retain the live path. Native
+control flags remain unknown until an explicit refresh. Healthy statuses retain
+the normal TTL. Focus checks use the cache; explicit Retry, internal execution
+recovery and Bot controls retain live probing. Invalidation drops the cached negative.
+This proves a narrow demand suppression, not global Bot inactivity, and never
+disables active work. Source/owner checks are recorded in
+[compatibility and receipt progress](../../../../../docs/audits/2026-10-14/native-compatibility-receipt-progress.json).
+
+The local catalog keeps its required initial startup/retention attempt for an
+existing installation. After a typed Docker stopped/not-installed result it
+does not schedule dormant retries while the runtime's existing active-work
+blockers are empty. It rechecks those blockers before a queued probe executes;
+owned runs, routines, integration startup, writes and memory extraction retain
+recovery. Setup, update, recovery and maintenance keep requiring owner action.
+Explicit catalog Retry remains immediate, and ready catalogs cancel stale retry
+timers. This is not a claim of zero initial probes or a global process sample:
+the fixtures sample five passive reads and 180 seconds of dormant scheduler time.
+
 OpenAI OAuth (`chatgpt-browser`, `chatgpt-token-sharing` and retired methods) is currently refused by the native host with `bot_opencode_provider_authentication` (401). Reconnecting does not enable Bot/managed-user ChatGPT inference in this pass. API-key Bots are unaffected; the retained OAuth coordination implementation is deferred to a separate migration pass.
 
 The cross-component operator and security runbook is `docs/BOTS_RUNTIME.md`.

@@ -7,7 +7,7 @@ const MAX_OUTBOX_BYTES = 2 * 1024 * 1024;
 // 'free_zen' and 'local_fallback' are no longer produced but stay accepted so an
 // outbox written by an older build rehydrates instead of being quarantined.
 const VALID_SOURCES = new Set(['derived', 'session_model', 'free_zen', 'local_fallback']);
-const VALID_STATES = new Set(['pending_idle', 'persisting']);
+const VALID_STATES = new Set(['pending_idle', 'persisting', 'paused']);
 
 const trimString = (value) => (typeof value === 'string' ? value.trim() : '');
 const finiteTimestamp = (value, fallback) => (
@@ -38,6 +38,8 @@ const normalizeJob = (value, now) => {
     sessionID,
     directory,
     sourceHash,
+    ...(typeof value.sourceMessageID === 'string' && /^[a-zA-Z0-9_-]{1,256}$/.test(value.sourceMessageID) ? { sourceMessageID: value.sourceMessageID } : {}),
+    ...(typeof value.lastAcceptedInputID === 'string' && /^[a-zA-Z0-9_-]{1,256}$/.test(value.lastAcceptedInputID) ? { lastAcceptedInputID: value.lastAcceptedInputID } : {}),
     candidateTitle,
     source,
     // The title an upgraded candidate may overwrite (the runtime's own derived

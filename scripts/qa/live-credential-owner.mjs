@@ -130,7 +130,7 @@ export async function prepareLiveCredentialSession(options){
 
 /** The challenge and cookie live only in memory. Concurrent consumers reserve
  * the single use before awaiting the application's own session issuer. */
-export async function createLiveOwnerLink({handle,hostOrigin,isHeld,now=Date.now}){
+export async function createLiveOwnerLink({handle,hostOrigin,isHeld,now=Date.now,onAdmission}){
   const host=new URL(hostOrigin);if(host.protocol!=='http:'||host.hostname!=='127.0.0.1'||!host.port||host.origin!==hostOrigin)throw fail('qa_live_origin_invalid');
   let challenge,closed=false;
   const server=http.createServer(async(req,res)=>{
@@ -140,7 +140,8 @@ export async function createLiveOwnerLink({handle,hostOrigin,isHeld,now=Date.now
     const reserved=challenge;reserved.used=true;
     try{
       const cookie=await handle.issueLocalOwnerSession();
-      if(closed||isHeld()||challenge!==reserved||reserved.expiresAt<=now()||cookie?.name!=='devryan_local_owner'||!/^[A-Za-z0-9_-]{43}$/.test(cookie.value??'')||!Number.isSafeInteger(cookie.maxAge)||cookie.maxAge<=0)throw fail('qa_live_owner_cookie_unavailable');
+      if(closed||isHeld()||req.destroyed||res.destroyed||challenge!==reserved||reserved.expiresAt<=now()||cookie?.name!=='devryan_local_owner'||!/^[A-Za-z0-9_-]{43}$/.test(cookie.value??'')||!Number.isSafeInteger(cookie.maxAge)||cookie.maxAge<=0)throw fail('qa_live_owner_cookie_unavailable');
+      onAdmission?.();
       res.writeHead(302,{'Location':hostOrigin+'/','Set-Cookie':`${cookie.name}=${cookie.value}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${cookie.maxAge}`});res.end();
     }catch{res.writeHead(403);res.end();}
   });

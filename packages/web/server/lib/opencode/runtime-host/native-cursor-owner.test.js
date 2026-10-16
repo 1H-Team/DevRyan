@@ -4,6 +4,32 @@ import {createNativeCursorOwner} from './native-cursor-owner.js';
 import {credentialMutationFingerprint as fingerprint} from './native-credential-mutation-owner.js';
 import {parseNativeCommand,encodeNativeProcessMessage,NATIVE_PROCESS_LIMITS} from './native-process-protocol.js';
 
+test('legacy Plan API selection captures read-only Cursor authority without prompt markers',async()=>{
+ const scope={directory:'/fixture/cursor',sessionID:'ses_plan',userMessageID:'msg_user',assistantMessageID:'msg_assistant',agent:'plan',modelID:'composer'};
+ const owner=createNativeAdmissionOwner({directory:scope.directory,ownerID:'fixture',runtime:{registerNativeSession:async()=>{},nativeAdmissionState:async()=>({revision:0,held:false})},
+  getSession:async()=>({id:scope.sessionID,directory:scope.directory,agent:'plan',model:{providerID:'cursor-acp',id:'composer'}}),authorizeOperation:async()=>{},
+  readPlanPolicy:async()=>({readOnly:true}),validatePlanImplementation:async()=>{},captureWebAuthorization:async()=>async()=>{}});
+ const metadata={devryan:{origin:'human',agent:'plan',providerID:'cursor-acp',modelID:'composer',planMode:false}};
+ try{await owner.withAcceptedOperation({sessionID:scope.sessionID,messageID:scope.userMessageID,fingerprint:'a'.repeat(64),metadata,request:{id:scope.userMessageID,text:'Plan',metadata}},async()=>{
+  expect((await owner.captureCursorAuthorization(scope)).readOnly).toBe(true);
+ });}finally{owner.dispose();}
+});
+
+test.each(['child','root','revoked','missing-policy'])('human Cursor %s retains canonical child policy without borrowing the root Plan objective',async kind=>{
+ const scope={directory:'/fixture/cursor',sessionID:'ses_cursor',userMessageID:'msg_user',assistantMessageID:'msg_assistant',agent:'build',modelID:'composer'};
+ let policyReads=0,allowed=true;
+ const owner=createNativeAdmissionOwner({directory:scope.directory,ownerID:'fixture',runtime:{registerNativeSession:async()=>{},nativeAdmissionState:async()=>({revision:0,held:false})},
+  getSession:async id=>({id,directory:scope.directory,agent:'build',model:{providerID:'cursor-acp',id:'composer'},...(id===scope.sessionID&&kind!=='root'?{parentID:'ses_root'}:{})}),
+  authorizeOperation:async()=>{},...(kind==='missing-policy'?{}:{readPlanPolicy:async()=>{policyReads++;if(kind==='root')throw Error('Human root Implement must not inherit its old Plan objective');if(kind==='revoked')allowed=false;return {readOnly:true};}}),
+  validatePlanImplementation:async()=>{},captureWebAuthorization:async()=>async()=>{if(!allowed)throw Object.assign(Error('revoked'),{code:'native_test_caller_revoked'});}});
+ const metadata={devryan:{origin:'human',agent:'build',providerID:'cursor-acp',modelID:'composer',planMode:false}};
+ try{await owner.withAcceptedOperation({sessionID:scope.sessionID,messageID:scope.userMessageID,fingerprint:'a'.repeat(64),metadata,request:{id:scope.userMessageID,text:'Continue',metadata}},async()=>{
+  if(kind==='revoked')await expect(owner.captureCursorAuthorization(scope)).rejects.toMatchObject({code:'native_test_caller_revoked'});
+  else if(kind==='missing-policy')await expect(owner.captureCursorAuthorization(scope)).rejects.toMatchObject({code:'native_plan_policy_unavailable'});
+  else expect((await owner.captureCursorAuthorization(scope)).readOnly).toBe(kind==='child');
+ });expect(policyReads).toBe(['root','missing-policy'].includes(kind)?0:1);}finally{owner.dispose();}
+});
+
 test('Cursor retains admitted caller after 204, verifies native record scope and waits actual process publication',async()=>{
  const scope={directory:'/fixture/cursor',sessionID:'ses_cursor',userMessageID:'msg_user',assistantMessageID:'msg_assistant',agent:'build',modelID:'composer',variant:'default'};
  let allowed=true,revision=0,lease,tracked=0;const calls=[],diagnostics=[];

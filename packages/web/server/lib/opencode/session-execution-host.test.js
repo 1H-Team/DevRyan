@@ -6,7 +6,7 @@ import fs from 'node:fs/promises';
 const mocks = vi.hoisted(() => ({
   runtime: { admitDirect: vi.fn(), finishDirect: vi.fn(), executionReceipt: vi.fn(), reserve: vi.fn(), prepare: vi.fn(),
     begin: vi.fn(), claimLease: vi.fn(), leaseForCall: vi.fn(), finish: vi.fn(), cleanupLease: vi.fn(), drain: vi.fn(),
-    assertAdmission: vi.fn(), registerChild: vi.fn(), cancelUnstartedCall: vi.fn(), cancelLease: vi.fn() },
+    assertAdmission: vi.fn(), registerChild: vi.fn(), cancelUnstartedCall: vi.fn(), cancelLease: vi.fn(), warm: vi.fn() },
   classify: vi.fn(),
   resolveGit: vi.fn(),
   runtimeOptions: null,
@@ -29,6 +29,7 @@ vi.mock('@openchamber/harness-runtime/lib/session-changes-tools.js', async (impo
 }));
 const { classifySessionChangeTool } = await vi.importActual('@openchamber/harness-runtime/lib/session-changes-tools.js');
 import { createSessionExecutionHost } from './session-execution-host.js';
+import { executionProgressMeter, executionSignal, withExecutionAdmission, withExecutionMeter } from '@openchamber/harness-runtime/lib/execution-admission.js';
 import { runReadOnlySessionExecution } from '@openchamber/harness-runtime/lib/session-execution.js';
 
 afterEach(() => { vi.resetAllMocks(); vi.unstubAllEnvs(); });
@@ -100,6 +101,60 @@ test('generation 2: the companion bridge is capability absent and contacts nothi
   expect(mocks.runtime.admitDirect).not.toHaveBeenCalled();
 });
 
+test('Cursor receipt drainage reuses the actual execution meter and advances only after published commit', async () => {
+  const record={info:{id:'msg_cursor',sessionID:input.sessionID,role:'assistant'},parts:[]};
+  const scope={sessionID:input.sessionID,messageID:record.info.id,callID:'cursor_msg_cursor'};
+  mocks.runtime.leaseForCall.mockResolvedValue({state:'published',directory,token:'lease',scope});
+  mocks.runtime.executionReceipt.mockResolvedValue({...scope,directory,files:[],source:'confined-execution'});
+  const entered=Promise.withResolvers(), release=Promise.withResolvers();
+  let ownerMeter, callerMeter;
+  const recordReceipts=vi.fn(async receipts=>{
+    ownerMeter=executionProgressMeter(); expect(ownerMeter).toBe(callerMeter);
+    expect(receipts).toEqual([{...scope,directory,files:[],source:'confined-execution',tool:'cursor_sdk'}]);
+    entered.resolve(); await release.promise;
+  });
+  const {host}=fixture({openCodeClient:createFakeClient(),recordReceipts,nativeExecution:{cursor:{persist:async()=>({messageID:record.info.id})}}});
+  // fixture defaults are overwritten with the exact published owner record.
+  mocks.runtime.executionReceipt.mockResolvedValue({...scope,directory,files:[],source:'confined-execution'});
+  const work=withExecutionMeter(()=>{
+    callerMeter=executionProgressMeter(); callerMeter.progress=7;
+    return host.persistCursorRecord({sessionID:input.sessionID,directory,record});
+  });
+  void work.catch(error=>entered.reject(error));
+  await entered.promise; expect(ownerMeter.progress).toBe(7);
+  release.resolve(); expect(await work).toEqual({messageID:'msg_cursor'});
+  expect(ownerMeter.progress).toBeGreaterThan(7);
+  await withExecutionMeter(async()=>{
+    const meter=executionProgressMeter(); meter.progress=7;
+    expect(await host.persistCursorRecord({sessionID:input.sessionID,directory,record})).toEqual({messageID:'msg_cursor'});
+    expect(meter.progress).toBe(7);
+    expect(recordReceipts).toHaveBeenCalledTimes(1);
+  });
+  expect(executionProgressMeter()).toBeUndefined();
+});
+
+test('Cursor receipt failure and unpublished leases never supply completion progress', async()=>{
+  const record={info:{id:'msg_cursor',sessionID:input.sessionID,role:'assistant'},parts:[]};
+  const scope={sessionID:input.sessionID,messageID:record.info.id,callID:'cursor_msg_cursor'};
+  const refusal=Object.assign(Error('owned receipt refused'),{code:'fixture_receipt_refused'});
+  const recordReceipts=vi.fn(async()=>{throw refusal;});
+  const {host}=fixture({openCodeClient:createFakeClient(),recordReceipts,nativeExecution:{cursor:{persist:async()=>({messageID:record.info.id})}}});
+  mocks.runtime.executionReceipt.mockResolvedValue({...scope,directory,files:[],source:'confined-execution'});
+  mocks.runtime.leaseForCall.mockResolvedValue({state:'published',directory,token:'lease',scope});
+  await withExecutionMeter(async()=>{
+    const meter=executionProgressMeter(); meter.progress=7;
+    await expect(host.persistCursorRecord({sessionID:input.sessionID,directory,record})).rejects.toBe(refusal);
+    expect(meter.progress).toBe(7);
+  });
+  mocks.runtime.leaseForCall.mockResolvedValue({state:'ready',directory,token:'other',scope});
+  recordReceipts.mockClear();
+  await withExecutionMeter(async()=>{
+    const meter=executionProgressMeter(); meter.progress=7;
+    await host.persistCursorRecord({sessionID:input.sessionID,directory,record});
+    expect(meter.progress).toBe(7); expect(recordReceipts).not.toHaveBeenCalled();
+  });
+});
+
 test('generation 2 Cursor persistence and execution require the constructor owner, preserving exact records', async () => {
   const record = { info: { id: 'msg_cursor', sessionID: input.sessionID, role: 'user' }, parts: [] };
   const persist = vi.fn(async value => ({ messageID: value.record.info.id }));
@@ -114,6 +169,36 @@ test('generation 2 Cursor persistence and execution require the constructor owne
   expect(withExecution).toHaveBeenCalledWith(execution, expect.any(Function));
   expect(client.sessions.get).not.toHaveBeenCalled();
   expect(mocks.runtime.reserve).not.toHaveBeenCalled();
+});
+
+test('ledger warming shares one selected pass and supersedes queued projects before they launch', async () => {
+  const { executionSignal } = await import('@openchamber/harness-runtime/lib/execution-admission.js');
+  const { host } = fixture({ openCodeClient: createFakeClient(), nativeExecution: { isReady: async () => true } });
+  let entered, release;
+  const started = new Promise(resolve => { entered = resolve; });
+  const cleanup = new Promise(resolve => { release = resolve; });
+  const calls = [];
+  mocks.runtime.warm.mockImplementation(async ({ directory: selected, refresh }) => {
+    calls.push(selected); expect(refresh).toBe(true);
+    if (calls.length === 1) {
+      const signal = executionSignal(); entered();
+      await new Promise(resolve => signal.addEventListener('abort', resolve, { once: true }));
+      await cleanup; signal.throwIfAborted();
+    }
+    return { built: true };
+  });
+  const first = host.warmLedger({ directory });
+  expect(host.warmLedger({ directory })).toBe(first);
+  await Promise.race([started, first.then(result => { throw new Error(`Warm pass never entered: ${JSON.stringify(result)}`); })]);
+  const second = host.warmLedger({ directory: path.join(directory, 'second') });
+  const third = host.warmLedger({ directory: path.join(directory, 'third') });
+  expect(calls).toEqual([directory]);
+  release();
+  expect(await first).toEqual({ failed: 'ledger_warm_superseded' });
+  expect(await second).toEqual({ failed: 'ledger_warm_superseded' });
+  expect(await third).toEqual({ built: true });
+  expect(calls).toEqual([directory, path.join(directory, 'third')]);
+  await host.drain();
 });
 
 function nativeManagedFixture() {
@@ -240,6 +325,124 @@ test.each([undefined, {}, { generation: () => 1 }, { generation: () => 3 }])('un
   expect(() => host.plugin({ ...input, action: 'direct-admit' })).toThrow(expect.objectContaining({ code: 'opencode_generation_invalid' }));
   await expect(host.beforeCursorPrompt(input)).rejects.toMatchObject({ code: 'opencode_generation_invalid' });
   expect(fetchImpl).not.toHaveBeenCalled(); expect(mocks.runtime.admitDirect).not.toHaveBeenCalled();
+});
+
+async function nativePublicationFixture(options = {}) {
+  const native = await import('@openchamber/harness-runtime/lib/session-execution.js');
+  const client = createFakeClient(), terminated = Promise.withResolvers(), launched = Promise.withResolvers(), diagnostics = [];
+  client.sessions.message.mockResolvedValue({ info: { id: input.messageID, role: 'assistant', sessionID: input.sessionID, parentID: 'msg_user' },
+    turnOwnership: { source: 'native-sequence', userMessageID: 'msg_user' }, parts: [{ type: 'tool', callID: input.callID, tool: 'write' }] });
+  const lease = { token: 'native_publication', ownerID: 'owner_fixture', directory, projectDirectory: directory,
+    viewDirectory: path.join(directory, '.cache/unused-native-view/worktree'), workingDirectory: path.join(directory, '.cache/unused-native-view/worktree'),
+    scope: { ...input, tool: 'write' }, state: 'ready' };
+  const receipt = { terminated: true, confined: true, cancelled: false, exitCode: 0 };
+  mocks.runtime.reserve.mockResolvedValue(lease); mocks.runtime.prepare.mockResolvedValue(lease);
+  mocks.runtime.finish.mockResolvedValue({ files: [{ path: 'fixture.txt', status: 'added' }], operationID: 'published_fixture' });
+  mocks.runtime.leaseForCall.mockResolvedValue(lease); native.readSessionExecutionReceipt.mockResolvedValue(receipt);
+  native.startSessionExecution.mockImplementation(async ({ onOutput }) => {
+    onOutput({ stream: 'stdout', data: Buffer.from(JSON.stringify({ type: 'result', ok: true, result: { content: 'Written fixture' } }) + '\n') });
+    launched.resolve(); return { child: { stdin: { write: vi.fn() } }, pid: 200, result: terminated.promise };
+  });
+  const f = fixture({ openCodeClient: client, admissionSummaryMinMs: 0, ...options,
+    onDiagnostic: record => { diagnostics.push(record); options.onDiagnostic?.(record); },
+    nativeExecution: { workerCommand: '/fixture/bun', workerArgs: ['worker.ts'], recheckPermit: async () => {} } });
+  const specification = { kind: 'writer', tool: 'write', input: { filePath: 'fixture.txt', content: 'fixture' } };
+  const start = () => f.host.nativeExecution({ ...input, ...specification, action: 'start', agent: 'build',
+    argsDigest: createHash('sha256').update(JSON.stringify(specification)).digest('hex') });
+  const settled = async handle => {
+    let batch, cursor = 0; const events = [];
+    do { batch = await f.host.nativeExecution({ action: 'read', handle, cursor }); cursor = batch.cursor; events.push(...batch.events); } while (!batch.done);
+    return events.at(-1);
+  };
+  return { ...f, diagnostics, lease, receipt, terminated, launched, start, settled,
+    finishes: () => diagnostics.filter(row => row.phase === 'finish') };
+}
+
+test('native writer finish observation follows durable receipt and precedes independently owned cleanup', async () => {
+  const f = await nativePublicationFixture({ onDiagnostic: record => { if (record.phase === 'finish') throw Error('observer unavailable'); } });
+  const publishing = Promise.withResolvers(), publication = Promise.withResolvers(), recording = Promise.withResolvers(), recorded = Promise.withResolvers(), cleaned = Promise.withResolvers();
+  mocks.runtime.finish.mockImplementation(async () => { publishing.resolve(); return publication.promise; });
+  f.recordReceipt.mockImplementation(async () => { recording.resolve(); await recorded.promise; });
+  mocks.runtime.cleanupLease.mockImplementation(() => cleaned.promise);
+  try {
+    const { handle } = await f.start(); await f.launched.promise;
+    expect(f.finishes()).toEqual([]); f.terminated.resolve(f.receipt); await publishing.promise;
+    expect(f.finishes()).toEqual([]); expect(f.recordReceipt).not.toHaveBeenCalled();
+    publication.resolve({ operationID: 'published_fixture', files: [] }); await recording.promise;
+    expect(f.finishes()).toEqual([]); expect(mocks.runtime.cleanupLease).not.toHaveBeenCalled();
+    recorded.resolve(); expect(await f.settled(handle)).toMatchObject({ type: 'settled', ok: true, result: { content: 'Written fixture' } });
+    expect(f.finishes()).toEqual([expect.objectContaining({ event: 'session_execution', phase: 'finish', state: 'completed',
+      sessionID: input.sessionID, messageID: input.messageID, callID: input.callID, elapsedMs: expect.any(Number) })]);
+    expect(f.recordReceipt).toHaveBeenCalledTimes(1); expect(mocks.runtime.cleanupLease).toHaveBeenCalledTimes(1);
+  } finally { publication.resolve({ files: [] }); recorded.resolve(); cleaned.resolve(); await f.host.drain(); }
+});
+
+test('native writer receipt failure keeps the original timeout error and never reports completed publication', async () => {
+  const f = await nativePublicationFixture();
+  const cause = Object.assign(Error('original receipt lock timeout'), { code: 'LOCK_TIMEOUT', name: 'TimeoutError' });
+  const failed = Promise.withResolvers();
+  f.recordReceipt.mockImplementation(async () => { failed.resolve(); throw cause; });
+  const { handle } = await withExecutionMeter(f.start); await f.launched.promise; f.terminated.resolve(f.receipt);
+  await failed.promise;
+  await expect(f.host.nativeExecution({ action: 'cancel', handle })).rejects.toBe(cause);
+  expect(await f.settled(handle)).toMatchObject({ type: 'uncertain', error: { code: 'LOCK_TIMEOUT' } });
+  expect(f.finishes()).toEqual([expect.objectContaining({ phase: 'finish', state: 'failed' })]);
+  expect(mocks.runtime.finish).toHaveBeenCalledTimes(1); expect(mocks.runtime.cancelLease).not.toHaveBeenCalled();
+  expect(mocks.runtime.cleanupLease).not.toHaveBeenCalled();
+  await expect(f.host.drain()).rejects.toBe(cause);
+});
+
+test('native writer publication failure reports failed timing and retains the existing cancellation outcome', async () => {
+  const f = await nativePublicationFixture(); const cause = Object.assign(Error('publication refused'), { code: 'fixture_publication_refused' });
+  mocks.runtime.finish.mockRejectedValue(cause);
+  try {
+    const { handle } = await f.start(); await f.launched.promise; f.terminated.resolve(f.receipt);
+    expect(await f.settled(handle)).toMatchObject({ type: 'settled', ok: false, error: { code: cause.code } });
+    expect(f.finishes()).toEqual([expect.objectContaining({ phase: 'finish', state: 'failed' })]);
+    expect(f.recordReceipt).not.toHaveBeenCalled(); expect(mocks.runtime.cancelLease).toHaveBeenCalledTimes(1);
+  } finally { await f.host.drain(); }
+});
+
+test('native writer finish observation preserves inherited authority and a committed receipt after admission expiry', async () => {
+  const f = await nativePublicationFixture(), controller = new AbortController(), recording = Promise.withResolvers(), recorded = Promise.withResolvers();
+  let inherited;
+  f.recordReceipt.mockImplementation(async () => {
+    expect(executionSignal()).toBe(inherited); recording.resolve(); await recorded.promise;
+    expect(executionSignal()).toBe(inherited); expect(inherited.aborted).toBe(true);
+  });
+  try {
+    const { handle } = await withExecutionAdmission(input, () => { inherited = executionSignal(); return f.start(); }, { signal: controller.signal });
+    await f.launched.promise; f.terminated.resolve(f.receipt); await recording.promise;
+    controller.abort(Object.assign(Error('original admission expired'), { code: 'local_execution_timeout' })); recorded.resolve();
+    expect(await f.settled(handle)).toMatchObject({ type: 'settled', ok: true });
+    expect(f.finishes()).toEqual([expect.objectContaining({ phase: 'finish', state: 'completed' })]);
+    expect(mocks.runtime.cancelLease).not.toHaveBeenCalled(); expect(f.recordReceipt).toHaveBeenCalledTimes(1);
+  } finally { recorded.resolve(); await f.host.drain(); }
+});
+
+test('native writer cancellation before termination produces no successful finish observation', async () => {
+  const f = await nativePublicationFixture();
+  try {
+    const { handle } = await f.start(); await f.launched.promise;
+    const cancelled = f.host.nativeExecution({ action: 'cancel', handle });
+    f.terminated.resolve({ ...f.receipt, cancelled: true, exitCode: 137 }); await cancelled;
+    expect(await f.settled(handle)).toMatchObject({ type: 'settled', ok: false });
+    expect(f.finishes()).toEqual([]); expect(mocks.runtime.finish).not.toHaveBeenCalled();
+    expect(mocks.runtime.cancelLease).toHaveBeenCalledTimes(1);
+  } finally { await f.host.drain(); }
+});
+
+test('native writer recovered publication observes its durable receipt only after the successful finish retry', async () => {
+  const f = await nativePublicationFixture();
+  mocks.runtime.finish.mockRejectedValueOnce(Error('materialization interrupted'));
+  mocks.runtime.leaseForCall.mockResolvedValue({ ...f.lease, state: 'published' });
+  try {
+    const { handle } = await f.start(); await f.launched.promise; f.terminated.resolve(f.receipt);
+    expect(await f.settled(handle)).toMatchObject({ type: 'settled', ok: true });
+    expect(f.finishes().map(row => row.state)).toEqual(['failed', 'completed']);
+    expect(mocks.runtime.finish).toHaveBeenCalledTimes(2); expect(f.recordReceipt).toHaveBeenCalledTimes(1);
+    expect(mocks.runtime.cancelLease).not.toHaveBeenCalled();
+  } finally { await f.host.drain(); }
 });
 
 test.each([{ tool: 'patch', projected: 'apply_patch', input: { patchText: 'partial patch fixture' } },

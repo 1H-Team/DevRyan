@@ -124,7 +124,7 @@ async function processCall(runtime, directory, ids, edit, deferred = null) {
   // The native launcher records confined termination beside the view; the
   // benchmark stands in for it, exactly as the runtime's own tests do.
   await fs.writeFile(path.join(path.dirname(lease.viewDirectory), 'termination.json'),
-    JSON.stringify({ terminated: true, confined: true, exitCode: 0, cancelled: false }));
+    JSON.stringify({ terminated: true, confined: true, exitCode: 0, cancelled: false }), { flag: 'wx', mode: 0o600 });
   const finish = await timed(() => runtime.finish({ directory, token: lease.token }));
   const row = { beginMs: begin.ms, beginCpuMs: begin.cpuMs, finishMs: finish.ms, finishCpuMs: finish.cpuMs, cleanupMs: null, cleanupDeferred: deferred !== null };
   const cleanup = timed(() => runtime.cleanupLease({ directory, token: lease.token })).then((result) => { row.cleanupMs = result.ms; });

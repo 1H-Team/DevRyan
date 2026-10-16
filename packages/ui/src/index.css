@@ -729,10 +729,10 @@ svg.animate-spin {
   border-color: color-mix(in srgb, #4FA66D 78%, black);
 }
 .oc-plan-implement-btn:disabled {
-  background-color: #E5E7EB;
-  border-color: #E5E7EB;
-  color: #000;
-  opacity: 1;
+  background-color: var(--muted);
+  border-color: var(--border);
+  color: var(--muted-foreground);
+  opacity: 0.65;
   cursor: default;
 }
 

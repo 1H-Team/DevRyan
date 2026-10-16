@@ -8,6 +8,14 @@ import { executionSocketDirectory, NODE_SPAWN_PRELOAD, ownedPrivateDirectory, pr
   sessionExecutionProfile, windowsSessionExecutionProfile, parseWindowsExecutionProcessIdentity, readSessionExecutionReceipt, sweepExecutionSocketDirectories, sweepSessionTemporaryDirectories, startReadOnlySessionExecution, verifySessionExecutionLauncher } from './session-execution.js';
 
 const roots = [], leases = [];
+test('Plan execution disables network grants and cannot restore writable input roots', () => {
+  const paths = { viewDirectory: '/fixture/view', scratchDirectory: '/fixture/scratch', socketDirectory: '/fixture/sockets' };
+  const profile = sessionExecutionProfile({ ...paths, readOnly: true });
+  expect(profile).toContain('(deny network*)');
+  expect(profile).not.toContain('(allow network-outbound');
+  expect(sessionExecutionProfile(paths)).not.toContain('(deny network*)');
+  expect(() => sessionExecutionProfile({ ...paths, readOnly: true, writableDirectories: ['/fixture/project'] })).toThrow('invalid_execution_path');
+});
 test('Windows cancellation identity refuses recycled or widened process observations', () => {
   const value = { protocol: 'devryan.windows-process-identity/1', pid: 12, startIdentity: 'win32:0123456789abcdef', active: true, inJob: true };
   expect(parseWindowsExecutionProcessIdentity(JSON.stringify(value), 12)).toEqual(value);

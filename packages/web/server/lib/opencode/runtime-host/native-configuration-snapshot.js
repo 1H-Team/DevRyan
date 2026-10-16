@@ -96,7 +96,7 @@ async function loadCurrentLocation({ directory, launch }) {
 }
 
 /** Constructor-only loader seam permits deterministic fixtures; production uses the existing settings owners. */
-export function createNativeConfigurationSnapshotResolver({ loadLocation = loadCurrentLocation, resolveSlimAgents, ponytailCommands, ponytailDefaultMode = process.env.PONYTAIL_DEFAULT_MODE, getRuntimeLocations } = {}) {
+export function createNativeConfigurationSnapshotResolver({ loadLocation = loadCurrentLocation, resolveSlimAgents, ponytailCommands, ponytailDefaultMode = process.env.PONYTAIL_DEFAULT_MODE, getRuntimeLocations, hasConfiguredClaudeProfile } = {}) {
   return async function resolveNativeConfigurationSnapshot({ binding, revision, expectedRegistrationDigest }) {
     const descriptor = binding?.descriptor, launch = descriptor?.launch;
     if (descriptor?.generation !== 2 || !Number.isSafeInteger(revision) || revision < 1 || !/^[a-f0-9]{64}$/.test(expectedRegistrationDigest)) throw fail('native_snapshot_identity_invalid');
@@ -115,6 +115,7 @@ export function createNativeConfigurationSnapshotResolver({ loadLocation = loadC
     const sources = { launch, directories: runtimeLocations.map(location => location.directory), skillSources: policy.skillSources };
     for (let attempt = 0; attempt < 3; attempt++) {
     const sourceStamp = await captureConfigurationSourceStamp(sources);
+    const claudeConfigured=registrations.plugins.some(origin=>origin.id==='devryan.provider-compat')&&await hasConfiguredClaudeProfile?.()===true;
     const additionalStamps = [];
     const locations = [];
     for (const location of runtimeLocations) {
@@ -178,6 +179,11 @@ export function createNativeConfigurationSnapshotResolver({ loadLocation = loadC
       const mcp = loaded.legacy.mcp ?? {};
       const requiredMCPs = Object.entries(mcp).filter(([, value]) => value?.enabled !== false).map(([id]) => id);
       const configuration = translateNativeSkillPermissions(translateNativeConfiguration({...loaded,agents:textSettings.agents,commands:textSettings.commands}),directory,skills);
+      // Meridian owns this account; an empty native stanza activates catalog metadata without a synthetic credential.
+      if(claudeConfigured&&!(Array.isArray(loaded.legacy.disabled_providers)&&loaded.legacy.disabled_providers.includes('anthropic'))
+        &&(!Array.isArray(loaded.legacy.enabled_providers)||loaded.legacy.enabled_providers.includes('anthropic'))){
+        configuration.providers??={};configuration.providers.anthropic??={};
+      }
       const compatibility = { legacy: loaded.legacy, agents: activeSlim?textSettings.agents:{...loaded.agents,...buildRuntimeHelperAgents()}, commands: loaded.commands, slim: loaded.slim, mcp,ponytail:{defaultMode:ponytail.defaultMode,source:ponytail.source} };
       locations.push({ directory, configuration, skills, aliases,
         instructions:textSettings.instructions,textReferences:textSettings.textReferences,

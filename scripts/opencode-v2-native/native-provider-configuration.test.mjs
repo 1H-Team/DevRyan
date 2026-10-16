@@ -5,7 +5,7 @@ import {existsSync,readFileSync} from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
 import {createHash} from 'node:crypto';
-import {resolveNativeProviderConfiguration} from '../../packages/web/server/lib/opencode/runtime-host/native-provider-configuration.js';
+import {resolveNativeProviderConfiguration,hasConfiguredNativeClaudeProfile} from '../../packages/web/server/lib/opencode/runtime-host/native-provider-configuration.js';
 import {REVIEWED_CLAUDE_STARTUP} from '../../packages/web/server/lib/opencode/runtime-host/reviewed-claude-transform.js';
 import {claudeKeychainService} from '../../packages/web/server/lib/opencode/claude-credential-projection.js';
 const repository=path.resolve(import.meta.dirname,'../..');
@@ -13,6 +13,14 @@ const fixture=async action=>{
  const root=await fs.mkdtemp(path.join(repository,'.cache/v2-validation/meridian-configuration-'));
  try{const globals=Object.fromEntries(['home','config','data','state','cache','bin','log','repos','tmp'].map(name=>[name,path.join(root,name)]));for(const directory of Object.values(globals))await fs.mkdir(directory,{recursive:true});await fs.mkdir(path.join(globals.home,'.config/meridian'),{recursive:true});await action({root,globals});}finally{await fs.rm(root,{recursive:true,force:true});}
 };
+test('Claude catalog metadata uses only an unambiguous configured CLI profile',()=>{
+ const first={id:'first',type:'claude-max'},second={id:'second',type:'claude-max'};
+ for(const input of [{profiles:[]},{profiles:[first,second]},{profiles:[first,second],defaultProfile:'missing'},
+  {profiles:[{id:'api',type:'api',apiKey:'synthetic'}]},{profiles:[{id:'token',type:'oauth-token',oauthToken:'synthetic'}]},
+  {profiles:[{...first,oauthToken:'synthetic'}]}])assert.equal(hasConfiguredNativeClaudeProfile(input),false);
+ for(const input of [{profiles:[first]},{profiles:[first,second],defaultProfile:'second'},{profiles:[{id:'legacy'}]}])
+  assert.equal(hasConfiguredNativeClaudeProfile(input),true);
+});
 test('private Meridian resolution matches the exact captured loader ordering and filtering',()=>fixture(async({globals})=>{
  const source=await fs.readFile(path.join(repository,'scripts/opencode-v2-native/fixtures/reviewed-claude-1.8.0.txt'),'utf8');assert.equal(createHash('sha256').update(source).digest('hex'),REVIEWED_CLAUDE_STARTUP.sourceSha256);
  const start=source.indexOf('var b=()=>'),end=source.indexOf('function A(e)');assert.ok(start>0&&end>start);

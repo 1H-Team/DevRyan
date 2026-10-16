@@ -105,6 +105,8 @@ export interface StartWebUiServerOptions {
   inspectBotRuntimeResource?: (input: Record<string, unknown>) => Promise<unknown>;
   stopBotRuntimeResource?: (input: Record<string, unknown>) => Promise<unknown>;
   requestBotIndexer?: (input: BotIndexerRequest) => Promise<Record<string, unknown>>;
+  /** Trusted host constructor only; exact owned Claude enrollment commands. */
+  nativeClaudeSecurityHome?: string;
   getManagedBrowserEnvironment?: () => ManagedBrowserEnvironment | Promise<ManagedBrowserEnvironment>;
 }
 

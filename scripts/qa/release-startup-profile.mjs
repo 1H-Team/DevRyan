@@ -22,13 +22,16 @@ export function releaseStartupEnvironment(root, base = process.env) {
     GIT_CEILING_DIRECTORIES: root, GIT_TERMINAL_PROMPT: '0', NO_PROXY: 'localhost,127.0.0.1', no_proxy: 'localhost,127.0.0.1' };
 }
 
-export async function createReleaseStartupProfile(root, { fixtureSetup = true, resume = false } = {}) {
+export async function createReleaseStartupProfile(root, { fixtureSetup = true, resume = false, deadline, signal } = {}) {
+  const check = () => { signal?.throwIfAborted(); if (deadline !== undefined) assert.ok(performance.now() < deadline, 'Release fixture deadline expired'); };
+  check();
   const env = releaseStartupEnvironment(root), workspace = path.join(root, 'workspace');
   for (const directory of [root, workspace, env.HOME, env.ZDOTDIR, env.TMPDIR, env.OPENCHAMBER_DATA_DIR,
     env.OPENCHAMBER_ELECTRON_USER_DATA_DIR, path.join(env.XDG_CONFIG_HOME, 'opencode')]) await fs.mkdir(directory, { recursive: true, mode: 0o700 });
   assert.equal(await fs.realpath(root), root);
   // Electron starts in HOME; fence both discovery roots from the enclosing checkout.
-  for (const directory of [env.HOME, workspace]) await exec('git', ['init', '--quiet', '--initial-branch=main', '--template=', directory], { env });
+  for (const directory of [env.HOME, workspace]) await exec('git', ['init', '--quiet', '--initial-branch=main', '--template=', directory], { env, signal, timeout: deadline === undefined ? undefined : Math.max(1, deadline - performance.now()) });
+  check();
   const port = await reservePort(), provider = await createRuntimeUiProvider({ generation: 2, directory: workspace });
   const settings = { desktopLocalPort: port, desktopLanAccessEnabled: false,
     productionBotsRuntimeMode: 'disabled', productionBotsRuntimeServiceOptOut: true,
@@ -39,7 +42,9 @@ export async function createReleaseStartupProfile(root, { fixtureSetup = true, r
   const binding = () => readRuntimeBundleBinding({ DEVRYAN_RUNTIME_BUNDLE_ROOT: controlRoot });
   const writeJson = async (file, value) => {
     await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
-    await fs.writeFile(file, JSON.stringify(value) + '\n', { mode: 0o600 });
+    check();
+    await fs.writeFile(file, JSON.stringify(value) + '\n', { mode: 0o600, signal });
+    check();
   };
   const configure = async ({ selected = false } = {}) => {
     const legacy = runtimeUiConfiguration(provider.baseURL), native = runtimeUiNativeConfiguration(legacy);
@@ -58,6 +63,7 @@ export async function createReleaseStartupProfile(root, { fixtureSetup = true, r
       await writeJson(path.join(env.OPENCHAMBER_DATA_DIR, 'settings.json'), settings);
       if (fixtureSetup) await configure();
     }
+    check();
     return { root, env, workspace, port, controlRoot, binding, configure, provider,
       close: () => provider.close(), check: () => provider.check() };
   } catch (error) { await provider.close(); throw error; }

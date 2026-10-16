@@ -14,6 +14,11 @@ import { Agent } from '@opencode/core/agent';
 import { LayerNode } from '@opencode/util/effect/layer-node';
 import { Global } from '@opencode/util/global';
 import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+import fs from 'node:fs/promises';
+import { createSessionMutationRuntime } from '../../packages/harness-runtime/lib/session-mutations.js';
+import type { SessionMutationRuntime } from '../../packages/harness-runtime/lib/session-mutations.js';
+import { createRemoteNativeAdmissionBridge } from '../../packages/web/server/lib/opencode/runtime-host/native-admission-bridge.js';
 import { createAdmissionGates, createChildThroughSession, observeDeferredNativeWake, observeOwnedShellNotification, observeOwnedPrimaryInput } from '../../packages/web/server/lib/opencode/runtime-host/admission-gates.js';
 import { SessionExecution } from '@opencode/core/session/execution';
 import { SessionInbox } from '@opencode/core/session/inbox';
@@ -22,6 +27,8 @@ import { provideRegistrationOrigin } from '../../packages/web/server/lib/opencod
 import type { NativeAdmissionBridge, OperationRequest } from '../../packages/web/server/lib/opencode/runtime-host/native-admission-contract.js';
 import { OperationPermitRef, requestPermit, runWithRequestPermit } from '../../packages/web/server/lib/opencode/runtime-host/native-admission-contract.js';
 import { HostRefusal, refuseHost, runWithHostRefusal } from '../../packages/web/server/lib/opencode/runtime-host/host-refusal.js';
+import { createNativeAdmissionOwner } from '../../packages/web/server/lib/opencode/runtime-host/native-admission-owner.js';
+import { createNativePlanDenialOwner } from '../../packages/web/server/lib/opencode/runtime-host/native-plan-denial-owner.js';
 
 const origin = { kind: 'plugin', id: 'fixture.reviewed', manifestDigest: 'a'.repeat(64), capabilities: ['read'] } as const;
 const invocation: Parameters<Tool.Snapshot['execute']>[0] = { sessionID: Schema.decodeUnknownSync(SessionSchema.ID)('ses_fixture'),
@@ -122,14 +129,14 @@ test('deferred wake uses current native inbox/activity and never resurrects cons
   pending = [];
   expect(await observe()).toBe('idle');
 });
-function fixture() {
+function fixture(overrides: Partial<Pick<NativeAdmissionBridge, 'authorize' | 'release'>> = {}) {
   const requests: OperationRequest[] = [], dispatched: unknown[] = [];
   let unguarded = 0;
   const bridge: NativeAdmissionBridge = { awaitReady: async () => {},
     authorize: async request => { requests.push(request); return { token: 'b'.repeat(64), sessionID: request.sessionID, revision: 0 }; },
     recheck: async () => {}, release: async () => {}, sealPrompt: async () => ({}), verifyAccepted: async () => {},
     registerShellJob: async () => {}, sealSynthetic: async () => ({}),
-    deferContinuation: async () => {}, hold: async () => {}, releaseHold: async () => {}, isHeld: async () => false };
+    deferContinuation: async () => {}, hold: async () => {}, releaseHold: async () => {}, isHeld: async () => false, ...overrides };
   const gates = createAdmissionGates({ bridge, nativePlugins: new Map(), executeOwned: call => {
     dispatched.push(call.input); return call.executeNative();
   } });
@@ -219,6 +226,46 @@ test('missing Job cancellation remains a native no-op, while actual and later jo
 const registration = (tools: Tool.Interface, name = 'fixture') => tools.transform(editor => editor.add({ name,
   input: Schema.Struct({ value: Schema.String }), description: 'Owned fixture tool', options: { codemode: true },
   execute: input => Effect.succeed({ content: JSON.stringify(input) }) })).pipe(Effect.provideService(Location.Service, Schema.decodeUnknownSync(Location.Info)({ directory:'/fixture/project', project:{id:'global',directory:'/fixture/project',canonical:'/fixture/project'} })));
+
+test('permission-filtered registered Plan writers reach the original negative admission owner without execution', async () => {
+  let readOnly = true; const cancelled: unknown[] = [], released: unknown[] = [];
+  const child = { id: invocation.sessionID, parentID: 'ses_parent', directory: '/fixture/project' };
+  const request = { ...invocation, call: { ...invocation.call, name: 'write' } };
+  const cache = fileURLToPath(new URL('../../.cache/v2-validation/', import.meta.url)); await fs.mkdir(cache, {recursive:true});
+  const storage = await fs.mkdtemp(path.join(cache,'plan-denial-types-'));
+  const state = () => ({ held: false, revision: 0, reverting: false, holds: [] });
+  const runtime: SessionMutationRuntime = { ...createSessionMutationRuntime({directory:storage}),
+    registerNativeSession: async () => state(), nativeAdmissionState: async () => state(),
+    cancelUnstartedCall: async (input: unknown) => { cancelled.push(input); } };
+  const owner = createNativeAdmissionOwner({ runtime, directory: child.directory, ownerID: 'fixture',
+    withSessionLock: async (_sessionID, action) => action(),
+    getSession: async (id: string) => id === child.id ? child : { id, directory: child.directory }, authorizeOperation: async () => {},
+    readPlanPolicy: async () => ({ readOnly }), recordPlanToolDenial: createNativePlanDenialOwner({ runtime,
+      readMessage: async () => ({ info: { id: request.messageID, sessionID: child.id, role: 'assistant' },
+        parts: [{ type: 'tool', callID: request.call.id, tool: 'write', state: { status: 'pending' } }] }) }) });
+  const remote = createRemoteNativeAdmissionBridge({rpc:(method,input)=>owner.handleRpc(method,input)});
+  const f = fixture({authorize:remote.authorize,release:async permit=>{released.push(permit);await remote.release(permit);}});
+  await f.gates.controls.openStartup();
+  try {
+    await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const tools = yield* Tool.Service;
+      const registered = yield* provideRegistrationOrigin(origin, registration(tools, 'write'));
+      const snapshot = yield* tools.snapshot([{ action: '*', resource: '*', effect: 'deny' }]);
+      expect(snapshot.definitions).toEqual([]);
+      const denied = yield* Effect.exit(snapshot.execute(request));
+      expect(denied._tag).toBe('Failure'); expect(f.dispatched).toEqual([]);
+      expect(cancelled).toEqual([{ directory: child.directory, sessionID: child.id, messageID: request.messageID,
+        callID: request.call.id, requireAbsent: true, guard: {admissionRevision:0,assertCurrent:expect.any(Function)} }]);
+      readOnly = false;
+      const stillFiltered = yield* Effect.exit(snapshot.execute(request));
+      expect(stillFiltered._tag).toBe('Failure'); expect(cancelled).toHaveLength(1); expect(released).toHaveLength(1);
+      yield* registered.dispose;
+      yield* Effect.exit(snapshot.execute(request));
+      yield* Effect.exit(snapshot.execute({ ...request, call: { ...request.call, name: 'unknown' } }));
+      expect(cancelled).toHaveLength(1); expect(f.dispatched).toEqual([]);
+    }).pipe(Effect.provide(f.layer))));
+  } finally { owner.dispose();await runtime.drain();await fs.rm(storage,{recursive:true,force:true}); }
+});
 
 test('the mandatory native Tool override beats competing replacement and gates final post-hook input without Code Mode', async () => {
   const f = fixture(); await f.gates.controls.openStartup();

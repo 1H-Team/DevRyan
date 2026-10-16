@@ -61,12 +61,14 @@ const KNOWN_TURN_MARKS = new Set([
 // Server-only marks on the native provider path: never accepted from clients.
 // `provider_request_prepared` is the native model request preparation,
 // `provider_request_sent` its first physical send, `provider_first_byte` the
-// first response bytes (HTTP headers or WebSocket frame) and
+// first body bytes or WebSocket frame; `provider_response_headers` is HTTP headers and
 // `provider_response_created` the Responses `response.created` frame.
 const SERVER_TURN_MARKS = new Set([
   'provider_request_prepared',
   'provider_request_sent',
   'provider_first_byte',
+  'provider_response_headers',
+  'provider_body_end',
   'provider_response_created',
 ]);
 const MAX_AGGREGATE_KEYS = 32;
@@ -80,6 +82,8 @@ const DURATION_PAIRS = [
   ['prompt_accepted', 'provider_request_sent'],
   ['provider_request_prepared', 'provider_request_sent'],
   ['provider_request_sent', 'provider_first_byte'],
+  ['provider_request_sent','provider_response_headers'],
+  ['provider_response_headers','provider_first_byte'],
   ['provider_request_sent', 'provider_response_created'],
   ['provider_first_byte', 'first_text_delta'],
   ['provider_request_sent', 'first_text_delta'],
@@ -611,7 +615,7 @@ function createTurnTimingRuntime(options = {}) {
   const aggregate = (target, key, sample) => {
     const keys = target.byKey;
     if (!keys.has(key) && keys.size >= MAX_AGGREGATE_KEYS) return;
-    const entry = keys.get(key) ?? { count: 0, totalMs: 0, maxMs: 0, waitMs: 0, holdMs: 0 };
+    const entry = keys.get(key) ?? { count: 0, totalMs: 0, maxMs: 0, waitMs: 0, holdMs: 0, failedCount: 0 };
     entry.count += 1;
     for (const [field, value] of Object.entries(sample)) entry[field] += value;
     entry.maxMs = Math.max(entry.maxMs, sample.totalMs ?? 0);
@@ -935,7 +939,7 @@ function createTurnTimingRuntime(options = {}) {
     reusedCount: bridge.reusedCount,
     failedCount: bridge.failedCount,
     methods: [...bridge.byKey].map(([method, entry]) => ({
-      method, count: entry.count, durationMs: entry.totalMs, maxMs: entry.maxMs,
+      method, count: entry.count, durationMs: entry.totalMs, maxMs: entry.maxMs, failedCount: entry.failedCount,
     })),
   } : null);
 
@@ -964,6 +968,9 @@ function createTurnTimingRuntime(options = {}) {
     for (const key of ['statusCode', 'stalledForMs']) {
       const value = nonNegative(metadata[key]);
       if (value !== null) payload[key === 'stalledForMs' ? 'durationMs' : key] = value;
+    }
+    if(mark==='provider_body_end')for(const key of ['bytes','chunks','maxGapMs']){
+      if(Number.isSafeInteger(metadata[key])&&metadata[key]>=0)payload[key]=metadata[key];
     }
     return {
       sessionId: record.sessionId,
@@ -1108,11 +1115,14 @@ function createTurnTimingRuntime(options = {}) {
         }
         const statusCode = nonNegative(input.metadata.statusCode);
         if (statusCode !== null) metadata.statusCode = statusCode;
+        if(mark==='provider_body_end')for(const key of ['bytes','chunks','maxGapMs']){
+          if(Number.isSafeInteger(input.metadata[key])&&input.metadata[key]>=0)metadata[key]=input.metadata[key];
+        }
       }
       if (!metadata.requestID) return false;
       if (mark === 'provider_request_sent'
         && metadata.requestID !== record.marks.provider_request_prepared?.metadata?.requestID) return false;
-      if (['provider_first_byte', 'provider_response_created'].includes(mark)
+      if (['provider_first_byte', 'provider_response_created','provider_response_headers','provider_body_end'].includes(mark)
         && metadata.requestID !== record.marks.provider_request_sent?.metadata?.requestID) return false;
       return setMark(record, mark, Object.keys(metadata).length > 0 ? metadata : undefined);
     },
@@ -1133,8 +1143,9 @@ function createTurnTimingRuntime(options = {}) {
       bridge.maxMs = Math.max(bridge.maxMs, durationMs);
       if (input.reused === true) bridge.reusedCount += 1;
       const statusCode = nonNegative(input.statusCode);
-      if (statusCode === null || statusCode >= 400) bridge.failedCount += 1;
-      aggregate(bridge, method, { totalMs: durationMs });
+      const failedCount = statusCode === null || statusCode >= 400 ? 1 : 0;
+      bridge.failedCount += failedCount;
+      aggregate(bridge, method, { totalMs: durationMs, failedCount });
       record.updatedAt = now();
       return true;
     },

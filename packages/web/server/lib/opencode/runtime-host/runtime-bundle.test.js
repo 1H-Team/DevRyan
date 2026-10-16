@@ -885,6 +885,10 @@ const startupUpgradeFixture=async name=>{
  const captures=[];
  const credentialProcess=async({descriptor,action,assertHeld})=>{await assertHeld();expect(action.action).toBe('capture');captures.push(descriptor.bundleID);return captureCredentials();};
  const controlRoot=await launchPinned(f,home,older);recordStartupBundleUpgradeFailure(null);
+ // Dummy older executables use the current importer; restore their historical fixture schema.
+ const baseline=readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot});
+ const database=resolveSqliteDriver().open(baseline.descriptor.launch.opencodeDatabasePath);
+ try{database.exec("ALTER TABLE project DROP COLUMN time_archived; DELETE FROM migration WHERE id IN ('20261007190000_azure_cli_external_credential','20261010180456_project_time_archived')");}finally{database.close();}
  return {f,home,older,pinned,controlRoot,captures,credentialProcess,launch:(release,process=credentialProcess)=>launchPinned(f,home,release,process),
   binding:()=>readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot})};
 };

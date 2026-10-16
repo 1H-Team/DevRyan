@@ -1,0 +1,295 @@
+{
+  "date": "2026-10-16",
+  "update": {
+    "from": "2.0.26",
+    "to": "2.0.30",
+    "effect": "4.0.1"
+  },
+  "packageQualification": {
+    "status": "passed",
+    "sourceDigest": "69260b599248a194428dfbd7aa1be5a970954115fddaaa3ba6165c0205a47b64",
+    "sourceCohort": {
+      "valid": true,
+      "changedPaths": []
+    },
+    "cases": [
+      {
+        "id": "compiled-production-artifacts",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-current-build-inputs",
+        "status": "passed"
+      },
+      {
+        "id": "portable-artifact-tamper-refusal",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-assets-source-denied",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-empty-initialization-lost-ack-resume",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-empty-initialization-idempotent-replay",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-fresh-native-initialization",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-credential-target-contract-refusal",
+        "status": "passed"
+      },
+      {
+        "id": "fresh-v2-baseline-checkpoint",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-clone-layout-legacy",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-v2-derived-bundle-clone",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-claude-selected-profile-credential-ipc",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-ready-catalog",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-helper-hang-independent-native-conversation",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-human-queue-child-idle-and-await-race",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-human-explicit-steer-with-busy-child",
+        "status": "passed"
+      },
+      {
+        "id": "package-read",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-existing-workspace-write",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-existing-workspace-revert-redo",
+        "status": "passed"
+      },
+      {
+        "id": "package-write",
+        "status": "passed"
+      },
+      {
+        "id": "second-location-write",
+        "status": "passed"
+      },
+      {
+        "id": "second-location-read-isolation",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-retained-initial-input",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-retained-multiple-inputs",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-retained-input-discard-lost-ack",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-retained-shell-notification",
+        "status": "passed"
+      },
+      {
+        "id": "package-edit",
+        "status": "passed"
+      },
+      {
+        "id": "package-patch",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-formatter",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-formatter-subprocess",
+        "status": "passed"
+      },
+      {
+        "id": "cli-diagnostic-seed",
+        "status": "passed"
+      },
+      {
+        "id": "cli-diagnostic-fail",
+        "status": "passed"
+      },
+      {
+        "id": "cli-diagnostic-fix",
+        "status": "passed"
+      },
+      {
+        "id": "cli-diagnostic-pass",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-cli-diagnostic-fail-fix-pass",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-reviewed-command",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-manual-compaction",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-native-observation",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-after-replacement-write",
+        "status": "passed"
+      },
+      {
+        "id": "tracked-compiled-pending-replacement",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-todo-lost-ack-replacement",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-owned-subtree-removal",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-model-title-persist-once-restart-restore",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-removal-startup-recovery",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-v2-credential-rollback-reconciliation",
+        "status": "passed"
+      },
+      {
+        "id": "candidate-work-rollback-retention",
+        "status": "passed"
+      },
+      {
+        "id": "rollback-selected-native-lifecycle",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-clone-layout-fresh-install",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-fresh-install-clone",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-fresh-install-rollback",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-seeded-credential-first-boot",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-parent-death-drain",
+        "status": "passed"
+      },
+      {
+        "id": "compiled-durable-journal-roots",
+        "status": "passed"
+      }
+    ],
+    "migrations": {
+      "baseline": 49,
+      "candidate": 50
+    },
+    "cleanupFailures": [],
+    "artifact": {
+      "buildId": "6662fea8dcc48fb0fa0bd06a8ba59af9200329baddaafe00ff96dcf861f5db5a",
+      "manifestSha256": "e9d0cfc68f8be1696603cdbb0e528e5c537249b8f3a1257700f3ac912999c621",
+      "simulationEnabled": false
+    },
+    "releasePair": {
+      "baselineVersion": "2.0.26",
+      "baselineManifestSha256": "b6eeb7a64d982c18827cde4a870aef9f1a1a2f0d2dc56ec0c62e1046bfbdff77",
+      "candidateVersion": "2.0.30",
+      "candidateManifestSha256": "e9d0cfc68f8be1696603cdbb0e528e5c537249b8f3a1257700f3ac912999c621"
+    },
+    "journalRoots": [
+      {
+        "id": "candidate",
+        "status": "passed",
+        "gapRecords": 0
+      },
+      {
+        "id": "baseline",
+        "status": "passed",
+        "gapRecords": 0
+      },
+      {
+        "id": "parent-death",
+        "status": "passed",
+        "gapRecords": 0
+      }
+    ]
+  },
+  "validation": {
+    "build": "passed",
+    "nativeBuild": "passed",
+    "bundleCheck": "passed",
+    "full": "passed",
+    "fullCommand": "bun run validate:full",
+    "fullLogSha256": "071b3bafbad8da2157a965ca6b6c30ef5f83e5d6c6dd8840c8cfed1bcac80c08",
+    "uiTests": 4161,
+    "serverTests": 7105,
+    "finalNativeHostTests": 34,
+    "startupBundleTests": 76,
+    "qualifiedSourceUnchanged": true,
+    "docs": "passed",
+    "finalLogSha256": {
+      "build-final.log": "35785d32823a3cccc424ce9f77ae7d850867d9e36af2d86c788c436d0423a14f",
+      "bundle-check-final.log": "d89c2fe2ec49cd11e5bfc2fe5568a8464f2bcb53bc5d13501cdd4eb0bdffdbd5",
+      "docs-validation-final.log": "0d80bd260e4627a2df268bc93275edf3f4467300a4218053f42375fb8eb0a2e8"
+    }
+  },
+  "notChecked": [
+    "Docker image build or deployment",
+    "Windows native build",
+    "live paid providers",
+    "release installer or installed app"
+  ],
+  "cleanup": {
+    "temporaryCandidateRemoved": true,
+    "supersededPackageRunsRemoved": true,
+    "createdWorktrees": 0,
+    "cacheReport": "completed",
+    "cachePrune": "preview only; existing cache preserved"
+  }
+}

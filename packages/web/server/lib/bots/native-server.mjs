@@ -3,7 +3,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { Effect, Exit, Layer, Logger, Schema, SchemaRepresentation, Scope } from 'effect';
 import { LLM, LLMClient } from '@opencode/ai';
 import { RequestExecutor } from '@opencode/ai/route';
-import { HttpClientRequest, HttpClientResponse } from 'effect/unstable/http';
+import { HttpClientRequest, HttpClientResponse } from 'effect/http';
 import { ServerFetch } from '@opencode/server/fetch';
 import { llmClient, requestExecutor } from '@opencode/core/effect/app-node-platform';
 import { Credential } from '@opencode/core/credential';
@@ -214,7 +214,7 @@ export async function createBotNativeServer({
     const handler = await Effect.runPromise(ServerFetch.make({ database: { path: databasePath },
       config: { directory: configDirectory, file: `${configDirectory}/opencode.json`, project: false },
       models: { fetch: false, snapshot: false }, events: { persist: true },
-      fs: { fff: false, filewatcher: false }, app: { name: 'DevRyan Bot', version: '2.0.26' },
+      fs: { fff: false, filewatcher: false }, app: { name: 'DevRyan Bot', version: '2.0.30' },
     }, { overrides }).pipe(Scope.provide(scope), Effect.provide(Logger.layer([], { mergeWithExisting: false }))));
     const agentProbe = await handler(new Request('http://localhost/api/agent', { headers: { 'x-opencode-directory': encodeURIComponent(directory) } }));
     if (!agentProbe.ok) throw new Error('bot_native_agent_unavailable');
@@ -229,7 +229,7 @@ export async function createBotNativeServer({
       if (!botNativeAuthorized(request.headers.get('authorization'), capability.runtimeToken)) return Response.json({ code: 'unauthorized' }, { status: 401 });
       const url = new URL(request.url);
       if (!ready) return Response.json({ code: 'bot_native_unavailable' }, { status: 503 });
-      if (url.pathname === '/devryan/ready' && request.method === 'GET') return Response.json({ ready: true, generation: 2, opencode: { version: '2.0.26' } });
+      if (url.pathname === '/devryan/ready' && request.method === 'GET') return Response.json({ ready: true, generation: 2, opencode: { version: '2.0.30' } });
       const signal = AbortSignal.any([request.signal, lifetime.signal]);
       try {
         if (url.pathname === '/devryan/bot/prompt' && request.method === 'POST') {

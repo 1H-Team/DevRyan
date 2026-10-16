@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest';
 const readAgent = name => readFileSync(new URL(`./${name}.md`, import.meta.url), 'utf8');
 
 describe('specialist-owned bundled agent routing', () => {
+  it('uses exact search references without stale codemap instructions', () => {
+    for (const agent of ['builder', 'explorer', 'fixer', 'orchestrator']) expect(readAgent(agent)).not.toMatch(/codemap/i);
+  });
   it('starts new tasks with Explorer discovery and routes implementation to its owning specialist', () => {
     const prompt = readAgent('orchestrator');
     for (const rule of ['**Explorer-first discovery.**', 'the user named the exact files or symbols to change',
@@ -59,7 +62,9 @@ describe('specialist-owned bundled agent routing', () => {
     const prompt = readAgent('explorer');
     expect(prompt).toContain('After two unsuccessful search rounds');
     expect(prompt).toContain('An explicitly requested broad usage map may continue within its stated scope');
-    expect(prompt).toContain('do not keep searching after saying you have enough context');
+    expect(prompt).toContain('Stop when the entrypoint, relevant symbol, and requested immediate connections are established.');
+    expect(prompt).toContain('Avoid repeating discovery');
+    expect(prompt).toContain('Aim for a report around 6 KiB');
     expect(prompt).toContain('Do not diagnose the bug');
     expect(prompt).toContain('Given a task goal rather than a single target');
   });

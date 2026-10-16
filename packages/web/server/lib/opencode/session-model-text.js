@@ -26,7 +26,7 @@ export const classifySessionModelProviderError = (error) => {
 
 /** Every attempt settles its admitted provider/worker before repair or model rotation. */
 export async function generateTextWithSessionModel({ openCodeClient, generateHelperText, cursorRuntime, directory, sessionID,
-  providerID, modelID, variant, agent, prompt, repairPrompt, system, maxOutputTokens = 2048, operationID = randomUUID(),
+  providerID, modelID, variant, selectionMode, selectionRevision, agent, prompt, repairPrompt, system, maxOutputTokens = 2048, operationID = randomUUID(),
   accept = text => text.trim() || null, timeoutMs = SESSION_MODEL_TEXT_TIMEOUT_MS, signal, now = () => Date.now() } = {}) {
   const startedAt = now(); let attempts = 0;
   const finish = fields => ({ ok: false, value: null, text: '', status: undefined, attempts,
@@ -46,9 +46,9 @@ export async function generateTextWithSessionModel({ openCodeClient, generateHel
     try {
       const remaining = Math.max(1, Math.ceil(deadline - now()));
       const generated = cursor ? { text: await cursorRuntime.generateText({ text: system ? `${system}\n\n${text}` : text,
-        directory, ...(sessionID ? { sessionID } : {}), ...(agent === 'devryan-title' ? { titleHelper: true } : {}), modelID, ...(variant ? { variant } : {}), timeoutMs: remaining, signal }) }
+        directory, ...(sessionID ? { sessionID } : {}), ...(agent === 'devryan-title' ? { titleHelper: true } : {}), modelID, ...(variant ? { variant } : {}), ...(selectionMode ? { selectionMode, selectionRevision, helperAgent: agent } : {}), timeoutMs: remaining, signal }) }
         : await generateHelperText({ operationID, directory, ...(sessionID ? { sessionID } : {}), providerID, modelID, agent,
-          ...(variant ? { variant } : {}), prompt: text, ...(system ? { system } : {}), timeoutMs: remaining, maxOutputTokens, signal });
+          ...(variant ? { variant } : {}), ...(selectionMode ? { selectionMode, selectionRevision } : {}), prompt: text, ...(system ? { system } : {}), timeoutMs: remaining, maxOutputTokens, signal });
       signal?.throwIfAborted();
       const output = typeof generated?.text === 'string' ? generated.text : '';
       const value = output ? await accept(output) : null;
@@ -59,9 +59,12 @@ export async function generateTextWithSessionModel({ openCodeClient, generateHel
       if (error?.code === 'native_helper_unsettled' || error?.code === 'native_helper_operation_pending') {
         return finish({ reason: 'unsettled', status, code: error.code, error });
       }
+      if (error?.code === 'native_helper_selection_changed' || status === 403 && /^native_/.test(error?.code ?? '') && error.code !== 'native_helper_provider_failed') {
+        return finish({ reason: error.code === 'native_helper_selection_changed' ? 'selection_changed' : 'authorization_revoked', status, code: error.code, error });
+      }
       const reason = signal?.aborted || error?.name === 'AbortError' || error?.name === 'TimeoutError' || /timeout|cancelled/i.test(error?.code ?? error?.message ?? '')
         ? 'timeout' : classifySessionModelProviderError({ ...error, data: { ...error?.data, statusCode: status } }).reason;
-      return finish({ reason, status, error });
+      return finish({ reason, status, code: error?.code, error });
     }
   }
   return finish({ reason: 'empty_output' });

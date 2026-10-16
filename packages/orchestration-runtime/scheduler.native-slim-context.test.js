@@ -1,10 +1,10 @@
 import {expect,test} from 'bun:test';
 import {createManagedTaskScheduler} from './scheduler.js';
 const input={idempotencyKey:'prompt-context',rootSessionId:'ses_root',directory:'/workspace',mode:'orchestrator',providerId:'fixture',modelId:'model',agent:'explorer',variant:null,label:'Exact child',prompt:'Exact objective',timeoutAt:null};
-async function fixture(){
+async function fixture(grouped=false){
  let durable=null,refuse=false;const persistence={load:async()=>durable,save:async value=>{if(refuse)throw new Error('durable_commit_refused');durable=structuredClone(value);}};
  const scheduler=createManagedTaskScheduler({persistence,executor:{start:async(_task,control)=>{await control.setChildSessionId('ses_child');await control.markAccepted();return {status:'completed',recoverablePreview:'Exact result'};},abort:async()=>({aborted:true}),reconcile:async()=>({state:'unavailable'})}});
- const task=await scheduler.submit(input);await scheduler.waitForTask(task.taskId);await scheduler.flush();
+ const task=await scheduler.submit({...input,...grouped?{dispatchGroupId:'msg_parent'}:{}});await scheduler.waitForTask(task.taskId);await scheduler.flush();
  return {scheduler,task,persistence,get durable(){return durable},refuse:()=>{refuse=true}};
 }
 
@@ -30,4 +30,20 @@ test('revocation before commit and durable save failure retain unobserved result
   f.refuse();await expect(f.scheduler.withNativePromptContext({rootSessionId:'ses_root',directory:'/workspace',authorize:async()=>{}},async state=>state.markPromptObserved({taskId:f.task.taskId,attempt:envelope.attempt,sequence:envelope.sequence}))).rejects.toThrow('durable_commit_refused');
   expect(f.scheduler.getResultEnvelope(f.task.taskId).promptObserved).toBeUndefined();expect(f.durable.resultEnvelopes[0].promptObserved).toBeUndefined();
  }finally{await f.scheduler.shutdown().catch(()=>{});}
+});
+
+test('the captured prompt barrier is readonly, exact, revoked with its grant and unavailable after the action',async()=>{
+ const f=await fixture(true);let reader,revoked=false;
+ const scope={rootSessionId:'ses_root',directory:'/workspace',authorize:async()=>{if(revoked)throw Error('generation_revoked')}};
+ try{
+  await f.scheduler.withNativePromptContext(scope,async state=>{
+   reader=state.readBarrier;
+   expect(await reader(scope)).toMatchObject({state:'awaiting_acknowledgement',taskIds:[f.task.taskId]});
+   await expect(reader({...scope,rootSessionId:'ses_other'})).rejects.toMatchObject({code:'native_prompt_context_fenced'});
+   await expect(reader({...scope,directory:'/other'})).rejects.toMatchObject({code:'native_prompt_context_fenced'});
+  });
+  await expect(reader(scope)).rejects.toMatchObject({code:'native_prompt_context_fenced'});
+  await expect(f.scheduler.withNativePromptContext(scope,async state=>{revoked=true;await state.readBarrier(scope)})).rejects.toThrow('generation_revoked');
+  expect(f.scheduler.getResultEnvelope(f.task.taskId).action).toBeNull();
+ }finally{await f.scheduler.shutdown();}
 });

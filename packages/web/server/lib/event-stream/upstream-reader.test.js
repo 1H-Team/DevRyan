@@ -1,6 +1,27 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { createUpstreamSseReader } from './upstream-reader.js';
+
+it('backs off unavailable upstream attempts, caps the delay, and aborts the wait promptly', async () => {
+  vi.useFakeTimers();
+  let attempts = 0;
+  const controller = new AbortController();
+  const reader = createUpstreamSseReader({buildUrl: () => 'http://fixture.invalid/event', signal: controller.signal,
+    fetchImpl: async () => {attempts++; return {ok: false, status: 503};}});
+  const running = reader.start();
+  try {
+    await vi.advanceTimersByTimeAsync(0);
+    expect(attempts).toBe(1);
+    for (const delay of [250, 500, 1000, 2000, 4000, 8000, 10000, 10000]) {
+      const before = attempts;
+      await vi.advanceTimersByTimeAsync(delay - 1); expect(attempts).toBe(before);
+      await vi.advanceTimersByTimeAsync(1); expect(attempts).toBe(before + 1);
+    }
+    controller.abort();
+    await running;
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {reader.stop(); controller.abort(); await running; vi.useRealTimers();}
+});
 
 function createSseResponse({ blocks = [], signal, holdOpen = false }) {
   const encoder = new TextEncoder();

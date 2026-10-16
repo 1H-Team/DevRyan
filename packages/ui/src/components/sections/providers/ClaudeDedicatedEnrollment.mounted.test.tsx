@@ -44,7 +44,8 @@ test('fresh sign-in requires user code and separate explicit selection; no autom
   try {
     await act(async () => root.render(<ClaudeDedicatedEnrollment administrator principalID="admin" directory="/owned/project" onSelected={onSelected} />));
     expect(container.textContent).toContain('Dedicated profile');
-    expect(container.textContent).toContain('Optional. Keeps Claude signed in automatically.');
+    expect(container.textContent).toContain('Sign in to Claude here, then choose Use This Profile to connect it. The selected profile renews automatically.');
+    expect(container.textContent).not.toContain('Optional.');
     expect(calls).toHaveLength(1); expect(calls[0].method).toBe('GET');
     await click(container, 'Add Dedicated Profile'); expect(opened).toEqual([URL]);
     await enter(container, 'original-code#foreign-state'); await click(container, 'Complete Sign-In');
@@ -197,7 +198,7 @@ test('partial-cleanup rows expose Delete retry but never selection', async () =>
   try {
     await act(async () => root.render(<ClaudeDedicatedEnrollment administrator principalID="admin" onSelected={onSelected} />));
     expect(container.textContent).toContain('Deletion incomplete. Retry Delete to finish.');
-    expect(container.textContent).not.toContain('Use This Profile');
+    expect(container.find(element => element.tagName === 'BUTTON' && element.textContent === 'Use This Profile')).toBeNull();
     await requestDelete(container, FAILED); expect(container.find(node => node.getAttribute('role') === 'dialog')).not.toBeNull();
   } finally { await act(async () => root.unmount()); }
 }));

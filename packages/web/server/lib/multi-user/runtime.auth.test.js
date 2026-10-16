@@ -3368,6 +3368,7 @@ describe('multi-user authentication runtime', () => {
       readSettingsFromDiskMigrated: async () => ({
         defaultAgent: 'Orchestrator',
         defaultPlanMode: true,
+        helperModelSelection: { providerID: 'opencode', modelID: 'deepseek-v4.1-flash', revision: 'host' },
         themeId: 'host-theme',
       }),
       listConfigAgents: () => [{
@@ -3461,6 +3462,20 @@ describe('multi-user authentication runtime', () => {
     }, resetFieldResponse);
     expect(resetFieldResponse.payload.defaultAgent).toBe('Orchestrator');
     expect(resetFieldResponse.payload.multiUser.settingsOverrideKeys).not.toContain('defaultAgent');
+
+    const helperModelSelection = { providerID: 'anthropic', modelID: 'personal-helper', revision: 'personal-revision' };
+    const helperResponse = makeResponse();
+    await handlers.get('PUT /api/config/settings')({ body: { helperModelSelection }, principal: refreshed }, helperResponse, vi.fn());
+    expect(helperResponse.statusCode).toBe(200);
+    expect(harness.getUserPolicy(USER_IDS.developer).settings_overrides.helperModelSelection).toEqual(helperModelSelection);
+    expect(helperResponse.payload.helperModelSelection).toEqual(helperModelSelection);
+    expect(helperResponse.payload.multiUser.settingsOverrideKeys).toContain('helperModelSelection');
+    const resetHelperResponse = makeResponse();
+    await handlers.get('DELETE /api/config/settings/overrides/:field')({ params: { field: 'helperModelSelection' }, principal: refreshed }, resetHelperResponse);
+    expect(resetHelperResponse.statusCode).toBe(200);
+    expect(resetHelperResponse.payload.helperModelSelection).toEqual({ providerID: 'opencode', modelID: 'deepseek-v4.1-flash', revision: 'host' });
+    expect(resetHelperResponse.payload.multiUser.settingsOverrideKeys).not.toContain('helperModelSelection');
+    expect(harness.getUserPolicy(USER_IDS.developer).settings_overrides.agentModelSelections.Builder.modelId).toBe('claude-sonnet-4-6');
 
     const missingHostSettingsResponse = makeResponse();
     await put({
@@ -4840,6 +4855,7 @@ describe('multi-user authentication runtime', () => {
     });
     expect(catalog.ensure).toHaveBeenCalled();
     expect(harness.runtime.botOwner.id).toMatch(/^[0-9a-f-]{36}$/);
-    expect(getStatus).toHaveBeenCalledTimes(1);
+    // Passive capabilities reuse the typed setup blocker without probing dormant Docker.
+    expect(getStatus).not.toHaveBeenCalled();
   });
 });

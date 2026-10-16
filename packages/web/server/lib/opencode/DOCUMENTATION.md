@@ -1,5 +1,48 @@
 # OpenCode Module Documentation
 
+`session-runtime.js` owns the optional Finalizing projection in the existing
+session-activity snapshot and event. Trusted native and Cursor constructors
+provide exact owner/run identities and monotonic progress through
+`updateSessionPresentation`; retirement uses `clearSessionPresentationOwner`.
+The server mints a presentation epoch and revision, carries explicit null
+clears, and keeps authoritative busy/idle/retry status separate. Unknown,
+retired or stale observations cannot renew presentation or execution authority.
+Accepted HTTP aborts clear only the presentation generation captured before the
+request; a later turn survives a delayed abort response. An absent capture grants
+no authority over a subsequently created projection.
+
+`cursor-execution-receipts.js` records the published confined Cursor process's
+outer byte receipt and retains every internal call alias. Native `task` calls
+also receive exact empty internal coverage receipts, because canonical Cursor
+history requires coverage for those wrappers; their bytes remain owned by the
+outer process receipt. The outer call is excluded from internal empty receipts
+so its published bytes cannot be overwritten by a duplicate. Unpublished leases
+cannot provide receipts, and unknown calls retain the existing restore checks.
+The owning test connects real mutation publication, reopened history summary and
+actual file Undo/Redo. Receipt phase diagnostics observe settlement; they do not
+grant execution authority or drive the orchestration save watchdog.
+`persistCursorRecord` keeps native persistence and the published receipt drain
+inside the existing execution meter. Durable Git work retains that meter, and
+only a successfully committed receipt batch advances completion progress.
+Failure, an unpublished lease or a memoized same-record no-op provides no
+completion progress. The adapter returns true only after awaited owner work,
+and false when its exact aliases/receipts already cover the record. This creates
+neither an admission nor a new watchdog or diagnostic heartbeat.
+
+The controller's provider policy reads translated native
+`configuration.compaction.buffer` before legacy compatibility `reserved`,
+including explicit zero. The legacy projector remains a separate boundary.
+Focused compatibility and progress evidence is recorded in
+[the compatibility slice](../../../../../docs/audits/2026-10-14/native-compatibility-receipt-progress.json).
+
+Cursor runtime-status reads authentication presence through the selected native
+integration's credential-metadata owner at the exact registered directory.
+It validates the bounded metadata response and returns only the existing
+authentication boolean. Owner, readiness and configuration-snapshot fences
+remain authoritative. This read does not require a project to belong to the
+bundle's immutable configuration-import map; configuration reads/writes and
+Cursor Configure retain their separate reviewed-source and execution contracts.
+
 ## Purpose
 This module provides OpenCode server integration utilities for the web server runtime, including configuration management, packaged/project agent discovery, packaged agent runtime sync, and provider authentication.
 
@@ -37,6 +80,7 @@ DevRyan forwards OpenCode's provider-reported assistant token payloads without a
 Every probe uses `SIGKILL` for timeout termination and rejects execution errors, signals, nonzero exits, malformed output and partial timeout stdout. Environment values and captured shell output are never logged. The internal factory supports injected execution, clock, shell candidates and executable checks; short deadline overrides are test-only dependencies, not settings. `env-runtime.test.js` uses deterministic fakes for host-specific paths plus an isolated short-deadline process that ignores SIGTERM and is verified dead after timeout. Windows and WSL behavior is simulated on non-Windows hosts.
 
 Native Git discovery in `session-execution-host.js` skips only `ENOENT` for unrelated registered roots so removed projects do not block valid siblings; a missing requested cwd, an unowned cwd and other root errors still refuse.
+Native writer and shell publication emit scoped `session_execution` finish timing after the mutation runtime and durable change-receipt recording both settle, including publication recovery. This timing observes the existing work without adding admission/deadline checks or replacing its errors; cleanup retains its separate owner and follows the receipt boundary. Fast completions use the existing admission-summary threshold, while failures remain visible.
 `execution-helper-command.js` resolves Apple's `/usr/bin/git` shim through bounded host-side `xcrun --find git` once per execution host. Helpers execute the selected Git binary inside the same supervisor, directory policy and clean environment; explicit non-shim commands are preserved. Failed selection is refused and can be retried. This avoids repeating Xcode discovery in each helper's empty confined home during native startup.
 
 ## Entrypoints and structure
@@ -48,9 +92,9 @@ Native Git discovery in `session-execution-host.js` skips only `ENOENT` for unre
 - `packages/web/server/lib/opencode/cli-entry-runtime.js`: CLI entrypoint runtime that detects direct execution, parses CLI options, and starts server bootstrap.
 - `packages/web/server/lib/opencode/routes.js`: OpenCode/provider settings and auth-related route registration.
 - `packages/web/server/lib/opencode/question-routes.js`: focused pre-proxy question routes. Pending lists merge OpenCode and Cursor by session/request identity with directory filtering; Cursor replies and rejects settle locally while unknown IDs continue to the generic OpenCode proxy. A Skip request for a verified OpenCode question is translated into one ordered successful reply per question instructing the active turn to use best judgment and state its assumption, because native OpenCode rejection terminates the tool call instead of resuming it. OpenCode listing is bounded by a short abort timeout. When it fails or stalls but Cursor has live cards, the route returns those cards with `X-DevRyan-Question-Partial: opencode` so clients preserve both sources and retry upstream discovery. OpenCode keeps a question answerable after its turn is aborted and then drops the answer. A live question always has its session's turn running. The reply route therefore reads the question list and `GET /session/status` in parallel, both small. If the question's session is not `busy`/`retry`, the route returns `409 { code: 'question_orphaned' }` without forwarding the reply, and the client resends the answer as a new message. Both reads reuse the short listing timeout, and any failure falls through to ordinary forwarding. One residual case: an orphan whose session already runs a newer turn is still forwarded. The DevRyan client discards orphans before it starts a new turn, so only other clients can produce that state.
-- `packages/web/server/lib/opencode/cursor-session-title-runtime.js`: Cursor-only session title coordination for intercepted SDK prompts, including eligibility checks, in-flight deduplication, compare-before-update rename protection, and retryable failure handling.
-- `packages/web/server/lib/opencode/standard-session-title-runtime.js`: Provider-neutral title coordination for non-Cursor sessions. It keeps the prompt preview while an isolated no-tools helper on the selected session provider/model resolves one title, with a thirty-second budget and one delayed retry. All providers follow this lifecycle. Only after both attempts fail does a local summary become the final fallback; no intermediate derived title is projected. Procedural approved-plan prefixes are excluded from the final name. Generic `Managed <agent> Task` child titles are eligible only when canonical parent/agent metadata matches; known initial agent-contract, legacy Context Mode routing (still present in stored child sessions), and read-only prefix blocks are excluded from the task brief. Existing placeholder children recover through session updates or list/watchdog reconciliation, including after restart. Candidates are durably recorded before projection, then PATCHed only after canonical idle or completed-turn recovery; a verifying read retires the job. Missing idle evidence backs off to sixty-second checks without treating absence as completion. Custom labels and manual renames remain authoritative.
-- `packages/web/server/lib/opencode/session-title-outbox.js`: Atomic versioned persistence for pending standard-title jobs. Web/Electron store `session-title-outbox.json` under `OPENCHAMBER_DATA_DIR`. Entries contain directory/session identity, a one-way prompt fingerprint, candidate/source, lifecycle state, retry counters, and timestamps—never raw prompt text. Malformed files are quarantined and rebuilt without blocking startup.
+- `packages/web/server/lib/opencode/cursor-session-title-runtime.js`: retained compatibility coordinator; production Cursor acceptance uses the shared standard title job/outbox.
+- `packages/web/server/lib/opencode/standard-session-title-runtime.js`: Provider-neutral titles across native and Cursor sessions. One 30-second deadline allows at most two model attempts: the configured shared helper, then a freshly authorized canonical active-session model after the prior attempt settles and while time remains. An unsettled owner cannot rotate. Only exhausted/unavailable model choices derive a local title. Durable candidates are projected once resolved, wait for authoritative idle/completed-turn evidence, and use native compare-before-rename plus verifying reads. Synthetic procedural instructions remain excluded. Manual renames win.
+- `packages/web/server/lib/opencode/session-title-outbox.js`: Atomic private `session-title-outbox.json` under `OPENCHAMBER_DATA_DIR`. Original candidate/source identity, canonical source message ID, latest accepted human input ID, lifecycle state and failure count survive restart. Three failed persistence cycles use 1s/2s backoff then become durably `paused`; busy/idle-evidence waiting does not consume a cycle. Missing idle evidence pauses after the existing six-observation backoff ladder; restart and late idle signals cannot reopen it. A new verified human input resets that observation cycle. Startup refusal codes defer only while the constructor-owned lifecycle reports its current, still-starting readiness attempt inside the original absolute readiness deadline (normally 20 seconds). Missing, failed, replaced or expired readiness authority restores the three-cycle budget; the window opens at owned startup-attempt creation before restored title jobs run, and pre-bind work cannot renew it. Private busy refusals proven not dispatched defer at the existing five-second interval while the process owner retains its bounded command deadlines. Unknown errors, correlated busy replies and unknown statuses retain the three-cycle pause. Waiting does not renew inference, source authority or the 30-second generation deadline. Only the latest canonical accepted human message, unseen by that job, may reopen one bounded cycle. Malformed files are quarantined. Raw prompt text is never stored.
 - `packages/web/server/lib/opencode/providers.js`: provider source detection, Anthropic OAuth proxy config helpers, default Cursor provider bootstrap, and Antigravity model cleanup inside the shared Google provider config. DevRyan-created Anthropic proxy configs register the reviewed installed `opencode-with-claude` entrypoint by local path; known legacy managed entries migrate to it, while explicit user version pins remain authoritative. Google auth discovery and disconnect treat `google` and `google.oauth` as aliases. OpenCode merges every existing user config file (`config.json`, `opencode.json`, `opencode.jsonc`) and every project config file, so provider detection and removal both visit all of them through `listExistingConfigFiles` in `shared.js`; removal edits each defining file in place with JSONC-preserving edits (`removeConfigKeyPaths`) and collapses containers it leaves empty. Antigravity source detection recognizes its account pool and models nested under Google configuration; disconnect removes every model the retired plugin wrote (Antigravity- and Gemini CLI-branded, see `antigravity-retirement.js`) while user-authored Google models stay. `listProviderConfigFiles` reports every layer that still defines a provider.
 - `packages/web/server/lib/opencode/antigravity-retirement.js`: identifies the Google models the retired Antigravity plugin wrote (`antigravity-*` ids or `(Antigravity)`/`(Gemini CLI)` names) and plans their removal; shared by provisioning and provider disconnect.
 - Provider disconnect (`DELETE /api/provider/:id/auth` in `routes.js`) always requests a runtime restart, including for an idempotent disconnect, because the runtime may still hold a provider whose source is gone. With `scope=all` it then verifies the result: `stillProvidedBy` lists every config file, auth-store entry, Antigravity account file, or credential environment variable name (never its value) that still supplies the provider, and the Providers UI reports those instead of claiming success. Antigravity account files are also found under the runtime overlay directories, because the plugin stores them in `OPENCODE_CONFIG_DIR`.
@@ -262,7 +306,7 @@ See the [native Codex audit](../../../../../docs/audits/2026-10-11/native-codex-
 - `GET /api/session/status` merges Cursor SDK runtime busy/idle status into the proxied OpenCode session status payload, falling back to Cursor-only status when upstream status is unavailable.
 - Every `POST /api/session/:sessionID/prompt_async` applies the shared provider/agent tool policy before Cursor interception or generic proxying. Packaged Orchestrator sends merge `task: false` with any provider-specific restriction, including Copilot's optional Resend namespace limits, so web and Electron forwarding preserve the same managed-only contract as the shared UI runtime overlay.
 - Accepted non-Cursor `POST /api/session/:sessionID/prompt_async` requests schedule non-blocking provider-neutral title generation with the directory and visible non-synthetic text captured at acceptance. Derived and selected-model candidates are atomically enqueued before their synthetic `session.updated` projection. Every provider waits for authoritative idle or completed-turn recovery before compare/PATCH/read verification; canonical idle, update, and delete events plus successful session-list loads drive durable reconciliation and bounded-concurrency placeholder recovery. Managed children that bypass the public prompt proxy recover from their canonical session updates and lists. This changes no public HTTP or SSE contract. Cached schema-verified Grok duplicate-tool disables merge synchronously, while discovery and refresh never block the prompt.
-- Intercepted `cursor-acp` prompts schedule a non-blocking Cursor Auto title request after acceptance. Only default, generated, provider-error, or legacy raw-prompt titles are eligible, and the upstream session is re-read before PATCH so manual names are never overwritten.
+- Intercepted `cursor-acp` prompts schedule the same non-blocking shared helper/title outbox after acceptance, with the canonical accepted message ID. Native compare-before-rename preserves manual names.
 - `GET /api/config/providers` preserves native model metadata and existing Copilot/Cursor merging. OpenAI availability reads only selected credential metadata in the requested reviewed location, falling back to the default reviewed location for unreviewed project directories. API-key and built-in ChatGPT catalogs pass through; retired sign-ins mark models `reauthorization_required`. External catalogs remain unchanged. Failed upstream catalogs retain integration providers with `catalogIncomplete: true`.
 
 ## Public exports (question-routes.js)
@@ -292,6 +336,7 @@ See the [native Codex audit](../../../../../docs/audits/2026-10-11/native-codex-
   - `startOpenCode()`
   - `restartOpenCode()`
   - `waitForOpenCodeReady(timeoutMs?, intervalMs?)`
+  - `isStartupReadinessPending()`: content-free observation of the current startup attempt's original readiness deadline; never resets a window or grants execution authority.
   - `waitForAgentPresence(agentName, timeoutMs?, intervalMs?)`
   - `applyOpenCodeConfigChanges({ scopes, changes })`
   - `bootstrapOpenCodeAtStartup()`
@@ -407,6 +452,7 @@ explicitly; nothing else reads the default.
 - `createTurnTimingRuntime(options?)`: creates an in-memory capped timing store. Returned API:
   - `recordClientMark({ sessionId, messageId?, mark, directory?, metadata? })`
   - `processOpenCodeEvent(payload)`
+  - `recordBridgeCall({ sessionId, method, durationMs, statusCode, reused? })`: aggregates bridge calls and status-only failures (null/incomplete status or HTTP status at least 400) globally and per retained method. The first 32 distinct methods are retained; global totals include calls for dropped methods, so retained method sums may be lower.
   - `getRecentTimings({ sessionId?, limit? })`: returns timing marks/durations plus accepted provider/model/agent/variant metadata, normalized `diagnostics.terminalFailure` kind/elapsed time, evidence-only active-total and same-provider concurrency snapshots at acceptance/failure, Cursor worker/run/stream timing, repeated text frames, malformed tool-call diagnostics, loop-guard diagnostics, mutation evidence, a capped ordered `diagnostics.toolCalls` projection, and `diagnostics.latestToolCall`. Concurrency is contextual evidence, never a causal conclusion or an admission limit. Tool calls are correlated internally by authoritative call/part identity and repeated states update one entry in place; terminal finality is monotonic if a stale active event arrives later. Tool projections contain only `ordinal`, normalized `tool`, normalized `status`, and `final`, with a default history cap of 20 and no identity/input/output fields.
 - `registerTurnTimingRoutes(app, runtime, options?)`: registers internal diagnostic routes and an optional accepted-mark observer used to journal confirmed renderer tool-input stalls:
   - `POST /api/diagnostics/turn-timing/mark`
@@ -798,11 +844,15 @@ Follow [the upgrade runbook](../../../../../docs/PLUGIN_UPGRADES.md) and retain 
 
 ### Session title deadlines and diagnostics
 
-Standard-provider titles use the selected model with a 30-second shared budget for helper creation, generation, and optional repair. A completed-answer read then has its own 2.5-second recovery budget. Only finished assistant records qualify for recovery. Helper deletion runs separately with the existing bounded OpenCode request timeout; shutdown cancels active generation and drains cleanup. Transports that ignore cancellation cannot publish late answers. Helpers whose creation response was lost remain eligible for the existing stale-helper sweep.
+The shared title coordinator uses one 30-second deadline for configured selection, first helper and authorized active-model fallback. Same-session schedules share the in-flight job. Helpers retain their actual cancellation/settlement owner when a timeout becomes `unsettled`; expired admission cannot begin a physical provider request. The native `title` agent remains disabled.
 
-The prompt preview remains visible until a resolved title is durably enqueued. One retry runs after 60 seconds; only exhausted attempts produce the local fallback. Idle-only persistence, manual rename precedence, and restart reconciliation remain unchanged. Existing saved titles are not regenerated.
+A resolved model or final derived candidate enters the existing atomic outbox before projection. Failed persistence pauses after three cycles with 1s/2s retry delays. Busy or missing-idle waiting does not count. Reopening requires a canonical user record and the private native accepted-input metadata (`origin: human`), not caller text or replay of the last accepted ID. A newly verified human input can replace the source authorization for the remaining pending persistence cycle without resetting its attempts; only a paused cycle reopens. Native rename compares the title it replaces, and manual rename remains authoritative during pause and restart recovery.
 
-`session_title_generation` is a journal lifecycle event (log records do not preserve an event field). The top-level `sessionID` identifies the target, and `payload.helperSessionID` identifies the hidden helper. Stages distinguish creation, response, recovery, cleanup, and final generation; reasons include `timeout`, `http_failure`, `empty_response`, `validation_rejection`, `recovery_failure`, `request_failure`, and `cancelled`. Diagnostics contain status/model/timing metadata, never the request or generated title.
+Managed native child titles enroll from the canonical accepted-user event after the constructor-owned dispatch seals the original source. The private managed source binding preserves its actual origin, which may be `unknown`; it grants nothing alone. `native-managed-title-owner.js` requires the exact durable assignment, originating assistant/control-call identities, current root objective and cancellation generation, controller/configuration, child selection, permissions, and the ordered canonical source. Starting, running, completed and failed assignments may title their accepted source while cancellation and replacement refuse it. Root and child human persistence reopening use a separate exact latest-human witness, bounded ancestry and fresh root/child permissions. Canonical reads and asynchronous scope checks repeat at physical helper/rename boundaries. The optional helper rename source ID is strictly typed and remains private. Managed witness checks share the original generation deadline and cannot buy another model budget after refusal. An unresolved delegated candidate whose source controller/configuration no longer matches after restart retains its candidate, source and attempts, then pauses after the existing three persistence cycles with `native_managed_title_source_invalid`. Historical source markers cannot renew authority; a fresh latest canonical human source or manual rename is required. Persisted titles restore without another helper request. The [sanitized title scope audit](../../../../../docs/audits/2026-10-14/native-title-scope.json) records this limit and the pending compiled gates.
+
+The private `readUserMessage` boundary preserves the exact validated native user text alongside its original metadata. Managed title recollection checks those bytes against the sealed source; the public projection cannot supply that proof. Dropping or normalizing the private text would reject a valid managed source. Accepted-command and human-input callers retain their metadata, session and directory checks. The [source-text boundary audit](../../../../../docs/audits/2026-10-14/native-managed-title-source-text.json) records the canonical incident proof and separates targeted qualification from the compiled lifecycle gate.
+
+`session_title_generation` records safe IDs, candidate/native/expected lengths, equality and provenance flags, model tuple/source, timings, bounded failure reasons and enumerated native refusal codes. Managed input capture failures, including accepted-user event triggers, retain the attempted source ID and the allowlisted refusal code instead of failing silently. Neither titles, raw exceptions nor source/job hashes enter diagnostics. `package-model-title-lane.mjs` makes actual compiled helper inference → one native rename → supervised restart restoration mandatory for full package shipping qualification; derived-only evidence fails.
 
 ## History
 
@@ -824,7 +874,7 @@ passes fresh verified artifacts privately to the bundle loader; this receipt
 never extends the serialized verification result. Reviewed config bytes and
 the controller's immediate pre-spawn artifacts still receive their own checks.
 
-The current package and compiled host pin is OpenCode 2.0.26.
+The current package and compiled host pin is OpenCode 2.0.30.
 Cold startup compares the selected and shipped artifact manifest digests even
 when their OpenCode versions match, so a repaired DevRyan host is activated once
 through the existing verified clone, credential checkpoint and selector CAS.
@@ -836,8 +886,8 @@ accepts a retained bundle of any OpenCode 2.x release for rollback
 (`isNativeOpenCodeVersion`), each using its matching controller; startup never runs
 one above the host pin. Cross-version credential capture or projection cannot
 substitute a controller: exact OpenCode version, core digest and existing manifest
-checks still apply. The build pins PTY 0.2.0 bytes and the 2.0.26 compaction observation source
-(`location-services-qhaz1dgr.js`, behavior unchanged from 2.0.24). A pinned
+checks still apply. The build pins PTY 0.2.0 bytes and the 2.0.30 compaction observation source
+(`instance-7khw7vys.js`). A pinned
 `@opencode/schema` agent-defaults transform restores the 2.0.24
 `external_directory: * → ask` default that 2.0.26 removed.
 
@@ -861,3 +911,14 @@ binding; physical exits are recorded before fallible owner cleanup.
 ### Managed Cursor Plan execution
 
 Native managed catalog reads use verified tool or recovery authority rather than a browser principal. Catalog access grants no execution rights. Managed Cursor prompt grants derive immutable read-only policy from the durable task; SDK create/resume permits only `read`, `grep`, `glob`, and `ls`, excludes task/MCP delegation, and includes policy in agent cache identity. Worker payloads carry this host-owned boolean, never a prompt-body override. Model discovery preserves SDK `reasoning_effort` choices; saved Medium resolves only to an actual Medium variant and never falls back to High or generic thinking.
+
+OpenCode 2.0.30 uses Effect 4.0.1 and its stable HTTP/process/socket exports.
+The host and Bot image both pin this release. Native plugin registration order
+matches the installed core inventory. HTTP schema errors remain sanitized
+startup evidence even when Effect marks them ignored for general reporting.
+The project archive migration raises the clone migration level to 2: existing
+reviewed 2.0.20/24/26 source layouts can upgrade, but migrated 2.0.30 databases
+cannot clone into an older release. Rollback retains the original database.
+
+The 2.0.30 compiled upgrade and rollback evidence is retained in
+[the upgrade audit](../../../../../docs/audits/2026-10-16/opencode-2.0.30/README.md).

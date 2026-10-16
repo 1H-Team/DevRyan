@@ -1,3 +1,4 @@
+import { appendFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -170,7 +171,7 @@ const gates = createAdmissionGates({ bridge, nativePlugins, providerHooks: inner
   await fs.appendFile(path.join(root,'hooks.jsonl'),JSON.stringify({domain,name,...typeof result?.kind==='string'?{kind:result.kind}:{}})+'\n');
 })),Effect.onError(cause=>Effect.promise(()=>fs.appendFile(path.join(root,'hooks.jsonl'),JSON.stringify({domain,name,failed:true,reasons:cause.reasons.map(reason=>({tag:reason._tag,code:(reason.error??reason.defect)?.code,name:(reason.error??reason.defect)?.name}))})+'\n'))))}; },
   executeOwned: () => Effect.die(new Error('Unexpected executable tool')) });
-const reportCause=ErrorReporter.make(({cause})=>{ const rows=cause.reasons.map(reason=>{const error=reason.error??reason.defect;return {tag:reason._tag,name:error?.name,code:error?.code,message:typeof error?.message==='string'?error.message.replace(/fixture\.[A-Za-z0-9_-]+\.fixture/g,'[fixture-token]').replace(/owned-refresh-[0-9]+/g,'[fixture-refresh]'):undefined,frames:error?.stack?.split('\n').slice(1)};}); fs.appendFile(path.join(root,'reported-causes.jsonl'),JSON.stringify(rows)+'\n'); });
+const reportCause=ErrorReporter.make(({cause})=>{ const rows=cause.reasons.map(reason=>{const error=reason.error??reason.defect;return {tag:reason._tag,name:error?.name,code:error?.code,message:typeof error?.message==='string'?error.message.replace(/fixture\.[A-Za-z0-9_-]+\.fixture/g,'[fixture-token]').replace(/owned-refresh-[0-9]+/g,'[fixture-refresh]'):undefined,frames:error?.stack?.split('\n').slice(1)};}); appendFileSync(path.join(root,'reported-causes.jsonl'),JSON.stringify(rows)+'\n'); });
 const httpContext=Context.make(ErrorReporter.CurrentErrorReporters,new Set([reportCause])).pipe(Context.add(Logger.CurrentLoggers,new Set()));
 const scope = Effect.runSync(Scope.make()); let server;
 const options = { database: { path: path.join(globals.data, 'native.db') }, config: { project: false }, events: { persist: false }, fs: { filewatcher: false, fff: false }, models: { fetch: false, snapshot: false }, simulation: false };
@@ -253,7 +254,7 @@ try {
   result = { integrationLocations: 2, nativeOAuthCommit: true, revokedAttemptRefused: false, closedHandlesRefused: false,
     providerKinds: [], physicalReceipts: 0, permitsWereOwned: true };
   // Provider lanes are added only through actual native Session services below.
-  const deps = { getRuntime: () => ({ generation: 2, version: '2.0.26', baseUrl: nativeURL, epoch: 1 }), getAuthHeaders: () => admissionOwner.requestHeaders(),
+  const deps = { getRuntime: () => ({ generation: 2, version: '2.0.30', baseUrl: nativeURL, epoch: 1 }), getAuthHeaders: () => admissionOwner.requestHeaders(),
     withNativeWebOperation: (spec, action) => admissionOwner.withWebOperation(spec, action) };
   const admission = createOpenCodeAdmission(deps, { nativeOwner: admissionOwner });
   const client = createOpenCodeClient({ ...deps, getAdmission: () => admission });

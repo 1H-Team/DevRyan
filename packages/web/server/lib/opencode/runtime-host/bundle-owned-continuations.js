@@ -6,7 +6,7 @@ import { SessionInbox } from '@opencode/schema/session-inbox';
 import { SessionMessage } from '@opencode/schema/session-message';
 import { validatePrimaryRecoveryRecord } from '../../../../../harness-runtime/lib/provider-recovery-policy.js';
 import { isNativeTurnParent, isNativeStatusRecord } from '../../../../../shared-runtime/lib/native-message-status.js';
-import { buildV2PromptContent, buildV2PromptFingerprint, buildDevryanPromptMetadata, validateDevryanPromptMetadata } from '../v2/admission.js';
+import { buildV2PromptContent, buildV2PromptFingerprint, buildDevryanPromptMetadata, validateCanonicalDevryanPromptMetadata } from '../v2/admission.js';
 import { projectMessagePage } from '../v2/projection/messages.js';
 import { bundleFailure, canonicalJSON, hasMigrationTable, isRecord, sha256 } from './bundle-migration-inventory.js';
 
@@ -114,7 +114,7 @@ export async function verifyBundleOwnedContinuations(db,webDataDirectory,{allowU
       if (Object.keys(prompt).some(key=>!['messageID','agent','model','variant','tools','objectiveID','parts'].includes(key))
         || !same(prompt.model,{providerID:record.providerID,modelID:record.modelID})
         || content.text.length===0 || content.files.length || content.agents.length) invalid();
-      if (row && (!validateDevryanPromptMetadata(payload.metadata?.devryan,{text:payload.text}).ok
+      if (row && (!validateCanonicalDevryanPromptMetadata(payload.metadata?.devryan,{text:payload.text}).ok
         || !same(payload,bundleContinuationItem(record).payload))) invalid();
       const size=db.all('SELECT COUNT(*) AS count,SUM(length(CAST(data AS BLOB))) AS bytes FROM session_message WHERE session_id=?',[sessionID])[0];
       if (size.count>MAX_MESSAGES || size.bytes>16*1024*1024) invalid();

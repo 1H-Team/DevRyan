@@ -1176,6 +1176,9 @@ export const GitView: React.FC = () => {
           : []),
       ].join('\n'));
       const warning = result.warnings?.find((value) => typeof value === 'string' && value.trim());
+      if (result.source === 'session_model') {
+        toast.info(t('gitView.toast.activeModelFallback'), { description: result.model ?? undefined });
+      }
       if (warning) {
         toast.warning(t('gitView.toast.generateCommitMessageFallback'), { description: warning });
       }

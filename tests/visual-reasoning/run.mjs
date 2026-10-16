@@ -26,9 +26,17 @@ const evidence = {
     scenario: 'reasoning', startedAt: new Date().toISOString(), outcome: 'failed',
     sourceHashes: {}, checks: [], screenshots: [], consoleErrors: [], cleanupErrors: [],
     visualReview: 'pending', liveProvider: 'not-run',
+    finalizingCoverage: 'Synthetic component inputs through the production presentation gate and label; native producer provenance is verified separately.',
 };
 for (const file of ['ReasoningGroup.tsx', 'ReasoningPart.tsx']) {
     evidence.sourceHashes[file] = createHash('sha256').update(await readFile(path.join(root, 'packages/ui/src/components/chat/message/parts', file))).digest('hex');
+}
+for (const file of [
+    'tests/visual-reasoning/status-fixture.tsx',
+    'packages/ui/src/sync/session-presentation.ts',
+    'packages/ui/src/components/chat/message/parts/WorkingPlaceholder.tsx',
+]) {
+    evidence.sourceHashes[file] = createHash('sha256').update(await readFile(path.join(root, file))).digest('hex');
 }
 let server;
 let host;
@@ -150,6 +158,41 @@ try {
                 await evaluate(cdp, `window.__reasoningFixture.setTheme(${JSON.stringify(theme)})`);
                 await assertPage('document.documentElement.scrollWidth <= innerWidth', 'Reasoning must not create horizontal viewport overflow');
                 await screenshot(`${width}x${height}-${theme}`);
+            });
+        }
+    }
+    await cdp.send('Page.navigate', { url: `${origin}/?status` });
+    await waitFor("Boolean(document.querySelector('nav[aria-label=\"Status controls\"]'))");
+    for (const [width, height] of [[1440, 900], [390, 844]]) {
+        for (const theme of ['light', 'dark']) {
+            await check(`${width}x${height} ${theme}: Finalizing presentation and stage clear`, async () => {
+                await cdp.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width === 390 });
+                await evaluate(cdp, `document.documentElement.classList.toggle('dark', ${theme === 'dark'})`);
+                for (const stage of ['finalizing', 'send']) {
+                    const point = await evaluate(cdp, `(() => {
+                        const button = Array.from(document.querySelectorAll('nav[aria-label="Status controls"] button'))
+                            .find(node => node.textContent.trim() === ${JSON.stringify(stage)});
+                        if (!button) return null;
+                        button.scrollIntoView({ block: 'center' });
+                        const rect = button.getBoundingClientRect();
+                        return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+                    })()`);
+                    assert.ok(point, `Status fixture must expose the exact ${stage} button`);
+                    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point });
+                    await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 });
+                    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 });
+                    await waitFor(`document.querySelector('output')?.dataset.stage === ${JSON.stringify(stage)}
+                        && document.querySelector('output')?.dataset.finalizing === ${JSON.stringify(String(stage === 'finalizing'))}`);
+                    if (stage === 'finalizing') {
+                        await waitFor(`(() => { const live = document.querySelector('section[aria-label="Live status"]');
+                            return Boolean(live?.checkVisibility()) && /^finalizing$/i.test(live.innerText.trim()); })()`);
+                        await assertPage('document.documentElement.scrollWidth <= innerWidth', 'Finalizing must not create horizontal viewport overflow');
+                        await screenshot(`finalizing-${width}x${height}-${theme}`);
+                    } else {
+                        await assertPage(`!(/finalizing/i.test(document.querySelector('section[aria-label="Live status"]').innerText))`,
+                            'Leaving the Finalizing fixture stage removes the live label');
+                    }
+                }
             });
         }
     }

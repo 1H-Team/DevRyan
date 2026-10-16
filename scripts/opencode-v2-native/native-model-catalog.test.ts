@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { Effect, Layer } from 'effect';
-import { HttpClient } from 'effect/unstable/http';
+import { HttpClient } from 'effect/http';
 import { KV } from '@opencode/core/kv';
 import { ModelsDev } from '@opencode/core/models-dev';
 import { FSUtil } from '@opencode/util/fs-util';

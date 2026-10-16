@@ -9,6 +9,29 @@ import { waitFor } from './process-lanes.mjs';
 export const reviewedCommandConfiguration = { reviewed: { template: 'Reviewed $ARGUMENTS', agent: 'orchestrator',
   model: { providerID: 'devryan-smoke', model: 'smoke-write' } } };
 
+/** This fixture configures exactly one primary; verify its live catalog row. */
+export async function readCompiledConfiguredPrimaryAgent({client,directory,configuration}){
+  const configured=Object.entries(configuration.agents??{}).filter(([,value])=>value?.mode==='primary'&&value.disable!==true&&value.disabled!==true);
+  assert.equal(configured.length,1,'Compiled root requires one source-configured primary agent');
+  const [name,definition]=configured[0];
+  const catalog=await client.catalog.agents({directory});
+  const agent=catalog.find(value=>value.name===name);
+  assert.ok(agent?.mode==='primary'&&typeof definition.model==='string'
+    &&`${agent.model?.providerID}/${agent.model?.modelID}`===definition.model,
+    'Compiled root requires its source-configured native catalog selection');
+  return name;
+}
+
+/** Explicit fixture admission preserves the actual selected native agent. */
+export async function readCompiledPromptAgent({client,sessionID,directory}){
+  const session=await client.sessions.get(sessionID,{directory});
+  assert.ok(session?.id===sessionID&&session.directory===directory&&!session.parentID&&!session.time?.archived,
+    'Compiled tool prompt requires its exact active root session');
+  assert.ok(typeof session.agent==='string'&&session.agent.length>0&&session.agent.length<=256,
+    'Compiled tool prompt requires its canonical selected agent');
+  return session.agent;
+}
+
 /** The first compiled writer must capture the workspace bytes that predate v2. */
 export async function runCompiledWorkspaceRevert({ invoke, client, executionHost, directory, sessionID, observations }) {
   const file=path.join(directory,'seed.txt'),untouched=path.join(directory,'attachment.txt');

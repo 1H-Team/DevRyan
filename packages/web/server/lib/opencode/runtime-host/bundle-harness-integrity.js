@@ -11,7 +11,7 @@ const entries = async directory => fs.readdir(directory,{withFileTypes:true}).ca
   if (error.code === 'ENOENT') return []; throw error;
 });
 const sessionFields = new Set(['sessionID','sessionId','rootSessionId','parentSessionId','childSessionId','sourceSessionId']);
-const messageFields = new Set(['messageID','messageId','userMessageID','assistantMessageID','anchorID','activeUserID','stepID','failedID','recoveryID','continuationID','sourceMessageId','targetMessageID','boundaryMessageID','notificationID','turnID']);
+const messageFields = new Set(['messageID','messageId','userMessageID','assistantMessageID','anchorID','objectiveID','sourceUserMessageID','previousStepID','activeUserID','stepID','failedID','recoveryID','continuationID','sourceMessageId','targetMessageID','boundaryMessageID','notificationID','turnID']);
 const references = (value, collected, sessionID=null, exception, route=[]) => {
   if (Array.isArray(value)) { for (const [index,item] of value.entries()) {
     if(route.join('.')==='record.guardedIDs'&&typeof item==='string'){
@@ -144,7 +144,7 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
     const row={code,ledger:String(ledger).slice(0,12),key:String(key).replace(/[^A-Za-z0-9._/-]/g,'_').slice(0,160)};
     if(findings.length<256&&!findings.some(item=>item.code===row.code&&item.ledger===row.ledger&&item.key===row.key))findings.push(row);
   };
-  const removed={sessions:new Set(),messages:new Set()}, verifiedFiles=new Set(),shellPins=[];
+  const removed={sessions:new Set(),messages:new Set()}, verifiedFiles=new Set(),shellPins=[],tombstones=[];
   const storage = path.join(webDataDirectory,'harness','session-mutations');
   const storesToInspect=(await entries(storage)).filter(entry=>!windows||!isWindowsPrivateControlName(entry.name));
   if(windows&&!gitRunner&&storesToInspect.length){
@@ -207,7 +207,13 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
           }
           }
         }
-        references(record,collected,null,shellException);
+        // A cancelled-call marker only blocks a late start of that call. It is
+        // history, so a message or session it names that is gone is reported.
+        if (key.startsWith('cancelled-calls/')) {
+          const named={sessions:new Set(),messages:new Set(),messageScopes:new Map()};
+          references(record,named);
+          tombstones.push({ledger:entry.name,key,named});
+        } else references(record,collected,null,shellException);
         if (relocate) store.set(key,await relocateRecord(record,projectMap,owned,getRegistered));
       }
       if (relocate) await store.commit();
@@ -227,7 +233,7 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
     const oid=(await runGit(root,['--git-dir',path.join(root,'git'),'rev-parse','--verify',ref])).toString().trim();
     if (oid!==expected.oid) throw bundleFailure('bundle_harness_reference_lost');
   }
-  for (const directory of ['provider-recovery','context']) for (const entry of await entries(path.join(webDataDirectory,'harness',directory))) {
+  for (const directory of ['provider-recovery','provider-stream','context']) for (const entry of await entries(path.join(webDataDirectory,'harness',directory))) {
     if(windows&&isWindowsPrivateControlName(entry.name))continue;
     if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
     const file = path.join(webDataDirectory,'harness',directory,entry.name);
@@ -281,5 +287,10 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
   if (sessionIDs) for (const id of collected.sessions) if (!sessionIDs.includes(id) && !removed.sessions.has(id)) throw bundleFailure('bundle_session_reference_lost');
   if (messageIDs) for (const id of collected.messages) if (!messageIDs.includes(id)
     && ![...collected.messageScopes.get(id)].every(owner=>owner===null ? removed.messages.has(id) : removed.sessions.has(owner))) throw bundleFailure('bundle_message_reference_lost');
+  for (const {ledger,key,named} of tombstones) {
+    if (sessionIDs && [...named.sessions].some(id=>!sessionIDs.includes(id) && !removed.sessions.has(id))) finding('bundle_session_reference_lost',ledger,key);
+    if (messageIDs && [...named.messages].some(id=>!messageIDs.includes(id)
+      && ![...named.messageScopes.get(id)].every(owner=>owner===null ? removed.messages.has(id) : removed.sessions.has(owner)))) finding('bundle_message_reference_lost',ledger,key);
+  }
   return {refs,sessionReferences:[...collected.sessions].sort(),messageReferences:[...collected.messages].sort(),findings};
 }

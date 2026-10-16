@@ -2,6 +2,16 @@
 
 ## Resource bounds and batch commits
 
+Native Cursor text and reasoning retain the constructor's existing part identity
+in provider state. Those exact parts bypass legacy string deduplication and
+diagnostic-text cleanup during live completion, fetched history and reload.
+Cumulative Cursor snapshots replace earlier values, including shorter prefix
+corrections. Rendering and copy concatenate their ordered bytes without invented
+separators, while preserving whitespace-only seams and distinct repeated parts.
+This uses existing provenance; text content never establishes replay authority.
+An unfinished history response cannot replace already-completed live Cursor
+content. Canonical history replacement does not reattach removed Cursor parts.
+
 `ChildStoreManager.historyBudget` caps estimated retained transcript bytes across all directory stores at 128 MiB, alongside the existing count/TTL caps. Immutable record sizes are weakly memoized; dirty directories are measured at most once per 500 ms accounting interval. Estimates include UTF-16 text and structural overhead, not browser RSS. Active, loading, optimistic, unfinished, busy, unresolved-question/permission and pending-revert sessions may exceed this soft cap. Evicted idle histories invalidate loader coverage and reload normally; disposing a directory releases its accounting and subscription.
 
 The pipeline passes ordered batches to `event-batch.ts`. Contiguous materialized text/reasoning deltas for busy sessions reuse one private parts-map clone and publish once. Each still runs the production event handler's diagnostics and activity bookkeeping. All other events flush the private state first, preserving status, permission, notification, cancellation and recovery ordering. Previously published part arrays/records remain immutable.
@@ -741,6 +751,25 @@ that second merge uses a new post-merge baseline. A newer live status event in
 either async window therefore remains authoritative; unchanged candidates still
 receive the authoritative status snapshot without message-based settlement. All baselines stay
 scoped to the existing `directory + sessionID` candidates.
+
+## Finalization presentation
+
+`session-presentation.ts` holds only loaded directory/session presentation. The
+existing `openchamber:session-activity` event and `/api/session-activity` snapshot
+carry a server epoch, monotonic presentation revision and a nullable Finalizing
+record bound to the original user and assistant. Native records require their
+actual step and attempt identities; Cursor records use their owned run generation
+and may have null native step/attempt identities. Snapshot hydration uses a
+captured baseline so newer live updates win, including explicit clears.
+Production reconnect callers also supply `resyncDirectoryAfterReconnect`'s
+`options.isCurrent` child-store ownership fence. Optional presentation hydration
+runs in the background and cannot delay canonical resync, Stop or recovery.
+
+The status row shows Finalizing only while authoritative status is busy and the
+record matches the current user turn. Retry, blockers and restoration retain
+their precedence. New user input, idle/error, deletion and directory disposal
+clear the projection. This state never changes Stop, queue, approval, recovery
+or watchdog authority and never derives completion from tool receipts or history.
 
 ## Manual provider recovery and stop-during-retry guard
 

@@ -1,3 +1,4 @@
+import { DEFAULT_HELPER_MODEL_SELECTION, parseHelperModelSelection, type HelperModelSelection } from '@/lib/helperModelSelection';
 import { startupDiagnosticSummary } from '../../../shared-runtime/startup-diagnostics.js';
 import { getChatThinkingState, resolveChatThinkingVariant } from '@/lib/providers/chatThinking';
 import { getCursorAcpVariantState, resolveCursorAcpVariantSelection } from '@/lib/providers/cursorThinking';
@@ -63,6 +64,7 @@ interface OpenChamberDefaults {
     defaultVariant?: string;
     defaultAgent?: string;
     defaultPlanMode?: boolean;
+    helperModelSelection?: HelperModelSelection;
     autoCreateWorktree?: boolean;
     gitmojiEnabled?: boolean;
     defaultFileViewerPreview?: boolean;
@@ -106,6 +108,7 @@ const fetchOpenChamberDefaults = async (): Promise<OpenChamberDefaults> => {
                         defaultVariant: defaultVariant.length > 0 ? defaultVariant : undefined,
                         defaultAgent: defaultAgent.length > 0 ? defaultAgent : undefined,
                         defaultPlanMode,
+                        helperModelSelection: parseHelperModelSelection(data?.helperModelSelection),
                         autoCreateWorktree: typeof data?.autoCreateWorktree === 'boolean' ? data.autoCreateWorktree : undefined,
                         gitmojiEnabled,
                         defaultFileViewerPreview,
@@ -151,6 +154,7 @@ const fetchOpenChamberDefaults = async (): Promise<OpenChamberDefaults> => {
             defaultVariant: defaultVariant.length > 0 ? defaultVariant : undefined,
             defaultAgent: defaultAgent.length > 0 ? defaultAgent : undefined,
             defaultPlanMode,
+            helperModelSelection: parseHelperModelSelection(data?.helperModelSelection),
             autoCreateWorktree: typeof data?.autoCreateWorktree === 'boolean' ? data.autoCreateWorktree : undefined,
             gitmojiEnabled,
             defaultFileViewerPreview,
@@ -645,6 +649,7 @@ interface ConfigStore {
     settingsDefaultVariant: string | undefined;
     settingsDefaultAgent: string | undefined;
     settingsDefaultPlanMode: boolean;
+    settingsHelperModelSelection: HelperModelSelection;
     settingsAutoCreateWorktree: boolean;
     settingsGitmojiEnabled: boolean;
     settingsDefaultFileViewerPreview: boolean;
@@ -742,7 +747,7 @@ interface ConfigStore {
     saveAgentModelSelection: (agentName: string, providerId: string, modelId: string, variant?: string) => void;
     persistAgentModelSelection: (agentName: string, providerId: string, modelId: string, variant?: string) => Promise<void>;
     resetAgentModelSelection: (agentName: string) => Promise<void>;
-    resetPersonalSettingsOverride: (field: 'defaultAgent' | 'defaultPlanMode') => Promise<void>;
+    resetPersonalSettingsOverride: (field: 'defaultAgent' | 'defaultPlanMode' | 'helperModelSelection') => Promise<void>;
     getAgentModelSelection: (agentName: string) => AgentModelSelection | null;
     probeConnection: (options?: { timeoutMs?: number }) => Promise<boolean>;
     checkConnection: () => Promise<boolean>;
@@ -838,6 +843,7 @@ export const useConfigStore = create<ConfigStore>()(
                 settingsDefaultVariant: undefined,
                 settingsDefaultAgent: undefined,
                 settingsDefaultPlanMode: false,
+                settingsHelperModelSelection: DEFAULT_HELPER_MODEL_SELECTION,
                 settingsAutoCreateWorktree: false,
                 settingsGitmojiEnabled: false,
                 settingsDefaultFileViewerPreview: false,
@@ -1518,6 +1524,7 @@ export const useConfigStore = create<ConfigStore>()(
                         ? payload.defaultAgent.trim()
                         : undefined;
                     set({
+                        ...(field === 'helperModelSelection' ? { settingsHelperModelSelection: parseHelperModelSelection(payload.helperModelSelection) ?? DEFAULT_HELPER_MODEL_SELECTION } : {}),
                         ...(field === 'defaultAgent' ? { settingsDefaultAgent: nextAgent } : {}),
                         ...(field === 'defaultPlanMode' ? { settingsDefaultPlanMode: payload.defaultPlanMode === true } : {}),
                         settingsOverrideKeys: parseSettingsOverrideKeys(payload.multiUser?.settingsOverrideKeys),
@@ -1635,6 +1642,7 @@ export const useConfigStore = create<ConfigStore>()(
                                     settingsDefaultVariant: openChamberDefaults.defaultVariant,
                                     settingsDefaultAgent: openChamberDefaults.defaultAgent,
                                     settingsDefaultPlanMode: resolvedDefaultPlanMode,
+                                    settingsHelperModelSelection: openChamberDefaults.helperModelSelection ?? DEFAULT_HELPER_MODEL_SELECTION,
                                     settingsOverrideKeys: openChamberDefaults.settingsOverrideKeys ?? [],
                                     settingsAutoCreateWorktree: openChamberDefaults.autoCreateWorktree ?? false,
                                     settingsGitmojiEnabled: openChamberDefaults.gitmojiEnabled ?? false,
@@ -2387,6 +2395,7 @@ export const useConfigStore = create<ConfigStore>()(
                     settingsDefaultVariant: state.settingsDefaultVariant,
                     settingsDefaultAgent: state.settingsDefaultAgent,
                     settingsDefaultPlanMode: state.settingsDefaultPlanMode,
+                    settingsHelperModelSelection: state.settingsHelperModelSelection,
                     settingsAutoCreateWorktree: state.settingsAutoCreateWorktree,
                     settingsGitmojiEnabled: state.settingsGitmojiEnabled,
                     settingsDefaultFileViewerPreview: state.settingsDefaultFileViewerPreview,

@@ -1,10 +1,11 @@
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createHarnessTaskContextHost as createHarnessTaskContextHostNative } from './harness-task-context.js';
 import { createNativeConsumerFixture } from './test-native-consumer-client.js';
 import { readPlanRevision, resolveSessionPlanRevision } from '../plans/revisions.js';
+import { createNativePlanSettlementVerifier } from './runtime-host/native-plan-settlement.js';
 
 const createHarnessTaskContextHost = (options = {}) => createHarnessTaskContextHostNative({
   ...options, openCodeClient: options.openCodeClient ?? createNativeConsumerFixture({
@@ -13,7 +14,9 @@ const createHarnessTaskContextHost = (options = {}) => createHarnessTaskContextH
 });
 
 describe('selected saved-plan root authority', () => {
-  let root, directory, scope, primary, routes, marker, revision, hosts, events, diagnostics, owners, projects;
+  let root, directory, scope, primary, routes, marker, revision, hosts, events, diagnostics, owners, projects, sourceState;
+  const sourcePrimary = () => ({ sessionID: 'ses_plan', directory: routes['/session/ses_plan'].directory,
+    anchorID: 'msg_plan_user', stepID: 'msg_plan', cancellationGeneration: 0, state: 'completed' });
   const user = () => routes['/session/ses_root/message/msg_user'];
   const assistant = () => routes['/session/ses_root/message/msg_assistant'];
   const select = (extra = {}) => { marker = { action: 'implement', sourceSessionId: 'ses_plan', sourceMessageId: 'msg_plan', planIndex: 0, ...extra };
@@ -22,7 +25,13 @@ describe('selected saved-plan root authority', () => {
   const host = (extra = {}) => {
     const value = createHarnessTaskContextHost({ dataDirectory: root,
       buildOpenCodeUrl: pathname => `http://127.0.0.1:3000${pathname}`,
-      readPrimaryRecord: async () => structuredClone(primary),
+      readPrimaryRecord: async id => structuredClone(id === 'ses_plan' ? sourcePrimary() : primary),
+      verifyPlanSourceSettled: createNativePlanSettlementVerifier({
+        readControllerPin: () => ({ instanceID: 'owned-fixture-controller', configurationDigest: 'a'.repeat(64) }),
+        readPrimaryRecord: async () => sourcePrimary(), readStatus: async () => sourceState.status,
+        readManagedState: async () => sourceState.managed, readManagedBarrier: async () => sourceState.barrier,
+        activeLeases: async () => sourceState.leases,
+      }),
       sessionOwnerKey: async id => owners[id] ?? null,
       getRegisteredProjects: async () => projects,
       publishEvent: (...args) => events.push(args), recordDiagnostic: entry => diagnostics.push(entry),
@@ -40,20 +49,27 @@ describe('selected saved-plan root authority', () => {
   const rpc = (value, extra = {}) => value.handlePlanRpc({ action: 'plan_read', ...scope, messageID: 'msg_assistant', callID: 'call_plan', ...extra });
   const update = (value, version, text = '# Plan\n- Updated step\n') => rpc(value, { action: 'plan_update', expectedVersion: version, text });
   beforeEach(async () => {
-    root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-plan-authority-'));
+    const fixtures = fileURLToPath(new URL('../../../../../.cache/test-fixtures/', import.meta.url));
+    await fs.mkdir(fixtures, { recursive: true }); root = await fs.mkdtemp(path.join(fixtures, 'devryan-plan-authority-'));
     directory = path.join(root, 'project'); await fs.mkdir(directory); directory = await fs.realpath(directory);
     scope = { sessionID: 'ses_root', directory };
     primary = { ...scope, anchorID: 'msg_user', agent: 'builder', state: 'observing', cancellationGeneration: 2, stepID: 'msg_assistant', guardedIDs: [] };
     routes = {
       '/session/ses_root': { id: 'ses_root', directory, projectID: 'project_a', slug: 'root', time: { created: 1700000000001 } },
       '/session/ses_plan': { id: 'ses_plan', directory, projectID: 'project_a', slug: 'plan', time: { created: 1700000000000 } },
-      '/session/ses_plan/message/msg_plan': { info: { id: 'msg_plan', sessionID: 'ses_plan', role: 'assistant' }, parts: [] },
+      '/session/ses_plan/message/msg_plan_user': { info: { id: 'msg_plan_user', sessionID: 'ses_plan', role: 'user',
+        metadata: { openchamberPlanMode: true } }, parts: [{ type: 'text', text: 'Make the plan.' }] },
+      '/session/ses_plan/message/msg_plan': { info: { id: 'msg_plan', sessionID: 'ses_plan', role: 'assistant', parentID: 'msg_plan_user',
+        time: { completed: 1700000000002 }, finish: 'stop' },
+        turnOwnership: { source: 'native-sequence', userMessageID: 'msg_plan_user' }, parts: [{ type: 'text', text: '# Plan\n- Original step\n' }] },
       '/session/ses_root/message/msg_user': { info: { id: 'msg_user', sessionID: 'ses_root', role: 'user' }, parts: [] },
       '/session/ses_root/message/msg_assistant': { info: { id: 'msg_assistant', sessionID: 'ses_root', role: 'assistant', parentID: 'msg_user' },
         turnOwnership: { source: 'native-sequence', userMessageID: 'msg_user' },
         parts: [{ type: 'tool', tool: 'devryan_task', callID: 'call_plan', state: { status: 'running' } }] },
       '/session/ses_root/todo': [],
     };
+    routes['/session/ses_plan/message'] = [routes['/session/ses_plan/message/msg_plan_user'], routes['/session/ses_plan/message/msg_plan']];
+    sourceState = { status: {}, managed: { tasks: [], envelopes: [] }, barrier: { state: 'clear' }, leases: [] };
     select({ projectDirectory: directory });
     revision = await resolveSessionPlanRevision({ dataDirectory: root, directory, sessionCreated: 1700000000000, sessionSlug: 'plan', sourceMessageID: 'msg_plan' });
     await fs.mkdir(revision.directory, { recursive: true }); await fs.writeFile(revision.path, '# Plan\n- Original step\n');
@@ -66,12 +82,28 @@ describe('selected saved-plan root authority', () => {
     routes['/session/ses_plan'].directory = worktree;
     const value = host();
     expect(await value.readCanonicalPlanIdentity({ sessionID: 'ses_plan', sourceMessageID: 'msg_plan', directory }))
-      .toEqual({ sessionCreated: 1700000000000, sessionSlug: 'plan' });
+      .toMatchObject({ sessionCreated: 1700000000000, sessionSlug: 'plan', content: '# Plan\n- Original step\n',
+        sourceIdentity: { sessionID: 'ses_plan', sourceMessageID: 'msg_plan', successful: true, settled: true, current: true } });
     routes['/session/ses_plan/message/msg_plan'].info.sessionID = 'ses_foreign';
     await expect(value.readCanonicalPlanIdentity({ sessionID: 'ses_plan', sourceMessageID: 'msg_plan', directory })).rejects.toThrow();
     routes['/session/ses_plan/message/msg_plan'].info.sessionID = 'ses_plan';
     routes['/session/ses_plan/message/msg_plan'].info.role = 'user';
     await expect(value.readCanonicalPlanIdentity({ sessionID: 'ses_plan', sourceMessageID: 'msg_plan', directory })).rejects.toThrow();
+  });
+
+  it.each([
+    ['busy source', () => { sourceState.status = { ses_plan: { type: 'busy' } }; }],
+    ['live lease', () => { sourceState.leases = [{ sessionID: 'ses_plan' }]; }],
+    ['running descendant', () => { sourceState.managed.tasks = [{ childSessionId: 'ses_child', status: 'running' }]; }],
+    ['unacknowledged envelope', () => { sourceState.barrier.state = 'awaiting_acknowledgement'; }],
+  ])('the original settlement verifier refuses %s without saving', async (_name, unsettle) => {
+    const value = host(), before = await rpc(value);
+    unsettle();
+    await expect(value.readCanonicalPlanIdentity({ sessionID: 'ses_plan', sourceMessageID: 'msg_plan', directory }))
+      .rejects.toMatchObject({ code: 'plan_source_unsettled' });
+    await expect(update(value, before.version)).rejects.toMatchObject({ code: 'plan_source_unsettled' });
+    expect((await readPlanRevision(revision)).content).toBe(before.content);
+    expect(events).toEqual([]);
   });
 
   it('binds global non-Git plans to their actual registered root on HTTP and private selection', async () => {
@@ -100,7 +132,7 @@ describe('selected saved-plan root authority', () => {
     select({ projectDirectory: directory });
     expect((await rpc(value)).path).toBe(revision.path);
     expect(await value.readCanonicalPlanIdentity({ sessionID: 'ses_plan', sourceMessageID: 'msg_plan', directory }))
-      .toEqual({ sessionCreated: 1700000000000, sessionSlug: 'plan' });
+      .toMatchObject({ sessionCreated: 1700000000000, sessionSlug: 'plan', sourceIdentity: { successful: true, settled: true, current: true } });
   });
 
   it('reads saved identity from the authorized root when a historical Git worktree is gone', async () => {
@@ -111,7 +143,7 @@ describe('selected saved-plan root authority', () => {
       return Response.json(url.pathname === '/project/current' ? { id: 'project_a', worktree: directory } : routes[url.pathname]);
     } });
     expect(await value.readCanonicalPlanIdentity({ sessionID: 'ses_plan', sourceMessageID: 'msg_plan', directory }))
-      .toEqual({ sessionCreated: 1700000000000, sessionSlug: 'plan' });
+      .toMatchObject({ sessionCreated: 1700000000000, sessionSlug: 'plan', sourceIdentity: { successful: true, settled: true, current: true } });
   });
 
   it('rejects missing canonical project identity rather than comparing two undefined IDs', async () => {

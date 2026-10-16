@@ -129,3 +129,57 @@ cells, then freeze the entire script tree. Performance measurements have their
 own final protocol freeze after all live diagnostic workloads stop. No drift is
 silently waived; rebuilding package provenance after a later production change
 is a separate required step.
+
+`receipt-ui-settlement.mjs` adds the final durable boundary to the existing
+two-frame renderer owner. The attended QA1 profile driver arms it before Plan
+and Implement submission, then joins the exact canonical objective and assistant
+IDs to one controller scope, completed tool receipts, explicit canonical idle,
+restored composer/Send controls and two animation frames. Its opt-in finite
+journal projection retains no tool input, output, paths or transcript content.
+The owned QA child enables the existing zero-minimum execution summaries;
+ordinary runtime diagnostics keep their normal threshold.
+
+Host monotonic brackets calibrate renderer `performance.now()` to the journal's
+`Date.now()` before and after each observation. Results retain transport and
+clock uncertainty, the canonical idle request interval and receipt commit bounds.
+Finish boundaries include receipt recording and may include cleanup after the
+commit, so their entire duration bounds the commit rather than supplying an
+invented exact timestamp. Missing receipts,
+clock steps, controller changes and incomplete canonical inventories remain
+explicit gaps. Five distinct matched objectives with identical workload,
+selection, source, native artifact, runner and UI hashes are required for a
+threshold summary. Only the lower latency bounds exceeding 1s median or 3s worst
+can establish the Finalizing prerequisite. A single profile exercise supplies
+observations, not a five-sample comparison or resource-regression clearance.
+
+`native-receipt-resource-benchmark.mjs` runs five isolated actual-native pairs
+with the deterministic loopback read/write provider, the existing unpackaged
+web/native host and sandboxed Electron Chromium browser shell, and an original
+full native qualification report. The loader-verified packaged UI is served by
+that host; this does not qualify packaged Electron shell execution or background
+service startup. It requires explicit repository-owned
+`--package-evidence`, `--artifact-root` and `--qualification-report` paths.
+Each fresh condition is the first native objective in a new app/profile/workspace;
+normal startup prewarm stays enabled. Its repeat uses a new session on the same
+running host after resetting only the owned proof file to the same absent baseline.
+These labels make no claim about cold OS, disk or provider caches.
+High labels the canonical/native-prepared selection of the synthetic temperature-0
+fixture; it does not establish a wire reasoning-effort setting. The existing
+responder asserts every actual request's model is `smoke-write`.
+The runner pins its full transitive measurement sources, exact native/package/UI,
+Chromium executable and installed Electron version,
+and qualification bytes, workload and selection. It reuses retained process-start
+identities for CPU/RSS sampling and checks physical-footprint identities on both
+sides of collection. Resource scope includes the synthetic responder and collector;
+coarse observations cannot prove every short-lived process. Strict receipt/UI gaps,
+missing footprint/RPC coverage or unconfirmed physical cleanup prevent a complete
+five-pair measurement. RPC counts come from the existing strict reader's opt-in
+persisted `turn.summary` projection after flush and complete coverage verification,
+with one exact original objective and final assistant. The runner needs no admin
+timing access; counts include fixed observer polling during the active turn.
+Committed write receipts and finish boundaries remain
+separate from the explicitly unavailable exact total durable-commit count. This
+single-source study cannot establish a historical improvement or clear the existing
+CPU/latency regression. The earlier packaged-shell attempt stopped before host
+startup with `runtime_service_registration_unavailable`, accepted zero turns and
+completed owned cleanup; it provides no resource or receipt measurement.

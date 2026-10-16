@@ -17,6 +17,8 @@ export async function runCompiledHelperIsolation({ runtimeOwner, client, provide
       helperRequests++;
       assert.equal(helperRequests, 1);
       assert.ok(!request.body.tools?.length, 'Text helper must never acquire conversation tools');
+      assert.equal(request.body.temperature, 0, 'Compiled configured helper zero sampling was lost');
+      assert.equal(Object.hasOwn(request.body, 'top_p'), false, 'Helper must not inherit unrelated conversation sampling');
       helperStarted();
       await new Promise(resolve => {
         if (signal.aborted) resolve();
@@ -25,7 +27,10 @@ export async function runCompiledHelperIsolation({ runtimeOwner, client, provide
       helperAborted();
       throw signal.reason;
     }
-    assert.ok(text.includes(marker)); conversationRequests++;
+    assert.ok(text.includes(marker));
+    assert.equal(request.body.temperature, 0, 'Compiled native context lost explicit zero sampling');
+    assert.equal(request.body.top_p, 0.37, 'Compiled native context lost captured top_p');
+    conversationRequests++;
     assert.equal(conversationRequests, 1);
     assert.equal(helperPending, true, 'The independent conversation must settle before helper release');
     return { items: [{ type: 'textDelta', text: 'Independent native conversation complete' }], reason: 'stop' };
@@ -34,14 +39,16 @@ export async function runCompiledHelperIsolation({ runtimeOwner, client, provide
   const operationID = randomUUID();
   // Catch immediately: cancellation can settle before the final assertions.
   const helper = runtimeOwner.generateHelperText({ operationID, directory, agent: 'devryan-commit',
-    providerID: 'devryan-smoke', modelID: 'smoke-write', variant: 'default', prompt: helperMarker,
+    providerID: 'devryan-smoke', modelID: 'smoke-write', selectionMode: 'configured', selectionRevision: 'compiled-fixture', prompt: helperMarker,
     timeoutMs: 30000, maxOutputTokens: 32, signal: cancellation.signal }).then(
       () => { throw new Error('Compiled pending helper unexpectedly completed'); }, error => error);
   try {
-    await Promise.race([started, new Promise((_, reject) => {
-      const timer = setTimeout(() => reject(new Error('Compiled helper did not reach the original HTTP provider')), 15000);
-      started.finally(() => clearTimeout(timer));
-    })]);
+    let startTimer;
+    try {
+      await Promise.race([started, helper.then(error => { throw error; }), new Promise((_, reject) => {
+        startTimer = setTimeout(() => reject(new Error('Compiled helper did not reach the original HTTP provider')), 15000);
+      })]);
+    } finally { clearTimeout(startTimer); }
     const session = await client.sessions.create({ title: marker, model: { providerID: 'devryan-smoke', modelID: 'smoke-write' } }, { directory });
     await client.prompts.prompt(session.id, { messageID: createV2MessageId(), agent: 'orchestrator', variant: 'default',
       model: { providerID: 'devryan-smoke', modelID: 'smoke-write' }, parts: [{ type: 'text', text: marker }] },
@@ -62,7 +69,7 @@ export async function runCompiledHelperIsolation({ runtimeOwner, client, provide
     assert.equal(runtimeOwner.isReady(), true, 'Helper cancellation stopped the independent native runtime');
     return { id: 'compiled-helper-hang-independent-native-conversation', status: 'passed', operationID,
       sessionID: session.id, assistantMessageID: assistant.info.id, helperRequests, conversationRequests,
-      providerCancellationObserved: true, source: 'actual-helper-provider-pending-native-conversation-completion-and-finalizer-ACK' };
+      providerCancellationObserved: true, physicalSamplingVerified: true, source: 'actual-helper-provider-pending-native-conversation-completion-and-finalizer-ACK' };
   } finally {
     cancellation.abort(new Error('compiled_fixture_helper_cleanup'));
     await helper;

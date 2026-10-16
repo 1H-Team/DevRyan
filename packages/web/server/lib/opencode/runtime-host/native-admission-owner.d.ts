@@ -53,6 +53,10 @@ export interface NativeDeferredWakeReceipt {
   readonly sessionID: string;
 }
 export interface NativeAdmissionOwnerOptions {
+ readonly readPlanPolicy?:(input:{readonly sessionID:string;readonly directory:string;readonly messageID?:string})=>Promise<{readonly readOnly:boolean;readonly objectiveID?:string}>;
+ readonly recordPlanToolDenial?:(request:OperationRequest,session:NativeSessionIdentity,recheck:()=>Promise<void>,
+   guard:Readonly<{assertCurrent:()=>void;admissionRevision:number}>)=>Promise<void>;
+ readonly validatePlanImplementation?:(accepted:Readonly<Record<string,unknown>>)=>Promise<void>;
  readonly getInstanceID?:()=>string|undefined;
   readonly bindNativeRecoveryDispatchInput?: (input: {readonly sessionID:string;readonly messageID:string;readonly itemHash:string})=>void|Promise<void>;
   readonly assertRecoveredInputOperation?:(request:OperationRequest,entry?:Readonly<Record<string,unknown>>)=>object|undefined;
@@ -76,10 +80,14 @@ export interface NativeAdmissionOwnerOptions {
     readonly id:string;readonly directory:string;readonly metadata:Readonly<Record<string,unknown>>} | null>;
   /** Canonical internal native user record; metadata never comes from the UI projection. */
   readonly readUserMessage?:(input:{directory:string;sessionID:string;messageID:string})=>Promise<{
-    readonly id:string;readonly type:'user';readonly sessionID:string;readonly directory:string;readonly metadata:Readonly<Record<string,unknown>>} | null>;
+    readonly id:string;readonly type:'user';readonly sessionID:string;readonly directory:string;readonly text:string;readonly metadata:Readonly<Record<string,unknown>>} | null>;
   readonly authorizeOperation: (request: OperationRequest & { readonly parentAuthorization?: OperationRequest }, session?: NativeSessionIdentity) => Promise<void>;
   /** Capture the original web principal here. The returned closure reloads its grants on every native use. */
+  readonly captureHelperSelection?:(input:import('./native-helper-contract.js').NativeHelperInput,session?:NativeSessionIdentity)=>Promise<{readonly selection:{readonly providerID:string;readonly modelID:string;readonly variant?:string;readonly revision:string};readonly recheck:()=>Promise<void>}>;
   readonly captureTitleHelperAuthorization?:(session:NativeSessionIdentity)=>Promise<()=>Promise<void>>;
+  readonly sealManagedTitleInput?:(input:{readonly sessionID:string;readonly directory:string;readonly messageID:string;readonly fingerprint:string;readonly text:string;readonly dispatch:NativeManagedTaskDispatch})=>Promise<Readonly<Record<string,unknown>>>;
+  readonly captureManagedTitleInput?:(input:{readonly sessionID:string;readonly directory?:string;readonly messageID?:string})=>Promise<{readonly sessionID:string;readonly directory:string;readonly sourceMessageID:string;readonly recheck:()=>Promise<void>}>;
+  readonly captureAcceptedHumanTitleInput?:(input:{readonly sessionID:string;readonly directory?:string;readonly messageID:string})=>Promise<{readonly sessionID:string;readonly directory:string;readonly sourceMessageID:string;readonly recheck:()=>Promise<void>}>;
   readonly captureWebAuthorization?: (request: { readonly operation:string;readonly sessionID?:string;readonly directory:string }, session?:NativeSessionIdentity)=>Promise<()=>Promise<void>>;
   /** Capture the original primary owner only within the initial private Web command scope. */
   readonly captureCommandPromptAdmission?:(input:{readonly sessionID:string;readonly directory:string})=>Promise<NativeCommandPromptAdmission>;
@@ -107,6 +115,7 @@ export interface NativeAdmissionOwnerOptions {
 export interface NativeAdmissionOwner {
  readonly withRetentionOperation:<A>(input:{directory:string;sessionID:string;action:'archive'|'delete';at:number;members:readonly import('./native-retention-quiet.js').NativeRetentionMember[];authorize:(members:readonly import('./native-retention-quiet.js').NativeRetentionMember[])=>Promise<void>},action:(permit:OperationPermit)=>Promise<A>)=>Promise<A>;
  readonly withHelperTitleOperation:<A>(input:import("./native-helper-contract.js").NativeHelperTitleInput,action:(permit:OperationPermit)=>Promise<A>)=>Promise<A>;
+ readonly verifyTitleAcceptedInput:(input:{readonly directory:string;readonly sessionID:string;readonly messageID:string})=>Promise<boolean>;
  readonly withHelperOperation:<A>(input:import("./native-helper-contract.js").NativeHelperInput,action:(permit:OperationPermit)=>Promise<A>)=>Promise<A>;
  readonly assertHelperOperation:(input:unknown,permit:OperationPermit)=>Promise<null>;
   readonly withRecoveredInputOperation:<A>(input:NativePrimaryContinuationDispatch&{payloadHash:string;enqueuedSeq:number;action:'resume'|'discard';recheck:()=>Promise<void>},action:(permit:OperationPermit)=>Promise<A>)=>Promise<A>;
@@ -149,6 +158,7 @@ export interface NativeAdmissionOwner {
   readonly withPrimaryRecoveryDispatch: <A>(input:NativePrimaryContinuationDispatch,action:()=>Promise<A>)=>Promise<A>;
   readonly withPrimaryContinuationOperation: <A>(input:NativePrimaryContinuationDispatch,action:(permit:OperationPermit)=>Promise<A>)=>Promise<A>;
   readonly updateAcceptedOperation: (input: { readonly metadata: Readonly<Record<string, unknown>>; readonly request: unknown }) => void;
+  readonly readOnlyExecution: (input: NativeExecutionAuthorization) => Promise<boolean>;
   readonly recheckExecution: (input: NativeExecutionAuthorization) => Promise<void>;
   /** Constructor-only image request retains its exact live supervised writer lease. */
   readonly withImageGeneration:<A>(invocation:NativeExecutionAuthorization,action:(recheck:()=>Promise<void>)=>Promise<A>)=>Promise<A>;
@@ -156,11 +166,13 @@ export interface NativeAdmissionOwner {
   readonly endWebfetchSecondary:(permit:OperationPermit)=>Promise<null>;
   /** Physical provider hooks retain a real session operation across async credential access. */
   readonly withProviderAttempt: <A>(input: { readonly directory: string; readonly sessionID: string;
-    readonly kind: 'primary' | 'title' | 'compaction' | 'generate'; readonly permit: OperationPermit }, action: (recheck: () => Promise<void>) => Promise<A>) => Promise<A>;
+    readonly kind: 'primary' | 'title' | 'compaction' | 'generate'; readonly permit: OperationPermit }, action: (recheck: () => Promise<void>,
+      helper?:Readonly<{agent:string;providerID:string;modelID:string;variant:string|null;selectionMode?:'configured'|'active';selectionRevision?:string}>) => Promise<A>) => Promise<A>;
   /** Pre-request credential resolution retains the admitted runner or exact secondary call. */
   readonly withProviderResolution: <A>(input: { readonly directory: string; readonly sessionID: string;
     readonly permit: OperationPermit }, action: (recheck: () => Promise<void>) => Promise<A>) => Promise<A>;
   readonly withPermit: <A>(input: NativeExecutionAuthorization, action: () => Promise<A>) => Promise<A>;
+  readonly withManagedResultRead: <A>(input: NativeExecutionAuthorization, action: () => Promise<A>) => Promise<A>;
   /** Private coordinator capability. This issuer is deliberately absent from handleRpc. */
   readonly withRevertOperation: <A>(input: NativeRevertOperation, action: () => Promise<A>) => Promise<A>;
   readonly releaseTransactionHolds: (input: NativeTransactionHolds) => Promise<void>;

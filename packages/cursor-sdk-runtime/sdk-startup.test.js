@@ -75,7 +75,8 @@ describe('Cursor SDK startup compatibility', () => {
             assert.equal(text, 'confined fixture');
             return { id: 'fixture-run', status: 'finished',
               async *stream() { yield { type: 'assistant', message: { content: [{ type: 'text', text: 'confined ok' }] } }; },
-              async wait() { return { status: 'finished', result: 'confined ok' }; }
+              async wait() { return { status: 'finished', result: 'confined ok' }; },
+              async conversation() { return [{type:'agentConversationTurn',turn:{steps:[{type:'assistantMessage',message:{text:'confined ok'}}]}}]; }
             };
           } };
         } };

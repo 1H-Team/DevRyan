@@ -1,6 +1,6 @@
 # Release builds and artifact handoffs
 
-The release workflow builds one web artifact, eight Bot images (six execution
+Candidate preparation builds one web artifact, verifies eight Bot images (six execution
 images plus the local catalog's `database` and `rest`) with at most three
 image jobs running concurrently, and one Apple silicon (arm64) Electron
 preparation. Final Electron packaging waits for all three verified inputs.
@@ -12,7 +12,7 @@ releases default to `desktop-macos-arm64`; manual runs expose the same scope
 choice. This scope skips web/npm publication and its tarball requirement while
 retaining every desktop, updater, signed Bot image, packaging and hosted
 migration gate. A manual `full` release retains the universal web platform
-requirements and refuses publication while those native artifacts are missing.
+requirements and refuses admission before heavy work while those native artifacts are missing.
 Discord announcements require the explicit manual `announce` input; releases
 do not dispatch updates to an upstream website.
 
@@ -55,8 +55,8 @@ every workspace's build script. Full validation remains separate from compilatio
 
 ## Release graph
 
-1. Validate release metadata and create the draft release.
-2. In parallel, validate UI types and compile web assets once, prepare arm64 native dependencies and
+1. Validate frozen package metadata, supported scope and the exact tag source. Admit the first source SHA into the draft and retain its release ID before heavy work. A version cannot be retagged or reused for another source, even after draft removal. Stable version writers share one non-cancelling concurrency owner.
+2. Candidate runs, and supported full-scope web packaging, validate UI types and compile web assets once, prepare arm64 native dependencies and
    helpers, and resolve all eight image inputs once. Image builds use individual
    GitHub Actions cache scopes with full intermediate-layer export.
 3. The read-only resolver computes each input digest (`scripts/bot-runtime-image-inputs.mjs`).
@@ -76,17 +76,184 @@ every workspace's build script. Full validation remains separate from compilatio
    runs in an isolated `devryan-smoke-<hex>` namespace, creates, initializes and
    migrates the catalog volume the way Electron does, and waits for the fixed services,
    `database` and `database-rest` to become healthy.
-4. npm consumes the web artifact, bundles private workspace runtime packages, and publishes the exact verified tarball.
+4. The full-scope npm packaging job consumes the web artifact and bundles private workspace runtime packages. Publication belongs to the finalizer after qualification.
    Electron consumes web assets, prepared native files, and the complete Bot
    manifest, then runs all existing packaged artifact gates.
-5. Each packaging job records its actual installer/tarball SHA-256. Finalize
-   runs once the signed Bot images, topology smoke and desktop packaging have
-   succeeded. It verifies the exact asset allowlist, uploaded state, non-empty
-   size and those packaging digests, deploys and checks the hosted migrations,
-   then publishes. Final-DMG GUI startup qualification is no longer part of
-   this workflow: from 2.0.11 it is a manual check
-   ([QA](QA.md#final-dmg-startup-qualification)) that never blocks publication.
-   It added about 40 minutes and did not pass for 2.0.9 or 2.0.10.
+5. Each packaging job records the actual installer/tarball SHA-256. Three fresh
+   `macos-26` candidate jobs consume the same retained DMG from the exact intended
+   tag SHA. A separate pre-tag job uses the frozen published baseline tag SHA and
+   DMG digest with the existing compiled native package acceptance, including
+   real clone, candidate work and rollback. A PR merge SHA cannot qualify another
+   source SHA. Stable admission requires the complete successful candidate run.
+6. Stable desktop-only runs skip unused UI/native preparation and download the exact admitted candidate DMG; they never
+   rebuilds or repackages it. Expired candidate artifacts fail admission rather
+   than falling back to a build. The exact final tag DMG runs one mandatory short GUI smoke, including the first
+   hotfix. It extracts the unchanged app, launches the ordinary native backend,
+   sends one local HTTP model prompt and reopens its persisted history. The
+   eleven-scenario runner remains separate; its historical approximately
+   40-minute receipt is neither shortened nor substituted for the short smoke.
+7. The existing finalizer is the sole stable public asset uploader. It verifies
+   staged scope assets and the short receipt before hosted deployment. Uploads
+   require the admitted draft ID and immutable source; an identical digest is
+   reused on retry and conflicting bytes fail without replacement. The complete
+   exact allowlist is checked before and after promotion. A published retry is
+   read only and needs the original successful finalization/deployment attempt
+   and its frozen asset digests in the original immutable finalization workflow
+   artifact. Docs source is a workflow artifact only.
+
+Before deployment or npm publication, the finalizer reads the exact final JSON,
+digest witness and external I/O observation and checks their source/version,
+run/attempt, retained DMG/app/manifest identity and every frozen phase allowance.
+The final smoke retains its qualified identity and budgets in a separate
+90-day workflow artifact. The same read-only validator runs again before public
+asset finalization; a missing, foreign or changed receipt fails before external
+deployment/publication writes.
+
+The `candidate=true` workflow mode derives version from checked-out metadata and
+forces `RELEASE_DRY_RUN=true`. It prohibits every external writer, including
+GitHub release/tag writes, image signing/tagging/publication, npm, hosted
+migrations and announcements. Changed Bot inputs must first use the existing
+immutable inputs-only tag lane; its `release.yml@refs/tags/v*` cosign trust is
+unchanged. Candidate and final DMGs are retained for 14 days; admission, packaging, GUI
+attempt, frozen budget and compiled upgrade/rollback receipts are retained for 90 days.
+Tag admission must fit within that candidate retention window. Expiry requires a
+new qualified cohort; it never permits replacing a conflicting asset or rebuilding
+bytes as proof of the expired candidate. The candidate workflow freezes and checks
+its feasible budget after all three rehearsals and upgrade/rollback. Stable source
+admission repeats that resolver before creating a draft, including read-only
+pre-tag checks; promotion repeats the retained final receipt/budget validation.
+
+The rehearsal caps are 150/120/60/30/90/30/60/30 seconds for inspection, first
+readiness, chat, stop, reopen, history, cleanup and receipt. Final limits are
+`ceil(3 × slowest of three green rehearsals)`, with 10-second I/O and 30-second
+readiness floors. The three rehearsals require distinct original hosted runner
+IDs; copied successful siblings retain their original producer's ID. Their sum
+must fit 570 seconds after GUI prerequisites.
+Preflight hashes, retained attempts and GUI admission share a separate 180-second
+setup allowance, recorded as `setup.limitSeconds`, `setup.elapsedMs` and
+`setup.status`. The allowance reserves time for installer hashing, bounded GitHub
+inventory and GUI compilation on a fresh runner; setup expiry is an evidence failure and
+grants no GUI retry. GUI cleanup retains its independent five-second stop attempt,
+and pre-app receipt I/O has its own 30-second bound. After GUI admission, smoke
+operations share the remaining absolute deadline and reserve cleanup/receipt
+time. Deadline and cancellation flow into the original QA owners; phases await
+settlement before cleanup. A JSON receipt alone is pending proof: its
+post-rename `.receipt-io` witness binds exact bytes. The outer receipt owner then
+measures settled JSON and witness I/O in a required `.receipt-observation`, bound
+to both files' digests. This measurement explicitly excludes the observation's
+own commit; that commit remains bounded by the same captured receipt and absolute
+deadline. Qualification requires all three files. The qualification ordinal and
+numeric hosted runner identity are bound into the receipt and both I/O witnesses;
+GitHub's global run attempt remains a separate correlation value. Late or failed writes remove
+qualifying JSON, witness and observation files and retain a failed
+partial artifact. The initial executed qualification plus at most two fresh-runner
+retries may reuse the same run/source/sample and retained DMG after typed pre-app
+GUI unavailability. Skipped jobs and positively proven queued cancellations do not consume this allowance;
+a queued GitHub job may have `started_at` despite empty steps and an explicit null/zero runner.
+Actual steps, an assigned runner or an original receipt prove execution. Missing
+fields alone cannot excuse a failure. A receipt-proven execution consumes its
+qualification ordinal even when the API omits the runner; any assigned API runner
+must agree with the original receipt. Copied successful siblings from **Re-run
+failed jobs** reuse the original producer only when their name, runner, execution
+timestamps and complete nonempty steps match; they do not consume an execution
+ordinal or require a new artifact.
+
+An initial gate at global workflow attempt 8 is still qualification 1. Every earlier receipt must
+prove no app start, zero fixture attempts and safe cleanup. Product, boot,
+fixture, journal, evidence and cleanup failures cannot be erased by a retry or
+new version. Earlier candidate, final and legacy job attempts are checked,
+including the current run. Retry admission is inside the smoke receipt boundary,
+so refusals retain failed evidence without starting the application. Each retry
+must match the actual previous job, ordinal and runner ID, and use a different
+GitHub-hosted runner. A failed prior-artifact download reaches that same guard;
+missing proof never excuses an executed job. Two unexplained gate failures across the last ten
+distinct prior stable versions block the next write admission. Every unexplained
+failed gate job/attempt counts, including two candidate failures in one run.
+Read-only correction rehearsals remain available for a new source/version under
+the source reuse guards. Write admission then requires a newer, exact-source
+candidate run started after the unresolved failures: all three actual green
+startup receipts, their common installer/app/manifest identities, derived phase
+budgets, frozen packaging metadata and upgrade/rollback proof must qualify. The
+same candidate resolver owns ordinary and repaired admission; no override flag
+or failure pardon is stored. Failed same-source/version product retries remain
+forbidden. Version identity comes
+from the immutable admission artifact (or exact-source retained legacy gate
+receipt), including candidate dispatches from branches such as `main`; changing
+source or dispatch branch cannot discard those failures. Legacy `workflow_dispatch`
+branches also use `package.json` at the exact source SHA, after trusted repository,
+workflow path and event checks. This establishes identity only; it grants no
+failure pardon. The scan classifies the bounded run inventory first, then reads
+jobs for the ten most recent versions with executed gates, all older runs of those
+versions, and the intended source/version. Admission-only versions do not consume
+that window. Pagination is capped at ten pages per inventory, source metadata at
+600 distinct SHAs, job inventories at 650 and total JSON API/artifact reads at 900
+per invocation. Exhaustion or malformed evidence stops admission with a retained
+`complete: false` classification and request count. Completed scans retain
+`complete: true`; identity metadata is reused only within the invocation.
+For local GET-only diagnosis, the existing CI entrypoint accepts
+`RELEASE_OPERATION=history-read` with the exact `GITHUB_SHA` and canonical
+`GITHUB_REPOSITORY`. It uses the saved gh owner without reading credentials,
+refuses non-GET requests, caps the diagnostic at 120 API/artifact reads and
+writes `history-classification.json` to `RELEASE_ARTIFACT_DIR`. Incomplete history
+returns nonzero with its request count and last route; a partial failure count
+never qualifies admission. Exact-source release admission markers and the compact
+identity inventory carried forward inside the existing immutable admission
+artifact can identify old cohorts after their attempt payload expires. These
+inventories contain no failure pardon: missing, partial, corrupt or expired attempt
+evidence counts an executed failed job as unexplained without aborting the whole
+trusted history scan. It cannot qualify a successful candidate. Skipped gates and
+cancelled jobs proved never started are excluded. Executed legacy gates remain in
+history; an exact stable push tag may establish their identity only after its
+current commit is checked against the historical source. Unknown identity still
+fails closed. Admission-only runs retain their source/version fence and identity
+inventory but do not displace executed gates in the ten-version failure window.
+Successful qualification requires all retained original evidence.
+Expired evidence outside the ten-version window does not block future tags once
+its version/source identity is authoritative. Unknown historical identity fails
+closed. Candidate source and budget qualification precede stable draft creation. All workflow attempts
+for each selected version are inspected; successful no-op dispatches cannot
+evict earlier failures or displace the tenth prior version with the current run.
+The current run is excluded only from the rolling window. Source admission
+separately checks its earlier gate attempts before heavy work or image writers,
+using the retained installer metadata and exact-source attempt receipts. Only
+typed pre-app GUI failures with zero fixtures and safe cleanup permit up to two
+fresh-runner retries of the failed gate jobs. Use GitHub Actions **Re-run failed
+jobs**, retaining the original successful admission and packaging jobs. A
+whole-workflow retry after retained admission or candidate packaging receives the bounded
+`release_retry_failed_gate_jobs_only` refusal before heavy work or image writers,
+so immutable admission/packaging artifacts are never rebuilt or re-uploaded.
+Missing retained identity/evidence refuses admission. A published retry first
+verifies the original finalization/deployment artifact and remains read only even
+if that run had earlier GUI failures. It reuses a same-run admission artifact
+only after exact source/version/scope/release-ID verification and skips its
+immutable upload; a fresh no-op run retains its own admission artifact.
+
+After promotion, the finalizer retains the original source/release ID, asset
+digests and verified deployment proof before discovery. It passes the actual
+`/releases/latest` response through the desktop updater's `discoverDesktopUpdate`
+parser, retrying only these read-only requests at most six times within one
+30-second interval. Version, release ID, installer name, SHA-256, byte size and
+canonical URL must match. The workflow uploads the small original finalization
+proof even when discovery fails. A later no-op may recover that specifically
+retained pending discovery after checking its original deployment/publish job,
+release ID and exact asset inventory; missing original proof still requires
+review and permits no asset writes. Successful publication retains verified
+discovery. Recovery from retained pending discovery uses the same six-read,
+30-second parser interval; it never repeats deployment or asset writes. An older
+published release verifies its own original parser/proof and
+release ID; it must be latest unless the latest published stable release has a
+strictly newer version and a different release ID. Windows append/full-scope
+proof remain separate.
+
+The manual Developer-ID Electron lane stages
+`DevRyan-manual-Developer-ID-<version>-<macos>-arm64.dmg`, distinct from the
+canonical stable installer. The retained legacy Tauri lane stages
+`DevRyan-legacy-tauri-<macos>-arm64.dmg`. Both direct-download artifact containers
+use `DevRyan-` names, retain DMGs for 14 days and perform no stable release writes.
+
+The [release rectification regressions](audits/2026-10-14/release-rectification.json)
+record the deterministic history, retry, receipt and updater checks; they do not
+qualify hosted GUI behavior or a public release.
 
 macOS preparation builds and verifies the pinned native v2 runtime with Bun
 1.3.14. `release-cache.yml` now verifies those same inputs from `main`, without
@@ -125,15 +292,21 @@ another dependency installation that could replace rebuilt native binaries.
 
 `scripts/release-ci.mjs` is the fixed-operation CI adapter. `RELEASE_OPERATION`
 selects `asset-describe`, `image-plan`, `image-resolve`, `image-sign`, `image-assemble`, `web-describe`, `web-stage`,
-`web-pack`, `prepare-export` or `prepare-import`. Artifact verification remains in reusable
+`web-pack`, `prepare-export` or `prepare-import`, plus the fixed admission,
+candidate resolution, smoke budget and finalization operations.
+`scripts/release-publication.mjs` owns draft admission and the existing finalizer's
+GitHub checks; it is not another publication workflow. Artifact verification remains in reusable
 core functions. Internal handoff artifacts are not public release assets.
 
 `packages/electron/scripts/package-prepared.mjs` is the production packaging
 boundary. Bot-manifest validation is mandatory there, including local builds;
 plain main-process compilation does not require a release manifest. The manual
-macOS workflow's Electron build requires a ref with a matching published Bot
-manifest and fails on a revision mismatch. Releases from 2.0.1 no longer publish
-that manifest, so the manual workflow cannot package them. Test-only QA shells remain separate.
+macOS workflow's Electron build downloads the internal Bot manifest from an
+explicit successful immutable inputs-only run, checks the exact source and
+workflow identity, and preserves signature verification. Its packaged input uses
+`DevRyan-<version>-arm64.dmg`; the downloadable manual artifact is staged as
+`DevRyan-manual-Developer-ID-<version>-<macos>-arm64.dmg`. Test-only QA shells
+remain separate.
 
 ## Ownership and maintenance
 

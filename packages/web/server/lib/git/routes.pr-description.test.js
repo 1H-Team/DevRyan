@@ -35,6 +35,7 @@ const makeApp = ({
   }),
   generateTextWithSessionModel = vi.fn(async () => ({ ok: false, value: null, reason: 'timeout', attempts: 1, durationMs: 60_000 })),
   listConfigAgents = vi.fn(() => []),
+  resolveHelperSelection,
   buildOpenCodeUrl = (requestPath) => `http://opencode.test${requestPath}`,
   getOpenCodeAuthHeaders = () => ({}),
   recordCommitTiming = vi.fn(),
@@ -49,6 +50,7 @@ const makeApp = ({
     generatePullRequestDescription,
     generateTextWithSessionModel,
     listConfigAgents,
+    resolveHelperSelection,
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
     recordCommitTiming,
@@ -101,14 +103,14 @@ describe('POST /api/git/pr-description', () => {
       }),
     });
     const response = await post(app).expect(200);
-    expect(response.body).toMatchObject({ title: 'Zen title', source: 'zen', model: PINNED_MODEL });
+    expect(response.body).toMatchObject({ title: 'Zen title', source: 'helper_model', selectionMode: 'configured', model: `opencode/${PINNED_MODEL}` });
     expect(generatePullRequestDescription.mock.calls[0][0].prompt).toBe('Return the Generate PR JSON');
   });
 
   it('always sends the pinned Zen model without a cooldown catalog', async () => {
     const { app, generatePullRequestDescription, recordCommitTiming } = makeApp();
-    const response = await post(app, { providerId: 'openai', modelId: 'gpt-5' }).expect(200);
-    expect(response.body).toMatchObject({ source: 'zen', attempts: [{ tier: 'zen', model: PINNED_MODEL, reason: null }] });
+    const response = await post(app, { sessionID: 'ses_active', providerId: 'foreign', modelId: 'ignored' }).expect(200);
+    expect(response.body).toMatchObject({ source: 'helper_model', attempts: [{ tier: 'zen', model: PINNED_MODEL, reason: null }] });
     expect(generatePullRequestDescription).toHaveBeenCalledWith(expect.objectContaining({ models: [PINNED_MODEL], cooldowns: null }));
     expect(recordCommitTiming).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       event: 'git_pr_description_model_attempt',
@@ -118,7 +120,7 @@ describe('POST /api/git/pr-description', () => {
     }));
   });
 
-  it('uses the Builder model through the hidden helper agent when Zen fails', async () => {
+  it('uses only the authorized active model through the existing helper agent when the configured helper fails', async () => {
     const generateTextWithSessionModel = vi.fn(async () => ({
       ok: true,
       value: { title: 'Session title', body: '## Summary\n- session' },
@@ -128,10 +130,11 @@ describe('POST /api/git/pr-description', () => {
     const { app, recordCommitTiming } = makeApp({
       generatePullRequestDescription: exhaustedGenerator([{ model: PINNED_MODEL, reason: 'timeout', durationMs: 15_000 }]),
       listConfigAgents: vi.fn(() => builderAgents),
+      resolveHelperSelection: async ({ selectionMode }) => selectionMode === 'configured' ? { providerID: 'opencode', modelID: PINNED_MODEL, selectionMode, selectionRevision: '1' } : { providerID: 'anthropic', modelID: 'claude-sonnet', selectionMode, selectionRevision: 'active-session' },
       generateTextWithSessionModel,
     });
 
-    const response = await post(app, { providerId: 'openai', modelId: 'gpt-5' }).expect(200);
+    const response = await post(app, { sessionID: 'ses_active', providerId: 'foreign', modelId: 'ignored' }).expect(200);
 
     expect(response.body).toMatchObject({
       title: 'Session title',
@@ -161,32 +164,42 @@ describe('POST /api/git/pr-description', () => {
     ]);
   });
 
-  it('uses the model from the request body when no Builder agent is configured', async () => {
-    const generateTextWithSessionModel = vi.fn(async () => ({
-      ok: true,
-      value: { title: 'Session title', body: 'body' },
-      attempts: 1,
-      durationMs: 10,
-    }));
-    const { app } = makeApp({
-      generatePullRequestDescription: exhaustedGenerator(),
-      listConfigAgents: vi.fn(() => [{ name: 'planner', model: { providerID: 'x', modelID: 'y' } }]),
-      generateTextWithSessionModel,
-    });
-    const response = await post(app, { providerId: 'openai', modelId: 'gpt-5' }).expect(200);
-    expect(response.body.model).toBe('openai/gpt-5');
-    expect(generateTextWithSessionModel).toHaveBeenCalledWith(expect.objectContaining({ providerID: 'openai', modelID: 'gpt-5' }));
+  it('ignores Builder and request model hints without an authorized active session', async () => {
+    const { app, generateTextWithSessionModel, listConfigAgents } = makeApp({ generatePullRequestDescription: exhaustedGenerator(), listConfigAgents: vi.fn(() => builderAgents) });
+    const response = await post(app, { providerId: 'openai', modelId: 'gpt-5' }).expect(502);
+    expect(response.body.code).toBe('HELPER_ACTIVE_MODEL_REQUIRED');
+    expect(generateTextWithSessionModel).not.toHaveBeenCalled();
+    expect(listConfigAgents).not.toHaveBeenCalled();
   });
 
-  it('returns FREE_ZEN_EXHAUSTED with the attempts when no session model can be resolved', async () => {
+  it('refuses a revoked active session even with a supplied model hint', async () => {
+    const resolver = vi.fn(async ({ selectionMode }) => {
+      if (selectionMode === 'active') throw Object.assign(new Error('native_session_access_revoked'), { code: 'native_session_access_revoked', statusCode: 403 });
+      return { providerID: 'opencode', modelID: PINNED_MODEL, selectionMode, selectionRevision: '1' };
+    });
+    const { app, generateTextWithSessionModel } = makeApp({ generatePullRequestDescription: exhaustedGenerator(), resolveHelperSelection: resolver });
+    const response = await post(app, { sessionID: 'ses_revoked', providerId: 'openai', modelId: 'gpt-5' }).expect(403);
+    expect(response.body.code).toBe('native_session_access_revoked');
+    expect(generateTextWithSessionModel).not.toHaveBeenCalled();
+  });
+  it.each(['selection','generation'])('refuses a changed helper %s without authorizing active fallback',async phase=>{
+    const changed=Object.assign(Error('private source'),{code:'native_helper_selection_changed',statusCode:403});
+    const resolver=vi.fn(async()=>{if(phase==='selection')throw changed;return {providerID:'saved',modelID:'model',selectionMode:'configured',selectionRevision:'old'};});
+    const {app,generateTextWithSessionModel}=makeApp({resolveHelperSelection:resolver,generatePullRequestDescription:async()=>{throw changed;}});
+    const response=await post(app,{sessionID:'ses_active'}).expect(409);
+    expect(response.body.code).toBe('HELPER_SELECTION_CHANGED');expect(response.body.error).toContain('Refresh');
+    expect(resolver).toHaveBeenCalledTimes(1);expect(generateTextWithSessionModel).not.toHaveBeenCalled();
+  });
+
+  it('returns an actionable refusal with attempts when no active model can be authorized', async () => {
     const { app, generateTextWithSessionModel } = makeApp({
       generatePullRequestDescription: exhaustedGenerator(),
     });
     const response = await post(app).expect(502);
     expect(generateTextWithSessionModel).not.toHaveBeenCalled();
     expect(response.body).toEqual({
-      error: 'Zen could not generate a pull request description (deepseek-v4.1-flash: rate_limited)',
-      code: 'FREE_ZEN_EXHAUSTED',
+      error: 'Select an accessible active chat with a model, or change the helper model in Settings → Agents → Session Defaults.',
+      code: 'HELPER_ACTIVE_MODEL_REQUIRED',
       attempts: [{ tier: 'zen', model: PINNED_MODEL, reason: 'rate_limited', durationMs: 5 }],
     });
   });
@@ -195,12 +208,13 @@ describe('POST /api/git/pr-description', () => {
     const { app } = makeApp({
       generatePullRequestDescription: exhaustedGenerator(),
       listConfigAgents: vi.fn(() => builderAgents),
+      resolveHelperSelection: async ({ selectionMode }) => selectionMode === 'configured' ? { providerID: 'opencode', modelID: PINNED_MODEL, selectionMode, selectionRevision: '1' } : { providerID: 'anthropic', modelID: 'claude-sonnet', selectionMode, selectionRevision: 'active-session' },
       generateTextWithSessionModel: vi.fn(async () => ({ ok: false, value: null, reason: 'timeout', attempts: 1, durationMs: 60_000 })),
     });
-    const response = await post(app).expect(502);
+    const response = await post(app, { sessionID: 'ses_active' }).expect(502);
     expect(response.body).toMatchObject({
       code: 'SESSION_MODEL_FAILED',
-      error: expect.stringContaining('Builder model (anthropic/claude-sonnet)'),
+      error: expect.stringContaining('active session model (anthropic/claude-sonnet)'),
       attempts: [
         { tier: 'zen', model: PINNED_MODEL, reason: 'rate_limited' },
         { tier: 'session_model', model: 'anthropic/claude-sonnet', reason: 'timeout' },

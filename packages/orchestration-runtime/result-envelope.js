@@ -244,6 +244,8 @@ export const validateManagedTaskResultEnvelope = (envelope) => {
   if (envelope.action !== null && !ACTIONS.has(envelope.action)) {
     throw new TypeError('result action is invalid');
   }
+  if(envelope.acknowledgementIdentity!==undefined&&(typeof envelope.acknowledgementIdentity!=='string'||!/^[a-f0-9]{64}$/.test(envelope.acknowledgementIdentity)
+    ||envelope.action===null))throw new TypeError('result acknowledgementIdentity is invalid');
   assertNullableString(envelope.followUpTaskId, 'followUpTaskId', { prefix: 'dvr_task_' });
   // Slice-2 fields. Absent keys are tolerated (pre-upgrade envelopes and hosts
   // that hydrate before the loaders default them); present keys must be valid.

@@ -13,8 +13,8 @@ import { requireDisposableMacRunner } from './macos-gui-prerequisites.mjs';
 import { prepareReleaseService } from './release-startup-service.mjs';
 import { readThroughNavigation, observeReleaseNavigation } from './navigation-tolerant.mjs';
 
-export const waitReleaseStartup = async (label, read, check = () => {}, timeoutMs = 120_000) => {
-  const deadline = performance.now() + timeoutMs;
+export const waitReleaseStartup = async (label, read, check = () => {}, timeoutMs = 120_000, phaseDeadline) => {
+  const deadline = Math.min(performance.now() + timeoutMs, phaseDeadline ?? Infinity);
   for (;;) {
     check(); const result = await read(deadline); check();
     assert.ok(performance.now() < deadline, `Timed out: ${label}`);
@@ -26,11 +26,14 @@ export const waitReleaseStartup = async (label, read, check = () => {}, timeoutM
 /** Use the renderer's authenticated same-origin transport; never extract a cookie or bootstrap token. */
 export async function releaseRendererRequest(cdp, pathname, init = {}, { deadline = performance.now() + 30_000, check } = {}) {
   assert.ok(pathname.startsWith('/api/') || pathname === '/health');
+  check?.();
+  assert.ok(performance.now() < deadline, 'Renderer request phase deadline expired');
+  const timeoutMs = Math.max(1, Math.min(10000, deadline - performance.now()));
   const expression = `(async () => { const response = await fetch(${JSON.stringify(pathname)}, {
-    ...${JSON.stringify(init)}, signal: AbortSignal.timeout(10000),
+    ...${JSON.stringify(init)}, signal: AbortSignal.timeout(${Math.ceil(timeoutMs)}),
     headers: {'content-type':'application/json','X-DevRyan-CSRF':'1'} });
     return {status: response.status, body: await response.json()}; })()`;
-  return !init.method || init.method === 'GET' ? readThroughNavigation(cdp, expression, { deadline, check }) : evaluate(cdp, expression);
+  return !init.method || init.method === 'GET' ? readThroughNavigation(cdp, expression, { deadline, check }) : evaluate(cdp, expression, { timeoutMs });
 }
 
 export async function captureReleaseStartupScreenshot(launch, directory, name, identity) {
@@ -44,17 +47,20 @@ export async function captureReleaseStartupScreenshot(launch, directory, name, i
   return { name, sha256: createHash('sha256').update(bytes).digest('hex'), sourceCommit, dmgSha256, manifestSha256, appSha256 };
 }
 
-export async function assertReleaseRetainedSession(launch, profile, id) {
-  const result = await launch.request('/api/session?directory=' + encodeURIComponent(profile.workspace) + '&roots=true&limit=50');
+export async function assertReleaseRetainedSession(launch, profile, id, { deadline, signal } = {}) {
+  signal?.throwIfAborted();
+  const ui = deadline === undefined ? launch.ui : launch.uiForDeadline(deadline, signal);
+  const result = await launch.request('/api/session?directory=' + encodeURIComponent(profile.workspace) + '&roots=true&limit=50', undefined, deadline);
   assert.equal(result.status, 200);
   const session = result.body.find(row => row.id === id);
   assert.ok(session, 'Saved history disappeared');
-  const messages = await launch.request(`/api/session/${encodeURIComponent(id)}/message?directory=${encodeURIComponent(profile.workspace)}`);
+  const messages = await launch.request(`/api/session/${encodeURIComponent(id)}/message?directory=${encodeURIComponent(profile.workspace)}`, undefined, deadline);
   assert.equal(messages.status, 200);
-  assert.ok(messages.body.some(row => row.info?.role === 'assistant' && row.info?.time?.completed
-    && row.parts?.some(part => part.type === 'text' && part.text?.includes('DevRyan live QA ready.'))), 'Completed fixture response disappeared');
-  await launch.ui.click({ selector: `[data-session-row=${JSON.stringify(id)}] [data-session-select]` });
-  await launch.ui.waitVisibleText('DevRyan live QA ready.');
+  const assistant = messages.body.find(row => row.info?.role === 'assistant' && row.info?.time?.completed
+    && row.parts?.some(part => part.type === 'text' && part.text?.includes('DevRyan live QA ready.')));
+  assert.ok(assistant, 'Completed fixture response disappeared');
+  await ui.click({ selector: `[data-session-row=${JSON.stringify(id)}] [data-session-select]` });
+  await ui.waitVisibleText('DevRyan live QA ready.', `[data-message-id=${JSON.stringify(assistant.info.id)}]`);
 }
 
 /** Runs in the renderer; setup has no selected model or provider-dependent copy. */
@@ -75,40 +81,51 @@ export function readReleaseSetupInterfaceState() {
     modelPicker: available('.model-controls__model-trigger') };
 }
 
-export async function launchReleaseStartup(artifact, profile, { setupOnly = false, serviceEnvironmentManaged = false, expectedFailure, onFailure, onStop } = {}) {
+export async function launchReleaseStartup(artifact, profile, { setupOnly = false, serviceEnvironmentManaged = false, expectedFailure, onFailure, onStop, onStarted, onLaunchStop, deadline, signal, cleanupDeadline } = {}) {
   // Released builds can automatically register a service before the renderer exists.
   requireDisposableMacRunner();
   const startedAt = performance.now(), debugPort = await reservePort();
   const logOffset = readNativeStartupLogs(null, profile.env.HOME).length;
-  let app, serviceEnvironment, stopping, cdp, audit, navigation, subscription, startup, exceptions = 0, removeErrors;
-  const stop = () => stopping ??= (async () => {
+  let app, serviceEnvironment, preparingService, failedServiceRestore, stopping, cdp, audit, navigation, subscription, startup, exceptions = 0, removeErrors;
+  const stop = ({ deadline: stopDeadline = cleanupDeadline } = {}) => stopping ??= (async () => {
+    await preparingService?.catch(() => {});
     removeErrors?.(); audit?.complete(); navigation?.complete(); subscription?.close(); cdp?.close();
     try {
       if (app) {
-        await app.stop(); await app.auditStopped();
+        await app.stop({ deadline: stopDeadline }); await app.auditStopped();
         assert.deepEqual(app.getCleanupEvidence().remainingProcessIds, []);
       }
     } finally {
-      try { await serviceEnvironment?.cleanup(); }
-      finally { await onStop?.({ app, navigation: navigation?.phases ?? [] }); }
+      try { await serviceEnvironment?.cleanup(undefined, { deadline: stopDeadline }); await failedServiceRestore?.({ deadline: stopDeadline }); }
+      finally { removeErrors?.(); audit?.complete(); navigation?.complete(); subscription?.close(); cdp?.close(); await onStop?.({ app, navigation: navigation?.phases ?? [] }); }
     }
   })();
+  onLaunchStop?.(stop);
+  const withinDeadline = () => { signal?.throwIfAborted(); if (deadline !== undefined) assert.ok(performance.now() < deadline, 'Release smoke readiness deadline exceeded'); };
   try {
-    serviceEnvironment = serviceEnvironmentManaged ? null : await prepareReleaseService(profile);
+    withinDeadline();
+    preparingService = serviceEnvironmentManaged ? null : prepareReleaseService(profile, { deadline, signal }).catch(error => { failedServiceRestore = error.restore; throw error; });
+    serviceEnvironment = await preparingService;
+    withinDeadline();
+    onStarted?.();
     app = startOwnedProcess(artifact.binary, [`--remote-debugging-port=${debugPort}`, '--use-mock-keychain'],
       { cwd: profile.workspace, env: profile.env });
-    const target = await discoverPageTarget(debugPort);
-    cdp = await CdpConnection.connect(target.webSocketDebuggerUrl);
+    const target = await discoverPageTarget(debugPort, deadline === undefined ? 45_000 : Math.max(1, deadline - performance.now()));
+    withinDeadline();
+    cdp = await CdpConnection.connect(target.webSocketDebuggerUrl, { timeoutMs: deadline === undefined ? 5000 : Math.max(1, deadline - performance.now()) });
+    withinDeadline();
     audit = observeStartupNavigation(cdp, startedAt, target.url);
-    const { frameTree } = await cdp.send('Page.getFrameTree');
+    const { frameTree } = await cdp.send('Page.getFrameTree', {}, { timeoutMs: deadline === undefined ? 30000 : deadline - performance.now() });
     navigation = observeReleaseNavigation(cdp, frameTree.frame.url, {
       terminal: Boolean(expectedFailure), initialLoaderId: frameTree.frame.loaderId,
     });
     subscription = observeNativeStartupSubscription(cdp, startedAt);
     removeErrors = cdp.on('Runtime.exceptionThrown', () => { exceptions++; });
-    await Promise.all([cdp.send('Page.enable'), cdp.send('Runtime.enable'), cdp.send('Network.enable'), cdp.send('DOMStorage.enable')]);
-    const check = () => { app.check(); profile.check(); subscription.check(); navigation.check(); };
-    const ui = createQaUiDriver(cdp, { checkAlive: check, timeoutMs: 60_000, navigationReads: true });
+    const initialization = { timeoutMs: deadline === undefined ? 30000 : deadline - performance.now() };
+    await Promise.all([cdp.send('Page.enable', {}, initialization), cdp.send('Runtime.enable', {}, initialization), cdp.send('Network.enable', {}, initialization), cdp.send('DOMStorage.enable', {}, initialization)]);
+    const alive = () => { app.check(); profile.check(); subscription.check(); navigation.check(); };
+    const check = () => { withinDeadline(); alive(); };
+    const ui = createQaUiDriver(cdp, { checkAlive: check, timeoutMs: 60_000, navigationReads: true, deadline, signal });
     if (expectedFailure) {
       await ui.waitVisibleText(expectedFailure);
       assert.equal(await readThroughNavigation(cdp, 'Boolean(document.querySelector("textarea"))', { deadline: performance.now() + 60_000, check }), false, 'Failed startup exposed a composer');
@@ -118,8 +135,8 @@ export async function launchReleaseStartup(artifact, profile, { setupOnly = fals
     const origin = await waitReleaseStartup('production renderer', async deadline => {
       const href = await readThroughNavigation(cdp, 'location.href', { deadline, check });
       return /^http:\/\/127\.0\.0\.1:\d+\//.test(href) ? new URL(href).origin : null;
-    }, check);
-    const request = (route, init, deadline) => releaseRendererRequest(cdp, route, init, { deadline, check });
+    }, check, 120000, deadline);
+    const request = (route, init, requestDeadline = deadline) => releaseRendererRequest(cdp, route, init, { deadline: requestDeadline ?? performance.now() + 30000, check });
     if (setupOnly) {
       await waitReleaseStartup('empty-profile native health', async deadline => {
         const { body } = await request('/health', undefined, deadline);
@@ -129,7 +146,7 @@ export async function launchReleaseStartup(artifact, profile, { setupOnly = fals
       await ui.waitReadExpression('empty-profile setup interface', `Object.values((${readReleaseSetupInterfaceState.toString()})()).every(Boolean)`);
       startup = { outcome: 'passed', setupInterface: true, uiReadyMs: performance.now() - startedAt };
     } else {
-      startup = await captureFirstDocumentStartup({ cdp, origin, startedAt, checkAlive: check, navigationAudit: audit, navigationReads: true,
+      startup = await captureFirstDocumentStartup({ cdp, origin, startedAt, checkAlive: check, navigationAudit: audit, navigationReads: true, deadline, signal,
         runtimeUiTuple: { providerId: runtimeUiTuple.providerID, modelId: runtimeUiTuple.modelID, agent: 'builder' },
         isEventStreamReady: subscription.isReady,
         fetchCatalog: async () => { const result = await request('/api/provider'); return new Response(JSON.stringify(result.body), { status: result.status }); },
@@ -145,26 +162,31 @@ export async function launchReleaseStartup(artifact, profile, { setupOnly = fals
       assert.equal(sessions.status, 200); assert.ok(Array.isArray(sessions.body));
     }
     assert.equal(exceptions, 0, 'Renderer exception during production startup');
-    return { cdp, app, ui, check, request, startup, navigation, subscription: subscription.evidence, stop,
-      submit: async () => {
-        const before = await request('/api/session?directory=' + encodeURIComponent(profile.workspace) + '&roots=true&limit=50');
+    const uiForDeadline = (phaseDeadline, phaseSignal) => createQaUiDriver(cdp, { checkAlive: alive, timeoutMs: 60000, navigationReads: true, deadline: phaseDeadline, signal: phaseSignal });
+    const phaseRequest = (route, init, phaseDeadline) => releaseRendererRequest(cdp, route, init, { deadline: phaseDeadline ?? performance.now() + 30000, check: alive });
+    return { cdp, app, ui, uiForDeadline, check: alive, request: phaseRequest, startup, navigation, subscription: subscription.evidence, stop,
+      submit: async ({ deadline: submitDeadline, signal: submitSignal } = {}) => {
+        const submitCheck = () => { alive(); submitSignal?.throwIfAborted(); if (submitDeadline !== undefined) assert.ok(performance.now() < submitDeadline, 'Submission phase deadline expired'); };
+        const submitUi = submitDeadline === undefined ? createQaUiDriver(cdp, { checkAlive: alive, timeoutMs: 60000, navigationReads: true }) : uiForDeadline(submitDeadline, submitSignal);
+        const submitRequest = (route, init) => releaseRendererRequest(cdp, route, init, { deadline: submitDeadline ?? performance.now() + 30000, check: submitCheck });
+        const before = await submitRequest('/api/session?directory=' + encodeURIComponent(profile.workspace) + '&roots=true&limit=50');
         assert.equal(before.status, 200);
         const beforeIds = new Set(before.body.map(row => row.id));
-        await ui.click({ label: 'New Chat' });
+        await submitUi.click({ label: 'New Chat' });
         const calls = profile.provider.observations.length;
-        await ui.send('DevRyan live QA ready.');
-        await ui.waitVisibleText('DevRyan live QA ready.');
+        await submitUi.send('DevRyan live QA ready.');
+        await submitUi.waitVisibleText('DevRyan live QA ready.');
         const sessionID = await waitReleaseStartup('fixture completion and persisted session', async deadline => {
           if (profile.provider.observations.length <= calls) return null;
-          const result = await request('/api/session?directory=' + encodeURIComponent(profile.workspace) + '&roots=true&limit=50', undefined, deadline);
+          const result = await submitRequest('/api/session?directory=' + encodeURIComponent(profile.workspace) + '&roots=true&limit=50', undefined, deadline);
           assert.equal(result.status, 200);
           const session = result.body.find(row => !beforeIds.has(row.id));
           if (!session) return null;
-          const messages = await request(`/api/session/${encodeURIComponent(session.id)}/message?directory=${encodeURIComponent(profile.workspace)}`, undefined, deadline);
+          const messages = await submitRequest(`/api/session/${encodeURIComponent(session.id)}/message?directory=${encodeURIComponent(profile.workspace)}`, undefined, deadline);
           assert.equal(messages.status, 200);
           return messages.body.some(row => row.info?.role === 'assistant' && row.info?.time?.completed
             && row.parts?.some(part => part.type === 'text' && part.text.includes('DevRyan live QA ready.'))) ? session.id : null;
-        }, check);
+        }, submitCheck, 120000, submitDeadline);
         assert.equal(exceptions, 0);
         return sessionID;
       } };
@@ -181,12 +203,14 @@ export async function launchReleaseStartup(artifact, profile, { setupOnly = fals
   }
 }
 
-export async function verifyReleaseJournal(profile) {
+export async function verifyReleaseJournal(profile, { deadline, signal } = {}) {
+  const check = () => { signal?.throwIfAborted(); if (deadline !== undefined) assert.ok(performance.now() < deadline, 'Journal verification deadline expired'); };
+  check();
   const directory = path.join(profile.binding().descriptor.launch.webDataDirectory, 'harness/journal');
   const paths = await collectGapPaths(directory, { verify: true });
   assert.ok(paths.length, 'Release startup journal is missing');
   let records = 0, gaps = 0;
-  for await (const row of readRecordsFromPaths(paths)) { records++; if (row.type === 'gap') gaps++; }
+  for await (const row of readRecordsFromPaths(paths)) { check(); records++; if (row.type === 'gap') gaps++; }
   assert.ok(records > 0); assert.equal(gaps, 0, 'Release startup journal has gaps');
   return gaps;
 }

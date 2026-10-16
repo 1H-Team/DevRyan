@@ -749,7 +749,7 @@ describe('notification trigger runtime completion gating', () => {
       info: { parentID: 'user_plan_1' },
     }));
     await runtime.maybeSendPushForTrigger(createCompletionPayload({
-      info: { parentID: 'user_plan_1', finish: undefined, status: 'completed' },
+      info: { parentID: 'user_plan_1', finish: 'stop', status: 'completed' },
     }));
     await runtime.maybeSendPushForTrigger(createStatusPayload('busy'));
     await runtime.maybeSendPushForTrigger(createStatusPayload('idle'));
@@ -834,6 +834,19 @@ describe('notification trigger runtime completion gating', () => {
     expect(calls.desktop).toHaveLength(1);
     expect(calls.desktop[0].kind).toBe('plan-ready');
     expect(mocks.fetchSessionMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it('a partial positive instruction cache cannot grant a wholly synthetic canonical replacement parent', async () => {
+    const { runtime, calls, mocks } = createRuntime();
+    mocks.fetchSessionMessage.mockResolvedValue({
+      info: { id: 'user_plan_1', sessionID: 'ses_1', role: 'user', mode: 'plan' },
+      parts: [{ type: 'text', synthetic: true, text: 'Replace the draft.' }],
+    });
+    await completePlanSession(runtime);
+    expect(mocks.fetchSessionMessage).toHaveBeenCalledWith('ses_1', 'user_plan_1');
+    expect(calls.desktop.some(payload => payload.kind === 'plan-ready')).toBe(false);
+    expect(calls.ui.some(payload => payload.kind === 'plan-ready')).toBe(false);
+    expect(calls.push.some(payload => payload.data?.type === 'plan-ready')).toBe(false);
   });
 
   it.each([

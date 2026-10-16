@@ -5,6 +5,10 @@ import {Cause,Context,Effect,Exit,Layer,Option,Scope,Schema} from 'effect';
 import {LLM,LLMClient,Message,type LLMClientShape} from '@opencode/ai';
 import {llmClient} from '@opencode/core/effect/app-node-platform';
 import {Location} from '@opencode/core/location';
+import {LocationServiceMap} from '@opencode/core/location-service-map';
+import {LocationActivity} from '@opencode/core/location-activity';
+import {Plugin} from '@opencode/core/plugin';
+import {AbsolutePath} from '@opencode/schema/schema';
 import {Database} from '@opencode/core/database/database';
 import {ModelResolver} from '@opencode/core/model-resolver';
 import {Agent} from '@opencode/core/agent';
@@ -44,15 +48,27 @@ export function createControllerWebfetch(options:ControllerWebfetchOptions){
  const tmp=options.tmpDirectory;
  if(!path.isAbsolute(tmp)||path.resolve(tmp)!==tmp||tmp.includes('\0'))throw refuse('native_webfetch_tmp_invalid');
  let nativeLLM:{readonly value:LLMClientShape;active:boolean}|undefined;
+ let nativeLocations:{readonly value:Context.Service.Shape<typeof LocationServiceMap.Service>;active:boolean}|undefined;
  const entries=new Map<string,{readonly context:Context.Context<never>;readonly selection:SessionContext.Interface;readonly database:Database.Interface;readonly location:Location.Interface;readonly agents:Agent.Interface;readonly models:ModelResolver.Interface;active:boolean}>();
  const binaryDirectory=(directory:string)=>nativeWebfetchBinaryDirectory(tmp,directory);
+ const captureLlmClient=(value:LLMClientShape)=>Effect.gen(function*(){
+  if(nativeLLM?.active)return yield* Effect.die(refuse('native_webfetch_llm_duplicate'));
+  const captured={value,active:true};nativeLLM=captured;
+  yield* Effect.addFinalizer(()=>Effect.sync(()=>{captured.active=false;if(nativeLLM===captured)nativeLLM=undefined;}));
+  return value;
+ });
  const overrides=[
+  LocationActivity.node.replace(LocationActivity.node.mapLayer(layer=>Layer.fromBuild((memo,scope)=>Effect.gen(function*(){
+   const input=yield* Effect.context(),output=yield* Layer.buildWithMemoMap(layer,memo,scope);
+   const value=Option.getOrUndefined(Context.getOption(input,LocationServiceMap.Service));
+   if(!value)return yield* Effect.die(refuse('native_helper_location_map_unavailable'));
+   const captured={value,active:true};nativeLocations=captured;
+   yield* Effect.addFinalizer(()=>Effect.sync(()=>{captured.active=false;if(nativeLocations===captured)nativeLocations=undefined;})).pipe(Scope.provide(scope));
+   return output;
+  })))),
   llmClient.replace(llmClient.mapLayer(layer=>Layer.effect(LLMClient.Service,Effect.gen(function*(){
    const value=yield* LLMClient.Service;
-   if(nativeLLM?.active)return yield* Effect.die(refuse('native_webfetch_llm_duplicate'));
-   const captured={value,active:true};nativeLLM=captured;
-   yield* Effect.addFinalizer(()=>Effect.sync(()=>{captured.active=false;if(nativeLLM===captured)nativeLLM=undefined;}));
-   return value;
+   return yield* captureLlmClient(value);
   })).pipe(Layer.provide(layer)))),
   SessionContext.node.replace(SessionContext.node.mapLayer(layer=>Layer.fromBuild((memo,scope)=>Effect.gen(function*(){
    // Capture dependencies before Layer.provide narrows the context to only the
@@ -115,7 +131,7 @@ export function createControllerWebfetch(options:ControllerWebfetchOptions){
    },
   };
  };
- const generateHelper=async(input:NativeHelperInput,permit:OperationPermit,signal:AbortSignal,recheck:()=>Promise<void>)=>{
+ const generateReadyHelper=(input:NativeHelperInput,permit:OperationPermit,signal:AbortSignal,recheck:()=>Promise<void>)=>{
   const frozen=nativeHelperInput(input),entry=[...entries.values()].find(item=>item.location.directory===frozen.directory),llm=nativeLLM;
   if(!entry?.active||!llm?.active||!permit.sessionID)throw refuse('native_helper_location_expired');
   const check=async()=>{signal.throwIfAborted();if(!entry.active||!llm.active||nativeLLM!==llm)throw refuse('native_helper_location_expired');await recheck();signal.throwIfAborted();};
@@ -141,8 +157,25 @@ export function createControllerWebfetch(options:ControllerWebfetchOptions){
    if(Buffer.byteLength(response.text)>262144)return yield* Effect.die(refuse('native_helper_output_invalid'));
    return {text:response.text};
   });
-  const result=await Effect.runPromiseWith(entry.context)(Effect.exit(execute.pipe(Effect.provideService(OperationPermitRef,permit))),{signal});
-  if(Exit.isFailure(result))throw Cause.squash(result.cause);return result.value;
+  return execute.pipe(Effect.provide(entry.context),Effect.provideService(OperationPermitRef,permit));
  };
- return {overrides,ownersFor,binaryDirectory,generateHelper};
+ const generateHelper=async(input:NativeHelperInput,permit:OperationPermit,signal:AbortSignal,recheck:()=>Promise<void>)=>{
+  const frozen=nativeHelperInput(input),locations=nativeLocations;
+  signal.throwIfAborted();await recheck();signal.throwIfAborted();
+  if(!locations?.active)throw refuse('native_helper_location_expired');
+  // Acquire the original lazy location graph, retaining its Scope through
+  // provider settlement. Catalog readiness alone need not construct it.
+  // This never creates a persisted conversation to prime a Git/title helper.
+  const result=await Effect.runPromise(Effect.exit(Effect.scoped(Effect.gen(function*(){
+   yield* SessionContext.Service;yield* (yield* Plugin.Service).awaitActivation;
+   yield* Effect.promise(async()=>{signal.throwIfAborted();await recheck();signal.throwIfAborted();
+    if(!locations.active||nativeLocations!==locations)throw refuse('native_helper_location_expired');});
+   // One native Effect owns inference and its finalizers under the acquired
+   // location Scope; no nested JS promise can release Scope/ACK first.
+   return yield* generateReadyHelper(frozen,permit,signal,recheck);
+  }).pipe(Effect.provide(locations.value.get({directory:AbsolutePath.make(frozen.directory)}))))),{signal}).catch(error=>{signal.throwIfAborted();throw error;});
+  if(Exit.isFailure(result))throw signal.aborted?signal.reason:Cause.squash(result.cause);
+  signal.throwIfAborted();return result.value;
+ };
+ return {overrides,ownersFor,binaryDirectory,generateHelper,captureLlmClient};
 }

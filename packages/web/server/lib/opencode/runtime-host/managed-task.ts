@@ -4,22 +4,27 @@ import { Tool } from '@opencode/schema/tool';
 import type { ExecuteOwned } from './native-admission-contract.js';
 import type { RegistrationOrigin } from './registration-origin.js';
 import type { ExecutionRpc } from './worker-protocol.js';
+import { currentNativeAttemptIdentity } from './native-observation.js';
 
 export const MANAGED_TASK_PLUGIN_ID = 'devryan.managed-task';
 export const createManagedTaskInputSchema = (environment: Record<string, string | undefined> = process.env) => {
   const staticSchema = environment.DEVRYAN_CAPABILITY_TOOL_SCHEMA === '0';
+  const v2=staticSchema||environment.DEVRYAN_MANAGED_RESULT_CONTRACT_VERSION==='2';
   return Schema.Union([
   Schema.Struct({ action: Schema.Literal('start'), agent: Schema.String, prompt: Schema.String,
     label: Schema.optional(Schema.String), timeout_seconds: Schema.optional(Schema.Int), allow_duplicate: Schema.optional(Schema.Boolean),
     required_checks: Schema.optional(Schema.Array(Schema.Struct({ name: Schema.String, command: Schema.String, paths: Schema.Array(Schema.String) }))) }),
   Schema.Struct({ action: Schema.Literals(['status', 'wait']), task_id: Schema.String }),
   ...(staticSchema || environment.DEVRYAN_MANAGED_WAIT_ANY === '1' ? [
-    Schema.Struct({ action: Schema.Literal('wait_any'), task_ids: Schema.Array(Schema.String), after_cursor: Schema.optional(Schema.String) }),
+    v2?Schema.Struct({ action: Schema.Literal('wait_any'), task_ids: Schema.Array(Schema.String), after_cursor: Schema.optional(Schema.String), until:Schema.optional(Schema.Literal('settled')) })
+      :Schema.Struct({ action: Schema.Literal('wait_any'), task_ids: Schema.Array(Schema.String), after_cursor: Schema.optional(Schema.String) }),
   ] : []),
   Schema.Struct({ action: Schema.Literal('read_result'), task_id: Schema.String, result_cursor: Schema.String }),
+  ...(v2?[Schema.Struct({ action: Schema.Literal('read_result'), reads: Schema.Array(Schema.Struct({task_id:Schema.String,result_cursor:Schema.String})) })]:[]),
   Schema.Struct({ action: Schema.Literal('cancel'), task_id: Schema.String,
     reason: Schema.optional(Schema.String), cascade: Schema.optional(Schema.Boolean) }),
   Schema.Struct({ action: Schema.Literals(['continue', 'abandon']), task_id: Schema.String }),
+  ...(v2?[Schema.Struct({ action: Schema.Literal('continue'), task_ids:Schema.Array(Schema.String) })]:[]),
   Schema.Struct({ action: Schema.Literals(['retry', 'resume']), task_id: Schema.String, agent: Schema.optional(Schema.String),
     prompt: Schema.optional(Schema.String), label: Schema.optional(Schema.String), timeout_seconds: Schema.optional(Schema.Int) }),
   Schema.Struct({ action: Schema.Literal('plan_read') }),
@@ -38,7 +43,7 @@ export const managedTaskInputSchema = createManagedTaskInputSchema({ DEVRYAN_CAP
 // supplies its authority and sends it to the existing managed scheduler.
 export const managedTaskPlugin = Plugin.define({ id: MANAGED_TASK_PLUGIN_ID,
   effect: ({ tool }) => tool.transform(editor => editor.add({ name: 'devryan_task', input: createManagedTaskInputSchema(),
-    description: 'Manage saved-model specialists and the selected Implement plan. Start independent work without an artificial concurrency cap. Use only advertised actions; waits stay attached through bounded host slices; status is nonblocking. Collect a terminal result before disposition. read_result uses each next cursor in order; required retained detail must be read before continue/retry/resume/abandon. Completed results accept only continue. Manual or scheduled Model Recovery stays unacknowledged. Required checks need real current content and exit receipts; collection never implies verification. Builder can only read or update its selected saved plan using plan_read/plan_update with expected_version and full text.',
+    description: 'Manage saved-model specialists and the selected Implement plan. Start independent work without an artificial concurrency cap. Use only advertised actions; waits stay attached through bounded host slices; status is nonblocking. V2 wait_any accepts until settled; read_result batches exact task/cursor pairs in reads; continue accepts exact task_ids and returns committed/failed/notProcessed. Collect terminal results and read required metadata/report pages in order. Disposition requires a later assistant Step than the last needed published page; never combine wait/read_result and disposition in one Step. Completed results accept only continue. Manual or scheduled Model Recovery stays unacknowledged. Required checks need real current content and exit receipts; collection never implies verification. Builder can only read or update its selected saved plan using plan_read/plan_update with expected_version and full text.',
     options: { codemode: false }, execute: () => Effect.fail(new Tool.Error({ message: 'managed_task_host_required' })) })),
 });
 
@@ -65,8 +70,11 @@ function waitFinished(input: Schema.Schema.Type<typeof managedTaskInputSchema>, 
     || !Array.isArray(result.readyTaskIds) || !Array.isArray(result.attention) || !Array.isArray(result.pendingTaskIds)
     || result.settled !== (result.pendingTaskIds.length === 0)
     || result.schemaVersion === 2 && !Array.isArray(result.changedTaskIds)) throw new Error('native_task_wait_response_invalid');
-  return result.settled || (result.schemaVersion === 2
-    ? Array.isArray(result.changedTaskIds) && result.changedTaskIds.length > 0
+  const changedTaskIds = Array.isArray(result.changedTaskIds) ? result.changedTaskIds : [];
+  const changedAttention = result.schemaVersion === 2
+    ? result.attention.some(value => record(value) && changedTaskIds.includes(value.taskId)) : result.attention.length > 0;
+  return result.settled || ('until' in input&&input.until==='settled'?changedAttention:result.schemaVersion === 2
+    ? changedTaskIds.length > 0
     : result.readyTaskIds.length > 0 || result.attention.length > 0);
 }
 
@@ -89,9 +97,11 @@ export function withManagedTaskExecution(options: { readonly origin: Registratio
           provenance: invocation.provenance, input: invocation.input } };
       for (;;) {
         yield* invocation.recheckPermit();
+        const nativeAttempt=yield* currentNativeAttemptIdentity;
         const result = yield* Effect.tryPromise({ try: signal => options.rpc('native.managed-task', {
           directory: invocation.location.directory, sessionID: invocation.nativeContext.sessionID, messageID: invocation.nativeContext.messageID,
           callID: invocation.nativeContext.id, tool: invocation.toolID, input, permit: invocation.existingPermit, authorization,
+          ...(nativeAttempt?{nativeAttempt}:{}),
         }, { signal }), catch: error => new Tool.Error({ message: error instanceof Error ? error.message : 'managed_task_failed' }) });
         yield* invocation.recheckPermit();
         const finished = yield* Effect.try({ try: () => waitFinished(input, result, invocation.nativeContext.sessionID, invocation.location.directory),

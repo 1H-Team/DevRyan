@@ -496,7 +496,7 @@ const run = async (file, args = [], { timeoutMs = 15_000 } = {}) => {
 
 const runOptional = (file, args, options) => run(file, args, options).catch(() => '');
 
-const collectFootprint = async (pids, jsonPath) => {
+export const collectFootprint = async (pids, jsonPath) => {
   if (pids.length === 0) return new Map();
   const args = ['-j', jsonPath];
   for (const pid of pids.slice(0, MAX_FOOTPRINT_PIDS)) args.push('-p', String(pid));

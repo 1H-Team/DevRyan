@@ -70,6 +70,27 @@ describe('isIsolatedUiTestSource', () => {
 });
 
 describe('test file discovery', () => {
+  test('keeps the requested Git root and normal nested tests while excluding descendant checkouts', () => {
+    mkdirSync(new URL('.cache/test-fixtures/', repoRoot), { recursive: true });
+    const root = mkdtempSync(fileURLToPath(new URL('.cache/test-fixtures/test-discovery-', repoRoot)));
+    try {
+      mkdirSync(path.join(root, '.git'));
+      mkdirSync(path.join(root, 'tests/nested'), { recursive: true });
+      mkdirSync(path.join(root, 'nested-checkout/.git'), { recursive: true });
+      mkdirSync(path.join(root, 'nested-worktree/tests'), { recursive: true });
+      writeFileSync(path.join(root, '.git/metadata.test.mjs'), '');
+      writeFileSync(path.join(root, 'root.test.mjs'), '');
+      writeFileSync(path.join(root, 'tests/nested/ordinary.test.mjs'), '');
+      writeFileSync(path.join(root, 'nested-checkout/foreign.test.mjs'), '');
+      writeFileSync(path.join(root, 'nested-worktree/.git'), 'gitdir: /unused/fixture-only\n');
+      writeFileSync(path.join(root, 'nested-worktree/tests/foreign.test.mjs'), '');
+
+      assert.deepEqual(discoverTestFiles(root, root), ['root.test.mjs', 'tests/nested/ordinary.test.mjs']);
+      assert.deepEqual(discoverTestFiles(path.join(root, 'nested-worktree'), root), ['nested-worktree/tests/foreign.test.mjs'],
+        'An explicitly selected checkout remains its own test root');
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
   test('discovers nested test files relative to the package root', () => {
     const root = mkdtempSync(path.join(os.tmpdir(), 'devryan-tests-'));
     try {
@@ -245,10 +266,10 @@ describe('release workflow', () => {
     assert.ok(migrationStep < releaseStep, 'database migrations must run immediately before release publication');
     assert.match(job, /uses: supabase\/setup-cli@v1/);
     assert.match(job, /version: 2\.115\.0/);
-    assert.match(workflow, /RELEASE_DRY_RUN: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.dry_run == true \}\}/);
+    assert.equal(YAML.parse(workflow).env.RELEASE_DRY_RUN, "${{ github.event_name == 'workflow_dispatch' && (inputs.dry_run == true || inputs.candidate == true) }}");
     assert.match(
       job.slice(migrationStep, releaseStep),
-      /^- name: Deploy and verify Supabase configuration and migrations\n        if: \$\{\{ env\.RELEASE_DRY_RUN != 'true' && env\.RELEASE_BOT_INPUTS_ONLY != 'true' \}\}/,
+      /^- name: Deploy and verify Supabase configuration and migrations\n        if: \$\{\{ needs\.create-release\.outputs\.published_noop != 'true' && env\.RELEASE_DRY_RUN != 'true' && env\.RELEASE_BOT_INPUTS_ONLY != 'true' \}\}/,
     );
     assert.match(job, /SUPABASE_ACCESS_TOKEN: \$\{\{ secrets\.SUPABASE_ACCESS_TOKEN \}\}/);
     assert.match(job, /SUPABASE_DB_PASSWORD: \$\{\{ secrets\.SUPABASE_DB_PASSWORD \}\}/);
@@ -278,23 +299,42 @@ describe('release workflow', () => {
     );
   });
 
-  test('keeps every pre-final GitHub Release upload in draft state', () => {
-    const workflow = readFileSync(new URL('.github/workflows/release.yml', repoRoot), 'utf8');
-    const finalPublish = workflow.indexOf('- name: Publish release');
-    assert.notEqual(finalPublish, -1, 'final release publication step not found');
-
-    const preFinalWorkflow = workflow.slice(0, finalPublish);
-    for (const stepName of [
-      'Create GitHub Release',
-      'Upload npm tarball to release',
-      'Upload DMG to release',
-    ]) {
-      const step = preFinalWorkflow.match(new RegExp(
-        `- name: ${stepName.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}\\n(?<body>[\\s\\S]*?)(?:\\n      - name: |$)`,
-      ));
-      assert.ok(step?.groups?.body, `${stepName} step not found`);
-      assert.match(step.groups.body, /draft: true/, `${stepName} must preserve the draft release`);
+  test('uses one admitted release owner for draft uploads and final publication', () => {
+    const source = readFileSync(new URL('.github/workflows/release.yml', repoRoot), 'utf8');
+    const workflow = YAML.parse(source);
+    const operations = Object.entries(workflow.jobs).flatMap(([job, value]) => value.steps
+      .filter((step) => step.env?.RELEASE_OPERATION)
+      .map((step) => ({ job, step })));
+    const admissions = operations.filter(({ step }) => step.env.RELEASE_OPERATION === 'source-admit');
+    const finalizers = operations.filter(({ step }) => step.env.RELEASE_OPERATION === 'release-finalize');
+    assert.equal(admissions.length, 1, 'source must have one admission owner');
+    assert.equal(admissions[0].job, 'create-release');
+    assert.equal(admissions[0].step.run, 'node scripts/release-ci.mjs');
+    assert.equal(finalizers.length, 1, 'release must have one finalization owner');
+    const { job, step } = finalizers[0];
+    assert.equal(job, 'finalize-release');
+    assert.equal(step.run, 'node scripts/release-ci.mjs');
+    assert.equal(step.env.RELEASE_ID, '${{ needs.create-release.outputs.release_id }}');
+    assert.equal(step.env.RELEASE_SCOPE, '${{ needs.create-release.outputs.scope }}');
+    assert.equal(step.env.RELEASE_ASSET_DIRECTORY, 'release-assets');
+    assert.equal(step.env.RELEASE_SMOKE_RECEIPT, 'release-smoke/final-dmg-smoke.json');
+    assert.equal(step.env.RELEASE_DEPLOYMENT_VERIFIED, 'true');
+    for (const guard of ["needs.create-release.outputs.published_noop != 'true'", "env.RELEASE_DRY_RUN != 'true'", "env.RELEASE_BOT_INPUTS_ONLY != 'true'"]) {
+      assert.ok(step.if.includes(guard), `finalization must fence ${guard}`);
     }
+    assert.doesNotMatch(source, /softprops\/action-gh-release|gh release (?:create|upload|edit)|RELEASE_OPERATION: release-upload/,
+      'workflow steps must not bypass the admitted draft upload/finalization owner');
+    const owner = readFileSync(new URL('scripts/release-publication.mjs', repoRoot), 'utf8');
+    assert.match(owner, /if \(!release\.draft\) \{ const proof = await verifyPublishedFinalization/);
+    assert.match(owner, /assertAdmittedRelease\(release, identity\);/);
+    assert.match(owner, /Conflicting asset bytes cannot be replaced/);
+    assert.match(owner, /if \(current\.some\(row => row\.name === local\.name\)\) continue/);
+    assert.ok(owner.indexOf('assertAdmittedRelease(release, identity);', owner.indexOf('for (const local of staged)'))
+      < owner.indexOf('https://uploads.github.com/'), 'each upload must recheck the admitted draft before writing');
+    const proof = workflow.jobs[job].steps.find((entry) => entry.name === 'Retain original finalization and deployment proof');
+    assert.equal(proof?.uses, 'actions/upload-artifact@v4');
+    assert.equal(proof.with.path, 'artifacts/finalization.json');
+    assert.equal(proof.with['retention-days'], 90);
   });
 
   test('installs Electron macOS optional dependencies for runner and package target architectures', () => {

@@ -1,10 +1,66 @@
 # Managed Orchestration Runtime
 
+`tool-output-limits.js` owns explicit native defaults (51,200 bytes / 2,000 lines) and the model result cap: the smaller of 48 KiB or the reviewed native byte limit minus 2 KiB. Model projections measure minified UTF-8 JSON after escaping. Report pages reuse v1 cursors and shorten only at code-point boundaries; duplicate task payload fields may be suppressed only when equal to the same retained envelope. Required envelope and header references remain intact. Unpageable metadata fails explicitly. Canonical task records are never shortened.
+
+`plan-mode-instructions.js` owns the static planning format shared by reviewed visible primary instruction prefixes and Cursor's primary instructions. Turn metadata carries a short presentation marker. The marker does not grant write permission or prove that a plan completed successfully.
+
 ## Purpose
 
 This package is the single policy owner for DevRyan-managed sub-agent work. It is deliberately separate from OpenCode/provider-native task events, which remain observational and are never admitted, counted, or cancelled by this runtime.
 
 ## Contract boundary
+
+Mandatory persistence retains its serialized owner until the actual save settles.
+Its independent watchdog reports one content-free `managed_persistence_stalled`
+attention observation at the existing task deadline or after five minutes without
+completed owner I/O. Completed write, sync, rename and final ownership-check
+boundaries renew idle time; queued/finalizing labels, started phases and repeated
+completions do not. A settled follow-up carries the same owner identity. These
+observations never complete, cancel, retry or acknowledge a task. During a pending
+save, public task/envelope/snapshot readers reuse the last committed projection;
+internal locked lease grants still inspect live state. Waiters remain withheld
+until durable task and envelope publication succeeds. No maps are cloned on
+ordinary serialized reads or progress callbacks.
+
+The native prompt-context constructor supplies a readonly dispatch-barrier reader
+while its exact root/directory lock is held. It repeats the captured admission
+check and removal fence, expires when the action ends, and changes no task or
+result state. This lets fresh Plan implementation validation inspect the same
+authoritative barrier without queuing behind its own prompt-admission lock.
+
+Native managed turns advertise a frozen `resultContractVersion: 2`. Existing
+scalar v1 actions and report cursors remain compatible. V2 adds exact task sets
+to `wait_any` with optional `until: "settled"`; this wakes on terminal settlement
+or attention/recovery while default waits still wake on their first change.
+Batch `read_result` uses exact task/cursor pairs, and bulk `continue` returns
+ordered `committed`, `failed` and `notProcessed` receipts.
+
+`managed-result-sections.js` pages oversized metadata and required references
+within the escaped minified response cap. Its typed metadata cursor binds the
+retained task, envelope and metadata digest; report cursors keep their v1 format.
+Both sections stop at code-point boundaries and preserve canonical records.
+Changed metadata invalidates its cursor. No required reference is silently
+removed or represented as truncated metadata.
+
+V2 projection and metadata/report reads may use up to 24 KiB per page. The
+existing fitter shrinks that ceiling against the complete escaped JSON reply,
+including fixed metadata, other batch rows and framing. V1 defaults remain
+8 KiB, and native collection derives its ceiling from the constructor-owned
+result contract rather than a returned version flag. This reduces transport
+volume for the measured two-result fixture; latency qualification remains unmet.
+See the [page evaluation](../../docs/audits/2026-10-15/managed-result-page-evaluation/README.md).
+
+Acknowledgement accepts a constructor-only final authorization callback and a
+durable acknowledgement identity. Duplicate acknowledgement succeeds only for
+the same action and identity, including recollection from a later authorized
+Step. Scheduler submission likewise repeats constructor authorization before
+reservation and durable insertion.
+
+After a submission commits, a failed launch-admission save returns the retained
+queued task rather than refusing admitted work. The existing admission retry
+timer gets one bounded retry; task deadlines and ownership still apply. Earlier
+durable admissions in the same pump launch after lock release, even if a later
+sibling save fails, provided their exact starting lease is still current.
 
 `scheduler.submit(input, { signal })` optionally accepts a local cancellation
 signal. It checks that signal before initialization, after entering the serialized
@@ -27,7 +83,7 @@ Queued work must survive application restart, so the private durable record incl
 
 `deriveXaiDuplicateToolOverrides(catalog)` removes no capability by inference: an MCP-prefixed Grok tool is disabled only when its canonical ID is simultaneously present with the same normalized description and stable parameter schema. `createXaiToolCatalogCache()` retains those results for 15 minutes under exact directory/provider/model keys; missing, expired, malformed, or unequal evidence fails open. Web/Electron populate their host-local caches outside prompt dispatch.
 
-`projectManagedTaskResult(...)`, `projectManagedResultEnvelope(...)`, and `readManagedResultReference(...)` provide an ephemeral private-RPC view without changing task or envelope records. Eager is the compatibility default. Reference mode leaves previews through 8,192 UTF-8 bytes unchanged; larger matching task/envelope payloads retain failure, disposition, recovery, and canonical-reference metadata inline while replacing both preview copies with one first-page `resultReference`. Pages are at most 8,192 UTF-8 bytes, stop only at Unicode code-point boundaries, and use a bounded versioned stateless cursor containing task/envelope identity plus validated string and byte offsets. A payload mismatch stays fully eager so projection cannot hide a contract violation.
+`projectManagedTaskResult(...)`, `projectManagedResultEnvelope(...)`, and `readManagedResultReference(...)` provide an ephemeral private-RPC view without changing task or envelope records. Eager is the compatibility default. V1 reference mode leaves previews through 8,192 UTF-8 bytes unchanged; larger matching task/envelope payloads retain failure, disposition, recovery, and canonical-reference metadata inline while replacing both preview copies with one first-page `resultReference`. V1 pages are at most 8,192 UTF-8 bytes, stop only at Unicode code-point boundaries, and use a bounded versioned stateless cursor containing task/envelope identity plus validated string and byte offsets. V2 uses these same cursors with its separately bounded page ceiling. A payload mismatch stays fully eager so projection cannot hide a contract violation.
 
 ## First assistant activity
 
@@ -57,6 +113,12 @@ not change task outcomes. Progress fields and wire formats remain compatible.
 ## Scheduler policy
 
 `createManagedTaskScheduler()` serializes every ledger mutation and immediately admits every eligible queued task without imposing an artificial concurrency cap. Queue sequence remains monotonic across the runtime and recovered queued work launches in deterministic order. Idempotency is scoped by root session and key.
+
+The optional `onMutationTiming` observer reports queue wait, exclusive
+hold time and outcome after each mutation settles. Observer failures do not
+alter transactions; returned rejected promises are contained without awaiting
+them, as with persistence observations. These elapsed measurements confer no execution authority or
+watchdog health exemption. The web orchestration owner forwards the same hook.
 
 Designer owns visual/UX implementation, including approved plans and fully specified appearances; Fixer owns behavior under an unchanged presentation. Compact provider contracts preserve this boundary and reserve Designer routing feedback for behavior-only assignments. Designer is implementation-only. The scheduler rejects every new `readOnly + designer` start or recovery with `MANAGED_READ_ONLY_AGENT_UNSUPPORTED`; read-only Explorer and other planning specialists remain eligible. The guard runs after idempotent replay lookup but before persistence or publication, so historical ledger records remain loadable while no new plan-mode Designer execution can begin.
 
@@ -219,6 +281,18 @@ The scheduler itself imposes no concurrency cap. A host may supply `admitLaunch(
 OpenCode ends a turn without a final answer when the user rejects a permission or a question: the last assistant step has `finish: 'tool-calls'`, every tool is settled and the session is idle. Such a child never continues on its own, and its task used to run until its deadline (60 minutes for Designer and Fixer) while the parent waited. `open-code-executor.js` reports it after the same stopped step has been observed for 30 seconds (`MANAGED_STOPPED_HANDOFF_MS`): a `failed`, resumable result, `partial` when earlier work is useful, with the reason "a tool permission or question was rejected" when the step carries that rejection. A busy status, an in-flight tool, a pending continuation or newer user input keep it waiting. `DEVRYAN_MANAGED_STOPPED_HANDOFF=0` restores the previous behaviour.
 
 ## Persistence bounds
+
+Retry/resume follow-up creation and its source result acknowledgement share one
+durable scheduler transaction. Failed writes or final authorization roll both
+back; launches occur only after that commit. Repeated acknowledgement returns
+the same linked child even with a different retry idempotency key. V2 settled
+waits respect their cursor through scheduler, native owner and executor: only
+attention intersecting `changedTaskIds` or full selection settlement returns
+control to the model. An unchanged parked child with a running sibling remains
+attached across bounded private slices. Scalar v1 ready/attention behavior stays
+unchanged. The composed regression is in
+`packages/web/server/lib/opencode/runtime-host/managed-task-attached.test.js`.
+Focused proof: [managed results and Plan cleanup](../../docs/audits/2026-10-14/managed-results-plan-cleanup.json).
 
 Owner adapters provide atomic `load()` and `save()` operations. Legacy records missing `dispatchGroupId` or `dispatchWaveId` hydrate to `null`, and records predating plan-mode task policy hydrate with `readOnly: false`, before validation so upgrades do not quarantine historical ledgers or lock old results. Before every save, the core removes the oldest unreferenced terminal history to enforce 2,000 terminal records, 14 days, and 20 MiB of UTF-8 serialized state. Every task transition clones, validates and serializes the whole ledger, so its size is a per-transition cost; 90 days of history had reached 1,670 records and the 20 MiB cap. Each successfully persisted removal is published before the task event whose commit caused it, and a task removed by its own terminal commit is not republished. This lets long-lived renderers release the same projection without polling or retaining tombstones. Nonterminal work, auto-resuming results, unacknowledged grouped results of an active conversation, and retained attempt lineage are never compacted; new work is rejected honestly when protected state alone cannot fit the byte boundary. A conversation is active while it has unfinished work or while any of its tasks or results changed within the age bound; an unacknowledged result in a conversation idle for longer ages out like other history (`expireUnacknowledged: false`, or `DEVRYAN_ORCHESTRATION_UNACKNOWLEDGED_EXPIRY=0` in the scheduler, keeps it until collected).
 

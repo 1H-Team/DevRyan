@@ -3,7 +3,7 @@ import { PersistentPty } from '@opencode/core/persistent-pty';
 import type { LayerNode } from '@opencode/util/effect/layer-node';
 import { AppProcess } from '@opencode/util/process';
 import { Duration, Effect, Layer, Schema, Stream } from 'effect';
-import { ChildProcessSpawner } from 'effect/unstable/process';
+import { ChildProcessSpawner } from 'effect/process';
 import { HostRefusal, refuseHost } from './host-refusal.js';
 import type { ExecutionRpc } from './worker-protocol.js';
 import { TerminationReceipt } from './worker-protocol.js';

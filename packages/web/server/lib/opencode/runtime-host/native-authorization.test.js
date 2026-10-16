@@ -210,3 +210,29 @@ test('detached managed catalog issuer verifies root owner without granting a pub
  for(const invalid of [{parentID:'ses_other'},{revert:{messageID:'msg_old'}},{time:{archived:1}}])await expect(authorization.captureManagedCatalogAuthorization({...session,...invalid})).rejects.toMatchObject({code:'native_managed_catalog_scope_invalid'});
  allowed=false;await expect(check()).rejects.toMatchObject({code:'native_session_access_revoked'});
 }));
+
+test('configured helper authorization binds the exact saved revision and keeps active fallback canonical', () => fixture(async directory => {
+  let settings = { helperModelSelection: { providerID: 'opencode', modelID: 'flash', revision: 'one' } }, allowed = true;
+  const session = { id: 'ses_owned', directory, model: { providerID: 'anthropic', id: 'active', variant: 'high' } };
+  const authorization = createNativeAuthorization({ locations: [{ directory }], manifest, getRequestPrincipal: () => ({ scope: 'managed', id: 'alice', appSessionId: 'login' }),
+    getMultiUserRuntime: () => ({ enabled: true, resolveSessionPlanContext: async () => allowed ? { directory } : null,
+      resolveCurrentNativeOperationContext: async () => allowed ? { directory } : null,
+      resolveNativeHelperSettings: async () => settings }) });
+  const configured = await authorization.captureHelperSelection({ directory, sessionID: session.id, agent: 'devryan-title', selectionMode: 'configured' }, session);
+  expect(configured.selection).toEqual(settings.helperModelSelection);
+  expect(configured.selection).not.toHaveProperty('variant');
+  await configured.recheck();
+  settings = { helperModelSelection: { ...settings.helperModelSelection, revision: 'two' } };
+  await expect(configured.recheck()).rejects.toMatchObject({ code: 'native_helper_selection_changed' });
+  const active = await authorization.captureHelperSelection({ directory, sessionID: session.id, agent: 'devryan-pr', selectionMode: 'active' }, session);
+  expect(active.selection).toEqual({ providerID: 'anthropic', modelID: 'active', revision: 'active-session' });
+  expect(session.model.variant).toBe('high');
+  settings = null;
+  await expect(authorization.captureHelperSelection({ directory, sessionID: session.id, agent: 'devryan-pr', selectionMode: 'configured' }, session))
+    .rejects.toMatchObject({ code: 'native_helper_settings_unavailable', statusCode: 503 });
+  settings = { helperModelSelection: { providerID: 'opencode', modelID: 'flash' } };
+  await expect(authorization.captureHelperSelection({ directory, sessionID: session.id, agent: 'devryan-pr', selectionMode: 'configured' }, session))
+    .rejects.toMatchObject({ code: 'native_helper_selection_invalid', statusCode: 400 });
+  allowed = false;
+  await expect(active.recheck()).rejects.toMatchObject({ code: 'native_session_access_revoked' });
+}));

@@ -17,6 +17,7 @@ import { openChangeStore, changeKey } from '../../packages/harness-runtime/lib/s
 import { readSessionExecutionReceipt } from '../../packages/harness-runtime/lib/session-execution.js';
 import { runQaMatrix } from './matrix-runner.mjs';
 import { TARGET_OPENCODE_VERSION } from '../../packages/web/server/lib/opencode/version-policy.js';
+import { parseHelperModelSelection } from '../../packages/shared-runtime/lib/helper-model-selection.js';
 
 const repository = fileURLToPath(new URL('../../', import.meta.url)).replace(/\/$/, '');
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -46,7 +47,8 @@ export function runtimeUiAgentOverrides() {
   return overrides;
 }
 
-export function runtimeUiConfiguration(baseURL) {
+export function runtimeUiConfiguration(baseURL, { modelContext = 32768 } = {}) {
+  assert.ok(Number.isSafeInteger(modelContext) && modelContext >= 32768 && modelContext <= 262144);
   const url = new URL(baseURL);
   if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || !url.port || url.pathname !== '/v1'
     || url.search || url.hash || url.username || url.password) throw fail('qa_runtime_fixture_origin_invalid');
@@ -54,7 +56,7 @@ export function runtimeUiConfiguration(baseURL) {
   return { model, small_model: model, default_agent: 'builder', plugin: [], mcp: {}, snapshot: false, lsp: false,
     enabled_providers: [runtimeUiTuple.providerID], permission: 'allow', provider: { [runtimeUiTuple.providerID]: {
       npm: '@ai-sdk/openai-compatible', name: 'Synthetic actual-backend UI model', options: { baseURL, apiKey: '' },
-      models: { [runtimeUiTuple.modelID]: { name: 'Synthetic UI', tool_call: true, limit: { context: 32768, output: 4096 },
+      models: { [runtimeUiTuple.modelID]: { name: 'Synthetic UI', tool_call: true, limit: { context: modelContext, output: 4096 },
         variants: { high: { temperature: 0 } } } },
     } }, agent: { ...Object.fromEntries(['builder', 'orchestrator'].map(name => [name, { mode: 'primary',
       description: `Synthetic ${name}`, prompt: 'Follow only the isolated QA request.', model, variant: 'high' }])), title: { disable: true } } };
@@ -66,6 +68,8 @@ export function runtimeUiNativeConfiguration(legacy, catalogProviders = {}) {
   const declared = createHttpProviderConfiguration(legacy.provider['devryan-smoke'].options.baseURL);
   native.providers = { ...declared.providers, ...nativeProviderConfigurations(catalogProviders) };
   delete native.providers['devryan-smoke'].models['gpt-5-native-smoke'];
+  const context = legacy.provider['devryan-smoke'].models['smoke-write'].limit.context;
+  if (context !== 32768) native.providers['devryan-smoke'].models['smoke-write'].limit = { context, input: context - 4096, output: 4096 };
   native.providers['devryan-smoke'].models['smoke-write'].variants = [{ id: 'high', settings: { temperature: 0 } }];
   return native;
 }
@@ -101,10 +105,12 @@ export function createRuntimeUiResponder({ generation, directory }) {
 
 /** Original bounded HTTP provider packets, paced only at the owned loopback
  * transport so the actual runtime/UI can observe cancellation and reconnect. */
-export async function createRuntimeUiProvider({ generation, directory, packetDelayMs = 80 }) {
+export async function createRuntimeUiProvider({ generation, directory, packetDelayMs = 80, fixtureResponder, truncateFixtureReply }) {
+  if (fixtureResponder !== undefined) assert.equal(typeof fixtureResponder, 'function');
+  if (truncateFixtureReply !== undefined) assert.equal(typeof truncateFixtureReply, 'function');
   assert.ok(Number.isSafeInteger(packetDelayMs) && packetDelayMs >= 0 && packetDelayMs <= 500);
   const observations = [], active = new Set(), sockets = new Set(); let failure;
-  const original = await createHttpProvider({ responder: createRuntimeUiResponder({ generation, directory }),
+  const original = await createHttpProvider({ responder: fixtureResponder ?? createRuntimeUiResponder({ generation, directory }),
     maxRequests: 64, onRequest: row => observations.push({ ...row }) });
   const server = createServer(async (request, response) => {
     const controller = new AbortController(); active.add(controller);
@@ -121,7 +127,9 @@ export async function createRuntimeUiProvider({ generation, directory, packetDel
       if (!upstream.ok) throw fail('qa_runtime_fixture_provider_failed');
       const output = await upstream.text(); if (Buffer.byteLength(output) > 1024 * 1024) throw fail('qa_runtime_fixture_output_bound');
       response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store' });
+      const cut = truncateFixtureReply?.(JSON.parse(Buffer.concat(chunks).toString('utf8')), output) === true;
       for (const packet of output.split('\n\n').filter(Boolean)) {
+        if (cut && (packet.includes('\"finish_reason\":\"stop\"') || packet === 'data: [DONE]')) continue;
         if (controller.signal.aborted) break;
         response.write(packet + '\n\n');
         if (packetDelayMs) await pause(packetDelayMs);
@@ -207,18 +215,21 @@ export function runtimeUiBundleLayout(runtimeRoot, startupUpgrade = false) {
   } };
 }
 
-export async function prepareRuntimeUiProfile({ cell, runtimeRoot, workspace, targetGeneration, artifactRoot, startupUpgrade = false, catalogProviders, legacyOpenAiBrowser = false }) {
+export async function prepareRuntimeUiProfile({ cell, runtimeRoot, workspace, targetGeneration, artifactRoot, startupUpgrade = false, catalogProviders, legacyOpenAiBrowser = false, fixtureResponder, packetDelayMs, modelContext, truncateFixtureReply, helperModelSelection }) {
   assert.equal(targetGeneration, 2);
   assert.equal(cell.transport, 'runtime-fixture');
+  const helper = parseHelperModelSelection(helperModelSelection);
+  if (helperModelSelection !== undefined && (!helper || helper.providerID !== runtimeUiTuple.providerID
+    || helper.modelID !== runtimeUiTuple.modelID)) throw fail('qa_runtime_fixture_helper_selection_invalid');
   const layout = runtimeUiBundleLayout(runtimeRoot, startupUpgrade);
   await ownedFutureDirectory(runtimeRoot); await ownedFutureDirectory(workspace);
   if (await fs.realpath(workspace) !== workspace || !path.isAbsolute(artifactRoot ?? '')
     || !inside(path.join(repository, '.cache'), artifactRoot) || await fs.realpath(artifactRoot) !== artifactRoot) throw fail('qa_runtime_fixture_path_invalid');
   await fs.mkdir(runtimeRoot, { recursive: true, mode: 0o700 });
-  const provider = await createRuntimeUiProvider({ generation: targetGeneration, directory: workspace });
+  const provider = await createRuntimeUiProvider({ generation: targetGeneration, directory: workspace, fixtureResponder, packetDelayMs, truncateFixtureReply });
   try {
     const sourceHome = path.join(runtimeRoot, 'mirror'); await fs.mkdir(sourceHome);
-    const legacy = runtimeUiConfiguration(provider.baseURL), native = runtimeUiNativeConfiguration(legacy, catalogProviders);
+    const legacy = runtimeUiConfiguration(provider.baseURL, { modelContext }), native = runtimeUiNativeConfiguration(legacy, catalogProviders);
     const primaryAgents = ['builder', 'orchestrator'];
     const agentOverrides = runtimeUiAgentOverrides();
     const pinnedAgents = Object.fromEntries(Object.entries(agentOverrides).map(([name, value]) => [name, { model: value.model, variant: value.variant }]));
@@ -229,6 +240,7 @@ export async function prepareRuntimeUiProfile({ cell, runtimeRoot, workspace, ta
       'opencode/.openchamber/config.json': JSON.stringify({ agentOverrides }),
       'web/settings.json': JSON.stringify({ lastDirectory: workspace, activeProjectId: 'qa-project',
         defaultModel: legacy.model, defaultAgent: 'builder',
+        ...(helper ? { helperModelSelection: helper } : {}),
         agentModelSelections: Object.fromEntries(primaryAgents.map(name => [name, { providerId: runtimeUiTuple.providerID,
           modelId: runtimeUiTuple.modelID, variant: runtimeUiTuple.variant }])),
         projects: [{ id: 'qa-project', path: workspace, label: 'Synthetic actual backend' }], showReasoningTraces: true,

@@ -52,6 +52,7 @@ DevRyan provides web and Electron interfaces to OpenCode over HTTP and SSE. This
 - For reported runtime issues (stuck sessions, failed prompts, abort/stream/sync anomalies, worktree or evidence lifecycle), inspect the diagnostic journal before forming a code-only theory. Resolve Error Log UUIDs through the administrator detail API first, then correlate session and call/tool/message/task IDs; run the journal gap check before concluding.
 - Use [runtime verification](docs/AGENT_RUNTIME_VERIFICATION.md) for journal commands, retention limits, the password-free agent-test accounts, and isolated verification-server setup. Report missing or expired evidence explicitly.
 - Keep live verification isolated from the user's running app and data. Do not stop their runtime or Docker Engine to satisfy a test.
+- The owner has standing authorization for paid agents-only QA using V1 / QA1 and its saved sign-ins. Do not request repeated QA approval or owner-link clicks. Complete the existing isolated owner sign-in through computer use on the owner's behalf; retain per-instance admission, qualification checks and memory-only credentials. This standing authorization supersedes older manual-click-only guidance, not authentication or source/artifact checks.
 
 ## Release invariants
 

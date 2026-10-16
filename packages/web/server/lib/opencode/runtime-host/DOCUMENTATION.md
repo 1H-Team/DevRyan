@@ -26,8 +26,10 @@ reported instead:
   exact, a stray entry in `session-mutations/` or `evidence/records`, and an
   evidence record outside `complete`/`gap`. A completed removal keeps excusing
   only the sessions it still proves, so a session it cannot excuse still fails
-  as `bundle_session_reference_lost`. With a non-identity project map every
-  finding throws.
+  as `bundle_session_reference_lost`. A `cancelled-calls/` marker only blocks a
+  late start of its call, so a message or session it names that is gone is a
+  finding too; the same lost reference on any other record still refuses. With
+  a non-identity project map every finding throws.
 - The clone copy leaves behind sockets and FIFOs anywhere, and symlinks inside
   a project ledger and under `global/{cache,tmp,log}`. Links under config,
   `global/home` and `global/data` still refuse with `bundle_symlink_source`.
@@ -56,6 +58,8 @@ across checkpoint, mutation or spawn boundaries.
 First-run setup preserves explicit background-service opt-out and disabled Bot
 runtime preferences. It still excludes prior service registration and ownership
 state, so provisioning cannot silently turn a user's opt-out into registration.
+The setup preference allowlist also preserves `helperModelSelection`, including
+its saved revision, independently from primary and notification model choices.
 
 Existing startup timing records now include manifest payload hashing, signature
 verification, first-install artifact retention/preparation/selection and binding.
@@ -76,6 +80,51 @@ model's tool schema. `DEVRYAN_CAPABILITY_TOOL_SCHEMA=0` retains the full schema
 for rollout compatibility; host policy checks still govern execution. Retained
 calls decode against the complete contract without acquiring new authority.
 
+Native registration also captures `DEVRYAN_MANAGED_RESULT_CONTRACT_VERSION`
+from the host capability projection. Version 2 exposes batch result reads,
+settled waits and ordered bulk continuation. Compatibility plugin hosts retain
+scalar version 1 because they lack the canonical native later-Step reader.
+Both the owner cursor-normalization slice and attached native executor intersect
+v2 attention with `changedTaskIds`: an unchanged parked child does not return
+control to the model while a selected sibling runs. Full settlement still
+returns immediately; v1 ready/attention behavior is preserved.
+
+`native-managed-publication-owner.js` reads ordered canonical messages under
+the current prepared attempt and reviewed configuration. A handler response is
+only a delivery candidate: `native-managed-results.js` requires its exact
+completed native tool part, input and output, rejects native truncation, and
+collects every required metadata/report page. Disposition requires an authorized
+assistant Step later than the last needed publication in that canonical order.
+Controller, configuration, original objective, cancellation generation and
+attempt changes revoke the live grant; diagnostic and UI events grant nothing.
+Restart requires explicit recollection of the same retained envelopes. Candidates
+are bounded to the latest verified publication and one pending delivery.
+
+Page acceptance and its publication candidate are staged synchronously together;
+a failed publication read leaves the exact cursor retryable. Publication reads
+retain only recorded message identities from bounded 200-message pages (2,000
+records, 20 pages and 64 MiB maximum), with five-second native page requests.
+
+Native result collection allows 24 KiB raw report/metadata pages only under its
+constructor-owned v2 scope; a result's own version flag cannot upgrade v1's
+8 KiB limit. Exact serialized reply caps, canonical publication, full section
+coverage and later-Step disposition checks remain separate and mandatory.
+Repeated publication checks still reread canonical payloads and fresh primary
+and authority state; no immutable history-version receipt currently permits
+payload reuse. The [page evaluation](../../../../../../docs/audits/2026-10-15/managed-result-page-evaluation/README.md)
+records reduced calls and the unqualified latency results.
+Long sessions do not require a full transcript scan. Bounded disposition barrier
+inspection stays under the disposition permit; the long-running result-read
+permit remains limited to status, wait, wait_any and read_result.
+Focused proof: [managed results and Plan cleanup](../../../../../../docs/audits/2026-10-14/managed-results-plan-cleanup.json).
+
+The actual Plan application gate retains its 480-second absolute limit and
+reserves two existing 30-second cleanup allowances. It owns browsers before
+readiness, drains queued opening/capture work on failure, and requires natural
+application exit plus empty process registry. Native/QA and UI source, runner
+and live loaded entry bytes are pinned before/after on success and failure;
+helper reload proves the exact selection and enabled UI hydration.
+
 ## Host helper and title ownership
 
 `native-configuration-snapshot.js` applies `runtime-helper-agents.js` after saved
@@ -88,6 +137,47 @@ Without those roles, `controller-webfetch.ts` rejects generation with
 controller-webfetch test now starts from resolver-produced configuration;
 the multipart Plan admission/projection/title regression checks that synthetic
 format instructions remain excluded while every real request part is retained.
+
+`native-authorization.js.captureHelperSelection` resolves the effective shared
+helper tuple/revision inside current title-owner or exact web-caller grants.
+`native-admission-owner.js` retains this configured/active selection alongside
+the existing title, commit or PR purpose and rechecks it before physical model
+use. Configured helpers and active fallback both omit variant for Default
+reasoning. Admission requires a captured revision and recheck owner; missing
+authority refuses before provider work, while unavailable settings return 503.
+Neither path switches the primary selection or grants tools.
+An issued private title permit admits only its exact native rename after fresh
+session/title/model/agent, revision/hold and owner checks. That validated permit
+does not fall through to generic operation authorization, which continues to
+deny an ambient `session.rename`. Native transaction-local compare-before-rename
+and manual-title priority remain mandatory.
+Cold helpers acquire the original location graph through `LocationServiceMap`
+and await its plugin activation inside a scope held through provider settlement.
+They do not create a persisted conversation to initialize native services.
+The constructor composes the scoped helper LLM capture inside the stream
+continuation owner's winning LLM override. LayerNode replacements are last-wins;
+independent overrides would silently discard one owner. The captured client is
+the actual wrapped native service, and both owners expire with its original scope.
+The configured-instructions plugin maps finite captured agent `temperature` and
+`top_p` defaults into native generation options for the qualified native
+OpenAI-compatible chat package. It respects explicit legacy sampling capability
+disablement, preserves preceding hook choices and omitted defaults, and copies
+no arbitrary request-body fields. Other provider packages remain unqualified
+for this mapping; GPT high-effort sampling stays omitted.
+The helper owner starts one deadline before admission, checks it before dispatch,
+and retains expired/unsettled work until real ACK/exit. Private accepted-input
+verification admits a paused title cycle only for a canonical `origin: human`
+record; body text, synthetic input and replayed ID cannot reopen it.
+
+## Private recovered execution during startup
+
+During the private `recovering` startup phase, stream preparation and native
+observations accept only the exact live controller and a session with an actual
+current recovered-input grant. Native provider-attempt admission still rechecks
+the permit's captured grant and shell receipt before inference. Missing, foreign,
+old-instance and consumed grants cannot open that path, and public startup stays
+closed until `open`. The stream owner records its known current-scope refusal
+code and action without exception text, RPC payloads or stderr.
 
 ## Archiving sessions with recovered input
 
@@ -103,7 +193,8 @@ resume or discard them. Generic web operations, prompts and wakes remain fenced.
 
 Managed start preparation has a 25-second deadline inside the existing 30-second
 bridge window and carries caller cancellation through catalog validation and
-scheduler admission. Native selection validation bounds catalog reads at 20
+scheduler admission. This bounds preparation, not already committed execution
+or the result-collection wait. Native selection validation bounds catalog reads at 20
 seconds. The SDK catalog command uses the existing confined read-only worker,
 with a bounded projection of model IDs and exact string-valued variant parameters.
 Cancellation waits for the owned process termination receipt before releasing
@@ -174,6 +265,112 @@ replacement model or permission to dispatch nested tasks.
 
 ## Provider request and account boundaries
 
+### Interrupted native streams
+
+`native-stream-continuation.ts` decorates the constructor-owned primary
+`SessionModelRequest.Prepared.retry` after the native/Slim decision. It can only
+restrict a proposed retry. Its private attempt scope observes all five native
+output-start setters, including empty text/reasoning starts, and requires a
+successfully published canonical text, reasoning or tool-input start before
+reserving a Continue. Diagnostics and projected messages grant no authority.
+An independent constructor-private output flag remains after attempt-scope loss;
+missing attempt proof after actual output vetoes retry. Native pre-output retry
+still reserves nothing. The source and compiled `missing-attempt` graph scenario
+must qualify that the third physical request is vetoed after two partial sends;
+the lightweight retry-decorator tests do not substitute for that graph.
+
+The private `native.stream-continuation` owner binds the exact controller,
+configuration, permit, cancellation generation, physical attempt, original
+objective and canonical failed predecessor. The pinned OpenCode 2.0.30
+Synthetic event supplies its committed event ID, sequence, derived user ID and
+payload fingerprint. The durable pending reservation becomes consumed before
+successor preparation/send; Step adoption consumes its proof once. There are
+at most two continuations per original objective. Plain Retry reserves nothing,
+and a third Continue is refused before a physical request. New human input,
+unsettled execution/tools/requests, changed selection or missing proof fail
+closed. Lost publication or Step proofs expire on the existing progress
+timeout; exact successor transport I/O can refresh liveness. Stop releases a
+pending reservation, while uncertain failures retain the fence and enter
+`needs_attention` with `provider_stream_interrupted`.
+
+The transport wrapper mirrors the pinned publisher's per-physical-request
+provider-error fence. After `provider-error` or a `step-finish` with
+`content-filter`, later text, reasoning and tool start events cannot mark that
+attempt as output-started. Source and compiled graph traces feed all five
+setter events through the actual native publisher after each refusal; ordinary
+pre-output Retry and the two-continuation capacity gate retain their own traces.
+
+The HTTP observer measures pulled response bytes, chunk count and maximum gap
+before SSE framing, without reading ahead or changing cancellation. Response
+headers have their own timing mark; `first-byte` denotes the first body byte.
+Only content-free typed timing fields reach the journal/export. Existing
+120-second headers, 300-second body and 900-second total transport defaults are
+unchanged; this path enables no new post-output timer.
+
+API-key Session WebSocket timing is separate from those HTTP limits. In pinned
+2.0.30, connection admission waits 15 seconds before its unsent HTTP fallback.
+The real model resolver passes the provider's explicit `chunkTimeout` to the
+Session WebSocket: a number sets the idle bound, `false` disables it, and an
+omitted setting uses the session transport's 30-minute idle fallback. The model's
+HTTP defaults separately contain 300,000 ms; that value does not become the
+Session WebSocket idle default. Local source and compiled fixtures use actual
+API-key WebSocket handshakes and model-request/transport services, advance the
+Effect test clock for these bounds, prove frame-driven idle resets, and verify
+that interrupting the stream closes its socket. They qualify transport Stop,
+not a live provider or the desktop Stop control. No 900-second WebSocket total
+cap or new 120-second post-output policy is claimed.
+The [focused fixture proof](../../../../../../docs/audits/2026-10-15/native-stream-websocket-qualification.json)
+records source hashes, separate subgates and the remaining qualification limits.
+
+Native preparation records the actual `prepared.request.tools.length`. Each
+linked physical send retains that count and projects the final materialized
+JSON body's tool-array count through the existing bounded parse used for wire
+reasoning options; unsupported/malformed bodies report null rather than zero.
+No second body parse, stream consumption or tool content is introduced.
+The same actual-body parse separately projects ordered Responses
+`configuration_update` reasoning controls into optional `wireEffortUpdates`
+(count 1–256 and the last finite effort). Top-level `wireOptions` remain literal:
+GPT6 cache-preserving effort updates can set the effective effort while omitting
+its top-level field. Malformed, unknown, excessive updates or conflicting top-level
+effort aliases produce null update evidence and cannot qualify effective effort.
+Only typed input-array controls are inspected; message content is never examined.
+The strict QA grader retains this provenance and still requires exact accepted,
+prepared and canonical-step selection. Default helper qualification refuses any
+update evidence. These observations neither rewrite requests nor explain away
+provider authentication failures. The [focused correction proof](../../../../../../docs/audits/2026-10-15/effort-update-observation-correction.json)
+records deterministic source/compiled coverage and the outstanding fresh cohort.
+`withProviderAttempt` supplies optional observation metadata from its private
+helper entry. Only a retained captured selection can supply mode/revision;
+constructors without selection capture refuse helper admission. The Node
+observation owner rejects controller-supplied revision fields, compares the
+prepared helper's actual agent/provider/model/variant with the exact admitted
+helper input, rechecks the existing selection owner and then publishes the
+captured revision. A bounded private request table also binds each physical
+helper observation to its own prepared request, exact permit, tuple and tool
+count; cross-helper or evicted request IDs produce a diagnostic gap. The table
+never grants execution and never exports its permit identity.
+Authorized active-session fallback keeps its distinct tuple.
+This metadata supplies no execution or credential authority. See the focused
+[helper observation proof](../../../../../../docs/audits/2026-10-14/qa1-provider-qualification.json).
+
+Finalizing presentation uses a separate read-only observation at the pinned
+native step's post-model, post-tool-join settlement seam. The SHA-guarded
+`native-finalization-observation-transform.mjs` brackets the existing mandatory
+snapshot/files/publication work without changing its ordering or decisions.
+The constructor-private producer binds the actual prepared request, step and
+attempt; the host rechecks controller, permit, original user and assistant.
+Progress comes from completed settlement operations, never timers or body
+silence. Begin/progress observations do not await display I/O or change native
+writes. The terminal observer drains its own finite queue before the original
+permit is released, including the retained terminal mark under pressure. One
+30-second aggregate budget starts at the interval's first enqueue; expiry or
+native interruption aborts optional requests and drops unsent marks. An expired
+or replaced interval cannot reopen, and observer failures cannot replace the
+original save/error/cancellation outcome. Renewed model work,
+cancellation, settlement and owner retirement clear presentation; this grants
+no retry, approval or watchdog authority. The transform and helper are bound
+inputs of both source qualification and compiled artifacts.
+
 OpenAI new enrollment uses reviewed `opencode.provider.openai` / `chatgpt-browser`
 (**Codex browser (legacy)**). Existing `opencode.provider.chatgpt` /
 `chatgpt-token-sharing` credentials remain usable for chat. The catalog exposes
@@ -215,6 +412,24 @@ when there are several. An ambiguous selection stays unavailable. Ordinary
 shared credentials are read from their original owner without renewal or writes;
 expired shared credentials require reconnecting through Claude Code/Meridian.
 Dedicated enrollment is optional automatic renewal.
+
+The host configuration snapshot also activates Claude catalog metadata for the
+same unambiguous saved `claude-max` profile (including the legacy omitted type),
+without reading its credential or contacting a provider. The constructor uses
+the private Meridian configuration resolver; only a reviewed
+`devryan.provider-compat` registration permits an empty Anthropic stanza. Saved
+provider/model settings survive, and explicit provider exclusions, absent
+profiles, inline credentials and ambiguous selection do not enable this bridge.
+Meridian `profiles.json` and `settings.json` metadata are included in the existing
+configuration capture/retry stamp. The original native configuration plugin owns
+catalog activation; no placeholder API key or native credential is created.
+The physical Meridian attempt still requires the original admission permit and
+host-owned selected credential. Catalog visibility alone grants neither.
+The compiled provider owner is registered independently of the legacy plugin
+list. Disabling legacy plugins does not disconnect that native account or stop
+this metadata bridge; the saved plugin list is preserved.
+The [catalog regression audit](../../../../../../docs/audits/2026-10-14/claude-provider-catalog.json)
+separates deterministic source/compiled proof from pending live verification.
 
 Dedicated enrollment is global to the bundle. `native-claude-enrollment-location.js`
 binds a request to its own directory when that directory is a reviewed location,
@@ -336,6 +551,14 @@ The host owner exposes it as
 reply's instance, directory and integration are verified. Credential metadata
 validation accepts OAuth rows only for OpenAI `chatgpt-*` methods and xAI
 `device`; other providers must be keys.
+
+The four `*.integration` caller operations recheck the original web authority
+and controller after their awaited read before returning data. Other operations
+retain their existing commit boundaries; this read fence cannot replace a
+truthful committed credential-mutation receipt. Cursor runtime-status uses the
+existing metadata owner for its exact current registered location, with the
+current configuration digest. It does not widen provider configuration access
+to directories outside the immutable import map.
 
 SDK endpoints can retain their construction error reporter. An asynchronous
 request scope routes its reports to the active catalog assertion, without
@@ -510,3 +733,140 @@ DevRyan update dialog and its existing download/restart path.
 ### xAI usage renewal
 
 `provider-refresh-selected-owned` is an exact-field controller operation for the selected xAI device OAuth credential. It carries the original usage caller grant, controller/location identity, credential ID and expected fingerprint, never credential values. The `provider.usage` GET scope authorizes one update with the fixed renewal-intent fingerprint; create, activate, remove and other providers remain refused. The registered native xAI implementation renews inside the existing reverse credential mutation queue and rechecks caller, acquisition and selected record before commit. Usage and admitted model resolutions share pending renewal observations; one bounded prior-renewal receipt per reviewed location permits reuse of this owner's renewal without accepting unrelated writes. Quota reads remain read-only until their usage request is rejected. Refresh tokens never cross into the web fetcher. The default launch quota refresh therefore loads usage without a chat request.
+
+### Plan execution restrictions
+
+Native admission captures canonical Plan mode from the original accepted user
+objective and inherited managed read-only assignment. The canonical legacy
+`plan` agent also restricts authority without requiring prompt markers. A child
+missing from a valid retained managed board receives conservative read-only
+policy only after its complete parent chain is verified in the same project and
+directory. Unavailable boards and mismatched parents refuse; a mutable root
+never restores a pruned child's write authority. Legacy markers can only
+restrict authority. Writes/patches are denied before dispatch, and shell
+execution retains the normal outer lease/receipt while running in a private
+read-only view with no writable project inputs or ignored-output grants. Stop,
+publication and cleanup remain owned by the execution host. Children receive
+the captured read-only policy; prompt text cannot grant write authority.
+Plan admission requires its canonical-policy and implementation-validation
+hooks; an Implement marker also requires validation. Missing hooks refuse Plan
+before dispatch while ordinary non-Plan admission remains available.
+The [focused restore/Plan safety proof](../../../../../../docs/audits/2026-10-15/restore-plan-safety-qualification.json)
+records the legacy-agent, pruned-child, exact restore-cache and unfinished-retry
+fixtures, with their remaining physical and compiled qualification limits.
+Plan shell runs from the original snapshot under the read-only host boundary.
+Its macOS profile denies network operations, including localhost POST/push;
+Linux adds a private network namespace. Other execution modes retain their
+existing network policy. The current Windows LPAC policy cannot supply a
+read-only original workspace and isolated network, so Plan shell returns
+`native_plan_confinement_unavailable` before creating its replacement view.
+The native runtime's private `readCanonicalPlanSequence` delegates to the
+privileged client; application wiring supplies it only to the Plan source
+owner. It reads at most 2,000 native rows/8 MiB, preserves canonical paging
+order and native compaction type/status/reason, and projects the complete
+sequence once. The Plan validator can therefore verify automatic-compaction
+successors without trusting display parts, summary text or client metadata.
+
+Initial negative writer admission records no-start evidence through
+`native-plan-denial-owner.js` only after captured read-only policy, exact pending
+canonical assistant/tool identity and an absent execution pointer agree. It
+uses the existing cancelled-call receipt store. A previously issued permit's
+failed recheck, a policy-read error or tool error text cannot create that proof.
+The owner rechecks controller identity after awaited admission state reads and
+passes its captured revision and synchronous owner assertion into the existing
+ledger cancellation transaction and guarded commit. No-start queries wait for
+that writer's lock through settlement or revocation rollback.
+This lets a later owned stream continuation cross a settled, denied Plan writer
+without weakening the uncertain-tool fence.
+
+A registered writer excluded from the actual native tool snapshot's definitions
+also passes through this initial admission check before the native filtered-tool
+rejection. The gate retains the sealed registration and checks that it is still
+current; it never enters the writer executor. A granted admission is released
+and does not bypass the snapshot's permission decision. Unknown or replaced
+registrations cannot obtain negative proof through this path.
+Plan admission admits only host-classified native reads, questions and confined
+shell, plus the specifically owned managed-task, context, document and Slim read
+tools. Unknown MCP/plugin effects and caller read-only annotations cannot grant
+authority. Managed descendants retain their captured read-only policy, and
+Plan persistence retains its separate owned route. Filtered writer preflight
+checks both the native registration ID and its current effective tool name.
+
+Native configuration translates legacy bash/task/write/patch permission names
+to shell/subagent/edit across ordered native and legacy supported shapes.
+Patterns and allow/deny/ask decisions are preserved; conflicting collapsed
+aliases fail closed. Boolean `tools` maps are translated at global and agent
+scope using pinned 2.0.30 precedence: global tool rules precede explicit rules;
+agent write/edit/patch entries merge into edit before explicit legacy action
+overrides. Invalid boolean maps and ambiguous aliases produce typed configuration
+errors. Frontmatter, frozen snapshots and native permission evaluation are
+covered separately. The Plan settlement verifier is composed with current
+controller/configuration, primary generation, canonical session status, active
+execution leases and managed task/envelope barriers.
+
+## Managed child title sources
+
+`native-managed-title-owner.js` seals only the private verified managed dispatch
+and independently reads its durable assignment and original root control call.
+Its canonical source marker is not authority. Capture/recheck bind controller,
+configuration, objective, cancellation generation, captured generation, selection,
+permissions and exact ordered accepted-user identity. A separate latest-human
+capture preserves child follow-ups and paused persistence reopening; replay,
+Synthetic input, missing/cyclic/deep ancestry and changed ownership fail closed.
+Latest-human capture compares the exact canonical ordered source parts, including
+attachments, alongside the private accepted-user record. Session `time.updated`
+alone is volatile during stream activity; other session fields remain compared.
+`native_managed_title_source_invalid` is an enumerated content-free title refusal.
+Focused helper/title evidence is recorded in
+[the sanitized owner proof](../../../../../../docs/audits/2026-10-14/helper-title-owner-corrections.json).
+The three-purpose HTTP/controller tests use actual admission, provider-attempt
+authorization and settlement; fresh compiled provider qualification is a separate gate.
+
+## Claude credential command diagnostics
+
+The constructor-owned credential command observer emits
+`native_claude_credential_command` only for the exact `/usr/bin/security`
+credential operations. Its payload contains `phase` (`probe`, `read`, `write`,
+`delete`) and bounded `exitCode` (or `null` when no numeric exit was available).
+Enrollment, renewal, settlement and legacy-fence reads share the observer. It
+waits for the original command owner to settle; diagnostics cannot change its
+result, public refusal or cancellation/close ownership. Journal and export
+sanitize this event separately and omit all command arguments, account/service
+names, HOME paths, stdout/stderr and credential content.
+
+The actual OS command owner replaces `execFile` failures before returning them,
+retaining only a bounded exit/system code. The error message, command line and
+stderr cannot reach vendor logging through that error. The macOS CLI still
+receives the reviewed store's arguments; this does not change the OS command
+interface or its process-list visibility.
+
+The existing reviewed macOS store uses the implicit OS Keychain. This diagnostic
+adds no store, fallback, HOME override, Keychain command or credential mutation.
+
+`startWebUiServer` may receive the trusted constructor option
+`nativeClaudeSecurityHome` for an isolated host whose inherited HOME cannot
+address the OS user's existing Keychain. `native-claude-security-home.js` applies
+that HOME only to the original `/usr/bin/security` credential command for an
+exact private enrollment under this bundle's control root. It validates the
+enrollment UUID, generation, profile, computed service, exact account/arguments,
+private directories and retained directory identities before dispatch. The
+host's HOME and native configuration remain isolated; HTTP, environment flags,
+public profile metadata and service-name patterns cannot enable this backend.
+
+Fresh enrollment supplies its live constructor binding. Credential resolution
+reads the original canonical lifecycle before its first private account read
+and rechecks that exact enrollment at each command. Renewal keeps the original
+mutation queue and issuer/write ownership; its uncancelled settlement read is
+confined to the exact prepared replacement attempt. Default, shared and legacy
+credential paths retain inherited HOME. A missing or replaced owned directory
+refuses this backend, including deletion; it never falls back to an installed
+default service. This option creates no Keychain and adds no file credential
+store, token export or credential-copy path.
+
+Before another enrollment, legacy migration skips profiles already proved by
+the existing canonical lifecycle and private enrollment directory validator.
+They have no legacy fence to import. Actual legacy/default migration keeps its
+original command backend and inherited HOME.
+The [deterministic proof](../../../../../../docs/audits/2026-10-14/claude-owned-security-home.json)
+records the owning tests and explicitly leaves actual OS Keychain behavior
+unverified until the authorized isolated sign-in.

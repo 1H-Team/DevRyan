@@ -5,7 +5,7 @@ import { runCompiledRecoveredShell } from './package-recovered-shell-lane.mjs';
 
 /** Real accepted inputs and compiled controller replacement; no native rows are
  * manufactured. Only the departing runner and actual response ACKs are held. */
-export async function runCompiledRecoveredInputs({ provider, client, managed, runtimeOwner, nativeTransport, getController, directory, databasePath, executionHost, observations, reviewedSetup = false, onCase, onExit }) {
+export async function runCompiledRecoveredInputs({ provider, client, managed, runtimeOwner, nativeTransport, getController, directory, databasePath, executionHost, observations, reviewedSetup = false, onCase, onExit, recordDiagnostic }) {
   const model = { providerID: 'devryan-smoke', modelID: 'smoke-write' };
   const cases = [], exits = [];
   const recordCase = row => { cases.push(row); onCase?.(row); };
@@ -290,6 +290,6 @@ export async function runCompiledRecoveredInputs({ provider, client, managed, ru
     } finally { gate.reject(new Error('fixture_retained_fallback_cleanup')); owner.handleRpc = originalRpc; }
   }
   await runCompiledRecoveredShell({ provider, client, managed, runtimeOwner, getController, directory, databasePath, executionHost, observations,
-    onCase: recordCase, onExit: recordExit });
+    onCase: recordCase, onExit: recordExit, recordDiagnostic });
   return { cases, exits };
 }

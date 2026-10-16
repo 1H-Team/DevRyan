@@ -7,10 +7,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createManagedTaskRecord,
   createManagedTaskResultEnvelope,
+  createManagedTaskScheduler,
 } from '@openchamber/orchestration-runtime';
 
 import { createNativeConsumerFixture } from '../opencode/test-native-consumer-client.js';
 import { createNativeManagedTaskOwner } from '../opencode/runtime-host/managed-task-owner.js';
+import { createHarnessTaskContextHost as createNativeTaskContextHost } from '../opencode/harness-task-context.js';
+import { createNativePlanSettlementVerifier } from '../opencode/runtime-host/native-plan-settlement.js';
 import { createWebManagedOrchestrationRuntime as createNativeOrchestrationRuntime } from './runtime.js';
 
 // These scheduler fixtures own their catalogs explicitly; no legacy transport
@@ -105,9 +108,10 @@ it('leaves a retained running child untouched until initialization after control
 });
 
 it('admits the native Plan Explorer with its exact Cursor selection under owned catalog authority', async () => {
-  let authorized = false;
+  let authorized = false, parentLocked = false;
   const validate = vi.fn(async input => {
     expect(authorized).toBe(true);
+    expect(parentLocked).toBe(false);
     expect(input).toEqual({ directory: '/workspace', modelID: 'claude-haiku-5-5', variant: 'medium', onFailure: expect.any(Function), signal: expect.any(AbortSignal) });
     return true;
   });
@@ -125,7 +129,10 @@ it('admits the native Plan Explorer with its exact Cursor selection under owned 
     executor: { start: async () => ({ status: 'completed', recoverablePreview: 'Located the component' }) },
   });
   const owner = createNativeManagedTaskOwner({
-    admissionOwner: { recheckExecution: async () => {}, withPermit: (_input, action) => action(),
+    admissionOwner: { recheckExecution: async () => {}, withPermit: async (_input, action) => {
+      expect(validate).toHaveBeenCalledOnce(); parentLocked = true;
+      try { return await action(); } finally { parentLocked = false; }
+    },
       withManagedTaskCatalogInvocation: (_input, action) => action() },
     taskContext: { authorizeNativeTaskInvocation: async () => ({ readOnly: true }) },
     executionHost: { nativeManagedControl: async () => ({ lease: { token: 'control_fixture' } }) },
@@ -139,6 +146,59 @@ it('admits the native Plan Explorer with its exact Cursor selection under owned 
     expect(result.task).toMatchObject({ providerId: 'cursor-acp', modelId: 'claude-haiku-5-5', variant: 'medium', agent: 'explorer' });
     expect(validate).toHaveBeenCalledOnce();
     expect(catalog).toHaveBeenCalledOnce();
+  } finally { await runtime.shutdown(); }
+});
+
+it('submission preparation binds exact parameters once and never becomes an RPC action', async () => {
+  const resolve = vi.fn(async ({ fallbackExecution }) => fallbackExecution);
+  const runtime = createWebManagedOrchestrationRuntime({ persistence: createPersistence(), resolveAgentExecution: resolve,
+    executor: { start: async () => ({ status: 'completed', recoverablePreview: 'Complete' }) } });
+  try {
+    const params = submitParams('prepared');
+    await runtime.withSubmissionPreparation(params, {}, async () => {
+      const result = await runtime.handleRpc({ method: 'submit', params });
+      expect(result.task.providerId).toBe(params.providerId);
+      await expect(runtime.handleRpc({ method: 'submit', params })).rejects.toMatchObject({ code: 'managed_submission_preparation_changed' });
+    });
+    expect(resolve).toHaveBeenCalledOnce();
+    await runtime.withSubmissionPreparation(submitParams('changed'), {}, async () => {
+      await expect(runtime.handleRpc({ method: 'submit', params: submitParams('changed', { prompt: 'Altered after preparation' }) }))
+        .rejects.toMatchObject({ code: 'managed_submission_preparation_changed' });
+    });
+    expect((await runtime.getSnapshot()).tasks).toHaveLength(1);
+    await expect(runtime.handleRpc({ method: 'withSubmissionPreparation', params })).rejects.toMatchObject({ code: 'rpc_method_not_found' });
+  } finally { await runtime.shutdown(); }
+});
+
+it('cancellation during submission preparation cannot reserve a task or enter the parent lock', async () => {
+  const gate = deferred(), entered = deferred(), controller = new AbortController(), commit = vi.fn();
+  const start = vi.fn(async () => { throw new Error('Cancelled preparation must not launch'); });
+  const runtime = createWebManagedOrchestrationRuntime({ persistence: createPersistence(), executor: { start },
+    resolveAgentExecution: async ({ fallbackExecution }) => { entered.resolve(); await gate.promise; return fallbackExecution; } });
+  try {
+    const preparing = runtime.withSubmissionPreparation(submitParams('cancelled-preparation'), { signal: controller.signal }, commit);
+    const refusal = expect(preparing).rejects.toBeDefined();
+    await entered.promise; controller.abort(); gate.resolve(); await refusal;
+    expect(commit).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
+    expect((await runtime.getSnapshot()).tasks).toEqual([]);
+  } finally { gate.resolve(); await runtime.shutdown(); }
+});
+
+it('closing work admission at the scheduler reservation prevents a prepared child from being committed', async () => {
+  let blocked = false;
+  const start = vi.fn(async () => ({ status: 'completed', recoverablePreview: 'Should not run' }));
+  const scheduler = createManagedTaskScheduler({ executor: { start } });
+  const runtime = createWebManagedOrchestrationRuntime({ persistence: createPersistence(),
+    scheduler: { ...scheduler, submit: (...args) => { blocked = true; return scheduler.submit(...args); } },
+    getWorkAdmissionBlock: () => blocked ? { code: 'fixture_admission_closed' } : null,
+  });
+  try {
+    const params = submitParams('reservation-race');
+    await expect(runtime.withSubmissionPreparation(params, {}, () => runtime.handleRpc({ method: 'submit', params })))
+      .rejects.toMatchObject({ code: 'fixture_admission_closed' });
+    expect(scheduler.listTasks()).toEqual([]);
+    expect(start).not.toHaveBeenCalled();
   } finally { await runtime.shutdown(); }
 });
 
@@ -301,7 +361,7 @@ const createTerminalPair = (suffix, recoverablePreview, overrides = {}) => {
     idempotencyKey: `terminal-${suffix}`,
     rootSessionId: 'ses_root',
     parentTaskId: null,
-    childSessionId: `ses_child_${suffix}`,
+    childSessionId: overrides.childSessionId ?? `ses_child_${suffix}`,
     directory: '/workspace',
     sequence: overrides.sequence ?? 1,
     mode: 'orchestrator',
@@ -334,6 +394,148 @@ const createTerminalPair = (suffix, recoverablePreview, overrides = {}) => {
   });
   return { task, resultEnvelope };
 };
+
+it('managed title assignment is constructor-only, bounded and remains available for a settled failed child', async () => {
+  const pair = createTerminalPair('title', 'retained result', { status: 'failed', failureReason: 'provider_error' });
+  pair.task.dispatchCallId = 'call_start'; pair.task.dispatchGroupId = 'msg_parent';
+  const runtime = createWebManagedOrchestrationRuntime({ now: () => 1_400, persistence: { load: async () => ({ version: 1, tasks: [pair.task], resultEnvelopes: [pair.resultEnvelope] }), save: async () => {} },
+    executor: { start: async () => { throw Error('No launch'); } } });
+  try {
+    await runtime.initialize();
+    const assignment = await runtime.readManagedTitleAssignment({ childSessionId: pair.task.childSessionId, directory: '/workspace' });
+    expect(Object.isFrozen(assignment)).toBe(true);
+    expect(assignment).toMatchObject({ taskId: pair.task.taskId, rootSessionId: 'ses_root', parentSessionId: 'ses_root', dispatchCallId: 'call_start', dispatchGroupId: 'msg_parent' });
+    expect(assignment).not.toHaveProperty('leaseToken'); expect(assignment).not.toHaveProperty('recoverablePreview'); expect(assignment).not.toHaveProperty('prompt');
+    await expect(runtime.handleRpc({ method: 'readManagedTitleAssignment', params: {} })).rejects.toMatchObject({ code: 'rpc_method_not_found' });
+    await expect(runtime.readManagedTitleAssignment({ childSessionId: pair.task.childSessionId, directory: '/foreign' })).rejects.toMatchObject({ code: 'native_managed_title_unavailable' });
+  } finally { await runtime.shutdown(); }
+});
+
+it('managed title assignment cannot select an older completed task over a same-time cancelled successor', async () => {
+  const first = createTerminalPair('title_old', 'old result', { sequence: 1 });
+  const next = createTerminalPair('title_new', 'cancelled', { sequence: 2, status: 'aborted', failureReason: 'cancelled', childSessionId: first.task.childSessionId });
+  for (const pair of [first, next]) { pair.task.dispatchCallId = 'call_start'; pair.task.dispatchGroupId = 'msg_parent'; pair.task.childSessionId = first.task.childSessionId; }
+  const runtime = createWebManagedOrchestrationRuntime({ now: () => 1_400,
+    persistence: { load: async () => ({ version: 1, tasks: [first.task, next.task], resultEnvelopes: [first.resultEnvelope, next.resultEnvelope] }), save: async () => {} },
+    executor: { start: async () => { throw Error('No launch'); } } });
+  try { await runtime.initialize(); await expect(runtime.readManagedTitleAssignment({ childSessionId: first.task.childSessionId, directory: '/workspace' })).rejects.toMatchObject({ code: 'native_managed_title_unavailable' }); }
+  finally { await runtime.shutdown(); }
+});
+
+it('managed title assignment rechecks work admission after held ownership verification', async () => {
+  const pair = createTerminalPair('title_fence', 'retained'); pair.task.dispatchCallId = 'call_start'; pair.task.dispatchGroupId = 'msg_parent';
+  const entered = deferred(), release = deferred(); let hold = false, blocked = false;
+  const runtime = createWebManagedOrchestrationRuntime({ now: () => 1_400, persistence: { load: async () => ({ version: 1, tasks: [pair.task], resultEnvelopes: [pair.resultEnvelope] }), save: async () => {},
+    verifyOwnership: async () => { if (hold) { entered.resolve(); await release.promise; } } },
+    getWorkAdmissionBlock: () => blocked ? { code: 'fixture_title_held' } : null, executor: { start: async () => { throw Error('No launch'); } } });
+  try {
+    await runtime.initialize(); hold = true;
+    const reading = runtime.readManagedTitleAssignment({ childSessionId: pair.task.childSessionId, directory: '/workspace' });
+    await entered.promise; blocked = true; release.resolve();
+    await expect(reading).rejects.toMatchObject({ code: 'fixture_title_held' });
+  } finally { release.resolve(); hold = false; blocked = false; await runtime.shutdown(); }
+});
+
+it('bounds escaped model result pages while keeping canonical retained evidence unchanged', async () => {
+  const preview = ('\0\n"\\🙂').repeat(4000);
+  const {task, resultEnvelope} = createTerminalPair('serialized', preview);
+  const before = structuredClone({task, resultEnvelope});
+  const runtime = createWebManagedOrchestrationRuntime({persistence: createPersistence(), executor: {},
+    harnessPolicies: {compactResults: false}, scheduler: {initialize: async () => {}, shutdown: async () => {}, flush: async () => {},
+      getDiagnostics: () => ({}), getTask: () => task, getResultEnvelope: () => resultEnvelope}});
+  const scope = {taskId: task.taskId, rootSessionId: task.rootSessionId, directory: task.directory, resultMode: 'reference', maxOutputBytes: 6000};
+  try {
+    let result = await runtime.handleRpc({method: 'status', params: scope});
+    expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThanOrEqual(6000);
+    let reconstructed = result.resultReference.text;
+    while (!result.resultReference.complete) {
+      result = await runtime.handleRpc({method: 'read_result', params: {...scope, resultCursor: result.resultReference.nextCursor}});
+      expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThanOrEqual(6000);
+      reconstructed += result.resultReference.text;
+    }
+    expect(reconstructed).toBe(preview);
+    expect({task, resultEnvelope}).toEqual(before);
+  } finally {await runtime.shutdown();}
+});
+
+it('v2 pages escaped reports and metadata references independently without changing canonical records',async()=>{
+ const {task,resultEnvelope}=createTerminalPair('metadata_v2','🙂 \\"\n'.repeat(2000));
+ task.canonicalRefs=Array.from({length:600},(_,index)=>({type:'tool',id:'call_'+index,messageID:'msg_'+index}));
+ resultEnvelope.canonicalRefs=structuredClone(task.canonicalRefs);
+ const canonical=structuredClone({task,resultEnvelope}),runtime=createWebManagedOrchestrationRuntime({persistence:createPersistence(),executor:{},
+  harnessPolicies:{compactResults:false},scheduler:{initialize:async()=>{},shutdown:async()=>{},flush:async()=>{},getDiagnostics:()=>({}),getTask:()=>task,getResultEnvelope:()=>resultEnvelope}});
+ const scope={taskId:task.taskId,rootSessionId:task.rootSessionId,directory:task.directory,resultMode:'reference',resultContractVersion:2,maxOutputBytes:1800};
+ try{
+  const first=await runtime.handleRpc({method:'status',params:scope});expect(first.metadataReference.section).toBe('metadata');
+  let metadata=first.metadataReference.text,cursor=first.metadataReference.nextCursor;
+  while(cursor){const next=await runtime.handleRpc({method:'read_result',params:{...scope,resultCursor:cursor}});expect(Buffer.byteLength(JSON.stringify(next))).toBeLessThanOrEqual(1800);
+   metadata+=next.metadataReference.text;cursor=next.metadataReference.nextCursor;}
+  expect(JSON.parse(metadata).resultEnvelope.canonicalRefs).toEqual(resultEnvelope.canonicalRefs);
+  let report=first.resultReference.text;cursor=first.resultReference.nextCursor;
+  while(cursor){const next=await runtime.handleRpc({method:'read_result',params:{...scope,resultCursor:cursor}});expect(Buffer.byteLength(JSON.stringify(next))).toBeLessThanOrEqual(1800);
+   report+=next.resultReference.text;cursor=next.resultReference.nextCursor;}
+  expect(report).toBe(resultEnvelope.recoverablePreview);expect({task,resultEnvelope}).toEqual(canonical);
+ }finally{await runtime.shutdown();}
+});
+
+it('selects larger report pages only for v2 and still fits a smaller native reply budget exactly',async()=>{
+ const {task,resultEnvelope}=createTerminalPair('v2_page_size','x'.repeat(50*1024));
+ const runtime=createWebManagedOrchestrationRuntime({persistence:createPersistence(),executor:{},harnessPolicies:{compactResults:false},
+  scheduler:{initialize:async()=>{},shutdown:async()=>{},flush:async()=>{},getDiagnostics:()=>({}),getTask:()=>task,getResultEnvelope:()=>resultEnvelope}});
+ const scope={taskId:task.taskId,rootSessionId:task.rootSessionId,directory:task.directory,resultMode:'reference',maxOutputBytes:48*1024};
+ try{
+  const v1=await runtime.handleRpc({method:'status',params:{...scope,resultContractVersion:1}});
+  expect(Buffer.byteLength(v1.resultReference.text)).toBe(8*1024);
+  const initial=await runtime.handleRpc({method:'status',params:{...scope,resultContractVersion:2}});
+  expect(initial.resultReference.text).toBe('');
+  const v2=await runtime.handleRpc({method:'read_result',params:{...scope,resultContractVersion:2,resultCursor:initial.resultReference.nextCursor}});
+  expect(Buffer.byteLength(v2.resultReference.text)).toBe(24*1024);
+  const small=await runtime.handleRpc({method:'read_result',params:{...scope,resultContractVersion:2,maxOutputBytes:1600,resultCursor:initial.resultReference.nextCursor}});
+  expect(Buffer.byteLength(JSON.stringify(small))).toBeLessThanOrEqual(1600);
+  expect(small.resultReference.text.length).toBeGreaterThan(0);
+ }finally{await runtime.shutdown();}
+});
+
+it('v2 acknowledgement requires constructor review proof and forwards its final durable recheck',async()=>{
+ const {task,resultEnvelope}=createTerminalPair('review_v2','Done'),acknowledgeResult=vi.fn(async(_id,options)=>{
+  await options.authorize();return {envelope:{...resultEnvelope,action:'continue',acknowledgementIdentity:options.acknowledgementIdentity},followUpTask:null};});
+ const runtime=createWebManagedOrchestrationRuntime({persistence:createPersistence(),executor:{},scheduler:{initialize:async()=>{},shutdown:async()=>{},flush:async()=>{},
+  getDiagnostics:()=>({}),getTask:()=>task,getResultEnvelope:()=>resultEnvelope,acknowledgeResult}});
+ const params={taskId:task.taskId,rootSessionId:task.rootSessionId,directory:task.directory,resultMode:'reference',resultContractVersion:2,
+  action:'continue',idempotencyKey:'test',acknowledgementIdentity:'a'.repeat(64)};
+ try{
+  await expect(runtime.handleRpc({method:'acknowledge',params})).rejects.toMatchObject({code:'managed_result_review_required'});
+  await expect(runtime.handleRpc({method:'acknowledge',params},{nativeResultReview:{taskId:task.taskId,envelopeId:resultEnvelope.envelopeId,action:'continue',acknowledgementIdentity:params.acknowledgementIdentity,recheck:'model-supplied'}})).rejects.toMatchObject({code:'managed_result_review_required'});
+  const recheck=vi.fn(async()=>{}),context={nativeResultReview:{taskId:task.taskId,envelopeId:resultEnvelope.envelopeId,action:'continue',acknowledgementIdentity:params.acknowledgementIdentity,recheck}};
+  expect((await runtime.handleRpc({method:'acknowledge',params},context)).resultEnvelope.action).toBe('continue');
+  expect(recheck).toHaveBeenCalledTimes(2);expect(acknowledgeResult).toHaveBeenCalledOnce();
+ }finally{await runtime.shutdown();}
+});
+
+it('refuses unpageable acknowledgement metadata before committing and reports a committed projection failure truthfully', async () => {
+  const {task, resultEnvelope} = createTerminalPair('receipt', 'Small findings');
+  let current = resultEnvelope;
+  const acknowledgeResult = vi.fn(async () => {
+    current = {...current, action: 'continue', acknowledgedAt: 2000};
+    return {envelope: {...current, canonicalRefs: [{type: 'message', id: 'msg_child', detail: '\0'.repeat(10000)}]}, followUpTask: null};
+  });
+  const runtime = createWebManagedOrchestrationRuntime({persistence: createPersistence(), executor: {}, harnessPolicies: {compactResults: false},
+    scheduler: {initialize: async () => {}, shutdown: async () => {}, flush: async () => {}, getDiagnostics: () => ({}),
+      getTask: () => task, getResultEnvelope: () => current, acknowledgeResult}});
+  const params = {taskId: task.taskId, rootSessionId: task.rootSessionId, directory: task.directory, resultMode: 'reference',
+    maxOutputBytes: 6000, action: 'continue', idempotencyKey: 'receipt'};
+  try {
+    current = {...current, canonicalRefs: [{type: 'message', id: 'msg_child', detail: '\0'.repeat(10000)}]};
+    await expect(runtime.handleRpc({method: 'acknowledge', params})).rejects.toMatchObject({code: 'managed_tool_output_metadata_too_large'});
+    expect(acknowledgeResult).not.toHaveBeenCalled();
+    current = resultEnvelope;
+    const result = await runtime.handleRpc({method: 'acknowledge', params});
+    expect(result).toMatchObject({committed: true, taskId: task.taskId, envelopeId: resultEnvelope.envelopeId,
+      action: 'continue', projectionError: 'managed_tool_output_metadata_too_large'});
+    expect(acknowledgeResult).toHaveBeenCalledOnce();
+    expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThanOrEqual(6000);
+  } finally {await runtime.shutdown();}
+});
 
 const createWaitScheduler = () => {
   const task = createManagedTaskRecord({
@@ -371,6 +573,63 @@ const createWaitScheduler = () => {
 };
 
 describe('web managed orchestration runtime', () => {
+  it.each(['clear', 'awaiting_acknowledgement'])('validates a fresh saved Implement plan through its scoped %s barrier while prompt admission owns the scheduler lock', async barrierState => {
+    const { createHash } = await import('node:crypto');
+    const { resolveSessionPlanRevision } = await import('../plans/routes.js');
+    const fixtureRoot = path.resolve('../../.cache/test-fixtures'); await fs.mkdir(fixtureRoot, { recursive: true });
+    const dataDirectory = await fs.mkdtemp(path.join(fixtureRoot, 'native-plan-barrier-'));
+    const scope = { rootSessionId: 'ses_root', directory: '/project' };
+    let generation = 1, revoked = false;
+    const primary = { sessionID: 'ses_root', directory: '/project', anchorID: 'msg_plan_user', objectiveID: 'msg_plan_user',
+      stepID: 'msg_plan', state: 'completed', cancellationGeneration: 0 };
+    const plan = { info: { id: 'msg_plan', sessionID: 'ses_root', role: 'assistant', parentID: 'msg_plan_user', finish: 'stop', time: { completed: 10 } },
+      turnOwnership: { source: 'native-sequence', userMessageID: 'msg_plan_user' }, parts: [{ type: 'text', text: '<!--plan-->\n# Saved plan\n' }] };
+    const routes = {
+      '/session/ses_root': { id: 'ses_root', directory: '/project', projectID: 'project_a', slug: 'calm-river', time: { created: 1700000000000 } },
+      '/project/current': { id: 'project_a', worktree: '/project' }, '/session/ses_root/message/msg_plan': plan,
+      '/session/ses_root/message': [{ info: { id: 'msg_plan_user', sessionID: 'ses_root', role: 'user' }, parts: [{ type: 'text', text: 'Plan it' }] }, plan],
+    };
+    const persistence = createPersistence();
+    if (barrierState === 'awaiting_acknowledgement') {
+      const at = Date.now(), retained = { ...createManagedTaskRecord({ ...submitParams('retained', { directory: '/project', dispatchGroupId: 'msg_parent' }),
+        taskId: 'dvr_task_retained', sequence: 1, attempt: 1, priorTaskId: null, executionKind: 'start', createdAt: at - 100, timeoutAt: null }),
+        status: 'completed', childSessionId: 'ses_child', startedAt: at - 50, finishedAt: at - 20, recoverablePreview: 'Needs review' };
+      await persistence.save({ version: 1, tasks: [retained], resultEnvelopes: [createManagedTaskResultEnvelope(retained, { sequence: 1, createdAt: at })] });
+    }
+    const runtime = createWebManagedOrchestrationRuntime({ persistence, executor: { start: async () => { throw Error('No task launch authorized'); } } });
+    const verify = createNativePlanSettlementVerifier({ readControllerPin: () => ({ instanceID: `controller-${generation}`, configurationDigest: 'a'.repeat(64) }),
+      readPrimaryRecord: async () => primary, readStatus: async () => ({}), activeLeases: async () => [],
+      readManagedState: ({ sessionID, directory }) => runtime.handleRpc({ method: 'context_state', params: { rootSessionId: sessionID, directory } }),
+      readManagedBarrier: ({ sessionID, directory }) => runtime.handleRpc({ method: 'barrier_status', params: { rootSessionId: sessionID, directory } }) });
+    const host = createNativeTaskContextHost({ dataDirectory, isManaged: () => true, sessionOwnerKey: async () => 'user:fixture',
+      resolveOwnedPlanContext: async () => ({ directory: '/project', ownerKey: 'user:fixture' }),
+      readPrimaryRecord: async () => primary, getManagedRuntime: () => runtime, verifyPlanSourceSettled: verify,
+      openCodeClient: createNativeConsumerFixture({ readFixture: async raw => {
+        const value = routes[new URL(raw).pathname]; return Response.json(value ?? null, { status: value === undefined ? 404 : 200 });
+      } }) });
+    try {
+      const revision = await resolveSessionPlanRevision({ dataDirectory, directory: '/project', sessionCreated: 1700000000000,
+        sessionSlug: 'calm-river', sourceMessageID: 'msg_plan', path });
+      const content = '# Owned implementation'; await fs.mkdir(revision.directory, { recursive: true }); await fs.writeFile(revision.path, content);
+      const accepted = { sessionID: 'ses_root', messageID: 'msg_implement', directory: '/project', intent: { parts: [{ type: 'text', synthetic: true,
+        text: '[openchamber-plan-action:v1] ' + JSON.stringify({ action: 'implement', sourceSessionId: 'ses_root', sourceMessageId: 'msg_plan',
+          planIndex: 0, version: createHash('sha256').update(content).digest('hex') }) }] } };
+      const authorize = async () => { if (revoked || generation !== 1) throw Error('captured_generation_revoked'); };
+      await runtime.withNativePromptContext({ ...scope, authorize }, async () => {
+        if (barrierState === 'clear') await host.validatePlanImplementation(accepted);
+        else await expect(host.validatePlanImplementation(accepted)).rejects.toMatchObject({ code: 'plan_source_unsettled' });
+        await expect(runtime.handleRpc({ method: 'barrier_status', params: { rootSessionId: 'ses_other', directory: scope.directory } }))
+          .rejects.toMatchObject({ code: 'native_prompt_context_fenced' });
+        await expect(runtime.handleRpc({ method: 'barrier_status', params: { ...scope, directory: '/foreign' } }))
+          .rejects.toMatchObject({ code: 'native_prompt_context_fenced' });
+        revoked = true;
+        await expect(runtime.handleRpc({ method: 'barrier_status', params: scope })).rejects.toThrow('captured_generation_revoked');
+        revoked = false;
+      });
+      await expect(runtime.handleRpc({ method: 'barrier_status', params: scope })).resolves.toMatchObject({ state: barrierState });
+      expect(runtime.getDiagnostics().scheduler.taskCount).toBe(barrierState === 'clear' ? 0 : 1);
+    } finally { await host.drain(); await runtime.shutdown(); await fs.rm(dataDirectory, { recursive: true, force: true }); }
+  }, 5_000);
   it('binds private native dispatch to current scheduler ownership, task lease and child selection', async () => {
     const entered = deferred();
     const done = deferred();
@@ -2503,7 +2762,7 @@ describe('managed agent name admission', () => {
 
     expect(readAgentCatalog).toHaveBeenCalledWith({ directory: '/workspace' });
     expect(resolveAgentExecution).toHaveBeenCalledWith(expect.objectContaining({ agent: 'fixer' }));
-    expect(scheduler.submit).toHaveBeenCalledWith(expect.objectContaining({ agent: 'fixer' }));
+    expect(scheduler.submit).toHaveBeenCalledWith(expect.objectContaining({ agent: 'fixer' }), expect.objectContaining({ authorize: expect.any(Function) }));
     expect(result.task.agent).toBe('fixer');
     await runtime.shutdown();
   });
@@ -2516,7 +2775,7 @@ describe('managed agent name admission', () => {
 
     await runtime.handleRpc({ method: 'submit', params: submitParams(1, { agent: 'Fixer' }) });
 
-    expect(scheduler.submit).toHaveBeenCalledWith(expect.objectContaining({ agent: 'Fixer' }));
+    expect(scheduler.submit).toHaveBeenCalledWith(expect.objectContaining({ agent: 'Fixer' }), expect.objectContaining({ authorize: expect.any(Function) }));
     await runtime.shutdown();
   });
 
@@ -2570,7 +2829,7 @@ describe('managed agent name admission', () => {
     expect(requests[0].url.pathname).toBe('/agent');
     expect(requests[0].url.searchParams.get('directory')).toBe('/workspace');
     expect(requests[0].init.headers).toMatchObject({ authorization: 'Basic fixture' });
-    expect(scheduler.submit).toHaveBeenCalledWith(expect.objectContaining({ agent: 'explorer' }));
+    expect(scheduler.submit).toHaveBeenCalledWith(expect.objectContaining({ agent: 'explorer' }), expect.objectContaining({ authorize: expect.any(Function) }));
 
     catalogStatus = 500;
     await expect(runtime.handleRpc({ method: 'submit', params: submitParams(2, { agent: 'explorer' }) }))
@@ -2608,11 +2867,11 @@ describe('managed agent name admission', () => {
     const runtime = createRuntime({ scheduler, readAgentCatalog });
 
     await runtime.handleRpc({ method: 'submit', params: submitParams(1, { agent: 'Builder', deadlineClass: 'council' }) });
-    expect(scheduler.submit).toHaveBeenLastCalledWith(expect.objectContaining({ agent: 'Builder' }));
+    expect(scheduler.submit).toHaveBeenLastCalledWith(expect.objectContaining({ agent: 'Builder' }), expect.objectContaining({ authorize: expect.any(Function) }));
 
     process.env.DEVRYAN_TASK_AGENT_VALIDATION = '0';
     await runtime.handleRpc({ method: 'submit', params: submitParams(2, { agent: 'Fixr' }) });
-    expect(scheduler.submit).toHaveBeenLastCalledWith(expect.objectContaining({ agent: 'Fixr' }));
+    expect(scheduler.submit).toHaveBeenLastCalledWith(expect.objectContaining({ agent: 'Fixr' }), expect.objectContaining({ authorize: expect.any(Function) }));
     expect(readAgentCatalog).not.toHaveBeenCalled();
     await runtime.shutdown();
   });
@@ -2712,7 +2971,7 @@ describe('managed orchestration catalogs on gen 2 (openCodeClient)', () => {
 
     expect(openCodeClient.catalog.agents).toHaveBeenCalledWith({ directory: '/workspace' }, { timeoutMs: 5_000 });
     expect(openCodeClient.catalog.providers).toHaveBeenCalledWith({ directory: '/workspace' }, { timeoutMs: 5_000 });
-    expect(scheduler.submit).toHaveBeenCalledWith(expect.objectContaining({ agent: 'explorer' }));
+    expect(scheduler.submit).toHaveBeenCalledWith(expect.objectContaining({ agent: 'explorer' }), expect.objectContaining({ authorize: expect.any(Function) }));
     expect(directFetch).not.toHaveBeenCalled();
     await runtime.shutdown();
   });
@@ -2806,4 +3065,16 @@ it('forwards only an explicitly supplied healthy reconciliation interval to the 
       ...(eventReconcileIntervalMs === undefined ? {} : { eventReconcileIntervalMs }) });
     await runtime.shutdown();
   }
+});
+
+it('context_state retains authoritative captured readonly children for native Plan enforcement', async () => {
+  const task = { ...createManagedTaskRecord({ ...submitParams('plan'), taskId: 'dvr_task_readonly', sequence: 1, readOnly: true,
+    attempt: 1, priorTaskId: null, executionKind: 'start', createdAt: 1000, timeoutAt: null }), status: 'completed', childSessionId: 'ses_readonly' };
+  const scheduler = { initialize: async () => {}, shutdown: async () => {}, flush: async () => {}, getDiagnostics: () => ({}),
+    listTasks: () => [task], listResultEnvelopes: () => [] };
+  const runtime = createWebManagedOrchestrationRuntime({ scheduler, persistence: createPersistence() });
+  try {
+    const result = await runtime.handleRpc({ method: 'context_state', params: { rootSessionId: 'ses_root', directory: '/workspace' } });
+    expect(result.tasks).toEqual([expect.objectContaining({ childSessionId: 'ses_readonly', readOnly: true })]);
+  } finally { await runtime.shutdown(); }
 });

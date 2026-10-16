@@ -109,6 +109,8 @@ const resolveModelResultMode = () => (
 );
 
 const withModelResultMode = (params, resultMode) => (
+  // Compatibility hosts have no constructor-owned canonical later-Step proof.
+  // Native v2 registration owns its batch surface; this retained plugin stays v1.
   resultMode === 'reference' ? { ...params, resultMode: 'reference', resultContractVersion: 1 } : params
 );
 

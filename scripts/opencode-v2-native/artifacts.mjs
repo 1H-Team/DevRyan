@@ -15,11 +15,15 @@ export const hashNativeFixtureValue = value => hash(JSON.stringify(value));
 const cohortInputs = [
   'packages/web/server/lib/opencode', 'packages/web/server/index.js', 'packages/web/server/application.js',
   'packages/web/server/lib/multi-user', 'packages/web/server/lib/ui-auth', 'packages/web/server/lib/tunnels',
-  'packages/web/server/lib/orchestration',
-  'packages/web/server/lib/harness', 'packages/harness-runtime', 'packages/orchestration-runtime', 'packages/shared-runtime',
+  'packages/web/server/lib/orchestration', 'packages/web/server/lib/git', 'packages/web/server/default-config',
+  'packages/web/server/lib/harness', 'packages/harness-runtime', 'packages/orchestration-runtime', 'packages/shared-runtime', 'packages/cursor-sdk-runtime',
   'packages/web/server/lib/opencode/session-execution-host.js', 'packages/web/server/lib/opencode/session-revert-coordinator.js',
   'packages/web/server/lib/opencode/harness-task-context.js', 'scripts/opencode-v2-native', 'scripts/verify-opencode-v2-native.mjs',
-  'scripts/build-native-runtime.mjs', 'scripts/native-runtime-assets.mjs', 'scripts/native-compaction-observation-transform.mjs',
+  'scripts/build-native-runtime.mjs', 'scripts/native-runtime-assets.mjs', 'scripts/native-compaction-observation-transform.mjs', 'scripts/native-finalization-observation-transform.mjs',
+  'scripts/verify-opencode-v2-package.mjs', 'scripts/qa', 'scripts/agent-evals', 'scripts/journal.mjs',
+  'scripts/perf/receipt-ui-settlement.mjs', 'scripts/perf/electron-interactive-benchmark.mjs',
+  'scripts/perf/electron-run-evidence.mjs',
+  'scripts/perf/electron-lifecycle-benchmark.mjs', 'scripts/perf/fixture-session-seeds.mjs',
   'package.json', 'bun.lock',
 ];
 export const captureNativeAcceptanceSource = async () => {
@@ -33,7 +37,8 @@ export const captureNativeAcceptanceSource = async () => {
         if (entry.isDirectory() || entry.isFile()) await visit(path.join(relative, entry.name));
         else throw new Error(`Native acceptance source contains a link: ${relative}/${entry.name}`);
       }
-    } else if ((relative === 'bun.lock' || /\.(?:[cm]?[jt]s|c|h|rs|json)$/.test(relative)) && !/\.(?:test|spec)\./.test(relative)) {
+    } else if ((relative === 'bun.lock' || /\.(?:[cm]?[jt]s|c|h|rs|json)$/.test(relative)
+      || relative.startsWith('packages/web/server/default-config/') && /\.(?:md|jsonc)$/.test(relative)) && !/\.(?:test|spec)\./.test(relative)) {
       files.set(relative, hash(await fs.readFile(resolved)));
     }
   };
@@ -98,7 +103,7 @@ export const verifyNativeAcceptanceArtifacts = async ({ rg = DEFAULT_RG, launche
         break;
       }
     }
-    assert.equal(manifest?.version, '2.0.26', `Native ${name} pin mismatch`);
+    assert.equal(manifest?.version, '2.0.30', `Native ${name} pin mismatch`);
     packages[name] = manifest;
   }
   const effectDirectory = path.join(repositoryRoot, 'node_modules/effect');

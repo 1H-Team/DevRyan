@@ -1,0 +1,38 @@
+{
+  "contract": "release-qualification-and-publication-rectification/1",
+  "qualification": "deterministic working-tree regressions; no release publication or platform qualification",
+  "validation": {
+    "command": "node --test scripts/release-publication.test.mjs scripts/qa/release-startup-smoke.test.mjs scripts/release-ci.test.mjs scripts/release-workflow.test.mjs",
+    "tests": 65,
+    "passed": 65,
+    "failed": 0,
+    "docsValidation": "passed with existing repository warnings",
+    "diffCheck": "passed"
+  },
+  "readOnlyHistoryFixture": {
+    "networkRequests": 0,
+    "publicWrites": 0,
+    "skippedAndNeverStartedGatesExcluded": true,
+    "executedLegacyFailureRetained": true,
+    "trustedIdentitySurvivesMissingAttemptEvidence": true,
+    "twoUnexplainedFailuresStillFenceWrites": true,
+    "admissionOnlyVersionsCannotEvictExecutedFailures": true
+  },
+  "artifactLinkage": {
+    "qualificationAttempt": "initial executed gate plus at most two proved fresh hosted-runner GUI-only retries",
+    "runAttempt": "independent positive GitHub workflow correlation; gaps and values above three are permitted",
+    "names": "DevRyan-startup-attempt-<runAttempt>-candidate-<sample> or -final",
+    "receiptBinding": "original job, source, installer digest, sample, workflow attempt, qualification ordinal and hosted runner ID",
+    "updater": "actual discoverDesktopUpdate parser verifies admitted version, installer name, digest, byte size and canonical URL after promotion before finalization returns"
+  },
+  "notExecuted": [
+    "GitHub API history or mutations, workflow dispatch, tag creation, npm, deployment or release promotion",
+    "Native full validation, signed DMG or hosted macOS GUI checks",
+    "QA1 owner URL, credential or profile operations"
+  ],
+  "limits": [
+    "Unknown historical source/version identity still refuses admission",
+    "Legacy or incomplete receipts cannot qualify new success or prove fresh-runner retry",
+    "Post-promotion updater discovery failure leaves the release public but produces no successful finalization receipt; existing no-op proof requirements still apply"
+  ]
+}

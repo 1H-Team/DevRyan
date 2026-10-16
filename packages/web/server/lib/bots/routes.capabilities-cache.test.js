@@ -200,6 +200,22 @@ describe('Bot capabilities route status caching', () => {
     expect(harness.botHost.getStatus).toHaveBeenCalledTimes(2);
   });
 
+  it('passive capability reads reuse only an actual stopped Docker result beyond TTL; refresh, invalidation and live callers still probe', async () => {
+    const clock=createClock(), getStatus=vi.fn(async()=>({state:'docker_unavailable',code:'bot_runtime_docker_unavailable',issues:[],warnings:[]}));
+    const harness=createHarness({clock,botHost:host(getStatus)});
+    expect((await harness.read()).payload).toMatchObject({state:'docker_stopped',available:false});
+    clock.advance(BOT_STATUS_CACHE_TTL_MS+1);
+    expect((await harness.read()).payload).toMatchObject({state:'docker_stopped',available:false});
+    expect(getStatus).toHaveBeenCalledTimes(1);
+    await harness.read({refresh:'1'}); expect(getStatus).toHaveBeenCalledTimes(2);
+    clock.advance(BOT_STATUS_CACHE_TTL_MS+1);
+    await harness.cache.getStatus(harness.botHost); expect(getStatus).toHaveBeenCalledTimes(3);
+    harness.cache.invalidate(); await harness.read(); expect(getStatus).toHaveBeenCalledTimes(4);
+    getStatus.mockResolvedValue(healthyStatus()); await harness.read({refresh:'1'});
+    clock.advance(BOT_STATUS_CACHE_TTL_MS+1);
+    expect((await harness.read()).payload.available).toBe(true); expect(getStatus).toHaveBeenCalledTimes(6);
+  });
+
   it('keeps the response shape identical between cached and uncached reads', async () => {
     const harness = createHarness({
       botHost: host(vi.fn(async () => ({
@@ -240,6 +256,30 @@ describe('Bot capabilities route status caching', () => {
 });
 
 describe('resolveBotCapabilities status cache opt-in', () => {
+  it('passive reads use observed dormant catalog failures without Docker probes, while explicit and execution reads stay live', async () => {
+    for (const [code, state] of [
+      ['bot_runtime_docker_unavailable', 'docker_stopped'],
+      ['bot_runtime_docker_not_installed', 'docker_not_installed'],
+      ['bot_runtime_setup_required', 'setup_required'],
+      ['bot_runtime_update_required', 'image_update_available'],
+    ]) {
+      const botHost = host();
+      const input = { hasSupabase: true, botHost, encryption: { getKey: () => Buffer.alloc(32) },
+        catalog: { state: 'unavailable', code }, cacheStoppedStatus: true };
+      for (let sample = 0; sample < 5; sample++) {
+        expect(await resolveBotCapabilities(input)).toMatchObject({ state, code, available: false, catalogAvailable: false, runtime: null });
+      }
+      expect(botHost.getStatus).not.toHaveBeenCalled();
+      await resolveBotCapabilities({ ...input, refreshStatus: true });
+      await resolveBotCapabilities({ ...input, cacheStoppedStatus: false });
+      expect(botHost.getStatus).toHaveBeenCalledTimes(2);
+    }
+    const botHost = host();
+    expect(await resolveBotCapabilities({ hasSupabase: true, botHost, encryption: { getKey: () => Buffer.alloc(32) },
+      catalog: { state: 'unavailable', code: '__proto__' }, cacheStoppedStatus: true })).toMatchObject({ state: 'catalog_unavailable' });
+    expect(botHost.getStatus).toHaveBeenCalledTimes(1);
+  });
+
   it('probes every time without a cache so per-run preflight stays live', async () => {
     const botHost = host();
     const encryption = { getKey: () => Buffer.alloc(32) };

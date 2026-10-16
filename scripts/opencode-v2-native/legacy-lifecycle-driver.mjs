@@ -13,6 +13,7 @@ process.on('uncaughtExceptionMonitor', error => {
 let bytes = '';
 for await (const chunk of process.stdin) { bytes += chunk; assert.ok(Buffer.byteLength(bytes) <= 65536); }
 const input = JSON.parse(bytes);
+const phase = (name, state) => console.error('[native-lifecycle-phase]', JSON.stringify({ phase: name, state, at: Date.now() }));
 if (input.builtinCatalog) {
   const { builtinCatalogPreflightFetch } = await import('./package-preflight.mjs');
   globalThis.fetch = builtinCatalogPreflightFetch(input.builtinCatalog.endpoint);
@@ -41,12 +42,15 @@ const { createRuntimeBundleStore } = await import('../../packages/web/server/lib
 const { resumeRuntimeBundle } = await import('../../packages/web/server/lib/opencode/runtime-host/runtime-bundle-resume.js');
 const { readRollbackIntentSync, rollbackIntentPath, captureRollbackFiles } = await import('../../packages/web/server/lib/opencode/runtime-host/bundle-rollback-intent.js');
 const { createCompiledBundleUpgradeLane } = await import('./package-bundle-upgrade-lane.mjs');
+const { runNativeBundleCredentialProcess } = await import('../../packages/web/server/lib/opencode/runtime-host/native-bundle-credential-process.js');
 const { readManagedOpenCodeRegistry } = await import('../../packages/web/server/lib/opencode/managed-process-registry.js');
 const { createFixtureJournal } = await import('./fixture-journal.mjs');
 const registryOptions = { registryPath: path.join(binding.descriptor.launch.global.state, 'managed-opencode-processes.json') };
 const hash = value => createHash('sha256').update(value).digest('hex');
 const launcher = path.join(path.dirname(binding.descriptor.launch.controllerBinary), `DevRyan-execution-${process.platform}-${process.arch}`);
+phase('artifact-load', 'started');
 const bundle = await loadNativeRuntimeBundle({ binding, launcher });
+phase('artifact-load', 'completed');
 const nativeVersion = bundle.artifacts.manifest.opencodeVersion;
 const { agents, commands = {}, ...legacy } = input.configuration;
 const resolve = createNativeConfigurationSnapshotResolver({ loadLocation: async () => ({ legacy: structuredClone(legacy),
@@ -96,7 +100,9 @@ owner = createNativeRuntimeOwner({ bundle, openCodeClient: client, admission, ex
   onExit: exit => exits.push(exit), onBound: child => { url = child.url; epoch++; } });
 let result;
 try {
+  phase('initial-start', 'started');
   const first = await owner.start();
+  phase('initial-start', 'completed');
   let builtinCatalog;
   if (input.builtinCatalog) {
     const { assertBuiltinCatalogPreflight } = await import('./package-preflight.mjs');
@@ -131,13 +137,15 @@ try {
       else history.set(sessionID,ids);
     }
   };
-  await inspect();
+  phase('initial-inspection', 'started');await inspect();phase('initial-inspection', 'completed');
   const stopped = await first.killForRecovery();
   assert.equal(stopped.receipt?.terminated, true); assert.equal(stopped.receipt?.confined, true);
+  phase('replacement-start', 'started');
   const second = await owner.start(); assert.notEqual(first.instanceID, second.instanceID);
+  phase('replacement-start', 'completed');
   registry.push(...readManagedOpenCodeRegistry(registryOptions).map(({ childPid, ownerPid }) => ({ childPid, ownerPid })));
   await fs.writeFile(input.evidencePath, JSON.stringify(registry));
-  await inspect();
+  phase('replacement-inspection', 'started');await inspect();phase('replacement-inspection', 'completed');
   const checkpoint = createRuntimeBundleCheckpoint({ownerID:input.bundleID,generation:2,launch:binding.descriptor.launch,
     closeAdmission:()=>{journal.beginDrain();return owner.closeAdmissionForCheckpoint();},getController:()=>second,
     assertAdmissionClosed:()=>owner.assertCheckpointAdmissionClosed(),beforeControllerStop:()=>owner.drainCredentialOwners(),
@@ -149,14 +157,21 @@ try {
     assert.equal(binding.selection.previousBundleID, input.rollback.targetBundleID);
     const target = JSON.parse(await fs.readFile(path.join(binding.controlRoot, 'bundles', input.rollback.targetBundleID, 'descriptor.json'), 'utf8'));
     assert.equal(target.bundleID, input.rollback.targetBundleID);
-    const lane = createCompiledBundleUpgradeLane({ observations, rollbackPhase: input.rollback.phase });
+    const lane = createCompiledBundleUpgradeLane({ observations, rollbackPhase: input.rollback.phase,
+      credentialProcess: async request => {
+        const name = `credential-${request.action.action}`;phase(name, 'started');
+        try { const result = await runNativeBundleCredentialProcess(request);phase(name, 'completed');return result; }
+        catch (error) { phase(name, 'failed');throw error; }
+      } });
     lane.restoreRollbackBaseline(target);
     const store = createRuntimeBundleStore({ controlRoot: binding.controlRoot,
       withQuiescedSource: (source, action) => checkpoint(source, async (stamp, scope) => {
         quiescence = stamp; return action(stamp, scope);
       }), runMigration: async () => { throw new Error('Unexpected rollback fixture migration'); },
       captureCredentials: lane.captureCredentials, reconcileRollback: request => lane.reconcileRollback(request) });
+    phase('checkpoint-rollback', 'started');
     const transitioned = await store.rollback({ targetBundleID: target.bundleID, expectedRevision: input.rollback.expectedRevision });
+    phase('checkpoint-rollback', 'completed');
     assert.equal(transitioned.selection.selectedBundleID, target.bundleID);
     assert.equal(transitioned.selection.previousBundleID, input.bundleID);
     assert.equal(transitioned.selection.revision, input.rollback.expectedRevision + 1);
@@ -179,19 +194,25 @@ try {
       assert.deepEqual(await fs.readFile(intentFile), proof);
       assert.deepEqual(await captureRollbackFiles(path.dirname(binding.descriptor.preparedManifestPath)), retained);
     } else assert.equal(transitioned.reason, null);
+    phase('rollback-retention', 'started');
     const retention = await lane.assertRollbackRetention(binding.descriptor);
+    phase('rollback-retention', 'completed');
     rollbackEvidence = { phase: input.rollback.phase, selection: transitioned.selection,
       intentSha256: hash(await fs.readFile(rollbackIntentPath(binding.controlRoot))),
       checkpointID: intent.checkpoint.checkpointID, host: intent.settlement.host,
       controller: intent.settlement.controller, nativeCredentialSha256: intent.nativeCredentialSha256,
       retention, heldRetryRefused: input.rollback.phase === 'ack-loss', sameHostResumeRefused: input.rollback.phase === 'ack-loss' };
-  } else quiescence = await checkpoint({kind:'bundle',bundleID:input.bundleID},stamp=>stamp);
+  } else {
+    phase('checkpoint', 'started');quiescence = await checkpoint({kind:'bundle',bundleID:input.bundleID},stamp=>stamp);phase('checkpoint', 'completed');
+  }
   assert.equal(second.hasExited(),true);
   result = { quiescence, ...(rollbackEvidence ? { rollback: rollbackEvidence } : {}), ...(builtinCatalog ? { builtinCatalog } : {}), id: 'rollback-selected-native-lifecycle', status: 'passed', version: nativeVersion, sessionIDs, history: Object.fromEntries(history),
     restart: { previousInstance: first.instanceID, replacementInstance: second.instanceID, exit: stopped },
     source: 'actual-selected-v2-owner-canonical-history-and-supervised-restart' };
 } finally {
+  phase('cleanup', 'started');
   await owner.close(); await managed.close(); await host.drain(); await journal.drain();
+  phase('cleanup', 'completed');
 }
 assert.equal(readManagedOpenCodeRegistry(registryOptions).length, 0);
 assert.equal(exits.length, 2); assert.ok(exits.every(exit => exit.receipt?.terminated && exit.receipt?.confined));

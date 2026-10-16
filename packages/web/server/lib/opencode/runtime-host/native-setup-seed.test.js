@@ -49,6 +49,16 @@ it('preserves setup and credentials but excludes conversation authority, journal
  const first=await seedNativeSetup(f);await f.write(path.join(f.source.webDataDirectory,'settings.json'),{themeId:'changed'});expect(await seedNativeSetup(f)).toEqual(first);
  await f.write(path.join(f.target.webDataDirectory,'settings.json'),{themeId:'tampered'});await expect(seedNativeSetup(f)).rejects.toMatchObject({code:'native_setup_seed_changed'});
 });
+it('seeds the chosen helper model revision independently from primary and notification preferences',async()=>{
+ const f=await fixture(),helperModelSelection={providerID:'fixture-helper',modelID:'helper-model',revision:'saved-choice-r1'};
+ const preferences={helperModelSelection,defaultModel:{providerID:'fixture-primary',modelID:'primary-model'},zenModel:'notification-model',themeId:'dark'};
+ await f.write(path.join(f.source.webDataDirectory,'settings.json'),{...preferences,selectedSessionId:'old-session',receipts:{old:true}});
+ const marker=await seedNativeSetup(f),seeded=path.join(f.target.webDataDirectory,'settings.json');
+ expect(JSON.parse(await fs.readFile(seeded,'utf8'))).toEqual(preferences);
+ await f.write(path.join(f.source.webDataDirectory,'settings.json'),{...preferences,helperModelSelection:{...helperModelSelection,revision:'changed-live-r2'}});
+ expect(await seedNativeSetup(f)).toEqual(marker);
+ expect(JSON.parse(await fs.readFile(seeded,'utf8'))).toEqual(preferences);
+});
 it('relocates exact Meridian account files and preserves original keychain identity',async()=>{
  const f=await fixture(),account=path.join(f.source.home,'.claude');
  await f.write(path.join(account,'.credentials.json'),{claudeAiOauth:{accessToken:'fixture'}});await f.write(path.join(account,'history.jsonl'),{privateHistory:true});

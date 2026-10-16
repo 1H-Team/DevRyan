@@ -1,8 +1,10 @@
+import type { HelperModelSelection } from '@/lib/helperModelSelection';
 import type { AgentModelSelection } from '@/lib/agentModelSelection';
 
 export type ManagedSettingsSnapshot = {
   defaultAgent?: string;
   defaultPlanMode?: boolean;
+  helperModelSelection?: HelperModelSelection;
   agentModelSelections?: Record<string, AgentModelSelection>;
   multiUser?: {
     settingsOverrideKeys?: string[];
@@ -39,6 +41,6 @@ export const resetManagedAgentDefault = (agentName: string) => (
   })
 );
 
-export const resetManagedSettingOverride = (field: 'defaultAgent' | 'defaultPlanMode') => (
+export const resetManagedSettingOverride = (field: 'defaultAgent' | 'defaultPlanMode' | 'helperModelSelection') => (
   requestManagedSettings(`/api/config/settings/overrides/${field}`, { method: 'DELETE' })
 );

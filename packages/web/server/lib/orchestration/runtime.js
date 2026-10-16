@@ -1,10 +1,12 @@
 import { createCompactResultHeader } from '@openchamber/orchestration-runtime';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { createRequiredCheckObserver } from './required-check-observer.js';
 import {
   createManagedAssistantActivityRegistry,
   createManagedOperatorAbortRegistry,
   createManagedTerminalErrorRegistry,
   createManagedTaskScheduler,
+  createManagedTaskRecord,
   formatManagedAssignmentContext,
   MANAGED_OVERLAP_READ_TOOLS,
   resolveHarnessPolicies,
@@ -16,7 +18,15 @@ import {
   projectManagedResultEnvelope,
   projectManagedTaskResult as projectManagedTaskResultForMode,
   readManagedResultReference,
+  prepareManagedResultMetadata,
+  isManagedMetadataCursor,
   resolveManagedResultMode,
+  assertManagedToolOutputSize,
+  fitManagedToolOutput,
+  compactManagedTaskToolResult,
+  MANAGED_TOOL_OUTPUT_MAX_BYTES,
+  MANAGED_RESULT_PAGE_MAX_BYTES,
+  MANAGED_RESULT_V2_PAGE_MAX_BYTES,
   supportsManagedReadOnlyAgent,
   supportsManagedReadOnlyProvider,
   toManagedTaskEvent,
@@ -274,7 +284,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
   const supportsReadOnlyProvider = providerId => supportsManagedReadOnlyProvider(providerId, { cursorReadOnly });
   const harnessPolicies = Object.freeze(Object.fromEntries(Object.entries(resolveHarnessPolicies(options.environment ?? process.env))
     .map(([key, enabled]) => [key, typeof options.harnessPolicies?.[key] === 'boolean' ? options.harnessPolicies[key] : enabled])));
-  const policyProjection = () => ({ schemaVersion: 1, policies: harnessPolicies,
+  const policyProjection = () => ({ schemaVersion: 1, resultContractVersion: 2, policies: harnessPolicies,
     overlapReadTools: harnessPolicies.readOverlap ? [...MANAGED_OVERLAP_READ_TOOLS] : [] });
   const parentReadFreshness = createParentReadFreshness();
   const resolveAgentExecution = typeof options.resolveAgentExecution === 'function'
@@ -467,6 +477,8 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     cursorReadOnly,
     onBarrierChange: options.onBarrierChange,
     onRequiredCheckReceipt: options.onRequiredCheckReceipt,
+    onPersistenceObservation: options.onPersistenceObservation,
+    onMutationTiming: options.onMutationTiming,
     executor,
     persistence,
     now,
@@ -669,22 +681,30 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     return task;
   };
 
-  const projectTaskResult = async (task, resultMode, envelope = scheduler.getResultEnvelope(task.taskId)) => {
+  const projectTaskResult = async (task, resultMode, envelope = scheduler.getResultEnvelope(task.taskId), maxOutputBytes, resultContractVersion) => {
     const result = projectManagedTaskResultForMode(
       projectTask(task, envelope),
       envelope,
       resultMode,
     );
-    if (resultMode === 'compact' && envelope && result.resultReference) {
+    if (resultMode === 'compact' && harnessPolicies.compactResults && envelope && result.resultReference) {
       result.resultHeader = createCompactResultHeader({ task, envelope,
         checks: await requiredCheckObserver.project(task), observedAt: now() });
     }
-    return Object.values(harnessPolicies).some(Boolean) ? { ...result, capabilities: policyProjection() } : result;
+    const capabilities = Object.values(harnessPolicies).some(Boolean) ? { capabilities: policyProjection() } : {};
+    const metadata=resultContractVersion===2&&envelope?await prepareManagedResultMetadata({...result,...capabilities,resultContractVersion:2}):null;
+    if (maxOutputBytes === undefined) return { ...result, ...capabilities,...resultContractVersion===2?{resultContractVersion:2}:{} };
+    return fitManagedToolOutput(pageBytes => {
+      const full={...projectManagedTaskResultForMode(projectTask(task,envelope),envelope,resultMode,pageBytes),
+        ...(result.resultHeader?{resultHeader:result.resultHeader}:{}),...capabilities,...resultContractVersion===2?{resultContractVersion:2}:{}};
+      try{return assertManagedToolOutputSize(full,maxOutputBytes);}
+      catch(error){if(error.code!=='managed_tool_output_metadata_too_large')throw error;return metadata?metadata.project(pageBytes,full.resultReference):full;}
+    },maxOutputBytes,resultContractVersion===2?MANAGED_RESULT_V2_PAGE_MAX_BYTES:MANAGED_RESULT_PAGE_MAX_BYTES);
   };
 
-  const projectEnvelopeResult = async (task, envelope, resultMode) => {
-    if (resultMode !== 'compact') return projectManagedResultEnvelope(task, envelope, resultMode);
-    const { task: _task, ...result } = await projectTaskResult(task, resultMode, envelope);
+  const projectEnvelopeResult = async (task, envelope, resultMode, maxOutputBytes) => {
+    if (maxOutputBytes === undefined && resultMode !== 'compact') return projectManagedResultEnvelope(task, envelope, resultMode);
+    const { task: _task, ...result } = await projectTaskResult(task, resultMode, envelope, maxOutputBytes);
     return result;
   };
 
@@ -747,13 +767,60 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     return admitted;
   };
 
+  const preparedSubmissions = new AsyncLocalStorage();
+  const nativePromptContexts = new AsyncLocalStorage();
+  const resolveSubmission = async (params, context) => {
+    context.signal?.throwIfAborted();
+    const readOnly = resolveReadOnly(params), submittedAgent = await resolveSubmittedAgent(params);
+    context.signal?.throwIfAborted();
+    const agent = typeof submittedAgent === 'string' ? submittedAgent.trim() : '';
+    const admittedExecution = await resolveAdmittedAgentExecution({ ...params, agent: submittedAgent }, readOnly, context.signal);
+    if (readOnly && agent && !supportsManagedReadOnlyAgent(agent)) throw createRuntimeError(
+      MANAGED_READ_ONLY_AGENT_UNSUPPORTED, MANAGED_READ_ONLY_AGENT_UNSUPPORTED_MESSAGE, 409);
+    if (readOnly && admittedExecution.providerId && !supportsReadOnlyProvider(admittedExecution.providerId)) throw createRuntimeError(
+      MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED, MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED_MESSAGE, 409);
+    context.signal?.throwIfAborted();
+    return Object.freeze({ readOnly, submittedAgent, admittedExecution: Object.freeze({ ...admittedExecution }) });
+  };
+
+  // Constructor-only preparation; the durable submit still owns its original
+  // cancellation, admission and scheduler fences. No wire field grants reuse.
+  const withSubmissionPreparation = async (params, context = {}, action) => {
+    let selection;
+    const signature = JSON.stringify(params);
+    try {
+      if (typeof action !== 'function') throw new TypeError('Submission action is required');
+      assertAvailable(); await ensureInitialized(); assertWorkAdmission();
+      selection = await resolveSubmission(params, context);
+      context.signal?.throwIfAborted(); assertWorkAdmission();
+    } catch (error) { throw normalizeRuntimeError(error); }
+    return preparedSubmissions.run({ signature, selection, used: false }, action);
+  };
+
   const handleRpcInternal = async ({ method, params = {} }, context = {}) => {
     // Static tool advertising must not reconcile children before their controller starts.
     if (method === 'harness_capabilities') return policyProjection();
     await ensureInitialized();
     const requestedResultMode = resolveManagedResultMode(params.resultMode);
-    const resultMode = harnessPolicies.compactResults && params.resultContractVersion === 1 && requestedResultMode !== 'eager'
+    const resultMode = params.resultContractVersion===2&&requestedResultMode!=='eager'?'compact':harnessPolicies.compactResults && params.resultContractVersion === 1 && requestedResultMode !== 'eager'
       ? 'compact' : requestedResultMode === 'compact' ? 'reference' : requestedResultMode;
+    const maxOutputBytes = params.maxOutputBytes??(params.resultContractVersion===2?MANAGED_TOOL_OUTPUT_MAX_BYTES:undefined);
+    if (maxOutputBytes !== undefined) assertManagedToolOutputSize({}, maxOutputBytes);
+    const project = (task, envelope = scheduler.getResultEnvelope(task.taskId)) => projectTaskResult(task, resultMode, envelope, maxOutputBytes, params.resultContractVersion);
+    const reserveCommittedReceipt = (identity) => {
+      if (maxOutputBytes !== undefined) assertManagedToolOutputSize({ committed: true, ...identity }, maxOutputBytes);
+    };
+    const committedProjection = async (identity, projection) => {
+      try {
+        const value = await projection();
+        return maxOutputBytes === undefined ? value : assertManagedToolOutputSize(value, maxOutputBytes);
+      }
+      catch (error) {
+        if (maxOutputBytes === undefined) throw error;
+        return assertManagedToolOutputSize({ committed: true, ...identity,
+          projectionError: error?.code === 'managed_tool_output_metadata_too_large' ? error.code : 'managed_result_projection_unavailable' }, maxOutputBytes);
+      }
+    };
     switch (method) {
       case 'context_state': {
         // Read-only and scope-checked; compaction anchors use it regardless of
@@ -763,7 +830,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         const tasks = scheduler.listTasks({ rootSessionId });
         for (const task of tasks) assertTaskScope(task, params);
         return { tasks: tasks.map((task) => ({ taskId: task.taskId, rootSessionId, childSessionId: task.childSessionId,
-          status: task.status, failureReason: task.failureReason,
+          status: task.status, failureReason: task.failureReason, readOnly: task.readOnly,
           requiredChecks: (task.requiredChecks ?? []).map(({ name }) => ({ name })),
           requiredCheckReceipts: (task.requiredCheckReceipts ?? []).map(({ name, status, callId, messageId }) => ({ name, status, callId, messageId })) })),
           envelopes: scheduler.listResultEnvelopes({ rootSessionId }).map((envelope) => ({ taskId: envelope.taskId,
@@ -813,29 +880,15 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         context.signal?.throwIfAborted();
         assertWorkAdmission();
         const timeoutAt = resolveSubmitTimeoutAt(params, now);
-        const readOnly = resolveReadOnly(params);
-        // The canonical name is what gets resolved, scheduled and fingerprinted.
-        const submittedAgent = await resolveSubmittedAgent(params);
-        const agent = typeof submittedAgent === 'string' ? submittedAgent.trim() : '';
-        context.signal?.throwIfAborted();
-        const admittedExecution = await resolveAdmittedAgentExecution({ ...params, agent: submittedAgent }, readOnly, context.signal);
-        const providerId = admittedExecution.providerId;
-        if (readOnly && agent && !supportsManagedReadOnlyAgent(agent)) {
-          throw createRuntimeError(
-            MANAGED_READ_ONLY_AGENT_UNSUPPORTED,
-            MANAGED_READ_ONLY_AGENT_UNSUPPORTED_MESSAGE,
-            409,
-          );
+        const prepared = preparedSubmissions.getStore();
+        if (prepared && (prepared.used || prepared.signature !== JSON.stringify(params))) {
+          throw createRuntimeError('managed_submission_preparation_changed', 'Managed submission preparation expired', 409);
         }
-        if (readOnly && providerId && !supportsReadOnlyProvider(providerId)) {
-          throw createRuntimeError(
-            MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED,
-            MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED_MESSAGE,
-            409,
-          );
-        }
+        if (prepared) prepared.used = true;
+        const { readOnly, submittedAgent, admittedExecution } = prepared?.selection ?? await resolveSubmission(params, context);
         context.signal?.throwIfAborted();
-        const task = await scheduler.submit({
+        reserveCommittedReceipt({ taskId: 'dvr_task_'.padEnd(256, 'x'), rootSessionId: params.rootSessionId, action: 'start' });
+        const submission = {
           idempotencyKey: params.idempotencyKey,
           rootSessionId: params.rootSessionId,
           dispatchGroupId: params.dispatchGroupId ?? null,
@@ -857,8 +910,17 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
           // marks independent reviewer seats for the duplicate guard.
           ...(params.deadlineClass === 'council' ? { deadlineClass: 'council' } : {}),
           timeoutAt,
-        }, ...(context.signal ? [{ signal: context.signal }] : []));
-        return projectTaskResult(task, resultMode);
+        };
+        if (maxOutputBytes !== undefined) await project(createManagedTaskRecord({ ...submission,
+          taskId: 'dvr_task_'.padEnd(256, 'x'), dispatchWaveId: 'dvr_wave_'.padEnd(256, 'x'),
+          sequence: Number.MAX_SAFE_INTEGER, createdAt: now(), attempt: 1, priorTaskId: null, executionKind: 'start' }), null);
+        const task = await scheduler.submit(submission, { signal: context.signal, authorize: async () => {
+          context.signal?.throwIfAborted(); assertAvailable(); assertWorkAdmission();
+          await persistence.verifyOwnership?.();
+          await context.authorizeSubmission?.();
+          context.signal?.throwIfAborted(); assertAvailable(); assertWorkAdmission();
+        } });
+        return committedProjection({ taskId: task.taskId, rootSessionId: task.rootSessionId, action: 'start', status: task.status }, () => project(task));
       }
       case 'wait': {
         const task = getScopedTask(params);
@@ -867,20 +929,33 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
           signal: context.signal,
           ...(waitTimeoutMs === undefined ? {} : { timeoutMs: waitTimeoutMs }),
         });
-        return projectTaskResult(settled, resultMode);
+        return project(settled);
       }
       case 'wait_any': {
         if (!harnessPolicies.waitAny) throw createRuntimeError('harness_policy_disabled', 'wait_any is disabled; use wait for an individual task', 409);
         if (!Array.isArray(params.taskIds) || params.taskIds.length === 0) throw new TypeError('taskIds is required');
+        if(params.resultContractVersion===2&&(params.taskIds.some(id=>typeof id!=='string'||!/^dvr_task_[A-Za-z0-9_-]+$/.test(id))
+          ||new Set(params.taskIds).size!==params.taskIds.length))throw createRuntimeError('invalid_request','Exact distinct task identifiers are required',400);
         const scopedTasks = [...new Set(params.taskIds)].map((taskId) => getScopedTask({ ...params, taskId }));
         const waitTimeoutMs = resolveWaitTimeoutMs(params);
         const result = await scheduler.waitForAnyTask({ rootSessionId: params.rootSessionId,
           taskIds: scopedTasks.map((task) => task.taskId), afterCursor: params.afterCursor,
+          ...(params.until===undefined?{}:{until:params.until}),
           signal: context.signal, ...(waitTimeoutMs === undefined ? {} : { timeoutMs: waitTimeoutMs }) });
         const returnedIds = new Set([...result.readyTaskIds, ...result.attention.map((entry) => entry.taskId),
           ...(result.settled ? result.unacknowledgedTaskIds : [])]);
-        return { ...result, results: await Promise.all([...returnedIds].map((id) => scheduler.getTask(id)).filter(Boolean)
-          .map((task) => projectTaskResult(task, resultMode))), capabilities: policyProjection() };
+        const selected=scopedTasks.filter(task=>returnedIds.has(task.taskId)).map(task=>getScopedTask({...params,taskId:task.taskId}));
+        if(params.resultContractVersion!==2)return { ...result, results:await Promise.all(selected.map(task=>project(task))),capabilities:policyProjection() };
+        const projected=await Promise.all(selected.map(task=>projectTaskResult(task,resultMode,scheduler.getResultEnvelope(task.taskId),undefined,2)));
+        const full=compactManagedTaskToolResult({...result,results:projected,capabilities:policyProjection(),resultContractVersion:2});
+        try{return assertManagedToolOutputSize(full,maxOutputBytes);}catch(error){if(error.code!=='managed_tool_output_metadata_too_large')throw error;}
+        const metadata=await Promise.all(projected.map(value=>prepareManagedResultMetadata(value)));
+        for(let count=projected.length;count>=0;count--){
+          try{return fitManagedToolOutput(pageBytes=>({...result,results:metadata.slice(0,count).map(section=>section.project(pageBytes)),
+            notReturnedTaskIds:selected.slice(count).map(task=>task.taskId),capabilities:policyProjection(),resultContractVersion:2}),maxOutputBytes,MANAGED_RESULT_V2_PAGE_MAX_BYTES);}
+          catch(error){if(error.code!=='managed_tool_output_metadata_too_large')throw error;}
+        }
+        throw createRuntimeError('managed_tool_output_metadata_too_large','The selected wait metadata exceeds response capacity; use a smaller exact selection',409);
       }
       case 'wait_result_action': {
         const task = getScopedTask(params);
@@ -891,8 +966,8 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
           ? scheduler.getTask(resultEnvelope.followUpTaskId)
           : null;
         return {
-          ...await projectEnvelopeResult(task, resultEnvelope, resultMode),
-          followUpTask: followUpTask ? await projectTaskResult(followUpTask, resultMode) : null,
+          ...await projectEnvelopeResult(task, resultEnvelope, resultMode, maxOutputBytes),
+          followUpTask: followUpTask ? await project(followUpTask) : null,
         };
       }
       case 'barrier': {
@@ -911,7 +986,10 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         if (!rootSessionId) {
           throw createRuntimeError('task_scope_mismatch', 'rootSessionId is required', 403);
         }
-        const barrier = await scheduler.inspectDispatchBarrier(rootSessionId);
+        const promptContext = nativePromptContexts.getStore();
+        const barrier = promptContext
+          ? await promptContext.readBarrier({ rootSessionId, directory: params.directory })
+          : await scheduler.inspectDispatchBarrier(rootSessionId);
         return Object.values(harnessPolicies).some(Boolean) ? { ...barrier, capabilities: policyProjection() } : barrier;
       }
       case 'list_provider_recovery_continuations': {
@@ -965,7 +1043,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         return projectHandoffResult(scope, result, resultMode);
       }
       case 'status': {
-        return projectTaskResult(getScopedTask(params), resultMode);
+        return project(getScopedTask(params));
       }
       case 'snapshot': {
         const rootSessionId = typeof params.rootSessionId === 'string'
@@ -978,17 +1056,41 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
       }
       case 'cancel': {
         const task = getScopedTask(params);
+        reserveCommittedReceipt({ taskId: task.taskId, rootSessionId: task.rootSessionId, action: 'cancel' });
         const cancelled = await scheduler.cancelTask(task.taskId, {
           cascade: params.cascade === true,
           ...(typeof params.reason === 'string' && params.reason.trim()
             ? { reason: params.reason.trim() }
             : {}),
         });
-        return Array.isArray(cancelled)
-          ? { tasks: await Promise.all(cancelled.map((entry) => projectTaskResult(entry, resultMode))) }
-          : projectTaskResult(cancelled, resultMode);
+        return committedProjection({ taskId: task.taskId, rootSessionId: task.rootSessionId, action: 'cancel',
+          ...(Array.isArray(cancelled) ? { affectedTaskCount: cancelled.length } : { status: cancelled.status }) },
+        async () => Array.isArray(cancelled) ? { tasks: await Promise.all(cancelled.map(entry => project(entry))) } : project(cancelled));
       }
       case 'read_result': {
+        if(params.reads!==undefined){
+          if(params.resultContractVersion!==2||params.taskId!==undefined||params.resultCursor!==undefined||!Array.isArray(params.reads)||!params.reads.length
+            ||params.reads.some(read=>!read||Object.keys(read).length!==2||typeof read.taskId!=='string'||typeof read.resultCursor!=='string')
+            ||new Set(params.reads.map(read=>read.taskId)).size!==params.reads.length)throw createRuntimeError('invalid_request','Exact distinct result reads are required',400);
+          const reply={resultContractVersion:2,results:[],failed:[],notProcessed:params.reads.map(read=>read.taskId)};
+          if(maxOutputBytes!==undefined)assertManagedToolOutputSize(reply,maxOutputBytes);
+          for(const read of params.reads){
+            if(context.signal?.aborted)break;
+            const rest=reply.notProcessed.slice(1),capacity=maxOutputBytes===undefined?undefined:maxOutputBytes-Buffer.byteLength(JSON.stringify(reply))-512;
+            if(capacity!==undefined&&capacity<1024)break;
+            try{
+              const value=await handleRpcInternal({method:'read_result',params:{...params,reads:undefined,...read,...capacity===undefined?{}:{maxOutputBytes:capacity}}},context);
+              const row={taskId:read.taskId,...value},next={...reply,results:[...reply.results,row],notProcessed:rest};
+              if(maxOutputBytes!==undefined)assertManagedToolOutputSize(next,maxOutputBytes);
+              reply.results.push(row);reply.notProcessed=rest;
+            }catch(error){
+              const failed={taskId:read.taskId,code:typeof error?.code==='string'&&/^[a-z0-9_]{1,128}$/.test(error.code)?error.code:'managed_result_read_failed'};
+              if(maxOutputBytes!==undefined)assertManagedToolOutputSize({...reply,failed:[...reply.failed,failed],notProcessed:rest},maxOutputBytes);
+              reply.failed.push(failed);reply.notProcessed=rest;
+            }
+          }
+          return reply;
+        }
         const task = getResultReadScopedTask(params);
         const resultEnvelope = scheduler.getResultEnvelope(task.taskId);
         if (!resultEnvelope) {
@@ -998,16 +1100,32 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
             404,
           );
         }
-        return {
+        if(params.resultContractVersion===2&&isManagedMetadataCursor(params.resultCursor)){
+          const full=await projectTaskResult(task,resultMode,resultEnvelope,undefined,2),metadata=await prepareManagedResultMetadata(full);
+          return maxOutputBytes===undefined?metadata.read(params.resultCursor):fitManagedToolOutput(pageBytes=>metadata.read(params.resultCursor,pageBytes),maxOutputBytes,MANAGED_RESULT_V2_PAGE_MAX_BYTES);
+        }
+        const projectPage = maxPageBytes => ({
           resultReference: readManagedResultReference({
             task,
             resultEnvelope,
             resultCursor: params.resultCursor,
+            maxPageBytes,
           }),
-        };
+        });
+        return maxOutputBytes === undefined ? projectPage() : fitManagedToolOutput(projectPage, maxOutputBytes,
+          params.resultContractVersion===2?MANAGED_RESULT_V2_PAGE_MAX_BYTES:MANAGED_RESULT_PAGE_MAX_BYTES);
       }
       case 'acknowledge': {
         const task = getScopedTask(params);
+        const review=context.nativeResultReview;
+        if(params.resultContractVersion===2&&(typeof review?.recheck!=='function'||review.taskId!==task.taskId
+          ||review.envelopeId!==scheduler.getResultEnvelope(task.taskId)?.envelopeId||review.action!==params.action
+          ||review.acknowledgementIdentity!==params.acknowledgementIdentity))throw createRuntimeError('managed_result_review_required','Canonical result delivery and a later authorized review Step are required',409);
+        if(params.resultContractVersion===2)await review.recheck();
+        if (maxOutputBytes !== undefined) await project(task);
+        reserveCommittedReceipt({ taskId: task.taskId, rootSessionId: task.rootSessionId, action: params.action,
+          envelopeId: scheduler.getResultEnvelope(task.taskId)?.envelopeId, followUpTaskId: 'dvr_task_'.padEnd(256, 'x'),
+          projectionError: 'managed_tool_output_metadata_too_large' });
         if (['retry', 'resume', 'retry_in_place', 'recover_in_place'].includes(params.action)) {
           assertWorkAdmission();
         }
@@ -1029,6 +1147,8 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         const result = await scheduler.acknowledgeResult(task.taskId, {
           action: params.action,
           idempotencyKey: params.idempotencyKey,
+          ...(params.resultContractVersion===2?{acknowledgementIdentity:params.acknowledgementIdentity}:{}),
+          ...(params.resultContractVersion===2?{authorize:review.recheck}:{}),
           ...(agentRetryExecution?.providerId
             ? { providerId: agentRetryExecution.providerId }
             : (params.providerId ? { providerId: params.providerId } : {})),
@@ -1048,12 +1168,13 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
             ? { autoResumeGeneration: params.autoResumeGeneration }
             : {}),
         });
-        return {
-          ...await projectEnvelopeResult(task, result.envelope, resultMode),
+        return committedProjection({ taskId: task.taskId, rootSessionId: task.rootSessionId, action: result.envelope.action,
+          envelopeId: result.envelope.envelopeId, followUpTaskId: result.followUpTask?.taskId ?? null }, async () => ({
+          ...await projectEnvelopeResult(task, result.envelope, resultMode, maxOutputBytes),
           followUpTask: result.followUpTask
-            ? await projectTaskResult(result.followUpTask, resultMode)
+            ? await project(result.followUpTask)
             : null,
-        };
+        }));
       }
       case 'set_auto_resume': {
         const task = getScopedTask(params);
@@ -1168,15 +1289,39 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     prepareBridge,
     initialize,
     handleRpc,
+    withSubmissionPreparation,
     getSnapshot,
     withNativePromptContext: async (input, action) => {
+      const scope = { rootSessionId: input.rootSessionId, directory: input.directory, authorize: input.authorize };
       assertAvailable(); await ensureOwnership(); assertWorkAdmission();
-      return scheduler.withNativePromptContext({ ...input, authorize: async () => {
+      return scheduler.withNativePromptContext({ ...scope, authorize: async () => {
         await persistence.verifyOwnership?.(); assertAvailable(); assertWorkAdmission();
-        await input.authorize();
-      } }, action);
+        await scope.authorize();
+      } }, state => nativePromptContexts.run({ readBarrier: state.readBarrier }, () => action(state)));
     },
     verifyNativeTaskDispatch: input => verifyNativeTaskDispatch(input).catch(error => { throw normalizeRuntimeError(error); }),
+    readManagedTitleAssignment: async ({ childSessionId, directory }) => {
+      const check = async () => { assertAvailable(); assertWorkAdmission(); await persistence.verifyOwnership?.(); assertAvailable(); assertWorkAdmission();
+        if (!initialized || !ownershipAcquired || shutdownPromise) throw createRuntimeError('native_managed_title_unavailable', 'Managed title owner is unavailable', 403); };
+      await check();
+      const task = scheduler.getChildAssignment(childSessionId, directory);
+      if (!task || task.owner !== 'devryan' || !['starting', 'running', 'completed', 'failed'].includes(task.status)
+        || !task.dispatchCallId || !task.dispatchGroupId) throw createRuntimeError('native_managed_title_unavailable', 'Managed title assignment is unavailable', 403);
+      const parent = task.parentTaskId ? scheduler.getTask(task.parentTaskId)?.childSessionId : task.rootSessionId;
+      if (!parent) throw createRuntimeError('native_managed_title_unavailable', 'Managed title parent is unavailable', 403);
+      const tupleFor = task => ({ taskId: task.taskId, rootSessionId: task.rootSessionId, parentSessionId: parent,
+        childSessionId, directory, dispatchCallId: task.dispatchCallId, dispatchGroupId: task.dispatchGroupId,
+        attempt: task.attempt, sequence: task.sequence, agent: task.agent, providerId: task.providerId,
+        modelId: task.modelId, variant: task.variant ?? 'default', readOnly: task.readOnly });
+      const tuple = tupleFor(task);
+      await check();
+      const current = scheduler.getChildAssignment(childSessionId, directory);
+      if (!current || !['starting', 'running', 'completed', 'failed'].includes(current.status)
+        || JSON.stringify(tupleFor(current)) !== JSON.stringify(tuple)
+        || (current.parentTaskId ? scheduler.getTask(current.parentTaskId)?.childSessionId : current.rootSessionId) !== parent)
+        throw createRuntimeError('native_managed_title_unavailable', 'Managed title assignment changed', 403);
+      return Object.freeze(tuple);
+    },
     verifyNativeTaskCatalog: input => verifyNativeTaskCatalog(input).catch(error => { throw normalizeRuntimeError(error); }),
     cancelSessionsForRemoval: async input => {
       assertAvailable();

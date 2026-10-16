@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { Cause, Effect, ErrorReporter, Schema } from 'effect';
-import { HttpApiSchemaError } from 'effect/unstable/httpapi/HttpApiError';
+import { HttpApiSchemaError } from 'effect/http-api/HttpApiError';
 import { HostRefusal, runWithHostRefusal } from '../../packages/web/server/lib/opencode/runtime-host/host-refusal.js';
 import { createNativeCatalogDiagnostics, nativeCatalogCause, nativeCatalogSchemaPaths, withNativeCatalogStage } from '../../packages/web/server/lib/opencode/runtime-host/native-catalog-diagnostics.js';
 import { assertNativeCatalog } from '../../packages/web/server/lib/opencode/runtime-host/startup-catalog.js';

@@ -111,11 +111,11 @@ export function assertOperationEvidence(receipts, expected, scenario) {
 // Command text is transient: retain only the reviewed supervisor's finite
 // lease paths, never worker argv/environment or unrelated process commands.
 export function parseWriterProcessSample(stdout, row, launcher) {
-  const match = stdout.trim().match(/^(\d+)\s+(\S+)\s+(\S+\s+\S+\s+\d+\s+\d{2}:\d{2}:\d{2}\s+\d{4})\s+(.+)$/);
+  const match = stdout.trim().match(/^(\d+)\s+(\S+)\s+(\S+\s+\S+\s+\d+\s+\d{2}:\d{2}:\d{2}\s+\d{4})(?:\s+(.+))?$/);
   if (!match || match[3].replace(/\s+/g, ' ') !== row.startIdentity.replace(/\s+/g, ' ')) return null;
   const value = parseProcessSample(`${match[1]} ${match[2]}`);
   if (!value) return null;
-  const args = match[4].split(/\s+/);
+  const args = (match[4] ?? '').split(/\s+/);
   const supervisor = launcher && !/\s/.test(launcher) && args[0] === launcher && args[5] === '--'
     && args.slice(1, 5).every(file => path.isAbsolute(file))
     ? { pid: row.pid, startIdentity: row.startIdentity, launcher,
@@ -211,10 +211,10 @@ export async function createProcessSampler(pid, intervalMs=benchmarkProtocol.sam
     const processes=[];
     for (const row of rows) {
       try {
-        const {stdout}=await executeSample('ps',['-ww','-p',String(row.pid),'-o',writerProcessLauncher ? 'rss=,time=,lstart=,command=' : 'rss=,time='],
+        const {stdout}=await executeSample('ps',['-ww','-p',String(row.pid),'-o',writerProcessLauncher ? 'rss=,time=,lstart=,command=' : 'rss=,time=,lstart='],
           {env:{...process.env,LC_ALL:'C'},timeout:1000,maxBuffer:64*1024});
-        const parsed = writerProcessLauncher ? parseWriterProcessSample(stdout,row,writerProcessLauncher) : null;
-        const value=writerProcessLauncher ? parsed?.value : parseProcessSample(stdout);
+        const parsed = parseWriterProcessSample(stdout,row,writerProcessLauncher);
+        const value=parsed?.value;
         if (parsed?.supervisor) writerObservations.set(`${row.pid}\0${row.startIdentity}`,parsed.supervisor);
         if (!value) throw Object.assign(new Error('Process resource sample was not readable'), {code:'process_sample_invalid'});
         const key=`${row.pid}\0${row.startIdentity}`;

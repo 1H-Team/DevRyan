@@ -353,10 +353,10 @@ describe('projectTurnRecords', () => {
         expect(secondEntry?.assistantParentMessageId).toBe('u2');
         expect(secondEntry?.isLatestPlan).toBe(true);
         expect(secondEntry?.isSuperseded).toBe(false);
-        expect(secondEntry?.isActionable).toBe(true);
+        expect(secondEntry?.isActionable).toBe(false); // Server saved-source validation has not completed.
         expect(projection.planTraceIndex.latestPlanTurnId).toBe('u2');
         expect(projection.planTraceIndex.latestPlanSourceMessageId).toBe('a2');
-        expect(projection.planTraceIndex.pendingPlanTurnId).toBeNull();
+        expect(projection.planTraceIndex.pendingPlanTurnId).toBe('u2'); // Awaiting authoritative saved-source validation.
         expect(projection.planTraceIndex.bySourceMessageId.get('a1')?.planVersion).toBe(1);
         expect(projection.planTraceIndex.byTurnId.get('u2')?.planVersion).toBe(2);
     });
@@ -396,7 +396,7 @@ describe('projectTurnRecords', () => {
         expect(projection.planTraceIndex.pendingPlanTurnId).toBe('u2');
     });
 
-    test('does not supersede a completed plan for a normal-mode follow-up turn', () => {
+    test('a later normal-mode user message makes a saved draft non-current', () => {
         const planUser = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1, planMode: true });
         const plan = createMessageEntry({
             id: 'a1',
@@ -412,9 +412,9 @@ describe('projectTurnRecords', () => {
 
         expect(projection.planTraceIndex.entries).toHaveLength(1);
         const entry = projection.planTraceIndex.bySourceMessageId.get('a1');
-        expect(entry?.isLatestPlan).toBe(true);
-        expect(entry?.isSuperseded).toBe(false);
-        expect(entry?.isActionable).toBe(true);
+        expect(entry?.isLatestPlan).toBe(false);
+        expect(entry?.isSuperseded).toBe(true);
+        expect(entry?.isActionable).toBe(false);
     });
 
     test('does not index structured markdown from a normal-mode assistant turn as a plan', () => {

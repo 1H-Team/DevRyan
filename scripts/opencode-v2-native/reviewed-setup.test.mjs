@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';import path from 'node:path';import {createHas
 import {createReviewedSetupSession,reviewedSetupFamilies,reviewedSetupRegistrations,assertReviewedSetupBoot,attachReviewedSetup} from './reviewed-setup.mjs';
 import {createHttpProviderConfiguration} from './http-provider.mjs';
 import {compiledHelperAgentIDs,createCompiledHelperAgentFixture} from './package-helper-agent-fixture.mjs';
+import {PLAN_MODE_SYSTEM_INSTRUCTIONS} from '../../packages/orchestration-runtime/index.js';
 test('all seven exact active specs map to existing compiled owners without losing manifest provenance',()=>{
  const ids=[...new Set(reviewedSetupFamilies.flatMap(row=>row.origins))];const origins=ids.map(id=>({id,manifestDigest:'a'.repeat(64),capabilities:['control']}));
  const rows=reviewedSetupRegistrations(origins);assert.equal(reviewedSetupFamilies.length,7);assert.equal(rows.length,origins.length);
@@ -58,6 +59,7 @@ test('snapshot preserves genuine saved overrides but does not self-shadow Slim/i
   }
   for(const name of ['orchestrator','fixer','designer','council','oracle','explorer','librarian','builder']){
    assert.deepEqual(location.configuration.agents[name],{mode:name==='orchestrator'||name==='builder'?'primary':'subagent',
+    ...(['orchestrator','builder'].includes(name)?{system:'For a turn explicitly requesting Plan mode, apply the following shared planning instructions:\n\n'+PLAN_MODE_SYSTEM_INSTRUCTIONS}:{}),
     model:{providerID:'devryan-smoke',model:'smoke-write',variant:'default'}});
   }
   assert.equal(location.compatibility.legacy.model,'devryan-smoke/smoke-write');

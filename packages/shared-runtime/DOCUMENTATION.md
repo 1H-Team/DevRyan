@@ -15,6 +15,16 @@ Copy Diagnostics never includes raw exceptions, credentials or paths.
 
 `lib/plan-storage-id.js` preserves project IDs up to 255 ASCII characters as plan directory names. Longer encoded project IDs use `path_sha256_<full SHA-256 of the ID>` for the storage component only. This keeps long project roots within the filesystem component limit without changing public project identity or relocating any previously writable plan directory. Web/Electron and the injected UI storage helper share this rule.
 
+## Shared helper model setting
+
+`lib/helper-model-selection.js` owns the typed `helperModelSelection` setting:
+`{ providerID, modelID, revision }`. The default is `opencode/deepseek-v4.1-flash`
+with revision `default`. There is no reasoning override: helpers use provider
+Default reasoning. Every explicit selection gets a new revision; personal reset
+removes the sparse override and inherits the host tuple and revision. UI, web and
+Electron use the same parser. Notification `zenModel` and legacy Git fields have
+separate ownership.
+
 ## Free OpenCode Zen model catalog
 
 `lib/free-zen-model-catalog.js` intersects the models currently served by the Zen API with the OpenCode rows whose models.dev input and output costs are both zero. It owns a five-minute success cache, single-flight refreshes, bounded fetches, and a stale snapshot for temporary catalog outages. Web/Electron share this policy while retaining their own feature-specific ordering and request transports.
@@ -23,7 +33,7 @@ Copy Diagnostics never includes raw exceptions, credentials or paths.
 
 ## Commit message drafts
 
-`lib/commit-message-draft.js` owns the shared 20-second generation deadline, compact subject-and-details prompt, Conventional Commit normalization, word-boundary repair for subjects over 72 characters, bounded detail sanitization, provider cooldown selection, and deterministic local fallback. Web/Electron provide authoritative Git context and direct provider transport; both hosts return the same valid subject plus two to four factual details without creating an OpenCode session. Provider timeouts and invalid output become an explicit local-fallback warning rather than a failed Generate action.
+`lib/commit-message-draft.js` owns the shared 20-second generation deadline, compact subject-and-details prompt, Conventional Commit normalization, word-boundary repair for subjects over 72 characters, bounded detail sanitization, provider cooldown selection, and deterministic local fallback. Web/Electron provide authoritative Git context through the native no-tools helper. Production routes disable deterministic fallback and permit only a freshly authorized active-session model after configured helper settlement; standalone injected consumers may still opt into the shared factual fallback.
 
 ## Safe skill archives
 
@@ -64,6 +74,21 @@ Its `provider-refusal` stage accepts only reviewed local OpenAI refusal codes,
 request kinds and physical hook names; additional fields are rejected. The
 runtime host emits these records and the harness sanitizer validates their
 safe journal projection using the same contract.
+Prepared/physical observations optionally carry numeric `toolCount`, and physical
+observations carry `wireToolCount` (null when the existing bounded serialized-body
+inspection cannot determine it). These contain no tool definitions or content.
+Physical records may separately carry `wireEffortUpdates`: a strict finite count
+(1–256) and final Responses configuration-update effort, or null when actual
+controls are malformed or ambiguous. The last ordered update governs effective
+effort; differing sequential values are valid. Top-level `wireOptions` retain
+their original provenance and are never populated from input controls. Additional
+update fields and unknown efforts are rejected by the shared parser. The existing
+sanitizer preserves only this finite contract, with no input or message content.
+`helperSelectionMode` and `helperSelectionRevision` are added only by the Node
+observation owner from the exact captured helper selection after existing permit
+rechecks; controller-supplied selection proof is rejected. Older records remain
+readable, but cannot qualify a missing live witness. Active-session fallback keeps
+its actual tuple and revision rather than inheriting the configured helper tuple.
 
 ## Assistant image syntax
 

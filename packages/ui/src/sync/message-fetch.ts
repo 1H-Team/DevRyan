@@ -2,6 +2,7 @@ import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 import { DEFAULT_MESSAGE_LIMIT } from "@/stores/types/sessionTypes"
 import { collapseExactAdjacentTextRepeats, normalizeAssistantPartText } from "./part-delta"
 import { unwrapSdkResult } from "./sdk-result"
+import { hasNativeCursorTextProvenance } from "../lib/messages/nativeCursorText"
 
 export type MessageRecord = {
   info?: Message
@@ -55,6 +56,7 @@ export function resolveMessagePagePagination(input: {
 }
 
 function normalizeFetchedPart(part: Part, role?: Message["role"]): Part {
+  if (hasNativeCursorTextProvenance(part)) return part
   if (part.type !== "text" && part.type !== "reasoning") {
     return part
   }

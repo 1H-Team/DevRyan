@@ -31,7 +31,7 @@ async function readTokenResponse(response,signal){
  * authority. Neither a service name nor an imported credential is a receipt. */
 export function createNativeClaudeEnrollmentOwner({controlRoot,home,asset,lifecycle,withMutationQueue,captureBinding,recheckBinding,publishProfile,beforeEnrollment,
  withProfileRemoval,assertProfileRemoval,removeProfile,recheckAfterRemoval,
- loadModule=()=>loadReviewedClaudeCredentials(asset),fetchImpl=globalThis.fetch,execute=runNativeClaudeCredentialCommand,account=userInfo().username,now=Date.now}){
+ loadModule=()=>loadReviewedClaudeCredentials(asset),fetchImpl=globalThis.fetch,execute=runNativeClaudeCredentialCommand,bindOwnedCommand,account=userInfo().username,now=Date.now}){
  if(!path.isAbsolute(controlRoot??'')||!path.isAbsolute(home??'')||[withMutationQueue,captureBinding,recheckBinding,publishProfile].some(fn=>typeof fn!=='function')
   ||typeof lifecycle?.read!=='function'||typeof lifecycle?.transition!=='function')throw fail('native_claude_enrollment_owner_required',503);
  const root=path.join(controlRoot,'claude-enrollments'),pending=new Map(),work=new Set();let closed=false;
@@ -39,6 +39,15 @@ export function createNativeClaudeEnrollmentOwner({controlRoot,home,asset,lifecy
  const refusal=error=>/^native_claude_enrollment_[a-z_]+$/.test(error?.code??'')?error:fail(error?.status===403?'native_claude_enrollment_refused':'native_claude_enrollment_failed',error?.status===403?403:409);
  const guarded=(action)=>{live();const operation=withMutationQueue(action).catch(error=>{throw refusal(error);});work.add(operation);void operation.finally(()=>work.delete(operation)).catch(()=>{});return operation;};
  const check=async(item,context)=>{live();if(now()>item.deadline)throw fail('native_claude_enrollment_expired');await recheckBinding(item.binding,context);live();};
+ const commands=new WeakMap();
+ const ownedCommand=async(item,context,file,args,options)=>{
+  if(!bindOwnedCommand)return execute(file,args,options);
+  const recheck=async()=>{await check(item,context);options.signal?.throwIfAborted();const identity=await ownedDirectory({...item,enrollmentID:item.id});
+   if(item.directoryIdentity&&(identity.dev!==item.directoryIdentity.dev||identity.ino!==item.directoryIdentity.ino))throw fail('native_claude_enrollment_receipt_invalid');await check(item,context);};
+  let command=commands.get(item);
+  if(!command){command=bindOwnedCommand({enrollmentID:item.id,profileID:item.profileID,configDirectory:item.configDirectory,service:item.service,generation:item.generation},recheck);commands.set(item,command);}
+  return (await command)(file,args,options,recheck);
+ };
  const capacity=async(item,context)=>{
   const state=await lifecycle.read();await check(item,context);
   try{assertClaudeEnrollmentCapacity(state,{profileID:item.profileID,service:item.service,configDirectory:item.configDirectory,enrollmentID:item.id,generation:item.generation});}
@@ -56,7 +65,7 @@ export function createNativeClaudeEnrollmentOwner({controlRoot,home,asset,lifecy
       ||args.filter(value=>value==='-U').length!==1||item.status!=='exchanging')throw fail('native_claude_enrollment_store_unavailable');
     args=[args[0],...args.slice(2)];
    }
-   try{const result=await execute(file,args,{...options,...signal?{signal}:{}});await check(item,context);return result;}
+   try{const result=await ownedCommand(item,context,file,args,{...options,...signal?{signal}:{}});await check(item,context);return result;}
    catch(error){commandFailure=error;throw error;}
   }});
   // The vendor store swallows command errors. Recheck authority and surface a
@@ -66,7 +75,7 @@ export function createNativeClaudeEnrollmentOwner({controlRoot,home,asset,lifecy
  };
  const unused=async(item,context,signal)=>{
   await check(item,context);
-  try{await execute('/usr/bin/security',['find-generic-password','-s',item.service,'-a',account],{timeout:5000,signal});}
+  try{await ownedCommand(item,context,'/usr/bin/security',['find-generic-password','-s',item.service,'-a',account],{timeout:5000,signal});}
   catch(error){await check(item,context);signal?.throwIfAborted();if(error?.code===44)return;throw fail('native_claude_enrollment_store_unavailable');}
   throw fail('native_claude_enrollment_collision');
  };
@@ -199,7 +208,7 @@ export function createNativeClaudeEnrollmentOwner({controlRoot,home,asset,lifecy
     const value=await verify();await check(item,context);
     if(!retry){state=await transition(state,{kind:'prepare-deletion',binding:scope,attemptID:randomUUID(),recordFingerprint:row.recordFingerprint,directoryDevice:identity?.dev??null,directoryInode:identity?.ino??null});row=state.unresolved.find(item=>item.enrollmentID===id&&item.phase==='deletion-prepared');}
     if(value){await verify();await check(item,context);
-     try{await execute('/usr/bin/security',['delete-generic-password','-s',row.service,'-a',account],{timeout:5000,signal:item.cancel.signal});}
+     try{await ownedCommand(item,context,'/usr/bin/security',['delete-generic-password','-s',row.service,'-a',account],{timeout:5000,signal:item.cancel.signal});}
      catch(error){if(error.code!==44)throw fail('native_claude_enrollment_deletion_failed');}
      await check(item,context);if(await store.read(true))throw fail('native_claude_enrollment_account_changed');
     }

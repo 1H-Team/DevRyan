@@ -93,8 +93,8 @@ export function createQaProcessOwnership(child, { readSnapshot = readQaProcessSn
       catch (error) { if (error.code !== 'ESRCH') throw error; }
     }
   };
-  const waitUntilStopped = async timeoutMs => {
-    const deadline = Date.now() + timeoutMs;
+  const waitUntilStopped = async (timeoutMs, phaseDeadline) => {
+    const deadline = Date.now() + Math.max(0, Math.min(timeoutMs, phaseDeadline === undefined ? timeoutMs : phaseDeadline - performance.now()));
     do {
       if ((await refresh()).length === 0) return true;
       await pause(50);
@@ -104,12 +104,12 @@ export function createQaProcessOwnership(child, { readSnapshot = readQaProcessSn
   return {
     refresh,
     getEvidence: evidence,
-    terminateRemaining: async () => {
+    terminateRemaining: async ({ deadline } = {}) => {
       if ((await refresh()).length === 0) return;
       await signalRemaining('SIGTERM');
-      if (await waitUntilStopped(2500)) return;
+      if (await waitUntilStopped(2500, deadline)) return;
       await signalRemaining('SIGKILL');
-      await waitUntilStopped(1000);
+      await waitUntilStopped(1000, deadline);
     },
     closeTracking: async () => { clearInterval(timer); closed = true; await pending; },
     auditStopped: async () => {

@@ -307,24 +307,30 @@ test('a real call never settles for a dirty warm pass that started after its res
   const target = await fs.realpath(path.join(f.directory, 'hot'));
   const lease = await f.runtime.reserve({ directory: f.directory, sessionID: 's', userMessageID: 'p', messageID: 'p-assistant', callID: 'c' });
   // Change the file after the warm pass inspected it, at its install re-check,
-  // so the warm pass skips it as dirty and does not re-pass; the reserved call
-  // starts preparing right then, while that warm pass is still in flight.
+  // so the reserved call starts preparing while that dirty advisory pass is
+  // still in flight. Foreground preparation supersedes it and observes anew.
   const original = fs.lstat.bind(fs); let inspected = false, preparing = null;
   const changing = spyOn(fs, 'lstat').mockImplementation(async (file, options) => {
     if (file === target && !preparing) {
       if (new Error().stack.includes('inspectMutationFile')) inspected = true;
-      else if (inspected) { await fs.writeFile(target, 'changed during warm'); preparing = f.runtime.prepare(lease); }
+      else if (inspected) {
+        await fs.writeFile(target, 'changed during warm'); preparing = f.runtime.prepare(lease);
+        void preparing.catch(() => {}); // Drained below, including after a warm/assertion failure.
+      }
     }
     return original(file, options);
   });
-  let warmed;
-  try { warmed = await f.runtime.warm({ directory: f.directory }); }
-  finally { changing.mockRestore(); }
-  expect(preparing).not.toBeNull();
-  expect(warmed).toMatchObject({ built: true });
-  expect(await f.runtime.warm({ directory: f.directory })).toEqual({ skipped: 'already-built' });
-  const ready = await preparing;
-  expect(await fs.readFile(path.join(ready.viewDirectory, 'hot'), 'utf8')).toBe('changed during warm');
+  try {
+    expect(await f.runtime.warm({ directory: f.directory })).toEqual({ skipped: 'foreground' });
+    expect(preparing).not.toBeNull();
+    const ready = await preparing;
+    expect(await fs.readFile(path.join(ready.viewDirectory, 'hot'), 'utf8')).toBe('changed during warm');
+    expect(await fs.readFile(path.join(ready.viewDirectory, 'stable'), 'utf8')).toBe('stable');
+    expect(await f.runtime.warm({ directory: f.directory })).toEqual({ skipped: 'already-built' });
+  } finally {
+    changing.mockRestore();
+    await Promise.allSettled([preparing]);
+  }
 });
 
 test('warm enforces the eligible file budget, the byte budget, and skips without a listing', async () => {
@@ -334,6 +340,11 @@ test('warm enforces the eligible file budget, the byte budget, and skips without
   for (let index = 0; index < 6; index += 1) await counted.put(`logs/${index}.log`, 'ignored standalone file');
   // The cheap listing sees 4 files; the eligible set (ignored files included) is 10.
   expect(await counted.runtime.warm({ directory: counted.directory, maxFiles: 5 })).toEqual({ skipped: 'too-large' });
+  // An early walk cutoff does not certify a completed pass; a larger budget retries.
+  expect(await counted.runtime.warm({ directory: counted.directory })).toMatchObject({ built: true });
+  expect(await counted.ledgerPaths()).toEqual(['.gitignore',
+    ...Array.from({ length: 6 }, (_, index) => `logs/${index}.log`),
+    ...Array.from({ length: 3 }, (_, index) => `src/${index}.js`)].sort());
   expect(await counted.runtime.warm({ directory: counted.directory })).toEqual({ skipped: 'already-built' });
 
   const heavy = await fixture();
@@ -344,6 +355,21 @@ test('warm enforces the eligible file budget, the byte budget, and skips without
   await broken.put('a.txt', 'a');
   await fs.writeFile(path.join(broken.directory, '.git', 'index'), 'not an index');
   expect(await broken.runtime.warm({ directory: broken.directory })).toEqual({ skipped: 'listing-unavailable' });
+});
+
+test('selected-project refresh updates an existing ledger within budget and cannot authorize a later call', async () => {
+  const f = await fixture();
+  await f.put('hot', 'original');
+  expect(await f.runtime.warm({directory: f.directory})).toMatchObject({built: true});
+  await f.put('hot', 'refreshed');
+  await f.put('new', 'new');
+  expect(await f.runtime.warm({directory: f.directory, refresh: true, maxFiles: 1})).toEqual({skipped: 'too-large'});
+  expect(await f.runtime.warm({directory: f.directory, refresh: true})).toMatchObject({built: true});
+  expect(await f.ledgerPaths()).toEqual(['hot', 'new']);
+  await f.put('hot', 'changed after refresh');
+  const lease = await f.begin('s', 'p', 'c');
+  expect(await fs.readFile(path.join(lease.viewDirectory, 'hot'), 'utf8')).toBe('changed after refresh');
+  await expect(f.runtime.warm({directory: f.directory, refresh: 'yes'})).rejects.toMatchObject({code: 'invalid_warm_request'});
 });
 
 test('a real call falls back to the complete walk when classification fails, and reports it', async () => {

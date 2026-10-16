@@ -14,7 +14,7 @@ export const RECOVERY_CONTINUATION = 'Continue from the existing progress and co
 export const PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS = Object.freeze(['1.18.25', '1.18.26', '1.18.27', '1.18.29', '1.18.30', '1.18.31', '1.18.32', '1.18.33']);
 // Native Step/continuation ownership has separate conformance from legacy
 // transport recovery. Keep exact canonical versions for retained rollback.
-export const NATIVE_PRIMARY_SUPPORTED_OPENCODE_VERSIONS = Object.freeze(['2.0.20', '2.0.24', '2.0.26']);
+export const NATIVE_PRIMARY_SUPPORTED_OPENCODE_VERSIONS = Object.freeze(['2.0.20', '2.0.24', '2.0.26', '2.0.30']);
 export const isNativePrimaryRuntimeVersion = version => NATIVE_PRIMARY_SUPPORTED_OPENCODE_VERSIONS.includes(version);
 // The bundled companion runtime is a pinned upstream release plus DevRyan's
 // execution patch, which does not touch provider transport; it reports
@@ -72,8 +72,45 @@ export function classifyPrimaryTransportError(error, runtimeVersion) {
   return null;
 }
 
+const nativeStreamHash=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
+const nativeStreamReservationValid=p=>p&&['instanceID','configurationDigest','permitSha256','cancellationGeneration','anchorID','objectiveID','sourceUserMessageID',
+      'previousStepID','attempt','requestID','outputEventID','fingerprint','toolPolicySha256','reservedAt'].every(key=>Object.hasOwn(p,key))
+      &&Object.keys(p).every(key=>['instanceID','configurationDigest','permitSha256','cancellationGeneration','anchorID','objectiveID','sourceUserMessageID',
+        'previousStepID','attempt','requestID','outputEventID','fingerprint','toolPolicySha256','eventID','eventSeq','userMessageID','syntheticFingerprint',
+        'preparedRequestID','successorAttempt','assistantMessageID','ordinal','reservedAt','preparedAt'].includes(key))
+      &&['configurationDigest','permitSha256','fingerprint','toolPolicySha256'].every(key=>nativeStreamHash(p[key]))
+      &&['anchorID','objectiveID','sourceUserMessageID','previousStepID'].every(key=>/^msg_[A-Za-z0-9]+$/.test(p[key]??''))
+      &&/^evt_[A-Za-z0-9]+$/.test(p.outputEventID??'')&&typeof p.instanceID==='string'&&p.instanceID.length>0&&p.instanceID.length<=256
+      &&typeof p.requestID==='string'&&p.requestID.length>0&&p.requestID.length<=256
+      &&Number.isSafeInteger(p.cancellationGeneration)&&p.cancellationGeneration>=0
+      &&Number.isFinite(p.reservedAt)&&p.reservedAt>=0&&(p.preparedAt===undefined||Number.isFinite(p.preparedAt)&&p.preparedAt>=p.reservedAt)
+      &&p.attempt&&Object.keys(p.attempt).length===2&&['traceID','spanID'].every(key=>/^[a-f0-9]{1,128}$/.test(p.attempt[key]??''))
+      &&(p.eventID===undefined?p.eventSeq===undefined&&p.userMessageID===undefined&&p.syntheticFingerprint===undefined
+        :/^evt_[A-Za-z0-9]+$/.test(p.eventID)&&Number.isSafeInteger(p.eventSeq)&&p.eventSeq>=1&&/^msg_[A-Za-z0-9]+$/.test(p.userMessageID??'')&&nativeStreamHash(p.syntheticFingerprint))
+      &&(p.successorAttempt===undefined||Object.keys(p.successorAttempt).length===2&&['traceID','spanID'].every(key=>/^[a-f0-9]{1,128}$/.test(p.successorAttempt[key]??'')));
+const validNativeStreamReceipts=receipts=>Array.isArray(receipts)&&receipts.length<=2&&new Set(receipts.map(item=>item?.eventID)).size===receipts.length
+  &&receipts.every(item=>nativeStreamReservationValid(item)&&Number.isFinite(item.preparedAt)&&item.eventID&&item.successorAttempt&&typeof item.preparedRequestID==='string'
+    &&item.preparedRequestID.length>0&&item.preparedRequestID.length<=256&&/^msg_[A-Za-z0-9]+$/.test(item.assistantMessageID??'')&&[1,2].includes(item.ordinal));
+export function validateNativeStreamReceiptRecord(value){
+  if(!value||Object.keys(value).length!==5||!['sessionID','directory','objectiveID','consumed','receipts'].every(key=>Object.hasOwn(value,key))
+    ||!/^ses_[A-Za-z0-9]+$/.test(value.sessionID??'')||typeof value.directory!=='string'||!value.directory||value.directory.includes('\0')
+    ||!/^msg_[A-Za-z0-9]+$/.test(value.objectiveID??'')||!Number.isSafeInteger(value.consumed)||value.consumed<0||value.consumed>2
+    ||!validNativeStreamReceipts(value.receipts)||value.receipts.length>value.consumed
+    ||value.receipts.some(receipt=>receipt.objectiveID!==value.objectiveID))throw recoveryError('invalid_native_stream_continuation');
+  return value;
+}
+
 export function validatePrimaryRecoveryRecord(value) {
   const hash=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
+  const stream=value?.nativeStream;
+  if(stream!==undefined){
+    if(value.executionGeneration!==2||!stream||Object.keys(stream).some(key=>!['consumed','pending','committed'].includes(key))
+      ||!Number.isSafeInteger(stream.consumed)||stream.consumed<0||stream.consumed>2||stream.consumed+Number(Boolean(stream.pending))>2
+      ||stream.pending&&(!nativeStreamReservationValid(stream.pending)||stream.committed||stream.pending.preparedAt!==undefined||stream.pending.preparedRequestID!==undefined||stream.pending.successorAttempt!==undefined||stream.pending.assistantMessageID!==undefined||stream.pending.ordinal!==undefined)
+      ||stream.committed&&(!nativeStreamReservationValid(stream.committed)||!Number.isFinite(stream.committed.preparedAt)||!stream.committed.eventID||typeof stream.committed.preparedRequestID!=='string'
+        ||!stream.committed.preparedRequestID||stream.consumed<1||stream.committed.assistantMessageID!==undefined||stream.committed.ordinal!==undefined))throw recoveryError('invalid_native_stream_continuation');
+  }
+  if(value?.nativeStreamReceipts!==undefined&&!validNativeStreamReceipts(value.nativeStreamReceipts))throw recoveryError('invalid_native_stream_continuation');
   const input=value?.recoveredInput;
   if(input!==undefined&&(!input||Object.keys(input).some(key=>!['inputID','payloadHash','enqueuedSeq','delivery','phase'].includes(key))
     || !/^msg_[A-Za-z0-9]+$/.test(input.inputID??'')||!hash(input.payloadHash)||!Number.isSafeInteger(input.enqueuedSeq)
@@ -130,7 +167,7 @@ export function validatePrimaryRecoveryRecord(value) {
   if (value?.executionGeneration !== undefined && (value.executionGeneration !== 2
     || typeof value.variant !== 'string' || value.variant.length === 0)) throw recoveryError('invalid_recovery_execution_selection');
   const owned = value?.ownedNativeContinuation;
-  if (owned !== undefined && (!owned || !['native-shell', 'native-compaction'].includes(owned.kind)
+  if (owned !== undefined && (!owned || !['native-shell', 'native-compaction','native-stream'].includes(owned.kind)
     || !/^msg_[a-zA-Z0-9]+$/.test(owned.sourceUserMessageID ?? '') || !/^msg_[a-zA-Z0-9]+$/.test(owned.userMessageID ?? '')
     || !/^msg_[a-zA-Z0-9]+$/.test(owned.assistantMessageID ?? ''))) throw recoveryError('invalid_native_continuation');
   const wake = value?.collectionWake;

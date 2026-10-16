@@ -270,6 +270,8 @@ describe('capability tool advertisement', () => {
     const { args, description } = (await DevRyanManagedOrchestrationPlugin()).tool.devryan_task;
     expect(args.action.values.includes('wait_any')).toBe(waitAny);
     expect('task_ids' in args).toBe(waitAny);
+    expect('reads' in args).toBe(false);
+    expect('until' in args).toBe(false);
     for (const action of ['checkpoint', 'decisions', 'remember_decision']) {
       expect(args.action.values.includes(action)).toBe(contextProjection);
       expect(args.action.description.includes(action)).toBe(contextProjection);
@@ -1811,6 +1813,7 @@ describe('DevRyan managed orchestration plugin', () => {
     expect(requests.every((request) => request.params.rootSessionId === 'ses_root')).toBe(true);
     expect(requests.every((request) => request.params.directory === '/workspace')).toBe(true);
     expect(requests.every((request) => request.params.resultMode === 'reference')).toBe(true);
+    expect(requests.every((request) => request.params.resultContractVersion === 1)).toBe(true);
     expect(requests.find((request) => request.method === 'wait').params.waitTimeoutMs).toBe(25_000);
     expect(requests.find((request) => request.method === 'acknowledge').params.action).toBe('retry');
   });

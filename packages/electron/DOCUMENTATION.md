@@ -1,5 +1,13 @@
 # Electron startup ownership
 
+Automatic Bot maintenance and catalog acquisition/context reads inspect their
+owned installation state before probing Docker. A profile with no installation
+returns the existing unavailable/setup-required outcome without Docker commands;
+explicit Setup/status controls and maintenance of existing installations retain
+their original behavior. Existing installations still get the catalog startup
+needed for retention. The server then suppresses dormant retries after typed
+Docker unavailability while preserving owned active work and explicit controls.
+
 The production package enters `dist-bundle/entry.mjs`. This small Electron and standard-library entry configures the profile and single-instance lock, queues deep links, and shows the existing splash before importing the main-process bundle. Runtime-service and status-probe launches skip window creation. Closing the early splash cancels startup. After showing, the entry yields two renderer animation frames before importing main; this gives the compositor a scheduling opportunity, while actual visible timing remains a native benchmark requirement. Failed foreground imports keep bounded diagnostics and Retry on this window; failed headless imports exit without a dialog. `early-startup.mjs` owns this temporary window until `main.mjs` adopts it and attaches the normal navigation, guest, lifecycle and quit handlers; startup creates only one window.
 
 `createStartupWindowOptions` is shared by early and ordinary windows so preload isolation and runtime capability arguments remain consistent. Adoption keeps the already committed early splash document instead of loading a second splash. The early splash has no runtime authority: native artifact, ownership, service and renderer readiness gates still run before usable chat. Local theme and retained geometry are applied when the main module takes ownership.
@@ -17,3 +25,11 @@ Runtime ownership acquisition has a 45-second budget, passed through to each mut
 Background service is opt-in through `enableBackgroundBots`. Fresh and app-bound startup never register it. Explicit service installations retain upgrade/re-registration and their stored configuration during guarded app-bound recovery. Non-service startup removes a stray registration left by an interrupted handoff and proves its owner stopped before app-bound acquisition. Uncertain owner absence fails closed. Registration inspection and app-bound startup do not depend on Docker availability.
 
 Connect Remote remains available for connecting the desktop interface to an existing remote DevRyan server.
+
+The stable release workflow admits one immutable version/source and draft release
+ID before preparation. The existing finalizer alone uploads exact branded scope
+assets; it requires the final DMG's short native GUI smoke. Three read-only
+macOS candidate rehearsals and separate frozen-baseline compiled upgrade/rollback
+qualification precede the tag run. Public docs archives remain workflow artifacts.
+See [release pipeline](../../docs/RELEASE_PIPELINE.md) for retry, digest and retention
+contracts; the eleven-scenario startup qualification retains its separate receipt.

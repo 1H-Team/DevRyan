@@ -320,13 +320,15 @@ export function createNativeAdmissionOwner(options) {
       await checkRetention(entry);return;
     }
     if(entry.helperTitle){
+      await entry.managedTitleSource?.recheck(); assertEntry(entry);
       const expected=entry.helperTitle;
       if(request.operation!=='session.rename'||request.sessionID!==expected.sessionID||stable(request.input)!==stable({sessionID:expected.sessionID,title:expected.title}))throw fail('native_helper_title_scope_invalid',403);
       await entry.reauthorize();assertEntry(entry);const session=await canonical(expected.sessionID),state=await runtime.nativeAdmissionState({directory:expected.directory,sessionID:expected.sessionID});
       if(session.directory!==expected.directory||!([expected.expectedTitle,expected.title].includes(session.title))||stable(session.model)!==stable(entry.helperSession.model)||session.agent!==entry.helperSession.agent||session.time?.archived||session.revert||state.held||state.reverting||state.revision!==entry.permit.revision)throw fail('native_helper_title_conflict',409);
-      await entry.reauthorize();assertEntry(entry);return;
+      await entry.reauthorize();await entry.managedTitleSource?.recheck();assertEntry(entry);return;
     }
     if (entry.helperText) {
+      await entry.managedTitleSource?.recheck(); assertEntry(entry);
       if (request.operation !== 'helper.generate' || request.sessionID !== entry.permit.sessionID
         || stable(request.input) !== stable(entry.helperText)) throw fail('native_helper_scope_invalid', 403);
       await entry.reauthorize(); assertEntry(entry);
@@ -336,7 +338,8 @@ export function createNativeAdmissionOwner(options) {
         if (session.directory !== entry.directory || stable(session.model)!==stable(entry.helperSession.model) || session.agent!==entry.helperSession.agent || session.time?.archived || session.revert || state.held || state.reverting
           || state.revision !== entry.permit.revision) throw fail('native_helper_scope_revoked', 403);
       }
-      await entry.reauthorize(); assertEntry(entry); return;
+      await entry.selectionRecheck?.();
+      await entry.reauthorize(); await entry.managedTitleSource?.recheck(); assertEntry(entry); return;
     }
     options.assertRecoveredInputOperation?.(request,entry);
     if (request.operation === 'session.command.effect' && (!entry.web || !entry.commandDerivation)) throw fail('native_command_derivation_required', 403);
@@ -413,6 +416,10 @@ export function createNativeAdmissionOwner(options) {
       }
     }
     if (entry.reauthorize) { await entry.reauthorize(); assertEntry(entry); }
+    if (entry.readOnlyPolicy && request.operation !== 'store.claim') {
+      const current = await planPolicy(entry.request, { directory: entry.directory });
+      if (stable(current) !== stable(entry.readOnlyPolicy)) throw fail('native_plan_policy_changed', 403);
+    }
     if (entry.deferredExecutionWake && !['execution.deferred.wake', 'execution.wake'].includes(request.operation)) {
       throw fail('native_permit_operation_mismatch', 403);
     }
@@ -454,6 +461,31 @@ export function createNativeAdmissionOwner(options) {
     assertEntry(entry);
     return entry;
   };
+  // Classification is host-owned, after registration-origin authorization.
+  // MCP/plugin annotations and caller flags cannot grant Plan effects.
+  const blockedPlanWriter = (request, policy) => {
+    if (policy?.readOnly !== true) return false;
+    const tool = request.input?.nativeToolID ?? request.input?.toolID, origin = request.input?.provenance;
+    if (origin?.kind === 'native' && origin.id === `opencode.tool.${tool}`
+      && ['read', 'glob', 'grep', 'skill', 'webfetch', 'websearch', 'question', 'shell'].includes(tool)) return false;
+    if (origin?.kind === 'plugin' && (
+      origin.id === 'devryan.managed-task' && tool === 'devryan_task'
+      || origin.id === 'devryan.harness-context' && ['todoread', 'todowrite'].includes(tool)
+      || origin.id === 'devryan.document-reader' && tool === 'devryan_document'
+      || origin.id === 'devryan.slim' && ['ast_grep_search', 'webfetch'].includes(tool))) return false;
+    return true;
+  };
+  const readPlanPolicy = async (request, session) => {
+    if (request.operation !== 'tool.execute' || typeof options.readPlanPolicy !== 'function') return undefined;
+    const policy = await options.readPlanPolicy({ sessionID: request.sessionID, directory: session.directory, messageID: request.messageID });
+    if (typeof policy?.readOnly !== 'boolean') throw fail('native_plan_policy_unavailable', 503);
+    return policy;
+  };
+  const planPolicy = async (request, session) => {
+    const policy = await readPlanPolicy(request, session);
+    if (blockedPlanWriter(request, policy)) throw fail('native_plan_write_denied', 403);
+    return policy;
+  };
   const issue = async (request, accepted) => {
     if (disposed) throw fail('native_owner_stopped', 503);
     const recoveredInputGrant=options.assertRecoveredInputOperation?.(request);
@@ -462,6 +494,7 @@ export function createNativeAdmissionOwner(options) {
     if (request.sessionID) {
       session = await (request.operation === 'store.claim' ? boundCanonical(request.sessionID) : canonical(request.sessionID));
       state = await runtime.nativeAdmissionState({ directory: session.directory, sessionID: session.id });
+      assertController();
       if (state.held) throw fail('native_session_held');
     }
     let reauthorize;
@@ -478,10 +511,31 @@ export function createNativeAdmissionOwner(options) {
       await reauthorize();
     }
     assertController();
+    const readOnlyPolicy = await readPlanPolicy(request, session);
+    assertController();
+    if (blockedPlanWriter(request, readOnlyPolicy)) {
+      // Only negative initial admission can prove that no executable permit existed.
+      // Rechecks of a previously issued tool retain their ordinary uncertainty fence.
+      if (typeof options.recordPlanToolDenial === 'function') {
+        const denialEpoch = controllerEpoch;
+        await options.recordPlanToolDenial(copy(request), session, async () => {
+          await reauthorize?.(); assertController();
+          const current = await runtime.nativeAdmissionState({ directory: session.directory, sessionID: session.id });
+          assertController();
+          if (current.held || current.revision !== state.revision) throw fail('native_permit_revoked');
+        }, Object.freeze({ admissionRevision: state.revision, assertCurrent: () => {
+          assertController();
+          if (controllerEpoch !== denialEpoch) throw fail('native_permit_revoked');
+          if (controllerReplacement) throw fail('native_controller_replacing', 503);
+        } }));
+      }
+      throw fail('native_plan_write_denied', 403);
+    }
+    assertController();
     const permit = Object.freeze({ token: token(), ...(request.sessionID ? { sessionID: request.sessionID } : {}), revision: state.revision });
     const entry = { permit, request: copy(request), directory: session?.directory ?? directory,
       accepted: accepted && copy(accepted), messageID: accepted?.messageID ?? request.messageID,
-      fingerprint: accepted?.fingerprint, metadata: accepted?.metadata && copy(accepted.metadata), reauthorize,recoveredInputGrant };
+      fingerprint: accepted?.fingerprint, metadata: accepted?.metadata && copy(accepted.metadata), reauthorize,recoveredInputGrant, readOnlyPolicy };
     if (request.operation === 'session.prompt' && !accepted) {
       if (!record(request.input) || typeof request.input.id !== 'string') throw fail('native_prompt_identity_required', 403);
       entry.messageID = request.input.id;
@@ -560,7 +614,7 @@ export function createNativeAdmissionOwner(options) {
       if (entry.permit.sessionID === request.sessionID && request.operation !== 'tool.execute'
         && !['runner.drain', 'store.claim', 'execution.resume'].includes(request.operation)) {
         await assertRequest(entry, request);
-        if (!entry.web && !entry.accepted && !entry.revert && !entry.shellCompletion && !entry.managedDispatch && !entry.deferredExecutionWake && !entry.interviewAction) await authorizeOperation({ ...copy(request), parentAuthorization: copy(entry.request) },
+        if (!entry.web && !entry.accepted && !entry.revert && !entry.shellCompletion && !entry.managedDispatch && !entry.deferredExecutionWake && !entry.interviewAction && !entry.helperTitle) await authorizeOperation({ ...copy(request), parentAuthorization: copy(entry.request) },
           request.sessionID ? (await stateFor(request.sessionID)).session : undefined);
         assertEntry(entry);
         return entry.permit;
@@ -613,6 +667,12 @@ export function createNativeAdmissionOwner(options) {
       metadata.devryan.command = { v: 1, ownerID, sessionID: event.sessionID, messageID: event.messageID,
         name: command.name, origin: copy(command.origin), definitionDigest: digest(command.definition),
         argumentsDigest: digest(command.invocation.prompt.text ?? ''), fingerprint: entry.fingerprint };
+    }
+    if (entry.managedDispatch && typeof options.sealManagedTitleInput === 'function') {
+      metadata.devryan.managedTitle = await options.sealManagedTitleInput({ sessionID: event.sessionID,
+        directory: entry.directory, messageID: event.messageID, fingerprint: entry.fingerprint,
+        text: event.prompt.text, dispatch: entry.managedDispatch });
+      assertEntry(entry);
     }
     entry.metadata = metadata;
     entry.finalText = event.prompt.text;
@@ -1173,7 +1233,15 @@ export function createNativeAdmissionOwner(options) {
       await assertRequest(entry, entry.request);
       if (!open) throw fail('native_provider_resolution_expired', 403);
     };
-    try { await recheck(); const result = await action(recheck); await recheck(); return result; }
+    try {
+      await recheck();
+      // Observation only. This exact constructor-owned helper input was already
+      // bound to its selection owner; no RPC field can supply this derivative.
+      const helper = !resolution && entry.helperText ? Object.freeze({agent:entry.helperText.agent,providerID:entry.helperText.providerID,
+        modelID:entry.helperText.modelID,variant:entry.helperText.variant??null,...entry.helperSelection?{
+          selectionMode:entry.helperText.selectionMode??'configured',selectionRevision:entry.helperSelection.revision}:{} }) : undefined;
+      const result = await action(recheck,helper); await recheck(); return result;
+    }
     finally { open = false; }
   });
   return {
@@ -1195,14 +1263,38 @@ export function createNativeAdmissionOwner(options) {
         }finally{active.delete(permit.token);}
       }
     }),
+    verifyTitleAcceptedInput: input => inController(async () => {
+      if (!validID(input.messageID) || typeof options.readUserMessage !== 'function') return false;
+      const session = await canonical(input.sessionID);
+      if (session.directory !== input.directory) return false;
+      const reauthorize = await options.captureTitleHelperAuthorization(copy(session));
+      await reauthorize();
+      const user = await options.readUserMessage(input);
+      await reauthorize(); assertController();
+      const metadata = user?.metadata?.devryan;
+      if (typeof options.captureAcceptedHumanTitleInput !== 'function') return false;
+      try { const source = await options.captureAcceptedHumanTitleInput(copy(input)); await reauthorize(); assertController(); await source.recheck(); }
+      catch (error) { if (error?.code === 'native_managed_title_source_invalid') return false; throw error; }
+      assertController();
+      return user?.id === input.messageID && user.type === 'user' && user.sessionID === session.id && user.directory === session.directory
+        && metadata?.v === 1 && metadata.origin === 'human' && !metadata.command;
+    }),
     withHelperTitleOperation:(input,action)=>inController(async()=>{
       const frozen=nativeHelperTitleInput(input),session=await canonical(frozen.sessionID);
       if(session.directory!==frozen.directory||session.title!==frozen.expectedTitle)throw fail('native_helper_title_conflict',409);
       const reauthorize=await options.captureTitleHelperAuthorization(copy(session));await reauthorize();assertController();
+      let managedTitleSource;
+      if (session.parentID) {
+        const source = { sessionID: session.id, directory: session.directory, messageID: frozen.sourceMessageID };
+        if (frozen.sourceMessageID && await options.readUserMessage?.(source).then(user => user?.metadata?.devryan?.origin === 'human')) {
+          managedTitleSource = await options.captureAcceptedHumanTitleInput?.(source);
+        } else managedTitleSource = await options.captureManagedTitleInput?.(source);
+      }
+      if (session.parentID && typeof managedTitleSource?.recheck !== 'function') throw fail('native_managed_title_source_invalid', 403);
       const state=await runtime.nativeAdmissionState({directory:frozen.directory,sessionID:frozen.sessionID});
       if(state.held||state.reverting||active.size>=PERMIT_MAX)throw fail('native_helper_scope_revoked',403);
       const permit=Object.freeze({token:token(),sessionID:frozen.sessionID,revision:state.revision});
-      const entry={permit,directory:frozen.directory,helperTitle:frozen,helperSession:copy(session),reauthorize,request:{operation:'session.rename',sessionID:frozen.sessionID,input:{sessionID:frozen.sessionID,title:frozen.title}}};remember(entry);
+      const entry={permit,directory:frozen.directory,helperTitle:frozen,helperSession:copy(session),reauthorize,managedTitleSource,request:{operation:'session.rename',sessionID:frozen.sessionID,input:{sessionID:frozen.sessionID,title:frozen.title}}};remember(entry);
       try{await assertRequest(entry,entry.request);return await context.run(permit,()=>action(permit));}finally{active.delete(permit.token);}
     }),
     withHelperOperation: (input, action) => inController(async () => {
@@ -1210,16 +1302,23 @@ export function createNativeAdmissionOwner(options) {
       const session = frozen.sessionID ? await canonical(frozen.sessionID) : undefined;
       if (session && session.directory !== frozen.directory) throw fail('native_helper_scope_invalid',403);
       const title=frozen.agent==='devryan-title'&&Boolean(session);
-      if(title&&(session.model?.providerID!==frozen.providerID||(session.model?.id??session.model?.modelID)!==frozen.modelID
-        ||(session.model?.variant??undefined)!==frozen.variant))throw fail('native_title_selection_changed',403);
+      const managedTitleSource = title && session.parentID ? await options.captureManagedTitleInput?.({ sessionID: session.id, directory: session.directory }) : undefined;
+      if (title && session.parentID && typeof managedTitleSource?.recheck !== 'function') throw fail('native_managed_title_source_invalid', 403);
       const reauthorize = title&&options.captureTitleHelperAuthorization
         ?await options.captureTitleHelperAuthorization(copy(session))
         :await options.captureWebAuthorization({operation:'helper.generate',directory:frozen.directory,sessionID:frozen.sessionID},session);
+      if (typeof options.captureHelperSelection !== 'function') throw fail('native_helper_selection_unavailable',503);
+      const chosen = await options.captureHelperSelection(frozen, copy(session));
+      if (!chosen?.selection || typeof chosen.recheck !== 'function' || typeof chosen.selection.revision !== 'string' || !chosen.selection.revision) throw fail('native_helper_selection_unavailable',503);
+      if (chosen.selection.providerID !== frozen.providerID || chosen.selection.modelID !== frozen.modelID
+        || chosen.selection.variant !== undefined || frozen.variant !== undefined || chosen.selection.revision !== frozen.selectionRevision) throw fail('native_helper_selection_changed',403);
+      const selectionRecheck = chosen.recheck;
       await reauthorize(); assertController();
       const state = session ? await runtime.nativeAdmissionState({directory:frozen.directory,sessionID:session.id}) : {revision:0,held:false,reverting:false};
       if (state.held || state.reverting || active.size >= PERMIT_MAX) throw fail('native_helper_scope_revoked',403);
       const permit = Object.freeze({token:token(),sessionID:frozen.sessionID ?? `ses_helper_${token()}`,revision:state.revision});
-      const entry = {permit,directory:frozen.directory,request:{operation:'helper.generate',sessionID:permit.sessionID,input:frozen},helperText:frozen,helperSession:copy(session),reauthorize};
+      const entry = {permit,directory:frozen.directory,request:{operation:'helper.generate',sessionID:permit.sessionID,input:frozen},helperText:frozen,
+        helperSelection:Object.freeze(copy(chosen.selection)),helperSession:copy(session),reauthorize,selectionRecheck,managedTitleSource};
       remember(entry);
       try {await assertRequest(entry,entry.request);return await context.run(permit,()=>action(permit));}
       finally {active.delete(permit.token);}
@@ -1387,6 +1486,13 @@ export function createNativeAdmissionOwner(options) {
     }),
     withAcceptedOperation: (accepted, action) => inController(async () => {
       if (!/^[a-f0-9]{64}$/.test(accepted?.fingerprint ?? '') || !record(accepted.metadata)) throw fail('native_accepted_operation_invalid', 403);
+      const parts = accepted.intent?.parts ?? accepted.request?.parts ?? [];
+      const planMode = accepted.metadata.devryan?.planMode === true || accepted.intent?.planMode === true
+        || accepted.metadata.devryan?.agent === 'plan' || accepted.intent?.agent === 'plan' || accepted.request?.agent === 'plan'
+        || parts.some(part => part.type === 'text' && part.synthetic === true && part.text?.trimStart().startsWith('User has requested to enter plan mode'));
+      const planImplementation = parts.some(part => part.type === 'text' && part.text?.startsWith('[openchamber-plan-action:v1] '));
+      if (planMode && typeof options.readPlanPolicy !== 'function'
+        || (planMode || planImplementation) && typeof options.validatePlanImplementation !== 'function') throw fail('native_plan_policy_unavailable', 503);
       const managedDispatch = managedDispatchContext.getStore();
       const primaryDispatch = primaryDispatchContext.getStore();
       const primaryContent=primaryDispatch&&buildV2PromptContent(primaryDispatch.prompt.parts);
@@ -1400,8 +1506,10 @@ export function createNativeAdmissionOwner(options) {
       }
       if (managedDispatch) {
         if (managedDispatch.operation !== 'prompt' || accepted.sessionID !== managedDispatch.sessionID) throw fail('native_managed_task_scope_invalid', 403);
-        await verifyManagedDispatch(managedDispatch);
+        const task = await verifyManagedDispatch(managedDispatch);
+        if (task.readOnly === true && task.providerId !== 'cursor-acp' && typeof options.readPlanPolicy !== 'function') throw fail('native_plan_policy_unavailable', 503);
       }
+      await options.validatePlanImplementation?.(accepted);
       const permit = await issue({ operation: 'admission.prompt', sessionID: accepted.sessionID, messageID: accepted.messageID }, accepted);
       if (managedDispatch) entryFor(permit).managedDispatch = managedDispatch;
       if (primaryDispatch) entryFor(permit).primaryDispatch = primaryDispatch;
@@ -1481,7 +1589,14 @@ export function createNativeAdmissionOwner(options) {
       await assertRequest(entry,{operation:'inbox.reconcile',sessionID:input.sessionID,messageID:input.userMessageID});
       const epoch=controllerEpoch,revision=entry.permit.revision,scope=copy(input),accepted=copy(entry.accepted.request);
       const original=entry.reauthorize,managed=entry.managedDispatch&&copy(entry.managedDispatch);
-      const readOnly=managed ? (await verifyManagedDispatch(managed)).readOnly === true : false;
+      const legacyPlanRestriction = entry.metadata?.devryan?.agent === 'plan'
+        || entry.accepted.intent?.parts?.some(part => part.type === 'text' && part.synthetic === true && part.text?.startsWith('User has requested to enter plan mode')) === true;
+      const humanChild = !managed && entry.metadata?.devryan?.origin === 'human'
+        && Boolean((await canonical(input.sessionID)).parentID);
+      if(humanChild&&typeof options.readPlanPolicy!=='function')throw fail('native_plan_policy_unavailable',503);
+      const inheritedPlan = !managed && (entry.metadata?.devryan?.origin !== 'human' || humanChild) && options.readPlanPolicy
+        ? await options.readPlanPolicy({ sessionID: input.sessionID, directory: input.directory }) : undefined;
+      const readOnly=managed ? (await verifyManagedDispatch(managed)).readOnly === true : entry.metadata?.devryan?.planMode === true || legacyPlanRestriction || inheritedPlan?.readOnly === true;
       if(typeof original!=='function'&&!managed)throw fail('native_cursor_caller_required',403);
       const authorize=async(settlement)=>{if(original)await original();if(managed&&((await verifyManagedDispatch(settlement?{...managed,operation:'settle'}:managed)).readOnly===true)!==readOnly)throw fail('native_cursor_scope_revoked',403);};
       const recheck=(settlement=false)=>inController(async()=>{
@@ -1719,6 +1834,11 @@ export function createNativeAdmissionOwner(options) {
       entry.metadata = copy(input.metadata);
       entry.accepted.request = copy(input.request);
     },
+    readOnlyExecution: input => inController(async () => {
+      await recheckExecution(input);
+      const entry = entryFor(input.permit);
+      return entry.readOnlyPolicy?.readOnly === true;
+    }),
     recheckExecution: input => inController(() => recheckExecution(input)),
     withImageGeneration:(invocation,action)=>inController(async()=>{
       const parent=entryFor(invocation?.permit),origin=parent.request.input?.provenance;
@@ -1761,6 +1881,21 @@ export function createNativeAdmissionOwner(options) {
     }),
     withProviderAttempt: (input, action) => withProviderOperation(input, action, false),
     withProviderResolution: (input, action) => withProviderOperation(input, action, true),
+    withManagedResultRead: (input, action) => inController(async () => {
+      const entry = entryFor(input.permit), request = entry.request;
+      if (request.operation !== 'tool.execute' || request.input?.toolID !== 'devryan_task'
+        || request.input.provenance?.kind !== 'plugin' || request.input.provenance.id !== 'devryan.managed-task'
+        || !['status', 'wait', 'wait_any', 'read_result'].includes(request.input.input?.action)) {
+        throw fail('native_managed_result_read_required', 403);
+      }
+      await recheckExecution(input);
+      // Reads may await a child; they must not withhold the parent's Stop/hold.
+      return context.run(entry.permit, async () => {
+        const result = await action();
+        await recheckExecution(input);
+        return result;
+      });
+    }),
     withPermit: (input, action) => inController(async () => {
       const entry = entryFor(input.permit);
       await recheckExecution(input);

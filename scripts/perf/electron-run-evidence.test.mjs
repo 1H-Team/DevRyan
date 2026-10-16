@@ -55,3 +55,29 @@ test('post-shutdown journal verification counts both compressed errors and malfo
     await assert.rejects(capturePerfJournal(path.join(directory, 'missing')), /ENOENT/);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+test('journal capture observes cancellation before reads and closes its iterator on cancellation during records', async t => {
+  const root = fileURLToPath(new URL('../../.cache/perf/', import.meta.url)); await mkdir(root, { recursive: true });
+  const directory = await mkdtemp(path.join(root, 'journal-abort-')); t.after(() => rm(directory, { recursive: true, force: true }));
+  const reason = Object.assign(Error('fixture scan cancelled'), { code: 'ABORT_ERR' });
+  const stopped = new AbortController(); stopped.abort(reason);
+  await assert.rejects(capturePerfJournal(path.join(directory, 'missing'), { signal: stopped.signal }), error => error === reason);
+  await mkdir(path.join(directory, 'runtime'));
+  await writeFile(path.join(directory, 'runtime/000001.ndjson.open'), Array.from({ length: 3 }, () => JSON.stringify({ type: 'lifecycle' })).join('\n') + '\n');
+  const controller = new AbortController(), original = controller.signal.throwIfAborted.bind(controller.signal);
+  let checks = 0;
+  controller.signal.throwIfAborted = () => { if (++checks === 6) controller.abort(reason); original(); };
+  await assert.rejects(capturePerfJournal(directory, { signal: controller.signal }), error => error === reason);
+  assert.equal(checks, 6, 'Cancellation must be checked during streamed records, not only before startup');
+  assert.equal((await capturePerfJournal(directory)).records, 3, 'Optional cancellation must not alter ordinary callers');
+});
+
+test('native observation gap events also make journal coverage incomplete evidence', async t => {
+  const root = fileURLToPath(new URL('../../.cache/perf/', import.meta.url)); await mkdir(root, { recursive: true });
+  const directory = await mkdtemp(path.join(root, 'journal-native-gap-')); t.after(() => rm(directory, { recursive: true, force: true }));
+  await mkdir(path.join(directory, 'runtime'));
+  await writeFile(path.join(directory, 'runtime/000001.ndjson.open'), JSON.stringify({ type: 'lifecycle', event: 'native_observation_gap', at: 1 }) + '\n');
+  const journal = await capturePerfJournal(directory);
+  assert.equal(journal.records, 1); assert.equal(journal.gapRecords, 1);
+  assert.equal(journal.gaps[0].reason, 'native_observation_gap');
+});

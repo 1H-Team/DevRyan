@@ -51,13 +51,13 @@ test('survives journal round trip and includes deleted title helpers in task exp
   const sanitizer = createDiagnosticSanitizer();
   const journal = createDiagnosticJournal({ directory: dir, sanitizer });
   try {
-    journal.enqueue({ type: 'lifecycle', event: 'session_title_generation', sessionID: 's1', at: 100, payload: { helperSessionID: 'title1', stage: 'helper_created' } });
-    journal.enqueue({ ...event('message.updated', { id: 'titlem1', parentID: 'title-user-message', tokens }), sessionID: 'title1' });
-    journal.enqueue({ type: 'open_code_event', at: 200, payload: { type: 'session.deleted', properties: { info: { id: 'title1', tokens } } } });
+    journal.enqueue({ type: 'lifecycle', event: 'session_title_generation', sessionID: 's1', at: 100, payload: { helperSessionID: 'ses_title1', stage: 'helper_created' } });
+    journal.enqueue({ ...event('message.updated', { id: 'msg_titlem1', parentID: 'msg_title_user', tokens }), sessionID: 'ses_title1' });
+    journal.enqueue({ type: 'open_code_event', at: 200, payload: { type: 'session.deleted', properties: { info: { id: 'ses_title1', tokens } } } });
     journal.enqueue({ ...wire('a1'), usageObservation: { ...wire('a1').usageObservation, secret: 'private', prompt: 'private' } });
     await journal.flush();
     expect((await journal.listSessionManifests()).find(row => row.sessionID === 's1').parentID).toBeNull();
-    expect((await journal.listSessionManifests()).find(row => row.sessionID === 'title1').parentID).toBeNull();
+    expect((await journal.listSessionManifests()).find(row => row.sessionID === 'ses_title1').parentID).toBeNull();
     const exported = await createDiagnosticsExport({ journal, sanitizer, scope: { scope: 'task', sessionID: 's1' } });
     const report = JSON.parse(exported.files.find(file => file.name === 'DevRyan-usage.json').data);
     expect(report.roots).toHaveLength(1);

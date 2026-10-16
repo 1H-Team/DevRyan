@@ -222,6 +222,15 @@ describe('settings helpers', () => {
     })).toEqual({});
   });
 
+  it('persists the typed helper tuple and revision independently of notification and legacy Git fields', () => {
+    const helpers = createTestHelpers();
+    const helperModelSelection = { providerID: 'anthropic', modelID: 'chosen', revision: 'saved-revision' };
+    expect(helpers.sanitizeSettingsUpdate({ helperModelSelection })).toEqual({ helperModelSelection });
+    for (const invalid of [{ ...helperModelSelection, variant: 'low' }, { providerID: 'opencode', modelID: 'chosen' }]) {
+      expect(helpers.sanitizeSettingsUpdate({ helperModelSelection: invalid })).toEqual({});
+    }
+  });
+
   it('accepts defaultPlanMode as a persisted shared setting', () => {
     const helpers = createTestHelpers();
 

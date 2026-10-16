@@ -158,6 +158,33 @@ describe('managed follow-up timeout windows', () => {
 });
 
 describe('managed scheduler parent actions', () => {
+  test.each(['retry', 'resume'])('%s creation and source acknowledgement share one durable commit', async action => {
+    let saved, failSave = false;
+    const writes = [];
+    const h = await createTerminalHarness({ schedulerOptions: { persistence: {
+      load: async () => saved,
+      save: async state => { if (failSave) throw Error('save refused'); saved = structuredClone(state); writes.push(saved); },
+    } } });
+    try {
+      let checks = 0;
+      await expect(h.scheduler.acknowledgeResult(h.original.taskId, { action, idempotencyKey: 'revoked-followup',
+        authorize: async () => { if (++checks === 3) throw Error('revoked'); } })).rejects.toThrow('revoked');
+      expect(checks).toBe(3);
+      expect(h.scheduler.getSnapshot().tasks).toHaveLength(1);
+      expect(h.scheduler.getResultEnvelope(h.original.taskId).action).toBeNull();
+      expect(h.starts).toHaveLength(1); expect(h.resumes).toHaveLength(0);
+      failSave = true;
+      await expect(h.scheduler.acknowledgeResult(h.original.taskId, { action, idempotencyKey: 'failed-save' })).rejects.toThrow('save refused');
+      expect(h.scheduler.getSnapshot().tasks).toHaveLength(1);
+      expect(h.scheduler.getResultEnvelope(h.original.taskId).action).toBeNull();
+      failSave = false;
+      const result = await h.scheduler.acknowledgeResult(h.original.taskId, { action, idempotencyKey: 'successful-followup' });
+      expect(writes.filter(state => state.tasks.length > 1).every(state => state.resultEnvelopes.find(row => row.taskId === h.original.taskId).followUpTaskId === result.followUpTask.taskId)).toBe(true);
+      const repeated = await h.scheduler.acknowledgeResult(h.original.taskId, { action, idempotencyKey: 'different-retry-key' });
+      expect(repeated.followUpTask.taskId).toBe(result.followUpTask.taskId);
+      expect(h.scheduler.getSnapshot().tasks).toHaveLength(2);
+    } finally { failSave = false; await h.scheduler.shutdown(); }
+  });
   test('retries as one linked attempt and deduplicates repeated action requests', async () => {
     const { original, scheduler, starts } = await createTerminalHarness({
       submitOverrides: { readOnly: true },
@@ -205,6 +232,17 @@ describe('managed scheduler parent actions', () => {
 
     expect(scheduler.getResultEnvelope(original.taskId).action).toBeNull();
     expect(starts).toHaveLength(1);
+  });
+
+  test('v2 acknowledgement binds action identity across repeated calls and rejects revoked final authority',async()=>{
+   const {original,scheduler}=await createTerminalHarness();
+   const identity='a'.repeat(64),options={action:'continue',idempotencyKey:'stable',acknowledgementIdentity:identity};
+   await expect(scheduler.acknowledgeResult(original.taskId,{...options,authorize:async()=>{throw Error('Cancelled at final save');}})).rejects.toThrow('Cancelled at final save');
+   expect(scheduler.getResultEnvelope(original.taskId).action).toBeNull();
+   await scheduler.acknowledgeResult(original.taskId,options);
+   expect((await scheduler.acknowledgeResult(original.taskId,{...options,idempotencyKey:'new-authorized-step'})).envelope.acknowledgementIdentity).toBe(identity);
+   for(const changed of [{...options,acknowledgementIdentity:'b'.repeat(64)},{...options,acknowledgementIdentity:undefined},{...options,action:'abandon'}])
+    await expect(scheduler.acknowledgeResult(original.taskId,changed)).rejects.toMatchObject({code:'result_already_acknowledged'});
   });
 
   test('parks a second grouped failure for user-selected manual recovery', async () => {

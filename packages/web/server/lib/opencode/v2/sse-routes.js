@@ -27,7 +27,7 @@ export const createOpenCodeV2SseHandler = ({ globalMessageStreamHub, resolveRequ
   if (!global && !directory) return res.status(400).json({ error: 'A directory is required', code: 'opencode_location_required' });
   res.status(200);
   res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders?.();

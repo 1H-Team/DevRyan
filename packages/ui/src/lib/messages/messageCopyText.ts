@@ -1,4 +1,5 @@
 import type { Part } from '@opencode-ai/sdk/v2';
+import { hasNativeCursorTextProvenance } from './nativeCursorText';
 
 type CopyTextPart = Part & {
   text?: string;
@@ -12,6 +13,9 @@ const joinText = (values: unknown[]): string => values.filter(nonblank).join('\n
 /** Clipboard-only: do not use this projection to extract or implement plans. */
 export function getMessageCopyText(parts: readonly Part[], role: 'user' | 'assistant'): string {
   const texts = parts.filter((part): part is CopyTextPart => part.type === 'text');
+  if (role === 'assistant' && texts.length > 0 && texts.every(hasNativeCursorTextProvenance)) {
+    return texts.map(part => typeof part.text === 'string' ? part.text : '').join('');
+  }
   if (role === 'user') {
     const outputs = joinText(texts.map((part) => part.shellAction?.output));
     if (outputs) return outputs;

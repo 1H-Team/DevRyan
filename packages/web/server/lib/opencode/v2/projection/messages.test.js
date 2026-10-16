@@ -848,3 +848,10 @@ describe('private native status-only turn identity', () => {
     expect(page.records[0].turnOwnership).toEqual({source:'native-sequence',userMessageID:'msg_user'});
   });
 });
+
+it.each([['exited', 2, 'error'], ['timeout', undefined, 'error'], ['killed', undefined, 'cancelled']])('restores %s shell failure on reload instead of a successful completion', (status, exit, finish) => {
+  const [shell] = project([{ id: 'msg_shell', type: 'shell', command: 'fixture', status, exit, output: { output: 'captured fixture output', cursor: 1, size: 1, truncated: false }, time: { created: 1, completed: 2 } }]);
+  expect(shell.info.finish).toBe(finish); expect(shell.info.error).toBeDefined();
+  expect(shell.parts[0].state).toMatchObject({ status: 'error' });
+  expect(shell.parts[0].state.error).toContain('captured fixture output');
+});

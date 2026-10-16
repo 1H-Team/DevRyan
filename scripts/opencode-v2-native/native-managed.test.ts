@@ -21,6 +21,8 @@ test('native schemas expose the complete managed action contract and refuse call
     {action:'start',agent:'fixer',prompt:'Fix',required_checks:[{name:'unit',command:'bun test',paths:['app.js']}]},
     ...['status','wait','cancel','continue','retry','resume','abandon'].map(action=>({action,task_id:'dvr_task_one'})),
     {action:'wait_any',task_ids:['dvr_task_one']},{action:'read_result',task_id:'dvr_task_one',result_cursor:'cursor'},
+    {action:'wait_any',task_ids:['dvr_task_one'],until:'settled'},{action:'continue',task_ids:['dvr_task_one','dvr_task_two']},
+    {action:'read_result',reads:[{task_id:'dvr_task_one',result_cursor:'cursor'}]},
     {action:'plan_read'},{action:'plan_update',expected_version:'version',text:'# Progress'},
     {action:'checkpoint'},{action:'decisions',query:'dependencies'},
     {action:'remember_decision',decision:'Keep dependencies unchanged.',source_message_id:'msg_user'},
@@ -28,6 +30,14 @@ test('native schemas expose the complete managed action contract and refuse call
   expect(()=>decode({action:'start',agent:'fixer',prompt:'Fix',provider_id:'caller'})).toThrow();
   expect(()=>decode({action:'plan_update',expected_version:1,text:'# Progress'})).toThrow();
   expect(()=>Schema.decodeUnknownSync(councilInputSchema)({prompt:'Compare',models:['caller']},{onExcessProperty:'error'})).toThrow();
+});
+test('v2 actions and settled wait fields are advertised only for a captured v2 host capability',()=>{
+ const inputs=[{action:'continue',task_ids:['dvr_task_one']},{action:'read_result',reads:[{task_id:'dvr_task_one',result_cursor:'cursor'}]},
+  {action:'wait_any',task_ids:['dvr_task_one'],until:'settled'}] as const;
+ for(const version of ['1','2']){
+  const decode=Schema.decodeUnknownSync(createManagedTaskInputSchema({DEVRYAN_MANAGED_WAIT_ANY:'1',DEVRYAN_MANAGED_RESULT_CONTRACT_VERSION:version}));
+  for(const input of inputs)if(version==='2')expect(decode(input,{onExcessProperty:'error'})).toEqual(input);else expect(()=>decode(input,{onExcessProperty:'error'})).toThrow();
+ }
 });
 test('native advertised actions follow host policy flags without changing compatibility decoding',()=>{
   const contextActions=[{action:'checkpoint'},{action:'decisions',query:'scope'},
@@ -93,6 +103,20 @@ test('attached waits refuse revocation after a slice and malformed live transpor
   expect(calls).toBe(1);
   const malformed=withManagedTaskExecution({origin,directory:'/unused',rpc:async()=>({task:{status:'running'}}),executeOwned:()=>Effect.die(Error('unknown'))});
   await expect(Effect.runPromise(malformed(call))).rejects.toThrow('native_task_wait_response_invalid');
+});
+
+test('settled waits wake only for changed v2 attention while v1 attention keeps its scalar behavior',async()=>{
+ for(const version of [1,2]){
+  const input=version===2?{action:'wait_any',task_ids:['dvr_task_parked','dvr_task_running'],until:'settled'}:{action:'wait_any',task_ids:['dvr_task_parked','dvr_task_running']};
+  let calls=0;
+  const execute=withManagedTaskExecution({origin,directory:'/unused',executeOwned:()=>Effect.die(Error('unknown')),rpc:async()=>{
+   calls++;
+   return {schemaVersion:version,rootSessionId:'ses_root',cursor:'cursor',settled:false,readyTaskIds:[],pendingTaskIds:['dvr_task_running'],
+    attention:[{taskId:'dvr_task_parked',state:'attention'}],...(version===2?{changedTaskIds:calls===1?[]:['dvr_task_parked']}:{} )};
+  }});
+  const result=await Effect.runPromise(execute(invocation('devryan_task',input)));
+  expect(calls).toBe(version===2?2:1);expect(JSON.parse(String(result.content)).settled).toBe(false);
+ }
 });
 
 test('real SDK activates managed and Council registrations with reviewed per-location authority',async()=>{

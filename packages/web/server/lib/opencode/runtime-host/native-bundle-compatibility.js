@@ -10,11 +10,20 @@ export const REVIEWED_NATIVE_CLONE_RELEASES = Object.freeze({
   '2.0.20': '474e0dc7e8a3c9befabaf876dc56b01e911146fd4088de7cad112858b5b665e9',
   '2.0.24': '036b5d1137133663fce481ecfe5fc65929ac1749cd7fb1719e1ae93b40dc6321',
   '2.0.26': '9f5a227676de99f375459ba7b5be9f78a9c215ca62e8d7ffe9cfe920b24ea808',
+  '2.0.30': 'fe5b54bf9ab3a5e3d1f5bc952bdff00f81d8ff6635c9ca83fef1c669af4f47e1',
 });
+// The later 2.0.26 build adds observation transforms without changing database layout.
+export const REVIEWED_NATIVE_CLONE_REBUILDS = Object.freeze({
+  '2.0.26': '287c56936f4c31fdff506e655a599a7ef277e384c144c1548ec48ba9e918b464',
+});
+const reviewedGraph = manifest => manifest.inputs?.coreDigest === REVIEWED_NATIVE_CLONE_RELEASES[manifest.opencodeVersion]
+  || Object.hasOwn(REVIEWED_NATIVE_CLONE_REBUILDS, manifest.opencodeVersion)
+    && manifest.inputs?.coreDigest === REVIEWED_NATIVE_CLONE_REBUILDS[manifest.opencodeVersion];
 // 2.0.26 adds the data-only migration 20261007190000_azure_cli_external_credential,
 // whose `external` credential values older releases cannot decode. The DDL layout
 // is unchanged, so a clone never moves a database to a lower migration level.
-export const REVIEWED_NATIVE_CLONE_MIGRATION_LEVEL = Object.freeze({ '2.0.20': 0, '2.0.24': 0, '2.0.26': 1 });
+export const REVIEWED_NATIVE_CLONE_MIGRATION_LEVEL = Object.freeze({ '2.0.20': 0, '2.0.24': 0, '2.0.26': 1, '2.0.30': 2 });
+// 2.0.30 adds project.time_archived; its migrated database cannot clone backwards.
 // A database imported from a legacy source keeps its __drizzle_migrations table.
 export const REVIEWED_NATIVE_CLONE_LAYOUT = Object.freeze({
   schemaSha256: '86eba4fd4db542bd82ef56f76c1e5eba80af1efc021e10cd5a7f59d70e5f1bf0',
@@ -35,8 +44,8 @@ export function isReviewedNativeClonePair(left, right, layout) {
   return left?.opencodeVersion !== right?.opencodeVersion
     && Object.hasOwn(REVIEWED_NATIVE_CLONE_RELEASES, left?.opencodeVersion)
     && Object.hasOwn(REVIEWED_NATIVE_CLONE_RELEASES, right?.opencodeVersion)
-    && left.inputs?.coreDigest === REVIEWED_NATIVE_CLONE_RELEASES[left.opencodeVersion]
-    && right.inputs?.coreDigest === REVIEWED_NATIVE_CLONE_RELEASES[right.opencodeVersion]
+    && reviewedGraph(left)
+    && reviewedGraph(right)
     && REVIEWED_NATIVE_CLONE_MIGRATION_LEVEL[left.opencodeVersion] <= REVIEWED_NATIVE_CLONE_MIGRATION_LEVEL[right.opencodeVersion]
     && reviewedLayouts.some(reviewed => Object.entries(reviewed).every(([key, value]) => layout?.[key] === value));
 }

@@ -6,10 +6,10 @@ const binding = { kind: 'mcp', directory: '/owned/project', controllerInstanceID
   server: 'remote', configurationDigest: 'a'.repeat(64), acquisitionID: 'acquisition-one', integrationID: 'mcp_remote', methodID: 'oauth' };
 const mutation = { ...binding, valueType: 'oauth', operation: 'create', requestedFingerprint: 'b'.repeat(64) };
 const spec = { ...binding, operation: 'mcp.oauth.start', method: 'POST', path: '/api/integration/mcp_remote/connect/oauth', body: { methodID: 'oauth' } };
-const fixture = () => {
+const fixture = (options = {}) => {
   let controller = binding.controllerInstanceID, principal = 'original', live = true, reviewed = true;
   const checked = [];
-  const owner = createNativeIntegrationAuthorization({ controllerIdentity: () => controller,
+  const owner = createNativeIntegrationAuthorization({ limit: options.limit, controllerIdentity: () => controller,
     verifyBinding: async () => { if (!reviewed) throw new Error('configuration_changed'); },
     authorizeConfiguredConnection: async () => { if (!reviewed) throw new Error('configuration_changed'); },
     captureWebAuthorization: async () => { const original = principal; return async () => {
@@ -196,4 +196,76 @@ test('xAI usage caller authorizes one exact renewal and cannot create, remove or
   await expect(f.owner.resolveMutation({authorizationID,binding:mutation})).rejects.toMatchObject({code:'native_credential_mutation_denied'});
   f.revoke();await expect(grant.reauthorize()).rejects.toThrow('original_caller_revoked');
   await expect(f.owner.withCallerOperation({...spec,path:'/api/integration/xai'},async()=>{})).rejects.toMatchObject({code:'native_integration_scope_invalid'});
+});
+
+
+const integrationReads = [['mcp', 'mcp_remote'], ['openai', 'openai'], ['cursor', 'cursor-acp'], ['provider', 'xai']];
+const readSpec = (kind, integrationID) => ({ kind, integrationID, directory: binding.directory,
+  configurationDigest: binding.configurationDigest, operation: `${kind}.integration`, method: 'GET',
+  path: `/api/integration/${integrationID}`, ...(kind === 'mcp' ? { server: 'remote' } : {}) });
+
+test.each(integrationReads)('%s integration read rechecks its original caller after awaited metadata', async (kind, integrationID) => {
+  const f = fixture(), entered = Promise.withResolvers(), release = Promise.withResolvers();
+  const metadata = [{ id: 'credential-one' }];
+  try {
+    const result = f.owner.withCallerOperation(readSpec(kind, integrationID), async () => {
+      entered.resolve(); await release.promise; return metadata;
+    });
+    await entered.promise; f.changeCaller(); release.resolve();
+    await expect(result).resolves.toBe(metadata);
+    expect(f.checked).toEqual(['original', 'original']);
+  } finally { f.owner.close(); }
+});
+
+test.each(integrationReads)('%s integration read refuses caller revocation while metadata is pending', async (kind, integrationID) => {
+  const f = fixture({ limit: 1 }), entered = Promise.withResolvers(), release = Promise.withResolvers();
+  try {
+    const result = f.owner.withCallerOperation(readSpec(kind, integrationID), async () => {
+      entered.resolve(); await release.promise; return [{ id: 'credential-one' }];
+    });
+    const refused = expect(result).rejects.toThrow('original_caller_revoked');
+    await entered.promise; f.revoke(); release.resolve(); await refused;
+    await expect(f.owner.withCallerOperation(readSpec(kind, integrationID), async () => [])).rejects.toThrow('original_caller_revoked');
+  } finally { f.owner.close(); }
+});
+
+test('integration read refuses controller replacement after the await and releases its request capacity', async () => {
+  const f = fixture({ limit: 1 }), entered = Promise.withResolvers(), release = Promise.withResolvers();
+  try {
+    const result = f.owner.withCallerOperation(readSpec('cursor', 'cursor-acp'), async () => {
+      entered.resolve(); await release.promise; return [];
+    });
+    const refused = expect(result).rejects.toMatchObject({ code: 'native_integration_grant_expired' });
+    await entered.promise; f.replace(); release.resolve(); await refused;
+    await expect(f.owner.withCallerOperation(readSpec('cursor', 'cursor-acp'), async () => [])).resolves.toEqual([]);
+    expect(f.owner.requestHeaders()).toEqual({});
+  } finally { f.owner.close(); }
+});
+
+test('failed integration read preserves the original error and releases its request capacity', async () => {
+  const f = fixture({ limit: 1 }), failure = new Error('fixture_read_failed');
+  try {
+    await expect(f.owner.withCallerOperation(readSpec('cursor', 'cursor-acp'), async () => {
+      f.replace(); throw failure;
+    })).rejects.toBe(failure);
+    await expect(f.owner.withCallerOperation(readSpec('cursor', 'cursor-acp'), async () => [])).resolves.toEqual([]);
+    expect(f.owner.requestHeaders()).toEqual({});
+  } finally { f.owner.close(); }
+});
+
+test.each(['oauth', 'credential', 'usage'])('committed %s operation keeps its result when caller authority changes after commit', async kind => {
+  const f = fixture(), receipt = { committed: true };
+  const body = { integrationID: 'cursor-acp', value: { type: 'key', key: 'synthetic-fixture' } };
+  const operation = kind === 'oauth' ? spec : kind === 'credential' ? {
+    ...readSpec('cursor', 'cursor-acp'), operation: 'cursor.credential.create', method: 'POST', path: '/api/credential',
+    body, valueType: 'key', requestedFingerprint: credentialMutationFingerprint(body),
+  } : { ...readSpec('provider', 'xai'), operation: 'provider.usage', method: 'GET', path: '/api/quota/xai',
+    methodID: 'device', credentialID: 'selected', expectedFingerprint: 'c'.repeat(64),
+    requestedFingerprint: credentialMutationFingerprint({ id: 'selected', renew: true }) };
+  try {
+    await expect(f.owner.withCallerOperation(operation, async () => {
+      await Promise.resolve(); f.revoke(); f.replace(); return receipt;
+    })).resolves.toBe(receipt);
+    expect(f.checked).toEqual(['original']);
+  } finally { f.owner.close(); }
 });

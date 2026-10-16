@@ -299,6 +299,8 @@ export const PlanView: React.FC<PlanViewProps> = ({
     const readText = async (path: string): Promise<{ content: string; version: string }> => {
       if (path === sessionPlanPath && sessionPlanIdentity) {
         const result = await runtimeApis.sessionPlans.readRevision(sessionPlanIdentity);
+        useSessionPlanFileStore.getState().markSaved(sessionPlanIdentity.sessionId, sessionPlanIdentity.sourceMessageId,
+          result.path, sessionPlanIdentity, result.sourceIdentity, result.content, result.version);
         return result;
       }
       if (runtimeApis.files?.readFile) {
@@ -331,6 +333,8 @@ export const PlanView: React.FC<PlanViewProps> = ({
           if (identity) {
             const result = await runtimeApis.sessionPlans.updateRevision({ ...identity, markdown, expectedVersion });
             if (!result.saved) throw new Error(t('planView.error.writeFailed'));
+            useSessionPlanFileStore.getState().markSaved(identity.sessionId, identity.sourceMessageId,
+              result.path, identity, result.sourceIdentity, result.content ?? markdown, result.version);
             return result.version;
           }
           if (runtimeApis.files?.writeFile) {

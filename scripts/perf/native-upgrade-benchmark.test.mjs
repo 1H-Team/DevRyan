@@ -190,7 +190,9 @@ test('copied snapshot preserves exact native provider and benchmark tuple withou
     const first = await resolve({ binding, revision: 1, expectedRegistrationDigest: performanceSha256(registrations) });
     assert.deepEqual(first.locations[0].configuration.providers, providers);
     assert.deepEqual(first.locations[0].configuration.agents.benchmark.model, { providerID: 'devryan-smoke', model: 'smoke-write', variant: 'default' });
-    assert.equal(first.locations[0].configuration.agents.benchmark.system, performanceRole.prompt);
+    const { PLAN_MODE_SYSTEM_INSTRUCTIONS } = await import('../../packages/orchestration-runtime/index.js');
+    assert.equal(first.locations[0].configuration.agents.benchmark.system, performanceRole.prompt
+      + '\n\nFor a turn explicitly requesting Plan mode, apply the following shared planning instructions:\n\n' + PLAN_MODE_SYSTEM_INSTRUCTIONS);
     assert.equal(first.locations[0].configuration.agents.benchmark.description, 'Exact project layer');
     await fs.writeFile(path.join(directory, '.opencode/opencode.json'), JSON.stringify({ agent: { benchmark: { description: 'New exact revision' } } }));
     const second = await resolve({ binding, revision: 2, expectedRegistrationDigest: performanceSha256(registrations) });
@@ -208,6 +210,7 @@ test('writer receipt coverage requires exact lease argv and actually sampled OS 
   const stdout=`1024 00:00.12 Fri Oct  2 07:00:00 2026 ${launcher} ${viewDirectory} /owned/lease/scratch ${profile} ${receiptPath} -- /worker secret-never-retained`;
   const parsed=parseWriterProcessSample(stdout,row,launcher);
   assert.deepEqual(parsed.value,{rssMiB:1,cpuMs:120});
+  assert.deepEqual(parseWriterProcessSample('1024 00:00.12 Fri Oct  2 07:00:00 2026',row).value,{rssMiB:1,cpuMs:120});
   assert.equal(JSON.stringify(parsed).includes('secret-never-retained'),false);
   assert.equal(parseWriterProcessSample(stdout,{...row,startIdentity:'Fri Oct  2 07:00:01 2026'},launcher),null);
   assert.equal(parseWriterProcessSample(stdout.replace(`${launcher} `,'/foreign/launcher '),row,launcher).supervisor,undefined);
@@ -446,12 +449,28 @@ test('initial sampler failure never registers a writer listener or starts period
   await nextTurn();assert.equal(snapshots,1);assert.equal(subscriptions,0);
 });
 
+test('sampler without writer metadata discards a PID reused between OS snapshot and CPU/RSS read',async()=>{
+  const identity='Fri Oct  2 07:00:00 2026';let replaced=false,snapshots=0;
+  const rows=()=>[{pid:process.pid,parentPid:0,startIdentity:identity,running:true},
+    {pid:101,parentPid:process.pid,startIdentity:replaced?'replacement-start':identity,running:true}];
+  const sampler=await createProcessSampler(101,100000,{readSnapshot:async()=>{snapshots++;return rows();},executeSample:async(_command,args)=>{
+    assert.equal(args.at(-1),'rss=,time=,lstart=');
+    replaced=true;return {stdout:'999999 00:59.99 Fri Oct  2 07:00:01 2026'};
+  }});
+  replaced=false;
+  const resource=await sampler.stop();
+  assert.equal(resource.samples.every(row=>row.processes.length===0),true);
+  assert.equal(resource.metrics.sampledDescendantCpuMs,0);
+  assert.equal(resource.exitedBeforeSample.length,2);
+  assert.equal(snapshots,4,'Only pass ancestry plus failed-sample diagnostics require global process snapshots');
+});
+
 test('subscription registration failure drains accepted work and revokes its captured callback',async()=>{
   const identity='Fri Oct  2 07:00:00 2026', rows=[{pid:process.pid,parentPid:0,startIdentity:identity,running:true},
     {pid:101,parentPid:process.pid,startIdentity:identity,running:true}];
   const entered=deferredSample(),release=deferredSample();let listener,snapshots=0,reads=0,rejected=false;
   const creating=createProcessSampler(101,250,{readSnapshot:async()=>{snapshots++;return rows;},
-    executeSample:async()=>{reads++;if(reads===2){entered.resolve();await release.promise;}return {stdout:'1024 00:00.12'};},
+    executeSample:async()=>{reads++;if(reads===2){entered.resolve();await release.promise;}return {stdout:`1024 00:00.12 ${identity}`};},
     subscribeWriterStarts:callback=>{listener=callback;callback(101);throw Object.assign(new Error('registration unavailable'),{code:'unit_registration_failed'});}});
   const rejection=assert.rejects(creating,{code:'unit_registration_failed'}).then(()=>{rejected=true;});
   await entered.promise;await nextTurn();assert.equal(rejected,false);

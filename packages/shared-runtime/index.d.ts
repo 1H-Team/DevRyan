@@ -1,5 +1,6 @@
 export * from './lib/usage-observation.js';
 export * from './lib/cache-efficiency-policy.js';
+export * from './lib/helper-model-selection.js';
 
 export interface ArchiveLimits {
   maxArchiveBytes?: number;

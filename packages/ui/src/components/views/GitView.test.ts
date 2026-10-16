@@ -8,6 +8,11 @@ const testDir = dirname(fileURLToPath(import.meta.url));
 const source = () => readFileSync(resolve(testDir, 'GitView.tsx'), 'utf8');
 
 describe('GitView revert actions', () => {
+  test('identifies a generated draft from the active chat model', () => {
+    const code = source();
+    expect(code).toContain("if (result.source === 'session_model')");
+    expect(code).toContain("toast.info(t('gitView.toast.activeModelFallback'), { description: result.model ?? undefined })");
+  });
   test('does not show a success toast after reverting a single file', () => {
     const code = source();
 

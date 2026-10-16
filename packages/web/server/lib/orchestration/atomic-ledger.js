@@ -19,6 +19,13 @@ const DEFAULT_MAX_LEDGER_READ_BYTES = 64 * 1024 * 1024;
 // file once, beside it, in case the removed history is wanted back.
 const COMPACTION_BACKUP_MIN_BYTES = 5 * 1024 * 1024;
 const COMPACTION_BACKUP_SUFFIX = '.before-compaction';
+const observeWrite = async (observation, phase, action) => {
+  const report = state => { try { observation?.onProgress?.({ phase, state }); } catch { /* Observation only. */ } };
+  report('started');
+  const value = await action();
+  report('completed');
+  return value;
+};
 const DEFAULT_OWNER_HEARTBEAT_MS = 10_000;
 const DEFAULT_OWNER_STALE_MS = 45_000;
 const MAX_OWNER_RECORD_BYTES = 4 * 1024;
@@ -160,23 +167,27 @@ function createWindowsManagedLedger({ filePath, ownerPath, maxReadBytes, now, lo
     }
     await assertOwnership(); return value;
   };
-  const saveNow = async snapshot => {
-    await assertOwnership(); const bytes = Buffer.from(JSON.stringify(validateSnapshot(snapshot)) + '\n');
+  const saveNow = async (snapshot, observation) => {
+    await observeWrite(observation, 'owner_verify', assertOwnership); const bytes = Buffer.from(JSON.stringify(validateSnapshot(snapshot)) + '\n');
     if (bytes.length > files.maxBytes) throw Object.assign(new RangeError('managed orchestration ledger exceeds native byte bound'), { code: 'ledger_capacity_exceeded' });
-    const previous = await read(filePath);
+    const previous = await observeWrite(observation, 'previous_read', () => read(filePath));
+    await observeWrite(observation, 'backup', async () => {
     if (previous && previous.bytes.length >= COMPACTION_BACKUP_MIN_BYTES && bytes.length * 2 < previous.bytes.length) {
       const backup = filePath + COMPACTION_BACKUP_SUFFIX;
       if (await read(backup) === null) {
         await assertOwnership(); await files.write(backup, previous.bytes, { expected: null }); await assertOwnership();
       }
     }
-    await assertOwnership(); await files.write(filePath, bytes, { expected: previous }); await assertOwnership(); writeCount++;
+    });
+    await assertOwnership();
+    await observeWrite(observation, 'native_commit', () => files.write(filePath, bytes, { expected: previous }));
+    await observeWrite(observation, 'commit_confirm', assertOwnership); writeCount++;
   };
   const enqueue = action => {
     if (releasing || closing) return Promise.reject(createOwnershipError('managed_orchestration_owner_conflict', 'Managed orchestration is shutting down'));
     const operation = saveTail.then(action); saveTail = operation.catch(() => {}); return operation;
   };
-  const save = snapshot => enqueue(() => saveNow(snapshot));
+  const save = (snapshot, observation) => enqueue(() => saveNow(snapshot, observation));
   const load = () => enqueue(loadNow);
   const releaseOwnership = () => closePromise ??= (async () => {
     // Keep the kernel lease until every admitted write has settled. New work
@@ -528,23 +539,24 @@ export const createAtomicManagedOrchestrationLedger = (options = {}) => {
     }
   };
 
-  const saveNow = async (snapshot) => {
-    await assertOwnership();
+  const saveNow = async (snapshot, observation) => {
+    await observeWrite(observation, 'owner_verify', assertOwnership);
     const validated = validateSnapshot(snapshot);
     const serialized = `${JSON.stringify(validated)}\n`;
-    await backUpBeforeCompaction(Buffer.byteLength(serialized, 'utf8'));
+    await observeWrite(observation, 'backup', () => backUpBeforeCompaction(Buffer.byteLength(serialized, 'utf8')));
     await writeFileAtomic(filePath, serialized, {
       fs: fsApi,
       mode: 0o600,
       directoryMode: 0o700,
       randomId,
+      onProgress: observation?.onProgress,
     });
-    await assertOwnership();
+    await observeWrite(observation, 'commit_confirm', assertOwnership);
     writeCount += 1;
   };
 
-  const save = (snapshot) => {
-    const operation = saveTail.then(() => saveNow(snapshot));
+  const save = (snapshot, observation) => {
+    const operation = saveTail.then(() => saveNow(snapshot, observation));
     saveTail = operation.catch(() => undefined);
     return operation;
   };

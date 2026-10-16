@@ -5,7 +5,6 @@ import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { verifyNativeRuntimeArtifacts } from '../packages/web/server/lib/opencode/runtime-host/native-artifacts.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const digest = async file => createHash('sha256').update(await fs.readFile(file)).digest('hex');
@@ -32,7 +31,7 @@ async function inventory({ directory = path.join(root, 'packages/web/runtime'), 
   const stat = await fs.lstat(manifestPath);
   if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 4 * 1024 * 1024) throw new Error('Native bundle manifest unavailable');
   const bytes = await fs.readFile(manifestPath), manifest = JSON.parse(bytes.toString());
-  if (manifest.schema !== 1 || manifest.opencodeVersion !== '2.0.26' || manifest.target !== `bun-${target}`
+  if (manifest.schema !== 1 || manifest.opencodeVersion !== '2.0.30' || manifest.target !== `bun-${target}`
     || !Array.isArray(manifest.files) || !manifest.files.length || manifest.files.length > 256) throw new Error('Native bundle inventory invalid');
   const names = new Set(['native-bundle.json']);
   for (const file of manifest.files) {
@@ -51,6 +50,7 @@ async function inventory({ directory = path.join(root, 'packages/web/runtime'), 
 
 export async function verifyRevertRuntimeArtifacts(options) {
   const verified = await inventory(options);
+  const { verifyNativeRuntimeArtifacts } = await import('../packages/web/server/lib/opencode/runtime-host/native-artifacts.js');
   const native = await verifyNativeRuntimeArtifacts({ manifestPath: verified.manifestPath, manifestSha256: verified.manifestSha256, launcher: verified.launcher });
   return { ...verified, native };
 }

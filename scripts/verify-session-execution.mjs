@@ -13,13 +13,15 @@ import { spawnConfinedProvider } from '../packages/web/server/lib/opencode/sessi
 import { fileURLToPath } from 'node:url';
 import { createWindowsPrivateFile, createWindowsPrivateFileOwner, ensureWindowsPrivateDirectory, readWindowsPrivateFile } from '../packages/harness-runtime/lib/windows-private-files.js';
 import { randomUUID } from 'node:crypto';
+import { createServer } from 'node:http';
+import { readOnlyShellLease } from '../packages/web/server/lib/opencode/native-readonly-shell.js';
 
 const launcher = process.env.DEVRYAN_TEST_EXECUTION_LAUNCHER;
 if (!launcher) throw new Error('Set DEVRYAN_TEST_EXECUTION_LAUNCHER to the built native helper');
 const native = (name, body, timeout) => test(name, { timeout }, body);
 const roots = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true }))); });
-async function fixture({ scope } = {}) {
+async function fixture({ scope, readOnly = false } = {}) {
   const root = process.platform === 'win32' ? path.join(os.tmpdir(), `devryan-execution-${randomUUID()}`)
     : await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-execution-'));
   if (process.platform === 'win32') await ensureWindowsPrivateDirectory(launcher, root);
@@ -27,7 +29,8 @@ async function fixture({ scope } = {}) {
   const canonical = await fs.realpath(root), viewDirectory = path.join(canonical, 'worktree');
   if (process.platform === 'win32') await ensureWindowsPrivateDirectory(launcher, viewDirectory);
   else await fs.mkdir(viewDirectory);
-  const lease = { viewDirectory, ...(scope ? { scope } : {}) };
+  const originalLease = { viewDirectory, ...(scope ? { scope } : {}) };
+  const lease = readOnly ? await readOnlyShellLease(originalLease) : originalLease;
   const start = async (command, args, signal) => {
     let stdout = '', stderr = '';
     const handle = await startSessionExecution({ launcher, lease, command, args, env: { PATH: process.env.PATH }, signal,
@@ -44,6 +47,28 @@ async function fixture({ scope } = {}) {
     // Through /bin/sh, as `npm run` starts scripts: macOS strips DYLD_* here.
     shell: (script, signal) => start('/bin/sh', ['-c', script], signal) };
 }
+
+native('Plan boundary preserves workspace reads and denies writes and localhost POST without changing ordinary execution', async t => {
+  if (process.platform === 'win32') { t.skip('LPAC read-only workspace/network policy unavailable'); return; }
+  const plan = await fixture({readOnly:true}), implementation = await fixture();
+  for (const f of [plan, implementation]) await fs.writeFile(path.join(f.viewDirectory,'tracked'),'original');
+  let requests=0;
+  const server=createServer((_request,response)=>{requests++;response.end('accepted');});
+  await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});
+  try {
+    const endpoint=`http://127.0.0.1:${server.address().port}/fixture`;
+    const source=`const fs=require('node:fs'),http=require('node:http');
+      const result={read:fs.readFileSync('tracked','utf8'),write:false,post:false};
+      try{fs.writeFileSync('tracked','changed');result.write=true;}catch(e){if(!['EPERM','EACCES','EROFS'].includes(e.code))throw e;}
+      const request=http.request(${JSON.stringify(endpoint)},{method:'POST'},response=>{response.resume();response.on('end',()=>{result.post=true;console.log(JSON.stringify(result));});});
+      request.on('error',()=>console.log(JSON.stringify(result)));request.setTimeout(1000,()=>request.destroy());request.end('fixture');`;
+    const blocked=await plan.run(source);assert.equal((await blocked.result).exitCode,0,blocked.output().stderr);
+    assert.deepEqual(JSON.parse(blocked.output().stdout),{read:'original',write:false,post:false});
+    assert.equal(await fs.readFile(path.join(plan.viewDirectory,'tracked'),'utf8'),'original');assert.equal(requests,0);
+    const allowed=await implementation.run(source);assert.equal((await allowed.result).exitCode,0,allowed.output().stderr);
+    assert.deepEqual(JSON.parse(allowed.output().stdout),{read:'original',write:true,post:true});assert.equal(requests,1);
+  } finally {await new Promise(resolve=>server.close(resolve));}
+},20_000);
 
 native('native boundary denies absolute, symlink and hardlink writes while allowing the private view', async () => {
   const f = await fixture(); const original = path.join(f.root, 'original');

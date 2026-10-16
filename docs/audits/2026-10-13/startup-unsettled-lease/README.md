@@ -131,6 +131,25 @@ the verifier now accepts an absent directory
 (`bundle-harness-integrity.test.js`). Whether the app then opened is not yet
 confirmed.
 
+## Fifth blocker, after installing 2.0.12
+
+2.0.12 refused at 22:17:05 (UTC+4) with `bundle_message_reference_lost`. The
+upgrade was refused, the retained runtime was tried as designed, and it failed
+the same check. The cause was the marker written by the first repair:
+`cancelUnstartedCall` stores `cancelled-calls/<key>` holding only a
+`messageID`. The call belonged to a child session that was later deleted. The
+verifier excuses a deleted session's records through their session, but the
+marker named no session, so its message counted as lost. Nothing removes such
+a marker, so any call cancelled before start in a later-deleted session hits
+this. The four earlier refusals hid it.
+
+The verifier now reports a marker's lost message or session as a finding, and
+new markers record their session (`bundle-harness-integrity.test.js`). On the
+affected installation the one marker was removed under the ledger lock with no
+runtime owner alive; the working-tree verifier then passed read-only against
+that bundle with no findings left to report. This section was written after the
+design change below.
+
 ## Design change after the fourth blocker
 
 All four blockers were one pattern: each release clones the runtime bundle, and

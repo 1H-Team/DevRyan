@@ -6,10 +6,28 @@ export function runNativeClaudeCredentialCommand(file,args,options){
   const {signal,...configuration}=options;
   if(signal?.aborted){reject(signal.reason);return;}
   let outcome;
-  const child=nodeExecFile(file,args,{...configuration,timeout:5000,killSignal:'SIGKILL'},(error,stdout)=>{outcome={error,stdout};});
+  const child=nodeExecFile(file,args,{...configuration,timeout:5000,killSignal:'SIGKILL'},(error,stdout)=>{
+   let code;
+   if(Number.isSafeInteger(error?.code)&&error.code>=0&&error.code<=255)code=error.code;
+   else if(typeof error?.code==='string'&&/^E[A-Z0-9_]{1,31}$/.test(error.code))code=error.code;
+   outcome={error:error?Object.assign(new Error('claude_credential_command_failed'),code===undefined?{}:{code}):undefined,stdout};
+  });
   const abort=()=>{child.kill('SIGKILL');};signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)abort();
   child.once('close',()=>{signal?.removeEventListener('abort',abort);if(signal?.aborted)reject(signal.reason);else if(outcome?.error)reject(outcome.error);else if(outcome)resolve({stdout:outcome.stdout});else reject(Object.assign(new Error('claude_credentials_unreadable'),{code:'claude_credentials_unreadable'}));});
  });
+}
+/** Observes only the exact credential utility after its original owner settles. */
+export function createObservedNativeClaudeCredentialCommand({execute=runNativeClaudeCredentialCommand,onDiagnostic}) {
+ const emit=payload=>{try{const result=onDiagnostic?.(Object.freeze(payload));if(result?.catch)void result.catch(()=>{});}catch{}};
+ return async(file,args,options)=>{
+  const phase=file==='/usr/bin/security'&&Array.isArray(args)
+   ? args[0]==='find-generic-password'?(args.includes('-w')?'read':'probe')
+    :args[0]==='add-generic-password'?'write':args[0]==='delete-generic-password'?'delete':undefined:undefined;
+  if(!phase)return execute(file,args,options);
+  try{const result=await execute(file,args,options);emit({phase,exitCode:0});return result;}
+  catch(error){emit({phase,exitCode:Number.isSafeInteger(error?.code)&&error.code>=0&&error.code<=255?error.code:null});throw error;}
+
+ };
 }
 import path from 'node:path';
 import {randomBytes,randomUUID} from 'node:crypto';
@@ -19,16 +37,24 @@ import {loadReviewedClaudeCredentials} from './reviewed-claude-host-credentials.
 import {claudeKeychainService} from '../claude-credential-projection.js';
 import {fetchSelectedClaudeQuota} from './native-claude-inspection.js';
 import {emptyClaudeLifecycle,parseClaudeLifecycle,transitionClaudeLifecycle,claudeRecordFingerprint,claudeGrantFingerprint,hasLegacyClaudeFence,sameClaudeEnrollment} from './native-claude-lifecycle.js';
+import {isVerifiedNativeClaudeEnrollmentProfile} from './native-setup-profiles.js';
 const fail=(code,status=403)=>Object.assign(new Error(code),{code,status,statusCode:status});
 const record=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 /** Called under the existing credential mutation queue by fresh enrollment only.
  * Adopt fences from configured services without rewriting their vendor records. */
-export async function migrateNativeClaudeLegacyFences({profiles,home,asset,lifecycle,loadModule=()=>loadReviewedClaudeCredentials(asset),backend={}},{recheck,signal}){
+export async function migrateNativeClaudeLegacyFences({profiles,home,asset,lifecycle,ownedControlRoot,loadModule=()=>loadReviewedClaudeCredentials(asset),backend={}},{recheck,signal}){
  if(!lifecycle||['read','transition'].some(key=>typeof lifecycle[key]!=='function')||typeof recheck!=='function')throw fail('native_claude_lifecycle_owner_required',503);
  const check=async()=>{await recheck();signal?.throwIfAborted();};await check();
  let module,state,observed=0,adopted=0;
  for(const profile of profiles.length?profiles:[{id:'default',type:'claude-max'}]){
   if(profile.type&&profile.type!=='claude-max'||profile.oauthToken||profile.apiKey)continue;
+  // A canonical fresh enrollment has no legacy fence to adopt. Its private
+  // service must not be reread through the legacy inherited-HOME backend.
+  if(ownedControlRoot){
+   state??=parseClaudeLifecycle(await lifecycle.read());await check();
+   if(await isVerifiedNativeClaudeEnrollmentProfile(profile,{controlRoot:ownedControlRoot,home,claudeLifecycle:state})){await check();continue;}
+   await check();
+  }
   const configDirectory=profile.claudeConfigDir??path.join(home,'.claude');
   const service=profile.keychainService??claudeKeychainService(configDirectory,home);
   module??=await loadModule();await check();let commandFailure;
@@ -57,9 +83,10 @@ export async function migrateNativeClaudeLegacyFences({profiles,home,asset,lifec
 }
 /** Only a fresh-enrollment receipt in the original native KV authorizes renewal.
  * Shared CLI profiles keep their exact selected service and are access-only. */
-export function createNativeClaudeCredentialOwner({profiles,home,withMutationQueue,asset,loadModule=()=>loadReviewedClaudeCredentials(asset),backend={},policy='renew',lifecycle,oauthTokenExpiries={},now=Date.now}){
+export function createNativeClaudeCredentialOwner({profiles,home,withMutationQueue,asset,loadModule=()=>loadReviewedClaudeCredentials(asset),backend={},policy='renew',lifecycle,bindOwnedCommand,ownedControlRoot,oauthTokenExpiries={},now=Date.now}){
  if(!['renew','access-only'].includes(policy)||typeof withMutationQueue!=='function'
-  ||lifecycle&&['read','transition'].some(key=>typeof lifecycle[key]!=='function'))throw fail('native_claude_credential_owner_required',503);
+  ||lifecycle&&['read','transition'].some(key=>typeof lifecycle[key]!=='function')
+  ||bindOwnedCommand&&(typeof bindOwnedCommand!=='function'||typeof ownedControlRoot!=='string'||!path.isAbsolute(ownedControlRoot)||!lifecycle))throw fail('native_claude_credential_owner_required',503);
  const accounts=new Map(structuredClone(profiles.length?profiles:[{id:'default',type:'claude-max'}]).map(profile=>[profile.id,profile]));let moduleWork;
  const access=value=>{
   const oauth=value?.claudeAiOauth;
@@ -81,19 +108,35 @@ export function createNativeClaudeCredentialOwner({profiles,home,withMutationQue
   const configDirectory=profile.claudeConfigDir??path.join(home,'.claude');
   const serviceName=profile.keychainService??claudeKeychainService(configDirectory,home);
   moduleWork??=loadModule();const module=await moduleWork;await check();
+  let state=bindOwnedCommand&&lifecycle?parseClaudeLifecycle(await lifecycle.read()):undefined;await check();
+  let command,ownedBinding,settlementAttemptID;
+  const privateProfile=typeof ownedControlRoot==='string'&&path.dirname(configDirectory)===path.join(ownedControlRoot,'claude-enrollments');
+  if(bindOwnedCommand&&privateProfile){
+   const row=state?.accounts.find(row=>row.profileID===profile.id);
+   if(!row||row.configDirectory!==configDirectory||row.service!==serviceName)throw fail('native_claude_account_changed');
+   ownedBinding=Object.freeze(enrollment(row));
+   const verifyBinding=async()=>{const current=parseClaudeLifecycle(await lifecycle.read());
+    if(!current.accounts.some(row=>sameClaudeEnrollment(row,ownedBinding))||current.unresolved.some(row=>sameClaudeEnrollment(row,ownedBinding)&&row.phase==='deletion-prepared'))throw fail('native_claude_account_changed');};
+   command=await bindOwnedCommand(ownedBinding,async()=>{await check();await verifyBinding();await check();});
+  }
+  const recheckSettlement=async()=>{
+   const current=parseClaudeLifecycle(await lifecycle.read());
+   if(!ownedBinding||!current.accounts.some(row=>sameClaudeEnrollment(row,ownedBinding))
+    ||!current.unresolved.some(row=>sameClaudeEnrollment(row,ownedBinding)&&row.phase==='replacement-prepared'&&row.attemptID===settlementAttemptID))throw fail('native_claude_refresh_unsettled',401);
+  };
   let dispatched=false;
   const fetch=async(url,options)=>{await check();dispatched=true;
    const response=await (backend.fetch??globalThis.fetch)(url,{...options,...signal?{signal:options.signal?AbortSignal.any([signal,options.signal]):signal}:{}});
    await check();return response;
   };
-  const execute=async(file,args,options)=>{await check();const result=await (backend.execFile??runNativeClaudeCredentialCommand)(file,args,{...options,timeout:5000,killSignal:'SIGKILL',...signal?{signal}:{}});await check();return result;};
+  const execute=async(file,args,options)=>{await check();const result=await (command??backend.execFile??runNativeClaudeCredentialCommand)(file,args,{...options,timeout:5000,killSignal:'SIGKILL',...signal?{signal}:{}});await check();return result;};
   const store=module.createPlatformCredentialStore({...backend,execFile:execute,serviceName,fetch});
   // Settlement reads are authorized by the already-admitted physical operation,
   // not its now-cancelled caller. They never exchange or write a credential.
-  const settlementStore=module.createPlatformCredentialStore({...backend,serviceName,execFile:(file,args,options)=>(backend.execFile??runNativeClaudeCredentialCommand)(file,args,{...options,timeout:5000,killSignal:'SIGKILL'})});
+  const settlementStore=module.createPlatformCredentialStore({...backend,serviceName,execFile:(file,args,options)=>command?command(file,args,{...options,timeout:5000,killSignal:'SIGKILL'},recheckSettlement):(backend.execFile??runNativeClaudeCredentialCommand)(file,args,{...options,timeout:5000,killSignal:'SIGKILL'})});
   let current=await store.read();await check();if(!current)throw fail('claude_credentials_missing',401);
   const legacyFence=hasLegacyClaudeFence(current);let token=access(current);
-  let state=lifecycle?parseClaudeLifecycle(await lifecycle.read()):emptyClaudeLifecycle();await check();
+  state??=lifecycle?parseClaudeLifecycle(await lifecycle.read()):emptyClaudeLifecycle();await check();
   const currentRefresh=current.claudeAiOauth?.refreshToken;
   if(typeof currentRefresh==='string'&&state.unresolved.some(row=>['enrollment-prepared','deletion-prepared'].includes(row.phase)&&row.grantFingerprint===claudeGrantFingerprint(currentRefresh)))throw fail('native_claude_refresh_unsettled',401);
   const transition=async operation=>{
@@ -128,7 +171,7 @@ export function createNativeClaudeCredentialOwner({profiles,home,withMutationQue
    if(readOnly||!authority||policy==='access-only'||legacyFence){
     if(forced||token.expiresAt<=now()+60000)throw fail('claude_credentials_expired',401);
    }else{
-    const attemptID=randomUUID(),binding=enrollment(authority);let prepared=false,settled=false,committed=false,begun=false,failure;
+    const attemptID=randomUUID(),binding=enrollment(authority);settlementAttemptID=attemptID;let prepared=false,settled=false,committed=false,begun=false,failure;
     const settleReplacement=async()=>{
      const pending=state.unresolved.find(row=>row.attemptID===attemptID);
      if(!pending||pending.phase!=='replacement-prepared')throw fail('native_claude_refresh_unsettled',401);

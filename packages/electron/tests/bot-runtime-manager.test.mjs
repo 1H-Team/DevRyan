@@ -1661,6 +1661,7 @@ describe('Electron-owned Docker Bot runtime manager', () => {
 
     // Automatic startup reports setup instead of pulling fresh images.
     await expect(manager.ensureReady()).rejects.toMatchObject({ code: 'bot_runtime_setup_required' });
+    expect(runner.calls).toEqual([]);
     expect(runner.calls.some(({ args }) => args[0] === 'pull' || args[0] === 'compose')).toBe(false);
     expect(stateStore.writes).toEqual([]);
 
@@ -1744,7 +1745,8 @@ describe('Electron-owned Docker Bot runtime manager', () => {
       await new Promise((resolve) => setTimeout(resolve, 5));
       return originalRunProcess(...args);
     };
-    const { manager } = createManager({ runner });
+    const { manager } = createManager({ runner,
+      stateStore: createMemoryStateStore({version: 1, current: releaseManifest(), previous: null, staged: null}) });
 
     await expect(manager.ensureReady({ deadlineMs: 1 })).rejects.toMatchObject({
       code: 'bot_runtime_startup_timeout',
@@ -2621,8 +2623,9 @@ describe('local Bot catalog lifecycle', () => {
     await expect(manager.databaseContext()).resolves.toMatchObject({ url: 'http://127.0.0.1:55130' });
 
     const missing = createManager({ manifest, stateStore: createMemoryStateStore() });
+    await expect(missing.manager.databaseContext()).rejects.toMatchObject({ code: 'bot_database_unavailable' });
     await expect(missing.manager.ensureCatalog()).rejects.toMatchObject({ code: 'bot_runtime_setup_required' });
-    expect(missing.runner.calls.some(({ args }) => args[0] === 'pull' || args[0] === 'compose')).toBe(false);
+    expect(missing.runner.calls).toEqual([]);
   });
 
   test('isolated runtimes never resolve to production resource names', async () => {

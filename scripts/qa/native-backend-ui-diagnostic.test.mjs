@@ -176,6 +176,11 @@ test('profile refuses unknown generation and escaped source before any provider 
   await fs.symlink(outside, path.join(root, 'link'));
   const input = { cell: { transport: 'runtime-fixture' }, runtimeRoot: path.join(root, 'runtime'), workspace: root, artifactRoot };
   await assert.rejects(prepareRuntimeUiProfile({ ...input, targetGeneration: 3 }));
+  for (const helperModelSelection of [
+    { providerID: 'foreign', modelID: 'smoke-write', revision: 'saved' },
+    { providerID: 'devryan-smoke', modelID: 'foreign', revision: 'saved' },
+    { providerID: 'devryan-smoke', modelID: 'smoke-write', revision: 'saved', variant: 'high' },
+  ]) await assert.rejects(prepareRuntimeUiProfile({ ...input, targetGeneration: 2, helperModelSelection }), /helper_selection_invalid/);
   await assert.rejects(prepareRuntimeUiProfile({ ...input, targetGeneration: 2, runtimeRoot: path.join(root, 'link/runtime') }), /path_invalid/);
   assert.deepEqual(await fs.readdir(outside), []);
 });

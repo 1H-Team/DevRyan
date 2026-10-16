@@ -9,10 +9,20 @@ import { assertWriterOutcome, backgroundShellTurn, snapshotFiles } from './asser
 import { backgroundRestartTurn } from './background-restart-turn.mjs';
 import { waitFor } from './process-lanes.mjs';
 
+/** Fixture evidence retains codes only, never exception messages or RPC payloads. */
+export function compiledShellRefusalDiagnostic(sessionID, method, input, error) {
+  if (input?.sessionID !== sessionID || typeof error?.code !== 'string'
+    || !/^(?:native|provider|recovery)_[a-z0-9_]{1,100}$/.test(error.code)
+    || typeof method !== 'string' || !/^native\.[a-z.-]{1,80}$/.test(method)) return null;
+  const operation = typeof input.operation === 'string' && /^[a-z][a-z.-]{0,80}$/.test(input.operation) ? input.operation : undefined;
+  return { type: 'lifecycle', event: 'compiled_shell_admission_refusal', sessionID,
+    payload: { method, ...(operation ? { operation } : {}), code: error.code } };
+}
+
 /** Genuine accepted synthetic notice held before promotion, then recovered by
  * the existing shell lease/receipt owner through two compiled replacements. */
 export async function runCompiledRecoveredShell({ provider, client, managed, runtimeOwner, getController,
-  directory, databasePath, executionHost, observations, onCase, onExit }) {
+  directory, databasePath, executionHost, observations, onCase, onExit, recordDiagnostic }) {
   assert.ok(Array.isArray(observations), 'Shell restart requires actual execution observations');
   const cache = path.join(fileURLToPath(new URL('../../', import.meta.url)), '.cache');
   for (const file of [directory, databasePath]) {
@@ -29,7 +39,22 @@ export async function runCompiledRecoveredShell({ provider, client, managed, run
   assert.equal((await snapshotFiles(directory, [filename]))[filename], null);
   const initial = backgroundShellTurn(id, { command });
   let initialRequests = 0, initialReturned = false, blocked = false, sealed;
-  const owner = runtimeOwner.nativeOwner, originalRpc = owner.handleRpc;
+  const owner = runtimeOwner.nativeOwner, originalRpc = owner.handleRpc, originalProviderAttempt = owner.withProviderAttempt;
+  const recordRefusal = (method, input, error) => {
+    const diagnostic = compiledShellRefusalDiagnostic(session.id, method, input, error);
+    if (diagnostic) {
+      observations.push({ phase: 'compiled_shell_admission_refusal', ...diagnostic });
+      try { void Promise.resolve(recordDiagnostic?.(diagnostic)).catch(() => undefined); } catch { /* Evidence cannot replace the original refusal. */ }
+    }
+  };
+  const observedRpc = async (method, input) => {
+    try { return await originalRpc(method, input); }
+    catch (error) { recordRefusal(method, input, error); throw error; }
+  };
+  owner.withProviderAttempt = async (input, action) => {
+    try { return await originalProviderAttempt(input, action); }
+    catch (error) { recordRefusal('native.provider-attempt', input, error); throw error; }
+  };
   const gate = Promise.withResolvers();void gate.promise.catch(() => {});
   const originalExecution = executionHost.nativeExecution;
   executionHost.nativeExecution = (input, context) => {
@@ -64,7 +89,7 @@ export async function runCompiledRecoveredShell({ provider, client, managed, run
         sealed = structuredClone(lease);blocked = true;await gate.promise;
       }
     }
-    return originalRpc(method, input);
+    return observedRpc(method, input);
   };
   try {
     await provider.setResponder(request => {
@@ -128,7 +153,7 @@ export async function runCompiledRecoveredShell({ provider, client, managed, run
     const intent = `shell.complete:${binding.jobID}`;
     assert.equal((await runtime.nativeShellContinuations({ directory })).some(row => row.sessionID === session.id && row.operation === intent), true);
     const previous = await exitController();
-    gate.reject(new Error('fixture_retained_shell_controller_closed'));owner.handleRpc = originalRpc;
+    gate.reject(new Error('fixture_retained_shell_controller_closed'));owner.handleRpc = observedRpc;
     const resumed = backgroundRestartTurn(id, undefined, { resumeShellID: binding.jobID });
     let continuationRequests = 0;
     await provider.setResponder(request => { continuationRequests++;return resumed.responder(request); });
@@ -170,12 +195,12 @@ export async function runCompiledRecoveredShell({ provider, client, managed, run
       locationBeforeRestart: 'queued', type: 'synthetic', enqueueEvents: enqueueEvents.length,
       jobID: binding.jobID, assistantMessageID: assistants[0].info.id, filename,
       initialRequests, continuationRequests, executionCounts: counts, oldInstanceID: previous.instanceID, instanceID: replacement.instanceID, secondInstanceID: second.instanceID,
-      controllerExits, gateRestored: owner.handleRpc === originalRpc, receiptRetained: true, fileUnchanged: true,
+      controllerExits, receiptRetained: true, fileUnchanged: true,
       releasedAfterIdle,
       source: 'actual-compiled-retained-shell-inbox-sealed-lease-and-confined-receipt-automatic-same-id-recovery' };
   } catch (error) { failure = error;throw error; }
   finally {
-    gate.reject(new Error('fixture_retained_shell_cleanup'));owner.handleRpc = originalRpc;executionHost.nativeExecution = originalExecution;
+    gate.reject(new Error('fixture_retained_shell_cleanup'));owner.handleRpc = originalRpc;owner.withProviderAttempt = originalProviderAttempt;executionHost.nativeExecution = originalExecution;
     const cleanupErrors = [];
     if (!row && releasePath && !releasedAfterIdle) await fs.writeFile(releasePath, '', { flag: 'wx', mode: 0o600 }).catch(error => {
       if (error.code !== 'EEXIST') cleanupErrors.push(error);
@@ -192,5 +217,6 @@ export async function runCompiledRecoveredShell({ provider, client, managed, run
     if (cleanupErrors.length) throw new AggregateError([...(failure ? [failure] : []), ...cleanupErrors], 'Retained shell fixture and cleanup failed');
   }
   assert.equal(owner.handleRpc, originalRpc);assert.equal(executionHost.nativeExecution, originalExecution);assert.equal(controllerExits, 2);
-  row.observerRestored = true;onCase?.(row);return row;
+  assert.equal(owner.withProviderAttempt, originalProviderAttempt);
+  row.gateRestored = true;row.observerRestored = true;onCase?.(row);return row;
 }

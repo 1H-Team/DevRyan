@@ -121,8 +121,8 @@ const BODY_FOR = {
 };
 
 describe('route table coverage', () => {
-  it('knows the 142 OpenAPI operations of 2.0.26 plus GET /openapi.json', () => {
-    expect(OPENCODE_V2_ROUTES_VERSION).toBe('2.0.26');
+  it('knows the 142 OpenAPI operations of 2.0.30 plus GET /openapi.json', () => {
+    expect(OPENCODE_V2_ROUTES_VERSION).toBe('2.0.30');
     expect(OPENCODE_V2_ROUTES).toHaveLength(142);
     expect(OPENCODE_V2_EXTRA_ROUTES.map(keyOf)).toEqual(['GET /openapi.json']);
     const known = listOpenCodeV2KnownRoutes().map(keyOf);
@@ -474,7 +474,7 @@ describe('location binding', () => {
 
 describe('diffLiveSpec', () => {
   it('reports no drift for the vendored document, as an object or as text', () => {
-    expect(diffLiveSpec(vendoredDoc())).toMatchObject({ ok: true, version: '2.0.26', error: null, added: [], removed: [], changed: [] });
+    expect(diffLiveSpec(vendoredDoc())).toMatchObject({ ok: true, version: '2.0.30', error: null, added: [], removed: [], changed: [] });
     expect(diffLiveSpec(VENDORED_TEXT).ok).toBe(true);
   });
 
@@ -483,7 +483,7 @@ describe('diffLiveSpec', () => {
     doc.paths['/api/brand-new'] = { post: { operationId: 'brand.new', parameters: [], responses: {} } };
     delete doc.paths['/api/vcs/base'];
     doc.paths['/api/session/{sessionID}'].patch.requestBody.content['application/json'].schema.properties.agent = { type: 'string' };
-    doc.paths['/api/session/{sessionID}'].get.parameters[0].schema.pattern = '^s';
+    doc.paths['/api/session/{sessionID}'].get.parameters[0].schema = { type: 'string', pattern: '^s' };
     doc.paths['/api/info'].get.operationId = 'server.information';
     const drift = diffLiveSpec(doc);
     expect(drift.ok).toBe(false);

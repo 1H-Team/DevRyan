@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { continueRebase, createGitWorktree, getGitLog, getGitStatus, getGitWorktreeBootstrapStatus, getPrimaryWorktreeRoot, gitFetch, resolveGitApiBaseOrigin, retryGitWorktreeBootstrapOperation } from "./gitApiHttp"
+import { continueRebase, createGitWorktree, generateCommitMessage, generateCommitMessageDraft, generatePullRequestDescription, getGitLog, getGitStatus, getGitWorktreeBootstrapStatus, getPrimaryWorktreeRoot, gitFetch, resolveGitApiBaseOrigin, retryGitWorktreeBootstrapOperation } from "./gitApiHttp"
 
 type TestWindow = {
   location: { origin: string }
@@ -30,6 +30,18 @@ const restoreGlobals = (): void => {
 }
 
 describe("gitApiHttp URL routing", () => {
+  test("keeps model and fallback source across commit and PR HTTP responses",async()=>{
+    try {
+      setTestWindow({location:{origin:"http://127.0.0.1:5173"}})
+      const attempt={tier:"session_model",model:"active/model",reason:null,durationMs:10}
+      globalThis.fetch=(async()=>Response.json({title:"Draft",body:"Body",message:{subject:"fix: draft",highlights:[]},status:"complete",commits:[],
+        source:"session_model",selectionMode:"active",model:"active/model",attempts:[attempt]})) as typeof fetch
+      expect(await generatePullRequestDescription("/repo",{base:"main",head:"feature"})).toEqual({title:"Draft",body:"Body",source:"session_model",selectionMode:"active",model:"active/model",attempts:[attempt]})
+      expect(await generateCommitMessage("/repo",{context:{branch:"main",tracking:null,scope:"staged-and-unstaged",stagedOnly:false,recentCommitSubjects:[],selectedFiles:[{path:"file",index:"M",workingDir:" "}]}}))
+        .toEqual({subject:"fix: draft",highlights:[],source:"session_model",selectionMode:"active",model:"active/model"})
+      expect(await generateCommitMessageDraft("/repo",{selectedFiles:["file"]})).toMatchObject({source:"session_model",selectionMode:"active",model:"active/model"})
+    } finally { restoreGlobals() }
+  })
   test("sends the CSRF marker when retrying a bootstrap operation", async () => {
     try {
       setTestWindow({ location: { origin: "http://127.0.0.1:5173" } })

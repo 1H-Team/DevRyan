@@ -45,11 +45,14 @@ export function primaryStepOverride(rpc: ExecutionRpc,
       if (!permit) return yield* refuseHost(new HostRefusal('native_primary_permit_required', 403, 'primary.step', step.data.sessionID));
       const attempt=yield* currentNativeAttemptIdentity;
       return yield* Effect.tryPromise({ try: signal => rpc('native.primary-step', { permit, event: step, attempt }, { signal }),
-        catch: error => error }).pipe(Effect.catch(() => Effect.gen(function* () {
+        catch: error => error }).pipe(Effect.catch(error => Effect.gen(function* () {
           // Stop can reach the native fiber while the handoff is awaiting its
           // reply. A normal rejected handoff still fails closed.
           if (yield* interrupted) return interruptedCleanup;
-          return yield* refuseHost(new HostRefusal('native_primary_step_unavailable', 503, 'primary.step', step.data.sessionID));
+          const code=typeof error==='object'&&error!==null&&'code' in error&&typeof error.code==='string'
+            &&['native_stream_continuation_fenced','native_continuation_fenced','provider_stream_interrupted'].includes(error.code)
+            ?error.code:'native_primary_step_unavailable';
+          return yield* refuseHost(new HostRefusal(code, code==='native_primary_step_unavailable'?503:409, 'primary.step', step.data.sessionID));
         })), Effect.flatMap(value=>{
           if(value===interruptedCleanup)return Effect.succeed(interruptedCleanup);
           if(typeof value==='object'&&value!==null&&'stop' in value){

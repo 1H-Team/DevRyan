@@ -24,7 +24,7 @@ const appendBoundedText = (previous, incoming) => {
   const current = typeof previous === 'string' ? previous : '';
   const next = typeof incoming === 'string' ? incoming : '';
   if (!next) return current;
-  const merged = next.startsWith(current) ? next : `${current}${next}`;
+  const merged = current + next;
   if (merged.length <= MAX_TEXT_CHARS) return merged;
   return `…${merged.slice(-(MAX_TEXT_CHARS - 1))}`;
 };

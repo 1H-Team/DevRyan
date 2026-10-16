@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "command": "bun test scripts/opencode-v2-native/native-result-publication.graph.test.ts",
+  "date": "2026-10-15",
+  "passed": 2,
+  "failed": 0,
+  "durationSeconds": 33.28,
+  "sourceHashes": {
+    "scripts/opencode-v2-native/native-result-publication.graph.test.ts": "7a1afd1b0ccd1a5be4e82b83a177735a4080426e8a1d1820d95a9ceb8638e865",
+    "packages/web/server/lib/opencode/runtime-host/managed-task.ts": "5bc7d0541cc4b9856b385aba6c847cf0dae7c05e855b4d2484258442438c3625",
+    "packages/web/server/lib/opencode/runtime-host/native-managed-publication-owner.js": "7ab8203a5c37beb99739d6993cfb568347d5c01c004eee7008a554bc17e52df3",
+    "packages/web/server/lib/opencode/runtime-host/native-managed-results.js": "9aa99d3d6178507982408a150b4b0a804d6855fa93844cc460135a53708648c0",
+    "packages/orchestration-runtime/managed-result-projection.js": "2bdac92b81ab023e0e7eb784a076862a6d5ae35c7c926ac2041d5c64d6093d82",
+    "packages/orchestration-runtime/tool-output-limits.js": "399036045728afe09439cd5467a595b3eedc799f1188de63ace32e2c7538941b",
+    "packages/web/server/lib/orchestration/runtime.js": "b502a9f1943d21c3d6fe58942cac4710aea0a6f123c21a6f3189edac771af228"
+  },
+  "observed": [
+    {
+      "compiled": false,
+      "sameStepCode": "native_task_later_review_step_required",
+      "primaryRequests": 5,
+      "publishedTools": 4,
+      "acknowledged": true,
+      "reportBytes": 35840,
+      "largestPageBytes": 24576,
+      "maxOutputBytes": 27367,
+      "nativeTruncationAbsent": true
+    },
+    {
+      "compiled": true,
+      "sameStepCode": "native_task_later_review_step_required",
+      "primaryRequests": 5,
+      "publishedTools": 4,
+      "acknowledged": true,
+      "reportBytes": 35840,
+      "largestPageBytes": 24576,
+      "maxOutputBytes": 27367,
+      "nativeTruncationAbsent": true
+    }
+  ],
+  "priorFailedAttempts": [
+    {
+      "failedCases": 2,
+      "reason": "New final-page assertion expected null; native absent cursor is undefined."
+    },
+    {
+      "failedCases": 2,
+      "reason": "New assertion expected absent native truncation metadata; real native policy supplies false after enforcing limits."
+    },
+    {
+      "failedCases": 2,
+      "reason": "New report collection assertion also included a later disposition response reference; collection now selects actual canonical wait/read_result outputs."
+    }
+  ],
+  "limitations": [
+    "Local disposable provider fixture only; no live account or provider calls.",
+    "No latency acceptance or final frozen build qualification.",
+    "Snapshot hashes recorded after observed final pass; benchmark samples retain their own before/after hashes."
+  ]
+}

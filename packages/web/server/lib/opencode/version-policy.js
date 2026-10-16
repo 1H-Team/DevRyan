@@ -1,4 +1,4 @@
-export const TARGET_OPENCODE_VERSION = '2.0.26';
+export const TARGET_OPENCODE_VERSION = '2.0.30';
 
 // Any OpenCode 2.x release can run natively: each bundle is admitted through its own
 // verified artifact manifest, and a retained bundle uses its matching compiled
@@ -11,7 +11,7 @@ export const isNativeOpenCodeVersion = version => typeof version === 'string' &&
 // (packages/bots-runtime/docker/opencode/Dockerfile). The two roll independently:
 // the host pin can move ahead while the container image waits for a rebuilt,
 // re-verified release.
-export const BOT_TARGET_OPENCODE_VERSION = '2.0.26';
+export const BOT_TARGET_OPENCODE_VERSION = '2.0.30';
 
 const EXACT_VERSION = /^2\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 

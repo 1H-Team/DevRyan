@@ -174,20 +174,24 @@ test('fresh-composition work snapshot retains original history, configuration, h
 });
 
 
-test('selected lifecycle identity failure closes its actual owned child before propagating the original failure', async () => {
+test('selected lifecycle inspection and rollback keep fixed budgets and settle their owned child on identity failure', async () => {
   const f = await fixture();
   try {
-    const descriptor = await f.create('candidate'), logFile = path.join(f.root, 'identity-failure.log');
-    let pid;
-    const original = Object.assign(new Error('fixture_identity_unavailable'), {code:'fixture_identity_unavailable'});
-    await assert.rejects(runSelectedNativeLifecycle({controlRoot:f.root,descriptor,configuration:{},
-      fixture:{root:f.root,environment:{}},logFile,readProcessIdentity:childPID=>{pid=childPID;throw original;}}),
-      error=>error===original);
-    assert.ok(pid > 0);
-    assert.throws(()=>process.kill(pid,0),error=>error.code==='ESRCH');
-    const exit = JSON.parse(await fs.readFile(logFile+'.exit.json','utf8'));
-    assert.equal(exit.pid,pid); assert.equal(exit.signal,'SIGTERM'); assert.equal(exit.timedOut,false);
-    assert.equal(exit.failure,'selected_native_lifecycle_failed'); assert.equal(exit.hostIdentity,null);
+    const descriptor = await f.create('candidate');
+    for (const rollback of [undefined, {phase:'ack-loss',expectedRevision:2,targetBundleID:'baseline'}]) {
+      const logFile = path.join(f.root, rollback ? 'rollback-identity-failure.log' : 'identity-failure.log');
+      let pid;
+      const original = Object.assign(new Error('fixture_identity_unavailable'), {code:'fixture_identity_unavailable'});
+      await assert.rejects(runSelectedNativeLifecycle({controlRoot:f.root,descriptor,configuration:{},
+        fixture:{root:f.root,environment:{}},logFile,rollback,readProcessIdentity:childPID=>{pid=childPID;throw original;}}),
+        error=>error===original);
+      assert.ok(pid > 0);
+      assert.throws(()=>process.kill(pid,0),error=>error.code==='ESRCH');
+      const exit = JSON.parse(await fs.readFile(logFile+'.exit.json','utf8'));
+      assert.equal(exit.pid,pid); assert.equal(exit.signal,'SIGTERM'); assert.equal(exit.timedOut,false);
+      assert.equal(exit.failure,'selected_native_lifecycle_failed'); assert.equal(exit.hostIdentity,null);
+      assert.equal(exit.timeoutMs,rollback?240000:120000);
+    }
   } finally { await fs.rm(f.root,{recursive:true,force:true}); }
 });
 

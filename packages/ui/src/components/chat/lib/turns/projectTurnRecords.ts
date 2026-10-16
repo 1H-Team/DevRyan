@@ -1,3 +1,4 @@
+import type { SessionPlanSourceIdentity } from '@/lib/api/types';
 import { isPlanModeUserMessage } from '@/lib/messages/actionablePlan';
 import { projectTurnActivity } from './projectTurnActivity';
 import { projectTurnIndexes } from './projectTurnIndexes';
@@ -215,6 +216,8 @@ const canReusePreviousTurn = (previous: TurnRecord, next: TurnRecord): boolean =
 };
 
 interface ProjectTurnRecordsOptions {
+    sourceIdentity?: SessionPlanSourceIdentity;
+    canonicalContent?: string;
     previousProjection?: TurnProjectionResult | null;
     recordedPlanModeMessageIds?: ReadonlySet<string>;
 }
@@ -355,6 +358,8 @@ export const projectTurnRecords = (
         ...projection,
         ungroupedMessageIds,
         planTraceIndex: projectPlanTurnTraceIndex(stableTurns, {
+            sourceIdentity: effectiveOptions.sourceIdentity,
+            canonicalContent: effectiveOptions.canonicalContent,
             previousIndex: effectiveOptions.previousProjection?.planTraceIndex,
             recordedPlanModeMessageIds: effectiveOptions.recordedPlanModeMessageIds,
         }),

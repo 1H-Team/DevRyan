@@ -12,6 +12,7 @@ import { describeWebArtifact, verifyWebArtifact, stageWebArtifact, hash, release
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const env = process.env;
 const identity = await releaseIdentity(root, env.GITHUB_SHA);
+if (env.RELEASE_CANDIDATE === 'true' && env.RELEASE_DRY_RUN !== 'true') throw new Error('Candidate runs must be read only');
 const botInputsOnly = assertBotInputPreparation(env, identity.release);
 if (botInputsOnly && !['image-plan', 'image-resolve', 'image-sign', 'image-assemble'].includes(env.RELEASE_OPERATION)) {
   throw new Error('Bot input preparation prohibits application release operations');
@@ -31,6 +32,157 @@ const preparedArchive = 'prepared.tar.zst';
 const botIdentity = { version: identity.release, revision: identity.revision, repositoryPrefix: `ghcr.io/${env.GITHUB_REPOSITORY_OWNER?.toLowerCase()}` };
 if (![undefined, 'true', 'false'].includes(env.RELEASE_DRY_RUN)) throw new Error('Invalid RELEASE_DRY_RUN');
 switch (env.RELEASE_OPERATION) {
+  case 'history-read': {
+    const { githubReleaseHistoryClient, readReleaseGateHistory, readReleaseGateReceipts, selectRollingReleaseGateRuns, countUnexplainedReleaseGateFailures } = await import('./release-publication.mjs');
+    const client = githubReleaseHistoryClient(env);
+    const summary = { protocol: 'devryan.release-history-diagnostic/1', source: identity.revision, version: identity.release,
+      complete: false, failureTallyComplete: false, requestLimit: 120, requestCount: 0, runs: [], unexplainedGateFailures: 0 };
+    try {
+      const allRuns = await client.pages('/actions/workflows/release.yml/runs', 'workflow_runs');
+      const history = await readReleaseGateHistory(root, client, allRuns, env.GITHUB_RUN_ID, { source: identity.revision, version: identity.release });
+      for (const run of selectRollingReleaseGateRuns(history.runs)) {
+        const failures = countUnexplainedReleaseGateFailures(history.jobsByRun.get(run.id), await readReleaseGateReceipts(root, client, run.id), run);
+        summary.runs.push({ id: run.id, source: run.head_sha, version: run.releaseVersion, unexplainedGateFailures: failures });
+        summary.unexplainedGateFailures += failures;
+      }
+      summary.complete = true; summary.failureTallyComplete = true;
+    } catch (error) {
+      summary.error = error.code === 'release_history_incomplete' ? error.code : 'release_history_evidence_unavailable';
+      const reason = error.message?.split('\n')[0];
+      if (['Historical source has no stable version', 'Historical release workflow changed', 'Historical release repository changed',
+        'Historical release event unavailable', 'Historical release identity proof unavailable or expired',
+        'Historical admission belongs to another source', 'Historical admission identities conflict',
+        'Historical frozen stable identity required', 'Historical inventory belongs to another source'].includes(reason)) summary.reason = reason;
+      const httpStatus = /\bHTTP ([1-5][0-9]{2})\b/.exec(error.stderr ?? '');
+      if (httpStatus) summary.httpStatus = Number(httpStatus[1]);
+      process.exitCode = 1;
+    }
+    summary.requestCount = client.requestCount;
+    summary.stoppedAt = client.lastRequest;
+    await write('history-classification.json', summary);
+    console.log(JSON.stringify(summary));
+    break;
+  }
+  case 'source-admit': {
+    const { admitRelease, githubReleaseClient, selectRollingReleaseGateRuns, assertReleaseSourceHistory, readReleaseGateReceipts, readReleaseGateHistory, countUnexplainedReleaseGateFailures, isExplainedReleaseGuiFailure, isExecutedReleaseGateJob, requireReleaseGateWriteAdmission, resolveQualifiedReleaseCandidate, assertCurrentReleaseGateAttempt, hasRetainedRunAdmission } = await import('./release-publication.mjs');
+    const { assertUniversalNativeReleaseAvailable } = await import('./verify-revert-runtime-artifacts.mjs');
+    if (env.RELEASE_SCOPE === 'full') assertUniversalNativeReleaseAvailable();
+    const client = githubReleaseClient(env);
+    const admissionInput = { source: identity.revision, version: identity.release, scope: env.RELEASE_SCOPE,
+      notes: await fs.readFile(env.RELEASE_NOTES_PATH, 'utf8'), candidate: env.RELEASE_CANDIDATE === 'true', client };
+    const readOnlyAdmission = await admitRelease({ ...admissionInput, environment: { ...env, RELEASE_DRY_RUN: 'true' } });
+    if (readOnlyAdmission.publishedNoop === true) {
+      const retained = await hasRetainedRunAdmission({ root, client, admission: readOnlyAdmission, runID: env.GITHUB_RUN_ID });
+      if (!retained) await write('admission.json', readOnlyAdmission);
+      await fs.appendFile(env.GITHUB_OUTPUT, `id=${readOnlyAdmission.releaseID}\nsource=${readOnlyAdmission.source}\npublished_noop=true\nadmission_retained=${retained}\ncandidate_run=\n`);
+      break;
+    }
+    await assertCurrentReleaseGateAttempt({ root, client, identity: { source: identity.revision, version: identity.release, lockfile: identity.lockfile },
+      currentRunID: env.GITHUB_RUN_ID, currentRunAttempt: env.GITHUB_RUN_ATTEMPT });
+    let history, runs;
+    try {
+      const allRuns = await client.pages('/actions/workflows/release.yml/runs', 'workflow_runs');
+      history = await readReleaseGateHistory(root, client, allRuns, env.GITHUB_RUN_ID, { source: identity.revision, version: identity.release });
+      runs = selectRollingReleaseGateRuns(history.runs);
+      const { jobsByRun } = history;
+      for (const run of history.runs.filter(run => runs.includes(run) || run.releaseVersion === identity.release || run.head_sha === identity.revision)) {
+        const jobs = jobsByRun.get(run.id);
+        if (!jobs.some(job => ['failure', 'timed_out', 'cancelled'].includes(job.conclusion))) continue;
+        const receipts = await readReleaseGateReceipts(root, client, run.id);
+        const failed = jobs.filter(job => isExecutedReleaseGateJob(job, receipts) && ['failure', 'timed_out', 'cancelled'].includes(job.conclusion));
+        if (!failed.length) continue;
+        run.unexplainedGateFailures = countUnexplainedReleaseGateFailures(jobs, receipts, run);
+        if (run.unexplainedGateFailures > 0) {
+          const times = failed.filter(job => !isExplainedReleaseGuiFailure(job, receipts, run)).map(job => Date.parse(job.completed_at));
+          if (!times.every(Number.isFinite)) throw new Error('Failure chronology proof required');
+          run.unexplainedGateCompletedAt = Math.max(...times);
+        }
+        if (run.head_sha === identity.revision && run.id !== Number(env.GITHUB_RUN_ID) && (run.unexplainedGateFailures > 0 || run.conclusion !== 'success')) {
+          throw new Error('Earlier gate failure requires investigation; a GUI-only retry must stay in the original retained run');
+        }
+      }
+      assertReleaseSourceHistory(history.runs, jobsByRun, { source: identity.revision, version: identity.release });
+      await write('history-classification.json', { complete: true, requestCount: client.requestCount });
+    } catch (error) {
+      await write('history-classification.json', { complete: false, requestCount: client.requestCount });
+      throw error;
+    }
+    let repaired = await requireReleaseGateWriteAdmission({ root, client, runs,
+      candidate: env.RELEASE_CANDIDATE === 'true' || env.RELEASE_DRY_RUN === 'true' || readOnlyAdmission.publishedNoop === true,
+      identity: { source: identity.revision, version: identity.release, lockfile: identity.lockfile }, currentRunID: env.GITHUB_RUN_ID });
+    if (env.RELEASE_CANDIDATE !== 'true') repaired ??= await resolveQualifiedReleaseCandidate({ root, client,
+      identity: { source: identity.revision, version: identity.release, lockfile: identity.lockfile }, currentRunID: env.GITHUB_RUN_ID });
+    const admission = await admitRelease({ ...admissionInput, environment: env });
+    await write('admission.json', { ...admission, history: history.inventory, historyClassification: { complete: history.complete, requestCount: client.requestCount } });
+    if (env.RELEASE_CANDIDATE === 'true' && !admission.publishedNoop) {
+      const { selectReleaseStartupBaselines } = await import('./qa/release-startup-contract.mjs');
+      const baseline = selectReleaseStartupBaselines(await client.pages('/releases'), identity.release)[0];
+      const sourceCommit = await client.tagSource(baseline.version);
+      await write('baseline.json', { protocol: 'devryan.release-baseline/1', version: baseline.version, sourceCommit, dmgSha256: baseline.sha256 });
+    }
+    await fs.appendFile(env.GITHUB_OUTPUT, `id=${admission.releaseID ?? ''}\nsource=${admission.source}\npublished_noop=${admission.publishedNoop === true}\nadmission_retained=false\ncandidate_run=${repaired?.run.id ?? ''}\ncandidate_attempt=${repaired?.run.run_attempt ?? ''}\n`);
+    break;
+  }
+  case 'candidate-budget':
+  case 'candidate-resolve': {
+    const { githubReleaseClient, resolveQualifiedReleaseCandidate } = await import('./release-publication.mjs');
+    const client = githubReleaseClient(env);
+    const { run: candidate, samples: selected, limits } = await resolveQualifiedReleaseCandidate({ root, client,
+      identity: { source: identity.revision, version: identity.release, lockfile: identity.lockfile },
+      currentRunID: env.GITHUB_RUN_ID, candidateRunID: env.RELEASE_OPERATION === 'candidate-budget' ? env.GITHUB_RUN_ID : env.RELEASE_CANDIDATE_RUN,
+      candidateCompletion: env.RELEASE_OPERATION === 'candidate-budget' });
+    if (env.RELEASE_OPERATION === 'candidate-budget') await write('smoke-limits.json', limits);
+    await fs.appendFile(env.GITHUB_OUTPUT, `run=${candidate.id}\nattempt=${candidate.run_attempt}\n${selected.map((job, index) => `sample${index + 1}_attempt=${job.run_attempt}\n`).join('')}`);
+    break;
+  }
+  case 'candidate-verify': {
+    const { verifyRetainedCandidateMetadata } = await import('./release-artifacts.mjs');
+    const metadata = JSON.parse(await fs.readFile(env.RELEASE_CANDIDATE_METADATA, 'utf8'));
+    const name = releaseAssetName('macos-arm64', identity.release);
+    const assets = await describeDirectoryAssets(env.RELEASE_ASSET_DIRECTORY);
+    if (assets.length !== 1 || assets[0].name !== name) throw new Error('Exact retained candidate installer required; rebuilding is forbidden');
+    verifyRetainedCandidateMetadata(metadata, identity, assets[0].digest.slice(7));
+    break;
+  }
+  case 'smoke-budget': {
+    const { freezeReleaseSmokeBudget, readReleaseSmokeReceipt } = await import('./qa/release-startup-smoke-contract.mjs');
+    const receipts = await Promise.all([1, 2, 3].map(sample => readReleaseSmokeReceipt(path.join(env.RELEASE_CANDIDATE_RECEIPTS, `candidate-startup-${sample}.json`))));
+    const upgrade = JSON.parse(await fs.readFile(path.join(env.RELEASE_CANDIDATE_RECEIPTS, 'upgrade-rollback.json'), 'utf8'));
+    const { assertReleaseUpgradeRollbackReceipt } = await import('./qa/release-startup-upgrade-rollback.mjs');
+    assertReleaseUpgradeRollbackReceipt(upgrade, { sourceCommit: identity.revision, version: identity.release, dmgSha256: receipts[0].dmgSha256 });
+    await write('smoke-limits.json', freezeReleaseSmokeBudget(receipts, { sourceCommit: identity.revision, version: identity.release }));
+    const { sourceCommit, version, dmgSha256, manifestSha256, appSha256 } = receipts[0];
+    await write('smoke-identity.json', { sourceCommit, version, dmgSha256, manifestSha256, appSha256 });
+    break;
+  }
+  case 'release-noop': {
+    const { githubReleaseClient, verifyPublishedFinalization } = await import('./release-publication.mjs');
+    const client = githubReleaseClient(env);
+    await client.frozenTag(identity.release, identity.revision);
+    const release = await client.request(`/releases/${env.RELEASE_ID}`);
+    const proof = await verifyPublishedFinalization(release, { source: identity.revision, version: identity.release, scope: env.RELEASE_SCOPE, releaseID: env.RELEASE_ID }, client);
+    const { verifyReleaseAssets } = await import('./verify-release-assets.mjs');
+    const failures = verifyReleaseAssets(await client.pages(`/releases/${env.RELEASE_ID}/assets`), { version: identity.release, scope: env.RELEASE_SCOPE, digests: new Map(Object.entries(proof.digests)) });
+    if (failures.length) throw new Error(failures.join('\n'));
+    break;
+  }
+  case 'release-prepublish':
+  case 'release-finalize': {
+    const { finalizeRelease, verifyReleasePrepublish } = await import('./release-publication.mjs');
+    const verifyPrepublish = () => verifyReleasePrepublish({ receiptPath: env.RELEASE_SMOKE_RECEIPT, identityPath: env.RELEASE_SMOKE_IDENTITY,
+      limitsPath: env.RELEASE_SMOKE_LIMITS, directory: env.RELEASE_ASSET_DIRECTORY,
+      identity: { source: identity.revision, version: identity.release, scope: env.RELEASE_SCOPE,
+        dmgSha256: env.RELEASE_SHA256_MACOS_ARM64, webSha256: env.RELEASE_SHA256_WEB },
+      runID: env.GITHUB_RUN_ID, runAttempt: env.RELEASE_SMOKE_ATTEMPT });
+    await verifyPrepublish();
+    if (env.RELEASE_OPERATION === 'release-prepublish') break;
+    const publicationIdentity = { source: identity.revision, version: identity.release, scope: env.RELEASE_SCOPE, releaseID: Number(env.RELEASE_ID) };
+    const result = await finalizeRelease({ identity: publicationIdentity, directory: env.RELEASE_ASSET_DIRECTORY,
+      deploymentVerified: env.RELEASE_DEPLOYMENT_VERIFIED === 'true', environment: env, beforePromote: verifyPrepublish,
+      retainFinalization: result => write('finalization.json', { protocol: 'devryan.release-finalization/1', identity: publicationIdentity, ...result }) });
+    if (result.status === 'published') await write('finalization.json', { protocol: 'devryan.release-finalization/1', identity: publicationIdentity, ...result, updaterDiscovery: 'verified' });
+    break;
+  }
   case 'asset-describe': {
     const name = releaseAssetName(env.RELEASE_ASSET_PLATFORM, identity.release);
     const directory = path.resolve(env.RELEASE_ASSET_DIRECTORY ?? '');
@@ -41,6 +193,7 @@ switch (env.RELEASE_OPERATION) {
     await write(`${env.RELEASE_ASSET_PLATFORM}-asset.json`, { protocol: 'devryan.release-asset/1',
       source: identity.revision, version: identity.release, platform: env.RELEASE_ASSET_PLATFORM,
       name: asset.name, size: asset.size, sha256: asset.digest.slice(7) });
+    if (env.RELEASE_ASSET_PLATFORM === 'macos-arm64') await write('candidate.json', { protocol: 'devryan.release-candidate/1', sourceCommit: identity.revision, version: identity.release, dmgSha256: asset.digest.slice(7), lockfile: identity.lockfile });
     break;
   }
   case 'image-plan': {

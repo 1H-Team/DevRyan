@@ -367,7 +367,7 @@ describe('global message stream SSE handler', () => {
     await waitForCondition(() => res.body.includes('evt-synthetic'));
 
     expect(res.getHeader('content-type')).toBe('text/event-stream');
-    expect(res.getHeader('cache-control')).toBe('no-cache');
+    expect(res.getHeader('cache-control')).toBe('no-cache, no-transform');
     expect(res.getHeader('connection')).toBe('keep-alive');
     expect(res.getHeader('x-accel-buffering')).toBe('no');
     expect(res.flushed).toBe(true);

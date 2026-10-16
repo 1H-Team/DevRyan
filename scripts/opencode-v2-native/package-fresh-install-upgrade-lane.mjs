@@ -66,7 +66,7 @@ export async function runCompiledFreshInstallUpgrade({ root, baseline, candidate
       return runNativeMigrationProcess({ binary: baseline.artifacts.controller, request, cwd: laneRoot,
         environment: isolatedEnvironment(request.isolatedRoot, fixture.environment),
         beforeSpawn: () => verifyNativeRuntimeArtifacts({ manifestPath: baseline.manifestPath, manifestSha256: baseline.manifestSha256,
-          launcher: baseline.artifacts.launcher }) });
+          launcher: baseline.artifacts.launcher, purpose: 'bundle-source' }) });
     },
     verifyV2Compatibility: async input => {
       const proof = await verifyCompiledCloneCompatibility(input);

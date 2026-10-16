@@ -1,15 +1,14 @@
 import { generateTextWithSessionModel } from '../opencode/session-model-text.js';
 import { randomUUID } from 'node:crypto';
 
-// Commit and PR drafts use one paid OpenCode Zen model instead of rotating the
-// free catalog, whose models routinely timed out before a local fallback.
+// Default remains paid Flash; settings select the exact shared helper tuple.
 export const GIT_GENERATION_ZEN_MODEL = 'deepseek-v4.1-flash';
-// Drafts are short, so low reasoning effort keeps the sparkles button fast.
-export const GIT_GENERATION_ZEN_VARIANT = 'low';
+// No explicit variant: helpers use provider Default reasoning.
+export const GIT_GENERATION_ZEN_VARIANT = undefined;
 
 /** Each draft attempt uses the admitted native helper and awaits its actual
  * settlement before repair or another model can start. */
-export const createGitZenTextTransport = ({ buildOpenCodeUrl, getOpenCodeAuthHeaders, openCodeClient, generateHelperText, cursorRuntime, directory, agent }) => {
+export const createGitZenTextTransport = ({ buildOpenCodeUrl, getOpenCodeAuthHeaders, openCodeClient, generateHelperText, cursorRuntime, directory, sessionID, selection, agent }) => {
   let pending;
   const operationID = randomUUID();
   return {
@@ -17,7 +16,9 @@ export const createGitZenTextTransport = ({ buildOpenCodeUrl, getOpenCodeAuthHea
       pending = generateTextWithSessionModel({
         buildOpenCodeUrl, getOpenCodeAuthHeaders, generateHelperText, cursorRuntime, directory, operationID,
         ...(openCodeClient ? { openCodeClient } : {}),
-        providerID: 'opencode', modelID: zenModel, variant: GIT_GENERATION_ZEN_VARIANT, agent, prompt, timeoutMs, signal,
+        providerID: selection?.providerID ?? 'opencode', modelID: selection?.modelID ?? zenModel,
+        ...(sessionID ? { sessionID } : {}),
+        ...(selection ? { selectionMode: selection.selectionMode, selectionRevision: selection.selectionRevision ?? selection.revision } : {}), agent, prompt, timeoutMs, signal,
         recoverOnError: false, denyTools: true,
       }).then((result) => {
         if (result.ok) return result.text;
@@ -30,6 +31,6 @@ export const createGitZenTextTransport = ({ buildOpenCodeUrl, getOpenCodeAuthHea
       return pending;
     },
     // An unsettled result ends rotation while its owner retains the permit.
-    async afterAttempt() { await pending?.catch(error => { if (error.reason === 'unsettled') throw error; }); },
+    async afterAttempt() { await pending?.catch(error => { if (['unsettled', 'selection_changed', 'authorization_revoked'].includes(error.reason)) throw error; }); },
   };
 };

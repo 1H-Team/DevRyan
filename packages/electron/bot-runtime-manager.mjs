@@ -3442,13 +3442,13 @@ export function createBotRuntimeManager({
   // It never installs images and runs with the installed release, so the
   // catalog is available independently of supervisor, egress or execution.
   const ensureCatalogInternal = async ({ deadlineAt = null } = {}) => {
-    const dockerPath = await requireDocker(deadlineAt);
     const desiredManifest = await loadManifest();
     const currentState = await readInstallationState(desiredManifest);
     if (!currentState?.current) fail('Bot runtime setup is required', 'bot_runtime_setup_required');
     if (isLegacyBotRuntimeManifest(currentState.current)) {
       fail('The Bot runtime must be updated before local Bots can start', 'bot_runtime_update_required');
     }
+    const dockerPath = await requireDocker(deadlineAt);
     await requireDeploymentOwnership(dockerPath, currentState.current, deadlineAt);
     const imageIssues = await inspectImages(dockerPath, currentState.current, deadlineAt);
     if (imageIssues.some((issue) => ['database', 'rest'].includes(issue.image))) {
@@ -3629,6 +3629,16 @@ export function createBotRuntimeManager({
   // only an explicit owner Setup may install a fresh runtime, and recovery
   // states always wait for the owner.
   const ensureReadyInternal = async ({ deadlineAt, allowInstall = false }) => {
+    if (!allowInstall) {
+      if (deadlineAt !== null && now() >= deadlineAt) deadlineError();
+      const installed = await installationState.read().catch(error => {
+        if (error?.code === 'bot_runtime_state_invalid') return undefined;
+        throw error;
+      });
+      if (deadlineAt !== null && now() >= deadlineAt) deadlineError();
+      // An Agents-only profile has no owned installation to maintain or authority to install one.
+      if (installed === null) fail('The private Bot runtime needs to be set up', 'bot_runtime_setup_required');
+    }
     let status = await statusInternal({ deadlineAt });
     for (let transition = 0; transition < MAX_READY_TRANSITIONS; transition += 1) {
       if (status.state === 'healthy') {
@@ -3663,12 +3673,12 @@ export function createBotRuntimeManager({
   };
 
   const resolveCatalogContext = async () => {
-    const dockerPath = await requireDocker();
     const desiredManifest = await loadManifest();
     const currentState = await readInstallationState(desiredManifest);
     if (!currentState?.current || isLegacyBotRuntimeManifest(currentState.current)) {
       fail('The local Bot catalog is not installed', 'bot_database_unavailable');
     }
+    const dockerPath = await requireDocker();
     const context = await databaseContext(dockerPath, currentState.current, 'bot_database_unavailable');
     try {
       return await databaseManager.context(context);

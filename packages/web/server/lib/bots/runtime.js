@@ -307,6 +307,7 @@ export function createBotsRuntime({
   const localCatalog = !supabase && botHost?.catalog
     ? createLocalBotCatalogTransport({
         catalog: botHost.catalog,
+        hasActiveWork: () => activeWorkBlockers().length > 0,
         objectStorage: Object.freeze({
           storageUpload: async (...args) => (await objectStorage()).storageUpload(...args),
           storageDownload: async (...args) => (await objectStorage()).storageDownload(...args),
@@ -828,7 +829,8 @@ export function createBotsRuntime({
     onMessageBlocked: (input) => dispatcher?.failQueuedRun(input),
   });
   connectorRegistry.register(createBotSharedConnector({ sharedFileService }));
-  // One Docker status probe per minute serves every capabilities read (routes.js).
+  // Passive capability reads may reuse a known stopped Docker result; internal
+  // recovery and controls retain their live probe path (routes.js).
   const botHostStatusCache = createBotHostStatusCache();
   let runRecovery = null;
   let schemaFailure = null;
@@ -1576,7 +1578,7 @@ export function createBotsRuntime({
     executionRetryTimer.unref?.();
   }
 
-  async function resolveCurrentCapabilities({ refresh = false } = {}) {
+  async function resolveCurrentCapabilities({ refresh = false, passive = false } = {}) {
     const input = {
       hasSupabase: store.available,
       catalog: catalogState(),
@@ -1588,8 +1590,9 @@ export function createBotsRuntime({
       startupState,
       statusCache: botHostStatusCache,
       refreshStatus: refresh === true,
+      cacheStoppedStatus: passive && !refresh,
     };
-    if (executionEnabled && started && executionFailure && !schemaFailure && !controlPlaneFailure) {
+    if (!passive && executionEnabled && started && executionFailure && !schemaFailure && !controlPlaneFailure) {
       // A recovery probe must see the live host, never a cached failure.
       const live = await resolveBotCapabilities({ ...input, refreshStatus: true });
       if (live.available) await startExecution();
@@ -2019,7 +2022,10 @@ export function createBotsRuntime({
           // A requested refresh is the owner retrying: restart an unavailable
           // catalog now rather than at the end of its backoff.
           if (options?.refresh === true) localCatalog?.retryNow();
-          return resolveCurrentCapabilities(options);
+          // Ordinary metadata reads do not restart failed execution services.
+          // Only a real previously-probed negative may outlive the probe TTL;
+          // controls and internal execution/recovery retain the live path.
+          return resolveCurrentCapabilities({refresh:options?.refresh === true,passive:options?.refresh !== true});
         },
         getCatalogState: () => catalogState(),
         trackWrite,

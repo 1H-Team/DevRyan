@@ -140,6 +140,7 @@ export interface PlanTurnTraceEntry {
     isSuperseded: boolean;
     /** True once every assistant sibling across member turns has completed. */
     isSettled: boolean;
+    hasTerminalError: boolean;
     isActionable: boolean;
 }
 
