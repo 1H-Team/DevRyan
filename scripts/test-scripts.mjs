@@ -4,7 +4,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 
 import { discoverTestFiles, isBunTestSource } from './test-runner-utils.mjs';
@@ -50,6 +50,11 @@ export function runScriptTests(root = repositoryRoot) {
     // Native graph fixtures must not share Bun's resolver and loader state.
     ...bun.map(file => ['bun', ['test', `./${file}`]]),
   ];
+  // Fixtures that must stay inside the repository create their run dirs under these
+  // .cache families and assume the family exists; a fresh checkout or a pruned
+  // .cache has none. QA fixtures require their parent to be private.
+  for (const family of ['v2-validation', 'perf', 'qa']) mkdirSync(path.join(root, '.cache', family), { recursive: true, mode: 0o700 });
+  chmodSync(path.join(root, '.cache', 'qa'), 0o700);
   // Private per-run TMPDIR (inside any caller-chosen TMPDIR), removed afterwards so suite leaks cannot accumulate.
   const parent = process.env.TMPDIR || os.tmpdir();
   mkdirSync(parent, { recursive: true });

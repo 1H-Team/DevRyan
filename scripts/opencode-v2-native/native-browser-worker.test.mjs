@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import {test,expect} from 'bun:test';
 import fs from 'node:fs/promises';import path from 'node:path';import {createHash} from 'node:crypto';
 import {prepareReviewedNativeInputs,reviewedNativeInputPlugin} from '../native-runtime-assets.mjs';
@@ -116,7 +117,9 @@ test('actual writer entry transports original browser permissions and lease requ
  }finally{if(active){active.cancel();await active.result;}await fs.rm(root,{recursive:true,force:true});}
 },30_000);
 
-test('captured managed Rust daemon reaches only owned CDP through lease-local relative Unix socket policy',async()=>{
+// Needs the agent-browser install captured by the opt-in packages/electron/tests/browser-inspection/upgrade-install.mjs.
+const capturedAgentBrowser=path.join(repository,'.cache/browser-upgrade/current/node_modules/agent-browser/package.json');
+test.skipIf(!existsSync(capturedAgentBrowser))('captured managed Rust daemon reaches only owned CDP through lease-local relative Unix socket policy',async()=>{
  const {root,bundle}=await graph(true);let active;const errors=[],events=[],socketNames=[];let upgraded=0,pending='',server;
  try{
   const captured=path.join(repository,'.cache/browser-upgrade/current/node_modules/agent-browser');
