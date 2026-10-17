@@ -8,6 +8,8 @@ import {rewriteNativeCompactionObservation} from '../native-compaction-observati
 import {prepareReviewedNativeInputs,reviewedNativeInputPlugin} from '../native-runtime-assets.mjs';
 
 const repository = path.resolve(import.meta.dirname, '../..');
+// Child logs and results land in the test's own temp root (removed afterwards) unless DEVRYAN_KEEP_ARTIFACTS=1.
+const keptDiagnostics=(root:string)=>process.env.DEVRYAN_KEEP_ARTIFACTS==='1'?path.join(repository,'.cache/v2-validation'):root;
 
 for (const compiled of [false,true]) test(`actual native physical request and committed Step.Started share the original attempt span ${compiled?'compiled':'source'}`, async () => {
   const root = await fs.mkdtemp(path.join(repository, '.cache/v2-validation/observation-span-'));
@@ -152,7 +154,7 @@ const gates = createAdmissionGates(`);
     const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
     clearTimeout(timer);if(timedOut)throw Error('Native observation child exceeded its bounded 30-second lifetime');
     const diagnostic=JSON.parse(await fs.readFile(path.join(root,'presentation-rpc-outcomes.json'),'utf8'));
-    await fs.writeFile(path.join(repository,'.cache/v2-validation',`native-observation-${compiled?'compiled':'source'}-presentation.json`),JSON.stringify({compiled,childExitCode:code,...diagnostic}));
+    await fs.writeFile(path.join(keptDiagnostics(root),`native-observation-${compiled?'compiled':'source'}-presentation.json`),JSON.stringify({compiled,childExitCode:code,...diagnostic}));
     expect({ code, stderr }).toEqual({ code: 0, stderr: '' });
     expect(JSON.parse(stdout).attemptSpanProven).toBe(true);expect(JSON.parse(stdout).effortUpdateWireProven).toBe(true);expect(JSON.parse(stdout).finalizationConstructorLinkProven).toBe(true);
     const outcomes=diagnostic.outcomes as {method:string;permitID?:string;sessionID?:string;assistantMessageID?:string;stepID?:string;phase?:string;progress?:number;outcome:string;ordinal:number}[];

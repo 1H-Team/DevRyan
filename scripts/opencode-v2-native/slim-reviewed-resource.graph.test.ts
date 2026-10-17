@@ -5,6 +5,8 @@ import {prepareReviewedNativeInputs,reviewedNativeInputPlugin} from '../native-r
 import {createNativeAssetFixturePlugin,writeNativeFixtureOutputs} from './native-asset-fixture.mjs';
 
 const repository=path.resolve(import.meta.dirname,'../..');
+// Child logs and results land in the test's own temp root (removed afterwards) unless DEVRYAN_KEEP_ARTIFACTS=1.
+const keptDiagnostics=(root:string)=>process.env.DEVRYAN_KEEP_ARTIFACTS==='1'?path.join(repository,'.cache/v2-validation'):root;
 test('actual Slim rescue retains native permission and reads only the exact reviewed support file',async()=>{
  const root=await fs.mkdtemp(path.join(repository,'.cache/v2-validation/slim-resource-'));
  let child:ReturnType<typeof Bun.spawn>|undefined;
@@ -73,7 +75,7 @@ const gates = createAdmissionGates({sessionHooks:(inner,location,owners)=>slim.d
   try{
    const [stdout,stderr,code]=await Promise.all([new Response(child.stdout).text(),new Response(child.stderr).text(),child.exited]);
    expect({code,stderr}).toEqual({code:0,stderr:''});const result=JSON.parse(stdout);
-   await fs.writeFile(path.join(repository,'.cache/v2-validation/resume-skill-resource-graph-result.json'),JSON.stringify(result));
+   await fs.writeFile(path.join(keptDiagnostics(root),'resume-skill-resource-graph-result.json'),JSON.stringify(result));
    expect(result.status).toBe('completed');expect(result.output).toContain('EXACT REVIEWED SUPPORT BYTES');
    expect(result.stages.filter((stage:string)=>stage==='native-permission')).toHaveLength(1);
    expect(result.stages.filter((stage:string)=>stage==='path:stat')).toHaveLength(1);

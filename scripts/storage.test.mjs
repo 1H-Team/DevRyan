@@ -76,5 +76,6 @@ test('cache guard names new scratch and ignores kept build caches', (t) => {
   put('qa/new-run/log.txt');
   put('test-fixtures/a/b.txt');
   assert.deepEqual(newCacheEntries(before, snapshotCache(root)), ['qa/new-run', 'test-fixtures']);
-  assert.match(cacheGrowthFailure(root, before), /left 2 new entries in \.cache\/:\n- \.cache\/qa\/new-run \(.+\)\n- \.cache\/test-fixtures/);
+  const report = cacheGrowthFailure(root, before);
+  assert.match(report, /left 2 new entries in \.cache\/:\n- \.cache\/qa\/new-run \(.+\)\n {4}qa\/new-run\/log\.txt\n- \.cache\/test-fixtures \(.+\)\n {4}test-fixtures\/a\/b\.txt/);
 });

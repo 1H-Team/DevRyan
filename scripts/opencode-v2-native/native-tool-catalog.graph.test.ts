@@ -7,6 +7,8 @@ import {Schema} from 'effect';
 import {readNativeToolCatalog} from './native-tool-catalog-client-fixture.mjs';
 
 const repository=path.resolve(import.meta.dirname,'../..');
+// Child logs and results land in the test's own temp root (removed afterwards) unless DEVRYAN_KEEP_ARTIFACTS=1.
+const keptDiagnostics=(root:string)=>process.env.DEVRYAN_KEEP_ARTIFACTS==='1'?path.join(repository,'.cache/v2-validation'):root;
 const ToolCatalog=Schema.Struct({ids:Schema.Array(Schema.String),definitions:Schema.NullOr(Schema.Array(Schema.Struct({id:Schema.String,description:Schema.String,parameters:Schema.Unknown})))});
 test('authenticated host tool route exposes exact sealed two-location native catalogs and schemas',async()=>{
  const root=await fs.mkdtemp(path.join(repository,'.cache/v2-validation/tool-catalog-'));
@@ -108,7 +110,7 @@ try{
    if(typeof child.stdin==='number'||!child.stdin)throw new Error('Owned fixture stdin required');child.stdin.end();
   }else if(child.exitCode===null){child.kill();}
   const [code,stdout,stderr]=await Promise.all([child.exited,stdoutPromise,stderrPromise]);
-  await fs.writeFile(path.join(repository,'.cache/v2-validation/resume-native-tool-catalog-child.log'),stderr);
+  await fs.writeFile(path.join(keptDiagnostics(root),'resume-native-tool-catalog-child.log'),stderr);
   expect({code,errors:stderr.split('\n').filter(line=>line&&!/^timestamp=.* level=INFO /.test(line))}).toEqual({code:0,errors:[]});expect(JSON.parse(stdout)).toEqual({locations:2,toolsExecuted:0});
  }finally{if(child&&child.exitCode===null){child.kill();await child.exited;}await fs.rm(root,{recursive:true,force:true});}
 },120_000);

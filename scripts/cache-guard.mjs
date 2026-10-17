@@ -42,6 +42,21 @@ export function newCacheEntries(before, after) {
   return added.filter((entry) => !entry.includes('/') || !addedTop.has(entry.split('/')[0])).sort();
 }
 
+/** Files inside a new entry, so the report names the producer's output, not just its folder. */
+function filesUnder(target) {
+  const found = [];
+  const walk = (directory) => {
+    for (const entry of list(directory)) {
+      const child = path.join(directory, entry.name);
+      if (entry.isDirectory()) walk(child);
+      else found.push(child);
+      if (found.length >= 10) return;
+    }
+  };
+  if (list(target).length) walk(target);
+  return found;
+}
+
 function size(file) {
   const result = spawnSync('du', ['-sh', file], { encoding: 'utf8' });
   return result.status === 0 ? result.stdout.split('\t')[0] : '?';
@@ -51,7 +66,8 @@ function size(file) {
 export function cacheGrowthFailure(root, before) {
   const added = newCacheEntries(before, snapshotCache(root));
   if (added.length === 0) return null;
-  const shown = added.slice(0, 20).map((entry) => `- .cache/${entry} (${size(path.join(root, '.cache', entry))})`);
+  const shown = added.slice(0, 20).flatMap((entry) => [`- .cache/${entry} (${size(path.join(root, '.cache', entry))})`,
+    ...filesUnder(path.join(root, '.cache', entry)).slice(0, 10).map((file) => `    ${path.relative(path.join(root, '.cache'), file)}`)]);
   return [
     `This run left ${added.length} new entr${added.length === 1 ? 'y' : 'ies'} in .cache/:`,
     ...shown,

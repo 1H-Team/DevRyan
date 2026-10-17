@@ -4,6 +4,8 @@ import path from 'node:path';
 import {prepareReviewedNativeInputs,reviewedNativeInputPlugin} from '../native-runtime-assets.mjs';
 import {createNativeAssetFixturePlugin,writeNativeFixtureOutputs} from './native-asset-fixture.mjs';
 const repository=path.resolve(import.meta.dirname,'../..');
+// Child logs and results land in the test's own temp root (removed afterwards) unless DEVRYAN_KEEP_ARTIFACTS=1.
+const keptDiagnostics=(root:string)=>process.env.DEVRYAN_KEEP_ARTIFACTS==='1'?path.join(repository,'.cache/v2-validation'):root;
 
 for (const boundary of ['physical','handoff','missing-callback'] as const) test('real Stop preserves native interrupted cleanup at '+boundary+' boundary',async()=>{
  const root=await fs.mkdtemp(path.join(repository,'.cache/v2-validation/native-stop-'));
@@ -128,8 +130,8 @@ const gates = createAdmissionGates({executionActivity:inner=>{nativeExecution=in
   child=Bun.spawn([process.execPath,path.join(root,'interrupted.mjs')],{cwd:repository,env:{PATH:'/usr/bin:/bin',HOME:home,TMPDIR:tmp,XDG_CONFIG_HOME:path.join(home,'config'),XDG_DATA_HOME:path.join(home,'data'),XDG_STATE_HOME:path.join(home,'state'),XDG_CACHE_HOME:path.join(home,'cache'),GIT_CEILING_DIRECTORIES:root,DEVRYAN_INTEGRATION_FIXTURE_ROOT:root},stdout:'pipe',stderr:'pipe'});
   if(!child.stdout||typeof child.stdout==='number'||!child.stderr||typeof child.stderr==='number')throw Error('Owned pipes required');
   const [stdout,stderr,code]=await Promise.all([new Response(child.stdout).text(),new Response(child.stderr).text(),child.exited]);
-  await fs.writeFile(path.join(repository,'.cache/v2-validation/resume-native-stop-'+boundary+'-child.log'),stderr);
-  {for(const name of ['rpc-errors.jsonl','reported-causes.jsonl','native-causes.jsonl','hooks.jsonl','stop-result.json']){const bytes=await fs.readFile(path.join(root,name)).catch(()=>Buffer.alloc(0));await fs.writeFile(path.join(repository,'.cache/v2-validation/resume-native-stop-'+boundary+'-'+name),bytes);}}
+  await fs.writeFile(path.join(keptDiagnostics(root),'resume-native-stop-'+boundary+'-child.log'),stderr);
+  {for(const name of ['rpc-errors.jsonl','reported-causes.jsonl','native-causes.jsonl','hooks.jsonl','stop-result.json']){const bytes=await fs.readFile(path.join(root,name)).catch(()=>Buffer.alloc(0));await fs.writeFile(path.join(keptDiagnostics(root),'resume-native-stop-'+boundary+'-'+name),bytes);}}
   expect({code,stderr}).toEqual({code:0,stderr:''});expect(JSON.parse(stdout)).toEqual(boundary==='missing-callback'?{missingCallbackRefused:true}:{interrupted:true,abortedAssistant:true,primaryPhysicalRequests:1});
  }finally{if(child&&child.exitCode===null){child.kill();await child.exited;}await fs.rm(root,{recursive:true,force:true});}
 },120_000);
