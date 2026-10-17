@@ -61,6 +61,10 @@ test('reviewed original browser plugin registers in the actual SDK snapshot unde
   const host=path.join(repository,'packages/web/server/lib/opencode/runtime-host');
   const runner=path.join(root,'registry.mjs');await fs.writeFile(runner,`
 import {Effect,Layer,Logger} from 'effect';import {Global} from '@opencode/util/global';import {Tool} from '@opencode/core/tool';import {Plugin} from '@opencode/core/plugin';
+
+// Child logs and receipts land in the test's own temp root (removed afterwards) unless DEVRYAN_KEEP_ARTIFACTS=1.
+const keptDiagnostics=(root)=>process.env.DEVRYAN_KEEP_ARTIFACTS==='1'?path.join(repository,'.cache/v2-validation'):root;
+
 const {OpenCode}=await import(${JSON.stringify(path.join(repository,'packages/web/node_modules/@opencode/sdk/dist/effect/index.js'))});
 const {trustedPluginOverride}=await import(${JSON.stringify(path.join(host,'trusted-plugins.ts'))});const {configurationOverrides}=await import(${JSON.stringify(path.join(host,'configuration.ts'))});const {createAdmissionGates}=await import(${JSON.stringify(path.join(host,'admission-gates.ts'))});
 const {nativeBrowserPlugin,reviewedBrowserInputSchema}=await import('./exports.mjs');
@@ -156,6 +160,6 @@ test.skipIf(!existsSync(capturedAgentBrowser))('captured managed Rust daemon rea
   expect(events.filter(value=>value.type==='permission')).toHaveLength(1);const result=events.filter(value=>value.type==='result');expect(result).toHaveLength(1);
   expect(result[0].ok).toBe(false);expect(result[0].error.message).toContain('owned fixture endpoint refused CDP');
   expect(await fs.lstat(socket).catch(error=>error.code)).toBe('ENOENT');
-  await fs.writeFile(path.join(repository,'.cache/v2-validation/stage-d-native-browser-rust-proof.json'),JSON.stringify({binarySha256:request.reviewedBrowser.sha256,version:'0.38.1',socketNames,upgraded,receipt,expectedRefusal:'owned fixture endpoint refused CDP',scopeBound:true},null,2)+'\n');
+  await fs.writeFile(path.join(keptDiagnostics(root),'stage-d-native-browser-rust-proof.json'),JSON.stringify({binarySha256:request.reviewedBrowser.sha256,version:'0.38.1',socketNames,upgraded,receipt,expectedRefusal:'owned fixture endpoint refused CDP',scopeBound:true},null,2)+'\n');
  }finally{if(active){active.cancel();await active.result;}server?.stop(true);await fs.rm(root,{recursive:true,force:true});}
 },30_000);

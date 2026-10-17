@@ -7,6 +7,10 @@ import {createNativeConfigurationSnapshotResolver} from '../../packages/web/serv
 import type {RuntimeBundleDescriptor} from '../../packages/web/server/lib/opencode/runtime-host/runtime-bundle.js';
 import {prepareReviewedNativeInputs,reviewedNativeInputPlugin} from '../native-runtime-assets.mjs';
 import {createNativeAssetFixturePlugin,writeNativeFixtureOutputs} from './native-asset-fixture.mjs';
+
+// Child logs and receipts land in the test's own temp root (removed afterwards) unless DEVRYAN_KEEP_ARTIFACTS=1.
+const keptDiagnostics=(root:string)=>process.env.DEVRYAN_KEEP_ARTIFACTS==='1'?path.join(repository,'.cache/v2-validation'):root;
+
 const repository=path.resolve(import.meta.dirname,'../..');
 
 test('controller webfetch uses actual native selection/hooks/provider with frozen secondary model and owned scratch',async()=>{
@@ -117,7 +121,7 @@ test('controller webfetch uses actual native selection/hooks/provider with froze
   const build=await Bun.build({entrypoints:[entry],target:'bun',outdir:root,naming:{entry:'fixture.mjs',asset:'[name]-[hash].[ext]'},plugins:[await createNativeAssetFixturePlugin(repository),reviewedNativeInputPlugin(await prepareReviewedNativeInputs(repository))]});
   if(!build.success)throw new AggregateError(build.logs,'Controller webfetch reviewed build failed');await writeNativeFixtureOutputs(build.outputs);
   child=Bun.spawn([process.execPath,fixture],{cwd:repository,env:{PATH:'/usr/bin:/bin',HOME:home,TMPDIR:tmp,XDG_CONFIG_HOME:home+'/config',XDG_DATA_HOME:home+'/data',XDG_STATE_HOME:home+'/state',XDG_CACHE_HOME:home+'/cache',GIT_CEILING_DIRECTORIES:root},stdout:'pipe',stderr:'pipe'});
-  if(!child.stdout||typeof child.stdout==='number'||!child.stderr||typeof child.stderr==='number')throw new Error('Fixture pipes required');const [stdout,stderr,code]=await Promise.all([new Response(child.stdout).text(),new Response(child.stderr).text(),child.exited]);await fs.writeFile(path.join(repository,'.cache/v2-validation/stage-d-controller-webfetch-child.log'),stderr);
+  if(!child.stdout||typeof child.stdout==='number'||!child.stderr||typeof child.stderr==='number')throw new Error('Fixture pipes required');const [stdout,stderr,code]=await Promise.all([new Response(child.stdout).text(),new Response(child.stderr).text(),child.exited]);await fs.writeFile(path.join(keptDiagnostics(root),'stage-d-controller-webfetch-child.log'),stderr);
   expect({code,stderr}).toEqual({code:0,stderr:''});expect(JSON.parse(stdout).models).toEqual(['m2','m2','m2','m2','m2']);expect(JSON.parse(stdout).asks).toBeGreaterThan(0);
  }finally{if(child&&child.exitCode===null){child.kill();await child.exited;}await fs.rm(root,{recursive:true,force:true});}
 },60000);

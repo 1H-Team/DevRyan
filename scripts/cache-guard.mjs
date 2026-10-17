@@ -22,10 +22,14 @@ export function snapshotCache(root) {
   for (const entry of list(cache)) {
     if (KEPT_CACHE_FAMILIES.includes(entry.name)) continue;
     if (!entry.isDirectory()) { entries.add(entry.name); continue; }
-    // An empty family folder left by a cleaned-up run is not scratch.
+    // Empty folders left by a cleaned-up run are not scratch.
     const children = list(path.join(cache, entry.name));
     if (children.length) entries.add(entry.name);
-    for (const child of children) entries.add(`${entry.name}/${child.name}`);
+    for (const child of children) {
+      const childPath = path.join(cache, entry.name, child.name);
+      if (child.isDirectory() && list(childPath).length === 0) continue;
+      entries.add(`${entry.name}/${child.name}`);
+    }
   }
   return entries;
 }

@@ -4,6 +4,10 @@ import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {prepareReviewedNativeInputs,reviewedNativeInputPlugin} from '../native-runtime-assets.mjs';
 import {createNativeAssetFixturePlugin} from './native-asset-fixture.mjs';
+
+// Child logs and receipts land in the test's own temp root (removed afterwards) unless DEVRYAN_KEEP_ARTIFACTS=1.
+const keptDiagnostics=(root:string)=>process.env.DEVRYAN_KEEP_ARTIFACTS==='1'?path.join(repository,'.cache/v2-validation'):root;
+
 const repository=path.resolve(import.meta.dirname,'../..');
 /** Real native transport/parser/scope. The owned RPC peer uses the real admission
  * owner; the loopback responder stands in for Meridian, not for any SDK service. */
@@ -175,8 +179,8 @@ let result, primaryFailure;`);
   }
   child=Bun.spawn(command,{cwd:repository,env:{PATH:'/usr/bin:/bin',HOME:home,TMPDIR:tmp,XDG_CONFIG_HOME:path.join(home,'config'),XDG_DATA_HOME:path.join(home,'data'),XDG_STATE_HOME:path.join(home,'state'),XDG_CACHE_HOME:path.join(home,'cache'),GIT_CEILING_DIRECTORIES:root,DEVRYAN_INTEGRATION_FIXTURE_ROOT:root},stdout:'pipe',stderr:'pipe'});
   if(!child.stdout||typeof child.stdout==='number'||!child.stderr||typeof child.stderr==='number')throw new Error('Owned child pipes required');
-  const [stdout,stderr,code]=await Promise.all([new Response(child.stdout).text(),new Response(child.stderr).text(),child.exited]);await fs.writeFile(path.join(repository,'.cache/v2-validation/stage-d-provider-transport-child.log'),stderr);await fs.writeFile(path.join(repository,'.cache/v2-validation/stage-d-provider-transport-child.stdout.log'),stdout);
-  for(const name of ['rpc-errors.jsonl','native-causes.jsonl','reported-causes.jsonl','hooks.jsonl'])await fs.copyFile(path.join(root,name),path.join(repository,`.cache/v2-validation/stage-d-provider-transport-${transport??'omitted'}-${name}`)).catch(error=>{if(error.code!=='ENOENT')throw error;});
+  const [stdout,stderr,code]=await Promise.all([new Response(child.stdout).text(),new Response(child.stderr).text(),child.exited]);await fs.writeFile(path.join(keptDiagnostics(root),'stage-d-provider-transport-child.log'),stderr);await fs.writeFile(path.join(keptDiagnostics(root),'stage-d-provider-transport-child.stdout.log'),stdout);
+  for(const name of ['rpc-errors.jsonl','native-causes.jsonl','reported-causes.jsonl','hooks.jsonl'])await fs.copyFile(path.join(root,name),path.join(keptDiagnostics(root),`stage-d-provider-transport-${transport??'omitted'}-${name}`)).catch(error=>{if(error.code!=='ENOENT')throw error;});
   expect({code,stderr}).toEqual({code:0,stderr:''});expect(JSON.parse(stdout).meridianMiddleware).toBe(true);expect(JSON.parse(stdout).providerObservationComposed).toBe(true);
  }finally{if(child&&child.exitCode===null){child.kill();await child.exited;}await fs.rm(root,{recursive:true,force:true});}
 },120000);

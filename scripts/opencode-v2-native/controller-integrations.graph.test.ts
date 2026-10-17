@@ -2,6 +2,10 @@ import { expect, test } from 'bun:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+// Child logs and receipts land in the test's own temp root (removed afterwards) unless DEVRYAN_KEEP_ARTIFACTS=1.
+const keptDiagnostics=(root:string)=>process.env.DEVRYAN_KEEP_ARTIFACTS==='1'?path.join(path.resolve(import.meta.dirname,'../..'),'.cache/v2-validation'):root;
+
+
 test('assembled native ServerFetch integration and provider attempts retain real owned scopes', async () => {
   const repository = path.resolve(import.meta.dirname, '../..');
   const root = await fs.mkdtemp(path.join(repository, '.cache/v2-validation/integration-server-'));
@@ -18,11 +22,11 @@ test('assembled native ServerFetch integration and provider attempts retain real
     });
     if (!child.stdout || typeof child.stdout === 'number' || !child.stderr || typeof child.stderr === 'number') throw new Error('Owned child pipes required');
     const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
-    await fs.writeFile(path.join(repository, '.cache/v2-validation/stage-d-integration-server-child.log'), stderr);
-    await fs.writeFile(path.join(repository, '.cache/v2-validation/stage-d-integration-server-child.stdout.log'), stdout);
-    await fs.copyFile(path.join(root, 'rpc-errors.jsonl'), path.join(repository, '.cache/v2-validation/stage-d-integration-server-rpc-errors.jsonl')).catch(error => { if (error.code !== 'ENOENT') throw error; });
-    await fs.copyFile(path.join(root, 'native-causes.jsonl'), path.join(repository, '.cache/v2-validation/stage-d-integration-server-native-causes.jsonl')).catch(error => { if (error.code !== 'ENOENT') throw error; });
-    for (const name of ['admissions.jsonl','messages.json','receipt-count.json','hooks.jsonl','reported-causes.jsonl']) await fs.copyFile(path.join(root,name),path.join(repository,'.cache/v2-validation/stage-d-integration-server-'+name)).catch(error=>{if(error.code!=='ENOENT')throw error;});
+    await fs.writeFile(path.join(keptDiagnostics(root),'stage-d-integration-server-child.log'), stderr);
+    await fs.writeFile(path.join(keptDiagnostics(root),'stage-d-integration-server-child.stdout.log'), stdout);
+    await fs.copyFile(path.join(root, 'rpc-errors.jsonl'), path.join(keptDiagnostics(root),'stage-d-integration-server-rpc-errors.jsonl')).catch(error => { if (error.code !== 'ENOENT') throw error; });
+    await fs.copyFile(path.join(root, 'native-causes.jsonl'), path.join(keptDiagnostics(root),'stage-d-integration-server-native-causes.jsonl')).catch(error => { if (error.code !== 'ENOENT') throw error; });
+    for (const name of ['admissions.jsonl','messages.json','receipt-count.json','hooks.jsonl','reported-causes.jsonl']) await fs.copyFile(path.join(root,name),path.join(keptDiagnostics(root),'stage-d-integration-server-'+name)).catch(error=>{if(error.code!=='ENOENT')throw error;});
     expect({ code, stderr }).toEqual({ code: 0, stderr: '' });
     const report = JSON.parse(stdout);
     expect(report.integrationLocations).toBe(2);

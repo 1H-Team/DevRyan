@@ -2,6 +2,10 @@ import {expect,test} from 'bun:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
+
+// Child logs and receipts land in the test's own temp root (removed afterwards) unless DEVRYAN_KEEP_ARTIFACTS=1.
+const keptDiagnostics=(root:string)=>process.env.DEVRYAN_KEEP_ARTIFACTS==='1'?path.join(repository,'.cache/v2-validation'):root;
+
 const repository=path.resolve(import.meta.dirname,'../..');
 /** Reuse the real assembled ServerFetch fixture; only owned account/catalog inputs and its final transport are extended. */
 test('real scoped SDK catalog reads current Copilot account through constructor owner and expires after reload',async()=>{
@@ -66,8 +70,8 @@ test('real scoped SDK catalog reads current Copilot account through constructor 
   const entry=path.join(root,'fixture.mjs');await fs.writeFile(entry,source);
   child=Bun.spawn([process.execPath,entry],{cwd:repository,env:{PATH:'/usr/bin:/bin',HOME:home,TMPDIR:tmp,XDG_CONFIG_HOME:path.join(home,'config'),XDG_DATA_HOME:path.join(home,'data'),XDG_STATE_HOME:path.join(home,'state'),XDG_CACHE_HOME:path.join(home,'cache'),GIT_CEILING_DIRECTORIES:root,DEVRYAN_INTEGRATION_FIXTURE_ROOT:root},stdout:'pipe',stderr:'pipe'});
   if(!child.stdout||typeof child.stdout==='number'||!child.stderr||typeof child.stderr==='number')throw new Error('Owned child pipes required');
-  const [stdout,stderr,code]=await Promise.all([new Response(child.stdout).text(),new Response(child.stderr).text(),child.exited]);await fs.writeFile(path.join(repository,'.cache/v2-validation/stage-d-provider-catalog-graph-child.log'),stderr);await fs.writeFile(path.join(repository,'.cache/v2-validation/stage-d-provider-catalog-graph-child.stdout.log'),stdout);
-  for(const name of ['rpc-errors.jsonl','native-causes.jsonl','reported-causes.jsonl','admissions.jsonl','hooks.jsonl','catalog-observations.jsonl'])await fs.copyFile(path.join(root,name),path.join(repository,'.cache/v2-validation/stage-d-provider-catalog-'+name)).catch(error=>{if(error.code!=='ENOENT')throw error;});
+  const [stdout,stderr,code]=await Promise.all([new Response(child.stdout).text(),new Response(child.stderr).text(),child.exited]);await fs.writeFile(path.join(keptDiagnostics(root),'stage-d-provider-catalog-graph-child.log'),stderr);await fs.writeFile(path.join(keptDiagnostics(root),'stage-d-provider-catalog-graph-child.stdout.log'),stdout);
+  for(const name of ['rpc-errors.jsonl','native-causes.jsonl','reported-causes.jsonl','admissions.jsonl','hooks.jsonl','catalog-observations.jsonl'])await fs.copyFile(path.join(root,name),path.join(keptDiagnostics(root),'stage-d-provider-catalog-'+name)).catch(error=>{if(error.code!=='ENOENT')throw error;});
   expect({code,stderr}).toEqual({code:0,stderr:''});expect(JSON.parse(stdout).copilotCatalog).toBe(true);
  }finally{if(child&&child.exitCode===null){child.kill();await child.exited;}await fs.rm(root,{recursive:true,force:true});}
 },120000);
