@@ -176,8 +176,13 @@ for (const mode of ['direct', 'persistent', 'oneshot']) {
             expect(reasoning[1].text).toBe('Second thought.');
             expect(assistant.parts.filter(part => part.type === 'tool')).toHaveLength(1);
             if (scenario === 'late-reasoning' || scenario === 'nested') expect(reasoning).toHaveLength(3);
+            const isCorrection = event => event.type === 'message.part.updated' && event.properties.part.text === '  corrected last\n';
+            // The stored message settles before the bus publishes the correcting update; wait for it before checking order.
+            if (scenario !== 'empty' && scenario !== 'same') {
+              for (let attempt = 0; attempt < 400 && !emitted.some(isCorrection); attempt++) await new Promise(resolve => setTimeout(resolve, 5));
+            }
             const lastStreamDelta = emitted.findIndex(event => event.type === 'message.part.delta' && event.properties.delta === ' tail');
-            const correction = emitted.findIndex(event => event.type === 'message.part.updated' && event.properties.part.text === '  corrected last\n');
+            const correction = emitted.findIndex(isCorrection);
             if (scenario !== 'empty' && scenario !== 'same') expect(correction).toBeGreaterThan(lastStreamDelta);
           }
           expect(assistant.info.finish).toBe(scenario === 'drainfail' ? 'error' : scenario === 'cancel' ? 'cancelled' : 'stop');
