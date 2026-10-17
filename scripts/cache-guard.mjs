@@ -16,6 +16,11 @@ const list = (directory) => {
   try { return fs.readdirSync(directory, { withFileTypes: true }); } catch { return []; }
 };
 
+/** True when a directory holds no files at any depth (only empty folders). */
+function isEmptyTree(directory) {
+  return list(directory).every((entry) => entry.isDirectory() && isEmptyTree(path.join(directory, entry.name)));
+}
+
 export function snapshotCache(root) {
   const cache = path.join(root, '.cache');
   const entries = new Set();
@@ -23,13 +28,9 @@ export function snapshotCache(root) {
     if (KEPT_CACHE_FAMILIES.includes(entry.name)) continue;
     if (!entry.isDirectory()) { entries.add(entry.name); continue; }
     // Empty folders left by a cleaned-up run are not scratch.
-    const children = list(path.join(cache, entry.name));
+    const children = list(path.join(cache, entry.name)).filter((child) => !(child.isDirectory() && isEmptyTree(path.join(cache, entry.name, child.name))));
     if (children.length) entries.add(entry.name);
-    for (const child of children) {
-      const childPath = path.join(cache, entry.name, child.name);
-      if (child.isDirectory() && list(childPath).length === 0) continue;
-      entries.add(`${entry.name}/${child.name}`);
-    }
+    for (const child of children) entries.add(`${entry.name}/${child.name}`);
   }
   return entries;
 }

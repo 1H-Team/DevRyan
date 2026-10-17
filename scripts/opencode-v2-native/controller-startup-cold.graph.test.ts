@@ -7,6 +7,8 @@ import {prepareReviewedNativeInputs,reviewedNativeInputPlugin} from '../native-r
 import {createNativeAssetFixturePlugin,writeNativeFixtureOutputs} from './native-asset-fixture.mjs';
 
 const repository=path.resolve(import.meta.dirname,'../..');
+// Child logs and projections land in the test's own temp root (removed afterwards) unless DEVRYAN_KEEP_ARTIFACTS=1.
+const keptDiagnostics=(root:string)=>process.env.DEVRYAN_KEEP_ARTIFACTS==='1'?path.join(repository,'.cache/v2-validation'):root;
 test('cold controller catalogs resolve original projects before the host closure is ready',async()=>{
  const root=await fs.mkdtemp(path.join(repository,'.cache/v2-validation/controller-cold-'));
  let child:ReturnType<typeof Bun.spawn>|undefined;
@@ -93,7 +95,7 @@ try{
   child=Bun.spawn([process.execPath,path.join(root,'fixture.mjs')],{cwd:root,env:{PATH:'/usr/bin:/bin',HOME:path.join(root,'isolated/home'),TMPDIR:path.join(root,'isolated/tmp'),GIT_CEILING_DIRECTORIES:root,DEVRYAN_CATALOG_ROOT:root},stdout:'pipe',stderr:'pipe'});
   if(!child.stdout||typeof child.stdout==='number'||!child.stderr||typeof child.stderr==='number')throw Error('Owned fixture pipes required');
   const [code,stdout,stderr]=await Promise.all([child.exited,new Response(child.stdout).text(),new Response(child.stderr).text()]);
-  await fs.writeFile(path.join(repository,'.cache/v2-validation/controller-startup-cold-child.log'),stderr);
+  await fs.writeFile(path.join(keptDiagnostics(root),'controller-startup-cold-child.log'),stderr);
   expect({code,errors:stderr.split('\n').filter(line=>line&&!/^timestamp=.* level=INFO /.test(line)&&!/^timestamp=.* level=WARN .*native_openai_method_migration_ignored/.test(line))}).toEqual({code:0,errors:[]});
   expect(JSON.parse(stdout)).toEqual({catalogAsserted:true,locations:2});
   const db=new Database(path.join(root,'isolated/data/native.db'),{readonly:true});

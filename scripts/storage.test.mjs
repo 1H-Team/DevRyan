@@ -71,7 +71,7 @@ test('cache guard names new scratch and ignores kept build caches', (t) => {
   put('eslint/new-cache.json');
   put('sessions/2026-10-16-notes/a.md');
   assert.equal(cacheGrowthFailure(root, before), null);
-  fs.mkdirSync(path.join(root, '.cache/empty-family'));
+  fs.mkdirSync(path.join(root, '.cache/empty-family/projects/nested'), { recursive: true });
   assert.equal(cacheGrowthFailure(root, before), null, 'empty folders are not scratch');
   put('qa/new-run/log.txt');
   put('test-fixtures/a/b.txt');

@@ -5,6 +5,8 @@ import {prepareReviewedNativeInputs,reviewedNativeInputPlugin} from '../native-r
 import {createNativeAssetFixturePlugin,writeNativeFixtureOutputs} from './native-asset-fixture.mjs';
 
 const repository=path.resolve(import.meta.dirname,'../..');
+// Child logs and projections land in the test's own temp root (removed afterwards) unless DEVRYAN_KEEP_ARTIFACTS=1.
+const keptDiagnostics=(root:string)=>process.env.DEVRYAN_KEEP_ARTIFACTS==='1'?path.join(repository,'.cache/v2-validation'):root;
 for(const compiled of [false,true])test(`pinned native automatic compaction preserves Plan lineage compiled=${compiled}`,async()=>{
  const root=await fs.mkdtemp(path.join(repository,'.cache/v2-validation/auto-plan-'));let child:ReturnType<typeof Bun.spawn>|undefined;
  try{
@@ -93,7 +95,7 @@ ${beginOutput}`);
   if(!child.stdout||typeof child.stdout==='number'||!child.stderr||typeof child.stderr==='number')throw Error('Owned pipes required');
   const [stdout,stderr,code]=await Promise.all([new Response(child.stdout).text(),new Response(child.stderr).text(),child.exited]);
   const diagnostic=await fs.readFile(path.join(root,'plan-projection-evidence.json'),'utf8').catch(()=>null);
-  await fs.writeFile(path.join(repository,'.cache/v2-validation',`native-auto-compaction-${compiled?'compiled':'source'}-projection.json`),JSON.stringify({compiled,code,...diagnostic?{projection:JSON.parse(diagnostic)}:{projection:null}}));
+  await fs.writeFile(path.join(keptDiagnostics(root),`native-auto-compaction-${compiled?'compiled':'source'}-projection.json`),JSON.stringify({compiled,code,...diagnostic?{projection:JSON.parse(diagnostic)}:{projection:null}}));
   if(code!==0){const errors=await fs.readFile(path.join(root,'rpc-errors.jsonl'),'utf8').catch(()=>'');throw Error(JSON.stringify({code,stderr,errors}));}
   expect(JSON.parse(stdout)).toMatchObject({automatic:true,primaryRequests:2,physicalCompactions:1});
  }finally{if(child&&child.exitCode===null){child.kill();await child.exited;}if(process.env.DEVRYAN_KEEP_ARTIFACTS!=='1')await fs.rm(root,{recursive:true,force:true});}
