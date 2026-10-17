@@ -81,7 +81,7 @@ test('outer provider hooks record known local refusals before wrapping and prese
  }
 });
 test('only the exact native source gets one observation insertion; removal reproduces original bytes',async()=>{
- const original=await fs.readFile(path.resolve(import.meta.dirname,'../../node_modules/@opencode/core/dist/chunks/instance-7khw7vys.js'),'utf8');
+ const original=await fs.readFile(path.resolve(import.meta.dirname,'../../node_modules/@opencode/core/dist/chunks/instance-1kn978n9.js'),'utf8');
  const helper=path.resolve(import.meta.dirname,'../../packages/web/server/lib/opencode/runtime-host/native-compaction-observation.ts');const result=rewriteNativeCompactionObservation(original,helper);
  expect(result.originalSha256).toBe(NATIVE_COMPACTION_SOURCE_SHA256);
  expect(result.transformedSha256).toBe(createHash('sha256').update(result.contents).digest('hex'));

@@ -8,7 +8,7 @@ const metadata = (target) => target.split(path.sep).some(component => component.
 export const nativeWebfetchBinaryDirectory=(tmp,directory)=>path.join(tmp,'devryan-webfetch',createHash('sha256').update(directory).digest('hex'));
 // A missing filename still belongs to its real parent, preserving native
 // missing-file/sibling recovery while resolving every existing symlink.
-async function canonicalTarget(target) {
+export async function canonicalTarget(target) {
   try { return await fs.realpath(target); }
   catch (error) {
     if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') throw error;

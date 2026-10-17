@@ -11,7 +11,7 @@ import {createStandardSessionTitleRuntime} from './standard-session-title-runtim
 function fixture(overrides={}){
  const events=[],state=overrides.state??{openCodeWorkingDirectory:process.cwd(),isShuttingDown:false},children=[];
  const native={isReady:()=>Boolean(children.at(-1)&&!children.at(-1).exited),start:vi.fn(async({beforeConfiguration}={})=>{await (overrides.getRuntimeBundle?.()??bundle).verify();await beforeConfiguration?.();const child={port:43100,url:'http://localhost:43100',hasExited:()=>child.exited,close:async()=>{events.push('exit');child.exited=true;},killForRecovery:async()=>{events.push('settle');child.exited=true;}};children.push(child);return child;})};
- const bundle={version:'2.0.30',descriptor:{generation:2,projectMap:[{targetDirectory:process.cwd()}]},verify:async()=>events.push('verify')};
+ const bundle={version:'2.0.32',descriptor:{generation:2,projectMap:[{targetDirectory:process.cwd()}]},verify:async()=>events.push('verify')};
  const runtime=createOpenCodeLifecycleRuntime({state,getNativeRuntime:()=>native,getRuntimeBundle:()=>bundle,
   buildOpenCodeUrl:()=> 'http://localhost:43100',resolveSlimConfiguration:()=>({enabled:false}),
   syncPackagedAgents:async()=>{events.push('agents');return {changed:false};},syncRuntimeAgentOverlays:async()=>({changed:false}),
@@ -19,7 +19,7 @@ function fixture(overrides={}){
   pauseManagedBrowserLeases:async()=>{events.push('pause');return 'owned';},resumeManagedBrowserLeases:async handle=>{expect(handle).toBe('owned');events.push('resume');},...overrides});
  return {runtime,state,native,bundle,events,children};
 }
-it('starts only a verified native owner and waits for its catalog',async()=>{const f=fixture();await f.runtime.bootstrapOpenCodeAtStartup();expect(f.events).toEqual(['verify','agents','probe']);expect(f.state).toMatchObject({openCodeGeneration:2,openCodeVersion:'2.0.30',isOpenCodeReady:true,isExternalOpenCode:false});expect(f.state.openCodeProcess).toBe(f.children[0]);});
+it('starts only a verified native owner and waits for its catalog',async()=>{const f=fixture();await f.runtime.bootstrapOpenCodeAtStartup();expect(f.events).toEqual(['verify','agents','probe']);expect(f.state).toMatchObject({openCodeGeneration:2,openCodeVersion:'2.0.32',isOpenCodeReady:true,isExternalOpenCode:false});expect(f.state.openCodeProcess).toBe(f.children[0]);});
 it('startup deferral exists only inside the original readiness deadline, even if a probe ignores its timeout',async()=>{
  vi.useFakeTimers();let entered,release;
  const began=new Promise(resolve=>{entered=resolve;});
@@ -157,7 +157,7 @@ it('a superseded successful readiness probe cannot clear a newer terminal startu
 it('a superseded failing readiness probe cannot overwrite the new ready owner', async () => {
  let rejectProbe;
  const probe=vi.fn().mockImplementationOnce(()=>new Promise((_,reject)=>{rejectProbe=reject;}))
-  .mockResolvedValue({ready:true,generation:2,version:'2.0.30'});
+  .mockResolvedValue({ready:true,generation:2,version:'2.0.32'});
  const f=fixture({probeOpenCodeReadiness:probe});
  const first=f.runtime.startOpenCode();
  await vi.waitFor(()=>expect(rejectProbe).toBeTypeOf('function'));
@@ -170,8 +170,8 @@ it('a superseded failing readiness probe cannot overwrite the new ready owner', 
  expect(f.state.lastOpenCodeError).toBeNull();
  expect(f.state.openCodeProcess).toBe(currentOwner);
 });
-it('missing or unsupported verified lifecycle version refuses before the controller starts',async()=>{for(const version of [undefined,'1.18.33','3.0.0','2.0.30-dev']){const f=fixture();f.bundle.version=version;await expect(f.runtime.startOpenCode()).rejects.toMatchObject({code:'native_runtime_bundle_required'});expect(f.native.start).not.toHaveBeenCalled();}});
-it('any other 2.x release requires the pinned upgrade before the controller starts',async()=>{for(const version of ['2.0.20','2.0.25','2.0.27']){const f=fixture();f.bundle.version=version;await expect(f.runtime.startOpenCode()).rejects.toMatchObject({code:'bundle_upgrade_required'});expect(f.native.start).not.toHaveBeenCalled();}});
+it('missing or unsupported verified lifecycle version refuses before the controller starts',async()=>{for(const version of [undefined,'1.18.33','3.0.0','2.0.32-dev']){const f=fixture();f.bundle.version=version;await expect(f.runtime.startOpenCode()).rejects.toMatchObject({code:'native_runtime_bundle_required'});expect(f.native.start).not.toHaveBeenCalled();}});
+it('any other 2.x release requires the pinned upgrade before the controller starts',async()=>{for(const version of ['2.0.20','2.0.25','2.0.27','2.0.30']){const f=fixture();f.bundle.version=version;await expect(f.runtime.startOpenCode()).rejects.toMatchObject({code:'bundle_upgrade_required'});expect(f.native.start).not.toHaveBeenCalled();}});
 it('inspects and restores prompts through their existing owner without applying runtime overlays', async () => {
  const prompts=[{name:'builder',state:'modified',currentHash:'a'.repeat(64),packagedHash:'b'.repeat(64)}];
  const sync=vi.fn(async()=>({prompts,changed:false})),overlays=vi.fn();
@@ -184,7 +184,7 @@ it('inspects and restores prompts through their existing owner without applying 
  expect(overlays).not.toHaveBeenCalled();expect(f.native.start).not.toHaveBeenCalled();
 });
 it('missing/legacy bundle or external flags fail before any owner starts',async()=>{for(const overrides of [{getNativeRuntime:()=>null},{getRuntimeBundle:()=>({descriptor:{generation:1}})},{env:{ENV_SKIP_OPENCODE_START:true}},{env:{ENV_CONFIGURED_OPENCODE_HOST:{origin:'http://localhost:1'}}}]){const f=fixture(overrides);await expect(f.runtime.bootstrapOpenCodeAtStartup()).rejects.toMatchObject({code:'native_runtime_bundle_required'});expect(f.native.start).not.toHaveBeenCalled();}});
-it('artifact failure never falls back to a standalone executable or marks ready',async()=>{const f=fixture({getRuntimeBundle:()=>({version:'2.0.30',descriptor:{generation:2,projectMap:[{targetDirectory:process.cwd()}]},verify:async()=>{throw Object.assign(Error('invalid'),{code:'native_runtime_artifacts_unverified'});}})});await expect(f.runtime.bootstrapOpenCodeAtStartup()).rejects.toMatchObject({code:'native_runtime_artifacts_unverified'});expect(f.children).toHaveLength(0);expect(f.events).not.toContain('agents');expect(f.state.isOpenCodeReady).toBe(false);});
+it('artifact failure never falls back to a standalone executable or marks ready',async()=>{const f=fixture({getRuntimeBundle:()=>({version:'2.0.32',descriptor:{generation:2,projectMap:[{targetDirectory:process.cwd()}]},verify:async()=>{throw Object.assign(Error('invalid'),{code:'native_runtime_artifacts_unverified'});}})});await expect(f.runtime.bootstrapOpenCodeAtStartup()).rejects.toMatchObject({code:'native_runtime_artifacts_unverified'});expect(f.children).toHaveLength(0);expect(f.events).not.toContain('agents');expect(f.state.isOpenCodeReady).toBe(false);});
 it('replacement drains the exact child and browser lease before native restart',async()=>{const f=fixture();await f.runtime.startOpenCode();f.events.length=0;await Promise.all([f.runtime.restartOpenCode(),f.runtime.restartOpenCode()]);expect(f.events).toEqual(['pause','exit','verify','agents','probe','resume']);expect(f.native.start).toHaveBeenCalledTimes(2);expect(f.state.isRestartingOpenCode).toBe(false);});
 it('a synchronous pause failure clears restart ownership and the next health check retries',async()=>{
  const pause=vi.fn().mockImplementationOnce(()=>{throw new Error('pause failed');}).mockResolvedValue('owned');
@@ -283,7 +283,7 @@ it('forwards the native lifecycle version into original application health and H
   expect(composition.getHealthSnapshot()).toMatchObject({ openCodeVersion: null, openCodeRunning: false,
     openCodeStartup: { state: 'idle', attempt: 0, code: null } });
   await f.runtime.bootstrapOpenCodeAtStartup();
-  expect(hmrState).toMatchObject({ openCodeVersion: '2.0.30', openCodePort: 43100 });
+  expect(hmrState).toMatchObject({ openCodeVersion: '2.0.32', openCodePort: 43100 });
   const app = express();
   registerServerStatusRoutes(app, {
     express,
@@ -297,7 +297,7 @@ it('forwards the native lifecycle version into original application health and H
     const response = await request(app).get(route);
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
-      openCodeVersion: '2.0.30', openCodePort: 43100,
+      openCodeVersion: '2.0.32', openCodePort: 43100,
       openCodeGeneration: 2, openCodeRunning: true, isOpenCodeReady: true,
       openCodeStartup: { state: 'ready', attempt: 1, code: null },
     });
@@ -314,7 +314,7 @@ it('forwards the native lifecycle version into original application health and H
 it('retained runtime reports its verified bundle version through launch and inherited ownership',async()=>{vi.stubEnv('DEVRYAN_QA_OPENCODE_VERSION','2.0.20');try{const f=fixture();f.bundle.version='2.0.20';await f.runtime.bootstrapOpenCodeAtStartup();expect(f.state.openCodeVersion).toBe('2.0.20');await f.runtime.bootstrapOpenCodeAtStartup();expect(f.native.start).toHaveBeenCalledTimes(1);}finally{vi.unstubAllEnvs();}});
 it('a supported runtime below the version pin refuses before launch and names the recorded startup upgrade failure',async()=>{
  const f=fixture();f.bundle.version='2.0.20';
- await expect(f.runtime.bootstrapOpenCodeAtStartup()).rejects.toMatchObject({code:'bundle_upgrade_required',message:expect.stringContaining('OpenCode 2.0.20 must be upgraded to 2.0.30')});
+ await expect(f.runtime.bootstrapOpenCodeAtStartup()).rejects.toMatchObject({code:'bundle_upgrade_required',message:expect.stringContaining('OpenCode 2.0.20 must be upgraded to 2.0.32')});
  expect(f.native.start).not.toHaveBeenCalled();expect(f.events).toEqual([]);expect(f.state.lastOpenCodeError).toMatch(/Restart DevRyan to retry the upgrade\.$/);
  const {recordStartupBundleUpgradeFailure}=await import('./runtime-host/bundle-startup-upgrade-status.js');recordStartupBundleUpgradeFailure('bundle_upgrade_owner_active');
  try{await expect(f.runtime.bootstrapOpenCodeAtStartup()).rejects.toMatchObject({message:expect.stringContaining('the startup upgrade did not complete (bundle_upgrade_owner_active)')});}

@@ -254,6 +254,8 @@ export function createExecutionRouting(options: { readonly rpc: ExecutionRpc; re
           args: [...command.args], env, cwd: command.options.cwd });
         if (!readOnly) shellHandles.set(callKey(ticket.invocation), handle);
         const output = yield* Queue.bounded<Uint8Array, Cause.Done | ReturnType<typeof platformFailure>>(256);
+        // ripgrep's --json stdout is parsed line by line, so its diagnostics must stay on stderr.
+        const errors = readOnly ? yield* Queue.bounded<Uint8Array, Cause.Done | ReturnType<typeof platformFailure>>(256) : undefined;
         const exit = Deferred.makeUnsafe<ExitCode, ReturnType<typeof platformFailure>>();
         const started = Deferred.makeUnsafe<ProcessId, ReturnType<typeof platformFailure>>();
         let done = false;
@@ -269,18 +271,20 @@ export function createExecutionRouting(options: { readonly rpc: ExecutionRpc; re
               else if (event.type === 'output') {
                 // The native Shell consumes `all`; no independent readers are
                 // added to its output pump, preserving its native cursor semantics.
-                if (!Queue.offerUnsafe(output, Buffer.from(event.data, 'base64'))) return yield* Effect.fail(platformFailure(new Error('native_output_overflow')));
+                const target = errors && event.stream === 'stderr' ? errors : output;
+                if (!Queue.offerUnsafe(target, Buffer.from(event.data, 'base64'))) return yield* Effect.fail(platformFailure(new Error('native_output_overflow')));
               } else if (event.type === 'uncertain') return yield* Effect.fail(platformFailure(new Error(event.error.code)));
               else if (event.type === 'settled') {
                 done = true; yield* read(handle, cursor);
                 if (!event.ok || !event.receipt?.terminated || !event.receipt.confined) return yield* Effect.fail(platformFailure(new Error(event.error?.message ?? 'native_execution_failed')));
-                yield* Queue.end(output); yield* Deferred.succeed(exit, ExitCode(event.receipt.exitCode));
+                yield* Queue.end(output); if (errors) yield* Queue.end(errors);
+                yield* Deferred.succeed(exit, ExitCode(event.receipt.exitCode));
               }
             }
             if (batch.done && !batch.events.length && !done) return yield* Effect.fail(platformFailure(new Error('native_execution_result_missing')));
           }
         }).pipe(Effect.catchCause((cause) => Effect.gen(function* () {
-          const error = platformFailure(cause); yield* Queue.fail(output, error);
+          const error = platformFailure(cause); yield* Queue.fail(output, error); if (errors) yield* Queue.fail(errors, error);
           yield* Deferred.fail(started, error); yield* Deferred.fail(exit, error);
           yield* Effect.promise(() => cancel(handle));
         })), Effect.ensuring(Effect.sync(() => { done = true; completion.resolve(); handles.delete(handle); })));
@@ -292,7 +296,7 @@ export function createExecutionRouting(options: { readonly rpc: ExecutionRpc; re
         const all = Stream.fromQueue(output);
         return makeHandle({ pid, exitCode: Deferred.await(exit), isRunning: Effect.sync(() => !done),
           kill: () => Effect.promise(() => cancel(handle)).pipe(Effect.mapError(platformFailure)),
-          stdin: Sink.drain, stdout: all, stderr: Stream.empty, all,
+          stdin: Sink.drain, stdout: all, stderr: errors ? Stream.fromQueue(errors) : Stream.empty, all,
           getInputFd: () => Sink.drain, getOutputFd: () => Stream.empty,
           unref: Effect.succeed(Effect.void) });
       }).pipe(Effect.catchDefect((cause) => Effect.fail(platformFailure(cause)))));

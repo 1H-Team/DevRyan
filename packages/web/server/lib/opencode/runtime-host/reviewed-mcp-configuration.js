@@ -20,7 +20,7 @@ export function reviewedMcpConfiguration(snapshot, directories) {
       if (record(info.oauth) && Object.keys(info.oauth).some(key => !['clientId', 'clientSecret', 'scope', 'callbackPort', 'redirectUri'].includes(key))) throw fail();
       const config = Schema.decodeUnknownSync(Mcp.RemoteConfig)(defined({ type: 'remote', url: info.url, headers: info.headers,
         disabled: info.enabled === undefined ? undefined : !info.enabled, codemode: false,
-        timeout: info.timeout === undefined ? undefined : { catalog: info.timeout, execution: info.timeout },
+        timeout: info.timeout === undefined ? undefined : { startup: info.timeout, catalog: info.timeout, execution: info.timeout },
         oauth: info.oauth && defined({ client_id: info.oauth.clientId, client_secret: info.oauth.clientSecret, scope: info.oauth.scope,
           callback_port: info.oauth.callbackPort, redirect_uri: info.oauth.redirectUri }) }), { onExcessProperty: 'error' });
       const url = new URL(config.url);

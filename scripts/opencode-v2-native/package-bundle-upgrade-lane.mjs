@@ -6,8 +6,8 @@ import { runNativeBundleCredentialProcess, NATIVE_BUNDLE_CREDENTIAL_CONTRACT } f
 import { createHash } from 'node:crypto';
 import { verifyNativeRuntimeArtifacts } from '../../packages/web/server/lib/opencode/runtime-host/native-artifacts.js';
 import { nativeBundleCredentialFingerprint } from '../../packages/web/server/lib/opencode/runtime-host/native-bundle-credential-contract.js';
-import { inspectNativeCloneLayout, isReviewedNativeClonePair, verifyNativeCloneCompatibility, REVIEWED_NATIVE_CLONE_LAYOUT,
-  REVIEWED_NATIVE_FRESH_CLONE_LAYOUT } from '../../packages/web/server/lib/opencode/runtime-host/native-bundle-compatibility.js';
+import { inspectNativeCloneLayout, isReviewedNativeClonePair, verifyNativeCloneCompatibility,
+  reviewedNativeCloneSourceLayout } from '../../packages/web/server/lib/opencode/runtime-host/native-bundle-compatibility.js';
 import { snapshotOwnedTree } from './package-rollback-lane.mjs';
 import { cloneTree } from '../qa/run-root.mjs';
 
@@ -22,19 +22,19 @@ export async function verifyCompiledCloneCompatibility({ source, artifacts }) {
     sourceManifestSha256: source.launch.artifactManifestSha256, targetManifestSha256: artifacts.artifactManifestSha256 } };
 }
 
-const reviewedCloneLayouts = Object.freeze({ legacy: REVIEWED_NATIVE_CLONE_LAYOUT, 'fresh-install': REVIEWED_NATIVE_FRESH_CLONE_LAYOUT });
 /** Each source kind must reach its own reviewed layout: a legacy import keeps
  * __drizzle_migrations, a fresh install has none. Release-independent structure
  * is always checked; the exact reviewed layout and release pair only across
  * releases, the only clones whose gate inspects the database. */
 export function assertBundleCloneLayout({ kind, databasePath, left, right }) {
-  const reviewed = reviewedCloneLayouts[kind];
-  assert.ok(reviewed, 'Unknown clone source layout');
+  assert.ok(['legacy', 'fresh-install'].includes(kind), 'Unknown clone source layout');
+  // The source release's own migration level decides which reviewed DDL its database has.
+  const reviewed = reviewedNativeCloneSourceLayout(left.opencodeVersion, kind);
   const layout = inspectNativeCloneLayout(databasePath);
   assert.equal(layout.migrationsSha256 === null, kind === 'fresh-install', `The ${kind} baseline has the wrong legacy migration journal`);
   const crossRelease = left.opencodeVersion !== right.opencodeVersion;
   if (crossRelease) {
-    assert.deepEqual(layout, { ...reviewed }, `The ${kind} baseline is not the reviewed ${kind} layout`);
+    assert.deepEqual(layout, { ...reviewed }, `The ${kind} baseline is not the reviewed ${kind} layout: ${JSON.stringify(layout)}`);
     assert.equal(isReviewedNativeClonePair(left, right, layout), true, `${left.opencodeVersion} → ${right.opencodeVersion} is not a reviewed clone pair`);
   }
   return { id: `compiled-clone-layout-${kind}`, status: 'passed', layout, baselineVersion: left.opencodeVersion,

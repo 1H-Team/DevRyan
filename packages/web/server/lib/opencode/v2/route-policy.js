@@ -101,6 +101,8 @@ export const OPENCODE_V2_ROUTE_CLASSES = Object.freeze({
   'GET /api/websearch/provider': S,
   'POST /api/websearch': D,
   'POST /api/experimental/generate': D,
+  // Brokers the server's stored OpenAI/xAI keys into a realtime session.
+  'POST /api/experimental/voice/session': D,
 
   // Events.
   'GET /api/event': S,

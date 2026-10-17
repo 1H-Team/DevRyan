@@ -273,7 +273,7 @@ cancellation across web/Electron. OpenAI defaults to observe; Anthropic has a pr
 safety, protocol, storage, rollout and rollback contracts are documented in
 [`docs/PROVIDER_RECOVERY.md`](../../docs/PROVIDER_RECOVERY.md).
 
-For the exact pinned native 2.0.30 controller, constructor-only
+For the exact pinned native 2.0.32 controller (and retained 2.0.26/2.0.30), constructor-only
 `nativeStreamContinuation` owns interrupted-stream reserve, canonical Synthetic
 binding, successor preparation/send and Step adoption. Pending plus consumed
 reservations never exceed two per original objective; preparation consumes the

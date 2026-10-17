@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { Location } from '@opencode/core/location';
-import { Effect, Layer, Schema } from 'effect';
+import { Effect, Layer, Schema, Stream } from 'effect';
 import { Tool } from '@opencode/core/tool';
 import { SessionInstructions } from '@opencode/core/session/instructions';
 import { Environment } from '@opencode/core/environment/index';
@@ -247,6 +247,38 @@ test('actual Environment serves only verified skill files through the current di
     await expect(run(support)).rejects.toThrow('native_skill_resource_changed');
     expect(calls.filter(value => value.endsWith('direct-admit')).length).toBe(calls.filter(value => value.endsWith('direct-finish')).length);
   } finally { await routing.close(); await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('native grep spawns keep ripgrep stderr out of the parsed stdout stream', async () => {
+  const project = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-grep-streams-')));
+  const encode = (text: string) => Buffer.from(text).toString('base64');
+  const starts: Array<Record<string, unknown>> = [];
+  const routing = createExecutionRouting({ directory: project, bridge, rpc: async (method, params) => {
+    if (method.endsWith('direct-admit')) return { token: 'fixture', generation: 2 };
+    if (method.endsWith('.start')) { starts.push(params); return { handle: 'read-handle' }; }
+    if (method.endsWith('.read')) return { cursor: 4, done: true, events: [
+      { cursor: 1, type: 'started', pid: 42 },
+      { cursor: 2, type: 'output', stream: 'stderr', data: encode('rg: ./denied: Permission denied (os error 13)\n') },
+      { cursor: 3, type: 'output', stream: 'stdout', data: encode('{"type":"summary"}\n') },
+      { cursor: 4, type: 'settled', ok: true, receipt: { terminated: true, confined: true, cancelled: false, exitCode: 0 } }] };
+    return {};
+  } });
+  try {
+    const location = Schema.decodeUnknownSync(Location.Info)({ directory: project, project: { id: 'global', directory: project, canonical: project } });
+    const layer = LayerNode.compile(Environment.node, { replacements: [...routing.overrides, Location.node.replace(Layer.succeed(Location.Service, location))] });
+    const call = { ...invocation('grep'), location, input: { pattern: 'commit' }, executeNative: () => Effect.scoped(Effect.gen(function* () {
+      const environment = yield* Environment.Service;
+      const child = yield* environment.spawner.spawn(ChildProcess.make('/fixture/rg', ['--json', '--', 'commit', '.'], { cwd: project }));
+      const [stdout, stderr, exitCode] = yield* Effect.all([Stream.mkString(Stream.decodeText(child.stdout)),
+        Stream.mkString(Stream.decodeText(child.stderr)), child.exitCode], { concurrency: 'unbounded' });
+      return { content: JSON.stringify({ stdout, stderr, exitCode }) };
+    })).pipe(Effect.provide(layer), Effect.mapError(error => new Tool.Error({ message: String(error) }))) };
+    const { content } = await Effect.runPromise(routing.executeOwned(call));
+    expect(typeof content).toBe('string');
+    const result = JSON.parse(String(content));
+    expect(result).toEqual({ stdout: '{"type":"summary"}\n', stderr: 'rg: ./denied: Permission denied (os error 13)\n', exitCode: 0 });
+    expect(starts).toMatchObject([{ kind: 'read', command: '/fixture/rg', tool: 'grep' }]);
+  } finally { await routing.close(); await fs.rm(project, { recursive: true, force: true }); }
 });
 
 test('the explicit writer entry refuses empty input with a failed protocol reply', async () => {

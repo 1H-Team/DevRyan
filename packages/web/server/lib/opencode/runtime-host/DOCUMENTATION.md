@@ -168,6 +168,24 @@ and retains expired/unsettled work until real ACK/exit. Private accepted-input
 verification admits a paused title cycle only for a canonical `origin: human`
 record; body text, synthetic input and replayed ID cannot reopen it.
 
+## Native grep and glob execution
+
+OpenCode 2.0.30 and 2.0.32 spawn ripgrep for `grep` and `glob` through `Environment.spawner`.
+`execution-routing.ts` turns that spawn into `execution.native.start` with
+`kind: 'read'`, and the host runs it under the read-only supervisor in
+`session-execution-host.js`. A location's read and protected roots may not exist
+yet (the per-directory webfetch scratch root under `global/tmp/devryan-webfetch`
+is created on first use). The host resolves them with `canonicalTarget` from
+`native-read-paths.js`, as the controller read guard does: a missing root
+canonicalizes through its nearest existing parent, so a missing protected root
+still protects its location. The working directory itself must exist.
+
+The read handle keeps the supervisor's stdout and stderr apart, because core
+parses ripgrep's `--json` stdout line by line. Shell handles stay merged.
+Core reports any refused spawn as the generic "ripgrep execution failed", so the
+host journals each refused or uncertain read start as a `session_execution`
+record with `phase: 'native_read'`, `state: 'failed'` and the bounded host code.
+
 ## Private recovered execution during startup
 
 During the private `recovering` startup phase, stream preparation and native
@@ -280,7 +298,7 @@ the lightweight retry-decorator tests do not substitute for that graph.
 
 The private `native.stream-continuation` owner binds the exact controller,
 configuration, permit, cancellation generation, physical attempt, original
-objective and canonical failed predecessor. The pinned OpenCode 2.0.30
+objective and canonical failed predecessor. The pinned OpenCode 2.0.32
 Synthetic event supplies its committed event ID, sequence, derived user ID and
 payload fingerprint. The durable pending reservation becomes consumed before
 successor preparation/send; Step adoption consumes its proof once. There are
@@ -307,7 +325,7 @@ Only content-free typed timing fields reach the journal/export. Existing
 unchanged; this path enables no new post-output timer.
 
 API-key Session WebSocket timing is separate from those HTTP limits. In pinned
-2.0.30, connection admission waits 15 seconds before its unsent HTTP fallback.
+2.0.32, connection admission waits 15 seconds before its unsent HTTP fallback.
 The real model resolver passes the provider's explicit `chunkTimeout` to the
 Session WebSocket: a number sets the idle bound, `false` disables it, and an
 omitted setting uses the session transport's 30-minute idle fallback. The model's
@@ -786,7 +804,7 @@ Native configuration translates legacy bash/task/write/patch permission names
 to shell/subagent/edit across ordered native and legacy supported shapes.
 Patterns and allow/deny/ask decisions are preserved; conflicting collapsed
 aliases fail closed. Boolean `tools` maps are translated at global and agent
-scope using pinned 2.0.30 precedence: global tool rules precede explicit rules;
+scope using pinned 2.0.32 precedence: global tool rules precede explicit rules;
 agent write/edit/patch entries merge into edit before explicit legacy action
 overrides. Invalid boolean maps and ambiguous aliases produce typed configuration
 errors. Frontmatter, frozen snapshots and native permission evaluation are

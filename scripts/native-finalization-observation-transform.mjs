@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import path from 'node:path';
-export const NATIVE_FINALIZATION_SOURCE_SHA256='c0a2d631832b85c1184d81493492729f21808b4a2c068fed9efe96e971169c60';
-export const NATIVE_FINALIZATION_SOURCE_SUFFIX='@opencode/core/dist/chunks/instance-r0d06n1c.js';
+export const NATIVE_FINALIZATION_SOURCE_SHA256='49a5b3de32ec01d86bc4ae0023ef9838f0fedf78c78ea6fe41a9d747a821684e';
+export const NATIVE_FINALIZATION_SOURCE_SUFFIX='@opencode/core/dist/chunks/instance-dy6575tn.js';
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const start='      if (record.finish || record.failure) {\n';
 const end='      if (llmFailure && llmError && retry?.retry && record.outputStarted';

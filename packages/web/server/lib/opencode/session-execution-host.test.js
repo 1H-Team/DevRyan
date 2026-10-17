@@ -631,6 +631,39 @@ test('native scans enforce Git exclusions, reject follow traversal and protect n
   expect(native.startReadOnlySessionExecution).toHaveBeenCalledTimes(2);
 });
 
+test('native scans accept location roots that do not exist yet and still honour missing protected roots', async () => {
+  const native = await import('@openchamber/harness-runtime/lib/session-execution.js');
+  native.startReadOnlySessionExecution.mockClear();
+  native.startReadOnlySessionExecution.mockResolvedValue({ child: {}, pid: 201,
+    result: Promise.resolve({ terminated: true, confined: true, cancelled: false, exitCode: 0 }) });
+  // The webfetch scratch root is only created once webfetch saves a binary.
+  const webfetch = path.join(os.tmpdir(), `devryan-missing-${process.pid}-${Date.now()}`, 'devryan-webfetch', 'digest');
+  let diagnostics = [];
+  const invoke = async (tool, args, protectedRoots = []) => {
+    const openCodeClient = createFakeClient();
+    openCodeClient.sessions.message.mockResolvedValue({ info: { role: 'assistant', sessionID: input.sessionID, parentID: 'msg_user' },
+      turnOwnership: { source: 'native-sequence', userMessageID: 'msg_user' }, parts: [{ type: 'tool', callID: input.callID, tool }] });
+    const created = fixture({ openCodeClient, nativeExecution: { recheckPermit: async () => {}, socketDirectory: null,
+      locations: [{ directory, readRoots: [directory, webfetch], protectedRoots }] } });
+    const { host } = created; diagnostics = created.diagnostics;
+    const specification = { kind: 'read', command: '/fixture/rg', args, cwd: directory };
+    try {
+      return await host.nativeExecution({ ...input, ...specification, tool, agent: 'build', action: 'start',
+        argsDigest: createHash('sha256').update(JSON.stringify(specification)).digest('hex') });
+    } finally { await host.drain(); }
+  };
+  await invoke('grep', ['--no-config', '--json', '--glob=AGENTS.md', '--', 'commit', '.']);
+  await invoke('glob', ['--no-config', '--files', '--glob=scripts/*pending*', '--glob=!**/.*', '--glob=!**/.git/**', '.']);
+  expect(native.startReadOnlySessionExecution).toHaveBeenCalledTimes(2);
+  // A protected root that does not exist yet still blocks a scan that would contain it.
+  await expect(invoke('grep', ['--no-config', '--json', '--', 'host', '.'], [path.join(directory, `missing-protected-${process.pid}`)]))
+    .rejects.toMatchObject({ code: 'native_read_root_denied' });
+  expect(native.startReadOnlySessionExecution).toHaveBeenCalledTimes(2);
+  // The refusal is journaled with its code; OpenCode only reports "ripgrep execution failed".
+  expect(diagnostics).toContainEqual(expect.objectContaining({ event: 'session_execution', phase: 'native_read', state: 'failed',
+    code: 'native_read_root_denied', tool: 'grep', callID: input.callID }));
+});
+
 test('Node helper independently validates pinned VCS info flags before launching a real supervisor', async () => {
   const { nativeVcsGitFlags } = await import('./execution-helper-policy.js');
   const native = await import('@openchamber/harness-runtime/lib/session-execution.js');

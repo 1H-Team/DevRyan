@@ -71,16 +71,16 @@ else{
   ptySource=rewriteNativeAsset('pty',await fs.readFile(ptyBinding),{assetPath:ptyBinary,assetSha256:hash(await fs.readFile(ptyBinary))});
 }
 const photonSource=rewriteNativeAsset('photon',await fs.readFile(photonFile));
-const compactionFile=path.join(coreRoot,'dist/chunks/instance-7khw7vys.js');
+const compactionFile=path.join(coreRoot,'dist/chunks/instance-1kn978n9.js');
 const compaction=rewriteNativeCompactionObservation(await fs.readFile(compactionFile,'utf8'),path.join(host,'native-compaction-observation.ts'));
-const finalizationFile=path.join(coreRoot,'dist/chunks/instance-r0d06n1c.js');
+const finalizationFile=path.join(coreRoot,'dist/chunks/instance-dy6575tn.js');
 const finalization=rewriteNativeFinalizationObservation(await fs.readFile(finalizationFile,'utf8'),path.join(host,'native-finalization-observation.ts'));
 // Core's own @opencode/schema dependency; its exports are import-only.
 const agentDefaultsFile=await fs.realpath(path.join(path.dirname(coreRoot),'schema/dist/agent.js'));
 const rewrites=new Map([[ptyBinding,ptySource],[photonFile,photonSource],[compactionFile,compaction.contents],[finalizationFile,finalization.contents],[agentDefaultsFile,rewriteNativeAgentDefaults(await fs.readFile(agentDefaultsFile))]]);
 for(const [file,contents] of rewrites) transforms.push({path:path.relative(repository,file),sha256:hash(await fs.readFile(file)),outputSha256:hash(contents),
   reason:file===ptyBinding?(windowsCandidate?'windows-persistent-pty-unavailable':'compiled-dynamic-package-resolve-unavailable'):file===compactionFile?'pinned-native-compaction-read-only-observation':file===finalizationFile?'pinned-native-finalization-read-only-observation':file===agentDefaultsFile?'pinned-native-external-directory-default-ask':'compiled-photon-source-wasm-read-denied'});
-const assetFilter=windowsCandidate?/(instance-7khw7vys|instance-r0d06n1c|persistent-pty[\\/]binary\.bun|photon_rs|@opencode[\\/]schema[\\/]dist[\\/]agent)\.js$/:/(instance-dajrwvna|instance-7khw7vys|instance-r0d06n1c|photon_rs|@opencode[\\/]schema[\\/]dist[\\/]agent)\.js$/;
+const assetFilter=windowsCandidate?/(instance-1kn978n9|instance-dy6575tn|persistent-pty[\\/]binary\.bun|photon_rs|@opencode[\\/]schema[\\/]dist[\\/]agent)\.js$/:/(instance-dajrwvna|instance-1kn978n9|instance-dy6575tn|photon_rs|@opencode[\\/]schema[\\/]dist[\\/]agent)\.js$/;
 const plugin={name:'devryan-pinned-asset-resolvers',setup(builder){builder.onLoad({filter:assetFilter},event=>{const contents=rewrites.get(path.resolve(event.path));if(contents===undefined) throw new Error('Unexpected native asset resolver');return {contents,loader:'js'};});}};
 const settings={target:'bun',minify:true,conditions:['bun'],sourcemap:'none',metafile:true,plugins:[plugin,reviewedNativeInputPlugin(reviewed)]};
 await fs.mkdir(path.dirname(output),{recursive:true});
@@ -152,7 +152,7 @@ try {
   const inputs={buildSources,lockSha256:hash(lockBytes),coreDigest,hostDigest,sourceFiles,resolvedPackages,
     reviewedInputProvenance:reviewed.provenance,
     nativeRegistrations:[...createReviewedNativePluginRegistry(coreDigest,{hostDigest}).values()].map(({id,manifestDigest,capabilities})=>({id,manifestDigest,capabilities})),reviewedPlugins,transforms};
-  const identity={bunVersion:Bun.version,bunRevision:Bun.revision,opencodeVersion:'2.0.30',target:`bun-${target}`,compiledContracts:[NATIVE_BUNDLE_CREDENTIAL_CONTRACT,CLAUDE_LIFECYCLE_PROTOCOL,'devryan-v2-clone/1','devryan.primary-step-stop/1','devryan.bundle.credential-owners/2'],inputs,
+  const identity={bunVersion:Bun.version,bunRevision:Bun.revision,opencodeVersion:'2.0.32',target:`bun-${target}`,compiledContracts:[NATIVE_BUNDLE_CREDENTIAL_CONTRACT,CLAUDE_LIFECYCLE_PROTOCOL,'devryan-v2-clone/1','devryan.primary-step-stop/1','devryan.bundle.credential-owners/2'],inputs,
     ...(windowsGitResource?{windowsGit:windowsGitResource.windowsGit}:{})};
   const buildId=hash(JSON.stringify(identity));
   const files=[];

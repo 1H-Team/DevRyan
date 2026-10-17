@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-10-17
+
+- Update the bundled OpenCode host from 2.0.30 to 2.0.32. Installs on 2.0.30 upgrade and roll back through the reviewed clone gate, which now checks the database layout of the source release's migration level. The new server voice-session route is denied. The Bot runtime stays on 2.0.30.
+
 ## [2.0.15] - 2026-10-16
 
 Versions 2.0.13 and 2.0.14 were never published; their contents ship in 2.0.15.

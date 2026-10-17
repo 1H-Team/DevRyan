@@ -22,6 +22,7 @@ import { isReviewedControllerGitArgs } from './execution-helper-policy.js';
 import { resolveControllerGitCommand } from './execution-helper-command.js';
 import { executeNativeContextAssets } from './runtime-host/native-context-assets.js';
 import { executeNativeInterviewDocument } from './runtime-host/native-interview-document.js';
+import { canonicalTarget } from './runtime-host/native-read-paths.js';
 import { createCursorExecutionReceipts } from './cursor-execution-receipts.js';
 
 const failure = (code, status = 409) => Object.assign(new Error(code), { code, status, statusCode: status });
@@ -481,8 +482,9 @@ export function createSessionExecutionHost(options) {
       const readDirectory = await fs.realpath(input.cwd ?? input.directory);
       const location = nativeOptions.locations?.find(location => location.directory === input.directory);
       if (nativeOptions.locations && !location) throw failure('native_read_root_denied', 403);
-      const readRoots = await Promise.all((location?.readRoots ?? nativeOptions.readRoots ?? [input.directory]).map(root => fs.realpath(root)));
-      const protectedRoots = await Promise.all((location?.protectedRoots ?? nativeOptions.protectedRoots ?? []).map(root => fs.realpath(root)));
+      // Roots may not exist yet (the webfetch scratch root is created lazily); resolve them like the controller's read guard.
+      const readRoots = await Promise.all((location?.readRoots ?? nativeOptions.readRoots ?? [input.directory]).map(root => canonicalTarget(path.resolve(root))));
+      const protectedRoots = await Promise.all((location?.protectedRoots ?? nativeOptions.protectedRoots ?? []).map(root => canonicalTarget(path.resolve(root))));
       const within = (root) => readDirectory === root || readDirectory.startsWith(`${root}${path.sep}`);
       const containsProtected = protectedRoots.some(root => root.startsWith(`${readDirectory}${path.sep}`));
       if (readDirectory.split(path.sep).some(component => component.toLowerCase() === '.git') || !readRoots.some(within) || protectedRoots.some(within) || containsProtected) throw failure('native_read_root_denied', 403);
@@ -506,7 +508,7 @@ export function createSessionExecutionHost(options) {
         nativeEvent(job, { type: 'settled', ok: receipt.confined && !receipt.cancelled && !job.failure,
           receipt, ...(job.failure ? { error: { message: job.failure.message } } : {}) }, true);
       })().finally(() => { job.done = true; for (const wake of job.waiters) wake(); job.waiters.clear(); });
-      void job.settled.catch((cause) => { nativeEvent(job, { type: 'uncertain', error: { code: cause.code ?? 'mutation_termination_unconfirmed' } }, true); });
+      void job.settled.catch((cause) => { nativeReadFailure(input, cause); nativeEvent(job, { type: 'uncertain', error: { code: cause.code ?? 'mutation_termination_unconfirmed' } }, true); });
       return { handle };
     }
     const { owner, jobs } = await preparations(); owner.assert(); signal?.throwIfAborted();
@@ -723,9 +725,21 @@ export function createSessionExecutionHost(options) {
     void job.settled.catch((cause) => { nativeEvent(job, { type: 'uncertain', error: { code: cause.code ?? 'mutation_termination_unconfirmed' } }, true); });
     return { handle: handleID };
   };
-  const nativeExecution = async (input, { signal } = {}) => ['start', 'helper', 'direct-admit', 'control-begin'].includes(input.action)
-    ? acquireController(lifetime => executeNativeExecution(input, { signal: AbortSignal.any([lifetime, ...(signal ? [signal] : [])]) }))
-    : executeNativeExecution(input, { signal });
+  // OpenCode reports every refused grep/glob spawn as "ripgrep execution failed";
+  // journal the bounded host code so the real cause survives.
+  const nativeReadFailure = (input, cause) => {
+    const code = typeof cause?.code === 'string' && /^[A-Za-z0-9_]{1,64}$/.test(cause.code) ? cause.code : 'native_read_failed';
+    try { options.onDiagnostic?.({ event: 'session_execution', sessionID: input.sessionID, messageID: input.messageID, callID: input.callID,
+      tool: input.tool, phase: 'native_read', state: 'failed', code }); } catch { /* Observer only. */ }
+  };
+  const nativeExecution = async (input, { signal } = {}) => {
+    const run = () => ['start', 'helper', 'direct-admit', 'control-begin'].includes(input.action)
+      ? acquireController(lifetime => executeNativeExecution(input, { signal: AbortSignal.any([lifetime, ...(signal ? [signal] : [])]) }))
+      : executeNativeExecution(input, { signal });
+    if (input.action !== 'start' || input.kind !== 'read') return run();
+    try { return await run(); }
+    catch (cause) { nativeReadFailure(input, cause); throw cause; }
+  };
   const nativeContextAssets = async (input, requestOptions = {}) => {
     // This runs before Step.Started. Its constructor captures canonical user
     // input and current hook authority; no assistant/tool identity is invented.
