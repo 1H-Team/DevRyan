@@ -347,6 +347,9 @@ describe('DevRyan document reader plugin', () => {
   });
 
   it('prunes cache files that exceed the seven-day retention window', async () => {
+    // pruneCache joins a pass already in flight (earlier tests start background prunes);
+    // let it finish so the pass below lists the stale file.
+    await __test.pruneCache();
     const cacheDirectory = __test.getSessionCacheDirectory('ses_stale');
     fs.mkdirSync(cacheDirectory, { recursive: true });
     const stalePath = path.join(cacheDirectory, `doc_${'a'.repeat(64)}.json`);
