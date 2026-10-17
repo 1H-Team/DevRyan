@@ -4,6 +4,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { createRuntimeBundleLifecycle, nativeUpgradeBundleID } from './runtime-bundle-lifecycle.js';
 import { readRuntimeBundleBinding } from './runtime-bundle-binding.js';
 import { recordStartupBundleUpgradeFailure } from './bundle-startup-upgrade-status.js';
+import { isNativePrimaryRuntimeVersion } from '../../../../../harness-runtime/lib/provider-recovery-policy.js';
 import { recordStartupFindings } from './startup-notices.js';
 import { artifactDiagnostic } from '@openchamber/shared-runtime/startup-diagnostics.js';
 import { readNativeRuntimeManifest } from './native-artifacts.js';
@@ -74,13 +75,16 @@ const sweepUnsealedCandidate = async (controlRoot, bundleID) => {
  * never downgrades OpenCode. The lifecycle
  * upgrade performs the verified clone, credential capture and selector CAS, and
  * keeps the previous bundle as the rollback target. A failure leaves the
- * selection unchanged and is recorded for the startup error, never thrown. */
+ * selection unchanged and is recorded, never thrown. When the selected runtime
+ * is an older reviewed native release, this process runs it instead of the pin
+ * and the upgrade retries at the next start. */
 export async function upgradeSelectedNativeBundleAtStartup({ controlRoot, env = process.env, artifactDirectory,
   verifyArtifacts, credentialProcess, privatePersistence = {}, createLifecycle = createRuntimeBundleLifecycle, log = console }) {
-  let upgradeStartedAt;
+  let upgradeStartedAt, selectedVersion = null, expected;
   recordStartupBundleUpgradeFailure(null);
   const refused = (code, error) => {
-    recordStartupBundleUpgradeFailure(code, error);
+    const retained = expected && newer(expected, selectedVersion) && isNativePrimaryRuntimeVersion(selectedVersion) ? selectedVersion : null;
+    recordStartupBundleUpgradeFailure(code, error, retained);
     recordStartupFindings('bundle_upgrade', [{ code, scope: 'upgrade', key: 'not-applied' }], {});
     const diagnostic = artifactDiagnostic(error);
     log.warn?.(`[runtime-bundle] startup upgrade not applied: ${code}${error?.detail ? ` ${JSON.stringify(error.detail)}` : ''}`);
@@ -89,13 +93,13 @@ export async function upgradeSelectedNativeBundleAtStartup({ controlRoot, env = 
     });
     return { status: 'failed', code, ...(diagnostic ? { diagnostic } : {}) };
   };
-  let expected;
   try { expected = resolveQaTargetOpenCodeVersion(env).version; } catch { return { status: 'skipped' }; }
   try {
     const binding = readRuntimeBundleBinding({ DEVRYAN_RUNTIME_BUNDLE_ROOT: controlRoot }, { allowHeldInspection: true });
     if (binding.admission === 'held' || binding.selection.reconciliationRequired) return { status: 'held' };
     const launch = binding.descriptor.launch;
     const selected = await readManifest(launch.artifactManifestPath, 'bundle-source');
+    selectedVersion = selected?.version ?? null;
     if (selected?.version === expected && binding.selection.transition === 'rollback') return { status: 'current' };
     const shipped = await readManifest(path.join(artifactDirectory, 'native-bundle.json'));
     if (selected?.version === expected && selected.sha256 === shipped?.sha256) return { status: 'current' };

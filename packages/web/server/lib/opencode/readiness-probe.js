@@ -5,6 +5,7 @@
 import { readOpenCodeRuntimeSelection } from './runtime-selection.js';
 import { OPENCODE_V2_ROUTES_VERSION } from './v2/routes.generated.js';
 import { resolveQaTargetOpenCodeVersion } from './version-policy.js';
+import { readStartupRetainedRuntimeVersion } from './runtime-host/bundle-startup-upgrade-status.js';
 import { readResponseBody } from './opencode-client/envelope.js';
 
 export const OPENCODE_GENERATION_ENV = 'DEVRYAN_OPENCODE_GENERATION';
@@ -97,14 +98,16 @@ export const resolveManagedOpenCodeGeneration = ({
 };
 
 /**
- * The exact OpenCode 2 version required by the host or explicit QA candidate.
+ * The exact OpenCode 2 version required by the host or explicit QA candidate,
+ * or the retained older runtime this process runs after a refused startup upgrade.
  * @param {2} generation
  * @param {Record<string, string | undefined>} [env]
  * @returns {string | null}
  */
 export const resolveExpectedOpenCodeVersion = (generation, env = process.env) => {
   if (generation !== 2) throw new Error('Only OpenCode 2 is supported');
-  return resolveQaTargetOpenCodeVersion(env).version;
+  const pinned = resolveQaTargetOpenCodeVersion(env).version;
+  return readStartupRetainedRuntimeVersion() ?? pinned;
 };
 
 const notReady = (generation, reason, extra = {}) => ({

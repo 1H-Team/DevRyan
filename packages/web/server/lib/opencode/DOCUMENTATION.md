@@ -910,9 +910,16 @@ startup evidence even when Effect marks them ignored for general reporting.
 The project archive migration raises the clone migration level to 2: existing
 reviewed 2.0.20/24/26 source layouts can upgrade, but migrated 2.0.30 databases
 cannot clone into an older release. Rollback retains the original database.
-2.0.32 adds no migration (level 2). Its database DDL equals 2.0.30's, which has
+2.0.32 adds no migration (level 2). Its database structure equals 2.0.30's, which has
 `project.time_archived`, so the clone gate checks a source database against the
 reviewed layout of the source release's own migration level
 (`reviewedNativeCloneSourceLayout`); 2.0.30 and 2.0.32 clone in both directions.
+A layout is a structural fingerprint (`inspectNativeCloneLayout`: columns by name,
+keys, indexes, constraints, triggers, the legacy migration journal and
+`user_version`), not DDL text. A database that an earlier release created and
+2.0.30 migrated in place (`ALTER TABLE … ADD`, column last) has the same layout as
+a fresh 2.0.30 one. Each reviewed value is measured from an actual controller
+database; `runtime-host/test-fixtures/native-clone-layouts/` holds schema-only
+dumps of the fresh 2.0.26, migrated and fresh 2.0.32 cases.
 2.0.32 adds `POST /api/experimental/voice/session`, which brokers the server's
 stored OpenAI/xAI keys into a realtime session; the route policy denies it.

@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Fix startup failing with `bundle_v2_upgrade_compatibility_required` after updating to 2.1.0. The upgrade gate compared database DDL text, so a database first created by 2.0.26 or earlier and migrated by 2.0.30 never matched the reviewed fresh 2.0.30 layout. It now compares the database structure, measured from actual controller databases.
+- Fix the retained runtime failing verification with `bundle_message_reference_lost` after a sub-agent session was deleted. A finished orchestration task's references belong to its child session, and a lost one is reported instead of refusing launch.
+- A refused runtime upgrade no longer locks the app out when the OpenCode version changed. The app opens on the retained older reviewed runtime with a notice, and retries the upgrade at the next start.
+
 ## [2.1.0] - 2026-10-17
 
 - Update the bundled OpenCode host from 2.0.30 to 2.0.32. Installs on 2.0.30 upgrade and roll back through the reviewed clone gate, which now checks the database layout of the source release's migration level. The new server voice-session route is denied. The Bot runtime stays on 2.0.30.

@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from 'vitest';
-import { startupUpgradeFailureOver, recordStartupBundleUpgradeFailure } from './bundle-startup-upgrade-status.js';
+import { startupUpgradeFailureOver, recordStartupBundleUpgradeFailure, readStartupRetainedRuntimeVersion } from './bundle-startup-upgrade-status.js';
 
 afterEach(() => recordStartupBundleUpgradeFailure(null));
 
@@ -17,4 +17,13 @@ it('preserves sanitized artifact diagnostics and clears a recovered attempt', ()
   expect(startupUpgradeFailureOver(later)).toMatchObject({ code: 'native_runtime_artifacts_unverified', status: 503, diagnostic });
   recordStartupBundleUpgradeFailure(null);
   expect(startupUpgradeFailureOver(later)).toBe(later);
+});
+
+it('names a retained runtime only while an upgrade refusal is recorded', () => {
+  recordStartupBundleUpgradeFailure('bundle_v2_upgrade_compatibility_required', undefined, '2.0.30');
+  expect(readStartupRetainedRuntimeVersion()).toBe('2.0.30');
+  recordStartupBundleUpgradeFailure(null, undefined, '2.0.30');
+  expect(readStartupRetainedRuntimeVersion()).toBeNull();
+  recordStartupBundleUpgradeFailure('bundle_upgrade_owner_active');
+  expect(readStartupRetainedRuntimeVersion()).toBeNull();
 });

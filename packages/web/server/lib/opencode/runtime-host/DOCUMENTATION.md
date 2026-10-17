@@ -28,8 +28,12 @@ reported instead:
   only the sessions it still proves, so a session it cannot excuse still fails
   as `bundle_session_reference_lost`. A `cancelled-calls/` marker only blocks a
   late start of its call, so a message or session it names that is gone is a
-  finding too; the same lost reference on any other record still refuses. With
-  a non-identity project map every finding throws.
+  finding too; the same lost reference on any other record still refuses. An
+  orchestration ledger task's references belong to its `childSessionId`, so a
+  removed child session excuses them; a lost reference in a finished task
+  (`completed`, `failed`, `aborted`, `interrupted`) is a finding with ledger
+  `orchestration` and key `tasks/<taskId>`, while a `queued` task still
+  refuses. With a non-identity project map every finding throws.
 - The clone copy leaves behind sockets and FIFOs anywhere, and symlinks inside
   a project ledger and under `global/{cache,tmp,log}`. Links under config,
   `global/home` and `global/data` still refuse with `bundle_symlink_source`.
@@ -45,11 +49,16 @@ exposes them as `startupNotices`, and the UI shows a persistent warning.
 
 A refused cold upgrade is recorded, not thrown. When the selected runtime
 still meets the OpenCode version pin and passes its own launch verification,
-it launches and the upgrade retries at the next start. When that verification
-fails too, `startupUpgradeFailureOver` reports the refused upgrade with the
-verification error as its cause, so an old-pin rejection of the retained
-runtime cannot mask the original refusal. A version below the pin always
-refuses. Cold
+it launches and the upgrade retries at the next start. When the selected
+runtime is an older reviewed native release (`NATIVE_PRIMARY_SUPPORTED_OPENCODE_VERSIONS`),
+the refusal records it as the retained version and `resolveExpectedOpenCodeVersion`
+names it instead of the pin for this process only
+(`readStartupRetainedRuntimeVersion`), so the app opens on that runtime with the
+`bundle_upgrade` startup notice instead of locking out. Any other version below
+the pin still refuses with `bundle_upgrade_required`. When the retained
+runtime's verification fails too, `startupUpgradeFailureOver` reports the
+refused upgrade with the verification error as its cause, so an old-pin
+rejection cannot mask the original refusal. Cold
 upgrade preflights the selected harness after owner checks and before artifact
 retention; the full final verifier still runs. Compatibility checking shares its
 fresh source result only with the immediately following upgrade decision, never

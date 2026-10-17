@@ -131,6 +131,22 @@ test.each([{messageID:'msg_gone_assistant'},{sessionID:'ses_gone',messageID:'msg
     f.db.set('operations/other.json',{messageID:'msg_gone_assistant'});await f.db.commit();
     await expect(f.verify()).rejects.toMatchObject({code:'bundle_message_reference_lost'});
   });
+test('a finished task whose child session was removed is history, a lost reference is reported, an unfinished one still refuses',async()=>{
+  const f=await fixture({acked:true}), ledger=path.join(f.web,'orchestration','ledger.json');
+  const save=tasks=>fs.mkdir(path.dirname(ledger),{recursive:true}).then(()=>fs.writeFile(ledger,JSON.stringify({tasks})));
+  // Cursor child results name `<user>_assistant` messages that only the removed child session held.
+  const task={taskId:'dvr_task_1',status:'completed',childSessionId:'ses_removed',rootSessionId:'ses_removed',
+    canonicalRefs:[{id:'msg_child_assistant',type:'message'},{id:'call-1',messageId:'msg_child_assistant',type:'tool'}]};
+  await save([task]);
+  expect((await f.verify()).findings).toEqual([]);
+  await save([{...task,childSessionId:'ses_gone'}]);
+  expect((await f.verify()).findings.map(row=>[row.code,row.ledger,row.key])).toEqual([
+    ['bundle_session_reference_lost','orchestratio','tasks/dvr_task_1'],['bundle_message_reference_lost','orchestratio','tasks/dvr_task_1']]);
+  await save([{...task,status:'queued',childSessionId:'ses_gone'}]);
+  await expect(f.verify()).rejects.toMatchObject({code:'bundle_session_reference_lost'});
+  await save([{...task,status:'queued'}]);
+  expect((await f.verify()).findings).toEqual([]);
+});
 test('ACKed tombstone cannot authorize a native session that still exists',async()=>{
   const f=await fixture({acked:true});await expect(f.verify({sessionIDs:['ses_removed']})).rejects.toMatchObject({code:'bundle_native_removal_invalid'});
 });

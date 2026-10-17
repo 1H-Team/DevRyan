@@ -26,31 +26,35 @@ const reviewedGraph = manifest => manifest.inputs?.coreDigest === REVIEWED_NATIV
 export const REVIEWED_NATIVE_CLONE_MIGRATION_LEVEL = Object.freeze({ '2.0.20': 0, '2.0.24': 0, '2.0.26': 1, '2.0.30': 2, '2.0.32': 2 });
 // 2.0.30 adds project.time_archived; its migrated database cannot clone backwards.
 // 2.0.32 adds no migration, so 2.0.30 and 2.0.32 databases clone both ways.
+// A layout is the database's structure (`inspectNativeCloneLayout`), not its DDL
+// text: a database created by an earlier release and migrated in place stores
+// `ALTER TABLE … ADD` text with the column last, a fresh one has it inside
+// CREATE TABLE. Each value comes from an actual controller database.
 // A database imported from a legacy source keeps its __drizzle_migrations table.
 export const REVIEWED_NATIVE_CLONE_LAYOUT = Object.freeze({
-  schemaSha256: '86eba4fd4db542bd82ef56f76c1e5eba80af1efc021e10cd5a7f59d70e5f1bf0',
+  structureSha256: '02248a6b5808cff229a46298a6b82c2dd4e0878d8bbdde4d67f2263083d11671',
   migrationsSha256: 'b0c489f7584f30b688a23e9cc6326c1c37b1dfb166ba14e5d55ee3cf33f08d9e',
   userVersion: 0,
 });
 // Every 2.x install creates its database from an empty source, without that
-// table. The actual 2.0.20 controller's fresh database and a fresh 2.0.26
-// database have this identical DDL; their `migration` rows differ only by the
-// 2.0.26 data-only migration.
+// table. The 2.0.20, 2.0.24 and 2.0.26 controllers' fresh databases share this
+// structure; their `migration` rows differ only by the 2.0.26 data-only migration.
 export const REVIEWED_NATIVE_FRESH_CLONE_LAYOUT = Object.freeze({
-  schemaSha256: '32957fae72f298bc107761ba6b9e3336fdee06a70f9be26e189a54e72f7898ec',
+  structureSha256: '71786c05ef01a162f4c62e96b7d270f221d9e4483511c72ca9eb7aaa208bd93a',
   migrationsSha256: null,
   userVersion: 0,
 });
-// A 2.0.30 database (migration level 2) has the project archive column, so its
-// source DDL differs. Both layouts come from the actual 2.0.30 controller's
-// legacy-imported and fresh databases in the 2.0.30 → 2.0.32 package lane.
+// A migration level 2 database has the project archive column. The legacy value
+// comes from the 2.0.30 controller's legacy-imported database in the package
+// lane. The fresh value is shared by a 2.0.30/2.0.32 controller's fresh
+// database and a 2.0.26 fresh database that 2.0.30 migrated in place.
 export const REVIEWED_NATIVE_PROJECT_ARCHIVE_CLONE_LAYOUT = Object.freeze({
-  schemaSha256: 'f05d9bfd3aec99c0e8f2228e3ea3fc3df1b844728f024bbcccba890559ace0d8',
+  structureSha256: '778643c504f9681272d611ec6a46e0531ca685a01253f60d405fbaca40d86bf8',
   migrationsSha256: REVIEWED_NATIVE_CLONE_LAYOUT.migrationsSha256,
   userVersion: 0,
 });
 export const REVIEWED_NATIVE_PROJECT_ARCHIVE_FRESH_CLONE_LAYOUT = Object.freeze({
-  schemaSha256: 'fd2ff69b1d7f96032381f4069c7a64214bbe2a8f2a124cda08d8354de566e00d',
+  structureSha256: 'a6f5e58a3e5a5836cfc452853ccf4d17ab05cdba91c7e5da5606cd6b74426a8f',
   migrationsSha256: null,
   userVersion: 0,
 });
@@ -72,15 +76,35 @@ export function isReviewedNativeClonePair(left, right, layout) {
     && ['legacy', 'fresh-install'].some(kind => Object.entries(reviewedNativeCloneSourceLayout(left.opencodeVersion, kind))
       .every(([key, value]) => layout?.[key] === value));
 }
-/** Read only schema/migration metadata, never credential or account values. */
+// SQLite DDL text as a comparable string: identifier quotes dropped, whitespace and case folded.
+const normalizedSQL = sql => sql?.replace(/[`"[\]]/g, '').replace(/\s+/g, ' ').trim().toLowerCase() ?? null;
+/** Read only schema/migration metadata, never credential or account values.
+ * The structure is order-insensitive per table (columns by name) and ignores
+ * DDL spelling, so the same layout reached by CREATE TABLE or by ALTER TABLE
+ * ADD hashes alike, while any column, key, index or constraint change differs. */
 export function inspectNativeCloneLayout(databasePath) {
   const db = resolveSqliteDriver().open(databasePath, { readonly: true });
   try {
     db.prepare('BEGIN').run();
-    const schema = db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name").all();
+    const all = (sql, ...args) => db.prepare(sql).all(...args);
+    const schema = all("SELECT type,name,tbl_name,sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name");
+    const tables = schema.filter(row => row.type === 'table').map(({ name }) => ({
+      name,
+      shape: all('SELECT type,ncol,wr,strict FROM pragma_table_list WHERE schema=\'main\' AND name=?', name),
+      columns: all('SELECT name,type,"notnull",dflt_value,pk,hidden FROM pragma_table_xinfo(?) ORDER BY name', name),
+      foreignKeys: all('SELECT "table","from","to",on_update,on_delete,"match" FROM pragma_foreign_key_list(?) ORDER BY "table","from","to"', name),
+      checks: normalizedSQL(schema.find(row => row.type === 'table' && row.name === name).sql).match(/\bcheck\s*\(/g)?.length ?? 0,
+      indexes: all('SELECT name,"unique",origin,partial FROM pragma_index_list(?) ORDER BY name', name).map(index => ({
+        ...index,
+        keys: all('SELECT seqno,name,"desc",coll,"key" FROM pragma_index_xinfo(?) ORDER BY seqno', index.name),
+        where: index.partial ? normalizedSQL(schema.find(row => row.name === index.name)?.sql)?.replace(/^.*?\bwhere\b/, '') ?? null : null,
+      })),
+    }));
+    const other = schema.filter(row => row.type === 'trigger' || row.type === 'view')
+      .map(row => ({ type: row.type, name: row.name, sql: normalizedSQL(row.sql) }));
     const legacy = schema.some(row => row.type === 'table' && row.name === '__drizzle_migrations');
-    const migrations = legacy ? hash(db.prepare('SELECT * FROM __drizzle_migrations ORDER BY id').all()) : null;
-    return { schemaSha256: hash(schema), migrationsSha256: migrations, userVersion: db.prepare('PRAGMA user_version').get().user_version };
+    const migrations = legacy ? hash(all('SELECT * FROM __drizzle_migrations ORDER BY id')) : null;
+    return { structureSha256: hash({ tables, other }), migrationsSha256: migrations, userVersion: db.prepare('PRAGMA user_version').get().user_version };
   } finally {
     try { db.prepare('ROLLBACK').run(); } finally { db.close(); }
   }

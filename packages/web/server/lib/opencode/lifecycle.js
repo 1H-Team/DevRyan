@@ -274,7 +274,8 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     if (!isNativeOpenCodeVersion(bundle.version)) throw unavailable();
     // An invalid QA override is left for the readiness probe to report.
     let expectedVersion=null;try{expectedVersion=resolveExpectedOpenCodeVersion(2);}catch{}
-    // A refused same-version upgrade leaves a runtime that still meets the pin; it launches and the upgrade retries next start.
+    // A refused upgrade leaves a runtime that meets the pin, or the retained older reviewed one
+    // the pin then names for this process; it launches and the upgrade retries next start.
     if(expectedVersion&&bundle.version!==expectedVersion)throw upgradeRequired(bundle.version,expectedVersion);
     state.openCodeWorkingDirectory=bundle.descriptor.projectMap[0].targetDirectory;
     const launchSettings=normalizeAgentRuntimeSettings(readAgentRuntimeSettings());

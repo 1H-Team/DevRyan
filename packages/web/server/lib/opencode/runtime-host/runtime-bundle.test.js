@@ -1013,13 +1013,15 @@ test('cold startup activates repaired host artifacts at the same OpenCode versio
 test('cold upgrade preserves artifact diagnostics and never publishes a failed candidate',async()=>{
  const u=await startupUpgradeFixture('startup-diagnostic-home'),before=u.binding().selection;
  const {upgradeSelectedNativeBundleAtStartup}=await import('./native-bundle-startup-upgrade.js');
- const {readStartupBundleUpgradeDiagnostic}=await import('./bundle-startup-upgrade-status.js');
+ const {readStartupBundleUpgradeDiagnostic,readStartupRetainedRuntimeVersion}=await import('./bundle-startup-upgrade-status.js');
  const diagnostic={stage:'signature',reason:'signature_failure',artifact:'DevRyan-native-controller',purpose:'current'};
  const error=Object.assign(Error('private exception text'),{code:'native_runtime_artifacts_unverified',diagnostic});
  const result=await upgradeSelectedNativeBundleAtStartup({controlRoot:u.controlRoot,artifactDirectory:u.pinned,env:{},verifyArtifacts:u.f.verifyArtifacts,
   createLifecycle:()=>({upgrade:async()=>{throw error;}}),log:{}});
  expect(result).toEqual({status:'failed',code:error.code,diagnostic});
  expect(readStartupBundleUpgradeDiagnostic()).toEqual(diagnostic);
+ // The retained older reviewed runtime runs for this process instead of locking the app out.
+ expect(readStartupRetainedRuntimeVersion()).toBe('2.0.20');
  expect(u.binding().selection).toEqual(before);
  await fs.unlink(path.join(u.pinned,'native-bundle.json'));
  const missing=await upgradeSelectedNativeBundleAtStartup({controlRoot:u.controlRoot,artifactDirectory:u.pinned,env:{},log:{}});

@@ -5,6 +5,7 @@ import { readBundleRecoveryEnvelope } from './bundle-owned-continuations.js';
 import { git } from '../../../../../harness-runtime/lib/session-changes-git.js';
 import { openChangeStore, changeKey } from '../../../../../harness-runtime/lib/session-changes-store.js';
 import { isRebootRecoveredLease } from '../../../../../harness-runtime/lib/session-reboot-recovery.js';
+import { isTerminalManagedTaskStatus } from '../../../../../orchestration-runtime/contract.js';
 import { bundleFailure, containsPath, isRecord, readBundleJSON as readBundleJSONOwned, saveBundleJSON as saveBundleJSONOwned, sha256, canonicalJSON } from './bundle-migration-inventory.js';
 
 const entries = async directory => fs.readdir(directory,{withFileTypes:true}).catch(error => {
@@ -271,7 +272,14 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
     if (!isRecord(ledger) || !Array.isArray(ledger.tasks)) throw bundleFailure('bundle_task_ledger_invalid');
     for (const task of ledger.tasks) {
       if (!isRecord(task) || ['starting','running','cancelling'].includes(task.status)) throw bundleFailure('bundle_task_unsettled');
-      references(task,collected);
+      // A task's messages belong to its child session. A finished task is
+      // history, so a session or message it names that is gone is reported.
+      const owner=typeof task.childSessionId==='string' ? task.childSessionId : null;
+      if (isTerminalManagedTaskStatus(task.status)) {
+        const named={sessions:new Set(),messages:new Set(),messageScopes:new Map()};
+        references(task,named,owner);
+        tombstones.push({ledger:'orchestration',key:`tasks/${task.taskId}`,named});
+      } else references(task,collected,owner);
     }
     if (relocate) await saveBundleJSON(ledgerFile,{...ledger,tasks:await Promise.all(ledger.tasks.map(task => relocateRecord(task,projectMap,undefined,getRegistered)))});
   } catch (error) { if (error.code !== 'ENOENT') throw error; }

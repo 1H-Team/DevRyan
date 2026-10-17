@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { resolveSqliteDriver } from '../db-maintenance-core.js';
@@ -23,7 +23,7 @@ test.each([['2.0.20', '2.0.24'], ['2.0.24', '2.0.20'], ['2.0.20', '2.0.26'], ['2
   for (const coreDigest of ['0'.repeat(64), left.inputs.coreDigest, '', undefined]) {
     expect(isReviewedNativeClonePair(left, { ...right, inputs: { coreDigest } }, reviewed)).toBe(false);
   }
-  for (const [key, value] of [['schemaSha256', '0'.repeat(64)], ['migrationsSha256', '0'.repeat(64)], ['userVersion', 1]]) {
+  for (const [key, value] of [['structureSha256', '0'.repeat(64)], ['migrationsSha256', '0'.repeat(64)], ['userVersion', 1]]) {
     expect(isReviewedNativeClonePair(left, right, { ...reviewed, [key]: value })).toBe(false);
   }
   expect(isReviewedNativeClonePair(left, right, undefined)).toBe(false);
@@ -46,10 +46,10 @@ test('a database never clones from 2.0.26 into a release with fewer reviewed mig
       .toThrow('bundle_v2_upgrade_compatibility_required');
   }
 });
-test('a fresh-install database qualifies only with its exact reviewed DDL and no legacy migration table', () => {
+test('a fresh-install database qualifies only with its exact reviewed structure and no legacy migration table', () => {
   const left = manifest('2.0.20'), right = manifest('2.0.26');
   expect(isReviewedNativeClonePair(left, right, REVIEWED_NATIVE_FRESH_CLONE_LAYOUT)).toBe(true);
-  for (const [key, value] of [['schemaSha256', REVIEWED_NATIVE_CLONE_LAYOUT.schemaSha256], ['schemaSha256', '0'.repeat(64)],
+  for (const [key, value] of [['structureSha256', REVIEWED_NATIVE_CLONE_LAYOUT.structureSha256], ['structureSha256', '0'.repeat(64)],
     ['migrationsSha256', REVIEWED_NATIVE_CLONE_LAYOUT.migrationsSha256], ['migrationsSha256', undefined], ['userVersion', 1]]) {
     expect(isReviewedNativeClonePair(left, right, { ...REVIEWED_NATIVE_FRESH_CLONE_LAYOUT, [key]: value })).toBe(false);
   }
@@ -67,7 +67,42 @@ test('layout inspection hashes the legacy migration table only when the database
     const legacy = resolveSqliteDriver().open(file);
     try { legacy.exec('CREATE TABLE __drizzle_migrations (id INTEGER PRIMARY KEY, hash TEXT)'); } finally { legacy.close(); }
     const imported = inspectNativeCloneLayout(file);
-    expect(imported.migrationsSha256).toMatch(/^[a-f0-9]{64}$/); expect(imported.schemaSha256).not.toBe(fresh.schemaSha256);
+    expect(imported.migrationsSha256).toMatch(/^[a-f0-9]{64}$/); expect(imported.structureSha256).not.toBe(fresh.structureSha256);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+// Schema-only DDL dumped from real controller databases (no rows).
+const fixtureLayout = (directory, name, mutate) => {
+  const file = path.join(directory, `${name}.db`);
+  writeFileSync(file, '');
+  const db = resolveSqliteDriver().open(file);
+  try {
+    db.exec(readFileSync(new URL(`./test-fixtures/native-clone-layouts/${name}.sql`, import.meta.url), 'utf8'));
+    mutate?.(db);
+  } finally { db.close(); }
+  return inspectNativeCloneLayout(file);
+};
+test('a database migrated in place has the same reviewed layout as a fresh one', () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'native-clone-layout-'));
+  try {
+    expect(fixtureLayout(directory, '2.0.26-fresh')).toEqual({ ...REVIEWED_NATIVE_FRESH_CLONE_LAYOUT });
+    // 2.0.30 upgraded this 2.0.26 database with ALTER TABLE project ADD time_archived:
+    // different DDL text and column order than a fresh 2.0.30/2.0.32 database.
+    const migrated = fixtureLayout(directory, '2.0.26-fresh-migrated-by-2.0.30');
+    expect(migrated).toEqual({ ...REVIEWED_NATIVE_PROJECT_ARCHIVE_FRESH_CLONE_LAYOUT });
+    expect(fixtureLayout(directory, '2.0.32-fresh')).toEqual(migrated);
+    const source = path.join(directory, 'source.db');
+    writeFileSync(source, '');
+    const db = resolveSqliteDriver().open(source);
+    try { db.exec(readFileSync(new URL('./test-fixtures/native-clone-layouts/2.0.26-fresh-migrated-by-2.0.30.sql', import.meta.url), 'utf8')); } finally { db.close(); }
+    expect(() => verifyNativeCloneCompatibility({ left: manifest('2.0.30'), right: manifest('2.0.32'), databasePath: source })).not.toThrow();
+    expect(() => verifyNativeCloneCompatibility({ left: manifest('2.0.26'), right: manifest('2.0.32'), databasePath: source }))
+      .toThrow('bundle_v2_upgrade_compatibility_required');
+    // Any real structural difference still refuses.
+    for (const change of ['ALTER TABLE project ADD extra text', 'ALTER TABLE project DROP COLUMN commands', 'CREATE TABLE extra (id text)',
+      'CREATE INDEX project_worktree_idx ON project (worktree)', 'DROP INDEX session_v2_parent_idx', 'PRAGMA user_version = 1']) {
+      expect(fixtureLayout(directory, '2.0.32-fresh', db => db.exec(change))).not.toEqual(migrated);
+    }
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 

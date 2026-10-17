@@ -312,6 +312,20 @@ it('forwards the native lifecycle version into original application health and H
 });
 
 it('retained runtime reports its verified bundle version through launch and inherited ownership',async()=>{vi.stubEnv('DEVRYAN_QA_OPENCODE_VERSION','2.0.20');try{const f=fixture();f.bundle.version='2.0.20';await f.runtime.bootstrapOpenCodeAtStartup();expect(f.state.openCodeVersion).toBe('2.0.20');await f.runtime.bootstrapOpenCodeAtStartup();expect(f.native.start).toHaveBeenCalledTimes(1);}finally{vi.unstubAllEnvs();}});
+it('a refused upgrade launches the retained older reviewed runtime for this process; another version still refuses',async()=>{
+ const {recordStartupBundleUpgradeFailure}=await import('./runtime-host/bundle-startup-upgrade-status.js');
+ recordStartupBundleUpgradeFailure('bundle_v2_upgrade_compatibility_required',undefined,'2.0.30');
+ try{
+  const other=fixture();other.bundle.version='2.0.26';
+  await expect(other.runtime.bootstrapOpenCodeAtStartup()).rejects.toMatchObject({code:'bundle_upgrade_required',message:expect.stringContaining('OpenCode 2.0.26 must be upgraded to 2.0.30')});
+  expect(other.native.start).not.toHaveBeenCalled();
+  const f=fixture();f.bundle.version='2.0.30';
+  await f.runtime.bootstrapOpenCodeAtStartup();
+  expect(f.native.start).toHaveBeenCalledTimes(1);expect(f.state.openCodeVersion).toBe('2.0.30');
+ }finally{recordStartupBundleUpgradeFailure(null);}
+ const f=fixture();f.bundle.version='2.0.30';
+ await expect(f.runtime.bootstrapOpenCodeAtStartup()).rejects.toMatchObject({code:'bundle_upgrade_required'});
+});
 it('a supported runtime below the version pin refuses before launch and names the recorded startup upgrade failure',async()=>{
  const f=fixture();f.bundle.version='2.0.20';
  await expect(f.runtime.bootstrapOpenCodeAtStartup()).rejects.toMatchObject({code:'bundle_upgrade_required',message:expect.stringContaining('OpenCode 2.0.20 must be upgraded to 2.0.32')});
