@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { resolveSqliteDriver } from '../db-maintenance-core.js';
+import { TARGET_OPENCODE_VERSION } from '../version-policy.js';
 
 const fail = () => Object.assign(new Error('bundle_v2_upgrade_compatibility_required'), { code: 'bundle_v2_upgrade_compatibility_required', status: 503 });
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -20,6 +21,15 @@ export const REVIEWED_NATIVE_CLONE_REBUILDS = Object.freeze({
 const reviewedGraph = manifest => manifest.inputs?.coreDigest === REVIEWED_NATIVE_CLONE_RELEASES[manifest.opencodeVersion]
   || Object.hasOwn(REVIEWED_NATIVE_CLONE_REBUILDS, manifest.opencodeVersion)
     && manifest.inputs?.coreDigest === REVIEWED_NATIVE_CLONE_REBUILDS[manifest.opencodeVersion];
+/** A production build must be the host's pinned release with a reviewed core
+ * graph; otherwise installed apps could not clone into it at startup. Record a
+ * new digest only after qualifying the upgrade from the previous release. */
+export function assertReviewedNativeCoreDigest(manifest, target = TARGET_OPENCODE_VERSION) {
+  const digest = manifest?.inputs?.coreDigest;
+  if (manifest?.opencodeVersion !== target || !reviewedGraph(manifest)) throw Object.assign(
+    new Error(`Native build OpenCode ${manifest?.opencodeVersion} core digest ${digest} is not the reviewed graph for ${target}`),
+    { code: 'native_core_digest_unreviewed', detail: { opencodeVersion: manifest?.opencodeVersion ?? null, target, coreDigest: digest ?? null } });
+}
 // 2.0.26 adds the data-only migration 20261007190000_azure_cli_external_credential,
 // whose `external` credential values older releases cannot decode. The DDL layout
 // is unchanged, so a clone never moves a database to a lower migration level.

@@ -258,6 +258,11 @@ describe('release workflow', () => {
     assert.equal(packaging.env.CSC_IDENTITY_AUTO_DISCOVERY, 'false');
     assert.match(packaging.run, /-c\.mac\.identity=null -c\.mac\.notarize=false -c\.dmg\.sign=false/);
 
+    // Nothing publishes until the packaged candidate upgrades a profile aged by the previous releases.
+    assert.ok(workflow.jobs.publish.needs.includes('upgrade-check'));
+    assert.match(workflow.jobs.publish.if, /needs\.upgrade-check\.result == 'success'/);
+    assert.ok(workflow.jobs['upgrade-check'].steps.some((step) => step.run?.startsWith('node scripts/qa/release-upgrade-lane.mjs --candidate-artifacts ')));
+
     const steps = workflow.jobs.publish.steps;
     const index = (name) => steps.findIndex((step) => step.name === name);
     const upload = index('Check the DMG and attach it to the draft');

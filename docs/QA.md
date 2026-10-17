@@ -97,6 +97,14 @@ node scripts/qa/first-launch-smoke.mjs --package-evidence <abs package-evidence.
 
 Provisions the first native bundle on a private HOME, one launch at a time. Scenarios: `owner-shaped` (synthetic v1 tree: 8 project records, 608 plans, Finder files, fake `qa-fixture-*` keys), `v200-half-seed` and `v200-selected` (both need `--v200-source <abs v2.0.0 checkout with node_modules>`; `v200-selected` accepts `--v200-artifacts <dir>`). Other flags: `--timeout-ms`, `--keep-runtime`, `--shell-exports` (checks the app ignores `OPENCODE_*`/`DEVRYAN_RUNTIME_BUNDLE_ROOT` exported by login shell files). PASS requires the loopback app document, `/api/health` `ok` with `isOpenCodeReady`, and `selection.json`; the v1 source tree must be unchanged. FAIL is the first `[electron] startup failed`, the startup or recovery page, an exit, or the timeout. A pre-2.0.0 package is expected to fail `owner-shaped` with `native_setup_json_invalid`.
 
+### Release upgrade lane
+
+```sh
+node scripts/qa/release-upgrade-lane.mjs --candidate-artifacts <abs native runtime dir> [--chain v2.0.12,v2.0.15,v2.1.0]
+```
+
+Headless, no Electron. It ages one private profile through the previous published releases, oldest first (default: the newest three, from `gh release list`). Each release's own source (`git archive` of its tag, `bun install`) starts its server against the native runtime from its published DMG. That runs the release's own provisioning or startup upgrade, then creates one session and deletes another. Finally this checkout's server cold-starts with the candidate runtime (`packages/web/runtime/darwin-arm64` locally; in `release.yml` the packaged DMG's `revert-runtime`). PASS requires the candidate upgrade to apply, the candidate to be the selected bundle, the production verifier and native readiness to pass, every kept session to survive and every deleted one to stay gone. A refused upgrade in an older hop is recorded, not failed: installed users stay on the runtime it left. Needs `gh` auth, `hdiutil`, Bun and network; the run root is under `scratchParent('release-upgrade')` and is removed unless `--keep-artifacts`.
+
 ### Packaged service smoke
 
 ```sh

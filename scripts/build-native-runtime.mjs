@@ -297,6 +297,8 @@ try {
   for(const source of buildSources)if(hash(await fs.readFile(path.join(repository,source.path)))!==source.sha256)throw new Error('Native build helper changed');
   if(hash(await fs.readFile(path.join(repository,'bun.lock')))!==hash(lockBytes))throw new Error('Native build lock changed');
   const manifest={schema:1,buildId,...identity,files,acceptedLauncher:{path:launcher}};
+  // The released artifact must be the reviewed core graph installed apps can clone into.
+  if(replaceProduction){const {assertReviewedNativeCoreDigest}=await import('../packages/web/server/lib/opencode/runtime-host/native-bundle-compatibility.js');assertReviewedNativeCoreDigest(manifest);}
   await fs.writeFile(path.join(stage,'native-bundle.json'),JSON.stringify(manifest,null,2)+'\n');
   await fs.rm(path.join(stage,'inventory'),{recursive:true,force:true});
   await fs.rm(path.join(stage,'configuration-inventory'),{recursive:true,force:true});

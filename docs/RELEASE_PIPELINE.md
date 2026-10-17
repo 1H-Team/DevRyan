@@ -18,7 +18,7 @@ Only tags matching `vX.Y.Z` trigger a release.
 
 ```
 admit ──┬─ web ─────────────────────────────────────────┐
-        ├─ electron-prepare ────────────────────────────┼─ electron-package ── publish
+        ├─ electron-prepare ────────────────────────────┼─ electron-package ── upgrade-check ── publish
         └─ bot-resolve ── bot-build (changed only) ── bot-publish ─┘
 ```
 
@@ -26,14 +26,15 @@ admit ──┬─ web ───────────────────
 | --- | --- |
 | `admit` | Checks that the tag, every version file and `bun.lock` agree, and that `CHANGELOG.md` has notes for the version. Fails if `vX.Y.Z` is already published. Otherwise it creates the draft, or reuses an unpublished draft for the same tag (retargeted, notes rewritten, earlier assets removed). Dry runs make no writes. |
 | `web` | `type-check:ui`, `build:web`, `bundle:check`, then hands `packages/web/dist` to packaging. |
-| `electron-prepare` | Installs darwin dependencies, restores the reviewed Claude executable (`scripts/hydrate-reviewed-claude.mjs`), builds the native v2 runtime, native helpers and the main bundle, rebuilds native bindings, and exports the prepared tree. |
+| `electron-prepare` | Installs darwin dependencies, restores the reviewed Claude executable (`scripts/hydrate-reviewed-claude.mjs`), builds the native v2 runtime (which refuses a core digest outside `REVIEWED_NATIVE_CLONE_RELEASES` for the host pin), native helpers and the main bundle, rebuilds native bindings, and exports the prepared tree. |
 | `bot-resolve` | Hashes each Bot image's inputs and reuses the signed `:in-<digest>` image when it exists and verifies. Lists the images that need building. |
 | `bot-build` | One job per changed image: multi-platform build, push, keyless cosign signature, and the `:in-<digest>` input tag. Skipped when nothing changed. |
 | `bot-publish` | Assembles `DevRyan-bot-runtime-images-<version>.json`, checks anonymous pulls, and smokes the isolated production topology. |
 | `electron-package` | Packages the app with the Bot manifest and runs static checks: Cursor SDK binaries, packaged orchestration config, packaged Bot manifest, and Info.plist usage descriptions. Uploads the DMG. |
+| `upgrade-check` | Ages a private profile through the newest three published releases (each release's own server and DMG runtime, with a session created and one deleted), then cold-starts the packaged candidate runtime with this commit's server. Fails unless the startup upgrade applies, the verifier and native readiness pass and session history survives (`scripts/qa/release-upgrade-lane.mjs`, [QA](QA.md#release-upgrade-lane)). |
 | `publish` | Checks the DMG against the allowlist and that the tag still points at this run's commit, then uploads it to the draft. Deploys and verifies the hosted Supabase configuration and migrations, publishes the draft, and polls `/releases/latest` until the shipped `discoverDesktopUpdate` (`packages/electron/desktop-updater.mjs`) finds the DMG with the uploaded size and SHA-256. |
 
-That is 7 checks plus one per changed Bot image. A release with unchanged Bot inputs takes about 10 minutes.
+That is 8 checks plus one per changed Bot image.
 
 `scripts/release.mjs` holds the GitHub Release steps (`admit`, `upload`, `publish`). `scripts/release-ci.mjs` holds the artifact handoffs (`web-describe`, `web-stage`, `prepare-export`, `prepare-import`) and the Bot image steps (`image-resolve`, `image-plan`, `image-sign`, `image-assemble`). Every failure throws with its real message, so the job log names the cause.
 

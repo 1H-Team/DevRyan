@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { resolveSqliteDriver } from '../db-maintenance-core.js';
-import { inspectNativeCloneLayout, isReviewedNativeClonePair, REVIEWED_NATIVE_CLONE_RELEASES, REVIEWED_NATIVE_CLONE_LAYOUT,
+import { assertReviewedNativeCoreDigest, inspectNativeCloneLayout, isReviewedNativeClonePair, REVIEWED_NATIVE_CLONE_RELEASES, REVIEWED_NATIVE_CLONE_LAYOUT,
   REVIEWED_NATIVE_FRESH_CLONE_LAYOUT, REVIEWED_NATIVE_CLONE_MIGRATION_LEVEL, REVIEWED_NATIVE_CLONE_REBUILDS, REVIEWED_NATIVE_PROJECT_ARCHIVE_CLONE_LAYOUT,
   REVIEWED_NATIVE_PROJECT_ARCHIVE_FRESH_CLONE_LAYOUT, reviewedNativeCloneSourceLayout, verifyNativeCloneCompatibility } from './native-bundle-compatibility.js';
 
@@ -139,4 +139,15 @@ test('the exact rebuilt 2.0.26 graph upgrades while unknown rebuilds refuse', ()
   const source = { ...manifest('2.0.26'), inputs: { coreDigest: REVIEWED_NATIVE_CLONE_REBUILDS['2.0.26'] } };
   expect(isReviewedNativeClonePair(source, manifest('2.0.30'), REVIEWED_NATIVE_FRESH_CLONE_LAYOUT)).toBe(true);
   expect(isReviewedNativeClonePair({ ...source, inputs: { coreDigest: 'a'.repeat(64) } }, manifest('2.0.30'), REVIEWED_NATIVE_FRESH_CLONE_LAYOUT)).toBe(false);
+});
+
+test('a production build must carry the reviewed core graph of the host pin', async () => {
+  const { TARGET_OPENCODE_VERSION } = await import('../version-policy.js');
+  expect(Object.hasOwn(REVIEWED_NATIVE_CLONE_RELEASES, TARGET_OPENCODE_VERSION)).toBe(true);
+  expect(() => assertReviewedNativeCoreDigest(manifest(TARGET_OPENCODE_VERSION))).not.toThrow();
+  expect(() => assertReviewedNativeCoreDigest({ ...manifest('2.0.26'), inputs: { coreDigest: REVIEWED_NATIVE_CLONE_REBUILDS['2.0.26'] } }, '2.0.26')).not.toThrow();
+  for (const build of [manifest('2.0.30'), { ...manifest(TARGET_OPENCODE_VERSION), inputs: { coreDigest: 'a'.repeat(64) } },
+    { ...manifest(TARGET_OPENCODE_VERSION), inputs: {} }, undefined]) {
+    expect(() => assertReviewedNativeCoreDigest(build)).toThrow(expect.objectContaining({ code: 'native_core_digest_unreviewed' }));
+  }
 });

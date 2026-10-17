@@ -339,9 +339,48 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  publish:
+  upgrade-check:
+    # Installed apps upgrade at their first launch. Age a private profile through
+    # the previous published releases, then cold-start the packaged candidate.
     needs: [admit, electron-package]
     if: ${{ !cancelled() && needs.electron-package.result == 'success' }}
+    runs-on: macos-26
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.admit.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.14'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        env:
+          DEVRYAN_SKIP_INSTALL_PREPARE: '1'
+        run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: DevRyan-macos-arm64-release
+          path: candidate-dmg
+      - name: Extract the packaged candidate runtime
+        run: |
+          set -euo pipefail
+          MOUNT="$RUNNER_TEMP/candidate-mount"
+          mkdir -p "$MOUNT"
+          hdiutil attach -readonly -nobrowse -mountpoint "$MOUNT" "candidate-dmg/DevRyan-${VERSION}-arm64.dmg"
+          ditto "$MOUNT/DevRyan.app/Contents/Resources/revert-runtime/darwin-arm64" "$RUNNER_TEMP/candidate-runtime"
+          hdiutil detach "$MOUNT" -force
+      - name: Upgrade from the previous releases
+        run: node scripts/qa/release-upgrade-lane.mjs --candidate-artifacts "$RUNNER_TEMP/candidate-runtime"
+
+  publish:
+    needs: [admit, electron-package, upgrade-check]
+    if: ${{ !cancelled() && needs.electron-package.result == 'success' && needs.upgrade-check.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: DevRyan Secrets
