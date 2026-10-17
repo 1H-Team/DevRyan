@@ -73,6 +73,20 @@ describe('managed agent-browser installer', () => {
     expect(recording.ensureInstalled).toHaveBeenLastCalledWith({ repair: true });
   });
 
+  it('does not hold managed setup on a slow recording download', async () => {
+    const dataRoot = makeTemporaryDirectory();
+    writeInstalledPackage(join(dataRoot, 'tools', 'agent-browser'));
+    const unavailable = { ok: false, state: 'unavailable', issues: [{ code: 'ffmpeg-not-ready', message: 'not ready' }] };
+    let finishDownload;
+    const download = new Promise(resolve => { finishDownload = resolve; });
+    const recording = { status: vi.fn(async () => unavailable), ensureInstalled: vi.fn(() => download) };
+    const installer = createAgentBrowserInstaller({ dataRoot, platform: 'darwin', arch: 'arm64', recordingInstaller: recording,
+      bunExecutable: writeFakeBun(makeTemporaryDirectory()), runCommand: async () => ({ ok: true, stdout: '' }) });
+    expect(await installer.ensureInstalled()).toMatchObject({ ok: true, state: 'ready', recording: unavailable });
+    expect(recording.ensureInstalled).toHaveBeenCalledWith();
+    finishDownload(unavailable);
+  });
+
   it('resolves every packaged platform binary name', () => {
     expect(resolveAgentBrowserBinaryName({ platform: 'darwin', arch: 'arm64' }))
       .toBe('agent-browser-darwin-arm64');

@@ -310,6 +310,7 @@ const branchPreviewCredentialsByPartition = new Map();
 let browserPartitionRegistryWrite = Promise.resolve();
 const NATIVE_BROWSER_AUTH_CACHE_MS = 5_000;
 const NATIVE_BROWSER_REVALIDATE_MS = 10_000;
+const MANAGED_BROWSER_SETUP_WAIT_MS = 10_000;
 let nativeBrowserRevalidationTimer = null;
 
 const quitRisk = emptyQuitRisk();
@@ -1191,6 +1192,9 @@ const startLocalServer = async () => {
             state.agentBrowserSkillStatus = state.agentBrowserInstallStatus?.ok
               ? await state.agentBrowserSkillProvisioner?.()
               : await state.agentBrowserSkillWithdrawer?.();
+            const issueCodes = [...(state.agentBrowserInstallStatus?.issues ?? []),
+              ...(state.agentBrowserInstallStatus?.recording?.issues ?? [])].map((issue) => issue?.code).filter(Boolean);
+            if (issueCodes.length) log.warn('[agent-browser] managed setup issues', { codes: issueCodes });
           } catch (error) {
             state.agentBrowserInstallStatus = {
               ...(state.agentBrowserInstallStatus || {}),
@@ -1211,7 +1215,17 @@ const startLocalServer = async () => {
           state.agentBrowserSetupPromise = null;
         });
       }
-      await state.agentBrowserSetupPromise;
+      // Runtime startup waits for this, so a slow install or repair continues in
+      // the background and this launch runs without browser automation.
+      let setupTimer;
+      const settled = await Promise.race([
+        state.agentBrowserSetupPromise.then(() => true),
+        new Promise((resolve) => { setupTimer = setTimeout(() => resolve(false), MANAGED_BROWSER_SETUP_WAIT_MS); }),
+      ]).finally(() => clearTimeout(setupTimer));
+      if (!settled) {
+        log.warn('[agent-browser] managed setup still running; starting without browser automation', { waitMs: MANAGED_BROWSER_SETUP_WAIT_MS });
+        return {};
+      }
       const binaryPath = state.agentBrowserInstallStatus?.binaryPath;
       if (state.agentBrowserInstallStatus?.ok !== true
         || !state.browserCdpDiscoveryUrl

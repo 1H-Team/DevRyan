@@ -2305,7 +2305,7 @@ export const useConfigStore = create<ConfigStore>()(
                             if (signal?.aborted) return;
                             console.error("Failed to initialize app:", error);
                             const message = error instanceof Error && error.name === 'TimeoutError'
-                                ? 'OpenCode did not become ready within two minutes.'
+                                ? 'OpenCode did not finish starting in time.'
                                 : error instanceof Error ? error.message : String(error);
                             set({
                                 isInitialized: false,

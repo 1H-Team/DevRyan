@@ -63,6 +63,7 @@ import {
   type StartupReadinessSummary,
 } from '@/lib/startup/readiness';
 import { warmAgentRuntime } from '@/lib/startup/agent-runtime-warmup';
+import { STARTUP_PROGRESS_TIMEOUT_MS, watchStartupRecovery } from '@/lib/startup/health';
 import { warmChatRuntime } from '@/lib/startup/chat-runtime-warmup';
 import { primeWorktreeBootstrap } from '@/lib/worktrees/worktreeBootstrap';
 import { useAgentRuntimeWarmupStore } from '@/stores/useAgentRuntimeWarmupStore';
@@ -677,7 +678,8 @@ function HostApp({ apis }: AppProps) {
     const controller = new AbortController();
     initializationControllerRef.current = controller;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
-    const deadline = performance.now() + 120_000;
+    let connectedOnce = false;
+    let deadline = performance.now() + STARTUP_PROGRESS_TIMEOUT_MS;
     setInitRetryExhausted(false);
     setOpenCodeFailureDetail(null);
 
@@ -690,6 +692,12 @@ function HostApp({ apis }: AppProps) {
 
       const next = useConfigStore.getState();
       if (controller.signal.aborted || next.isInitialized) return;
+      // A slow startup may have used the whole window; loading after the host
+      // answered still gets its own retry budget.
+      if (next.isConnected && !connectedOnce) {
+        connectedOnce = true;
+        deadline = Math.max(deadline, performance.now() + STARTUP_PROGRESS_TIMEOUT_MS);
+      }
       if (!next.initializationRetryable || performance.now() >= deadline) {
         setOpenCodeFailureDetail(next.initializationRetryable ? null : next.initializationLoadError ?? null);
         setInitRetryExhausted(true);
@@ -717,6 +725,16 @@ function HostApp({ apis }: AppProps) {
     if (!initRetryExhausted) return;
 
     dismissInitialLoadingElement();
+  }, [initRetryExhausted]);
+
+  React.useEffect(() => {
+    // Only a startup that never reached the host recovers on its own; failures
+    // after connecting (providers, agents) stay on the Retry screen.
+    if (!initRetryExhausted || useConfigStore.getState().isConnected) return;
+    const controller = new AbortController();
+    void watchStartupRecovery((signal) => opencodeClient.readHealth({ signal }), { signal: controller.signal })
+      .then(() => setInitRetryEpoch((value) => value + 1), () => {});
+    return () => controller.abort();
   }, [initRetryExhausted]);
 
   React.useEffect(() => {

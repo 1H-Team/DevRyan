@@ -599,7 +599,12 @@ The web entry logs `bundle_preparation` and `application_import` before the
 journal owner exists. Native launch logs consecutive `native_settlement`,
 `native_verification`, `native_configuration_sync`, `native_configuration`,
 `native_controller`, `native_recovery`, and `native_open` durations through
-`../startup-timing.js`. These records contain fixed phase names, monotonic
+`../startup-timing.js`. Inside `native_configuration`, the nested
+`native_configuration_locations`, `native_configuration_snapshot` and
+`native_configuration_browser` spans time project locations, the configuration
+snapshot and the managed browser environment. Electron bounds that browser wait
+at 10 seconds and repairs recording (FFmpeg) in the background, so an optional
+download never holds startup. These records contain fixed phase names, monotonic
 elapsed milliseconds and completion/failure outcomes only. Existing journal
 startup/failure records and recovery ordering remain authoritative. The timings
 are observations, never readiness or integrity shortcuts.

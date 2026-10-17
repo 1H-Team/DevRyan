@@ -1,7 +1,7 @@
 import { createNativePlanSettlementVerifier } from './native-plan-settlement.js';
 import { createNativePlanDenialOwner } from './native-plan-denial-owner.js';
 import { createNativeManagedTitleOwner } from './native-managed-title-owner.js';
-import { startStartupTiming } from '../startup-timing.js';
+import { startStartupTiming, timeStartupPhase } from '../startup-timing.js';
 import { artifactDiagnostic } from '@openchamber/shared-runtime/startup-diagnostics.js';
 import {captureNativeSetupCredentialSeed} from './native-setup-credential-ack.js';
 import {nativeBundleFileOperations} from './native-bundle-file-operations.js';
@@ -511,8 +511,8 @@ export function createNativeRuntimeOwner(options) {
       await beforeConfiguration?.();
       nextStage('configuration');
       const recoveredSessionIDs=await recoveredInputs.install(instanceID);
-      await bundle.refreshLocations?.();
-      configurationSnapshot = await bundle.resolveConfiguration?.(++configurationRevision);
+      await timeStartupPhase('native_configuration_locations', async () => bundle.refreshLocations?.());
+      configurationSnapshot = await timeStartupPhase('native_configuration_snapshot', async () => bundle.resolveConfiguration?.(++configurationRevision));
       if(configurationSnapshot&&JSON.stringify(configurationSnapshot.locations.map(location=>location.directory))!==JSON.stringify(bundle.locations.map(location=>location.directory)))throw fail('native_configuration_sources_changed');
       slim=configurationSnapshot&&bundle.reviewedConfiguration?createNativeSlimOwner({admissionOwner:nativeOwner,openCodeClient,
         configurationSnapshot,locations:bundle.locations,configDirectory:descriptor.launch.opencodeConfigDirectory,ponytailInstructions:bundle.reviewedConfiguration.ponytailInstructions}):undefined;
@@ -534,7 +534,8 @@ export function createNativeRuntimeOwner(options) {
         documents=createNativeDocumentRuntime({admissionOwner:nativeOwner,documentOwner,reviewedConfiguration:bundle.reviewedConfiguration,
           readUserAttachments,locations:configurationSnapshot.locations,origin:{kind:'plugin',...documentOrigin}});
       }else documents=undefined;
-      reviewedBrowser = browserOrigin ? await readNativeBrowserAssets(await options.getManagedBrowserEnvironment?.()) : undefined;
+      reviewedBrowser = browserOrigin ? await timeStartupPhase('native_configuration_browser',
+        async () => readNativeBrowserAssets(await options.getManagedBrowserEnvironment?.())) : undefined;
       const privateEnvironment = await bridge.start();
       const globals = descriptor.launch.global;
       nativeInstanceID = instanceID;

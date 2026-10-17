@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { parseStartupHealth, waitForStartupHealth, type StartupHealthSnapshot } from './health';
+import { parseStartupHealth, waitForStartupHealth, watchStartupRecovery, type StartupHealthSnapshot } from './health';
 
 const health = (state: 'starting' | 'ready' | 'failed', attempt = 1): StartupHealthSnapshot => ({
   ready: state === 'ready', runtimeIdentity: 'host:1', error: state === 'failed' ? 'Native bootstrap failed' : null,
@@ -37,6 +37,32 @@ describe('startup health polling', () => {
   test('bounds a continuously unavailable host', async () => {
     await expect(waitForStartupHealth(async () => null, { ...options(), timeoutMs: 10 }))
       .rejects.toMatchObject({ name: 'TimeoutError' });
+  });
+
+  test('keeps waiting past the progress window while the host reports starting', async () => {
+    const sequence: (StartupHealthSnapshot | null)[] = Array.from({ length: 40 }, () => health('starting'));
+    sequence.push(health('ready'));
+    let calls = 0;
+    // 40 polls at >=1 ms each outlive a 10 ms window only because each one reports progress.
+    await waitForStartupHealth(async () => {
+      await new Promise(resolve => setTimeout(resolve, 1));
+      return sequence[calls++] ?? null;
+    }, { ...options(), timeoutMs: 10, maxTimeoutMs: 5_000 });
+    expect(calls).toBe(41);
+  });
+
+  test('still expires when the host stops reporting progress', async () => {
+    let calls = 0;
+    await expect(waitForStartupHealth(async () => (calls++ < 3 ? health('starting') : null),
+      { ...options(), timeoutMs: 20, maxTimeoutMs: 5_000 })).rejects.toMatchObject({ name: 'TimeoutError' });
+    expect(calls).toBeGreaterThan(3);
+  });
+
+  test('caps a startup that reports progress forever', async () => {
+    const startedAt = performance.now();
+    await expect(waitForStartupHealth(async () => health('starting'), { ...options(), timeoutMs: 10, maxTimeoutMs: 60 }))
+      .rejects.toMatchObject({ name: 'TimeoutError' });
+    expect(performance.now() - startedAt).toBeLessThan(1_000);
   });
 
   test('aborts an old owner and ignores its late ready response after retry', async () => {
@@ -86,4 +112,21 @@ test('artifact diagnostics survive health parsing and a terminal failure without
     diagnostic: snapshot?.startup?.diagnostic,
   });
   expect(failure.message).toContain('code signature');
+});
+
+describe('startup recovery after the Retry screen', () => {
+  test('resolves once a late host reports ready', async () => {
+    const sequence = [null, health('starting'), health('ready')];
+    let calls = 0;
+    await watchStartupRecovery(async () => sequence[calls++] ?? null,
+      { signal: new AbortController().signal, intervalMs: 1, requestTimeoutMs: 5 });
+    expect(calls).toBe(3);
+  });
+
+  test('stops when its owner aborts', async () => {
+    const controller = new AbortController();
+    const watching = watchStartupRecovery(async () => health('starting'), { signal: controller.signal, intervalMs: 1 });
+    setTimeout(() => controller.abort(), 10);
+    await expect(watching).rejects.toMatchObject({ name: 'AbortError' });
+  });
 });

@@ -77,7 +77,7 @@ An Error Log event UUID is an administrative locator, not an execution record.
 
 ### Desktop runtime ownership after restart
 
-Separate the Electron window, the web listener, the native runtime and usable chat. `/health` and `/api/health` expose `openCodeStartup` with `state` (`idle`, `starting`, `ready`, `failed`), `attempt` and a bounded `code`. A failed attempt is terminal until recovery starts a new one; a listening web server alone does not mean OpenCode is ready. The UI polls once a second with a three-second request timeout and a 120-second overall deadline.
+Separate the Electron window, the web listener, the native runtime and usable chat. `/health` and `/api/health` expose `openCodeStartup` with `state` (`idle`, `starting`, `ready`, `failed`), `attempt` and a bounded `code`. A failed attempt is terminal until recovery starts a new one; a listening web server alone does not mean OpenCode is ready. The UI polls once a second with a three-second request timeout. It gives up after 120 seconds without progress; each snapshot that reports `starting` restarts that window, up to 10 minutes in total. After it gives up, the Retry screen keeps checking every five seconds and continues by itself once the host reports ready.
 
 Startup logs:
 
@@ -104,5 +104,5 @@ The entrypoint binds the selected native bundle before importing data owners. Th
 
 - `retryRuntimeServiceConnection` bounds the foreground connection at 20 seconds, extended to 60 only while the service is still booting. A stale descriptor triggers one guarded ownership check: only proved stopped or missing ownership ends the wait early. Each attempt gets the retry's absolute deadline; bootstrap and lease HTTP requests abort after five seconds or the remaining deadline.
 - Recovery unregisters, proves the owner stopped again, and acquires exclusively before persisting app-bound mode. Phase logs report each step with elapsed milliseconds and allowlisted failure codes.
-- Startup health owner: `packages/ui/src/lib/startup/health.ts` validates the optional host startup snapshot and polls health every second (three-second request deadline, two-minute overall deadline). `useConfigStore.initializeApp` deduplicates it before loading providers and agents; `App` cancels old owners on retry or unmount, and terminal failures reach the Retry screen. Older health servers stay compatible.
+- Startup health owner: `packages/ui/src/lib/startup/health.ts` validates the optional host startup snapshot and polls health every second (three-second request deadline, 120-second window without progress, 10-minute cap while the host reports `starting`). `useConfigStore.initializeApp` deduplicates it before loading providers and agents; `App` cancels old owners on retry or unmount, and terminal failures reach the Retry screen. Older health servers stay compatible.
 - `bun run test:startup` covers these contracts (see [TESTING.md](TESTING.md)).

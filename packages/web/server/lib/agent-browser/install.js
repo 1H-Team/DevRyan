@@ -433,7 +433,7 @@ export const createAgentBrowserInstaller = (options = {}) => {
     };
   };
 
-  const mutate = ({ repair = false } = {}) => {
+  const mutate = ({ repair = false, awaitRecording = true } = {}) => {
     if (mutationPromise) return mutationPromise;
     mutationPromise = (async () => {
       const before = await status();
@@ -566,19 +566,22 @@ export const createAgentBrowserInstaller = (options = {}) => {
           ],
         };
       }
-    })().then(async (browser) => ({
-      ...browser,
-      recording: browser.ok
-        ? await recordingInstaller.ensureInstalled({ repair })
-        : await recordingInstaller.status(),
-    })).finally(() => {
+    })().then(async (browser) => {
+      if (!browser.ok) return { ...browser, recording: await recordingInstaller.status() };
+      if (awaitRecording) return { ...browser, recording: await recordingInstaller.ensureInstalled({ repair }) };
+      // Recording is optional. Runtime startup must not wait on its download,
+      // so a missing or unverified FFmpeg is repaired in the background.
+      const recording = await recordingInstaller.status();
+      if (!recording.ok) void recordingInstaller.ensureInstalled().catch(() => {});
+      return { ...browser, recording };
+    }).finally(() => {
       mutationPromise = null;
     });
     return mutationPromise;
   };
 
   const install = () => mutate({ repair: false });
-  const ensureInstalled = () => mutate({ repair: false });
+  const ensureInstalled = () => mutate({ repair: false, awaitRecording: false });
   const repair = () => mutate({ repair: true });
 
   return {
