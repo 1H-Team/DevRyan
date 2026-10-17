@@ -4,9 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-10-17
+
 - Fix startup failing with `bundle_v2_upgrade_compatibility_required` after updating to 2.1.0. The upgrade gate compared database DDL text, so a database first created by 2.0.26 or earlier and migrated by 2.0.30 never matched the reviewed fresh 2.0.30 layout. It now compares the database structure, measured from actual controller databases.
 - Fix the retained runtime failing verification with `bundle_message_reference_lost` after a sub-agent session was deleted. A finished orchestration task's references belong to its child session, and a lost one is reported instead of refusing launch.
 - A refused runtime upgrade no longer locks the app out when the OpenCode version changed. The app opens on the retained older reviewed runtime with a notice, and retries the upgrade at the next start.
+- Releases now qualify the startup upgrade before publishing: a headless check ages a profile through the previous three published releases, then cold-starts the packaged candidate. The native build refuses an unreviewed OpenCode core graph.
 
 ## [2.1.0] - 2026-10-17
 
