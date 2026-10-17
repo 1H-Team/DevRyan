@@ -14,14 +14,11 @@ runtime.
    attaches runtime observations to completed assistant messages and step-finish
    events. `packages/harness-runtime/lib/usage.js` reconciles retained evidence;
    existing diagnostic exports include `DevRyan-usage.json`.
-2. `scripts/qa/cache-wire-evidence.mjs`, `cache-wire-observer.mjs`,
-   `cache-wire-plugin.mjs` and `cache-serializer-probe.mjs` own disposable final-wire
-   observation and actual-adapter fixtures. They are not imported by shipped
-   configuration. The default-only plugin entrypoint avoids OpenCode invoking
-   exported test helpers as plugin factories.
+2. The disposable final-wire observation tools (`cache-wire-*`, `cache-serializer-probe`)
+   were removed from `scripts/qa`; recover them from git history before the
+   app-cleanup commit if a new study needs them.
 3. `packages/shared-runtime/lib/cache-efficiency-policy.js` owns route qualification.
-   The repository-only `cache-title-plugin.mjs`, `cache-efficiency-experiments.mjs`
-   and `cache-pair-runner.mjs` implement gated experiments. All flags default off.
+   The repository-only gated experiment scripts were removed with the study tooling.
 
 ## Accounting semantics
 
@@ -112,13 +109,6 @@ the [provider's documented ticks](https://docs.x.ai/developers/cost-tracking) to
 USD with provider-billed provenance. An OAuth-shaped response does not establish
 subscription billing; its cost provenance remains unknown.
 
-Read an existing journal without initializing, pruning or modifying it:
-
-```sh
-node scripts/qa/cache-usage-report.mjs .cache/qa/OWNED_RUN/journal
-node scripts/qa/cache-usage-report.mjs .cache/qa/OWNED_RUN/journal .cache/qa/OWNED_RUN/cache-wire.ndjson
-```
-
 For a companion execution-cost baseline, run the owned QA server with
 `DEVRYAN_EXECUTION_SUMMARY_MIN_MS=0`, which journals every dispatch's phase
 summary. Add `DEVRYAN_EXECUTION_TRACE=1` to capture companion worker milestones
@@ -141,8 +131,7 @@ Initialize a study once with `initializeCacheStudy({ runtimeRoot, home,
 runtimeVersion, routes })`. Each route has a unique `id`, `provider`, `model`,
 `auth`, `transport`, exact `origin` and inference `path`. Sol and Astra may share
 an endpoint while retaining separate model budgets. Register at most four routes.
-Load the `file://` URL of `scripts/qa/cache-wire-plugin.mjs` only in that profile,
-with `DEVRYAN_QA_RUNTIME_ROOT` and `DEVRYAN_QA_HOME` pointing at its owned paths.
+The removed wire plugin was loaded only in that profile, with `DEVRYAN_QA_RUNTIME_ROOT` and `DEVRYAN_QA_HOME` pointing at its owned paths.
 Initialization uses exclusive creation; a restart must reuse the study.
 Any profile containing a non-loopback endpoint requires a shared parent campaign,
 independent of its evidence label. Qualification and admission use the same
@@ -187,7 +176,7 @@ claim requiring actual-route evidence; a configuration field cannot prove it.
 
 ## Budgets and experiments
 
-`cache-study.mjs` uses a cross-process lock and fsynced atomic ledger. Every
+The removed `cache-study.mjs` used a cross-process lock and fsynced atomic ledger. Every
 observed attempt is reserved before fetch, including failed requests and retries.
 Reservations are never refunded or moved between routes: at most 160 overall,
 40 per route, 16 for A/A and 24 for title trials. A/A uses six pairs and leaves four
@@ -261,15 +250,8 @@ No OpenAI explicit-breakpoint or Anthropic boundary/retention experiment is enab
 ## Verification and evidence limits
 
 Deterministic tests use synthetic usage and disposable files. Run the owning
-shared/harness tests and `node --test scripts/qa/cache-wire-observer.test.mjs`.
-The opt-in actual serializer probe requires an explicitly supplied installed
-binary and sends only loopback synthetic requests:
-
-```sh
-node scripts/qa/cache-serializer-probe.mjs /absolute/path/to/opencode
-```
-
-It checks the installed adapters on two turns for Sol, Astra and Grok, native normalized usage, byte-level
+shared/harness tests. The removed opt-in serializer probe used an explicitly
+supplied installed binary and only loopback synthetic requests; it checked the installed adapters on two turns for Sol, Astra and Grok, native normalized usage, byte-level
 prefix hashes, response model, observer/endpoint/reservation count agreement and
 owned-process cleanup. Existing `meridian-prefix.mjs` retains the independent
 Anthropic native history/tool-result fixture. None of these fixtures establishes

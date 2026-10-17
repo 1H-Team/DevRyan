@@ -126,12 +126,6 @@ Private credential-free fixture profiles. Defaults: three runs of `idle`, `one-s
 
 ## Configured live-provider smoke
 
-```sh
-DEVRYAN_QA_LIVE_ORIGIN=http://127.0.0.1:PORT node scripts/qa/live.mjs
-```
-
-Two minimal real-provider requests through an existing loopback DevRyan host (it never discovers or stops the user's app). It signs in with the password-free administrator login, uses the host's default OpenAI model and Builder agent in an isolated Git workspace, verifies a completed answer, a second streamed answer, SSE reconnect and cancel, then deletes only its own session. This is HTTP/host acceptance, not UI acceptance. Record the host version with the result, and do not rerun it in place of investigating a deterministic failure.
-
 `bun scripts/qa/provider-access-smoke.mjs --allow-live <bundle-root> <output> [openai|xai]` sends one short direct request per provider using the current token in memory (OpenAI also three tool-bearing requests). It uses real provider credentials: only run it when the user has authorized it for that provider.
 
 ## Investigations

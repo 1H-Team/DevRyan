@@ -129,43 +129,4 @@ handling without calling a provider; live model results must be reported separat
 
 ## Duplicate-output acceptance
 
-Run the isolated real-runtime loopback probe against each supported build:
-
-```sh
-node scripts/qa/cache-serializer-probe.mjs /absolute/path/to/opencode --duplicates
-```
-
-The probe uses the existing repository SDK, private homes and synthetic requests; it never reads installed-app history or provider credentials. It verifies off/on request sizes, no-duplicate controls, native-pruned anchors, later bundled hooks, canonical history, two manual summaries, automatic compaction and hook ordering. Raw bodies are inspected only in memory; the retained report contains sizes, fixture identities and checks. Synthetic token usage exercises native compaction and is not provider usage or cost evidence. Unit tests additionally exercise cancellation/failure, concurrent sessions, model switches, capability backoff and ordinary headroom preservation.
-
-Live behavior is a separate gate in `scripts/qa/duplicate-behavior.mjs`. Supply ten distinct matched live trials per proposed profile, five skill-reuse and five managed-result-continuity pairs, with independent grading and report hashes. Require no critical continuity failures, repeated mutations, or increase in same-key repeat-call rate. Missing/incomplete trials fail qualification. Retain failed trials; do not replace them with successful retries. This gate does not alter the existing performance comparator or claim statistical reliability. Store the reviewed acceptance report hash with the exact release profile only after correctness, final-request and live behavior checks all pass.
-
-### Live routes
-
-`scripts/qa/duplicate-live.mjs` picks its wire route from the proposal's `profile.providerID`. The proposal's `profile.transport` must be that route's host-attested transport. Otherwise the runner stops before it creates output, a certificate or a host.
-
-| Provider | Forwarded request | Host-attested `transport` |
-| --- | --- | --- |
-| `openai` | `POST api.openai.com/v1/responses`, Sign in with ChatGPT | `openai-chatgpt-managed-responses-v1` |
-| `xai` | `POST api.x.ai/v1/responses`, xAI OAuth | `xai-oauth-responses-v1` |
-| `anthropic` | Loopback Meridian | None; fails with `unsupported-route:anthropic-meridian` |
-
-The host names the transport in `packages/web/server/lib/opencode/duplicate-provider-route.js`. OpenAI uses the OpenAI OAuth coordinator. xAI reads only the `type` of the `xai` record in OpenCode's `auth.json`, the record OpenCode's xAI plugin uses. API-key xAI names no transport, so its candidate arm cannot qualify. The selected-route `providerHash` covers endpoint overrides.
-
-The wire proxy forwards only the registered route and the proposal's model. The runner waits (bounded) until no forwarded request is in flight before it deletes a trial session or stops an arm: deleting a session aborts its background title request, which on xAI can still be streaming after the reply and would otherwise be recorded as a transport failure. It also forwards the reviewed metadata GETs. It refuses every other CONNECT, including the xAI token endpoint. The copied access-only token must therefore outlive the run. OpenCode's xAI plugin refreshes two minutes before expiry, so admit the credential with a duration check covering the whole run. Run the pilot, then the acceptance, then default verification after promotion:
-
-```sh
-node scripts/qa/duplicate-live.mjs PREPARED_ROOT BOOTSTRAP --pilot
-node scripts/qa/duplicate-live.mjs PREPARED_ROOT BOOTSTRAP
-node scripts/qa/duplicate-live.mjs PREPARED_ROOT BOOTSTRAP --verify-default
-```
-
-`PREPARED_ROOT/proposal.json` holds `{ "profile": { ... } }`: the candidate release profile, including `providerID`, `modelID`, `variant`, `providerHash`, `providerScope: "selected-route"`, `transport`, the runtime identity and the ordered `plugins`. Stage it in the prepared host's private source copy before either arm runs. The result's `wireRoute` records the route used.
-
-Claude through Meridian is not captured. OpenCode sends Anthropic Messages to Meridian on loopback, which `HTTPS_PROXY` never sees, and Meridian's Claude Code child rewrites the upstream request. Qualification would need:
-
-- A loopback capture of the OpenCode-to-Meridian `POST /v1/messages` that forwards bytes unchanged. It must not change the selected provider's configuration, which is part of `providerHash`.
-- A Messages projection that pairs `tool_use` and `tool_result` blocks by `tool_use_id`, not Responses `input` items.
-- Anthropic usage parsing, which `createWireUsageParser` already supports for `anthropic`.
-- A host-attested `anthropic` transport that also binds the Meridian and Claude Code versions.
-
-Report serialized sizes/peak size, transform overhead, compaction count, actual provider input/cache tokens and peak input separately. Unobserved provider metrics remain unknown. Do not infer monetary savings. Historical replacement-array estimates do not establish provider savings.
+The isolated serializer probe, live behaviour gate and wire-proxy runner for duplicate-output acceptance were removed from `scripts/qa` (app cleanup); recover them from git history if a new acceptance run is needed. The host-side route contract stays in `packages/web/server/lib/opencode/duplicate-provider-route.js`.

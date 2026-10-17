@@ -821,8 +821,7 @@ and keeps selection/send/queue variant values unchanged. Catalog enrichment
 preserves unchanged object references and never merges metadata into options.
 
 Regression coverage lives in the handoff, HTTP-hotfix, model-default-thinking and
-mounted ModelControls hydration tests. The opt-in isolated live comparison is
-`scripts/qa/meridian-designer-continuity.mjs`.
+mounted ModelControls hydration tests. The opt-in isolated live comparison script was removed in app cleanup.
 
 ## Harness skill discovery
 

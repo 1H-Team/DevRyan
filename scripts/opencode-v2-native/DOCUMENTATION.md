@@ -171,15 +171,6 @@ uses disposable inputs and an explicit constructor-owned local role grant;
 production admission scope/race tests remain separate. This is deterministic
 publication qualification, not live provider or packaged application evidence.
 
-`../perf/managed-result-transport-benchmark.mjs` compares current scalar v1
-compatibility with v2 for the same two retained 35 KiB reports and 256 canonical
-references using the production core/scheduler and a disposable atomic ledger.
-Five paired cold/warm samples count exact minified model bytes, logical calls,
-RPCs, commits and host CPU/latency/RSS. Completed canonical tool parts are
-fixture supplied; the native publication gate above remains separate. The
-measurement shows fewer bytes/calls and increased host CPU/latency, without provider-token
-or speed claims.
-
 `package-model-title-lane.mjs` enrolls its fresh root through the existing
 constructor-owned managed fixture before submitting an `origin: human` source
 prompt. Enrollment grants fixture ownership only; native accepted input, Step,
