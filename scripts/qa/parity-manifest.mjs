@@ -17,9 +17,9 @@ import { pathToFileURL } from 'node:url';
 import { openCodeBaseVersion } from '../../packages/web/server/lib/opencode/opencode-update-runtime.js';
 import { resolveQaTargetOpenCodeVersion } from '../../packages/web/server/lib/opencode/version-policy.js';
 
-export const PARITY_SCHEMA_VERSION = 1;
-export const SLIM_PACKAGE_NAME = 'oh-my-opencode-slim';
-export const SLIM_WRAPPER_FILE = 'devryan-oh-my-opencode-slim.mjs';
+// Schema 2: the agent orchestration is built in; there is no Slim package,
+// wrapper or setup-status route to capture.
+export const PARITY_SCHEMA_VERSION = 2;
 const DEFAULT_TIMEOUT_MS = 30_000;
 
 // Slim 2.2.25 behaviours DevRyan relies on. A future runtime must reproduce each
@@ -281,21 +281,6 @@ export function summarizeDevRyanSkills(payload) {
   })).sort(byKey('name'));
 }
 
-export function summarizeSlimStatus(status) {
-  if (!isPlainObject(status)) throw new Error('Slim status is not an object');
-  return canonicalize({
-    ok: status.ok === true,
-    installedVersion: stringOrNull(status.installedVersion),
-    runtimeEnabled: status.runtimeEnabled === true,
-    wrapperConfigured: status.wrapperConfigured === true,
-    rawRegistered: status.wrapperStatus?.rawRegistered === true,
-    packageDependencyInstalled: status.packageDependencyInstalled === true,
-    slimConfigExists: status.slimConfigExists === true,
-    backgroundSubagentsEnv: stringOrNull(status.backgroundSubagentsEnv),
-    issueCodes: Array.isArray(status.issues) ? sortedStrings(status.issues.map(issue => issue?.code)) : [],
-  });
-}
-
 // Live lists confirm commands and tool ids; everything else stays `static`.
 export function buildSlimChecklist({ commands, toolIds } = {}) {
   const commandNames = Array.isArray(commands) ? new Set(commands.map(command => command.name)) : null;
@@ -310,28 +295,6 @@ export function buildSlimChecklist({ commands, toolIds } = {}) {
       observed: source ? source.has(behaviour.name) : null,
     });
   }).sort(byKey('id'));
-}
-
-export async function captureSlimStatic({ slimPackage, wrapperPath, readFileImpl = readFile } = {}) {
-  if (!slimPackage) return { status: 'skipped', reason: 'no --slim-package or --qa-home given' };
-  let manifest;
-  try {
-    manifest = JSON.parse(await readFileImpl(path.join(slimPackage, 'package.json'), 'utf8'));
-  } catch (error) {
-    return { status: 'error', reason: `Slim package.json unreadable (${error.code || error.name})` };
-  }
-  const hashFile = async (file) => {
-    try { return sha256(await readFileImpl(file)); } catch { return null; }
-  };
-  return {
-    status: 'captured',
-    data: canonicalize({
-      packageName: stringOrNull(manifest?.name),
-      version: stringOrNull(manifest?.version),
-      distIndexSha256: await hashFile(path.join(slimPackage, 'dist', 'index.js')),
-      wrapperSha256: wrapperPath ? await hashFile(wrapperPath) : null,
-    }),
-  };
 }
 
 const sectionFailure = (error) => {
@@ -380,14 +343,12 @@ export async function captureParityManifest({
   fetchImpl = globalThis.fetch,
   expectRuntime,
   env = process.env,
-  slimPackage,
   qaHome,
   provider,
   model,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   now = () => new Date(),
   userHome = os.homedir(),
-  readFileImpl = readFile,
 } = {}) {
   if (typeof fetchImpl !== 'function') throw new Error('fetch is unavailable');
   if (typeof directory !== 'string' || !path.isAbsolute(directory)) throw new Error('--directory must be an absolute path');
@@ -457,16 +418,10 @@ export async function captureParityManifest({
   }
   sections.skills = await section('skills', '/api/skill', list => summarizeSkills(list, normalize));
   sections.devryanSkills = await section('devryanSkills', '/api/config/skills', summarizeDevRyanSkills);
-  sections.devryanSlim = await section('devryanSlim', '/api/config/slim/status', summarizeSlimStatus, { scoped: false });
-
-  const slimPackagePath = slimPackage || (qaHome ? path.join(qaHome, '.config', 'opencode', 'node_modules', SLIM_PACKAGE_NAME) : null);
-  const wrapperPath = qaHome ? path.join(qaHome, '.config', 'opencode', 'plugins', SLIM_WRAPPER_FILE) : null;
-  const slimStatic = await captureSlimStatic({ slimPackage: slimPackagePath, wrapperPath, readFileImpl });
   sections.slim = {
     status: 'captured',
-    source: 'static package + live command/tool lists',
+    source: 'built-in agent orchestration + live command/tool lists',
     data: {
-      package: slimStatic,
       checklist: buildSlimChecklist({
         commands: sections.commands.status === 'captured' ? sections.commands.data : null,
         toolIds: sections.toolIds.status === 'captured' ? sections.toolIds.data : null,
@@ -560,7 +515,7 @@ function diffSection(before, after) {
 const sectionHasDifference = diff => Boolean(diff.status || diff.added.length || diff.removed.length || diff.changed.length);
 
 const arraySections = new Set(['agents', 'commands', 'mcp', 'toolIds', 'tools', 'skills', 'devryanSkills']);
-const manifestSections = ['devryan', 'agents', 'commands', 'config', 'mcp', 'toolIds', 'tools', 'skills', 'devryanSkills', 'devryanSlim', 'slim'];
+const manifestSections = ['devryan', 'agents', 'commands', 'config', 'mcp', 'toolIds', 'tools', 'skills', 'devryanSkills', 'slim'];
 
 // Saved evidence has the same contract as a fresh capture. Matching failures
 // are incomplete evidence, never proof that two catalogs are equivalent.
@@ -578,13 +533,8 @@ export function validateParityManifest(manifest) {
     }
     if (!(arraySections.has(name) ? Array.isArray(section.data) : isPlainObject(section.data))) throw new Error(`invalid parity section data: ${name}`);
   }
-  if (manifest.sections.slim.status === 'captured') {
-    const pkg = manifest.sections.slim.data.package;
-    if (!isPlainObject(pkg) || !['captured', 'skipped', 'error'].includes(pkg.status)
-      || (pkg.status === 'captured' ? !isPlainObject(pkg.data) : typeof pkg.reason !== 'string')) throw new Error('invalid parity Slim package evidence');
-    // Static inspection is optional when no private package path was supplied;
-    // a requested package that could not be read is a capture failure.
-    if (pkg.status === 'error') incomplete.push('slim.package');
+  if (manifest.sections.slim.status === 'captured' && !Array.isArray(manifest.sections.slim.data.checklist)) {
+    throw new Error('invalid parity Slim checklist evidence');
   }
   return { complete: incomplete.length === 0, incomplete };
 }
@@ -616,12 +566,12 @@ export const serializeManifest = manifest => `${JSON.stringify(canonicalize(mani
 
 const USAGE = `Usage:
   node scripts/qa/parity-manifest.mjs --origin <http://127.0.0.1:port> --directory <abs path> --out <file.json>
-      [--qa-home <private QA home>] [--slim-package <dir>] [--expect-runtime <version>]
+      [--qa-home <private QA home>] [--expect-runtime <version>]
       [--provider <id> --model <id>] [--timeout-ms <n>]
   node scripts/qa/parity-manifest.mjs --diff <baseline.json> (--candidate <file.json> | --origin ... --directory ... [--out <file.json>])
 Exit: 0 captured / no differences, 1 section capture error or differences, 2 usage or fatal error.`;
 
-const FLAGS = new Set(['origin', 'directory', 'out', 'qa-home', 'slim-package', 'expect-runtime', 'provider', 'model', 'timeout-ms', 'diff', 'candidate']);
+const FLAGS = new Set(['origin', 'directory', 'out', 'qa-home', 'expect-runtime', 'provider', 'model', 'timeout-ms', 'diff', 'candidate']);
 
 export function parseArgs(argv) {
   const options = {};
@@ -679,7 +629,6 @@ export async function main(argv = process.argv.slice(2), { fetchImpl = globalThi
         now,
         expectRuntime: options['expect-runtime'],
         qaHome: options['qa-home'] ?? stringOrNull(env.DEVRYAN_QA_HOME) ?? undefined,
-        slimPackage: options['slim-package'],
         provider: options.provider,
         model: options.model,
         timeoutMs: options['timeout-ms'] ? Number.parseInt(options['timeout-ms'], 10) : DEFAULT_TIMEOUT_MS,
@@ -691,8 +640,7 @@ export async function main(argv = process.argv.slice(2), { fetchImpl = globalThi
     }
     const evidence = validateParityManifest(candidate);
     for (const name of evidence.incomplete) {
-      const entry = name === 'slim.package' ? candidate.sections.slim.data.package : candidate.sections[name];
-      stderr.write(`parity-manifest: ${name} capture failed: ${entry.reason}\n`);
+      stderr.write(`parity-manifest: ${name} capture failed: ${candidate.sections[name].reason}\n`);
     }
     if (!options.diff) {
       if (!options.out) stdout.write(serializeManifest(candidate));

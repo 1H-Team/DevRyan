@@ -269,11 +269,6 @@ describe('harness preflight', () => {
         timedOut: true,
         errors: [{ name: 'mcp', status: 'timeout', error: 'Timed out' }],
       },
-      slimRuntime: {
-        expectedMode: 'devryan-wrapper',
-        rawPluginEnabled: true,
-        wrapperPluginEnabled: false,
-      },
       toolManifest: { aliases: { skill: ['skill'] } },
     });
 
@@ -283,7 +278,6 @@ describe('harness preflight', () => {
       'duplicate-skill-name',
       'malformed-skill-frontmatter',
       'warmup-timeout',
-      'slim-raw-mode-active',
     ]));
   });
 

@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parse as parseJsonc } from 'jsonc-parser';
 
 import {
-  DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC,
   resolveSlimConfig,
   writeSlimAgentModelOverride,
 } from './slim-config.js';
@@ -96,9 +95,10 @@ describe('oh-my-opencode-slim config adapter', () => {
     expect(resolved.agents.observer).toBeUndefined();
   });
 
-  it('treats the DevRyan wrapper as Slim runtime without enabling the Slim agent catalog', async () => {
+  it('resolves the built-in agent routing without any plugin registration', async () => {
+    // Upgraded setups may still list the retired adapter; it changes nothing.
     await writeJson(path.join(configDirectory, 'opencode.json'), {
-      plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC],
+      plugin: ['./plugins/devryan-oh-my-opencode-slim.mjs'],
     });
     await writeJson(path.join(configDirectory, 'oh-my-opencode-slim.json'), {
       preset: 'openai',
@@ -109,38 +109,14 @@ describe('oh-my-opencode-slim config adapter', () => {
         },
       },
     });
+    const listed = resolveSlimConfig(projectDirectory, { configDirectory });
+    await fs.rm(path.join(configDirectory, 'opencode.json'));
+    const unlisted = resolveSlimConfig(projectDirectory, { configDirectory });
 
-    const resolved = resolveSlimConfig(projectDirectory, { configDirectory });
-
-    expect(resolved.pluginEnabled).toBe(true);
-    expect(resolved.slimRuntimeEnabled).toBe(true);
-    expect(resolved.wrapperPluginEnabled).toBe(true);
-    expect(resolved.rawPluginEnabled).toBe(false);
-    expect(resolved.slimAgentCatalogEnabled).toBe(false);
-    expect(resolved.enabled).toBe(false);
-    expect(resolved.agentNames).toEqual(['fixer', 'orchestrator']);
-  });
-
-  it('keeps raw Slim mode as the only mode that exposes Slim agents as the catalog', async () => {
-    await writeJson(path.join(configDirectory, 'opencode.json'), {
-      plugin: ['oh-my-opencode-slim'],
-    });
-    await writeJson(path.join(configDirectory, 'oh-my-opencode-slim.json'), {
-      preset: 'openai',
-      presets: {
-        openai: {
-          orchestrator: { model: 'openai/gpt-5.5', variant: 'medium' },
-        },
-      },
-    });
-
-    const resolved = resolveSlimConfig(projectDirectory, { configDirectory });
-
-    expect(resolved.rawPluginEnabled).toBe(true);
-    expect(resolved.wrapperPluginEnabled).toBe(false);
-    expect(resolved.slimRuntimeEnabled).toBe(true);
-    expect(resolved.slimAgentCatalogEnabled).toBe(true);
-    expect(resolved.enabled).toBe(true);
+    expect(unlisted.agentNames).toEqual(['fixer', 'orchestrator']);
+    expect(unlisted).toEqual(listed);
+    expect(unlisted).not.toHaveProperty('pluginEnabled');
+    expect(unlisted).not.toHaveProperty('enabled');
   });
 
   it('writes model overrides to root agents while preserving Slim-owned fields and deleting cleared variants', async () => {
@@ -185,9 +161,6 @@ describe('oh-my-opencode-slim config adapter', () => {
 
   it('persists a Grok fixer model and low variant as one Slim override', async () => {
     const slimConfigPath = path.join(configDirectory, 'oh-my-opencode-slim.json');
-    await writeJson(path.join(configDirectory, 'opencode.json'), {
-      plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC],
-    });
     await writeJson(slimConfigPath, {
       preset: 'openai',
       presets: {

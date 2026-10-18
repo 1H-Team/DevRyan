@@ -7,19 +7,20 @@ import {compiledCouncilMembers} from './package-council-lane.mjs';
 import {runCompiledSlimCommands} from './package-slim-lane.mjs';
 
 /** Exact specs from the sanitized authorized active inventory; executable bytes
- * come exclusively from the verified compiled manifest/configuration asset. */
+ * come exclusively from the verified compiled manifest/configuration asset. The
+ * built-in agent orchestration (`slim`) has no spec: no plugin entry selects it. */
 export const reviewedSetupFamilies=Object.freeze([
  ['ponytail','./node_modules/@dietrichgebert/ponytail/.opencode/plugins/ponytail.mjs',['devryan.ponytail']],
  ['cursor','./plugins/devryan-open-cursor.mjs',['devryan.provider-compat']],
  ['claude','./node_modules/opencode-with-claude/dist/index.js',['devryan.provider-compat']],
- ['slim','./plugins/devryan-oh-my-opencode-slim.mjs',['devryan.slim','devryan.slim-commands','devryan.slim-lifecycle']],
+ ['slim',null,['devryan.slim','devryan.slim-commands','devryan.slim-lifecycle']],
  ['documents','./plugins/devryan-document-reader.mjs',['devryan.document-reader']],
  ['skills','./plugins/devryan-skill-context.mjs',['devryan.reviewed-skills']],
  ['imagegen','./node_modules/opencode-gpt-imagegen/dist/index.js',['opencode-gpt-imagegen']],
 ].map(([family,spec,origins])=>Object.freeze({family,spec,origins:Object.freeze(origins)})));
 const browserSpec='./plugins/devryan-browser.mjs';
 export function reviewedSetupRegistrations(origins,{browser=false}={}){
- const mapped=origins.map(origin=>({...origin,legacySpecs:[...reviewedSetupFamilies.filter(row=>row.origins.includes(origin.id)).map(row=>row.spec),
+ const mapped=origins.map(origin=>({...origin,legacySpecs:[...reviewedSetupFamilies.filter(row=>row.spec&&row.origins.includes(origin.id)).map(row=>row.spec),
   ...browser&&origin.id==='devryan.browser'?[browserSpec]:[]]}));
  for(const row of reviewedSetupFamilies)for(const id of row.origins)assert.ok(mapped.some(origin=>origin.id===id),`Required compiled family unavailable: ${row.family}/${id}`);
  if(browser)assert.ok(mapped.some(origin=>origin.id==='devryan.browser'),'Required compiled browser unavailable');
@@ -42,7 +43,7 @@ export function attachReviewedSetup({bundle,binding,registrationBytes,configurat
  // Slim/interview declarations belong to their actual SDK factories. Treating
  // them as saved commands suppresses the original execution-before behavior.
  const commands={...structuredClone(configuration.commands??{}),...original.ponytailCommands};
- const legacy={...structuredClone(configuration),agent:agents,command:commands,plugin:[...reviewedSetupFamilies.map(row=>row.spec),...browser?[browserSpec]:[]],default_agent:'orchestrator'};
+ const legacy={...structuredClone(configuration),agent:agents,command:commands,plugin:[...reviewedSetupFamilies.flatMap(row=>row.spec?[row.spec]:[]),...browser?[browserSpec]:[]],default_agent:'orchestrator'};
  if(remoteMcp!==undefined)legacy.mcp=structuredClone(remoteMcp);
  // The full original tools/skills prompt exceeds the small baseline model.
  // Declare fixture capacity; native automatic compaction remains enabled.

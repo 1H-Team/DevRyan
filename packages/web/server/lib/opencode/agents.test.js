@@ -16,7 +16,6 @@ import {
   writeAgentBackupModel,
   writeAgentModelOverride,
 } from './agents.js';
-import { DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC } from './slim-config.js';
 import { createHash } from 'node:crypto';
 import { createNativeConfigurationSnapshotResolver } from './runtime-host/native-configuration-snapshot.js';
 
@@ -179,87 +178,10 @@ describe('agent model overrides', () => {
     ]);
   });
 
-  it('lists Slim-managed agents instead of stale packaged defaults when the Slim plugin is active', async () => {
-    const slimConfigDirectory = path.dirname(userConfigPath);
-    await writeJson(userConfigPath, {
-      plugin: ['opencode-with-claude'],
-    });
-    await writeJson(path.join(slimConfigDirectory, 'opencode.json'), {
-      plugin: ['oh-my-opencode-slim'],
-    });
-    await writeJson(path.join(slimConfigDirectory, 'oh-my-opencode-slim.json'), {
-      preset: 'openai',
-      presets: {
-        openai: {
-          orchestrator: { model: 'openai/gpt-5.5', variant: 'medium', skills: ['*'], mcps: ['*'] },
-          designer: { model: 'openai/gpt-5.4-mini', variant: 'medium', skills: [], mcps: [] },
-          fixer: { model: 'openai/gpt-5.5', variant: 'low', skills: [], mcps: [] },
-        },
-      },
-    });
-    await writeSlimInstalledAgent(slimConfigDirectory, 'builder', [
-      'mode: primary',
-      'model: openai/gpt-5.5',
-      'variant: medium',
-    ]);
-    await writeSlimInstalledAgent(slimConfigDirectory, 'council', [
-      'mode: all',
-      'model: openai/gpt-5.5',
-      'modelRefs:',
-      '  - openai/gpt-5.5',
-      '  - opencode/claude-opus-4-5',
-      'variant: medium',
-    ]);
-    await writeProjectAgent(projectDirectory, 'orchestrator', [
-      'mode: primary',
-      'model: stale/project-orchestrator',
-      'variant: stale',
-    ]);
-    await writeProjectAgent(projectDirectory, 'council', [
-      'mode: all',
-      'model: stale/project-council',
-      'variant: stale',
-    ]);
-    await writeProjectAgent(projectDirectory, 'custom-reviewer', [
-      'mode: subagent',
-      'model: openai/gpt-5.4',
-    ]);
-
-    const agents = listConfigAgents(projectDirectory, { userConfigPath, slimConfigDirectory });
-    const names = agents.map((agent) => agent.name);
-    const orchestrator = agents.find((agent) => agent.name === 'orchestrator');
-
-    expect(names).toContain('custom-reviewer');
-    expect(names).toContain('orchestrator');
-    expect(names).toContain('designer');
-    expect(names).toContain('fixer');
-    expect(names).toContain('builder');
-    expect(names).toContain('council');
-    expect(orchestrator).toMatchObject({
-      scope: 'slim',
-      source: 'slim',
-      mode: 'primary',
-      model: { providerID: 'openai', modelID: 'gpt-5.5' },
-      modelRefs: ['openai/gpt-5.5'],
-      variant: 'medium',
-      overrides: { model: false, variant: false, councillors: false },
-    });
-
-    expect(agents.find((agent) => agent.name === 'council')).toMatchObject({
-      scope: 'slim',
-      source: 'slim',
-      mode: 'all',
-      model: { providerID: 'openai', modelID: 'gpt-5.5' },
-      modelRefs: ['openai/gpt-5.5', 'opencode/claude-opus-4-5'],
-      variant: 'medium',
-    });
-  });
-
   it('writes Slim-managed model overrides to oh-my-opencode-slim config instead of the DevRyan sidecar', async () => {
     const slimConfigDirectory = path.dirname(userConfigPath);
     const slimConfigPath = path.join(slimConfigDirectory, 'oh-my-opencode-slim.json');
     await writeJson(userConfigPath, {
-      plugin: ['oh-my-opencode-slim'],
     });
     await writeJson(slimConfigPath, {
       preset: 'openai',
@@ -298,7 +220,6 @@ describe('agent model overrides', () => {
     const slimConfigDirectory = path.dirname(userConfigPath);
     const slimConfigPath = path.join(slimConfigDirectory, 'oh-my-opencode-slim.json');
     await writeJson(userConfigPath, {
-      plugin: ['oh-my-opencode-slim'],
     });
     await writeJson(slimConfigPath, {
       preset: 'openai',
@@ -327,19 +248,17 @@ describe('agent model overrides', () => {
       variant: 'low',
     });
 
+    // DevRyan's packaged Council stays authoritative; the routing applies over it.
     const config = getAgentConfig('council', projectDirectory, { userConfigPath, slimConfigDirectory }).config;
-    expect(config.scope).toBe('slim');
-    expect(config.source).toBe('slim');
+    expect(config.scope).toBe('packaged');
     expect(config.model).toEqual({ providerID: 'openai', modelID: 'gpt-5.4-mini' });
     expect(config.variant).toBe('low');
-    expect(config.prompt).toBe('council prompt');
   });
 
   it('keeps DevRyan project agents authoritative in wrapper mode while applying Slim model metadata', async () => {
     const slimConfigDirectory = path.dirname(userConfigPath);
     const slimConfigPath = path.join(slimConfigDirectory, 'oh-my-opencode-slim.json');
     await writeJson(userConfigPath, {
-      plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC],
     });
     await writeJson(slimConfigPath, {
       preset: 'openai',
@@ -519,9 +438,11 @@ describe('agent backup models', () => {
     writeAgentModelOverride('builder', { model: 'openai/gpt-5.5', variant: 'medium' }, projectDirectory, { userConfigPath });
     writeAgentBackupModel('builder', { model: 'anthropic/claude-sonnet-4-6', variant: null }, projectDirectory, { userConfigPath });
 
+    // The primary routes to the agent orchestration config; the backup stays in the sidecar.
+    const slimConfigPath = path.join(path.dirname(userConfigPath), 'oh-my-opencode-slim.jsonc');
+    expect((await readJsonc(slimConfigPath)).agents.builder).toEqual({ model: 'openai/gpt-5.5', variant: 'medium' });
     const sidecar = JSON.parse(await fs.readFile(sidecarPath, 'utf8'));
-    expect(sidecar.agentOverrides.builder).toEqual({ model: 'openai/gpt-5.5', variant: 'medium' });
-    expect(sidecar.agentOverrides.builder).not.toHaveProperty('backupModel');
+    expect(sidecar.agentOverrides?.builder).toBeUndefined();
     expect(sidecar.agentBackupModels.builder).toEqual({ model: 'anthropic/claude-sonnet-4-6', variant: null });
 
     const config = getAgentConfig('builder', projectDirectory, { userConfigPath }).config;
@@ -530,7 +451,7 @@ describe('agent backup models', () => {
     expect(config.backupModel).toEqual({ providerID: 'anthropic', modelID: 'claude-sonnet-4-6', variant: null });
 
     expect(deleteAgentBackupModel('builder', { userConfigPath })).toBe(true);
-    expect(JSON.parse(await fs.readFile(sidecarPath, 'utf8')).agentOverrides.builder).toEqual({ model: 'openai/gpt-5.5', variant: 'medium' });
+    expect((await readJsonc(slimConfigPath)).agents.builder).toEqual({ model: 'openai/gpt-5.5', variant: 'medium' });
   });
 
   it('rejects a backup model equal to the effective primary model and unknown agents', async () => {
@@ -574,7 +495,6 @@ describe('agent backup models', () => {
     const slimConfigDirectory = path.dirname(userConfigPath);
     const slimConfigPath = path.join(slimConfigDirectory, 'oh-my-opencode-slim.json');
     await writeJson(userConfigPath, {
-      plugin: ['oh-my-opencode-slim'],
     });
     await writeJson(slimConfigPath, {
       preset: 'openai',
@@ -645,8 +565,8 @@ describe('shadowed sidecar agent overrides', () => {
     slimConfigDirectory = path.dirname(userConfigPath);
     sidecarPath = path.join(slimConfigDirectory, '.openchamber', 'config.json');
     await fs.mkdir(projectDirectory, { recursive: true });
-    plugins = [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC];
-    // Plugin detection is injected so no test reads the real OpenCode config.
+    plugins = [];
+    // OpenCode config reads are injected so no test reads the real config.
     options = {
       userConfigPath,
       slimConfigDirectory,
@@ -779,20 +699,6 @@ describe('shadowed sidecar agent overrides', () => {
     expectMirrorsRuntime(shadowed);
   });
 
-  it('reports nothing when wrapper layering does not apply', async () => {
-    await writeSidecarOverrides({ fixer: { model: 'openai/gpt-5.5', variant: 'medium' } });
-    await writeSlimConfig({ agents: { fixer: { model: 'xai/grok-4.6', variant: 'high' } } });
-
-    plugins = [];
-    expect(listShadowedAgentModelOverrides(projectDirectory, options)).toEqual({});
-    expect(listManagedRuntimeAgentModelOverrides(projectDirectory, options).fixer)
-      .toEqual({ model: 'openai/gpt-5.5', variant: 'medium' });
-
-    // Raw Slim owns the catalog: the sidecar is not layered under Slim values.
-    plugins = ['oh-my-opencode-slim'];
-    expect(listShadowedAgentModelOverrides(projectDirectory, options)).toEqual({});
-  });
-
   it('honors project-level Slim config over user Slim config', async () => {
     await writeSidecarOverrides({ fixer: { model: 'openai/gpt-5.5', variant: 'medium' } });
     await writeSlimConfig({ agents: { fixer: { model: 'anthropic/claude-sonnet-4-6', variant: 'low' } } });
@@ -832,9 +738,9 @@ describe('shadowed sidecar agent overrides', () => {
     expectMirrorsRuntime(shadowed);
   });
 
-  for (const plugin of [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC, 'oh-my-opencode-slim']) {
-    it(`preserves saved Council members through ${plugin} and native snapshot without replacing the coordinator`, async () => {
-      plugins=[plugin];
+  {
+    it('preserves saved Council members through the native snapshot without replacing the coordinator', async () => {
+      plugins=[];
       const councillors=[{model:'openai/gpt-5.5',variant:'xhigh'},
         {model:'cursor-acp/composer-2.5',variant:'high'},
         {model:'opencode/claude-opus-4-5',variant:null},
@@ -856,12 +762,12 @@ describe('shadowed sidecar agent overrides', () => {
         expect(agent.variant).toBe('medium');
         expect(agent.overrides.councillors).toBe(true);
       }
-      const manifest={schema:1,plugins:[{id:'devryan.slim',legacySpecs:[plugin]}]};
+      const manifest={schema:1,plugins:[{id:'devryan.slim',legacySpecs:[]}]};
       const launch={opencodeConfigDirectory:slimConfigDirectory,global:{home:tempRoot},
         reviewedPluginManifestPath:path.join(tempRoot,'reviewed-plugins.json'),reviewedNativeConfigPath:path.join(tempRoot,'reviewed-native.json')};
       await writeJson(launch.reviewedPluginManifestPath,manifest);
       await writeJson(launch.reviewedNativeConfigPath,{schema:1,locations:[{directory:projectDirectory}],catalogRequirements:{}});
-      const resolver=createNativeConfigurationSnapshotResolver({loadLocation:async()=>({legacy:{plugin:[plugin]},agents:{council:read()},commands:{},skills:[],
+      const resolver=createNativeConfigurationSnapshotResolver({loadLocation:async()=>({legacy:{plugin:[]},agents:{council:read()},commands:{},skills:[],
         slim:{activePreset:'openai',mergedConfig:{agents:{council:{model:'openai/gpt-5.6-sol',variant:'medium'}}}},parseMarkdown:()=>({body:'',frontmatter:{}})}),
         resolveSlimAgents:input=>({agents:input.hostConfiguration.agent})});
       const snapshot=await resolver({binding:{descriptor:{generation:2,launch,projectMap:[{targetDirectory:projectDirectory}]}},revision:1,

@@ -360,7 +360,7 @@ test('personal setup mirroring normalizes explicit options and requires preserve
 
 test('personal plugin classification keeps only entries provisioning does not own', () => {
     const sourceConfig = '/synthetic-home/.config/opencode';
-    const provisioned = ['./plugins/devryan-open-cursor.mjs', './node_modules/opencode-with-claude/dist/index.js', './plugins/devryan-oh-my-opencode-slim.mjs'];
+    const provisioned = ['./plugins/devryan-open-cursor.mjs', './node_modules/opencode-with-claude/dist/index.js'];
     const { personal, managed } = classifyQaPersonalPluginEntries([
         './node_modules/@synthetic/ponytail/.opencode/plugins/ponytail.mjs',
         './plugins/devryan-open-cursor.mjs', 'opencode-with-claude', 'oh-my-opencode-slim@2.2.25',
@@ -391,12 +391,13 @@ test('personal plugin classification keeps only entries provisioning does not ow
 });
 
 test('mirrored plugin order follows the owner\'s registration order', () => {
-    const provisioned = ['./plugins/devryan-open-cursor.mjs', './node_modules/opencode-with-claude/dist/index.js', './plugins/devryan-oh-my-opencode-slim.mjs'];
+    const provisioned = ['./plugins/devryan-open-cursor.mjs', './node_modules/opencode-with-claude/dist/index.js'];
     const sourceConfig = '/synthetic-home/.config/opencode';
     const { ordered } = classifyQaPersonalPluginEntries(['./node_modules/@synthetic/ponytail/index.mjs', 'oh-my-opencode-slim@2.2.25',
         './plugins/devryan-open-cursor.mjs', './plugins/personal.mjs', './plugins/devryan-open-cursor.mjs'], { provisioned, sourceConfig });
+    // The retired Slim registration is owned by DevRyan but no longer provisioned.
     assert.deepEqual(orderQaMirroredPlugins(provisioned, ordered), ['./node_modules/@synthetic/ponytail/index.mjs',
-        './plugins/devryan-oh-my-opencode-slim.mjs', './plugins/devryan-open-cursor.mjs', './plugins/personal.mjs',
+        './plugins/devryan-open-cursor.mjs', './plugins/personal.mjs',
         './node_modules/opencode-with-claude/dist/index.js']);
     assert.deepEqual(orderQaMirroredPlugins(provisioned, []), provisioned);
 });

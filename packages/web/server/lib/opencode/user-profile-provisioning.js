@@ -355,15 +355,7 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
         syncContent(targetRelativePath, fsApi.readFileSync(pathApi.join(configRoot, sourceRelativePath), 'utf8'));
       }
     }
-    // The new Slim runtime retains host agent state. Do not install its package
-    // alongside a user-owned adapter whose restoration contract is unknown.
-    if (result.conflicts.includes(pathApi.join(configDirectory, 'plugins/devryan-oh-my-opencode-slim.mjs'))) {
-      result.ok = false;
-      result.error = 'DEVRYAN_SLIM_ADAPTER_CONFLICT: preserve and reconcile the user-owned Slim adapter before upgrading managed plugins';
-      return result;
-    }
-    // This merge retains unrelated user fields. Write it only after checking
-    // that the required Slim adapter can be upgraded safely.
+    // This merge retains unrelated user fields.
     syncContent('package.json', `${JSON.stringify(desiredPackage, null, 2)}\n`, { mergeSafe: true });
     const retiredSkillPaths = Object.keys(previousFiles)
       .filter((relativePath) => relativePath.startsWith('skills/'));

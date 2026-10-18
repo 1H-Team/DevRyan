@@ -661,20 +661,6 @@ const buildManagedSlimConfig = (userConfig) => {
 const syncSlimConfigOverlay = async (targetConfigDirectory, workingDirectory, options = {}) => {
   const slim = resolveSlimConfig(workingDirectory, options);
   const staleTargets = SLIM_CONFIG_FILE_NAMES.map((fileName) => path.join(targetConfigDirectory, fileName));
-  if (!slim.pluginEnabled) {
-    let changed = false;
-    for (const target of staleTargets) {
-      changed = (await removeFileIfPresent(target)) || changed;
-    }
-    return {
-      changed,
-      written: false,
-      updated: false,
-      removed: changed,
-      targetPath: null,
-    };
-  }
-
   const targetPath = path.join(
     targetConfigDirectory,
     slim.userConfigPath ? path.basename(slim.userConfigPath) : 'oh-my-opencode-slim.json',

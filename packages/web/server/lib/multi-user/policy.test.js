@@ -150,7 +150,6 @@ describe('multi-user policy', () => {
       ['/config/skills/catalog/source', 'GET', 'skills.catalog'],
       ['/config/skills/example', 'GET', 'skills.installed'],
       ['/config/plugins', 'GET', 'plugins'],
-      ['/config/slim/install', 'POST', 'plugins'],
       ['/magic-prompts/default', 'PUT', 'magic-prompts'],
       ['/magic-prompts/default', 'DELETE', 'magic-prompts'],
       ['/magic-prompts', 'DELETE', 'magic-prompts'],

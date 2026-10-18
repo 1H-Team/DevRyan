@@ -4,7 +4,7 @@ import path from 'node:path';
 import { formatPackagedAgentSyncConflicts } from './packaged-agent-sync.js';
 import { DEFAULT_AGENT_RUNTIME_SETTINGS, normalizeAgentRuntimeSettings } from './agent-runtime-settings.js';
 import { buildVisibleSkillPolicy } from './skill-policy.js';
-import { SLIM_REPLACED_AGENT_NAMES, resolveSlimConfig } from './slim-config.js';
+import { resolveSlimConfig } from './slim-config.js';
 import { probe as probeOpenCodeRuntime, resolveExpectedOpenCodeVersion } from './readiness-probe.js';
 import { isNativeOpenCodeVersion } from './version-policy.js';
 import { readStartupBundleUpgradeFailure, readStartupBundleUpgradeDiagnostic } from './runtime-host/bundle-startup-upgrade-status.js';
@@ -154,7 +154,6 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     return { workingDirectory: resolvedWorkingDirectory, slimConfig, skillPolicy, packagedOptions: {
       agentOverrides: {},
       skillPolicy,
-      excludedAgentNames: slimConfig.enabled ? Array.from(SLIM_REPLACED_AGENT_NAMES) : [],
     } };
   };
   const getPackagedAgentPrompts = async () => {
@@ -216,8 +215,8 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       packaged: packagedResult ?? { changed: false, conflicts: [] },
       overlays: overlayResult ?? { changed: false, targetConfigDirectory: null },
       targetConfigDirectory: overlayResult?.targetConfigDirectory ?? null,
-      slimPreset: slimConfig.pluginEnabled && slimConfig.activePreset ? slimConfig.activePreset : null,
-      slimConfigDirectory: slimConfig.pluginEnabled ? slimConfig.configDirectory : null,
+      slimPreset: slimConfig.activePreset || null,
+      slimConfigDirectory: slimConfig.configDirectory,
       runtimeApplied: true,
       requiresReload: true,
     };

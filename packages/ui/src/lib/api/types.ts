@@ -1570,7 +1570,6 @@ export type PluginScope = 'user' | 'project';
 export type PluginParsedKind = 'npm' | 'path';
 export type DevRyanDefaultPluginId =
   | '@rama_nigg/open-cursor'
-  | 'oh-my-opencode-slim'
   | 'opencode-with-claude'
   | 'openai-tool-schema-sanitizer';
 
@@ -1619,41 +1618,6 @@ export interface PluginsListResponse {
   entries: PluginEntry[];
   files: PluginFile[];
   errors: PluginConfigError[];
-}
-
-export interface SlimSetupIssue {
-  code: string;
-  message: string;
-}
-
-export interface SlimWrapperStatus {
-  configured: boolean;
-  wrapperRegistered: boolean;
-  wrapperFileExists: boolean;
-  rawRegistered: boolean;
-  path: string;
-  spec: string;
-}
-
-export interface SlimSetupStatus {
-  ok?: boolean;
-  installedVersion: string | null;
-  configDirectory?: string;
-  configPath?: string;
-  slimConfigPath?: string;
-  wrapperPath?: string;
-  packageJsonPath?: string;
-  runtimeEnabled: boolean;
-  wrapperConfigured: boolean;
-  wrapperStatus?: SlimWrapperStatus;
-  packageDependencyInstalled: boolean;
-  slimConfigExists?: boolean;
-  backgroundSubagentsEnv?: string;
-  changedFiles?: string[];
-  backupPaths?: string[];
-  issues: SlimSetupIssue[];
-  repair?: boolean;
-  reload?: unknown;
 }
 
 // ============== Skills Catalog Types ==============

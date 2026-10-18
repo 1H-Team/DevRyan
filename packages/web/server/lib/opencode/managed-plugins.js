@@ -5,7 +5,6 @@ export const DEVRYAN_MANAGED_PLUGIN_IDS = Object.freeze({
   OPEN_CURSOR: '@rama_nigg/open-cursor',
   CLAUDE: 'opencode-with-claude',
   GPT_IMAGEGEN: 'opencode-gpt-imagegen',
-  SLIM: 'oh-my-opencode-slim',
   SKILL_CONTEXT: 'devryan-skill-context',
   DOCUMENT_READER: 'devryan-document-reader',
   OPENAI_TOOL_SCHEMA_SANITIZER: 'openai-tool-schema-sanitizer',
@@ -49,26 +48,6 @@ const definitions = [
     entrypoint: 'dist/index.js',
     registrationPath: './node_modules/opencode-gpt-imagegen/dist/index.js',
     legacySpecs: ['opencode-gpt-imagegen', 'opencode-gpt-imagegen@latest', 'opencode-gpt-imagegen@0.1.10', 'opencode-gpt-imagegen@0.1.12'],
-    delivery: 'installed-local',
-    sourcePath: 'default-config/user-profile/package.json',
-    profileRegistration: true,
-    public: true,
-  },
-  {
-    id: DEVRYAN_MANAGED_PLUGIN_IDS.SLIM,
-    displayName: 'Oh My OpenCode Slim',
-    packageName: 'oh-my-opencode-slim',
-    version: '2.2.25',
-    entrypoint: 'dist/index.js',
-    registrationPath: './plugins/devryan-oh-my-opencode-slim.mjs',
-    legacySpecs: [
-      'oh-my-opencode-slim',
-      'oh-my-opencode-slim@2.0.5',
-      'oh-my-opencode-slim@2.2.15',
-      'oh-my-opencode-slim@2.2.18',
-      'oh-my-opencode-slim@2.2.24',
-      'oh-my-opencode-slim@2.2.25',
-    ],
     delivery: 'installed-local',
     sourcePath: 'default-config/user-profile/package.json',
     profileRegistration: true,
@@ -159,6 +138,18 @@ const RETIRED_ANTIGRAVITY_REGISTRATION_PATH = './node_modules/opencode-antigravi
 // Superpowers (removed 2026-10): the bundled skill-path adapter and the upstream
 // git plugin it replaced. Writing/executing plans guidance lives in the primary agents.
 const RETIRED_SUPERPOWERS_REGISTRATION_PATH = './plugins/devryan-superpowers.mjs';
+// Oh My OpenCode Slim (removed as a plugin 2026-10): its agents and orchestration are
+// built into the native runtime and always active, so the adapter, npm package and
+// every spec an upgraded setup still lists load nothing.
+const RETIRED_SLIM_REGISTRATION_PATH = './plugins/devryan-oh-my-opencode-slim.mjs';
+const RETIRED_SLIM_PACKAGE_SPECS = Object.freeze([
+  'oh-my-opencode-slim',
+  'oh-my-opencode-slim@2.0.5',
+  'oh-my-opencode-slim@2.2.15',
+  'oh-my-opencode-slim@2.2.18',
+  'oh-my-opencode-slim@2.2.24',
+  'oh-my-opencode-slim@2.2.25',
+]);
 
 export const RETIRED_DEVRYAN_PLUGIN_SPECS = Object.freeze([
   'cursor-acp',
@@ -171,6 +162,8 @@ export const RETIRED_DEVRYAN_PLUGIN_SPECS = Object.freeze([
   RETIRED_ANTIGRAVITY_REGISTRATION_PATH,
   RETIRED_SUPERPOWERS_REGISTRATION_PATH,
   'superpowers@git+https://github.com/obra/superpowers.git',
+  ...RETIRED_SLIM_PACKAGE_SPECS,
+  RETIRED_SLIM_REGISTRATION_PATH,
 ]);
 
 // Registration paths also retired in absolute or file:// form (matched by path suffix).
@@ -178,12 +171,15 @@ const RETIRED_DEVRYAN_PLUGIN_REGISTRATION_SUFFIXES = Object.freeze([
   RETIRED_CONTEXT_MODE_REGISTRATION_PATH.replace(/^\.\//, '/'),
   RETIRED_ANTIGRAVITY_REGISTRATION_PATH.replace(/^\.\//, '/'),
   RETIRED_SUPERPOWERS_REGISTRATION_PATH.replace(/^\.\//, '/'),
+  RETIRED_SLIM_REGISTRATION_PATH.replace(/^\.\//, '/'),
+  '/node_modules/oh-my-opencode-slim/dist/index.js',
 ]);
 
 // Profile dependencies DevRyan pinned and now removes, keyed by package name with the exact pinned version.
 export const RETIRED_DEVRYAN_PROFILE_DEPENDENCIES = Object.freeze({
   'context-mode': '1.0.169',
   'opencode-antigravity-auth': '1.6.0',
+  'oh-my-opencode-slim': '2.2.25',
 });
 
 const normalizeSpec = (value) => {

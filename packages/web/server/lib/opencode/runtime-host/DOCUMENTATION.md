@@ -133,6 +133,16 @@ application exit plus empty process registry. Native/QA and UI source, runner
 and live loaded entry bytes are pinned before/after on success and failure;
 helper reload proves the exact selection and enabled UI hydration.
 
+## Built-in agent orchestration
+
+The agent orchestration derived from Oh My OpenCode Slim (`devryan.slim`,
+`devryan.slim-commands`, `devryan.slim-lifecycle`) is part of DevRyan, not a
+plugin. `native-core-registrations.js` lists these origins;
+`native-configuration-snapshot.js` activates them in every location whenever
+the bundle registers them, with no `plugin` entry, and always resolves Slim
+agent routing. The retired adapter and package specs an upgraded setup still
+lists are ignored (`isRetiredDevRyanPluginSpec`), never rejected.
+
 ## Host helper and title ownership
 
 `native-configuration-snapshot.js` applies `runtime-helper-agents.js` after saved

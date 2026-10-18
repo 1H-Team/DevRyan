@@ -127,7 +127,6 @@ describe('user profile provisioning', () => {
       './plugins/devryan-open-cursor.mjs',
       './node_modules/opencode-with-claude/dist/index.js',
       './node_modules/opencode-gpt-imagegen/dist/index.js',
-      './plugins/devryan-oh-my-opencode-slim.mjs',
       './plugins/devryan-skill-context.mjs',
       './plugins/devryan-document-reader.mjs',
     ]);
@@ -139,7 +138,6 @@ describe('user profile provisioning', () => {
       '@rynfar/meridian': '1.62.6',
       'adm-zip': '0.6.0',
       'mammoth': '1.12.1',
-      'oh-my-opencode-slim': '2.2.25',
       'opencode-gpt-imagegen': '0.1.12',
       'opencode-with-claude': '1.8.0',
       'unpdf': '1.8.0',
@@ -150,11 +148,12 @@ describe('user profile provisioning', () => {
     });
     expect(JSON.stringify(slim)).not.toContain('"mcps"');
     expect(fs.existsSync(path.join(configDir, 'agents', 'orchestrator.md'))).toBe(true);
-    expect(fs.existsSync(path.join(configDir, 'plugins', 'devryan-oh-my-opencode-slim.mjs'))).toBe(true);
+    expect(packageJson.dependencies).not.toHaveProperty('oh-my-opencode-slim');
+    expect(fs.existsSync(path.join(configDir, 'plugins', 'devryan-oh-my-opencode-slim.mjs'))).toBe(false);
     expect(fs.existsSync(path.join(configDir, 'plugins', 'devryan-superpowers.mjs'))).toBe(false);
     expect(fs.existsSync(path.join(configDir, 'plugins', 'devryan-skill-context.mjs'))).toBe(true);
     expect(fs.existsSync(path.join(configDir, 'plugins', 'devryan-document-reader.mjs'))).toBe(true);
-    expect(fs.existsSync(path.join(configDir, 'node_modules', 'oh-my-opencode-slim'))).toBe(true);
+    expect(fs.existsSync(path.join(configDir, 'node_modules', 'oh-my-opencode-slim'))).toBe(false);
     expect(fs.existsSync(path.join(configDir, 'node_modules', 'opencode-with-claude'))).toBe(true);
     expect(fs.existsSync(path.join(configDir, 'node_modules', 'opencode-gpt-imagegen'))).toBe(true);
     expect(packageJson.dependencies).not.toHaveProperty('context-mode');
@@ -303,20 +302,19 @@ describe('user profile provisioning', () => {
     }
   });
 
-  it('does not replace a user-owned Slim adapter or install a new package against it', async () => {
+  it('keeps a user-owned Slim adapter but no longer registers or installs Slim', async () => {
     const configDir = path.join(home, '.config', 'opencode');
     const adapter = path.join(configDir, 'plugins', 'devryan-oh-my-opencode-slim.mjs');
     fs.mkdirSync(path.dirname(adapter), { recursive: true });
     fs.writeFileSync(adapter, 'export default async () => ({ custom: true });\n');
-    const packagePath = path.join(configDir, 'package.json');
-    writeJson(packagePath, { dependencies: { 'oh-my-opencode-slim': '2.2.15' } });
-    const before = fs.readFileSync(packagePath, 'utf8');
+    writeJson(path.join(configDir, 'package.json'), { dependencies: { 'oh-my-opencode-slim': '2.2.15' } });
     const result = await createRuntime().provision();
-    expect(result.ok).toBe(false);
-    expect(result.error).toContain('DEVRYAN_SLIM_ADAPTER_CONFLICT');
+    expect(result.ok).toBe(true);
+    // An untracked file is user data: it stays, but nothing loads it.
     expect(fs.readFileSync(adapter, 'utf8')).toContain('custom: true');
-    expect(fs.readFileSync(packagePath, 'utf8')).toBe(before);
-    expect(commands).toHaveLength(0);
+    expect(readJson(path.join(configDir, 'opencode.json')).plugin).not.toContain('./plugins/devryan-oh-my-opencode-slim.mjs');
+    // A pin other than DevRyan's own 2.2.25 is user-owned and left alone.
+    expect(readJson(path.join(configDir, 'package.json')).dependencies['oh-my-opencode-slim']).toBe('2.2.15');
   });
 
   it('reconciles legacy managed specs in a previously managed config without discarding later user edits', async () => {
@@ -335,6 +333,7 @@ describe('user profile provisioning', () => {
       'context-mode@1.0.169',
       'superpowers@git+https://github.com/obra/superpowers.git',
       './plugins/devryan-oh-my-opencode-slim.mjs',
+      'oh-my-opencode-slim@2.2.25',
     ];
     writeJson(configPath, staleConfig);
 
@@ -349,7 +348,6 @@ describe('user profile provisioning', () => {
       './plugins/devryan-open-cursor.mjs',
       './node_modules/opencode-with-claude/dist/index.js',
       './node_modules/opencode-gpt-imagegen/dist/index.js',
-      './plugins/devryan-oh-my-opencode-slim.mjs',
       './plugins/devryan-skill-context.mjs',
       './plugins/devryan-document-reader.mjs',
     ]);
@@ -851,56 +849,43 @@ describe('user profile provisioning', () => {
     expect(result.conflicts).toContain(agentPath);
   });
 
-  it.each(['2.0.5', '2.2.18', '2.2.24'])('upgrades Slim from %s without changing user-owned config or primary prompt', async (staleVersion) => {
+  it('retires the Slim adapter and its pinned package from a profile provisioned by an earlier release', async () => {
     const runtime = createRuntime();
     await runtime.provision();
     const configDir = path.join(home, '.config', 'opencode');
+    const configPath = path.join(configDir, 'opencode.json');
     const packagePath = path.join(configDir, 'package.json');
-    const installedPackagePath = path.join(
-      configDir,
-      'node_modules',
-      'oh-my-opencode-slim',
-      'package.json',
-    );
+    const manifestPath = path.join(configDir, '.openchamber', 'user-profile-manifest.json');
+    const adapterPath = path.join(configDir, 'plugins', 'devryan-oh-my-opencode-slim.mjs');
     const slimConfigPath = path.join(configDir, 'oh-my-opencode-slim.json');
-    const orchestratorPath = path.join(configDir, 'agents', 'orchestrator.md');
-
+    // DevRyan <= 2.1.1 wrote and tracked the adapter, pinned the package and registered it.
+    const adapterContent = 'export default async () => ({});\n';
+    fs.mkdirSync(path.dirname(adapterPath), { recursive: true });
+    fs.writeFileSync(adapterPath, adapterContent, 'utf8');
+    const manifest = readJson(manifestPath);
+    manifest.files['plugins/devryan-oh-my-opencode-slim.mjs'] = { hash: hashContent(adapterContent) };
+    writeJson(manifestPath, manifest);
+    const config = readJson(configPath);
+    config.plugin = [...config.plugin.slice(0, 3), './plugins/devryan-oh-my-opencode-slim.mjs', ...config.plugin.slice(3)];
+    writeJson(configPath, config);
     const stalePackage = readJson(packagePath);
-    stalePackage.dependencies['oh-my-opencode-slim'] = staleVersion;
+    stalePackage.dependencies['oh-my-opencode-slim'] = '2.2.25';
     writeJson(packagePath, stalePackage);
-    writeJson(installedPackagePath, {
-      name: 'oh-my-opencode-slim',
-      version: staleVersion,
-    });
-
+    // The agent model routing stays with the user.
     const userSlimConfig = readJson(slimConfigPath);
-    userSlimConfig.agents.orchestrator = {
-      model: 'openai/gpt-5.6-sol',
-      variant: 'high',
-    };
+    userSlimConfig.agents.orchestrator = { model: 'openai/gpt-5.6-sol', variant: 'high' };
     writeJson(slimConfigPath, userSlimConfig);
-    fs.writeFileSync(orchestratorPath, 'user-owned primary prompt\n', 'utf8');
     const expectedSlimConfig = fs.readFileSync(slimConfigPath, 'utf8');
-    const expectedOrchestrator = fs.readFileSync(orchestratorPath, 'utf8');
 
     const result = await runtime.provision();
 
     expect(result.ok).toBe(true);
-    expect(readJson(packagePath).dependencies['oh-my-opencode-slim']).toBe('2.2.25');
-    expect(readJson(installedPackagePath).version).toBe('2.2.25');
+    expect(readJson(configPath).plugin).not.toContain('./plugins/devryan-oh-my-opencode-slim.mjs');
+    expect(readJson(packagePath).dependencies).not.toHaveProperty('oh-my-opencode-slim');
+    expect(fs.existsSync(adapterPath)).toBe(false);
+    expect(result.removed).toContain(adapterPath);
+    expect(readJson(manifestPath).files).not.toHaveProperty('plugins/devryan-oh-my-opencode-slim.mjs');
     expect(fs.readFileSync(slimConfigPath, 'utf8')).toBe(expectedSlimConfig);
-    expect(fs.readFileSync(orchestratorPath, 'utf8')).toBe(expectedOrchestrator);
-    expect(result.conflicts).toEqual(expect.arrayContaining([
-      slimConfigPath,
-      orchestratorPath,
-    ]));
-    expect(commands).toHaveLength(2);
-
-    const repeated = await runtime.provision();
-    expect(repeated.ok).toBe(true);
-    expect(readJson(installedPackagePath).version).toBe('2.2.25');
-    expect(fs.readFileSync(slimConfigPath, 'utf8')).toBe(expectedSlimConfig);
-    expect(commands).toHaveLength(2);
   });
 
   it('retires the Superpowers adapter from a profile provisioned by an earlier release', async () => {

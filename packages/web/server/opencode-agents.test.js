@@ -328,7 +328,9 @@ describe('OpenCode user agent model overrides', () => {
 
     expect(result.config.model).toEqual({ providerID: 'openai', modelID: 'gpt-5.5' });
     expect(result.config.variant).toBeUndefined();
-    expect(result.config.overrides.variant).toBe(true);
+    // DevRyan roles route through the built-in agent orchestration config: a
+    // root model override clears the inherited variant without a variant entry.
+    expect(result.config.overrides.model).toBe(true);
   });
 
   it('rejects user overrides that try to mutate inherited agent fields', () => {
@@ -359,15 +361,13 @@ describe('OpenCode user agent model overrides', () => {
       variant: 'low',
     }, projectDirectory, { userConfigPath });
 
-    const deleted = deleteAgentModelOverride('builder', { userConfigPath });
-    const overrides = listAgentModelOverrides({ userConfigPath });
+    const deleted = deleteAgentModelOverride('builder', { userConfigPath, workingDirectory: projectDirectory });
 
     expect(deleted).toBe(true);
-    expect(overrides.builder).toBeUndefined();
-    expect(overrides.designer).toEqual({
-      model: 'opencode-go/glm-5.1',
-      variant: 'low',
-    });
+    expect(getAgentConfig('builder', projectDirectory, { userConfigPath }).config.overrides.model).toBe(false);
+    const designer = getAgentConfig('designer', projectDirectory, { userConfigPath }).config;
+    expect(designer.model).toEqual({ providerID: 'opencode-go', modelID: 'glm-5.1' });
+    expect(designer.variant).toBe('low');
   });
 
   it('retains stale overrides on disk but excludes them from runtime agent listings', async () => {
@@ -811,7 +811,7 @@ describe('OpenCode config agent routes', () => {
       getAgentConfig: (name, directory) => getAgentConfig(name, directory, { userConfigPath }),
       listAgentModelOverrides: () => listAgentModelOverrides({ userConfigPath }),
       writeAgentModelOverride: (name, body, directory) => writeAgentModelOverride(name, body, directory, { userConfigPath }),
-      deleteAgentModelOverride: (name) => deleteAgentModelOverride(name, { userConfigPath }),
+      deleteAgentModelOverride: (name, options) => deleteAgentModelOverride(name, { ...options, userConfigPath }),
       listConfigAgents: (directory) => listConfigAgents(directory, { userConfigPath }),
       getCommandSources: () => ({ md: { exists: false }, json: { exists: false } }),
       createCommand: () => {},
@@ -842,12 +842,9 @@ describe('OpenCode config agent routes', () => {
         expect(res.body.agent.config.variant).toBeUndefined();
       });
 
-    await request(app)
-      .get('/api/config/agent-overrides')
-      .expect(200)
-      .expect((res) => {
-        expect(res.body.overrides.builder).toEqual({ model: 'openai/gpt-5.5', variant: null });
-      });
+    // DevRyan roles persist in the built-in agent orchestration config, not the sidecar.
+    expect(getAgentConfig('builder', projectDirectory, { userConfigPath }).config.model)
+      .toEqual({ providerID: 'openai', modelID: 'gpt-5.5' });
 
     await request(app)
       .delete('/api/config/agents/builder/override')
@@ -878,7 +875,7 @@ describe('OpenCode config agent routes', () => {
       getAgentConfig: (name, directory) => getAgentConfig(name, directory, { userConfigPath }),
       listAgentModelOverrides: () => listAgentModelOverrides({ userConfigPath }),
       writeAgentModelOverride: (name, body, directory) => writeAgentModelOverride(name, body, directory, { userConfigPath }),
-      deleteAgentModelOverride: (name) => deleteAgentModelOverride(name, { userConfigPath }),
+      deleteAgentModelOverride: (name, options) => deleteAgentModelOverride(name, { ...options, userConfigPath }),
       listConfigAgents: (directory) => listConfigAgents(directory, { userConfigPath }),
       getCommandSources: () => ({ md: { exists: false }, json: { exists: false } }),
       createCommand: () => {},
@@ -954,7 +951,7 @@ describe('OpenCode config agent routes', () => {
       getAgentConfig: (name, directory) => getAgentConfig(name, directory, { userConfigPath }),
       listAgentModelOverrides: () => listAgentModelOverrides({ userConfigPath }),
       writeAgentModelOverride: (name, body, directory) => writeAgentModelOverride(name, body, directory, { userConfigPath }),
-      deleteAgentModelOverride: (name) => deleteAgentModelOverride(name, { userConfigPath }),
+      deleteAgentModelOverride: (name, options) => deleteAgentModelOverride(name, { ...options, userConfigPath }),
       listConfigAgents: (directory) => listConfigAgents(directory, { userConfigPath }),
       getCommandSources: () => ({ md: { exists: false }, json: { exists: false } }),
       createCommand: () => {},
@@ -979,10 +976,9 @@ describe('OpenCode config agent routes', () => {
         expect(res.body.warning).toContain('coordinator unavailable');
       });
 
-    expect(listAgentModelOverrides({ userConfigPath }).explorer).toEqual({
-      model: 'openai/gpt-5.5',
-      variant: 'high',
-    });
+    const explorer = getAgentConfig('explorer', projectDirectory, { userConfigPath }).config;
+    expect(explorer.model).toEqual({ providerID: 'openai', modelID: 'gpt-5.5' });
+    expect(explorer.variant).toBe('high');
 
     await fs.rm(userConfigDirectory, { recursive: true, force: true });
   });

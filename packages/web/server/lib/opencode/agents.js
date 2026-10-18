@@ -481,12 +481,6 @@ function getDevRyanBaseConfigAgents(workingDirectory) {
   return Array.from(agentsByName.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
-// Wrapper-mode Slim layering applies only when the DevRyan wrapper plugin is
-// active and raw Slim does not own the agent catalog.
-function isSlimWrapperLayeringActive(slim) {
-  return Boolean(slim.wrapperPluginEnabled && !slim.slimAgentCatalogEnabled);
-}
-
 // The Slim values layered over a DevRyan agent's sidecar override: `model` only
 // when Slim supplies a model ref, `variant` always (string or null). Shared by
 // the runtime map and the shadowed-override diagnostic so they cannot drift.
@@ -504,10 +498,6 @@ function getSlimWrapperRuntimeLayer(slimAgent) {
 function listManagedRuntimeAgentModelOverrides(workingDirectory, options = {}) {
   const overrides = { ...listAgentModelOverrides(options) };
   const slim = resolveSlimConfig(workingDirectory, options);
-  if (!isSlimWrapperLayeringActive(slim)) {
-    return overrides;
-  }
-
   const devRyanAgentNames = new Set(
     getDevRyanBaseConfigAgents(workingDirectory).map((agent) => agent.name),
   );
@@ -566,10 +556,6 @@ function listShadowedAgentModelOverrides(workingDirectory, options = {}) {
   }
 
   const slim = resolveSlimConfig(workingDirectory, options);
-  if (!isSlimWrapperLayeringActive(slim)) {
-    return {};
-  }
-
   const devRyanAgentsByName = new Map(
     getDevRyanBaseConfigAgents(workingDirectory).map((agent) => [agent.name, agent]),
   );
@@ -648,31 +634,14 @@ function applySlimModelMetadata(agent, slimAgent) {
   return next;
 }
 
+// DevRyan's packaged and project agents are the base; the built-in agent
+// orchestration layers its model routing over them and adds the roles DevRyan
+// does not define (for example the hidden councillor).
 function getBaseConfigAgents(workingDirectory, options = {}) {
-  const slim = resolveSlimConfig(workingDirectory, options);
-  const slimAgents = getSlimConfigAgents(workingDirectory, options);
-  if (slim.slimAgentCatalogEnabled && Object.keys(slimAgents).length > 0) {
-    const agentsByName = new Map(Object.entries(slimAgents));
-    for (const agent of listProjectAgents(workingDirectory)) {
-      if (SLIM_REPLACED_AGENT_NAMES.has(agent.name)) {
-        continue;
-      }
-      agentsByName.set(agent.name, agent);
-    }
-    return Array.from(agentsByName.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }
-
   const agentsByName = new Map(getDevRyanBaseConfigAgents(workingDirectory).map((agent) => [agent.name, agent]));
-  if (slim.pluginEnabled && !slim.slimAgentCatalogEnabled) {
-    const runtimeSlimAgents = getSlimRuntimeModelAgents(workingDirectory, options);
-    for (const [name, slimAgent] of Object.entries(runtimeSlimAgents)) {
-      const existing = agentsByName.get(name);
-      if (existing) {
-        agentsByName.set(name, applySlimModelMetadata(existing, slimAgent));
-      } else {
-        agentsByName.set(name, slimAgent);
-      }
-    }
+  for (const [name, slimAgent] of Object.entries(getSlimRuntimeModelAgents(workingDirectory, options))) {
+    const existing = agentsByName.get(name);
+    agentsByName.set(name, existing ? applySlimModelMetadata(existing, slimAgent) : slimAgent);
   }
 
   return Array.from(agentsByName.values()).sort((a, b) => a.name.localeCompare(b.name));
@@ -728,8 +697,6 @@ function mergeSlimAgentLayers(installedAgent, configAgent) {
 }
 
 function getSlimAgentsFromResolvedConfig(slim) {
-  if (!slim.pluginEnabled) return {};
-
   const agentsByName = new Map();
   for (const agent of listSlimInstalledAgents(slim)) {
     agentsByName.set(agent.name, agent);
@@ -741,17 +708,8 @@ function getSlimAgentsFromResolvedConfig(slim) {
   return Object.fromEntries(Array.from(agentsByName.entries()).sort(([a], [b]) => a.localeCompare(b)));
 }
 
-function getSlimConfigAgents(workingDirectory, options = {}) {
-  const slim = resolveSlimConfig(workingDirectory, options);
-  if (!slim.slimAgentCatalogEnabled) return {};
-
-  return getSlimAgentsFromResolvedConfig(slim);
-}
-
 function getSlimRuntimeModelAgents(workingDirectory, options = {}) {
-  const slim = resolveSlimConfig(workingDirectory, options);
-  if (!slim.pluginEnabled || slim.slimAgentCatalogEnabled) return {};
-  return getSlimAgentsFromResolvedConfig(slim);
+  return getSlimAgentsFromResolvedConfig(resolveSlimConfig(workingDirectory, options));
 }
 
 function assertKnownAgentName(agentName, workingDirectory, options = {}) {
@@ -761,69 +719,61 @@ function assertKnownAgentName(agentName, workingDirectory, options = {}) {
   }
 }
 
-function writeAgentModelOverride(agentName, rawOverride, workingDirectory, options = {}) {
-  const override = normalizeAgentModelOverride(rawOverride);
-  const slimAgents = getSlimConfigAgents(workingDirectory, options);
-  const slimRuntimeAgents = getSlimRuntimeModelAgents(workingDirectory, options);
-  const slim = resolveSlimConfig(workingDirectory, options);
-  const devRyanAgentExists = getDevRyanBaseConfigAgents(workingDirectory).some((agent) => agent.name === agentName);
-  if (slimAgents[agentName] || slimRuntimeAgents[agentName] || (slim.pluginEnabled && devRyanAgentExists)) {
-    return writeSlimAgentModelOverride(agentName, override, options);
-  }
+// The built-in agent orchestration owns a role's model and variant; Council
+// members stay in the DevRyan sidecar, where applySlimCouncillorOverride reads them.
+function isOrchestrationRoutedAgent(agentName, workingDirectory, options = {}) {
+  return Boolean(getSlimRuntimeModelAgents(workingDirectory, options)[agentName])
+    || getDevRyanBaseConfigAgents(workingDirectory).some((agent) => agent.name === agentName);
+}
 
-  assertKnownAgentName(agentName, workingDirectory, options);
+function writeSidecarAgentOverrides(nextOverrides, options = {}) {
   const config = readUserConfig(options);
   const openchamber = config[OPENCHAMBER_CONFIG_KEY] && typeof config[OPENCHAMBER_CONFIG_KEY] === 'object' && !Array.isArray(config[OPENCHAMBER_CONFIG_KEY])
     ? { ...config[OPENCHAMBER_CONFIG_KEY] }
     : {};
-  const overrides = getAgentOverridesContainer(config);
-
-  const nextConfig = {
+  writeUserConfig({
     ...config,
     [OPENCHAMBER_CONFIG_KEY]: {
       ...openchamber,
-      [AGENT_OVERRIDES_CONFIG_KEY]: {
-        ...overrides,
-        [agentName]: override,
-      },
+      [AGENT_OVERRIDES_CONFIG_KEY]: nextOverrides,
     },
-  };
+  }, options);
+}
 
-  writeUserConfig(nextConfig, options);
+function writeAgentModelOverride(agentName, rawOverride, workingDirectory, options = {}) {
+  const override = normalizeAgentModelOverride(rawOverride);
+  if (isOrchestrationRoutedAgent(agentName, workingDirectory, options)) {
+    const { councillors, ...modelOverride } = override;
+    if (Object.keys(modelOverride).length > 0) {
+      writeSlimAgentModelOverride(agentName, modelOverride, options);
+    }
+    if (councillors !== undefined) {
+      const overrides = { ...getAgentOverridesContainer(readUserConfig(options)) };
+      overrides[agentName] = { councillors };
+      writeSidecarAgentOverrides(overrides, options);
+    }
+    return override;
+  }
+
+  assertKnownAgentName(agentName, workingDirectory, options);
+  const overrides = getAgentOverridesContainer(readUserConfig(options));
+  writeSidecarAgentOverrides({ ...overrides, [agentName]: override }, options);
   return override;
 }
 
 function deleteAgentModelOverride(agentName, options = {}) {
-  if (options.workingDirectory) {
-    const slimAgents = getSlimConfigAgents(options.workingDirectory, options);
-    const slimRuntimeAgents = getSlimRuntimeModelAgents(options.workingDirectory, options);
-    const slim = resolveSlimConfig(options.workingDirectory, options);
-    const devRyanAgentExists = getDevRyanBaseConfigAgents(options.workingDirectory).some((agent) => agent.name === agentName);
-    if (slimAgents[agentName] || slimRuntimeAgents[agentName] || (slim.pluginEnabled && devRyanAgentExists)) {
-      return deleteSlimAgentModelOverride(agentName, options);
-    }
+  let removed = false;
+  if (options.workingDirectory && isOrchestrationRoutedAgent(agentName, options.workingDirectory, options)) {
+    removed = deleteSlimAgentModelOverride(agentName, options);
   }
 
-  const config = readUserConfig(options);
-  const openchamber = config[OPENCHAMBER_CONFIG_KEY] && typeof config[OPENCHAMBER_CONFIG_KEY] === 'object' && !Array.isArray(config[OPENCHAMBER_CONFIG_KEY])
-    ? { ...config[OPENCHAMBER_CONFIG_KEY] }
-    : {};
-  const overrides = { ...getAgentOverridesContainer(config) };
-
+  const overrides = { ...getAgentOverridesContainer(readUserConfig(options)) };
   if (!Object.prototype.hasOwnProperty.call(overrides, agentName)) {
-    return false;
+    return removed;
   }
 
   delete overrides[agentName];
-  const nextConfig = {
-    ...config,
-    [OPENCHAMBER_CONFIG_KEY]: {
-      ...openchamber,
-      [AGENT_OVERRIDES_CONFIG_KEY]: overrides,
-    },
-  };
-
-  writeUserConfig(nextConfig, options);
+  writeSidecarAgentOverrides(overrides, options);
   return true;
 }
 
@@ -1003,11 +953,6 @@ function getPackagedAgent(agentName) {
 }
 
 function getAgentScope(agentName, workingDirectory) {
-  const slimAgents = getSlimConfigAgents(workingDirectory);
-  if (slimAgents[agentName]) {
-    return { scope: SLIM_SCOPE, path: slimAgents[agentName].__path || null };
-  }
-
   if (workingDirectory) {
     const projectPath = getIndexedProjectAgentPath(workingDirectory, agentName);
     if (fs.existsSync(projectPath)) {
@@ -1029,40 +974,6 @@ function getAgentScope(agentName, workingDirectory) {
 }
 
 function getAgentSources(agentName, workingDirectory) {
-  const slim = resolveSlimConfig(workingDirectory);
-  const slimAgents = getSlimConfigAgents(workingDirectory);
-  const slimAgent = slimAgents[agentName];
-  if (slimAgent) {
-    const mdPath = slimAgent.__path || null;
-    const jsonPath = slim.projectConfigPath || slim.userConfigPath || null;
-    return {
-      md: {
-        exists: Boolean(mdPath),
-        path: mdPath,
-        scope: mdPath ? SLIM_SCOPE : null,
-        fields: mdPath ? Object.keys(parseMdFile(mdPath).frontmatter) : [],
-      },
-      json: {
-        exists: Boolean(jsonPath),
-        path: jsonPath,
-        scope: SLIM_SCOPE,
-        fields: ['model', 'variant'],
-      },
-      projectMd: {
-        exists: false,
-        path: null,
-      },
-      packagedMd: {
-        exists: false,
-        path: null,
-      },
-      userMd: {
-        exists: false,
-        path: null,
-      },
-    };
-  }
-
   const projectPath = workingDirectory ? getIndexedProjectAgentPath(workingDirectory, agentName) : null;
   const projectExists = Boolean(projectPath && fs.existsSync(projectPath));
   const packagedAgent = getPackagedAgent(agentName);
@@ -1146,14 +1057,6 @@ function getAgentSources(agentName, workingDirectory) {
 function getAgentConfig(agentName, workingDirectory, options = {}) {
   const overrides = listAgentModelOverrides(options);
   const backupModels = listAgentBackupModels(options);
-  const slimAgents = getSlimConfigAgents(workingDirectory, options);
-  if (slimAgents[agentName]) {
-    return {
-      source: 'slim',
-      scope: SLIM_SCOPE,
-      config: attachAgentBackupModel(applySlimCouncillorOverride(slimAgents[agentName], overrides[agentName]), backupModels),
-    };
-  }
   const slimRuntimeAgents = getSlimRuntimeModelAgents(workingDirectory, options);
 
   const projectPath = workingDirectory ? getIndexedProjectAgentPath(workingDirectory, agentName) : null;

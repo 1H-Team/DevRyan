@@ -434,7 +434,7 @@ export function settingsPageForRequest(requestPath, method = 'GET') {
   if (/^\/(?:config\/mcp|mcp)(?:\/|$)/.test(path)) return 'mcp';
   if (/^\/config\/skills\/(?:catalog|install|scan)(?:\/|$)/.test(path)) return 'skills.catalog';
   if (/^\/config\/skills(?:\/|$)/.test(path)) return 'skills.installed';
-  if (/^\/config\/(?:plugins|slim)(?:\/|$)/.test(path)) return 'plugins';
+  if (/^\/config\/plugins(?:\/|$)/.test(path)) return 'plugins';
   // Reading the effective host prompt catalog is a chat/action runtime
   // dependency. Keep the editor and every mutation permission-gated without
   // requiring managed users to see the Magic Prompts settings page.

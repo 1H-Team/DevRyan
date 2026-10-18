@@ -18,12 +18,12 @@ const projectEntry = {
 };
 
 const defaultPlugin = {
-  id: 'devryan-default:oh-my-opencode-slim',
-  pluginId: 'oh-my-opencode-slim' as const,
-  displayName: 'Oh My OpenCode Slim',
-  shippedSpec: './plugins/devryan-oh-my-opencode-slim.mjs',
-  effectiveSpec: './plugins/devryan-oh-my-opencode-slim.mjs',
-  version: '2.0.5',
+  id: 'devryan-default:@rama_nigg/open-cursor',
+  pluginId: '@rama_nigg/open-cursor' as const,
+  displayName: 'Open Cursor',
+  shippedSpec: './plugins/devryan-open-cursor.mjs',
+  effectiveSpec: './plugins/devryan-open-cursor.mjs',
+  version: '2.5.8',
   delivery: 'installed-local' as const,
   sourcePath: 'default-config/user-profile/package.json',
   kind: 'default' as const,
@@ -39,10 +39,6 @@ describe('PluginsSidebar', () => {
       selectedId: null,
       isLoading: false,
       lastError: null,
-      slimStatus: null,
-      slimStatusLoading: false,
-      slimActionInFlight: null,
-      slimLastError: null,
     });
     Object.assign(usePluginsStore.getInitialState(), { defaults: [defaultPlugin], entries: [projectEntry] });
   });
@@ -57,7 +53,7 @@ describe('PluginsSidebar', () => {
 
       expect(markup).toContain('DevRyan Default Plugins');
       expect(markup).toContain('Project Config Entries');
-      expect(markup).toContain('Oh My OpenCode Slim');
+      expect(markup).toContain('Open Cursor');
       expect(markup).toContain('devryan-default-plugin@1.0.0');
     } finally {
       usePluginsStore.setState(initialPluginsState, true);
