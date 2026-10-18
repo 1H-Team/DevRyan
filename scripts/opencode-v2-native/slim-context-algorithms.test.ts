@@ -1,13 +1,12 @@
 import {test,expect} from 'bun:test';import fs from 'node:fs/promises';import path from 'node:path';import os from 'node:os';import {pathToFileURL} from 'node:url';
-import {rewriteReviewedSlimServer} from '../../packages/web/server/lib/opencode/runtime-host/reviewed-package-transforms.js';
+import {bundleAgentsCore,importAgentsCore} from './agents-core-fixture.ts';
 import {createOwnedSlimTaskBoardRenderer} from '../../packages/web/server/lib/opencode/runtime-host/native-slim-context-algorithms.js';
-import type * as ReviewedSlim from '../../packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js';
+import type * as ReviewedSlim from '../../packages/agents-core/index.js';
 
 test('original pure retry selector preserves chain order, rearm and exhaustion without a fallback manager',async()=>{
  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-slim-context-')));
  try{
-  const entry=path.join(root,'reviewed.mjs');await fs.writeFile(entry,rewriteReviewedSlimServer(await fs.readFile(new URL('../../packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js',import.meta.url))).contents);
-  const originals:typeof ReviewedSlim=await import(pathToFileURL(entry).href);
+  const originals=await importAgentsCore(root);
   const initial={chains:{explorer:['saved/first','saved/second','saved/last']},agent:'explorer',currentModel:'saved/first',tried:[],exhaustion:0 as const};const before=JSON.stringify(initial);
   const first=originals.selectReviewedSlimFallback(initial);expect(first.selection).toMatchObject({nextModel:'saved/second',ref:{providerID:'saved',modelID:'second'}});expect(JSON.stringify(initial)).toBe(before);
   const second=originals.selectReviewedSlimFallback({...initial,currentModel:'saved/second',tried:first.tried,exhaustion:first.exhaustion});expect(second.selection).toMatchObject({nextModel:'saved/last'});
@@ -22,10 +21,10 @@ test('original pure retry selector preserves chain order, rearm and exhaustion w
 test('original taskboard renderer uses canonical owner formatting and exact terminal CAS inside existing fence',async()=>{
  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-slim-board-')));
  try{
-  const entry=path.join(root,'reviewed.mjs');await fs.writeFile(entry,rewriteReviewedSlimServer(await fs.readFile(new URL('../../packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js',import.meta.url))).contents);
-  const originals:typeof ReviewedSlim=await import(pathToFileURL(entry).href);
+  const originals=await importAgentsCore(root);
   let live=true,inFence=false;const reconciled:unknown[]=[];
-  let job:ReviewedSlim.ReviewedSlimBoardJob={taskID:'ses_child',alias:'exp-1',agent:'explorer',state:'completed',generation:3,terminalRevision:7,terminalUnreconciled:true,contextFiles:[],description:'Exact & objective',resultSummary:'Exact result'};
+  let job:ReviewedSlim.ReviewedSlimBoardJob={taskID:'ses_child',parentSessionID:'ses_parent',alias:'exp-1',agent:'explorer',state:'completed',generation:3,taskGeneration:3,terminalRevision:7,activityRevision:0,terminalUnreconciled:true,contextFiles:[],description:'Exact & objective',resultSummary:'Exact result',
+   background:true,timedOut:false,recoverableAfterLiveBusy:false,statusUncertain:false,cancellationRequested:false,launchedAt:1,lastLaunchedAt:1,runStartedAt:1,updatedAt:2,lastUsedAt:2};
   const renderer=createOwnedSlimTaskBoardRenderer(originals,{assertCurrent:async()=>{if(!live)throw new Error('task_grant_revoked');},withTaskState:async action=>{inFence=true;try{await action();}finally{inFence=false;}},presentation:{shouldManageSession:id=>id==='ses_parent',board:{get:()=>job,
    formatForPromptWithMetadata:()=>originals.formatReviewedSlimTaskBoard({jobs:[job],reusable:job.terminalUnreconciled?[]:[job]}),
    markReconciled:(taskID,_at,generation,revision)=>{if(!inFence)throw new Error('missing_owner_fence');reconciled.push({taskID,generation,revision});job={...job,state:'reconciled',terminalUnreconciled:false};return job;},
@@ -37,20 +36,28 @@ test('original taskboard renderer uses canonical owner formatting and exact term
  }finally{await fs.rm(root,{recursive:true,force:true});}
 });
 
-test('fresh image workers restore only bounded per-location original presentation state',async()=>{
+test('fresh image workers save content-addressed images without carrying state between runs',async()=>{
  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-slim-image-state-')));
  try{
-  const entry=path.join(root,'reviewed.mjs'),view=path.join(root,'view');await fs.mkdir(view);await fs.writeFile(entry,rewriteReviewedSlimServer(await fs.readFile(new URL('../../packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js',import.meta.url))).contents);
-  const script=path.join(root,'worker.mjs');await fs.writeFile(script,`import * as original from ${JSON.stringify(pathToFileURL(entry).href)};
-const view=process.cwd(),logical='/reviewed/location';original.bindReviewedSlimImageWorker(view);
-const state=JSON.parse(process.env.REVIEWED_STATE||'null');if(state)original.restoreReviewedSlimImageState(state,logical);
-const messages=[{info:{role:'user',id:'msg_one',sessionID:'ses_owned'},parts:[{type:'file',url:'data:image/png;base64,aGVsbG8=',mime:'image/png',filename:'same.png'}]}];let notices=0;
-const skipped=original.processReviewedSlimImageAttachments({messages,workDir:view,imageRouting:'auto',disabledAgents:new Set(process.env.REVIEWED_IMAGES==='enabled'?[]:['observer']),log:()=>{notices++}});
-console.log(JSON.stringify({skipped,notices,state:original.snapshotReviewedSlimImageState(logical)}));`);
-  const run=async(state?:unknown,images=false)=>{const childProcess=Bun.spawn([process.execPath,script],{cwd:view,env:{...globalThis.process.env,REVIEWED_STATE:state?JSON.stringify(state):'',REVIEWED_IMAGES:images?'enabled':''},stdout:'pipe',stderr:'pipe'});const out=await new Response(childProcess.stdout).text(),error=await new Response(childProcess.stderr).text();expect(await childProcess.exited).toBe(0);expect(error).toBe('');return JSON.parse(out);};
-  const first=await run();expect(first).toMatchObject({skipped:true,notices:1,state:{schema:1,logicalDirectory:'/reviewed/location',counts:[['ses_owned',1]]}});expect(JSON.stringify(first.state)).not.toContain(view);
-  const next=await run(first.state);expect(next).toMatchObject({skipped:false,notices:0});expect(next.state).toEqual(first.state);
-  const image=await run(undefined,true);expect(image.state.resolved).toHaveLength(1);expect(image.state.resolved[0][0]).toContain('/.opencode/images/ses_owned\n');const imageRestored=await run(image.state,true);expect(imageRestored.state.resolved).toEqual(image.state.resolved);expect(imageRestored.state.cleanup).toEqual(image.state.cleanup);
-  const malicious={...first.state,resolved:[['/.opencode/images\nname\nhash','../outside']]};const child=Bun.spawn([process.execPath,script],{cwd:view,env:{...process.env,REVIEWED_STATE:JSON.stringify(malicious)},stdout:'pipe',stderr:'pipe'});expect(await child.exited).not.toBe(0);expect(await new Response(child.stderr).text()).toContain('reviewed_slim_image_state_invalid');
+  const entry=await bundleAgentsCore(root),view=path.join(root,'view');await fs.mkdir(view);
+  // 3.x keeps no per-directory state: every confined worker run is fresh and
+  // the saved, content-addressed file is the only memo.
+  const png='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+  const script=path.join(root,'worker.mjs');await fs.writeFile(script,`import * as original from ${JSON.stringify(entry)};
+const view=process.cwd();original.bindReviewedSlimImageWorker(view);
+if(process.env.REVIEWED_ESCAPE)original.processReviewedSlimImageAttachments({messages:[],workDir:'/elsewhere',imageRouting:'auto',disabledAgents:new Set(),log:()=>{}});
+const messages=[{info:{role:'user',id:'msg_one',sessionID:'ses_owned'},parts:[{type:'file',url:'data:image/png;base64,${png}',mime:'image/png',filename:'same.png'}]}];const logs=[];
+const skipped=original.processReviewedSlimImageAttachments({messages,workDir:view,imageRouting:'auto',disabledAgents:new Set(process.env.REVIEWED_IMAGES==='enabled'?[]:['observer']),log:message=>{logs.push(message)}});
+console.log(JSON.stringify({skipped,logs,parts:messages[0].parts}));`);
+  const run=async(env:Record<string,string>)=>{const childProcess=Bun.spawn([process.execPath,script],{cwd:view,env:{...globalThis.process.env,...env},stdout:'pipe',stderr:'pipe'});const out=await new Response(childProcess.stdout).text(),error=await new Response(childProcess.stderr).text();return {exit:await childProcess.exited,out,error};};
+  const parse=async(env:Record<string,string>)=>{const result=await run(env);expect(result.exit).toBe(0);expect(result.error).toBe('');return JSON.parse(result.out);};
+  const retained=await parse({});expect(retained.skipped).toBe(true);expect(retained.logs).toHaveLength(1);expect(retained.parts[0].type).toBe('file');
+  const saved=await fs.realpath(view)+'/.opencode/images/ses_owned/same-c7a9c45f.png';
+  const notice='[Image saved to:\n- '+saved+'\nDelegate to @observer with the path(s) and your goal — @observer reads images with its read tool.]';
+  const first=await parse({REVIEWED_IMAGES:'enabled'});expect(first.skipped).toBe(false);expect(first.parts).toEqual([{type:'text',text:notice}]);
+  expect(Buffer.from(await fs.readFile(saved)).toString('base64')).toBe(png);
+  const again=await parse({REVIEWED_IMAGES:'enabled'});expect(again.parts).toEqual(first.parts);
+  expect(await fs.readdir(path.join(view,'.opencode/images/ses_owned'))).toEqual(['same-c7a9c45f.png']);
+  const escape=await run({REVIEWED_ESCAPE:'1'});expect(escape.exit).not.toBe(0);expect(escape.error).toContain('reviewed_slim_image_worker_required');
  }finally{await fs.rm(root,{recursive:true,force:true});}
 });

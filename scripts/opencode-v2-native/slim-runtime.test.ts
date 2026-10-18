@@ -4,7 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import {pathToFileURL} from 'node:url';
 import {renderReviewedPonytailInstructions} from '../../packages/web/server/lib/opencode/runtime-host/reviewed-ponytail-instructions.js';
-import {rewriteReviewedSlimServer} from '../../packages/web/server/lib/opencode/runtime-host/reviewed-package-transforms.js';
+import {bundleAgentsCore} from './agents-core-fixture.ts';
 
 for(const controllerComposition of [false,true])test((controllerComposition?'controller composition: ':'')+'composed pinned Slim runtime preserves two location catalogs across tool reload and disposes its native scope', async () => {
   const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-native-slim-')));
@@ -19,11 +19,7 @@ for(const controllerComposition of [false,true])test((controllerComposition?'con
     await Promise.all(directories.map(directory => fs.mkdir(directory)));
     const host = new URL('../../packages/web/server/lib/opencode/runtime-host/', import.meta.url).href;
     const sdk = new URL('../../packages/web/node_modules/@opencode/sdk/dist/effect/index.js', import.meta.url).href;
-    const input = new URL('../../packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js', import.meta.url);
-    const transformed = rewriteReviewedSlimServer(await fs.readFile(input));
-    const reviewedEntry = path.join(root, 'reviewed-slim.mjs');
-    await fs.writeFile(reviewedEntry, transformed.contents);
-    const slim = pathToFileURL(reviewedEntry).href;
+    const slim = await bundleAgentsCore(root);
     const source = `
       import { Effect, Fiber, Layer, Logger } from 'effect';
       import { Global } from '@opencode/util/global';
@@ -158,7 +154,7 @@ for(const controllerComposition of [false,true])test((controllerComposition?'con
             yield* Effect.promise(()=>primary.admit({sessionID:contextSession.id,directory,primary:true,executionGeneration:2,body:{messageID:'msg_owneduser',agent:'orchestrator',model:{providerID:'sim',modelID:'m1'},variant:'default'}}));
             actualBoardOwner=createNativeSlimContextOwner({originals,primaryRuntime:primary,getManagedRuntime:()=>taskScheduler,locations:[{directory}],openCodeClient:{sessions:{get:async id=>{const session=await Effect.runPromise(api.sessions.get({sessionID:id}));return {id:session.id,directory:session.location.directory,parentID:session.parentID};}}},admissionOwner:{captureSessionHookAuthorization:async input=>async()=>{const current=currentNativeSlimHookAuthority();if(!current||current.permit.token!==input.permit.token||current.sessionID!==input.sessionID||current.directory!==input.directory)throw new Error('actual_board_hook_revoked');}}});
             const boardContext=yield* capturedHooks.trigger('session','context',{...actualResultEvent,messages:[contextEvent.messages[0],{...toolResult,content:[...toolResult.content,...secondResult.content]}]}).pipe(Effect.provideService(OperationPermitRef,{token:'f'.repeat(64),revision:0,sessionID:contextSession.id}));
-            if(boardContext.messages.length!==3||boardContext.messages[2].role!=='user'||boardContext.messages[2].id!=='msg_owneduser-background-job-board'||!boardContext.messages[2].content[0].text.includes('ORIGINAL TERMINAL BOARD RESULT')||Object.hasOwn(boardContext.messages[1],'id'))throw new Error('actual_original_board_insertion_lost');
+            if(boardContext.messages.length!==3||boardContext.messages[2].role!=='user'||!/^msg_owneduser-background-job-board-[0-9a-f]{8}$/.test(boardContext.messages[2].id)||!boardContext.messages[2].content[0].text.includes('ORIGINAL TERMINAL BOARD RESULT')||Object.hasOwn(boardContext.messages[1],'id'))throw new Error('actual_original_board_insertion_lost');
             if(taskScheduler.getResultEnvelope(task.taskId).promptObserved)throw new Error('board_presentation_collected_early');
             const nextUser={...contextEvent.messages[0],id:'msg_ownednext',content:[{type:'text',text:'Continue actual objective'}]};
             const secondContext=yield* capturedHooks.trigger('session','context',{...actualResultEvent,messages:[contextEvent.messages[0],{...toolResult,content:toolResult.content},nextUser]}).pipe(Effect.provideService(OperationPermitRef,{token:'f'.repeat(64),revision:0,sessionID:contextSession.id}));

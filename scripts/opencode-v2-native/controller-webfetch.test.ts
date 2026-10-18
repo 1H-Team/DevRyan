@@ -38,7 +38,7 @@ test('controller webfetch uses actual native selection/hooks/provider with froze
    const {runWithRequestPermit}=await import(${JSON.stringify(pathToFileURL(path.join(host,'native-admission-contract.ts')).href)});
    const {OperationPermitRef}=await import(${JSON.stringify(pathToFileURL(path.join(host,'native-admission-contract.ts')).href)});
    const {configurationOverrides}=await import(${JSON.stringify(pathToFileURL(path.join(host,'configuration.ts')).href)});
-   import * as original from ${JSON.stringify(path.join(repository,'packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js'))};
+   import * as original from ${JSON.stringify(path.join(repository,'packages/agents-core/src/devryan/index.ts'))};
    import {helperPluginContext} from ${JSON.stringify(path.join(host,'native-helper-context.ts'))};
    import {createControllerWebfetch} from ${JSON.stringify(path.join(host,'controller-webfetch.ts'))};
    import {createNativeObservation} from ${JSON.stringify(path.join(host,'native-observation.ts'))};

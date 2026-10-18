@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import {fileURLToPath} from 'node:url';
-import {assertCompiledAstReceipt,createCompiledSlimFetchFixture,runCompiledSlimTools} from './package-slim-tools-lane.mjs';
+import {assertCompiledAstReceipt,createCompiledSlimFetchFixture,runCompiledSlimTools} from './package-agents-core-tools-lane.mjs';
 import {createOpenCodeAdmission} from '../../packages/web/server/lib/opencode/v2/admission.js';
 import {createOpenCodeClient} from '../../packages/web/server/lib/opencode/opencode-client/index.js';
 

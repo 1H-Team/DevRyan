@@ -3,50 +3,41 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {createServer} from 'node:http';
-import {fileURLToPath} from 'node:url';
-import vm from 'node:vm';
+import {execFileSync} from 'node:child_process';
+import {fileURLToPath,pathToFileURL} from 'node:url';
+import {scratchParent} from '../qa/run-root.mjs';
 import {resolveSqliteDriver} from '../../packages/web/server/lib/opencode/db-maintenance-core.js';
 
 const repository=fileURLToPath(new URL('../../',import.meta.url)).replace(/\/$/,'');
-const originalPath='packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js';
 const sha256=bytes=>createHash('sha256').update(bytes).digest('hex');
-const slices=[
- ['// src/hooks/command-hook-utils.ts','// src/hooks/deepwork/index.ts'],
- ['// src/hooks/deepwork/index.ts','// src/hooks/types.ts'],
- ['// src/hooks/loop-command/index.ts','// src/hooks/task-session-manager/continuation-model-selection.ts'],
- ['// src/hooks/reflect/index.ts','// src/hooks/search-path-guard/index.ts'],
-];
-function exactSlice(source,start,end){
- assert.equal(source.split(start).length,2,`Original command anchor changed: ${start}`);
- const offset=source.indexOf(start),stop=source.indexOf(end,offset);
- assert.ok(stop>offset,`Original command boundary changed: ${end}`);
- return source.slice(offset,stop);
-}
-/** Execute only the original pure command factories, never the package module
- * or its setup. Production evidence additionally binds these bytes to the
- * already verified compiled artifact's complete source inventory. */
+/** Execute only the original pure command factories from agents-core, never
+ * the package entry or its setup. Production evidence additionally binds
+ * every linked agents-core source to the verified compiled artifact's
+ * complete source inventory. */
 export async function loadOriginalSlimCommandOracle({artifacts}={}){
- const capture=JSON.parse(await fs.readFile(path.join(repository,'packages/web/runtime/reviewed-inputs/manifest.json'),'utf8'));
- const pinned=capture.inputs.find(row=>row.id==='slim-2.2.25').files.find(row=>row.path==='dist/server/index.js');
- const bytes=await fs.readFile(path.join(repository,originalPath));assert.equal(sha256(bytes),pinned.sha256);
- if(artifacts){
-  const compiled=artifacts.manifest.inputs.sourceFiles.find(row=>row.path===originalPath);
-  assert.ok(compiled,'Original Slim source absent from compiled evidence');assert.equal(compiled.sha256,pinned.sha256);
- }
- const source=bytes.toString('utf8');
- const context=vm.createContext(Object.create(null),{codeGeneration:{strings:false,wasm:false}});
- const factories=new vm.Script(slices.map(([start,end])=>exactSlice(source,start,end)).join('\n')+
-  '\n({deepwork:createDeepworkCommandHook,loop:createLoopCommandHook,reflect:createReflectCommandHook})').runInContext(context,{timeout:1000});
- return {sourceSha256:pinned.sha256,async prompt(command,args){
-  assert.ok(Object.hasOwn(factories,command));assert.equal(typeof args,'string');
-  // These positive cases avoid the internal synthetic help branch; that
-  // branch is already covered by the actual SDK command contract tests.
-  if(command!=='reflect')assert.ok(args.trim());
-  const hook=factories[command]();hook.registerCommand({});const output={parts:[]};
-  await hook.handleCommandExecuteBefore({command,sessionID:'oracle_only',arguments:args},output);
-  assert.equal(output.parts.length,1);assert.equal(output.parts[0].type,'text');
-  return output.parts[0].text;
- }};
+ await fs.mkdir(scratchParent('agents-core-oracle'),{recursive:true});
+ const root=await fs.mkdtemp(path.join(scratchParent('agents-core-oracle'),'commands-'));
+ try{
+  const built=JSON.parse(execFileSync('bun',[path.join(repository,'scripts/opencode-v2-native/build-agents-core-commands.mjs'),root],{cwd:repository,encoding:'utf8'}));
+  assert.ok(Array.isArray(built.sources)&&built.sources.length>0,'agents-core command sources missing');
+  const sources=await Promise.all(built.sources.map(async file=>({path:file,sha256:sha256(await fs.readFile(path.join(repository,file)))})));
+  if(artifacts)for(const source of sources){
+   const compiled=artifacts.manifest.inputs.sourceFiles.find(row=>row.path===source.path);
+   assert.ok(compiled,`agents-core command source absent from compiled evidence: ${source.path}`);assert.equal(compiled.sha256,source.sha256);
+  }
+  const factories=await import(pathToFileURL(built.module).href);
+  return {sourceSha256:sha256(JSON.stringify(sources)),sources,async prompt(command,args){
+   const factory={deepwork:factories.createDeepworkCommandHook,loop:factories.createLoopCommandHook,reflect:factories.createReflectCommandHook}[command];
+   assert.equal(typeof factory,'function');assert.equal(typeof args,'string');
+   // These positive cases avoid the internal synthetic help branch; that
+   // branch is already covered by the actual SDK command contract tests.
+   if(command!=='reflect')assert.ok(args.trim());
+   const hook=factory();hook.registerCommand({});const output={parts:[]};
+   await hook.handleCommandExecuteBefore({command,sessionID:'oracle_only',arguments:args},output);
+   assert.equal(output.parts.length,1);assert.equal(output.parts[0].type,'text');
+   return output.parts[0].text;
+  }};
+ }finally{await fs.rm(root,{recursive:true,force:true});}
 }
 
 /** The original loop factory chooses one random history directory and uses it

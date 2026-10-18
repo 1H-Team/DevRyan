@@ -43,9 +43,9 @@ import {preparePackageSkillData,runCompiledSkillChecks} from './opencode-v2-nati
 import { createCompiledBrowserLane } from './opencode-v2-native/package-browser-lane.mjs';
 import { runCompiledDocuments } from './opencode-v2-native/package-document-lane.mjs';
 import { compiledCouncilMembers, runCompiledCouncil } from './opencode-v2-native/package-council-lane.mjs';
-import { createCompiledSlimWebBridge, runCompiledSlimInterview } from './opencode-v2-native/package-slim-lane.mjs';
+import { createCompiledSlimWebBridge, runCompiledSlimInterview } from './opencode-v2-native/package-agents-core-lane.mjs';
 import { createCompiledMcpLane } from './opencode-v2-native/package-mcp-lane.mjs';
-import { runCompiledSlimTools } from './opencode-v2-native/package-slim-tools-lane.mjs';
+import { runCompiledSlimTools } from './opencode-v2-native/package-agents-core-tools-lane.mjs';
 import { createCompiledImageLane } from './opencode-v2-native/package-image-lane.mjs';
 import { readNativeRemovalRows, assertNativeRemovalAbsent, assertCompletedRemoval } from './opencode-v2-native/removal-lanes.mjs';
 import { assertPackagePreflightOptions, assertCompiledCompositionCatalogs, packagePreflightResult,

@@ -4,7 +4,7 @@ import {createNativeConfigurationSnapshotResolver} from '../../packages/web/serv
 import {parseMdFile} from '../../packages/web/server/lib/opencode/shared.js';
 import {packageSkillsForLaunch} from './package-skill-lane.mjs';
 import {compiledCouncilMembers} from './package-council-lane.mjs';
-import {runCompiledSlimCommands} from './package-slim-lane.mjs';
+import {runCompiledSlimCommands} from './package-agents-core-lane.mjs';
 
 /** Exact specs from the sanitized authorized active inventory; executable bytes
  * come exclusively from the verified compiled manifest/configuration asset. The

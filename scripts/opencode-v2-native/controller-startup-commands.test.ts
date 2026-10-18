@@ -25,7 +25,7 @@ globalThis.captureNativeHostOptions=options=>{captured=options;throw new Error('
 let networkCalls=0;globalThis.fetch=async()=>{networkCalls++;throw new Error('fixture_network_forbidden');};
 const {startNativeController}=await import(${JSON.stringify(path.join(host,'controller-startup.ts'))});
 const {reviewedSlimCommandDeclarations}=await import(${JSON.stringify(path.join(host,'native-slim-commands.ts'))});
-const originals=await import(${JSON.stringify(path.join(repository,'packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js'))});
+const originals=await import(${JSON.stringify(path.join(repository,'packages/agents-core/src/devryan/index.ts'))});
 const {command:ponytail}=await import('devryan:reviewed-ponytail-instructions');
 const ids=['devryan.slim','devryan.slim-commands','devryan.slim-lifecycle','devryan.ponytail'];
 const origins=ids.map((id,index)=>({id,manifestDigest:String(index+1).repeat(64),capabilities:id==='devryan.slim'?['read','write','network','process']:['control']}));

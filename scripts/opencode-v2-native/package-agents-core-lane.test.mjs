@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createCompiledSlimWebBridge,loadOriginalSlimCommandOracle,normalizeOriginalLoopPrompt,assertCompiledInterviewUsers} from './package-slim-lane.mjs';
+import {createCompiledSlimWebBridge,loadOriginalSlimCommandOracle,normalizeOriginalLoopPrompt,assertCompiledInterviewUsers} from './package-agents-core-lane.mjs';
 
-test('exact captured pure factories produce activation rather than static declaration templates',async()=>{
+test('agents-core pure command factories produce activation rather than static declaration templates',async()=>{
  const oracle=await loadOriginalSlimCommandOracle();assert.match(oracle.sourceSha256,/^[a-f0-9]{64}$/);
  const deepwork=await oracle.prompt('deepwork','  exact original task  ');
- assert.ok(deepwork.startsWith('Use the deepwork skill'));assert.ok(deepwork.endsWith('Task:\nexact original task'));
+ // 3.x inlines the deepwork skill and ends with the router head and task.
+ assert.ok(deepwork.startsWith('# Deepwork\n'));assert.ok(deepwork.includes('Your deepwork router head is `.slim/deepwork/oracle_only.md`'));assert.ok(deepwork.endsWith('Task:\nexact original task'));
  assert.ok(deepwork.includes('.slim/deepwork/'));assert.notEqual(deepwork,'Start a deepwork session for a complex coding task');
  const loop=await oracle.prompt('loop','goal: local test; successCriteria: pass; maxAttempts: 1');
  assert.ok(normalizeOriginalLoopPrompt(loop).includes('loop-<original-random-id>'));assert.ok(loop.includes('Dispatch @fixer'));
@@ -18,7 +19,10 @@ test('exact captured pure factories produce activation rather than static declar
  assert.ok(reflect.includes('Analyze the last 100 sessions'));assert.ok(reflect.endsWith('Focus:\nexact focus'));
  assert.notEqual(reflect,'Review repeated work and suggest workflow improvements');
  await assert.rejects(loadOriginalSlimCommandOracle({artifacts:{manifest:{inputs:{sourceFiles:[]}}}}),/absent from compiled evidence/);
- await assert.rejects(loadOriginalSlimCommandOracle({artifacts:{manifest:{inputs:{sourceFiles:[{path:'packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js',sha256:'a'.repeat(64)}]}}}}),/strictly equal/);
+ assert.ok(oracle.sources.some(row=>row.path==='packages/agents-core/src/hooks/deepwork/index.ts'));
+ await loadOriginalSlimCommandOracle({artifacts:{manifest:{inputs:{sourceFiles:oracle.sources}}}});
+ const tampered=oracle.sources.map((row,index)=>index===0?{...row,sha256:'a'.repeat(64)}:row);
+ await assert.rejects(loadOriginalSlimCommandOracle({artifacts:{manifest:{inputs:{sourceFiles:tampered}}}}),/strictly equal/);
 });
 
 test('fixture web bridge mounts only the existing owner and retains constructor/event boundaries',async()=>{

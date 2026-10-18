@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import {pathToFileURL} from 'node:url';
-import {rewriteReviewedSlimServer} from '../../packages/web/server/lib/opencode/runtime-host/reviewed-package-transforms.js';
+import {bundleAgentsCore} from './agents-core-fixture.ts';
 
 test('pinned Slim native setup preserves two location catalogs across tool reload and disposes its native scope', async () => {
   const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-native-slim-')));
@@ -18,11 +18,7 @@ test('pinned Slim native setup preserves two location catalogs across tool reloa
     await Promise.all(directories.map(directory => fs.mkdir(directory)));
     const host = new URL('../../packages/web/server/lib/opencode/runtime-host/', import.meta.url).href;
     const sdk = new URL('../../packages/web/node_modules/@opencode/sdk/dist/effect/index.js', import.meta.url).href;
-    const input = new URL('../../packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js', import.meta.url);
-    const transformed = rewriteReviewedSlimServer(await fs.readFile(input));
-    const reviewedEntry = path.join(root, 'reviewed-slim.mjs');
-    await fs.writeFile(reviewedEntry, transformed.contents);
-    const slim = pathToFileURL(reviewedEntry).href;
+    const slim = await bundleAgentsCore(root);
     const source = `
       import { Effect, Layer, Logger } from 'effect';
       import { Global } from '@opencode/util/global';

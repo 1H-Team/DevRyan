@@ -16,8 +16,7 @@ test('FFI verification embeds the native library from the locked core dependency
 });
 test('Windows-style Git checkout preserves byte-pinned reviewed resources',async()=>{
  const fixture=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-reviewed-checkout-')));
- const files=['packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js',
-  'packages/web/server/default-config/plugins/devryan-document-reader.mjs','packages/web/server/default-config/plugins/devryan-browser.mjs'];
+ const files=['packages/web/server/default-config/plugins/devryan-document-reader.mjs','packages/web/server/default-config/plugins/devryan-browser.mjs'];
  try{
   execFileSync('git',['init','-q'],{cwd:fixture});
   await fs.copyFile(path.join(repository,'.gitattributes'),path.join(fixture,'.gitattributes'));
@@ -64,13 +63,12 @@ test('reviewed original closure and exact constructor transforms are inventoried
  const root=path.join(repository,'packages/web/runtime/reviewed-inputs');
  const manifest=JSON.parse(await fs.readFile(path.join(root,'manifest.json'),'utf8'));
  for(const input of manifest.inputs)for(const file of input.files)assert.equal(reviewed.inputFiles.get(path.join(root,input.id,file.path)),file.sha256);
- assert.equal(reviewed.inputFiles.has(path.join(root,'slim-2.2.25/dist/server/index.d.ts')),true);
  assert.equal(reviewed.inputFiles.has(path.join(root,'ponytail-4.10.0/LICENSE')),true);
- const slim=reviewed.rewrites.get(path.join(root,'slim-2.2.25/dist/server/index.js'));
- assert.match(slim,/v1Hooks = await requireReviewedSlimHost\(directory\)\.hooks\(pluginInput\)/);
- assert.doesNotMatch(slim,/v1Hooks = await OhMyOpenCodeLite\(pluginInput\)/);
- assert.match(slim,/function createAutoUpdateCheckerHook\(ctx, options = \{\}\) \{\s+return \{ event: async \(\) => \{\} \};/);
- assert.equal(reviewed.transforms.find(item=>item.reason==='reviewed-slim-owned-constructor-seams').steps.length,36);
+ // The built-in agents are workspace source (packages/agents-core), not a
+ // captured input with a build-time rewrite.
+ assert.equal(manifest.inputs.some(input=>input.id.startsWith('slim-')),false);
+ assert.equal([...reviewed.inputFiles.keys(),...reviewed.rewrites.keys()].some(file=>file.startsWith(path.join(root,'slim-'))),false);
+ assert.equal(reviewed.transforms.some(item=>item.reason==='reviewed-slim-owned-constructor-seams'),false);
  assert.match(reviewed.virtualModules.get(REVIEWED_PONYTAIL_MODULE),/^export default /);
  assert.equal(reviewed.claudeCredentials.path,'DevRyan-Claude-credentials.mjs');
  assert.equal(reviewed.claudeCredentials.sha256,hash(reviewed.claudeCredentials.contents));

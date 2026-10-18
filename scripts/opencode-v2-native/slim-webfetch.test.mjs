@@ -7,7 +7,7 @@ const repository=path.resolve(import.meta.dirname,'../..');
 const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-slim-fetch-')));
 const entry=path.join(root,'entry.ts'),output=path.join(root,'bundle.mjs');
 await fs.writeFile(entry,`export * from ${JSON.stringify(path.join(repository,'packages/web/server/lib/opencode/runtime-host/native-slim-webfetch.ts'))};
-export * from ${JSON.stringify(path.join(repository,'packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js'))};
+export * from ${JSON.stringify(path.join(repository,'packages/agents-core/src/devryan/index.ts'))};
 export * from ${JSON.stringify(path.join(repository,'packages/web/server/lib/opencode/runtime-host/native-slim-dom.ts'))};`);
 const built=await Bun.build({entrypoints:[entry],target:'bun',plugins:[reviewedNativeInputPlugin(await prepareReviewedNativeInputs(repository))]});
 if(!built.success)throw new AggregateError(built.logs,'Reviewed webfetch build failed');
