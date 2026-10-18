@@ -14,10 +14,6 @@ import {
   readConfigFile,
 } from './shared.js';
 import { listManagedRuntimeAgentModelOverrides } from './agents.js';
-import {
-  normalizeAgentRuntimeSettings,
-  readAgentRuntimeSettings,
-} from './agent-runtime-settings.js';
 import { listMcpConfigs } from './mcp.js';
 import {
   buildBlockedManagedRuntimeMcpOverlay,
@@ -574,12 +570,10 @@ const mergeProviderRecords = (left, right) => {
 // `lsp: true` that slim-install writes into the user's config. lsp/lsp.ts
 // short-circuits on `!cfg.lsp` ("all LSPs are disabled") before registering
 // any server, so no typescript-language-server/tsserver is ever spawned.
-const buildAgentRuntimeLspOverlay = (options = {}) => {
-  const settings = isPlainObject(options.agentRuntimeSettings)
-    ? normalizeAgentRuntimeSettings(options.agentRuntimeSettings)
-    : readAgentRuntimeSettings({ userConfigPath: options.userConfigPath });
-  return settings.lsp === false ? { lsp: false } : null;
-};
+// Always off: a confined edit would start its own server from cold for the
+// whole project and discard it (10-20 s and 2-3 GiB per edit), and agents run
+// the project's own type checks instead.
+const AGENT_RUNTIME_LSP_OVERLAY = Object.freeze({ lsp: false });
 
 const buildRuntimeConfigOverlay = (workingDirectory, options = {}) => {
   const activePluginPlan = buildActivePluginPlan(workingDirectory, options);
@@ -604,7 +598,7 @@ const buildRuntimeConfigOverlay = (workingDirectory, options = {}) => {
     activePluginPlan.overlay,
     buildAnthropicOAuthProxyOverlay(workingDirectory, options),
     buildPackagedPluginOverlay(packagedPluginSpecs),
-    buildAgentRuntimeLspOverlay(options),
+    AGENT_RUNTIME_LSP_OVERLAY,
   ].filter(Boolean);
 
   if (overlays.length === 0) {

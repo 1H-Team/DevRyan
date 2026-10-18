@@ -481,8 +481,8 @@ that cache as soon as the profile file mutation succeeds, including partial clea
 Claude attempts and inspection then refuse until reconfiguration retires the owner.
 Deleting an unpublished incomplete profile does not invalidate the working provider.
 
-The reviewed macOS Claude Code asset is pinned to 2.1.280, the minimum version
-required by the saved Opus 5.5 selection. The existing npm hydrator verifies the
+The packaged macOS Claude Code fallback is 2.1.302. About can independently
+select a newer official Claude executable through a managed installation record. The existing npm hydrator verifies the
 archive integrity and exact binary hash/size; native build/startup signature checks
 remain required. Meridian and Agent SDK versions are unchanged. Windows retains
 its separately qualified executable pins.
@@ -502,9 +502,11 @@ await the physical supervisor. Infrastructure refusals retain finite transport
 errors and exit 125 instead of becoming a misleading generic exit-one auth error.
 The obsolete nested `--claude-transport-worker` entry is no longer accepted.
 
-New builds and activation candidates require the current reviewed Claude pin.
-Bundle cloning and explicit rollback alone may verify the exact previously
-reviewed macOS ARM64 Claude 2.1.251 identity (digest, size, mode and signature).
+New builds seed the current packaged Claude pin. Independently updated
+activation candidates require the managed installation provenance and publisher
+checks described below. Bundle cloning and explicit rollback also recognize
+the historical macOS ARM64 Claude 2.1.251 and 2.1.280 identities (digest, size,
+mode and signature).
 These constructor-owned `bundle-source`/`bundle-rollback` purposes never come
 from HTTP metadata; prepared targets and retained-candidate resume stay current-only.
 An explicit rollback selector grants its historical purpose at load and before
@@ -739,15 +741,44 @@ earlier builds.
 
 ## Claude updates in About
 
-The shared UI's `ClaudeCodeVersionSection.tsx` displays the running bundle's
-Claude identity through `../claude-runtime-update.js`. The public registry check
-is informational. Applying a verified bundle reuses `BundledRuntimeUpdate.tsx`
-and the existing runtime bundle lifecycle; no runtime pin, executable integrity
-check, credential checkpoint or rollback rule is relaxed. The reusable update
-control accepts a refresh key after an explicit About check and reports pending
-mutations so About cannot refresh away an in-flight transition. It disables its
-mutations while About is checking. App-delivered Claude upgrades use the ordinary
-DevRyan update dialog and its existing download/restart path.
+The shared UI's `ClaudeCodeVersionSection.tsx` reads the running version from
+`../claude-runtime-update.js`. `../claude-update-routes.js` owns authenticated
+GET `/api/config/claude-update` and administrator-only POST `/install` and
+`/rollback` below that path. Mutations accept only `{ expectedRevision }` and
+require `x-devryan-csrf: 1`. They return 202 with a pollable host-owned operation;
+a browser disconnect does not cancel activation. Other platforms retain the
+existing app-delivered update flow.
+
+`managed-claude-installation.js` resolves an exact stable npm platform package,
+bounds downloads, verifies SHA-512 archive integrity, extracts only a regular
+ARM64 Mach-O executable, and checks Apple's signature chain and Anthropic's
+`Q6L2SF6YDW` team. Its isolated preflight checks the reported version, required
+flags and SDK initialize control response. It sends no prompt, denies network
+and Keychain command access, disables settings and tools, and waits for process
+termination before deleting scratch. `scripts/hydrate-reviewed-claude.mjs` uses
+the same downloader for the packaged fallback.
+
+`managed-claude-candidate.js` copies the verified artifact inventory, replacing
+only Claude and recording `claudeInstallation` (schema, package, version,
+platform, archive URL/integrity, executable hash/size and signature evidence).
+The manifest digest binds this record; `native-artifacts.js` verifies the actual
+publisher and bytes on every launch. Other assets retain their exact pins.
+The candidate uses the existing bundle retention, checkpoint, selector CAS and
+host recomposition lifecycle. Download/check failures leave admission open;
+activation reserves idle admission before checkpointing and never replaces a
+running executable. A later app upgrade preserves a newer managed Claude;
+`claudeBaseManifestSha256` prevents reinstalling the same shipped core at every
+cold start. Source and rollback verification also recognize the previous
+2.1.280 and 2.1.251 packaged assets.
+
+Before selecting a Claude update, the bundle store persists a pending activation
+record with the source selector and source file inventory. Cold bootstrap runs
+`claude-activation-recovery.js` before opening data owners. Failed preflight can
+restore only an untouched prepared candidate's unchanged source, with absent
+owners and a fresh selector revision. It never projects old credentials over
+new work. Ready startup retires this automatic recovery; subsequent recovery
+uses the existing explicit bundle rollback and its reconciliation guards.
+Interrupted staging is removed under the updater lock on the next attempt.
 
 
 ### xAI usage renewal

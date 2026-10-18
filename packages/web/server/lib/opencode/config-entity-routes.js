@@ -75,9 +75,6 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
     deleteAgentModelOverride,
     writeAgentBackupModel,
     deleteAgentBackupModel,
-    readAgentRuntimeSettings,
-    writeAgentRuntimeSettings,
-    getAgentRuntimeApplicationState,
     getPackagedAgentPrompts,
     restorePackagedAgentPrompt,
     listConfigAgents,
@@ -433,63 +430,6 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
       console.error('Failed to delete agent backup model:', error);
       res.status(500).json({ error: formatErrorMessage(error, 'Failed to delete agent backup model') });
     }
-  });
-
-  // Desired switches stay in the sidecar. Only successful managed readiness
-  // proves which launch snapshot OpenCode applied; saves never rewrite its overlay.
-  const projectAgentRuntimeSettings = (settings) => {
-    const application = typeof getAgentRuntimeApplicationState === 'function'
-      ? getAgentRuntimeApplicationState() : null;
-    const runtimeMode = ['managed', 'external'].includes(application?.runtimeMode)
-      ? application.runtimeMode : 'unknown';
-    const appliedLsp = runtimeMode === 'managed' && typeof application?.appliedLsp === 'boolean'
-      ? application.appliedLsp : null;
-    return {
-      lsp: settings.lsp,
-      appliesOnRestart: true,
-      runtimeMode,
-      appliedLsp,
-      restartRequired: appliedLsp === null ? null : settings.lsp !== appliedLsp,
-    };
-  };
-  const AGENT_RUNTIME_UNAVAILABLE = 'Agent runtime settings are not supported by this host';
-  const AGENT_RUNTIME_FORBIDDEN = 'Agent runtime settings are not available for this user';
-
-  app.get('/api/config/agent-runtime', (req, res) => {
-    if (!canReadFullAgentConfig(req.principal)) {
-      return res.status(403).json({ error: AGENT_RUNTIME_FORBIDDEN });
-    }
-    if (typeof readAgentRuntimeSettings !== 'function') {
-      return res.status(501).json({ error: AGENT_RUNTIME_UNAVAILABLE });
-    }
-    try {
-      const settings = readAgentRuntimeSettings();
-      return res.json(projectAgentRuntimeSettings(settings));
-    } catch (error) {
-      console.error('Failed to read agent runtime settings:', error);
-      return res.status(500).json({ error: formatErrorMessage(error, 'Failed to read agent runtime settings') });
-    }
-  });
-
-  app.put('/api/config/agent-runtime', express.json({ limit: '16kb' }), async (req, res) => {
-    if (!canReadFullAgentConfig(req.principal)) {
-      return res.status(403).json({ error: AGENT_RUNTIME_FORBIDDEN });
-    }
-    if (typeof readAgentRuntimeSettings !== 'function' || typeof writeAgentRuntimeSettings !== 'function') {
-      return res.status(501).json({ error: AGENT_RUNTIME_UNAVAILABLE });
-    }
-    let next;
-    try {
-      next = writeAgentRuntimeSettings(req.body || {});
-    } catch (error) {
-      const invalid = error?.code === 'invalid_agent_runtime_settings';
-      if (!invalid) console.error('Failed to write agent runtime settings:', error);
-      return res.status(invalid ? 400 : 500).json({
-        error: formatErrorMessage(error, 'Failed to write agent runtime settings'),
-      });
-    }
-
-    return res.json(projectAgentRuntimeSettings(next));
   });
 
   const rejectAgentMutation = (_req, res) => {

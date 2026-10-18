@@ -283,17 +283,8 @@ replays keep the record reference. No DevRyan host wires launch admission, so
 sub-agent launches are never capped or held and the field is always `null` in
 practice (user requirement, 2026-09-04); no store surfaces limits or pacing.
 
-The managed agent-runtime switches (today only `lsp`, OpenCode's language
-servers inside agent sessions) live in `useAgentsStore` as `agentRuntimeSettings`,
-loaded and saved through `/api/config/agent-runtime` from the Agent Runtime
-section. Saves are serialized, retain confirmed values while pending, and fence
-older loads. GET and PUT return desired `lsp`, `appliesOnRestart: true`,
-`runtimeMode`, `appliedLsp`, and `restartRequired`. Only successful managed
-readiness proves application; external or unknown application returns null for
-the latter two fields. Repeated saves and renderer reloads preserve pending
-changes, and reverting desired settings clears them. Restart acceptance,
-configuration-apply state changes, and focus trigger fresh reads; none locally
-clear the restart notice. A 404 or 501 clears the state so the section hides.
+OpenCode's language servers are always off for agent sessions, so no store
+carries an agent-runtime switch.
 
 Ownership and safety rules:
 

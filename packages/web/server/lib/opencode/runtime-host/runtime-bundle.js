@@ -512,7 +512,7 @@ export function createRuntimeBundleStore(options) {
       return finishPreparation(value,artifacts,request);
     });
   };
-  const switchSelection = async ({bundleID,expectedRevision},transition,reconciliationRequired,previousBundleID,credentialBaseline) => lock(path.join(controlRoot,'selection.lock'),async () => {
+  const switchSelection = async ({bundleID,expectedRevision},transition,reconciliationRequired,previousBundleID,credentialBaseline,claudeIntent) => lock(path.join(controlRoot,'selection.lock'),async () => {
     const current = await readSelected(), revision=current?.selection.revision ?? 0;
     if (!Number.isSafeInteger(expectedRevision) || expectedRevision !== revision) throw fail('bundle_selection_revision_conflict');
     const verified=await verify({bundleID,phase:'resume',allowOwnedContinuations:false,
@@ -520,6 +520,7 @@ export function createRuntimeBundleStore(options) {
     const next={schema:1,revision:revision+1,selectedBundleID:bundleID,previousBundleID:previousBundleID ?? current?.selection.selectedBundleID ?? null,
       transition,reconciliationRequired,preparedManifestSha256:await fileHash(verified.descriptor.preparedManifestPath)};
     if(credentialBaseline)await saveBundleJSON(path.join(controlRoot,'rollback',bundleID+'.json'),credentialBaseline);
+    if (claudeIntent) await saveBundleJSON(path.join(controlRoot, 'claude-activation.json'), claudeIntent);
     await saveBundleJSON(path.join(controlRoot,'selection.json'),next); return next;
   });
   const select = async input => {
@@ -549,7 +550,14 @@ export function createRuntimeBundleStore(options) {
           targetDescriptorSha256:await fileHash(path.join(controlRoot,'bundles',current.descriptor.bundleID,'descriptor.json')),hostOwnerBaseline};
       }
       await scope?.assertHeld?.();
-      return switchSelection(input,'activate',false,undefined,baseline);
+      let claudeIntent;
+      if (input.claudeUpdate === true) {
+        if (!current || !baseline) throw fail('bundle_claude_activation_invalid');
+        claudeIntent = { schema: 1, state: 'pending',
+          candidateBundleID: input.bundleID, sourceSelection: current.selection,
+          sourceFiles: await captureRollbackFiles(path.join(controlRoot, 'bundles', current.descriptor.bundleID)) };
+      }
+      return switchSelection(input,'activate',false,undefined,baseline,claudeIntent);
     });
   };
   const recoveryFiles = value => captureRollbackFiles(path.join(controlRoot,'bundles',value.bundleID));
@@ -661,5 +669,32 @@ export function createRuntimeBundleStore(options) {
       return {selection:selected,admission:'held',reason:result.status==='blocked' ? result.reason:null};
     });
   };
-  return {prepare,verify,readSelected,select,rollback,resume};
+  // Cold bootstrap only. An untouched prepared clone has never accepted work;
+  // restore its unchanged source without replay or credential projection.
+  const restoreUnstartedClaude = async () => lock(path.join(controlRoot, 'selection.lock'), async () => {
+    if (typeof options.assertNoLiveOwner !== 'function') throw fail('bundle_claude_recovery_owner_required');
+    const current = await readSelected(), intent = await readBundleJSON(path.join(controlRoot, 'claude-activation.json'));
+    if (intent?.schema !== 1 || intent.state !== 'pending' || !current || current.selection.reconciliationRequired
+      || current.selection.transition !== 'activate' || intent.candidateBundleID !== current.descriptor.bundleID
+      || current.descriptor.sourceBundleID !== current.selection.previousBundleID) throw fail('bundle_claude_activation_invalid');
+    const previous = selection(intent.sourceSelection);
+    if (current.selection.revision !== previous.revision + 1 || previous.selectedBundleID !== current.selection.previousBundleID) throw fail('bundle_selection_revision_conflict');
+    const source = await readDescriptor(previous.selectedBundleID), candidate = current.descriptor;
+    await options.assertNoLiveOwner(candidate.launch); await options.assertNoLiveOwner(source.launch);
+    if (await fileHash(source.preparedManifestPath) !== previous.preparedManifestSha256) throw fail('bundle_claude_recovery_changed');
+    const root = path.join(controlRoot, 'bundles', candidate.bundleID), prepared = await readBundleJSON(candidate.preparedManifestPath);
+    if (prepared.descriptorSha256 !== await fileHash(path.join(root, 'descriptor.json')) || !Array.isArray(prepared.initialFiles)) throw fail('bundle_claude_recovery_changed');
+    const initial = durable(prepared.initialFiles, root, candidate.launch);
+    await verifyTree(root, initial);
+    if (canonicalJSON(durable(await treeManifest(root), root, candidate.launch).filter(row => row.path !== 'prepared.json')) !== canonicalJSON(initial)
+      || canonicalJSON(intent.sourceFiles) !== canonicalJSON(await captureRollbackFiles(path.join(controlRoot, 'bundles', source.bundleID)))) throw fail('bundle_claude_recovery_changed');
+    if (rollbackIntentUnresolved(readRollbackIntentSync(controlRoot), current.selection)) throw fail('bundle_recovery_resume_required');
+    await verify({ bundleID: source.bundleID, phase: 'resume', artifactPurpose: 'bundle-rollback', allowOwnedContinuations: false });
+    await options.assertNoLiveOwner(candidate.launch); await options.assertNoLiveOwner(source.launch);
+    const next = { ...previous, revision: current.selection.revision + 1, transition: 'rollback' };
+    await saveBundleJSON(path.join(controlRoot, 'selection.json'), next);
+    await saveBundleJSON(path.join(controlRoot, 'claude-activation.json'), { ...intent, state: 'restored' });
+    return next;
+  });
+  return {prepare,verify,readSelected,select,rollback,resume,restoreUnstartedClaude};
 }

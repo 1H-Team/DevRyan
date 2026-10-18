@@ -49,16 +49,17 @@
       }
     ]
   },
-  "excluded": "Unused @anthropic-ai/claude-agent-sdk platform executable; selected Claude Code 2.1.280 binary is the exact darwin-arm64 runtime asset. Meridian and Agent SDK captures are unchanged.",
+  "excluded": "Unused @anthropic-ai/claude-agent-sdk platform executable; selected Claude Code 2.1.302 binary is the exact darwin-arm64 runtime asset. Meridian and Agent SDK captures are unchanged.",
   "nativeExecutable": {
     "package": "@anthropic-ai/claude-code-darwin-arm64",
-    "version": "2.1.280",
-    "archiveUrl": "https://registry.npmjs.org/@anthropic-ai/claude-code-darwin-arm64/-/claude-code-darwin-arm64-2.1.280.tgz",
-    "archiveIntegrity": "sha512-ctkNgja8Yi2kngVFPO2667k6zbtJwjQ+dOTeEp1XmzHcoDFdaee4h4WVgZllsewm/Io+pPPPSFQVdGHOtdE/1A==",
-    "vendorManifestUrl": "https://downloads.claude.ai/claude-code-releases/2.1.280/manifest.json",
-    "sha256": "387a5c5dcdbb815085edf0baf79591f9d8894efe922bceaf3d75b1b08055229d",
-    "size": 217254576,
+    "version": "2.1.302",
+    "archiveUrl": "https://registry.npmjs.org/@anthropic-ai/claude-code-darwin-arm64/-/claude-code-darwin-arm64-2.1.302.tgz",
+    "archiveIntegrity": "sha512-h0MlQtldJnHXdPB6KGQ6rYQocvNTEXBI+NW4791OD2mIZcq6fHrV4PsM+XK297OL0+wVENlDHtlBj1BL/3S52A==",
+    "vendorManifestUrl": "https://downloads.claude.ai/claude-code-releases/2.1.302/manifest.json",
+    "sha256": "5262ce9de86243fed0d21edc39b271555d56780d0112e2b194439fe1c6662d37",
+    "size": 267956720,
     "signaturePublisher": "Anthropic PBC",
-    "signatureTeamID": "Q6L2SF6YDW"
+    "signatureTeamID": "Q6L2SF6YDW",
+    "cdhash": "3759f6c69569d1685ffcd6eea1c7e20539c2d4b5"
   }
 }

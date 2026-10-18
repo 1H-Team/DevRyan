@@ -3,49 +3,20 @@ import { describe, expect, test } from 'bun:test';
 
 const pageSource = readFileSync(new URL('./AgentsPage.tsx', import.meta.url), 'utf8');
 const runtimePageSource = readFileSync(new URL('./AgentRuntimePage.tsx', import.meta.url), 'utf8');
-const sectionSource = readFileSync(new URL('./AgentRuntimeSection.tsx', import.meta.url), 'utf8');
 
 describe('agent runtime presentation', () => {
   test('has its own host-editor Runtime view beside Behavior, outside any agent editor', () => {
     expect(pageSource).toContain("if (resolveAgentsGlobalView(selectedGlobalView, authPrincipal) === 'runtime') return <AgentRuntimePage />;");
     expect(pageSource.indexOf('<AgentRuntimePage />'))
       .toBeLessThan(pageSource.indexOf("t('settings.agents.page.section.identityRole')"));
-    expect(pageSource).not.toContain('<AgentRuntimeSection');
-    expect(runtimePageSource).toContain('<AgentRuntimeSection canEdit={canViewAgentRuntime(principal)} />');
-    expect(runtimePageSource.indexOf('<AgentRuntimeSection'))
+    expect(runtimePageSource.indexOf('<PackagedAgentPrompts />'))
       .toBeLessThan(runtimePageSource.indexOf('<OpenCodeCliSettings />'));
     expect(runtimePageSource.indexOf('<OpenCodeCliSettings />'))
       .toBeLessThan(runtimePageSource.indexOf('<AgentBrowserControlSettings />'));
   });
 
-  test('offers the language-server switch to host admins and read-only text to others', () => {
-    expect(sectionSource).toContain("t('settings.agents.runtime.title')");
-    expect(sectionSource).toContain("t('settings.agents.runtime.lsp.label')");
-    expect(sectionSource).toContain("t('settings.agents.runtime.lsp.description')");
-    expect(sectionSource).toContain('checked={settings.lsp}');
-    expect(sectionSource).toContain('void save({ lsp: checked })');
-    expect(sectionSource.match(/\{canEdit \? \(/g)).toHaveLength(1);
-    expect(sectionSource).toContain("t('settings.agents.runtime.readOnly.on')");
-    expect(sectionSource).toContain("t('settings.agents.runtime.readOnly.off')");
-    expect(sectionSource).toContain('if (!settings) return null;');
-  });
-
-  test('saves through the agents store, reports failures, and hides on hosts without the route', () => {
-    expect(sectionSource).toContain('saveAgentRuntimeSettings(input).catch(');
-    expect(sectionSource).toContain("t('settings.agents.runtime.toast.saveFailed')");
-    expect(sectionSource).toContain('getAgentRuntimeSettings().catch(');
-    expect(sectionSource).toContain("t('settings.agents.runtime.toast.loadFailed')");
-  });
-
-  test('shows the restart note after a change and a Restart Runtime button only where the host can restart', () => {
-    expect(sectionSource).toContain('settings.restartRequired === true ? (');
-    expect(sectionSource).toContain("t('settings.agents.runtime.restart.note')");
-    expect(sectionSource).toContain('apis.settings.restartOpenCode');
-    expect(sectionSource).toContain("{canEdit && settings.runtimeMode === 'managed' && restartOpenCode ? (");
-    expect(sectionSource).toContain("t('settings.agents.runtime.actions.restart')");
-    expect(sectionSource).toContain('await restartOpenCode();');
-    expect(sectionSource).toContain('await getAgentRuntimeSettings();');
-    expect(sectionSource).toContain("t('settings.agents.runtime.toast.restartRequested')");
-    expect(sectionSource).toContain("t('settings.agents.runtime.toast.restartFailed')");
+  test('offers no language-server switch: OpenCode language servers stay off', () => {
+    expect(runtimePageSource).not.toContain('AgentRuntimeSection');
+    expect(runtimePageSource).not.toContain('lsp');
   });
 });

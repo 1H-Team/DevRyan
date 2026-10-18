@@ -60,15 +60,17 @@ export interface RuntimeBundleStoreOptions {
   readonly captureCredentials?: (input:{readonly descriptor:RuntimeBundleDescriptor;readonly checkpoint:RuntimeBundleCheckpoint;readonly assertHeld:()=>Promise<void>})=>Promise<Extract<import('./native-bundle-credential-process.js').NativeBundleCredentialResult,{status:'captured'}>>;
   readonly reconcileRollback?: (input: { readonly candidate: RuntimeBundleDescriptor; readonly target: RuntimeBundleDescriptor;readonly credentialBinding:import('./native-bundle-credentials.js').NativeBundleCredentialBinding;readonly assertHeld:()=>Promise<void> }) => Promise<{ readonly status: 'reconciled';readonly credentialReceipt:Extract<import('./native-bundle-credential-process.js').NativeBundleCredentialResult,{status:'projected'}> } | { readonly status: 'blocked'; readonly reason: string }>;
   readonly readProcessIdentity?:(pid:number)=>{readonly pid:number;readonly startIdentity:string}|null;
+  readonly assertNoLiveOwner?: (launch: RuntimeBundleLaunch) => Promise<void>;
   readonly now?: () => number;
 }
 export function createRuntimeBundleStore(options: RuntimeBundleStoreOptions): {
+  restoreUnstartedClaude(): Promise<RuntimeBundleSelection>;
   prepare(input: PrepareRuntimeBundle): Promise<RuntimeBundleDescriptor>;
   verify(input: { readonly bundleID: string; readonly phase: 'prepared' | 'resume'; readonly artifactPurpose?: 'bundle-source' | 'bundle-rollback' }): Promise<RuntimeBundleVerification>;
   resume(input:{readonly expectedRevision:number}):Promise<RuntimeBundleSelection>;
   readSelected(): Promise<{ readonly selection: RuntimeBundleSelection; readonly descriptor: RuntimeBundleDescriptor } | null>;
   /** Lifecycle stops/recomposes all owners; this does not open admission. */
-  select(input: { readonly bundleID: string; readonly expectedRevision: number }): Promise<RuntimeBundleSelection>;
+  select(input: { readonly bundleID: string; readonly expectedRevision: number; readonly claudeUpdate?: boolean }): Promise<RuntimeBundleSelection>;
   /** Static incompatibility keeps B active. A checkpointed partial projection is held for Resume B recovery. */
   rollback(input: { readonly targetBundleID: string; readonly expectedRevision: number }): Promise<{ readonly selection: RuntimeBundleSelection; readonly admission: 'held'; readonly reason: string | null }>;
 };

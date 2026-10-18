@@ -28,7 +28,7 @@ import { readFacadeMessagePage, resolveFacadeDirectory, sendOpenCodeFacadeError,
 import { createGlobalAgentsMdRuntime } from './global-agents-md-runtime.js';
 import { registerGlobalAgentsMdRoutes } from './global-agents-md-routes.js';
 import { createOpenCodeUpdateCheckHandler } from './opencode-update-check.js';
-import { createClaudeUpdateCheckHandler, readBundledClaudeVersion } from './claude-runtime-update.js';
+import { createClaudeUpdateCheckHandler, readBundledClaudeResolution } from './claude-runtime-update.js';
 import {
   readMeridianPromptMode,
   setMeridianPromptCompatibilityMode,
@@ -338,8 +338,12 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
   app.get('/api/config/claude-resolution', async (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     try {
-      const version = isExternalOpenCode() ? null : await (dependencies.readBundledClaudeVersion ?? readBundledClaudeVersion)();
-      res.json({ source: version ? 'verified-native-bundle' : 'unavailable', version });
+      if (isExternalOpenCode()) return res.json({ source: 'unavailable', version: null });
+      if (dependencies.readBundledClaudeVersion) {
+        const version = await dependencies.readBundledClaudeVersion();
+        return res.json({ source: version ? 'verified-native-bundle' : 'unavailable', version });
+      }
+      res.json(await readBundledClaudeResolution());
     } catch { res.status(503).json({ code: 'claude_runtime_version_unavailable' }); }
   });
 

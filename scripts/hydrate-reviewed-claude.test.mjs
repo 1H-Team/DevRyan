@@ -23,10 +23,11 @@ test('a corrupt download installs no executable and removes temporary bytes', as
   const repository = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-hydrate-corrupt-'));
   try {
     await assert.rejects(hydrateReviewedClaude({ repository, fetchImpl: async (url, options) => {
-      assert.equal(url, 'https://registry.npmjs.org/@anthropic-ai/claude-code-darwin-arm64/-/claude-code-darwin-arm64-2.1.280.tgz');
+      if (url.endsWith('/2.1.302')) return Response.json({ name: '@anthropic-ai/claude-code-darwin-arm64', version: '2.1.302', dist: { tarball: 'https://registry.npmjs.org/@anthropic-ai/claude-code-darwin-arm64/-/claude-code-darwin-arm64-2.1.302.tgz', integrity: 'sha512-h0MlQtldJnHXdPB6KGQ6rYQocvNTEXBI+NW4791OD2mIZcq6fHrV4PsM+XK297OL0+wVENlDHtlBj1BL/3S52A==' } });
+      assert.equal(url, 'https://registry.npmjs.org/@anthropic-ai/claude-code-darwin-arm64/-/claude-code-darwin-arm64-2.1.302.tgz');
       assert.equal(options.redirect, 'error');
       return new Response('corrupt archive');
-    } }), /archive integrity mismatch/);
+    } }), /claude_archive_integrity/);
     await assert.rejects(fs.stat(path.join(repository, relative)), { code: 'ENOENT' });
     assert.deepEqual(await fs.readdir(path.dirname(path.join(repository, relative))), []);
   } finally { await fs.rm(repository, { recursive: true, force: true }); }
@@ -39,11 +40,11 @@ test('the reviewed executable, captured metadata and source manifest pin the mod
   const asset = capture.files.find(file => file.path === 'assets/' + REVIEWED_CLAUDE_ASSETS.claude.path);
   const metadata = JSON.parse(await fs.readFile(new URL('claude-1.8.0/node_modules/@anthropic-ai/claude-code-darwin-arm64/package.json', root), 'utf8'));
   const provenance = JSON.parse(await fs.readFile(new URL('claude-1.8.0/provenance.json', root), 'utf8'));
-  assert.equal(REVIEWED_CLAUDE_ASSETS.claude.version, '2.1.280');
+  assert.equal(REVIEWED_CLAUDE_ASSETS.claude.version, '2.1.302');
   assert.equal(metadata.version, REVIEWED_CLAUDE_ASSETS.claude.version);
   assert.equal(asset.sha256, REVIEWED_CLAUDE_ASSETS.claude.sha256);
-  assert.equal(asset.size, 217254576);
+  assert.equal(asset.size, 267956720);
   assert.equal(provenance.nativeExecutable.version, metadata.version);
   assert.equal(provenance.nativeExecutable.sha256, asset.sha256);
-  assert.equal(provenance.nativeExecutable.archiveIntegrity, 'sha512-ctkNgja8Yi2kngVFPO2667k6zbtJwjQ+dOTeEp1XmzHcoDFdaee4h4WVgZllsewm/Io+pPPPSFQVdGHOtdE/1A==');
+  assert.equal(provenance.nativeExecutable.archiveIntegrity, 'sha512-h0MlQtldJnHXdPB6KGQ6rYQocvNTEXBI+NW4791OD2mIZcq6fHrV4PsM+XK297OL0+wVENlDHtlBj1BL/3S52A==');
 });

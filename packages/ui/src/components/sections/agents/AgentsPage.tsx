@@ -857,14 +857,23 @@ export const AgentsPage: React.FC = () => {
     return <BehaviorPage />;
   }
 
-  const renderThinkingLevelRow = (
-    key?: React.Key,
+  // Every row passes its own model and variant: a default would make an empty
+  // backup or Council variant (`undefined`) display the primary's variant.
+  const renderThinkingLevelRow = ({
+    key,
     alignUnderModel = false,
-    modelRef = model,
-    value: string | undefined = variant,
-    onChange: (value: string | undefined) => void = setVariant,
-    onModelChange: (value: string) => void = setModel,
-  ) => {
+    modelRef,
+    value,
+    onChange,
+    onModelChange,
+  }: {
+    key?: React.Key;
+    alignUnderModel?: boolean;
+    modelRef: string;
+    value: string | undefined;
+    onChange: (value: string | undefined) => void;
+    onModelChange: (value: string) => void;
+  }) => {
     const parsedRowModel = parseModelIdentifier(modelRef);
     const rowProvider = parsedRowModel ? providers.find((entry) => entry.id === parsedRowModel.providerId) : undefined;
     const rowVariantControlState = parsedRowModel
@@ -961,7 +970,12 @@ export const AgentsPage: React.FC = () => {
     );
   };
 
-  const thinkingLevelRow = renderThinkingLevelRow();
+  const thinkingLevelRow = renderThinkingLevelRow({
+    modelRef: model,
+    value: variant,
+    onChange: setVariant,
+    onModelChange: setModel,
+  });
 
   const renderCouncilModelRow = (councilModel: string, index: number) => {
     const parsedCouncilModel = parseModelIdentifier(councilModel);
@@ -1000,14 +1014,14 @@ export const AgentsPage: React.FC = () => {
             )}
           </div>
         </div>
-        {renderThinkingLevelRow(
-          `council-thinking-${index}`,
-          true,
-          councilModel,
-          councilVariants[index],
-          (nextVariant) => setCouncilVariantAt(index, nextVariant),
-          (nextModelRef) => setCouncilModelAt(index, nextModelRef),
-        )}
+        {renderThinkingLevelRow({
+          key: `council-thinking-${index}`,
+          alignUnderModel: true,
+          modelRef: councilModel,
+          value: councilVariants[index],
+          onChange: (nextVariant) => setCouncilVariantAt(index, nextVariant),
+          onModelChange: (nextModelRef) => setCouncilModelAt(index, nextModelRef),
+        })}
       </div>
     );
   };
@@ -1194,8 +1208,15 @@ export const AgentsPage: React.FC = () => {
                   </div>
                 ) : null}
 
-                {!isCouncilAgent && !isPersonalModelEditor
-                  ? renderThinkingLevelRow('backup-thinking', true, backupModel, backupVariant, setBackupVariant, setBackupModel)
+                {!isCouncilAgent && !isPersonalModelEditor && backupModel.trim()
+                  ? renderThinkingLevelRow({
+                    key: 'backup-thinking',
+                    alignUnderModel: true,
+                    modelRef: backupModel,
+                    value: backupVariant,
+                    onChange: setBackupVariant,
+                    onModelChange: setBackupModel,
+                  })
                   : null}
 
                 {!isCouncilAgent && !isPersonalModelEditor ? (

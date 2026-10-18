@@ -127,11 +127,11 @@ export const ManagedSettingsFrame: React.FC<ManagedSettingsFrameProps> = ({ onCl
       { slug: 'notifications', title: t('settings.page.notifications.title'), description: 'Choose when and how DevRyan notifies you.', group: 'Preferences' },
       { slug: 'bots', title: t('settings.page.bots.title'), description: t('settings.page.bots.description'), group: 'Workspace' },
       { slug: 'agents', title: t('settings.page.agents.title'), description: t('settings.view.home.cards.agents.description'), group: 'Workspace' },
+      { slug: 'providers', title: t('settings.page.providers.title'), description: 'Review provider access, models, and usage.', group: 'Workspace' },
+      { slug: 'usage', title: t('settings.page.usage.title'), description: 'Inspect provider usage and limits.', group: 'Workspace' },
       { slug: 'plugins', title: t('settings.page.plugins.title'), description: 'Review installed OpenCode plugins.', group: 'Workspace' },
       { slug: 'skills.installed', title: t('settings.page.skills.title'), description: 'Manage reusable Coding Agent skills.', group: 'Workspace' },
       { slug: 'mcp', title: t('settings.page.mcp.title'), description: 'Review Coding Agent servers.', group: 'Workspace' },
-      { slug: 'providers', title: t('settings.page.providers.title'), description: 'Review provider access, models, and usage.', group: 'Workspace' },
-      { slug: 'usage', title: t('settings.page.usage.title'), description: 'Inspect provider usage and limits.', group: 'Workspace' },
       {
         slug: 'bug-reports',
         title: t('settings.page.bugReports.title'),

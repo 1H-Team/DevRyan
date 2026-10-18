@@ -8,7 +8,6 @@ import yaml from 'yaml';
 
 import { deleteAgentModelOverride, writeAgentModelOverride } from './agents.js';
 import * as authModule from './auth.js';
-import * as agentRuntimeSettingsModule from './agent-runtime-settings.js';
 import { GITHUB_COPILOT_AUTO_MODEL } from './github-copilot-models.js';
 import { syncRuntimeAgentOverlays } from './runtime-agent-overlays.js';
 import { listRuntimePluginAssets } from './default-config-assets.js';
@@ -117,7 +116,6 @@ describe('syncRuntimeAgentOverlays', () => {
   let manifestPath;
   let targetConfigDirectory;
   let readAuthSpy;
-  let readAgentRuntimeSettingsSpy;
   let originalOpenAIApiKey;
   let originalDataDirectory;
 
@@ -138,20 +136,11 @@ describe('syncRuntimeAgentOverlays', () => {
     delete process.env.OPENAI_API_KEY;
     // Keep suite hermetic: real machine Copilot auth must not leak into overlay expectations.
     readAuthSpy = vi.spyOn(authModule, 'readAuthFile').mockReturnValue({});
-    // Same reason: the real machine sidecar must not decide whether `lsp: false`
-    // lands in overlay expectations. Tests that exercise the sidecar path restore this.
-    readAgentRuntimeSettingsSpy = vi
-      .spyOn(agentRuntimeSettingsModule, 'readAgentRuntimeSettings')
-      .mockReturnValue({ lsp: true });
-    agentRuntimeSettingsModule.clearAgentRuntimeSettingsCache();
   });
 
   afterEach(async () => {
     readAuthSpy?.mockRestore();
     readAuthSpy = undefined;
-    readAgentRuntimeSettingsSpy?.mockRestore();
-    readAgentRuntimeSettingsSpy = undefined;
-    agentRuntimeSettingsModule.clearAgentRuntimeSettingsCache();
     if (originalOpenAIApiKey === undefined) {
       delete process.env.OPENAI_API_KEY;
     } else {
@@ -1199,6 +1188,7 @@ describe('syncRuntimeAgentOverlays', () => {
             timeout: 60_000,
           },
         },
+        lsp: false,
       });
     expect(result.configWritten).toBe(true);
   });
@@ -1262,6 +1252,7 @@ describe('syncRuntimeAgentOverlays', () => {
             },
           },
         },
+        lsp: false,
       });
     expect(result.configWritten).toBe(true);
   });
@@ -1310,6 +1301,7 @@ describe('syncRuntimeAgentOverlays', () => {
             timeout: 60_000,
           },
         },
+        lsp: false,
       });
   });
 
@@ -1356,6 +1348,7 @@ describe('syncRuntimeAgentOverlays', () => {
       .resolves.toEqual({
         agent: TITLE_AGENT_OVERLAY,
         mcp: BLOCKED_MCP_TOMBSTONES,
+        lsp: false,
       });
     expect(result.configUpdated).toBe(true);
   });
@@ -1389,6 +1382,7 @@ describe('syncRuntimeAgentOverlays', () => {
             Object.entries(BLOCKED_MCP_TOMBSTONES).filter(([name]) => name !== 'ghgrep'),
           ),
         },
+        lsp: false,
       });
     expect(result.configWritten).toBe(true);
   });
@@ -1490,6 +1484,7 @@ describe('syncRuntimeAgentOverlays', () => {
             },
           },
         },
+        lsp: false,
       });
     expect(result.pluginsWritten).toEqual([
       'council-session.js',
@@ -1536,6 +1531,7 @@ describe('syncRuntimeAgentOverlays', () => {
         plugin: [
           './plugins/council-session.js',
         ],
+        lsp: false,
       });
   });
 
@@ -1987,88 +1983,24 @@ describe('syncRuntimeAgentOverlays', () => {
       .rejects.toMatchObject({ code: 'ENOENT' });
   });
 
-  describe('agent runtime language server setting', () => {
-    const buildSyncOptions = () => ({
+  it('always writes lsp:false into the runtime config', async () => {
+    const result = await syncRuntimeAgentOverlays({
       workingDirectory: projectDirectory,
       packagedAgentDirectory,
       packagedPluginDirectory,
       overlayRoot,
       manifestPath,
-      readConfig: () => ({}),
+      readConfig: () => ({ lsp: true }),
       listMcpConfigs: () => [],
     });
-
-    it('leaves the runtime config byte-identical while the language server is enabled', async () => {
-      const syncOptions = buildSyncOptions();
-      const initial = await syncRuntimeAgentOverlays({ ...syncOptions, agentRuntimeSettings: { lsp: true } });
-      const configPath = path.join(initial.targetConfigDirectory, 'opencode.json');
-      const content = await fs.readFile(configPath, 'utf8');
-
-      expect(initial.configWritten).toBe(true);
-      expect(content).not.toContain('"lsp"');
-      expect(JSON.parse(content)).toEqual({
-        agent: TITLE_AGENT_OVERLAY,
-        mcp: BLOCKED_MCP_TOMBSTONES,
-      });
-
-      const repeated = await syncRuntimeAgentOverlays({ ...syncOptions, agentRuntimeSettings: { lsp: true } });
-      expect(repeated.configWritten).toBe(false);
-      expect(repeated.configUpdated).toBe(false);
-      expect(repeated.configRemoved).toBe(false);
-      await expect(fs.readFile(configPath, 'utf8')).resolves.toBe(content);
-    });
-
-    it('writes lsp:false into the runtime config when the setting is off and removes it when re-enabled', async () => {
-      const syncOptions = buildSyncOptions();
-      const disabled = await syncRuntimeAgentOverlays({ ...syncOptions, agentRuntimeSettings: { lsp: false } });
-      const configPath = path.join(disabled.targetConfigDirectory, 'opencode.json');
-
-      expect(disabled.configWritten).toBe(true);
-      await expect(fs.readFile(configPath, 'utf8').then((content) => JSON.parse(content)))
-        .resolves.toEqual({
-          agent: TITLE_AGENT_OVERLAY,
-          mcp: BLOCKED_MCP_TOMBSTONES,
-          lsp: false,
-        });
-
-      const enabled = await syncRuntimeAgentOverlays({ ...syncOptions, agentRuntimeSettings: { lsp: true } });
-      expect(enabled.configUpdated).toBe(true);
-      expect(enabled.configRemoved).toBe(false);
-      const content = await fs.readFile(configPath, 'utf8');
-      expect(content).not.toContain('"lsp"');
-      expect(JSON.parse(content)).toEqual({
-        agent: TITLE_AGENT_OVERLAY,
-        mcp: BLOCKED_MCP_TOMBSTONES,
-      });
-    });
-
-    it('keeps the default (off) for malformed injected settings', async () => {
-      const syncOptions = buildSyncOptions();
-      const result = await syncRuntimeAgentOverlays({ ...syncOptions, agentRuntimeSettings: { lsp: 'true' } });
-      const runtimeConfig = JSON.parse(await fs.readFile(
-        path.join(result.targetConfigDirectory, 'opencode.json'),
-        'utf8',
-      ));
-      expect(runtimeConfig.lsp).toBe(false);
-    });
-
-    it('reads the setting from the DevRyan sidecar when it is not injected', async () => {
-      readAgentRuntimeSettingsSpy.mockRestore();
-      const userConfigPath = path.join(tempRoot, 'opencode-config', 'opencode.json');
-      agentRuntimeSettingsModule.writeAgentRuntimeSettings({ lsp: false }, { userConfigPath });
-
-      const syncOptions = { ...buildSyncOptions(), userConfigPath };
-      const disabled = await syncRuntimeAgentOverlays(syncOptions);
-      const configPath = path.join(disabled.targetConfigDirectory, 'opencode.json');
-      expect(JSON.parse(await fs.readFile(configPath, 'utf8')).lsp).toBe(false);
-      // The overlay only ever writes OpenCode's own key; the sidecar and the
-      // user's opencode config stay untouched by the sync.
-      await expect(fs.stat(userConfigPath)).rejects.toMatchObject({ code: 'ENOENT' });
-
-      agentRuntimeSettingsModule.writeAgentRuntimeSettings({ lsp: true }, { userConfigPath });
-      const enabled = await syncRuntimeAgentOverlays(syncOptions);
-      expect(enabled.configUpdated).toBe(true);
-      expect(JSON.parse(await fs.readFile(configPath, 'utf8'))).not.toHaveProperty('lsp');
+    const runtimeConfig = JSON.parse(await fs.readFile(
+      path.join(result.targetConfigDirectory, 'opencode.json'),
+      'utf8',
+    ));
+    expect(runtimeConfig).toEqual({
+      agent: TITLE_AGENT_OVERLAY,
+      mcp: BLOCKED_MCP_TOMBSTONES,
+      lsp: false,
     });
   });
 });

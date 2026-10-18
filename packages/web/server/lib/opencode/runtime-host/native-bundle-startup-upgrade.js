@@ -33,7 +33,7 @@ const newer = (left, right) => {
  * upgrade. The lifecycle verifies both artifact sets before using either. */
 const readManifest = async (file, purpose = 'current') => {
   const { bytes, manifest } = await readNativeRuntimeManifest(file, purpose);
-  return { version: typeof manifest?.opencodeVersion === 'string' ? manifest.opencodeVersion : null, sha256: hash(bytes) };
+  return { version: typeof manifest?.opencodeVersion === 'string' ? manifest.opencodeVersion : null, sha256: hash(bytes), claudeBaseManifestSha256: manifest.claudeBaseManifestSha256 };
 };
 
 const registryOptions = launch => ({ registryPath: path.join(launch.global.state, 'managed-opencode-processes.json') });
@@ -102,7 +102,7 @@ export async function upgradeSelectedNativeBundleAtStartup({ controlRoot, env = 
     selectedVersion = selected?.version ?? null;
     if (selected?.version === expected && binding.selection.transition === 'rollback') return { status: 'current' };
     const shipped = await readManifest(path.join(artifactDirectory, 'native-bundle.json'));
-    if (selected?.version === expected && selected.sha256 === shipped?.sha256) return { status: 'current' };
+    if (selected?.version === expected && (selected.sha256 === shipped?.sha256 || selected.claudeBaseManifestSha256 === shipped?.sha256)) return { status: 'current' };
     if (shipped?.version !== expected) return refused('bundle_upgrade_unavailable');
     if (newer(selected?.version, expected)) return refused('bundle_runtime_newer_than_application');
     upgradeStartedAt = Date.now();

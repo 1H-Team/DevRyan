@@ -87,8 +87,8 @@ export const SETTINGS_NAV_SECTIONS: readonly SettingsNavSection[] = [
   {
     labelKey: 'settings.view.nav.group.connections',
     destinations: [
-      PLUGINS_SETTINGS_DESTINATION,
       PROVIDERS_SETTINGS_DESTINATION,
+      PLUGINS_SETTINGS_DESTINATION,
       REMOTE_CONNECTIONS_SETTINGS_DESTINATION,
     ],
   },

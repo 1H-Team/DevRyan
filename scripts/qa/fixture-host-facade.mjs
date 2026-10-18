@@ -14,7 +14,6 @@ import { createGlobalMessageStreamHub } from '../../packages/web/server/lib/even
 import { registerOpenCodeProxy } from '../../packages/web/server/lib/opencode/proxy.js';
 import { registerConfigEntityRoutes } from '../../packages/web/server/lib/opencode/config-entity-routes.js';
 import { listConfigAgents } from '../../packages/web/server/lib/opencode/agents.js';
-import { readAgentRuntimeSettings, writeAgentRuntimeSettings } from '../../packages/web/server/lib/opencode/agent-runtime-settings.js';
 
 const require = createRequire(new URL('../../packages/web/package.json', import.meta.url));
 const express = require('express');
@@ -26,7 +25,7 @@ const loopback = value => {
   return url.origin;
 };
 const core = pathname => /^\/api\/(?:session(?:\/|$)|experimental\/(?:session|tool)(?:\/|$)|question(?:\/|$)|permission(?:\/|$)|(?:agent|provider|command|config|global\/config|skill|mcp|path|project|vcs|lsp)(?:\/|$)|(?:global\/)?event$)/.test(pathname);
-const featureConfig = pathname => /^\/api\/config\//.test(pathname) && !['/api/config/providers', '/api/config/agents', '/api/config/agent-runtime'].includes(pathname);
+const featureConfig = pathname => /^\/api\/config\//.test(pathname) && !['/api/config/providers', '/api/config/agents'].includes(pathname);
 const providerReadFeature = req => req.method === 'GET'
   && (req.path === '/api/provider/auth' || /^\/api\/provider\/[^/]+\/source$/.test(req.path));
 
@@ -74,13 +73,10 @@ export async function createQaFixtureHostFacade({ fixture, realOrigin, workspace
   }));
   registerConfigEntityRoutes(features, { resolveProjectDirectory: async req => ({ directory: resolveDirectory(req) }),
     listConfigAgents: directory => listConfigAgents(directory, { userConfigPath, env: {},
-      readOpenCodeConfig: () => JSON.parse(require('node:fs').readFileSync(userConfigPath, 'utf8')) }),
-    readAgentRuntimeSettings: () => readAgentRuntimeSettings({ userConfigPath }),
-    writeAgentRuntimeSettings: input => writeAgentRuntimeSettings(input, { userConfigPath }),
-    getAgentRuntimeApplicationState: () => ({ runtimeMode: 'external', appliedLsp: null }) });
+      readOpenCodeConfig: () => JSON.parse(require('node:fs').readFileSync(userConfigPath, 'utf8')) }) });
   app.use((req, res, next) => {
     if (/^\/api\/session\/[^/]+\/plan-revisions\/[^/]+$/.test(req.path)
-      || ['/api/config/agents', '/api/config/agent-runtime'].includes(req.path)) {
+      || req.path === '/api/config/agents') {
       return express.json({ limit: '1mb' })(req, res, error => error ? next(error) : features(req, res, next));
     }
     next();

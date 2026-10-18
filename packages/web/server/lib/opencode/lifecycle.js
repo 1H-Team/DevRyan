@@ -2,7 +2,6 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { formatPackagedAgentSyncConflicts } from './packaged-agent-sync.js';
-import { DEFAULT_AGENT_RUNTIME_SETTINGS, normalizeAgentRuntimeSettings } from './agent-runtime-settings.js';
 import { buildVisibleSkillPolicy } from './skill-policy.js';
 import { SLIM_REPLACED_AGENT_NAMES, resolveSlimConfig } from './slim-config.js';
 import { probe as probeOpenCodeRuntime, resolveExpectedOpenCodeVersion } from './readiness-probe.js';
@@ -81,7 +80,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     setOpenCodePort=port=>{state.openCodePort=port;},setDetectedOpenCodeApiPrefix=()=>{},setupProxy=()=>{},ensureOpenCodeApiPrefix=()=>{},
     pauseManagedBrowserLeases=async()=>null,resumeManagedBrowserLeases=async()=>{},getActiveSessionCount=()=>0,
     syncPackagedAgents=async()=>({changed:false}),syncRuntimeAgentOverlays=async()=>({changed:false}),
-    readSettingsFromDisk=async()=>({}),readAgentRuntimeSettings=()=>DEFAULT_AGENT_RUNTIME_SETTINGS,
+    readSettingsFromDisk=async()=>({}),
     sanitizeProjects=value=>Array.isArray(value)?value:[],sanitizeHiddenSkills=value=>Array.isArray(value)?value:[],discoverSkills=()=>[],
     resolveSlimConfiguration=resolveSlimConfig,
     onOpenCodeRestarted=()=>{},onStartupStatus=()=>{},assertExecutionReady=()=>{},getNativeRuntime=()=>null,getRuntimeBundle=()=>null,
@@ -133,7 +132,6 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       window.pending = false;
     }
   };
-  const getAgentRuntimeApplicationState=()=>({runtimeMode:'managed',appliedLsp:typeof state.appliedAgentRuntimeSettings?.lsp==='boolean'?state.appliedAgentRuntimeSettings.lsp:null});
   const prepareAgentRuntimeConfig = async () => {
     let settings = {};
     try {
@@ -171,7 +169,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       expectedAgentHashes: { [name]: expectedHash }, restoreOnly: true });
     return { changed: result.changed, backups: result.restored ?? [] };
   };
-  const syncManagedAgentRuntimeConfig = async (agentRuntimeSettings = normalizeAgentRuntimeSettings(readAgentRuntimeSettings()), attempt = state.openCodeStartup.attempt) => {
+  const syncManagedAgentRuntimeConfig = async (attempt = state.openCodeStartup.attempt) => {
     const { workingDirectory, slimConfig, skillPolicy, packagedOptions } = await prepareAgentRuntimeConfig();
     assertCurrentStartup(attempt);
     if (workingDirectory !== state.openCodeWorkingDirectory) {
@@ -189,7 +187,6 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     const overlayResult = await syncRuntimeAgentOverlays({
       workingDirectory: state.openCodeWorkingDirectory,
       skillPolicy,
-      agentRuntimeSettings,
     });
     assertCurrentStartup(attempt);
 
@@ -278,17 +275,13 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     // the pin then names for this process; it launches and the upgrade retries next start.
     if(expectedVersion&&bundle.version!==expectedVersion)throw upgradeRequired(bundle.version,expectedVersion);
     state.openCodeWorkingDirectory=bundle.descriptor.projectMap[0].targetDirectory;
-    const launchSettings=normalizeAgentRuntimeSettings(readAgentRuntimeSettings());
     state.openCodeGeneration=2;state.isExternalOpenCode=false;
     const instance=await native.start({ beforeConfiguration: async () => {
       assertCurrentStartup(attempt);
-      await syncManagedAgentRuntimeConfig(launchSettings,attempt);assertCurrentStartup(attempt);emitStartupStatus('Starting the verified native runtime…');
+      await syncManagedAgentRuntimeConfig(attempt);assertCurrentStartup(attempt);emitStartupStatus('Starting the verified native runtime…');
     } });assertCurrentStartup(attempt);state.openCodeProcess=instance;state.openCodeVersion=bundle.version;
-    const acceptedConfiguration=native.getConfigurationSnapshot?.()?.locations
-      .find(location=>location.directory===state.openCodeWorkingDirectory)?.configuration;
-    const acceptedSettings=acceptedConfiguration?{lsp:acceptedConfiguration.lsp!==false}:launchSettings;
     state.openCodeBaseUrl=instance.url;setOpenCodePort(instance.port);setDetectedOpenCodeApiPrefix('');syncToHmrState();
-    await waitForOpenCodeReady(20000,400,attempt);assertCurrentStartup(attempt);state.appliedAgentRuntimeSettings=acceptedSettings;syncToHmrState();return instance;
+    await waitForOpenCodeReady(20000,400,attempt);assertCurrentStartup(attempt);return instance;
   };
   const startOpenCode=()=>state.currentRestartPromise??runStartup(launchOpenCode);
   let pausedBrowserLeases;
@@ -386,6 +379,6 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
   };
 
   return {startOpenCode,restartOpenCode,waitForOpenCodeReady,waitForAgentPresence,isStartupReadinessPending,applyOpenCodeConfigChanges,
-    syncManagedAgentRuntimeConfig,getAgentRuntimeApplicationState,getPackagedAgentPrompts,restorePackagedAgentPrompt,
+    syncManagedAgentRuntimeConfig,getPackagedAgentPrompts,restorePackagedAgentPrompt,
     bootstrapOpenCodeAtStartup,startHealthMonitoring,triggerHealthCheck};
 };

@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { verifyQaNativeInput, projectQaNativeSnapshot, assertQaNativeSelection, assertQaNativeCredentialAdmission, prepareQaNativeProfile, validateQaNativeSourceLaunch, createQaNativeLaunchEnvironment,
+import { parseQaNativeSnapshotOutput, verifyQaNativeInput, projectQaNativeSnapshot, assertQaNativeSelection, assertQaNativeCredentialAdmission, prepareQaNativeProfile, validateQaNativeSourceLaunch, createQaNativeLaunchEnvironment,
   createQaNativeInputVerifier, archiveQaNativeControllerLog, qaNativeRequiredProviders } from './native-profile-preparation.mjs';
 import { prepareQaMatrixLiveProfile } from './matrix-runner.mjs';
 import { translateNativeConfiguration } from '../../packages/web/server/lib/opencode/runtime-host/native-configuration-data.js';
@@ -207,4 +207,11 @@ test('native saved fallback projection retains ordered original models and effor
     const invalid = structuredClone(snapshot); change(invalid);
     assert.throws(() => projectQaNativeSnapshot(invalid, directory), error => ['qa_native_backup_routes_missing', 'qa_native_backup_routes_invalid'].includes(error.code));
   }
+});
+
+test('native snapshot protocol accepts only finite verifier timing records before its JSON payload', () => {
+  const timing='[runtime-bundle] startup phase '+JSON.stringify({phase:'artifact_hashing',outcome:'completed',elapsedMs:12});
+  assert.deepEqual(parseQaNativeSnapshotOutput(timing+'\n'+JSON.stringify({locations:[]})),{locations:[]});
+  for(const output of ['private unexpected log\n{}',timing+'\n{}\n{}','[runtime-bundle] startup phase {"phase":"other","outcome":"completed","elapsedMs":1}\n{}',
+    '[runtime-bundle] startup phase {"phase":"artifact_hashing","outcome":"completed","elapsedMs":1,"extra":"untrusted"}\n{}'])assert.throws(()=>parseQaNativeSnapshotOutput(output));
 });

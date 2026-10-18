@@ -462,6 +462,7 @@ export function settingsPageForRequest(requestPath, method = 'GET') {
   if (/^\/git\/(?:identities|global-identity|discover-credentials|set-identity|commit-template)(?:\/|$)/.test(path)) return 'git';
   if (path === '/config/themes') return 'appearance';
   if (path === '/config/opencode-resolution') return 'about';
+  if (/^\/config\/claude-update(?:\/|$)/.test(path)) return 'about';
   if (path === '/config/opencode-update-check' || path === '/config/claude-update-check' || path === '/config/claude-resolution') return 'about';
   return null;
 }

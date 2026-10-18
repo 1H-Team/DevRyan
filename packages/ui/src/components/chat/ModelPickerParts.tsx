@@ -37,7 +37,7 @@ const RailButton: React.FC<{
             >
                 {children}
                 {active ? (
-                    <span aria-hidden="true" className="absolute -right-[7px] top-1.5 bottom-1.5 w-[2px] rounded-full bg-primary" />
+                    <span aria-hidden="true" className="absolute -right-[5px] top-1.5 bottom-1.5 w-[2px] rounded-full bg-primary" />
                 ) : null}
             </button>
         </TooltipTrigger>
@@ -70,7 +70,7 @@ export const ModelPickerRail: React.FC<{
     return (
         <div className="model-picker-rail flex w-12 flex-shrink-0 flex-col items-center border-r border-border/40 py-1.5">
             <div className={cn(
-                'flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
+                'scrollbar-hidden flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-x-hidden overflow-y-auto',
                 dimmed && 'opacity-50'
             )}>
                 {favoritesTab ? (

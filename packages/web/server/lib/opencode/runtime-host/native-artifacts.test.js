@@ -4,7 +4,7 @@ import { REVIEWED_CLAUDE_ASSETS } from './reviewed-claude-transform.js';
 
 test('the previous reviewed Claude identity is source/rollback only and never a default or new target pin', async () => {
   const previous = { role: 'asset', ...REVIEWED_PREVIOUS_CLAUDE_ASSET };
-  expect(previous.version).toBe('2.1.251'); expect(REVIEWED_CLAUDE_ASSETS.claude.version).toBe('2.1.280');
+  expect(previous.version).toBe('2.1.251'); expect(REVIEWED_CLAUDE_ASSETS.claude.version).toBe('2.1.302');
   expect(previous.sha256).not.toBe(REVIEWED_CLAUDE_ASSETS.claude.sha256);
   for (const purpose of ['bundle-source', 'bundle-rollback']) expect(isReviewedPreviousClaudeAsset(previous, purpose, 'darwin', 'arm64')).toBe(true);
   for (const purpose of [undefined, 'current', 'target', 'unknown']) expect(isReviewedPreviousClaudeAsset(previous, purpose, 'darwin', 'arm64')).toBe(false);

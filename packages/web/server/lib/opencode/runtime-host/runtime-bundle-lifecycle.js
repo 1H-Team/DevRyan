@@ -1,11 +1,14 @@
 import fs from 'node:fs/promises';
+import { createClaudeCandidate, preserveManagedClaude } from './managed-claude-candidate.js';
+import { checkLatestClaudeRelease, claudeVersionFromManifest } from '../claude-runtime-update.js';
+import { newerClaude } from './managed-claude-installation.js';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import express from 'express';
 import { createRuntimeBundleStore } from './runtime-bundle.js';
 import { createRuntimeBundleCheckpoint } from './bundle-checkpoint.js';
 import { retainNativeArtifacts } from './retained-native-artifacts.js';
-import { verifyNativeRuntimeArtifacts } from './native-artifacts.js';
+import { verifyNativeRuntimeArtifacts, readNativeRuntimeManifest } from './native-artifacts.js';
 import { defaultNativeRegistrations } from './native-default-bundle.js';
 import {resumeRuntimeBundle} from './runtime-bundle-resume.js';
 import { executionArtifacts } from '../execution-artifacts.js';
@@ -30,7 +33,8 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
   stopProducers, drainStores, executionHost, afterExit, beforeControllerStop, requestRecomposition,
   artifactDirectory = executionArtifacts().directory, verifyArtifacts = verifyNativeRuntimeArtifacts,
   credentialProcess = runNativeBundleCredentialProcess, storeFactory = createRuntimeBundleStore,
-  retainArtifacts = retainNativeArtifacts, retainCheckpoint, privatePersistence={}, neverStarted = false }) {
+  retainArtifacts = retainNativeArtifacts, retainCheckpoint, privatePersistence={}, neverStarted = false,
+  waitForClaudeIdle, onClaudePhase = () => {}, createClaude = createClaudeCandidate, checkClaudeRelease = checkLatestClaudeRelease }) {
   if (retainCheckpoint !== undefined && typeof retainCheckpoint !== 'function') throw fail('bundle_checkpoint_grant_invalid');
   // Permanent for this process: the application admission gate never reopens
   // after a checkpoint starts closing it, so neither may the lifecycle.
@@ -97,9 +101,14 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
     if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 4 * 1024 * 1024) throw fail('bundle_candidate_artifact_invalid');
     const manifestSha256 = hash(await fs.readFile(manifestPath));
     const artifacts = await timeStartupPhase('bundle_artifact_verification', () => verifyArtifacts({ manifestPath, manifestSha256, launcher: executionArtifacts(artifactDirectory).launcher }));
-    return { artifacts, manifestSha256, manifestPath };
+    const candidate = { artifacts, manifestSha256, manifestPath };
+    if (process.platform !== 'darwin' || process.arch !== 'arm64') return candidate;
+    const current = await readNativeRuntimeManifest(binding.descriptor.launch.artifactManifestPath, 'bundle-source');
+    if (!current.manifest.claudeInstallation) return candidate;
+    const source = await verifyLaunch(binding.descriptor.launch, 'bundle-source');
+    return preserveManagedClaude({ controlRoot: binding.controlRoot, source, candidate, verifyArtifacts });
   };
-  const inspect = async () => {
+  const inspect = async ({ checkUpdates = true } = {}) => {
     const current = await store.readSelected();
     const snapshot = { state, reason, bundleID: current?.selection.selectedBundleID ?? binding.descriptor.bundleID,
       previousBundleID: current?.selection.previousBundleID ?? null, revision: current?.selection.revision ?? binding.selection.revision,
@@ -108,7 +117,7 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
     // Mirrors run(): only an unchecked host with a selector-owned target may roll back.
     snapshot.rollbackAvailable = !checkpointHeld && !transition && !heldAction && !snapshot.restartRequired && ['ready', 'held'].includes(state)
       && Boolean(snapshot.reconciliationRequired ? current?.selection.selectedBundleID : current?.selection.previousBundleID);
-    if (snapshot.restartRequired || state === 'held' || state === 'transitioning') return snapshot;
+    if (!checkUpdates || snapshot.restartRequired || state === 'held' || state === 'transitioning') return snapshot;
     try {
       const candidate = await readCandidate();
       snapshot.availableManifestSha256 = candidate.manifestSha256;
@@ -143,17 +152,7 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
     })().finally(() => { transition = undefined; });
     return transition;
   };
-  const handle = {
-    inspect,
-    resume: input=>resumeRuntimeBundle({controlRoot:binding.controlRoot,input}),
-    recompose: async () => {
-      if (state !== 'restart_required' || typeof requestRecomposition !== 'function') throw fail('bundle_host_restart_required');
-      try { await requestRecomposition(); }
-      catch { reason = 'bundle_host_restart_failed'; throw fail(reason); }
-    },
-    upgrade: input => run('upgrade', input, async current => {
-      const candidate = await readCandidate();
-      if (candidate.manifestSha256 === current.descriptor.launch.artifactManifestSha256) throw fail('bundle_upgrade_not_available');
+  const applyCandidate = async (input, current, candidate, claudeUpdate = false) => {
       const retained = await timeStartupPhase('bundle_artifact_retention', () => retainArtifacts({ ...privatePersistence, controlRoot: binding.controlRoot, ...candidate, verifyArtifacts }));
       const inputRoot = path.join(binding.controlRoot, 'upgrade-inputs', retained.manifestSha256);
       await fs.mkdir(inputRoot, { recursive: true, mode: 0o700 });
@@ -170,14 +169,48 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
         && original.manifest.inputs.coreDigest === retained.manifest.inputs.coreDigest
         ? { manifestPath: retained.manifestPath, manifestSha256: retained.manifestSha256 } : undefined;
       const bundleID = nativeUpgradeBundleID(retained.manifestSha256, current.selection.revision);
+      let releaseIdle;
+      if (claudeUpdate) {
+        onClaudePhase('waiting-for-idle');
+        releaseIdle = await waitForClaudeIdle();
+        onClaudePhase('activating');
+      }
+      try {
       await timeStartupPhase('bundle_candidate_preparation', () => store.prepare({ bundleID, generation: 2, source: { kind: 'bundle', bundleID: current.descriptor.bundleID },
         projectMap: current.descriptor.projectMap, auxiliary: { kind: 'absent' }, launchArtifacts }));
-      return timeStartupPhase('bundle_selection', () => store.select({ bundleID, expectedRevision: input.expectedRevision }));
+      return await timeStartupPhase('bundle_selection', () => store.select({ bundleID, expectedRevision: input.expectedRevision, ...(claudeUpdate ? { claudeUpdate: true } : {}) }));
+      } finally { releaseIdle?.(); }
+  };
+  const handle = {
+    inspect,
+    resume: input=>resumeRuntimeBundle({controlRoot:binding.controlRoot,input}),
+    recompose: async () => {
+      if (state !== 'restart_required' || typeof requestRecomposition !== 'function') throw fail('bundle_host_restart_required');
+      try { await requestRecomposition(); }
+      catch { reason = 'bundle_host_restart_failed'; throw fail(reason); }
+    },
+    upgrade: input => run('upgrade', input, async current => {
+      const candidate = await readCandidate();
+      if (candidate.manifestSha256 === current.descriptor.launch.artifactManifestSha256) throw fail('bundle_upgrade_not_available');
+      return applyCandidate(input, current, candidate);
+    }),
+    upgradeClaude: input => run('claude', input, async current => {
+      if (process.platform !== 'darwin' || process.arch !== 'arm64' || typeof waitForClaudeIdle !== 'function') throw fail('bundle_claude_update_unavailable');
+      const source = await verifyLaunch(current.descriptor.launch, 'bundle-source');
+      const release = await checkClaudeRelease();
+      const installed = claudeVersionFromManifest(source.manifest);
+      if (!installed) throw fail('bundle_claude_version_unavailable');
+      if (!newerClaude(release.latestVersion, installed)) throw fail('bundle_upgrade_not_available');
+      const candidate = await createClaude({ controlRoot: binding.controlRoot, source, version: release.latestVersion, verifyArtifacts, onPhase: onClaudePhase });
+      return applyCandidate(input, current, candidate, true);
     }),
     rollback: input => run('rollback', input, async current => {
       const targetBundleID = current.selection.reconciliationRequired ? current.selection.selectedBundleID : current.selection.previousBundleID;
       if (!targetBundleID) throw fail('bundle_rollback_target_invalid');
-      return store.rollback({ targetBundleID, expectedRevision: input.expectedRevision });
+      let releaseIdle;
+      if (waitForClaudeIdle) { onClaudePhase('waiting-for-idle'); releaseIdle = await waitForClaudeIdle(); onClaudePhase('activating'); }
+      try { return await store.rollback({ targetBundleID, expectedRevision: input.expectedRevision }); }
+      finally { releaseIdle?.(); }
     }),
   };
   if (retainCheckpoint) {
@@ -245,14 +278,15 @@ export function registerRuntimeBundleLifecycleRoutes(app, { lifecycle, isAdminis
 /** Application writes stop before any owner checkpoint. A disconnected write
  * has no completion ACK; keep that uncertainty until a fresh host composition. */
 export function createRuntimeBundleAdmissionGate() {
-  let held = false, activeWrites = 0, uncertainWrite = false;
+  let held = false, idleReservation = false, checkingIdle = false, activeWrites = 0, uncertainWrite = false;
   return {
     middleware(req, res, next) {
-      const lifecycle = /^\/api\/runtime\/bundle(?:\/|$)/.test(req.path);
+      const lifecycle = /^\/api\/runtime\/bundle(?:\/|$)/.test(req.path) || /^\/api\/config\/claude-update(?:\/|$)/.test(req.path);
       if (held && !lifecycle && !['/health', '/api/health'].includes(req.path)) {
         return res.status(503).json({ code: 'bundle_runtime_admission_held' });
       }
       if (!lifecycle && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+        if (checkingIdle) return res.status(503).json({ code: 'bundle_runtime_waiting_for_idle' });
         activeWrites++;
         let finished = false;
         res.once('finish', () => { if (!finished) { finished = true; activeWrites--; } });
@@ -262,7 +296,18 @@ export function createRuntimeBundleAdmissionGate() {
       }
       next();
     },
+    async reserveIdle(isIdle) {
+      if (held || checkingIdle || activeWrites || uncertainWrite) return false;
+      checkingIdle = true;
+      try {
+        if (!await isIdle() || activeWrites || uncertainWrite) return false;
+        held = true; idleReservation = true;
+        return true;
+      } finally { checkingIdle = false; }
+    },
+    releaseIdle() { if (idleReservation) { held = false; idleReservation = false; } },
     close() {
+      idleReservation = false;
       held = true;
       if (activeWrites || uncertainWrite) throw fail('bundle_host_requests_unsettled');
     },

@@ -27,7 +27,6 @@ const permissions = {};
 const actualSync = await import('@/sync/sync-context');
 mock.module('@/sync/sync-context', () => ({ ...actualSync, useDirectorySync: () => permissions }));
 mock.module('@/components/sections/behavior/BehaviorPage', () => ({ BehaviorPage: passthrough }));
-mock.module('./AgentRuntimeSection', () => ({ AgentRuntimeSection: () => null }));
 mock.module('./ModelSelector', () => ({
   ModelSelector: ({ providerId, modelId, onChange }: { providerId: string; modelId: string; onChange: (provider: string, model: string) => void }) => (
     <button data-model={`${providerId}/${modelId}`} onClick={() => onChange(providerId, `${modelId}-draft`)}>{modelId}</button>
@@ -153,3 +152,46 @@ for (const selected of ['builder', 'council']) {
     }
   }));
 }
+
+test('a cleared or variant-less backup does not show the primary variant', async () => withDom(async container => {
+  const { createRoot } = await import('react-dom/client');
+  const root = createRoot(container as unknown as Element);
+  const originalAgents = useAgentsStore.getState(), originalConfig = useConfigStore.getState();
+  const originalDirectory = useDirectoryStore.getState(), originalPrincipal = getAuthPrincipal();
+  const tools = spyOn(opencodeClient, 'listToolIds').mockResolvedValue([]);
+  const agent: AgentWithExtras = { name: 'builder', mode: 'all', options: {}, permission: [],
+    model: { providerID: 'cursor-acp', modelID: 'composer-2.5' }, variant: 'high', modelRefs: ['cursor-acp/composer-2.5'],
+    backupModel: { providerID: 'cursor-acp', modelID: 'composer-2.5', variant: 'high' },
+  };
+  // Only the primary row may carry the saved High warning once the backup has none.
+  const savedHighCount = () => container.textContent.split('Saved selection: high.').length - 1;
+  try {
+    setAuthPrincipal({ ...originalPrincipal, scope: 'local-admin', role: 'admin' });
+    useAgentsStore.setState({ agents: [agent], selectedAgentName: 'builder',
+      resetAgentBackupModel: async (name) => {
+        const cleared: AgentWithExtras = { ...agent, name, backupModel: null };
+        useAgentsStore.setState({ agents: [cleared] });
+        return null;
+      },
+    });
+    useConfigStore.setState({ providers: [] });
+    useDirectoryStore.setState({ currentDirectory: '/cleared-backup-fixture' });
+    await act(async () => { root.render(<AgentsPage />); });
+    expect(savedHighCount()).toBe(2);
+
+    const clear = container.find(node => node.tagName === 'BUTTON' && node.textContent.includes('settings.agents.page.actions.clearBackupModel'));
+    expect(clear).not.toBeNull();
+    await act(async () => { clear!.click(); });
+    expect(savedHighCount()).toBe(1);
+
+    await act(async () => {
+      const variantless: AgentWithExtras = { ...agent, backupModel: { providerID: 'cursor-acp', modelID: 'composer-2.5', variant: null } };
+      useAgentsStore.setState({ agents: [variantless] });
+    });
+    expect(savedHighCount()).toBe(1);
+  } finally {
+    await act(async () => { root.unmount(); }); tools.mockRestore();
+    useAgentsStore.setState(originalAgents); useConfigStore.setState(originalConfig);
+    useDirectoryStore.setState(originalDirectory); setAuthPrincipal(originalPrincipal);
+  }
+}));

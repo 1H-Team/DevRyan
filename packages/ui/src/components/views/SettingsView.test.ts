@@ -192,11 +192,11 @@ describe('SettingsView navigation', () => {
     expect(resolveSettingsSlug('github')).toBe('users');
   });
 
-  test('Plugins, Skills and MCP Servers share the Plugins hub at the top of Connections', () => {
+  test('Plugins, Skills and MCP Servers share the Plugins hub after Providers in Connections', () => {
     const workflowPages = getNavSlugs('settings.view.nav.group.workflow');
 
     expect(resolveSettingsSlug('plugins')).toBe('plugins');
-    expect(getNavSlugs('settings.view.nav.group.connections').slice(0, 3)).toEqual(['plugins', 'skills.installed', 'mcp']);
+    expect(getNavSlugs('settings.view.nav.group.connections').slice(1, 4)).toEqual(['plugins', 'skills.installed', 'mcp']);
     for (const slug of ['plugins', 'skills.installed', 'mcp'] as const) {
       expect(workflowPages).not.toContain(slug);
       expect(getSettingsNavDestination(slug)?.id).toBe('plugins');
@@ -310,20 +310,20 @@ describe('SettingsView navigation', () => {
     ).toBe(false);
   });
 
-  test('orders Connections as Plugins, Providers, then Remote Connections', () => {
+  test('orders Connections as Providers, Plugins, then Remote Connections', () => {
     const connections = SETTINGS_NAV_SECTIONS
       .find((section) => section.labelKey === 'settings.view.nav.group.connections')
       ?.destinations ?? [];
 
     expect(connections.map((destination) => destination.id)).toEqual([
-      'plugins',
       'providers',
+      'plugins',
       'remote-connections',
     ]);
-    expect(connections[0]?.slugs).toEqual(['plugins', 'skills.installed', 'mcp']);
-    expect(connections[0]?.tabsAriaLabelKey).toBe('settings.plugins.tabs.aria');
-    expect(connections[1]?.slugs).toEqual(['providers']);
-    expect(connections[1]?.fallbackSlugs).toEqual(['usage']);
+    expect(connections[1]?.slugs).toEqual(['plugins', 'skills.installed', 'mcp']);
+    expect(connections[1]?.tabsAriaLabelKey).toBe('settings.plugins.tabs.aria');
+    expect(connections[0]?.slugs).toEqual(['providers']);
+    expect(connections[0]?.fallbackSlugs).toEqual(['usage']);
     expect(connections[2]?.slugs).toEqual(['tunnel', 'remote-instances']);
     expect(connections[2]?.labelKey).toBe('settings.page.remoteConnections.title');
   });

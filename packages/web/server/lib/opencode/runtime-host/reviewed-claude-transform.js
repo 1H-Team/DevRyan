@@ -5,7 +5,7 @@ export const REVIEWED_CLAUDE_STARTUP = Object.freeze({
   sourceSha256: 'b3a32d1f03047f68e39874725bc9ed40fc42b59a773acdb815e8c9b7b4025aad',
 });
 export const REVIEWED_CLAUDE_ASSETS = Object.freeze({
-  claude: Object.freeze({path:'DevRyan-Claude-darwin-arm64',sha256:'387a5c5dcdbb815085edf0baf79591f9d8894efe922bceaf3d75b1b08055229d',version:'2.1.280',mode:0o755}),
+  claude: Object.freeze({path:'DevRyan-Claude-darwin-arm64',sha256:'5262ce9de86243fed0d21edc39b271555d56780d0112e2b194439fe1c6662d37',version:'2.1.302',mode:0o755}),
   libsql: Object.freeze({path:'DevRyan-libsql-darwin-arm64.node',sha256:'3fd9e58190311b5ee027c3e5452a6a410b31a5d610fd55853d797bb3c9f5db0c',version:'0.5.29',mode:0o644}),
 });
 

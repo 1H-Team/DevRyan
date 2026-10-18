@@ -212,22 +212,6 @@ it('a failed replacement keeps browser admission paused until a successful retry
  expect(resume).not.toHaveBeenCalled();expect(f.state.currentRestartPromise).toBeNull();
  await f.runtime.restartOpenCode();expect(pause).toHaveBeenCalledTimes(1);expect(resume).toHaveBeenCalledWith('owned');
 });
-it('publishes the accepted launch settings only after readiness, independent of later disk changes',async()=>{
- let configured={lsp:false};let releaseReady;let readingReady;
- const readyStarted=new Promise(resolve=>{readingReady=resolve;});
- const readiness=new Promise(resolve=>{releaseReady=resolve;});
- const f=fixture({readAgentRuntimeSettings:()=>configured,probeOpenCodeReadiness:async()=>{readingReady();await readiness;return {ready:true,generation:2,version:f.bundle.version};}});
- f.native.getConfigurationSnapshot=()=>({locations:[{directory:process.cwd(),configuration:{lsp:false}}]});
- const start=f.runtime.startOpenCode();await readyStarted;
- configured={lsp:true};expect(f.runtime.getAgentRuntimeApplicationState().appliedLsp).toBeNull();
- releaseReady();await start;expect(f.runtime.getAgentRuntimeApplicationState().appliedLsp).toBe(false);
-});
-it('failed launch readiness does not publish unaccepted runtime settings',async()=>{
- const state={openCodeWorkingDirectory:process.cwd(),appliedAgentRuntimeSettings:{lsp:false}};
- const f=fixture({state,readAgentRuntimeSettings:()=>({lsp:true}),probeOpenCodeReadiness:async()=>({ready:false,reason:'generation_invalid'})});
- await expect(f.runtime.startOpenCode()).rejects.toMatchObject({code:'opencode_runtime_not_ready'});
- expect(f.runtime.getAgentRuntimeApplicationState().appliedLsp).toBe(false);
-});
 it('readiness failure remains closed and config changes use the same native restart',async()=>{let ready=false;const f=fixture({probeOpenCodeReadiness:async()=>({ready,generation:2,reason:'generation_invalid',version:'2.0.20'})});await expect(f.runtime.startOpenCode()).rejects.toMatchObject({code:'opencode_runtime_not_ready'});expect(f.state.isOpenCodeReady).toBe(false);ready=true;expect(await f.runtime.applyOpenCodeConfigChanges({scopes:['agents'],changes:[{metadata:{agentName:'builder'}}]})).toEqual({runtimeApplied:true,requiresReload:false});expect(f.native.start).toHaveBeenCalledTimes(2);});
 it('dead native children restart while live busy children are preserved',async()=>{let healthy=true;const f=fixture({getActiveSessionCount:()=>1,probeOpenCodeReadiness:async()=>({ready:healthy,generation:2,reason:'unreachable',version:'2.0.20'})});await f.runtime.startOpenCode();healthy=false;await f.runtime.triggerHealthCheck();expect(f.native.start).toHaveBeenCalledTimes(1);f.children[0].exited=true;healthy=true;await f.runtime.triggerHealthCheck();expect(f.events).toContain('settle');expect(f.native.start).toHaveBeenCalledTimes(2);});
 

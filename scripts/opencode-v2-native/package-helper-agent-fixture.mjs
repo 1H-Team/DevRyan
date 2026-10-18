@@ -39,7 +39,7 @@ export async function createCompiledHelperAgentFixture({ root }) {
     packagedAgentDirectory: owned.agents, packagedPluginDirectory: owned.plugins,
     dataDirectory: owned.data, openCodeDataDirectory: owned['opencode-data'],
     slimConfigDirectory: owned.config, userConfigPath: path.join(owned.config, 'opencode.json'),
-    agentOverrides: {}, agentRuntimeSettings: { lsp: true }, env: {},
+    agentOverrides: {}, env: {},
     readConfig: () => ({}), readOpenCodeConfig: () => ({}), listMcpConfigs: () => [],
     readAuthFile: () => ({}), writeAuthFile: refuse('auth_write'), fetchImpl: refuse('fetch'),
   });

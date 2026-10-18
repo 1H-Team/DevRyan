@@ -14,7 +14,7 @@ describe('ManagedSettingsView capabilities', () => {
     expect(source).not.toContain('settingsPermissionBoundarySlug(slug, audience)');
   });
 
-  test('orders the Plugins hub pages before Providers in managed navigation', () => {
+  test('orders Providers before the Plugins hub pages in managed navigation', () => {
     const pluginsIndex = source.indexOf("{ slug: 'plugins'");
     const skillsIndex = source.indexOf("{ slug: 'skills.installed'");
     const mcpIndex = source.indexOf("{ slug: 'mcp'");
@@ -23,7 +23,8 @@ describe('ManagedSettingsView capabilities', () => {
     expect(pluginsIndex).toBeGreaterThan(-1);
     expect(skillsIndex).toBeGreaterThan(pluginsIndex);
     expect(mcpIndex).toBeGreaterThan(skillsIndex);
-    expect(providersIndex).toBeGreaterThan(mcpIndex);
+    expect(providersIndex).toBeGreaterThan(-1);
+    expect(pluginsIndex).toBeGreaterThan(providersIndex);
   });
 
   test('contains no Bot capability assignment navigation', () => {

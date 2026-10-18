@@ -152,6 +152,7 @@ export const registerOpenCodeProxy = (app, deps) => {
       req.path === '/config/opencode-update-check' ||
       req.path === '/config/claude-update-check' ||
       req.path === '/config/claude-resolution' ||
+      /^\/config\/claude-update(?:\/|$)/.test(req.path) ||
       req.path.startsWith('/config/settings') ||
       req.path.startsWith('/config/skills') ||
       req.path === '/config/reload' ||

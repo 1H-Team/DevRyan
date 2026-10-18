@@ -1,3 +1,4 @@
+import { validateClaudeInstallation, CLAUDE_TEAM } from './managed-claude-installation.js';
 import { artifactDiagnostic } from '@openchamber/shared-runtime/startup-diagnostics.js';
 import {isNativeOpenCodeVersion} from '../version-policy.js';
 import fs from 'node:fs/promises';
@@ -16,10 +17,13 @@ const exec = promisify(execFile), digestPattern = /^[a-f0-9]{64}$/;
 // This previously reviewed binary is migration/explicit rollback authority, never a new target pin.
 export const REVIEWED_PREVIOUS_CLAUDE_ASSET = Object.freeze({ version: '2.1.251', path: 'DevRyan-Claude-darwin-arm64',
   sha256: '625869b01e0050f260b2980fac248fd9cef9e462612bded4ec9d3d49ff8969a5', size: 197171680, mode: 0o755 });
+export const REVIEWED_PREVIOUS_CLAUDE_ASSETS = Object.freeze([REVIEWED_PREVIOUS_CLAUDE_ASSET, Object.freeze({
+  version: '2.1.280', path: 'DevRyan-Claude-darwin-arm64', sha256: '387a5c5dcdbb815085edf0baf79591f9d8894efe922bceaf3d75b1b08055229d', size: 217254576, mode: 0o755,
+})]);
 export const isReviewedPreviousClaudeAsset = (file, purpose, platform = process.platform, arch = process.arch) =>
   ['bundle-source', 'bundle-rollback'].includes(purpose) && platform === 'darwin' && arch === 'arm64'
-  && file?.role === 'asset' && (file.version === undefined || file.version === REVIEWED_PREVIOUS_CLAUDE_ASSET.version)
-  && ['path', 'sha256', 'size', 'mode'].every(key => file[key] === REVIEWED_PREVIOUS_CLAUDE_ASSET[key]);
+  && file?.role === 'asset' && REVIEWED_PREVIOUS_CLAUDE_ASSETS.some(asset => (file.version === undefined || file.version === asset.version)
+    && ['path', 'sha256', 'size', 'mode'].every(key => file[key] === asset[key]));
 const hashFile = async file => {
   const hash = createHash('sha256');
   for await (const chunk of createReadStream(file)) hash.update(chunk);
@@ -125,8 +129,11 @@ export async function verifyNativeRuntimeArtifacts({ manifestPath, manifestSha25
       ? ['claude','libsql'].includes(windowsAsset)?[windowsAsset,file]:undefined
       : Object.entries(REVIEWED_CLAUDE_ASSETS).find(([,asset])=>asset.path===file.path);
     if(claudeAsset){
-      const [name,asset]=claudeAsset;if(reviewedClaude[name]||file.role!=='asset'||file.mode!==asset.mode
-        ||file.sha256!==asset.sha256&&!(name==='claude'&&isReviewedPreviousClaudeAsset(file,purpose)))throw fail();
+      const [name,asset]=claudeAsset;
+      const managed = name === 'claude' && process.platform === 'darwin' && process.arch === 'arm64' && manifest.claudeInstallation;
+      if (managed) validateClaudeInstallation(managed, file);
+      if(reviewedClaude[name]||file.role!=='asset'||file.mode!==asset.mode
+        ||!managed&&file.sha256!==asset.sha256&&!(name==='claude'&&isReviewedPreviousClaudeAsset(file,purpose)))throw fail();
       reviewedClaude[name]=Object.freeze({path:target,sha256:file.sha256});
     }
     if (ast) {
@@ -144,6 +151,9 @@ export async function verifyNativeRuntimeArtifacts({ manifestPath, manifestSha25
         if (file.signing.mode === 'unsigned' || file.signing.verified !== true || !/^[a-f0-9]{40,64}$/.test(file.signing.cdhash)) throw fail();
         await timed('artifact_signatures', () => exec('/usr/bin/codesign', ['--verify', '--strict', target], { timeout: 15_000, maxBuffer: 64 * 1024 }));
         const info = await timed('artifact_signatures', () => exec('/usr/bin/codesign', ['-d', '--verbose=4', target], { timeout: 15_000, maxBuffer: 64 * 1024 }));
+        if (claudeAsset?.[0] === 'claude' && manifest.claudeInstallation) {
+          await exec('/usr/bin/codesign', ['--verify', '--strict', '-R', `=anchor apple generic and certificate leaf[subject.OU] = "${CLAUDE_TEAM}"`, target], { timeout: 15000, maxBuffer: 65536 });
+        }
         const cdhash = /^CDHash=(.+)$/m.exec(info.stderr)?.[1];
         const teamID = /^TeamIdentifier=(.+)$/m.exec(info.stderr)?.[1];
         if (file.signing.cdhash !== cdhash || (file.signing.mode === 'release' && (!file.signing.teamID || file.signing.teamID === 'not set' || file.signing.teamID !== teamID))) throw fail();

@@ -1376,3 +1376,24 @@ test('target with only historical native credential contract refuses new clone b
  const f=await fixture({compiledContracts:['devryan.bundle.credential-owners/2','devryan.bundle.credentials/1']});await f.store.prepare(f.baselineInput);await f.store.select({bundleID:'baseline',expectedRevision:0});const before=f.checkpoints.length;
  await expect(f.store.prepare({...f.baselineInput,bundleID:'candidate',source:{kind:'bundle',bundleID:'baseline'}})).rejects.toMatchObject({code:'bundle_credential_contract_incompatible'});expect(f.checkpoints).toHaveLength(before);await expect(fs.lstat(path.join(f.controlRoot,'bundles','candidate'))).rejects.toMatchObject({code:'ENOENT'});
 });
+
+
+for (const changed of ['none', 'candidate', 'source', 'live-owner']) test(`cold Claude recovery requires untouched state and absent owners (${changed})`, async () => {
+ const f=await fixture();
+ await f.store.prepare(f.baselineInput); await f.store.select({bundleID:'baseline',expectedRevision:0});
+ const candidate=await f.store.prepare({...f.baselineInput,bundleID:'claude-candidate',source:{kind:'bundle',bundleID:'baseline'}});
+ await f.store.select({bundleID:'claude-candidate',expectedRevision:1,claudeUpdate:true});
+ const sourceRoot=path.join(f.controlRoot,'bundles','baseline');
+ if(changed==='candidate')await fs.writeFile(path.join(candidate.launch.webDataDirectory,'new-work.json'),'accepted work');
+ if(changed==='source')await fs.writeFile(path.join(sourceRoot,'web-data','new-work.json'),'changed source');
+ const owner=vi.fn(async()=>{if(changed==='live-owner')throw Object.assign(new Error(),{code:'bundle_upgrade_owner_active'});});
+ const store=createRuntimeBundleStore({controlRoot:f.controlRoot,withQuiescedSource:f.withQuiescedSource,runMigration:f.runMigration,
+   verifyArtifacts:f.verifyArtifacts,captureCredentials,assertNoLiveOwner:owner});
+ if(changed==='none') {
+   expect(await store.restoreUnstartedClaude()).toMatchObject({revision:3,selectedBundleID:'baseline',previousBundleID:null,transition:'rollback'});
+   expect(JSON.parse(await fs.readFile(path.join(f.controlRoot,'claude-activation.json'),'utf8')).state).toBe('restored');
+ } else {
+   await expect(store.restoreUnstartedClaude()).rejects.toThrow();
+   expect((await store.readSelected()).selection).toMatchObject({revision:2,selectedBundleID:'claude-candidate'});
+ }
+});

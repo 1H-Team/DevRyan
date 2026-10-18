@@ -160,9 +160,6 @@ export const DesktopNetworkSettings: React.FC = () => {
             <div className="typography-micro text-muted-foreground/70">
               {t('settings.openchamber.desktopNetwork.field.allowLanAccessDescription')}
             </div>
-            <div className="typography-micro text-[var(--status-warning)]/85">
-              {t('settings.openchamber.desktopNetwork.field.warning')}
-            </div>
           </div>
         </div>
 

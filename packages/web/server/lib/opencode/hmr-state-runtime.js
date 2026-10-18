@@ -16,7 +16,6 @@ export const createHmrStateRuntime = (dependencies) => {
         openCodeEpoch: 0,
         openCodePaths: {},
         openCodeWorkingDirectory: os.homedir(),
-        appliedAgentRuntimeSettings: null,
         isShuttingDown: false,
         signalsAttached: false,
         userProvidedOpenCodePassword: undefined,

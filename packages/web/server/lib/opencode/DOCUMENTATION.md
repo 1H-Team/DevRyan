@@ -273,8 +273,8 @@ credential. Bots and managed users on OAuth still fail with
   - `GET /api/config/settings`
   - `PUT /api/config/settings`
   - `GET /api/config/opencode-resolution`
-  - `GET /api/config/claude-resolution` (`claude-runtime-update.js`) reports `{ source, version }` for the running bundled Claude Code executable. It reads the bounded manifest bound to the host's launch digest and maps the executable digest to a reviewed current, previous rollback, or Windows identity. It never resolves the shell CLI, reads credentials, or executes Claude. External or absent bundles return `unavailable`; invalid manifests return 503 with a finite code.
-- `GET /api/config/claude-update-check` shares the existing bounded, credential-free registry lookup against the fixed `@anthropic-ai/claude-code/latest` npm document and accepts stable semantic versions. These two authenticated reads require About settings access. The About Claude row uses the existing administrator-only runtime bundle upgrade/rollback routes for verified local candidates, including revision CAS, CSRF, checkpoint/recomposition and recovery behavior. A newer upstream release alone never authorizes installing an unreviewed executable; the row also opens the ordinary DevRyan update flow when requested. No standalone CLI installation is modified.
+  - `GET /api/config/claude-resolution` (`claude-runtime-update.js`) reports the running manifest-bound Claude version, `verified-native-bundle` or `verified-managed-installation` source, and rollback availability. It never resolves the shell CLI or reads credentials. Invalid manifests return 503.
+- `GET /api/config/claude-update-check` checks the fixed `@anthropic-ai/claude-code/latest` registry document. About can install the exact latest stable macOS ARM64 executable through `claude-update-routes.js`: administrator-only, CSRF-protected POST `/api/config/claude-update/install` and `/rollback` accept only `{ expectedRevision }`; GET `/api/config/claude-update` reports progress. Installation performs automatic integrity, publisher and offline protocol checks, then reuses the bundle checkpoint/selection/recomposition lifecycle. New versions require no per-release hash allowlist or DevRyan release. See `runtime-host/DOCUMENTATION.md` for provenance, preservation and recovery contracts.
 
 - `GET /api/config/opencode-update-check`
   - `POST /api/opencode/directory`
@@ -379,29 +379,16 @@ Managed runtime directory allowances include the resolved DevRyan data root, POS
 - `applyRuntimeExternalDirectoryPolicy(frontmatter, runtimeExternalDirectories?)`: merges normalized runtime-only directory allows into an existing permission block while preserving fallback and tool-specific rules.
 - `sanitizeAgentSkillPolicy(frontmatter, policy)`: rewrites an agent frontmatter permission block so `permission.skill` defaults to deny; skill-capable agents without an explicit wildcard deny get all visible skills, explicitly restricted agents keep only their previous visible allows, and runtime external directories are added as `external_directory` allow patterns while preserving the fallback action.
 
-## Agent-runtime setting application
+## Language servers
 
-Agent-runtime settings use a separate launch contract: `lifecycle.js` captures
-desired settings once before managed launch preparation and passes that exact
-snapshot as `agentRuntimeSettings` to `syncRuntimeAgentOverlays`. Successful
-readiness records the applied snapshot in retained host state; failures keep the
-previous snapshot. `getAgentRuntimeApplicationState()` supplies managed/external
-mode and the known applied value to settings GET/PUT. The routes only persist
-desired settings and compare them with that snapshot; they never resynchronize
-the overlay or infer application from a configuration revision. Unknown or
-external application reports null applied/restart state.
-
-The language server (`agentRuntime.lsp`) is off unless the user turns it on in
-Settings → Agents → Runtime. While it is off the runtime overlay writes
-`lsp: false`, which also reaches confined workers, because the companion sends
-them the host's configuration. A confined `edit`, `write` or `apply_patch`
-otherwise starts `typescript-language-server` and `tsserver` from cold for the
-whole project and discards them when the call ends: measured on 2026-09-30 at
-10 to 20 seconds and 2 to 3 GiB per edit. Agents run the project's own type
-checks instead.
-
-Tests that need a language server in the runtime set the desired state
-explicitly; nothing else reads the default.
+OpenCode's language servers are always off for agent sessions; there is no
+setting. The runtime overlay (`runtime-agent-overlays.js`) always writes
+`lsp: false`, which replaces any `lsp` value from the user's configuration and
+also reaches confined workers, because the companion sends them the host's
+configuration. A confined `edit`, `write` or `apply_patch` would otherwise start
+`typescript-language-server` and `tsserver` from cold for the whole project and
+discard them when the call ends: measured on 2026-09-30 at 10 to 20 seconds and
+2 to 3 GiB per edit. Agents run the project's own type checks instead.
 
 ## Public exports (agent-runtime-warmup.js)
 - `createAgentRuntimeWarmup(dependencies)`: creates a read-only warmup runtime. Returned API:

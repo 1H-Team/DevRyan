@@ -1,8 +1,10 @@
+import { completeClaudeActivation, readClaudeStartupFailure } from './lib/opencode/runtime-host/claude-activation-recovery.js';
 import { selectedRuntimeBundle, getRuntimeHome } from './lib/opencode/runtime-host/runtime-bundle-binding.js';
 import {createNativePrivatePersistence} from './lib/opencode/runtime-host/native-private-persistence.js';
 import { loadNativeRuntimeBundle, createNativeRuntimeOwner, createRuntimeBundleVerifier } from './lib/opencode/runtime-host/native-runtime-owner.js';
 import { startupUpgradeFailureOver } from './lib/opencode/runtime-host/bundle-startup-upgrade-status.js';
 import { startupNotices } from './lib/opencode/runtime-host/startup-notices.js';
+import { createClaudeUpdateController, registerClaudeUpdateRoutes } from './lib/opencode/claude-update-routes.js';
 import { createRuntimeBundleLifecycle, createRuntimeBundleAdmissionGate, createRuntimeBundleWorkFence, registerRuntimeBundleLifecycleRoutes } from './lib/opencode/runtime-host/runtime-bundle-lifecycle.js';
 import { createNativeAuthorization } from './lib/opencode/runtime-host/native-authorization.js';
 import { writeOpenCodeRuntimeSelection } from './lib/opencode/runtime-selection.js';
@@ -81,7 +83,6 @@ import { createOpenAiOAuthBridge } from './lib/opencode/openai-oauth-bridge.js';
 import { createConfigApplyCoordinator, createConfigChangeMarker } from '@openchamber/shared-runtime';
 import { syncPackagedAgents } from './lib/opencode/packaged-agent-sync.js';
 import { syncRuntimeAgentOverlays } from './lib/opencode/runtime-agent-overlays.js';
-import { readAgentRuntimeSettings } from './lib/opencode/agent-runtime-settings.js';
 import { createUserProfileProvisioningRuntime } from './lib/opencode/user-profile-provisioning.js';
 import { retireLegacyCursorPlugin } from './lib/opencode/legacy-cursor-plugin.js';
 import { readAuthFile } from './lib/opencode/auth.js';
@@ -1353,7 +1354,6 @@ Object.defineProperties(openCodeLifecycleState, {
     if (JSON.stringify(value) !== JSON.stringify(openCodePaths)) invalidateOpenCodeRuntime();
     openCodePaths = value;
   } },
-  appliedAgentRuntimeSettings: { get: () => hmrState.appliedAgentRuntimeSettings ?? null, set: (value) => { hmrState.appliedAgentRuntimeSettings = value; } },
   openCodeProcess: { get: () => openCodeProcess, set: (value) => {
     if (value !== openCodeProcess) invalidateOpenCodeRuntime();
     openCodeProcess = value;
@@ -1473,7 +1473,6 @@ const openCodeLifecycleRuntime = createOpenCodeLifecycleRuntime({
     packagedPluginDirectory: path.join(defaultConfigRoot, 'plugins'),
   }),
   readSettingsFromDisk,
-  readAgentRuntimeSettings,
   sanitizeProjects,
   sanitizeHiddenSkills,
   discoverSkills,
@@ -1528,7 +1527,6 @@ const ensureNativeDirectory=async directory=>{
   await restartOpenCode();
   if(!nativeRuntime?.isReady()||!nativeRuntime.getConfigurationSnapshot()?.locations.some(location=>location.directory===directory))throw Object.assign(new Error('native_runtime_not_ready'),{code:'native_runtime_not_ready',statusCode:503});
 };
-const getAgentRuntimeApplicationState = () => openCodeLifecycleRuntime.getAgentRuntimeApplicationState();
 const waitForOpenCodeReady = (...args) => openCodeLifecycleRuntime.waitForOpenCodeReady(...args);
 const waitForAgentPresence = (...args) => openCodeLifecycleRuntime.waitForAgentPresence(...args);
 const commandDeadlineRuntime = createWebCommandDeadlineRuntime({
@@ -1923,12 +1921,28 @@ const gracefulShutdown = (...args) => gracefulShutdownRuntime.gracefulShutdown(.
 
 async function main(options = {}) {
   const bundleAdmission = createRuntimeBundleAdmissionGate();
+  const claudeUpdateAbort = new AbortController();
   let agentRuntimeWarmup;
   const requestHostRestart = typeof options.onRestartHost === 'function' ? options.onRestartHost
     : process.env.DEVRYAN_SUPERVISED_RESTART === '1'
       ? async () => { await gracefulShutdown({ exitProcess: false }); process.exit(1); } : undefined;
   const runtimeBundleLifecycle = createRuntimeBundleLifecycle({ privatePersistence, binding: selectedRuntimeBundle,
     retainCheckpoint: options.retainRuntimeBundleCheckpoint,
+    onClaudePhase: phase => claudeUpdates.setPhase(phase),
+    waitForClaudeIdle: async () => {
+      for (;;) {
+        if (claudeUpdateAbort.signal.aborted) throw Object.assign(new Error(), { code: 'claude_update_interrupted' });
+        const reserved = await bundleAdmission.reserveIdle(async () => {
+          const busy = await getAuthoritativeActiveSessionCount();
+          const orchestration = managedOrchestrationRuntime?.getDiagnostics()?.scheduler;
+          return !claudeUpdateAbort.signal.aborted && !busy && !scheduledTasksRuntime.getStatus().runningScheduledTasksCount
+            && !orchestration?.activeLaunchCount && !orchestration?.activeHandoffCount && !orchestration?.pendingAcknowledgementCount
+            && !(multiUserRuntime?.botsRuntime?.getRestartBlockers?.() || []).length;
+        });
+        if (reserved) return () => bundleAdmission.releaseIdle();
+        await new Promise(resolve => { const timer = setTimeout(resolve, 1000); timer.unref(); });
+      }
+    },
     getController: () => nativeRuntime.checkpointController(),
     closeAdmission: async () => {
       bundleAdmission.close();
@@ -1991,6 +2005,7 @@ async function main(options = {}) {
     },
     requestRecomposition: requestHostRestart,
   });
+  const claudeUpdates = createClaudeUpdateController({ lifecycle: runtimeBundleLifecycle, startupFailure: await readClaudeStartupFailure(selectedRuntimeBundle) });
   const deferOpenCodeStartup = options.deferOpenCodeStartup === true;
   let deferredOpenCodeStartupComplete = !deferOpenCodeStartup;
   let deferredOpenCodeStartupPromise = null;
@@ -2445,6 +2460,8 @@ async function main(options = {}) {
   });
   registerRuntimeBundleLifecycleRoutes(app, { lifecycle: runtimeBundleLifecycle,
     isAdministrator: () => canForceConfigRestart(getRequestPrincipal()) });
+  registerClaudeUpdateRoutes(app, { controller: claudeUpdates,
+    isAdministrator: () => canForceConfigRestart(getRequestPrincipal()) });
   uiAuthController = bootstrapResult.uiAuthController;
   // Must precede managed session routes, which intercept the generic proxy.
   app.get('/api/diagnostics/execution-runtime', (_req, res) => res.json({ state: executionReadiness.state, diagnostic: executionReadiness.diagnostic }));
@@ -2838,7 +2855,6 @@ async function main(options = {}) {
     restartOpenCode,
     waitForOpenCodeReady,
     isExternalOpenCode: () => isExternalOpenCode || ENV_SKIP_OPENCODE_START,
-    getAgentRuntimeApplicationState,
     getPackagedAgentPrompts: () => openCodeLifecycleRuntime.getPackagedAgentPrompts(),
     restorePackagedAgentPrompt: (input) => openCodeLifecycleRuntime.restorePackagedAgentPrompt(input),
     buildAugmentedPath,
@@ -3009,6 +3025,7 @@ async function main(options = {}) {
         ? async () => { await gracefulShutdown({ exitProcess: false }); process.exit(1); } : undefined,
   });
 
+  await completeClaudeActivation(selectedRuntimeBundle);
   reportStartupPhase('ready', 'DevRyan is ready.');
 
   return {
@@ -3058,8 +3075,10 @@ async function main(options = {}) {
     isOpenCodeStartupDeferred: () => !deferredOpenCodeStartupComplete,
     isReady: () => isOpenCodeReady,
     restartOpenCode: () => restartOpenCode(),
-    stop: (shutdownOptions = {}) =>
-      gracefulShutdown({ exitProcess: shutdownOptions.exitProcess ?? false })
+    stop: (shutdownOptions = {}) => {
+      claudeUpdateAbort.abort();
+      return gracefulShutdown({ exitProcess: shutdownOptions.exitProcess ?? false });
+    }
   };
 }
 

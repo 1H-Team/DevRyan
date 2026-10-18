@@ -1,3 +1,4 @@
+import { REVIEWED_CLAUDE_ASSETS } from './reviewed-claude-transform.js';
 import {NATIVE_BUNDLE_CREDENTIAL_CONTRACT} from './native-bundle-credential-contract.js';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -17,7 +18,7 @@ afterEach(async () => { for (const root of roots.splice(0)) await fs.rm(root, { 
 
 async function fixture({ unknownController = false, unsettledController = false, failDrain = false, drainFailures = 0, failProjection = false,
   failRestart = false, failQuiesce = false, failCapture = false, failRetain = false, failStore = null, reconciliationRequired = false,
-  retainCheckpoint, beforeReadSelected, beforeDrain, neverStarted = false, assertOwner } = {}) {
+  retainCheckpoint, beforeReadSelected, beforeDrain, neverStarted = false, assertOwner, claude = {} } = {}) {
   const root = await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()), 'runtime-bundle-lifecycle-')); roots.push(root);
   const launch = { opencodeDatabasePath: path.join(root, 'a.db'), webDataDirectory: path.join(root, 'web'),
     webConfigDirectory: path.join(root, 'web-config'), opencodeConfigDirectory: path.join(root, 'config'),
@@ -36,10 +37,10 @@ async function fixture({ unknownController = false, unsettledController = false,
   const injected = code => Object.assign(new Error(code), { code });
   const controller = { hasExited: () => exited, call: async input => { events.push(input.action); if (failQuiesce) throw injected('bundle_controller_quiesce_failed'); },
     close: async () => { events.push('controller-close'); exited = !unsettledController; } };
-  const manifest = { opencodeVersion: '2.0.20', inputs: { coreDigest: 'c'.repeat(64), reviewedPlugins: [] },
+  const manifest = { files: [{ role: 'asset', path: 'DevRyan-Claude-darwin-arm64', sha256: REVIEWED_CLAUDE_ASSETS.claude.sha256 }], opencodeVersion: '2.0.20', inputs: { coreDigest: 'c'.repeat(64), reviewedPlugins: [] },
     compiledContracts: ['devryan-v2-clone/1', NATIVE_BUNDLE_CREDENTIAL_CONTRACT, 'devryan.bundle.credential-owners/2'] };
   const artifactDirectory = path.join(root, 'app-resources'); await fs.mkdir(artifactDirectory);
-  const bytes = JSON.stringify(manifest); await fs.writeFile(path.join(artifactDirectory, 'native-bundle.json'), bytes);
+  const bytes = JSON.stringify(manifest); await fs.writeFile(launch.artifactManifestPath, bytes); await fs.writeFile(path.join(artifactDirectory, 'native-bundle.json'), bytes);
   const candidateHash = digest(bytes);
   const retained = { manifest, manifestSha256: candidateHash, manifestPath: path.join(root, 'artifacts', candidateHash, 'native-bundle.json'),
     controller: path.join(root, 'new-controller'), writer: path.join(root, 'new-writer') };
@@ -86,7 +87,7 @@ async function fixture({ unknownController = false, unsettledController = false,
     };
   };
   const restart = vi.fn(async () => { events.push('restart'); if (failRestart) throw new Error('host refused restart'); });
-  const lifecycle = createRuntimeBundleLifecycle({ binding, artifactDirectory, verifyArtifacts, credentialProcess, storeFactory, retainCheckpoint, neverStarted,
+  const lifecycle = createRuntimeBundleLifecycle({ createClaude: async () => ({ artifacts: retained, manifestSha256: candidateHash, manifestPath: retained.manifestPath }), ...claude, binding, artifactDirectory, verifyArtifacts, credentialProcess, storeFactory, retainCheckpoint, neverStarted,
     retainArtifacts: async () => { events.push('retain'); if (failRetain) throw injected('bundle_retain_failed'); return retained; }, requestRecomposition: restart,
     getController: () => unknownController ? null : controller,
     closeAdmission: async () => { events.push('admission-close'); gate.close(); },
@@ -341,7 +342,7 @@ test('constructor grant is synchronous, frozen, narrow, and settles the genuine 
   expect(Object.isFrozen(grant)).toBe(true);
   expect(Object.keys(grant).sort()).toEqual(['controlRoot', 'ownerID', 'withHeldCheckpoint']);
   expect(grant.ownerID).toBe('A'); expect(grant.controlRoot).toBe(value.binding.controlRoot);
-  expect(Object.keys(value.lifecycle).sort()).toEqual(['inspect', 'recompose', 'resume', 'rollback', 'upgrade']);
+  expect(Object.keys(value.lifecycle).sort()).toEqual(['inspect', 'recompose', 'resume', 'rollback', 'upgrade', 'upgradeClaude']);
   let expired;
   expect(await grant.withHeldCheckpoint(async scope => {
     expect(Object.isFrozen(scope)).toBe(true); expect(Object.keys(scope)).toEqual(['assertHeld']);
@@ -409,4 +410,36 @@ test('selector change during settlement cannot expose a held credential scope', 
   await expect(grant.withHeldCheckpoint(action)).rejects.toMatchObject({ code: 'bundle_selection_revision_conflict' });
   expect(action).not.toHaveBeenCalled();
   await expect(grant.withHeldCheckpoint(action)).rejects.toMatchObject({ code: 'bundle_checkpoint_grant_revoked' });
+});
+
+
+test.skipIf(process.platform !== 'darwin' || process.arch !== 'arm64')('future Claude update waits for idle before closing admission and uses normal selection', async () => {
+  let ready; const wait = new Promise(resolve => { ready = resolve; });
+  const phases = [], releaseIdle = vi.fn();
+  const value = await fixture({ claude: { checkClaudeRelease: async () => ({ latestVersion: '9.0.0' }),
+    onClaudePhase: phase => phases.push(phase), waitForClaudeIdle: async () => { await wait; return releaseIdle; } } });
+  const updating = value.lifecycle.upgradeClaude({ expectedRevision: 1 });
+  for (let i = 0; i < 100 && !phases.includes('waiting-for-idle'); i++) await new Promise(resolve => setTimeout(resolve, 2));
+  expect(phases).toContain('waiting-for-idle'); expect(value.events).not.toContain('admission-close');
+  await expect(value.lifecycle.upgrade({ expectedRevision: 1 })).rejects.toMatchObject({ code: 'bundle_lifecycle_busy' });
+  ready();
+  expect(await updating).toMatchObject({ revision: 2, restartRequired: true, transition: 'claude' });
+  expect(phases).toEqual(['waiting-for-idle', 'activating']); expect(releaseIdle).toHaveBeenCalledTimes(1);
+  expect(value.events).toContain('select'); expect(value.events.indexOf('admission-close')).toBeLessThan(value.events.indexOf('select'));
+});
+test.skipIf(process.platform !== 'darwin' || process.arch !== 'arm64')('stale revisions and bad downloads never close admission or change selection', async () => {
+  const createClaude = vi.fn(async () => { throw Object.assign(new Error(), { code: 'claude_archive_integrity' }); });
+  const value = await fixture({ claude: { createClaude, checkClaudeRelease: async () => ({ latestVersion: '9.0.0' }), waitForClaudeIdle: async () => {} } });
+  await expect(value.lifecycle.upgradeClaude({ expectedRevision: 0 })).rejects.toMatchObject({ code: 'bundle_selection_revision_conflict' });
+  expect(createClaude).not.toHaveBeenCalled();
+  await expect(value.lifecycle.upgradeClaude({ expectedRevision: 1 })).rejects.toMatchObject({ code: 'claude_archive_integrity' });
+  expect(value.events).not.toContain('admission-close');
+  expect(await value.lifecycle.inspect({ checkUpdates: false })).toMatchObject({ revision: 1, restartRequired: false, state: 'ready' });
+});
+test('idle reservation prevents new writes, reopens on pre-check failure, and never reopens a checkpoint', async () => {
+  const gate = createRuntimeBundleAdmissionGate();
+  expect(await gate.reserveIdle(async () => false)).toBe(false); expect(gate.isHeld()).toBe(false);
+  expect(await gate.reserveIdle(async () => true)).toBe(true); expect(gate.isHeld()).toBe(true);
+  gate.releaseIdle(); expect(gate.isHeld()).toBe(false);
+  expect(await gate.reserveIdle(async () => true)).toBe(true); gate.close(); gate.releaseIdle(); expect(gate.isHeld()).toBe(true);
 });

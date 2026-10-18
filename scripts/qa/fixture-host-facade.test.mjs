@@ -97,9 +97,6 @@ test('QA facade uses original native client/proxy, passes product features and s
     assert.equal(unauthenticated.status,401,await unauthenticated.text());
     assert.equal((await f.request(`/api/session/${session.body.id}/recovery`)).body.actualProductFeature,true);
     assert.ok(f.passed.every(row=>!row.path.endsWith('/prompt_async')));
-    const settings=await f.request('/api/config/agent-runtime');assert.equal(settings.status,200);assert.equal(settings.body.runtimeMode,'external');
-    assert.equal((await f.request('/api/config/agent-runtime',{lsp:true},'PUT')).body.lsp,true);
-    assert.equal((await f.request('/api/config/agent-runtime',{lsp:'unsafe'},'PUT')).status,400);
     const source=history.body.find(row=>row.info.role==='assistant');
     const canonical=await f.facade.client.sessions.get(session.body.id,{directory:f.workspace});
     const query=new URLSearchParams({directory:f.workspace,sessionCreated:String(canonical.time.created),sessionSlug:canonical.slug});

@@ -205,6 +205,22 @@ export async function validateQaNativeSourceLaunch(launch, runtimeRoot) {
   }
 }
 
+/** The artifact verifier emits finite timing records before the single JSON result. */
+export function parseQaNativeSnapshotOutput(stdout) {
+  const lines = stdout.split('\n').filter(Boolean), payload = [];
+  for (const line of lines) {
+    const prefix = '[runtime-bundle] startup phase ';
+    if (!line.startsWith(prefix)) { payload.push(line); continue; }
+    const timing = JSON.parse(line.slice(prefix.length));
+    if (Object.keys(timing).sort().join(',') !== 'elapsedMs,outcome,phase'
+      || !['artifact_hashing', 'artifact_signatures'].includes(timing.phase)
+      || !['completed', 'failed'].includes(timing.outcome)
+      || !Number.isFinite(timing.elapsedMs) || timing.elapsedMs < 0) throw fail('qa_native_snapshot_output_invalid');
+  }
+  if (payload.length !== 1) throw fail('qa_native_snapshot_output_invalid');
+  return JSON.parse(payload[0]);
+}
+
 /** Fresh process imports the production binding before configuration owners.
  * It reports routes and prompt hashes only; never raw prompts or credentials. */
 export async function readQaNativeSelectionView(binding, environment, workspace) {
@@ -231,7 +247,7 @@ export async function readQaNativeSelectionView(binding, environment, workspace)
     timeout: 60000, maxBuffer: 4 * 1024 * 1024,
   });
   if (stderr) throw fail('qa_native_snapshot_stderr');
-  return JSON.parse(stdout);
+  return parseQaNativeSnapshotOutput(stdout);
 }
 
 /** The same offline bundle composition is used by the sign-in source and cells.

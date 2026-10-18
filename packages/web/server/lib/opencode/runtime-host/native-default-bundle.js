@@ -1,3 +1,4 @@
+import { recoverClaudeActivationAtStartup } from './claude-activation-recovery.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
@@ -142,6 +143,7 @@ export async function provisionDefaultNativeBundle({env=process.env,home=os.home
  const provision=async()=>{
   await sweepRemovedNativeSetupSources({controlRoot,sourceRoot,...privatePersistence});
   if(await exists(path.join(controlRoot,'selection.json'))){
+   if (!operations.windows) await recoverClaudeActivationAtStartup({ controlRoot, verifyArtifacts });
    const selected=readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot},{allowHeldInspection:true});
    if(selected.admission==='held'||selected.selection.reconciliationRequired)return controlRoot;
    if(!operations.windows)await finishNativeBundleRebootRecoveryAtStartup({controlRoot,verifyArtifacts});
