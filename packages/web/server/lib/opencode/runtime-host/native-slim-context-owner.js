@@ -12,15 +12,22 @@ const terminal=new Set(['completed','failed','aborted','timed_out']);
 export function createNativeSlimContextOwner({admissionOwner,openCodeClient,primaryRuntime,getManagedRuntime,getInstanceID,originals,locations}){
  const scopes=new AsyncLocalStorage(),renderers=new Map();
  const active=()=>{const scope=scopes.getStore();if(!scope)throw fail('native_slim_context_scope_required');return scope;};
- const job=(task,envelope)=>({taskID:task.taskId,alias:task.taskId,agent:task.agent,
-  state:task.status==='failed'?'error':task.status==='aborted'?'cancelled':task.status==='timed_out'?'stopped':terminal.has(task.status)?task.status:'running',
-  generation:task.attempt,terminalRevision:envelope?.sequence,description:task.label,objective:task.prompt,
-  resultSummary:envelope?.recoverablePreview??'',lastStatusError:task.failureReason,
-  timedOut:task.status==='timed_out',statusUncertain:task.status==='timed_out',
-  terminalUnreconciled:Boolean(envelope&&(envelope.promptObserved?.attempt!==task.attempt||envelope.promptObserved?.sequence!==envelope.sequence)),
-  terminalState:task.status==='failed'?'error':task.status==='aborted'?'cancelled':task.status==='completed'?'completed':undefined,
-  launchedAt:task.createdAt,lastLaunchedAt:task.startedAt??task.createdAt,contextFiles:[],
- });
+ // Board rows use the agents-core record shape. Managed tasks have one run per
+ // attempt; recency comes from the attempt's own timestamps, and the fields the
+ // renderer never reads for host-owned rows keep neutral values.
+ const job=(task,envelope)=>{
+  const updatedAt=task.finishedAt??task.startedAt??task.createdAt;
+  return {taskID:task.taskId,parentSessionID:task.rootSessionId,alias:task.taskId,agent:task.agent,
+   state:task.status==='failed'?'error':task.status==='aborted'?'cancelled':task.status==='timed_out'?'stopped':terminal.has(task.status)?task.status:'running',
+   generation:task.attempt,taskGeneration:task.attempt,terminalRevision:envelope?.sequence??0,activityRevision:0,
+   description:task.label,objective:task.prompt,resultSummary:envelope?.recoverablePreview??'',lastStatusError:task.failureReason,
+   background:true,timedOut:task.status==='timed_out',statusUncertain:task.status==='timed_out',recoverableAfterLiveBusy:false,cancellationRequested:false,
+   terminalUnreconciled:Boolean(envelope&&(envelope.promptObserved?.attempt!==task.attempt||envelope.promptObserved?.sequence!==envelope.sequence)),
+   terminalState:task.status==='failed'?'error':task.status==='aborted'?'cancelled':task.status==='completed'?'completed':undefined,
+   launchedAt:task.createdAt,lastLaunchedAt:task.startedAt??task.createdAt,runStartedAt:task.startedAt??task.createdAt,
+   updatedAt,lastUsedAt:updatedAt,...typeof task.finishedAt==='number'?{completedAt:task.finishedAt}:{},contextFiles:[],
+  };
+ };
  const renderer=directory=>{
   if(renderers.has(directory))return renderers.get(directory);
   const location=locations.find(value=>value.directory===directory),saved=location?.compatibility?.slim;

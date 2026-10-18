@@ -190,7 +190,7 @@ export interface ToolLoopGuardHook {
   ) => Promise<void>;
   'tool.execute.after': (
     input: { tool: string; sessionID?: string; callID?: string },
-    output: { output: unknown; metadata?: unknown },
+    output: { output?: unknown; metadata?: unknown },
   ) => Promise<void>;
   observeNewUserMessage(sessionID: string, messageID: string): void;
   resetTurn(sessionID: string): void;
@@ -302,7 +302,7 @@ export function createToolLoopGuardHook(): ToolLoopGuardHook {
 
     'tool.execute.after': async (
       input: { tool: string; sessionID?: string; callID?: string },
-      output: { output: unknown; metadata?: unknown },
+      output: { output?: unknown; metadata?: unknown },
     ): Promise<void> => {
       const sessionID = input.sessionID;
       if (!sessionID) return;

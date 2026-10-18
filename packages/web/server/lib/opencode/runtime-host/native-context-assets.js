@@ -10,7 +10,34 @@ const record=value=>value!==null&&typeof value==='object'&&!Array.isArray(value)
 const fields=(value,names)=>record(value)&&Object.keys(value).every(key=>names.includes(key));
 const protocol='devryan-context-images/1',MIB=1024*1024;
 const digest=value=>createHash('sha256').update(value).digest('hex');
-const suffix=' Your model may not support image input. Delegate to @observer with the file path(s) above so it can read the file with its read tool.]';
+// The original image hook's notice: `[` + sections joined by newlines + `]`,
+// a readable section and/or an oversized section, each listing saved paths.
+const readableHeader='Image saved to:',readableFooter='Delegate to @observer with the path(s) and your goal — @observer reads images with its read tool.';
+const oversizedHeader='Too large for the read tool (20 MiB) — do not delegate; ask the user to compress or crop:';
+const parseNotice=text=>{
+ if(typeof text!=='string'||!text.startsWith('[')||!text.endsWith(']'))throw fail('native_image_output_invalid');
+ const lines=text.slice(1,-1).split('\n'),readable=[],oversized=[];let index=0;
+ if(lines[index]===readableHeader){
+  index++;while(index<lines.length&&lines[index]!==readableFooter){if(!lines[index].startsWith('- '))throw fail('native_image_output_invalid');readable.push(lines[index++].slice(2));}
+  if(lines[index++]!==readableFooter||!readable.length)throw fail('native_image_output_invalid');
+ }
+ if(lines[index]===oversizedHeader){
+  index++;while(index<lines.length){const match=/^- (.+) \((\d+\.\d) MiB\)$/.exec(lines[index++]);if(!match)throw fail('native_image_output_invalid');oversized.push({file:match[1],size:match[2]});}
+  if(!oversized.length)throw fail('native_image_output_invalid');
+ }
+ if(index!==lines.length||!readable.length&&!oversized.length)throw fail('native_image_output_invalid');
+ return {readable,oversized};
+};
+const renderNotice=({readable,oversized})=>'['+[
+ ...readable.length?[[readableHeader,...readable.map(file=>'- '+file),readableFooter].join('\n')]:[],
+ ...oversized.length?[[oversizedHeader,...oversized.map(row=>`- ${row.file} (${row.size} MiB)`)].join('\n')]:[],
+].join('\n')+']';
+const noticeFiles=notice=>[...notice.readable,...notice.oversized.map(row=>row.file)];
+const privateImagePath=(file,lease)=>{
+ const relative=path.relative(lease.workingDirectory,file);
+ if(!path.isAbsolute(file)||!relative.startsWith(`.opencode${path.sep}images${path.sep}`)||relative.split(path.sep).some(component=>component==='..'))throw fail('native_image_output_invalid');
+ return relative;
+};
 const imageBytes=async file=>{
  const handle=await fs.open(file,constants.O_RDONLY|constants.O_NOFOLLOW);
  try{
@@ -22,22 +49,15 @@ const imageBytes=async file=>{
 };
 
 const validateResult=(result,original,lease)=>{
- if(!fields(result,['messages','imagesSkipped','privateDirectory','state'])||!Array.isArray(result.messages)||result.messages.length!==original.length
+ if(!fields(result,['messages','imagesSkipped','privateDirectory'])||!Array.isArray(result.messages)||result.messages.length!==original.length
   ||typeof result.imagesSkipped!=='boolean'||result.privateDirectory!==lease.workingDirectory)throw fail('native_image_output_invalid');
- if(!fields(result.state,['schema','logicalDirectory','cleanup','counts','resolved'])||result.state.schema!==1||result.state.logicalDirectory!==lease.directory
-  ||![result.state.cleanup,result.state.counts,result.state.resolved].every(value=>Array.isArray(value)&&value.length<=256)
-  ||Buffer.byteLength(JSON.stringify(result.state))>256*1024)throw fail('native_image_output_invalid');
  for(let i=0;i<result.messages.length;i++){
   const message=result.messages[i],source=original[i];
   if(!record(message)||JSON.stringify(message.info)!==JSON.stringify(source.info)||!Array.isArray(message.parts))throw fail('native_image_output_invalid');
   for(const part of message.parts){
    if(source.parts.some(before=>JSON.stringify(before)===JSON.stringify(part)))continue;
-   if(!fields(part,['type','text'])||part.type!=='text'||typeof part.text!=='string'
-    ||!part.text.startsWith('[Image attachment detected. Saved to: ')||!part.text.endsWith(suffix))throw fail('native_image_output_invalid');
-   for(const file of part.text.slice('[Image attachment detected. Saved to: '.length,-suffix.length).split(', ')){
-    const relative=path.relative(lease.workingDirectory,file);
-    if(!path.isAbsolute(file)||!relative.startsWith(`.opencode${path.sep}images${path.sep}`)||relative.split(path.sep).some(component=>component==='..'))throw fail('native_image_output_invalid');
-   }
+   if(!fields(part,['type','text'])||part.type!=='text')throw fail('native_image_output_invalid');
+   for(const file of noticeFiles(parseNotice(part.text)))privateImagePath(file,lease);
   }
  }
 };
@@ -52,20 +72,17 @@ async function canonicalResult(result,original,lease,publication,recheck){
   if(!record(message)||JSON.stringify(message.info)!==JSON.stringify(source.info)||!Array.isArray(message.parts))throw fail('native_image_output_invalid');
   for(const part of message.parts){
    if(source.parts.some(before=>JSON.stringify(before)===JSON.stringify(part)))continue;
-   if(!fields(part,['type','text'])||part.type!=='text'||typeof part.text!=='string'
-    ||!part.text.startsWith('[Image attachment detected. Saved to: ')||!part.text.endsWith(suffix))throw fail('native_image_output_invalid');
-   const privatePaths=part.text.slice('[Image attachment detected. Saved to: '.length,-suffix.length).split(', '),mapped=[];
-   for(const file of privatePaths){
-    const relative=path.relative(lease.workingDirectory,file);
-    if(!relative.startsWith(`.opencode${path.sep}images${path.sep}`)||relative.split(path.sep).some(component=>component==='..'))throw fail('native_image_output_invalid');
-    const canonical=path.join(lease.directory,relative);
+   if(!fields(part,['type','text'])||part.type!=='text')throw fail('native_image_output_invalid');
+   const notice=parseNotice(part.text),mapped=new Map();
+   for(const file of noticeFiles(notice)){
+    const canonical=path.join(lease.directory,privateImagePath(file,lease));
     await recheck();
     if(await fs.realpath(file)!==file||await fs.realpath(canonical)!==canonical)throw fail('native_image_publication_missing');
     const [privateBytes,canonicalBytes]=await Promise.all([imageBytes(file),imageBytes(canonical)]);
     if(!privateBytes.equals(canonicalBytes))throw fail('native_image_publication_missing');
-    await recheck();mapped.push(canonical);
+    await recheck();mapped.set(file,canonical);
    }
-   part.text='[Image attachment detected. Saved to: '+mapped.join(', ')+suffix;
+   part.text=renderNotice({readable:notice.readable.map(file=>mapped.get(file)),oversized:notice.oversized.map(row=>({...row,file:mapped.get(row.file)}))});
   }
  }
  return {messages,imagesSkipped:result.imagesSkipped};
@@ -94,7 +111,7 @@ export async function executeNativeContextAssets(input,{signal}={},deps){
   ||!['auto','direct'].includes(captured.imageRouting)||!Array.isArray(captured.disabledAgents)
   ||captured.disabledAgents.length>100||captured.disabledAgents.some(agent=>typeof agent!=='string'))throw fail('native_image_input_invalid');
  const bytes=Buffer.from(JSON.stringify({messages,imageRouting:captured.imageRouting,disabledAgents:captured.disabledAgents,
-  logicalDirectory:input.directory,...deps.state?{state:deps.state}:{}}));
+  logicalDirectory:input.directory}));
  if(bytes.length>65*MIB)throw fail('native_image_input_invalid');
  if(nativeHandles.size>=128)throw fail('native_execution_capacity_exceeded');
  const {owner,jobs}=await preparations();
@@ -116,7 +133,7 @@ export async function executeNativeContextAssets(input,{signal}={},deps){
    const output=await canonicalResult(decoded,messages,job.lease,publication,recheck);
    await recordReceipt?.({...await runtime.executionReceipt({directory:input.directory,token:reserved.token}),tool:'context-assets'});
    await cleanupAfterPublication(job.lease);
-   await recheck();deps.saveState(structuredClone(decoded.state));
+   await recheck();
    try{nativeOptions.onOutcome?.({...scope,token:reserved.token,state:'published'});}catch{/* Observer only. */}
    return {...output,contextAssetID:captured.contextAssetID,receipt,publication};
   };

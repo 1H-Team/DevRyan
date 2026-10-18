@@ -1,7 +1,7 @@
 import type { NativeCatalogSelection } from './native-process-protocol.js';
 import type { RuntimeBundleDescriptor } from './runtime-bundle.js';
 import type { ReviewedSkill } from './reviewed-skills.js';
-import type {ReviewedSlimAgentData} from '../../../../runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js';
+import type {ReviewedSlimAgentData} from '@openchamber/agents-core';
 import type {NativeTextReference} from './native-text-settings.js';
 export interface NativeConfigurationLocation {
   readonly directory: string; readonly configuration: Record<string, unknown>; readonly skills: readonly ReviewedSkill[];

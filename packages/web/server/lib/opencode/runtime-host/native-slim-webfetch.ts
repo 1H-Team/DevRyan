@@ -1,9 +1,10 @@
 import path from 'node:path';
-import type {ReviewedWebfetchContext,ReviewedWebfetchDefinition,ReviewedWebfetchInput,ReviewedWebfetchOwners} from '../../../../runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js';
+import type * as AgentsCore from '@openchamber/agents-core';
+import type {ReviewedWebfetchContext,ReviewedWebfetchDefinition,ReviewedWebfetchInput,ReviewedWebfetchOptions,ReviewedWebfetchOwners} from '@openchamber/agents-core';
 
 export interface ReviewedWebfetchOriginals {
- readonly createWebfetchTool:(context:unknown,options?:Readonly<Record<string,unknown>>)=>ReviewedWebfetchDefinition;
- readonly withReviewedWebfetchOwner:<T>(owner:ReviewedWebfetchOwners,action:()=>Promise<T>)=>Promise<T>;
+ readonly createWebfetchTool:typeof AgentsCore.createWebfetchTool;
+ readonly withReviewedWebfetchOwner:typeof AgentsCore.withReviewedWebfetchOwner;
 }
 export interface OwnedSlimWebfetchOwners extends Omit<ReviewedWebfetchOwners,'signal'|'sessionID'|'saveBinary'> {
  /** Fresh original caller/permit/epoch check; never a serialized policy fallback. */
@@ -31,7 +32,9 @@ export function parseReviewedWebfetchInput(value:unknown,definition:ReviewedWebf
 /** Original Slim algorithms with invocation-local authority. No ambient client, fetch, file write or DOM resolution. */
 export function createOwnedSlimWebfetch(options:{
  readonly originals:ReviewedWebfetchOriginals;
- readonly configuration:Readonly<Record<string,unknown>>;
+ /** Model routes from the frozen native configuration. Inline image attachments
+  * stay off: imageRouting is never 'direct' here, so results are text. */
+ readonly configuration:Omit<ReviewedWebfetchOptions,'binaryDir'|'smallModelRef'|'imageRouting'>;
  readonly binaryDirectory:string;
  /** Capture the original small-model route once from the same frozen native configuration. */
  readonly smallModelRef?:()=>string|undefined;

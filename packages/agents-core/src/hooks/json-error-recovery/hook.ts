@@ -35,16 +35,13 @@ STOP and do this NOW:
 DO NOT repeat the exact same invalid call.
 `;
 
+// DevRyan: only the fields read below; hosts pass their full payloads.
 interface ToolExecuteAfterInput {
   tool: string;
-  sessionID: string;
-  callID: string;
 }
 
 interface ToolExecuteAfterOutput {
-  title: string;
-  output: unknown;
-  metadata: unknown;
+  output?: unknown;
 }
 
 export function createJsonErrorRecoveryHook(_ctx: unknown) {

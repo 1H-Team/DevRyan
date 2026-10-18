@@ -200,7 +200,7 @@ export function createSessionExecutionHost(options) {
   // The original image hook has small presentation maps. A location mutex
   // preserves their order across private workers; process/lease scheduling
   // remains entirely with the existing execution owner.
-  const contextImageStates = new Map(), contextAssetWorks = new Set();
+  const contextImageQueues = new Map(), contextAssetWorks = new Set();
   let contextAssetLifetime = new AbortController();
   let controllerSettlement, terminalDrain, terminal = false;
   const nativeAdmissions = new Set(), unsettledAdmissions = new Set();
@@ -746,10 +746,10 @@ export function createSessionExecutionHost(options) {
     options.assertExecutionReady?.();
     if (typeof input?.directory !== 'string' || nativeOptions?.locations && !nativeOptions.locations.some(location => location.directory === input.directory)) throw failure('native_image_scope_invalid', 403);
     contextAssetLifetime.signal.throwIfAborted();
-    let slot = contextImageStates.get(input.directory);
+    let slot = contextImageQueues.get(input.directory);
     if (!slot) {
-      if (contextImageStates.size >= 128) throw failure('native_context_assets_capacity_exceeded', 503);
-      slot = { tail: Promise.resolve(), pending: 0, state: undefined }; contextImageStates.set(input.directory, slot);
+      if (contextImageQueues.size >= 128) throw failure('native_context_assets_capacity_exceeded', 503);
+      slot = { tail: Promise.resolve(), pending: 0 }; contextImageQueues.set(input.directory, slot);
     }
     if (slot.pending >= 8) throw failure('native_context_assets_capacity_exceeded', 503);
     const previous = slot.tail; let release;
@@ -759,8 +759,7 @@ export function createSessionExecutionHost(options) {
       try {
         await previous; signal.throwIfAborted(); options.assertExecutionReady?.();
         return await executeNativeContextAssets(input, { signal }, { runtime, nativeOptions, nativeHandles, preparations, launcher,
-          cleanup, cleanupAfterPublication, recordReceipt: options.recordReceipt, generation, state: slot.state,
-          saveState: state => { slot.state = state; } });
+          cleanup, cleanupAfterPublication, recordReceipt: options.recordReceipt, generation });
       } finally { slot.pending--; release(); }
     })();
     contextAssetWorks.add(work);

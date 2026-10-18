@@ -27,9 +27,8 @@ export const ast_grep_replace:ReviewedAstDefinition<AstReplaceInput>;
 export function bindReviewedAstGrepAsset(absolutePath:string):void;
 
 export interface ReviewedWebfetchInput {readonly url:string;readonly format:'text'|'markdown'|'html';readonly timeout?:number;readonly prompt?:string;readonly extract_main:boolean;readonly prefer_llms_txt:'auto'|'always'|'never';readonly include_metadata:boolean;readonly save_binary:boolean}
-/** The v1 tool context Slim's v2 adapter builds for each call. Webfetch reads
- * `sessionID`, `abort`, `ask`, `metadata` and, for inline images, `extra.model.capabilities`. */
-export interface ReviewedWebfetchContext {readonly sessionID:string;readonly messageID:string;readonly agent:string;readonly directory:string;readonly worktree:string;readonly abort:AbortSignal;
+/** All webfetch reads from its context; `extra.model.capabilities` gates inline images. */
+export interface ReviewedWebfetchContext {readonly sessionID:string;readonly abort:AbortSignal;
  ask(request:{permission:string;patterns:string[];always:string[];metadata:Record<string,unknown>}):Promise<void>;
  metadata(request:{title?:string;metadata?:Record<string,unknown>}):void;
  readonly extra?:{readonly model?:{readonly capabilities?:{readonly input?:{readonly image?:boolean}}}}}
@@ -91,13 +90,13 @@ export interface ReviewedSlimToolOutput {args?:Record<string,unknown>;output?:st
 export type ReviewedSlimHook=(input:Record<string,unknown>,output:Record<string,unknown>)=>Promise<void>;
 export interface ReviewedSlimToolLoopGuard {
  readonly 'tool.execute.before':(input:{readonly tool:string;readonly sessionID?:string;readonly callID?:string},output:{args?:unknown})=>Promise<void>;
- readonly 'tool.execute.after':(input:{readonly tool:string;readonly sessionID?:string;readonly callID?:string},output:{output:unknown;metadata?:unknown})=>Promise<void>;
+ readonly 'tool.execute.after':(input:{readonly tool:string;readonly sessionID?:string;readonly callID?:string},output:{output?:unknown;metadata?:unknown})=>Promise<void>;
  readonly observeNewUserMessage:(sessionID:string,messageID:string)=>void;
  readonly resetTurn:(sessionID:string)=>void;readonly resetSession:(sessionID:string)=>void;
 }
 export function createToolLoopGuardHook():ReviewedSlimToolLoopGuard;
-export function createJsonErrorRecoveryHook(context:unknown):{readonly 'tool.execute.after':(input:{readonly tool:string;readonly sessionID:string;readonly callID:string},output:{title:string;output:unknown;metadata:unknown})=>Promise<void>};
-export function createPhaseReminderHook(options?:{readonly shouldInject?:(sessionID:string)=>boolean}):{readonly 'experimental.chat.messages.transform':(input:Record<string,never>,output:{messages?:unknown})=>Promise<void>};
+export function createJsonErrorRecoveryHook(context:unknown):{readonly 'tool.execute.after':(input:{readonly tool:string},output:{output?:unknown})=>Promise<void>};
+export function createPhaseReminderHook(options?:{readonly shouldInject?:(sessionID:string)=>boolean}):{readonly 'experimental.chat.messages.transform':(input:unknown,output:{messages?:unknown})=>Promise<void>};
 export function createFilterAvailableSkillsHook(context:unknown,runtime:{readonly agents:()=>Readonly<Record<string,unknown>>;readonly disabledSkills:readonly string[]}):{readonly 'experimental.chat.messages.transform':ReviewedSlimHook};
 export interface ReviewedChatHeadersContext {readonly directory:string;readonly client:{readonly session:{readonly message:(input:{readonly path:{readonly id:string;readonly messageID:string};readonly query:{readonly directory:string}})=>Promise<{readonly data?:{readonly parts:readonly unknown[]}}>}}}
 export function createChatHeadersHook(context:ReviewedChatHeadersContext):{readonly 'chat.headers':(input:{readonly sessionID:string;readonly model:{readonly providerID:string;readonly api:{readonly npm:string}};readonly provider:{readonly info?:{readonly id?:string}};readonly message:{readonly id:string;readonly role:string}},output:{headers:Record<string,string>})=>Promise<void>};

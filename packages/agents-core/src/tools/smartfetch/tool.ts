@@ -1,8 +1,9 @@
 import os from 'node:os';
 import path from 'node:path';
 import {
-  type PluginInput,
+  type ToolContext,
   type ToolDefinition,
+  type ToolResult,
   tool,
 } from '@opencode-ai/plugin';
 import { detectInlineImageMime } from '../../utils/image-signatures';
@@ -60,12 +61,31 @@ import {
 } from './utils';
 
 const z = tool.schema;
+/** DevRyan: webfetch reads only these context fields, so the host can run it
+ * with its own owned context; `extra` carries the turn's model capabilities. */
+export type WebfetchToolContext = Pick<
+  ToolContext,
+  'sessionID' | 'abort' | 'ask' | 'metadata'
+> & {
+  readonly extra?: {
+    readonly model?: {
+      readonly capabilities?: { readonly input?: { readonly image?: boolean } };
+    };
+  };
+};
+
 /** DevRyan: keeps the precise argument schemas visible to the host. */
-export type WebfetchToolDefinition = ReturnType<typeof tool<typeof ARGS>>;
+export interface WebfetchToolDefinition {
+  readonly description: string;
+  readonly args: typeof ARGS;
+  execute(args: WebfetchArgs, context: WebfetchToolContext): Promise<ToolResult>;
+}
+type WebfetchArgs = Parameters<
+  ReturnType<typeof tool<typeof ARGS>>['execute']
+>[0];
 // Still a plugin ToolDefinition for the v2 registration path.
-export type WebfetchToolDefinitionCheck = WebfetchToolDefinition extends ToolDefinition
-  ? true
-  : never;
+export type WebfetchToolDefinitionCheck =
+  WebfetchToolDefinition extends ToolDefinition ? true : never;
 
 const ARGS = {
   url: z.httpUrl(),
@@ -124,7 +144,7 @@ export function createWebfetchTool(
   const binaryDir =
     options.binaryDir || path.join(os.tmpdir(), 'opencode-smartfetch');
 
-  return tool({
+  return {
     description: WEBFETCH_DESCRIPTION,
     args: ARGS,
     async execute(rawArgs, ctx) {
@@ -524,13 +544,7 @@ export function createWebfetchTool(
               : undefined;
           let inlineImageSkipped: string | undefined;
           if (!args.save_binary && fetchResult.binaryKind === 'image') {
-            const capability = (
-              ctx as typeof ctx & {
-                extra?: {
-                  model?: { capabilities?: { input?: { image?: boolean } } };
-                };
-              }
-            ).extra?.model?.capabilities?.input?.image;
+            const capability = ctx.extra?.model?.capabilities?.input?.image;
             if (options.imageRouting?.() !== 'direct') {
               inlineImageSkipped = 'image_routing_auto';
             } else if (capability === undefined) {
@@ -692,6 +706,5 @@ export function createWebfetchTool(
         );
       });
     },
-  });
+  };
 }
-

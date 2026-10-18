@@ -21,7 +21,7 @@ export async function loadNativeReviewedConfiguration({reviewedConfiguration:ass
   const loaded=await import('data:text/javascript;base64,'+bytes.toString('base64'));
   if(!record(loaded.reviewedImagegenOriginals)||['withReviewedImagegenOwner','callReviewedImagegenResponses'].some(key=>typeof loaded.reviewedImagegenOriginals[key]!=='function')
     ||loaded.nativeBuildID!==manifest.buildId||typeof loaded.resolveSlimAgents!=='function'||typeof loaded.createReviewedDocumentCache!=='function'
-    ||!record(loaded.reviewedSlimInterviewOriginals)||['createInterviewService','createInterviewHandler','resolveExistingInterviewPath','InterviewDocumentOwnershipError'].some(key=>typeof loaded.reviewedSlimInterviewOriginals[key]!=='function')
+    ||!record(loaded.reviewedSlimInterviewOriginals)||['createInterviewService','createInterviewHandler','resolveExistingInterviewPath','InterviewDocumentOwnershipError','InterviewPatchApplyError','InterviewPatchRequiredError'].some(key=>typeof loaded.reviewedSlimInterviewOriginals[key]!=='function')
     ||typeof loaded.createOwnedNativeDocument!=='function'||!record(loaded.reviewedDocumentOriginals)
     ||['createDocumentTool','processFilePart','withReviewedDocumentOwner'].some(key=>typeof loaded.reviewedDocumentOriginals[key]!=='function')
     ||['createReviewedSlimTaskBoardRenderer','formatReviewedSlimTaskBoard','isReviewedSlimFailoverError','selectReviewedSlimFallback'].some(key=>typeof loaded[key]!=='function')

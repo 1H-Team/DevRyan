@@ -35,7 +35,7 @@ const buildSources=await Promise.all(['scripts/build-native-runtime.mjs','script
   'packages/web/server/lib/opencode/runtime-host/reviewed-windows-assets.js',
   ...(windowsCandidate?['packages/harness-runtime/native/session-execution-windows.c']:[]),
   'packages/harness-runtime/native/session-execution.c','packages/harness-runtime/native/session-spawn-darwin.c','packages/harness-runtime/native/session-group-darwin.h',
-  'packages/web/server/lib/opencode/runtime-host/reviewed-package-transforms.js',
+  'packages/web/server/lib/opencode/runtime-host/reviewed-ast-asset.js',
   'packages/web/server/lib/opencode/runtime-host/reviewed-document-transform.js',
   'packages/web/server/lib/opencode/runtime-host/reviewed-browser-transform.js',
   'packages/web/server/lib/opencode/runtime-host/reviewed-ponytail-instructions.js',

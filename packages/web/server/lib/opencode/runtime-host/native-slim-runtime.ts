@@ -5,7 +5,7 @@ import type {Location} from '@opencode/core/location';
 import type {Plugin} from '@opencode/plugin/effect/plugin';
 import type {SessionRetry} from '@opencode/plugin/effect/session';
 import {Tool} from '@opencode/schema/tool';
-import type * as ReviewedSlim from '../../../../runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js';
+import type * as ReviewedSlim from '@openchamber/agents-core';
 import type {NativeConfigurationSnapshot,NativeConfigurationLocation} from './native-configuration-snapshot.js';
 import {nativeSlimPlugin,REVIEWED_SLIM_HOOK_INVENTORY} from './native-slim.js';
 import {nativeSlimCommandBehaviorsPlugin,reviewedSlimCommandDeclarations} from './native-slim-commands.js';
@@ -69,6 +69,17 @@ const toolInput=(input:Record<string,unknown>):ReviewedSlim.ReviewedSlimToolInpu
  if(typeof input.tool!=='string'||typeof input.sessionID!=='string')throw new Error('native_slim_hook_identity_invalid');
  return {...input,tool:input.tool,sessionID:input.sessionID,...typeof input.callID==='string'?{callID:input.callID}:{}};
 };
+/** The chat-headers algorithm reads only these fields; absent optional ones keep its early returns. */
+const chatHeadersInput=(input:Record<string,unknown>)=>{
+ const model=record(input.model)?input.model:undefined,api=model&&record(model.api)?model.api:undefined;
+ const provider=record(input.provider)&&record(input.provider.info)?input.provider.info:undefined,message=record(input.message)?input.message:undefined;
+ if(typeof input.sessionID!=='string'||!model||typeof model.providerID!=='string'||!message||typeof message.role!=='string')throw new Error('native_slim_hook_identity_invalid');
+ return {sessionID:input.sessionID,model:{providerID:model.providerID,api:{npm:typeof api?.npm==='string'?api.npm:''}},
+  provider:provider?{info:typeof provider.id==='string'?{id:provider.id}:{}}:{},message:{id:typeof message.id==='string'?message.id:'',role:message.role}};
+};
+/** Original webfetch answers with text, or text plus inline file attachments. */
+const webfetchContent=(result:ReviewedSlim.ReviewedToolResult)=>typeof result==='string'?result
+ :[{type:'text' as const,text:result.output},...(result.attachments??[]).map(file=>({type:'file' as const,mime:file.mime,uri:file.url,...file.filename?{name:file.filename}:{}}))];
 const definitions=(options:NativeSlimRuntimeOptions)=>({deepwork:options.originals.createDeepworkCommandHook,loop:options.originals.createLoopCommandHook,reflect:options.originals.createReflectCommandHook});
 
 /** Composition of the real pinned setup, pure factories and existing host owners. No ambient legacy factory. */
@@ -145,10 +156,13 @@ export function createNativeSlimRuntime(options:NativeSlimRuntimeOptions){
     dispose:owner.dispose,
     'v2.session.retry':owner.retry,
     'tool.execute.before':async(input:Record<string,unknown>,output:Record<string,unknown>)=>{const identity=toolInput(input);await runNativeSlimOwnedHook(()=>owner.beforePaths(identity,output));await loop['tool.execute.before'](identity,output);},
-    'tool.execute.after':async(input:Record<string,unknown>,output:Record<string,unknown>)=>{await json['tool.execute.after'](input,output);await loop['tool.execute.after'](toolInput(input),output);},
+    'tool.execute.after':async(input:Record<string,unknown>,output:Record<string,unknown>)=>{const identity=toolInput(input);await json['tool.execute.after'](identity,output);await loop['tool.execute.after'](identity,output);},
     // Interactive command execution belongs to the native command registration below.
     'command.execute.before':async()=>{throw new Error('native_slim_unowned_command_context');},
-    'chat.headers':async(input:Record<string,unknown>,output:Record<string,unknown>)=>{if(typeof input.sessionID!=='string')throw new Error('native_slim_hook_identity_invalid');await owner.assertContext({directory,sessionID:input.sessionID});await headers['chat.headers'](input,output);},
+    'chat.headers':async(input:Record<string,unknown>,output:Record<string,unknown>)=>{if(typeof input.sessionID!=='string')throw new Error('native_slim_hook_identity_invalid');await owner.assertContext({directory,sessionID:input.sessionID});
+     // The algorithm only adds headers; copy what it set onto the request headers.
+     if(!record(output.headers))throw new Error('native_slim_hook_output_invalid');const added:Record<string,string>={};
+     await headers['chat.headers'](chatHeadersInput(input),{headers:added});Object.assign(output.headers,added);},
     'experimental.session.compacting':async()=>{throw new Error('native_slim_compaction_owner_required');},
     'chat.message':async(input:Record<string,unknown>,output?:Record<string,unknown>)=>{if(typeof input.sessionID==='string'&&typeof input.messageID==='string')loop.observeNewUserMessage(input.sessionID,input.messageID);await owner.observePrompt(input,output);},
     'experimental.chat.system.transform':async(_input:Record<string,unknown>,output:Record<string,unknown>)=>{if(!Array.isArray(output.system)||!output.system.every((value:unknown)=>typeof value==='string'))throw new Error('native_slim_system_invalid');options.originals.collapseSystemInPlace(output.system);},
@@ -180,7 +194,7 @@ export function createNativeSlimRuntime(options:NativeSlimRuntimeOptions){
   if(!toolsFor(invocation.location.directory).includes(invocation.toolID))return Effect.fail(new Tool.Error({message:'native_slim_tool_disabled'}));
   if(invocation.toolID!=='webfetch')return options.executeOwned(invocation);
   return options.withControl(invocation,Effect.suspend(()=>{
-   let running:Promise<string>|undefined;
+   let running:Promise<ReviewedSlim.ReviewedToolResult>|undefined;
    const progress=new Set<Promise<void>>();let progressFailure:unknown;
    const drainProgress=async()=>{while(progress.size)await Promise.all([...progress]);if(progressFailure!==undefined)throw progressFailure;};
    const operation=Effect.gen(function*(){
@@ -200,7 +214,7 @@ export function createNativeSlimRuntime(options:NativeSlimRuntimeOptions){
       await drainProgress();return result;
      })();return running;
     },catch:error=>new Tool.Error({message:error instanceof Error?error.message:'native_webfetch_failed'})});
-    yield* invocation.recheckPermit();return {content:result};
+    yield* invocation.recheckPermit();return {content:webfetchContent(result)};
    });
    // Effect interruption aborts the Promise signal. It must still wait for the
    // original algorithm and owned IO/progress callbacks to actually settle.

@@ -1,4 +1,4 @@
-import type * as ReviewedSlim from '../../../../runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js';
+import type * as ReviewedSlim from '@openchamber/agents-core';
 import type {createManagedTaskScheduler} from '@openchamber/orchestration-runtime';
 import type {PrimaryRecoveryHost} from '@openchamber/harness-runtime';
 import type {OperationPermit} from './native-admission-contract.js';

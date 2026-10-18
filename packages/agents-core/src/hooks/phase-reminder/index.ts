@@ -36,7 +36,7 @@ interface PhaseReminderOptions {
 export function createPhaseReminderHook(options: PhaseReminderOptions = {}) {
   return {
     'experimental.chat.messages.transform': async (
-      _input: Record<string, never>,
+      _input: unknown,
       output: { messages?: unknown },
     ): Promise<void> => {
       const messages = Array.isArray(output.messages) ? output.messages : [];
