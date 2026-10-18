@@ -8,11 +8,9 @@ import { useQueuedMessageAutoSend } from '@/hooks/useQueuedMessageAutoSend';
 import { useProviderErrorRecovery } from '@/hooks/useProviderErrorRecovery';
 import { useSessionAutoCleanup } from '@/hooks/useSessionAutoCleanup';
 import { useWindowControlsOverlayLayout } from '@/hooks/useWindowControlsOverlayLayout';
-import { setOptimisticRefs } from '@/sync/session-actions';
 import { markSessionViewed } from '@/sync/notification-store';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { setExternallyViewedSession, useSyncChildStores } from '@/sync/sync-context';
-import { useSync } from '@/sync/use-sync';
 import { quotaRefreshCoordinator } from '@/stores/useQuotaStore';
 import { useManagedOrchestrationStore } from '@/stores/useManagedOrchestrationStore';
 import {
@@ -33,23 +31,6 @@ type MiniChatPresenceMessage = {
   sessionId?: string;
   directory?: string;
   viewed?: boolean;
-};
-
-const SyncOptimisticBridge: React.FC = () => {
-  const sync = useSync();
-  const addRef = React.useRef(sync.optimistic.add);
-  const removeRef = React.useRef(sync.optimistic.remove);
-  addRef.current = sync.optimistic.add;
-  removeRef.current = sync.optimistic.remove;
-
-  React.useEffect(() => {
-    setOptimisticRefs(
-      (input) => addRef.current(input),
-      (input) => removeRef.current(input),
-    );
-  }, []);
-
-  return null;
 };
 
 const MiniChatPresenceBridge: React.FC = () => {
@@ -230,7 +211,7 @@ export function SyncRuntimeEffects({ embeddedBackgroundWorkEnabled }: {
   useProviderErrorRecovery(embeddedBackgroundWorkEnabled);
   useQueuedMessageAutoSend(embeddedBackgroundWorkEnabled);
 
-  return <SyncOptimisticBridge />;
+  return null;
 }
 
 export function SyncAppEffects({ embeddedBackgroundWorkEnabled }: {

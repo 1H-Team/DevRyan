@@ -238,8 +238,8 @@ tools are represented as `hasUnattributedMutations` because their commands may
 change files without providing a trustworthy bounded path set.
 
 `sync-context.tsx` reconciles that projection after relevant live events and
-reconnect materialization; `use-sync.ts` does the same after message-page
-materialization. The dedicated `useSessionChangeAttributionStore.ts` stays
+reconnect materialization; `session-message-loader.ts` does the same after
+message-page materialization. The dedicated `useSessionChangeAttributionStore.ts` stays
 outside high-frequency session/message state. The active badge intersects its
 attributed paths with current rich Git working-tree stats, so committed,
 reverted, or otherwise clean files disappear without transferring unrelated
@@ -410,7 +410,8 @@ stores.
 The ownership callback releases all ephemeral directory-scoped resources:
 
 - session prefetch data, in-flight markers, and generation revisions;
-- message-loading metadata and optimistic shadow entries owned by `useSync()`;
+- message-loading metadata, optimistic shadow entries, history LRU, background
+  trim timers, and materialization state owned by `SessionHistory`;
 - pending part deltas, materialization retries, child-session fetches, and
   archived-session offload timers;
 - event-pipeline queues and session/message routing-index entries;
@@ -816,8 +817,7 @@ Budget goes to the newest messages first and the result is presented chronologic
 `SessionMessageLoader` is created once by `SyncProvider` and owns first-page,
 older-page, stale-tail, prefetch, optimistic-shadow, and in-flight state for a
 normalized `(directory, session ID)` key. Metadata and the first message page
-start concurrently in `useSync`; metadata failure never blocks a valid message
-snapshot. The loader materializes a page once after any adaptive expansion, so
+start concurrently; metadata failure never blocks a valid message snapshot. The loader materializes a page once after any adaptive expansion, so
 catch-up never replays historical events through the live reducer.
 
 With `sessionFastLoadEnabled`, web/Electron starts at 50 records and expands to
@@ -832,6 +832,27 @@ identity guards prevent deletion, directory disposal, and rapid switching from
 accepting late results. Selected-session hydration does not invoke the broad
 focus/reconnect recovery path; only an actually incomplete trailing assistant
 turn may request that recovery.
+
+`SessionHistory` (`session-history.ts`) is the provider's single history owner
+around that loader, exposed through `useSessionHistory()`. It owns session
+metadata hydration, the two-level cache LRU (30 directories,
+`SESSION_CACHE_LIMIT` sessions), the debounced background trim, archived
+offload timers, and materialization state for every managed directory, keyed by
+exact `(directory, session ID)`. `useSync()` is a stateless view over it, and
+sidebar rows read the owner directly, so mounting or unmounting consumers in any
+order acquires and releases nothing. `session-materializer.ts` is the module
+entry point that session actions and live events use outside React.
+
+Only explicit loads (`ensureRenderable`, `loadMore`, `ensureFirstPage`) may
+create a passive child store. Archiving, unarchiving, offload, timers, cleanup
+and late responses read existing stores only, so a retired directory is never
+re-armed. The in-flight metadata request is the publication fence: offloading
+history drops transcript caches and fences pending metadata but keeps the
+session summary; retiring a deleted session also drops its LRU membership,
+materialization state and archive timer; directory disposal releases all of
+it. Sidebar export loads the root and every child through the row's directory,
+fails when a session cannot be made renderable instead of exporting partial
+history, and counts each failed child with its descendants as skipped.
 
 Intent prefetch is active-directory-only, one request at a time, and limited to
 six queued targets. Rows start exact-session work on pointer-down/click, hover

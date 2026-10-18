@@ -45,7 +45,8 @@ import type { ChildSessionExport } from '@/lib/exportSession';
 import { saveSessionExportMarkdown } from '@/lib/sessionExportSave';
 import { buildSessionMessageRecordsSnapshot, useDirectoryStore, useDirectorySync, useIsSessionWorking, useSession, useSessionFirstUserText, useSessionPermissions } from '@/sync/sync-context';
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import { useSync } from '@/sync/use-sync';
+import { useSessionHistory } from '@/sync/sync-context';
+import { collectChildSessionExports, loadSessionExportRecords, type SessionExportSource } from './sessionExportCollection';
 import { useViewportStore } from '@/sync/viewport-store';
 import { DraggableSessionRow } from './sessionFolderDnd';
 import type { SessionNode } from './types';
@@ -359,7 +360,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     groupDirectory,
   );
   const directoryStore = useDirectoryStore(sessionDirectory ?? undefined);
-  const sync = useSync();
+  const history = useSessionHistory();
   const { diagnostics } = useRuntimeAPIs();
 
   const selectionModeEnabled = useSessionMultiSelectStore((state) => state.enabled);
@@ -526,32 +527,24 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
 
   const descendantCount = React.useMemo(() => collectNodeDescendantIds(node).length, [collectNodeDescendantIds, node]);
 
-  const collectChildExports = React.useCallback(async (children: SessionNode[]): Promise<{ children: ChildSessionExport[]; skipped: number }> => {
-    const results: ChildSessionExport[] = [];
-    let skipped = 0;
-    for (const child of children) {
-      try {
-        await sync.ensureSessionRenderable(child.session.id);
-        const childRecords = buildSessionMessageRecordsSnapshot(directoryStore.getState(), child.session.id).list;
-        const childTitle = resolveDisplaySessionTitle({
-          title: child.session.title,
+  const exportSource = React.useMemo<SessionExportSource | null>(() => sessionDirectory ? {
+    directory: sessionDirectory,
+    ensureRenderable: (target) => history.ensureRenderable(target),
+    readRecords: (sessionID) => buildSessionMessageRecordsSnapshot(directoryStore.getState(), sessionID).list,
+  } : null, [directoryStore, history, sessionDirectory]);
+
+  const collectChildExports = React.useCallback((source: SessionExportSource, children: SessionNode[]) => (
+    collectChildSessionExports({
+      ...source,
+      describe: (childSession) => ({
+        title: resolveDisplaySessionTitle({
+          title: childSession.title,
           fallback: t('sessions.sidebar.session.export.untitledSubagent'),
-        });
-        const childAgent = (child.session as Session & { agent?: string }).agent;
-        const grandChildren = await collectChildExports(child.children);
-        skipped += grandChildren.skipped;
-        results.push({
-          title: childTitle,
-          agent: childAgent,
-          records: childRecords,
-          children: grandChildren.children,
-        });
-      } catch {
-        skipped += collectNodeDescendantIds(child).length + 1;
-      }
-    }
-    return { children: results, skipped };
-  }, [collectNodeDescendantIds, directoryStore, sync, t]);
+        }),
+        agent: (childSession as Session & { agent?: string }).agent,
+      }),
+    }, children)
+  ), [t]);
 
   const showSkippedSubtasksWarning = React.useCallback((count: number) => {
     if (count <= 0) return;
@@ -563,7 +556,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   const doExportSession = React.useCallback(async (includeSubtasks: boolean) => {
     if (exportInFlightRef.current) return;
 
-    if (!sessionDirectory) {
+    if (!exportSource) {
       toast.error(t('sessions.sidebar.session.export.nothingToExport'));
       return;
     }
@@ -574,9 +567,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
 
     try {
       const preparedExportPromise = (async () => {
-        await sync.ensureSessionRenderable(session.id);
-
-        const records = buildSessionMessageRecordsSnapshot(directoryStore.getState(), session.id).list;
+        const records = await loadSessionExportRecords(exportSource, session.id);
         if (records.length === 0) {
           throw new EmptySessionExportError();
         }
@@ -584,7 +575,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
         let childExports: ChildSessionExport[] | undefined;
         let skippedSubtaskCount = 0;
         if (includeSubtasks && node.children.length > 0) {
-          const collected = await collectChildExports(node.children);
+          const collected = await collectChildExports(exportSource, node.children);
           childExports = collected.children;
           skippedSubtaskCount = collected.skipped;
         }
@@ -645,7 +636,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
       toast.dismiss(preparingToastId);
       exportInFlightRef.current = false;
     }
-  }, [collectChildExports, directoryStore, node.children, resolvedSession.title, session.id, sessionDirectory, showSkippedSubtasksWarning, sync, t]);
+  }, [collectChildExports, exportSource, node.children, resolvedSession.title, session.id, showSkippedSubtasksWarning, t]);
   const handleExportSession = React.useCallback(async () => {
     if (node.children.length > 0) {
       setExportIncludeSubtasks(true);

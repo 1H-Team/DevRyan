@@ -47,6 +47,7 @@ import {
   releaseSessionActionDirectory,
   releaseSessionActionSession,
   setActionRefs,
+  setOptimisticRefs,
 } from "./session-actions"
 import { clearSyncRefs, getSessionUIStoreIfInitialized, setSyncRefs } from "./sync-refs"
 import { stripMessageDiffSnapshots, stripSessionDiffSnapshots } from "./sanitize"
@@ -135,12 +136,13 @@ import {
   getEffectiveSessionRevertMessageID,
 } from "./revert-transactions"
 import {
-  clearSessionMaterializerChildStores,
+  clearSessionMaterializer,
   markArchived,
   markUnarchived,
-  releaseSessionMaterializerDirectory,
-  setSessionMaterializerChildStores,
+  retireSessionHistory,
+  setSessionMaterializer,
 } from "./session-materializer"
+import { SessionHistory } from "./session-history"
 import { detectPlanCompletedCandidate } from "./plan-completion-detection"
 import { detectPlanImplementationRequestCandidate } from "./plan-implementation-detection"
 import { detectPlanProposedCandidate } from "./plan-proposed-detection"
@@ -385,6 +387,7 @@ const markRendererReducedEvent = (
 type SyncSystem = {
   childStores: ChildStoreManager
   messageLoader: SessionMessageLoader
+  history: SessionHistory
   sdk: OpencodeClient
   directory: string
   resyncSession: (sessionID: string, options?: { directory?: string | null; reason?: "focus" | "reconnect" | "manual" }) => Promise<void>
@@ -411,6 +414,11 @@ export function useSyncChildStores(): ChildStoreManager {
 
 export function useSessionMessageLoader(): SessionMessageLoader {
   return useSyncSystem().messageLoader
+}
+
+/** The provider's single history owner; stable for the provider's lifetime. */
+export function useSessionHistory(): SessionHistory {
+  return useSyncSystem().history
 }
 
 function getLiveStates(childStores: ChildStoreManager): State[] {
@@ -1333,7 +1341,6 @@ const releaseDirectoryOwnedSyncState = (
 ) => {
   clearSessionPrefetchDirectory(directory)
   clearSessionMessagePaginationDirectory(directory)
-  releaseSessionMaterializerDirectory(directory)
   releaseSessionActionDirectory(directory)
   clearSessionChildrenForDirectory(sessionChildrenFetches, directory)
   clearPendingPartDeltasForDirectory(pendingPartDeltas, directory)
@@ -2198,6 +2205,7 @@ const removeDeletedSessionFromAllChildStores = (
   for (const directory of overlayDirectories) {
     recordDirectorySessionLifecycleChange(directory, { type: "delete", sessionID })
     messageLoader?.invalidateSession({ directory, sessionID })
+    retireSessionHistory(sessionID, directory)
   }
 
   for (const directory of targetDirectories) {
@@ -3511,23 +3519,38 @@ export function SyncProvider(props: {
   const messageLoader = messageLoaderRef.current
   messageLoader.activate()
   messageLoader.setActivePrefetchDirectory(props.directory)
+  const activeDirectoryRef = useRef(props.directory)
+  activeDirectoryRef.current = props.directory
+  const activeSdkRef = useRef(props.sdk)
+  activeSdkRef.current = props.sdk
+  const historyRef = useRef<SessionHistory | null>(null)
+  if (!historyRef.current) {
+    historyRef.current = new SessionHistory({
+      childStores,
+      loader: messageLoader,
+      getSdk: (directory) => directory === activeDirectoryRef.current
+        ? activeSdkRef.current
+        : opencodeClient.getScopedSdkClient(directory),
+    })
+  }
+  const history = historyRef.current
+  history.activate()
   const routingIndexRef = useRef<EventRoutingIndex | null>(null)
   if (!routingIndexRef.current) routingIndexRef.current = createEventRoutingIndex()
   const routingIndex = routingIndexRef.current
-  const activeDirectoryRef = useRef(props.directory)
-  activeDirectoryRef.current = props.directory
   const releaseEventPipelineDirectoryRef = useRef<(directory: string) => void>(() => undefined)
   const activateOwnershipCleanupRef = useRef<(() => () => void) | null>(null)
   if (!activateOwnershipCleanupRef.current) {
     activateOwnershipCleanupRef.current = createRestartSafeOwnershipCleanup(() => {
       messageLoader.dispose()
+      history.dispose()
       childStores.disposeAll()
-      clearSessionMaterializerChildStores(childStores)
+      clearSessionMaterializer(history)
       clearSyncRefs(childStores)
       clearActionRefs(childStores)
     })
   }
-  setSessionMaterializerChildStores(childStores)
+  setSessionMaterializer(history)
 
   const resyncSession = useCallback(
     async (sessionID: string, options?: { directory?: string | null; reason?: "focus" | "reconnect" | "manual" }) => {
@@ -3548,11 +3571,12 @@ export function SyncProvider(props: {
     () => ({
       childStores,
       messageLoader,
+      history,
       sdk: props.sdk,
       directory: props.directory,
       resyncSession,
     }),
-    [childStores, messageLoader, props.sdk, props.directory, resyncSession],
+    [childStores, messageLoader, history, props.sdk, props.directory, resyncSession],
   )
 
   const startupInitialized = useConfigStore((state) => state.isInitialized)
@@ -3676,6 +3700,7 @@ export function SyncProvider(props: {
       onDispose: (directory, snapshot) => {
         cancelBootstrap(directory)
         messageLoader.invalidateDirectory(directory)
+        history.releaseDirectory(directory)
         directorySessionLifecycleOverlays.delete(normalizeEventDirectory(directory))
         clearDirectorySessionChangeAttributions(directory)
         clearDirectorySessionTreeChanges(directory)
@@ -3704,7 +3729,7 @@ export function SyncProvider(props: {
     return () => {
       for (const directory of bootstrapOwners.keys()) cancelBootstrap(directory)
     }
-  }, [childStores, messageLoader, props.sdk, routingIndex, startupInitialized])
+  }, [childStores, history, messageLoader, props.sdk, routingIndex, startupInitialized])
 
   // Bootstrap global state — set bootingRoot/bootedAt to suppress
   // redundant refresh events during startup. A bumped epoch (startup Retry)
@@ -4114,7 +4139,11 @@ export function SyncProvider(props: {
       childStores,
       () => opencodeClient.getDirectory() || props.directory,
     )
-  }, [props.sdk, props.directory, childStores, routingIndex, messageLoader])
+    setOptimisticRefs(
+      (input) => history.optimisticAdd({ ...input, directory: input.directory || props.directory }),
+      (input) => history.optimisticRemove({ ...input, directory: input.directory || props.directory }),
+    )
+  }, [props.sdk, props.directory, childStores, routingIndex, messageLoader, history])
 
   // Subscribe to child store for streaming state derivation
   useEffect(() => {

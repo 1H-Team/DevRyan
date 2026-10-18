@@ -1709,7 +1709,7 @@ export async function unshareSession(sessionId: string): Promise<Session | null>
 
 /**
  * Wraps an async send operation with optimistic user-message insertion.
- * Uses useSync()'s optimistic infrastructure — message + parts are inserted
+ * Uses SessionHistory's optimistic infrastructure — message + parts are inserted
  * into the store AND registered in the shadow Map. mergeOptimisticPage
  * handles deduplication when the server echoes back the real message.
  */
@@ -1746,7 +1746,7 @@ export async function optimisticSend(input: {
   messageID?: string
 }): Promise<void> {
   if (!_optimisticAdd || !_optimisticRemove) {
-    throw new Error("Optimistic refs not set — is useSync() mounted?")
+    throw new Error("Optimistic refs not set — is SyncProvider mounted?")
   }
 
   throwIfAborted(input.signal)
