@@ -85,6 +85,19 @@ export const createWebHarnessRuntime = (options = {}) => {
     runtime: options.runtime ?? 'web',
     ...entry,
   });
+  // Observational journal writes never throw into the event path. A failure is
+  // reported to the console, not back through the journal that failed.
+  const recordObservation = (entry) => {
+    try {
+      return record(entry);
+    } catch (error) {
+      console.warn('[harness] journal record failed', {
+        type: typeof entry?.type === 'string' ? entry.type : null,
+        code: /^[a-z][a-z0-9_]{1,100}$/i.test(error?.code ?? '') ? error.code : 'journal_record_failed',
+      });
+      return false;
+    }
+  };
 
   const requestActor = (req) => {
     const principal = req?.principal;
@@ -225,19 +238,28 @@ export const createWebHarnessRuntime = (options = {}) => {
     promptAdmissionMiddleware,
     controlJournalMiddleware,
     record,
+    // Order: primary recovery (authority-bearing, may throw as before), native
+    // idle continuation (deferred), session-change observation, journal record.
+    // The last two are observational: an immediate try/catch plus rejection
+    // handling keeps a sync throw or a failing journal from skipping the rest.
     recordOpenCodeEvent(payload, directory = null) {
       primaryRecoveryRuntime?.observe(payload);
       if (nativeSessionIdleObserver && payload?.type === 'session.status' && payload.properties?.status?.type === 'idle'
         && typeof payload.properties.sessionID === 'string' && typeof directory === 'string') {
         void Promise.resolve().then(() => nativeSessionIdleObserver?.({ sessionID: payload.properties.sessionID, directory }))
-          .catch(error => record({ type: 'log', event: 'native_todo_continuation_failed', sessionID: payload.properties.sessionID,
+          .catch(error => recordObservation({ type: 'log', event: 'native_todo_continuation_failed', sessionID: payload.properties.sessionID,
             payload: { code: typeof error?.code === 'string' ? error.code : 'native_continuation_unavailable' } }));
       }
-      void sessionChangeHost?.observe(payload, directory).catch((error) => record({ type: 'log', event: 'session_changes_observation_failed',
+      const changeObservationFailed = (error) => recordObservation({ type: 'log', event: 'session_changes_observation_failed',
         sessionID: payload?.properties?.part?.sessionID ?? payload?.properties?.sessionID ?? null,
         payload: { callID: payload?.properties?.part?.callID ?? null, code: typeof error?.code === 'string' ? error.code : 'capture_unavailable' },
-      }));
-      return record({
+      });
+      try {
+        void sessionChangeHost?.observe(payload, directory)?.catch(changeObservationFailed);
+      } catch (error) {
+        changeObservationFailed(error);
+      }
+      return recordObservation({
         type: 'open_code_event',
         directory,
         sessionID: payload?.properties?.sessionID

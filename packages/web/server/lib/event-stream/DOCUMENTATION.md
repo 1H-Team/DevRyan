@@ -14,7 +14,7 @@ This module contains the OpenChamber message-stream WebSocket protocol and runti
 - `packages/web/server/lib/event-stream/protocol.test.js`: unit tests for protocol helpers.
 - `packages/web/server/lib/event-stream/upstream-reader.test.js`: unit tests for upstream SSE reader behavior.
 - `packages/web/server/lib/event-stream/runtime.test.js`: unit tests for runtime-side broadcaster behavior.
-- `packages/web/server/lib/event-stream/canonical-ingestion.js`: watcher-owned raw-event side-effect composer, including the optional shell-command deadline observer.
+- `packages/web/server/lib/event-stream/canonical-ingestion.js`: watcher-owned raw-event side-effect composer, including the optional shell-command deadline observer, and `createSyntheticOpenCodeEventEmitter` for events DevRyan synthesizes itself. Both keep their own order. Authority-bearing steps (session state, managed orchestration, and primary recovery inside the journal step) run bare and keep their failure behaviour. Observational steps (session-info cache, push, turn timing, activity, evidence, title, command deadline) get an immediate try/catch plus rejection handling, so a sync throw or rejection never skips later deliveries or the synthetic UI broadcast. The harness `recordOpenCodeEvent` isolates its session-change observation and journal record the same way and reports a failed journal write to the console, never back through the journal.
 - `packages/web/server/lib/event-stream/canonical-ingestion.test.js`: unit tests for canonical side-effect dispatch.
 
 ## Public exports

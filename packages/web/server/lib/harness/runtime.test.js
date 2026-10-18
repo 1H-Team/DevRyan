@@ -52,6 +52,47 @@ describe('web harness prompt admission', () => {
     expect(events.slice(2)).toEqual(['primary', 'primary', 'primary']);
     await runtime.drain();
   });
+  it('isolates observational failures in recordOpenCodeEvent while primary recovery runs first and may throw', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'devryan-observation-isolation-'));
+    temporaryDirectories.push(directory);
+    const runtime = createWebHarnessRuntime({ dataDirectory: directory, runtime: 'test' });
+    const order = [], recorded = [];
+    const enqueue = runtime.journal.enqueue;
+    runtime.journal.enqueue = (entry) => { recorded.push(entry); return true; };
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      runtime.setPrimaryRecoveryRuntime({ observe: () => order.push('primary') });
+      runtime.setNativeSessionIdleObserver(() => { order.push('idle'); });
+      // A sync throw in session-change observation still journals the event.
+      runtime.setSessionChangeHost({ observe: () => { order.push('changes'); throw Object.assign(new Error('x'), { code: 'capture_broken' }); }, drain: async () => {} });
+      const idle = { type: 'session.status', properties: { sessionID: 'ses_iso', status: { type: 'idle' } } };
+      expect(runtime.recordOpenCodeEvent(idle, directory)).toBe(true);
+      await Promise.resolve();
+      expect(order).toEqual(['primary', 'changes', 'idle']);
+      expect(recorded.map((entry) => entry.event ?? entry.type)).toEqual(['session_changes_observation_failed', 'open_code_event']);
+      expect(recorded[0].payload.code).toBe('capture_broken');
+      // An async rejection is recorded once it settles.
+      recorded.length = 0;
+      runtime.setSessionChangeHost({ observe: async () => { throw new Error('later'); }, drain: async () => {} });
+      runtime.recordOpenCodeEvent({ type: 'message.updated', properties: { sessionID: 'ses_iso' } }, directory);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(recorded.map((entry) => entry.event ?? entry.type)).toEqual(['open_code_event', 'session_changes_observation_failed']);
+      // A journal that throws synchronously never throws into the event path.
+      runtime.journal.enqueue = () => { throw Object.assign(new Error('disk'), { code: 'journal_closed' }); };
+      expect(runtime.recordOpenCodeEvent({ type: 'message.updated', properties: { sessionID: 'ses_iso' } }, directory)).toBe(false);
+      expect(warn).toHaveBeenCalledWith('[harness] journal record failed', { type: 'open_code_event', code: 'journal_closed' });
+      // Primary recovery is authority-bearing: its throw still propagates before anything else runs.
+      order.length = 0;
+      runtime.setPrimaryRecoveryRuntime({ observe: () => { throw new Error('recovery owner failed'); } });
+      expect(() => runtime.recordOpenCodeEvent(idle, directory)).toThrow('recovery owner failed');
+      expect(order).toEqual([]);
+    } finally {
+      warn.mockRestore();
+      runtime.journal.enqueue = enqueue;
+      runtime.setSessionChangeHost(null);
+      await runtime.drain();
+    }
+  });
   it('returns retryable 503 before initialization and records only accepted prompts', async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), 'devryan-web-harness-'));
     temporaryDirectories.push(directory);

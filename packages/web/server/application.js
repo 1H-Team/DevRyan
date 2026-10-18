@@ -71,7 +71,7 @@ import {
   UPSTREAM_STALL_TIMEOUT_CONCURRENT_MS,
 } from './lib/event-stream/index.js';
 import { createBoundedTaskRunner } from './lib/event-stream/bounded-task-runner.js';
-import { createCanonicalOpenCodeEventProcessor } from './lib/event-stream/canonical-ingestion.js';
+import { createCanonicalOpenCodeEventProcessor, createSyntheticOpenCodeEventEmitter } from './lib/event-stream/canonical-ingestion.js';
 import { createFsSearchRuntime as createFsSearchRuntimeFactory } from './lib/fs/search.js';
 import { createOpenCodeLifecycleRuntime } from './lib/opencode/lifecycle.js';
 import { createRuntimeRestartReconciler } from './lib/opencode/runtime-restart-reconcile.js';
@@ -622,16 +622,16 @@ const projectMultiUserActivity = (payload) => {
   activityProjection.run(() => multiUserRuntime?.recordOpenCodeActivity?.(payload));
 };
 
-const emitSyntheticOpenCodeEvent = (payload, options = {}) => {
-  managedOrchestrationRuntime?.processOpenCodeEvent?.(payload, options.directory ?? null);
-  maybeCacheSessionInfoFromEvent(payload);
-  sessionRuntime.processOpenCodeSsePayload(payload);
-  turnTimingRuntime.processOpenCodeEvent(payload);
-  harnessRuntime.recordOpenCodeEvent(payload, options.directory ?? null);
-  projectMultiUserActivity(payload);
-  void evidenceRuntime?.processOpenCodeEvent(payload);
-  broadcastGlobalUiEvent(payload, options);
-};
+const emitSyntheticOpenCodeEvent = createSyntheticOpenCodeEventEmitter({
+  processManagedOrchestration: (payload, directory) => managedOrchestrationRuntime?.processOpenCodeEvent?.(payload, directory),
+  cacheSessionInfo: (payload) => maybeCacheSessionInfoFromEvent(payload),
+  processSessionState: (payload) => sessionRuntime.processOpenCodeSsePayload(payload),
+  processTurnTiming: (payload) => turnTimingRuntime.processOpenCodeEvent(payload),
+  recordJournalEvent: (payload, directory) => harnessRuntime.recordOpenCodeEvent(payload, directory),
+  recordMultiUserActivity: (payload) => projectMultiUserActivity(payload),
+  processEvidence: (payload) => evidenceRuntime?.processOpenCodeEvent(payload),
+  broadcast: (payload, options) => broadcastGlobalUiEvent(payload, options),
+});
 
 const resolveCursorSdkAgentModelSelection = async (agent, resolveModelSelection) => {
   const model = agent?.model && typeof agent.model === 'object' && !Array.isArray(agent.model)
