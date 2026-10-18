@@ -2,13 +2,13 @@ import crypto from 'node:crypto';
 import http from 'node:http';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
-import { createSupervisorAuthenticator, SupervisorAuthError } from './auth.js';
+import { createSupervisorAuthenticator, SupervisorAuthError, validateSupervisorToken } from './auth.js';
 import {
   BotDockerError,
   createBotDockerSupervisor,
   createDockerSocketClient,
 } from './docker.js';
-import { createBotEngineProxyClient } from './engine-proxy-client.js';
+import { createBotEngineProxyClient, validateBotEngineProxyConfiguration } from './engine-proxy-client.js';
 
 const DEFAULT_PORT = 43120;
 const MAX_BODY_BYTES = 64 * 1024;
@@ -394,31 +394,7 @@ export function createSupervisorHttpServer({
   return server;
 }
 
-export async function startSupervisorService({
-  token,
-  deploymentId,
-  images,
-  port = DEFAULT_PORT,
-  host = '0.0.0.0',
-  docker = createDockerSocketClient(),
-  reasoningNetwork,
-  computerNetwork,
-  egressProxyUrl,
-  runtimeRoot,
-  engineProxyUrl = null,
-  engineProxyToken = null,
-} = {}) {
-  const supervisor = engineProxyUrl
-    ? createBotEngineProxyClient({ endpoint: engineProxyUrl, token: engineProxyToken })
-    : createBotDockerSupervisor({
-        docker,
-        deploymentId,
-        images,
-        reasoningNetwork,
-        computerNetwork,
-        egressProxyUrl,
-        runtimeRoot,
-      });
+const listenSupervisor = async ({ token, supervisor, port, host }) => {
   const server = createSupervisorHttpServer({ token, supervisor });
   await new Promise((resolve, reject) => {
     server.once('error', reject);
@@ -432,26 +408,84 @@ export async function startSupervisorService({
       error ? reject(error) : resolve()
     ))),
   });
+};
+
+/**
+ * Library and test interface. With `engineProxyUrl` it uses the engine proxy;
+ * otherwise it drives Docker directly. The Docker client is built only on that
+ * direct path, and the deployed image never reaches it (see the entry below).
+ */
+export async function startSupervisorService({
+  token,
+  deploymentId,
+  images,
+  port = DEFAULT_PORT,
+  host = '0.0.0.0',
+  docker,
+  createDockerClient = createDockerSocketClient,
+  reasoningNetwork,
+  computerNetwork,
+  egressProxyUrl,
+  runtimeRoot,
+  engineProxyUrl = null,
+  engineProxyToken = null,
+} = {}) {
+  validateSupervisorToken(token);
+  const supervisor = engineProxyUrl
+    ? createBotEngineProxyClient({ endpoint: engineProxyUrl, token: engineProxyToken })
+    : createBotDockerSupervisor({
+        docker: docker ?? createDockerClient(),
+        deploymentId,
+        images,
+        reasoningNetwork,
+        computerNetwork,
+        egressProxyUrl,
+        runtimeRoot,
+      });
+  return listenSupervisor({ token, supervisor, port, host });
+}
+
+const configurationError = (message) => new BotDockerError(message, 'bot_supervisor_configuration_invalid');
+
+/**
+ * The deployed container configuration: supervisor bearer, engine-proxy endpoint
+ * and bearer, and port. Every value is checked before any client or listener
+ * exists, and every failure is one finite configuration error.
+ */
+export function readDeployedSupervisorConfiguration(env = process.env) {
+  const token = env.DEVRYAN_BOT_SUPERVISOR_TOKEN;
+  try {
+    validateSupervisorToken(token);
+  } catch {
+    throw configurationError('Supervisor token configuration is invalid');
+  }
+  if (!env.DEVRYAN_BOT_ENGINE_PROXY_URL) throw configurationError('The deployed supervisor requires the Bot engine proxy');
+  const engineProxy = { endpoint: env.DEVRYAN_BOT_ENGINE_PROXY_URL, token: env.DEVRYAN_BOT_ENGINE_PROXY_TOKEN };
+  try {
+    validateBotEngineProxyConfiguration(engineProxy);
+  } catch {
+    throw configurationError('Bot engine proxy configuration is invalid');
+  }
+  const rawPort = env.DEVRYAN_BOT_SUPERVISOR_PORT ?? String(DEFAULT_PORT);
+  const port = /^[1-9]\d{0,4}$/.test(rawPort) ? Number(rawPort) : NaN;
+  if (!(port <= 65_535)) throw configurationError('Supervisor port configuration is invalid');
+  return Object.freeze({ token, engineProxy: Object.freeze(engineProxy), port });
+}
+
+/** The image entry: engine-proxy mode only. It has no direct-Docker fallback. */
+export async function startDeployedSupervisorService({
+  env = process.env,
+  host = '0.0.0.0',
+  createEngineProxyClient = createBotEngineProxyClient,
+} = {}) {
+  const { token, engineProxy, port } = readDeployedSupervisorConfiguration(env);
+  const supervisor = createEngineProxyClient(engineProxy);
+  return listenSupervisor({ token, supervisor, port, host });
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
-  const port = Number(process.env.DEVRYAN_BOT_SUPERVISOR_PORT || DEFAULT_PORT);
-  startSupervisorService({
-    token: process.env.DEVRYAN_BOT_SUPERVISOR_TOKEN,
-    deploymentId: process.env.DEVRYAN_BOT_DEPLOYMENT_ID,
-    images: {
-      reasoning: process.env.DEVRYAN_BOT_OPENCODE_IMAGE,
-      computer: process.env.DEVRYAN_BOT_COMPUTER_IMAGE,
-    },
-    port,
-    reasoningNetwork: process.env.DEVRYAN_BOT_REASONING_NETWORK,
-    computerNetwork: process.env.DEVRYAN_BOT_COMPUTER_NETWORK,
-    egressProxyUrl: process.env.DEVRYAN_MODEL_EGRESS_URL,
-    runtimeRoot: process.env.DEVRYAN_BOT_HOST_RUNTIME_ROOT,
-    engineProxyUrl: process.env.DEVRYAN_BOT_ENGINE_PROXY_URL,
-    engineProxyToken: process.env.DEVRYAN_BOT_ENGINE_PROXY_TOKEN,
-  }).then(({ address }) => {
-    const boundPort = typeof address === 'object' && address ? address.port : port;
+  startDeployedSupervisorService().then(({ address }) => {
+    const boundPort = typeof address === 'object' && address ? address.port : DEFAULT_PORT;
     console.log(`[bot-supervisor] listening on port ${boundPort}`);
   }).catch((error) => {
     console.error(`[bot-supervisor] startup failed (${error?.code || 'unknown'})`);

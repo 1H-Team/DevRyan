@@ -106,6 +106,10 @@ and the reviewed `opencode-gpt-imagegen@0.1.12`, and runs as UID/GID
 into an immutable host channel/hash directory; Electron verifies it and the
 supervisor mounts it read-only at `/runtime-config`. The reviewed gateway
 plugin remains pinned in the image at `/opt/devryan/devryan-bot-tools.mjs`.
+Its implementation lives in `opencode/devryan-bot-gateway.mjs`, which the
+image copies beside it and the native server imports directly
+(`createPlugin`, `validateEnvironment`); the plugin file keeps only the
+OpenCode factory and its callable `__test` export.
 OpenCode data, the exact one-provider per-run `auth.json` file, and channel
 workspace use separate writable mounts, and the service exposes only port 4096. The legacy
 `initialize` command remains solely as an image contract fixture and is not

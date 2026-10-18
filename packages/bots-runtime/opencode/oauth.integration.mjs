@@ -32,6 +32,7 @@ try {
     [`${root}/packages/bots-runtime/opencode/oauth-fixture.mjs`, '/opt/devryan/oauth-fixture.mjs'],
     ...(!baked ? [
       [`${root}/packages/bots-runtime/opencode/devryan-bot-tools.mjs`, '/opt/devryan/devryan-bot-tools.mjs'],
+      [`${root}/packages/bots-runtime/opencode/devryan-bot-gateway.mjs`, '/opt/devryan/devryan-bot-gateway.mjs'],
       [`${root}/packages/web/server/default-config/plugins/devryan-openai-oauth.mjs`, '/opt/devryan/devryan-openai-oauth.mjs'],
     ] : []),
     [directory, '/fixture-tls'],

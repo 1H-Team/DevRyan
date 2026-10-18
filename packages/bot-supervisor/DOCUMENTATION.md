@@ -120,6 +120,15 @@ responses; and rejects upgrades, unknown Docker API versions, encoded-path
 tricks, arbitrary exec/create options, and unowned resources. If the proxy is
 unavailable, lifecycle mutation fails closed.
 
+The image entry (`node ./src/server.js`) is `startDeployedSupervisorService`.
+It reads only the supervisor bearer, `DEVRYAN_BOT_ENGINE_PROXY_URL`, the
+engine-proxy bearer and the port, and validates all four before it constructs a
+client or opens a listener. Any missing or invalid value fails startup with the
+single code `bot_supervisor_configuration_invalid`. It has no direct-Docker
+fallback. `startSupervisorService` remains the library and test interface: with
+`engineProxyUrl` it uses the proxy, otherwise it drives Docker directly, and it
+builds the Docker client only on that direct path.
+
 A Docker socket remains root-equivalent. Splitting the supervisor from the
 socket adds an independently authenticated and schema-constrained boundary, but
 compromise of the engine-proxy container must still be treated as compromise of

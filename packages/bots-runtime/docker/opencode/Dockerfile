@@ -25,6 +25,8 @@ RUN apt-get update \
 
 COPY --chown=10001:10001 packages/bots-runtime/opencode/devryan-bot-tools.mjs /opt/devryan/devryan-bot-tools.mjs
 COPY --chown=10001:10001 packages/bots-runtime/opencode/devryan-bot-tools.mjs /opt/devryan/packages/bots-runtime/opencode/devryan-bot-tools.mjs
+COPY --chown=10001:10001 packages/bots-runtime/opencode/devryan-bot-gateway.mjs /opt/devryan/devryan-bot-gateway.mjs
+COPY --chown=10001:10001 packages/bots-runtime/opencode/devryan-bot-gateway.mjs /opt/devryan/packages/bots-runtime/opencode/devryan-bot-gateway.mjs
 COPY --chown=10001:10001 packages/web/server/default-config/plugins/devryan-openai-oauth.mjs /opt/devryan/devryan-openai-oauth.mjs
 COPY --chown=10001:10001 packages/web/server/default-config/plugins/devryan-openai-oauth.mjs /opt/devryan/packages/web/server/default-config/plugins/devryan-openai-oauth.mjs
 COPY --chown=10001:10001 packages/web/server/lib/bots/native-server.mjs /opt/devryan/packages/web/server/lib/bots/native-server.mjs

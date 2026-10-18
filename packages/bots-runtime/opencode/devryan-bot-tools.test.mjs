@@ -3,6 +3,7 @@ import path from 'node:path';
 import { describe, expect, test } from 'bun:test';
 
 import plugin, * as exports from './devryan-bot-tools.mjs';
+import * as gateway from './devryan-bot-gateway.mjs';
 import { BOT_TARGET_OPENCODE_VERSION } from '../../web/server/lib/opencode/version-policy.js';
 
 const TOKEN = 'runtime-token-0123456789abcdef0123456789';
@@ -27,6 +28,13 @@ describe('scoped OpenCode Bot plugin', () => {
   test('exports functions only so OpenCode can load every export as a factory', () => {
     expect(plugin).toBeFunction();
     expect(Object.values(exports).every((value) => typeof value === 'function')).toBe(true);
+  });
+
+  test('the plugin and the native server share one gateway implementation', () => {
+    for (const name of ['ERROR_CODES', 'OPERATIONS', 'createPlugin', 'executeGatewayOperation', 'validateEnvironment',
+      'validateImageInput', 'validateInput', 'workspaceWriteInput']) {
+      expect(exports.__test[name]).toBe(gateway[name]);
+    }
   });
 
   test('publishes a quick-reply question tool that records the question and tells the model to stop', async () => {

@@ -20,7 +20,7 @@ import { SessionMessage } from '@opencode/schema/session-message';
 import { Tool } from '@opencode/schema/tool';
 import { Plugin } from '@opencode/plugin/effect';
 import { tool } from '@opencode-ai/plugin/tool';
-import { __test as gateway } from '../../../../bots-runtime/opencode/devryan-bot-tools.mjs';
+import { createPlugin as createGatewayTools, validateEnvironment as validateGatewayEnvironment } from '../../../../bots-runtime/opencode/devryan-bot-gateway.mjs';
 import oauthPlugin from '../../default-config/plugins/devryan-openai-oauth.mjs';
 import { projectNativeSetupCredentials } from '../opencode/runtime-host/native-setup-credential-data.js';
 import { nativeModelCatalogOverride } from '../opencode/runtime-host/native-model-catalog.ts';
@@ -75,7 +75,7 @@ export function createBotNativeOAuthMiddleware({ access, fetchImpl }) {
 /** Assemble the same gateway wrappers used by the native graph. Refusal precedes
  * the reviewed image executor, including its reference-file reads. */
 export async function createBotNativeTools({ directory, access, environment, openaiOAuth, imageToolFactory }) {
-  return (await gateway.createPlugin({ toolApi: tool, environment,
+  return (await createGatewayTools({ toolApi: tool, environment,
     imageToolFactory: imageToolFactory ?? (() => createBotNativeImageTool({ directory, access })),
     beforeImage: () => {
       if (openaiOAuth) throw Object.assign(new Error('native_image_generation_siwc_unsupported'), { code: 'native_image_generation_siwc_unsupported' });
@@ -90,7 +90,7 @@ export async function createBotNativeServer({
   // Deterministic tests substitute native graph services, never live credentials/providers.
   overrides: testOverrides = [],
 } = {}) {
-  const capability = gateway.validateEnvironment(environment);
+  const capability = validateGatewayEnvironment(environment);
   const rawAuth = await fs.readFile(authPath, 'utf8');
   if (Buffer.byteLength(rawAuth) > 256 * 1024) throw invalid();
   const auth = JSON.parse(rawAuth);

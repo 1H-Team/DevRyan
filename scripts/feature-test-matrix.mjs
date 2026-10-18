@@ -190,6 +190,7 @@ export const FEATURE_TEST_MATRIX = Object.freeze([
       'packages/web/server/lib/bots/browser-service.js',
       'packages/web/server/lib/bots/opencode-provider.js',
       'packages/bots-runtime/opencode/devryan-bot-tools.mjs',
+      'packages/bots-runtime/opencode/devryan-bot-gateway.mjs',
       'supabase/migrations/20260830150000_bot_waiting_control.sql',
     ],
     testPaths: [
@@ -258,6 +259,7 @@ export const FEATURE_TEST_MATRIX = Object.freeze([
       'packages/bot-egress/src/server.js',
       'packages/bot-egress/src/token.js',
       'packages/bots-runtime/opencode/devryan-bot-tools.mjs',
+      'packages/bots-runtime/opencode/devryan-bot-gateway.mjs',
       'packages/bot-computer/src/browser.js',
       'packages/bot-computer/src/browser-diagnostics.js',
       'packages/bot-computer/src/display.js',

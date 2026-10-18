@@ -41,14 +41,21 @@ const normalizeEndpoint = (value) => {
   return Object.freeze({ hostname: url.hostname, port: Number(url.port) });
 };
 
+/** Validate an engine-proxy endpoint and bearer without constructing a client. */
+export function validateBotEngineProxyConfiguration({ endpoint, token } = {}) {
+  const target = normalizeEndpoint(endpoint);
+  if (!TOKEN_PATTERN.test(token || '')) throw configurationError('Bot engine proxy client is invalid');
+  return target;
+}
+
 export function createBotEngineProxyClient({
   endpoint,
   token,
   request = http.request,
   timeoutMs = 120_000,
 } = {}) {
-  const target = normalizeEndpoint(endpoint);
-  if (!TOKEN_PATTERN.test(token || '') || typeof request !== 'function'
+  const target = validateBotEngineProxyConfiguration({ endpoint, token });
+  if (typeof request !== 'function'
     || !Number.isInteger(timeoutMs) || timeoutMs < 1_000 || timeoutMs > 120_000) {
     throw configurationError('Bot engine proxy client is invalid');
   }

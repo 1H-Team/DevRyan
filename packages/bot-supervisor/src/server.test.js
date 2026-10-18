@@ -1,6 +1,11 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import http from 'node:http';
-import { createSupervisorHttpServer } from './server.js';
+import {
+  createSupervisorHttpServer,
+  readDeployedSupervisorConfiguration,
+  startDeployedSupervisorService,
+  startSupervisorService,
+} from './server.js';
 
 const TOKEN = 'supervisor-test-token-0123456789abcdef';
 const servers = [];
@@ -273,5 +278,80 @@ describe('Bot supervisor HTTP service', () => {
     });
     expect(stopped.status).toBe(200);
     expect((await fetch(`${baseUrl}/v1/runtime/${proxyToken}/v1/status`)).status).toBe(404);
+  });
+});
+
+describe('Bot supervisor startup', () => {
+  const PROXY_TOKEN = 'a'.repeat(43);
+  const deployed = (overrides = {}) => ({
+    DEVRYAN_BOT_SUPERVISOR_TOKEN: TOKEN,
+    DEVRYAN_BOT_ENGINE_PROXY_URL: 'http://engine-proxy:43124',
+    DEVRYAN_BOT_ENGINE_PROXY_TOKEN: PROXY_TOKEN,
+    ...overrides,
+  });
+  const freePort = async () => {
+    const probe = http.createServer();
+    await new Promise((resolve) => probe.listen(0, '127.0.0.1', resolve));
+    const { port } = probe.address();
+    await new Promise((resolve) => probe.close(resolve));
+    return port;
+  };
+
+  test('missing or invalid deployed configuration fails once, before any client or listener', async () => {
+    const listen = spyOn(http.Server.prototype, 'listen');
+    try {
+      for (const env of [
+        deployed({ DEVRYAN_BOT_SUPERVISOR_TOKEN: undefined }),
+        deployed({ DEVRYAN_BOT_SUPERVISOR_TOKEN: 'short' }),
+        deployed({ DEVRYAN_BOT_ENGINE_PROXY_URL: undefined }),
+        deployed({ DEVRYAN_BOT_ENGINE_PROXY_URL: 'http://docker.example:2375' }),
+        deployed({ DEVRYAN_BOT_ENGINE_PROXY_TOKEN: undefined }),
+        deployed({ DEVRYAN_BOT_SUPERVISOR_PORT: '0' }),
+        deployed({ DEVRYAN_BOT_SUPERVISOR_PORT: '70000' }),
+        deployed({ DEVRYAN_BOT_SUPERVISOR_PORT: 'http' }),
+      ]) {
+        let clients = 0;
+        const failure = await startDeployedSupervisorService({ env, createEngineProxyClient: () => { clients += 1; } })
+          .then(() => null, (error) => error);
+        expect(failure?.code).toBe('bot_supervisor_configuration_invalid');
+        expect(String(failure?.message)).not.toContain(TOKEN);
+        expect(clients).toBe(0);
+      }
+      expect(listen).not.toHaveBeenCalled();
+    } finally {
+      listen.mockRestore();
+    }
+  });
+
+  test('the deployed entry serves through the engine proxy and never builds a Docker client', async () => {
+    const port = await freePort();
+    const proxyConfigurations = [];
+    const service = await startDeployedSupervisorService({
+      env: deployed({ DEVRYAN_BOT_SUPERVISOR_PORT: String(port) }),
+      host: '127.0.0.1',
+      createEngineProxyClient: (configuration) => { proxyConfigurations.push(configuration); return fakeSupervisor(); },
+    });
+    try {
+      expect(proxyConfigurations).toEqual([{ endpoint: 'http://engine-proxy:43124', token: PROXY_TOKEN }]);
+      expect(service.address.port).toBe(port);
+      const response = await command(`http://127.0.0.1:${port}`, '/v1/status', { botId: 'bot' });
+      expect(response.status).toBe(200);
+    } finally {
+      await service.close();
+    }
+    expect(readDeployedSupervisorConfiguration(deployed()).port).toBe(43120);
+  });
+
+  test('the library entry builds a Docker client only on its direct path', async () => {
+    let dockerClients = 0;
+    const createDockerClient = () => { dockerClients += 1; return {}; };
+    const proxied = await startSupervisorService({ token: TOKEN, host: '127.0.0.1', port: 0, createDockerClient,
+      engineProxyUrl: 'http://127.0.0.1:43124', engineProxyToken: PROXY_TOKEN });
+    await proxied.close();
+    expect(dockerClients).toBe(0);
+    await expect(startSupervisorService({ token: 'short', createDockerClient })).rejects.toMatchObject({ code: 'bot_supervisor_unauthorized' });
+    expect(dockerClients).toBe(0);
+    await expect(startSupervisorService({ token: TOKEN, createDockerClient })).rejects.toMatchObject({ code: 'bot_supervisor_configuration_invalid' });
+    expect(dockerClients).toBe(1);
   });
 });
