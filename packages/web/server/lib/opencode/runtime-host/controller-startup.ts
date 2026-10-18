@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { projectManagedModelValidationFailure } from '@openchamber/orchestration-runtime';
 import {bootstrapNativeSetupCredentials} from './native-setup-credentials.js';
 import {createControllerHelperText} from './controller-helper-text.js';
 import { createNativeRuntimeHost } from './bootstrap.js';
@@ -44,7 +45,8 @@ export async function startNativeController(boot:NativeProcessBoot,identity:{cor
     const body=await readResponseBody(response,{signal,maxResponseBytes:4*1024*1024});
     if(!body.parsed || !record(body.value) || !response.ok || body.value.ok!==true) {
       const code=record(body.value)&&record(body.value.error)&&typeof body.value.error.code==='string'?body.value.error.code:'native_bridge_failed';
-      throw Object.assign(new Error(code),{code,status:response.ok?503:response.status});
+      const failure = record(body.value) && record(body.value.error) ? projectManagedModelValidationFailure(body.value.error) : null;
+      throw Object.assign(new Error(failure?.message ?? code),{code,status:response.ok?503:response.status,...failure ? {details:failure.details} : {}});
     }
     return body.value.result;
   };

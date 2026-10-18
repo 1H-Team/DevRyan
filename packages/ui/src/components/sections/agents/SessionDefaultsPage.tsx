@@ -289,6 +289,12 @@ type AgentModelRow = {
   modelLabel: string | null;
 };
 
+// OpenCode built-in helpers that are not worth a row in the summary card.
+const OPENCODE_BUILTIN_AGENT_NAMES = new Set(['general', 'explore']);
+
+const isVisibleSummaryAgent = (agent: Agent): boolean =>
+  !OPENCODE_BUILTIN_AGENT_NAMES.has(agent.name.trim().toLowerCase());
+
 const AgentModelsSummary: React.FC = () => {
   const { t } = useI18n();
   const principal = useAuthPrincipal();
@@ -298,31 +304,36 @@ const AgentModelsSummary: React.FC = () => {
   const setSelectedAgent = useAgentsStore((state) => state.setSelectedAgent);
   const isPersonalEditor = canEditPersonalAgentModels(principal);
 
-  const rows = React.useMemo<AgentModelRow[]>(() => {
+  const buildRows = React.useCallback((agents: Agent[]): AgentModelRow[] => agents.map((agent) => {
+    const selection = resolveAgentDefaultSelection({
+      agentName: agent.name,
+      agents: [agent],
+      providers,
+      personalSelections,
+    });
+    const model = selection
+      ? providers.find((provider) => provider.id === selection.providerId)?.models.find((entry) => entry.id === selection.modelId)
+      : undefined;
+    const modelName = selection ? (model ? getModelDisplayName(model) : selection.modelId) : null;
+    return {
+      agent,
+      selection,
+      modelLabel: modelName ? [modelName, selection?.variant].filter(Boolean).join(' · ') : null,
+    };
+  }), [personalSelections, providers]);
+
+  const groups = React.useMemo(() => {
     // Same agents as the Agents sidebar, so every row opens an editor.
-    const visible = filterVisibleSettingsAgents(filterVisibleAgentSelectorOptions(configAgents));
+    const visible = filterVisibleSettingsAgents(filterVisibleAgentSelectorOptions(configAgents))
+      .filter(isVisibleSummaryAgent);
     const primary = visible.filter((agent) => isPrimaryAgentMode(agent.mode)).sort(compareAgentOptions);
     const subagents = visible
       .filter((agent) => !isPrimaryAgentMode(agent.mode))
       .sort((a, b) => formatAgentDisplayName(a.name).localeCompare(formatAgentDisplayName(b.name)));
-    return [...primary, ...subagents].map((agent) => {
-      const selection = resolveAgentDefaultSelection({
-        agentName: agent.name,
-        agents: [agent],
-        providers,
-        personalSelections,
-      });
-      const model = selection
-        ? providers.find((provider) => provider.id === selection.providerId)?.models.find((entry) => entry.id === selection.modelId)
-        : undefined;
-      const modelName = selection ? (model ? getModelDisplayName(model) : selection.modelId) : null;
-      return {
-        agent,
-        selection,
-        modelLabel: modelName ? [modelName, selection?.variant].filter(Boolean).join(' · ') : null,
-      };
-    });
-  }, [configAgents, personalSelections, providers]);
+    return { primary: buildRows(primary), subagents: buildRows(subagents) };
+  }, [buildRows, configAgents]);
+
+  const rows = [...groups.primary, ...groups.subagents];
 
   const openAgent = React.useCallback((agentName: string) => {
     setSelectedAgent(agentName);
@@ -344,6 +355,40 @@ const AgentModelsSummary: React.FC = () => {
     }
   };
 
+  const renderRow = ({ agent, selection, modelLabel }: AgentModelRow) => {
+    const label = formatAgentDisplayName(agent.name);
+    return (
+      <li key={agent.name}>
+        <button
+          type="button"
+          onClick={() => openAgent(agent.name)}
+          aria-label={t('settings.sessionDefaults.agentModels.openAria', { agent: label })}
+          className="group flex w-full items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/50"
+        >
+          <RiAiAgentLine
+            className="h-3.5 w-3.5 shrink-0"
+            style={{ color: `var(${getAgentIconColor(agent.name).var})` }}
+          />
+          <span className="w-32 shrink-0 truncate typography-ui-label text-foreground sm:w-40">{label}</span>
+          <span className="min-w-0 flex-1 truncate typography-meta text-muted-foreground">
+            {modelLabel ?? t('settings.sessionDefaults.agentModels.defaultModel')}
+          </span>
+          {renderSourceBadge(selection)}
+          <RiArrowRightSLine className="h-4 w-4 shrink-0 text-muted-foreground/60 transition-colors group-hover:text-foreground" />
+        </button>
+      </li>
+    );
+  };
+
+  const renderGroup = (label: string, groupRows: AgentModelRow[]) => groupRows.length > 0 ? (
+    <>
+      <div className="px-3 pt-2 pb-1 typography-micro font-semibold uppercase tracking-[0.08em] text-muted-foreground/80">
+        {label}
+      </div>
+      {groupRows.map(renderRow)}
+    </>
+  ) : null;
+
   return (
     <SettingsDetailSection
       title={t('settings.sessionDefaults.section.agentModels')}
@@ -355,30 +400,8 @@ const AgentModelsSummary: React.FC = () => {
       bodyClassName="px-0 py-1"
     >
       <ul className="divide-y divide-[var(--interactive-border)]/60">
-        {rows.map(({ agent, selection, modelLabel }) => {
-          const label = formatAgentDisplayName(agent.name);
-          return (
-            <li key={agent.name}>
-              <button
-                type="button"
-                onClick={() => openAgent(agent.name)}
-                aria-label={t('settings.sessionDefaults.agentModels.openAria', { agent: label })}
-                className="group flex w-full items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/50"
-              >
-                <RiAiAgentLine
-                  className="h-3.5 w-3.5 shrink-0"
-                  style={{ color: `var(${getAgentIconColor(agent.name).var})` }}
-                />
-                <span className="w-32 shrink-0 truncate typography-ui-label text-foreground sm:w-40">{label}</span>
-                <span className="min-w-0 flex-1 truncate typography-meta text-muted-foreground">
-                  {modelLabel ?? t('settings.sessionDefaults.agentModels.defaultModel')}
-                </span>
-                {renderSourceBadge(selection)}
-                <RiArrowRightSLine className="h-4 w-4 shrink-0 text-muted-foreground/60 transition-colors group-hover:text-foreground" />
-              </button>
-            </li>
-          );
-        })}
+        {renderGroup(t('settings.sessionDefaults.agentModels.group.primary'), groups.primary)}
+        {renderGroup(t('settings.sessionDefaults.agentModels.group.subagents'), groups.subagents)}
       </ul>
     </SettingsDetailSection>
   );

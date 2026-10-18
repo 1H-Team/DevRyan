@@ -1302,9 +1302,13 @@ export function createNativeAdmissionOwner(options) {
       const session = frozen.sessionID ? await canonical(frozen.sessionID) : undefined;
       if (session && session.directory !== frozen.directory) throw fail('native_helper_scope_invalid',403);
       const title=frozen.agent==='devryan-title'&&Boolean(session);
+      // Notification summaries have no web request principal either, so the
+      // whole detached helper family reuses the title path's session-bound
+      // authorization. Managed title source capture stays title-only.
+      const detachedHelper=['devryan-title','devryan-notify'].includes(frozen.agent)&&Boolean(session);
       const managedTitleSource = title && session.parentID ? await options.captureManagedTitleInput?.({ sessionID: session.id, directory: session.directory }) : undefined;
       if (title && session.parentID && typeof managedTitleSource?.recheck !== 'function') throw fail('native_managed_title_source_invalid', 403);
-      const reauthorize = title&&options.captureTitleHelperAuthorization
+      const reauthorize = detachedHelper&&options.captureTitleHelperAuthorization
         ?await options.captureTitleHelperAuthorization(copy(session))
         :await options.captureWebAuthorization({operation:'helper.generate',directory:frozen.directory,sessionID:frozen.sessionID},session);
       if (typeof options.captureHelperSelection !== 'function') throw fail('native_helper_selection_unavailable',503);

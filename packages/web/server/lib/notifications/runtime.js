@@ -1,7 +1,13 @@
 import { resolveGen2OpenCodeClient } from '../opencode/opencode-client-seam.js';
+import { generateTextWithSessionModel } from '../opencode/session-model-text.js';
+import { buildSummarizationInput } from '../text/summarization.js';
 import { detectPlanReadyRevision, isPlanReadySuppressedUserMessage, PLAN_READY_DEFAULT_TEMPLATE } from './plan-ready.js';
 
 export const SESSION_COMPLETION_NOTIFICATION_SETTLE_MS = 500;
+
+const NOTIFICATION_HELPER_AGENT = 'devryan-notify';
+const NOTIFICATION_SUMMARY_TIMEOUT_MS = 15_000;
+const NOTIFICATION_SUMMARY_MAX_OUTPUT_TOKENS = 256;
 
 const HIDDEN_NOTIFICATION_SESSION_TITLES = new Set([
   'smartfetch-secondary',
@@ -22,8 +28,8 @@ export const createNotificationTriggerRuntime = (deps) => {
   const {
     readSettingsFromDisk,
     prepareNotificationLastMessage,
-    summarizeText,
-    resolveZenModel,
+    resolveHelperSelection,
+    generateHelperText,
     buildTemplateVariables,
     extractLastMessageText,
     fetchSessionMessages,
@@ -708,14 +714,54 @@ export const createNotificationTriggerRuntime = (deps) => {
     return !hasActiveAssistantWork(parts);
   };
 
+  // Summarization is always on through the Helper Model. Any failure —
+  // helper unavailable, selection revoked, provider error, timeout — falls
+  // back to plain truncation inside prepareNotificationLastMessage.
+  const summarizeViaHelper = async (text, summaryLength, sessionId) => {
+    if (typeof resolveHelperSelection !== 'function' || typeof generateHelperText !== 'function') {
+      throw new Error('Notification helper is unavailable');
+    }
+    if (!sessionId) throw new Error('Notification summary requires a session');
+    // Notification events do not carry the session directory; the canonical
+    // session record does.
+    const sessionInfo = await fetchSessionInfo(sessionId);
+    const directory = typeof sessionInfo?.directory === 'string' ? sessionInfo.directory : '';
+    if (!directory) throw new Error('Notification summary requires the session directory');
+    const selection = await resolveHelperSelection({
+      agent: NOTIFICATION_HELPER_AGENT,
+      directory,
+      sessionID: sessionId,
+      selectionMode: 'configured',
+    });
+    if (!selection?.providerID || !selection?.modelID) throw new Error('Notification helper selection unavailable');
+    const result = await generateTextWithSessionModel({
+      openCodeClient,
+      generateHelperText,
+      directory,
+      sessionID: sessionId,
+      providerID: selection.providerID,
+      modelID: selection.modelID,
+      selectionMode: selection.selectionMode ?? 'configured',
+      selectionRevision: selection.selectionRevision ?? selection.revision,
+      agent: NOTIFICATION_HELPER_AGENT,
+      prompt: buildSummarizationInput(text, summaryLength, 'notification'),
+      denyTools: true,
+      timeoutMs: NOTIFICATION_SUMMARY_TIMEOUT_MS,
+      maxOutputTokens: NOTIFICATION_SUMMARY_MAX_OUTPUT_TOKENS,
+    });
+    if (!result?.ok || typeof result.value !== 'string' || !result.value.trim()) {
+      throw new Error(`Notification summary failed: ${result?.reason || 'no output'}`);
+    }
+    return result.value;
+  };
+
   const prepareLastMessageForNotification = ({ message, settings, sessionId }) => {
     return prepareNotificationLastMessage({
       message,
       settings,
-      summarize: async (text, length) => {
-        const zenModel = await resolveZenModel(settings?.zenModel);
-        return summarizeText(text, length, zenModel, sessionId);
-      },
+      summarize: sessionId
+        ? (text, summaryLength) => summarizeViaHelper(text, summaryLength, sessionId)
+        : undefined,
     });
   };
 

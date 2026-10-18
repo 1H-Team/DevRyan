@@ -7,6 +7,8 @@ import {
 } from './harness-result.js';
 import { isDeepStrictEqual } from 'node:util';
 import { canReadSettingsPage } from '../multi-user/policy.js';
+import { previewAgentModelOverride } from './agents.js';
+import { inspectModelSelection } from '../../../../shared-runtime/lib/model-selection-availability.js';
 
 const sanitizeModel = (model) => {
   if (typeof model === 'string') return model;
@@ -72,6 +74,8 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
     listStaleAgentModelOverrides,
     listShadowedAgentModelOverrides,
     writeAgentModelOverride,
+    readAgentModelCatalog,
+    validateCursorModelSelection,
     deleteAgentModelOverride,
     writeAgentBackupModel,
     deleteAgentBackupModel,
@@ -348,7 +352,49 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
       }
 
       const previousAgent = getAgentConfig(agentName, directory);
-      const override = writeAgentModelOverride(agentName, req.body || {}, directory);
+      if (!previousAgent?.config?.name) return res.status(404).json({ error: 'Agent not found' });
+      const preview = previewAgentModelOverride(previousAgent.config, req.body || {});
+      const selections = [
+        { model: preview.config.model, variant: preview.config.variant },
+        ...(Array.isArray(preview.config.councillors) ? preview.config.councillors : []),
+      ];
+      // Validate the merged pair, including an unchanged effort on model-only updates.
+      for (const selection of selections) {
+        const model = sanitizeModel(selection.model);
+        const slash = typeof model === 'string' ? model.indexOf('/') : -1;
+        const providerID = typeof model === 'string' ? model.slice(0, slash) : model?.providerID;
+        const modelID = typeof model === 'string' ? model.slice(slash + 1) : model?.modelID;
+        if (!providerID || !modelID || (typeof model === 'string' && slash < 1)) {
+          return res.status(409).json({ error: 'Agent has no executable model', code: 'managed_agent_model_unavailable',
+            retryable: false, details: { reason: 'model_missing', agent: agentName } });
+        }
+        let result;
+        if (providerID === 'cursor-acp') {
+          let available;
+          try { available = await validateCursorModelSelection?.({ directory, modelID, variant: selection.variant, signal: AbortSignal.timeout(5_000) }); }
+          catch { /* Display fallbacks are not authoritative catalog evidence. */ }
+          result = available === true ? { status: 'available', reason: null }
+            : available === false ? { status: 'unavailable', reason: 'selection_unavailable' }
+              : { status: 'unknown', reason: 'catalog_unavailable' };
+        } else {
+          let catalog;
+          try { catalog = await readAgentModelCatalog?.(directory); } catch { /* Unavailable is retryable, never a missing model. */ }
+          result = inspectModelSelection({ providerID, modelID, variant: selection.variant }, catalog);
+        }
+        if (result.status !== 'available') {
+          const retryable = result.status === 'unknown';
+          const message = retryable ? 'The model catalog could not be verified. Retry saving the agent settings.'
+            : result.reason === 'variant_missing' ? `${agentName}: reasoning effort '${selection.variant}' is unsupported for ${providerID}/${modelID}. Choose a supported effort or Provider default.`
+              : `${agentName}: ${providerID}/${modelID} is unavailable. Choose an available model.`;
+          return res.status(retryable ? 503 : 409).json({ error: message,
+            code: retryable ? 'managed_agent_model_availability_unknown' : 'managed_agent_model_unavailable', retryable,
+            details: { reason: result.reason, agent: agentName, providerID, modelID, variant: selection.variant ?? null } });
+        }
+      }
+      if (!isDeepStrictEqual(previousAgent.config, getAgentConfig(agentName, directory)?.config)) {
+        return res.status(409).json({ error: 'Agent settings changed while validating. Reload and retry.', code: 'agent_configuration_changed', retryable: true });
+      }
+      const override = writeAgentModelOverride(agentName, preview.override, directory);
       const agent = getAgentConfig(agentName, directory);
       return completeAgentOverrideMutation(
         res,

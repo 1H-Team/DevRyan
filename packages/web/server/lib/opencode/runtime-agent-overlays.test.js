@@ -107,6 +107,14 @@ const TITLE_AGENT_OVERLAY = {
     permission: { '*': 'deny' },
     prompt: expect.any(String),
   },
+  'devryan-notify': {
+    description: 'Internal no-tools notification summary generator',
+    mode: 'subagent',
+    hidden: true,
+    temperature: 0,
+    permission: { '*': 'deny' },
+    prompt: expect.any(String),
+  },
 };
 
 describe('syncRuntimeAgentOverlays', () => {

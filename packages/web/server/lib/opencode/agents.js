@@ -761,6 +761,17 @@ function writeAgentModelOverride(agentName, rawOverride, workingDirectory, optio
   return override;
 }
 
+// Preview the effective pair before a catalog read; no configuration is written.
+export function previewAgentModelOverride(config, rawOverride) {
+  const patch = normalizeAgentModelOverride(rawOverride);
+  const next = applyAgentModelOverride(config, patch);
+  // Persist the pair we validate. A partial sidecar write replaces its old row,
+  // and a Slim default needs a model override to suppress preset inheritance.
+  const override = normalizeAgentModelOverride({ model: next.model, variant: next.variant ?? null,
+    ...(Array.isArray(next.councillors) ? { councillors: next.councillors } : {}) });
+  return { override, config: next };
+}
+
 function deleteAgentModelOverride(agentName, options = {}) {
   let removed = false;
   if (options.workingDirectory && isOrchestrationRoutedAgent(agentName, options.workingDirectory, options)) {

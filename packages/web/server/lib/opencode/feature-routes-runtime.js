@@ -218,6 +218,8 @@ export const createFeatureRoutesRuntime = (dependencies) => {
     } = await import('./index.js');
 
     registerConfigEntityRoutes(app, {
+      readAgentModelCatalog: directory => openCodeClient.catalog.providers({ directory }, { timeoutMs: 5_000 }),
+      validateCursorModelSelection: input => cursorSdkRuntime?.validateModelSelection?.(input) ?? null,
       resolveProjectDirectory,
       resolveOptionalProjectDirectory,
       markConfigChange,

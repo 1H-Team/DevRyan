@@ -346,7 +346,6 @@ const fetchFreeZenModels = (...args) => notificationTemplateRuntime.fetchFreeZen
 const resolveZenModel = (...args) => notificationTemplateRuntime.resolveZenModel(...args);
 const resolveZenModelNonBlocking = (...args) => notificationTemplateRuntime.resolveZenModelNonBlocking(...args);
 const validateZenModelAtStartup = (...args) => notificationTemplateRuntime.validateZenModelAtStartup(...args);
-const summarizeText = (...args) => notificationTemplateRuntime.summarizeText(...args);
 const extractTextFromParts = (...args) => notificationTemplateRuntime.extractTextFromParts(...args);
 const extractLastMessageText = (...args) => notificationTemplateRuntime.extractLastMessageText(...args);
 const fetchSessionMessages = (...args) => notificationTemplateRuntime.fetchSessionMessages(...args);
@@ -1145,8 +1144,8 @@ const notificationTriggerRuntime = createNotificationTriggerRuntime({
   readCanonicalPlanIdentity: input => harnessTaskContext.readCanonicalPlanIdentity(input),
   readSettingsFromDisk,
   prepareNotificationLastMessage,
-  summarizeText,
-  resolveZenModel,
+  resolveHelperSelection: request => nativeRuntime.resolveHelperSelection(request),
+  generateHelperText: request => nativeRuntime.generateHelperText(request),
   buildTemplateVariables,
   extractLastMessageText,
   fetchSessionMessages,

@@ -152,13 +152,13 @@ it('derives enabled native agents while preserving every explicit catalog requir
  expect(location.configuration.agents.title.disabled).toBe(true);
  expect(location.configuration.agents.legacyDormant.disabled).toBe(true);
  expect(location.configuration.agents.enabled.disabled).toBe(false);
- expect(location.requiredCatalogs.agents).toEqual(['builder','enabled','devryan-title','devryan-commit','devryan-pr']);
+ expect(location.requiredCatalogs.agents).toEqual(['builder','enabled','devryan-title','devryan-commit','devryan-pr','devryan-notify']);
  const file=f.input.binding.descriptor.launch.reviewedNativeConfigPath;
  const policy=JSON.parse(await fs.readFile(file,'utf8'));
  policy.catalogRequirements.agents=['title','explicit-missing','builder'];
  await fs.writeFile(file,JSON.stringify(policy));
  const explicitlyRequired=await f.resolver({...f.input,revision:2});
- expect(explicitlyRequired.locations[0].requiredCatalogs.agents).toEqual(['title','explicit-missing','builder','enabled','devryan-title','devryan-commit','devryan-pr']);
+ expect(explicitlyRequired.locations[0].requiredCatalogs.agents).toEqual(['title','explicit-missing','builder','enabled','devryan-title','devryan-commit','devryan-pr','devryan-notify']);
 });
 
 it('derives enabled agents when the reviewed policy omits its agent list',async()=>{
@@ -169,7 +169,7 @@ it('derives enabled agents when the reviewed policy omits its agent list',async(
  policy.catalogRequirements={};
  await fs.writeFile(file,JSON.stringify(policy));
  const snapshot=await f.resolver(f.input);
- expect(snapshot.locations[0].requiredCatalogs.agents).toEqual(['builder','devryan-title','devryan-commit','devryan-pr']);
+ expect(snapshot.locations[0].requiredCatalogs.agents).toEqual(['builder','devryan-title','devryan-commit','devryan-pr','devryan-notify']);
  expect(snapshot.locations[0].configuration.agents.title.disabled).toBe(true);
 });
 
@@ -186,7 +186,7 @@ it('materializes host no-tools helpers and disables native titles after Slim ove
  const {configuration,compatibility,requiredCatalogs}= (await resolver(f.input)).locations[0];
  expect(configuration.agents.title).toEqual({disabled:true});
  expect(compatibility.agents['devryan-title']).toEqual(buildRuntimeHelperAgents()['devryan-title']);
- for(const name of ['devryan-title','devryan-commit','devryan-pr']){
+ for(const name of ['devryan-title','devryan-commit','devryan-pr','devryan-notify']){
   expect(configuration.agents[name]).toMatchObject({hidden:true,mode:'subagent',permissions:[{action:'*',resource:'*',effect:'deny'}]});
   expect(configuration.agents[name].model).toBeUndefined();
   expect(requiredCatalogs.agents).toContain(name);

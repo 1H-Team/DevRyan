@@ -29,11 +29,12 @@ export function reviewedSetupRegistrations(origins,{browser=false}={}){
 
 /** Original sealed Slim resolver, real snapshot capture/digest/validation. Only
  * route selections are fixture data; no installed configs/credentials are read. */
-export function attachReviewedSetup({bundle,binding,registrationBytes,configuration,skillData,councilMembers,browser=false,remoteMcp}){
+export function attachReviewedSetup({bundle,binding,registrationBytes,configuration,skillData,councilMembers,browser=false,remoteMcp,explorerVariant}){
+ assert.ok(explorerVariant===undefined||['low','medium'].includes(explorerVariant),'Invalid Explorer admission fixture variant');
  const original=bundle.reviewedConfiguration;
  assert.equal(typeof original?.resolveSlimAgents,'function');assert.equal(typeof original?.ponytailCommands?.ponytail?.template,'string');
  const roles=['orchestrator','fixer','designer','council','oracle','explorer','librarian','builder'];
- const agents={...structuredClone(configuration.agents??{}),...Object.fromEntries(roles.map(name=>[name,{model:'devryan-smoke/smoke-write',variant:'default',mode:name==='orchestrator'||name==='builder'?'primary':'subagent',
+ const agents={...structuredClone(configuration.agents??{}),...Object.fromEntries(roles.map(name=>[name,{model:'devryan-smoke/smoke-write',variant:name==='explorer'&&explorerVariant?explorerVariant:'default',mode:name==='orchestrator'||name==='builder'?'primary':'subagent',
   ...(typeof configuration.agents?.[name]?.temperature==='number'?{temperature:configuration.agents[name].temperature}:{}),
   ...(typeof configuration.agents?.[name]?.top_p==='number'?{top_p:configuration.agents[name].top_p}:{})}]))};
  if(councilMembers!==undefined){
@@ -53,7 +54,7 @@ export function attachReviewedSetup({bundle,binding,registrationBytes,configurat
   model.limit={...model.limit,input:131072,context:262144,output:4096};
  }
  delete legacy.agents;delete legacy.commands;
- const mergedConfig={agents:Object.fromEntries(roles.map(name=>[name,{model:'devryan-smoke/smoke-write',variant:'default'}])),disabled_mcps:['websearch','context7','grep_app']};
+ const mergedConfig={agents:Object.fromEntries(roles.map(name=>[name,{model:'devryan-smoke/smoke-write',variant:name==='explorer'&&explorerVariant?explorerVariant:'default'}])),disabled_mcps:['websearch','context7','grep_app']};
  // Both routes are the same owned loopback provider. Only the explicit 429
  // lane invokes the original saved-chain fallback behavior.
  mergedConfig.agents.orchestrator.model=['devryan-smoke/smoke-write','devryan-smoke/gpt-5-native-smoke'];

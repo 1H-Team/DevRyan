@@ -10,7 +10,8 @@ import {
   formatManagedAssignmentContext,
   MANAGED_OVERLAP_READ_TOOLS,
   resolveHarnessPolicies,
-  isManagedModelAvailableInCatalog,
+  inspectManagedModelInCatalog,
+  projectManagedModelValidationFailure,
   MANAGED_READ_ONLY_AGENT_UNSUPPORTED,
   MANAGED_READ_ONLY_AGENT_UNSUPPORTED_MESSAGE,
   MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED,
@@ -157,6 +158,14 @@ const createRuntimeError = (code, message, statusCode = ERROR_STATUS_BY_CODE[cod
   error.statusCode = statusCode;
   return error;
 };
+
+const modelValidationResult = (value) => {
+  if (value === true || value?.status === 'available') return { status: 'available', reason: null };
+  if (value?.status === 'unavailable' && ['provider_missing', 'model_missing', 'variant_missing'].includes(value.reason)) return value;
+  return value === false ? { status: 'unavailable', reason: 'selection_unavailable' }
+    : { status: 'unknown', reason: 'catalog_unavailable' };
+};
+const validationIdentity = (value) => typeof value === 'string' ? value.slice(0, 180).replace(/[\x00-\x1f\x7f]/g, '') : null;
 
 // Transport-level failures of a host dependency (Supabase, loopback OpenCode)
 // are retryable: callers must see 503, never a malformed 400/500.
@@ -338,8 +347,8 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
       const client = resolveGen2OpenCodeClient(openCodeClient);
       try {
         const catalog = await client.catalog.providers(directory ? { directory } : {}, { timeoutMs: 5_000 });
-        return isManagedModelAvailableInCatalog(catalog, providerId, modelId, variant);
-      } catch { return null; }
+        return inspectManagedModelInCatalog(catalog, providerId, modelId, variant);
+      } catch { return { status: 'unknown', reason: 'catalog_unavailable' }; }
     };
   // Admission validates the agent against the submitting directory's catalog.
   const readAgentCatalog = typeof options.readAgentCatalog === 'function'
@@ -374,11 +383,11 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
   };
   const resolvePlannedAutoResumeBackup = async (params) => {
     const backup = await resolveAutoResumeBackupExecution(params);
-    if (backup && validateAgentExecution && await validateAgentExecution({
+    if (backup && validateAgentExecution && modelValidationResult(await validateAgentExecution({
       directory: params.directory, providerId: backup.providerId, modelId: backup.modelId, variant: backup.variant ?? null,
       ...(backup.providerId === 'cursor-acp' ? { rootSessionId: params.rootSessionId, agent: params.agent,
         taskId: params.taskId, autoResumeGeneration: params.autoResumeGeneration } : {}),
-    }) !== true) return null;
+    })).status !== 'available') return null;
     return backup;
   };
   const executor = options.executor ?? createWebManagedOpenCodeExecutor({
@@ -431,13 +440,13 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
           return { outcome: 'rejected', code: 'backup_changed', message: 'The configured backup changed or was removed' };
         }
         if (validateAgentExecution) {
-          const available = await validateAgentExecution({ directory: task.directory, providerId: params.providerId, modelId: params.modelId, variant: params.variant ?? null,
+          const available = modelValidationResult(await validateAgentExecution({ directory: task.directory, providerId: params.providerId, modelId: params.modelId, variant: params.variant ?? null,
             ...(params.providerId === 'cursor-acp' ? { rootSessionId: task.rootSessionId, agent: task.agent,
-              taskId: task.taskId, autoResumeGeneration: params.autoResumeGeneration } : {}) });
-          if (available === false) {
+              taskId: task.taskId, autoResumeGeneration: params.autoResumeGeneration } : {}) }));
+          if (available.status === 'unavailable') {
             return { outcome: 'rejected', code: 'backup_unavailable', message: 'The configured backup model is unavailable' };
           }
-          if (available !== true) {
+          if (available.status !== 'available') {
             if (envelope.autoResume.trigger !== 'provider_transport') {
               return { outcome: 'deferred', retryAfterMs: AUTO_RESUME_HOST_DEFER_MS, reason: 'backup_availability_unknown' };
             }
@@ -746,7 +755,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
       admitted = requested;
     }
     if (validateAgentExecution) {
-      const available = await validateAgentExecution({
+      const available = modelValidationResult(await validateAgentExecution({
         directory: params.directory,
         providerId: admitted.providerId,
         modelId: admitted.modelId,
@@ -754,14 +763,24 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         ...(signal ? { signal } : {}),
         ...(admitted.providerId === 'cursor-acp' ? { rootSessionId: params.rootSessionId,
           agent: params.agent, taskId: params.taskId, autoResumeGeneration: params.autoResumeGeneration } : {}),
-      });
+      }));
       signal?.throwIfAborted();
-      if (available !== true) {
-        throw createRuntimeError(
-          available === false ? 'managed_agent_model_unavailable' : 'managed_agent_model_availability_unknown',
-          `Managed selection could not be verified: ${admitted.providerId}/${admitted.modelId}${admitted.variant ? ` (${admitted.variant})` : ''}`,
-          available === false ? 409 : 503,
-        );
+      if (available.status !== 'available') {
+        const details = { reason: available.reason, providerId: validationIdentity(admitted.providerId),
+          modelId: validationIdentity(admitted.modelId), variant: validationIdentity(admitted.variant),
+          agent: validationIdentity(params.agent),
+          ...(available.modelName ? { modelName: available.modelName } : {}),
+          ...(available.supportedVariants ? { supportedVariants: available.supportedVariants } : {}) };
+        const projection = projectManagedModelValidationFailure({
+          code: available.status === 'unavailable' ? 'managed_agent_model_unavailable' : 'managed_agent_model_availability_unknown', details });
+        options.onModelValidationFailure?.({ ...projection.details, rootSessionId: validationIdentity(params.rootSessionId),
+          directory: validationIdentity(params.directory), agent: validationIdentity(params.agent),
+          taskId: validationIdentity(params.taskId), callId: validationIdentity(params.dispatchCallId ?? params.callId),
+          messageId: validationIdentity(params.dispatchGroupId) });
+        throw Object.assign(createRuntimeError(
+          projection.code, projection.message,
+          available.status === 'unavailable' ? 409 : 503,
+        ), { details: projection.details });
       }
     }
     return admitted;

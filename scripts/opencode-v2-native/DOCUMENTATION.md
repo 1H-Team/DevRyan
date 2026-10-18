@@ -288,3 +288,7 @@ zero sampling/top-p, and holds a real native cancellation finalizer before the
 production helper route can acknowledge settlement. The compiled helper isolation
 lane also requires actual compatible-chat sampling bytes; its receipt cannot
 replace the full compiled package qualification.
+
+## Explorer model admission acceptance
+
+`node scripts/opencode-v2-native/package-managed-model-admission-lane.mjs --artifact-root <absolute-native-artifact-directory>` runs two private compiled arms with a synthetic loopback provider and its exact `low`, `high`, `max` reasoning variants. The Low arm requires one completed Explorer child with its real native parent relationship. The Medium arm requires the parent-visible actionable tool error, a correlated and flushed `variant_missing` diagnostic, zero durable tasks and zero native children. Each arm retains the existing compiled artifact/source identity checks and run-root cleanup. `--keep-artifacts` retains evidence explicitly. This narrow acceptance does not replace full package qualification.

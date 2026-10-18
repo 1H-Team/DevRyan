@@ -22,7 +22,6 @@ import { useI18n, type I18nKey } from '@/lib/i18n';
 import { getAgentIconColor } from '@/lib/agentColors';
 import { useAgentsStore } from '@/stores/useAgentsStore';
 import {
-  SettingsBadge,
   SettingsEmptyState,
   SettingsSidebarHeader,
   SettingsSidebarItem,
@@ -43,22 +42,18 @@ interface AgentsSidebarProps {
 const AGENTS_GENERAL_ENTRY_COPY: Record<AgentsSettingsGeneralEntry['kind'], {
   icon: React.ComponentType<{ className?: string }>;
   titleKey: I18nKey;
-  descriptionKey: I18nKey;
 }> = {
   'session-defaults': {
     icon: RiChatHistoryLine,
     titleKey: 'settings.agents.sidebar.sessionDefaults',
-    descriptionKey: 'settings.agents.sidebar.sessionDefaultsDescription',
   },
   behavior: {
     icon: RiBrainLine,
     titleKey: 'settings.agents.sidebar.behavior',
-    descriptionKey: 'settings.agents.sidebar.behaviorDescription',
   },
   runtime: {
     icon: RiCpuLine,
     titleKey: 'settings.agents.sidebar.runtime',
-    descriptionKey: 'settings.agents.sidebar.runtimeDescription',
   },
 };
 
@@ -87,7 +82,6 @@ export const AgentsSidebar: React.FC<AgentsSidebarProps> = ({ onItemSelect }) =>
       <SettingsSidebarItem
         key={entry.id}
         title={t(copy.titleKey)}
-        metadata={<span className="pl-5">{t(copy.descriptionKey)}</span>}
         selected={entry.selected}
         onSelect={() => {
           select(entry);
@@ -103,7 +97,6 @@ export const AgentsSidebar: React.FC<AgentsSidebarProps> = ({ onItemSelect }) =>
     <SettingsSidebarItem
       key={entry.id}
       title={entry.label}
-      metadata={entry.agent.description ? <span className="pl-5">{entry.agent.description}</span> : undefined}
       selected={entry.selected}
       onSelect={() => {
         select(entry);
@@ -115,11 +108,6 @@ export const AgentsSidebar: React.FC<AgentsSidebarProps> = ({ onItemSelect }) =>
           style={{ color: `var(${getAgentIconColor(entry.agent.name).var})` }}
         />
       )}
-      trailing={entry.isSessionDefault ? (
-        <SettingsBadge tone="accent" className="px-1.5 py-0" title={t('settings.agents.sidebar.badge.defaultTitle')}>
-          {t('settings.agents.sidebar.badge.default')}
-        </SettingsBadge>
-      ) : null}
       className="py-1"
     />
   );

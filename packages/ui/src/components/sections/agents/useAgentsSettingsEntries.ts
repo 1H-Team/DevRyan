@@ -3,10 +3,8 @@ import { useShallow } from 'zustand/react/shallow';
 import type { Agent } from '@opencode-ai/sdk/v2';
 import { canAccessSettingsPage, isGlobalAgentBehaviorUiHidden, useAuthPrincipal, type AuthPrincipal } from '@/lib/authSession';
 import { formatAgentDisplayName } from '@/lib/agentDisplay';
-import { resolveDefaultAgentName, resolveSelectableAgentOptions } from '@/lib/agentSelection';
 import { resolveSettingsSlug } from '@/lib/settings/metadata';
 import { filterVisibleSettingsAgents, useAgentsStore, type AgentsGlobalView } from '@/stores/useAgentsStore';
-import { useConfigStore } from '@/stores/useConfigStore';
 import { useUIStore } from '@/stores/useUIStore';
 
 /** Host-wide agent runtime (language server, OpenCode binary, browser control) is host-editor only. */
@@ -19,17 +17,6 @@ export const resolveAgentsGlobalView = (view: AgentsGlobalView, principal: AuthP
   view === 'runtime' && canViewAgentRuntime(principal) ? 'runtime' : 'behavior'
 );
 
-/** The agent new sessions start with, resolved exactly like the Session Defaults picker. */
-export const useSessionDefaultAgentName = (): string => {
-  const agents = useAgentsStore((state) => state.agents);
-  const configAgents = useConfigStore((state) => state.agents);
-  const settingsDefaultAgent = useConfigStore((state) => state.settingsDefaultAgent);
-  return React.useMemo(
-    () => resolveDefaultAgentName(settingsDefaultAgent, resolveSelectableAgentOptions(configAgents, agents)),
-    [agents, configAgents, settingsDefaultAgent],
-  );
-};
-
 export type AgentsSettingsGeneralEntry = {
   kind: 'session-defaults' | AgentsGlobalView;
   id: string;
@@ -41,7 +28,6 @@ export type AgentsSettingsAgentEntry = {
   id: string;
   agent: Agent;
   label: string;
-  isSessionDefault: boolean;
   selected: boolean;
 };
 
@@ -85,8 +71,6 @@ export const useAgentsSettingsEntries = (searchQuery = '') => {
       setSelectedGlobalView: state.setSelectedGlobalView,
     })),
   );
-  const sessionDefaultAgentName = useSessionDefaultAgentName();
-
   const canReadAgents = canAccessSettingsPage(principal, 'agents');
   const canReadSessions = canAccessSettingsPage(principal, 'sessions');
   const behaviorHidden = isGlobalAgentBehaviorUiHidden(principal);
@@ -144,9 +128,8 @@ export const useAgentsSettingsEntries = (searchQuery = '') => {
     id: `agent:${agent.name}`,
     agent,
     label: formatAgentDisplayName(agent.name),
-    isSessionDefault: agent.name === sessionDefaultAgentName,
     selected: onAgentsPage && selectedAgentName === agent.name,
-  }), [onAgentsPage, selectedAgentName, sessionDefaultAgentName]);
+  }), [onAgentsPage, selectedAgentName]);
 
   const primaryAgents = React.useMemo(
     () => orderedAgents.primary.filter((agent) => matchesQuery(agent, query)).map(toAgentEntry),

@@ -1,7 +1,7 @@
 # Notifications Module Documentation
 
 ## Purpose
-This module owns server-side notification classification, template preparation, and fanout for native shells, connected UI runtimes, and web push. Message preparation includes text truncation, plain-text normalization, and optional summarization.
+This module owns server-side notification classification, template preparation, and fanout for native shells, connected UI runtimes, and web push. Message preparation includes text truncation, plain-text normalization, and always-on summarization through the Helper Model (`devryan-notify`).
 
 The trigger owner's terminal `holdForCheckpoint()` stops new timers and event
 work, clears scheduled callbacks, and joins admitted summarization and final push
@@ -23,7 +23,7 @@ an HTTP response or event stream does not establish completion.
 
 ### Notifications API (re-exported from message.js)
 - `truncateNotificationText(text, maxLength)`: Truncates text to specified max length, appending `...` if truncated.
-- `prepareNotificationLastMessage({ message, settings, summarize })`: Prepares the last message for notification display, with optional summarization support.
+- `prepareNotificationLastMessage({ message, settings, summarize })`: Prepares the last message for notification display. Summarization is always on whenever a `summarize` function is supplied; without one, the message falls back to plain truncation.
 
 ### Route registration API (routes.js)
 - `registerNotificationRoutes(app, dependencies)`: Registers notification-owned endpoints:
@@ -61,7 +61,7 @@ an HTTP response or event stream does not establish completion.
   - completion suppression while the session's latest todo snapshot contains `pending` or `in_progress` work
   - session parent cache for subtask suppression
   - template resolution and fallback behavior
-  - lazy Zen-model resolution only when last-message summarization is enabled and the message exceeds its configured threshold
+  - Helper Model summarization of long last messages through the hidden no-tools `devryan-notify` agent (configured helper selection, 15 s timeout), falling back to plain truncation when the helper is unavailable or fails
   - generated session-title projections shared with the UI, with meaningful titles preserved across later placeholder snapshots
   - native notification fanout and web push payload fanout
 
@@ -126,11 +126,13 @@ The user-facing completion name is **Session Completion**. Plan-producing turns 
 
 ## Settings object format
 
-The `settings` parameter for `prepareNotificationLastMessage` supports:
-- `summarizeLastMessage` (boolean): Whether to enable summarization for long messages.
-- `summaryThreshold` (number): Minimum message length to trigger summarization (default: 200).
-- `summaryLength` (number): Target length for summarized messages (default: 100).
-- `maxLastMessageLength` (number): Maximum length for the final notification text (default: 250).
+Summarization of notification last messages is always on through the Helper
+Model and no longer reads stored summarization switches. The legacy
+`summarizeLastMessage`, `summaryThreshold`, `summaryLength`,
+`maxLastMessageLength` and `zenModel` keys stay in persistence and in the
+multi-user policy so older installs and synced settings still parse; TTS and
+voice summaries keep using `zenModel`. Threshold (200), summary length (100)
+and the final truncation limit (250) are built-in defaults.
 
 Notification delivery additionally consumes:
 - `notifyOnCompletion` (boolean, default `true`): Enables Session Completion for user-visible root sessions. The compatibility key is unchanged.
@@ -166,10 +168,11 @@ Plan Ready native/UI payloads use `kind: "plan-ready"`; web push uses `data.type
 
 ### `prepareNotificationLastMessage`
 - Returns empty string for empty/null message.
-- Returns truncated original message if summarization disabled, message under threshold, or summarization fails.
+- Summarizes whenever a `summarize` function is supplied and the message exceeds the built-in threshold, regardless of stored settings.
+- Returns truncated original message when no `summarize` function is supplied, the message is under threshold, or summarization fails.
 - Returns truncated summary if summarization succeeds and returns non-empty string.
 - Normalizes markdown-like formatting to plain text before truncation.
-- Always applies `maxLastMessageLength` truncation to final result.
+- Always applies the built-in max length truncation to the final result.
 
 ## Notes for contributors
 

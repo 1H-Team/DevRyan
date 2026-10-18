@@ -55,7 +55,7 @@ describe('thinking variant labels', () => {
       models: [{ id: 'qa-model', variants: { low: {}, high: {} } }],
     };
 
-    expect(defaultOption).toBe('{formatEffortLabel(undefined)}');
+    expect(defaultOption).toBe('Provider Default');
     expect(formatEffortLabel(undefined)).toBe('Default');
     expect(resolveAgentVariantForSave(provider, 'openai/qa-model', undefined)).toBeUndefined();
   });

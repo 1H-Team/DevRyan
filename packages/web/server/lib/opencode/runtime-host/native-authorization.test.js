@@ -237,3 +237,18 @@ test('configured helper authorization binds the exact saved revision and keeps a
   allowed = false;
   await expect(active.recheck()).rejects.toMatchObject({ code: 'native_session_access_revoked' });
 }));
+
+test('devryan-notify follows the detached title path: session required, no web principal, unknown agents rejected', () => fixture(async directory => {
+  const authorization = createNativeAuthorization({ locations: [{ directory }], manifest, getRequestPrincipal: () => undefined,
+    getMultiUserRuntime: () => ({ enabled: true, resolveSessionPlanContext: async () => ({ directory }),
+      resolveNativeHelperSettings: async () => ({ helperModelSelection: { providerID: 'opencode', modelID: 'flash', revision: 'one' } }) }) });
+  const session = { id: 'ses_notify', directory };
+  // No web principal is required, but a canonical session is.
+  const configured = await authorization.captureHelperSelection({ directory, sessionID: session.id, agent: 'devryan-notify', selectionMode: 'configured' }, session);
+  expect(configured.selection).toEqual({ providerID: 'opencode', modelID: 'flash', revision: 'one' });
+  await configured.recheck();
+  await expect(authorization.captureHelperSelection({ directory, sessionID: session.id, agent: 'devryan-notify', selectionMode: 'configured' }))
+    .rejects.toMatchObject({ code: 'native_helper_selection_invalid' });
+  await expect(authorization.captureHelperSelection({ directory, sessionID: session.id, agent: 'devryan-something', selectionMode: 'configured' }, session))
+    .rejects.toMatchObject({ code: 'native_helper_selection_invalid' });
+}));

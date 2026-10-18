@@ -12,6 +12,7 @@ import {
   listManagedRuntimeAgentModelOverrides,
   listShadowedAgentModelOverrides,
   normalizeAgentBackupModel,
+  previewAgentModelOverride,
   resolveLocalAgentBackupExecution,
   writeAgentBackupModel,
   writeAgentModelOverride,
@@ -67,6 +68,31 @@ describe('agent model overrides', () => {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
     tempRoot = undefined;
+  });
+
+  it('persists a partial default selection without re-inheriting the preset effort', async () => {
+    await writeJson(path.join(path.dirname(userConfigPath), 'devryan-agents.json'), {
+      preset: 'team', presets: { team: { explorer: { model: 'opencode-go/deepseek-v4.1-flash', variant: 'medium' } } },
+    });
+    const options = { userConfigPath };
+    const previous = getAgentConfig('explorer', projectDirectory, options).config;
+    expect(previous.variant).toBe('medium');
+    const preview = previewAgentModelOverride(previous, { variant: null });
+    writeAgentModelOverride('explorer', preview.override, projectDirectory, options);
+    const saved = getAgentConfig('explorer', projectDirectory, options).config;
+    expect(saved.model).toEqual(previous.model);
+    expect(saved.variant).toBeUndefined();
+    expect(saved.model).toEqual(preview.config.model);
+  });
+
+  it('persists the validated effective pair for partial model changes', async () => {
+    await writeProjectAgent(projectDirectory, 'builder', ['mode: primary', 'model: openai/original', 'variant: low']);
+    const options = { userConfigPath };
+    writeAgentModelOverride('builder', { model: 'openai/selected', variant: 'high' }, projectDirectory, options);
+    const preview = previewAgentModelOverride(getAgentConfig('builder', projectDirectory, options).config, { model: 'openai/next' });
+    expect(preview.override).toEqual({ model: 'openai/next', variant: 'high' });
+    writeAgentModelOverride('builder', preview.override, projectDirectory, options);
+    expect(getAgentConfig('builder', projectDirectory, options).config).toMatchObject({ model: { providerID: 'openai', modelID: 'next' }, variant: 'high' });
   });
 
   it('replaces markdown modelRefs when applying a saved scalar model override', async () => {

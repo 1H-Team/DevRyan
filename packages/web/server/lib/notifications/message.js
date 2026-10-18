@@ -48,10 +48,12 @@ export const prepareNotificationLastMessage = async ({ message, settings, summar
     return '';
   }
 
-  const shouldSummarize = settings?.summarizeLastMessage === true && typeof summarize === 'function';
-  const summaryThreshold = resolvePositiveNumber(settings?.summaryThreshold, DEFAULT_NOTIFICATION_SUMMARY_THRESHOLD);
-  const summaryLength = resolvePositiveNumber(settings?.summaryLength, DEFAULT_NOTIFICATION_SUMMARY_LENGTH);
-  const maxLastMessageLength = resolvePositiveNumber(settings?.maxLastMessageLength, DEFAULT_NOTIFICATION_MESSAGE_MAX_LENGTH);
+  // Summarization is always on through the Helper Model; the legacy settings
+  // switches stay in persistence but no longer gate this behaviour.
+  const shouldSummarize = typeof summarize === 'function';
+  const summaryThreshold = DEFAULT_NOTIFICATION_SUMMARY_THRESHOLD;
+  const summaryLength = DEFAULT_NOTIFICATION_SUMMARY_LENGTH;
+  const maxLastMessageLength = DEFAULT_NOTIFICATION_MESSAGE_MAX_LENGTH;
 
   let messageForNotification = originalMessage;
   if (shouldSummarize && originalMessage.length > summaryThreshold) {

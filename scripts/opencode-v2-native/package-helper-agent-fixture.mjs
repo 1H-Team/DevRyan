@@ -4,7 +4,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { syncRuntimeAgentOverlays } from '../../packages/web/server/lib/opencode/runtime-agent-overlays.js';
 
-export const compiledHelperAgentIDs = Object.freeze(['devryan-title', 'devryan-commit', 'devryan-pr']);
+export const compiledHelperAgentIDs = Object.freeze(['devryan-title', 'devryan-commit', 'devryan-pr', 'devryan-notify']);
 
 export function assertCompiledHelperAgents(agents) {
   assert.ok(agents && typeof agents === 'object' && !Array.isArray(agents), 'Production helper agents missing');

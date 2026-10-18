@@ -108,6 +108,14 @@ agent configuration uses the agent captured before the request as its fallback.
 Late catalog, model override, and backup-model responses cannot replace the
 visible settings catalog after its directory changes.
 
+The agent model editor preserves explicit saved thinking levels through catalog
+refreshes and model changes. An unlisted level remains visible with an inline
+error; saving primary, backup, or Council selections requires a confirmed model
+and either a supported level or an explicit Provider default choice. Changing
+models never substitutes an effort for an unsupported saved selection. Each
+section validates independently, and the first Council row owns the Council's
+primary model and thinking level.
+
 Settings catalog refreshes reconcile complete normalized records by agent name
 against state at response time, retaining save/reset generation guards. Structural
 comparison ignores object key order, preserves array order, and distinguishes

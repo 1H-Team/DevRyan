@@ -798,7 +798,7 @@ describe('OpenCode config agent routes', () => {
 
   it('lists, writes, and deletes user agent model overrides', async () => {
     projectDirectory = await makeTempProject();
-    const userConfigDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-route-overrides-'));
+    const userConfigDirectory = await fs.mkdtemp(path.join(isolatedOpencodeConfigDir, 'route-overrides-'));
     const userConfigPath = path.join(userConfigDirectory, 'config.json');
     const app = express();
     app.use(express.json());
@@ -810,6 +810,7 @@ describe('OpenCode config agent routes', () => {
       getAgentSources: () => ({ md: { exists: true, scope: 'packaged' }, json: { exists: false } }),
       getAgentConfig: (name, directory) => getAgentConfig(name, directory, { userConfigPath }),
       listAgentModelOverrides: () => listAgentModelOverrides({ userConfigPath }),
+      readAgentModelCatalog: async () => ({ providers: [{ id: 'openai', models: [{ id: 'gpt-5.5', variants: ['high'] }] }] }),
       writeAgentModelOverride: (name, body, directory) => writeAgentModelOverride(name, body, directory, { userConfigPath }),
       deleteAgentModelOverride: (name, options) => deleteAgentModelOverride(name, { ...options, userConfigPath }),
       listConfigAgents: (directory) => listConfigAgents(directory, { userConfigPath }),
@@ -858,7 +859,7 @@ describe('OpenCode config agent routes', () => {
 
   it('queues OpenCode apply after writing and deleting an agent model override', async () => {
     projectDirectory = await makeTempProject();
-    const userConfigDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-route-refresh-'));
+    const userConfigDirectory = await fs.mkdtemp(path.join(isolatedOpencodeConfigDir, 'route-refresh-'));
     const userConfigPath = path.join(userConfigDirectory, 'config.json');
     const refreshCalls = [];
     const app = express();
@@ -874,6 +875,7 @@ describe('OpenCode config agent routes', () => {
       getAgentSources: () => ({ md: { exists: true, scope: 'packaged' }, json: { exists: false } }),
       getAgentConfig: (name, directory) => getAgentConfig(name, directory, { userConfigPath }),
       listAgentModelOverrides: () => listAgentModelOverrides({ userConfigPath }),
+      readAgentModelCatalog: async () => ({ providers: [{ id: 'openai', models: [{ id: 'gpt-5.5', variants: ['high'] }] }] }),
       writeAgentModelOverride: (name, body, directory) => writeAgentModelOverride(name, body, directory, { userConfigPath }),
       deleteAgentModelOverride: (name, options) => deleteAgentModelOverride(name, { ...options, userConfigPath }),
       listConfigAgents: (directory) => listConfigAgents(directory, { userConfigPath }),
@@ -936,7 +938,7 @@ describe('OpenCode config agent routes', () => {
 
   it('keeps a saved agent override visible when the apply request cannot be recorded', async () => {
     projectDirectory = await makeTempProject();
-    const userConfigDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-route-refresh-fail-'));
+    const userConfigDirectory = await fs.mkdtemp(path.join(isolatedOpencodeConfigDir, 'route-refresh-fail-'));
     const userConfigPath = path.join(userConfigDirectory, 'config.json');
     const app = express();
     app.use(express.json());
@@ -950,6 +952,7 @@ describe('OpenCode config agent routes', () => {
       getAgentSources: () => ({ md: { exists: true, scope: 'packaged' }, json: { exists: false } }),
       getAgentConfig: (name, directory) => getAgentConfig(name, directory, { userConfigPath }),
       listAgentModelOverrides: () => listAgentModelOverrides({ userConfigPath }),
+      readAgentModelCatalog: async () => ({ providers: [{ id: 'openai', models: [{ id: 'gpt-5.5', variants: ['high'] }] }] }),
       writeAgentModelOverride: (name, body, directory) => writeAgentModelOverride(name, body, directory, { userConfigPath }),
       deleteAgentModelOverride: (name, options) => deleteAgentModelOverride(name, { ...options, userConfigPath }),
       listConfigAgents: (directory) => listConfigAgents(directory, { userConfigPath }),

@@ -2,6 +2,8 @@
 
 Native model RPCs capture `maxOutputBytes` from their reviewed configuration generation. Result projection bounds the escaped serialized output, including metadata and references. Submit and disposition reserve receipt capacity before scheduler mutations; disposition also checks the current retained projection first. If projection fails after a durable mutation, the tool returns a bounded `committed` receipt with the exact task/envelope/action identities and an enumerated projection failure. Callers must read current status rather than repeat a committed operation as new work. Ordinary UI/API reads retain their existing eager shape.
 
+Managed model admission retains provider/model/variant refusal reasons and records `managed_model_validation_failed` for every provider before scheduler admission. Records include the bounded model tuple and root/agent/task/tool-call identities when available; unsupported variants keep the existing 409 compatibility code with `details.reason: variant_missing` and an actionable Settings message. Unreadable catalogs remain 503; injected boolean/null validators remain supported. No rejected selection creates a child or silently substitutes an effort.
+
 Constructor-only `withSubmissionPreparation` resolves the exact agent/model tuple
 outside the parent mutation lock. Its asynchronous local scope is consumed once
 by the same serialized submission; it does not cache credentials, permits or

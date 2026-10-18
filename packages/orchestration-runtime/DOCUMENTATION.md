@@ -10,6 +10,8 @@ This package is the single policy owner for DevRyan-managed sub-agent work. It i
 
 ## Contract boundary
 
+`inspectManagedModelInCatalog` retains the shared provider/model/variant availability reason; the existing `isManagedModelAvailableInCatalog` remains a boolean-or-null compatibility projection. An unsupported explicit reasoning variant is `variant_missing`, never a request to substitute another effort. The structured refusal carries the exact selected model's supported variants and display name when known. `projectManagedModelValidationFailure` owns the transport allowlist: only model-admission codes and enumerated reasons cross with bounded agent/model identifiers, optional display name, up to sixteen supported variants and a constructed message. Foreign error text and additional details do not cross this boundary.
+
 Mandatory persistence retains its serialized owner until the actual save settles.
 Its independent watchdog reports one content-free `managed_persistence_stalled`
 attention observation at the existing task deadline or after five minutes without

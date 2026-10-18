@@ -14,7 +14,7 @@ import { assertWriterOutcome } from './assertions.mjs';
 /** Real product owners with disposable state and an explicitly selected fixture model. */
 export function createNativeManagedFixture({ client, admissionOwner, executionHost, directory, directories = [directory], dataDirectory,
   buildOpenCodeUrl, getOpenCodeAuthHeaders, environment, observations, diagnostics, journal,
-  isNativeFallbackError, dispatchNativeRecovery, eventReconcileIntervalMs, resolveProviderRequest,
+  isNativeFallbackError, dispatchNativeRecovery, eventReconcileIntervalMs, resolveProviderRequest, onModelValidationFailure,
   executionModel = { providerID: 'sim', modelID: 'm1', variant: 'default' } }) {
   assert.ok(typeof executionModel.providerID === 'string' && executionModel.providerID
     && typeof executionModel.modelID === 'string' && executionModel.modelID
@@ -58,6 +58,7 @@ export function createNativeManagedFixture({ client, admissionOwner, executionHo
       assert.ok(entry?.model?.providerID && entry.model.modelID, 'Managed fixture role has no native configured model');
       return { providerId: entry.model.providerID, modelId: entry.model.modelID, variant: entry.variant ?? null };
     },
+    onModelValidationFailure,
     publishEvent: event => observations.push({ phase: 'managed_event', type: event.type, properties: event.properties }),
   });
   const step = createNativePrimaryStepOwner({ admissionOwner, openCodeClient: client, primaryRuntime: primary,

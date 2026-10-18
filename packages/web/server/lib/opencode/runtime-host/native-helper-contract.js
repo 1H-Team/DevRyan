@@ -9,7 +9,7 @@ export function nativeHelperInput(input) {
     || input.operationID !== undefined && !id(input.operationID)
     || !path.isAbsolute(input.directory ?? '') || path.resolve(input.directory) !== input.directory || input.directory.includes('\0')
     || input.sessionID !== undefined && (typeof input.sessionID !== 'string' || !/^ses[a-zA-Z0-9_-]{1,128}$/.test(input.sessionID))
-    || !['devryan-title','devryan-commit','devryan-pr'].includes(input.agent)
+    || !['devryan-title','devryan-commit','devryan-pr','devryan-notify'].includes(input.agent)
     || !id(input.providerID) || !id(input.modelID) || input.variant !== undefined && !id(input.variant)
     || input.selectionMode !== undefined && !['configured','active'].includes(input.selectionMode)
     || input.selectionRevision !== undefined && !id(input.selectionRevision)

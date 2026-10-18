@@ -57,7 +57,7 @@ describe('managed Agent settings presentation', () => {
       'onModelChange: setBackupModel,',
     ].join('\n                    '));
     expect(pageSource).toContain('{!isCouncilAgent && !isPersonalModelEditor ? (');
-    expect(pageSource).toContain('disabled={!canEditSelectedModel || isSavingModelOverride || !backupModel.trim()}');
+    expect(pageSource).toContain('disabled={!canEditSelectedModel || isSavingModelOverride || !backupModel.trim() || Boolean(backupModelError)}');
     expect(pageSource).toContain('disabled={!canEditSelectedModel || isSavingModelOverride || !savedBackupModelRef}');
   });
 });

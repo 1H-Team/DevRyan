@@ -1,5 +1,25 @@
 # Native startup catalog diagnostics
 
+## Managed task admission errors
+
+The controller bridge preserves the shared allowlisted model-admission reason,
+bounded model tuple and constructed Settings guidance. It continues to expose
+only the code for other bridge failures. This lets `devryan_task` explain an
+unsupported reasoning variant without forwarding foreign error text or arbitrary
+details. Admission records the parent dispatch message and tool-call identities
+before any child session is created.
+
+## Image context preparation
+
+`native-image-runtime.js` skips the confined image worker only when the selected
+canonical user rows contain exclusively text parts (or no parts). It still
+validates the canonical anchor, authorization and unchanged before/after context,
+and retains owned-request cancellation and settlement. Historical images and
+unknown part shapes keep the existing worker and publication path. A successful
+validated return emits `native_image_context` with only the `text-only` or
+`worker` outcome, bounded message count and elapsed milliseconds; observation
+cannot change context delivery. Direct image routing is unchanged.
+
 ## Mandatory startup contract
 
 `native-artifacts.js` bounds manifest reads and keeps every integrity check before
@@ -169,22 +189,25 @@ module, `controller-slim.ts`, `controller-webfetch.ts`,
 
 `native-configuration-snapshot.js` applies `runtime-helper-agents.js` after saved
 and Slim agent resolution. This installs the hidden, deny-all `devryan-title`,
-`devryan-commit` and `devryan-pr` roles without assigning a model or variant,
-and disables native `title`. The existing standard title coordinator owns
-generation, bounded retry/fallback and compare-before-rename persistence.
-Without those roles, `controller-webfetch.ts` rejects generation with
-`native_helper_agent_unavailable` before a provider request. The compiled
+`devryan-commit`, `devryan-pr` and `devryan-notify` roles without assigning a
+model or variant, and disables native `title`. The existing standard title
+coordinator owns generation, bounded retry/fallback and compare-before-rename
+persistence. Without those roles, `controller-webfetch.ts` rejects generation
+with `native_helper_agent_unavailable` before a provider request. The compiled
 controller-webfetch test now starts from resolver-produced configuration;
 the multipart Plan admission/projection/title regression checks that synthetic
 format instructions remain excluded while every real request part is retained.
 
 `native-authorization.js.captureHelperSelection` resolves the effective shared
 helper tuple/revision inside current title-owner or exact web-caller grants.
-`native-admission-owner.js` retains this configured/active selection alongside
-the existing title, commit or PR purpose and rechecks it before physical model
-use. Configured helpers and active fallback both omit variant for Default
-reasoning. Admission requires a captured revision and recheck owner; missing
-authority refuses before provider work, while unavailable settings return 503.
+`devryan-notify` (notification summaries) follows the title path: detached
+authorization bound to the canonical session, with a session required and no
+web request principal. `native-admission-owner.js` retains this configured/active
+selection alongside the existing title, commit, PR or notification purpose and
+rechecks it before physical model use. Configured helpers and active fallback
+both omit variant for Default reasoning. Admission requires a captured revision
+and recheck owner; missing authority refuses before provider work, while
+unavailable settings return 503.
 Neither path switches the primary selection or grants tools.
 An issued private title permit admits only its exact native rename after fresh
 session/title/model/agent, revision/hold and owner checks. That validated permit

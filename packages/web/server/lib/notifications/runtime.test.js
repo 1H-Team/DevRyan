@@ -7,6 +7,7 @@ const createNotificationTriggerRuntime = (options = {}) => createNotificationTri
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createNotificationTriggerRuntime as createNotificationTriggerRuntimeNative } from './runtime.js';
+import { prepareNotificationLastMessage } from './message.js';
 import { createNotificationTemplateRuntime } from './template-runtime.js';
 
 const createCompletionPayload = (overrides = {}) => ({
@@ -139,8 +140,10 @@ const createRuntime = (settings = {}, options = {}) => {
       },
     })),
     prepareNotificationLastMessage: vi.fn(async ({ message }) => message),
-    summarizeText: vi.fn(async (text) => text),
-    resolveZenModel: vi.fn(async () => 'gpt-5-nano'),
+    resolveHelperSelection: vi.fn(async () => ({
+      providerID: 'helper', modelID: 'flash', revision: 'saved', selectionMode: 'configured', selectionRevision: 'saved',
+    })),
+    generateHelperText: vi.fn(async () => ({ text: 'Helper summary' })),
     buildTemplateVariables: vi.fn(async (_payload, sessionId) => ({
       project_name: 'Project',
       worktree: '/tmp/project',
@@ -190,8 +193,8 @@ const createRuntime = (settings = {}, options = {}) => {
   const runtime = createNotificationTriggerRuntime({
     readSettingsFromDisk: mocks.readSettingsFromDisk,
     prepareNotificationLastMessage: mocks.prepareNotificationLastMessage,
-    summarizeText: mocks.summarizeText,
-    resolveZenModel: mocks.resolveZenModel,
+    resolveHelperSelection: mocks.resolveHelperSelection,
+    generateHelperText: mocks.generateHelperText,
     buildTemplateVariables: mocks.buildTemplateVariables,
     extractLastMessageText: mocks.extractLastMessageText,
     fetchSessionMessages: mocks.fetchSessionMessages,
@@ -507,7 +510,7 @@ describe('notification trigger runtime completion gating', () => {
     expect(calls.push).toHaveLength(0);
     expect(mocks.buildTemplateVariables).not.toHaveBeenCalled();
     expect(mocks.prepareNotificationLastMessage).not.toHaveBeenCalled();
-    expect(mocks.summarizeText).not.toHaveBeenCalled();
+    expect(mocks.generateHelperText).not.toHaveBeenCalled();
   });
 
   it('still sends always-mode completion notifications while the window is focused', async () => {
@@ -524,15 +527,15 @@ describe('notification trigger runtime completion gating', () => {
     expect(mocks.buildTemplateVariables).toHaveBeenCalledOnce();
   });
 
-  it('does not fetch plan history or resolve a Zen model for an ordinary unsummarized completion', async () => {
+  it('does not fetch plan history or call the helper for an ordinary short completion', async () => {
     const { runtime, calls, mocks } = createRuntime({ summarizeLastMessage: false });
 
     await completeSession(runtime);
 
     expect(calls.desktop).toHaveLength(1);
     expect(mocks.fetchSessionMessages).not.toHaveBeenCalled();
-    expect(mocks.resolveZenModel).not.toHaveBeenCalled();
-    expect(mocks.summarizeText).not.toHaveBeenCalled();
+    expect(mocks.resolveHelperSelection).not.toHaveBeenCalled();
+    expect(mocks.generateHelperText).not.toHaveBeenCalled();
   });
 
   it('deduplicates terminal message and busy/idle repeats by assistant message', async () => {
@@ -762,8 +765,8 @@ describe('notification trigger runtime completion gating', () => {
     expect(calls.push[0].data).toMatchObject({ type: 'plan-ready', sourceMessageId: 'msg_1' });
   });
 
-  it('delivers a cached sentinel plan without history or Zen enrichment', async () => {
-    const { runtime, calls, mocks } = createRuntime({ summarizeLastMessage: false });
+  it('delivers a cached sentinel plan without history or helper enrichment', async () => {
+    const { runtime, calls, mocks } = createRuntime();
     mocks.fetchSessionMessages.mockRejectedValue(new Error('history timeout'));
 
     await completePlanSession(runtime);
@@ -771,7 +774,7 @@ describe('notification trigger runtime completion gating', () => {
     expect(calls.desktop).toHaveLength(1);
     expect(calls.desktop[0].kind).toBe('plan-ready');
     expect(mocks.fetchSessionMessages).not.toHaveBeenCalled();
-    expect(mocks.resolveZenModel).not.toHaveBeenCalled();
+    expect(mocks.resolveHelperSelection).not.toHaveBeenCalled();
   });
 
   it.each(['instruction-first', 'maintenance-first'])('suppresses maintenance Plan Ready across cached and payload fallback paths (%s)', async (order) => {
@@ -1273,5 +1276,95 @@ describe('notification trigger runtime on OpenCode 2 (openCodeClient)', () => {
     // The lineage is unknown, so the child is not treated as auto-accepting.
     expect(calls.desktop).toHaveLength(1);
     expect(calls.desktop[0].kind).toBe('permission');
+  });
+});
+
+describe('always-on notification summarization through the devryan-notify helper', () => {
+  const longMessage = 'a'.repeat(300);
+  const completionSettings = {
+    nativeNotificationsEnabled: true,
+    notificationMode: 'always',
+    notifyOnCompletion: true,
+    notificationTemplates: { completion: { title: 'Session complete', message: '{last_message}' } },
+  };
+
+  const createHelperRuntime = ({ helperText, sessionInfo } = {}) => {
+    const helperSelectionInputs = [];
+    const calls = { desktop: [] };
+    const mocks = {
+      resolveHelperSelection: vi.fn(async (input) => {
+        helperSelectionInputs.push(input);
+        return { providerID: 'helper', modelID: 'flash', revision: 'saved', selectionMode: 'configured', selectionRevision: 'saved' };
+      }),
+      generateHelperText: vi.fn(async () => ({ text: helperText ?? 'Concise completion summary' })),
+      fetchSessionInfo: vi.fn(async () => (
+        sessionInfo ?? { id: 'ses_1', title: 'Session title', directory: '/fixture-directory' }
+      )),
+      extractLastMessageText: vi.fn(() => longMessage),
+    };
+    const runtime = createNotificationTriggerRuntime({
+      readSettingsFromDisk: async () => completionSettings,
+      prepareNotificationLastMessage,
+      resolveHelperSelection: mocks.resolveHelperSelection,
+      generateHelperText: mocks.generateHelperText,
+      buildTemplateVariables: vi.fn(async () => ({ session_name: 'Session title' })),
+      extractLastMessageText: mocks.extractLastMessageText,
+      fetchSessionMessages: vi.fn(async () => []),
+      fetchSessionInfo: mocks.fetchSessionInfo,
+      fetchLastAssistantMessageText: vi.fn(async () => longMessage),
+      resolveNotificationTemplate: (template, variables) => template.replace(/\{(\w+)\}/g, (_match, key) => variables[key] ?? ''),
+      shouldApplyResolvedTemplateMessage: () => true,
+      emitDesktopNotification: (payload) => calls.desktop.push(payload),
+      broadcastUiNotification: vi.fn(),
+      sendPushToAllUiSessions: vi.fn(async () => {}),
+      completionSettleMs: 0,
+    });
+    return { runtime, calls, mocks, helperSelectionInputs };
+  };
+
+  it('summarizes a long completion through the configured helper model', async () => {
+    const { runtime, calls, mocks, helperSelectionInputs } = createHelperRuntime();
+
+    await completeSession(runtime);
+
+    expect(mocks.resolveHelperSelection).toHaveBeenCalledOnce();
+    expect(helperSelectionInputs[0]).toMatchObject({
+      agent: 'devryan-notify',
+      directory: '/fixture-directory',
+      sessionID: 'ses_1',
+      selectionMode: 'configured',
+    });
+    expect(mocks.generateHelperText).toHaveBeenCalledOnce();
+    expect(mocks.generateHelperText.mock.calls[0][0]).toMatchObject({
+      agent: 'devryan-notify',
+      providerID: 'helper',
+      modelID: 'flash',
+      selectionMode: 'configured',
+      selectionRevision: 'saved',
+    });
+    expect(calls.desktop).toHaveLength(1);
+    expect(calls.desktop[0].body).toBe('Concise completion summary');
+  });
+
+  it('falls back to plain truncation when the helper fails', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { runtime, calls, mocks } = createHelperRuntime();
+    mocks.generateHelperText.mockRejectedValue(new Error('helper unavailable'));
+
+    await completeSession(runtime);
+
+    expect(mocks.generateHelperText).toHaveBeenCalledOnce();
+    expect(calls.desktop).toHaveLength(1);
+    expect(calls.desktop[0].body).toBe(`${'a'.repeat(250)}...`);
+  });
+
+  it('falls back to plain truncation when the session directory is unavailable', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { runtime, calls } = createHelperRuntime({ sessionInfo: { id: 'ses_1', title: 'Session title' } });
+
+    await completeSession(runtime);
+
+    expect(calls.desktop).toHaveLength(1);
+    expect(calls.desktop[0].body).toBe(`${'a'.repeat(250)}...`);
   });
 });

@@ -518,7 +518,8 @@ export function createNativeRuntimeOwner(options) {
         configurationSnapshot,locations:bundle.locations,configDirectory:descriptor.launch.opencodeConfigDirectory,ponytailInstructions:bundle.reviewedConfiguration.ponytailInstructions}):undefined;
       slimContext=configurationSnapshot&&bundle.reviewedConfiguration?createNativeSlimContextOwner({admissionOwner:nativeOwner,openCodeClient,primaryRuntime,
         getManagedRuntime,getInstanceID:()=>nativeInstanceID===instanceID?instanceID:undefined,originals:bundle.reviewedConfiguration,locations:configurationSnapshot.locations}):undefined;
-      images=configurationSnapshot&&bundle.reviewedPlugins.some(row=>row.id==='devryan.slim')?createNativeImageRuntime({admissionOwner:nativeOwner,executionHost,readContext:readCanonicalContext,locations:configurationSnapshot.locations}):undefined;
+      images=configurationSnapshot&&bundle.reviewedPlugins.some(row=>row.id==='devryan.slim')?createNativeImageRuntime({admissionOwner:nativeOwner,executionHost,readContext:readCanonicalContext,locations:configurationSnapshot.locations,
+        onOutcome:({directory,sessionID,...payload})=>options.recordDiagnostic?.({type:'lifecycle',event:'native_image_context',directory,sessionID,payload})}):undefined;
       const documentOrigin=bundle.reviewedPlugins.find(row=>row.id==='devryan.document-reader');
       if(documentOrigin&&configurationSnapshot&&bundle.reviewedConfiguration){
         const documentOwner=createNativeDocumentOwner({locations:bundle.locations,cacheRoot:path.join(descriptor.launch.global.cache,'devryan-documents'),

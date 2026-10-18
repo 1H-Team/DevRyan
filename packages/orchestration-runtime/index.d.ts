@@ -30,6 +30,21 @@ export function isManagedModelAvailableInCatalog(
   modelId: unknown,
   variant?: string | null,
 ): boolean | null;
+export function inspectManagedModelInCatalog(
+  payload: unknown,
+  providerId: unknown,
+  modelId: unknown,
+  variant?: string | null,
+): import('../shared-runtime/lib/model-selection-availability.js').ModelSelectionAvailability & {
+  supportedVariants?: string[]; modelName?: string;
+};
+export function projectManagedModelValidationFailure(value: unknown): {
+  code: 'managed_agent_model_unavailable' | 'managed_agent_model_availability_unknown';
+  message: string;
+  details: { reason: 'provider_missing' | 'model_missing' | 'variant_missing' | 'selection_unavailable' | 'catalog_unavailable';
+    providerId: string | null; modelId: string | null; variant: string | null;
+    agent?: string; modelName?: string; supportedVariants?: string[] };
+} | null;
 export function isXaiProviderID(providerID: unknown): boolean;
 export function listXaiModelIds(providerPayload: unknown): string[];
 export function createXaiToolCatalogCache(options?: {

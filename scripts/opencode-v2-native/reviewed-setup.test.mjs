@@ -75,6 +75,14 @@ test('snapshot preserves genuine saved overrides but does not self-shadow Slim/i
   assert.ok(location.activeRegistrationIDs.includes('devryan.browser'));
   assert.equal(location.compatibility.mcp.compiled.url,'http://127.0.0.1:1/mcp');assert.deepEqual(location.requiredCatalogs.mcp,['compiled']);
   assert.deepEqual(location.compatibility.slim.mergedConfig.disabled_mcps,['websearch','context7','grep_app']);
+  for(const explorerVariant of ['low','medium']){
+   attachReviewedSetup({bundle,binding,registrationBytes,configuration,browser:true,explorerVariant});
+   const admission=(await bundle.resolveConfiguration(2)).locations[0];
+   assert.equal(admission.configuration.agents.explorer.model.variant,explorerVariant);
+   assert.equal(admission.compatibility.slim.mergedConfig.agents.explorer.variant,explorerVariant);
+   assert.deepEqual(configuration,unchangedConfiguration);
+  }
+  for(const explorerVariant of ['high','',null])assert.throws(()=>attachReviewedSetup({bundle,binding,registrationBytes,configuration,explorerVariant}),/Invalid Explorer admission fixture variant/);
  }finally{await fs.rm(root,{recursive:true,force:true});}
 });
 

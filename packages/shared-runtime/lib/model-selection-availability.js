@@ -4,7 +4,7 @@ const unavailable = reason => ({ status: 'unavailable', reason });
 
 /** Inspect capability evidence without changing the requested selection or asserting credentials. */
 export function inspectModelSelection(selection, catalog, { variantsComplete = true } = {}) {
-  if (!record(catalog) || !Array.isArray(catalog.providers)) return unknown();
+  if (!record(catalog) || catalog.catalogIncomplete === true || !Array.isArray(catalog.providers)) return unknown();
   const provider = catalog.providers.find(row => record(row)
     && (row.id ?? row.providerID ?? row.providerId) === selection.providerID);
   if (!provider) return unavailable('provider_missing');

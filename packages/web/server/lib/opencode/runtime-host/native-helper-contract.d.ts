@@ -1,6 +1,6 @@
 export interface NativeHelperInput {
  readonly operationID?:string;
- readonly directory:string;readonly sessionID?:string;readonly agent:'devryan-title'|'devryan-commit'|'devryan-pr';
+ readonly directory:string;readonly sessionID?:string;readonly agent:'devryan-title'|'devryan-commit'|'devryan-pr'|'devryan-notify';
  readonly providerID:string;readonly modelID:string;readonly variant?:string;readonly selectionMode?:'configured'|'active';readonly selectionRevision?:string;readonly prompt:string;readonly system?:string;
  readonly timeoutMs?:number;readonly maxOutputTokens?:number;
 }

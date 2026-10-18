@@ -137,7 +137,7 @@ test('controller settlement cancels paused old capture, reaps its keeper and per
 
 // These are canonical record/renderer graph fixtures. The independent shell
 // completion owner tests cover creation of the same source= shell record.
-for(const tail of ['shell','status','compaction'])test(`original native ${tail} context selects canonical active images before the actual worker`,async()=>{
+for(const tail of ['shell','status','compaction'])test(`original native ${tail} context ${tail==='compaction'?'preserves its text without starting an image worker':'selects canonical active images before the actual worker'}`,async()=>{
  let directory;const sessionID='ses_images';
  const user={id:'msg_user',type:'user',text:'Keep this canonical user text',time:{created:1},files:[{mime:'image/png',name:'report.png',data:bytes.toString('base64'),source:{type:'data'}}]};
  const continuation=tail==='compaction'?{id:'msg_summary',type:'compaction',status:'completed',reason:'auto',summary:'Canonical text summary',recent:'',time:{created:2}}:
@@ -147,20 +147,24 @@ for(const tail of ['shell','status','compaction'])test(`original native ${tail} 
   return Response.json(body);
  }});
  const readContext=async()=>{const page=await privileged.readCanonicalUserPage(sessionID,{limit:200},{directory});return {records:page.records,latestTurnParent:page.latestTurnParent};};
- const fixtureResult=await fixture({readContext});directory=fixtureResult.directory;const {host,receipts}=fixtureResult;
- const images=createNativeImageRuntime({locations:[{directory}],readContext,admissionOwner:{captureSessionHookAuthorization:async()=>async()=>{}},executionHost:host});
+ const fixtureResult=await fixture({readContext});directory=fixtureResult.directory;const {host,receipts,changes}=fixtureResult;let workerCalls=0;
+ const images=createNativeImageRuntime({locations:[{directory}],readContext,admissionOwner:{captureSessionHookAuthorization:async()=>async()=>{}},
+  executionHost:{nativeContextAssets:(...args)=>{workerCalls++;return host.nativeContextAssets(...args);}}});
  const transform=createControllerImages(async(method,input)=>method==='native.slim.images'?images.transform(input):images.settle(input),async()=>{});
  try{
   const active=tail==='compaction'?[continuation]:raw;
   const output={messages:toLLMMessages2(active,{providerID:'openai'}).map(info=>({info,parts:info.content}))};
+  const original=tail==='compaction'?structuredClone(output):undefined;
   expect(output.messages.at(-1).info.id).toBe(continuation.id);
   await transform({directory,sessionID,permit:{token:'private'},domain:'session',phase:'context',signal:new AbortController().signal,event:{}},{},output);
-  expect(receipts).toHaveLength(1);expect(receipts[0].receipt).toMatchObject({terminated:true,confined:true,cancelled:false,exitCode:0});
-  expect(receipts[0].messageID).toBe(tail==='status'?user.id:continuation.id);
   if(tail==='compaction'){
+   expect(workerCalls).toBe(0);expect(receipts).toEqual([]);expect(changes).toEqual([]);
+   expect(output).toEqual(original);expect(await host.runtime.activeLeases({directory})).toEqual([]);
    expect(await fs.stat(path.join(directory,'.opencode/images')).catch(()=>null)).toBeNull();
    expect(output.messages).toHaveLength(1);expect(output.messages[0].info.id).toBe(continuation.id);
   }else{
+   expect(workerCalls).toBe(1);expect(receipts).toHaveLength(1);expect(receipts[0].receipt).toMatchObject({terminated:true,confined:true,cancelled:false,exitCode:0});
+   expect(receipts[0].messageID).toBe(tail==='status'?user.id:continuation.id);
    const file=path.join(directory,'.opencode/images/ses_images',`report-${sha}.png`);
    expect(await fs.readFile(file)).toEqual(bytes);
    expect(output.messages[0].parts.some(part=>part.type==='media')).toBe(false);

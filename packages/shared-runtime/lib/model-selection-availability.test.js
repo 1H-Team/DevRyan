@@ -14,6 +14,7 @@ test('availability preserves an exact effort and distinguishes incomplete from u
 test('empty, malformed, unavailable and native array catalogs retain distinct evidence', () => {
   const selection = { providerID: 'owned', modelID: 'model', variant: 'high' };
   expect(inspectModelSelection(selection, null).status).toBe('unknown');
+  expect(inspectModelSelection(selection, { catalogIncomplete: true, providers: [] })).toEqual({ status: 'unknown', reason: 'catalog_unavailable' });
   expect(inspectModelSelection(selection, { providers: [] })).toEqual({ status: 'unavailable', reason: 'provider_missing' });
   expect(inspectModelSelection(selection, { providers: [{ id: 'owned', models: { model: { variants: [{ id: 'high' }] } } }] }).status).toBe('available');
   expect(inspectModelSelection(selection, { providers: [{ id: 'owned', models: { model: { available: false } } }] }).reason).toBe('model_missing');

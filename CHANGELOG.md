@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.3] - 2026-10-18
+
+- Preserve explicit agent reasoning choices when switching models, show unsupported selections with the model's available options, and reject invalid managed task selections before creating a child session. Incomplete model catalogs remain unknown rather than marking models unavailable.
+- Simplify agent and session default settings and summarize notification messages through the configured Helper Model, with plain-text fallback when summarization is unavailable.
+- Skip image worker preparation for validated text-only context while preserving authorization, cancellation and context checks. Add native admission, notification, image-context and agent settings regression coverage.
+
 ## [2.1.2] - 2026-10-18
 
 - The agent orchestration (orchestrator, specialists, presets, task board, `/deepwork`, `/loop`, `/reflect`, `/interview`, web fetch and AST search) is now built into DevRyan instead of shipping as the Oh My OpenCode Slim plugin. It is always on and no longer appears as a plugin in Settings. Upgraded installs that still list the old plugin keep working; the entry is ignored.

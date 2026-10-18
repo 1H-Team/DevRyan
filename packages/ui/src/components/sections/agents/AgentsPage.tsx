@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils';
 import { ModelSelector } from './ModelSelector';
 import { BehaviorPage } from '@/components/sections/behavior/BehaviorPage';
 import { AgentRuntimePage } from './AgentRuntimePage';
-import { resolveAgentsGlobalView, useSessionDefaultAgentName } from './useAgentsSettingsEntries';
+import { resolveAgentsGlobalView } from './useAgentsSettingsEntries';
 import { SettingsBadge, SettingsDetailHeader, SettingsDetailSection } from '@/components/sections/shared';
 import { getAgentIconColor } from '@/lib/agentColors';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -38,8 +38,8 @@ import {
 } from '@/lib/agentDefaultResolution';
 import { parseModelIdentifier } from '@/lib/modelIdentifier';
 import { getModelVariantControlState, getModelVariantDisplayState, getOrderedThinkingVariants } from '@/lib/providers/variantControls';
-import { resolveAgentVariantForModel, resolveAgentVariantForSave, resolveAgentVariantSelection } from './agentVariantSelection';
-import { formatEffortLabel, formatVisibleEffortLabel } from '@/components/chat/mobileControlsUtils';
+import { getAgentVariantSelectionError, resolveAgentVariantForModel, resolveAgentVariantForSave, resolveAgentVariantSelection } from './agentVariantSelection';
+import { formatEffortLabel } from '@/components/chat/mobileControlsUtils';
 import {
   Select,
   SelectContent,
@@ -292,7 +292,6 @@ export const AgentsPage: React.FC = () => {
   })));
 
   const selectedAgent = selectedAgentName ? getAgentByName(selectedAgentName) : null;
-  const sessionDefaultAgentName = useSessionDefaultAgentName();
   const providers = useConfigStore((state) => state.providers);
   const personalAgentSelections = useConfigStore((state) => state.agentModelSelections);
   const persistAgentModelSelection = useConfigStore((state) => state.persistAgentModelSelection);
@@ -316,6 +315,7 @@ export const AgentsPage: React.FC = () => {
   const [pendingRuleName, setPendingRuleName] = React.useState('');
   const [pendingRulePattern, setPendingRulePattern] = React.useState('*');
   const [isToolPermissionsOpen, setIsToolPermissionsOpen] = React.useState(false);
+  const [isSystemPromptOpen, setIsSystemPromptOpen] = React.useState(false);
   const authPrincipal = useAuthPrincipal();
   const permissionsUiHidden = isAgentPermissionsUiHidden(authPrincipal);
   const behaviorUiHidden = isGlobalAgentBehaviorUiHidden(authPrincipal);
@@ -368,6 +368,10 @@ export const AgentsPage: React.FC = () => {
     const parsedModel = parseModelIdentifier(modelRef);
     return parsedModel ? providers.find((entry) => entry.id === parsedModel.providerId) : undefined;
   }, [providers]);
+  const primaryModelError = getAgentVariantSelectionError(getProviderForModelRef(model), model, isCouncilAgent ? councilVariants[0] : variant);
+  const councilModelError = isCouncilAgent ? councilModels.some((entry, index) => entry.trim()
+    && getAgentVariantSelectionError(getProviderForModelRef(entry), entry, councilVariants[index])) : false;
+  const backupModelError = getAgentVariantSelectionError(getProviderForModelRef(backupModel), backupModel, backupVariant);
   const resolveVariantForModel = React.useCallback((
     modelRef: string,
     currentVariant: string | undefined,
@@ -423,6 +427,7 @@ export const AgentsPage: React.FC = () => {
   }, []);
 
   const setCouncilVariantAt = React.useCallback((index: number, value: string | undefined) => {
+    if (index === 0) setVariant(value);
     setCouncilVariants((prev) => {
       const next = [...prev];
       while (next.length <= index) {
@@ -737,21 +742,22 @@ export const AgentsPage: React.FC = () => {
       const resolvedVariant = resolveAgentVariantForSave(
         getProviderForModelRef(trimmedModel),
         trimmedModel,
-        variant,
+        isCouncilAgent ? councilVariants[0] : variant,
       );
-      const resolvedCouncillors = councilModels
-        .map((entry, index) => {
-          const trimmedCouncilModel = entry.trim();
+      const resolvedCouncillors = (isCouncilAgent ? councilModels : [])
+        .map((entry, index) => ({ model: entry.trim(), variant: councilVariants[index] }))
+        .filter((entry) => entry.model.length > 0)
+        .map((entry) => {
+          const trimmedCouncilModel = entry.model;
           return {
             model: trimmedCouncilModel,
             variant: resolveAgentVariantForSave(
               getProviderForModelRef(trimmedCouncilModel),
               trimmedCouncilModel,
-              councilVariants[index],
+              entry.variant,
             ),
           };
-        })
-        .filter((entry) => entry.model.length > 0);
+        });
 
       if (isPersonalModelEditor) {
         const parsed = parseModelIdentifier(trimmedModel);
@@ -876,6 +882,7 @@ export const AgentsPage: React.FC = () => {
   }) => {
     const parsedRowModel = parseModelIdentifier(modelRef);
     const rowProvider = parsedRowModel ? providers.find((entry) => entry.id === parsedRowModel.providerId) : undefined;
+    const selectionError = getAgentVariantSelectionError(rowProvider, modelRef, value);
     const rowVariantControlState = parsedRowModel
       ? getModelVariantControlState(rowProvider, parsedRowModel.modelId, value)
       : null;
@@ -887,7 +894,7 @@ export const AgentsPage: React.FC = () => {
         ?? rowAvailableVariants.find((entry) => entry.trim().toLowerCase() === value.trim().toLowerCase())
       : undefined;
     const retainedVariant = typeof value === 'string' && value.trim() ? value.trim() : undefined;
-    const unlistedVariant = retainedVariant && !selectedVariant ? retainedVariant : undefined;
+    const unlistedVariant = retainedVariant && !selectedVariant && selectionError ? retainedVariant : undefined;
     const selectValue = selectedVariant ?? retainedVariant ?? NO_VARIANT_VALUE;
     const rowVariantDisplayState = parsedRowModel
       ? getModelVariantDisplayState(rowProvider, parsedRowModel.modelId, value)
@@ -895,11 +902,7 @@ export const AgentsPage: React.FC = () => {
     const rowFastEnabled = Boolean(rowVariantDisplayState?.fastEnabled);
     const rowEffortLabel = selectedVariant || retainedVariant
       ? formatEffortLabel(selectedVariant ?? retainedVariant, { providerId: parsedRowModel?.providerId })
-      : (
-        rowVariantDisplayState?.selectedVariant && rowAvailableVariants.length > 0
-          ? formatVisibleEffortLabel(rowVariantDisplayState.selectedVariant, rowAvailableVariants, { providerId: parsedRowModel?.providerId })
-          : formatEffortLabel(undefined, { providerId: parsedRowModel?.providerId })
-      );
+      : 'Provider Default';
     const applyVariantUpdate = (updates: { fastEnabled?: boolean; variant?: string }) => {
       const selection = resolveAgentVariantSelection(rowProvider, modelRef, value, updates);
       if (selection.modelRef !== modelRef) {
@@ -928,7 +931,7 @@ export const AgentsPage: React.FC = () => {
             }}
             disabled={!canEditSelectedModel || isSavingModelOverride || (!rowSupportsVariants && !rowCanToggleFast && !unlistedVariant)}
           >
-            <SelectTrigger className="w-fit min-w-[120px]">
+            <SelectTrigger className="w-fit min-w-[120px]" aria-invalid={Boolean(selectionError)}>
               <SelectValue placeholder={t('settings.agents.page.field.thinkingPlaceholder')}>
                 {(rowEffortLabel || rowFastEnabled) ? (
                   <span className="inline-flex items-center gap-1">
@@ -955,8 +958,8 @@ export const AgentsPage: React.FC = () => {
                   <SelectSeparator />
                 </>
               ) : null}
-              <SelectItem value={NO_VARIANT_VALUE}>{formatEffortLabel(undefined)}</SelectItem>
-              {unlistedVariant ? <SelectItem value={unlistedVariant}>{formatEffortLabel(unlistedVariant)} (Not in Current Catalog)</SelectItem> : null}
+              <SelectItem value={NO_VARIANT_VALUE}>Provider Default</SelectItem>
+              {unlistedVariant ? <SelectItem value={unlistedVariant} disabled>{formatEffortLabel(unlistedVariant)} (Not in Current Catalog)</SelectItem> : null}
               {rowAvailableVariants.map((availableVariant) => (
                 <SelectItem key={availableVariant} value={availableVariant}>
                   {formatEffortLabel(availableVariant, { providerId: parsedRowModel?.providerId })}
@@ -964,7 +967,7 @@ export const AgentsPage: React.FC = () => {
               ))}
             </SelectContent>
           </Select>
-          {unlistedVariant ? <span className="typography-meta text-[var(--status-warning)]">Saved selection: {unlistedVariant}. Availability is not confirmed by the current catalog.</span> : null}
+          {selectionError ? <span role="alert" className="typography-meta text-[var(--status-error)]">{retainedVariant ? `Saved selection: ${retainedVariant}. ` : ''}{selectionError}</span> : null}
         </div>
       </div>
     );
@@ -1034,11 +1037,6 @@ export const AgentsPage: React.FC = () => {
           className="mb-4"
           icon={<RiAiAgentLine style={{ color: `var(${getAgentIconColor(selectedAgentName).var})` }} />}
           title={formatAgentDisplayName(selectedAgentName)}
-          badges={selectedAgentName === sessionDefaultAgentName ? (
-            <SettingsBadge tone="accent" title={t('settings.agents.sidebar.badge.defaultTitle')}>
-              {t('settings.agents.sidebar.badge.default')}
-            </SettingsBadge>
-          ) : null}
         />
 
         {staleModelOverrides.length > 0 && (
@@ -1229,7 +1227,7 @@ export const AgentsPage: React.FC = () => {
                         size="xs"
                         className="!font-normal normal-case"
                         onClick={() => void handleSaveBackupModel()}
-                        disabled={!canEditSelectedModel || isSavingModelOverride || !backupModel.trim()}
+                        disabled={!canEditSelectedModel || isSavingModelOverride || !backupModel.trim() || Boolean(backupModelError)}
                       >
                         <RiSaveLine className="h-3.5 w-3.5" />
                         {t('settings.agents.page.actions.saveBackupModel')}
@@ -1290,7 +1288,7 @@ export const AgentsPage: React.FC = () => {
                       size="xs"
                       className="!font-normal normal-case"
                       onClick={() => void handleSaveModelOverride()}
-                      disabled={!canEditSelectedModel || isSavingModelOverride}
+                      disabled={!canEditSelectedModel || isSavingModelOverride || Boolean(primaryModelError) || councilModelError}
                     >
                       <RiSaveLine className="h-3.5 w-3.5" />
                       {t('settings.agents.page.actions.saveModelOverride')}
@@ -1328,22 +1326,36 @@ export const AgentsPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="py-1.5">
-              <span className="typography-ui-label text-foreground">{t('settings.agents.page.section.systemPrompt')}</span>
-              <div className="mt-1.5">
-                <Textarea
-                  value={prompt}
-                  readOnly
-                  aria-readonly="true"
-                  placeholder={t('settings.agents.page.field.systemPromptPlaceholder')}
-                  rows={8}
-                  outerClassName="bg-[var(--surface-muted)]"
-                  className="w-full font-mono typography-meta min-h-[120px] max-h-[60vh] bg-transparent resize-y cursor-default"
-                />
-              </div>
-            </div>
-
         </SettingsDetailSection>
+
+        {/* System Prompt */}
+        <Collapsible open={isSystemPromptOpen} onOpenChange={setIsSystemPromptOpen} className="mb-2">
+          <CollapsibleTrigger className="group flex w-full items-center justify-between gap-4 rounded-md px-1 py-1 text-left hover:bg-[var(--interactive-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]">
+            <h3 className="typography-ui-header font-medium text-foreground">
+              {t('settings.agents.page.section.systemPrompt')}
+            </h3>
+            <RiArrowDownSLine
+              className={cn(
+                "h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:text-foreground",
+                isSystemPromptOpen && "rotate-180",
+              )}
+            />
+          </CollapsibleTrigger>
+
+          <CollapsibleContent className="pt-1">
+            <div className="px-1 pb-2">
+              <Textarea
+                value={prompt}
+                readOnly
+                aria-readonly="true"
+                placeholder={t('settings.agents.page.field.systemPromptPlaceholder')}
+                rows={8}
+                outerClassName="bg-[var(--surface-muted)]"
+                className="w-full font-mono typography-meta min-h-[120px] max-h-[60vh] bg-transparent resize-y cursor-default"
+              />
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
 
         {/* Tool Permissions */}
         {!permissionsUiHidden && (

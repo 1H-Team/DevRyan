@@ -12,6 +12,22 @@ const callRpc = (environment, body, options = {}) => fetch(environment.DEVRYAN_O
 });
 
 describe('managed orchestration private host', () => {
+  it('preserves only safe model refusal details across the tool bridge', async () => {
+    const host = createManagedOrchestrationPrivateHost({ handleRpc: async () => {
+      throw Object.assign(new Error('foreign diagnostic text'), { code: 'managed_agent_model_unavailable', statusCode: 409,
+        details: { reason: 'variant_missing', providerId: 'opencode-go', modelId: 'flash', variant: 'medium', token: 'private-token' } });
+    } });
+    const environment = await host.start();
+    try {
+      const response = await callRpc(environment, { method: 'submit', params: {} });
+      expect(response.status).toBe(409);
+      const body = await response.json();
+      expect(body.error.details).toEqual({ reason: 'variant_missing', providerId: 'opencode-go', modelId: 'flash', variant: 'medium' });
+      expect(body.error.message).toContain('or Provider default in Agents settings');
+      expect(JSON.stringify(body)).not.toContain('private-token');
+      expect(JSON.stringify(body)).not.toContain('foreign diagnostic text');
+    } finally { await host.stop(); }
+  });
   it('attributes credential resolution timing through its nested binding without exposing it', async () => {
     const onRequestTiming = vi.fn();
     const host = createManagedOrchestrationPrivateHost({ handleRpc: async () => null, onRequestTiming });

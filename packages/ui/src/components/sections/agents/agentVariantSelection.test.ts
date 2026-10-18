@@ -4,6 +4,7 @@ import {
   resolveAgentVariantForModel,
   resolveAgentVariantForSave,
   resolveAgentVariantSelection,
+  getAgentVariantSelectionError,
 } from './agentVariantSelection';
 
 describe('agent Settings variant selection', () => {
@@ -77,6 +78,56 @@ describe('agent Settings variant selection', () => {
     };
 
     expect(resolveAgentVariantForSave(provider, 'opencode/deepseek-v4-flash-free', 'HIGH')).toBe('high');
-    expect(resolveAgentVariantForSave(provider, 'opencode/deepseek-v4-flash-free', 'stale')).toBe('stale');
+    expect(() => resolveAgentVariantForSave(provider, 'opencode/deepseek-v4-flash-free', 'stale')).toThrow('Choose a supported thinking level or Provider default');
+  });
+
+  test('requires catalog confirmation even when the selected effort is provider default', () => {
+    expect(getAgentVariantSelectionError(undefined, 'example/model', undefined)).toContain('Refresh the model catalog');
+    expect(() => resolveAgentVariantForSave({ id: 'example', models: [] }, 'example/model', 'high')).toThrow('Model availability');
+  });
+
+  test('model changes retain unsupported intent until the user explicitly selects a replacement', () => {
+    const provider = { id: 'example', models: [
+      { id: 'source', variants: { high: {} } },
+      { id: 'target', variants: { medium: {} } },
+    ] };
+    const retained = resolveAgentVariantForModel(provider, 'example/target', 'high');
+    expect(retained).toBe('high');
+    expect(getAgentVariantSelectionError(provider, 'example/target', retained)).toContain('unavailable');
+    expect(resolveAgentVariantForSave(provider, 'example/target', 'medium')).toBe('medium');
+    expect(resolveAgentVariantForSave(provider, 'example/target', undefined)).toBeUndefined();
+  });
+
+  test('fast model changes do not silently discard unsupported effort', () => {
+    const provider = { id: 'example', models: [
+      { id: 'model', variants: { high: {} } },
+      { id: 'model-fast', variants: { medium: {} } },
+    ] };
+    expect(resolveAgentVariantSelection(provider, 'example/model', 'high', { fastEnabled: true }))
+      .toEqual({ modelRef: 'example/model-fast', variant: 'high' });
+  });
+
+  test('does not reinterpret a saved invalid OpenAI none as another effort', () => {
+    const provider = { id: 'openai', models: [{ id: 'model', variants: { low: {}, high: {} } }] };
+    expect(resolveAgentVariantForModel(provider, 'openai/model', 'none')).toBe('none');
+    expect(() => resolveAgentVariantForSave(provider, 'openai/model', 'none')).toThrow('unavailable');
+  });
+
+  test('an explicit fast variant toggle still replaces the thinking variant', () => {
+    const provider = { id: 'example', models: [{ id: 'model', variants: { high: {}, fast: {} } }] };
+    expect(resolveAgentVariantSelection(provider, 'example/model', 'high', { fastEnabled: true }))
+      .toEqual({ modelRef: 'example/model', variant: 'fast' });
+  });
+
+  test('a persisted default sentinel displays and saves as provider default', () => {
+    const provider = { id: 'example', models: [{ id: 'model', variants: { high: {} } }] };
+    expect(resolveAgentVariantForModel(provider, 'example/model', 'default')).toBeUndefined();
+    expect(resolveAgentVariantForSave(provider, 'example/model', 'default')).toBeUndefined();
+    expect(getAgentVariantSelectionError(provider, 'example/model', 'default')).toBeUndefined();
+  });
+
+  test('a model explicitly marked unavailable cannot be saved', () => {
+    const provider = { id: 'example', models: [{ id: 'model', available: false }] };
+    expect(getAgentVariantSelectionError(provider, 'example/model', undefined)).toContain('Model availability');
   });
 });

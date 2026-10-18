@@ -70,11 +70,13 @@ export function createNativeAuthorization({ locations, manifest, getRequestPrinc
       };
     },
     captureHelperSelection: async (input, session) => {
-      const title = input.agent === 'devryan-title';
-      if (!['devryan-title', 'devryan-commit', 'devryan-pr'].includes(input.agent)
-        || !['configured', 'active'].includes(input.selectionMode ?? 'configured') || title && !session) throw fail('native_helper_selection_invalid');
-      const principal = title ? null : structuredClone(getRequestPrincipal());
-      const reauthorize = title ? await (async () => { await detached(session); return () => detached(session); })()
+      // Notifications carry no web request principal: devryan-notify follows
+      // the detached title path (bound to the canonical session, session required).
+      const detachedHelper = ['devryan-title', 'devryan-notify'].includes(input.agent);
+      if (!['devryan-title', 'devryan-commit', 'devryan-pr', 'devryan-notify'].includes(input.agent)
+        || !['configured', 'active'].includes(input.selectionMode ?? 'configured') || detachedHelper && !session) throw fail('native_helper_selection_invalid');
+      const principal = detachedHelper ? null : structuredClone(getRequestPrincipal());
+      const reauthorize = detachedHelper ? await (async () => { await detached(session); return () => detached(session); })()
         : await (async () => {
           // Capture before any async settings read; reuse the exact web grant.
           const original = getRequestPrincipal();
@@ -90,7 +92,7 @@ export function createNativeAuthorization({ locations, manifest, getRequestPrinc
         const multiUser = getMultiUserRuntime();
         if (!multiUser?.enabled && typeof readHelperSettings !== 'function') throw fail('native_helper_settings_unavailable', 503);
         const settings = multiUser?.enabled
-          ? await multiUser.resolveNativeHelperSettings?.({ sessionID: session?.id, directory: input.directory, principal, detached: title })
+          ? await multiUser.resolveNativeHelperSettings?.({ sessionID: session?.id, directory: input.directory, principal, detached: detachedHelper })
           : await readHelperSettings?.();
         if (!settings) throw fail('native_helper_settings_unavailable', 503);
         await reauthorize();

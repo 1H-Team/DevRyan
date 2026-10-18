@@ -19,6 +19,105 @@ import {
 } from './agents.js';
 import { registerConfigEntityRoutes, sanitizeAgentRuntimeMetadata } from './config-entity-routes.js';
 
+describe('agent override selection admission', () => {
+  const model = { providerID: 'opencode-go', modelID: 'deepseek-v4.1-flash' };
+  const catalog = { providers: [{ id: model.providerID, models: {
+    [model.modelID]: { variants: { low: {}, high: {}, max: {} } },
+    other: { variants: { high: {} } },
+  } }] };
+  const setup = () => {
+    let config = { name: 'explorer', model, variant: 'medium' };
+    const getAgentConfig = vi.fn(() => ({ config: structuredClone(config) }));
+    const write = vi.fn((_name, patch) => {
+      config = { ...config, ...patch, model: patch.model ?? config.model };
+      return patch;
+    });
+    const readCatalog = vi.fn(async () => structuredClone(catalog));
+    const validateCursor = vi.fn(async () => null);
+    const mark = vi.fn(async () => ({ requiresApply: true, runtimeApplied: false }));
+    const app = express();
+    registerCommonRequestMiddleware(app, { express });
+    registerConfigEntityRoutes(app, {
+      resolveProjectDirectory: async () => ({ directory: '/project' }),
+      getAgentConfig, writeAgentModelOverride: write, readAgentModelCatalog: readCatalog, validateCursorModelSelection: validateCursor, markConfigChange: mark,
+    });
+    const put = patch => request(app).put('/api/config/agents/explorer/override').send(patch);
+    return { put, write, readCatalog, validateCursor, mark, getAgentConfig, config: () => config };
+  };
+
+  it('rejects the observed unsupported effort without writing or marking an apply', async () => {
+    const h = setup();
+    const response = await h.put({ model: 'opencode-go/deepseek-v4.1-flash', variant: 'medium' });
+    expect(response.status).toBe(409);
+    expect(response.body).toMatchObject({ code: 'managed_agent_model_unavailable', retryable: false,
+      details: { reason: 'variant_missing', agent: 'explorer', ...model, variant: 'medium' } });
+    expect(h.write).not.toHaveBeenCalled(); expect(h.mark).not.toHaveBeenCalled();
+    expect(h.config().variant).toBe('medium');
+    expect(h.readCatalog).toHaveBeenCalledWith('/project');
+  });
+
+  it.each(['low', null])('admits an explicit supported effort or provider default: %s', async variant => {
+    const h = setup();
+    await h.put({ variant }).expect(200);
+    expect(h.write).toHaveBeenCalledExactlyOnceWith('explorer', { model: 'opencode-go/deepseek-v4.1-flash', variant }, '/project');
+    expect(h.mark).toHaveBeenCalledTimes(1);
+  });
+
+  it('checks the inherited effort on model-only changes', async () => {
+    const h = setup();
+    await h.put({ model: 'opencode-go/other' }).expect(409);
+    expect(h.write).not.toHaveBeenCalled();
+    await h.put({ model: 'opencode-go/other', variant: 'high' }).expect(200);
+    expect(h.write).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([null, { catalogIncomplete: true, providers: [] }, { providers: [{ id: 'opencode-go' }] }])(
+    'treats missing or incomplete catalog evidence as retryable', async value => {
+      const h = setup(); h.readCatalog.mockResolvedValue(value);
+      const response = await h.put({ variant: 'low' });
+      expect(response.status).toBe(503);
+      expect(response.body).toMatchObject({ code: 'managed_agent_model_availability_unknown', retryable: true,
+        details: { reason: 'catalog_unavailable' } });
+      expect(h.write).not.toHaveBeenCalled();
+    });
+
+  it('refuses catalog transport failures without mutating settings', async () => {
+    const h = setup(); h.readCatalog.mockRejectedValue(new Error('offline'));
+    await h.put({ variant: 'low' }).expect(503);
+    expect(h.write).not.toHaveBeenCalled();
+  });
+
+  it('refuses to overwrite a concurrent settings change during catalog discovery', async () => {
+    const h = setup();
+    h.readCatalog.mockImplementation(async () => {
+      h.getAgentConfig.mockReturnValue({ config: { ...h.config(), variant: 'max' } });
+      return catalog;
+    });
+    const response = await h.put({ variant: 'low' });
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe('agent_configuration_changed');
+    expect(h.write).not.toHaveBeenCalled();
+  });
+
+  it('validates all effective Council member selections before writing', async () => {
+    const h = setup();
+    await h.put({ variant: 'low', councillors: [{ model: 'opencode-go/other', variant: 'medium' }] }).expect(409);
+    expect(h.write).not.toHaveBeenCalled();
+  });
+
+  it('requires authoritative Cursor selection evidence rather than a display fallback', async () => {
+    const h = setup();
+    await h.put({ model: 'cursor-acp/chosen', variant: 'low' }).expect(503);
+    expect(h.write).not.toHaveBeenCalled(); expect(h.readCatalog).not.toHaveBeenCalled();
+    h.validateCursor.mockResolvedValue(false);
+    await h.put({ model: 'cursor-acp/chosen', variant: 'low' }).expect(409);
+    expect(h.write).not.toHaveBeenCalled();
+    h.validateCursor.mockResolvedValue(true);
+    await h.put({ model: 'cursor-acp/chosen', variant: 'low' }).expect(200);
+    expect(h.validateCursor).toHaveBeenLastCalledWith(expect.objectContaining({ directory: '/project', modelID: 'chosen', variant: 'low' }));
+  });
+});
+
 describe('restricted agent runtime metadata', () => {
   it('preserves effective model and safe Slim preset provenance', () => {
     expect(sanitizeAgentRuntimeMetadata({

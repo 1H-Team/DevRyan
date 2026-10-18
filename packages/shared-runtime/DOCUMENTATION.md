@@ -17,6 +17,8 @@ Copy Diagnostics never includes raw exceptions, credentials or paths.
 
 ## Shared helper model setting
 
+`lib/model-selection-availability.js` inspects exact provider/model/effort catalog evidence without changing the selection. A catalog marked `catalogIncomplete` is unknown, never evidence that a provider or model is missing. Agent settings saves and managed execution admission share this distinction.
+
 `lib/helper-model-selection.js` owns the typed `helperModelSelection` setting:
 `{ providerID, modelID, revision }`. The default is `opencode/deepseek-v4.1-flash`
 with revision `default`. There is no reasoning override: helpers use provider

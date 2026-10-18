@@ -92,11 +92,15 @@ for (const boundary of ['physical','context'] as const) test(`owned original sta
    const canonical=await readUsers();assert.equal(canonical.at(-1).info.id,user.info.id);assert.equal(canonical.some(row=>row.info.id===savedPayload.body.id),false);
    const rows=await Effect.runPromise(nativeStore.messages({sessionID:session.id}));
    const actualContext={messages:toLLMMessages2([...rows].reverse(),{providerID:'openai'}).map(info=>({info,parts:info.content}))};
+   const originalContext=JSON.stringify(actualContext),originalMessages=actualContext.messages.map(message=>({message,info:message.info,parts:message.parts})),originalCanonical=await readContext(),originalPermit=JSON.stringify(runnerPermit);
    assert.equal(actualContext.messages.at(-1).info.id,savedPayload.body.id,'Original native AI conversion retains the status-tail ID');
    const controllerImages=createControllerImages(async(method,input)=>method==='native.slim.images'?images.transform(input):images.settle(input),async()=>{});
    await controllerImages({directory,sessionID:session.id,permit:runnerPermit,domain:'session',phase:'context',signal:new AbortController().signal,event:{}},{},actualContext);
-   assert.equal(enteredAssets,1,'Actual controller context must process the accepted input despite the trailing status notice');enteredAssets=0;
-   const input=imageInput(runnerPermit);try{assert.deepEqual(await images.transform(input),{replacements:[],imagesSkipped:false});assert.equal(enteredAssets,1);}
+   assert.equal(enteredAssets,0,'Canonical text-only input with a trailing status notice must not start image preparation');
+   assert.equal(JSON.stringify(actualContext),originalContext,'Text-only image preparation must preserve the entire controller context');
+   for(const [index,original]of originalMessages.entries()){assert.equal(actualContext.messages[index],original.message);assert.equal(actualContext.messages[index].info,original.info);assert.equal(actualContext.messages[index].parts,original.parts);}
+   assert.deepEqual(await readContext(),originalCanonical,'The no-op must preserve canonical user context');assert.equal(JSON.stringify(runnerPermit),originalPermit);
+   const input=imageInput(runnerPermit);try{assert.deepEqual(await images.transform(input),{replacements:[],imagesSkipped:false});assert.equal(enteredAssets,0);}
    finally{await images.settle(imageScope(input));}
   }
   foreignScope=true;await assert.rejects(()=>admissionOwner.withInterviewAction(action,payload=>gates.controls.interviewActionOwned(payload)));foreignScope=false;
@@ -121,7 +125,7 @@ for (const boundary of ['physical','context'] as const) test(`owned original sta
    const stale=imageInput(currentPermit),beforeAssets=enteredAssets;
    try{await assert.rejects(()=>images.transform(stale),error=>error.code==='native_image_message_stale');assert.equal(enteredAssets,beforeAssets);}finally{await images.settle(imageScope(stale));}
    const current={...imageInput(currentPermit),messageIDs:[user.info.id,newest.info.id]};
-   try{assert.deepEqual(await images.transform(current),{replacements:[],imagesSkipped:false});assert.equal(enteredAssets,beforeAssets+1);}finally{await images.settle(imageScope(current));}
+   try{assert.deepEqual(await images.transform(current),{replacements:[],imagesSkipped:false});assert.equal(enteredAssets,beforeAssets,'A newer canonical text user keeps the no-worker path after stale input is refused');}finally{await images.settle(imageScope(current));}
   }finally{await admissionOwner.handleRpc('native.admission.release',currentPermit);await images.close();}
   result={statusNoticeRetained:true,primaryRequests:1,authorityNegatives:6,canonicalSyntheticUserPreserved:true};
 `+source.slice(end);

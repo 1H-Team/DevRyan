@@ -718,11 +718,13 @@ describe('web managed orchestration runtime', () => {
       getDiagnostics: vi.fn(() => ({})),
     };
     const validateAgentExecution = vi.fn(async () => false);
+    const onModelValidationFailure = vi.fn();
     const runtime = createWebManagedOrchestrationRuntime({
       scheduler,
       persistence: createPersistence(),
       executor: { async start() { throw new Error('must not start'); } },
       validateAgentExecution,
+      onModelValidationFailure,
     });
 
     await expect(runtime.handleRpc({ method: 'submit', params: submitParams(1) }))
@@ -738,6 +740,8 @@ describe('web managed orchestration runtime', () => {
     validateAgentExecution.mockResolvedValueOnce(null);
     await expect(runtime.handleRpc({ method: 'submit', params: submitParams(2) })).rejects.toMatchObject({ code: 'managed_agent_model_availability_unknown', statusCode: 503 });
     expect(scheduler.submit).not.toHaveBeenCalled();
+    expect(onModelValidationFailure.mock.calls.map(([record]) => [record.rootSessionId, record.reason]))
+      .toEqual([['ses_root', 'selection_unavailable'], ['ses_root', 'catalog_unavailable']]);
   });
 
   it('blocks only work-launching RPC actions while work admission is blocked', async () => {
@@ -2989,6 +2993,30 @@ describe('managed orchestration catalogs on gen 2 (openCodeClient)', () => {
     await expect(tolerant.handleRpc({ method: 'submit', params: submitParams(2) })).rejects.toMatchObject({ code: 'managed_agent_model_availability_unknown', statusCode: 503 });
     expect(scheduler.submit).not.toHaveBeenCalled();
     await tolerant.shutdown();
+  });
+
+  it('explains an unsupported non-Cursor variant and journals the refusal before creating work', async () => {
+    const scheduler = createMockScheduler();
+    const onModelValidationFailure = vi.fn();
+    const client = createFakeOpenCodeClient({ providers: { providers: [{ id: 'github-copilot', models: {
+      'gpt-4.1': { name: 'Example Model', variants: { low: {}, high: {}, max: {} } },
+    } }] } });
+    const runtime = createRuntime(client, { scheduler, onModelValidationFailure });
+    try {
+      await expect(runtime.handleRpc({ method: 'submit', params: submitParams('variant', {
+        variant: 'medium', taskId: 'dvr_task_variant', dispatchCallId: 'call_variant', dispatchGroupId: 'msg_variant',
+      }) })).rejects.toMatchObject({ code: 'managed_agent_model_unavailable', statusCode: 409,
+        message: 'explorer cannot start: medium is unsupported for Example Model. Choose low, high, max or Provider default in Agents settings.',
+        details: { reason: 'variant_missing', providerId: 'github-copilot', modelId: 'gpt-4.1', variant: 'medium', agent: 'explorer', modelName: 'Example Model', supportedVariants: ['low', 'high', 'max'] } });
+      expect(scheduler.submit).not.toHaveBeenCalled();
+      expect(onModelValidationFailure).toHaveBeenCalledExactlyOnceWith({ rootSessionId: 'ses_root', directory: '/workspace',
+        agent: 'explorer', taskId: 'dvr_task_variant', callId: 'call_variant', messageId: 'msg_variant',
+        reason: 'variant_missing', providerId: 'github-copilot', modelId: 'gpt-4.1', variant: 'medium', modelName: 'Example Model', supportedVariants: ['low', 'high', 'max'] });
+      await runtime.handleRpc({ method: 'submit', params: submitParams('supported', { variant: 'high' }) });
+      await runtime.handleRpc({ method: 'submit', params: submitParams('default') });
+      expect(scheduler.submit).toHaveBeenCalledTimes(2);
+      expect(onModelValidationFailure).toHaveBeenCalledTimes(1);
+    } finally { await runtime.shutdown(); }
   });
 
   it('fails closed when the client agent catalog cannot be read or the generation is unknown', async () => {
