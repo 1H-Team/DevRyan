@@ -15,7 +15,9 @@ the tree wholesale.
   `custom-skills-registry.ts`, `paths.ts`).
 - Sources no DevRyan entry point reaches (pruned to the import graph of
   `src/devryan/index.ts`), including the auto-update hook and built-in MCP
-  injection.
+  injection,
+  and `v2/config-watch` (DevRyan's host owns configuration changes) with
+  its tests and fixtures.
 
 ## DevRyan behaviour changes
 

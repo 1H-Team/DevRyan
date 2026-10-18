@@ -60,10 +60,6 @@ import {
   resolveV2Directory,
 } from './client-shim';
 import {
-  createProfileRefreshRunner,
-  watchPluginConfigFiles,
-} from './config-watch';
-import {
   type BackgroundDefaultFlipState,
   DELEGATION_TOOL_V2,
   SUBAGENT_BACKGROUND_DEFAULT_DESCRIPTION,
