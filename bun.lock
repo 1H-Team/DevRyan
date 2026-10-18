@@ -54,6 +54,7 @@
         "zod": "4.6.5",
       },
       "devDependencies": {
+        "@types/bun": "1.4.0",
         "@types/turndown": "5.0.6",
       },
     },

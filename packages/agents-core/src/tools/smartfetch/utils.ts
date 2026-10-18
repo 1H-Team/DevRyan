@@ -4,6 +4,7 @@ import TurndownService from 'turndown';
 import { escapeHtml } from '../../utils/escape-html';
 import { parseFrontmatter } from '../../utils/frontmatter';
 import { type JsdomModule, loadJSDOM } from '../../utils/jsdom';
+import { log } from '../../utils/logger';
 import type { CachedFetch, ExtractedContent } from './types';
 
 const CSS_TREE_WARN_PREFIX = '[csstree-match]';
@@ -43,7 +44,8 @@ export function withJsdomCssParsingErrorsSuppressed<T>(
   const vc = new VirtualConsoleClass();
   vc.on('jsdomError', (error) => {
     const type = (error as Error & { type?: string }).type;
-    if (type !== 'css-parsing') console.error(error);
+    // DevRyan: diagnostics go to the host log sinks, never stderr.
+    if (type !== 'css-parsing') log('[smartfetch] jsdom error', String(error));
   });
   return fn(vc);
 }

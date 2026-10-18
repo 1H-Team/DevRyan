@@ -338,7 +338,7 @@ export function createReviewedSlimInterviewBridge(
     registerCommand,
     handleContext,
     handleEvent,
-    getTranscript: (sessionID) => transcripts.get(sessionID) ?? [],
+    getTranscript: (sessionID: string) => transcripts.get(sessionID) ?? [],
     dispose: async () => {
       await owner.dispose();
       activeText.clear();
