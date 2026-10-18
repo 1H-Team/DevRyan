@@ -1,6 +1,5 @@
-import type { Stats } from 'node:fs';
-import * as fs from 'node:fs/promises';
 import path from 'node:path';
+import { requireReviewedSlimPathOwner } from '../../devryan/owners';
 
 import { normalizeLineEndings, parsePatch } from './codec';
 import { ApplyPatchError, getErrorMessage } from './errors';
@@ -78,7 +77,8 @@ async function real(target: string): Promise<string> {
   let current = path.resolve(target);
 
   while (true) {
-    const exact = await fs.realpath(current).catch((error: unknown) => {
+    // DevRyan: filesystem access goes through the invocation path owner.
+    const exact = await requireReviewedSlimPathOwner().realpath(current).catch((error: unknown) => {
       if (isMissingPathError(error)) {
         return null;
       }
@@ -134,9 +134,11 @@ async function guard(ctx: PathGuardContext, target: string): Promise<void> {
   );
 }
 
-async function statOrNull(filePath: string): Promise<Stats | null> {
+async function statOrNull(
+  filePath: string,
+): Promise<{ isFile(): boolean } | null> {
   try {
-    return await fs.stat(filePath);
+    return await requireReviewedSlimPathOwner().stat(filePath);
   } catch (error) {
     if (isMissingPathError(error)) return null;
     throw new ApplyPatchError(
@@ -233,7 +235,7 @@ async function readPreparedFileText(
   verb: 'update' | 'delete',
 ): Promise<string> {
   try {
-    return await fs.readFile(filePath, 'utf-8');
+    return await requireReviewedSlimPathOwner().readText(filePath);
   } catch (error) {
     if (isMissingPathError(error)) {
       throw new ApplyPatchError(

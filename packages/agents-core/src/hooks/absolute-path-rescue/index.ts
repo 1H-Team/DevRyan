@@ -25,11 +25,11 @@
  * The hook never blocks and never invents paths: without a matching,
  * existing, confined candidate the call proceeds exactly as written.
  */
-import { statSync } from 'node:fs';
 import path from 'node:path';
 
 import type { PluginInput } from '@opencode-ai/plugin';
 
+import { requireReviewedSlimPathOwner } from '../../devryan/owners';
 import { log } from '../../utils/logger';
 
 interface ToolExecuteBeforeInput {
@@ -50,7 +50,7 @@ type PathOperations = Pick<
 
 interface RescueOptions {
   pathOperations?: PathOperations;
-  exists?: (p: string) => boolean;
+  exists?: (p: string) => boolean | Promise<boolean>;
 }
 
 /** Argument keys carrying a file path, per host tool schema. */
@@ -62,18 +62,19 @@ const RESCUED_TOOLS = new Set(['read', 'list', 'glob', 'grep']);
 /** True when the path is missing (ENOENT only — other stat errors are
  * environment problems, not absent paths, and must not trigger a
  * rewrite). */
-function isMissing(p: string): boolean {
+// DevRyan: stat goes through the invocation path owner, never the host fs.
+async function isMissing(p: string): Promise<boolean> {
   try {
-    statSync(p);
+    await requireReviewedSlimPathOwner().stat(p);
     return false;
   } catch (error) {
     return (error as NodeJS.ErrnoException).code === 'ENOENT';
   }
 }
 
-function defaultExists(p: string): boolean {
+async function defaultExists(p: string): Promise<boolean> {
   try {
-    statSync(p);
+    await requireReviewedSlimPathOwner().stat(p);
     return true;
   } catch {
     return false;
@@ -93,12 +94,12 @@ function defaultExists(p: string): boolean {
  * An empty tail (the guess ends at the anchor) rescues to the
  * workspace root — the canonical dropped-parents case.
  */
-export function findRescuedSuffix(
+export async function findRescuedSuffix(
   raw: string,
   workspace: string,
   pathOperations: PathOperations = path,
-  exists: (p: string) => boolean = defaultExists,
-): string | null {
+  exists: (p: string) => boolean | Promise<boolean> = defaultExists,
+): Promise<string | null> {
   // Segment with the injected flavor's separator throughout: on win32
   // the workspace resolves to backslashes while a guess may arrive with
   // forward slashes (C:/Users/…), which Windows treats as absolute —
@@ -130,7 +131,7 @@ export function findRescuedSuffix(
     // tail decides, with no reinterpretation.
     const tail = guessSegments.slice(occurrences[0] + anchorLen);
     const candidate = [root, ...tail].join(sep);
-    return exists(candidate) ? candidate : null;
+    return (await exists(candidate)) ? candidate : null;
   }
   return null;
 }
@@ -157,9 +158,9 @@ export function createAbsolutePathRescueHook(
         const raw = args[key];
         if (typeof raw !== 'string' || raw === '') continue;
         if (!pathOperations.isAbsolute(raw)) continue;
-        if (!isMissing(raw)) continue;
+        if (!(await isMissing(raw))) continue;
 
-        const rescued = findRescuedSuffix(
+        const rescued = await findRescuedSuffix(
           raw,
           workspace,
           pathOperations,

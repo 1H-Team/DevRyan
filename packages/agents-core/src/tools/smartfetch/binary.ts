@@ -1,3 +1,4 @@
+import { requireReviewedWebfetchOwner } from '../../devryan/owners';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { BinaryFetch } from './types';
@@ -39,7 +40,23 @@ export function buildBinaryResultMessage(
   return `${subject} content omitted because it exceeds the download limit.`;
 }
 
+// DevRyan: binaries are published by the invocation owner. The original
+// allocator below is exported only for the confined worker that owns it.
 export async function saveBinary(
+  binaryDir: string,
+  data: Uint8Array,
+  contentType: string,
+  filename?: string,
+) {
+  return requireReviewedWebfetchOwner().saveBinary({
+    directory: binaryDir,
+    data,
+    contentType,
+    ...(filename === undefined ? {} : { filename }),
+  });
+}
+
+export async function saveReviewedWebfetchBinary(
   binaryDir: string,
   data: Uint8Array,
   contentType: string,

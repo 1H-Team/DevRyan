@@ -7,7 +7,7 @@ import {
 } from '@opencode-ai/plugin';
 import { detectInlineImageMime } from '../../utils/image-signatures';
 import { base64Size, buildBinaryResultMessage, saveBinary } from './binary';
-import { buildCacheKey, CACHE, conditionalHeaders, lookup } from './cache';
+import { buildCacheKey, conditionalHeaders, lookup, ownedCache } from './cache';
 import {
   DEFAULT_TIMEOUT_SECONDS,
   MAX_BINARY_DOWNLOAD_BYTES,
@@ -466,7 +466,7 @@ export function createWebfetchTool(
         }
         if (!fetchResult) throw new Error('Fetch produced no result');
         if (!cached.fresh) {
-          CACHE.set(
+          ownedCache().set(
             'usedLlmsTxt' in fetchResult && fetchResult.usedLlmsTxt
               ? llmsCacheKey
               : cacheKey,

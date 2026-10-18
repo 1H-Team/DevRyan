@@ -1,14 +1,10 @@
-import { existsSync } from 'node:fs';
 import { crossSpawn } from '../../utils/compat';
+import { requireReviewedAstGrepAsset } from '../../devryan/owners';
 import {
   DEFAULT_MAX_MATCHES,
   DEFAULT_MAX_OUTPUT_BYTES,
   DEFAULT_TIMEOUT_MS,
-  findSgCliPathSync,
-  getSgCliPath,
-  setSgCliPath,
 } from './constants';
-import { ensureAstGrepBinary } from './downloader';
 import type { CliLanguage, CliMatch, SgResult } from './types';
 
 export interface RunOptions {
@@ -21,49 +17,12 @@ export interface RunOptions {
   updateAll?: boolean;
 }
 
-// Use a single init promise to avoid race conditions
-let initPromise: Promise<string | null> | null = null;
-
-export async function getAstGrepPath(): Promise<string | null> {
-  const currentPath = getSgCliPath();
-  if (currentPath !== 'sg' && existsSync(currentPath)) {
-    return currentPath;
-  }
-
-  if (initPromise) {
-    return initPromise;
-  }
-
-  initPromise = (async () => {
-    const syncPath = findSgCliPathSync();
-    if (syncPath && existsSync(syncPath)) {
-      setSgCliPath(syncPath);
-      return syncPath;
-    }
-
-    const downloadedPath = await ensureAstGrepBinary();
-    if (downloadedPath) {
-      setSgCliPath(downloadedPath);
-      return downloadedPath;
-    }
-
-    return null;
-  })();
-
-  return initPromise;
+// DevRyan: the executable is the bound reviewed asset; nothing is resolved lazily.
+export async function getAstGrepPath(): Promise<string> {
+  return requireReviewedAstGrepAsset();
 }
 
-export function startBackgroundInit(): void {
-  if (!initPromise) {
-    initPromise = getAstGrepPath();
-    initPromise.catch((err) => {
-      console.warn(
-        '[ast-grep] Background initialization failed:',
-        err?.message ?? err,
-      );
-    });
-  }
-}
+export function startBackgroundInit(): void {}
 
 export async function runSg(options: RunOptions): Promise<SgResult> {
   const args = [
@@ -96,14 +55,7 @@ export async function runSg(options: RunOptions): Promise<SgResult> {
     options.paths && options.paths.length > 0 ? options.paths : ['.'];
   args.push(...paths);
 
-  let cliPath = getSgCliPath();
-
-  if (!existsSync(cliPath) && cliPath !== 'sg') {
-    const downloadedPath = await getAstGrepPath();
-    if (downloadedPath) {
-      cliPath = downloadedPath;
-    }
-  }
+  const cliPath = requireReviewedAstGrepAsset();
 
   const timeout = DEFAULT_TIMEOUT_MS;
 
@@ -138,31 +90,6 @@ export async function runSg(options: RunOptions): Promise<SgResult> {
         truncatedReason: 'timeout',
         error: error.message,
       };
-    }
-
-    const nodeError = e as NodeJS.ErrnoException;
-    if (
-      nodeError.code === 'ENOENT' ||
-      nodeError.message?.includes('ENOENT') ||
-      nodeError.message?.includes('not found')
-    ) {
-      const downloadedPath = await ensureAstGrepBinary();
-      if (downloadedPath) {
-        setSgCliPath(downloadedPath);
-        return runSg(options);
-      } else {
-        return {
-          matches: [],
-          totalMatches: 0,
-          truncated: false,
-          error:
-            `ast-grep CLI binary not found.\n\n` +
-            `Auto-download failed. Manual install options:\n` +
-            `  bun add -D @ast-grep/cli\n` +
-            `  cargo install ast-grep --locked\n` +
-            `  brew install ast-grep`,
-        };
-      }
     }
 
     return {
@@ -229,6 +156,35 @@ export async function runSg(options: RunOptions): Promise<SgResult> {
   }
 
   const totalMatches = matches.length;
+  // DevRyan: ast-grep treats JSON output with --update-all as a preview. Keep
+  // the original preview parsing, then apply through the identical command.
+  if (options.updateAll && totalMatches > 0) {
+    const apply = crossSpawn(
+      [cliPath, ...args.filter((arg) => arg !== '--json=compact')],
+      { stdout: 'pipe', stderr: 'pipe' },
+    );
+    let applyTimer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const [, applyError, applyExit] = await Promise.race([
+        Promise.all([apply.stdout(), apply.stderr(), apply.exited]),
+        new Promise<never>((_, reject) => {
+          applyTimer = setTimeout(() => {
+            apply.kill();
+            reject(new Error('AST apply timeout'));
+          }, DEFAULT_TIMEOUT_MS);
+        }),
+      ]);
+      if (applyExit !== 0)
+        return {
+          matches: [],
+          totalMatches: 0,
+          truncated: false,
+          error: applyError.trim() || 'AST apply failed',
+        };
+    } finally {
+      clearTimeout(applyTimer);
+    }
+  }
   const matchesTruncated = totalMatches > DEFAULT_MAX_MATCHES;
   const finalMatches = matchesTruncated
     ? matches.slice(0, DEFAULT_MAX_MATCHES)
@@ -247,11 +203,9 @@ export async function runSg(options: RunOptions): Promise<SgResult> {
 }
 
 export function isCliAvailable(): boolean {
-  const path = findSgCliPathSync();
-  return path !== null && existsSync(path);
+  return Boolean(requireReviewedAstGrepAsset());
 }
 
 export async function ensureCliAvailable(): Promise<boolean> {
-  const path = await getAstGrepPath();
-  return path !== null && existsSync(path);
+  return Boolean(await getAstGrepPath());
 }

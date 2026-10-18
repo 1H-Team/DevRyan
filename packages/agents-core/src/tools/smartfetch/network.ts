@@ -1,3 +1,4 @@
+import { requireReviewedWebfetchOwner } from '../../devryan/owners';
 import path from 'node:path';
 import { fitUtf8 } from './binary';
 import {
@@ -196,7 +197,8 @@ export async function fetchWithRedirects(
   let current = url;
 
   for (let i = 0; i < MAX_REDIRECTS; i++) {
-    const response = await fetch(current, {
+    // DevRyan: the invocation owner performs the request under its grant.
+    const response = await requireReviewedWebfetchOwner().fetch(current, {
       redirect: 'manual',
       signal,
       headers: {

@@ -4,14 +4,11 @@ import { parseList } from '../config/agent-mcps';
 import { resolvePreset } from '../config/presets';
 import type { HostConfigSnapshot, RuntimeConfig } from '../config/runtime';
 import { applyOrchestratorModelConfig } from '../config/strip-orchestrator-model';
-import type { MarketplaceActivationStore } from '../marketplace/activation';
-import { resolveMarketplaceActivation } from '../marketplace/activation';
 import {
-  createMarketplaceAgentDefinitions,
+  MARKETPLACE_TOOL_NAMES,
   type MarketplaceAgentMetadata,
-} from '../marketplace/agent-definitions';
-import { marketplaceConfigFingerprint } from '../marketplace/config-identity';
-import { MARKETPLACE_TOOL_NAMES } from '../marketplace/schemas';
+  marketplaceConfigFingerprint,
+} from './marketplace-types';
 import { normalizeAgentName } from '../utils/agent-variant';
 import { adaptPermissions } from '../v2/adapters';
 import {
@@ -84,12 +81,6 @@ export interface RegistryBuildOptions {
     Record<string, readonly V2PermissionRule[]>
   >;
   readonly onHostModelSelected?: (agentName: string) => void;
-  readonly marketplace?: {
-    readonly selectedPackageIds: readonly string[];
-    readonly store: MarketplaceActivationStore;
-    readonly pluginVersion: string;
-    readonly availableSkillNames: readonly string[];
-  };
 }
 
 function clone<T>(value: T): T {
@@ -114,69 +105,6 @@ function isMcpEnabled(value: unknown): boolean {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return true;
   const config = value as { enabled?: unknown; disabled?: unknown };
   return config.enabled !== false && config.disabled !== true;
-}
-
-function applyMarketplaceOwnerOverride(
-  definition: AgentDefinition,
-  override: ReturnType<RuntimeConfig['agents']>[string] | undefined,
-): void {
-  if (!override) return;
-  if (typeof override.prompt === 'string') {
-    definition.config.prompt = override.prompt;
-  }
-  if (typeof override.description === 'string') {
-    definition.description = override.description;
-  }
-  if (typeof override.model === 'string') {
-    definition.config.model = override.model;
-  } else if (Array.isArray(override.model) && override.model.length > 0) {
-    const models = override.model.map((model) =>
-      typeof model === 'string' ? { id: model } : { ...model },
-    );
-    definition._modelArray = models;
-    if (definition.name !== 'orchestrator') {
-      definition.config.model = models[0]?.id;
-      if (models[0]?.variant) definition.config.variant = models[0].variant;
-    }
-  }
-  if (override.inheritModelFrom === 'session') {
-    delete definition.config.model;
-    if (override.variant === undefined) delete definition.config.variant;
-  }
-  if (typeof override.variant === 'string') {
-    definition.config.variant = override.variant;
-  }
-  if (typeof override.temperature === 'number') {
-    definition.config.temperature = override.temperature;
-  }
-  if (override.color) definition.config.color = override.color;
-  if (override.options) {
-    definition.config.options = {
-      ...definition.config.options,
-      ...clone(override.options),
-    };
-  }
-  if (override.permission) {
-    const merged = clone(override.permission);
-    // A permission override replaces the whole map; keep the agent's
-    // nested-dispatch stance when the override doesn't address `task`,
-    // otherwise the override would silently strip it. String shorthands
-    // stay untouched — they are an explicit take-over of every tool.
-    if (
-      merged !== null &&
-      typeof merged === 'object' &&
-      !Array.isArray(merged) &&
-      (merged as Record<string, unknown>).task === undefined
-    ) {
-      const stance = (
-        definition.config.permission as Record<string, unknown> | undefined
-      )?.task;
-      if (stance !== undefined) {
-        (merged as Record<string, unknown>).task = clone(stance);
-      }
-    }
-    definition.config.permission = merged;
-  }
 }
 
 function narrowCapabilities(
@@ -386,147 +314,8 @@ export function buildResolvedAgentRegistry(
     }
   }
   const marketplaceMetadata = new Map<string, MarketplaceAgentMetadata>();
-  let marketplacePackages: MarketplaceLivePackage[] = [];
-  if (options.marketplace?.selectedPackageIds.length) {
-    const customOwnerNames = new Set(runtime.customAgentNames);
-    const reservedAgentNames = new Set<string>([
-      ...Object.keys(AGENT_ALIASES),
-      ...Object.values(AGENT_ALIASES),
-      ...definitions.flatMap((definition) => [
-        ...(customOwnerNames.has(definition.name)
-          ? []
-          : [
-              definition.name,
-              ...(definition.displayName ? [definition.displayName] : []),
-            ]),
-      ]),
-      ...Object.keys(runtime.acpAgents),
-    ]);
-    const mcpNames = new Set([
-      ...Object.entries(host.mcp ?? {})
-        .filter(([, config]) => isMcpEnabled(config))
-        .map(([name]) => name),
-      ...Object.keys(pluginMcps),
-    ]);
-    for (const disabled of runtime.disabledMcps) mcpNames.delete(disabled);
-    const plan = resolveMarketplaceActivation({
-      selectedPackageIds: options.marketplace.selectedPackageIds,
-      store: options.marketplace.store,
-      pluginVersion: options.marketplace.pluginVersion,
-      availableSkillNames: options.marketplace.availableSkillNames,
-      availableMcpNames: [...mcpNames],
-      disabledSkillNames: runtime.disabledSkills,
-      disabledMcpNames: runtime.disabledMcps,
-      reservedAgentNames,
-    });
-    marketplacePackages = plan.agents.map((admission) => ({
-      id: admission.packageId,
-      runtimeName: admission.agentName,
-      version: admission.version,
-      digest: admission.digest,
-      configFingerprint: '',
-    }));
-    const constructed = createMarketplaceAgentDefinitions(plan);
-    const admittedNames = new Set(
-      constructed.agents.map((agent) => agent.name),
-    );
-    const marketplaceAgents = constructed.agents.map((sourceAgent) => {
-      const agent = clone(sourceAgent);
-      const owner = runtime.agents()[agent.name];
-      const hostOwner = host.agent?.[agent.name];
-      const displayName =
-        (typeof hostOwner?.displayName === 'string'
-          ? hostOwner.displayName
-          : undefined) ??
-        (typeof owner?.displayName === 'string'
-          ? owner.displayName
-          : undefined);
-      applyMarketplaceOwnerOverride(agent, owner);
-      if (displayName) agent.displayName = displayName;
-      return agent;
-    });
-    const reservedIdentityEntries: Array<{ name: string; owner?: string }> = [
-      ...[...Object.keys(AGENT_ALIASES), ...Object.values(AGENT_ALIASES)].map(
-        (name) => ({ name }),
-      ),
-      ...definitions.flatMap((definition) => [
-        {
-          name: definition.name,
-          owner: customOwnerNames.has(definition.name)
-            ? definition.name
-            : undefined,
-        },
-        ...(definition.displayName
-          ? [
-              {
-                name: definition.displayName,
-                owner: definition.name,
-              },
-            ]
-          : []),
-      ]),
-      ...Object.keys(runtime.acpAgents).map((name) => ({ name })),
-      ...Object.entries(host.agent ?? {}).flatMap(([name, config]) => {
-        // Only the actual configured custom-agent key establishes package
-        // ownership. A displayName collision never transfers ownership to a
-        // different host key (e.g. host key `PackageAlias`).
-        const owner = customOwnerNames.has(name) ? name : undefined;
-        return [
-          { name, owner },
-          ...(typeof config.displayName === 'string'
-            ? [{ name: config.displayName, owner }]
-            : []),
-        ];
-      }),
-    ];
-    const reservedIdentities = reservedIdentityEntries.map(
-      ({ name, owner }) => ({
-        name: normalizeAgentName(name).toLowerCase(),
-        owner,
-      }),
-    );
-    const packageIdentities = new Set<string>();
-    for (const agent of marketplaceAgents) {
-      const identities = [agent.name, agent.displayName]
-        .filter((name): name is string => Boolean(name))
-        .map((name) => normalizeAgentName(name).toLowerCase());
-      for (const identity of identities) {
-        if (
-          reservedIdentities.some(
-            (reserved) =>
-              reserved.name === identity && reserved.owner !== agent.name,
-          ) ||
-          packageIdentities.has(identity)
-        ) {
-          throw new Error(
-            `Marketplace agent identity '${identity}' collides with a reserved agent identity`,
-          );
-        }
-      }
-      identities.forEach((identity) => {
-        packageIdentities.add(identity);
-      });
-    }
-    constructed.metadata.forEach((metadata) => {
-      marketplaceMetadata.set(metadata.runtimeName, {
-        ...metadata,
-        capabilities: {
-          ...metadata.capabilities,
-          mcps: metadata.capabilities.mcps.filter((name) => mcpNames.has(name)),
-        },
-      });
-    });
-    definitions = [
-      ...definitions.filter(
-        (definition) =>
-          !(
-            customOwnerNames.has(definition.name) &&
-            admittedNames.has(definition.name)
-          ),
-      ),
-      ...marketplaceAgents,
-    ];
-  }
+  // DevRyan: no marketplace package agents are activated (see marketplace-types).
+  const marketplacePackages: MarketplaceLivePackage[] = [];
   const baseline = getAgentConfigsFromDefinitions(runtime, definitions);
   const sdk = clone(baseline) as Record<
     string,

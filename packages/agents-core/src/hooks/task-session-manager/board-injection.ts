@@ -179,7 +179,7 @@ export function formatReopenCorrectionTextNoBoard(
 /** Record that the parent consumed (reconciled) a terminal run, so a later
  * reopen-to-running of the same run can be corrected. */
 function rememberReportedTerminalRun(
-  state: InjectionState,
+  state: BoardPresentationState,
   parentSessionID: string,
   run: ReportedTerminalRun,
 ): void {
@@ -205,7 +205,7 @@ function rememberReportedTerminalRun(
  * without a separate event seam on the board store.
  */
 function deliverReopenCorrections(
-  state: InjectionState,
+  state: BoardPresentationState,
   parentSessionID: string,
   messages: unknown[],
   baseInfo: MessageWithParts['info'],
@@ -258,7 +258,7 @@ function deliverReopenCorrections(
  * Reported runs must never surface in a recreated session.
  */
 export function pruneReopenCorrectionState(
-  state: InjectionState,
+  state: BoardPresentationState,
   parentSessionID: string,
 ): void {
   state.reportedTerminalRunsByParent?.delete(parentSessionID);
@@ -324,6 +324,30 @@ export interface InjectionState {
    */
   retainedTailBoards: Map<string, Map<string, RetainedTailBoard>>;
 }
+
+/**
+ * DevRyan: the part of InjectionState the board-presentation path reads. The
+ * host's job owner renders and reconciles through it without Slim's task
+ * lifecycle (gate, ledger, completion fences, context tracker).
+ */
+export type BoardPresentationState = Pick<
+  InjectionState,
+  | 'maxRetainedSnapshots'
+  | 'strategy'
+  | 'boardInjection'
+  | 'terminalJobsInjectedByParent'
+  | 'pendingInjectedTerminalJobsByParent'
+  | 'reportedTerminalRunsByParent'
+  | 'metadataKey'
+  | 'shouldManageSession'
+  | 'retainedBoardSnapshots'
+  | 'retainedTailBoards'
+> & {
+  backgroundJobBoard: Pick<
+    BackgroundJobStore,
+    'get' | 'formatForPromptWithMetadata' | 'markReconciled'
+  >;
+};
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
@@ -1171,7 +1195,7 @@ function sameExecutionIdentity(
 }
 
 function rememberPendingInjectedTerminalJob(
-  state: InjectionState,
+  state: BoardPresentationState,
   parentSessionID: string,
   execution: BackgroundJobExecution,
 ): void {
@@ -1183,7 +1207,7 @@ function rememberPendingInjectedTerminalJob(
 }
 
 function reconcileExecutionBatch(
-  state: InjectionState,
+  state: BoardPresentationState,
   parentSessionID: string,
   executions: Iterable<BackgroundJobExecution>,
 ): void {
@@ -1221,7 +1245,7 @@ function reconcileExecutionBatch(
 }
 
 export function rememberInjectedTerminalJobs(
-  state: InjectionState,
+  state: BoardPresentationState,
   parentSessionID: string,
   executions: readonly BackgroundJobExecution[],
   promptShapeKey: string,
@@ -1271,7 +1295,7 @@ export function rememberInjectedTerminalJobs(
 }
 
 export function reconcileInjectedTerminalJobs(
-  state: InjectionState,
+  state: BoardPresentationState,
   parentSessionID: string,
 ): void {
   const entry = state.terminalJobsInjectedByParent.get(parentSessionID);
@@ -1298,7 +1322,7 @@ export function reconcileInjectedTerminalJobs(
 }
 
 function reconcileConsumedTerminalJobs(
-  state: InjectionState,
+  state: BoardPresentationState,
   parentSessionID: string,
   promptShapeKey: string,
 ): void {
@@ -1316,7 +1340,7 @@ function reconcileConsumedTerminalJobs(
 }
 
 export async function injectBackgroundJobBoard(
-  state: InjectionState,
+  state: BoardPresentationState,
   _input: Record<string, never>,
   output: { messages?: unknown },
 ): Promise<void> {
@@ -1358,7 +1382,7 @@ export async function injectBackgroundJobBoard(
  *      it so the NEXT request can freeze/replay it once the tail advances.
  * A board on any earlier message is never mutated or stripped.
  */
-function injectLatestBoard(state: InjectionState, messages: unknown[]): void {
+function injectLatestBoard(state: BoardPresentationState, messages: unknown[]): void {
   // The current tail anchor: the last real (non-fully-tagged) message. It is
   // the ONLY message whose board is volatile — the tail re-caches anyway, so
   // freshening its board is free. Every earlier message was already sent, so
@@ -1648,7 +1672,7 @@ function boardAnchors(messages: unknown[], metadataKey: string): BoardAnchor[] {
 
 /** Record (or refresh) a board placed on an anchor for later replay. */
 function rememberTailBoard(
-  state: InjectionState,
+  state: BoardPresentationState,
   sessionID: string,
   board: RetainedTailBoard,
 ): void {
@@ -1665,7 +1689,7 @@ function rememberTailBoard(
  * retries an unsafe replay on every later request.
  */
 function forgetTailBoard(
-  state: InjectionState,
+  state: BoardPresentationState,
   sessionID: string,
   anchorId: string,
 ): void {
@@ -1699,7 +1723,7 @@ function forgetTailBoard(
  * count. Orphan markers are discarded if their full reference is absent.
  */
 function replayRetainedTailBoards(
-  state: InjectionState,
+  state: BoardPresentationState,
   sessionID: string,
   messages: unknown[],
   currentAnchorId: string | undefined,
@@ -1789,7 +1813,7 @@ function findTriggeringUserMessage(
 }
 
 function injectCheckpointBoard(
-  state: InjectionState,
+  state: BoardPresentationState,
   messages: unknown[],
 ): void {
   const currentMessages = realMessages(messages, state.metadataKey);
@@ -2054,7 +2078,7 @@ function hasCompacted(
 }
 
 function updateBoardHistoryState(
-  state: InjectionState,
+  state: BoardPresentationState,
   sessionID: string,
   messages: MessageWithParts[],
 ): RetainedBoardSnapshotState {

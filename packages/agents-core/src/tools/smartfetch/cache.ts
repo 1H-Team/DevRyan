@@ -1,4 +1,5 @@
 import { LRUCache } from 'lru-cache';
+import { requireReviewedWebfetchOwner } from '../../devryan/owners';
 import type { FetchResult } from './types';
 
 type CacheOptions = {
@@ -24,15 +25,25 @@ export function calculateCacheSize(value: FetchResult): number {
   return total;
 }
 
-export const CACHE = new LRUCache<string, FetchResult>({
-  maxSize: 50 * 1024 * 1024,
-  ttl: 15 * 60 * 1000,
-  sizeCalculation: calculateCacheSize,
-});
+// DevRyan: the cache is owned by the host per grant scope (createReviewed
+// WebfetchCache) and reached through the invocation owner, never a global.
+export type ReviewedFetchCache = LRUCache<string, FetchResult>;
+
+export function createReviewedWebfetchCache(): ReviewedFetchCache {
+  return new LRUCache<string, FetchResult>({
+    maxSize: 50 * 1024 * 1024,
+    ttl: 15 * 60 * 1000,
+    sizeCalculation: calculateCacheSize,
+  });
+}
+
+export function ownedCache(): ReviewedFetchCache {
+  return requireReviewedWebfetchOwner().cache as unknown as ReviewedFetchCache;
+}
 
 export function lookup(key: string) {
   const status: LRUCache.Status<string, FetchResult> = {};
-  const entry = CACHE.get(key, {
+  const entry = ownedCache().get(key, {
     allowStale: true,
     noDeleteOnStaleGet: true,
     status,

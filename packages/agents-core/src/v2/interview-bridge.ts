@@ -1,21 +1,13 @@
-import type { Server } from 'node:http';
-import type { InterviewConfig, PluginConfig } from '../config';
-import { createDashboardManager } from '../interview/dashboard-manager';
-import { computeInterviewMode } from '../interview/manager';
-import type { InterviewSessionRuntime } from '../interview/runtime';
-import { createInterviewServer } from '../interview/server';
-import { createInterviewService } from '../interview/service';
+// DevRyan: the interview bridge is driven by the host's interview owner. The
+// service, its documents and its HTTP surface live in the host; commands are
+// submitted and proven accepted through the owner, and failures refuse the
+// request instead of being swallowed. `/implement` is not enabled in DevRyan.
+import type { createInterviewService } from '../interview/service';
 import type { InterviewMessage } from '../interview/types';
 import { isRecord } from '../utils/guards';
 import { log } from '../utils/logger';
-import { createSessionListShim } from './client-shim';
-import { createSessionSubmit, textFromContent } from './session-submit';
-import type {
-  V2CommandDraft,
-  V2Context,
-  V2Session,
-  V2SessionContextEvent,
-} from './types';
+import { textFromContent } from './session-submit';
+import type { V2CommandDraft, V2SessionContextEvent } from './types';
 
 export const INTERVIEW_COMMAND_MARKER =
   '<omos-interview-command>$ARGUMENTS</omos-interview-command>';
@@ -54,16 +46,6 @@ function toInterviewMessages(event: V2SessionContextEvent): InterviewMessage[] {
   }));
 }
 
-export interface V2InterviewBridge {
-  readonly service: ReturnType<typeof createInterviewService>;
-  readonly runtime: InterviewSessionRuntime;
-  registerCommand(draft: V2CommandDraft): void;
-  handleContext(event: V2SessionContextEvent): Promise<void>;
-  handleEvent(event: Record<string, unknown>): Promise<void>;
-  getTranscript(sessionID: string): InterviewMessage[];
-  dispose(): void;
-}
-
 /** Mutate the trailing command message from hook-produced parts. When the
  * hook produced nothing, strip the marker and leave the raw args text.
  * Only the trailing message is mutated; earlier messages are left
@@ -88,118 +70,50 @@ export function applyInterviewCommandParts(
   ];
 }
 
-export function createV2InterviewBridge(
-  ctx: V2Context,
-  config?: InterviewConfig,
-  options: {
-    /** Whether the /interview command is enabled for this host. */
-    commandEnabled?: boolean;
-    /** Whether the /implement command is enabled for this host. */
-    implementEnabled?: boolean;
-    /** Already-listening server for the dashboard role to adopt. */
-    server?: Server;
-  } = {},
-): V2InterviewBridge {
+type InterviewService = Pick<
+  ReturnType<typeof createInterviewService>,
+  'handleCommandExecuteBefore' | 'handleEvent'
+> & {
+  getActiveInterviewId: (sessionID: string) => Promise<string | null> | string | null;
+};
+
+export interface ReviewedSlimInterviewBridgeOwner {
+  readonly runtime: unknown;
+  readonly service: InterviewService;
+  readonly submitCommand: (invocation: unknown) => Promise<void>;
+  readonly assertAcceptedCommand: (input: {
+    readonly sessionID: string;
+    readonly messageID: string;
+    readonly args: string;
+    readonly event: V2SessionContextEvent;
+  }) => Promise<void>;
+  readonly dispose: () => Promise<void>;
+}
+
+export const reviewedSlimInterviewCommandDeclaration = Object.freeze({
+  description: 'Open a localhost interview UI for a feature idea',
+  template: INTERVIEW_COMMAND_MARKER,
+});
+
+export function createReviewedSlimInterviewBridge(
+  owner: ReviewedSlimInterviewBridgeOwner,
+) {
+  if (
+    !owner ||
+    !owner.service ||
+    (['submitCommand', 'assertAcceptedCommand', 'dispose'] as const).some(
+      (name) => typeof owner[name] !== 'function',
+    ) ||
+    (
+      ['getActiveInterviewId', 'handleCommandExecuteBefore', 'handleEvent'] as const
+    ).some((name) => typeof owner.service[name] !== 'function')
+  )
+    throw new Error('reviewed_slim_interview_bridge_owner_required');
   const transcripts = new Map<string, InterviewMessage[]>();
   const activeText = new Map<string, string>();
   const activeMessageIDs = new Map<string, string>();
-  // Reduced hosts may omit the session domain entirely.
-  const methods = (ctx.session ?? {}) as V2Session;
-  const submitUserText = createSessionSubmit(ctx);
-
-  const runtime: InterviewSessionRuntime = {
-    messages: async (sessionID) => transcripts.get(sessionID) ?? [],
-    notify: async (sessionID, text) => {
-      // synthetic only — no prompt fallback: `resume: false` admits the
-      // input WITHOUT waking the session, mirroring the v1 noReply prompt
-      // (a prompt fallback would double-send and wake the loop).
-      if (typeof methods.synthetic !== 'function') {
-        log('[v2][interview] synthetic unavailable for notify', { sessionID });
-        return;
-      }
-      try {
-        await methods.synthetic({ sessionID, text, resume: false });
-      } catch (err) {
-        log('[v2][interview] synthetic notify failed', {
-          sessionID,
-          err: String(err),
-        });
-      }
-    },
-    continue: async (sessionID, text) => {
-      // Best-effort switch to the orchestrator agent, then a flat prompt.
-      try {
-        await methods.switchAgent?.({ sessionID, agent: 'orchestrator' });
-      } catch (err) {
-        log('[v2][interview] switchAgent failed (best-effort)', {
-          sessionID,
-          err: String(err),
-        });
-      }
-      if (typeof methods.prompt !== 'function') {
-        throw new Error('session.prompt is unavailable');
-      }
-      await methods.prompt({ sessionID, text });
-    },
-    rename: async (sessionID, title) => {
-      // Renames go through session.update({sessionID, title}).
-      if (typeof methods.update !== 'function') {
-        log('[v2][interview] session rename unavailable', { sessionID });
-        return;
-      }
-      try {
-        await methods.update({ sessionID, title });
-      } catch (err) {
-        log('[v2][interview] session rename failed', {
-          sessionID,
-          err: String(err),
-        });
-      }
-    },
-  };
-
-  const { dashboardEnabled, outputFolder, dashboardPort } =
-    computeInterviewMode(config);
-  const pluginContext = { directory: process.cwd() } as never;
-  const dashboardManager = dashboardEnabled
-    ? createDashboardManager(
-        pluginContext,
-        { interview: config } as PluginConfig,
-        dashboardPort,
-        outputFolder,
-        {
-          runtime,
-          // v1-shaped list over v2 session.list (directory discovery for
-          // the dashboard's session scan); empty page when the host lacks
-          // the method.
-          sessionClient: {
-            list: createSessionListShim(methods),
-          } as never,
-          server: options.server,
-        },
-      )
-    : null;
-  const service =
-    dashboardManager?.service ??
-    createInterviewService(pluginContext, config, { runtime });
-  const server = dashboardManager
-    ? null
-    : createInterviewServer({
-        getState: (interviewID) => service.getInterviewState(interviewID),
-        listInterviewFiles: () => service.listInterviewFiles(),
-        listInterviews: () => service.listInterviews(),
-        submitAnswers: (interviewID, answers) =>
-          service.submitAnswers(interviewID, answers),
-        submitBlockComment: (interviewID, section, comment) =>
-          service.submitBlockComment(interviewID, section, comment),
-        submitChat: (interviewID, message) =>
-          service.submitChat(interviewID, message),
-        handleNudgeAction: (interviewID, action) =>
-          service.handleNudgeAction(interviewID, action),
-        outputFolder,
-        port: 0,
-      });
-  if (server) service.setBaseUrlResolver(() => server.ensureStarted());
+  const service = owner.service;
+  const options = { commandEnabled: true, implementEnabled: false };
 
   function registerCommand(draft: V2CommandDraft): void {
     // v2 command drafts are add-only. `/interview` renders its marker as a
@@ -213,45 +127,21 @@ export function createV2InterviewBridge(
         name: 'interview',
         description: 'Open a localhost interview UI for a feature idea',
         execute: async (invocation) => {
-          // Never throw: v2 surfaces command execution errors to the user.
           try {
-            await submitUserText(
-              invocation?.sessionID ?? '',
-              markerText(invocation?.prompt?.text ?? ''),
-            );
+            await owner.submitCommand(invocation);
           } catch (err) {
             log('[v2][interview] command execute failed', String(err));
-          }
-        },
-      });
-    }
-    if (options.implementEnabled !== false) {
-      draft.add({
-        name: 'implement',
-        description: 'Read the completed interview markdown and implement it',
-        execute: async (invocation) => {
-          try {
-            await submitUserText(
-              invocation?.sessionID ?? '',
-              implementMarkerText(invocation?.prompt?.text ?? ''),
-            );
-          } catch (err) {
-            log(
-              '[v2][interview] implement command execute failed',
-              String(err),
-            );
+            throw err;
           }
         },
       });
     }
   }
 
-  function isManagedInterviewSession(sessionID: string): boolean {
+  async function isManagedInterviewSession(sessionID: string): Promise<boolean> {
     return (
       transcripts.has(sessionID) ||
-      Boolean(
-        (dashboardManager?.service ?? service).getActiveInterviewId(sessionID),
-      )
+      Boolean(await service.getActiveInterviewId(sessionID))
     );
   }
 
@@ -264,9 +154,20 @@ export function createV2InterviewBridge(
     if (interviewMatch && options.commandEnabled === false) return;
     if (implementMatch && options.implementEnabled === false) return;
     const match = interviewMatch ?? implementMatch;
-    const managed = isManagedInterviewSession(event.sessionID);
+    const managed = await isManagedInterviewSession(event.sessionID);
     if (!match && !managed) return;
 
+    // DevRyan: the host proves the marker came from an accepted command.
+    if (match) {
+      if (typeof trailing?.id !== 'string' || !trailing.id)
+        throw new Error('reviewed_slim_interview_message_required');
+      await owner.assertAcceptedCommand({
+        sessionID: event.sessionID,
+        messageID: trailing.id,
+        args: match[1].trim(),
+        event,
+      });
+    }
     // Capture the current view before executing /interview so resume and
     // creation can read the history. Ordinary sessions never enter here.
     transcripts.set(event.sessionID, toInterviewMessages(event));
@@ -280,7 +181,7 @@ export function createV2InterviewBridge(
         metadata?: Record<string, unknown>;
       }>,
     };
-    await (dashboardManager ?? service).handleCommandExecuteBefore(
+    await service.handleCommandExecuteBefore(
       {
         command: interviewMatch ? 'interview' : 'implement',
         sessionID: event.sessionID,
@@ -360,7 +261,7 @@ export function createV2InterviewBridge(
       ((properties.info as { id?: string } | undefined)?.id ?? '');
     if (!sessionID) return;
 
-    const managed = isManagedInterviewSession(sessionID);
+    const managed = await isManagedInterviewSession(sessionID);
     if (type === 'session.next.text.started') {
       if (!managed) return;
       const messageID = textMessageID(properties);
@@ -391,7 +292,7 @@ export function createV2InterviewBridge(
       activeText.delete(sessionID);
       activeMessageIDs.delete(sessionID);
       appendText(sessionID, text, messageID);
-      await (dashboardManager ?? service).handleEvent({
+      await service.handleEvent({
         event: { type, properties },
       });
       return;
@@ -400,7 +301,7 @@ export function createV2InterviewBridge(
       activeText.delete(sessionID);
       activeMessageIDs.delete(sessionID);
       transcripts.delete(sessionID);
-      await (dashboardManager ?? service).handleEvent({
+      await service.handleEvent({
         event: { type: 'session.deleted', properties: { sessionID } },
       });
       return;
@@ -417,7 +318,7 @@ export function createV2InterviewBridge(
       // event-adapter.ts). The bridge receives the RAW event, so without this
       // mapping the v2 service never sees a turn end and never posts notices.
       const statusType = type === 'session.execution.started' ? 'busy' : 'idle';
-      await (dashboardManager ?? service).handleEvent({
+      await service.handleEvent({
         event: {
           type: 'session.status',
           properties: { sessionID, status: { type: statusType } },
@@ -427,22 +328,19 @@ export function createV2InterviewBridge(
     }
 
     if (type === 'session.status') {
-      await (dashboardManager ?? service).handleEvent({
+      await service.handleEvent({
         event: { type, properties },
       });
     }
   }
 
   return {
-    service,
-    runtime,
     registerCommand,
     handleContext,
     handleEvent,
     getTranscript: (sessionID) => transcripts.get(sessionID) ?? [],
     dispose: async () => {
-      if (dashboardManager) await dashboardManager.dispose();
-      server?.close();
+      await owner.dispose();
       activeText.clear();
       activeMessageIDs.clear();
       transcripts.clear();

@@ -331,6 +331,53 @@ export function resolveExistingInterviewPath(
   return null;
 }
 
+/** DevRyan: the same resolution with existence checked by the owner. */
+export async function resolveReviewedExistingInterviewPath(
+  directory: string,
+  outputFolder: string,
+  value: string,
+  deps: { readonly exists: (candidate: string) => Promise<boolean> },
+): Promise<string | null> {
+  if (!deps || typeof deps.exists !== 'function')
+    throw new Error('reviewed_interview_path_owner_required');
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const outputDir = createInterviewDirectoryPath(directory, outputFolder);
+  const candidates = new Set<string>();
+  const resolvedRoot = path.resolve(directory);
+
+  if (path.isAbsolute(trimmed)) {
+    candidates.add(trimmed);
+  } else {
+    candidates.add(path.resolve(directory, trimmed));
+    candidates.add(path.join(outputDir, trimmed));
+    if (!trimmed.endsWith('.md')) {
+      candidates.add(path.join(outputDir, `${trimmed}.md`));
+    }
+  }
+
+  for (const candidate of candidates) {
+    if (path.extname(candidate) !== '.md') {
+      continue;
+    }
+    const resolved = path.resolve(candidate);
+    if (
+      !resolved.startsWith(resolvedRoot + path.sep) &&
+      resolved !== resolvedRoot
+    ) {
+      continue;
+    }
+    if (await deps.exists(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
 // ─── String Utilities ────────────────────────────────────────────────
 
 export function slugify(value: string): string {

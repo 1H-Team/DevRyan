@@ -20,7 +20,10 @@ export function normalizeAgentName(agentName: string): string {
   return trimmed.startsWith('@') ? trimmed.slice(1) : trimmed;
 }
 
-function getRuntimeAgentNames(runtime: RuntimeConfig): string[] {
+/** DevRyan: the only RuntimeConfig members these helpers read. */
+export type AgentNameSource = Pick<RuntimeConfig, 'customAgentNames' | 'agents'>;
+
+function getRuntimeAgentNames(runtime: AgentNameSource): string[] {
   const unique = new Set<string>([
     ...ALL_AGENT_NAMES,
     ...runtime.customAgentNames,
@@ -30,7 +33,7 @@ function getRuntimeAgentNames(runtime: RuntimeConfig): string[] {
 
 /** Plugin-layer override for a name, alias-aware (no host merge). */
 function getPluginOverride(
-  runtime: RuntimeConfig,
+  runtime: AgentNameSource,
   name: string,
 ): AgentOverrideConfig | undefined {
   const agents = runtime.agents();
@@ -52,7 +55,7 @@ function getPluginOverride(
  * - displayName aliases (e.g. "advisor" -> "oracle")
  */
 export function resolveRuntimeAgentName(
-  runtime: RuntimeConfig,
+  runtime: AgentNameSource,
   agentName: string,
 ): string {
   const normalized = normalizeAgentName(agentName);
@@ -85,7 +88,7 @@ export function escapeRegExp(value: string): string {
 export type DisplayNameMentionRewriter = (text: string) => string;
 
 export function createDisplayNameMentionRewriter(
-  runtime: RuntimeConfig,
+  runtime: AgentNameSource,
 ): DisplayNameMentionRewriter {
   const replacements: Array<{ regex: RegExp; internalName: string }> = [];
 

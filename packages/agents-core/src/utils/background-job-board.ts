@@ -1518,102 +1518,13 @@ export class BackgroundJobBoard implements BackgroundJobStore {
     parentSessionID: string,
     now = Date.now(),
   ): BackgroundJobPromptMetadata | undefined {
-    // Keep placeholders resolvable, but out of every operational section
-    // and the corresponding terminal-consumption metadata.
-    const jobs = this.list(parentSessionID).filter(
-      (job) => job.provisional !== true,
-    );
-    // Long-unconfirmable running jobs leave the render (#1314); the store
-    // record survives and a real terminal publication returns the entry.
-    const isStaleUncertain = (job: BackgroundJobRecord) =>
-      job.state === 'running' &&
-      job.statusUncertain &&
-      now - (job.statusUncertainSince ?? job.updatedAt) >=
-        STATUS_UNCERTAIN_DEMOTE_AFTER_MS;
-    const active = jobs.filter(
-      (job) =>
-        (job.state === 'running' || job.terminalUnreconciled) &&
-        !isStaleUncertain(job),
-    );
-    // Aged ballast leaves the render (#1314 family). Applied only to
-    // reusable/retained below — the active filter's exemption is structural.
-    const isRenderAgedOut = (job: BackgroundJobRecord) =>
-      now - job.lastUsedAt >= AGED_ENTRY_RENDER_TTL_MS;
-    // listReusable predates the provisional provenance contract and is
-    // unaware of it: without this filter a reconciled completed
-    // placeholder would surface in the Reusable Sessions section even
-    // though it was never attributed (same exclusion as `jobs` above).
-    const reusable = this.listReusable(parentSessionID).filter(
-      (job) => job.provisional !== true && !isRenderAgedOut(job),
-    );
-    const retained = jobs.filter(
-      (job) => isRetainedStopped(job) && !isRenderAgedOut(job),
-    );
-    const acknowledgedFailedSession = reusable.some((job) => {
-      const terminal = job.terminalState ?? terminalStateOf(job.state);
-      return terminal === 'cancelled' || terminal === 'error';
+    return renderBackgroundJobBoard({
+      jobs: this.list(parentSessionID),
+      reusable: this.listReusable(parentSessionID),
+      readContextMaxFiles: this.readContextMaxFiles,
+      delegationTool: this.delegationTool,
+      now,
     });
-
-    if (active.length === 0 && reusable.length === 0 && retained.length === 0) {
-      return undefined;
-    }
-
-    const text = formatSystemReminder(
-      [
-        '### Background Job Board',
-        'SENTINEL: background-job-board-v2',
-        ...(acknowledgedFailedSession
-          ? [
-              'Acknowledged terminal sessions are reusable by alias for the same specialist/context.',
-            ]
-          : [
-              'Completed or reconciled sessions are reusable by alias for the same specialist/context.',
-            ]),
-        'Timed-out running sessions are recoverable by alias for safe resume after a live busy signal.',
-        ...(acknowledgedFailedSession
-          ? [
-              'Active, uncertain, or unacknowledged terminal sessions are not reusable.',
-            ]
-          : ['Cancelled or errored sessions are not reusable.']),
-        ...(this.delegationTool === 'task'
-          ? [
-              'Continue an existing session with task_revive even when it is not listed here. task_result only reads a result and is not required before task_revive.',
-            ]
-          : [
-              'Completed sessions continue with subagent() by exact session id even when they are not listed. Cancelled, errored, and stopped sessions use task_revive.',
-            ]),
-        ...(retained.length > 0
-          ? [
-              `Stopped sessions without a terminal result are retained for task_revive, not ${this.delegationTool}().`,
-            ]
-          : []),
-        '',
-        '#### Active / Unreconciled',
-        ...(active.length > 0 ? active.map(formatJob) : ['- none']),
-        '',
-        '#### Reusable Sessions',
-        ...(reusable.length > 0
-          ? reusable.map((job) => this.formatReusableJob(job))
-          : ['- none']),
-        ...(retained.length > 0
-          ? [
-              '',
-              '#### Retained / Recovery',
-              ...retained.map((job) => this.formatRetainedJob(job)),
-            ]
-          : []),
-      ].join('\n'),
-    );
-
-    const terminalUnreconciledTaskIDs = active
-      .filter((job) => job.terminalUnreconciled)
-      .map(({ taskID, generation, terminalRevision }) => ({
-        taskID,
-        generation,
-        terminalRevision,
-      }));
-
-    return { text, terminalUnreconciledTaskIDs };
   }
 
   formatForPrompt(parentSessionID: string, now?: number): string | undefined {
@@ -1765,38 +1676,11 @@ export class BackgroundJobBoard implements BackgroundJobStore {
   }
 
   private formatReusableJob(job: BackgroundJobRecord): string {
-    const terminal = job.terminalState ?? terminalStateOf(job.state);
-    const reconciliation = job.terminalUnreconciled
-      ? 'unreconciled'
-      : 'reconciled';
-    const lines = [
-      `- ${promptSafe(job.alias)} / ${promptSafe(job.taskID)} / ${promptSafe(job.agent)} / ${promptSafe(terminal ?? job.state)}, ${reconciliation}`,
-      `  Objective: ${promptSafe(job.description || job.objective || '')}`,
-    ];
-    const context = formatContextFiles(
-      job.contextFiles,
-      this.readContextMaxFiles,
-    );
-    if (context) lines.push(`  Context read by ${job.alias}: ${context}`);
-    return lines.join('\n');
+    return formatReusableJobLine(job, this.readContextMaxFiles);
   }
 
   private formatRetainedJob(job: BackgroundJobRecord): string {
-    const lines = [
-      `- ${promptSafe(job.alias)} / ${promptSafe(job.taskID)} / ${promptSafe(job.agent)} / stopped, ${REVIVE_ONLY}`,
-      `  Objective: ${promptSafe(job.description || job.objective || '')}`,
-      ...(this.delegationTool === 'task'
-        ? []
-        : [
-            `  Recovery: no terminal result; recoverable with task_revive, not ${this.delegationTool}()`,
-          ]),
-    ];
-    const context = formatContextFiles(
-      job.contextFiles,
-      this.readContextMaxFiles,
-    );
-    if (context) lines.push(`  Context read by ${job.alias}: ${context}`);
-    return lines.join('\n');
+    return formatRetainedJobLine(job, this.readContextMaxFiles, this.delegationTool);
   }
 
   /**
@@ -2093,3 +1977,157 @@ function finiteEvidenceTime(value: number | undefined): number | undefined {
     ? value
     : undefined;
 }
+
+// DevRyan: the board text as a pure function of the host's job records, so the
+// host's own job owner can render it (formatReviewedSlimTaskBoard). The class
+// methods above delegate here, keeping one rendering.
+export interface BackgroundJobBoardRenderInput {
+  readonly jobs: readonly BackgroundJobRecord[];
+  readonly reusable: readonly BackgroundJobRecord[];
+  readonly readContextMaxFiles: number;
+  readonly delegationTool: string;
+  readonly now: number;
+}
+
+export function renderBackgroundJobBoard(
+  input: BackgroundJobBoardRenderInput,
+): BackgroundJobPromptMetadata | undefined {
+    // Keep placeholders resolvable, but out of every operational section
+    // and the corresponding terminal-consumption metadata.
+    const jobs = input.jobs.filter(
+      (job) => job.provisional !== true,
+    );
+    // Long-unconfirmable running jobs leave the render (#1314); the store
+    // record survives and a real terminal publication returns the entry.
+    const isStaleUncertain = (job: BackgroundJobRecord) =>
+      job.state === 'running' &&
+      job.statusUncertain &&
+      input.now - (job.statusUncertainSince ?? job.updatedAt) >=
+        STATUS_UNCERTAIN_DEMOTE_AFTER_MS;
+    const active = jobs.filter(
+      (job) =>
+        (job.state === 'running' || job.terminalUnreconciled) &&
+        !isStaleUncertain(job),
+    );
+    // Aged ballast leaves the render (#1314 family). Applied only to
+    // reusable/retained below — the active filter's exemption is structural.
+    const isRenderAgedOut = (job: BackgroundJobRecord) =>
+      input.now - job.lastUsedAt >= AGED_ENTRY_RENDER_TTL_MS;
+    // listReusable predates the provisional provenance contract and is
+    // unaware of it: without this filter a reconciled completed
+    // placeholder would surface in the Reusable Sessions section even
+    // though it was never attributed (same exclusion as `jobs` above).
+    const reusable = input.reusable.filter(
+      (job) => job.provisional !== true && !isRenderAgedOut(job),
+    );
+    const retained = jobs.filter(
+      (job) => isRetainedStopped(job) && !isRenderAgedOut(job),
+    );
+    const acknowledgedFailedSession = reusable.some((job) => {
+      const terminal = job.terminalState ?? terminalStateOf(job.state);
+      return terminal === 'cancelled' || terminal === 'error';
+    });
+
+    if (active.length === 0 && reusable.length === 0 && retained.length === 0) {
+      return undefined;
+    }
+
+    const text = formatSystemReminder(
+      [
+        '### Background Job Board',
+        'SENTINEL: background-job-board-v2',
+        ...(acknowledgedFailedSession
+          ? [
+              'Acknowledged terminal sessions are reusable by alias for the same specialist/context.',
+            ]
+          : [
+              'Completed or reconciled sessions are reusable by alias for the same specialist/context.',
+            ]),
+        'Timed-out running sessions are recoverable by alias for safe resume after a live busy signal.',
+        ...(acknowledgedFailedSession
+          ? [
+              'Active, uncertain, or unacknowledged terminal sessions are not reusable.',
+            ]
+          : ['Cancelled or errored sessions are not reusable.']),
+        ...(input.delegationTool === 'task'
+          ? [
+              'Continue an existing session with task_revive even when it is not listed here. task_result only reads a result and is not required before task_revive.',
+            ]
+          : [
+              'Completed sessions continue with subagent() by exact session id even when they are not listed. Cancelled, errored, and stopped sessions use task_revive.',
+            ]),
+        ...(retained.length > 0
+          ? [
+              `Stopped sessions without a terminal result are retained for task_revive, not ${input.delegationTool}().`,
+            ]
+          : []),
+        '',
+        '#### Active / Unreconciled',
+        ...(active.length > 0 ? active.map(formatJob) : ['- none']),
+        '',
+        '#### Reusable Sessions',
+        ...(reusable.length > 0
+          ? reusable.map((job) => formatReusableJobLine(job, input.readContextMaxFiles))
+          : ['- none']),
+        ...(retained.length > 0
+          ? [
+              '',
+              '#### Retained / Recovery',
+              ...retained.map((job) => formatRetainedJobLine(job, input.readContextMaxFiles, input.delegationTool)),
+            ]
+          : []),
+      ].join('\n'),
+    );
+
+    const terminalUnreconciledTaskIDs = active
+      .filter((job) => job.terminalUnreconciled)
+      .map(({ taskID, generation, terminalRevision }) => ({
+        taskID,
+        generation,
+        terminalRevision,
+      }));
+
+    return { text, terminalUnreconciledTaskIDs };
+  }
+
+function formatReusableJobLine(
+  job: BackgroundJobRecord,
+  readContextMaxFiles: number,
+): string {
+    const terminal = job.terminalState ?? terminalStateOf(job.state);
+    const reconciliation = job.terminalUnreconciled
+      ? 'unreconciled'
+      : 'reconciled';
+    const lines = [
+      `- ${promptSafe(job.alias)} / ${promptSafe(job.taskID)} / ${promptSafe(job.agent)} / ${promptSafe(terminal ?? job.state)}, ${reconciliation}`,
+      `  Objective: ${promptSafe(job.description || job.objective || '')}`,
+    ];
+    const context = formatContextFiles(
+      job.contextFiles,
+      readContextMaxFiles,
+    );
+    if (context) lines.push(`  Context read by ${job.alias}: ${context}`);
+    return lines.join('\n');
+  }
+
+function formatRetainedJobLine(
+  job: BackgroundJobRecord,
+  readContextMaxFiles: number,
+  delegationTool: string,
+): string {
+    const lines = [
+      `- ${promptSafe(job.alias)} / ${promptSafe(job.taskID)} / ${promptSafe(job.agent)} / stopped, ${REVIVE_ONLY}`,
+      `  Objective: ${promptSafe(job.description || job.objective || '')}`,
+      ...(delegationTool === 'task'
+        ? []
+        : [
+            `  Recovery: no terminal result; recoverable with task_revive, not ${delegationTool}()`,
+          ]),
+    ];
+    const context = formatContextFiles(
+      job.contextFiles,
+      readContextMaxFiles,
+    );
+    if (context) lines.push(`  Context read by ${job.alias}: ${context}`);
+    return lines.join('\n');
+  }

@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { stripJsonComments } from '../cli/config-io';
+import { requireReviewedSlimConfiguration, reviewedSlimAgentData } from '../devryan/owners';
 import { getConfigSearchDirs } from '../cli/paths';
 import { DEFAULT_DISABLED_AGENTS } from './constants';
 import type { ResolvedPresetMap } from './presets';
@@ -42,6 +42,20 @@ export {
 /**
  * Warning kinds produced during config loading.
  */
+/** Upstream cli/config-io helper; strips JSONC comments and trailing commas. */
+export function stripJsonComments(json: string): string {
+  const commentPattern = /\\"|"(?:\\"|[^"])*"|(\/\/.*|\/\*[\s\S]*?\*\/)/g;
+  const trailingCommaPattern = /\\"|"(?:\\"|[^"])*"|(,)(\s*[}\]])/g;
+
+  return json
+    .replace(commentPattern, (match, commentGroup) =>
+      commentGroup ? '' : match,
+    )
+    .replace(trailingCommaPattern, (match, comma, closing) =>
+      comma ? closing : match,
+    );
+}
+
 export type ConfigLoadWarningKind =
   | 'invalid-json'
   | 'invalid-schema'
@@ -868,14 +882,13 @@ export function loadPluginConfig(
   directory: string,
   options?: LoadPluginConfigOptions,
 ): ResolvedPluginConfig {
-  const { userConfigPath, projectConfigPaths } = findPluginConfigPaths(
-    directory,
-    options?.hostFlavor,
-  );
-
-  let config: RawPluginConfig = userConfigPath
-    ? (loadPluginConfigFromPath(userConfigPath, options) ?? {})
-    : {};
+  // DevRyan: the host resolved and froze this location's merged user/project
+  // configuration (devryan-agents.json[c]); no file or environment is read here.
+  const saved = requireReviewedSlimConfiguration(directory);
+  const { userConfigPath, projectConfigPath } = saved;
+  let config: RawPluginConfig = structuredClone(
+    saved.configuration,
+  ) as RawPluginConfig;
 
   const presetPaths = new Map<string, string>();
   const presetInheritancePaths = new Map<string, string>();
@@ -894,15 +907,7 @@ export function loadPluginConfig(
       }
     }
   };
-  if (userConfigPath) recordConfigSources(config, userConfigPath);
-
-  for (const configPath of projectConfigPaths) {
-    const projectConfig = loadPluginConfigFromPath(configPath, options);
-    if (projectConfig) {
-      config = mergePluginConfigs(config, projectConfig);
-      recordConfigSources(projectConfig, configPath);
-    }
-  }
+  recordConfigSources(config, projectConfigPath ?? userConfigPath ?? '');
 
   // v2-derived defaults (pre-parse, on the merged explicit-only config so a
   // key any layer configured explicitly is never overridden): the v2 native
@@ -945,8 +950,9 @@ export function loadPluginConfig(
     config.multiplexer = MultiplexerConfigSchema.parse(config.multiplexer);
   }
 
-  // Override preset from environment variable if set
-  const envPreset = process.env.OH_MY_OPENCODE_SLIM_PRESET;
+  // DevRyan: the host already applied DEVRYAN_AGENTS_PRESET / the legacy
+  // variable / the saved preset when it froze this location.
+  const envPreset = saved.activePreset;
   if (envPreset) {
     config.preset = envPreset;
   }
@@ -1096,6 +1102,9 @@ export function loadAgentPrompt(
   prompt?: string;
   appendPrompt?: string;
 } {
+  // DevRyan: prompts captured in the host snapshot replace prompt file lookup.
+  const captured = reviewedSlimAgentData.getStore();
+  if (captured) return structuredClone(captured.prompts[agentName] ?? {});
   let preset: string | undefined;
   let projectDirectory: string | undefined;
   let hostFlavor: string | undefined;

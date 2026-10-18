@@ -7,11 +7,7 @@ export {
   startBackgroundInit,
 } from './cli';
 export type { EnvironmentCheckResult } from './constants';
-export {
-  ensureAstGrepBinary,
-  getCacheDir,
-  getCachedBinaryPath,
-} from './downloader';
+export { ensureAstGrepBinary } from './downloader';
 export type { CliLanguage, CliMatch, SgResult } from './types';
 export { CLI_LANGUAGES } from './types';
 export { ast_grep_replace, ast_grep_search };

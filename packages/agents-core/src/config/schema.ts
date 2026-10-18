@@ -1,5 +1,15 @@
 import { z } from 'zod';
-import { MarketplacePackageIdSchema } from '../marketplace/schemas';
+
+// Upstream marketplace/schemas (the marketplace itself is not part of DevRyan):
+// presets may still name package IDs, which are validated but never activated.
+const packageIdPattern = /^[a-z0-9][a-z0-9._-]{0,63}\/[a-z0-9][a-z0-9._-]{0,63}$/;
+const MarketplacePackageIdSchema = z
+  .string()
+  .trim()
+  .regex(
+    packageIdPattern,
+    'Expected a canonical package ID such as author/name',
+  );
 import {
   AGENT_THEME_COLORS,
   DEFAULT_MAX_RETAINED_SNAPSHOTS,

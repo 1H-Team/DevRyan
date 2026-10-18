@@ -1,8 +1,8 @@
-import { statSync } from 'node:fs';
 import path from 'node:path';
 
 import type { PluginInput } from '@opencode-ai/plugin';
 
+import { requireReviewedSlimPathOwner } from '../../devryan/owners';
 import { log } from '../../utils/logger';
 
 interface ToolExecuteBeforeInput {
@@ -85,7 +85,8 @@ export function createSearchPathGuardHook(ctx: PluginInput) {
 
       let missing = false;
       try {
-        statSync(resolved);
+        // DevRyan: the invocation path owner preserves ENOENT/ENOTDIR codes.
+        await requireReviewedSlimPathOwner().stat(resolved);
       } catch (error) {
         const code = (error as NodeJS.ErrnoException).code;
         if (code === 'ENOENT') {

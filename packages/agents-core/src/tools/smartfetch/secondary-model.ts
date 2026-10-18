@@ -1,8 +1,7 @@
 import type { PluginInput } from '@opencode-ai/plugin';
-import { SMARTFETCH_SECONDARY_SESSION_TITLE } from '../../config/constants';
-import { getClient } from '../../utils/opencode-client';
-import { abortSessionWithTimeout } from '../../utils/session';
+import { requireReviewedWebfetchOwner } from '../../devryan/owners';
 import { MAX_MODEL_CONTENT_CHARS } from './constants';
+import { runWithScopedTimeout } from './network';
 import type { CachedFetch, SecondaryModel } from './types';
 
 interface SecondaryModelResolutionInput {
@@ -130,243 +129,39 @@ export function decideSecondaryModelUse(
   return { use: true, reason: 'prompt_present' as const };
 }
 
-const SESSION_DELETE_RETRIES = 3;
-const SESSION_DELETE_RETRY_DELAY_MS = 500;
 const SECONDARY_MODEL_TIMEOUT_MS = 30_000;
-const pendingSecondaryModelCleanups = new WeakMap<object, number>();
 
 /**
- * Exposed for tests so they can avoid real wall-clock sleeps.
- * Not part of the public API.
+ * DevRyan: the secondary model runs through the invocation owner, which owns
+ * provider authority and must abort and settle its work before returning
+ * after cancellation. No temporary session is created by this module.
  */
-export const _testConfig = {
-  deleteRetryDelayMs: SESSION_DELETE_RETRY_DELAY_MS,
-  secondaryModelTimeoutMs: SECONDARY_MODEL_TIMEOUT_MS,
-};
-
-async function raceTimeout<T>(operation: Promise<T>, onTimeout?: () => void) {
-  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      operation,
-      new Promise<never>((_, reject) => {
-        timeoutHandle = setTimeout(() => {
-          onTimeout?.();
-          reject(new Error('Secondary model timed out'));
-        }, _testConfig.secondaryModelTimeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
-  }
-}
-
-/**
- * Delete a temporary secondary-model session with retry.
- *
- * The previous implementation swallowed all errors silently via
- * `.catch(() => undefined)`, which left orphaned sessions in the database
- * whenever the delete failed (e.g. during an OpenCode instance dispose/reload
- * cycle). This retries transient failures and logs persistent ones so the
- * issue is visible instead of silently leaking sessions.
- */
-async function deleteSessionSafely(
-  input: PluginInput,
-  sessionId: string,
-): Promise<void> {
-  const client = getClient(input);
-  for (let attempt = 1; attempt <= SESSION_DELETE_RETRIES; attempt++) {
-    try {
-      await client.session.delete({
-        path: { id: sessionId },
-        query: { directory: input.directory },
-      });
-      return;
-    } catch (error) {
-      if (attempt >= SESSION_DELETE_RETRIES) {
-        console.warn(
-          `[smartfetch] Failed to clean up secondary session ${sessionId} ` +
-            `after ${SESSION_DELETE_RETRIES} attempts: ` +
-            (error instanceof Error ? error.message : String(error)),
-        );
-        return;
-      }
-      await new Promise((resolve) =>
-        setTimeout(resolve, _testConfig.deleteRetryDelayMs),
-      );
-    }
-  }
-}
-
-/** One-shot generation channel exposed by the v2 host
- * (`ctx.generate.text`), threaded through `PluginInput.experimental_v2`. */
-export type V2GenerateText = (
-  prompt: string,
-  model?: { id: string; providerID: string; variant?: string },
-) => Promise<{ text: string }>;
-
-/**
- * v2 path: one-shot `ctx.generate.text`, no temporary session.
- *
- * Skips session.create / tool.ids / session.delete entirely (the v2 host
- * manages generation lifetime) while preserving the v1 contract: the same
- * deterministic `buildPrompt` embedding (generate.text has no separate
- * content channel), the same truncation + note behavior, the same
- * `{text, inputTruncated, inputChars, sourceChars}` result shape, and the
- * same `Promise.race` timeout error so the fallback chain treats v2
- * timeouts exactly like v1 timeouts.
- */
-async function runSecondaryModelViaGenerateText(
-  generateText: V2GenerateText,
-  model: SecondaryModel,
-  prompt: string,
-  content: string,
-) {
-  const { truncatedContent, effectivePrompt, ...inputStats } = prepareInput(
-    content,
-    prompt,
-  );
-
-  const { variant, ...modelOnly } = model;
-  const modelRef = {
-    id: modelOnly.modelID,
-    providerID: modelOnly.providerID,
-    ...(variant ? { variant } : {}),
-  };
-
-  const result = await raceTimeout(
-    generateText(buildPrompt(truncatedContent, effectivePrompt), modelRef),
-  );
-  return { text: result.text.trim(), ...inputStats };
-}
-
 async function runSecondaryModel(
-  input: PluginInput,
+  _input: PluginInput,
   model: SecondaryModel,
   prompt: string,
   content: string,
   parentSessionID?: string,
 ) {
-  const generateText = (
-    input as { experimental_v2?: { generateText?: unknown } }
-  ).experimental_v2?.generateText;
-  if (typeof generateText === 'function') {
-    return runSecondaryModelViaGenerateText(
-      generateText as V2GenerateText,
-      model,
-      prompt,
-      content,
-    );
-  }
-
-  const client = getClient(input);
-  const directory = input.directory;
-  if (pendingSecondaryModelCleanups.has(client)) {
-    throw new Error(
-      'A secondary model session cleanup is still pending; using fetched content without starting another session',
-    );
-  }
-  let sessionId: string | undefined;
-  let promptPromise: Promise<unknown> | undefined;
-  let promptTimedOut = false;
-  try {
-    const sessionResponse = await client.session.create({
-      query: { directory },
-      body: {
-        title: SMARTFETCH_SECONDARY_SESSION_TITLE,
-        ...(parentSessionID ? { parentID: parentSessionID } : {}),
-      },
-      throwOnError: true,
-    });
-
-    const session = sessionResponse.data;
-    sessionId = session?.id;
-    if (!sessionId) {
-      const errorDetail =
-        sessionResponse && 'error' in sessionResponse
-          ? `: ${JSON.stringify(sessionResponse.error)}`
-          : '';
-      throw new Error(
-        `Secondary model session did not return an id${errorDetail}`,
-      );
-    }
-
-    const { truncatedContent, effectivePrompt, ...inputStats } = prepareInput(
-      content,
-      prompt,
-    );
-    const toolIDsResponse = await client.tool.ids({
-      query: { directory },
-    });
-    const toolIDs = toolIDsResponse.data ?? [];
-    const disabledTools = Object.fromEntries(
-      (toolIDs || []).map((id: string) => [id, false]),
-    );
-
-    const { variant, ...modelOnly } = model;
-    promptPromise = client.session.prompt({
-      path: { id: sessionId },
-      query: { directory },
-      body: {
-        model: modelOnly,
-        // The v1 runtime reads the variant from the body top level and
-        // strips unknown keys from `model`; the SDK type omits it, so
-        // spread it through the body shape directly.
-        ...(variant ? { variant } : {}),
-        system:
-          'Answer only from the supplied content. Do not use tools or outside knowledge.',
-        tools: disabledTools,
-        parts: [
-          {
-            type: 'text',
-            text: buildPrompt(truncatedContent, effectivePrompt),
-          },
-        ],
-      },
-    });
-    const result = await raceTimeout(promptPromise, () => {
-      promptTimedOut = true;
-      pendingSecondaryModelCleanups.set(
-        client,
-        (pendingSecondaryModelCleanups.get(client) ?? 0) + 1,
-      );
-    });
-
-    const parts =
-      (result as { data?: { parts?: Array<{ type?: string; text?: string }> } })
-        ?.data?.parts ?? [];
-    const text = parts
-      .map((part) => (part?.type === 'text' ? part.text || '' : ''))
-      .join('')
-      .trim();
-
-    return { text, ...inputStats };
-  } catch (error) {
-    if (promptTimedOut && sessionId) {
-      try {
-        await abortSessionWithTimeout(client, sessionId);
-      } catch {
-        // Keep the original timeout error. Cleanup remains gated on the
-        // prompt settling so a failed abort cannot recreate the FK race.
-      }
-    }
-    throw error;
-  } finally {
-    const cleanupSessionId = sessionId;
-    if (promptTimedOut && promptPromise && cleanupSessionId) {
-      void promptPromise
-        .catch(() => undefined)
-        .then(() => deleteSessionSafely(input, cleanupSessionId))
-        .finally(() => {
-          const remaining =
-            (pendingSecondaryModelCleanups.get(client) ?? 1) - 1;
-          if (remaining) pendingSecondaryModelCleanups.set(client, remaining);
-          else pendingSecondaryModelCleanups.delete(client);
-        });
-    } else if (cleanupSessionId) {
-      await deleteSessionSafely(input, cleanupSessionId);
-    }
-  }
+  const owner = requireReviewedWebfetchOwner();
+  if (parentSessionID !== owner.sessionID)
+    throw new Error('reviewed_webfetch_session_mismatch');
+  const { truncatedContent, effectivePrompt, ...inputStats } = prepareInput(
+    content,
+    prompt,
+  );
+  const text = await runWithScopedTimeout(
+    owner.signal,
+    SECONDARY_MODEL_TIMEOUT_MS,
+    (signal) =>
+      owner.secondary({
+        sessionID: parentSessionID,
+        model,
+        prompt: buildPrompt(truncatedContent, effectivePrompt),
+        signal,
+      }),
+  );
+  return { text: text.trim(), ...inputStats };
 }
 
 export async function runSecondaryModelWithFallback(

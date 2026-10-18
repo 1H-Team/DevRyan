@@ -199,9 +199,14 @@ export class RuntimeConfig {
     directory: string,
     pluginConfig: ResolvedPluginConfig,
     hostFlavor?: string,
+    // DevRyan: the host snapshot captures the location's local skills; the
+    // instance then never discovers skills on disk.
+    options?: { readonly localSkillNames?: readonly string[] },
   ): RuntimeConfig {
     const instance = new RuntimeConfig(directory, hostFlavor);
     instance.seedPlugin(pluginConfig);
+    if (options?.localSkillNames)
+      instance.localSkillNamesCache = [...options.localSkillNames];
     return instance;
   }
 

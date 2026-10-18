@@ -1,6 +1,4 @@
-import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import type { PluginInput } from '@opencode-ai/plugin';
 import type { InterviewConfig } from '../config';
@@ -11,29 +9,19 @@ import {
 } from '../utils';
 import { parseModelReference } from '../utils/session';
 import {
-  appendInterviewAnswers,
-  claimInterviewDocument,
   createInterviewDirectoryPath,
   createInterviewFilePath,
   DEFAULT_OUTPUT_FOLDER,
-  ensureInterviewFile,
   extractSpecOutline,
   extractSummarySection,
   extractTitle,
   hashInterviewState,
   InterviewDocumentOwnershipError,
   InterviewPatchApplyError,
-  markInterviewDocumentComplete,
-  markInterviewDocumentIncomplete,
   normalizeOutputFolder,
   parseFrontmatter,
   parseSpecBlocks,
-  readInterviewDocument,
   relativeInterviewPath,
-  resolveExistingInterviewPath,
-  rewriteInterviewDocument,
-  rewriteInterviewDocumentWithFinalSpec,
-  withInterviewDocumentLock,
 } from './document';
 import {
   buildFallbackState,
@@ -60,10 +48,8 @@ import {
   buildResumePrompt,
   type SpecPromptContext,
 } from './prompts';
-import {
-  createV1InterviewSessionRuntime,
-  type InterviewSessionRuntime,
-} from './runtime';
+import type { InterviewDocuments } from './owned-documents';
+import type { InterviewSessionRuntime } from './runtime';
 import type {
   InterviewAnswer,
   InterviewAssistantState,
@@ -134,45 +120,6 @@ function shouldAutoOpenBrowser(
   return requested && !isAutomatedRuntime(env);
 }
 
-/**
- * Open a URL in the default browser.
- * Supports macOS, Linux, and Windows. Failures are logged but not thrown.
- */
-function openBrowser(url: string): void {
-  const platform = process.platform;
-  let command: string;
-  let args: string[];
-
-  if (platform === 'darwin') {
-    command = 'open';
-    args = [url];
-  } else if (platform === 'win32') {
-    command = 'cmd';
-    args = ['/c', 'start', '', url];
-  } else {
-    // Linux and other Unix-like systems
-    command = 'xdg-open';
-    args = [url];
-  }
-
-  try {
-    const child = spawn(command, args, {
-      detached: true,
-      windowsHide: true,
-      stdio: 'ignore',
-    });
-    child.on('error', (error) => {
-      log('[interview] failed to open browser:', { error: error.message, url });
-    });
-    child.unref();
-  } catch (error) {
-    log('[interview] failed to spawn browser opener:', {
-      error: error instanceof Error ? error.message : String(error),
-      url,
-    });
-  }
-}
-
 function nowIso(): string {
   return new Date().toISOString();
 }
@@ -180,10 +127,14 @@ function nowIso(): string {
 export function createInterviewService(
   ctx: PluginInput,
   config?: InterviewConfig,
-  deps?: {
-    openBrowser?: (url: string) => void;
+  // DevRyan: document I/O, the session runtime and the browser opener are
+  // lent by the host's interview owner; this service never touches the
+  // filesystem, spawns processes or reaches the client directly.
+  deps: {
+    documents: InterviewDocuments;
+    openBrowser: (url: string) => void;
     env?: NodeJS.ProcessEnv;
-    runtime?: InterviewSessionRuntime;
+    runtime: InterviewSessionRuntime;
   },
 ): {
   setBaseUrlResolver: (resolver: () => Promise<string>) => void;
@@ -250,8 +201,11 @@ export function createInterviewService(
     config,
     deps?.env ?? process.env,
   );
-  const browserOpener = deps?.openBrowser ?? openBrowser;
-  const sessionRuntime = deps?.runtime ?? createV1InterviewSessionRuntime(ctx);
+  const documents = deps?.documents;
+  if (!documents || !deps.runtime || typeof deps.openBrowser !== 'function')
+    throw new Error('reviewed_interview_owner_required');
+  const browserOpener = deps.openBrowser;
+  const sessionRuntime = deps.runtime;
   const activeInterviewIds = new Map<string, string>();
   const interviewsById = new Map<string, InterviewRecord>();
   const activeSyncs = new Map<string, Promise<InterviewState>>();
@@ -452,8 +406,8 @@ export function createInterviewService(
       if (active && active.status === 'active') {
         if (active.idea === normalizedIdea) {
           if (active.completed) {
-            await withInterviewDocumentLock(active.markdownPath, () =>
-              markInterviewDocumentIncomplete(active),
+            await documents.withLock(active.markdownPath, () =>
+              documents.markIncomplete(active),
             );
             active.completed = false;
           }
@@ -481,8 +435,8 @@ export function createInterviewService(
       baseMessageCount: messages.length,
     };
 
-    await withInterviewDocumentLock(record.markdownPath, () =>
-      ensureInterviewFile(record),
+    await documents.withLock(record.markdownPath, () =>
+      documents.ensure(record),
     );
     bindInterview(record);
     return record;
@@ -498,8 +452,8 @@ export function createInterviewService(
       if (active && active.status === 'active') {
         if (active.markdownPath === markdownPath) {
           if (active.completed) {
-            await withInterviewDocumentLock(active.markdownPath, () =>
-              markInterviewDocumentIncomplete(active),
+            await documents.withLock(active.markdownPath, () =>
+              documents.markIncomplete(active),
             );
             active.completed = false;
           }
@@ -511,7 +465,7 @@ export function createInterviewService(
     }
 
     const messages = await loadMessages(sessionID);
-    const document = await claimInterviewDocument(
+    const document = await documents.claim(
       markdownPath,
       sessionID,
       messages.length,
@@ -530,8 +484,8 @@ export function createInterviewService(
     };
 
     if (record.completed) {
-      await withInterviewDocumentLock(record.markdownPath, () =>
-        markInterviewDocumentIncomplete(record),
+      await documents.withLock(record.markdownPath, () =>
+        documents.markIncomplete(record),
       );
       record.completed = false;
     }
@@ -570,8 +524,8 @@ export function createInterviewService(
     applied: boolean;
     hash: string;
   }> {
-    return withInterviewDocumentLock(interview.markdownPath, async () => {
-      const existingDocument = await readInterviewDocument(interview);
+    return documents.withLock(interview.markdownPath, async () => {
+      const existingDocument = await documents.read(interview);
       const turnHash = hashInterviewState(state);
       const consumed = parseFrontmatter(existingDocument)?.consumedState;
       if (consumed === turnHash) {
@@ -584,7 +538,7 @@ export function createInterviewService(
       }
 
       try {
-        let document = await rewriteInterviewDocument(
+        let document = await documents.rewrite(
           interview,
           state.summary,
           state.title,
@@ -595,7 +549,7 @@ export function createInterviewService(
           state.questions.length > 0 &&
           parseFrontmatter(document)?.status === 'complete'
         ) {
-          document = await markInterviewDocumentIncomplete(interview);
+          document = await documents.markIncomplete(interview);
           interview.completed = false;
         }
         memoryFor(interview.id).patchRepairSent = false;
@@ -684,8 +638,8 @@ export function createInterviewService(
       while (pending.length > 0) {
         const batch = pending[0];
         try {
-          await withInterviewDocumentLock(interview.markdownPath, () =>
-            appendInterviewAnswers(interview, batch.questions, batch.answers),
+          await documents.withLock(interview.markdownPath, () =>
+            documents.appendAnswers(interview, batch.questions, batch.answers),
           );
           pending.shift();
         } catch (error) {
@@ -752,7 +706,7 @@ export function createInterviewService(
     retryMessages = true,
   ): Promise<InterviewState> {
     if (interview.status !== 'active') {
-      const document = await readInterviewDocument(interview);
+      const document = await documents.read(interview);
       return {
         interview,
         url: `${await ensureServer()}/interview/${interview.id}`,
@@ -885,8 +839,8 @@ export function createInterviewService(
     let document: string;
 
     if (isCleanFinalResponse) {
-      document = await withInterviewDocumentLock(interview.markdownPath, () =>
-        rewriteInterviewDocumentWithFinalSpec(interview, latestAssistantText),
+      document = await documents.withLock(interview.markdownPath, () =>
+        documents.rewriteFinal(interview, latestAssistantText),
       );
       finalizationPending.delete(interview.id);
       delete memoryFor(interview.id).lastAppliedState;
@@ -925,8 +879,8 @@ export function createInterviewService(
         }
       }
     } else {
-      document = await withInterviewDocumentLock(interview.markdownPath, () =>
-        readInterviewDocument(interview),
+      document = await documents.withLock(interview.markdownPath, () =>
+        documents.read(interview),
       );
     }
 
@@ -1422,10 +1376,10 @@ export function createInterviewService(
       turnFor(sessionID).serviceInitiated = true;
       serviceInitiated = true;
       if (interview.completed) {
-        const beforeReopen = await readInterviewDocument(interview);
+        const beforeReopen = await documents.read(interview);
         reopenedConsumedState = parseFrontmatter(beforeReopen)?.consumedState;
-        await withInterviewDocumentLock(interview.markdownPath, () =>
-          markInterviewDocumentIncomplete(interview),
+        await documents.withLock(interview.markdownPath, () =>
+          documents.markIncomplete(interview),
         );
         interview.completed = false;
         reopenedCompletion = true;
@@ -1444,13 +1398,13 @@ export function createInterviewService(
         }
         if (reopenedCompletion) {
           try {
-            await withInterviewDocumentLock(
+            await documents.withLock(
               interview.markdownPath,
               async () => {
-                const current = await readInterviewDocument(interview);
+                const current = await documents.read(interview);
                 const consumedState = parseFrontmatter(current)?.consumedState;
                 if (consumedState !== reopenedConsumedState) return;
-                await markInterviewDocumentComplete(interview);
+                await documents.markComplete(interview);
                 interview.completed = true;
               },
             );
@@ -1603,14 +1557,14 @@ export function createInterviewService(
       }
 
       if (interview.completed) {
-        await withInterviewDocumentLock(interview.markdownPath, () =>
-          markInterviewDocumentIncomplete(interview),
+        await documents.withLock(interview.markdownPath, () =>
+          documents.markIncomplete(interview),
         );
         interview.completed = false;
       }
       await notifyInterviewUrl(input.sessionID, interview);
       turnFor(input.sessionID).serviceInitiated = true;
-      const document = await readInterviewDocument(interview);
+      const document = await documents.read(interview);
       const preface =
         'The interview UI was reopened for the current session. If your latest interview turn already contains unanswered questions, do not repeat them.';
       output.parts.push(
@@ -1625,7 +1579,7 @@ export function createInterviewService(
       return;
     }
 
-    const resumePath = resolveExistingInterviewPath(
+    const resumePath = await documents.resolveExisting(
       ctx.directory,
       outputFolder,
       idea,
@@ -1645,7 +1599,7 @@ export function createInterviewService(
         }
         throw error;
       }
-      const document = await fs.readFile(interview.markdownPath, 'utf8');
+      const document = await documents.readText(interview.markdownPath, 'utf8');
       await notifyInterviewUrl(input.sessionID, interview);
       turnFor(input.sessionID).serviceInitiated = true;
       output.parts.push(
@@ -1661,7 +1615,7 @@ export function createInterviewService(
     }
 
     const interview = await createInterview(input.sessionID, idea);
-    const document = await fs.readFile(interview.markdownPath, 'utf8');
+    const document = await documents.readText(interview.markdownPath, 'utf8');
     const existingSummary = extractSummarySection(document).trim();
     const hasExistingSpec =
       existingSummary !== '' &&
@@ -1836,7 +1790,7 @@ export function createInterviewService(
 
     let entries: string[];
     try {
-      entries = await fs.readdir(outputDir);
+      entries = await documents.list(outputDir);
     } catch {
       return [];
     }
@@ -1849,7 +1803,7 @@ export function createInterviewService(
 
       let content: string;
       try {
-        content = await fs.readFile(fullPath, 'utf8');
+        content = await documents.readText(fullPath, 'utf8');
       } catch {
         continue;
       }
@@ -1938,17 +1892,17 @@ export function createInterviewService(
     }
     if (action === 'confirm-complete') {
       await retryPendingAnswerHistory(interview);
-      const didComplete = await withInterviewDocumentLock(
+      const didComplete = await documents.withLock(
         interview.markdownPath,
         async () => {
-          const current = await readInterviewDocument(interview);
+          const current = await documents.read(interview);
           if (parseFrontmatter(current)?.status === 'complete') return false;
           if (memoryFor(interview.id).pendingAnswers === true) {
             throw new Error(
               'Cannot complete while answers are awaiting incorporation.',
             );
           }
-          await markInterviewDocumentComplete(interview);
+          await documents.markComplete(interview);
           return true;
         },
       );
@@ -1982,7 +1936,7 @@ export function createInterviewService(
     const outputDir = createInterviewDirectoryPath(ctx.directory, outputFolder);
     let entries: string[];
     try {
-      entries = await fs.readdir(outputDir);
+      entries = await documents.list(outputDir);
     } catch {
       return null;
     }
@@ -1992,8 +1946,8 @@ export function createInterviewService(
       const filePath = path.join(outputDir, entry);
       try {
         const [content, stat] = await Promise.all([
-          fs.readFile(filePath, 'utf8'),
-          fs.stat(filePath),
+          documents.readText(filePath, 'utf8'),
+          documents.stat(filePath),
         ]);
         if (parseFrontmatter(content)?.status !== 'complete') continue;
         if (!best || stat.mtimeMs > best.mtime) {
@@ -2017,7 +1971,7 @@ export function createInterviewService(
       await retryPendingAnswerHistory(activeInterview);
     }
     const requestedPath = requested
-      ? resolveExistingInterviewPath(ctx.directory, outputFolder, requested)
+      ? await documents.resolveExisting(ctx.directory, outputFolder, requested)
       : null;
     if (
       activeInterview &&
@@ -2036,7 +1990,7 @@ export function createInterviewService(
     }
     let markdownPath: string | null = null;
     if (requested) {
-      markdownPath = resolveExistingInterviewPath(
+      markdownPath = await documents.resolveExisting(
         ctx.directory,
         outputFolder,
         requested,
@@ -2056,7 +2010,7 @@ export function createInterviewService(
       return;
     }
 
-    const selectedDocument = await fs.readFile(markdownPath, 'utf8');
+    const selectedDocument = await documents.readText(markdownPath, 'utf8');
     const active = [...interviewsById.values()].find(
       (record) =>
         record.status === 'active' &&

@@ -1,13 +1,12 @@
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
+import { requireReviewedWebfetchOwner } from '../devryan/owners';
 
 export type JsdomModule = typeof import('jsdom');
 type JsdomLoader = () => Promise<JsdomModule>;
 
+// DevRyan: the reviewed DOM closure is lent per invocation by its owner;
+// no package is resolved from the host filesystem.
 async function importJSDOM(): Promise<JsdomModule> {
-  const require = createRequire(import.meta.url);
-  const entrypoint = require.resolve('jsdom');
-  return (await import(pathToFileURL(entrypoint).href)) as JsdomModule;
+  return (await requireReviewedWebfetchOwner().loadJSDOM()) as JsdomModule;
 }
 
 export function createJSDOMLoader(loader: JsdomLoader): JsdomLoader {
@@ -25,15 +24,9 @@ export function createJSDOMLoader(loader: JsdomLoader): JsdomLoader {
   };
 }
 
-const loadJSDOMFromFile = createJSDOMLoader(importJSDOM);
-
-/**
- * Resolve jsdom to its installed file before importing it. This keeps
- * transitive relative asset loads anchored to a real filesystem URL instead
- * of the host's bundled module URL.
- */
+/** Not memoized: every invocation asks its own owner. */
 export function loadJSDOM(): Promise<JsdomModule> {
-  return loadJSDOMFromFile();
+  return importJSDOM();
 }
 
 /**

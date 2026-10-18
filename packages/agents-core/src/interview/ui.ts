@@ -118,10 +118,12 @@ function brandImage(size: number): string {
   return `<img class="brand-mark" src="${BRAND_LOGO_URL}" alt="Oh My Opencode Slim" width="${size}" height="${size}" />`;
 }
 
+// DevRyan: pages are served under the host's authorized route prefix.
 export function renderDashboardPage(
   interviews: DashboardInterviewItem[],
   files: InterviewFileItem[],
   outputFolder: string,
+  basePrefix = '',
 ): string {
   const activeHtml =
     interviews.length === 0
@@ -410,10 +412,10 @@ export function renderDashboardPage(
       let lastSig = '';
       let bannerTimer = null;
       // Use health endpoint for change detection (no auth needed, shows counts)
-      (async () => { try { const r = await fetch('/api/health'); if (r.ok) lastSig = await r.text(); } catch {} })();
+      (async () => { try { const r = await fetch(${JSON.stringify(basePrefix)} + '/api/health'); if (r.ok) lastSig = await r.text(); } catch {} })();
       setInterval(async () => {
         try {
-          const res = await fetch('/api/health');
+          const res = await fetch(${JSON.stringify(basePrefix)} + '/api/health');
           if (!res.ok) return;
           const sig = await res.text();
           if (sig !== lastSig) {
@@ -430,7 +432,7 @@ export function renderDashboardPage(
       // Settings: load current state
       (async () => {
         try {
-          const r = await fetch('/api/settings');
+          const r = await fetch(${JSON.stringify(basePrefix)} + '/api/settings');
           if (!r.ok) return;
           const s = await r.json();
           const sel = document.getElementById('scanDays');
@@ -452,7 +454,7 @@ export function renderDashboardPage(
           const btn = document.createElement('button');
           btn.textContent = 'Remove';
           btn.addEventListener('click', async function() {
-            await fetch('/api/settings', {
+            await fetch(${JSON.stringify(basePrefix)} + '/api/settings', {
               method: 'POST',
               headers: { 'content-type': 'application/json' },
               body: JSON.stringify({ removeFolder: dir })
@@ -467,7 +469,7 @@ export function renderDashboardPage(
 
       document.getElementById('rescanBtn')?.addEventListener('click', async function() {
         const days = parseInt(document.getElementById('scanDays').value, 10);
-        await fetch('/api/settings', {
+        await fetch(${JSON.stringify(basePrefix)} + '/api/settings', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ scanDays: days, discover: true })
@@ -479,7 +481,7 @@ export function renderDashboardPage(
         const input = document.getElementById('addFolderInput');
         const dir = input.value.trim();
         if (!dir) return;
-        await fetch('/api/settings', {
+        await fetch(${JSON.stringify(basePrefix)} + '/api/settings', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ addFolder: dir })
@@ -495,6 +497,7 @@ export function renderDashboardPage(
 export function renderInterviewPage(
   interviewId: string,
   resumeSlug: string,
+  basePrefix = '',
 ): string {
   const safeTitle = escapeHtml(interviewId);
 
@@ -1028,7 +1031,7 @@ export function renderInterviewPage(
   <body>
     <nav id="tocSidebar" class="toc-sidebar"></nav>
     <div class="wrap">
-      <a href="/" class="back-link">← All Interviews</a>
+      <a href="${escapeHtml(basePrefix + "/")}" class="back-link">← All Interviews</a>
       <div class="brand-header">
         ${brandImage(144)}
       </div>
@@ -1448,7 +1451,7 @@ export function renderInterviewPage(
         submitStatus.textContent = '';
 
         try {
-          const res = await fetch('/api/interviews/' + encodeURIComponent(interviewId) + '/block-comment', {
+          const res = await fetch(${JSON.stringify(basePrefix)} + '/api/interviews/' + encodeURIComponent(interviewId) + '/block-comment', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ section: sectionTitle, comment: commentText }),
@@ -1655,7 +1658,7 @@ export function renderInterviewPage(
         const submitStatus = document.getElementById('submitStatus');
         submitStatus.textContent = '';
         try {
-          const res = await fetch('/api/interviews/' + encodeURIComponent(interviewId) + '/chat', {
+          const res = await fetch(${JSON.stringify(basePrefix)} + '/api/interviews/' + encodeURIComponent(interviewId) + '/chat', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ message }),
@@ -1855,7 +1858,7 @@ export function renderInterviewPage(
       }
 
       async function refresh() {
-        const url = '/api/interviews/' + encodeURIComponent(interviewId) + '/state';
+        const url = ${JSON.stringify(basePrefix)} + '/api/interviews/' + encodeURIComponent(interviewId) + '/state';
         const response = await fetch(url);
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'Failed to load state');
@@ -1886,7 +1889,7 @@ export function renderInterviewPage(
         scrollToTop();
 
         try {
-          const response = await fetch('/api/interviews/' + encodeURIComponent(interviewId) + '/answers', {
+          const response = await fetch(${JSON.stringify(basePrefix)} + '/api/interviews/' + encodeURIComponent(interviewId) + '/answers', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ answers }),
@@ -1934,7 +1937,7 @@ export function renderInterviewPage(
         document.getElementById('submitStatus').textContent = '';
         try {
           const url =
-            '/api/interviews/' +
+            ${JSON.stringify(basePrefix)} + '/api/interviews/' +
             encodeURIComponent(interviewId) +
             '/nudge';
           const res = await fetch(url, {
@@ -1971,7 +1974,7 @@ export function renderInterviewPage(
         if (activeEs) {
           activeEs.close();
         }
-        const sseUrl = '/api/interviews/' + encodeURIComponent(interviewId) + '/events';
+        const sseUrl = ${JSON.stringify(basePrefix)} + '/api/interviews/' + encodeURIComponent(interviewId) + '/events';
         const es = new EventSource(sseUrl);
         activeEs = es;
 

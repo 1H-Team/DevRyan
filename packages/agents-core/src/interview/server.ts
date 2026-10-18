@@ -431,3 +431,238 @@ export function createInterviewServer(deps: {
     },
   };
 }
+
+/**
+ * DevRyan: the original dashboard/page/API request handling without a
+ * listener. The host's web server routes requests here under its own prefix
+ * and authorizes each one first; no port is bound and no election runs.
+ */
+export function createInterviewHandler(deps: {
+  basePrefix?: string;
+  authorize: (request: IncomingMessage) => Promise<void>;
+  getState: (interviewId: string) => Promise<InterviewState>;
+  listInterviewFiles: () => Promise<InterviewFileItem[]>;
+  listInterviews: () => InterviewListItem[];
+  submitAnswers: (interviewId: string, answers: InterviewAnswer[]) => Promise<void>;
+  submitBlockComment: (interviewId: string, section: string, comment: string) => Promise<void>;
+  submitChat: (interviewId: string, message: string) => Promise<void>;
+  handleNudgeAction: (interviewId: string, action: 'more-questions' | 'confirm-complete') => Promise<void>;
+  outputFolder: string;
+}): (request: IncomingMessage, response: ServerResponse) => Promise<void> {
+  if (!deps || typeof deps.authorize !== 'function')
+    throw new Error('reviewed_interview_http_authorization_required');
+  const basePrefix = deps.basePrefix ?? '';
+  if (typeof basePrefix !== 'string' || (basePrefix !== '' && !/^(?:\/[a-zA-Z0-9_-]+)+$/.test(basePrefix)))
+    throw new Error('reviewed_interview_base_prefix_invalid');
+  async function loadDashboardData() {
+    const interviews = deps.listInterviews().map((item) => {
+      const resumeSlug = extractResumeSlug(item.id);
+      return {
+        ...item,
+        url: `${basePrefix}/interview/${item.id}`,
+        mode: 'active',
+        resumeSlug,
+      };
+    });
+    const files = await deps.listInterviewFiles();
+    return { interviews, files };
+  }
+
+  async function handle(
+    request: IncomingMessage,
+    response: ServerResponse,
+  ): Promise<void> {
+    let url: URL;
+    try {
+      url = new URL(request.url ?? '/', 'http://127.0.0.1');
+    } catch {
+      sendJson(response, 400, { error: 'Invalid request URL' });
+      return;
+    }
+    const pathname = url.pathname;
+
+    // Dashboard: root page listing all interviews
+    if (request.method === 'GET' && pathname === '/') {
+      try {
+        const { interviews, files } = await loadDashboardData();
+        sendHtml(
+          response,
+          renderDashboardPage(interviews, files, deps.outputFolder, basePrefix),
+        );
+      } catch {
+        sendJson(response, 500, { error: 'Failed to load interviews' });
+      }
+      return;
+    }
+
+    // API: list all interviews as JSON
+    if (request.method === 'GET' && pathname === '/api/interviews') {
+      try {
+        const { interviews, files } = await loadDashboardData();
+        sendJson(response, 200, { active: interviews, files });
+      } catch {
+        sendJson(response, 500, { error: 'Failed to load interviews' });
+      }
+      return;
+    }
+
+    if (request.method === 'GET' && pathname.startsWith('/interview/')) {
+      const rawId = decodeURIComponent(pathname.split('/').pop() ?? 'unknown');
+      sendHtml(response, renderInterviewPage(rawId, extractResumeSlug(rawId), basePrefix));
+      return;
+    }
+
+    const stateMatch = pathname.match(/^\/api\/interviews\/([^/]+)\/state$/);
+    if (request.method === 'GET' && stateMatch) {
+      try {
+        const state = await deps.getState(decodeURIComponent(stateMatch[1]));
+        sendJson(response, 200, state);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Interview not found';
+        const status = message === 'Interview not found' ? 404 : 500;
+        sendJson(response, status, { error: message });
+      }
+      return;
+    }
+
+    // CSRF note: This endpoint intentionally sends no CORS headers.
+    // The browser's same-origin policy blocks cross-origin POST with
+    // Content-Type: application/json (it triggers a preflight, which
+    // 404s here). Do NOT add Access-Control-Allow-Origin without also
+    // adding an Origin check or CSRF token.
+    const answersMatch = pathname.match(
+      /^\/api\/interviews\/([^/]+)\/answers$/,
+    );
+    if (request.method === 'POST' && answersMatch) {
+      try {
+        const body = parseAnswersPayload(await readJsonBody(request));
+        await deps.submitAnswers(
+          decodeURIComponent(answersMatch[1]),
+          body.answers,
+        );
+        sendJson(response, 200, {
+          ok: true,
+          message: 'Answers submitted to the OpenCode session.',
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Failed to submit answers.';
+        const status = getSubmissionStatus(error);
+        sendJson(response, status, {
+          ok: false,
+          message,
+        });
+      }
+      return;
+    }
+
+    const blockCommentMatch = pathname.match(
+      /^\/api\/interviews\/([^/]+)\/block-comment$/,
+    );
+    if (request.method === 'POST' && blockCommentMatch) {
+      try {
+        const body = (await readJsonBody(request)) as {
+          section?: string;
+          comment?: string;
+        };
+        if (
+          typeof body.section !== 'string' ||
+          typeof body.comment !== 'string'
+        ) {
+          sendJson(response, 400, {
+            error: 'section and comment must be strings',
+          });
+          return;
+        }
+        await deps.submitBlockComment(
+          decodeURIComponent(blockCommentMatch[1]),
+          body.section,
+          body.comment,
+        );
+        sendJson(response, 200, {
+          ok: true,
+          message: 'Block feedback forwarded.',
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Failed to submit block comment.';
+        const status = getSubmissionStatus(error);
+        sendJson(response, status, { ok: false, message });
+      }
+      return;
+    }
+
+    // ── Chat: freeform message to agent ─────────────────────────────
+    const chatMatch = pathname.match(/^\/api\/interviews\/([^/]+)\/chat$/);
+    if (request.method === 'POST' && chatMatch) {
+      try {
+        const body = (await readJsonBody(request)) as {
+          message?: string;
+        };
+        if (typeof body.message !== 'string' || !body.message.trim()) {
+          sendJson(response, 400, {
+            error: 'message must be a non-empty string',
+          });
+          return;
+        }
+        await deps.submitChat(
+          decodeURIComponent(chatMatch[1]),
+          body.message.trim(),
+        );
+        sendJson(response, 200, {
+          ok: true,
+          message: 'Chat message forwarded to agent.',
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Failed to submit chat message.';
+        const status = getSubmissionStatus(error);
+        sendJson(response, status, { ok: false, message });
+      }
+      return;
+    }
+
+    // Nudge: ask more questions or confirm complete
+    const nudgeMatch = pathname.match(/^\/api\/interviews\/([^/]+)\/nudge$/);
+    if (request.method === 'POST' && nudgeMatch) {
+      try {
+        const body = (await readJsonBody(request)) as {
+          action?: string;
+        };
+        if (
+          body.action !== 'more-questions' &&
+          body.action !== 'confirm-complete'
+        ) {
+          sendJson(response, 400, {
+            error: 'action must be "more-questions" or "confirm-complete"',
+          });
+          return;
+        }
+        await deps.handleNudgeAction(
+          decodeURIComponent(nudgeMatch[1]),
+          body.action,
+        );
+        sendJson(response, 200, { ok: true, message: 'Nudge sent.' });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Failed to nudge.';
+        const status = message === 'Interview not found' ? 404 : 500;
+        sendJson(response, status, { ok: false, message });
+      }
+      return;
+    }
+
+    sendJson(response, 404, { error: 'Not found' });
+  }
+
+
+  return async (request, response) => {
+    await deps.authorize(request);
+    return handle(request, response);
+  };
+}

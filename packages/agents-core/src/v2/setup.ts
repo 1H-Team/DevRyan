@@ -15,15 +15,9 @@
  */
 
 import path from 'node:path';
-import type { RegistryFactoryBridge } from '../agents/registry-bridge';
-import {
-  buildBundledSkillInfos,
-  removeLegacySkillSyncState,
-} from '../cli/custom-skills';
 import { loadPluginConfig } from '../config/loader';
 import { InterviewConfigSchema } from '../config/schema';
 import { getBuildInfo } from '../generated/build-info';
-import { getCurrentRuntimePackageJsonPath } from '../hooks/auto-update-checker/checker';
 import {
   isTaggedPart,
   isVolatileTaggedMessage,
@@ -40,7 +34,10 @@ import { GOAL_POINTER_METADATA_KEY } from '../hooks/deepwork-goal';
 import type { ForegroundFallbackManager } from '../hooks/foreground-fallback';
 import { PHASE_REMINDER_METADATA_KEY } from '../hooks/phase-reminder';
 import { BACKGROUND_JOB_BOARD_METADATA_KEY } from '../hooks/task-session-manager/board-injection';
-import { OhMyOpenCodeLite } from '../index';
+import {
+  assertReviewedSlimHooks,
+  requireReviewedSlimHost,
+} from '../devryan/owners';
 import type { McpConfig } from '../mcp/types';
 import {
   configureBackgroundJobPersistence,
@@ -80,7 +77,6 @@ import {
   isInternalAdmission,
   recordInternalAdmission,
 } from './internal-admissions';
-import { createV2InterviewBridge } from './interview-bridge';
 import {
   applyRuntimeProfileOptions,
   createSessionProfileBridge,
@@ -315,6 +311,7 @@ export function createSessionContextHandler(
       await deps.interviewHandleContext(event);
     } catch (err) {
       log('[v2] interview context bridge failed', String(err));
+      throw err; // DevRyan: refuse the request instead of degrading it
     }
     // Generic command marker dispatch (deepwork / reflect / loop).
     if (deps.commandBefore) {
@@ -322,6 +319,7 @@ export function createSessionContextHandler(
         await applyCommandMarkerToContext(event, deps.commandBefore);
       } catch (err) {
         log('[v2] command context bridge failed', String(err));
+      throw err; // DevRyan: refuse the request instead of degrading it
       }
     }
     // Agent/model discovery (native prompt-hook mode): the prompt hook
@@ -333,6 +331,7 @@ export function createSessionContextHandler(
         await deps.observeContextAgent(event);
       } catch (err) {
         log('[v2] chat.message agent-discovery bridge failed', String(err));
+      throw err; // DevRyan: refuse the request instead of degrading it
       }
     }
     // chat.headers state (trailing user message identity + internal
@@ -342,6 +341,7 @@ export function createSessionContextHandler(
         deps.observeChatHeaders(event);
       } catch (err) {
         log('[v2] chat.headers context tracking failed', String(err));
+      throw err; // DevRyan: refuse the request instead of degrading it
       }
     }
     // Agent tracking (chat.message equivalent, per-request emulation —
@@ -359,6 +359,7 @@ export function createSessionContextHandler(
         );
       } catch (err) {
         log('[v2] chat.message bridge failed', String(err));
+      throw err; // DevRyan: refuse the request instead of degrading it
       }
     }
     // System transform: v2 SystemPart[] -> v1 string[] -> mutate -> back.
@@ -379,6 +380,7 @@ export function createSessionContextHandler(
         }));
       } catch (err) {
         log('[v2] system transform bridge failed', String(err));
+      throw err; // DevRyan: refuse the request instead of degrading it
       }
     }
     // Messages transform: v2 Message.content -> v1 {info, parts} -> back.
@@ -488,6 +490,7 @@ export function createSessionContextHandler(
         }
       } catch (err) {
         log('[v2] messages transform bridge failed', String(err));
+      throw err; // DevRyan: refuse the request instead of degrading it
       }
     }
     // Session-frozen runtime profile: a captured child session gets its
@@ -1959,8 +1962,6 @@ export function createV2Setup(): (ctx: V2Context) => Promise<V2Cleanup> {
     let stopPermissionPromptAdmission: (() => Promise<void>) | undefined;
     let stopPermissionEventIntake: (() => Promise<void>) | undefined;
     let v1Hooks: Record<string, unknown> | undefined;
-    let registryBridge: RegistryFactoryBridge | undefined;
-    let backgroundFlip: BackgroundDefaultFlipState | undefined;
 
     const boundedPermissionStop = (
       stop: () => Promise<void> | void,
@@ -1978,98 +1979,29 @@ export function createV2Setup(): (ctx: V2Context) => Promise<V2Cleanup> {
       };
     };
 
-    // ── Storage domain (optional): background-job persistence ──
-    // Configured BEFORE the v1 factory runs so board/ledger creation
-    // seeds from the persisted state. Absent domain → pure in-memory
-    // fallback with zero behavior change (v1 hosts never reach here).
-    try {
-      const storage = ctx.storage;
-      if (
-        storage &&
-        typeof storage.get === 'function' &&
-        typeof storage.set === 'function' &&
-        typeof storage.remove === 'function' &&
-        typeof storage.scan === 'function'
-      ) {
-        configureBackgroundJobPersistence(storage);
-        await loadInitialBackgroundJobPersistence();
-        log('[v2] background-job persistence enabled via ctx.storage');
-      } else {
-        // Storage-less reactivation: actively reset to the documented
-        // process-local fallback instead of retaining the previous
-        // activation's backend/seed state (fenced — pending writes from
-        // the old epoch are discarded).
-        configureBackgroundJobPersistence(undefined);
-        log(
-          '[v2] ctx.storage unavailable; background-job state stays process-local',
-        );
-      }
-    } catch (err) {
-      log('[v2] background-job persistence init failed', String(err));
-    }
+    // DevRyan: background tasks are owned by the host; no Slim job
+    // persistence is configured (process-local state only).
+    configureBackgroundJobPersistence(undefined);
 
     try {
-      log('[v2] importing v1 factory...');
-      // Capability probe: v2 one-shot generation (`ctx.generate.text`),
-      // probed structurally since V2Context stays minimal by design.
-      // Powers the smartfetch secondary-model summaries without a temp
-      // session; hosts without the domain get no `experimental_v2` key
-      // at all.
-      const generateText = (
-        ctx as {
-          generate?: {
-            text?: (input: {
-              prompt: string;
-              model?: { id: string; providerID: string; variant?: string };
-            }) => Promise<{ text: string }>;
-          };
-        }
-      ).generate?.text;
-      const generateChannel =
-        typeof generateText === 'function'
-          ? {
-              generateText: (
-                prompt: string,
-                model?: { id: string; providerID: string; variant?: string },
-              ) => generateText({ prompt, ...(model ? { model } : {}) }),
-            }
-          : undefined;
-      log('[v2] ctx.generate.text', {
-        available: typeof generateText === 'function',
-      });
-      // Capability probe: the v2 model registry (`ctx.model`) resolves the
-      // catalog ⊕ config view the host itself uses for media gating. Powers
-      // capability-aware image routing; hosts without the domain keep the
-      // conservative default.
-      const modelDomain = (ctx as V2Context).model?.list
-        ? (ctx as V2Context).model
-        : undefined;
-      log('[v2] ctx.model', { available: Boolean(modelDomain) });
-      const pluginInput = buildPluginInput(ctx, {
-        ...(generateChannel ?? {}),
-        ...(modelDomain ? { modelDomain } : {}),
-      });
-      log('[v2] calling OhMyOpenCodeLite...');
-      v1Hooks = (await OhMyOpenCodeLite(
-        pluginInput as never,
-      )) as unknown as Record<string, unknown>;
-      registryBridge = v1Hooks.registryBridge as RegistryFactoryBridge;
-      // Per-instance flip handle (the factory threads its isArmed getter
-      // into the execute.before deps; this side owns arm/disarm).
-      backgroundFlip = v1Hooks['v2.backgroundDefaultFlip'] as
-        | BackgroundDefaultFlipState
-        | undefined;
+      // DevRyan: the v1 hook inventory is composed by the host from Slim's
+      // pure hook factories (devryan/owners.ts); the upstream v1 plugin
+      // factory, its registry bridge and the subagent default flip are not
+      // part of DevRyan. Secondary generation and the model registry stay
+      // with their host owners.
+      const pluginInput = buildPluginInput(ctx, {});
+      v1Hooks = await requireReviewedSlimHost(directory).hooks(pluginInput);
+      assertReviewedSlimHooks(directory, v1Hooks);
       log('[v2] v1 factory initialized', {
         agents: Object.keys((v1Hooks as { agent?: object }).agent ?? {}).length,
         tools: Object.keys((v1Hooks as { tool?: object }).tool ?? {}).length,
       });
     } catch (err) {
+      // DevRyan: a host composition failure is a startup refusal, not a
+      // silently empty plugin.
       log('[v2] FATAL: v1 factory init failed', String(err));
-      console.error('[oh-my-opencode-slim][v2] factory init failed:', err);
-      // Don't hard-fail the whole plugin; register nothing and stay loaded.
-      // The scope claim must not outlive the failed generation.
       eventDirectoryScope.release();
-      return async () => {};
+      throw err;
     }
 
     if (!v1Hooks) {
@@ -2087,6 +2019,7 @@ export function createV2Setup(): (ctx: V2Context) => Promise<V2Cleanup> {
     // error unchanged. The success path's returned cleanup keeps its
     // own semantics.
     try {
+      // DevRyan: frozen per-location configuration (bound by the host).
       const pluginConfig = loadPluginConfig(directory, { hostFlavor: 'v2' });
       const interviewConfig = InterviewConfigSchema.parse(
         pluginConfig.interview ?? {},
@@ -2098,317 +2031,18 @@ export function createV2Setup(): (ctx: V2Context) => Promise<V2Cleanup> {
       const implementCommandEnabled = isCommandEnabled('implement', {
         disabledCommands,
       });
-      const interviewBridge = createV2InterviewBridge(ctx, interviewConfig, {
-        commandEnabled: interviewCommandEnabled,
-        implementEnabled: implementCommandEnabled,
-      });
+      // DevRyan: the interview bridge, its service, documents and HTTP
+      // surface are owned by the host (createReviewedSlimInterviewBridge).
+      void interviewConfig;
+      void implementCommandEnabled;
+      const interviewBridge = requireReviewedSlimHost(directory).interviewBridge;
       disposers.push(() => interviewBridge.dispose());
-      // The submit tool and text-complete fallback are built inside the v1
-      // factory against the v1 interview manager. On v2 the bridge owns the
-      // live transcript and active interviews, so point them at its service.
-      (
-        v1Hooks as {
-          'v2.setInterviewService'?: (service: unknown) => void;
-        }
-      )['v2.setInterviewService']?.(interviewBridge.service);
 
-      // Commands do not depend on agent finalization or host state.
-      let finalizedRegistry:
-        | ReturnType<RegistryFactoryBridge['requireRegistry']>
-        | undefined;
-      let permissionSnapshotReady = false;
-      let permissionSnapshotFailure: Error | undefined;
-      let resolvePermissionSnapshotReady!: () => void;
-      const permissionSnapshotReadiness = new Promise<void>((resolve) => {
-        resolvePermissionSnapshotReady = resolve;
-      });
-      let pendingAgentDraft: V2AgentDraft | undefined;
-      // An agent pass that ended before the MCP snapshot existed: our agents
-      // were added to it afterwards, missing later host transforms.
-      let agentPassDeferred = false;
-      let agentRebuild: Promise<unknown> | undefined;
-      let nativeAgentSnapshot:
-        | {
-            agents: Record<string, Record<string, unknown>>;
-            permissions: Record<string, V2PermissionRule[]>;
-          }
-        | undefined;
-      let permissionRulesBridgeEnabled = false;
-      const pluginAgents = new Set<string>();
-      let marketplaceAgentsRequirePromptPolicy = false;
-      let permissionRulesBridge:
-        | ReturnType<typeof createPermissionRulesBridge>
-        | undefined;
-      let synthCommands:
-        | Record<string, { template?: string; description?: string }>
-        | undefined;
-      if (!registryBridge)
-        throw new Error('v1 factory registry bridge is unavailable');
-      const configCommands: Record<string, unknown> = {};
-      registryBridge.prepareCommands(configCommands);
-      const command = configCommands.command as
-        | Record<string, { template?: string; description?: string }>
-        | undefined;
-      if (command) synthCommands = command;
-
-      // Read configured namespaces from the MCP transform draft, before
-      // finalizing agent permissions. `mcp.list()` would describe live
-      // connections, not the configured namespace inventory.
+      // DevRyan: agents, their permissions, MCP servers and runtime model
+      // profiles are owned by the host snapshot (see native-slim.ts). The
+      // upstream registry finalization, MCP/agent transforms, permission
+      // rules bridge, profile refresh and config watcher are not registered.
       const mcps = (v1Hooks.mcp ?? {}) as Record<string, McpConfig>;
-      let hostMcpSnapshot: Record<string, unknown> | undefined;
-
-      const finalizeAgentDraft = (draft: V2AgentDraft) => {
-        if (permissionSnapshotFailure) return;
-        if (
-          hostMcpSnapshot === undefined ||
-          nativeAgentSnapshot === undefined
-        ) {
-          return;
-        }
-        // Consume before applying: MCP replays must not reuse this editor.
-        pendingAgentDraft = undefined;
-        const registry =
-          finalizedRegistry ??
-          registryBridge.finalize(
-            { agent: nativeAgentSnapshot.agents, mcp: hostMcpSnapshot },
-            nativeAgentSnapshot.permissions,
-          );
-        finalizedRegistry = registry;
-        marketplaceAgentsRequirePromptPolicy =
-          registry.marketplaceAgentNames.length > 0;
-        // Deferred agent finalization is the first point where marketplace
-        // agents are known. Latch capability failures for the readiness barrier.
-        if (
-          registry.marketplaceAgentNames.length &&
-          typeof ctx.session?.update !== 'function'
-        ) {
-          permissionSnapshotFailure = new Error(
-            'Marketplace agents require ctx.session.update to enforce child permission ceilings',
-          );
-          resolvePermissionSnapshotReady();
-          return;
-        }
-        const resolvedAgents = registry.getSdkAgentProjection() as Record<
-          string,
-          Record<string, unknown>
-        >;
-        pluginAgents.clear();
-        for (const name of Object.keys(resolvedAgents)) pluginAgents.add(name);
-        if (permissionRulesBridge) {
-          permissionRulesBridge.refreshPluginAgents();
-        }
-        for (const [name, cfg] of Object.entries(resolvedAgents)) {
-          if (
-            !registry.agentNames.includes(name) &&
-            !Object.hasOwn(registry.identities, name)
-          )
-            continue;
-          applyAgentToDraft(
-            draft,
-            name,
-            cfg,
-            registry.nativePolicies[name]?.rules,
-          );
-        }
-        if (resolvedAgents.orchestrator) {
-          try {
-            draft.default(registry.identities.orchestrator ?? 'orchestrator');
-          } catch {
-            /* default() optional */
-          }
-        }
-        // Log inside finalization because the transform await only confirms
-        // registration; the callback may not have run yet.
-        log('[v2] agents registered', {
-          count: Object.keys(resolvedAgents).length,
-        });
-        permissionSnapshotReady = true;
-        resolvePermissionSnapshotReady();
-      };
-      // The host rebuilds agents by running every transform in order; its
-      // config transform (global and per-agent permissions) runs after ours.
-      // When our agents were added to a pass that already finished, they
-      // missed those rules (#1374). Rebuild once so they exist in-pass.
-      const requestAgentRebuild = () => {
-        if (typeof ctx.agent?.reload !== 'function') return;
-        agentRebuild = Promise.resolve()
-          .then(() => (generationDisposed ? undefined : ctx.agent.reload()))
-          .catch((err) =>
-            log(
-              '[v2] agent rebuild after deferred finalization failed',
-              String(err),
-            ),
-          );
-      };
-      const captureAgentDraft = (draft: V2AgentDraft) => {
-        if (permissionSnapshotFailure) {
-          if (generationDisposed) {
-            throw new Error(
-              'Agent transform callback belongs to a retired generation',
-            );
-          }
-          return;
-        }
-        pendingAgentDraft = draft;
-        try {
-          if (nativeAgentSnapshot === undefined) {
-            const nativeByAgent: Record<string, V2PermissionRule[]> = {};
-            const hostAgents: Record<string, Record<string, unknown>> = {};
-            const listedAgents = draft.list();
-            if (!Array.isArray(listedAgents)) {
-              throw new Error('agent transform did not expose a native list');
-            }
-            for (const listed of listedAgents) {
-              const name = typeof listed.id === 'string' ? listed.id : '';
-              if (!name) continue;
-              const native = draft.get(name) ?? listed;
-              // `permissions` is optional in the host type surface: absent
-              // means "no native rule overrides", not a fatal condition.
-              // Only a malformed non-array value latches a failure (surfaced
-              // at prompt time with its cause, never a silent setup death).
-              if (
-                native.permissions !== undefined &&
-                !Array.isArray(native.permissions)
-              ) {
-                throw new Error(
-                  `Native agent '${name}' exposed a malformed permissions field`,
-                );
-              }
-              const snapshot = snapshotNativeAgentForRegistry(native);
-              hostAgents[name] = snapshot.config;
-              nativeByAgent[name] = snapshot.permissions;
-            }
-            nativeAgentSnapshot = {
-              agents: hostAgents,
-              permissions: nativeByAgent,
-            };
-          }
-          finalizeAgentDraft(draft);
-          agentPassDeferred = !permissionSnapshotReady;
-        } catch (error) {
-          if (generationDisposed) throw error;
-          permissionSnapshotFailure =
-            error instanceof Error ? error : new Error(String(error));
-          resolvePermissionSnapshotReady();
-        }
-      };
-      try {
-        if (typeof ctx.mcp?.transform !== 'function') {
-          log(
-            '[v2] ctx.mcp.transform unavailable; skipping MCP snapshot (v1 host embedded v2 core)',
-          );
-          // Degrade gracefully: v1 hosts with embedded v2 core don't provide
-          // full v2 context. This is expected and non-fatal.
-          hostMcpSnapshot = {};
-        } else {
-          const reg = await ctx.mcp.transform((draft) => {
-            const configured = draft.list();
-            if (!Array.isArray(configured)) {
-              throw new Error('MCP configuration draft returned no inventory');
-            }
-            hostMcpSnapshot = Object.fromEntries(configured);
-            for (const [name, config] of Object.entries(mcps)) {
-              // User/host-configured namespaces own their key (issue #1290):
-              // never inject a built-in over an existing entry.
-              if (Object.hasOwn(hostMcpSnapshot, name)) continue;
-              draft.set(name, adaptMcpServer(config));
-            }
-            if (pendingAgentDraft) finalizeAgentDraft(pendingAgentDraft);
-            if (agentPassDeferred && permissionSnapshotReady) {
-              agentPassDeferred = false;
-              requestAgentRebuild();
-            }
-          });
-          disposers.push(() => reg.dispose());
-        }
-      } catch (err) {
-        throw new Error(
-          'Unable to snapshot configured MCP namespaces: this host cannot ' +
-            'expose configured MCP namespaces; update to a supported v2 host',
-          { cause: err },
-        );
-      }
-
-      // ── Agents ──
-      try {
-        const reg = await ctx.agent.transform(captureAgentDraft);
-        disposers.push(() => reg.dispose());
-        if (permissionSnapshotFailure) {
-          if (
-            permissionSnapshotFailure.message.startsWith(
-              'Marketplace agents require ctx.session.update',
-            )
-          ) {
-            throw permissionSnapshotFailure;
-          }
-          throw new Error('Agent permission snapshot finalization failed', {
-            cause: permissionSnapshotFailure,
-          });
-        }
-      } catch (err) {
-        registryBridge.retire();
-        throw err;
-      }
-      permissionRulesBridgeEnabled = typeof ctx.session?.update === 'function';
-      if (!permissionRulesBridgeEnabled && !permissionRulesUnavailableWarned) {
-        permissionRulesUnavailableWarned = true;
-        log(PERMISSION_RULES_UNAVAILABLE_WARNING);
-      }
-
-      // ── Runtime profiles + config-file watcher ──
-      // Watches every config candidate (user + project, .json + .jsonc,
-      // including not-yet-created files/directories). On a settled change the
-      // v1 factory's `v2.refreshProfiles` hook re-reads the config and
-      // resolves ONLY model/variant/temperature/options per agent, atomically
-      // swapped here and projected to the sidebar through the existing
-      // tui-state writer. Failure is honest: no swap, one logged cause.
-      let currentProfiles: V2AgentRuntimeProfiles = {};
-      let registeredProfiles: V2AgentRuntimeProfiles = {};
-      try {
-        const factoryRefreshProfiles = (
-          v1Hooks as { 'v2.refreshProfiles'?: unknown }
-        )['v2.refreshProfiles'];
-        if (typeof factoryRefreshProfiles === 'function') {
-          const refreshProfiles = factoryRefreshProfiles as (options?: {
-            allowInvalidFallback?: boolean;
-          }) => Promise<
-            | { ok: true; profiles: V2AgentRuntimeProfiles }
-            | { ok: false; reason: string }
-          >;
-          // Startup has no last-good table. Seed from the loader's normal
-          // fallback config so malformed input stays non-fatal, then make all
-          // later watcher refreshes strict and retain this seed on failure.
-          const initial = await refreshProfiles({ allowInvalidFallback: true });
-          if (!initial.ok) {
-            throw new Error(initial.reason);
-          }
-          registeredProfiles = initial.profiles;
-          currentProfiles = reconcileRuntimeProfileOptionKeys(
-            {},
-            initial.profiles,
-          );
-          const runner = createProfileRefreshRunner({
-            refresh: refreshProfiles,
-            apply: (profiles) => {
-              currentProfiles = reconcileRuntimeProfileOptionKeys(
-                currentProfiles,
-                profiles,
-              );
-            },
-          });
-          const watch = watchPluginConfigFiles({
-            directory,
-            onChanged: (signal) => runner(signal),
-          });
-          disposers.push(() => watch.dispose());
-        } else {
-          log(
-            '[v2] v1 factory exposes no v2.refreshProfiles hook; config edits need a reload',
-          );
-        }
-      } catch (err) {
-        log('[v2] config watcher registration failed', String(err));
-      }
 
       // ── Tools ──
       try {
@@ -2459,23 +2093,8 @@ export function createV2Setup(): (ctx: V2Context) => Promise<V2Cleanup> {
 
       log('[v2] mcp servers registered', { count: Object.keys(mcps).length });
 
-      // ── Commands (deepwork / reflect / loop slash commands) ──
-      try {
-        const entries = Object.entries(synthCommands ?? {});
-        if (entries.length > 0) {
-          const submitCommand = createSessionSubmit(ctx);
-          const reg = await ctx.command.transform((draft) => {
-            registerSynthCommands(draft, entries, submitCommand);
-          });
-          disposers.push(() => reg.dispose());
-          log('[v2] commands registered', {
-            // Includes `interview`, which the bridge registers below.
-            count: entries.length,
-          });
-        }
-      } catch (err) {
-        log('[v2] command.transform failed', String(err));
-      }
+      // DevRyan: deepwork / reflect / loop are registered by the host's
+      // devryan.slim-commands owner, not through Slim's command transform.
 
       // `/interview` is a v2 command marker. The context bridge consumes the
       // rendered marker and delegates the actual behavior to the interview
@@ -2495,83 +2114,9 @@ export function createV2Setup(): (ctx: V2Context) => Promise<V2Cleanup> {
         log('[v2] interview command registration failed', String(err));
       }
 
-      // ── Bundled skills (ctx.skill.transform — in-process, never disk-copied) ──
-      try {
-        if (typeof ctx.skill?.transform === 'function') {
-          const runtimePackageJson = getCurrentRuntimePackageJsonPath();
-          if (!runtimePackageJson) {
-            log(
-              '[v2] bundled skill registration skipped: runtime package.json unresolved',
-            );
-          } else {
-            const packageRoot = path.dirname(runtimePackageJson);
-            const disabled = [
-              ...(loadPluginConfig(directory, { hostFlavor: 'v2' })
-                .disabled_skills ?? []),
-            ];
-            const infos = buildBundledSkillInfos(packageRoot, disabled);
-            if (infos.length === 0) {
-              log(
-                '[v2] bundled skill registration produced no skills (check package root)',
-                { packageRoot },
-              );
-            }
-            // A host resolves `transform` on callback *registration*; the
-            // callback body may not have run when the await returns. The
-            // handle is therefore disposed unconditionally — the one step
-            // that must not depend on the callback having run.
-            let legacyMigrated = false;
-            const reg = await ctx.skill.transform((draft) => {
-              // v1-era drafts expose {source,list}, not add — probe before use.
-              if (typeof draft.add !== 'function') {
-                log(
-                  '[v2] ctx.skill draft lacks add(); bundled skills not registered',
-                );
-                return;
-              }
-              for (const info of infos) draft.add(info);
-              log('[v2] bundled skills registered in-process', {
-                count: infos.length,
-                disabled: disabled.length,
-              });
-              if (!legacyMigrated) {
-                try {
-                  const legacy = removeLegacySkillSyncState(
-                    undefined,
-                    disabled,
-                  );
-                  // Latch only on success: a throwing cleanup is transient and
-                  // must be retried by a later rebuild. An unreadable manifest
-                  // returns normally, so it still latches and is not retried.
-                  legacyMigrated = true;
-                  if (legacy.kept.length > 0 || legacy.backedUp.length > 0) {
-                    log(
-                      '[v2] legacy skill copies: kept customized (shadow the in-process registration), backed up disabled',
-                      { kept: legacy.kept, backedUp: legacy.backedUp },
-                    );
-                  }
-                  if (legacy.manifestUnreadable) {
-                    log(
-                      '[v2] legacy skills manifest unreadable — stale copies may shadow registrations; remove ~/.config/opencode/.oh-my-opencode-slim manually',
-                    );
-                  }
-                } catch (err) {
-                  log('[v2] legacy skill cleanup failed', String(err));
-                }
-              }
-            });
-            if (typeof reg?.dispose === 'function') {
-              disposers.push(() => reg.dispose());
-            }
-          }
-        } else {
-          log(
-            '[v2] ctx.skill.transform unavailable; bundled skills not registered',
-          );
-        }
-      } catch (err) {
-        log('[v2] bundled skill registration failed', String(err));
-      }
+      // DevRyan: skills (including Slim's bundled ones) are captured and
+      // served by the host's reviewed skill owner; nothing is registered or
+      // migrated on disk here.
 
       // ── Session context hook: command markers + system/messages transforms ──
       // One registration handles: the interview marker bridge, generic command
@@ -2610,24 +2155,9 @@ export function createV2Setup(): (ctx: V2Context) => Promise<V2Cleanup> {
       // churn path keyed on events this bridge does not otherwise need.
       const chatHeaderStates = new Map<string, ChatHeaderSessionState>();
 
-      // Session-frozen runtime profiles: freeze the current profile for each
-      // newly seen plugin CHILD session, switching host defaults before the
-      // first request but preserving per-call models. Existing children keep their
-      // profile; parents and foreign agents are never touched.
-      //
-      // Created BEFORE the native prompt hook below so the hook can await
-      // `ensureSessionProfile`: the prompt hook is the guaranteed
-      // request-path capture (a child's first admission cannot race the
-      // asynchronous event pump), while `observeEvent` remains a
-      // prewarm/cleanup consumer of `session.created`/`session.deleted`.
+      // DevRyan: runtime model profiles are host-owned; no per-child profile
+      // switching is registered.
       let promptBridge: V2SessionPromptBridge | undefined;
-      const sessionProfileBridge = createSessionProfileBridge({
-        profiles: () => currentProfiles,
-        registeredProfiles,
-        pluginAgents,
-        session: ctx.session,
-        knownAgent: (sessionID) => promptBridge?.agentForSession(sessionID),
-      });
 
       // Skip session hook registration if ctx.session is unavailable (v1 host
       // embedded v2 core with limited context). On full v2 contexts, session
@@ -2646,33 +2176,9 @@ export function createV2Setup(): (ctx: V2Context) => Promise<V2Cleanup> {
         if (chatMessage) {
           const bridge = createSessionPromptBridge(chatMessage);
           promptBridge = bridge;
+          // DevRyan: agents and permissions are final in the host snapshot,
+          // so no readiness barrier or per-prompt permission step applies.
           const promptReg = await ctx.session.hook('prompt', async (event) => {
-            if (!permissionSnapshotReady) {
-              await withTimeout(
-                permissionSnapshotReadiness,
-                PERMISSION_RULES_OPERATION_TIMEOUT_MS,
-                'Agent permission snapshot readiness timed out',
-              );
-            }
-            if (permissionSnapshotFailure) {
-              if (
-                permissionSnapshotFailure.message.startsWith(
-                  'Marketplace agents require ctx.session.update',
-                )
-              ) {
-                throw permissionSnapshotFailure;
-              }
-              throw new Error('Agent permission snapshot finalization failed', {
-                cause: permissionSnapshotFailure,
-              });
-            }
-            const permissionBridge = permissionRulesBridge;
-            if (permissionBridge) {
-              await permissionBridge.ensurePromptPermission(event.sessionID);
-            }
-            // Freeze and switch the inference profile before the admitted
-            // input's first model request; the event stream is only a prewarm.
-            await sessionProfileBridge.ensureSessionProfile(event.sessionID);
             await bridge.handlePrompt(event);
           });
           stopPermissionPromptAdmission = boundedPermissionStop(
@@ -2703,13 +2209,6 @@ export function createV2Setup(): (ctx: V2Context) => Promise<V2Cleanup> {
             promptBridge?.agentForSession(sessionID),
           systemTransform,
           messagesTransform,
-          // Captured child sessions get their frozen temperature/provider
-          // options on the request options record only.
-          applyRuntimeProfile: (event) =>
-            applyRuntimeProfileOptions(
-              event,
-              sessionProfileBridge.profileForSession(event.sessionID),
-            ),
         });
         const reg = await ctx.session.hook('context', handler);
         disposers.push(() => reg.dispose());
@@ -2741,33 +2240,8 @@ export function createV2Setup(): (ctx: V2Context) => Promise<V2Cleanup> {
         disposers.push(() => compactionReg.dispose());
         log('[v2] compaction bridge registered (session.compaction)');
 
-        const retryHook = v1Hooks['v2.session.retry'] as
-          | ForegroundFallbackManager['handleV2Retry']
-          | undefined;
-        const switchModel = ctx.session.switchModel;
-        // Without switchModel the retry hook must not register: it would mask
-        // the deferred fallback path on hosts that can't switch in place.
-        if (
-          typeof retryHook === 'function' &&
-          typeof switchModel === 'function'
-        ) {
-          try {
-            const reg = await (
-              ctx.session.hook as unknown as (
-                name: 'retry',
-                cb: (event: never) => Promise<void>,
-              ) => ReturnType<V2Context['session']['hook']>
-            )('retry', (event) =>
-              retryHook(event, (id, model) =>
-                switchModel.call(ctx.session, { sessionID: id, model }),
-              ),
-            );
-            disposers.push(() => reg.dispose());
-            log('[v2] retry hook registered');
-          } catch (err) {
-            log('[v2] retry hook registration failed', String(err));
-          }
-        }
+        // DevRyan: model fallback stays disabled in Slim; retry and model
+        // switching belong to the host's devryan.slim-lifecycle owner.
 
         // ── Tool execute hooks ──
         try {
@@ -2812,44 +2286,6 @@ export function createV2Setup(): (ctx: V2Context) => Promise<V2Cleanup> {
             });
             disposers.push(() => reg.dispose());
           }
-          // Background-default flip, wording half: rewrite the native
-          // `subagent` description to state the default the execute.before
-          // rewrite applies, so prose and mechanism declare one contract.
-          // Pairing: the per-instance mechanism half (the args rewrite in
-          // tool-execute-hooks) reads this setup's flip handle, armed only
-          // after this description rewrite verifiably landed (draft.get
-          // probe). Any failure on either path (transform throws, native
-          // tool absent, hook registration failed, handle missing from the
-          // factory) leaves BOTH halves off and the native foreground
-          // default keeps operating end-to-end with its native wording —
-          // no semantic mismatch is possible. Per-instance state: disposing
-          // one location's setup disarms only its own flip.
-          if (before && backgroundFlip) {
-            try {
-              let flipVerified = false;
-              const reg = await ctx.tool.transform((draft) => {
-                draft.update(DELEGATION_TOOL_V2, (tool) => {
-                  tool.description = SUBAGENT_BACKGROUND_DEFAULT_DESCRIPTION;
-                });
-                const flipped = draft.get(DELEGATION_TOOL_V2);
-                flipVerified =
-                  flipped?.description ===
-                  SUBAGENT_BACKGROUND_DEFAULT_DESCRIPTION;
-                if (!flipVerified) {
-                  log('[v2] subagent description flip missed (tool absent)');
-                }
-              });
-              if (flipVerified) backgroundFlip.arm();
-              disposers.push(() => {
-                // Disarm first: a throwing reg.dispose() must never leave a
-                // stale armed mechanism behind (fail-safe direction).
-                backgroundFlip.disarm();
-                reg.dispose();
-              });
-            } catch (err) {
-              log('[v2] subagent description flip failed', String(err));
-            }
-          }
           log('[v2] tool hooks registered', {
             before: !!before,
             after: !!after,
@@ -2864,80 +2300,7 @@ export function createV2Setup(): (ctx: V2Context) => Promise<V2Cleanup> {
             | ((i: { event: Record<string, unknown> }) => Promise<void>)
             | undefined;
           if (eventHook || interviewBridge) {
-            // ── Per-session permission rules (ctx.session.update) ──
-            // Plugin-managed child sessions get their agent's task-policy
-            // installed as ordered session-scoped rules at creation
-            // (session.update's `permissions` REPLACES the session-scoped
-            // list). Fail-soft inside the bridge; the v1 event dispatch
-            // below never depends on it (capability-absent hosts degrade
-            // with a one-time deterministic warning).
-            if (permissionRulesBridgeEnabled) {
-              permissionRulesBridge = createPermissionRulesBridge(ctx.session, {
-                permissionForAgent: async (agent) => {
-                  const registry = finalizedRegistry;
-                  const registered = registry?.nativePolicies[agent]?.rules;
-                  if (!registry || !registered) return registered;
-                  // The host appends global and per-agent config rules AFTER
-                  // plugin agent transforms (#1374), so the registered policy
-                  // lacks them. Session rules are evaluated after agent rules:
-                  // installing the registered policy would override the
-                  // user's globals. Project the finalized agent instead and
-                  // re-apply only plugin-owned ceilings.
-                  try {
-                    if (agentRebuild) await agentRebuild;
-                    const finalized = await readFinalizedAgentPermissions(
-                      ctx.agent,
-                      agent,
-                    );
-                    if (finalized) {
-                      return registry.compileChildPermissions(agent, finalized);
-                    }
-                  } catch (err) {
-                    log(
-                      '[v2][permission-rules] finalized agent policy unavailable; using registered policy',
-                      { agent, err: String(err) },
-                    );
-                  }
-                  return registered;
-                },
-                pluginAgents,
-                requireKnownIdentity: () =>
-                  marketplaceAgentsRequirePromptPolicy,
-                marketplaceAgentNames: () => {
-                  const registry = finalizedRegistry;
-                  if (!registry) return new Set();
-                  return new Set(
-                    registry.marketplaceAgentNames.flatMap((name) => [
-                      name,
-                      registry.identities[name] ?? name,
-                    ]),
-                  );
-                },
-                knownAgentNames: () => {
-                  const names = new Set<string>(pluginAgents);
-                  for (const [name, config] of Object.entries(
-                    nativeAgentSnapshot?.agents ?? {},
-                  )) {
-                    names.add(name);
-                    if (typeof config.displayName === 'string') {
-                      names.add(config.displayName);
-                    }
-                  }
-                  const registry = finalizedRegistry;
-                  if (registry) {
-                    for (const [name, identity] of Object.entries(
-                      registry.identities,
-                    )) {
-                      names.add(name);
-                      names.add(identity);
-                    }
-                  }
-                  return names;
-                },
-              });
-              const permissionBridge = permissionRulesBridge;
-              disposers.push(() => permissionBridge.dispose());
-            }
+            // DevRyan: child-session permission rules are host-owned.
             const iter = ctx.event.subscribe();
             const eventIterator = iter[Symbol.asyncIterator]();
             let eventStopped = false;
@@ -2986,18 +2349,6 @@ export function createV2Setup(): (ctx: V2Context) => Promise<V2Cleanup> {
                       if (eventHook) await eventHook({ event: next.value });
                       continue;
                     }
-                    // Prewarm waits for the deferred agent roster so a child is
-                    // not classified against an empty plugin-agent set; deletions
-                    // still clear captured state immediately. Prewarm stays
-                    // ahead of the permission rules so a held update cannot
-                    // delay identity capture.
-                    if (
-                      rawType !== 'session.created' ||
-                      permissionSnapshotReady
-                    ) {
-                      await sessionProfileBridge.observeEvent(next.value);
-                    }
-                    await permissionRulesBridge?.observeEvent(next.value);
                     if (eventHook) {
                       for (const ev of mapV2EventToV1(next.value)) {
                         await eventHook({ event: ev });
@@ -3027,10 +2378,6 @@ export function createV2Setup(): (ctx: V2Context) => Promise<V2Cleanup> {
       // Every bridge is fail-soft; without this, a fully broken registration
       // would look like a successful load with an empty session.
       if (disposers.length === 0) {
-        console.error(
-          '[oh-my-opencode-slim][v2] WARNING: no bridges registered — ' +
-            'the plugin loaded but registered nothing. Check the plugin log.',
-        );
         log('[v2] health check: zero bridges registered');
       } else {
         log('[v2] health check passed', { bridges: disposers.length });
@@ -3042,13 +2389,11 @@ export function createV2Setup(): (ctx: V2Context) => Promise<V2Cleanup> {
         log('[v2] dispose invoked');
         generationDisposed = true;
         eventDirectoryScope.release();
-        registryBridge?.retire();
         // Mark disposed immediately, then stop new admissions and event
         // intake before awaiting the bounded drain. The OpenCode plugin
         // adapter does not forward AbortSignal; a timed-out host update may
         // still commit remotely later, but it cannot mark this generation
         // successful locally.
-        const permissionDrain = permissionRulesBridge?.dispose();
         for (const stop of [
           stopPermissionPromptAdmission,
           stopPermissionEventIntake,
@@ -3060,7 +2405,6 @@ export function createV2Setup(): (ctx: V2Context) => Promise<V2Cleanup> {
             log('[v2] permission bridge stop failed', String(err));
           }
         }
-        await permissionDrain;
         // FIFO is intentional: the success path preserves the historical
         // registration-order teardown; only the abort path unwinds LIFO.
         for (const d of disposers) {
@@ -3092,7 +2436,6 @@ export function createV2Setup(): (ctx: V2Context) => Promise<V2Cleanup> {
       // instances from ever reclaiming this location and would block the
       // last-instance wake reset.
       eventDirectoryScope.release();
-      registryBridge?.retire();
       // The original cause MUST reach the plugin log and stderr before the
       // unwind: without it a live setup failure is invisible (the host only
       // sees a rejected plugin load). Walk the `cause` chain too — wrapper
@@ -3111,7 +2454,6 @@ export function createV2Setup(): (ctx: V2Context) => Promise<V2Cleanup> {
         '[v2] FATAL: setup failed after factory init',
         causes.join('\ncaused by: '),
       );
-      console.error('[oh-my-opencode-slim][v2] setup failed:', err);
       // Best-effort abort-path cleanup: LIFO over the saved disposers,
       // each isolated so a failing disposer cannot mask the original
       // error, then the v1 dispose hook, then rethrow unchanged.
