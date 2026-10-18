@@ -59,7 +59,9 @@ test('actual original interview service/UI/answer flow publishes Markdown only a
   expect(url).toBe(prefix+`/api/interviews/${id}/state`);
   const server=createServer((req,res)=>{if(!req.url.startsWith(prefix+'/')){res.statusCode=404;res.end();return;}req.url=req.url.slice(prefix.length);void f.owner.handleRequest({directory:f.directory,request:req,response:res}).catch(cause=>{res.statusCode=cause.statusCode??500;res.end(cause.code);});});
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
-  try{const response=await fetch(`http://127.0.0.1:${server.address().port}`+url);expect(response.status).toBe(200);expect((await response.json()).questions[0].question).toBe('Who uses it?');}
+  try{const response=await fetch(`http://127.0.0.1:${server.address().port}`+url);expect(response.status).toBe(200);
+   // After the answer, 3.x reports no pending questions until the agent replies.
+   const body=await response.json();expect(body.interview.id).toBe(id);expect(body.questions).toEqual([]);expect(body.mode).toBe('awaiting-agent');}
   finally{await new Promise(resolve=>server.close(resolve));}
   await f.owner.handleEvent({directory:f.directory,sessionID:'ses_interview',event:{type:'session.status',properties:{sessionID:'ses_interview',status:{type:'idle'}}}});
   const chat=await request(f.owner,f.directory,`/api/interviews/${id}/chat`,'POST',{message:'Parsed Express body'},true);expect(chat.status).toBe(200);

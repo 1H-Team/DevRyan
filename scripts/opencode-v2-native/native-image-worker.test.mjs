@@ -16,7 +16,8 @@ if(!built.success)throw new AggregateError(built.logs,'Original image worker gra
 const bundle=path.join(root,'worker.mjs');await writeNativeFixtureOutputs(built.outputs);
 afterAll(()=>fs.rm(root,{recursive:true,force:true}));
 const origin={kind:'plugin',id:'devryan.slim',manifestDigest:'a'.repeat(64),capabilities:['read','write','process','network','control']};
-const bytes=Buffer.from('Exact original image bytes'),sha=createHash('sha1').update(bytes).digest('hex').slice(0,8);
+// 3.x saves only attachments whose bytes sniff as a readable image (a real 1x1 PNG).
+const bytes=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==','base64'),sha=createHash('sha1').update(bytes).digest('hex').slice(0,8);
 const message={info:{id:'msg_user',sessionID:'ses_images',role:'user'},parts:[{type:'text',text:'Keep this canonical user text'},{id:'prt_image',type:'file',mime:'image/png',filename:'report.png',url:'data:image/png;base64,'+bytes.toString('base64')}]};
 async function fixture({imageRouting='auto',disabledAgents=[],revokeAfterReceipt=false,onMaterialize,captureBarrier,readContext}={}){
  const directory=await fs.mkdtemp(path.join(root,'project-'));await git(directory,['init','--quiet']);
@@ -34,16 +35,16 @@ async function fixture({imageRouting='auto',disabledAgents=[],revokeAfterReceipt
  return {host,directory,receipts,changes,changeHost,checks:()=>checks};
 }
 
-test('whole original image worker publishes canonical user-boundary assets after actual receipt and preserves original notices/backup',async()=>{
+test('whole original image worker publishes canonical user-boundary assets after actual receipt and appends the images ignore rule',async()=>{
  const {host,directory,receipts,changes,changeHost,checks}=await fixture();
  try{
   const result=await host.nativeContextAssets({directory,sessionID:'ses_images',messageID:'msg_user',messageIDs:['msg_user'],permit:{token:'private'}});
   const file=path.join(directory,'.opencode/images/ses_images',`report-${sha}.png`);
   expect(receipts).toHaveLength(1);expect(receipts[0].receipt).toMatchObject({terminated:true,confined:true,cancelled:false,exitCode:0});
-  expect(result.receipt).toEqual(receipts[0].receipt);expect(result.publication.files.map(file=>file.path).sort()).toEqual(['.opencode/.gitignore','.opencode/.gitignore.oh-my-opencode-slim-legacy',`.opencode/images/ses_images/report-${sha}.png`]);
-  expect(await fs.readFile(file)).toEqual(bytes);expect(await fs.readFile(path.join(directory,'.opencode/.gitignore'),'utf8')).toBe('images/\n');
-  expect(await fs.readFile(path.join(directory,'.opencode/.gitignore.oh-my-opencode-slim-legacy'),'utf8')).toBe('*\n');
-  expect(result.messages[0].parts[0]).toEqual(message.parts[0]);expect(result.messages[0].parts[1].text).toContain('Saved to: '+file);
+  expect(result.receipt).toEqual(receipts[0].receipt);expect(result.publication.files.map(file=>file.path).sort()).toEqual(['.opencode/.gitignore',`.opencode/images/ses_images/report-${sha}.png`]);
+  expect(await fs.readFile(file)).toEqual(bytes);// 3.x keeps the existing rules and appends only the images rule.
+  expect(await fs.readFile(path.join(directory,'.opencode/.gitignore'),'utf8')).toBe('*\nimages/\n');
+  expect(result.messages[0].parts[0]).toEqual(message.parts[0]);expect(result.messages[0].parts[1].text).toContain('Image saved to:\n- '+file+'\n');
   const lease=await host.runtime.leaseForCall({directory,sessionID:'ses_images',messageID:'msg_user',callID:receipts[0].callID});
   expect(result.messages[0].parts[1].text).not.toContain(lease.viewDirectory);expect(result.imagesSkipped).toBe(false);
   expect(changes).toHaveLength(1);expect(changes[0]).toMatchObject({tool:'context-assets',sessionID:'ses_images',messageID:'msg_user',userMessageID:'msg_user'});
@@ -61,7 +62,7 @@ test.each([{imageRouting:'direct',disabledAgents:[],skipped:false},{imageRouting
   expect(result.messages).toEqual([message]);expect(result.imagesSkipped).toBe(skipped);
   expect(receipts[0].receipt).toMatchObject({terminated:true,confined:true,cancelled:false,exitCode:0});
   expect(await fs.stat(path.join(directory,'.opencode/images')).catch(()=>null)).toBeNull();
-  expect(await fs.readFile(path.join(directory,'.opencode/.gitignore.oh-my-opencode-slim-legacy'),'utf8')).toBe('*\n');
+  expect(await fs.readFile(path.join(directory,'.opencode/.gitignore'),'utf8')).toBe('*\n');
  }finally{await host.drain();}
 },60_000);
 
@@ -98,12 +99,12 @@ test('caller-provided context asset identity or worker messages are refused befo
  }finally{await host.drain();}
 },60_000);
 
-test('fresh worker processes preserve original per-location one-toast state in concurrent context calls',async()=>{
+test('fresh worker processes report skipped images on every concurrent call; the host rate-limits the notice',async()=>{
  const {host,directory,receipts}=await fixture({disabledAgents:['observer']});
  try{
   const scope={directory,sessionID:'ses_images',messageID:'msg_user',messageIDs:['msg_user'],permit:{token:'private'}};
   const results=await Promise.all([host.nativeContextAssets(scope),host.nativeContextAssets(scope)]);
-  expect(results.map(result=>result.imagesSkipped)).toEqual([true,false]);expect(receipts).toHaveLength(2);
+  expect(results.map(result=>result.imagesSkipped)).toEqual([true,true]);expect(receipts).toHaveLength(2);
   expect(receipts.every(event=>event.receipt.terminated&&event.receipt.confined&&!event.receipt.cancelled&&event.receipt.exitCode===0)).toBe(true);
   expect(results[0].contextAssetID).not.toBe(results[1].contextAssetID);
   expect(results.map(result=>result.messages)).toEqual([[message],[message]]);
@@ -163,7 +164,7 @@ for(const tail of ['shell','status','compaction'])test(`original native ${tail} 
    const file=path.join(directory,'.opencode/images/ses_images',`report-${sha}.png`);
    expect(await fs.readFile(file)).toEqual(bytes);
    expect(output.messages[0].parts.some(part=>part.type==='media')).toBe(false);
-   expect(output.messages[0].parts.some(part=>part.type==='text'&&part.text.includes('Saved to: '+file))).toBe(true);
+   expect(output.messages[0].parts.some(part=>part.type==='text'&&part.text.includes('Image saved to:\n- '+file+'\n'))).toBe(true);
    expect(output.messages[1].info.id).toBe(continuation.id);
   }
  }finally{await images.close();await host.drain();}

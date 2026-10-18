@@ -29,7 +29,7 @@ test('sealed reviewed configuration imports under Node and builds original roles
    if(resolved.backgroundJobs.strategy!=='checkpoint-compatible'||resolved.backgroundJobs.maxRetainedSnapshots!==2||resolved.backgroundJobs.readContextMaxFiles!==3)throw new Error('normalized_board_settings_lost');
    if(resolved.agents.orchestrator.model!=='saved/host'||resolved.agents.orchestrator.variant!==null)throw new Error('saved_selection_lost');
    if(!resolved.agents.librarian.prompt.includes('EXACT CAPTURED PROMPT\\n')||!resolved.agents.librarian.prompt.includes('EXACT APPEND\\n'))throw new Error('prompt_bytes_lost');
-   if(!resolved.agents.orchestrator.prompt.includes('Council Mode')||!resolved.agents['councillor-alpha']||resolved.agents.observer)throw new Error('builtin_graph_lost');
+   if(!resolved.agents.orchestrator.prompt.includes('## Council\\nSeats: councillor-alpha')||!resolved.agents['councillor-alpha']||resolved.agents.observer)throw new Error('builtin_graph_lost');
    if(!resolved.agents.explorer.prompt||!resolved.agents.fixer.prompt)throw new Error('builtin_prompt_absent');
    const selected={...input,configuration:{...input.configuration,preset:'base',agents:{orchestrator:{model:'saved/root',variant:'high'},fixer:{model:'saved/fixer',variant:'medium'},librarian:{model:[{id:'saved/first',variant:'high'},{id:'saved/backup',variant:'low'}]}},presets:{base:{orchestrator:{model:'preset/root',variant:'low'},fixer:{model:'preset/fixer',variant:'low'},explorer:{model:'preset/explorer',variant:'low'}},alternate:{orchestrator:{model:'alternate/root',variant:'low'},fixer:{model:'alternate/fixer',variant:'low'},explorer:{model:'alternate/explorer',variant:'medium'}}}}};
    for(const activePreset of ['base','alternate']){
