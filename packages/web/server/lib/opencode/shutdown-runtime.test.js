@@ -59,6 +59,18 @@ describe('graceful shutdown runtime', () => {
     expect(order).toEqual(['admission', 'native', 'admission', 'native', 'usage-connection', 'watcher', 'shared-hub', 'stores', 'complete']);
   });
 
+  it('completes for a start that failed before acquiring any optional owner', async () => {
+    let shuttingDown = false;
+    const complete = vi.fn();
+    const runtime = createRuntime(null, {
+      getIsShuttingDown: () => shuttingDown, setIsShuttingDown: value => { shuttingDown = value; },
+      closeNativeRuntime: async () => {}, closeFeatureRoutes: async () => {}, onShutdownComplete: complete,
+    });
+    await runtime.gracefulShutdown({ exitProcess: false });
+    expect(complete).toHaveBeenCalledOnce();
+    expect(shuttingDown).toBe(true);
+  });
+
   it('naturally exits after stopping the real shared hub reconnect timer', async () => {
     const moduleUrl = relative => JSON.stringify(new URL(relative, import.meta.url).href);
     const script = `

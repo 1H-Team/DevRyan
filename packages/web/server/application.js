@@ -1927,6 +1927,19 @@ const webHostLifecycle = createWebHostLifecycle({
     isShuttingDown = false;
     syncToHmrState();
   },
+  // The graceful shutdown already orders admission, native settlement, then
+  // dependent infrastructure. It clears isShuttingDown only when the native
+  // settlement is refused, which is when every owner is retained.
+  cleanupFailedStart: async () => {
+    try {
+      await gracefulShutdown({ exitProcess: false });
+    } catch (error) {
+      throw Object.assign(new Error('web_host_start_cleanup_incomplete', { cause: error }), {
+        code: /^[a-z][a-z0-9_]{1,100}$/.test(error?.code ?? '') ? error.code : 'web_host_start_cleanup_incomplete',
+        retainedOwners: !isShuttingDown,
+      });
+    }
+  },
 });
 const startWebUiServer = (options = {}) => webHostLifecycle.start(options);
 

@@ -1,5 +1,7 @@
 import { timeStartupPhase } from './startup-timing.js';
 
+const finiteCode = (error, fallback) => /^[a-z][a-z0-9_]{1,100}$/.test(error?.code ?? '') ? error.code : fallback;
+
 const alreadyRunning = () => Object.assign(new Error('A DevRyan web host is already running in this process'), {
   code: 'web_host_already_running', status: 409,
 });
@@ -12,8 +14,16 @@ const alreadyRunning = () => Object.assign(new Error('A DevRyan web host is alre
  * start failed: Electron's Startup Retry and its background-runtime handoff
  * fallback restart the in-process host that way. Restarting after a completed
  * shutdown first clears that shutdown's process state (`resetAfterStop`).
+ *
+ * A failed start owns what it acquired. `cleanupFailedStart` (the graceful
+ * shutdown) closes admission, settles native execution and its durable
+ * acknowledgements, and only then disposes dependent infrastructure. A refused
+ * settlement keeps the journal, scheduler, stores and private execution bridge
+ * so the start stays retryable. The original error is rethrown unchanged; the
+ * cleanup outcome is reported separately as `error.startupCleanup`
+ * (`released`, `retained` or `failed`, with a finite code).
  */
-export function createWebHostLifecycle({ construct, resetAfterStop }) {
+export function createWebHostLifecycle({ construct, resetAfterStop, cleanupFailedStart = async () => {}, log = console }) {
   let state = 'idle';
   let stoppedDuringStart = false;
 
@@ -28,8 +38,28 @@ export function createWebHostLifecycle({ construct, resetAfterStop }) {
       state = stoppedDuringStart ? 'stopped' : 'running';
       return handle;
     } catch (error) {
+      const cleanup = await releaseFailedStart();
+      if (error && typeof error === 'object' && Object.isExtensible(error)) {
+        Object.defineProperty(error, 'startupCleanup', { value: cleanup, enumerable: false, configurable: true });
+      }
       state = stoppedDuringStart ? 'stopped' : 'idle';
       throw error;
+    }
+  };
+
+  const releaseFailedStart = async () => {
+    try {
+      await cleanupFailedStart();
+      return Object.freeze({ state: 'released', code: null });
+    } catch (cleanupError) {
+      // `retainedOwners`: settlement was refused before any owner was disposed,
+      // so admission stays drained and the store owners stay alive for a retry.
+      const cleanup = Object.freeze({
+        state: cleanupError?.retainedOwners === true ? 'retained' : 'failed',
+        code: finiteCode(cleanupError, 'web_host_start_cleanup_failed'),
+      });
+      log.warn?.('[web-host] failed start cleanup did not complete', cleanup);
+      return cleanup;
     }
   };
 
