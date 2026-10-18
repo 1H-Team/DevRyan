@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import { readNativeWindowObservation, observeNativeStartupVisibility, submitNativeStartupFixture, observeStartupBackgroundWork, assertNativeStartupPackageSource, assertNativeStartupUpgrade, assertNativeUpgradeBaseline, observeNativeStartupSubscription, parseNativeStartupArgs, readNativeStartupLogs,
-  parseStartupComparisonArgs, summarizeStartupComparison, assertStartupComparisonSources, summarizeNativeStartupRuns, assertNativeStartupReopen } from './native-startup-benchmark.mjs';
+  parseStartupComparisonArgs, summarizeStartupComparison, summarizeStartupRegression, assertStartupComparisonSources, summarizeNativeStartupRuns, assertNativeStartupReopen } from './native-startup-benchmark.mjs';
 import { parseStartupPhaseLogs } from '../perf/electron-lifecycle-benchmark.mjs';
 import { runtimeUiBundleLayout } from './native-backend-ui-diagnostic.mjs';
 import { resolveRuntimeBundleRoot } from '../../packages/web/server/lib/opencode/runtime-host/runtime-bundle-root.js';
@@ -242,6 +242,22 @@ test('comparison requires five percent and all three pairs, with complete launch
   assert.throws(() => summarizeStartupComparison(runs([100, 110]), runs([90, 95, 100])));
 });
 
+test('the no-regression gate needs five complete pairs and allows max(5%, 50 ms) median growth', () => {
+  const runs = times => times.map(uiReadyMs => ({ startup: { outcome: 'passed', uiReadyMs }, cleanupErrors: [] }));
+  const baseline = runs([1000, 1100, 1200, 900, 1050]);
+  const accepted = summarizeStartupRegression(baseline, runs([1040, 1150, 1260, 950, 1100]));
+  assert.equal(accepted.baseline.medianUiReadyMs, 1050);
+  assert.equal(accepted.allowanceMs, 52.5);
+  assert.equal(accepted.growthMs, 50);
+  assert.equal(accepted.accepted, true);
+  assert.deepEqual(accepted.pairedGrowthMs, [40, 50, 60, 50, 50]);
+  assert.equal(summarizeStartupRegression(baseline, runs([1100, 1110, 1120, 1130, 1140])).accepted, false);
+  const fast = runs([100, 110, 120, 90, 105]);
+  assert.equal(summarizeStartupRegression(fast, runs([150, 155, 160, 140, 150])).accepted, true, 'the 50 ms floor applies to fast starts');
+  assert.throws(() => summarizeStartupRegression(runs([1, 2, 3]), runs([1, 2, 3])), /5 fresh launches/);
+  assert.throws(() => summarizeStartupRegression(baseline, [...runs([1, 2, 3, 4]), { startup: { outcome: 'failed' }, cleanupErrors: [] }]), /cleanup must pass/);
+});
+
 test('comparison pins both receipts and permits only the reviewed startup optimization files', () => {
   const source = entries => ({ entries, sha256: createHash('sha256').update(JSON.stringify(entries)).digest('hex') });
   const file = 'packages/ui/src/App.tsx';
@@ -251,6 +267,9 @@ test('comparison pins both receipts and permits only the reviewed startup optimi
   const foreign = source([...candidate.entries, { file: 'bun.lock', sha256: 'c' }]);
   assert.throws(() => assertStartupComparisonSources(baseline, foreign, foreign.sha256));
   assert.throws(() => assertStartupComparisonSources({ ...baseline, sha256: 'bad' }, candidate, candidate.sha256));
+  assert.deepEqual(assertStartupComparisonSources(baseline, foreign, foreign.sha256, { anyChangedFiles: true }), [file, 'bun.lock'],
+    'the no-regression gate records arbitrary changed files');
+  assert.throws(() => assertStartupComparisonSources(baseline, baseline, baseline.sha256, { anyChangedFiles: true }), /actual candidate/);
 });
 
 test('reopen proof rejects changed selection, absent timing and any repeat bundle mutation', () => {
@@ -268,6 +287,11 @@ test('comparison CLI defaults to natural and explicitly labels foreground mode',
   const args = ['--baseline-package-evidence', '/repo/baseline.json', '--candidate-package-evidence', '/repo/candidate.json', '--artifact-root', '/repo/native'];
   assert.equal(parseStartupComparisonArgs(args).startupMode, 'natural');
   assert.equal(parseStartupComparisonArgs([...args, '--startup-mode', 'foreground']).startupMode, 'foreground');
+  assert.equal(parseStartupComparisonArgs(args).gate, 'improvement');
+  const gated = parseStartupComparisonArgs([...args, '--gate', 'no-regression', '--startup-mode', 'foreground']);
+  assert.deepEqual([gated.gate, gated.startupMode], ['no-regression', 'foreground']);
+  assert.throws(() => parseStartupComparisonArgs([...args, '--gate', 'faster']), /improvement or no-regression/);
+  assert.throws(() => parseStartupComparisonArgs([...args, '--gate', 'no-regression', '--gate', 'improvement']));
   for (const invalid of [args.slice(0, 4), [...args, '--reload', 'true'], [...args, '--startup-mode', 'hidden'], args.map(value => value === '/repo/native' ? 'relative' : value)]) {
     assert.throws(() => parseStartupComparisonArgs(invalid));
   }

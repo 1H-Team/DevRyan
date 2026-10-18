@@ -29,7 +29,7 @@ import { assertManagedTaskResultEnvelopeMatchesTask } from '../../packages/orche
 import { assistantReasoningPartId, assistantTextPartId, assistantToolPartId, compactionSummaryMessageId } from '../../packages/web/server/lib/opencode/v2/projection/ids.js';
 import { toV1ToolPart, toV2ToolName } from '../../packages/web/server/lib/opencode/v2/projection/tools.js';
 import { matchOpenCodeV2Route } from '../../packages/web/server/lib/opencode/v2/route-policy.js';
-import { PERF_CHILD_SESSION_IDS, PERF_PARENT_SESSION_ID } from './fixture-session-seeds.mjs';
+import { PERF_CHILD_SESSION_IDS, PERF_EXTRA_STREAM_SESSION_IDS, PERF_PARENT_SESSION_ID } from './fixture-session-seeds.mjs';
 import {
   checkOpenApiValue, createV2IdFactory, createV2WireStore, DEVRYAN_FIXTURE_EVENT_TYPES, encodeV2Frame,
   OPENCODE_V2_DURABLE_EVENT_VERSIONS, OPENCODE_V2_UNLOCATED_EVENT_TYPES, openApiRequestSchema, parseV2FrameBlock,
@@ -223,6 +223,8 @@ export const createLoopbackOpenCodeV2Fixture = async ({
   let eventSuppression = null;
   let streamTimer = null;
   let activeScenario = 'idle';
+  // Deltas published per session by the current workload: actual concurrency evidence.
+  const streamDeltaCounts = new Map();
   let statusRequestCount = 0;
   let sseConnectionCount = 0;
   let abortedPrompts = 0;
@@ -533,18 +535,32 @@ export const createLoopbackOpenCodeV2Fixture = async ({
 
   const userPayload = (text, parts, extra = {}) => ({ text, metadata: { devryan: { v: 1, ...extra, parts } } });
 
+  const seedPerformanceTurn = (sessionID, createdOffset) => {
+    const text = 'Run the deterministic renderer performance fixture.';
+    const inboxID = `msg_user_${sessionID}`;
+    publish('session.inbox.enqueued', { sessionID, inboxID, item: { type: 'user', delivery: 'steer',
+      payload: userPayload(text, [{ kind: 'text', length: text.length, id: `part_user_${sessionID}` }], { agent: 'build', providerID: 'fixture', modelID: 'fixture-model' }) } },
+    { created: FIXED_CREATED_AT + 10 + createdOffset });
+    publish('session.inbox.delivered', { sessionID, inboxID }, { created: FIXED_CREATED_AT + 10 });
+  };
+
   // Seed the four performance sessions and their single user turn, as gen 1 does.
   ALL_SESSION_IDS.forEach((sessionID, index) => {
     const parent = sessionID === PERF_PARENT_SESSION_ID;
     createSessionRecord({ id: sessionID, parentID: parent ? undefined : PERF_PARENT_SESSION_ID,
       title: parent ? 'Performance parent' : `Performance ${sessionID.slice(-7)}`, created: FIXED_CREATED_AT + (parent ? 4 : index) });
-    const text = 'Run the deterministic renderer performance fixture.';
-    const inboxID = `msg_user_${sessionID}`;
-    publish('session.inbox.enqueued', { sessionID, inboxID, item: { type: 'user', delivery: 'steer',
-      payload: userPayload(text, [{ kind: 'text', length: text.length, id: `part_user_${sessionID}` }], { agent: 'build', providerID: 'fixture', modelID: 'fixture-model' }) } },
-    { created: FIXED_CREATED_AT + 10 + (parent ? 4 : index) });
-    publish('session.inbox.delivered', { sessionID, inboxID }, { created: FIXED_CREATED_AT + 10 });
+    seedPerformanceTurn(sessionID, parent ? 4 : index);
   });
+
+  /** Seed the eight extra root sessions of the twelve-stream workload (idempotent). */
+  const seedStreamSessions = () => {
+    PERF_EXTRA_STREAM_SESSION_IDS.forEach((sessionID, index) => {
+      if (store.has(sessionID)) return;
+      createSessionRecord({ id: sessionID, title: `Performance extra ${index + 1}`, created: FIXED_CREATED_AT + 5 + index });
+      seedPerformanceTurn(sessionID, 5 + index);
+    });
+    return [...PERF_EXTRA_STREAM_SESSION_IDS];
+  };
 
   const lastStoredTime = (sessionID) => store.messages(sessionID).reduce((latest, record) => Math.max(latest, record.time?.created ?? 0, record.time?.completed ?? 0), 0);
 
@@ -766,10 +782,15 @@ export const createLoopbackOpenCodeV2Fixture = async ({
   };
 
   const startScenario = (scenario) => {
-    if (!['idle','one-stream','four-stream'].includes(scenario)) throw new Error('Invalid fixture streaming scenario');
+    if (!['idle','one-stream','four-stream','twelve-stream'].includes(scenario)) throw new Error('Invalid fixture streaming scenario');
+    if (scenario === 'twelve-stream' && !PERF_EXTRA_STREAM_SESSION_IDS.every((id) => store.has(id))) {
+      throw new Error('Seed the extra stream sessions before the twelve-stream workload');
+    }
     stopScenario({ settle: false });
     activeScenario = scenario;
-    const active = (scenario === 'four-stream' ? ALL_SESSION_IDS : scenario === 'one-stream' ? [PERF_PARENT_SESSION_ID] : []).filter((id) => store.has(id));
+    streamDeltaCounts.clear();
+    const active = (scenario === 'twelve-stream' ? [...ALL_SESSION_IDS, ...PERF_EXTRA_STREAM_SESSION_IDS]
+      : scenario === 'four-stream' ? ALL_SESSION_IDS : scenario === 'one-stream' ? [PERF_PARENT_SESSION_ID] : []).filter((id) => store.has(id));
     for (const sessionID of active) {
       const assistantID = `msg_assistant_${sessionID}`;
       const base = { sessionID, assistantMessageID: assistantID };
@@ -795,6 +816,7 @@ export const createLoopbackOpenCodeV2Fixture = async ({
         chunkIndexes.set(sessionID, index + 1);
         texts.set(sessionID, `${texts.get(sessionID) ?? ''}${delta}`);
         publish('session.text.delta', { sessionID, assistantMessageID: `msg_assistant_${sessionID}`, ordinal: 0, delta });
+        streamDeltaCounts.set(sessionID, (streamDeltaCounts.get(sessionID) ?? 0) + 1);
       }
     }, 16);
   };
@@ -868,6 +890,7 @@ export const createLoopbackOpenCodeV2Fixture = async ({
   const controls = {
     startScenario,
     stopScenario,
+    seedStreamSessions,
     seedHistory,
     // Live replay of a delta on an existing text or reasoning part. As in 2.0.20, deltas are
     // ephemeral: REST keeps the text of the last `*.ended` (gen 1 also appends it to REST).
@@ -999,6 +1022,7 @@ export const createLoopbackOpenCodeV2Fixture = async ({
       olderMessageRequestCounts: Object.fromEntries(olderMessageRequestCounts),
       messagePageRequests: structuredClone(messagePageRequests),
       textLengths: Object.fromEntries([...texts].map(([id, text]) => [id, text.length])),
+      streamDeltaCounts: Object.fromEntries(streamDeltaCounts),
       receivedPrompts: structuredClone(receivedPrompts),
       canonicalUserDelays: structuredClone(canonicalUserDelays),
       rejectedPrompts: structuredClone(rejectedPrompts),

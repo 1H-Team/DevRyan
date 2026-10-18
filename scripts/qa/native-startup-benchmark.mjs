@@ -36,24 +36,36 @@ export function parseNativeStartupArgs(argv) {
   return { packageEvidence: argv[1], artifactRoot: argv[3], ...(argv.length === 6 ? { baselineArtifactRoot: argv[5] } : {}) };
 }
 
+/** improvement: the reviewed startup optimisation (3 pairs, >= 5% faster). no-regression: refactor qualification. */
+export const STARTUP_COMPARISON_GATES = Object.freeze(['improvement', 'no-regression']);
+const COMPARISON_ORDERS = Object.freeze({
+  improvement: ['B1', 'C1', 'C2', 'B2', 'B3', 'C3'],
+  'no-regression': ['B1', 'C1', 'C2', 'B2', 'B3', 'C3', 'C4', 'B4', 'B5', 'C5'],
+});
+
 export function parseStartupComparisonArgs(argv) {
   const flags = ['--baseline-package-evidence', '--candidate-package-evidence', '--artifact-root'];
-  assert.ok([6, 8, 10].includes(argv.length), 'Comparison requires explicit baseline, candidate and native artifacts');
+  assert.ok([6, 8, 10, 12].includes(argv.length), 'Comparison requires explicit baseline, candidate and native artifacts');
   for (let index = 0; index < flags.length; index++) {
     assert.equal(argv[index * 2], flags[index], 'Unexpected comparison option');
     assert.ok(path.isAbsolute(argv[index * 2 + 1]), 'Comparison artifacts must be absolute');
   }
-  let startupMode = 'natural', baselineArtifactRoot;
+  let startupMode, baselineArtifactRoot, gate;
   for (let index = 6; index < argv.length; index += 2) {
-    if (argv[index] === '--startup-mode' && index === 6) startupMode = argv[index + 1];
+    if (argv[index] === '--startup-mode' && startupMode === undefined) startupMode = argv[index + 1];
+    else if (argv[index] === '--gate' && gate === undefined) {
+      gate = argv[index + 1];
+      assert.ok(STARTUP_COMPARISON_GATES.includes(gate), 'Comparison gate must be improvement or no-regression');
+    }
     else if (argv[index] === '--baseline-artifact-root' && baselineArtifactRoot === undefined) {
       baselineArtifactRoot = argv[index + 1];
       assert.ok(path.isAbsolute(baselineArtifactRoot), 'Upgrade baseline artifacts must be absolute');
     } else throw new Error('Unexpected comparison option');
   }
+  startupMode ??= 'natural';
   assertStartupMode(startupMode);
   return { baselinePackageEvidence: argv[1], candidatePackageEvidence: argv[3], artifactRoot: argv[5], startupMode,
-    ...(baselineArtifactRoot ? { baselineArtifactRoot } : {}) };
+    gate: gate ?? 'improvement', ...(baselineArtifactRoot ? { baselineArtifactRoot } : {}) };
 }
 
 export function readNativeWindowObservation(raw, ownedPid) {
@@ -248,12 +260,12 @@ export function readNativeStartupLogs(app, qaHome, offset = 0) {
   return logs.join('\n');
 }
 
-export function summarizeNativeStartupRuns(runs) {
-  assert.equal(runs.length, 3, 'Native startup measurements require three fresh launches');
+export function summarizeNativeStartupRuns(runs, launches = 3) {
+  assert.equal(runs.length, launches, `Native startup measurements require ${launches === 3 ? 'three' : launches} fresh launches`);
   assert.ok(runs.every(run => run.startup?.outcome === 'passed' && !run.cleanupErrors?.length), 'Every startup and cleanup must pass');
   const values = runs.map(run => run.startup.uiReadyMs).sort((a, b) => a - b);
   assert.ok(values.every(value => Number.isFinite(value) && value >= 0), 'Startup timings must use the parent clock');
-  return { launches: 3, medianUiReadyMs: values[1], minimumUiReadyMs: values[0], maximumUiReadyMs: values[2] };
+  return { launches, medianUiReadyMs: values[(launches - 1) / 2], minimumUiReadyMs: values[0], maximumUiReadyMs: values.at(-1) };
 }
 
 export function assertNativeStartupPackageSource(packaged, current, startupPolicy, baselineSourceSha256) {
@@ -598,7 +610,17 @@ export function summarizeStartupComparison(baseline, candidate) {
     accepted: improvementPercent >= 5 && pairedImprovements.every(Boolean) };
 }
 
-export function assertStartupComparisonSources(baseline, candidate, current) {
+/** Five interleaved pairs: reject median time-to-usable-chat growth above max(5%, 50 ms). */
+export function summarizeStartupRegression(baseline, candidate) {
+  const before = summarizeNativeStartupRuns(baseline, 5), after = summarizeNativeStartupRuns(candidate, 5);
+  const growthMs = after.medianUiReadyMs - before.medianUiReadyMs;
+  const allowanceMs = Math.max(0.05 * before.medianUiReadyMs, 50);
+  return { baseline: before, candidate: after, growthMs, allowanceMs,
+    pairedGrowthMs: baseline.map((run, index) => candidate[index].startup.uiReadyMs - run.startup.uiReadyMs),
+    accepted: growthMs <= allowanceMs };
+}
+
+export function assertStartupComparisonSources(baseline, candidate, current, { anyChangedFiles = false } = {}) {
   assert.equal(candidate.sha256, current, 'Candidate must match current reviewed source');
   const previous = new Map(baseline.entries.map(entry => [entry.file, entry.sha256]));
   const next = new Map(candidate.entries.map(entry => [entry.file, entry.sha256]));
@@ -631,15 +653,17 @@ export function assertStartupComparisonSources(baseline, candidate, current) {
     'packages/web/server/lib/opencode/runtime-host/native-authorization.test.js',
     'packages/web/server/lib/opencode/runtime-host/native-recovered-input.test.js',
   ];
-  assert.ok(changed.every(file => allowed.includes(file)), 'Comparison changed files outside the startup candidates');
+  // A no-regression gate qualifies arbitrary refactors; it records, not restricts, the changed files.
+  assert.ok(anyChangedFiles || changed.every(file => allowed.includes(file)), 'Comparison changed files outside the startup candidates');
   for (const source of [baseline, candidate]) {
     assert.equal(hash(JSON.stringify(source.entries)), source.sha256, 'Source receipt is invalid');
   }
   return changed;
 }
 
-export async function runNativeStartupComparison({ baselinePackageEvidence, candidatePackageEvidence, artifactRoot, baselineArtifactRoot, startupMode = 'natural' }) {
+export async function runNativeStartupComparison({ baselinePackageEvidence, candidatePackageEvidence, artifactRoot, baselineArtifactRoot, startupMode = 'natural', gate = 'improvement' }) {
   assertStartupMode(startupMode);
+  assert.ok(STARTUP_COMPARISON_GATES.includes(gate), 'Comparison gate must be improvement or no-regression');
   assert.ok(typeof artifactRoot === 'string' && artifactRoot.startsWith(path.join(repository, '.cache') + path.sep),
     'Comparison native artifacts must stay in the repository cache');
   assert.equal(await fs.realpath(artifactRoot), artifactRoot, 'Comparison native artifacts must be canonical');
@@ -647,7 +671,8 @@ export async function runNativeStartupComparison({ baselinePackageEvidence, cand
   const baseline = await loadQaPackagedArtifact({ root: repository, evidencePath: baselinePackageEvidence });
   const candidate = await loadQaPackagedArtifact({ root: repository, evidencePath: candidatePackageEvidence });
   const catalogProviders = await readStartupCatalogFixture();
-  const changed = assertStartupComparisonSources(baseline.evidence.source, candidate.evidence.source, before.sha256);
+  const changed = assertStartupComparisonSources(baseline.evidence.source, candidate.evidence.source, before.sha256,
+    { anyChangedFiles: gate === 'no-regression' });
   assert.equal(baseline.evidence.electronVersion, candidate.evidence.electronVersion);
   assert.deepEqual(baseline.evidence.nativeArtifacts.map(({ relative, sha256 }) => ({ relative, sha256 })),
     candidate.evidence.nativeArtifacts.map(({ relative, sha256 }) => ({ relative, sha256 })));
@@ -656,7 +681,7 @@ export async function runNativeStartupComparison({ baselinePackageEvidence, cand
   assert.equal(await nativeManifest(candidate), nativeDigest, 'Native runtime versions must match');
   assert.equal(hash(await fs.readFile(path.join(artifactRoot, 'native-bundle.json'))), nativeDigest, 'Fixture must match packaged native runtime');
   const run = createRunRoot({ parent: scratchParent('qa'), prefix: 'startup-comparison-', owner: 'scripts/qa/native-startup-benchmark.mjs' });
-  const evidence = { outcome: 'failed', startupMode, changed, nativeDigest, catalogFixtureSha256: hash(JSON.stringify(catalogProviders ?? null)), order: ['B1', 'C1', 'C2', 'B2', 'B3', 'C3'],
+  const evidence = { outcome: 'failed', startupMode, gate, changed, nativeDigest, catalogFixtureSha256: hash(JSON.stringify(catalogProviders ?? null)), order: COMPARISON_ORDERS[gate],
     baselineSourceSha256: baseline.evidence.source.sha256, candidateSourceSha256: candidate.evidence.source.sha256,
     baselineArchiveSha256: baseline.evidence.archiveSha256, candidateArchiveSha256: candidate.evidence.archiveSha256,
     baseline: [], candidate: [] };
@@ -675,9 +700,11 @@ export async function runNativeStartupComparison({ baselinePackageEvidence, cand
     }
     assert.equal(await nativeManifest(baseline), nativeDigest);
     assert.equal(await nativeManifest(candidate), nativeDigest);
-    evidence.summary = summarizeStartupComparison(evidence.baseline, evidence.candidate);
-    evidence.reopenSummary = summarizeStartupComparison(evidence.baseline.map(record => record.reopen), evidence.candidate.map(record => record.reopen));
-    evidence.outcome = 'passed';
+    const summarize = gate === 'no-regression' ? summarizeStartupRegression : summarizeStartupComparison;
+    evidence.summary = summarize(evidence.baseline, evidence.candidate);
+    evidence.reopenSummary = summarize(evidence.baseline.map(record => record.reopen), evidence.candidate.map(record => record.reopen));
+    // The improvement experiment reports acceptance descriptively; a no-regression gate fails the run.
+    evidence.outcome = gate === 'no-regression' && !evidence.summary.accepted ? 'regressed' : 'passed';
   } catch (error) { evidence.error = error.message; }
   finally {
     await fs.writeFile(path.join(run.dir, 'evidence.json'), JSON.stringify(evidence, null, 2) + '\n', { mode: 0o600 });

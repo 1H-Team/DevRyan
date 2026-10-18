@@ -458,6 +458,31 @@ describe('loopback OpenCode 2.0.20 fixture', () => {
     }
   });
 
+  it('streams twelve sessions only after seeding the extra roots, and counts deltas per session', async () => {
+    const fixture = await createLoopbackOpenCodeV2Fixture({ directory: '/qa-v2-twelve' });
+    try {
+      const api = client(fixture);
+      const roots = async () => (await api.get('/api/session?parentID=null&limit=200', { withLocation: false })).body.data.length;
+      const before = await roots();
+      assert.throws(() => fixture.startScenario('twelve-stream'), /Seed the extra stream sessions/);
+      const extras = fixture.seedStreamSessions();
+      assert.equal(extras.length, 8);
+      assert.deepEqual(fixture.seedStreamSessions(), extras, 'seeding is idempotent');
+      assert.equal(await roots(), before + 8);
+      fixture.startScenario('twelve-stream');
+      await waitFor('twelve streaming sessions', () => Object.keys(fixture.getState().streamDeltaCounts).length === 12);
+      fixture.stopScenario();
+      const counts = fixture.getState().streamDeltaCounts;
+      assert.deepEqual(Object.keys(counts).sort(), [PERF_PARENT_SESSION_ID, ...PERF_CHILD_SESSION_IDS, ...extras].sort());
+      assert.ok(Object.values(counts).every((count) => count > 0));
+      fixture.startScenario('one-stream');
+      assert.deepEqual(fixture.getState().streamDeltaCounts, {}, 'a new workload resets the counts');
+      fixture.stopScenario();
+    } finally {
+      await fixture.close();
+    }
+  });
+
   it('folds the captured 2.0.20 frames into exactly the REST records 2.0.20 served', () => {
     const cases = [['01-two-step-tool-turn.json', 'session.messages.asc'], ['02-retry.json', 'session.messages.asc'],
       ['03-abort.json', 'session.messages.asc'], ['04-failure.json', 'session.messages.asc'], ['04b-tool-failed.json', 'session.messages.asc'],

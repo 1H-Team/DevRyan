@@ -48,9 +48,10 @@ For any runtime issue (stuck sessions, missing or duplicated events, failed prom
 bun scripts/journal.mjs list
 bun scripts/journal.mjs show <sessionID> --tail 200
 bun scripts/journal.mjs gaps
+bun scripts/journal.mjs gaps --verify
 ```
 
-`show` also accepts `--type`, `--event`, `--since`, `--until` and `--grep`. Pass `--dir <journal-dir>` to read a specific host's journal.
+`gaps` skips session buckets whose manifest records zero gaps; `gaps --verify` rereads every chunk and is the form qualification runs use. `show` also accepts `--type`, `--event`, `--since`, `--until` and `--grep`. Pass `--dir <journal-dir>` to read a specific host's journal.
 
 | Topic | Detail |
 | --- | --- |

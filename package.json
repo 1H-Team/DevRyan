@@ -84,6 +84,8 @@
     "version:bump": "node scripts/bump-version.mjs",
     "qa": "node scripts/qa/run.mjs",
     "perf:reducer": "bun scripts/perf/streaming-reducer-benchmark.mjs",
+    "perf:reducer:compare": "bun scripts/perf/reducer-comparison.mjs",
+    "perf:resource-gate": "node ./scripts/perf/resource-gate.mjs",
     "build:revert-runtime": "node scripts/build-revert-runtime.mjs",
     "verify:revert-runtime": "node scripts/verify-revert-runtime-artifacts.mjs"
   },

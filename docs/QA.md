@@ -118,19 +118,23 @@ Three direct headless launches of the packaged `--runtime-service` in a private 
 
 ```sh
 bun scripts/qa/native-startup-benchmark.mjs --package-evidence <abs> --artifact-root <abs> [--baseline-artifact-root <abs>]
-bun scripts/qa/native-startup-benchmark.mjs --baseline-package-evidence <abs> --candidate-package-evidence <abs> --artifact-root <abs> [--startup-mode foreground]
+bun scripts/qa/native-startup-benchmark.mjs --baseline-package-evidence <abs> --candidate-package-evidence <abs> --artifact-root <abs> [--startup-mode foreground] [--gate no-regression]
 ```
 
-Three fresh packaged launches through usable chat (native catalog, exact fixture model and agent, composer, sessions and the renderer's event-stream readiness), first document only, no reloads. `--baseline-artifact-root` instead measures first launches after a production startup upgrade from the older native artifacts. The second form runs interleaved baseline/candidate pairs and accepts only a median reduction of at least 5% with all pairs faster. Run benchmarks alone, not beside builds or tests. `DEVRYAN_QA_CATALOG_CONFIG` can point at a sanitized `providers.json` to require specific Cursor models in the catalog.
+Three fresh packaged launches through usable chat (native catalog, exact fixture model and agent, composer, sessions and the renderer's event-stream readiness), first document only, no reloads. `--baseline-artifact-root` instead measures first launches after a production startup upgrade from the older native artifacts. The second form runs interleaved baseline/candidate pairs and accepts only a median reduction of at least 5% with all pairs faster. With `--gate no-regression` it runs five interleaved pairs, records (rather than restricts) the changed files, and fails when median time to usable chat grows by more than max(5%, 50 ms). Run benchmarks alone, not beside builds or tests. `DEVRYAN_QA_CATALOG_CONFIG` can point at a sanitized `providers.json` to require specific Cursor models in the catalog.
 
 ### Resource benchmark
 
 ```sh
 bun run perf:electron -- --label candidate --package-evidence <abs package-evidence.json>
 bun run perf:electron -- --label candidate --package-evidence <abs> --scenarios session-memory   # or interactive
+bun run perf:resource-gate -- --scenarios idle,twelve-stream --baseline <B1/summary.json> --candidate <C1/summary.json> --candidate <C2/summary.json> --baseline <B2/summary.json>
+bun run perf:reducer:compare -- --baseline <baseline checkout> [--pairs 10]
 ```
 
-Private credential-free fixture profiles. Defaults: three runs of `idle`, `one-stream`, `four-stream` and `plan-skeleton`, 5 s warm-up, 30 s measurement, 500 ms sampling. `--scenarios`, `--runs`, `--warmup-ms`, `--measure-ms` and `--output` change that (label shortened runs a smoke), and `--baseline <summary.json>` applies comparison gates. Do not combine `--package-evidence` with `--electron-binary`. Each launch writes `startup.json` with parent-clock milestones. Protocols: `session-memory` loads four 180-turn histories and measures initial, loaded, inactive and deleted states; `interactive` is described in [INTERACTIVE.md](../scripts/perf/INTERACTIVE.md). Other profiling tools live in `scripts/perf/`.
+Private credential-free fixture profiles. Defaults: three runs of `idle`, `one-stream`, `four-stream` and `plan-skeleton`, 5 s warm-up, 30 s measurement, 500 ms sampling. `--scenarios`, `--runs`, `--warmup-ms`, `--measure-ms` and `--output` change that (label shortened runs a smoke), and `--baseline <summary.json>` applies comparison gates. Do not combine `--package-evidence` with `--electron-binary`. Each launch writes `startup.json` with parent-clock milestones. Protocols: `session-memory` loads four 180-turn histories and measures initial, loaded, inactive and deleted states; `interactive` is described in [INTERACTIVE.md](../scripts/perf/INTERACTIVE.md). The opt-in `twelve-stream` scenario seeds eight extra root sessions before launch and streams all twelve. Every streaming run records how many sessions actually streamed through the measurement window and fails when fewer than its workload did.
+
+`perf:resource-gate` is the no-regression gate over separate single-package benchmark runs taken alternately (B C C B …) with identical options and `--output` under the OS temp dir. It fails on median total-app CPU growth above max(5%, 1 percentage point) or median/p95 total working-set growth above max(5%, 16 MiB), and refuses mismatched protocols, Chromium runtimes, process types, unpaired or non-interleaved runs. `perf:reducer:compare` runs the reducer benchmark alternately from a baseline checkout (a worktree under `.cache/worktrees/`) and this one, and per scenario allows max(5% of the baseline median p95, 3 × its median absolute deviation); an allowance above 15% is reported as too noisy to qualify. Other profiling tools live in `scripts/perf/`.
 
 ## Configured live-provider smoke
 

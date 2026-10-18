@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import { runInNewContext } from 'node:vm';
 
 import {
+  assessStreamConcurrency,
   compareBenchmarkSummaries,
   compareLifecycleSummaries,
   assertPerfPackageEvidenceUnchanged,
@@ -295,7 +296,21 @@ describe('Electron resource benchmark metrics', () => {
     assert.equal(summary.medianGpuCpu, 8);
     assert.equal(summary.medianTabWorkingSet, 90);
     assert.equal(summary.medianTotalAppWorkingSet, 340);
+    assert.equal(summary.p95TotalAppWorkingSet, 350);
+    assert.equal(summary.medianTotalAppCpu, 39);
+    assert.deepEqual(summary.processTypes, ['Browser', 'GPU', 'Tab']);
     assert.equal(median([4, 1, 3, 2]), 2.5);
+  });
+
+  it('accepts the opt-in twelve-stream workload and rejects underloaded streaming runs', () => {
+    assert.deepEqual(parseBenchmarkArguments(['--scenarios', 'twelve-stream']).scenarios, ['twelve-stream']);
+    assert.ok(!parseBenchmarkArguments([]).scenarios.includes('twelve-stream'), 'twelve-stream stays out of the defaults');
+    const counts = (count, value) => Object.fromEntries(Array.from({ length: count }, (_, index) => [`ses_${index}`, value]));
+    assert.deepEqual(assessStreamConcurrency('twelve-stream', counts(12, 5), counts(12, 9)), { expectedSessions: 12, observedSessions: 12 });
+    assert.throws(() => assessStreamConcurrency('twelve-stream', counts(12, 5), { ...counts(11, 9), ses_11: 5 }), /Underloaded twelve-stream run: 11\/12/);
+    assert.throws(() => assessStreamConcurrency('four-stream', {}, counts(3, 1)), /Underloaded four-stream/);
+    assert.deepEqual(assessStreamConcurrency('idle', {}, {}), { expectedSessions: 0, observedSessions: 0 });
+    assert.throws(() => assessStreamConcurrency('plan-skeleton', {}, {}), /No streaming workload/);
   });
 
   it('requires one explicit packaged artifact source for isolated measurements', () => {

@@ -40,7 +40,11 @@ import { createRunRoot } from '../qa/run-root.mjs';
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDirectory, '../..');
 const DEFAULT_SCENARIOS = ['idle', 'one-stream', 'four-stream', 'plan-skeleton'];
-const VALID_SCENARIOS = new Set([...DEFAULT_SCENARIOS, 'session-memory', 'interactive']);
+// Opt-in: seeds eight extra root sessions, so it never changes the default fixture.
+const RESOURCE_SCENARIOS = [...DEFAULT_SCENARIOS, 'twelve-stream'];
+const VALID_SCENARIOS = new Set([...RESOURCE_SCENARIOS, 'session-memory', 'interactive']);
+/** Sessions each streaming workload must keep streaming through the whole measurement window. */
+export const STREAM_SCENARIO_SESSIONS = Object.freeze({ idle: 0, 'one-stream': 1, 'four-stream': 4, 'twelve-stream': 12 });
 const SAMPLE_INTERVAL_MS = 500;
 const MAX_LOG_BYTES = 2 * 1024 * 1024;
 
@@ -316,6 +320,13 @@ const metricForType = (sample, type, field, nestedField) => {
   return typeof value === 'number' ? value : null;
 };
 
+const totalAppWorkingSet = (sample) => sample.appMetrics.reduce((total, entry) => total + (entry.memory?.workingSetSize ?? 0), 0);
+
+const percentile95 = (values) => {
+  const finite = values.filter(Number.isFinite).sort((left, right) => left - right);
+  return finite.length === 0 ? null : finite[Math.ceil(finite.length * 0.95) - 1];
+};
+
 export const summarizeMemorySamples = (rawSamples) => {
   const samples = rawSamples.slice(1);
   return {
@@ -323,11 +334,25 @@ export const summarizeMemorySamples = (rawSamples) => {
     medianTabCpu: median(samples.map((sample) => metricForType(sample, 'Tab', 'cpu', 'percentCPUUsage'))),
     medianGpuCpu: median(samples.map((sample) => metricForType(sample, 'GPU', 'cpu', 'percentCPUUsage'))),
     medianTabWorkingSet: median(samples.map((sample) => metricForType(sample, 'Tab', 'memory', 'workingSetSize'))),
-    medianTotalAppWorkingSet: median(samples.map((sample) => (
-      sample.appMetrics.reduce((total, entry) => total + (entry.memory?.workingSetSize ?? 0), 0)
+    medianTotalAppWorkingSet: median(samples.map(totalAppWorkingSet)),
+    p95TotalAppWorkingSet: percentile95(samples.map(totalAppWorkingSet)),
+    medianTotalAppCpu: median(samples.map((sample) => (
+      sample.appMetrics.reduce((total, entry) => total + (entry.cpu?.percentCPUUsage ?? 0), 0)
     ))),
     medianMainRss: median(samples.map((sample) => sample.process?.rss ?? null)),
+    processTypes: [...new Set(samples.flatMap((sample) => sample.appMetrics.map((entry) => entry.type)))].sort(),
   };
+};
+
+/** Sessions that kept streaming between two fixture delta-count snapshots; underloaded runs fail. */
+export const assessStreamConcurrency = (scenario, before = {}, after = {}) => {
+  const expectedSessions = STREAM_SCENARIO_SESSIONS[scenario];
+  if (expectedSessions === undefined) throw new Error(`No streaming workload for ${scenario}`);
+  const observedSessions = Object.keys(after).filter((sessionID) => (after[sessionID] ?? 0) > (before[sessionID] ?? 0)).length;
+  if (observedSessions < expectedSessions) {
+    throw new Error(`Underloaded ${scenario} run: ${observedSessions}/${expectedSessions} sessions streamed during measurement`);
+  }
+  return { expectedSessions, observedSessions };
 };
 
 const aggregateRunSummaries = (runs) => ({
@@ -336,7 +361,10 @@ const aggregateRunSummaries = (runs) => ({
   medianGpuCpu: median(runs.map((run) => run.summary.medianGpuCpu)),
   medianTabWorkingSet: median(runs.map((run) => run.summary.medianTabWorkingSet)),
   medianTotalAppWorkingSet: median(runs.map((run) => run.summary.medianTotalAppWorkingSet)),
+  medianP95TotalAppWorkingSet: median(runs.map((run) => run.summary.p95TotalAppWorkingSet)),
+  medianTotalAppCpu: median(runs.map((run) => run.summary.medianTotalAppCpu)),
   medianMainRss: median(runs.map((run) => run.summary.medianMainRss)),
+  processTypes: [...new Set(runs.flatMap((run) => run.summary.processTypes ?? []))].sort(),
 });
 
 export const summarizeStartupRuns = (runs) => {
@@ -444,6 +472,10 @@ const runOnce = async ({ scenario, runIndex, scenarioDirectory, electronBinary, 
   const interactiveSessions = scenario === 'interactive'
     ? await prepareInteractiveSessions(fixture).catch(async error => { await fixture.close(); throw error; })
     : null;
+  if (scenario === 'twelve-stream') {
+    // Seed before launch so the extra roots are part of startup, like the default four.
+    try { fixture.seedStreamSessions(); } catch (error) { await fixture.close(); throw error; }
+  }
   const debugPort = await reservePort();
   let logs = '';
   const spawnedAt = performance.now();
@@ -556,6 +588,7 @@ const runOnce = async ({ scenario, runIndex, scenarioDirectory, electronBinary, 
     }
 
     await wait(warmupMs);
+    const streamsBefore = fixture.getState().streamDeltaCounts;
 
     const traceEvents = [];
     const removeTraceListener = cdp.on('Tracing.dataCollected', ({ value }) => {
@@ -588,6 +621,8 @@ const runOnce = async ({ scenario, runIndex, scenarioDirectory, electronBinary, 
     await cdp.send('Tracing.end');
     await traceComplete;
     removeTraceListener();
+    const concurrency = scenario === 'plan-skeleton' ? null
+      : assessStreamConcurrency(scenario, streamsBefore, fixture.getState().streamDeltaCounts);
     fixture.stopScenario();
 
     const summary = summarizeMemorySamples(samples);
@@ -605,6 +640,7 @@ const runOnce = async ({ scenario, runIndex, scenarioDirectory, electronBinary, 
       forcedNavigation,
       skeleton,
       fixture: fixture.getState(),
+      concurrency,
       summary,
       samples,
     };
@@ -648,7 +684,7 @@ export const runElectronResourceBenchmark = async ({ argv = [], startupMode = 'n
   if (interactiveScope === 'typing' && (options.scenarios.length !== 1 || options.scenarios[0] !== 'interactive')) {
     throw new Error('Typing scope requires only the interactive scenario');
   }
-  if (startupMode === 'foreground' && interactiveScope !== 'typing' && options.scenarios.some(scenario => !DEFAULT_SCENARIOS.includes(scenario))) {
+  if (startupMode === 'foreground' && interactiveScope !== 'typing' && options.scenarios.some(scenario => !RESOURCE_SCENARIOS.includes(scenario))) {
     throw new Error('Foreground startup is only supported for resource scenarios');
   }
   const packaged = options.packageEvidence ? await loadQaPackagedArtifact({ root: repositoryRoot, evidencePath: options.packageEvidence }) : null;
@@ -733,7 +769,7 @@ export const runElectronResourceBenchmark = async ({ argv = [], startupMode = 'n
         startup: summarizeStartupRuns(runs.map(run => run.startup)),
         chromium: runs[0].chromium,
         display,
-        runs: runs.map((run) => ({ runIndex: run.runIndex, summary: run.summary,
+        runs: runs.map((run) => ({ runIndex: run.runIndex, summary: run.summary, ...(run.concurrency ? { concurrency: run.concurrency } : {}),
           startup: run.startup, ...(run.sessionMemory ? { memory: run.sessionMemory.summary } : {}),
           ...(run.interactive ? { interactive: { outcome: run.interactive.outcome,
             interactiveScope, actions: run.interactive.actionsSummary,
