@@ -12,6 +12,7 @@ import {
   validateRuntimeServiceDescriptor,
 } from '../runtime-service.mjs';
 import { retireMismatchedRuntimeService, retryRuntimeServiceConnection } from '../runtime-service-startup.mjs';
+import { APP_VERSION, connectionFixture, serviceDescriptor } from './runtime-service-connection-fixture.mjs';
 
 const mainSource = readFileSync(new URL('../main.mjs', import.meta.url), 'utf8');
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
@@ -216,78 +217,75 @@ describe('verified stale-service termination', () => {
 });
 
 describe('foreground connection to the background runtime', () => {
-  const start = mainSource.indexOf('let runtimeServiceReconnectPromise = null;');
-  const end = mainSource.indexOf('const macosMajorVersion = () => {');
-  assert.ok(start > 0 && end > start);
-  const createConnect = new AsyncFunction('deps', `
-    const { readRuntimeServiceDescriptor, isRuntimeServiceProtocolSupported, assertRuntimeServiceDescriptorOwner,
-      dataRootDirectory, buildLocalUrl, waitForHealth, APP_VERSION, retireStaleRuntimeService,
-      bootstrapRuntimeServiceSession, startDesktopHostBroker, registerDesktopHostLease, stopDesktopHostBroker,
-      state, log, BrowserWindow, setInterval, clearInterval, recordRuntimeServiceAppVersion } = deps;
-    ${mainSource.slice(start, end)}
-    return connectToRuntimeService;
-  `);
-  const fixture = async (appVersion) => {
-    const calls = [];
-    const state = {};
-    const descriptor = appVersion === undefined ? baseDescriptor : { ...baseDescriptor, appVersion };
-    const connect = await createConnect({
-      readRuntimeServiceDescriptor: async () => descriptor,
-      isRuntimeServiceProtocolSupported: () => true,
-      assertRuntimeServiceDescriptorOwner: async () => { calls.push('owner'); },
-      dataRootDirectory: () => '/data',
-      buildLocalUrl: (port) => `http://127.0.0.1:${port}/`,
-      waitForHealth: async () => { calls.push('health'); return true; },
-      APP_VERSION: '2.0.1',
-      retireStaleRuntimeService: async (value, url) => { calls.push(['retire', value.appVersion ?? null, url]); },
-      bootstrapRuntimeServiceSession: async () => { calls.push('bootstrap'); },
-      startDesktopHostBroker: async () => { calls.push('broker'); return {}; },
-      registerDesktopHostLease: async () => ({
-        instanceId: descriptor.instanceId, ownerGeneration: descriptor.ownerGeneration, protocolVersion: descriptor.protocolVersion,
-      }),
-      stopDesktopHostBroker: async () => {},
-      state,
-      log: { warn: () => {} },
-      BrowserWindow: { getAllWindows: () => [] },
-      setInterval: () => ({ unref: () => {} }),
-      clearInterval: () => {},
-      recordRuntimeServiceAppVersion: async () => { calls.push('record'); },
-    });
-    return { calls, state, connect };
+  const retirement = () => {
+    const events = [];
+    let stopped = false;
+    return {
+      events,
+      overrides: {
+        getRegistration: () => ({
+          unregister: async () => { events.push('unregister'); return { ok: true, state: 'not_registered', code: null }; },
+          status: async () => { events.push('status'); return { ok: true, state: 'not_registered', code: null }; },
+          register: async (options) => { events.push(['register', options]); return { ok: true, state: 'enabled', code: null }; },
+        }),
+        waitForOwnerStopped: async (timeoutMs) => { events.push(['stopped?', timeoutMs]); return stopped; },
+        terminateProcess: async (request) => { events.push(['terminate', request]); stopped = true; return true; },
+      },
+    };
   };
 
   for (const [name, appVersion] of [['no app version (1.x, 2.0.0)', undefined], ['another app version', '2.0.2']]) {
     test(`a live service with ${name} is retired and never attached`, async () => {
-      const { calls, state, connect } = await fixture(appVersion);
-      await assert.rejects(connect(), (error) => error.code === 'runtime_service_unavailable' && error.retryable !== false);
-      assert.deepEqual(calls, ['owner', ['retire', appVersion ?? null, 'http://127.0.0.1:57123']]);
-      assert.equal(state.runtimeServiceClient, undefined);
-      assert.equal(state.sidecarUrl, undefined);
+      const retire = retirement();
+      const { calls, state, requests, brokers, connection } = connectionFixture({
+        descriptors: [serviceDescriptor({ appVersion })], overrides: retire.overrides,
+      });
+      await assert.rejects(connection.connect(), (error) => error.code === 'runtime_service_unavailable' && error.retryable !== false);
+      assert.equal(calls[0], 'owner');
+      assert.equal(retire.events.filter((event) => event === 'unregister').length, 1);
+      assert.equal(state.runtimeServiceClient, false);
+      assert.equal(state.sidecarUrl, null);
+      assert.equal(brokers.length, 0);
+      assert.ok(!requests.some((request) => request.kind === 'lease'));
       // Retired once: a second mismatched owner ends the wait instead of looping.
-      await assert.rejects(connect(), (error) => error.code === 'runtime_service_version_mismatch' && error.retryable === false);
-      assert.equal(calls.filter((call) => Array.isArray(call)).length, 1);
+      await assert.rejects(connection.connect(), (error) => error.code === 'runtime_service_version_mismatch' && error.retryable === false);
+      assert.equal(retire.events.filter((event) => event === 'unregister').length, 1);
     });
   }
 
   test('a reconnect never retires or attaches a mismatched service', async () => {
-    const { calls, state, connect } = await fixture('2.0.0');
-    await assert.rejects(connect({ reconnecting: true }), { code: 'runtime_service_version_mismatch' });
+    const retire = retirement();
+    const { calls, state, connection } = connectionFixture({
+      descriptors: [serviceDescriptor({ appVersion: '2.0.0' })], overrides: retire.overrides,
+    });
+    await assert.rejects(connection.connect({ reconnecting: true }), { code: 'runtime_service_version_mismatch' });
     assert.deepEqual(calls, ['owner']);
-    assert.equal(state.runtimeServiceClient, undefined);
+    assert.deepEqual(retire.events, []);
+    assert.equal(state.runtimeServiceClient, false);
   });
 
   test('a service of this app version is attached', async () => {
-    const { calls, state, connect } = await fixture('2.0.1');
-    assert.equal(await connect(), 'http://127.0.0.1:57123');
-    assert.deepEqual(calls, ['owner', 'health', 'owner', 'bootstrap', 'broker', 'record']);
+    const { calls, state, connection } = connectionFixture({ descriptors: [serviceDescriptor({ appVersion: APP_VERSION })] });
+    assert.equal(await connection.connect(), 'http://127.0.0.1:57123');
+    assert.deepEqual(calls, ['owner', 'health', 'owner', ['cookie', 'http://127.0.0.1:57123'], 'broker', 'record']);
     assert.equal(state.runtimeServiceClient, true);
   });
 
-  test('retirement drains through prepare-update and registers through the startup registration check', () => {
-    const body = mainSource.slice(mainSource.indexOf('const retireStaleRuntimeService = '), start);
-    assert.match(body, /\/api\/runtime-service\/prepare-update/);
-    assert.match(body, /terminate: \(signal\) => terminateRuntimeServiceProcess\(\{ pid: descriptor\.pid, signal \}\)/);
-    assert.match(body, /register: \(\) => ensureRuntimeServiceRegistered\(/);
+  test('retirement drains through prepare-update, signals only the verified pid and registers through the startup registration check', async () => {
+    const retire = retirement();
+    const { requests, connection } = connectionFixture({
+      descriptors: [serviceDescriptor({ appVersion: '2.0.2' })], overrides: retire.overrides,
+    });
+    await assert.rejects(connection.connect(), { code: 'runtime_service_unavailable' });
+    assert.deepEqual(requests.map((request) => [request.kind, request.method]), [['bootstrap', 'POST'], ['prepare-update', 'POST']]);
+    assert.equal(requests[1].url, 'http://127.0.0.1:57123/api/runtime-service/prepare-update');
+    assert.deepEqual(retire.events, [
+      'unregister', ['stopped?', 15_000], ['terminate', { pid: 4242, signal: 'SIGTERM' }], ['stopped?', 5_000],
+      'status', ['register', { allowLegacy: true }],
+    ]);
+  });
+
+  test('the runtime coordinator publishes this app version', () => {
     assert.match(mainSource, /createRuntimeServiceCoordinator\(\{\s+dataDirectory: dataRootDirectory\(\), safeStorage, appVersion: APP_VERSION,/);
   });
 });

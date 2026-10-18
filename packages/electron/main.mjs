@@ -62,6 +62,7 @@ import {
   createDesktopHostBroker,
   createDesktopHostBrokerClient,
 } from './desktop-host-broker.mjs';
+import { createRuntimeServiceConnection } from './runtime-service-connection.mjs';
 import { createRuntimeServiceRegistration } from './runtime-service-registration.mjs';
 import { createRuntimeServiceNativeControl } from './runtime-service-native.mjs';
 import {
@@ -71,9 +72,7 @@ import {
   recoverAppBoundRuntime,
   retryRuntimeServiceConnection,
   ensureRuntimeServiceRegistered,
-  retireMismatchedRuntimeService,
   reregisterRuntimeServiceAfterUpgrade,
-  runtimeServiceRequestSignal,
   runStartupPhase,
   createDesktopHostLeaseHandler,
 } from './runtime-service-startup.mjs';
@@ -1382,48 +1381,32 @@ const setRuntimeServiceCookie = async (url, setCookieHeader) => {
   });
 };
 
-const registerDesktopHostLease = async (url, broker, deadline) => {
-  const signal = runtimeServiceRequestSignal(deadline);
-  const register = (capabilities) => session.defaultSession.fetch(`${url}/api/runtime-service/desktop-host`, {
-    method: 'POST',
-    signal,
-    headers: {
-      'Content-Type': 'application/json',
-      'X-DevRyan-CSRF': '1',
-    },
-    body: JSON.stringify({
-      leaseId: broker.leaseId,
-      brokerPort: broker.port,
-      brokerToken: broker.token,
-      capabilities,
-    }),
-  });
-  let response = await register(broker.capabilities);
-  if (response.status === 400 && broker.capabilities.includes('browser_observation')) {
-    // Previous runtime-service builds reject unknown capabilities. Preserve
-    // their existing desktop-host operations while explicitly leaving remote
-    // observation unavailable for that mixed-version pairing.
-    response = await register(broker.capabilities.filter((value) => value !== 'browser_observation'));
+// The app version whose registration is known to start its service: recorded
+// after a registration replacement and after connecting to this version's service.
+const recordRuntimeServiceAppVersion = async () => {
+  if (readSettingsRoot().productionBotsRuntimeServiceAppVersion === APP_VERSION) return;
+  try {
+    await mutateSettingsRoot((root) => { root.productionBotsRuntimeServiceAppVersion = APP_VERSION; });
+  } catch {
+    log.warn('[runtime-service] registration version was not recorded', { code: 'runtime_service_version_record_failed' });
   }
-  if (!response.ok) {
-    const payload = await response.json().catch(() => null);
-    const error = new Error('Runtime service rejected the desktop host lease');
-    error.code = response.status === 401
-      ? 'runtime_service_session_required'
-      : 'desktop_host_registration_failed';
-    // Bounded, secret-free detail so startup logs say why the service refused.
-    error.rejection = Object.freeze({
-      status: response.status,
-      code: typeof payload?.code === 'string' && /^[a-z][a-z0-9_]{0,99}$/.test(payload.code) ? payload.code : null,
-    });
-    throw error;
-  }
-  return response.json();
 };
 
-const startDesktopHostBroker = async () => {
-  if (state.desktopHostBroker) return state.desktopHostBroker;
-  state.desktopHostBroker = await createDesktopHostBroker({
+// The desktop-host connection to this app's background runtime service is
+// owned by runtime-service-connection.mjs; it has per-connection identity.
+const runtimeServiceConnection = createRuntimeServiceConnection({
+  state,
+  appVersion: APP_VERSION,
+  fetch: (url, options) => session.defaultSession.fetch(url, options),
+  dataDirectory: () => dataRootDirectory(),
+  readDescriptor: readRuntimeServiceDescriptor,
+  assertDescriptorOwner: assertRuntimeServiceDescriptorOwner,
+  isProtocolSupported: isRuntimeServiceProtocolSupported,
+  buildLocalUrl,
+  waitForHealth,
+  unsealBootstrapToken: (descriptor) => unsealRuntimeServiceBootstrapToken({ descriptor, safeStorage }),
+  setRuntimeServiceCookie,
+  createBroker: () => createDesktopHostBroker({
     handlers: {
       status: async () => ({
         focused: isAnyWindowFocused(),
@@ -1436,164 +1419,16 @@ const startDesktopHostBroker = async () => {
       browserLeaseObservationSnapshot: (request) => getDesktopBrowserLeaseObservationSnapshot(request),
       openBrowserLeaseObservationStream: (request) => openDesktopBrowserLeaseObservationStream(request),
     },
-  });
-  return state.desktopHostBroker;
-};
-
-const stopDesktopHostBroker = async ({ notifyService = true } = {}) => {
-  if (state.desktopHostLeaseRefreshTimer) {
-    clearInterval(state.desktopHostLeaseRefreshTimer);
-    state.desktopHostLeaseRefreshTimer = null;
-  }
-  const broker = state.desktopHostBroker;
-  state.desktopHostBroker = null;
-  if (notifyService && broker && state.sidecarUrl && state.runtimeServiceClient) {
-    await session.defaultSession.fetch(
-      `${state.sidecarUrl}/api/runtime-service/desktop-host/${encodeURIComponent(broker.leaseId)}`,
-      {
-        method: 'DELETE',
-        headers: { 'X-DevRyan-CSRF': '1' },
-      },
-    ).catch(() => undefined);
-  }
-  await broker?.close().catch(() => undefined);
-};
-
-const bootstrapRuntimeServiceSession = async (url, descriptor, deadline) => {
-  const bootstrapToken = unsealRuntimeServiceBootstrapToken({ descriptor, safeStorage });
-  const bootstrap = await session.defaultSession.fetch(`${url}/auth/runtime-service-bootstrap`, {
-    method: 'POST',
-    signal: runtimeServiceRequestSignal(deadline),
-    headers: {
-      'Content-Type': 'application/json',
-      'X-DevRyan-CSRF': '1',
-    },
-    body: JSON.stringify({ token: bootstrapToken }),
-  });
-  if (!bootstrap.ok) {
-    const error = new Error('The background runtime session could not be established');
-    error.code = 'runtime_service_bootstrap_rejected';
-    throw error;
-  }
-  await setRuntimeServiceCookie(url, bootstrap.headers.get('set-cookie'));
-};
-
-// prepare-update exists since the first runtime-service release (1.1.7), so a
-// service from any older version can be drained through it.
-const retireStaleRuntimeService = (descriptor, url, deadline) => retireMismatchedRuntimeService({
-  descriptor,
-  appVersion: APP_VERSION,
+  }),
+  recordAppVersion: () => recordRuntimeServiceAppVersion(),
+  getRegistration: () => getRuntimeServiceRegistration(),
+  waitForOwnerStopped: (timeoutMs) => waitForRuntimeServiceOwnerStopped(timeoutMs),
+  terminateProcess: terminateRuntimeServiceProcess,
+  getWindows: () => BrowserWindow.getAllWindows(),
   log,
-  drain: async () => {
-    if (!await waitForHealth(url, 5_000, 100)) {
-      throw Object.assign(new Error('The background runtime is not ready'), { code: 'runtime_service_unavailable' });
-    }
-    await bootstrapRuntimeServiceSession(url, descriptor, deadline);
-    const response = await session.defaultSession.fetch(`${url}/api/runtime-service/prepare-update`, {
-      method: 'POST',
-      signal: runtimeServiceRequestSignal(deadline),
-      headers: { 'X-DevRyan-CSRF': '1' },
-    });
-    if (!response.ok) {
-      throw Object.assign(new Error('The background runtime did not accept the drain'), {
-        code: 'runtime_service_update_prepare_failed',
-      });
-    }
-  },
-  unregister: () => getRuntimeServiceRegistration().unregister(),
-  waitForStopped: (timeoutMs) => waitForRuntimeServiceOwnerStopped(timeoutMs),
-  terminate: (signal) => terminateRuntimeServiceProcess({ pid: descriptor.pid, signal }),
-  register: () => ensureRuntimeServiceRegistered({ registration: getRuntimeServiceRegistration(), log }),
 });
-
-// The app version whose registration is known to start its service: recorded
-// after a registration replacement and after connecting to this version's service.
-const recordRuntimeServiceAppVersion = async () => {
-  if (readSettingsRoot().productionBotsRuntimeServiceAppVersion === APP_VERSION) return;
-  try {
-    await mutateSettingsRoot((root) => { root.productionBotsRuntimeServiceAppVersion = APP_VERSION; });
-  } catch {
-    log.warn('[runtime-service] registration version was not recorded', { code: 'runtime_service_version_record_failed' });
-  }
-};
-
-let runtimeServiceReconnectPromise = null;
-let runtimeServiceRetired = false;
-const connectToRuntimeService = async ({ reconnecting = false, deadline = Date.now() + 20_000 } = {}) => {
-  const descriptor = await readRuntimeServiceDescriptor({ dataDirectory: dataRootDirectory() });
-  if (!isRuntimeServiceProtocolSupported(descriptor.protocolVersion)) {
-    const error = new Error('The background runtime protocol is not supported by this app version');
-    error.code = 'runtime_service_protocol_mismatch';
-    throw error;
-  }
-  await assertRuntimeServiceDescriptorOwner({ dataDirectory: dataRootDirectory(), descriptor });
-  const url = buildLocalUrl(descriptor.port).replace(/\/$/, '');
-  // A protocol match is not enough: a live service of another app version
-  // would keep its old server (1.x: v1 OpenCode) and skip this version's
-  // provisioning. It is retired once; it is never attached.
-  if (descriptor.appVersion !== APP_VERSION) {
-    if (reconnecting || runtimeServiceRetired) {
-      throw Object.assign(new Error('The background runtime belongs to another app version'), {
-        code: 'runtime_service_version_mismatch', retryable: false,
-      });
-    }
-    runtimeServiceRetired = true;
-    await retireStaleRuntimeService(descriptor, url, deadline);
-    throw Object.assign(new Error('The background runtime is restarting for this app version'), {
-      code: 'runtime_service_unavailable',
-    });
-  }
-  if (!await waitForHealth(url, Math.max(0, Math.min(5_000, deadline - Date.now())), 100)) {
-    const error = new Error('The background runtime is not ready');
-    error.code = 'runtime_service_unavailable';
-    throw error;
-  }
-  await assertRuntimeServiceDescriptorOwner({ dataDirectory: dataRootDirectory(), descriptor });
-  await bootstrapRuntimeServiceSession(url, descriptor, deadline);
-  const broker = await startDesktopHostBroker();
-  try {
-    const status = await registerDesktopHostLease(url, broker, deadline);
-    if (status?.instanceId !== descriptor.instanceId
-      || status?.ownerGeneration !== descriptor.ownerGeneration
-      || status?.protocolVersion !== descriptor.protocolVersion) {
-      const error = new Error('The background runtime changed during connection');
-      error.code = 'runtime_service_generation_changed';
-      throw error;
-    }
-    state.runtimeServiceClient = true;
-    state.sidecarUrl = url;
-    await recordRuntimeServiceAppVersion();
-    if (state.desktopHostLeaseRefreshTimer) clearInterval(state.desktopHostLeaseRefreshTimer);
-    state.desktopHostLeaseRefreshTimer = setInterval(() => {
-      void registerDesktopHostLease(url, broker).catch((error) => {
-        log.warn('[runtime-service] desktop host lease refresh failed', {
-          code: error?.code || 'desktop_host_registration_failed',
-          ...(error?.rejection ? { rejection: error.rejection } : {}),
-        });
-        if (runtimeServiceReconnectPromise) return;
-        runtimeServiceReconnectPromise = (async () => {
-          const fresh = await readRuntimeServiceDescriptor({ dataDirectory: dataRootDirectory() });
-          if (fresh.instanceId === descriptor.instanceId) return;
-          const nextUrl = await connectToRuntimeService({ reconnecting: true });
-          // Refresh only app windows attached to the replaced local owner.
-          for (const window of BrowserWindow.getAllWindows()) {
-            if (window.isDestroyed()) continue;
-            const previous = window.webContents.getURL();
-            if (!previous.startsWith(`${url}/`)) continue;
-            await window.loadURL(`${nextUrl}${previous.slice(url.length)}`);
-          }
-        })().catch((failure) => {
-          log.warn('[runtime-service] reconnect deferred', { code: failure?.code || 'runtime_service_unavailable' });
-        }).finally(() => { runtimeServiceReconnectPromise = null; });
-      });
-    }, 10_000);
-    state.desktopHostLeaseRefreshTimer.unref?.();
-    return url;
-  } catch (error) {
-    if (!reconnecting) await stopDesktopHostBroker({ notifyService: false });
-    throw error;
-  }
-};
+const stopDesktopHostBroker = (options) => runtimeServiceConnection.disconnect(options);
+const connectToRuntimeService = (options) => runtimeServiceConnection.connect(options);
 
 const macosMajorVersion = () => {
   if (process.platform !== 'darwin') return 0;

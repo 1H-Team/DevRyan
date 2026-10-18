@@ -6,6 +6,7 @@ import { afterEach, describe, test } from 'node:test';
 
 import { createRuntimeServiceRegistration } from '../runtime-service-registration.mjs';
 import { reregisterRuntimeServiceAfterUpgrade } from '../runtime-service-startup.mjs';
+import { connectionFixture, deferred, okResponse } from './runtime-service-connection-fixture.mjs';
 
 const mainSource = await fs.readFile(new URL('../main.mjs', import.meta.url), 'utf8');
 const directories = [];
@@ -110,9 +111,21 @@ describe('background runtime registration after a manual upgrade', () => {
     const replace = body.indexOf('await reregisterBackgroundRuntimeAfterManualUpgrade();');
     const ensure = body.indexOf('await ensureRuntimeServiceRegistered(');
     assert.ok(resume > 0 && replace > resume && ensure > replace);
-    // A successful connection proves the registration starts this version.
-    const connect = mainSource.slice(mainSource.indexOf('const connectToRuntimeService = async'),
-      mainSource.indexOf('const macosMajorVersion = () =>'));
-    assert.match(connect, /recordRuntimeServiceAppVersion\(\)/);
+  });
+
+  test('only a successful connection records that the registration starts this version', async () => {
+    const attached = connectionFixture();
+    await attached.connection.connect();
+    assert.equal(attached.calls.filter((call) => call === 'record').length, 1);
+    assert.equal(attached.calls.at(-1), 'record');
+    const changed = connectionFixture({ hold: (kind) => {
+      if (kind !== 'lease') return null;
+      const response = deferred();
+      response.resolve(okResponse({ instanceId: 'another', ownerGeneration: 3, protocolVersion: 2 }));
+      return response;
+    } });
+    await assert.rejects(changed.connection.connect(), { code: 'runtime_service_generation_changed' });
+    assert.ok(!changed.calls.includes('record'));
+    assert.match(mainSource, /recordAppVersion: \(\) => recordRuntimeServiceAppVersion\(\)/);
   });
 });
