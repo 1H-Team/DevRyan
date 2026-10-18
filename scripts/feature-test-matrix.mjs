@@ -251,7 +251,8 @@ export const FEATURE_TEST_MATRIX = Object.freeze([
   {
     id: 'production-bots-container-confinement',
     sourcePaths: [
-      'packages/bot-supervisor/src/docker.js',
+      'packages/bot-engine-proxy/src/docker.js',
+      'packages/bot-supervisor/src/contract.js',
       'packages/bot-supervisor/src/server.js',
       'packages/bot-supervisor/src/engine-proxy-client.js',
       'packages/bot-engine-proxy/src/server.js',
@@ -268,7 +269,8 @@ export const FEATURE_TEST_MATRIX = Object.freeze([
       'packages/bot-computer/src/managed-policy.js',
     ],
     testPaths: [
-      'packages/bot-supervisor/src/docker.test.js',
+      'packages/bot-engine-proxy/src/docker.test.js',
+      'packages/bot-supervisor/src/contract.test.js',
       'packages/bot-supervisor/src/server.test.js',
       'packages/bot-engine-proxy/src/server.test.js',
       'packages/bot-egress/src/connect-policy.test.js',

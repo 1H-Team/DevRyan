@@ -3,21 +3,6 @@
   "description": "Temporary cross-package imports into private package files. Each entry names the plan stage that removes it; unscheduled entries have no removal stage yet. See scripts/check-import-boundaries.mjs.",
   "exceptions": [
     {
-      "importer": "packages/bot-engine-proxy/src/server.js",
-      "target": "packages/bot-supervisor/src/docker.js",
-      "stage": "5"
-    },
-    {
-      "importer": "packages/bot-engine-proxy/src/server.test.js",
-      "target": "packages/bot-supervisor/src/docker.js",
-      "stage": "5"
-    },
-    {
-      "importer": "packages/bot-engine-proxy/src/server.test.js",
-      "target": "packages/bot-supervisor/src/engine-proxy-client.js",
-      "stage": "5"
-    },
-    {
       "importer": "packages/bots-runtime/opencode/devryan-bot-tools.test.mjs",
       "target": "packages/web/server/lib/opencode/version-policy.js",
       "stage": "unscheduled"
@@ -96,11 +81,6 @@
       "importer": "packages/electron/tests/bot-catalog.docker.test.mjs",
       "target": "packages/web/server/lib/bots/store.js",
       "stage": "unscheduled"
-    },
-    {
-      "importer": "packages/electron/tests/bot-runtime-manager.test.mjs",
-      "target": "packages/bot-supervisor/src/docker.js",
-      "stage": "5"
     },
     {
       "importer": "packages/electron/tests/browser-inspection/electron-main.mjs",

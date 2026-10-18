@@ -7,7 +7,7 @@ import {
   BotDockerError,
   createBotDockerSupervisor,
   createDockerSocketClient,
-} from '../../bot-supervisor/src/docker.js';
+} from './docker.js';
 
 const DEFAULT_PORT = 43124;
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/u;

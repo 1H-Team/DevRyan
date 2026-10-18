@@ -23,6 +23,9 @@ import {
   resolveBotGeneratedImagePath,
   resolveBotWorkspacePath,
 } from './workspace-listing.js';
+import { BOT_RESOURCE_LIMITS, BotDockerError } from '../../bot-supervisor/src/contract.js';
+
+export { BOT_RESOURCE_LIMITS, BotDockerError };
 
 const DOCKER_API_VERSION = 'v1.44';
 const MAX_DOCKER_RESPONSE_BYTES = 8 * 1024 * 1024;
@@ -79,8 +82,6 @@ try {
 }
 process.stdout.write(JSON.stringify({ entries, truncated }));
 `;
-const GIB = 1024 * 1024 * 1024;
-const MIB = 1024 * 1024;
 const IMAGE_REFERENCE_PATTERN = /^[a-z0-9][a-z0-9._/-]*(?::[0-9]+)?(?:[/:][a-z0-9][a-z0-9._/-]*)*(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}|@sha256:[0-9a-f]{64})$/;
 const NETWORK_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/;
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -95,31 +96,6 @@ export const BOT_CONTAINER_PORTS = Object.freeze({
   reasoning: '4096/tcp',
   computer: '43122/tcp',
 });
-
-export const BOT_RESOURCE_LIMITS = Object.freeze({
-  reasoning: Object.freeze({
-    memoryBytes: 2 * GIB,
-    nanoCpus: 2_000_000_000,
-    pids: 256,
-    shmBytes: 64 * MIB,
-  }),
-  computer: Object.freeze({
-    memoryBytes: 3 * GIB,
-    nanoCpus: 2_000_000_000,
-    pids: 512,
-    shmBytes: GIB,
-  }),
-});
-
-export class BotDockerError extends Error {
-  constructor(message, code, { statusCode = 500, dockerStatusCode = null, cause } = {}) {
-    super(message, { cause });
-    this.name = 'BotDockerError';
-    this.code = code;
-    this.statusCode = statusCode;
-    this.dockerStatusCode = dockerStatusCode;
-  }
-}
 
 const fail = (message, code, options) => {
   throw new BotDockerError(message, code, options);

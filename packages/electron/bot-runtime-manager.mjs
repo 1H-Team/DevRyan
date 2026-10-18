@@ -74,7 +74,7 @@ const MIB = 1024 * 1024;
 const ENGINE_MEMORY_PROBE_TTL_MS = 5 * 60_000;
 // Docker Desktop hands every container the memory of one shared VM. These
 // numbers mirror the per-container limits in
-// packages/bot-supervisor/src/docker.js (BOT_RESOURCE_LIMITS) and
+// packages/bot-supervisor/src/contract.js (BOT_RESOURCE_LIMITS) and
 // docker/bots/compose.yml; the preflight below only warns, it never blocks.
 export const BOT_RUNTIME_ENGINE_MEMORY_POLICY = Object.freeze({
   minimumBytes: 6 * GIB,

@@ -3,11 +3,7 @@ import http from 'node:http';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 import { createSupervisorAuthenticator, SupervisorAuthError, validateSupervisorToken } from './auth.js';
-import {
-  BotDockerError,
-  createBotDockerSupervisor,
-  createDockerSocketClient,
-} from './docker.js';
+import { BotDockerError } from './contract.js';
 import { createBotEngineProxyClient, validateBotEngineProxyConfiguration } from './engine-proxy-client.js';
 
 const DEFAULT_PORT = 43120;
@@ -410,42 +406,24 @@ const listenSupervisor = async ({ token, supervisor, port, host }) => {
   });
 };
 
+const configurationError = (message) => new BotDockerError(message, 'bot_supervisor_configuration_invalid');
+
 /**
- * Library and test interface. With `engineProxyUrl` it uses the engine proxy;
- * otherwise it drives Docker directly. The Docker client is built only on that
- * direct path, and the deployed image never reaches it (see the entry below).
+ * Library and test interface. The supervisor has no Docker implementation: it
+ * always serves through the Bot engine proxy, which owns Docker.
  */
 export async function startSupervisorService({
   token,
-  deploymentId,
-  images,
   port = DEFAULT_PORT,
   host = '0.0.0.0',
-  docker,
-  createDockerClient = createDockerSocketClient,
-  reasoningNetwork,
-  computerNetwork,
-  egressProxyUrl,
-  runtimeRoot,
   engineProxyUrl = null,
   engineProxyToken = null,
 } = {}) {
   validateSupervisorToken(token);
-  const supervisor = engineProxyUrl
-    ? createBotEngineProxyClient({ endpoint: engineProxyUrl, token: engineProxyToken })
-    : createBotDockerSupervisor({
-        docker: docker ?? createDockerClient(),
-        deploymentId,
-        images,
-        reasoningNetwork,
-        computerNetwork,
-        egressProxyUrl,
-        runtimeRoot,
-      });
+  if (!engineProxyUrl) throw configurationError('The supervisor requires the Bot engine proxy');
+  const supervisor = createBotEngineProxyClient({ endpoint: engineProxyUrl, token: engineProxyToken });
   return listenSupervisor({ token, supervisor, port, host });
 }
-
-const configurationError = (message) => new BotDockerError(message, 'bot_supervisor_configuration_invalid');
 
 /**
  * The deployed container configuration: supervisor bearer, engine-proxy endpoint

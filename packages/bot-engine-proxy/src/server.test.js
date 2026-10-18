@@ -3,7 +3,7 @@ import net from 'node:net';
 import path from 'node:path';
 import { afterEach, describe, expect, test } from 'bun:test';
 
-import { BotDockerError } from '../../bot-supervisor/src/docker.js';
+import { BotDockerError } from './docker.js';
 import { createBotEngineProxyClient } from '../../bot-supervisor/src/engine-proxy-client.js';
 import { createEngineProxyHttpServer } from './server.js';
 

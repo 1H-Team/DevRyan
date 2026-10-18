@@ -1,6 +1,6 @@
 import http from 'node:http';
 
-import { BotDockerError } from './docker.js';
+import { BotDockerError } from './contract.js';
 
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/u;
 const MAX_REQUEST_BYTES = 36 * 1024 * 1024;

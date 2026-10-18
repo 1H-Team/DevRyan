@@ -7,7 +7,7 @@ RUN addgroup -S -g 10001 devryan \
 
 COPY --chown=10001:10001 packages/bot-engine-proxy/package.json ./package.json
 COPY --chown=10001:10001 packages/bot-engine-proxy/src ./src
-COPY --chown=10001:10001 packages/bot-supervisor/src /app/packages/bot-supervisor/src
+COPY --chown=10001:10001 packages/bot-supervisor/src/contract.js /app/packages/bot-supervisor/src/contract.js
 
 ENV NODE_ENV=production \
     DEVRYAN_BOT_ENGINE_PROXY_PORT=43124

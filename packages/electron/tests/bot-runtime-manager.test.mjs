@@ -20,7 +20,7 @@ import {
   resolveDockerSocketSupplementalGid,
   resolveDockerExecutable,
 } from '../bot-runtime-manager.mjs';
-import { BOT_RESOURCE_LIMITS } from '../../bot-supervisor/src/docker.js';
+import { BOT_RESOURCE_LIMITS } from '../../bot-supervisor/src/contract.js';
 import { BOT_DB_MIGRATIONS, loadBotDatabaseSql } from '@openchamber/bot-db';
 
 const REPOSITORY_ROOT = path.resolve(import.meta.dir, '../../..');

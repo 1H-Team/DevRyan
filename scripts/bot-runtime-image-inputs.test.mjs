@@ -61,6 +61,15 @@ describe('Bot runtime image input digest', () => {
     const indexer = await readBotRuntimeImageInputs({ key: 'indexer', root: repositoryRoot });
     assert.ok(indexer.files.some((entry) => entry.file === 'packages/bot-indexer/src/search.js'));
     assert.ok(indexer.files.some((entry) => entry.file === 'packages/bot-indexer/package-lock.json'));
+    // The engine proxy owns Docker and copies only the supervisor's contract leaf;
+    // the supervisor image carries no Docker implementation.
+    const files = async (key) => (await readBotRuntimeImageInputs({ key, root: repositoryRoot })).files.map((entry) => entry.file);
+    const proxy = await files('engine-proxy');
+    assert.ok(proxy.includes('packages/bot-engine-proxy/src/docker.js'));
+    assert.deepEqual(proxy.filter((file) => file.startsWith('packages/bot-supervisor/')), ['packages/bot-supervisor/src/contract.js']);
+    const supervisor = await files('supervisor');
+    assert.ok(supervisor.includes('packages/bot-supervisor/src/contract.js'));
+    assert.deepEqual(supervisor.filter((file) => /^(?:docker|names|workspace-[a-z]+|[a-z-]+-verifier)(?:\.test)?\.js$/.test(path.basename(file))), []);
   });
 
   test('covers copied files, directories, modes, ignore rules and the Dockerfile', async t => {

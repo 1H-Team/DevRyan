@@ -4,6 +4,12 @@
   "private": true,
   "type": "module",
   "main": "./src/server.js",
+  "exports": {
+    ".": "./src/server.js",
+    "./package.json": "./package.json",
+    "./src/contract.js": "./src/contract.js",
+    "./src/engine-proxy-client.js": "./src/engine-proxy-client.js"
+  },
   "scripts": {
     "start": "node ./src/server.js",
     "test": "bun test"

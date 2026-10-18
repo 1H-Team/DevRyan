@@ -12,6 +12,7 @@ import {
   createDockerSocketClient,
 } from './docker.js';
 import { buildBotOwnershipLabels, deriveBotResourceNames } from './names.js';
+import { BOT_ENGINE_OPERATIONS } from '../../bot-supervisor/src/contract.js';
 import { createBotWorkspaceListingParser } from './workspace-listing.js';
 
 const DEPLOYMENT_ID = 'deployment-01';
@@ -322,6 +323,10 @@ const createFixture = (docker = new FakeDocker()) => ({
 });
 
 describe('restricted Bot Docker supervisor', () => {
+  test('implements exactly the fixed engine contract operations', () => {
+    expect(Object.keys(createFixture().supervisor)).toEqual([...BOT_ENGINE_OPERATIONS]);
+  });
+
   test('allows Docker its full stop grace period even when ordinary requests have shorter deadlines', async () => {
     const timeouts = [];
     const paths = [];

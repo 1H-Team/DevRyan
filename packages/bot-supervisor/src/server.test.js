@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import http from 'node:http';
+import { readdir, readFile } from 'node:fs/promises';
 import {
   createSupervisorHttpServer,
   readDeployedSupervisorConfiguration,
@@ -342,16 +343,26 @@ describe('Bot supervisor startup', () => {
     expect(readDeployedSupervisorConfiguration(deployed()).port).toBe(43120);
   });
 
-  test('the library entry builds a Docker client only on its direct path', async () => {
-    let dockerClients = 0;
-    const createDockerClient = () => { dockerClients += 1; return {}; };
-    const proxied = await startSupervisorService({ token: TOKEN, host: '127.0.0.1', port: 0, createDockerClient,
+  test('the library entry serves only through the engine proxy and has no Docker path', async () => {
+    const listen = spyOn(http.Server.prototype, 'listen');
+    try {
+      await expect(startSupervisorService({ token: 'short' })).rejects.toMatchObject({ code: 'bot_supervisor_unauthorized' });
+      await expect(startSupervisorService({ token: TOKEN })).rejects.toMatchObject({ code: 'bot_supervisor_configuration_invalid' });
+      expect(listen).not.toHaveBeenCalled();
+    } finally {
+      listen.mockRestore();
+    }
+    const proxied = await startSupervisorService({ token: TOKEN, host: '127.0.0.1', port: 0,
       engineProxyUrl: 'http://127.0.0.1:43124', engineProxyToken: PROXY_TOKEN });
     await proxied.close();
-    expect(dockerClients).toBe(0);
-    await expect(startSupervisorService({ token: 'short', createDockerClient })).rejects.toMatchObject({ code: 'bot_supervisor_unauthorized' });
-    expect(dockerClients).toBe(0);
-    await expect(startSupervisorService({ token: TOKEN, createDockerClient })).rejects.toMatchObject({ code: 'bot_supervisor_configuration_invalid' });
-    expect(dockerClients).toBe(1);
+  });
+
+  test('the supervisor package carries no Docker implementation', async () => {
+    const sources = await readdir(new URL('.', import.meta.url));
+    expect(sources.filter((file) => /^(?:docker|names|workspace-[a-z]+|[a-z-]+-verifier)(?:\.test)?\.js$/.test(file))).toEqual([]);
+    for (const file of sources.filter((name) => name.endsWith('.js') && !name.endsWith('.test.js'))) {
+      const source = await readFile(new URL(file, import.meta.url), 'utf8');
+      expect(source).not.toMatch(/docker\.sock|bot-engine-proxy\/src/);
+    }
   });
 });

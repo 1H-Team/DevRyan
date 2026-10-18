@@ -297,8 +297,8 @@ describe('Bots affected validation planning', () => {
 
   test('runs confined service suites and the Electron host', () => {
     assert.deepEqual(tests([
-      'packages/bot-supervisor/src/docker.js',
-      'packages/bot-engine-proxy/src/server.js',
+      'packages/bot-supervisor/src/contract.js',
+      'packages/bot-engine-proxy/src/docker.js',
       'packages/bot-egress/src/connect-policy.js',
       'packages/bot-computer/src/browser.js',
       'packages/bot-indexer/src/index-store.js',

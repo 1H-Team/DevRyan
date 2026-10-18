@@ -124,10 +124,19 @@ The image entry (`node ./src/server.js`) is `startDeployedSupervisorService`.
 It reads only the supervisor bearer, `DEVRYAN_BOT_ENGINE_PROXY_URL`, the
 engine-proxy bearer and the port, and validates all four before it constructs a
 client or opens a listener. Any missing or invalid value fails startup with the
-single code `bot_supervisor_configuration_invalid`. It has no direct-Docker
-fallback. `startSupervisorService` remains the library and test interface: with
-`engineProxyUrl` it uses the proxy, otherwise it drives Docker directly, and it
-builds the Docker client only on that direct path.
+single code `bot_supervisor_configuration_invalid`. `startSupervisorService`
+remains the library and test interface and also requires `engineProxyUrl`.
+
+This package has no Docker implementation. `packages/bot-engine-proxy/src`
+owns `docker.js` and its Docker-only helpers (`names.js`, `workspace-archive.js`,
+`workspace-listing.js` and the shared-file and generated-image verifiers).
+`src/contract.js` is the dependency-free contract both sides share:
+`BOT_RESOURCE_LIMITS`, `BOT_ENGINE_OPERATIONS` (the fixed eleven operations) and
+`BotDockerError`, whose name and codes are unchanged. The package `exports` it
+and `engine-proxy-client.js`; the engine-proxy image copies only `contract.js`,
+and the supervisor image's source has no Docker code. Contract tests check that
+the Docker engine and the proxy client implement exactly those operations, and
+Electron's limit parity test reads the same constant.
 
 A Docker socket remains root-equivalent. Splitting the supervisor from the
 socket adds an independently authenticated and schema-constrained boundary, but
