@@ -731,6 +731,25 @@ after construction keeps the existing restart/relaunch semantics; there is no
 live rebind. `runtime-bundle.test.js` checks this order in a fresh process with
 conflicting ambient paths.
 
+### One web host per process
+
+`application.js` is a single-host composition. Its exported `startWebUiServer`
+goes through `web-host-lifecycle.js`: a start while another is starting or
+running acquires nothing and fails with `web_host_already_running` (409). A new
+start is allowed after the previous start failed, or after its graceful shutdown
+completed (`onShutdownComplete`, never after a refused native settlement).
+Electron relies on both for Startup Retry and for the background-runtime handoff
+fallback. Restarting after a completed shutdown first clears that shutdown's
+`isShuttingDown` flag; before this a restarted host inherited it. Construction is
+timed as `web_host_construction`, inside Electron's `server_listen` phase.
+
+These remain process singletons, evaluated once and reused by a restarted host:
+the bound environment and `selectedRuntimeBundle` (launcher), the module-level
+composition in `application.js`, including private persistence, the boot bundle
+verification and the loaded native bundle, the `globalThis` HMR state, and the
+signal handlers (`signalsAttached`). DevRyan does not support more than one web
+host per process; a selection change still requires a restart or relaunch.
+
 `packages/web/package.json` `exports` is the web package's public surface for
 other packages: the server entry (`.` and `./server/index.js`) and the modules the
 Electron shell loads by package name — `runtime-bundle-binding.js`,

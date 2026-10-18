@@ -156,6 +156,7 @@ import { createNotificationTriggerRuntime } from './lib/notifications/runtime.js
 import { createPushRuntime } from './lib/notifications/push-runtime.js';
 import { createNotificationTemplateRuntime } from './lib/notifications/template-runtime.js';
 import { createGracefulShutdownRuntime } from './lib/opencode/shutdown-runtime.js';
+import { createWebHostLifecycle } from './lib/opencode/web-host-lifecycle.js';
 import { createProjectConfigRuntime } from './lib/projects/project-config.js';
 import { classifyPreviewRequestScope, createPreviewProxyRuntime } from './lib/preview/proxy-runtime.js';
 import { createLocalInstanceStatusRuntime } from './lib/preview/local-instances-runtime.js';
@@ -1914,9 +1915,20 @@ const gracefulShutdownRuntime = createGracefulShutdownRuntime({
   tunnelAuthController,
   scheduledTasksRuntime,
   getHarnessRuntime: () => harnessRuntime,
+  onShutdownComplete: () => webHostLifecycle.markStopped(),
 });
 
 const gracefulShutdown = (...args) => gracefulShutdownRuntime.gracefulShutdown(...args);
+// Module state above is evaluated once per process; this keeps host construction
+// (main) from overlapping and clears the finished shutdown before a restart.
+const webHostLifecycle = createWebHostLifecycle({
+  construct: (options) => main(options),
+  resetAfterStop: () => {
+    isShuttingDown = false;
+    syncToHmrState();
+  },
+});
+const startWebUiServer = (options = {}) => webHostLifecycle.start(options);
 
 async function main(options = {}) {
   const bundleAdmission = createRuntimeBundleAdmissionGate();
@@ -3092,7 +3104,7 @@ runCliEntryIfMain({
   setExitOnShutdown: (value) => {
     exitOnShutdown = value;
   },
-  startServer: main,
+  startServer: startWebUiServer,
 });
 }
 
@@ -3101,6 +3113,6 @@ export {
   gracefulShutdown,
   setupProxy,
   restartOpenCode,
-  main as startWebUiServer,
+  startWebUiServer,
   parseServeCliOptions as parseArgs,
 };

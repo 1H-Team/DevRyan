@@ -49,12 +49,14 @@ describe('graceful shutdown runtime', () => {
       closeFeatureRoutes: async () => { order.push('usage-connection'); },
       openCodeWatcherRuntime: { stop: () => order.push('watcher') },
       globalMessageStreamHub: { stop: () => order.push('shared-hub') },
+      // The host lifecycle may restart only after a shutdown completed, never after a refusal.
+      onShutdownComplete: () => order.push('complete'),
     });
     await expect(runtime.gracefulShutdown({ exitProcess: false })).rejects.toThrow('settlement pending');
     expect(order).toEqual(['admission', 'native']); expect(shuttingDown).toBe(false);
     settled = true;
     await runtime.gracefulShutdown({ exitProcess: false });
-    expect(order).toEqual(['admission', 'native', 'admission', 'native', 'usage-connection', 'watcher', 'shared-hub', 'stores']);
+    expect(order).toEqual(['admission', 'native', 'admission', 'native', 'usage-connection', 'watcher', 'shared-hub', 'stores', 'complete']);
   });
 
   it('naturally exits after stopping the real shared hub reconnect timer', async () => {

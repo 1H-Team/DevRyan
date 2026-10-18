@@ -35,6 +35,7 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     getHarnessRuntime,
     closeNativeRuntime,
     closeFeatureRoutes,
+    onShutdownComplete,
   } = dependencies;
 
   const gracefulShutdown = async (options = {}) => {
@@ -239,6 +240,7 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     }
 
     console.log('Graceful shutdown complete');
+    onShutdownComplete?.();
     if (exitProcess) {
       process.exit(0);
     }
