@@ -11,7 +11,7 @@ test('configuration import executes only sealed bytes and validates its exact na
  const source=`export const nativeBuildID=${JSON.stringify(buildId)};
  export const reviewedImagegenOriginals={withReviewedImagegenOwner(){},callReviewedImagegenResponses(){}};
  export const createReviewedDocumentCache=()=>({});export const resolveSlimAgents=input=>({agents:input.agents});
- export const createOwnedNativeDocument=()=>({});export const reviewedSlimInterviewOriginals={createInterviewService(){},createInterviewHandler(){},resolveExistingInterviewPath(){},InterviewDocumentOwnershipError:class{}};export const reviewedDocumentOriginals={createDocumentTool(){},processFilePart(){},withReviewedDocumentOwner(){}};
+ export const createOwnedNativeDocument=()=>({});export const reviewedSlimInterviewOriginals={createInterviewService(){},createInterviewHandler(){},resolveExistingInterviewPath(){},InterviewDocumentOwnershipError:class{},InterviewPatchApplyError:class{},InterviewPatchRequiredError:class{}};export const reviewedDocumentOriginals={createDocumentTool(){},processFilePart(){},withReviewedDocumentOwner(){}};
  export const createReviewedSlimTaskBoardRenderer=()=>({});export const formatReviewedSlimTaskBoard=()=>'';export const isReviewedSlimFailoverError=()=>false;export const selectReviewedSlimFallback=()=>({});
  export const slimCommandDeclarations=Object.fromEntries(['deepwork','loop','reflect'].map(name=>[name,{template:name,description:name}]));
  export const ponytailInstructions={lite:'lite',full:'full',ultra:'ultra',review:'review'};
