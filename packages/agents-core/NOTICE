@@ -1,0 +1,7 @@
+DevRyan agents core
+
+This package contains source code derived from Oh My OpenCode Slim
+(https://github.com/alvinunreal/oh-my-opencode-slim), Copyright (c) 2025 its
+authors, used under the MIT License reproduced in LICENSE. DevRyan has removed
+parts of it and modified the remaining files; UPSTREAM.md records the upstream
+base and every change ported since.
