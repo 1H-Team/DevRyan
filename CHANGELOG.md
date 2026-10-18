@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.2] - 2026-10-18
+
+- The agent orchestration (orchestrator, specialists, presets, task board, `/deepwork`, `/loop`, `/reflect`, `/interview`, web fetch and AST search) is now built into DevRyan instead of shipping as the Oh My OpenCode Slim plugin. It is always on and no longer appears as a plugin in Settings. Upgraded installs that still list the old plugin keep working; the entry is ignored.
+- The built-in agents move to the Slim 3.0.4 algorithms, now maintained in DevRyan: v2 child-session recovery, ordered v2 permissions, prompt-cache fixes and stricter image handling (only real JPEG, PNG, GIF or WebP attachments are saved for the observer).
+- The agents configuration is now `devryan-agents.jsonc`. On first start an existing `oh-my-opencode-slim.json[c]` is copied to it once and left untouched, and a failed copy never blocks startup. `DEVRYAN_AGENTS_PRESET` selects a preset; `OH_MY_OPENCODE_SLIM_PRESET` still works.
+- Settings → About can update the bundled Claude Code to the latest stable release through a verified managed installation, with rollback. The bundled Claude Code is now 2.1.302.
+- Remove the Agents → Runtime settings (language-server toggle).
+
 ## [2.1.1] - 2026-10-17
 
 - Fix startup failing with `bundle_v2_upgrade_compatibility_required` after updating to 2.1.0. The upgrade gate compared database DDL text, so a database first created by 2.0.26 or earlier and migrated by 2.0.30 never matched the reviewed fresh 2.0.30 layout. It now compares the database structure, measured from actual controller databases.

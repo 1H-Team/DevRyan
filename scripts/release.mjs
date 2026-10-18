@@ -20,6 +20,7 @@ const SCOPE = 'desktop-macos-arm64';
 
 export const VERSION_FILES = [
   'package.json',
+  'packages/agents-core/package.json',
   'packages/bot-computer/package.json',
   'packages/bot-db/package.json',
   'packages/bot-engine-proxy/package.json',
