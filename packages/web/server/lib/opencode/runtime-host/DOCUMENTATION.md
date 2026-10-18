@@ -143,6 +143,28 @@ the bundle registers them, with no `plugin` entry, and always resolves Slim
 agent routing. The retired adapter and package specs an upgraded setup still
 lists are ignored (`isRetiredDevRyanPluginSpec`), never rejected.
 
+Its code is the workspace package `@openchamber/agents-core`
+(`packages/agents-core`, see its `DOCUMENTATION.md`). Every `native-slim*`
+module, `controller-slim.ts`, `controller-webfetch.ts`,
+`native-image-worker.ts`, `native-interview-worker.ts` and
+`reviewed-configuration-entry.ts` compile against its declared surface
+(`index.d.ts`); the native build bundles it from source. Host owners follow its
+3.x algorithms:
+
+- `native-context-assets.js` parses and remaps the image hook's notice (a
+  readable and an oversized section of saved paths). The image worker keeps no
+  state between runs.
+- Interview documents support `markComplete`, `markIncomplete`, `stat` and
+  patch rewrites. A patch that does not apply crosses back from the confined
+  worker as `native_interview_patch_failed` (bounded hunk and context) or
+  `native_interview_patch_required`, and `native-interview-owner.js` rethrows
+  the original error class so the service's repair flow runs.
+- `native-slim-context-owner.js` maps managed tasks to the 3.x board record
+  (recency from the attempt's timestamps).
+- Webfetch results may carry inline image attachments, mapped to file parts;
+  the host never enables them (`imageRouting` is not `direct`).
+- `REVIEWED_AST_ASSET_SHA256` lives in `reviewed-ast-asset.js`.
+
 ## Host helper and title ownership
 
 `native-configuration-snapshot.js` applies `runtime-helper-agents.js` after saved

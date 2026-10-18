@@ -259,6 +259,10 @@ export type V1ChatMessageInput = {
 
 /** Deps injected into the single session context hook. */
 export interface V2SessionContextHandlerDeps {
+  /** DevRyan: add upstream's manual prompt-cache breakpoint after an
+   * injection. Off in the DevRyan host, whose context contract requires
+   * native parts (tool results included) to pass through unchanged. */
+  cacheBreakpoint?: boolean;
   /** Interview bridge handleContext (transcript projection + /interview
    * marker dispatch). */
   interviewHandleContext: (event: V2SessionContextEvent) => Promise<void>;
@@ -463,7 +467,7 @@ export function createSessionContextHandler(
         // the host's four slots on historical reminders or a volatile board
         // message. Keep all v1 injected parts byte-identical, and copy only
         // the v2 target part (the host may reuse its original object).
-        const hasInjection = event.messages.some((message) =>
+        const hasInjection = deps.cacheBreakpoint === true && event.messages.some((message) =>
           message.content.some(
             (part) =>
               isTaggedPart(part, PHASE_REMINDER_METADATA_KEY) ||

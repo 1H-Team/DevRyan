@@ -17,6 +17,29 @@ the tree wholesale.
   `src/devryan/index.ts`), including the auto-update hook and built-in MCP
   injection.
 
+## DevRyan behaviour changes
+
+- All authority goes through `src/devryan/owners.ts` (see
+  `DOCUMENTATION.md`): host log sinks instead of the log file and stderr, a
+  frozen per-location configuration instead of file and environment reads,
+  invocation owners for paths and web fetch, and a host-verified AST
+  executable instead of download or PATH lookup.
+- The v2 setup takes its hooks from the host binding and refuses a request
+  when a bridge fails instead of degrading it. Storage, generation and model
+  probes, the agent registry, MCP and permission bridges, config watching,
+  synthesized commands, the retry hook and bundled skill installation are host
+  owned and not run.
+- The task board renders host-owned task rows with `delegationTool: 'task'` and
+  board injection on; fallback selection is the pure
+  `selectReviewedSlimFallback`, applied by the host's recovery owner.
+- Hook factories take only the context fields they read, so the host passes
+  its owned contexts without casts.
+- The manual prompt-cache breakpoint the v2 context handler adds after an
+  injection is off (`cacheBreakpoint`): the host requires native parts,
+  tool results included, to pass through the context hook unchanged.
+- The image hook keeps no per-directory state between confined worker runs.
+- `/implement` and `interview_submit_state` are not enabled.
+
 ## Tests removed or replaced
 
 Upstream tests of code DevRyan removed or moved into the host owners:

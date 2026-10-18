@@ -14,8 +14,10 @@ Personal models, variants, prompts, permissions and MCP choices remain user-owne
   Update those four components together after acceptance. An exact source patch
   being available does not mean its runtime tuple has passed acceptance.
 - The agent orchestration derived from Oh My OpenCode Slim is not a plugin: it
-  is built into the native runtime and is not upgraded through this runbook. Its
-  former adapter and package specs are retired in the registry.
+  is DevRyan-owned source in [packages/agents-core](../packages/agents-core/DOCUMENTATION.md),
+  built into the native runtime. Port upstream fixes with the section below,
+  never by upgrading a package. Its former adapter and package specs are
+  retired in the registry.
 - Preserve compatibility names and the separate Cursor SDK runtime. Do not use
   these names as permission to inspect upstream OpenChamber/OpenCode checkouts.
   Do not refresh legacy Tauri assets or unrelated installed skill collections.
@@ -145,3 +147,25 @@ the audit. Update this runbook when ownership or gates change.
 DevRyan applies `packages/web/server/lib/opencode/imagegen-model-hotfix.js` during managed provisioning and Bot image builds. The reviewed 0.1.12 executable (also byte-identical in 0.1.10 for degraded installs) requests `gpt-6-astra` with `reasoning.effort: medium`. This selects the model invoking the hosted image tool; it does not pin a separate hosted image renderer. Unknown versions, modified source and partial patches fail closed. Re-review the source digest and rerun installed image checks whenever upgrading this plugin.
 
 The installed-package fixture copies and patches the image package privately, asserting model/effort along with references, output and auth behavior. The live image acceptance script was removed in app cleanup. [OpenAI documents Astra support for medium reasoning and image-generation tools](https://developers.openai.com/api/docs/models/gpt-6-astra).
+
+## Porting upstream agent fixes
+
+`packages/agents-core` started from Slim v3.0.4 and is maintained by selective
+ports, never by replacing the tree.
+
+1. Read the upstream release notes or commit. Decide **adopt**, **already
+   covered** or **defer** against DevRyan's owners: managed tasks, Council,
+   compaction, permissions/providers and the continuation gate stay
+   authoritative. Upstream fallback, background-default delegation and
+   `/implement` are deferred.
+2. Apply the change by hand to the matching files. Keep every authority seam in
+   `src/devryan/owners.ts`: no direct file, network, process, environment or
+   console access, and no new built-in MCP, updater or marketplace code.
+3. Port the upstream tests that cover the change. When a declared export
+   changes, update `index.d.ts` with it; the type check proves they agree.
+4. Record the upstream commit SHA and a one-line summary under "Ported upstream
+   commits" in `UPSTREAM.md`, and add any behaviour DevRyan keeps different to
+   its "DevRyan behaviour changes".
+5. Run `bun run validate`, then the native build and the agents-core lanes
+   (`scripts/opencode-v2-native/package-agents-core-lane.mjs`,
+   `package-agents-core-tools-lane.mjs`) before a release.
