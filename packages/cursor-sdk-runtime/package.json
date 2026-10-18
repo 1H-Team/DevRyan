@@ -11,6 +11,6 @@
   "dependencies": {
     "@cursor/sdk": "1.0.28",
     "@modelcontextprotocol/sdk": "1.29.0",
-    "zod": "^4.5.4"
+    "zod": "4.6.5"
   }
 }

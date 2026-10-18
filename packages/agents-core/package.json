@@ -1,0 +1,27 @@
+{
+  "name": "@openchamber/agents-core",
+  "version": "2.1.1",
+  "private": true,
+  "type": "module",
+  "description": "DevRyan's built-in agent orchestration, derived from Oh My OpenCode Slim (see NOTICE).",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./src/devryan/index.ts"
+    }
+  },
+  "scripts": {
+    "test": "bun test",
+    "type-check": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@mozilla/readability": "0.6.0",
+    "@opencode-ai/plugin": "1.18.33",
+    "lru-cache": "11.5.3",
+    "turndown": "7.2.4",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/turndown": "5.0.6"
+  }
+}
