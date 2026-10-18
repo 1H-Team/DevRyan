@@ -182,7 +182,9 @@ function formatMiB(bytes: number): string {
 }
 
 export function processImageAttachments(args: {
-  messages: MessageWithParts[];
+  // DevRyan: every message is type-guarded before use, so the host passes its
+  // transform messages as they are.
+  messages: readonly unknown[];
   workDir: string;
   imageRouting: 'auto' | 'direct';
   disabledAgents: ReadonlySet<string>;

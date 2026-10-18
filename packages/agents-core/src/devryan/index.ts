@@ -4,6 +4,8 @@
 // ../../index.d.ts. Authority (files, network, processes, configuration,
 // provider calls) is always lent by the host through ./owners.
 import type { AgentOverrideConfig } from '../config';
+import { InterviewConfigSchema } from '../config/schema';
+import { createInterviewService as createUpstreamInterviewService } from '../interview/service';
 import { createV2Setup } from '../v2/setup';
 import {
   createDisplayNameMentionRewriter as createUpstreamMentionRewriter,
@@ -49,7 +51,6 @@ export { createChatHeadersHook } from '../hooks/chat-headers';
 export { createApplyPatchHook } from '../hooks/apply-patch';
 export { createAbsolutePathRescueHook } from '../hooks/absolute-path-rescue';
 export { createSearchPathGuardHook } from '../hooks/search-path-guard';
-export { createSessionCompactionBridge } from '../v2/setup';
 export { collapseSystemInPlace } from '../utils/system-collapse';
 
 /** The host passes its snapshot agent map; only display names are read. */
@@ -74,7 +75,19 @@ export function createDisplayNameMentionRewriter(runtime: {
 }
 
 // Interview: the service runs in the host owner; documents in its worker.
-export { createInterviewService } from '../interview/service';
+/** The host passes the saved `interview` section; it is parsed (with
+ * defaults) through the original schema before the service sees it. */
+export function createInterviewService(
+  context: Parameters<typeof createUpstreamInterviewService>[0],
+  configuration: Readonly<Record<string, unknown>> | undefined,
+  dependencies: Parameters<typeof createUpstreamInterviewService>[2],
+): ReturnType<typeof createUpstreamInterviewService> {
+  return createUpstreamInterviewService(
+    context,
+    InterviewConfigSchema.parse(configuration ?? {}),
+    dependencies,
+  );
+}
 export { createInterviewHandler } from '../interview/server';
 export {
   appendInterviewAnswers,

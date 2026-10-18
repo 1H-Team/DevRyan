@@ -1341,7 +1341,7 @@ function reconcileConsumedTerminalJobs(
 
 export async function injectBackgroundJobBoard(
   state: BoardPresentationState,
-  _input: Record<string, never>,
+  _input: unknown,
   output: { messages?: unknown },
 ): Promise<void> {
   const messages = Array.isArray(output.messages) ? output.messages : [];

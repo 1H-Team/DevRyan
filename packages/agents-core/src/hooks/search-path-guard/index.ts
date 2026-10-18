@@ -41,8 +41,10 @@ export function resolveSearchPath(
   return pathOperations.join(directory, raw);
 }
 
-export function createSearchPathGuardHook(ctx: PluginInput) {
-  const hostFlavor = (ctx as PluginInput & { hostFlavor?: string }).hostFlavor;
+export function createSearchPathGuardHook(
+  ctx: Pick<PluginInput, 'directory'> & { readonly hostFlavor?: string },
+) {
+  const hostFlavor = ctx.hostFlavor;
 
   return {
     'tool.execute.before': async (

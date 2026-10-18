@@ -38,7 +38,9 @@ export function createReviewedWebfetchCache(): ReviewedFetchCache {
 }
 
 export function ownedCache(): ReviewedFetchCache {
-  return requireReviewedWebfetchOwner().cache;
+  const cache = requireReviewedWebfetchOwner().cache;
+  if (!(cache instanceof LRUCache)) throw new Error('reviewed_webfetch_cache_invalid');
+  return cache;
 }
 
 export function lookup(key: string) {

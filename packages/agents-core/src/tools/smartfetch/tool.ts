@@ -60,6 +60,13 @@ import {
 } from './utils';
 
 const z = tool.schema;
+/** DevRyan: keeps the precise argument schemas visible to the host. */
+export type WebfetchToolDefinition = ReturnType<typeof tool<typeof ARGS>>;
+// Still a plugin ToolDefinition for the v2 registration path.
+export type WebfetchToolDefinitionCheck = WebfetchToolDefinition extends ToolDefinition
+  ? true
+  : never;
+
 const ARGS = {
   url: z.httpUrl(),
   format: z.enum(['text', 'markdown', 'html']).default('markdown'),
@@ -110,9 +117,10 @@ function pickContent(
 }
 
 export function createWebfetchTool(
-  pluginCtx: PluginInput,
+  // DevRyan: unused; provider and session authority come from the owner.
+  pluginCtx: object,
   options: SmartfetchOptions = {},
-): ToolDefinition {
+): WebfetchToolDefinition {
   const binaryDir =
     options.binaryDir || path.join(os.tmpdir(), 'opencode-smartfetch');
 
@@ -686,3 +694,4 @@ export function createWebfetchTool(
     },
   });
 }
+

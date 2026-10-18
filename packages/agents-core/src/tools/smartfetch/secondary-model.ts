@@ -1,4 +1,3 @@
-import type { PluginInput } from '@opencode-ai/plugin';
 import { requireReviewedWebfetchOwner } from '../../devryan/owners';
 import { MAX_MODEL_CONTENT_CHARS } from './constants';
 import { runWithScopedTimeout } from './network';
@@ -6,7 +5,7 @@ import type { CachedFetch, SecondaryModel } from './types';
 
 interface SecondaryModelResolutionInput {
   /** Dedicated webfetch model(s) from the plugin config (highest priority). */
-  webfetchModels?: Array<{ id: string; variant?: string }>;
+  webfetchModels?: ReadonlyArray<{ id: string; variant?: string }>;
   /** `small_model` from the host's already-loaded merged OpenCode config. */
   smallModel?: string;
   /** Explorer agent model id, resolved from in-memory config at construction. */
@@ -137,7 +136,7 @@ const SECONDARY_MODEL_TIMEOUT_MS = 30_000;
  * after cancellation. No temporary session is created by this module.
  */
 async function runSecondaryModel(
-  _input: PluginInput,
+  _input: object,
   model: SecondaryModel,
   prompt: string,
   content: string,
@@ -165,7 +164,7 @@ async function runSecondaryModel(
 }
 
 export async function runSecondaryModelWithFallback(
-  input: PluginInput,
+  input: object,
   models: SecondaryModel[],
   prompt: string,
   content: string,

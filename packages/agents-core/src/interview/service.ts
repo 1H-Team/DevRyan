@@ -125,7 +125,8 @@ function nowIso(): string {
 }
 
 export function createInterviewService(
-  ctx: PluginInput,
+  // DevRyan: only the location is read from the plugin context.
+  ctx: Pick<PluginInput, 'directory'>,
   config: InterviewConfig | undefined,
   // DevRyan: document I/O, the session runtime and the browser opener are
   // lent by the host's interview owner; this service never touches the

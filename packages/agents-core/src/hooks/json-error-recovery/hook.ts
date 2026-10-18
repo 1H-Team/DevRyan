@@ -1,4 +1,3 @@
-import type { PluginInput } from '@opencode-ai/plugin';
 
 export const JSON_ERROR_TOOL_EXCLUDE_LIST = [
   'bash',
@@ -48,7 +47,7 @@ interface ToolExecuteAfterOutput {
   metadata: unknown;
 }
 
-export function createJsonErrorRecoveryHook(_ctx: PluginInput) {
+export function createJsonErrorRecoveryHook(_ctx: unknown) {
   return {
     'tool.execute.after': async (
       input: ToolExecuteAfterInput,

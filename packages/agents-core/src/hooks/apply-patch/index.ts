@@ -29,7 +29,10 @@ function replacePatchArgs(
   return args.patchText === patchText;
 }
 
-export function createApplyPatchHook(ctx: PluginInput) {
+// DevRyan: only the location fields are read; the host lends no client.
+export function createApplyPatchHook(
+  ctx: Pick<PluginInput, 'directory'> & { readonly worktree?: string },
+) {
   return {
     'tool.execute.before': async (
       input: ToolExecuteBeforeInput,

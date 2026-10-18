@@ -1,17 +1,29 @@
-import type { PluginInput, ProviderContext } from '@opencode-ai/plugin';
 import type { Model, UserMessage } from '@opencode-ai/sdk';
 import { isInternalInitiatorPart } from '../utils';
-import { getClient } from '../utils/opencode-client';
 
+// DevRyan: only the fields read below; hosts pass their full records.
 interface ChatHeadersInput {
   sessionID: string;
-  model: Model;
-  provider: ProviderContext;
-  message: UserMessage;
+  model: Pick<Model, 'providerID'> & { api: Pick<Model['api'], 'npm'> };
+  provider: { info?: { id?: string } };
+  message: { id: UserMessage['id']; role: string };
 }
 
 interface ChatHeadersOutput {
   headers: Record<string, string>;
+}
+
+/** DevRyan: the host lends only its message reader for this location. */
+export interface ChatHeadersContext {
+  readonly directory: string;
+  readonly client: {
+    readonly session: {
+      readonly message: (input: {
+        readonly path: { readonly id: string; readonly messageID: string };
+        readonly query: { readonly directory: string };
+      }) => Promise<{ readonly data?: { readonly parts: readonly unknown[] } }>;
+    };
+  };
 }
 
 /** Copilot routing header the hook may set (shared with the v2 bridge in
@@ -41,7 +53,7 @@ export function isCopilotProvider(providerID: string): boolean {
 }
 
 async function hasInternalMarker(
-  input: PluginInput,
+  input: ChatHeadersContext,
   sessionID: string,
   messageID: string,
 ): Promise<boolean> {
@@ -52,7 +64,7 @@ async function hasInternalMarker(
   }
 
   try {
-    const response = await getClient(input).session.message({
+    const response = await input.client.session.message({
       path: { id: sessionID, messageID },
       query: { directory: input.directory },
     });
@@ -73,7 +85,7 @@ async function hasInternalMarker(
   }
 }
 
-export function createChatHeadersHook(ctx: PluginInput) {
+export function createChatHeadersHook(ctx: ChatHeadersContext) {
   return {
     'chat.headers': async (
       input: ChatHeadersInput,

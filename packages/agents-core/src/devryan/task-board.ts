@@ -8,11 +8,11 @@ import {
   injectBackgroundJobBoard,
 } from '../hooks/task-session-manager/board-injection';
 import {
+  type BackgroundJobPromptMetadata,
   type BackgroundJobRecord,
   renderBackgroundJobBoard,
 } from '../utils/background-job-board';
 
-type BoardMetadata = ReturnType<typeof renderBackgroundJobBoard>;
 type BoardHook = (input: Record<string, unknown>, output: Record<string, unknown>) => Promise<void>;
 
 /** The host maps its owned job rows to Slim's record shape (lastUsedAt included). */
@@ -21,7 +21,7 @@ export function formatReviewedSlimTaskBoard(input: {
   readonly reusable: readonly BackgroundJobRecord[];
   readonly readContextMaxFiles?: number;
   readonly now?: number;
-}): NonNullable<BoardMetadata> | null {
+}): BackgroundJobPromptMetadata | null {
   return (
     renderBackgroundJobBoard({
       jobs: input.jobs,
@@ -34,11 +34,26 @@ export function formatReviewedSlimTaskBoard(input: {
   );
 }
 
+/** The host's task owner: reads its job rows and commits reconciliation
+ * synchronously inside the injection path. */
+export interface ReviewedSlimBoardStore {
+  readonly get: (taskID: string) => BackgroundJobRecord | undefined;
+  readonly formatForPromptWithMetadata: (
+    parentSessionID: string,
+  ) => BackgroundJobPromptMetadata | null | undefined;
+  readonly markReconciled: (
+    taskID: string,
+    at: undefined,
+    generation: number,
+    terminalRevision?: number,
+  ) => BackgroundJobRecord | undefined;
+}
+
 export interface ReviewedSlimBoardOwners {
   readonly shouldManageSession: (sessionID: string) => boolean;
   readonly strategy?: 'latest' | 'checkpoint-compatible';
   readonly maxRetainedSnapshots?: number;
-  readonly board: BoardPresentationState['backgroundJobBoard'];
+  readonly board: ReviewedSlimBoardStore;
 }
 
 export function createReviewedSlimTaskBoardRenderer(owner: ReviewedSlimBoardOwners): {
@@ -57,14 +72,19 @@ export function createReviewedSlimTaskBoardRenderer(owner: ReviewedSlimBoardOwne
   const board = owner.board;
   const state: BoardPresentationState = {
     backgroundJobBoard: {
-      get: board.get.bind(board),
-      formatForPromptWithMetadata: board.formatForPromptWithMetadata.bind(board),
-      markReconciled: (...args) => {
-        const result: unknown = board.markReconciled(...args);
+      get: (taskID) => board.get(taskID),
+      formatForPromptWithMetadata: (parentSessionID) =>
+        board.formatForPromptWithMetadata(parentSessionID) ?? undefined,
+      markReconciled: (taskID, _now, generation, terminalRevision) => {
+        // Only revision-checked reconciliation is accepted by the host owner.
+        if (generation === undefined)
+          throw new Error('reviewed_slim_task_board_generation_required');
+        const result = board.markReconciled(taskID, undefined, generation, terminalRevision);
         // Reconciliation must stay atomic within the synchronous inject path.
-        if (result && typeof (result as { then?: unknown }).then === 'function')
+        const settled: unknown = result;
+        if (settled instanceof Promise)
           throw new Error('reviewed_slim_task_board_atomic_owner_required');
-        return result as ReturnType<typeof board.markReconciled>;
+        return result;
       },
     },
     shouldManageSession: owner.shouldManageSession,
@@ -87,8 +107,7 @@ export function createReviewedSlimTaskBoardRenderer(owner: ReviewedSlimBoardOwne
     'retainedTailBoards',
   ] as const;
   return {
-    transform: (input, output) =>
-      injectBackgroundJobBoard(state, input as never, output as never),
+    transform: (input, output) => injectBackgroundJobBoard(state, input, output),
     clearSession: (sessionID) => {
       for (const key of sessionKeys) state[key]?.delete(sessionID);
     },

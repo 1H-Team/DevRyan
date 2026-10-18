@@ -4,7 +4,6 @@
 // code fails closed when no owner is bound.
 import { AsyncLocalStorage } from 'node:async_hooks';
 import path from 'node:path';
-import type { ReviewedFetchCache } from '../tools/smartfetch/cache';
 
 const fail = (code: string): never => {
   throw new Error(code);
@@ -15,11 +14,13 @@ const isAbsoluteDirectory = (value: unknown): value is string =>
 // ---------------------------------------------------------------------------
 // Host binding: the v1 hook factory, log sink and interview bridge per location.
 
+// Method syntax: the bridge is created by createReviewedSlimInterviewBridge
+// and only passed through the host, which never narrows its v2 payloads.
 export interface ReviewedSlimInterviewBridge {
-  readonly registerCommand: (draft: unknown) => void;
-  readonly handleContext: (event: unknown) => Promise<void>;
-  readonly handleEvent: (event: unknown) => Promise<void>;
-  readonly dispose: () => Promise<void>;
+  registerCommand(draft: unknown): void;
+  handleContext(event: unknown): Promise<void>;
+  handleEvent(event: unknown): Promise<void>;
+  dispose(): Promise<void>;
 }
 
 export interface ReviewedSlimHostBinding {
@@ -148,7 +149,8 @@ export function requireReviewedSlimPathOwner(): ReviewedSlimPathOwner {
 export interface ReviewedWebfetchOwners {
   readonly sessionID: string;
   readonly signal: AbortSignal;
-  readonly cache: ReviewedFetchCache;
+  /** Opaque handle from createReviewedWebfetchCache (checked on use). */
+  readonly cache: object;
   readonly fetch: (
     url: string,
     init: {

@@ -8,7 +8,7 @@
  */
 
 export interface V2AgentDraft {
-  list(): Array<Record<string, unknown>>;
+  list(): ReadonlyArray<Record<string, unknown>>;
   get(id: string): Record<string, unknown> | undefined;
   default(id: string | undefined): void;
   update(id: string, update: (agent: Record<string, unknown>) => void): void;

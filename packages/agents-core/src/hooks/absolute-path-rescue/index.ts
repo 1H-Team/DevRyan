@@ -137,7 +137,7 @@ export async function findRescuedSuffix(
 }
 
 export function createAbsolutePathRescueHook(
-  ctx: PluginInput,
+  ctx: Pick<PluginInput, 'directory'>,
   options: RescueOptions = {},
 ) {
   const pathOperations = options.pathOperations ?? path;

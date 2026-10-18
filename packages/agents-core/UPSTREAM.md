@@ -13,7 +13,6 @@ the tree wholesale.
   entry points (`tui*.ts`), `preset-editor-domain.ts` and every `codemap.md`.
 - `cli/` except the skill-permission helpers (`skills.ts`, `custom-skills.ts`,
   `custom-skills-registry.ts`, `paths.ts`).
-
 - Sources no DevRyan entry point reaches (pruned to the import graph of
   `src/devryan/index.ts`), including the auto-update hook and built-in MCP
   injection.

@@ -35,7 +35,8 @@ export const nodeInterviewDocuments: InterviewDocuments = {
     resolveExistingInterviewPath(directory, outputFolder, value),
 };
 
-type Context = Parameters<typeof createOwnedInterviewService>[0];
+// Upstream tests pass a full plugin context; the v1 runtime reads its client.
+type Context = Parameters<typeof createV1InterviewSessionRuntime>[0];
 type Config = Parameters<typeof createOwnedInterviewService>[1];
 type Dependencies = Parameters<typeof createOwnedInterviewService>[2];
 

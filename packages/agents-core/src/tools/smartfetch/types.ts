@@ -12,7 +12,7 @@ export type SmartfetchOptions = {
    * Dedicated model(s) for secondary-model summarization.
    * Each entry is tried in order; the first to return usable text is used.
    */
-  webfetchModels?: ModelRef[];
+  webfetchModels?: readonly ModelRef[];
   /**
    * Getter for the host's `small_model` from the already-loaded merged
    * OpenCode config. Read once into memory at plugin construction; the

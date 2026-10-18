@@ -15,7 +15,9 @@ function showOutputToUser(context: unknown, output: string): void {
   ctx.metadata?.({ metadata: { output } });
 }
 
-export const ast_grep_search: ToolDefinition = tool({
+// DevRyan: the precise argument schemas stay visible so the host can parse
+// input with them (ToolDefinition widens them to zod core types).
+export const ast_grep_search = tool({
   description:
     'Search code patterns across filesystem using AST-aware matching. ' +
     'Use meta-variables: $VAR (single node), $$$ (multiple nodes). ' +
@@ -71,7 +73,7 @@ export const ast_grep_search: ToolDefinition = tool({
   },
 });
 
-export const ast_grep_replace: ToolDefinition = tool({
+export const ast_grep_replace = tool({
   description:
     'Replace code patterns across filesystem with AST-aware rewriting. ' +
     'Dry-run by default. Use meta-variables in rewrite to preserve matched content. ' +
@@ -115,3 +117,6 @@ export const ast_grep_replace: ToolDefinition = tool({
     }
   },
 });
+
+ast_grep_search satisfies ToolDefinition;
+ast_grep_replace satisfies ToolDefinition;
