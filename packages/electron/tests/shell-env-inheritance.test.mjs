@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import {selectInheritedShellEnv} from '../shell-env-inheritance.mjs';
-import {provisionDefaultNativeBundle} from '@openchamber/web/server/lib/opencode/runtime-host/native-default-bundle.js';
+import {provisionDefaultNativeBundle} from '../../web/server/lib/opencode/runtime-host/native-default-bundle.js';
 
 const mainSource=await fs.readFile(new URL('../main.mjs',import.meta.url),'utf8');
 const REFUSED='native_runtime_configuration_unsupported';

@@ -20,7 +20,8 @@ let bytes = '';
 for await (const chunk of process.stdin) { bytes += chunk; assert.ok(Buffer.byteLength(bytes) <= 65536); }
 const input = JSON.parse(bytes);
 assert.ok(['upgrade', 'rollback', 'rollback-crash', 'inspection', 'resumed-inspection', 'parent-death', 'plan-implement'].includes(input.mode));
-const { selectedRuntimeBundle: binding } = await import('../../packages/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js');
+// Inspect without binding; the web entrypoint's launcher binds before composition.
+const binding = (await import('../../packages/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js')).readRuntimeBundleBinding(process.env, { allowHeldInspection: true });
 assert.ok(binding && binding.admission !== 'held');
 const { startWebUiServer } = await import('../../packages/web/server/index.js');
 let server, result, stopProof, candidateStopHistory, stopStream;

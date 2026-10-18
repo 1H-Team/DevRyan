@@ -711,6 +711,36 @@ directory still fails with `bundle_harness_directory_unmapped`.
 Removed registered projects retain these historical identities without becoming
 executable locations; recreated symlink or noncanonical directories still refuse.
 
+### Launcher order and binding
+
+`server/index.js` calls `prepareNativeRuntimeEntry()` (`runtime-entry-bootstrap.js`)
+and only then dynamically imports a composition (`application.js`, or
+`runtime-bundle-recovery.js` for a held selection). The launcher captures the
+shell-owned setup, provisions the bundle (including the cold startup upgrade in
+`native-bundle-startup-upgrade.js`), verifies and binds the selection through
+`initializeRuntimeBundleBinding`, which sets `OPENCHAMBER_DATA_DIR`,
+`OPENCODE_CONFIG_DIR` and `OPENCODE_CONFIG`, and restores setup owners. Importing
+`runtime-bundle-binding.js` or the launcher reads no selection and changes no
+environment: `selectedRuntimeBundle` stays `null` until the explicit call. Modules
+that capture paths at load (`application.js`, `auth.js`, `mcp.js`, `shared.js`,
+`openchamber-sidecar.js` and others) are therefore safe only behind the launcher.
+Other processes either inspect with the pure `readRuntimeBundleBinding` (Electron's
+shell, package and QA drivers) or, when they are their own launcher, call
+`initializeRuntimeBundleBinding` before importing those owners. A selection change
+after construction keeps the existing restart/relaunch semantics; there is no
+live rebind. `runtime-bundle.test.js` checks this order in a fresh process with
+conflicting ambient paths.
+
+`packages/web/package.json` `exports` is the web package's public surface for
+other packages: the server entry (`.` and `./server/index.js`) and the modules the
+Electron shell loads by package name — `runtime-bundle-binding.js`,
+`runtime-bundle-root.js` (including `readNativeShellBundleBinding`, shared by the
+CLI and the shell), `native-artifacts.js`, `native-bundle-reboot-recovery.js`,
+`opencode/path-utils.js`, `opencode/login-shell-env-filter.js` and
+`agent-browser/install.js`. Node refuses any other package-name subpath at runtime,
+and Electron externalizes `@openchamber/web/*` in its bundle, so a new import must
+be added there first; the boundary check reports it before it can ship.
+
 Startup binding reads sealed bundle documents with the same 32 MiB
 `BUNDLE_DOCUMENT_MAX_BYTES` limit used by bundle storage and native boot
 verification, checking both file metadata and bytes read. Hash, canonical-path

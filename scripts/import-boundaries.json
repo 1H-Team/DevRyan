@@ -48,46 +48,6 @@
       "stage": "unscheduled"
     },
     {
-      "importer": "packages/electron/main.mjs",
-      "target": "packages/web/server/lib/agent-browser/install.js",
-      "stage": "unscheduled"
-    },
-    {
-      "importer": "packages/electron/main.mjs",
-      "target": "packages/web/server/lib/opencode/login-shell-env-filter.js",
-      "stage": "4a"
-    },
-    {
-      "importer": "packages/electron/main.mjs",
-      "target": "packages/web/server/lib/opencode/path-utils.js",
-      "stage": "4a"
-    },
-    {
-      "importer": "packages/electron/main.mjs",
-      "target": "packages/web/server/lib/opencode/runtime-host/native-artifacts.js",
-      "stage": "4a"
-    },
-    {
-      "importer": "packages/electron/main.mjs",
-      "target": "packages/web/server/lib/opencode/runtime-host/native-bundle-reboot-recovery.js",
-      "stage": "4a"
-    },
-    {
-      "importer": "packages/electron/main.mjs",
-      "target": "packages/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js",
-      "stage": "4a"
-    },
-    {
-      "importer": "packages/electron/native-settings-directory.mjs",
-      "target": "packages/web/server/lib/opencode/runtime-host/runtime-bundle-root.js",
-      "stage": "4a"
-    },
-    {
-      "importer": "packages/electron/shell-env-inheritance.mjs",
-      "target": "packages/web/server/lib/opencode/login-shell-env-filter.js",
-      "stage": "4a"
-    },
-    {
       "importer": "packages/electron/tests/bot-catalog.docker.test.mjs",
       "target": "packages/web/server/lib/bots/activation-hold.js",
       "stage": "unscheduled"
@@ -148,11 +108,6 @@
       "stage": "unscheduled"
     },
     {
-      "importer": "packages/electron/tests/browser-inspection/upgrade-install.mjs",
-      "target": "packages/web/server/lib/agent-browser/install.js",
-      "stage": "unscheduled"
-    },
-    {
       "importer": "packages/electron/tests/browser-inspection/upgrade-main.mjs",
       "target": "packages/web/server/default-config/plugins/devryan-browser.mjs",
       "stage": "unscheduled"
@@ -165,7 +120,7 @@
     {
       "importer": "packages/electron/tests/shell-env-inheritance.test.mjs",
       "target": "packages/web/server/lib/opencode/runtime-host/native-default-bundle.js",
-      "stage": "4a"
+      "stage": "unscheduled"
     },
     {
       "importer": "packages/electron/tests/ssh-managed-reuse.test.mjs",
@@ -206,11 +161,6 @@
       "importer": "packages/ui/src/sync/session-presentation.integration.test.js",
       "target": "packages/web/server/lib/opencode/session-runtime.js",
       "stage": "unscheduled"
-    },
-    {
-      "importer": "packages/web/bin/runtime-bundle-command.test.js",
-      "target": "packages/electron/native-settings-directory.mjs",
-      "stage": "4a"
     }
   ]
 }

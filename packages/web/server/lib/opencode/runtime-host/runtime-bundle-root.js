@@ -13,3 +13,12 @@ export function resolveRuntimeBundleRoot(environment, home) {
   const state = absolute(environment.XDG_STATE_HOME || path.join(absolute(home), '.local', 'state'));
   return path.join(state, 'devryan', 'runtime-bundles');
 }
+
+/** The existing selection the shell may inspect, or null when none exists. It
+ * starts nothing and grants no admission; the reader is injected so a shell can
+ * resolve the root before it loads the binding module. */
+export function readNativeShellBundleBinding({ environment, home, existsSync, readRuntimeBundleBinding }) {
+  const controlRoot = resolveRuntimeBundleRoot(environment, home);
+  return existsSync(path.join(controlRoot, 'selection.json'))
+    ? readRuntimeBundleBinding({ DEVRYAN_RUNTIME_BUNDLE_ROOT: controlRoot }, { allowHeldInspection: true }) : null;
+}

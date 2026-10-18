@@ -6,7 +6,8 @@ import {readManagedOpenCodeRegistry} from '../../packages/web/server/lib/opencod
 globalThis.console=new Console({stdout:process.stderr,stderr:process.stderr});
 let bytes='';for await(const chunk of process.stdin){bytes+=chunk;assert.ok(Buffer.byteLength(bytes)<=4096);}
 const input=JSON.parse(bytes);
-const {selectedRuntimeBundle:binding}=await import('../../packages/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js');
+// Inspect without binding; the web entrypoint's launcher binds before composition.
+const binding=(await import('../../packages/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js')).readRuntimeBundleBinding(process.env,{allowHeldInspection:true});
 assert.equal(binding?.admission,'held');assert.equal(binding.selection.revision,input.expectedRevision);assert.equal(binding.descriptor.bundleID,input.candidateBundleID);
 const {startWebUiServer}=await import('../../packages/web/server/index.js');
 let server,result;

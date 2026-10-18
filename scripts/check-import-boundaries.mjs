@@ -10,7 +10,9 @@
 //   targets, whether reached by package name or by relative path.
 // Each temporary exception in scripts/import-boundaries.json is one exact
 // importer/target pair with the plan stage that removes it. An exception that no
-// longer matches an import fails the check, so the list only shrinks.
+// longer matches an import fails the check, so the list only shrinks. No
+// exception covers a package-name import of a subpath the target's `exports`
+// omits: Node refuses that import at runtime (ERR_PACKAGE_PATH_NOT_EXPORTED).
 //
 //   node scripts/check-import-boundaries.mjs            all tracked packages
 //   node scripts/check-import-boundaries.mjs --files a b only these importers
@@ -102,8 +104,10 @@ export function findViolations({ root = repositoryRoot, files, packages = loadPa
       const target = packages.get(to);
       if (!target) continue;
       const exported = target.entries.has(resolved.target) || resolved.exported === true;
-      if (APPLICATION_PACKAGES.includes(to) && !exported) violations.push({ importer, target: resolved.target, specifier, rule: 'private-application-import' });
-      else if (target.hasExports && !exported) violations.push({ importer, target: resolved.target, specifier, rule: 'unexported-subpath' });
+      // Node enforces a declared `exports` on package-name imports at runtime.
+      const runtimeRefused = target.hasExports && resolved.via === 'package' && !exported;
+      if (APPLICATION_PACKAGES.includes(to) && !exported) violations.push({ importer, target: resolved.target, specifier, rule: 'private-application-import', runtimeRefused });
+      else if (target.hasExports && !exported) violations.push({ importer, target: resolved.target, specifier, rule: 'unexported-subpath', runtimeRefused });
     }
   }
   return violations;
@@ -131,6 +135,7 @@ export function readExceptions(root = repositoryRoot) {
 export function applyExceptions(violations, exceptions, requestedFiles = null) {
   const used = new Set();
   const unexpected = violations.filter(violation => {
+    if (violation.runtimeRefused) return true;
     const exception = exceptions.find(entry => entry.importer === violation.importer && entry.target === violation.target);
     if (exception) used.add(exception);
     return !exception;
@@ -156,7 +161,10 @@ export function main(argv = process.argv.slice(2)) {
   if (argv[0] === '--files') files = argv.slice(1);
   else if (argv.length > 0) throw new Error('Usage: node scripts/check-import-boundaries.mjs [--files <path>...]');
   const { checked, unexpected, stale } = checkImportBoundaries({ files });
-  for (const violation of unexpected) console.error(`${violation.rule}: ${violation.importer} -> ${violation.target} (${violation.specifier})`);
+  for (const violation of unexpected) {
+    const note = violation.runtimeRefused ? '; the package exports omit it, so Node refuses this import at runtime' : '';
+    console.error(`${violation.rule}: ${violation.importer} -> ${violation.target} (${violation.specifier})${note}`);
+  }
   for (const exception of stale) console.error(`stale exception: ${exception.importer} -> ${exception.target}; remove it from scripts/import-boundaries.json`);
   if (unexpected.length || stale.length) {
     console.error(`Import boundaries failed: ${unexpected.length} unlisted, ${stale.length} stale (${checked} files checked).`);

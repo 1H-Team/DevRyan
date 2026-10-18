@@ -180,8 +180,8 @@ async function runDriver({ mode = 'upgrade', cleanupFails = false, settleStop = 
     assert, class {}, fs, path, waitFor, readBundleConversationRows,
     () => `msg_user_${accepted + 1}`, () => [{ ownerPid: 321, childPid: restarted ? 987 : 654 }],
     options => openApplicationStopStream({ ...options, fetchImpl: fetch, ...(stream === 'no-ready' ? { deadline: Date.now() + 20 } : {}) }), fakeProcess, fetch, {},
-    { selectedRuntimeBundle: { admission: 'open', descriptor: { bundleID: mode === 'upgrade' ? 'bundle_A' : 'bundle_B',
-      launch: { global: { state: '/owned' }, artifactManifestSha256: (mode === 'upgrade' ? 'a' : 'b').repeat(64) } } } },
+    { readRuntimeBundleBinding: () => ({ admission: 'open', descriptor: { bundleID: mode === 'upgrade' ? 'bundle_A' : 'bundle_B',
+      launch: { global: { state: '/owned' }, artifactManifestSha256: (mode === 'upgrade' ? 'a' : 'b').repeat(64) } } }) },
     { startWebUiServer: async () => server },
     { runApplicationPlanImplementation: async () => { phases.push('plan-complete'); if(planFails)throw Error('Actual Plan acceptance failed'); return {status:'passed'}; } },
     (callback, milliseconds) => {

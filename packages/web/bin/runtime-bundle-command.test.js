@@ -6,7 +6,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import {parseArgs} from './cli.js';
 import {runRuntimeBundleCommand} from './runtime-bundle-command.js';
-import {readNativeShellBundleBinding} from '../../electron/native-settings-directory.mjs';
+import {readNativeShellBundleBinding} from '../server/lib/opencode/runtime-host/runtime-bundle-root.js';
 const run=promisify(execFile);
 test('runtime resume preserves command validation across fully specified quiet/JSON/plain modes',async()=>{
  for(const flags of [[],['--quiet'],['-q'],['--json'],['--plain'],['--json','--quiet'],['--json','-q']]){

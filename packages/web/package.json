@@ -5,6 +5,30 @@
   "type": "module",
   "main": "./server/index.js",
   "types": "./server/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./server/index.d.ts",
+      "default": "./server/index.js"
+    },
+    "./package.json": "./package.json",
+    "./server/index.js": {
+      "types": "./server/index.d.ts",
+      "default": "./server/index.js"
+    },
+    "./server/lib/agent-browser/install.js": "./server/lib/agent-browser/install.js",
+    "./server/lib/opencode/login-shell-env-filter.js": "./server/lib/opencode/login-shell-env-filter.js",
+    "./server/lib/opencode/path-utils.js": "./server/lib/opencode/path-utils.js",
+    "./server/lib/opencode/runtime-host/native-artifacts.js": "./server/lib/opencode/runtime-host/native-artifacts.js",
+    "./server/lib/opencode/runtime-host/native-bundle-reboot-recovery.js": "./server/lib/opencode/runtime-host/native-bundle-reboot-recovery.js",
+    "./server/lib/opencode/runtime-host/runtime-bundle-binding.js": {
+      "types": "./server/lib/opencode/runtime-host/runtime-bundle-binding.d.ts",
+      "default": "./server/lib/opencode/runtime-host/runtime-bundle-binding.js"
+    },
+    "./server/lib/opencode/runtime-host/runtime-bundle-root.js": {
+      "types": "./server/lib/opencode/runtime-host/runtime-bundle-root.d.ts",
+      "default": "./server/lib/opencode/runtime-host/runtime-bundle-root.js"
+    }
+  },
   "bin": {
     "openchamber": "./bin/cli.js"
   },

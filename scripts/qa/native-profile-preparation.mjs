@@ -221,13 +221,14 @@ export function parseQaNativeSnapshotOutput(stdout) {
   return JSON.parse(payload[0]);
 }
 
-/** Fresh process imports the production binding before configuration owners.
+/** Fresh process binds the production selection before importing configuration owners.
  * It reports routes and prompt hashes only; never raw prompts or credentials. */
 export async function readQaNativeSelectionView(binding, environment, workspace) {
   const module = fileURLToPath(new URL('../../packages/web/server/lib/opencode/runtime-host/native-runtime-owner.js', import.meta.url));
   const bindingModule = fileURLToPath(new URL('../../packages/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js', import.meta.url));
   const source = `
-    const {selectedRuntimeBundle:binding}=await import(${JSON.stringify(bindingModule)});
+    const {initializeRuntimeBundleBinding}=await import(${JSON.stringify(bindingModule)});
+    const binding=initializeRuntimeBundleBinding(process.env,{allowHeldInspection:true});
     const {loadNativeRuntimeBundle}=await import(${JSON.stringify(module)});
     const {projectQaNativeSnapshot}=await import(${JSON.stringify(fileURLToPath(import.meta.url))});
     const bundle=await loadNativeRuntimeBundle({binding,launcher:process.env.DEVRYAN_QA_LAUNCHER});

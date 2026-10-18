@@ -1,10 +1,6 @@
 import path from 'node:path';
-import {resolveRuntimeBundleRoot} from '@openchamber/web/server/lib/opencode/runtime-host/runtime-bundle-root.js';
-export function readNativeShellBundleBinding({environment,home,existsSync,readRuntimeBundleBinding}){
- const controlRoot=resolveRuntimeBundleRoot(environment,home);
- return existsSync(path.join(controlRoot,'selection.json'))
-  ?readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot},{allowHeldInspection:true}):null;
-}
+import {readNativeShellBundleBinding} from '@openchamber/web/server/lib/opencode/runtime-host/runtime-bundle-root.js';
+export {readNativeShellBundleBinding};
 /** Resolve settings from the existing verified native selection without starting
  * a runtime. The shell's service/Bot storage root remains separately captured. */
 export function createNativeSettingsDirectory({environment,home,existsSync,readRuntimeBundleBinding}){

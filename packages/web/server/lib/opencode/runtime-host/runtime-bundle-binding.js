@@ -78,9 +78,12 @@ export function readRuntimeBundleBinding(environment = process.env,{allowHeldIns
   return freeze({ controlRoot, bundleRoot, selection, descriptor,admission:selection.reconciliationRequired||rollbackRecovery?'held':'pending',...(rollbackRecovery?{rollbackRecovery}:{}) });
 }
 
-// Store/UI imports may inspect a held selection. This binding never grants
-// native admission; the constructing runtime owner must reconcile first.
-export let selectedRuntimeBundle = readRuntimeBundleBinding(process.env,{allowHeldInspection:true});
+// Set only by the launcher's explicit initializeRuntimeBundleBinding call
+// (runtime-entry-bootstrap.js), before the entrypoint imports any store owner.
+// Importing this module reads no selection and changes no environment. Store/UI
+// owners may inspect a held selection; this binding never grants native
+// admission, and the constructing runtime owner must reconcile first.
+export let selectedRuntimeBundle = null;
 export function initializeRuntimeBundleBinding(environment=process.env,options) {
   const selected=readRuntimeBundleBinding(environment,options);
   if(!selected)throw fail();
@@ -95,4 +98,3 @@ export function initializeRuntimeBundleBinding(environment=process.env,options) 
   return selected;
 }
 export const getRuntimeHome = () => selectedRuntimeBundle?.descriptor.launch.global.home ?? os.homedir();
-if(selectedRuntimeBundle)initializeRuntimeBundleBinding(process.env,{allowHeldInspection:true});

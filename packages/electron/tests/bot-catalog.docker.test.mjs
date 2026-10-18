@@ -7,14 +7,14 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
 import { BOT_DB_MIGRATIONS } from '@openchamber/bot-db';
-import { createLocalBotCatalogTransport } from '@openchamber/web/server/lib/bots/local-catalog.js';
-import { createLocalBotObjectStorage } from '@openchamber/web/server/lib/bots/local-object-storage.js';
-import { createBotStore } from '@openchamber/web/server/lib/bots/store.js';
-import { createBotAuthorization } from '@openchamber/web/server/lib/bots/authorization.js';
-import { createBotBlobStore } from '@openchamber/web/server/lib/bots/blob-store.js';
-import { encryptBotJson } from '@openchamber/web/server/lib/bots/encryption.js';
-import { messageAssociatedData } from '@openchamber/web/server/lib/bots/channels.js';
-import { validateBotCatalogCandidate } from '@openchamber/web/server/lib/bots/catalog-validation.js';
+import { createLocalBotCatalogTransport } from '../../web/server/lib/bots/local-catalog.js';
+import { createLocalBotObjectStorage } from '../../web/server/lib/bots/local-object-storage.js';
+import { createBotStore } from '../../web/server/lib/bots/store.js';
+import { createBotAuthorization } from '../../web/server/lib/bots/authorization.js';
+import { createBotBlobStore } from '../../web/server/lib/bots/blob-store.js';
+import { encryptBotJson } from '../../web/server/lib/bots/encryption.js';
+import { messageAssociatedData } from '../../web/server/lib/bots/channels.js';
+import { validateBotCatalogCandidate } from '../../web/server/lib/bots/catalog-validation.js';
 
 import { COMPOSE_PATH, REPOSITORY_ROOT, createCatalogHarness, runProcess } from './bot-catalog-docker-harness.mjs';
 
@@ -278,8 +278,8 @@ suite('cloud Bot import into the local catalog', () => {
   };
 
   const newImporter = async () => {
-    const { createBotCatalogImport } = await import('@openchamber/web/server/lib/bots/catalog-import.js');
-    const { createBotActivationHold } = await import('@openchamber/web/server/lib/bots/activation-hold.js');
+    const { createBotCatalogImport } = await import('../../web/server/lib/bots/catalog-import.js');
+    const { createBotActivationHold } = await import('../../web/server/lib/bots/activation-hold.js');
     const host = {
       backup: (options) => manager.backupCatalog(options),
       prepareRestore: (id) => manager.prepareCatalogRestore(id),

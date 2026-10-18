@@ -520,8 +520,8 @@ if (!isRuntimeServiceControlProbe) {
   log.info('[electron] startup phase', { phase: 'shell_environment', outcome: 'completed', elapsedMs: Math.round(performance.now() - startedAt) });
 }
 
-// The binding changes OPENCHAMBER_DATA_DIR during module evaluation. Capture
-// shell ownership first; a static import would run before this in packaged ESM.
+// The in-process web launcher binds OPENCHAMBER_DATA_DIR to the selected bundle.
+// Capture shell ownership first; this process only inspects the binding.
 const hostDataRootDirectory=path.resolve(process.env.OPENCHAMBER_DATA_DIR||path.join(os.homedir(),'.config','openchamber'));
 const hostRuntimeBundleRoot = process.env.DEVRYAN_RUNTIME_BUNDLE_ROOT;
 let readRuntimeBundleBinding, shellRuntimeBundleBindingError;

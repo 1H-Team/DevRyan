@@ -89,6 +89,21 @@ test('exceptions are exact pairs with a stage, and unused ones fail as stale', (
   }
 });
 
+test('an exception never covers a package-name import that the target exports refuse at runtime', () => {
+  const exceptionFile = exceptions => ({ 'scripts/import-boundaries.json': { schemaVersion: 1, description: 'fixture', exceptions } });
+  const exported = { ...base, 'packages/web/package.json': { name: '@openchamber/web', main: './server/index.js',
+    exports: { '.': './server/index.js', './server/public.js': './server/public.js' } }, 'packages/web/server/public.js': 'export const value = 1;\n' };
+  const files = { ...exported,
+    'packages/electron/by-name.mjs': "import { secret } from '@openchamber/web/server/private.js';\n",
+    'packages/electron/relative.mjs': "import { secret } from '../web/server/private.js';\n",
+    'packages/electron/public.mjs': "import { value } from '@openchamber/web/server/public.js';\n" };
+  const listed = ['by-name.mjs', 'relative.mjs'].map(file => ({ importer: `packages/electron/${file}`, target: 'packages/web/server/private.js', stage: 'unscheduled' }));
+  const result = checkImportBoundaries({ root: fixture({ ...files, ...exceptionFile(listed) }),
+    files: ['by-name.mjs', 'relative.mjs', 'public.mjs'].map(file => `packages/electron/${file}`) });
+  assert.deepEqual(result.unexpected.map(violation => [violation.importer, violation.runtimeRefused]), [['packages/electron/by-name.mjs', true]]);
+  assert.deepEqual(result.stale, [listed[0]], 'the refused pair is not a usable exception');
+});
+
 test('the repository has no unlisted private imports and no stale exceptions', () => {
   const result = checkImportBoundaries();
   assert.deepEqual(result.unexpected, []);
