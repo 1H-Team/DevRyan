@@ -24,7 +24,7 @@ import { createControllerInterview } from './controller-interview.js';
 import { createControllerProviders } from './controller-providers.js';
 import {nativeImagegenPlugin,NATIVE_IMAGEGEN_PLUGIN_ID} from './native-imagegen-plugin.js';
 import {createNativeCursorIngress} from './native-cursor-ingress.js';
-import * as slimOriginals from '../../../../runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js';
+import * as slimOriginals from '@openchamber/agents-core';
 import {command as ponytailCommand} from 'devryan:reviewed-ponytail-instructions';
 import {scrubOpencodeFingerprints} from 'devryan:reviewed-claude-scrub';
 import {Effect,Schema} from 'effect';

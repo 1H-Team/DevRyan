@@ -19,7 +19,8 @@ describe('full test-suite contract', () => {
     assert.ok(files.includes('scripts/verify-bot-runtime-images.test.mjs'));
     assert.ok(files.includes('scripts/test-suite-contract.test.mjs'));
     assert.ok(files.includes('scripts/opencode-v2-native/bootstrap.test.ts'));
-    assert.ok(files.includes('packages/web/runtime/reviewed-inputs/slim-2.2.25/src/skills/codemap/scripts/codemap.test.ts'));
+    // agents-core tests run once, through their own package (test:full, validate).
+    assert.ok(!files.some(file => file.startsWith('packages/agents-core/')));
     const web = JSON.parse(readFileSync(path.join(repositoryRoot, 'packages/web/package.json'), 'utf8'));
     assert.match(web.scripts.test, /--exclude 'runtime\/reviewed-inputs\/\*\*'/);
     for (const file of ['server/lib/opencode/runtime-host/native-helper.test.js', 'server/lib/opencode/runtime-host/native-retention-quiet.test.ts', 'server/lib/opencode/runtime-host/native-queued-input.test.ts']) {
@@ -83,6 +84,7 @@ describe('full test-suite contract', () => {
       '.opencode/agents/',
       '.opencode/plugins/',
       'scripts/',
+      'packages/agents-core/',
       'packages/bot-computer/',
       'packages/bot-db/',
       'packages/bot-engine-proxy/',

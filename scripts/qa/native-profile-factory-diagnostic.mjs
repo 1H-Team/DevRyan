@@ -15,6 +15,7 @@ import { createDiagnosticSanitizer } from '../../packages/harness-runtime/lib/sa
 import { TARGET_OPENCODE_VERSION } from '../../packages/web/server/lib/opencode/version-policy.js';
 import { translateNativeConfiguration } from '../../packages/web/server/lib/opencode/runtime-host/native-configuration-data.js';
 import { defaultNativeRegistrations } from '../../packages/web/server/lib/opencode/runtime-host/native-default-bundle.js';
+import { NATIVE_CORE_REGISTRATION_IDS } from '../../packages/web/server/lib/opencode/runtime-host/native-core-registrations.js';
 import { readRuntimeBundleBinding } from '../../packages/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js';
 import { createRunRoot } from './run-root.mjs';
 
@@ -39,13 +40,15 @@ export async function runQaNativeFactoryDiagnostic({ artifactRoot, bun = 'bun', 
   for (const directory of [sourceHome, workspace, path.join(sourceHome, 'opencode'), path.join(sourceHome, 'web')]) await fs.mkdir(directory, { recursive: true, mode: 0o700 });
   const names = (await fs.readdir(path.join(repository, 'packages/web/server/default-config/agents'))).filter(file => file.endsWith('.md')).map(file => file.slice(0, -3));
   // Declare the synthetic model tuple explicitly; never substitute a saved user's model.
-  const slim = activePluginIDs.includes('devryan.slim');
+  const artifacts = JSON.parse(await fs.readFile(path.join(artifactRoot, 'native-bundle.json'), 'utf8'));
+  const registrations = defaultNativeRegistrations(artifacts.inputs.reviewedPlugins);
+  // Built-in agent orchestration is active whenever the bundle registers it.
+  const slim = registrations.some(row => row.id === 'devryan.slim');
   const modelID = slim ? 'gpt-5.5' : 'gpt-5.6-sol', model = `openai/${modelID}`, variant = slim ? 'medium' : 'high';
   const agents = Object.fromEntries(names.map(name => [name, { model, variant,
     ...(name === 'council' ? { councillors: [{ model, variant }] } : {}) }]));
   agents.builder ??= { model, variant };
-  const artifacts = JSON.parse(await fs.readFile(path.join(artifactRoot, 'native-bundle.json'), 'utf8'));
-  const registrations = defaultNativeRegistrations(artifacts.inputs.reviewedPlugins);
+  assert.ok(activePluginIDs.every(id => !NATIVE_CORE_REGISTRATION_IDS.includes(id)), 'Built-in registrations are not selected by plugin entries');
   assert.ok(activePluginIDs.every(id => registrations.some(row => row.id === id && row.legacySpecs.length)));
   const plugins = [...new Set(registrations.filter(row => activePluginIDs.includes(row.id)).map(row => row.legacySpecs[0]))];
   const legacy = { model, default_agent: 'builder', agent: agents, plugin: plugins, ...(providers ? { provider: providers } : {}) };

@@ -619,20 +619,6 @@ function lintWarmup({ findings, latestWarmup }) {
   }
 }
 
-function lintSlimRuntime({ findings, slimRuntime }) {
-  if (!isObject(slimRuntime)) return;
-  if (slimRuntime.expectedMode !== 'devryan-wrapper') return;
-  if (slimRuntime.rawPluginEnabled !== true || slimRuntime.wrapperPluginEnabled === true) return;
-  findings.push(createFinding({
-    ruleId: 'slim-raw-mode-active',
-    severity: 'warning',
-    summary: 'Raw oh-my-opencode-slim is active while DevRyan wrapper mode is expected',
-    artifact: { type: 'plugin', name: 'oh-my-opencode-slim' },
-    suggestedNextAction: 'Run the Slim runtime repair action so DevRyan registers its wrapper plugin',
-    stopCondition: 'Stop relying on DevRyan prompt preservation until the raw Slim plugin is replaced by the wrapper',
-  }));
-}
-
 function readToolManifestToolIds(toolManifest) {
   const ids = [];
   for (const tool of asArray(toolManifest?.tools)) {
@@ -851,7 +837,6 @@ function lintAgentHarness(options = {}) {
   lintSkills({ findings, skills });
   lintStaleOverrides({ findings, staleOverrides });
   lintWarmup({ findings, latestWarmup: options.latestWarmup });
-  lintSlimRuntime({ findings, slimRuntime: options.slimRuntime });
   lintForbiddenRuntimeSurface({
     findings,
     toolManifest: options.toolManifest,
@@ -946,7 +931,6 @@ function buildPreflightResult({
   latestWarmup,
   toolManifest,
   packagedAgents,
-  slimRuntime,
   readSkillBody,
   runtimeMode,
   anthropicUsage,
@@ -961,7 +945,6 @@ function buildPreflightResult({
     staleOverrides,
     latestWarmup,
     toolManifest,
-    slimRuntime,
     promptTools: context.promptTools,
     runtimeMode,
     configCredentialScan,
@@ -1004,7 +987,6 @@ function buildPreflightResult({
     findings,
     toolManifest,
     latestWarmup,
-    slimRuntime,
     runtimeMode,
     promptAudit,
     contextBudget: resolvedContextBudget,
@@ -1112,7 +1094,6 @@ function createHarnessPreflight(dependencies = {}) {
                 },
               },
         packagedAgents: read('getPackagedAgents', resolvedContext),
-        slimRuntime: typeof dependencies.getSlimRuntime === 'function' ? dependencies.getSlimRuntime(resolvedContext) : null,
         runtimeMode: typeof dependencies.getRuntimeMode === 'function'
           ? dependencies.getRuntimeMode(resolvedContext)
           : 'managed',

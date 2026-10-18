@@ -4,7 +4,7 @@ import type { AgentEditor } from '@opencode/plugin/promise/agent';
 import type { CommandEditor } from '@opencode/plugin/promise/command';
 import { fromPromise } from '@opencode/plugin/promise/adapter';
 import type { NativeConfigurationSnapshot } from './native-configuration-snapshot.js';
-import type {ReviewedSlimHostBinding} from '../../../../runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js';
+import type {ReviewedSlimHostBinding} from '@openchamber/agents-core';
 
 /** Exact pinned factory inventory. Production readiness must assign each behavior an owner. */
 export const REVIEWED_SLIM_HOOK_INVENTORY=Object.freeze([

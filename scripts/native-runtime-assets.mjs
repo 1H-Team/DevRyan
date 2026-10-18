@@ -2,7 +2,7 @@ import {createHash} from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {isBuiltin} from 'node:module';
-import {rewriteReviewedSlimServer,REVIEWED_AST_ASSET_SHA256} from '../packages/web/server/lib/opencode/runtime-host/reviewed-package-transforms.js';
+import {REVIEWED_AST_ASSET_SHA256} from '../packages/web/server/lib/opencode/runtime-host/reviewed-ast-asset.js';
 import {rewriteReviewedBrowser} from '../packages/web/server/lib/opencode/runtime-host/reviewed-browser-transform.js';
 import {rewriteReviewedImagegen,rewriteReviewedImagegenDebug} from '../packages/web/server/lib/opencode/runtime-host/reviewed-imagegen-transform.js';
 import {rewriteReviewedDocumentReader} from '../packages/web/server/lib/opencode/runtime-host/reviewed-document-transform.js';
@@ -86,8 +86,8 @@ export async function prepareReviewedNativeInputs(repository,{target='darwin-arm
   const bytes=await fs.readFile(absolute);inputFiles.set(absolute,hash(bytes));return bytes;
  };
  const manifest=JSON.parse((await read('manifest.json')).toString('utf8'));
- const versions={'slim-2.2.25':'2.2.25','ponytail-4.10.0':'4.10.0','ast-grep-0.45.3':'0.45.3','jsdom-30.1.1':'30.1.1','claude-1.8.0':'1.8.0','imagegen-0.1.12':'0.1.12'};
- if(manifest.schema!==1||!Array.isArray(manifest.inputs)||manifest.inputs.length!==6)throw new Error('Reviewed input manifest changed');
+ const versions={'ponytail-4.10.0':'4.10.0','ast-grep-0.45.3':'0.45.3','jsdom-30.1.1':'30.1.1','claude-1.8.0':'1.8.0','imagegen-0.1.12':'0.1.12'};
+ if(manifest.schema!==1||!Array.isArray(manifest.inputs)||manifest.inputs.length!==5)throw new Error('Reviewed input manifest changed');
  const seen=new Set();
  for(const input of manifest.inputs){
   if(!Object.hasOwn(versions,input.id)||versions[input.id]!==input.version||seen.has(input.id)||!Array.isArray(input.files))throw new Error('Reviewed input manifest changed');
@@ -98,7 +98,7 @@ export async function prepareReviewedNativeInputs(repository,{target='darwin-arm
    if(bytes.length!==file.size||hash(bytes)!==file.sha256)throw new Error(`Reviewed input bytes changed: ${input.id}/${file.path}`);
   }
  }
- await read('README.md');await read('slim-2.2.25/dist/server/index.d.ts');await read('jsdom-30.1.1/node_modules/jsdom/lib/api.d.ts');
+ await read('README.md');await read('jsdom-30.1.1/node_modules/jsdom/lib/api.d.ts');
  const graph=JSON.parse((await read('jsdom-30.1.1/resolutions.json')).toString('utf8'));
  if(graph.schema!==1||!Array.isArray(graph.edges))throw new Error('Reviewed DOM resolution graph invalid');
  const resolutions=new Map();
@@ -143,8 +143,6 @@ export async function prepareReviewedNativeInputs(repository,{target='darwin-arm
  const claudeAssets=Object.fromEntries(Object.entries(REVIEWED_CLAUDE_ASSETS).map(([name,asset])=>{
   const source=path.join(root,'claude-1.8.0/assets',asset.path);if(inputFiles.get(source)!==asset.sha256)throw new Error('Reviewed Claude asset changed');return [name,{...asset,source}];
  }));
- const slimPath=path.join(root,'slim-2.2.25/dist/server/index.js');
- const slim=rewriteReviewedSlimServer(await fs.readFile(slimPath));
  const ponytail=await renderReviewedPonytailInstructions();
  const documentPath=path.join(repository,'packages/web/server/default-config/plugins/devryan-document-reader.mjs');
  if(await fs.realpath(documentPath)!==documentPath)throw new Error('Reviewed document input escaped repository');
@@ -187,8 +185,6 @@ export async function prepareReviewedNativeInputs(repository,{target='darwin-arm
   {path:path.relative(repository,imagegenDebugPath),sha256:hash(imagegenDebugOriginal),outputSha256:hash(imagegenDebug),reason:'captured-optional-color-helper-absent'},
   {path:path.relative(repository,browserPath),sha256:browser.sourceSHA256,outputSha256:browser.outputSHA256,reason:'production-browser-owned-io',steps:browser.transforms},
   {path:path.relative(repository,documentPath),sha256:document.sourceSHA256,outputSha256:document.outputSHA256,reason:'production-document-owned-io',steps:document.transforms},
-  {path:path.relative(repository,slimPath),sha256:slim.sourceSHA256,outputSha256:slim.outputSHA256,
-  reason:'reviewed-slim-owned-constructor-seams',steps:slim.transforms},
   {path:REVIEWED_PONYTAIL_MODULE,sha256:hash(JSON.stringify(ponytail.sourceSHA256)),outputSha256:hash(ponytail.moduleSource),
    reason:'reviewed-ponytail-shared-builder',sourceHashes:ponytail.sourceSHA256},
   {path:path.relative(repository,jsdomPath),sha256:hash(jsdomOriginal),outputSha256:hash(jsdomContents),reason:'captured-optional-canvas-absent',steps:[{id:'sealed-jsdom-optional-canvas',originalSHA256:hash(canvasOriginal),outputSHA256:hash('exports.Canvas = null;')}]},
@@ -200,7 +196,7 @@ export async function prepareReviewedNativeInputs(repository,{target='darwin-arm
  transforms.push({path:path.relative(repository,credentialPath),sha256:hash(credentialOriginal),outputSha256:hash(credentialContents),reason:'sealed-host-selected-claude-renewal'});
  transforms.push({path:path.relative(repository,jsoncMain),sha256:hash(await fs.readFile(jsoncMain)),outputSha256:hash(await fs.readFile(jsonc.modulePath)),reason:'pinned-jsonc-original-esm-module-resolution'},
   {path:path.relative(repository,xhrPath),sha256:hash(xhrOriginal),outputSha256:hash(xhrContents),reason:'compiled-dom-sync-xhr-lazy-original-worker-resolver'});
- return {inputFiles,resolutions,workspaceResolutions,rewrites:new Map([[imagegenPath,imagegen.contents],[imagegenDebugPath,imagegenDebug],[slimPath,slim.contents],[jsdomPath,jsdomContents],[stylePath,styleContents],[xhrPath,xhrContents],[documentPath,document.contents],[browserPath,browser.contents],[claudePath,claudeContents],[libsqlPath,libsqlContents],[spawnPath,spawnContents],[httpPath,httpContents]]),virtualModules:new Map([[REVIEWED_PONYTAIL_MODULE,ponytail.moduleSource],['devryan:reviewed-claude-startup',`export {startReviewedProxy,checkReviewedProxy,scrubReviewedSystem} from ${JSON.stringify(claudePath)};`],['devryan:reviewed-claude-scrub',`export {scrubOpencodeFingerprints} from ${JSON.stringify(path.join(root,'claude-1.8.0/node_modules/@rynfar/meridian-plugin-opencode-scrub/dist/scrub.js'))};`]]),transforms,claudeAssets,claudeCredentials,
+ return {inputFiles,resolutions,workspaceResolutions,rewrites:new Map([[imagegenPath,imagegen.contents],[imagegenDebugPath,imagegenDebug],[jsdomPath,jsdomContents],[stylePath,styleContents],[xhrPath,xhrContents],[documentPath,document.contents],[browserPath,browser.contents],[claudePath,claudeContents],[libsqlPath,libsqlContents],[spawnPath,spawnContents],[httpPath,httpContents]]),virtualModules:new Map([[REVIEWED_PONYTAIL_MODULE,ponytail.moduleSource],['devryan:reviewed-claude-startup',`export {startReviewedProxy,checkReviewedProxy,scrubReviewedSystem} from ${JSON.stringify(claudePath)};`],['devryan:reviewed-claude-scrub',`export {scrubOpencodeFingerprints} from ${JSON.stringify(path.join(root,'claude-1.8.0/node_modules/@rynfar/meridian-plugin-opencode-scrub/dist/scrub.js'))};`]]),transforms,claudeAssets,claudeCredentials,
   provenance:manifest.inputs.map(({id,version,sourceKind,sourceLocation,license})=>({id,version,sourceKind,sourceLocation,license})),
   ast:{source:astPath,path:REVIEWED_AST_FILENAME,sha256:REVIEWED_AST_ASSET_SHA256}};
 }

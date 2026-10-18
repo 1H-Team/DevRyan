@@ -10,7 +10,7 @@ const PRE_TASK_ORCHESTRATOR_PROMPT_UTF8_BYTES = 15_902;
 const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 43_214;
 const DEFAULT_SLIM_PROFILE_PATH = path.resolve(
   __dirname,
-  '../../default-config/user-profile/oh-my-opencode-slim.json',
+  '../../default-config/user-profile/devryan-agents.jsonc',
 );
 
 const LOCAL_PATH_PATTERNS = [

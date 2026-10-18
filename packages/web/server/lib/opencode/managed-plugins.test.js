@@ -49,13 +49,11 @@ describe('managed plugin manifest', () => {
       '@rama_nigg/open-cursor': '2.5.8',
       'opencode-with-claude': '1.8.0',
       'opencode-gpt-imagegen': '0.1.12',
-      'oh-my-opencode-slim': '2.2.25',
     });
     expect(DEVRYAN_MANAGED_PROFILE_PLUGIN_SPECS).toEqual([
       './plugins/devryan-open-cursor.mjs',
       './node_modules/opencode-with-claude/dist/index.js',
       './node_modules/opencode-gpt-imagegen/dist/index.js',
-      './plugins/devryan-oh-my-opencode-slim.mjs',
       './plugins/devryan-skill-context.mjs',
       './plugins/devryan-document-reader.mjs',
     ]);
@@ -93,6 +91,7 @@ describe('managed plugin manifest', () => {
     expect(webProfileConfig.plugin).toEqual(DEVRYAN_MANAGED_PROFILE_PLUGIN_SPECS);
     expect(tauriRootConfig).toEqual(webRootConfig);
     expect(webPackage.dependencies).toMatchObject(DEVRYAN_MANAGED_PROFILE_DEPENDENCIES);
+    expect(webPackage.dependencies).not.toHaveProperty('oh-my-opencode-slim');
     expect(tauriProfileConfig.plugin).not.toContain('./plugins/devryan-document-reader.mjs');
     expect(tauriProfileConfig.plugin).not.toContain('./plugins/devryan-skill-context.mjs');
     expect(tauriPackage.dependencies).not.toHaveProperty('unpdf');
@@ -111,10 +110,9 @@ describe('managed plugin manifest', () => {
       expect(packageJson.dependencies).not.toHaveProperty('context-mode');
     }
 
-    // Tauri retains Slim 2.0.5 and its legacy loader; the forward profile also
-    // supports the server descriptor exported by its pinned Slim 2.2.25.
-    expect(fs.readFileSync(path.join(webDefaultConfigRoot, 'plugins', 'devryan-oh-my-opencode-slim.mjs'), 'utf8'))
-      .toContain('exported.server');
+    // The forward profile has no Slim adapter: the agent orchestration is built
+    // into the native runtime. Released Tauri retains Slim 2.0.5 and its loader.
+    expect(fs.existsSync(path.join(webDefaultConfigRoot, 'plugins', 'devryan-oh-my-opencode-slim.mjs'))).toBe(false);
     expect(fs.readFileSync(path.join(tauriDefaultConfigRoot, 'plugins', 'devryan-oh-my-opencode-slim.mjs'), 'utf8'))
       .not.toContain('exported.server');
     // Superpowers is retired from the forward profile; released Tauri keeps its frozen copy.
@@ -144,10 +142,28 @@ describe('managed plugin manifest', () => {
       './plugins/devryan-open-cursor.mjs',
       ['./node_modules/opencode-with-claude/dist/index.js', { enabled: true }],
       './node_modules/opencode-gpt-imagegen/dist/index.js',
-      './plugins/devryan-oh-my-opencode-slim.mjs',
       './plugins/devryan-skill-context.mjs',
       './plugins/devryan-document-reader.mjs',
     ]);
+  });
+
+  it('retires the Slim adapter and package registrations now that agent orchestration is built in', () => {
+    for (const spec of [
+      './plugins/devryan-oh-my-opencode-slim.mjs',
+      'file:///Users/test/.config/opencode/plugins/devryan-oh-my-opencode-slim.mjs',
+      'oh-my-opencode-slim',
+      'oh-my-opencode-slim@2.2.25',
+      './node_modules/oh-my-opencode-slim/dist/index.js',
+    ]) {
+      expect(isRetiredDevRyanPluginSpec(spec)).toBe(true);
+      expect(getDevRyanManagedPluginForSpec(spec)).toBeNull();
+    }
+    expect(reconcileDevRyanManagedPluginSpecs([
+      'user-plugin@1.0.0',
+      ['./plugins/devryan-oh-my-opencode-slim.mjs', { enabled: true }],
+      'oh-my-opencode-slim@2.2.24',
+    ]).some((entry) => JSON.stringify(entry).includes('slim'))).toBe(false);
+    expect(RETIRED_DEVRYAN_PROFILE_DEPENDENCIES['oh-my-opencode-slim']).toBe('2.2.25');
   });
 
   it('retires the Superpowers adapter and its upstream git plugin from existing profiles', () => {
@@ -195,6 +211,7 @@ describe('managed plugin manifest', () => {
     expect(RETIRED_DEVRYAN_PROFILE_DEPENDENCIES).toEqual({
       'context-mode': '1.0.169',
       'opencode-antigravity-auth': '1.6.0',
+      'oh-my-opencode-slim': '2.2.25',
     });
   });
 

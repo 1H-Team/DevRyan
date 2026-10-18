@@ -14,7 +14,6 @@ import { registerScheduledTaskRoutes } from '../scheduled-tasks/routes.js';
 import { registerSkillRoutes } from './skill-routes.js';
 import { registerOpenCodeRoutes } from './routes.js';
 import { createPluginReadModel, registerReadonlyPluginRoutes } from './plugins-readonly.js';
-import { createSlimSetupRuntime, registerSlimSetupRoutes } from './slim-install.js';
 import { registerConfigApplyRoutes } from './config-apply-runtime.js';
 import { createImageAssetsRuntime } from '../image-assets/runtime.js';
 
@@ -193,16 +192,6 @@ export const createFeatureRoutesRuntime = (dependencies) => {
     registerReadonlyPluginRoutes(app, {
       resolveOptionalProjectDirectory,
       listPlugins: pluginReadModel.listPlugins,
-    });
-    registerSlimSetupRoutes(app, {
-      slimSetupRuntime: createSlimSetupRuntime({
-        fs,
-        path,
-        os,
-        spawn,
-        env: process.env,
-      }),
-      markConfigChange,
     });
 
     const {

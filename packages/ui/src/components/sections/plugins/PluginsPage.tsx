@@ -1,15 +1,13 @@
 import React from "react";
-import { RiCodeBoxLine, RiDownloadCloud2Line, RiFileTextLine, RiFolderLine, RiPlugLine, RiRefreshLine } from "@remixicon/react";
+import { RiCodeBoxLine, RiFileTextLine, RiFolderLine, RiPlugLine } from "@remixicon/react";
 import { SettingsBadge } from "@/components/sections/shared/SettingsBadge";
 import { SettingsDetailHeader } from "@/components/sections/shared/SettingsDetailHeader";
 import { SettingsDetailSection } from "@/components/sections/shared/SettingsDetailSection";
 import { SettingsPageLayout } from "@/components/sections/shared/SettingsPageLayout";
-import { Button } from "@/components/ui/button";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { usePluginsStore } from "@/stores/usePluginsStore";
 import type { DevRyanDefaultPlugin, PluginEntry, PluginFile } from "@/lib/api/types";
-import { getSlimActions, isSlimPlugin } from "./pluginSlimPresentation";
 
 const formatOptions = (options: Record<string, unknown> | undefined): string => {
   if (!options || Object.keys(options).length === 0) {
@@ -51,85 +49,7 @@ const DefaultBadge: React.FC = () => {
   );
 };
 
-const SlimStatusPanel: React.FC = () => {
-  const { t } = useI18n();
-  const status = usePluginsStore((state) => state.slimStatus);
-  const isLoading = usePluginsStore((state) => state.slimStatusLoading);
-  const actionInFlight = usePluginsStore((state) => state.slimActionInFlight);
-  const lastError = usePluginsStore((state) => state.slimLastError);
-  const installSlimRuntime = usePluginsStore((state) => state.installSlimRuntime);
-  const repairSlimRuntime = usePluginsStore((state) => state.repairSlimRuntime);
-  const busy = isLoading || actionInFlight !== null;
-  const actions = getSlimActions(status);
-  const isReady = Boolean(status?.runtimeEnabled && status.wrapperConfigured);
-  const issueMessages = status?.issues?.map((issue) => issue.message).filter(Boolean) ?? [];
-
-  const statusBadge = isLoading ? (
-    <SettingsBadge tone="neutral">{t("settings.plugins.slim.status.loading")}</SettingsBadge>
-  ) : (
-    <SettingsBadge tone={isReady ? "success" : "warning"} dot>
-      {isReady ? t("settings.plugins.slim.status.ready") : t("settings.plugins.slim.status.needsSetup")}
-    </SettingsBadge>
-  );
-
-  return (
-    <SettingsDetailSection
-      title={t("settings.plugins.slim.title")}
-      meta={statusBadge}
-      actions={(
-        <>
-          {actions.install ? <Button
-            type="button"
-            size="xs"
-            onClick={() => { void installSlimRuntime(); }}
-            disabled={busy}
-          >
-            <RiDownloadCloud2Line className="h-3.5 w-3.5" />
-            {actionInFlight === "install" ? t("settings.plugins.slim.action.installing") : t("settings.plugins.slim.action.install")}
-          </Button> : null}
-          {actions.repair ? <Button
-            type="button"
-            size="xs"
-            variant="outline"
-            onClick={() => { void repairSlimRuntime(); }}
-            disabled={busy}
-          >
-            <RiRefreshLine className="h-3.5 w-3.5" />
-            {actionInFlight === "repair" ? t("settings.plugins.slim.action.repairing") : t("settings.plugins.slim.action.repair")}
-          </Button> : null}
-        </>
-      )}
-      variant="card"
-    >
-      <DetailRow label={t("settings.plugins.slim.field.version")} value={status?.installedVersion ?? t("settings.plugins.slim.value.missing")} mono />
-      <DetailRow label={t("settings.plugins.slim.field.wrapper")} value={status?.wrapperConfigured ? t("settings.plugins.slim.value.configured") : t("settings.plugins.slim.value.missing")} />
-      <DetailRow label={t("settings.plugins.slim.field.background")} value={status?.backgroundSubagentsEnv ?? "true"} mono />
-      {status?.backupPaths && status.backupPaths.length > 0 ? (
-        <DetailRow
-          label={t("settings.plugins.slim.field.backups")}
-          value={(
-            <div className="space-y-1">
-              {status.backupPaths.map((backupPath) => (
-                <div key={backupPath} className="break-all">{backupPath}</div>
-              ))}
-            </div>
-          )}
-          mono
-        />
-      ) : null}
-      {issueMessages.length > 0 || lastError ? (
-        <div className="my-3 rounded-md border border-[var(--status-warning-border)] bg-[var(--status-warning-background)] p-3 text-[var(--status-warning)]">
-          {lastError ? <div className="typography-meta">{lastError}</div> : null}
-          {issueMessages.map((message) => (
-            <div key={message} className="typography-meta">{message}</div>
-          ))}
-        </div>
-      ) : null}
-    </SettingsDetailSection>
-  );
-};
-
-const EntryDetails: React.FC<{ entry: PluginEntry; children?: React.ReactNode }> = ({ entry, children }) => {
+const EntryDetails: React.FC<{ entry: PluginEntry }> = ({ entry }) => {
   const { t } = useI18n();
   const Icon = entry.parsedKind === "path" ? RiFolderLine : RiCodeBoxLine;
   const scopeLabel = entry.scope === "project" ? t("settings.plugins.scope.project") : t("settings.plugins.scope.user");
@@ -144,7 +64,6 @@ const EntryDetails: React.FC<{ entry: PluginEntry; children?: React.ReactNode }>
         subtitle={t("settings.plugins.page.readOnly")}
       />
 
-      {children}
 
       <SettingsDetailSection title={t("settings.plugins.page.section.config")} variant="card">
         <DetailRow label={t("settings.plugins.page.field.spec")} value={entry.spec} mono />
@@ -165,7 +84,7 @@ const EntryDetails: React.FC<{ entry: PluginEntry; children?: React.ReactNode }>
   );
 };
 
-const FileDetails: React.FC<{ file: PluginFile; children?: React.ReactNode }> = ({ file, children }) => {
+const FileDetails: React.FC<{ file: PluginFile }> = ({ file }) => {
   const { t } = useI18n();
   const scopeLabel = file.scope === "project" ? t("settings.plugins.scope.project") : t("settings.plugins.scope.user");
 
@@ -179,7 +98,6 @@ const FileDetails: React.FC<{ file: PluginFile; children?: React.ReactNode }> = 
         subtitle={t("settings.plugins.page.fileReadOnly")}
       />
 
-      {children}
 
       <SettingsDetailSection title={t("settings.plugins.page.section.file")} variant="card">
         <DetailRow label={t("settings.plugins.page.field.fileName")} value={file.fileName} mono />
@@ -190,7 +108,7 @@ const FileDetails: React.FC<{ file: PluginFile; children?: React.ReactNode }> = 
   );
 };
 
-const DefaultDetails: React.FC<{ plugin: DevRyanDefaultPlugin; children?: React.ReactNode }> = ({ plugin, children }) => {
+const DefaultDetails: React.FC<{ plugin: DevRyanDefaultPlugin }> = ({ plugin }) => {
   const { t } = useI18n();
   const effectiveDiffers = plugin.effectiveSpec !== plugin.shippedSpec;
 
@@ -203,7 +121,6 @@ const DefaultDetails: React.FC<{ plugin: DevRyanDefaultPlugin; children?: React.
         subtitle={t("settings.plugins.default.readOnly")}
       />
 
-      {children}
 
       <SettingsDetailSection title={t("settings.plugins.default.section.package")} variant="card">
         <DetailRow label={t("settings.plugins.default.field.shippedSpec")} value={plugin.shippedSpec} mono />
@@ -243,7 +160,6 @@ export const PluginsPage: React.FC = () => {
           title={t("settings.plugins.sidebar.title")}
           subtitle={t("settings.plugins.sidebar.description")}
         />
-        <SlimStatusPanel />
         <p className="px-1 typography-meta text-muted-foreground">
           {t("settings.plugins.page.empty.select")}. {t("settings.plugins.page.empty.description")}
         </p>
@@ -251,15 +167,13 @@ export const PluginsPage: React.FC = () => {
     );
   }
 
-  const slimPanel = isSlimPlugin(selected) ? <SlimStatusPanel /> : null;
-
   return (
     <SettingsPageLayout>
       {selected.kind === "default"
-        ? <DefaultDetails plugin={selected}>{slimPanel}</DefaultDetails>
+        ? <DefaultDetails plugin={selected} />
         : selected.kind === "config"
-        ? <EntryDetails entry={selected}>{slimPanel}</EntryDetails>
-        : <FileDetails file={selected}>{slimPanel}</FileDetails>}
+        ? <EntryDetails entry={selected} />
+        : <FileDetails file={selected} />}
     </SettingsPageLayout>
   );
 };

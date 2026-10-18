@@ -1,5 +1,5 @@
 import path from 'node:path';
-import type * as ReviewedSlim from '../../../../runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js';
+import type * as ReviewedSlim from '@openchamber/agents-core';
 export interface NativeSlimPathOwners {
  readonly assertCurrent:(input:ReviewedSlim.ReviewedSlimToolInput)=>Promise<void>;
  readonly stat:(input:ReviewedSlim.ReviewedSlimToolInput,file:string)=>Promise<{readonly kind:'file'|'directory'|'other'}>;

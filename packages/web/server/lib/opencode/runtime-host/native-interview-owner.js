@@ -6,20 +6,23 @@ const fail=(code,status=403)=>Object.assign(new Error(code),{code,status,statusC
 const object=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 const id=value=>typeof value==='string'&&/^[a-zA-Z0-9_-]{1,512}$/.test(value);
 const within=(root,file)=>file===root||file.startsWith(root+path.sep);
-const snapshot=record=>Object.freeze(Object.fromEntries(['id','sessionID','idea','markdownPath','createdAt','status','baseMessageCount'].map(key=>[key,record[key]])));
+const snapshot=record=>Object.freeze(Object.fromEntries(['id','sessionID','idea','markdownPath','createdAt','abandonedAt','abandonedOrder','status','completed','baseMessageCount']
+ .filter(key=>record[key]!==undefined).map(key=>[key,record[key]])));
+// Recoverable document outcomes the original service handles itself.
+const recoverable=['ENOENT','native_interview_document_owned','native_interview_patch_failed','native_interview_patch_required'];
 const scopeFields=scope=>({directory:scope.directory,sessionID:scope.sessionID,messageID:scope.messageID,authorizationID:scope.authorizationID,recheck:scope.recheck,signal:scope.signal});
 
 /** One original state machine per reviewed location; its IO has no ambient authority. */
 export function createNativeInterviewOwner(options){
  const {originals}=options;
  if(!Array.isArray(options.locations)||!options.locations.length||options.locations.length>128
-  ||!['createInterviewService','createInterviewHandler','resolveExistingInterviewPath','InterviewDocumentOwnershipError'].every(key=>typeof originals?.[key]==='function')
+  ||!['createInterviewService','createInterviewHandler','resolveExistingInterviewPath','InterviewDocumentOwnershipError','InterviewPatchApplyError','InterviewPatchRequiredError'].every(key=>typeof originals?.[key]==='function')
   ||!['captureInterviewAuthorization','captureInterviewUIAuthorization','captureInterviewEventAuthorization','executeDocument','baseURL','openBrowser'].every(key=>typeof options[key]==='function')
   ||!['messages','continue','notify','rename'].every(key=>typeof options.runtime?.[key]==='function'))throw fail('native_interview_owner_required');
  const context=new AsyncLocalStorage(),locations=new Map(),locks=new Map(),active=new Set(),uncertain=new Set(),lifetime=new AbortController();let closed=false;
  const current=()=>{const scope=context.getStore();if(!scope||closed)throw fail('native_interview_scope_required');scope.signal.throwIfAborted();if(scope.pure)throw fail('native_interview_event_effect_denied');return scope;};
  const check=async scope=>{if(closed)throw fail('native_interview_closed');scope.signal.throwIfAborted();if(scope.failure)throw scope.failure;await scope.recheck();scope.signal.throwIfAborted();if(closed)throw fail('native_interview_closed');if(scope.failure)throw scope.failure;};
- const io=async action=>{const scope=current();try{await check(scope);const result=await action(scope);await check(scope);return result;}catch(cause){if(!['ENOENT','native_interview_document_owned'].includes(cause?.code))scope.failure??=cause;throw cause;}};
+ const io=async action=>{const scope=current();try{await check(scope);const result=await action(scope);await check(scope);return result;}catch(cause){if(!recoverable.includes(cause?.code))scope.failure??=cause;throw cause;}};
  const background=action=>{const scope=current(),work=io(action);scope.pending.add(work);void work.catch(()=>{});return work;};
  const run=async(scope,action)=>{
   const owned={...scope,pending:new Set(),failure:null,signal:AbortSignal.any([lifetime.signal,...scope.signal?[scope.signal]:[]])};
@@ -49,7 +52,12 @@ export function createNativeInterviewOwner(options){
     {origin:options.origin,recheck:()=>check(scope),signal:scope.signal});
    if(!result?.receipt||result.receipt.terminated!==true||result.receipt.confined!==true||result.receipt.cancelled===true||result.receipt.exitCode!==0)throw Object.assign(fail('native_interview_termination_unconfirmed'),{nativeProcessUnsettled:true});
    if(result.publication?.outcome==='partial')throw fail('native_interview_publication_conflict',409);return result.result;
-  }).catch(cause=>{if(cause?.code==='native_interview_document_owned'&&id(cause.ownerSessionID))throw new originals.InterviewDocumentOwnershipError(file,cause.ownerSessionID);throw cause;});
+  }).catch(cause=>{
+   if(cause?.code==='native_interview_document_owned'&&id(cause.ownerSessionID))throw new originals.InterviewDocumentOwnershipError(file,cause.ownerSessionID);
+   if(cause?.code==='native_interview_patch_required')throw new originals.InterviewPatchRequiredError();
+   if(cause?.code==='native_interview_patch_failed'&&object(cause.patch))throw new originals.InterviewPatchApplyError(cause.patch.failedHunk,cause.patch.contextWindow);
+   throw cause;
+  });
   const readText=async file=>io(async()=>{
    await safeFile(file);const handle=await fs.open(file,constants.O_RDONLY|constants.O_NOFOLLOW);
    try{const before=await handle.stat();if(!before.isFile()||before.size>16*MIB)throw fail('native_interview_document_too_large',413);
@@ -73,10 +81,17 @@ export function createNativeInterviewOwner(options){
    ensure:value=>{const row=record(value);return document(row.markdownPath,{kind:'ensure',record:row}).then(()=>undefined);},
    claim:(file,sessionID,baseMessageCount)=>{if(current().sessionID!==sessionID)throw fail('native_interview_session_mismatch');return document(file,{kind:'claim',sessionID,baseMessageCount});},
    read:value=>{const row=record(value);return document(row.markdownPath,{kind:'read',record:row});},
-   rewrite:(value,summary,title)=>{const row=record(value);return document(row.markdownPath,{kind:'rewrite',record:row,summary,...title===undefined?{}:{title}});},
+   rewrite:(value,summary,title,patch,consumedState)=>{const row=record(value);return document(row.markdownPath,{kind:'rewrite',record:row,summary,
+    ...title===undefined?{}:{title},...patch===undefined?{}:{patch},...consumedState===undefined?{}:{consumedState}});},
+   markComplete:value=>{const row=record(value);return document(row.markdownPath,{kind:'markComplete',record:row});},
+   markIncomplete:value=>{const row=record(value);return document(row.markdownPath,{kind:'markIncomplete',record:row});},
    rewriteFinal:(value,text)=>{const row=record(value);return document(row.markdownPath,{kind:'rewriteFinal',record:row,text});},
    appendAnswers:(value,questions,answers)=>{const row=record(value);return document(row.markdownPath,{kind:'appendAnswers',record:row,questions,answers}).then(()=>undefined);},
    readText,
+   stat:file=>io(async()=>{
+    await safeFile(file);const stat=await fs.lstat(file);
+    if(!stat.isFile()||await fs.realpath(file)!==file)throw fail('native_interview_path_denied');await safeFile(file);return {mtimeMs:stat.mtimeMs};
+   }),
    list:folder=>io(async()=>{if(folder!==outputDirectory)throw fail('native_interview_path_denied');await safeFile(folder,{markdown:false});const entries=await fs.readdir(folder);if(entries.length>10000)throw fail('native_interview_inventory_too_large',413);await safeFile(folder,{markdown:false});return entries;}),
    resolveExisting:(requestedDirectory,requestedOutput,value)=>io(async()=>{
     if(requestedDirectory!==directory||requestedOutput!==outputFolder||typeof value!=='string'||value.length>4096)throw fail('native_interview_path_denied');

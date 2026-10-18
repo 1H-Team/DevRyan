@@ -21,12 +21,12 @@ const file = (fileName: string, scope: "user" | "project"): PluginFile => ({
 
 const defaults: DevRyanDefaultPlugin[] = [
   {
-    id: "devryan-default:oh-my-opencode-slim",
-    pluginId: "oh-my-opencode-slim",
-    displayName: "Oh My OpenCode Slim",
-    shippedSpec: "./plugins/devryan-oh-my-opencode-slim.mjs",
-    effectiveSpec: "./plugins/devryan-oh-my-opencode-slim.mjs",
-    version: "2.0.5",
+    id: "devryan-default:@rama_nigg/open-cursor",
+    pluginId: "@rama_nigg/open-cursor",
+    displayName: "Open Cursor",
+    shippedSpec: "./plugins/devryan-open-cursor.mjs",
+    effectiveSpec: "./plugins/devryan-open-cursor.mjs",
+    version: "2.5.8",
     delivery: "installed-local",
     sourcePath: "default-config/user-profile/package.json",
     kind: "default",
@@ -53,7 +53,7 @@ describe("groupPluginsForSidebar", () => {
     }))).toEqual([
       {
         key: "devryan-defaults",
-        items: ["Oh My OpenCode Slim"],
+        items: ["Open Cursor"],
       },
       {
         key: "project-entries",
@@ -78,7 +78,7 @@ describe("groupPluginsForSidebar", () => {
     expect(groupPluginsForSidebar({
       defaults,
       entries: [{ ...entry("opencode-with-claude@1.6.17", "user"), defaultPluginId: "opencode-with-claude" }],
-      files: [{ ...file("devryan-oh-my-opencode-slim.mjs", "user"), defaultPluginId: "oh-my-opencode-slim" }],
+      files: [{ ...file("devryan-open-cursor.mjs", "user"), defaultPluginId: "@rama_nigg/open-cursor" }],
     }).map((group) => group.key)).toEqual(["devryan-defaults"]);
   });
 

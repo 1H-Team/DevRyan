@@ -34,7 +34,7 @@ const BOOTSTRAP_LOCK_TIMEOUT_MS=5*60_000;
 const exists=async file=>{try{await fs.lstat(file);return true;}catch(error){if(error.code==='ENOENT')return false;throw error;}};
 const nativePluginIDs={
  '@rama_nigg/open-cursor':['devryan.provider-compat'], 'opencode-with-claude':['devryan.provider-compat'],
- 'opencode-gpt-imagegen':['opencode-gpt-imagegen'], 'oh-my-opencode-slim':['devryan.slim','devryan.slim-commands','devryan.slim-lifecycle'],
+ 'opencode-gpt-imagegen':['opencode-gpt-imagegen'],
  'devryan-skill-context':['devryan.reviewed-skills'],'devryan-document-reader':['devryan.document-reader'],
 };
 const syncDirectory=async directory=>{const handle=await fs.open(directory,'r');try{await handle.sync();}catch{}finally{await handle.close();}};

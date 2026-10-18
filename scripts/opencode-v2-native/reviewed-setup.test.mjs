@@ -4,10 +4,13 @@ import {createReviewedSetupSession,reviewedSetupFamilies,reviewedSetupRegistrati
 import {createHttpProviderConfiguration} from './http-provider.mjs';
 import {compiledHelperAgentIDs,createCompiledHelperAgentFixture} from './package-helper-agent-fixture.mjs';
 import {PLAN_MODE_SYSTEM_INSTRUCTIONS} from '../../packages/orchestration-runtime/index.js';
-test('all seven exact active specs map to existing compiled owners without losing manifest provenance',()=>{
+test('all seven families map to existing compiled owners without losing manifest provenance',()=>{
  const ids=[...new Set(reviewedSetupFamilies.flatMap(row=>row.origins))];const origins=ids.map(id=>({id,manifestDigest:'a'.repeat(64),capabilities:['control']}));
  const rows=reviewedSetupRegistrations(origins);assert.equal(reviewedSetupFamilies.length,7);assert.equal(rows.length,origins.length);
- for(const row of rows){assert.equal(row.manifestDigest,'a'.repeat(64));assert.ok(row.legacySpecs.length);}
+ // Built-in agent orchestration has no plugin spec; every other family has its exact spec.
+ const builtIn=new Set(reviewedSetupFamilies.filter(row=>row.spec===null).flatMap(row=>row.origins));
+ assert.deepEqual([...builtIn].sort(),['devryan.slim','devryan.slim-commands','devryan.slim-lifecycle']);
+ for(const row of rows){assert.equal(row.manifestDigest,'a'.repeat(64));assert.equal(row.legacySpecs.length>0,!builtIn.has(row.id));}
  assert.throws(()=>reviewedSetupRegistrations(origins.filter(row=>row.id!=='devryan.document-reader')),/Required compiled family unavailable/);
 });
 test('active boot evidence refuses a missing required original command or family',async()=>{

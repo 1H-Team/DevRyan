@@ -61,8 +61,10 @@ export async function executeNativeInterviewDocument(input,authority,deps){
       }else if(event.type==='result'&&event.ok===true){
        if(!keys(event,['protocol','type','ok','chunks','bytes','sha256'])||event.chunks!==chunks.length||event.bytes!==size||event.sha256!==digest.digest('hex'))throw fail('native_interview_protocol_invalid');result=event;
       }else if(event.type==='result'&&event.ok===false){
-       if(!keys(event,['protocol','type','ok','error'])||!keys(event.error,['code','ownerSessionID'])||!/^native_interview_[a-z_]{1,80}$/.test(event.error.code)
-        ||event.error.ownerSessionID!==undefined&&!(typeof event.error.ownerSessionID==='string'&&/^[a-zA-Z0-9_-]{1,512}$/.test(event.error.ownerSessionID)))throw fail('native_interview_protocol_invalid');result=event;
+       if(!keys(event,['protocol','type','ok','error'])||!keys(event.error,['code','ownerSessionID','patch'])||!/^native_interview_[a-z_]{1,80}$/.test(event.error.code)
+        ||event.error.ownerSessionID!==undefined&&!(typeof event.error.ownerSessionID==='string'&&/^[a-zA-Z0-9_-]{1,512}$/.test(event.error.ownerSessionID))
+        ||event.error.patch!==undefined&&(event.error.code!=='native_interview_patch_failed'||!keys(event.error.patch,['failedHunk','contextWindow'])
+         ||![event.error.patch.failedHunk,event.error.patch.contextWindow].every(value=>typeof value==='string'&&value.length<=16*1024)))throw fail('native_interview_protocol_invalid');result=event;
       }else throw fail('native_interview_protocol_invalid');
      }catch(cause){reject(cause);}
     }if(Buffer.byteLength(pending)>64*1024)reject(fail('native_interview_protocol_invalid'));
@@ -73,7 +75,8 @@ export async function executeNativeInterviewDocument(input,authority,deps){
    try{nativeOptions.onTermination?.({...scope,token:reserved.token,receipt});}catch{/* Observer only. */}
    signal.throwIfAborted();
    if(!receipt.terminated||!receipt.confined||receipt.cancelled||receipt.exitCode!==0||signal.aborted||failure||pending||!result?.ok){
-    const cause=failure??fail(result?.error?.code??'native_interview_document_failed');if(result?.error?.ownerSessionID)cause.ownerSessionID=result.error.ownerSessionID;throw cause;
+    const cause=failure??fail(result?.error?.code??'native_interview_document_failed');if(result?.error?.ownerSessionID)cause.ownerSessionID=result.error.ownerSessionID;
+    if(!failure&&result?.error?.patch)cause.patch={failedHunk:result.error.patch.failedHunk,contextWindow:result.error.patch.contextWindow};throw cause;
    }
    decoded=JSON.parse(Buffer.concat(chunks,size).toString());if(!keys(decoded,['result'])||decoded.result!==null&&typeof decoded.result!=='string')throw fail('native_interview_output_invalid');
    await recheck();const publication=await runtime.finish({directory:input.directory,token:reserved.token});published=true;job.published=true;return await complete(publication);

@@ -1,10 +1,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
-import type {AstSearchInput,AstReplaceInput,ReviewedAstDefinition} from '../../../../runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js';
+import type {AstSearchInput,AstReplaceInput,ReviewedAstDefinition} from '@openchamber/agents-core';
 import type {Permission} from '@opencode/core/permission';
 import type {WorkerInput,NativeResult} from './worker-protocol.js';
-import {REVIEWED_AST_ASSET_SHA256} from './reviewed-package-transforms.js';
+import {REVIEWED_AST_ASSET_SHA256} from './reviewed-ast-asset.js';
 
 export type AstWorkerInput=Extract<WorkerInput,{tool:'ast_grep_search'|'ast_grep_replace'}>;
 const inside=(root:string,file:string)=>file===root||file.startsWith(root+path.sep);
@@ -55,7 +55,7 @@ export async function runReviewedAstWorker(request:AstWorkerInput,callbacks:{
  if(!stat.isFile()||!(stat.mode&0o111)||stat.size>64*1024*1024)throw new Error('native_ast_asset_invalid');
  const bytes=await fs.readFile(request.reviewedAst.path);
  if(createHash('sha256').update(bytes).digest('hex')!==REVIEWED_AST_ASSET_SHA256)throw new Error('native_ast_asset_invalid');
- const originals=await import('../../../../runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js');
+ const originals=await import('@openchamber/agents-core');
  const definition=request.tool==='ast_grep_search'?originals.ast_grep_search:originals.ast_grep_replace;
  const input=validateReviewedAstInput(request.input,request.tool,definition);
  const paths=await rebaseReviewedAstPaths(input.paths,request);
@@ -71,6 +71,8 @@ export async function runReviewedAstWorker(request:AstWorkerInput,callbacks:{
  const content=request.tool==='ast_grep_search'?await originals.ast_grep_search.execute({...input,paths,globs},context)
   :'rewrite' in input?await originals.ast_grep_replace.execute({...input,paths,globs},context):(()=>{throw new Error('native_ast_input_invalid');})();
  for(const update of updates)await callbacks.progress(update);
+ // The AST tools always answer with text; anything else is refused.
+ if(typeof content!=='string')throw new Error('native_ast_output_invalid');
  // The original tool returns failures as formatted strings. A failed apply
  // must discard its private contribution rather than publish partial writes.
  if(content.startsWith('Error:'))throw new Error(content);

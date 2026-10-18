@@ -320,8 +320,9 @@ async function seed({source,target,environment={},captureLogicalSetup,windowsOwn
    await save(path.join(configTarget,'opencode.json'),Buffer.from(JSON.stringify(merged,null,2)+'\n'),'opencode.json');
   });
  }
- // Other exact files: the highest layer that provides one of a group's names supplies the whole group (Slim JSON/JSONC is one setting).
- for(const group of [['oh-my-opencode-slim.json','oh-my-opencode-slim.jsonc'],['AGENTS.md'],['.openchamber/config.json'],['ponytail/config.json']])
+ // Other exact files: the highest layer that provides one of a group's names supplies the whole group (the agent
+ // configuration in either name and JSON/JSONC is one setting; startup migrates a legacy name).
+ for(const group of [['devryan-agents.json','devryan-agents.jsonc','oh-my-opencode-slim.json','oh-my-opencode-slim.jsonc'],['AGENTS.md'],['.openchamber/config.json'],['ponytail/config.json']])
   for(const root of layers){for(const name of group)await copy(root,name,path.join(configTarget,name));if(group.some(supplied))break;}
  if(source.opencodeConfigFile){
   // The selected custom layer follows ordinary user/project layers. It must

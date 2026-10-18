@@ -8,14 +8,16 @@ Personal models, variants, prompts, permissions and MCP choices remain user-owne
 
 - The managed plugin registry is [managed-plugins.js](../packages/web/server/lib/opencode/managed-plugins.js).
   Keep it consistent with the sanitized profile manifest, installed entrypoints,
-  Slim schema URL, package tests and Bot image pins.
+  package tests and Bot image pins.
 - [Claude runtime compatibility](../packages/web/server/lib/opencode/claude-runtime-compatibility.js)
   owns the selected Claude proxy/Meridian/Agent SDK/Claude Code tuple and provenance.
   Update those four components together after acceptance. An exact source patch
   being available does not mean its runtime tuple has passed acceptance.
-- [Slim's adapter](../packages/web/server/default-config/plugins/devryan-oh-my-opencode-slim.mjs)
-  preserves DevRyan's agents and default agent while keeping runtime hooks. Restore
-  the final agent object **in place**: Slim retains it for model admission.
+- The agent orchestration derived from Oh My OpenCode Slim is not a plugin: it
+  is DevRyan-owned source in [packages/agents-core](../packages/agents-core/DOCUMENTATION.md),
+  built into the native runtime. Port upstream fixes with the section below,
+  never by upgrading a package. Its former adapter and package specs are
+  retired in the registry.
 - Preserve compatibility names and the separate Cursor SDK runtime. Do not use
   these names as permission to inspect upstream OpenChamber/OpenCode checkouts.
   Do not refresh legacy Tauri assets or unrelated installed skill collections.
@@ -52,11 +54,8 @@ package pins for other bundled plugins follow the reviewed registry; reconcile
 any intentional package fork before upgrading, rather than treating it as an
 ordinary preset customization.
 
-A conflicting user-owned Slim adapter stops provisioning with
-`DEVRYAN_SLIM_ADAPTER_CONFLICT` before writing the package manifest or installing
-the new dependencies. Preserve the file, reconcile its custom behavior with the
-reviewed adapter, and rerun provisioning. Agent/preset conflicts remain preserved
-and reported. Repeated provisioning must be idempotent.
+Agent/preset conflicts remain preserved and reported. Repeated provisioning must
+be idempotent.
 
 For Meridian, use exact version, entrypoint and original SHA-256 gates in
 [the hotfix installer](../packages/web/server/lib/opencode/meridian-http-hotfix.js).
@@ -74,14 +73,13 @@ Claude overrides, stale installed packages, partial install failure, adapter
 conflicts, repeated provisioning and rollback.
 
 The opt-in real-package checker uses synthetic image responses and a disposable
-Slim profile. It does not submit provider requests:
+profile. It does not submit provider requests:
 
 ```bash
-bun scripts/qa/plugin-upgrades.mjs /absolute/private/node_modules /absolute/repo/.cache/plugin-checks /absolute/sanitized-slim-fixture.json
+bun scripts/qa/plugin-upgrades.mjs /absolute/private/node_modules /absolute/repo/.cache/plugin-checks
 ```
 
-The optional third argument supplies sanitized personal settings. Without it the
-checker uses synthetic role assignments. Check actual provider streaming and
+Check actual provider streaming and
 tool contracts separately; an import check does not establish authenticated
 Cursor execution or image model availability.
 
@@ -149,3 +147,25 @@ the audit. Update this runbook when ownership or gates change.
 DevRyan applies `packages/web/server/lib/opencode/imagegen-model-hotfix.js` during managed provisioning and Bot image builds. The reviewed 0.1.12 executable (also byte-identical in 0.1.10 for degraded installs) requests `gpt-6-astra` with `reasoning.effort: medium`. This selects the model invoking the hosted image tool; it does not pin a separate hosted image renderer. Unknown versions, modified source and partial patches fail closed. Re-review the source digest and rerun installed image checks whenever upgrading this plugin.
 
 The installed-package fixture copies and patches the image package privately, asserting model/effort along with references, output and auth behavior. The live image acceptance script was removed in app cleanup. [OpenAI documents Astra support for medium reasoning and image-generation tools](https://developers.openai.com/api/docs/models/gpt-6-astra).
+
+## Porting upstream agent fixes
+
+`packages/agents-core` started from Slim v3.0.4 and is maintained by selective
+ports, never by replacing the tree.
+
+1. Read the upstream release notes or commit. Decide **adopt**, **already
+   covered** or **defer** against DevRyan's owners: managed tasks, Council,
+   compaction, permissions/providers and the continuation gate stay
+   authoritative. Upstream fallback, background-default delegation and
+   `/implement` are deferred.
+2. Apply the change by hand to the matching files. Keep every authority seam in
+   `src/devryan/owners.ts`: no direct file, network, process, environment or
+   console access, and no new built-in MCP, updater or marketplace code.
+3. Port the upstream tests that cover the change. When a declared export
+   changes, update `index.d.ts` with it; the type check proves they agree.
+4. Record the upstream commit SHA and a one-line summary under "Ported upstream
+   commits" in `UPSTREAM.md`, and add any behaviour DevRyan keeps different to
+   its "DevRyan behaviour changes".
+5. Run `bun run validate`, then the native build and the agents-core lanes
+   (`scripts/opencode-v2-native/package-agents-core-lane.mjs`,
+   `package-agents-core-tools-lane.mjs`) before a release.

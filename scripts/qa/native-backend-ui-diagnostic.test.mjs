@@ -21,7 +21,7 @@ test('private UI pins survive the original packaged agent producer and exact nat
   const overrides = runtimeUiAgentOverrides(), legacy = runtimeUiConfiguration('http://127.0.0.1:12345/v1');
   const pinned = Object.fromEntries(Object.entries(overrides).map(([name, value]) => [name, { model: value.model, variant: value.variant }]));
   await fs.writeFile(path.join(config, 'opencode.json'), JSON.stringify(legacy));
-  await fs.writeFile(path.join(config, 'oh-my-opencode-slim.json'), JSON.stringify({ preset: 'qa', presets: { qa: pinned }, agents: pinned }));
+  await fs.writeFile(path.join(config, 'devryan-agents.json'), JSON.stringify({ preset: 'qa', presets: { qa: pinned }, agents: pinned }));
   const sidecar = path.join(config, '.openchamber/config.json');
   const read = () => JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', `
     import {listPackagedAgents} from './packages/web/server/lib/opencode/packaged-agents.js';

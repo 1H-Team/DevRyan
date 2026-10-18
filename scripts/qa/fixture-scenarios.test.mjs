@@ -46,7 +46,7 @@ for(const generation of [2]) for(const agent of ['builder','orchestrator']) test
     assert.deepEqual(settings.agentModelSelections,Object.fromEntries(['build','builder','orchestrator'].map(name => [name,{providerId:'fixture',modelId:'fixture-model',variant:'low'}])));
     assert.equal(Object.hasOwn(settings,'defaultVariant'),false);
     assert.equal(Object.hasOwn(settings,'agentVariantSelections'),false);
-    const slim=JSON.parse(await readFile(path.join(profile.env.OPENCODE_CONFIG_DIR,'oh-my-opencode-slim.json'),'utf8'));
+    const slim=JSON.parse(await readFile(path.join(profile.env.OPENCODE_CONFIG_DIR,'devryan-agents.json'),'utf8'));
     assert.equal(slim.agents.builder.model,'fixture/fixture-model');
     assert.equal(slim.agents.builder.variant,'low');
     const userConfigPath=path.join(profile.env.OPENCODE_CONFIG_DIR,'opencode.json');

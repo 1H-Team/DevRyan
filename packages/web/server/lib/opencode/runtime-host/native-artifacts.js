@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { verifySessionExecutionLauncher } from '@openchamber/harness-runtime/lib/session-execution.js';
-import { REVIEWED_AST_ASSET_SHA256 } from './reviewed-package-transforms.js';
+import { REVIEWED_AST_ASSET_SHA256 } from './reviewed-ast-asset.js';
 import { REVIEWED_CLAUDE_ASSETS, REVIEWED_CLAUDE_CREDENTIALS } from './reviewed-claude-transform.js';
 import {assertWindowsBinaryArchitecture,reviewedWindowsRuntimeAsset,readWindowsLibsqlEvidence} from './reviewed-windows-assets.js';
 import {nativeArtifactInventoryLimit,validWindowsArtifactPath,verifyWindowsGitInventory,verifyWindowsGitMetadata} from './reviewed-windows-git.js';

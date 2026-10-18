@@ -103,11 +103,3 @@ export {
   createPluginReadModel,
   registerReadonlyPluginRoutes,
 } from './plugins-readonly.js';
-
-export {
-  DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE,
-  DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC,
-  SLIM_MANAGED_VERSION,
-  createSlimSetupRuntime,
-  registerSlimSetupRoutes,
-} from './slim-install.js';

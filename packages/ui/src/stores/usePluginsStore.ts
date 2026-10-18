@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { devtools } from './utils/devtoolsGate';
 import { opencodeClient } from "@/lib/opencode/client";
 import { useProjectsStore } from "@/stores/useProjectsStore";
-import type { DevRyanDefaultPlugin, DevRyanDefaultPluginId, PluginConfigError, PluginEntry, PluginFile, PluginsListResponse, SlimSetupIssue, SlimSetupStatus } from "@/lib/api/types";
+import type { DevRyanDefaultPlugin, DevRyanDefaultPluginId, PluginConfigError, PluginEntry, PluginFile, PluginsListResponse } from "@/lib/api/types";
 
 interface PluginsStore {
   defaults: DevRyanDefaultPlugin[];
@@ -12,16 +12,9 @@ interface PluginsStore {
   selectedId: string | null;
   isLoading: boolean;
   lastError: string | null;
-  slimStatus: SlimSetupStatus | null;
-  slimStatusLoading: boolean;
-  slimActionInFlight: "install" | "repair" | null;
-  slimLastError: string | null;
 
   setSelected: (id: string | null) => void;
   loadPlugins: (options?: { refresh?: boolean }) => Promise<boolean>;
-  loadSlimStatus: () => Promise<boolean>;
-  installSlimRuntime: () => Promise<boolean>;
-  repairSlimRuntime: () => Promise<boolean>;
   getById: (id: string) => DevRyanDefaultPlugin | PluginEntry | PluginFile | undefined;
 }
 
@@ -91,7 +84,6 @@ const normalizePluginEntry = (value: unknown): PluginEntry | null => {
 
 const normalizeDefaultPluginId = (value: unknown): DevRyanDefaultPluginId | null => (
   value === "@rama_nigg/open-cursor"
-    || value === "oh-my-opencode-slim"
     || value === "opencode-with-claude"
     || value === "openai-tool-schema-sanitizer"
     ? value
@@ -185,52 +177,6 @@ const normalizePluginsResponse = (payload: unknown): PluginsListResponse => {
   };
 };
 
-const normalizeSlimIssue = (value: unknown): SlimSetupIssue | null => {
-  if (!value || typeof value !== "object") return null;
-  const candidate = value as Record<string, unknown>;
-  const code = typeof candidate.code === "string" ? candidate.code : "";
-  const message = typeof candidate.message === "string" ? candidate.message : "";
-  return code && message ? { code, message } : null;
-};
-
-const normalizeStringArray = (value: unknown): string[] => (
-  Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : []
-);
-
-const normalizeSlimStatus = (payload: unknown): SlimSetupStatus => {
-  const candidate = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
-  const wrapperStatus = candidate.wrapperStatus && typeof candidate.wrapperStatus === "object" && !Array.isArray(candidate.wrapperStatus)
-    ? candidate.wrapperStatus as Record<string, unknown>
-    : null;
-  return {
-    ok: typeof candidate.ok === "boolean" ? candidate.ok : undefined,
-    installedVersion: typeof candidate.installedVersion === "string" ? candidate.installedVersion : null,
-    configDirectory: typeof candidate.configDirectory === "string" ? candidate.configDirectory : undefined,
-    configPath: typeof candidate.configPath === "string" ? candidate.configPath : undefined,
-    slimConfigPath: typeof candidate.slimConfigPath === "string" ? candidate.slimConfigPath : undefined,
-    wrapperPath: typeof candidate.wrapperPath === "string" ? candidate.wrapperPath : undefined,
-    packageJsonPath: typeof candidate.packageJsonPath === "string" ? candidate.packageJsonPath : undefined,
-    runtimeEnabled: candidate.runtimeEnabled === true,
-    wrapperConfigured: candidate.wrapperConfigured === true,
-    wrapperStatus: wrapperStatus ? {
-      configured: wrapperStatus.configured === true,
-      wrapperRegistered: wrapperStatus.wrapperRegistered === true,
-      wrapperFileExists: wrapperStatus.wrapperFileExists === true,
-      rawRegistered: wrapperStatus.rawRegistered === true,
-      path: typeof wrapperStatus.path === "string" ? wrapperStatus.path : "",
-      spec: typeof wrapperStatus.spec === "string" ? wrapperStatus.spec : "",
-    } : undefined,
-    packageDependencyInstalled: candidate.packageDependencyInstalled === true,
-    slimConfigExists: typeof candidate.slimConfigExists === "boolean" ? candidate.slimConfigExists : undefined,
-    backgroundSubagentsEnv: typeof candidate.backgroundSubagentsEnv === "string" ? candidate.backgroundSubagentsEnv : undefined,
-    changedFiles: normalizeStringArray(candidate.changedFiles),
-    backupPaths: normalizeStringArray(candidate.backupPaths),
-    issues: Array.isArray(candidate.issues) ? candidate.issues.map(normalizeSlimIssue).filter((issue): issue is SlimSetupIssue => issue !== null) : [],
-    repair: candidate.repair === true,
-    reload: candidate.reload,
-  };
-};
-
 const buildPluginsSignature = (data: PluginsListResponse): string => {
   return JSON.stringify({
     defaults: data.defaults,
@@ -264,10 +210,6 @@ export const usePluginsStore = create<PluginsStore>()(
       selectedId: null,
       isLoading: false,
       lastError: null,
-      slimStatus: null,
-      slimStatusLoading: false,
-      slimActionInFlight: null,
-      slimLastError: null,
 
       setSelected: (id) => set({ selectedId: id }),
 
@@ -332,72 +274,6 @@ export const usePluginsStore = create<PluginsStore>()(
           return await request;
         } finally {
           pluginsLoadInFlight.delete(cacheKey);
-        }
-      },
-
-      loadSlimStatus: async () => {
-        set({ slimStatusLoading: true, slimLastError: null });
-        try {
-          const response = await fetch("/api/config/slim/status", {
-            headers: { Accept: "application/json" },
-          });
-          if (!response.ok) {
-            throw new Error("Failed to load Slim runtime status");
-          }
-          const status = normalizeSlimStatus(await response.json().catch(() => ({})));
-          set({ slimStatus: status, slimStatusLoading: false, slimLastError: null });
-          return true;
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          console.error("[PluginsStore] Failed to load Slim status:", error);
-          set({ slimStatusLoading: false, slimLastError: message });
-          return false;
-        }
-      },
-
-      installSlimRuntime: async () => {
-        set({ slimActionInFlight: "install", slimLastError: null });
-        try {
-          const response = await fetch("/api/config/slim/install", {
-            method: "POST",
-            headers: { Accept: "application/json", "Content-Type": "application/json" },
-            body: "{}",
-          });
-          if (!response.ok) {
-            throw new Error("Failed to install Slim runtime");
-          }
-          const status = normalizeSlimStatus(await response.json().catch(() => ({})));
-          set({ slimStatus: status, slimActionInFlight: null, slimLastError: null });
-          await get().loadPlugins({ refresh: true });
-          return true;
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          console.error("[PluginsStore] Failed to install Slim runtime:", error);
-          set({ slimActionInFlight: null, slimLastError: message });
-          return false;
-        }
-      },
-
-      repairSlimRuntime: async () => {
-        set({ slimActionInFlight: "repair", slimLastError: null });
-        try {
-          const response = await fetch("/api/config/slim/repair", {
-            method: "POST",
-            headers: { Accept: "application/json", "Content-Type": "application/json" },
-            body: "{}",
-          });
-          if (!response.ok) {
-            throw new Error("Failed to repair Slim runtime");
-          }
-          const status = normalizeSlimStatus(await response.json().catch(() => ({})));
-          set({ slimStatus: status, slimActionInFlight: null, slimLastError: null });
-          await get().loadPlugins({ refresh: true });
-          return true;
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          console.error("[PluginsStore] Failed to repair Slim runtime:", error);
-          set({ slimActionInFlight: null, slimLastError: message });
-          return false;
         }
       },
 

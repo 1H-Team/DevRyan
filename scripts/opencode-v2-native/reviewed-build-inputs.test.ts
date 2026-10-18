@@ -4,13 +4,13 @@ import path from 'node:path';
 import os from 'node:os';
 import {prepareReviewedNativeInputs,reviewedNativeInputPlugin,REVIEWED_PONYTAIL_MODULE} from '../native-runtime-assets.mjs';
 
-test('actual reviewed Slim static import and Ponytail builder virtual module bundle without ambient discovery',async()=>{
+test('agents-core static import and Ponytail builder virtual module bundle without ambient discovery',async()=>{
  const repository=path.resolve(import.meta.dirname,'../..');
  const inputs=await prepareReviewedNativeInputs(repository);
  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-reviewed-build-')));
  try{
   const entry=path.join(root,'entry.ts');
-  const slim=path.join(repository,'packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js');
+  const slim=path.join(repository,'packages/agents-core/src/devryan/index.ts');
   await fs.writeFile(entry,`import slim,{bindReviewedSlimHost,bindReviewedAstGrepAsset,ast_grep_search} from ${JSON.stringify(slim)};
 import instructions from ${JSON.stringify(REVIEWED_PONYTAIL_MODULE)};
 export {slim,bindReviewedSlimHost,bindReviewedAstGrepAsset,ast_grep_search,instructions};\n`);

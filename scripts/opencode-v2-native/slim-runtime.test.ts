@@ -4,7 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import {pathToFileURL} from 'node:url';
 import {renderReviewedPonytailInstructions} from '../../packages/web/server/lib/opencode/runtime-host/reviewed-ponytail-instructions.js';
-import {rewriteReviewedSlimServer} from '../../packages/web/server/lib/opencode/runtime-host/reviewed-package-transforms.js';
+import {bundleAgentsCore} from './agents-core-fixture.ts';
 
 for(const controllerComposition of [false,true])test((controllerComposition?'controller composition: ':'')+'composed pinned Slim runtime preserves two location catalogs across tool reload and disposes its native scope', async () => {
   const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-native-slim-')));
@@ -13,17 +13,13 @@ for(const controllerComposition of [false,true])test((controllerComposition?'con
     const home = path.join(root, 'home'), tmp = path.join(home, 'tmp'), config = path.join(home, 'config');
     await fs.mkdir(tmp, { recursive: true }); await fs.mkdir(config);
     await fs.writeFile(path.join(tmp, 'package.json'), '{"type":"commonjs"}');
-    await fs.writeFile(path.join(config, 'oh-my-opencode-slim.json'), JSON.stringify({ autoUpdate: false, companion: { enabled: false },
+    await fs.writeFile(path.join(config, 'devryan-agents.json'), JSON.stringify({ autoUpdate: false, companion: { enabled: false },
       backgroundJobs: { orchestratorWake: { enabled: false } }, agents: { builder: { model: 'sim/m1', variant: 'high' } } }));
     const directories = [path.join(root, 'one'), path.join(root, 'two'),path.join(root,'inactive')];
     await Promise.all(directories.map(directory => fs.mkdir(directory)));
     const host = new URL('../../packages/web/server/lib/opencode/runtime-host/', import.meta.url).href;
     const sdk = new URL('../../packages/web/node_modules/@opencode/sdk/dist/effect/index.js', import.meta.url).href;
-    const input = new URL('../../packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js', import.meta.url);
-    const transformed = rewriteReviewedSlimServer(await fs.readFile(input));
-    const reviewedEntry = path.join(root, 'reviewed-slim.mjs');
-    await fs.writeFile(reviewedEntry, transformed.contents);
-    const slim = pathToFileURL(reviewedEntry).href;
+    const slim = await bundleAgentsCore(root);
     const source = `
       import { Effect, Fiber, Layer, Logger } from 'effect';
       import { Global } from '@opencode/util/global';
@@ -158,7 +154,7 @@ for(const controllerComposition of [false,true])test((controllerComposition?'con
             yield* Effect.promise(()=>primary.admit({sessionID:contextSession.id,directory,primary:true,executionGeneration:2,body:{messageID:'msg_owneduser',agent:'orchestrator',model:{providerID:'sim',modelID:'m1'},variant:'default'}}));
             actualBoardOwner=createNativeSlimContextOwner({originals,primaryRuntime:primary,getManagedRuntime:()=>taskScheduler,locations:[{directory}],openCodeClient:{sessions:{get:async id=>{const session=await Effect.runPromise(api.sessions.get({sessionID:id}));return {id:session.id,directory:session.location.directory,parentID:session.parentID};}}},admissionOwner:{captureSessionHookAuthorization:async input=>async()=>{const current=currentNativeSlimHookAuthority();if(!current||current.permit.token!==input.permit.token||current.sessionID!==input.sessionID||current.directory!==input.directory)throw new Error('actual_board_hook_revoked');}}});
             const boardContext=yield* capturedHooks.trigger('session','context',{...actualResultEvent,messages:[contextEvent.messages[0],{...toolResult,content:[...toolResult.content,...secondResult.content]}]}).pipe(Effect.provideService(OperationPermitRef,{token:'f'.repeat(64),revision:0,sessionID:contextSession.id}));
-            if(boardContext.messages.length!==3||boardContext.messages[2].role!=='user'||boardContext.messages[2].id!=='msg_owneduser-background-job-board'||!boardContext.messages[2].content[0].text.includes('ORIGINAL TERMINAL BOARD RESULT')||Object.hasOwn(boardContext.messages[1],'id'))throw new Error('actual_original_board_insertion_lost');
+            if(boardContext.messages.length!==3||boardContext.messages[2].role!=='user'||!/^msg_owneduser-background-job-board-[0-9a-f]{8}$/.test(boardContext.messages[2].id)||!boardContext.messages[2].content[0].text.includes('ORIGINAL TERMINAL BOARD RESULT')||Object.hasOwn(boardContext.messages[1],'id'))throw new Error('actual_original_board_insertion_lost');
             if(taskScheduler.getResultEnvelope(task.taskId).promptObserved)throw new Error('board_presentation_collected_early');
             const nextUser={...contextEvent.messages[0],id:'msg_ownednext',content:[{type:'text',text:'Continue actual objective'}]};
             const secondContext=yield* capturedHooks.trigger('session','context',{...actualResultEvent,messages:[contextEvent.messages[0],{...toolResult,content:toolResult.content},nextUser]}).pipe(Effect.provideService(OperationPermitRef,{token:'f'.repeat(64),revision:0,sessionID:contextSession.id}));
@@ -248,7 +244,7 @@ for(const controllerComposition of [false,true])test((controllerComposition?'con
       const rows=result.rows;// The SDK's local catalog owners probe these exact endpoints once.
       // Fetch remains refused; no package updater or provider traffic is allowed.
       expect(result.networkCalls.map(call=>call.url).sort()).toEqual(['http://127.0.0.1:11434/api/tags','http://127.0.0.1:1234/api/v1/models','http://127.0.0.1:8000/health']);
-      expect((await fs.readdir(config)).sort()).toEqual(['oh-my-opencode-slim.json']);
+      expect((await fs.readdir(config)).sort()).toEqual(['devryan-agents.json']);
       expect(rows).toHaveLength(3);expect(result.disposals.sort()).toEqual(directories.slice(0,2).sort());expect(result.lifecycleEvents.length).toBeGreaterThan(0);expect(result.controlEvents).toEqual(['control-start','progress','control-finish']);expect(result.hookAuthorities.length).toBeGreaterThan(0);expect(result.hookAuthorities.every(value=>value.token==='f'.repeat(64)&&directories.includes(value.directory))).toBe(true);
       for (const [index, row] of rows.entries()) {
         expect(row.directory).toBe(directories[index]); if(index===2){expect(row.calls).toHaveLength(0);expect(row.lists[0]).toEqual(row.lists[1]);continue;}expect(row.agents.find(agent => agent.id === 'builder')?.model?.variant).toBe(index ? 'medium' : 'high');

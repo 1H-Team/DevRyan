@@ -6,7 +6,7 @@ import {createReviewedSlimPathHooks} from './native-slim-paths.js';
 import {createOwnedSlimInterviewBridge,type NativeSlimInterviewBridgeOwners} from './native-slim-interview-bridge.js';
 import type {ExecutionRpc} from './worker-protocol.js';
 import type {NativeSlimCommandInput,NativeSlimCommandOptions} from './native-slim-commands.js';
-import type {ReviewedSlimHook} from '../../../../runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js';
+import type {ReviewedSlimHook} from '@openchamber/agents-core';
 
 const record=(value:unknown):value is Record<string,unknown>=>!!value&&typeof value==='object'&&!Array.isArray(value);
 const fail=(code:string)=>new Error(code);

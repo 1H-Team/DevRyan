@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { formatPackagedAgentSyncConflicts } from './packaged-agent-sync.js';
 import { buildVisibleSkillPolicy } from './skill-policy.js';
-import { SLIM_REPLACED_AGENT_NAMES, resolveSlimConfig } from './slim-config.js';
+import { migrateLegacyAgentsConfig, resolveSlimConfig } from './slim-config.js';
 import { probe as probeOpenCodeRuntime, resolveExpectedOpenCodeVersion } from './readiness-probe.js';
 import { isNativeOpenCodeVersion } from './version-policy.js';
 import { readStartupBundleUpgradeFailure, readStartupBundleUpgradeDiagnostic } from './runtime-host/bundle-startup-upgrade-status.js';
@@ -82,7 +82,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     syncPackagedAgents=async()=>({changed:false}),syncRuntimeAgentOverlays=async()=>({changed:false}),
     readSettingsFromDisk=async()=>({}),
     sanitizeProjects=value=>Array.isArray(value)?value:[],sanitizeHiddenSkills=value=>Array.isArray(value)?value:[],discoverSkills=()=>[],
-    resolveSlimConfiguration=resolveSlimConfig,
+    resolveSlimConfiguration=resolveSlimConfig,migrateAgentsConfiguration=migrateLegacyAgentsConfig,
     onOpenCodeRestarted=()=>{},onStartupStatus=()=>{},assertExecutionReady=()=>{},getNativeRuntime=()=>null,getRuntimeBundle=()=>null,
     probeOpenCodeReadiness=probeOpenCodeRuntime} = deps;
   const assertNative = () => {
@@ -148,11 +148,12 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     const hiddenSkills = sanitizeHiddenSkills(settings?.hiddenSkills) || [];
     const skills = discoverSkills(resolvedWorkingDirectory);
     const skillPolicy = buildVisibleSkillPolicy({ skills, hiddenSkills });
+    // Renames the former plugin's config file once; it never throws or blocks startup.
+    migrateAgentsConfiguration();
     const slimConfig = resolveSlimConfiguration(resolvedWorkingDirectory);
     return { workingDirectory: resolvedWorkingDirectory, slimConfig, skillPolicy, packagedOptions: {
       agentOverrides: {},
       skillPolicy,
-      excludedAgentNames: slimConfig.enabled ? Array.from(SLIM_REPLACED_AGENT_NAMES) : [],
     } };
   };
   const getPackagedAgentPrompts = async () => {
@@ -213,8 +214,8 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       packaged: packagedResult ?? { changed: false, conflicts: [] },
       overlays: overlayResult ?? { changed: false, targetConfigDirectory: null },
       targetConfigDirectory: overlayResult?.targetConfigDirectory ?? null,
-      slimPreset: slimConfig.pluginEnabled && slimConfig.activePreset ? slimConfig.activePreset : null,
-      slimConfigDirectory: slimConfig.pluginEnabled ? slimConfig.configDirectory : null,
+      slimPreset: slimConfig.activePreset || null,
+      slimConfigDirectory: slimConfig.configDirectory,
       runtimeApplied: true,
       requiresReload: true,
     };

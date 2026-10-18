@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -66,10 +66,6 @@ const fixtureResponses = () => ({
     { name: 'tdd', description: 'Test first', location: `${QA_HOME}/.config/opencode/skills/tdd/SKILL.md`, content: '# TDD' },
   ],
   '/api/config/skills': { skills: [{ name: 'tdd', scope: 'user', source: 'opencode', path: '/x' }] },
-  '/api/config/slim/status': {
-    ok: true, installedVersion: '2.2.25', runtimeEnabled: true, wrapperConfigured: true, wrapperStatus: { rawRegistered: false },
-    packageDependencyInstalled: true, slimConfigExists: true, backgroundSubagentsEnv: 'true', issues: [], configPath: '/secret',
-  },
 });
 
 const createFetch = (responses = fixtureResponses(), statusOverrides = {}) => {
@@ -103,14 +99,14 @@ const assertSortedKeys = (value) => {
 test('captures a sorted, hashed manifest through GET routes with the workspace directory', async () => {
   const { fetchImpl, calls } = createFetch();
   const manifest = await capture({ fetchImpl });
-  assert.equal(manifest.schemaVersion, 1);
+  assert.equal(manifest.schemaVersion, 2);
   assert.equal(manifest.capturedAt, '2026-09-30T12:00:00.000Z');
   assert.equal(manifest.origin, '127.0.0.1:47123');
   assert.deepEqual(manifest.runtime, { expected: TARGET_OPENCODE_VERSION, observed: `${TARGET_OPENCODE_VERSION}-devryan.4`, observedBase: TARGET_OPENCODE_VERSION, source: 'host-pin' });
   assertSortedKeys(manifest);
   for (const call of calls) {
     assert.equal(call.init.method, 'GET');
-    if (call.url.pathname === '/api/health' || call.url.pathname === '/api/config/slim/status') continue;
+    if (call.url.pathname === '/api/health') continue;
     assert.equal(call.url.searchParams.get('directory'), DIRECTORY);
     assert.equal(call.init.headers['x-opencode-directory'], DIRECTORY);
   }
@@ -118,7 +114,7 @@ test('captures a sorted, hashed manifest through GET routes with the workspace d
   assert.equal(toolCall.url.searchParams.get('provider'), 'openai');
   assert.equal(toolCall.url.searchParams.get('model'), 'gpt-5.5');
 
-  const { agents, commands, toolIds, tools, mcp, skills, devryan, devryanSkills, devryanSlim } = manifest.sections;
+  const { agents, commands, toolIds, tools, mcp, skills, devryan, devryanSkills } = manifest.sections;
   assert.deepEqual(agents.data.map(agent => agent.name), ['build', 'orchestrator']);
   const orchestrator = agents.data[1];
   const normalizedPrompt = PROMPT.replace(DIRECTORY, '<directory>');
@@ -145,7 +141,7 @@ test('captures a sorted, hashed manifest through GET routes with the workspace d
   assert.equal(Object.hasOwn(devryan.data, 'openCodeVersionSuffix'), false);
   assert.deepEqual(devryan.data.executionRuntime, { code: null, state: 'active' });
   assert.deepEqual(devryanSkills.data, [{ name: 'tdd', scope: 'user', source: 'opencode' }]);
-  assert.equal(devryanSlim.data.installedVersion, '2.2.25');
+  assert.equal(manifest.sections.devryanSlim, undefined);
 });
 
 test('redacts secrets from config, MCP, health and plugin entries', async () => {
@@ -168,14 +164,10 @@ test('redacts secrets from config, MCP, health and plugin entries', async () => 
 });
 
 test('the Slim checklist confirms commands and tools from live lists and marks the rest static', async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'parity-slim-'));
-  try {
-    await mkdir(path.join(root, 'dist'));
-    await writeFile(path.join(root, 'package.json'), JSON.stringify({ name: 'oh-my-opencode-slim', version: '2.2.25' }));
-    await writeFile(path.join(root, 'dist', 'index.js'), 'export default {}');
-    const manifest = await capture({ fetchImpl: createFetch().fetchImpl, slimPackage: root, readFileImpl: readFile, qaHome: undefined });
-    const { package: slimPackage, checklist } = manifest.sections.slim.data;
-    assert.deepEqual(slimPackage, { data: { distIndexSha256: sha256('export default {}'), packageName: 'oh-my-opencode-slim', version: '2.2.25', wrapperSha256: null }, status: 'captured' });
+  {
+    const manifest = await capture({ fetchImpl: createFetch().fetchImpl, qaHome: undefined });
+    const { checklist } = manifest.sections.slim.data;
+    assert.equal(manifest.sections.slim.data.package, undefined);
     assert.equal(checklist.length, SLIM_BEHAVIOURS.length);
     assert.deepEqual(checklist.map(item => item.id), [...checklist.map(item => item.id)].sort());
     const byId = Object.fromEntries(checklist.map(item => [item.id, item]));
@@ -193,8 +185,6 @@ test('the Slim checklist confirms commands and tools from live lists and marks t
     assert.equal(byId['tool.task_status'].devryan, 'unused');
     assert.equal(byId['tool.webfetch'].devryan, 'relies');
     assert.equal(byId['hook.loop-guard'].devryan, 'relies');
-  } finally {
-    await rm(root, { recursive: true, force: true });
   }
 });
 
@@ -299,10 +289,9 @@ test('saved manifest comparison rejects missing schemas and cannot equate failed
     const valid = await capture({ fetchImpl: createFetch().fetchImpl, qaHome: undefined });
     const sink = { write: () => {} };
     for (const side of ['baseline', 'candidate', 'both']) {
-      for (const failure of ['section-error', 'section-skipped', 'nested-package-error']) {
+      for (const failure of ['section-error', 'section-skipped']) {
         const invalid = structuredClone(valid);
-        if (failure === 'nested-package-error') invalid.sections.slim.data.package = { status: 'error', reason: 'package unavailable' };
-        else invalid.sections.agents = { status: failure === 'section-error' ? 'error' : 'skipped', reason: 'capture unavailable' };
+        invalid.sections.agents = { status: failure === 'section-error' ? 'error' : 'skipped', reason: 'capture unavailable' };
         const baseline = side === 'candidate' ? valid : invalid;
         const candidate = side === 'baseline' ? valid : invalid;
         const diff = diffManifests(baseline, candidate);
@@ -312,7 +301,7 @@ test('saved manifest comparison rejects missing schemas and cannot equate failed
         assert.equal(await main(['--diff', baselineFile, '--candidate', candidateFile], { stdout: sink, stderr: sink }), 1, `${side}: ${failure}`);
       }
     }
-    for (const invalid of [{}, { ...valid, schemaVersion: 2 }, { ...valid, sections: {} },
+    for (const invalid of [{}, { ...valid, schemaVersion: 1 }, { ...valid, sections: {} },
       { ...valid, sections: { ...valid.sections, config: { status: 'captured' } } },
       { ...valid, sections: { ...valid.sections, slim: { status: 'captured', data: {} } } }]) {
       assert.throws(() => diffManifests(invalid, invalid), /parity/);
@@ -340,7 +329,7 @@ test('CLI capture writes the manifest deterministically and validates arguments'
     const first = await readFile(out, 'utf8');
     assert.equal(await main(argv, { fetchImpl: createFetch().fetchImpl, stdout: sink, stderr: sink, env, now: () => new Date(0) }), 0);
     assert.equal(await readFile(out, 'utf8'), first, 'identical input yields byte-identical output');
-    assert.equal(JSON.parse(first).sections.slim.data.package.status, 'skipped');
+    assert.ok(Array.isArray(JSON.parse(first).sections.slim.data.checklist));
     const errors = [];
     assert.equal(await main(argv, { fetchImpl: createFetch(fixtureResponses(), { '/api/agent': 503 }).fetchImpl, stdout: sink, stderr: { write: chunk => errors.push(chunk) }, env }), 1);
     assert.match(errors.join(''), /agents capture failed: HTTP 503/);

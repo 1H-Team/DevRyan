@@ -2,130 +2,6 @@
   "schema": 1,
   "inputs": [
     {
-      "id": "slim-2.2.25",
-      "version": "2.2.25",
-      "sourceKind": "repository-owned-reviewed-capture",
-      "sourceLocation": ".cache/v2-spike/research/plugin-api/tp/oh-my-opencode-slim_2.2.25/package",
-      "files": [
-        {
-          "path": "LICENSE",
-          "sha256": "06dcddbb6908a0c6dd4a9e8ec822eea41d5a460a53089fecccc8a68049e99241",
-          "size": 1056
-        },
-        {
-          "path": "dist/server/index.js",
-          "sha256": "53c162ba1a6d767e79dc5345d316baaf3b9eb7239d0492df13b6633fc35af798",
-          "size": 2452141
-        },
-        {
-          "path": "package.json",
-          "sha256": "ba873f892f60fb3e75afe7a891669317fd039fe41e058698a6a34db8397e5d08",
-          "size": 5110
-        },
-        {
-          "path": "src/companion/companion-manifest.json",
-          "sha256": "dfbb3f19c521e3131f0df7836e07b7825a4637c902f3860e13fce7ec0fb8652c",
-          "size": 827
-        },
-        {
-          "path": "src/skills/clonedeps/README.md",
-          "sha256": "b1a701f9459a7c25cdc55178d04844ad707ecaa4d0bf48801e3da42a3c9f46b4",
-          "size": 1128
-        },
-        {
-          "path": "src/skills/clonedeps/SKILL.md",
-          "sha256": "8e7a0ef28cccd2c54a6e091f470d41c6be3a0ef3a0e9414d06912b3a4d845a48",
-          "size": 8697
-        },
-        {
-          "path": "src/skills/clonedeps/codemap.md",
-          "sha256": "25329a65dcafdd4108be1a6b993489a2a2ff91e7561ca1b2fa3b4c064b695fcd",
-          "size": 2890
-        },
-        {
-          "path": "src/skills/codemap/README.md",
-          "sha256": "fab8e2159592b290b5615f2b234082f5c1d4283a538df9f9542afa841c76fa0b",
-          "size": 1275
-        },
-        {
-          "path": "src/skills/codemap/SKILL.md",
-          "sha256": "3befad8d7c35ec7d33de663588b5b1a394179d79ca3bd8ec8c029597f5853e0c",
-          "size": 6812
-        },
-        {
-          "path": "src/skills/codemap/codemap.md",
-          "sha256": "0e5298c0d4f931a93bb6da06d2211d9a8635d4a0396f3b6b8d8651907b690450",
-          "size": 2509
-        },
-        {
-          "path": "src/skills/codemap/scripts/codemap.mjs",
-          "sha256": "a6e59ec16f7b7e5de185a9cf35933c23e94dfaab3389a99eed66a7ece3c1fdb5",
-          "size": 12616
-        },
-        {
-          "path": "src/skills/codemap/scripts/codemap.test.ts",
-          "sha256": "bd94813c7545a1fe0fa46f2c8967cb7b3d8531b78e7ff313d923cabad996d569",
-          "size": 3625
-        },
-        {
-          "path": "src/skills/codemap.md",
-          "sha256": "3120ed092fc8d06766037ac031a9e5d170376d7e7febb9db3a559bdb0a986381",
-          "size": 4444
-        },
-        {
-          "path": "src/skills/deepwork/SKILL.md",
-          "sha256": "1f840df7be35fb33e87a14e63892ada09c0d71264e544c48ad95f27656326ef3",
-          "size": 6237
-        },
-        {
-          "path": "src/skills/loop-engineering/SKILL.md",
-          "sha256": "551b298be29aa9603d0572ebb0b4ffcf6c873c692a49ba1106b373ab806192b6",
-          "size": 1418
-        },
-        {
-          "path": "src/skills/oh-my-opencode-slim/SKILL.md",
-          "sha256": "0d8bacdd5f00b6ad33b5b43f376bce08314b86c97889c7ee12e6f33722b0fdf3",
-          "size": 11708
-        },
-        {
-          "path": "src/skills/reflect/SKILL.md",
-          "sha256": "3e7edc3d65599b3d0ec7ceea768f086be734ce6edcea9cc7a7166986ae227dbb",
-          "size": 11603
-        },
-        {
-          "path": "src/skills/simplify/README.md",
-          "sha256": "30e479208ff37a348388284f434fde6b9ca9cbf704c56f21781b6175021cc7ad",
-          "size": 578
-        },
-        {
-          "path": "src/skills/simplify/SKILL.md",
-          "sha256": "29e126c20e8310fad21bd0db5fe4225c88538aa8585b1efbc9726a684643cf10",
-          "size": 4809
-        },
-        {
-          "path": "src/skills/simplify/codemap.md",
-          "sha256": "1294ff736984194660510db9ff1e288f0abf72f1b8569db16a505c39587267e7",
-          "size": 2022
-        },
-        {
-          "path": "src/skills/verification-planning/SKILL.md",
-          "sha256": "7d2f4db38901c82a2884284805ebe4105b813933ba5cdca572acfed5b92e83c5",
-          "size": 4584
-        },
-        {
-          "path": "src/skills/worktrees/SKILL.md",
-          "sha256": "09c9b694ff3450e96d078ff687f25dae6238202972fdc62a6769605531bc22f6",
-          "size": 6376
-        }
-      ],
-      "closureSHA256": "76120d694052108fd0fd7e0ce9ef13e6f9270f8e6c659747efc364db8400bcfc",
-      "license": {
-        "declared": "MIT",
-        "path": "LICENSE",
-        "sha256": "06dcddbb6908a0c6dd4a9e8ec822eea41d5a460a53089fecccc8a68049e99241"
-      }
-    },
-    {
       "id": "ponytail-4.10.0",
       "version": "4.10.0",
       "sourceKind": "repository-owned-reviewed-capture",
@@ -6979,14 +6855,8 @@
       ]
     }
   ],
-  "transforms": {
-    "module": "packages/web/server/lib/opencode/runtime-host/reviewed-package-transforms.js",
-    "entry": "rewriteReviewedSlimServer",
-    "sourceSHA256": "53c162ba1a6d767e79dc5345d316baaf3b9eb7239d0492df13b6633fc35af798",
-    "outputEvidence": "original/output hashes are returned for every exact build transformation"
-  },
   "runtimeDisposition": {
-    "Slim": "Static native setup import with constructor-frozen data, allowlisted registrations and owned invocation routing. Original AST definitions and formatters exported only for the confined worker.",
+    "AgentsCore": "Built-in @openchamber/agents-core (owned source derived from Oh My OpenCode Slim v3.0.4) compiled from the workspace. Static native setup import with constructor-frozen data, allowlisted registrations and owned invocation routing. AST definitions and formatters run only in the confined worker.",
     "Ponytail": "Exact shared builder instructions embedded at build; existing selected state file accessed by the host-owned command adapter. Ambient plugin retained as inactive original data.",
     "AST": "Only branded captured platform executable, manifest-verified by host and bound inside private-view worker. No PATH/download fallback."
   },

@@ -13,7 +13,7 @@ for(const {scenario,slim,compiled,setter} of cases)test('pinned 2.0.32 native st
   const replace=(before:string,after:string)=>{if(source.split(before).length!==2)throw Error('Native graph fixture changed: '+before);source=source.replace(before,after);};
   source=`import {createNativeObservation} from ${JSON.stringify(path.join(repository,'packages/web/server/lib/opencode/runtime-host/native-observation.ts'))};
 import {createControllerWebfetch} from ${JSON.stringify(path.join(repository,'packages/web/server/lib/opencode/runtime-host/controller-webfetch.ts'))};
-import * as helperOriginals from ${JSON.stringify(path.join(repository,'packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js'))};
+import * as helperOriginals from ${JSON.stringify(path.join(repository,'packages/agents-core/src/devryan/index.ts'))};
 import {createNativeStreamContinuationOwner} from ${JSON.stringify(path.join(repository,'packages/web/server/lib/opencode/runtime-host/native-stream-continuation-owner.js'))};
 import {createNativePlanDenialOwner} from ${JSON.stringify(path.join(repository,'packages/web/server/lib/opencode/runtime-host/native-plan-denial-owner.js'))};
 import {createPrimaryRecoveryHost} from ${JSON.stringify(path.join(repository,'packages/harness-runtime/lib/provider-recovery-host.js'))};
@@ -54,7 +54,7 @@ import {primaryStepOverride} from ${JSON.stringify(path.join(repository,'package
    source=`import {createControllerSlim} from ${JSON.stringify(path.join(host,'controller-slim.ts'))};
 import {createNativeSlimOwner} from ${JSON.stringify(path.join(host,'native-slim-owner.js'))};
 import {createNativeSlimContextOwner} from ${JSON.stringify(path.join(host,'native-slim-context-owner.js'))};
-import * as originals from ${JSON.stringify(path.join(repository,'packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js'))};
+import * as originals from ${JSON.stringify(path.join(repository,'packages/agents-core/src/devryan/index.ts'))};
 `+source;
    replace('const runtime = createSessionMutationRuntime(',`for(const row of snapshot.locations)row.compatibility.slim={mergedConfig:{autoUpdate:false,companion:{enabled:false},backgroundJobs:{orchestratorWake:{enabled:false}},webfetch:{enabled:false}},nativeRuntime:{runtimeChains:{},fallback:{enabled:false}}};
 const runtime = createSessionMutationRuntime(`);

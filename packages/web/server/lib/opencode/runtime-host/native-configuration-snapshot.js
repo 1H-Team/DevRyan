@@ -10,6 +10,7 @@ import { captureNativeTextSettings, verifyNativeTextSettings } from './native-te
 import {configuredNativeSkillDirectories,discoverConfiguredNativeSkills} from './native-configured-skills.js';
 import { isRetiredDevRyanPluginSpec } from '../managed-plugins.js';
 import { buildRuntimeHelperAgents } from '../runtime-helper-agents.js';
+import { NATIVE_CORE_REGISTRATION_IDS } from './native-core-registrations.js';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const fail = code => Object.assign(new Error(code), { code, status: 503 });
@@ -134,7 +135,8 @@ export function createNativeConfigurationSnapshotResolver({ loadLocation = loadC
       // upgraded setup still lists) load nothing; they are ignored, not rejected.
       const activePlugins = specs.map(pluginSpec).filter(spec => !isRetiredDevRyanPluginSpec(spec));
       if (activePlugins.some(spec => !spec || !registrations.plugins.some(origin => origin.legacySpecs?.includes(spec)))) throw fail('native_plugin_registration_unreviewed');
-      const activeRegistrationIDs=registrations.plugins.filter(origin=>origin.legacySpecs?.some(spec=>activePlugins.includes(spec))).map(origin=>origin.id);
+      // Built-in agent orchestration is always active; it has no plugin spec to list.
+      const activeRegistrationIDs=registrations.plugins.filter(origin=>NATIVE_CORE_REGISTRATION_IDS.includes(origin.id)||origin.legacySpecs?.some(spec=>activePlugins.includes(spec))).map(origin=>origin.id);
       if(activeRegistrationIDs.some(id=>typeof id!=='string')||new Set(activeRegistrationIDs).size!==activeRegistrationIDs.length)throw fail('native_registration_revision_mismatch');
       if(activeRegistrationIDs.includes('devryan.ponytail')){
         if(!ponytailCommands||typeof ponytailCommands!=='object'||Array.isArray(ponytailCommands)||Object.keys(ponytailCommands).length!==6)throw fail('native_ponytail_commands_owner_required');
@@ -146,7 +148,7 @@ export function createNativeConfigurationSnapshotResolver({ loadLocation = loadC
       }
       const allowedRoots = [directory, launch.opencodeConfigDirectory, launch.global.home];
       for (const source of policy.skillSources ?? []) {
-        if (!registrations.plugins.some(origin => origin.id === source.pluginID && origin.legacySpecs?.some(spec => activePlugins.includes(spec)))) continue;
+        if (!activeRegistrationIDs.includes(source.pluginID)) continue;
         // Additional package data roots must be part of immutable reviewed
         // evidence. They do not become generic native read roots.
         allowedRoots.push(source.directory);
@@ -159,7 +161,7 @@ export function createNativeConfigurationSnapshotResolver({ loadLocation = loadC
         if (skills.some(value => value.id === captured.id)) continue;
         skills.push(captured);
       }
-      const activeSlim=registrations.plugins.some(origin=>origin.id==='devryan.slim'&&origin.legacySpecs?.some(spec=>activePlugins.includes(spec)));
+      const activeSlim=activeRegistrationIDs.includes('devryan.slim');
       if(activeSlim&&typeof resolveSlimAgents!=='function')throw fail('native_slim_configuration_owner_required');
       const textSettings = await captureNativeTextSettings({loaded,directory,launch,captureSlimPrompts:activeSlim});
       if(activeSlim){

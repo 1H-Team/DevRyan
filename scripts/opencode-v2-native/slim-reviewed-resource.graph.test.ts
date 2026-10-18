@@ -19,7 +19,7 @@ test('actual Slim rescue retains native permission and reads only the exact revi
 import {createExecutionRouting} from ${JSON.stringify(path.join(host,'execution-routing.ts'))};
 import {createNativeSlimOwner} from ${JSON.stringify(path.join(host,'native-slim-owner.js'))};
 import {captureReviewedSkill} from ${JSON.stringify(path.join(host,'reviewed-skills.js'))};
-import * as originals from ${JSON.stringify(path.join(repository,'packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js'))};
+import * as originals from ${JSON.stringify(path.join(repository,'packages/agents-core/src/devryan/index.ts'))};
 `+source;
   replace('let nativeURL, ready = false, handler, map,',`let slimOwner;let servedRead=false;const stages=[];let nativeURL, ready = false, handler, map,`);
   replace('const runtime = createSessionMutationRuntime(',`const skillRoot=path.join(globals.home,'private-skill');await fs.mkdir(skillRoot);const skillFile=path.join(skillRoot,'SKILL.md'),support=path.join(skillRoot,'support.txt');await fs.writeFile(skillFile,'# Reviewed body');await fs.writeFile(support,'EXACT REVIEWED SUPPORT BYTES\\n');

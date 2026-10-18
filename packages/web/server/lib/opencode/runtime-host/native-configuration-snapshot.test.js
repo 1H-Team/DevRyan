@@ -336,9 +336,11 @@ it('preserves ordered skill effects via stable IDs and actual native wildcard ru
 
 it('captures original Slim prompt inputs before the shared snapshot digest and refuses a missing compiled resolver',async()=>{
  const f=await fixture(),launch=f.input.binding.descriptor.launch;
- const manifest=JSON.stringify({schema:1,plugins:[{id:'devryan.slim',legacySpecs:['oh-my-opencode-slim@2.2.25']}]});
+ // Built-in agent orchestration: active without any plugin entry; the retired
+ // adapter an upgraded setup still lists is ignored.
+ const manifest=JSON.stringify({schema:1,plugins:[{id:'devryan.slim',legacySpecs:[]}]});
  await fs.writeFile(launch.reviewedPluginManifestPath,manifest);f.input.expectedRegistrationDigest=createHash('sha256').update(manifest).digest('hex');
- f.loaded.legacy.plugin=['oh-my-opencode-slim@2.2.25'];f.loaded.slim={mergedConfig:{preset:'saved',agents:{builder:{model:'openai/model'}}},activePreset:'saved'};
+ f.loaded.legacy.plugin=['./plugins/devryan-oh-my-opencode-slim.mjs'];f.loaded.slim={mergedConfig:{preset:'saved',agents:{builder:{model:'openai/model'}}},activePreset:'saved'};
  await fs.mkdir(path.join(f.directory,'.opencode','prompts','saved'),{recursive:true});await fs.mkdir(path.join(launch.opencodeConfigDirectory,'prompts'),{recursive:true});
  await fs.writeFile(path.join(f.directory,'.opencode','prompts','saved','builder.md'),'EXACT PROJECT PROMPT\n');
  await fs.writeFile(path.join(launch.opencodeConfigDirectory,'prompts','builder.md'),'USER PROMPT\n');await fs.writeFile(path.join(launch.opencodeConfigDirectory,'prompts','builder_append.md'),'EXACT USER APPEND\n');
@@ -346,7 +348,8 @@ it('captures original Slim prompt inputs before the shared snapshot digest and r
  let captured;const resolver=createNativeConfigurationSnapshotResolver({loadLocation:async()=>({...structuredClone({...f.loaded,parseMarkdown:undefined}),parseMarkdown:f.loaded.parseMarkdown}),resolveSlimAgents:input=>{
   captured=input;return {agents:{...input.hostConfiguration.agent,builtin:{model:'openai/model',prompt:'ORIGINAL BUILTIN PROMPT\n'}},defaultAgent:'builder',backgroundJobs:{strategy:'checkpoint-compatible',maxRetainedSnapshots:2,readContextMaxFiles:3}};
  }});
- const first=await resolver(f.input);expect(first.locations[0].compatibility.slim.nativeRuntime.backgroundJobs).toEqual({strategy:'checkpoint-compatible',maxRetainedSnapshots:2,readContextMaxFiles:3});expect(captured.prompts.builder).toEqual({prompt:'EXACT PROJECT PROMPT\n',appendPrompt:'EXACT USER APPEND\n'});
+ const first=await resolver(f.input);expect(first.locations[0].activePlugins).toEqual([]);expect(first.locations[0].activeRegistrationIDs).toEqual(['devryan.slim']);
+ expect(first.locations[0].compatibility.slim.nativeRuntime.backgroundJobs).toEqual({strategy:'checkpoint-compatible',maxRetainedSnapshots:2,readContextMaxFiles:3});expect(captured.prompts.builder).toEqual({prompt:'EXACT PROJECT PROMPT\n',appendPrompt:'EXACT USER APPEND\n'});
  expect(captured.hostConfiguration.agent.builder.prompt).toBe('saved prompt\n');expect(captured.localSkills).toEqual(['fixture']);
  expect(first.locations[0].configuration.agents.builtin.system).toBe('ORIGINAL BUILTIN PROMPT\n');expect(first.locations[0].compatibility.agents.builtin.prompt).toBe('ORIGINAL BUILTIN PROMPT\n');
  expect(first.locations[0].textReferences.map(value=>value.content)).toEqual(['EXACT PROJECT PROMPT\n','EXACT USER APPEND\n']);
@@ -356,7 +359,7 @@ it('captures original Slim prompt inputs before the shared snapshot digest and r
 
 it('uses exact per-location active registrations and original Ponytail command overwrite precedence',async()=>{
  const f=await fixture(),launch=f.input.binding.descriptor.launch;
- const manifest=JSON.stringify({schema:1,plugins:[{id:'devryan.ponytail',legacySpecs:['@dietrichgebert/ponytail']},{id:'devryan.slim',legacySpecs:['oh-my-opencode-slim@2.2.25']}]});
+ const manifest=JSON.stringify({schema:1,plugins:[{id:'devryan.ponytail',legacySpecs:['@dietrichgebert/ponytail']},{id:'devryan.document-reader',legacySpecs:['./plugins/devryan-document-reader.mjs']}]});
  await fs.writeFile(launch.reviewedPluginManifestPath,manifest);f.input.expectedRegistrationDigest=createHash('sha256').update(manifest).digest('hex');f.loaded.legacy.plugin=['@dietrichgebert/ponytail'];f.loaded.commands.ponytail={template:'saved override'};
  const {renderReviewedPonytailInstructions}=await import('./reviewed-ponytail-instructions.js'),{commands}=await renderReviewedPonytailInstructions();
  const loadLocation=async()=>({...structuredClone({...f.loaded,parseMarkdown:undefined}),parseMarkdown:f.loaded.parseMarkdown});

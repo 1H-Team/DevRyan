@@ -17,7 +17,6 @@ import {
   writeAgentBackupModel,
   writeAgentModelOverride,
 } from './agents.js';
-import { DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC } from './slim-config.js';
 import { registerConfigEntityRoutes, sanitizeAgentRuntimeMetadata } from './config-entity-routes.js';
 
 describe('restricted agent runtime metadata', () => {
@@ -276,7 +275,7 @@ describe('agent overrides listing route', () => {
     options = {
       userConfigPath,
       slimConfigDirectory: path.dirname(userConfigPath),
-      readOpenCodeConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
+      readOpenCodeConfig: () => ({ plugin: [] }),
       env: {},
     };
     await writeJson(path.join(path.dirname(userConfigPath), '.openchamber', 'config.json'), {

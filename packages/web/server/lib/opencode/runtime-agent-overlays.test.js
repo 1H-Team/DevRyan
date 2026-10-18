@@ -11,7 +11,9 @@ import * as authModule from './auth.js';
 import { GITHUB_COPILOT_AUTO_MODEL } from './github-copilot-models.js';
 import { syncRuntimeAgentOverlays } from './runtime-agent-overlays.js';
 import { listRuntimePluginAssets } from './default-config-assets.js';
-import { DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE, DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC } from './slim-config.js';
+// A packaged local plugin; any bundled-file adapter behaves the same.
+const LOCAL_PLUGIN_FILE = 'devryan-example-adapter.mjs';
+const LOCAL_PLUGIN_SPEC = `./plugins/${LOCAL_PLUGIN_FILE}`;
 
 const writeAgent = async (agentDirectory, name, frontmatterLines, prompt) => {
   await fs.mkdir(agentDirectory, { recursive: true });
@@ -517,7 +519,7 @@ describe('syncRuntimeAgentOverlays', () => {
 
   it('copies the active Slim config into the managed overlay config directory', async () => {
     const opencodeConfigDirectory = path.join(tempRoot, 'opencode-config');
-    const slimConfigPath = path.join(opencodeConfigDirectory, 'oh-my-opencode-slim.json');
+    const slimConfigPath = path.join(opencodeConfigDirectory, 'devryan-agents.json');
     const slimConfig = {
       preset: 'openai',
       presets: {
@@ -540,7 +542,7 @@ describe('syncRuntimeAgentOverlays', () => {
       readOpenCodeConfig: () => ({ plugin: ['oh-my-opencode-slim'] }),
     });
 
-    await expect(fs.readFile(path.join(result.targetConfigDirectory, 'oh-my-opencode-slim.json'), 'utf8'))
+    await expect(fs.readFile(path.join(result.targetConfigDirectory, 'devryan-agents.json'), 'utf8'))
       .resolves.toBe(`${JSON.stringify({ ...slimConfig, fallback: { enabled: false } }, null, 2)}\n`);
     await expect(fs.readFile(path.join(result.targetConfigDirectory, 'opencode.json'), 'utf8'))
       .resolves.not.toContain('oh-my-opencode-slim');
@@ -549,7 +551,7 @@ describe('syncRuntimeAgentOverlays', () => {
 
   it('disables Slim foreground fallback in the managed overlay while preserving model chains', async () => {
     const opencodeConfigDirectory = path.join(tempRoot, 'opencode-config');
-    const slimConfigPath = path.join(opencodeConfigDirectory, 'oh-my-opencode-slim.jsonc');
+    const slimConfigPath = path.join(opencodeConfigDirectory, 'devryan-agents.jsonc');
     const slimConfig = {
       agents: {
         fixer: { model: ['openai/gpt-5.5', { id: 'opencode-go/glm-5.1', variant: 'high' }] },
@@ -568,12 +570,12 @@ describe('syncRuntimeAgentOverlays', () => {
       overlayRoot,
       manifestPath,
       slimConfigDirectory: opencodeConfigDirectory,
-      readConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
-      readOpenCodeConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
+      readConfig: () => ({ plugin: [LOCAL_PLUGIN_SPEC] }),
+      readOpenCodeConfig: () => ({ plugin: [LOCAL_PLUGIN_SPEC] }),
     };
 
     const result = await syncRuntimeAgentOverlays(syncOptions);
-    const overlayPath = path.join(result.targetConfigDirectory, 'oh-my-opencode-slim.jsonc');
+    const overlayPath = path.join(result.targetConfigDirectory, 'devryan-agents.json');
     const overlay = JSON.parse(await fs.readFile(overlayPath, 'utf8'));
 
     expect(result.slimConfigPath).toBe(overlayPath);
@@ -599,50 +601,42 @@ describe('syncRuntimeAgentOverlays', () => {
       overlayRoot,
       manifestPath,
       slimConfigDirectory: opencodeConfigDirectory,
-      readConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
-      readOpenCodeConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
+      readConfig: () => ({ plugin: [LOCAL_PLUGIN_SPEC] }),
+      readOpenCodeConfig: () => ({ plugin: [LOCAL_PLUGIN_SPEC] }),
     });
 
-    const overlayPath = path.join(result.targetConfigDirectory, 'oh-my-opencode-slim.json');
+    const overlayPath = path.join(result.targetConfigDirectory, 'devryan-agents.json');
     expect(result.slimConfigWritten).toBe(true);
     expect(result.slimConfigPath).toBe(overlayPath);
     await expect(fs.readFile(overlayPath, 'utf8'))
       .resolves.toBe(`${JSON.stringify({ fallback: { enabled: false } }, null, 2)}\n`);
   });
 
-  it('removes the Slim overlay when Slim is not active', async () => {
+  it('writes the Slim overlay with no plugin registration because the orchestration is built in', async () => {
     const opencodeConfigDirectory = path.join(tempRoot, 'opencode-config');
-    await writeJson(path.join(opencodeConfigDirectory, 'oh-my-opencode-slim.json'), { preset: 'openai' });
-    const syncOptions = {
+    await writeJson(path.join(opencodeConfigDirectory, 'devryan-agents.json'), { preset: 'openai' });
+    const result = await syncRuntimeAgentOverlays({
       workingDirectory: projectDirectory,
       packagedAgentDirectory,
       packagedPluginDirectory,
       overlayRoot,
       manifestPath,
       slimConfigDirectory: opencodeConfigDirectory,
-      readConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
-      readOpenCodeConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
-    };
-    const active = await syncRuntimeAgentOverlays(syncOptions);
-    expect(active.slimConfigWritten).toBe(true);
-
-    const inactive = await syncRuntimeAgentOverlays({
-      ...syncOptions,
       readConfig: () => ({ plugin: [] }),
       readOpenCodeConfig: () => ({ plugin: [] }),
     });
-    expect(inactive.slimConfigRemoved).toBe(true);
-    expect(inactive.slimConfigPath).toBeNull();
-    expect(fsSync.existsSync(path.join(inactive.targetConfigDirectory, 'oh-my-opencode-slim.json'))).toBe(false);
+    expect(result.slimConfigWritten).toBe(true);
+    await expect(fs.readFile(path.join(result.targetConfigDirectory, 'devryan-agents.json'), 'utf8'))
+      .resolves.toBe(`${JSON.stringify({ preset: 'openai', fallback: { enabled: false } }, null, 2)}\n`);
   });
 
   it('materializes wrapper-mode Slim model saves into managed agent overlays', async () => {
     const opencodeConfigDirectory = path.join(tempRoot, 'opencode-config');
     const userConfigPath = path.join(opencodeConfigDirectory, 'opencode.json');
-    const slimConfigPath = path.join(opencodeConfigDirectory, 'oh-my-opencode-slim.json');
+    const slimConfigPath = path.join(opencodeConfigDirectory, 'devryan-agents.json');
     const wrapperSource = 'export default async function wrapper() { return {}; }\n';
     await writeJson(userConfigPath, {
-      plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC],
+      plugin: [LOCAL_PLUGIN_SPEC],
     });
     await writeJson(slimConfigPath, {
       preset: 'openai',
@@ -660,7 +654,7 @@ describe('syncRuntimeAgentOverlays', () => {
       'variant: medium',
     ], 'Packaged DevRyan fixer prompt');
     await fs.mkdir(packagedPluginDirectory, { recursive: true });
-    await fs.writeFile(path.join(packagedPluginDirectory, DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE), wrapperSource, 'utf8');
+    await fs.writeFile(path.join(packagedPluginDirectory, LOCAL_PLUGIN_FILE), wrapperSource, 'utf8');
 
     writeAgentModelOverride(
       'fixer',
@@ -680,8 +674,8 @@ describe('syncRuntimeAgentOverlays', () => {
       manifestPath,
       userConfigPath,
       slimConfigDirectory: opencodeConfigDirectory,
-      readConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
-      readOpenCodeConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
+      readConfig: () => ({ plugin: [LOCAL_PLUGIN_SPEC] }),
+      readOpenCodeConfig: () => ({ plugin: [LOCAL_PLUGIN_SPEC] }),
       skillPolicy: {
         skillNames: [],
         skillDirectories: [],
@@ -691,9 +685,9 @@ describe('syncRuntimeAgentOverlays', () => {
 
     const overlayConfig = JSON.parse(await fs.readFile(path.join(result.targetConfigDirectory, 'opencode.json'), 'utf8'));
     const overlay = await readOverlayAgent(result.targetConfigDirectory, 'fixer');
-    await expect(fs.readFile(path.join(result.targetConfigDirectory, 'oh-my-opencode-slim.json'), 'utf8'))
+    await expect(fs.readFile(path.join(result.targetConfigDirectory, 'devryan-agents.json'), 'utf8'))
       .resolves.toContain('"preset": "openai"');
-    await expect(fs.readFile(path.join(result.targetConfigDirectory, 'plugins', DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE), 'utf8'))
+    await expect(fs.readFile(path.join(result.targetConfigDirectory, 'plugins', LOCAL_PLUGIN_FILE), 'utf8'))
       .resolves.toBe(wrapperSource);
     expect(overlayConfig.plugin).toBeUndefined();
     expect(overlay.prompt).toBe('Packaged DevRyan fixer prompt');
@@ -706,9 +700,9 @@ describe('syncRuntimeAgentOverlays', () => {
     const opencodeConfigDirectory = path.join(tempRoot, 'opencode-config');
     const userConfigPath = path.join(opencodeConfigDirectory, 'opencode.json');
     await writeJson(userConfigPath, {
-      plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC],
+      plugin: [LOCAL_PLUGIN_SPEC],
     });
-    await writeJson(path.join(opencodeConfigDirectory, 'oh-my-opencode-slim.json'), {
+    await writeJson(path.join(opencodeConfigDirectory, 'devryan-agents.json'), {
       preset: 'openai',
       presets: {
         openai: {
@@ -734,8 +728,8 @@ describe('syncRuntimeAgentOverlays', () => {
       manifestPath,
       userConfigPath,
       slimConfigDirectory: opencodeConfigDirectory,
-      readConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
-      readOpenCodeConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
+      readConfig: () => ({ plugin: [LOCAL_PLUGIN_SPEC] }),
+      readOpenCodeConfig: () => ({ plugin: [LOCAL_PLUGIN_SPEC] }),
       skillPolicy: {
         skillNames: [],
         skillDirectories: [],
@@ -769,9 +763,9 @@ describe('syncRuntimeAgentOverlays', () => {
     const opencodeConfigDirectory = path.join(tempRoot, 'opencode-config');
     const userConfigPath = path.join(opencodeConfigDirectory, 'opencode.json');
     await writeJson(userConfigPath, {
-      plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC],
+      plugin: [LOCAL_PLUGIN_SPEC],
     });
-    await writeJson(path.join(opencodeConfigDirectory, 'oh-my-opencode-slim.json'), {
+    await writeJson(path.join(opencodeConfigDirectory, 'devryan-agents.json'), {
       preset: 'openai',
       presets: {
         openai: {
@@ -803,8 +797,8 @@ describe('syncRuntimeAgentOverlays', () => {
       manifestPath,
       userConfigPath,
       slimConfigDirectory: opencodeConfigDirectory,
-      readConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
-      readOpenCodeConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
+      readConfig: () => ({ plugin: [LOCAL_PLUGIN_SPEC] }),
+      readOpenCodeConfig: () => ({ plugin: [LOCAL_PLUGIN_SPEC] }),
       skillPolicy: {
         skillNames: [],
         skillDirectories: [],
@@ -1539,13 +1533,13 @@ describe('syncRuntimeAgentOverlays', () => {
     const wrapperSource = 'export default async function wrapper() { return {}; }\n';
     await fs.mkdir(packagedPluginDirectory, { recursive: true });
     await fs.writeFile(
-      path.join(packagedPluginDirectory, DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE),
+      path.join(packagedPluginDirectory, LOCAL_PLUGIN_FILE),
       wrapperSource,
       'utf8',
     );
 
     let activeConfig = {
-      plugin: ['cursor-acp', DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC],
+      plugin: ['cursor-acp', LOCAL_PLUGIN_SPEC],
     };
     const syncOptions = {
       workingDirectory: projectDirectory,
@@ -1564,7 +1558,7 @@ describe('syncRuntimeAgentOverlays', () => {
     );
     expect(sourceOwnedConfig.plugin).toBeUndefined();
     await expect(fs.readFile(
-      path.join(sourceOwned.targetPluginDirectory, DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE),
+      path.join(sourceOwned.targetPluginDirectory, LOCAL_PLUGIN_FILE),
       'utf8',
     )).resolves.toBe(wrapperSource);
 
@@ -1574,7 +1568,7 @@ describe('syncRuntimeAgentOverlays', () => {
       await fs.readFile(path.join(packagedFallback.targetConfigDirectory, 'opencode.json'), 'utf8'),
     );
     expect(packagedFallbackConfig.plugin).toEqual([
-      DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC,
+      LOCAL_PLUGIN_SPEC,
     ]);
   });
 
@@ -1582,7 +1576,7 @@ describe('syncRuntimeAgentOverlays', () => {
     const wrapperSource = 'export default async function wrapper() { return {}; }\n';
     await fs.mkdir(packagedPluginDirectory, { recursive: true });
     await fs.writeFile(
-      path.join(packagedPluginDirectory, DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE),
+      path.join(packagedPluginDirectory, LOCAL_PLUGIN_FILE),
       wrapperSource,
       'utf8',
     );
@@ -1595,7 +1589,7 @@ describe('syncRuntimeAgentOverlays', () => {
       manifestPath,
       readConfig: () => ({ plugin: ['context-mode@1.0.169'] }),
       readSourcePluginConfigs: () => [{
-        plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC],
+        plugin: [LOCAL_PLUGIN_SPEC],
       }],
       readOpenCodeConfig: () => ({}),
       listMcpConfigs: () => [],
@@ -1606,7 +1600,7 @@ describe('syncRuntimeAgentOverlays', () => {
 
     expect(runtimeConfig.plugin).toBeUndefined();
     await expect(fs.readFile(
-      path.join(result.targetPluginDirectory, DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE),
+      path.join(result.targetPluginDirectory, LOCAL_PLUGIN_FILE),
       'utf8',
     )).resolves.toBe(wrapperSource);
   });

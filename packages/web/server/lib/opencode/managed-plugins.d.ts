@@ -2,7 +2,6 @@ export type DevRyanManagedPluginId =
   | '@rama_nigg/open-cursor'
   | 'opencode-with-claude'
   | 'opencode-gpt-imagegen'
-  | 'oh-my-opencode-slim'
   | 'devryan-skill-context'
   | 'devryan-document-reader'
   | 'openai-tool-schema-sanitizer';
