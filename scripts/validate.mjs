@@ -82,6 +82,11 @@ const packages = {
     prefix: 'packages/harness-runtime/',
     test: ['bun', ['test', 'packages/harness-runtime']],
   },
+  agentsCore: {
+    prefix: 'packages/agents-core/',
+    typeCheck: ['bun', ['run', '--cwd', 'packages/agents-core', 'type-check']],
+    test: ['bun', ['run', '--cwd', 'packages/agents-core', 'test']],
+  },
 };
 
 // Shared configuration: a change re-checks lint and types everywhere.
@@ -261,6 +266,7 @@ function affectedTypeCheckPackages(changedPackages, includeDependents) {
   if (includeDependents && changedPackages.has('harness')) {
     result.add('web');
   }
+  if (includeDependents && changedPackages.has('agentsCore')) result.add('web');
   return result;
 }
 
@@ -319,6 +325,7 @@ function affectedTests(files) {
   if (tests.has('orchestration')) ['ui', 'web'].forEach((name) => tests.add(name));
   if (tests.has('shared')) tests.add('web');
   if (tests.has('harness')) tests.add('web');
+  if (tests.has('agentsCore')) tests.add('web');
   return tests;
 }
 

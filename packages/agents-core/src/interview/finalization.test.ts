@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import type { InterviewSessionRuntime } from './runtime';
-import { createInterviewService } from './service';
+import { createInterviewService } from './test-service';
 import type { InterviewMessage } from './types';
 
 describe('interview finalization', () => {

@@ -1,26 +1,54 @@
+// DevRyan: the interview service, documents and HTTP surface are owned by the
+// host; these tests cover the bridge against a fake owner. Upstream's tests of
+// the plugin-built runtime, dashboard and /implement were removed (UPSTREAM.md).
 import { describe, expect, mock, test } from 'bun:test';
-import * as fs from 'node:fs/promises';
-import { bindFreePort } from '../interview/test-port';
 import {
   applyInterviewCommandParts,
-  createV2InterviewBridge,
+  createReviewedSlimInterviewBridge,
   markerText,
+  type ReviewedSlimInterviewBridgeOwner,
+  reviewedSlimInterviewCommandDeclaration,
 } from './interview-bridge';
+import type { V2CommandDefinition, V2SessionContextEvent } from './types';
 
-function createContext(overrides?: {
-  synthetic?: (input: Record<string, unknown>) => Promise<unknown>;
-  update?: (input: Record<string, unknown>) => Promise<unknown>;
-  prompt?: (input: Record<string, unknown>) => Promise<unknown>;
-}): any {
-  return {
-    session: {
-      hook: mock(async () => ({ dispose() {} })),
-      synthetic: overrides?.synthetic,
-      update: overrides?.update,
-      prompt: overrides?.prompt,
-      create: mock(async () => ({ id: 'side-session' })),
+function createOwner(overrides?: {
+  active?: string | null;
+  inject?: string;
+  accept?: ReviewedSlimInterviewBridgeOwner['assertAcceptedCommand'];
+}) {
+  const handleCommandExecuteBefore = mock(
+    async (
+      _input: { command: string; sessionID: string; arguments: string },
+      output: { parts: Array<Record<string, unknown>> },
+    ) => {
+      if (overrides?.inject)
+        output.parts.push({ type: 'text', text: overrides.inject });
     },
+  );
+  const handleEvent = mock(async (_input: { event: unknown }) => {});
+  const owner = {
+    runtime: {},
+    service: {
+      handleCommandExecuteBefore,
+      handleEvent,
+      getActiveInterviewId: mock(async () => overrides?.active ?? null),
+    },
+    submitCommand: mock(async (_invocation: unknown) => {}),
+    assertAcceptedCommand: mock(overrides?.accept ?? (async () => {})),
+    dispose: mock(async () => {}),
   };
+  return owner;
+}
+
+function contextEvent(
+  sessionID: string,
+  messages: V2SessionContextEvent['messages'],
+): V2SessionContextEvent {
+  return { sessionID, agent: 'orchestrator', model: {}, system: [], tools: {}, messages };
+}
+
+function userText(id: string | undefined, text: string) {
+  return { ...(id ? { id } : {}), role: 'user', content: [{ type: 'text', text }] };
 }
 
 describe('markerText', () => {
@@ -48,278 +76,148 @@ describe('markerText', () => {
   });
 });
 
-describe('v2 interview bridge', () => {
-  test('propagates v2 prompt failures through interview continuation', async () => {
-    const prompt = mock(async () => {
-      throw new Error('prompt rejected');
-    });
-    const bridge = createV2InterviewBridge(createContext({ prompt }), {
-      outputFolder: `.tmp-v2-prompt-error-${Date.now()}`,
-    } as never);
-
-    await expect(
-      bridge.runtime.continue('ses_prompt_error', 'Continue.'),
-    ).rejects.toThrow('prompt rejected');
-    bridge.dispose();
+describe('reviewed interview bridge', () => {
+  test('requires a complete owner', () => {
+    expect(() =>
+      createReviewedSlimInterviewBridge(
+        {} as unknown as ReviewedSlimInterviewBridgeOwner,
+      ),
+    ).toThrow('reviewed_slim_interview_bridge_owner_required');
   });
 
-  test('rejects continuation when v2 prompt is unavailable', async () => {
-    const bridge = createV2InterviewBridge(createContext(), {
-      outputFolder: `.tmp-v2-prompt-missing-${Date.now()}`,
-    } as never);
-
-    await expect(
-      bridge.runtime.continue('ses_prompt_missing', 'Continue.'),
-    ).rejects.toThrow('session.prompt is unavailable');
-    bridge.dispose();
-  });
-
-  test('registers an add-only marker command and rewrites only the tail', async () => {
-    const directory = `.tmp-v2-interview-${Date.now()}`;
-    const synthetic = mock(async () => ({}));
-    const update = mock(async () => ({}));
-    const bridge = createV2InterviewBridge(
-      createContext({ synthetic, update }),
-      {
-        outputFolder: directory,
-      } as never,
-    );
-    const added: Array<{ name: string; description?: string }> = [];
-    bridge.registerCommand({
-      add: (def) =>
-        added.push({ name: def.name, description: def.description }),
-    });
-
-    expect(added).toEqual([
-      {
-        name: 'interview',
-        description: 'Open a localhost interview UI for a feature idea',
-      },
-      {
-        name: 'implement',
-        description: 'Read the completed interview markdown and implement it',
-      },
+  test('registers only /interview and submits through the owner', async () => {
+    const owner = createOwner();
+    const bridge = createReviewedSlimInterviewBridge(owner);
+    const added: V2CommandDefinition[] = [];
+    bridge.registerCommand({ add: (def) => added.push(def) });
+    expect(added.map((def) => [def.name, def.description])).toEqual([
+      ['interview', reviewedSlimInterviewCommandDeclaration.description],
     ]);
-
-    const earlier = {
-      id: 'old',
-      role: 'user',
-      content: [{ type: 'text', text: 'Earlier context' }],
-    };
-    const event = {
-      sessionID: 'ses_v2',
-      agent: 'orchestrator',
-      model: {},
-      system: [],
-      tools: {},
-      messages: [
-        earlier,
-        {
-          id: 'tail',
-          role: 'user',
-          content: [
-            {
-              type: 'text',
-              text: markerText('build a notes app'),
-            },
-          ],
-        },
-      ],
-    };
-    const earlierBefore = structuredClone(earlier);
-    await bridge.handleContext(event);
-
-    expect(earlier).toEqual(earlierBefore);
-    expect(event.messages[1].content[0].text).toContain('build a notes app');
-    expect(event.messages[1].content[0].text).toContain('<interview_state>');
-    expect(synthetic).toHaveBeenCalled();
-    expect(update).toHaveBeenCalledWith({
-      sessionID: 'ses_v2',
-      title: 'Interview: build a notes app',
-    });
-
-    bridge.dispose();
-    await fs.rm(`${process.cwd()}/${directory}`, {
-      recursive: true,
-      force: true,
-    });
+    const invocation = { sessionID: 'ses', prompt: { text: 'x' } };
+    await added[0]?.execute(invocation);
+    expect(owner.submitCommand).toHaveBeenCalledWith(invocation);
   });
 
-  test('does not intercept markers when the command is disabled', async () => {
-    const directory = `.tmp-v2-interview-disabled-${Date.now()}`;
-    const synthetic = mock(async () => ({}));
-    const update = mock(async () => ({}));
-    const bridge = createV2InterviewBridge(
-      createContext({ synthetic, update }),
-      { outputFolder: directory } as never,
-      { commandEnabled: false },
-    );
-    const handler = mock(async () => {});
-    bridge.service.handleCommandExecuteBefore = handler;
-    const trailing = {
-      id: 'tail-disabled',
-      role: 'user',
-      content: [{ type: 'text', text: markerText('disabled idea') }],
-    };
-    const before = structuredClone(trailing.content);
-
-    await bridge.handleContext({
-      sessionID: 'ses_v2_disabled',
-      agent: 'orchestrator',
-      model: {},
-      system: [],
-      tools: {},
-      messages: [trailing],
+  test('propagates owner submit failures', async () => {
+    const owner = createOwner();
+    owner.submitCommand.mockImplementation(async () => {
+      throw new Error('refused');
     });
-
-    expect(trailing.content).toEqual(before);
-    expect(bridge.getTranscript('ses_v2_disabled')).toEqual([]);
-    expect(handler).not.toHaveBeenCalled();
-    expect(synthetic).not.toHaveBeenCalled();
-    expect(update).not.toHaveBeenCalled();
-    bridge.dispose();
-    await fs.rm(`${process.cwd()}/${directory}`, {
-      recursive: true,
-      force: true,
-    });
-  });
-
-  test('intercepts markers when the command is enabled', async () => {
-    const directory = `.tmp-v2-interview-enabled-${Date.now()}`;
-    const synthetic = mock(async () => ({}));
-    const update = mock(async () => ({}));
-    const bridge = createV2InterviewBridge(
-      createContext({ synthetic, update }),
-      { outputFolder: directory } as never,
-      { commandEnabled: true },
-    );
-    const handler = mock(async () => {});
-    bridge.service.handleCommandExecuteBefore = handler;
-    const trailing = {
-      id: 'tail-enabled',
-      role: 'user',
-      content: [{ type: 'text', text: markerText('enabled idea') }],
-    };
-
-    await bridge.handleContext({
-      sessionID: 'ses_v2_enabled',
-      agent: 'orchestrator',
-      model: {},
-      system: [],
-      tools: {},
-      messages: [trailing],
-    });
-
-    expect(handler).toHaveBeenCalled();
-    expect(trailing.content[0]?.text).not.toBe(markerText('enabled idea'));
-    bridge.dispose();
-    await fs.rm(`${process.cwd()}/${directory}`, {
-      recursive: true,
-      force: true,
-    });
+    const bridge = createReviewedSlimInterviewBridge(owner);
+    const added: V2CommandDefinition[] = [];
+    bridge.registerCommand({ add: (def) => added.push(def) });
+    await expect(
+      added[0]?.execute({ sessionID: 'ses', prompt: { text: '' } }),
+    ).rejects.toThrow('refused');
   });
 
   test('registerCommand is a no-op when the draft has no add', () => {
-    const bridge = createV2InterviewBridge(createContext());
+    const bridge = createReviewedSlimInterviewBridge(createOwner());
     expect(() => bridge.registerCommand({} as never)).not.toThrow();
-    bridge.dispose();
   });
 
-  test('embedded interview markers are not dispatched (whole-text anchor)', async () => {
-    const synthetic = mock(async () => ({}));
-    const bridge = createV2InterviewBridge(createContext({ synthetic }), {
-      outputFolder: `.tmp-v2-embedded-${Date.now()}`,
-    } as never);
-    const trailing = {
-      id: 't',
-      role: 'user',
-      content: [
-        {
-          type: 'text',
-          text: `before ${markerText('hijack')} after`,
-        },
-      ],
-    };
-    const before = structuredClone(trailing.content);
+  test('proves the command was accepted, then rewrites only the tail', async () => {
+    const owner = createOwner({ inject: 'injected <interview_state>' });
+    const bridge = createReviewedSlimInterviewBridge(owner);
+    const earlier = userText('old', 'Earlier context');
+    const earlierBefore = structuredClone(earlier);
+    const event = contextEvent('ses_v2', [
+      earlier,
+      userText('tail', markerText('  build a notes app ')),
+    ]);
+    await bridge.handleContext(event);
 
-    await bridge.handleContext({
-      sessionID: 'ses_embed',
-      agent: 'orchestrator',
-      model: {},
-      system: [],
-      tools: {},
-      messages: [trailing],
+    expect(owner.assertAcceptedCommand).toHaveBeenCalledWith({
+      sessionID: 'ses_v2',
+      messageID: 'tail',
+      args: 'build a notes app',
+      event,
     });
-
-    expect(trailing.content).toEqual(before);
-    expect(synthetic).not.toHaveBeenCalled();
-    bridge.dispose();
+    expect(owner.service.handleCommandExecuteBefore).toHaveBeenCalledWith(
+      { command: 'interview', sessionID: 'ses_v2', arguments: 'build a notes app' },
+      expect.anything(),
+    );
+    expect(earlier).toEqual(earlierBefore);
+    expect(event.messages[1]?.content).toEqual([
+      { type: 'text', text: 'injected <interview_state>' },
+    ]);
   });
 
-  test('runtime methods probe the v2 session domain with flat inputs', async () => {
-    const calls: Array<{ method: string; input: Record<string, unknown> }> = [];
-    const track =
-      (method: string) =>
-      async (input: Record<string, unknown>): Promise<unknown> => {
-        calls.push({ method, input });
-        return {};
-      };
-    const bridge = createV2InterviewBridge({
-      session: {
-        prompt: track('prompt'),
-        synthetic: track('synthetic'),
-        switchAgent: track('switchAgent'),
-        update: track('update'),
+  test('refuses a marker the owner did not accept', async () => {
+    const owner = createOwner({
+      accept: async () => {
+        throw new Error('reviewed_interview_command_unaccepted');
       },
-    } as never);
-
-    await bridge.runtime.notify('ses_n', 'ready');
-    expect(calls).toContainEqual({
-      method: 'synthetic',
-      // resume:false = admit the interview URL without waking the session
-      // (v1's noReply prompt equivalent; no agent turn, no double-send).
-      input: { sessionID: 'ses_n', text: 'ready', resume: false },
     });
-
-    await bridge.runtime.continue('ses_c', 'go on');
-    expect(calls).toContainEqual({
-      method: 'switchAgent',
-      input: { sessionID: 'ses_c', agent: 'orchestrator' },
-    });
-    expect(calls).toContainEqual({
-      method: 'prompt',
-      input: { sessionID: 'ses_c', text: 'go on' },
-    });
-
-    await bridge.runtime.rename('ses_r', 'Interview: x');
-    expect(calls).toContainEqual({
-      method: 'update',
-      input: { sessionID: 'ses_r', title: 'Interview: x' },
-    });
-
-    bridge.dispose();
-  });
-
-  test('notify is a no-op (no prompt fallback) when synthetic is unavailable', async () => {
-    const prompt = mock(async () => ({}));
-    const bridge = createV2InterviewBridge({
-      session: { prompt },
-    } as never);
-    await bridge.runtime.notify('ses_f', 'hey');
-    expect(prompt).not.toHaveBeenCalled();
-    bridge.dispose();
-  });
-
-  test('rename logs and skips when unavailable', async () => {
-    const prompt = mock(async () => ({}));
-    const bridge = createV2InterviewBridge({
-      session: { prompt },
-    } as never);
+    const bridge = createReviewedSlimInterviewBridge(owner);
     await expect(
-      bridge.runtime.rename('ses_ru', 'Interview: x'),
-    ).resolves.toBeUndefined();
-    expect(prompt).not.toHaveBeenCalled();
-    bridge.dispose();
+      bridge.handleContext(contextEvent('ses', [userText('u', markerText('x'))])),
+    ).rejects.toThrow('reviewed_interview_command_unaccepted');
+    expect(owner.service.handleCommandExecuteBefore).not.toHaveBeenCalled();
+  });
+
+  test('refuses a marker message without an id', async () => {
+    const owner = createOwner();
+    const bridge = createReviewedSlimInterviewBridge(owner);
+    await expect(
+      bridge.handleContext(contextEvent('ses', [userText(undefined, markerText('x'))])),
+    ).rejects.toThrow('reviewed_slim_interview_message_required');
+    expect(owner.assertAcceptedCommand).not.toHaveBeenCalled();
+  });
+
+  test('does not dispatch embedded or /implement markers', async () => {
+    const owner = createOwner();
+    const bridge = createReviewedSlimInterviewBridge(owner);
+    const embedded = `please ${markerText('x')} now`;
+    const implement = '<omos-implement-command>x</omos-implement-command>';
+    for (const text of [embedded, implement]) {
+      const event = contextEvent('ses', [userText('u', text)]);
+      await bridge.handleContext(event);
+      expect(event.messages[0]?.content).toEqual([{ type: 'text', text }]);
+    }
+    expect(owner.assertAcceptedCommand).not.toHaveBeenCalled();
+    expect(owner.service.handleCommandExecuteBefore).not.toHaveBeenCalled();
+  });
+
+  test('projects text events from data- and properties-keyed payloads', async () => {
+    const bridge = createReviewedSlimInterviewBridge(createOwner());
+    await bridge.handleContext(contextEvent('ses_text', [userText('u', markerText('hi'))]));
+    await bridge.handleEvent({ type: 'session.next.text.started', data: { sessionID: 'ses_text' } });
+    await bridge.handleEvent({ type: 'session.next.text.delta', data: { sessionID: 'ses_text', delta: 'one' } });
+    await bridge.handleEvent({ type: 'session.next.text.delta', properties: { sessionID: 'ses_text', delta: ' two' } });
+    expect(bridge.getTranscript('ses_text').at(-1)?.parts?.[0]?.text).toBe('one two');
+
+    await bridge.handleEvent({ type: 'session.deleted', data: { sessionID: 'ses_text' } });
+    expect(bridge.getTranscript('ses_text')).toEqual([]);
+  });
+
+  test('maps session.execution lifecycle to busy/idle status for the service', async () => {
+    const owner = createOwner({ active: 'interview-1' });
+    const bridge = createReviewedSlimInterviewBridge(owner);
+    await bridge.handleEvent({ type: 'session.execution.started', data: { sessionID: 'ses' } });
+    await bridge.handleEvent({ type: 'session.execution.succeeded', data: { sessionID: 'ses' } });
+    expect(owner.service.handleEvent.mock.calls.map(([call]) => call)).toEqual([
+      { event: { type: 'session.status', properties: { sessionID: 'ses', status: { type: 'busy' } } } },
+      { event: { type: 'session.status', properties: { sessionID: 'ses', status: { type: 'idle' } } } },
+    ]);
+  });
+
+  test('ignores text streams for sessions that are not interviews', async () => {
+    const bridge = createReviewedSlimInterviewBridge(createOwner());
+    await bridge.handleContext(contextEvent('ses_plain', [userText('u', 'hello')]));
+    await bridge.handleEvent({ type: 'session.next.text.started', properties: { sessionID: 'ses_plain' } });
+    await bridge.handleEvent({ type: 'session.next.text.delta', properties: { sessionID: 'ses_plain', delta: 'ignored' } });
+    expect(bridge.getTranscript('ses_plain')).toEqual([]);
+  });
+
+  test('dispose releases the owner and clears transcripts', async () => {
+    const owner = createOwner();
+    const bridge = createReviewedSlimInterviewBridge(owner);
+    await bridge.handleContext(contextEvent('ses', [userText('u', markerText('x'))]));
+    expect(bridge.getTranscript('ses')).not.toEqual([]);
+    await bridge.dispose();
+    expect(owner.dispose).toHaveBeenCalledTimes(1);
+    expect(bridge.getTranscript('ses')).toEqual([]);
   });
 
   test('applyInterviewCommandParts: empty parts strip the marker, keep args', () => {
@@ -348,293 +246,4 @@ describe('v2 interview bridge', () => {
     ]);
   });
 
-  test('snapshots transcript before downstream part injection', async () => {
-    const directory = `.tmp-v2-interview-snap-${Date.now()}`;
-    const bridge = createV2InterviewBridge(createContext(), {
-      outputFolder: directory,
-    } as never);
-    const event = {
-      sessionID: 'ses_snapshot',
-      agent: 'orchestrator',
-      model: {},
-      system: [],
-      tools: {},
-      messages: [
-        {
-          id: 'answer',
-          role: 'user',
-          content: [{ type: 'text', text: markerText('the answer') }],
-        },
-      ],
-    };
-
-    await bridge.handleContext(event);
-    const captured = bridge.getTranscript('ses_snapshot');
-    event.messages[0].content.push({
-      type: 'text',
-      text: 'injected by downstream transform',
-      synthetic: true,
-      metadata: { source: 'bridge-test' },
-    } as { type: string; text: string });
-
-    expect(captured[0]?.parts?.[0]?.text).toContain('the answer');
-    expect(
-      captured[0]?.parts?.some(
-        (part) => part.text === 'injected by downstream transform',
-      ),
-    ).toBe(false);
-    bridge.dispose();
-    await fs.rm(`${process.cwd()}/${directory}`, {
-      recursive: true,
-      force: true,
-    });
-  });
-
-  test('maps v2 session.execution lifecycle into a turn notice', async () => {
-    const directory = `.tmp-v2-interview-exec-${Date.now()}`;
-    const synthetic = mock(async () => ({}));
-    const bridge = createV2InterviewBridge(createContext({ synthetic }), {
-      outputFolder: directory,
-    } as never);
-    await bridge.handleContext({
-      sessionID: 'ses_exec',
-      agent: 'orchestrator',
-      model: {},
-      system: [],
-      tools: {},
-      messages: [
-        {
-          id: 'u',
-          role: 'user',
-          content: [{ type: 'text', text: markerText('exec idea') }],
-        },
-      ],
-    });
-    expect(bridge.service.getActiveInterviewId('ses_exec')).not.toBeNull();
-
-    await bridge.handleEvent({
-      type: 'session.next.text.started',
-      properties: { sessionID: 'ses_exec', messageID: 'msg-1' },
-    });
-    await bridge.handleEvent({
-      type: 'session.next.text.ended',
-      properties: { sessionID: 'ses_exec', messageID: 'msg-1', text: 'Done.' },
-    });
-
-    // Live v2 emits execution.started (busy) before the turn's tool submit.
-    await bridge.handleEvent({
-      type: 'session.execution.started',
-      properties: { sessionID: 'ses_exec' },
-    });
-    const applied = await bridge.service.submitState(
-      'ses_exec',
-      {
-        summary: 'Exec spec',
-        questions: [{ id: 'q-1', question: 'Q?' }],
-      },
-      'msg-1',
-    );
-    expect(applied.ok).toBe(true);
-    await bridge.handleEvent({
-      type: 'session.execution.succeeded',
-      properties: { sessionID: 'ses_exec' },
-    });
-
-    const calls = synthetic.mock.calls as unknown as Array<[{ text?: string }]>;
-    const notices = calls.map((call) => String(call[0]?.text ?? ''));
-    expect(notices.some((text) => text.includes('⎔ Spec updated'))).toBe(true);
-    bridge.dispose();
-    await fs.rm(`${process.cwd()}/${directory}`, {
-      recursive: true,
-      force: true,
-    });
-  });
-
-  test('projects text events and removes a deleted session', async () => {
-    const directory = `.tmp-v2-interview-text-${Date.now()}`;
-    const bridge = createV2InterviewBridge(createContext(), {
-      outputFolder: directory,
-    } as never);
-    await bridge.handleContext({
-      sessionID: 'ses_text',
-      agent: 'orchestrator',
-      model: {},
-      system: [],
-      tools: {},
-      messages: [
-        {
-          id: 'u',
-          role: 'user',
-          content: [{ type: 'text', text: markerText('hello') }],
-        },
-      ],
-    });
-    await bridge.handleEvent({
-      type: 'session.next.text.started',
-      properties: { sessionID: 'ses_text' },
-    });
-    await bridge.handleEvent({
-      type: 'session.next.text.delta',
-      properties: { sessionID: 'ses_text', delta: 'one' },
-    });
-    await bridge.handleEvent({
-      type: 'session.next.text.delta',
-      properties: { sessionID: 'ses_text', delta: ' two' },
-    });
-    expect(bridge.getTranscript('ses_text').at(-1)?.parts?.[0]?.text).toBe(
-      'one two',
-    );
-
-    await bridge.handleEvent({
-      type: 'session.deleted',
-      properties: { sessionID: 'ses_text' },
-    });
-    expect(bridge.getTranscript('ses_text')).toEqual([]);
-    bridge.dispose();
-    await fs.rm(`${process.cwd()}/${directory}`, {
-      recursive: true,
-      force: true,
-    });
-  });
-
-  test('resolves sessionID from live `data`-keyed events (text + deletion)', async () => {
-    // Live v2 hosts key the event payload under `data`; reading only
-    // `event.properties` left handleEvent dead on live v2 for ALL events.
-    const directory = `.tmp-v2-interview-live-${Date.now()}`;
-    const bridge = createV2InterviewBridge(createContext(), {
-      outputFolder: directory,
-    } as never);
-    await bridge.handleContext({
-      sessionID: 'ses_live',
-      agent: 'orchestrator',
-      model: {},
-      system: [],
-      tools: {},
-      messages: [
-        {
-          id: 'u',
-          role: 'user',
-          content: [{ type: 'text', text: markerText('hello') }],
-        },
-      ],
-    });
-    await bridge.handleEvent({
-      type: 'session.next.text.started',
-      data: { sessionID: 'ses_live' },
-    });
-    await bridge.handleEvent({
-      type: 'session.next.text.delta',
-      data: { sessionID: 'ses_live', delta: 'from data' },
-    });
-    expect(bridge.getTranscript('ses_live').at(-1)?.parts?.[0]?.text).toBe(
-      'from data',
-    );
-
-    await bridge.handleEvent({
-      type: 'session.deleted',
-      data: { sessionID: 'ses_live' },
-    });
-    expect(bridge.getTranscript('ses_live')).toEqual([]);
-    bridge.dispose();
-    await fs.rm(`${process.cwd()}/${directory}`, {
-      recursive: true,
-      force: true,
-    });
-  });
-
-  test('ignores text streams for sessions that are not interviews', async () => {
-    const bridge = createV2InterviewBridge(createContext());
-    await bridge.handleContext({
-      sessionID: 'ses_plain',
-      agent: 'orchestrator',
-      model: {},
-      system: [],
-      tools: {},
-      messages: [
-        {
-          id: 'u',
-          role: 'user',
-          content: [{ type: 'text', text: 'hello' }],
-        },
-      ],
-    });
-    await bridge.handleEvent({
-      type: 'session.next.text.started',
-      properties: { sessionID: 'ses_plain' },
-    });
-    await bridge.handleEvent({
-      type: 'session.next.text.delta',
-      properties: { sessionID: 'ses_plain', delta: 'ignored' },
-    });
-    expect(bridge.getTranscript('ses_plain')).toEqual([]);
-    bridge.dispose();
-  });
-
-  test('shares one configured dashboard across multiple v2 sessions', async () => {
-    const directory = `.tmp-v2-dashboard-${Date.now()}`;
-    const { port, server } = await bindFreePort();
-    const config = {
-      outputFolder: directory,
-      dashboard: true,
-      port,
-    } as never;
-    const synthetic1 = mock(async () => ({}));
-    const synthetic2 = mock(async () => ({}));
-    const bridge1 = createV2InterviewBridge(
-      createContext({ synthetic: synthetic1 }),
-      config,
-      { server },
-    );
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    const bridge2 = createV2InterviewBridge(
-      createContext({ synthetic: synthetic2 }),
-      config,
-    );
-
-    try {
-      const createEvent = (sessionID: string, idea: string) => ({
-        sessionID,
-        agent: 'orchestrator',
-        model: {},
-        system: [],
-        tools: {},
-        messages: [
-          {
-            id: `${sessionID}-command`,
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: markerText(idea),
-              },
-            ],
-          },
-        ],
-      });
-
-      const event1 = createEvent('v2-session-1', 'first dashboard idea');
-      const event2 = createEvent('v2-session-2', 'second dashboard idea');
-      await bridge1.handleContext(event1);
-      await bridge2.handleContext(event2);
-
-      expect(synthetic1.mock.calls[0]?.[0].text).toContain(
-        `http://127.0.0.1:${port}/interview/`,
-      );
-      expect(synthetic2.mock.calls[0]?.[0].text).toContain(
-        `http://127.0.0.1:${port}/interview/`,
-      );
-    } finally {
-      await bridge1.dispose();
-      await bridge2.dispose();
-      // Safety net: close the held server if the dashboard never adopted it.
-      if (server.listening) {
-        server.closeAllConnections();
-        server.close();
-      }
-      await fs.rm(`${process.cwd()}/${directory}`, {
-        recursive: true,
-        force: true,
-      });
-    }
-  });
 });

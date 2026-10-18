@@ -4,6 +4,7 @@
 // code fails closed when no owner is bound.
 import { AsyncLocalStorage } from 'node:async_hooks';
 import path from 'node:path';
+import type { ReviewedFetchCache } from '../tools/smartfetch/cache';
 
 const fail = (code: string): never => {
   throw new Error(code);
@@ -138,21 +139,16 @@ export function withReviewedSlimPathOwner<T>(owner: ReviewedSlimPathOwner, actio
 }
 
 export function requireReviewedSlimPathOwner(): ReviewedSlimPathOwner {
-  return pathOwners.getStore() ?? fail('reviewed_slim_path_owner_required');
+  return pathOwners.getStore() ?? testOwners?.path ?? fail('reviewed_slim_path_owner_required');
 }
 
 // ---------------------------------------------------------------------------
 // Invocation-local web fetch authority (network, cache, DOM, binaries, model).
 
-export interface ReviewedWebfetchCache {
-  readonly get: (key: string) => unknown;
-  readonly set: (key: string, value: unknown) => unknown;
-}
-
 export interface ReviewedWebfetchOwners {
   readonly sessionID: string;
   readonly signal: AbortSignal;
-  readonly cache: ReviewedWebfetchCache;
+  readonly cache: ReviewedFetchCache;
   readonly fetch: (
     url: string,
     init: {
@@ -184,7 +180,7 @@ export function withReviewedWebfetchOwner<T>(owner: ReviewedWebfetchOwners, acti
 }
 
 export function requireReviewedWebfetchOwner(): ReviewedWebfetchOwners {
-  return webfetchOwners.getStore() ?? fail('reviewed_webfetch_owner_required');
+  return webfetchOwners.getStore() ?? testOwners?.webfetch ?? fail('reviewed_webfetch_owner_required');
 }
 
 // ---------------------------------------------------------------------------
@@ -226,4 +222,20 @@ export function requireReviewedSlimImageWorker(directory?: string): string {
   )
     fail('reviewed_slim_image_worker_required');
   return imageWorkerDirectory as string;
+}
+
+// ---------------------------------------------------------------------------
+// Test support only: the package test preload installs default owners so the
+// upstream algorithm tests run against the real filesystem and fetch. The
+// DevRyan host never calls this; without it every access fails closed.
+
+let testOwners:
+  | { readonly path: ReviewedSlimPathOwner; readonly webfetch: ReviewedWebfetchOwners }
+  | undefined;
+
+export function installReviewedSlimTestOwners(owners: {
+  readonly path: ReviewedSlimPathOwner;
+  readonly webfetch: ReviewedWebfetchOwners;
+}): void {
+  testOwners = owners;
 }

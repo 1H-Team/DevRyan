@@ -2,7 +2,12 @@ import { afterEach, describe, expect, mock, test } from 'bun:test';
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { buildCacheKey, CACHE } from './cache';
+import {
+  type ReviewedWebfetchOwners,
+  requireReviewedWebfetchOwner,
+  withReviewedWebfetchOwner,
+} from '../../devryan/owners';
+import { buildCacheKey, ownedCache } from './cache';
 import { createWebfetchTool } from './tool';
 
 let mockV2Client: Record<string, unknown>;
@@ -21,9 +26,9 @@ function createExecutionContext() {
 }
 
 async function expireCached(key: string) {
-  const entry = CACHE.get(key);
+  const entry = ownedCache().get(key);
   if (!entry) throw new Error(`Missing cache entry: ${key}`);
-  CACHE.set(key, entry, { ttl: 1 });
+  ownedCache().set(key, entry, { ttl: 1 });
   await Bun.sleep(12);
 }
 
@@ -32,7 +37,7 @@ describe('smartfetch/tool', () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
-    CACHE.clear();
+    ownedCache().clear();
     mock.restore();
   });
 
@@ -117,7 +122,7 @@ describe('smartfetch/tool', () => {
     ) as typeof fetch;
     const webfetch = createWebfetchTool({ client: {} } as any);
     for (const format of ['markdown', 'text', 'html'] as const) {
-      CACHE.clear();
+      ownedCache().clear();
       expect(
         await webfetch.execute(
           { url: 'https://docs.example.com/page', format },
@@ -165,7 +170,7 @@ describe('smartfetch/tool', () => {
         'text/plain, text/markdown;q=0.9, */*;q=0.1',
       ],
     ]);
-    expect(CACHE.size).toBe(1);
+    expect(ownedCache().size).toBe(1);
   });
 
   test('no-llms docs pages keep per-format Accept and representations', async () => {
@@ -970,7 +975,7 @@ describe('smartfetch/tool', () => {
   });
 
   test('same document with different fragments issues a single request', async () => {
-    CACHE.clear();
+    ownedCache().clear();
 
     const fetchMock = mock(async (input: string | URL | Request) => {
       const url = typeof input === 'string' ? input : input.toString();
@@ -1085,7 +1090,9 @@ describe('smartfetch/tool', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  test('passes ctx.sessionID as parentID to the secondary-model session', async () => {
+  // DevRyan: the secondary model runs through the invocation owner, which
+  // receives the calling session instead of a temporary child session.
+  test('passes ctx.sessionID to the owner-routed secondary model', async () => {
     const fetchMock = mock(async () => {
       return new Response(
         'Article about smartfetch: it fetches pages, extracts the main ' +
@@ -1096,41 +1103,36 @@ describe('smartfetch/tool', () => {
     });
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
-    const session = {
-      create: mock(async () => ({ data: { id: 'secondary-session' } })),
-      prompt: mock(async () => ({
-        data: { parts: [{ type: 'text', text: 'Extracted answer' }] },
-      })),
-      delete: mock(async () => ({ data: true })),
-      abort: mock(async () => ({ data: true })),
-    };
-    const toolIds = { ids: mock(async () => ({ data: ['read'] })) };
-    mockV2Client = { session, tool: toolIds };
-
+    const owner = requireReviewedWebfetchOwner();
+    const secondary = mock<ReviewedWebfetchOwners['secondary']>(
+      async () => 'Extracted answer',
+    );
     const webfetch = createWebfetchTool({ client: mockV2Client } as any, {
       webfetchModels: [{ id: 'provider/small-model' }],
     });
     const ctx = createExecutionContext();
     ctx.sessionID = 'main-session-id';
-    const result = await webfetch.execute(
-      {
-        url: 'https://example.com/article',
-        format: 'markdown',
-        extract_main: true,
-        prefer_llms_txt: 'auto',
-        include_metadata: false,
-        save_binary: false,
-        prompt: 'Extract the answer',
-      },
-      ctx,
+    const result = await withReviewedWebfetchOwner(
+      { ...owner, sessionID: 'main-session-id', secondary },
+      () =>
+        webfetch.execute(
+          {
+            url: 'https://example.com/article',
+            format: 'markdown',
+            extract_main: true,
+            prefer_llms_txt: 'auto',
+            include_metadata: false,
+            save_binary: false,
+            prompt: 'Extract the answer',
+          },
+          ctx,
+        ),
     );
 
-    expect(session.create).toHaveBeenCalledWith(
+    expect(secondary).toHaveBeenCalledWith(
       expect.objectContaining({
-        body: expect.objectContaining({
-          title: 'smartfetch-secondary',
-          parentID: 'main-session-id',
-        }),
+        sessionID: 'main-session-id',
+        model: { providerID: 'provider', modelID: 'small-model' },
       }),
     );
     expect(result).toContain('Extracted answer');

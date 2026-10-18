@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { bindReviewedSlimHost } from '../../devryan/owners';
 import { loadJSDOM } from '../../utils/jsdom';
 import {
   cleanFetchedMarkdown,
@@ -194,10 +197,24 @@ describe('smartfetch/utils', () => {
     }
   });
 
+  // DevRyan: forwarded jsdom errors go to the host log sink, never stderr.
   test('suppresses css-parsing errors on both paths but forwards other jsdomErrors', async () => {
     const originalError = console.error;
     const errorCalls: unknown[][] = [];
+    const logged: string[] = [];
     console.error = (...args: unknown[]) => errorCalls.push(args);
+    const release = bindReviewedSlimHost({
+      directory: path.join(tmpdir(), 'smartfetch-utils-log'),
+      requiredHooks: [],
+      hooks: async () => ({}),
+      log: (entry) => logged.push(entry),
+      interviewBridge: {
+        registerCommand: () => {},
+        handleContext: async () => {},
+        handleEvent: async () => {},
+        dispose: async () => {},
+      },
+    });
     try {
       for (const extractMain of [false, true]) {
         const result = await extractFromHtml(
@@ -207,7 +224,7 @@ describe('smartfetch/utils', () => {
         );
         expect(result.text).toContain('Hello');
       }
-      expect(errorCalls).toEqual([]);
+      expect(logged).toEqual([]);
       const { VirtualConsole } = await loadJSDOM();
       withJsdomCssParsingErrorsSuppressed((vc) => {
         vc.emit('jsdomError', {
@@ -220,11 +237,11 @@ describe('smartfetch/utils', () => {
         });
       }, VirtualConsole);
 
-      expect(errorCalls).toHaveLength(1);
-      expect((errorCalls[0][0] as Error).message).toBe(
-        'Failed to load resource',
-      );
+      expect(errorCalls).toEqual([]);
+      expect(logged).toHaveLength(1);
+      expect(logged[0]).toContain('[smartfetch] jsdom error');
     } finally {
+      release();
       console.error = originalError;
     }
   });

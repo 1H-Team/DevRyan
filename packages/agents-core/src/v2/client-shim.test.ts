@@ -1663,15 +1663,27 @@ describe('v2 client shim degradation notices (one-time per process)', () => {
     const logDir = await fs.mkdtemp(
       path.join(os.tmpdir(), 'omos-client-shim-log-'),
     );
+    // DevRyan: log entries go to the bound host sinks, not a log file.
     const workerSource = `
       const { buildPluginInput } = await import(
         process.env.SHIM_MODULE_URL
       );
-      const { initLogger, flushLoggerForTesting } = await import(
-        process.env.LOGGER_MODULE_URL
+      const { bindReviewedSlimHost } = await import(
+        process.env.OWNERS_MODULE_URL
       );
-      const { readdirSync, readFileSync } = await import('node:fs');
-      initLogger();
+      const lines = [];
+      bindReviewedSlimHost({
+        directory: process.cwd(),
+        requiredHooks: [],
+        hooks: async () => ({}),
+        log: (entry) => lines.push(entry),
+        interviewBridge: {
+          registerCommand() {},
+          async handleContext() {},
+          async handleEvent() {},
+          async dispose() {},
+        },
+      });
       // Stock v2 plugin session domain: no list, no remove.
       const input = buildPluginInput({ session: {} });
       const session = input.client.session;
@@ -1679,18 +1691,6 @@ describe('v2 client shim degradation notices (one-time per process)', () => {
         await session.list({ query: {} });
         await session.delete({ path: { id: 'ses_tmp' } });
       }
-      await flushLoggerForTesting();
-      const contents = readFileSync(
-        process.env.OPENCODE_LOG_DIR +
-          '/' +
-          readdirSync(process.env.OPENCODE_LOG_DIR).find(
-            (entry) =>
-              entry.startsWith('oh-my-opencode-slim.') &&
-              entry.endsWith('-' + process.pid + '.log'),
-          ),
-        'utf8',
-      );
-      const lines = contents.split('\\n');
       console.log(
         JSON.stringify({
           listWarnings: lines.filter((line) =>
@@ -1710,8 +1710,8 @@ describe('v2 client shim degradation notices (one-time per process)', () => {
         SHIM_MODULE_URL: pathToFileURL(
           path.join(import.meta.dir, 'client-shim.ts'),
         ).href,
-        LOGGER_MODULE_URL: pathToFileURL(
-          path.join(import.meta.dir, '../utils/logger.ts'),
+        OWNERS_MODULE_URL: pathToFileURL(
+          path.join(import.meta.dir, '../devryan/owners.ts'),
         ).href,
         LOG_FILE_PATH: path.join(
           logDir,

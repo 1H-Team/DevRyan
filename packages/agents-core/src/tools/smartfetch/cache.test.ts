@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   buildCacheKey,
-  CACHE,
+  ownedCache,
   calculateCacheSize,
   conditionalHeaders,
   lookup,
@@ -17,13 +17,13 @@ const cacheOptions = {
 
 describe('smartfetch/cache', () => {
   test('keeps the 50 MiB/15-minute LRU and charges stored payload bytes', () => {
-    expect(CACHE.maxSize).toBe(50 * 1024 * 1024);
-    expect(CACHE.ttl).toBe(15 * 60 * 1000);
+    expect(ownedCache().maxSize).toBe(50 * 1024 * 1024);
+    expect(ownedCache().ttl).toBe(15 * 60 * 1000);
     try {
-      CACHE.set('size-probe', makeBinary(new Uint8Array(4096)));
-      expect(CACHE.calculatedSize).toBe(4096);
+      ownedCache().set('size-probe', makeBinary(new Uint8Array(4096)));
+      expect(ownedCache().calculatedSize).toBe(4096);
     } finally {
-      CACHE.clear();
+      ownedCache().clear();
     }
   });
 
@@ -48,7 +48,7 @@ describe('smartfetch/cache', () => {
   });
 
   test('a stale cache lookup retains the entry but reports it as not fresh', async () => {
-    CACHE.set(
+    ownedCache().set(
       'expired-entry',
       makeCached({
         text: 'body',
@@ -69,7 +69,7 @@ describe('smartfetch/cache', () => {
       });
       expect(conditionalHeaders(makeCached({}))).toEqual({});
     } finally {
-      CACHE.clear();
+      ownedCache().clear();
     }
   });
 

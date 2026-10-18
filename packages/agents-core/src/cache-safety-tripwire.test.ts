@@ -52,44 +52,12 @@ const ALLOWLIST = new Map<string, string>([
     'Date.now() gates retry/dedup windows for model failover; no prompt content is derived from it.',
   ],
   [
-    'hooks/task-session-manager/task-context-tracker.ts',
-    'Date.now() records lastReadAt for internal recency ordering; formatted prompt output (background job board) is confined to the volatile trailing message.',
-  ],
-  [
-    'hooks/task-session-manager/event-router.ts',
-    'Date.now() captures idleObservedAt to detect post-idle busy recovery from foreground-fallback re-prompts; never serialized into prompt content.',
-  ],
-  [
     'hooks/task-session-manager/board-injection.ts',
     'randomBytes(4) names each process instance of checkpoint board snapshot ids (#1368): the epoch is restart-scoped identity metadata on injected message ids. snapshotID metadata is dropped by the host converter and never reaches provider bytes (pinned by board-injection-cache-safety.test.ts); board text itself is deterministic.',
   ],
   [
     'hooks/task-session-manager/revived-run-tracker.ts',
     'Date.now() captures immutable observation-attempt boundaries for terminal attribution; these timestamps are never serialized into notification prompts.',
-  ],
-  [
-    'hooks/task-session-manager/runtime-status-reconciliation.ts',
-    'Date.now() establishes in-memory request/observation ordering for generation-safe status reconciliation; board timestamps are never formatted into prompt content.',
-  ],
-  [
-    'hooks/orchestrator-wake/index.ts',
-    'Date.now() timestamps event-tracked child/status bookkeeping for wake decisions (staleness bound, busy-set); the wake prompt text — including the v2 anti-forgery and writer-lane suffix constants — is static and never derives from them.',
-  ],
-  [
-    'hooks/task-session-manager/child-input-wait.ts',
-    'Date.now() defaults the askedAt ordering key for pending child asks; timestamps are internal bookkeeping — the wake delta carries the ask content, never the timestamp.',
-  ],
-  [
-    'hooks/auto-update-checker/cache.ts',
-    'Date.now() and process.pid name an on-disk quarantine directory during the atomic publish transaction; the path is filesystem bookkeeping, never serialized into prompt content.',
-  ],
-  [
-    'hooks/auto-update-checker/checker.ts',
-    'Date.now()/Math.random() compose a per-run temp token for install bookkeeping; it names local directories and never reaches the prompt prefix.',
-  ],
-  [
-    'hooks/deepwork-guard/index.ts',
-    'Date.now() timestamps claim markers and receipts under .slim/deepwork/.runtime/ (machine-owned bookkeeping the workflow never reads); the completion gate deny message carries only slugs and paths, never timestamps.',
   ],
 ]);
 

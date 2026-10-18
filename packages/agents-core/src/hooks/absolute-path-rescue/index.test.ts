@@ -97,13 +97,13 @@ describe('absolute-path-rescue hook', () => {
     expect(args.filePath).toBe(unrelated);
   });
 
-  test('rejects guesses containing .. segments entirely', () => {
+  test('rejects guesses containing .. segments entirely', async () => {
     // Literal string: path.join would normalize the .. away.
     const dotted = `${os.tmpdir()}/__slim_missing_1143__/../../src`;
-    expect(findRescuedSuffix(dotted, workspace)).toBeNull();
+    expect(await findRescuedSuffix(dotted, workspace)).toBeNull();
   });
 
-  test('never trims the tail to a bare basename (meaning change)', () => {
+  test('never trims the tail to a bare basename (meaning change)', async () => {
     // Anchor = basename(workspace) matches, but the tail after it does
     // not exist: no rescue to <workspace>/README.md (oracle counterexample).
     const guessed = path.join(
@@ -112,10 +112,10 @@ describe('absolute-path-rescue hook', () => {
       'nonexistent-subproject',
       'README.md',
     );
-    expect(findRescuedSuffix(guessed, workspace)).toBeNull();
+    expect(await findRescuedSuffix(guessed, workspace)).toBeNull();
   });
 
-  test('repeated anchor occurrences make the rescue ambiguous (null)', () => {
+  test('repeated anchor occurrences make the rescue ambiguous (null)', async () => {
     const base = path.basename(workspace);
     const guessed = path.join(
       tempRoot,
@@ -124,10 +124,10 @@ describe('absolute-path-rescue hook', () => {
       base,
       'README.md',
     );
-    expect(findRescuedSuffix(guessed, workspace)).toBeNull();
+    expect(await findRescuedSuffix(guessed, workspace)).toBeNull();
   });
 
-  test('a missing tail under the longest anchor never falls back shorter', () => {
+  test('a missing tail under the longest anchor never falls back shorter', async () => {
     // Longest anchor = Child/Project matches; its tail is missing. The
     // rescue must NOT reinterpret via the shorter anchor Project
     // (which would find src/ under the workspace).
@@ -139,16 +139,16 @@ describe('absolute-path-rescue hook', () => {
       'nope',
       'src',
     );
-    expect(findRescuedSuffix(guessed, workspace)).toBeNull();
+    expect(await findRescuedSuffix(guessed, workspace)).toBeNull();
   });
 
-  test('anchor at guess end rescues to the workspace root', () => {
+  test('anchor at guess end rescues to the workspace root', async () => {
     // Canonical dropped-parents: guess stops exactly at Project.
     const guessed = path.join(tempRoot, 'Parent', 'Project');
-    expect(findRescuedSuffix(guessed, workspace)).toBe(workspace);
+    expect(await findRescuedSuffix(guessed, workspace)).toBe(workspace);
   });
 
-  test('forward slashes in a guess segment like a Windows drive path', () => {
+  test('forward slashes in a guess segment like a Windows drive path', async () => {
     // On win32 path.sep is '\': a C:/Users/… guess with a dropped
     // parent must segment the same as the workspace. Simulated with a
     // win32-flavored path module and an injected `exists` so the test
@@ -156,7 +156,7 @@ describe('absolute-path-rescue hook', () => {
     const win32Path = path.win32;
     const target = 'C:\\Users\\dev\\Work\\Parent\\Project\\src\\app.ts';
     const guessed = 'C:/Users/dev/Work/Project/src/app.ts'; // Parent dropped
-    const rescued = findRescuedSuffix(
+    const rescued = await findRescuedSuffix(
       guessed,
       'C:\\Users\\dev\\Work\\Parent\\Project',
       win32Path,
@@ -165,11 +165,11 @@ describe('absolute-path-rescue hook', () => {
     expect(rescued).toBe(target);
   });
 
-  test('rejects candidates whose stat fails for non-ENOENT reasons', () => {
+  test('rejects candidates whose stat fails for non-ENOENT reasons', async () => {
     // /src/app.ts/extra crosses a FILE component: stat yields ENOTDIR,
     // which must NOT count as an existing candidate.
     const guessed = path.join(tempRoot, 'Project', 'src', 'app.ts', 'extra');
-    expect(findRescuedSuffix(guessed, workspace)).toBeNull();
+    expect(await findRescuedSuffix(guessed, workspace)).toBeNull();
   });
 
   test('ignores tools without a file path argument', async () => {
@@ -181,14 +181,14 @@ describe('absolute-path-rescue hook', () => {
     expect(args.command).toContain('Project'); // untouched
   });
 
-  test('findRescuedSuffix keeps the longest existing tail', () => {
+  test('findRescuedSuffix keeps the longest existing tail', async () => {
     const guessed = path.join(tempRoot, 'Parent', 'Project');
     expect(
-      findRescuedSuffix(path.join(guessed, 'src', 'app.ts'), workspace),
+      await findRescuedSuffix(path.join(guessed, 'src', 'app.ts'), workspace),
     ).toBe(path.join(workspace, 'src', 'app.ts'));
     // A guess with no matching tail yields no rescue.
     expect(
-      findRescuedSuffix(path.join(guessed, 'nope', 'missing'), workspace),
+      await findRescuedSuffix(path.join(guessed, 'nope', 'missing'), workspace),
     ).toBeNull();
   });
 });

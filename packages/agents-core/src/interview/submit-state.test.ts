@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises';
 import { InterviewConfigSchema } from '../config/schema';
 import { normalizeAssistantState, parseAssistantState } from './parser';
 import type { InterviewSessionRuntime } from './runtime';
-import { createInterviewService } from './service';
+import { createInterviewService } from './test-service';
 import type { InterviewMessage, InterviewState } from './types';
 
 interface Harness {

@@ -14,6 +14,28 @@ the tree wholesale.
 - `cli/` except the skill-permission helpers (`skills.ts`, `custom-skills.ts`,
   `custom-skills-registry.ts`, `paths.ts`).
 
+- Sources no DevRyan entry point reaches (pruned to the import graph of
+  `src/devryan/index.ts`), including the auto-update hook and built-in MCP
+  injection.
+
+## Tests removed or replaced
+
+Upstream tests of code DevRyan removed or moved into the host owners:
+
+- Removed: `build-info`, `config/loader` and `config/skills-add-remove` (file
+  discovery is host-owned; the loader reads the bound configuration),
+  `utils/logger` (host log sinks), `hooks/auto-update-checker/*`,
+  `v2/permission-rules-bridge`, `v2/setup-compaction` and
+  `v2/setup-generation-reset` (host-owned permissions, compaction and
+  generation state).
+- Replaced with owner-based tests: `v2/interview-bridge` (fake interview
+  owner; `/implement` is disabled), `tools/smartfetch/secondary-model`
+  (owner `secondary` call instead of temporary sessions), and single cases in
+  `tools/smartfetch/tool`, `tools/smartfetch/utils`, `config/presets` and
+  `v2/setup-chat-headers`.
+- `test/preload.ts` installs filesystem/fetch test owners and isolates the
+  XDG and OpenCode directories, matching upstream `test-isolation.ts`.
+
 ## Ported upstream commits
 
 None yet.

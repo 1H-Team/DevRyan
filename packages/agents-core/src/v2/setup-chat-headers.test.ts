@@ -365,7 +365,9 @@ describe('chat.headers context wiring', () => {
     expect(seen).toEqual(['ses_hdr']);
   });
 
-  test('an observer throw does not break the rest of the handler', async () => {
+  // DevRyan: a failing context bridge refuses the request instead of
+  // silently degrading it (upstream logged and continued).
+  test('an observer throw refuses the request', async () => {
     const handler = createSessionContextHandler({
       interviewHandleContext: async () => {},
       observeChatHeaders: () => {
@@ -375,7 +377,7 @@ describe('chat.headers context wiring', () => {
 
     await expect(
       handler(makeContextEvent([{ id: 'm1', role: 'user', content: [] }])),
-    ).resolves.toBeUndefined();
+    ).rejects.toThrow('boom');
   });
 
   test('end to end: context event then model request sets the header', async () => {

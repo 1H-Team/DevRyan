@@ -9,7 +9,7 @@ import { createInterviewServer } from './server';
 import {
   createInterviewService as createRealInterviewService,
   MAX_RETAINED_ABANDONED,
-} from './service';
+} from './test-service';
 import { bindFreePort } from './test-port';
 import type { InterviewAnswer } from './types';
 import { renderInterviewPage } from './ui';

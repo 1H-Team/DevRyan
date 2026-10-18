@@ -38,7 +38,7 @@ export function createReviewedWebfetchCache(): ReviewedFetchCache {
 }
 
 export function ownedCache(): ReviewedFetchCache {
-  return requireReviewedWebfetchOwner().cache as unknown as ReviewedFetchCache;
+  return requireReviewedWebfetchOwner().cache;
 }
 
 export function lookup(key: string) {
