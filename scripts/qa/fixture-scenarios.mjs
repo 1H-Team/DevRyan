@@ -60,7 +60,7 @@ export async function prepareQaFixtureProfile({runtimeRoot,workspace,cell,genera
   const modelSelection={providerId:cell.providerId,modelId:cell.modelId,variant:'low'};
   const modelRef=`${modelSelection.providerId}/${modelSelection.modelId}`;
   const agents=Object.fromEntries(agentNames.map(name => [name,{model:modelRef,variant:modelSelection.variant}]));
-  await writeFile(path.join(home,'.config/opencode/oh-my-opencode-slim.json'),JSON.stringify({preset:'qa',presets:{qa:agents},agents}),{mode:0o600});
+  await writeFile(path.join(home,'.config/opencode/devryan-agents.json'),JSON.stringify({preset:'qa',presets:{qa:agents},agents}),{mode:0o600});
   await writeFile(path.join(home,'.config/opencode/opencode.json'),JSON.stringify({model:modelRef,default_agent:cell.agent === 'builder' ? 'build' : cell.agent,agent:agents,plugin:[],mcp:{}}),{mode:0o600});
   // Standalone /api/config/agents overlays packaged metadata onto native
   // /agent. Its supported sidecar must share the same private fixture pins.

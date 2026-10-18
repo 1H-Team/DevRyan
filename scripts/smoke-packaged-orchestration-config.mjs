@@ -52,7 +52,7 @@ export const smokePackagedOrchestrationConfig = async ({ configRoot }) => {
   requireFile(path.join(resolvedConfigRoot, 'plugins', 'devryan-document-reader.mjs'), 'default document reader plugin');
   requireFile(path.join(profileRoot, 'opencode.json'), 'user profile config');
   requireFile(path.join(profileRoot, 'package.json'), 'user profile dependency declaration');
-  requireFile(path.join(profileRoot, 'oh-my-opencode-slim.json'), 'user profile Slim configuration');
+  requireFile(path.join(profileRoot, 'devryan-agents.jsonc'), 'user profile agent configuration');
 
   const profileConfig = readJson(path.join(profileRoot, 'opencode.json'));
   const profilePackage = readJson(path.join(profileRoot, 'package.json'));

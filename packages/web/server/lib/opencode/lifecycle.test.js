@@ -13,12 +13,14 @@ function fixture(overrides={}){
  const native={isReady:()=>Boolean(children.at(-1)&&!children.at(-1).exited),start:vi.fn(async({beforeConfiguration}={})=>{await (overrides.getRuntimeBundle?.()??bundle).verify();await beforeConfiguration?.();const child={port:43100,url:'http://localhost:43100',hasExited:()=>child.exited,close:async()=>{events.push('exit');child.exited=true;},killForRecovery:async()=>{events.push('settle');child.exited=true;}};children.push(child);return child;})};
  const bundle={version:'2.0.32',descriptor:{generation:2,projectMap:[{targetDirectory:process.cwd()}]},verify:async()=>events.push('verify')};
  const runtime=createOpenCodeLifecycleRuntime({state,getNativeRuntime:()=>native,getRuntimeBundle:()=>bundle,
-  buildOpenCodeUrl:()=> 'http://localhost:43100',resolveSlimConfiguration:()=>({enabled:false}),
+  // Never migrate or read the real user OpenCode config directory from a test.
+  buildOpenCodeUrl:()=> 'http://localhost:43100',resolveSlimConfiguration:()=>({}),migrateAgentsConfiguration:()=>({migrated:false,reason:'absent'}),
   syncPackagedAgents:async()=>{events.push('agents');return {changed:false};},syncRuntimeAgentOverlays:async()=>({changed:false}),
   probeOpenCodeReadiness:async input=>{expect(input.generation).toBe(2);events.push('probe');return {ready:true,generation:2,version:bundle.version};},
   pauseManagedBrowserLeases:async()=>{events.push('pause');return 'owned';},resumeManagedBrowserLeases:async handle=>{expect(handle).toBe('owned');events.push('resume');},...overrides});
  return {runtime,state,native,bundle,events,children};
 }
+it('migrates the legacy agent config before resolving it on every configured start',async()=>{const order=[];const f=fixture({migrateAgentsConfiguration:()=>{order.push('migrate');return {migrated:false,reason:'failed',code:'INVALID_JSONC'};},resolveSlimConfiguration:()=>{order.push('resolve');return {};}});await f.runtime.bootstrapOpenCodeAtStartup();expect(order).toEqual(['migrate','resolve']);expect(f.state.isOpenCodeReady).toBe(true);});
 it('starts only a verified native owner and waits for its catalog',async()=>{const f=fixture();await f.runtime.bootstrapOpenCodeAtStartup();expect(f.events).toEqual(['verify','agents','probe']);expect(f.state).toMatchObject({openCodeGeneration:2,openCodeVersion:'2.0.32',isOpenCodeReady:true,isExternalOpenCode:false});expect(f.state.openCodeProcess).toBe(f.children[0]);});
 it('startup deferral exists only inside the original readiness deadline, even if a probe ignores its timeout',async()=>{
  vi.useFakeTimers();let entered,release;

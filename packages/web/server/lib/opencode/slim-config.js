@@ -1,5 +1,8 @@
+import { randomBytes } from 'node:crypto';
+import fs from 'node:fs';
 import path from 'node:path';
 
+import { parseConfigJsonc, removeJsoncKeyPaths } from './jsonc-config.js';
 import {
   AGENT_SCOPE,
   OPENCODE_CONFIG_DIR,
@@ -12,7 +15,13 @@ import {
 // Configuration of the built-in agent orchestration (derived from Oh My OpenCode
 // Slim). It is always active; no plugin entry enables it.
 const SLIM_SCOPE = 'slim';
-const SLIM_CONFIG_BASENAME = 'oh-my-opencode-slim';
+// `devryan-agents.json[c]` holds presets and per-role models. Files still named
+// after the former plugin are read only where no new-name file exists: a user
+// config directory is migrated at startup, project files are never rewritten.
+const AGENTS_CONFIG_BASENAME = 'devryan-agents';
+const LEGACY_SLIM_CONFIG_BASENAME = 'oh-my-opencode-slim';
+const AGENTS_CONFIG_FILE_NAMES = [`${AGENTS_CONFIG_BASENAME}.jsonc`, `${AGENTS_CONFIG_BASENAME}.json`];
+const LEGACY_SLIM_CONFIG_FILE_NAMES = [`${LEGACY_SLIM_CONFIG_BASENAME}.jsonc`, `${LEGACY_SLIM_CONFIG_BASENAME}.json`];
 const DEFAULT_DISABLED_AGENTS = ['observer'];
 const PROTECTED_AGENTS = new Set(['orchestrator', 'councillor']);
 const SLIM_REPLACED_AGENT_NAMES = new Set([
@@ -58,26 +67,27 @@ const normalizeConfigDirectory = (options = {}) => {
   return configured ? path.resolve(configured) : OPENCODE_CONFIG_DIR;
 };
 
-const findSlimConfigPath = (configDirectory) => {
-  const jsoncPath = path.join(configDirectory, `${SLIM_CONFIG_BASENAME}.jsonc`);
-  const jsonPath = path.join(configDirectory, `${SLIM_CONFIG_BASENAME}.json`);
-  if (readConfigFile(jsoncPath) && Object.keys(readConfigFile(jsoncPath)).length > 0) {
-    return jsoncPath;
-  }
-  if (readConfigFile(jsonPath) && Object.keys(readConfigFile(jsonPath)).length > 0) {
-    return jsonPath;
-  }
-  return null;
+const hasConfigContent = (filePath) => {
+  const config = readConfigFile(filePath);
+  return Boolean(config) && Object.keys(config).length > 0;
 };
+
+const findConfigPathIn = (directory, fileNames) => (
+  fileNames.map((fileName) => path.join(directory, fileName)).find(hasConfigContent) || null
+);
+
+const findExistingPathIn = (directory, fileNames) => (
+  fileNames.map((fileName) => path.join(directory, fileName)).find((filePath) => fs.existsSync(filePath)) || null
+);
+
+const findSlimConfigPath = (configDirectory) => (
+  findConfigPathIn(configDirectory, AGENTS_CONFIG_FILE_NAMES)
+  || findConfigPathIn(configDirectory, LEGACY_SLIM_CONFIG_FILE_NAMES)
+);
 
 const findProjectSlimConfigPath = (workingDirectory) => {
   if (!workingDirectory) return null;
-  const base = path.join(workingDirectory, '.opencode', SLIM_CONFIG_BASENAME);
-  const jsoncPath = `${base}.jsonc`;
-  const jsonPath = `${base}.json`;
-  if (Object.keys(readConfigFile(jsoncPath)).length > 0) return jsoncPath;
-  if (Object.keys(readConfigFile(jsonPath)).length > 0) return jsonPath;
-  return null;
+  return findSlimConfigPath(path.join(workingDirectory, '.opencode'));
 };
 
 const readSlimConfigFile = (filePath) => {
@@ -202,10 +212,10 @@ const normalizeSlimAgent = (name, rawConfig, rootOverride, { activePreset = null
 
 const getActivePresetName = (config, options = {}) => {
   const env = options.env || process.env;
-  const envPreset = typeof env.OH_MY_OPENCODE_SLIM_PRESET === 'string' && env.OH_MY_OPENCODE_SLIM_PRESET.trim()
-    ? env.OH_MY_OPENCODE_SLIM_PRESET.trim()
-    : '';
-  if (envPreset) return envPreset;
+  // DEVRYAN_AGENTS_PRESET wins; the former plugin's variable keeps working.
+  for (const name of ['DEVRYAN_AGENTS_PRESET', 'OH_MY_OPENCODE_SLIM_PRESET']) {
+    if (typeof env[name] === 'string' && env[name].trim()) return env[name].trim();
+  }
   return typeof config?.preset === 'string' && config.preset.trim() ? config.preset.trim() : null;
 };
 
@@ -262,14 +272,52 @@ const resolveSlimConfig = (workingDirectory, options = {}) => {
   };
 };
 
-const getSlimWritePath = (options = {}) => {
+// Writes always land in the new-name file. Before it exists, its starting point
+// is the legacy file, so a save never discards presets the user already has.
+const readSlimWriteTarget = (options = {}) => {
   const configDirectory = normalizeConfigDirectory(options);
-  return findSlimConfigPath(configDirectory) || path.join(configDirectory, `${SLIM_CONFIG_BASENAME}.jsonc`);
+  const existing = findExistingPathIn(configDirectory, AGENTS_CONFIG_FILE_NAMES);
+  if (existing) return { targetPath: existing, config: readSlimConfigFile(existing) };
+  const legacyPath = findConfigPathIn(configDirectory, LEGACY_SLIM_CONFIG_FILE_NAMES);
+  const legacy = { ...readSlimConfigFile(legacyPath) };
+  delete legacy.$schema;
+  return { targetPath: path.join(configDirectory, AGENTS_CONFIG_FILE_NAMES[0]), config: legacy };
+};
+
+/**
+ * Creates `devryan-agents.jsonc` from a legacy `oh-my-opencode-slim.json[c]` in
+ * a user config directory. Idempotent; the legacy file is left untouched and the
+ * legacy JSONC bytes (comments included) are kept except its `$schema`. It never
+ * throws: a failure is reported and reads keep falling back to the legacy file.
+ */
+const migrateLegacyAgentsConfig = (options = {}) => {
+  const configDirectory = normalizeConfigDirectory(options);
+  try {
+    if (findExistingPathIn(configDirectory, AGENTS_CONFIG_FILE_NAMES)) return { migrated: false, reason: 'present' };
+    const legacyPath = findExistingPathIn(configDirectory, LEGACY_SLIM_CONFIG_FILE_NAMES);
+    if (!legacyPath) return { migrated: false, reason: 'absent' };
+    const source = fs.readFileSync(legacyPath, 'utf8');
+    if (!isPlainObject(parseConfigJsonc(source, legacyPath))) throw Object.assign(new Error('legacy agents config is not an object'), { code: 'INVALID_JSONC' });
+    const targetPath = path.join(configDirectory, AGENTS_CONFIG_FILE_NAMES[0]);
+    const temporaryPath = `${targetPath}.${randomBytes(6).toString('hex')}.tmp`;
+    fs.writeFileSync(temporaryPath, removeJsoncKeyPaths(source, [['$schema']]), { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+    try {
+      // A concurrent startup may have migrated meanwhile; never replace its file.
+      fs.linkSync(temporaryPath, targetPath);
+    } finally {
+      fs.rmSync(temporaryPath, { force: true });
+    }
+    return { migrated: true, from: legacyPath, to: targetPath };
+  } catch (error) {
+    if (error?.code === 'EEXIST') return { migrated: false, reason: 'present' };
+    const code = typeof error?.code === 'string' && /^[A-Z_]{2,40}$/.test(error.code) ? error.code : 'MIGRATION_FAILED';
+    console.warn(`[agents-config] legacy agent config migration deferred (${code}); reading the legacy file`);
+    return { migrated: false, reason: 'failed', code };
+  }
 };
 
 const writeSlimAgentModelOverride = (agentName, override, options = {}) => {
-  const targetPath = getSlimWritePath(options);
-  const config = readSlimConfigFile(targetPath);
+  const { targetPath, config } = readSlimWriteTarget(options);
   const agents = isPlainObject(config.agents) ? { ...config.agents } : {};
   const existing = isPlainObject(agents[agentName]) ? { ...agents[agentName] } : {};
   if (Object.prototype.hasOwnProperty.call(override, 'model')) {
@@ -288,8 +336,7 @@ const writeSlimAgentModelOverride = (agentName, override, options = {}) => {
 };
 
 const deleteSlimAgentModelOverride = (agentName, options = {}) => {
-  const targetPath = getSlimWritePath(options);
-  const config = readSlimConfigFile(targetPath);
+  const { targetPath, config } = readSlimWriteTarget(options);
   const agents = isPlainObject(config.agents) ? { ...config.agents } : {};
   const existing = isPlainObject(agents[agentName]) ? { ...agents[agentName] } : null;
   if (!existing) {
@@ -311,9 +358,12 @@ const deleteSlimAgentModelOverride = (agentName, options = {}) => {
 };
 
 export {
+  AGENTS_CONFIG_FILE_NAMES,
+  LEGACY_SLIM_CONFIG_FILE_NAMES,
   SLIM_REPLACED_AGENT_NAMES,
   SLIM_SCOPE,
   deleteSlimAgentModelOverride,
+  migrateLegacyAgentsConfig,
   resolveSlimConfig,
   writeSlimAgentModelOverride,
 };

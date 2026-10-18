@@ -236,7 +236,7 @@ export async function prepareRuntimeUiProfile({ cell, runtimeRoot, workspace, ta
     const copiedConfiguration = { ...legacy, provider: undefined, providers: native.providers };
     const manifest = JSON.parse(await fs.readFile(path.join(artifactRoot, 'native-bundle.json'), 'utf8'));
     const files = { 'opencode/opencode.json': JSON.stringify(copiedConfiguration),
-      'opencode/oh-my-opencode-slim.json': JSON.stringify({ preset: 'qa', presets: { qa: pinnedAgents }, agents: pinnedAgents }),
+      'opencode/devryan-agents.json': JSON.stringify({ preset: 'qa', presets: { qa: pinnedAgents }, agents: pinnedAgents }),
       'opencode/.openchamber/config.json': JSON.stringify({ agentOverrides }),
       'web/settings.json': JSON.stringify({ lastDirectory: workspace, activeProjectId: 'qa-project',
         defaultModel: legacy.model, defaultAgent: 'builder',

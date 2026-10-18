@@ -119,7 +119,7 @@ describe('user profile provisioning', () => {
     const configDir = path.join(home, '.config', 'opencode');
     const config = readJson(path.join(configDir, 'opencode.json'));
     const packageJson = readJson(path.join(configDir, 'package.json'));
-    const slim = readJson(path.join(configDir, 'oh-my-opencode-slim.json'));
+    const slim = readJson(path.join(configDir, 'devryan-agents.jsonc'));
     const meridianFeatures = readJson(path.join(home, '.config', 'meridian', 'sdk-features.json'));
 
     expect(result.ok).toBe(true);
@@ -281,24 +281,27 @@ describe('user profile provisioning', () => {
     expect((await runtime.provision()).changed).toBe(false);
   });
 
-  it('preserves untracked personal Slim JSON, higher-precedence JSONC and prompt overrides', async () => {
+  it('migrates personal legacy agent config ahead of the shipped default and preserves prompt overrides', async () => {
     const configDir = path.join(home, '.config', 'opencode');
-    const slimPath = path.join(configDir, 'oh-my-opencode-slim.json');
-    const jsoncPath = path.join(configDir, 'oh-my-opencode-slim.jsonc');
+    const legacyJsonPath = path.join(configDir, 'oh-my-opencode-slim.json');
+    const legacyJsoncPath = path.join(configDir, 'oh-my-opencode-slim.jsonc');
+    const agentsPath = path.join(configDir, 'devryan-agents.jsonc');
     const promptPath = path.join(configDir, 'agents', 'builder.md');
     const personal = { preset: 'openai', disabled_mcps: ['context7', 'websearch', 'gh_grep'],
       agents: { builder: { model: 'xai/grok-4.6', variant: 'high' }, designer: { model: 'anthropic/claude-opus-5', variant: 'medium' } } };
-    writeJson(slimPath, personal);
-    fs.writeFileSync(jsoncPath, '// personal precedence\n{"agents":{"oracle":{"model":"openai/gpt-6-astra"}}}\n');
+    writeJson(legacyJsonPath, personal);
+    // JSONC outranks JSON, so it is the file that becomes the new configuration.
+    fs.writeFileSync(legacyJsoncPath, '// personal precedence\n{"agents":{"oracle":{"model":"openai/gpt-6-astra"}}}\n');
     fs.mkdirSync(path.dirname(promptPath), { recursive: true });
     fs.writeFileSync(promptPath, 'My primary agent instructions\n');
-    const before = [slimPath, jsoncPath, promptPath].map(file => fs.readFileSync(file, 'utf8'));
+    const before = [legacyJsonPath, legacyJsoncPath, promptPath].map(file => fs.readFileSync(file, 'utf8'));
     const runtime = createRuntime();
     for (let attempt = 0; attempt < 2; attempt++) {
       const result = await runtime.provision();
       expect(result.ok).toBe(true);
-      expect(result.conflicts).toEqual(expect.arrayContaining([slimPath, promptPath]));
-      expect([slimPath, jsoncPath, promptPath].map(file => fs.readFileSync(file, 'utf8'))).toEqual(before);
+      expect(result.conflicts).toEqual(expect.arrayContaining([agentsPath, promptPath]));
+      expect([legacyJsonPath, legacyJsoncPath, promptPath].map(file => fs.readFileSync(file, 'utf8'))).toEqual(before);
+      expect(fs.readFileSync(agentsPath, 'utf8')).toBe(before[1]);
     }
   });
 
@@ -857,7 +860,7 @@ describe('user profile provisioning', () => {
     const packagePath = path.join(configDir, 'package.json');
     const manifestPath = path.join(configDir, '.openchamber', 'user-profile-manifest.json');
     const adapterPath = path.join(configDir, 'plugins', 'devryan-oh-my-opencode-slim.mjs');
-    const slimConfigPath = path.join(configDir, 'oh-my-opencode-slim.json');
+    const slimConfigPath = path.join(configDir, 'devryan-agents.jsonc');
     // DevRyan <= 2.1.1 wrote and tracked the adapter, pinned the package and registered it.
     const adapterContent = 'export default async () => ({});\n';
     fs.mkdirSync(path.dirname(adapterPath), { recursive: true });

@@ -180,7 +180,7 @@ describe('agent model overrides', () => {
 
   it('writes Slim-managed model overrides to oh-my-opencode-slim config instead of the DevRyan sidecar', async () => {
     const slimConfigDirectory = path.dirname(userConfigPath);
-    const slimConfigPath = path.join(slimConfigDirectory, 'oh-my-opencode-slim.json');
+    const slimConfigPath = path.join(slimConfigDirectory, 'devryan-agents.json');
     await writeJson(userConfigPath, {
     });
     await writeJson(slimConfigPath, {
@@ -218,7 +218,7 @@ describe('agent model overrides', () => {
 
   it('routes Slim-installed global agent overrides to Slim config', async () => {
     const slimConfigDirectory = path.dirname(userConfigPath);
-    const slimConfigPath = path.join(slimConfigDirectory, 'oh-my-opencode-slim.json');
+    const slimConfigPath = path.join(slimConfigDirectory, 'devryan-agents.json');
     await writeJson(userConfigPath, {
     });
     await writeJson(slimConfigPath, {
@@ -257,7 +257,7 @@ describe('agent model overrides', () => {
 
   it('keeps DevRyan project agents authoritative in wrapper mode while applying Slim model metadata', async () => {
     const slimConfigDirectory = path.dirname(userConfigPath);
-    const slimConfigPath = path.join(slimConfigDirectory, 'oh-my-opencode-slim.json');
+    const slimConfigPath = path.join(slimConfigDirectory, 'devryan-agents.json');
     await writeJson(userConfigPath, {
     });
     await writeJson(slimConfigPath, {
@@ -439,7 +439,7 @@ describe('agent backup models', () => {
     writeAgentBackupModel('builder', { model: 'anthropic/claude-sonnet-4-6', variant: null }, projectDirectory, { userConfigPath });
 
     // The primary routes to the agent orchestration config; the backup stays in the sidecar.
-    const slimConfigPath = path.join(path.dirname(userConfigPath), 'oh-my-opencode-slim.jsonc');
+    const slimConfigPath = path.join(path.dirname(userConfigPath), 'devryan-agents.jsonc');
     expect((await readJsonc(slimConfigPath)).agents.builder).toEqual({ model: 'openai/gpt-5.5', variant: 'medium' });
     const sidecar = JSON.parse(await fs.readFile(sidecarPath, 'utf8'));
     expect(sidecar.agentOverrides?.builder).toBeUndefined();
@@ -493,7 +493,7 @@ describe('agent backup models', () => {
 
   it('stores Slim-managed agent backup models in the DevRyan sidecar, never in Slim config', async () => {
     const slimConfigDirectory = path.dirname(userConfigPath);
-    const slimConfigPath = path.join(slimConfigDirectory, 'oh-my-opencode-slim.json');
+    const slimConfigPath = path.join(slimConfigDirectory, 'devryan-agents.json');
     await writeJson(userConfigPath, {
     });
     await writeJson(slimConfigPath, {
@@ -544,8 +544,8 @@ describe('shadowed sidecar agent overrides', () => {
   let options;
 
   const writeSidecarOverrides = (agentOverrides) => writeJson(sidecarPath, { agentOverrides });
-  const writeSlimConfig = (config) => writeJson(path.join(slimConfigDirectory, 'oh-my-opencode-slim.json'), config);
-  const writeProjectSlimConfig = (config) => writeJson(path.join(projectDirectory, '.opencode', 'oh-my-opencode-slim.json'), config);
+  const writeSlimConfig = (config) => writeJson(path.join(slimConfigDirectory, 'devryan-agents.json'), config);
+  const writeProjectSlimConfig = (config) => writeJson(path.join(projectDirectory, '.opencode', 'devryan-agents.json'), config);
 
   // Every shadowed entry must describe what the managed runtime actually runs.
   const expectMirrorsRuntime = (shadowed) => {

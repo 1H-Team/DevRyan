@@ -16,7 +16,7 @@ test('native qualification pins actual Cursor producers and paid QA exercise inp
     'scripts/agent-evals/client.mjs', 'scripts/agent-evals/cases.mjs', 'scripts/agent-evals/graders.mjs',
     'scripts/journal.mjs', 'packages/web/server/lib/git/routes.js', 'packages/web/server/lib/git/zen-text.js',
     'packages/web/server/default-config/agents/explorer.md',
-    'packages/web/server/default-config/user-profile/oh-my-opencode-slim.json']) {
+    'packages/web/server/default-config/user-profile/devryan-agents.jsonc']) {
     assert.match(proof.sources[file] ?? '', /^[a-f0-9]{64}$/, `Missing qualification source: ${file}`);
   }
 });

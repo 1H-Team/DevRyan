@@ -12,7 +12,7 @@ test('pinned Slim native setup preserves two location catalogs across tool reloa
     const home = path.join(root, 'home'), tmp = path.join(home, 'tmp'), config = path.join(home, 'config');
     await fs.mkdir(tmp, { recursive: true }); await fs.mkdir(config);
     await fs.writeFile(path.join(tmp, 'package.json'), '{"type":"commonjs"}');
-    await fs.writeFile(path.join(config, 'oh-my-opencode-slim.json'), JSON.stringify({ autoUpdate: false, companion: { enabled: false },
+    await fs.writeFile(path.join(config, 'devryan-agents.json'), JSON.stringify({ autoUpdate: false, companion: { enabled: false },
       backgroundJobs: { orchestratorWake: { enabled: false } }, agents: { builder: { model: 'sim/m1', variant: 'high' } } }));
     const directories = [path.join(root, 'one'), path.join(root, 'two')];
     await Promise.all(directories.map(directory => fs.mkdir(directory)));
@@ -119,7 +119,7 @@ test('pinned Slim native setup preserves two location catalogs across tool reloa
       const rows=result.rows;// The SDK's local catalog owners probe these exact endpoints once.
       // Fetch remains refused; no package updater or provider traffic is allowed.
       expect(result.networkCalls.map(call=>call.url).sort()).toEqual(['http://127.0.0.1:11434/api/tags','http://127.0.0.1:1234/api/v1/models','http://127.0.0.1:8000/health']);
-      expect((await fs.readdir(config)).sort()).toEqual(['oh-my-opencode-slim.json']);
+      expect((await fs.readdir(config)).sort()).toEqual(['devryan-agents.json']);
       expect(rows).toHaveLength(2);
       for (const [index, row] of rows.entries()) {
         expect(row.directory).toBe(directories[index]); expect(row.agents.find(agent => agent.id === 'builder')?.model?.variant).toBe(index ? 'medium' : 'high');

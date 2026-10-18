@@ -28,7 +28,7 @@ import {
   applyRuntimeExternalDirectoryPolicy,
   sanitizeAgentSkillPolicy,
 } from './skill-policy.js';
-import { resolveSlimConfig } from './slim-config.js';
+import { AGENTS_CONFIG_FILE_NAMES, LEGACY_SLIM_CONFIG_FILE_NAMES, resolveSlimConfig } from './slim-config.js';
 import {
   GITHUB_COPILOT_PROVIDER_ID,
   GITHUB_COPILOT_PROVIDER_NAME,
@@ -53,7 +53,7 @@ const DEFAULT_OPENAI_HEADER_TIMEOUT_MS = 120_000;
 const DEFAULT_OPENAI_CHUNK_TIMEOUT_MS = 300_000;
 const DEFAULT_OPENAI_REQUEST_TIMEOUT_MS = 15 * 60_000;
 const ANTHROPIC_OAUTH_CONFIG_PROVIDER_ID = 'anthropic';
-const SLIM_CONFIG_FILE_NAMES = ['oh-my-opencode-slim.jsonc', 'oh-my-opencode-slim.json'];
+const SLIM_CONFIG_FILE_NAMES = [...AGENTS_CONFIG_FILE_NAMES, ...LEGACY_SLIM_CONFIG_FILE_NAMES];
 
 // OpenCode merges higher-precedence agent markdown over project markdown. It
 // rejects YAML null for variant, and omitting variant keeps the lower layer's
@@ -661,10 +661,7 @@ const buildManagedSlimConfig = (userConfig) => {
 const syncSlimConfigOverlay = async (targetConfigDirectory, workingDirectory, options = {}) => {
   const slim = resolveSlimConfig(workingDirectory, options);
   const staleTargets = SLIM_CONFIG_FILE_NAMES.map((fileName) => path.join(targetConfigDirectory, fileName));
-  const targetPath = path.join(
-    targetConfigDirectory,
-    slim.userConfigPath ? path.basename(slim.userConfigPath) : 'oh-my-opencode-slim.json',
-  );
+  const targetPath = path.join(targetConfigDirectory, 'devryan-agents.json');
   const desiredContent = `${JSON.stringify(buildManagedSlimConfig(slim.userConfig), null, 2)}\n`;
   let currentContent = null;
   try {
