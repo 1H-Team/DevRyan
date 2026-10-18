@@ -3,11 +3,11 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { git } from './session-changes-git.js';
-import { createSessionMutationRuntime } from './session-mutations.js';
-import { recoveredInputHash } from '../../web/server/lib/opencode/runtime-host/native-recovered-input-hash.js';
-import { createNativeAdmissionOwner } from '../../web/server/lib/opencode/runtime-host/native-admission-owner.js';
-import { createManagedOrchestrationPrivateHost } from '../../web/server/lib/orchestration/private-host.js';
+import { git } from '../../../../../harness-runtime/lib/session-changes-git.js';
+import { createSessionMutationRuntime } from '../../../../../harness-runtime/lib/session-mutations.js';
+import { recoveredInputHash } from '../../opencode/runtime-host/native-recovered-input-hash.js';
+import { createNativeAdmissionOwner } from '../../opencode/runtime-host/native-admission-owner.js';
+import { createManagedOrchestrationPrivateHost } from '../../orchestration/private-host.js';
 
 const roots = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true }))); });

@@ -129,12 +129,12 @@ describe('affected validation planning', () => {
 
   test('runs Cursor tests and dependent host validation for Cursor runtime code', () => {
     const plan = buildPlan('fast', ['packages/cursor-sdk-runtime/persistent-worker.mjs']);
-    assert.deepEqual(plan.commands.map((entry) => entry.label), ['typeCheck:web', 'test:cursor', 'test:web', 'test:startup']);
+    assert.deepEqual(plan.commands.map((entry) => entry.label), ['typeCheck:web', 'import-boundaries', 'browser-graph', 'test:cursor', 'test:web', 'test:startup']);
     assert.deepEqual(plan.commands.find((entry) => entry.label === 'test:cursor')?.args, ['test', 'packages/cursor-sdk-runtime']);
   });
 
   test('runs the Electron suite for shell code', () => {
-    assert.deepEqual(labels(['packages/electron/scripts/native-module-paths.mjs']), ['typeCheck:electron', 'test:electron', 'test:startup']);
+    assert.deepEqual(labels(['packages/electron/scripts/native-module-paths.mjs']), ['typeCheck:electron', 'import-boundaries', 'browser-graph', 'test:electron', 'test:startup']);
   });
 
   test('type-checks the frozen legacy Tauri package without running its cargo tests', () => {
@@ -144,7 +144,7 @@ describe('affected validation planning', () => {
 
   test('runs orchestration tests and every dependent runtime for orchestration core changes', () => {
     assert.deepEqual(labels(['packages/orchestration-runtime/scheduler.js']), [
-      'typeCheck:ui', 'typeCheck:web', 'test:orchestration', 'test:ui', 'test:web', 'test:startup',
+      'typeCheck:ui', 'typeCheck:web', 'import-boundaries', 'browser-graph', 'test:orchestration', 'test:ui', 'test:web', 'test:startup',
     ]);
   });
 });

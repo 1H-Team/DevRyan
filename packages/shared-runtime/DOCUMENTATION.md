@@ -2,6 +2,17 @@
 
 `@openchamber/shared-runtime` contains dependency-light host logic that must behave identically in the web/Electron runtimes.
 
+## Entry points
+
+`package.json` `exports` is the public surface:
+
+- `./startup-diagnostics.js` and the `./lib/<name>.js` modules listed there are portable: no Node builtins or packages, safe for the browser bundle;
+- `./node/safe-archive.js` is Node-only (`node:fs`, `node:crypto`, `adm-zip`);
+- `./testing/*.js` are portable test fixtures;
+- the root `.` is the compatibility barrel for web and Electron. It re-exports the archive module, so it is Node-only and browser code must use the portable subpaths.
+
+Any other file is private. `scripts/check-import-boundaries.mjs` enforces this for package-name and relative imports, and `scripts/check-browser-graph.mjs` keeps the Node-only module out of the UI.
+
 ## Startup integrity diagnostics
 
 `startup-diagnostics.js` owns the bounded artifact diagnostic shared by the verifier,

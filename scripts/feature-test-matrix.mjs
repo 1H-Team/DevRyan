@@ -72,7 +72,7 @@ export const FEATURE_TEST_MATRIX = Object.freeze([
       'scripts/opencode-v2-native/bootstrap.test.ts',
       'scripts/opencode-v2-native/admission-gates.test.ts',
       'scripts/opencode-v2-native/execution-routing.test.ts',
-      'packages/harness-runtime/lib/session-mutations-native-holds.test.js',
+      'packages/web/server/lib/harness/native-integration/session-mutations-native-holds.test.js',
       'packages/web/server/lib/opencode/runtime-host/managed-task-owner.test.js',
       'packages/web/server/lib/opencode/runtime-host/primary-step-owner.test.js',
       'packages/web/server/lib/opencode/runtime-host/native-shell-continuation.test.js',

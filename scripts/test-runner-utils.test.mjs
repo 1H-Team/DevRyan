@@ -285,6 +285,8 @@ describe('Bots affected validation planning', () => {
       'typeCheck:electron',
       'typeCheck:ui',
       'typeCheck:web',
+      'import-boundaries',
+      'browser-graph',
       'test:bots',
       'test:electron',
       'test:ui',
@@ -359,8 +361,18 @@ describe('maintenance validation selection', () => {
     assert.ok(buildPlan('fast', ['packages/bot-indexer/package-lock.json']).commands.some(c => c.label === 'test:botIndexer'));
   });
 
+  test('checks import boundaries for changed package code, and every importer when a manifest or the exception list changes', () => {
+    const boundaries = files => buildPlan('fast', files).commands.find(c => c.label === 'import-boundaries')?.args;
+    assert.deepEqual(boundaries(['packages/ui/src/App.tsx', 'docs/TESTING.md']), ['scripts/check-import-boundaries.mjs', '--files', 'packages/ui/src/App.tsx']);
+    for (const file of ['packages/shared-runtime/package.json', 'scripts/import-boundaries.json', 'scripts/check-browser-graph.mjs']) {
+      assert.deepEqual(boundaries([file]), ['scripts/check-import-boundaries.mjs'], file);
+      assert.ok(buildPlan('fast', [file]).commands.some(c => c.label === 'browser-graph'), file);
+    }
+    assert.equal(boundaries(['scripts/release.mjs']), undefined);
+  });
+
   test('runs every check in full mode and refuses unknown modes', () => {
-    assert.deepEqual(buildPlan('full').commands.map(c => c.label), ['lint:full', 'type-check:full', 'docs:validate', 'build', 'bundle:check', 'test:full']);
+    assert.deepEqual(buildPlan('full').commands.map(c => c.label), ['lint:full', 'import-boundaries', 'browser-graph', 'type-check:full', 'docs:validate', 'build', 'bundle:check', 'test:full']);
     assert.throws(() => buildPlan('quick', []), /Unknown validation mode/);
   });
 });

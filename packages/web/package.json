@@ -19,7 +19,7 @@
     "build:watch": "vite build --watch",
     "type-check": "tsc --noEmit && tsc -p server/lib/opencode/runtime-host/tsconfig.json",
     "lint": "eslint \"./src/**/*.{ts,tsx}\" --config ../../eslint.config.js --cache --cache-location ../../.cache/eslint/web",
-    "test": "vitest run --no-file-parallelism --maxWorkers=1 --exclude 'runtime/reviewed-inputs/**' --exclude 'server/lib/opencode/runtime-host/native-helper.test.js' --exclude 'server/lib/opencode/runtime-host/native-retention-quiet.test.ts' --exclude 'server/lib/opencode/runtime-host/native-queued-input.test.ts' && bun test server/lib/opencode/runtime-host/native-helper.test.js server/lib/opencode/runtime-host/native-retention-quiet.test.ts server/lib/opencode/runtime-host/native-queued-input.test.ts",
+    "test": "vitest run --no-file-parallelism --maxWorkers=1 --exclude 'runtime/reviewed-inputs/**' --exclude 'server/lib/opencode/runtime-host/native-helper.test.js' --exclude 'server/lib/opencode/runtime-host/native-retention-quiet.test.ts' --exclude 'server/lib/opencode/runtime-host/native-queued-input.test.ts' --exclude 'server/lib/harness/native-integration/**' && bun test server/lib/opencode/runtime-host/native-helper.test.js server/lib/opencode/runtime-host/native-retention-quiet.test.ts server/lib/opencode/runtime-host/native-queued-input.test.ts ./server/lib/harness/native-integration",
     "test:native-host": "bun test ../../scripts/opencode-v2-native/*.test.ts",
     "start": "node bin/cli.js serve"
   },

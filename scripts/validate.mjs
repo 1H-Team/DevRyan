@@ -233,6 +233,20 @@ function command(label, executable, args) {
   return { label, executable, args };
 }
 
+const importBoundaryInputs = new Set(['scripts/import-boundaries.json', 'scripts/check-import-boundaries.mjs', 'scripts/check-browser-graph.mjs']);
+
+// Cross-package import boundaries and the browser bundle graph. A manifest,
+// exception-list or checker change re-checks every importer.
+function importBoundaryCommands(files) {
+  const everything = files.some((file) => importBoundaryInputs.has(file) || /^packages\/[^/]+\/package\.json$/.test(file));
+  const importers = files.filter((file) => file.startsWith('packages/') && /\.(?:[cm]?js|jsx|[cm]?ts|tsx)$/.test(file));
+  if (!everything && importers.length === 0) return [];
+  return [
+    command('import-boundaries', 'node', ['scripts/check-import-boundaries.mjs', ...(everything ? [] : ['--files', ...importers])]),
+    command('browser-graph', 'node', ['scripts/check-browser-graph.mjs']),
+  ];
+}
+
 function packageCommands(packageNames, commandName) {
   return [...packageNames]
     .sort()
@@ -286,6 +300,8 @@ function changedLintCommand(files) {
 function fullCommands() {
   return [
     command('lint:full', 'bun', ['run', 'lint']),
+    command('import-boundaries', 'node', ['scripts/check-import-boundaries.mjs']),
+    command('browser-graph', 'node', ['scripts/check-browser-graph.mjs']),
     command('type-check:full', 'bun', ['run', 'type-check']),
     command('docs:validate', 'bun', ['run', 'docs:validate']),
     command('build', 'bun', ['run', 'build']),
@@ -356,6 +372,7 @@ export function buildPlan(requestedMode, providedFiles) {
     commands.push(...changedLintCommand(files));
     commands.push(...packageCommands(affectedTypeCheckPackages(changedPackages, true), 'typeCheck'));
   }
+  commands.push(...importBoundaryCommands(files));
   if (files.some(isScriptsFile)) commands.push(command('test:scripts', 'bun', ['run', 'test:scripts']));
   commands.push(...packageCommands(affectedTests(files), 'test'));
   commands.push(command('test:startup', 'bun', ['run', 'test:startup']));

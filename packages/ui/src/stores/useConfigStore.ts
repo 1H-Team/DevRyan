@@ -1,5 +1,5 @@
 import { DEFAULT_HELPER_MODEL_SELECTION, parseHelperModelSelection, type HelperModelSelection } from '@/lib/helperModelSelection';
-import { startupDiagnosticSummary } from '../../../shared-runtime/startup-diagnostics.js';
+import { startupDiagnosticSummary } from '@openchamber/shared-runtime/startup-diagnostics.js';
 import { getChatThinkingState, resolveChatThinkingVariant } from '@/lib/providers/chatThinking';
 import { getCursorAcpVariantState, resolveCursorAcpVariantSelection } from '@/lib/providers/cursorThinking';
 import { useMemo } from "react";

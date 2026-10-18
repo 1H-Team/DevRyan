@@ -1,5 +1,5 @@
 import { createProjectIdFromPath } from '@/lib/projectId';
-import { resolvePlanProjectStorageId } from '../../../../shared-runtime/lib/plan-storage-id.js';
+import { resolvePlanProjectStorageId } from '@openchamber/shared-runtime/lib/plan-storage-id.js';
 
 export interface SessionPlanFileIdentity {
   projectPath: string;

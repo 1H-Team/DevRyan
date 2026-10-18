@@ -28,3 +28,11 @@ barriers, session-token reauthorization and Express request middleware.
 controller with the host. Electron inherits this in-process backend. The private
 orchestration bridge carries the bundled plugin handshake and execution guard.
 See `docs/PROVIDER_RECOVERY.md` for policy and release gates.
+
+## Native integration tests
+
+`native-integration/` holds harness-runtime behaviour tests that need web-host
+modules (native admission, the native consumer fixture, orchestration private
+host, Claude stderr diagnostics). They run under Bun from the web `test` script
+and are excluded from Vitest, so `@openchamber/harness-runtime` tests never
+import the web server.

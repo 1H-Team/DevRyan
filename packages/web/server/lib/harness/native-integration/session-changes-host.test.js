@@ -3,9 +3,9 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { createSessionChangeHost } from './session-changes-host.js';
-import { createSessionMutationRuntime } from './session-mutations.js';
-import { createNativeConsumerFixture } from '../../web/server/lib/opencode/test-native-consumer-client.js';
+import { createSessionChangeHost } from '../../../../../harness-runtime/lib/session-changes-host.js';
+import { createSessionMutationRuntime } from '../../../../../harness-runtime/lib/session-mutations.js';
+import { createNativeConsumerFixture } from '../../opencode/test-native-consumer-client.js';
 
 const createFixtureHost = options => createSessionChangeHost({ ...options, openCodeClient: options.openCodeClient ?? createNativeConsumerFixture({ readFixture: options.fetchImpl }) });
 

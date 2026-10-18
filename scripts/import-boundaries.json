@@ -1,0 +1,216 @@
+{
+  "schemaVersion": 1,
+  "description": "Temporary cross-package imports into private package files. Each entry names the plan stage that removes it; unscheduled entries have no removal stage yet. See scripts/check-import-boundaries.mjs.",
+  "exceptions": [
+    {
+      "importer": "packages/bot-engine-proxy/src/server.js",
+      "target": "packages/bot-supervisor/src/docker.js",
+      "stage": "5"
+    },
+    {
+      "importer": "packages/bot-engine-proxy/src/server.test.js",
+      "target": "packages/bot-supervisor/src/docker.js",
+      "stage": "5"
+    },
+    {
+      "importer": "packages/bot-engine-proxy/src/server.test.js",
+      "target": "packages/bot-supervisor/src/engine-proxy-client.js",
+      "stage": "5"
+    },
+    {
+      "importer": "packages/bots-runtime/opencode/devryan-bot-tools.test.mjs",
+      "target": "packages/web/server/lib/opencode/version-policy.js",
+      "stage": "unscheduled"
+    },
+    {
+      "importer": "packages/bots-runtime/opencode/native-image-tool.test.mjs",
+      "target": "packages/web/server/lib/bots/native-image-tool.mjs",
+      "stage": "unscheduled"
+    },
+    {
+      "importer": "packages/bots-runtime/opencode/native-server.test.mjs",
+      "target": "packages/web/server/lib/bots/native-server.mjs",
+      "stage": "unscheduled"
+    },
+    {
+      "importer": "packages/bots-runtime/opencode/native-tool-policy.test.mjs",
+      "target": "packages/web/server/lib/bots/config-compiler.js",
+      "stage": "unscheduled"
+    },
+    {
+      "importer": "packages/bots-runtime/opencode/native-tool-policy.test.mjs",
+      "target": "packages/web/server/lib/bots/native-server.mjs",
+      "stage": "unscheduled"
+    },
+    {
+      "importer": "packages/cursor-sdk-runtime/model-discovery.test.js",
+      "target": "packages/web/server/lib/opencode/runtime-host/native-cursor-owner.js",
+      "stage": "unscheduled"
+    },
+    {
+      "importer": "packages/electron/main.mjs",
+      "target": "packages/web/server/lib/agent-browser/install.js",
+      "stage": "unscheduled"
+    },
+    {
+      "importer": "packages/electron/main.mjs",
+      "target": "packages/web/server/lib/opencode/login-shell-env-filter.js",
+      "stage": "4a"
+    },
+    {
+      "importer": "packages/electron/main.mjs",
+      "target": "packages/web/server/lib/opencode/path-utils.js",
+      "stage": "4a"
+    },
+    {
+      "importer": "packages/electron/main.mjs",
+      "target": "packages/web/server/lib/opencode/runtime-host/native-artifacts.js",
+      "stage": "4a"
+    },
+    {
+      "importer": "packages/electron/main.mjs",
+      "target": "packages/web/server/lib/opencode/runtime-host/native-bundle-reboot-recovery.js",
+      "stage": "4a"
+    },
+    {
+      "importer": "packages/electron/main.mjs",
+      "target": "packages/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js",
+      "stage": "4a"
+    },
+    {
+      "importer": "packages/electron/native-settings-directory.mjs",
+      "target": "packages/web/server/lib/opencode/runtime-host/runtime-bundle-root.js",
+      "stage": "4a"
+    },
+    {
+      "importer": "packages/electron/shell-env-inheritance.mjs",
+      "target": "packages/web/server/lib/opencode/login-shell-env-filter.js",
+      "stage": "4a"
+    },
+    {
+      "importer": "packages/electron/tests/bot-catalog.docker.test.mjs",
+      "target": "packages/web/server/lib/bots/activation-hold.js",
+      "stage": "unscheduled"
+    },
+    {
+      "importer": "packages/electron/tests/bot-catalog.docker.test.mjs",
+      "target": "packages/web/server/lib/bots/authorization.js",
+      "stage": "unscheduled"
+    },
+    {
+      "importer": "packages/electron/tests/bot-catalog.docker.test.mjs",
+      "target": "packages/web/server/lib/bots/blob-store.js",
+      "stage": "unscheduled"
+    },
+    {
+      "importer": "packages/electron/tests/bot-catalog.docker.test.mjs",
+      "target": "packages/web/server/lib/bots/catalog-import.js",
+      "stage": "unscheduled"
+    },
+    {
+      "importer": "packages/electron/tests/bot-catalog.docker.test.mjs",
+      "target": "packages/web/server/lib/bots/catalog-validation.js",
+      "stage": "unscheduled"
+    },
+    {
+      "importer": "packages/electron/tests/bot-catalog.docker.test.mjs",
+      "target": "packages/web/server/lib/bots/channels.js",
+      "stage": "unscheduled"
+    },
+    {
+      "importer": "packages/electron/tests/bot-catalog.docker.test.mjs",
+      "target": "packages/web/server/lib/bots/encryption.js",
+      "stage": "unscheduled"
+    },
+    {
+      "importer": "packages/electron/tests/bot-catalog.docker.test.mjs",
+      "target": "packages/web/server/lib/bots/local-catalog.js",
+      "stage": "unscheduled"
+    },
+    {
+      "importer": "packages/electron/tests/bot-catalog.docker.test.mjs",
+      "target": "packages/web/server/lib/bots/local-object-storage.js",
+      "stage": "unscheduled"
+    },
+    {
+      "importer": "packages/electron/tests/bot-catalog.docker.test.mjs",
+      "target": "packages/web/server/lib/bots/store.js",
+      "stage": "unscheduled"
+    },
+    {
+      "importer": "packages/electron/tests/bot-runtime-manager.test.mjs",
+      "target": "packages/bot-supervisor/src/docker.js",
+      "stage": "5"
+    },
+    {
+      "importer": "packages/electron/tests/browser-inspection/electron-main.mjs",
+      "target": "packages/web/server/default-config/plugins/devryan-browser.mjs",
+      "stage": "unscheduled"
+    },
+    {
+      "importer": "packages/electron/tests/browser-inspection/upgrade-install.mjs",
+      "target": "packages/web/server/lib/agent-browser/install.js",
+      "stage": "unscheduled"
+    },
+    {
+      "importer": "packages/electron/tests/browser-inspection/upgrade-main.mjs",
+      "target": "packages/web/server/default-config/plugins/devryan-browser.mjs",
+      "stage": "unscheduled"
+    },
+    {
+      "importer": "packages/electron/tests/browser-inspection/upgrade-worker.mjs",
+      "target": "packages/web/server/default-config/plugins/devryan-browser.mjs",
+      "stage": "unscheduled"
+    },
+    {
+      "importer": "packages/electron/tests/shell-env-inheritance.test.mjs",
+      "target": "packages/web/server/lib/opencode/runtime-host/native-default-bundle.js",
+      "stage": "4a"
+    },
+    {
+      "importer": "packages/electron/tests/ssh-managed-reuse.test.mjs",
+      "target": "packages/web/server/lib/opencode/ssh-managed-identity.js",
+      "stage": "unscheduled"
+    },
+    {
+      "importer": "packages/ui/src/lib/retentionSelection.test.ts",
+      "target": "packages/web/server/lib/opencode/session-activity-gate.js",
+      "stage": "unscheduled"
+    },
+    {
+      "importer": "packages/ui/src/sync/native-cursor-transcript.test.js",
+      "target": "packages/web/server/lib/event-stream/payload-serialization.js",
+      "stage": "unscheduled"
+    },
+    {
+      "importer": "packages/ui/src/sync/native-cursor-transcript.test.js",
+      "target": "packages/web/server/lib/opencode/v2/projection/events.js",
+      "stage": "unscheduled"
+    },
+    {
+      "importer": "packages/ui/src/sync/native-cursor-transcript.test.js",
+      "target": "packages/web/server/lib/opencode/v2/projection/messages.js",
+      "stage": "unscheduled"
+    },
+    {
+      "importer": "packages/ui/src/sync/plan-ready-notification-parity.test.ts",
+      "target": "packages/web/server/lib/notifications/plan-ready.js",
+      "stage": "unscheduled"
+    },
+    {
+      "importer": "packages/ui/src/sync/session-presentation.integration.test.js",
+      "target": "packages/web/server/lib/event-stream/payload-serialization.js",
+      "stage": "unscheduled"
+    },
+    {
+      "importer": "packages/ui/src/sync/session-presentation.integration.test.js",
+      "target": "packages/web/server/lib/opencode/session-runtime.js",
+      "stage": "unscheduled"
+    },
+    {
+      "importer": "packages/web/bin/runtime-bundle-command.test.js",
+      "target": "packages/electron/native-settings-directory.mjs",
+      "stage": "4a"
+    }
+  ]
+}

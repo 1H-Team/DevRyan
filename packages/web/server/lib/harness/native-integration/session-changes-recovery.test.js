@@ -3,10 +3,10 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { createSessionChangeRuntime } from './session-changes.js';
-import { createSessionChangeHost } from './session-changes-host.js';
-import { openChangeStore, changeKey } from './session-changes-store.js';
-import { createNativeConsumerFixture } from '../../web/server/lib/opencode/test-native-consumer-client.js';
+import { createSessionChangeRuntime } from '../../../../../harness-runtime/lib/session-changes.js';
+import { createSessionChangeHost } from '../../../../../harness-runtime/lib/session-changes-host.js';
+import { openChangeStore, changeKey } from '../../../../../harness-runtime/lib/session-changes-store.js';
+import { createNativeConsumerFixture } from '../../opencode/test-native-consumer-client.js';
 
 const test = (name, run) => bunTest(name, run, 60_000);
 let base, directory, storage, runtime, events;

@@ -5,7 +5,7 @@
 | Command | Use |
 | --- | --- |
 | `bun run validate` | The local gate before every push and release tag. Diffs against the upstream branch (override with `VALIDATE_BASE`) and runs only what the change touches. |
-| `bun run validate:full` | Lint, type-check, `docs:validate`, build, `bundle:check` and `test:full`. This is what CI runs. |
+| `bun run validate:full` | Lint, import boundaries, the browser graph, type-check, `docs:validate`, build, `bundle:check` and `test:full`. This is what CI runs. |
 | `bun run test:startup` | Curated startup and user-data contract. |
 | `bun run test:full` | Scripts, the visual fixture and every package suite. |
 | `bun run docs:validate` | Markdown links and inline-code paths. |
@@ -17,7 +17,10 @@
 - tests of changed packages and their dependents;
 - `test:scripts` when `scripts/`, `.github/` or `.opencode/agents|plugins` change;
 - `docs:validate` when Markdown changes;
+- import boundaries and the browser graph when package code changes (every importer when a package manifest, `scripts/import-boundaries.json` or a checker changes);
 - `test:startup`, always.
+
+`scripts/check-import-boundaries.mjs` resolves static, re-export, `require` and literal dynamic imports between packages. Application packages (web, Electron, the Bot services) expose only their `main`/`exports`; a package that declares `exports` exposes only those targets, by package name or relative path. Each temporary exception in `scripts/import-boundaries.json` is one exact importer/target pair with the plan stage that removes it (`unscheduled` when none does yet); an exception that no longer matches fails, so the list only shrinks. `scripts/check-browser-graph.mjs` walks the web Vite entry points with the build's aliases and fails on Node builtins, `adm-zip`, or a web-server, Electron, Bot-service or Node-only shared-runtime file.
 
 A docs-only change runs only `docs:validate`. Both validate modes fail if the run left new entries in `.cache/` (see [STORAGE_CLEANUP.md](STORAGE_CLEANUP.md)).
 

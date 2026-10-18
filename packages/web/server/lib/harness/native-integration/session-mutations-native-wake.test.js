@@ -2,9 +2,9 @@ import { afterEach, expect, test } from 'bun:test';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { git } from './session-changes-git.js';
-import { createSessionMutationRuntime } from './session-mutations.js';
-import { createNativeAdmissionOwner } from '../../web/server/lib/opencode/runtime-host/native-admission-owner.js';
+import { git } from '../../../../../harness-runtime/lib/session-changes-git.js';
+import { createSessionMutationRuntime } from '../../../../../harness-runtime/lib/session-mutations.js';
+import { createNativeAdmissionOwner } from '../../opencode/runtime-host/native-admission-owner.js';
 
 const roots = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => fs.rm(root, { recursive: true, force: true }))); });

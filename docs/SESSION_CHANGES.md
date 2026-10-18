@@ -246,7 +246,9 @@ interleaving segments and revision isolation.
 shell-only and partial writes, staged/dirty baselines, untracked and ignored
 files, raw CRLF/filters, symlinks, binaries, renames, net-zero changes, descendant
 retention, independent and overlapping writers, revision expiration, restart
-and conflict-safe Undo/Redo. `session-changes-host.test.js` checks the shared
+and conflict-safe Undo/Redo. The web-host integration tests under
+`packages/web/server/lib/harness/native-integration/` include
+`session-changes-host.test.js`, which checks the shared
 HTTP/plugin contract and history pagination. Plugin tests check tool coverage;
 card/store tests check presentation and asynchronous isolation.
 `session-changes-scale.test.js` crosses the old snapshot, path, storage, operation
