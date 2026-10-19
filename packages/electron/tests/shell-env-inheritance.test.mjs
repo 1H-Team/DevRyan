@@ -85,7 +85,7 @@ test('main marks a packaged app for the server re-merge before importing the ser
  const serverImport=mainSource.indexOf("await runStartupPhase('server_import', () => webServerEntry.load(), log)");
  assert.ok(serverImport>0);
  assert.ok(marker<serverImport);
- assert.match(mainSource,/import \{ PACKAGED_DESKTOP_ENV \} from '@openchamber\/web\/server\/lib\/opencode\/login-shell-env-filter\.js';/);
+ assert.match(mainSource,/import \{ PACKAGED_DESKTOP_ENV \} from '@devryan\/web\/server\/lib\/opencode\/login-shell-env-filter\.js';/);
 });
 
 test('legacy OPENCHAMBER_* login-shell names are judged as their DevRyan names',()=>{

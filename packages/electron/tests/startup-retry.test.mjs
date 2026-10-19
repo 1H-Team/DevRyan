@@ -53,8 +53,8 @@ test('Retry relaunches after a cached entry failure and retries in process other
 });
 
 test('main routes the startup Retry action and the server entry import through the relaunch-aware loader', () => {
-  assert.match(mainSource, /createModuleEntryLoader\(\s*\(\)\s*=>\s*import\('@openchamber\/web\/server\/index\.js'\)\s*\)/);
-  assert.doesNotMatch(mainSource, /await import\('@openchamber\/web\/server\/index\.js'\)/,
+  assert.match(mainSource, /createModuleEntryLoader\(\s*\(\)\s*=>\s*import\('@devryan\/web\/server\/index\.js'\)\s*\)/);
+  assert.doesNotMatch(mainSource, /await import\('@devryan\/web\/server\/index\.js'\)/,
     'a direct import bypasses the cached-failure detection');
   const retryBranch = mainSource.match(/if \(startupAction === 'retry-startup'\) \{([\s\S]*?)\n    \}/)?.[1] ?? '';
   assert.match(retryBranch, /routeStartupRetry\(/);
