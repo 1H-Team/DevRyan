@@ -114,7 +114,7 @@ for (const spec of childSpecs) {
   spawnSpec(spec);
 }
 
-console.log('[dev] OpenChamber dev stack running (Ctrl+C to stop)');
+console.log('[dev] DevRyan dev stack running (Ctrl+C to stop)');
 console.log('[dev] API default: http://127.0.0.1:3001');
 
 process.on('SIGINT', () => {

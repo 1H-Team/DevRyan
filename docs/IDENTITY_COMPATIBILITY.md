@@ -78,9 +78,23 @@ migration and a release note.
   `openchamber serve`): the external npm package installs only that binary.
 - The `[OpenChamberDesktopNotify]` stdout prefix and the `openchamber-server`
   argv match used for the legacy Tauri sidecar.
-- Code identifiers such as `OpenChamberProjectAction` and file names other than
-  `devryanConfig.ts`, `devryanEvents.ts` and `components/sections/devryan/`:
-  they are not user-visible.
+- Persisted field names: `remoteOpenchamber` (also read as `remote_openchamber`)
+  and `auth.openchamberPassword` in saved SSH instances, the
+  `openchamberPlanMode` message metadata flag, and the `openchamber` key of the
+  OpenCode config with its `.openchamber/` sidecar folder (also used for
+  manifests, overlays and backups under the OpenCode config folder).
+- Wire and binary names: the `openchamberVersion` field of the health response
+  (read by older clients and remote hosts), the `openchamber_write_pty` import
+  compiled into the Ghostty WebAssembly module, the `openchamber-browser` CDP
+  browser context id, the `openchamber-ui` passkey user name and the
+  `mailto:openchamber@localhost` push subject stored with VAPID keys.
+- Names written outside DevRyan: the `openchamber/<name>` branch prefix of new
+  worktrees, the `persist:openchamber-browser*` Electron partitions (cookies),
+  the Docker image's `openchamber` user and `/home/openchamber` paths that
+  compose files mount, and CLI log files `logs/openchamber-<port>.log`.
+- Internal code identifiers and file names use DevRyan names; the ones above
+  keep the old spelling only because stored data or another program depends
+  on it.
 - CLI daemon records `run/openchamber-<port>.{pid,json}`: a newer CLI must find
   daemons an older one started.
 - Environment names sent to an SSH host's DevRyan CLI: `ssh-managed-probe.mjs`
