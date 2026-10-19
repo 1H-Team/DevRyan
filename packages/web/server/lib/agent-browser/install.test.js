@@ -229,74 +229,73 @@ describe('managed agent-browser installer', () => {
     expect(await first).toEqual(await second);
   });
 
-  it('resolves and validates Bun from option, environment, current runtime, and the user install path', async () => {
-    const cases = [
-      {
-        name: 'option',
-        prepare: (root, homeDir) => ({
+  const bunResolutionCases = [
+    {
+      name: 'option',
+      prepare: (root, homeDir) => ({
+        homeDir,
+        env: { PATH: '' },
+        currentExecutable: join(root, 'DevRyan'),
+        bunExecutable: writeFakeBun(join(root, 'option')),
+      }),
+    },
+    {
+      name: 'environment',
+      prepare: (root, homeDir) => {
+        const bunInstall = join(root, 'bun-install');
+        const executable = writeFakeBun(join(bunInstall, 'bin'));
+        return {
           homeDir,
-          env: { PATH: '' },
+          env: { PATH: '', BUN_INSTALL: bunInstall },
           currentExecutable: join(root, 'DevRyan'),
-          bunExecutable: writeFakeBun(join(root, 'option')),
-        }),
+          expected: executable,
+        };
       },
-      {
-        name: 'environment',
-        prepare: (root, homeDir) => {
-          const bunInstall = join(root, 'bun-install');
-          const executable = writeFakeBun(join(bunInstall, 'bin'));
-          return {
-            homeDir,
-            env: { PATH: '', BUN_INSTALL: bunInstall },
-            currentExecutable: join(root, 'DevRyan'),
-            expected: executable,
-          };
-        },
-      },
-      {
-        name: 'current executable',
-        prepare: (root, homeDir) => ({
-          homeDir,
-          env: { PATH: '' },
-          currentExecutable: writeFakeBun(join(root, 'runtime')),
-        }),
-      },
-      {
-        name: 'user install',
-        prepare: (root, homeDir) => ({
-          homeDir,
-          env: { PATH: '' },
-          currentExecutable: join(root, 'DevRyan'),
-          expected: writeFakeBun(join(homeDir, '.bun', 'bin')),
-        }),
-      },
-    ];
+    },
+    {
+      name: 'current executable',
+      prepare: (root, homeDir) => ({
+        homeDir,
+        env: { PATH: '' },
+        currentExecutable: writeFakeBun(join(root, 'runtime')),
+      }),
+    },
+    {
+      name: 'user install',
+      prepare: (root, homeDir) => ({
+        homeDir,
+        env: { PATH: '' },
+        currentExecutable: join(root, 'DevRyan'),
+        expected: writeFakeBun(join(homeDir, '.bun', 'bin')),
+      }),
+    },
+  ];
 
-    for (const entry of cases) {
-      const root = makeTemporaryDirectory();
-      const homeDir = join(root, 'home');
-      const options = entry.prepare(root, homeDir);
-      const expected = options.expected ?? options.bunExecutable ?? options.currentExecutable;
-      const runCommand = vi.fn(async (_command, _args, commandOptions) => {
-        writeInstalledPackage(commandOptions.cwd);
-        return { ok: true, code: 0, stdout: '', stderr: '' };
-      });
-      const installer = createAgentBrowserInstaller({
-        dataRoot: join(root, 'data'),
-        platform: 'darwin',
-        arch: 'arm64',
-        runCommand,
-        ...options,
-      });
+  // One test per case: each spawns fake Bun executables and gets its own time budget.
+  it.each(bunResolutionCases)('resolves and validates Bun from the $name', async (entry) => {
+    const root = makeTemporaryDirectory();
+    const homeDir = join(root, 'home');
+    const options = entry.prepare(root, homeDir);
+    const expected = options.expected ?? options.bunExecutable ?? options.currentExecutable;
+    const runCommand = vi.fn(async (_command, _args, commandOptions) => {
+      writeInstalledPackage(commandOptions.cwd);
+      return { ok: true, code: 0, stdout: '', stderr: '' };
+    });
+    const installer = createAgentBrowserInstaller({
+      dataRoot: join(root, 'data'),
+      platform: 'darwin',
+      arch: 'arm64',
+      runCommand,
+      ...options,
+    });
 
-      const result = await installer.ensureInstalled();
-      expect(result, entry.name).toMatchObject({ ok: true, bunExecutable: expected });
-      expect(runCommand, entry.name).toHaveBeenCalledWith(
-        expected,
-        ['install', '--ignore-scripts'],
-        expect.any(Object),
-      );
-    }
+    const result = await installer.ensureInstalled();
+    expect(result, entry.name).toMatchObject({ ok: true, bunExecutable: expected });
+    expect(runCommand, entry.name).toHaveBeenCalledWith(
+      expected,
+      ['install', '--ignore-scripts'],
+      expect.any(Object),
+    );
   });
 
   it('reports an actionable unavailable state when no validated Bun executable exists', async () => {
