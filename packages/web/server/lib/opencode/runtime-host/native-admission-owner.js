@@ -1494,7 +1494,7 @@ export function createNativeAdmissionOwner(options) {
       const planMode = accepted.metadata.devryan?.planMode === true || accepted.intent?.planMode === true
         || accepted.metadata.devryan?.agent === 'plan' || accepted.intent?.agent === 'plan' || accepted.request?.agent === 'plan'
         || parts.some(part => part.type === 'text' && part.synthetic === true && part.text?.trimStart().startsWith('User has requested to enter plan mode'));
-      const planImplementation = parts.some(part => part.type === 'text' && part.text?.startsWith('[openchamber-plan-action:v1] '));
+      const planImplementation = parts.some(part => part.type === 'text' && (part.text?.startsWith('[devryan-plan-action:v1] ') || part.text?.startsWith('[openchamber-plan-action:v1] ')));
       if (planMode && typeof options.readPlanPolicy !== 'function'
         || (planMode || planImplementation) && typeof options.validatePlanImplementation !== 'function') throw fail('native_plan_policy_unavailable', 503);
       const managedDispatch = managedDispatchContext.getStore();

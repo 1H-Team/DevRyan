@@ -5,6 +5,7 @@
 This directory is DevRyan's browser adapter for the official `libghostty-vt` C ABI, adapted from T3 Code (see `LICENSE-T3CODE`). It replaces the `ghostty-web` npm package: the emulator, the renderer and the input layer are all owned here, so a terminal bug is fixed in this directory rather than patched around in `node_modules`.
 
 - `runtime.ts` owns the single WebAssembly instance per page, the C struct layouts read from `ghostty_type_json`, allocation helpers, and the PTY write callback trampoline (embedded bytes compiled from `../../../scripts/ghostty-write-pty.zig`).
+  New trampoline bytes import `devryan_write_pty`; the host also accepts the old `openchamber_write_pty` import for previously built artifacts.
 - `core.ts` owns one terminal's Ghostty handles: VT writes, resize, theme and 256-color palette, selection, key/mouse/paste encoding, and the render-state snapshot (`GhosttySnapshot`) the renderer draws.
 - `renderer.ts` paints a snapshot into a Canvas 2D context: background runs, text runs, decorations, cursor. It measures the cell from the faces that will render.
 - `surface.ts` owns the DOM: canvas, hidden textarea (keyboard, IME, clipboard), scrollbar, pointer selection, link hover/activation, mouse reporting, wheel scrolling, cursor blink, DPR changes, and the fit/notify cycle toward the PTY.

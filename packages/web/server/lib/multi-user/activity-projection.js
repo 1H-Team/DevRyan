@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { canonicalDevRyanEventType } from '@devryan/shared-runtime/lib/event-types.js';
 
 import { classifyProviderTransportFailure, validateManagedTransportRecovery } from '@devryan/orchestration-runtime';
 import { stableAuditEventId } from './analytics.js';
@@ -83,7 +84,7 @@ const sessionIdFromPayload = (payload) => {
 };
 
 const managedTaskFromPayload = (payload) => {
-  if (payload?.type !== 'openchamber:managed-task') return null;
+  if (canonicalDevRyanEventType(payload?.type) !== 'devryan:managed-task') return null;
   const properties = payload.properties;
   if (!properties || properties.owner !== 'devryan') return null;
   const task = properties.task;

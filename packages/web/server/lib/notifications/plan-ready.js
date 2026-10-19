@@ -1,6 +1,7 @@
 const PLAN_CARD_SENTINEL = '<!--plan-->';
 const PLAN_MODE_INSTRUCTION_PREFIX = 'User has requested to enter plan mode';
-const PLAN_IMPLEMENTATION_REQUEST_PREFIX = '[openchamber-plan-action:v1] ';
+const PLAN_IMPLEMENTATION_REQUEST_PREFIX = '[devryan-plan-action:v1] ';
+const LEGACY_PLAN_IMPLEMENTATION_REQUEST_PREFIX = '[openchamber-plan-action:v1] ';
 const PROVIDER_RECOVERY_PREFIX = '[devryan-provider-recovery:v1:';
 const OPEN_TODO_CONTINUATION_PREFIX = '[devryan-open-todo-continuation:v1]\n';
 const LEGACY_OPEN_TODO_CONTINUATION_PROMPT = 'Your turn ended with open todos. If a plan deviation stopped you, classify it (Class 1: note it and continue; Class 2: ask with the question tool) and continue from the first open todo. If everything is done, mark the todos complete and give the final summary.';
@@ -95,7 +96,7 @@ const isPlanModeUserMessage = (message) => {
   if (!info || info.role !== 'user') return false;
   if (isPlanReadySuppressedUserMessage(message)) return false;
   if (typeof info.mode === 'string' && info.mode.trim().toLowerCase() === 'plan') return true;
-  if (info.metadata?.openchamberPlanMode === true) return true;
+  if (info.metadata?.devryanPlanMode === true || info.metadata?.openchamberPlanMode === true) return true;
   return Array.isArray(message.parts) && message.parts.some((part) => (
     part?.synthetic === true
     && getPartText(part).trim().startsWith(PLAN_MODE_INSTRUCTION_PREFIX)
@@ -106,9 +107,11 @@ const isImplementationRequest = (message) => Array.isArray(message?.parts)
   && message.parts.some((part) => {
     if (part?.type !== 'text' || part.synthetic !== true) return false;
     const text = getPartText(part).trim();
-    if (!text.startsWith(PLAN_IMPLEMENTATION_REQUEST_PREFIX)) return false;
+    const prefix = [PLAN_IMPLEMENTATION_REQUEST_PREFIX, LEGACY_PLAN_IMPLEMENTATION_REQUEST_PREFIX]
+      .find(candidate => text.startsWith(candidate));
+    if (!prefix) return false;
     try {
-      const request = JSON.parse(text.slice(PLAN_IMPLEMENTATION_REQUEST_PREFIX.length));
+      const request = JSON.parse(text.slice(prefix.length));
       return request?.action === 'implement'
         && typeof request.sourceSessionId === 'string' && request.sourceSessionId.trim().length > 0
         && typeof request.sourceMessageId === 'string' && request.sourceMessageId.trim().length > 0

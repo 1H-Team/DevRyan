@@ -72,7 +72,7 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
   const broadcastPresentation = sessionID => {
     const activity = sessionActivityPhases.get(sessionID);
     if (activity && typeof broadcastEvent === 'function') {
-      try { broadcastEvent({ type: 'openchamber:session-activity',
+      try { broadcastEvent({ type: 'devryan:session-activity',
         properties: { sessionId: sessionID, sessionID, phase: activity.phase, ...presentationFields(sessionID) } }); }
       catch { /* Optional display observers cannot veto status or durable work. */ }
     }
@@ -186,7 +186,7 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
 
     if (typeof broadcastEvent === 'function') {
       broadcastEvent({
-        type: 'openchamber:session-activity',
+        type: 'devryan:session-activity',
         properties: {
           sessionId,
           sessionID: sessionId,
@@ -239,7 +239,7 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
     if (!existing || existing.status !== status || attentionChanged) {
       const state = sessionStates.get(sessionId);
       const syntheticPayload = {
-        type: 'openchamber:session-status',
+        type: 'devryan:session-status',
         properties: {
           sessionId,
           sessionID: sessionId,
@@ -298,7 +298,7 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
       state.needsAttention = false;
 
       const syntheticPayload = {
-        type: 'openchamber:session-status',
+        type: 'devryan:session-status',
         properties: {
           sessionId,
           sessionID: sessionId,

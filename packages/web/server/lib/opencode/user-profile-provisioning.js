@@ -21,6 +21,7 @@ import {
 import { applyManagedMeridianSdkFeaturePolicy } from './meridian-sdk-features.js';
 import { applyMeridianHttpHotfix } from './meridian-http-hotfix.js';
 import { applyImagegenModelHotfix } from './imagegen-model-hotfix.js';
+import { migrateDevRyanSidecarDirectory } from './devryan-sidecar.js';
 import {
   CLAUDE_RUNTIME_MANAGED_OVERRIDES,
   CLAUDE_RUNTIME_SELECTION,
@@ -34,9 +35,9 @@ import {
 
 const DEFAULT_CONFIG_ROOT = path.resolve(process.cwd(), 'server', 'default-config');
 const DEFAULT_PROFILE_ROOT = path.join(DEFAULT_CONFIG_ROOT, 'user-profile');
-const MANIFEST_RELATIVE_PATH = path.join('.openchamber', 'user-profile-manifest.json');
+const MANIFEST_RELATIVE_PATH = path.join('.devryan', 'user-profile-manifest.json');
 const MERIDIAN_POLICY_MARKER_RELATIVE_PATH = path.join(
-  '.openchamber',
+  '.devryan',
   'meridian-sdk-features-policy.json',
 );
 
@@ -178,6 +179,7 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
     || pathApi.join(configDirectory, MERIDIAN_POLICY_MARKER_RELATIVE_PATH);
 
   const provision = async () => {
+    migrateDevRyanSidecarDirectory(configDirectory);
     const manifestPath = pathApi.join(configDirectory, MANIFEST_RELATIVE_PATH);
     const previousManifest = readJson(fsApi, manifestPath, { version: 1, files: {} });
     const previousFiles = isRecord(previousManifest.files) ? previousManifest.files : {};

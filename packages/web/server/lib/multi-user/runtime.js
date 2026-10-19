@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { createDiagnosticSanitizer } from '@devryan/harness-runtime';
+import { canonicalDevRyanEventType } from '@devryan/shared-runtime/lib/event-types.js';
 
 import { resolveMultiUserConfig } from './config.js';
 import { createPrincipalCache } from './principal-cache.js';
@@ -334,15 +335,15 @@ const extractSessionId = (payload) => {
 };
 
 const MANAGED_TASK_EVENT_TYPES = new Set([
-  'openchamber:managed-task',
-  'openchamber:managed-task-removed',
+  'devryan:managed-task',
+  'devryan:managed-task-removed',
 ]);
 
 const extractManagedTaskRootSessionId = (payload) => {
-  if (!payload || typeof payload !== 'object' || !MANAGED_TASK_EVENT_TYPES.has(payload.type)) return '';
+  if (!payload || typeof payload !== 'object' || !MANAGED_TASK_EVENT_TYPES.has(canonicalDevRyanEventType(payload.type))) return '';
   const properties = payload.properties;
   if (!properties || typeof properties !== 'object' || properties.owner !== 'devryan') return '';
-  const candidate = payload.type === 'openchamber:managed-task'
+  const candidate = canonicalDevRyanEventType(payload.type) === 'devryan:managed-task'
     ? properties.task?.rootSessionId
     : properties.rootSessionId;
   return typeof candidate === 'string' ? candidate.trim() : '';
@@ -3386,7 +3387,7 @@ export async function createMultiUserRuntime({
     const sessionId = extractSessionId(payload);
     if (sessionId) return ownsSession(principal, sessionId);
     if (directory && directory !== 'global') return Boolean(resolveAssignmentForValue(principal, directory));
-    return payload?.type === 'openchamber:heartbeat' || payload?.type === 'server.connected';
+    return canonicalDevRyanEventType(payload?.type) === 'devryan:heartbeat' || payload?.type === 'server.connected';
   };
 
   const registerRoutes = (app, {

@@ -46,6 +46,8 @@ describe('core-routes', () => {
     expect(response.body).toMatchObject({
       status: 'ok',
       openCodeRunning: true,
+      devryanVersion: '1.0.0',
+      openchamberVersion: '1.0.0',
     });
     expect(response.headers['x-devryan-instance-id']).toBe('instance-test-id');
     expect(response.text).not.toContain('<!doctype html>');
@@ -228,6 +230,8 @@ describe('core-routes', () => {
       const response = await request(app).get('/api/system/info');
       expect(response.status).toBe(200);
       expect(response.body).toMatchObject({
+        devryanVersion: '1.0.0',
+        openchamberVersion: '1.0.0',
         devMode: true,
         devShutdownAllowed: true,
       });

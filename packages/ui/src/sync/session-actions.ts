@@ -1813,7 +1813,7 @@ export async function optimisticSend(input: {
       // the captured thinking choice. Empty string is explicit provider default.
       ...(input.variant !== undefined ? { variant: input.variant === null ? "" : input.variant } : {}),
     } satisfies UserMessage["model"],
-    metadata: input.planMode === true ? { openchamberPlanMode: true } as Record<string, unknown> : {} as Record<string, unknown>,
+    metadata: input.planMode === true ? { devryanPlanMode: true } as Record<string, unknown> : {} as Record<string, unknown>,
     time: { created: Date.now() },
   } as unknown as Message
   const assistantPlaceholderID = `${messageID}_assistant`

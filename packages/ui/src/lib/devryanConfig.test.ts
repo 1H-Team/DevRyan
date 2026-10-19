@@ -89,6 +89,13 @@ describe("project actions config", () => {
     });
   });
 
+  test('reads the old Auto-discover selection as the canonical ID', async () => {
+    await withMockProjectConfig({ projectActionsPrimaryId: '__openchamber_auto_discover_preview__' }, async () => {
+      const state = await getProjectActionsState(project);
+      expect(state.primaryActionId).toBe(DEVRYAN_AUTO_DISCOVER_ACTION_ID);
+    });
+  });
+
   test("rejects unknown primary IDs", async () => {
     await withMockProjectConfig({
       projectActions: [action],

@@ -55,7 +55,7 @@ function acceptDirectoryMessageStreamFromHub({
       return;
     }
 
-    sendMessageStreamWsEvent(socket, { type: 'openchamber:heartbeat', timestamp: Date.now() }, { directory: 'global' });
+    sendMessageStreamWsEvent(socket, { type: 'devryan:heartbeat', timestamp: Date.now() }, { directory: 'global' });
   }, heartbeatIntervalMs);
 
   const forwardOne = async (entry, signal) => {

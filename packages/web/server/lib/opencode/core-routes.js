@@ -188,6 +188,8 @@ export const registerServerStatusRoutes = (app, dependencies) => {
       status: 'ok',
       timestamp: new Date().toISOString(),
       ...snapshot,
+      devryanVersion: openchamberVersion,
+      openchamberVersion,
       // Native integrations require the current owned host, including during replacement.
       openCode: {
         ...describeOpenCodeRuntimeCapabilities(resolveHealthOpenCodeGeneration(snapshot, process.env), { mcpOAuthAvailable }),
@@ -295,6 +297,7 @@ export const registerServerStatusRoutes = (app, dependencies) => {
 
   app.get('/api/system/info', requireSystemAdmin, (_req, res) => {
     res.json({
+      devryanVersion: openchamberVersion,
       openchamberVersion,
       runtime: runtimeName,
       pid: process.pid,

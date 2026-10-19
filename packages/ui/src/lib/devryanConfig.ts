@@ -92,7 +92,8 @@ export const DEVRYAN_PROJECT_ACTION_NAME_MAX_LENGTH = 80;
 export const DEVRYAN_PROJECT_ACTION_COMMAND_MAX_LENGTH = 4000;
 export const DEVRYAN_PROJECT_ACTION_OPEN_URL_MAX_LENGTH = 2000;
 export const DEVRYAN_PROJECT_ACTION_DESKTOP_FORWARD_MAX_LENGTH = 300;
-export const DEVRYAN_AUTO_DISCOVER_ACTION_ID = '__openchamber_auto_discover_preview__';
+export const DEVRYAN_AUTO_DISCOVER_ACTION_ID = '__devryan_auto_discover_preview__';
+const LEGACY_AUTO_DISCOVER_ACTION_ID = '__openchamber_auto_discover_preview__';
 export const DEVRYAN_PROJECT_PLAN_TITLE_MAX_LENGTH = 160;
 
 const DEVRYAN_ACTION_PLATFORM_SET = new Set<DevRyanProjectActionPlatform>(['macos', 'linux', 'windows']);
@@ -451,8 +452,8 @@ const sanitizeProjectActionsState = (value: {
 } | null | undefined): DevRyanProjectActionsState => {
   const actions = sanitizeProjectActions(value?.actions);
   const primaryRaw = typeof value?.primaryActionId === 'string' ? value.primaryActionId.trim() : '';
-  const primaryActionId = primaryRaw === DEVRYAN_AUTO_DISCOVER_ACTION_ID
-    ? primaryRaw
+  const primaryActionId = primaryRaw === DEVRYAN_AUTO_DISCOVER_ACTION_ID || primaryRaw === LEGACY_AUTO_DISCOVER_ACTION_ID
+    ? DEVRYAN_AUTO_DISCOVER_ACTION_ID
     : primaryRaw && actions.some((entry) => entry.id === primaryRaw)
     ? primaryRaw
     : null;

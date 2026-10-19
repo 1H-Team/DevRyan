@@ -1,8 +1,5 @@
-// DevRyan event type names on the wire. Server-side payloads, journals and
-// ledgers keep the `openchamber:*` literals (persisted records and in-process
-// observers read them). A client that opts in with `?events=devryan` (or the
-// `X-DevRyan-Events: devryan` header) receives `devryan:*`; any other client,
-// such as a stale or cached tab, still receives `openchamber:*`.
+// New events use DevRyan names. The no-query wire dialect stays legacy for
+// cached clients; explicit DevRyan clients receive canonical names.
 export const LEGACY_EVENT_TYPE_PREFIX = 'openchamber:';
 export const DEVRYAN_EVENT_TYPE_PREFIX = 'devryan:';
 export const DEVRYAN_EVENT_DIALECT = 'devryan';
@@ -24,11 +21,14 @@ export function resolveEventDialect(req) {
 }
 
 /**
- * Renames a serialized payload's leading `openchamber:` type for an opted-in
- * connection. One prefix check and slice: the shared payload serialization is
- * reused, never re-stringified.
+ * Renames only a serialized payload's leading type for its connection dialect.
+ * Journals can contain either spelling; payload bytes are never re-stringified.
  */
 export function applyEventDialect(json, dialect) {
-  return dialect === DEVRYAN_EVENT_DIALECT && typeof json === 'string' && json.startsWith(LEGACY_HEAD)
-    ? `${DEVRYAN_HEAD}${json.slice(LEGACY_HEAD.length)}` : json;
+  if (typeof json !== 'string') return json;
+  if (dialect === DEVRYAN_EVENT_DIALECT && json.startsWith(LEGACY_HEAD))
+    return `${DEVRYAN_HEAD}${json.slice(LEGACY_HEAD.length)}`;
+  if (dialect !== DEVRYAN_EVENT_DIALECT && json.startsWith(DEVRYAN_HEAD))
+    return `${LEGACY_HEAD}${json.slice(DEVRYAN_HEAD.length)}`;
+  return json;
 }

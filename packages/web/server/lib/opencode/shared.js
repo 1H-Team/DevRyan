@@ -253,7 +253,7 @@ function writeConfig(config, filePath = CONFIG_FILE) {
   try {
     if (fs.existsSync(filePath)) {
       readConfigFile(filePath);
-      const backupFile = `${filePath}.openchamber.backup`;
+      const backupFile = `${filePath}.devryan.backup`;
       fs.copyFileSync(filePath, backupFile);
       console.log(`Created config backup: ${backupFile}`);
     }
@@ -276,7 +276,7 @@ function removeConfigKeyPaths(filePath, keyPaths) {
   parseConfigJsonc(source, filePath);
   const next = removeJsoncKeyPaths(source, keyPaths);
   if (next === source) return false;
-  fs.copyFileSync(filePath, `${filePath}.openchamber.backup`);
+  fs.copyFileSync(filePath, `${filePath}.devryan.backup`);
   fs.writeFileSync(filePath, next, 'utf8');
   return true;
 }

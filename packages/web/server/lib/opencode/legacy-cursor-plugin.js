@@ -13,7 +13,7 @@ export const LEGACY_CURSOR_PLUGIN_HASH = '954ceb8ef4de6ac2cb3e95d81d56a11bda58d3
 const OPEN_CURSOR_ENTRYPOINT = path.join('@rama_nigg', 'open-cursor', 'dist', 'plugin-entry.js');
 const digest = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
 const names = ['plugin/cursor-acp.js', 'plugins/cursor-acp.js'];
-const retiredName = (name) => `.openchamber/retired-plugins/${name.replaceAll('/', '-')}`;
+const retiredName = (name) => `.devryan/retired-plugins/${name.replaceAll('/', '-')}`;
 const byteBackupName = (name, hash) => `${retiredName(name)}.${hash}.disabled`;
 const linkBackupName = (name) => `${retiredName(name)}.link.json`;
 const localRegistration = (entry, directory) => {

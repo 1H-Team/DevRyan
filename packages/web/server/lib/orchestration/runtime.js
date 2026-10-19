@@ -564,7 +564,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         recoveryWarningPublished = true;
         try {
           await publishEvent({
-            type: 'openchamber:managed-orchestration-warning',
+            type: 'devryan:managed-orchestration-warning',
             properties: { message: recoveryWarning },
           });
         } catch (error) {

@@ -83,6 +83,7 @@ import { createOpenAiOAuthCoordinator } from './lib/opencode/openai-oauth-coordi
 import { createOpenAiOAuthBridge } from './lib/opencode/openai-oauth-bridge.js';
 import { createConfigApplyCoordinator, createConfigChangeMarker } from '@devryan/shared-runtime';
 import { syncPackagedAgents } from './lib/opencode/packaged-agent-sync.js';
+import { migrateDevRyanSidecarDirectory } from './lib/opencode/devryan-sidecar.js';
 import { syncRuntimeAgentOverlays } from './lib/opencode/runtime-agent-overlays.js';
 import { createUserProfileProvisioningRuntime } from './lib/opencode/user-profile-provisioning.js';
 import { retireLegacyCursorPlugin } from './lib/opencode/legacy-cursor-plugin.js';
@@ -583,7 +584,7 @@ async function constructWebHost(options = {}) {
       }
       try {
         writeSseEvent(client.response, {
-          type: 'openchamber:project-metadata-changed',
+          type: 'devryan:project-metadata-changed',
           properties: { projectId },
         });
       } catch {
@@ -610,7 +611,7 @@ async function constructWebHost(options = {}) {
       if (client?.principalId !== principalId) continue;
       try {
         writeSseEvent(client.response, {
-          type: 'openchamber:browser-agent-leases-changed',
+          type: 'devryan:browser-agent-leases-changed',
           properties: { revision },
         });
       } catch {
@@ -1710,7 +1711,7 @@ async function constructWebHost(options = {}) {
       getNativeClaudeSecurityHome: () => nativeClaudeSecurityHome,
       getBrowserLeaseRuntime: () => browserLeaseRuntime,
       getWebBaseURL: () => { const address=server?.address();if(!address||typeof address==='string')throw new Error('native_interview_web_owner_required');return `http://127.0.0.1:${address.port}`; },
-      emitIntegrationEvent: event => broadcastGlobalUiEvent({type:'openchamber:integration',properties:{...event,eventID:crypto.randomUUID()}},{directory:event.directory}),
+      emitIntegrationEvent: event => broadcastGlobalUiEvent({type:'devryan:integration',properties:{...event,eventID:crypto.randomUUID()}},{directory:event.directory}),
       cursorRuntime:cursorSdkRuntime,
       providerEnvironment:{},
       executionHost: sessionExecutionHost, primaryRuntime: primaryRecoveryRuntime, taskContext: harnessTaskContext,
@@ -1813,7 +1814,7 @@ async function constructWebHost(options = {}) {
         }
         try {
           writeSseEvent(response, {
-            type: 'openchamber:scheduled-task-ran',
+            type: 'devryan:scheduled-task-ran',
             properties: {
               projectId: event.projectID,
               taskId: event.taskID,
@@ -3138,7 +3139,10 @@ const webHostLifecycle = createWebHostLifecycle({
     await activeHost?.releaseFailedStart();
   },
 });
-const startWebUiServer = (options = {}) => webHostLifecycle.start(options);
+const startWebUiServer = (options = {}) => {
+  migrateDevRyanSidecarDirectory(selectedRuntimeBundle?.descriptor.launch.opencodeConfigDirectory);
+  return webHostLifecycle.start(options);
+};
 
 export function runWebCliEntry(currentFilename) {
 runCliEntryIfMain({

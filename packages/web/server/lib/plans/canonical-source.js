@@ -112,7 +112,7 @@ export function validateCanonicalPlanSource({ sessionID, sourceMessageID, record
   let content = contentMembers.map(text).join('');
   const sentinel = /(^|\r?\n)[ \t]*`{0,3}<!--[ \t]*plan[ \t]*-->`{0,3}[ \t]*(?:\r?\n|$)/.exec(content);
   if (sentinel) content = content.slice(sentinel.index + sentinel[0].length);
-  else if (root.info.metadata?.openchamberPlanMode !== true) reject('plan_source_not_plan');
+  else if (root.info.metadata?.devryanPlanMode !== true && root.info.metadata?.openchamberPlanMode !== true) reject('plan_source_not_plan');
   if (!content.trim()) reject('plan_source_empty');
   return { content, sourceIdentity: { sessionID, sourceMessageID, rootUserMessageID: rootUserID,
     memberUserMessageIDs, memberAssistantMessageIDs: members.map(row => row.info.id), currentSourceMessageID: tail.info.id,

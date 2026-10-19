@@ -325,7 +325,7 @@ export const createUiPasskeys = ({
       rpName,
       rpID,
       userID,
-      userName: 'openchamber-ui',
+      userName: 'devryan-ui',
       userDisplayName: 'DevRyan UI',
       attestationType: 'none',
       excludeCredentials: getPasskeysForRpId(store, rpID).map((passkey) => ({

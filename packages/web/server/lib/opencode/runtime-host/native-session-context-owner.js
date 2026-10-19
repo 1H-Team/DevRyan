@@ -64,7 +64,7 @@ export function createNativeSessionContextOwner({admissionOwner,taskContext,open
     if(text.includes('manualRecoveryRequired')||text.includes('[devryan-provider-recovery:'))return {continued:false,reason:'manual_recovery'};
     if(anchor?.info?.id!==(primary.objectiveID??primary.anchorID)||anchor.info.sessionID!==sessionID||anchor.info.role!=='user')throw fail('native_primary_objective_unavailable');
     const parts=[];
-    if(anchor.info.metadata?.openchamberPlanMode===true){
+    if(anchor.info.metadata?.devryanPlanMode===true||anchor.info.metadata?.openchamberPlanMode===true){
       const instruction=anchor.parts?.find(part=>part.type==='text'&&part.synthetic===true&&part.text?.trim().startsWith(PLAN_PREFIX));
       if(!instruction||!instruction.text.trim().slice(PLAN_PREFIX.length).replace(/^[.\s]+/,''))throw fail('native_primary_plan_instruction_unavailable');
       parts.push({type:'text',synthetic:true,text:instruction.text});

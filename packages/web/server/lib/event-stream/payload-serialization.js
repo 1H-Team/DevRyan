@@ -30,8 +30,8 @@ const serialize = (payload) => {
   return entry;
 };
 
-/** JSON text of an event payload, exactly as `JSON.stringify(payload)`; an
- * opted-in connection's dialect renames a leading `openchamber:` type. */
+/** JSON text of an event payload with its connection's canonical or legacy
+ * leading event type. */
 export const serializeEventPayload = (payload, dialect = null) => applyEventDialect(serialize(payload).json, dialect);
 
 /** UTF-8 size of `serializeEventPayload(payload)`. */

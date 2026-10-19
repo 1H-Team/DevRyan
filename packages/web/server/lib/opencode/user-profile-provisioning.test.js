@@ -161,8 +161,8 @@ describe('user profile provisioning', () => {
     expect(packageJson.dependencies).not.toHaveProperty('opencode-antigravity-auth');
     expect(fs.existsSync(path.join(configDir, 'node_modules', '@rynfar', 'meridian'))).toBe(true);
     expect(fs.existsSync(path.join(configDir, 'skills'))).toBe(false);
-    expect(fs.existsSync(path.join(configDir, '.openchamber', 'user-profile-manifest.json'))).toBe(true);
-    expect(fs.existsSync(path.join(configDir, '.openchamber', 'meridian-sdk-features-policy.json'))).toBe(true);
+    expect(fs.existsSync(path.join(configDir, '.devryan', 'user-profile-manifest.json'))).toBe(true);
+    expect(fs.existsSync(path.join(configDir, '.devryan', 'meridian-sdk-features-policy.json'))).toBe(true);
     expect(meridianFeatures.opencode).toEqual({
       codeSystemPrompt: true,
       clientSystemPrompt: true,
@@ -224,7 +224,7 @@ describe('user profile provisioning', () => {
         .replace(/^user-profile\//, '')
         .replace(/^plugins\//, 'plugins/'))
       .sort();
-    const manifest = readJson(path.join(configDir, '.openchamber', 'user-profile-manifest.json'));
+    const manifest = readJson(path.join(configDir, '.devryan', 'user-profile-manifest.json'));
 
     expect(Object.keys(manifest.files).sort()).toEqual(expectedManagedFiles);
     expect(Object.keys(manifest.files).some((relativePath) => relativePath.startsWith('skills/')))
@@ -262,7 +262,7 @@ describe('user profile provisioning', () => {
     const runtime = createRuntime();
     expect((await runtime.provision()).ok).toBe(true);
     const configDir = path.join(home, '.config', 'opencode');
-    const manifestPath = path.join(configDir, '.openchamber', 'user-profile-manifest.json');
+    const manifestPath = path.join(configDir, '.devryan', 'user-profile-manifest.json');
     const manifest = readJson(manifestPath);
     const roles = ['orchestrator', 'designer', 'fixer'];
     for (const role of roles) {
@@ -553,7 +553,7 @@ describe('user profile provisioning', () => {
       home,
       '.config',
       'opencode',
-      '.openchamber',
+      '.devryan',
       'claude-runtime-compatibility.json',
     );
     const packageJson = readJson(packagePath);
@@ -590,7 +590,7 @@ describe('user profile provisioning', () => {
       return {
         configDirectory,
         packagePath: path.join(configDirectory, 'package.json'),
-        markerPath: path.join(configDirectory, '.openchamber', 'claude-runtime-compatibility.json'),
+        markerPath: path.join(configDirectory, '.devryan', 'claude-runtime-compatibility.json'),
         installedClaudeCodePath: path.join(configDirectory, 'node_modules', '@anthropic-ai', 'claude-code', 'package.json'),
       };
     };
@@ -768,12 +768,12 @@ describe('user profile provisioning', () => {
     const packagePath = path.join(configDirectory, 'package.json');
     const manifestPath = path.join(
       configDirectory,
-      '.openchamber',
+      '.devryan',
       'user-profile-manifest.json',
     );
     const markerPath = path.join(
       configDirectory,
-      '.openchamber',
+      '.devryan',
       'claude-runtime-compatibility.json',
     );
     const packageJson = readJson(packagePath);
@@ -858,7 +858,7 @@ describe('user profile provisioning', () => {
     const configDir = path.join(home, '.config', 'opencode');
     const configPath = path.join(configDir, 'opencode.json');
     const packagePath = path.join(configDir, 'package.json');
-    const manifestPath = path.join(configDir, '.openchamber', 'user-profile-manifest.json');
+    const manifestPath = path.join(configDir, '.devryan', 'user-profile-manifest.json');
     const adapterPath = path.join(configDir, 'plugins', 'devryan-oh-my-opencode-slim.mjs');
     const slimConfigPath = path.join(configDir, 'devryan-agents.jsonc');
     // DevRyan <= 2.1.1 wrote and tracked the adapter, pinned the package and registered it.
@@ -896,7 +896,7 @@ describe('user profile provisioning', () => {
     await runtime.provision();
     const configDir = path.join(home, '.config', 'opencode');
     const configPath = path.join(configDir, 'opencode.json');
-    const manifestPath = path.join(configDir, '.openchamber', 'user-profile-manifest.json');
+    const manifestPath = path.join(configDir, '.devryan', 'user-profile-manifest.json');
     const adapterPath = path.join(configDir, 'plugins', 'devryan-superpowers.mjs');
     const ownedSkillPath = path.join(configDir, 'skills', 'Superpowers', 'SKILL.md');
     // DevRyan <= 2.0.1 wrote and tracked the adapter and registered it in the profile.
@@ -950,7 +950,7 @@ describe('user profile provisioning', () => {
     const runtime = createRuntime();
     const result = await runtime.provision();
     const repeated = await runtime.provision();
-    const manifest = readJson(path.join(configDir, '.openchamber', 'user-profile-manifest.json'));
+    const manifest = readJson(path.join(configDir, '.devryan', 'user-profile-manifest.json'));
 
     expect(result.removed).toEqual(expect.arrayContaining([
       legacySkillPath,

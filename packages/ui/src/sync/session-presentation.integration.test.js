@@ -32,8 +32,8 @@ function fixture() {
   const apply = event => applySyncEventForTest('global', event, manager, routing);
   const runtime = createSessionRuntime({ writeSseEvent() {}, getNotificationClients: () => new Set(),
     broadcastEvent: event => {
-      // The server keeps the persisted `openchamber:*` type; an opted-in UI receives `devryan:*`.
-      if (event.type === 'openchamber:session-activity') apply(JSON.parse(serializeEventPayload(event, 'devryan')));
+      // Live events use DevRyan names; historical payloads may carry the old alias.
+      if (event.type === 'devryan:session-activity' || event.type === 'openchamber:session-activity') apply(JSON.parse(serializeEventPayload(event, 'devryan')));
     } });
   runtimes.push(runtime);
   const status = type => {

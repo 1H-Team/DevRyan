@@ -70,7 +70,7 @@ export const createNotificationEmitterRuntime = (dependencies) => {
     }
 
     const syntheticPayload = {
-      type: 'openchamber:notification',
+      type: 'devryan:notification',
       properties: {
         ...payload,
         // Tell the UI whether the sidecar stdout notification channel is active.

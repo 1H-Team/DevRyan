@@ -25,7 +25,7 @@ describe('selected native provider configuration owner',()=>{
     const project=f.write('project','{"provider":{"openai":{}}}');const before=fs.readFileSync(user,'utf8');
     const committed=[];await f.run({providerID:'openai',scope:'all'},async owner=>{await owner.verifyConfiguration();await owner.disconnectCredentials(()=>committed.push('auth'));await owner.removeConfiguration(scope=>committed.push(scope));});
     const next=fs.readFileSync(user,'utf8');expect(next).toContain('// keep comment');expect(next).toContain('"other"');expect(next).toMatch(/"model"\s*:\s*"other\/m"/);expect(next).not.toContain('"openai"');
-    expect(fs.readFileSync(`${user}.openchamber.backup`,'utf8')).toBe(before);expect(fs.readFileSync(project,'utf8')).toContain('openai');expect(committed).toEqual(['auth','user']);
+    expect(fs.readFileSync(`${user}.devryan.backup`,'utf8')).toBe(before);expect(fs.readFileSync(project,'utf8')).toContain('openai');expect(committed).toEqual(['auth','user']);
     expect(f.credentialOperation.mock.calls[0][0]).toMatchObject({operation:'openai.credential.remove',expectedFingerprint:f.row.expectedFingerprint,directory:f.project});
   });
   it.each([
@@ -56,7 +56,7 @@ describe('selected native provider configuration owner',()=>{
   });
   it.each(['source','backup'])('refuses %s symlinks before credential deletion',async kind=>{
     const f=fixture(),file=f.write('user','{"provider":{"openai":{}}}'),outside=path.join(f.root,'outside.json');fs.writeFileSync(outside,'{}');
-    if(kind==='source')fs.rmSync(file);fs.symlinkSync(outside,kind==='source'?file:`${file}.openchamber.backup`);
+    if(kind==='source')fs.rmSync(file);fs.symlinkSync(outside,kind==='source'?file:`${file}.devryan.backup`);
     await expect(f.run({providerID:'openai',scope:'all'},owner=>owner.disconnectCredentials(()=>{}))).rejects.toMatchObject({code:'native_provider_configuration_symlink'});expect(f.credentialOperation).not.toHaveBeenCalled();expect(fs.readFileSync(outside,'utf8')).toBe('{}');
   });
   it('rejects a new config layer created while native credential removal awaits; retains actual acknowledged removal',async()=>{
@@ -74,7 +74,7 @@ describe('selected native provider configuration owner',()=>{
     expect(result.auth).toEqual({exists:true,path:null});expect(result.user.exists).toBe(true);expect(f.credentialOperation).not.toHaveBeenCalled();
   });
   it('refuses changed backup after awaited metadata before credentials and source commit',async()=>{
-    const f=fixture(),file=f.write('user','{"provider":{"openai":{}}}');f.credentialMetadata.mockImplementation(async()=>{fs.writeFileSync(`${file}.openchamber.backup`,'{}');return[f.row];});
+    const f=fixture(),file=f.write('user','{"provider":{"openai":{}}}');f.credentialMetadata.mockImplementation(async()=>{fs.writeFileSync(`${file}.devryan.backup`,'{}');return[f.row];});
     await expect(f.run({providerID:'openai',scope:'all'},owner=>owner.disconnectCredentials(()=>{}))).rejects.toMatchObject({code:'native_provider_configuration_changed'});expect(f.credentialOperation).not.toHaveBeenCalled();expect(fs.readFileSync(file,'utf8')).toContain('openai');
   });
   it('freezes exact read scope and refuses borrowing it for credential deletion',async()=>{

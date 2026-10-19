@@ -3,11 +3,12 @@ import type { Message, Part } from '@opencode-ai/sdk/v2/client';
 type TextLikePart = Part & { text?: string; content?: string; value?: string; synthetic?: boolean };
 type MessageWithPlanModeMetadata = Message & {
   mode?: unknown;
-  metadata?: { openchamberPlanMode?: unknown };
+  metadata?: { devryanPlanMode?: unknown; openchamberPlanMode?: unknown };
 };
 
 export const PLAN_MODE_INSTRUCTION_PREFIX = 'User has requested to enter plan mode';
-export const PLAN_IMPLEMENTATION_REQUEST_PREFIX = '[openchamber-plan-action:v1] ';
+export const PLAN_IMPLEMENTATION_REQUEST_PREFIX = '[devryan-plan-action:v1] ';
+const LEGACY_PLAN_IMPLEMENTATION_REQUEST_PREFIX = '[openchamber-plan-action:v1] ';
 const PROVIDER_RECOVERY_PREFIX = '[devryan-provider-recovery:v1:';
 const OPEN_TODO_CONTINUATION_PREFIX = '[devryan-open-todo-continuation:v1]\n';
 // Compatibility for canonical wakes written before the versioned marker.
@@ -149,10 +150,12 @@ export const parsePlanImplementationRequestPart = (
   if (textPart.synthetic !== true) return null;
 
   const text = getPartText(part).trim();
-  if (!text.startsWith(PLAN_IMPLEMENTATION_REQUEST_PREFIX)) return null;
+  const prefix = [PLAN_IMPLEMENTATION_REQUEST_PREFIX, LEGACY_PLAN_IMPLEMENTATION_REQUEST_PREFIX]
+    .find((candidate) => text.startsWith(candidate));
+  if (!prefix) return null;
 
   try {
-    const parsed = JSON.parse(text.slice(PLAN_IMPLEMENTATION_REQUEST_PREFIX.length)) as {
+    const parsed = JSON.parse(text.slice(prefix.length)) as {
       action?: unknown;
       sourceSessionId?: unknown;
       sourceMessageId?: unknown;
@@ -203,7 +206,7 @@ const isPlanModeMetadata = (message: Message): boolean => {
   const candidate = message as MessageWithPlanModeMetadata;
   const mode = candidate.mode;
   if (typeof mode === 'string' && mode.trim().toLowerCase() === 'plan') return true;
-  return candidate.metadata?.openchamberPlanMode === true;
+  return candidate.metadata?.devryanPlanMode === true || candidate.metadata?.openchamberPlanMode === true;
 };
 
 /**

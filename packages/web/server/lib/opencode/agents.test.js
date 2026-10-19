@@ -372,7 +372,7 @@ describe('agent backup models', () => {
     tempRoot = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-agent-backup-models-')));
     projectDirectory = path.join(tempRoot, 'project');
     userConfigPath = path.join(tempRoot, 'opencode-config', 'config.json');
-    sidecarPath = path.join(path.dirname(userConfigPath), '.openchamber', 'config.json');
+    sidecarPath = path.join(path.dirname(userConfigPath), '.devryan', 'config.json');
     await fs.mkdir(path.dirname(userConfigPath), { recursive: true });
   });
 
@@ -589,7 +589,7 @@ describe('shadowed sidecar agent overrides', () => {
     projectDirectory = path.join(tempRoot, 'project');
     userConfigPath = path.join(tempRoot, 'opencode-config', 'config.json');
     slimConfigDirectory = path.dirname(userConfigPath);
-    sidecarPath = path.join(slimConfigDirectory, '.openchamber', 'config.json');
+    sidecarPath = path.join(slimConfigDirectory, '.devryan', 'config.json');
     await fs.mkdir(projectDirectory, { recursive: true });
     plugins = [];
     // OpenCode config reads are injected so no test reads the real config.

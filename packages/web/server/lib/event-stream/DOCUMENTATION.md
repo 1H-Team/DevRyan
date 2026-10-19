@@ -65,11 +65,12 @@ This module contains the DevRyan message-stream WebSocket protocol and runtime b
 
 ## Event-name dialect
 
-`event-dialect.js` owns the wire names of host events. Payloads, journals and the
-orchestration contract keep the `openchamber:*` literal. A connection that sends
+`event-dialect.js` owns the wire names of host events. New payloads use
+`devryan:*`; historical journals and codec fixtures can contain `openchamber:*`.
+A connection that sends
 `?events=devryan` (WebSocket query, `/api/devryan/events` EventSource) or the
 `X-DevRyan-Events: devryan` header receives `devryan:*`; any other client keeps
-`openchamber:*`. The choice is fixed per connection (`socket.devryanEventDialect`,
+`openchamber:*` for cached older clients. The choice is fixed per connection (`socket.devryanEventDialect`,
 `res.devryanEventDialect`) and applied by `serializeEventPayload(payload, dialect)`
-as a prefix swap on the shared cached JSON, never a re-serialization. See
+as a prefix swap in either direction on the shared cached JSON, never a re-serialization. See
 [identity compatibility](../../../../../docs/IDENTITY_COMPATIBILITY.md).

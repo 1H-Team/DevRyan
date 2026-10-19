@@ -43,7 +43,7 @@ const CLAUDE_RUNTIME_MANAGED_OVERRIDES = Object.freeze({
 });
 
 const COMPATIBILITY_MARKER_RELATIVE_PATH = path.join(
-  '.openchamber',
+  '.devryan',
   'claude-runtime-compatibility.json',
 );
 

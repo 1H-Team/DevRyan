@@ -18,6 +18,9 @@ describe('event-name dialect', () => {
     const payload = { type: 'openchamber:managed-task', properties: { note: 'openchamber:kept' } };
     expect(serializeEventPayload(payload)).toBe(JSON.stringify(payload));
     expect(serializeEventPayload(payload, 'devryan')).toBe(JSON.stringify({ ...payload, type: 'devryan:managed-task' }));
+    const canonical = { ...payload, type: 'devryan:managed-task' };
+    expect(serializeEventPayload(canonical)).toBe(JSON.stringify(payload));
+    expect(serializeEventPayload(canonical, 'devryan')).toBe(JSON.stringify(canonical));
     expect(applyEventDialect('{"type":"session.status"}', 'devryan')).toBe('{"type":"session.status"}');
     expect(applyEventDialect('{"properties":{},"type":"openchamber:x"}', 'devryan')).toBe('{"properties":{},"type":"openchamber:x"}');
   });
@@ -29,5 +32,7 @@ describe('event-name dialect', () => {
     const sse = serializeMessageStreamSseEvent({ payload, directory: 'global', eventId: '7' }, 'devryan');
     expect(JSON.parse(sse.split('\n').find(line => line.startsWith('data: ')).slice(6)).payload.type).toBe('devryan:heartbeat');
     expect(serializeMessageStreamSseEvent({ payload, directory: 'global' })).toContain('"type":"openchamber:heartbeat"');
+    expect(serializeMessageStreamSseEvent({ payload: { ...payload, type: 'devryan:heartbeat' }, directory: 'global' }))
+      .toContain('"type":"openchamber:heartbeat"');
   });
 });

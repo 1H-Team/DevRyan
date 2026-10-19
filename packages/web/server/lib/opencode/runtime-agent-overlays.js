@@ -40,8 +40,8 @@ const DEFAULT_PACKAGED_PLUGIN_DIR = path.join(DEFAULT_CONFIG_DIR, 'plugins');
 const COUNCIL_AGENT_NAME = 'council';
 const COUNCIL_MODELS_FILE_NAME = 'council.models.json';
 const AGENT_MODELS_COMPANION_VERSION = 1;
-const DEFAULT_RUNTIME_AGENT_OVERLAY_ROOT = path.join(OPENCODE_CONFIG_DIR, '.openchamber', 'runtime-agent-overlays');
-const DEFAULT_RUNTIME_AGENT_OVERLAY_MANIFEST_PATH = path.join(OPENCODE_CONFIG_DIR, '.openchamber', 'runtime-agent-overlays.json');
+const DEFAULT_RUNTIME_AGENT_OVERLAY_ROOT = path.join(OPENCODE_CONFIG_DIR, '.devryan', 'runtime-agent-overlays');
+const DEFAULT_RUNTIME_AGENT_OVERLAY_MANIFEST_PATH = path.join(OPENCODE_CONFIG_DIR, '.devryan', 'runtime-agent-overlays.json');
 // Must cover OAuth discovery + DCR + token refresh: an abort mid-refresh burns
 // the rotated refresh token and de-authenticates the MCP (invalid_grant loop).
 const DEFAULT_REMOTE_MCP_TIMEOUT_MS = 60_000;

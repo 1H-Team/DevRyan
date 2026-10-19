@@ -17,7 +17,7 @@ import { RELEASED_PACKAGED_AGENT_HASHES } from './packaged-agent-baselines.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_CONFIG_DIR = path.resolve(__dirname, '../../default-config');
 const DEFAULT_PACKAGED_AGENT_DIR = path.join(DEFAULT_CONFIG_DIR, 'agents');
-const DEFAULT_MANIFEST_PATH = path.join(OPENCODE_CONFIG_DIR, '.openchamber', 'packaged-agents.json');
+const DEFAULT_MANIFEST_PATH = path.join(OPENCODE_CONFIG_DIR, '.devryan', 'packaged-agents.json');
 // The retired v1 user-profile provisioner kept its own baseline beside this manifest.
 const PROFILE_MANIFEST_FILE_NAME = 'user-profile-manifest.json';
 const PACKAGED_AGENT_BACKUP_DIRECTORY = path.join('backups', 'packaged-agents');

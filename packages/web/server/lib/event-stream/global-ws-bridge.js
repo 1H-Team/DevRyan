@@ -179,7 +179,7 @@ export function createGlobalMessageStreamWsBridge({
         return;
       }
 
-      sendMessageStreamWsEvent(socket, { type: 'openchamber:heartbeat', timestamp: Date.now() }, { directory: 'global' });
+      sendMessageStreamWsEvent(socket, { type: 'devryan:heartbeat', timestamp: Date.now() }, { directory: 'global' });
     }, heartbeatIntervalMs);
     clientTimers.set(socket, [pingInterval, heartbeatInterval]);
 

@@ -14,7 +14,7 @@ import { resolveSqliteDriver } from '../db-maintenance-core.js';
 import { verifyBundleOwnedContinuations } from './bundle-owned-continuations.js';
 import { inspectBundleHarness } from './bundle-harness-integrity.js';
 import { buildV2PromptContent, buildV2PromptFingerprint, buildDevryanPromptMetadata } from '../v2/admission.js';
-import { createRuntimeBundleStore } from './runtime-bundle.js';
+import { createRuntimeBundleStore, readRuntimeBundleDescriptor } from './runtime-bundle.js';
 import { assertNoPendingMigration, assertBundlePendingInput, verifyMigrationReferences, sha256,canonicalJSON } from './bundle-migration-inventory.js';
 import { readRuntimeBundleBinding, getRuntimeHome } from './runtime-bundle-binding.js';
 import { git } from '../../../../../harness-runtime/lib/session-changes-git.js';
@@ -359,6 +359,22 @@ test('early binding accepts exact generation-one globals and refuses a stale des
   await fs.writeFile(descriptorFile,JSON.stringify(baseline));
   await fs.writeFile(path.join(f.controlRoot,'selection.json'),JSON.stringify({...bound.selection,reconciliationRequired:true}));
   expect(()=>readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:f.controlRoot})).toThrow('bundle_rollback_reconciliation_required');
+});
+test('new bundles use the DevRyan config directory and descriptor validation retains the exact historical path',async()=>{
+  const f=await fixture(), baseline=await f.store.prepare(f.baselineInput);
+  const descriptorFile=path.join(f.controlRoot,'bundles','baseline','descriptor.json');
+  expect(baseline.launch.webConfigDirectory).toBe(path.join(f.controlRoot,'bundles','baseline','config','devryan'));
+  await f.store.select({bundleID:'baseline',expectedRevision:0});
+  expect(readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:f.controlRoot}).descriptor.launch.webConfigDirectory)
+    .toBe(baseline.launch.webConfigDirectory);
+  const historical={...baseline,launch:{...baseline.launch,webConfigDirectory:path.join(f.controlRoot,'bundles','baseline','config','openchamber')}};
+  await fs.writeFile(descriptorFile,JSON.stringify(historical));
+  expect((await readRuntimeBundleDescriptor(f.controlRoot,'baseline')).launch.webConfigDirectory)
+    .toBe(historical.launch.webConfigDirectory);
+  await fs.writeFile(descriptorFile,JSON.stringify({...historical,launch:{...historical.launch,webConfigDirectory:path.join(f.controlRoot,'bundles','baseline','config','other')}}));
+  await expect(readRuntimeBundleDescriptor(f.controlRoot,'baseline')).rejects.toMatchObject({code:'bundle_descriptor_path_mismatch'});
+  await fs.mkdir(path.join(f.controlRoot,'bundles','baseline','config','other'));
+  expect(()=>readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:f.controlRoot})).toThrow('runtime_bundle_binding_invalid');
 });
 test('a fresh process binds only through the launcher, before path-capturing owners load, despite conflicting ambient paths',async()=>{
   const f=await fixture(), baseline=await f.store.prepare(f.baselineInput);

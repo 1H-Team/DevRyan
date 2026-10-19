@@ -66,7 +66,11 @@ export const AboutSettings: React.FC = () => {
           const response = await fetch('/api/system/info', { signal: controller.signal });
           if (response.ok) {
             const data: unknown = await response.json();
-            if (data && typeof data === 'object' && 'openchamberVersion' in data) version = data.openchamberVersion;
+            if (data && typeof data === 'object') {
+              const canonical = 'devryanVersion' in data ? data.devryanVersion : undefined;
+              version = typeof canonical === 'string' && canonical.trim()
+                ? canonical : 'openchamberVersion' in data ? data.openchamberVersion : undefined;
+            }
           }
         }
       } catch {

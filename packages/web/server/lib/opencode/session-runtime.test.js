@@ -48,7 +48,7 @@ describe('session runtime', () => {
     runtime.markSessionViewed('session-1', 'client-1');
 
     expect(events).toContainEqual({
-      type: 'openchamber:session-status',
+      type: 'devryan:session-status',
       properties: expect.objectContaining({
         sessionId: 'session-1',
         sessionID: 'session-1',
@@ -57,7 +57,7 @@ describe('session runtime', () => {
       }),
     });
     expect(events.at(-1)).toEqual({
-      type: 'openchamber:session-status',
+      type: 'devryan:session-status',
       properties: {
         sessionId: 'session-1',
         sessionID: 'session-1',
@@ -93,7 +93,7 @@ describe('session runtime', () => {
     });
 
     expect(events).toContainEqual({
-      type: 'openchamber:session-status',
+      type: 'devryan:session-status',
       properties: expect.objectContaining({
         sessionId: 'legacy-session-1',
         sessionID: 'legacy-session-1',
@@ -132,7 +132,7 @@ describe('session runtime', () => {
     });
 
     const activityPhases = () => events
-      .filter((event) => event.type === 'openchamber:session-activity')
+      .filter((event) => event.type === 'devryan:session-activity')
       .map((event) => event.properties.phase);
 
     expect(activityPhases()).toEqual(['busy', 'cooldown']);
@@ -272,7 +272,7 @@ describe('session runtime', () => {
   });
   it('throwing optional presentation observers cannot veto begin, clear or authoritative idle', () => {
     const runtime = createSessionRuntime({ writeSseEvent() {}, getNotificationClients: () => new Set(), broadcastEvent: event => {
-      if (event.type === 'openchamber:session-activity' && event.properties.phase === 'busy' && event.properties.presentationRevision) throw Error('display observer failed');
+      if (event.type === 'devryan:session-activity' && event.properties.phase === 'busy' && event.properties.presentationRevision) throw Error('display observer failed');
     } });runtimes.push(runtime);
     runtime.processOpenCodeSsePayload({ type: 'session.status', properties: { sessionID: 'session-presentation', status: { type: 'busy' } } });
     expect(() => runtime.updateSessionPresentation(presentation())).not.toThrow();

@@ -145,7 +145,7 @@ describe('metadata.devryan schema', () => {
     expect(readDevryanPromptSelection(metadata)).toEqual({ agent: 'build', providerID: 'fixture', modelID: 'fixture-model', variant: null, planMode: true });
     expect(userTextSegments('msg_x', text, metadata).map((segment) => [segment.id, segment.kind, segment.text]))
       .toEqual([['prt_a', 'synthetic', 'aaaaa'], ['prt_b', 'text', 'bbb'], ['msg_x:text:2', 'attachment', 'cc']]);
-    expect(toV1UserMetadata(metadata)).toEqual({ openchamberPlanMode: true });
+    expect(toV1UserMetadata(metadata)).toEqual({ devryanPlanMode: true });
     // Absent variant means "inherited": the key is omitted, never undefined.
     const inherited = buildDevryanPromptMetadata({ origin: 'server', planMode: false, parts: [] });
     expect(inherited).toEqual({ v: 1, origin: 'server', planMode: false, parts: [] });
@@ -301,7 +301,7 @@ describe('admission against the v2 fixture', () => {
     const page = await h.client.sessions.messages(sessionID, { limit: 10 }, { directory });
     const user = page.records.find((record) => record.info.id === messageID);
     expect(user.info).toMatchObject({ role: 'user', agent: 'build', model: { providerID: 'fixture', modelID: 'fixture-model', variant: 'high' },
-      metadata: { openchamberPlanMode: true } });
+      metadata: { devryanPlanMode: true } });
     expect(user.parts.map((part) => [part.id, part.type, part.synthetic === true])).toEqual([
       ['prt_plan', 'text', true], ['prt_text', 'text', false], [`${messageID}:file:0`, 'file', false], [`${messageID}:agent:0`, 'agent', false],
     ]);

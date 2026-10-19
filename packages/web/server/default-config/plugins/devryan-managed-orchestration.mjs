@@ -51,7 +51,8 @@ const PLAN_AUTHORITY_MAX_PAGES = 10;
 const PLAN_AUTHORITY_MAX_RECORDS = PLAN_AUTHORITY_MAX_PAGES * INVOCATION_POLICY_MESSAGE_LIMIT;
 const PLAN_AUTHORITY_MAX_BYTES = 8 * 1024 * 1024;
 const PLAN_MODE_INSTRUCTION_PREFIX = 'User has requested to enter plan mode';
-const PLAN_IMPLEMENTATION_REQUEST_PREFIX = '[openchamber-plan-action:v1] ';
+const PLAN_IMPLEMENTATION_REQUEST_PREFIX = '[devryan-plan-action:v1] ';
+const LEGACY_PLAN_IMPLEMENTATION_REQUEST_PREFIX = '[openchamber-plan-action:v1] ';
 const MANAGED_READ_ONLY_AGENT_UNSUPPORTED = 'MANAGED_READ_ONLY_AGENT_UNSUPPORTED';
 const MANAGED_READ_ONLY_AGENT_UNSUPPORTED_MESSAGE = 'Designer is implementation-only and cannot be dispatched from Plan Mode. Orchestrator owns design planning and may use Explorer for read-only discovery.';
 const MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED = 'MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED';
@@ -328,9 +329,11 @@ const isPlanInstructionPart = (part) => (
 const isPlanImplementationPart = (part) => {
   if (part?.type !== 'text' || part.synthetic !== true) return false;
   const text = readPartText(part).trim();
-  if (!text.startsWith(PLAN_IMPLEMENTATION_REQUEST_PREFIX)) return false;
+  const prefix = [PLAN_IMPLEMENTATION_REQUEST_PREFIX, LEGACY_PLAN_IMPLEMENTATION_REQUEST_PREFIX]
+    .find(candidate => text.startsWith(candidate));
+  if (!prefix) return false;
   try {
-    const request = JSON.parse(text.slice(PLAN_IMPLEMENTATION_REQUEST_PREFIX.length));
+    const request = JSON.parse(text.slice(prefix.length));
     return request?.action === 'implement'
       && typeof request.sourceSessionId === 'string' && request.sourceSessionId.trim().length > 0
       && typeof request.sourceMessageId === 'string' && request.sourceMessageId.trim().length > 0
@@ -374,7 +377,7 @@ const isPlanModeUserRecord = (record) => {
   const mode = typeof record.info.mode === 'string'
     ? record.info.mode.trim().toLowerCase()
     : '';
-  if (mode === 'plan' || record.info.metadata?.openchamberPlanMode === true) return true;
+  if (mode === 'plan' || record.info.metadata?.devryanPlanMode === true || record.info.metadata?.openchamberPlanMode === true) return true;
   return Array.isArray(record.parts) && record.parts.some(isPlanInstructionPart);
 };
 

@@ -22,7 +22,7 @@ import {
 
 const PACKAGED_AGENT_SCOPE = 'packaged';
 const AGENT_WRITE_DISABLED_MESSAGE = 'Agent configuration is read-only. Edit project .opencode/agents/*.md files directly.';
-const DEVRYAN_CONFIG_KEY = 'openchamber';
+const DEVRYAN_CONFIG_KEY = 'devryan';
 const AGENT_OVERRIDES_CONFIG_KEY = 'agentOverrides';
 // Backup models live under their own sidecar key (never inside agentOverrides):
 // normalizeAgentModelOverride rejects unknown keys, and slim/plugin overrides are
@@ -192,10 +192,10 @@ function readUserConfig(options = {}) {
 }
 
 function writeUserConfig(config, options = {}) {
-  // Split: the `openchamber` subtree lives in DevRyan's sidecar (colocated with
+  // Split: the `devryan` subtree lives in DevRyan's sidecar (colocated with
   // the resolved user config path so tests stay isolated); everything else
   // writes back to the opencode config file. OpenCode 1.15+ rejects unknown
-  // top-level keys, so we must never persist `openchamber` into its config.
+  // top-level keys, so we must never persist `devryan` into its config.
   const userConfigPath = resolveUserConfigPath(options);
   const sanitized = persistDevRyanFromConfig(config, userConfigPath);
   writeConfig(sanitized, userConfigPath);
@@ -532,7 +532,7 @@ function getSlimFieldShadowSource(slimAgent, field) {
 }
 
 /**
- * Read-only diagnostic: for each sidecar `openchamber.agentOverrides` entry,
+ * Read-only diagnostic: for each sidecar `devryan.agentOverrides` entry,
  * reports the fields that wrapper-mode Slim layering shadows at runtime in
  * `workingDirectory`, mirroring listManagedRuntimeAgentModelOverrides exactly.
  * Only DevRyan packaged/project agents with a Slim entry are affected; `model`

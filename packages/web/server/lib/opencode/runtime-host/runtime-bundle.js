@@ -57,10 +57,11 @@ const descriptor = (controlRoot,id,value) => {
     || !Array.isArray(value.projectMap) || !value.projectMap.length||value.sourceBundleID!==undefined&&!validID(value.sourceBundleID)) throw fail('bundle_descriptor_invalid');
   const root = path.join(controlRoot,'bundles',id); launch(value.launch);
   const expected = {opencodeDatabasePath:path.join(root,'opencode','opencode.db'),
-    webDataDirectory:path.join(root,'web-data'),webConfigDirectory:path.join(root,'config','openchamber'),
+    webDataDirectory:path.join(root,'web-data'),webConfigDirectory:path.join(root,'config','devryan'),
     opencodeConfigDirectory:path.join(root,'config','opencode'),reviewedNativeConfigPath:path.join(root,'config','reviewed-native.json'),
     reviewedPluginManifestPath:path.join(root,'config','reviewed-plugins.json')};
-  for (const [key,file] of Object.entries(expected)) if (value.launch[key] !== file) throw fail('bundle_descriptor_path_mismatch');
+  for (const [key,file] of Object.entries(expected)) if (key !== 'webConfigDirectory' && value.launch[key] !== file) throw fail('bundle_descriptor_path_mismatch');
+  if (![path.join(root,'config','devryan'),path.join(root,'config','openchamber')].includes(value.launch.webConfigDirectory)) throw fail('bundle_descriptor_path_mismatch');
   if (value.preparedManifestPath !== path.join(root,'prepared.json') || (value.generation === 2 && value.migrationReceiptPath !== path.join(root,'sources','migration.json'))) throw fail('bundle_descriptor_path_mismatch');
   for (const [key,file] of Object.entries(value.launch.global)) if (key !== 'config'
     && file !== path.join(root,'global',key,)) throw fail('bundle_descriptor_path_mismatch');
@@ -380,7 +381,7 @@ export function createRuntimeBundleStore(options) {
       await timeStartupPhase('bundle_data_copy',async()=>{
         const skipped=scope=>relative=>recordStartupFindings('bundle_copy',[{code:'bundle_copy_entry_skipped',scope,key:relative}]);
         await copyTree(source.launch.webDataDirectory,path.join(root,'web-data'),{ignore:true,derivedLinks:derivedLedgerPath,onSkip:skipped('web-data')});
-        await copyTree(source.launch.webConfigDirectory,path.join(root,'config','openchamber'),{onSkip:skipped('config')});
+        await copyTree(source.launch.webConfigDirectory,path.join(root,'config','devryan'),{onSkip:skipped('config')});
         await copyTree(source.launch.opencodeConfigDirectory,globals.config,{onSkip:skipped('config')});
         // Home and data may hold user configuration behind a link; only disposable trees drop theirs.
         for(const [key,directory] of Object.entries(source.launch.global))if(key!=='config')await copyTree(directory,globals[key],
@@ -416,7 +417,7 @@ export function createRuntimeBundleStore(options) {
       await copyTree(artifacts.reviewedPluginManifestPath,path.join(root,'config','reviewed-plugins.json'));
       const value={schema:1,bundleID:input.bundleID,generation:2,sourceBundleID:source.bundleID,createdAt:now(),checkpoint:sourceCheckpoint,
         launch:{...artifacts,opencodeDatabasePath:path.join(root,'opencode','opencode.db'),webDataDirectory:path.join(root,'web-data'),
-          webConfigDirectory:path.join(root,'config','openchamber'),opencodeConfigDirectory:globals.config,global:globals,
+          webConfigDirectory:path.join(root,'config','devryan'),opencodeConfigDirectory:globals.config,global:globals,
           reviewedNativeConfigPath:path.join(root,'config','reviewed-native.json'),reviewedPluginManifestPath:path.join(root,'config','reviewed-plugins.json')},
         projectMap:source.projectMap,preparedManifestPath:path.join(root,'prepared.json'),migrationReceiptPath:path.join(root,'sources','migration.json')};
       await inspectHarness(value.launch.webDataDirectory,{projectMap:value.projectMap,relocate:true,sourceWebDataDirectory:source.launch.webDataDirectory,checkpointID:sourceCheckpoint.checkpointID},value.launch);
@@ -470,7 +471,7 @@ export function createRuntimeBundleStore(options) {
         await operations.withSqliteOutput(path.join(root,'opencode','opencode.db'),file=>sourceDB.backup(file));
       } finally { sourceDB.raw.close(); }
       await copyTree(sourceLaunch.webDataDirectory,path.join(root,'web-data'),{ignore:true});
-      await copyTree(sourceLaunch.webConfigDirectory,path.join(root,'config','openchamber'));
+      await copyTree(sourceLaunch.webConfigDirectory,path.join(root,'config','devryan'));
       await copyTree(sourceLaunch.opencodeConfigDirectory,path.join(root,'config','opencode'));
       await operations.ensureDirectory(path.join(root,'sources'));
       await saveBundleJSON(path.join(root,'sources','baseline.json'),{schema:1,checkpoint:sourceCheckpoint,inventory,harness});
@@ -485,7 +486,7 @@ export function createRuntimeBundleStore(options) {
       const value = {schema:1,bundleID:input.bundleID,generation:input.generation,createdAt:now(),
         checkpoint:sourceCheckpoint,
         launch:{...artifacts,opencodeDatabasePath:path.join(root,'opencode','opencode.db'),
-          webDataDirectory:path.join(root,'web-data'),webConfigDirectory:path.join(root,'config','openchamber'),opencodeConfigDirectory:globals.config,global:globals,
+          webDataDirectory:path.join(root,'web-data'),webConfigDirectory:path.join(root,'config','devryan'),opencodeConfigDirectory:globals.config,global:globals,
           reviewedNativeConfigPath:path.join(root,'config','reviewed-native.json'),reviewedPluginManifestPath:path.join(root,'config','reviewed-plugins.json')},
         projectMap:input.projectMap,preparedManifestPath:path.join(root,'prepared.json')};
       await inspectHarness(value.launch.webDataDirectory,{projectMap:input.generation===2 ? input.projectMap:

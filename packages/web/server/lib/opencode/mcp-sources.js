@@ -16,7 +16,7 @@ const USER_CONFIG_PATHS = [
   OFFICIAL_USER_CONFIG_FILE,
   path.join(OPENCODE_CONFIG_DIR, 'opencode.jsonc'),
 ];
-const MCP_RECOVERY_MANIFEST_PATH = path.join(OPENCODE_CONFIG_DIR, '.openchamber', 'mcp-recovery.json');
+const MCP_RECOVERY_MANIFEST_PATH = path.join(OPENCODE_CONFIG_DIR, '.devryan', 'mcp-recovery.json');
 
 function getProjectOfficialConfigPaths(workingDirectory) {
   if (!workingDirectory) return [];
@@ -52,6 +52,7 @@ function getUserMcpSourceKind(userPath) {
 
 function backupPathsFor(configPath) {
   return [
+    `${configPath}.devryan.backup`,
     `${configPath}.openchamber.backup`,
     `${configPath}.bak`,
   ];

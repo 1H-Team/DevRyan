@@ -156,7 +156,7 @@ export const createHarnessTaskContextHost = (options) => {
     const legacyRestriction = anchor.parts.some(part => part.type === 'text' && part.synthetic === true
       && part.text?.startsWith('User has requested to enter plan mode'));
     return { objectiveID, readOnly: primary.agent === 'plan' || raw.metadata?.devryan?.agent === 'plan'
-      || raw.metadata?.devryan?.planMode === true || raw.metadata?.openchamberPlanMode === true || legacyRestriction };
+      || raw.metadata?.devryan?.planMode === true || raw.metadata?.devryanPlanMode === true || raw.metadata?.openchamberPlanMode === true || legacyRestriction };
   };
   const authorizeNativeTaskInvocation = async (input) => {
     if (!identifier(input?.messageID) || !identifier(input?.callID)) {
@@ -176,7 +176,7 @@ export const createHarnessTaskContextHost = (options) => {
     if (typeof options.readOnlyInvocation !== 'function') throw fault('native_plan_policy_unavailable');
     const capturedReadOnly = await options.readOnlyInvocation(input);
     if (typeof capturedReadOnly !== 'boolean') throw fault('native_plan_policy_unavailable');
-    return { objectiveID, readOnly: capturedReadOnly || anchor.info.metadata?.openchamberPlanMode === true
+    return { objectiveID, readOnly: capturedReadOnly || anchor.info.metadata?.devryanPlanMode === true || anchor.info.metadata?.openchamberPlanMode === true
       || anchor.parts.some(part => part.type === 'text' && part.synthetic === true && part.text?.startsWith('User has requested to enter plan mode')) };
   };
   const authorizeNativeTodoInvocation = async (input) => {
@@ -300,7 +300,7 @@ export const createHarnessTaskContextHost = (options) => {
     const parts = accepted.intent?.parts ?? accepted.request?.parts;
     if (!Array.isArray(parts)) return;
     const record = { info: { role: 'user' }, parts };
-    const markerParts = parts.filter(part => part.type === 'text' && part.text?.startsWith('[openchamber-plan-action:v1] '));
+    const markerParts = parts.filter(part => part.type === 'text' && (part.text?.startsWith('[devryan-plan-action:v1] ') || part.text?.startsWith('[openchamber-plan-action:v1] ')));
     if (!markerParts.length) return;
     const observe = phase => { try { options.recordDiagnostic?.({ type: 'lifecycle', event: 'session_plan_implementation_validation',
       sessionID: accepted.sessionID, messageID: accepted.messageID, payload: { phase } }); } catch { /* Read authorization never depends on an observer. */ } };
@@ -314,7 +314,8 @@ export const createHarnessTaskContextHost = (options) => {
     const selected = await resolvePlan(plan, context);
     observe('selected_source_validated');
     const marker = markerParts[0]; let version;
-    try { version = JSON.parse(marker.text.slice('[openchamber-plan-action:v1] '.length)).version; } catch { /* Invalid marker fails below. */ }
+    const prefix = marker.text.startsWith('[devryan-plan-action:v1] ') ? '[devryan-plan-action:v1] ' : '[openchamber-plan-action:v1] ';
+    try { version = JSON.parse(marker.text.slice(prefix.length)).version; } catch { /* Invalid marker fails below. */ }
     if (typeof version !== 'string' || !/^[a-f0-9]{64}$/.test(version)) throw planError(409, 'plan_saved_version_required');
     const saved = await readPlanRevision(selected.revision, { fsApi: options.fsApi });
     if (saved.version !== version) throw planError(409, 'plan_version_conflict');

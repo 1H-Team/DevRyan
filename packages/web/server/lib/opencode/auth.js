@@ -61,7 +61,7 @@ function writeAuthFile(auth) {
     }
 
     if (fs.existsSync(AUTH_FILE)) {
-      const backupFile = `${AUTH_FILE}.openchamber.backup`;
+      const backupFile = `${AUTH_FILE}.devryan.backup`;
       fs.copyFileSync(AUTH_FILE, backupFile);
       console.log(`Created auth backup: ${backupFile}`);
     }

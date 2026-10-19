@@ -64,8 +64,10 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
         const response = await fetch('/api/system/info');
         if (response.ok) {
           const data = await response.json();
-          if (typeof data.openchamberVersion === 'string' && data.openchamberVersion.trim()) {
-            setVersion(data.openchamberVersion);
+          const version = typeof data.devryanVersion === 'string' && data.devryanVersion.trim()
+            ? data.devryanVersion : data.openchamberVersion;
+          if (typeof version === 'string' && version.trim()) {
+            setVersion(version);
             return;
           }
         }

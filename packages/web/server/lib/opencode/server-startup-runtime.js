@@ -48,7 +48,7 @@ export const createServerStartupRuntime = (dependencies) => {
         activePort = typeof addressInfo === 'object' && addressInfo ? addressInfo.port : port;
 
         try {
-          process.send?.({ type: 'openchamber:ready', port: activePort });
+          process.send?.({ type: 'devryan:ready', port: activePort });
         } catch {
           // ignore
         }

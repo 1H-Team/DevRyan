@@ -58,7 +58,7 @@ const MAX_PARENT_LOOKUP_PAGES = 50;
 
 const DEVRYAN_METADATA_KEY = 'devryan';
 const DEVRYAN_METADATA_VERSION = 1;
-const PLAN_MODE_METADATA_KEY = 'openchamberPlanMode';
+const PLAN_MODE_METADATA_KEY = 'devryanPlanMode';
 const COMPACTION_AGENT = 'compaction';
 const SHELL_TOOL = 'bash';
 const FILE_COUNT_TOOLS = new Set(['edit', 'write', 'apply_patch']);
@@ -224,7 +224,7 @@ export const readDevryanPromptSelection = (metadata) => {
 
 /**
  * v1 user `metadata`: the v2 metadata without DevRyan internals, plus the
- * `openchamberPlanMode` marker the UI's plan-card detection reads.
+ * `devryanPlanMode` marker the UI's plan-card detection reads.
  * @param {unknown} metadata
  * @returns {Record<string, unknown>}
  */

@@ -20,6 +20,7 @@ import {
   getStatus,
   getWorktrees,
   getWorktreeBootstrapStatus,
+  previewWorktreeCreate,
   isInsideOrSameDirectory,
   isGitRepository,
   resolveBaseRefForLog,
@@ -69,6 +70,21 @@ describe('getRemotes', () => {
 });
 
 describe('getWorktrees', () => {
+  it('uses the DevRyan prefix for new worktree branches', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'devryan-worktree-branch-'));
+    tempDirs.push(directory);
+    const git = simpleGit(directory);
+    await git.init();
+    await git.addConfig('user.name', 'DevRyan Test');
+    await git.addConfig('user.email', 'devryan@example.com');
+    await writeFile(join(directory, 'tracked.txt'), 'initial\n');
+    await git.add('tracked.txt');
+    await git.commit('initial commit');
+
+    await expect(previewWorktreeCreate(directory, { worktreeName: 'feature' }))
+      .resolves.toMatchObject({ branch: 'devryan/feature' });
+  });
+
   it('distinguishes failed discovery from a successful empty non-Git directory', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'devryan-worktree-discovery-'));
     tempDirs.push(directory);

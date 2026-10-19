@@ -87,7 +87,7 @@ export function createNativeProviderConfigurationOperation({ descriptor, getSnap
     const verify = () => { live(); for (const [file, before] of [...initial, ...backups]) if (!same(before, read(file, roots))) throw changed(); };
     const affected = input.scope === 'all' ? ['user', 'custom', 'project'] : ['user', 'custom', 'project'].includes(input.scope) ? [input.scope] : [];
     for (const scope of affected) for (const file of candidates[scope]) {
-      if (initial.get(file) && keys(initial.get(file).config, input.providerID).length) backups.set(`${file}.openchamber.backup`, read(`${file}.openchamber.backup`, roots));
+      if (initial.get(file) && keys(initial.get(file).config, input.providerID).length) backups.set(`${file}.devryan.backup`, read(`${file}.devryan.backup`, roots));
     }
     const kind = input.providerID === 'openai' ? 'openai' : input.providerID === 'cursor-acp' ? 'cursor' : 'provider';
     const integrationID = input.providerID;
@@ -130,7 +130,7 @@ export function createNativeProviderConfigurationOperation({ descriptor, getSnap
           const before = initial.get(file); if (!before) continue;
           const next = removeJsoncKeyPaths(before.bytes.toString('utf8'), keys(before.config, integrationID));
           if (next === before.bytes.toString('utf8')) continue;
-          const backup = `${file}.openchamber.backup`; guard(backup, roots);
+          const backup = `${file}.devryan.backup`; guard(backup, roots);
           const staged = temporary(file, next, before.mode);
           let backupStaged;
           try {

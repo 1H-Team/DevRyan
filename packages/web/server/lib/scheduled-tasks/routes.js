@@ -323,7 +323,7 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
 
     try {
       writeSseEvent(res, {
-        type: 'openchamber:event-stream-ready',
+        type: 'devryan:event-stream-ready',
         properties: {
           connectedAt: Date.now(),
         },
@@ -334,7 +334,7 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
     const heartbeat = setInterval(() => {
       try {
         writeSseEvent(res, {
-          type: 'openchamber:heartbeat',
+          type: 'devryan:heartbeat',
           properties: {
             timestamp: Date.now(),
           },

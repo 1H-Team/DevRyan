@@ -57,7 +57,8 @@ export function readRuntimeBundleBinding(environment = process.env,{allowHeldIns
     webDataDirectory:path.join(bundleRoot,'web-data'),webConfigDirectory:path.join(bundleRoot,'config','openchamber'),
     opencodeConfigDirectory:path.join(bundleRoot,'config','opencode'),reviewedNativeConfigPath:path.join(bundleRoot,'config','reviewed-native.json'),
     reviewedPluginManifestPath:path.join(bundleRoot,'config','reviewed-plugins.json')};
-  for (const [key,file] of Object.entries(expected)) if (launch[key]!==file) throw fail();
+  for (const [key,file] of Object.entries(expected)) if (key!=='webConfigDirectory'&&launch[key]!==file) throw fail();
+  if (![path.join(bundleRoot,'config','devryan'),path.join(bundleRoot,'config','openchamber')].includes(launch.webConfigDirectory)) throw fail();
   for (const key of ['home','config','data','state','cache','bin','log','repos','tmp']) owned(launch.global?.[key]);
   if (launch.global.config !== launch.opencodeConfigDirectory || launch.webConfigDirectory === launch.opencodeConfigDirectory
     || !/^[a-f0-9]{64}$/.test(launch.artifactManifestSha256)) throw fail();

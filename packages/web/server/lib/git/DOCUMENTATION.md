@@ -254,7 +254,7 @@ mutation lock as Git operations so API-driven edits cannot race a merge.
 ### Worktree Naming
 - Worktree names are slugified via `slugWorktreeName`.
 - Random names use adjectives/nouns from `OPENCODE_ADJECTIVES` and `OPENCODE_NOUNS` lists.
-- Branches created for new worktrees use `openchamber/<worktree-name>` pattern.
+- Branches created for new worktrees use `devryan/<worktree-name>`; existing `openchamber/*` branches remain valid.
 
 ### Cross-Platform Considerations
 - Use `normalizeDirectoryPath` for all directory inputs to handle `~` and path separators.

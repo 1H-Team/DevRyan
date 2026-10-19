@@ -904,7 +904,7 @@ const resolveCandidateDirectory = async (worktreeRoot, preferredName, explicitBr
       return { name, directory, branch: explicitBranchName };
     }
 
-    const branch = `openchamber/${name}`;
+    const branch = `devryan/${name}`;
     const branchRef = `refs/heads/${branch}`;
     const branchExists = await runGitCommand(primaryWorktree, ['show-ref', '--verify', '--quiet', branchRef]);
     if (branchExists.success) {

@@ -68,7 +68,7 @@ const resolvePromptFeaturePaths = (options = {}) => {
     markerPath: options.markerPath
       || pathApi.join(
         configDirectory,
-        '.openchamber',
+        '.devryan',
         'meridian-sdk-features-policy.json',
       ),
   };

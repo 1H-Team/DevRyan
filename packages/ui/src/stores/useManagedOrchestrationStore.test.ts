@@ -164,7 +164,7 @@ const withRecoveryDefaults = (task: ManagedTaskEventRecord): ManagedTaskProjecte
 });
 
 const taskEvent = (task: ManagedTaskProjectedRecord, resultEnvelope?: ManagedTaskEvent['properties']['resultEnvelope']): ManagedTaskEvent => ({
-  type: 'openchamber:managed-task',
+  type: 'devryan:managed-task',
   properties: {
     owner: 'devryan',
     directory: task.directory,
@@ -174,7 +174,7 @@ const taskEvent = (task: ManagedTaskProjectedRecord, resultEnvelope?: ManagedTas
 });
 
 const removalEvent = (task: ManagedTaskEventRecord, sequence = task.sequence): ManagedTaskRemovalEvent => ({
-  type: 'openchamber:managed-task-removed',
+  type: 'devryan:managed-task-removed',
   properties: {
     owner: 'devryan',
     taskId: task.taskId,
