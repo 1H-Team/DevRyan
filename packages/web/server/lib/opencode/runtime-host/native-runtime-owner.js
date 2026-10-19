@@ -834,6 +834,10 @@ export function createNativeRuntimeOwner(options) {
       return privileged.readCanonicalPlanSequence(input.sessionID, {directory:input.directory,timeoutMs:5000});
     },
     nativeOwner, handleRpc, start,
+    // Nothing was ever launched, is launching or awaits settlement: a failed
+    // host start has no native execution to settle and leaves this process
+    // singleton reusable, since close() is terminal.
+    isUnstarted: () => !starting && !child && !lastExit && !unsettledLaunch && !stopping && !stopped && !checkpointHeld,
     checkpointController: () => { if (!child) throw fail('bundle_checkpoint_controller_unknown'); return child; },
     closeAdmissionForCheckpoint: async () => {
       checkpointHeld = true; phase = 'checkpoint';

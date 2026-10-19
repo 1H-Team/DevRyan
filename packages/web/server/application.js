@@ -1894,7 +1894,12 @@ const gracefulShutdownRuntime = createGracefulShutdownRuntime({
   getBrowserLeaseRuntime: () => browserLeaseRuntime,
   getCursorSdkRuntime: () => cursorSdkRuntime,
   getSessionExecutionHost: () => sessionExecutionHost,
-  closeNativeRuntime: nativeBundle ? () => nativeRuntime.close() : undefined,
+  // close() is terminal for the module-level owner. A failed start that never
+  // launched native execution has nothing to settle and keeps it reusable, so
+  // an in-process Startup Retry can still start the native runtime.
+  closeNativeRuntime: nativeBundle
+    ? (options = {}) => (options.failedStart && nativeRuntime.isUnstarted() ? undefined : nativeRuntime.close())
+    : undefined,
   closeFeatureRoutes: () => featureRoutesRuntime.close(),
   getSessionTitleRuntime: () => standardSessionTitleRuntime,
   shouldSkipOpenCodeStop: () => ENV_SKIP_OPENCODE_START || isExternalOpenCode,
@@ -1932,7 +1937,7 @@ const webHostLifecycle = createWebHostLifecycle({
   // settlement is refused, which is when every owner is retained.
   cleanupFailedStart: async () => {
     try {
-      await gracefulShutdown({ exitProcess: false });
+      await gracefulShutdown({ exitProcess: false, failedStart: true });
     } catch (error) {
       throw Object.assign(new Error('web_host_start_cleanup_incomplete', { cause: error }), {
         code: /^[a-z][a-z0-9_]{1,100}$/.test(error?.code ?? '') ? error.code : 'web_host_start_cleanup_incomplete',
