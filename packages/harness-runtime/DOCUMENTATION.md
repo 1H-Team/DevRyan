@@ -1,5 +1,10 @@
 # Harness Runtime
 
+New synthetic events and plan-action markers use `devryan` names. Journal,
+recovery, objective and task-context readers accept the pre-rename aliases with
+the same ownership, single-marker and scope validation. Event normalisation is
+owned by the portable shared-runtime event-types leaf.
+
 `@devryan/harness-runtime` is the Node ESM owner for durable DevRyan
 harness operations. It has no third-party dependencies; its only workspace
 dependency is `@devryan/shared-runtime` (native status, observation, usage

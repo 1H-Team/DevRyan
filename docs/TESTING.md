@@ -59,7 +59,7 @@ Runner and discovery changes belong in `scripts/`. Feature tests live beside the
 - Use temporary directories in the OS temp dir, injected dependencies or loopback-only fakes. Never require credentials, live providers, external network, the user's configuration or installed-app state.
 - Clean up temp files and child processes on pass, failure and interruption. Never write scratch under `.cache/`.
 - `scripts/qa/run-root.mjs` `createRunRoot` removes a run directory (`<os tmpdir>/devryan-<family>`) unless `--keep-artifacts` or `DEVRYAN_KEEP_ARTIFACTS=1` is set.
-- DevRyan names are canonical; the kept OpenChamber identities (`@openchamber/electron`, `openchamber://`, the bundle ID) and accepted aliases are listed in [identity compatibility](IDENTITY_COMPATIBILITY.md). DevRyan branding assertions apply to public release filenames and metadata.
+- DevRyan names are canonical; the installed OpenChamber identities and accepted aliases are listed in [identity compatibility](IDENTITY_COMPATIBILITY.md). DevRyan branding assertions apply to public release filenames and metadata.
 
 ## Opt-in groups
 

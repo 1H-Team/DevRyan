@@ -487,7 +487,7 @@ test('isolated Plan decisions require real native refusal/results and never manu
 });
 
 test('managed decisions drain exact report/metadata cursors before the later native continue step', () => {
-  const fixture = createPlanImplementResponder(), input = request('[openchamber-plan-action:v1] UI fixture marker');
+  const fixture = createPlanImplementResponder(), input = request('[devryan-plan-action:v1] UI fixture marker');
   result(input.body, 'native_plan_fixer_start', { task: { taskId: 'dvr_task_fixer' } });
   assert.equal(fixture.responder(input).items[0].input.action, 'wait');
   result(input.body, 'native_plan_fixer_wait', { task: { taskId: 'dvr_task_fixer', status: 'completed' },
@@ -497,7 +497,7 @@ test('managed decisions drain exact report/metadata cursors before the later nat
   assert.equal(fixture.responder(input).items[0].input.result_cursor, 'report-1');
   result(input.body, 'native_plan_fixer_page_1', { resultReference: { complete: true, nextCursor: null } });
   assert.deepEqual(fixture.responder(input).items[0].input, { action: 'continue', task_id: 'dvr_task_fixer' });
-  const failed = request('[openchamber-plan-action:v1] UI fixture marker');
+  const failed = request('[devryan-plan-action:v1] UI fixture marker');
   result(failed.body, 'native_plan_fixer_start', { task: { taskId: 'dvr_task_fixer' } });
   result(failed.body, 'native_plan_fixer_wait', { task: { status: 'failed', failureReason: 'actual check failed' } });
   assert.throws(() => fixture.responder(failed), /Actual fixer child failed/);

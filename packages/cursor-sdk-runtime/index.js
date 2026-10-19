@@ -1930,7 +1930,7 @@ export function createCursorSdkRuntime(options = {}) {
     if (notified.has(scope)) return;
     notified.add(scope);
     try {
-      emit({ type: 'openchamber:provider-catalog', properties: {
+      emit({ type: 'devryan:provider-catalog', properties: {
         providerID: CURSOR_PROVIDER_ID, directory: scope, source: 'sdk',
       } }, directory);
     } catch { /* Catalog observers cannot change a successful cache commit. */ }
@@ -3824,7 +3824,7 @@ export function createCursorSdkRuntime(options = {}) {
         modelID,
         ...(variant ? { variant } : {}),
         ...(requestedAgent ? { agent: requestedAgent } : {}),
-        ...(isPlanModePrompt ? { metadata: { openchamberPlanMode: true } } : {}),
+        ...(isPlanModePrompt ? { metadata: { devryanPlanMode: true } } : {}),
       },
       parts: userParts,
     };

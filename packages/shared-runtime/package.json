@@ -23,6 +23,10 @@
       "types": "./lib/cache-efficiency-policy.d.ts",
       "default": "./lib/cache-efficiency-policy.js"
     },
+    "./lib/event-types.js": {
+      "types": "./lib/event-types.d.ts",
+      "default": "./lib/event-types.js"
+    },
     "./lib/helper-model-selection.js": {
       "types": "./lib/helper-model-selection.d.ts",
       "default": "./lib/helper-model-selection.js"

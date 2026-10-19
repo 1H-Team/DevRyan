@@ -3,7 +3,9 @@
 `index.js` is the shared Cursor SDK 1.0.28 conversation adapter. Web and Electron
 use the same transcript mapping. `node-worker.mjs` runs one isolated request;
 `persistent-worker.mjs` routes requests by request ID and caches SDK agents.
-The public runtime declarations live in `index.d.ts`.
+The public runtime declarations live in `index.d.ts`. New plan prompts publish
+`metadata.devryanPlanMode`; transcript readers also accept the legacy
+`openchamberPlanMode` flag.
 
 Explicit native connection verification uses the existing twenty-second owned
 catalog deadline, including metadata-worker cancellation and physical

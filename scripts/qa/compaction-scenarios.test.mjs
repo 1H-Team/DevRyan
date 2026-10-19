@@ -153,7 +153,7 @@ test('Plan approval selects its exact UI source request and enforces canonical s
   const cell={providerId:'openai',modelId:'fixture-model',agent:'builder',variant:null};
   const marker={action:'implement',sourceSessionId:'ses_root',sourceMessageId:'msg_plan',planIndex:0,projectDirectory:'/qa/project'};
   const user={info:{id:'msg_approval',sessionID:'ses_root',role:'user',agent:'build',model:{providerID:'openai',modelID:'fixture-model',variant:''}},
-    parts:[{type:'text',synthetic:true,text:'[openchamber-plan-action:v1] '+JSON.stringify(marker)}]};
+    parts:[{type:'text',synthetic:true,text:'[devryan-plan-action:v1] '+JSON.stringify(marker)}]};
   const continuation={info:{id:'msg_continue',role:'user'},parts:[{type:'text',synthetic:true,text:'Continue from where the previous response left off.'}]};
   const options={sessionID:'ses_root',sourceMessageID:'msg_plan',projectDirectory:'/qa/project',cell,nativeAgent:'build'};
   assert.equal(findQaPlanApprovalUser([user,...rows(),continuation],new Set(),options),user);
@@ -164,7 +164,7 @@ test('Plan approval selects its exact UI source request and enforces canonical s
   assert.throws(()=>findQaPlanApprovalUser([builder],new Set(),options));
   for(const mutate of [
     value=>{value.parts[0].text=value.parts[0].text.replace('/qa/project','/qa/foreign');},
-    value=>{const marker=JSON.parse(value.parts[0].text.slice('[openchamber-plan-action:v1] '.length));delete marker.projectDirectory;value.parts[0].text='[openchamber-plan-action:v1] '+JSON.stringify(marker);},
+    value=>{const marker=JSON.parse(value.parts[0].text.slice('[devryan-plan-action:v1] '.length));delete marker.projectDirectory;value.parts[0].text='[devryan-plan-action:v1] '+JSON.stringify(marker);},
     value=>{value.info.model.variant='high';}, value=>{value.info.agent='orchestrator';},
     value=>{value.info.model.modelID='other';}, value=>{value.parts[0].text=value.parts[0].text.replace('msg_plan','msg_old');},
     value=>{value.parts.push({type:'text',synthetic:true,text:'User has requested to enter plan mode.'});},

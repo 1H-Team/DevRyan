@@ -25,6 +25,11 @@ test('selected plan references require one canonical synthetic implement marker'
   const ordinary = selected(marker); ordinary.parts[0].synthetic = false; expect(planReference(ordinary)).toBeNull();
   const assistant = selected(marker); assistant.info = { ...anchor.info, role: 'assistant' }; expect(planReference(assistant)).toBeNull();
   const duplicate = selected(marker); duplicate.parts.push({ ...duplicate.parts[0] }); expect(planReference(duplicate)).toBeNull();
+  const canonical = selected(marker);
+  canonical.parts[0].text = canonical.parts[0].text.replace('[openchamber-plan-action:v1]', '[devryan-plan-action:v1]');
+  expect(planReference(canonical)).toEqual(planReference(selected(marker)));
+  canonical.parts.push(selected(marker).parts[0]);
+  expect(planReference(canonical)).toBeNull();
 });
 
 describe('recoverable task checkpoints', () => {

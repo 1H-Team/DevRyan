@@ -325,7 +325,7 @@ export class ManagedResultReferenceError extends Error {
 }
 
 export interface ManagedTaskEvent {
-  type: 'openchamber:managed-task';
+  type: 'devryan:managed-task';
   properties: {
     owner: 'devryan';
     directory: string;
@@ -335,7 +335,7 @@ export interface ManagedTaskEvent {
 }
 
 export interface ManagedTaskRemovalEvent {
-  type: 'openchamber:managed-task-removed';
+  type: 'devryan:managed-task-removed';
   properties: {
     owner: 'devryan';
     taskId: string;

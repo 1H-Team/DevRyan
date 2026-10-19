@@ -20,7 +20,7 @@ const messageText = row => row.parts.filter(part => part.type === 'text').map(pa
 
 export function findQaPlanApprovalUser(rows, previousIds, { sessionID, sourceMessageID, projectDirectory, cell, nativeAgent }) {
   assert.ok(typeof projectDirectory === 'string' && path.isAbsolute(projectDirectory), 'Plan approval requires the expected project directory');
-  const prefix = '[openchamber-plan-action:v1] ';
+  const prefix = '[devryan-plan-action:v1] ';
   const candidates = rows.filter(row => row.info?.role === 'user' && !previousIds.has(row.info.id)
     && row.parts?.some(part => part.type === 'text' && part.synthetic === true && part.text?.startsWith(prefix)));
   if (!candidates.length) return null;

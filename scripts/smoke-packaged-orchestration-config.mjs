@@ -157,7 +157,7 @@ export const smokePackagedOrchestrationConfig = async ({ configRoot }) => {
     }
 
     const expectedManagedFiles = managedProfileFiles(assets);
-    const manifest = readJson(path.join(configDirectory, '.openchamber', 'user-profile-manifest.json'));
+    const manifest = readJson(path.join(configDirectory, '.devryan', 'user-profile-manifest.json'));
     for (const relativePath of expectedManagedFiles) {
       requireFile(path.join(configDirectory, relativePath), `provisioned managed file ${relativePath}`);
       if (!manifest.files?.[relativePath]?.hash) throw new Error(`Missing manifest record for ${relativePath}`);

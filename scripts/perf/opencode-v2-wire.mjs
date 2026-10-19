@@ -56,7 +56,7 @@ export const OPENCODE_V2_UNLOCATED_EVENT_TYPES = new Set([
  * the upstream stream. They are NOT part of the OpenCode 2.0.20 event manifest and carry
  * `metadata.devryanFixture: true`.
  */
-export const DEVRYAN_FIXTURE_EVENT_TYPES = new Set(['openchamber:managed-task', 'openchamber:managed-task-removed']);
+export const DEVRYAN_FIXTURE_EVENT_TYPES = new Set(['devryan:managed-task', 'devryan:managed-task-removed', 'openchamber:managed-task', 'openchamber:managed-task-removed']);
 
 export const V2_HEARTBEAT_FRAME = ': heartbeat\n\n';
 

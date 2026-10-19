@@ -15,7 +15,7 @@ const cell={transport:'fixture',providerId:'fixture',modelId:'fixture-model',run
 const prepareNativeProfile=async({runtimeRoot})=>{
   const home=path.join(runtimeRoot,'home');
   return {env:{DEVRYAN_RUNTIME_BUNDLE_ROOT:path.join(runtimeRoot,'bundles'),DEVRYAN_OPENCODE_GENERATION:'2',
-    HOME:home,DEVRYAN_QA_HOME:home,OPENCODE_CONFIG_DIR:path.join(home,'.config/opencode'),DEVRYAN_DATA_DIR:path.join(home,'.config/openchamber'),
+    HOME:home,DEVRYAN_QA_HOME:home,OPENCODE_CONFIG_DIR:path.join(home,'.config/opencode'),DEVRYAN_DATA_DIR:path.join(home,'.config/devryan'),
     DEVRYAN_ELECTRON_USER_DATA_DIR:path.join(runtimeRoot,'browser-profile')},bootstrapPath:'constructor-unit-only',
     verifyInputs:async()=>'a'.repeat(64),close:async()=>{},evidence:{inputDigest:'a'.repeat(64),nativeBundle:{bundleID:'constructor-unit-only'}}};
 };
@@ -65,7 +65,7 @@ for(const generation of [2]) for(const agent of ['builder','orchestrator']) test
     const userConfigPath=path.join(profile.env.OPENCODE_CONFIG_DIR,'opencode.json');
     const nativeConfig=JSON.parse(await readFile(userConfigPath,'utf8'));
     assert.equal(Object.hasOwn(nativeConfig,'openchamber'),false);
-    const sidecar=JSON.parse(await readFile(path.join(profile.env.OPENCODE_CONFIG_DIR,'.openchamber/config.json'),'utf8'));
+    const sidecar=JSON.parse(await readFile(path.join(profile.env.OPENCODE_CONFIG_DIR,'.devryan/config.json'),'utf8'));
     assert.deepEqual(sidecar.agentOverrides,Object.fromEntries(['build','builder','orchestrator'].map(name => [name,{model:'fixture/fixture-model',variant:'low'}])));
     const configAgents=listConfigAgents(project.fixtureRoot,{userConfigPath,env:{},readOpenCodeConfig:()=>nativeConfig});
     for(const name of ['builder','orchestrator']) {

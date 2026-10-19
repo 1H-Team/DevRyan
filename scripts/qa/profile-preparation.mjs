@@ -437,7 +437,7 @@ const inheritedStatePathKey = key => /^(MERIDIAN|CLAUDE)_(\w+_)?(DIR|PATH|CONFIG
 // (CLAUDE_CONFIG_DIR) and its state from homedir(). HOME is therefore owned in
 // this launch environment; the shim still never mutates it inside a process.
 export const createQaLaunchEnvironment = ({ runtimeRoot, home, opencodeBinary, baseEnvironment = process.env }) => {
-    const data = path.join(home, '.config/openchamber');
+    const data = path.join(home, '.config/devryan');
     const env = qaPlatformEnvironment(baseEnvironment);
     for (const key of Object.keys(env)) if (inheritedStatePathKey(key)) delete env[key];
     Object.assign(env, { DEVRYAN_QA_RUNTIME_ROOT: runtimeRoot, DEVRYAN_QA_HOME: home,

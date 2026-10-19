@@ -9,9 +9,9 @@ import { resolveDevRyanDataRoot } from '@devryan/shared-runtime/node/data-root.j
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// The npm registry package the global CLI updates from (an external identity).
-const PACKAGE_NAME = '@openchamber/web';
-const PACKAGE_PATH_SEGMENTS = PACKAGE_NAME.split('/');
+// Updates must stay on DevRyan; legacy installs are recognised separately.
+const PACKAGE_NAME = '@devryan/web';
+const LEGACY_PACKAGE_NAME = '@openchamber/web';
 const NPM_REGISTRY_URL = `https://registry.npmjs.org/${PACKAGE_NAME}`;
 const GITHUB_REPOSITORY_OWNER = '1H-Team';
 const GITHUB_REPOSITORY_NAME = 'DevRyan';
@@ -215,9 +215,9 @@ function getCurrentPackagePath() {
   return path.resolve(__dirname, '..', '..');
 }
 
-function getPackagePathForGlobalRoot(rootPath) {
-  if (!rootPath) return null;
-  return path.join(rootPath, ...PACKAGE_PATH_SEGMENTS);
+function getPackagePathsForGlobalRoot(rootPath) {
+  if (!rootPath) return [];
+  return [PACKAGE_NAME, LEGACY_PACKAGE_NAME].map(name => path.join(rootPath, ...name.split('/')));
 }
 
 function getUniquePaths(paths) {
@@ -336,17 +336,18 @@ function getGlobalNodeModulesRoots(pm) {
 function getOwnedPackagePathsFromGlobalBins(pm) {
   const packagePaths = [];
   for (const binDir of getGlobalBinDirs(pm)) {
-    const binaryName = process.platform === 'win32' ? 'openchamber.cmd' : 'openchamber';
-    const binaryPath = path.join(binDir, binaryName);
-    if (!fs.existsSync(binaryPath)) continue;
-
-    try {
-      const realBinaryPath = fs.realpathSync.native ? fs.realpathSync.native(binaryPath) : fs.realpathSync(binaryPath);
-      packagePaths.push(path.resolve(realBinaryPath, '..', '..'));
-    } catch {
+    for (const name of ['devryan', 'openchamber']) {
+      const binaryName = process.platform === 'win32' ? `${name}.cmd` : name;
+      const binaryPath = path.join(binDir, binaryName);
+      if (!fs.existsSync(binaryPath)) continue;
+      try {
+        const realBinaryPath = fs.realpathSync.native ? fs.realpathSync.native(binaryPath) : fs.realpathSync(binaryPath);
+        packagePaths.push(path.resolve(realBinaryPath, '..', '..'));
+      } catch {
+        // Missing global bins cannot establish package ownership.
+      }
     }
   }
-
   return getUniquePaths(packagePaths);
 }
 
@@ -357,7 +358,7 @@ function detectPackageManagerFromCurrentInstallPath() {
 function packageManagerOwnsCurrentInstall(pm) {
   const currentPackagePaths = getComparablePaths(getCurrentPackagePath());
   const candidatePackagePaths = [
-    ...getGlobalNodeModulesRoots(pm).map(getPackagePathForGlobalRoot),
+    ...getGlobalNodeModulesRoots(pm).flatMap(getPackagePathsForGlobalRoot),
     ...getOwnedPackagePathsFromGlobalBins(pm),
   ];
 
@@ -603,14 +604,16 @@ async function getGlobalBinDirsAsync(pm) {
 
 async function packageManagerOwnsCurrentInstallAsync(pm) {
   const current = getComparablePaths(getCurrentPackagePath());
-  const candidates = (await getGlobalNodeModulesRootsAsync(pm)).map(getPackagePathForGlobalRoot);
+  const candidates = (await getGlobalNodeModulesRootsAsync(pm)).flatMap(getPackagePathsForGlobalRoot);
   for (const binDirectory of await getGlobalBinDirsAsync(pm)) {
-    const binaryName = process.platform === 'win32' ? 'openchamber.cmd' : 'openchamber';
-    try {
-      const binary = await fs.promises.realpath(path.join(binDirectory, binaryName));
-      candidates.push(path.resolve(binary, '..', '..'));
-    } catch {
-      // Missing or inaccessible global command is not ownership evidence.
+    for (const name of ['devryan', 'openchamber']) {
+      const binaryName = process.platform === 'win32' ? `${name}.cmd` : name;
+      try {
+        const binary = await fs.promises.realpath(path.join(binDirectory, binaryName));
+        candidates.push(path.resolve(binary, '..', '..'));
+      } catch {
+        // Missing or inaccessible global command is not ownership evidence.
+      }
     }
   }
   return candidates.some((candidate) => candidate && pathSetContains(current, getComparablePaths(candidate)));
@@ -746,13 +749,13 @@ function isCommandAvailable(command) {
 function getPackageListArgs(pm) {
   switch (pm) {
     case 'pnpm':
-      return ['list', '-g', '--depth=0', PACKAGE_NAME];
+      return ['list', '-g', '--depth=0', PACKAGE_NAME, LEGACY_PACKAGE_NAME];
     case 'yarn':
       return ['global', 'list', '--depth=0'];
     case 'bun':
       return ['pm', 'ls', '-g'];
     default:
-      return ['list', '-g', '--depth=0', PACKAGE_NAME];
+      return ['list', '-g', '--depth=0', PACKAGE_NAME, LEGACY_PACKAGE_NAME];
   }
 }
 
@@ -858,7 +861,7 @@ export async function checkForUpdates(options = {}) {
       return {
         ...remote,
         packageManager: pm,
-        updateCommand: 'openchamber update',
+        updateCommand: 'devryan update',
       };
     }
   }
@@ -889,7 +892,7 @@ export async function checkForUpdates(options = {}) {
     body: undefined,
     packageManager: pm,
     // Show our CLI command, not raw package manager command
-    updateCommand: 'openchamber update',
+    updateCommand: 'devryan update',
   };
 }
 

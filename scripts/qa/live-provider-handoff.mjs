@@ -220,7 +220,7 @@ export async function prepareProviderHandoff({ artifactRoot, root }) {
   const artifactBytes = await readQaPinnedFile(path.join(artifactRoot, 'native-bundle.json'), undefined, 4 * 1024 * 1024);
   const artifact = JSON.parse(artifactBytes);
   const files = {
-    'opencode/opencode.json': legacy, 'opencode/.openchamber/config.json': { agentOverrides: agents }, 'web/settings.json': settings,
+    'opencode/opencode.json': legacy, 'opencode/.devryan/config.json': { agentOverrides: agents }, 'web/settings.json': settings,
     'reviewed-native.json': { schema: 1, configuration: translateNativeConfiguration({ legacy, agents }), locations: [],
       catalogRequirements: { agents: ['orchestrator'], tools: ['read'], plugins: [], models: [] } },
     'reviewed-plugins.json': { schema: 1, plugins: defaultNativeRegistrations(artifact.inputs.reviewedPlugins) },

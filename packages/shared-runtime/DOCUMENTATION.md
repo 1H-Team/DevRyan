@@ -131,3 +131,7 @@ Codex usage and optional reset-bank reads reject redirects, use 20/10-second
 timeouts and reuse bounded 64-KiB response parsing. A usage 401 exposes
 `REAUTHENTICATION_REQUIRED`; native hosts can report renewal pending because
 OpenCode owns refresh. Optional reset failures preserve the main allowance.
+
+`lib/event-types.js` canonicalises pre-rename `openchamber:*` event identities
+for journal and in-process readers. New synthetic events use `devryan:*`; the
+web stream owner translates only the leading serialized type for older clients.

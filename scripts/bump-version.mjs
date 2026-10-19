@@ -70,12 +70,12 @@ cargoContent = cargoContent.replace(
 fs.writeFileSync(cargoPath, cargoContent);
 console.log(`  ${CARGO_TOML}: ${oldCargoVersion} -> ${newVersion}`);
 
-// Update Cargo.lock for openchamber-desktop, if present
+// Update Cargo.lock for devryan-desktop, if present
 const cargoLockPath = path.join(ROOT, CARGO_LOCK);
 if (fs.existsSync(cargoLockPath)) {
   try {
     let lockContent = fs.readFileSync(cargoLockPath, 'utf8');
-    const anchor = 'name = "openchamber-desktop"';
+    const anchor = 'name = "devryan-desktop"';
     const anchorIndex = lockContent.indexOf(anchor);
     if (anchorIndex !== -1) {
       // find the next version line after the anchor
@@ -91,7 +91,7 @@ if (fs.existsSync(cargoLockPath)) {
         console.warn(`Warning: could not locate version line in ${CARGO_LOCK}`);
       }
     } else {
-      console.warn(`Warning: could not find openchamber-desktop entry in ${CARGO_LOCK}`);
+      console.warn(`Warning: could not find devryan-desktop entry in ${CARGO_LOCK}`);
     }
   } catch (e) {
     console.error(`Failed to update ${CARGO_LOCK}:`, e);

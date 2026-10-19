@@ -13,6 +13,7 @@ import { spawn, spawnSync } from 'child_process';
 import { fileURLToPath, pathToFileURL } from 'url';
 import {runRuntimeBundleCommand} from './runtime-bundle-command.js';
 import { isModuleCliExecution } from './cli-entry.js';
+import { daemonRecordPaths, daemonRecordPort, daemonLogPath } from './cli-records.js';
 import { prepareLocalOwnerEnrollment } from '../server/lib/multi-user/local-owner-bootstrap.js';
 import { createOwnerAuthenticatedTunnelFetch } from './tunnel-owner-auth.js';
 import { cloudflareTunnelProviderCapabilities } from '../server/lib/tunnels/providers/cloudflare.js';
@@ -319,7 +320,7 @@ function buildTunnelStartReplayCommand({
   tokenViaStdin,
   tokenFileProvided,
 }) {
-  const parts = ['openchamber', 'tunnel', 'start'];
+  const parts = ['devryan', 'tunnel', 'start'];
   if (Number.isFinite(port) && port > 0) {
     parts.push('--port', String(port));
   }
@@ -367,7 +368,7 @@ function buildTunnelStartReplayCommand({
 
 function buildTunnelProfileAddCommand({ provider, hostname, originPort }) {
   const parts = [
-    'openchamber',
+    'devryan',
     'tunnel',
     'profile',
     'add',
@@ -1244,8 +1245,9 @@ function ensureLogsDir() {
   fs.mkdirSync(getLogsDir(), { recursive: true });
 }
 
-function getLogFilePath(port) {
-  return path.join(getLogsDir(), `openchamber-${port}.log`);
+function getLogFilePath(port, { readLegacy = false, recordPath } = {}) {
+  return readLegacy ? daemonLogPath(getLogsDir(), port, { recordPath, exists: fs.existsSync })
+    : path.join(getLogsDir(), `devryan-${port}.log`);
 }
 
 function getTunnelProfilesFilePath() {
@@ -1653,7 +1655,7 @@ function resolveProfileByName(profiles, profileName, provider) {
   });
 
   if (matches.length === 0) {
-    return { profile: null, error: `No tunnel profile found for name '${profileName}'. Run 'openchamber tunnel profile list'.` };
+    return { profile: null, error: `No tunnel profile found for name '${profileName}'. Run 'devryan tunnel profile list'.` };
   }
   if (matches.length > 1) {
     return { profile: null, error: `Profile name '${profileName}' exists for multiple providers. Use --provider <id>.` };
@@ -1750,11 +1752,11 @@ function getRunDir() {
 }
 
 async function getPidFilePath(port) {
-  return path.join(getRunDir(), `openchamber-${port}.pid`);
+  return daemonRecordPaths(getRunDir(), port)[0].pid;
 }
 
 async function getInstanceFilePath(port) {
-  return path.join(getRunDir(), `openchamber-${port}.json`);
+  return daemonRecordPaths(getRunDir(), port)[0].instance;
 }
 
 function readPidFile(pidFilePath) {
@@ -2021,7 +2023,7 @@ function waitForDaemonReadyMessage(child, {
     const onMessage = (msg) => {
       if (
         msg
-        && msg.type === 'openchamber:ready'
+        && (msg.type === 'devryan:ready' || msg.type === 'openchamber:ready')
         && typeof msg.port === 'number'
         && Number.isFinite(msg.port)
         && msg.port > 0
@@ -2311,7 +2313,7 @@ async function resolveDoctorPortStatuses(options = {}) {
         available: false,
         status: 'warning',
         line: `port ${requestedPort} not available (desktop runtime)`,
-        detail: 'Use a CLI instance port from `openchamber serve` for tunneling.',
+        detail: 'Use a CLI instance port from `devryan serve` for tunneling.',
       });
       return { statuses, availableEntries: [] };
     }
@@ -2321,7 +2323,7 @@ async function resolveDoctorPortStatuses(options = {}) {
       available: false,
       status: 'error',
       line: `port ${requestedPort} not available (no running instance)`,
-      detail: `Start one with \`openchamber serve --port ${requestedPort}\`.`,
+      detail: `Start one with \`devryan serve --port ${requestedPort}\`.`,
     });
     return { statuses, availableEntries: [] };
   }
@@ -2342,7 +2344,7 @@ async function resolveDoctorPortStatuses(options = {}) {
       available: false,
       status: 'warning',
       line: `port ${desktopEntry.port} not available (desktop runtime)`,
-      detail: 'Use a CLI instance port from `openchamber serve` for tunneling.',
+      detail: 'Use a CLI instance port from `devryan serve` for tunneling.',
     });
   }
 
@@ -2352,7 +2354,7 @@ async function resolveDoctorPortStatuses(options = {}) {
       available: false,
       status: 'warning',
       line: 'no CLI ports available for tunneling',
-      detail: 'Start one with `openchamber serve`.',
+      detail: 'Start one with `devryan serve`.',
     });
   }
 
@@ -2364,13 +2366,13 @@ async function discoverRunningInstances() {
   const runDir = getRunDir();
   try {
     const files = fs.readdirSync(runDir);
-    const pidFiles = files.filter((file) => file.startsWith('openchamber-') && file.endsWith('.pid'));
+    const pidFiles = files.filter((file) => daemonRecordPort(file) !== null).sort();
     for (const file of pidFiles) {
-      const port = parseInt(file.replace('openchamber-', '').replace('.pid', ''), 10);
+      const port = daemonRecordPort(file);
       if (!Number.isFinite(port) || port <= 0) continue;
       const pidFilePath = path.join(runDir, file);
       const pid = readPidFile(pidFilePath);
-      const instanceFilePath = path.join(runDir, `openchamber-${port}.json`);
+      const instanceFilePath = path.join(runDir, file.replace(/\.pid$/, '.json'));
       const storedOptions = readInstanceOptions(instanceFilePath);
       const launchMode = storedOptions?.launchMode === 'foreground' ? 'foreground' : 'daemon';
       const identity = await validatePidFileIdentity({ port, pid, launchMode });
@@ -2388,7 +2390,9 @@ async function discoverRunningInstances() {
       if (Number.isFinite(storedOptions?.startedAt)) {
         startedAt = storedOptions.startedAt;
       }
-      instances.push({ port, pid, pidFilePath, instanceFilePath, mtime, startedAt, launchMode });
+      if (!instances.some(instance => instance.port === port && instance.pid === pid)) {
+        instances.push({ port, pid, pidFilePath, instanceFilePath, mtime, startedAt, launchMode });
+      }
     }
   } catch {
   }
@@ -2524,7 +2528,7 @@ async function resolveTargetInstance({
 
   if (options.all && requireAll) {
     if (running.length === 0) {
-      throw new Error('No running DevRyan instance found. Start one with `openchamber serve`.');
+      throw new Error('No running DevRyan instance found. Start one with `devryan serve`.');
     }
     return running;
   }
@@ -2537,7 +2541,7 @@ async function resolveTargetInstance({
         if (!attachability.attachable) {
           if (attachability.reason === 'desktop') {
             throw new Error(
-              `Port ${options.port} is used by DevRyan Desktop app. Tunnel attach requires a CLI instance from \`openchamber serve\`.`
+              `Port ${options.port} is used by DevRyan Desktop app. Tunnel attach requires a CLI instance from \`devryan serve\`.`
             );
           }
           throw new Error(
@@ -2552,7 +2556,7 @@ async function resolveTargetInstance({
       const systemInfo = await fetchSystemInfoFromPort(options.port);
       if (systemInfo?.runtime === 'desktop') {
         throw new Error(
-          `Port ${options.port} is used by DevRyan Desktop app. Tunnel attach requires a CLI instance from \`openchamber serve\`.`
+          `Port ${options.port} is used by DevRyan Desktop app. Tunnel attach requires a CLI instance from \`devryan serve\`.`
         );
       }
     }
@@ -2609,10 +2613,10 @@ async function resolveTargetInstance({
     }
 
     if (sawDesktop) {
-      throw new Error('Only DevRyan Desktop instance(s) detected. Tunnel attach requires a CLI instance from `openchamber serve`.');
+      throw new Error('Only DevRyan Desktop instance(s) detected. Tunnel attach requires a CLI instance from `devryan serve`.');
     }
 
-    throw new Error('No attachable DevRyan instance found. Start one with `openchamber serve`.');
+    throw new Error('No attachable DevRyan instance found. Start one with `devryan serve`.');
   }
 
   if (running.length === 1) {
@@ -2631,7 +2635,7 @@ async function resolveTargetInstance({
       const started = running.find((entry) => entry.port === startedPort) || getLatestInstance(running);
       if (started) return { ...started, autoStarted: true };
     }
-    throw new Error('No running DevRyan instance found. Start one with `openchamber serve`.');
+    throw new Error('No running DevRyan instance found. Start one with `devryan serve`.');
   }
 
   const ports = running.map((entry) => entry.port).join(', ');
@@ -2650,7 +2654,7 @@ async function resolveTunnelReadEntries(options) {
   }
 
   if (running.length === 0) {
-    throw new Error('No running DevRyan instance found. Start one with `openchamber serve`.');
+    throw new Error('No running DevRyan instance found. Start one with `devryan serve`.');
   }
 
   return running;
@@ -2767,10 +2771,10 @@ async function handleTunnelProfileSubcommand(options, action) {
     if (!isQuietMode(options)) {
       clackIntro('Tunnel Profile');
       logStatus('info', 'Available subcommands', 'list, show, add, remove');
-      clackLog.step('List profiles: `openchamber tunnel profile list`');
-      clackLog.step('Show one profile: `openchamber tunnel profile show --name <name>`');
-      clackLog.step('Add profile: `openchamber tunnel profile add --provider cloudflare --mode managed-remote --name <name> --hostname <host> --origin-port 3000 --token <token>`');
-      clackLog.step('Remove profile: `openchamber tunnel profile remove --name <name>`');
+      clackLog.step('List profiles: `devryan tunnel profile list`');
+      clackLog.step('Show one profile: `devryan tunnel profile show --name <name>`');
+      clackLog.step('Add profile: `devryan tunnel profile add --provider cloudflare --mode managed-remote --name <name> --hostname <host> --origin-port 3000 --token <token>`');
+      clackLog.step('Remove profile: `devryan tunnel profile remove --name <name>`');
       clackOutro('Choose a subcommand');
     }
     return;
@@ -3038,7 +3042,7 @@ async function handleTunnelProfileSubcommand(options, action) {
     clackIntro(boldText('Tunnel Profile Saved'));
     logStatus('success', `${added.name} (${added.provider}/${added.mode})`, `${added.hostname} origin:${added.originPort} ${formatProfileTokenStatus(added, options.showSecrets)}`);
     clackOutro('save complete');
-    logStatus('info', '[START_PROFILE]', `openchamber tunnel start --profile ${added.name}`);
+    logStatus('info', '[START_PROFILE]', `devryan tunnel start --profile ${added.name}`);
     clackOutro('');
     return;
   }
@@ -3078,7 +3082,7 @@ async function handleTunnelProfileSubcommand(options, action) {
   const suggestion = findClosestMatch(sub, knownProfileActions);
   const hint = suggestion ? ` Did you mean '${suggestion}'?` : '';
   throw new TunnelCliError(
-    `Unknown tunnel profile subcommand '${sub}'.${hint} Use 'openchamber tunnel help'.`,
+    `Unknown tunnel profile subcommand '${sub}'.${hint} Use 'devryan tunnel help'.`,
     EXIT_CODE.USAGE_ERROR
   );
 }
@@ -3123,18 +3127,20 @@ const commands = {
     }
 
     if (targetPort !== 0) {
-      const pidFilePath = await getPidFilePath(targetPort);
-      const instanceFilePath = await getInstanceFilePath(targetPort);
-      const existingPid = readPidFile(pidFilePath);
-      if (existingPid) {
-        const storedOptions = readInstanceOptions(instanceFilePath);
-        const launchMode = storedOptions?.launchMode === 'foreground' ? 'foreground' : 'daemon';
-        const identity = await validatePidFileIdentity({ port: targetPort, pid: existingPid, launchMode });
-        if (identity.valid) {
-          throw new Error(`DevRyan is already running on port ${targetPort} (PID: ${existingPid})`);
+      for (const record of daemonRecordPaths(getRunDir(), targetPort)) {
+        const pidFilePath = record.pid;
+        const instanceFilePath = record.instance;
+        const existingPid = readPidFile(pidFilePath);
+        if (existingPid) {
+          const storedOptions = readInstanceOptions(instanceFilePath);
+          const launchMode = storedOptions?.launchMode === 'foreground' ? 'foreground' : 'daemon';
+          const identity = await validatePidFileIdentity({ port: targetPort, pid: existingPid, launchMode });
+          if (identity.valid) {
+            throw new Error(`DevRyan is already running on port ${targetPort} (PID: ${existingPid})`);
+          }
+          removePidFile(pidFilePath);
+          removeInstanceFile(instanceFilePath);
         }
-        removePidFile(pidFilePath);
-        removeInstanceFile(instanceFilePath);
       }
 
       if (explicitPort && !(await isPortAvailable(targetPort, options.host))) {
@@ -3145,7 +3151,7 @@ const commands = {
           );
         }
         if (systemInfo?.runtime) {
-          throw new Error(`DevRyan is already running on port ${targetPort}. Use \`openchamber status\` or \`openchamber stop --port ${targetPort}\`.`);
+          throw new Error(`DevRyan is already running on port ${targetPort}. Use \`devryan status\` or \`devryan stop --port ${targetPort}\`.`);
         }
         throw new Error(`Port ${targetPort} is already in use by another process.`);
       }
@@ -3399,7 +3405,7 @@ const commands = {
       port: resolvedPort,
       pid: child.pid,
       url: buildLocalUrl(resolvedPort, '/'),
-      logs: `openchamber logs -p ${resolvedPort}`,
+      logs: `devryan logs -p ${resolvedPort}`,
       launchMode: 'daemon',
     };
 
@@ -4159,16 +4165,16 @@ const commands = {
           logStatus('error', `port ${entry.port} — No running instance`);
         }
         if (desktopUnavailablePorts.length > 0) {
-          clackLog.message('Only CLI instances (openchamber serve) support tunneling.');
+          clackLog.message('Only CLI instances (devryan serve) support tunneling.');
         }
 
         if (cliPorts.length === 0 && unavailablePorts.length === 0) {
-          logStatus('warning', 'No running instances found', 'Start one with `openchamber serve`.');
+          logStatus('warning', 'No running instances found', 'Start one with `devryan serve`.');
           clackOutro('No ports available');
           return;
         }
         if (cliPorts.length === 0) {
-          logStatus('warning', 'No CLI instances available for tunneling', 'Start one with `openchamber serve`.');
+          logStatus('warning', 'No CLI instances available for tunneling', 'Start one with `devryan serve`.');
           clackOutro('No CLI ports available');
           return;
         }
@@ -4649,7 +4655,7 @@ const commands = {
 
             if (attachableSafeInstances.length === 0) {
               throw new TunnelCliError(
-                'No attachable DevRyan CLI instances found on safe ports. Start one with `openchamber serve --port 3000`.',
+                'No attachable DevRyan CLI instances found on safe ports. Start one with `devryan serve --port 3000`.',
                 EXIT_CODE.USAGE_ERROR,
               );
             }
@@ -4675,7 +4681,7 @@ const commands = {
           logStatus(
             'info',
             `Using auto-started instance on port ${instance.port}`,
-            `logs: openchamber logs -p ${instance.port}`,
+            `logs: devryan logs -p ${instance.port}`,
           );
         }
 
@@ -4718,8 +4724,8 @@ const commands = {
             throw new Error(
               `DevRyan on port ${instance.port} is still starting after 60s. Startup time can vary by machine performance. ` +
               `Wait another minute, then check health with \`curl -fsS ${buildLocalUrl(instance.port, '/health')}\`. ` +
-              `If health is OK, retry tunnel start with \`openchamber tunnel start --port ${instance.port}\`. ` +
-              `For diagnostics run \`openchamber logs -p ${instance.port}\`.`
+              `If health is OK, retry tunnel start with \`devryan tunnel start --port ${instance.port}\`. ` +
+              `For diagnostics run \`devryan logs -p ${instance.port}\`.`
             );
           }
           healthProgress?.stop(`Instance ${instance.port} is healthy`);
@@ -4773,12 +4779,12 @@ const commands = {
           if (error instanceof Error && /\/api\/(?:devryan|openchamber)\/tunnel\/start/.test(error.message) && /timed out/.test(error.message)) {
             spin?.error('Tunnel start timed out');
             throw new Error(
-              `Tunnel start timed out after 60s. cloudflared may still be starting; check with \`openchamber tunnel status --port ${instance.port}\`. Run \`openchamber logs -p ${instance.port}\` for details.`
+              `Tunnel start timed out after 60s. cloudflared may still be starting; check with \`devryan tunnel status --port ${instance.port}\`. Run \`devryan logs -p ${instance.port}\` for details.`
             );
           }
           spin?.error('Tunnel start failed');
           const message = error instanceof Error ? error.message : String(error);
-          throw new Error(`${message} Run \`openchamber logs -p ${instance.port}\` for details.`);
+          throw new Error(`${message} Run \`devryan logs -p ${instance.port}\` for details.`);
         }
 
         if (!response.ok || !body?.ok) {
@@ -4788,7 +4794,7 @@ const commands = {
           const userError = isCloudflareTimeout
             ? `Cloudflare quick tunnel request timed out. ${baseError}`
             : baseError;
-          throw new Error(`${userError} Run \`openchamber logs -p ${instance.port}\` for details.`);
+          throw new Error(`${userError} Run \`devryan logs -p ${instance.port}\` for details.`);
         }
 
         // Avoid duplicate "Tunnel started" lines: spinner completion is implied by
@@ -4842,15 +4848,15 @@ const commands = {
           clackOutro('');
 
           const optionalTips = [
-            { line: 'Check status', detail: 'openchamber tunnel status' },
-            { line: 'Stop tunnel', detail: 'openchamber tunnel stop' },
+            { line: 'Check status', detail: 'devryan tunnel status' },
+            { line: 'Stop tunnel', detail: 'devryan tunnel stop' },
             { line: 'If needed, repeat with same settings', detail: replayCommand },
           ];
 
           if (!selectedProfile && mode === 'managed-remote' && typeof hostname === 'string' && hostname.trim().length > 0) {
             const profileSaveCommand = buildTunnelProfileAddCommand({ provider, hostname, originPort });
             optionalTips.push({ line: 'Optional: save reusable profile (stores hostname + token locally)', detail: profileSaveCommand });
-            optionalTips.push({ line: 'Start from saved profile', detail: 'openchamber tunnel start --profile <name>' });
+            optionalTips.push({ line: 'Start from saved profile', detail: 'devryan tunnel start --profile <name>' });
           }
 
           console.log('');
@@ -4953,7 +4959,7 @@ const commands = {
         const suggestion = findClosestMatch(subcommand, knownTunnelSubcommands);
         const hint = suggestion ? ` Did you mean '${suggestion}'?` : '';
         throw new TunnelCliError(
-          `Unknown tunnel subcommand '${subcommand}'.${hint} Use 'openchamber tunnel help'.`,
+          `Unknown tunnel subcommand '${subcommand}'.${hint} Use 'devryan tunnel help'.`,
           EXIT_CODE.USAGE_ERROR
         );
       }
@@ -4990,10 +4996,10 @@ const commands = {
 
     if (isJsonMode(options)) {
       if (options.follow) {
-        throw new Error('`openchamber logs --json` requires `--no-follow` for deterministic JSON output.');
+        throw new Error('`devryan logs --json` requires `--no-follow` for deterministic JSON output.');
       }
       const entries = targets.map((target) => {
-        const logPath = getLogFilePath(target.port);
+        const logPath = getLogFilePath(target.port, { readLegacy: true, recordPath: target.pidFilePath });
         return {
           port: target.port,
           logPath,
@@ -5009,7 +5015,7 @@ const commands = {
     }
 
     for (const target of targets) {
-      const logPath = getLogFilePath(target.port);
+      const logPath = getLogFilePath(target.port, { readLegacy: true, recordPath: target.pidFilePath });
       const lines = readTailLines(logPath, options.lines);
       if (showFrames) {
         logStatus('info', `port ${target.port}`, logPath);
@@ -5033,7 +5039,7 @@ const commands = {
     }
 
     const unsubs = targets.map((target) => {
-      const logPath = getLogFilePath(target.port);
+      const logPath = getLogFilePath(target.port, { readLegacy: true, recordPath: target.pidFilePath });
       return followFile(logPath, (line) => {
         if (shouldPrefixLines) {
           console.log(`[${target.port}] ${line}`);

@@ -10,7 +10,7 @@ export const currentObjectiveUser = (record) => record.activeUserID ?? record.re
 export const isManagedMaintenancePrompt = (body) => {
   if (!Array.isArray(body?.parts)) return false;
   if (body.parts.some((part) => part?.type === 'text' && part.synthetic === true
-    && part.text?.startsWith('[openchamber-plan-action:v1] '))) return false;
+    && (part.text?.startsWith('[devryan-plan-action:v1] ') || part.text?.startsWith('[openchamber-plan-action:v1] ')))) return false;
   return isNativeCompactionRecord({ info: { role: 'user' }, parts: body.parts })
     || body.parts.some((part) => part?.type === 'text' && part.synthetic === true && typeof part.text === 'string'
       && (/^\[devryan-provider-recovery:v1:[^\]\r\n]+\]/.test(part.text)

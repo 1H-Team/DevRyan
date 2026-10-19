@@ -21,7 +21,7 @@ const inside=(root,file)=>file.startsWith(root+path.sep);
 const relativePath=value=>typeof value==='string'&&value&&!path.isAbsolute(value)&&!value.split(/[\\/]/).some(part=>!part||part==='.'||part==='..');
 const omitted=new Set(['auth','credentials','credential','apiKey','api_key','accessToken','access_token','refreshToken','refresh_token','oauthToken','password','clientSecret','client_secret','sessionToken','usageSessionToken','managedRemoteTunnelToken','managedRemoteTunnelPresetTokens','keychainService','claudeConfigDir','activeConnector','key','token','refresh','access','secret','authorization','Authorization','cookie','Cookie','headers','httpHeaders','env','environment']);
 export const isQaLiveSetupFile=file=>/^(opencode\/(?:agent|agents|command|commands|prompts|skill|skills)\/|home\/(?:\.agents\/skills|\.opencode\/(?:skill|skills))\/)/.test(file)
-  ||['opencode/.openchamber/config.json','opencode/config.json','opencode/opencode.json','opencode/opencode.jsonc','opencode/devryan-agents.json','opencode/devryan-agents.jsonc','opencode/oh-my-opencode-slim.json','opencode/oh-my-opencode-slim.jsonc','opencode/AGENTS.md','web-config/settings.json'].includes(file);
+  ||['opencode/.devryan/config.json','opencode/.openchamber/config.json','opencode/config.json','opencode/opencode.json','opencode/opencode.jsonc','opencode/devryan-agents.json','opencode/devryan-agents.jsonc','opencode/oh-my-opencode-slim.json','opencode/oh-my-opencode-slim.jsonc','opencode/AGENTS.md','web-config/settings.json'].includes(file);
 
 export async function assertQaPrivateDirectory(directory){
   if(!path.isAbsolute(directory??'')||path.resolve(directory)!==directory||!inside(qaCache,directory)||await fs.realpath(directory)!==directory)throw fail('qa_live_private_path_required');
@@ -57,7 +57,7 @@ export function removeQaLiveCredentials(value){
 export function projectQaLiveSetupFile(file,bytes){
   if(!/\.jsonc?$/.test(file))return {bytes,disabledMcpEntries:0};
   const source=bytes.toString('utf8'),diagnostics=[];
-  const config=/^opencode\/(?:\.openchamber\/config|config|opencode|devryan-agents|oh-my-opencode-slim)\.jsonc?$/.test(file)||file==='web-config/settings.json';
+  const config=/^opencode\/(?:\.(?:devryan|openchamber)\/config|config|opencode|devryan-agents|oh-my-opencode-slim)\.jsonc?$/.test(file)||file==='web-config/settings.json';
   const parsed=config?parseConfigJsonc(source,file):stripComments(source).trim()?parseJsonc(source,diagnostics,{allowTrailingComma:true}):{};
   if(diagnostics.length)throw new InvalidJsoncError(file,diagnostics);
   const value=removeQaLiveCredentials(parsed);let disabledMcpEntries=0;

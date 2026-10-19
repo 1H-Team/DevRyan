@@ -54,9 +54,9 @@ export async function prepareQaFixtureProfile({runtimeRoot,workspace,cell,genera
   const home=path.join(runtimeRoot,'home');
   await mkdir(home,{mode:0o700});
   await writeFile(path.join(home,'.devryan-qa-home'),'owned fixture QA home\n',{flag:'wx',mode:0o600});
-  const data=path.join(home,'.config/openchamber');
+  const data=path.join(home,'.config/devryan');
   const browserProfile=path.join(runtimeRoot,'browser-profile');
-  await Promise.all([data,browserProfile,path.join(home,'tmp'),path.join(home,'.cache'),path.join(home,'.config/opencode/.openchamber')]
+  await Promise.all([data,browserProfile,path.join(home,'tmp'),path.join(home,'.cache'),path.join(home,'.config/opencode/.devryan')]
     .map((directory) => mkdir(directory,{recursive:true,mode:0o700})));
   await writeFile(path.join(runtimeRoot,'credentials.env.json'),'{}\n',{flag:'wx',mode:0o600});
   const agentNames=['build','builder','orchestrator'];
@@ -67,7 +67,7 @@ export async function prepareQaFixtureProfile({runtimeRoot,workspace,cell,genera
   await writeFile(path.join(home,'.config/opencode/opencode.json'),JSON.stringify({model:modelRef,default_agent:cell.agent === 'builder' ? 'build' : cell.agent,agent:agents,plugin:[],mcp:{}}),{mode:0o600});
   // Standalone /api/config/agents overlays packaged metadata onto native
   // /agent. Its supported sidecar must share the same private fixture pins.
-  await writeFile(path.join(home,'.config/opencode/.openchamber/config.json'),JSON.stringify({agentOverrides:agents}),{mode:0o600});
+  await writeFile(path.join(home,'.config/opencode/.devryan/config.json'),JSON.stringify({agentOverrides:agents}),{mode:0o600});
   await writeFile(path.join(home,'.gitconfig'),'[user]\n\tname = DevRyan QA\n\temail = qa@devryan.invalid\n',{mode:0o600});
   // Private app defaults match the fixture's native Low fallback. The driver
   // still selects each requested Default/High through the actual controls.
@@ -478,7 +478,7 @@ export async function runQaFixtureScenario({cell,fixture,projectFixture,cdp,ui,a
     const accepted=await ui.waitFor('actual Plan-card implementation submitted',()=>fixture.getState().receivedPrompts[previous]);
     await idle(sessionID);
     const implementation=(await rows(sessionID)).find(row=>row.info.id===accepted.messageID);
-    const prefix='[openchamber-plan-action:v1] ';
+    const prefix='[devryan-plan-action:v1] ';
     const markers=implementation.parts.filter(part=>part.type==='text'&&part.synthetic===true&&part.text.startsWith(prefix));
     assert.equal(markers.length,1);
     const marker=JSON.parse(markers[0].text.slice(prefix.length));

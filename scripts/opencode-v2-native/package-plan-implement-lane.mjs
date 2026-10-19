@@ -212,7 +212,7 @@ export function createPlanImplementResponder({ continuePlan = false } = {}) {
       if (!results.has('native_plan_repair_check')) return call('native_plan_repair_check', 'shell', { command: 'test -s fixer.txt && test -s designer.txt && test -s repair.txt' });
       return final('Native Plan implementation recovered and verified.');
     }
-    if (userText.includes('[openchamber-plan-action:v1]')) {
+    if (userText.includes('[devryan-plan-action:v1]')) {
       for (const role of ['fixer', 'designer']) { const reply = dispatch(messages, role); if (reply) return reply; }
       if (!results.has('native_plan_partial_check')) return call('native_plan_partial_check', 'shell', { command: 'test -s repair.txt' });
       return final('Partial implementation retained: Fixer and Designer published; the repair check failed.');
@@ -268,9 +268,9 @@ export async function runApplicationPlanImplementation({ api, messages, director
   assert.equal(approval.source, 'actual-plan-card-click');
   rows = await finished('Partial implementation retained:');
   const implement = rows.find(row => row.info.role === 'user' && !beforeApproval.has(row.info.id)
-    && row.parts.some(part => part.type === 'text' && part.text.startsWith('[openchamber-plan-action:v1] ')));
+    && row.parts.some(part => part.type === 'text' && part.text.startsWith('[devryan-plan-action:v1] ')));
   assert.ok(implement, 'Actual UI approval never reached canonical native admission');
-  const marker = JSON.parse(implement.parts.find(part => part.type === 'text' && part.text.startsWith('[openchamber-plan-action:v1] ')).text.slice('[openchamber-plan-action:v1] '.length));
+  const marker = JSON.parse(implement.parts.find(part => part.type === 'text' && part.text.startsWith('[devryan-plan-action:v1] ')).text.slice('[devryan-plan-action:v1] '.length));
   assert.deepEqual({ session: marker.sourceSessionId, source: marker.sourceMessageId, index: marker.planIndex, version: marker.version },
     { session: sessionID, source: source.info.id, index: 0, version: saved.version });
   const partialCheck = rows.flatMap(row => row.parts).find(part => part.callID === 'native_plan_partial_check');

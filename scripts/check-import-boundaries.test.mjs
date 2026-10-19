@@ -30,7 +30,7 @@ const base = {
   'packages/library/package.json': { name: '@devryan/library', main: './index.js' },
   'packages/library/index.js': 'export const x = 1;\n',
   'packages/library/lib/deep.js': 'export const y = 1;\n',
-  'packages/electron/package.json': { name: '@openchamber/electron' },
+  'packages/electron/package.json': { name: '@devryan/electron' },
 };
 
 test('static, re-export, require and literal dynamic imports of private application files fail', () => {

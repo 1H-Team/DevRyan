@@ -52,7 +52,7 @@ export async function runQaNativeFactoryDiagnostic({ artifactRoot, bun = 'bun', 
   assert.ok(activePluginIDs.every(id => registrations.some(row => row.id === id && row.legacySpecs.length)));
   const plugins = [...new Set(registrations.filter(row => activePluginIDs.includes(row.id)).map(row => row.legacySpecs[0]))];
   const legacy = { model, default_agent: 'builder', agent: agents, plugin: plugins, ...(providers ? { provider: providers } : {}) };
-  const bytes = { 'opencode/opencode.json': JSON.stringify(legacy), 'opencode/.openchamber/config.json': JSON.stringify({ agentOverrides: agents }), 'web/settings.json': '{}',
+  const bytes = { 'opencode/opencode.json': JSON.stringify(legacy), 'opencode/.devryan/config.json': JSON.stringify({ agentOverrides: agents }), 'web/settings.json': '{}',
     'reviewed-native.json': JSON.stringify({ schema: 1, configuration: translateNativeConfiguration({ legacy, agents }),
       locations: [], catalogRequirements: { agents: ['builder'], tools: ['read'], plugins: [], models: [] } }),
     'reviewed-plugins.json': JSON.stringify({ schema: 1, plugins: registrations }) };

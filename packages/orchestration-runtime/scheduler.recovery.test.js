@@ -480,7 +480,7 @@ describe('managed scheduler restart recovery', () => {
     expect(saves.at(-1).tasks.map((task) => task.taskId)).toEqual(['dvr_task_2', 'dvr_task_3']);
     expect(scheduler.getDiagnostics().compactedTaskCount).toBe(1);
     expect(events).toContainEqual({
-      type: 'openchamber:managed-task-removed',
+      type: 'devryan:managed-task-removed',
       properties: {
         owner: 'devryan',
         taskId: 'dvr_task_1',
@@ -538,9 +538,9 @@ describe('managed scheduler restart recovery', () => {
     await scheduler.waitForTask(second.taskId);
     await scheduler.flush();
 
-    const removalIndex = events.findIndex((event) => event.type === 'openchamber:managed-task-removed');
+    const removalIndex = events.findIndex((event) => event.type === 'devryan:managed-task-removed');
     const secondTerminalIndex = events.findIndex((event) => (
-      event.type === 'openchamber:managed-task'
+      event.type === 'devryan:managed-task'
       && event.properties.task.taskId === second.taskId
       && event.properties.task.status === 'completed'
     ));
@@ -589,7 +589,7 @@ describe('managed scheduler restart recovery', () => {
     });
     await scheduler.flush();
 
-    const removalIndex = events.findIndex((event) => event.type === 'openchamber:managed-task-removed');
+    const removalIndex = events.findIndex((event) => event.type === 'devryan:managed-task-removed');
     expect(removalIndex).toBeGreaterThanOrEqual(0);
     expect(events.slice(removalIndex + 1)).toEqual([]);
     expect(scheduler.getTask(task.taskId)).toBeNull();

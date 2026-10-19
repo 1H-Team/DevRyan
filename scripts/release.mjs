@@ -58,7 +58,7 @@ export async function versionMismatches(repositoryRoot, version) {
   const cargoVersion = cargoToml.match(/^version = "([^"]+)"/m)?.[1];
   if (cargoVersion !== version) mismatches.push(`packages/desktop/src-tauri/Cargo.toml: ${cargoVersion ?? 'missing'}`);
   const cargoLock = await fs.readFile(path.join(repositoryRoot, 'packages/desktop/src-tauri/Cargo.lock'), 'utf8');
-  const lockVersion = cargoLock.match(/name = "openchamber-desktop"\nversion = "([^"]+)"/)?.[1];
+  const lockVersion = cargoLock.match(/name = "devryan-desktop"\nversion = "([^"]+)"/)?.[1];
   if (lockVersion !== version) mismatches.push(`packages/desktop/src-tauri/Cargo.lock: ${lockVersion ?? 'missing'}`);
   return mismatches;
 }

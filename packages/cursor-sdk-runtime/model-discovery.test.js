@@ -171,7 +171,7 @@ describe('Cursor SDK model discovery', () => {
         expect(events).toHaveLength(0);
         release.resolve();
         await pending;
-        expect(events).toEqual([{ event: { type: 'openchamber:provider-catalog',
+        expect(events).toEqual([{ event: { type: 'devryan:provider-catalog',
           properties: { providerID: 'cursor-acp', directory: '/owned/project', source: 'sdk' } },
           context: { directory: '/owned/project', eventId: expect.any(String) } }]);
         await runtime.refreshVirtualProvider({ directory: '/owned/project' });

@@ -42,10 +42,10 @@ beforeEach(async () => {
 });
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 
-const ownWithRoot = async (pm) => {
+const ownWithRoot = async (pm, scope = 'devryan') => {
   const root = pm === 'bun' ? path.join(fixture, pm, 'install/global/node_modules') : path.join(fixture, pm, 'node_modules');
-  await fs.mkdir(path.join(root, '@openchamber'), { recursive: true });
-  await fs.symlink(packagePath, path.join(root, '@openchamber/web'), 'junction');
+  await fs.mkdir(path.join(root, `@${scope}`), { recursive: true });
+  await fs.symlink(packagePath, path.join(root, `@${scope}/web`), 'junction');
 };
 
 describe('async package manager selection matches synchronous CLI selection', () => {
@@ -74,16 +74,23 @@ describe('async package manager selection matches synchronous CLI selection', ()
       && options.maxBuffer === 1024 * 1024 && options.killSignal === 'SIGKILL')).toBe(true);
   });
 
-  it('resolves installation ownership through the global executable symlink', async () => {
+  it.each(['devryan', 'openchamber'])('resolves %s installation ownership through the global executable symlink', async (bin) => {
     settings.available = ['yarn', 'npm'];
     await fs.mkdir(path.join(fixture, 'yarn/bin'), { recursive: true });
-    const name = process.platform === 'win32' ? 'openchamber.cmd' : 'openchamber';
+    const name = process.platform === 'win32' ? `${bin}.cmd` : bin;
     await fs.symlink(path.join(packagePath, 'bin/cli.js'), path.join(fixture, 'yarn/bin', name));
     const sync = await import('./package-manager.js');
     expect(sync.detectPackageManager()).toBe('yarn');
     vi.resetModules();
     const asynchronous = await import('./package-manager.js');
     expect(await asynchronous.detectPackageManagerAsync()).toBe('yarn');
+  });
+
+  it('recognises ownership through the legacy global package root', async () => {
+    settings.available = ['yarn', 'npm'];
+    await ownWithRoot('yarn', 'openchamber');
+    const { detectPackageManagerAsync } = await import('./package-manager.js');
+    expect(await detectPackageManagerAsync()).toBe('yarn');
   });
 
   it('keeps desktop update ownership and skips every subprocess', async () => {
@@ -152,7 +159,7 @@ it('serves another HTTP request while update checking waits for real slow subpro
     const health = await nativeFetch(`${origin}/health`, { signal: AbortSignal.timeout(1000) });
     expect(await health.text()).toBe('responsive');
     expect(updateCompleted).toBe(false);
-    expect(await (await update).json()).toMatchObject({ available: false, packageManager: 'npm', updateCommand: 'openchamber update' });
+    expect(await (await update).json()).toMatchObject({ available: false, packageManager: 'npm', updateCommand: 'devryan update' });
     expect(probes.spawnSync).not.toHaveBeenCalled();
   } finally {
     server.closeAllConnections();

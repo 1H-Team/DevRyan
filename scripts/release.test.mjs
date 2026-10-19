@@ -19,7 +19,7 @@ async function fixture(t, { files = { [`DevRyan-${version}-arm64.dmg`]: 'install
     await fs.writeFile(path.join(root, file), JSON.stringify({ version: file === 'package.json' ? packageVersion : version }));
   }
   await fs.writeFile(path.join(root, 'packages/desktop/src-tauri/Cargo.toml'), `[package]\nversion = "${version}"\n`);
-  await fs.writeFile(path.join(root, 'packages/desktop/src-tauri/Cargo.lock'), `name = "openchamber-desktop"\nversion = "${version}"\n`);
+  await fs.writeFile(path.join(root, 'packages/desktop/src-tauri/Cargo.lock'), `name = "devryan-desktop"\nversion = "${version}"\n`);
   await fs.writeFile(path.join(root, 'CHANGELOG.md'), `# Changelog\n\n## [${version}] - 2026-10-16\n\n- Fixed things.\n\n## [9.8.6]\n\n- Older.\n`);
   const assets = path.join(root, 'assets');
   await fs.mkdir(assets);

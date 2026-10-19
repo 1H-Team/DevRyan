@@ -1183,7 +1183,7 @@ export const createLoopbackOpenCodeV2Fixture = async ({
       const tag = behavior.rejectStatus === 400 ? 'InvalidRequestError' : behavior.rejectStatus === 409 ? 'ConflictError' : 'UnknownError';
       return { status: behavior.rejectStatus, body: { _tag: tag, message: 'Configured QA prompt rejection' } };
     }
-    const header = request.headers['x-openchamber-message-id'];
+    const header = request.headers['x-devryan-message-id'] ?? request.headers['x-openchamber-message-id'];
     const id = body.id ?? (typeof header === 'string' && header.startsWith('msg_') ? header : ids.ascending('msg'));
     if (store.messages(sessionID).some((record) => record.id === id) || store.inbox(sessionID).some((item) => item.id === id)) {
       rejectedPrompts.push({ sessionID, messageID: id, status: 409 });

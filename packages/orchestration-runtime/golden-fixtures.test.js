@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
+import { applyEventDialect } from '../web/server/lib/event-stream/event-dialect.js';
 
 import {
   createManagedTaskScheduler,
@@ -55,8 +56,10 @@ describe('golden wire payloads', () => {
     expect(JSON.stringify(validateManagedTaskAutoResume(envelope.autoResume))).toBe(JSON.stringify(envelope.autoResume));
   });
 
-  test('the task-event SSE payload is byte-identical', () => {
-    expect(`${JSON.stringify(toManagedTaskEvent(ledger.tasks[1], JSON.parse(envelopeBytes)))}\n`).toBe(fixture('task-event.json'));
+  test('the task-event SSE payload remains byte-identical for legacy clients', () => {
+    const canonical = JSON.stringify(toManagedTaskEvent(ledger.tasks[1], JSON.parse(envelopeBytes)));
+    expect(`${applyEventDialect(canonical, null)}\n`).toBe(fixture('task-event.json'));
+    expect(`${applyEventDialect(canonical, 'devryan')}\n`).toBe(fixture('task-event-devryan.json'));
   });
 });
 

@@ -389,7 +389,7 @@ export const toManagedTaskEvent = (task, resultEnvelope = null) => {
     assertJsonCompatible(resultEnvelope, 'resultEnvelope');
   }
   return {
-    type: 'openchamber:managed-task',
+    type: 'devryan:managed-task',
     properties: {
       owner: MANAGED_TASK_OWNER,
       directory: task.directory,
@@ -402,7 +402,7 @@ export const toManagedTaskEvent = (task, resultEnvelope = null) => {
 export const toManagedTaskRemovalEvent = (task) => {
   validateManagedTaskRecord(task);
   return {
-    type: 'openchamber:managed-task-removed',
+    type: 'devryan:managed-task-removed',
     properties: {
       owner: MANAGED_TASK_OWNER,
       taskId: task.taskId,

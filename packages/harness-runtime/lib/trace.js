@@ -1,3 +1,4 @@
+import { canonicalDevRyanEventType } from '@devryan/shared-runtime/lib/event-types.js';
 import crypto from 'node:crypto';
 import { resolveRecordSessionID, resolveSessionRelation } from './session-id.js';
 
@@ -40,7 +41,7 @@ export const createHarnessTraceCollector = ({ maxEvents = 100_000, maxBytes = 32
     if (relation) keep(relations, id(relation.sessionID), id(relation.parentID));
     const sessionID = id(resolveRecordSessionID(record)) ?? 'runtime';
     const payload = record?.payload ?? {}, p = payload.properties ?? {}, at = number(record?.at);
-    if (payload.type === 'openchamber:managed-task' && p.task) {
+    if (canonicalDevRyanEventType(payload.type) === 'devryan:managed-task' && p.task) {
       const task = p.task, key = id(task.taskId), previous = tasks.get(key);
       if (previous && number(previous.sequence) > number(task.sequence)) return;
       const envelope = p.resultEnvelope;

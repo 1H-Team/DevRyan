@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Cross-package import boundaries for packages/*. Reads static imports, re-exports,
 // require() and literal dynamic import() through TypeScript's pre-processor, and
-// resolves relative and workspace (@devryan/*, and the kept @openchamber/electron) specifiers to repository files.
+// resolves relative and workspace (@devryan/*, plus accepted @openchamber/* aliases) specifiers to repository files.
 //
 // Rules, for an importer and a target in different packages:
 // - private-application-import: an application package (web, electron, the Bot

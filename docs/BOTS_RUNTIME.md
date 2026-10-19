@@ -835,7 +835,8 @@ architecture as the Electron artifact and place it at
 loaded by the Electron main process because Apple resolves the LaunchAgent
 against the calling app's bundle. The agent plist must
 be sealed at
-`Contents/Library/LaunchAgents/dev.openchamber.desktop.runtime-service.plist`.
+`Contents/Library/LaunchAgents/dev.devryan.desktop.runtime-service.plist`
+(the legacy plist remains bundled for installed-service compatibility).
 Both local packaging and release CI verify the unpacked app, ZIP, and DMG and
 run a status probe through the packaged DevRyan executable. The gate rejects a
 missing bridge, wrong Mach-O architecture, invalid plist, `not_found` status,

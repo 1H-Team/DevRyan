@@ -1,3 +1,4 @@
+import { canonicalDevRyanEventType } from '@devryan/shared-runtime/lib/event-types.js';
 import { isNativeStatusRecord } from '../../shared-runtime/lib/native-message-status.js';
 import { applyObjectiveRejection, applyObjectiveProgress, projectObjectiveProgress } from './objective-progress.js';
 import { planBuilderTodoContinuation } from './builder-todo-continuation.js';
@@ -103,7 +104,7 @@ export function createPrimaryRecoveryController(options) {
     } : null,
   });
   const publish = (record) => options.publishEvent?.({
-    type: 'openchamber:primary-recovery', properties: { sessionID: record.sessionID, recovery: project(record) },
+    type: 'devryan:primary-recovery', properties: { sessionID: record.sessionID, recovery: project(record) },
   }, { directory: record.directory });
   const lock = (id, fn) => (options.withLock
     ? options.withLock(id, fn)
@@ -1054,7 +1055,7 @@ export function createPrimaryRecoveryController(options) {
     const r = records.get(id);
     if (!r) return;
     const l = remember(r);
-    if (payload.type === 'openchamber:managed-task' && p.resultEnvelope && p.resultEnvelope.taskId === p.task?.taskId
+    if (canonicalDevRyanEventType(payload.type) === 'devryan:managed-task' && p.resultEnvelope && p.resultEnvelope.taskId === p.task?.taskId
       && p.resultEnvelope.rootSessionId === id && p.resultEnvelope.status === 'completed') {
       if (Number.isFinite(p.task.createdAt)) void observeProgress({ sessionID: id, kind: 'child-completed',
         identity: p.resultEnvelope.envelopeId, taskCreatedAt: p.task.createdAt });

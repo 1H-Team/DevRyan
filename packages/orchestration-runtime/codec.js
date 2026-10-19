@@ -370,7 +370,7 @@ export const decodeResultEnvelopePayload = (value, options) => {
 export const decodedEnvelopeMatchesTask = (task, envelope) => findManagedResultPayloadMismatch(task, envelope) === null;
 
 /**
- * The properties of an `openchamber:managed-task` event as `{task,
+ * The properties of an `devryan:managed-task` event as `{task,
  * resultEnvelope}`, or null when the event cannot be shown. An envelope that
  * is present must decode and match its task.
  */

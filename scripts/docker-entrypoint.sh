@@ -1,7 +1,8 @@
 #!/usr/bin/env sh
 set -eu
 
-HOME="/home/openchamber"
+DEVRYAN_DOCKER_HOME="${DEVRYAN_DOCKER_HOME:-/home/devryan}"
+export HOME="${DEVRYAN_DOCKER_HOME}"
 
 OPENCODE_CONFIG_DIR="${OPENCODE_CONFIG_DIR:-${HOME}/.config/opencode}"
 export OPENCODE_CONFIG_DIR

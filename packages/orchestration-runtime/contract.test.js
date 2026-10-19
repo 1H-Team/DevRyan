@@ -278,7 +278,7 @@ describe('managed orchestration contract', () => {
     const task = createManagedTaskRecord(validInput());
     const event = toManagedTaskEvent(task);
 
-    expect(event.type).toBe('openchamber:managed-task');
+    expect(event.type).toBe('devryan:managed-task');
     expect(event.properties.owner).toBe('devryan');
     expect(event.properties.task.taskId).toBe(task.taskId);
     expect(event.properties.task.dispatchCallId).toBe('call_dispatch_01');
@@ -420,7 +420,7 @@ describe('managed orchestration contract', () => {
     const event = toManagedTaskRemovalEvent(task);
 
     expect(event).toEqual({
-      type: 'openchamber:managed-task-removed',
+      type: 'devryan:managed-task-removed',
       properties: {
         owner: 'devryan',
         taskId: task.taskId,

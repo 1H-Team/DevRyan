@@ -4,12 +4,15 @@ import { createRecordStore } from './record-store.js';
 import { withCrossProcessFileLock } from './atomic-file.js';
 import { isManagedMaintenancePrompt } from './objective-identity.js';
 
+const PLAN_ACTION_PREFIXES = ['[devryan-plan-action:v1] ', '[openchamber-plan-action:v1] '];
+const planActionPrefix = text => PLAN_ACTION_PREFIXES.find(prefix => text.startsWith(prefix));
+
 const MAX_RECORD_BYTES = 64 * 1024;
 const hash = (value) => crypto.createHash('sha256').update(value).digest('hex');
 const object = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 const textParts = (record) => (record?.parts ?? []).filter((part) => part.type === 'text' && typeof part.text === 'string');
 const isRealUser = (record) => record?.info?.role === 'user' && !isManagedMaintenancePrompt(record)
-  && textParts(record).some((part) => part.synthetic !== true || part.text.startsWith('[openchamber-plan-action:v1] '));
+  && textParts(record).some((part) => part.synthetic !== true || planActionPrefix(part.text));
 const boundedText = (value, bytes) => {
   let result = String(value ?? '');
   if (Buffer.byteLength(result) <= bytes) return result;
@@ -19,10 +22,10 @@ const boundedText = (value, bytes) => {
 const fault = (code) => Object.assign(new Error(code), { code, statusCode: 409 });
 export const planReference = (record) => {
   if (record?.info?.role !== 'user') return null;
-  const markers = textParts(record).filter((part) => part.synthetic === true && part.text.startsWith('[openchamber-plan-action:v1] '));
+  const markers = textParts(record).filter((part) => part.synthetic === true && planActionPrefix(part.text));
   if (markers.length !== 1) return null;
   try {
-    const value = JSON.parse(markers[0].text.slice('[openchamber-plan-action:v1] '.length));
+    const value = JSON.parse(markers[0].text.slice(planActionPrefix(markers[0].text).length));
     if (value?.action === 'implement' && [value.sourceSessionId, value.sourceMessageId]
       .every((id) => typeof id === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(id))
       && Number.isSafeInteger(value.planIndex) && value.planIndex >= 0

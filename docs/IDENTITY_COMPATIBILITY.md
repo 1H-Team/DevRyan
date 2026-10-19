@@ -1,101 +1,111 @@
 # Identity compatibility
 
-DevRyan began as a fork of OpenChamber. DevRyan names are now canonical, and the
-OpenChamber names stay accepted so installed apps, saved data, user scripts and
-older clients keep working. New code writes DevRyan names and reads both.
+DevRyan names are canonical. New installations, records and registrations use
+DevRyan names; old OpenChamber names remain migration inputs and accepted aliases.
+The 2026-10-20 Stage 6 follow-up explicitly authorizes identity changes previously
+frozen by AGENTS.md. A legacy literal in a reader, migration, golden fixture or
+provenance record is intentional and must not be removed by a bulk replacement.
 
-## Accepted aliases
+## Runtime and public interfaces
 
-| Canonical | Accepted alias | Where the alias is handled |
-|---|---|---|
-| `DEVRYAN_*` environment variables | `OPENCHAMBER_*` | `packages/shared-runtime/lib/legacy-environment.js`: every process entry adopts unset aliases, writers set both names, login-shell filters judge an alias as its DevRyan name |
-| `@devryan/*` workspace packages | none (renamed) | `@openchamber/electron` and `@openchamber/desktop` keep their names (below); the import checkers accept both scopes |
-| `devryan` CLI | `openchamber` | `packages/web/package.json` ships both bins; `bin/cli-entry.js` accepts either name |
-| `/api/devryan/*` REST routes | `/api/openchamber/*` | `packages/web/server/lib/legacy-api-path.js` rewrites `req.url` and `req.originalUrl` as the first middleware of every composition, before admission, auth, multi-user and tunnel policy; guard regexes also match both. Electron main's status probes fall back to the alias for an older runtime service |
-| `devryan:*` server event types on the wire | `openchamber:*` | Per connection: a client sending `?events=devryan` or `X-DevRyan-Events: devryan` gets `devryan:*` (`lib/event-stream/event-dialect.js`, a prefix swap on the shared payload serialization); others keep `openchamber:*`. Payloads, journals and the orchestration contract keep the `openchamber:*` literal. The UI canonicalises incoming types (`packages/ui/src/lib/eventTypes.ts`) |
-| `x-devryan-message-id`, `X-DevRyan-Warning`, `x-devryan-ui-session` headers | `x-openchamber-*` | The server reads both message-id names and sets both warning headers; the preview proxy strips both session headers |
-| `__DEVRYAN_*__` / `__devryan*` globals | `__OPENCHAMBER_*__` / `__openchamber*` | Preload and the main-process init script set both names for the desktop globals, for a remote DevRyan of an older version; other globals are bundle-internal |
-| `devryan:*` Electron IPC channels, desktop DOM events and `--devryan-*` preload flags | `openchamber:*` | Main and preload ship together; preload and the menu re-dispatch each `devryan:*` desktop event under its alias for older remote UIs; UI error-text matching reads both |
-| `devryan`-prefixed browser storage keys | `openchamber`-prefixed keys | `packages/ui/src/lib/legacyStorageMigration.ts` (and the inline script in `packages/web/index.html`) copies each old key once, before stores hydrate; old keys stay |
-| `application/x-devryan-file-path` drag type, `devryan-preview-*` bridge sources | `openchamber` forms | Readers accept both; the preview bridge answers a pre-rename parent in its names |
-| `~/.config/devryan` data folder | `~/.config/openchamber` | `packages/harness-runtime/lib/data-root-migration.js` moves it once at startup and leaves a link; `packages/shared-runtime/lib/data-root.js` resolves the root everywhere |
+| Canonical | Accepted legacy input | Compatibility owner |
+| --- | --- | --- |
+| `DEVRYAN_*` | `OPENCHAMBER_*` | Shared-runtime environment helpers adopt unset aliases. Launchers targeting an older child may set both; the canonical value wins. |
+| `@devryan/*` workspace packages | Old installed package/profile paths | Package manifests and lockfile use DevRyan. CLI package-manager detection recognizes both installed scopes and executable names. |
+| `devryan` CLI | `openchamber` | Both bins remain shipped; new help, replay commands, update targets and installer text use DevRyan. |
+| `/api/devryan/*` | `/api/openchamber/*` | First middleware rewrites aliases before admission, auth, multi-user and tunnel policy. |
+| `devryan:*` synthetic events | `openchamber:*` journal/wire records | New emitters use DevRyan. Shared-runtime canonicalizes old reader inputs. `event-dialect.js` rewrites only the leading serialized type: current UI requests `events=devryan`; no-query cached clients retain the legacy wire spelling. Properties and event ordering are unchanged. |
+| `x-devryan-message-id`, `X-DevRyan-Warning`, `x-devryan-ui-session` | `x-openchamber-*` | Readers/preview stripping accept both; compatibility warning headers may be returned under both names. |
+| `__DEVRYAN_*__`, `__devryan*`, `devryan:*` desktop events | Old globals and desktop event spellings | Main/preload expose compatibility aliases for older remote UIs. |
+| `devryan://` | `openchamber://` | Both registered/accepted. Retry, diagnostics and incoming links accept old installed links. |
+| `devryanVersion` in health/system information | `openchamberVersion` | New clients prefer canonical, old response field remains available. |
+| `devryan-browser` CDP context | `openchamber-browser` | New browser-control context uses canonical identity; legacy ID is accepted by matching readers. |
+| `devryan_write_pty` | `openchamber_write_pty` | Embedded Ghostty callback trampoline imports DevRyan; the host provides both function names for legacy artifacts. The vendored terminal Wasm is unchanged. |
+| `devryan/<name>` worktree branches | Existing branches of either prefix | New branch defaults are canonical. Existing/explicit branches retain their names. |
 
-## Data folder migration
+## Saved settings and managed configuration
 
-Electron main (before its first data-root reader), the web server entry (outside
-Electron) and the CLI run `migrateDataRootAtStartup`
-(`packages/web/server/lib/opencode/runtime-host/data-root-startup.js`). It does
-nothing when `DEVRYAN_DATA_DIR` names another folder, on Windows, or under a test
-runner. Otherwise, under `<XDG_STATE_HOME>/devryan/migrations/data-root.lock`:
+- Browser local/session-storage keys migrate once to the DevRyan prefix before
+  stores hydrate. Canonical values win; old keys remain for stale tabs/downgrades.
+- Saved SSH records write `remoteDevryan` and `auth.devryanPassword`; readers also
+  accept `remoteOpenchamber`, `remote_openchamber` and `auth.openchamberPassword`.
+  Secret values are not logged or included in migration diagnostics.
+- New plan prompts write `devryanPlanMode`; transcript, notification, admission
+  and UI readers also accept `openchamberPlanMode`.
+- Synthetic plan-action text writes `[devryan-plan-action:v1]`. Readers accept
+  the old prefix with the same payload validation and reject duplicate markers,
+  including a mixed canonical/legacy pair.
+- OpenCode's synthetic DevRyan config key is `devryan`, with managed sidecars
+  under `.devryan/`. The old top-level key and `.openchamber/` tree are migration
+  inputs. Legacy files remain intact, existing canonical files win, config writes
+  are atomic, and invalid/conflicting entries fail visibly. Neither synthetic key
+  is written into OpenCode's own schema-validated config file.
+- The default data folder is `~/.config/devryan`. Startup migration moves the old
+  `~/.config/openchamber` folder and leaves a relative link. Existing collisions
+  are preserved in a legacy conflict directory. A failed cross-volume/bind-mount
+  move keeps the old root in use and surfaces a notice; it never deletes data to
+  force canonical spelling. Explicit custom data roots remain explicit.
+- New CLI daemons write `run/devryan-<port>.{pid,json}` and
+  `logs/devryan-<port>.log`. Discovery accepts both prefixes and validates process
+  identity before treating a record as owned. A running legacy daemon keeps its
+  original records until it stops; log readers fall back to its old filename.
+- Newly created passkey display names and push VAPID subjects use `devryan-ui`
+  and `mailto:devryan@localhost`. Existing passkey IDs/credentials and saved VAPID
+  key records remain unchanged.
 
-1. A marker (`.devryan-migration.json`) is written into the old folder, the folder
-   is renamed to `~/.config/devryan`, and `~/.config/openchamber` becomes the
-   relative link `devryan`. A crash after the rename is finished at the next start.
-2. When both folders exist, old entries move in; names that already exist go to
-   `~/.config/devryan/legacy-openchamber-<time>/`. A failed move is rolled back.
-3. When the folder cannot move (`EXDEV`, `EBUSY`, `EPERM`, `EACCES`, `EROFS`; a
-   Docker bind mount, for example), it stays in use and the open app shows a
-   notice.
+## Desktop identity and existing installations
 
-Until the move succeeds, `resolveDevRyanDataRoot` keeps returning the old folder
-while it is a real directory, so an old install keeps working. Older DevRyan
-processes still running keep working through the link. Records sealed with the
-old path (a bundle's `reviewed-native.json` `protectedRoots`) are not rewritten:
-their consumers canonicalise paths. The legacy launchd plist is not rewritten:
-launchd reads it only at bootstrap, its log paths resolve through the link, and a
-new registration writes the resolved root.
+New Electron and Tauri source manifests use `@devryan/electron`,
+`@devryan/desktop` and the canonical bundle ID `dev.devryan.desktop`.
+The legacy Electron ID `dev.openchamber.desktop` remains an accepted installed
+source identity for update and recovery. Updater discovery still uses the
+canonical repository's `/releases/latest` and the public release remains exactly
+one `DevRyan-<version>-arm64.dmg`.
 
-Readers keep accepting an alias indefinitely; removing one needs its own
-migration and a release note.
+Electron selects an existing `@openchamber/electron` Chromium profile before
+acquiring the single-instance lock or initializing its main runtime. New profiles
+use `@devryan/electron`. This preserves the old cookies, localStorage, IndexedDB
+and Safe Storage material in place. Browser partitions likewise use canonical
+names for new profiles and retain existing legacy partitions when present.
+Changing a spelling never discards a browser session to produce an empty profile.
 
-## Kept unchanged
+New runtime-service registrations use the canonical launchd/plist label. The
+bundled old plist and native control's legacy registration lookup remain for
+installed services. An already registered legacy service remains recognized until
+an explicit unregister/re-register operation migrates it. Unit tests inject
+native control, keychain, updater and app operations; they do not register an OS
+service or modify an installed app.
 
-- The app bundle ID `dev.openchamber.desktop` and everything bound to it: the
-  updater, keychain items, the SMAppService/launchd label and plist names,
-  macOS preferences and the `dev.openchamber.desktop.macos-speech-helper` ID.
-- The Electron package name `@openchamber/electron`. The packaged
-  `package.json` has no `productName`, so Electron derives the Chromium profile
-  folder (`~/Library/Application Support/@openchamber/electron`, with the
-  `-runtime-service` sibling) from this name before `app.setName('DevRyan')`
-  runs; cookies, localStorage, IndexedDB and their Safe Storage key live there.
-- The frozen legacy Tauri package `packages/desktop` (`@openchamber/desktop`).
-- The npm registry package `@openchamber/web` that `package-manager.js` updates
-  a global CLI from and that `ssh-manager.mjs` installs on SSH hosts, and the
-  remote `openchamber` binary those hosts run: they are external, not this
-  workspace. `scripts/install.sh` is upstream's installer for that package.
-- Persisted or wire-contract literals: journaled `openchamber:managed-task(-removed)`
-  and other synthetic event payloads (the wire rename is per connection), the
-  orchestration codec golden bytes, the `[openchamber-plan-action:v1]` message
-  marker, the project action id `__openchamber_auto_discover_preview__`, theme
-  ids such as `openchamber-dark`, the project-local `openchamber.json` file,
-  IndexedDB database names and the in-bundle `config/openchamber` folder of
-  runtime bundles (sealed into each bundle's descriptor and manifest hash).
-- The `openchamber://` deep-link scheme stays registered.
-- The managed Claude Code status-line script `~/.cache/openchamber/claude-code-status-line.sh`:
-  its path is written into the user's `~/.claude/settings.json` and matched to
-  recognise the managed command.
-- Text naming the globally installed CLI binary (`openchamber update`,
-  `openchamber serve`): the external npm package installs only that binary.
-- The `[OpenChamberDesktopNotify]` stdout prefix and the `openchamber-server`
-  argv match used for the legacy Tauri sidecar.
-- Persisted field names: `remoteOpenchamber` (also read as `remote_openchamber`)
-  and `auth.openchamberPassword` in saved SSH instances, the
-  `openchamberPlanMode` message metadata flag, and the `openchamber` key of the
-  OpenCode config with its `.openchamber/` sidecar folder (also used for
-  manifests, overlays and backups under the OpenCode config folder).
-- Wire and binary names: the `openchamberVersion` field of the health response
-  (read by older clients and remote hosts), the `openchamber_write_pty` import
-  compiled into the Ghostty WebAssembly module, the `openchamber-browser` CDP
-  browser context id, the `openchamber-ui` passkey user name and the
-  `mailto:openchamber@localhost` push subject stored with VAPID keys.
-- Names written outside DevRyan: the `openchamber/<name>` branch prefix of new
-  worktrees, the `persist:openchamber-browser*` Electron partitions (cookies),
-  the Docker image's `openchamber` user and `/home/openchamber` paths that
-  compose files mount, and CLI log files `logs/openchamber-<port>.log`.
-- Internal code identifiers and file names use DevRyan names; the ones above
-  keep the old spelling only because stored data or another program depends
-  on it.
-- CLI daemon records `run/openchamber-<port>.{pid,json}`: a newer CLI must find
-  daemons an older one started.
-- Environment names sent to an SSH host's DevRyan CLI: `ssh-managed-probe.mjs`
-  sends both names, because the remote CLI may be an older release.
+The Tauri source branding/settings fallback is updated, but the old installed
+Tauri updater transition is **unqualified**: this repository's one-DMG public
+release does not include a signed Tauri update manifest/archive. Source changes
+alone cannot prove that deployment transition. New desktop features still belong
+in `packages/electron`; the Tauri package remains legacy compatibility code.
+
+## Immutable legacy inputs
+
+These records are accepted or retained rather than rewritten in place:
+
+- Selected runtime bundle descriptors, prepared manifests and their hashes,
+  including an existing `config/openchamber` directory. New readers must validate
+  legacy paths with the same containment and integrity rules as canonical paths.
+- The pre-rename orchestration event golden fixture. Both legacy and canonical
+  wire payload bytes are pinned; ledger and cursor formats are unchanged.
+- Existing browser databases are selected in place when found; new databases
+  use DevRyan names. When database enumeration is unavailable, the reader falls
+  back to the old name to avoid losing attachments or cursor state. Theme IDs
+  normalize to DevRyan through the versioned catalog while retaining old aliases.
+  The managed Claude Code status-line path embedded in user settings remains
+  an accepted command identity.
+- The legacy Tauri sidecar argv/stdout markers used to identify a released
+  process, provenance URLs, upstream credits and detection of legacy-branded
+  release assets. Historical changelog text describes the release that shipped.
+- Docker's `/home/openchamber` compatibility link and the existing
+  `./data/openchamber` host bind source. The container user/home and mount targets
+  are DevRyan; the UID stays 1000 with an old username alias, and an old mount target resolves into the same
+  home. Keeping the host source prevents a Compose upgrade from silently creating
+  an empty data volume.
+
+Readers accept aliases indefinitely. Removing an alias requires its own migration
+and release note. A documented fallback is compatibility coverage, not a claim
+that a native upgrade or a live account was exercised in this task.

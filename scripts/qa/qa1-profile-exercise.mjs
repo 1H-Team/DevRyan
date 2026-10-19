@@ -699,16 +699,16 @@ export async function runQa1ProfileExercise({ api, authenticateBrowser, inspectP
     rows = await wait(async () => {
       const next = await settled();
       return next && next.some(row => row.info.role === 'user' && !before.has(row.info.id)
-        && row.parts.some(part => part.type === 'text' && part.text.startsWith('[openchamber-plan-action:v1] ')))
+        && row.parts.some(part => part.type === 'text' && part.text.startsWith('[devryan-plan-action:v1] ')))
         && next.some(row => row.info.role === 'assistant' && !before.has(row.info.id) && row.info.time?.completed) ? next : false;
     });
     const approvalUsers = rows.filter(row => row.info.role === 'user' && !before.has(row.info.id)
-      && row.parts.some(part => part.type === 'text' && part.synthetic === true && part.text.startsWith('[openchamber-plan-action:v1] ')));
+      && row.parts.some(part => part.type === 'text' && part.synthetic === true && part.text.startsWith('[devryan-plan-action:v1] ')));
     if (approvalUsers.length !== 1) throw fail('qa_profile_plan_approval_invalid');
     const approved = approvalUsers[0], markers = approved.parts.filter(part => part.type === 'text' && part.synthetic === true
-      && part.text.startsWith('[openchamber-plan-action:v1] '));
+      && part.text.startsWith('[devryan-plan-action:v1] '));
     if (markers.length !== 1) throw fail('qa_profile_plan_approval_invalid');
-    assert.deepEqual(JSON.parse(markers[0].text.slice('[openchamber-plan-action:v1] '.length)), { action: 'implement', sourceSessionId: sessionID,
+    assert.deepEqual(JSON.parse(markers[0].text.slice('[devryan-plan-action:v1] '.length)), { action: 'implement', sourceSessionId: sessionID,
       sourceMessageId: saved.sourceMessageID, planIndex: 0, projectDirectory: fixture.fixtureRoot, version: saved.version });
     if (approved.info.agent !== 'orchestrator' || approved.info.model?.providerID !== 'openai' || approved.info.model?.modelID !== 'gpt-6-astra'
       || (approved.info.model.variant ?? approved.info.variant) !== 'medium') throw fail('qa_profile_canonical_selection_mismatch');
