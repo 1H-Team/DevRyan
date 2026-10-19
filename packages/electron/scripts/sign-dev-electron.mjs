@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const electronDir = path.resolve(__dirname, '..');
-const STABLE_IDENTIFIER = 'dev.openchamber.desktop';
+const STABLE_IDENTIFIER = 'dev.devryan.desktop';
 
 function exit(msg, code = 0) {
   if (msg) console.log(`[sign-dev-electron] ${msg}`);

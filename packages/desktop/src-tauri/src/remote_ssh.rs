@@ -14,7 +14,8 @@ use std::{
 use tauri::{AppHandle, Emitter, State};
 
 const LOCAL_HOST_ID: &str = "local";
-const SSH_STATUS_EVENT: &str = "openchamber:ssh-instance-status";
+const SSH_STATUS_EVENT: &str = "devryan:ssh-instance-status";
+const LEGACY_SSH_STATUS_EVENT: &str = "openchamber:ssh-instance-status";
 const DEFAULT_CONNECTION_TIMEOUT_SEC: u16 = 60;
 const DEFAULT_LOCAL_BIND_HOST: &str = "127.0.0.1";
 const DEFAULT_CONTROL_PERSIST_SEC: u16 = 300;
@@ -147,7 +148,8 @@ pub struct DesktopSshStoredSecret {
 #[serde(rename_all = "camelCase")]
 pub struct DesktopSshAuthConfig {
     pub ssh_password: Option<DesktopSshStoredSecret>,
-    pub openchamber_password: Option<DesktopSshStoredSecret>,
+    #[serde(alias = "openchamberPassword", alias = "openchamber_password")]
+    pub devryan_password: Option<DesktopSshStoredSecret>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -182,7 +184,8 @@ pub struct DesktopSshInstance {
     #[serde(default = "default_connection_timeout")]
     pub connection_timeout_sec: u16,
     #[serde(default)]
-    pub remote_openchamber: DesktopSshRemoteOpenchamberConfig,
+    #[serde(alias = "remoteOpenchamber", alias = "remote_openchamber")]
+    pub remote_dev_ryan: DesktopSshRemoteOpenchamberConfig,
     #[serde(default)]
     pub local_forward: DesktopSshLocalForwardConfig,
     #[serde(default)]
@@ -313,16 +316,16 @@ fn now_millis() -> u64 {
 }
 
 fn settings_file_path() -> PathBuf {
-    if let Ok(dir) = std::env::var("OPENCHAMBER_DATA_DIR") {
+    if let Ok(dir) = std::env::var("DEVRYAN_DATA_DIR").or_else(|_| std::env::var("OPENCHAMBER_DATA_DIR")) {
         if !dir.trim().is_empty() {
             return PathBuf::from(dir.trim()).join("settings.json");
         }
     }
     let home = std::env::var("HOME").unwrap_or_default();
-    PathBuf::from(home)
-        .join(".config")
-        .join("openchamber")
-        .join("settings.json")
+    let config = PathBuf::from(home).join(".config");
+    let canonical = config.join("devryan").join("settings.json");
+    let legacy = config.join("openchamber").join("settings.json");
+    if canonical.exists() || !legacy.exists() { canonical } else { legacy }
 }
 
 fn read_settings_root(path: &Path) -> Value {
@@ -1173,7 +1176,7 @@ fn current_remote_openchamber_version(
     run_remote_command(
         parsed,
         control_path,
-        "openchamber --version 2>/dev/null || true",
+        "devryan --version 2>/dev/null || openchamber --version 2>/dev/null || true",
         DEFAULT_CONNECTION_TIMEOUT_SEC,
     )
     .ok()
@@ -1194,26 +1197,26 @@ fn install_openchamber_managed(
     match preferred {
         DesktopSshInstallMethod::Bun => {
             if has_bun {
-                commands.push(format!("bun add -g @openchamber/web@{version}"));
+                commands.push(format!("bun add -g @devryan/web@{version}"));
             }
             if has_npm {
-                commands.push(format!("npm install -g @openchamber/web@{version}"));
+                commands.push(format!("npm install -g @devryan/web@{version}"));
             }
         }
         DesktopSshInstallMethod::Npm => {
             if has_npm {
-                commands.push(format!("npm install -g @openchamber/web@{version}"));
+                commands.push(format!("npm install -g @devryan/web@{version}"));
             }
             if has_bun {
-                commands.push(format!("bun add -g @openchamber/web@{version}"));
+                commands.push(format!("bun add -g @devryan/web@{version}"));
             }
         }
         DesktopSshInstallMethod::DownloadRelease | DesktopSshInstallMethod::UploadBundle => {
             if has_bun {
-                commands.push(format!("bun add -g @openchamber/web@{version}"));
+                commands.push(format!("bun add -g @devryan/web@{version}"));
             }
             if has_npm {
-                commands.push(format!("npm install -g @openchamber/web@{version}"));
+                commands.push(format!("npm install -g @devryan/web@{version}"));
             }
         }
     }
@@ -1237,7 +1240,7 @@ fn install_openchamber_managed(
         }
     }
 
-    Err(last_error.unwrap_or_else(|| anyhow!("Failed to install OpenChamber on remote host")))
+    Err(last_error.unwrap_or_else(|| anyhow!("Failed to install DevRyan on remote host")))
 }
 
 fn parse_probe_status_line(line: Option<&str>, prefix: &str) -> Option<u16> {
@@ -1256,7 +1259,7 @@ fn is_liveness_http_status(status: u16) -> bool {
 fn configured_openchamber_password(instance: &DesktopSshInstance) -> Option<&str> {
     instance
         .auth
-        .openchamber_password
+        .devryan_password
         .as_ref()
         .and_then(|secret| {
             if secret.enabled {
@@ -1307,7 +1310,7 @@ fn probe_remote_system_info(
         if is_auth_http_status(info_status) {
             if openchamber_password.is_some() && auth_status != 200 {
                 return Err(anyhow!(format!(
-                    "Remote OpenChamber requires UI authentication and configured password was rejected (auth status {auth_status})"
+                    "Remote DevRyan requires UI authentication and configured password was rejected (auth status {auth_status})"
                 )));
             }
 
@@ -1316,14 +1319,14 @@ fn probe_remote_system_info(
             }
 
             return Err(anyhow!(
-                "Remote OpenChamber requires UI authentication on /api/system/info; configure OpenChamber UI password"
+                "Remote DevRyan requires UI authentication on /api/system/info; configure DevRyan UI password"
             ));
         }
     } else if is_liveness_http_status(health_status) {
         return Ok(RemoteSystemInfo::default());
     } else {
         return Err(anyhow!(format!(
-            "Remote OpenChamber probe failed (info status {info_status}, health status {health_status})"
+            "Remote DevRyan probe failed (info status {info_status}, health status {health_status})"
         )));
     }
 
@@ -1374,21 +1377,24 @@ fn start_remote_server_managed(
     instance: &DesktopSshInstance,
     desired_port: u16,
 ) -> Result<u16> {
-    let mut env_prefix = "OPENCHAMBER_RUNTIME=ssh-remote".to_string();
+    let mut env_prefix = "DEVRYAN_RUNTIME=ssh-remote OPENCHAMBER_RUNTIME=ssh-remote".to_string();
     if let Some(secret) = instance
         .auth
-        .openchamber_password
+        .devryan_password
         .as_ref()
         .and_then(|v| if v.enabled { v.value.clone() } else { None })
         .map(|v| v.trim().to_string())
         .filter(|v| !v.is_empty())
     {
         env_prefix.push(' ');
+        env_prefix.push_str("DEVRYAN_UI_PASSWORD=");
+        env_prefix.push_str(&shell_quote(&secret));
+        env_prefix.push(' ');
         env_prefix.push_str("OPENCHAMBER_UI_PASSWORD=");
         env_prefix.push_str(&shell_quote(&secret));
     }
     let script = format!(
-        "{env_prefix} openchamber serve --daemon --hostname 127.0.0.1 --port {desired_port}"
+        "{env_prefix} $(if command -v devryan >/dev/null 2>&1; then echo devryan; else echo openchamber; fi) serve --daemon --hostname 127.0.0.1 --port {desired_port}"
     );
     let output = run_remote_command(
         parsed,
@@ -1590,7 +1596,7 @@ fn wait_local_forward_ready(local_port: u16) -> Result<()> {
         poll_ms = (poll_ms * 2).min(2000);
     }
     Err(anyhow!(
-        "Timed out waiting for forwarded OpenChamber health"
+        "Timed out waiting for forwarded DevRyan health"
     ))
 }
 
@@ -1743,7 +1749,8 @@ impl DesktopSshManagerInner {
             .lock()
             .expect("ssh status mutex")
             .insert(id.to_string(), status.clone());
-        let _ = app.emit(SSH_STATUS_EVENT, status);
+        let _ = app.emit(SSH_STATUS_EVENT, status.clone());
+        let _ = app.emit(LEGACY_SSH_STATUS_EVENT, status);
     }
 
     fn clear_retry_attempt(&self, id: &str) {
@@ -1902,10 +1909,10 @@ impl DesktopSshManagerInner {
         if let Some(mut session) = self.sessions.lock().expect("ssh sessions mutex").remove(id) {
             if session.started_by_us
                 && matches!(
-                    session.instance.remote_openchamber.mode,
+                    session.instance.remote_dev_ryan.mode,
                     DesktopSshRemoteMode::Managed
                 )
-                && !session.instance.remote_openchamber.keep_running
+                && !session.instance.remote_dev_ryan.keep_running
             {
                 stop_remote_server_best_effort(
                     &session.parsed,
@@ -1953,18 +1960,18 @@ impl DesktopSshManagerInner {
     ) -> Result<(u16, bool)> {
         let app_version = app.package_info().version.to_string();
 
-        match instance.remote_openchamber.mode {
+        match instance.remote_dev_ryan.mode {
             DesktopSshRemoteMode::External => {
-                let Some(port) = instance.remote_openchamber.preferred_port else {
+                let Some(port) = instance.remote_dev_ryan.preferred_port else {
                     return Err(anyhow!(
-                        "External mode requires a preferred remote OpenChamber port"
+                        "External mode requires a preferred remote DevRyan port"
                     ));
                 };
                 self.set_status(
                     app,
                     &instance.id,
                     DesktopSshPhase::ServerDetecting,
-                    Some("Probing external OpenChamber server".to_string()),
+                    Some("Probing external DevRyan server".to_string()),
                     None,
                     None,
                     Some(port),
@@ -1980,7 +1987,7 @@ impl DesktopSshManagerInner {
                 )
                 .map_err(|err| {
                     anyhow!(format!(
-                        "External OpenChamber server probe failed on configured remote port: {err}"
+                        "External DevRyan server probe failed on configured remote port: {err}"
                     ))
                 })?;
                 Ok((port, false))
@@ -1990,7 +1997,7 @@ impl DesktopSshManagerInner {
                     app,
                     &instance.id,
                     DesktopSshPhase::RemoteProbe,
-                    Some("Checking remote OpenChamber installation".to_string()),
+                    Some("Checking remote DevRyan installation".to_string()),
                     None,
                     None,
                     None,
@@ -2005,7 +2012,7 @@ impl DesktopSshManagerInner {
                         app,
                         &instance.id,
                         DesktopSshPhase::Installing,
-                        Some("Installing OpenChamber on remote host".to_string()),
+                        Some("Installing DevRyan on remote host".to_string()),
                         None,
                         None,
                         None,
@@ -2017,7 +2024,7 @@ impl DesktopSshManagerInner {
                         parsed,
                         control_path,
                         &app_version,
-                        &instance.remote_openchamber.install_method,
+                        &instance.remote_dev_ryan.install_method,
                     )?;
                 } else if installed_version.as_deref() != Some(app_version.as_str()) {
                     self.set_status(
@@ -2025,7 +2032,7 @@ impl DesktopSshManagerInner {
                         &instance.id,
                         DesktopSshPhase::Updating,
                         Some(format!(
-                            "Updating remote OpenChamber from {} to {}",
+                            "Updating remote DevRyan from {} to {}",
                             installed_version
                                 .clone()
                                 .unwrap_or_else(|| "unknown".to_string()),
@@ -2042,7 +2049,7 @@ impl DesktopSshManagerInner {
                         parsed,
                         control_path,
                         &app_version,
-                        &instance.remote_openchamber.install_method,
+                        &instance.remote_dev_ryan.install_method,
                     )?;
                 }
 
@@ -2050,7 +2057,7 @@ impl DesktopSshManagerInner {
                     app,
                     &instance.id,
                     DesktopSshPhase::ServerDetecting,
-                    Some("Detecting managed OpenChamber server".to_string()),
+                    Some("Detecting managed DevRyan server".to_string()),
                     None,
                     None,
                     None,
@@ -2060,7 +2067,7 @@ impl DesktopSshManagerInner {
                 );
 
                 let mut started_by_us = false;
-                let mut remote_port = instance.remote_openchamber.preferred_port;
+                let mut remote_port = instance.remote_dev_ryan.preferred_port;
 
                 if let Some(port) = remote_port {
                     if !remote_server_running(
@@ -2078,7 +2085,7 @@ impl DesktopSshManagerInner {
                         app,
                         &instance.id,
                         DesktopSshPhase::ServerStarting,
-                        Some("Starting managed OpenChamber server".to_string()),
+                        Some("Starting managed DevRyan server".to_string()),
                         None,
                         None,
                         None,
@@ -2087,7 +2094,7 @@ impl DesktopSshManagerInner {
                         false,
                     );
                     let desired_port = instance
-                        .remote_openchamber
+                        .remote_dev_ryan
                         .preferred_port
                         .unwrap_or_else(|| random_port_candidate(&instance.id));
                     let started_port =
@@ -2097,7 +2104,7 @@ impl DesktopSshManagerInner {
                 }
 
                 let Some(port) = remote_port else {
-                    return Err(anyhow!("Failed to determine remote OpenChamber port"));
+                    return Err(anyhow!("Failed to determine remote DevRyan port"));
                 };
 
                 if !remote_server_running(
@@ -2107,7 +2114,7 @@ impl DesktopSshManagerInner {
                     configured_openchamber_password(instance),
                 ) {
                     return Err(anyhow!(
-                        "Managed OpenChamber server failed to become reachable"
+                        "Managed DevRyan server failed to become reachable"
                     ));
                 }
 
@@ -2855,11 +2862,28 @@ mod tests {
             ssh_command: command.to_string(),
             ssh_parsed: None,
             connection_timeout_sec: DEFAULT_CONNECTION_TIMEOUT_SEC,
-            remote_openchamber: DesktopSshRemoteOpenchamberConfig::default(),
+            remote_dev_ryan: DesktopSshRemoteOpenchamberConfig::default(),
             local_forward: DesktopSshLocalForwardConfig::default(),
             auth: DesktopSshAuthConfig::default(),
             port_forwards: Vec::new(),
         }
+    }
+
+    #[test]
+    fn saved_ssh_fields_write_devryan_and_read_legacy_names() {
+        let canonical = serde_json::to_value(sample_instance("fixture", "ssh example.invalid"))
+            .expect("serialize");
+        assert!(canonical.get("remoteDevRyan").is_some());
+        assert!(canonical.get("remoteOpenchamber").is_none());
+        let mut old = canonical;
+        let remote = old.as_object_mut().expect("object").remove("remoteDevRyan").expect("remote");
+        old["remoteOpenchamber"] = remote;
+        old["auth"] = serde_json::json!({ "openchamberPassword": { "enabled": false, "store": "never" } });
+        let loaded: DesktopSshInstance = serde_json::from_value(old).expect("legacy settings");
+        let rewritten = serde_json::to_value(loaded).expect("rewrite");
+        assert!(rewritten.get("remoteDevRyan").is_some());
+        assert!(rewritten["auth"].get("devryanPassword").is_some());
+        assert!(rewritten["auth"].get("openchamberPassword").is_none());
     }
 
     #[test]

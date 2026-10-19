@@ -8,7 +8,8 @@
 
 namespace {
 
-constexpr const char* kPlistName = "dev.openchamber.desktop.runtime-service.plist";
+constexpr const char* kPlistName = "dev.devryan.desktop.runtime-service.plist";
+constexpr const char* kLegacyPlistName = "dev.openchamber.desktop.runtime-service.plist";
 
 const char* StateName(SMAppServiceStatus status) {
   switch (status) {
@@ -51,9 +52,9 @@ napi_value Result(napi_env env, bool ok, SMAppServiceStatus status, const char* 
   return result;
 }
 
-SMAppService* RuntimeService() API_AVAILABLE(macos(13.0)) {
+SMAppService* RuntimeService(const char* plistName = kPlistName) API_AVAILABLE(macos(13.0)) {
   return [SMAppService agentServiceWithPlistName:
-      [NSString stringWithUTF8String:kPlistName]];
+      [NSString stringWithUTF8String:plistName]];
 }
 
 napi_value Status(napi_env env, napi_callback_info info) {
@@ -61,6 +62,14 @@ napi_value Status(napi_env env, napi_callback_info info) {
   if (@available(macOS 13.0, *)) {
     SMAppService* service = RuntimeService();
     return Result(env, true, service.status, nullptr);
+  }
+  return Result(env, false, SMAppServiceStatusNotRegistered, "smappservice_unavailable");
+}
+
+napi_value StatusLegacy(napi_env env, napi_callback_info info) {
+  (void)info;
+  if (@available(macOS 13.0, *)) {
+    return Result(env, true, RuntimeService(kLegacyPlistName).status, nullptr);
   }
   return Result(env, false, SMAppServiceStatusNotRegistered, "smappservice_unavailable");
 }
@@ -92,6 +101,21 @@ napi_value Unregister(napi_env env, napi_callback_info info) {
       return Result(env, true, status, nullptr);
     }
     return Result(env, false, status, "smappservice_unregistration_failed");
+  }
+  return Result(env, false, SMAppServiceStatusNotRegistered, "smappservice_unavailable");
+}
+
+napi_value UnregisterLegacy(napi_env env, napi_callback_info info) {
+  (void)info;
+  if (@available(macOS 13.0, *)) {
+    SMAppService* service = RuntimeService(kLegacyPlistName);
+    NSError* error = nil;
+    const bool unregistered = [service unregisterAndReturnError:&error];
+    const SMAppServiceStatus status = service.status;
+    if (unregistered || status == SMAppServiceStatusNotRegistered) {
+      return Result(env, true, status, nullptr);
+    }
+    return Result(env, false, status, "smappservice_legacy_unregistration_failed");
   }
   return Result(env, false, SMAppServiceStatusNotRegistered, "smappservice_unavailable");
 }
@@ -135,8 +159,10 @@ napi_value RenameApplication(napi_env env, napi_callback_info info) {
 napi_value Initialize(napi_env env, napi_value exports) {
   napi_property_descriptor properties[] = {
     {"status", nullptr, Status, nullptr, nullptr, nullptr, napi_default, nullptr},
+    {"statusLegacy", nullptr, StatusLegacy, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"register", nullptr, Register, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"unregister", nullptr, Unregister, nullptr, nullptr, nullptr, napi_default, nullptr},
+    {"unregisterLegacy", nullptr, UnregisterLegacy, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"renameExclusive", nullptr, RenameApplication, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"swapApplications", nullptr, RenameApplication, nullptr, nullptr, nullptr, napi_default, reinterpret_cast<void*>(1)},
   };

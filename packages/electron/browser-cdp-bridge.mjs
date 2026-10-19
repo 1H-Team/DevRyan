@@ -138,7 +138,7 @@ const buildTargetInfo = (targetId, url, title) => ({
   url: url || 'about:blank',
   attached: true,
   canAccessOpener: false,
-  browserContextId: 'openchamber-browser',
+  browserContextId: 'devryan-browser',
 });
 
 const removeListener = (emitter, event, listener) => {

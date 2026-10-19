@@ -673,6 +673,8 @@ export class ElectronSshManager {
     }
 
     const parsed = parseSshCommand(sshCommand);
+    const remote = instance?.remoteDevRyan ?? instance?.remoteOpenchamber ?? instance?.remote_openchamber;
+    const rawPassword = instance?.auth?.devryanPassword ?? instance?.auth?.openchamberPassword ?? instance?.auth?.openchamber_password;
     const seen = new Set();
     const portForwards = Array.isArray(instance?.portForwards)
       ? instance.portForwards
@@ -688,14 +690,14 @@ export class ElectronSshManager {
       connectionTimeoutSec: Number.isFinite(instance?.connectionTimeoutSec) && Number(instance.connectionTimeoutSec) > 0
         ? Number(instance.connectionTimeoutSec)
         : DEFAULT_CONNECTION_TIMEOUT_SEC,
-      remoteOpenchamber: {
-        mode: instance?.remoteOpenchamber?.mode === 'external' ? 'external' : 'managed',
-        keepRunning: instance?.remoteOpenchamber?.keepRunning !== false,
-        ...(Number.isFinite(instance?.remoteOpenchamber?.preferredPort) ? { preferredPort: Number(instance.remoteOpenchamber.preferredPort) } : {}),
-        installMethod: ['npm', 'bun', 'download_release', 'upload_bundle'].includes(instance?.remoteOpenchamber?.installMethod)
-          ? instance.remoteOpenchamber.installMethod
+      remoteDevRyan: {
+        mode: remote?.mode === 'external' ? 'external' : 'managed',
+        keepRunning: remote?.keepRunning !== false && remote?.keep_running !== false,
+        ...(Number.isFinite(remote?.preferredPort ?? remote?.preferred_port) ? { preferredPort: Number(remote.preferredPort ?? remote.preferred_port) } : {}),
+        installMethod: ['npm', 'bun', 'download_release', 'upload_bundle'].includes(remote?.installMethod ?? remote?.install_method)
+          ? remote.installMethod ?? remote.install_method
           : 'bun',
-        uploadBundleOverSsh: Boolean(instance?.remoteOpenchamber?.uploadBundleOverSsh),
+        uploadBundleOverSsh: Boolean(remote?.uploadBundleOverSsh ?? remote?.upload_bundle_over_ssh),
       },
       localForward: {
         bindHost: sanitizeBindHost(instance?.localForward?.bindHost),
@@ -703,7 +705,7 @@ export class ElectronSshManager {
       },
       auth: {
         ...(this.sanitizeStoredSecret(instance?.auth?.sshPassword) ? { sshPassword: this.sanitizeStoredSecret(instance.auth.sshPassword) } : {}),
-        ...(this.sanitizeStoredSecret(instance?.auth?.openchamberPassword) ? { openchamberPassword: this.sanitizeStoredSecret(instance.auth.openchamberPassword) } : {}),
+        ...(this.sanitizeStoredSecret(rawPassword) ? { devryanPassword: this.sanitizeStoredSecret(rawPassword) } : {}),
       },
       portForwards,
     };
@@ -806,7 +808,7 @@ export class ElectronSshManager {
   }
 
   configuredDevRyanPassword(instance) {
-    const secret = instance?.auth?.openchamberPassword;
+    const secret = instance?.auth?.devryanPassword ?? instance?.auth?.openchamberPassword ?? instance?.auth?.openchamber_password;
     return secret?.enabled && typeof secret.value === 'string' && secret.value.trim() ? secret.value.trim() : null;
   }
 
@@ -821,7 +823,7 @@ export class ElectronSshManager {
 
   async currentRemoteDevRyanVersion(parsed, controlPath) {
     try {
-      const output = await runRemoteCommand(parsed, controlPath, 'openchamber --version 2>/dev/null || true');
+      const output = await runRemoteCommand(parsed, controlPath, 'devryan --version 2>/dev/null || openchamber --version 2>/dev/null || true');
       return parseVersionToken(output);
     } catch {
       return null;
@@ -834,14 +836,14 @@ export class ElectronSshManager {
     const commands = [];
 
     if (preferred === 'bun') {
-      if (hasBun) commands.push(`bun add -g @openchamber/web@${version}`);
-      if (hasNpm) commands.push(`npm install -g @openchamber/web@${version}`);
+      if (hasBun) commands.push(`bun add -g @devryan/web@${version}`);
+      if (hasNpm) commands.push(`npm install -g @devryan/web@${version}`);
     } else if (preferred === 'npm') {
-      if (hasNpm) commands.push(`npm install -g @openchamber/web@${version}`);
-      if (hasBun) commands.push(`bun add -g @openchamber/web@${version}`);
+      if (hasNpm) commands.push(`npm install -g @devryan/web@${version}`);
+      if (hasBun) commands.push(`bun add -g @devryan/web@${version}`);
     } else {
-      if (hasBun) commands.push(`bun add -g @openchamber/web@${version}`);
-      if (hasNpm) commands.push(`npm install -g @openchamber/web@${version}`);
+      if (hasBun) commands.push(`bun add -g @devryan/web@${version}`);
+      if (hasNpm) commands.push(`npm install -g @devryan/web@${version}`);
     }
 
     if (commands.length === 0) {
@@ -954,17 +956,18 @@ export class ElectronSshManager {
   }
 
   async ensureRemoteServer(instance, parsed, controlPath) {
-    if (instance.remoteOpenchamber.mode === 'external') {
-      if (!instance.remoteOpenchamber.preferredPort) {
+    const remote = instance.remoteDevRyan ?? instance.remoteOpenchamber ?? instance.remote_openchamber;
+    if (remote.mode === 'external') {
+      if (!remote.preferredPort) {
         throw new Error('External mode requires a preferred remote DevRyan port');
       }
-      const port = instance.remoteOpenchamber.preferredPort;
+      const port = remote.preferredPort;
       this.setStatus(instance.id, 'server_detecting', 'Probing external DevRyan server', null, null, port, false, 0, false);
       await this.probeRemoteSystemInfo(parsed, controlPath, port, this.configuredDevRyanPassword(instance));
       return { remotePort: port, startedByUs: false };
     }
 
-    const remotePort = instance.remoteOpenchamber.preferredPort || randomPortCandidate(instance.id);
+    const remotePort = remote.preferredPort || randomPortCandidate(instance.id);
     this.setStatus(instance.id, 'server_detecting', 'Verifying managed DevRyan server');
     const identity = { action: 'probe', id: instance.id, port: remotePort, version: this.appVersion };
     const existing = await this.managedRemoteOperation(parsed, controlPath, identity);
@@ -988,7 +991,7 @@ export class ElectronSshManager {
     const installedVersion = await this.currentRemoteDevRyanVersion(parsed, controlPath);
     if (installedVersion !== this.appVersion) {
       this.setStatus(instance.id, installedVersion ? 'updating' : 'installing', 'Preparing remote DevRyan installation');
-      await this.installDevRyanManaged(parsed, controlPath, this.appVersion, instance.remoteOpenchamber.installMethod);
+      await this.installDevRyanManaged(parsed, controlPath, this.appVersion, remote.installMethod);
     }
     this.setStatus(instance.id, 'server_starting', 'Starting managed DevRyan server');
     await this.startRemoteServerManaged(parsed, controlPath, instance, remotePort);
@@ -1008,7 +1011,8 @@ export class ElectronSshManager {
     this.sessions.delete(id);
 
     if (session) {
-      if (session.startedByUs && session.instance.remoteOpenchamber.mode === 'managed' && !session.instance.remoteOpenchamber.keepRunning) {
+      const remote = session.instance.remoteDevRyan ?? session.instance.remoteOpenchamber ?? session.instance.remote_openchamber;
+      if (session.startedByUs && remote.mode === 'managed' && !remote.keepRunning) {
         await this.stopRemoteServerBestEffort(session.parsed, session.controlPath, session.remotePort, session.instance.id);
       }
       await stopControlMasterBestEffort(session.parsed, session.controlPath);

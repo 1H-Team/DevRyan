@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs/promises';
 import test from 'node:test';
-import { createStartupWindowOptions } from '../early-startup.mjs';
+import { createStartupWindowOptions, selectPackagedUserDataDirectory } from '../early-startup.mjs';
 
 const entry = await fs.readFile(new URL('../entry.mjs', import.meta.url), 'utf8');
 const packageJson = JSON.parse(await fs.readFile(new URL('../package.json', import.meta.url), 'utf8'));
@@ -28,6 +28,13 @@ test('foreground entry paints before importing main; service and probe do not cr
   assert.match(entry, /if \(!service && !probe/);
   assert.match(entry, /if \(service \|\| probe\) \{ app\.exit\(1\); return; \}/);
   assert.deepEqual(packageJson.build.files.slice(0, 3), ['dist-bundle/entry.mjs', 'dist-bundle/early-startup.mjs', 'dist-bundle/startup-splash.mjs']);
+});
+
+test('packaged profiles keep existing Chromium and Safe Storage data but new installs use DevRyan', () => {
+  assert.equal(selectPackagedUserDataDirectory({ appDataDirectory: '/private/app-data', legacyProfileExists: true }),
+    '/private/app-data/@openchamber/electron');
+  assert.equal(selectPackagedUserDataDirectory({ appDataDirectory: '/private/app-data', legacyProfileExists: false }),
+    '/private/app-data/@devryan/electron');
 });
 
 test('early splash is adopted once, blocks navigation and guests, and keeps preload isolation', async () => {

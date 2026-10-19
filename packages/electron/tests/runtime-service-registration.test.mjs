@@ -24,6 +24,25 @@ const temporaryDirectory = async () => {
 };
 
 describe('background runtime registration', () => {
+  test('replaces a registered 2.0 SMAppService only after explicit unregister', async () => {
+    const root = await temporaryDirectory();
+    let previousEnabled = true;
+    const calls = [];
+    const registration = createRuntimeServiceRegistration({ platform: 'darwin', macosMajor: 15, isPackaged: true,
+      executablePath: path.join(root, 'DevRyan.app/Contents/MacOS/DevRyan'), dataDirectory: path.join(root, 'data'),
+      homeDirectory: root, nativeControl: {
+        statusLegacy: async () => { calls.push('statusLegacy'); return { ok: true, state: previousEnabled ? 'enabled' : 'not_registered' }; },
+        unregisterLegacy: async () => { calls.push('unregisterLegacy'); previousEnabled = false; return { ok: true, state: 'not_registered' }; },
+        unregister: async () => { calls.push('unregister'); return { ok: true, state: 'not_registered' }; },
+        status: async () => { calls.push('status'); return { ok: true, state: 'not_registered' }; },
+        register: async () => { calls.push('register'); return { ok: true, state: 'enabled' }; },
+      } });
+    assert.equal((await registration.status()).state, 'enabled');
+    assert.equal(registration.mode, 'legacy-smappservice');
+    assert.equal((await registration.unregister()).state, 'not_registered');
+    assert.equal((await registration.register()).state, 'enabled');
+    assert.ok(calls.indexOf('unregisterLegacy') < calls.indexOf('register'));
+  });
   for (const state of ['not_found', 'not_registered', 'enabled', 'requires_approval', 'unknown', 'unavailable']) {
     test(`unregister is idempotent only for absent registrations: ${state}`, async () => {
       const root = await temporaryDirectory();
@@ -133,7 +152,7 @@ describe('background runtime registration', () => {
       'Contents',
       'Library',
       'LaunchAgents',
-      'dev.openchamber.desktop.runtime-service.plist',
+      'dev.devryan.desktop.runtime-service.plist',
     );
     await fs.mkdir(path.dirname(bundledPlistPath), { recursive: true });
     await fs.writeFile(bundledPlistPath, 'bundled');
@@ -181,7 +200,7 @@ describe('background runtime registration', () => {
       'Contents',
       'Library',
       'LaunchAgents',
-      'dev.openchamber.desktop.runtime-service.plist',
+      'dev.devryan.desktop.runtime-service.plist',
     );
     await fs.mkdir(path.dirname(bundledPlistPath), { recursive: true });
     await fs.writeFile(bundledPlistPath, 'bundled');

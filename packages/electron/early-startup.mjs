@@ -10,6 +10,9 @@ let closedBeforeMain = false;
 let releaseAppGuards = () => {};
 const deferredLinks = [];
 
+export const selectPackagedUserDataDirectory = ({ appDataDirectory, legacyProfileExists }) => path.join(
+  appDataDirectory, legacyProfileExists ? '@openchamber/electron' : '@devryan/electron');
+
 export function configureEarlyStartup({ app, isPreview, WINDOWS_PREVIEW_NAME, APP_USER_MODEL_ID,
   isRuntimeServiceMode, isRuntimeServiceControlProbe }) {
   if (configured) return true;
@@ -25,6 +28,21 @@ export function configureEarlyStartup({ app, isPreview, WINDOWS_PREVIEW_NAME, AP
     // single-instance lock and Chromium profile. Isolate both before acquiring
     // the lock so visual verification never disrupts the user's running app.
     app.setPath('userData', devUserDataDirectory);
+  } else if (app.isPackaged && !isPreview) {
+    // Electron derives this directory from package.name before setName runs.
+    // Keep an existing Chromium profile in place: its cookies, IndexedDB and
+    // Safe Storage metadata must remain under the same directory on upgrade.
+    const appDataDirectory = app.getPath('appData');
+    const legacy = path.join(appDataDirectory, '@openchamber/electron');
+    const legacyProfileExists = (() => {
+      try { return fs.lstatSync(legacy).isDirectory(); } catch (error) {
+        if (error.code === 'ENOENT') return false;
+        throw error;
+      }
+    })();
+    const userDataDirectory = selectPackagedUserDataDirectory({ appDataDirectory, legacyProfileExists });
+    fs.mkdirSync(userDataDirectory, { recursive: true });
+    app.setPath('userData', userDataDirectory);
   }
 
   // The background runtime service and the status probe run from the same app
@@ -54,7 +72,7 @@ export function configureEarlyStartup({ app, isPreview, WINDOWS_PREVIEW_NAME, AP
   }
 
   // Set the product name early so electron-log derives its log directory as
-  // ~/Library/Logs/DevRyan/ (not ~/Library/Logs/@openchamber/electron/).
+  // ~/Library/Logs/DevRyan/ (independent of the selected profile directory).
   app.setName(isPreview ? WINDOWS_PREVIEW_NAME : 'DevRyan');
   app.setAppUserModelId(APP_USER_MODEL_ID);
   app.commandLine.appendSwitch('proxy-bypass-list', '<-loopback>');

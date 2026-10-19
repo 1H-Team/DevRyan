@@ -84,21 +84,19 @@ fn eval_in_focused_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>, script: 
 }
 
 fn dispatch_menu_action<R: tauri::Runtime>(app: &tauri::AppHandle<R>, action: &str) {
+    let _ = app.emit("devryan:menu-action", action);
     let _ = app.emit("openchamber:menu-action", action);
 
-    let event = serde_json::to_string("openchamber:menu-action")
-        .unwrap_or_else(|_| "\"openchamber:menu-action\"".into());
     let detail = serde_json::to_string(action).unwrap_or_else(|_| "\"\"".into());
-    let script = format!("window.dispatchEvent(new CustomEvent({event}, {{ detail: {detail} }}));");
+    let script = format!("for (const name of ['devryan:menu-action','openchamber:menu-action']) window.dispatchEvent(new CustomEvent(name, {{ detail: {detail} }}));");
     eval_in_focused_window(app, &script);
 }
 
 fn dispatch_check_for_updates<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    let _ = app.emit("devryan:check-for-updates", ());
     let _ = app.emit("openchamber:check-for-updates", ());
 
-    let event = serde_json::to_string("openchamber:check-for-updates")
-        .unwrap_or_else(|_| "\"openchamber:check-for-updates\"".into());
-    let script = format!("window.dispatchEvent(new Event({event}));");
+    let script = "for (const name of ['devryan:check-for-updates','openchamber:check-for-updates']) window.dispatchEvent(new Event(name));";
     eval_in_all_windows(app, &script);
 }
 use tauri_plugin_shell::{process::CommandChild, process::CommandEvent, ShellExt};
@@ -158,10 +156,10 @@ const MENU_ITEM_QUIT_ID: &str = "menu_quit";
 
 #[cfg(target_os = "macos")]
 const GITHUB_BUG_REPORT_URL: &str =
-    "https://github.com/btriapitsyn/openchamber/issues/new?template=bug_report.yml";
+    "https://github.com/1H-Team/DevRyan/issues/new?template=bug_report.yml";
 #[cfg(target_os = "macos")]
 const GITHUB_FEATURE_REQUEST_URL: &str =
-    "https://github.com/btriapitsyn/openchamber/issues/new?template=feature_request.yml";
+    "https://github.com/1H-Team/DevRyan/issues/new?template=feature_request.yml";
 #[cfg(target_os = "macos")]
 const DISCORD_INVITE_URL: &str = "https://discord.gg/ZYRSdnwwKA";
 
@@ -264,7 +262,7 @@ unsafe extern "C-unwind" fn application_should_terminate_with_confirmation(
     let message = quit_confirmation_message();
     let confirmed = matches!(
         rfd::MessageDialog::new()
-            .set_title("Quit OpenChamber?")
+            .set_title("Quit DevRyan?")
             .set_description(&message)
             .set_level(rfd::MessageLevel::Warning)
             .set_buttons(rfd::MessageButtons::OkCancel)
@@ -352,7 +350,7 @@ fn request_quit_with_confirmation(app: &tauri::AppHandle) {
     let handle = app.clone();
     app.dialog()
         .message(message)
-        .title("Quit OpenChamber?")
+        .title("Quit DevRyan?")
         .buttons(MessageDialogButtons::OkCancel)
         .kind(tauri_plugin_dialog::MessageDialogKind::Warning)
         .show(move |confirmed| {
@@ -1163,9 +1161,10 @@ fn installed_apps_cache_path() -> PathBuf {
     let home = env::var_os("HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("/"));
-    home.join(".config")
-        .join("openchamber")
-        .join(INSTALLED_APPS_CACHE_FILE)
+    let config = home.join(".config");
+    let canonical = config.join("devryan").join(INSTALLED_APPS_CACHE_FILE);
+    let legacy = config.join("openchamber").join(INSTALLED_APPS_CACHE_FILE);
+    if canonical.exists() || !legacy.exists() { canonical } else { legacy }
 }
 
 #[cfg(target_os = "macos")]
@@ -1219,10 +1218,8 @@ fn build_installed_apps(
 
 #[cfg(target_os = "macos")]
 fn dispatch_installed_apps_update(app: &tauri::AppHandle, apps: &[InstalledAppInfo]) {
-    let event = serde_json::to_string("openchamber:installed-apps-updated")
-        .unwrap_or_else(|_| "\"openchamber:installed-apps-updated\"".into());
     let detail = serde_json::to_string(apps).unwrap_or_else(|_| "[]".into());
-    let script = format!("window.dispatchEvent(new CustomEvent({event}, {{ detail: {detail} }}));");
+    let script = format!("for (const name of ['devryan:installed-apps-updated','openchamber:installed-apps-updated']) window.dispatchEvent(new CustomEvent(name, {{ detail: {detail} }}));");
     eval_in_all_windows(app, &script);
 }
 
@@ -1615,16 +1612,16 @@ fn build_health_url(base_url: &str) -> Option<String> {
 }
 
 fn settings_file_path() -> PathBuf {
-    if let Ok(dir) = env::var("OPENCHAMBER_DATA_DIR") {
+    if let Ok(dir) = env::var("DEVRYAN_DATA_DIR").or_else(|_| env::var("OPENCHAMBER_DATA_DIR")) {
         if !dir.trim().is_empty() {
             return PathBuf::from(dir.trim()).join("settings.json");
         }
     }
     let home = env::var("HOME").unwrap_or_default();
-    PathBuf::from(home)
-        .join(".config")
-        .join("openchamber")
-        .join("settings.json")
+    let config = PathBuf::from(home).join(".config");
+    let canonical = config.join("devryan").join("settings.json");
+    let legacy = config.join("openchamber").join("settings.json");
+    if canonical.exists() || !legacy.exists() { canonical } else { legacy }
 }
 
 fn read_desktop_settings_json() -> Option<serde_json::Value> {
@@ -2315,7 +2312,7 @@ fn maybe_show_sidecar_notification(app: &tauri::AppHandle, payload: SidecarNotif
     let title = payload
         .title
         .filter(|t| is_nonempty_string(t))
-        .unwrap_or_else(|| "OpenChamber".to_string());
+        .unwrap_or_else(|| "DevRyan".to_string());
     let body = payload.body.filter(|b| is_nonempty_string(b));
     let _tag = payload.tag;
 
@@ -2754,7 +2751,7 @@ fn desktop_notify(
     let mut builder = app
         .notification()
         .builder()
-        .title(payload.title.unwrap_or_else(|| "OpenChamber".to_string()));
+        .title(payload.title.unwrap_or_else(|| "DevRyan".to_string()));
 
     if let Some(body) = payload.body {
         if is_nonempty_string(&body) {
@@ -2828,6 +2825,10 @@ async fn desktop_download_and_install_update(
                 if !started {
                     total = content_length;
                     let _ = app.emit(
+                        "devryan:update-progress",
+                        UpdateProgressEvent::Started { content_length },
+                    );
+                    let _ = app.emit(
                         "openchamber:update-progress",
                         UpdateProgressEvent::Started { content_length },
                     );
@@ -2835,6 +2836,14 @@ async fn desktop_download_and_install_update(
                 }
 
                 downloaded = downloaded.saturating_add(chunk_length as u64);
+                let _ = app.emit(
+                    "devryan:update-progress",
+                    UpdateProgressEvent::Progress {
+                        chunk_length,
+                        downloaded,
+                        total,
+                    },
+                );
                 let _ = app.emit(
                     "openchamber:update-progress",
                     UpdateProgressEvent::Progress {
@@ -2845,6 +2854,7 @@ async fn desktop_download_and_install_update(
                 );
             },
             || {
+                let _ = app.emit("devryan:update-progress", UpdateProgressEvent::Finished);
                 let _ = app.emit("openchamber:update-progress", UpdateProgressEvent::Finished);
             },
         )
@@ -3380,7 +3390,7 @@ fn create_window(
     };
 
     let mut builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(parsed))
-        .title("OpenChamber")
+        .title("DevRyan")
         .inner_size(1280.0, 800.0)
         .min_inner_size(MIN_WINDOW_WIDTH as f64, MIN_WINDOW_HEIGHT as f64)
         .decorations(true)
@@ -3432,7 +3442,7 @@ fn create_startup_window(app: &tauri::AppHandle, restore_geometry: bool) -> Resu
     let splash_script = build_startup_splash_script();
 
     let mut builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-        .title("OpenChamber")
+        .title("DevRyan")
         .inner_size(1280.0, 800.0)
         .min_inner_size(MIN_WINDOW_WIDTH as f64, MIN_WINDOW_HEIGHT as f64)
         .decorations(true)

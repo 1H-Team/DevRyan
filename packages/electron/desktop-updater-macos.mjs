@@ -60,6 +60,7 @@ export function createMacDmgInstaller({ installedBundle, currentVersion, cacheDi
       mounted = true;
       const source = path.join(mount, 'DevRyan.app');
       const candidate = await verifyMacUpdateBundle(source, { version: update.version, signing: previous.signing, run });
+      if (candidate.signing.identifier !== 'dev.devryan.desktop') throw fail('update_bundle_identity_mismatch');
       const launcher = path.join(path.dirname(candidate.manifestPath), 'DevRyan-execution-darwin-arm64');
       await verifyNativeArtifacts({ manifestPath: candidate.manifestPath, manifestSha256: candidate.manifestSha256, launcher });
       const size = Number.parseInt((await run('/usr/bin/du', ['-sk', source], { timeout: 30_000, maxBuffer: 4096 })).stdout, 10) * 1024;

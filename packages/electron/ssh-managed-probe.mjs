@@ -4,8 +4,15 @@ async function remoteManagedOperation(input) {
   const fs = await import('node:fs/promises'), crypto = await import('node:crypto');
   const { constants } = await import('node:fs');
   const path = await import('node:path'), os = await import('node:os');
-  const directory = path.join(os.homedir(), '.config', 'openchamber', 'ssh-managed');
-  const file = path.join(directory, crypto.createHash('sha256').update(input.id).digest('hex') + '.key');
+  const name = crypto.createHash('sha256').update(input.id).digest('hex') + '.key';
+  const legacyFile = path.join(os.homedir(), '.config', 'openchamber', 'ssh-managed', name);
+  const canonicalFile = path.join(os.homedir(), '.config', 'devryan', 'ssh-managed', name);
+  const legacyExists = await fs.lstat(legacyFile).then(stat => stat.isFile(), error => {
+    if (error.code === 'ENOENT') return false;
+    throw error;
+  });
+  const file = legacyExists ? legacyFile : canonicalFile;
+  const directory = path.dirname(file);
   const readKey = async () => {
     const handle = await fs.open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
     try {
@@ -25,7 +32,15 @@ async function remoteManagedOperation(input) {
     } catch (cause) { if (cause.code !== 'EEXIST') throw cause; }
     const key = await readKey();
     const { spawn } = await import('node:child_process');
-    const child = spawn('openchamber', ['serve', '--hostname', '127.0.0.1', '--port', String(input.port)], {
+    const available = async binary => {
+      for (const parent of (process.env.PATH || '').split(path.delimiter).filter(Boolean)) {
+        try { await fs.access(path.join(parent, binary), constants.X_OK); return true; } catch { /* Next PATH entry. */ }
+      }
+      return false;
+    };
+    const binary = await available('devryan') ? 'devryan' : legacyExists && await available('openchamber') ? 'openchamber' : null;
+    if (!binary) throw new Error('ssh_managed_cli_missing');
+    const child = spawn(binary, ['serve', '--hostname', '127.0.0.1', '--port', String(input.port)], {
       // The remote CLI may be an older release that reads only the OPENCHAMBER_* names.
       env: { ...process.env, DEVRYAN_RUNTIME: 'ssh-remote', OPENCHAMBER_RUNTIME: 'ssh-remote', DEVRYAN_SSH_INSTANCE_ID: input.id,
         DEVRYAN_SSH_OWNER_TOKEN: key, ...(input.password ? { DEVRYAN_UI_PASSWORD: input.password, OPENCHAMBER_UI_PASSWORD: input.password } : {}) },

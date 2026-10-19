@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
   <key>CFBundleIdentifier</key>
-  <string>dev.openchamber.desktop.macos-speech-helper</string>
+  <string>dev.devryan.desktop.macos-speech-helper</string>
   <key>CFBundleName</key>
   <string>DevRyan Speech Helper</string>
   <key>NSMicrophoneUsageDescription</key>

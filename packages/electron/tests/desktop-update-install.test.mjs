@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
 import { createMacDmgInstaller } from '../desktop-updater-macos.mjs';
+import { verifyMacUpdateBundle } from '../desktop-update-install.mjs';
 import { fixture, startupFixture, readUpdateIntent, mutateUpdateIntent, runDesktopUpdateInstall, processStart } from './desktop-update-install-fixture.mjs';
 
 test('waits for the exact owner exit, then accepts startup while retaining the original app', async () => fixture(async f => {
@@ -16,6 +17,39 @@ test('waits for the exact owner exit, then accepts startup while retaining the o
   assert.equal((await readUpdateIntent(f.intentPath, f.roots)).phase, 'complete');
   assert.equal(await fs.readFile(path.join(f.intent.target, 'version'), 'utf8'), '2.0.2');
   assert.equal(await fs.readFile(path.join(f.intent.backup, 'version'), 'utf8'), '2.0.1');
+}));
+
+test('a 2.0 installation can install and roll back a canonical bundle identity', async () => fixture(async f => {
+  const canonical = { ...f.intent.candidateSigning, identifier: 'dev.devryan.desktop' };
+  await f.mutate(['prepared'], { candidateSigning: canonical });
+  assert.equal((await readUpdateIntent(f.intentPath, f.roots)).candidateSigning.identifier, 'dev.devryan.desktop');
+  const verifyBundle = async (bundle, options) => {
+    const verified = await f.verifyBundle(bundle, options);
+    return { ...verified, signing: options.version === f.intent.version ? canonical : f.intent.signing };
+  };
+  assert.equal(await runDesktopUpdateInstall(f.intentPath, { ...f.options, verifyBundle,
+    launch: async () => { await f.mutate(['launching'], { phase: 'accepted' }); } }), 'complete');
+  assert.equal(await fs.readFile(path.join(f.intent.backup, 'version'), 'utf8'), f.intent.previous.version);
+}));
+
+test('bundle verifier accepts only legacy or canonical signed IDs with matching service labels', async () => fixture(async f => {
+  const bundle = f.intent.target;
+  const runtime = path.join(bundle, 'Contents/Resources/revert-runtime/darwin-arm64');
+  await fs.mkdir(runtime, { recursive: true });
+  await fs.writeFile(path.join(runtime, 'native-bundle.json'), JSON.stringify({ schema: 1, buildId: 'a'.repeat(64), target: 'bun-darwin-arm64' }));
+  for (const identity of ['dev.openchamber.desktop', 'dev.devryan.desktop']) {
+    const run = async (command, args) => {
+      if (command === '/usr/bin/plutil') return { stdout: JSON.stringify(args.at(-1).endsWith('Info.plist')
+        ? { CFBundleIdentifier: identity, CFBundleExecutable: 'DevRyan', CFBundleShortVersionString: '2.0.1' }
+        : { Label: `${identity}.runtime-service`, BundleProgram: 'Contents/MacOS/DevRyan', ProgramArguments: ['DevRyan', '--runtime-service'] }) };
+      if (command === '/usr/bin/lipo') return { stdout: 'arm64' };
+      return { stderr: `Identifier=${identity}\nCDHash=${'a'.repeat(40)}\nSignature=adhoc\nTeamIdentifier=not set\n` };
+    };
+    assert.equal((await verifyMacUpdateBundle(bundle, { version: '2.0.1', run })).signing.identifier, identity);
+  }
+  await assert.rejects(verifyMacUpdateBundle(bundle, { version: '2.0.1', run: async (_command, args) =>
+    ({ stdout: args.at(-1)?.endsWith('Info.plist') ? JSON.stringify({ CFBundleIdentifier: 'other.app', CFBundleExecutable: 'DevRyan', CFBundleShortVersionString: '2.0.1' }) : '' }) }),
+    { code: 'update_bundle_identity_mismatch' });
 }));
 
 for (const point of ['waiting-for-owner', 'before-exchange', 'after-exchange', 'after-backup']) {

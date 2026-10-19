@@ -5,7 +5,7 @@ import { configureEarlyStartup, deferEarlyAppEvents, showEarlyStartupWindow, sho
 const service = process.argv.includes('--runtime-service');
 const probe = process.argv.includes('--runtime-service-control=status');
 if (!configureEarlyStartup({ app, isPreview: false, APP_USER_MODEL_ID:
-  process.platform === 'win32' ? 'dev.devryan.desktop' : 'dev.openchamber.desktop',
+  'dev.devryan.desktop',
   isRuntimeServiceMode: service, isRuntimeServiceControlProbe: probe })) process.exit(0);
 deferEarlyAppEvents(app);
 app.whenReady().then(async () => {

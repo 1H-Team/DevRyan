@@ -7,6 +7,23 @@ import path from 'node:path';
 import { createDesktopSettings } from '../desktop-settings.mjs';
 import { ElectronSshManager } from '../ssh-manager.mjs';
 
+test('SSH settings write DevRyan fields and accept both legacy spellings', () => {
+  const manager = Object.create(ElectronSshManager.prototype);
+  for (const remoteField of ['remoteDevRyan', 'remoteOpenchamber', 'remote_openchamber']) {
+    for (const passwordField of ['devryanPassword', 'openchamberPassword', 'openchamber_password']) {
+      const instance = manager.sanitizeInstance({ id: 'fixture', sshCommand: 'ssh example.invalid',
+        [remoteField]: { mode: 'external', preferredPort: 4001 },
+        auth: { [passwordField]: { enabled: false, store: 'never' } } });
+      assert.equal(instance.remoteDevRyan.mode, 'external');
+      assert.equal(instance.remoteDevRyan.preferredPort, 4001);
+      assert.deepEqual(instance.auth.devryanPassword, { enabled: false, store: 'never' });
+      assert.equal(instance.remoteOpenchamber, undefined);
+      assert.equal(instance.auth.openchamberPassword, undefined);
+      assert.equal(manager.configuredDevRyanPassword(instance), null);
+    }
+  }
+});
+
 async function withFixture(run) {
   const directory = await fsp.mkdtemp(path.join(os.tmpdir(), 'devryan-ssh-settings-checkpoint-'));
   try { await run(directory); }

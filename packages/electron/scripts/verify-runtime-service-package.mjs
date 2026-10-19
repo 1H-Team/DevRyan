@@ -59,7 +59,7 @@ const verifyApp = (candidateAppPath, label) => {
     'Contents',
     'Library',
     'LaunchAgents',
-    'dev.openchamber.desktop.runtime-service.plist',
+    'dev.devryan.desktop.runtime-service.plist',
   );
   if (!fs.statSync(bridgePath).isFile()) throw new Error(`${label} native bridge is missing: ${bridgePath}`);
   if (!fs.statSync(plistPath).isFile()) throw new Error(`${label} LaunchAgent is missing: ${plistPath}`);
@@ -77,7 +77,7 @@ const verifyApp = (candidateAppPath, label) => {
   run('/usr/bin/plutil', ['-lint', plistPath]);
   const plistResult = run('/usr/bin/plutil', ['-convert', 'json', '-o', '-', plistPath], { output: true });
   const plist = JSON.parse(plistResult.stdout);
-  if (plist.Label !== 'dev.openchamber.desktop.runtime-service'
+  if (plist.Label !== 'dev.devryan.desktop.runtime-service'
     || plist.BundleProgram !== 'Contents/MacOS/DevRyan'
     || !Array.isArray(plist.ProgramArguments)
     || plist.ProgramArguments[0] !== 'DevRyan'

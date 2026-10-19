@@ -40,9 +40,10 @@ export async function readUpdateIntent(intentPath, roots = applicationRoots()) {
     || !Number.isSafeInteger(intent.ownerPID) || intent.ownerPID <= 0 || typeof intent.ownerStart !== 'string' || !intent.ownerStart
     || !Number.isSafeInteger(intent.previous?.dev) || !Number.isSafeInteger(intent.previous?.ino)
     || !/^\d+\.\d+\.\d+$/.test(intent.previous?.version ?? '') || !['adhoc', 'release'].includes(intent.signing?.mode)
-    || intent.signing.identifier !== 'dev.openchamber.desktop' || intent.arch !== 'arm64'
+    || !['dev.openchamber.desktop', 'dev.devryan.desktop'].includes(intent.signing.identifier) || intent.arch !== 'arm64'
     || !/^[a-f0-9]{40,64}$/.test(intent.signing.cdhash ?? '')
-    || intent.candidateSigning?.mode !== intent.signing.mode || intent.candidateSigning?.identifier !== intent.signing.identifier
+    || intent.candidateSigning?.mode !== intent.signing.mode
+    || !['dev.openchamber.desktop', 'dev.devryan.desktop'].includes(intent.candidateSigning?.identifier)
     || intent.candidateSigning?.teamID !== intent.signing.teamID || !/^[a-f0-9]{40,64}$/.test(intent.candidateSigning?.cdhash ?? '')
     || !/^[a-f0-9]{64}$/.test(intent.manifestSha256 ?? '') || !/^[a-f0-9]{64}$/.test(intent.bridgeSha256 ?? '')
     || !/^[a-f0-9]{64}$/.test(intent.installerSha256 ?? '')) throw fail('update_intent_invalid');
@@ -83,7 +84,7 @@ export async function verifyMacUpdateBundle(bundle, { version, signing, arch = '
   if (!stat.isDirectory() || await fs.realpath(bundle) !== bundle) throw fail('update_bundle_invalid');
   const { stdout } = await run('/usr/bin/plutil', ['-convert', 'json', '-o', '-', path.join(bundle, 'Contents/Info.plist')], { timeout: 10_000, maxBuffer: 64 * 1024 });
   const info = JSON.parse(stdout);
-  if (info.CFBundleIdentifier !== 'dev.openchamber.desktop' || info.CFBundleExecutable !== 'DevRyan'
+  if (!['dev.openchamber.desktop', 'dev.devryan.desktop'].includes(info.CFBundleIdentifier) || info.CFBundleExecutable !== 'DevRyan'
     || info.CFBundleShortVersionString !== version) throw fail('update_bundle_identity_mismatch');
   const binary = path.join(bundle, 'Contents/MacOS/DevRyan');
   const architectures = (await run('/usr/bin/lipo', ['-archs', binary], { timeout: 10_000 })).stdout.trim().split(/\s+/);
@@ -96,9 +97,10 @@ export async function verifyMacUpdateBundle(bundle, { version, signing, arch = '
     : team && team !== 'not set' ? { mode: 'release', identifier, cdhash, teamID: team } : null;
   if (!actual || identifier !== info.CFBundleIdentifier || !cdhash || signing
     && (actual.mode !== signing.mode || actual.teamID !== signing.teamID)) throw fail('update_bundle_signing_mismatch');
-  const agentPath = path.join(bundle, 'Contents/Library/LaunchAgents/dev.openchamber.desktop.runtime-service.plist');
+  const agentLabel = `${info.CFBundleIdentifier}.runtime-service`;
+  const agentPath = path.join(bundle, `Contents/Library/LaunchAgents/${agentLabel}.plist`);
   const agent = JSON.parse((await run('/usr/bin/plutil', ['-convert', 'json', '-o', '-', agentPath], { timeout: 10_000, maxBuffer: 64 * 1024 })).stdout);
-  if (agent.Label !== 'dev.openchamber.desktop.runtime-service' || agent.BundleProgram !== 'Contents/MacOS/DevRyan'
+  if (agent.Label !== agentLabel || agent.BundleProgram !== 'Contents/MacOS/DevRyan'
     || agent.ProgramArguments?.[0] !== 'DevRyan' || agent.ProgramArguments?.[1] !== '--runtime-service') throw fail('update_bundle_service_mismatch');
   const bridge = path.join(bundle, 'Contents/Resources/native/DevRyanRuntimeServiceControl.node');
   await run('/usr/bin/codesign', ['--verify', '--strict', bridge], { timeout: 10_000, maxBuffer: 64 * 1024 });

@@ -100,11 +100,11 @@ import {
   privilegedOriginGuardJs,
 } from './origin-policy.mjs';
 import {
-  BROWSER_WEBVIEW_PARTITION,
   hardenWebviewAttachParams,
   isAllowedWebviewNavigationUrl,
   isAllowedWebviewSourceUrl,
 } from './browser-webview-policy.mjs';
+import { selectBrowserPartitionIdentity } from './browser-partition-identity.mjs';
 import { createBrowserDevToolsController } from './browser-devtools-controller.mjs';
 import { createBrowserSurfaceManager } from './browser-surface-manager.mjs';
 import { isBenignNavigationAbort } from './browser-navigation-error.mjs';
@@ -137,10 +137,11 @@ const isDeepLinkArg = (arg) => typeof arg === 'string' && DEEP_LINK_PROTOCOLS.so
 const STARTUP_RETRY_HOST = 'retry-startup';
 const BOT_RUNTIME_RETRY_HOST = 'retry-bot-runtime';
 const BOT_RUNTIME_CONTINUE_HOST = 'continue-without-bots';
-const APP_USER_MODEL_ID = isPreview ? WINDOWS_PREVIEW_APP_ID : process.platform === 'win32' ? 'dev.devryan.desktop' : 'dev.openchamber.desktop';
+const APP_USER_MODEL_ID = isPreview ? WINDOWS_PREVIEW_APP_ID : 'dev.devryan.desktop';
 
 if (!configureEarlyStartup({ app, isPreview, WINDOWS_PREVIEW_NAME, APP_USER_MODEL_ID,
   isRuntimeServiceMode, isRuntimeServiceControlProbe })) process.exit(0);
+const browserPartitionIdentity = selectBrowserPartitionIdentity({ userDataDirectory: app.getPath('userData') });
 
 try {
   process.chdir(os.homedir());
@@ -211,13 +212,13 @@ const readAppMetadata = () => {
     try {
       const raw = fs.readFileSync(candidate, 'utf8');
       const parsed = JSON.parse(raw);
-      if (parsed?.name === '@openchamber/electron' && typeof parsed.version === 'string') {
+      if (['@devryan/electron', '@openchamber/electron'].includes(parsed?.name) && typeof parsed.version === 'string') {
         return { name: parsed.name, version: parsed.version };
       }
     } catch {
     }
   }
-  return { name: '@openchamber/electron', version: app.getVersion() };
+  return { name: '@devryan/electron', version: app.getVersion() };
 };
 
 const APP_METADATA = readAppMetadata();
@@ -1738,7 +1739,8 @@ const loadRegisteredManualBrowserPartitions = () => {
     for (const value of parsed) {
       if (
         typeof value !== 'string'
-        || (!value.startsWith(MANUAL_BROWSER_PARTITION_PREFIX) && !value.startsWith(AGENT_PREVIEW_PARTITION_PREFIX))
+        || (![MANUAL_BROWSER_PARTITION_PREFIX, AGENT_PREVIEW_PARTITION_PREFIX,
+          'persist:openchamber-browser-user-', 'persist:openchamber-browser-agent-'].some(prefix => value.startsWith(prefix)))
       ) continue;
       registeredBrowserPartitions.add(value);
       configureBrowserWebviewPartition(value);
@@ -1774,7 +1776,8 @@ const fetchNativeBrowserContext = async (browserWindow) => {
   if (!response.ok) throw new Error('DevRyan authentication is unavailable');
   const principal = readAuthorizedBrowserPrincipal(await response.json().catch(() => null));
   if (!principal) throw new Error('Browser access is disabled');
-  const context = createManualBrowserContext({ origin, principalId: principal.id });
+  const context = createManualBrowserContext({ origin, principalId: principal.id,
+    partitionPrefix: browserPartitionIdentity.manualPrefix });
   registerBrowserPartition(context.partition);
   return { ...context, verifiedAt: Date.now() };
 };
@@ -2422,6 +2425,7 @@ const createDesktopBrowserLease = async ({ leaseId, metadata = {}, previewCreden
   if (metadata?.authoritativeOwner === true && metadata?.previewOrigin) {
     try {
       browserPartition = createAgentPreviewPartition({
+        partitionPrefix: browserPartitionIdentity.agentPrefix,
         ownerUserId: metadata.ownerUserId,
         previewOrigin: metadata.previewOrigin,
       }) || '';
@@ -2779,7 +2783,7 @@ const configureBrowserWebviewPartition = (partition) => {
   return browserSession;
 };
 
-const configureBrowserWebviewSession = () => configureBrowserWebviewPartition(BROWSER_WEBVIEW_PARTITION);
+const configureBrowserWebviewSession = () => configureBrowserWebviewPartition(browserPartitionIdentity.shared);
 
 const configureAgentPreviewPartition = (partition, { expectedOrigin, credential } = {}) => {
   const normalizedCredential = normalizeAgentPreviewCredential(credential, expectedOrigin);
@@ -2814,7 +2818,7 @@ const clearLegacySharedBrowserProfileOnce = async () => {
 // persistent partition; keep both in sync so neither hides disk usage.
 const cacheMaintenanceSessions = () => ({
   defaultSession: session.defaultSession,
-  browserSession: session.fromPartition(BROWSER_WEBVIEW_PARTITION),
+  browserSession: session.fromPartition(browserPartitionIdentity.shared),
   browserSessions: Array.from(registeredBrowserPartitions, (partition) => session.fromPartition(partition)),
 });
 
@@ -3032,7 +3036,7 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
       event.preventDefault();
       return;
     }
-    hardenWebviewAttachParams(webPreferences, params);
+    hardenWebviewAttachParams(webPreferences, params, { partition: browserPartitionIdentity.shared });
   });
 
   browserWindow.webContents.setZoomFactor(1);

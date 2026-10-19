@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/schema.json",
-  "productName": "OpenChamber",
+  "productName": "DevRyan",
   "version": "2.1.3",
-  "identifier": "ai.opencode.openchamber",
+  "identifier": "dev.devryan.desktop",
   "build": {
     "beforeDevCommand": "node ./scripts/dev-web-server.mjs",
     "beforeBuildCommand": "bun run build:sidecar",
@@ -14,7 +14,7 @@
       {
         "label": "main",
         "create": false,
-        "title": "OpenChamber",
+        "title": "DevRyan",
         "width": 1280,
         "height": 800,
         "resizable": true,
@@ -75,7 +75,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://github.com/btriapitsyn/openchamber/releases/latest/download/latest.json"
+        "https://github.com/1H-Team/DevRyan/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDIwRDMyQUQzNjNFRTc1ODIKUldTQ2RlNWoweXJUSUdpVWVWNm84R1pHamYzNVFhYWgyWmlpWFVzem5nUTlHd1dlRlNTV0FFc3IK"
     }

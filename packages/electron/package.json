@@ -1,5 +1,5 @@
 {
-  "name": "@openchamber/electron",
+  "name": "@devryan/electron",
   "version": "2.1.3",
   "private": true,
   "description": "Electron desktop runtime for DevRyan",
@@ -47,7 +47,7 @@
     "package:prepared": "node ./scripts/package-prepared.mjs"
   },
   "build": {
-    "appId": "dev.openchamber.desktop",
+    "appId": "dev.devryan.desktop",
     "productName": "DevRyan",
     "files": [
       "dist-bundle/entry.mjs",
@@ -169,6 +169,10 @@
         }
       ],
       "extraFiles": [
+        {
+          "from": "resources/runtime-service/dev.devryan.desktop.runtime-service.plist",
+          "to": "Library/LaunchAgents/dev.devryan.desktop.runtime-service.plist"
+        },
         {
           "from": "resources/runtime-service/dev.openchamber.desktop.runtime-service.plist",
           "to": "Library/LaunchAgents/dev.openchamber.desktop.runtime-service.plist"
