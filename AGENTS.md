@@ -5,7 +5,7 @@ DevRyan is the web and Electron interface to OpenCode over HTTP and SSE. Canonic
 ## Hard rules
 
 - Work only inside this repository unless the user authorizes another path in the current task. Do not read, clone, compare or modify upstream OpenChamber (`openchamber/openchamber`, `btriapitsyn/openchamber`, `../openchamber`) or `../opencode` without explicit permission in the current task.
-- Preserve the compatibility identities `@openchamber/*`, `openchamber`, `OPENCHAMBER_*`, configuration paths and protocol names. They do not authorize upstream access.
+- DevRyan names are canonical: `DEVRYAN_*`, `@devryan/*`, `devryan:*` events, `X-DevRyan-*` headers, `__devryan*` globals and `~/.config/devryan`. The old OpenChamber names are accepted aliases only (readers accept both, new code writes DevRyan names). Keep unchanged: the app bundle ID `dev.openchamber.desktop` and everything tied to it (updater, keychain, launchd label, prefs), the frozen `packages/desktop`, and the storage identities listed in [identity compatibility](docs/IDENTITY_COMPATIBILITY.md). None of this authorizes upstream access.
 - No new dependencies unless requested. No editor extensions.
 - Never add secrets, log sensitive data, or type, store or transmit passwords. Use the password-free agent-test login ([runtime verification](docs/AGENT_RUNTIME_VERIFICATION.md)) for live checks.
 - New desktop work goes in `packages/electron`. `packages/desktop` is frozen legacy Tauri, kept only for released-install compatibility ([cutover runbook](docs/TAURI_TO_ELECTRON_CUTOVER.md)).

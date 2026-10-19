@@ -126,7 +126,7 @@ test('native launch environment runs the real home preload and isolated-host rej
     const child = await promisify(execFile)(process.execPath, ['--input-type=module', '--eval', "import os from 'node:os';process.stdout.write(JSON.stringify({home:os.homedir(),testHome:process.env.OPENCODE_TEST_HOME}));"], { env });
     assert.deepEqual(JSON.parse(child.stdout), { home, testHome: home }); assert.equal(child.stderr, '');
     await assert.rejects(promisify(execFile)(process.execPath, [fileURLToPath(new URL('./isolated-host.mjs', import.meta.url))], {
-      env: { ...env, DEVRYAN_QA_RUNTIME: 'web', OPENCHAMBER_PORT: '0' }, timeout: 30000, maxBuffer: 1024 * 1024,
+      env: { ...env, DEVRYAN_QA_RUNTIME: 'web', DEVRYAN_PORT: '0' }, timeout: 30000, maxBuffer: 1024 * 1024,
     }), error => error.code === 1 && error.stderr.includes('selection.json') && error.stderr.includes('ENOENT'));
     await assert.rejects(fs.access(path.join(root, 'ready.json')), { code: 'ENOENT' });
   } finally { await fs.rm(root, { recursive: true, force: true }); }

@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { mergePathValues } from './path-utils.js';
 import { isPackagedDesktopEnv, isUnsupportedLoginShellValue } from './login-shell-env-filter.js';
+import { adoptLegacyEnvironment } from '@openchamber/shared-runtime/lib/legacy-environment.js';
 
 const SHELL_PROBE_TIMEOUT_MS = 5_000;
 const DISCOVERY_PROBE_BUDGET_MS = 10_000;
@@ -245,6 +246,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
       }
       process.env[key] = value;
     }
+    adoptLegacyEnvironment(process.env);
     if (dropped.length && !loginShellDropsLogged) {
       loginShellDropsLogged = true;
       logger.info(`[shell-env] server ignored login-shell variables the runtime does not support: ${dropped.sort().join(', ')}`);
@@ -268,7 +270,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
       return state.resolvedGitBinary;
     }
 
-    const explicit = [process.env.GIT_BINARY, process.env.OPENCHAMBER_GIT_BINARY]
+    const explicit = [process.env.GIT_BINARY, process.env.DEVRYAN_GIT_BINARY]
       .map((value) => (typeof value === 'string' ? value.trim() : ''))
       .filter(Boolean);
     for (const candidate of explicit) {

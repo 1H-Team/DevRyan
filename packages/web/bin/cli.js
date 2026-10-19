@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+// First: adopt OPENCHAMBER_* aliases before any module reads its environment.
+import '@openchamber/shared-runtime/node/adopt-legacy-environment.js';
+import { setDevRyanEnv } from '@openchamber/shared-runtime/lib/legacy-environment.js';
 import fs from 'fs';
 import net from 'net';
 import os from 'os';
@@ -135,8 +138,8 @@ function isUnsafeBrowserPort(port) {
 }
 
 function resolveApiHost() {
-  const configured = typeof process.env.OPENCHAMBER_HOST === 'string'
-    ? process.env.OPENCHAMBER_HOST.trim()
+  const configured = typeof process.env.DEVRYAN_HOST === 'string'
+    ? process.env.DEVRYAN_HOST.trim()
     : '';
 
   if (!configured) {
@@ -537,12 +540,12 @@ function hasUiPasswordConfigured(password) {
 
 // Refuse to launch a network-exposed (non-loopback) server without UI auth,
 // unless the operator explicitly accepts the risk via
-// OPENCHAMBER_ALLOW_UNAUTHENTICATED_LAN=true. Closes the accidental
-// `--host 0.0.0.0` (or OPENCHAMBER_HOST) unauthenticated-LAN exposure.
+// DEVRYAN_ALLOW_UNAUTHENTICATED_LAN=true. Closes the accidental
+// `--host 0.0.0.0` (or DEVRYAN_HOST) unauthenticated-LAN exposure.
 function assertAuthenticatedNetworkExposure({ host, uiPassword }) {
   const configured = typeof host === 'string' && host.trim().length > 0
     ? host.trim()
-    : (typeof process.env.OPENCHAMBER_HOST === 'string' ? process.env.OPENCHAMBER_HOST.trim() : '');
+    : (typeof process.env.DEVRYAN_HOST === 'string' ? process.env.DEVRYAN_HOST.trim() : '');
   const bindHost = configured || '127.0.0.1';
   if (hasUiPasswordConfigured(uiPassword)) {
     return;
@@ -627,7 +630,7 @@ function parseArgs(argv = process.argv.slice(2)) {
   const options = {
     port: DEFAULT_PORT,
     host: undefined,
-    uiPassword: process.env.OPENCHAMBER_UI_PASSWORD || undefined,
+    uiPassword: process.env.DEVRYAN_UI_PASSWORD || undefined,
     json: false,
     all: false,
     follow: true,
@@ -954,9 +957,9 @@ OPTIONS:
   -v, --version           Show version
 
 ENVIRONMENT:
-  OPENCHAMBER_HOST             Bind address (e.g. 0.0.0.0 for all interfaces)
-  OPENCHAMBER_UI_PASSWORD      Alternative to --ui-password flag
-  OPENCHAMBER_DATA_DIR         Override DevRyan data directory
+  DEVRYAN_HOST             Bind address (e.g. 0.0.0.0 for all interfaces)
+  DEVRYAN_UI_PASSWORD      Alternative to --ui-password flag
+  DEVRYAN_DATA_DIR         Override DevRyan data directory
 
 RUNTIME:
   DevRyan serves its bundled native OpenCode 2.0.32 runtime.
@@ -1208,8 +1211,8 @@ complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and __fish_seen_
 }
 
 function getDataDir() {
-  if (typeof process.env.OPENCHAMBER_DATA_DIR === 'string' && process.env.OPENCHAMBER_DATA_DIR.trim().length > 0) {
-    return path.resolve(process.env.OPENCHAMBER_DATA_DIR.trim());
+  if (typeof process.env.DEVRYAN_DATA_DIR === 'string' && process.env.DEVRYAN_DATA_DIR.trim().length > 0) {
+    return path.resolve(process.env.DEVRYAN_DATA_DIR.trim());
   }
   return path.join(os.homedir(), '.config', 'openchamber');
 }
@@ -3163,8 +3166,8 @@ const commands = {
       uiPassword: effectiveUiPassword,
     });
     if (!effectiveUiPassword && !options.suppressUiPasswordWarning) {
-      const warningLine = 'OPENCHAMBER_UI_PASSWORD is not set';
-      const warningDetail = 'browser UI is unsecured. Use --ui-password or OPENCHAMBER_UI_PASSWORD.';
+      const warningLine = 'DEVRYAN_UI_PASSWORD is not set';
+      const warningDetail = 'browser UI is unsecured. Use --ui-password or DEVRYAN_UI_PASSWORD.';
       if (showOutput) {
         logStatus('warning', warningLine, warningDetail);
       } else if (isJsonMode(options)) {
@@ -3192,7 +3195,7 @@ const commands = {
 
       // Propagate resolved values into env before importing the server module.
       if (effectiveUiPassword) {
-        process.env.OPENCHAMBER_UI_PASSWORD = effectiveUiPassword;
+        setDevRyanEnv(process.env, 'DEVRYAN_UI_PASSWORD', effectiveUiPassword);
       }
 
       // In --quiet mode, redirect stdout/stderr to the log file so that
@@ -3307,17 +3310,17 @@ const commands = {
       stdio: ['ignore', logFd, logFd, 'ipc'],
       env: {
         ...process.env,
-        OPENCHAMBER_PORT: String(targetPort),
-        ...(effectiveHost ? { OPENCHAMBER_HOST: effectiveHost } : {}),
-        ...(effectiveUiPassword ? { OPENCHAMBER_UI_PASSWORD: effectiveUiPassword } : {}),
-        ...(process.env.OPENCODE_SKIP_START ? { OPENCHAMBER_SKIP_OPENCODE_START: process.env.OPENCODE_SKIP_START } : {}),
+        DEVRYAN_PORT: String(targetPort),
+        ...(effectiveHost ? { DEVRYAN_HOST: effectiveHost } : {}),
+        ...(effectiveUiPassword ? { DEVRYAN_UI_PASSWORD: effectiveUiPassword } : {}),
+        ...(process.env.OPENCODE_SKIP_START ? { DEVRYAN_SKIP_OPENCODE_START: process.env.OPENCODE_SKIP_START } : {}),
       },
     });
 
     child.unref();
     serveSpin?.start(`Starting DevRyan on port ${targetPort === 0 ? 'auto' : targetPort}...`);
 
-    const readyTimeoutMs = normalizeDaemonReadyTimeoutMs(process.env.OPENCHAMBER_DAEMON_READY_TIMEOUT_MS);
+    const readyTimeoutMs = normalizeDaemonReadyTimeoutMs(process.env.DEVRYAN_DAEMON_READY_TIMEOUT_MS);
     const readyResult = await waitForDaemonReadyMessage(child, {
       requestedPort: targetPort,
       timeoutMs: readyTimeoutMs,

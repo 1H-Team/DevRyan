@@ -87,8 +87,8 @@ describe('fs mutation routes', () => {
   let originalGitReadCacheTtl;
 
   beforeEach(async () => {
-    originalGitReadCacheTtl = process.env.OPENCHAMBER_GIT_READ_CACHE_TTL_MS;
-    delete process.env.OPENCHAMBER_GIT_READ_CACHE_TTL_MS;
+    originalGitReadCacheTtl = process.env.DEVRYAN_GIT_READ_CACHE_TTL_MS;
+    delete process.env.DEVRYAN_GIT_READ_CACHE_TTL_MS;
     workspace = await mkdtemp(path.join(os.tmpdir(), 'devryan-fs-workspace-'));
     outsideDir = await mkdtemp(path.join(os.tmpdir(), 'devryan-fs-outside-'));
     configRoot = await mkdtemp(path.join(os.tmpdir(), 'devryan-fs-config-'));
@@ -97,9 +97,9 @@ describe('fs mutation routes', () => {
 
   afterEach(async () => {
     if (originalGitReadCacheTtl === undefined) {
-      delete process.env.OPENCHAMBER_GIT_READ_CACHE_TTL_MS;
+      delete process.env.DEVRYAN_GIT_READ_CACHE_TTL_MS;
     } else {
-      process.env.OPENCHAMBER_GIT_READ_CACHE_TTL_MS = originalGitReadCacheTtl;
+      process.env.DEVRYAN_GIT_READ_CACHE_TTL_MS = originalGitReadCacheTtl;
     }
     await Promise.all(cleanup.map((dir) => rm(dir, { recursive: true, force: true })));
   });
@@ -400,7 +400,7 @@ describe('fs mutation routes', () => {
   });
 
   it('disables git read caching when the TTL is zero', async () => {
-    process.env.OPENCHAMBER_GIT_READ_CACHE_TTL_MS = '0';
+    process.env.DEVRYAN_GIT_READ_CACHE_TTL_MS = '0';
     const spawn = createExecSpawn({ stdout: path.join(workspace, '.git') });
     const app = createApp({ workspace, configRoot, spawn });
 

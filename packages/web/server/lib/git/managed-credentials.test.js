@@ -17,18 +17,18 @@ import { buildGitEnv, commit, fetch as fetchRemote, getBranches, merge, pull, pu
 const execFileAsync = promisify(execFile);
 
 const temporaryDirectories = [];
-const originalDataDirectory = process.env.OPENCHAMBER_DATA_DIR;
+const originalDataDirectory = process.env.DEVRYAN_DATA_DIR;
 
 beforeEach(async () => {
   accounts.clear();
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-git-credentials-'));
   temporaryDirectories.push(directory);
-  process.env.OPENCHAMBER_DATA_DIR = directory;
+  process.env.DEVRYAN_DATA_DIR = directory;
 });
 
 afterEach(async () => {
-  if (originalDataDirectory === undefined) delete process.env.OPENCHAMBER_DATA_DIR;
-  else process.env.OPENCHAMBER_DATA_DIR = originalDataDirectory;
+  if (originalDataDirectory === undefined) delete process.env.DEVRYAN_DATA_DIR;
+  else process.env.DEVRYAN_DATA_DIR = originalDataDirectory;
   await Promise.all(temporaryDirectories.splice(0).map((directory) => fs.rm(directory, { recursive: true, force: true })));
 });
 

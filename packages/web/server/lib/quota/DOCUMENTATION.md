@@ -120,7 +120,7 @@ The host (`providers/opencode.js`) refreshes an access token within 60 seconds o
 
 The managed layer is additive and does not replace or mutate existing provider auth. Canonical provider IDs are `opencode`, `ollama-cloud`, and `cursor-acp`; HTTP callers may use `zen`/`opencode-zen` and `cursor` as aliases, but discovery exposes only canonical rows. OpenCode Go's retired dashboard form is no longer exposed.
 
-- Files live under `${OPENCHAMBER_DATA_DIR ?? ~/.config/openchamber}/quota/<provider>.json`.
+- Files live under `${DEVRYAN_DATA_DIR ?? ~/.config/openchamber}/quota/<provider>.json`.
 - Provider IDs are allowlisted before path construction. Directories use mode `0700`; temporary and final files use `0600`; writes use same-directory atomic rename with exact temporary-file cleanup.
 - Payloads are bounded to 16 KB in the route and storage host, use exact provider-specific shapes, and reject CR/LF/NUL injection, unknown fields, mixed Cursor dashboard/OAuth forms, and malformed OpenCode Zen workspace/token values. Only the server writes the Zen credential, from an approved device sign-in.
 - Status responses contain only `configured`, optional safe metadata (`credentialKind`, `hasRefreshToken`, `effectiveSource`, Zen `workspaceId`, Zen `reconnectRequired`), and a fixed mask. `reconnectRequired` marks a retired `{ workspaceId, authCookie }` file, which is detected but never sent anywhere; the Zen provider stays listed with `RECONNECT_REQUIRED` until the user reconnects or disconnects. Secrets and secret fragments are never returned or logged.

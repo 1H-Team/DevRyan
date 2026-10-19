@@ -19,7 +19,7 @@ export async function verifyConfinedCursorStore({artifactRoot}){
  try{
   result=await runReadOnlySessionExecution({launcher:path.join(artifactRoot,`DevRyan-execution-${process.platform}-${process.arch}`),storage,
    command:process.execPath,args:[path.join(repositoryRoot,'packages/cursor-sdk-runtime/node-worker.mjs')],socketDirectory:null,workerBrowsers:false,
-   env:{PATH:'/usr/bin:/bin',CURSOR_BACKEND_URL:provider.baseURL,OPENCHAMBER_CURSOR_SETTING_SOURCES:'none',CURSOR_SDK_RIPGREP_PATH:DEFAULT_RG},
+   env:{PATH:'/usr/bin:/bin',CURSOR_BACKEND_URL:provider.baseURL,DEVRYAN_CURSOR_SETTING_SOURCES:'none',CURSOR_SDK_RIPGREP_PATH:DEFAULT_RG},
    inputForLease:lease=>JSON.stringify({sessionID:'ses_confined_store',apiKey:'owned-loopback-store-key',directory:lease.workingDirectory,
     modelID:'composer',prompt:'Owned SQLite and transport check'}),signal:AbortSignal.timeout(30_000)});
   assert.equal(result.receipt.terminated,true);assert.equal(result.receipt.confined,true);assert.equal(result.receipt.cancelled,false);assert.equal(result.receipt.exitCode,0);
@@ -32,7 +32,7 @@ export async function verifyConfinedCursorStore({artifactRoot}){
   assert.equal(requests.find(row=>row.pathname==='/auth/exchange_user_api_key')?.selectedCredentialObserved,true);
   title=await runReadOnlySessionExecution({launcher:path.join(artifactRoot,`DevRyan-execution-${process.platform}-${process.arch}`),storage,
    command:process.execPath,args:[path.join(repositoryRoot,'packages/cursor-sdk-runtime/node-worker.mjs')],socketDirectory:null,workerBrowsers:false,
-   env:{PATH:'/usr/bin:/bin',CURSOR_BACKEND_URL:provider.baseURL,OPENCHAMBER_CURSOR_SETTING_SOURCES:'none',CURSOR_SDK_RIPGREP_PATH:DEFAULT_RG},
+   env:{PATH:'/usr/bin:/bin',CURSOR_BACKEND_URL:provider.baseURL,DEVRYAN_CURSOR_SETTING_SOURCES:'none',CURSOR_SDK_RIPGREP_PATH:DEFAULT_RG},
    inputForLease:lease=>JSON.stringify({type:'title',apiKey:'owned-loopback-store-key',directory:lease.workingDirectory,text:'Owned title store check'}),
    signal:AbortSignal.timeout(30_000)});
   assert.equal(title.receipt.terminated,true);assert.equal(title.receipt.confined,true);assert.equal(title.receipt.cancelled,false);assert.equal(title.receipt.exitCode,0);

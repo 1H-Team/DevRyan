@@ -544,7 +544,7 @@ export async function runFirstLaunchSmoke(options) {
     }
     const flags = [`--remote-debugging-port=${debugPort}`, `--user-data-dir=${layout.profile}`];
     evidence.launch = { binary: packaged.binary, flags: flags.map(flag => flag.replace(runtimeRoot, '<QA_RUNTIME>')), debugPort, port,
-      environmentKeys: Object.keys(env).sort(), legacyFixtureFlags: ['OPENCODE_HOST', 'OPENCODE_SKIP_START', 'OPENCHAMBER_SKIP_OPENCODE_START'].filter(key => key in env) };
+      environmentKeys: Object.keys(env).sort(), legacyFixtureFlags: ['OPENCODE_HOST', 'OPENCODE_SKIP_START', 'DEVRYAN_SKIP_OPENCODE_START'].filter(key => key in env) };
     const launchedAt = performance.now();
     mark('launchMs');
     app = startOwnedProcess(packaged.binary, flags, { cwd: layout.workspace, env });

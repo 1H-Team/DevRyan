@@ -22,7 +22,7 @@ const writeRegistry = (processes) => {
 };
 
 const baseOptions = (overrides = {}) => ({
-  env: { OPENCHAMBER_DATA_DIR: dataDir },
+  env: { DEVRYAN_DATA_DIR: dataDir },
   registryPath: path.join(dataDir, 'managed-opencode-processes.json'),
   ownerPid: 1000,
   selfPid: 999,

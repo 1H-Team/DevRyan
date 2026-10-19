@@ -13,6 +13,18 @@
 
 Any other file is private. `scripts/check-import-boundaries.mjs` enforces this for package-name and relative imports, and `scripts/check-browser-graph.mjs` keeps the Node-only module out of the UI.
 
+## Legacy environment aliases
+
+`lib/legacy-environment.js` owns the `DEVRYAN_*` / `OPENCHAMBER_*` alias rule
+([identity compatibility](../../docs/IDENTITY_COMPATIBILITY.md)). It is portable
+and operates on any env record: `adoptLegacyEnvironment` copies unset aliases
+without overriding or deleting, `readDevRyanEnv` prefers the DevRyan name,
+`setDevRyanEnv` writes or removes both names so they never diverge, and
+`canonicalEnvironmentName` lets name lists judge an alias as its DevRyan name.
+`./node/adopt-legacy-environment.js` is the side-effect entry: Electron main, the
+web server entry and the CLI import it first, before any module reads its
+environment, and re-run adoption after each login-shell merge.
+
 ## Startup integrity diagnostics
 
 `startup-diagnostics.js` owns the bounded artifact diagnostic shared by the verifier,

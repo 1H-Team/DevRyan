@@ -455,8 +455,8 @@ const runOnce = async ({ scenario, runIndex, scenarioDirectory, electronBinary, 
   const profile = await prepareQaFixtureProfile({ runtimeRoot: path.join(runDirectory, 'runtime'), workspace: fixtureDirectory, generation,
     artifactRoot: process.env.QA_NATIVE_ARTIFACT_ROOT,
     cell: { transport: 'fixture', runtime: 'electron', providerId: 'fixture', modelId: 'fixture-model', agent: 'builder', planMode: false, variant: null, scenarioId: 'core-journey' } });
-  const dataDirectory = profile.env.OPENCHAMBER_DATA_DIR;
-  const userDataDirectory = profile.env.OPENCHAMBER_ELECTRON_USER_DATA_DIR;
+  const dataDirectory = profile.env.DEVRYAN_DATA_DIR;
+  const userDataDirectory = profile.env.DEVRYAN_ELECTRON_USER_DATA_DIR;
   await mkdir(dataDirectory, { recursive: true });
   await mkdir(userDataDirectory, { recursive: true });
   const settings = JSON.parse(await readFile(path.join(dataDirectory, 'settings.json'), 'utf8'));
@@ -489,10 +489,10 @@ const runOnce = async ({ scenario, runIndex, scenarioDirectory, electronBinary, 
   ], {
     cwd: repositoryRoot,
     env: createQaHostLaunchEnvironment(profile.env, {
-      OPENCHAMBER_DATA_DIR: dataDirectory,
+      DEVRYAN_DATA_DIR: dataDirectory,
       OPENCODE_HOST: fixture.origin,
       OPENCODE_SKIP_START: 'true',
-      OPENCHAMBER_SKIP_OPENCODE_START: 'true',
+      DEVRYAN_SKIP_OPENCODE_START: 'true',
       NO_PROXY: 'localhost,127.0.0.1',
       no_proxy: 'localhost,127.0.0.1',
     }),

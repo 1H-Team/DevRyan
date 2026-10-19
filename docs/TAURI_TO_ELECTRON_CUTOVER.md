@@ -20,7 +20,7 @@ longer exists and are in git history.
   (`packages/electron/desktop-updater.mjs`, `desktop-updater-macos.mjs`,
   `desktop-update-install.mjs`), not through a manifest-driven updater.
 - Both shells are meant to resolve the same user settings file (`settings.json`
-  under the OpenChamber data directory, overridable with `OPENCHAMBER_DATA_DIR`)
+  under the OpenChamber data directory, overridable with `DEVRYAN_DATA_DIR`)
   so a migrated install keeps its hosts, default host and history. Re-audit
   `settings_file_path` in the Tauri sources against the Electron settings module
   before any cutover; if they diverge, the migration loses user data.

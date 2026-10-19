@@ -67,9 +67,9 @@ describe('write/read round trip', () => {
     expect(readOpenCodeRuntimeSelection({ dataDir })).toEqual(selection);
   });
 
-  it('resolves the data directory from OPENCHAMBER_DATA_DIR when no dataDir is given', () => {
+  it('resolves the data directory from DEVRYAN_DATA_DIR when no dataDir is given', () => {
     const dataDir = makeTempDir();
-    const env = { OPENCHAMBER_DATA_DIR: dataDir };
+    const env = { DEVRYAN_DATA_DIR: dataDir };
     writeOpenCodeRuntimeSelection(derive(), { env });
     expect(readOpenCodeRuntimeSelection({ env })).toMatchObject({ runtime: { kind: 'host' } });
   });

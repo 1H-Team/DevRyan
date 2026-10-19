@@ -11,8 +11,8 @@ export async function preparePackagedQaHost({ app, env = process.env, resourcesP
   if (!app.isPackaged || env.DEVRYAN_QA_RUNTIME !== 'electron') throw new Error('Packaged QA requires the actual packaged Electron host');
   const runtimeRoot = env.DEVRYAN_QA_RUNTIME_ROOT;
   const home = env.DEVRYAN_QA_HOME;
-  const data = env.OPENCHAMBER_DATA_DIR;
-  const profile = env.OPENCHAMBER_ELECTRON_USER_DATA_DIR;
+  const data = env.DEVRYAN_DATA_DIR;
+  const profile = env.DEVRYAN_ELECTRON_USER_DATA_DIR;
   for (const value of [runtimeRoot, home, data, profile]) {
     if (!value || !path.isAbsolute(value)) throw new Error('Packaged QA paths must be absolute owned directories');
   }
@@ -41,8 +41,8 @@ export async function preparePackagedQaHost({ app, env = process.env, resourcesP
   await Promise.all([logs, shellConfig].map(directory => mkdir(directory, { recursive: true, mode: 0o700 })));
   await writeFile(settingsPath, `${JSON.stringify({ ...settings, productionBotsRuntimeMode: 'disabled', desktopLanAccessEnabled: false })}\n`, { mode: 0o600 });
   Object.assign(env, privateEnvironment);
-  env.OPENCHAMBER_ELECTRON_DEV = '0';
-  env.OPENCHAMBER_DIST_DIR = path.join(resourcesPath, 'web-dist');
+  env.DEVRYAN_ELECTRON_DEV = '0';
+  env.DEVRYAN_DIST_DIR = path.join(resourcesPath, 'web-dist');
   // main probes a login shell on macOS. ZDOTDIR keeps that probe away from the
   // user's personal rc files without changing HOME in this or the parent process.
   env.SHELL = '/bin/zsh';
@@ -55,7 +55,7 @@ export async function preparePackagedQaHost({ app, env = process.env, resourcesP
   app.isDefaultProtocolClient = () => true;
   app.setAsDefaultProtocolClient = () => false;
   const evidence = { isPackaged: app.isPackaged, packagedMain: 'dist-bundle/entry.mjs',
-    webDist: env.OPENCHAMBER_DIST_DIR, privateHome: home, privateProfile: profile, logs,
+    webDist: env.DEVRYAN_DIST_DIR, privateHome: home, privateProfile: profile, logs,
     globalProtocolRegistration: 'suppressed-for-qa', backgroundBotService: 'disabled-for-qa',
     personalShellConfiguration: 'excluded-by-private-ZDOTDIR', operatingSystemKeychain: 'mocked-for-qa' };
   await writeFile(path.join(runtimeRoot, 'packaged-host.json'), `${JSON.stringify(evidence, null, 2)}\n`, { mode: 0o600 });

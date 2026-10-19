@@ -279,7 +279,7 @@ const waitFor = async (predicate, timeoutMs = 500) => {
 describe('Cursor SDK worker runtime config', () => {
   test('runs desktop Electron prompt work in an Electron-as-Node worker', () => {
     const config = resolveCursorSdkWorkerRuntimeConfig({
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       hasInjectedLoadSdk: false,
       isBunRuntime: false,
       isElectronRuntime: true,
@@ -309,7 +309,7 @@ describe('Cursor SDK worker runtime config', () => {
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       usePersistentWorkerForPrompts: false,
       nodeBinary: '/Applications/DevRyan.app/Contents/MacOS/DevRyan',
@@ -801,7 +801,7 @@ describe('Cursor SDK worker runtime config', () => {
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       usePersistentWorkerForPrompts: false,
       spawnImpl: createFakeWorkerSpawn(capture),
@@ -839,7 +839,7 @@ describe('Cursor SDK worker runtime config', () => {
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       usePersistentWorkerForPrompts: false,
       spawnImpl: createFakeWorkerSpawn(capture),
@@ -878,7 +878,7 @@ describe('Cursor SDK worker runtime config', () => {
       storageDir: tempDir,
       streamIdleTimeoutMs: 20,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       usePersistentWorkerForPrompts: false,
       nodeBinary: '/Applications/DevRyan.app/Contents/MacOS/DevRyan',
@@ -918,7 +918,7 @@ describe('Cursor SDK worker runtime config', () => {
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       usePersistentWorkerForPrompts: false,
       nodeBinary: '/Applications/DevRyan.app/Contents/MacOS/DevRyan',
@@ -957,7 +957,7 @@ describe('Cursor SDK worker runtime config', () => {
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       usePersistentWorkerForPrompts: false,
       nodeBinary: '/Applications/DevRyan.app/Contents/MacOS/DevRyan',
@@ -1363,7 +1363,7 @@ describe('Cursor SDK worker runtime config', () => {
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       nodeBinary: '/Applications/DevRyan.app/Contents/MacOS/DevRyan',
       workerPath: '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@openchamber/cursor-sdk-runtime/node-worker.mjs',
@@ -1431,7 +1431,7 @@ describe('Cursor SDK worker runtime config', () => {
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       spawnImpl: createFakePersistentWorkerSpawn(capture),
     });
@@ -1472,7 +1472,7 @@ describe('Cursor SDK worker runtime config', () => {
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       spawnImpl: (command, args, options) => (
         args[0]?.endsWith('persistent-worker.mjs')
@@ -1511,7 +1511,7 @@ describe('Cursor SDK worker runtime config', () => {
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       spawnImpl: (command, args, options) => (
         args[0]?.endsWith('persistent-worker.mjs')
@@ -1559,7 +1559,7 @@ describe('Cursor SDK worker runtime config', () => {
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       spawnImpl: createFakePersistentWorkerSpawn(capture),
       resolveAgentDefinitions: async ({ directory }) => {
@@ -1614,7 +1614,7 @@ describe('Cursor SDK worker runtime config', () => {
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       spawnImpl: createFakePersistentWorkerSpawn(capture),
     });
@@ -1653,7 +1653,7 @@ describe('Cursor SDK worker runtime config', () => {
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       spawnImpl: createFakePersistentWorkerSpawn(capture),
     });
@@ -1682,7 +1682,7 @@ describe('Cursor SDK worker runtime config', () => {
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       spawnImpl: createFakePersistentWorkerSpawn(capture),
       resolveAgentDefinitions: async () => ({
@@ -1723,7 +1723,7 @@ describe('Cursor SDK worker runtime config', () => {
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       spawnImpl: createFakePersistentWorkerSpawn(capture),
       resolveAgentDefinitions: async () => ({
@@ -1764,7 +1764,7 @@ describe('Cursor SDK worker runtime config', () => {
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       spawnImpl: createFakePersistentWorkerSpawn(capture, { autoRespond: false }),
     });
@@ -1832,7 +1832,7 @@ describe('Cursor SDK worker runtime config', () => {
     const capture = { calls: [], children: [], commands: [] };
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir, readAuth: () => ({ 'cursor-acp': { key: 'fixture-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' }, useNodeWorkerForPrompts: true,
+      env: { DEVRYAN_RUNTIME: 'desktop' }, useNodeWorkerForPrompts: true,
       spawnImpl: createFakePersistentWorkerSpawn(capture, { autoRespond: false }),
     });
     try {
@@ -1888,7 +1888,7 @@ describe('Cursor SDK worker runtime config', () => {
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       spawnImpl: createFakePersistentWorkerSpawn(capture, { autoRespond: false }),
     });
@@ -2009,7 +2009,7 @@ describe('Cursor SDK worker runtime config', () => {
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       spawnImpl: createFakePersistentWorkerSpawn(capture, { autoRespond: false }),
     });
@@ -2215,7 +2215,7 @@ describe('Cursor SDK worker runtime config', () => {
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       nodeBinary: '/Applications/DevRyan.app/Contents/MacOS/DevRyan',
       workerPath: '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@openchamber/cursor-sdk-runtime/node-worker.mjs',
@@ -2262,7 +2262,7 @@ describe('Cursor SDK worker runtime config', () => {
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       usePersistentWorkerForPrompts: false,
       spawnImpl: createFakeWorkerSpawn(capture),
@@ -2310,7 +2310,7 @@ describe('Cursor SDK worker runtime config', () => {
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
-      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       spawnImpl: createFakePersistentWorkerSpawn(capture),
       questionRuntime: {

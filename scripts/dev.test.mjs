@@ -59,7 +59,7 @@ describe('shouldRestartDevChild', () => {
 describe('resolveDevDataDirectory', () => {
   test('preserves an explicit data-directory override', () => {
     assert.equal(resolveDevDataDirectory({
-      env: { OPENCHAMBER_DATA_DIR: './explicit-dev-data' },
+      env: { DEVRYAN_DATA_DIR: './explicit-dev-data' },
       repoRoot: '/workspace/devryan',
       scope: 'electron',
     }), path.resolve('./explicit-dev-data'));

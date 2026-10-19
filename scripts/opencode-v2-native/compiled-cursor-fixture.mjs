@@ -95,7 +95,7 @@ export async function createCompiledCursorFixture({root,artifactRoot,provider,ob
   readAuth:()=>{throw Error('Native Cursor must not read legacy auth');},resolveApiKey:input=>runtimeOwner.resolveCursorApiKey(input),
   ownedReadOnly:(input,action)=>runtimeOwner.withCursorReadOnly(input,()=>readonlyScope.run(input,action)),nativeWarming:false,
   nodeBinary:process.execPath,useNodeWorkerForPrompts:true,usePersistentWorkerForPrompts:false,ripgrepPath:DEFAULT_RG,
-  workerEnv:{...environment,CURSOR_BACKEND_URL:provider.baseURL,OPENCHAMBER_CURSOR_SETTING_SOURCES:'none'},
+  workerEnv:{...environment,CURSOR_BACKEND_URL:provider.baseURL,DEVRYAN_CURSOR_SETTING_SOURCES:'none'},
   onPersistRecord:input=>host.persistCursorRecord(input),executionAdapter:{start:input=>host.startCursor(input),
    startReadOnly:input=>runtimeOwner.withCursorReadOnlyExecution(async()=>{
     const scope=readonlyScope.getStore();if(!scope)throw Error('Actual Cursor readonly scope required');

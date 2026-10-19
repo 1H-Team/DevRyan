@@ -81,13 +81,13 @@ export async function prepareQaFixtureProfile({runtimeRoot,workspace,cell,genera
     fixture.seedHistory(PERF_PARENT_SESSION_ID,{turns:180,textBytes:256});
     nativeProfile=await prepareNativeProfile({runtimeRoot,workspace,artifactRoot,targetGeneration:2,
       cell:{...cell,transport:'runtime-fixture',providerId:'devryan-smoke',modelId:'smoke-write',agent:'builder',variant:'high',planMode:false}});
-    const nativeData=nativeProfile.env.OPENCHAMBER_DATA_DIR;
+    const nativeData=nativeProfile.env.DEVRYAN_DATA_DIR;
     if (!within(runtimeRoot,nativeData) || await realpath(nativeData)!==nativeData
       || !nativeProfile.env.DEVRYAN_RUNTIME_BUNDLE_ROOT || typeof nativeProfile.verifyInputs!=='function') throw new Error('QA wire native profile invalid');
     await writeFile(path.join(nativeData,'settings.json'),await readFile(path.join(data,'settings.json')),{mode:0o600});
     const env={...nativeProfile.env,DEVRYAN_QA_RUNTIME:cell.runtime,GH_CONFIG_DIR:path.join(home,'.config/gh'),
       GIT_CONFIG_GLOBAL:path.join(home,'.gitconfig'),GIT_CONFIG_NOSYSTEM:'1',GH_TOKEN:'',GITHUB_TOKEN:'',
-      OPENCHAMBER_DIST_DIR:path.join(root,'packages/web/dist'),OPENCHAMBER_ELECTRON_DEV:'1',
+      DEVRYAN_DIST_DIR:path.join(root,'packages/web/dist'),DEVRYAN_ELECTRON_DEV:'1',
       NO_PROXY:'localhost,127.0.0.1',no_proxy:'localhost,127.0.0.1'};
     return {env,bootstrapPath:nativeProfile.bootstrapPath,fixture,verifyInputs:nativeProfile.verifyInputs,nativeLogRoot:nativeProfile.nativeLogRoot,
       startFacade:async realOrigin => {
@@ -95,7 +95,7 @@ export async function prepareQaFixtureProfile({runtimeRoot,workspace,cell,genera
         const local=new URL(realOrigin);
         if(local.protocol!=='http:'||local.hostname!=='127.0.0.1'||!local.port||local.pathname!=='/'||local.search||local.hash||local.username||local.password)throw new Error('QA wire host must be an exact loopback origin');
         // Electron chooses its local server port from owned settings, rather
-        // than OPENCHAMBER_PORT. Pin the same reserved port before main starts.
+        // than DEVRYAN_PORT. Pin the same reserved port before main starts.
         const settingsPath=path.join(nativeData,'settings.json');
         const settings=JSON.parse(await readFile(settingsPath,'utf8'));
         await writeFile(settingsPath,JSON.stringify({...settings,desktopLocalPort:Number(local.port)}),{mode:0o600});

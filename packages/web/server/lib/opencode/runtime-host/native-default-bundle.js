@@ -1,3 +1,4 @@
+import {readDevRyanEnv} from '@openchamber/shared-runtime/lib/legacy-environment.js';
 import { recoverClaudeActivationAtStartup } from './claude-activation-recovery.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -118,11 +119,11 @@ export async function provisionDefaultNativeBundle({env=process.env,home=os.home
  artifactDirectory=executionArtifacts().directory,verifyArtifacts=verifyNativeRuntimeArtifacts,runMigration,credentialProcess,
  defaultConfigRoot=new URL('../../../default-config/',import.meta.url),captureLogicalSetup}={}) {
  recordStartupBundleUpgradeFailure(null);
- if(env.OPENCODE_DB!==undefined&&!path.isAbsolute(env.OPENCODE_DB)||env.OPENCODE_HOST||env.OPENCODE_SKIP_START==='true'||env.OPENCHAMBER_SKIP_OPENCODE_START==='true'||env.OPENCODE_BINARY
+ if(env.OPENCODE_DB!==undefined&&!path.isAbsolute(env.OPENCODE_DB)||env.OPENCODE_HOST||env.OPENCODE_SKIP_START==='true'||readDevRyanEnv(env,'DEVRYAN_SKIP_OPENCODE_START')==='true'||env.OPENCODE_BINARY
   ||env.DEVRYAN_OPENCODE_GENERATION!==undefined&&env.DEVRYAN_OPENCODE_GENERATION!=='2')throw fail('native_runtime_configuration_unsupported');
  const controlRoot=resolveRuntimeBundleRoot(env,home);
  if(env.DEVRYAN_RUNTIME_BUNDLE_ROOT!==undefined)return controlRoot;
- const dataRoot=path.resolve(env.OPENCHAMBER_DATA_DIR||path.join(home,'.config','openchamber'));
+ const dataRoot=path.resolve(env.DEVRYAN_DATA_DIR||path.join(home,'.config','openchamber'));
  const sourceRoot=path.join(path.dirname(controlRoot),'fresh-native-source');
  let privatePersistence={};
  if(process.platform==='win32'){

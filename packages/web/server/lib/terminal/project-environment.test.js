@@ -69,7 +69,7 @@ describe('isBrowserPublicProjectEnvironmentKey', () => {
       'PUBLIC_OPENAI_API_KEY',
       'REACT_APP_GITHUB_ACCESS_TOKEN',
       'VITE_SESSION_SECRET',
-      'OPENCHAMBER_UI_PASSWORD',
+      'DEVRYAN_UI_PASSWORD',
       'UNPREFIXED_VALUE',
     ]) {
       expect(isBrowserPublicProjectEnvironmentKey(key), key).toBe(false);

@@ -114,7 +114,7 @@ const resolveGitBinary = () => {
     return resolvedGitBinary;
   }
 
-  const explicit = [process.env.GIT_BINARY, process.env.OPENCHAMBER_GIT_BINARY]
+  const explicit = [process.env.GIT_BINARY, process.env.DEVRYAN_GIT_BINARY]
     .map((value) => (typeof value === 'string' ? value.trim() : ''))
     .filter(Boolean);
   for (const candidate of explicit) {
@@ -338,8 +338,8 @@ const assertManagedFetchBranchAllowed = async ({ directory, principal, assignmen
 const ensureGitAskPassHelper = async () => {
   if (gitAskPassHelperPromise) return gitAskPassHelperPromise;
   gitAskPassHelperPromise = (async () => {
-    const dataDirectory = process.env.OPENCHAMBER_DATA_DIR
-      ? path.resolve(process.env.OPENCHAMBER_DATA_DIR)
+    const dataDirectory = process.env.DEVRYAN_DATA_DIR
+      ? path.resolve(process.env.DEVRYAN_DATA_DIR)
       : path.join(os.homedir(), '.config', 'openchamber');
     const runtimeDirectory = path.join(dataDirectory, 'runtime');
     await fsp.mkdir(runtimeDirectory, { recursive: true, mode: 0o700 });

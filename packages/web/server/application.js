@@ -284,7 +284,7 @@ async function constructWebHost(options = {}) {
     shouldSkipApiCompression: () => shouldSkipApiCompression(),
   });
 
-  const OPENCHAMBER_VERSION = (() => {
+  const DEVRYAN_VERSION = (() => {
     try {
       const packagePath = path.resolve(__dirname, '..', 'package.json');
       const raw = fs.readFileSync(packagePath, 'utf8');
@@ -312,13 +312,13 @@ async function constructWebHost(options = {}) {
   };
 
   const shouldSkipApiCompression = () => {
-    if (isEnvFlagEnabled(process.env.OPENCHAMBER_SKIP_API_COMPRESSION)) return true;
-    if (isEnvFlagEnabled(process.env.OPENCHAMBER_COMPRESS_API)) return false;
-    if (isEnvFlagDisabled(process.env.OPENCHAMBER_COMPRESS_API)) return true;
-    return process.env.OPENCHAMBER_RUNTIME === 'desktop';
+    if (isEnvFlagEnabled(process.env.DEVRYAN_SKIP_API_COMPRESSION)) return true;
+    if (isEnvFlagEnabled(process.env.DEVRYAN_COMPRESS_API)) return false;
+    if (isEnvFlagDisabled(process.env.DEVRYAN_COMPRESS_API)) return true;
+    return process.env.DEVRYAN_RUNTIME === 'desktop';
   };
 
-  const OPENCHAMBER_VERBOSE_REQUEST_LOGS = isEnvFlagEnabled(process.env.OPENCHAMBER_VERBOSE_REQUEST_LOGS);
+  const DEVRYAN_VERBOSE_REQUEST_LOGS = isEnvFlagEnabled(process.env.DEVRYAN_VERBOSE_REQUEST_LOGS);
 
   const PLAN_MODE_EXPERIMENT_ENABLED =
     isEnvFlagEnabled(process.env.OPENCODE_EXPERIMENTAL_PLAN_MODE)
@@ -359,9 +359,9 @@ async function constructWebHost(options = {}) {
   const sanitizeHiddenSkills = (...args) => settingsNormalizationRuntime.sanitizeHiddenSkills(...args);
   const sanitizeProjects = (...args) => settingsNormalizationRuntime.sanitizeProjects(...args);
 
-  const OPENCHAMBER_USER_CONFIG_ROOT = selectedRuntimeBundle?.descriptor.launch.webConfigDirectory ?? path.join(os.homedir(), '.config', 'openchamber');
-  const OPENCHAMBER_USER_THEMES_DIR = path.join(OPENCHAMBER_USER_CONFIG_ROOT, 'themes');
-  const OPENCHAMBER_PROJECTS_CONFIG_DIR = path.join(OPENCHAMBER_USER_CONFIG_ROOT, 'projects');
+  const DEVRYAN_USER_CONFIG_ROOT = selectedRuntimeBundle?.descriptor.launch.webConfigDirectory ?? path.join(os.homedir(), '.config', 'openchamber');
+  const DEVRYAN_USER_THEMES_DIR = path.join(DEVRYAN_USER_CONFIG_ROOT, 'themes');
+  const DEVRYAN_PROJECTS_CONFIG_DIR = path.join(DEVRYAN_USER_CONFIG_ROOT, 'projects');
 
   const MAX_THEME_JSON_BYTES = 512 * 1024;
 
@@ -369,7 +369,7 @@ async function constructWebHost(options = {}) {
   const themeRuntime = createThemeRuntime({
     fsPromises,
     path,
-    themesDir: OPENCHAMBER_USER_THEMES_DIR,
+    themesDir: DEVRYAN_USER_THEMES_DIR,
     maxThemeJsonBytes: MAX_THEME_JSON_BYTES,
     logger: console,
   });
@@ -394,24 +394,24 @@ async function constructWebHost(options = {}) {
   const buildTemplateVariables = (...args) => notificationTemplateRuntime.buildTemplateVariables(...args);
   const getCachedZenModels = (...args) => notificationTemplateRuntime.getCachedZenModels(...args);
 
-  const OPENCHAMBER_DATA_DIR = process.env.OPENCHAMBER_DATA_DIR
-    ? path.resolve(process.env.OPENCHAMBER_DATA_DIR)
+  const DEVRYAN_DATA_DIR = process.env.DEVRYAN_DATA_DIR
+    ? path.resolve(process.env.DEVRYAN_DATA_DIR)
     : path.join(os.homedir(), '.config', 'openchamber');
-  const SETTINGS_FILE_PATH = path.join(OPENCHAMBER_DATA_DIR, 'settings.json');
-  const PUSH_SUBSCRIPTIONS_FILE_PATH = path.join(OPENCHAMBER_DATA_DIR, 'push-subscriptions.json');
-  const CLOUDFLARE_MANAGED_REMOTE_TUNNELS_FILE_PATH = path.join(OPENCHAMBER_DATA_DIR, 'cloudflare-managed-remote-tunnels.json');
-  const CLOUDFLARE_LEGACY_NAMED_TUNNELS_FILE_PATH = path.join(OPENCHAMBER_DATA_DIR, 'cloudflare-named-tunnels.json');
+  const SETTINGS_FILE_PATH = path.join(DEVRYAN_DATA_DIR, 'settings.json');
+  const PUSH_SUBSCRIPTIONS_FILE_PATH = path.join(DEVRYAN_DATA_DIR, 'push-subscriptions.json');
+  const CLOUDFLARE_MANAGED_REMOTE_TUNNELS_FILE_PATH = path.join(DEVRYAN_DATA_DIR, 'cloudflare-managed-remote-tunnels.json');
+  const CLOUDFLARE_LEGACY_NAMED_TUNNELS_FILE_PATH = path.join(DEVRYAN_DATA_DIR, 'cloudflare-named-tunnels.json');
   const CLOUDFLARE_MANAGED_REMOTE_TUNNELS_VERSION = 2;
   const projectIconStore = createProjectIconStore({
     fsPromises,
     path,
     crypto,
-    dataDirectory: OPENCHAMBER_DATA_DIR,
+    dataDirectory: DEVRYAN_DATA_DIR,
   });
   const harnessRuntime = createWebHarnessRuntime({
     ...privatePersistence,
-    dataDirectory: OPENCHAMBER_DATA_DIR,
-    runtime: process.env.OPENCHAMBER_RUNTIME || 'web',
+    dataDirectory: DEVRYAN_DATA_DIR,
+    runtime: process.env.DEVRYAN_RUNTIME || 'web',
     logger: console,
     knownSecrets: Object.entries(process.env)
       .filter(([key, value]) => (
@@ -722,7 +722,7 @@ async function constructWebHost(options = {}) {
       startReadOnly: input => nativeBundle?nativeRuntime.withCursorReadOnlyExecution(()=>sessionExecutionHost.startReadOnly(input)):sessionExecutionHost.startReadOnly(input),
       beforePrompt: (input) => sessionExecutionHost.beforeCursorPrompt(input) },
     onPersistRecord: (input) => sessionExecutionHost.persistCursorRecord(input) } : {}),
-    storageDir: path.join(OPENCHAMBER_DATA_DIR, 'cursor-sdk-sessions'),
+    storageDir: path.join(DEVRYAN_DATA_DIR, 'cursor-sdk-sessions'),
     readAuth: readAuthFile,
     env: process.env,
     emitEvent: emitSyntheticOpenCodeEvent,
@@ -764,7 +764,7 @@ async function constructWebHost(options = {}) {
   const projectConfigRuntime = createProjectConfigRuntime({
     fsPromises,
     path,
-    projectsDirPath: OPENCHAMBER_PROJECTS_CONFIG_DIR,
+    projectsDirPath: DEVRYAN_PROJECTS_CONFIG_DIR,
   });
   evidenceRuntime = createWebEvidenceRuntime({
     ...privatePersistence,
@@ -772,7 +772,7 @@ async function constructWebHost(options = {}) {
     projectConfigRuntime,
     getSessionActivity: (sessionID) => sessionRuntime.getSessionActivitySnapshot()[sessionID] ?? null,
     journal: harnessRuntime.journal,
-    runtime: process.env.OPENCHAMBER_RUNTIME || 'web',
+    runtime: process.env.DEVRYAN_RUNTIME || 'web',
     logger: console,
   });
   harnessRuntime.setEvidenceRuntime(evidenceRuntime);
@@ -895,13 +895,13 @@ async function constructWebHost(options = {}) {
   });
 
   const ENV_SKIP_OPENCODE_START = process.env.OPENCODE_SKIP_START === 'true' ||
-                                      process.env.OPENCHAMBER_SKIP_OPENCODE_START === 'true';
+                                      process.env.DEVRYAN_SKIP_OPENCODE_START === 'true';
   const ENV_DESKTOP_NOTIFY = (() => {
-    if (process.env.OPENCHAMBER_DESKTOP_NOTIFY === 'true') {
+    if (process.env.DEVRYAN_DESKTOP_NOTIFY === 'true') {
       return true;
     }
 
-    if (process.env.OPENCHAMBER_RUNTIME === 'desktop') {
+    if (process.env.DEVRYAN_RUNTIME === 'desktop') {
       return true;
     }
 
@@ -913,9 +913,9 @@ async function constructWebHost(options = {}) {
     typeof process.env.OPENCODE_WSL_DISTRO === 'string' && process.env.OPENCODE_WSL_DISTRO.trim().length > 0
       ? process.env.OPENCODE_WSL_DISTRO.trim()
       : (
-        typeof process.env.OPENCHAMBER_OPENCODE_WSL_DISTRO === 'string' &&
-        process.env.OPENCHAMBER_OPENCODE_WSL_DISTRO.trim().length > 0
-          ? process.env.OPENCHAMBER_OPENCODE_WSL_DISTRO.trim()
+        typeof process.env.DEVRYAN_OPENCODE_WSL_DISTRO === 'string' &&
+        process.env.DEVRYAN_OPENCODE_WSL_DISTRO.trim().length > 0
+          ? process.env.DEVRYAN_OPENCODE_WSL_DISTRO.trim()
           : null
       );
 
@@ -1060,7 +1060,7 @@ async function constructWebHost(options = {}) {
   };
 
   const ENV_CONFIGURED_API_PREFIX = normalizeApiPrefix(
-    process.env.OPENCODE_API_PREFIX || process.env.OPENCHAMBER_API_PREFIX || ''
+    process.env.OPENCODE_API_PREFIX || process.env.DEVRYAN_API_PREFIX || ''
   );
 
     if (ENV_CONFIGURED_API_PREFIX && ENV_CONFIGURED_API_PREFIX !== '') {
@@ -1133,7 +1133,7 @@ async function constructWebHost(options = {}) {
     fetchImpl: fetch,
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
-    outboxFilePath: path.join(OPENCHAMBER_DATA_DIR, 'session-title-outbox.json'),
+    outboxFilePath: path.join(DEVRYAN_DATA_DIR, 'session-title-outbox.json'),
     onTitleGenerated: ({ session, title, directory }) => {
       emitSyntheticOpenCodeEvent({
         type: 'session.updated',
@@ -1403,13 +1403,13 @@ async function constructWebHost(options = {}) {
   });
 
   const openAiOAuthCoordinator = createOpenAiOAuthCoordinator({
-    stateFile: path.join(OPENCHAMBER_DATA_DIR, 'runtime', 'openai-oauth-state.json'),
+    stateFile: path.join(DEVRYAN_DATA_DIR, 'runtime', 'openai-oauth-state.json'),
     recordDiagnostic: (entry) => harnessRuntime.record(entry),
   });
   const openAiOAuthBridge = createOpenAiOAuthBridge({ coordinator: openAiOAuthCoordinator });
 
   const openCodeDbMaintenance = createOpenCodeDbMaintenance({
-    dataDir: OPENCHAMBER_DATA_DIR,
+    dataDir: DEVRYAN_DATA_DIR,
     journal: (entry) => harnessRuntime.record(entry),
   });
   const readOpenCodeDbMaintenanceSettings = async () => normalizeOpenCodeDbMaintenanceSettings(
@@ -1478,7 +1478,7 @@ async function constructWebHost(options = {}) {
     }),
     syncRuntimeAgentOverlays: (options) => syncRuntimeAgentOverlays({
       ...options,
-      dataDirectory: OPENCHAMBER_DATA_DIR,
+      dataDirectory: DEVRYAN_DATA_DIR,
       packagedAgentDirectory: path.join(defaultConfigRoot, 'agents'),
       packagedPluginDirectory: path.join(defaultConfigRoot, 'plugins'),
     }),
@@ -1567,7 +1567,7 @@ async function constructWebHost(options = {}) {
     openCodeClient,
     ...(nativeBundle?{isNativeFallbackError:error=>nativeBundle.reviewedConfiguration?.isReviewedSlimFailoverError(error)===true,
       dispatchNativeRecovery:(record,prompt)=>nativeRuntime.dispatchNativeRecovery(record,prompt)}:{}),
-    dataDirectory: OPENCHAMBER_DATA_DIR,
+    dataDirectory: DEVRYAN_DATA_DIR,
     executionOutcomes: (input) => sessionExecutionHost.runtime.executionOutcomes(input),
     buildOpenCodeUrl: (pathname) => buildOpenCodeUrl(pathname, ''),
     getOpenCodeAuthHeaders,
@@ -1613,7 +1613,7 @@ async function constructWebHost(options = {}) {
   const harnessTaskContext = createHarnessTaskContextHost({
     ...privatePersistence,
     openCodeClient,
-    dataDirectory: OPENCHAMBER_DATA_DIR, buildOpenCodeUrl, getOpenCodeAuthHeaders,
+    dataDirectory: DEVRYAN_DATA_DIR, buildOpenCodeUrl, getOpenCodeAuthHeaders,
     readPrimaryRecord: (sessionID) => primaryRecoveryRuntime.readRecord(sessionID),
     nativeStreamContinuationReceipts: (sessionID, objectiveID) => primaryRecoveryRuntime.nativeStreamContinuationReceipts(sessionID, objectiveID),
     readCanonicalPlanSequence: input => nativeRuntime.readCanonicalPlanSequence(input),
@@ -1636,7 +1636,7 @@ async function constructWebHost(options = {}) {
     ...privatePersistence,
     openCodeClient,
     restoreOwned: input => sessionExecutionHost.coordinator.restoreFiles(input),
-    dataDirectory: OPENCHAMBER_DATA_DIR,
+    dataDirectory: DEVRYAN_DATA_DIR,
     onDiagnostic: (event) => {
       harnessRuntime.record({ type: 'log', event: 'session_changes_capture', sessionID: event.sessionID, payload: event });
       if (event.code === 'exact_tool_receipt' && event.phase === 'receipt' && event.hasChanges) {
@@ -1652,7 +1652,7 @@ async function constructWebHost(options = {}) {
   });
   harnessRuntime.setSessionChangeHost(sessionChangeHost);
   const sessionExecutionHost = createSessionExecutionHost({
-    ...privatePersistence, assertExecutionReady: executionReadiness.assertReady, dataDirectory: OPENCHAMBER_DATA_DIR, activityGate: sessionActivityGate,
+    ...privatePersistence, assertExecutionReady: executionReadiness.assertReady, dataDirectory: DEVRYAN_DATA_DIR, activityGate: sessionActivityGate,
     openCodeClient,
     getLauncher: () => nativeBundle?.artifacts.launcher ?? executionArtifacts().launcher, buildOpenCodeUrl, getOpenCodeAuthHeaders,
     ...(nativeBundle ? { nativeExecution: {
@@ -2116,12 +2116,12 @@ async function constructWebHost(options = {}) {
     const port = Number.isFinite(options.port) && options.port >= 0 ? Math.trunc(options.port) : DEFAULT_PORT;
     const host = typeof options.host === 'string' && options.host.length > 0 ? options.host : undefined;
     const effectiveBindHost = host
-      || (typeof process.env.OPENCHAMBER_HOST === 'string' && process.env.OPENCHAMBER_HOST.trim().length > 0
-        ? process.env.OPENCHAMBER_HOST.trim()
+      || (typeof process.env.DEVRYAN_HOST === 'string' && process.env.DEVRYAN_HOST.trim().length > 0
+        ? process.env.DEVRYAN_HOST.trim()
         : '127.0.0.1');
     const configuredUiPassword = typeof options.uiPassword === 'string'
       ? options.uiPassword
-      : (typeof process.env.OPENCHAMBER_UI_PASSWORD === 'string' ? process.env.OPENCHAMBER_UI_PASSWORD : null);
+      : (typeof process.env.DEVRYAN_UI_PASSWORD === 'string' ? process.env.DEVRYAN_UI_PASSWORD : null);
     if (
       isNetworkExposedBindHost(effectiveBindHost)
       && !(typeof configuredUiPassword === 'string' && configuredUiPassword.trim().length > 0)
@@ -2218,7 +2218,7 @@ async function constructWebHost(options = {}) {
           return owner.access(input);
         },
       },
-      dataDirectory: OPENCHAMBER_DATA_DIR,
+      dataDirectory: DEVRYAN_DATA_DIR,
       fetchImpl: fetch,
       logger: console,
       readManagedTunnelConfig: readManagedRemoteTunnelConfigFromDisk,
@@ -2281,7 +2281,7 @@ async function constructWebHost(options = {}) {
           mode: TUNNEL_MODE_MANAGED_REMOTE, hostname: saved.hostname, token: saved.token, originPort: saved.originPort });
       }
     }
-    registerLocalOwnerBootstrap(app, { dataDirectory: OPENCHAMBER_DATA_DIR, connection: multiUserRuntime.connection });
+    registerLocalOwnerBootstrap(app, { dataDirectory: DEVRYAN_DATA_DIR, connection: multiUserRuntime.connection });
     registerTunnelAccessBoundary(app, server, { controller: tunnelAuthController, connection: multiUserRuntime.connection, runtimeInstanceId,
       getRuntimeReady: () => isOpenCodeReady,
       authenticateOwner: async (req, res) => {
@@ -2350,8 +2350,8 @@ async function constructWebHost(options = {}) {
     const uiPassword = typeof options.uiPassword === 'string' ? options.uiPassword : null;
     const bootstrapResult = bootstrapRuntime.setupBaseRoutes(app, {
       process,
-      openchamberVersion: OPENCHAMBER_VERSION,
-      runtimeName: process.env.OPENCHAMBER_RUNTIME || 'web',
+      openchamberVersion: DEVRYAN_VERSION,
+      runtimeName: process.env.DEVRYAN_RUNTIME || 'web',
       serverStartedAt,
       runtimeInstanceId,
       gracefulShutdown,
@@ -2395,7 +2395,7 @@ async function constructWebHost(options = {}) {
           },
         };
       },
-      verboseRequestLogs: OPENCHAMBER_VERBOSE_REQUEST_LOGS,
+      verboseRequestLogs: DEVRYAN_VERBOSE_REQUEST_LOGS,
       uiPassword,
       tunnelAuthController,
       readSettingsFromDiskMigrated,
@@ -2421,7 +2421,7 @@ async function constructWebHost(options = {}) {
       path,
       server,
       __dirname,
-      openchamberDataDir: OPENCHAMBER_DATA_DIR,
+      openchamberDataDir: DEVRYAN_DATA_DIR,
       modelsDevApiUrl: MODELS_DEV_API_URL,
       modelsMetadataCacheTtl: MODELS_METADATA_CACHE_TTL,
       fetchFreeZenModels,
@@ -2596,7 +2596,7 @@ async function constructWebHost(options = {}) {
           payload: activity,
         });
       },
-      dataDirectory: OPENCHAMBER_DATA_DIR,
+      dataDirectory: DEVRYAN_DATA_DIR,
       buildOpenCodeUrl,
       getOpenCodeAuthHeaders,
       cursorSdkRuntime:cursorPromptRuntime,
@@ -2825,9 +2825,9 @@ async function constructWebHost(options = {}) {
       spawn,
       resolveGitBinaryForSpawn,
       createFsSearchRuntime: createFsSearchRuntimeFactory,
-      openchamberDataDir: OPENCHAMBER_DATA_DIR,
+      openchamberDataDir: DEVRYAN_DATA_DIR,
       projectIconStore,
-      openchamberUserConfigRoot: OPENCHAMBER_USER_CONFIG_ROOT,
+      openchamberUserConfigRoot: DEVRYAN_USER_CONFIG_ROOT,
       normalizeDirectoryPath,
       resolveProjectDirectory,
       resolveOptionalProjectDirectory,

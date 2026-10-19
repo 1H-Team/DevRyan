@@ -24,8 +24,8 @@ export const createServerStartupRuntime = (dependencies) => {
 
   const resolveBindHost = (host) =>
     host
-    || (typeof process.env.OPENCHAMBER_HOST === 'string' && process.env.OPENCHAMBER_HOST.trim().length > 0
-      ? process.env.OPENCHAMBER_HOST.trim()
+    || (typeof process.env.DEVRYAN_HOST === 'string' && process.env.DEVRYAN_HOST.trim().length > 0
+      ? process.env.DEVRYAN_HOST.trim()
       : '127.0.0.1');
 
   const startListeningAndMaybeTunnel = async ({
@@ -159,7 +159,7 @@ export const createServerStartupRuntime = (dependencies) => {
 
     process.on('uncaughtException', (error) => {
       console.error('Uncaught Exception:', error);
-      if (process.env.OPENCHAMBER_DEV_MODE === 'true') {
+      if (process.env.DEVRYAN_DEV_MODE === 'true') {
         // Previously this called process.exit(1) directly, which orphaned the
         // managed `opencode serve` child on every dev-mode crash/HMR restart (the
         // child is not detached and has no die-with-parent guarantee on macOS, so

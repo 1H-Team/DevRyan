@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { createHash } from 'node:crypto';
+import { setDevRyanEnv } from '@openchamber/shared-runtime/lib/legacy-environment.js';
 import {readRollbackIntentSync,rollbackIntentUnresolved} from './bundle-rollback-intent.js';
 import {BUNDLE_DOCUMENT_MAX_BYTES} from './bundle-document-limits.js';
 
@@ -90,7 +91,7 @@ export function initializeRuntimeBundleBinding(environment=process.env,options) 
   if(selectedRuntimeBundle&&(selectedRuntimeBundle.controlRoot!==selected.controlRoot||selectedRuntimeBundle.bundleRoot!==selected.bundleRoot
     ||selectedRuntimeBundle.selection.revision!==selected.selection.revision))throw fail();
   selectedRuntimeBundle=selected;
-  process.env.OPENCHAMBER_DATA_DIR=selected.descriptor.launch.webDataDirectory;
+  setDevRyanEnv(process.env,'DEVRYAN_DATA_DIR',selected.descriptor.launch.webDataDirectory);
   process.env.OPENCODE_CONFIG_DIR=selected.descriptor.launch.opencodeConfigDirectory;
   const customConfig=path.join(selected.descriptor.launch.opencodeConfigDirectory,'native-custom-config.json');
   if(fs.existsSync(customConfig)){const stat=fs.lstatSync(customConfig);if(!stat.isFile()||stat.isSymbolicLink()||fs.realpathSync(customConfig)!==customConfig)throw fail();}

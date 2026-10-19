@@ -446,14 +446,14 @@ export const createQaLaunchEnvironment = ({ runtimeRoot, home, opencodeBinary, b
         XDG_CACHE_HOME: path.join(home, '.cache'), TMPDIR: path.join(home, 'tmp'),
         // One content-addressed package cache shared by every QA home (was ~115 MB per home).
         BUN_INSTALL_CACHE_DIR: path.join(repositoryRoot, '.cache/shared/bun-install-cache'),
-        OPENCHAMBER_DATA_DIR: data, OPENCHAMBER_ELECTRON_USER_DATA_DIR: path.join(runtimeRoot, 'browser-profile'),
-        OPENCHAMBER_DIST_DIR: path.join(repositoryRoot, 'packages/web/dist'), OPENCHAMBER_ELECTRON_DEV: '1',
+        DEVRYAN_DATA_DIR: data, DEVRYAN_ELECTRON_USER_DATA_DIR: path.join(runtimeRoot, 'browser-profile'),
+        DEVRYAN_DIST_DIR: path.join(repositoryRoot, 'packages/web/dist'), DEVRYAN_ELECTRON_DEV: '1',
         OPENCODE_BINARY: opencodeBinary, CLAUDE_PROXY_PORT: '0',
         CLAUDE_CONFIG_DIR: path.join(home, '.claude'),
         MERIDIAN_CONFIG_DIR: path.join(home, '.config/meridian'), MERIDIAN_SESSION_DIR: path.join(home, '.cache/meridian'),
         NODE_OPTIONS: `--import=${JSON.stringify(homeShim)}`,
         NO_PROXY: 'localhost,127.0.0.1', no_proxy: 'localhost,127.0.0.1' });
-    for (const key of ['OPENCODE_HOST', 'OPENCODE_PORT', 'OPENCODE_CONFIG', 'OPENCODE_CONFIG_DIR', 'OPENCODE_DISABLE_PROJECT_CONFIG', 'OPENCODE_SKIP_START', 'OPENCHAMBER_SKIP_OPENCODE_START', 'OPENCHAMBER_SERVER_URL', 'ELECTRON_RUN_AS_NODE', 'OH_MY_OPENCODE_SLIM_PRESET', 'MERIDIAN_PROFILES', 'MERIDIAN_DEFAULT_PROFILE', 'CLAUDE_CODE_OAUTH_TOKEN']) delete env[key];
+    for (const key of ['OPENCODE_HOST', 'OPENCODE_PORT', 'OPENCODE_CONFIG', 'OPENCODE_CONFIG_DIR', 'OPENCODE_DISABLE_PROJECT_CONFIG', 'OPENCODE_SKIP_START', 'DEVRYAN_SKIP_OPENCODE_START', 'DEVRYAN_SERVER_URL', 'ELECTRON_RUN_AS_NODE', 'OH_MY_OPENCODE_SLIM_PRESET', 'MERIDIAN_PROFILES', 'MERIDIAN_DEFAULT_PROFILE', 'CLAUDE_CODE_OAUTH_TOKEN']) delete env[key];
     // Native OpenCode loads inline config after global/project/managed config.
     // This test-only observer therefore sees final plugin reasoning controls.
     env.OPENCODE_CONFIG_CONTENT = JSON.stringify({ plugin: [pathToFileURL(providerObserver).href] });

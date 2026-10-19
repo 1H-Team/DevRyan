@@ -36,7 +36,7 @@ import { openExternalUrl } from '@/lib/url';
 import { useI18n } from '@/lib/i18n';
 import {
   getProjectActionsState,
-  OPENCHAMBER_AUTO_DISCOVER_ACTION_ID,
+  DEVRYAN_AUTO_DISCOVER_ACTION_ID,
   updateOpenChamberConfig,
   type OpenChamberProjectAction,
   type ProjectRef,
@@ -387,7 +387,7 @@ export const ProjectActionsButton = ({
   }, [stableProjectRef]);
 
   const autoDiscoverAction = React.useMemo<OpenChamberProjectAction>(() => ({
-    id: OPENCHAMBER_AUTO_DISCOVER_ACTION_ID,
+    id: DEVRYAN_AUTO_DISCOVER_ACTION_ID,
     name: t('projectActions.actions.autoDiscover'),
     command: '',
     icon: 'search',
@@ -437,7 +437,7 @@ export const ProjectActionsButton = ({
     if (!selectedActionId) {
       return;
     }
-    if (selectedActionId === OPENCHAMBER_AUTO_DISCOVER_ACTION_ID) {
+    if (selectedActionId === DEVRYAN_AUTO_DISCOVER_ACTION_ID) {
       return;
     }
     if (!actions.some((entry) => entry.id === selectedActionId)) {
@@ -628,7 +628,7 @@ export const ProjectActionsButton = ({
     }
 
     try {
-      const discovered = action.id === OPENCHAMBER_AUTO_DISCOVER_ACTION_ID
+      const discovered = action.id === DEVRYAN_AUTO_DISCOVER_ACTION_ID
         ? await (async (): Promise<OpenChamberProjectAction> => {
           const [actionsState, scripts] = await Promise.all([
             getProjectActionsState({ id: stableProjectRef?.id ?? '', path: normalizedDirectory }),
@@ -639,7 +639,7 @@ export const ProjectActionsButton = ({
             throw new Error(t('contextPanel.preview.noDevServer'));
           }
           return {
-            id: OPENCHAMBER_AUTO_DISCOVER_ACTION_ID,
+            id: DEVRYAN_AUTO_DISCOVER_ACTION_ID,
             name: t('projectActions.actions.autoDiscover'),
             command: devServer.command,
             icon: 'search',
@@ -650,7 +650,7 @@ export const ProjectActionsButton = ({
         : action;
 
       const hasCustomOpenUrl = discovered.autoOpenUrl === true && (discovered.openUrl || '').trim().length > 0;
-      const { key, tabId, sessionId } = await getOrCreateActionTab(discovered, { revealTerminal: !hasCustomOpenUrl && action.id !== OPENCHAMBER_AUTO_DISCOVER_ACTION_ID });
+      const { key, tabId, sessionId } = await getOrCreateActionTab(discovered, { revealTerminal: !hasCustomOpenUrl && action.id !== DEVRYAN_AUTO_DISCOVER_ACTION_ID });
       let activeSessionId = sessionId;
       let createdSession = false;
 
@@ -674,7 +674,7 @@ export const ProjectActionsButton = ({
         await sleep(350);
       }
 
-      if (discovered.id === OPENCHAMBER_AUTO_DISCOVER_ACTION_ID) {
+      if (discovered.id === DEVRYAN_AUTO_DISCOVER_ACTION_ID) {
         streamCleanupByRunKeyRef.current[key]?.();
         setConnecting(normalizedDirectory, tabId, true);
         streamCleanupByRunKeyRef.current[key] = connectTerminalStream(
@@ -715,11 +715,11 @@ export const ProjectActionsButton = ({
         actionId: discovered.id,
         tabId,
         sessionId: activeSessionId,
-        status: discovered.id === OPENCHAMBER_AUTO_DISCOVER_ACTION_ID && !manualOpenUrl ? 'waiting-for-preview' : 'running',
+        status: discovered.id === DEVRYAN_AUTO_DISCOVER_ACTION_ID && !manualOpenUrl ? 'waiting-for-preview' : 'running',
       });
       window.clearTimeout(previewWaitTimeoutByRunKeyRef.current[key]);
       delete previewWaitTimeoutByRunKeyRef.current[key];
-      if (discovered.id === OPENCHAMBER_AUTO_DISCOVER_ACTION_ID && !manualOpenUrl) {
+      if (discovered.id === DEVRYAN_AUTO_DISCOVER_ACTION_ID && !manualOpenUrl) {
         previewWaitTimeoutByRunKeyRef.current[key] = window.setTimeout(() => {
           useTerminalStore.getState().updateProjectActionRunStatus(key, 'running');
           delete previewWaitTimeoutByRunKeyRef.current[key];
@@ -748,7 +748,7 @@ export const ProjectActionsButton = ({
         lastSeenChunkId: null,
         openedUrl: Boolean(desktopForwardUrl) || Boolean(manualOpenUrl) || hasCustomOpenUrl,
         tail: '',
-        openInPreview: discovered.id === OPENCHAMBER_AUTO_DISCOVER_ACTION_ID,
+        openInPreview: discovered.id === DEVRYAN_AUTO_DISCOVER_ACTION_ID,
       };
 
       const normalizedCommand = stripControlChars(discovered.command.trim().replace(/\r\n|\r/g, '\n'));
@@ -1017,14 +1017,14 @@ export const ProjectActionsButton = ({
   }
 
   const selectedIconKey = (resolvedSelected.icon || 'play') as keyof typeof PROJECT_ACTION_ICON_MAP;
-  const SelectedIcon = resolvedSelected.id === OPENCHAMBER_AUTO_DISCOVER_ACTION_ID
+  const SelectedIcon = resolvedSelected.id === DEVRYAN_AUTO_DISCOVER_ACTION_ID
     ? RiSearchLine
     : PROJECT_ACTION_ICON_MAP[selectedIconKey] || RiPlayLine;
   const selectedButtonLabel = formatActionButtonLabel(
     resolvedSelected.name,
     t('projectActions.label.fallbackAction'),
   );
-  const showSelectedButtonLabel = !compact && resolvedSelected.id !== OPENCHAMBER_AUTO_DISCOVER_ACTION_ID;
+  const showSelectedButtonLabel = !compact && resolvedSelected.id !== DEVRYAN_AUTO_DISCOVER_ACTION_ID;
   const selectedRunKey = toProjectActionRunKey(normalizedDirectory, resolvedSelected.id);
   const selectedRunning = projectActionRuns[selectedRunKey];
   const isStoppingSelected = selectedRunning?.status === 'stopping';
@@ -1098,7 +1098,7 @@ export const ProjectActionsButton = ({
             <DropdownMenuSeparator />
             {displayActions.map((entry) => {
               const iconKey = (entry.icon || 'play') as keyof typeof PROJECT_ACTION_ICON_MAP;
-              const Icon = entry.id === OPENCHAMBER_AUTO_DISCOVER_ACTION_ID
+              const Icon = entry.id === DEVRYAN_AUTO_DISCOVER_ACTION_ID
                 ? RiSearchLine
                 : PROJECT_ACTION_ICON_MAP[iconKey] || RiPlayLine;
               const runKey = toProjectActionRunKey(normalizedDirectory, entry.id);
@@ -1206,7 +1206,7 @@ export const ProjectActionsButton = ({
           <DropdownMenuSeparator />
           {displayActions.map((entry) => {
             const iconKey = (entry.icon || 'play') as keyof typeof PROJECT_ACTION_ICON_MAP;
-            const Icon = entry.id === OPENCHAMBER_AUTO_DISCOVER_ACTION_ID
+            const Icon = entry.id === DEVRYAN_AUTO_DISCOVER_ACTION_ID
               ? RiSearchLine
               : PROJECT_ACTION_ICON_MAP[iconKey] || RiPlayLine;
             const runKey = toProjectActionRunKey(normalizedDirectory, entry.id);

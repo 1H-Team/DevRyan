@@ -37,10 +37,10 @@ const parseSettingSourcesFlag = (raw) => {
   return parsed.length ? parsed : undefined;
 };
 
-// DevRyan cursor context trim (default OFF). Set OPENCHAMBER_CURSOR_SETTING_SOURCES to a
+// DevRyan cursor context trim (default OFF). Set DEVRYAN_CURSOR_SETTING_SOURCES to a
 // comma list of cursor setting layers (project,user,team,mdm,plugins,all) or "none" to
 // load none, trimming ambient rules/settings context sent to the cursor-agent runtime.
-const CURSOR_SETTING_SOURCES = parseSettingSourcesFlag(process.env.OPENCHAMBER_CURSOR_SETTING_SOURCES);
+const CURSOR_SETTING_SOURCES = parseSettingSourcesFlag(process.env.DEVRYAN_CURSOR_SETTING_SOURCES);
 
 // Upper bound on how long we wait for an SDK run cancel to settle before we
 // force the request to finish. Prevents a hung cancel from leaving the host

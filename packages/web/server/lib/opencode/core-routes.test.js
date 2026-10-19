@@ -166,8 +166,8 @@ describe('core-routes', () => {
   });
 
   it('rejects shutdown in dev mode', async () => {
-    const previous = process.env.OPENCHAMBER_DEV_MODE;
-    process.env.OPENCHAMBER_DEV_MODE = 'true';
+    const previous = process.env.DEVRYAN_DEV_MODE;
+    process.env.DEVRYAN_DEV_MODE = 'true';
     try {
       const { app, dependencies } = createApp();
       const response = await request(app)
@@ -180,18 +180,18 @@ describe('core-routes', () => {
       expect(dependencies.gracefulShutdown).not.toHaveBeenCalled();
     } finally {
       if (typeof previous === 'undefined') {
-        delete process.env.OPENCHAMBER_DEV_MODE;
+        delete process.env.DEVRYAN_DEV_MODE;
       } else {
-        process.env.OPENCHAMBER_DEV_MODE = previous;
+        process.env.DEVRYAN_DEV_MODE = previous;
       }
     }
   });
 
   it('rejects dev-shutdown when allow flag is not set', async () => {
-    const previousShutdown = process.env.OPENCHAMBER_DEV_SHUTDOWN;
-    const previousAllow = process.env.OPENCHAMBER_ALLOW_DEV_SHUTDOWN;
-    process.env.OPENCHAMBER_DEV_SHUTDOWN = 'true';
-    delete process.env.OPENCHAMBER_ALLOW_DEV_SHUTDOWN;
+    const previousShutdown = process.env.DEVRYAN_DEV_SHUTDOWN;
+    const previousAllow = process.env.DEVRYAN_ALLOW_DEV_SHUTDOWN;
+    process.env.DEVRYAN_DEV_SHUTDOWN = 'true';
+    delete process.env.DEVRYAN_ALLOW_DEV_SHUTDOWN;
     try {
       const { app } = createApp();
       const response = await request(app)
@@ -204,25 +204,25 @@ describe('core-routes', () => {
       expect(response.body).toEqual({ ok: false, error: 'Dev shutdown is disabled' });
     } finally {
       if (typeof previousShutdown === 'undefined') {
-        delete process.env.OPENCHAMBER_DEV_SHUTDOWN;
+        delete process.env.DEVRYAN_DEV_SHUTDOWN;
       } else {
-        process.env.OPENCHAMBER_DEV_SHUTDOWN = previousShutdown;
+        process.env.DEVRYAN_DEV_SHUTDOWN = previousShutdown;
       }
       if (typeof previousAllow === 'undefined') {
-        delete process.env.OPENCHAMBER_ALLOW_DEV_SHUTDOWN;
+        delete process.env.DEVRYAN_ALLOW_DEV_SHUTDOWN;
       } else {
-        process.env.OPENCHAMBER_ALLOW_DEV_SHUTDOWN = previousAllow;
+        process.env.DEVRYAN_ALLOW_DEV_SHUTDOWN = previousAllow;
       }
     }
   });
 
   it('exposes dev flags on /api/system/info', async () => {
-    const previousMode = process.env.OPENCHAMBER_DEV_MODE;
-    const previousShutdown = process.env.OPENCHAMBER_DEV_SHUTDOWN;
-    const previousAllow = process.env.OPENCHAMBER_ALLOW_DEV_SHUTDOWN;
-    process.env.OPENCHAMBER_DEV_MODE = 'true';
-    process.env.OPENCHAMBER_DEV_SHUTDOWN = 'true';
-    process.env.OPENCHAMBER_ALLOW_DEV_SHUTDOWN = 'true';
+    const previousMode = process.env.DEVRYAN_DEV_MODE;
+    const previousShutdown = process.env.DEVRYAN_DEV_SHUTDOWN;
+    const previousAllow = process.env.DEVRYAN_ALLOW_DEV_SHUTDOWN;
+    process.env.DEVRYAN_DEV_MODE = 'true';
+    process.env.DEVRYAN_DEV_SHUTDOWN = 'true';
+    process.env.DEVRYAN_ALLOW_DEV_SHUTDOWN = 'true';
     try {
       const { app } = createApp();
       const response = await request(app).get('/api/system/info');
@@ -233,9 +233,9 @@ describe('core-routes', () => {
       });
     } finally {
       for (const [key, value] of [
-        ['OPENCHAMBER_DEV_MODE', previousMode],
-        ['OPENCHAMBER_DEV_SHUTDOWN', previousShutdown],
-        ['OPENCHAMBER_ALLOW_DEV_SHUTDOWN', previousAllow],
+        ['DEVRYAN_DEV_MODE', previousMode],
+        ['DEVRYAN_DEV_SHUTDOWN', previousShutdown],
+        ['DEVRYAN_ALLOW_DEV_SHUTDOWN', previousAllow],
       ]) {
         if (typeof value === 'undefined') {
           delete process.env[key];

@@ -38,15 +38,15 @@ describe('network-exposed auth validation', () => {
   });
 
   it('allows explicit unsafe LAN override from process env only', () => {
-    const previous = process.env.OPENCHAMBER_ALLOW_UNAUTHENTICATED_LAN;
-    process.env.OPENCHAMBER_ALLOW_UNAUTHENTICATED_LAN = 'true';
+    const previous = process.env.DEVRYAN_ALLOW_UNAUTHENTICATED_LAN;
+    process.env.DEVRYAN_ALLOW_UNAUTHENTICATED_LAN = 'true';
     try {
       expect(() => assertAuthenticatedNetworkExposure({ host: '0.0.0.0' })).not.toThrow();
     } finally {
       if (typeof previous === 'string') {
-        process.env.OPENCHAMBER_ALLOW_UNAUTHENTICATED_LAN = previous;
+        process.env.DEVRYAN_ALLOW_UNAUTHENTICATED_LAN = previous;
       } else {
-        delete process.env.OPENCHAMBER_ALLOW_UNAUTHENTICATED_LAN;
+        delete process.env.DEVRYAN_ALLOW_UNAUTHENTICATED_LAN;
       }
     }
   });
@@ -335,13 +335,13 @@ describe('bundled runtime help', () => {
     try {
       const { stdout } = await promisify(execFile)(process.execPath, [path.join(import.meta.dirname, 'cli.js'), 'serve', '--help'], {
         cwd: root, env: { PATH: process.env.PATH, HOME: root, XDG_CONFIG_HOME: path.join(root, 'config'),
-          XDG_DATA_HOME: path.join(root, 'data'), OPENCHAMBER_DATA_DIR: path.join(root, 'web-data'), NO_COLOR: '1' },
+          XDG_DATA_HOME: path.join(root, 'data'), DEVRYAN_DATA_DIR: path.join(root, 'web-data'), NO_COLOR: '1' },
         timeout: 15000, maxBuffer: 256 * 1024,
       });
       expect(stdout).toContain('bundled native OpenCode 2.0.32');
       expect(stdout).toContain('Update DevRyan');
       for (const flag of ['--foreground', '--host', '--port']) expect(stdout).toContain(flag);
-      expect(stdout).not.toMatch(/OPENCODE_HOST|OPENCODE_PORT|OPENCODE_SKIP_START|OPENCHAMBER_OPENCODE_HOSTNAME/);
+      expect(stdout).not.toMatch(/OPENCODE_HOST|OPENCODE_PORT|OPENCODE_SKIP_START|DEVRYAN_OPENCODE_HOSTNAME/);
     } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
 });

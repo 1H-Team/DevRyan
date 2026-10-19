@@ -366,7 +366,7 @@ test('a fresh process binds only through the launcher, before path-capturing own
   const home=await fs.mkdtemp(path.join(os.tmpdir(),'devryan-fresh-binding-home-')); roots.push(home);
   const ambient=path.join(home,'ambient');
   const url=file=>JSON.stringify(new URL(file,import.meta.url).href);
-  const probe=`const env=()=>({data:process.env.OPENCHAMBER_DATA_DIR,configDir:process.env.OPENCODE_CONFIG_DIR,config:process.env.OPENCODE_CONFIG});
+  const probe=`const env=()=>({data:process.env.DEVRYAN_DATA_DIR,configDir:process.env.OPENCODE_CONFIG_DIR,config:process.env.OPENCODE_CONFIG});
 const binding=await import(${url('./runtime-bundle-binding.js')});
 const afterImport={...env(),selected:binding.selectedRuntimeBundle,home:binding.getRuntimeHome()};
 const {prepareNativeRuntimeEntry}=await import(${url('./runtime-entry-bootstrap.js')});
@@ -375,7 +375,7 @@ const prepared=await prepareNativeRuntimeEntry();
 const shared=await import(${url('../shared.js')});
 process.stdout.write('\\nRESULT:'+JSON.stringify({afterImport,afterLauncherImport,prepared:prepared.descriptor.bundleID,
  bound:{...env(),selected:binding.selectedRuntimeBundle?.descriptor.bundleID,home:binding.getRuntimeHome()},captured:shared.OPENCODE_CONFIG_DIR})+'\\n');`;
-  const ambientEnv={OPENCHAMBER_DATA_DIR:path.join(ambient,'data'),OPENCODE_CONFIG_DIR:path.join(ambient,'opencode'),OPENCODE_CONFIG:path.join(ambient,'opencode','config.json')};
+  const ambientEnv={DEVRYAN_DATA_DIR:path.join(ambient,'data'),OPENCODE_CONFIG_DIR:path.join(ambient,'opencode'),OPENCODE_CONFIG:path.join(ambient,'opencode','config.json')};
   const child=spawn(process.execPath,['--input-type=module','-e',probe],{cwd:home,stdio:['ignore','pipe','pipe'],
     env:{PATH:process.env.PATH,HOME:home,DEVRYAN_RUNTIME_BUNDLE_ROOT:f.controlRoot,...ambientEnv}});
   let stdout='',stderr='';child.stdout.on('data',chunk=>{stdout+=chunk;});child.stderr.on('data',chunk=>{stderr+=chunk;});
@@ -383,7 +383,7 @@ process.stdout.write('\\nRESULT:'+JSON.stringify({afterImport,afterLauncherImpor
   expect(code,stderr).toBe(0);
   const result=JSON.parse(stdout.split('\n').find(line=>line.startsWith('RESULT:')).slice('RESULT:'.length));
   // Importing the binding or the launcher reads no selection and changes no environment.
-  const unbound={data:ambientEnv.OPENCHAMBER_DATA_DIR,configDir:ambientEnv.OPENCODE_CONFIG_DIR,config:ambientEnv.OPENCODE_CONFIG,selected:null};
+  const unbound={data:ambientEnv.DEVRYAN_DATA_DIR,configDir:ambientEnv.OPENCODE_CONFIG_DIR,config:ambientEnv.OPENCODE_CONFIG,selected:null};
   expect(result.afterImport).toEqual({...unbound,home});
   expect(result.afterLauncherImport).toEqual(unbound);
   const launch=baseline.launch;

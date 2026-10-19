@@ -313,6 +313,6 @@ describe('managed OpenCode process registry', () => {
 
   it('resolves the OpenChamber data dir from the environment', () => {
     const dataDir = path.join(tmpdir(), 'openchamber-verify-data');
-    expect(getOpenChamberDataDir({ OPENCHAMBER_DATA_DIR: dataDir })).toBe(path.resolve(dataDir));
+    expect(getOpenChamberDataDir({ DEVRYAN_DATA_DIR: dataDir })).toBe(path.resolve(dataDir));
   });
 });

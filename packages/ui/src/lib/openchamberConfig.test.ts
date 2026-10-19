@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   getProjectActionsState,
-  OPENCHAMBER_AUTO_DISCOVER_ACTION_ID,
+  DEVRYAN_AUTO_DISCOVER_ACTION_ID,
   saveProjectActionsState,
   type OpenChamberProjectAction,
   type ProjectRef,
@@ -82,10 +82,10 @@ describe("project actions config", () => {
   test("keeps explicit Auto-discover as the primary ID", async () => {
     await withMockProjectConfig({
       projectActions: [action],
-      projectActionsPrimaryId: OPENCHAMBER_AUTO_DISCOVER_ACTION_ID,
+      projectActionsPrimaryId: DEVRYAN_AUTO_DISCOVER_ACTION_ID,
     }, async () => {
       const state = await getProjectActionsState(project);
-      expect(state.primaryActionId).toBe(OPENCHAMBER_AUTO_DISCOVER_ACTION_ID);
+      expect(state.primaryActionId).toBe(DEVRYAN_AUTO_DISCOVER_ACTION_ID);
     });
   });
 
@@ -103,10 +103,10 @@ describe("project actions config", () => {
     await withMockProjectConfig({}, async () => {
       await saveProjectActionsState(project, {
         actions: [action],
-        primaryActionId: OPENCHAMBER_AUTO_DISCOVER_ACTION_ID,
+        primaryActionId: DEVRYAN_AUTO_DISCOVER_ACTION_ID,
       });
       const state = await getProjectActionsState(project);
-      expect(state.primaryActionId).toBe(OPENCHAMBER_AUTO_DISCOVER_ACTION_ID);
+      expect(state.primaryActionId).toBe(DEVRYAN_AUTO_DISCOVER_ACTION_ID);
     });
   });
 });

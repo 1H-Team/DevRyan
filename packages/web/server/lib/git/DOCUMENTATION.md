@@ -17,7 +17,7 @@ Managed callers are additionally constrained by the multi-user layer: worktree c
   - `commit-message.js`: Session-free commit-subject prompt, normalization, validation, and direct Zen utility-model generation.
   - `commit-message-context.js`: Bounded host-side status, history, and selected-file diff collection for commit-message drafts.
   - `credentials.js`: Git credentials management.
-  - `identity-storage.js`: Git identity storage under `OPENCHAMBER_DATA_DIR` with mode-`0600` atomic writes.
+  - `identity-storage.js`: Git identity storage under `DEVRYAN_DATA_DIR` with mode-`0600` atomic writes.
 
 ## Public API
 

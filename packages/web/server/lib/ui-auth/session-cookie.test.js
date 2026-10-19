@@ -49,7 +49,7 @@ test('signed sessions bind to their issued port and legacy cookies cannot authen
         passwordless.dispose();assert.equal(local(),false);
       } finally {auth.dispose();}`;
     await promisify(execFile)(process.execPath, ['--input-type=module', '-e', script], {
-      env: { ...process.env, OPENCHAMBER_DATA_DIR: directory, OPENCODE_JWT_SECRET: undefined }, timeout: 15_000,
+      env: { ...process.env, DEVRYAN_DATA_DIR: directory, OPENCODE_JWT_SECRET: undefined }, timeout: 15_000,
     });
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
 });

@@ -55,7 +55,7 @@ export async function runPackagedServiceSmoke({ packageEvidence, artifactRoot })
   try {
     prepared = await prepareRuntimeUiProfile({ cell: { transport: 'runtime-fixture' }, runtimeRoot, workspace,
       targetGeneration: 2, artifactRoot });
-    const dataDirectory = prepared.env.OPENCHAMBER_DATA_DIR;
+    const dataDirectory = prepared.env.DEVRYAN_DATA_DIR;
     const profile = path.join(runtimeRoot, 'profile');
     await fs.mkdir(profile, { mode: 0o700 });
     const settingsPath = path.join(dataDirectory, 'settings.json');
@@ -65,8 +65,8 @@ export async function runPackagedServiceSmoke({ packageEvidence, artifactRoot })
       await fs.writeFile(settingsPath, JSON.stringify({ ...settings, desktopLocalPort: port,
         desktopLanAccessEnabled: false, productionBotsRuntimeMode: 'disabled' }) + '\n', { mode: 0o600 });
       const env = { ...prepared.env, DEVRYAN_QA_RUNTIME: 'electron',
-        OPENCHAMBER_ELECTRON_USER_DATA_DIR: profile, OPENCHAMBER_DIST_DIR: packaged.artifactDirectory,
-        OPENCHAMBER_PORT: String(port), GIT_CEILING_DIRECTORIES: fixtures };
+        DEVRYAN_ELECTRON_USER_DATA_DIR: profile, DEVRYAN_DIST_DIR: packaged.artifactDirectory,
+        DEVRYAN_PORT: String(port), GIT_CEILING_DIRECTORIES: fixtures };
       delete env.NODE_OPTIONS;
       const startedAt = performance.now();
       app = startOwnedProcess(packaged.binary, ['--runtime-service', `--user-data-dir=${profile}`], { cwd: workspace, env });

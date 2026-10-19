@@ -22,9 +22,9 @@ export const createQaHostLaunchEnvironment = (profileEnvironment, overrides = {}
 // through `overrides`; a native first launch omits them and provisions itself.
 export const createQaIsolatedRuntimeEnvironment = ({ runtime, runtimeRoot, home, data, profile, distDirectory, port,
   overrides = {}, runtimeEnv = {} }, baseEnvironment = process.env) => {
-  const env = createQaHostLaunchEnvironment({}, { OPENCHAMBER_DATA_DIR: data, OPENCHAMBER_ELECTRON_USER_DATA_DIR: profile,
-    OPENCHAMBER_DIST_DIR: distDirectory, OPENCHAMBER_PORT: String(port), ...overrides,
-    OPENCHAMBER_ELECTRON_DEV: '1', NO_PROXY: 'localhost,127.0.0.1', no_proxy: 'localhost,127.0.0.1' }, baseEnvironment);
+  const env = createQaHostLaunchEnvironment({}, { DEVRYAN_DATA_DIR: data, DEVRYAN_ELECTRON_USER_DATA_DIR: profile,
+    DEVRYAN_DIST_DIR: distDirectory, DEVRYAN_PORT: String(port), ...overrides,
+    DEVRYAN_ELECTRON_DEV: '1', NO_PROXY: 'localhost,127.0.0.1', no_proxy: 'localhost,127.0.0.1' }, baseEnvironment);
   delete env.ELECTRON_RUN_AS_NODE;
   Object.assign(env, { DEVRYAN_QA_HOME: home, DEVRYAN_QA_RUNTIME_ROOT: runtimeRoot, DEVRYAN_QA_RUNTIME: runtime });
   for (const key of Object.keys(env)) if (/TOKEN|SECRET|PASSWORD|API_KEY/.test(key)) delete env[key];

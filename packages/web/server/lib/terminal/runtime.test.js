@@ -326,7 +326,7 @@ describe('terminal runtime', () => {
       OPENAI_API_KEY: process.env.OPENAI_API_KEY,
       CURSOR_API_KEY: process.env.CURSOR_API_KEY,
       OPENCODE_JWT_SECRET: process.env.OPENCODE_JWT_SECRET,
-      OPENCHAMBER_UI_PASSWORD: process.env.OPENCHAMBER_UI_PASSWORD,
+      DEVRYAN_UI_PASSWORD: process.env.DEVRYAN_UI_PASSWORD,
       DEVRYAN_ORCHESTRATION_TOKEN: process.env.DEVRYAN_ORCHESTRATION_TOKEN,
       OPENCODE_SERVER_PASSWORD: process.env.OPENCODE_SERVER_PASSWORD,
       SUPABASE_SECRET_KEY: process.env.SUPABASE_SECRET_KEY,
@@ -334,7 +334,7 @@ describe('terminal runtime', () => {
     process.env.OPENAI_API_KEY = 'openai-secret-test';
     process.env.CURSOR_API_KEY = 'cursor-secret-test';
     process.env.OPENCODE_JWT_SECRET = 'jwt-secret-test';
-    process.env.OPENCHAMBER_UI_PASSWORD = 'ui-password-test';
+    process.env.DEVRYAN_UI_PASSWORD = 'ui-password-test';
     process.env.DEVRYAN_ORCHESTRATION_TOKEN = 'orchestration-secret-test';
     process.env.OPENCODE_SERVER_PASSWORD = 'opencode-server-password-test';
     process.env.SUPABASE_SECRET_KEY = 'supabase-secret-test';

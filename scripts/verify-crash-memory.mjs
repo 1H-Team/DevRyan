@@ -23,7 +23,7 @@ if (!process.versions.electron) {
   await Promise.all(['app_bound', 'service'].map(async (mode) => {
     const base = path.join(output, mode); await fs.mkdir(base, { recursive: true });
     const env = { PATH: process.env.PATH, HOME: base, TMPDIR: base, XDG_CONFIG_HOME: base,
-      OPENCHAMBER_DATA_DIR: base, OPENCHAMBER_ELECTRON_DEV: '1', OPENCHAMBER_ELECTRON_USER_DATA_DIR: path.join(base, 'profile') };
+      DEVRYAN_DATA_DIR: base, DEVRYAN_ELECTRON_DEV: '1', DEVRYAN_ELECTRON_USER_DATA_DIR: path.join(base, 'profile') };
     const child = spawn(electron, ['--js-flags=--expose-gc', fileURLToPath(import.meta.url), '--seconds', String(seconds), '--output', base, '--mode', mode,
       '--source', source, '--workload', workload, ...(observeRefreshLoop ? ['--observe-refresh-loop'] : [])], { cwd: root, env, stdio: 'inherit' });
     const code = await new Promise((resolve, reject) => { child.once('error', reject); child.once('exit', resolve); });

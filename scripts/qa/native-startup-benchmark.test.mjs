@@ -73,7 +73,7 @@ test('upgrade preparation uses the normal canonical root and lets production pro
   assert.equal(upgradeEnv.XDG_STATE_HOME, `${runtimeRoot}/state`);
   assert.equal(resolveRuntimeBundleRoot(upgradeEnv, launch.global.home), upgrade.controlRoot);
   assert.equal(upgradeEnv.HOME, launch.global.home);
-  assert.equal(upgradeEnv.OPENCHAMBER_DATA_DIR, launch.webDataDirectory);
+  assert.equal(upgradeEnv.DEVRYAN_DATA_DIR, launch.webDataDirectory);
   assert.throws(() => upgrade.createLaunchEnvironment({ controlRoot: regular.controlRoot, descriptor: { launch } }));
   assert.throws(() => runtimeUiBundleLayout(runtimeRoot, 'true'));
   assert.throws(() => runtimeUiBundleLayout('relative', true));

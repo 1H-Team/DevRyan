@@ -8,6 +8,7 @@ import test from 'node:test';
 import { resolveStartupSplashPalette, withStartupSplashPalette } from '../startup-splash.mjs';
 import { restartSupabaseHost } from '../supabase-host-restart.mjs';
 import { finishQuitAfterCleanup } from '../quit-cleanup.mjs';
+import { setDevRyanEnv } from '../../shared-runtime/lib/legacy-environment.js';
 
 const repository = path.resolve(fileURLToPath(new URL('../../..', import.meta.url)));
 const mainSource = await fs.readFile(new URL('../main.mjs', import.meta.url), 'utf8');
@@ -33,7 +34,7 @@ import ${osAlias} from 'node:os';
 const isRuntimeServiceControlProbe=false;
 const isPreview=${preview};
 ${importsAndCapture.replaceAll(bindingSpecifier, bindingUrl)}
-process.stdout.write(JSON.stringify({ hostRoot: hostDataRootDirectory, selectedRoot: process.env.OPENCHAMBER_DATA_DIR${failed ? ', code:shellRuntimeBundleBindingError?.code' : ''} }));
+process.stdout.write(JSON.stringify({ hostRoot: hostDataRootDirectory, selectedRoot: process.env.DEVRYAN_DATA_DIR${failed ? ', code:shellRuntimeBundleBindingError?.code' : ''} }));
 `;
 }
 
@@ -48,7 +49,7 @@ test('source and packaged ESM capture the shell root before bundle binding chang
     assert.equal(build.signal, null);
     const bundledSource = await fs.readFile(path.join(outdir, 'main.mjs'), 'utf8');
     const binding = path.join(fixture, 'binding.mjs');
-    await fs.writeFile(binding, `process.env.OPENCHAMBER_DATA_DIR = process.env.DEVRYAN_TEST_SELECTED_DATA_ROOT;
+    await fs.writeFile(binding, `process.env.DEVRYAN_DATA_DIR = process.env.DEVRYAN_TEST_SELECTED_DATA_ROOT;
 export const readRuntimeBundleBinding = () => null;
 `);
     const home = path.join(fixture, 'home');
@@ -62,7 +63,7 @@ export const readRuntimeBundleBinding = () => null;
           const result = spawnSync(process.execPath, [probe], {
             cwd: fixture, encoding: 'utf8', timeout: 10_000,
             env: { HOME: home, PATH: process.env.PATH, DEVRYAN_TEST_SELECTED_DATA_ROOT: selectedRoot,
-              ...(configured ? { OPENCHAMBER_DATA_DIR: hostRoot } : {}) },
+              ...(configured ? { DEVRYAN_DATA_DIR: hostRoot } : {}) },
           });
           assert.equal(result.status, 0, result.stderr || result.error?.message);
           assert.equal(result.signal, null);
@@ -84,7 +85,7 @@ export const readRuntimeBundleBinding = () => null;
         // A broken binding would throw if preview accidentally imported it.
         await fs.writeFile(previewProbe, bootstrapProbe(source, pathToFileURL(brokenBinding).href, true, true));
         const previewResult = spawnSync(process.execPath, [previewProbe], { cwd: fixture, encoding: 'utf8', timeout: 10_000,
-          env: { HOME: home, PATH: process.env.PATH, OPENCHAMBER_DATA_DIR: previewRoot } });
+          env: { HOME: home, PATH: process.env.PATH, DEVRYAN_DATA_DIR: previewRoot } });
         assert.equal(previewResult.status, 0, previewResult.stderr || previewResult.error?.message);
         assert.equal(previewResult.signal, null);
         assert.deepEqual(JSON.parse(previewResult.stdout), { hostRoot: previewRoot, selectedRoot: previewRoot });
@@ -128,24 +129,25 @@ function relaunchCallback(environment, relaunch, originalBundleRoot) {
   const start = mainSource.indexOf('const relaunchWithHostDataRoot = () => {');
   const end = mainSource.indexOf('const firstExistingPath =', start);
   assert.ok(start >= 0 && end > start);
-  return new Function('app', 'process', 'hostDataRootDirectory', 'hostRuntimeBundleRoot', `
+  return new Function('app', 'process', 'hostDataRootDirectory', 'hostRuntimeBundleRoot', 'setDevRyanEnv', `
     ${mainSource.slice(start, end)}
     return relaunchWithHostDataRoot;
-  `)({ relaunch }, { env: environment }, '/fixture/shell-data', originalBundleRoot);
+  `)({ relaunch }, { env: environment }, '/fixture/shell-data', originalBundleRoot, setDevRyanEnv);
 }
 
 test('relaunch inherits the shell root and always restores the current parent environment', () => {
   for (const selectedRoot of ['/fixture/retained-bundle/web-data', undefined]) for (const fails of [false, true]) {
-    const environment = selectedRoot === undefined ? {} : { OPENCHAMBER_DATA_DIR: selectedRoot };
+    const environment = selectedRoot === undefined ? {} : { DEVRYAN_DATA_DIR: selectedRoot };
     let inherited;
     const relaunch = relaunchCallback(environment, () => {
-      inherited = environment.OPENCHAMBER_DATA_DIR;
+      inherited = environment.DEVRYAN_DATA_DIR;
+      assert.equal(environment.OPENCHAMBER_DATA_DIR, environment.DEVRYAN_DATA_DIR, 'The relaunch alias matches');
       if (fails) throw new Error('fixture relaunch failed');
     });
     if (fails) assert.throws(relaunch, /fixture relaunch failed/);
     else relaunch();
     assert.equal(inherited, '/fixture/shell-data');
-    assert.deepEqual(environment, selectedRoot === undefined ? {} : { OPENCHAMBER_DATA_DIR: selectedRoot });
+    assert.deepEqual(environment, selectedRoot === undefined ? {} : { DEVRYAN_DATA_DIR: selectedRoot });
   }
   assert.equal(mainSource.match(/app\.relaunch\(\)/g)?.length, 1, 'All existing callbacks use the root-preserving handoff');
   assert.equal(mainSource.match(/relaunch:\s*(?:restart \? )?relaunchWithHostDataRoot/g)?.length, 3);
@@ -153,13 +155,13 @@ test('relaunch inherits the shell root and always restores the current parent en
 
 test('strict host restart hands off the shell root only after drain and release succeed', async () => {
   for (const failure of [null, 'drain', 'release']) for (const serviceMode of [false, true]) {
-    const environment = { OPENCHAMBER_DATA_DIR: '/fixture/retained-bundle/web-data' }, calls = [];
-    const selected = () => assert.equal(environment.OPENCHAMBER_DATA_DIR, '/fixture/retained-bundle/web-data');
+    const environment = { DEVRYAN_DATA_DIR: '/fixture/retained-bundle/web-data' }, calls = [];
+    const selected = () => assert.equal(environment.DEVRYAN_DATA_DIR, '/fixture/retained-bundle/web-data');
     const operation = restartSupabaseHost({
       handle: { stop: async () => { selected(); calls.push('drain'); if (failure === 'drain') throw Error('fixture drain failed'); } },
       coordinator: { release: async () => { selected(); calls.push('release'); if (failure === 'release') throw Error('fixture release failed'); } },
       serviceMode, onStopped: () => { selected(); calls.push('stopped'); },
-      relaunch: relaunchCallback(environment, () => { assert.equal(environment.OPENCHAMBER_DATA_DIR, '/fixture/shell-data'); calls.push('relaunch'); }),
+      relaunch: relaunchCallback(environment, () => { assert.equal(environment.DEVRYAN_DATA_DIR, '/fixture/shell-data'); calls.push('relaunch'); }),
       exit: code => { selected(); calls.push(`exit:${code}`); },
     });
     if (failure) await assert.rejects(operation, new RegExp(`fixture ${failure} failed`));
@@ -171,18 +173,18 @@ test('strict host restart hands off the shell root only after drain and release 
 });
 
 test('bounded ordinary restart preserves parent environment even while timed-out cleanup remains pending', async () => {
-  const environment = { OPENCHAMBER_DATA_DIR: '/fixture/retained-bundle/web-data' }, calls = [];
+  const environment = { DEVRYAN_DATA_DIR: '/fixture/retained-bundle/web-data' }, calls = [];
   let timeout;
   const operation = finishQuitAfterCleanup({
     cleanupOwnedResources: () => { calls.push('cleanup'); return new Promise(() => {}); },
-    relaunch: relaunchCallback(environment, () => { assert.equal(environment.OPENCHAMBER_DATA_DIR, '/fixture/shell-data'); calls.push('relaunch'); }),
+    relaunch: relaunchCallback(environment, () => { assert.equal(environment.DEVRYAN_DATA_DIR, '/fixture/shell-data'); calls.push('relaunch'); }),
     requestQuit: () => assert.fail('The pending cleanup must take the existing bounded fallback'),
-    forceExit: () => { assert.equal(environment.OPENCHAMBER_DATA_DIR, '/fixture/retained-bundle/web-data'); calls.push('exit'); },
+    forceExit: () => { assert.equal(environment.DEVRYAN_DATA_DIR, '/fixture/retained-bundle/web-data'); calls.push('exit'); },
     scheduleTimeout: callback => { timeout = callback; return 1; }, cancelTimeout: () => {},
   });
   await Promise.resolve();
   assert.deepEqual(calls, ['cleanup']);
-  assert.equal(environment.OPENCHAMBER_DATA_DIR, '/fixture/retained-bundle/web-data');
+  assert.equal(environment.DEVRYAN_DATA_DIR, '/fixture/retained-bundle/web-data');
   timeout();
   assert.equal(await operation, 'forced');
   assert.deepEqual(calls, ['cleanup', 'relaunch', 'exit']);
@@ -191,7 +193,7 @@ test('bounded ordinary restart preserves parent environment even while timed-out
 
 test('Retry removes only the attempt-injected bundle root and preserves an explicit launch root', () => {
   for (const original of [undefined, '/fixture/user-selected-control']) for (const fails of [false, true]) {
-    const environment = { OPENCHAMBER_DATA_DIR: '/fixture/selected-web', DEVRYAN_RUNTIME_BUNDLE_ROOT: '/fixture/attempt-control' };
+    const environment = { DEVRYAN_DATA_DIR: '/fixture/selected-web', DEVRYAN_RUNTIME_BUNDLE_ROOT: '/fixture/attempt-control' };
     const parent = { ...environment };
     let inherited;
     const relaunch = relaunchCallback(environment, () => {
@@ -200,7 +202,7 @@ test('Retry removes only the attempt-injected bundle root and preserves an expli
     }, original);
     if (fails) assert.throws(relaunch, /fixture retry failed/);
     else relaunch();
-    assert.equal(inherited.OPENCHAMBER_DATA_DIR, '/fixture/shell-data');
+    assert.equal(inherited.DEVRYAN_DATA_DIR, '/fixture/shell-data');
     assert.equal(inherited.DEVRYAN_RUNTIME_BUNDLE_ROOT, original);
     assert.equal(Object.hasOwn(inherited, 'DEVRYAN_RUNTIME_BUNDLE_ROOT'), original !== undefined);
     assert.deepEqual(environment, parent);

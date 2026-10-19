@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import {selectInheritedShellEnv} from '../shell-env-inheritance.mjs';
+import {selectInheritedShellEnv,selectShellDataRoots} from '../shell-env-inheritance.mjs';
 import {provisionDefaultNativeBundle} from '../../web/server/lib/opencode/runtime-host/native-default-bundle.js';
 
 const mainSource=await fs.readFile(new URL('../main.mjs',import.meta.url),'utf8');
@@ -14,25 +14,25 @@ test('login-shell merge drops only refused or provisioning-bypassing values and 
  // A v1 desktop user's rc exports: README external-server recipe, the onboarding
  // OPENCODE_BINARY hint, a stray relative DB and documented rollback/diagnostic switches.
  const {inherited,dropped}=selectInheritedShellEnv(launchEnv,{OPENCODE_PORT:'4096',OPENCODE_SKIP_START:'true',OPENCODE_HOST:'https://fixture.invalid:4096',
-  OPENCHAMBER_SKIP_OPENCODE_START:'true',OPENCODE_BINARY:'/fixture/bin/opencode',OPENCODE_DB:'relative.db',DEVRYAN_OPENCODE_GENERATION:'1',
-  DEVRYAN_RUNTIME_BUNDLE_ROOT:'/fixture/other-bundles',OPENCHAMBER_DATA_DIR:'/fixture/other-data',XDG_STATE_HOME:'/fixture/other-state',
+  DEVRYAN_SKIP_OPENCODE_START:'true',OPENCODE_BINARY:'/fixture/bin/opencode',OPENCODE_DB:'relative.db',DEVRYAN_OPENCODE_GENERATION:'1',
+  DEVRYAN_RUNTIME_BUNDLE_ROOT:'/fixture/other-bundles',DEVRYAN_DATA_DIR:'/fixture/other-data',XDG_STATE_HOME:'/fixture/other-state',
   DEVRYAN_PRIMARY_RECOVERY_MODE:'legacy',DEVRYAN_DUPLICATE_OUTPUTS:'1',EDITOR:'vim',PATH:'/fixture/shell/bin'});
- assert.deepEqual(inherited,{OPENCODE_PORT:'4096',OPENCHAMBER_DATA_DIR:'/fixture/other-data',DEVRYAN_PRIMARY_RECOVERY_MODE:'legacy',DEVRYAN_DUPLICATE_OUTPUTS:'1'});
+ assert.deepEqual(inherited,{OPENCODE_PORT:'4096',DEVRYAN_DATA_DIR:'/fixture/other-data',DEVRYAN_PRIMARY_RECOVERY_MODE:'legacy',DEVRYAN_DUPLICATE_OUTPUTS:'1'});
  // Launch-set names (OPENCODE_SKIP_START, XDG_STATE_HOME) are kept by the ordinary rule, not reported.
- assert.deepEqual(dropped,['DEVRYAN_OPENCODE_GENERATION','DEVRYAN_RUNTIME_BUNDLE_ROOT','OPENCHAMBER_SKIP_OPENCODE_START','OPENCODE_BINARY','OPENCODE_DB','OPENCODE_HOST']);
- assert.deepEqual(selectInheritedShellEnv({},{XDG_STATE_HOME:'/fixture/s',OPENCHAMBER_DATA_DIR:'/fixture/d'}),{inherited:{XDG_STATE_HOME:'/fixture/s',OPENCHAMBER_DATA_DIR:'/fixture/d'},dropped:[]});
+ assert.deepEqual(dropped,['DEVRYAN_OPENCODE_GENERATION','DEVRYAN_RUNTIME_BUNDLE_ROOT','DEVRYAN_SKIP_OPENCODE_START','OPENCODE_BINARY','OPENCODE_DB','OPENCODE_HOST']);
+ assert.deepEqual(selectInheritedShellEnv({},{XDG_STATE_HOME:'/fixture/s',DEVRYAN_DATA_DIR:'/fixture/d'}),{inherited:{XDG_STATE_HOME:'/fixture/s',DEVRYAN_DATA_DIR:'/fixture/d'},dropped:[]});
 });
 
 test('a packaged app also drops login-shell dev/packaging redirections; dev runs and the launch environment keep them',()=>{
- const redirections={OPENCHAMBER_ELECTRON_DEV:'1',OPENCHAMBER_ELECTRON_USER_DATA_DIR:'/fixture/user-data',
+ const redirections={DEVRYAN_ELECTRON_DEV:'1',DEVRYAN_ELECTRON_USER_DATA_DIR:'/fixture/user-data',
   DEVRYAN_EXECUTION_ARTIFACTS:'/fixture/dev-artifacts',DEVRYAN_DEFAULT_CONFIG_ROOT:'/fixture/default-config'};
- const shellEnv={...redirections,OPENCODE_HOST:'https://fixture.invalid:4096',OPENCHAMBER_DATA_DIR:'/fixture/d',DEVRYAN_PRIMARY_RECOVERY_MODE:'legacy',PATH:'/fixture/shell/bin'};
- assert.deepEqual(selectInheritedShellEnv({PATH:'/usr/bin'},shellEnv,{packaged:true}),{inherited:{OPENCHAMBER_DATA_DIR:'/fixture/d',DEVRYAN_PRIMARY_RECOVERY_MODE:'legacy'},
-  dropped:['DEVRYAN_DEFAULT_CONFIG_ROOT','DEVRYAN_EXECUTION_ARTIFACTS','OPENCHAMBER_ELECTRON_DEV','OPENCHAMBER_ELECTRON_USER_DATA_DIR','OPENCODE_HOST']});
+ const shellEnv={...redirections,OPENCODE_HOST:'https://fixture.invalid:4096',DEVRYAN_DATA_DIR:'/fixture/d',DEVRYAN_PRIMARY_RECOVERY_MODE:'legacy',PATH:'/fixture/shell/bin'};
+ assert.deepEqual(selectInheritedShellEnv({PATH:'/usr/bin'},shellEnv,{packaged:true}),{inherited:{DEVRYAN_DATA_DIR:'/fixture/d',DEVRYAN_PRIMARY_RECOVERY_MODE:'legacy'},
+  dropped:['DEVRYAN_DEFAULT_CONFIG_ROOT','DEVRYAN_ELECTRON_DEV','DEVRYAN_ELECTRON_USER_DATA_DIR','DEVRYAN_EXECUTION_ARTIFACTS','OPENCODE_HOST']});
  for(const options of [undefined,{packaged:false}])assert.deepEqual(selectInheritedShellEnv({PATH:'/usr/bin'},shellEnv,options),
-  {inherited:{...redirections,OPENCHAMBER_DATA_DIR:'/fixture/d',DEVRYAN_PRIMARY_RECOVERY_MODE:'legacy'},dropped:['OPENCODE_HOST']});
+  {inherited:{...redirections,DEVRYAN_DATA_DIR:'/fixture/d',DEVRYAN_PRIMARY_RECOVERY_MODE:'legacy'},dropped:['OPENCODE_HOST']});
  // Launch-set redirections are the packaged app's own decision and stay untouched, not reported.
- assert.deepEqual(selectInheritedShellEnv(Object.freeze({...redirections}),shellEnv,{packaged:true}),{inherited:{OPENCHAMBER_DATA_DIR:'/fixture/d',DEVRYAN_PRIMARY_RECOVERY_MODE:'legacy'},dropped:['OPENCODE_HOST']});
+ assert.deepEqual(selectInheritedShellEnv(Object.freeze({...redirections}),shellEnv,{packaged:true}),{inherited:{DEVRYAN_DATA_DIR:'/fixture/d',DEVRYAN_PRIMARY_RECOVERY_MODE:'legacy'},dropped:['OPENCODE_HOST']});
 });
 
 test('every shell-only value is dropped exactly when provisioning would refuse it or be bypassed by it',async()=>{
@@ -46,12 +46,12 @@ test('every shell-only value is dropped exactly when provisioning would refuse i
   };
   const cases=[['OPENCODE_DB','relative.db'],['OPENCODE_DB',''],['OPENCODE_DB',path.join(root,'opencode.db')],
    ['OPENCODE_HOST','https://fixture.invalid:4096'],['OPENCODE_HOST',''],['OPENCODE_SKIP_START','true'],['OPENCODE_SKIP_START','false'],
-   ['OPENCHAMBER_SKIP_OPENCODE_START','true'],['OPENCHAMBER_SKIP_OPENCODE_START','1'],['OPENCODE_BINARY','/fixture/bin/opencode'],['OPENCODE_BINARY',''],
+   ['DEVRYAN_SKIP_OPENCODE_START','true'],['DEVRYAN_SKIP_OPENCODE_START','1'],['OPENCODE_BINARY','/fixture/bin/opencode'],['OPENCODE_BINARY',''],
    ['DEVRYAN_OPENCODE_GENERATION','1'],['DEVRYAN_OPENCODE_GENERATION',''],['DEVRYAN_OPENCODE_GENERATION','2'],
    ['DEVRYAN_RUNTIME_BUNDLE_ROOT',path.join(root,'other-bundles')],['DEVRYAN_RUNTIME_BUNDLE_ROOT',''],
-   ['OPENCODE_PORT','4096'],['OPENCHAMBER_DATA_DIR',path.join(root,'data')],['XDG_STATE_HOME',path.join(root,'state')],
+   ['OPENCODE_PORT','4096'],['DEVRYAN_DATA_DIR',path.join(root,'data')],['XDG_STATE_HOME',path.join(root,'state')],
    ['XDG_STATE_HOME',''],['XDG_STATE_HOME','state'],['XDG_STATE_HOME',root+'/../foreign'],['XDG_STATE_HOME',root+'/\nforeign'],
-   ['OPENCHAMBER_ELECTRON_DEV','1'],['OPENCHAMBER_ELECTRON_USER_DATA_DIR',path.join(root,'user-data')],
+   ['DEVRYAN_ELECTRON_DEV','1'],['DEVRYAN_ELECTRON_USER_DATA_DIR',path.join(root,'user-data')],
    ['DEVRYAN_PRIMARY_RECOVERY_MODE','legacy'],['DEVRYAN_MANAGED_RESULT_MODE','full']];
   const control=await provision(launchEnv);
   assert.ok(control.code&&control.code!==REFUSED,JSON.stringify(control));
@@ -86,4 +86,11 @@ test('main marks a packaged app for the server re-merge before importing the ser
  assert.ok(serverImport>0);
  assert.ok(marker<serverImport);
  assert.match(mainSource,/import \{ PACKAGED_DESKTOP_ENV \} from '@openchamber\/web\/server\/lib\/opencode\/login-shell-env-filter\.js';/);
+});
+
+test('legacy OPENCHAMBER_* login-shell names are judged as their DevRyan names',()=>{
+ const shellEnv={OPENCHAMBER_ELECTRON_DEV:'1',OPENCHAMBER_SKIP_OPENCODE_START:'true',OPENCHAMBER_DATA_DIR:'/fixture/legacy'};
+ assert.deepEqual(selectInheritedShellEnv({},shellEnv,{packaged:true}),
+  {inherited:{OPENCHAMBER_DATA_DIR:'/fixture/legacy'},dropped:['OPENCHAMBER_ELECTRON_DEV','OPENCHAMBER_SKIP_OPENCODE_START']});
+ assert.deepEqual(selectShellDataRoots({},shellEnv,{packaged:true}),{OPENCHAMBER_DATA_DIR:'/fixture/legacy'});
 });

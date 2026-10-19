@@ -3,9 +3,9 @@ import test from 'node:test';
 import {createNativeSettingsDirectory} from '../native-settings-directory.mjs';
 import {createDesktopSettings} from '../desktop-settings.mjs';
 test('desktop settings follow valid native selection; host root and invalid selection remain explicit',()=>{
- let selected=false;const environment={OPENCHAMBER_DATA_DIR:'/fixture/old',XDG_STATE_HOME:'/fixture/state'};
+ let selected=false;const environment={DEVRYAN_DATA_DIR:'/fixture/old',XDG_STATE_HOME:'/fixture/state'};
  const resolve=createNativeSettingsDirectory({environment,home:'/fixture/home',existsSync:()=>selected,readRuntimeBundleBinding:input=>{assert.equal(input.DEVRYAN_RUNTIME_BUNDLE_ROOT,'/fixture/state/devryan/runtime-bundles');return {descriptor:{launch:{webDataDirectory:'/fixture/native/web-data'}}};}});
- assert.equal(resolve(),'/fixture/old');selected=true;assert.equal(resolve(),'/fixture/native/web-data');assert.equal(environment.OPENCHAMBER_DATA_DIR,'/fixture/old');
+ assert.equal(resolve(),'/fixture/old');selected=true;assert.equal(resolve(),'/fixture/native/web-data');assert.equal(environment.DEVRYAN_DATA_DIR,'/fixture/old');
  const invalid=createNativeSettingsDirectory({environment,home:'/fixture/home',existsSync:()=>true,readRuntimeBundleBinding:()=>{throw new Error('bundle_binding_invalid');}});assert.throws(invalid,/bundle_binding_invalid/);
 });
 test('held native selection permits only settings path inspection for the recovery shell',()=>{

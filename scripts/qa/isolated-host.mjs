@@ -28,7 +28,7 @@ if (runtime === 'electron') {
 } else {
     process.chdir(repositoryRoot);
     const { startWebUiServer } = await import('../../packages/web/server/index.js');
-    const server = await startWebUiServer({ host: '127.0.0.1', port: Number(process.env.OPENCHAMBER_PORT), attachSignals: true });
+    const server = await startWebUiServer({ host: '127.0.0.1', port: Number(process.env.DEVRYAN_PORT), attachSignals: true });
     await writeFile(path.join(runtimeRoot, 'ready.json'), JSON.stringify({
         origin: `http://127.0.0.1:${server.getPort()}`,
         opencodePort: server.getOpenCodePort(),

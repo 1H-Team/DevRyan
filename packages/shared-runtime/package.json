@@ -27,6 +27,10 @@
       "types": "./lib/helper-model-selection.d.ts",
       "default": "./lib/helper-model-selection.js"
     },
+    "./lib/legacy-environment.js": {
+      "types": "./lib/legacy-environment.d.ts",
+      "default": "./lib/legacy-environment.js"
+    },
     "./lib/model-selection-availability.js": {
       "types": "./lib/model-selection-availability.d.ts",
       "default": "./lib/model-selection-availability.js"
@@ -50,6 +54,10 @@
     "./lib/usage-observation.js": {
       "types": "./lib/usage-observation.d.ts",
       "default": "./lib/usage-observation.js"
+    },
+    "./node/adopt-legacy-environment.js": {
+      "types": "./lib/adopt-legacy-environment.d.ts",
+      "default": "./lib/adopt-legacy-environment.js"
     },
     "./node/safe-archive.js": {
       "types": "./lib/safe-archive.d.ts",

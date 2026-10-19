@@ -1,6 +1,6 @@
 # Web Harness Host
 
-The web harness host is initialized from the resolved `OPENCHAMBER_DATA_DIR`.
+The web harness host is initialized from the resolved `DEVRYAN_DATA_DIR`.
 It records sanitized canonical and synthetic OpenCode events, prompt/control
 records, lifecycle transitions, worktree receipts, and evidence transitions.
 The control journal is mounted before primary recovery (which answers a primary

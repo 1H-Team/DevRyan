@@ -8,7 +8,7 @@ const REGISTRY_VERSION = 2;
 const REGISTRY_FILE_NAME = 'managed-opencode-processes.json';
 
 function getOpenChamberDataDir(env = process.env) {
-  const configured = typeof env.OPENCHAMBER_DATA_DIR === 'string' ? env.OPENCHAMBER_DATA_DIR.trim() : '';
+  const configured = typeof env.DEVRYAN_DATA_DIR === 'string' ? env.DEVRYAN_DATA_DIR.trim() : '';
   return configured ? path.resolve(configured) : path.join(os.homedir(), '.config', 'openchamber');
 }
 

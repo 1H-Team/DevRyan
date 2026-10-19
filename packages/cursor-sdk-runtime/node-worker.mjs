@@ -86,8 +86,8 @@ const parseSettingSourcesFlag = (raw) => {
   return parsed.length ? parsed : undefined;
 };
 
-// DevRyan cursor context trim (default OFF) — see OPENCHAMBER_CURSOR_SETTING_SOURCES.
-const CURSOR_SETTING_SOURCES = parseSettingSourcesFlag(process.env.OPENCHAMBER_CURSOR_SETTING_SOURCES);
+// DevRyan cursor context trim (default OFF) — see DEVRYAN_CURSOR_SETTING_SOURCES.
+const CURSOR_SETTING_SOURCES = parseSettingSourcesFlag(process.env.DEVRYAN_CURSOR_SETTING_SOURCES);
 
 const sdkStatusFromRunStatus = (status) => {
   if (status === 'finished') return 'FINISHED';

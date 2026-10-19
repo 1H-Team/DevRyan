@@ -169,7 +169,7 @@ export async function runQaMatrixCell(cell, { nativePreparation, sourceHome, pre
   let nativeJournal;
   const readProviderObservation = async ({ final = false } = {}) => {
     if (profile?.evidence.generation === 2) {
-      const journalDirectory = path.join(profile.env.OPENCHAMBER_DATA_DIR, 'harness/journal');
+      const journalDirectory = path.join(profile.env.DEVRYAN_DATA_DIR, 'harness/journal');
       if (final) {
         await flushQaNativeObservationJournal({ journalDirectory, readStatus: () => api('/api/diagnostics/status'),
           exportJournal: async () => {
@@ -316,7 +316,7 @@ export async function runQaMatrixCell(cell, { nativePreparation, sourceHome, pre
     evidence.profile = profile.evidence;
     // The directory depends only on the prepared profile and owned fixture.
     // Fixed filename inputs resolve that scope before any returned API identity.
-    const ownedPlansRoot = (await resolveSessionPlanRevision({ dataDirectory: profile.env.OPENCHAMBER_DATA_DIR,
+    const ownedPlansRoot = (await resolveSessionPlanRevision({ dataDirectory: profile.env.DEVRYAN_DATA_DIR,
       directory: fixture.fixtureRoot, sessionCreated: 1, sessionSlug: 'qa-scope', sourceMessageID: 'qa-scope', path })).directory;
     readSavedRevision = identity => readQaSavedPlanRevision(api, identity, ownedPlansRoot);
     if (cell.runtime === 'electron') {
@@ -335,12 +335,12 @@ export async function runQaMatrixCell(cell, { nativePreparation, sourceHome, pre
     const port = await reservePort();
     const debugPort = await reservePort();
     const inspectorPort = cell.windowSize ? await reservePort() : null;
-    const env = createQaHostLaunchEnvironment(profile.env, { DEVRYAN_QA_RUNTIME: cell.runtime, OPENCHAMBER_PORT: String(port), OPENCHAMBER_DIST_DIR: artifactDirectory });
+    const env = createQaHostLaunchEnvironment(profile.env, { DEVRYAN_QA_RUNTIME: cell.runtime, DEVRYAN_PORT: String(port), DEVRYAN_DIST_DIR: artifactDirectory });
     const wireFacade=profile.startFacade?await profile.startFacade(`http://127.0.0.1:${port}`):null;
-    if(wireFacade&&cell.runtime==='electron')delete env.OPENCHAMBER_SERVER_URL;
+    if(wireFacade&&cell.runtime==='electron')delete env.DEVRYAN_SERVER_URL;
     if(wireFacade)evidence.wireFacade={...wireFacade.evidence,electronHostMode:cell.runtime==='electron'?'remote-loopback-facade':'web-facade'};
     delete env.ELECTRON_RUN_AS_NODE;
-    const flags = [`--remote-debugging-port=${debugPort}`, `--user-data-dir=${profile.env.OPENCHAMBER_ELECTRON_USER_DATA_DIR}`, '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', '--disable-background-timer-throttling'];
+    const flags = [`--remote-debugging-port=${debugPort}`, `--user-data-dir=${profile.env.DEVRYAN_ELECTRON_USER_DATA_DIR}`, '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', '--disable-background-timer-throttling'];
     if (inspectorPort) flags.push(`--inspect=127.0.0.1:${inspectorPort}`);
     if (cell.runtime === 'electron') start(packaged.binary, flags, env);
     else start('node', [profile.bootstrapPath], env);
@@ -731,7 +731,7 @@ export async function runQaMatrixCell(cell, { nativePreparation, sourceHome, pre
     evidence.ownedProcessCleanup = owned.map(child => child.getCleanupEvidence());
     await writeFile(path.join(fixture.evidenceDirectory, 'process-logs.json'), JSON.stringify(owned.map(child => sanitize(child.getLog())), null, 2));
     if (profile) {
-      try { await rename(path.join(profile.env.OPENCHAMBER_DATA_DIR, 'harness/journal'), path.join(fixture.evidenceDirectory, 'journal')); } catch (error) { if (error.code !== 'ENOENT') evidence.cleanupErrors.push(sanitize(error.message)); }
+      try { await rename(path.join(profile.env.DEVRYAN_DATA_DIR, 'harness/journal'), path.join(fixture.evidenceDirectory, 'journal')); } catch (error) { if (error.code !== 'ENOENT') evidence.cleanupErrors.push(sanitize(error.message)); }
       if (profile.evidence.generation === 2) evidence.providerObservation = 'native-journal';
       else try {
         const observation = await readFile(path.join(runtimeRoot, 'provider-evidence.ndjson'), 'utf8');
@@ -763,7 +763,7 @@ export async function runQaMatrixCell(cell, { nativePreparation, sourceHome, pre
         catch (error) { evidence.nativeLogs.push({ file: 'native-controller.jsonl', state: 'read-failed' }); evidence.cleanupErrors.push(sanitize(error.message)); }
       }
       try {
-        const ledger = JSON.parse(await readFile(path.join(profile.env.OPENCHAMBER_DATA_DIR, 'orchestration/ledger.json'), 'utf8'));
+        const ledger = JSON.parse(await readFile(path.join(profile.env.DEVRYAN_DATA_DIR, 'orchestration/ledger.json'), 'utf8'));
         await writeFile(path.join(fixture.evidenceDirectory, 'managed-ledger.json'), JSON.stringify(sanitizer.sanitizeExportValue(ledger), null, 2), { mode: 0o600 });
         evidence.managedLedger = 'captured';
       } catch (error) { evidence.managedLedger = error.code === 'ENOENT' ? 'unavailable' : 'read-failed'; }

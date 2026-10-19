@@ -921,7 +921,7 @@ sessions, deployment keys, or Docker volumes as part of owner repair.
 
 ### Runtime data layout
 
-The data root is `$OPENCHAMBER_DATA_DIR` when set, otherwise the existing
+The data root is `$DEVRYAN_DATA_DIR` when set, otherwise the existing
 DevRyan compatibility data directory (normally `~/.config/openchamber`). Its
 Bot-owned local paths are:
 
@@ -1050,7 +1050,7 @@ before dependent encrypted Skill objects and credentials.
 To keep existing Bots, credentials, workspace data, and Chromium sessions usable
 when an installation reports a foreign deployment:
 
-1. Locate the original `OPENCHAMBER_DATA_DIR` and its runtime-service owner
+1. Locate the original `DEVRYAN_DATA_DIR` and its runtime-service owner
    record. Use the Electron secret store to read an **existing** sealed key and
    derive only its deployment ID for comparison with Docker labels. Never create
    a key during discovery, print key material, or infer identity from a Compose
@@ -1070,7 +1070,7 @@ when an installation reports a foreign deployment:
    checks process identity and reclaims a stopped owner. Never delete the lock
    to force startup. Stop the destination app normally before changing its
    launch configuration; preserve that configuration for rollback.
-4. Launch the destination app with `OPENCHAMBER_DATA_DIR` pointing to the
+4. Launch the destination app with `DEVRYAN_DATA_DIR` pointing to the
    original directory. Use the existing registration and owner-acquisition
    flow for app-bound/service mode; do not register a second competing owner.
    An environment override must also be supplied on subsequent launches by

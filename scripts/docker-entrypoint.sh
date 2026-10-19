@@ -59,8 +59,8 @@ if [ "${OH_MY_OPENCODE:-false}" = "true" ]; then
 fi
 
 # Docker containers need to listen on all interfaces for port mapping to work.
-OPENCHAMBER_HOST="${OPENCHAMBER_HOST:-0.0.0.0}"
-export OPENCHAMBER_HOST
+DEVRYAN_HOST="${DEVRYAN_HOST:-0.0.0.0}"
+export DEVRYAN_HOST
 
 echo "[entrypoint] starting..."
 

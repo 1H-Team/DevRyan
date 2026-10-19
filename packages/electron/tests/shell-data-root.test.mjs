@@ -11,9 +11,9 @@ import {selectShellDataRoots} from '../shell-env-inheritance.mjs';
 const mainSource=await fs.readFile(new URL('../main.mjs',import.meta.url),'utf8');
 
 test('only login-shell data-root names absent from the launch environment are adopted early',()=>{
- const shellEnv={OPENCHAMBER_DATA_DIR:'/fixture/shell-data',XDG_STATE_HOME:'/fixture/shell-state',OPENCODE_PORT:'4096',PATH:'/fixture/bin'};
- assert.deepEqual(selectShellDataRoots({},shellEnv,{packaged:true}),{OPENCHAMBER_DATA_DIR:'/fixture/shell-data',XDG_STATE_HOME:'/fixture/shell-state'});
- assert.deepEqual(selectShellDataRoots({XDG_STATE_HOME:'/launch/state'},shellEnv,{packaged:true}),{OPENCHAMBER_DATA_DIR:'/fixture/shell-data'});
+ const shellEnv={DEVRYAN_DATA_DIR:'/fixture/shell-data',XDG_STATE_HOME:'/fixture/shell-state',OPENCODE_PORT:'4096',PATH:'/fixture/bin'};
+ assert.deepEqual(selectShellDataRoots({},shellEnv,{packaged:true}),{DEVRYAN_DATA_DIR:'/fixture/shell-data',XDG_STATE_HOME:'/fixture/shell-state'});
+ assert.deepEqual(selectShellDataRoots({XDG_STATE_HOME:'/launch/state'},shellEnv,{packaged:true}),{DEVRYAN_DATA_DIR:'/fixture/shell-data'});
  assert.deepEqual(selectShellDataRoots({},null,{packaged:true}),{});
  assert.deepEqual(selectShellDataRoots({},{PATH:'/fixture/bin'},{packaged:false}),{});
 });
@@ -34,13 +34,13 @@ const {createOpenCodeEnvRuntime}=await import(${JSON.stringify(envRuntime)});
 const raw=spawnSync('/bin/sh',['-il','-c','env -0'],{stdio:['ignore','pipe','ignore']}).stdout.toString();
 const shellEnv=Object.fromEntries(raw.split('\\0').filter(Boolean).map(line=>[line.slice(0,line.indexOf('=')),line.slice(line.indexOf('=')+1)]));
 Object.assign(process.env,selectShellDataRoots(process.env,shellEnv,{packaged:true}));
-const electronDataRoot=path.resolve(process.env.OPENCHAMBER_DATA_DIR||path.join(os.homedir(),'.config','openchamber'));
+const electronDataRoot=path.resolve(process.env.DEVRYAN_DATA_DIR||path.join(os.homedir(),'.config','openchamber'));
 let electronControlRoot=null;
 readNativeShellBundleBinding({environment:{...process.env},home:os.homedir(),existsSync:file=>{electronControlRoot=path.dirname(file);return false;},readRuntimeBundleBinding:()=>null});
 Object.assign(process.env,selectInheritedShellEnv(process.env,shellEnv,{packaged:true}).inherited);
 process.env.DEVRYAN_PACKAGED_DESKTOP='1';
 createOpenCodeEnvRuntime({state:{},shellCandidates:['/bin/sh'],logger:{info:()=>{}}}).applyLoginShellEnvSnapshot();
-const serverDataRoot=path.resolve(process.env.OPENCHAMBER_DATA_DIR||path.join(os.homedir(),'.config','openchamber'));
+const serverDataRoot=path.resolve(process.env.DEVRYAN_DATA_DIR||path.join(os.homedir(),'.config','openchamber'));
 const serverControlRoot=path.resolve(process.env.XDG_STATE_HOME||path.join(os.homedir(),'.local','state'),'devryan','runtime-bundles');
 console.log(JSON.stringify({electronDataRoot,serverDataRoot,electronControlRoot,serverControlRoot}));
 `;
@@ -58,7 +58,7 @@ test('Electron and the server resolve the same data and bundle-control roots whe
    return JSON.parse(result.stdout.trim().split('\n').pop());
   };
   const shellData=path.join(root,'shell-data'),shellState=path.join(root,'shell-state');
-  const exported=await run(`export OPENCHAMBER_DATA_DIR=${shellData}\nexport XDG_STATE_HOME=${shellState}\n`);
+  const exported=await run(`export DEVRYAN_DATA_DIR=${shellData}\nexport XDG_STATE_HOME=${shellState}\n`);
   assert.equal(exported.electronDataRoot,shellData);
   assert.equal(exported.serverDataRoot,shellData);
   assert.equal(exported.electronControlRoot,path.join(shellState,'devryan','runtime-bundles'));

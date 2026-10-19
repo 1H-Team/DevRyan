@@ -101,8 +101,8 @@ export async function runQa({ runtime = 'web', scenario = 'chat', generation, ar
       thinkingModels: thinking?.thinkingModels,
       cell: { runtime, transport: 'fixture', providerId: 'fixture', modelId: 'fixture-model', scenarioId: scenario === 'mobile' ? 'mobile' : 'core-journey', agent: 'builder', planMode: false, variant: null } });
     fixture = qaProfile.fixture;
-    data = qaProfile.env.OPENCHAMBER_DATA_DIR;
-    profile = qaProfile.env.OPENCHAMBER_ELECTRON_USER_DATA_DIR;
+    data = qaProfile.env.DEVRYAN_DATA_DIR;
+    profile = qaProfile.env.DEVRYAN_ELECTRON_USER_DATA_DIR;
     evidence.profile = qaProfile.evidence;
     const sessionChanges = scenario === 'session-changes' ? await import('./session-changes.mjs') : null;
     const preparedChanges = sessionChanges ? await sessionChanges.prepareSessionChangesQa({ fixture, directory: workspace, dataDirectory: data }) : null;
@@ -115,7 +115,7 @@ export async function runQa({ runtime = 'web', scenario = 'chat', generation, ar
         ...(scenario === 'navigation' && process.env.DEVRYAN_QA_RUNTIME_SERVICE === '1' ? { productionBotsRuntimeMode: 'service' } : {}) }));
     }
     const env = createQaHostLaunchEnvironment(qaProfile.env, { DEVRYAN_QA_RUNTIME: runtime,
-      OPENCHAMBER_PORT: String(port), OPENCHAMBER_DIST_DIR: path.join(root, 'packages/web/dist') });
+      DEVRYAN_PORT: String(port), DEVRYAN_DIST_DIR: path.join(root, 'packages/web/dist') });
     await qaProfile.verifyInputs();
     const start = (command, args, environment = env) => {
       const process = startOwnedProcess(command, args, { cwd: root, env: environment });

@@ -52,9 +52,9 @@ for (const [label, dist] of candidates) {
   const fixture = await createLoopbackOpenCodeFixtureForGeneration(options.generation, { directory: workspace });
   const port = await reservePort(), debugPort = await reservePort();
   const origin = `http://127.0.0.1:${port}`;
-  const env = { ...fixture.runtimeEnv, PATH: process.env.PATH, TMPDIR: path.join(home, 'tmp'), HOME: home, OPENCHAMBER_DATA_DIR: data,
-    OPENCHAMBER_DIST_DIR: dist, OPENCHAMBER_PORT: String(port), OPENCHAMBER_ELECTRON_USER_DATA_DIR: profile,
-    OPENCODE_HOST: fixture.origin, OPENCODE_SKIP_START: 'true', OPENCHAMBER_SKIP_OPENCODE_START: 'true',
+  const env = { ...fixture.runtimeEnv, PATH: process.env.PATH, TMPDIR: path.join(home, 'tmp'), HOME: home, DEVRYAN_DATA_DIR: data,
+    DEVRYAN_DIST_DIR: dist, DEVRYAN_PORT: String(port), DEVRYAN_ELECTRON_USER_DATA_DIR: profile,
+    OPENCODE_HOST: fixture.origin, OPENCODE_SKIP_START: 'true', DEVRYAN_SKIP_OPENCODE_START: 'true',
     DEVRYAN_QA_RUNTIME_ROOT: own, DEVRYAN_QA_HOME: home, DEVRYAN_QA_RUNTIME: runtime, OPENCODE_TEST_HOME: home,
     XDG_CONFIG_HOME: path.join(home, '.config'), XDG_DATA_HOME: path.join(home, '.local/share'), XDG_CACHE_HOME: path.join(home, '.cache'),
     XDG_STATE_HOME: path.join(home, '.local/state'), OPENCODE_CONFIG_DIR: path.join(home, '.config/opencode'),

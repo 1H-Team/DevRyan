@@ -56,19 +56,23 @@ export function configureWindowsPreview({ app, resourcesPath, platform = process
   }
   // Do not inherit installed-native bundle selection, development redirects,
   // external OpenCode endpoints or credential/config roots into this product.
-  for (const key of ['DEVRYAN_RUNTIME_BUNDLE_ROOT', 'OPENCHAMBER_ELECTRON_USER_DATA_DIR', 'OPENCHAMBER_ELECTRON_DEV',
+  for (const key of ['DEVRYAN_RUNTIME_BUNDLE_ROOT', 'DEVRYAN_ELECTRON_USER_DATA_DIR', 'DEVRYAN_ELECTRON_DEV',
     'OPENCODE_BINARY', 'OPENCODE_PATH', 'OPENCODE_CONFIG', 'OPENCODE_CONFIG_CONTENT', 'OPENCODE_CONFIG_DIR',
     'OPENCODE_PORT', 'OPENCODE_SERVER_URL', 'OPENCODE_SERVER_USERNAME', 'OPENCODE_SERVER_PASSWORD',
-    'OPENCODE_SKIP_START', 'OPENCHAMBER_SKIP_OPENCODE_START']) delete environment[key];
+    'OPENCODE_SKIP_START', 'DEVRYAN_SKIP_OPENCODE_START']) {
+    delete environment[key];
+    if (key.startsWith('DEVRYAN_')) delete environment[`OPENCHAMBER_${key.slice('DEVRYAN_'.length)}`];
+  }
   Object.assign(environment, {
     DEVRYAN_RUNTIME_MODE: 'standard-preview',
     DEVRYAN_STANDARD_OPENCODE_BINARY: path.join(resourcesPath, 'opencode', 'opencode.exe'),
-    OPENCHAMBER_DATA_DIR: path.join(userData, 'data'),
+    DEVRYAN_DATA_DIR: path.join(userData, 'data'),
     XDG_CONFIG_HOME: path.join(userData, 'config'),
     XDG_DATA_HOME: path.join(userData, 'share'),
     XDG_STATE_HOME: path.join(userData, 'state'),
     XDG_CACHE_HOME: path.join(userData, 'cache'),
   });
+  delete environment.OPENCHAMBER_DATA_DIR;
   return userData;
 }
 

@@ -54,8 +54,8 @@
 
 - Auth storage: `~/.config/openchamber/github-auth.json`
 - Writes are atomic and file mode is `0o600`.
-- Client ID resolution order: `OPENCHAMBER_GITHUB_CLIENT_ID` -> `settings.json` -> default.
-- Scope resolution order: `OPENCHAMBER_GITHUB_SCOPES` -> `settings.json` -> default.
+- Client ID resolution order: `DEVRYAN_GITHUB_CLIENT_ID` -> `settings.json` -> default.
+- Scope resolution order: `DEVRYAN_GITHUB_SCOPES` -> `settings.json` -> default.
 - Account id resolution order: explicit `accountId` -> user login -> user id -> token prefix.
 - Standalone credential selection remains the current stored account first,
   then optional `gh` CLI token when CLI credentials are enabled. OAuth

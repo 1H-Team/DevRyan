@@ -10,7 +10,7 @@ const createDependencies = ({ devMode }) => {
   const currentFilename = '/repo/server/index.js';
   const process = {
     argv: ['bun', currentFilename, '--port', '3914'],
-    env: devMode ? { OPENCHAMBER_DEV_MODE: 'true' } : {},
+    env: devMode ? { DEVRYAN_DEV_MODE: 'true' } : {},
   };
 
   return {

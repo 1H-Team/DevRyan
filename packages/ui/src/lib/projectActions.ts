@@ -20,7 +20,7 @@ import {
 } from '@remixicon/react';
 import type { ComponentType } from 'react';
 import {
-  OPENCHAMBER_AUTO_DISCOVER_ACTION_ID,
+  DEVRYAN_AUTO_DISCOVER_ACTION_ID,
   type OpenChamberProjectAction,
   type OpenChamberProjectActionPlatform,
 } from '@/lib/openchamberConfig';
@@ -130,7 +130,7 @@ export const resolveProjectActionSelection = ({
   canUseAutoDiscover: boolean;
   selectedActionId: string | null;
 }): OpenChamberProjectAction | null => {
-  if (selectedActionId === OPENCHAMBER_AUTO_DISCOVER_ACTION_ID && canUseAutoDiscover) {
+  if (selectedActionId === DEVRYAN_AUTO_DISCOVER_ACTION_ID && canUseAutoDiscover) {
     return autoDiscoverAction;
   }
 

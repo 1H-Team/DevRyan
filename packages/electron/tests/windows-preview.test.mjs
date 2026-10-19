@@ -15,14 +15,14 @@ test('dedicated packaged Windows entry isolates product identity and runtime bef
       getName: () => name, setName: value => { name = value; }, setAppUserModelId: value => { modelId = value; },
       getPath: key => paths[key], setPath: (key, value) => { paths[key] = value; } };
     const environment = { DEVRYAN_RUNTIME_BUNDLE_ROOT: path.join(root, 'native'), OPENCODE_SERVER_PASSWORD: 'disposable-fixture',
-      OPENCHAMBER_ELECTRON_USER_DATA_DIR: path.join(root, 'stable'), OPENCODE_CONFIG: 'inherited.json', OPENCODE_SKIP_START: 'true' };
+      DEVRYAN_ELECTRON_USER_DATA_DIR: path.join(root, 'stable'), OPENCODE_CONFIG: 'inherited.json', OPENCODE_SKIP_START: 'true' };
     const userData = configureWindowsPreview({ app, resourcesPath: path.join(root, 'resources'), environment, arch: 'arm64', platform: 'win32' });
     assert.equal(name, WINDOWS_PREVIEW_NAME);
     assert.equal(modelId, WINDOWS_PREVIEW_APP_ID);
     assert.equal(paths.userData, path.join(root, WINDOWS_PREVIEW_NAME));
     assert.equal(environment.DEVRYAN_RUNTIME_MODE, 'standard-preview');
     assert.equal(environment.DEVRYAN_STANDARD_OPENCODE_BINARY, path.join(root, 'resources/opencode/opencode.exe'));
-    assert.equal(environment.OPENCHAMBER_DATA_DIR, path.join(userData, 'data'));
+    assert.equal(environment.DEVRYAN_DATA_DIR, path.join(userData, 'data'));
     assert.equal(environment.DEVRYAN_RUNTIME_BUNDLE_ROOT, undefined);
     assert.equal(environment.OPENCODE_SERVER_PASSWORD, undefined);
     assert.equal(environment.OPENCODE_CONFIG, undefined);

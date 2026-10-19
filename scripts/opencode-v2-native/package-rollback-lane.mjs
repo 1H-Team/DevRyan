@@ -25,7 +25,7 @@ export async function snapshotOwnedTree(directory) {
 export async function runSelectedNativeLifecycle({ controlRoot, descriptor, configuration, fixture, logFile, sessionIDs = [], seedInput, rollback, builtinCatalog, readProcessIdentity = processIdentity }) {
   const globals = descriptor.launch.global;
   const environment = createQaHostLaunchEnvironment(fixture.environment, {
-    DEVRYAN_RUNTIME_BUNDLE_ROOT: controlRoot, OPENCHAMBER_DATA_DIR: descriptor.launch.webDataDirectory,
+    DEVRYAN_RUNTIME_BUNDLE_ROOT: controlRoot, DEVRYAN_DATA_DIR: descriptor.launch.webDataDirectory,
     OPENCODE_DISABLE_MODELS_FETCH: 'true',
     HOME: globals.home, XDG_CONFIG_HOME: path.dirname(globals.config), XDG_DATA_HOME: path.dirname(globals.data),
     XDG_STATE_HOME: path.dirname(globals.state), XDG_CACHE_HOME: path.dirname(globals.cache),

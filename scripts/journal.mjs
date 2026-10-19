@@ -30,8 +30,8 @@ export const resolveRecordSessionID = (record) => {
 export const resolveJournalDirectory = ({ argv = [], env = process.env, homeDir = os.homedir() } = {}) => {
   const index = argv.indexOf('--dir');
   if (index >= 0 && argv[index + 1]) return path.resolve(argv[index + 1]);
-  const dataRoot = env.OPENCHAMBER_DATA_DIR
-    ? path.resolve(env.OPENCHAMBER_DATA_DIR)
+  const dataRoot = env.DEVRYAN_DATA_DIR
+    ? path.resolve(env.DEVRYAN_DATA_DIR)
     : path.join(homeDir, '.config', 'openchamber');
   return path.join(dataRoot, 'harness', 'journal');
 };

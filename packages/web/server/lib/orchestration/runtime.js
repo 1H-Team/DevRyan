@@ -244,7 +244,7 @@ const projectTask = (task, envelope = null) => (
   toManagedTaskEvent(task, envelope).properties.task
 );
 
-const OWNERSHIP_WARNING = 'Managed orchestration is unavailable because another DevRyan runtime owns this data directory. Close the other runtime or configure a separate OPENCHAMBER_DATA_DIR.';
+const OWNERSHIP_WARNING = 'Managed orchestration is unavailable because another DevRyan runtime owns this data directory. Close the other runtime or configure a separate DEVRYAN_DATA_DIR.';
 
 const isOwnershipError = (error) => (
   error?.code === 'managed_orchestration_owner_conflict'

@@ -290,9 +290,9 @@ const stopControlMasterBestEffort = async (parsed, controlPath) => {
 const askpassScriptContent = () => `#!/bin/bash
 PROMPT="$1"
 
-if [[ -n "$OPENCHAMBER_SSH_ASKPASS_VALUE" ]]; then
+if [[ -n "$DEVRYAN_SSH_ASKPASS_VALUE" ]]; then
   if [[ "$PROMPT" == *"assword"* || "$PROMPT" == *"passphrase"* ]]; then
-    printf '%s\\n' "$OPENCHAMBER_SSH_ASKPASS_VALUE"
+    printf '%s\\n' "$DEVRYAN_SSH_ASKPASS_VALUE"
     exit 0
   fi
 fi
@@ -778,7 +778,7 @@ export class ElectronSshManager {
         SSH_ASKPASS_REQUIRE: 'force',
         SSH_ASKPASS: askpassPath,
         DISPLAY: '1',
-        ...(sshPassword ? { OPENCHAMBER_SSH_ASKPASS_VALUE: sshPassword.trim() } : {}),
+        ...(sshPassword ? { DEVRYAN_SSH_ASKPASS_VALUE: sshPassword.trim() } : {}),
       },
     });
     return child;

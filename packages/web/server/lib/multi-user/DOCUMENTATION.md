@@ -116,9 +116,9 @@ global Bot schema marker or disable existing Bot chat.
 
 ## Configuration
 
-Set `OPENCHAMBER_SUPABASE_URL`,
-`OPENCHAMBER_SUPABASE_PUBLISHABLE_KEY`, and
-`OPENCHAMBER_SUPABASE_SECRET_KEY`. The equivalent `SUPABASE_*` names are also
+Set `DEVRYAN_SUPABASE_URL`,
+`DEVRYAN_SUPABASE_PUBLISHABLE_KEY`, and
+`DEVRYAN_SUPABASE_SECRET_KEY`. The equivalent `SUPABASE_*` names are also
 accepted. A mode-`0600` `<data-dir>/supabase.json` file may be used instead.
 
 The secret key is sent only in Supabase's `apikey` header when it is a modern

@@ -5,7 +5,7 @@ import { verifySessionExecutionLauncher } from '@openchamber/harness-runtime/lib
 const platform = `${process.platform}-${process.arch}`;
 const extension = process.platform === 'win32' ? '.exe' : '';
 export function executionArtifactDirectory({ resourcesPath = process.resourcesPath,
-  developmentMode = process.env.OPENCHAMBER_ELECTRON_DEV } = {}) {
+  developmentMode = process.env.DEVRYAN_ELECTRON_DEV } = {}) {
   return resourcesPath && developmentMode !== '1'
     ? path.join(resourcesPath, 'revert-runtime', platform)
     : fileURLToPath(new URL(`../../../runtime/${platform}/`, import.meta.url));

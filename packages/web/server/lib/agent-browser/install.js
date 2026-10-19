@@ -153,8 +153,8 @@ const parseBinaryVersion = (value) => {
 const normalizeDataRoot = (dataRoot, pathApi, homeDir) => {
   const configured = typeof dataRoot === 'string' && dataRoot.trim()
     ? dataRoot.trim()
-    : typeof process.env.OPENCHAMBER_DATA_DIR === 'string' && process.env.OPENCHAMBER_DATA_DIR.trim()
-      ? process.env.OPENCHAMBER_DATA_DIR.trim()
+    : typeof process.env.DEVRYAN_DATA_DIR === 'string' && process.env.DEVRYAN_DATA_DIR.trim()
+      ? process.env.DEVRYAN_DATA_DIR.trim()
       : pathApi.join(homeDir, '.config', 'openchamber');
   return pathApi.resolve(configured);
 };

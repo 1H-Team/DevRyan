@@ -9,6 +9,7 @@ it.each(['ready','held-A','pending-B'])('actual thin entry awaits bootstrap and 
  try{
   const entry=await fs.readFile(new URL('../../../index.js',import.meta.url),'utf8');
   await fs.writeFile(path.join(root,'entry.mjs'),entry
+   .replace("'@openchamber/shared-runtime/node/adopt-legacy-environment.js'",`'${new URL('../../../../../shared-runtime/lib/adopt-legacy-environment.js',import.meta.url).href}'`)
    .replace("'./lib/opencode/startup-timing.js'","'./startup-timing.mjs'")
    .replace("'./lib/opencode/runtime-host/runtime-entry-bootstrap.js'","'./bootstrap.mjs'")
    .replace("'./lib/opencode/runtime-host/runtime-bundle-recovery.js'","'./recovery.mjs'")

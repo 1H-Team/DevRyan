@@ -3,14 +3,14 @@ import path from 'path';
 import os from 'os';
 import { getRequestPrincipal } from '../multi-user/request-context.js';
 
-const OPENCHAMBER_DATA_DIR = process.env.OPENCHAMBER_DATA_DIR
-  ? path.resolve(process.env.OPENCHAMBER_DATA_DIR)
+const DEVRYAN_DATA_DIR = process.env.DEVRYAN_DATA_DIR
+  ? path.resolve(process.env.DEVRYAN_DATA_DIR)
   : path.join(os.homedir(), '.config', 'openchamber');
 
-const STORAGE_DIR = OPENCHAMBER_DATA_DIR;
+const STORAGE_DIR = DEVRYAN_DATA_DIR;
 const STORAGE_FILE = path.join(STORAGE_DIR, 'github-auth.json');
 const STORAGE_LOCK_DIR = path.join(STORAGE_DIR, '.github-auth.lock');
-const SETTINGS_FILE = path.join(OPENCHAMBER_DATA_DIR, 'settings.json');
+const SETTINGS_FILE = path.join(DEVRYAN_DATA_DIR, 'settings.json');
 
 const DEFAULT_GITHUB_CLIENT_ID = 'Ov23lizomPOC3eFYo56r';
 const DEFAULT_GITHUB_SCOPES = 'repo read:org workflow read:user user:email';
@@ -332,7 +332,7 @@ export function clearGitHubAuthById(accountId) {
 }
 
 export function getGitHubClientId() {
-  const raw = process.env.OPENCHAMBER_GITHUB_CLIENT_ID;
+  const raw = process.env.DEVRYAN_GITHUB_CLIENT_ID;
   const clientId = typeof raw === 'string' ? raw.trim() : '';
   if (clientId) return clientId;
 
@@ -350,7 +350,7 @@ export function getGitHubClientId() {
 }
 
 export function getGitHubScopes() {
-  const raw = process.env.OPENCHAMBER_GITHUB_SCOPES;
+  const raw = process.env.DEVRYAN_GITHUB_SCOPES;
   const fromEnv = typeof raw === 'string' ? raw.trim() : '';
   if (fromEnv) return fromEnv;
 

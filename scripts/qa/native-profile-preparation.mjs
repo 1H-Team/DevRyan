@@ -188,7 +188,7 @@ export function createQaNativeLaunchEnvironment({ binding, runtimeRoot, baseEnvi
     XDG_CONFIG_HOME: launch.global.config, XDG_DATA_HOME: launch.global.data,
     XDG_STATE_HOME: launch.global.state, XDG_CACHE_HOME: launch.global.cache, TMPDIR: launch.global.tmp,
     NODE_OPTIONS: `--import=${JSON.stringify(fileURLToPath(new URL('./isolated-home.mjs', import.meta.url)))}`,
-    OPENCHAMBER_DATA_DIR: launch.webDataDirectory, OPENCHAMBER_ELECTRON_USER_DATA_DIR: path.join(runtimeRoot, 'browser-profile'), OPENCHAMBER_ELECTRON_DEV: '1' };
+    DEVRYAN_DATA_DIR: launch.webDataDirectory, DEVRYAN_ELECTRON_USER_DATA_DIR: path.join(runtimeRoot, 'browser-profile'), DEVRYAN_ELECTRON_DEV: '1' };
 }
 
 export async function validateQaNativeSourceLaunch(launch, runtimeRoot) {

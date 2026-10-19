@@ -28,7 +28,7 @@ const zenCredential = {
 const makeOptions = () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-quota-'));
   tempDirectories.push(directory);
-  return { env: { OPENCHAMBER_DATA_DIR: directory } };
+  return { env: { DEVRYAN_DATA_DIR: directory } };
 };
 
 afterEach(() => {
@@ -141,6 +141,6 @@ describe('managed quota credentials', () => {
       { cookie: 'secret' },
       { ...options, fsImpl, randomUUID: () => 'fixed' },
     )).toThrow('rename failed');
-    expect(fs.readdirSync(path.join(options.env.OPENCHAMBER_DATA_DIR, 'quota'))).toEqual([]);
+    expect(fs.readdirSync(path.join(options.env.DEVRYAN_DATA_DIR, 'quota'))).toEqual([]);
   });
 });

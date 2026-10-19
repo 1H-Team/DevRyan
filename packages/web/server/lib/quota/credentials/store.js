@@ -37,8 +37,8 @@ export const getQuotaCredentialsDirectory = ({
   homedir = os.homedir,
   pathImpl = path,
 } = {}) => pathImpl.join(
-  env.OPENCHAMBER_DATA_DIR
-    ? pathImpl.resolve(env.OPENCHAMBER_DATA_DIR)
+  env.DEVRYAN_DATA_DIR
+    ? pathImpl.resolve(env.DEVRYAN_DATA_DIR)
     : pathImpl.join(homedir(), '.config', 'openchamber'),
   'quota',
 );

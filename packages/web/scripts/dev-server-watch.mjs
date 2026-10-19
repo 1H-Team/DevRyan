@@ -12,8 +12,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const webRoot = path.resolve(__dirname, '..');
 const repoRoot = path.resolve(webRoot, '../..');
-const port = process.env.OPENCHAMBER_PORT || '3001';
-const restartDelayMs = Number.parseInt(process.env.OPENCHAMBER_DEV_RESTART_DELAY_MS || '1000', 10);
+const port = process.env.DEVRYAN_PORT || '3001';
+const restartDelayMs = Number.parseInt(process.env.DEVRYAN_DEV_RESTART_DELAY_MS || '1000', 10);
 const devDataDirectory = resolveDevDataDirectory({
   env: process.env,
   repoRoot,
@@ -30,8 +30,8 @@ function spawnServer() {
     command: 'bun',
     args: ['server/index.js', '--port', String(port)],
     env: {
-      OPENCHAMBER_DATA_DIR: devDataDirectory,
-      OPENCHAMBER_DEV_MODE: 'true',
+      DEVRYAN_DATA_DIR: devDataDirectory,
+      DEVRYAN_DEV_MODE: 'true',
     },
   });
 }

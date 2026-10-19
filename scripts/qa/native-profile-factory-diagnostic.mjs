@@ -135,7 +135,7 @@ export async function runQaNativeFactoryDiagnostic({ artifactRoot, bun = 'bun', 
       inputDigest: profile.evidence.inputDigest, nativeBundle: profile.evidence.nativeBundle, agentCount: Object.keys(profile.evidence.agentSelections).length });
     report.stage = 'actual_host_startup';
     host = startOwnedProcess(process.versions.bun ? 'node' : process.execPath, [profile.bootstrapPath], { cwd: repository,
-      env: { ...profile.env, DEVRYAN_QA_RUNTIME: 'web', OPENCHAMBER_PORT: '0', GIT_CEILING_DIRECTORIES: repository, GIT_CONFIG_NOSYSTEM: '1' } });
+      env: { ...profile.env, DEVRYAN_QA_RUNTIME: 'web', DEVRYAN_PORT: '0', GIT_CEILING_DIRECTORIES: repository, GIT_CONFIG_NOSYSTEM: '1' } });
     let ready;
     const deadline = Date.now() + 120000;
     while (Date.now() < deadline) {

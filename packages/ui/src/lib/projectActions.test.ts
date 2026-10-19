@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { OPENCHAMBER_AUTO_DISCOVER_ACTION_ID, type OpenChamberProjectAction } from "./openchamberConfig";
+import { DEVRYAN_AUTO_DISCOVER_ACTION_ID, type OpenChamberProjectAction } from "./openchamberConfig";
 import { resolveProjectActionSelection } from "./projectActions";
 
 const autoDiscoverAction: OpenChamberProjectAction = {
-  id: OPENCHAMBER_AUTO_DISCOVER_ACTION_ID,
+  id: DEVRYAN_AUTO_DISCOVER_ACTION_ID,
   name: "Auto-discover",
   command: "",
 };
@@ -38,7 +38,7 @@ describe("resolveProjectActionSelection", () => {
       actions: [userAction],
       autoDiscoverAction,
       canUseAutoDiscover: true,
-      selectedActionId: OPENCHAMBER_AUTO_DISCOVER_ACTION_ID,
+      selectedActionId: DEVRYAN_AUTO_DISCOVER_ACTION_ID,
     })).toBe(autoDiscoverAction);
   });
 

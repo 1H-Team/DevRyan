@@ -22,7 +22,7 @@ import {
 
 const PACKAGED_AGENT_SCOPE = 'packaged';
 const AGENT_WRITE_DISABLED_MESSAGE = 'Agent configuration is read-only. Edit project .opencode/agents/*.md files directly.';
-const OPENCHAMBER_CONFIG_KEY = 'openchamber';
+const DEVRYAN_CONFIG_KEY = 'openchamber';
 const AGENT_OVERRIDES_CONFIG_KEY = 'agentOverrides';
 // Backup models live under their own sidecar key (never inside agentOverrides):
 // normalizeAgentModelOverride rejects unknown keys, and slim/plugin overrides are
@@ -158,7 +158,7 @@ function resolveUserConfigPath(options = {}) {
 }
 
 function getAgentOverridesContainer(config) {
-  const openchamber = config?.[OPENCHAMBER_CONFIG_KEY];
+  const openchamber = config?.[DEVRYAN_CONFIG_KEY];
   if (!openchamber || typeof openchamber !== 'object' || Array.isArray(openchamber)) {
     return {};
   }
@@ -172,7 +172,7 @@ function getAgentOverridesContainer(config) {
 }
 
 function getAgentBackupModelsContainer(config) {
-  const openchamber = config?.[OPENCHAMBER_CONFIG_KEY];
+  const openchamber = config?.[DEVRYAN_CONFIG_KEY];
   if (!openchamber || typeof openchamber !== 'object' || Array.isArray(openchamber)) {
     return {};
   }
@@ -728,12 +728,12 @@ function isOrchestrationRoutedAgent(agentName, workingDirectory, options = {}) {
 
 function writeSidecarAgentOverrides(nextOverrides, options = {}) {
   const config = readUserConfig(options);
-  const openchamber = config[OPENCHAMBER_CONFIG_KEY] && typeof config[OPENCHAMBER_CONFIG_KEY] === 'object' && !Array.isArray(config[OPENCHAMBER_CONFIG_KEY])
-    ? { ...config[OPENCHAMBER_CONFIG_KEY] }
+  const openchamber = config[DEVRYAN_CONFIG_KEY] && typeof config[DEVRYAN_CONFIG_KEY] === 'object' && !Array.isArray(config[DEVRYAN_CONFIG_KEY])
+    ? { ...config[DEVRYAN_CONFIG_KEY] }
     : {};
   writeUserConfig({
     ...config,
-    [OPENCHAMBER_CONFIG_KEY]: {
+    [DEVRYAN_CONFIG_KEY]: {
       ...openchamber,
       [AGENT_OVERRIDES_CONFIG_KEY]: nextOverrides,
     },
@@ -804,14 +804,14 @@ function writeAgentBackupModel(agentName, rawBackupModel, workingDirectory, opti
   }
 
   const config = readUserConfig(options);
-  const openchamber = config[OPENCHAMBER_CONFIG_KEY] && typeof config[OPENCHAMBER_CONFIG_KEY] === 'object' && !Array.isArray(config[OPENCHAMBER_CONFIG_KEY])
-    ? { ...config[OPENCHAMBER_CONFIG_KEY] }
+  const openchamber = config[DEVRYAN_CONFIG_KEY] && typeof config[DEVRYAN_CONFIG_KEY] === 'object' && !Array.isArray(config[DEVRYAN_CONFIG_KEY])
+    ? { ...config[DEVRYAN_CONFIG_KEY] }
     : {};
   const backupModels = getAgentBackupModelsContainer(config);
 
   writeUserConfig({
     ...config,
-    [OPENCHAMBER_CONFIG_KEY]: {
+    [DEVRYAN_CONFIG_KEY]: {
       ...openchamber,
       [AGENT_BACKUP_MODELS_CONFIG_KEY]: {
         ...backupModels,
@@ -825,8 +825,8 @@ function writeAgentBackupModel(agentName, rawBackupModel, workingDirectory, opti
 
 function deleteAgentBackupModel(agentName, options = {}) {
   const config = readUserConfig(options);
-  const openchamber = config[OPENCHAMBER_CONFIG_KEY] && typeof config[OPENCHAMBER_CONFIG_KEY] === 'object' && !Array.isArray(config[OPENCHAMBER_CONFIG_KEY])
-    ? { ...config[OPENCHAMBER_CONFIG_KEY] }
+  const openchamber = config[DEVRYAN_CONFIG_KEY] && typeof config[DEVRYAN_CONFIG_KEY] === 'object' && !Array.isArray(config[DEVRYAN_CONFIG_KEY])
+    ? { ...config[DEVRYAN_CONFIG_KEY] }
     : {};
   const backupModels = { ...getAgentBackupModelsContainer(config) };
 
@@ -837,7 +837,7 @@ function deleteAgentBackupModel(agentName, options = {}) {
   delete backupModels[agentName];
   writeUserConfig({
     ...config,
-    [OPENCHAMBER_CONFIG_KEY]: {
+    [DEVRYAN_CONFIG_KEY]: {
       ...openchamber,
       [AGENT_BACKUP_MODELS_CONFIG_KEY]: backupModels,
     },

@@ -27,8 +27,8 @@ function run(label, command, args, env = {}, options = {}) {
   });
 }
 
-const uiPort = process.env.OPENCHAMBER_HMR_UI_PORT || '5180';
-const backendPort = process.env.OPENCHAMBER_HMR_API_PORT || '3902';
+const uiPort = process.env.DEVRYAN_HMR_UI_PORT || '5180';
+const backendPort = process.env.DEVRYAN_HMR_API_PORT || '3902';
 
 function clearViteCache() {
   const cacheDirs = [
@@ -45,17 +45,17 @@ function clearViteCache() {
 clearViteCache();
 
 const api = run('api', 'bun', ['run', '--cwd', 'packages/web', 'dev:server:watch'], {
-  OPENCHAMBER_DATA_DIR: devDataDirectory,
-  OPENCHAMBER_PORT: backendPort,
+  DEVRYAN_DATA_DIR: devDataDirectory,
+  DEVRYAN_PORT: backendPort,
 });
 const vite = run(
   'vite',
   'bun',
   ['x', 'vite', '--force', '--host', '127.0.0.1', '--port', uiPort, '--strictPort'],
   {
-    OPENCHAMBER_DATA_DIR: devDataDirectory,
-    OPENCHAMBER_PORT: backendPort,
-    OPENCHAMBER_DISABLE_PWA_DEV: '1',
+    DEVRYAN_DATA_DIR: devDataDirectory,
+    DEVRYAN_PORT: backendPort,
+    DEVRYAN_DISABLE_PWA_DEV: '1',
   },
   { cwd: webRoot },
 );

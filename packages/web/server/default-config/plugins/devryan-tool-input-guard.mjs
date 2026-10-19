@@ -230,7 +230,9 @@ const enforceShellTimeout = (args) => {
 // ---------------------------------------------------------------------------
 
 const resolveDataDir = (env = process.env) => {
-  const value = typeof env.OPENCHAMBER_DATA_DIR === 'string' ? env.OPENCHAMBER_DATA_DIR.trim() : '';
+  // OPENCHAMBER_DATA_DIR is the accepted alias; this plugin runs inside OpenCode.
+  const configured = env.DEVRYAN_DATA_DIR ?? env.OPENCHAMBER_DATA_DIR;
+  const value = typeof configured === 'string' ? configured.trim() : '';
   if (value) return path.resolve(value);
   return path.join(os.homedir(), '.config', 'openchamber');
 };

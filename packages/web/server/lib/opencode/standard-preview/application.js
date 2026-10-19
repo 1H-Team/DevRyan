@@ -37,7 +37,7 @@ export const gracefulShutdown = options => activeHandle?.stop(options);
 /** In-process desktop feature backend; the only subprocess is the supported stock OpenCode runtime. */
 export async function startWebUiServer(options = {}) {
   if (activeHandle) throw Object.assign(new Error('Preview server is already running'), { code: 'standard_preview_server_started' });
-  const dataDirectory = options.dataDirectory ?? process.env.OPENCHAMBER_DATA_DIR;
+  const dataDirectory = options.dataDirectory ?? process.env.DEVRYAN_DATA_DIR;
   if (typeof dataDirectory !== 'string' || !path.isAbsolute(dataDirectory)) throw invalid('An isolated preview data directory is required');
   const binary = options.runtimeBinary ?? process.env.DEVRYAN_STANDARD_OPENCODE_BINARY;
   const bindHost = options.host ?? '127.0.0.1';

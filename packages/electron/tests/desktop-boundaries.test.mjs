@@ -11,7 +11,7 @@ import { createDesktopMenu } from '../desktop-menu.mjs';
 
 test('settings serialize mutations, recover after failure and read the current data directory', async () => {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'devryan-settings-'));
-  const environment = { env: { OPENCHAMBER_DATA_DIR: root }, pid: process.pid };
+  const environment = { env: { DEVRYAN_DATA_DIR: root }, pid: process.pid };
   try {
     const settings = createDesktopSettings({ fs, fsp, os, process: environment, log: {}, getMainWindow: () => null, LOCAL_HOST_ID: 'local' });
     await Promise.all([
@@ -24,14 +24,14 @@ test('settings serialize mutations, recover after failure and read the current d
     assert.equal(settings.readDesktopHostsConfig().hosts[0].url, 'https://host.test/');
     assert.equal(settings.readDesktopHostsConfig().hosts.length, 1);
     assert.equal(settings.readSettingsRoot().first, 1);
-    environment.env.OPENCHAMBER_DATA_DIR = path.join(root, 'other');
+    environment.env.DEVRYAN_DATA_DIR = path.join(root, 'other');
     assert.deepEqual(settings.readSettingsRoot(), {});
   } finally { await fsp.rm(root, { recursive: true, force: true }); }
 });
 
 test('a failed settings write leaves no temporary file behind', async () => {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'devryan-settings-'));
-  const environment = { env: { OPENCHAMBER_DATA_DIR: root }, pid: process.pid };
+  const environment = { env: { DEVRYAN_DATA_DIR: root }, pid: process.pid };
   const failingFsp = { ...fsp, rename: async () => { throw Object.assign(new Error('disk full'), { code: 'ENOSPC' }); } };
   try {
     const settings = createDesktopSettings({ fs, fsp: failingFsp, os, process: environment, log: {}, getMainWindow: () => null, LOCAL_HOST_ID: 'local' });

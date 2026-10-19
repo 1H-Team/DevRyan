@@ -277,12 +277,12 @@ export const createPushRuntime = (deps) => {
   };
 
   const resolveVapidSubject = async () => {
-    const configured = process.env.OPENCHAMBER_VAPID_SUBJECT;
+    const configured = process.env.DEVRYAN_VAPID_SUBJECT;
     if (typeof configured === 'string' && configured.trim().length > 0) {
       return configured.trim();
     }
 
-    const originEnv = process.env.OPENCHAMBER_PUBLIC_ORIGIN;
+    const originEnv = process.env.DEVRYAN_PUBLIC_ORIGIN;
     if (typeof originEnv === 'string' && originEnv.trim().length > 0) {
       const trimmed = originEnv.trim();
       if (isLoopbackHttpOrigin(trimmed)) {
@@ -320,7 +320,7 @@ export const createPushRuntime = (deps) => {
     const subject = await resolveVapidSubject();
 
     if (subject === 'mailto:openchamber@localhost') {
-      console.warn('[Push] No public origin configured for VAPID; set OPENCHAMBER_VAPID_SUBJECT or enable push once from a real origin.');
+      console.warn('[Push] No public origin configured for VAPID; set DEVRYAN_VAPID_SUBJECT or enable push once from a real origin.');
     }
 
     (await loadWebPush()).setVapidDetails(subject, keys.publicKey, keys.privateKey);

@@ -5,8 +5,8 @@ export function createDesktopSettings({ fs, fsp, os, process, log, getMainWindow
   const windowGeometryRevisions = new Map();
   const settingsFilePath = () => {
     if (resolveDataDirectory) return path.join(resolveDataDirectory(), 'settings.json');
-    if (typeof process.env.OPENCHAMBER_DATA_DIR === 'string' && process.env.OPENCHAMBER_DATA_DIR.trim()) {
-      return path.join(process.env.OPENCHAMBER_DATA_DIR.trim(), 'settings.json');
+    if (typeof process.env.DEVRYAN_DATA_DIR === 'string' && process.env.DEVRYAN_DATA_DIR.trim()) {
+      return path.join(process.env.DEVRYAN_DATA_DIR.trim(), 'settings.json');
     }
     return path.join(os.homedir(), '.config', 'openchamber', 'settings.json');
   };

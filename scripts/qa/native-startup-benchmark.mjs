@@ -375,11 +375,11 @@ async function runStartupLaunches({ packageEvidence, artifactRoot, baselineArtif
           assert.equal(prepared.env.XDG_STATE_HOME, path.join(runtimeRoot, 'state'));
         }
         const profile = path.join(runtimeRoot, 'profile'), port = await reservePort();
-        const settingsPath = path.join(prepared.env.OPENCHAMBER_DATA_DIR, 'settings.json');
+        const settingsPath = path.join(prepared.env.DEVRYAN_DATA_DIR, 'settings.json');
         const settings = JSON.parse(await fs.readFile(settingsPath, 'utf8'));
         await fs.writeFile(settingsPath, JSON.stringify({ ...settings, desktopLocalPort: port,
           desktopLanAccessEnabled: false, productionBotsRuntimeMode: 'disabled' }) + '\n', { mode: 0o600 });
-        const env = { ...prepared.env, DEVRYAN_QA_RUNTIME: 'electron', OPENCHAMBER_ELECTRON_USER_DATA_DIR: profile,
+        const env = { ...prepared.env, DEVRYAN_QA_RUNTIME: 'electron', DEVRYAN_ELECTRON_USER_DATA_DIR: profile,
           GIT_CEILING_DIRECTORIES: fixtures };
         delete env.NODE_OPTIONS;
         const captureLaunch = async launchRecord => {

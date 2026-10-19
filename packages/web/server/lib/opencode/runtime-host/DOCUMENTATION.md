@@ -718,7 +718,7 @@ and only then dynamically imports a composition (`application.js`, or
 `runtime-bundle-recovery.js` for a held selection). The launcher captures the
 shell-owned setup, provisions the bundle (including the cold startup upgrade in
 `native-bundle-startup-upgrade.js`), verifies and binds the selection through
-`initializeRuntimeBundleBinding`, which sets `OPENCHAMBER_DATA_DIR`,
+`initializeRuntimeBundleBinding`, which sets `DEVRYAN_DATA_DIR`,
 `OPENCODE_CONFIG_DIR` and `OPENCODE_CONFIG`, and restores setup owners. Importing
 `runtime-bundle-binding.js` or the launcher reads no selection and changes no
 environment: `selectedRuntimeBundle` stays `null` until the explicit call. Modules

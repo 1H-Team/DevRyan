@@ -64,13 +64,13 @@ export const registerServerStatusRoutes = (app, dependencies) => {
     });
   };
 
-  const isDevMode = () => process.env.OPENCHAMBER_DEV_MODE === 'true';
+  const isDevMode = () => process.env.DEVRYAN_DEV_MODE === 'true';
 
   const isDevShutdownAllowed = () => {
     // Dev-only escape hatch: allow terminating the dev stack from the UI.
     // Requires explicit opt-in so default dev sessions are not group-killed accidentally.
-    return process.env.OPENCHAMBER_DEV_SHUTDOWN === 'true'
-      && process.env.OPENCHAMBER_ALLOW_DEV_SHUTDOWN === 'true';
+    return process.env.DEVRYAN_DEV_SHUTDOWN === 'true'
+      && process.env.DEVRYAN_ALLOW_DEV_SHUTDOWN === 'true';
   };
 
   const isSameOriginRequest = (req) => {
@@ -245,7 +245,7 @@ export const registerServerStatusRoutes = (app, dependencies) => {
       await Promise.all(previewPorts.map((port) => killListenPort(port)));
 
       const pgid = await resolveProcessGroupId(process.pid);
-      const orchestratorPid = Number.parseInt(process.env.OPENCHAMBER_DEV_ORCHESTRATOR_PID || '', 10);
+      const orchestratorPid = Number.parseInt(process.env.DEVRYAN_DEV_ORCHESTRATOR_PID || '', 10);
 
       // Kick off shutdown cleanup first.
       void gracefulShutdown({ exitProcess: false });

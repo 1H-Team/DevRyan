@@ -15,7 +15,7 @@ const GITHUB_REPOSITORY_OWNER = '1H-Team';
 const GITHUB_REPOSITORY_NAME = 'DevRyan';
 const GITHUB_LATEST_RELEASE_API_URL =
   `https://api.github.com/repos/${GITHUB_REPOSITORY_OWNER}/${GITHUB_REPOSITORY_NAME}/releases/latest`;
-const COMPATIBILITY_UPDATE_CHECK_URL = process.env.OPENCHAMBER_UPDATE_API_URL;
+const COMPATIBILITY_UPDATE_CHECK_URL = process.env.DEVRYAN_UPDATE_API_URL;
 const UPDATE_CHECK_URL = COMPATIBILITY_UPDATE_CHECK_URL || GITHUB_LATEST_RELEASE_API_URL;
 const DEFAULT_UPDATE_CHECK_INTERVAL_SEC = 6 * 60 * 60;
 let cachedDetectedPm = null;
@@ -372,7 +372,7 @@ export function detectPackageManagerDetails() {
   // dozen spawnSync(pm, ['bin', '-g']) calls with 10s timeouts each; under
   // the in-process server every one blocks the Electron main event loop and
   // manifests as a multi-second UI freeze. Short-circuit here.
-  if (process.env.OPENCHAMBER_RUNTIME === 'desktop') {
+  if (process.env.DEVRYAN_RUNTIME === 'desktop') {
     return {
       packageManager: 'electron',
       reason: 'desktop-runtime',
@@ -392,7 +392,7 @@ export function detectPackageManagerDetails() {
       };
   }
 
-  const forcedPm = process.env.OPENCHAMBER_PACKAGE_MANAGER?.trim();
+  const forcedPm = process.env.DEVRYAN_PACKAGE_MANAGER?.trim();
   if (forcedPm && ['npm', 'pnpm', 'yarn', 'bun'].includes(forcedPm)) {
     const forcedPmCommand = resolvePackageManagerCommand(forcedPm);
     if (isCommandAvailable(forcedPmCommand)) {
@@ -617,7 +617,7 @@ async function isPackageInstalledWithAsync(pm) {
 }
 
 async function detectPackageManagerUncachedAsync() {
-  const forced = process.env.OPENCHAMBER_PACKAGE_MANAGER?.trim();
+  const forced = process.env.DEVRYAN_PACKAGE_MANAGER?.trim();
   if (['npm', 'pnpm', 'yarn', 'bun'].includes(forced)
     && await isCommandAvailableAsync(await resolvePackageManagerCommandAsync(forced))) return forced;
 
@@ -646,7 +646,7 @@ async function detectPackageManagerUncachedAsync() {
 }
 
 export async function detectPackageManagerAsync() {
-  if (process.env.OPENCHAMBER_RUNTIME === 'desktop') return 'electron';
+  if (process.env.DEVRYAN_RUNTIME === 'desktop') return 'electron';
   if (cachedDetectedPm) return cachedDetectedPm;
   pendingDetectedPm ??= detectPackageManagerUncachedAsync().then((pm) => {
     cachedDetectedPm ??= pm;

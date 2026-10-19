@@ -5,7 +5,7 @@ const EXEC_JOB_TTL_MS = 30 * 60 * 1000;
 const IMAGE_ASSET_GRANT_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
 
 const createCommandTimeoutMs = () => {
-  const raw = Number(process.env.OPENCHAMBER_FS_EXEC_TIMEOUT_MS);
+  const raw = Number(process.env.DEVRYAN_FS_EXEC_TIMEOUT_MS);
   if (Number.isFinite(raw) && raw > 0) return raw;
   return 5 * 60 * 1000;
 };

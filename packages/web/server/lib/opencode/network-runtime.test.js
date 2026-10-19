@@ -9,15 +9,15 @@ import { TARGET_OPENCODE_V2_VERSION } from './readiness-probe.js';
 
 // The managed generation is read from the runtime selection in the data
 // directory; keep every read inside a disposable one.
-const originalDataDir = process.env.OPENCHAMBER_DATA_DIR;
+const originalDataDir = process.env.DEVRYAN_DATA_DIR;
 let isolatedDataDir = null;
 beforeAll(() => {
   isolatedDataDir = mkdtempSync(join(tmpdir(), 'devryan-network-runtime-'));
-  process.env.OPENCHAMBER_DATA_DIR = isolatedDataDir;
+  process.env.DEVRYAN_DATA_DIR = isolatedDataDir;
 });
 afterAll(() => {
-  if (typeof originalDataDir === 'string') process.env.OPENCHAMBER_DATA_DIR = originalDataDir;
-  else delete process.env.OPENCHAMBER_DATA_DIR;
+  if (typeof originalDataDir === 'string') process.env.DEVRYAN_DATA_DIR = originalDataDir;
+  else delete process.env.DEVRYAN_DATA_DIR;
   if (isolatedDataDir) rmSync(isolatedDataDir, { recursive: true, force: true });
 });
 

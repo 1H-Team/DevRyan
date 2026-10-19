@@ -68,7 +68,7 @@ const runtimeDirectoryAllows = (...directories) => Object.fromEntries(
 );
 
 const managedRuntimeDirectoryAllows = (...directories) => {
-  const dataDirectory = process.env.OPENCHAMBER_DATA_DIR;
+  const dataDirectory = process.env.DEVRYAN_DATA_DIR;
   return runtimeDirectoryAllows(
     ...(process.platform === 'win32' ? [] : ['/tmp']),
     ...(dataDirectory ? [dataDirectory] : []),
@@ -140,9 +140,9 @@ describe('syncRuntimeAgentOverlays', () => {
     manifestPath = path.join(overlayRoot, 'manifest.json');
     targetConfigDirectory = path.join(overlayRoot, crypto.createHash('sha256').update(projectDirectory).digest('hex'));
     originalOpenAIApiKey = process.env.OPENAI_API_KEY;
-    originalDataDirectory = process.env.OPENCHAMBER_DATA_DIR;
-    process.env.OPENCHAMBER_DATA_DIR = path.join(tempRoot, 'openchamber-data');
-    await fs.mkdir(process.env.OPENCHAMBER_DATA_DIR, { recursive: true });
+    originalDataDirectory = process.env.DEVRYAN_DATA_DIR;
+    process.env.DEVRYAN_DATA_DIR = path.join(tempRoot, 'openchamber-data');
+    await fs.mkdir(process.env.DEVRYAN_DATA_DIR, { recursive: true });
     delete process.env.OPENAI_API_KEY;
     // Keep suite hermetic: real machine Copilot auth must not leak into overlay expectations.
     readAuthSpy = vi.spyOn(authModule, 'readAuthFile').mockReturnValue({});
@@ -158,9 +158,9 @@ describe('syncRuntimeAgentOverlays', () => {
     }
     originalOpenAIApiKey = undefined;
     if (originalDataDirectory === undefined) {
-      delete process.env.OPENCHAMBER_DATA_DIR;
+      delete process.env.DEVRYAN_DATA_DIR;
     } else {
-      process.env.OPENCHAMBER_DATA_DIR = originalDataDirectory;
+      process.env.DEVRYAN_DATA_DIR = originalDataDirectory;
     }
     originalDataDirectory = undefined;
     if (tempRoot) {
@@ -1053,15 +1053,15 @@ describe('syncRuntimeAgentOverlays', () => {
       '*': 'ask',
       ...managedRuntimeDirectoryAllows(projectDirectory),
     });
-    const dataDirectoryPattern = `${path.resolve(process.env.OPENCHAMBER_DATA_DIR)}/*`;
+    const dataDirectoryPattern = `${path.resolve(process.env.DEVRYAN_DATA_DIR)}/*`;
     expect(overlay.frontmatter.permission.external_directory[dataDirectoryPattern]).toBe('allow');
     expect(path.join(
-      process.env.OPENCHAMBER_DATA_DIR,
+      process.env.DEVRYAN_DATA_DIR,
       'projects',
       'another-project',
       'plans',
       'revision.md',
-    ).startsWith(`${path.resolve(process.env.OPENCHAMBER_DATA_DIR)}${path.sep}`)).toBe(true);
+    ).startsWith(`${path.resolve(process.env.DEVRYAN_DATA_DIR)}${path.sep}`)).toBe(true);
     expect(overlay.frontmatter.permission.read).toEqual({
       '*': 'allow',
       '*.env': 'ask',

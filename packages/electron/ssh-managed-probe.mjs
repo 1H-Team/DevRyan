@@ -26,8 +26,9 @@ async function remoteManagedOperation(input) {
     const key = await readKey();
     const { spawn } = await import('node:child_process');
     const child = spawn('openchamber', ['serve', '--hostname', '127.0.0.1', '--port', String(input.port)], {
-      env: { ...process.env, OPENCHAMBER_RUNTIME: 'ssh-remote', DEVRYAN_SSH_INSTANCE_ID: input.id,
-        DEVRYAN_SSH_OWNER_TOKEN: key, ...(input.password ? { OPENCHAMBER_UI_PASSWORD: input.password } : {}) },
+      // The remote CLI may be an older release that reads only the OPENCHAMBER_* names.
+      env: { ...process.env, DEVRYAN_RUNTIME: 'ssh-remote', OPENCHAMBER_RUNTIME: 'ssh-remote', DEVRYAN_SSH_INSTANCE_ID: input.id,
+        DEVRYAN_SSH_OWNER_TOKEN: key, ...(input.password ? { DEVRYAN_UI_PASSWORD: input.password, OPENCHAMBER_UI_PASSWORD: input.password } : {}) },
       stdio: ['ignore', 'ignore', 'ignore'],
     });
     const code = await new Promise((resolve, reject) => { child.once('error', reject); child.once('close', resolve); });

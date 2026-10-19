@@ -25,18 +25,18 @@ const logs=[];
 createOpenCodeEnvRuntime({state:{},shellCandidates:['/bin/sh'],logger:{info:message=>logs.push(message)}}).applyLoginShellEnvSnapshot();
 console.log(JSON.stringify({dropped,logs,env:Object.fromEntries(names.map(name=>[name,process.env[name]??null]))}));
 `;
-const PROVISIONING=['DEVRYAN_OPENCODE_GENERATION','DEVRYAN_RUNTIME_BUNDLE_ROOT','OPENCHAMBER_SKIP_OPENCODE_START','OPENCODE_BINARY','OPENCODE_DB','OPENCODE_HOST','OPENCODE_SKIP_START'];
-const REDIRECTIONS=['DEVRYAN_DEFAULT_CONFIG_ROOT','DEVRYAN_EXECUTION_ARTIFACTS','OPENCHAMBER_ELECTRON_DEV','OPENCHAMBER_ELECTRON_USER_DATA_DIR'];
-const KEPT={OPENCHAMBER_DATA_DIR:'/fixture/shell-data',DEVRYAN_PRIMARY_RECOVERY_MODE:'legacy'};
+const PROVISIONING=['DEVRYAN_OPENCODE_GENERATION','DEVRYAN_RUNTIME_BUNDLE_ROOT','DEVRYAN_SKIP_OPENCODE_START','OPENCODE_BINARY','OPENCODE_DB','OPENCODE_HOST','OPENCODE_SKIP_START'];
+const REDIRECTIONS=['DEVRYAN_DEFAULT_CONFIG_ROOT','DEVRYAN_EXECUTION_ARTIFACTS','DEVRYAN_ELECTRON_DEV','DEVRYAN_ELECTRON_USER_DATA_DIR'];
+const KEPT={DEVRYAN_DATA_DIR:'/fixture/shell-data',DEVRYAN_PRIMARY_RECOVERY_MODE:'legacy'};
 
 test('after main merges the login shell and the server re-merges it, no dropped name is back in process.env',async()=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'devryan-shell-remerge-'));
  try{
   const home=path.join(root,'home');
   await fs.mkdir(home);
-  const shell={OPENCODE_HOST:'http://127.0.0.1:4096',OPENCODE_BINARY:'/fixture/bin/opencode',OPENCODE_SKIP_START:'true',OPENCHAMBER_SKIP_OPENCODE_START:'true',
-   OPENCODE_DB:'relative.db',DEVRYAN_OPENCODE_GENERATION:'1',DEVRYAN_RUNTIME_BUNDLE_ROOT:'/nonexistent',OPENCHAMBER_ELECTRON_DEV:'1',
-   OPENCHAMBER_ELECTRON_USER_DATA_DIR:'/fixture/shell-user-data',DEVRYAN_EXECUTION_ARTIFACTS:'/fixture/shell-artifacts',DEVRYAN_DEFAULT_CONFIG_ROOT:'/fixture/shell-default-config',...KEPT};
+  const shell={OPENCODE_HOST:'http://127.0.0.1:4096',OPENCODE_BINARY:'/fixture/bin/opencode',OPENCODE_SKIP_START:'true',DEVRYAN_SKIP_OPENCODE_START:'true',
+   OPENCODE_DB:'relative.db',DEVRYAN_OPENCODE_GENERATION:'1',DEVRYAN_RUNTIME_BUNDLE_ROOT:'/nonexistent',DEVRYAN_ELECTRON_DEV:'1',
+   DEVRYAN_ELECTRON_USER_DATA_DIR:'/fixture/shell-user-data',DEVRYAN_EXECUTION_ARTIFACTS:'/fixture/shell-artifacts',DEVRYAN_DEFAULT_CONFIG_ROOT:'/fixture/shell-default-config',...KEPT};
   await fs.writeFile(path.join(home,'.profile'),Object.entries(shell).map(([name,value])=>`export ${name}=${value}\n`).join(''));
   const names=[...PROVISIONING,...REDIRECTIONS,...Object.keys(KEPT)];
   const run=(packaged,launch={})=>{
@@ -57,7 +57,7 @@ test('after main merges the login shell and the server re-merges it, no dropped 
   for(const name of PROVISIONING)assert.equal(dev.env[name],null,name);
   for(const name of REDIRECTIONS)assert.equal(dev.env[name],shell[name],name);
 
-  const launch={OPENCODE_SKIP_START:'true',OPENCHAMBER_ELECTRON_DEV:'0',DEVRYAN_EXECUTION_ARTIFACTS:'/launch/artifacts'};
+  const launch={OPENCODE_SKIP_START:'true',DEVRYAN_ELECTRON_DEV:'0',DEVRYAN_EXECUTION_ARTIFACTS:'/launch/artifacts'};
   const launched=run(true,launch);
   for(const [name,value] of Object.entries(launch))assert.equal(launched.env[name],value,name);
   for(const name of [...PROVISIONING,...REDIRECTIONS].filter(name=>!(name in launch)))assert.equal(launched.env[name],null,name);

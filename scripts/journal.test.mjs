@@ -32,7 +32,7 @@ afterEach(async () => {
 describe('journal CLI helpers', () => {
   test('resolves the configured data root and explicit journal override', () => {
     assert.equal(
-      resolveJournalDirectory({ argv: [], env: { OPENCHAMBER_DATA_DIR: '/data' }, homeDir: '/home' }),
+      resolveJournalDirectory({ argv: [], env: { DEVRYAN_DATA_DIR: '/data' }, homeDir: '/home' }),
       path.join('/data', 'harness', 'journal'),
     );
     assert.equal(

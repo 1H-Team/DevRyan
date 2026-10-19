@@ -29,7 +29,7 @@ Call it again with the other email to switch roles. `POST /auth/logout` (with th
 Only one DevRyan runtime may own a selected bundle. Never stop or reuse the user's running app, data or Docker Engine.
 
 - Fixture QA: `bun run qa` starts its own server on a private data directory (see [QA.md](QA.md)).
-- Live checks: build the current source (`bun run build` plus the native artifact build), then start a private profile through `scripts/qa/native-profile-factory.mjs` and `scripts/qa/native-profile-preparation.mjs`. Setting only `OPENCHAMBER_DATA_DIR` is not enough: native bundle selection also uses the state root, and provider owners have their own configuration.
+- Live checks: build the current source (`bun run build` plus the native artifact build), then start a private profile through `scripts/qa/native-profile-factory.mjs` and `scripts/qa/native-profile-preparation.mjs`. Setting only `DEVRYAN_DATA_DIR` is not enough: native bundle selection also uses the state root, and provider owners have their own configuration.
 - Credential-free check of the profile factory:
 
 ```bash
@@ -63,7 +63,7 @@ bun scripts/journal.mjs gaps --verify
 | Retention | 7 days and 1 GiB total. Records are sanitized before disk: secrets redacted, paths rewritten to `<WORKTREE_...>` placeholders. |
 | Aborts | `control` records with `action: "abort"` carry `payload.source` (`stop_button`, `double_escape`, `steered_send`, `session_removal`, `revert`, `redo`, `abort_guard`, `provider_retry`, `stall_watchdog`, `status_row`, or `unknown`). Use it to explain `MessageAbortedError` or `Tool execution aborted`. |
 | Crashes | A managed OpenCode exit is a `runtime/` lifecycle `opencode_process_exit` (`code`, `signal`, `uptimeMs`, `expected`, sanitized stderr tail). `expected: false` is a crash; `opencode_restart_reconciled` counts sessions settled as `turn_failed` / `runtime_exit`. macOS crash reports: `~/Library/Logs/DiagnosticReports/DevRyan-opencode-*.ips`. |
-| Health | `GET /api/diagnostics/status` (port 3000; `dev:server` uses `${OPENCHAMBER_PORT:-3001}`) reports `sessionCount`, bytes, queue/write/gap counts and the last error. |
+| Health | `GET /api/diagnostics/status` (port 3000; `dev:server` uses `${DEVRYAN_PORT:-3001}`) reports `sessionCount`, bytes, queue/write/gap counts and the last error. |
 
 Absence of an expected non-delta record is itself evidence: the runtime never saw it. Storage, sanitizer, export and HTTP contracts: `packages/harness-runtime/DOCUMENTATION.md` and `packages/web/server/lib/diagnostics/DOCUMENTATION.md`.
 

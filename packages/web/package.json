@@ -37,7 +37,7 @@
   },
   "scripts": {
     "dev": "bun run build:watch",
-    "dev:server": "bun server/index.js --port ${OPENCHAMBER_PORT:-3001}",
+    "dev:server": "bun server/index.js --port ${DEVRYAN_PORT:-3001}",
     "dev:server:watch": "node ./scripts/dev-server-watch.mjs",
     "build": "vite build",
     "build:watch": "vite build --watch",

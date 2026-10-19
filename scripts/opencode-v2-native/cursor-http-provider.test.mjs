@@ -37,7 +37,7 @@ test('original Cursor SDK performs actual loopback model discovery and Connect i
     // Node 22 reports node:sqlite as experimental on stderr; the assertion below is about SDK output.
     child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', path.join(repositoryRoot, 'packages/cursor-sdk-runtime/node-worker.mjs')], {
       env: { PATH: process.env.PATH, HOME: home, TMPDIR: root, CURSOR_BACKEND_URL: provider.baseURL,
-        OPENCHAMBER_CURSOR_SETTING_SOURCES: 'none', CURSOR_SDK_RIPGREP_PATH: DEFAULT_RG },
+        DEVRYAN_CURSOR_SETTING_SOURCES: 'none', CURSOR_SDK_RIPGREP_PATH: DEFAULT_RG },
     });
     let stdout = '', stderr = '';
     child.stdout.on('data', bytes => { stdout += bytes; }); child.stderr.on('data', bytes => { stderr += bytes; });

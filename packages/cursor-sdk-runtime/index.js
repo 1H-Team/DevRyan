@@ -224,7 +224,7 @@ const normalizeToolCallStatus = (status) => {
 
 const isBunRuntime = () => typeof globalThis.Bun !== 'undefined';
 
-const isDesktopRuntimeEnv = (env) => trimString(env?.OPENCHAMBER_RUNTIME).toLowerCase() === 'desktop';
+const isDesktopRuntimeEnv = (env) => trimString(env?.DEVRYAN_RUNTIME).toLowerCase() === 'desktop';
 
 const normalizeWorkerEnv = (value) => {
   if (!isPlainObject(value)) return {};
@@ -324,10 +324,10 @@ const parseSettingSourcesFlag = (raw) => {
   return parsed.length ? parsed : undefined;
 };
 
-// DevRyan cursor context trim (default OFF). OPENCHAMBER_CURSOR_SETTING_SOURCES = comma
+// DevRyan cursor context trim (default OFF). DEVRYAN_CURSOR_SETTING_SOURCES = comma
 // list of cursor setting layers (project,user,team,mdm,plugins,all) or "none" to load
 // none — trims ambient rules/settings context the cursor-agent assembles per turn.
-const CURSOR_SETTING_SOURCES = parseSettingSourcesFlag(process.env.OPENCHAMBER_CURSOR_SETTING_SOURCES);
+const CURSOR_SETTING_SOURCES = parseSettingSourcesFlag(process.env.DEVRYAN_CURSOR_SETTING_SOURCES);
 
 const mergeToolDataIntoState = (part) => {
   if (!isPlainObject(part) || part.type !== 'tool') {
@@ -1552,7 +1552,7 @@ const normalizeStoredSessionState = (state) => {
 };
 
 const defaultStorageDir = () => path.join(
-  process.env.OPENCHAMBER_DATA_DIR ? path.resolve(process.env.OPENCHAMBER_DATA_DIR) : path.join(os.homedir(), '.config', 'openchamber'),
+  process.env.DEVRYAN_DATA_DIR ? path.resolve(process.env.DEVRYAN_DATA_DIR) : path.join(os.homedir(), '.config', 'openchamber'),
   'cursor-sdk-sessions',
 );
 

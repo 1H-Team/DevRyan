@@ -15,7 +15,7 @@ export const normalizeDeterministicGitReadCommand = (command) => {
 };
 
 const parseTtlMs = (env) => {
-  const raw = Number(env?.OPENCHAMBER_GIT_READ_CACHE_TTL_MS);
+  const raw = Number(env?.DEVRYAN_GIT_READ_CACHE_TTL_MS);
   if (Number.isFinite(raw) && raw >= 0) return raw;
   return DEFAULT_TTL_MS;
 };

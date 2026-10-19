@@ -492,9 +492,9 @@ describe('DevRyan tool input guard shell policies', () => {
     expect(fs.existsSync(path.join(dataDir, 'locks'))).toBe(false);
   });
 
-  test('resolves the data dir from OPENCHAMBER_DATA_DIR only', () => {
-    expect(__test.resolveDataDir({ OPENCHAMBER_DATA_DIR: '/tmp/a' })).toBe(path.resolve('/tmp/a'));
-    expect(__test.resolveDataDir({ OPENCHAMBER_DATA_DIR: '   ' })).toBe(path.join(os.homedir(), '.config', 'openchamber'));
+  test('resolves the data dir from DEVRYAN_DATA_DIR only', () => {
+    expect(__test.resolveDataDir({ DEVRYAN_DATA_DIR: '/tmp/a' })).toBe(path.resolve('/tmp/a'));
+    expect(__test.resolveDataDir({ DEVRYAN_DATA_DIR: '   ' })).toBe(path.join(os.homedir(), '.config', 'openchamber'));
     expect(__test.resolveDataDir({})).toBe(path.join(os.homedir(), '.config', 'openchamber'));
   });
 });

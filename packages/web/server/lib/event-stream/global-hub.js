@@ -26,7 +26,7 @@ const parseByteBudget = (raw) => {
   return Number.isFinite(value) && value > 0 ? value : null;
 };
 export const MESSAGE_STREAM_GLOBAL_REPLAY_BYTE_BUDGET =
-  parseByteBudget(process.env.OPENCHAMBER_MESSAGE_STREAM_REPLAY_BYTE_BUDGET) ?? 16 * 1024 * 1024;
+  parseByteBudget(process.env.DEVRYAN_MESSAGE_STREAM_REPLAY_BYTE_BUDGET) ?? 16 * 1024 * 1024;
 
 // OpenCode 2 uses data-only `/api/event` frames without upstream replay. Every
 // reconnect marks projection state cold, reconciles active sessions, and tells

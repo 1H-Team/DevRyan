@@ -191,7 +191,7 @@ test('the legacy tree hash covers every created v1 file, including top-level rec
 
 test('v2.0.0 child environment keeps only platform inputs and the private roots', () => {
   const env = createV200PrepareEnvironment({ home: '/qa/home' }, { PATH: '/bin', LANG: 'C', HOME: '/Users/person', OPENCODE_HOST: 'x',
-    OPENCODE_CONFIG_DIR: '/Users/person/.config/opencode', DEVRYAN_RUNTIME_BUNDLE_ROOT: '/x', OPENCHAMBER_DATA_DIR: '/x', OPENAI_API_KEY: 'x', NODE_OPTIONS: 'x' });
+    OPENCODE_CONFIG_DIR: '/Users/person/.config/opencode', DEVRYAN_RUNTIME_BUNDLE_ROOT: '/x', DEVRYAN_DATA_DIR: '/x', OPENAI_API_KEY: 'x', NODE_OPTIONS: 'x' });
   assert.deepEqual(env, { PATH: '/bin', LANG: 'C', HOME: '/qa/home', XDG_CONFIG_HOME: '/qa/home/.config', XDG_DATA_HOME: '/qa/home/.local/share',
     XDG_STATE_HOME: '/qa/home/.local/state', XDG_CACHE_HOME: '/qa/home/.cache' });
 });

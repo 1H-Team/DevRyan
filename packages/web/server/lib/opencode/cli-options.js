@@ -7,18 +7,18 @@ export const parseServeCliOptions = ({
 }) => {
   const args = Array.isArray(argv) ? [...argv] : [];
   const envPassword =
-    env.OPENCHAMBER_UI_PASSWORD ||
+    env.DEVRYAN_UI_PASSWORD ||
     env.OPENCODE_UI_PASSWORD ||
     null;
-  const envCfTunnel = env.OPENCHAMBER_TRY_CF_TUNNEL === 'true';
-  const envTunnelProvider = env.OPENCHAMBER_TUNNEL_PROVIDER || undefined;
-  const envTunnelMode = env.OPENCHAMBER_TUNNEL_MODE || undefined;
-  const envTunnelConfigRaw = env.OPENCHAMBER_TUNNEL_CONFIG;
+  const envCfTunnel = env.DEVRYAN_TRY_CF_TUNNEL === 'true';
+  const envTunnelProvider = env.DEVRYAN_TUNNEL_PROVIDER || undefined;
+  const envTunnelMode = env.DEVRYAN_TUNNEL_MODE || undefined;
+  const envTunnelConfigRaw = env.DEVRYAN_TUNNEL_CONFIG;
   const envTunnelConfig = typeof envTunnelConfigRaw === 'string'
     ? (envTunnelConfigRaw.trim().length > 0 ? envTunnelConfigRaw.trim() : null)
     : undefined;
-  const envTunnelToken = env.OPENCHAMBER_TUNNEL_TOKEN || undefined;
-  const envTunnelHostname = env.OPENCHAMBER_TUNNEL_HOSTNAME || undefined;
+  const envTunnelToken = env.DEVRYAN_TUNNEL_TOKEN || undefined;
+  const envTunnelHostname = env.DEVRYAN_TUNNEL_HOSTNAME || undefined;
 
   const options = {
     port: defaultPort,

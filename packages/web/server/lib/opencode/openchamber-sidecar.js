@@ -3,7 +3,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { selectedRuntimeBundle } from './runtime-host/runtime-bundle-binding.js';
 
-const OPENCHAMBER_CONFIG_KEY = 'openchamber';
+const DEVRYAN_CONFIG_KEY = 'openchamber';
 const DEFAULT_SIDECAR_DIR = path.join(selectedRuntimeBundle?.descriptor.launch.opencodeConfigDirectory ?? path.join(os.homedir(), '.config', 'opencode'), '.openchamber');
 const DEFAULT_SIDECAR_PATH = path.join(DEFAULT_SIDECAR_DIR, 'config.json');
 
@@ -67,7 +67,7 @@ export function writeOpenchamberSidecar(data, userConfigPath) {
 export function migrateOpenchamberConfigToSidecar({ configFile, readConfigFile, writeConfig }) {
   const config = readConfigFile(configFile);
   if (!isPlainObject(config)) return;
-  const legacy = config[OPENCHAMBER_CONFIG_KEY];
+  const legacy = config[DEVRYAN_CONFIG_KEY];
   if (!isPlainObject(legacy)) return;
 
   const existingSidecar = readOpenchamberSidecar(configFile) || {};
@@ -75,7 +75,7 @@ export function migrateOpenchamberConfigToSidecar({ configFile, readConfigFile, 
   writeOpenchamberSidecar(merged, configFile);
 
   const sanitized = { ...config };
-  delete sanitized[OPENCHAMBER_CONFIG_KEY];
+  delete sanitized[DEVRYAN_CONFIG_KEY];
   writeConfig(sanitized, configFile);
 
   console.log(`[OpenCode] Migrated openchamber config key from ${configFile} to sidecar ${resolveSidecarPath(configFile)}`);
@@ -90,12 +90,12 @@ export function migrateOpenchamberConfigToSidecar({ configFile, readConfigFile, 
 export function applyOpenchamberSidecarToConfig(config, userConfigPath) {
   const sidecar = readOpenchamberSidecar(userConfigPath);
   if (!sidecar) return config;
-  const baseOpenchamber = isPlainObject(config?.[OPENCHAMBER_CONFIG_KEY])
-    ? config[OPENCHAMBER_CONFIG_KEY]
+  const baseOpenchamber = isPlainObject(config?.[DEVRYAN_CONFIG_KEY])
+    ? config[DEVRYAN_CONFIG_KEY]
     : {};
   return {
     ...(isPlainObject(config) ? config : {}),
-    [OPENCHAMBER_CONFIG_KEY]: { ...baseOpenchamber, ...sidecar },
+    [DEVRYAN_CONFIG_KEY]: { ...baseOpenchamber, ...sidecar },
   };
 }
 
@@ -106,11 +106,11 @@ export function applyOpenchamberSidecarToConfig(config, userConfigPath) {
  */
 export function persistOpenchamberFromConfig(config, userConfigPath) {
   if (!isPlainObject(config)) return config;
-  const openchamber = config[OPENCHAMBER_CONFIG_KEY];
+  const openchamber = config[DEVRYAN_CONFIG_KEY];
   if (isPlainObject(openchamber)) {
     writeOpenchamberSidecar(openchamber, userConfigPath);
   }
   const sanitized = { ...config };
-  delete sanitized[OPENCHAMBER_CONFIG_KEY];
+  delete sanitized[DEVRYAN_CONFIG_KEY];
   return sanitized;
 }

@@ -14,8 +14,8 @@ const cell={transport:'fixture',providerId:'fixture',modelId:'fixture-model',run
 const prepareNativeProfile=async({runtimeRoot})=>{
   const home=path.join(runtimeRoot,'home');
   return {env:{DEVRYAN_RUNTIME_BUNDLE_ROOT:path.join(runtimeRoot,'bundles'),DEVRYAN_OPENCODE_GENERATION:'2',
-    HOME:home,DEVRYAN_QA_HOME:home,OPENCODE_CONFIG_DIR:path.join(home,'.config/opencode'),OPENCHAMBER_DATA_DIR:path.join(home,'.config/openchamber'),
-    OPENCHAMBER_ELECTRON_USER_DATA_DIR:path.join(runtimeRoot,'browser-profile')},bootstrapPath:'constructor-unit-only',
+    HOME:home,DEVRYAN_QA_HOME:home,OPENCODE_CONFIG_DIR:path.join(home,'.config/opencode'),DEVRYAN_DATA_DIR:path.join(home,'.config/openchamber'),
+    DEVRYAN_ELECTRON_USER_DATA_DIR:path.join(runtimeRoot,'browser-profile')},bootstrapPath:'constructor-unit-only',
     verifyInputs:async()=>'a'.repeat(64),close:async()=>{},evidence:{inputDigest:'a'.repeat(64),nativeBundle:{bundleID:'constructor-unit-only'}}};
 };
 const artifactRoot=path.resolve('.cache/qa/unit-native-artifact-not-launched');
@@ -31,13 +31,13 @@ for(const generation of [2]) for(const agent of ['builder','orchestrator']) test
     assert.equal(profile.env.DEVRYAN_OPENCODE_GENERATION,String(generation));
     assert.equal(profile.env.HOME,profile.env.DEVRYAN_QA_HOME);
     assert.equal(profile.env.OPENCODE_SKIP_START,undefined);
-    assert.equal(profile.env.OPENCHAMBER_SKIP_OPENCODE_START,undefined);
+    assert.equal(profile.env.DEVRYAN_SKIP_OPENCODE_START,undefined);
     assert.equal(profile.env.OPENCODE_HOST,undefined);
     assert.equal(typeof profile.startFacade,'function');
     assert.equal(profile.evidence.runtimeOwner,'actual-private-native-bundle');
     assert.equal(profile.evidence.localElectronIPC,'not-qualified-by-wire');
     assert.equal(profile.env.GH_TOKEN,'');assert.equal(profile.env.GITHUB_TOKEN,'');
-    const settings=JSON.parse(await readFile(path.join(profile.env.OPENCHAMBER_DATA_DIR,'settings.json'),'utf8'));
+    const settings=JSON.parse(await readFile(path.join(profile.env.DEVRYAN_DATA_DIR,'settings.json'),'utf8'));
     assert.equal(settings.homeDirectory,project.fixtureRoot);
     assert.equal(settings.lastDirectory,project.fixtureRoot);
     assert.equal(settings.showReasoningTraces,true);
@@ -71,7 +71,7 @@ for(const generation of [2]) for(const agent of ['builder','orchestrator']) test
     await assert.rejects(profile.startFacade('https://foreign.invalid'),/exact loopback/);
     const facade=await profile.startFacade('http://127.0.0.1:49152');
     assert.match(facade.origin,/^http:\/\/127\.0\.0\.1:/);
-    const launchSettings=JSON.parse(await readFile(path.join(profile.env.OPENCHAMBER_DATA_DIR,'settings.json'),'utf8'));
+    const launchSettings=JSON.parse(await readFile(path.join(profile.env.DEVRYAN_DATA_DIR,'settings.json'),'utf8'));
     assert.equal(launchSettings.desktopLocalPort,49152);
     assert.deepEqual(launchSettings.desktopWindowState,settings.desktopWindowState);
     await assert.rejects(profile.startFacade('http://127.0.0.1:49153'),/already started/);

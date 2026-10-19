@@ -1,3 +1,6 @@
+// First: adopt OPENCHAMBER_* aliases before any module reads its environment.
+import '../shared-runtime/lib/adopt-legacy-environment.js';
+import { adoptLegacyEnvironment, setDevRyanEnv } from '../shared-runtime/lib/legacy-environment.js';
 import { configureEarlyStartup, createStartupWindowOptions, takeEarlyStartupWindow, takeEarlyAppLinks } from './early-startup.mjs';
 import { artifactDiagnostic, describeArtifactFailure, startupDiagnosticSummary } from '../shared-runtime/startup-diagnostics.js';
 import {createNativeSettingsDirectory,readNativeShellBundleBinding} from './native-settings-directory.mjs';
@@ -121,7 +124,7 @@ const botRecoveryDialog = createBotRecoveryDialog({ dialog });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const isDev = process.env.OPENCHAMBER_ELECTRON_DEV === '1' || !app.isPackaged;
+const isDev = process.env.DEVRYAN_ELECTRON_DEV === '1' || !app.isPackaged;
 const isPreview = isWindowsPreview({ app });
 const isRuntimeServiceMode = process.argv.includes('--runtime-service');
 const isRuntimeServiceControlProbe = process.argv.includes('--runtime-service-control=status');
@@ -517,12 +520,13 @@ const loadShellEnv = () => {
 if (!isRuntimeServiceControlProbe) {
   const startedAt = performance.now();
   Object.assign(process.env, selectShellDataRoots(process.env, loadShellEnv(), { packaged: app.isPackaged }));
+  adoptLegacyEnvironment(process.env);
   log.info('[electron] startup phase', { phase: 'shell_environment', outcome: 'completed', elapsedMs: Math.round(performance.now() - startedAt) });
 }
 
-// The in-process web launcher binds OPENCHAMBER_DATA_DIR to the selected bundle.
+// The in-process web launcher binds DEVRYAN_DATA_DIR to the selected bundle.
 // Capture shell ownership first; this process only inspects the binding.
-const hostDataRootDirectory=path.resolve(process.env.OPENCHAMBER_DATA_DIR||path.join(os.homedir(),'.config','openchamber'));
+const hostDataRootDirectory=path.resolve(process.env.DEVRYAN_DATA_DIR||path.join(os.homedir(),'.config','openchamber'));
 const hostRuntimeBundleRoot = process.env.DEVRYAN_RUNTIME_BUNDLE_ROOT;
 let readRuntimeBundleBinding, shellRuntimeBundleBindingError;
 const bindingFailed = () => {
@@ -552,9 +556,11 @@ const { settingsFilePath, readSettingsRoot, mutateSettingsRoot, normalizeHostUrl
 const dataRootDirectory = () => hostDataRootDirectory;
 
 const relaunchWithHostDataRoot = () => {
-  const runtimeDataDirectory = process.env.OPENCHAMBER_DATA_DIR;
+  // Both the DevRyan name and its OPENCHAMBER_* alias are restored exactly.
+  const dataDirectoryNames = ['DEVRYAN_DATA_DIR', 'OPENCHAMBER_DATA_DIR'];
+  const runtimeDataDirectories = dataDirectoryNames.map((name) => process.env[name]);
   const runtimeBundleRoot = process.env.DEVRYAN_RUNTIME_BUNDLE_ROOT;
-  process.env.OPENCHAMBER_DATA_DIR = hostDataRootDirectory;
+  setDevRyanEnv(process.env, 'DEVRYAN_DATA_DIR', hostDataRootDirectory);
   if (hostRuntimeBundleRoot === undefined) delete process.env.DEVRYAN_RUNTIME_BUNDLE_ROOT;
   else process.env.DEVRYAN_RUNTIME_BUNDLE_ROOT = hostRuntimeBundleRoot;
   try {
@@ -563,8 +569,10 @@ const relaunchWithHostDataRoot = () => {
   } finally {
     // Ordinary quit can use bounded cleanup; keep any remaining parent work
     // bound to its selected runtime even if scheduling the relaunch fails.
-    if (runtimeDataDirectory === undefined) delete process.env.OPENCHAMBER_DATA_DIR;
-    else process.env.OPENCHAMBER_DATA_DIR = runtimeDataDirectory;
+    dataDirectoryNames.forEach((name, index) => {
+      if (runtimeDataDirectories[index] === undefined) delete process.env[name];
+      else process.env[name] = runtimeDataDirectories[index];
+    });
     if (runtimeBundleRoot === undefined) delete process.env.DEVRYAN_RUNTIME_BUNDLE_ROOT;
     else process.env.DEVRYAN_RUNTIME_BUNDLE_ROOT = runtimeBundleRoot;
   }
@@ -840,6 +848,7 @@ const inheritUserShellEnv = () => {
   // packaged app dev/packaging redirections, are dropped; everything else is inherited.
   const { inherited, dropped } = selectInheritedShellEnv(process.env, shellEnv, { packaged: app.isPackaged });
   Object.assign(process.env, inherited);
+  adoptLegacyEnvironment(process.env);
   if (dropped.length) log.info(`[shell-env] ignored login-shell variables the desktop runtime does not support: ${dropped.join(', ')}`);
 
   const shellPath = typeof shellEnv.PATH === 'string' ? shellEnv.PATH : '';
@@ -896,10 +905,10 @@ const startLocalServer = async () => {
   // deliberate, warned opt-in with no desktop password mechanism, so honor that
   // opt-in here rather than crashing boot.
   if (lanAccessEnabled) {
-    process.env.OPENCHAMBER_ALLOW_UNAUTHENTICATED_LAN = 'true';
+    setDevRyanEnv(process.env, 'DEVRYAN_ALLOW_UNAUTHENTICATED_LAN', 'true');
     log.warn('[desktop] Network Access is enabled; the UI is reachable on your LAN without authentication.');
   } else {
-    delete process.env.OPENCHAMBER_ALLOW_UNAUTHENTICATED_LAN;
+    setDevRyanEnv(process.env, 'DEVRYAN_ALLOW_UNAUTHENTICATED_LAN', undefined);
   }
 
   // Probe before starting the server — main() in the server module sets up a
@@ -917,17 +926,17 @@ const startLocalServer = async () => {
     chosenPort = await pickUnusedPort();
   }
 
-  // The server module reads ENV_DESKTOP_NOTIFY / OPENCHAMBER_DIST_DIR /
-  // OPENCHAMBER_RUNTIME at import time (top-level const), so these must be
+  // The server module reads ENV_DESKTOP_NOTIFY / DEVRYAN_DIST_DIR /
+  // DEVRYAN_RUNTIME at import time (top-level const), so these must be
   // set before the first import. After this point, the same env is used by
   // both the Electron main and the server running inside it.
-  process.env.OPENCHAMBER_HOST = bindHost;
-  process.env.OPENCHAMBER_DIST_DIR = resolveWebDistDir();
-  process.env.OPENCHAMBER_RUNTIME = 'desktop';
-  process.env.OPENCHAMBER_DESKTOP_NOTIFY = 'true';
+  setDevRyanEnv(process.env, 'DEVRYAN_HOST', bindHost);
+  setDevRyanEnv(process.env, 'DEVRYAN_DIST_DIR', resolveWebDistDir());
+  setDevRyanEnv(process.env, 'DEVRYAN_RUNTIME', 'desktop');
+  setDevRyanEnv(process.env, 'DEVRYAN_DESKTOP_NOTIFY', 'true');
   // The server's login-shell re-merge applies the packaged filter only on this marker.
   if (app.isPackaged) process.env[PACKAGED_DESKTOP_ENV] = '1'; else delete process.env[PACKAGED_DESKTOP_ENV];
-  process.env.OPENCHAMBER_SKIP_API_COMPRESSION = process.env.OPENCHAMBER_SKIP_API_COMPRESSION || 'true';
+  setDevRyanEnv(process.env, 'DEVRYAN_SKIP_API_COMPRESSION', process.env.DEVRYAN_SKIP_API_COMPRESSION || 'true');
   process.env.NO_PROXY = process.env.NO_PROXY || 'localhost,127.0.0.1';
   process.env.no_proxy = process.env.no_proxy || 'localhost,127.0.0.1';
 
@@ -938,7 +947,7 @@ const startLocalServer = async () => {
   state.browserCdpDiscoveryUrl = `http://127.0.0.1:${chosenPort}/api/desktop/browser-cdp`;
   state.agentBrowserRuntimeMode = (
     process.env.OPENCODE_SKIP_START === 'true'
-    || process.env.OPENCHAMBER_SKIP_OPENCODE_START === 'true'
+    || process.env.DEVRYAN_SKIP_OPENCODE_START === 'true'
   ) ? 'external' : 'pending';
   delete process.env.DEVRYAN_BROWSER_CDP_DISCOVERY_URL;
   delete process.env.DEVRYAN_BROWSER_CDP_TOKEN;
@@ -1446,7 +1455,7 @@ const getRuntimeServiceRegistration = () => {
   let nativeControlErrorCode = null;
   if (process.platform === 'darwin'
     && app.isPackaged
-    && process.env.OPENCHAMBER_ELECTRON_DEV !== '1') {
+    && process.env.DEVRYAN_ELECTRON_DEV !== '1') {
     try {
       nativeControl = createRuntimeServiceNativeControl({ resourcesPath: process.resourcesPath });
     } catch (error) {
@@ -1461,7 +1470,7 @@ const getRuntimeServiceRegistration = () => {
     executablePath: process.execPath,
     resourcesPath: process.resourcesPath,
     dataDirectory: dataRootDirectory(),
-    developmentMode: process.env.OPENCHAMBER_ELECTRON_DEV === '1',
+    developmentMode: process.env.DEVRYAN_ELECTRON_DEV === '1',
     nativeControl,
     nativeControlErrorCode,
   });
@@ -1684,7 +1693,7 @@ const buildContentOriginPolicy = () => {
   return {
     localOrigin: state.localOrigin,
     hostUrls: config.hosts.map((entry) => entry.url),
-    envServerUrl: normalizeHostUrl(process.env.OPENCHAMBER_SERVER_URL || ''),
+    envServerUrl: normalizeHostUrl(process.env.DEVRYAN_SERVER_URL || ''),
   };
 };
 
@@ -3407,7 +3416,7 @@ const resolveInitialUrl = async () => {
   let initialUrl = localUiUrl;
   let remoteProbe = null;
 
-  const envTarget = runtimeBundleRecoveryRequired?null:normalizeHostUrl(process.env.OPENCHAMBER_SERVER_URL || '');
+  const envTarget = runtimeBundleRecoveryRequired?null:normalizeHostUrl(process.env.DEVRYAN_SERVER_URL || '');
   const config = runtimeBundleRecoveryRequired?{hosts:[],defaultHostId:LOCAL_HOST_ID,initialHostChoiceCompleted:true}:readDesktopHostsConfig();
   if (envTarget) {
     initialUrl = envTarget;
@@ -4524,7 +4533,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
     case 'desktop_hosts_set': {
       await writeDesktopHostsConfig(args.input || args.config || {});
       const updatedConfig = readDesktopHostsConfig();
-      const envTarget = normalizeHostUrl(process.env.OPENCHAMBER_SERVER_URL || '');
+      const envTarget = normalizeHostUrl(process.env.DEVRYAN_SERVER_URL || '');
       state.bootOutcome = computeBootOutcome({
         envTargetUrl: envTarget || null,
         probe: null,

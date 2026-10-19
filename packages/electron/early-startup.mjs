@@ -13,8 +13,9 @@ const deferredLinks = [];
 export function configureEarlyStartup({ app, isPreview, WINDOWS_PREVIEW_NAME, APP_USER_MODEL_ID,
   isRuntimeServiceMode, isRuntimeServiceControlProbe }) {
   if (configured) return true;
-  if (typeof process.env.OPENCHAMBER_ELECTRON_USER_DATA_DIR === 'string') {
-    const configuredUserDataDirectory = process.env.OPENCHAMBER_ELECTRON_USER_DATA_DIR;
+  // Runs before main adopts OPENCHAMBER_* aliases, so read the alias directly.
+  const configuredUserDataDirectory = process.env.DEVRYAN_ELECTRON_USER_DATA_DIR ?? process.env.OPENCHAMBER_ELECTRON_USER_DATA_DIR;
+  if (typeof configuredUserDataDirectory === 'string') {
     if (!path.isAbsolute(configuredUserDataDirectory) || /[\u0000-\u001f]/.test(configuredUserDataDirectory)) {
       throw new Error('Electron user data directory must be an absolute path');
     }
