@@ -365,7 +365,7 @@ export const debugUtils = {
         projectInfo,
         health: opencodeHealth,
       },
-      openchamber: {
+      devryan: {
         settingsInfo,
       },
     };

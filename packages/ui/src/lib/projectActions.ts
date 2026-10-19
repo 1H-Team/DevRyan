@@ -21,8 +21,8 @@ import {
 import type { ComponentType } from 'react';
 import {
   DEVRYAN_AUTO_DISCOVER_ACTION_ID,
-  type OpenChamberProjectAction,
-  type OpenChamberProjectActionPlatform,
+  type DevRyanProjectAction,
+  type DevRyanProjectActionPlatform,
 } from '@/lib/devryanConfig';
 import type {
   DesktopSshInstance,
@@ -91,7 +91,7 @@ export const normalizeProjectActionDirectory = (value: string): string => {
   return trimmed.length > 1 ? trimmed.replace(/\/+$/, '') : trimmed;
 };
 
-export const getCurrentProjectActionPlatform = (): OpenChamberProjectActionPlatform => {
+export const getCurrentProjectActionPlatform = (): DevRyanProjectActionPlatform => {
   if (typeof navigator === 'undefined') {
     return 'macos';
   }
@@ -106,8 +106,8 @@ export const getCurrentProjectActionPlatform = (): OpenChamberProjectActionPlatf
 };
 
 export const isProjectActionEnabledOnPlatform = (
-  action: OpenChamberProjectAction,
-  platform: OpenChamberProjectActionPlatform
+  action: DevRyanProjectAction,
+  platform: DevRyanProjectActionPlatform
 ): boolean => {
   if (!Array.isArray(action.platforms) || action.platforms.length === 0) {
     return true;
@@ -125,11 +125,11 @@ export const resolveProjectActionSelection = ({
   canUseAutoDiscover,
   selectedActionId,
 }: {
-  actions: OpenChamberProjectAction[];
-  autoDiscoverAction: OpenChamberProjectAction;
+  actions: DevRyanProjectAction[];
+  autoDiscoverAction: DevRyanProjectAction;
   canUseAutoDiscover: boolean;
   selectedActionId: string | null;
-}): OpenChamberProjectAction | null => {
+}): DevRyanProjectAction | null => {
   if (selectedActionId === DEVRYAN_AUTO_DISCOVER_ACTION_ID && canUseAutoDiscover) {
     return autoDiscoverAction;
   }

@@ -564,7 +564,7 @@ export const sendAssistantCompletionNotification = async (
         payload: {
           title: payload?.title,
           body: payload?.body,
-          tag: 'openchamber-agent-complete',
+          tag: 'devryan-agent-complete',
         },
       });
       return true;

@@ -59,7 +59,7 @@ const isElectronMacHost = (): boolean => {
     return electron?.runtime === 'electron' && /mac/i.test(window.navigator?.platform ?? '');
 };
 
-interface OpenChamberDefaults {
+interface DevRyanDefaults {
     defaultModel?: string;
     defaultVariant?: string;
     defaultAgent?: string;
@@ -81,7 +81,7 @@ const parseSettingsOverrideKeys = (value: unknown): string[] => (
         : []
 );
 
-const fetchOpenChamberDefaults = async (): Promise<OpenChamberDefaults> => {
+const fetchDevRyanDefaults = async (): Promise<DevRyanDefaults> => {
     try {
         // 1. Runtime settings API
         const runtimeSettings = getRegisteredRuntimeAPIs()?.settings;
@@ -1584,12 +1584,12 @@ export const useConfigStore = create<ConfigStore>()(
 
                     for (let attempt = 0; attempt < 3; attempt++) {
                         try {
-                            // Fetch agents and OpenChamber settings in parallel
+                            // Fetch agents and DevRyan settings in parallel
                             const directory = fromDirectoryKey(directoryKey);
-                            const [agents, configAgents, openChamberDefaults] = await Promise.all([
+                            const [agents, configAgents, devRyanDefaults] = await Promise.all([
                                 opencodeClient.withDirectory(fromDirectoryKey(directoryKey), () => opencodeClient.listAgentsStrict()),
                                 fetchConfigAgentsSnapshot(directory),
-                                fetchOpenChamberDefaults(),
+                                fetchDevRyanDefaults(),
                             ]);
 
                             // Startup overlaps HTTP reads, but model/default resolution needs the committed catalog.
@@ -1611,7 +1611,7 @@ export const useConfigStore = create<ConfigStore>()(
 
                             const existingZenModel = normalizeOptionalString(get().settingsZenModel);
 
-                            const defaultZenModel = normalizeOptionalString(openChamberDefaults.zenModel);
+                            const defaultZenModel = normalizeOptionalString(devRyanDefaults.zenModel);
 
                             const resolvedExistingGitSelection = resolveGitGenerationModelSelection({
                                 providers,
@@ -1626,7 +1626,7 @@ export const useConfigStore = create<ConfigStore>()(
                             const resolvedGitSelection = resolvedExistingGitSelection || resolvedDefaultGitSelection;
                             const resolvedGitModelId = resolvedGitSelection?.modelId;
                             const resolvedZenModel = resolvedGitModelId || defaultZenModel || existingZenModel;
-                            const resolvedDefaultPlanMode = openChamberDefaults.defaultPlanMode ?? false;
+                            const resolvedDefaultPlanMode = devRyanDefaults.defaultPlanMode ?? false;
 
                             set((state) => {
                                 const baseSnapshot = getDirectoryScopedConfigBase(state, directoryKey);
@@ -1638,18 +1638,18 @@ export const useConfigStore = create<ConfigStore>()(
                                 };
 
                                 const nextState: Partial<ConfigStore> = {
-                                    settingsDefaultModel: openChamberDefaults.defaultModel,
-                                    settingsDefaultVariant: openChamberDefaults.defaultVariant,
-                                    settingsDefaultAgent: openChamberDefaults.defaultAgent,
+                                    settingsDefaultModel: devRyanDefaults.defaultModel,
+                                    settingsDefaultVariant: devRyanDefaults.defaultVariant,
+                                    settingsDefaultAgent: devRyanDefaults.defaultAgent,
                                     settingsDefaultPlanMode: resolvedDefaultPlanMode,
-                                    settingsHelperModelSelection: openChamberDefaults.helperModelSelection ?? DEFAULT_HELPER_MODEL_SELECTION,
-                                    settingsOverrideKeys: openChamberDefaults.settingsOverrideKeys ?? [],
-                                    settingsAutoCreateWorktree: openChamberDefaults.autoCreateWorktree ?? false,
-                                    settingsGitmojiEnabled: openChamberDefaults.gitmojiEnabled ?? false,
-                                    settingsDefaultFileViewerPreview: openChamberDefaults.defaultFileViewerPreview ?? false,
+                                    settingsHelperModelSelection: devRyanDefaults.helperModelSelection ?? DEFAULT_HELPER_MODEL_SELECTION,
+                                    settingsOverrideKeys: devRyanDefaults.settingsOverrideKeys ?? [],
+                                    settingsAutoCreateWorktree: devRyanDefaults.autoCreateWorktree ?? false,
+                                    settingsGitmojiEnabled: devRyanDefaults.gitmojiEnabled ?? false,
+                                    settingsDefaultFileViewerPreview: devRyanDefaults.defaultFileViewerPreview ?? false,
                                     settingsZenModel: resolvedZenModel,
                                     settingsMessageStreamTransport: 'auto',
-                                    responseStyleInstructionLoaded: openChamberDefaults.responseStyleInstructionLoaded ?? state.responseStyleInstructionLoaded,
+                                    responseStyleInstructionLoaded: devRyanDefaults.responseStyleInstructionLoaded ?? state.responseStyleInstructionLoaded,
                                     directoryScoped: {
                                         ...state.directoryScoped,
                                         [directoryKey]: nextSnapshot,
@@ -1665,7 +1665,7 @@ export const useConfigStore = create<ConfigStore>()(
                                 if (isManagedNonAdminUser()) {
                                     // Server-persisted per-agent picks are the durable copy
                                     // for managed users; the local cache follows them.
-                                    nextState.agentModelSelections = openChamberDefaults.agentModelSelections ?? {};
+                                    nextState.agentModelSelections = devRyanDefaults.agentModelSelections ?? {};
                                 }
 
                                 return nextState;
@@ -1716,10 +1716,10 @@ export const useConfigStore = create<ConfigStore>()(
 
                             const selectableSafeAgents = resolveSelectableAgentOptions(safeAgents, []);
                             const invalidSettings: { defaultAgent?: string } = {};
-                            const settingsAgent = openChamberDefaults.defaultAgent
-                                ? findSelectableAgentByName(selectableSafeAgents, openChamberDefaults.defaultAgent)
+                            const settingsAgent = devRyanDefaults.defaultAgent
+                                ? findSelectableAgentByName(selectableSafeAgents, devRyanDefaults.defaultAgent)
                                 : undefined;
-                            if (openChamberDefaults.defaultAgent && !settingsAgent) {
+                            if (devRyanDefaults.defaultAgent && !settingsAgent) {
                                 // Agent no longer exists, is hidden/internal, or is not primary-selectable.
                                 invalidSettings.defaultAgent = '';
                             }
@@ -1925,10 +1925,10 @@ export const useConfigStore = create<ConfigStore>()(
                             selState.saveSessionAgentSelection(currentSessionId, agentName);
                         }
 
-                        if (currentSessionId && useSessionUIStore.getState().isOpenChamberCreatedSession(currentSessionId)) {
+                        if (currentSessionId && useSessionUIStore.getState().isDevRyanCreatedSession(currentSessionId)) {
                             const existingAgentModel = selState.getAgentModelForSession(currentSessionId, agentName);
                             if (!existingAgentModel) {
-                                useSessionUIStore.getState().initializeNewOpenChamberSession(currentSessionId, agents);
+                                useSessionUIStore.getState().initializeNewDevRyanSession(currentSessionId, agents);
                             }
                         }
                     }

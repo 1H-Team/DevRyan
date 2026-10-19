@@ -52,7 +52,7 @@ describe('terminalLinkAtPositionWithRange', () => {
     ];
     const link = terminalLinkAtPositionWithRange(rows, 1, 3);
     expect(link).toEqual({
-      text: 'https://openchamber.dev/docs',
+      text: 'https://devryan.dev/docs',
       range: { start: { x: 4, y: 0 }, end: { x: 15, y: 1 } },
     });
   });

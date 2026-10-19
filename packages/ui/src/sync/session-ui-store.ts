@@ -813,10 +813,10 @@ export type SessionUIState = {
   clearAbortPrompt: () => void
   armAbortPrompt: (durationMs?: number) => number | null
   clearError: () => void
-  markSessionAsOpenChamberCreated: (sessionId: string) => void
-  isOpenChamberCreatedSession: (sessionId: string) => boolean
+  markSessionAsDevRyanCreated: (sessionId: string) => void
+  isDevRyanCreatedSession: (sessionId: string) => boolean
   getContextUsageForSession: (sessionId: string | null, directory?: string | null) => SessionContextUsage | null
-  initializeNewOpenChamberSession: (sessionId: string, agents: unknown[]) => void
+  initializeNewDevRyanSession: (sessionId: string, agents: unknown[]) => void
   setWorktreeMetadata: (sessionId: string, metadata: WorktreeMetadata | null) => void
   overrideNewSessionDraftTarget: (options: Record<string, unknown>) => void
   resolvePendingDraftWorktreeTarget: (requestId: string, directory: string | null, options?: Record<string, unknown>) => void
@@ -2283,14 +2283,14 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
 
   clearError: () => set({ error: null }),
 
-  markSessionAsOpenChamberCreated: (sessionId) =>
+  markSessionAsDevRyanCreated: (sessionId) =>
     set((s) => {
       const next = new Set(s.webUICreatedSessions)
       next.add(sessionId)
       return { webUICreatedSessions: next }
     }),
 
-  isOpenChamberCreatedSession: (sessionId) => get().webUICreatedSessions.has(sessionId),
+  isDevRyanCreatedSession: (sessionId) => get().webUICreatedSessions.has(sessionId),
 
   getContextUsageForSession: (sessionId, directory) => {
     if (!sessionId) return null
@@ -2319,7 +2319,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     return attachRelatedSubagentContextUsage(usage, relatedSubagents)
   },
 
-  initializeNewOpenChamberSession: () => {
+  initializeNewDevRyanSession: () => {
     // Stub — was a no-op in old store
   },
 
@@ -2675,7 +2675,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       // keeps its own choice.
       if (capturedDraftId) useSelectionStore.getState().clearDraftPlanMode(capturedDraftId)
 
-      get().initializeNewOpenChamberSession(created.id, configState.agents ?? [])
+      get().initializeNewDevRyanSession(created.id, configState.agents ?? [])
 
       get().promoteDraftToSession({
         expectedNavigationRevision,
@@ -2808,7 +2808,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         useSelectionStore.getState().markBuilderHandoffCleared(created.id)
       }
       get().setCurrentSession(created.id, targetSessionDirectory, { expectedNavigationRevision })
-      get().initializeNewOpenChamberSession(created.id, useConfigStore.getState().agents ?? [])
+      get().initializeNewDevRyanSession(created.id, useConfigStore.getState().agents ?? [])
       if (targetSessionDirectory) {
         getSyncChildStores().ensureChild(targetSessionDirectory)
       }

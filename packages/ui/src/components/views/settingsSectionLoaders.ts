@@ -4,8 +4,8 @@ import { getAuthPrincipal, useAuthPrincipal } from '@/lib/authSession';
 import { canPrepareSettingsSection, usesManagedSettings } from './SettingsView.access';
 import { createPreparedSettingsComponent } from './preparedSettingsComponent';
 import type { SettingsDataBoundaryProps } from './SettingsDataBoundary';
-import { OpenChamberPage } from '@/components/sections/devryan/OpenChamberPage';
-import { openChamberSectionResources } from '@/components/sections/devryan/openChamberSectionResources';
+import { DevRyanPage } from '@/components/sections/devryan/DevRyanPage';
+import { devRyanSectionResources } from '@/components/sections/devryan/devRyanSectionResources';
 
 export { createPreparedSettingsComponent } from './preparedSettingsComponent';
 import type { SettingsPageSlug } from '@/lib/settings/metadata';
@@ -92,7 +92,7 @@ export const PreparedUsagePage = usagePage.Component;
 export const PreparedMagicPromptsSidebar = magicPromptsSidebar.Component;
 export const PreparedMagicPromptsPage = magicPromptsPage.Component;
 export const PreparedGitPage = gitPage.Component;
-export const PreparedOpenChamberPage = OpenChamberPage;
+export const PreparedDevRyanPage = DevRyanPage;
 export const PreparedAboutSettings = aboutSettings.Component;
 export const PreparedUserManagementPage = userManagementPage.Component;
 export const PreparedBugReportsPage = bugReportsPage.Component;
@@ -136,13 +136,13 @@ const pageResources: Partial<Record<SettingsPageSlug, readonly SettingsSectionRe
   'magic-prompts': [magicPromptsSidebar, magicPromptsPage],
   git: [gitPage],
   about: [aboutSettings],
-  appearance: [openChamberSectionResources.visual],
-  chat: [openChamberSectionResources.chat],
-  shortcuts: [openChamberSectionResources.shortcuts],
+  appearance: [devRyanSectionResources.visual],
+  chat: [devRyanSectionResources.chat],
+  shortcuts: [devRyanSectionResources.shortcuts],
   sessions: [agentsSidebar, agentsPicker, sessionDefaultsPage],
-  notifications: [openChamberSectionResources.notifications],
-  voice: [openChamberSectionResources.voice],
-  tunnel: [openChamberSectionResources.tunnel],
+  notifications: [devRyanSectionResources.notifications],
+  voice: [devRyanSectionResources.voice],
+  tunnel: [devRyanSectionResources.tunnel],
 };
 
 const sectionPreloads = new Map<string, Promise<void>>();

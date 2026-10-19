@@ -1,6 +1,6 @@
 import { createPreparedSettingsComponent } from '@/components/views/preparedSettingsComponent';
 
-export const openChamberSectionResources = {
+export const devRyanSectionResources = {
   visual: createPreparedSettingsComponent(() => import('./VisualSectionContent').then((module) => ({ default: module.VisualSectionContent }))),
   chat: createPreparedSettingsComponent(() => import('./VisualSectionContent').then((module) => ({ default: module.ChatSectionContent }))),
   shortcuts: createPreparedSettingsComponent(() => import('./KeyboardShortcutsSettings').then((module) => ({ default: module.KeyboardShortcutsSettings }))),

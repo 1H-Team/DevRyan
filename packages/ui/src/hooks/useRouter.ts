@@ -52,7 +52,7 @@ const applyRoutedSessionSelection = (sessionId: string, reconcile = false): bool
 
 
 /**
- * Hook that provides bidirectional URL routing for OpenChamber.
+ * Hook that provides bidirectional URL routing for DevRyan.
  *
  * On mount:
  * - Parses URL parameters and applies them to app state

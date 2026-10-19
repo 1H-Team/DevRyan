@@ -41,14 +41,14 @@ describe('Appearance source contracts', () => {
     });
 
     test('keeps the appearance modules out of the eager settings page shell', () => {
-        const page = read('../OpenChamberPage.tsx');
+        const page = read('../DevRyanPage.tsx');
 
         expect(page).not.toContain('./appearance/');
-        expect(page).not.toContain("from './OpenChamberVisualSettings'");
+        expect(page).not.toContain("from './DevRyanVisualSettings'");
     });
 
     test('renders sections in DOM order without nested interactive rows', () => {
-        const root = read('../OpenChamberVisualSettings.tsx');
+        const root = read('../DevRyanVisualSettings.tsx');
         const sections = [
             'ThemeSection.tsx',
             'TypographySection.tsx',

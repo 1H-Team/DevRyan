@@ -126,7 +126,7 @@ describe("isPlanModeUserMessage", () => {
     )).toBe(true)
   })
 
-  test("treats OpenChamber plan-mode metadata as a plan source", () => {
+  test("treats DevRyan plan-mode metadata as a plan source", () => {
     expect(isPlanModeUserMessage(
       {
         ...userMessage("user-1"),

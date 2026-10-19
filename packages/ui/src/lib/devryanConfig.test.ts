@@ -3,12 +3,12 @@ import {
   getProjectActionsState,
   DEVRYAN_AUTO_DISCOVER_ACTION_ID,
   saveProjectActionsState,
-  type OpenChamberProjectAction,
+  type DevRyanProjectAction,
   type ProjectRef,
 } from "./devryanConfig";
 
 const project: ProjectRef = { id: "project", path: "/repo" };
-const action: OpenChamberProjectAction = {
+const action: DevRyanProjectAction = {
   id: "run-dev",
   name: "Run Dev",
   command: "bun run dev",

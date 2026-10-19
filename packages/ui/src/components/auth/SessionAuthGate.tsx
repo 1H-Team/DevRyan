@@ -24,7 +24,7 @@ import { installApiFetchSecurity } from '@/lib/apiSecurity';
 import { initializeInteractionAnalytics } from '@/lib/interactionAnalytics';
 import { startAppearanceAutoSave } from '@/lib/appearanceAutoSave';
 import { startModelPrefsAutoSave } from '@/lib/modelPrefsAutoSave';
-import { subscribeOpenchamberEvents } from '@/lib/devryanEvents';
+import { subscribeDevRyanEvents } from '@/lib/devryanEvents';
 import {
   authStoragePrincipalId,
   hasAuthCapability,
@@ -519,7 +519,7 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({ children }) =>
       }
     };
 
-    const unsubscribe = subscribeOpenchamberEvents((event) => {
+    const unsubscribe = subscribeDevRyanEvents((event) => {
       if (event.type === 'stream-ready') {
         scheduleRefresh();
         return;
@@ -988,7 +988,7 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({ children }) =>
                 <div className="relative">
                   <RiLockLine className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/60" />
                   <Input
-                    id="openchamber-ui-password"
+                    id="devryan-ui-password"
                     ref={passwordInputRef}
                     type="password"
                     autoComplete={isClaiming ? 'new-password' : 'current-password'}

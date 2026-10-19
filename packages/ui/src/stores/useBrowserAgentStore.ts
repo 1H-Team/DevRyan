@@ -6,7 +6,7 @@ import {
   isElectronShell,
   isStandaloneWebRuntime,
 } from '@/lib/desktop';
-import { subscribeOpenchamberEvents } from '@/lib/devryanEvents';
+import { subscribeDevRyanEvents } from '@/lib/devryanEvents';
 import { resolveRootSessionID } from '@/lib/sessionLineage';
 import { useUIStore } from '@/stores/useUIStore';
 
@@ -443,7 +443,7 @@ export const ensureBrowserAgentListeners = (): void => {
   listenersInstalled = true;
 
   if (isStandaloneWebRuntime()) {
-    subscribeOpenchamberEvents((event) => {
+    subscribeDevRyanEvents((event) => {
       if (event.type === 'stream-ready' || event.type === 'browser-agent-leases-changed') {
         void refreshRemoteBrowserAgentLeases();
       }

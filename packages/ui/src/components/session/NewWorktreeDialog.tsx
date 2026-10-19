@@ -1057,7 +1057,7 @@ export function NewWorktreeDialog({
           void sessionActions.updateSessionTitle(session.id, sessionTitle).catch(() => undefined);
 
           try {
-            useSessionUIStore.getState().initializeNewOpenChamberSession(session.id, useConfigStore.getState().agents);
+            useSessionUIStore.getState().initializeNewDevRyanSession(session.id, useConfigStore.getState().agents);
           } catch {
             // ignore
           }

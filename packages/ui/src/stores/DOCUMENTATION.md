@@ -172,7 +172,7 @@ the default assignment's public `/projects/<project>/<branch>` path becomes auth
 instead. Managed metadata changes are admin-only, persisted through the server, and
 rolled back optimistically if that request fails. Active managed clients refresh their
 principal assignment snapshot after a scoped project-metadata event and after the
-OpenChamber event stream reconnects, recovering changes missed while disconnected.
+DevRyan event stream reconnects, recovering changes missed while disconnected.
 
 `useGlobalSessionsStore.ts` combines complete global HTTP listings with low-frequency
 `session.created`, `session.updated`, and `session.deleted` events from the sync pipeline. Lifecycle

@@ -1414,7 +1414,7 @@ export async function createSessionRecord(
       registerSessionDirectory(session.id, sessionDirectory)
       getSessionUIStore().getState().setSessionDirectory(session.id, sessionDirectory)
     }
-    getSessionUIStore().getState().markSessionAsOpenChamberCreated(session.id)
+    getSessionUIStore().getState().markSessionAsDevRyanCreated(session.id)
     if (!isHiddenCreatedSession) {
       useGlobalSessionsStore.getState().upsertSession(session)
     }
@@ -2565,7 +2565,7 @@ function settleSessionTreeAfterRevert(directory: string | undefined, rootSession
  * 1. Resolve the known tree for optimistic coordination and legacy compatibility
  * 2. Extract text from the target message for prompt restoration
  * 3. Optimistically set revert marker so messages hide immediately
- * 4. Call OpenChamber's tree-scoped session revert and merge returned session
+ * 4. Call DevRyan's tree-scoped session revert and merge returned session
  * 5. Queue a session- and revision-owned composer restoration after acknowledgement
  */
 export async function revertToMessage(

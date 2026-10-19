@@ -40,7 +40,7 @@ mock.module('./settingsSectionLoaders', () => ({
     'RemoteInstancesPage', 'RemoteInstancesSidebar', 'SessionDefaultsPage', 'SkillsPage', 'SkillsSidebar', 'UsagePage', 'UsageSidebar',
     'UserManagementPage'].map((name) => [`Prepared${name}`, () => <div>{name}</div>])),
   PreparedSettingsDataBoundary: passthrough,
-  PreparedOpenChamberPage: ({ section }: { section: string }) => {
+  PreparedDevRyanPage: ({ section }: { section: string }) => {
     const Component = resourceFor(section === 'visual' ? 'appearance' : section).Component;
     return <Component />;
   },

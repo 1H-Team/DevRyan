@@ -95,7 +95,7 @@ import {
 } from '@/stores/useGlobalSessionsStore';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
-import { subscribeOpenchamberEvents } from '@/lib/devryanEvents';
+import { subscribeDevRyanEvents } from '@/lib/devryanEvents';
 import type { GitHubAuthStatus } from '@/lib/api/types';
 import { markWorktreeBootstrapPending } from '@/lib/worktrees/worktreeBootstrap';
 import { hasAuthCapability, useAuthPrincipal } from '@/lib/authSession';
@@ -502,7 +502,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
 
   React.useEffect(() => {
     let refreshTimeout: ReturnType<typeof setTimeout> | null = null;
-    const unsubscribe = subscribeOpenchamberEvents((event) => {
+    const unsubscribe = subscribeDevRyanEvents((event) => {
       if (event.type !== 'scheduled-task-ran') {
         return;
       }

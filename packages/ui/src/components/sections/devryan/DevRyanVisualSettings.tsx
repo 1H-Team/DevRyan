@@ -32,14 +32,14 @@ const SECTION_COMPONENTS: Record<AppearanceSectionId, React.ComponentType<Appear
     mobileInstall: MobileInstallSection,
 };
 
-interface OpenChamberVisualSettingsProps {
+interface DevRyanVisualSettingsProps {
     /** Which settings to show. If undefined, shows all. */
     visibleSettings?: readonly VisibleSetting[];
     /** Show the live Appearance preview beside (wide) or above (narrow) the settings. */
     preview?: boolean;
 }
 
-export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps> = ({ visibleSettings, preview = false }) => {
+export const DevRyanVisualSettings: React.FC<DevRyanVisualSettingsProps> = ({ visibleSettings, preview = false }) => {
     const { isMobile } = useDeviceInfo();
     const { browserTab } = usePwaDetection();
     const principal = useAuthPrincipal();

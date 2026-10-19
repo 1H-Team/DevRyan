@@ -1,14 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { DEVRYAN_AUTO_DISCOVER_ACTION_ID, type OpenChamberProjectAction } from "./devryanConfig";
+import { DEVRYAN_AUTO_DISCOVER_ACTION_ID, type DevRyanProjectAction } from "./devryanConfig";
 import { resolveProjectActionSelection } from "./projectActions";
 
-const autoDiscoverAction: OpenChamberProjectAction = {
+const autoDiscoverAction: DevRyanProjectAction = {
   id: DEVRYAN_AUTO_DISCOVER_ACTION_ID,
   name: "Auto-discover",
   command: "",
 };
 
-const userAction: OpenChamberProjectAction = {
+const userAction: DevRyanProjectAction = {
   id: "run-dev",
   name: "Run Dev",
   command: "bun run dev",

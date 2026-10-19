@@ -101,7 +101,7 @@ const sessionUIStore = {
     setSessionDirectory: (sessionId: string, directory: string | null) => {
       sessionDirectories[sessionId] = directory
     },
-    markSessionAsOpenChamberCreated: () => {},
+    markSessionAsDevRyanCreated: () => {},
     getDirectoryForSession: (sessionId: string) => sessionDirectories[sessionId] ?? null,
     abortPendingSend: () => false,
     clearSessionTurnCompletion: () => {},

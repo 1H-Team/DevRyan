@@ -1,4 +1,4 @@
-export type OpenChamberSection =
+export type DevRyanSection =
   | 'visual'
   | 'chat'
   | 'shortcuts'

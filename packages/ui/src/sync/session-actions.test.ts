@@ -280,7 +280,7 @@ const sessionActionsSessionUIStore = {
     setSessionDirectory: (sessionId: string, directory: string | null) => {
       sessionDirectories[sessionId] = directory
     },
-    markSessionAsOpenChamberCreated: () => {},
+    markSessionAsDevRyanCreated: () => {},
     getDirectoryForSession: (sessionId: string) => sessionDirectories[sessionId] ?? null,
     abortPendingSend: (key: string) => {
       const controller = mockAbortControllers.get(key)
@@ -2323,7 +2323,7 @@ describe("revertToMessage scoped revert", () => {
     sessionMessagesHandler = () => Promise.resolve({ data: [] })
   })
 
-  test("calls the OpenChamber scoped revert endpoint with session, message, and directory", async () => {
+  test("calls the DevRyan scoped revert endpoint with session, message, and directory", async () => {
     const session = makeSession("session-a")
     const before = { id: "msg_10", sessionID: "session-a", role: "assistant", time: { created: 1 } } as unknown as import("@opencode-ai/sdk/v2/client").Message
     const target = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as unknown as import("@opencode-ai/sdk/v2/client").Message

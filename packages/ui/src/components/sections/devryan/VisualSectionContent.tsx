@@ -1,5 +1,5 @@
 import React from 'react';
-import { OpenChamberVisualSettings, type VisibleSetting } from './OpenChamberVisualSettings';
+import { DevRyanVisualSettings, type VisibleSetting } from './DevRyanVisualSettings';
 
 // Section order comes from appearance/visibleSettings.ts; these lists only choose what a page shows.
 const CHAT_SETTINGS: readonly VisibleSetting[] = [
@@ -37,10 +37,10 @@ const APPEARANCE_SETTINGS: readonly VisibleSetting[] = [
 
 // Appearance: every visual and chat preference, with the live preview.
 export const VisualSectionContent: React.FC = () => (
-    <OpenChamberVisualSettings visibleSettings={APPEARANCE_SETTINGS} preview />
+    <DevRyanVisualSettings visibleSettings={APPEARANCE_SETTINGS} preview />
 );
 
 // Chat section: message presentation, diff layout, status, reasoning, and queue behavior.
 export const ChatSectionContent: React.FC = () => (
-    <OpenChamberVisualSettings visibleSettings={CHAT_SETTINGS} />
+    <DevRyanVisualSettings visibleSettings={CHAT_SETTINGS} />
 );

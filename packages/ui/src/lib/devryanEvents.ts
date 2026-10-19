@@ -14,7 +14,7 @@ export type ProjectMetadataChangedEvent = {
   projectId: string;
 };
 
-export type OpenChamberStreamReadyEvent = {
+export type DevRyanStreamReadyEvent = {
   type: 'stream-ready';
 };
 
@@ -23,11 +23,11 @@ export type BrowserAgentLeasesChangedEvent = {
   revision: number;
 };
 
-export type OpenChamberEvent = ScheduledTaskRanEvent
+export type DevRyanEvent = ScheduledTaskRanEvent
   | ProjectMetadataChangedEvent
-  | OpenChamberStreamReadyEvent
+  | DevRyanStreamReadyEvent
   | BrowserAgentLeasesChangedEvent;
-type Listener = (event: OpenChamberEvent) => void;
+type Listener = (event: DevRyanEvent) => void;
 
 let eventSource: EventSource | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -95,9 +95,9 @@ const parseEnvelope = (raw: string): { type: string; properties: unknown } | nul
   }
 };
 
-export const parseOpenChamberEventEnvelope = (
+export const parseDevRyanEventEnvelope = (
   rawEnvelope: { type: string; properties: unknown },
-): OpenChamberEvent | null => {
+): DevRyanEvent | null => {
   const envelope = { ...rawEnvelope, type: canonicalEventType(rawEnvelope.type) };
   if (envelope.type === 'devryan:event-stream-ready') {
     return { type: 'stream-ready' };
@@ -147,7 +147,7 @@ export const parseOpenChamberEventEnvelope = (
 };
 
 const dispatchFromEnvelope = (envelope: { type: string; properties: unknown }) => {
-  const nextEvent = parseOpenChamberEventEnvelope(envelope);
+  const nextEvent = parseDevRyanEventEnvelope(envelope);
   if (!nextEvent) return;
   if (nextEvent.type === 'stream-ready') reconnectAttempt = 0;
   for (const listener of listeners) {
@@ -190,7 +190,7 @@ const connect = () => {
   eventSource = source;
 };
 
-export const subscribeOpenchamberEvents = (listener: Listener): (() => void) => {
+export const subscribeDevRyanEvents = (listener: Listener): (() => void) => {
   listeners.add(listener);
   connect();
 

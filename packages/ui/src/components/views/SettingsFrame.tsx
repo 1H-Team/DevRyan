@@ -8,7 +8,7 @@ import {
 } from '@remixicon/react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
-import type { OpenChamberSection } from '@/components/sections/devryan/types';
+import type { DevRyanSection } from '@/components/sections/devryan/types';
 import { useDeviceInfo } from '@/lib/device';
 import { isDesktopShell, isWebRuntime } from '@/lib/desktop';
 import { useI18n } from '@/lib/i18n';
@@ -76,7 +76,7 @@ import {
   PreparedMagicPromptsSidebar,
   PreparedMcpPage,
   PreparedMcpSidebar,
-  PreparedOpenChamberPage,
+  PreparedDevRyanPage,
   PreparedPluginsPage,
   PreparedPluginsSidebar,
   PreparedProjectsPage,
@@ -349,7 +349,7 @@ export const SettingsFrame: React.FC<SettingsFrameProps> = ({ onClose, forceMobi
 
   // Nav is always open (collapsed state removed)
 
-  const openChamberSectionBySlug: Partial<Record<SettingsPageSlug, OpenChamberSection>> = React.useMemo(() => ({
+  const devRyanSectionBySlug: Partial<Record<SettingsPageSlug, DevRyanSection>> = React.useMemo(() => ({
     appearance: 'visual',
     chat: 'chat',
     shortcuts: 'shortcuts',
@@ -548,13 +548,13 @@ export const SettingsFrame: React.FC<SettingsFrameProps> = ({ onClose, forceMobi
       case 'notifications':
       case 'voice':
       case 'tunnel': {
-        const section = openChamberSectionBySlug[slug] ?? 'visual';
-        return <PreparedOpenChamberPage section={section} />;
+        const section = devRyanSectionBySlug[slug] ?? 'visual';
+        return <PreparedDevRyanPage section={section} />;
       }
       default:
         return <SettingsHome onOpen={openPage} pendingSlug={pendingSlug} />;
     }
-  }, [openChamberSectionBySlug, openPage, pendingSlug, principal, renderUnavailable, runtimeCtx]);
+  }, [devRyanSectionBySlug, openPage, pendingSlug, principal, renderUnavailable, runtimeCtx]);
 
   const renderPageContent = React.useCallback((slug: SettingsPageSlug) => {
     const content = renderRawPageContent(slug);

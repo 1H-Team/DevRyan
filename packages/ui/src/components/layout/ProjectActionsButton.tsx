@@ -37,8 +37,8 @@ import { useI18n } from '@/lib/i18n';
 import {
   getProjectActionsState,
   DEVRYAN_AUTO_DISCOVER_ACTION_ID,
-  updateOpenChamberConfig,
-  type OpenChamberProjectAction,
+  updateDevRyanConfig,
+  type DevRyanProjectAction,
   type ProjectRef,
 } from '@/lib/devryanConfig';
 import {
@@ -311,7 +311,7 @@ export const ProjectActionsButton = ({
   const updateProjectActionRunStatus = useTerminalStore((state) => state.updateProjectActionRunStatus);
   const removeProjectActionRun = useTerminalStore((state) => state.removeProjectActionRun);
 
-  const [actions, setActions] = React.useState<OpenChamberProjectAction[]>([]);
+  const [actions, setActions] = React.useState<DevRyanProjectAction[]>([]);
   const [selectedActionId, setSelectedActionId] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
   const [browserPresentationLeaseId, setBrowserPresentationLeaseId] = React.useState<string | null>(null);
@@ -386,7 +386,7 @@ export const ProjectActionsButton = ({
     }
   }, [stableProjectRef]);
 
-  const autoDiscoverAction = React.useMemo<OpenChamberProjectAction>(() => ({
+  const autoDiscoverAction = React.useMemo<DevRyanProjectAction>(() => ({
     id: DEVRYAN_AUTO_DISCOVER_ACTION_ID,
     name: t('projectActions.actions.autoDiscover'),
     command: '',
@@ -443,7 +443,7 @@ export const ProjectActionsButton = ({
     if (!actions.some((entry) => entry.id === selectedActionId)) {
       setSelectedActionId(null);
       if (stableProjectRef) {
-        void updateOpenChamberConfig(stableProjectRef, { projectActionsPrimaryId: undefined });
+        void updateDevRyanConfig(stableProjectRef, { projectActionsPrimaryId: undefined });
       }
     }
   }, [actions, selectedActionId, stableProjectRef]);
@@ -564,7 +564,7 @@ export const ProjectActionsButton = ({
 
   }, [displayActions, openExternal, openProjectUrl, projectActionRuns, setTabPreviewUrl, t, terminalSessions, updateProjectActionRunStatus]);
 
-  const getOrCreateActionTab = React.useCallback(async (action: OpenChamberProjectAction, options: { revealTerminal?: boolean } = {}) => {
+  const getOrCreateActionTab = React.useCallback(async (action: DevRyanProjectAction, options: { revealTerminal?: boolean } = {}) => {
     if (!normalizedDirectory) {
       throw new Error(t('projectActions.error.noActiveDirectory'));
     }
@@ -611,7 +611,7 @@ export const ProjectActionsButton = ({
     t,
   ]);
 
-  const runAction = React.useCallback(async (action: OpenChamberProjectAction) => {
+  const runAction = React.useCallback(async (action: DevRyanProjectAction) => {
     if ((!allowMobile && isMobile)) {
       return;
     }
@@ -629,7 +629,7 @@ export const ProjectActionsButton = ({
 
     try {
       const discovered = action.id === DEVRYAN_AUTO_DISCOVER_ACTION_ID
-        ? await (async (): Promise<OpenChamberProjectAction> => {
+        ? await (async (): Promise<DevRyanProjectAction> => {
           const [actionsState, scripts] = await Promise.all([
             getProjectActionsState({ id: stableProjectRef?.id ?? '', path: normalizedDirectory }),
             readPackageJsonScripts(normalizedDirectory),
@@ -783,7 +783,7 @@ export const ProjectActionsButton = ({
     terminal,
   ]);
 
-  const stopAction = React.useCallback(async (action: OpenChamberProjectAction) => {
+  const stopAction = React.useCallback(async (action: DevRyanProjectAction) => {
     const runKey = toProjectActionRunKey(normalizedDirectory, action.id);
     const activeRun = projectActionRuns[runKey];
     if (!activeRun) {
@@ -849,10 +849,10 @@ export const ProjectActionsButton = ({
     void runAction(action);
   }, [normalizedDirectory, runAction, projectActionRuns, resolvedSelectedAction, stopAction]);
 
-  const handleSelectAction = React.useCallback((action: OpenChamberProjectAction, toggleStopIfRunning = false) => {
+  const handleSelectAction = React.useCallback((action: DevRyanProjectAction, toggleStopIfRunning = false) => {
     setSelectedActionId(action.id);
     if (stableProjectRef) {
-      void updateOpenChamberConfig(stableProjectRef, {
+      void updateDevRyanConfig(stableProjectRef, {
         projectActionsPrimaryId: action.id,
       });
     }

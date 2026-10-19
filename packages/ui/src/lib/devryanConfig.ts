@@ -1,5 +1,5 @@
 /**
- * OpenChamber project-level configuration service.
+ * DevRyan project-level configuration service.
  * Stores per-project settings in <config folder>/projects/<projectId>.json, where the
  * config folder is ~/.config/devryan (or the pre-rename ~/.config/openchamber).
  * Migrates from legacy <project>/.openchamber/openchamber.json.
@@ -29,61 +29,61 @@ function getRuntimeFilesAPI(): FilesAPI | null {
   return null;
 }
 
-export interface OpenChamberConfig {
+export interface DevRyanConfig {
   projectPath?: string;
   'setup-worktree'?: string[];
   projectNotes?: string;
-  projectTodos?: OpenChamberProjectTodoItem[];
-  projectPlanFiles?: OpenChamberProjectPlanFileLink[];
-  projectActions?: OpenChamberProjectAction[];
+  projectTodos?: DevRyanProjectTodoItem[];
+  projectPlanFiles?: DevRyanProjectPlanFileLink[];
+  projectActions?: DevRyanProjectAction[];
   projectActionsPrimaryId?: string;
 }
 
-export type OpenChamberProjectActionPlatform = 'macos' | 'linux' | 'windows';
+export type DevRyanProjectActionPlatform = 'macos' | 'linux' | 'windows';
 
-export interface OpenChamberProjectAction {
+export interface DevRyanProjectAction {
   id: string;
   name: string;
   command: string;
   icon?: string | null;
-  platforms?: OpenChamberProjectActionPlatform[];
+  platforms?: DevRyanProjectActionPlatform[];
   autoOpenUrl?: boolean;
   openUrl?: string;
   desktopOpenSshForward?: string;
 }
 
-export interface OpenChamberProjectActionsState {
-  actions: OpenChamberProjectAction[];
+export interface DevRyanProjectActionsState {
+  actions: DevRyanProjectAction[];
   primaryActionId: string | null;
 }
 
-export interface OpenChamberProjectTodoItem {
+export interface DevRyanProjectTodoItem {
   id: string;
   text: string;
   completed: boolean;
   createdAt: number;
 }
 
-export interface OpenChamberProjectPlanFileLink {
+export interface DevRyanProjectPlanFileLink {
   id: string;
   path: string;
   createdAt: number;
 }
 
-export interface OpenChamberProjectPlanFile {
+export interface DevRyanProjectPlanFile {
   title: string;
   body: string;
   raw: string;
   path: string;
 }
 
-export interface OpenChamberProjectNotesTodos {
+export interface DevRyanProjectNotesTodos {
   notes: string;
-  todos: OpenChamberProjectTodoItem[];
+  todos: DevRyanProjectTodoItem[];
 }
 
-export interface OpenChamberProjectContextData extends OpenChamberProjectNotesTodos {
-  plans: OpenChamberProjectPlanFileLink[];
+export interface DevRyanProjectContextData extends DevRyanProjectNotesTodos {
+  plans: DevRyanProjectPlanFileLink[];
 }
 
 export const DEVRYAN_PROJECT_NOTES_MAX_LENGTH = 1000;
@@ -95,7 +95,7 @@ export const DEVRYAN_PROJECT_ACTION_DESKTOP_FORWARD_MAX_LENGTH = 300;
 export const DEVRYAN_AUTO_DISCOVER_ACTION_ID = '__openchamber_auto_discover_preview__';
 export const DEVRYAN_PROJECT_PLAN_TITLE_MAX_LENGTH = 160;
 
-const DEVRYAN_ACTION_PLATFORM_SET = new Set<OpenChamberProjectActionPlatform>(['macos', 'linux', 'windows']);
+const DEVRYAN_ACTION_PLATFORM_SET = new Set<DevRyanProjectActionPlatform>(['macos', 'linux', 'windows']);
 
 const normalize = (value: string): string => {
   if (!value) return '';
@@ -282,12 +282,12 @@ const sanitizeProjectNotes = (value: unknown): string => {
   return trimToMaxLength(value, DEVRYAN_PROJECT_NOTES_MAX_LENGTH);
 };
 
-const sanitizeProjectTodoItems = (value: unknown): OpenChamberProjectTodoItem[] => {
+const sanitizeProjectTodoItems = (value: unknown): DevRyanProjectTodoItem[] => {
   if (!Array.isArray(value)) {
     return [];
   }
 
-  const sanitized: OpenChamberProjectTodoItem[] = [];
+  const sanitized: DevRyanProjectTodoItem[] = [];
   for (const entry of value) {
     if (!entry || typeof entry !== 'object') {
       continue;
@@ -325,12 +325,12 @@ const sanitizeProjectTodoItems = (value: unknown): OpenChamberProjectTodoItem[] 
   return sanitized;
 };
 
-const sanitizeProjectPlanFileLinks = (value: unknown): OpenChamberProjectPlanFileLink[] => {
+const sanitizeProjectPlanFileLinks = (value: unknown): DevRyanProjectPlanFileLink[] => {
   if (!Array.isArray(value)) {
     return [];
   }
 
-  const sanitized: OpenChamberProjectPlanFileLink[] = [];
+  const sanitized: DevRyanProjectPlanFileLink[] = [];
   const seenIds = new Set<string>();
 
   for (const entry of value) {
@@ -362,18 +362,18 @@ const sanitizeProjectPlanFileLinks = (value: unknown): OpenChamberProjectPlanFil
   return sanitized.sort((a, b) => b.createdAt - a.createdAt);
 };
 
-const sanitizeProjectActionPlatforms = (value: unknown): OpenChamberProjectActionPlatform[] => {
+const sanitizeProjectActionPlatforms = (value: unknown): DevRyanProjectActionPlatform[] => {
   if (!Array.isArray(value)) {
     return [];
   }
 
-  const unique: OpenChamberProjectActionPlatform[] = [];
-  const seen = new Set<OpenChamberProjectActionPlatform>();
+  const unique: DevRyanProjectActionPlatform[] = [];
+  const seen = new Set<DevRyanProjectActionPlatform>();
   for (const entry of value) {
     if (typeof entry !== 'string') {
       continue;
     }
-    const normalized = entry.trim().toLowerCase() as OpenChamberProjectActionPlatform;
+    const normalized = entry.trim().toLowerCase() as DevRyanProjectActionPlatform;
     if (!DEVRYAN_ACTION_PLATFORM_SET.has(normalized) || seen.has(normalized)) {
       continue;
     }
@@ -384,12 +384,12 @@ const sanitizeProjectActionPlatforms = (value: unknown): OpenChamberProjectActio
   return unique;
 };
 
-const sanitizeProjectActions = (value: unknown): OpenChamberProjectAction[] => {
+const sanitizeProjectActions = (value: unknown): DevRyanProjectAction[] => {
   if (!Array.isArray(value)) {
     return [];
   }
 
-  const sanitized: OpenChamberProjectAction[] = [];
+  const sanitized: DevRyanProjectAction[] = [];
   const seenIds = new Set<string>();
 
   for (const entry of value) {
@@ -448,7 +448,7 @@ const sanitizeProjectActions = (value: unknown): OpenChamberProjectAction[] => {
 const sanitizeProjectActionsState = (value: {
   actions?: unknown;
   primaryActionId?: unknown;
-} | null | undefined): OpenChamberProjectActionsState => {
+} | null | undefined): DevRyanProjectActionsState => {
   const actions = sanitizeProjectActions(value?.actions);
   const primaryRaw = typeof value?.primaryActionId === 'string' ? value.primaryActionId.trim() : '';
   const primaryActionId = primaryRaw === DEVRYAN_AUTO_DISCOVER_ACTION_ID
@@ -466,7 +466,7 @@ const sanitizeProjectActionsState = (value: {
 const sanitizeProjectNotesAndTodos = (value: {
   notes?: unknown;
   todos?: unknown;
-} | null | undefined): OpenChamberProjectNotesTodos => {
+} | null | undefined): DevRyanProjectNotesTodos => {
   return {
     notes: sanitizeProjectNotes(value?.notes),
     todos: sanitizeProjectTodoItems(value?.todos),
@@ -477,7 +477,7 @@ const sanitizeProjectContextData = (value: {
   notes?: unknown;
   todos?: unknown;
   plans?: unknown;
-} | null | undefined): OpenChamberProjectContextData => {
+} | null | undefined): DevRyanProjectContextData => {
   const notesAndTodos = sanitizeProjectNotesAndTodos(value);
   return {
     ...notesAndTodos,
@@ -558,7 +558,7 @@ export const parseProjectPlanMarkdown = (raw: string): { title: string; body: st
  * Read the config for a project.
  * Returns null if file doesn't exist or is invalid.
  */
-export async function readOpenChamberConfig(project: ProjectRef): Promise<OpenChamberConfig | null> {
+export async function readDevRyanConfig(project: ProjectRef): Promise<DevRyanConfig | null> {
   const projectDirectory = typeof project?.path === 'string' ? project.path.trim() : '';
   if (!projectDirectory) {
     return null;
@@ -575,7 +575,7 @@ export async function readOpenChamberConfig(project: ProjectRef): Promise<OpenCh
     return text;
   };
 
-  const parseConfig = (text: string | null): OpenChamberConfig | null => {
+  const parseConfig = (text: string | null): DevRyanConfig | null => {
     if (typeof text !== 'string') {
       return null;
     }
@@ -588,7 +588,7 @@ export async function readOpenChamberConfig(project: ProjectRef): Promise<OpenCh
       if (!parsed || typeof parsed !== 'object') {
         return null;
       }
-      return parsed as OpenChamberConfig;
+      return parsed as DevRyanConfig;
     } catch {
       return null;
     }
@@ -612,9 +612,9 @@ export async function readOpenChamberConfig(project: ProjectRef): Promise<OpenCh
 
   // Best-effort write + delete legacy.
   try {
-    const wrote = await writeOpenChamberConfig(project, legacyConfig);
+    const wrote = await writeDevRyanConfig(project, legacyConfig);
     if (wrote) {
-      await deleteLegacyOpenChamberConfig(projectDirectory);
+      await deleteLegacyDevRyanConfig(projectDirectory);
     }
   } catch {
     // Ignore migration failures; still return legacy content.
@@ -630,9 +630,9 @@ export async function readOpenChamberConfig(project: ProjectRef): Promise<OpenCh
  * dedicated route and never round-trips them through this config write path to
  * avoid a read-then-write race clobbering a concurrent server update.
  */
-export async function writeOpenChamberConfig(
+export async function writeDevRyanConfig(
   project: ProjectRef,
-  config: OpenChamberConfig
+  config: DevRyanConfig
 ): Promise<boolean> {
   const projectDirectory = typeof project?.path === 'string' ? project.path.trim() : '';
   if (!projectDirectory) {
@@ -676,7 +676,7 @@ export async function writeOpenChamberConfig(
     }, null, 2);
     return await writeTextFile(configPath, content);
   } catch (error) {
-    console.error('Failed to write openchamber config:', error);
+    console.error('Failed to write DevRyan config:', error);
     return false;
   }
 }
@@ -684,30 +684,30 @@ export async function writeOpenChamberConfig(
 /**
  * Update specific keys in the config, preserving other values.
  */
-export async function updateOpenChamberConfig(
+export async function updateDevRyanConfig(
   project: ProjectRef,
-  updates: Partial<OpenChamberConfig>
+  updates: Partial<DevRyanConfig>
 ): Promise<boolean> {
-  const existing = await readOpenChamberConfig(project) || {};
+  const existing = await readDevRyanConfig(project) || {};
   const merged = { ...existing, ...updates };
-  return writeOpenChamberConfig(project, merged);
+  return writeDevRyanConfig(project, merged);
 }
 
 /**
  * Get worktree setup commands from config.
  */
 export async function getWorktreeSetupCommands(project: ProjectRef): Promise<string[]> {
-  const config = await readOpenChamberConfig(project);
+  const config = await readDevRyanConfig(project);
   return config?.['setup-worktree'] ?? [];
 }
 
 export async function saveWorktreeSetupCommands(project: ProjectRef, commands: string[]): Promise<boolean> {
   const filtered = commands.filter((cmd) => cmd.trim().length > 0);
-  return updateOpenChamberConfig(project, { 'setup-worktree': filtered });
+  return updateDevRyanConfig(project, { 'setup-worktree': filtered });
 }
 
-export async function getProjectNotesAndTodos(project: ProjectRef): Promise<OpenChamberProjectNotesTodos> {
-  const config = await readOpenChamberConfig(project);
+export async function getProjectNotesAndTodos(project: ProjectRef): Promise<DevRyanProjectNotesTodos> {
+  const config = await readDevRyanConfig(project);
   return sanitizeProjectNotesAndTodos({
     notes: config?.projectNotes,
     todos: config?.projectTodos,
@@ -716,21 +716,21 @@ export async function getProjectNotesAndTodos(project: ProjectRef): Promise<Open
 
 export async function saveProjectNotesAndTodos(
   project: ProjectRef,
-  value: OpenChamberProjectNotesTodos
+  value: DevRyanProjectNotesTodos
 ): Promise<boolean> {
   const sanitized = sanitizeProjectNotesAndTodos({
     notes: value.notes,
     todos: value.todos,
   });
 
-  return updateOpenChamberConfig(project, {
+  return updateDevRyanConfig(project, {
     projectNotes: sanitized.notes,
     projectTodos: sanitized.todos,
   });
 }
 
-export async function getProjectContextData(project: ProjectRef): Promise<OpenChamberProjectContextData> {
-  const config = await readOpenChamberConfig(project);
+export async function getProjectContextData(project: ProjectRef): Promise<DevRyanProjectContextData> {
+  const config = await readDevRyanConfig(project);
   return sanitizeProjectContextData({
     notes: config?.projectNotes,
     todos: config?.projectTodos,
@@ -738,22 +738,22 @@ export async function getProjectContextData(project: ProjectRef): Promise<OpenCh
   });
 }
 
-export async function getProjectPlanFiles(project: ProjectRef): Promise<OpenChamberProjectPlanFileLink[]> {
-  const config = await readOpenChamberConfig(project);
+export async function getProjectPlanFiles(project: ProjectRef): Promise<DevRyanProjectPlanFileLink[]> {
+  const config = await readDevRyanConfig(project);
   return sanitizeProjectPlanFileLinks(config?.projectPlanFiles);
 }
 
 export async function saveProjectPlanFiles(
   project: ProjectRef,
-  value: OpenChamberProjectPlanFileLink[]
+  value: DevRyanProjectPlanFileLink[]
 ): Promise<boolean> {
   const sanitized = sanitizeProjectPlanFileLinks(value);
-  return updateOpenChamberConfig(project, {
+  return updateDevRyanConfig(project, {
     projectPlanFiles: sanitized,
   });
 }
 
-export async function readProjectPlanFile(path: string): Promise<OpenChamberProjectPlanFile | null> {
+export async function readProjectPlanFile(path: string): Promise<DevRyanProjectPlanFile | null> {
   const trimmedPath = typeof path === 'string' ? path.trim() : '';
   if (!trimmedPath) {
     return null;
@@ -820,7 +820,7 @@ export async function importProjectPlanFileFromContent(
   project: ProjectRef,
   content: string,
   fallbackTitle?: string
-): Promise<OpenChamberProjectPlanFileLink | null> {
+): Promise<DevRyanProjectPlanFileLink | null> {
   const raw = typeof content === 'string' ? content : '';
   if (!raw.trim()) {
     return null;
@@ -834,7 +834,7 @@ export async function importProjectPlanFileFromContent(
 export async function createProjectPlanFile(
   project: ProjectRef,
   value: { title: string; body: string }
-): Promise<OpenChamberProjectPlanFileLink | null> {
+): Promise<DevRyanProjectPlanFileLink | null> {
   const plansDirectory = await getProjectPlansDirectory(project);
   if (!plansDirectory) {
     return null;
@@ -871,8 +871,8 @@ export async function createProjectPlanFile(
   return nextEntry;
 }
 
-export async function getProjectActionsState(project: ProjectRef): Promise<OpenChamberProjectActionsState> {
-  const config = await readOpenChamberConfig(project);
+export async function getProjectActionsState(project: ProjectRef): Promise<DevRyanProjectActionsState> {
+  const config = await readDevRyanConfig(project);
   return sanitizeProjectActionsState({
     actions: config?.projectActions,
     primaryActionId: config?.projectActionsPrimaryId,
@@ -881,14 +881,14 @@ export async function getProjectActionsState(project: ProjectRef): Promise<OpenC
 
 export async function saveProjectActionsState(
   project: ProjectRef,
-  value: OpenChamberProjectActionsState
+  value: DevRyanProjectActionsState
 ): Promise<boolean> {
   const sanitized = sanitizeProjectActionsState({
     actions: value.actions,
     primaryActionId: value.primaryActionId,
   });
 
-  return updateOpenChamberConfig(project, {
+  return updateDevRyanConfig(project, {
     projectActions: sanitized.actions,
     projectActionsPrimaryId: sanitized.primaryActionId ?? undefined,
   });
@@ -913,7 +913,7 @@ export function substituteCommandVariables(
     .replace(/\$\{ROOT_WORKTREE_PATH\}/g, variables.rootWorktreePath);
 }
 
-async function deleteLegacyOpenChamberConfig(projectDirectory: string): Promise<void> {
+async function deleteLegacyDevRyanConfig(projectDirectory: string): Promise<void> {
   const legacyPath = getLegacyConfigPath(projectDirectory);
   const runtimeFiles = getRuntimeFilesAPI();
 

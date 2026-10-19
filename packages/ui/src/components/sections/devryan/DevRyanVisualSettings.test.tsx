@@ -6,7 +6,7 @@ import { ThemeSystemContext, type ThemeContextValue } from '@/contexts/theme-sys
 import { I18nProvider } from '@/lib/i18n';
 import { DEFAULT_DARK_THEME_ID, DEFAULT_LIGHT_THEME_ID, themes } from '@/lib/theme/themes';
 import type { Theme } from '@/types/theme';
-import { OpenChamberVisualSettings } from './OpenChamberVisualSettings';
+import { DevRyanVisualSettings } from './DevRyanVisualSettings';
 
 const darkTheme = themes.find((theme) => theme.metadata.id === DEFAULT_DARK_THEME_ID) as Theme;
 
@@ -34,9 +34,9 @@ const render = (node: React.ReactNode): string => renderToStaticMarkup(
 
 const headings = (markup: string): string[] => [...markup.matchAll(/<h3[^>]*>([^<]+)</g)].map((match) => match[1] ?? '');
 
-describe('OpenChamberVisualSettings', () => {
+describe('DevRyanVisualSettings', () => {
     test('renders titled sections in on-screen order with the live preview', () => {
-        const markup = render(<OpenChamberVisualSettings preview />);
+        const markup = render(<DevRyanVisualSettings preview />);
 
         expect(headings(markup)).toEqual([
             'Theme',
@@ -53,7 +53,7 @@ describe('OpenChamberVisualSettings', () => {
     });
 
     test('describes every setting and uses no nested button rows', () => {
-        const markup = render(<OpenChamberVisualSettings preview />);
+        const markup = render(<DevRyanVisualSettings preview />);
         const fields = markup.split('data-settings-field').slice(1);
 
         expect(fields.length).toBeGreaterThan(20);
@@ -64,7 +64,7 @@ describe('OpenChamberVisualSettings', () => {
     });
 
     test('shows theme cards with each theme painted in its own colors', () => {
-        const markup = render(<OpenChamberVisualSettings preview />);
+        const markup = render(<DevRyanVisualSettings preview />);
 
         expect(markup.match(/data-theme-swatch/g)?.length).toBe(themes.length);
         expect(markup).toContain('In Use');
@@ -72,7 +72,7 @@ describe('OpenChamberVisualSettings', () => {
 
     test('keeps the Chat page to chat sections without the preview', () => {
         const markup = render(
-            <OpenChamberVisualSettings visibleSettings={['userMessageRendering', 'diffLayout', 'dotfiles', 'queueMode']} />,
+            <DevRyanVisualSettings visibleSettings={['userMessageRendering', 'diffLayout', 'dotfiles', 'queueMode']} />,
         );
 
         expect(headings(markup)).toEqual(['Conversation', 'Code &amp; Files', 'Composer']);

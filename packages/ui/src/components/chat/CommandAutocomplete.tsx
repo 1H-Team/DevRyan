@@ -10,7 +10,7 @@ import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { useI18n } from '@/lib/i18n';
 import { hasAuthCapability, useAuthPrincipal } from '@/lib/authSession';
 
-type CommandSource = 'openchamber' | 'opencode';
+type CommandSource = 'devryan' | 'opencode';
 
 export interface CommandInfo {
   id: string;
@@ -20,7 +20,7 @@ export interface CommandInfo {
   agent?: string;
   model?: string;
   isBuiltIn?: boolean;
-  isOpenChamber?: boolean;
+  isDevRyan?: boolean;
   isSkill?: boolean;
   scope?: string;
 }
@@ -119,24 +119,24 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
 
         const builtInCommands: CommandInfo[] = [
           ...(hasSession && !hasMessagesInCurrentSession
-            ? [{ id: 'devryan:init', name: 'init', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.initDescription'), isBuiltIn: true }]
+            ? [{ id: 'devryan:init', name: 'init', source: 'devryan' as const, description: t('chat.commandAutocomplete.command.initDescription'), isBuiltIn: true }]
             : []
           ),
           ...(hasSession  // Show when session exists, not when hasMessages
             ? [
-                { id: 'devryan:undo', name: 'undo', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.undoDescription'), isBuiltIn: true },
-                { id: 'devryan:redo', name: 'redo', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.redoDescription'), isBuiltIn: true },
-                { id: 'devryan:timeline', name: 'timeline', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.timelineDescription'), isBuiltIn: true },
+                { id: 'devryan:undo', name: 'undo', source: 'devryan' as const, description: t('chat.commandAutocomplete.command.undoDescription'), isBuiltIn: true },
+                { id: 'devryan:redo', name: 'redo', source: 'devryan' as const, description: t('chat.commandAutocomplete.command.redoDescription'), isBuiltIn: true },
+                { id: 'devryan:timeline', name: 'timeline', source: 'devryan' as const, description: t('chat.commandAutocomplete.command.timelineDescription'), isBuiltIn: true },
               ]
             : []
           ),
-          { id: 'devryan:compact', name: 'compact', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.compactDescription'), isBuiltIn: true },
+          { id: 'devryan:compact', name: 'compact', source: 'devryan' as const, description: t('chat.commandAutocomplete.command.compactDescription'), isBuiltIn: true },
           ...(hasSession
-            ? [{ id: 'devryan:summary', name: 'summary', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.summaryDescription'), isOpenChamber: true }]
+            ? [{ id: 'devryan:summary', name: 'summary', source: 'devryan' as const, description: t('chat.commandAutocomplete.command.summaryDescription'), isDevRyan: true }]
             : []
           ),
           ...(canStartSessionCommand
-            ? [{ id: 'devryan:workspace-review', name: 'workspace-review', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.workspaceReviewDescription'), isOpenChamber: true }]
+            ? [{ id: 'devryan:workspace-review', name: 'workspace-review', source: 'devryan' as const, description: t('chat.commandAutocomplete.command.workspaceReviewDescription'), isDevRyan: true }]
             : []
           ),
         ];
@@ -166,24 +166,24 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
         const allowInitCommand = !hasMessagesInCurrentSession;
         const builtInCommands: CommandInfo[] = [
           ...(hasSession && !hasMessagesInCurrentSession
-            ? [{ id: 'devryan:init', name: 'init', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.initDescription'), isBuiltIn: true }]
+            ? [{ id: 'devryan:init', name: 'init', source: 'devryan' as const, description: t('chat.commandAutocomplete.command.initDescription'), isBuiltIn: true }]
             : []
           ),
           ...(hasSession  // Show when session exists, not when hasMessages
             ? [
-                { id: 'devryan:undo', name: 'undo', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.undoDescription'), isBuiltIn: true },
-                { id: 'devryan:redo', name: 'redo', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.redoDescription'), isBuiltIn: true },
-                { id: 'devryan:timeline', name: 'timeline', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.timelineDescription'), isBuiltIn: true },
+                { id: 'devryan:undo', name: 'undo', source: 'devryan' as const, description: t('chat.commandAutocomplete.command.undoDescription'), isBuiltIn: true },
+                { id: 'devryan:redo', name: 'redo', source: 'devryan' as const, description: t('chat.commandAutocomplete.command.redoDescription'), isBuiltIn: true },
+                { id: 'devryan:timeline', name: 'timeline', source: 'devryan' as const, description: t('chat.commandAutocomplete.command.timelineDescription'), isBuiltIn: true },
               ]
             : []
           ),
-          { id: 'devryan:compact', name: 'compact', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.compactDescription'), isBuiltIn: true },
+          { id: 'devryan:compact', name: 'compact', source: 'devryan' as const, description: t('chat.commandAutocomplete.command.compactDescription'), isBuiltIn: true },
           ...(hasSession
-            ? [{ id: 'devryan:summary', name: 'summary', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.summaryDescription'), isOpenChamber: true }]
+            ? [{ id: 'devryan:summary', name: 'summary', source: 'devryan' as const, description: t('chat.commandAutocomplete.command.summaryDescription'), isDevRyan: true }]
             : []
           ),
           ...(canStartSessionCommand
-            ? [{ id: 'devryan:workspace-review', name: 'workspace-review', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.workspaceReviewDescription'), isOpenChamber: true }]
+            ? [{ id: 'devryan:workspace-review', name: 'workspace-review', source: 'devryan' as const, description: t('chat.commandAutocomplete.command.workspaceReviewDescription'), isDevRyan: true }]
             : []
           ),
         ];
@@ -331,7 +331,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
           <div>
             {commands.map((command, index) => {
               const isSystem = command.isBuiltIn;
-              const isOpenChamberBadge = command.isOpenChamber;
+              const isDevRyanBadge = command.isDevRyan;
               const isProject = command.scope === 'project';
               
               return (
@@ -398,7 +398,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
                           {t('chat.commandAutocomplete.badge.skill')}
                         </span>
                       ) : null}
-                      {isOpenChamberBadge ? (
+                      {isDevRyanBadge ? (
                         <span
                           className="text-[10px] leading-none uppercase font-bold tracking-tight px-1.5 py-1 rounded border flex-shrink-0"
                           style={{

@@ -23,7 +23,7 @@ import {
   PreparedBugReportsPage,
   PreparedMcpPage,
   PreparedMcpSidebar,
-  PreparedOpenChamberPage,
+  PreparedDevRyanPage,
   PreparedPluginsPage,
   PreparedPluginsSidebar,
   PreparedProvidersPage,
@@ -374,7 +374,7 @@ export const ManagedSettingsFrame: React.FC<ManagedSettingsFrameProps> = ({ onCl
       const section = activeSlug === 'appearance' ? 'visual' : activeSlug;
       return (
         <SettingsPagePermissionBoundary slug={activeSlug}>
-          <SectionBoundary><PreparedOpenChamberPage section={section} /></SectionBoundary>
+          <SectionBoundary><PreparedDevRyanPage section={section} /></SectionBoundary>
         </SettingsPagePermissionBoundary>
       );
     }

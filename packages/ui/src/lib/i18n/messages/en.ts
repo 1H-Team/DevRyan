@@ -2912,7 +2912,7 @@ export const dict = {
   'sidebar.resize.rightPanelAria': 'Resize Right Panel',
   'mainLayout.mobile.closeDrawerAria': 'Close Drawer',
   'sortableTabsStrip.aria.tabs': 'Tabs',
-  'openChamberLogo.aria.logo': 'DevRyan logo',
+  'devRyanLogo.aria.logo': 'DevRyan logo',
   'markdownRenderer.table.actions.copyTitle': 'Copy Table',
   'markdownRenderer.table.actions.downloadTitle': 'Download Table',
   'markdownRenderer.table.toast.downloadedAsFormat': 'Table downloaded as {format}',

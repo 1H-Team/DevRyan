@@ -19,8 +19,8 @@ import {
   readProjectPlanFile,
   DEVRYAN_PROJECT_TODO_TEXT_MAX_LENGTH,
   saveProjectNotesAndTodos,
-  type OpenChamberProjectPlanFileLink,
-  type OpenChamberProjectTodoItem,
+  type DevRyanProjectPlanFileLink,
+  type DevRyanProjectTodoItem,
   type ProjectRef,
 } from '@/lib/devryanConfig';
 import { generateBranchName } from '@/lib/git/branchNameGenerator';
@@ -52,12 +52,12 @@ type PendingSendTarget = {
   todoText: string;
 };
 
-type ProjectPlanListItem = OpenChamberProjectPlanFileLink & {
+type ProjectPlanListItem = DevRyanProjectPlanFileLink & {
   title: string;
 };
 
 const toPlanListItem = async (
-  plan: OpenChamberProjectPlanFileLink,
+  plan: DevRyanProjectPlanFileLink,
   fallbackTitle: string,
 ): Promise<ProjectPlanListItem> => {
   const file = await readProjectPlanFile(plan.path);
@@ -89,7 +89,7 @@ export const ProjectNotesTodoPanel: React.FC<ProjectNotesTodoPanelProps> = ({
     ));
   const [isLoading, setIsLoading] = React.useState(false);
   const [notes, setNotes] = React.useState('');
-  const [todos, setTodos] = React.useState<OpenChamberProjectTodoItem[]>([]);
+  const [todos, setTodos] = React.useState<DevRyanProjectTodoItem[]>([]);
   const [newTodoText, setNewTodoText] = React.useState('');
   const [sendingTodoId, setSendingTodoId] = React.useState<string | null>(null);
   const [expandedTodoIds, setExpandedTodoIds] = React.useState<Set<string>>(() => new Set());
@@ -102,7 +102,7 @@ export const ProjectNotesTodoPanel: React.FC<ProjectNotesTodoPanelProps> = ({
 
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
   const createSession = useSessionUIStore((state) => state.createSession);
-  const initializeNewOpenChamberSession = useSessionUIStore((state) => state.initializeNewOpenChamberSession);
+  const initializeNewDevRyanSession = useSessionUIStore((state) => state.initializeNewDevRyanSession);
   const sendMessageToSession = useSessionUIStore((state) => state.sendMessageToSession);
   const setPendingInputText = useInputStore((state) => state.setPendingInputText);
   const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
@@ -111,7 +111,7 @@ export const ProjectNotesTodoPanel: React.FC<ProjectNotesTodoPanelProps> = ({
   const setSessionSwitcherOpen = useUIStore((state) => state.setSessionSwitcherOpen);
 
   const persistProjectData = React.useCallback(
-    async (nextNotes: string, nextTodos: OpenChamberProjectTodoItem[]) => {
+    async (nextNotes: string, nextTodos: DevRyanProjectTodoItem[]) => {
       if (!projectRef) {
         return false;
       }
@@ -368,7 +368,7 @@ export const ProjectNotesTodoPanel: React.FC<ProjectNotesTodoPanelProps> = ({
             return;
           }
           sessionId = session.id;
-          initializeNewOpenChamberSession(session.id, useConfigStore.getState().agents ?? []);
+          initializeNewDevRyanSession(session.id, useConfigStore.getState().agents ?? []);
         }
 
         if (!sessionId) {
@@ -417,7 +417,7 @@ export const ProjectNotesTodoPanel: React.FC<ProjectNotesTodoPanelProps> = ({
         setSendingTodoId(null);
       }
     },
-    [canCreateBranchWorktree, createSession, initializeNewOpenChamberSession, onActionComplete, pendingSendTarget, projectRef, routeToChat, sendMessageToSession, t]
+    [canCreateBranchWorktree, createSession, initializeNewDevRyanSession, onActionComplete, pendingSendTarget, projectRef, routeToChat, sendMessageToSession, t]
   );
 
   const planFileInputRef = React.useRef<HTMLInputElement | null>(null);
