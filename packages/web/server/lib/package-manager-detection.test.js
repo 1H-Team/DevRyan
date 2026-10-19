@@ -23,7 +23,7 @@ const commandResult = (command, args) => {
   else if (args[0] === 'prefix') stdout = path.join(fixture, pm);
   else if (args[0] === 'bin' || args.join(' ') === 'global bin' || args.join(' ') === 'pm bin -g') stdout = path.join(fixture, pm, 'bin');
   else if (args.join(' ') === 'global dir') stdout = path.join(fixture, pm);
-  else if (settings.visible.includes(pm)) stdout = '@devryan/web@1.0.0';
+  else if (settings.visible.includes(pm)) stdout = '@openchamber/web@1.0.0';
   return { status: 0, stdout, stderr: '' };
 };
 
@@ -45,7 +45,7 @@ afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 const ownWithRoot = async (pm) => {
   const root = pm === 'bun' ? path.join(fixture, pm, 'install/global/node_modules') : path.join(fixture, pm, 'node_modules');
   await fs.mkdir(path.join(root, '@openchamber'), { recursive: true });
-  await fs.symlink(packagePath, path.join(root, '@devryan/web'), 'junction');
+  await fs.symlink(packagePath, path.join(root, '@openchamber/web'), 'junction');
 };
 
 describe('async package manager selection matches synchronous CLI selection', () => {
@@ -110,7 +110,7 @@ describe('async package manager selection matches synchronous CLI selection', ()
   it('treats failed or timed-out probes as unavailable without promoting the forced manager', async () => {
     vi.stubEnv('DEVRYAN_PACKAGE_MANAGER', 'yarn');
     probes.execFile.mockImplementation((_command, _args, _options, callback) => {
-      queueMicrotask(() => callback(Object.assign(new Error('probe stopped'), { killed: true, code: 'ETIMEDOUT' }), '@devryan/web', ''));
+      queueMicrotask(() => callback(Object.assign(new Error('probe stopped'), { killed: true, code: 'ETIMEDOUT' }), '@openchamber/web', ''));
     });
     const { detectPackageManagerAsync } = await import('./package-manager.js');
     expect(await detectPackageManagerAsync()).toBe('npm');
