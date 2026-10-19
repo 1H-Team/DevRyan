@@ -16,6 +16,7 @@ test('saved graph rejects excess authority fields and malformed backup, Council 
 });
 
 test('mirror reads only nonsecret allowlisted input and seals the projected graph',async()=>{
+  await fs.mkdir(path.join(qaCache,'test-fixtures'),{recursive:true,mode:0o700});
   const root=await fs.mkdtemp(path.join(qaCache,'test-fixtures/live-mirror-'));
   try{
     const source=path.join(root,'source'),artifactRoot=path.join(root,'artifacts'),outputRoot=path.join(root,'output');

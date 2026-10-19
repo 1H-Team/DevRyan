@@ -150,9 +150,11 @@ const gates = createAdmissionGates(`);
       XDG_CONFIG_HOME: path.join(home, 'config'), XDG_DATA_HOME: path.join(home, 'data'), XDG_STATE_HOME: path.join(home, 'state'),
       XDG_CACHE_HOME: path.join(home, 'cache'), GIT_CEILING_DIRECTORIES: root, DEVRYAN_INTEGRATION_FIXTURE_ROOT: root }, stdout: 'pipe', stderr: 'pipe' });
     if (!child.stdout || typeof child.stdout === 'number' || !child.stderr || typeof child.stderr === 'number') throw Error('Owned pipes required');
-    let timedOut=false;timer=setTimeout(()=>{timedOut=true;try{child?.kill('SIGKILL');}catch{}},30000);
+    // Hang detection, not a performance bound: the child takes ~12 s locally and
+    // ~22 s on a hosted CI runner, and slower runners exceeded 30 s.
+    let timedOut=false;timer=setTimeout(()=>{timedOut=true;try{child?.kill('SIGKILL');}catch{}},120_000);
     const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
-    clearTimeout(timer);if(timedOut)throw Error('Native observation child exceeded its bounded 30-second lifetime');
+    clearTimeout(timer);if(timedOut)throw Error('Native observation child exceeded its bounded 120-second lifetime');
     const diagnostic=JSON.parse(await fs.readFile(path.join(root,'presentation-rpc-outcomes.json'),'utf8'));
     await fs.writeFile(path.join(keptDiagnostics(root),`native-observation-${compiled?'compiled':'source'}-presentation.json`),JSON.stringify({compiled,childExitCode:code,...diagnostic}));
     expect({ code, stderr }).toEqual({ code: 0, stderr: '' });
@@ -178,4 +180,4 @@ const gates = createAdmissionGates(`);
     catch(error){throw failure?new AggregateError([failure,error],'Observation fixture and child cleanup failed',{cause:failure}):error;}
     finally{clearTimeout(cleanupTimer);await fs.rm(root,{recursive:true,force:true});}
   }
-}, 120_000);
+}, 300_000);
