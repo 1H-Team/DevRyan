@@ -52,6 +52,7 @@ import {
 import { resolveManagedTaskTurnProjection } from './managedTaskDispatch';
 import { assistantRowRendersContent, selectAssistantHeaderTargetId } from './message/assistantRowContent';
 import type { AssistantImageMessage } from './message/parts/generatedImageResults';
+import { readMessageClientRole, readMessageId, readMessageParentId, readMessageRole } from '@/lib/decoders/messageInfo';
 
 // Sessions below the threshold render fully (zero behavior change for the
 // common case); above it, history virtualizes so DOM + observers + highlighted
@@ -114,12 +115,7 @@ const useStableEvent = <TArgs extends unknown[], TResult>(handler: (...args: TAr
 
 const USER_SHELL_MARKER = 'The following tool was executed by the user';
 
-const resolveMessageRole = (message: ChatMessageEntry): string | null => {
-    const info = message.info as unknown as { clientRole?: string | null | undefined; role?: string | null | undefined };
-    return (typeof info.clientRole === 'string' ? info.clientRole : null)
-        ?? (typeof info.role === 'string' ? info.role : null)
-        ?? null;
-};
+const resolveMessageRole = (message: ChatMessageEntry): string | null => readMessageRole(message.info);
 
 const normalizeCompactionCommandMessage = (message: ChatMessageEntry): ChatMessageEntry => {
     if (!hasCompactionPart(message)) {
@@ -139,8 +135,7 @@ const normalizeCompactionCommandMessage = (message: ChatMessageEntry): ChatMessa
         return { type: 'text', text: '/compact' } as Part;
     });
 
-    const info = message.info as unknown as { clientRole?: string | null | undefined };
-    const needsClientRole = info.clientRole !== 'user';
+    const needsClientRole = readMessageClientRole(message.info) !== 'user';
     const needsBoundary = Boolean(boundary) && getCompactionBoundary(message)?.kind !== boundary?.kind;
 
     if (!changedParts && !needsClientRole && !needsBoundary) {
@@ -174,8 +169,7 @@ const normalizeCompactionSummaryMessage = (
         return message;
     }
 
-    const info = message.info as unknown as { clientRole?: string | null | undefined };
-    if (info.clientRole === 'assistant') {
+    if (readMessageClientRole(message.info) === 'assistant') {
         return message;
     }
 
@@ -210,14 +204,10 @@ const isUserSubtaskMessage = (message: ChatMessageEntry | undefined): boolean =>
 
 const getMessageId = (message: ChatMessageEntry | undefined): string | null => {
     if (!message) return null;
-    const id = (message.info as unknown as { id?: unknown }).id;
-    return typeof id === 'string' && id.trim().length > 0 ? id : null;
+    return readMessageId(message.info);
 };
 
-const getMessageParentId = (message: ChatMessageEntry): string | null => {
-    const parentID = (message.info as unknown as { parentID?: unknown }).parentID;
-    return typeof parentID === 'string' && parentID.trim().length > 0 ? parentID : null;
-};
+const getMessageParentId = (message: ChatMessageEntry): string | null => readMessageParentId(message.info);
 
 const isUserShellMarkerMessage = (message: ChatMessageEntry | undefined): boolean => {
     if (!message) return false;

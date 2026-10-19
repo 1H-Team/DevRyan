@@ -1,5 +1,6 @@
 import type { AttachedFile } from "@/stores/types/sessionTypes"
 import { isLikelyTransientStreamFailure } from "@/lib/messages/transientStreamError"
+import { decodeAssistantMessageError } from "@/lib/decoders/assistantMessageError"
 import { planManualRecovery, planTransientRecovery } from "@/lib/messages/transientRecovery"
 import { resolveSessionSendConfig } from "./send-config"
 import {
@@ -102,17 +103,8 @@ export async function executeTransientRetry(
     return false
   }
 
-  const error = latestMessage.error as {
-    name?: unknown
-    data?: { message?: unknown }
-    message?: unknown
-  }
-  const detail = typeof error.data?.message === "string"
-    ? error.data.message
-    : typeof error.message === "string"
-      ? error.message
-      : error.name
-  if (!isLikelyTransientStreamFailure(error.name, detail)) {
+  const error = decodeAssistantMessageError(latestMessage.error)
+  if (!isLikelyTransientStreamFailure(error?.name, error?.detail)) {
     return false
   }
 

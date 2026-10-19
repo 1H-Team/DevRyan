@@ -1893,6 +1893,28 @@ describe('managed orchestration store', () => {
     expect(managedOrchestrationSelectors.autoResume(projected.taskId)(store.getState())?.revision).toBe(2);
   });
 
+  test('a newer host\'s unknown auto-resume reason keeps the envelope, with the reason read as null', async () => {
+    const { projected, envelope } = usageLimitFailure();
+    const newer = {
+      ...envelope,
+      providerResetAt: 9_000,
+      autoResume: { ...autoResumeBlock({ state: 'ended', enabled: false }), reason: 'future_reason' as never },
+    } satisfies ManagedTaskProjectedEnvelope;
+
+    const live = createManagedOrchestrationStore({ api: fakeApi() });
+    live.getState().ingestEvent(taskEvent(projected, newer));
+    expect(live.getState().resultEnvelopesByTaskId[projected.taskId]?.envelopeId).toBe(envelope.envelopeId);
+    expect(managedOrchestrationSelectors.autoResume(projected.taskId)(live.getState())).toMatchObject({ state: 'ended', reason: null });
+
+    const loaded = createManagedOrchestrationStore({ api: fakeApi({
+      getSnapshot: async () => emptySnapshot({ tasks: [projected], resultEnvelopes: [newer] }),
+    }) });
+    await loaded.getState().loadSnapshot();
+    expect(loaded.getState().snapshotError).toBeNull();
+    expect(loaded.getState().resultEnvelopesByTaskId[projected.taskId]?.envelopeId).toBe(envelope.envelopeId);
+    expect(managedOrchestrationSelectors.autoResume(projected.taskId)(loaded.getState())).toMatchObject({ reason: null });
+  });
+
   test('setAutoResume posts the toggle, holds a pending action, and upserts the returned envelope', async () => {
     const { projected, envelope } = usageLimitFailure();
     const requests: Array<{ taskId: string; body: Record<string, unknown> }> = [];

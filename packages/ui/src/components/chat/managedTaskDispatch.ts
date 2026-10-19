@@ -2,12 +2,9 @@ import { describeExecutionFailure } from '@/lib/executionFailure';
 import type { Part, ToolPart } from '@opencode-ai/sdk/v2';
 import type { ManagedTaskStatus } from '@openchamber/orchestration-runtime';
 
+import { decodeManagedTaskToolPart } from '@/lib/decoders/managedTaskToolPart';
+import { isRecord, type UnknownRecord } from '@/lib/decoders/guards';
 import { isManagedTaskToolName } from './message/parts/toolRenderUtils';
-
-type ManagedTaskPayload = {
-  task?: { taskId?: unknown; dispatchCallId?: unknown };
-  followUpTask?: { task?: { taskId?: unknown; dispatchCallId?: unknown } };
-};
 
 const MANAGED_DISPATCH_ACTIONS = new Set(['start', 'retry']);
 const MANAGED_CONTROL_ACTIONS = new Set([
@@ -137,9 +134,8 @@ const MANAGED_START_FAILURE_STATUSES = new Set([
 const readErrorMessage = (value: unknown): string => {
   const raw = typeof value === 'string'
     ? value
-    : value && typeof value === 'object' && !Array.isArray(value)
-      && typeof (value as { message?: unknown }).message === 'string'
-      ? (value as { message: string }).message
+    : isRecord(value) && typeof value.message === 'string'
+      ? value.message
       : '';
   const normalized = raw.replace(/\s+/g, ' ').trim();
   if (!normalized) return '';
@@ -150,27 +146,15 @@ const readErrorMessage = (value: unknown): string => {
   return describeExecutionFailure(withoutRules) ?? withoutRules.slice(0, 240);
 };
 
-const parsePayload = (output: unknown): ManagedTaskPayload | null => {
-  if (output && typeof output === 'object' && !Array.isArray(output)) {
-    return output as ManagedTaskPayload;
-  }
-  if (typeof output !== 'string' || !output.trim()) return null;
-  try {
-    const parsed = JSON.parse(output);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? parsed as ManagedTaskPayload
-      : null;
-  } catch {
-    return null;
-  }
-};
+const isManagedTaskStatus = (value: string): value is ManagedTaskStatus => (
+  MANAGED_TASK_STATUSES.has(value as ManagedTaskStatus)
+);
 
 const fallbackFromTask = (
   partId: string,
-  value: unknown,
+  task: UnknownRecord | null,
 ): ManagedTaskDispatchFallback | null => {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const task = value as Record<string, unknown>;
+  if (!task) return null;
   const taskId = typeof task.taskId === 'string' ? task.taskId.trim() : '';
   const dispatchCallId = typeof task.dispatchCallId === 'string'
     ? task.dispatchCallId.trim()
@@ -191,7 +175,7 @@ const fallbackFromTask = (
     || dispatchCallId === undefined
     || !agent
     || !label
-    || !MANAGED_TASK_STATUSES.has(status as ManagedTaskStatus)
+    || !isManagedTaskStatus(status)
     || !directory
     || childSessionId === undefined
   ) return null;
@@ -201,7 +185,7 @@ const fallbackFromTask = (
     dispatchCallId: dispatchCallId || null,
     agent,
     label,
-    status: status as ManagedTaskStatus,
+    status,
     childSessionId: childSessionId || null,
     directory,
   };
@@ -213,14 +197,9 @@ export const resolveManagedTaskFallbacks = (
   const latestByTaskId = new Map<string, ManagedTaskDispatchFallback>();
   for (const part of parts) {
     if (part.type !== 'tool' || !isManagedTaskToolName((part as ToolPart).tool)) continue;
-    const state = (part as ToolPart).state as Record<string, unknown> | undefined;
-    const payload = parsePayload(state?.output);
-    if (!payload) continue;
-    const candidates = [
-      payload.task,
-      payload.followUpTask?.task,
-    ];
-    for (const candidate of candidates) {
+    const view = decodeManagedTaskToolPart(part as ToolPart);
+    if (!view.output) continue;
+    for (const candidate of [view.outputTask, view.followUpTask]) {
       const fallback = fallbackFromTask(part.id, candidate);
       if (fallback) latestByTaskId.set(fallback.taskId, fallback);
     }
@@ -230,27 +209,17 @@ export const resolveManagedTaskFallbacks = (
 
 const taskIdFromPart = (part: ToolPart): string | null => {
   if (!isManagedTaskToolName(part.tool)) return null;
-  const state = part.state as Record<string, unknown> | undefined;
-  const input = state?.input as Record<string, unknown> | undefined;
-  const action = typeof input?.action === 'string' ? input.action.trim() : '';
+  const { action, outputTask, followUpTask } = decodeManagedTaskToolPart(part);
   if (action !== 'start' && action !== 'retry') return null;
-  const payload = parsePayload(state?.output);
-  const candidate = action === 'start'
-    ? payload?.task?.taskId
-    : payload?.followUpTask?.task?.taskId;
+  const candidate = action === 'start' ? outputTask?.taskId : followUpTask?.taskId;
   return typeof candidate === 'string' && candidate.startsWith('dvr_task_') ? candidate : null;
 };
 
 const pendingDispatchFromPart = (part: ToolPart): PendingManagedTaskDispatch | null => {
   if (!isManagedTaskToolName(part.tool)) return null;
-  const state = part.state as Record<string, unknown> | undefined;
-  const input = state?.input as Record<string, unknown> | undefined;
-  const action = typeof input?.action === 'string' ? input.action.trim() : '';
-  const status = typeof state?.status === 'string' ? state.status.trim() : '';
+  const { action, status, agent, label, error } = decodeManagedTaskToolPart(part);
   if (action !== 'start') return null;
 
-  const agent = typeof input?.agent === 'string' ? input.agent.trim() : '';
-  const label = typeof input?.label === 'string' ? input.label.trim() : '';
   const dispatchCallId = typeof part.callID === 'string' ? part.callID.trim() : '';
   const normalizedAgent = agent || 'agent';
   if (status === 'pending' || status === 'running') {
@@ -271,20 +240,16 @@ const pendingDispatchFromPart = (part: ToolPart): PendingManagedTaskDispatch | n
     agent: normalizedAgent,
     label: label || `Managed ${normalizedAgent} task`,
     status: 'error',
-    errorMessage: readErrorMessage(state?.error),
+    errorMessage: readErrorMessage(error),
   };
 };
 
 const closingDispositionTaskIdFromPart = (part: ToolPart): string | null => {
   if (!isManagedTaskToolName(part.tool)) return null;
-  const state = part.state as Record<string, unknown> | undefined;
-  const status = typeof state?.status === 'string' ? state.status.trim() : '';
+  const { status, action, inputTaskId } = decodeManagedTaskToolPart(part);
   if (status !== 'pending' && status !== 'running' && status !== 'completed') return null;
-  const input = state?.input as Record<string, unknown> | undefined;
-  const action = typeof input?.action === 'string' ? input.action.trim() : '';
   if (!WAVE_CLOSING_DISPOSITION_ACTIONS.has(action)) return null;
-  const taskId = typeof input?.task_id === 'string' ? input.task_id.trim() : '';
-  return taskId.startsWith('dvr_task_') ? taskId : null;
+  return inputTaskId.startsWith('dvr_task_') ? inputTaskId : null;
 };
 
 export const resolveManagedTaskDispatch = (parts: readonly Part[]) => {
@@ -303,9 +268,7 @@ export const resolveManagedTaskDispatch = (parts: readonly Part[]) => {
       if (part.type === 'tool') hasNonManagedTool = true;
       continue;
     }
-    const state = (part as ToolPart).state as Record<string, unknown> | undefined;
-    const input = state?.input as Record<string, unknown> | undefined;
-    const action = typeof input?.action === 'string' ? input.action.trim() : '';
+    const { action } = decodeManagedTaskToolPart(part as ToolPart);
     if (MANAGED_DISPATCH_ACTIONS.has(action)) hasManagedDispatchAction = true;
     else if (MANAGED_CONTROL_ACTIONS.has(action)) hasManagedControlAction = true;
     else hasUnknownManagedAction = true;

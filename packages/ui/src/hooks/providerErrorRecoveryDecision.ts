@@ -6,6 +6,7 @@ import { isLikelyProviderModelNotFound } from '@/lib/messages/providerModelNotFo
 import { isLikelyTransientStreamFailure, stripWrappedJsonQuotes } from '@/lib/messages/transientStreamError';
 import { isAssistantTurnComplete } from '@/sync/session-working';
 import { isClaudeThirdPartyUsageClassificationError } from '@/lib/messages/claudeThirdPartyUsage';
+import { decodeAssistantMessageError } from '@/lib/decoders/assistantMessageError';
 
 type Input = {
   messages: Message[];
@@ -52,22 +53,15 @@ export function decideProviderErrorRecovery(input: Input): { reason: string } | 
   }
   if (!anchorUserMessageId || anchorUserMessageId !== input.observedActiveUserMessageId) return null;
 
-  const error = latest.error as { name?: unknown; message?: unknown; data?: { message?: unknown } };
-  const raw = typeof error.data?.message === 'string'
-    ? error.data.message
-    : typeof error.message === 'string'
-      ? error.message
-      : typeof error.name === 'string'
-        ? error.name
-        : '';
-  const reason = stripWrappedJsonQuotes(raw).trim();
+  const error = decodeAssistantMessageError(latest.error);
+  const reason = stripWrappedJsonQuotes(error?.detail ?? '').trim();
   if (!reason || isLikelyProviderAuthFailure(reason)) return null;
   if (
     isClaudeThirdPartyUsageClassificationError(reason)
     ||
     isLikelyProviderModelNotFound(reason)
-    || error.name === 'ProviderModelNotFoundError'
-    || isLikelyTransientStreamFailure(error.name, reason)
+    || error?.name === 'ProviderModelNotFoundError'
+    || isLikelyTransientStreamFailure(error?.name, reason)
   ) return { reason };
   return null;
 }

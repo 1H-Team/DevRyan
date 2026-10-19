@@ -693,9 +693,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         if (isUser) {
             return undefined;
         }
-        const errorInfo = (message.info as { error?: unknown } | undefined)?.error as
-            | { data?: { message?: unknown }; message?: unknown; name?: unknown }
-            | undefined;
+        const errorInfo = 'error' in message.info ? message.info.error : undefined;
         const messageId = typeof message.info.id === 'string' ? message.info.id : undefined;
         const abortOptions: {
             manualAbortMessageId?: string;

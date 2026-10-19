@@ -1,10 +1,17 @@
 import { assertRuntimeFeatureAvailable } from './opencode/runtime-capabilities';
 import { opencodeClient } from './opencode/client';
-import type {
-  ManagedTaskEventRecord,
-  ManagedTaskResultAction,
-  ManagedTaskResultEnvelope,
+import {
+  decodedEnvelopeMatchesTask,
+  decodeResultEnvelopePayload,
+  decodeTaskEventRecord,
+  isAutoResumeActiveState,
+  type ManagedTaskAutoResume,
+  type ManagedTaskWaitingReason,
+  type ManagedTaskEventRecord,
+  type ManagedTaskResultAction,
+  type ManagedTaskResultEnvelope,
 } from '@openchamber/orchestration-runtime';
+import { isRecord } from './decoders/guards';
 
 export type ManagedOrchestrationSnapshot = {
   available: boolean;
@@ -15,8 +22,8 @@ export type ManagedOrchestrationSnapshot = {
 };
 
 export type ManagedTaskProjection = {
-  task: ManagedTaskEventRecord;
-  resultEnvelope?: ManagedTaskResultEnvelope;
+  task: ManagedTaskProjectedRecord;
+  resultEnvelope?: ManagedTaskProjectedEnvelope;
 };
 
 export type ManagedTaskActionResponse = ManagedTaskProjection | {
@@ -28,124 +35,39 @@ export type ManagedTaskAcknowledgementResponse = {
   followUpTask: ManagedTaskProjection | null;
 };
 
-export type ManagedTaskAutoResumeState =
-  | 'planning'
-  | 'scheduled'
-  | 'attempting'
-  | 'superseded'
-  | 'succeeded'
-  | 'ended'
-  | 'cancelled'
-  | 'exhausted'
-  | 'acknowledged';
-
-export type ManagedTaskAutoResumeResetSource = 'opencode_status' | 'meridian_quota' | 'backoff';
-
-/** Mirrors `ManagedTaskAutoResumeReason` in packages/orchestration-runtime/index.d.ts. */
-export type ManagedTaskAutoResumeReason =
-  | 'backup_unavailable'
-  | 'user'
-  | 'manual_retry'
-  | 'session_deleted'
-  | 'cancelled'
-  | 'attempt_cap'
-  | 'time_cap'
-  | 'host_failures'
-  | 'window_rejections';
-
-export type ManagedTaskAutoResumeTarget = {
-  kind: 'backup' | 'original';
-  providerId: string;
-  modelId: string;
-  variant: string | null;
-};
-
-export type ManagedTaskAutoResumeError = {
-  code: string;
-  message: string;
-  at: number;
-};
-
-/**
- * Host-owned automatic recovery state carried on a usage-limit result
- * envelope. `revision` only moves forward; the store keeps the highest one.
- */
-export type ManagedTaskAutoResume = {
-  trigger?: 'provider_usage_limit' | 'provider_transport';
-  revision: number;
-  enabled: boolean;
-  state: ManagedTaskAutoResumeState;
-  cancelGeneration: number;
-  lineageStartedAt: number;
-  expiresAt: number;
-  attemptCount: number;
-  noSignalProbes: number;
-  rejectionsInWindow: number;
-  windowResetAt: number | null;
-  nextAttemptAt: number | null;
-  resetAt: number | null;
-  resetSource: ManagedTaskAutoResumeResetSource | null;
-  target: ManagedTaskAutoResumeTarget | null;
-  recoveryCycleTaskId: string | null;
-  backupAttemptTaskId: string | null;
-  lastAttemptTaskId: string | null;
-  lastAttemptAt: number | null;
-  lastError: ManagedTaskAutoResumeError | null;
-  hostFailures: number;
-  reason: ManagedTaskAutoResumeReason | null;
-};
-
-const MANAGED_TASK_AUTO_RESUME_ACTIVE_STATES: ReadonlySet<ManagedTaskAutoResumeState> = new Set([
-  'planning',
-  'scheduled',
-  'attempting',
-]);
+export type {
+  ManagedTaskAutoResume,
+  ManagedTaskAutoResumeError,
+  ManagedTaskAutoResumeReason,
+  ManagedTaskAutoResumeResetSource,
+  ManagedTaskAutoResumeState,
+  ManagedTaskAutoResumeTarget,
+  ManagedTaskWaitingReason,
+  ManagedTaskWaitingReasonKind,
+} from '@openchamber/orchestration-runtime';
 
 export const isManagedTaskAutoResumeActive = (
-  autoResume: Pick<ManagedTaskAutoResume, 'enabled' | 'state'> | null | undefined,
-) => Boolean(autoResume?.enabled && MANAGED_TASK_AUTO_RESUME_ACTIVE_STATES.has(autoResume.state));
+  autoResume: { enabled: boolean; state: string } | null | undefined,
+) => Boolean(autoResume?.enabled && isAutoResumeActiveState(autoResume.state));
 
 /**
- * Task fields added for automatic recovery. Optional so wire-shaped records from
- * older hosts (and fixtures) stay assignable; the store always writes them,
- * normalizing absent values to null.
+ * A task record as the store holds it. The store writes what the orchestration
+ * codec decodes (`DecodedManagedTaskEventRecord`, every field present); the
+ * recovery and scheduling fields stay optional so wire-shaped records from
+ * older hosts and fixtures remain assignable.
  */
-export type ManagedTaskRecoveryFields = {
+export type ManagedTaskProjectedRecord = ManagedTaskEventRecord & {
   recoveryLineageId?: string | null;
   childPromptedAt?: number | null;
   firstAssistantPartAt?: number | null;
-};
-
-/** Mirrors the scheduler's `waitingReason.kind`: why a queued task has not started yet. */
-export type ManagedTaskWaitingReasonKind = 'capacity' | 'system_pressure';
-
-/**
- * Host-owned reason a queued task is being held back. Mutable while the task
- * stays queued; the store normalizes it to null for every other status. Same
- * optionality rule as the recovery fields.
- */
-export type ManagedTaskWaitingReason = {
-  kind: ManagedTaskWaitingReasonKind;
-  /** Starting + running tasks at the time of the check. */
-  activeCount: number;
-  /** Effective cap for `capacity`; null for `system_pressure`. */
-  limit: number | null;
-  since: number;
-};
-
-export type ManagedTaskSchedulingFields = {
   waitingReason?: ManagedTaskWaitingReason | null;
 };
 
-export type ManagedTaskProjectedRecord = ManagedTaskEventRecord & ManagedTaskRecoveryFields & ManagedTaskSchedulingFields;
-
-/** Envelope fields added for automatic recovery; same optionality rule as the task fields. */
-export type ManagedTaskEnvelopeRecoveryFields = {
+/** A result envelope as the store holds it; same optionality rule as the task. */
+export type ManagedTaskProjectedEnvelope = ManagedTaskResultEnvelope & {
   providerResetAt?: number | null;
   autoResume?: ManagedTaskAutoResume | null;
 };
-
-export type ManagedTaskProjectedEnvelope = ManagedTaskResultEnvelope & ManagedTaskEnvelopeRecoveryFields;
 
 export type ManagedTaskAutoResumeResponse = {
   resultEnvelope: ManagedTaskResultEnvelope;
@@ -184,16 +106,22 @@ export class ManagedOrchestrationApiError extends Error {
   }
 }
 
+/**
+ * The orchestration HTTP API. `handoff` returns a decoded response. The task
+ * endpoints return the parsed JSON as `unknown`: the managed-orchestration
+ * store decodes each one (orchestration codec, lenient) against the task it
+ * acted on. Their wire shapes are the `Managed*Response` types above.
+ */
 export type ManagedOrchestrationApi = {
   handoff(request: ManagedAgentHandoffRequest): Promise<ManagedAgentHandoffResponse>;
-  getSnapshot(options?: { rootSessionId?: string }): Promise<ManagedOrchestrationSnapshot>;
-  getTask(taskId: string, scope: { rootSessionId: string; directory?: string }): Promise<ManagedTaskProjection>;
+  getSnapshot(options?: { rootSessionId?: string }): Promise<unknown>;
+  getTask(taskId: string, scope: { rootSessionId: string; directory?: string }): Promise<unknown>;
   cancelTask(taskId: string, body: {
     rootSessionId: string;
     directory?: string;
     reason?: string;
     cascade?: boolean;
-  }): Promise<ManagedTaskActionResponse>;
+  }): Promise<unknown>;
   acknowledgeTask(taskId: string, body: {
     rootSessionId: string;
     directory?: string;
@@ -202,17 +130,13 @@ export type ManagedOrchestrationApi = {
     providerId?: string;
     modelId?: string;
     variant?: string | null;
-  }): Promise<ManagedTaskAcknowledgementResponse>;
+  }): Promise<unknown>;
   setAutoResume(taskId: string, body: {
     rootSessionId: string;
     directory?: string;
     enabled: boolean;
-  }): Promise<ManagedTaskAutoResumeResponse>;
+  }): Promise<unknown>;
 };
-
-const isRecord = (value: unknown): value is Record<string, unknown> => (
-  Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-);
 
 const parseError = (status: number, payload: unknown) => {
   const error = isRecord(payload) && isRecord(payload.error) ? payload.error : null;
@@ -225,12 +149,64 @@ const parseError = (status: number, payload: unknown) => {
   return new ManagedOrchestrationApiError(message, { status, code });
 };
 
+const LENIENT = { mode: 'lenient' } as const;
+
+const HANDOFF_STATES: ReadonlySet<string> = new Set(['clear', 'confirmation_required', 'blocked']);
+
+const invalidResponse = () => new ManagedOrchestrationApiError(
+  'Managed orchestration returned an invalid response',
+  { status: 502, code: 'invalid_response' },
+);
+
+/** A `{task, resultEnvelope?}` projection; null when the task or its envelope cannot be shown. */
+export const decodeManagedTaskProjection = (value: unknown): ManagedTaskProjection | null => {
+  if (!isRecord(value)) return null;
+  const task = decodeTaskEventRecord(value.task, LENIENT);
+  if (!task) return null;
+  if (value.resultEnvelope === undefined) return { task };
+  const resultEnvelope = decodeResultEnvelopePayload(value.resultEnvelope, LENIENT);
+  return resultEnvelope && decodedEnvelopeMatchesTask(task, resultEnvelope) ? { task, resultEnvelope } : null;
+};
+
+/** Decodes a handoff response; a task it cannot show is left out, a malformed response is refused. */
+export const decodeManagedAgentHandoffResponse = (value: unknown): ManagedAgentHandoffResponse => {
+  if (
+    !isRecord(value)
+    || typeof value.rootSessionId !== 'string'
+    || value.fromMode !== 'orchestrator'
+    || value.toMode !== 'builder'
+    || typeof value.state !== 'string'
+    || !HANDOFF_STATES.has(value.state)
+    || !Array.isArray(value.tasks)
+    || !Array.isArray(value.failures)
+  ) throw invalidResponse();
+  const tasks: ManagedTaskProjection[] = [];
+  for (const projection of value.tasks) {
+    const decoded = decodeManagedTaskProjection(projection);
+    if (decoded) tasks.push(decoded);
+  }
+  const failures: ManagedAgentHandoffResponse['failures'] = [];
+  for (const failure of value.failures) {
+    if (isRecord(failure) && typeof failure.taskId === 'string' && failure.code === 'cleanup_failed' && typeof failure.message === 'string') {
+      failures.push({ taskId: failure.taskId, code: 'cleanup_failed', message: failure.message });
+    }
+  }
+  return {
+    rootSessionId: value.rootSessionId,
+    fromMode: 'orchestrator',
+    toMode: 'builder',
+    state: value.state === 'clear' || value.state === 'confirmation_required' ? value.state : 'blocked',
+    tasks,
+    failures,
+  };
+};
+
 export const createManagedOrchestrationApi = (options: {
   fetchImpl?: typeof fetch;
 } = {}): ManagedOrchestrationApi => {
   const fetchImpl = options.fetchImpl ?? fetch;
 
-  const requestJson = async <T>(input: string, init?: RequestInit): Promise<T> => {
+  const requestJson = async (input: string, init?: RequestInit): Promise<unknown> => {
     assertRuntimeFeatureAvailable('managedChildTasks');
     let response: Response;
     try {
@@ -249,18 +225,15 @@ export const createManagedOrchestrationApi = (options: {
         payload = JSON.parse(text);
       } catch {
         if (response.ok) {
-          throw new ManagedOrchestrationApiError(
-            'Managed orchestration returned an invalid response',
-            { status: 502, code: 'invalid_response' },
-          );
+          throw invalidResponse();
         }
       }
     }
     if (!response.ok) throw parseError(response.status, payload);
-    return payload as T;
+    return payload;
   };
 
-  const postJson = <T>(input: string, body: Record<string, unknown>) => requestJson<T>(input, {
+  const postJson = (input: string, body: object) => requestJson(input, {
     method: 'POST',
     headers: {
       Accept: 'application/json',
@@ -271,14 +244,14 @@ export const createManagedOrchestrationApi = (options: {
   });
 
   return {
-    handoff(request) {
-      return postJson<ManagedAgentHandoffResponse>('/api/orchestration/handoff', request);
+    async handoff(request) {
+      return decodeManagedAgentHandoffResponse(await postJson('/api/orchestration/handoff', request));
     },
     getSnapshot({ rootSessionId }: { rootSessionId?: string } = {}) {
       const query = new URLSearchParams();
       if (rootSessionId?.trim()) query.set('rootSessionId', rootSessionId.trim());
       const suffix = query.size > 0 ? `?${query.toString()}` : '';
-      return requestJson<ManagedOrchestrationSnapshot>(`/api/orchestration/snapshot${suffix}`, {
+      return requestJson(`/api/orchestration/snapshot${suffix}`, {
         cache: 'no-store',
         headers: { Accept: 'application/json' },
       });
@@ -286,13 +259,13 @@ export const createManagedOrchestrationApi = (options: {
     getTask(taskId, scope) {
       const query = new URLSearchParams({ rootSessionId: scope.rootSessionId });
       if (scope.directory?.trim()) query.set('directory', scope.directory.trim());
-      return requestJson<ManagedTaskProjection>(
+      return requestJson(
         `/api/orchestration/task/${encodeURIComponent(taskId)}?${query.toString()}`,
         { cache: 'no-store', headers: { Accept: 'application/json' } },
       );
     },
     cancelTask(taskId, body) {
-      return postJson<ManagedTaskActionResponse>(
+      return postJson(
         `/api/orchestration/task/${encodeURIComponent(taskId)}/cancel`,
         body,
       );
@@ -302,13 +275,13 @@ export const createManagedOrchestrationApi = (options: {
       if (body.action === 'retry' || body.action === 'resume' || body.action === 'retry_in_place') {
         (await opencodeClient.awaitInputSubscription())();
       }
-      return postJson<ManagedTaskAcknowledgementResponse>(
+      return postJson(
         `/api/orchestration/task/${encodeURIComponent(taskId)}/acknowledge`,
         body,
       );
     },
     setAutoResume(taskId, body) {
-      return postJson<ManagedTaskAutoResumeResponse>(
+      return postJson(
         `/api/orchestration/task/${encodeURIComponent(taskId)}/auto-resume`,
         body,
       );

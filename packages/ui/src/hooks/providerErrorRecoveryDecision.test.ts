@@ -19,6 +19,19 @@ const assistant = (detail: string, name = 'UnknownError') => ({
 }) as unknown as Message;
 
 describe('decideProviderErrorRecovery', () => {
+  test('an empty data.message falls through to the error message', () => {
+    const withEmptyData = {
+      ...assistant(''),
+      error: { name: 'UnknownError', message: 'Streaming response failed', data: { message: '' } },
+    } as unknown as Message;
+    expect(decideProviderErrorRecovery({
+      messages: [user, withEmptyData],
+      observedActiveUserMessageId: 'user-1',
+      queuedMessageCount: 0,
+      blockingRequestCount: 0,
+    })).toEqual({ reason: 'Streaming response failed' });
+  });
+
   test('offers manual recovery for transient and model-not-found provider errors', () => {
     expect(decideProviderErrorRecovery({
       messages: [user, assistant('Streaming response failed')],

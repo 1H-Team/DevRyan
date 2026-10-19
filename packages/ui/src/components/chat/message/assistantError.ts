@@ -10,16 +10,14 @@ import {
   stripWrappedJsonQuotes,
 } from "@/lib/messages/transientStreamError"
 import { isClaudeThirdPartyUsageClassificationError } from "@/lib/messages/claudeThirdPartyUsage"
+import { decodeAssistantMessageError } from "@/lib/decoders/assistantMessageError"
 import type {
   ManagedAbortRecoveryPresentation,
   ManagedTransportRecoveryPresentation,
 } from "../lib/turns/types"
 
-export type AssistantErrorInfo = {
-  data?: { message?: unknown }
-  message?: unknown
-  name?: unknown
-}
+/** An assistant message's `info.error`, decoded by `decodeAssistantMessageError`. */
+export type AssistantErrorInfo = unknown
 
 export type AssistantErrorClassification = {
   text: string
@@ -89,14 +87,9 @@ export function classifyAssistantError(
     managedTransportRecovery?: ManagedTransportRecoveryPresentation
   } = {},
 ): AssistantErrorClassification | undefined {
-  if (!errorInfo) {
-    return undefined
-  }
-
-  const dataMessage = typeof errorInfo.data?.message === "string" ? errorInfo.data.message : undefined
-  const errorMessage = typeof errorInfo.message === "string" ? errorInfo.message : undefined
-  const errorName = typeof errorInfo.name === "string" ? errorInfo.name : undefined
-  const rawDetail = dataMessage || errorMessage || errorName
+  const decoded = decodeAssistantMessageError(errorInfo)
+  const errorName = decoded?.name
+  const rawDetail = decoded?.detail
   if (!rawDetail) {
     return undefined
   }

@@ -294,6 +294,16 @@ practice (user requirement, 2026-09-04); no store surfaces limits or pacing.
 OpenCode's language servers are always off for agent sessions, so no store
 carries an agent-runtime switch.
 
+Host payloads (task events, snapshots, action responses) decode through the
+orchestration codec (`@openchamber/orchestration-runtime`, lenient mode); the
+store has no parser of its own. Lenient mode degrades a newer host's unknown
+auto-resume reason, or a malformed auto-resume/waiting block, to `null` instead
+of dropping the task or its result envelope. `orchestrationApi.ts` returns the
+task endpoints' JSON as `unknown` for the store to decode and decodes the
+handoff response itself. Other UI payload decoders (assistant errors, message
+info, managed-task tool parts, shared guards) live in `src/lib/decoders/`;
+the tool-part decoder parses each part state's output once.
+
 Ownership and safety rules:
 
 1. The store is not persisted. The web/Electron host ledger is the
