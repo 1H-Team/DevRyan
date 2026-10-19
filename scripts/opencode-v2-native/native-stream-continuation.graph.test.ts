@@ -103,7 +103,9 @@ const gates = createAdmissionGates({executionActivity:inner=>{nativeExecution=in
   streamOwner=async input=>{const answer=await actualOwner(input);if(${JSON.stringify(scenario)}==='stop-publication'&&input.action==='reserve'&&answer===true)await primaryRuntime.control(input.sessionID,'stop');return answer;};
   const session=await callerContext.run(caller,()=>client.sessions.create({title:'Owned stream fixture',model:{providerID:'openai',modelID:'gpt-5.5'}},{directory}));
   await callerContext.run(caller,()=>client.prompts.command(session.id,{command:'interview',arguments:'preserve objective',agent:'build',model:{providerID:'openai',modelID:'gpt-5.5'}},{directory}));
-  const deadline=Date.now()+25_000;let record,done=false;
+  // Hang detection, not a performance bound: retries with real backoff can take
+  // well over 25 s on a loaded host. The settled state asserted below is unchanged.
+  const deadline=Date.now()+120_000;let record,done=false;
   while(Date.now()<deadline){record=await primaryRuntime.readRecord(session.id);const messages=await client.sessions.messages(session.id,{limit:100},{directory});
    const assistants=messages.records.filter(row=>row.info.role==='assistant');
    if(${scenario.startsWith('late-')})done=primaryRequests===1&&assistants.some(row=>row.info.time.completed&&row.info.error)&&await Effect.runPromise(nativeExecution.isActive(session.id))===false;
@@ -193,4 +195,4 @@ const gates = createAdmissionGates({executionActivity:inner=>{nativeExecution=in
   if(code!==0){const errors=await fs.readFile(path.join(root,'rpc-errors.jsonl'),'utf8').catch(()=>'');const proof=await fs.readFile(path.join(root,'stream-proof.json'),'utf8').catch(()=>'');throw Error(JSON.stringify({code,stderr,errors,proof,root}));}
   expect(JSON.parse(stdout)).toMatchObject({scenario,primaryRequests:scenario.startsWith('late-')?1:setter?(['text-start','reasoning-start'].includes(setter)?3:1):['exhausted','denied-tool'].includes(scenario)?3:scenario==='stop-publication'?1:2});
  }finally{if(child&&child.exitCode===null){child.kill();await child.exited;}await fs.rm(root,{recursive:true,force:true});}
-},180_000);
+},300_000);
