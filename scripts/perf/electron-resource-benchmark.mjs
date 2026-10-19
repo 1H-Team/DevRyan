@@ -450,7 +450,10 @@ const runOnce = async ({ scenario, runIndex, scenarioDirectory, electronBinary, 
   const fixtureDirectory = path.join(runDirectory, 'workspace');
   await mkdir(fixtureDirectory, { recursive: true });
   execFileSync('git', ['init', '--quiet', fixtureDirectory], { stdio: 'pipe' });
+  // Fixture profiles bind the verified native artifacts (QA_NATIVE_ARTIFACT_ROOT,
+  // as for the QA matrix) and must live in the repository cache (default --output).
   const profile = await prepareQaFixtureProfile({ runtimeRoot: path.join(runDirectory, 'runtime'), workspace: fixtureDirectory, generation,
+    artifactRoot: process.env.QA_NATIVE_ARTIFACT_ROOT,
     cell: { transport: 'fixture', runtime: 'electron', providerId: 'fixture', modelId: 'fixture-model', agent: 'builder', planMode: false, variant: null, scenarioId: 'core-journey' } });
   const dataDirectory = profile.env.OPENCHAMBER_DATA_DIR;
   const userDataDirectory = profile.env.OPENCHAMBER_ELECTRON_USER_DATA_DIR;
