@@ -26,6 +26,54 @@ const execute = promisify(execFile);
 const repository = fileURLToPath(new URL('../../', import.meta.url)).replace(/\/$/, '');
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
+export const NATIVE_STARTUP_DRAFT = 'DevRyan startup draft remains unsent.';
+
+/** The endpoint is a real pointer focus and browser text insertion, with no submit action. */
+export async function proveNativeStartupComposer({ read, click, insertText, providerRequestCount, checkAlive = () => {},
+  settle = () => pause(100), clock = () => performance.now(), startedAt, expectedTimeOrigin, draft = NATIVE_STARTUP_DRAFT }) {
+  checkAlive();
+  const before = await read();
+  assert.ok(before?.point && before.hitOwned && before.enabled && before.value === '',
+    'Startup composer must be empty, enabled and unobstructed at the pointer target');
+  assert.equal(before.timeOrigin, expectedTimeOrigin, 'Composer proof must use the ready document');
+  const initialRequests = providerRequestCount();
+  const clickedAtMs = clock() - startedAt;
+  await click(before.point);
+  checkAlive();
+  const focused = await read();
+  assert.equal(focused?.focused, true, 'Trusted pointer click must focus the composer');
+  assert.equal(focused.timeOrigin, expectedTimeOrigin, 'Composer document changed after pointer focus');
+  assert.equal(focused.sessionID, before.sessionID, 'Pointer focus must not navigate to a session');
+  await insertText(draft);
+  await settle();
+  checkAlive();
+  const after = await read();
+  assert.equal(after?.timeOrigin, expectedTimeOrigin, 'Composer document changed during draft entry');
+  assert.equal(after.focused, true, 'Composer lost focus during draft entry');
+  assert.equal(after.value, draft, 'Composer must accept the exact fixed draft');
+  assert.equal(after.sessionID, before.sessionID, 'Draft entry must not navigate to a session');
+  assert.equal(providerRequestCount(), initialRequests, 'Draft entry must not submit a provider request');
+  return { outcome: 'passed', method: 'trusted CDP pointer click and Input.insertText',
+    clickedAtMs, acceptedAtMs: clock() - startedAt, draftSha256: hash(draft), draftBytes: Buffer.byteLength(draft),
+    unsent: true, providerRequestsBefore: initialRequests, providerRequestsAfter: providerRequestCount() };
+}
+
+export async function proveNativeStartupComposerWithCdp({ cdp, checkAlive, startedAt, expectedTimeOrigin, providerRequests }) {
+  const read = () => evaluate(cdp, `(() => {
+    const e=[...document.querySelectorAll('textarea')].find(node=>{const r=node.getBoundingClientRect();return r.width>0&&r.height>0});
+    if(!e)return null;
+    const r=e.getBoundingClientRect(),point={x:r.left+r.width/2,y:r.top+r.height/2};
+    const hit=document.elementFromPoint(point.x,point.y);
+    let visible=point.x>=0&&point.x<innerWidth&&point.y>=0&&point.y<innerHeight;
+    for(let node=e;node;node=node.parentElement){const s=getComputedStyle(node);if(s.display==='none'||s.visibility==='hidden'||Number(s.opacity)<=0)visible=false;}
+    return {point,hitOwned:visible&&Boolean(hit&&e.contains(hit)),enabled:!e.disabled&&!e.readOnly,
+      focused:document.activeElement===e,value:e.value,sessionID:new URL(location.href).searchParams.get('session'),timeOrigin:performance.timeOrigin};
+  })()`);
+  const ui = createQaUiDriver(cdp, { checkAlive, timeoutMs: 10000 });
+  return proveNativeStartupComposer({ read, click: point => ui.pointer(point),
+    insertText: text => cdp.send('Input.insertText', { text }), providerRequestCount: () => providerRequests.length,
+    checkAlive, startedAt, expectedTimeOrigin });
+}
 
 export function parseNativeStartupArgs(argv) {
   if (![4, 6].includes(argv.length) || argv[0] !== '--package-evidence' || argv[2] !== '--artifact-root'
@@ -312,12 +360,11 @@ async function runStartupLaunches({ packageEvidence, artifactRoot, baselineArtif
     assert.equal(manifest.opencodeVersion, TARGET_OPENCODE_VERSION, 'Upgrade candidate must match the host pin');
     candidate = { opencodeVersion: manifest.opencodeVersion, artifactManifestSha256: hash(candidateBytes) };
   }
-  const fixtures = path.join(repository, '.cache/test-fixtures');
-  await fs.mkdir(fixtures, { recursive: true, mode: 0o700 });
-  assert.equal(await fs.realpath(fixtures), fixtures);
   let activeStop = async () => {};
   const run = createRunRoot({ parent: scratchParent('qa'), prefix: 'native-startup-',
     owner: 'scripts/qa/native-startup-benchmark.mjs', extraPayloads: ['native-visibility'], onInterrupt: () => activeStop() });
+  const fixtures = path.join(run.dir, 'test-fixtures');
+  await fs.mkdir(fixtures, { mode: 0o700 });
   const launchScope = comparisonSource ? 'one fresh process/profile' : 'three fresh processes/profiles';
   const evidence = { schemaVersion: 1, kind: candidate ? 'packaged-native-app-bound-startup-upgrade' : 'packaged-native-app-bound-startup', outcome: 'failed',
     scope: candidate ? 'three fresh baseline profiles; production app-bound native startup upgrade; local HTTP model fixture; natural first usable renderer'
@@ -365,7 +412,8 @@ async function runStartupLaunches({ packageEvidence, artifactRoot, baselineArtif
       activeStop = stop;
       try {
         prepared = await prepareRuntimeUiProfile({ cell: { transport: 'runtime-fixture' }, runtimeRoot, workspace, targetGeneration: 2,
-          artifactRoot: baselineArtifactRoot ?? artifactRoot, startupUpgrade: Boolean(baselineArtifactRoot), catalogProviders, legacyOpenAiBrowser });
+          artifactRoot: baselineArtifactRoot ?? artifactRoot, runScope: run.scope,
+          startupUpgrade: Boolean(baselineArtifactRoot), catalogProviders, legacyOpenAiBrowser });
         record.initialBundle = readBundleStartupState(prepared.controlRoot);
         if (candidate) {
           assert.equal(record.initialBundle.revision, 1);
@@ -443,6 +491,7 @@ async function runStartupLaunches({ packageEvidence, artifactRoot, baselineArtif
             } } } : {}),
             runtimeUiTuple: { providerId: runtimeUiTuple.providerID, modelId: runtimeUiTuple.modelID, agent: 'builder' },
             isEventStreamReady: subscription.isReady,
+            proveComposerUsable: proof => proveNativeStartupComposerWithCdp({ ...proof, providerRequests: prepared.evidence.providerRequests }),
             readStartupPhases: () => parseStartupPhaseLogs(readNativeStartupLogs(app, prepared.env.DEVRYAN_QA_HOME, logOffset)),
             milestones: { cdpTargetMs, firstVisibleObservedMs: observed.value.firstVisibleObservedMs, loopbackOriginMs: performance.now() - startedAt } });
           launchRecord.subscription = subscription.evidence;

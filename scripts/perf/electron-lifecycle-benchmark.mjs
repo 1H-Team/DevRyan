@@ -121,13 +121,14 @@ export async function waitForStartupCatalog(origin, { checkAlive = () => {}, onR
 }
 
 export async function captureFirstDocumentStartup({ cdp, fixture, origin, startedAt, milestones = {}, checkAlive, navigationAudit,
-  startupMode = 'natural', runtimeUiTuple, isEventStreamReady, readStartupPhases, foregroundWindow, fetchCatalog, navigationReads = false, deadline: phaseDeadline, signal }) {
+  startupMode = 'natural', runtimeUiTuple, isEventStreamReady, proveComposerUsable, readStartupPhases, foregroundWindow, fetchCatalog, navigationReads = false, deadline: phaseDeadline, signal }) {
   assertStartupMode(startupMode);
   const audit = navigationAudit ?? observeStartupNavigation(cdp, startedAt, origin);
   const tuple = runtimeUiTuple ?? { providerId: 'fixture', modelId: 'fixture-model' };
   if (runtimeUiTuple) {
     assert.ok(tuple.providerId && tuple.modelId && tuple.agent, 'Native startup requires its exact provider/model/agent tuple');
     assert.equal(typeof isEventStreamReady, 'function', 'Native startup requires authoritative event-stream readiness');
+    assert.equal(typeof proveComposerUsable, 'function', 'Native startup requires an independent composer usability proof');
   }
   const eventStreamReady = isEventStreamReady ?? (() => fixture.getState().sseClientCount > 0);
   const backendScope = runtimeUiTuple ? 'actual native backend; local HTTP model fixture' : 'deterministic external OpenCode fixture';
@@ -204,11 +205,18 @@ export async function captureFirstDocumentStartup({ cdp, fixture, origin, starte
         // This one-shot setup shares the original deadline and is never retried.
         return false;
       }
+      if (eventStreamReady()) evidence.eventStreamReadyMs ??= performance.now() - startedAt;
       if (!snapshot.composer || !snapshot.newChat || !snapshot.model || !selectedStartupModelIsAvailable(snapshot, catalog, tuple)
         || snapshot.visibilityState !== 'visible'
         || !eventStreamReady()) return false;
       return snapshot;
     });
+    evidence.controlsReadyMs = performance.now() - startedAt;
+    if (proveComposerUsable) {
+      evidence.composerProof = await proveComposerUsable({ cdp, checkAlive, startedAt, expectedTimeOrigin: evidence.document.timeOrigin });
+      assert.equal(evidence.composerProof.outcome, 'passed', 'Composer usability proof failed');
+      assert.equal(audit.attempts.length, 0, 'Benchmark-forced navigation was attempted during composer proof');
+    }
     evidence.uiReadyMs = performance.now() - startedAt;
     evidence.outcome = 'passed';
   } catch (error) {

@@ -440,12 +440,18 @@ test('native startup requires its exact model/agent tuple and an authoritative e
       selectedModel: { ...tuple, agent: reads < 3 ? 'wrong-agent' : tuple.agent, catalogAvailable: true } } } };
   } };
   const result = await captureFirstDocumentStartup({ cdp, origin: `http://127.0.0.1:${server.address().port}`,
-    startedAt: performance.now(), runtimeUiTuple: tuple, isEventStreamReady: () => reads >= 4 });
+    startedAt: performance.now(), runtimeUiTuple: tuple, isEventStreamReady: () => reads >= 4,
+    proveComposerUsable: async () => ({ outcome: 'passed', unsent: true }) });
   assert.equal(result.outcome, 'passed');
   assert.equal(reads, 4);
+  assert.deepEqual(result.composerProof, { outcome: 'passed', unsent: true });
+  assert.ok(result.uiReadyMs >= result.controlsReadyMs);
+  assert.ok(result.eventStreamReadyMs >= result.fixtureCatalogReadyMs);
   assert.match(result.scope, /actual native backend; local HTTP model fixture/);
   assert.equal(result.nativeStartupObservation, 'unavailable');
   await assert.rejects(captureFirstDocumentStartup({ cdp, startedAt: 0, runtimeUiTuple: tuple }), /authoritative event-stream readiness/);
+  await assert.rejects(captureFirstDocumentStartup({ cdp, startedAt: 0, runtimeUiTuple: tuple,
+    isEventStreamReady: () => true }), /independent composer usability proof/);
 });
 
 

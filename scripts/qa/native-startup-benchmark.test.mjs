@@ -6,7 +6,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
-import { readNativeWindowObservation, observeNativeStartupVisibility, submitNativeStartupFixture, observeStartupBackgroundWork, assertNativeStartupPackageSource, assertNativeStartupUpgrade, assertNativeUpgradeBaseline, observeNativeStartupSubscription, parseNativeStartupArgs, readNativeStartupLogs,
+import { readNativeWindowObservation, observeNativeStartupVisibility, submitNativeStartupFixture, proveNativeStartupComposer, NATIVE_STARTUP_DRAFT, observeStartupBackgroundWork, assertNativeStartupPackageSource, assertNativeStartupUpgrade, assertNativeUpgradeBaseline, observeNativeStartupSubscription, parseNativeStartupArgs, readNativeStartupLogs,
   parseStartupComparisonArgs, summarizeStartupComparison, summarizeStartupRegression, assertStartupComparisonSources, summarizeNativeStartupRuns, assertNativeStartupReopen } from './native-startup-benchmark.mjs';
 import { parseStartupPhaseLogs } from '../perf/electron-lifecycle-benchmark.mjs';
 import { runtimeUiBundleLayout } from './native-backend-ui-diagnostic.mjs';
@@ -16,6 +16,38 @@ const encode = value => Buffer.from(value).toString('base64');
 const ready = 'event: devryan.subscription-ready\ndata: {"type":"ready","scope":"global"}\n\n';
 const response = requestId => ({ requestId, response: { url: 'http://127.0.0.1:4567/api/global/event', status: 200, mimeType: 'text/event-stream' } });
 const flush = () => new Promise(resolve => setImmediate(resolve));
+
+test('independent startup endpoint uses a pointer to focus, accepts the exact fixed draft and leaves it unsent', async () => {
+  let value = '', focused = false, requests = 0, now = 100;
+  const point = { x: 100, y: 200 }, calls = [];
+  const proof = await proveNativeStartupComposer({ startedAt: 50, expectedTimeOrigin: 77, clock: () => now,
+    read: async () => ({ point, hitOwned: true, enabled: true, value, focused, timeOrigin: 77, sessionID: null }),
+    click: async target => { calls.push(['click', target]); focused = true; now += 10; },
+    insertText: async text => { calls.push(['insert', text]); value = text; now += 5; },
+    providerRequestCount: () => requests, settle: async () => { now += 100; } });
+  assert.deepEqual(calls, [['click', point], ['insert', NATIVE_STARTUP_DRAFT]]);
+  assert.equal(proof.acceptedAtMs, 165);
+  assert.equal(proof.unsent, true);
+  assert.equal(proof.providerRequestsAfter, 0);
+  assert.equal(JSON.stringify(proof).includes(NATIVE_STARTUP_DRAFT), false);
+});
+
+test('startup composer proof rejects interception, failed focus, changed draft, submission and document replacement', async () => {
+  const scenario = async (overrides = {}) => {
+    let value = '', focused = false, requests = 0;
+    return proveNativeStartupComposer({ startedAt: 0, expectedTimeOrigin: 77,
+      read: async () => ({ point: { x: 1, y: 2 }, hitOwned: true, enabled: true, value, focused,
+        timeOrigin: 77, sessionID: null, ...overrides.read?.({ focused, value }) }),
+      click: async () => { focused = !overrides.blockFocus; },
+      insertText: async text => { value = overrides.changedDraft ? text + '!' : text; if (overrides.submit) requests++; },
+      providerRequestCount: () => requests, settle: async () => {} });
+  };
+  await assert.rejects(scenario({ read: () => ({ hitOwned: false }) }), /unobstructed/);
+  await assert.rejects(scenario({ blockFocus: true }), /pointer click must focus/);
+  await assert.rejects(scenario({ changedDraft: true }), /exact fixed draft/);
+  await assert.rejects(scenario({ submit: true }), /must not submit/);
+  await assert.rejects(scenario({ read: ({ focused }) => focused ? { timeOrigin: 88 } : {} }), /document changed/);
+});
 test('the release CLI reports argument failures without a circular top-level await', () => {
   const command = fileURLToPath(new URL('./native-startup-benchmark.mjs', import.meta.url));
   for (const flag of ['--release-dmg', '--reproduce-release-upgrade']) {
