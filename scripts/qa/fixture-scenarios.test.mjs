@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile, rm, symlink } from 'node:fs/promises';
+import { mkdir, readFile, rm, symlink } from 'node:fs/promises';
 import path from 'node:path';
 import { test } from 'node:test';
 import { prepareQaFixtureProfile, runQaFixtureScenario } from './fixture-scenarios.mjs';
@@ -7,6 +7,7 @@ import { createQaProjectFixture, removeQaProjectFixture } from './project-fixtur
 import { PERF_PARENT_SESSION_ID } from '../perf/fixture-session-seeds.mjs';
 import { listConfigAgents } from '../../packages/web/server/lib/opencode/agents.js';
 import { createOpenCodeClient } from '../../packages/web/server/lib/opencode/opencode-client/index.js';
+import { createRunRoot, scratchParent } from './run-root.mjs';
 
 const cell={transport:'fixture',providerId:'fixture',modelId:'fixture-model',runtime:'web',scenarioId:'core-journey',agent:'builder',variant:null,planMode:false};
 // Constructor contract only; actual native bundle preparation is independently
@@ -19,6 +20,18 @@ const prepareNativeProfile=async({runtimeRoot})=>{
     verifyInputs:async()=>'a'.repeat(64),close:async()=>{},evidence:{inputDigest:'a'.repeat(64),nativeBundle:{bundleID:'constructor-unit-only'}}};
 };
 const artifactRoot=path.resolve('.cache/qa/unit-native-artifact-not-launched');
+
+test('fixture profile accepts a constructor-owned OS temp run and cleans it on pass', async () => {
+  const run = createRunRoot({ parent: scratchParent('qa'), prefix: 'fixture-profile-', owner: 'fixture-profile-test', signals: false, env: {}, argv: [] });
+  const runtimeRoot = path.join(run.dir, 'runtime'), workspace = path.join(runtimeRoot, 'workspace');
+  let profile;
+  try {
+    await mkdir(workspace, { recursive: true, mode: 0o700 });
+    profile = await prepareQaFixtureProfile({ runtimeRoot, workspace, cell, generation: 2, artifactRoot, runScope: run.scope, prepareNativeProfile });
+    assert.equal(profile.env.DEVRYAN_QA_HOME, path.join(runtimeRoot, 'home'));
+  } finally { await profile?.close(); run.finish('passed'); }
+  await assert.rejects(readFile(run.manifestPath), { code: 'ENOENT' });
+});
 
 for(const generation of [2]) for(const agent of ['builder','orchestrator']) test(`generation ${generation} fixture ${agent} profile pins private defaults and uses no copied credentials or installed provider runtime`,async () => {
   const project=createQaProjectFixture({runId:'fixture-profile-contract'});let profile;

@@ -7,7 +7,7 @@
 // removed. A failed run first prints a one-line hint to stderr. Producers whose
 // payload is a deliverable (`keepOnPass`) keep the directory on pass only.
 // `--keep-artifacts` or DEVRYAN_KEEP_ARTIFACTS=1 keeps everything in every case.
-import { constants as fsConstants, copyFileSync, cpSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { constants as fsConstants, copyFileSync, cpSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -18,11 +18,29 @@ export const HEAVY_TOP_LEVEL = Object.freeze(['runtime', 'home', 'profile']);
 /** Directory names removed at any depth. */
 export const HEAVY_ANYWHERE = Object.freeze(['node_modules', 'runtime-bundles']);
 const SIGNAL_CODES = { SIGINT: 130, SIGTERM: 143 };
+const ownedScratchRuns = new WeakMap();
 
 /** OS-temp parent directory for a scratch family, e.g. `<tmpdir>/devryan-qa`. */
 export function scratchParent(family) {
   if (typeof family !== 'string' || !/^[a-z0-9-]+$/.test(family)) throw new TypeError(`Invalid scratch family: ${String(family)}`);
-  return path.join(os.tmpdir(), `devryan-${family}`);
+  return path.join(realpathSync(os.tmpdir()), `devryan-${family}`);
+}
+
+/** Admit only descendants of a live run created by this process in the QA/perf temp families. */
+export function isOwnedScratchPath(file, { scope, future = false } = {}) {
+  const owned = scope && ownedScratchRuns.get(scope);
+  if (!owned || typeof file !== 'string' || !path.isAbsolute(file) || path.resolve(file) !== file) return false;
+  const { root, dev, ino } = owned;
+  if (file !== root && !file.startsWith(root + path.sep)) return false;
+  try {
+    const stat = lstatSync(root);
+    if (!stat.isDirectory() || stat.isSymbolicLink() || stat.dev !== dev || stat.ino !== ino || realpathSync(root) !== root) return false;
+    let ancestor = file;
+    if (future) {
+      while (!lstatOrNull(ancestor)) ancestor = path.dirname(ancestor);
+    }
+    return realpathSync(ancestor) === ancestor && (ancestor === root || ancestor.startsWith(root + path.sep));
+  } catch { return false; }
 }
 
 export function keepArtifactsRequested({ argv = process.argv, env = process.env, keep = false } = {}) {
@@ -87,9 +105,25 @@ function lstatOrNull(target) { try { return lstatSync(target); } catch { return 
 export function createRunRoot({ parent, prefix = 'run-', name, dir: adoptedDir, owner, keepArtifacts, keepOnPass = false, argv, env, extraPayloads = [], heavyNames = [], external = [], onInterrupt,
   signals = true, exitProcessOnSignal = true } = {}) {
   if (!owner || (!parent && !adoptedDir)) throw new TypeError('createRunRoot requires owner and parent (or dir)');
+  for (const component of [prefix, name].filter(value => value !== undefined)) {
+    if (typeof component !== 'string' || !component || component === '.' || component === '..' || path.basename(component) !== component || component.includes('\0'))
+      throw new TypeError('Run directory name must be one path component');
+  }
   if (parent) mkdirSync(parent, { recursive: true, mode: 0o700 });
+  const scratchFamily = parent && ['qa', 'perf'].find(family => parent === scratchParent(family));
+  if (scratchFamily) {
+    const stat = lstatSync(parent);
+    if (!stat.isDirectory() || stat.isSymbolicLink() || realpathSync(parent) !== parent
+      || (stat.mode & 0o777) !== 0o700 || typeof process.getuid === 'function' && stat.uid !== process.getuid())
+      throw new Error('Scratch parent must be a private canonical directory');
+  }
   const dir = adoptedDir ? path.resolve(adoptedDir) : name ? path.join(parent, name) : mkdtempSync(path.join(parent, prefix));
   if (name) mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const scope = Object.freeze({});
+  const initial = lstatSync(dir);
+  const canonicalAtStart = realpathSync(dir);
+  if (!initial.isDirectory() || initial.isSymbolicLink() || scratchFamily && canonicalAtStart !== dir) throw new Error('Run directory must be canonical');
+  if (scratchFamily) ownedScratchRuns.set(scope, { root: dir, dev: initial.dev, ino: initial.ino });
   const keep = keepArtifactsRequested({ argv, env: env ?? process.env, keep: keepArtifacts });
   const manifestPath = path.join(dir, RUN_MANIFEST);
   const manifest = { schemaVersion: 1, owner, createdAt: new Date().toISOString(), completedAt: null, status: 'running', pinned: false };
@@ -103,6 +137,11 @@ export function createRunRoot({ parent, prefix = 'run-', name, dir: adoptedDir, 
   const finishSync = status => {
     if (finished) return manifest.status;
     if (!RUN_STATUSES.includes(status) || status === 'running') throw new TypeError(`Invalid run status: ${status}`);
+    const current = lstatOrNull(dir);
+    if (!current?.isDirectory() || current.isSymbolicLink() || current.dev !== initial.dev || current.ino !== initial.ino || realpathSync(dir) !== canonicalAtStart) {
+      dispose(); ownedScratchRuns.delete(scope);
+      throw new Error('Run directory identity changed before cleanup');
+    }
     finished = true;
     manifest.status = status;
     manifest.completedAt = new Date().toISOString();
@@ -117,6 +156,7 @@ export function createRunRoot({ parent, prefix = 'run-', name, dir: adoptedDir, 
     }
     if (!removed) { try { writeManifest(manifestPath, manifest); } catch { /* run dir already removed */ } }
     dispose();
+    ownedScratchRuns.delete(scope);
     return status;
   };
   function dispose() { for (const [event, handler] of handlers.splice(0)) process.removeListener(event, handler); }
@@ -137,7 +177,7 @@ export function createRunRoot({ parent, prefix = 'run-', name, dir: adoptedDir, 
     }
   }
   return {
-    dir, manifestPath, keepArtifacts: keep,
+    dir, scope, manifestPath, keepArtifacts: keep,
     get status() { return manifest.status; },
     get payloadsRemoved() { return payloadsRemoved; },
     /** Register another path outside the run dir that this run owns. */

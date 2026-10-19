@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
-import { cloneFile, cloneTree, createRunRoot, keepArtifactsRequested, removeRunPayloads, scratchParent } from './run-root.mjs';
+import { cloneFile, cloneTree, createRunRoot, isOwnedScratchPath, keepArtifactsRequested, removeRunPayloads, scratchParent } from './run-root.mjs';
 
 const helper = fileURLToPath(new URL('./run-root.mjs', import.meta.url));
 const scratch = () => mkdtempSync(path.join(os.tmpdir(), 'run-root-test-'));
@@ -29,8 +29,48 @@ test('run.json starts running and carries the fixed contract', () => {
 });
 
 test('scratchParent lives in the OS temp dir and validates the family', () => {
-  assert.equal(scratchParent('qa'), path.join(os.tmpdir(), 'devryan-qa'));
+  assert.equal(scratchParent('qa'), path.join(realpathSync(os.tmpdir()), 'devryan-qa'));
   for (const bad of ['', 'Q A', '../x', 'a/b', undefined]) assert.throws(() => scratchParent(bad), TypeError);
+});
+
+test('only canonical descendants of a live constructor-owned scratch run are admitted', () => {
+  const run = create(scratchParent('qa'));
+  const workspace = path.join(run.dir, 'runtime/workspace');
+  const outsider = scratch();
+  try {
+    assert.equal(isOwnedScratchPath(workspace, { scope: run.scope, future: true }), true);
+    assert.equal(isOwnedScratchPath(workspace), false);
+    mkdirSync(workspace, { recursive: true });
+    assert.equal(isOwnedScratchPath(workspace, { scope: run.scope }), true);
+    assert.equal(isOwnedScratchPath(outsider, { scope: run.scope }), false);
+    assert.equal(isOwnedScratchPath(path.join(run.dir, '../escape'), { scope: run.scope, future: true }), false);
+    symlinkSync(outsider, path.join(run.dir, 'alias'));
+    assert.equal(isOwnedScratchPath(path.join(run.dir, 'alias'), { scope: run.scope, future: true }), false);
+    assert.equal(isOwnedScratchPath(path.join(run.dir, 'alias/new'), { scope: run.scope, future: true }), false);
+    rmSync(run.dir, { recursive: true }); mkdirSync(run.dir);
+    assert.equal(isOwnedScratchPath(run.dir, { scope: run.scope }), false);
+    assert.throws(() => run.finish('passed'), /identity changed/);
+  } finally { run.dispose(); rmSync(run.dir, { recursive: true, force: true }); rmSync(outsider, { recursive: true }); }
+});
+
+test('owned scratch runs clean pass, failure and interruption', () => {
+  for (const status of ['passed', 'failed', 'interrupted']) {
+    const run = create(scratchParent('qa'));
+    const file = path.join(run.dir, 'payload'); writeFileSync(file, 'x');
+    const original = process.stderr.write; process.stderr.write = () => true;
+    try { assert.equal(run.finish(status), status); } finally { process.stderr.write = original; }
+    assert.equal(existsSync(run.dir), false);
+    assert.equal(isOwnedScratchPath(file, { scope: run.scope }), false);
+  }
+});
+
+test('scratch scope cannot admit sibling runs or path traversal', () => {
+  const first = create(scratchParent('qa')), second = create(scratchParent('qa'));
+  try {
+    assert.equal(isOwnedScratchPath(path.join(second.dir, 'runtime'), { scope: first.scope, future: true }), false);
+    assert.throws(() => create(scratchParent('qa'), { name: '../escaped' }), TypeError);
+    assert.throws(() => create(scratchParent('qa'), { prefix: '../escaped-' }), TypeError);
+  } finally { first.finish('passed'); second.finish('passed'); }
 });
 
 test('pass removes the whole run directory', () => {

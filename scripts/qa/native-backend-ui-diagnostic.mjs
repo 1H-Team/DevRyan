@@ -18,14 +18,16 @@ import { readSessionExecutionReceipt } from '../../packages/harness-runtime/lib/
 import { runQaMatrix } from './matrix-runner.mjs';
 import { TARGET_OPENCODE_VERSION } from '../../packages/web/server/lib/opencode/version-policy.js';
 import { parseHelperModelSelection } from '../../packages/shared-runtime/lib/helper-model-selection.js';
+import { isOwnedScratchPath } from './run-root.mjs';
 
 const repository = fileURLToPath(new URL('../../', import.meta.url)).replace(/\/$/, '');
 const hash = value => createHash('sha256').update(value).digest('hex');
 const fail = code => Object.assign(new Error(code), { code });
 const inside = (root, file) => file.startsWith(root + path.sep);
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
-async function ownedFutureDirectory(file) {
-  if (!path.isAbsolute(file ?? '') || path.resolve(file) !== file || !inside(path.join(repository, '.cache'), file)) throw fail('qa_runtime_fixture_path_invalid');
+async function ownedFutureDirectory(file, runScope) {
+  if (!path.isAbsolute(file ?? '') || path.resolve(file) !== file
+    || !(inside(path.join(repository, '.cache'), file) || isOwnedScratchPath(file, { scope: runScope, future: true }))) throw fail('qa_runtime_fixture_path_invalid');
   let ancestor = file;
   for (;;) { try { await fs.lstat(ancestor); break; } catch (error) { if (error.code !== 'ENOENT') throw error; ancestor = path.dirname(ancestor); } }
   if (await fs.realpath(ancestor) !== ancestor) throw fail('qa_runtime_fixture_path_invalid');
@@ -152,8 +154,8 @@ export async function createRuntimeUiProvider({ generation, directory, packetDel
 
 /** Read one committed ledger tree without creating, recovering or committing
  * state. Pending materialization is not publication evidence. */
-export async function readRuntimeUiLease({ storage, directory, sessionID, callID }) {
-  await ownedFutureDirectory(storage); await ownedFutureDirectory(directory);
+export async function readRuntimeUiLease({ storage, directory, sessionID, callID, runScope }) {
+  await ownedFutureDirectory(storage, runScope); await ownedFutureDirectory(directory, runScope);
   const root = path.join(storage, changeKey(directory)), gitDir = path.join(root, 'git');
   for (const target of [directory, root, gitDir]) {
     const stat = await fs.lstat(target).catch(() => null);
@@ -215,14 +217,14 @@ export function runtimeUiBundleLayout(runtimeRoot, startupUpgrade = false) {
   } };
 }
 
-export async function prepareRuntimeUiProfile({ cell, runtimeRoot, workspace, targetGeneration, artifactRoot, startupUpgrade = false, catalogProviders, legacyOpenAiBrowser = false, fixtureResponder, packetDelayMs, modelContext, truncateFixtureReply, helperModelSelection }) {
+export async function prepareRuntimeUiProfile({ cell, runtimeRoot, workspace, targetGeneration, artifactRoot, runScope, startupUpgrade = false, catalogProviders, legacyOpenAiBrowser = false, fixtureResponder, packetDelayMs, modelContext, truncateFixtureReply, helperModelSelection }) {
   assert.equal(targetGeneration, 2);
   assert.equal(cell.transport, 'runtime-fixture');
   const helper = parseHelperModelSelection(helperModelSelection);
   if (helperModelSelection !== undefined && (!helper || helper.providerID !== runtimeUiTuple.providerID
     || helper.modelID !== runtimeUiTuple.modelID)) throw fail('qa_runtime_fixture_helper_selection_invalid');
   const layout = runtimeUiBundleLayout(runtimeRoot, startupUpgrade);
-  await ownedFutureDirectory(runtimeRoot); await ownedFutureDirectory(workspace);
+  await ownedFutureDirectory(runtimeRoot, runScope); await ownedFutureDirectory(workspace, runScope);
   if (await fs.realpath(workspace) !== workspace || !path.isAbsolute(artifactRoot ?? '')
     || !inside(path.join(repository, '.cache'), artifactRoot) || await fs.realpath(artifactRoot) !== artifactRoot) throw fail('qa_runtime_fixture_path_invalid');
   await fs.mkdir(runtimeRoot, { recursive: true, mode: 0o700 });
@@ -251,7 +253,7 @@ export async function prepareRuntimeUiProfile({ cell, runtimeRoot, workspace, ta
       'reviewed-plugins.json': JSON.stringify({ schema: 1, plugins: manifest.inputs.reviewedPlugins }) };
     for (const [file, bytes] of Object.entries(files)) { await fs.mkdir(path.dirname(path.join(sourceHome, file)), { recursive: true }); await fs.writeFile(path.join(sourceHome, file), bytes, { mode: 0o600 }); }
     const preparedInput = { sourceHome, artifactRoot, files: Object.entries(files).map(([file, bytes]) => ({ path: file, sha256: hash(bytes) })) };
-    const verifier = await createQaNativeInputVerifier(preparedInput);
+    const verifier = await createQaNativeInputVerifier(preparedInput, { runScope });
     // This constructor-only refusal is never consulted: source copying is
     // reused separately from live account admission, which remains unchanged.
     const factory = await createQaNativePreparationFactory({ preparedInput,
@@ -300,7 +302,7 @@ export async function prepareRuntimeUiProfile({ cell, runtimeRoot, workspace, ta
     return { env, controlRoot, bootstrapPath: fileURLToPath(new URL('./isolated-host.mjs', import.meta.url)), nativeLogRoot: launch.global.log,
       toolPrompt: runtimeUiToolPrompt, verifyInputs: verifier.verifyInputs,
       verifyToolPublication: async input => { provider.check(); return assertRuntimeUiPublication({ ...input, directory: workspace,
-        leaseForCall: scope => readRuntimeUiLease({ ...scope, storage }) }); },
+        leaseForCall: scope => readRuntimeUiLease({ ...scope, storage, runScope }) }); },
       close: () => provider.close(),
       evidence: { transport: 'runtime-fixture', generation: targetGeneration, credentialsCopied: false, personalSetup: false, legacyOpenAiBrowser,
         inputDigest: verifier.inputDigest, sourceHome, modelSelection: runtimeUiTuple, providerRequests: provider.observations,

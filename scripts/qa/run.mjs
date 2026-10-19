@@ -97,7 +97,7 @@ export async function runQa({ runtime = 'web', scenario = 'chat', generation, ar
   try {
     execFileSync('git', ['init', '--quiet', workspace]);
     const thinking = scenario === 'thinking' ? await import('./thinking-slider.mjs') : null;
-    qaProfile = await prepareQaFixtureProfile({ runtimeRoot: temporary, workspace, artifactRoot, generation: fixtureGeneration,
+    qaProfile = await prepareQaFixtureProfile({ runtimeRoot: temporary, workspace, artifactRoot, generation: fixtureGeneration, runScope: run.scope,
       thinkingModels: thinking?.thinkingModels,
       cell: { runtime, transport: 'fixture', providerId: 'fixture', modelId: 'fixture-model', scenarioId: scenario === 'mobile' ? 'mobile' : 'core-journey', agent: 'builder', planMode: false, variant: null } });
     fixture = qaProfile.fixture;

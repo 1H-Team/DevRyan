@@ -10,32 +10,35 @@ import { createRuntimeBundleCheckpoint } from '../../packages/web/server/lib/ope
 import { readRuntimeBundleBinding } from '../../packages/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js';
 import { reviewedCouncilMembers } from '../../packages/web/server/lib/opencode/runtime-host/reviewed-council-configuration.js';
 import { qaPlatformEnvironment } from './launch-environment.mjs';
+import { isOwnedScratchPath } from './run-root.mjs';
 
 const repository = fileURLToPath(new URL('../../', import.meta.url)).replace(/\/$/, '');
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const fail = code => Object.assign(new Error(code), { code });
 const within = (root, file) => file === root || file.startsWith(root + path.sep);
-async function ownedPath(file, { directory = true } = {}) {
-  if (!path.isAbsolute(file ?? '') || path.resolve(file) !== file || !within(path.join(repository, '.cache'), file)
+async function ownedPath(file, { directory = true, runScope } = {}) {
+  if (!path.isAbsolute(file ?? '') || path.resolve(file) !== file
+    || !(within(path.join(repository, '.cache'), file) || isOwnedScratchPath(file, { scope: runScope }))
     || await fs.realpath(file) !== file) throw fail('qa_native_input_path_invalid');
   const stat = await fs.lstat(file);
   if (stat.isSymbolicLink() || (directory ? !stat.isDirectory() : !stat.isFile())) throw fail('qa_native_input_path_invalid');
   return file;
 }
-async function ownedFutureDirectory(file) {
-  if (!path.isAbsolute(file ?? '') || path.resolve(file) !== file || !within(path.join(repository, '.cache'), file)) throw fail('qa_native_input_path_invalid');
+async function ownedFutureDirectory(file, runScope) {
+  if (!path.isAbsolute(file ?? '') || path.resolve(file) !== file
+    || !(within(path.join(repository, '.cache'), file) || isOwnedScratchPath(file, { scope: runScope, future: true }))) throw fail('qa_native_input_path_invalid');
   let parent = file;
   for (;;) {
     try { await fs.lstat(parent); break; }
     catch (error) { if (error.code !== 'ENOENT') throw error; parent = path.dirname(parent); }
   }
-  await ownedPath(parent);
+  await ownedPath(parent, { runScope });
 }
 
 /** No ambient home or implicit credential files. The manifest covers the whole copied input. */
-export async function verifyQaNativeInput(input) {
+export async function verifyQaNativeInput(input, { runScope } = {}) {
   if (!input || Object.keys(input).some(key => !['sourceHome', 'files', 'artifactRoot'].includes(key))) throw fail('qa_native_input_invalid');
-  await ownedPath(input.sourceHome); await ownedPath(input.artifactRoot);
+  await ownedPath(input.sourceHome, { runScope }); await ownedPath(input.artifactRoot);
   if (!Array.isArray(input.files) || !input.files.length || input.files.length > 10000) throw fail('qa_native_input_manifest_invalid');
   const expected = new Map();
   for (const row of input.files) {
@@ -62,19 +65,19 @@ export async function verifyQaNativeInput(input) {
   return hash(JSON.stringify([...expected].sort(([a], [b]) => a.localeCompare(b))));
 }
 
-export async function createQaNativeInputVerifier(input) {
-  const approvedInput = structuredClone(input), inputDigest = await verifyQaNativeInput(approvedInput);
+export async function createQaNativeInputVerifier(input, { runScope } = {}) {
+  const approvedInput = structuredClone(input), inputDigest = await verifyQaNativeInput(approvedInput, { runScope });
   approvedInput.files.forEach(Object.freeze); Object.freeze(approvedInput.files); Object.freeze(approvedInput);
   return { input: approvedInput, inputDigest, verifyInputs: async () => {
-    if (await verifyQaNativeInput(approvedInput) !== inputDigest) throw fail('qa_native_input_changed');
+    if (await verifyQaNativeInput(approvedInput, { runScope }) !== inputDigest) throw fail('qa_native_input_changed');
     return inputDigest;
   } };
 }
 
-export async function archiveQaNativeControllerLog(profile, evidenceDirectory, sanitizer) {
+export async function archiveQaNativeControllerLog(profile, evidenceDirectory, sanitizer, runScope) {
   const logRoot = profile.nativeLogRoot;
   if (!within(profile.env.DEVRYAN_QA_RUNTIME_ROOT, logRoot ?? '')) throw fail('qa_native_log_path_invalid');
-  await ownedPath(logRoot); await ownedPath(evidenceDirectory);
+  await ownedPath(logRoot, { runScope }); await ownedPath(evidenceDirectory, { runScope });
   const source = path.join(logRoot, 'native-controller.jsonl');
   if (await fs.realpath(source) !== source || !(await fs.lstat(source)).isFile()) throw fail('qa_native_log_path_invalid');
   const handle = await fs.open(source, constants.O_RDONLY | constants.O_NOFOLLOW), maximum = 4 * 1024 * 1024;
@@ -191,17 +194,17 @@ export function createQaNativeLaunchEnvironment({ binding, runtimeRoot, baseEnvi
     DEVRYAN_DATA_DIR: launch.webDataDirectory, DEVRYAN_ELECTRON_USER_DATA_DIR: path.join(runtimeRoot, 'browser-profile'), DEVRYAN_ELECTRON_DEV: '1' };
 }
 
-export async function validateQaNativeSourceLaunch(launch, runtimeRoot) {
+export async function validateQaNativeSourceLaunch(launch, runtimeRoot, runScope) {
   if (!launch || Object.keys(launch).some(key => !['opencodeDatabasePath', 'webDataDirectory', 'webConfigDirectory', 'opencodeConfigDirectory', 'global'].includes(key))
     || !launch.global || Object.keys(launch.global).some(key => key !== 'home')) throw fail('qa_native_source_not_isolated');
   const file = launch.opencodeDatabasePath;
   if (!within(runtimeRoot, file ?? '')) throw fail('qa_native_source_not_isolated');
-  await ownedPath(file, { directory: false });
+  await ownedPath(file, { directory: false, runScope });
   const directories = [launch.webDataDirectory, launch.webConfigDirectory, launch.opencodeConfigDirectory,
     launch.global?.home];
   for (const directory of directories) {
     if (!within(runtimeRoot, directory ?? '')) throw fail('qa_native_source_not_isolated');
-    await ownedPath(directory);
+    await ownedPath(directory, { runScope });
   }
 }
 
@@ -253,10 +256,10 @@ export async function readQaNativeSelectionView(binding, environment, workspace)
 
 /** The same offline bundle composition is used by the sign-in source and cells.
  * A serialized input cannot supply a checkpoint or migration owner. */
-export async function prepareQaNativeBundle({runtimeRoot,source,bundleID='candidate'}){
-  await ownedPath(runtimeRoot);
+export async function prepareQaNativeBundle({runtimeRoot,source,bundleID='candidate',runScope}){
+  await ownedPath(runtimeRoot, { runScope });
   if(typeof source?.checkpointOptions!=='function'||typeof source?.runMigration!=='function')throw fail('qa_native_checkpoint_prerequisite');
-  await validateQaNativeSourceLaunch(source.launch,runtimeRoot);
+  await validateQaNativeSourceLaunch(source.launch,runtimeRoot,runScope);
   const controlRoot=path.join(runtimeRoot,'native-bundles'),descriptors=new Map(),checkpoints=new Map();
   const store=createRuntimeBundleStore({controlRoot,runMigration:source.runMigration,withQuiescedSource:async(scope,action)=>{
     const ownerID=scope.kind==='legacy'?'qa-source':scope.bundleID;
@@ -275,25 +278,25 @@ export async function prepareQaNativeBundle({runtimeRoot,source,bundleID='candid
 
 /** Source/credential callbacks are constructor-owned production owners, never
  * matrix JSON. Source copying uses the actual checkpoint and migration store. */
-export async function prepareQaNativeProfile({ runtimeRoot, workspace, cell, nativePreparation }) {
+export async function prepareQaNativeProfile({ runtimeRoot, workspace, cell, nativePreparation, runScope }) {
   if (typeof nativePreparation?.prepareSource !== 'function' || typeof nativePreparation?.bootstrapCredentials !== 'function') throw fail('qa_native_preparation_prerequisite');
   const { input, inputDigest, verifyInputs } = await createQaNativeInputVerifier(nativePreparation.preparedInput);
   let preparationFailure;
   try {
-  await ownedPath(workspace);
-  await ownedFutureDirectory(runtimeRoot);
-  await fs.mkdir(runtimeRoot, { recursive: true, mode: 0o700 }); await ownedPath(runtimeRoot);
+  await ownedPath(workspace, { runScope });
+  await ownedFutureDirectory(runtimeRoot, runScope);
+  await fs.mkdir(runtimeRoot, { recursive: true, mode: 0o700 }); await ownedPath(runtimeRoot, { runScope });
   const source = await nativePreparation.prepareSource({ runtimeRoot, workspace, sourceHome: input.sourceHome, artifactRoot: input.artifactRoot });
   if (typeof source?.checkpointOptions !== 'function' || typeof source?.runMigration !== 'function') throw fail('qa_native_checkpoint_prerequisite');
   for (const key of ['controllerBinary', 'writerBinary', 'artifactManifestPath']) {
     const file = source.nativeArtifacts?.[key];
     if (!within(input.artifactRoot, file ?? '') || await fs.realpath(file) !== file) throw fail('qa_native_artifact_input_mismatch');
   }
-  await validateQaNativeSourceLaunch(source.launch, runtimeRoot);
+  await validateQaNativeSourceLaunch(source.launch, runtimeRoot, runScope);
   if (!source.projectMap?.some(row => row.targetDirectory === workspace)) throw fail('qa_native_location_missing');
-  const {store,binding,launch}=await prepareQaNativeBundle({runtimeRoot,source});
+  const {store,binding,launch}=await prepareQaNativeBundle({runtimeRoot,source,runScope});
   if (!within(runtimeRoot, launch.global.log)) throw fail('qa_native_log_path_invalid');
-  const nativeLogRoot = await ownedPath(launch.global.log);
+  const nativeLogRoot = await ownedPath(launch.global.log, { runScope });
   await fs.writeFile(path.join(launch.global.home, '.devryan-qa-home'), 'DevRyan isolated native QA\n', { mode: 0o600 });
   await fs.writeFile(path.join(runtimeRoot, 'credentials.env.json'), '{}\n', { mode: 0o600 });
   const env = createQaNativeLaunchEnvironment({ binding, runtimeRoot });

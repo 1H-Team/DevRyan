@@ -12,6 +12,7 @@ import { parseQaNativeSnapshotOutput, verifyQaNativeInput, projectQaNativeSnapsh
 import { prepareQaMatrixLiveProfile } from './matrix-runner.mjs';
 import { translateNativeConfiguration } from '../../packages/web/server/lib/opencode/runtime-host/native-configuration-data.js';
 import { createDiagnosticSanitizer } from '../../packages/harness-runtime/lib/sanitizer.js';
+import { createRunRoot, scratchParent } from './run-root.mjs';
 
 test('native input manifest covers every copied file and rejects changed, missing, additional and symlinked state', async () => {
   const root = await fs.realpath(await fs.mkdtemp(path.resolve('.cache/qa-native-input-')));
@@ -30,6 +31,20 @@ test('native input manifest covers every copied file and rejects changed, missin
     await assert.rejects(verifyQaNativeInput(input), { code: 'qa_native_input_changed' });
     await assert.rejects(verifyQaNativeInput({ ...input, files: [{ ...input.files[0], path: '../original' }] }), { code: 'qa_native_input_manifest_invalid' });
   } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('native input verifier accepts generated temp source only with its run scope and cache artifact root', async () => {
+  const run = createRunRoot({ parent: scratchParent('qa'), owner: 'native-input-test', signals: false, argv: [], env: {} });
+  const sourceHome = path.join(run.dir, 'runtime/mirror');
+  const artifactRoot = await fs.realpath(await fs.mkdtemp(path.resolve('.cache/qa-native-artifact-')));
+  const bytes = 'fixture';
+  try {
+    await fs.mkdir(sourceHome, { recursive: true, mode: 0o700 }); await fs.writeFile(path.join(sourceHome, 'config.json'), bytes);
+    const input = { sourceHome, artifactRoot, files: [{ path: 'config.json', sha256: createHash('sha256').update(bytes).digest('hex') }] };
+    await assert.rejects(verifyQaNativeInput(input), { code: 'qa_native_input_path_invalid' });
+    assert.match(await verifyQaNativeInput(input, { runScope: run.scope }), /^[a-f0-9]{64}$/);
+    await assert.rejects(verifyQaNativeInput({ ...input, artifactRoot: run.dir }, { runScope: run.scope }), { code: 'qa_native_input_path_invalid' });
+  } finally { run.finish('passed'); await fs.rm(artifactRoot, { recursive: true, force: true }); }
 });
 
 test('saved snapshot reports original role effort and ordered Council routes, only prompt digests', () => {
@@ -174,6 +189,19 @@ test('native controller logs are bounded, sanitized and archived from the verifi
     await assert.rejects(archiveQaNativeControllerLog(profile, evidence, sanitizer), { code: 'qa_native_log_path_invalid' });
     await assert.rejects(archiveQaNativeControllerLog({ ...profile, nativeLogRoot: '/outside/log' }, evidence, sanitizer), { code: 'qa_native_log_path_invalid' });
   } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('native controller log archival accepts only its constructor-owned temp evidence scope', async () => {
+  const run = createRunRoot({ parent: scratchParent('qa'), owner: 'native-log-test', signals: false, argv: [], env: {} });
+  const logRoot = path.join(run.dir, 'runtime/log'), evidence = path.join(run.dir, 'evidence');
+  await fs.mkdir(logRoot, { recursive: true, mode: 0o700 }); await fs.mkdir(evidence, { mode: 0o700 });
+  await fs.writeFile(path.join(logRoot, 'native-controller.jsonl'), '{"event":"native-process-exit","code":0}\n');
+  const profile = { nativeLogRoot: logRoot, env: { DEVRYAN_QA_RUNTIME_ROOT: path.join(run.dir, 'runtime') } };
+  const sanitizer = createDiagnosticSanitizer({ homeDir: run.dir });
+  try {
+    await assert.rejects(archiveQaNativeControllerLog(profile, evidence, sanitizer), { code: 'qa_native_input_path_invalid' });
+    assert.equal((await archiveQaNativeControllerLog(profile, evidence, sanitizer, run.scope)).state, 'captured');
+  } finally { run.finish('passed'); }
 });
 
 test('native saved fallback projection retains ordered original models and efforts with separate execution defaults', () => {

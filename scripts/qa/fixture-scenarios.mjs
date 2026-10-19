@@ -13,6 +13,7 @@ import { findQaPlanApprovalUser } from './compaction-scenarios.mjs';
 import { assertQaSubmittedPlanMode, isQaKnownSessionSettled } from './submitted-turn.mjs';
 import { runQaRecoveredInputFixtureProof } from './fixture-recovered-inputs.mjs';
 import { prepareRuntimeUiProfile } from './native-backend-ui-diagnostic.mjs';
+import { isOwnedScratchPath } from './run-root.mjs';
 import { createQaFixtureHostFacade } from './fixture-host-facade.mjs';
 import { revealQaFixtureTool, runQaFixtureFailureRecovery } from './fixture-failures.mjs';
 import { runQaFixtureMobileCoverage } from './fixture-mobile-coverage.mjs';
@@ -34,7 +35,7 @@ const canonicalTarget = async (target) => {
   }
 };
 
-export async function prepareQaFixtureProfile({runtimeRoot,workspace,cell,generation,artifactRoot,thinkingModels,
+export async function prepareQaFixtureProfile({runtimeRoot,workspace,cell,generation,artifactRoot,thinkingModels,runScope,
   prepareNativeProfile = prepareRuntimeUiProfile}) {
   if (cell?.transport !== 'fixture' || cell.providerId !== 'fixture' || cell.modelId !== 'fixture-model'
     || !['web','electron'].includes(cell.runtime) || !['core-journey','mobile'].includes(cell.scenarioId)
@@ -44,10 +45,12 @@ export async function prepareQaFixtureProfile({runtimeRoot,workspace,cell,genera
   const fixtureGeneration=resolveQaFixtureGeneration(generation);
   if (!path.isAbsolute(artifactRoot ?? '')) throw new Error('QA wire fixtures require explicit native artifacts');
   const cache=path.join(await realpath(root),'.cache');
-  if (!path.isAbsolute(runtimeRoot) || !path.isAbsolute(workspace) || !within(cache,path.resolve(runtimeRoot))
-    || !within(cache,await realpath(workspace)) || !within(cache,await canonicalTarget(runtimeRoot))) throw new Error('Fixture profile must use an owned repository cache workspace');
+  if (!path.isAbsolute(runtimeRoot) || !path.isAbsolute(workspace)
+    || !(within(cache,path.resolve(runtimeRoot)) && within(cache,await canonicalTarget(runtimeRoot))
+      || isOwnedScratchPath(runtimeRoot,{scope:runScope,future:true}))
+    || !(within(cache,await realpath(workspace)) || isOwnedScratchPath(workspace,{scope:runScope}))) throw new Error('Fixture profile must use an owned repository cache workspace or constructor-owned QA run');
   await mkdir(runtimeRoot,{recursive:true,mode:0o700});
-  if (!within(cache,await realpath(runtimeRoot))) throw new Error('Fixture runtime root escaped the repository cache');
+  if (!(within(cache,await realpath(runtimeRoot)) || isOwnedScratchPath(runtimeRoot,{scope:runScope}))) throw new Error('Fixture runtime root escaped its run');
   const home=path.join(runtimeRoot,'home');
   await mkdir(home,{mode:0o700});
   await writeFile(path.join(home,'.devryan-qa-home'),'owned fixture QA home\n',{flag:'wx',mode:0o600});
@@ -79,7 +82,7 @@ export async function prepareQaFixtureProfile({runtimeRoot,workspace,cell,genera
   let nativeProfile,facade;
   try {
     fixture.seedHistory(PERF_PARENT_SESSION_ID,{turns:180,textBytes:256});
-    nativeProfile=await prepareNativeProfile({runtimeRoot,workspace,artifactRoot,targetGeneration:2,
+    nativeProfile=await prepareNativeProfile({runtimeRoot,workspace,artifactRoot,targetGeneration:2,runScope,
       cell:{...cell,transport:'runtime-fixture',providerId:'devryan-smoke',modelId:'smoke-write',agent:'builder',variant:'high',planMode:false}});
     const nativeData=nativeProfile.env.DEVRYAN_DATA_DIR;
     if (!within(runtimeRoot,nativeData) || await realpath(nativeData)!==nativeData
