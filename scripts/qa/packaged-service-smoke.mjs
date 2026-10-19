@@ -54,7 +54,7 @@ export async function runPackagedServiceSmoke({ packageEvidence, artifactRoot })
   activeStop = stop;
   try {
     prepared = await prepareRuntimeUiProfile({ cell: { transport: 'runtime-fixture' }, runtimeRoot, workspace,
-      targetGeneration: 2, artifactRoot });
+      targetGeneration: 2, artifactRoot, runScope: run.scope });
     const dataDirectory = prepared.env.DEVRYAN_DATA_DIR;
     const profile = path.join(runtimeRoot, 'profile');
     await fs.mkdir(profile, { mode: 0o700 });

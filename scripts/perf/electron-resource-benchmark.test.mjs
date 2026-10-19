@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { describe, it } from 'node:test';
 import { runInNewContext } from 'node:vm';
+import { scratchParent } from '../qa/run-root.mjs';
 
 import {
   assessStreamConcurrency,
@@ -47,6 +48,11 @@ describe('Electron resource benchmark metrics', () => {
       if (prior === undefined) delete process.env.DEVRYAN_QA_OPENCODE_VERSION;
       else process.env.DEVRYAN_QA_OPENCODE_VERSION = prior;
     }
+  });
+
+  it('defaults resource and interactive run output to the owned OS temp family', () => {
+    assert.equal(parseBenchmarkArguments([]).outputRoot, scratchParent('perf'));
+    assert.equal(parseBenchmarkArguments(['--scenarios', 'interactive', '--package-evidence', '.cache/qa/package-evidence.json']).outputRoot, scratchParent('perf'));
   });
 
   it('records generation-specific fixture protocol identity and forbids cross-generation optimization comparisons', async () => {

@@ -23,13 +23,17 @@ const artifactRoot=path.resolve('.cache/qa/unit-native-artifact-not-launched');
 
 test('fixture profile accepts a constructor-owned OS temp run and cleans it on pass', async () => {
   const run = createRunRoot({ parent: scratchParent('qa'), prefix: 'fixture-profile-', owner: 'fixture-profile-test', signals: false, env: {}, argv: [] });
+  const foreign = createRunRoot({ parent: scratchParent('qa'), prefix: 'fixture-foreign-', owner: 'fixture-foreign-test', signals: false, env: {}, argv: [] });
   const runtimeRoot = path.join(run.dir, 'runtime'), workspace = path.join(runtimeRoot, 'workspace');
   let profile;
   try {
     await mkdir(workspace, { recursive: true, mode: 0o700 });
+    const input = { runtimeRoot, workspace, cell, generation: 2, artifactRoot, prepareNativeProfile };
+    await assert.rejects(prepareQaFixtureProfile(input), /owned repository cache workspace or constructor-owned QA run/);
+    await assert.rejects(prepareQaFixtureProfile({ ...input, runScope: foreign.scope }), /owned repository cache workspace or constructor-owned QA run/);
     profile = await prepareQaFixtureProfile({ runtimeRoot, workspace, cell, generation: 2, artifactRoot, runScope: run.scope, prepareNativeProfile });
     assert.equal(profile.env.DEVRYAN_QA_HOME, path.join(runtimeRoot, 'home'));
-  } finally { await profile?.close(); run.finish('passed'); }
+  } finally { await profile?.close(); run.finish('passed'); foreign.finish('passed'); }
   await assert.rejects(readFile(run.manifestPath), { code: 'ENOENT' });
 });
 

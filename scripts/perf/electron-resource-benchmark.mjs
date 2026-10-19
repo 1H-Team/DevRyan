@@ -35,7 +35,7 @@ import {
 } from './electron-interactive-benchmark.mjs';
 
 import { PERF_PARENT_SESSION_ID } from './fixture-session-seeds.mjs';
-import { createRunRoot } from '../qa/run-root.mjs';
+import { createRunRoot, scratchParent } from '../qa/run-root.mjs';
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDirectory, '../..');
@@ -65,7 +65,7 @@ export const parseBenchmarkArguments = (argv) => {
     runs: 3,
     warmupMs: 5_000,
     measureMs: 30_000,
-    outputRoot: path.join(repositoryRoot, '.cache/perf'),
+    outputRoot: scratchParent('perf'),
     electronBinary: null,
     packageEvidence: null,
     baseline: null,
@@ -445,15 +445,15 @@ export const compareBenchmarkSummaries = (baseline, current) => {
   return { passed: checks.every((check) => check.passed), checks };
 };
 
-const runOnce = async ({ scenario, runIndex, scenarioDirectory, electronBinary, packageEvidence, warmupMs, measureMs, startupMode, interactiveScope, generation }) => {
+const runOnce = async ({ scenario, runIndex, scenarioDirectory, electronBinary, packageEvidence, warmupMs, measureMs, startupMode, interactiveScope, generation, runScope }) => {
   const runDirectory = path.join(scenarioDirectory, `run-${runIndex}`);
   const fixtureDirectory = path.join(runDirectory, 'workspace');
   await mkdir(fixtureDirectory, { recursive: true });
   execFileSync('git', ['init', '--quiet', fixtureDirectory], { stdio: 'pipe' });
-  // Fixture profiles bind the verified native artifacts (QA_NATIVE_ARTIFACT_ROOT,
-  // as for the QA matrix) and must live in the repository cache (default --output).
+  // Fixture profiles bind the verified repository-cache native artifacts and
+  // use only this constructor-owned performance run for generated state.
   const profile = await prepareQaFixtureProfile({ runtimeRoot: path.join(runDirectory, 'runtime'), workspace: fixtureDirectory, generation,
-    artifactRoot: process.env.QA_NATIVE_ARTIFACT_ROOT,
+    artifactRoot: process.env.QA_NATIVE_ARTIFACT_ROOT, runScope,
     cell: { transport: 'fixture', runtime: 'electron', providerId: 'fixture', modelId: 'fixture-model', agent: 'builder', planMode: false, variant: null, scenarioId: 'core-journey' } });
   const dataDirectory = profile.env.DEVRYAN_DATA_DIR;
   const userDataDirectory = profile.env.DEVRYAN_ELECTRON_USER_DATA_DIR;
@@ -756,6 +756,7 @@ export const runElectronResourceBenchmark = async ({ argv = [], startupMode = 'n
           startupMode,
           interactiveScope,
           generation: options.generation,
+          runScope: run.scope,
         }));
       }
       const display = displaySignature(runs[0].display);
