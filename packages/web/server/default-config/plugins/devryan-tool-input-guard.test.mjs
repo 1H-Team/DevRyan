@@ -493,9 +493,18 @@ describe('DevRyan tool input guard shell policies', () => {
   });
 
   test('resolves the data dir from DEVRYAN_DATA_DIR only', () => {
-    expect(__test.resolveDataDir({ DEVRYAN_DATA_DIR: '/tmp/a' })).toBe(path.resolve('/tmp/a'));
-    expect(__test.resolveDataDir({ DEVRYAN_DATA_DIR: '   ' })).toBe(path.join(os.homedir(), '.config', 'openchamber'));
-    expect(__test.resolveDataDir({})).toBe(path.join(os.homedir(), '.config', 'openchamber'));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-guard-home-'));
+    try {
+      expect(__test.resolveDataDir({ DEVRYAN_DATA_DIR: '/tmp/a' }, home)).toBe(path.resolve('/tmp/a'));
+      expect(__test.resolveDataDir({ OPENCHAMBER_DATA_DIR: '/tmp/b' }, home)).toBe(path.resolve('/tmp/b'));
+      // Migrated or fresh: the DevRyan folder.
+      expect(__test.resolveDataDir({ DEVRYAN_DATA_DIR: '   ' }, home)).toBe(path.join(home, '.config', 'devryan'));
+      // Before the startup migration the pre-rename folder still holds the data.
+      fs.mkdirSync(path.join(home, '.config', 'openchamber'), { recursive: true });
+      expect(__test.resolveDataDir({}, home)).toBe(path.join(home, '.config', 'openchamber'));
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
   });
 });
 

@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -12,14 +15,18 @@ describe('project identity', () => {
     );
   });
 
-  it('resolves the canonical active-project plan directory', async () => {
-    expect(await resolveProjectPlansDirectory(
-      '/Users/zoubair/Repositories/onehealth-connector/',
-      '/Users/zoubair/',
-    )).toBe(
-      '/Users/zoubair/.config/openchamber/projects/'
-      + 'path_L1VzZXJzL3pvdWJhaXIvUmVwb3NpdG9yaWVzL29uZWhlYWx0aC1jb25uZWN0b3I/plans',
-    );
+  it('resolves the canonical active-project plan directory under the data root in use', async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-plans-home-'));
+    const projectPath = '/Users/example/Repositories/Test/';
+    const plans = 'projects/path_L1VzZXJzL2V4YW1wbGUvUmVwb3NpdG9yaWVzL1Rlc3Q/plans';
+    try {
+      expect(await resolveProjectPlansDirectory(projectPath, home)).toBe(path.join(home, '.config', 'devryan', plans));
+      // Before the startup migration the pre-rename folder still holds the plans.
+      fs.mkdirSync(path.join(home, '.config', 'openchamber'), { recursive: true });
+      expect(await resolveProjectPlansDirectory(projectPath, home)).toBe(path.join(home, '.config', 'openchamber', plans));
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
   });
 
   it('returns no directory for an incomplete identity', async () => {
