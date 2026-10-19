@@ -25,6 +25,14 @@ without overriding or deleting, `readDevRyanEnv` prefers the DevRyan name,
 web server entry and the CLI import it first, before any module reads its
 environment, and re-run adoption after each login-shell merge.
 
+## Data root
+
+`./node/data-root.js` (`lib/data-root.js`, Node-only) resolves the DevRyan data
+root for every host: `DEVRYAN_DATA_DIR` (or its alias) unless it names a default
+location, else `~/.config/devryan`, or the pre-rename `~/.config/openchamber`
+while it is still a real directory. The one-time move is owned by
+`packages/harness-runtime/lib/data-root-migration.js`.
+
 ## Startup integrity diagnostics
 
 `startup-diagnostics.js` owns the bounded artifact diagnostic shared by the verifier,

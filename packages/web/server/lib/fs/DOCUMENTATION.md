@@ -11,7 +11,7 @@ Own filesystem API behavior for the web server runtime, including workspace-boun
 ## Public exports
 - `registerFsRoutes(app, dependencies)` from `routes.js`
   - Registers all filesystem routes:
-    - `GET /api/fs/home`
+    - `GET /api/fs/home` (`{ home, configDirectory }`; `configDirectory` is the DevRyan user config folder, `~/.config/devryan` or the pre-rename folder while it holds the data)
     - `POST /api/fs/mkdir`
     - `GET /api/fs/read`
   - `GET /api/fs/raw`

@@ -1,4 +1,5 @@
 import {readDevRyanEnv} from '@openchamber/shared-runtime/lib/legacy-environment.js';
+import {resolveDevRyanDataRoot} from '@openchamber/shared-runtime/node/data-root.js';
 import { recoverClaudeActivationAtStartup } from './claude-activation-recovery.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -123,7 +124,7 @@ export async function provisionDefaultNativeBundle({env=process.env,home=os.home
   ||env.DEVRYAN_OPENCODE_GENERATION!==undefined&&env.DEVRYAN_OPENCODE_GENERATION!=='2')throw fail('native_runtime_configuration_unsupported');
  const controlRoot=resolveRuntimeBundleRoot(env,home);
  if(env.DEVRYAN_RUNTIME_BUNDLE_ROOT!==undefined)return controlRoot;
- const dataRoot=path.resolve(env.DEVRYAN_DATA_DIR||path.join(home,'.config','openchamber'));
+ const dataRoot=resolveDevRyanDataRoot({env,home});
  const sourceRoot=path.join(path.dirname(controlRoot),'fresh-native-source');
  let privatePersistence={};
  if(process.platform==='win32'){
@@ -211,7 +212,7 @@ export async function provisionDefaultNativeBundle({env=process.env,home=os.home
    try{if(operations.windows)db.exec('PRAGMA user_version=0');}finally{db.close();}
    if(!operations.windows)await fs.chmod(file,0o600);
   });
-  await seedNativeSetup({source:{webDataDirectory:dataRoot,webConfigDirectory:path.join(home,'.config','openchamber'),
+  await seedNativeSetup({source:{webDataDirectory:dataRoot,webConfigDirectory:resolveDevRyanDataRoot({env:{},home}),
    // OpenCode always loads its global config directory; OPENCODE_CONFIG_DIR is one more layer over it.
    opencodeConfigDirectory:path.resolve(env.XDG_CONFIG_HOME||path.join(home,'.config'),'opencode'),
    opencodeConfigOverlayDirectory:env.OPENCODE_CONFIG_DIR?path.resolve(env.OPENCODE_CONFIG_DIR):undefined,

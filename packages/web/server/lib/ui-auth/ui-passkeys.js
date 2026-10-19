@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
+import { resolveDevRyanDataRoot } from '@openchamber/shared-runtime/node/data-root.js';
 let webAuthn;
 const loadWebAuthn = () => webAuthn ??= import('@simplewebauthn/server');
 
@@ -9,9 +9,7 @@ const DEFAULT_STORE_VERSION = 1;
 const DEFAULT_CHALLENGE_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_RP_NAME = 'OpenChamber';
 
-const DEVRYAN_DATA_DIR = process.env.DEVRYAN_DATA_DIR
-  ? path.resolve(process.env.DEVRYAN_DATA_DIR)
-  : path.join(os.homedir(), '.config', 'openchamber');
+const DEVRYAN_DATA_DIR = resolveDevRyanDataRoot();
 
 const PASSKEY_STORE_FILE = path.join(DEVRYAN_DATA_DIR, 'ui-passkeys.json');
 

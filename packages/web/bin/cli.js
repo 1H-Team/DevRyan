@@ -3,6 +3,7 @@
 // First: adopt OPENCHAMBER_* aliases before any module reads its environment.
 import '@openchamber/shared-runtime/node/adopt-legacy-environment.js';
 import { setDevRyanEnv } from '@openchamber/shared-runtime/lib/legacy-environment.js';
+import { migrateDataRootAtStartup } from '../server/lib/opencode/runtime-host/data-root-startup.js';
 import fs from 'fs';
 import net from 'net';
 import os from 'os';
@@ -34,6 +35,7 @@ import {
   printJson,
   logStatus, formatProviderWithIcon as clackFormatProviderWithIcon,
 } from './cli-output.js';
+import { resolveDevRyanDataRoot } from '@openchamber/shared-runtime/node/data-root.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1211,10 +1213,7 @@ complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and __fish_seen_
 }
 
 function getDataDir() {
-  if (typeof process.env.DEVRYAN_DATA_DIR === 'string' && process.env.DEVRYAN_DATA_DIR.trim().length > 0) {
-    return path.resolve(process.env.DEVRYAN_DATA_DIR.trim());
-  }
-  return path.join(os.homedir(), '.config', 'openchamber');
+  return resolveDevRyanDataRoot();
 }
 
 function getLogsDir() {
@@ -5191,6 +5190,9 @@ async function main() {
     }
     return;
   }
+
+  // One-time move of ~/.config/openchamber to ~/.config/devryan before getDataDir().
+  await migrateDataRootAtStartup({ log: { info: () => {}, warn: () => {} } });
 
   if (removedFlagErrors.length > 0) {
     if (isJsonMode(options)) {

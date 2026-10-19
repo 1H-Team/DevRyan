@@ -18,6 +18,7 @@
     "./server/lib/agent-browser/install.js": "./server/lib/agent-browser/install.js",
     "./server/lib/opencode/login-shell-env-filter.js": "./server/lib/opencode/login-shell-env-filter.js",
     "./server/lib/opencode/path-utils.js": "./server/lib/opencode/path-utils.js",
+    "./server/lib/opencode/runtime-host/data-root-startup.js": "./server/lib/opencode/runtime-host/data-root-startup.js",
     "./server/lib/opencode/runtime-host/native-artifacts.js": "./server/lib/opencode/runtime-host/native-artifacts.js",
     "./server/lib/opencode/runtime-host/native-bundle-reboot-recovery.js": "./server/lib/opencode/runtime-host/native-bundle-reboot-recovery.js",
     "./server/lib/opencode/runtime-host/runtime-bundle-binding.js": {

@@ -1,9 +1,9 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
 import { createUiPasskeys } from './ui-passkeys.js';
 import { LEGACY_UI_SESSION_COOKIE, requestUiSessionCookieName } from './session-cookie.js';
+import { resolveDevRyanDataRoot } from '@openchamber/shared-runtime/node/data-root.js';
 
 let jose;
 const loadJose = () => jose ??= import('jose');
@@ -283,9 +283,7 @@ const normalizePassword = (candidate) => {
 
 const isTrustedDeviceRequest = (value) => value === true;
 
-const DEVRYAN_DATA_DIR = process.env.DEVRYAN_DATA_DIR
-  ? path.resolve(process.env.DEVRYAN_DATA_DIR)
-  : path.join(os.homedir(), '.config', 'openchamber');
+const DEVRYAN_DATA_DIR = resolveDevRyanDataRoot();
 const JWT_SECRET_FILE = path.join(DEVRYAN_DATA_DIR, 'jwt-secret');
 
 function getOrCreateJwtSecret() {

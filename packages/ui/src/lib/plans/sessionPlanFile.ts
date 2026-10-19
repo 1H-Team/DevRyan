@@ -10,6 +10,8 @@ export interface SessionPlanFileIdentity {
 
 export interface SessionPlanFileStorage {
   resolveHomeDirectory(): Promise<string | null>;
+  /** The DevRyan config folder the server reports, when known. */
+  resolveConfigDirectory?(): Promise<string | null>;
   statFile(path: string): Promise<{ exists: boolean; isFile: boolean }>;
   createDirectory(path: string): Promise<void>;
   writeFile(path: string, content: string): Promise<void>;
@@ -48,6 +50,7 @@ export const sanitizePlanPathSegment = (value: string): string => {
 export const buildSessionPlanFilePath = async (
   homeDirectory: string,
   identity: SessionPlanFileIdentity,
+  configDirectory?: string | null,
 ): Promise<string> => {
   const home = normalizePath(homeDirectory);
   const projectPath = normalizePath(identity.projectPath);
@@ -62,7 +65,9 @@ export const buildSessionPlanFilePath = async (
     throw new Error('Plan file identity is incomplete');
   }
 
-  const projectsDirectory = joinPath(joinPath(joinPath(home, '.config'), 'openchamber'), 'projects');
+  // Without a reported config folder, use the pre-rename location: after the
+  // startup migration it is a link to ~/.config/devryan.
+  const projectsDirectory = joinPath(configDirectory ? normalizePath(configDirectory) : joinPath(joinPath(home, '.config'), 'openchamber'), 'projects');
   const plansDirectory = joinPath(joinPath(projectsDirectory, projectId), 'plans');
   return joinPath(plansDirectory, `${sessionCreated}-${sessionSlug}-${sourceMessageId}.md`);
 };
@@ -81,7 +86,7 @@ export const ensureSessionPlanFile = async ({
     throw new Error('Unable to resolve the home directory for plan storage');
   }
 
-  const filePath = await buildSessionPlanFilePath(homeDirectory, identity);
+  const filePath = await buildSessionPlanFilePath(homeDirectory, identity, await storage.resolveConfigDirectory?.());
   const existing = pendingWrites.get(filePath);
   if (existing) return existing;
 

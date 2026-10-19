@@ -1,3 +1,4 @@
+import { resolveDevRyanDataRoot } from '@openchamber/shared-runtime/node/data-root.js';
 import { readVersionedFile, writeVersionedFile } from './file-versions.js';
 import { createDeterministicGitReadCache } from './git-read-cache.js';
 
@@ -547,7 +548,9 @@ export const registerFsRoutes = (app, dependencies) => {
       if (!home || typeof home !== 'string' || home.length === 0) {
         return res.status(500).json({ error: 'Failed to resolve home directory' });
       }
-      return res.json({ home });
+      // The DevRyan user config folder: ~/.config/devryan, or the pre-rename
+      // ~/.config/openchamber while it still holds the data.
+      return res.json({ home, configDirectory: resolveDevRyanDataRoot({ env: {}, home }) });
     } catch (error) {
       console.error('Failed to resolve home directory:', error);
       return res.status(500).json({ error: (error && error.message) || 'Failed to resolve home directory' });

@@ -55,7 +55,7 @@ bun scripts/journal.mjs gaps --verify
 
 | Topic | Detail |
 | --- | --- |
-| Location | `<selected descriptor launch.webDataDirectory>/harness/journal/` (web and Electron). Journals under `~/.config/openchamber/` describe the old runtime. |
+| Location | `<selected descriptor launch.webDataDirectory>/harness/journal/` (web and Electron). Journals under `~/.config/devryan/` (before the data-folder move, `~/.config/openchamber/`) describe the old runtime. |
 | Layout | `index.json` summarizes `sessions/<sessionID>/manifest.json`. Closed chunks are `*.ndjson.gz`, the active chunk is `*.ndjson.open`, large strings are `blobs/<sha256>.txt.gz`, sessionless records are under `runtime/`. The generated `README.md` there is the format guide. |
 | Record types | `open_code_event`, `prompt`, `control`, `lifecycle`, `worktree_transition`, `evidence_transition`, `connection`, `timing`, `log`, `gap`. |
 | Intentional trims | `message.part.delta` is not stored. Repeated `message.part.updated` and `session.updated` are last-write-wins (`coalesced` counts the source events). These are not gaps. |

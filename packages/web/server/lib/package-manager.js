@@ -4,6 +4,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { resolveDevRyanDataRoot } from '@openchamber/shared-runtime/node/data-root.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -27,10 +28,14 @@ function getSpawnSyncBaseOptions() {
 function getOpenChamberConfigDir() {
   if (process.platform === 'win32') {
     const appData = process.env.APPDATA;
-    if (appData) return path.join(appData, 'openchamber');
+    if (appData) {
+      // Windows is not migrated: keep an existing pre-rename folder in use.
+      const legacy = path.join(appData, 'openchamber');
+      return fs.existsSync(legacy) ? legacy : path.join(appData, 'devryan');
+    }
   }
 
-  return path.join(os.homedir(), '.config', 'openchamber');
+  return resolveDevRyanDataRoot({ env: {} });
 }
 
 function sanitizeInstallScope(scope) {

@@ -78,6 +78,7 @@ import { createRuntimeRestartReconciler } from './lib/opencode/runtime-restart-r
 import { createSessionExecutionHost } from './lib/opencode/session-execution-host.js';
 import { hostStallClock, onHostStall } from '@openchamber/harness-runtime/lib/host-stall-clock.js';
 import { executionArtifacts, executionReadinessMiddleware } from './lib/opencode/execution-artifacts.js';
+import { resolveDevRyanDataRoot } from '@openchamber/shared-runtime/node/data-root.js';
 import { createOpenAiOAuthCoordinator } from './lib/opencode/openai-oauth-coordinator.js';
 import { createOpenAiOAuthBridge } from './lib/opencode/openai-oauth-bridge.js';
 import { createConfigApplyCoordinator, createConfigChangeMarker } from '@openchamber/shared-runtime';
@@ -359,7 +360,7 @@ async function constructWebHost(options = {}) {
   const sanitizeHiddenSkills = (...args) => settingsNormalizationRuntime.sanitizeHiddenSkills(...args);
   const sanitizeProjects = (...args) => settingsNormalizationRuntime.sanitizeProjects(...args);
 
-  const DEVRYAN_USER_CONFIG_ROOT = selectedRuntimeBundle?.descriptor.launch.webConfigDirectory ?? path.join(os.homedir(), '.config', 'openchamber');
+  const DEVRYAN_USER_CONFIG_ROOT = selectedRuntimeBundle?.descriptor.launch.webConfigDirectory ?? resolveDevRyanDataRoot({ env: {} });
   const DEVRYAN_USER_THEMES_DIR = path.join(DEVRYAN_USER_CONFIG_ROOT, 'themes');
   const DEVRYAN_PROJECTS_CONFIG_DIR = path.join(DEVRYAN_USER_CONFIG_ROOT, 'projects');
 
@@ -394,9 +395,7 @@ async function constructWebHost(options = {}) {
   const buildTemplateVariables = (...args) => notificationTemplateRuntime.buildTemplateVariables(...args);
   const getCachedZenModels = (...args) => notificationTemplateRuntime.getCachedZenModels(...args);
 
-  const DEVRYAN_DATA_DIR = process.env.DEVRYAN_DATA_DIR
-    ? path.resolve(process.env.DEVRYAN_DATA_DIR)
-    : path.join(os.homedir(), '.config', 'openchamber');
+  const DEVRYAN_DATA_DIR = resolveDevRyanDataRoot();
   const SETTINGS_FILE_PATH = path.join(DEVRYAN_DATA_DIR, 'settings.json');
   const PUSH_SUBSCRIPTIONS_FILE_PATH = path.join(DEVRYAN_DATA_DIR, 'push-subscriptions.json');
   const CLOUDFLARE_MANAGED_REMOTE_TUNNELS_FILE_PATH = path.join(DEVRYAN_DATA_DIR, 'cloudflare-managed-remote-tunnels.json');

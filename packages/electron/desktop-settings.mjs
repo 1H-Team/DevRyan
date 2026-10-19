@@ -1,14 +1,12 @@
 import path from 'node:path';
+import { resolveDevRyanDataRoot } from '../shared-runtime/lib/data-root.js';
 import { persistWindowState } from './window-state-persistence.mjs';
 
 export function createDesktopSettings({ fs, fsp, os, process, log, getMainWindow, minWidth, minHeight, LOCAL_HOST_ID, setTimeout = globalThis.setTimeout, resolveDataDirectory }) {
   const windowGeometryRevisions = new Map();
   const settingsFilePath = () => {
     if (resolveDataDirectory) return path.join(resolveDataDirectory(), 'settings.json');
-    if (typeof process.env.DEVRYAN_DATA_DIR === 'string' && process.env.DEVRYAN_DATA_DIR.trim()) {
-      return path.join(process.env.DEVRYAN_DATA_DIR.trim(), 'settings.json');
-    }
-    return path.join(os.homedir(), '.config', 'openchamber', 'settings.json');
+    return path.join(resolveDevRyanDataRoot({ env: process.env, home: os.homedir() }), 'settings.json');
   };
 
   const readJsonFile = (filePath) => {

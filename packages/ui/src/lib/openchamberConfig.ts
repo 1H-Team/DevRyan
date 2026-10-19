@@ -1,6 +1,7 @@
 /**
  * OpenChamber project-level configuration service.
- * Stores per-project settings in ~/.config/openchamber/<projectId>.json.
+ * Stores per-project settings in <config folder>/projects/<projectId>.json, where the
+ * config folder is ~/.config/devryan (or the pre-rename ~/.config/openchamber).
  * Migrates from legacy <project>/.openchamber/openchamber.json.
  */
 
@@ -13,7 +14,8 @@ type ProjectRef = { id: string; path: string };
 const CONFIG_FILENAME = 'openchamber.json';
 // LEGACY_PROJECT_CONFIG: legacy per-project config root inside repo.
 const LEGACY_CONFIG_DIR = '.openchamber';
-const USER_PROJECTS_DIR_SEGMENTS = ['.config', 'openchamber', 'projects'];
+// Pre-rename location, used only when the server does not report its config folder.
+const LEGACY_USER_CONFIG_DIR_SEGMENTS = ['.config', 'openchamber'];
 
 /**
  * Get the runtime Files API if available (Desktop).
@@ -201,7 +203,9 @@ const writeTextFile = async (path: string, content: string): Promise<boolean> =>
   return Boolean(res.ok);
 };
 
-const resolveHomeDirectory = async (): Promise<string | null> => {
+type HomeDirectories = { home: string; configDirectory: string | null };
+
+const resolveHomeDirectories = async (): Promise<HomeDirectories | null> => {
   // Use server-reported home as the source of truth for user config paths.
   // In some runtimes, window.__OPENCHAMBER_HOME__ can be workspace/project-root
   // scoped, which would incorrectly route writes into the project directory.
@@ -213,10 +217,11 @@ const resolveHomeDirectory = async (): Promise<string | null> => {
     if (!response.ok) {
       throw new Error('Failed to resolve home directory from API');
     }
-    const payload = await response.json().catch(() => null) as { home?: unknown } | null;
+    const payload = await response.json().catch(() => null) as { home?: unknown; configDirectory?: unknown } | null;
     const home = typeof payload?.home === 'string' ? payload.home.trim() : '';
+    const configDirectory = typeof payload?.configDirectory === 'string' ? payload.configDirectory.trim() : '';
     if (home) {
-      return normalize(home);
+      return { home: normalize(home), configDirectory: configDirectory ? normalize(configDirectory) : null };
     }
   } catch {
     // fall through
@@ -226,18 +231,22 @@ const resolveHomeDirectory = async (): Promise<string | null> => {
 
     const desktopHome = await getDesktopHomeDirectory().catch(() => null);
     if (desktopHome && desktopHome.trim().length > 0) {
-      return normalize(desktopHome);
+      return { home: normalize(desktopHome), configDirectory: null };
     }
 
   return null;
 };
 
 const getUserProjectsDirectory = async (): Promise<string | null> => {
-  const home = await resolveHomeDirectory();
-  if (!home) {
+  const directories = await resolveHomeDirectories();
+  if (!directories) {
     return null;
   }
-  return USER_PROJECTS_DIR_SEGMENTS.reduce((acc, segment) => joinPath(acc, segment), home);
+  // An older server reports only home; its data is still in the pre-rename folder,
+  // which after migration is a link to ~/.config/devryan.
+  const configDirectory = directories.configDirectory
+    ?? LEGACY_USER_CONFIG_DIR_SEGMENTS.reduce((acc, segment) => joinPath(acc, segment), directories.home);
+  return joinPath(configDirectory, 'projects');
 };
 
 const resolveConfigProjectId = (project: ProjectRef): string | null => {
@@ -594,7 +603,7 @@ export async function readOpenChamberConfig(project: ProjectRef): Promise<OpenCh
   }
 
   // 2) Migrate legacy <project>/.openchamber/openchamber.json.
-  // LEGACY_PROJECT_CONFIG: migrate project-local openchamber.json -> ~/.config/openchamber/projects/<projectId>.json
+  // LEGACY_PROJECT_CONFIG: migrate project-local openchamber.json -> <config folder>/projects/<projectId>.json
   const legacyPath = getLegacyConfigPath(projectDirectory);
   const legacyConfig = parseConfig(await readText(legacyPath));
   if (!legacyConfig) {

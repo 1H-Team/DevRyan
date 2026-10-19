@@ -649,7 +649,7 @@ git branch --list 'devryan/*'
 ```
 
 The legacy directory is `<data-dir>/worktrees/` (normally
-`~/.config/openchamber/worktrees/`). Cleanup is deliberately manual; runtime
+`~/.config/devryan/worktrees/`). Cleanup is deliberately manual; runtime
 grant changes never delete shared or legacy worktrees.
 
 ## AI-agent test identities

@@ -99,6 +99,14 @@ owned data root. Files are written with private permissions using a
 file-fsync/rename/parent-fsync sequence. Invalid JSON records are moved to a
 `quarantine/` directory and do not prevent startup.
 
+## Data folder migration
+
+`lib/data-root-migration.js` (`migrateLegacyDataRoot`, exported from the root)
+moves `~/.config/openchamber` to `~/.config/devryan` once, under a cross-process
+lock outside both folders, and leaves a relative compatibility link. It is
+idempotent and finishes an interrupted move; outcomes and recovery are described
+in [identity compatibility](../../docs/IDENTITY_COMPATIBILITY.md#data-folder-migration).
+
 ## Runtime ownership
 
 - `lifecycle.js`: synchronous canonical OpenCode-event correlation. Idle is

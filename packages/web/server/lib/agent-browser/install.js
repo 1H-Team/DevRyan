@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveDevRyanDataRoot } from '@openchamber/shared-runtime/node/data-root.js';
 
 export const AGENT_BROWSER_VERSION = '0.38.1';
 export const AGENT_BROWSER_MANAGED_CONFIG_FILE = 'devryan-agent-browser.json';
@@ -153,9 +154,7 @@ const parseBinaryVersion = (value) => {
 const normalizeDataRoot = (dataRoot, pathApi, homeDir) => {
   const configured = typeof dataRoot === 'string' && dataRoot.trim()
     ? dataRoot.trim()
-    : typeof process.env.DEVRYAN_DATA_DIR === 'string' && process.env.DEVRYAN_DATA_DIR.trim()
-      ? process.env.DEVRYAN_DATA_DIR.trim()
-      : pathApi.join(homeDir, '.config', 'openchamber');
+    : resolveDevRyanDataRoot({ home: homeDir });
   return pathApi.resolve(configured);
 };
 

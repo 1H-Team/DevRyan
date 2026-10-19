@@ -34,6 +34,12 @@ describe('session plan files', () => {
     })).not.toBe(await buildSessionPlanFilePath('/Users/example', identity));
   });
 
+  test('uses the reported DevRyan config folder when the server provides one', async () => {
+    expect(await buildSessionPlanFilePath('/Users/example', identity, '/Users/example/.config/devryan/')).toBe(
+      '/Users/example/.config/devryan/projects/path_L1VzZXJzL2V4YW1wbGUvUmVwb3NpdG9yaWVzL1Rlc3Q/plans/1721234567890-Add-clamp-helper-msg_01-latest.md',
+    );
+  });
+
   test('writes the exact Markdown once and hydrates an existing revision without overwriting edits', async () => {
     const writes: Array<{ path: string; content: string }> = [];
     let exists = false;

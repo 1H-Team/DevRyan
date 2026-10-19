@@ -26,3 +26,4 @@ export * from './lib/task-context.js';
 export * from './lib/objective-progress.js';
 export { createHarnessTraceCollector } from './lib/trace.js';
 export { createUsageCollector } from './lib/usage.js';
+export * from './lib/data-root-migration.js';

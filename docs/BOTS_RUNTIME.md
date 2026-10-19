@@ -922,7 +922,7 @@ sessions, deployment keys, or Docker volumes as part of owner repair.
 ### Runtime data layout
 
 The data root is `$DEVRYAN_DATA_DIR` when set, otherwise the existing
-DevRyan compatibility data directory (normally `~/.config/openchamber`). Its
+DevRyan compatibility data directory (normally `~/.config/devryan`). Its
 Bot-owned local paths are:
 
 - `bots/keys/deployment-key.v1`: one Electron `safeStorage`-sealed 32-byte

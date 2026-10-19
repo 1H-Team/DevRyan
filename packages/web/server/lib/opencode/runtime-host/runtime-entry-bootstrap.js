@@ -1,7 +1,6 @@
 import {provisionDefaultNativeBundle} from './native-default-bundle.js';
 import {initializeRuntimeBundleBinding} from './runtime-bundle-binding.js';
-import os from 'node:os';
-import path from 'node:path';
+import {resolveDevRyanDataRoot} from '@openchamber/shared-runtime/node/data-root.js';
 import {captureNativeSetupOwners,restoreNativeSetupOwners} from './native-setup-local-owners.js';
 import {timeStartupPhase} from '../startup-timing.js';
 
@@ -11,7 +10,7 @@ import {timeStartupPhase} from '../startup-timing.js';
  * DEVRYAN_DATA_DIR/OPENCODE_CONFIG_DIR/OPENCODE_CONFIG. Only then may the
  * entrypoint import a composition. Importing this module does nothing. */
 export async function prepareNativeRuntimeEntry(){
- const sourceDataDirectory=path.resolve(process.env.DEVRYAN_DATA_DIR||path.join(os.homedir(),'.config','openchamber'));
+ const sourceDataDirectory=resolveDevRyanDataRoot();
  const controlRoot=await provisionDefaultNativeBundle({captureLogicalSetup:()=>captureNativeSetupOwners(sourceDataDirectory)});
  process.env.DEVRYAN_RUNTIME_BUNDLE_ROOT=controlRoot;
  const binding=await timeStartupPhase('bundle_prepared_bound',()=>initializeRuntimeBundleBinding(process.env,{allowHeldInspection:true}));

@@ -59,6 +59,10 @@
       "types": "./lib/adopt-legacy-environment.d.ts",
       "default": "./lib/adopt-legacy-environment.js"
     },
+    "./node/data-root.js": {
+      "types": "./lib/data-root.d.ts",
+      "default": "./lib/data-root.js"
+    },
     "./node/safe-archive.js": {
       "types": "./lib/safe-archive.d.ts",
       "default": "./lib/safe-archive.js"

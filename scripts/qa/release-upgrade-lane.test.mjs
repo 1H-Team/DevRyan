@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { gradeHeldRecovery, gradeReleaseUpgrade, parseReleaseUpgradeArgs, selectPreviousReleases } from './release-upgrade-lane.mjs';
+import { gradeDataRootMigration, gradeHeldRecovery, gradeReleaseUpgrade, parseReleaseUpgradeArgs, selectPreviousReleases } from './release-upgrade-lane.mjs';
 
 test('arguments require absolute candidate artifacts and a distinct tag chain', () => {
   assert.deepEqual(parseReleaseUpgradeArgs(['--candidate-artifacts', '/a', '--chain', 'v2.0.15,v2.1.0', '--keep-artifacts']),
@@ -62,4 +62,17 @@ test('a held selection starts only the recovery composition and resumes once the
     const grade = gradeHeldRecovery({ ...input, ...override });
     assert.equal(grade.passed, false); assert.match(grade.failures.join('\n'), message);
   }
+});
+
+test('data-root grading requires the aged folder to move whole and leave a devryan link', () => {
+  const before = { legacy: { kind: 'directory', entries: ['logs', 'release-upgrade-sentinel.json'] }, root: { kind: 'absent' } };
+  const after = { legacy: { kind: 'link', target: 'devryan' }, root: { kind: 'directory', entries: ['.devryan-migration.json', 'logs', 'release-upgrade-sentinel.json'] } };
+  assert.deepEqual(gradeDataRootMigration({ before, after }), { passed: true, failures: [] });
+  const cases = [
+    [{ ...before, legacy: { kind: 'absent' } }, after, /no ~\/.config\/openchamber/],
+    [{ ...before, root: { kind: 'directory', entries: [] } }, after, /existed before/],
+    [before, { ...after, legacy: { kind: 'directory', entries: [] } }, /not a link/],
+    [before, { ...after, root: { kind: 'directory', entries: ['logs'] } }, /missing after the move: release-upgrade-sentinel.json/],
+  ];
+  for (const [b, a, failure] of cases) assert.match(gradeDataRootMigration({ before: b, after: a }).failures.join('\n'), failure);
 });

@@ -1,15 +1,14 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
+import { resolveDevRyanDataRoot } from '@openchamber/shared-runtime/node/data-root.js';
 
 // v2 adds `workingDirectory`; v1 files (no such field) still read as null.
 const REGISTRY_VERSION = 2;
 const REGISTRY_FILE_NAME = 'managed-opencode-processes.json';
 
 function getOpenChamberDataDir(env = process.env) {
-  const configured = typeof env.DEVRYAN_DATA_DIR === 'string' ? env.DEVRYAN_DATA_DIR.trim() : '';
-  return configured ? path.resolve(configured) : path.join(os.homedir(), '.config', 'openchamber');
+  return resolveDevRyanDataRoot({ env });
 }
 
 function getManagedOpenCodeRegistryPath(options = {}) {

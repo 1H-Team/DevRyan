@@ -359,7 +359,7 @@ export const settingsDict = {
   'settings.openchamber.tunnel.session.expiresIn': 'Expires in {remaining}',
   'settings.openchamber.tunnel.session.inactiveWithReason': 'Inactive ({reason})',
   'settings.openchamber.tunnel.error.invalidConfigExtension': 'Config file must use .yml, .yaml, or .json extension.',
-  'settings.openchamber.tunnel.tooltip.tokensSavedPath': 'Tokens are saved in ~/.config/openchamber/cloudflare-managed-remote-tunnels.json.',
+  'settings.openchamber.tunnel.tooltip.tokensSavedPath': 'Tokens are saved in ~/.config/devryan/cloudflare-managed-remote-tunnels.json.',
   'settings.openchamber.tunnel.empty.noManagedRemoteTunnels': 'No managed remote tunnels saved yet.',
   'settings.openchamber.tunnel.toast.checkAvailabilityFailed': 'Failed to check tunnel availability',
   'settings.openchamber.tunnel.toast.saveSettingsFailed': 'Failed to save tunnel settings',

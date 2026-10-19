@@ -52,7 +52,7 @@
 
 ## Auth storage and config
 
-- Auth storage: `~/.config/openchamber/github-auth.json`
+- Auth storage: `~/.config/devryan/github-auth.json`
 - Writes are atomic and file mode is `0o600`.
 - Client ID resolution order: `DEVRYAN_GITHUB_CLIENT_ID` -> `settings.json` -> default.
 - Scope resolution order: `DEVRYAN_GITHUB_SCOPES` -> `settings.json` -> default.

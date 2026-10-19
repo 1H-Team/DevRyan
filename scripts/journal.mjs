@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { createReadStream } from 'node:fs';
+import { createReadStream, lstatSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -27,13 +27,21 @@ export const resolveRecordSessionID = (record) => {
     : '';
 };
 
+// Self-contained copy of packages/shared-runtime/lib/data-root.js (QA runs this
+// file alone): DEVRYAN_DATA_DIR or its alias, else the pre-rename folder while it
+// is still a real directory, else ~/.config/devryan.
+const defaultDataRoot = (env, homeDir) => {
+  const configured = env.DEVRYAN_DATA_DIR ?? env.OPENCHAMBER_DATA_DIR;
+  if (typeof configured === 'string' && configured.trim()) return path.resolve(configured.trim());
+  const legacy = path.join(homeDir, '.config', 'openchamber');
+  try { if (lstatSync(legacy).isDirectory()) return legacy; } catch { /* Migrated or absent. */ }
+  return path.join(homeDir, '.config', 'devryan');
+};
+
 export const resolveJournalDirectory = ({ argv = [], env = process.env, homeDir = os.homedir() } = {}) => {
   const index = argv.indexOf('--dir');
   if (index >= 0 && argv[index + 1]) return path.resolve(argv[index + 1]);
-  const dataRoot = env.DEVRYAN_DATA_DIR
-    ? path.resolve(env.DEVRYAN_DATA_DIR)
-    : path.join(homeDir, '.config', 'openchamber');
-  return path.join(dataRoot, 'harness', 'journal');
+  return path.join(defaultDataRoot(env, homeDir), 'harness', 'journal');
 };
 
 const stripGlobalOptions = (argv) => {

@@ -13,6 +13,7 @@ import { setDevRyanEnv } from '../../shared-runtime/lib/legacy-environment.js';
 const repository = path.resolve(fileURLToPath(new URL('../../..', import.meta.url)));
 const mainSource = await fs.readFile(new URL('../main.mjs', import.meta.url), 'utf8');
 const bindingSpecifier = '@openchamber/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js';
+const dataRootUrl = new URL('../../shared-runtime/lib/data-root.js', import.meta.url).href;
 
 // Keep the emitted import form intact: a static external import executes before
 // even a textually earlier capture, including when the other code was inlined.
@@ -23,7 +24,9 @@ function bootstrapProbe(source, bindingUrl, failed = false, preview = false) {
   const capture = source.slice(start, end);
   const pathAlias = capture.match(/=\s*([\w$]+)\.resolve\(/)?.[1];
   const osAlias = capture.match(/([\w$]+)\.homedir\(\)/)?.[1];
-  assert.ok(pathAlias && osAlias);
+  // The real data-root resolver, under whatever name the source or bundle uses.
+  const resolverAlias = capture.match(/\.resolve\(\s*([\w$]+)\(\{/)?.[1];
+  assert.ok(pathAlias && osAlias && resolverAlias, 'The capture resolves the shared data root');
   const staticBindingImports = source.split('\n').filter(line => (
     /^import\s/.test(line) && line.includes(bindingSpecifier)
   ));
@@ -31,6 +34,7 @@ function bootstrapProbe(source, bindingUrl, failed = false, preview = false) {
   assert.ok(importsAndCapture.includes(bindingSpecifier), 'Execute the real binding import');
   return `import ${pathAlias} from 'node:path';
 import ${osAlias} from 'node:os';
+import { resolveDevRyanDataRoot as ${resolverAlias} } from ${JSON.stringify(dataRootUrl)};
 const isRuntimeServiceControlProbe=false;
 const isPreview=${preview};
 ${importsAndCapture.replaceAll(bindingSpecifier, bindingUrl)}
@@ -57,13 +61,19 @@ export const readRuntimeBundleBinding = () => null;
     for (const [label, source] of [['source', mainSource], ['packaged', bundledSource]]) {
       const probe = path.join(fixture, `${label}.mjs`);
       await fs.writeFile(probe, bootstrapProbe(source, pathToFileURL(binding).href));
-      for (const configured of [true, false]) {
-        await t.test(`${label}: configured=${configured}`, () => {
-          const hostRoot = configured ? path.join(fixture, 'shell-data') : path.join(home, '.config', 'openchamber');
+      // A pre-rename folder that still holds the data (migration deferred or
+      // impossible) stays the host root; otherwise the default is ~/.config/devryan.
+      const legacyHome = path.join(fixture, 'legacy-home');
+      await fs.mkdir(path.join(legacyHome, '.config', 'openchamber'), { recursive: true });
+      for (const mode of ['configured', 'default', 'legacy']) {
+        await t.test(`${label}: ${mode}`, () => {
+          const probeHome = mode === 'legacy' ? legacyHome : home;
+          const hostRoot = mode === 'configured' ? path.join(fixture, 'shell-data')
+            : path.join(probeHome, '.config', mode === 'legacy' ? 'openchamber' : 'devryan');
           const result = spawnSync(process.execPath, [probe], {
             cwd: fixture, encoding: 'utf8', timeout: 10_000,
-            env: { HOME: home, PATH: process.env.PATH, DEVRYAN_TEST_SELECTED_DATA_ROOT: selectedRoot,
-              ...(configured ? { DEVRYAN_DATA_DIR: hostRoot } : {}) },
+            env: { HOME: probeHome, PATH: process.env.PATH, DEVRYAN_TEST_SELECTED_DATA_ROOT: selectedRoot,
+              ...(mode === 'configured' ? { DEVRYAN_DATA_DIR: hostRoot } : {}) },
           });
           assert.equal(result.status, 0, result.stderr || result.error?.message);
           assert.equal(result.signal, null);
@@ -77,7 +87,7 @@ export const readRuntimeBundleBinding = () => null;
       const result = spawnSync(process.execPath, [brokenProbe], { cwd: fixture, encoding: 'utf8', timeout: 10_000,
         env: { HOME: home, PATH: process.env.PATH } });
       assert.equal(result.status, 0, result.stderr || result.error?.message);
-      assert.deepEqual(JSON.parse(result.stdout), { hostRoot: path.join(home, '.config', 'openchamber'), code: 'runtime_bundle_binding_invalid' });
+      assert.deepEqual(JSON.parse(result.stdout), { hostRoot: path.join(home, '.config', 'devryan'), code: 'runtime_bundle_binding_invalid' });
       assert.equal(result.stderr, '');
       await t.test(`${label}: preview excludes native binding`, async () => {
         const previewRoot = path.join(fixture, 'preview-data');

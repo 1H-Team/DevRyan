@@ -19,8 +19,13 @@ export const resetStartupFindings = () => findings.clear();
 /** What the open app tells its owner about a startup that continued. */
 export function startupNotices() {
   const rows = readStartupFindings(), upgrade = rows.find(row => row.source === 'bundle_upgrade');
-  const isolated = rows.filter(row => row.source !== 'bundle_upgrade');
+  const dataRoot = rows.find(row => row.source === 'data_root');
+  const isolated = rows.filter(row => row.source !== 'bundle_upgrade' && row.source !== 'data_root');
   return [
+    ...(dataRoot?.code === 'data_root_merged' ? [{ code: 'data_root_merged', count: 1,
+      message: 'DevRyan moved its data from ~/.config/openchamber to ~/.config/devryan. Older files whose names already existed there were kept in a legacy-openchamber folder inside it.' }] : []),
+    ...(dataRoot && dataRoot.code !== 'data_root_merged' ? [{ code: 'data_root_kept_in_place', count: 1,
+      message: `DevRyan kept using ~/.config/openchamber because the folder could not be moved to ~/.config/devryan (${dataRoot.scope || 'error'}). Your data is unchanged; the move is retried at the next start.` }] : []),
     ...(upgrade ? [{ code: 'startup_upgrade_not_applied', count: 1,
       message: `This release's runtime upgrade was not applied (${upgrade.code}). DevRyan is running on the previous runtime and retries at the next start.` }] : []),
     ...(isolated.length ? [{ code: 'startup_records_isolated', count: isolated.length,

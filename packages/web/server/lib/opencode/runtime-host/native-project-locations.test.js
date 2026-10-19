@@ -53,3 +53,13 @@ it('original application project callbacks accept missing settings without weake
   f.set(malformed);await expect(f.read()).rejects.toMatchObject({code:'native_project_directory_invalid'});
  }
 });
+
+it('protects the target of a sealed root that is now a compatibility link',async()=>{
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'registered-native-link-')));roots.push(root);
+ const base=path.join(root,'first'),data=path.join(root,'devryan'),legacy=path.join(root,'openchamber'),inside=path.join(data,'projects');
+ for(const folder of [base,inside])await fs.mkdir(folder,{recursive:true});
+ await fs.symlink('devryan',legacy);
+ const launch={webDataDirectory:base,webConfigDirectory:base,opencodeConfigDirectory:base,global:{tmp:base,home:base}};
+ const read=createNativeProjectLocations({baseLocations:[{directory:base,readRoots:[base],protectedRoots:[legacy]}],launch,getRegisteredProjects:async()=>[{path:inside}]});
+ await expect(read()).rejects.toMatchObject({code:'native_project_directory_protected'});
+});

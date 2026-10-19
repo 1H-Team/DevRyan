@@ -1,11 +1,9 @@
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
 import { getRequestPrincipal } from '../multi-user/request-context.js';
+import { resolveDevRyanDataRoot } from '@openchamber/shared-runtime/node/data-root.js';
 
-const DEVRYAN_DATA_DIR = process.env.DEVRYAN_DATA_DIR
-  ? path.resolve(process.env.DEVRYAN_DATA_DIR)
-  : path.join(os.homedir(), '.config', 'openchamber');
+const DEVRYAN_DATA_DIR = resolveDevRyanDataRoot();
 
 const STORAGE_DIR = DEVRYAN_DATA_DIR;
 const STORAGE_FILE = path.join(STORAGE_DIR, 'github-auth.json');

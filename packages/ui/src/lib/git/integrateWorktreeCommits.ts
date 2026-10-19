@@ -175,12 +175,12 @@ export async function computeIntegratePlan(args: {
 async function createTempWorktree(repoRoot: string, targetBranch: string): Promise<string> {
   // Use two separate execCommand calls instead of shell-specific && operator
   // to support non-POSIX shells like Nushell (see #870)
-  const mkdirResult = await execCommand('mkdir -p "$HOME/.config/openchamber/tmp"', repoRoot);
+  const mkdirResult = await execCommand('mkdir -p "$HOME/.config/devryan/tmp"', repoRoot);
   if (!isOk(mkdirResult)) {
     throw new Error(stderrText(mkdirResult) || 'Failed to create temp directory parent');
   }
   const tmp = await execCommand(
-    'mktemp -d "$HOME/.config/openchamber/tmp/oc-integrate-XXXXXX"',
+    'mktemp -d "$HOME/.config/devryan/tmp/oc-integrate-XXXXXX"',
     repoRoot
   );
   const tmpDir = stdoutText(tmp);

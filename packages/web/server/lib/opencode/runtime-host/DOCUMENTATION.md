@@ -64,7 +64,10 @@ reported instead:
   re-examines the intents. An unreadable intent names no session and is only
   reported. Other recovery steps stay all-or-nothing.
 
-`startup-notices.js` collects these for the process. The health snapshot
+`data-root-startup.js` runs the one-time data-folder move before any data-root
+reader (Electron main, the server entry outside Electron, the CLI); a merged or
+unmovable folder becomes a `data_root` startup notice. `startup-notices.js`
+collects these for the process. The health snapshot
 exposes them as `startupNotices`, and the UI shows a persistent warning.
 
 A refused cold upgrade is recorded, not thrown. When the selected runtime

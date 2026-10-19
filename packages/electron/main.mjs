@@ -1,6 +1,7 @@
 // First: adopt OPENCHAMBER_* aliases before any module reads its environment.
 import '../shared-runtime/lib/adopt-legacy-environment.js';
 import { adoptLegacyEnvironment, setDevRyanEnv } from '../shared-runtime/lib/legacy-environment.js';
+import { resolveDevRyanDataRoot } from '../shared-runtime/lib/data-root.js';
 import { configureEarlyStartup, createStartupWindowOptions, takeEarlyStartupWindow, takeEarlyAppLinks } from './early-startup.mjs';
 import { artifactDiagnostic, describeArtifactFailure, startupDiagnosticSummary } from '../shared-runtime/startup-diagnostics.js';
 import {createNativeSettingsDirectory,readNativeShellBundleBinding} from './native-settings-directory.mjs';
@@ -524,9 +525,17 @@ if (!isRuntimeServiceControlProbe) {
   log.info('[electron] startup phase', { phase: 'shell_environment', outcome: 'completed', elapsedMs: Math.round(performance.now() - startedAt) });
 }
 
+// One-time move of ~/.config/openchamber to ~/.config/devryan, after the shell's
+// data-root choice is known and before any reader. It never throws; a folder that
+// cannot move stays in use and the open app shows a notice.
+if (!isRuntimeServiceControlProbe && !isPreview) {
+  const { migrateDataRootAtStartup } = await import('@openchamber/web/server/lib/opencode/runtime-host/data-root-startup.js');
+  await migrateDataRootAtStartup({ log });
+}
+
 // The in-process web launcher binds DEVRYAN_DATA_DIR to the selected bundle.
 // Capture shell ownership first; this process only inspects the binding.
-const hostDataRootDirectory=path.resolve(process.env.DEVRYAN_DATA_DIR||path.join(os.homedir(),'.config','openchamber'));
+const hostDataRootDirectory=path.resolve(resolveDevRyanDataRoot({env:process.env,home:os.homedir()}));
 const hostRuntimeBundleRoot = process.env.DEVRYAN_RUNTIME_BUNDLE_ROOT;
 let readRuntimeBundleBinding, shellRuntimeBundleBindingError;
 const bindingFailed = () => {
@@ -4286,7 +4295,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       if (!underHome && !underTmp) {
         throw new Error('File is outside the allowed workspace');
       }
-      const DENIED_SEGMENTS = ['.ssh', '.aws', '.gnupg', '.gpg', '.config/gh', '.config/openchamber/credentials'];
+      const DENIED_SEGMENTS = ['.ssh', '.aws', '.gnupg', '.gpg', '.config/gh', '.config/devryan/credentials', '.config/openchamber/credentials'];
       const relFromHome = underHome ? filePath.slice(home.length + 1) : '';
       const relNormalized = relFromHome.split(path.sep).join('/');
       if (DENIED_SEGMENTS.some((segment) => relNormalized === segment || relNormalized.startsWith(`${segment}/`))) {

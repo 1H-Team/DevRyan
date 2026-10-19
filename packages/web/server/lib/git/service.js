@@ -21,6 +21,7 @@ import { populateWorktreeWithLockRecovery } from './worktree-lock-recovery.js';
 import { withIndexLockRetry, withIndexLockRetryResult } from './index-lock-retry.js';
 import { getRequestPrincipal } from '../multi-user/request-context.js';
 import { getGitHubAuthById } from '../github/auth.js';
+import { resolveDevRyanDataRoot } from '@openchamber/shared-runtime/node/data-root.js';
 
 const fsp = fs.promises;
 const require = createRequire(import.meta.url);
@@ -338,9 +339,7 @@ const assertManagedFetchBranchAllowed = async ({ directory, principal, assignmen
 const ensureGitAskPassHelper = async () => {
   if (gitAskPassHelperPromise) return gitAskPassHelperPromise;
   gitAskPassHelperPromise = (async () => {
-    const dataDirectory = process.env.DEVRYAN_DATA_DIR
-      ? path.resolve(process.env.DEVRYAN_DATA_DIR)
-      : path.join(os.homedir(), '.config', 'openchamber');
+    const dataDirectory = resolveDevRyanDataRoot();
     const runtimeDirectory = path.join(dataDirectory, 'runtime');
     await fsp.mkdir(runtimeDirectory, { recursive: true, mode: 0o700 });
     if (process.platform === 'win32') {

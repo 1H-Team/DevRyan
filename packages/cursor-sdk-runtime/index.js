@@ -38,6 +38,7 @@ import {
   settleCursorNativeTaskPart,
   sanitizeCursorTaskResult,
 } from './cursor-native-task.js';
+import fsSync from 'node:fs';
 
 export { normalizeInteractionUpdateToSdkMessage } from './interaction-update-normalize.js';
 
@@ -1551,8 +1552,17 @@ const normalizeStoredSessionState = (state) => {
   };
 };
 
+// The web host always passes its storage directory; this standalone default
+// follows packages/shared-runtime/lib/data-root.js without depending on it.
+const defaultDataRoot = () => {
+  const configured = process.env.DEVRYAN_DATA_DIR ?? process.env.OPENCHAMBER_DATA_DIR;
+  if (configured) return path.resolve(configured);
+  const legacy = path.join(os.homedir(), '.config', 'openchamber');
+  try { if (fsSync.lstatSync(legacy).isDirectory()) return legacy; } catch { /* No legacy folder. */ }
+  return path.join(os.homedir(), '.config', 'devryan');
+};
 const defaultStorageDir = () => path.join(
-  process.env.DEVRYAN_DATA_DIR ? path.resolve(process.env.DEVRYAN_DATA_DIR) : path.join(os.homedir(), '.config', 'openchamber'),
+  defaultDataRoot(),
   'cursor-sdk-sessions',
 );
 

@@ -5,7 +5,7 @@
 // Usage: docs/QA.md "Release upgrade lane".
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
-import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readFile, readdir, readlink, realpath, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
@@ -72,6 +72,34 @@ export function gradeReleaseUpgrade({ hops, candidate, candidateManifestSha256 }
   const lost = kept.filter(id => !listed.has(id)), revived = deleted.filter(id => listed.has(id));
   if (lost.length) failures.push(`Sessions lost across the upgrade: ${lost.join(', ')}`);
   if (revived.length) failures.push(`Deleted sessions reappeared: ${revived.join(', ')}`);
+  return { passed: failures.length === 0, failures };
+}
+
+/** What the data-root migration sees: the pre-rename folder and the DevRyan root. */
+export async function inspectDataRoots(home) {
+  const describe = async directory => {
+    const stat = await lstat(directory).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
+    if (!stat) return { kind: 'absent' };
+    if (stat.isSymbolicLink()) return { kind: 'link', target: await readlink(directory) };
+    return stat.isDirectory() ? { kind: 'directory', entries: (await readdir(directory)).sort() } : { kind: 'other' };
+  };
+  return { legacy: await describe(path.join(home, '.config', 'openchamber')), root: await describe(path.join(home, '.config', 'devryan')) };
+}
+
+/**
+ * Pure grading of the data-root migration across the candidate start: the aged
+ * ~/.config/openchamber must become a link to devryan, and every entry it held
+ * must be in ~/.config/devryan.
+ */
+export function gradeDataRootMigration({ before, after }) {
+  const failures = [];
+  if (before?.legacy?.kind !== 'directory') failures.push('The aged profile has no ~/.config/openchamber folder to migrate');
+  if (before?.root?.kind !== 'absent') failures.push('~/.config/devryan existed before the candidate start');
+  if (after?.legacy?.kind !== 'link' || after.legacy.target !== 'devryan') failures.push('~/.config/openchamber is not a link to devryan after the candidate start');
+  if (after?.root?.kind !== 'directory') failures.push('~/.config/devryan is not a folder after the candidate start');
+  const moved = new Set(after?.root?.entries ?? []);
+  const missing = (before?.legacy?.entries ?? []).filter(name => !moved.has(name));
+  if (missing.length) failures.push(`Entries missing after the move: ${missing.join(', ')}`);
   return { passed: failures.length === 0, failures };
 }
 
@@ -246,6 +274,11 @@ export async function runReleaseUpgradeLane(options) {
     await run('git', ['init', '--quiet', '--initial-branch=main', `--template=${path.join(root, 'git-template')}`], { cwd: layout.workspace,
       env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_CEILING_DIRECTORIES: root } });
     await writeFile(path.join(layout.workspace, 'README.md'), '# Release upgrade lane\n');
+    // The installed desktop app always has its host folder; seed it so the
+    // candidate's data-root migration has data to move even when a headless
+    // release hop writes nothing there.
+    await mkdir(path.join(layout.home, '.config', 'openchamber'), { recursive: true, mode: 0o700 });
+    await writeFile(path.join(layout.home, '.config', 'openchamber', 'release-upgrade-sentinel.json'), '{"kept":true}\n', { mode: 0o600 });
     const prepared = await Promise.all(chain.map(async release => {
       const [artifacts, source] = await Promise.all([fetchReleaseArtifacts(release, root), prepareReleaseSource(release, root)]);
       return { release, artifacts, source };
@@ -254,14 +287,19 @@ export async function runReleaseUpgradeLane(options) {
     for (const { release, source, artifacts } of prepared) {
       hops.push(await runHop({ release, source, artifacts, layout, activity: true, timeoutMs: options.hopTimeoutMs }));
     }
+    const dataRootsBefore = await inspectDataRoots(layout.home);
     const candidate = await runHop({ release: 'candidate', source: repository, artifacts: options.candidateArtifacts, layout, activity: false, timeoutMs: options.hopTimeoutMs });
-    const upgrade = gradeReleaseUpgrade({ hops, candidate, candidateManifestSha256 });
+    const dataRoots = { before: dataRootsBefore, after: await inspectDataRoots(layout.home) };
+    const dataRootGrade = gradeDataRootMigration(dataRoots);
+    const releaseGrade = gradeReleaseUpgrade({ hops, candidate, candidateManifestSha256 });
+    const upgrade = { passed: releaseGrade.passed && dataRootGrade.passed,
+      failures: [...releaseGrade.failures, ...dataRootGrade.failures.map(failure => `Data root: ${failure}`)] };
     const heldRecovery = upgrade.passed ? await runHeldRecovery({ hops, layout, artifacts: options.candidateArtifacts,
       candidateManifestSha256, timeoutMs: options.hopTimeoutMs }) : { passed: false, failures: ['Not run: the candidate upgrade failed'] };
     const grade = { passed: upgrade.passed && heldRecovery.passed,
       failures: [...upgrade.failures, ...heldRecovery.failures.map(failure => `Held recovery: ${failure}`)] };
     const evidence = { schemaVersion: 1, kind: 'release-upgrade-lane', chain, candidateManifestSha256,
-      hops: hops.map(({ log, ...hop }) => hop), candidate, heldRecovery, ...grade };
+      hops: hops.map(({ log, ...hop }) => hop), candidate, dataRoots, heldRecovery, ...grade };
     process.stdout.write(`${JSON.stringify(evidence, null, 2)}\n`);
     runRoot.finish(grade.passed ? 'passed' : 'failed');
     return evidence;

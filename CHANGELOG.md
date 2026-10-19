@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Move DevRyan's data folder from `~/.config/openchamber` to `~/.config/devryan` at the first start. The folder is renamed in one step, nothing is copied, and `~/.config/openchamber` stays as a link to the new folder so existing paths keep working. A folder that cannot be moved, such as a Docker bind mount, stays in use and the app says so.
+- Rename the `OPENCHAMBER_*` environment variables to `DEVRYAN_*`. The old names are still accepted.
+
 ## [2.1.3] - 2026-10-18
 
 - Preserve explicit agent reasoning choices when switching models, show unsupported selections with the model's available options, and reject invalid managed task selections before creating a child session. Incomplete model catalogs remain unknown rather than marking models unavailable.

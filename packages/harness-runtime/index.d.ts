@@ -1187,3 +1187,24 @@ export function validateObjectiveProgress(value: unknown): void;
 export function applyObjectiveRejection(previous: ObjectiveRejection[] | undefined, input: { fingerprint: string; reason: ObjectiveRejection['reason']; callID: string; at: number }): { receipts: ObjectiveRejection[]; state: 'blocked' | 'duplicate' | 'tracking-capacity' | 'corrective-replan' | 'correct-input'; count: number | null };
 export function applyObjectiveProgress(previous: ObjectiveProgress | undefined, input: { kind: ObjectiveProgressKind; fingerprint: string; at: number }): ObjectiveProgress;
 export function projectObjectiveProgress(value: ObjectiveProgress | undefined): { policy: 'report-only'; lastUsefulAt: number | null; counts: Partial<Record<ObjectiveProgressKind, number>>; relevance: string };
+
+export const DATA_ROOT_MIGRATION_MARKER: '.devryan-migration.json';
+export type DataRootMigrationOutcome = 'explicit' | 'unsupported_platform' | 'none' | 'current' | 'linked'
+  | 'migrated' | 'merged' | 'deferred' | 'kept_in_place';
+export interface DataRootMigrationResult {
+  outcome: DataRootMigrationOutcome;
+  root?: string;
+  code?: string;
+  conflicts?: string[];
+  conflictDirectory?: string | null;
+}
+export function isLegacyDataRootBusy(legacy: string, options?: { fs?: unknown; isAlive?: (pid: number) => boolean }): Promise<boolean>;
+export function migrateLegacyDataRoot(options?: {
+  env?: Record<string, string | undefined>;
+  home?: string;
+  platform?: NodeJS.Platform;
+  fs?: unknown;
+  now?: () => Date;
+  isBusy?: (legacy: string) => Promise<boolean>;
+  lockOptions?: Record<string, unknown>;
+}): Promise<DataRootMigrationResult>;

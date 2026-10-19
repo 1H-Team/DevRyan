@@ -15,6 +15,9 @@ export function createNativeProjectLocations({baseLocations,launch,getRegistered
   if(!Array.isArray(projects)||projects.length>128)throw fail('native_project_directory_invalid');
   const locations=baseLocations.map(location=>({...location,readRoots:[...(location.readRoots??[location.directory]),
    nativeWebfetchBinaryDirectory(launch.global.tmp,location.directory)],protectedRoots:[...new Set([...(location.protectedRoots??[]),...protectedRoots])]}));
+  // A sealed root may name a pre-rename path that is now a link (for example
+  // ~/.config/openchamber); project directories are canonical, so compare both.
+  const canonicalRoots=[...new Set([...protectedRoots,...await Promise.all(protectedRoots.map(root=>fs.realpath(root).catch(()=>root)))])];
   for(const project of projects){
    const directory=project?.path;
    if(typeof directory!=='string'||!path.isAbsolute(directory)||directory!==path.resolve(directory)||/[\u0000-\u001f]/.test(directory))throw fail('native_project_directory_invalid');
@@ -24,7 +27,7 @@ export function createNativeProjectLocations({baseLocations,launch,getRegistered
    const stat=await fs.lstat(directory).catch(error=>{if(error.code==='ENOENT')return undefined;throw error;});
    if(!stat)continue;
    if(!stat.isDirectory()||stat.isSymbolicLink()||await fs.realpath(directory)!==directory)throw fail('native_project_directory_invalid');
-   if(protectedRoots.some(root=>within(root,directory)))throw fail('native_project_directory_protected');
+   if(canonicalRoots.some(root=>within(root,directory)))throw fail('native_project_directory_protected');
    locations.push({directory,readRoots:[directory,nativeWebfetchBinaryDirectory(launch.global.tmp,directory)],protectedRoots});
   }
   if(locations.length>128)throw fail('native_project_directory_invalid');

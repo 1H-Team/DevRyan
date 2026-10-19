@@ -5,6 +5,12 @@ import '@openchamber/shared-runtime/node/adopt-legacy-environment.js';
 import { fileURLToPath } from 'node:url';
 import { startStartupTiming } from './lib/opencode/startup-timing.js';
 
+// Electron main runs the data-root migration itself, before its own readers.
+if (!process.versions.electron) {
+  const { migrateDataRootAtStartup } = await import('./lib/opencode/runtime-host/data-root-startup.js');
+  await migrateDataRootAtStartup();
+}
+
 let application;
 if (process.env.DEVRYAN_RUNTIME_MODE === 'standard-preview') {
   application = await import('./lib/opencode/standard-preview/application.js');
