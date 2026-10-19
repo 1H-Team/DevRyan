@@ -71,13 +71,6 @@ describe('graceful shutdown runtime', () => {
     expect(shuttingDown).toBe(true);
   });
 
-  it('passes the shutdown options to native close so a failed start can keep an unstarted owner', async () => {
-    const closeNativeRuntime = vi.fn(async () => {});
-    const runtime = createRuntime(null, { closeNativeRuntime, closeFeatureRoutes: async () => {} });
-    await runtime.gracefulShutdown({ exitProcess: false, failedStart: true });
-    expect(closeNativeRuntime).toHaveBeenCalledExactlyOnceWith({ exitProcess: false, failedStart: true });
-  });
-
   it('naturally exits after stopping the real shared hub reconnect timer', async () => {
     const moduleUrl = relative => JSON.stringify(new URL(relative, import.meta.url).href);
     const script = `

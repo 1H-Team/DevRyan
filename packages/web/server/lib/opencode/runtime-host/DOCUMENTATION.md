@@ -752,12 +752,6 @@ stays drained and the start stays retryable. The original error is rethrown
 unchanged; the cleanup outcome is reported separately as the non-enumerable
 `error.startupCleanup` (`released`, `retained` or `failed`, with a finite code).
 A released start counts as a completed shutdown, so a retry first clears it.
-The native runtime owner is a module-level singleton whose `close()` is terminal.
-A failed start that never launched native execution (`isUnstarted()`) has
-nothing to settle, so its cleanup leaves the owner open and Startup Retry can
-start the native runtime in-process. Once native execution has launched, a host
-cannot start it again in the same process; that needs a relaunch, as it did
-before this cleanup existed.
 
 These remain process singletons, evaluated once and reused by a restarted host:
 the bound environment and `selectedRuntimeBundle` (launcher), the module-level

@@ -50,7 +50,7 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     // Native close needs the journal, scheduler and private execution bridge
     // alive until its scope, supervisors and durable ACK barrier have settled.
     if (closeNativeRuntime || closeFeatureRoutes) {
-      try { await closeNativeRuntime?.(options); await closeFeatureRoutes?.(); }
+      try { await closeNativeRuntime?.(); await closeFeatureRoutes?.(); }
       catch (cause) {
         // Admission stays drained, but a refused native settlement must be
         // retryable once its owner confirms exit and durable recovery.

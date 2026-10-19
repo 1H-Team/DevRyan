@@ -48,21 +48,6 @@ const fixture = async (action, cursorRuntime, configure) => {
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 };
 
-test('the owner reports unstarted only before any launch begins and never after its terminal close', () => fixture(async ({ owner }) => {
-  expect(owner.isUnstarted()).toBe(true);
-  const launch = owner.start();
-  expect(owner.isUnstarted()).toBe(false);
-  await launch.catch(() => {});
-  await owner.close().catch(() => {});
-  expect(owner.isUnstarted()).toBe(false);
-}));
-
-test('a terminal close of a never-started owner refuses any later start', () => fixture(async ({ owner }) => {
-  await owner.close();
-  expect(owner.isUnstarted()).toBe(false);
-  await expect(owner.start()).rejects.toMatchObject({ code: 'native_controller_already_owned' });
-}));
-
 test('a coherent clone reseal after verification cannot replace the selected prepared hash or spawn a controller', async () => {
  let verified = false, boot, reseal;
  const hash = bytes => createHash('sha256').update(bytes).digest('hex');
