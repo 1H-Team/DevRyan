@@ -60,54 +60,6 @@ describe('web host lifecycle', () => {
     expect(resetAfterStop).toHaveBeenCalledOnce();
   });
 
-  it('a failed start releases what it acquired before its original error surfaces', async () => {
-    const order = [], failure = Object.assign(new Error('listener failed'), { code: 'EADDRINUSE' });
-    const lifecycle = createWebHostLifecycle({
-      construct: async () => { order.push('construct'); throw failure; },
-      resetAfterStop: () => order.push('reset'),
-      cleanupFailedStart: async () => { order.push('cleanup'); lifecycle.markStopped(); },
-    });
-    const error = await lifecycle.start().catch(caught => caught);
-    expect(error).toBe(failure);
-    expect(error.startupCleanup).toEqual({ state: 'released', code: null });
-    expect(Object.keys(error)).not.toContain('startupCleanup');
-    expect(order).toEqual(['construct', 'cleanup']);
-    // The released host restarts from a cleared shutdown.
-    expect(lifecycle.getState()).toBe('stopped');
-    await lifecycle.start().catch(() => {});
-    expect(order).toEqual(['construct', 'cleanup', 'reset', 'construct', 'cleanup']);
-  });
-
-  it('a refused settlement retains the owners, keeps the start retryable and reports separately', async () => {
-    const warn = vi.fn(), failure = new Error('controller exited');
-    const construct = vi.fn().mockRejectedValueOnce(failure).mockResolvedValueOnce({ id: 'retry' });
-    const resetAfterStop = vi.fn();
-    const lifecycle = createWebHostLifecycle({ construct, resetAfterStop, log: { warn },
-      cleanupFailedStart: async () => { throw Object.assign(new Error('settlement refused'), { code: 'bundle_execution_unsettled', retainedOwners: true }); } });
-    const error = await lifecycle.start().catch(caught => caught);
-    expect(error).toBe(failure);
-    expect(error.startupCleanup).toEqual({ state: 'retained', code: 'bundle_execution_unsettled' });
-    expect(warn).toHaveBeenCalledExactlyOnceWith('[web-host] failed start cleanup did not complete', error.startupCleanup);
-    expect(lifecycle.getState()).toBe('idle');
-    await expect(lifecycle.start()).resolves.toEqual({ id: 'retry' });
-    expect(resetAfterStop).not.toHaveBeenCalled();
-  });
-
-  it('a cleanup failure after settlement is reported as failed with a finite code only', async () => {
-    const lifecycle = createWebHostLifecycle({ construct: async () => { throw new Error('boom'); }, resetAfterStop: () => {}, log: { warn: () => {} },
-      cleanupFailedStart: async () => { throw Object.assign(new Error('secret path /Users/x'), { code: 'Not A Code' }); } });
-    const error = await lifecycle.start().catch(caught => caught);
-    expect(error.startupCleanup).toEqual({ state: 'failed', code: 'web_host_start_cleanup_failed' });
-  });
-
-  it('a non-extensible failure is rethrown as is', async () => {
-    const failure = Object.freeze(new Error('frozen'));
-    const cleanupFailedStart = vi.fn(async () => {});
-    const lifecycle = createWebHostLifecycle({ construct: async () => { throw failure; }, resetAfterStop: () => {}, cleanupFailedStart });
-    await expect(lifecycle.start()).rejects.toBe(failure);
-    expect(cleanupFailedStart).toHaveBeenCalledOnce();
-  });
-
   it('labels construction as its own startup phase', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     try {

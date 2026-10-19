@@ -743,16 +743,6 @@ fallback. Restarting after a completed shutdown first clears that shutdown's
 `isShuttingDown` flag; before this a restarted host inherited it. Construction is
 timed as `web_host_construction`, inside Electron's `server_listen` phase.
 
-A failed start owns what it acquired. Before the original error surfaces, the
-lifecycle runs the graceful shutdown on the partial host: admission closes,
-native execution and its durable acknowledgements settle, and only then is
-dependent infrastructure disposed. If native settlement is refused, the
-journal, scheduler, stores and private execution bridge stay alive, admission
-stays drained and the start stays retryable. The original error is rethrown
-unchanged; the cleanup outcome is reported separately as the non-enumerable
-`error.startupCleanup` (`released`, `retained` or `failed`, with a finite code).
-A released start counts as a completed shutdown, so a retry first clears it.
-
 These remain process singletons, evaluated once and reused by a restarted host:
 the bound environment and `selectedRuntimeBundle` (launcher), the module-level
 composition in `application.js`, including private persistence, the boot bundle
