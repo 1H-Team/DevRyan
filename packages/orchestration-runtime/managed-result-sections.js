@@ -1,16 +1,14 @@
 import {sliceManagedResultText,ManagedResultReferenceError} from './managed-result-projection.js';
+import {decodeBase64Url,encodeBase64Url,stableStringify} from './codec-primitives.js';
 
 const prefix='dvr_result_section_v2.';
 const encoder=new TextEncoder();
 const fault=()=>new ManagedResultReferenceError('invalid_result_cursor','Managed result metadata cursor is invalid');
-const stable=value=>JSON.stringify(value,(_key,item)=>item&&typeof item==='object'&&!Array.isArray(item)
-  ?Object.fromEntries(Object.keys(item).sort().map(key=>[key,item[key]])):item);
-const encode=value=>prefix+btoa(Array.from(encoder.encode(JSON.stringify(value)),byte=>String.fromCharCode(byte)).join('')).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/g,'');
+const encode=value=>prefix+encodeBase64Url(JSON.stringify(value),{pad:false});
 const decode=cursor=>{
   if(typeof cursor!=='string'||cursor.length>4096||!cursor.startsWith(prefix))throw fault();
   try{
-    const encoded=cursor.slice(prefix.length);if(!/^[A-Za-z0-9_-]+$/.test(encoded))throw fault();
-    const value=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(Uint8Array.from(atob(encoded.replace(/-/g,'+').replace(/_/g,'/')),character=>character.charCodeAt(0))));
+    const value=JSON.parse(decodeBase64Url(cursor.slice(prefix.length),{pad:false}));
     if(!value||Object.keys(value).length!==8||value.v!==2||value.s!=='metadata'
       ||typeof value.t!=='string'||!value.t.startsWith('dvr_task_')||typeof value.e!=='string'||!value.e.startsWith('dvr_result_')
       ||typeof value.h!=='string'||!/^[a-f0-9]{64}$/.test(value.h)
@@ -29,7 +27,7 @@ export async function prepareManagedResultMetadata(value){
   // Observation time is not retained result identity. Current check coverage,
   // exit receipts and every reference still participate in the digest.
   if(metadata.resultHeader?.verification)delete metadata.resultHeader.verification.observedAt;
-  const content=stable(metadata),totalBytes=encoder.encode(content).byteLength;
+  const content=stableStringify(metadata),totalBytes=encoder.encode(content).byteLength;
   const digest=await globalThis.crypto.subtle.digest('SHA-256',encoder.encode(content));
   const identitySha256=Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join('');
   const page=(offset,returned,maxPageBytes)=>{

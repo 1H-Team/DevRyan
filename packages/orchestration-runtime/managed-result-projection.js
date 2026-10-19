@@ -1,25 +1,12 @@
+import { decodeBase64Url, encodeBase64Url, findManagedResultPayloadMismatch } from './codec-primitives.js';
+
 export const MANAGED_RESULT_PAGE_MAX_BYTES = 8 * 1024;
 export const MANAGED_RESULT_V2_PAGE_MAX_BYTES = 24 * 1024;
 export const MANAGED_RESULT_MODES = Object.freeze(['eager', 'reference', 'compact']);
 
 const CURSOR_PREFIX = 'dvr_result_cursor_v1.';
 const MAX_CURSOR_CHARS = 4 * 1024;
-const RESULT_PAYLOAD_FIELDS = Object.freeze([
-  'taskId',
-  'rootSessionId',
-  'parentTaskId',
-  'childSessionId',
-  'directory',
-  'status',
-  'partial',
-  'failureReason',
-  'attempt',
-  'priorTaskId',
-  'executionKind',
-  'recoverablePreview',
-]);
 const textEncoder = new TextEncoder();
-const textDecoder = new TextDecoder('utf-8', { fatal: true });
 
 const isRecord = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 const utf8ByteLength = (value) => textEncoder.encode(value).byteLength;
@@ -52,46 +39,10 @@ export const resolveManagedResultMode = (value) => {
   throw new TypeError('resultMode must be eager, reference or compact');
 };
 
-export const managedResultPayloadMatches = (task, resultEnvelope) => {
-  if (!isRecord(task) || !isRecord(resultEnvelope)) return false;
-  for (const field of RESULT_PAYLOAD_FIELDS) {
-    if (!Object.hasOwn(task, field) || !Object.hasOwn(resultEnvelope, field)) return false;
-    if (!Object.is(task[field], resultEnvelope[field])) return false;
-  }
-  if (!Array.isArray(task.canonicalRefs) || !Array.isArray(resultEnvelope.canonicalRefs)) {
-    return false;
-  }
-  try {
-    return JSON.stringify(task.canonicalRefs) === JSON.stringify(resultEnvelope.canonicalRefs);
-  } catch {
-    return false;
-  }
-};
-
-const encodeBase64Url = (value) => {
-  const bytes = textEncoder.encode(value);
-  let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-};
-
-const decodeBase64Url = (value) => {
-  if (!/^[A-Za-z0-9_-]+$/.test(value)) throw invalidCursor();
-  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
-  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
-  let binary;
-  try {
-    binary = atob(padded);
-  } catch {
-    throw invalidCursor();
-  }
-  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-  try {
-    return textDecoder.decode(bytes);
-  } catch {
-    throw invalidCursor();
-  }
-};
+export const managedResultPayloadMatches = (task, resultEnvelope) => (
+  isRecord(task) && isRecord(resultEnvelope)
+  && findManagedResultPayloadMismatch(task, resultEnvelope, { requireOwnFields: true }) === null
+);
 
 const encodeCursor = ({ taskId, envelopeId, stringOffset, returnedBytes, totalBytes }) => {
   const cursor = `${CURSOR_PREFIX}${encodeBase64Url(JSON.stringify({
@@ -101,7 +52,7 @@ const encodeCursor = ({ taskId, envelopeId, stringOffset, returnedBytes, totalBy
     o: stringOffset,
     b: returnedBytes,
     z: totalBytes,
-  }))}`;
+  }), { pad: false })}`;
   if (cursor.length > MAX_CURSOR_CHARS) {
     throw referenceMismatch('managed result identity is too large to encode safely');
   }
@@ -119,7 +70,7 @@ const decodeCursor = (cursor) => {
   }
   let value;
   try {
-    value = JSON.parse(decodeBase64Url(cursor.slice(CURSOR_PREFIX.length)));
+    value = JSON.parse(decodeBase64Url(cursor.slice(CURSOR_PREFIX.length), { pad: true }));
   } catch (error) {
     if (error instanceof ManagedResultReferenceError) throw error;
     throw invalidCursor();

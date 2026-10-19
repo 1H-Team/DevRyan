@@ -1,11 +1,10 @@
 import { createHash } from 'node:crypto';
-import { isTerminalManagedTaskStatus, MANAGED_RESULT_PAGE_MAX_BYTES, MANAGED_RESULT_V2_PAGE_MAX_BYTES } from '@openchamber/orchestration-runtime';
+import { isAutoResumeActive, isTerminalManagedTaskStatus, MANAGED_RESULT_PAGE_MAX_BYTES, MANAGED_RESULT_V2_PAGE_MAX_BYTES, MANAGED_TASK_LIVE_STATUSES, stableStringify } from '@openchamber/orchestration-runtime';
 
 const fault = code => Object.assign(new Error(code), { code, statusCode: 409 });
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const key = (scope, taskID) => `${scope.directory}\0${scope.rootSessionId}\0${taskID}`;
-const live = new Set(['queued', 'starting', 'running']);
-const stable=value=>JSON.stringify(value,(_key,item)=>record(item)?Object.fromEntries(Object.keys(item).sort().map(key=>[key,item[key]])):item);
+const live = new Set(MANAGED_TASK_LIVE_STATUSES);
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const samePublicationScope=(left,right)=>['controllerInstanceID','configurationDigest','objectiveID','cancellationGeneration'].every(field=>left?.[field]===right?.[field]);
 export function validateNativeManagedResult(result, scope, taskID) {
@@ -81,7 +80,7 @@ export function createNativeManagedResultCollection() {
     stagePublication(scope, taskIDs, invocation, identity, output) {
       if(!record(identity)||!record(identity.attempt)||typeof identity.permitSha256!=='string')throw fault('native_task_publication_scope_invalid');
       const candidate={identity:structuredClone(identity),messageID:invocation.messageID,callID:invocation.callID,
-        inputSha256:hash(stable(invocation.input)),outputSha256:hash(JSON.stringify(output))};
+        inputSha256:hash(stableStringify(invocation.input)),outputSha256:hash(JSON.stringify(output))};
       for(const taskID of taskIDs){
         const value=collected.get(key(scope,taskID));if(!value)throw fault('native_task_wait_required');
         const prior=value.publications??[];
@@ -103,7 +102,7 @@ export function createNativeManagedResultCollection() {
         const part=message?.parts?.find(part=>part.type==='tool'&&part.tool==='devryan_task'&&part.callID===candidate.callID);
         if(index<0||message.info.role!=='assistant'||message.info.sessionID!==scope.rootSessionId
           ||part?.state?.status!=='completed'||part.state.metadata?.truncated===true
-          ||hash(stable(part.state.input))!==candidate.inputSha256||typeof part.state.output!=='string'
+          ||hash(stableStringify(part.state.input))!==candidate.inputSha256||typeof part.state.output!=='string'
           ||hash(part.state.output)!==candidate.outputSha256)throw fault('native_task_result_not_published');
         if(review&&currentIndex<=index)throw fault('native_task_later_review_step_required');
       }
@@ -147,8 +146,7 @@ export function createNativeManagedResultCollection() {
       if (current.resultEnvelope?.envelopeId !== value.envelopeID || current.task.status !== value.status) throw fault('native_task_result_changed');
       if (current.resultEnvelope.action !== null) throw fault('native_task_already_dispositioned');
       if (value.status === 'completed' && action !== 'continue') throw fault('native_task_completed_requires_continue');
-      if (current.task.manualRecoveryRequired === true || current.resultEnvelope.autoResume?.enabled === true
-        && ['planning','scheduled','attempting'].includes(current.resultEnvelope.autoResume.state)) throw fault('manual_model_recovery_required');
+      if (current.task.manualRecoveryRequired === true || isAutoResumeActive(current.resultEnvelope)) throw fault('manual_model_recovery_required');
       if ((value.detailRequired||current.resultHeader?.detail?.requiredBeforeDisposition===true) && !value.complete) throw fault('native_task_result_detail_required');
       if(value.metadata&&!value.metadata.complete)throw fault('native_task_result_metadata_required');
     },

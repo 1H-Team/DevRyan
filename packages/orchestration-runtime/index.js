@@ -2,6 +2,7 @@ export * from './abort-sources.js';
 export * from './agent-contracts.js';
 export * from './assistant-activity.js';
 export * from './auto-resume-policy.js';
+export * from './codec.js';
 export * from './contract.js';
 export * from './managed-result-projection.js';
 export * from './managed-result-sections.js';

@@ -3,11 +3,7 @@ import nodeFs from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-import {
-  assertManagedTaskResultEnvelopeMatchesTask,
-  validateManagedTaskRecord,
-  validateManagedTaskResultEnvelope,
-} from '@openchamber/orchestration-runtime';
+import { decodeLedgerSnapshot, encodeLedgerSnapshot } from '@openchamber/orchestration-runtime';
 import { writeFileAtomic } from '@openchamber/harness-runtime';
 import { createExecutionHostOwner } from '@openchamber/harness-runtime/lib/execution-host-owner.js';
 
@@ -59,66 +55,6 @@ const defaultIsProcessAlive = (pid) => {
   }
 };
 
-const validateSnapshot = (value) => {
-  if (!value || typeof value !== 'object' || Array.isArray(value) || value.version !== 1) {
-    throw new TypeError('managed orchestration ledger version is invalid');
-  }
-  if (!Array.isArray(value.tasks) || !Array.isArray(value.resultEnvelopes)) {
-    throw new TypeError('managed orchestration ledger collections are invalid');
-  }
-
-  const tasks = new Map();
-  const normalizedTasks = [];
-  const idempotencyKeys = new Set();
-  for (const candidate of value.tasks) {
-    const task = {
-      ...candidate,
-      dispatchGroupId: candidate?.dispatchGroupId ?? null,
-      dispatchCallId: candidate?.dispatchCallId ?? null,
-      dispatchWaveId: candidate?.dispatchWaveId ?? null,
-      readOnly: candidate?.readOnly ?? false,
-      recoveryLineageId: candidate?.recoveryLineageId ?? null,
-      childPromptedAt: candidate?.childPromptedAt ?? null,
-      firstAssistantPartAt: candidate?.firstAssistantPartAt ?? null,
-      waitingReason: candidate?.waitingReason ?? null,
-    };
-    validateManagedTaskRecord(task);
-    if (tasks.has(task.taskId)) {
-      throw new TypeError(`duplicate managed task ${task.taskId}`);
-    }
-    const key = `${task.rootSessionId}\u0000${task.idempotencyKey}`;
-    if (idempotencyKeys.has(key)) {
-      throw new TypeError(`duplicate managed idempotency key for root ${task.rootSessionId}`);
-    }
-    tasks.set(task.taskId, task);
-    normalizedTasks.push(task);
-    idempotencyKeys.add(key);
-  }
-
-  const envelopes = new Set();
-  const normalizedEnvelopes = [];
-  for (const candidate of value.resultEnvelopes) {
-    const envelope = {
-      ...candidate,
-      providerResetAt: candidate?.providerResetAt ?? null,
-      autoResume: candidate?.autoResume ?? null,
-    };
-    validateManagedTaskResultEnvelope(envelope);
-    if (envelopes.has(envelope.taskId)) {
-      throw new TypeError(`duplicate managed result envelope for task ${envelope.taskId}`);
-    }
-    const task = tasks.get(envelope.taskId);
-    if (!task) {
-      throw new TypeError(`managed result envelope has no task ${envelope.taskId}`);
-    }
-    assertManagedTaskResultEnvelopeMatchesTask(task, envelope);
-    envelopes.add(envelope.taskId);
-    normalizedEnvelopes.push(envelope);
-  }
-
-  return { ...value, tasks: normalizedTasks, resultEnvelopes: normalizedEnvelopes };
-};
-
 /** The Windows lifetime belongs to the retained native kernel keeper. Ledger
  * JSON, timestamps and numeric process probes never authorize stealing it. */
 function createWindowsManagedLedger({ filePath, ownerPath, maxReadBytes, now, logger, windowsLedgerOwner, windowsLauncher, createWindowsKeeper }) {
@@ -159,7 +95,7 @@ function createWindowsManagedLedger({ filePath, ownerPath, maxReadBytes, now, lo
     let value;
     try {
       if (!Buffer.isBuffer(previous.bytes) || previous.bytes.length > maxReadBytes) throw new RangeError(`managed orchestration ledger exceeds ${maxReadBytes} bytes`);
-      value = validateSnapshot(JSON.parse(previous.bytes.toString('utf8')));
+      value = decodeLedgerSnapshot(JSON.parse(previous.bytes.toString('utf8')));
     } catch (error) {
       await assertOwnership(); quarantinedPath = await files.quarantine(filePath, previous); await assertOwnership();
       recoveryWarning = `Managed orchestration ledger was quarantined: ${error instanceof Error ? error.message : String(error)}`;
@@ -168,7 +104,7 @@ function createWindowsManagedLedger({ filePath, ownerPath, maxReadBytes, now, lo
     await assertOwnership(); return value;
   };
   const saveNow = async (snapshot, observation) => {
-    await observeWrite(observation, 'owner_verify', assertOwnership); const bytes = Buffer.from(JSON.stringify(validateSnapshot(snapshot)) + '\n');
+    await observeWrite(observation, 'owner_verify', assertOwnership); const bytes = Buffer.from(encodeLedgerSnapshot(snapshot));
     if (bytes.length > files.maxBytes) throw Object.assign(new RangeError('managed orchestration ledger exceeds native byte bound'), { code: 'ledger_capacity_exceeded' });
     const previous = await observeWrite(observation, 'previous_read', () => read(filePath));
     await observeWrite(observation, 'backup', async () => {
@@ -511,7 +447,7 @@ export const createAtomicManagedOrchestrationLedger = (options = {}) => {
       }
       const parsed = JSON.parse(await fsApi.readFile(filePath, 'utf8'));
       await assertOwnership();
-      return validateSnapshot(parsed);
+      return decodeLedgerSnapshot(parsed);
     } catch (error) {
       await quarantine(error);
       return null;
@@ -541,8 +477,7 @@ export const createAtomicManagedOrchestrationLedger = (options = {}) => {
 
   const saveNow = async (snapshot, observation) => {
     await observeWrite(observation, 'owner_verify', assertOwnership);
-    const validated = validateSnapshot(snapshot);
-    const serialized = `${JSON.stringify(validated)}\n`;
+    const serialized = encodeLedgerSnapshot(snapshot);
     await observeWrite(observation, 'backup', () => backUpBeforeCompaction(Buffer.byteLength(serialized, 'utf8')));
     await writeFileAtomic(filePath, serialized, {
       fs: fsApi,

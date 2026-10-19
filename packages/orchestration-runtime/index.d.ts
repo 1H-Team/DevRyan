@@ -1154,3 +1154,80 @@ export function formatManagedAssignmentContext(
   task: Pick<ManagedTaskRecord, 'taskId' | 'rootSessionId' | 'agent' | 'label' | 'prompt'> & { readOnly?: boolean },
   options?: { maxPromptBytes?: number; maxBytes?: number },
 ): string | null;
+
+// Orchestration codec (codec.js): persisted ledger and host-to-UI wire shapes.
+export const MANAGED_TASK_ID_PREFIX: 'dvr_task_';
+export const MANAGED_WAVE_ID_PREFIX: 'dvr_wave_';
+export const MANAGED_TASK_LIVE_STATUSES: readonly Exclude<ManagedTaskStatus, ManagedTaskTerminalStatus>[];
+export const MANAGED_TASK_TERMINAL_STATUSES: readonly ManagedTaskTerminalStatus[];
+export const MANAGED_TASK_FAILURE_KINDS: readonly Exclude<ManagedTaskFailureKind, null>[];
+export const AUTO_RESUME_STATES: readonly ManagedTaskAutoResumeState[];
+export const AUTO_RESUME_RESET_SOURCES: readonly ManagedTaskAutoResumeResetSource[];
+export const AUTO_RESUME_REASONS: readonly ManagedTaskAutoResumeReason[];
+export type ManagedResultPayloadField =
+  | 'taskId' | 'rootSessionId' | 'parentTaskId' | 'childSessionId' | 'directory' | 'status' | 'partial'
+  | 'failureReason' | 'attempt' | 'priorTaskId' | 'executionKind' | 'recoverablePreview';
+export const MANAGED_RESULT_PAYLOAD_FIELDS: readonly ManagedResultPayloadField[];
+export const MANAGED_RESULT_COMPACTED_FIELDS: readonly ('failureReason' | 'recoverablePreview' | 'canonicalRefs')[];
+export function isManagedTaskId(value: unknown): value is string;
+export function isAutoResumeActiveState(state: unknown): state is 'planning' | 'scheduled' | 'attempting';
+export function findManagedResultPayloadMismatch(
+  task: Record<string, unknown>,
+  envelope: Record<string, unknown>,
+  options?: { requireOwnFields?: boolean },
+): ManagedResultPayloadField | 'canonicalRefs' | null;
+export function encodeBase64Url(text: string, options: { pad: boolean }): string;
+export function decodeBase64Url(value: string, options: { pad: boolean }): string;
+export function stableStringify(value: unknown): string;
+
+export function decodeManagedTaskRecord(value: unknown): ManagedTaskRecord;
+export function decodeResultEnvelope(value: unknown): ManagedTaskResultEnvelope;
+export type ManagedLedgerDecodeErrorCode =
+  | 'invalid_ledger_version'
+  | 'invalid_ledger_collections'
+  | 'invalid_result_envelopes'
+  | 'duplicate_task'
+  | 'duplicate_idempotency_key'
+  | 'duplicate_result_envelope'
+  | 'orphan_result_envelope';
+export interface ManagedLedgerDecodeErrorDetail {
+  taskId?: string;
+  envelopeId?: string;
+  rootSessionId?: string;
+}
+export interface ManagedLedgerSnapshot {
+  version: 1;
+  tasks: ManagedTaskRecord[];
+  resultEnvelopes: ManagedTaskResultEnvelope[];
+}
+export function decodeLedgerSnapshot(value: unknown, options?: {
+  requireResultEnvelopes?: boolean;
+  createError?: (code: ManagedLedgerDecodeErrorCode, detail: ManagedLedgerDecodeErrorDetail) => Error;
+}): ManagedLedgerSnapshot;
+export function encodeLedgerSnapshot(snapshot: unknown): string;
+
+export type ManagedWireDecodeMode = 'strict' | 'lenient';
+export interface ManagedWireDecodeOptions { mode?: ManagedWireDecodeMode }
+/** A task record as decoded from a task event or snapshot: absent optional fields read as null. */
+export type DecodedManagedTaskEventRecord = Omit<ManagedTaskEventRecord, 'dispatchWaveId' | 'transportRecovery' | 'manualRecoveryRequired'> & {
+  dispatchWaveId: string | null;
+  transportRecovery: ManagedTransportRecovery | null;
+};
+export type DecodedManagedTaskResultEnvelope = Omit<ManagedTaskResultEnvelope, 'acknowledgementIdentity' | 'promptObserved'>;
+export interface DecodedManagedOrchestrationSnapshot {
+  available: boolean;
+  bridgeReady: boolean;
+  recoveryWarning: string | null;
+  tasks: DecodedManagedTaskEventRecord[];
+  resultEnvelopes: DecodedManagedTaskResultEnvelope[];
+}
+export function decodeManagedTaskWaitingReason(value: unknown): ManagedTaskWaitingReason | null;
+export function decodeManagedTaskAutoResume(value: unknown): ManagedTaskAutoResume | null;
+export function decodeTaskEventRecord(value: unknown, options?: ManagedWireDecodeOptions): DecodedManagedTaskEventRecord | null;
+export function decodeResultEnvelopePayload(value: unknown, options?: ManagedWireDecodeOptions): DecodedManagedTaskResultEnvelope | null;
+export function decodedEnvelopeMatchesTask(task: DecodedManagedTaskEventRecord, envelope: DecodedManagedTaskResultEnvelope): boolean;
+export function decodeTaskEventPayload(properties: unknown, options?: ManagedWireDecodeOptions): {
+  task: DecodedManagedTaskEventRecord;
+  resultEnvelope: DecodedManagedTaskResultEnvelope | null;
+} | null;
+export function decodeSnapshotPayload(value: unknown, options?: ManagedWireDecodeOptions): DecodedManagedOrchestrationSnapshot;
