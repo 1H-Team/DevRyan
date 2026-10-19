@@ -61,6 +61,16 @@ describe('opt-in background runtime startup', () => {
       assert.equal(result.mode, currentMode ?? 'app_bound');
     }
   });
+  test('a bundle without a service definition starts app-bound with nothing to remove', async () => {
+    const forbidden = () => { throw Error('Nothing is registered'); };
+    const result = await prepareAutomaticRuntimeService({ currentMode: 'app_bound', platform: 'darwin', isPackaged: true,
+      registration: { status: async () => ({ ok: true, state: 'not_found' }), register: forbidden, unregister: forbidden },
+      waitForStopped: forbidden });
+    assert.deepEqual({ ...result }, { mode: 'app_bound', state: 'not_registered', code: null });
+    await assert.rejects(prepareAutomaticRuntimeService({ currentMode: 'app_bound', platform: 'darwin', isPackaged: true,
+      registration: { status: async () => ({ ok: false, state: 'not_found', code: 'smappservice_status_failed' }) } }),
+    { code: 'runtime_service_registration_unavailable' });
+  });
   test('live owner, failed unregister and uncertain registration all fail closed', async () => {
     for (const state of ['live', 'unregister', 'unknown']) {
       await assert.rejects(prepareAutomaticRuntimeService({ currentMode: 'app_bound', platform: 'darwin', isPackaged: true,

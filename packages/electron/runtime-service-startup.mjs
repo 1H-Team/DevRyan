@@ -25,7 +25,12 @@ export const prepareAutomaticRuntimeService = async ({
     return Object.freeze({ mode: currentMode || 'app_bound', state: 'skipped', code: null });
   }
   // Registration can survive a crash before enableBackgroundBots persists service mode.
+  // `not_found` means the bundle carries no service definition (QA packages strip
+  // it), so nothing can be registered and nothing stray needs removing.
   const current = await registration.status();
+  if (current?.ok === true && current.state === 'not_found') {
+    return Object.freeze({ mode: currentMode || 'app_bound', state: 'not_registered', code: null });
+  }
   if (current?.ok !== true || !['not_registered', 'enabled', 'requires_approval'].includes(current.state)) {
     throw Object.assign(new Error('Background runtime registration could not be established'), {
       code: 'runtime_service_registration_unavailable',
