@@ -261,7 +261,10 @@ export const createRuntimeServiceRegistration = ({
     register: async (options) => {
       if (!modern) return registerLegacy(options);
       const selected = await selectModernMode();
-      if (selected.mode === 'legacy') return registerLegacy(options);
+      // An older private LaunchAgent already owns the runtime after upgrade.
+      // Bootstrapping the new label beside it would start a second owner.
+      if (selected.mode === 'legacy') return selected.status.state === 'enabled'
+        ? selected.status : registerLegacy(options);
       if (selected.mode === 'legacy-smappservice') return selected.status;
       const registered = await registerModern();
       if (registered.state === 'not_found' && await bundledDefinitionExists()) {

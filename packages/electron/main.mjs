@@ -2421,7 +2421,7 @@ const createDesktopBrowserLease = async ({ leaseId, metadata = {}, previewCreden
   const owner = { ownerWindowId: ownerWindow.id, metadata: { ...metadata } };
   browserLeaseOwners.set(leaseId, owner);
 
-  let browserPartition = '';
+  let browserPartition = browserPartitionIdentity.shared;
   if (metadata?.authoritativeOwner === true && metadata?.previewOrigin) {
     try {
       browserPartition = createAgentPreviewPartition({
