@@ -733,31 +733,38 @@ conflicting ambient paths.
 
 ### One web host per process
 
-`application.js` is a single-host composition. Its exported `startWebUiServer`
-goes through `web-host-lifecycle.js`: a start while another is starting or
-running acquires nothing and fails with `web_host_already_running` (409). A new
-start is allowed after the previous start failed, or after its graceful shutdown
-completed (`onShutdownComplete`, never after a refused native settlement).
-Electron relies on both for Startup Retry and for the background-runtime handoff
-fallback. Restarting after a completed shutdown first clears that shutdown's
-`isShuttingDown` flag; before this a restarted host inherited it. Construction is
-timed as `web_host_construction`, inside Electron's `server_listen` phase.
+`application.js` has two tiers.
 
-These remain process singletons, evaluated once and reused by a restarted host:
-the bound environment and `selectedRuntimeBundle` (launcher), the module-level
-composition in `application.js`, including private persistence, the boot bundle
-verification and the loaded native bundle, the `globalThis` HMR state, and the
-signal handlers (`signalsAttached`). DevRyan does not support more than one web
-host per process; a selection change still requires a restart or relaunch.
+- **Process tier.** This tier is evaluated once at import:
+  - the bound environment and `selectedRuntimeBundle` (from the launcher);
+  - private persistence;
+  - the boot bundle verification;
+  - the loaded native bundle and its runtime-selection record;
+  - the `globalThis` HMR state.
 
-A failed start leaves what it acquired in place, as in v2.1.3, so an in-process
-Startup Retry reuses it and can become ready. A completed graceful shutdown is
-terminal for several of those module-level owners (the native runtime owner's
-`close()`, the session execution host's final drain, the session, orchestration
-and Cursor runtimes): a host started again in the same process constructs but
-cannot start native execution, so recovery after a completed shutdown needs a
-relaunch. Releasing a failed start's resources, or a real in-process restart,
-first requires making those owners per-construction.
+  A failure here fails the import, and Electron answers it with a relaunch (`startup-retry.mjs`).
+- **Host tier.** `constructWebHost()` builds everything with a lifecycle, once per construction:
+  - the harness journal;
+  - the session, Cursor, watcher and stream owners;
+  - the session execution host;
+  - the native runtime owner;
+  - the scheduler;
+  - the HTTP server;
+  - that host's graceful shutdown.
+
+  A failure here is a start failure, and Electron retries it in-process. The module exports (`gracefulShutdown`, `setupProxy`, `restartOpenCode`) and the process signal handlers act on the latest construction. Signal and error listeners are attached once per process.
+
+`startWebUiServer` goes through `web-host-lifecycle.js`:
+- A start while another is starting or running acquires nothing and fails with `web_host_already_running` (409).
+- A new start is allowed after the previous start failed, or after its graceful shutdown completed (`onShutdownComplete`). It constructs a fresh host. The native runtime owner's `close()` and the session execution host's final drain are terminal, so they only end the discarded host's owners.
+- A restart first clears the finished shutdown's `isShuttingDown` HMR flag.
+
+Construction is timed as `web_host_construction`, inside Electron's `server_listen` phase. DevRyan never runs two hosts at once in one process, and a selection change still requires a restart or relaunch.
+
+A failed start releases what it acquired before its error surfaces. The lifecycle runs that construction's graceful shutdown, which handles admission, then native settlement, then dependent infrastructure. It rethrows the original error with a non-enumerable `error.startupCleanup` of `{state: released|retained|failed, code}`.
+- If native settlement is refused, the partial host keeps its owners (`retained`).
+- The next start settles that host first, and constructs only once it is released.
+- If it is refused again, that start fails with `web_host_start_cleanup_incomplete` (its `cause` is the refusal), so two native owners never coexist.
 
 `packages/web/package.json` `exports` is the web package's public surface for
 other packages: the server entry (`.` and `./server/index.js`) and the modules the

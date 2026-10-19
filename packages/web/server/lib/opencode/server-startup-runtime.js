@@ -1,3 +1,7 @@
+// The error listeners act through the process-wide gracefulShutdown, so one set
+// per process serves every web host constructed in it; a restart adds none.
+const processesWithErrorHandlers = new WeakSet();
+
 export const createServerStartupRuntime = (dependencies) => {
   const {
     process,
@@ -145,6 +149,9 @@ export const createServerStartupRuntime = (dependencies) => {
       setSignalsAttached(true);
       syncToHmrState();
     }
+
+    if (processesWithErrorHandlers.has(process)) return;
+    processesWithErrorHandlers.add(process);
 
     process.on('unhandledRejection', (reason, promise) => {
       console.error('Unhandled Rejection at:', promise, 'reason:', reason);

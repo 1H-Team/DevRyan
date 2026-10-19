@@ -73,4 +73,20 @@ describe('server startup runtime', () => {
     expect(issueBootstrapToken).not.toHaveBeenCalled();
     expect(onTunnelReady).toHaveBeenCalledWith('https://app.example.com', null);
   });
+
+  it('attaches signal and error listeners once per process across host constructions', () => {
+    const on = vi.fn();
+    const processLike = { env: {}, on, send: vi.fn() };
+    let signalsAttached = false;
+    const construct = () => createServerStartupRuntime({
+      process: processLike,
+      gracefulShutdown: vi.fn(),
+      getSignalsAttached: () => signalsAttached,
+      setSignalsAttached: (value) => { signalsAttached = value; },
+      syncToHmrState: vi.fn(),
+    });
+    construct().attachProcessHandlers({ attachSignals: true });
+    construct().attachProcessHandlers({ attachSignals: true });
+    expect(on.mock.calls.map(([event]) => event)).toEqual(['SIGTERM', 'SIGINT', 'SIGQUIT', 'unhandledRejection', 'uncaughtException']);
+  });
 });

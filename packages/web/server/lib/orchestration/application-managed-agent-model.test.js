@@ -8,13 +8,13 @@ import { createWebManagedOrchestrationRuntime } from './runtime.js';
 // initialization, process, provider or installed-data access runs here.
 const source = readFileSync(new URL('../../application.js', import.meta.url), 'utf8');
 function composition(source, { multiUserRuntime = {}, listConfigAgents = vi.fn() } = {}) {
-  const marker = '  const resolveManagedAgentExecutionForOwner =';
+  const marker = '    const resolveManagedAgentExecutionForOwner =';
   const start = source.indexOf(marker);
-  const prefix = start < 0 ? '' : source.slice(start, source.indexOf('  managedOrchestrationRuntime =', start));
-  const directStart = source.indexOf('    resolveAgentExecution:');
-  const direct = source.slice(directStart, source.indexOf('    // Auto-resume hooks:', directStart));
-  const rpcStart = source.indexOf('      resolve_agent_execution:');
-  const rpc = source.slice(rpcStart, source.indexOf('    },\n    authorizePrivateRpc:', rpcStart));
+  const prefix = start < 0 ? '' : source.slice(start, source.indexOf('    managedOrchestrationRuntime =', start));
+  const directStart = source.indexOf('      resolveAgentExecution:');
+  const direct = source.slice(directStart, source.indexOf('      // Auto-resume hooks:', directStart));
+  const rpcStart = source.indexOf('        resolve_agent_execution:');
+  const rpc = source.slice(rpcStart, source.indexOf('      },\n      authorizePrivateRpc:', rpcStart));
   expect(directStart).toBeGreaterThan(0);
   expect(rpcStart).toBeGreaterThan(0);
   return runInNewContext(`${prefix}\nconst direct = {${direct}}; const rpc = {${rpc}};\n({ direct: direct.resolveAgentExecution, rpc: rpc.resolve_agent_execution })`, {
