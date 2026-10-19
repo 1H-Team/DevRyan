@@ -22,7 +22,7 @@ const LEGACY_USER_CONFIG_DIR_SEGMENTS = ['.config', 'openchamber'];
  */
 function getRuntimeFilesAPI(): FilesAPI | null {
   if (typeof window === 'undefined') return null;
-  const apis = (window as typeof window & { __OPENCHAMBER_RUNTIME_APIS__?: RuntimeAPIs }).__OPENCHAMBER_RUNTIME_APIS__;
+  const apis = (window as typeof window & { __DEVRYAN_RUNTIME_APIS__?: RuntimeAPIs }).__DEVRYAN_RUNTIME_APIS__;
   if (apis?.files) {
     return apis.files;
   }
@@ -207,7 +207,7 @@ type HomeDirectories = { home: string; configDirectory: string | null };
 
 const resolveHomeDirectories = async (): Promise<HomeDirectories | null> => {
   // Use server-reported home as the source of truth for user config paths.
-  // In some runtimes, window.__OPENCHAMBER_HOME__ can be workspace/project-root
+  // In some runtimes, window.__DEVRYAN_HOME__ can be workspace/project-root
   // scoped, which would incorrectly route writes into the project directory.
   try {
     const response = await fetch(`${getBaseUrl()}/fs/home`, {

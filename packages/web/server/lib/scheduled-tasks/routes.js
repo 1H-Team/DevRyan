@@ -1,4 +1,5 @@
 import { computeNextRunAt } from './runtime.js';
+import { resolveEventDialect } from '../event-stream/event-dialect.js';
 
 const asNonEmptyString = (value) => {
   if (typeof value !== 'string') {
@@ -252,7 +253,7 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
     }
   });
 
-  app.get('/api/openchamber/scheduled-tasks/status', async (req, res) => {
+  app.get('/api/devryan/scheduled-tasks/status', async (req, res) => {
     try {
       if (isAdministrator(req.principal) && typeof scheduledTasksRuntime.getStatus === 'function') {
         const status = typeof scheduledTasksRuntime.refreshStatus === 'function'
@@ -303,13 +304,14 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
     }
   });
 
-  app.get('/api/openchamber/events', (req, res) => {
+  app.get('/api/devryan/events', (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders?.();
 
+    res.devryanEventDialect = resolveEventDialect(req);
     const clients = getOpenChamberEventClients();
     const client = {
       response: res,

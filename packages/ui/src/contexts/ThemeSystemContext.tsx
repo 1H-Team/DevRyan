@@ -528,14 +528,14 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
     }
 
     const scopedWindow = window as unknown as {
-      __openchamberApplyThemeSync?: (payload: ThemeSyncPayload) => void;
+      __devryanApplyThemeSync?: (payload: ThemeSyncPayload) => void;
     };
 
-    scopedWindow.__openchamberApplyThemeSync = applyIncomingThemeSync;
+    scopedWindow.__devryanApplyThemeSync = applyIncomingThemeSync;
 
     return () => {
-      if (scopedWindow.__openchamberApplyThemeSync === applyIncomingThemeSync) {
-        delete scopedWindow.__openchamberApplyThemeSync;
+      if (scopedWindow.__devryanApplyThemeSync === applyIncomingThemeSync) {
+        delete scopedWindow.__devryanApplyThemeSync;
       }
     };
   }, [applyIncomingThemeSync]);
@@ -555,7 +555,7 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
         payload?: ThemeSyncPayload;
       };
 
-      if (data?.type !== 'openchamber:theme-sync' || !data.payload) {
+      if (data?.type !== 'devryan:theme-sync' || !data.payload) {
         return;
       }
 
@@ -623,8 +623,8 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
       });
     };
 
-    window.addEventListener('openchamber:settings-synced', handleSettingsSynced);
-    return () => window.removeEventListener('openchamber:settings-synced', handleSettingsSynced);
+    window.addEventListener('devryan:settings-synced', handleSettingsSynced);
+    return () => window.removeEventListener('devryan:settings-synced', handleSettingsSynced);
   }, []);
 
   const setTheme = useCallback(

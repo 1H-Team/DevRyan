@@ -93,7 +93,7 @@ async function checkForWebUpdates(runtime: ClientRuntime, currentVersion?: strin
     const params = mapRuntimeParams(runtime);
 
     if (currentVersion) params.set('currentVersion', currentVersion);
-    const response = await fetch(`/api/openchamber/update-check?${params.toString()}`, {
+    const response = await fetch(`/api/devryan/update-check?${params.toString()}`, {
       method: 'GET',
       headers: { Accept: 'application/json' },
     });

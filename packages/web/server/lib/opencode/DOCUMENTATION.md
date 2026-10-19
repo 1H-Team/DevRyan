@@ -680,9 +680,9 @@ discard them when the call ends: measured on 2026-09-30 at 10 to 20 seconds and
 
 ## Public exports (openchamber-routes.js)
 - `registerOpenChamberRoutes(app, dependencies)`: registers OpenChamber endpoints:
-  - `GET /api/openchamber/update-check`
-  - `POST /api/openchamber/update-install`
-  - `GET /api/openchamber/models-metadata`
+  - `GET /api/devryan/update-check`
+  - `POST /api/devryan/update-install`
+  - `GET /api/devryan/models-metadata`
   - `GET /api/zen/models`
 - Update checks await asynchronous package-manager probes so background polling
   cannot block prompt admission, recovery RPCs, or SSE on the shared host event
@@ -730,7 +730,7 @@ discard them when the call ends: measured on 2026-09-30 at 10 to 20 seconds and
 - `registerOpenCodeProxy(app, dependencies)`: registers OpenCode proxy routes and middleware.
 - Owns:
   - SSE forwarders: `GET /api/global/event`, `GET /api/event`
-  - Scoped session revert: `POST /api/openchamber/session/:sessionID/scoped-revert`
+  - Scoped session revert: `POST /api/devryan/session/:sessionID/scoped-revert`
   - Session message forwarder: `POST /api/session/:sessionId/message`
   - Generic `/api/*` forwarding with hop-by-hop header filtering
   - Windows `/session` merge fallback path behavior

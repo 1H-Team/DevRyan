@@ -87,7 +87,7 @@ rows. Identical invalid history therefore settles without an event/read loop.
 
 ## Summary and review contract
 
-`GET /api/openchamber/session/:id/changes?directory=...` returns:
+`GET /api/devryan/session/:id/changes?directory=...` returns:
 
 - `rootSessionID`, requested `directory`, canonical `worktreeDirectory`, `worktreeID` and `revision`.
 - `coverage` (`complete` or `partial`), machine-readable `reasons`, and typed

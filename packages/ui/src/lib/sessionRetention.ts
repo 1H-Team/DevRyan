@@ -16,7 +16,7 @@ async function post(route: string, body: object, signal?: AbortSignal) {
   const base = opencodeClient.getBaseUrl().replace(/\/$/, '');
   const timeout = AbortSignal.timeout(15_000);
   try {
-    const response = await fetch(`${base}/openchamber/session-retention/${route}`, {
+    const response = await fetch(`${base}/devryan/session-retention/${route}`, {
       method: 'POST', credentials: 'include', headers: {
         'content-type': 'application/json', 'x-devryan-selection-request': crypto.randomUUID(),
       },

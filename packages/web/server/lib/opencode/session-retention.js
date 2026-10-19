@@ -109,8 +109,8 @@ export function createSessionRetention(options) {
 export function registerSessionRetentionRoutes(app, { retention, gate }) {
   // Authentication/CSRF and principal middleware precede this registration.
   app.all('/api/session/retention-control', (_req, res) => res.sendStatus(404));
-  app.post('/api/openchamber/session-retention/run', express.json({ limit: '4kb' }), async (_req, res) => res.json(await retention.run()));
-  app.post('/api/openchamber/session-retention/selection', (req, _res, next) => {
+  app.post('/api/devryan/session-retention/run', express.json({ limit: '4kb' }), async (_req, res) => res.json(await retention.run()));
+  app.post('/api/devryan/session-retention/selection', (req, _res, next) => {
     markSelectionTiming(req, 'middlewareMs'); next();
   }, express.json({ limit: '4kb' }), (req, res) => {
     try {

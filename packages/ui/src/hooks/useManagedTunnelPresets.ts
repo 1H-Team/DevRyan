@@ -47,7 +47,7 @@ export const useManagedTunnelPresets = (enabled = true): ManagedTunnelPresetsSta
     setLoading(true);
     (async () => {
       try {
-        const response = await fetch('/api/openchamber/tunnel/status', { signal: controller.signal });
+        const response = await fetch('/api/devryan/tunnel/status', { signal: controller.signal });
         if (!response.ok) throw new Error(`Tunnel status failed (${response.status})`);
         const payload = await response.json() as TunnelStatusPayload;
         if (cancelled) return;

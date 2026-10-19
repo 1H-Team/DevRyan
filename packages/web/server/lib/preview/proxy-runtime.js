@@ -80,7 +80,9 @@ export const classifyPreviewRequestScope = (req, classifiedScope = 'local') => {
   return trustedLoopback ? 'local' : 'unknown-public';
 };
 
-const PREVIEW_BRIDGE_SCRIPT_ID = 'openchamber-preview-bridge';
+const PREVIEW_BRIDGE_SCRIPT_ID = 'devryan-preview-bridge';
+// A page injected before the rename carries the accepted alias id.
+const LEGACY_PREVIEW_BRIDGE_SCRIPT_ID = 'openchamber-preview-bridge';
 
 const parsePreviewResourcePath = (url) => {
   try {
@@ -259,14 +261,16 @@ export const classifyPreviewNavigation = ({ url, currentUrl }) => {
 };
 
 const PREVIEW_BRIDGE_SCRIPT = String.raw`(() => {
-  if (window.__openchamberPreviewBridgeInstalled) return;
-  window.__openchamberPreviewBridgeInstalled = true;
+  if (window.__devryanPreviewBridgeInstalled) return;
+  window.__devryanPreviewBridgeInstalled = true;
 
-  const SOURCE = 'openchamber-preview-bridge';
+  // A parent tab from before the rename sends and expects the openchamber-* names;
+  // the bridge answers in the name the parent last used.
+  let SOURCE = 'devryan-preview-bridge';
   const VERSION = 1;
   const MAX_TEXT = 500;
   const MAX_ARG = 1000;
-  const previewConfig = window.__openchamberPreviewConfig || {};
+  const previewConfig = window.__devryanPreviewConfig || {};
   const proxyBasePath = typeof previewConfig.proxyBasePath === 'string' ? previewConfig.proxyBasePath : '';
   const targetOrigin = typeof previewConfig.targetOrigin === 'string' ? previewConfig.targetOrigin : '';
   const embedExternalNavigation = previewConfig.embedExternalNavigation === true;
@@ -342,15 +346,15 @@ const PREVIEW_BRIDGE_SCRIPT = String.raw`(() => {
       window.location.reload();
     } catch {}
   };
-  window.__openchamberPreviewReload = reloadPreviewDocument;
+  window.__devryanPreviewReload = reloadPreviewDocument;
 
   const reportDisplayNavigation = () => {
     const url = toDisplayUrl(window.location.href);
     if (url) post({ type: 'navigate-preview', url, navigation: 'display', ts: Date.now() });
   };
 
-  if (!window.__openchamberPreviewHistoryPatched) {
-    window.__openchamberPreviewHistoryPatched = true;
+  if (!window.__devryanPreviewHistoryPatched) {
+    window.__devryanPreviewHistoryPatched = true;
     for (const method of ['pushState', 'replaceState']) {
       const original = window.history && window.history[method];
       if (typeof original !== 'function') continue;
@@ -406,8 +410,8 @@ const PREVIEW_BRIDGE_SCRIPT = String.raw`(() => {
   };
 
   const installColorSchemeMatchMediaPatch = () => {
-    if (window.__openchamberPreviewColorSchemePatched || typeof window.matchMedia !== 'function') return;
-    window.__openchamberPreviewColorSchemePatched = true;
+    if (window.__devryanPreviewColorSchemePatched || typeof window.matchMedia !== 'function') return;
+    window.__devryanPreviewColorSchemePatched = true;
     nativeMatchMedia = window.matchMedia.bind(window);
     window.matchMedia = function(query) {
       const nativeMql = nativeMatchMedia(query);
@@ -686,8 +690,8 @@ const PREVIEW_BRIDGE_SCRIPT = String.raw`(() => {
   };
 
   const installWebSocketProxyPatch = () => {
-    if (window.__openchamberWebSocketProxyPatched || typeof window.WebSocket !== 'function') return;
-    window.__openchamberWebSocketProxyPatched = true;
+    if (window.__devryanWebSocketProxyPatched || typeof window.WebSocket !== 'function') return;
+    window.__devryanWebSocketProxyPatched = true;
     const NativeWebSocket = window.WebSocket;
     const proxyBase = proxyBasePath.endsWith('/') ? proxyBasePath.slice(0, -1) : proxyBasePath;
     if (!proxyBase) return;
@@ -768,8 +772,8 @@ const PREVIEW_BRIDGE_SCRIPT = String.raw`(() => {
   };
 
   const installAppRequestProxyPatch = () => {
-    if (window.__openchamberAppRequestProxyPatched) return;
-    window.__openchamberAppRequestProxyPatched = true;
+    if (window.__devryanAppRequestProxyPatched) return;
+    window.__devryanAppRequestProxyPatched = true;
     const proxyBase = proxyBasePath.endsWith('/') ? proxyBasePath.slice(0, -1) : proxyBasePath;
     if (!proxyBase) return;
 
@@ -1021,9 +1025,9 @@ const PREVIEW_BRIDGE_SCRIPT = String.raw`(() => {
   const sendHover = (event) => {
     if (!inspectMode) return;
     pendingHover = event;
-    if (window.__openchamberPreviewHoverFrame) return;
-    window.__openchamberPreviewHoverFrame = window.requestAnimationFrame(() => {
-      window.__openchamberPreviewHoverFrame = 0;
+    if (window.__devryanPreviewHoverFrame) return;
+    window.__devryanPreviewHoverFrame = window.requestAnimationFrame(() => {
+      window.__devryanPreviewHoverFrame = 0;
       const currentEvent = pendingHover;
       pendingHover = null;
       if (!currentEvent || !inspectMode) return;
@@ -1105,7 +1109,8 @@ const PREVIEW_BRIDGE_SCRIPT = String.raw`(() => {
   window.addEventListener('message', (event) => {
     if (event.source !== window.parent) return;
     const data = event.data;
-    if (!data || data.source !== 'openchamber-preview-parent' || data.version !== VERSION) return;
+    if (!data || (data.source !== 'devryan-preview-parent' && data.source !== 'openchamber-preview-parent') || data.version !== VERSION) return;
+    SOURCE = data.source === 'openchamber-preview-parent' ? 'openchamber-preview-bridge' : 'devryan-preview-bridge';
     if (data.type === 'set-inspect-mode') {
       setInspectMode(data.enabled === true);
     }
@@ -1172,7 +1177,7 @@ const PREVIEW_BRIDGE_SCRIPT = String.raw`(() => {
 
 export const createPreviewLocationVirtualizerScript = (proxyBasePath) => {
   const serializedProxyBasePath = JSON.stringify(proxyBasePath).replace(/</g, '\\u003c');
-  return `try{const proxyBase=${serializedProxyBasePath}.replace(/\\/$/,'');const current=new URL(window.location.href);if(current.origin===window.location.origin&&(current.pathname===proxyBase||current.pathname.indexOf(proxyBase+'/')===0)){const targetPath=current.pathname.slice(proxyBase.length)||'/';current.searchParams.delete('ocPreview');current.searchParams.delete('ocBrowser');window.history.replaceState(window.history.state,'',targetPath+current.search+current.hash);window.__openchamberPreviewLocationVirtualized=true;}}catch{}`;
+  return `try{const proxyBase=${serializedProxyBasePath}.replace(/\\/$/,'');const current=new URL(window.location.href);if(current.origin===window.location.origin&&(current.pathname===proxyBase||current.pathname.indexOf(proxyBase+'/')===0)){const targetPath=current.pathname.slice(proxyBase.length)||'/';current.searchParams.delete('ocPreview');current.searchParams.delete('ocBrowser');window.history.replaceState(window.history.state,'',targetPath+current.search+current.hash);window.__devryanPreviewLocationVirtualized=true;}}catch{}`;
 };
 
 export const createPreviewBridgeScript = ({
@@ -1185,7 +1190,7 @@ export const createPreviewBridgeScript = ({
     targetOrigin,
     embedExternalNavigation,
   }).replace(/</g, '\\u003c');
-  return `window.__openchamberPreviewConfig=${config};${PREVIEW_BRIDGE_SCRIPT}`;
+  return `window.__devryanPreviewConfig=${config};${PREVIEW_BRIDGE_SCRIPT}`;
 };
 
 const parseCookieHeader = (cookieHeader) => {
@@ -1378,7 +1383,7 @@ export const createPreviewViewerNavigationHandoffHtml = ({ url, bridgeNonce = ''
   const normalized = new URL(url).toString();
   const navigationMode = navigation === 'target' ? 'target' : 'external';
   const payload = JSON.stringify({
-    source: 'openchamber-preview-bridge',
+    source: 'devryan-preview-bridge',
     version: 1,
     type: 'navigate-preview',
     url: normalized,
@@ -1777,7 +1782,7 @@ export const createPreviewProxyRuntime = ({
       embedExternalNavigation = false,
       virtualizeLocation = true,
     }) => {
-      if (typeof bodyText !== 'string' || bodyText.includes(PREVIEW_BRIDGE_SCRIPT_ID)) {
+      if (typeof bodyText !== 'string' || bodyText.includes(PREVIEW_BRIDGE_SCRIPT_ID) || bodyText.includes(LEGACY_PREVIEW_BRIDGE_SCRIPT_ID)) {
         return bodyText;
       }
 
@@ -1822,7 +1827,7 @@ export const createPreviewProxyRuntime = ({
         )
         .replace(
           /(?:window\.)?location\.reload\(\)/g,
-          () => 'window.__openchamberPreviewReload ? window.__openchamberPreviewReload() : window.location.reload()',
+          () => 'window.__devryanPreviewReload ? window.__devryanPreviewReload() : window.location.reload()',
         );
     };
 
@@ -1973,6 +1978,7 @@ export const createPreviewProxyRuntime = ({
           if (upstreamCookies) proxyReq.setHeader('cookie', upstreamCookies);
           else proxyReq.removeHeader('cookie');
           proxyReq.removeHeader('authorization');
+          proxyReq.removeHeader('x-devryan-ui-session');
           proxyReq.removeHeader('x-openchamber-ui-session');
           proxyReq.setHeader('accept-encoding', 'identity');
         },
@@ -1983,6 +1989,7 @@ export const createPreviewProxyRuntime = ({
           if (upstreamCookies) proxyReq.setHeader('cookie', upstreamCookies);
           else proxyReq.removeHeader('cookie');
           proxyReq.removeHeader('authorization');
+          proxyReq.removeHeader('x-devryan-ui-session');
           proxyReq.removeHeader('x-openchamber-ui-session');
         },
         proxyRes: (() => {

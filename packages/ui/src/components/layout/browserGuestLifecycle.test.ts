@@ -92,7 +92,7 @@ describe('session-scoped browser lease lifecycle', () => {
     expect(appEffects).toContain('if (claim.generation !== generation) continue');
     expect(appEffects).toContain('pending = { ...claim, retry: claim.retry + 1 }');
     expect(appEffects).toContain('committedClaimSignature = claim.signature');
-    expect(appEffects).toContain("window.addEventListener('openchamber:connection-status', handleConnectionStatus)");
+    expect(appEffects).toContain("window.addEventListener('devryan:connection-status', handleConnectionStatus)");
     expect(appEffects).toContain('if (retryTimer) clearTimeout(retryTimer)');
     expect(browserAgentStore).toContain("invokeDesktop<unknown>('desktop_browser_lease_claim_contexts'");
   });

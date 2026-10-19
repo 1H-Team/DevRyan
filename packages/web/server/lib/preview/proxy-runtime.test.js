@@ -512,7 +512,7 @@ describe('preview bridge lifecycle', () => {
       targetOrigin: 'http://127.0.0.1:3000',
     });
 
-    expect(script).toContain('window.__openchamberPreviewConfig=');
+    expect(script).toContain('window.__devryanPreviewConfig=');
     expect(script).toContain("navigation: 'display'");
     expect(script).toContain("for (const method of ['pushState', 'replaceState'])");
     expect(script).toContain("navigation: 'target'");
@@ -635,7 +635,7 @@ describe('preview bridge lifecycle', () => {
 
     expect(location.pathname).toBe('/');
     expect(location.search).toBe('');
-    expect(window.__openchamberPreviewLocationVirtualized).toBe(true);
+    expect(window.__devryanPreviewLocationVirtualized).toBe(true);
     expect(messages.some((message) => (
       message.type === 'ready' && message.url === `${targetOrigin}/`
     ))).toBe(true);
@@ -974,7 +974,7 @@ describe('attached proxy runtime', () => {
     ]);
     expect(res.headers.get('cache-control')).toBe('no-store, no-cache, must-revalidate, proxy-revalidate');
     expect(res.headers.has('etag')).toBe(false);
-    expect(body).toContain(`<script id="openchamber-preview-bridge" nonce="${nonce}">`);
+    expect(body).toContain(`<script id="devryan-preview-bridge" nonce="${nonce}">`);
   });
 
   it('injects the bridge without touching headers when the target sends no CSP', async () => {
@@ -999,7 +999,7 @@ describe('attached proxy runtime', () => {
     );
 
     expect(proxyRes.headers['content-security-policy']).toBeUndefined();
-    expect(body).toMatch(/<script id="openchamber-preview-bridge" nonce="[^"]+">/);
+    expect(body).toMatch(/<script id="devryan-preview-bridge" nonce="[^"]+">/);
   });
 
   it('streams binary and long-lived responses without buffering them', async () => {
@@ -1263,13 +1263,13 @@ describe('attached proxy runtime', () => {
 
     const loopbackBrowserHtml = await render(loopbackBrowser);
     const previewHtml = await render(preview);
-    expect(loopbackBrowserHtml).toContain('id="openchamber-preview-bridge-location"');
-    expect(loopbackBrowserHtml).not.toContain('id="openchamber-preview-bridge-location" type="module"');
+    expect(loopbackBrowserHtml).toContain('id="devryan-preview-bridge-location"');
+    expect(loopbackBrowserHtml).not.toContain('id="devryan-preview-bridge-location" type="module"');
     expect(loopbackBrowserHtml).toContain("window.history.replaceState(window.history.state,'',targetPath+current.search+current.hash)");
-    expect(loopbackBrowserHtml.indexOf('id="openchamber-preview-bridge-location"'))
-      .toBeLessThan(loopbackBrowserHtml.indexOf('window.__openchamberPreviewConfig='));
-    expect(previewHtml).toContain('id="openchamber-preview-bridge-location"');
-    expect(previewHtml).not.toContain('id="openchamber-preview-bridge-location" type="module"');
+    expect(loopbackBrowserHtml.indexOf('id="devryan-preview-bridge-location"'))
+      .toBeLessThan(loopbackBrowserHtml.indexOf('window.__devryanPreviewConfig='));
+    expect(previewHtml).toContain('id="devryan-preview-bridge-location"');
+    expect(previewHtml).not.toContain('id="devryan-preview-bridge-location" type="module"');
   });
 
   it('enforces the same session binding for HMR WebSocket upgrades', async () => {
@@ -1362,7 +1362,7 @@ describe('attached proxy runtime', () => {
       removeHeader(name) { removed.push(name); },
       setHeader() {},
     }, { headers: {} });
-    expect(removed).toEqual(['cookie', 'authorization', 'x-openchamber-ui-session']);
+    expect(removed).toEqual(['cookie', 'authorization', 'x-devryan-ui-session', 'x-openchamber-ui-session']);
   });
 
   it('rewrites upstream Origin and Referer without leaking the proxy target path', async () => {

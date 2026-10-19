@@ -17,7 +17,7 @@ export const registerOpenChamberRoutes = (app, dependencies) => {
   let cachedModelsMetadata = null;
   let cachedModelsMetadataTimestamp = 0;
 
-  app.get('/api/openchamber/update-check', async (req, res) => {
+  app.get('/api/devryan/update-check', async (req, res) => {
     try {
       const { checkForUpdates } = await import('../package-manager.js');
       const parseString = (value) => (typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined);
@@ -55,7 +55,7 @@ export const registerOpenChamberRoutes = (app, dependencies) => {
     }
   });
 
-  app.post('/api/openchamber/update-install', async (_req, res) => {
+  app.post('/api/devryan/update-install', async (_req, res) => {
     try {
       const { spawn: spawnChild } = await import('child_process');
       const {
@@ -247,7 +247,7 @@ export const registerOpenChamberRoutes = (app, dependencies) => {
     }
   });
 
-  app.get('/api/openchamber/models-metadata', async (_req, res) => {
+  app.get('/api/devryan/models-metadata', async (_req, res) => {
     const now = Date.now();
 
     if (cachedModelsMetadata && now - cachedModelsMetadataTimestamp < modelsMetadataCacheTtl) {

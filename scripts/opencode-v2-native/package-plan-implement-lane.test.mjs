@@ -98,12 +98,12 @@ test('changes network proof retains only bounded exact owned routes and finite t
   const proof = createApplicationPlanChangesEvidence({ origin: 'http://127.0.0.1:1234', sessionID: 'ses_owned', directory: '/owned/project', now: () => now });
   const request = (requestId, pathname, extra = {}) => proof.request({ requestId, request: {
     url: `http://127.0.0.1:1234${pathname}`, method: 'GET', postData: 'private body', headers: { authorization: 'private credential' }, ...extra } });
-  request('1.1', '/api/openchamber/session/ses_foreign/changes?directory=private');
+  request('1.1', '/api/devryan/session/ses_foreign/changes?directory=private');
   request('1.2', '/api/config/settings');
-  request('1.3', '/api/openchamber/session/ses_owned/changes?directory=%2Fowned%2Fproject&private=private-query');
+  request('1.3', '/api/devryan/session/ses_owned/changes?directory=%2Fowned%2Fproject&private=private-query');
   now = 125; proof.response({ requestId: '1.3', response: { status: 503, headers: { private: 'private-response' }, url: 'private-url' } });
   proof.finished({ requestId: '1.3' });
-  request('1.4', '/api/openchamber/session/ses_owned/changes?directory=%2Fforeign');
+  request('1.4', '/api/devryan/session/ses_owned/changes?directory=%2Fforeign');
   now = 130; proof.failed({ requestId: '1.4', errorText: 'private network detail' });
   const evidence = proof.snapshot();
   assert.deepEqual(evidence.records.map(row => [row.phase, row.pathKind, row.directoryMatches]), [
@@ -111,7 +111,7 @@ test('changes network proof retains only bounded exact owned routes and finite t
   ]);
   assert.equal(evidence.records[1].status, 503); assert.equal(evidence.records[1].elapsedMs, 25); assert.equal(evidence.pending, 0);
   assert.doesNotMatch(JSON.stringify(evidence), /private|credential|authorization|\/owned|\/foreign|headers|postData|errorText/);
-  for (let i = 0; i < 300; i++) request(`bound.${i}`, '/api/openchamber/session/ses_owned/changes');
+  for (let i = 0; i < 300; i++) request(`bound.${i}`, '/api/devryan/session/ses_owned/changes');
   assert.ok(proof.snapshot().pending <= 128); assert.ok(proof.snapshot().records.length <= 256); assert.ok(proof.snapshot().dropped > 0);
 });
 

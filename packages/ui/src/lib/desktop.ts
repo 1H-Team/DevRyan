@@ -228,7 +228,7 @@ type ElectronRuntimeGlobal = {
 
 const getElectronRuntime = (): ElectronRuntimeGlobal | null => {
   if (typeof window === 'undefined') return null;
-  return (window as unknown as { __OPENCHAMBER_ELECTRON__?: ElectronRuntimeGlobal }).__OPENCHAMBER_ELECTRON__ ?? null;
+  return (window as unknown as { __DEVRYAN_ELECTRON__?: ElectronRuntimeGlobal }).__DEVRYAN_ELECTRON__ ?? null;
 };
 
 export const isTauriShell = (): boolean => {
@@ -391,7 +391,7 @@ export const isDesktopLocalOriginActive = (): boolean => {
   if (typeof window === 'undefined') return false;
   if (!isDesktopShell()) return false;
 
-  const local = typeof window.__OPENCHAMBER_LOCAL_ORIGIN__ === 'string' ? window.__OPENCHAMBER_LOCAL_ORIGIN__ : '';
+  const local = typeof window.__DEVRYAN_LOCAL_ORIGIN__ === 'string' ? window.__DEVRYAN_LOCAL_ORIGIN__ : '';
   const localUrl = parseUrl(local);
   const currentUrl = parseUrl(window.location.origin);
 
@@ -465,7 +465,7 @@ export const isStandaloneWebRuntime = (): boolean => {
 
 export const isWebRuntime = (): boolean => {
   if (typeof window === "undefined") return false;
-  const apis = (window as { __OPENCHAMBER_RUNTIME_APIS__?: { runtime?: { platform?: string } } }).__OPENCHAMBER_RUNTIME_APIS__;
+  const apis = (window as { __DEVRYAN_RUNTIME_APIS__?: { runtime?: { platform?: string } } }).__DEVRYAN_RUNTIME_APIS__;
   const platform = apis?.runtime?.platform;
   if (platform === 'web') {
     return true;
@@ -479,7 +479,7 @@ export const isWebRuntime = (): boolean => {
 
 export const getDesktopHomeDirectory = async (): Promise<string | null> => {
   if (typeof window !== 'undefined') {
-    const embedded = window.__OPENCHAMBER_HOME__;
+    const embedded = window.__DEVRYAN_HOME__;
     if (embedded && embedded.length > 0) {
       return embedded;
     }
@@ -614,7 +614,7 @@ export const downloadDesktopUpdate = async (
 
   try {
     if (typeof onProgress === 'function' && tauri?.event?.listen) {
-      unlisten = await tauri.event.listen('openchamber:update-progress', (evt) => {
+      unlisten = await tauri.event.listen('devryan:update-progress', (evt) => {
         const payload = evt?.payload;
         if (!payload || typeof payload !== 'object') return;
         const data = payload as { event?: unknown; data?: unknown };
@@ -656,7 +656,7 @@ export const downloadDesktopUpdate = async (
   } catch (error) {
     console.warn('Failed to download update (tauri)', error);
     const message = error instanceof Error
-      ? error.message.replace(/^Error invoking remote method ['"]openchamber:invoke['"]:\s*(?:Error:\s*)?/i, '').trim()
+      ? error.message.replace(/^Error invoking remote method ['"]devryan:invoke['"]:\s*(?:Error:\s*)?/i, '').trim()
       : '';
     throw new Error(message || 'Failed to download update');
   } finally {
@@ -692,7 +692,7 @@ export const restartDesktopApp = async (): Promise<boolean> => {
     return true;
   } catch (error) {
     console.warn('Failed to restart desktop app (tauri)', error);
-    throw new Error(error instanceof Error ? error.message.replace(/^Error invoking remote method ['"]openchamber:invoke['"]:\s*(?:Error:\s*)?/i, '').trim() : 'Failed to restart desktop app');
+    throw new Error(error instanceof Error ? error.message.replace(/^Error invoking remote method ['"]devryan:invoke['"]:\s*(?:Error:\s*)?/i, '').trim() : 'Failed to restart desktop app');
   }
 };
 

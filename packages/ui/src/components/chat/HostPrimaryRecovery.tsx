@@ -111,13 +111,13 @@ const HostPrimaryRecoverySession = ({ sessionId, showAvailability = false }: Rec
       const current = usePrimaryRecoveryStore.getState().snapshots[sessionId];
       if (current?.recoveredInputPartial && (current.recoveredInput || actionPending.current)) scheduleRefresh();
     };
-    window.addEventListener('openchamber:primary-recovery', onProjection);
+    window.addEventListener('devryan:primary-recovery', onProjection);
     window.addEventListener('online', refresh);
-    window.addEventListener('openchamber:primary-recovery-reconnect', refresh);
+    window.addEventListener('devryan:primary-recovery-reconnect', refresh);
     return () => { active = false; clearInterval(interval); if (refreshTimer !== null) clearTimeout(refreshTimer);
       refreshStatus.current = () => {}; window.removeEventListener('online', refresh);
-      window.removeEventListener('openchamber:primary-recovery-reconnect', refresh);
-      window.removeEventListener('openchamber:primary-recovery', onProjection); };
+      window.removeEventListener('devryan:primary-recovery-reconnect', refresh);
+      window.removeEventListener('devryan:primary-recovery', onProjection); };
   }, [sessionId]);
   const record = snapshot?.record;
   const repeatedInput = record?.reason === 'managed_repeated_preexecution_rejection';

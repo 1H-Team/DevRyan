@@ -223,10 +223,10 @@ export const registerScopedSessionRevertRoute = (app, deps) => {
   };
   const runnerOptions = () => ({ openCodeClient: deps.openCodeClient });
 
-  // Keep JSON parsing route-local because /api/openchamber/* is intentionally
+  // Keep JSON parsing route-local because /api/devryan/* is intentionally
   // registered before the generic /api proxy and is not covered by common API
   // middleware in all runtimes/test harnesses.
-  app.post('/api/openchamber/session/:sessionID/scoped-revert', parseScopedRevertJson, async (req, res) => {
+  app.post('/api/devryan/session/:sessionID/scoped-revert', parseScopedRevertJson, async (req, res) => {
     const requestAbort = bindScopedRevertRequestAbort(req, res);
     const requestID = crypto.randomUUID();
 
@@ -270,7 +270,7 @@ export const registerScopedSessionRevertRoute = (app, deps) => {
     }
   });
 
-  app.post('/api/openchamber/session/:sessionID/scoped-unrevert', parseScopedRevertJson, async (req, res) => {
+  app.post('/api/devryan/session/:sessionID/scoped-unrevert', parseScopedRevertJson, async (req, res) => {
     const requestAbort = bindScopedRevertRequestAbort(req, res);
     const requestID = crypto.randomUUID();
 
@@ -303,7 +303,7 @@ export const registerScopedSessionRevertRoute = (app, deps) => {
     }
   });
 
-  app.get('/api/openchamber/session/:sessionID/changes', async (req, res) => {
+  app.get('/api/devryan/session/:sessionID/changes', async (req, res) => {
     const requestAbort = bindScopedRevertRequestAbort(req, res);
 
     try {

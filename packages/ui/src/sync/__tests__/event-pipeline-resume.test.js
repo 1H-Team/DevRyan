@@ -10,7 +10,7 @@ afterEach(() => {
 });
 
 describe('createEventPipeline — system resume reconnect', () => {
-  it('reconnects immediately on openchamber:system-resume event', async () => {
+  it('reconnects immediately on devryan:system-resume event', async () => {
     const winListeners = {};
     const dispatchedWindowEvents = [];
     globalThis.document = {
@@ -98,7 +98,7 @@ describe('createEventPipeline — system resume reconnect', () => {
       // Wait for first SSE attempt to start and deliver the event, then
       // simulate OS resume by invoking the registered handler directly.
       setTimeout(() => {
-        const handler = winListeners['openchamber:system-resume'];
+        const handler = winListeners['devryan:system-resume'];
         if (handler) handler();
       }, 80);
     });
@@ -108,7 +108,7 @@ describe('createEventPipeline — system resume reconnect', () => {
 
     // Should have made two SDK calls: initial connect + reconnect after resume.
     expect(eventCalls.length).toBe(2);
-    expect(dispatchedWindowEvents).toEqual(['openchamber:primary-recovery-reconnect', 'openchamber:primary-recovery-reconnect']);
+    expect(dispatchedWindowEvents).toEqual(['devryan:primary-recovery-reconnect', 'devryan:primary-recovery-reconnect']);
     // Disconnect reason should include system_resume.
     expect(disconnectReasons.some((r) => r.includes('system_resume'))).toBe(true);
   });

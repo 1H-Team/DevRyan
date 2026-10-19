@@ -44,7 +44,7 @@ import { getOrderedThinkingVariants, resolveProviderModelVariant } from "@/lib/p
 import { isProviderModelAvailable, resolveAvailableProviderModel, type ProviderAccountModelFields } from "@/lib/providers/modelAvailability";
 
 const MODELS_DEV_API_URL = "https://models.dev/api.json";
-const MODELS_DEV_PROXY_URL = "/api/openchamber/models-metadata";
+const MODELS_DEV_PROXY_URL = "/api/devryan/models-metadata";
 
 const GIT_UTILITY_PROVIDER_ID = "zen";
 const GIT_UTILITY_PREFERRED_MODEL_ID = "big-pickle";
@@ -53,8 +53,8 @@ export type ConfigLoadStatus = "idle" | "loading" | "ready" | "error";
 
 const isElectronMacHost = (): boolean => {
     if (typeof window === 'undefined') return false;
-    const electron = (window as unknown as { __OPENCHAMBER_ELECTRON__?: { runtime?: string } }).__OPENCHAMBER_ELECTRON__;
-    const macosMajor = (window as unknown as { __OPENCHAMBER_MACOS_MAJOR__?: unknown }).__OPENCHAMBER_MACOS_MAJOR__;
+    const electron = (window as unknown as { __DEVRYAN_ELECTRON__?: { runtime?: string } }).__DEVRYAN_ELECTRON__;
+    const macosMajor = (window as unknown as { __DEVRYAN_MACOS_MAJOR__?: unknown }).__DEVRYAN_MACOS_MAJOR__;
     if (electron?.runtime === 'electron' && typeof macosMajor === 'number' && macosMajor > 0) return true;
     return electron?.runtime === 'electron' && /mac/i.test(window.navigator?.platform ?? '');
 };

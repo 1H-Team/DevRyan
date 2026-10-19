@@ -118,6 +118,7 @@ import { createSessionRuntime } from './lib/opencode/session-runtime.js';
 import { createOpenCodeWatcherRuntime } from './lib/opencode/watcher.js';
 import { createTurnTimingRuntime, registerTurnTimingRoutes } from './lib/opencode/turn-timing.js';
 import { createNativeProviderTiming } from './lib/opencode/runtime-host/native-provider-timing.js';
+import { legacyApiPathRewrite } from './lib/legacy-api-path.js';
 import { createAgentRuntimeWarmup, registerAgentRuntimeWarmupRoute } from './lib/opencode/agent-runtime-warmup.js';
 import { createProjectPrewarmRuntime } from './lib/opencode/project-prewarm-runtime.js';
 import { createXaiToolCatalogRuntime } from './lib/opencode/xai-tool-catalog-runtime.js';
@@ -247,7 +248,7 @@ const hmrStateRuntime = createHmrStateRuntime({
   globalThisLike: globalThis,
   os,
   processLike: process,
-  stateKey: '__openchamberHmrState',
+  stateKey: '__devryanHmrState',
 });
 const hmrState = hmrStateRuntime.getOrCreateHmrState();
 hmrStateRuntime.ensureUserProvidedOpenCodePassword(hmrState);
@@ -2182,6 +2183,8 @@ async function constructWebHost(options = {}) {
     void validateZenModelAtStartup();
 
     const app = express();
+    // First: the /api/devryan alias becomes /api/devryan before any guard.
+    app.use(legacyApiPathRewrite);
     app.use(bundleAdmission.middleware);
     const serverStartedAt = new Date().toISOString();
     const runtimeInstanceId = crypto.randomUUID();
@@ -2476,7 +2479,7 @@ async function constructWebHost(options = {}) {
     // Must precede managed session routes, which intercept the generic proxy.
     app.get('/api/diagnostics/execution-runtime', (_req, res) => res.json({ state: executionReadiness.state, diagnostic: executionReadiness.diagnostic }));
     app.use(executionReadinessMiddleware(executionReadiness));
-    app.use('/api/openchamber/interviews', async (req,res,next) => {
+    app.use('/api/devryan/interviews', async (req,res,next) => {
       if(!nativeRuntime)return next();
       const relative=req.url;req.url=req.originalUrl;
       try{if(!await nativeRuntime.handleInterviewRequest(req,res))next();}
@@ -2513,7 +2516,7 @@ async function constructWebHost(options = {}) {
       },
     });
     browserObservationRuntime.registerRoutes(app);
-    app.use('/api/openchamber/session/:sessionID/changes', express.json({ limit: '16kb' }), async (req, res, next) => {
+    app.use('/api/devryan/session/:sessionID/changes', express.json({ limit: '16kb' }), async (req, res, next) => {
       const controller = new AbortController();
       const disconnected = () => { if (!res.writableEnded) controller.abort(); };
       res.on('close', disconnected);

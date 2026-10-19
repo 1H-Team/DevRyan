@@ -50,13 +50,13 @@ export type {
 
 declare global {
   interface Window {
-    __OPENCHAMBER_RUNTIME_APIS__?: RuntimeAPIs;
+    __DEVRYAN_RUNTIME_APIS__?: RuntimeAPIs;
   }
 }
 
 const getRuntimeGit = () => {
-  if (typeof window !== 'undefined' && window.__OPENCHAMBER_RUNTIME_APIS__?.git) {
-    return window.__OPENCHAMBER_RUNTIME_APIS__.git;
+  if (typeof window !== 'undefined' && window.__DEVRYAN_RUNTIME_APIS__?.git) {
+    return window.__DEVRYAN_RUNTIME_APIS__.git;
   }
   return null;
 };

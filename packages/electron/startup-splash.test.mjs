@@ -53,8 +53,8 @@ describe('Electron startup splash', () => {
       navigateWindow: async (_window, url) => {
         const html = decodeURIComponent(url.split(',').slice(1).join(','));
         expect(html).toContain('Runtime preparation failed (runtime_bundle_binding_invalid)');
-        expect(html).toContain('openchamber://retry-startup');
-        expect(html).toContain('openchamber://copy-startup-diagnostics');
+        expect(html).toContain('devryan://retry-startup');
+        expect(html).toContain('devryan://copy-startup-diagnostics');
         expect(html).not.toContain('Settings binding changed');
         calls.push('navigate');
       },
@@ -152,7 +152,7 @@ describe('Electron startup splash', () => {
     expect(html).toContain('stroke="currentColor"');
     expect(html).toContain('Startup needs attention');
     expect(html).toContain('role="alert"');
-    expect(html).toContain('openchamber://retry-startup');
+    expect(html).toContain('devryan://retry-startup');
     expect(html).toContain('fetch failed (ENOTFOUND) &lt;script&gt;unsafe()&lt;/script&gt;');
     expect(html).not.toContain('<script>unsafe()</script>');
   });
@@ -164,10 +164,10 @@ describe('Electron startup splash', () => {
     );
 
     expect(html).toContain('Private Bot runtime needs attention');
-    expect(html).toContain('openchamber://retry-bot-runtime');
-    expect(html).toContain('openchamber://continue-without-bots');
+    expect(html).toContain('devryan://retry-bot-runtime');
+    expect(html).toContain('devryan://continue-without-bots');
     expect(html).toContain('Docker is unavailable &lt;private&gt;');
-    expect(html).not.toContain('openchamber://retry-startup');
+    expect(html).not.toContain('devryan://retry-startup');
   });
 
   it('activates the local UI before background Bot preparation and retries without restarting the server', () => {
@@ -264,13 +264,13 @@ describe('Electron startup splash', () => {
 describe('native startup reboot recovery', () => {
   it('offers restart preparation only for the guarded recovery screen and does not offer an ineffective app retry afterward', () => {
     const waiting = buildStartupErrorHtml({}, { message: 'bundle_execution_unsettled', rebootRecovery: true });
-    expect(waiting).toContain('openchamber://prepare-reboot-recovery');
+    expect(waiting).toContain('devryan://prepare-reboot-recovery');
     expect(waiting).toContain('Your sessions and retained work will be preserved.');
-    expect(waiting).toContain('openchamber://retry-startup');
+    expect(waiting).toContain('devryan://retry-startup');
     const fenced = buildStartupErrorHtml({}, { message: 'bundle_reboot_required', rebootRequired: true });
     expect(fenced).toContain('Restart your computer to continue');
-    expect(fenced).not.toContain('openchamber://prepare-reboot-recovery');
-    expect(fenced).not.toContain('openchamber://retry-startup');
+    expect(fenced).not.toContain('devryan://prepare-reboot-recovery');
+    expect(fenced).not.toContain('devryan://retry-startup');
     expect(fenced).toContain('Copy Diagnostics');
   });
 
@@ -280,7 +280,7 @@ describe('native startup reboot recovery', () => {
     expect(source).toContain("!rebootRecoveryPreparable(startupErrorDetails(startupRecoveryFailure).code)");
     expect(source).toContain("const rebootRecoveryPreparable = (code) => code === 'bundle_execution_unsettled' || code === 'bundle_reboot_recovery_changed';");
     expect(source).toContain('controlRoot: binding.controlRoot, expectedRevision: binding.selection.revision');
-    expect(source).not.toContain("shell.openExternal('openchamber://prepare-reboot-recovery')");
+    expect(source).not.toContain("shell.openExternal('devryan://prepare-reboot-recovery')");
   });
 });
 

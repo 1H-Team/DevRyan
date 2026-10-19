@@ -50,7 +50,7 @@ it('rejects expired proofs and fails closed if either half of durable authorizat
 
 it('keeps CLI tunnel operations usable with filesystem proof without enrolling an owner implicitly', async () => {
   const { root, connection, app } = await fixture();
-  app.post('/api/openchamber/tunnel/start', (req, res) => {
+  app.post('/api/devryan/tunnel/start', (req, res) => {
     if (!connection.authenticateLocalOwner(req)) return res.status(403).json({ code: 'local_owner_required' });
     if (req.headers['x-devryan-csrf'] !== '1') return res.sendStatus(403);
     return res.json({ ok: true });
@@ -59,7 +59,7 @@ it('keeps CLI tunnel operations usable with filesystem proof without enrolling a
   await new Promise((resolve) => server.once('listening', resolve));
   try {
     const fetchTunnel = createOwnerAuthenticatedTunnelFetch({ getDataDirectory: () => root });
-    const url = `http://127.0.0.1:${server.address().port}/api/openchamber/tunnel/start`;
+    const url = `http://127.0.0.1:${server.address().port}/api/devryan/tunnel/start`;
     await expect(fetchTunnel(url, { method: 'POST' })).rejects.toMatchObject({ code: 'local_owner_required' });
     expect(connection.ownerPrincipal()).toBeNull();
     await connection.bootstrapLocalOwner();

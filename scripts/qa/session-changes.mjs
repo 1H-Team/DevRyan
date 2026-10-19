@@ -113,7 +113,7 @@ export async function runSessionChangesQa({ cdp, directory, runtime, prepared, c
   const ui = createQaUiDriver(cdp);
   const card = '[data-session-changes-card-root]';
   const cardText = () => evaluate(cdp, `document.querySelector('${card}')?.textContent ?? ''`);
-  const summary = id => evaluate(cdp, `fetch('/api/openchamber/session/${id}/changes?directory='+encodeURIComponent(${JSON.stringify(directory)})).then(async r=>{if(!r.ok)throw Error('summary '+r.status);return r.json()})`);
+  const summary = id => evaluate(cdp, `fetch('/api/devryan/session/${id}/changes?directory='+encodeURIComponent(${JSON.stringify(directory)})).then(async r=>{if(!r.ok)throw Error('summary '+r.status);return r.json()})`);
   const select = async id => {
     await cdp.send('Page.navigate', { url: `${await evaluate(cdp, 'location.origin')}/?session=${id}` });
     await ui.waitExpression('selected session changes card', `Boolean(document.querySelector('${card}'))`);
@@ -160,7 +160,7 @@ export async function runSessionChangesQa({ cdp, directory, runtime, prepared, c
     await ui.waitExpression('native reconciliation settled', `document.querySelector('${card}')?.textContent.includes('28 files') && !document.querySelector('${card}')?.textContent.includes('Loading session changes')`);
     const settled = await summary(prepared.native);
     assert.equal(settled.coverage, 'complete'); assert.equal(settled.reconciliationState, 'settled'); assert.equal(settled.restoreAvailable, false);
-    const diff = await evaluate(cdp, `fetch('/api/openchamber/session/${prepared.native}/changes/diff?directory='+encodeURIComponent(${JSON.stringify(directory)})+'&revision=${settled.revision}&file=native-28.txt&segment=0').then(r=>r.json())`);
+    const diff = await evaluate(cdp, `fetch('/api/devryan/session/${prepared.native}/changes/diff?directory='+encodeURIComponent(${JSON.stringify(directory)})+'&revision=${settled.revision}&file=native-28.txt&segment=0').then(r=>r.json())`);
     assert.ok(diff.patch.includes('long-native-edit-'.repeat(400)));
     await screenshot('changes-native-settled');
     result.checkpoints.push({ name: 'native', fileCount: settled.fileCount, coverage: settled.coverage, previewRows: 24 });
@@ -237,7 +237,7 @@ export async function runSessionChangesQa({ cdp, directory, runtime, prepared, c
     await select(prepared.restorable);
     const value = await summary(prepared.restorable); assert.equal(value.restoreAvailable, true);
     await writeFile(path.join(directory, 'restore.txt'), 'external conflict\n');
-    const conflict = await evaluate(cdp, `fetch('/api/openchamber/session/${prepared.restorable}/changes/undo?directory='+encodeURIComponent(${JSON.stringify(directory)}),{method:'POST',headers:{'Content-Type':'application/json','X-DevRyan-CSRF':'1'},body:JSON.stringify({revision:${JSON.stringify(value.revision)}})}).then(r=>r.status)`);
+    const conflict = await evaluate(cdp, `fetch('/api/devryan/session/${prepared.restorable}/changes/undo?directory='+encodeURIComponent(${JSON.stringify(directory)}),{method:'POST',headers:{'Content-Type':'application/json','X-DevRyan-CSRF':'1'},body:JSON.stringify({revision:${JSON.stringify(value.revision)}})}).then(r=>r.status)`);
     assert.equal(conflict, 409); assert.equal(await readFile(path.join(directory, 'restore.txt'), 'utf8'), 'external conflict\n');
     await writeFile(path.join(directory, 'restore.txt'), 'restorable content\n');
     await exerciseRestore('changes-after-conflict');

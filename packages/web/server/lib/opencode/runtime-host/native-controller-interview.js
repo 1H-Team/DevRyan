@@ -4,7 +4,7 @@ import {createNativeOwnedRequests} from './native-owned-requests.js';
 
 const fail=code=>Object.assign(new Error(code),{code,status:403,statusCode:403});
 const record=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
-const prefix=directory=>'/api/openchamber/interviews/'+createHash('sha256').update(directory).digest('hex');
+const prefix=directory=>'/api/devryan/interviews/'+createHash('sha256').update(directory).digest('hex');
 /** Composition only: the original interview state machine owns behavior and
  * the existing admission, ledger and native session owners own all effects. */
 export function createNativeControllerInterview(options){

@@ -22,7 +22,7 @@ import { useMiniChatKeyboardShortcuts } from '@/hooks/useMiniChatKeyboardShortcu
 import { useWorktreeDiscovery } from '@/lib/worktrees/useWorktreeDiscovery';
 import { useAuthPrincipal } from '@/lib/authSession';
 
-const MINI_CHAT_PRESENCE_CHANNEL = 'openchamber:mini-chat-presence';
+const MINI_CHAT_PRESENCE_CHANNEL = 'devryan:mini-chat-presence';
 
 type MiniChatMode = 'session' | 'draft';
 

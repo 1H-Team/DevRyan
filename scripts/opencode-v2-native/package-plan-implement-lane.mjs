@@ -325,12 +325,12 @@ export async function runApplicationPlanImplementation({ api, messages, director
   for (const role of ['fixer', 'designer']) assert.equal(await fs.readFile(path.join(directory, `${role}.txt`), 'utf8'), `${role} real native publication\n`);
   assert.equal(await fs.readFile(path.join(directory, 'repair.txt'), 'utf8'), 'recovered real native publication\n');
   for (const id of sessionIDs) assert.deepEqual((await messages(id)).map(row => row.info.id), histories.get(id), 'File Redo changed canonical conversation identity');
-  const reverted = await api(`/api/openchamber/session/${sessionID}/scoped-revert?${query}`, { messageID: implement.info.id, scope: 'tree' });
+  const reverted = await api(`/api/devryan/session/${sessionID}/scoped-revert?${query}`, { messageID: implement.info.id, scope: 'tree' });
   assert.equal(reverted.verification?.ok, true); assert.equal(reverted.redoAvailable, true);
   for (const file of ['fixer.txt', 'designer.txt', 'repair.txt']) await assert.rejects(fs.readFile(path.join(directory, file)), error => error.code === 'ENOENT');
   await checkpoint({ phase: 'reverted', sessionID, messageID: continuedTail.info.id,
     targetText: 'Run real shell checks', hiddenMessageIDs: [implement.info.id, recoveryMessageID] });
-  const redone = await api(`/api/openchamber/session/${sessionID}/scoped-unrevert?${query}`, {});
+  const redone = await api(`/api/devryan/session/${sessionID}/scoped-unrevert?${query}`, {});
   assert.equal(redone.verification?.ok, true);
   for (const role of ['fixer', 'designer']) assert.equal(await fs.readFile(path.join(directory, `${role}.txt`), 'utf8'), `${role} real native publication\n`);
   assert.equal(await fs.readFile(path.join(directory, 'repair.txt'), 'utf8'), 'recovered real native publication\n');
@@ -380,7 +380,7 @@ export function createApplicationPlanChangesEvidence({ origin, sessionID, direct
     request({ requestId, request }) {
       if (typeof requestId !== 'string' || !/^[A-Za-z0-9_.:-]{1,128}$/.test(requestId)) return;
       let url; try { url = new URL(request?.url); } catch { return; }
-      const base = `/api/openchamber/session/${encodeURIComponent(sessionID)}/changes`;
+      const base = `/api/devryan/session/${encodeURIComponent(sessionID)}/changes`;
       const kind = url.pathname === base ? 'summary' : ['undo', 'redo', 'diff'].find(value => url.pathname === `${base}/${value}`);
       if (url.origin !== origin || !kind || request.method !== (['undo', 'redo'].includes(kind) ? 'POST' : 'GET')) return;
       if (pending.size >= 128) { dropped++; return; }

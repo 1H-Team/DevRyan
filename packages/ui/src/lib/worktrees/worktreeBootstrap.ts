@@ -4,7 +4,7 @@ import type { GitWorktreeBootstrapStatus, RuntimeAPIs } from '@/lib/api/types';
 
 declare global {
   interface Window {
-    __OPENCHAMBER_RUNTIME_APIS__?: RuntimeAPIs;
+    __DEVRYAN_RUNTIME_APIS__?: RuntimeAPIs;
   }
 }
 
@@ -86,7 +86,7 @@ const ensureEntry = (
 };
 
 const getRuntimeGit = () => (
-  typeof window !== 'undefined' ? window.__OPENCHAMBER_RUNTIME_APIS__?.git : undefined
+  typeof window !== 'undefined' ? window.__DEVRYAN_RUNTIME_APIS__?.git : undefined
 );
 
 const fetchStatus = async (

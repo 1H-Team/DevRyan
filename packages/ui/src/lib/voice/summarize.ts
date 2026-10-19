@@ -13,8 +13,8 @@ const resolveSummarizeUrl = (): string => {
     }
 
     const desktopServer = (window as typeof window & {
-        __OPENCHAMBER_DESKTOP_SERVER__?: { origin: string };
-    }).__OPENCHAMBER_DESKTOP_SERVER__;
+        __DEVRYAN_DESKTOP_SERVER__?: { origin: string };
+    }).__DEVRYAN_DESKTOP_SERVER__;
     const baseOrigin = desktopServer?.origin || window.location.origin;
     return new URL('/api/text/summarize', baseOrigin).toString();
 };

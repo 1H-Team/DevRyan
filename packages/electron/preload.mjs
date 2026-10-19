@@ -12,16 +12,16 @@ const readArgValue = (name) => {
   return entry.slice(prefix.length);
 };
 
-const localOrigin = readArgValue('--openchamber-local-origin');
-const serverOrigin = readArgValue('--openchamber-server-origin');
+const localOrigin = readArgValue('--devryan-local-origin');
+const serverOrigin = readArgValue('--devryan-server-origin');
 const isPreview = readArgValue('--devryan-runtime-mode') === 'standard-preview';
-const homeDirectory = readArgValue('--openchamber-home');
-const macosMajorRaw = readArgValue('--openchamber-macos-major');
+const homeDirectory = readArgValue('--devryan-home');
+const macosMajorRaw = readArgValue('--devryan-macos-major');
 const macosMajor = Number.parseInt(macosMajorRaw, 10);
 
 // Preload re-executes on every cross-origin navigation (we run with
 // sandbox:false, per-document). Two separate concerns to balance:
-//  - __OPENCHAMBER_ELECTRON__ is a shell-identity flag (no capability).
+//  - __DEVRYAN_ELECTRON__ is a shell-identity flag (no capability).
 //    Remote UIs still need it so isDesktopShell() returns true and the
 //    window renders with desktop affordances (DesktopHostSwitcher,
 //    title bar offsets, etc.). Expose unconditionally.
@@ -62,20 +62,27 @@ const invokeMain = (command, args = {}) => {
   if (localOrigin && !isLocalPage && LOCAL_ONLY_BOT_RUNTIME_COMMANDS.has(command)) {
     return Promise.reject(new Error('Bot runtime IPC is available only to the local DevRyan UI'));
   }
-  return ipcRenderer.invoke('openchamber:invoke', command, args);
+  return ipcRenderer.invoke('devryan:invoke', command, args);
 };
 
-// Remote pages need __OPENCHAMBER_LOCAL_ORIGIN__ so the HostSwitcher knows
+// Remote pages need __DEVRYAN_LOCAL_ORIGIN__ so the HostSwitcher knows
 // the URL of the Local entry (isDesktopLocalOriginActive() falls back to
 // window.location.origin otherwise — wrong on remote). Low risk: the value
 // is just "http://127.0.0.1:<port>" which is not exploitable without the
 // IPC channel, and CORS on the local server prevents remote-origin fetches.
+// A remote DevRyan of an older version can run under this preload and reads the
+// accepted __OPENCHAMBER_*__ alias, so each desktop global is exposed under both names.
+const exposeDesktopGlobal = (name, value) => {
+  contextBridge.exposeInMainWorld(`__DEVRYAN_${name}__`, value);
+  contextBridge.exposeInMainWorld(`__OPENCHAMBER_${name}__`, value);
+};
+
 if (localOrigin) {
-  contextBridge.exposeInMainWorld('__OPENCHAMBER_LOCAL_ORIGIN__', localOrigin);
+  exposeDesktopGlobal('LOCAL_ORIGIN', localOrigin);
 }
 
 if (isLocalPage && serverOrigin) {
-  contextBridge.exposeInMainWorld('__OPENCHAMBER_DESKTOP_SERVER__', {
+  exposeDesktopGlobal('DESKTOP_SERVER', {
     origin: serverOrigin,
     apiPrefix: '/api',
     opencodePort: null,
@@ -87,16 +94,16 @@ if (isLocalPage && serverOrigin) {
 // operate on the REMOTE server's filesystem, local home is irrelevant
 // (and would be misleading if consumed as a workspace hint).
 if (isLocalPage && homeDirectory) {
-  contextBridge.exposeInMainWorld('__OPENCHAMBER_HOME__', homeDirectory);
+  exposeDesktopGlobal('HOME', homeDirectory);
 }
 
 // macOS major version drives window chrome offsets (traffic lights) — UI
 // presentation only, safe to expose.
 if (Number.isFinite(macosMajor) && macosMajor > 0) {
-  contextBridge.exposeInMainWorld('__OPENCHAMBER_MACOS_MAJOR__', macosMajor);
+  exposeDesktopGlobal('MACOS_MAJOR', macosMajor);
 }
 
-contextBridge.exposeInMainWorld('__OPENCHAMBER_ELECTRON__', {
+exposeDesktopGlobal('ELECTRON', {
   runtime: 'electron',
   ...(isPreview ? { runtimeMode: 'standard-preview', capabilities: { browser: false, terminal: false, media: false, updater: false } } : {}),
 });
@@ -148,7 +155,7 @@ const dispatchNativeEvent = (event, detail) => {
 // Main-process events are read-only notifications (update progress,
 // window focus, etc.) — safe to deliver to any page rendered in this
 // webContents. The events themselves don't grant capability.
-ipcRenderer.on('openchamber:emit', (_evt, payload) => {
+ipcRenderer.on('devryan:emit', (_evt, payload) => {
   if (!payload || typeof payload !== 'object') {
     return;
   }
@@ -159,10 +166,12 @@ ipcRenderer.on('openchamber:emit', (_evt, payload) => {
   }
 
   dispatchNativeEvent(event, payload.detail);
+  // A remote DevRyan of an older version listens for the openchamber:* alias.
+  if (event.startsWith('devryan:')) dispatchNativeEvent(`openchamber:${event.slice('devryan:'.length)}`, payload.detail);
 });
 
 // __TAURI__ is exposed on all pages; the main-process gate in
-// ipcMain.handle('openchamber:invoke') decides per-command what is safe
+// ipcMain.handle('devryan:invoke') decides per-command what is safe
 // for non-local callers (window/host-switcher ops yes, file/shell ops
 // no). See COMMANDS_SAFE_FOR_REMOTE in main.mjs.
 contextBridge.exposeInMainWorld('__TAURI__', {
@@ -170,7 +179,7 @@ contextBridge.exposeInMainWorld('__TAURI__', {
     invoke: (cmd, args) => invokeMain(cmd, args || {}),
   },
   dialog: {
-    open: (options) => ipcRenderer.invoke('openchamber:dialog:open', options || {}),
+    open: (options) => ipcRenderer.invoke('devryan:dialog:open', options || {}),
   },
   shell: {
     open: (url) => invokeMain('desktop_open_external_url', { url }),

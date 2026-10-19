@@ -1,8 +1,8 @@
 import {describe,expect,test} from 'bun:test'
 import {createIntegrationUIEvents,IMAGES_SKIPPED_MESSAGE} from './integration-ui-events'
 const id='12345678-1234-1234-1234-123456789abc'
-const route='/api/openchamber/interviews/'+ 'a'.repeat(64)+'/interview/interview_1'
-const event=(kind='interview-open',properties:Record<string,unknown>={})=>({type:'openchamber:integration',properties:{directory:'/repo',sessionID:'ses_one',eventID:id,kind,...(kind==='interview-open'?{path:route}:{}),...properties}})
+const route='/api/devryan/interviews/'+ 'a'.repeat(64)+'/interview/interview_1'
+const event=(kind='interview-open',properties:Record<string,unknown>={})=>({type:'devryan:integration',properties:{directory:'/repo',sessionID:'ses_one',eventID:id,kind,...(kind==='interview-open'?{path:route}:{}),...properties}})
 function fixture(panel=true){
  const opened:string[][]=[],external:string[]=[],notices:string[]=[],blocked:Array<()=>void>=[]
  let authorized=true,allowPopup=false
@@ -19,7 +19,7 @@ describe('authenticated integration UI effects',()=>{
  })
  test('refuses foreign/encoded/query/credential routes, forged directory, IDs and extra fields',()=>{
   const f=fixture()
-  for(const path of ['https://evil.test'+route,'//evil.test'+route,route+'?url=https://evil.test',route+'#x',route+'/%2e%2e',route.replace('interview_1','..'),'/api/openchamber/interviews/short/interview/id'])expect(f.owner.handle('/repo',event('interview-open',{path}))).toBe(false)
+  for(const path of ['https://evil.test'+route,'//evil.test'+route,route+'?url=https://evil.test',route+'#x',route+'/%2e%2e',route.replace('interview_1','..'),'/api/devryan/interviews/short/interview/id'])expect(f.owner.handle('/repo',event('interview-open',{path}))).toBe(false)
   for(const p of [{directory:'/other'},{eventID:'arbitrary'},{sessionID:'../session'},{kind:'execute'},{url:'https://evil.test'}])expect(f.owner.handle('/repo',event('interview-open',p))).toBe(false)
   expect(f.opened).toHaveLength(0)
  })

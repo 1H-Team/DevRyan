@@ -22,9 +22,9 @@ import {
 import { AppearanceSectionShell, OptionSelect, UnitNumberInput, type AppearanceSectionProps } from './controls';
 
 type PwaInstallNameWindow = Window & {
-    __OPENCHAMBER_SET_PWA_INSTALL_NAME__?: (value: string) => string;
-    __OPENCHAMBER_SET_PWA_ORIENTATION__?: (value: PwaOrientation) => PwaOrientation;
-    __OPENCHAMBER_UPDATE_PWA_MANIFEST__?: () => void;
+    __DEVRYAN_SET_PWA_INSTALL_NAME__?: (value: string) => string;
+    __DEVRYAN_SET_PWA_ORIENTATION__?: (value: PwaOrientation) => PwaOrientation;
+    __DEVRYAN_UPDATE_PWA_MANIFEST__?: () => void;
 };
 
 export const MobileInstallSection = React.memo(function MobileInstallSection({ rows, isMobile }: AppearanceSectionProps) {
@@ -55,14 +55,14 @@ export const MobileInstallSection = React.memo(function MobileInstallSection({ r
 
         await updateDesktopSettings({ pwaAppName: persistedValue });
 
-        if (typeof win.__OPENCHAMBER_SET_PWA_INSTALL_NAME__ === 'function') {
-            const resolved = win.__OPENCHAMBER_SET_PWA_INSTALL_NAME__(persistedValue);
+        if (typeof win.__DEVRYAN_SET_PWA_INSTALL_NAME__ === 'function') {
+            const resolved = win.__DEVRYAN_SET_PWA_INSTALL_NAME__(persistedValue);
             setPwaInstallName(resolved);
             return;
         }
 
         setPwaInstallName(persistedValue || DEFAULT_PWA_INSTALL_NAME);
-        win.__OPENCHAMBER_UPDATE_PWA_MANIFEST__?.();
+        win.__DEVRYAN_UPDATE_PWA_MANIFEST__?.();
     }, []);
 
     const applyPwaOrientation = React.useCallback(async (value: PwaOrientation) => {
@@ -75,14 +75,14 @@ export const MobileInstallSection = React.memo(function MobileInstallSection({ r
 
         await updateDesktopSettings({ pwaOrientation: normalized });
 
-        if (typeof win.__OPENCHAMBER_SET_PWA_ORIENTATION__ === 'function') {
-            const resolved = win.__OPENCHAMBER_SET_PWA_ORIENTATION__(normalized);
+        if (typeof win.__DEVRYAN_SET_PWA_ORIENTATION__ === 'function') {
+            const resolved = win.__DEVRYAN_SET_PWA_ORIENTATION__(normalized);
             setPwaOrientation(resolved);
             return;
         }
 
         setPwaOrientation(normalized);
-        win.__OPENCHAMBER_UPDATE_PWA_MANIFEST__?.();
+        win.__DEVRYAN_UPDATE_PWA_MANIFEST__?.();
     }, []);
 
     const handlePwaOrientationChange = React.useCallback((value: PwaOrientation) => {

@@ -26,8 +26,8 @@ const getRuntimeSessionPlans = (): SessionPlansAPI | null => {
   const registered = getRegisteredRuntimeAPIs()?.sessionPlans;
   if (registered) return registered;
   if (typeof window === 'undefined') return null;
-  const runtimeWindow = window as typeof window & { __OPENCHAMBER_RUNTIME_APIS__?: RuntimeAPIs };
-  return runtimeWindow.__OPENCHAMBER_RUNTIME_APIS__?.sessionPlans ?? null;
+  const runtimeWindow = window as typeof window & { __DEVRYAN_RUNTIME_APIS__?: RuntimeAPIs };
+  return runtimeWindow.__DEVRYAN_RUNTIME_APIS__?.sessionPlans ?? null;
 };
 
 const persistenceKey = (sessionId: string, sourceMessageId: string): string => (

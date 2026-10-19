@@ -373,12 +373,12 @@ const hostGlobalMutation = (req) => {
     '/browser/instances/register',
     '/browser/local-instances/status',
   ].includes(req.path)) return false;
-  return /^\/(?:config|auth|provider|mcp|openchamber\/tunnel|projects|diagnostics|evidence|desktop|browser)/.test(req.path);
+  return /^\/(?:config|auth|provider|mcp|(?:devryan|openchamber)\/tunnel|projects|diagnostics|evidence|desktop|browser)/.test(req.path);
 };
 
 const hostGlobalRead = (requestPath) => {
-  if (/^\/(?:auth|provider|mcp|openchamber\/tunnel)(?:\/|$)/.test(requestPath)) return true;
-  if (requestPath === '/openchamber/events' || requestPath === '/openchamber/scheduled-tasks/status') return false;
+  if (/^\/(?:auth|provider|mcp|(?:devryan|openchamber)\/tunnel)(?:\/|$)/.test(requestPath)) return true;
+  if (/^\/(?:devryan|openchamber)\/(?:events|scheduled-tasks\/status)$/.test(requestPath)) return false;
   if (/^\/projects\/[^/]+\/icon$/.test(requestPath)) return false;
   if (/^\/projects\/[^/]+\/(?:branch-target|scheduled-tasks(?:\/[^/]+)?(?:\/run)?)$/.test(requestPath)) return false;
   if (/^\/projects(?:\/|$)/.test(requestPath)) return true;
@@ -2119,7 +2119,7 @@ export async function createMultiUserRuntime({
       || (requestPath.startsWith('/config/') && STATE_CHANGING_METHODS.has(req.method));
     if (principal.offlineGrace && (
       offlineHostConfig
-      || /^\/(?:admin(?:\/|$)|bug-reports(?:\/|$)|error-logs(?:\/|$)|github\/auth(?:\/|$)|auth(?:\/|$)|provider(?:\/|$)|mcp(?:\/|$)|projects(?:\/|$)|openchamber\/tunnel(?:\/|$)|diagnostics(?:\/|$))/.test(requestPath)
+      || /^\/(?:admin(?:\/|$)|bug-reports(?:\/|$)|error-logs(?:\/|$)|github\/auth(?:\/|$)|auth(?:\/|$)|provider(?:\/|$)|mcp(?:\/|$)|projects(?:\/|$)|(?:devryan|openchamber)\/tunnel(?:\/|$)|diagnostics(?:\/|$))/.test(requestPath)
     )) {
       throw Object.assign(new Error('Account and host management are unavailable during offline grace'), {
         statusCode: 503,
@@ -5762,7 +5762,7 @@ export async function createMultiUserRuntime({
         } catch { return jsonError(res, 404, 'Session not found'); }
       });
 
-      app.use('/api/openchamber/session/:sessionID', async (req, res, next) => {
+      app.use('/api/devryan/session/:sessionID', async (req, res, next) => {
         if (req.principal?.scope !== 'managed') return next();
         const sessionId = req.params.sessionID;
         try {

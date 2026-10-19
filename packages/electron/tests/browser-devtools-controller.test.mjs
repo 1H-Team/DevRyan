@@ -252,11 +252,11 @@ describe('desktop browser DevTools IPC boundary', () => {
   test('revalidates remote-origin DevTools through the native Browser authorization gate', () => {
     const nativeCommands = mainSource.slice(
       mainSource.indexOf('const NATIVE_BROWSER_COMMANDS = new Set(['),
-      mainSource.indexOf("ipcMain.handle('openchamber:invoke'"),
+      mainSource.indexOf("ipcMain.handle('devryan:invoke'"),
     );
     const invokeHandler = mainSource.slice(
-      mainSource.indexOf("ipcMain.handle('openchamber:invoke'"),
-      mainSource.indexOf("ipcMain.handle('openchamber:dialog:open'"),
+      mainSource.indexOf("ipcMain.handle('devryan:invoke'"),
+      mainSource.indexOf("ipcMain.handle('devryan:dialog:open'"),
     );
     expect(nativeCommands).toContain('desktop_browser_devtools_set_open');
     expect(nativeCommands).toContain('const SENSITIVE_NATIVE_BROWSER_COMMANDS');

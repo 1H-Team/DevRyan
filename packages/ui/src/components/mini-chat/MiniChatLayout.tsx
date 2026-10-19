@@ -48,7 +48,7 @@ const MiniChatHeader: React.FC<{ mode: MiniChatMode }> = ({ mode }) => {
     return normalizePath(state.newSessionDraft.bootstrapPendingDirectory ?? state.newSessionDraft.directoryOverride ?? '');
   });
   const [pinned, setPinned] = React.useState(false);
-  const macosMajor = typeof window !== 'undefined' ? window.__OPENCHAMBER_MACOS_MAJOR__ ?? 0 : 0;
+  const macosMajor = typeof window !== 'undefined' ? window.__DEVRYAN_MACOS_MAJOR__ ?? 0 : 0;
   const hasMacTrafficLights = Number.isFinite(macosMajor) && macosMajor > 0;
   const macosHeaderSizeClass = hasMacTrafficLights
     ? macosMajor >= 26

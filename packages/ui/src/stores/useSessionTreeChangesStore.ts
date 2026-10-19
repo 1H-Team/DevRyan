@@ -7,7 +7,7 @@ import { isTransientError } from '@/sync/retry'
 
 /**
  * Files changed by a session tree (root + every sub-agent session that worked
- * for it), as reported by `GET /api/openchamber/session/:id/changes`.
+ * for it), as reported by `GET /api/devryan/session/:id/changes`.
  *
  * Keyed by runtime, principal, directory and root session. Refreshes are debounced (500 ms)
  * and every response is checked against the latest request for its key so a

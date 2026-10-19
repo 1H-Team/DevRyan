@@ -337,9 +337,9 @@ describe('managed tunnel and invitation links', () => {
       uiAuthController: { multiUser: false, requireAuth: (_req, _res, next) => next(new Error('fixture-auth-failure')) },
       readSettingsFromDiskMigrated: async () => ({}), normalizeTunnelSessionTtlMs: (value) => value,
     });
-    app.post('/api/openchamber/session-retention/selection', (_req, res) => res.json({ selected: true }));
+    app.post('/api/devryan/session-retention/selection', (_req, res) => res.json({ selected: true }));
     app.use((error, _req, res, _next) => res.status(503).json({ error: error.message }));
-    const response = await request(app).post('/api/openchamber/session-retention/selection');
+    const response = await request(app).post('/api/devryan/session-retention/selection');
     expect(response.status).toBe(503);
     expect(response.body).toEqual({ error: 'fixture-auth-failure' });
   });

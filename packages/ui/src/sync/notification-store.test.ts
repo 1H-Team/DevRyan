@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test } from "bun:test"
 import { getSafeStorage } from "@/stores/utils/safeStorage"
 import { appendNotification, markSessionViewed, markSessionsViewed, reconcileSessionFailureNotifications, useNotificationStore } from "./notification-store"
 
-const COMPLETION_NOTIFICATION_STORAGE_KEY = "openchamber:notification-completions:v1"
+const COMPLETION_NOTIFICATION_STORAGE_KEY = "devryan:notification-completions:v1"
 
 function resetNotificationStore() {
   useNotificationStore.setState({

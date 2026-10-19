@@ -3,7 +3,7 @@ import { continueRebase, createGitWorktree, generateCommitMessage, generateCommi
 
 type TestWindow = {
   location: { origin: string }
-  __OPENCHAMBER_DESKTOP_SERVER__?: {
+  __DEVRYAN_DESKTOP_SERVER__?: {
     origin: string
     opencodePort: number | null
     apiPrefix: string
@@ -65,7 +65,7 @@ describe("gitApiHttp URL routing", () => {
     try {
       setTestWindow({
         location: { origin: "http://127.0.0.1:5173" },
-        __OPENCHAMBER_DESKTOP_SERVER__: {
+        __DEVRYAN_DESKTOP_SERVER__: {
           origin: "http://127.0.0.1:3901",
           opencodePort: null,
           apiPrefix: "/api",
@@ -93,7 +93,7 @@ describe("gitApiHttp URL routing", () => {
     try {
       setTestWindow({
         location: { origin: "http://127.0.0.1:57123" },
-        __OPENCHAMBER_DESKTOP_SERVER__: {
+        __DEVRYAN_DESKTOP_SERVER__: {
           origin: "http://127.0.0.1:57123",
           opencodePort: null,
           apiPrefix: "/api",

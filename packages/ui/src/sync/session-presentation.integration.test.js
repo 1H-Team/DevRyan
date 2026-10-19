@@ -32,7 +32,8 @@ function fixture() {
   const apply = event => applySyncEventForTest('global', event, manager, routing);
   const runtime = createSessionRuntime({ writeSseEvent() {}, getNotificationClients: () => new Set(),
     broadcastEvent: event => {
-      if (event.type === 'openchamber:session-activity') apply(JSON.parse(serializeEventPayload(event)));
+      // The server keeps the persisted `openchamber:*` type; an opted-in UI receives `devryan:*`.
+      if (event.type === 'openchamber:session-activity') apply(JSON.parse(serializeEventPayload(event, 'devryan')));
     } });
   runtimes.push(runtime);
   const status = type => {

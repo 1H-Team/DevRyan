@@ -451,9 +451,9 @@ export function settingsPageForRequest(requestPath, method = 'GET') {
     || /^\/provider\/[^/]+\/(?:auth|source|oauth|usage-auth|runtime-status)(?:\/|$)/.test(path)
     || /^\/provider\/(?:anthropic\/(?:check-oauth|claude-cli|prompt-mode)|cursor-acp\/configure|xai\/oauth)(?:\/|$)/.test(path)) return 'providers';
   if (/^\/quota\/credentials(?:\/|$)/.test(path)) return 'providers';
-  if (/^\/openchamber\/tunnel(?:\/|$)/.test(path)) return 'tunnel';
+  if (/^\/(?:devryan|openchamber)\/tunnel(?:\/|$)/.test(path)) return 'tunnel';
   if (/^\/diagnostics(?:\/(?:status|export|sanitize))?$/.test(path)
-    || /^\/(?:opencode\/update-check|openchamber\/update-(?:check|install))(?:\/|$)/.test(path)) return 'about';
+    || /^\/(?:opencode\/update-check|(?:devryan|openchamber)\/update-(?:check|install))(?:\/|$)/.test(path)) return 'about';
   const projectRuntimeRoute = /^\/projects\/[^/]+\/(?:branch-target|scheduled-tasks(?:\/[^/]+)?(?:\/run)?)$/.test(path);
   if (/^\/projects(?:\/|$)/.test(path)
     && !projectRuntimeRoute

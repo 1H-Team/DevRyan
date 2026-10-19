@@ -505,7 +505,7 @@ describe('useSessionTreeChangesStore', () => {
       } }))
     const release = subscribeSessionTreeChanges('/repo', 'ses_root')
     await waitUntil(() => useSessionTreeChangesStore.getState().entries.get(getSessionTreeChangesKey('/repo', 'ses_root'))?.revision === 'ready')
-    expect(requests).toEqual([1, 2].map(() => ({ url: 'http://fixture.invalid/api/openchamber/session/ses_root/changes?directory=%2Frepo', method: 'GET' })))
+    expect(requests).toEqual([1, 2].map(() => ({ url: 'http://fixture.invalid/api/devryan/session/ses_root/changes?directory=%2Frepo', method: 'GET' })))
     release()
   })
 

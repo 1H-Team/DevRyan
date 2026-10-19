@@ -1,8 +1,8 @@
 import { getSafeStorage } from "@/stores/utils/safeStorage"
 import type { ChatDraft } from "./session-ui-store"
 
-export const CHAT_DRAFTS_STORAGE_KEY = "openchamber_chat_drafts"
-export const LEGACY_NEW_INPUT_DRAFT_KEY = "openchamber_chat_input_draft_new"
+export const CHAT_DRAFTS_STORAGE_KEY = "devryan_chat_drafts"
+export const LEGACY_NEW_INPUT_DRAFT_KEY = "devryan_chat_input_draft_new"
 
 const normalizePath = (value?: unknown): string | null => {
   if (typeof value !== "string") return null
@@ -42,16 +42,16 @@ const normalizeDraftSendConfig = (value: unknown): ChatDraft["sendConfig"] | und
 }
 
 export const getDraftInputStorageKey = (draftId: string): string =>
-  `openchamber_chat_input_draft_draft_${draftId}`
+  `devryan_chat_input_draft_draft_${draftId}`
 
 export const getDraftConfirmedMentionsStorageKey = (draftId: string): string =>
-  `openchamber_chat_confirmed_mentions_draft_${draftId}`
+  `devryan_chat_confirmed_mentions_draft_${draftId}`
 
 export const getSessionInputStorageKey = (sessionId: string): string =>
-  `openchamber_chat_input_draft_${sessionId}`
+  `devryan_chat_input_draft_${sessionId}`
 
 export const getSessionConfirmedMentionsStorageKey = (sessionId: string): string =>
-  `openchamber_chat_confirmed_mentions_${sessionId}`
+  `devryan_chat_confirmed_mentions_${sessionId}`
 
 type PersistedSessionInputRemovalListener = (sessionId: string) => void
 

@@ -4,8 +4,8 @@ import { registerScopedSessionRevertRoute } from './session-scoped-revert.js';
 import { resolveOpenCodeGeneration } from './opencode-generation.js';
 import { createOpenCodeV2FacadeRouter, resolveFacadeClient, sendOpenCodeFacadeError } from './v2/facade-routes.js';
 import { createOpenCodeV2SseHandler } from './v2/sse-routes.js';
+import { readPromptMessageIdHeader } from './v2/admission.js';
 
-const PROMPT_ASYNC_MESSAGE_ID_HEADER = 'x-openchamber-message-id';
 
 export const registerOpenCodeProxy = (app, deps) => {
   const { OPEN_CODE_READY_GRACE_MS, getRuntime, getOpenCodeAuthHeaders, buildOpenCodeUrl, turnTimingRuntime } = deps;
@@ -46,7 +46,7 @@ export const registerOpenCodeProxy = (app, deps) => {
       return;
     }
 
-    const messageId = getSingleHeader(req.headers?.[PROMPT_ASYNC_MESSAGE_ID_HEADER]);
+    const messageId = getSingleHeader(readPromptMessageIdHeader(req.headers));
     const directory = typeof req.query?.directory === 'string' ? req.query.directory : undefined;
     let body = req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body)
       ? req.body

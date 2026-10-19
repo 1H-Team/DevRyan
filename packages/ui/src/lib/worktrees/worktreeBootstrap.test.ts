@@ -72,7 +72,7 @@ describe('worktree bootstrap send recovery', () => {
       configurable: true,
       writable: true,
       value: {
-        __OPENCHAMBER_RUNTIME_APIS__: {
+        __DEVRYAN_RUNTIME_APIS__: {
           git: { worktree: { bootstrapStatus, retry, operation } },
         } as unknown as RuntimeAPIs,
       },

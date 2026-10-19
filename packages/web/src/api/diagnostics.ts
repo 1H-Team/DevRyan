@@ -53,7 +53,7 @@ export const createWebDiagnosticsAPI = (): DiagnosticsAPI => ({
 
   async export(scope: DiagnosticsExportScope) {
     const invoke = getNativeInvoke();
-    if (invoke && window.__OPENCHAMBER_ELECTRON__) {
+    if (invoke && window.__DEVRYAN_ELECTRON__) {
       return invoke<DiagnosticsExportResult>('desktop_export_diagnostics', { scope });
     }
 

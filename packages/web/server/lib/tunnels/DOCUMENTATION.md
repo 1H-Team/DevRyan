@@ -68,7 +68,7 @@ hostname with Supabase On (`policy: account-login`). With Supabase Off or absent
 an enrolled local owner can start or resume the tunnel (`policy: owner-link`).
 Manual startup returns a one-time owner link; automatic resume restores the connector
 and existing sessions without minting a link. The local settings page can issue a
-replacement using `POST /api/openchamber/tunnel/links` with `{ "access": "owner" }`.
+replacement using `POST /api/devryan/tunnel/links` with `{ "access": "owner" }`.
 Other tunnel modes and explicit Bot sharing retain selected-Bot links. A database
 outage while On never enables owner-link authentication.
 
@@ -123,8 +123,8 @@ configuration and preserves unexpired sessions. Recovery suspends live connectio
 without deleting sessions. Stop, grant revocation, owner changes, authentication-mode
 changes and hostname changes invalidate authorization and close associated streams.
 Expired/lost sessions require another locally issued link; remote passkey enrollment
-is unsupported. `POST /api/openchamber/tunnel/links` issues a selected-Bot link;
-`DELETE /api/openchamber/tunnel/grants/:grantId` revokes a Bot or owner grant. Both require direct-local
+is unsupported. `POST /api/devryan/tunnel/links` issues a selected-Bot link;
+`DELETE /api/devryan/tunnel/grants/:grantId` revokes a Bot or owner grant. Both require direct-local
 owner authentication and CSRF protection.
 
 Electron enrolls an absent local owner through its in-process server handle or
@@ -145,7 +145,7 @@ Tunnel shutdown is asynchronous and process-authoritative. Provider controllers 
 grace periods. `createTunnelService().stop()` keeps the active controller registered until the
 provider confirms exit and coalesces concurrent stop requests onto the same promise.
 
-The `/api/openchamber/tunnel/stop` route waits for that promise before revoking bootstrap/session
+The `/api/devryan/tunnel/stop` route waits for that promise before revoking bootstrap/session
 artifacts or clearing the active tunnel identity. If the connector cannot be stopped, the route
 returns `tunnel_stop_failed` and preserves both controller and authentication state; this prevents a
 still-public connector from being reclassified as a local unauthenticated request path.

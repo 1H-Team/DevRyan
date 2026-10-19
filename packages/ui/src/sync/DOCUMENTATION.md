@@ -434,8 +434,8 @@ flush timestamps, preserving frame pacing without retaining queue arrays.
 
 ## Managed orchestration event routing
 
-`openchamber:managed-task`, `openchamber:managed-task-removed`, and
-`openchamber:managed-orchestration-warning` are host-owned synthetic events.
+`devryan:managed-task`, `devryan:managed-task-removed`, and
+`devryan:managed-orchestration-warning` are host-owned synthetic events.
 `event-pipeline.ts` normalizes and routes them to
 `useManagedOrchestrationStore.ts` before resolving a directory, allocating a
 queue, coalescing, or invoking the session reducer. This guarantees that a
@@ -714,7 +714,7 @@ Keep this in sync with `handleDirectoryEvent` in `sync-context.tsx`:
 
 ## Synthetic status events
 
-Server compatibility events named `openchamber:session-status` are normalized in `event-pipeline.ts` before routing and coalescing. The normalized event uses the canonical `session.status` type with `properties.sessionID` and a `properties.status` object. This keeps reducers, routing keys, and coalescing on the same path as OpenCode-native status events.
+Server compatibility events named `devryan:session-status` are normalized in `event-pipeline.ts` before routing and coalescing. The normalized event uses the canonical `session.status` type with `properties.sessionID` and a `properties.status` object. This keeps reducers, routing keys, and coalescing on the same path as OpenCode-native status events.
 
 ## Completion vs active work
 
@@ -756,7 +756,7 @@ scoped to the existing `directory + sessionID` candidates.
 ## Finalization presentation
 
 `session-presentation.ts` holds only loaded directory/session presentation. The
-existing `openchamber:session-activity` event and `/api/session-activity` snapshot
+existing `devryan:session-activity` event and `/api/session-activity` snapshot
 carry a server epoch, monotonic presentation revision and a nullable Finalizing
 record bound to the original user and assistant. Native records require their
 actual step and attempt identities; Cursor records use their owned run generation
@@ -981,7 +981,7 @@ Native flattened user `providerID`/`modelID` fields restore the same exact choic
 as nested SDK user models; nested tuples retain precedence without mixing
 fields. They preserve the recorded choice while catalog discovery completes
 rather than substituting a startup default. Authoritative
-`openchamber:provider-catalog` events carry only the provider ID, accepted
+`devryan:provider-catalog` events carry only the provider ID, accepted
 directory and `source: sdk`; `provider-catalog-recovery.ts` refreshes the matching
 visible configuration scope outside transcript stores. Concurrent invalidations
 coalesce. A forced read uses existing load tokens to fence any older fallback

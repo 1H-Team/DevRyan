@@ -2,7 +2,7 @@
 export const IMAGES_SKIPPED_MESSAGE = 'Observer agent is disabled, so images can\'t be analyzed. Set image_routing to "direct" to send images to your model, or enable observer.'
 const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i
-const INTERVIEW_PATH = /^\/api\/openchamber\/interviews\/[a-f0-9]{64}\/interview\/[A-Za-z0-9_-]{1,128}$/
+const INTERVIEW_PATH = /^\/api\/(?:devryan|openchamber)\/interviews\/[a-f0-9]{64}\/interview\/[A-Za-z0-9_-]{1,128}$/
 
 type Dependencies = {
   origin: () => string
@@ -25,7 +25,7 @@ export function createIntegrationUIEvents(deps: Dependencies) {
   }
   return {
     handle(directory: string, payload: unknown): boolean {
-      if (!active || !record(payload) || payload.type !== 'openchamber:integration' || !record(payload.properties)) return false
+      if (!active || !record(payload) || payload.type !== 'devryan:integration' || !record(payload.properties)) return false
       const p = payload.properties
       if (typeof directory !== 'string' || !directory || directory.length > 4096 || directory.includes('\0') || p.directory !== directory
         || typeof p.sessionID !== 'string' || !/^ses[A-Za-z0-9_-]{1,128}$/.test(p.sessionID)

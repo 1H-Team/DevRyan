@@ -192,7 +192,7 @@ export function serializeMessageStreamWsEvent(payload, options = {}) {
   if (isMessageStreamControlPayload(payload)) return serializeMessageStreamControlFrame(payload);
   const eventId = typeof options.eventId === 'string' && options.eventId.length > 0 ? options.eventId : null;
   const directory = typeof options.directory === 'string' && options.directory.length > 0 ? options.directory : null;
-  const payloadJson = serializeEventPayload(payload);
+  const payloadJson = serializeEventPayload(payload, options.dialect ?? null);
   if (payloadJson === undefined) {
     return JSON.stringify({ type: 'event', ...(eventId ? { eventId } : {}), ...(directory ? { directory } : {}) });
   }
@@ -202,6 +202,7 @@ export function serializeMessageStreamWsEvent(payload, options = {}) {
 export function sendMessageStreamWsEvent(socket, payload, options = {}) {
   let frame;
   // An unserializable payload fails this delivery, as before, never the caller.
-  try { frame = serializeMessageStreamWsEvent(payload, options); } catch { return false; }
+  // The connection's event-name dialect is fixed when it is accepted.
+  try { frame = serializeMessageStreamWsEvent(payload, { dialect: socket?.devryanEventDialect ?? null, ...options }); } catch { return false; }
   return sendMessageStreamWsFrame(socket, frame);
 }

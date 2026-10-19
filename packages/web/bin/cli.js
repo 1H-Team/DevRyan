@@ -2410,7 +2410,7 @@ async function fetchTunnelProvidersFromPort(port, fetchImpl = globalThis.fetch) 
     return null;
   }
   try {
-    const response = await fetchImpl(buildLocalUrl(port, '/api/openchamber/tunnel/providers'));
+    const response = await fetchImpl(buildLocalUrl(port, '/api/devryan/tunnel/providers'));
     if (!response.ok) return null;
     const body = await response.json().catch(() => null);
     if (!body || !Array.isArray(body.providers)) return null;
@@ -3857,7 +3857,7 @@ const commands = {
         const results = [];
         for (const entry of entries) {
           try {
-            const { response, body } = await requestJson(entry.port, `/api/openchamber/tunnel/check?provider=${encodeURIComponent(provider)}`);
+            const { response, body } = await requestJson(entry.port, `/api/devryan/tunnel/check?provider=${encodeURIComponent(provider)}`);
             if (!response.ok) {
               results.push({ port: entry.port, error: body?.error || `check ${response.status}` });
               continue;
@@ -3913,7 +3913,7 @@ const commands = {
         const results = [];
         for (const entry of entries) {
           try {
-            const { response, body } = await requestJson(entry.port, '/api/openchamber/tunnel/status');
+            const { response, body } = await requestJson(entry.port, '/api/devryan/tunnel/status');
             if (!response.ok) {
               results.push({ port: entry.port, error: body?.error || `status ${response.status}` });
               continue;
@@ -4052,7 +4052,7 @@ const commands = {
               }
               const { response, body } = await requestJson(
                 diagnosticsEntry.port,
-                `/api/openchamber/tunnel/doctor?${query.toString()}`,
+                `/api/devryan/tunnel/doctor?${query.toString()}`,
                 doctorFetchOptions,
               );
               if (response.ok && body?.ok && isValidTunnelDoctorResponse(body)) {
@@ -4731,7 +4731,7 @@ const commands = {
             originPort,
             managedRemoteTunnelToken: token,
           };
-          const { response: presetResponse, body: presetBody } = await requestJson(instance.port, '/api/openchamber/tunnel/managed-remote-token', {
+          const { response: presetResponse, body: presetBody } = await requestJson(instance.port, '/api/devryan/tunnel/managed-remote-token', {
             method: 'PUT',
             body: JSON.stringify(tokenSyncPayload),
           });
@@ -4762,13 +4762,13 @@ const commands = {
         let response;
         let body;
         try {
-          ({ response, body } = await requestJson(instance.port, '/api/openchamber/tunnel/start', {
+          ({ response, body } = await requestJson(instance.port, '/api/devryan/tunnel/start', {
             method: 'POST',
             body: JSON.stringify(payload),
             timeoutMs: 60000,
           }));
         } catch (error) {
-          if (error instanceof Error && /\/api\/openchamber\/tunnel\/start/.test(error.message) && /timed out/.test(error.message)) {
+          if (error instanceof Error && /\/api\/(?:devryan|openchamber)\/tunnel\/start/.test(error.message) && /timed out/.test(error.message)) {
             spin?.error('Tunnel start timed out');
             throw new Error(
               `Tunnel start timed out after 60s. cloudflared may still be starting; check with \`openchamber tunnel status --port ${instance.port}\`. Run \`openchamber logs -p ${instance.port}\` for details.`
@@ -4891,7 +4891,7 @@ const commands = {
           const tunnelStopSpin = shouldRenderHumanOutput(options) ? createSpinner(options) : null;
           tunnelStopSpin?.start(`Stopping tunnel on port ${entry.port}...`);
           try {
-            const { response, body } = await requestJson(entry.port, '/api/openchamber/tunnel/stop', {
+            const { response, body } = await requestJson(entry.port, '/api/devryan/tunnel/stop', {
               method: 'POST',
             });
             if (!response.ok) {

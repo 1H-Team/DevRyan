@@ -144,7 +144,7 @@ describe('managed remote owner access with Supabase Off', () => {
     expect(session.status).toBe(200); expect(session.body.contextualScope).toBe('local-admin');
     expect((await request(f.server).post('/api/session').set(remote).set('Cookie', cookie)).status).toBe(403);
     expect((await request(f.server).post('/api/session').set(remote).set('Cookie', cookie).set('X-DevRyan-CSRF', '1')).status).toBe(200);
-    for (const route of ['/api/desktop/browser-cdp', '/API/DESKTOP/browser-cdp', '/api/runtime-service/handshake', '/api/openchamber/tunnel/links', '/API/OPENCHAMBER/TUNNEL/links', '/api/system/supabase-connection', '/api/bots', '/api/passkeys', '/auth/passkey/register/options']) {
+    for (const route of ['/api/desktop/browser-cdp', '/API/DESKTOP/browser-cdp', '/api/runtime-service/handshake', '/api/devryan/tunnel/links', '/API/OPENCHAMBER/TUNNEL/links', '/api/system/supabase-connection', '/api/bots', '/api/passkeys', '/auth/passkey/register/options']) {
       expect((await request(f.server).get(route).set(remote).set('Cookie', cookie)).status, route).toBe(403);
     }
     expect(f.forbidden).not.toHaveBeenCalled();
@@ -249,7 +249,7 @@ describe('durable Bot-only tunnel authorization', () => {
       await f.controller.revokeTunnelArtifacts(); const cookie = await f.login();
       for (const route of ['/api/session', '/api/global/event', '/api/terminal/create', '/api/fs', '/api/git/status',
         '/api/preview/proxy/1234567890abcdef', '/api/desktop/browser-cdp', '/api/runtime-service/handshake',
-        '/api/openchamber/tunnel/status', '/api/system/supabase-connection', '/api/passkeys', `/api/bots/${BOT}/credentials`]) {
+        '/api/devryan/tunnel/status', '/api/system/supabase-connection', '/api/passkeys', `/api/bots/${BOT}/credentials`]) {
         for (const value of [cookie, revokedCookie, `oc_tunnel_session=${'A'.repeat(43)}`, '']) {
           const result = await request(f.server).get(route).set(remote).set('Cookie', value);
           expect([401, 403], `${mode}: ${route}, ${value === cookie ? 'valid' : value === revokedCookie ? 'revoked' : 'invalid'} cookie`).toContain(result.status);

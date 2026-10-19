@@ -26,6 +26,7 @@ import {
   type ManagedTaskProjectedRecord,
   type ManagedTaskWaitingReason,
 } from '@/lib/orchestrationApi';
+import { canonicalEventType } from '@/lib/eventTypes';
 
 const IMMUTABLE_PROJECTED_TASK_FIELDS = [
   'owner',
@@ -55,7 +56,7 @@ export type ManagedTaskPendingAction = 'cancel' | 'auto_resume' | ManagedTaskRes
 export type ManagedRootDelegationPhase = 'starting' | 'waiting' | null;
 
 type ManagedOrchestrationWarningEvent = {
-  type: 'openchamber:managed-orchestration-warning';
+  type: 'devryan:managed-orchestration-warning';
   properties: { message: string };
 };
 
@@ -533,7 +534,9 @@ export const createManagedOrchestrationStore = (options: {
       ...initialState(),
       ingestEvent(event) {
         if (!isRecord(event) || typeof event.type !== 'string') return;
-        if (event.type === 'openchamber:managed-orchestration-warning') {
+        // Contract-built and older-host events carry the `openchamber:*` alias.
+        const type = canonicalEventType(event.type);
+        if (type === 'devryan:managed-orchestration-warning') {
           const properties = isRecord(event.properties) ? event.properties : null;
           const message = typeof properties?.message === 'string' ? properties.message.trim() : '';
           const boundedMessage = truncateManagedText(message, MAX_MANAGED_TASK_FAILURE_BYTES);
@@ -542,12 +545,12 @@ export const createManagedOrchestrationStore = (options: {
             : { ...state, recoveryWarning: boundedMessage });
           return;
         }
-        if (event.type === 'openchamber:managed-task-removed') {
+        if (type === 'devryan:managed-task-removed') {
           const properties = isRecord(event.properties) ? event.properties : null;
           if (properties) removeCompactedTask(properties);
           return;
         }
-        if (event.type !== 'openchamber:managed-task') return;
+        if (type !== 'devryan:managed-task') return;
         const properties = isRecord(event.properties) ? event.properties : null;
         if (properties?.owner !== 'devryan') return;
         const task = parseManagedTaskEventRecord(properties.task);

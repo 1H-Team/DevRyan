@@ -112,7 +112,7 @@ describe('main-owned browser surface contract', () => {
   test('authorizes native surface commands for configured DevRyan origins and keeps state out of pop-out URLs', () => {
     const remoteCommands = mainSource.slice(
       mainSource.indexOf('const COMMANDS_SAFE_FOR_REMOTE = new Set(['),
-      mainSource.indexOf("ipcMain.handle('openchamber:invoke'"),
+      mainSource.indexOf("ipcMain.handle('devryan:invoke'"),
     );
     expect(mainSource).toContain("case 'desktop_browser_surface_create':");
     expect(mainSource).toContain("case 'desktop_browser_surface_popout':");

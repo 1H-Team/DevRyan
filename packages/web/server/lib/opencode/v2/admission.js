@@ -31,7 +31,7 @@
 // to the text length (`projection/ids.js` `userTextSegments`).
 //
 // Retries are idempotent: the message id comes from the body `messageID` or the
-// `x-openchamber-message-id` header (generated otherwise). A repeat of an
+// `x-devryan-message-id` header, or its `x-openchamber-message-id` alias (generated otherwise). A repeat of an
 // admitted id with the same accepted operation resolves without new writes.
 // Its digest is persisted on that turn's inbox/transcript metadata, not the
 // session's latest metadata. Existing turns are checked before selection writes;
@@ -86,7 +86,14 @@ export const ADMISSION_DELIVERIES = Object.freeze(['queue', 'steer']);
 /** Default delivery for prompts and commands (B.5; F10 may change it). */
 export const ADMISSION_DEFAULT_DELIVERY = 'queue';
 
-export const PROMPT_MESSAGE_ID_HEADER = 'x-openchamber-message-id';
+export const PROMPT_MESSAGE_ID_HEADER = 'x-devryan-message-id';
+/** Accepted alias sent by an older UI or client. */
+export const LEGACY_PROMPT_MESSAGE_ID_HEADER = 'x-openchamber-message-id';
+/** The prompt id header, DevRyan name first, then the accepted alias. */
+export const readPromptMessageIdHeader = (headers) => {
+  const value = readHeader(headers, PROMPT_MESSAGE_ID_HEADER);
+  return isNonEmptyString(value) ? value : readHeader(headers, LEGACY_PROMPT_MESSAGE_ID_HEADER);
+};
 export const PROMPT_ORIGIN_HEADER = 'x-devryan-prompt-origin';
 
 /** The synthetic preface the UI adds for plan mode (`ui/src/lib/messages/actionablePlan.ts`). */
@@ -588,7 +595,7 @@ const readHeader = (headers, name) => {
 /** The prompt id: body `messageID`, else the header, else a new id. Both given must agree. */
 const resolveMessageId = (operation, body, options) => {
   const fromBody = isNonEmptyString(body.messageID) ? body.messageID : undefined;
-  const fromOptions = isNonEmptyString(options.messageID) ? options.messageID : readHeader(options.headers, PROMPT_MESSAGE_ID_HEADER);
+  const fromOptions = isNonEmptyString(options.messageID) ? options.messageID : readPromptMessageIdHeader(options.headers);
   const fromHeader = isNonEmptyString(fromOptions) ? fromOptions : undefined;
   if (fromBody && fromHeader && fromBody !== fromHeader) throw invalidInput(operation, 'messageID and the message id header differ');
   const id = fromBody ?? fromHeader;

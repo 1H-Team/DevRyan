@@ -1,3 +1,5 @@
+import { resolveEventDialect } from '../event-stream/event-dialect.js';
+
 const parsePushSubscribeBody = (body) => {
   if (!body || typeof body !== 'object') return null;
   const endpoint = body.endpoint;
@@ -204,6 +206,7 @@ export const registerNotificationRoutes = (app, dependencies) => {
 
     const clients = getUiNotificationClients();
     res.devRyanPrincipal = req.principal;
+    res.devryanEventDialect = resolveEventDialect(req);
     res.devRyanEventFilter = multiUserRuntime?.filterEventForPrincipal || null;
     clients.add(res);
 

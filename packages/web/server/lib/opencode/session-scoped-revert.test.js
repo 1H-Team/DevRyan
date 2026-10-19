@@ -60,14 +60,14 @@ describe('scoped session revert (generation 2)', () => {
     const query = `directory=${encodeURIComponent('/repo')}`;
 
     for (const [route, body] of [['scoped-revert', { messageID: 'msg_1' }], ['scoped-unrevert', {}]]) {
-      const response = await fetch(`${base}/api/openchamber/session/ses_root/${route}?${query}`,
+      const response = await fetch(`${base}/api/devryan/session/ses_root/${route}?${query}`,
         { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       expect(response.status).toBe(409);
       expect(await response.json()).toEqual({ error: 'OpenCode 2 does not provide conversation_revert yet', code: 'capability_absent' });
     }
     expect(guarded).toEqual([]);
 
-    const changes = await fetch(`${base}/api/openchamber/session/ses_root/changes?${query}`);
+    const changes = await fetch(`${base}/api/devryan/session/ses_root/changes?${query}`);
     expect(changes.status).toBe(200);
     expect(await changes.json()).toMatchObject({ sessionCount: 2, rootSessionID: 'ses_root', coverage: 'partial', reasons: ['historical_capture_unavailable'] });
     expect(openCodeClient.sessions.get).toHaveBeenCalledWith('ses_root', expect.objectContaining({ directory: '/repo', allowNotFound: true }));

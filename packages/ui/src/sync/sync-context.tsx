@@ -393,7 +393,7 @@ type SyncSystem = {
   resyncSession: (sessionID: string, options?: { directory?: string | null; reason?: "focus" | "reconnect" | "manual" }) => Promise<void>
 }
 
-const SYNC_CONTEXT_GLOBAL_KEY = "__openchamber_sync_context__"
+const SYNC_CONTEXT_GLOBAL_KEY = "__devryan_sync_context__"
 type SyncGlobal = typeof globalThis & {
   [SYNC_CONTEXT_GLOBAL_KEY]?: React.Context<SyncSystem | null>
 }
@@ -1902,7 +1902,7 @@ const getSessionIdFromPayload = (event: Event): string | null => {
     || event.type === "question.rejected"
     || event.type === "session.deleted"
     || eventType === "session.compacted"
-    || eventType === "openchamber:session-activity"
+    || eventType === "devryan:session-activity"
   ) {
     const sessionID = props.sessionID
     if (typeof sessionID === "string" && sessionID.length > 0) return sessionID
@@ -2924,7 +2924,7 @@ function handleEvent(
     return
   }
 
-  if (String(payload.type) === "openchamber:session-activity") {
+  if (String(payload.type) === "devryan:session-activity") {
     const sessionID = getSessionIdFromPayload(payload)
     if (sessionID && stateContainsSessionData(store.getState(), sessionID)) {
       const presentation = useSessionPresentationStore.getState()
@@ -3463,7 +3463,7 @@ export function handleUserNotificationEvent(
   if (
     !payload
     || typeof payload !== "object"
-    || (payload as { type?: unknown }).type !== "openchamber:notification"
+    || (payload as { type?: unknown }).type !== "devryan:notification"
   ) return
   const properties = payload && typeof payload === "object"
     && (payload as { properties?: unknown }).properties

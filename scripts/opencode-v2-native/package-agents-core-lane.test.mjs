@@ -31,7 +31,7 @@ test('fixture web bridge mounts only the existing owner and retains constructor/
   assert.equal((await bridge.request(directory,'/')).status,503);
   const requests=[];bridge.bindRuntimeOwner({handleInterviewRequest:async(req,res)=>{requests.push(req.url);res.writeHead(200,{'content-type':'application/json'}).end(JSON.stringify({source:'existing owner'}));return true;}});
   const response=await bridge.request(directory,'/api/interviews');assert.equal(response.status,200);assert.deepEqual(await response.json(),{source:'existing owner'});
-  assert.match(requests[0],/^\/api\/openchamber\/interviews\/[a-f0-9]{64}\/api\/interviews$/);
+  assert.match(requests[0],/^\/api\/devryan\/interviews\/[a-f0-9]{64}\/api\/interviews$/);
   assert.throws(()=>bridge.bindRuntimeOwner({handleInterviewRequest:async()=>true}));
   await assert.rejects(bridge.emitIntegrationEvent({directory,sessionID:'ses_owned',kind:'interview-open',path:'https://external.invalid/'}));
   await assert.rejects(bridge.request(directory,'/../escape'));
@@ -47,7 +47,7 @@ test('interview count oracle preserves the original standalone synthetic notific
   metadata:{devryan:{v:1,origin:'native',command:{name:'interview',sessionID,messageID:'msg_command'}}}},
  {id:'msg_answer',sessionID,type:'assistant',time:{created:2,completed:3},agent:'orchestrator',model:{providerID:'fixture',id:'model'},content:[{type:'text',text:'exact answer'}],finish:'stop'},
  {id:'msg_notice',sessionID,type:'synthetic',time:{created:4},metadata:{devryan:{v:1,origin:'interview'}},
-  text:'⎔ Interview UI ready\n\nOpen: http://127.0.0.1:1/api/openchamber/interviews/'+ 'a'.repeat(64)+'/interview/local\nDocument: interview/local.md\n\n[system status: continue without acknowledging this notification]'}];
+  text:'⎔ Interview UI ready\n\nOpen: http://127.0.0.1:1/api/devryan/interviews/'+ 'a'.repeat(64)+'/interview/local\nDocument: interview/local.md\n\n[system status: continue without acknowledging this notification]'}];
  const records=projectMessagePage(canonical,{sessionID,directory:'/owned',agent:'orchestrator',model:{providerID:'fixture',id:'model'}}).records;
  assert.equal(records.filter(row=>row.info.role==='user').length,2,'Real native projection exposes the synthetic notice as user-role');
  assert.equal(assertCompiledInterviewUsers({records,canonical,sessionID,idea}).info.id,'msg_command');

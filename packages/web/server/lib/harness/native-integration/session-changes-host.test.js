@@ -33,7 +33,7 @@ beforeEach(async () => {
   });
 });
 afterEach(async () => { await host.drain(); await fs.rm(base, { recursive: true, force: true }); }, 30_000);
-const endpoint = (action = '') => `/api/openchamber/session/ses_a/changes${action}?directory=${encodeURIComponent(directory)}`;
+const endpoint = (action = '') => `/api/devryan/session/ses_a/changes${action}?directory=${encodeURIComponent(directory)}`;
 const tool = (callID) => ({ info: { id: `msg_${callID}`, parentID: 'user_1', role: 'assistant', time: { created: 2 } },
   parts: [{ id: `part_${callID}`, type: 'tool', callID, tool: 'bash', state: { status: 'completed' } }] });
 

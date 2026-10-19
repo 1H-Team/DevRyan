@@ -1434,6 +1434,8 @@ export function registerGitRoutes(app, {
     } catch (error) {
       // Unavailable discovery must not look like an authoritative empty list.
       console.warn('Failed to discover worktrees:', error?.message || error);
+      res.setHeader('X-DevRyan-Warning', 'git worktrees unavailable');
+      // Accepted alias read by an older UI.
       res.setHeader('X-OpenChamber-Warning', 'git worktrees unavailable');
       res.status(503).json({ error: 'Worktree discovery unavailable' });
     }

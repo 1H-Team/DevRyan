@@ -16,8 +16,8 @@ export type IntegrateResult = GitIntegrateResult;
 
 const getRuntimeGit = (): GitAPI | null => {
   if (typeof window === 'undefined') return null;
-  const apis = (window as typeof window & { __OPENCHAMBER_RUNTIME_APIS__?: RuntimeAPIs })
-    .__OPENCHAMBER_RUNTIME_APIS__;
+  const apis = (window as typeof window & { __DEVRYAN_RUNTIME_APIS__?: RuntimeAPIs })
+    .__DEVRYAN_RUNTIME_APIS__;
   return apis?.git ?? null;
 };
 

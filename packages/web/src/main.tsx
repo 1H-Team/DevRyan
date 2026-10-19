@@ -1,3 +1,5 @@
+// First: copy pre-rename browser storage keys before any store hydrates.
+import '@devryan/ui/lib/legacyStorageMigration.entry';
 import { createWebAPIs } from './api';
 import { registerSW } from 'virtual:pwa-register';
 import {
@@ -11,18 +13,18 @@ import '@devryan/ui/styles/fonts';
 
 declare global {
   interface Window {
-    __OPENCHAMBER_RUNTIME_APIS__?: RuntimeAPIs;
-    __OPENCHAMBER_DESKTOP_SERVER__?: {
+    __DEVRYAN_RUNTIME_APIS__?: RuntimeAPIs;
+    __DEVRYAN_DESKTOP_SERVER__?: {
       origin: string;
       opencodePort: number | null;
       apiPrefix: string;
       cliAvailable: boolean;
     };
-    __OPENCHAMBER_ELECTRON__?: unknown;
+    __DEVRYAN_ELECTRON__?: unknown;
   }
 }
 
-window.__OPENCHAMBER_RUNTIME_APIS__ = createWebAPIs();
+window.__DEVRYAN_RUNTIME_APIS__ = createWebAPIs();
 
 type PrerenderingDocument = Document & {
   prerendering?: boolean;

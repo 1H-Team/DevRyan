@@ -318,7 +318,7 @@ export function registerTunnelAccessBoundary(app, server, { controller, connecti
     && controller.classifyRequestScope(req) === 'tunnel';
   app.use(async (req, res, next) => {
     if (isDirectLocalRequest(req)) {
-      if (/^\/api\/openchamber\/tunnel(?:\/|$)/.test(req.path)) {
+      if (/^\/api\/devryan\/tunnel(?:\/|$)/.test(req.path)) {
         if (!['GET', 'HEAD'].includes(req.method) && req.headers['x-devryan-csrf'] !== '1') return res.sendStatus(403);
         try {
           if (!await authenticateOwner(req, res)) return res.status(403).json({ code: 'local_owner_required', error: 'Authenticate the local owner to control tunnels' });
@@ -361,7 +361,7 @@ export function registerTunnelAccessBoundary(app, server, { controller, connecti
       });
     }
     if (remoteSession?.access === 'owner') {
-      if (/^\/(?:api\/(?:openchamber\/tunnel|system\/supabase-connection|passkeys|auth\/reset|admin|bots|bot-actions|bot-channels|bot-runs|bug-reports|user-analytics)(?:\/|$)|auth\/(?:local-owner|passkey|agent-test-session|claim|invite)(?:\/|$))/i.test(pathname)) return res.sendStatus(403);
+      if (/^\/(?:api\/(?:(?:devryan|openchamber)\/tunnel|system\/supabase-connection|passkeys|auth\/reset|admin|bots|bot-actions|bot-channels|bot-runs|bug-reports|user-analytics)(?:\/|$)|auth\/(?:local-owner|passkey|agent-test-session|claim|invite)(?:\/|$))/i.test(pathname)) return res.sendStatus(403);
       if (!['GET', 'HEAD'].includes(req.method) && (req.headers['x-devryan-csrf'] !== '1' || req.headers.origin !== `https://${remoteSession.hostname}`)) return res.sendStatus(403);
       if (!authorizeOwner(req, remoteSession)) return res.sendStatus(401);
       res.setHeader('Cache-Control', 'no-store');

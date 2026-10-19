@@ -46,7 +46,7 @@ let snapshot = VISIBLE_ANIMATED;
 // minimized window still reports `visibilityState: 'visible'`. The shell
 // reports its window's visibility itself; without a report the window counts
 // as visible.
-export const WINDOW_VISIBILITY_EVENT = 'openchamber:window-visibility';
+export const WINDOW_VISIBILITY_EVENT = 'devryan:window-visibility';
 export const WINDOW_HIDDEN_ATTRIBUTE = 'data-window-hidden';
 let windowHidden = false;
 

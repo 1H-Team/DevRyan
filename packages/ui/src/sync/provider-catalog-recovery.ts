@@ -9,7 +9,7 @@ export function createProviderCatalogRecovery(deps: {
   let active = true
   return {
     handle(directory: string, payload: unknown): boolean {
-      if (!active || !record(payload) || payload.type !== 'openchamber:provider-catalog' || !record(payload.properties)) return false
+      if (!active || !record(payload) || payload.type !== 'devryan:provider-catalog' || !record(payload.properties)) return false
       const p = payload.properties
       if (Object.keys(p).some(key => !['providerID', 'directory', 'source'].includes(key))
         || p.providerID !== 'cursor-acp' || p.source !== 'sdk' || typeof p.directory !== 'string'

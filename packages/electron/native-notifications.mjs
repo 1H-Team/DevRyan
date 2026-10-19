@@ -69,7 +69,7 @@ export function createNativeNotifications({ BrowserWindow, Notification, app, pl
     notification.on('click', () => {
       focusForegroundWindow();
       if (sessionId) {
-        emitToAllWindows('openchamber:open-session', { sessionId });
+        emitToAllWindows('devryan:open-session', { sessionId });
       }
       release();
     });

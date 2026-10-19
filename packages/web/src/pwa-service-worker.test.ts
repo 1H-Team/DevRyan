@@ -29,17 +29,17 @@ describe('pwa service worker startup policy', () => {
 
   it('detects Electron desktop from the preload runtime globals', () => {
     expect(isDesktopRuntimeWindow({
-      __OPENCHAMBER_DESKTOP_SERVER__: { origin: 'http://127.0.0.1:55676' },
+      __DEVRYAN_DESKTOP_SERVER__: { origin: 'http://127.0.0.1:55676' },
     })).toBe(true);
 
     expect(isDesktopRuntimeWindow({
-      __OPENCHAMBER_RUNTIME_APIS__: {
+      __DEVRYAN_RUNTIME_APIS__: {
         runtime: { isDesktop: true },
       },
     })).toBe(true);
 
     expect(isDesktopRuntimeWindow({
-      __OPENCHAMBER_RUNTIME_APIS__: {
+      __DEVRYAN_RUNTIME_APIS__: {
         runtime: { isDesktop: false, },
       },
     })).toBe(false);

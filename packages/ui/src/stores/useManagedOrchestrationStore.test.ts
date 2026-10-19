@@ -1800,7 +1800,7 @@ describe('managed orchestration store', () => {
     for (const stale of [legacy, { ...running, childPromptedAt: null, firstAssistantPartAt: null },
       { ...running, childPromptedAt: 3_000, firstAssistantPartAt: 4_000 }]) {
       store.getState().ingestEvent({
-        type: 'openchamber:managed-task', properties: { owner: 'devryan', directory: running.directory, task: stale },
+        type: 'devryan:managed-task', properties: { owner: 'devryan', directory: running.directory, task: stale },
       });
       expect(store.getState().tasksById[running.taskId]).toBe(current);
     }

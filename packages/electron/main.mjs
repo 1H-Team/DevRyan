@@ -130,7 +130,10 @@ const isPreview = isWindowsPreview({ app });
 const isRuntimeServiceMode = process.argv.includes('--runtime-service');
 const isRuntimeServiceControlProbe = process.argv.includes('--runtime-service-control=status');
 
-const DEEP_LINK_PROTOCOL = 'openchamber';
+// devryan:// is canonical; openchamber:// links from before the rename keep working.
+const DEEP_LINK_PROTOCOLS = Object.freeze(['devryan', 'openchamber']);
+const isDeepLinkProtocol = (protocol) => DEEP_LINK_PROTOCOLS.some((scheme) => protocol === `${scheme}:`);
+const isDeepLinkArg = (arg) => typeof arg === 'string' && DEEP_LINK_PROTOCOLS.some((scheme) => arg.startsWith(`${scheme}://`));
 const STARTUP_RETRY_HOST = 'retry-startup';
 const BOT_RUNTIME_RETRY_HOST = 'retry-bot-runtime';
 const BOT_RUNTIME_CONTINUE_HOST = 'continue-without-bots';
@@ -190,8 +193,8 @@ const cleanupExpiredDiagnosticsTemps = async (destination) => {
 };
 
 try {
-  if (!isPreview && !app.isDefaultProtocolClient(DEEP_LINK_PROTOCOL)) {
-    app.setAsDefaultProtocolClient(DEEP_LINK_PROTOCOL);
+  for (const scheme of DEEP_LINK_PROTOCOLS) {
+    if (!isPreview && !app.isDefaultProtocolClient(scheme)) app.setAsDefaultProtocolClient(scheme);
   }
 } catch (error) {
   // log.* not yet initialized at this point; fall back to console.
@@ -449,12 +452,11 @@ const refreshQuitRiskFlags = async () => {
     return;
   }
 
-  const scheduledUrl = `${base}/api/openchamber/scheduled-tasks/status`;
-  const tunnelUrl = `${base}/api/openchamber/tunnel/status`;
-
-  const fetchJson = async (url) => {
+  const fetchJson = async (route) => {
     try {
-      const response = await fetch(url, { signal: AbortSignal.timeout(2_000) });
+      let response = await fetch(`${base}/api/devryan${route}`, { signal: AbortSignal.timeout(2_000) });
+      // A runtime service of an older version serves only the /api/openchamber alias.
+      if (response.status === 404) response = await fetch(`${base}/api/openchamber${route}`, { signal: AbortSignal.timeout(2_000) });
       if (!response.ok) return null;
       return await response.json();
     } catch {
@@ -462,7 +464,7 @@ const refreshQuitRiskFlags = async () => {
     }
   };
 
-  const [scheduled, tunnel] = await Promise.all([fetchJson(scheduledUrl), fetchJson(tunnelUrl)]);
+  const [scheduled, tunnel] = await Promise.all([fetchJson('/scheduled-tasks/status'), fetchJson('/tunnel/status')]);
 
   Object.assign(quitRisk, buildQuitRiskSnapshot({
     scheduledTasks: scheduled,
@@ -1831,7 +1833,7 @@ const buildInitScript = (localOrigin, bootOutcome, serverOrigin = localOrigin) =
   const privilegedGuard = privilegedOriginGuardJs();
   return [
     '(function(){',
-    `try{window.__OPENCHAMBER_MACOS_MAJOR__=${macVersion};window.__OPENCHAMBER_LOCAL_ORIGIN__=${local};var __oc_server=${server};var __oc_origin=location&&location.origin||'';var __oc_local=${local};var __oc_home=${home};var __oc_is_local=${privilegedGuard};if(__oc_is_local){window.__OPENCHAMBER_HOME__=__oc_home;}if(__oc_is_local&&__oc_server){window.__OPENCHAMBER_DESKTOP_SERVER__={origin:__oc_server,apiPrefix:'/api',opencodePort:null,cliAvailable:true};}var __oc_bo=${outcome};if(__oc_bo){window.__OPENCHAMBER_DESKTOP_BOOT_OUTCOME__=__oc_bo;}}catch(_e){}`,
+    `try{var __oc_set=function(n,v){window['__DEVRYAN_'+n+'__']=v;window['__OPENCHAMBER_'+n+'__']=v;};__oc_set('MACOS_MAJOR',${macVersion});__oc_set('LOCAL_ORIGIN',${local});var __oc_server=${server};var __oc_origin=location&&location.origin||'';var __oc_local=${local};var __oc_home=${home};var __oc_is_local=${privilegedGuard};if(__oc_is_local){__oc_set('HOME',__oc_home);}if(__oc_is_local&&__oc_server){__oc_set('DESKTOP_SERVER',{origin:__oc_server,apiPrefix:'/api',opencodePort:null,cliAvailable:true});}var __oc_bo=${outcome};if(__oc_bo){__oc_set('DESKTOP_BOOT_OUTCOME',__oc_bo);}}catch(_e){}`,
     '}())',
   ].join('');
 };
@@ -1920,7 +1922,7 @@ const buildBotStartupAttentionHtml = (error) => {
 const startupActionForUrl = (rawUrl) => {
   try {
     const parsed = new URL(rawUrl);
-    if (parsed.protocol !== `${DEEP_LINK_PROTOCOL}:`) return null;
+    if (!isDeepLinkProtocol(parsed.protocol)) return null;
     if (parsed.hostname === 'prepare-reboot-recovery') return 'prepare-reboot-recovery';
     if (parsed.hostname === 'copy-startup-diagnostics') return 'copy-startup-diagnostics';
     if (parsed.hostname === STARTUP_RETRY_HOST) return 'retry-startup';
@@ -1947,7 +1949,7 @@ const navigateWindow = async (browserWindow, url, { allowAbort = false } = {}) =
 
 const emitToWindow = (browserWindow, event, detail) => {
   if (!browserWindow || browserWindow.isDestroyed()) return;
-  browserWindow.webContents.send('openchamber:emit', { event, detail });
+  browserWindow.webContents.send('devryan:emit', { event, detail });
 };
 
 const emitToAllWindows = (event, detail) => {
@@ -1964,7 +1966,7 @@ const parseDeepLink = (raw) => {
   if (!trimmed) return null;
   try {
     const url = new URL(trimmed);
-    if (url.protocol !== `${DEEP_LINK_PROTOCOL}:`) return null;
+    if (!isDeepLinkProtocol(url.protocol)) return null;
     const type = url.hostname;
     if (!type) return null;
     const segments = url.pathname.split('/').filter(Boolean);
@@ -2007,11 +2009,11 @@ const dispatchDeepLink = (link) => {
   if (!link) return;
   log.info('[electron] dispatching deep-link', { type: link.type, valueLen: link.value?.length || 0 });
   if (link.type === 'session' && link.value) {
-    emitToAllWindows('openchamber:open-session', { sessionId: link.value });
+    emitToAllWindows('devryan:open-session', { sessionId: link.value });
     return;
   }
   if (link.type === 'project' && link.value) {
-    emitToAllWindows('openchamber:open-project', { projectPath: link.value });
+    emitToAllWindows('devryan:open-project', { projectPath: link.value });
     return;
   }
   if (link.type === 'host' && link.value) {
@@ -2045,7 +2047,7 @@ const handleDeepLinks = (urls) => {
 };
 
 const extractInitialDeepLinks = () =>
-  process.argv.filter((arg) => typeof arg === 'string' && arg.startsWith(`${DEEP_LINK_PROTOCOL}://`));
+  process.argv.filter(isDeepLinkArg);
 
 const { buildMacMenu, dispatchMenuAction, dispatchCheckForUpdates, dispatchDomEventToWindow } = createDesktopMenu({
   BrowserWindow, Menu, app, shell, log, getMainWindow: () => state.mainWindow,
@@ -2907,7 +2909,7 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
   // A busy session cost about one core that way with nobody looking.
   const emitWindowVisibility = () => {
     if (browserWindow.isDestroyed()) return;
-    emitToWindow(browserWindow, 'openchamber:window-visibility', {
+    emitToWindow(browserWindow, 'devryan:window-visibility', {
       visible: browserWindow.isVisible() && !browserWindow.isMinimized(),
     });
   };
@@ -2915,7 +2917,7 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
   browserWindow.webContents.on('did-finish-load', emitWindowVisibility);
 
   browserWindow.on('resize', () => {
-    emitToWindow(browserWindow, 'openchamber:window-resized');
+    emitToWindow(browserWindow, 'devryan:window-resized');
     debounceWindowStatePersist(browserWindow, false);
   });
   browserWindow.on('move', () => {
@@ -3111,9 +3113,9 @@ const publishBotRuntimeProgress = (progress, browserWindow = null) => {
     : null;
   updateStartupSplashStatus(botRuntimeProgressText(progress));
   if (browserWindow) {
-    emitToWindow(browserWindow, 'openchamber:bot-runtime-progress', progress);
+    emitToWindow(browserWindow, 'devryan:bot-runtime-progress', progress);
   } else {
-    emitToAllWindows('openchamber:bot-runtime-progress', progress);
+    emitToAllWindows('devryan:bot-runtime-progress', progress);
   }
 };
 
@@ -3195,8 +3197,8 @@ const createBrowserPopoutWindow = async ({ surfaceId = '', workspaceId = '', bas
     webPreferences: {
       additionalArguments: [
         `--devryan-runtime-mode=${isPreview ? 'standard-preview' : 'native'}`,
-        `--openchamber-local-origin=${desktopLocalOrigin}`,
-        `--openchamber-server-origin=${desktopServerOrigin}`,
+        `--devryan-local-origin=${desktopLocalOrigin}`,
+        `--devryan-server-origin=${desktopServerOrigin}`,
       ],
       preload: isDev ? path.join(__dirname, 'preload.mjs') : path.join(app.getAppPath(), 'preload.mjs'),
       backgroundThrottling: false,
@@ -3316,10 +3318,10 @@ const createMiniChatWindow = async ({ mode, sessionId = '', directory = '', proj
     webPreferences: {
       additionalArguments: [
         `--devryan-runtime-mode=${isPreview ? 'standard-preview' : 'native'}`,
-        `--openchamber-local-origin=${desktopLocalOrigin}`,
-        `--openchamber-server-origin=${desktopServerOrigin}`,
-        `--openchamber-home=${desktopHome}`,
-        `--openchamber-macos-major=${desktopMacosMajor}`,
+        `--devryan-local-origin=${desktopLocalOrigin}`,
+        `--devryan-server-origin=${desktopServerOrigin}`,
+        `--devryan-home=${desktopHome}`,
+        `--devryan-macos-major=${desktopMacosMajor}`,
       ],
       preload: isDev ? path.join(__dirname, 'preload.mjs') : path.join(app.getAppPath(), 'preload.mjs'),
       backgroundThrottling: false,
@@ -3465,7 +3467,7 @@ const installPowerResumeHook = () => {
   if (powerResumeHookInstalled) return;
   powerResumeHookInstalled = true;
   powerMonitor.on('resume', () => {
-    emitToAllWindows('openchamber:system-resume', { timestamp: Date.now() });
+    emitToAllWindows('devryan:system-resume', { timestamp: Date.now() });
   });
 };
 
@@ -3704,7 +3706,7 @@ const verifyWindowsUpdateArtifacts = () => verifyWindowsInstalledArtifacts({ tar
   owner: windowsUpdateOwner, verifyNativeArtifacts: verifyNativeRuntimeArtifacts });
 const desktopUpdater = isPreview ? createPreviewUpdater() : createDesktopUpdater({ currentVersion: APP_VERSION, cacheDirectory: updateCacheDirectory,
   windowsOwner: windowsUpdateOwner, verifyWindowsArtifacts: verifyWindowsUpdateArtifacts,
-  onProgress: progress => emitToAllWindows('openchamber:update-progress', progress) });
+  onProgress: progress => emitToAllWindows('devryan:update-progress', progress) });
 const desktopDmgInstaller = app.isPackaged && process.platform === 'darwin' && !isRuntimeServiceMode && !isRuntimeServiceControlProbe
   ? createMacDmgInstaller({ installedBundle: path.dirname(path.dirname(path.dirname(process.execPath))),
     currentVersion: APP_VERSION, cacheDirectory: updateCacheDirectory, verifyNativeArtifacts: verifyNativeRuntimeArtifacts,
@@ -4528,7 +4530,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
         const apps = await buildInstalledApps(Array.isArray(args.apps) ? args.apps : []);
         await fsp.mkdir(path.dirname(cachePath), { recursive: true });
         await fsp.writeFile(cachePath, JSON.stringify({ updatedAt: now, apps }, null, 2));
-        emitToAllWindows('openchamber:installed-apps-updated', apps);
+        emitToAllWindows('devryan:installed-apps-updated', apps);
       };
       if (!hasCache || isCacheStale || args.force === true) {
         void refresh();
@@ -4632,7 +4634,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
           requestQuit: () => { state.updateInstallReady = true;app.quit(); }, forceExit: () => {},
           onCleanupError: error => {
             log.warn('[electron] update cleanup refused', { code: error?.code || 'update_cleanup_failed' });
-            emitToAllWindows('openchamber:update-progress', { event: 'Error', data: { message: 'Update shutdown did not finish. Quit and reopen DevRyan before retrying.' } });
+            emitToAllWindows('devryan:update-progress', { event: 'Error', data: { message: 'Update shutdown did not finish. Quit and reopen DevRyan before retrying.' } });
           },
         }).then(outcome => {
           if (outcome === 'blocked') {
@@ -4705,10 +4707,10 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
         const directory = typeof args.directory === 'string' ? args.directory.trim() : '';
         const mode = typeof args.mode === 'string' ? args.mode.trim() : '';
         if (sessionId) {
-          emitToWindow(state.mainWindow, 'openchamber:open-session', { sessionId, directory });
+          emitToWindow(state.mainWindow, 'devryan:open-session', { sessionId, directory });
         } else if (mode === 'draft') {
           const projectId = typeof args.projectId === 'string' ? args.projectId.trim() : '';
-          emitToWindow(state.mainWindow, 'openchamber:open-draft-session', { directory, projectId });
+          emitToWindow(state.mainWindow, 'devryan:open-draft-session', { directory, projectId });
         }
         return { focused: true };
       }
@@ -4838,7 +4840,7 @@ const SENSITIVE_NATIVE_BROWSER_COMMANDS = new Set([
   'desktop_browser_devtools_set_open',
 ]);
 
-ipcMain.handle('openchamber:invoke', async (event, command, args) => {
+ipcMain.handle('devryan:invoke', async (event, command, args) => {
   if (isPreview && isPreviewUnsupportedCommand(command)) throw new Error('windows_preview_feature_unavailable');
   const browserWindow = BrowserWindow.fromWebContents(event.sender);
   if(command==='desktop_runtime_bundle_resume'){
@@ -4877,7 +4879,7 @@ ipcMain.handle('openchamber:invoke', async (event, command, args) => {
   return handleInvoke(browserWindow, command, args);
 });
 
-ipcMain.handle('openchamber:dialog:open', async (event, options) => {
+ipcMain.handle('devryan:dialog:open', async (event, options) => {
   // Native file dialogs expose absolute local paths; never grant to remote.
   if (!isLocalSender(event.sender)) {
     log.warn(`[ipc] rejected dialog:open from non-local origin: ${event.sender?.getURL?.() || '(unknown)'}`);
@@ -4971,7 +4973,7 @@ app.on('will-quit', () => {
 
 app.on('second-instance', (_event, argv) => {
   const urls = Array.isArray(argv)
-    ? argv.filter((arg) => typeof arg === 'string' && arg.startsWith(`${DEEP_LINK_PROTOCOL}://`))
+    ? argv.filter(isDeepLinkArg)
     : [];
   if (urls.length > 0) handleDeepLinks(urls);
   focusForegroundWindow();

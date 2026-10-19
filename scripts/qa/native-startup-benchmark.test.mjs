@@ -219,11 +219,11 @@ test('background startup evidence counts only owned fixed endpoints and cleans u
   const cdp = fakeCdp(), observer = observeStartupBackgroundWork(cdp, performance.now(), 'http://127.0.0.1:4567');
   const request = url => cdp.emit('Network.requestWillBeSent', { request: { url, postData: 'must never be retained' } });
   request('http://127.0.0.1:9999/api/startup/agent-runtime-warmup');
-  request('https://example.com/api/openchamber/update-check');
+  request('https://example.com/api/devryan/update-check');
   request('not a URL');
   assert.deepEqual(observer.evidence, { agentWarmupAtMs: null, updateChecks: 0 });
   request('http://127.0.0.1:4567/api/startup/agent-runtime-warmup?directory=private');
-  request('http://127.0.0.1:4567/api/openchamber/update-check?private=value');
+  request('http://127.0.0.1:4567/api/devryan/update-check?private=value');
   assert.ok(observer.evidence.agentWarmupAtMs >= 0);
   assert.equal(observer.evidence.updateChecks, 1);
   assert.equal(JSON.stringify(observer.evidence).includes('private'), false);

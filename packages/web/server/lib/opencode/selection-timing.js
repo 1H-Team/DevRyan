@@ -4,7 +4,7 @@ const timings = new WeakMap();
 
 /** Only opaque correlation and durations: never log a request body or session. */
 export function selectionIngress(req, res, next) {
-  if (req.method !== 'POST' || req.path !== '/api/openchamber/session-retention/selection') return next();
+  if (req.method !== 'POST' || req.path !== '/api/devryan/session-retention/selection') return next();
   const supplied = req.headers['x-devryan-selection-request'];
   const requestID = typeof supplied === 'string' && /^[a-zA-Z0-9_-]{8,64}$/.test(supplied) ? supplied : randomUUID();
   const trace = { requestID, at: new Date().toISOString(), started: performance.now(), phases: {} };

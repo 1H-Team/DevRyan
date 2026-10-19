@@ -190,11 +190,11 @@ export const ProjectNotesTodoPanel: React.FC<ProjectNotesTodoPanelProps> = ({
       setContextReloadTick((previous) => previous + 1);
     };
 
-    window.addEventListener('openchamber:project-plan-saved', handleProjectContextRefresh);
-    window.addEventListener('openchamber:project-notes-updated', handleProjectContextRefresh);
+    window.addEventListener('devryan:project-plan-saved', handleProjectContextRefresh);
+    window.addEventListener('devryan:project-notes-updated', handleProjectContextRefresh);
     return () => {
-      window.removeEventListener('openchamber:project-plan-saved', handleProjectContextRefresh);
-      window.removeEventListener('openchamber:project-notes-updated', handleProjectContextRefresh);
+      window.removeEventListener('devryan:project-plan-saved', handleProjectContextRefresh);
+      window.removeEventListener('devryan:project-notes-updated', handleProjectContextRefresh);
     };
   }, [projectRef]);
 
@@ -437,7 +437,7 @@ export const ProjectNotesTodoPanel: React.FC<ProjectNotesTodoPanelProps> = ({
           return;
         }
         setPlans((previous) => previous.filter((entry) => entry.id !== planId));
-        window.dispatchEvent(new CustomEvent('openchamber:project-plan-saved', {
+        window.dispatchEvent(new CustomEvent('devryan:project-plan-saved', {
           detail: { projectId: projectRef.id },
         }));
       } finally {
@@ -472,7 +472,7 @@ export const ProjectNotesTodoPanel: React.FC<ProjectNotesTodoPanelProps> = ({
           toast.error(t('rightSidebar.contextNotesTodo.toast.importPlanFailed'));
           return;
         }
-        window.dispatchEvent(new CustomEvent('openchamber:project-plan-saved', {
+        window.dispatchEvent(new CustomEvent('devryan:project-plan-saved', {
           detail: { projectId: projectRef.id },
         }));
         toast.success(t('rightSidebar.contextNotesTodo.toast.planImported'));

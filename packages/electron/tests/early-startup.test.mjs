@@ -65,16 +65,16 @@ test('deep links arriving during heavy import are replayed once', async () => {
   startup.deferEarlyAppEvents(fixtureApp);
   let prevented = false;
   fixtureApp.emit('open-url', { preventDefault: () => { prevented = true; } }, 'openchamber://session/fixture');
-  fixtureApp.emit('second-instance', {}, ['app', 'openchamber://session/second']);
+  fixtureApp.emit('second-instance', {}, ['app', 'openchamber://session/second', 'devryan://session/third']);
   assert.equal(prevented, true);
-  assert.deepEqual(startup.takeEarlyAppLinks(), ['openchamber://session/fixture', 'openchamber://session/second']);
+  assert.deepEqual(startup.takeEarlyAppLinks(), ['openchamber://session/fixture', 'openchamber://session/second', 'devryan://session/third']);
   assert.deepEqual(startup.takeEarlyAppLinks(), []);
   assert.equal(fixtureApp.listenerCount('open-url'), 0);
 });
 
 test('main and early startup share construction options and runtime capability arguments', () => {
   const options = createStartupWindowOptions({ app: app(), palette: { background: '#123456' }, localOrigin: 'http://127.0.0.1:1' });
-  assert.ok(options.webPreferences.additionalArguments.includes('--openchamber-local-origin=http://127.0.0.1:1'));
+  assert.ok(options.webPreferences.additionalArguments.includes('--devryan-local-origin=http://127.0.0.1:1'));
   assert.equal(options.backgroundColor, '#123456');
 });
 

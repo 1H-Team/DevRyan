@@ -2,7 +2,6 @@ import {expect,test} from 'bun:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import {pathToFileURL} from 'node:url';
 import {importAgentsCore} from './agents-core-fixture.ts';
 import {createReviewedSlimInterviewService,type NativeSlimInterviewDocuments,type NativeSlimInterviewRecord} from '../../packages/web/server/lib/opencode/runtime-host/native-slim-interview.ts';
 import type {ReviewedInterviewState,ReviewedSlimCommandPart} from '../../packages/agents-core/index.js';
@@ -65,7 +64,7 @@ test('original interview UI handler uses existing HTTP owner and injected exact 
  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-slim-interview-http-')));
  const reviewed=await importAgentsCore(root);
  let authorized=true;const actions:unknown[]=[];
- const prefix='/api/openchamber/interviews/owned_location';
+ const prefix='/api/devryan/interviews/owned_location';
  const fixtureState:ReviewedInterviewState={interview:{id:'owned-interview',sessionID:'ses_owned',idea:'Exact idea',markdownPath:path.join(root,'specs','owned.md'),createdAt:'2026-01-01T00:00:00.000Z',status:'active',baseMessageCount:0},
   url:'http://127.0.0.1/interview/owned-interview',markdownPath:path.join(root,'specs','owned.md'),mode:'awaiting-user',isBusy:false,summary:'Exact title',questions:[],document:'',blocks:[]};
  const handler=reviewed.createInterviewHandler({basePrefix:prefix,authorize:async()=>{actions.push('authorize');if(!authorized)throw new Error('original_owner_revoked');},outputFolder:'specs',listInterviews:()=>[{id:'owned-interview',idea:'Exact idea',status:'active',createdAt:'2026-01-01T00:00:00.000Z'}],listInterviewFiles:async()=>[],getState:async id=>{expect(id).toBe('owned-interview');return fixtureState;},submitAnswers:async(id,answers)=>{actions.push({id,answers});},submitBlockComment:async()=>{},submitChat:async()=>{},handleNudgeAction:async()=>{}});

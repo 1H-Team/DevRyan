@@ -470,10 +470,10 @@ export const TunnelSettings: React.FC = () => {
   const checkAvailabilityAndStatus = React.useCallback(async (signal: AbortSignal) => {
     try {
       const [checkRes, statusRes, settingsRes, providersRes] = await Promise.all([
-        fetch('/api/openchamber/tunnel/check', { signal }),
-        fetch('/api/openchamber/tunnel/status', { signal }),
+        fetch('/api/devryan/tunnel/check', { signal }),
+        fetch('/api/devryan/tunnel/status', { signal }),
         fetch('/api/config/settings', { signal, headers: { Accept: 'application/json' } }),
-        fetch('/api/openchamber/tunnel/providers', { signal }),
+        fetch('/api/devryan/tunnel/providers', { signal }),
       ]);
 
       const checkData = await checkRes.json();
@@ -693,7 +693,7 @@ export const TunnelSettings: React.FC = () => {
     let cancelled = false;
     const refreshSessions = async () => {
       try {
-        const statusRes = await fetch('/api/openchamber/tunnel/status');
+        const statusRes = await fetch('/api/devryan/tunnel/status');
         if (!statusRes.ok || cancelled) {
           return;
         }
@@ -914,7 +914,7 @@ export const TunnelSettings: React.FC = () => {
         });
       }
 
-      const res = await fetch('/api/openchamber/tunnel/start', {
+      const res = await fetch('/api/devryan/tunnel/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-DevRyan-CSRF': '1' },
         body: JSON.stringify({
@@ -1019,7 +1019,7 @@ export const TunnelSettings: React.FC = () => {
   const handleCreateLink = React.useCallback(async () => {
     setIsCreatingLink(true);
     try {
-      const response = await fetch('/api/openchamber/tunnel/links', {
+      const response = await fetch('/api/devryan/tunnel/links', {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'X-DevRyan-CSRF': '1' },
         body: JSON.stringify(accessPolicy === 'owner-link' ? { access: 'owner' } : { botIds: selectedBotIds }),
       });
@@ -1040,8 +1040,8 @@ export const TunnelSettings: React.FC = () => {
     setState('stopping');
 
     try {
-      await fetch('/api/openchamber/tunnel/stop', { method: 'POST', headers: { 'X-DevRyan-CSRF': '1' } });
-      const statusRes = await fetch('/api/openchamber/tunnel/status');
+      await fetch('/api/devryan/tunnel/stop', { method: 'POST', headers: { 'X-DevRyan-CSRF': '1' } });
+      const statusRes = await fetch('/api/devryan/tunnel/status');
       if (statusRes.ok) {
         const statusData = (await statusRes.json()) as TunnelStatusResponse;
         setSessionRecords(Array.isArray(statusData.activeSessions) ? statusData.activeSessions : []);
@@ -1346,7 +1346,7 @@ export const TunnelSettings: React.FC = () => {
                     </span>
                     {record.grantId && record.isActive && <Button variant="outline" size="sm" onClick={async () => {
                       try {
-                        const response = await fetch(`/api/openchamber/tunnel/grants/${record.grantId}`, { method: 'DELETE', headers: { 'X-DevRyan-CSRF': '1' } });
+                        const response = await fetch(`/api/devryan/tunnel/grants/${record.grantId}`, { method: 'DELETE', headers: { 'X-DevRyan-CSRF': '1' } });
                         if (!response.ok) throw new Error('Revoke failed');
                         setSessionRecords((records) => records.filter((entry) => entry.grantId !== record.grantId));
                       } catch { toast.error('Could not revoke this Bot connection.'); }

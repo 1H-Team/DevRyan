@@ -39,7 +39,7 @@ function deltaEvent(delta: string): OpencodeEvent {
 
 function syntheticStatusEvent(sessionId: string, status: "idle" | "busy" | "retry", metadata: Record<string, unknown> = {}): OpencodeEvent {
   return {
-    type: "openchamber:session-status",
+    type: "devryan:session-status",
     properties: {
       sessionId,
       status,
@@ -104,7 +104,7 @@ function installBrowserStubs() {
       href: "http://127.0.0.1:5173/",
       origin: "http://127.0.0.1:5173",
     },
-    __OPENCHAMBER_RUNTIME_APIS__: undefined,
+    __DEVRYAN_RUNTIME_APIS__: undefined,
     addEventListener: windowEvents.addEventListener.bind(windowEvents),
     removeEventListener: windowEvents.removeEventListener.bind(windowEvents),
     dispatchEvent: windowEvents.dispatchEvent.bind(windowEvents),
@@ -205,7 +205,7 @@ describe("createEventPipeline", () => {
       heartbeatTimeoutMs: 1_000,
     })
     const managedEvent = {
-      type: "openchamber:managed-task",
+      type: "devryan:managed-task",
       properties: {
         owner: "devryan",
         directory: "/repo",
@@ -213,7 +213,7 @@ describe("createEventPipeline", () => {
       },
     } as unknown as OpencodeEvent
     const removalEvent = {
-      type: "openchamber:managed-task-removed",
+      type: "devryan:managed-task-removed",
       properties: {
         owner: "devryan",
         taskId: "dvr_task_1",
@@ -226,7 +226,9 @@ describe("createEventPipeline", () => {
     try {
       pipeline.enqueueEvent("/repo", managedEvent)
       pipeline.enqueueEvent("/repo", removalEvent)
-      expect(routed).toEqual([managedEvent, removalEvent])
+      // An older host sends the openchamber:* alias; it routes under the DevRyan name.
+      pipeline.enqueueEvent("/repo", { ...managedEvent, type: "openchamber:managed-task" } as unknown as OpencodeEvent)
+      expect(routed).toEqual([managedEvent, removalEvent, managedEvent])
       expect(directoryEvents).toBe(0)
       expect(pipeline.getDirectoryQueueCount()).toBe(0)
     } finally {
@@ -249,7 +251,7 @@ describe("createEventPipeline", () => {
       heartbeatTimeoutMs: 1_000,
     })
     const notificationEvent = {
-      type: "openchamber:notification",
+      type: "devryan:notification",
       properties: {
         kind: "plan-ready",
         title: "Plan ready",
@@ -738,7 +740,7 @@ describe("createEventPipeline", () => {
 })
 
 test('routes authenticated integration events outside transcript batches with their source directory', async () => {
-  const event = { type: 'openchamber:integration', properties: { kind: 'images-skipped', directory: '/repo', sessionID: 'ses_1', eventID: '12345678-1234-1234-1234-123456789abc' } } as unknown as OpencodeEvent
+  const event = { type: 'devryan:integration', properties: { kind: 'images-skipped', directory: '/repo', sessionID: 'ses_1', eventID: '12345678-1234-1234-1234-123456789abc' } } as unknown as OpencodeEvent
   let finish!: () => void
   const consumed = new Promise<void>(resolve => { finish = resolve })
   const routed: unknown[][] = [], transcript: unknown[] = []
@@ -752,7 +754,7 @@ test('routes authenticated integration events outside transcript batches with th
 })
 
 test('routes SDK catalog success outside transcript queues with its exact directory', () => {
-  const event = { type: 'openchamber:provider-catalog', properties: { providerID: 'cursor-acp', directory: '/repo', source: 'sdk' } } as unknown as OpencodeEvent
+  const event = { type: 'devryan:provider-catalog', properties: { providerID: 'cursor-acp', directory: '/repo', source: 'sdk' } } as unknown as OpencodeEvent
   const routed: unknown[][] = [], transcript: unknown[] = []
   const pipeline = createEventPipeline({ sdk: createSdk([], () => undefined), transport: 'sse',
     onEvent: (_directory, payload) => { transcript.push(payload) },

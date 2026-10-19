@@ -482,15 +482,15 @@ const StartupReadinessGate: React.FC<{
       readyDispatchedRef.current = true;
       dismissInitialLoadingElement();
       (window as unknown as {
-        __openchamberAppReady?: boolean;
-        __openchamberStartupReady?: boolean;
-      }).__openchamberAppReady = true;
+        __devryanAppReady?: boolean;
+        __devryanStartupReady?: boolean;
+      }).__devryanAppReady = true;
       (window as unknown as {
-        __openchamberAppReady?: boolean;
-        __openchamberStartupReady?: boolean;
-      }).__openchamberStartupReady = true;
-      window.dispatchEvent(new Event('openchamber:startup-ready'));
-      window.dispatchEvent(new Event('openchamber:app-ready'));
+        __devryanAppReady?: boolean;
+        __devryanStartupReady?: boolean;
+      }).__devryanStartupReady = true;
+      window.dispatchEvent(new Event('devryan:startup-ready'));
+      window.dispatchEvent(new Event('devryan:app-ready'));
       setHasCompletedStartup(true);
     }, 150);
 
@@ -766,7 +766,7 @@ function HostApp({ apis }: AppProps) {
       }
 
       const data = event.data as { type?: unknown; payload?: EmbeddedVisibilityPayload };
-      if (data?.type !== 'openchamber:embedded-visibility') {
+      if (data?.type !== 'devryan:embedded-visibility') {
         return;
       }
 
@@ -774,16 +774,16 @@ function HostApp({ apis }: AppProps) {
     };
 
     const scopedWindow = window as unknown as {
-      __openchamberSetEmbeddedVisibility?: (payload?: EmbeddedVisibilityPayload) => void;
+      __devryanSetEmbeddedVisibility?: (payload?: EmbeddedVisibilityPayload) => void;
     };
 
-    scopedWindow.__openchamberSetEmbeddedVisibility = applyVisibility;
+    scopedWindow.__devryanSetEmbeddedVisibility = applyVisibility;
     window.addEventListener('message', handleMessage);
 
     return () => {
       window.removeEventListener('message', handleMessage);
-      if (scopedWindow.__openchamberSetEmbeddedVisibility === applyVisibility) {
-        delete scopedWindow.__openchamberSetEmbeddedVisibility;
+      if (scopedWindow.__devryanSetEmbeddedVisibility === applyVisibility) {
+        delete scopedWindow.__devryanSetEmbeddedVisibility;
       }
     };
   }, [embeddedSessionChat]);
@@ -834,8 +834,8 @@ function HostApp({ apis }: AppProps) {
       });
     };
 
-    window.addEventListener('openchamber:open-session', handler as EventListener);
-    return () => window.removeEventListener('openchamber:open-session', handler as EventListener);
+    window.addEventListener('devryan:open-session', handler as EventListener);
+    return () => window.removeEventListener('devryan:open-session', handler as EventListener);
   }, []);
 
   React.useEffect(() => {
@@ -858,8 +858,8 @@ function HostApp({ apis }: AppProps) {
       });
     };
 
-    window.addEventListener('openchamber:open-draft-session', handler as EventListener);
-    return () => window.removeEventListener('openchamber:open-draft-session', handler as EventListener);
+    window.addEventListener('devryan:open-draft-session', handler as EventListener);
+    return () => window.removeEventListener('devryan:open-draft-session', handler as EventListener);
   }, []);
 
   React.useEffect(() => {
@@ -878,8 +878,8 @@ function HostApp({ apis }: AppProps) {
       }
     };
 
-    window.addEventListener('openchamber:open-project', handler as EventListener);
-    return () => window.removeEventListener('openchamber:open-project', handler as EventListener);
+    window.addEventListener('devryan:open-project', handler as EventListener);
+    return () => window.removeEventListener('devryan:open-project', handler as EventListener);
   }, []);
 
   // useEventStream replaced by SyncProvider + SyncBridge
@@ -931,7 +931,7 @@ function HostApp({ apis }: AppProps) {
   }, [clearError, embeddedSessionChat, error]);
 
   // Poll for the injected boot outcome until it becomes available (desktop only).
-  // The Rust backend sets window.__OPENCHAMBER_DESKTOP_BOOT_OUTCOME__ once the
+  // The Rust backend sets window.__DEVRYAN_DESKTOP_BOOT_OUTCOME__ once the
   // sidecar reaches a stable state. We poll with exponential backoff to handle
   // potential race conditions during startup and config writes.
   React.useEffect(() => {

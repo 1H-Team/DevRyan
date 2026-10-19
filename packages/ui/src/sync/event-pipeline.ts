@@ -24,6 +24,7 @@ import {
 import { appendStreamingTextDelta } from "./part-delta"
 import { sessionEvents } from "@/lib/sessionEvents"
 import { usePrimaryRecoveryStore } from "@/stores/usePrimaryRecoveryStore"
+import { canonicalEventType, DEVRYAN_EVENT_DIALECT } from "@/lib/eventTypes"
 
 export type QueuedEvent = {
   directory: string
@@ -97,14 +98,16 @@ type MessageStreamWsFrame = {
 }
 
 const normalizeEventType = (payload: Event): Event => {
-  const type = (payload as { type?: unknown }).type
-  if (typeof type !== "string") {
+  const rawType = (payload as { type?: unknown }).type
+  if (typeof rawType !== "string") {
     return payload
   }
 
+  // An older host sends the `openchamber:*` alias of a `devryan:*` host event.
+  const type = canonicalEventType(rawType)
   const match = /^(.*)\.(\d+)$/.exec(type)
   if (!match || !match[1]) {
-    return payload
+    return type === rawType ? payload : { ...payload, type: type as Event["type"] } as unknown as Event
   }
 
   return {
@@ -115,7 +118,7 @@ const normalizeEventType = (payload: Event): Event => {
 
 const normalizeSyntheticSessionStatus = (payload: Event): Event => {
   const type = (payload as { type?: unknown }).type
-  if (type !== "openchamber:session-status") {
+  if (type !== "devryan:session-status") {
     return payload
   }
 
@@ -249,6 +252,7 @@ function buildGlobalEventWsUrl(lastEventId?: string, replayUnanchored = false): 
   const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`
   const httpUrl = new URL("global/event/ws", resolveAbsoluteUrl(normalizedBase))
   httpUrl.searchParams.set("clientID", retentionClientID)
+  httpUrl.searchParams.set("events", DEVRYAN_EVENT_DIALECT)
   if (lastEventId && lastEventId.length > 0) {
     httpUrl.searchParams.set("lastEventId", lastEventId)
   } else if (replayUnanchored) {
@@ -263,14 +267,14 @@ function getRendererRuntimeLabel(): string {
   }
 
   const runtimeApis = (window as unknown as {
-    __OPENCHAMBER_DESKTOP_SERVER__?: unknown
-    __OPENCHAMBER_ELECTRON__?: unknown
-    __OPENCHAMBER_RUNTIME_APIS__?: { runtime?: { isDesktop?: boolean;  } }
-  }).__OPENCHAMBER_RUNTIME_APIS__
+    __DEVRYAN_DESKTOP_SERVER__?: unknown
+    __DEVRYAN_ELECTRON__?: unknown
+    __DEVRYAN_RUNTIME_APIS__?: { runtime?: { isDesktop?: boolean;  } }
+  }).__DEVRYAN_RUNTIME_APIS__
 
   if (
-    (window as unknown as { __OPENCHAMBER_DESKTOP_SERVER__?: unknown }).__OPENCHAMBER_DESKTOP_SERVER__
-    || (window as unknown as { __OPENCHAMBER_ELECTRON__?: unknown }).__OPENCHAMBER_ELECTRON__
+    (window as unknown as { __DEVRYAN_DESKTOP_SERVER__?: unknown }).__DEVRYAN_DESKTOP_SERVER__
+    || (window as unknown as { __DEVRYAN_ELECTRON__?: unknown }).__DEVRYAN_ELECTRON__
     || runtimeApis?.runtime?.isDesktop === true
   ) {
     return "desktop"
@@ -687,7 +691,7 @@ export function createEventPipeline(input: EventPipelineInput) {
     // "Connection lost" until something else (HTTP health check) happens
     // to race a setState({isConnected: true}) through.
     onReconnect?.()
-    globalThis.window?.dispatchEvent(new globalThis.Event("openchamber:primary-recovery-reconnect"))
+    globalThis.window?.dispatchEvent(new globalThis.Event("devryan:primary-recovery-reconnect"))
   }
 
   const enqueueEvent = (directory: string, payload: Event) => {
@@ -700,7 +704,7 @@ export function createEventPipeline(input: EventPipelineInput) {
       sessionEvents.requestGitRefresh({ directory: routeDirectory?.(directory, normalizedPayload) || directory, sessionChanges: true, sessionID })
       return
     }
-    if (normalizedType === "openchamber:primary-recovery") {
+    if (normalizedType === "devryan:primary-recovery") {
       const data = normalizedPayload as unknown as { properties?: { sessionID?: unknown; recovery?: unknown } }
       if (typeof data.properties?.sessionID === "string") {
         usePrimaryRecoveryStore.getState().accept(data.properties.sessionID, data.properties.recovery)
@@ -708,22 +712,22 @@ export function createEventPipeline(input: EventPipelineInput) {
       return
     }
     if (
-      normalizedType === "openchamber:managed-task"
-      || normalizedType === "openchamber:managed-task-removed"
-      || normalizedType === "openchamber:managed-orchestration-warning"
+      normalizedType === "devryan:managed-task"
+      || normalizedType === "devryan:managed-task-removed"
+      || normalizedType === "devryan:managed-orchestration-warning"
     ) {
       onManagedOrchestrationEvent?.(normalizedPayload)
       return
     }
-    if (normalizedType === "openchamber:integration") {
+    if (normalizedType === "devryan:integration") {
       onIntegrationEvent?.(directory, normalizedPayload)
       return
     }
-    if (normalizedType === "openchamber:provider-catalog") {
+    if (normalizedType === "devryan:provider-catalog") {
       onProviderCatalogEvent?.(directory, normalizedPayload)
       return
     }
-    if (normalizedType === "openchamber:notification") {
+    if (normalizedType === "devryan:notification") {
       onUserNotificationEvent?.(normalizedPayload)
       return
     }
@@ -815,7 +819,7 @@ export function createEventPipeline(input: EventPipelineInput) {
     }
     const events = await sdk.global.event({
       signal,
-      headers: { "X-DevRyan-Subscription-Ready": "1", "X-DevRyan-Replay-Gap": "1", "X-DevRyan-Client-ID": retentionClientID, ...(hadSubscriptionReady && !lastEventId ? { "X-DevRyan-Replay-Unanchored": "1" } : {}), ...(lastEventId && lastEventId.length > 0 ? { "Last-Event-ID": lastEventId } : {}) },
+      headers: { "X-DevRyan-Events": DEVRYAN_EVENT_DIALECT, "X-DevRyan-Subscription-Ready": "1", "X-DevRyan-Replay-Gap": "1", "X-DevRyan-Client-ID": retentionClientID, ...(hadSubscriptionReady && !lastEventId ? { "X-DevRyan-Replay-Unanchored": "1" } : {}), ...(lastEventId && lastEventId.length > 0 ? { "Last-Event-ID": lastEventId } : {}) },
       onSseEvent: (event: { id?: unknown; event?: unknown; data?: unknown }) => {
         if (signal.aborted) return
         if (event.event === "devryan.subscription-ready") {
@@ -1191,7 +1195,7 @@ export function createEventPipeline(input: EventPipelineInput) {
   // Use globalThis (not window) for the system-resume listener so that
   // test environments can replace globalThis.window with a stub.
   if (typeof globalThis.window !== "undefined") {
-    globalThis.window.addEventListener("openchamber:system-resume", onSystemResume)
+    globalThis.window.addEventListener("devryan:system-resume", onSystemResume)
   }
 
   const cleanup = () => {
@@ -1202,7 +1206,7 @@ export function createEventPipeline(input: EventPipelineInput) {
       window.removeEventListener("pageshow", onPageShow)
     }
     if (typeof globalThis.window !== "undefined") {
-      globalThis.window.removeEventListener("openchamber:system-resume", onSystemResume)
+      globalThis.window.removeEventListener("devryan:system-resume", onSystemResume)
     }
     abort.abort()
     flushAll()

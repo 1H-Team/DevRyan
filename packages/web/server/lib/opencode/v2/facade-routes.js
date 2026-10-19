@@ -7,7 +7,7 @@ import { createV2Requester } from '../opencode-client/v2.js';
 import { unwrapList } from '../opencode-client/envelope.js';
 import { createNativeIntegrationFacade } from './native-integration-facade.js';
 import { toV1Projects } from './projection/catalog.js';
-import { PROMPT_ORIGIN_HEADER } from './admission.js';
+import { PROMPT_MESSAGE_ID_HEADER, PROMPT_ORIGIN_HEADER, readPromptMessageIdHeader } from './admission.js';
 import { checkBrowserSessionPatchBody, evaluateOpenCodeV2Request, normalizeOpenCodeV2Path } from './route-policy.js';
 
 const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -136,7 +136,7 @@ export const createOpenCodeV2FacadeRouter = (deps) => {
     try {
       const directory = await resolveFacadeDirectory(req, deps.resolveRequestDirectory);
       const options = { directory, signal: controller.signal, headers: {
-        'x-openchamber-message-id': req.headers['x-openchamber-message-id'],
+        [PROMPT_MESSAGE_ID_HEADER]: readPromptMessageIdHeader(req.headers),
       } };
       const result = await operation(req.openCodeFacadeClient, req, res, options);
       if (!res.headersSent && !res.writableEnded && !res.destroyed) res.json(result);

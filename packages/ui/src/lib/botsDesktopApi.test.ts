@@ -64,7 +64,7 @@ describe('Production Bots desktop client', () => {
       available: () => true,
       invoke: async () => {
         throw new Error(
-          "Error invoking remote method 'openchamber:invoke': "
+          "Error invoking remote method 'devryan:invoke': "
           + 'BotRuntimeManagerError: Bot runtime image supervisor is not publicly accessible.',
         );
       },

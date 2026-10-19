@@ -712,7 +712,7 @@ const SHARED_JSON_50MB_PREFIXES = Object.freeze([
   '/api/text',
   '/api/voice',
   '/api/tts',
-  '/api/openchamber/tunnel',
+  '/api/devryan/tunnel',
 ]);
 
 // Limit for the shared JSON parser, or null when the path is left unparsed.

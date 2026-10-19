@@ -23,7 +23,7 @@ test('a viewed failure without an assistant stays visible, persists safely, and 
       root.render(<SessionFailureNotice sessionId="s" />);
     });
     expect(container.find((node) => node.getAttribute('role') === 'alert')).not.toBeNull();
-    const persisted = getSafeStorage().getItem('openchamber:notification-completions:v1') ?? '';
+    const persisted = getSafeStorage().getItem('devryan:notification-completions:v1') ?? '';
     expect(persisted).toContain('session_timeout');
     expect(persisted).not.toContain('private stack');
     const errors = useNotificationStore.getState().list;
@@ -73,7 +73,7 @@ test('explicit user cancellation is not presented as a failed request', async ()
         root.render(<SessionFailureNotice sessionId="s" />);
       });
       expect(container.find((node) => node.getAttribute('role') === 'alert')).toBeNull();
-      expect(getSafeStorage().getItem('openchamber:notification-completions:v1')).toContain('session_cancelled');
+      expect(getSafeStorage().getItem('devryan:notification-completions:v1')).toContain('session_cancelled');
     } finally { await act(async () => root.unmount()); }
   });
 });
@@ -89,7 +89,7 @@ test('an expired provider sign-in says how to fix it and persists only its code'
         root.render(<SessionFailureNotice sessionId="s" />);
       });
       expect(container.textContent).toContain(PROVIDER_TOKEN_EXPIRED_MESSAGE);
-      const persisted = getSafeStorage().getItem('openchamber:notification-completions:v1') ?? '';
+      const persisted = getSafeStorage().getItem('devryan:notification-completions:v1') ?? '';
       expect(persisted).toContain('provider_token_expired');
       expect(persisted).not.toContain('claude login');
     } finally { await act(async () => root.unmount()); }

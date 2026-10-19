@@ -60,7 +60,7 @@ test('notifications use live focus and main window state when clicked', () => {
   focused = false;
   runtime.maybeShowNativeNotification({ payload: { requireHidden: true, sessionId: 'session' } });
   notification.emit('click');
-  assert.deepEqual(events, ['notification', 'app-focus', 'restore', 'show', 'focus', ['openchamber:open-session', { sessionId: 'session' }]]);
+  assert.deepEqual(events, ['notification', 'app-focus', 'restore', 'show', 'focus', ['devryan:open-session', { sessionId: 'session' }]]);
 });
 
 test('menu dispatch follows the current focused window and preserves native shortcuts', () => {
@@ -77,5 +77,5 @@ test('menu dispatch follows the current focused window and preserves native shor
   focused = second;
   copy.click();
   assert.equal(calls[0], 'copy');
-  assert.deepEqual(calls[1], [second, 'openchamber:menu-action', 'copy']);
+  assert.deepEqual(calls[1], [second, 'devryan:menu-action', 'copy']);
 });

@@ -56,11 +56,11 @@ for (const policy of ['owner-link', 'account-login'] as const) test(`starts Mana
     expect(start).not.toBeNull();
     expect(start?.getAttribute('disabled')).toBeNull();
     await act(async () => { start?.click(); });
-    expect(writes[0]).toMatchObject({ url: '/api/openchamber/tunnel/start', body: { mode: 'managed-remote', managedRemoteTunnelPresetId: 'production' } });
+    expect(writes[0]).toMatchObject({ url: '/api/devryan/tunnel/start', body: { mode: 'managed-remote', managedRemoteTunnelPresetId: 'production' } });
     if (policy === 'owner-link') {
       expect(container.textContent).toContain('This private link grants full access');
       await act(async () => { button(t('settings.openchamber.tunnel.actions.newConnectLink'))?.click(); });
-      expect(writes.at(-1)).toEqual({ url: '/api/openchamber/tunnel/links', body: { access: 'owner' } });
+      expect(writes.at(-1)).toEqual({ url: '/api/devryan/tunnel/links', body: { access: 'owner' } });
     }
     await act(async () => { button(t(policy === 'owner-link' ? 'settings.common.actions.copyAll' : 'settings.openchamber.tunnel.actions.copyUrl'))?.click(); });
     expect(copied).toEqual([policy === 'owner-link' ? connectUrl : url]);

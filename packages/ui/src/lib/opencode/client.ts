@@ -259,12 +259,12 @@ const resolveDesktopBaseUrl = (): string | null => {
     return null;
   }
   const desktopServer = (window as typeof window & {
-    __OPENCHAMBER_DESKTOP_SERVER__?: { origin: string; apiPrefix?: string };
-    __OPENCHAMBER_RUNTIME_APIS__?: RuntimeAPIs;
-  }).__OPENCHAMBER_DESKTOP_SERVER__;
+    __DEVRYAN_DESKTOP_SERVER__?: { origin: string; apiPrefix?: string };
+    __DEVRYAN_RUNTIME_APIS__?: RuntimeAPIs;
+  }).__DEVRYAN_DESKTOP_SERVER__;
 
   const isDesktop = Boolean(
-    (window as typeof window & { __OPENCHAMBER_RUNTIME_APIS__?: RuntimeAPIs }).__OPENCHAMBER_RUNTIME_APIS__?.runtime?.isDesktop
+    (window as typeof window & { __DEVRYAN_RUNTIME_APIS__?: RuntimeAPIs }).__DEVRYAN_RUNTIME_APIS__?.runtime?.isDesktop
   );
 
   if (!desktopServer || !isDesktop) {
@@ -334,7 +334,7 @@ const getDesktopFilesApi = (): FilesAPI | null => {
   if (typeof window === "undefined") {
     return null;
   }
-  const apis = (window as typeof window & { __OPENCHAMBER_RUNTIME_APIS__?: RuntimeAPIs }).__OPENCHAMBER_RUNTIME_APIS__;
+  const apis = (window as typeof window & { __DEVRYAN_RUNTIME_APIS__?: RuntimeAPIs }).__DEVRYAN_RUNTIME_APIS__;
   if (apis && apis.runtime?.isDesktop && apis.files) {
     return apis.files;
   }
@@ -505,7 +505,7 @@ async function readScopedRevertError(response: Response, fallback: string): Prom
 
 function buildScopedRevertUrl(baseUrl: string, sessionId: string, route: string, directory?: string): URL {
   const base = baseUrl.replace(/\/$/, "");
-  const url = new URL(`${base}/openchamber/session/${encodeURIComponent(sessionId)}/${route}`);
+  const url = new URL(`${base}/devryan/session/${encodeURIComponent(sessionId)}/${route}`);
   if (directory && directory.length > 0) {
     url.searchParams.set("directory", directory);
   }
@@ -1640,7 +1640,7 @@ class OpencodeService {
           headers: {
             'content-type': 'application/json',
             accept: 'application/json',
-            'x-openchamber-message-id': messageId,
+            'x-devryan-message-id': messageId,
             'x-devryan-prompt-origin': 'human',
           },
           body: JSON.stringify({

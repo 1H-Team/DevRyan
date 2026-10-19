@@ -5,7 +5,7 @@ import type { AttachedFile } from '@/stores/types/sessionTypes'
 export const SESSION_CREATION_DEADLINE_MS = 120_000
 export const PRE_CREATION_RESTART = 'session_create_restart_rejected'
 export const UNKNOWN_CREATION_OUTCOME = 'session_create_outcome_unknown'
-const STORAGE_KEY = 'openchamber_session_creation_attempts'
+const STORAGE_KEY = 'devryan_session_creation_attempts'
 
 export type CreationSnapshot = Readonly<{
   draftId: string

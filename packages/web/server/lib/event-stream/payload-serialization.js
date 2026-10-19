@@ -3,6 +3,8 @@
 // accounting, queue accounting and frames. Only recent payloads are retained:
 // live fan-out reuses them within milliseconds, and a slow client or a replay
 // that misses the cache simply serializes again.
+import { applyEventDialect } from './event-dialect.js';
+
 const MAX_CACHED_CHARS = 4 * 1024 * 1024;
 const MAX_CACHED_ENTRIES = 256;
 const cache = new Map();
@@ -28,8 +30,9 @@ const serialize = (payload) => {
   return entry;
 };
 
-/** JSON text of an event payload, exactly as `JSON.stringify(payload)`. */
-export const serializeEventPayload = (payload) => serialize(payload).json;
+/** JSON text of an event payload, exactly as `JSON.stringify(payload)`; an
+ * opted-in connection's dialect renames a leading `openchamber:` type. */
+export const serializeEventPayload = (payload, dialect = null) => applyEventDialect(serialize(payload).json, dialect);
 
 /** UTF-8 size of `serializeEventPayload(payload)`. */
 export const eventPayloadBytes = (payload) => serialize(payload).bytes;

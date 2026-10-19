@@ -131,7 +131,7 @@ describe('local SSE routes', () => {
       },
     });
 
-    const handler = getRoute('GET', '/api/openchamber/events');
+    const handler = getRoute('GET', '/api/devryan/events');
     const req = createMockRequest();
     const res = createMockResponse();
 

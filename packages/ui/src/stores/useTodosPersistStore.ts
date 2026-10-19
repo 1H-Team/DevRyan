@@ -54,7 +54,7 @@ export const useTodosPersistStore = create<TodosPersistState>()(
                 },
             }),
             {
-                name: 'openchamber-session-todos',
+                name: 'devryan-session-todos',
                 version: 1,
                 storage: createJSONStorage(() => getSafeStorage()),
                 partialize: (state) => ({ sessions: state.sessions }),

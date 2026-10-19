@@ -246,7 +246,7 @@ export function observeStartupBackgroundWork(cdp, startedAt, origin) {
     try { url = new URL(request?.url); } catch { return; }
     if (url.origin !== origin) return;
     if (url.pathname === '/api/startup/agent-runtime-warmup') evidence.agentWarmupAtMs ??= performance.now() - startedAt;
-    if (url.pathname === '/api/openchamber/update-check') evidence.updateChecks++;
+    if (url.pathname === '/api/devryan/update-check') evidence.updateChecks++;
   });
   return { evidence, close };
 }

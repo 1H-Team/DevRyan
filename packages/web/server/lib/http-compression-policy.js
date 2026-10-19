@@ -24,7 +24,7 @@ export function createCompressionPolicy({ shouldSkipApiCompression }) {
     '/api/event',
     '/api/global/event',
     '/api/notifications/stream',
-    '/api/openchamber/events',
+    '/api/devryan/events',
   ];
 
   function shouldSkipCompression(req, res) {

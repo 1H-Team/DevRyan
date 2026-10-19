@@ -246,7 +246,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
   };
 
   const registerRoutes = (app) => {
-    app.get('/api/openchamber/tunnel/check', async (req, res) => {
+    app.get('/api/devryan/tunnel/check', async (req, res) => {
       try {
         const requestedProvider = typeof req?.query?.provider === 'string' && req.query.provider.trim().length > 0
           ? normalizeTunnelProvider(req.query.provider)
@@ -350,27 +350,27 @@ export const createTunnelRoutesRuntime = (dependencies) => {
         return res.status(500).json({ ok: false, error: 'Failed to run tunnel doctor' });
       }
     };
-    app.post('/api/openchamber/tunnel/doctor', handleTunnelDoctor);
-    app.get('/api/openchamber/tunnel/doctor', handleTunnelDoctor);
+    app.post('/api/devryan/tunnel/doctor', handleTunnelDoctor);
+    app.get('/api/devryan/tunnel/doctor', handleTunnelDoctor);
 
-    app.get('/api/openchamber/tunnel/providers', (_req, res) => {
+    app.get('/api/devryan/tunnel/providers', (_req, res) => {
       const providers = tunnelProviderRegistry.listCapabilities();
       return res.json({ providers });
     });
 
-    app.post('/api/openchamber/tunnel/links', async (req, res) => {
+    app.post('/api/devryan/tunnel/links', async (req, res) => {
       try {
         const link = await tunnelAuthController.issueBootstrapToken({ access: req.body?.access, botIds: req.body?.botIds, ttlMs: TUNNEL_LINK_TTL_MS });
         return res.json({ connectUrl: `https://${tunnelAuthController.getActiveTunnelHost()}/tunnel/connect#t=${link.token}`, expiresAt: link.expiresAt });
       } catch (error) { return res.status(error.statusCode || 503).json({ error: error.message, code: error.code || 'tunnel_link_unavailable' }); }
     });
 
-    app.delete('/api/openchamber/tunnel/grants/:grantId', async (req, res) => {
+    app.delete('/api/devryan/tunnel/grants/:grantId', async (req, res) => {
       try { await tunnelAuthController.revokeGrant(req.params.grantId); return res.sendStatus(204); }
       catch (error) { return res.status(error.statusCode || 503).json({ error: 'Tunnel grant could not be revoked' }); }
     });
 
-    app.get('/api/openchamber/tunnel/status', async (_req, res) => {
+    app.get('/api/devryan/tunnel/status', async (_req, res) => {
       try {
         await tunnelService.refreshHealth?.({ maxAgeMs: 5000 });
         const runtimeReady = Boolean(getRuntimeReady());
@@ -488,7 +488,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
       }
     });
 
-    app.put('/api/openchamber/tunnel/managed-remote-token', async (req, res) => {
+    app.put('/api/devryan/tunnel/managed-remote-token', async (req, res) => {
       try {
         const presetId = typeof req?.body?.presetId === 'string' ? req.body.presetId.trim() : '';
         const presetName = typeof req?.body?.presetName === 'string' ? req.body.presetName.trim() : '';
@@ -521,7 +521,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
       }
     });
 
-    app.post('/api/openchamber/tunnel/start', async (_req, res) => {
+    app.post('/api/devryan/tunnel/start', async (_req, res) => {
       try {
         if (tunnelAuthController.hasOwner && ((_req.body?.connectTtlMs !== undefined && _req.body.connectTtlMs !== TUNNEL_LINK_TTL_MS)
           || (_req.body?.sessionTtlMs !== undefined && _req.body.sessionTtlMs !== TUNNEL_SESSION_TTL_MS))) {
@@ -718,7 +718,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
       }
     });
 
-    app.post('/api/openchamber/tunnel/stop', async (_req, res) => {
+    app.post('/api/devryan/tunnel/stop', async (_req, res) => {
       let revokedBootstrapCount = 0;
       let invalidatedSessionCount = 0;
       const activeTunnelId = tunnelAuthController.getActiveTunnelId();

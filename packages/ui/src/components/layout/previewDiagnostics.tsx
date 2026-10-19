@@ -114,7 +114,7 @@ export const usePreviewDiagnostics = ({
     const frameWindow = iframeRef.current?.contentWindow;
     if (!enabled || !bridgeReady || !frameWindow) return;
     frameWindow.postMessage({
-      source: 'openchamber-preview-parent',
+      source: 'devryan-preview-parent',
       version: 1,
       type: 'set-inspect-mode',
       enabled: inspectMode,
@@ -125,7 +125,7 @@ export const usePreviewDiagnostics = ({
     const frameWindow = iframeRef.current?.contentWindow;
     if (!enabled || !bridgeReady || !frameWindow) return;
     frameWindow.postMessage({
-      source: 'openchamber-preview-parent',
+      source: 'devryan-preview-parent',
       version: 1,
       type: 'set-color-scheme',
       scheme: colorScheme,
@@ -171,19 +171,20 @@ export const usePreviewDiagnostics = ({
     const handler = (event: MessageEvent<PreviewBridgeMessage>) => {
       if (event.source !== iframeRef.current?.contentWindow || event.origin !== window.location.origin) return;
       const data = event.data;
-      if (!data || data.source !== 'openchamber-preview-bridge' || data.version !== 1) return;
+      // A page injected before the rename sends the openchamber-* alias.
+      if (!data || (data.source !== 'devryan-preview-bridge' && data.source !== 'openchamber-preview-bridge') || data.version !== 1) return;
 
       if (data.type === 'ready') {
         setBridgeReady(true);
         const frameWindow = iframeRef.current?.contentWindow;
         frameWindow?.postMessage({
-          source: 'openchamber-preview-parent',
+          source: 'devryan-preview-parent',
           version: 1,
           type: 'set-inspect-mode',
           enabled: inspectMode,
         }, window.location.origin);
         frameWindow?.postMessage({
-          source: 'openchamber-preview-parent',
+          source: 'devryan-preview-parent',
           version: 1,
           type: 'set-color-scheme',
           scheme: colorScheme,

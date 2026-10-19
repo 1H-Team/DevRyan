@@ -73,8 +73,8 @@ or advance scheduled occurrences.
   - `PUT /api/projects/:projectId/scheduled-tasks`
   - `DELETE /api/projects/:projectId/scheduled-tasks/:taskId`
   - `POST /api/projects/:projectId/scheduled-tasks/:taskId/run`
-  - `GET /api/openchamber/scheduled-tasks/status`
-  - `GET /api/openchamber/events`
+  - `GET /api/devryan/scheduled-tasks/status`
+  - `GET /api/devryan/events`
 
 The status response preserves `hasEnabledScheduledTasks` and
 `enabledScheduledTasksCount` for management compatibility. Quit-risk consumers

@@ -4,7 +4,7 @@ import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
-const SPEECH_EVENT = 'openchamber:macos-speech';
+const SPEECH_EVENT = 'devryan:macos-speech';
 const HELPER_NAME = 'macos-speech-helper';
 const HELPER_STOP_COMMAND = 'stop\n';
 const GRACEFUL_STOP_TIMEOUT_MS = 800;

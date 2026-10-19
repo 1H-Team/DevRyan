@@ -251,14 +251,14 @@ export const ProjectPreviewGrantOwner: React.FC = () => {
       const detail = (event as CustomEvent<{ status?: unknown }>).detail;
       if (detail?.status === 'connected') void synchronize(true);
     };
-    window.addEventListener('openchamber:connection-status', handleConnected);
+    window.addEventListener('devryan:connection-status', handleConnected);
 
     return () => {
       disposed = true;
       controller?.abort();
       unsubscribe();
       window.clearInterval(intervalID);
-      window.removeEventListener('openchamber:connection-status', handleConnected);
+      window.removeEventListener('devryan:connection-status', handleConnected);
     };
   }, [enabled, principal.id]);
 

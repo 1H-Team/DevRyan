@@ -79,7 +79,7 @@ spyOn(opencodeClient, 'getProviders').mockImplementation(async options => {
   catalogReads.push(options); return readCatalog(options);
 });
 spyOn(globalThis, 'fetch').mockImplementation(async input => {
-  if (String(input) !== '/api/openchamber/models-metadata') throw new Error('Unexpected fixture request');
+  if (String(input) !== '/api/devryan/models-metadata') throw new Error('Unexpected fixture request');
   return Response.json({});
 });
 
@@ -221,7 +221,7 @@ describe('ModelControls delayed user-part hydration', () => {
       await act(async () => { initial = useConfigStore.getState().loadProviders({ directory }); });
       expect(catalogReads).toHaveLength(1);
       await act(async () => {
-        const event = { type: 'openchamber:provider-catalog', properties: { providerID: 'cursor-acp', directory, source: 'sdk' } };
+        const event = { type: 'devryan:provider-catalog', properties: { providerID: 'cursor-acp', directory, source: 'sdk' } };
         recovery.handle(directory, event); recovery.handle(directory, event);
       });
       expect(catalogReads).toHaveLength(2);

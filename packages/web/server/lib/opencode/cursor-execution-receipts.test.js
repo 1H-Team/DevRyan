@@ -115,7 +115,7 @@ test('published confinement covers native tasks through exact aliases while the 
       expect((await runtime.leaseForCall({directory,sessionID:'child',callID})).token).toBe(owned.token);
     }
     await host.drain(); host=makeHost();
-    const endpoint=`/api/openchamber/session/child/changes?directory=${encodeURIComponent(directory)}`;
+    const endpoint=`/api/devryan/session/child/changes?directory=${encodeURIComponent(directory)}`;
     const summary=await host.handleRequest('GET',endpoint);
     expect(summary.body).toMatchObject({coverage:'complete',reasons:[],fileCount:1});
     expect(summary.body.files.map(file=>file.path)).toEqual(['changed.txt']);

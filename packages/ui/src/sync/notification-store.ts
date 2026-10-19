@@ -63,7 +63,7 @@ type NotificationIndex = {
 
 const MAX_NOTIFICATIONS = 500
 const NOTIFICATION_TTL_MS = 1000 * 60 * 60 * 24 * 30 // 30 days
-const COMPLETION_NOTIFICATION_STORAGE_KEY = "openchamber:notification-completions:v1"
+const COMPLETION_NOTIFICATION_STORAGE_KEY = "devryan:notification-completions:v1"
 const notificationStorage = getSafeStorage()
 
 // ---------------------------------------------------------------------------

@@ -1,3 +1,5 @@
+import { canonicalEventType, DEVRYAN_EVENT_DIALECT } from '@/lib/eventTypes';
+
 export type ScheduledTaskRanEvent = {
   type: 'scheduled-task-ran';
   projectId: string;
@@ -82,7 +84,7 @@ const parseEnvelope = (raw: string): { type: string; properties: unknown } | nul
 
   try {
     const parsed = JSON.parse(raw);
-    const type = typeof parsed?.type === 'string' ? parsed.type : '';
+    const type = typeof parsed?.type === 'string' ? canonicalEventType(parsed.type) : '';
     const properties = parsed?.properties;
     if (!type) {
       return null;
@@ -94,13 +96,14 @@ const parseEnvelope = (raw: string): { type: string; properties: unknown } | nul
 };
 
 export const parseOpenChamberEventEnvelope = (
-  envelope: { type: string; properties: unknown },
+  rawEnvelope: { type: string; properties: unknown },
 ): OpenChamberEvent | null => {
-  if (envelope.type === 'openchamber:event-stream-ready') {
+  const envelope = { ...rawEnvelope, type: canonicalEventType(rawEnvelope.type) };
+  if (envelope.type === 'devryan:event-stream-ready') {
     return { type: 'stream-ready' };
   }
 
-  if (envelope.type === 'openchamber:heartbeat') {
+  if (envelope.type === 'devryan:heartbeat') {
     return null;
   }
 
@@ -108,19 +111,19 @@ export const parseOpenChamberEventEnvelope = (
     ? envelope.properties as Record<string, unknown>
     : null;
 
-  if (envelope.type === 'openchamber:project-metadata-changed') {
+  if (envelope.type === 'devryan:project-metadata-changed') {
     const projectId = typeof parsed?.projectId === 'string' ? parsed.projectId.trim() : '';
     return projectId ? { type: 'project-metadata-changed', projectId } : null;
   }
 
-  if (envelope.type === 'openchamber:browser-agent-leases-changed') {
+  if (envelope.type === 'devryan:browser-agent-leases-changed') {
     const revision = typeof parsed?.revision === 'number' && Number.isSafeInteger(parsed.revision)
       ? parsed.revision
       : -1;
     return revision >= 0 ? { type: 'browser-agent-leases-changed', revision } : null;
   }
 
-  if (envelope.type !== 'openchamber:scheduled-task-ran') {
+  if (envelope.type !== 'devryan:scheduled-task-ran') {
     return null;
   }
 
@@ -166,7 +169,7 @@ const connect = () => {
 
   cleanupSource();
 
-  const source = new EventSource('/api/openchamber/events');
+  const source = new EventSource(`/api/devryan/events?events=${DEVRYAN_EVENT_DIALECT}`);
   source.onopen = () => {
     resetHeartbeatTimer();
   };

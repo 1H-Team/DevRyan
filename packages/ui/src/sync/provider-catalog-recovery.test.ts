@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import { createProviderCatalogRecovery } from './provider-catalog-recovery'
 
 const event = (directory = '/repo', changes: Record<string, unknown> = {}) => ({
-  type: 'openchamber:provider-catalog', properties: { providerID: 'cursor-acp', directory, source: 'sdk', ...changes },
+  type: 'devryan:provider-catalog', properties: { providerID: 'cursor-acp', directory, source: 'sdk', ...changes },
 })
 const flush = async () => { for (let index = 0; index < 5; index++) await Promise.resolve() }
 
@@ -27,7 +27,7 @@ test('ignores fallback, malformed, background and wrongly routed catalog notific
   for (const [directory, payload] of [
     ['/repo', event('/repo', { source: 'fallback' })], ['/repo', event('/repo', { providerID: 'other' })],
     ['/repo', event('/repo', { models: [] })], ['/other', event('/other')], ['/other', event('/repo')],
-    ['global', event('')], ['/repo', { type: 'openchamber:provider-catalog', properties: null }],
+    ['global', event('')], ['/repo', { type: 'devryan:provider-catalog', properties: null }],
   ] as const) expect(recovery.handle(directory, payload)).toBe(false)
   await flush(); expect(calls).toBe(0); recovery.dispose()
 })

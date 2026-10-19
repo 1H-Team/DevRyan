@@ -130,7 +130,7 @@ export const DesktopRightChromeActions: React.FC<DesktopRightChromeActionsProps>
     try {
       const cfg = await desktopHostsGet();
       const currentHref = window.location.href;
-      const localOrigin = window.__OPENCHAMBER_LOCAL_ORIGIN__ || window.location.origin;
+      const localOrigin = window.__DEVRYAN_LOCAL_ORIGIN__ || window.location.origin;
 
       if (locationMatchesHost(currentHref, localOrigin)) {
         setCurrentInstanceLabel('Local');

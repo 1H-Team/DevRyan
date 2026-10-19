@@ -52,7 +52,7 @@ import {
 installApiFetchSecurity();
 
 const STATUS_CHECK_ENDPOINT = '/auth/session';
-const TRUST_DEVICE_STORAGE_KEY = 'openchamber.uiAuth.trustDevice';
+const TRUST_DEVICE_STORAGE_KEY = 'devryan.uiAuth.trustDevice';
 
 const fetchSessionStatus = async (): Promise<Response> => {
   const response = await fetch(STATUS_CHECK_ENDPOINT, {

@@ -1301,9 +1301,9 @@ describe("sync plan lifecycle on message.part.delta", () => {
   test("removes only the deleted session's persisted composer text and mentions", () => {
     const deletedSessionID = "ses_composer_delete"
     const retainedSessionID = "ses_composer_keep"
-    const deletedDraftKey = `openchamber_chat_input_draft_${deletedSessionID}`
-    const deletedMentionsKey = `openchamber_chat_confirmed_mentions_${deletedSessionID}`
-    const retainedDraftKey = `openchamber_chat_input_draft_${retainedSessionID}`
+    const deletedDraftKey = `devryan_chat_input_draft_${deletedSessionID}`
+    const deletedMentionsKey = `devryan_chat_confirmed_mentions_${deletedSessionID}`
+    const retainedDraftKey = `devryan_chat_input_draft_${retainedSessionID}`
     const storage = getSafeStorage()
     const childStores = new ChildStoreManager()
     const store = childStores.ensureChild(DIRECTORY)
@@ -1978,7 +1978,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
     const nativeNotifications: Array<{ title?: string; body?: string; tag?: string }> = []
 
     handleUserNotificationEvent({
-      type: "openchamber:notification",
+      type: "devryan:notification",
       properties: {
         kind: "plan-ready",
         sessionId: SESSION_ID,

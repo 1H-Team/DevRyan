@@ -73,11 +73,11 @@ export function createStartupWindowOptions({ app, isPreview = false, palette,
     webPreferences: {
       additionalArguments: [
         `--devryan-runtime-mode=${isPreview ? 'standard-preview' : 'native'}`,
-        `--openchamber-local-origin=${localOrigin}`,
-        `--openchamber-server-origin=${serverOrigin}`,
-        `--openchamber-home=${os.homedir() || ''}`,
-        `--openchamber-macos-major=${macosMajor}`,
-        `--openchamber-boot-outcome=${JSON.stringify(bootOutcome)}`,
+        `--devryan-local-origin=${localOrigin}`,
+        `--devryan-server-origin=${serverOrigin}`,
+        `--devryan-home=${os.homedir() || ''}`,
+        `--devryan-macos-major=${macosMajor}`,
+        `--devryan-boot-outcome=${JSON.stringify(bootOutcome)}`,
       ],
       preload: path.join(app.getAppPath(), 'preload.mjs'),
       backgroundThrottling: false, contextIsolation: true, nodeIntegration: false,
@@ -89,7 +89,7 @@ export function createStartupWindowOptions({ app, isPreview = false, palette,
 
 export function deferEarlyAppEvents(app) {
   const onSecond = (_event, argv) => {
-    if (Array.isArray(argv)) deferredLinks.push(...argv.filter(arg => typeof arg === 'string' && arg.startsWith('openchamber://')));
+    if (Array.isArray(argv)) deferredLinks.push(...argv.filter(arg => typeof arg === 'string' && (arg.startsWith('devryan://') || arg.startsWith('openchamber://'))));
     if (earlyWindow && !earlyWindow.isDestroyed()) { earlyWindow.show(); earlyWindow.focus(); }
   };
   const onUrl = (event, url) => { event.preventDefault(); deferredLinks.push(url); };
@@ -156,8 +156,8 @@ export async function showEarlyStartupFailure({ app, clipboard, dialog }) {
   window.webContents.on('will-navigate', (event, url) => {
     event.preventDefault();
     if (window.webContents.getURL() !== failureUrl) return;
-    if (url === 'openchamber://retry-startup') { app.relaunch(); app.quit(); }
-    if (url === 'openchamber://copy-startup-diagnostics') clipboard.writeText('{"code":"electron_main_import_failed"}');
+    if (url === 'devryan://retry-startup' || url === 'openchamber://retry-startup') { app.relaunch(); app.quit(); }
+    if (url === 'devryan://copy-startup-diagnostics' || url === 'openchamber://copy-startup-diagnostics') clipboard.writeText('{"code":"electron_main_import_failed"}');
   });
   window.webContents.on('will-attach-webview', event => event.preventDefault());
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));

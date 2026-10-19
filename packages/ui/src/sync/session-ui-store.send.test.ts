@@ -595,8 +595,8 @@ const { useSessionPlanFileStore } = await import("@/stores/useSessionPlanFileSto
 const { setAuthPrincipal } = await import("@/lib/authSession")
 
 const SESSION_COMPLETION_INDICATOR_SETTLE_MS = 250
-const CURSOR_DRAFT_PREWARM_STORAGE_KEY = "openchamber.cursorDraftPrewarmSessions.v1"
-const PLAN_MESSAGE_STATE_STORAGE_KEY = "openchamber_plan_message_state"
+const CURSOR_DRAFT_PREWARM_STORAGE_KEY = "devryan.cursorDraftPrewarmSessions.v1"
+const PLAN_MESSAGE_STATE_STORAGE_KEY = "devryan_plan_message_state"
 
 bunTestHooks.afterEach(() => {
   restoreOpencodeClientMock()

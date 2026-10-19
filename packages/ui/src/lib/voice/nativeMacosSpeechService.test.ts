@@ -10,8 +10,8 @@ const installMockWindow = () => {
   const invocations: Array<{ command: string; args?: Record<string, unknown> }> = [];
 
   const mockWindow = {
-    __OPENCHAMBER_ELECTRON__: { runtime: 'electron' },
-    __OPENCHAMBER_MACOS_MAJOR__: 14,
+    __DEVRYAN_ELECTRON__: { runtime: 'electron' },
+    __DEVRYAN_MACOS_MAJOR__: 14,
     navigator: { platform: 'MacIntel' },
     __TAURI__: {
       core: {
@@ -202,16 +202,16 @@ describe('nativeMacosSpeechService', () => {
       (level) => levels.push(level),
     );
 
-    handlers.get('openchamber:macos-speech')?.({
+    handlers.get('devryan:macos-speech')?.({
       payload: { type: 'transcript', provider: 'macos', text: 'hello', isFinal: false },
     });
-    handlers.get('openchamber:macos-speech')?.({
+    handlers.get('devryan:macos-speech')?.({
       payload: { type: 'transcript', provider: 'macos', text: 'hello world', isFinal: true },
     });
-    handlers.get('openchamber:macos-speech')?.({
+    handlers.get('devryan:macos-speech')?.({
       payload: { type: 'level', provider: 'macos', level: 1.4 },
     });
-    handlers.get('openchamber:macos-speech')?.({
+    handlers.get('devryan:macos-speech')?.({
       payload: { type: 'error', provider: 'macos', code: 'speech_permission_denied' },
     });
 
@@ -238,7 +238,7 @@ describe('nativeMacosSpeechService', () => {
       { silenceThresholdDb: -44, silenceHoldMs: 900 },
     );
 
-    handlers.get('openchamber:macos-speech')?.({
+    handlers.get('devryan:macos-speech')?.({
       payload: { type: 'transcript', provider: 'macos', text: 'pause here', isFinal: true, finalReason: 'silence' },
     });
 
@@ -260,7 +260,7 @@ describe('nativeMacosSpeechService', () => {
 
     expect(nativeMacosSpeechService.getIsListening()).toBe(true);
 
-    handlers.get('openchamber:macos-speech')?.({
+    handlers.get('devryan:macos-speech')?.({
       payload: { type: 'stopped', provider: 'macos' },
     });
 

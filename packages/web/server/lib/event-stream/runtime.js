@@ -12,6 +12,7 @@ import { stripEventDiffContent } from '../opencode/diff-summary.js';
 import { createGlobalMessageStreamWsBridge } from './global-ws-bridge.js';
 import { createBoundedEventQueue } from './bounded-event-queue.js';
 import { serializeEventPayload } from './payload-serialization.js';
+import { resolveEventDialect } from './event-dialect.js';
 import { acceptDirectoryMessageStreamWsConnection } from './directory-ws-bridge.js';
 import {
   DEFAULT_UPSTREAM_RECONNECT_DELAY_MS,
@@ -34,7 +35,7 @@ function getRequestLastEventId(req) {
   return '';
 }
 
-export function serializeMessageStreamSseEvent({ payload, directory, eventId }) {
+export function serializeMessageStreamSseEvent({ payload, directory, eventId }, dialect = null) {
   const lines = [];
   if (typeof eventId === 'string' && eventId.length > 0) {
     lines.push(`id: ${eventId}`);
@@ -42,7 +43,7 @@ export function serializeMessageStreamSseEvent({ payload, directory, eventId }) 
   const hasDirectory = typeof directory === 'string' && directory.length > 0;
   // Byte-identical to stringifying `{ directory?, payload }`, reusing the
   // payload serialization shared by every client.
-  const payloadJson = serializeEventPayload(payload);
+  const payloadJson = serializeEventPayload(payload, dialect);
   lines.push(`data: ${payloadJson === undefined
     ? JSON.stringify(hasDirectory ? { directory } : {})
     : `{${hasDirectory ? `"directory":${JSON.stringify(directory)},` : ''}"payload":${payloadJson}}`}`);
@@ -308,6 +309,7 @@ export function createMessageStreamWsRuntime({
     const isGlobalStream = pathname === MESSAGE_STREAM_GLOBAL_WS_PATH;
     const requestedLastEventId = requestUrl.searchParams.get('lastEventId')?.trim() || '';
     const requestedDirectory = requestUrl.searchParams.get('directory')?.trim() || '';
+    socket.devryanEventDialect = resolveEventDialect({ url: rawUrl, headers: req.headers });
 
     if (isGlobalStream) {
       globalBridge.accept(socket, {

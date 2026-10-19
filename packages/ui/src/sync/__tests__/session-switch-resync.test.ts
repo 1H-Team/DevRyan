@@ -128,7 +128,7 @@ import { useSessionUIStore } from "../session-ui-store"
 import { appendNotification, useNotificationStore } from "../notification-store"
 import { getSafeStorage } from "@/stores/utils/safeStorage"
 
-const COMPLETION_NOTIFICATION_STORAGE_KEY = "openchamber:notification-completions:v1"
+const COMPLETION_NOTIFICATION_STORAGE_KEY = "devryan:notification-completions:v1"
 
 function resetNotificationStore() {
   useNotificationStore.setState({

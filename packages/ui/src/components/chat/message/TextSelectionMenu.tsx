@@ -377,7 +377,7 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
         toast.error(t('chat.textSelection.toast.addToNotesFailed'));
         return;
       }
-      window.dispatchEvent(new CustomEvent('openchamber:project-notes-updated', {
+      window.dispatchEvent(new CustomEvent('devryan:project-notes-updated', {
         detail: { projectId: currentProjectRef.id },
       }));
       if (usedSummaryFallback) {

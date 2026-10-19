@@ -19,13 +19,13 @@ export const getComposerDraftTargetKey = (target: ComposerDraftTarget): string =
 
 export const getComposerDraftStorageKey = (target: ComposerDraftTarget): string | null => {
   if (target.kind === "session") return getSessionInputStorageKey(target.id)
-  if (target.kind === "draft") return `openchamber_chat_input_draft_draft_${target.id}`
+  if (target.kind === "draft") return `devryan_chat_input_draft_draft_${target.id}`
   return null
 }
 
 export const getComposerConfirmedMentionsStorageKey = (target: ComposerDraftTarget): string | null => {
   if (target.kind === "session") return getSessionConfirmedMentionsStorageKey(target.id)
-  if (target.kind === "draft") return `openchamber_chat_confirmed_mentions_draft_${target.id}`
+  if (target.kind === "draft") return `devryan_chat_confirmed_mentions_draft_${target.id}`
   return null
 }
 

@@ -34,7 +34,7 @@ const withMockProjectConfig = async (
   Object.defineProperty(globalThis, "window", {
     configurable: true,
     value: {
-      __OPENCHAMBER_RUNTIME_APIS__: {
+      __DEVRYAN_RUNTIME_APIS__: {
         files: {
           createDirectory: async () => ({ success: true }),
           readFile: async (path: string) => {

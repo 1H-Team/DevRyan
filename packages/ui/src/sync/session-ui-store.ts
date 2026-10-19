@@ -127,7 +127,7 @@ import {
 export type { AttachedFile }
 
 const CURSOR_ACP_PROVIDER_ID = "cursor-acp"
-const CURSOR_DRAFT_PREWARM_STORAGE_KEY = "openchamber.cursorDraftPrewarmSessions.v1"
+const CURSOR_DRAFT_PREWARM_STORAGE_KEY = "devryan.cursorDraftPrewarmSessions.v1"
 const CURSOR_DRAFT_PREWARM_STALE_MS = 24 * 60 * 60 * 1000
 const CROSS_RUNTIME_HANDOFF_MAX_MESSAGES = 8
 const CROSS_RUNTIME_HANDOFF_MAX_CHARS = 6000
@@ -905,7 +905,7 @@ const resolveDirectoryKey = (session: Session): string | null => {
 
 const safeStorage = getSafeStorage()
 const DRAFT_TARGET_STORAGE_KEY = "oc.chatInput.lastDraftTarget"
-const PLAN_MESSAGE_STATE_STORAGE_KEY = "openchamber_plan_message_state"
+const PLAN_MESSAGE_STATE_STORAGE_KEY = "devryan_plan_message_state"
 const MAX_PERSISTED_PLAN_MESSAGE_IDS = 2000
 
 type PersistedDraftTarget = { projectId: string | null; directory: string | null }

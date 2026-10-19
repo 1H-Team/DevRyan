@@ -32,7 +32,7 @@ const childStores = {
     subscribeSessionLists: (notify) => store.subscribe(notify),
 };
 // The production module shares this context across chunks. Supply only isolated fixture state.
-const FixtureSyncContext = globalThis.__openchamber_sync_context__;
+const FixtureSyncContext = globalThis.__devryan_sync_context__;
 const sync = { childStores, directory: '/fixture' };
 const counts = { history: 0, broad: 0 };
 const huge = '--- a/example.txt\r\n+++ b/example.txt\r\n@@ -1 +1 @@\r\n-old\r\n+' + 'x'.repeat(262144) + '\r\nFULL SOURCE TAIL\r\n';

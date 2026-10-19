@@ -60,7 +60,7 @@ type MacosSpeechEvent =
   | { type: 'level'; provider: 'macos'; level: number }
   | { type: 'error'; provider: 'macos'; code?: string; message?: string };
 
-const MACOS_SPEECH_EVENT = 'openchamber:macos-speech';
+const MACOS_SPEECH_EVENT = 'devryan:macos-speech';
 
 const getTauri = (): TauriGlobal | null => {
   if (typeof window === 'undefined') return null;
@@ -69,7 +69,7 @@ const getTauri = (): TauriGlobal | null => {
 
 const isMacOSHost = (): boolean => {
   if (typeof window === 'undefined') return false;
-  const macosMajor = (window as unknown as { __OPENCHAMBER_MACOS_MAJOR__?: unknown }).__OPENCHAMBER_MACOS_MAJOR__;
+  const macosMajor = (window as unknown as { __DEVRYAN_MACOS_MAJOR__?: unknown }).__DEVRYAN_MACOS_MAJOR__;
   if (typeof macosMajor === 'number' && Number.isFinite(macosMajor) && macosMajor > 0) return true;
   return /mac/i.test(window.navigator?.platform ?? '');
 };

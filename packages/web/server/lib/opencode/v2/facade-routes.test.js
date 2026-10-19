@@ -59,8 +59,11 @@ describe('gen-2 browser facade', () => {
     expect(response.headers['x-next-cursor']).toBe('v2:next');
     expect(client.sessions.messages).toHaveBeenCalledWith('ses_a', { limit: 10, before: 'v2:opaque' }, expect.any(Object));
     const prompt = { parts: [{ type: 'text', text: 'hello' }] };
-    expect((await request(app).post('/api/session/ses_a/prompt_async').set('x-openchamber-message-id', 'msg_a').send(prompt)).status).toBe(204);
-    expect(client.prompts.prompt).toHaveBeenCalledWith('ses_a', prompt, expect.objectContaining({ headers: { 'x-openchamber-message-id': 'msg_a' } }));
+    expect((await request(app).post('/api/session/ses_a/prompt_async').set('x-devryan-message-id', 'msg_a').send(prompt)).status).toBe(204);
+    expect(client.prompts.prompt).toHaveBeenCalledWith('ses_a', prompt, expect.objectContaining({ headers: { 'x-devryan-message-id': 'msg_a' } }));
+    // An older UI's alias header keeps its prompt identity.
+    expect((await request(app).post('/api/session/ses_a/prompt_async').set('x-openchamber-message-id', 'msg_b').send(prompt)).status).toBe(204);
+    expect(client.prompts.prompt).toHaveBeenLastCalledWith('ses_a', prompt, expect.objectContaining({ headers: { 'x-devryan-message-id': 'msg_b' } }));
   });
 
   it.each(['human', undefined, 'managed-primary', 'native', 'Human Being', ['human', 'human']])(

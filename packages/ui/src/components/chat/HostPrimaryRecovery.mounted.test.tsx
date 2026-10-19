@@ -191,10 +191,10 @@ test('partial event refresh coalesces and resumes after an input action finishes
       await act(async () => root.render(<HostPrimaryRecovery sessionId="ses_root" />));
       respond = () => new Promise(resolve => { finish = resolve; });
       await act(async () => container.find(node => node.tagName === 'BUTTON' && node.textContent === 'Discard Input')?.click());
-      const event = new CustomEvent('openchamber:primary-recovery', { detail: { properties: { sessionID: 'ses_root',
+      const event = new CustomEvent('devryan:primary-recovery', { detail: { properties: { sessionID: 'ses_root',
         recovery: { ...retained(), recoveredInput: undefined, recoveredInputPartial: true } } } });
       await act(async () => {
-        for (let index = 0; index < 3; index++) listeners.get('openchamber:primary-recovery')?.(event);
+        for (let index = 0; index < 3; index++) listeners.get('devryan:primary-recovery')?.(event);
         await new Promise(resolve => setTimeout(resolve, 250));
       });
       expect(requests).toEqual([['ses_root']]);

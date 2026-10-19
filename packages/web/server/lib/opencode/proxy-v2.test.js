@@ -100,7 +100,8 @@ describe('native proxy readiness and dispatch', () => {
     expect(response.status).toBe(204);
     expect(prompt).toHaveBeenCalledTimes(1);
     expect(prompt).toHaveBeenCalledWith('ses_1', body, expect.objectContaining({ directory: '/project',
-      headers: { 'x-openchamber-message-id': 'msg_user' } }));
+      // The older UI's alias is accepted and forwarded under the DevRyan name.
+      headers: { 'x-devryan-message-id': 'msg_user' } }));
     expect(marks.map(({ mark }) => mark)).toEqual(['send_started', 'prompt_accepted']);
     expect(marks[1]).toMatchObject({ sessionId: 'ses_1', messageId: 'msg_user', metadata: { providerID: 'test', modelID: 'native', statusCode: 204 } });
   });

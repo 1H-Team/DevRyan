@@ -42,7 +42,7 @@ import type {
 
 declare global {
   interface Window {
-    __OPENCHAMBER_DESKTOP_SERVER__?: {
+    __DEVRYAN_DESKTOP_SERVER__?: {
       origin: string;
       opencodePort: number | null;
       apiPrefix: string;
@@ -56,7 +56,7 @@ export const resolveGitApiBaseOrigin = (): string => {
     return '';
   }
   const currentOrigin = window.location?.origin || '';
-  const desktopOrigin = window.__OPENCHAMBER_DESKTOP_SERVER__?.origin;
+  const desktopOrigin = window.__DEVRYAN_DESKTOP_SERVER__?.origin;
   if (desktopOrigin && desktopOrigin !== currentOrigin) {
     const currentHost = (() => {
       try {
@@ -617,7 +617,7 @@ export async function generatePullRequestDescription(
 
 export async function listGitWorktrees(directory: string): Promise<GitWorktreeInfo[]> {
   const response = await fetch(buildUrl(`${API_BASE}/worktrees`, directory));
-  if (response.headers.get('X-OpenChamber-Warning')) throw new Error('Worktree discovery unavailable');
+  if (response.headers.get('X-DevRyan-Warning') || response.headers.get('X-OpenChamber-Warning')) throw new Error('Worktree discovery unavailable');
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: response.statusText }));
     throw new Error(error.error || 'Failed to list worktrees');

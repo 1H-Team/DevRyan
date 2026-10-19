@@ -4,6 +4,7 @@ import { serializeEventPayload } from '../../event-stream/payload-serialization.
 import { createMessageStreamGapControlPayload, isMessageStreamControlPayload } from '../../event-stream/protocol.js';
 import { serializeMessageStreamSseEvent } from '../../event-stream/runtime.js';
 import { resolveFacadeDirectory, sendOpenCodeFacadeError } from './facade-routes.js';
+import { resolveEventDialect } from '../../event-stream/event-dialect.js';
 
 /** Gen-2 SSE is another subscriber of the one projected, authorized hub. */
 export const createOpenCodeV2SseHandler = ({ globalMessageStreamHub, resolveRequestDirectory,
@@ -13,6 +14,7 @@ export const createOpenCodeV2SseHandler = ({ globalMessageStreamHub, resolveRequ
     return res.status(503).json({ error: 'OpenCode event stream is unavailable', code: 'opencode_unavailable', retryable: true });
   }
   const global = (req.originalUrl || req.url).split('?')[0].replace(/\/$/, '') === '/api/global/event';
+  const dialect = resolveEventDialect(req);
   const subscriptionReady = global && req.headers['x-devryan-subscription-ready'] === '1';
   if (subscriptionReady && (typeof hub.subscribeStatus !== 'function' || typeof hub.isConnected !== 'function')) {
     return res.status(503).json({ error: 'OpenCode event stream readiness is unavailable', code: 'opencode_unavailable', retryable: true });
@@ -68,8 +70,8 @@ export const createOpenCodeV2SseHandler = ({ globalMessageStreamHub, resolveRequ
       if (!control && eventFilter && !await eventFilter(req.principal, entry)) return true;
       if (closed || signal.aborted || res.destroyed) return false;
       const frame = control ? `event: devryan.replay-gap\ndata: ${JSON.stringify({ replayGap: entry.payload.properties })}\n\n`
-        : global ? serializeMessageStreamSseEvent(entry)
-        : `${entry.eventId ? `id: ${entry.eventId}\n` : ''}data: ${serializeEventPayload(entry.payload)}\n\n`;
+        : global ? serializeMessageStreamSseEvent(entry, dialect)
+        : `${entry.eventId ? `id: ${entry.eventId}\n` : ''}data: ${serializeEventPayload(entry.payload, dialect)}\n\n`;
       if (res.write(frame)) return true;
       // Serialize writes while Node applies backpressure, retaining the same
       // bounded queue used for asynchronous ownership filtering on WebSockets.

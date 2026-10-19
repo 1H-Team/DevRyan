@@ -27,7 +27,7 @@ export async function runPackagedPreviewSmoke({ app, window, session, baseUrl, e
   if (!window || window.isDestroyed() || window.webContents.isLoading()
     || !isPrivilegedRendererUrl(window.webContents.getURL(), baseUrl)
     || new URL(window.webContents.getURL()).origin !== new URL(baseUrl).origin) throw new Error('windows_preview_smoke_renderer_failed');
-  const renderer = await window.webContents.executeJavaScript('({title:document.title,body:!!document.body,bridge:!!window.__OPENCHAMBER_ELECTRON__})');
+  const renderer = await window.webContents.executeJavaScript('({title:document.title,body:!!document.body,bridge:!!window.__DEVRYAN_ELECTRON__})');
   if (!renderer.body || !renderer.bridge) throw new Error('windows_preview_smoke_preload_failed');
   const { runWindowsPreviewSessionSmoke } = await import(pathToFileURL(path.join(process.resourcesPath, 'windows-preview-session-smoke.mjs')).href);
   const request = async (relative, init = {}) => {

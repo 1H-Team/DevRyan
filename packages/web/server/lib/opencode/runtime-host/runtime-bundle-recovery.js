@@ -4,6 +4,7 @@ import {resumeRuntimeBundle} from './runtime-bundle-resume.js';
 import { selectedRuntimeBundle } from './runtime-bundle-binding.js';
 import { parseServeCliOptions } from '../cli-options.js';
 import { runCliEntryIfMain } from '../cli-entry-runtime.js';
+import { legacyApiPathRewrite } from '../../legacy-api-path.js';
 
 const fail = () => Object.assign(new Error('bundle_rollback_reconciliation_required'), { code: 'bundle_rollback_reconciliation_required', status: 503 });
 const emptySchedule = Object.freeze({ hasEnabledScheduledTasks: false, hasPendingScheduledTasks: false,
@@ -36,7 +37,7 @@ export function createRuntimeBundleRecoveryApplication({ binding = selectedRunti
     if (options.host && !['127.0.0.1', 'localhost', '::1'].includes(options.host)) throw Object.assign(new Error('bundle_recovery_loopback_required'), { code: 'bundle_recovery_loopback_required' });
     const port = options.port ?? 3000;
     if (!Number.isInteger(port) || port < 0 || port > 65535) throw new TypeError('Invalid port');
-    app = express(); app.disable('x-powered-by');
+    app = express(); app.disable('x-powered-by'); app.use(legacyApiPathRewrite);
     app.use((_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
     const status = async (_req, res) => res.status(503).json({ ok: false, isOpenCodeReady: false,
       executionRuntime: { state: 'held', code: 'bundle_rollback_reconciliation_required' }, runtimeBundle: await inspect() });

@@ -5,10 +5,14 @@ export function createDesktopMenu({ BrowserWindow, Menu, app, shell, log, getMai
   const dispatchDomEventToWindow = (browserWindow, event, detail) => {
     if (!browserWindow || browserWindow.isDestroyed()) return;
 
-    const eventLiteral = JSON.stringify(event);
-    const script = detail === undefined
-      ? `window.dispatchEvent(new Event(${eventLiteral}));`
-      : `window.dispatchEvent(new CustomEvent(${eventLiteral}, { detail: ${JSON.stringify(detail)} }));`;
+    // The openchamber:* alias reaches a remote DevRyan of an older version.
+    const names = event.startsWith('devryan:') ? [event, `openchamber:${event.slice('devryan:'.length)}`] : [event];
+    const script = names.map((name) => {
+      const eventLiteral = JSON.stringify(name);
+      return detail === undefined
+        ? `window.dispatchEvent(new Event(${eventLiteral}));`
+        : `window.dispatchEvent(new CustomEvent(${eventLiteral}, { detail: ${JSON.stringify(detail)} }));`;
+    }).join('');
 
     void browserWindow.webContents.executeJavaScript(script, true).catch(() => {});
   };
@@ -23,14 +27,14 @@ export function createDesktopMenu({ BrowserWindow, Menu, app, shell, log, getMai
 
   const dispatchMenuAction = (action) => {
     const target = getMenuTargetWindow();
-    emitToWindow(target, 'openchamber:menu-action', action);
-    dispatchDomEventToWindow(target, 'openchamber:menu-action', action);
+    emitToWindow(target, 'devryan:menu-action', action);
+    dispatchDomEventToWindow(target, 'devryan:menu-action', action);
   };
 
   const dispatchCheckForUpdates = () => {
-    emitToAllWindows('openchamber:check-for-updates');
+    emitToAllWindows('devryan:check-for-updates');
     for (const browserWindow of BrowserWindow.getAllWindows()) {
-      dispatchDomEventToWindow(browserWindow, 'openchamber:check-for-updates');
+      dispatchDomEventToWindow(browserWindow, 'devryan:check-for-updates');
     }
   };
 

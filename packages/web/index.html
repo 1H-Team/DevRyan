@@ -24,13 +24,28 @@
 
     <!-- Web app manifest (endpoint-first with data URL fallback) -->
     <script>
+      // Before reading them: copy pre-rename `openchamber` storage keys to their
+      // DevRyan names once (packages/ui/src/lib/legacyStorageMigration.ts).
+      try {
+        for (const area of [localStorage, sessionStorage]) {
+          const keys = Array.from({ length: area.length }, (_, index) => area.key(index));
+          for (const key of keys) {
+            if (!key || !/^openchamber(?=[._:-])/.test(key)) continue;
+            const next = key.replace(/^openchamber/, 'devryan');
+            const value = area.getItem(key);
+            if (value !== null && area.getItem(next) === null) area.setItem(next, value);
+          }
+        }
+      } catch {
+        // Storage unavailable: the app's own entry retries.
+      }
       const baseUrl = location.origin;
       const defaultAppName = 'DevRyan - AI Coding Assistant';
       const defaultShortName = 'DevRyan';
-      const pwaNameStorageKey = 'openchamber.pwaName';
-      const pwaOrientationStorageKey = 'openchamber.pwaOrientation';
-      const mobileKeyboardModeStorageKey = 'openchamber.mobileKeyboardMode';
-      const pwaRecentSessionsStorageKey = 'openchamber.pwaRecentSessions';
+      const pwaNameStorageKey = 'devryan.pwaName';
+      const pwaOrientationStorageKey = 'devryan.pwaOrientation';
+      const mobileKeyboardModeStorageKey = 'devryan.mobileKeyboardMode';
+      const pwaRecentSessionsStorageKey = 'devryan.pwaRecentSessions';
       const viewportBaseContent = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover';
 
       const normalizePwaName = (value, fallback) => {
@@ -377,18 +392,18 @@
       const initialInstallNameOverride = getQueryInstallNameOverride();
       void updateManifest(initialInstallNameOverride);
 
-      window.__OPENCHAMBER_GET_PWA_INSTALL_NAME__ = () => getStoredInstallName();
-      window.__OPENCHAMBER_SET_PWA_INSTALL_NAME__ = (value) => {
+      window.__DEVRYAN_GET_PWA_INSTALL_NAME__ = () => getStoredInstallName();
+      window.__DEVRYAN_SET_PWA_INSTALL_NAME__ = (value) => {
         const resolvedName = setStoredInstallName(value);
         void updateManifest(resolvedName);
         return resolvedName;
       };
-      window.__OPENCHAMBER_SET_PWA_ORIENTATION__ = (value) => {
+      window.__DEVRYAN_SET_PWA_ORIENTATION__ = (value) => {
         const resolvedOrientation = setStoredOrientation(value);
         void updateManifest(null, resolvedOrientation);
         return resolvedOrientation;
       };
-      window.__OPENCHAMBER_UPDATE_PWA_MANIFEST__ = () => {
+      window.__DEVRYAN_UPDATE_PWA_MANIFEST__ = () => {
         refreshManifestFromStorage();
       };
     </script>

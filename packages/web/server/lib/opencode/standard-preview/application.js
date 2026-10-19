@@ -25,6 +25,7 @@ import { parseServeCliOptions } from '../cli-options.js';
 import { createStandardPreviewLifecycle } from './lifecycle.js';
 import { createStandardPreviewProviders } from './providers.js';
 import { STANDARD_PREVIEW_CAPABILITIES, previewUnavailable } from './capabilities.js';
+import { legacyApiPathRewrite } from '../../legacy-api-path.js';
 
 let activeHandle;
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -90,6 +91,7 @@ export async function startWebUiServer(options = {}) {
     return { directory };
   };
   const app = express(), server = http.createServer(app);
+  app.use(legacyApiPathRewrite);
   let hub;
   const lifecycle = createStandardPreviewLifecycle({ binary, dataDirectory, workingDirectory,
     configFile: options.runtimeConfigFile,

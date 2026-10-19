@@ -120,6 +120,7 @@ import {
     shouldAttachResponseStyleReminder,
     wrapResponseStyleReminder,
 } from '@/lib/responseStyle';
+import { FILE_PATH_DRAG_TYPE, LEGACY_FILE_PATH_DRAG_TYPE } from '@/lib/fileDragTypes';
 import { getSyncMessages } from '@/sync/sync-refs';
 import { ComposerContextUsageControl } from './ComposerContextUsageControl';
 import { resolveSelectableAgentOptions } from './modelControlAgentOptions';
@@ -3127,7 +3128,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             if (lowerTypes.includes('files')) return true;
             if (lowerTypes.includes('text/uri-list')) return true;
             if (lowerTypes.includes('codefiles')) return true;
-            if (lowerTypes.includes('application/x-openchamber-file-path')) return true;
+            if (lowerTypes.includes(FILE_PATH_DRAG_TYPE) || lowerTypes.includes(LEGACY_FILE_PATH_DRAG_TYPE)) return true;
             if (lowerTypes.some((type) => type.includes('vnd.code.tree'))) return true;
         }
 
@@ -3207,7 +3208,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         e.preventDefault();
         e.stopPropagation();
         dragEnterCountRef.current++;
-        const isInternal = e.dataTransfer.types?.includes('application/x-openchamber-file-path') ?? false;
+        const isInternal = (e.dataTransfer.types?.includes(FILE_PATH_DRAG_TYPE) || e.dataTransfer.types?.includes(LEGACY_FILE_PATH_DRAG_TYPE)) ?? false;
         if (isInternal !== isInternalDrag) {
             setIsInternalDrag(isInternal);
         }
@@ -3258,7 +3259,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         if (!currentSessionId && !newSessionDraftOpen) return;
 
         // Internal drag: file tree → chat input (relative path as @mention)
-        const internalPath = e.dataTransfer.getData('application/x-openchamber-file-path');
+        const internalPath = e.dataTransfer.getData(FILE_PATH_DRAG_TYPE) || e.dataTransfer.getData(LEGACY_FILE_PATH_DRAG_TYPE);
         if (internalPath && internalPath !== '.') {
             confirmedMentionsRef.current.add(internalPath);
             const mention = `@${internalPath}`;

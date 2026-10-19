@@ -212,8 +212,8 @@ ${renderLogoSvg()}
       <div class="error-content" role="alert">
         <h1>${rebootRequired ? 'Restart your computer to continue' : 'Startup needs attention'}</h1>
         <p>${detail}</p>
-        ${rebootRecovery ? '<p>A previous execution has not been safely settled. Prepare recovery to check whether a computer restart can resolve it. Your sessions and retained work will be preserved.</p><a href="openchamber://retry-startup">Retry</a><a href="openchamber://prepare-reboot-recovery">Prepare recovery for restart</a>' : rebootRequired ? '<p>Recovery is prepared. Restart your computer, then reopen DevRyan. Restarting only the app cannot finish this recovery.</p>' : '<a href="openchamber://retry-startup">Retry</a>'}
-        <a href="openchamber://copy-startup-diagnostics">Copy Diagnostics</a>
+        ${rebootRecovery ? '<p>A previous execution has not been safely settled. Prepare recovery to check whether a computer restart can resolve it. Your sessions and retained work will be preserved.</p><a href="devryan://retry-startup">Retry</a><a href="devryan://prepare-reboot-recovery">Prepare recovery for restart</a>' : rebootRequired ? '<p>Recovery is prepared. Restart your computer, then reopen DevRyan. Restarting only the app cannot finish this recovery.</p>' : '<a href="devryan://retry-startup">Retry</a>'}
+        <a href="devryan://copy-startup-diagnostics">Copy Diagnostics</a>
       </div>
     </main>
   </body>
@@ -275,8 +275,8 @@ ${renderLogoSvg()}
         <h1>Private Bot runtime needs attention</h1>
         <p>${detail}</p>
         <div class="actions">
-          <a class="primary" href="openchamber://retry-bot-runtime">Retry</a>
-          <a href="openchamber://continue-without-bots">Continue without Bots</a>
+          <a class="primary" href="devryan://retry-bot-runtime">Retry</a>
+          <a href="devryan://continue-without-bots">Continue without Bots</a>
         </div>
       </div>
     </main>

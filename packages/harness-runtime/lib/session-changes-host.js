@@ -318,7 +318,7 @@ export function createSessionChangeHost(options) {
     },
     async handleRequest(method, rawPath, body = {}) {
       const url = new URL(rawPath, 'http://session-changes.invalid');
-      const match = url.pathname.replace(/^\/api(?=\/)/, '').match(/^\/openchamber\/session\/([^/]+)\/changes(?:\/(diff|undo|redo))?$/);
+      const match = url.pathname.replace(/^\/api(?=\/)/, '').match(/^\/(?:devryan|openchamber)\/session\/([^/]+)\/changes(?:\/(diff|undo|redo))?$/);
       if (!match) return null;
       const [, rootSessionID, action] = match;
       const directory = url.searchParams.get('directory');
@@ -371,7 +371,7 @@ export function createSessionChangeHost(options) {
   const requestUnshared = host.handleRequest;
   host.handleRequest = async (method, rawPath, body = {}, context = {}) => {
     const url = new URL(rawPath, 'http://session-changes.invalid');
-    const match = url.pathname.replace(/^\/api(?=\/)/, '').match(/^\/openchamber\/session\/([a-zA-Z0-9_-]+)\/changes(?:\/(diff|undo|redo))?$/);
+    const match = url.pathname.replace(/^\/api(?=\/)/, '').match(/^\/(?:devryan|openchamber)\/session\/([a-zA-Z0-9_-]+)\/changes(?:\/(diff|undo|redo))?$/);
     if (!match) return requestUnshared(method, rawPath, body);
     try {
       const directory = url.searchParams.get('directory');

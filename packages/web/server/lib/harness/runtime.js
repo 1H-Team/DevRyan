@@ -132,9 +132,8 @@ export const createWebHarnessRuntime = (options = {}) => {
 
     const sessionID = typeof req.params?.sessionID === 'string' ? req.params.sessionID : '';
     const directory = typeof req.query?.directory === 'string' ? req.query.directory : null;
-    const messageID = typeof req.headers?.['x-openchamber-message-id'] === 'string'
-      ? req.headers['x-openchamber-message-id']
-      : null;
+    const headerMessageID = req.headers?.['x-devryan-message-id'] ?? req.headers?.['x-openchamber-message-id'];
+    const messageID = typeof headerMessageID === 'string' ? headerMessageID : null;
     record({
       type: 'prompt',
       actor: requestActor(req),

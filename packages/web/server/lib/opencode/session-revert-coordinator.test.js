@@ -41,7 +41,7 @@ it('serves concurrent Revert and Redo through the existing HTTP envelopes withou
     } } });
   const app = express(); registerScopedSessionRevertRoute(app, { sessionRevertCoordinator: coordinator });
   const base = await listen(app);
-  const post = (route, body) => fetch(`${base}/api/openchamber/session/a/${route}?directory=${encodeURIComponent(project)}`,
+  const post = (route, body) => fetch(`${base}/api/devryan/session/a/${route}?directory=${encodeURIComponent(project)}`,
     { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   const response = await post('scoped-revert', { messageID: 'pa' }); const reverted = await response.json();
   expect(response.status).toBe(200); expect(reverted.verification.ok).toBe(true); expect(reverted.redoAvailable).toBe(true);
@@ -77,7 +77,7 @@ it('refuses the legacy revert path for ledger-owned conversations when no coordi
   const app = express(); registerScopedSessionRevertRoute(app, { openCodeClient: { generation: () => 2 }, assertLegacyRevertAllowed });
   const base = await listen(app);
   for (const [route, body] of [['scoped-revert', { messageID: 'pa' }], ['scoped-unrevert', {}]]) {
-    const response = await fetch(`${base}/api/openchamber/session/a/${route}?directory=${encodeURIComponent(project)}`,
+    const response = await fetch(`${base}/api/devryan/session/a/${route}?directory=${encodeURIComponent(project)}`,
       { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
     expect(response.status).toBe(409);
     expect((await response.json()).code).toBe('capability_absent');
@@ -117,7 +117,7 @@ it('keeps imported receipt history inspectable but refuses mutation without a na
     executions: { isConfined: async () => true, cancelAndWait: async ({ sessions }) => { cancellations.push(sessions); return { terminated: true, sessions }; } } });
   const app = express(); registerScopedSessionRevertRoute(app, { sessionRevertCoordinator: coordinator });
   const base = await listen(app);
-  const post = (route, body) => fetch(`${base}/api/openchamber/session/L/${route}?directory=${encodeURIComponent(project)}`,
+  const post = (route, body) => fetch(`${base}/api/devryan/session/L/${route}?directory=${encodeURIComponent(project)}`,
     { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
 
   // Imported receipts remain readable, but have no native ledger transaction.
@@ -213,7 +213,7 @@ it('refuses Revert and Redo on generation 2 before any conversation or file muta
   const app = express(); registerScopedSessionRevertRoute(app, { sessionRevertCoordinator: coordinator });
   const base = await listen(app);
   for (const [route, body] of [['scoped-revert', { messageID: 'msg_1' }], ['scoped-unrevert', {}]]) {
-    const response = await fetch(`${base}/api/openchamber/session/ses_a/${route}?directory=${encodeURIComponent(project)}`,
+    const response = await fetch(`${base}/api/devryan/session/ses_a/${route}?directory=${encodeURIComponent(project)}`,
       { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
     expect(response.status).toBe(409);
     expect((await response.json()).code).toBe('mutation_runtime_unsupported');

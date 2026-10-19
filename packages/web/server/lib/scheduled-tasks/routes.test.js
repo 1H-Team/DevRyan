@@ -79,7 +79,7 @@ describe('personal scheduled-task routes', () => {
     registerScheduledTaskRoutes(app, dependencies(tasks));
     const res = response();
 
-    await route('GET', '/api/openchamber/scheduled-tasks/status')({ principal: developer }, res);
+    await route('GET', '/api/devryan/scheduled-tasks/status')({ principal: developer }, res);
 
     expect(res.payload).toMatchObject({
       enabledScheduledTasksCount: 2,

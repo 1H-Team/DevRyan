@@ -3,15 +3,15 @@ import { getSafeStorage } from '@/stores/utils/safeStorage';
  * Sync debug logging — gated behind localStorage flag.
  *
  * Enable in browser console:
- *   getSafeStorage().setItem("openchamber:sync:debug", "1")
+ *   getSafeStorage().setItem("devryan:sync:debug", "1")
  *
  * Disable:
- *   getSafeStorage().removeItem("openchamber:sync:debug")
+ *   getSafeStorage().removeItem("devryan:sync:debug")
  *
  * All checks are early-returns on the hot path — zero cost when disabled.
  */
 
-const FLAG_KEY = "openchamber:sync:debug"
+const FLAG_KEY = "devryan:sync:debug"
 
 let _enabled: boolean | undefined
 

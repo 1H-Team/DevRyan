@@ -85,7 +85,7 @@ if (!process.versions.electron) {
         transientHeapPeak = Math.max(transientHeapPeak, process.memoryUsage().heapUsed);
         snapshots.length = 0;
       } else {
-        const results = await Promise.all(Array.from({ length: 8 }, () => host.handleRequest('GET', `/api/openchamber/session/ses_root/changes?directory=${encodeURIComponent(directory)}`)));
+        const results = await Promise.all(Array.from({ length: 8 }, () => host.handleRequest('GET', `/api/devryan/session/ses_root/changes?directory=${encodeURIComponent(directory)}`)));
         if (results.some(r => r.status !== 200)) throw new Error('Fixture summary failed');
         transientHeapPeak = Math.max(transientHeapPeak, process.memoryUsage().heapUsed);
       }

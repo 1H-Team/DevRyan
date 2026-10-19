@@ -105,7 +105,7 @@ export class BotsDesktopApiError extends Error {
 const desktopErrorMessage = (error: unknown): string => {
   const message = error instanceof Error ? error.message : 'Bot runtime request failed';
   return message
-    .replace(/^Error invoking remote method ['"]openchamber:invoke['"]:\s*/i, '')
+    .replace(/^Error invoking remote method ['"]devryan:invoke['"]:\s*/i, '')
     .replace(/^BotRuntimeManagerError:\s*/i, '')
     .replace(/^RuntimeServiceRegistrationError:\s*/i, '')
     .trim() || 'Bot runtime request failed';
@@ -219,7 +219,7 @@ export const createBotsDesktopApi = ({
       return result && typeof result === 'object' ? result : null;
     },
     listenProgress: (listener) => listenDesktopEvent<BotRuntimeOperationProgress>(
-      'openchamber:bot-runtime-progress',
+      'devryan:bot-runtime-progress',
       listener,
     ),
     setup: () => call<BotsDesktopRuntimeStatus>(

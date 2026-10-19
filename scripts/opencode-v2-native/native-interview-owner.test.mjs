@@ -19,7 +19,7 @@ async function fixture({revokeAfterReceipt=false,onMaterialize,trustedDeletedEve
  let live=true;const controller=new AbortController(),receipts=[],effects=[],messages=[{info:{id:'msg_interview_user',sessionID:'ses_interview',role:'user'},parts:[{type:'text',text:'/interview Owned product'}]}];
  const recheck=async()=>{if(!live)throw Object.assign(Error('original_grant_revoked'),{code:'original_grant_revoked'});};
  const host=createSessionExecutionHost({dataDirectory:directory+'-data',onMaterialize,getLauncher:()=>path.join(repository,'packages/web/runtime/darwin-arm64/DevRyan-execution-darwin-arm64'),openCodeClient:{generation:()=>2},nativeExecution:{reviewedAstOrigin:origin,workerCommand:process.execPath,workerArgs:[workerPath],workerEnvironment:{PATH:'/usr/bin:/bin',GIT_CEILING_DIRECTORIES:directory},socketDirectory:null,onTermination:record=>{receipts.push(record);if(revokeAfterReceipt)live=false;},isReady:async()=>true}});
- const owner=createNativeInterviewOwner({locations:[{directory,basePrefix:'/api/openchamber/interviews/owned-location',configuration:{autoOpenBrowser:false,outputFolder:'interview',maxQuestions:2}}],originals,origin,
+ const owner=createNativeInterviewOwner({locations:[{directory,basePrefix:'/api/devryan/interviews/owned-location',configuration:{autoOpenBrowser:false,outputFolder:'interview',maxQuestions:2}}],originals,origin,
   captureInterviewAuthorization:async()=>({authorizationID:'auth_original',recheck,signal:controller.signal}),captureInterviewUIAuthorization:async()=>({recheck}),captureInterviewEventAuthorization:async input=>({recheck:trustedDeletedEvent&&input.event.type==='session.deleted'?async()=>{if(input.sessionID!=='ses_interview')throw Error('Untrusted deletion');}:recheck}),
   runtime:{messages:async scope=>{effects.push({kind:'messages',scope});return messages;},continue:async(scope,input)=>effects.push({kind:'continue',scope,input}),notify:async(scope,input)=>effects.push({kind:'notify',scope,input}),rename:async(scope,input)=>effects.push({kind:'rename',scope,input})},
   executeDocument:(input,authority)=>host.nativeInterviewDocument(input,authority),baseURL:async()=>'/owned/interview',openBrowser:async()=>{throw Error('No external browser');}});
@@ -50,12 +50,12 @@ test('actual original interview service/UI/answer flow publishes Markdown only a
   expect(f.receipts.every(record=>record.receipt.terminated&&record.receipt.confined&&record.receipt.exitCode===0)).toBe(true);
   expect(await fs.readFile(path.join(f.directory,'keep.txt'),'utf8')).toBe('Preserve workspace bytes');
   const dashboard=await request(f.owner,f.directory,'/');expect(dashboard.status).toBe(200);expect(dashboard.bytes.toString()).toContain('Owned product');
-  expect(dashboard.bytes.toString()).toContain('/api/openchamber/interviews/owned-location/interview/');
+  expect(dashboard.bytes.toString()).toContain('/api/devryan/interviews/owned-location/interview/');
   const page=await request(f.owner,f.directory,`/interview/${id}`),html=page.bytes.toString();
   const refresh=html.slice(html.indexOf('async function refresh()')),expression=refresh.match(/const url\s*=\s*([\s\S]*?);/)[1];
   // Execute the exact original renderer's URL expression, then make its real
   // same-origin state fetch through the prefixed existing-server shape.
-  const url=Function('interviewId','return '+expression)(id),prefix='/api/openchamber/interviews/owned-location';
+  const url=Function('interviewId','return '+expression)(id),prefix='/api/devryan/interviews/owned-location';
   expect(url).toBe(prefix+`/api/interviews/${id}/state`);
   const server=createServer((req,res)=>{if(!req.url.startsWith(prefix+'/')){res.statusCode=404;res.end();return;}req.url=req.url.slice(prefix.length);void f.owner.handleRequest({directory:f.directory,request:req,response:res}).catch(cause=>{res.statusCode=cause.statusCode??500;res.end(cause.code);});});
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));

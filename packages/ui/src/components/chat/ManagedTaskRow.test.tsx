@@ -161,7 +161,7 @@ const manualRecoveryFailure = (
 
 const ingest = (task: ManagedTaskEventRecord, resultEnvelope?: ManagedTaskProjectedEnvelope) => {
   store.getState().ingestEvent({
-    type: 'openchamber:managed-task',
+    type: 'devryan:managed-task',
     properties: {
       owner: 'devryan',
       directory: '/workspace',

@@ -109,12 +109,12 @@ export async function createCompiledSlimWebBridge(){
  return {getWebBaseURL:()=>baseURL,events,
   emitIntegrationEvent:async event=>{assert.equal(closed,false);assert.ok(event&&typeof event.directory==='string'&&typeof event.sessionID==='string');
    assert.ok(['interview-open','images-skipped'].includes(event.kind));
-   if(event.kind==='interview-open')assert.match(event.path,/^\/api\/openchamber\/interviews\/[a-f0-9]{64}(?:\/.*)?$/);
+   if(event.kind==='interview-open')assert.match(event.path,/^\/api\/(?:devryan|openchamber)\/interviews\/[a-f0-9]{64}(?:\/.*)?$/);
    events.push(structuredClone(event));},
   bindRuntimeOwner:runtime=>{assert.equal(owner,undefined);assert.equal(typeof runtime.handleInterviewRequest,'function');owner=runtime;},
   async request(directory,suffix,options={}){
    assert.equal(closed,false);assert.ok(suffix.startsWith('/')&&!suffix.includes('..'));
-   const prefix='/api/openchamber/interviews/'+sha256(directory);
+   const prefix='/api/devryan/interviews/'+sha256(directory);
    try { return await fetch(baseURL+prefix+suffix,{...options,signal:AbortSignal.timeout(10000)}); }
    catch(error) {
     error.protocolEvidence={lane:'compiled-slim-interview',method:options.method??'GET',route:suffix,timeoutMs:10000};
@@ -209,7 +209,7 @@ export async function runCompiledSlimInterview({provider,client,runtimeOwner,dir
  const witness=await documentWitness({executionHost,observations,directory,sessionID:session.id,file:active.state.interview.markdownPath});
  const bytes=await fs.readFile(active.state.interview.markdownPath,'utf8');assert.ok(bytes.includes(summary));assert.ok(bytes.includes(`sessionID: ${session.id}`));
  const rendered=await bridge.request(directory,`/interview/${encodeURIComponent(active.id)}`);assert.equal(rendered.status,200);
- assert.ok((await rendered.text()).includes('/api/openchamber/interviews/'+sha256(directory)));
+ assert.ok((await rendered.text()).includes('/api/devryan/interviews/'+sha256(directory)));
  const row={id:'compiled-active-interview',status:'passed',sessionID:session.id,userMessageID:user.info.id,interviewID:active.id,
   ...witness,source:'original-accepted-command-context-state-machine-supervised-markdown-and-owned-http-ui',personalProviderParity:false};
  onCase?.(row);cases.push(row);

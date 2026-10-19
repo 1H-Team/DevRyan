@@ -7,11 +7,11 @@ describe('document animation state', () => {
     const source = readFileSync(new URL('./useDocumentAnimationState.ts', import.meta.url), 'utf8');
     // One listener for the life of the page, so a report is never missed.
     expect(source.match(/addEventListener\(WINDOW_VISIBILITY_EVENT/g)?.length).toBe(1);
-    expect(source).toContain("export const WINDOW_VISIBILITY_EVENT = 'openchamber:window-visibility'");
+    expect(source).toContain("export const WINDOW_VISIBILITY_EVENT = 'devryan:window-visibility'");
     expect(source).toContain('const isVisible = !windowHidden && ');
     expect(source).toContain('document.documentElement.toggleAttribute(WINDOW_HIDDEN_ATTRIBUTE, windowHidden)');
     const shell = readFileSync(new URL('../../../electron/main.mjs', import.meta.url), 'utf8');
-    expect(shell).toContain("emitToWindow(browserWindow, 'openchamber:window-visibility', {");
+    expect(shell).toContain("emitToWindow(browserWindow, 'devryan:window-visibility', {");
     expect(shell).toContain("for (const event of ['show', 'hide', 'minimize', 'restore']) browserWindow.on(event, emitWindowVisibility);");
     const styles = readFileSync(new URL('../index.css', import.meta.url), 'utf8');
     expect(styles).toContain('html[data-window-hidden] *::after');

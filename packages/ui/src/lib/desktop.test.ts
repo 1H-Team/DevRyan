@@ -12,8 +12,8 @@ import {
 } from './desktop';
 
 type TestWindow = Window & typeof globalThis & {
-  __OPENCHAMBER_ELECTRON__?: { runtime: string };
-  __OPENCHAMBER_LOCAL_ORIGIN__?: string;
+  __DEVRYAN_ELECTRON__?: { runtime: string };
+  __DEVRYAN_LOCAL_ORIGIN__?: string;
   __TAURI__?: {
     core?: { invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
     dialog?: { open?: (options: Record<string, unknown>) => Promise<unknown> };
@@ -43,8 +43,8 @@ describe('desktop access helpers', () => {
       return '/Users/dev/Selected';
     });
     installWindow({
-      __OPENCHAMBER_ELECTRON__: { runtime: 'electron' },
-      __OPENCHAMBER_LOCAL_ORIGIN__: 'http://127.0.0.1:3001',
+      __DEVRYAN_ELECTRON__: { runtime: 'electron' },
+      __DEVRYAN_LOCAL_ORIGIN__: 'http://127.0.0.1:3001',
       __TAURI__: {
         core: { invoke: mock(async () => null) },
         dialog: { open: dialogOpen },
@@ -67,7 +67,7 @@ describe('desktop access helpers', () => {
       return '/Users/dev/Selected';
     });
     installWindow({
-      __OPENCHAMBER_LOCAL_ORIGIN__: 'http://127.0.0.1:3001',
+      __DEVRYAN_LOCAL_ORIGIN__: 'http://127.0.0.1:3001',
       __TAURI__: {
         core: { invoke: mock(async () => null) },
         dialog: { open: dialogOpen },
@@ -94,7 +94,7 @@ describe('desktop access helpers', () => {
       return '/Users/dev/file.txt';
     });
     installWindow({
-      __OPENCHAMBER_LOCAL_ORIGIN__: 'http://127.0.0.1:3001',
+      __DEVRYAN_LOCAL_ORIGIN__: 'http://127.0.0.1:3001',
       __TAURI__: {
         core: { invoke: mock(async () => null) },
         dialog: { open: dialogOpen },
@@ -116,8 +116,8 @@ describe('desktop access helpers', () => {
   test('applies Electron keep awake through desktop IPC on the local origin', async () => {
     const invocations: Array<{ cmd: string; args?: Record<string, unknown> }> = [];
     installWindow({
-      __OPENCHAMBER_ELECTRON__: { runtime: 'electron' },
-      __OPENCHAMBER_LOCAL_ORIGIN__: 'http://127.0.0.1:3001',
+      __DEVRYAN_ELECTRON__: { runtime: 'electron' },
+      __DEVRYAN_LOCAL_ORIGIN__: 'http://127.0.0.1:3001',
       __TAURI__: {
         core: {
           invoke: mock(async (cmd: string, args?: Record<string, unknown>) => {
@@ -139,8 +139,8 @@ describe('desktop access helpers', () => {
   test('reads and clears the Electron cache through local desktop IPC', async () => {
     const invocations: string[] = [];
     installWindow({
-      __OPENCHAMBER_ELECTRON__: { runtime: 'electron' },
-      __OPENCHAMBER_LOCAL_ORIGIN__: 'http://127.0.0.1:3001',
+      __DEVRYAN_ELECTRON__: { runtime: 'electron' },
+      __DEVRYAN_LOCAL_ORIGIN__: 'http://127.0.0.1:3001',
       __TAURI__: {
         core: {
           invoke: mock(async (cmd: string) => {
@@ -175,8 +175,8 @@ describe('desktop access helpers', () => {
 
     installWindow({
       location: { origin: 'https://remote.example.com' } as Location,
-      __OPENCHAMBER_ELECTRON__: { runtime: 'electron' },
-      __OPENCHAMBER_LOCAL_ORIGIN__: 'http://127.0.0.1:3001',
+      __DEVRYAN_ELECTRON__: { runtime: 'electron' },
+      __DEVRYAN_LOCAL_ORIGIN__: 'http://127.0.0.1:3001',
       __TAURI__: { core: { invoke } },
     });
     expect(await clearDesktopCache()).toBeNull();
@@ -185,8 +185,8 @@ describe('desktop access helpers', () => {
 
   test('rejects malformed Electron cache responses', async () => {
     installWindow({
-      __OPENCHAMBER_ELECTRON__: { runtime: 'electron' },
-      __OPENCHAMBER_LOCAL_ORIGIN__: 'http://127.0.0.1:3001',
+      __DEVRYAN_ELECTRON__: { runtime: 'electron' },
+      __DEVRYAN_LOCAL_ORIGIN__: 'http://127.0.0.1:3001',
       __TAURI__: {
         core: { invoke: mock(async () => ({ sizeBytes: -1 })) },
       },
@@ -204,8 +204,8 @@ describe('desktop access helpers', () => {
 
   test('reports the selected desktop export path as saved', async () => {
     installWindow({
-      __OPENCHAMBER_ELECTRON__: { runtime: 'electron' },
-      __OPENCHAMBER_LOCAL_ORIGIN__: 'http://127.0.0.1:3001',
+      __DEVRYAN_ELECTRON__: { runtime: 'electron' },
+      __DEVRYAN_LOCAL_ORIGIN__: 'http://127.0.0.1:3001',
       __TAURI__: {
         core: {
           invoke: mock(async () => '/Users/dev/Exports/chat.md'),
@@ -221,8 +221,8 @@ describe('desktop access helpers', () => {
 
   test('reports native desktop export cancellation without falling back', async () => {
     installWindow({
-      __OPENCHAMBER_ELECTRON__: { runtime: 'electron' },
-      __OPENCHAMBER_LOCAL_ORIGIN__: 'http://127.0.0.1:3001',
+      __DEVRYAN_ELECTRON__: { runtime: 'electron' },
+      __DEVRYAN_LOCAL_ORIGIN__: 'http://127.0.0.1:3001',
       __TAURI__: {
         core: {
           invoke: mock(async () => null),
@@ -238,8 +238,8 @@ describe('desktop access helpers', () => {
   test('reports desktop export as unavailable outside a local desktop origin', async () => {
     installWindow({
       location: { origin: 'https://remote.example.com' } as Location,
-      __OPENCHAMBER_ELECTRON__: { runtime: 'electron' },
-      __OPENCHAMBER_LOCAL_ORIGIN__: 'http://127.0.0.1:3001',
+      __DEVRYAN_ELECTRON__: { runtime: 'electron' },
+      __DEVRYAN_LOCAL_ORIGIN__: 'http://127.0.0.1:3001',
       __TAURI__: {
         core: {
           invoke: mock(async () => '/should/not/be/used.md'),
@@ -254,8 +254,8 @@ describe('desktop access helpers', () => {
 
   test('reports desktop export as unavailable when the native save API is missing', async () => {
     installWindow({
-      __OPENCHAMBER_ELECTRON__: { runtime: 'electron' },
-      __OPENCHAMBER_LOCAL_ORIGIN__: 'http://127.0.0.1:3001',
+      __DEVRYAN_ELECTRON__: { runtime: 'electron' },
+      __DEVRYAN_LOCAL_ORIGIN__: 'http://127.0.0.1:3001',
       __TAURI__: { core: {} },
     });
 
@@ -266,8 +266,8 @@ describe('desktop access helpers', () => {
 
   test('does not convert desktop export IPC failures into cancellation', async () => {
     installWindow({
-      __OPENCHAMBER_ELECTRON__: { runtime: 'electron' },
-      __OPENCHAMBER_LOCAL_ORIGIN__: 'http://127.0.0.1:3001',
+      __DEVRYAN_ELECTRON__: { runtime: 'electron' },
+      __DEVRYAN_LOCAL_ORIGIN__: 'http://127.0.0.1:3001',
       __TAURI__: {
         core: {
           invoke: mock(async () => {
@@ -297,8 +297,8 @@ describe('desktop access helpers', () => {
       [null, 'downloaded'],
     ] as const) {
       installWindow({
-        __OPENCHAMBER_ELECTRON__: { runtime: 'electron' },
-        __OPENCHAMBER_LOCAL_ORIGIN__: 'http://127.0.0.1:3001',
+        __DEVRYAN_ELECTRON__: { runtime: 'electron' },
+        __DEVRYAN_LOCAL_ORIGIN__: 'http://127.0.0.1:3001',
         __TAURI__: { core: { invoke: mock(async () => reply) } },
       });
       expect(await downloadDesktopUpdate()).toEqual(expected);

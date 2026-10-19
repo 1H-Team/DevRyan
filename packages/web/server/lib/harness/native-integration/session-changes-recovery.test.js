@@ -137,7 +137,7 @@ test('child receipts notify ancestors absent from the UI and survive deletion of
 
 const makeHost = (fetchImpl) => createSessionChangeHost({ dataDirectory: base,
   openCodeClient: createNativeConsumerFixture({ readFixture: fetchImpl, baseUrl: 'http://fixture' }) });
-const endpoint = () => `/api/openchamber/session/ses_root/changes?directory=${encodeURIComponent(directory)}`;
+const endpoint = () => `/api/devryan/session/ses_root/changes?directory=${encodeURIComponent(directory)}`;
 
 test('hook resolution follows history pages and later uses canonical message identity', async () => {
   const record = { info: { id: 'msg_old', sessionID: 'ses_root', role: 'assistant', parentID: 'user_1', time: { created: 2 } },

@@ -59,6 +59,7 @@ import {
   type DirectoryLoadRegistry,
 } from './sidebarFilesTreeRefresh';
 import type { FileReadOptions } from '@/lib/api/types';
+import { FILE_PATH_DRAG_TYPE } from '@/lib/fileDragTypes';
 
 type FileNode = {
   name: string;
@@ -212,7 +213,7 @@ const FileRow: React.FC<FileRowProps> = ({
   const handleDragStart = React.useCallback((e: React.DragEvent) => {
     const path = getRelativePath(root, node.path);
     if (!path || path === '.') return;
-    e.dataTransfer.setData('application/x-openchamber-file-path', path);
+    e.dataTransfer.setData(FILE_PATH_DRAG_TYPE, path);
     e.dataTransfer.effectAllowed = 'copy';
   }, [node.path, root]);
 
@@ -927,7 +928,7 @@ export const SidebarFilesTree: React.FC = () => {
                     onDragStart={(e) => {
                       const path = node.relativePath || getRelativePath(root ?? '', node.path);
                       if (!path || path === '.') return;
-                      e.dataTransfer.setData('application/x-openchamber-file-path', path);
+                      e.dataTransfer.setData(FILE_PATH_DRAG_TYPE, path);
                       e.dataTransfer.effectAllowed = 'copy';
                     }}
                     className={cn(

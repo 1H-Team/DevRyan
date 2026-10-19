@@ -19,10 +19,10 @@ import {
   collectBrowserAgentWindowContexts,
 } from '@/stores/useBrowserAgentStore';
 
-const MINI_CHAT_PRESENCE_CHANNEL = 'openchamber:mini-chat-presence';
-const MANAGED_TASK_EVENT = 'openchamber:managed-task';
-const MANAGED_TASK_REMOVED_EVENT = 'openchamber:managed-task-removed';
-const MANAGED_WARNING_EVENT = 'openchamber:managed-orchestration-warning';
+const MINI_CHAT_PRESENCE_CHANNEL = 'devryan:mini-chat-presence';
+const MANAGED_TASK_EVENT = 'devryan:managed-task';
+const MANAGED_TASK_REMOVED_EVENT = 'devryan:managed-task-removed';
+const MANAGED_WARNING_EVENT = 'devryan:managed-orchestration-warning';
 let managedOrchestrationOwnerCount = 0;
 let managedOrchestrationCleanupGeneration = 0;
 
@@ -87,13 +87,13 @@ const ManagedOrchestrationOwner: React.FC = () => {
     window.addEventListener(MANAGED_TASK_EVENT, ingestWindowEvent);
     window.addEventListener(MANAGED_TASK_REMOVED_EVENT, ingestWindowEvent);
     window.addEventListener(MANAGED_WARNING_EVENT, ingestWindowEvent);
-    window.addEventListener('openchamber:connection-status', handleConnectionStatus);
+    window.addEventListener('devryan:connection-status', handleConnectionStatus);
 
     return () => {
       window.removeEventListener(MANAGED_TASK_EVENT, ingestWindowEvent);
       window.removeEventListener(MANAGED_TASK_REMOVED_EVENT, ingestWindowEvent);
       window.removeEventListener(MANAGED_WARNING_EVENT, ingestWindowEvent);
-      window.removeEventListener('openchamber:connection-status', handleConnectionStatus);
+      window.removeEventListener('devryan:connection-status', handleConnectionStatus);
       managedOrchestrationOwnerCount = Math.max(0, managedOrchestrationOwnerCount - 1);
       const cleanupGeneration = ++managedOrchestrationCleanupGeneration;
       queueMicrotask(() => {
@@ -188,7 +188,7 @@ const BrowserLeaseClaimOwner: React.FC = () => {
       if (detail?.status === 'connected') claimKnownContexts(true);
     };
     window.addEventListener('focus', handleFocus);
-    window.addEventListener('openchamber:connection-status', handleConnectionStatus);
+    window.addEventListener('devryan:connection-status', handleConnectionStatus);
 
     return () => {
       disposed = true;
@@ -197,7 +197,7 @@ const BrowserLeaseClaimOwner: React.FC = () => {
       unsubscribeSessions();
       unsubscribeManagedTasks();
       window.removeEventListener('focus', handleFocus);
-      window.removeEventListener('openchamber:connection-status', handleConnectionStatus);
+      window.removeEventListener('devryan:connection-status', handleConnectionStatus);
     };
   }, [childStores]);
 

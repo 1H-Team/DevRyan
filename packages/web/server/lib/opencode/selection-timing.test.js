@@ -15,7 +15,7 @@ test('selection diagnostics bound middleware/gate timings without recording cont
   const server = app.listen(0, '127.0.0.1');
   await once(server, 'listening');
   try {
-    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/openchamber/session-retention/selection`, {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/devryan/session-retention/selection`, {
       method: 'POST', headers: { 'content-type': 'application/json', 'x-devryan-selection-request': 'fixture_request', authorization: 'fixture-private' },
       body: JSON.stringify({ clientID: 'fixture_client', sessionID: 'ses_private', revision: 7, content: 'fixture-conversation' }),
     });
