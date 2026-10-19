@@ -3,9 +3,10 @@ import { getRuntimeHome } from '../../opencode/runtime-host/runtime-bundle-bindi
 import { dirname, join } from 'path';
 
 import { isPlainObject } from '../../opencode/shared.js';
-import { CLAUDE_CODE_STATUS_PATH } from './claude-code-status.js';
+import { CLAUDE_CODE_LEGACY_STATUS_PATH, CLAUDE_CODE_STATUS_PATH } from './claude-code-status.js';
 
-export const CLAUDE_CODE_STATUS_SCRIPT_PATH = join(getRuntimeHome(), '.cache', 'openchamber', 'claude-code-status-line.sh');
+export const CLAUDE_CODE_STATUS_SCRIPT_PATH = join(getRuntimeHome(), '.cache', 'devryan', 'claude-code-status-line.sh');
+export const CLAUDE_CODE_LEGACY_STATUS_SCRIPT_PATH = join(getRuntimeHome(), '.cache', 'openchamber', 'claude-code-status-line.sh');
 export const CLAUDE_CODE_SETTINGS_PATH = join(getRuntimeHome(), '.claude', 'settings.json');
 export const CLAUDE_CODE_USAGE_PENDING_CODE = 'claude_code_usage_pending';
 export const CLAUDE_CODE_STATUS_LINE_CUSTOM_CODE = 'claude_code_status_line_custom';
@@ -78,9 +79,18 @@ export const ensureClaudeCodeStatusLineBridge = ({
   settingsPath = CLAUDE_CODE_SETTINGS_PATH,
   scriptPath = CLAUDE_CODE_STATUS_SCRIPT_PATH,
   statusPath = CLAUDE_CODE_STATUS_PATH,
+  legacyScriptPath = scriptPath === CLAUDE_CODE_STATUS_SCRIPT_PATH ? CLAUDE_CODE_LEGACY_STATUS_SCRIPT_PATH : null,
+  legacyStatusPath = statusPath === CLAUDE_CODE_STATUS_PATH ? CLAUDE_CODE_LEGACY_STATUS_PATH : null,
   fs = { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync },
 } = {}) => {
   try {
+    const settings = parseSettingsFileWithFs(settingsPath, fs);
+    const statusLine = isPlainObject(settings.statusLine) ? settings.statusLine : null;
+    if (legacyScriptPath && statusLine?.type === 'command' && commandMatchesManagedScript(statusLine.command, legacyScriptPath)) {
+      return { ok: true, status: 'already-configured', scriptPath: legacyScriptPath,
+        statusPath: legacyStatusPath, command: getManagedStatusLineCommand({ scriptPath: legacyScriptPath }) };
+    }
+
     fs.mkdirSync(dirname(scriptPath), { recursive: true });
     const scriptContent = buildClaudeCodeStatusLineScript({ statusPath });
     let shouldWriteScript = true;
@@ -94,8 +104,6 @@ export const ensureClaudeCodeStatusLineBridge = ({
     fs.chmodSync?.(scriptPath, 0o755);
 
     fs.mkdirSync(dirname(settingsPath), { recursive: true });
-    const settings = parseSettingsFileWithFs(settingsPath, fs);
-    const statusLine = isPlainObject(settings.statusLine) ? settings.statusLine : null;
     const managedCommand = getManagedStatusLineCommand({ scriptPath });
 
     if (statusLine?.type === 'command' && commandMatchesManagedScript(statusLine.command, scriptPath)) {

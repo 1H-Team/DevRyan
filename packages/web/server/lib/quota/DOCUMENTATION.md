@@ -82,6 +82,7 @@ xAI requests the pinned CLI billing endpoint with manual redirect handling. Redi
 - `providers/claude-meridian.js` validates and queries the active local `opencode-with-claude`/Meridian runtime through bounded loopback-only quota and per-session context endpoints. Context lookup resolves and caches the OpenCode → Claude session mapping, coalesces reads per session, and refreshes that mapping after native compaction.
 - `providers/claude-code-usage.js` is the compatibility fallback for older Meridian releases. It runs the local, non-billable `/usage` command with JSON output and no session persistence.
 - `providers/claude-code-status.js` reads legacy status-line JSON only as degraded last-known data. A status-line result is never reported as a successful fresh quota read, and quota reads never install or modify Claude status-line settings.
+- New managed Claude status-line scripts and JSON live in `~/.cache/devryan`; the reader falls back to `~/.cache/openchamber/claude-code-status.json` when the new file is absent. Setup recognizes an existing managed `~/.cache/openchamber/claude-code-status-line.sh` command without replacing the user's Claude settings.
 
 ## Anthropic usage sources
 

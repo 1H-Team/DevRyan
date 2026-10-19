@@ -3,7 +3,8 @@ import { getRuntimeHome } from '../../opencode/runtime-host/runtime-bundle-bindi
 import { join } from 'path';
 import { toNumber, toTimestamp, toUsageWindow } from '../utils/index.js';
 
-export const CLAUDE_CODE_STATUS_PATH = join(getRuntimeHome(), '.cache', 'openchamber', 'claude-code-status.json');
+export const CLAUDE_CODE_STATUS_PATH = join(getRuntimeHome(), '.cache', 'devryan', 'claude-code-status.json');
+export const CLAUDE_CODE_LEGACY_STATUS_PATH = join(getRuntimeHome(), '.cache', 'openchamber', 'claude-code-status.json');
 export const CLAUDE_CODE_USAGE_UNAVAILABLE_CODE = 'claude_code_usage_pending';
 export const CLAUDE_CODE_USAGE_UNAVAILABLE_MESSAGE = 'Claude Code usage data has not been emitted yet.';
 
@@ -44,13 +45,18 @@ const getStatusUpdatedAt = (payload, stats) => {
   return explicitTimestamp ?? stats.mtimeMs;
 };
 
-export const readClaudeCodeStatusUsage = ({ statusPath = CLAUDE_CODE_STATUS_PATH, now = Date.now() } = {}) => {
+export const readClaudeCodeStatusUsage = ({
+  statusPath = CLAUDE_CODE_STATUS_PATH,
+  legacyStatusPath = statusPath === CLAUDE_CODE_STATUS_PATH ? CLAUDE_CODE_LEGACY_STATUS_PATH : null,
+  now = Date.now(),
+} = {}) => {
   try {
-    if (!existsSync(statusPath)) {
+    const readablePath = existsSync(statusPath) ? statusPath : legacyStatusPath;
+    if (!readablePath || !existsSync(readablePath)) {
       return { ok: false, code: CLAUDE_CODE_USAGE_UNAVAILABLE_CODE, error: CLAUDE_CODE_USAGE_UNAVAILABLE_MESSAGE };
     }
 
-    const stats = statSync(statusPath);
+    const stats = statSync(readablePath);
     if (!stats.isFile()) {
       return { ok: false, code: CLAUDE_CODE_USAGE_UNAVAILABLE_CODE, error: CLAUDE_CODE_USAGE_UNAVAILABLE_MESSAGE };
     }
@@ -58,7 +64,7 @@ export const readClaudeCodeStatusUsage = ({ statusPath = CLAUDE_CODE_STATUS_PATH
       return { ok: false, error: 'Claude Code status-line usage file is too large to read safely.' };
     }
 
-    const content = readFileSync(statusPath, 'utf8');
+    const content = readFileSync(readablePath, 'utf8');
     const payload = JSON.parse(content);
     const updatedAt = getStatusUpdatedAt(payload, stats);
     if (!updatedAt || now - updatedAt > STATUS_TTL_MS) {

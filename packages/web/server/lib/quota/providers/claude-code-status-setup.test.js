@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   buildClaudeCodeStatusLineScript,
+  CLAUDE_CODE_LEGACY_STATUS_SCRIPT_PATH,
+  CLAUDE_CODE_STATUS_SCRIPT_PATH,
   CLAUDE_CODE_STATUS_LINE_CUSTOM_CODE,
   ensureClaudeCodeStatusLineBridge,
   getManagedStatusLineCommand,
@@ -16,8 +18,10 @@ const createPaths = () => {
   tempDir = mkdtempSync(join(tmpdir(), 'devryan-claude-status-setup-'));
   return {
     settingsPath: join(tempDir, '.claude', 'settings.json'),
-    scriptPath: join(tempDir, '.cache', 'openchamber', 'claude-code-status-line.sh'),
-    statusPath: join(tempDir, '.cache', 'openchamber', 'claude-code-status.json'),
+    scriptPath: join(tempDir, '.cache', 'devryan', 'claude-code-status-line.sh'),
+    statusPath: join(tempDir, '.cache', 'devryan', 'claude-code-status.json'),
+    legacyScriptPath: join(tempDir, '.cache', 'openchamber', 'claude-code-status-line.sh'),
+    legacyStatusPath: join(tempDir, '.cache', 'openchamber', 'claude-code-status.json'),
   };
 };
 
@@ -29,6 +33,19 @@ afterEach(() => {
 });
 
 describe('ensureClaudeCodeStatusLineBridge', () => {
+  it('uses DevRyan defaults and recognizes an existing historical managed command', () => {
+    expect(CLAUDE_CODE_STATUS_SCRIPT_PATH).toMatch(/\.cache\/devryan\/claude-code-status-line\.sh$/);
+    expect(CLAUDE_CODE_LEGACY_STATUS_SCRIPT_PATH).toMatch(/\.cache\/openchamber\/claude-code-status-line\.sh$/);
+    const paths = createPaths();
+    const settings = { statusLine: { type: 'command', command: getManagedStatusLineCommand({ scriptPath: paths.legacyScriptPath }) } };
+    mkdirSync(join(tempDir, '.claude'), { recursive: true });
+    writeFileSync(paths.settingsPath, JSON.stringify(settings));
+    const result = ensureClaudeCodeStatusLineBridge(paths);
+    expect(result).toMatchObject({ ok: true, status: 'already-configured', scriptPath: paths.legacyScriptPath,
+      statusPath: paths.legacyStatusPath });
+    expect(JSON.parse(readFileSync(paths.settingsPath, 'utf8'))).toEqual(settings);
+    expect(existsSync(paths.scriptPath)).toBe(false);
+  });
   it('creates the managed script and Claude Code settings when no statusLine exists', () => {
     const paths = createPaths();
 
