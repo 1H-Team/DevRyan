@@ -2847,7 +2847,7 @@ export const dict = {
   'updateDialog.actions.updateNow': 'Update Now',
   'updateDialog.status.updating': 'Updating...',
   'updateDialog.error.updateFailed': 'Update failed',
-  'updateDialog.error.takingLonger': 'Update is taking longer than expected. Wait a bit and refresh, or run: openchamber update',
+  'updateDialog.error.takingLonger': 'Update is taking longer than expected. Wait a bit and refresh, or run: devryan update',
   'memoryDebugPanel.title': 'Debug Panel',
   'memoryDebugPanel.tabs.memory': 'Memory',
   'memoryDebugPanel.tabs.streaming': 'Streaming',

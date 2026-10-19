@@ -1,5 +1,7 @@
 import { getSafeStorage, getStoragePrincipal } from '@/stores/utils/safeStorage';
-const DB_NAME = 'openchamber-message-cursors';
+import { selectIndexedDbName } from '@/lib/indexedDbIdentity';
+const DB_NAME = 'devryan-message-cursors';
+const LEGACY_DB_NAME = 'openchamber-message-cursors';
 const STORE_NAME = 'cursors';
 const DB_VERSION = 1;
 const FALLBACK_KEY = 'devryan.messageCursors';
@@ -16,13 +18,15 @@ const hasIndexedDbSupport = () => {
   return isBrowser() && typeof indexedDB !== 'undefined';
 };
 
-const openDatabase = (): Promise<IDBDatabase> => {
+const openDatabase = async (): Promise<IDBDatabase> => {
   if (!hasIndexedDbSupport()) {
     return Promise.reject(new Error('IndexedDB not supported'));
   }
 
+  const name = await selectIndexedDbName({ canonical: DB_NAME, legacy: LEGACY_DB_NAME,
+    listDatabases: typeof indexedDB.databases === 'function' ? () => indexedDB.databases() : undefined });
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    const request = indexedDB.open(name, DB_VERSION);
 
     request.onupgradeneeded = () => {
       const db = request.result;

@@ -65,9 +65,7 @@ export const buildSessionPlanFilePath = async (
     throw new Error('Plan file identity is incomplete');
   }
 
-  // Without a reported config folder, use the pre-rename location: after the
-  // startup migration it is a link to ~/.config/devryan.
-  const projectsDirectory = joinPath(configDirectory ? normalizePath(configDirectory) : joinPath(joinPath(home, '.config'), 'openchamber'), 'projects');
+  const projectsDirectory = joinPath(configDirectory ? normalizePath(configDirectory) : joinPath(joinPath(home, '.config'), 'devryan'), 'projects');
   const plansDirectory = joinPath(joinPath(projectsDirectory, projectId), 'plans');
   return joinPath(plansDirectory, `${sessionCreated}-${sessionSlug}-${sourceMessageId}.md`);
 };

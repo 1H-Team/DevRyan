@@ -213,7 +213,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
     : 0;
 
   const isWebRuntime = runtimeType === 'web';
-  const updateCommand = info?.updateCommand || 'openchamber update';
+  const updateCommand = info?.updateCommand || 'devryan update';
 
   // Reset state when dialog closes
   useEffect(() => {

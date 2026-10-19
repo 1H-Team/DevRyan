@@ -1322,7 +1322,7 @@ fn icon_to_data_url(icon_path: &Path, app_name: &str) -> Option<String> {
         .duration_since(UNIX_EPOCH)
         .map(|value| value.as_millis())
         .unwrap_or(0);
-    let tmp_path = env::temp_dir().join(format!("openchamber-icon-{sanitized}-{timestamp}.png"));
+    let tmp_path = env::temp_dir().join(format!("devryan-icon-{sanitized}-{timestamp}.png"));
 
     let status = Command::new("sips")
         .args([
@@ -2173,11 +2173,18 @@ async fn refresh_quit_risk_flags(local_base_url: &str) {
         Err(_) => return,
     };
 
-    let scheduled_url = format!("{trimmed}/api/openchamber/scheduled-tasks/status");
-    let tunnel_url = format!("{trimmed}/api/openchamber/tunnel/status");
-
-    let scheduled_future = client.get(scheduled_url).send();
-    let tunnel_future = client.get(tunnel_url).send();
+    let scheduled_future = async {
+        let response = client.get(format!("{trimmed}/api/devryan/scheduled-tasks/status")).send().await;
+        if matches!(&response, Ok(value) if value.status() == reqwest::StatusCode::NOT_FOUND) {
+            client.get(format!("{trimmed}/api/openchamber/scheduled-tasks/status")).send().await
+        } else { response }
+    };
+    let tunnel_future = async {
+        let response = client.get(format!("{trimmed}/api/devryan/tunnel/status")).send().await;
+        if matches!(&response, Ok(value) if value.status() == reqwest::StatusCode::NOT_FOUND) {
+            client.get(format!("{trimmed}/api/openchamber/tunnel/status")).send().await
+        } else { response }
+    };
     let (scheduled_result, tunnel_result) = tokio::join!(scheduled_future, tunnel_future);
 
     let mut scheduled_verified = false;
@@ -2539,6 +2546,8 @@ async fn spawn_local_server(app: &tauri::AppHandle) -> Result<String> {
     }
 
     for var in [
+        "DEVRYAN_OPENCODE_PATH",
+        "DEVRYAN_OPENCODE_BIN",
         "OPENCHAMBER_OPENCODE_PATH",
         "OPENCHAMBER_OPENCODE_BIN",
         "OPENCODE_PATH",
@@ -2593,11 +2602,16 @@ async fn spawn_local_server(app: &tauri::AppHandle) -> Result<String> {
             .sidecar(SIDECAR_NAME)
             .map_err(|err| anyhow!("Failed to resolve sidecar '{SIDECAR_NAME}': {err}"))?
             .args(["--port", &port.to_string()])
+            .env("DEVRYAN_HOST", sidecar_bind_host)
             .env("OPENCHAMBER_HOST", sidecar_bind_host)
+            .env("DEVRYAN_DIST_DIR", dist_dir.clone())
             .env("OPENCHAMBER_DIST_DIR", dist_dir.clone())
             .env("DEVRYAN_DEFAULT_CONFIG_ROOT", default_config_dir.clone())
+            .env("DEVRYAN_RUNTIME", "desktop")
             .env("OPENCHAMBER_RUNTIME", "desktop")
+            .env("DEVRYAN_DESKTOP_NOTIFY", "true")
             .env("OPENCHAMBER_DESKTOP_NOTIFY", "true")
+            .env("DEVRYAN_SKIP_API_COMPRESSION", "true")
             .env("OPENCHAMBER_SKIP_API_COMPRESSION", "true")
             .env("PATH", augmented_path.clone())
             .env("NO_PROXY", no_proxy)
@@ -3134,7 +3148,7 @@ fn build_init_script(local_origin: &str, boot_outcome: Option<&DesktopBootOutcom
         .unwrap_or_else(|| "undefined".to_string());
 
     let mut init_script = format!(
-        "(function(){{try{{window.__OPENCHAMBER_HOME__={home_json};window.__OPENCHAMBER_MACOS_MAJOR__={macos_major};window.__OPENCHAMBER_LOCAL_ORIGIN__={local_json};window.__OPENCHAMBER_DESKTOP_BOOT_OUTCOME__={boot_outcome_json};}}catch(_e){{}}}})();"
+        "(function(){{try{{window.__DEVRYAN_HOME__=window.__OPENCHAMBER_HOME__={home_json};window.__DEVRYAN_MACOS_MAJOR__=window.__OPENCHAMBER_MACOS_MAJOR__={macos_major};window.__DEVRYAN_LOCAL_ORIGIN__=window.__OPENCHAMBER_LOCAL_ORIGIN__={local_json};window.__DEVRYAN_DESKTOP_BOOT_OUTCOME__=window.__OPENCHAMBER_DESKTOP_BOOT_OUTCOME__={boot_outcome_json};}}catch(_e){{}}}})();"
     );
 
     // Cleanup: older builds injected a native-ish Instance switcher button into pages.
@@ -3642,7 +3656,7 @@ fn open_new_window(app: &tauri::AppHandle) {
         local_url.clone()
     };
 
-    let env_target = std::env::var("OPENCHAMBER_SERVER_URL")
+    let env_target = std::env::var("DEVRYAN_SERVER_URL").or_else(|_| std::env::var("OPENCHAMBER_SERVER_URL"))
         .ok()
         .and_then(|raw| normalize_server_url(&raw))
         .filter(|url| !same_server_url(url, &local_ui_url));
@@ -4080,7 +4094,7 @@ fn main() {
                 // Selected host: env override first, then desktop default host, else local.
                 // If env override points to the local server, ignore it and use
                 // config-based resolution instead.
-                let env_target = std::env::var("OPENCHAMBER_SERVER_URL")
+                let env_target = std::env::var("DEVRYAN_SERVER_URL").or_else(|_| std::env::var("OPENCHAMBER_SERVER_URL"))
                     .ok()
                     .and_then(|raw| normalize_server_url(&raw))
                     .filter(|url| !same_server_url(url, &local_ui_url));

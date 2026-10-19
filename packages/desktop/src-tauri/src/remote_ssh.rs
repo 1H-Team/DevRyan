@@ -80,7 +80,7 @@ impl Default for DesktopSshInstallMethod {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DesktopSshRemoteOpenchamberConfig {
+pub struct DesktopSshRemoteDevRyanConfig {
     #[serde(default)]
     pub mode: DesktopSshRemoteMode,
     #[serde(default = "default_true")]
@@ -92,7 +92,7 @@ pub struct DesktopSshRemoteOpenchamberConfig {
     pub upload_bundle_over_ssh: bool,
 }
 
-impl Default for DesktopSshRemoteOpenchamberConfig {
+impl Default for DesktopSshRemoteDevRyanConfig {
     fn default() -> Self {
         Self {
             mode: DesktopSshRemoteMode::Managed,
@@ -185,7 +185,7 @@ pub struct DesktopSshInstance {
     pub connection_timeout_sec: u16,
     #[serde(default)]
     #[serde(alias = "remoteOpenchamber", alias = "remote_openchamber")]
-    pub remote_dev_ryan: DesktopSshRemoteOpenchamberConfig,
+    pub remote_dev_ryan: DesktopSshRemoteDevRyanConfig,
     #[serde(default)]
     pub local_forward: DesktopSshLocalForwardConfig,
     #[serde(default)]
@@ -290,7 +290,8 @@ pub struct DesktopSshManagerState {
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RemoteSystemInfo {
-    openchamber_version: Option<String>,
+    #[serde(alias = "openchamberVersion")]
+    devryan_version: Option<String>,
     runtime: Option<String>,
     pid: Option<u64>,
     started_at: Option<String>,
@@ -937,16 +938,16 @@ fn control_path_for_instance(_session_dir: &Path, instance_id: &str) -> PathBuf 
         instance_id.hash(&mut hasher);
         hasher.finish()
     };
-    std::env::temp_dir().join(format!("ocssh-{hash:x}.sock"))
+    std::env::temp_dir().join(format!("devryanssh-{hash:x}.sock"))
 }
 
 fn askpass_script_content() -> String {
     let script = r#"#!/bin/bash
 PROMPT="$1"
 
-if [[ -n "$OPENCHAMBER_SSH_ASKPASS_VALUE" ]]; then
+if [[ -n "$DEVRYAN_SSH_ASKPASS_VALUE" ]]; then
   if [[ "$PROMPT" == *"assword"* || "$PROMPT" == *"passphrase"* ]]; then
-    printf '%s\n' "$OPENCHAMBER_SSH_ASKPASS_VALUE"
+    printf '%s\n' "$DEVRYAN_SSH_ASKPASS_VALUE"
     exit 0
   fi
 fi
@@ -1018,7 +1019,7 @@ fn spawn_master_process(
         .env("DISPLAY", "1");
 
     if let Some(secret) = ssh_password.filter(|value| !value.trim().is_empty()) {
-        command.env("OPENCHAMBER_SSH_ASKPASS_VALUE", secret.trim());
+        command.env("DEVRYAN_SSH_ASKPASS_VALUE", secret.trim());
     }
 
     command.spawn().with_context(|| {
@@ -1169,7 +1170,7 @@ fn parse_version_token(raw: &str) -> Option<String> {
     None
 }
 
-fn current_remote_openchamber_version(
+fn current_remote_devryan_version(
     parsed: &DesktopSshParsedCommand,
     control_path: &Path,
 ) -> Option<String> {
@@ -1183,7 +1184,7 @@ fn current_remote_openchamber_version(
     .and_then(|value| parse_version_token(&value))
 }
 
-fn install_openchamber_managed(
+fn install_devryan_managed(
     parsed: &DesktopSshParsedCommand,
     control_path: &Path,
     version: &str,
@@ -1256,7 +1257,7 @@ fn is_liveness_http_status(status: u16) -> bool {
     (200..=299).contains(&status) || is_auth_http_status(status)
 }
 
-fn configured_openchamber_password(instance: &DesktopSshInstance) -> Option<&str> {
+fn configured_devryan_password(instance: &DesktopSshInstance) -> Option<&str> {
     instance
         .auth
         .devryan_password
@@ -1276,15 +1277,15 @@ fn probe_remote_system_info(
     parsed: &DesktopSshParsedCommand,
     control_path: &Path,
     port: u16,
-    openchamber_password: Option<&str>,
+    devryan_password: Option<&str>,
 ) -> Result<RemoteSystemInfo> {
-    let auth_payload = if let Some(password) = openchamber_password {
+    let auth_payload = if let Some(password) = devryan_password {
         serde_json::to_string(&json!({ "password": password })).unwrap_or_else(|_| "{}".to_string())
     } else {
         "{}".to_string()
     };
 
-    let auth_enabled = if openchamber_password.is_some() {
+    let auth_enabled = if devryan_password.is_some() {
         "1"
     } else {
         "0"
@@ -1308,7 +1309,7 @@ fn probe_remote_system_info(
 
     if is_liveness_http_status(info_status) {
         if is_auth_http_status(info_status) {
-            if openchamber_password.is_some() && auth_status != 200 {
+            if devryan_password.is_some() && auth_status != 200 {
                 return Err(anyhow!(format!(
                     "Remote DevRyan requires UI authentication and configured password was rejected (auth status {auth_status})"
                 )));
@@ -1331,10 +1332,11 @@ fn probe_remote_system_info(
     }
 
     let mut info = serde_json::from_str::<RemoteSystemInfo>(&body).unwrap_or_default();
-    if info.openchamber_version.is_none() {
+    if info.devryan_version.is_none() {
         if let Ok(value) = serde_json::from_str::<Value>(&body) {
-            info.openchamber_version = value
-                .get("openchamberVersion")
+            info.devryan_version = value
+                .get("devryanVersion")
+                .or_else(|| value.get("openchamberVersion"))
                 .and_then(Value::as_str)
                 .map(|v| v.to_string());
             info.runtime = value
@@ -1355,9 +1357,9 @@ fn remote_server_running(
     parsed: &DesktopSshParsedCommand,
     control_path: &Path,
     port: u16,
-    openchamber_password: Option<&str>,
+    devryan_password: Option<&str>,
 ) -> bool {
-    probe_remote_system_info(parsed, control_path, port, openchamber_password).is_ok()
+    probe_remote_system_info(parsed, control_path, port, devryan_password).is_ok()
 }
 
 fn random_port_candidate(seed: &str) -> u16 {
@@ -1983,7 +1985,7 @@ impl DesktopSshManagerInner {
                     parsed,
                     control_path,
                     port,
-                    configured_openchamber_password(instance),
+                    configured_devryan_password(instance),
                 )
                 .map_err(|err| {
                     anyhow!(format!(
@@ -2006,7 +2008,7 @@ impl DesktopSshManagerInner {
                     false,
                 );
 
-                let installed_version = current_remote_openchamber_version(parsed, control_path);
+                let installed_version = current_remote_devryan_version(parsed, control_path);
                 if installed_version.is_none() {
                     self.set_status(
                         app,
@@ -2020,7 +2022,7 @@ impl DesktopSshManagerInner {
                         0,
                         false,
                     );
-                    install_openchamber_managed(
+                    install_devryan_managed(
                         parsed,
                         control_path,
                         &app_version,
@@ -2045,7 +2047,7 @@ impl DesktopSshManagerInner {
                         0,
                         false,
                     );
-                    install_openchamber_managed(
+                    install_devryan_managed(
                         parsed,
                         control_path,
                         &app_version,
@@ -2074,7 +2076,7 @@ impl DesktopSshManagerInner {
                         parsed,
                         control_path,
                         port,
-                        configured_openchamber_password(instance),
+                        configured_devryan_password(instance),
                     ) {
                         remote_port = None;
                     }
@@ -2111,7 +2113,7 @@ impl DesktopSshManagerInner {
                     parsed,
                     control_path,
                     port,
-                    configured_openchamber_password(instance),
+                    configured_devryan_password(instance),
                 ) {
                     return Err(anyhow!(
                         "Managed DevRyan server failed to become reachable"
@@ -2862,7 +2864,7 @@ mod tests {
             ssh_command: command.to_string(),
             ssh_parsed: None,
             connection_timeout_sec: DEFAULT_CONNECTION_TIMEOUT_SEC,
-            remote_dev_ryan: DesktopSshRemoteOpenchamberConfig::default(),
+            remote_dev_ryan: DesktopSshRemoteDevRyanConfig::default(),
             local_forward: DesktopSshLocalForwardConfig::default(),
             auth: DesktopSshAuthConfig::default(),
             port_forwards: Vec::new(),
@@ -2884,6 +2886,14 @@ mod tests {
         assert!(rewritten.get("remoteDevRyan").is_some());
         assert!(rewritten["auth"].get("devryanPassword").is_some());
         assert!(rewritten["auth"].get("openchamberPassword").is_none());
+    }
+
+    #[test]
+    fn remote_system_info_accepts_both_version_fields() {
+        let current: RemoteSystemInfo = serde_json::from_value(serde_json::json!({ "devryanVersion": "2.1.3" })).expect("current");
+        let legacy: RemoteSystemInfo = serde_json::from_value(serde_json::json!({ "openchamberVersion": "2.0.2" })).expect("legacy");
+        assert_eq!(current.devryan_version.as_deref(), Some("2.1.3"));
+        assert_eq!(legacy.devryan_version.as_deref(), Some("2.0.2"));
     }
 
     #[test]
@@ -2961,7 +2971,7 @@ mod tests {
     #[test]
     fn parse_ssh_config_candidates_extracts_host_entries() {
         let temp =
-            std::env::temp_dir().join(format!("openchamber-ssh-import-{}.txt", now_millis()));
+            std::env::temp_dir().join(format!("devryan-ssh-import-{}.txt", now_millis()));
         fs::write(
             &temp,
             "\nHost prod\n  HostName 10.0.0.1\nHost *.dev !skip\nHost *\n",

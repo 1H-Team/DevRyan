@@ -1,7 +1,9 @@
 import type { AttachedFile } from "@/stores/types/sessionTypes"
 import { getStoragePrincipal } from "@/stores/utils/safeStorage"
+import { selectIndexedDbName } from "@/lib/indexedDbIdentity"
 
-const DB_NAME = "openchamber-composer-attachments"
+const DB_NAME = "devryan-composer-attachments"
+const LEGACY_DB_NAME = "openchamber-composer-attachments"
 const STORE_NAME = "attachments"
 const DB_VERSION = 1
 
@@ -25,10 +27,12 @@ export type ComposerAttachmentPersistence = {
 
 const isBrowser = (): boolean => typeof window !== "undefined" && typeof indexedDB !== "undefined"
 
-const openDatabase = (): Promise<IDBDatabase> => {
+const openDatabase = async (): Promise<IDBDatabase> => {
   if (!isBrowser()) return Promise.reject(new Error("IndexedDB is unavailable"))
+  const name = await selectIndexedDbName({ canonical: DB_NAME, legacy: LEGACY_DB_NAME,
+    listDatabases: typeof indexedDB.databases === "function" ? () => indexedDB.databases() : undefined })
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION)
+    const request = indexedDB.open(name, DB_VERSION)
     request.onupgradeneeded = () => {
       const database = request.result
       if (!database.objectStoreNames.contains(STORE_NAME)) database.createObjectStore(STORE_NAME)
