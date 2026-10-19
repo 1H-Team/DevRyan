@@ -8,16 +8,20 @@ import {
   toManagedTaskEvent,
   toManagedTaskRemovalEvent,
   truncateManagedText,
-  validateManagedTaskRecord,
 } from './contract.js';
 import { assertManagedTaskTransition } from './transitions.js';
 import { managedResultCollectionState, projectManagedWaitSnapshot, projectManagedCommitSnapshot } from './managed-wait.js';
 import { validateManagedTransportRecovery } from './transport-recovery.js';
 import {
-  assertManagedTaskResultEnvelopeMatchesTask,
   createManagedTaskResultEnvelope,
   validateManagedTaskResultEnvelope,
 } from './result-envelope.js';
+import {
+  MANAGED_TASK_ID_PREFIX,
+  MANAGED_TASK_TERMINAL_STATUSES,
+  MANAGED_WAVE_ID_PREFIX,
+  decodeLedgerSnapshot,
+} from './codec.js';
 import {
   DEFAULT_MANAGED_LEDGER_MAX_BYTES,
   DEFAULT_MANAGED_TERMINAL_MAX_AGE_MS,
@@ -52,7 +56,7 @@ const WAITING_REASON_KINDS = new Set(['capacity', 'system_pressure']);
 const ADMISSION_RETRY_DEFAULT_MS = 5_000;
 const ADMISSION_RETRY_MIN_MS = 1_000;
 const ADMISSION_RETRY_MAX_MS = 60_000;
-const TERMINAL_RESULT_STATUSES = new Set(['completed', 'failed', 'aborted', 'interrupted']);
+const TERMINAL_RESULT_STATUSES = new Set(MANAGED_TASK_TERMINAL_STATUSES);
 const AGENT_HANDOFF_MANUAL_RECOVERY_ABANDON = Symbol('agent-handoff-manual-recovery-abandon');
 const IMPLEMENTATION_PROGRESS_GRACE_MS = 15 * 60_000;
 const IMPLEMENTATION_RENEW_WINDOW_MS = 10 * 60_000;
@@ -105,6 +109,21 @@ const createRandomId = (prefix) => {
 const idempotencyIndexKey = (rootSessionId, idempotencyKey) => (
   `${rootSessionId}\u0000${idempotencyKey}`
 );
+
+// The codec's ledger failures, as the scheduler has always reported them.
+const LEDGER_DECODE_ERRORS = Object.freeze({
+  invalid_ledger_version: ['invalid_ledger', () => 'managed orchestration ledger is invalid'],
+  invalid_ledger_collections: ['invalid_ledger', () => 'managed orchestration ledger is invalid'],
+  invalid_result_envelopes: ['invalid_ledger', () => 'managed result envelopes are invalid'],
+  duplicate_task: ['duplicate_task', ({ taskId }) => `duplicate task ${taskId} in ledger`],
+  duplicate_idempotency_key: ['duplicate_idempotency_key', ({ rootSessionId }) => `duplicate idempotency key for root ${rootSessionId}`],
+  duplicate_result_envelope: ['invalid_result_envelope', ({ envelopeId }) => `result envelope ${envelopeId} has no unique task`],
+  orphan_result_envelope: ['invalid_result_envelope', ({ envelopeId }) => `result envelope ${envelopeId} has no unique task`],
+});
+const createLedgerDecodeError = (code, detail) => {
+  const [schedulerCode, message] = LEDGER_DECODE_ERRORS[code];
+  return new ManagedOrchestrationError(schedulerCode, message(detail));
+};
 
 /**
  * Window during which an identical in-flight dispatch is collapsed onto the
@@ -182,9 +201,9 @@ export const createManagedTaskScheduler = (options = {}) => {
   if (!Number.isFinite(abortTimeoutMs) || abortTimeoutMs < 1) {
     throw new RangeError('abortTimeoutMs must be a positive finite number');
   }
-  const createTaskId = options.createTaskId ?? (() => createRandomId('dvr_task_'));
+  const createTaskId = options.createTaskId ?? (() => createRandomId(MANAGED_TASK_ID_PREFIX));
   const createLeaseToken = options.createLeaseToken ?? (() => createRandomId('dvr_lease_'));
-  const createWaveId = options.createWaveId ?? (() => createRandomId('dvr_wave_'));
+  const createWaveId = options.createWaveId ?? (() => createRandomId(MANAGED_WAVE_ID_PREFIX));
   const publishEvent = options.publishEvent ?? (() => undefined);
   const logger = options.logger ?? console;
   const persistenceStallMs = options.persistenceStallMs ?? PERSISTENCE_STALL_MS;
@@ -1885,54 +1904,12 @@ export const createManagedTaskScheduler = (options = {}) => {
       if (initialized) return;
       const loaded = await persistence.load();
       if (loaded !== null && loaded !== undefined) {
-        if (!loaded || loaded.version !== 1 || !Array.isArray(loaded.tasks)) {
-          throw new ManagedOrchestrationError('invalid_ledger', 'managed orchestration ledger is invalid');
-        }
-        for (const rawTask of loaded.tasks) {
-          const task = validateManagedTaskRecord({
-            ...rawTask,
-            dispatchGroupId: rawTask?.dispatchGroupId ?? null,
-            dispatchCallId: rawTask?.dispatchCallId ?? null,
-            dispatchWaveId: rawTask?.dispatchWaveId ?? null,
-            readOnly: rawTask?.readOnly ?? false,
-            recoveryLineageId: rawTask?.recoveryLineageId ?? null,
-            childPromptedAt: rawTask?.childPromptedAt ?? null,
-            firstAssistantPartAt: rawTask?.firstAssistantPartAt ?? null,
-            waitingReason: rawTask?.waitingReason ?? null,
-          });
-          if (tasks.has(task.taskId)) {
-            throw new ManagedOrchestrationError('duplicate_task', `duplicate task ${task.taskId} in ledger`);
-          }
-          const indexKey = idempotencyIndexKey(task.rootSessionId, task.idempotencyKey);
-          if (idempotencyIndex.has(indexKey)) {
-            throw new ManagedOrchestrationError(
-              'duplicate_idempotency_key',
-              `duplicate idempotency key for root ${task.rootSessionId}`,
-            );
-          }
+        const ledger = decodeLedgerSnapshot(loaded, { requireResultEnvelopes: false, createError: createLedgerDecodeError });
+        for (const task of ledger.tasks) {
           tasks.set(task.taskId, cloneTask(task));
-          idempotencyIndex.set(indexKey, task.taskId);
+          idempotencyIndex.set(idempotencyIndexKey(task.rootSessionId, task.idempotencyKey), task.taskId);
         }
-        const loadedEnvelopes = loaded.resultEnvelopes ?? [];
-        if (!Array.isArray(loadedEnvelopes)) {
-          throw new ManagedOrchestrationError('invalid_ledger', 'managed result envelopes are invalid');
-        }
-        for (const rawEnvelope of loadedEnvelopes) {
-          const envelope = validateManagedTaskResultEnvelope({
-            ...rawEnvelope,
-            providerResetAt: rawEnvelope?.providerResetAt ?? null,
-            autoResume: rawEnvelope?.autoResume ?? null,
-          });
-          const task = tasks.get(envelope.taskId);
-          if (!task || resultEnvelopes.has(envelope.taskId)) {
-            throw new ManagedOrchestrationError(
-              'invalid_result_envelope',
-              `result envelope ${envelope.envelopeId} has no unique task`,
-            );
-          }
-          assertManagedTaskResultEnvelopeMatchesTask(task, envelope);
-          resultEnvelopes.set(envelope.taskId, structuredClone(envelope));
-        }
+        for (const envelope of ledger.resultEnvelopes) resultEnvelopes.set(envelope.taskId, structuredClone(envelope));
       }
       committedReadState = { version: 1, tasks: [...tasks.values()], resultEnvelopes: [...resultEnvelopes.values()] };
       initialized = true;

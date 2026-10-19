@@ -5,33 +5,19 @@ import {
   isTerminalManagedTaskStatus,
   validateManagedTaskRecord,
 } from './contract.js';
+import {
+  AUTO_RESUME_REASONS,
+  AUTO_RESUME_RESET_SOURCES,
+  AUTO_RESUME_STATES as AUTO_RESUME_STATE_LIST,
+  findManagedResultPayloadMismatch,
+} from './codec-primitives.js';
 
 const textEncoder = new TextEncoder();
 const ACTIONS = new Set(['continue', 'resume', 'retry', 'recover_in_place', 'retry_in_place', 'abandon']);
-const AUTO_RESUME_STATES = new Set([
-  'planning',
-  'scheduled',
-  'attempting',
-  'superseded',
-  'succeeded',
-  'ended',
-  'cancelled',
-  'exhausted',
-  'acknowledged',
-]);
-const AUTO_RESUME_RESET_SOURCES = new Set(['opencode_status', 'meridian_quota', 'backoff']);
+const AUTO_RESUME_STATES = new Set(AUTO_RESUME_STATE_LIST);
+const AUTO_RESUME_RESET_SOURCE_SET = new Set(AUTO_RESUME_RESET_SOURCES);
 const AUTO_RESUME_TARGET_KINDS = new Set(['backup', 'original']);
-const AUTO_RESUME_REASONS = new Set([
-  'user',
-  'manual_retry',
-  'session_deleted',
-  'cancelled',
-  'attempt_cap',
-  'time_cap',
-  'host_failures',
-  'window_rejections',
-  'backup_unavailable',
-]);
+const AUTO_RESUME_REASON_SET = new Set(AUTO_RESUME_REASONS);
 
 const isRecord = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
@@ -106,9 +92,9 @@ export const validateManagedTaskAutoResume = (value) => {
   assertNullableTimestamp(resetAt, 'autoResume.resetAt');
   assertNullableTimestamp(lastAttemptAt, 'autoResume.lastAttemptAt');
   const resetSource = value.resetSource ?? null;
-  assertNullableEnum(resetSource, 'autoResume.resetSource', AUTO_RESUME_RESET_SOURCES);
+  assertNullableEnum(resetSource, 'autoResume.resetSource', AUTO_RESUME_RESET_SOURCE_SET);
   const reason = value.reason ?? null;
-  assertNullableEnum(reason, 'autoResume.reason', AUTO_RESUME_REASONS);
+  assertNullableEnum(reason, 'autoResume.reason', AUTO_RESUME_REASON_SET);
   const lastAttemptTaskId = value.lastAttemptTaskId ?? null;
   assertNullableString(lastAttemptTaskId, 'autoResume.lastAttemptTaskId', { prefix: 'dvr_task_' });
 
@@ -307,28 +293,12 @@ export const assertManagedTaskResultEnvelopeMatchesTask = (task, envelope) => {
   validateManagedTaskRecord(task);
   validateManagedTaskResultEnvelope(envelope);
 
-  const fields = [
-    'taskId',
-    'rootSessionId',
-    'parentTaskId',
-    'childSessionId',
-    'directory',
-    'status',
-    'partial',
-    'failureReason',
-    'attempt',
-    'priorTaskId',
-    'executionKind',
-    'recoverablePreview',
-  ];
-  for (const field of fields) {
-    if (!Object.is(task[field], envelope[field])) {
-      throw new TypeError(`result envelope ${field} does not match task ${task.taskId}`);
-    }
-  }
-
-  if (JSON.stringify(task.canonicalRefs) !== JSON.stringify(envelope.canonicalRefs)) {
+  const mismatch = findManagedResultPayloadMismatch(task, envelope);
+  if (mismatch === 'canonicalRefs') {
     throw new TypeError(`result envelope canonicalRefs do not match task ${task.taskId}`);
+  }
+  if (mismatch) {
+    throw new TypeError(`result envelope ${mismatch} does not match task ${task.taskId}`);
   }
 
   return envelope;

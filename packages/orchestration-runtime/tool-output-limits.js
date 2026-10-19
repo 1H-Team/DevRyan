@@ -1,4 +1,5 @@
 import { MANAGED_RESULT_PAGE_MAX_BYTES, MANAGED_RESULT_V2_PAGE_MAX_BYTES } from './managed-result-projection.js';
+import { MANAGED_RESULT_COMPACTED_FIELDS } from './codec-primitives.js';
 
 export const NATIVE_TOOL_OUTPUT_DEFAULTS = Object.freeze({ max_bytes: 51_200, max_lines: 2_000 });
 export const MANAGED_TOOL_OUTPUT_MAX_BYTES = 48 * 1024;
@@ -26,7 +27,7 @@ export function compactManagedTaskToolResult(value) {
   const patch = (field, next) => { if (result === value) result = { ...value }; result[field] = next; };
   if (value.task?.taskId && value.task.taskId === value.resultEnvelope?.taskId) {
     let task = value.task;
-    for (const field of ['failureReason', 'recoverablePreview', 'canonicalRefs']) {
+    for (const field of MANAGED_RESULT_COMPACTED_FIELDS) {
       if (!Object.hasOwn(task, field) || !Object.hasOwn(value.resultEnvelope, field)
         || JSON.stringify(task[field]) !== JSON.stringify(value.resultEnvelope[field])) continue;
       if (task === value.task) task = { ...task };

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { isTerminalManagedTaskStatus, validateRequiredChecks, managedToolOutputBudget, assertManagedToolOutputSize } from '@openchamber/orchestration-runtime';
+import { isManagedTaskId, isTerminalManagedTaskStatus, MANAGED_TASK_LIVE_STATUSES, validateRequiredChecks, managedToolOutputBudget, assertManagedToolOutputSize } from '@openchamber/orchestration-runtime';
 import { createNativeManagedResultCollection, validateNativeManagedResult } from './native-managed-results.js';
 
 const fail = code => Object.assign(new Error(code), { code, statusCode: 409 });
@@ -14,12 +14,12 @@ const actionFields = {
 };
 const dispositions = new Set(['continue','retry','resume','abandon']);
 const selection=value=>{
-  if(!Array.isArray(value)||!value.length||value.some(id=>typeof id!=='string'||!/^dvr_task_[A-Za-z0-9_-]+$/.test(id))||new Set(value).size!==value.length)throw fail('native_task_selection_invalid');
+  if(!Array.isArray(value)||!value.length||value.some(id=>!isManagedTaskId(id))||new Set(value).size!==value.length)throw fail('native_task_selection_invalid');
   return value;
 };
 const acknowledged=(result,taskID,envelopeID,action)=>result?.resultEnvelope?.taskId===taskID&&result.resultEnvelope.envelopeId===envelopeID&&result.resultEnvelope.action===action
   ||result?.committed===true&&result.taskId===taskID&&result.envelopeId===envelopeID&&result.action===action;
-const liveStatuses = new Set(['queued','starting','running']);
+const liveStatuses = new Set(MANAGED_TASK_LIVE_STATUSES);
 const parse = args => {
   if (!args || !Object.hasOwn(actionFields,args.action)) throw fail('native_task_action_invalid');
   if (Object.keys(args).some(key => key !== 'action' && !actionFields[args.action].includes(key))) throw fail('native_task_input_invalid');
@@ -165,11 +165,11 @@ export function createNativeManagedTaskOwner({ admissionOwner, taskContext, exec
             },
             });
             const task = result?.task;
-            if (typeof task?.taskId === 'string' && /^dvr_task_[A-Za-z0-9_-]+$/.test(task.taskId)
+            if (isManagedTaskId(task?.taskId)
               && task.rootSessionId === input.sessionID && task.directory === input.directory) {
               committedStart = { committed: true, taskId: task.taskId, rootSessionId: input.sessionID, action: 'start', status: task.status };
             } else if (result?.committed === true && result.action === 'start' && result.rootSessionId === input.sessionID
-              && /^dvr_task_[A-Za-z0-9_-]+$/.test(result.taskId ?? '')) committedStart = result;
+              && isManagedTaskId(result.taskId)) committedStart = result;
             return result;
           });
         } finally {

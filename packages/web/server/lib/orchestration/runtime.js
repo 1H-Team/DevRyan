@@ -31,6 +31,10 @@ import {
   supportsManagedReadOnlyAgent,
   supportsManagedReadOnlyProvider,
   toManagedTaskEvent,
+  isAutoResumeActive,
+  isManagedTaskId,
+  MANAGED_TASK_ID_PREFIX,
+  MANAGED_WAVE_ID_PREFIX,
 } from '@openchamber/orchestration-runtime';
 
 import { createAtomicManagedOrchestrationLedger } from './atomic-ledger.js';
@@ -671,9 +675,8 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
       if (!initialized || !ownershipAcquired || shutdownPromise || !task || task.owner !== 'devryan'
         || task.rootSessionId !== input.rootSessionId || task.directory !== input.directory || task.agent !== input.agent
         || input.providerId !== 'cursor-acp' || !Number.isSafeInteger(input.autoResumeGeneration)
-        || !envelope || envelope.action !== null || envelope.autoResume?.enabled !== true
-        || envelope.autoResume.cancelGeneration !== input.autoResumeGeneration
-        || !['planning', 'scheduled', 'attempting'].includes(envelope.autoResume.state)) {
+        || !envelope || envelope.action !== null || !isAutoResumeActive(envelope)
+        || envelope.autoResume.cancelGeneration !== input.autoResumeGeneration) {
         throw createRuntimeError('native_managed_task_catalog_invalid', 'Managed recovery catalog authority expired', 403);
       }
       return task;
@@ -906,7 +909,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         if (prepared) prepared.used = true;
         const { readOnly, submittedAgent, admittedExecution } = prepared?.selection ?? await resolveSubmission(params, context);
         context.signal?.throwIfAborted();
-        reserveCommittedReceipt({ taskId: 'dvr_task_'.padEnd(256, 'x'), rootSessionId: params.rootSessionId, action: 'start' });
+        reserveCommittedReceipt({ taskId: MANAGED_TASK_ID_PREFIX.padEnd(256, 'x'), rootSessionId: params.rootSessionId, action: 'start' });
         const submission = {
           idempotencyKey: params.idempotencyKey,
           rootSessionId: params.rootSessionId,
@@ -931,7 +934,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
           timeoutAt,
         };
         if (maxOutputBytes !== undefined) await project(createManagedTaskRecord({ ...submission,
-          taskId: 'dvr_task_'.padEnd(256, 'x'), dispatchWaveId: 'dvr_wave_'.padEnd(256, 'x'),
+          taskId: MANAGED_TASK_ID_PREFIX.padEnd(256, 'x'), dispatchWaveId: MANAGED_WAVE_ID_PREFIX.padEnd(256, 'x'),
           sequence: Number.MAX_SAFE_INTEGER, createdAt: now(), attempt: 1, priorTaskId: null, executionKind: 'start' }), null);
         const task = await scheduler.submit(submission, { signal: context.signal, authorize: async () => {
           context.signal?.throwIfAborted(); assertAvailable(); assertWorkAdmission();
@@ -953,7 +956,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
       case 'wait_any': {
         if (!harnessPolicies.waitAny) throw createRuntimeError('harness_policy_disabled', 'wait_any is disabled; use wait for an individual task', 409);
         if (!Array.isArray(params.taskIds) || params.taskIds.length === 0) throw new TypeError('taskIds is required');
-        if(params.resultContractVersion===2&&(params.taskIds.some(id=>typeof id!=='string'||!/^dvr_task_[A-Za-z0-9_-]+$/.test(id))
+        if(params.resultContractVersion===2&&(params.taskIds.some(id=>!isManagedTaskId(id))
           ||new Set(params.taskIds).size!==params.taskIds.length))throw createRuntimeError('invalid_request','Exact distinct task identifiers are required',400);
         const scopedTasks = [...new Set(params.taskIds)].map((taskId) => getScopedTask({ ...params, taskId }));
         const waitTimeoutMs = resolveWaitTimeoutMs(params);
@@ -1143,7 +1146,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         if(params.resultContractVersion===2)await review.recheck();
         if (maxOutputBytes !== undefined) await project(task);
         reserveCommittedReceipt({ taskId: task.taskId, rootSessionId: task.rootSessionId, action: params.action,
-          envelopeId: scheduler.getResultEnvelope(task.taskId)?.envelopeId, followUpTaskId: 'dvr_task_'.padEnd(256, 'x'),
+          envelopeId: scheduler.getResultEnvelope(task.taskId)?.envelopeId, followUpTaskId: MANAGED_TASK_ID_PREFIX.padEnd(256, 'x'),
           projectionError: 'managed_tool_output_metadata_too_large' });
         if (['retry', 'resume', 'retry_in_place', 'recover_in_place'].includes(params.action)) {
           assertWorkAdmission();

@@ -11,25 +11,23 @@ import {
   isProviderPromptRejected,
 } from './provider-retry-policy.js';
 import { validateManagedTransportRecovery } from './transport-recovery.js';
+import {
+  MANAGED_TASK_ID_PREFIX,
+  MANAGED_TASK_STATUSES,
+  MANAGED_TASK_TERMINAL_STATUSES,
+  MANAGED_WAVE_ID_PREFIX,
+} from './codec-primitives.js';
+
+export { MANAGED_TASK_STATUSES };
 
 export const MANAGED_TASK_OWNER = 'devryan';
-
-export const MANAGED_TASK_STATUSES = Object.freeze([
-  'queued',
-  'starting',
-  'running',
-  'completed',
-  'failed',
-  'aborted',
-  'interrupted',
-]);
 
 export const MAX_MANAGED_TASK_LABEL_BYTES = 512;
 export const MAX_MANAGED_TASK_PROMPT_BYTES = 256 * 1024;
 export const MAX_MANAGED_TASK_PREVIEW_BYTES = 64 * 1024;
 export const MAX_MANAGED_TASK_FAILURE_BYTES = 16 * 1024;
 
-const TERMINAL_STATUSES = new Set(['completed', 'failed', 'aborted', 'interrupted']);
+const TERMINAL_STATUSES = new Set(MANAGED_TASK_TERMINAL_STATUSES);
 const STATUS_SET = new Set(MANAGED_TASK_STATUSES);
 export const MANAGED_TASK_WAITING_REASON_KINDS = Object.freeze(['capacity', 'system_pressure']);
 const WAITING_REASON_KIND_SET = new Set(MANAGED_TASK_WAITING_REASON_KINDS);
@@ -195,13 +193,13 @@ export const validateManagedTaskRecord = (task) => {
   if (task.owner !== MANAGED_TASK_OWNER) {
     throw new TypeError('owner must be devryan');
   }
-  assertString(task.taskId, 'taskId', { prefix: 'dvr_task_' });
+  assertString(task.taskId, 'taskId', { prefix: MANAGED_TASK_ID_PREFIX });
   assertString(task.idempotencyKey, 'idempotencyKey', { maxBytes: 1024 });
   assertString(task.rootSessionId, 'rootSessionId');
   assertNullableString(task.dispatchGroupId, 'dispatchGroupId', { maxBytes: 1024 });
   assertNullableString(task.dispatchCallId, 'dispatchCallId', { maxBytes: 1024 });
-  assertNullableString(task.dispatchWaveId, 'dispatchWaveId', { prefix: 'dvr_wave_', maxBytes: 1024 });
-  assertNullableString(task.parentTaskId, 'parentTaskId', { prefix: 'dvr_task_' });
+  assertNullableString(task.dispatchWaveId, 'dispatchWaveId', { prefix: MANAGED_WAVE_ID_PREFIX, maxBytes: 1024 });
+  assertNullableString(task.parentTaskId, 'parentTaskId', { prefix: MANAGED_TASK_ID_PREFIX });
   assertNullableString(task.childSessionId, 'childSessionId');
   assertString(task.directory, 'directory');
   if (!Number.isSafeInteger(task.sequence) || task.sequence < 1) {
@@ -222,7 +220,7 @@ export const validateManagedTaskRecord = (task) => {
   if (!Number.isSafeInteger(task.attempt) || task.attempt < 1) {
     throw new TypeError('attempt must be a positive integer');
   }
-  assertNullableString(task.priorTaskId, 'priorTaskId', { prefix: 'dvr_task_' });
+  assertNullableString(task.priorTaskId, 'priorTaskId', { prefix: MANAGED_TASK_ID_PREFIX });
   if (!EXECUTION_KIND_SET.has(task.executionKind)) {
     throw new TypeError('executionKind must be start, retry, resume, recover_in_place, or retry_in_place');
   }
