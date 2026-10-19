@@ -14,7 +14,7 @@ describe('Bot Catalog native pointer smoke helpers', () => {
     });
     expect(defaults).toEqual({
       outputDirectory: '/tmp/native-pointer-output',
-      supabaseConfig: '/Users/tester/.config/openchamber/supabase.json',
+      supabaseConfig: '/Users/tester/.config/devryan/supabase.json',
       electronBinary: null,
       electronMode: 'raw',
       timeoutMs: 60_000,

@@ -58,8 +58,8 @@ if (!compileTarget) {
 }
 
 const sidecarBaseName = process.platform === 'win32'
-  ? `openchamber-server-${targetTriple}.exe`
-  : `openchamber-server-${targetTriple}`;
+  ? `devryan-server-${targetTriple}.exe`
+  : `devryan-server-${targetTriple}`;
 const sidecarOutPath = path.join(sidecarsDir, sidecarBaseName);
 
 
@@ -120,7 +120,7 @@ for (const relativePath of await listDefaultConfigAssets(defaultConfigDir)) {
   await fs.copyFile(sourcePath, targetPath);
 }
 
-console.log('[desktop] building openchamber-server sidecar...');
+console.log('[desktop] building devryan-server sidecar...');
 await fs.mkdir(sidecarsDir, { recursive: true });
 
 const buildArgs = [

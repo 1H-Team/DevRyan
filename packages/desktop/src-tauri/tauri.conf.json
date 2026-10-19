@@ -39,7 +39,7 @@
   "bundle": {
     "active": true,
     "externalBin": [
-      "sidecars/openchamber-server"
+      "sidecars/devryan-server"
     ],
     "resources": [
       "resources/web-dist/**/*",

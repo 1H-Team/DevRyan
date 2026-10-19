@@ -1388,8 +1388,9 @@ fn is_app_bundle_installed(bundle_name: &str) -> bool {
     false
 }
 
-const SIDECAR_NAME: &str = "openchamber-server";
-const SIDECAR_NOTIFY_PREFIX: &str = "[OpenChamberDesktopNotify] ";
+const SIDECAR_NAME: &str = "devryan-server";
+const SIDECAR_NOTIFY_PREFIX: &str = "[DevRyanDesktopNotify] ";
+const LEGACY_SIDECAR_NOTIFY_PREFIX: &str = "[OpenChamberDesktopNotify] ";
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(20);
 const HEALTH_POLL_INITIAL_INTERVAL: Duration = Duration::from_millis(250);
 const HEALTH_POLL_MAX_INTERVAL: Duration = Duration::from_millis(2000);
@@ -2413,47 +2414,28 @@ fn build_local_url(port: u16) -> String {
     format!("http://127.0.0.1:{port}")
 }
 
-/// Kills any stale openchamber-server processes that may be lingering from
+/// Kills any stale sidecar processes that may be lingering from
 /// previous app sessions or incomplete shutdowns. This ensures a clean
 /// startup and prevents port conflicts.
 fn kill_stale_sidecar_processes() {
-    let process_name = if cfg!(windows) {
-        "openchamber-server.exe"
-    } else {
-        "openchamber-server"
-    };
-
-    let result = if cfg!(target_os = "macos") {
-        // macOS: use pkill to terminate by process name
-        std::process::Command::new("pkill")
-            .arg("-x") // exact match
-            .arg(process_name)
-            .output()
-    } else if cfg!(target_os = "linux") {
-        // Linux: use pkill
-        std::process::Command::new("pkill")
-            .arg("-x")
-            .arg(process_name)
-            .output()
-    } else if cfg!(windows) {
-        // Windows: use taskkill
-        std::process::Command::new("taskkill")
-            .arg("/F")
-            .arg("/IM")
-            .arg(process_name)
-            .output()
-    } else {
-        return;
-    };
-
-    // Log result for debugging (pkill returns 1 if no processes found, which is fine)
-    if let Ok(output) = result {
-        log::debug!(
-            "[sidecar] cleanup result: exit_code={:?}, stdout={}, stderr={}",
-            output.status.code(),
-            String::from_utf8_lossy(&output.stdout).trim(),
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
+    for base_name in [SIDECAR_NAME, "openchamber-server"] {
+        let process_name = if cfg!(windows) { format!("{base_name}.exe") } else { base_name.to_string() };
+        let result = if cfg!(target_os = "macos") || cfg!(target_os = "linux") {
+            std::process::Command::new("pkill").arg("-x").arg(&process_name).output()
+        } else if cfg!(windows) {
+            std::process::Command::new("taskkill").arg("/F").arg("/IM").arg(&process_name).output()
+        } else {
+            return;
+        };
+        if let Ok(output) = result {
+            log::debug!(
+                "[sidecar] cleanup result for {}: exit_code={:?}, stdout={}, stderr={}",
+                process_name,
+                output.status.code(),
+                String::from_utf8_lossy(&output.stdout).trim(),
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
     }
 
     // Brief pause to let the OS clean up the processes
@@ -2650,7 +2632,8 @@ async fn spawn_local_server(app: &tauri::AppHandle) -> Result<String> {
                 match event {
                     CommandEvent::Stdout(bytes) => {
                         let line = String::from_utf8_lossy(&bytes);
-                        if let Some(rest) = line.strip_prefix(SIDECAR_NOTIFY_PREFIX) {
+                        if let Some(rest) = line.strip_prefix(SIDECAR_NOTIFY_PREFIX)
+                            .or_else(|| line.strip_prefix(LEGACY_SIDECAR_NOTIFY_PREFIX)) {
                             if let Ok(parsed) =
                                 serde_json::from_str::<SidecarNotifyPayload>(rest.trim())
                             {

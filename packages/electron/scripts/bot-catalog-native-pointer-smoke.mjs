@@ -56,7 +56,7 @@ export const parseNativePointerSmokeArguments = (argv, {
 } = {}) => {
   const options = {
     outputDirectory,
-    supabaseConfig: path.join(homeDirectory, '.config/openchamber/supabase.json'),
+    supabaseConfig: path.join(homeDirectory, '.config/devryan/supabase.json'),
     electronBinary: null,
     electronMode: 'raw',
     timeoutMs: 60_000,
