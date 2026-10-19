@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-20",
+  "status": "in-progress",
+  "baselineRevision": "72ca82dc",
+  "historicalCandidateRevision": "c05c3a77826aacccb2457565d7b27132b3f939de",
+  "historicalCommits": 60,
+  "harnessRepairCommit": "c4e0f580",
+  "startupProtocolCommit": "40f405d2",
+  "performanceFixes": [],
+  "measurements": [],
+  "liveProviders": { "physicalRequests": 0, "spendUsd": 0, "status": "not-run" },
+  "evidenceDirectory": ".artifacts/performance-audit-2026-10-20",
+  "qualification": {
+    "startup": "unqualified",
+    "sendStreaming": "unqualified",
+    "interactive": "unqualified",
+    "resources": "unqualified",
+    "reducer": "unqualified"
+  }
+}
