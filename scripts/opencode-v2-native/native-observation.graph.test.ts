@@ -17,6 +17,14 @@ for (const compiled of [false,true]) test(`actual native physical request and co
   await fs.mkdir(tmp, { recursive: true });
   await fs.writeFile(path.join(tmp, 'package.json'), '{"type":"commonjs"}\n');
   let child: ReturnType<typeof Bun.spawn> | undefined, timer: ReturnType<typeof setTimeout> | undefined, failure: unknown;
+  // Kills a child still running and removes the fixture; a cleanup failure is
+  // reported together with the test's own failure.
+  const settleObservationChild=async()=>{
+    let cleanupTimer: ReturnType<typeof setTimeout> | undefined;
+    try { if(child&&child.exitCode===null){child.kill('SIGKILL');await Promise.race([child.exited,new Promise<never>((_resolve,reject)=>{cleanupTimer=setTimeout(()=>reject(Error('Owned observation child failed to settle after SIGKILL')),5000);})]);} }
+    catch(error){throw failure?new AggregateError([failure,error],'Observation fixture and child cleanup failed',{cause:failure}):error;}
+    finally{clearTimeout(cleanupTimer);await fs.rm(root,{recursive:true,force:true});}
+  };
   try {
     const sourcePath = path.join(repository, 'scripts/opencode-v2-native/controller-integrations.graph-fixture.mjs');
     let source = await fs.readFile(sourcePath, 'utf8');
@@ -152,7 +160,7 @@ const gates = createAdmissionGates(`);
     if (!child.stdout || typeof child.stdout === 'number' || !child.stderr || typeof child.stderr === 'number') throw Error('Owned pipes required');
     // Hang detection, not a performance bound: the child takes ~12 s locally and
     // ~22 s on a hosted CI runner, and slower runners exceeded 30 s.
-    let timedOut=false;timer=setTimeout(()=>{timedOut=true;try{child?.kill('SIGKILL');}catch{}},120_000);
+    let timedOut=false;timer=setTimeout(()=>{timedOut=true;try{child?.kill('SIGKILL');}catch{/* Already exited. */}},120_000);
     const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
     clearTimeout(timer);if(timedOut)throw Error('Native observation child exceeded its bounded 120-second lifetime');
     const diagnostic=JSON.parse(await fs.readFile(path.join(root,'presentation-rpc-outcomes.json'),'utf8'));
@@ -175,9 +183,6 @@ const gates = createAdmissionGates(`);
       ]);
     }
   } catch(error) { failure=error;throw error; } finally {
-    clearTimeout(timer);let cleanupTimer: ReturnType<typeof setTimeout> | undefined;
-    try { if(child&&child.exitCode===null){child.kill('SIGKILL');await Promise.race([child.exited,new Promise<never>((_resolve,reject)=>{cleanupTimer=setTimeout(()=>reject(Error('Owned observation child failed to settle after SIGKILL')),5000);})]);} }
-    catch(error){throw failure?new AggregateError([failure,error],'Observation fixture and child cleanup failed',{cause:failure}):error;}
-    finally{clearTimeout(cleanupTimer);await fs.rm(root,{recursive:true,force:true});}
+    clearTimeout(timer);await settleObservationChild();
   }
 }, 300_000);
