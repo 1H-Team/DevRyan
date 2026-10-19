@@ -805,7 +805,7 @@ export class ElectronSshManager {
     throw new Error('SSH ControlMaster connection timed out');
   }
 
-  configuredOpenChamberPassword(instance) {
+  configuredDevRyanPassword(instance) {
     const secret = instance?.auth?.openchamberPassword;
     return secret?.enabled && typeof secret.value === 'string' && secret.value.trim() ? secret.value.trim() : null;
   }
@@ -819,7 +819,7 @@ export class ElectronSshManager {
     }
   }
 
-  async currentRemoteOpenChamberVersion(parsed, controlPath) {
+  async currentRemoteDevRyanVersion(parsed, controlPath) {
     try {
       const output = await runRemoteCommand(parsed, controlPath, 'openchamber --version 2>/dev/null || true');
       return parseVersionToken(output);
@@ -828,7 +828,7 @@ export class ElectronSshManager {
     }
   }
 
-  async installOpenChamberManaged(parsed, controlPath, version, preferred) {
+  async installDevRyanManaged(parsed, controlPath, version, preferred) {
     const hasBun = await this.remoteCommandExists(parsed, controlPath, 'bun');
     const hasNpm = await this.remoteCommandExists(parsed, controlPath, 'npm');
     const commands = [];
@@ -860,9 +860,9 @@ export class ElectronSshManager {
     throw lastError || new Error('Failed to install DevRyan on remote host');
   }
 
-  async probeRemoteSystemInfo(parsed, controlPath, port, openchamberPassword) {
-    const authPayload = openchamberPassword ? JSON.stringify({ password: openchamberPassword }) : '{}';
-    const authEnabled = openchamberPassword ? '1' : '0';
+  async probeRemoteSystemInfo(parsed, controlPath, port, uiPassword) {
+    const authPayload = uiPassword ? JSON.stringify({ password: uiPassword }) : '{}';
+    const authEnabled = uiPassword ? '1' : '0';
     const script = `AUTH_STATUS=0; INFO_STATUS=0; HEALTH_STATUS=0; BODY_FILE="$(mktemp)"; COOKIE_FILE="$(mktemp)"; cleanup(){ rm -f "$BODY_FILE" "$COOKIE_FILE"; }; trap cleanup EXIT; if command -v curl >/dev/null 2>&1; then if [ "${authEnabled}" = "1" ]; then AUTH_STATUS="$(curl -sS --max-time 3 -o /dev/null -w '%{http_code}' -c "$COOKIE_FILE" -H 'content-type: application/json' --data ${shellQuote(authPayload)} http://127.0.0.1:${port}/auth/session || true)"; if [ "$AUTH_STATUS" = "200" ]; then INFO_STATUS="$(curl -sS --max-time 3 -b "$COOKIE_FILE" -o "$BODY_FILE" -w '%{http_code}' http://127.0.0.1:${port}/api/system/info || true)"; else INFO_STATUS="$(curl -sS --max-time 3 -o "$BODY_FILE" -w '%{http_code}' http://127.0.0.1:${port}/api/system/info || true)"; fi; else INFO_STATUS="$(curl -sS --max-time 3 -o "$BODY_FILE" -w '%{http_code}' http://127.0.0.1:${port}/api/system/info || true)"; fi; HEALTH_STATUS="$(curl -sS --max-time 3 -o /dev/null -w '%{http_code}' http://127.0.0.1:${port}/health || true)"; elif command -v wget >/dev/null 2>&1; then wget -qO "$BODY_FILE" http://127.0.0.1:${port}/api/system/info >/dev/null 2>&1; if [ $? -eq 0 ]; then INFO_STATUS=200; fi; wget -qO- http://127.0.0.1:${port}/health >/dev/null 2>&1; if [ $? -eq 0 ]; then HEALTH_STATUS=200; fi; else exit 127; fi; printf 'INFO_STATUS=%s\\nAUTH_STATUS=%s\\nHEALTH_STATUS=%s\\n' "$INFO_STATUS" "$AUTH_STATUS" "$HEALTH_STATUS"; cat "$BODY_FILE" 2>/dev/null || true`;
     const output = await runRemoteCommand(parsed, controlPath, script);
     const lines = output.split(/\r?\n/);
@@ -873,7 +873,7 @@ export class ElectronSshManager {
 
     if (isLivenessHttpStatus(infoStatus)) {
       if (isAuthHttpStatus(infoStatus)) {
-        if (openchamberPassword && authStatus !== 200) {
+        if (uiPassword && authStatus !== 200) {
           throw new Error(`Remote DevRyan requires UI authentication and configured password was rejected (auth status ${authStatus})`);
         }
         if (isLivenessHttpStatus(healthStatus)) return {};
@@ -892,9 +892,9 @@ export class ElectronSshManager {
     }
   }
 
-  async remoteServerRunning(parsed, controlPath, port, openchamberPassword) {
+  async remoteServerRunning(parsed, controlPath, port, uiPassword) {
     try {
-      await this.probeRemoteSystemInfo(parsed, controlPath, port, openchamberPassword);
+      await this.probeRemoteSystemInfo(parsed, controlPath, port, uiPassword);
       return true;
     } catch {
       return false;
@@ -912,7 +912,7 @@ export class ElectronSshManager {
 
   async startRemoteServerManaged(parsed, controlPath, instance, desiredPort) {
     await this.managedRemoteOperation(parsed, controlPath, { action: 'start', id: instance.id, port: desiredPort,
-      version: this.appVersion, password: this.configuredOpenChamberPassword(instance) });
+      version: this.appVersion, password: this.configuredDevRyanPassword(instance) });
     return desiredPort;
   }
 
@@ -960,7 +960,7 @@ export class ElectronSshManager {
       }
       const port = instance.remoteOpenchamber.preferredPort;
       this.setStatus(instance.id, 'server_detecting', 'Probing external DevRyan server', null, null, port, false, 0, false);
-      await this.probeRemoteSystemInfo(parsed, controlPath, port, this.configuredOpenChamberPassword(instance));
+      await this.probeRemoteSystemInfo(parsed, controlPath, port, this.configuredDevRyanPassword(instance));
       return { remotePort: port, startedByUs: false };
     }
 
@@ -985,10 +985,10 @@ export class ElectronSshManager {
       throw new Error('The remote port could not be verified as this managed DevRyan instance. Choose another port or stop the existing listener.');
     }
     this.setStatus(instance.id, 'remote_probe', 'Checking remote DevRyan installation');
-    const installedVersion = await this.currentRemoteOpenChamberVersion(parsed, controlPath);
+    const installedVersion = await this.currentRemoteDevRyanVersion(parsed, controlPath);
     if (installedVersion !== this.appVersion) {
       this.setStatus(instance.id, installedVersion ? 'updating' : 'installing', 'Preparing remote DevRyan installation');
-      await this.installOpenChamberManaged(parsed, controlPath, this.appVersion, instance.remoteOpenchamber.installMethod);
+      await this.installDevRyanManaged(parsed, controlPath, this.appVersion, instance.remoteOpenchamber.installMethod);
     }
     this.setStatus(instance.id, 'server_starting', 'Starting managed DevRyan server');
     await this.startRemoteServerManaged(parsed, controlPath, instance, remotePort);
