@@ -1,4 +1,4 @@
-import { isOpenCodeConsoleOrgId, isOpenCodeConsoleToken } from '@openchamber/shared-runtime';
+import { isOpenCodeConsoleOrgId, isOpenCodeConsoleToken } from '@devryan/shared-runtime';
 
 import {
   QuotaCredentialError,

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { createHash } from 'node:crypto';
-import { setDevRyanEnv } from '@openchamber/shared-runtime/lib/legacy-environment.js';
+import { setDevRyanEnv } from '@devryan/shared-runtime/lib/legacy-environment.js';
 import {readRollbackIntentSync,rollbackIntentUnresolved} from './bundle-rollback-intent.js';
 import {BUNDLE_DOCUMENT_MAX_BYTES} from './bundle-document-limits.js';
 

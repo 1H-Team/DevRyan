@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { resolveDevRyanDataRoot } from '@openchamber/shared-runtime/node/data-root.js';
+import { resolveDevRyanDataRoot } from '@devryan/shared-runtime/node/data-root.js';
 
 // v2 adds `workingDirectory`; v1 files (no such field) still read as null.
 const REGISTRY_VERSION = 2;

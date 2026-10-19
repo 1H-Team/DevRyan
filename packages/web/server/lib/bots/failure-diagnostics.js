@@ -1,5 +1,5 @@
 import { homedir } from 'node:os';
-import { createDiagnosticSanitizer } from '@openchamber/harness-runtime';
+import { createDiagnosticSanitizer } from '@devryan/harness-runtime';
 
 const sanitizer = createDiagnosticSanitizer({ homeDir: homedir() });
 const safeIdentifier = (value) => typeof value === 'string'

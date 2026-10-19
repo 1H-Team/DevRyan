@@ -2,7 +2,7 @@
 // refused upgrade does not stop startup by itself: the selected runtime still
 // launches when it passes its own verification and meets the version pin, or
 // when it is the retained older reviewed runtime the refused upgrade left.
-import { artifactDiagnostic } from '@openchamber/shared-runtime/startup-diagnostics.js';
+import { artifactDiagnostic } from '@devryan/shared-runtime/startup-diagnostics.js';
 let failure = null;
 let diagnostic;
 let detail;

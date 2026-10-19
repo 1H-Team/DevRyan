@@ -7,7 +7,7 @@ import { migrateLegacyAgentsConfig, resolveSlimConfig } from './slim-config.js';
 import { probe as probeOpenCodeRuntime, resolveExpectedOpenCodeVersion } from './readiness-probe.js';
 import { isNativeOpenCodeVersion } from './version-policy.js';
 import { readStartupBundleUpgradeFailure, readStartupBundleUpgradeDiagnostic } from './runtime-host/bundle-startup-upgrade-status.js';
-import { artifactDiagnostic, describeArtifactFailure } from '@openchamber/shared-runtime/startup-diagnostics.js';
+import { artifactDiagnostic, describeArtifactFailure } from '@devryan/shared-runtime/startup-diagnostics.js';
 
 const unavailable=(code='native_runtime_bundle_required')=>Object.assign(new Error(code==='native_runtime_owner_mismatch'?'Inherited runtime process requires a fresh server owner':'Verified native runtime bundle required'),{code,status:503});
 // Readiness would refuse this runtime with version_mismatch; startup normally

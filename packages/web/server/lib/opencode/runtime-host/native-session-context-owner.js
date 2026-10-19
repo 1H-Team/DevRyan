@@ -1,4 +1,4 @@
-import {currentObjectiveUser} from '@openchamber/harness-runtime/lib/objective-identity.js';
+import {currentObjectiveUser} from '@devryan/harness-runtime/lib/objective-identity.js';
 import {toV1ToolName} from '../v2/projection/tools.js';
 import { readSessionTodo } from '../v2/projection/sessions.js';
 import {randomBytes} from 'node:crypto';

@@ -7,7 +7,7 @@ import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { useBotChannelStore } from '@/stores/useBotChannelStore';
 import { useBotSharedFilesStore } from '@/stores/useBotSharedFilesStore';
-import { stripAssistantImageMarkdown } from '@openchamber/shared-runtime/lib/assistant-image-sources.js';
+import { stripAssistantImageMarkdown } from '@devryan/shared-runtime/lib/assistant-image-sources.js';
 import { BotQuestionBlock } from './BotQuestionBlock';
 import { BotResultAttachments } from './BotResultAttachments';
 

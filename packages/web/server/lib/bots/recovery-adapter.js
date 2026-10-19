@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 
-import { hashCanonicalBotJson } from '@openchamber/bots-runtime';
+import { hashCanonicalBotJson } from '@devryan/bots-runtime';
 
 import { decryptBotJson } from './encryption.js';
 import {

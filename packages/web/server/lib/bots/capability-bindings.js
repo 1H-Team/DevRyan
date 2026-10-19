@@ -1,7 +1,7 @@
 import crypto, { randomUUID } from 'node:crypto';
 import path from 'node:path';
 
-import { hashCanonicalBotJson } from '@openchamber/bots-runtime';
+import { hashCanonicalBotJson } from '@devryan/bots-runtime';
 
 import { validateBotRevisionRuntimeContract } from './config-compiler.js';
 import {

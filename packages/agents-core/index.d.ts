@@ -1,4 +1,4 @@
-// Declared surface of @openchamber/agents-core, the only contract the DevRyan
+// Declared surface of @devryan/agents-core, the only contract the DevRyan
 // runtime host compiles against. src/devryan/surface-check.ts proves the
 // implementation (src/devryan/index.ts) is assignable to these declarations.
 // Every authority (files, network, processes, configuration, provider calls)

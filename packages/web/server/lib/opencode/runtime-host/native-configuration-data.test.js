@@ -3,7 +3,7 @@ import {fileURLToPath} from 'node:url';
 import {parseMdFile} from '../shared.js';
 import {expect,it} from 'vitest';
 import {nativePermissionRules,translateNativeConfiguration} from './native-configuration-data.js';
-import {PLAN_MODE_SYSTEM_INSTRUCTIONS} from '@openchamber/orchestration-runtime';
+import {PLAN_MODE_SYSTEM_INSTRUCTIONS} from '@devryan/orchestration-runtime';
 
 it('captures planning format in visible primary prefixes and explicit native tool budgets', () => {
  const configuration=translateNativeConfiguration({legacy:{},agents:{orchestrator:{mode:'primary',prompt:'Own orchestration.'},

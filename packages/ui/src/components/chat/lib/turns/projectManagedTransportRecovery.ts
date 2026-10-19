@@ -5,7 +5,7 @@ import {
     isManagedTransientTransportContinuationPrompt,
     type ManagedTaskEventRecord,
     type ProviderTransportFailureKind,
-} from '@openchamber/orchestration-runtime';
+} from '@devryan/orchestration-runtime';
 
 import type {
     ChatMessageEntry,

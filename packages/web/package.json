@@ -1,5 +1,5 @@
 {
-  "name": "@openchamber/web",
+  "name": "@devryan/web",
   "version": "2.1.3",
   "private": false,
   "type": "module",
@@ -31,6 +31,7 @@
     }
   },
   "bin": {
+    "devryan": "./bin/cli.js",
     "openchamber": "./bin/cli.js"
   },
   "publishConfig": {
@@ -53,13 +54,13 @@
     "@clack/prompts": "^1.7.0",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@octokit/rest": "^22.0.1",
-    "@openchamber/agents-core": "workspace:*",
-    "@openchamber/bot-db": "workspace:*",
-    "@openchamber/bots-runtime": "workspace:*",
-    "@openchamber/cursor-sdk-runtime": "workspace:*",
-    "@openchamber/harness-runtime": "workspace:*",
-    "@openchamber/orchestration-runtime": "workspace:*",
-    "@openchamber/shared-runtime": "workspace:*",
+    "@devryan/agents-core": "workspace:*",
+    "@devryan/bot-db": "workspace:*",
+    "@devryan/bots-runtime": "workspace:*",
+    "@devryan/cursor-sdk-runtime": "workspace:*",
+    "@devryan/harness-runtime": "workspace:*",
+    "@devryan/orchestration-runtime": "workspace:*",
+    "@devryan/shared-runtime": "workspace:*",
     "@opencode-ai/sdk": "^1.18.33",
     "@opencode/ai": "2.0.32",
     "@opencode/core": "2.0.32",
@@ -139,7 +140,7 @@
     "vitest": "^4.1.11",
     "workbox-window": "^7.4.1",
     "zustand": "^5.0.15",
-    "@openchamber/ui": "workspace:*"
+    "@devryan/ui": "workspace:*"
   },
   "files": [
     "dist",

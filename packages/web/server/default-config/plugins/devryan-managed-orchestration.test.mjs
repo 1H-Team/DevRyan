@@ -3,9 +3,9 @@ import { createOpencodeClient } from '@opencode-ai/sdk';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { createPrimaryRecoveryController, createPrimaryRecoveryManagedAdapter } from '@openchamber/harness-runtime';
-import { createManagedTaskScheduler } from '@openchamber/orchestration-runtime';
-import { createCompactResultHeader } from '@openchamber/orchestration-runtime';
+import { createPrimaryRecoveryController, createPrimaryRecoveryManagedAdapter } from '@devryan/harness-runtime';
+import { createManagedTaskScheduler } from '@devryan/orchestration-runtime';
+import { createCompactResultHeader } from '@devryan/orchestration-runtime';
 
 vi.mock('@opencode-ai/plugin', () => {
   const makeSchema = () => {

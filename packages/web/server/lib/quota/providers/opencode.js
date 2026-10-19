@@ -6,7 +6,7 @@ import {
   fetchOpenCodeZenQuotaAdapter,
   refreshOpenCodeConsoleToken,
   startOpenCodeConsoleDeviceAuthorization,
-} from '@openchamber/shared-runtime';
+} from '@devryan/shared-runtime';
 
 import {
   hasLegacyOpenCodeZenCredential,

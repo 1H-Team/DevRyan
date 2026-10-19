@@ -287,7 +287,7 @@ describe('native startup reboot recovery', () => {
 it('native restart preparation rejects unrelated failures and derives authority from the selected binding', async () => {
   const source = mainSource();
   const recovery = source.slice(source.indexOf('let preparingStartupRebootRecovery ='), source.indexOf('const showBotStartupAttention ='))
-    .replace("await import('@openchamber/web/server/lib/opencode/runtime-host/native-bundle-reboot-recovery.js')", 'await loadRecovery()');
+    .replace("await import('@devryan/web/server/lib/opencode/runtime-host/native-bundle-reboot-recovery.js')", 'await loadRecovery()');
   const failure = { code: 'native_runtime_artifacts_unverified' };
   const calls = [];
   let finish, refuse;

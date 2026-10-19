@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { resolveDevRyanDataRoot } from '@openchamber/shared-runtime/node/data-root.js';
+import { resolveDevRyanDataRoot } from '@devryan/shared-runtime/node/data-root.js';
 
 const STORAGE_DIR = resolveDevRyanDataRoot();
 const STORAGE_FILE = path.join(STORAGE_DIR, 'git-identities.json');

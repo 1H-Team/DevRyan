@@ -1,7 +1,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { useStore } from 'zustand';
-import { createManagedTaskRecord, toManagedTaskEvent } from '@openchamber/orchestration-runtime';
+import { createManagedTaskRecord, toManagedTaskEvent } from '@devryan/orchestration-runtime';
 import { ManagedTaskList } from '@/components/chat/ManagedTaskList';
 import { useManagedOrchestrationStore } from '@/stores/useManagedOrchestrationStore';
 import { I18nProvider } from '@/lib/i18n';

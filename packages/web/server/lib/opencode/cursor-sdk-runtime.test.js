@@ -4,7 +4,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { createCursorSdkRuntime } from '@openchamber/cursor-sdk-runtime';
+import { createCursorSdkRuntime } from '@devryan/cursor-sdk-runtime';
 import { collectSanitizedTools } from '../../../../../scripts/agent-evals/client.mjs';
 
 const waitFor = async (predicate) => {

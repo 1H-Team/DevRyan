@@ -2,7 +2,7 @@ import type { BotSharedFile } from '@/lib/botsApi';
 import {
   canonicalizeAssistantImageSource,
   extractAssistantImageReferences,
-} from '@openchamber/shared-runtime/lib/assistant-image-sources.js';
+} from '@devryan/shared-runtime/lib/assistant-image-sources.js';
 
 export const BOT_PREVIEW_IMAGE_TYPES = new Set([
   'image/png',

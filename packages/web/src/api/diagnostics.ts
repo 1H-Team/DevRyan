@@ -5,7 +5,7 @@ import type {
   DiagnosticsExportScope,
   OpenCodeStorageCompactResult,
   OpenCodeStorageStatus,
-} from '@openchamber/ui/lib/api/types';
+} from '@devryan/ui/lib/api/types';
 
 const getNativeInvoke = () => {
   const tauri = (window as unknown as {

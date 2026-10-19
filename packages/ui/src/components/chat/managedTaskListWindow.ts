@@ -1,4 +1,4 @@
-import type { ManagedTaskEventRecord } from '@openchamber/orchestration-runtime';
+import type { ManagedTaskEventRecord } from '@devryan/orchestration-runtime';
 
 const MANAGED_TASK_ROW_BATCH = 24;
 const SAME_CHILD_EXECUTION_KINDS = new Set(['resume', 'recover_in_place', 'retry_in_place']);

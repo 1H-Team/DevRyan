@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 
-import { createLifecycleTracker } from '@openchamber/harness-runtime';
-import { classifyProviderTransportFailure } from '@openchamber/orchestration-runtime';
+import { createLifecycleTracker } from '@devryan/harness-runtime';
+import { classifyProviderTransportFailure } from '@devryan/orchestration-runtime';
 
 import {
   createHarnessError,

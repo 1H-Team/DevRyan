@@ -4,7 +4,7 @@ import type {
   SessionPlanRevisionUpdate,
   SessionPlansAPI,
   SessionPlanSourceIdentity,
-} from '@openchamber/ui/lib/api/types';
+} from '@devryan/ui/lib/api/types';
 
 const routeFor = ({ sessionId, sourceMessageId }: SessionPlanRevisionIdentity): string => (
   `/api/session/${encodeURIComponent(sessionId)}/plan-revisions/${encodeURIComponent(sourceMessageId)}`

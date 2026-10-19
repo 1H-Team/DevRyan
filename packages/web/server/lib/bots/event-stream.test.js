@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
-import { BOT_EVENT_MAX_BYTES, BOT_SNAPSHOT_FORMAT, createBotSnapshotAssembler } from '@openchamber/bots-runtime/event-snapshot.js';
+import { BOT_EVENT_MAX_BYTES, BOT_SNAPSHOT_FORMAT, createBotSnapshotAssembler } from '@devryan/bots-runtime/event-snapshot.js';
 
 import { createBotEventStream } from './event-stream.js';
 

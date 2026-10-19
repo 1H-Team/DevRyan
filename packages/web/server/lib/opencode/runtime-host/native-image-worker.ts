@@ -16,7 +16,7 @@ export async function runNativeImageWorker(input:NativeImageInput):Promise<Nativ
   ||!path.isAbsolute(input.logicalDirectory)||path.resolve(input.logicalDirectory)!==input.logicalDirectory)throw Error('native_image_input_invalid');
  for(const message of input.messages)if(!record(message)||!record(message.info)||message.info.role!=='user'
   ||typeof message.info.id!=='string'||typeof message.info.sessionID!=='string'||!Array.isArray(message.parts))throw Error('native_image_input_invalid');
- const originals=await import('@openchamber/agents-core');
+ const originals=await import('@devryan/agents-core');
  originals.bindReviewedSlimImageWorker(directory);
  const messages=structuredClone(input.messages);
  const imagesSkipped=originals.processReviewedSlimImageAttachments({messages,workDir:directory,imageRouting:input.imageRouting,

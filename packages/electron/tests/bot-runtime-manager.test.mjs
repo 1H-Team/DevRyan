@@ -21,7 +21,7 @@ import {
   resolveDockerExecutable,
 } from '../bot-runtime-manager.mjs';
 import { BOT_RESOURCE_LIMITS } from '../../bot-supervisor/src/contract.js';
-import { BOT_DB_MIGRATIONS, loadBotDatabaseSql } from '@openchamber/bot-db';
+import { BOT_DB_MIGRATIONS, loadBotDatabaseSql } from '@devryan/bot-db';
 
 const REPOSITORY_ROOT = path.resolve(import.meta.dir, '../../..');
 const loadDatabaseSql = () => loadBotDatabaseSql({
@@ -2437,7 +2437,7 @@ describe('Electron-owned Docker Bot runtime manager', () => {
     expect(compose).toMatch(/bot-database-data:\n\s+name: [^\n]+\n\s+external: true/);
     expect(compose).not.toMatch(/\bdown\b|--volumes|-v\b/);
     // Packaged apps ship the reviewed SQL beside the compose file.
-    expect(packageJson.dependencies['@openchamber/bot-db']).toBe('workspace:*');
+    expect(packageJson.dependencies['@devryan/bot-db']).toBe('workspace:*');
     expect(packageJson.build.mac.extraResources).toEqual(expect.arrayContaining([
       expect.objectContaining({ from: '../../supabase/migrations', to: 'bot-db/supabase-migrations' }),
       expect.objectContaining({ from: '../bot-db/sql', to: 'bot-db/sql' }),

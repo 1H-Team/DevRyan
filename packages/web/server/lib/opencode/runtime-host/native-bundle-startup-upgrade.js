@@ -6,7 +6,7 @@ import { readRuntimeBundleBinding } from './runtime-bundle-binding.js';
 import { recordStartupBundleUpgradeFailure } from './bundle-startup-upgrade-status.js';
 import { isNativePrimaryRuntimeVersion } from '../../../../../harness-runtime/lib/provider-recovery-policy.js';
 import { recordStartupFindings } from './startup-notices.js';
-import { artifactDiagnostic } from '@openchamber/shared-runtime/startup-diagnostics.js';
+import { artifactDiagnostic } from '@devryan/shared-runtime/startup-diagnostics.js';
 import { readNativeRuntimeManifest } from './native-artifacts.js';
 import { isProcessRunning, readManagedOpenCodeRegistry, readProcessStartTime,
   reapOrphanedManagedOpenCodeProcesses } from '../managed-process-registry.js';

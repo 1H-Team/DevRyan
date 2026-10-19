@@ -1,6 +1,6 @@
 # Production Bots runtime contracts
 
-`@openchamber/bots-runtime` is the dependency-free source of truth for policy that must remain identical in Electron, the web server, container-facing adapters, and the shared UI. It intentionally contains no HTTP, Supabase, Docker, OpenCode, browser, filesystem, or React logic.
+`@devryan/bots-runtime` is the dependency-free source of truth for policy that must remain identical in Electron, the web server, container-facing adapters, and the shared UI. It intentionally contains no HTTP, Supabase, Docker, OpenCode, browser, filesystem, or React logic.
 
 Operator setup, recovery, retention, and trust-boundary guidance lives in
 `docs/BOTS_RUNTIME.md`.

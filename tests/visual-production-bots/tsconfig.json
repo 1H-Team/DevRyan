@@ -10,7 +10,7 @@
     "baseUrl": "../..",
     "paths": {
       "@/*": ["packages/ui/src/*"],
-      "@openchamber/ui/*": ["packages/ui/src/*"]
+      "@devryan/ui/*": ["packages/ui/src/*"]
     },
     "noEmit": true
   },

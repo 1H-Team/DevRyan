@@ -1,5 +1,5 @@
 import type {IncomingMessage,ServerResponse} from 'node:http';
-import type * as AgentsCore from '@openchamber/agents-core';
+import type * as AgentsCore from '@devryan/agents-core';
 import type {NativeSlimInterviewFactory,NativeSlimInterviewService} from './native-slim-interview.js';
 import type {NativeInterviewDocumentScope,NativeInterviewDocumentAuthority,NativeInterviewDocumentResult} from './native-interview-document.js';
 import type {RegistrationOrigin} from './registration-origin.js';

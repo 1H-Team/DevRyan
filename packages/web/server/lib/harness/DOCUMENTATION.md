@@ -34,5 +34,5 @@ See `docs/PROVIDER_RECOVERY.md` for policy and release gates.
 `native-integration/` holds harness-runtime behaviour tests that need web-host
 modules (native admission, the native consumer fixture, orchestration private
 host, Claude stderr diagnostics). They run under Bun from the web `test` script
-and are excluded from Vitest, so `@openchamber/harness-runtime` tests never
+and are excluded from Vitest, so `@devryan/harness-runtime` tests never
 import the web server.

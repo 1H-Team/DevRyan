@@ -1,8 +1,8 @@
-import { DEFAULT_HELPER_MODEL_SELECTION } from '@openchamber/shared-runtime';
+import { DEFAULT_HELPER_MODEL_SELECTION } from '@devryan/shared-runtime';
 import {generateTextWithSessionModel} from './session-model-text.js';
 import { NativeCommandRefusal } from './runtime-host/native-command-refusal.js';
 import crypto from 'node:crypto';
-import { isManagedTaskPlaceholderSession as isManagedPlaceholderSession } from '@openchamber/orchestration-runtime';
+import { isManagedTaskPlaceholderSession as isManagedPlaceholderSession } from '@devryan/orchestration-runtime';
 
 import {
   isPlanControlTitle,

@@ -5,7 +5,7 @@ import request from '../../test-supertest.js';
 import {
   createConfigApplyCoordinator,
   createConfigChangeMarker,
-} from '@openchamber/shared-runtime';
+} from '@devryan/shared-runtime';
 import { registerCommonRequestMiddleware } from './core-routes.js';
 import { registerConfigApplyRoutes } from './config-apply-runtime.js';
 

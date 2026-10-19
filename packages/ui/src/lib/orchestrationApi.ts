@@ -10,7 +10,7 @@ import {
   type ManagedTaskEventRecord,
   type ManagedTaskResultAction,
   type ManagedTaskResultEnvelope,
-} from '@openchamber/orchestration-runtime';
+} from '@devryan/orchestration-runtime';
 import { isRecord } from './decoders/guards';
 
 export type ManagedOrchestrationSnapshot = {
@@ -44,7 +44,7 @@ export type {
   ManagedTaskAutoResumeTarget,
   ManagedTaskWaitingReason,
   ManagedTaskWaitingReasonKind,
-} from '@openchamber/orchestration-runtime';
+} from '@devryan/orchestration-runtime';
 
 export const isManagedTaskAutoResumeActive = (
   autoResume: { enabled: boolean; state: string } | null | undefined,

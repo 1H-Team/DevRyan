@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-import { parseStrictJson } from '@openchamber/bots-runtime';
+import { parseStrictJson } from '@devryan/bots-runtime';
 
 import { decryptBotJson, encryptBotJson } from './encryption.js';
 

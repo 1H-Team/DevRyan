@@ -1,5 +1,5 @@
 import { validateClaudeInstallation, CLAUDE_TEAM } from './managed-claude-installation.js';
-import { artifactDiagnostic } from '@openchamber/shared-runtime/startup-diagnostics.js';
+import { artifactDiagnostic } from '@devryan/shared-runtime/startup-diagnostics.js';
 import {isNativeOpenCodeVersion} from '../version-policy.js';
 import fs from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
@@ -7,7 +7,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { verifySessionExecutionLauncher } from '@openchamber/harness-runtime/lib/session-execution.js';
+import { verifySessionExecutionLauncher } from '@devryan/harness-runtime/lib/session-execution.js';
 import { REVIEWED_AST_ASSET_SHA256 } from './reviewed-ast-asset.js';
 import { REVIEWED_CLAUDE_ASSETS, REVIEWED_CLAUDE_CREDENTIALS } from './reviewed-claude-transform.js';
 import {assertWindowsBinaryArchitecture,reviewedWindowsRuntimeAsset,readWindowsLibsqlEvidence} from './reviewed-windows-assets.js';

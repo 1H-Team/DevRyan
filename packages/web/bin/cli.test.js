@@ -114,6 +114,15 @@ describe('cli entry detection', () => {
     expect(isModuleCliExecution(symlinkPath, moduleUrl, realpath)).toBe(true);
   });
 
+  it('accepts the devryan bin and its openchamber alias by name', () => {
+    const realpath = (filePath) => filePath;
+    for (const name of ['devryan', 'openchamber']) {
+      expect(isModuleCliExecution(`/opt/bin/${name}`, moduleUrl, realpath, ['devryan', 'openchamber'])).toBe(true);
+    }
+    expect(isModuleCliExecution('/opt/bin/other', moduleUrl, realpath, ['devryan', 'openchamber'])).toBe(false);
+    expect(isModuleCliExecution('/opt/bin/openchamber', moduleUrl, realpath, 'openchamber')).toBe(true);
+  });
+
   it('falls back to resolved paths when realpath fails', () => {
     const realpath = () => {
       throw new Error('realpath unavailable');

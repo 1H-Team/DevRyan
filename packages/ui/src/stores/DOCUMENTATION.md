@@ -295,7 +295,7 @@ OpenCode's language servers are always off for agent sessions, so no store
 carries an agent-runtime switch.
 
 Host payloads (task events, snapshots, action responses) decode through the
-orchestration codec (`@openchamber/orchestration-runtime`, lenient mode); the
+orchestration codec (`@devryan/orchestration-runtime`, lenient mode); the
 store has no parser of its own. Lenient mode degrades a newer host's unknown
 auto-resume reason, or a malformed auto-resume/waiting block, to `null` instead
 of dropping the task or its result envelope. `orchestrationApi.ts` returns the

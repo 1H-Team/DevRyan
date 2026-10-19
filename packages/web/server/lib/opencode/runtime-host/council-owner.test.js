@@ -1,5 +1,5 @@
 import { expect,test } from 'vitest';
-import { projectManagedTaskResult,readManagedResultReference } from '@openchamber/orchestration-runtime';
+import { projectManagedTaskResult,readManagedResultReference } from '@devryan/orchestration-runtime';
 import { createNativeCouncilOwner } from './council-owner.js';
 const input={tool:'council_session',authorization:{input:{provenance:{kind:'plugin',id:'devryan.council'}}},directory:'/project',sessionID:'ses_root',messageID:'msg_assistant',callID:'call_council',input:{prompt:'Compare designs'}};
 test('preserves saved order/variants, real control call and independent paged bodies while retaining task disposition',async()=>{

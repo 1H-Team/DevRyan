@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { resolveDevRyanDataRoot } from '@openchamber/shared-runtime/node/data-root.js';
+import { resolveDevRyanDataRoot } from '@devryan/shared-runtime/node/data-root.js';
 
 export const MAX_QUOTA_CREDENTIAL_PAYLOAD_BYTES = 16 * 1024;
 export const MANAGED_QUOTA_PROVIDER_IDS = Object.freeze([

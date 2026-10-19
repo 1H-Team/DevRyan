@@ -27,7 +27,7 @@ import {
   canonicalizeBotJson,
   hashCanonicalBotJson,
   parseStrictJson,
-} from '@openchamber/bots-runtime';
+} from '@devryan/bots-runtime';
 
 import {
   BotReasoningAdapterError,

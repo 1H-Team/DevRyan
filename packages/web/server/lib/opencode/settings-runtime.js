@@ -1,4 +1,4 @@
-import { cleanupStaleAtomicFiles } from '@openchamber/harness-runtime';
+import { cleanupStaleAtomicFiles } from '@devryan/harness-runtime';
 
 import { createProjectIdFromPath } from '../projects/project-id.js';
 import { normalizeNotificationTemplates } from './notification-settings.js';

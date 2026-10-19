@@ -1,8 +1,8 @@
 # Harness Runtime
 
-`@openchamber/harness-runtime` is the Node ESM owner for durable DevRyan
+`@devryan/harness-runtime` is the Node ESM owner for durable DevRyan
 harness operations. It has no third-party dependencies; its only workspace
-dependency is `@openchamber/shared-runtime` (native status, observation, usage
+dependency is `@devryan/shared-runtime` (native status, observation, usage
 and provider-error leaf modules), and its production modules never import the web
 server. It contains atomic private-file persistence,
 versioned record stores, turn lifecycle correlation, durable worktree bootstrap

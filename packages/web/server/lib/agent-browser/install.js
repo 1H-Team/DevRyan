@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { resolveDevRyanDataRoot } from '@openchamber/shared-runtime/node/data-root.js';
+import { resolveDevRyanDataRoot } from '@devryan/shared-runtime/node/data-root.js';
 
 export const AGENT_BROWSER_VERSION = '0.38.1';
 export const AGENT_BROWSER_MANAGED_CONFIG_FILE = 'devryan-agent-browser.json';

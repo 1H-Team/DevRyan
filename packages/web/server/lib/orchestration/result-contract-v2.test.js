@@ -1,5 +1,5 @@
 import {afterEach,expect,it} from 'vitest';
-import {createManagedTaskRecord,createManagedTaskResultEnvelope} from '@openchamber/orchestration-runtime';
+import {createManagedTaskRecord,createManagedTaskResultEnvelope} from '@devryan/orchestration-runtime';
 import {createWebManagedOrchestrationRuntime} from './runtime.js';
 import {createNativeManagedTaskOwner} from '../opencode/runtime-host/managed-task-owner.js';
 import {createNativeManagedPublicationReader} from '../opencode/runtime-host/native-managed-publication-owner.js';

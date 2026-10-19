@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
-import { createSessionMutationRuntime } from '@openchamber/harness-runtime';
+import { createSessionMutationRuntime } from '@devryan/harness-runtime';
 import { git } from '../../../../harness-runtime/lib/session-changes-git.js';
 import { registerScopedSessionRevertRoute } from './session-scoped-revert.js';
 import { createNativeRevertConversation, createScopedRevertConversation, createScopedRevertCoordinator } from './session-revert-coordinator.js';

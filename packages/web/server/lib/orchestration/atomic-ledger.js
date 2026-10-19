@@ -3,9 +3,9 @@ import nodeFs from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-import { decodeLedgerSnapshot, encodeLedgerSnapshot } from '@openchamber/orchestration-runtime';
-import { writeFileAtomic } from '@openchamber/harness-runtime';
-import { createExecutionHostOwner } from '@openchamber/harness-runtime/lib/execution-host-owner.js';
+import { decodeLedgerSnapshot, encodeLedgerSnapshot } from '@devryan/orchestration-runtime';
+import { writeFileAtomic } from '@devryan/harness-runtime';
+import { createExecutionHostOwner } from '@devryan/harness-runtime/lib/execution-host-owner.js';
 
 // Well above the 20 MiB the scheduler writes: an oversized ledger is
 // quarantined, which forgets every task, so reading must tolerate one a

@@ -1,6 +1,6 @@
-import {isUnsupportedLoginShellValue} from '@openchamber/web/server/lib/opencode/login-shell-env-filter.js';
+import {isUnsupportedLoginShellValue} from '@devryan/web/server/lib/opencode/login-shell-env-filter.js';
 
-export {isDesktopRefusedShellValue} from '@openchamber/web/server/lib/opencode/login-shell-env-filter.js';
+export {isDesktopRefusedShellValue} from '@devryan/web/server/lib/opencode/login-shell-env-filter.js';
 
 /** Login-shell variables absent from the launch environment, except PATH (merged
  * separately) and values the shared login-shell filter rejects (refused values and,

@@ -5,7 +5,7 @@
  * This client provides methods to fetch skills list and download skill packages.
  */
 
-import { downloadArchive } from '@openchamber/shared-runtime';
+import { downloadArchive } from '@devryan/shared-runtime';
 
 const CLAWDHUB_API_BASE = 'https://clawdhub.com/api/v1';
 const CLAWDHUB_PAGE_LIMIT = 25;

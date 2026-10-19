@@ -1,4 +1,4 @@
-import type * as ReviewedSlim from '@openchamber/agents-core';
+import type * as ReviewedSlim from '@devryan/agents-core';
 import type {SessionRetry} from '@opencode/plugin/effect/session';
 
 export interface NativeSlimRetryOwners {

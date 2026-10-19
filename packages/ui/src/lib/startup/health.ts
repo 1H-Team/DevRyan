@@ -1,4 +1,4 @@
-import { parseArtifactDiagnostic, describeArtifactFailure, type ArtifactDiagnostic } from '@openchamber/shared-runtime/startup-diagnostics.js';
+import { parseArtifactDiagnostic, describeArtifactFailure, type ArtifactDiagnostic } from '@devryan/shared-runtime/startup-diagnostics.js';
 
 export interface StartupHealthSnapshot {
   ready: boolean;

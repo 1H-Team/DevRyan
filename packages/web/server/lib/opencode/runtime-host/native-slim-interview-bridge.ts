@@ -1,5 +1,5 @@
 import path from 'node:path';
-import type * as ReviewedSlim from '@openchamber/agents-core';
+import type * as ReviewedSlim from '@devryan/agents-core';
 export interface NativeSlimInterviewBridgeOwners extends Omit<ReviewedSlim.ReviewedSlimInterviewBridgeOwner,'assertAcceptedCommand'> {
  readonly assertCurrent:(event:unknown)=>Promise<void>;
  readonly assertAcceptedCommand:(input:{readonly directory:string;readonly sessionID:string;readonly messageID:string;readonly args:string;readonly event:unknown})=>Promise<void>;

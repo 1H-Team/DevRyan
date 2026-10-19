@@ -1,5 +1,5 @@
 import type {SessionEvent} from '@opencode/schema/session-event';
-import type {PrimaryRecoveryHost} from '@openchamber/harness-runtime';
+import type {PrimaryRecoveryHost} from '@devryan/harness-runtime';
 import type {OperationPermit} from './native-admission-contract.js';
 import type {NativeAdmissionOwner} from './native-admission-owner.js';
 import type {NativeAttemptIdentity} from './native-observation.js';

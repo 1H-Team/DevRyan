@@ -6856,7 +6856,7 @@
     }
   ],
   "runtimeDisposition": {
-    "AgentsCore": "Built-in @openchamber/agents-core (owned source derived from Oh My OpenCode Slim v3.0.4) compiled from the workspace. Static native setup import with constructor-frozen data, allowlisted registrations and owned invocation routing. AST definitions and formatters run only in the confined worker.",
+    "AgentsCore": "Built-in @devryan/agents-core (owned source derived from Oh My OpenCode Slim v3.0.4) compiled from the workspace. Static native setup import with constructor-frozen data, allowlisted registrations and owned invocation routing. AST definitions and formatters run only in the confined worker.",
     "Ponytail": "Exact shared builder instructions embedded at build; existing selected state file accessed by the host-owned command adapter. Ambient plugin retained as inactive original data.",
     "AST": "Only branded captured platform executable, manifest-verified by host and bound inside private-view worker. No PATH/download fallback."
   },

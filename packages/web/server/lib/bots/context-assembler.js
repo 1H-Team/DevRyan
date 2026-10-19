@@ -1,4 +1,4 @@
-import { canonicalizeBotJson } from '@openchamber/bots-runtime';
+import { canonicalizeBotJson } from '@devryan/bots-runtime';
 
 import { botQuestionContextText } from './bot-question.js';
 import { genericExecutionFromLegacyRun } from './reasoning-adapter.js';

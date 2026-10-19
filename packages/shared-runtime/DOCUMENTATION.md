@@ -1,6 +1,6 @@
 # Shared runtime
 
-`@openchamber/shared-runtime` contains dependency-light host logic that must behave identically in the web/Electron runtimes.
+`@devryan/shared-runtime` contains dependency-light host logic that must behave identically in the web/Electron runtimes.
 
 ## Entry points
 

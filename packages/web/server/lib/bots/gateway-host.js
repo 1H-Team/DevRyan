@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import http from 'node:http';
 import net from 'node:net';
 
-import { assertBotJsonValue } from '@openchamber/bots-runtime';
+import { assertBotJsonValue } from '@devryan/bots-runtime';
 
 import { validateUuid } from './validation.js';
 import { botErrorLogFields } from './error-normalization.js';

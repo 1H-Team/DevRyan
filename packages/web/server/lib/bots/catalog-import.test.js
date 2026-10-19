@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { REVIEWED_SOURCE_SCHEMAS } from '@openchamber/bot-db';
+import { REVIEWED_SOURCE_SCHEMAS } from '@devryan/bot-db';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createBotActivationHold } from './activation-hold.js';

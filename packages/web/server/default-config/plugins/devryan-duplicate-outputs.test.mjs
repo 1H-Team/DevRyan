@@ -6,7 +6,7 @@ import { DevRyanDocumentReaderPlugin, __test as documentTest } from './devryan-d
 import { DevRyanToolInputGuardPlugin } from './devryan-tool-input-guard.mjs';
 import { __test, DevRyanHarnessContextPlugin } from './devryan-harness-context.mjs';
 import { DevRyanSkillContextPlugin } from './devryan-skill-context.mjs';
-import { resolveHarnessPolicies } from '@openchamber/orchestration-runtime';
+import { resolveHarnessPolicies } from '@devryan/orchestration-runtime';
 
 const { projectObservations, pluginInventory } = __test();
 const body = '<skill_content>Unique instructions 世界 \\"\n'.repeat(80) + '</skill_content>';

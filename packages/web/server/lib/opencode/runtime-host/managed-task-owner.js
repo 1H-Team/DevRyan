@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { isManagedTaskId, isTerminalManagedTaskStatus, MANAGED_TASK_LIVE_STATUSES, validateRequiredChecks, managedToolOutputBudget, assertManagedToolOutputSize } from '@openchamber/orchestration-runtime';
+import { isManagedTaskId, isTerminalManagedTaskStatus, MANAGED_TASK_LIVE_STATUSES, validateRequiredChecks, managedToolOutputBudget, assertManagedToolOutputSize } from '@devryan/orchestration-runtime';
 import { createNativeManagedResultCollection, validateNativeManagedResult } from './native-managed-results.js';
 
 const fail = code => Object.assign(new Error(code), { code, statusCode: 409 });

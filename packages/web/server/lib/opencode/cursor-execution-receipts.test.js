@@ -4,8 +4,8 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { createSessionMutationRuntime } from '@openchamber/harness-runtime/lib/session-mutations.js';
-import { createSessionChangeHost } from '@openchamber/harness-runtime/lib/session-changes-host.js';
+import { createSessionMutationRuntime } from '@devryan/harness-runtime/lib/session-mutations.js';
+import { createSessionChangeHost } from '@devryan/harness-runtime/lib/session-changes-host.js';
 import { createNativeConsumerFixture } from './test-native-consumer-client.js';
 
 const lease = { directory: '/fixture', token: 'lease_one', scope: { sessionID: 'child', messageID: 'assistant' } };

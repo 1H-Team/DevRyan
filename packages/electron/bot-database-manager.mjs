@@ -9,7 +9,7 @@ import {
   assertBotDatabaseName,
   classifyBotDatabaseHistory,
   renderMigrationTransaction,
-} from '@openchamber/bot-db';
+} from '@devryan/bot-db';
 
 // Host lifecycle for the local Bot catalog: volume ownership, one-off cluster
 // initialization, identity checks, reviewed migrations and loopback REST

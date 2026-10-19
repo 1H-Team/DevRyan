@@ -1,4 +1,4 @@
-import { buildManagedAgentContract } from '@openchamber/orchestration-runtime';
+import { buildManagedAgentContract } from '@devryan/orchestration-runtime';
 
 import { ANTHROPIC_PROVIDER_IDS } from '../opencode/anthropic-provider-ids.js';
 import { readMeridianPromptMode } from '../opencode/meridian-sdk-features.js';

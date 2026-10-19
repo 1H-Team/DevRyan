@@ -1,4 +1,4 @@
-import type {PrimaryRecoveryHost,NativePrimaryContinuationPrompt} from '@openchamber/harness-runtime';
+import type {PrimaryRecoveryHost,NativePrimaryContinuationPrompt} from '@devryan/harness-runtime';
 import type {OperationPermit} from './native-admission-contract.js';
 import type {NativeManagedInvocation,NativeManagedDependencies} from './managed-task-owner.js';
 export const SESSION_CONTEXT_PLUGIN_ID:'devryan.harness-context';

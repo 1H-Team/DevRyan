@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { currentObjectiveUser } from '@openchamber/harness-runtime/lib/objective-identity.js';
+import { currentObjectiveUser } from '@devryan/harness-runtime/lib/objective-identity.js';
 import { parseNativePresentation } from './native-observation-contract.js';
 import { parseNativeObservation } from './native-observation-contract.js';
 

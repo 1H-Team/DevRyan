@@ -1,4 +1,4 @@
-import { migrateLegacyDataRoot } from '@openchamber/harness-runtime';
+import { migrateLegacyDataRoot } from '@devryan/harness-runtime';
 import { recordStartupFindings } from './startup-notices.js';
 
 // Outcomes the open app reports; `deferred` (an older process still owns the

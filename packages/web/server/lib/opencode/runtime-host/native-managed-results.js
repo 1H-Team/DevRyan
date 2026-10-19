@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { isAutoResumeActive, isTerminalManagedTaskStatus, MANAGED_RESULT_PAGE_MAX_BYTES, MANAGED_RESULT_V2_PAGE_MAX_BYTES, MANAGED_TASK_LIVE_STATUSES, stableStringify } from '@openchamber/orchestration-runtime';
+import { isAutoResumeActive, isTerminalManagedTaskStatus, MANAGED_RESULT_PAGE_MAX_BYTES, MANAGED_RESULT_V2_PAGE_MAX_BYTES, MANAGED_TASK_LIVE_STATUSES, stableStringify } from '@devryan/orchestration-runtime';
 
 const fault = code => Object.assign(new Error(code), { code, statusCode: 409 });
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);

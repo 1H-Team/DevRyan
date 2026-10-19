@@ -1,6 +1,6 @@
 import React from 'react';
 import { RiAlertLine, RiLoader4Line } from '@remixicon/react';
-import { formatManagedTaskDisplayName } from '@openchamber/orchestration-runtime';
+import { formatManagedTaskDisplayName } from '@devryan/orchestration-runtime';
 
 import { Button } from '@/components/ui/button';
 import {

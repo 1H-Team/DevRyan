@@ -1,6 +1,6 @@
 import path from 'node:path';
-import type * as AgentsCore from '@openchamber/agents-core';
-import type {ReviewedWebfetchContext,ReviewedWebfetchDefinition,ReviewedWebfetchInput,ReviewedWebfetchOptions,ReviewedWebfetchOwners} from '@openchamber/agents-core';
+import type * as AgentsCore from '@devryan/agents-core';
+import type {ReviewedWebfetchContext,ReviewedWebfetchDefinition,ReviewedWebfetchInput,ReviewedWebfetchOptions,ReviewedWebfetchOwners} from '@devryan/agents-core';
 
 export interface ReviewedWebfetchOriginals {
  readonly createWebfetchTool:typeof AgentsCore.createWebfetchTool;

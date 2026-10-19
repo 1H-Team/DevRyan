@@ -1,4 +1,4 @@
-import { assertBotJsonValue } from '@openchamber/bots-runtime';
+import { assertBotJsonValue } from '@devryan/bots-runtime';
 
 import {
   sanitizeBotConversationalTextParts,

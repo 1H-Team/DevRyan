@@ -5,7 +5,7 @@ const createHarnessRunFingerprintReader = (options = {}) => createHarnessRunFing
   }),
 });
 import { describe, expect, it, vi } from 'vitest';
-import { createDiagnosticSanitizer } from '@openchamber/harness-runtime';
+import { createDiagnosticSanitizer } from '@devryan/harness-runtime';
 import { buildHarnessRunFingerprint, createHarnessRunFingerprintReader as createHarnessRunFingerprintReaderNative } from './harness-run-fingerprint.js';
 
 const input = () => ({ runtimeVersion: '1.18.30', selection: { providerID: 'openai', modelID: 'gpt-6-astra', agent: 'orchestrator', variant: 'medium' },

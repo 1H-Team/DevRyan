@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 
-import { loadBotDatabaseSql } from '@openchamber/bot-db';
+import { loadBotDatabaseSql } from '@devryan/bot-db';
 
 import { createBotCatalogBackups } from '../bot-catalog-backup.mjs';
 import { createBotDatabaseManager, createFileBotDatabaseStateStore } from '../bot-database-manager.mjs';

@@ -2,7 +2,7 @@ import {
   createXaiToolCatalogCache,
   isXaiProviderID,
   listXaiModelIds,
-} from '@openchamber/orchestration-runtime';
+} from '@devryan/orchestration-runtime';
 
 import { resolveGen2OpenCodeClient } from './opencode-client-seam.js';
 

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import express from 'express';
 import path from 'node:path';
-import { createDiagnosticSanitizer } from '@openchamber/harness-runtime';
+import { createDiagnosticSanitizer } from '@devryan/harness-runtime';
 import { registerCommonRequestMiddleware } from './core-routes.js';
 import { registerOpenCodeProxy } from './proxy.js';
 import { createNativeConsumerFixture } from './test-native-consumer-client.js';

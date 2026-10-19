@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
-import { resolveHarnessPolicies } from '@openchamber/orchestration-runtime';
+import { resolveHarnessPolicies } from '@devryan/orchestration-runtime';
 import { readDuplicatePluginInventory, qualifyDuplicateOutputs, resolveDuplicateOutputPolicy, createRuntimeDigestReader, createRuntimeIdentityReader, duplicatePolicyVector } from './harness-duplicate-qualification.js';
 import { createHarnessToolManifestReader } from './harness-tool-manifest.js';
 import { resolveGen2OpenCodeClient } from './opencode-client-seam.js';

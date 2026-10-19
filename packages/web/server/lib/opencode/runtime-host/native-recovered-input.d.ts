@@ -10,7 +10,7 @@ export function recoveredInputHash(item:unknown):string;
 export function readRecoveredNativeInputs(db:MigrationDatabase,startedIDs?:readonly string[],sessionIDFilter?:string):RecoveredNativeInput[];
 export function withRecoveredInputDatabase<A>(file:string,action:(db:MigrationDatabase)=>A):A;
 export {nativeInputCancellation} from './native-input-cancellation.js';
-import type {PrimaryRecoveryHost,PrimaryRecoveryExecutionRecord,RecoveredInputOwner} from '@openchamber/harness-runtime';
+import type {PrimaryRecoveryHost,PrimaryRecoveryExecutionRecord,RecoveredInputOwner} from '@devryan/harness-runtime';
 export interface NativeRecoveredPublication {
  readonly events:readonly {readonly type:string;readonly data:Readonly<Record<string,unknown>>}[];
  readonly pending:readonly {readonly id:string;readonly sessionID:string;readonly payloadHash:string;readonly enqueuedSeq?:number}[];

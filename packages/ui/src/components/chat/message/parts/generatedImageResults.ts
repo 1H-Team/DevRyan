@@ -4,7 +4,7 @@ import {
     extractAssistantImageReferences,
     isSupportedAssistantImageSource,
     type AssistantImageReferenceKind,
-} from '@openchamber/shared-runtime/lib/assistant-image-sources.js';
+} from '@devryan/shared-runtime/lib/assistant-image-sources.js';
 
 import { isToolPartFinalizedForDisplay } from './toolDisplayState';
 import { normalizeToolName } from './toolRenderUtils';

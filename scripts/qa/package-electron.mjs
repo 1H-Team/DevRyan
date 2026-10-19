@@ -155,11 +155,11 @@ export async function packageQaElectron({ webDist, nativeSourceApp, nativeRuntim
     }
     const verifiedWorkspaceFiles = [];
     const workspaceMappings = [
-      ['node_modules/@openchamber/web/server/', 'packages/web/server/'],
-      ['node_modules/@openchamber/shared-runtime/', 'packages/shared-runtime/'],
-      ['node_modules/@openchamber/harness-runtime/', 'packages/harness-runtime/'],
-      ['node_modules/@openchamber/orchestration-runtime/', 'packages/orchestration-runtime/'],
-      ['node_modules/@openchamber/bot-egress/', 'packages/bot-egress/'],
+      ['node_modules/@devryan/web/server/', 'packages/web/server/'],
+      ['node_modules/@devryan/shared-runtime/', 'packages/shared-runtime/'],
+      ['node_modules/@devryan/harness-runtime/', 'packages/harness-runtime/'],
+      ['node_modules/@devryan/orchestration-runtime/', 'packages/orchestration-runtime/'],
+      ['node_modules/@devryan/bot-egress/', 'packages/bot-egress/'],
     ];
     for (const entry of asar.listPackage(archive).map(file => file.replace(/^\//, ''))) {
       const mapping = workspaceMappings.find(([prefix]) => entry.startsWith(prefix));

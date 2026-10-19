@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { parseStrictJson } from '@openchamber/bots-runtime';
+import { parseStrictJson } from '@devryan/bots-runtime';
 
 import {
   createAgUiReasoningAdapter,

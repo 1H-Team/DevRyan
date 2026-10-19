@@ -1,4 +1,4 @@
-import type { ManagedTaskRecord, ManagedTaskResultEnvelope, ManagedResultReference, ManagedMetadataReference, CompactResultHeader } from '@openchamber/orchestration-runtime';
+import type { ManagedTaskRecord, ManagedTaskResultEnvelope, ManagedResultReference, ManagedMetadataReference, CompactResultHeader } from '@devryan/orchestration-runtime';
 export interface NativeManagedScope { readonly directory: string; readonly rootSessionId: string; readonly resultContractVersion?: 1 | 2 }
 export interface NativeManagedPublicationIdentity {
   readonly controllerInstanceID: string; readonly configurationDigest: string; readonly objectiveID: string; readonly cancellationGeneration: number;

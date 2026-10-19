@@ -1,4 +1,4 @@
-import { createKeyedSingleFlight } from '@openchamber/orchestration-runtime';
+import { createKeyedSingleFlight } from '@devryan/orchestration-runtime';
 
 import { openCodeClientErrorStatus, resolveGen2OpenCodeClient } from '../../opencode/opencode-client-seam.js';
 import { toNumber, toTimestamp, toUsageWindow } from '../utils/index.js';

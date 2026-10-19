@@ -1,4 +1,4 @@
-import { classifyProviderTransportFailure } from '@openchamber/orchestration-runtime';
+import { classifyProviderTransportFailure } from '@devryan/orchestration-runtime';
 
 export const DIAGNOSTIC_IMPACTS = Object.freeze(['low', 'medium', 'high', 'critical']);
 export const DIAGNOSTIC_SOURCES = Object.freeze(['observed', 'inferred']);

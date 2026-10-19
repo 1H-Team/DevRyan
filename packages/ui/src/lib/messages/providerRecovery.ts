@@ -1,5 +1,5 @@
 import type { Message } from '@opencode-ai/sdk/v2/client';
-import { isDefiniteProviderUsageLimit } from '@openchamber/orchestration-runtime';
+import { isDefiniteProviderUsageLimit } from '@devryan/orchestration-runtime';
 
 import type { ProviderRecoveryInput } from '@/stores/useProviderRecoveryStore';
 

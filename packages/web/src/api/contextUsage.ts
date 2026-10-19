@@ -1,7 +1,7 @@
 import type {
   ContextUsageAPI,
   ProviderContextUsageSnapshot,
-} from '@openchamber/ui/lib/api/types';
+} from '@devryan/ui/lib/api/types';
 
 const unavailable = (sessionID: string): ProviderContextUsageSnapshot => ({
   sessionID,

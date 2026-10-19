@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { createSessionRevertCoordinator } from '@openchamber/harness-runtime';
+import { createSessionRevertCoordinator } from '@devryan/harness-runtime';
 import { createCapabilityAbsentError, OPENCODE_CAPABILITY_ABSENT, resolveOpenCodeGeneration } from './opencode-generation.js';
 import { createPrivilegedOpenCodeClient } from './opencode-client/privileged.js';
 

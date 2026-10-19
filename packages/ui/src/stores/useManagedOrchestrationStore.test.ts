@@ -9,7 +9,7 @@ import {
   type ManagedTaskRemovalEvent,
   type ManagedTaskStatus,
   type ManagedTransportRecovery,
-} from '@openchamber/orchestration-runtime';
+} from '@devryan/orchestration-runtime';
 
 import type {
   ManagedOrchestrationApi,

@@ -27,7 +27,7 @@ export const PRIVILEGED_PREFIXES = Object.freeze([
 const FORBIDDEN_PACKAGES = new Set(['adm-zip']);
 const BUILTINS = new Set(builtinModules.flatMap(name => [name, name.split('/')[0]]));
 // The web Vite aliases (packages/web/vite.config.ts), most specific first.
-const ALIASES = [['@openchamber/ui/', 'packages/ui/src/'], ['@web/', 'packages/web/src/'], ['@/', 'packages/ui/src/']];
+const ALIASES = [['@devryan/ui/', 'packages/ui/src/'], ['@web/', 'packages/web/src/'], ['@/', 'packages/ui/src/']];
 const CODE = /\.(?:[cm]?js|jsx|[cm]?ts|tsx)$/;
 const SUFFIXES = ['', '.ts', '.tsx', '.js', '.mjs', '.jsx', '/index.ts', '/index.tsx', '/index.js'];
 const WORKER_URL = /new\s+URL\(\s*(['"])([^'"]+)\1\s*,\s*import\.meta\.url\s*\)/g;
@@ -73,7 +73,7 @@ export function walkBrowserGraph({ root = repositoryRoot, entries = BROWSER_ENTR
       const alias = ALIASES.find(([prefix]) => specifier.startsWith(prefix));
       if (specifier.startsWith('./') || specifier.startsWith('../')) candidate = path.posix.normalize(path.posix.join(path.posix.dirname(file), specifier));
       else if (alias) candidate = alias[1] + specifier.slice(alias[0].length);
-      else if (specifier.startsWith('@openchamber/')) candidate = resolveSpecifier({ root, packages, importer: file, specifier })?.target ?? null;
+      else if (/^@(?:devryan|openchamber)\//.test(specifier)) candidate = resolveSpecifier({ root, packages, importer: file, specifier })?.target ?? null;
       if (!candidate) continue; // third-party package: a bundle leaf
       const target = existing(root, candidate);
       if (target) queue.push({ file: target, from: file });

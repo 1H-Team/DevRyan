@@ -1,5 +1,5 @@
 import express from 'express';
-import { createDiagnosticSanitizer } from '@openchamber/harness-runtime';
+import { createDiagnosticSanitizer } from '@devryan/harness-runtime';
 import { describe, expect, it, vi } from 'vitest';
 import request from '../../test-supertest.js';
 import { registerAuthAndAccessRoutes } from '../opencode/core-routes.js';

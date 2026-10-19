@@ -290,7 +290,7 @@ describe('Cursor SDK worker runtime config', () => {
       requestedUseNodeWorkerForPrompts: undefined,
       requestedWorkerCwd: '',
       requestedWorkerEnv: {},
-      workerPath: '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@openchamber/cursor-sdk-runtime/node-worker.mjs',
+      workerPath: '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@devryan/cursor-sdk-runtime/node-worker.mjs',
       ripgrepPath: PACKAGED_RIPGREP_PATH,
     });
 
@@ -313,7 +313,7 @@ describe('Cursor SDK worker runtime config', () => {
       useNodeWorkerForPrompts: true,
       usePersistentWorkerForPrompts: false,
       nodeBinary: '/Applications/DevRyan.app/Contents/MacOS/DevRyan',
-      workerPath: '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@openchamber/cursor-sdk-runtime/node-worker.mjs',
+      workerPath: '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@devryan/cursor-sdk-runtime/node-worker.mjs',
       workerCwd: '/Applications/DevRyan.app/Contents/Resources',
       workerEnv: { ELECTRON_RUN_AS_NODE: '1' },
       ripgrepPath: PACKAGED_RIPGREP_PATH,
@@ -333,7 +333,7 @@ describe('Cursor SDK worker runtime config', () => {
     expect(capture.calls).toHaveLength(1);
     expect(capture.calls[0].command).toBe('/Applications/DevRyan.app/Contents/MacOS/DevRyan');
     expect(capture.calls[0].args).toEqual([
-      '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@openchamber/cursor-sdk-runtime/node-worker.mjs',
+      '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@devryan/cursor-sdk-runtime/node-worker.mjs',
     ]);
     expect(capture.calls[0].options.cwd).toBe('/tmp/project');
     expect(capture.calls[0].options.env.ELECTRON_RUN_AS_NODE).toBe('1');
@@ -882,7 +882,7 @@ describe('Cursor SDK worker runtime config', () => {
       useNodeWorkerForPrompts: true,
       usePersistentWorkerForPrompts: false,
       nodeBinary: '/Applications/DevRyan.app/Contents/MacOS/DevRyan',
-      workerPath: '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@openchamber/cursor-sdk-runtime/node-worker.mjs',
+      workerPath: '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@devryan/cursor-sdk-runtime/node-worker.mjs',
       workerCwd: '/Applications/DevRyan.app/Contents/Resources',
       workerEnv: { ELECTRON_RUN_AS_NODE: '1' },
       spawnImpl: createFinalResultBeforeStreamWorkerSpawn(capture),
@@ -922,7 +922,7 @@ describe('Cursor SDK worker runtime config', () => {
       useNodeWorkerForPrompts: true,
       usePersistentWorkerForPrompts: false,
       nodeBinary: '/Applications/DevRyan.app/Contents/MacOS/DevRyan',
-      workerPath: '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@openchamber/cursor-sdk-runtime/node-worker.mjs',
+      workerPath: '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@devryan/cursor-sdk-runtime/node-worker.mjs',
       workerCwd: '/Applications/DevRyan.app/Contents/Resources',
       workerEnv: { ELECTRON_RUN_AS_NODE: '1' },
       spawnImpl: createFakeWorkerSpawn(capture),
@@ -961,7 +961,7 @@ describe('Cursor SDK worker runtime config', () => {
       useNodeWorkerForPrompts: true,
       usePersistentWorkerForPrompts: false,
       nodeBinary: '/Applications/DevRyan.app/Contents/MacOS/DevRyan',
-      workerPath: '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@openchamber/cursor-sdk-runtime/node-worker.mjs',
+      workerPath: '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@devryan/cursor-sdk-runtime/node-worker.mjs',
       workerCwd: '/Applications/DevRyan.app/Contents/Resources',
       workerEnv: { ELECTRON_RUN_AS_NODE: '1' },
       spawnImpl: createFakeWorkerSpawn(capture),
@@ -1366,7 +1366,7 @@ describe('Cursor SDK worker runtime config', () => {
       env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       nodeBinary: '/Applications/DevRyan.app/Contents/MacOS/DevRyan',
-      workerPath: '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@openchamber/cursor-sdk-runtime/node-worker.mjs',
+      workerPath: '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@devryan/cursor-sdk-runtime/node-worker.mjs',
       workerCwd: '/Applications/DevRyan.app/Contents/Resources',
       workerEnv: { ELECTRON_RUN_AS_NODE: '1' },
       ripgrepPath: PACKAGED_RIPGREP_PATH,
@@ -1404,7 +1404,7 @@ describe('Cursor SDK worker runtime config', () => {
     const promptCommands = capture.commands.filter((entry) => entry.type === 'prompt');
     expect(capture.calls).toHaveLength(1);
     expect(capture.calls[0].args).toEqual([
-      '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@openchamber/cursor-sdk-runtime/persistent-worker.mjs',
+      '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@devryan/cursor-sdk-runtime/persistent-worker.mjs',
     ]);
     expect(capture.calls[0].options.cwd).toBe('/tmp/project');
     expect(capture.calls[0].options.env.CURSOR_SDK_RIPGREP_PATH).toBe(PACKAGED_RIPGREP_PATH);
@@ -2218,7 +2218,7 @@ describe('Cursor SDK worker runtime config', () => {
       env: { DEVRYAN_RUNTIME: 'desktop' },
       useNodeWorkerForPrompts: true,
       nodeBinary: '/Applications/DevRyan.app/Contents/MacOS/DevRyan',
-      workerPath: '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@openchamber/cursor-sdk-runtime/node-worker.mjs',
+      workerPath: '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@devryan/cursor-sdk-runtime/node-worker.mjs',
       workerCwd: '/Applications/DevRyan.app/Contents/Resources',
       workerEnv: { ELECTRON_RUN_AS_NODE: '1' },
       ripgrepPath: PACKAGED_RIPGREP_PATH,
@@ -2245,10 +2245,10 @@ describe('Cursor SDK worker runtime config', () => {
 
     expect(capture.calls).toHaveLength(2);
     expect(capture.calls[0].args).toEqual([
-      '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@openchamber/cursor-sdk-runtime/persistent-worker.mjs',
+      '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@devryan/cursor-sdk-runtime/persistent-worker.mjs',
     ]);
     expect(capture.calls[1].args).toEqual([
-      '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@openchamber/cursor-sdk-runtime/node-worker.mjs',
+      '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@devryan/cursor-sdk-runtime/node-worker.mjs',
     ]);
     expect(capture.calls[0].options.env.CURSOR_SDK_RIPGREP_PATH).toBe(PACKAGED_RIPGREP_PATH);
     expect(capture.calls[1].options.env.CURSOR_SDK_RIPGREP_PATH).toBe(PACKAGED_RIPGREP_PATH);

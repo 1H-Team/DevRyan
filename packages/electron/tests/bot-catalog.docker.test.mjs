@@ -6,7 +6,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
-import { BOT_DB_MIGRATIONS } from '@openchamber/bot-db';
+import { BOT_DB_MIGRATIONS } from '@devryan/bot-db';
 import { createLocalBotCatalogTransport } from '../../web/server/lib/bots/local-catalog.js';
 import { createLocalBotObjectStorage } from '../../web/server/lib/bots/local-object-storage.js';
 import { createBotStore } from '../../web/server/lib/bots/store.js';
@@ -318,7 +318,7 @@ suite('cloud Bot import into the local catalog', () => {
   beforeAll(async () => {
     const { BOT_RUNTIME_IMAGE_KEYS, validateBotRuntimeManifest } = await import('../bot-runtime-manifest.mjs');
     const { createBotRuntimeManager } = await import('../bot-runtime-manager.mjs');
-    const { loadBotDatabaseSql } = await import('@openchamber/bot-db');
+    const { loadBotDatabaseSql } = await import('@devryan/bot-db');
     const { startFakeCloud } = await import('./fake-cloud-postgrest.mjs');
     harness = await createCatalogHarness();
     await harness.databaseManager.prepare(harness.context, { allowInitialize: true });

@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import simpleGit from 'simple-git';
-import { createRecordStore } from '@openchamber/harness-runtime';
+import { createRecordStore } from '@devryan/harness-runtime';
 import { collectCommitMessageContext } from './commit-message-context.js';
 
 import {

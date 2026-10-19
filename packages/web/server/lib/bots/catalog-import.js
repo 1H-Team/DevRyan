@@ -16,7 +16,7 @@ import {
   renderPageInsert,
   renderPageOpen,
   renderSourceIdentityInsert,
-} from '@openchamber/bot-db';
+} from '@devryan/bot-db';
 
 import { botObjectFileName } from './local-object-storage.js';
 import { BOT_CATALOG_ENVELOPES } from './catalog-validation.js';

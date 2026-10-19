@@ -1,7 +1,7 @@
 import {
   isTerminalManagedTaskStatus,
   type ManagedTaskEventRecord,
-} from '@openchamber/orchestration-runtime';
+} from '@devryan/orchestration-runtime';
 import type { Message, Part } from '@opencode-ai/sdk/v2';
 
 import type { ManagedOrchestrationStore } from '@/stores/useManagedOrchestrationStore';

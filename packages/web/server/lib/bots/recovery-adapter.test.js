@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 
-import { hashCanonicalBotJson } from '@openchamber/bots-runtime';
+import { hashCanonicalBotJson } from '@devryan/bots-runtime';
 
 import { encryptBotJson } from './encryption.js';
 import {

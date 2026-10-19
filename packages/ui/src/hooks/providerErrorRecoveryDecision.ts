@@ -1,5 +1,5 @@
 import type { Message, SessionStatus } from '@opencode-ai/sdk/v2/client';
-import { isDefiniteProviderUsageLimit } from '@openchamber/orchestration-runtime';
+import { isDefiniteProviderUsageLimit } from '@devryan/orchestration-runtime';
 
 import { isLikelyProviderAuthFailure } from '@/lib/messages/providerAuthError';
 import { isLikelyProviderModelNotFound } from '@/lib/messages/providerModelNotFound';

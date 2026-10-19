@@ -1,6 +1,6 @@
 import { isPlanControlTitle, summarizeText as summarizeSharedText } from '../text/summarization.js';
 import { stripMessageDiffContent, stripSessionDiffContent } from '../opencode/diff-summary.js';
-import { createFreeZenModelCatalog } from '@openchamber/shared-runtime';
+import { createFreeZenModelCatalog } from '@devryan/shared-runtime';
 import { openCodeClientErrorStatus, resolveGen2OpenCodeClient } from '../opencode/opencode-client-seam.js';
 
 export const createNotificationTemplateRuntime = (deps) => {

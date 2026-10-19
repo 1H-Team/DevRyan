@@ -9,6 +9,8 @@ older clients keep working. New code writes DevRyan names and reads both.
 | Canonical | Accepted alias | Where the alias is handled |
 |---|---|---|
 | `DEVRYAN_*` environment variables | `OPENCHAMBER_*` | `packages/shared-runtime/lib/legacy-environment.js`: every process entry adopts unset aliases, writers set both names, login-shell filters judge an alias as its DevRyan name |
+| `@devryan/*` workspace packages | none (renamed) | `@openchamber/electron` and `@openchamber/desktop` keep their names (below); the import checkers accept both scopes |
+| `devryan` CLI | `openchamber` | `packages/web/package.json` ships both bins; `bin/cli-entry.js` accepts either name |
 | `~/.config/devryan` data folder | `~/.config/openchamber` | `packages/harness-runtime/lib/data-root-migration.js` moves it once at startup and leaves a link; `packages/shared-runtime/lib/data-root.js` resolves the root everywhere |
 
 ## Data folder migration
@@ -49,6 +51,12 @@ migration and a release note.
   folder (`~/Library/Application Support/@openchamber/electron`, with the
   `-runtime-service` sibling) from this name before `app.setName('DevRyan')`
   runs; cookies, localStorage, IndexedDB and their Safe Storage key live there.
-- The frozen legacy Tauri package `packages/desktop`.
+- The frozen legacy Tauri package `packages/desktop` (`@openchamber/desktop`).
+- The npm registry package `@openchamber/web` that `package-manager.js` updates
+  a global CLI from and that `ssh-manager.mjs` installs on SSH hosts, and the
+  remote `openchamber` binary those hosts run: they are external, not this
+  workspace. `scripts/install.sh` is upstream's installer for that package.
+- CLI daemon records `run/openchamber-<port>.{pid,json}`: a newer CLI must find
+  daemons an older one started.
 - Environment names sent to an SSH host's DevRyan CLI: `ssh-managed-probe.mjs`
   sends both names, because the remote CLI may be an older release.

@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 
-import { createManagedTaskRecord } from '@openchamber/orchestration-runtime';
+import { createManagedTaskRecord } from '@devryan/orchestration-runtime';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { createAtomicManagedOrchestrationLedger } from './atomic-ledger.js';

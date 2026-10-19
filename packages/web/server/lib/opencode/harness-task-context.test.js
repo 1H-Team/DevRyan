@@ -10,7 +10,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { formatManagedAssignmentContext } from '@openchamber/orchestration-runtime';
+import { formatManagedAssignmentContext } from '@devryan/orchestration-runtime';
 import { createHarnessTaskContextHost as createHarnessTaskContextHostNative } from './harness-task-context.js';
 import {createNativeAdmissionOwner} from './runtime-host/native-admission-owner.js';
 

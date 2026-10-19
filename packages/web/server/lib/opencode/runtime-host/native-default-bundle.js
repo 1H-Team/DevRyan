@@ -1,5 +1,5 @@
-import {readDevRyanEnv} from '@openchamber/shared-runtime/lib/legacy-environment.js';
-import {resolveDevRyanDataRoot} from '@openchamber/shared-runtime/node/data-root.js';
+import {readDevRyanEnv} from '@devryan/shared-runtime/lib/legacy-environment.js';
+import {resolveDevRyanDataRoot} from '@devryan/shared-runtime/node/data-root.js';
 import { recoverClaudeActivationAtStartup } from './claude-activation-recovery.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';

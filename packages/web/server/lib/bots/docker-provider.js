@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import {
   resolveComputerScopeKey,
   resolveReasoningScopeKey,
-} from '@openchamber/bots-runtime';
+} from '@devryan/bots-runtime';
 
 import { assertExactObject, validateUuid } from './validation.js';
 

@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   DATA_ROOT_NAME, defaultDataRootPaths, explicitDataRoot,
-} from '@openchamber/shared-runtime/node/data-root.js';
+} from '@devryan/shared-runtime/node/data-root.js';
 import { withCrossProcessFileLock, writeFileAtomic } from './atomic-file.js';
 
 export const DATA_ROOT_MIGRATION_MARKER = '.devryan-migration.json';

@@ -1,6 +1,6 @@
 import {describe,expect,it,vi} from 'vitest';
 import {OPENCODE_CAPABILITY_ABSENT} from '../opencode/opencode-generation.js';
-import {createFreeZenCooldowns} from '@openchamber/shared-runtime';
+import {createFreeZenCooldowns} from '@devryan/shared-runtime';
 import {GIT_GENERATION_ZEN_MODEL,GIT_GENERATION_ZEN_VARIANT,createGitZenTextTransport} from './zen-text.js';
 import {generateCommitMessageDirect} from './commit-message.js';
 import {generatePullRequestDescriptionDirect} from './pr-description.js';

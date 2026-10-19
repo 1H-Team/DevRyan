@@ -1090,7 +1090,7 @@ reducers.
 
 Clients opt into `?snapshot=parts-v1` to receive aggregate snapshots up to
 16 MiB. Snapshots within 256 KiB keep their ordinary envelope; larger ones use
-ordered `snapshot.part` envelopes from `@openchamber/bots-runtime`, followed by
+ordered `snapshot.part` envelopes from `@devryan/bots-runtime`, followed by
 the queued live events. Clients without this capability retain the original
 single-event limit. The UI assembles parts privately and updates canonical
 stores only after the complete snapshot passes validation. A disconnect,

@@ -7,7 +7,7 @@ import { artifactDiagnostic, describeArtifactFailure, startupDiagnosticSummary }
 import {createNativeSettingsDirectory,readNativeShellBundleBinding} from './native-settings-directory.mjs';
 import { isWindowsPreview, WINDOWS_PREVIEW_APP_ID, WINDOWS_PREVIEW_NAME, createPreviewUpdater, isPreviewUnsupportedCommand } from './windows-preview.mjs';
 import {selectInheritedShellEnv,selectShellDataRoots} from './shell-env-inheritance.mjs';
-import { AGENT_BROWSER_VERSION } from '@openchamber/web/server/lib/agent-browser/install.js';
+import { AGENT_BROWSER_VERSION } from '@devryan/web/server/lib/agent-browser/install.js';
 import { restartSupabaseHost } from './supabase-host-restart.mjs';
 import {confirmRuntimeBundleResume} from './runtime-bundle-recovery.mjs';
 import { createRuntimeMemoryMonitor } from './runtime-memory-monitor.mjs';
@@ -33,7 +33,7 @@ import { createMacDmgInstaller } from './desktop-updater-macos.mjs';
 import { createWindowsNsisInstaller } from './desktop-updater-windows.mjs';
 import { createWindowsUpdateOwner } from './windows-update-owner.mjs';
 import { verifyWindowsInstalledArtifacts } from './windows-installed-artifacts.mjs';
-import { verifyNativeRuntimeArtifacts } from '@openchamber/web/server/lib/opencode/runtime-host/native-artifacts.js';
+import { verifyNativeRuntimeArtifacts } from '@devryan/web/server/lib/opencode/runtime-host/native-artifacts.js';
 import { ElectronSshManager } from './ssh-manager.mjs';
 import { MacosSpeechManager } from './speech-manager.mjs';
 import { clearElectronRuntimeCaches, getElectronRuntimeCacheInfo } from './cache-maintenance.mjs';
@@ -50,7 +50,7 @@ import {
   resolveDockerSocketSupplementalGid,
 } from './bot-runtime-manager.mjs';
 import { BOT_RUNTIME_IMAGE_KEYS, loadBotRuntimeManifest } from './bot-runtime-manifest.mjs';
-import { loadBotDatabaseSql } from '@openchamber/bot-db';
+import { loadBotDatabaseSql } from '@devryan/bot-db';
 import { finishQuitAfterCleanup } from './quit-cleanup.mjs';
 import { createModuleEntryLoader, routeStartupRetry } from './startup-retry.mjs';
 import {
@@ -529,7 +529,7 @@ if (!isRuntimeServiceControlProbe) {
 // data-root choice is known and before any reader. It never throws; a folder that
 // cannot move stays in use and the open app shows a notice.
 if (!isRuntimeServiceControlProbe && !isPreview) {
-  const { migrateDataRootAtStartup } = await import('@openchamber/web/server/lib/opencode/runtime-host/data-root-startup.js');
+  const { migrateDataRootAtStartup } = await import('@devryan/web/server/lib/opencode/runtime-host/data-root-startup.js');
   await migrateDataRootAtStartup({ log });
 }
 
@@ -543,7 +543,7 @@ const bindingFailed = () => {
   return null;
 };
 try {
-  if (!isPreview && !isRuntimeServiceControlProbe) ({readRuntimeBundleBinding}=await import('@openchamber/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js'));
+  if (!isPreview && !isRuntimeServiceControlProbe) ({readRuntimeBundleBinding}=await import('@devryan/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js'));
 } catch { bindingFailed(); }
 const shellRuntimeBundleBinding=(() => {
   if (isPreview || shellRuntimeBundleBindingError || isRuntimeServiceControlProbe) return null;
@@ -839,8 +839,8 @@ const { maybeShowNativeNotification, focusForegroundWindow, isAnyWindowFocused }
 });
 
 // Merge the user's login-shell env (PATH, etc.) into this process before we
-import { pathLooksUserConfigured, mergePathValues } from '@openchamber/web/server/lib/opencode/path-utils.js';
-import { PACKAGED_DESKTOP_ENV } from '@openchamber/web/server/lib/opencode/login-shell-env-filter.js';
+import { pathLooksUserConfigured, mergePathValues } from '@devryan/web/server/lib/opencode/path-utils.js';
+import { PACKAGED_DESKTOP_ENV } from '@devryan/web/server/lib/opencode/login-shell-env-filter.js';
 
 // import/start the server in-process. The server and its children (opencode
 // CLI, git, etc.) inherit process.env directly now — there is no sidecar
@@ -878,7 +878,7 @@ const acquireRuntimeOwner = createRuntimeOwnerAcquirer({
 
 // The server entry bootstraps during evaluation; a failed evaluation stays
 // cached, so startup Retry must relaunch instead of importing it again.
-const webServerEntry = createModuleEntryLoader(() => import('@openchamber/web/server/index.js'));
+const webServerEntry = createModuleEntryLoader(() => import('@devryan/web/server/index.js'));
 
 let localServerStartPromise = null;
 const spawnLocalServer = () => {
@@ -1005,7 +1005,7 @@ const startLocalServer = async () => {
       createAgentBrowserInstaller,
       provisionAgentBrowserSkill,
       withdrawAgentBrowserSkill,
-    } = await import('@openchamber/web/server/lib/agent-browser/install.js');
+    } = await import('@devryan/web/server/lib/agent-browser/install.js');
     const dataRoot = dataRootDirectory();
     const skillOptions = {
       dataRoot,
@@ -3494,7 +3494,7 @@ const prepareStartupRebootRecovery = async () => {
     const binding = readNativeShellBundleBinding({ environment: { ...process.env }, home: os.homedir(),
       existsSync: fs.existsSync, readRuntimeBundleBinding });
     if (!binding) throw Object.assign(new Error('The retained runtime could not be inspected.'), { code: 'runtime_bundle_binding_invalid' });
-    const { beginNativeBundleRebootRecovery } = await import('@openchamber/web/server/lib/opencode/runtime-host/native-bundle-reboot-recovery.js');
+    const { beginNativeBundleRebootRecovery } = await import('@devryan/web/server/lib/opencode/runtime-host/native-bundle-reboot-recovery.js');
     await beginNativeBundleRebootRecovery({ controlRoot: binding.controlRoot, expectedRevision: binding.selection.revision });
     await showStartupFailure(Object.assign(new Error('Recovery is prepared and requires a computer restart.'), { code: 'bundle_reboot_required' }));
   } catch (error) {

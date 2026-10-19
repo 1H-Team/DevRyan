@@ -1,7 +1,7 @@
 // Select composition only after the launcher has provisioned, verified and bound
 // the native bundle; no composition or store owner is imported before that.
 // First: adopt OPENCHAMBER_* aliases before any module reads its environment.
-import '@openchamber/shared-runtime/node/adopt-legacy-environment.js';
+import '@devryan/shared-runtime/node/adopt-legacy-environment.js';
 import { fileURLToPath } from 'node:url';
 import { startStartupTiming } from './lib/opencode/startup-timing.js';
 

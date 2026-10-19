@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { resolveDevRyanDataRoot } from '@openchamber/shared-runtime/node/data-root.js';
+import { resolveDevRyanDataRoot } from '@devryan/shared-runtime/node/data-root.js';
 import { DATA_ROOT_MIGRATION_MARKER, migrateLegacyDataRoot } from './data-root-migration.js';
 
 const homes = [];

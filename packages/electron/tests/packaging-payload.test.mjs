@@ -10,13 +10,13 @@ test('the native runtime ships once, as the revert-runtime resource', () => {
   // (packages/web/server/lib/opencode/execution-artifacts.js). A second copy inside
   // app.asar.unpacked added ~470 MB installed and ~165 MB to the DMG.
   for (const platform of ['darwin', 'win32', 'linux']) {
-    assert.ok(build.files.includes(`!node_modules/@openchamber/web/runtime/${platform}-*{,/**}`), platform);
+    assert.ok(build.files.includes(`!node_modules/@devryan/web/runtime/${platform}-*{,/**}`), platform);
   }
-  assert.ok(build.files.includes('!node_modules/@openchamber/web/runtime/reviewed-inputs/claude-*/assets{,/**}'));
+  assert.ok(build.files.includes('!node_modules/@devryan/web/runtime/reviewed-inputs/claude-*/assets{,/**}'));
   assert.equal(runtimeCopy(build.mac.extraResources)?.to, 'revert-runtime');
   assert.equal(runtimeCopy(build.win.extraResources)?.to, 'revert-runtime');
 });
 
 test('the web package stays unpacked without the runtime forcing it', () => {
-  assert.ok(build.asarUnpack.includes('node_modules/@openchamber/web/**'));
+  assert.ok(build.asarUnpack.includes('node_modules/@devryan/web/**'));
 });

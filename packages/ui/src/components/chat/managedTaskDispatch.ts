@@ -1,6 +1,6 @@
 import { describeExecutionFailure } from '@/lib/executionFailure';
 import type { Part, ToolPart } from '@opencode-ai/sdk/v2';
-import type { ManagedTaskStatus } from '@openchamber/orchestration-runtime';
+import type { ManagedTaskStatus } from '@devryan/orchestration-runtime';
 
 import { decodeManagedTaskToolPart } from '@/lib/decoders/managedTaskToolPart';
 import { isRecord, type UnknownRecord } from '@/lib/decoders/guards';

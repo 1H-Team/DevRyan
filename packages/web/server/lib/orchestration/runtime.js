@@ -1,4 +1,4 @@
-import { createCompactResultHeader } from '@openchamber/orchestration-runtime';
+import { createCompactResultHeader } from '@devryan/orchestration-runtime';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createRequiredCheckObserver } from './required-check-observer.js';
 import {
@@ -35,7 +35,7 @@ import {
   isManagedTaskId,
   MANAGED_TASK_ID_PREFIX,
   MANAGED_WAVE_ID_PREFIX,
-} from '@openchamber/orchestration-runtime';
+} from '@devryan/orchestration-runtime';
 
 import { createAtomicManagedOrchestrationLedger } from './atomic-ledger.js';
 import {

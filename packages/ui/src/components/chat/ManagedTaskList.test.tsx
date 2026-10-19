@@ -9,7 +9,7 @@ import {
   toManagedTaskEvent,
   type ManagedTaskRecord,
   type ManagedTaskStatus,
-} from '@openchamber/orchestration-runtime';
+} from '@devryan/orchestration-runtime';
 
 import { I18nProvider } from '@/lib/i18n';
 import { dict } from '@/lib/i18n/messages/en';

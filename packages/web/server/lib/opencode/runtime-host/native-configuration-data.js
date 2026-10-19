@@ -1,7 +1,7 @@
 import {ConfigProvider} from '@opencode/schema/config/provider';
 import {ConfigCompaction} from '@opencode/schema/config/compaction';
 import {Schema} from 'effect';
-import {nativeToolOutputLimits,PLAN_MODE_SYSTEM_INSTRUCTIONS} from '@openchamber/orchestration-runtime';
+import {nativeToolOutputLimits,PLAN_MODE_SYSTEM_INSTRUCTIONS} from '@devryan/orchestration-runtime';
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const fail = code => Object.assign(new Error(code), { code, status: 503 });
 

@@ -9,4 +9,4 @@ export function readBundleRecoveryEnvelope(file: string,options?:{readonly windo
 /** Read-only startup integrity; this does not authorize dispatch. */
 export function verifyBundleOwnedContinuations(db: MigrationDatabase, webDataDirectory: string,options?:{readonly allowUnownedPending?:boolean;readonly cancelledContinuations?:readonly VerifiedBundleContinuation[]}): Promise<readonly VerifiedBundleContinuation[]>;
 
-export function bundleContinuationItem(record:import('@openchamber/harness-runtime').PrimaryRecoveryExecutionRecord):{readonly type:'user';readonly delivery:'queue';readonly payload:Readonly<Record<string,unknown>>};
+export function bundleContinuationItem(record:import('@devryan/harness-runtime').PrimaryRecoveryExecutionRecord):{readonly type:'user';readonly delivery:'queue';readonly payload:Readonly<Record<string,unknown>>};

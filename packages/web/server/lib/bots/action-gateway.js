@@ -3,7 +3,7 @@ import crypto, { randomUUID } from 'node:crypto';
 import {
   hashCanonicalBotJson,
   validateBotActionDescriptor,
-} from '@openchamber/bots-runtime';
+} from '@devryan/bots-runtime';
 
 import { publicBotActionAttempt } from './approval-service.js';
 import { normalizeBotQuestion } from './bot-question.js';

@@ -1,5 +1,5 @@
-import type { SupabaseConnectionAPI } from '@openchamber/ui/lib/api/types';
-import { isSupabaseConnectionStatus, SupabaseConnectionError } from '@openchamber/ui/lib/api/supabaseConnection';
+import type { SupabaseConnectionAPI } from '@devryan/ui/lib/api/types';
+import { isSupabaseConnectionStatus, SupabaseConnectionError } from '@devryan/ui/lib/api/supabaseConnection';
 
 async function request(init: RequestInit) {
   try {

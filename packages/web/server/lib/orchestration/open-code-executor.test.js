@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT,
   MANAGED_TURN_BUDGET_PROMPT,
-} from '@openchamber/orchestration-runtime';
+} from '@devryan/orchestration-runtime';
 
 import { createOpenCodeClient } from '../opencode/opencode-client/index.js';
 import { createNativeConsumerFixture } from '../opencode/test-native-consumer-client.js';

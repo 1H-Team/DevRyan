@@ -3,8 +3,8 @@ import {
   createKeyedSingleFlight,
   waitForSharedOperation,
   createManagedOpenCodeExecutor,
-} from '@openchamber/orchestration-runtime';
-import { CURSOR_PROVIDER_ID } from '@openchamber/cursor-sdk-runtime';
+} from '@devryan/orchestration-runtime';
+import { CURSOR_PROVIDER_ID } from '@devryan/cursor-sdk-runtime';
 
 import { resolveGen2OpenCodeClient } from '../opencode/opencode-client-seam.js';
 import { stripMessageDiffSummary } from '../opencode/diff-summary.js';

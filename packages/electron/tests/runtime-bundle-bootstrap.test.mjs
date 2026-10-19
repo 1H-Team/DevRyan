@@ -12,7 +12,7 @@ import { setDevRyanEnv } from '../../shared-runtime/lib/legacy-environment.js';
 
 const repository = path.resolve(fileURLToPath(new URL('../../..', import.meta.url)));
 const mainSource = await fs.readFile(new URL('../main.mjs', import.meta.url), 'utf8');
-const bindingSpecifier = '@openchamber/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js';
+const bindingSpecifier = '@devryan/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js';
 const dataRootUrl = new URL('../../shared-runtime/lib/data-root.js', import.meta.url).href;
 
 // Keep the emitted import form intact: a static external import executes before

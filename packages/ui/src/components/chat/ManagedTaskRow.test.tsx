@@ -9,7 +9,7 @@ import {
   type ManagedTaskRecord,
   type ManagedTaskStatus,
   type ManagedTransportRecovery,
-} from '@openchamber/orchestration-runtime';
+} from '@devryan/orchestration-runtime';
 
 import { I18nProvider } from '@/lib/i18n';
 import { managedTitleFixture, renderManagedTaskMarkup } from './managedTaskTestFixture';

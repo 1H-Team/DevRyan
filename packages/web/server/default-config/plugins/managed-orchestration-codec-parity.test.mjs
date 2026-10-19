@@ -7,7 +7,7 @@ import {
   MANAGED_TASK_FAILURE_KINDS,
   MANAGED_TASK_LIVE_STATUSES,
   MANAGED_TASK_TERMINAL_STATUSES,
-} from '@openchamber/orchestration-runtime';
+} from '@devryan/orchestration-runtime';
 import { describe, expect, it } from 'vitest';
 
 // The plugin is copied into the OpenCode config directory and cannot import the

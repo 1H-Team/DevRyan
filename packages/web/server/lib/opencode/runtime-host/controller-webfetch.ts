@@ -23,7 +23,7 @@ import {Model} from '@opencode/schema/model';
 import {Provider} from '@opencode/schema/provider';
 import type {OwnedToolInvocation} from './native-admission-contract.js';
 import type {OwnedSlimWebfetchOwners} from './native-slim-webfetch.js';
-import type {ReviewedWebfetchOwners,ReviewedWebfetchContext,ReviewedWebfetchCache} from '@openchamber/agents-core';
+import type {ReviewedWebfetchOwners,ReviewedWebfetchContext,ReviewedWebfetchCache} from '@devryan/agents-core';
 import {nativeWebfetchBinaryDirectory} from './native-read-paths.js';
 import jsdom from '../../../../runtime/reviewed-inputs/jsdom-30.1.1/node_modules/jsdom/lib/api.js';
 

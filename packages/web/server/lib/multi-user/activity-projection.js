@@ -1,6 +1,6 @@
 import path from 'node:path';
 
-import { classifyProviderTransportFailure, validateManagedTransportRecovery } from '@openchamber/orchestration-runtime';
+import { classifyProviderTransportFailure, validateManagedTransportRecovery } from '@devryan/orchestration-runtime';
 import { stableAuditEventId } from './analytics.js';
 import { classifyDiagnosticFailure } from './error-diagnostics.js';
 

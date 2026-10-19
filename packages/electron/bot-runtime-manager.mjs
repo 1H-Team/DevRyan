@@ -11,7 +11,7 @@ import {
   createRuntimeToken,
   normalizeBrowserHosts,
   normalizeModelHosts,
-} from '@openchamber/bot-egress/token';
+} from '@devryan/bot-egress/token';
 
 import {
   BOT_RUNTIME_IMAGE_KEYS,
@@ -33,7 +33,7 @@ import {
   BOT_DB_MIGRATIONS,
   IMPORT_CATALOG_SQL,
   sourceSchemaMigrations,
-} from '@openchamber/bot-db';
+} from '@devryan/bot-db';
 
 export const BOT_RUNTIME_COMPOSE_PROJECT = 'devryan-bots';
 export const BOT_RUNTIME_RESOURCE_NAMESPACE = 'devryan';

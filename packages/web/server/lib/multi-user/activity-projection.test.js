@@ -1,7 +1,7 @@
 import os from 'node:os';
 import { describe, expect, it } from 'vitest';
 
-import { createDiagnosticSanitizer } from '@openchamber/harness-runtime';
+import { createDiagnosticSanitizer } from '@devryan/harness-runtime';
 
 import {
   ERROR_CONTEXT_TEXT_LIMIT_BYTES,

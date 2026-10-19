@@ -1,6 +1,6 @@
 import {expect,test} from 'vitest';
 import {Effect} from 'effect';
-import {createManagedTaskScheduler} from '@openchamber/orchestration-runtime';
+import {createManagedTaskScheduler} from '@devryan/orchestration-runtime';
 import {createWebManagedOrchestrationRuntime} from '../../orchestration/runtime.js';
 import {createNativeManagedTaskOwner} from './managed-task-owner.js';
 import {withManagedTaskExecution} from './managed-task.ts';

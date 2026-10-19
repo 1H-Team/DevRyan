@@ -1,6 +1,6 @@
 import os from 'node:os';
 
-import { createDiagnosticSanitizer } from '@openchamber/harness-runtime';
+import { createDiagnosticSanitizer } from '@devryan/harness-runtime';
 
 import { stableAuditEventId } from './analytics.js';
 import {

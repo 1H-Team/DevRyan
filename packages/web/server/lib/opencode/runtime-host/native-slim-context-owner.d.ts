@@ -1,6 +1,6 @@
-import type * as ReviewedSlim from '@openchamber/agents-core';
-import type {createManagedTaskScheduler} from '@openchamber/orchestration-runtime';
-import type {PrimaryRecoveryHost} from '@openchamber/harness-runtime';
+import type * as ReviewedSlim from '@devryan/agents-core';
+import type {createManagedTaskScheduler} from '@devryan/orchestration-runtime';
+import type {PrimaryRecoveryHost} from '@devryan/harness-runtime';
 import type {OperationPermit} from './native-admission-contract.js';
 export interface NativeSlimContextInput {readonly permit:OperationPermit;readonly directory:string;readonly sessionID:string;readonly phase:'context';readonly messages:readonly unknown[]}
 export interface NativeSlimRetryInput {readonly permit:OperationPermit;readonly attempt?:import('./native-observation.js').NativeAttemptIdentity;readonly directory:string;readonly sessionID:string;readonly phase:'retry';readonly event:{readonly sessionID:string;readonly agent:string;readonly model:{readonly providerID:string;readonly id:string};readonly error:unknown;readonly attempt:number;readonly decision:import('@opencode/plugin/effect/session').SessionRetryDecision}}

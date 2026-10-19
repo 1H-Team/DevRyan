@@ -4,7 +4,7 @@ import { constants } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'yaml';
-import { withCrossProcessFileLock, writeFileAtomic } from '@openchamber/harness-runtime';
+import { withCrossProcessFileLock, writeFileAtomic } from '@devryan/harness-runtime';
 
 import { AGENT_DIR, OPENCODE_CONFIG_DIR } from './shared.js';
 import {

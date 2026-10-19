@@ -10,8 +10,8 @@ import {
   createWorktreeBootstrapRuntime,
   validateCommandDeadlineRecord,
   validateWorktreeBootstrapReceipt,
-} from '@openchamber/harness-runtime';
-import { ABORT_SOURCE_HEADER, normalizeAbortSource } from '@openchamber/orchestration-runtime';
+} from '@devryan/harness-runtime';
+import { ABORT_SOURCE_HEADER, normalizeAbortSource } from '@devryan/orchestration-runtime';
 
 // Node lower-cases incoming header names.
 const ABORT_SOURCE_REQUEST_HEADER = ABORT_SOURCE_HEADER.toLowerCase();

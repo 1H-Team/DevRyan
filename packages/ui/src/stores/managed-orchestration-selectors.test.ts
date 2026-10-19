@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { createManagedTaskRecord, toManagedTaskEvent } from '@openchamber/orchestration-runtime';
+import { createManagedTaskRecord, toManagedTaskEvent } from '@devryan/orchestration-runtime';
 
 import { createManagedOrchestrationStore, managedOrchestrationSelectors } from './useManagedOrchestrationStore';
 

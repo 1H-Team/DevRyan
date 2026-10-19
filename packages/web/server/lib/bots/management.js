@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { assertTunnelBotGrant, isBotTunnelPrincipal } from '../tunnels/bot-grants.js';
 
-import { hashCanonicalBotJson } from '@openchamber/bots-runtime';
+import { hashCanonicalBotJson } from '@devryan/bots-runtime';
 
 import { readProviderAuthRecord } from '../opencode/auth.js';
 import {

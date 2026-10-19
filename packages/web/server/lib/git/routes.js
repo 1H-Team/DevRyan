@@ -1,4 +1,4 @@
-import { DEFAULT_HELPER_MODEL_SELECTION } from '@openchamber/shared-runtime';
+import { DEFAULT_HELPER_MODEL_SELECTION } from '@devryan/shared-runtime';
 import { registerCommitTemplateRoutes } from './template-routes.js';
 import { generateCommitMessageDirect } from './commit-message.js';
 import { collectCommitMessageContext, validateCommitMessageSelectedFiles } from './commit-message-context.js';
@@ -11,7 +11,7 @@ import {
   PULL_REQUEST_DIFF_MAX_CHARS,
   buildPullRequestDiffContext,
   normalizePullRequestDraft,
-} from '@openchamber/shared-runtime';
+} from '@devryan/shared-runtime';
 
 const extractGitErrorText = (error) => {
   const message = typeof error?.message === 'string' ? error.message : '';

@@ -314,7 +314,7 @@ jobs:
           ASAR_CLI=$(find node_modules/.bun -path '*/@electron+asar@*/node_modules/@electron/asar/bin/asar.js' -print -quit)
           test -n "$ASAR_CLI" || { echo "Error: installed Electron asar CLI not found in the Bun dependency tree."; exit 1; }
           node "$ASAR_CLI" extract "$APP_PATH/Contents/Resources/app.asar" "$EXTRACT_ROOT"
-          ARTIFACT_ROOT="$EXTRACT_ROOT/node_modules/@openchamber/web/server/default-config"
+          ARTIFACT_ROOT="$EXTRACT_ROOT/node_modules/@devryan/web/server/default-config"
           node scripts/verify-default-config-artifact.mjs --source packages/web/server/default-config --artifact-root "$ARTIFACT_ROOT"
           node scripts/smoke-packaged-orchestration-config.mjs --config-root "$ARTIFACT_ROOT"
       - name: Check packaged Bot runtime manifest

@@ -1,6 +1,6 @@
 import {provisionDefaultNativeBundle} from './native-default-bundle.js';
 import {initializeRuntimeBundleBinding} from './runtime-bundle-binding.js';
-import {resolveDevRyanDataRoot} from '@openchamber/shared-runtime/node/data-root.js';
+import {resolveDevRyanDataRoot} from '@devryan/shared-runtime/node/data-root.js';
 import {captureNativeSetupOwners,restoreNativeSetupOwners} from './native-setup-local-owners.js';
 import {timeStartupPhase} from '../startup-timing.js';
 

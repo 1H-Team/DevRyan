@@ -3,12 +3,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { StringDecoder } from 'node:string_decoder';
-import { sessionExecutionProfile, verifySessionExecutionLauncher } from '@openchamber/harness-runtime/lib/session-execution.js';
+import { sessionExecutionProfile, verifySessionExecutionLauncher } from '@devryan/harness-runtime/lib/session-execution.js';
 import { startParentDeathWatchdog } from '../parent-death-watchdog.js';
 import { registerManagedOpenCodeProcess, unregisterManagedOpenCodeProcess, reapOrphanedManagedOpenCodeProcesses } from '../managed-process-registry.js';
 import { NATIVE_PROCESS_LIMITS, parseNativeBoot, parseNativeCommand, parseNativeReply, encodeNativeProcessMessage } from './native-process-protocol.js';
 import { NativeCommandRefusal } from './native-command-refusal.js';
-import { createDiagnosticSanitizer, sanitizeNativeSchemaPath } from '@openchamber/harness-runtime/lib/sanitizer.js';
+import { createDiagnosticSanitizer, sanitizeNativeSchemaPath } from '@devryan/harness-runtime/lib/sanitizer.js';
 
 const stderrDiagnostics = tail => {
   const sanitizer = createDiagnosticSanitizer();

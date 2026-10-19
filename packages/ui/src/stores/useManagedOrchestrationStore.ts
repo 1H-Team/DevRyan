@@ -14,7 +14,7 @@ import {
   type ManagedTaskRemovalEvent,
   type ManagedTaskResultAction,
   type ManagedTaskStatus,
-} from '@openchamber/orchestration-runtime';
+} from '@devryan/orchestration-runtime';
 
 import { isRecord } from '@/lib/decoders/guards';
 import {

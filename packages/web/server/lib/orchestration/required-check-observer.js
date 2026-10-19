@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { projectRequiredCheckEvidence } from '@openchamber/orchestration-runtime';
+import { projectRequiredCheckEvidence } from '@devryan/orchestration-runtime';
 
 // No source bytes are retained. Confinement, file count, byte count and race
 // checks are independent of any declared read-only tool metadata.

@@ -2,7 +2,7 @@
 
 A release is one tag push. `.github/workflows/release.yml` builds `DevRyan-<version>-arm64.dmg`, attaches it to a draft GitHub Release and publishes it. A manual run of the same workflow is a dry run: it builds everything on its ref and publishes nothing.
 
-The public release carries exactly one asset, `DevRyan-<version>-arm64.dmg` (Apple silicon, ad-hoc signed, not notarized). The allowlist is `RELEASE_SCOPES` in `packages/electron/release-assets.mjs`, enforced by `scripts/verify-release-assets.mjs`. Intel and Windows builds are not released. `@openchamber/web` on npm belongs to upstream; DevRyan never publishes to npm.
+The public release carries exactly one asset, `DevRyan-<version>-arm64.dmg` (Apple silicon, ad-hoc signed, not notarized). The allowlist is `RELEASE_SCOPES` in `packages/electron/release-assets.mjs`, enforced by `scripts/verify-release-assets.mjs`. Intel and Windows builds are not released. `@devryan/web` on npm belongs to upstream; DevRyan never publishes to npm.
 
 ## Releasing a version
 

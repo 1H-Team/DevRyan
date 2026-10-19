@@ -9,7 +9,7 @@ it.each(['ready','held-A','pending-B'])('actual thin entry awaits bootstrap and 
  try{
   const entry=await fs.readFile(new URL('../../../index.js',import.meta.url),'utf8');
   await fs.writeFile(path.join(root,'entry.mjs'),entry
-   .replace("'@openchamber/shared-runtime/node/adopt-legacy-environment.js'",`'${new URL('../../../../../shared-runtime/lib/adopt-legacy-environment.js',import.meta.url).href}'`)
+   .replace("'@devryan/shared-runtime/node/adopt-legacy-environment.js'",`'${new URL('../../../../../shared-runtime/lib/adopt-legacy-environment.js',import.meta.url).href}'`)
    .replace("'./lib/opencode/runtime-host/data-root-startup.js'","'./data-root-startup.mjs'")
    .replace("'./lib/opencode/startup-timing.js'","'./startup-timing.mjs'")
    .replace("'./lib/opencode/runtime-host/runtime-entry-bootstrap.js'","'./bootstrap.mjs'")
@@ -37,7 +37,7 @@ it('a refused cold upgrade still binds the selected bundle and restores setup',a
    .replace("'./runtime-bundle-binding.js'","'./binding.mjs'")
    .replace("'./native-setup-local-owners.js'","'./setup.mjs'")
    .replace("'../startup-timing.js'","'./timing.mjs'")
-   .replace("'@openchamber/shared-runtime/node/data-root.js'",`'${new URL('../../../../../shared-runtime/lib/data-root.js',import.meta.url).href}'`)
+   .replace("'@devryan/shared-runtime/node/data-root.js'",`'${new URL('../../../../../shared-runtime/lib/data-root.js',import.meta.url).href}'`)
    );
   const statusUrl=new URL('./bundle-startup-upgrade-status.js',import.meta.url).href;
   await fs.writeFile(path.join(root,'provision.mjs'),`import {recordStartupBundleUpgradeFailure} from ${JSON.stringify(statusUrl)};export const provisionDefaultNativeBundle=async()=>{recordStartupBundleUpgradeFailure('bundle_symlink_source');return '/selected';};`);

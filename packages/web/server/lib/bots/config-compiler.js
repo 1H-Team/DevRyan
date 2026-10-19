@@ -7,7 +7,7 @@ import {
   assertBotJsonValue,
   canonicalizeBotJson,
   hashCanonicalBotJson,
-} from '@openchamber/bots-runtime';
+} from '@devryan/bots-runtime';
 
 import { validateBotActionPolicy, validateBotBrowserPolicy } from './policy-engine.js';
 import { validateUuid } from './validation.js';

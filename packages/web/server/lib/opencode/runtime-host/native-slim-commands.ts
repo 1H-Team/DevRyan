@@ -1,7 +1,7 @@
 import type {CommandInvocation} from '@opencode/plugin/effect/command';
 import type {Plugin} from '@opencode/plugin/effect/plugin';
 import {Effect} from 'effect';
-import type {ReviewedSlimCommandHook,ReviewedSlimCommandPart} from '@openchamber/agents-core';
+import type {ReviewedSlimCommandHook,ReviewedSlimCommandPart} from '@devryan/agents-core';
 import type {NativeConfigurationSnapshot} from './native-configuration-snapshot.js';
 
 export interface NativeSlimCommandInput {readonly directory:string;readonly name:string;readonly invocation:CommandInvocation}

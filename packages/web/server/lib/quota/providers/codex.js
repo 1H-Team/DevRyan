@@ -1,4 +1,4 @@
-import { fetchCodexQuotaAdapter } from '@openchamber/shared-runtime';
+import { fetchCodexQuotaAdapter } from '@devryan/shared-runtime';
 
 import { readAuthFile } from '../../opencode/auth.js';
 import { getAuthEntry, normalizeAuthEntry } from '../utils/index.js';

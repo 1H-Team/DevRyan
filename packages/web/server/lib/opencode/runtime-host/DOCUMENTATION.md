@@ -166,7 +166,7 @@ the bundle registers them, with no `plugin` entry, and always resolves Slim
 agent routing. The retired adapter and package specs an upgraded setup still
 lists are ignored (`isRetiredDevRyanPluginSpec`), never rejected.
 
-Its code is the workspace package `@openchamber/agents-core`
+Its code is the workspace package `@devryan/agents-core`
 (`packages/agents-core`, see its `DOCUMENTATION.md`). Every `native-slim*`
 module, `controller-slim.ts`, `controller-webfetch.ts`,
 `native-image-worker.ts`, `native-interview-worker.ts` and
@@ -776,7 +776,7 @@ Electron shell loads by package name — `runtime-bundle-binding.js`,
 CLI and the shell), `native-artifacts.js`, `native-bundle-reboot-recovery.js`,
 `opencode/path-utils.js`, `opencode/login-shell-env-filter.js` and
 `agent-browser/install.js`. Node refuses any other package-name subpath at runtime,
-and Electron externalizes `@openchamber/web/*` in its bundle, so a new import must
+and Electron externalizes `@devryan/web/*` in its bundle, so a new import must
 be added there first; the boundary check reports it before it can ship.
 
 Startup binding reads sealed bundle documents with the same 32 MiB

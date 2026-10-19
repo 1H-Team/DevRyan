@@ -1,4 +1,4 @@
-import type { ManagedTaskEventRecord } from '@openchamber/orchestration-runtime';
+import type { ManagedTaskEventRecord } from '@devryan/orchestration-runtime';
 
 export const navigateToManagedTaskChild = (
   task: ManagedTaskEventRecord,

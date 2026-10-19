@@ -1,5 +1,5 @@
 import React from 'react';
-import type { ManagedTaskEventRecord } from '@openchamber/orchestration-runtime';
+import type { ManagedTaskEventRecord } from '@devryan/orchestration-runtime';
 
 import { useAssistantStatus } from '@/hooks/useAssistantStatus';
 import { useConfigStore } from '@/stores/useConfigStore';

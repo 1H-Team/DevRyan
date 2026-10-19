@@ -1,7 +1,7 @@
 import { Context, Effect, ErrorReporter, Schema, type SchemaIssue, type Cause } from 'effect';
 import { HttpApiSchemaError } from 'effect/http-api/HttpApiError';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { sanitizeNativeSchemaPath } from '@openchamber/harness-runtime/lib/sanitizer.js';
+import { sanitizeNativeSchemaPath } from '@devryan/harness-runtime/lib/sanitizer.js';
 import { HostRefusal, refuseHost } from './host-refusal.js';
 
 const causes = new Map([

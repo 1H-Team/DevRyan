@@ -5,9 +5,9 @@ import {
   isDesktopRuntimeWindow,
 } from './pwa-service-worker';
 
-import type { RuntimeAPIs } from '@openchamber/ui/lib/api/types';
-import '@openchamber/ui/index.css';
-import '@openchamber/ui/styles/fonts';
+import type { RuntimeAPIs } from '@devryan/ui/lib/api/types';
+import '@devryan/ui/index.css';
+import '@devryan/ui/styles/fonts';
 
 declare global {
   interface Window {
@@ -89,7 +89,7 @@ const unregisterDevelopmentServiceWorkers = (): void => {
   });
 };
 
-void import('@openchamber/ui/main');
+void import('@devryan/ui/main');
 
 const serviceWorkerAction = getPwaServiceWorkerStartupAction({
   isProduction: import.meta.env.PROD,

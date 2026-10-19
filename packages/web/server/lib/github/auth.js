@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { getRequestPrincipal } from '../multi-user/request-context.js';
-import { resolveDevRyanDataRoot } from '@openchamber/shared-runtime/node/data-root.js';
+import { resolveDevRyanDataRoot } from '@devryan/shared-runtime/node/data-root.js';
 
 const DEVRYAN_DATA_DIR = resolveDevRyanDataRoot();
 

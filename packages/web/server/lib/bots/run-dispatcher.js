@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { performance } from 'node:perf_hooks';
 
-import { resolveComputerScopeKey } from '@openchamber/bots-runtime';
+import { resolveComputerScopeKey } from '@devryan/bots-runtime';
 
 import { publicBotChannelPreview } from './channels.js';
 import { normalizeBotRunError, botErrorLogFields } from './error-normalization.js';

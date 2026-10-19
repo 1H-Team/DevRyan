@@ -1,5 +1,5 @@
 import path from 'node:path';
-import type * as ReviewedSlim from '@openchamber/agents-core';
+import type * as ReviewedSlim from '@devryan/agents-core';
 export interface NativeSlimPathOwners {
  readonly assertCurrent:(input:ReviewedSlim.ReviewedSlimToolInput)=>Promise<void>;
  readonly stat:(input:ReviewedSlim.ReviewedSlimToolInput,file:string)=>Promise<{readonly kind:'file'|'directory'|'other'}>;

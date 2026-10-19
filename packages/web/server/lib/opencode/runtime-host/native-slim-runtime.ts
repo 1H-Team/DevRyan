@@ -5,7 +5,7 @@ import type {Location} from '@opencode/core/location';
 import type {Plugin} from '@opencode/plugin/effect/plugin';
 import type {SessionRetry} from '@opencode/plugin/effect/session';
 import {Tool} from '@opencode/schema/tool';
-import type * as ReviewedSlim from '@openchamber/agents-core';
+import type * as ReviewedSlim from '@devryan/agents-core';
 import type {NativeConfigurationSnapshot,NativeConfigurationLocation} from './native-configuration-snapshot.js';
 import {nativeSlimPlugin,REVIEWED_SLIM_HOOK_INVENTORY} from './native-slim.js';
 import {nativeSlimCommandBehaviorsPlugin,reviewedSlimCommandDeclarations} from './native-slim-commands.js';

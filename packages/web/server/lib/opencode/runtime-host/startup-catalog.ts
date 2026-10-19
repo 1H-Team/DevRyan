@@ -1,5 +1,5 @@
 import { Schema, type Context } from 'effect';
-import { inspectModelSelection } from '@openchamber/shared-runtime';
+import { inspectModelSelection } from '@devryan/shared-runtime';
 import { Plugin } from '@opencode/schema/plugin';
 import type { NativeCatalogRequirements, NativeCursorCatalog, NativeCatalogAvailability } from './native-process-protocol.js';
 import { runWithHostRefusal } from './host-refusal.js';

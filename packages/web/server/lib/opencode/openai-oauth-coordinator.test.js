@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createDiagnosticJournal, createDiagnosticSanitizer } from '@openchamber/harness-runtime';
+import { createDiagnosticJournal, createDiagnosticSanitizer } from '@devryan/harness-runtime';
 import { compareAndSwapOpenAiAuth, createOpenAiOAuthCoordinator } from './openai-oauth-coordinator.js';
 import { createOpenAiOAuthBridge } from './openai-oauth-bridge.js';
 import plugin from '../../default-config/plugins/devryan-openai-oauth.mjs';

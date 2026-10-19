@@ -1,7 +1,7 @@
-import { readSessionExecutionReceipt } from '@openchamber/harness-runtime/lib/session-execution.js';
-import { cleanupExecutionLease } from '@openchamber/harness-runtime/lib/execution-cleanup.js';
-import { withExecutionPreparation, withoutExecutionDeadline, executionRemainingMs, executionPhase, executionCleanup } from '@openchamber/harness-runtime/lib/execution-admission.js';
-import { hostDeadlineExpired } from '@openchamber/harness-runtime/lib/host-stall-clock.js';
+import { readSessionExecutionReceipt } from '@devryan/harness-runtime/lib/session-execution.js';
+import { cleanupExecutionLease } from '@devryan/harness-runtime/lib/execution-cleanup.js';
+import { withExecutionPreparation, withoutExecutionDeadline, executionRemainingMs, executionPhase, executionCleanup } from '@devryan/harness-runtime/lib/execution-admission.js';
+import { hostDeadlineExpired } from '@devryan/harness-runtime/lib/host-stall-clock.js';
 
 const failure = (code) => Object.assign(new Error(code), { code, status: 409 });
 

@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
 
-import { canonicalizeBotJson } from '@openchamber/bots-runtime';
+import { canonicalizeBotJson } from '@devryan/bots-runtime';
 
 import {
   readProviderAuthRecord,

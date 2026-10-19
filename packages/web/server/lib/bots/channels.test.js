@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { decryptBotJson, encryptBotJson } from './encryption.js';
 import { createBotChannels, messageAssociatedData } from './channels.js';
 import { createBotAuthorization } from './authorization.js';
-import { encodeBotSnapshot } from '@openchamber/bots-runtime/event-snapshot.js';
+import { encodeBotSnapshot } from '@devryan/bots-runtime/event-snapshot.js';
 
 const BOT_ID = 'b0000000-0000-4000-8000-000000000001';
 const CHANNEL_ID = 'c0000000-0000-4000-8000-000000000001';

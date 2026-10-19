@@ -4,7 +4,7 @@ import {
   canonicalizeBotJson,
   hashCanonicalBotJson,
   parseStrictJson,
-} from '@openchamber/bots-runtime';
+} from '@devryan/bots-runtime';
 
 import {
   BOT_COMPILED_CONFIG_VERSION,

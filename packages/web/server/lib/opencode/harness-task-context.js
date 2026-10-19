@@ -1,10 +1,10 @@
-import { assertManagedToolOutputSize } from '@openchamber/orchestration-runtime/tool-output-limits.js';
+import { assertManagedToolOutputSize } from '@devryan/orchestration-runtime/tool-output-limits.js';
 import path from 'node:path';
 import { validateCanonicalPlanSource } from '../plans/canonical-source.js';
 import fs from 'node:fs/promises';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { createTaskContextRuntime, planReference } from '@openchamber/harness-runtime';
-import { currentObjectiveUser } from '@openchamber/harness-runtime/lib/objective-identity.js';
+import { createTaskContextRuntime, planReference } from '@devryan/harness-runtime';
+import { currentObjectiveUser } from '@devryan/harness-runtime/lib/objective-identity.js';
 import { planError, readPlanRevision, writePlanRevision } from '../plans/revisions.js';
 import { resolveSelectedPlanRevision, assertGlobalPlanProjectScope } from '../plans/selected-revision.js';
 import { fingerprintCheckContent } from '../orchestration/required-check-observer.js';

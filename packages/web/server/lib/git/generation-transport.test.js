@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { once } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createFreeZenCooldowns } from '@openchamber/shared-runtime';
+import { createFreeZenCooldowns } from '@devryan/shared-runtime';
 import { generateCommitMessageDirect } from './commit-message.js';
 import { generatePullRequestDescriptionDirect } from './pr-description.js';
 

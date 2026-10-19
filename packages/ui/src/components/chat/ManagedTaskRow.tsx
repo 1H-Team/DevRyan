@@ -4,7 +4,7 @@ import {
   formatManagedTaskDisplayName,
   readManagedResultReport,
   type ManagedTaskEventRecord,
-} from '@openchamber/orchestration-runtime';
+} from '@devryan/orchestration-runtime';
 
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/lib/i18n';

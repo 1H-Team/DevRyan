@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import {
   BOT_EVENT_MAX_BYTES, BOT_SNAPSHOT_FORMAT, BOT_SNAPSHOT_PART_KIND,
   encodeBotSnapshot, splitBotSnapshot,
-} from '@openchamber/bots-runtime/event-snapshot.js';
+} from '@devryan/bots-runtime/event-snapshot.js';
 
 import { createBotEventDiagnostics } from './event-diagnostics.js';
 import { withBotAbort } from './request-lifetime.js';

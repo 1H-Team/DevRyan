@@ -5,7 +5,7 @@ import path from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { hashCanonicalBotJson } from '@openchamber/bots-runtime';
+import { hashCanonicalBotJson } from '@devryan/bots-runtime';
 
 import { createBotSpecService } from './bot-spec.js';
 import { createBotSpecSigner } from './bot-spec-signer.js';

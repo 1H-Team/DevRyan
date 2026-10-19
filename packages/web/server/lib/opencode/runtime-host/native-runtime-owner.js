@@ -2,7 +2,7 @@ import { createNativePlanSettlementVerifier } from './native-plan-settlement.js'
 import { createNativePlanDenialOwner } from './native-plan-denial-owner.js';
 import { createNativeManagedTitleOwner } from './native-managed-title-owner.js';
 import { startStartupTiming, timeStartupPhase } from '../startup-timing.js';
-import { artifactDiagnostic } from '@openchamber/shared-runtime/startup-diagnostics.js';
+import { artifactDiagnostic } from '@devryan/shared-runtime/startup-diagnostics.js';
 import {captureNativeSetupCredentialSeed} from './native-setup-credential-ack.js';
 import {nativeBundleFileOperations} from './native-bundle-file-operations.js';
 import {createNativeHelperOwner} from './native-helper-owner.js';

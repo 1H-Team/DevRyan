@@ -9,7 +9,7 @@ import {
   createManagedTaskScheduler,
   toManagedTaskEvent,
   type ManagedOpenCodeTransport,
-} from '@openchamber/orchestration-runtime';
+} from '@devryan/orchestration-runtime';
 import { I18nProvider } from '@/lib/i18n';
 import { withDom } from '../bots/chat/botMountedDom';
 import { managedTitleFixture } from './managedTaskTestFixture';

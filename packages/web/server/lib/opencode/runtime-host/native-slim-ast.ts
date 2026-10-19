@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
-import type {AstSearchInput,AstReplaceInput,ReviewedAstDefinition} from '@openchamber/agents-core';
+import type {AstSearchInput,AstReplaceInput,ReviewedAstDefinition} from '@devryan/agents-core';
 import type {Permission} from '@opencode/core/permission';
 import type {WorkerInput,NativeResult} from './worker-protocol.js';
 import {REVIEWED_AST_ASSET_SHA256} from './reviewed-ast-asset.js';
@@ -55,7 +55,7 @@ export async function runReviewedAstWorker(request:AstWorkerInput,callbacks:{
  if(!stat.isFile()||!(stat.mode&0o111)||stat.size>64*1024*1024)throw new Error('native_ast_asset_invalid');
  const bytes=await fs.readFile(request.reviewedAst.path);
  if(createHash('sha256').update(bytes).digest('hex')!==REVIEWED_AST_ASSET_SHA256)throw new Error('native_ast_asset_invalid');
- const originals=await import('@openchamber/agents-core');
+ const originals=await import('@devryan/agents-core');
  const definition=request.tool==='ast_grep_search'?originals.ast_grep_search:originals.ast_grep_replace;
  const input=validateReviewedAstInput(request.input,request.tool,definition);
  const paths=await rebaseReviewedAstPaths(input.paths,request);

@@ -4,7 +4,7 @@ import {
   runFreeZenModelRotation,
   sharedFreeZenCooldowns,
   normalizeGeneratedCommitDraft,
-} from '@openchamber/shared-runtime';
+} from '@devryan/shared-runtime';
 import { generateZenText, resolveZenSessionID } from '../text/summarization.js';
 
 export const COMMIT_SUBJECT_MAX_LENGTH = 72;

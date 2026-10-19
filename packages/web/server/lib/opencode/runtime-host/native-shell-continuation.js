@@ -1,5 +1,5 @@
 import { isNativeStatusRecord } from '../../../../../shared-runtime/lib/native-message-status.js';
-import { currentObjectiveUser, isNativeCompactionRecord } from '@openchamber/harness-runtime/lib/objective-identity.js';
+import { currentObjectiveUser, isNativeCompactionRecord } from '@devryan/harness-runtime/lib/objective-identity.js';
 
 /** Metadata locates a job; only the current ledger and real receipt prove it. */
 export function createNativeShellContinuationVerifier({ runtime, getShellJobReceipt }) {

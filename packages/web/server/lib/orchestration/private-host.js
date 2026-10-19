@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import http from 'node:http';
-import { projectManagedModelValidationFailure } from '@openchamber/orchestration-runtime';
+import { projectManagedModelValidationFailure } from '@devryan/orchestration-runtime';
 
 // A 256 KiB plan can expand sixfold when control characters are JSON-escaped.
 const DEFAULT_MAX_BODY_BYTES = 2 * 1024 * 1024;

@@ -1,7 +1,7 @@
 import React, { act } from 'react';
 import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test';
 import { useStore } from 'zustand';
-import { createManagedTaskRecord, toManagedTaskEvent, type ManagedTaskRecord } from '@openchamber/orchestration-runtime';
+import { createManagedTaskRecord, toManagedTaskEvent, type ManagedTaskRecord } from '@devryan/orchestration-runtime';
 import { I18nProvider } from '@/lib/i18n';
 import { resolveDisplaySessionTitle } from '@/lib/sessionTitles';
 import { managedTitleFixture } from './managedTaskTestFixture';

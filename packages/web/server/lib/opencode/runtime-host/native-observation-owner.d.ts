@@ -1,6 +1,6 @@
 import type {NativeConfigurationSnapshot} from './native-configuration-snapshot.js';
 import type {NativeAdmissionOwner} from './native-admission-owner.js';
-import type {PrimaryRecoveryHost} from '@openchamber/harness-runtime';
+import type {PrimaryRecoveryHost} from '@devryan/harness-runtime';
 import type {NativePresentationProgress,NativeObservation} from './native-observation-contract.js';
 export interface NativeObservationOwnerOptions {
  readonly instanceID:string;readonly snapshot:Pick<NativeConfigurationSnapshot,'digest'> & {readonly locations:ReadonlyArray<Pick<NativeConfigurationSnapshot['locations'][number],'directory'>>};

@@ -1,4 +1,4 @@
-import { ConfigApplyError } from '@openchamber/shared-runtime';
+import { ConfigApplyError } from '@devryan/shared-runtime';
 
 const sendApplyError = (res, error, getStatus, canForceRestart) => {
   if (error instanceof ConfigApplyError) {

@@ -1,4 +1,4 @@
-import { classifySessionChangeTool, normalizeSessionChangeTool } from '@openchamber/harness-runtime/lib/session-changes-tools.js';
+import { classifySessionChangeTool, normalizeSessionChangeTool } from '@devryan/harness-runtime/lib/session-changes-tools.js';
 
 const failure = code => Object.assign(new Error(code), { code, status: 409 });
 const MAX_SETTLED_LEASES = 1024;

@@ -9,7 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import { getRuntimeHome } from '../../opencode/runtime-host/runtime-bundle-binding.js';
 import { OPENCODE_CONFIG_DIR } from '../../opencode/shared.js';
-import { installSkillArchive, isArchiveRejectionError } from '@openchamber/shared-runtime';
+import { installSkillArchive, isArchiveRejectionError } from '@devryan/shared-runtime';
 
 import { downloadClawdHubSkill, fetchClawdHubSkillInfo } from './api.js';
 

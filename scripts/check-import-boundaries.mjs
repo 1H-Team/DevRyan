@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Cross-package import boundaries for packages/*. Reads static imports, re-exports,
 // require() and literal dynamic import() through TypeScript's pre-processor, and
-// resolves relative and @openchamber/* specifiers to repository files.
+// resolves relative and workspace (@devryan/*, and the kept @openchamber/electron) specifiers to repository files.
 //
 // Rules, for an importer and a target in different packages:
 // - private-application-import: an application package (web, electron, the Bot
@@ -76,7 +76,7 @@ export function resolveSpecifier({ root = repositoryRoot, packages, importer, sp
     const target = toPosix(path.posix.normalize(path.posix.join(path.posix.dirname(importer), specifier)));
     return target.startsWith('packages/') ? { target: resolveFile(root, target), via: 'relative' } : null;
   }
-  const match = /^(@openchamber\/[^/]+)(\/.+)?$/.exec(specifier);
+  const match = /^(@(?:devryan|openchamber)\/[^/]+)(\/.+)?$/.exec(specifier);
   if (!match) return null;
   const entry = [...packages.values()].find(candidate => candidate.name === match[1]);
   if (!entry) return null;

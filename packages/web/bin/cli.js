@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 // First: adopt OPENCHAMBER_* aliases before any module reads its environment.
-import '@openchamber/shared-runtime/node/adopt-legacy-environment.js';
-import { setDevRyanEnv } from '@openchamber/shared-runtime/lib/legacy-environment.js';
+import '@devryan/shared-runtime/node/adopt-legacy-environment.js';
+import { setDevRyanEnv } from '@devryan/shared-runtime/lib/legacy-environment.js';
 import { migrateDataRootAtStartup } from '../server/lib/opencode/runtime-host/data-root-startup.js';
 import fs from 'fs';
 import net from 'net';
@@ -35,7 +35,7 @@ import {
   printJson,
   logStatus, formatProviderWithIcon as clackFormatProviderWithIcon,
 } from './cli-output.js';
-import { resolveDevRyanDataRoot } from '@openchamber/shared-runtime/node/data-root.js';
+import { resolveDevRyanDataRoot } from '@devryan/shared-runtime/node/data-root.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1885,7 +1885,7 @@ function isDevRyanServerCommand(command) {
   if (!normalized) return false;
   const lower = normalized.toLowerCase();
   return /(?:^|[\s"'])\S*\/packages\/web\/server\/index\.js(?:$|[\s"'])/.test(lower)
-    || /(?:^|[\s"'])\S*\/@openchamber\/web\/server\/index\.js(?:$|[\s"'])/.test(lower)
+    || /(?:^|[\s"'])\S*\/@(?:devryan|openchamber)\/web\/server\/index\.js(?:$|[\s"'])/.test(lower)
     || /(?:^|[\s"'])\S*(?:devryan|openchamber)\S*\/server\/index\.js(?:$|[\s"'])/.test(lower);
 }
 
@@ -5273,7 +5273,7 @@ async function main() {
   await commands[command](options);
 }
 
-const isCliExecution = isModuleCliExecution(process.argv[1], import.meta.url, fs.realpathSync, 'openchamber');
+const isCliExecution = isModuleCliExecution(process.argv[1], import.meta.url, fs.realpathSync, ['devryan', 'openchamber']);
 
 if (isCliExecution) {
   let isHandlingSigint = false;

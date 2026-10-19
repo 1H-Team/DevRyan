@@ -9,7 +9,7 @@ import {
   BOT_DATABASE_NAME,
   assertBotDatabaseName,
   classifyBotDatabaseHistory,
-} from '@openchamber/bot-db';
+} from '@devryan/bot-db';
 
 // Backups of the recoverable local Bot unit: the database, every live
 // encrypted object, the Bot credential/environment/Telegram vaults, signing

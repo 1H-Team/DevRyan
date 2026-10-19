@@ -13,25 +13,25 @@ const mocks = vi.hoisted(() => ({
   runtimeOptions: null,
 }));
 vi.mock('./execution-helper-command.js', () => ({ resolveControllerGitCommand: mocks.resolveGit }));
-vi.mock('@openchamber/harness-runtime', () => ({
+vi.mock('@devryan/harness-runtime', () => ({
   createSessionMutationRuntime: (options) => { mocks.runtimeOptions = options; return mocks.runtime; },
   createSessionRevertCoordinator: () => ({}),
 }));
-vi.mock('@openchamber/harness-runtime/lib/session-execution.js', () => ({
+vi.mock('@devryan/harness-runtime/lib/session-execution.js', () => ({
   verifySessionExecutionLauncher: async () => true, sweepExecutionSocketDirectories: async () => 0,
   prepareSessionExecution: vi.fn(), readSessionExecutionReceipt: vi.fn(), startSessionExecution: vi.fn(), startReadOnlySessionExecution: vi.fn(), runReadOnlySessionExecution: vi.fn(),
 }));
-vi.mock('@openchamber/harness-runtime/lib/execution-host-owner.js', async (importOriginal) => ({
+vi.mock('@devryan/harness-runtime/lib/execution-host-owner.js', async (importOriginal) => ({
   ...await importOriginal(), createExecutionHostOwner: async () => ({ id: 'owner_fixture', signal: new AbortController().signal,
     assert: () => {}, close: async () => {} }),
 }));
-vi.mock('@openchamber/harness-runtime/lib/session-changes-tools.js', async (importOriginal) => ({
+vi.mock('@devryan/harness-runtime/lib/session-changes-tools.js', async (importOriginal) => ({
   ...await importOriginal(), classifySessionChangeTool: mocks.classify,
 }));
-const { classifySessionChangeTool } = await vi.importActual('@openchamber/harness-runtime/lib/session-changes-tools.js');
+const { classifySessionChangeTool } = await vi.importActual('@devryan/harness-runtime/lib/session-changes-tools.js');
 import { createSessionExecutionHost } from './session-execution-host.js';
-import { executionProgressMeter, executionSignal, withExecutionAdmission, withExecutionMeter } from '@openchamber/harness-runtime/lib/execution-admission.js';
-import { runReadOnlySessionExecution } from '@openchamber/harness-runtime/lib/session-execution.js';
+import { executionProgressMeter, executionSignal, withExecutionAdmission, withExecutionMeter } from '@devryan/harness-runtime/lib/execution-admission.js';
+import { runReadOnlySessionExecution } from '@devryan/harness-runtime/lib/session-execution.js';
 
 afterEach(() => { vi.resetAllMocks(); vi.unstubAllEnvs(); });
 const directory = process.cwd();
@@ -173,7 +173,7 @@ test('generation 2 Cursor persistence and execution require the constructor owne
 });
 
 test('ledger warming shares one selected pass and supersedes queued projects before they launch', async () => {
-  const { executionSignal } = await import('@openchamber/harness-runtime/lib/execution-admission.js');
+  const { executionSignal } = await import('@devryan/harness-runtime/lib/execution-admission.js');
   const { host } = fixture({ openCodeClient: createFakeClient(), nativeExecution: { isReady: async () => true } });
   let entered, release;
   const started = new Promise(resolve => { entered = resolve; });
@@ -329,7 +329,7 @@ test.each([undefined, {}, { generation: () => 1 }, { generation: () => 3 }])('un
 });
 
 async function nativePublicationFixture(options = {}) {
-  const native = await import('@openchamber/harness-runtime/lib/session-execution.js');
+  const native = await import('@devryan/harness-runtime/lib/session-execution.js');
   const client = createFakeClient(), terminated = Promise.withResolvers(), launched = Promise.withResolvers(), diagnostics = [];
   client.sessions.message.mockResolvedValue({ info: { id: input.messageID, role: 'assistant', sessionID: input.sessionID, parentID: 'msg_user' },
     turnOwnership: { source: 'native-sequence', userMessageID: 'msg_user' }, parts: [{ type: 'tool', callID: input.callID, tool: 'write' }] });
@@ -449,7 +449,7 @@ test('native writer recovered publication observes its durable receipt only afte
 test.each([{ tool: 'patch', projected: 'apply_patch', input: { patchText: 'partial patch fixture' } },
   { tool: 'ast_grep_replace', projected: 'ast_grep_replace', input: { pattern: 'old()', rewrite: 'new()', lang: 'javascript', dryRun: false } }])(
   'native $tool failure waits termination, cancels its view, and publishes nothing', async ({ tool, projected, input: arguments_ }) => {
-  const native = await import('@openchamber/harness-runtime/lib/session-execution.js');
+  const native = await import('@devryan/harness-runtime/lib/session-execution.js');
   const openCodeClient = createFakeClient();
   openCodeClient.sessions.message.mockResolvedValue({ info: { role: 'assistant', sessionID: input.sessionID, parentID: 'msg_user' },
     turnOwnership: { source: 'native-sequence', userMessageID: 'msg_user' },
@@ -502,7 +502,7 @@ test('native AST launch refuses unreviewed origins before preparing a workspace'
 });
 
 test('native host helpers allow only bounded reviewed Git discovery with a fresh environment', async () => {
-  const native = await import('@openchamber/harness-runtime/lib/session-execution.js');
+  const native = await import('@devryan/harness-runtime/lib/session-execution.js');
   native.runReadOnlySessionExecution.mockResolvedValue({ receipt: { terminated: true, confined: true, cancelled: false, exitCode: 0 },
     stdout: Buffer.from('.git\n.git\n/fixture\n'), stderr: Buffer.alloc(0) });
   const { host } = fixture({ nativeExecution: { helperRoots: [directory], gitCommand: '/usr/bin/git', socketDirectory: null } });
@@ -539,7 +539,7 @@ test('native helpers share successful Git selection, retry failed discovery, and
 });
 
 test('a removed unrelated native helper root does not block a valid current project or widen discovery', async () => {
-  const native = await import('@openchamber/harness-runtime/lib/session-execution.js');
+  const native = await import('@devryan/harness-runtime/lib/session-execution.js');
   native.runReadOnlySessionExecution.mockResolvedValue({ receipt: { terminated: true, confined: true, cancelled: false, exitCode: 0 },
     stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) });
   const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-helper-roots-')));
@@ -566,7 +566,7 @@ test('a removed unrelated native helper root does not block a valid current proj
 test('native Git discovery stays inside the registered project when only an unregistered parent is a repository', async () => {
   const { execFile } = await import('node:child_process');
   const os = await import('node:os');
-  const native = await import('@openchamber/harness-runtime/lib/session-execution.js');
+  const native = await import('@devryan/harness-runtime/lib/session-execution.js');
   // The supervisor stand-in runs the exact command, arguments, environment and directory with real Git.
   native.runReadOnlySessionExecution.mockImplementation(({ command, args, env, logicalDirectory }) => new Promise((resolve) => {
     execFile(command, args, { cwd: logicalDirectory, env, encoding: 'buffer' }, (error, stdout, stderr) => {
@@ -600,7 +600,7 @@ test('native Git discovery stays inside the registered project when only an unre
 });
 
 test('native scans enforce Git exclusions, reject follow traversal and protect nested host roots', async () => {
-  const native = await import('@openchamber/harness-runtime/lib/session-execution.js');
+  const native = await import('@devryan/harness-runtime/lib/session-execution.js');
   native.startReadOnlySessionExecution.mockResolvedValue({ child: {}, pid: 200,
     result: Promise.resolve({ terminated: true, confined: true, cancelled: false, exitCode: 0 }) });
   const openCodeClient = createFakeClient();
@@ -632,7 +632,7 @@ test('native scans enforce Git exclusions, reject follow traversal and protect n
 });
 
 test('native scans accept location roots that do not exist yet and still honour missing protected roots', async () => {
-  const native = await import('@openchamber/harness-runtime/lib/session-execution.js');
+  const native = await import('@devryan/harness-runtime/lib/session-execution.js');
   native.startReadOnlySessionExecution.mockClear();
   native.startReadOnlySessionExecution.mockResolvedValue({ child: {}, pid: 201,
     result: Promise.resolve({ terminated: true, confined: true, cancelled: false, exitCode: 0 }) });
@@ -666,7 +666,7 @@ test('native scans accept location roots that do not exist yet and still honour 
 
 test('Node helper independently validates pinned VCS info flags before launching a real supervisor', async () => {
   const { nativeVcsGitFlags } = await import('./execution-helper-policy.js');
-  const native = await import('@openchamber/harness-runtime/lib/session-execution.js');
+  const native = await import('@devryan/harness-runtime/lib/session-execution.js');
   native.runReadOnlySessionExecution.mockResolvedValue({ receipt: { terminated: true, confined: true, cancelled: false, exitCode: 0 }, stdout: Buffer.from('main\n'), stderr: Buffer.alloc(0) });
   const { host } = fixture({ nativeExecution: { helperRoots: [directory], gitCommand: '/usr/bin/git', socketDirectory: null } });
   const helper = { action: 'helper', command: 'git', args: [...nativeVcsGitFlags, 'symbolic-ref', '--quiet', '--short', 'HEAD'], cwd: directory };
@@ -680,7 +680,7 @@ test('Node helper independently validates pinned VCS info flags before launching
 });
 
 test('real ledger preserves a committed publication across interrupted materialization and restart', async () => {
-  const { createSessionMutationRuntime: createActualRuntime } = await vi.importActual('@openchamber/harness-runtime/lib/session-mutations.js');
+  const { createSessionMutationRuntime: createActualRuntime } = await vi.importActual('@devryan/harness-runtime/lib/session-mutations.js');
   const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-publication-recovery-')));
   const project = path.join(root, 'project'), home = path.join(root, 'home'), temporary = path.join(root, 'tmp'), storage = path.join(root, 'ledger');
   await Promise.all([fs.mkdir(project), fs.mkdir(home), fs.mkdir(temporary)]);
@@ -787,7 +787,7 @@ test('browser worker privately binds canonical user scope, waits lease callbacks
   const f = await browserHostFixture(); let host;
   mocks.runtime.finish.mockResolvedValue({ files: [{ path: '.devryan-browser/owned.png', status: 'added' }] });
   try {
-    const native = await import('@openchamber/harness-runtime/lib/session-execution.js');
+    const native = await import('@devryan/harness-runtime/lib/session-execution.js');
     const operation = Promise.withResolvers(), entered = Promise.withResolvers(), terminated = Promise.withResolvers();
     const browserOperation = vi.fn(async (invocation, event) => {
       expect(invocation).toMatchObject({ userMessageID: 'msg_user', token: f.lease.token });
@@ -828,7 +828,7 @@ test('browser worker privately binds canonical user scope, waits lease callbacks
 test('browser worker refuses caller assets and forged scope without publishing the private view', async () => {
   const f = await browserHostFixture(); let host;
   try {
-    const native = await import('@openchamber/harness-runtime/lib/session-execution.js');
+    const native = await import('@devryan/harness-runtime/lib/session-execution.js');
     const callback = vi.fn(); const receipt = { terminated: true, confined: true, cancelled: true, exitCode: 137 };
     native.startSessionExecution.mockImplementation(async ({ onOutput }) => {
       onOutput({ stream: 'stdout', data: Buffer.from(JSON.stringify({ type: 'browser', id: 'request_forged', operation: 'acquire',
@@ -1054,7 +1054,7 @@ test('a failed settlement never replaces the finish failure', async () => {
 });
 
 test('read-only execution receives only the host-owned Windows storage authority', async () => {
-  const native = await import('@openchamber/harness-runtime/lib/session-execution.js');
+  const native = await import('@devryan/harness-runtime/lib/session-execution.js');
   const windowsOwner = { ensureDirectory: vi.fn(), createDirectory: vi.fn() };
   const callerOwner = { ensureDirectory: vi.fn() };
   native.startReadOnlySessionExecution.mockResolvedValue({ child: {}, result: Promise.resolve({ confined: true }) });

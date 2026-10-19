@@ -1,4 +1,4 @@
-import type {CursorSdkRuntime} from '@openchamber/cursor-sdk-runtime';
+import type {CursorSdkRuntime} from '@devryan/cursor-sdk-runtime';
 import type {NativeConfigurationSnapshot} from './native-configuration-snapshot.js';
 import type {RegistrationOrigin} from './registration-origin.js';
 import type {NativeProviderProcess,NativeProviderProcessOptions,NativeProviderExit} from './native-provider-process.js';

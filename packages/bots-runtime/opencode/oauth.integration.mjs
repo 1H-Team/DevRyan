@@ -23,7 +23,7 @@ try {
     [`${root}/packages/web/server/lib/bots`, '/src/bots'],
     [`${root}/packages/web/server/lib/multi-user/vault.js`, '/src/multi-user/vault.js'],
     [`${root}/packages/bot-egress/src`, '/src/egress'],
-    [`${root}/packages/bots-runtime`, '/src/node_modules/@openchamber/bots-runtime'],
+    [`${root}/packages/bots-runtime`, '/src/node_modules/@devryan/bots-runtime'],
     [`${root}/packages/web/server/lib`, '/fixture-repository/packages/web/server/lib'],
     [`${root}/packages/shared-runtime`, '/fixture-repository/packages/shared-runtime'],
     [`${root}/packages/harness-runtime`, '/fixture-repository/packages/harness-runtime'],

@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { createManagedAssistantActivityRegistry, createManagedOpenCodeExecutor } from '@openchamber/orchestration-runtime';
+import { createManagedAssistantActivityRegistry, createManagedOpenCodeExecutor } from '@devryan/orchestration-runtime';
 import { createEventProjector } from '../opencode/v2/projection/events.js';
 
 it.each([true, false])('a warm native projector recognizes real activity without inventing it (streaming: %s)', async streaming => {

@@ -1,7 +1,7 @@
 // Test-only mounted host; production components never import this module.
 import React, { act } from 'react';
 import { createStore } from 'zustand/vanilla';
-import { formatManagedTaskDisplayName } from '@openchamber/orchestration-runtime';
+import { formatManagedTaskDisplayName } from '@devryan/orchestration-runtime';
 import { HostElement, HostNode, withDom } from '../bots/chat/botMountedDom';
 
 const defaultTitleSessions = () => [{ id: 'ses_child', title: 'Map the Workspace' }];

@@ -1,6 +1,6 @@
-import { classifyManagedTaskFailure } from '@openchamber/orchestration-runtime';
+import { classifyManagedTaskFailure } from '@devryan/orchestration-runtime';
 import crypto from 'node:crypto';
-import { createPrimaryRecoveryHost, createPrimaryRecoveryManagedAdapter } from '@openchamber/harness-runtime';
+import { createPrimaryRecoveryHost, createPrimaryRecoveryManagedAdapter } from '@devryan/harness-runtime';
 
 const ownerHash = (req) => {
   const cookie = String(req.headers?.cookie ?? '').split(';').map((value) => value.trim())

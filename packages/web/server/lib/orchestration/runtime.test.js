@@ -8,7 +8,7 @@ import {
   createManagedTaskRecord,
   createManagedTaskResultEnvelope,
   createManagedTaskScheduler,
-} from '@openchamber/orchestration-runtime';
+} from '@devryan/orchestration-runtime';
 
 import { createNativeConsumerFixture } from '../opencode/test-native-consumer-client.js';
 import { createNativeManagedTaskOwner } from '../opencode/runtime-host/managed-task-owner.js';

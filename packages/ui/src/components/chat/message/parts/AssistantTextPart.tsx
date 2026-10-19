@@ -7,7 +7,7 @@ import type { ContentChangeReason } from '@/hooks/useChatAutoFollow';
 import { useStreamingTextThrottle } from '../../hooks/useStreamingTextThrottle';
 import { resolveAssistantDisplayText, shouldRenderAssistantText } from './assistantTextVisibility';
 import { postRendererTurnTimingMark, streamPerfCount, streamPerfObserve } from '@/stores/utils/streamDebug';
-import { stripAssistantImageMarkdown } from '@openchamber/shared-runtime/lib/assistant-image-sources.js';
+import { stripAssistantImageMarkdown } from '@devryan/shared-runtime/lib/assistant-image-sources.js';
 
 type PartWithText = Part & { text?: string; content?: string; value?: string; time?: { start?: number; end?: number } };
 

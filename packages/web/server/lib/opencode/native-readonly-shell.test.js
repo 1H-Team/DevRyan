@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { sessionExecutionProfile, prepareSessionExecution } from '@openchamber/harness-runtime/lib/session-execution.js';
+import { sessionExecutionProfile, prepareSessionExecution } from '@devryan/harness-runtime/lib/session-execution.js';
 import { readOnlyShellLease } from './native-readonly-shell.js';
 const roots = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => fs.rm(root, { recursive: true, force: true }))); });

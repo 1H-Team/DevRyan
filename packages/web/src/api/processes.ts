@@ -3,7 +3,7 @@ import type {
   ProcessesSnapshot,
   ProcessStopResult,
   ProcessTrackingProjectSetting,
-} from '@openchamber/ui/lib/api/types';
+} from '@devryan/ui/lib/api/types';
 
 const readJson = async <T,>(response: Response, fallback: string): Promise<T> => {
   if (!response.ok) {

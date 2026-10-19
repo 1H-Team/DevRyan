@@ -1,5 +1,5 @@
 import path from 'node:path';
-import type * as AgentsCore from '@openchamber/agents-core';
+import type * as AgentsCore from '@devryan/agents-core';
 
 // The interview contract is owned by agents-core; these names keep the host's
 // existing vocabulary.

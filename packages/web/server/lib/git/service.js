@@ -16,12 +16,12 @@ import { createRequire } from 'module';
 import {
   createPostCheckoutHookRunner,
   createWorktreeBootstrapRuntime,
-} from '@openchamber/harness-runtime';
+} from '@devryan/harness-runtime';
 import { populateWorktreeWithLockRecovery } from './worktree-lock-recovery.js';
 import { withIndexLockRetry, withIndexLockRetryResult } from './index-lock-retry.js';
 import { getRequestPrincipal } from '../multi-user/request-context.js';
 import { getGitHubAuthById } from '../github/auth.js';
-import { resolveDevRyanDataRoot } from '@openchamber/shared-runtime/node/data-root.js';
+import { resolveDevRyanDataRoot } from '@devryan/shared-runtime/node/data-root.js';
 
 const fsp = fs.promises;
 const require = createRequire(import.meta.url);

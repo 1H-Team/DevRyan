@@ -1,4 +1,4 @@
-import type { ManagedTaskResultEnvelope } from '@openchamber/orchestration-runtime';
+import type { ManagedTaskResultEnvelope } from '@devryan/orchestration-runtime';
 
 export const getSameChildFollowUpTaskId = (
   resultEnvelope?: Pick<ManagedTaskResultEnvelope, 'action' | 'followUpTaskId'>,

@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { mergePathValues } from './path-utils.js';
 import { isPackagedDesktopEnv, isUnsupportedLoginShellValue } from './login-shell-env-filter.js';
-import { adoptLegacyEnvironment } from '@openchamber/shared-runtime/lib/legacy-environment.js';
+import { adoptLegacyEnvironment } from '@devryan/shared-runtime/lib/legacy-environment.js';
 
 const SHELL_PROBE_TIMEOUT_MS = 5_000;
 const DISCOVERY_PROBE_BUDGET_MS = 10_000;

@@ -1,4 +1,4 @@
-import { currentObjectiveUser } from '@openchamber/harness-runtime/lib/objective-identity.js';
+import { currentObjectiveUser } from '@devryan/harness-runtime/lib/objective-identity.js';
 import {createHash} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
 

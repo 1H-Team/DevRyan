@@ -7,7 +7,7 @@ import {
   createRecordStore,
   createTurnEvidenceRuntime,
   validateEvidenceRecord,
-} from '@openchamber/harness-runtime';
+} from '@devryan/harness-runtime';
 import { createProjectIdFromPath } from '../projects/project-id.js';
 
 const execFileAsync = promisify(execFile);

@@ -1,6 +1,6 @@
 # Agents core
 
-`@openchamber/agents-core` is DevRyan's built-in agent orchestration: the
+`@devryan/agents-core` is DevRyan's built-in agent orchestration: the
 orchestrator and its specialists, presets and model routing, the task board,
 commands (`/deepwork`, `/loop`, `/reflect`, `/interview`), web fetch and AST
 search. It is owned source derived from Oh My OpenCode Slim v3.0.4 (MIT, see

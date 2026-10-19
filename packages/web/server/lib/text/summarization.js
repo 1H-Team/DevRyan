@@ -14,7 +14,7 @@ import {
   FREE_ZEN_LONG_COOLDOWN_MS,
   FREE_ZEN_SHORT_COOLDOWN_MS,
   sharedFreeZenCooldowns,
-} from '@openchamber/shared-runtime';
+} from '@devryan/shared-runtime';
 
 export function buildSummarizationPrompt(maxLength, mode = 'tts') {
   if (mode === 'title') {

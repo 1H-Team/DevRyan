@@ -5,7 +5,7 @@ import {
   createHarnessWarning,
   withHarnessResult,
 } from './harness-result.js';
-import { resolveProviderPromptTools } from '@openchamber/orchestration-runtime';
+import { resolveProviderPromptTools } from '@devryan/orchestration-runtime';
 import {
   MANAGED_RUNTIME_TOOL_COUNT_WARNING_THRESHOLD,
   isBlockedManagedRuntimeMcpName,

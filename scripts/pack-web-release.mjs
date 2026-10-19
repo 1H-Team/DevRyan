@@ -50,7 +50,7 @@ export async function packWebRelease({ root, destination }) {
     workspaces.set(manifest.name, manifest);
     directories.set(manifest.name, directory);
   }
-  const source = workspaces.get('@openchamber/web');
+  const source = workspaces.get('@devryan/web');
   const { manifest, bundled } = planWorkspaceBundle(source, workspaces);
   await fs.mkdir(destination, { recursive: true });
   const scratch = await fs.mkdtemp(path.join(destination, '.web-pack-'));

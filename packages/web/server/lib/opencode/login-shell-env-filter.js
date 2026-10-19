@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { canonicalEnvironmentName } from '@openchamber/shared-runtime/lib/legacy-environment.js';
+import { canonicalEnvironmentName } from '@devryan/shared-runtime/lib/legacy-environment.js';
 
 // The single login-shell filter shared by Electron main's merge
 // (packages/electron/shell-env-inheritance.mjs) and the server's re-merge

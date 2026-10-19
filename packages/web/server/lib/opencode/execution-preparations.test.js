@@ -1,12 +1,12 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { createSessionMutationRuntime } from '@openchamber/harness-runtime';
-import { changeKey } from '@openchamber/harness-runtime/lib/session-changes-store.js';
-import { withCrossProcessFileLock } from '@openchamber/harness-runtime/lib/atomic-file.js';
+import { createSessionMutationRuntime } from '@devryan/harness-runtime';
+import { changeKey } from '@devryan/harness-runtime/lib/session-changes-store.js';
+import { withCrossProcessFileLock } from '@devryan/harness-runtime/lib/atomic-file.js';
 import { test, expect } from 'vitest';
 import { createExecutionPreparations, recoverExecutionLeases } from './execution-preparations.js';
-import { executionSignal, withExecutionAdmission } from '@openchamber/harness-runtime/lib/execution-admission.js';
+import { executionSignal, withExecutionAdmission } from '@devryan/harness-runtime/lib/execution-admission.js';
 
 test('authenticated polling remains available while reconciliation owns the ledger', async () => {
   let complete, launches = 0;
@@ -232,7 +232,7 @@ test('a transient cancellation failure stays retryable instead of pinning the jo
 // A stalled host (its event loop blocked for 30, 61 or 110 s, as on
 // 2026-09-29) cannot answer a poll. That time must not make the poller "lost".
 import { afterEach, describe, vi } from 'vitest';
-import { resetHostStallClock } from '@openchamber/harness-runtime/lib/host-stall-clock.js';
+import { resetHostStallClock } from '@devryan/harness-runtime/lib/host-stall-clock.js';
 
 describe('a lost poller is measured in time the host could run', () => {
   afterEach(() => { vi.useRealTimers(); resetHostStallClock(); delete process.env.DEVRYAN_STALL_AWARE_DEADLINES; });

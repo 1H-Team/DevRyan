@@ -1,5 +1,5 @@
 import { resolveGen2OpenCodeClient } from '../opencode/opencode-client-seam.js';
-import { createCommandDeadlineController } from '@openchamber/harness-runtime';
+import { createCommandDeadlineController } from '@devryan/harness-runtime';
 
 const REQUEST_TIMEOUT_MS = 5_000;
 

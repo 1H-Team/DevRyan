@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { projectManagedTaskResult, readManagedResultReference, createCompactResultHeader, prepareManagedResultMetadata, fitManagedToolOutput } from '@openchamber/orchestration-runtime';
+import { projectManagedTaskResult, readManagedResultReference, createCompactResultHeader, prepareManagedResultMetadata, fitManagedToolOutput } from '@devryan/orchestration-runtime';
 import { createNativeManagedResultCollection } from './native-managed-results.js';
 
 const scope = {rootSessionId:'ses_root',directory:'/project'};

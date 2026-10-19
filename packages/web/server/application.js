@@ -76,12 +76,12 @@ import { createFsSearchRuntime as createFsSearchRuntimeFactory } from './lib/fs/
 import { createOpenCodeLifecycleRuntime } from './lib/opencode/lifecycle.js';
 import { createRuntimeRestartReconciler } from './lib/opencode/runtime-restart-reconcile.js';
 import { createSessionExecutionHost } from './lib/opencode/session-execution-host.js';
-import { hostStallClock, onHostStall } from '@openchamber/harness-runtime/lib/host-stall-clock.js';
+import { hostStallClock, onHostStall } from '@devryan/harness-runtime/lib/host-stall-clock.js';
 import { executionArtifacts, executionReadinessMiddleware } from './lib/opencode/execution-artifacts.js';
-import { resolveDevRyanDataRoot } from '@openchamber/shared-runtime/node/data-root.js';
+import { resolveDevRyanDataRoot } from '@devryan/shared-runtime/node/data-root.js';
 import { createOpenAiOAuthCoordinator } from './lib/opencode/openai-oauth-coordinator.js';
 import { createOpenAiOAuthBridge } from './lib/opencode/openai-oauth-bridge.js';
-import { createConfigApplyCoordinator, createConfigChangeMarker } from '@openchamber/shared-runtime';
+import { createConfigApplyCoordinator, createConfigChangeMarker } from '@devryan/shared-runtime';
 import { syncPackagedAgents } from './lib/opencode/packaged-agent-sync.js';
 import { syncRuntimeAgentOverlays } from './lib/opencode/runtime-agent-overlays.js';
 import { createUserProfileProvisioningRuntime } from './lib/opencode/user-profile-provisioning.js';
@@ -144,8 +144,8 @@ import {
   resolveSkillSearchDirectories,
   walkSkillMdFiles,
 } from './lib/opencode/shared.js';
-import { CURSOR_PROVIDER_ID, createCursorSdkRuntime } from '@openchamber/cursor-sdk-runtime';
-import { PLAN_MODE_SYSTEM_INSTRUCTIONS } from '@openchamber/orchestration-runtime';
+import { CURSOR_PROVIDER_ID, createCursorSdkRuntime } from '@devryan/cursor-sdk-runtime';
+import { PLAN_MODE_SYSTEM_INSTRUCTIONS } from '@devryan/orchestration-runtime';
 import { createScheduledTasksRuntime } from './lib/scheduled-tasks/runtime.js';
 import { createServerStartupRuntime } from './lib/opencode/server-startup-runtime.js';
 import { createTunnelWiringRuntime } from './lib/opencode/tunnel-wiring-runtime.js';
@@ -171,7 +171,7 @@ import { createWebManagedOrchestrationRuntime } from './lib/orchestration/runtim
 import { resolveManagedAgentExecution } from './lib/multi-user/managed-agent-defaults.js';
 import { registerManagedOrchestrationRoutes } from './lib/orchestration/routes.js';
 import { createWebHarnessRuntime } from './lib/harness/runtime.js';
-import { createSessionChangeHost } from '@openchamber/harness-runtime';
+import { createSessionChangeHost } from '@devryan/harness-runtime';
 import { createSessionActivityGate } from './lib/opencode/session-activity-gate.js';
 import { createSessionRetention, registerSessionRetentionRoutes } from './lib/opencode/session-retention.js';
 import { createWebPrimaryRecoveryRuntime } from './lib/harness/provider-recovery.js';

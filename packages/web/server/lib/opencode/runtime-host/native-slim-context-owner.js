@@ -1,6 +1,6 @@
 import {AsyncLocalStorage} from 'node:async_hooks';
 import {isDeepStrictEqual} from 'node:util';
-import {currentObjectiveUser} from '@openchamber/harness-runtime/lib/objective-identity.js';
+import {currentObjectiveUser} from '@devryan/harness-runtime/lib/objective-identity.js';
 import {isNativeStatusRecord} from '../../../../../shared-runtime/lib/native-message-status.js';
 import {nativeStepPermitSha256} from './primary-step-owner.js';
 const record=value=>!!value&&typeof value==='object'&&!Array.isArray(value);

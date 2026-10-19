@@ -15,7 +15,7 @@ export default defineConfig({
         find: '@opencode-ai/sdk/v2',
         replacement: path.join(repositoryRoot, 'node_modules/@opencode-ai/sdk/dist/v2/client.js'),
       },
-      { find: '@openchamber/ui', replacement: path.join(repositoryRoot, 'packages/ui/src') },
+      { find: '@devryan/ui', replacement: path.join(repositoryRoot, 'packages/ui/src') },
       { find: '@', replacement: path.join(repositoryRoot, 'packages/ui/src') },
     ],
   },

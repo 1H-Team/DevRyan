@@ -1,4 +1,4 @@
-import { DEFAULT_HELPER_MODEL_SELECTION, parseHelperModelSelection } from '@openchamber/shared-runtime';
+import { DEFAULT_HELPER_MODEL_SELECTION, parseHelperModelSelection } from '@devryan/shared-runtime';
 import fs from 'node:fs/promises';
 
 const fail = (code, status = 403) => Object.assign(new Error(code), { code, status, statusCode: status });

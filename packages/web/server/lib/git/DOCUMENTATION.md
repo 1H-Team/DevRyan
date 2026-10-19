@@ -12,7 +12,7 @@ Managed callers are additionally constrained by the multi-user layer: worktree c
   - `template-routes.js`: Conventional commit template and global `commit-msg` hook setup routes.
   - `operation-state.js`: Shared per-worktree Git operation and HEAD state reader, plus remote-operation preconditions.
   - `service.js`: Core Git operations (repository, branch, worktree, commit, merge/rebase, status/diff, log).
-  - `@openchamber/harness-runtime/lib/git-post-checkout-hook.js`: Shared bounded post-checkout hook execution used by web/Electron.
+  - `@devryan/harness-runtime/lib/git-post-checkout-hook.js`: Shared bounded post-checkout hook execution used by web/Electron.
   - `integrate.js`: Server-owned commit reintegration, temporary worktree lifecycle, conflict continuation, and the `isIntegrateTempPath` predicate that keeps those worktrees out of managed-project registration.
   - `commit-message.js`: Session-free commit-subject prompt, normalization, validation, and direct Zen utility-model generation.
   - `commit-message-context.js`: Bounded host-side status, history, and selected-file diff collection for commit-message drafts.

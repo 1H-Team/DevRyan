@@ -1,4 +1,4 @@
-import { resolveDevRyanDataRoot } from '@openchamber/shared-runtime/node/data-root.js';
+import { resolveDevRyanDataRoot } from '@devryan/shared-runtime/node/data-root.js';
 import { readVersionedFile, writeVersionedFile } from './file-versions.js';
 import { createDeterministicGitReadCache } from './git-read-cache.js';
 

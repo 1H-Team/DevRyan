@@ -74,7 +74,7 @@ test('main adopts the login-shell data roots before capturing its roots or readi
  const adoption=mainSource.indexOf('Object.assign(process.env, selectShellDataRoots(process.env, loadShellEnv(), { packaged: app.isPackaged }));');
  assert.ok(adoption>0,'main adopts the login-shell data roots');
  const capture=mainSource.search(/^const hostDataRootDirectory\s*=/m);
- const binding=mainSource.indexOf("await import('@openchamber/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js')");
+ const binding=mainSource.indexOf("await import('@devryan/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js')");
  assert.ok(capture>adoption&&binding>adoption);
  // The status-only control probe never runs the login shell.
  assert.match(mainSource.slice(mainSource.lastIndexOf('\n',adoption-1)-80,adoption),/if \(!isRuntimeServiceControlProbe\)/);

@@ -1,4 +1,4 @@
-import { PLAN_MODE_SYSTEM_INSTRUCTIONS } from "@openchamber/orchestration-runtime"
+import { PLAN_MODE_SYSTEM_INSTRUCTIONS } from "@devryan/orchestration-runtime"
 import { beforeEach, describe, expect, mock, test } from "bun:test"
 
 const bunTestHooks = (await import("bun:test")) as unknown as {

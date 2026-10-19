@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createDiagnosticSanitizer } from '@openchamber/harness-runtime';
+import { createDiagnosticSanitizer } from '@devryan/harness-runtime';
 import { buildGitGenerationTimingRecord } from './generation-diagnostics.js';
 
 describe('Git generation journal records', () => {

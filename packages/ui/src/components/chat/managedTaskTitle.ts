@@ -1,5 +1,5 @@
 import React from 'react';
-import { isManagedTaskPlaceholderSession } from '@openchamber/orchestration-runtime';
+import { isManagedTaskPlaceholderSession } from '@devryan/orchestration-runtime';
 import { isCursorAcpErrorTitle, isPlaceholderSessionTitle, resolveDisplaySessionTitle } from '@/lib/sessionTitles';
 import { useDirectoryStore } from '@/sync/sync-context';
 import { subscribeToSessionBranch } from '@/sync/session-selectors';

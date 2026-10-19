@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { MANAGED_AGENT_CONTRACT_TAG } from '@openchamber/orchestration-runtime';
+import { MANAGED_AGENT_CONTRACT_TAG } from '@devryan/orchestration-runtime';
 
 import {
   DEFAULT_MANAGED_TURN_BUDGET,

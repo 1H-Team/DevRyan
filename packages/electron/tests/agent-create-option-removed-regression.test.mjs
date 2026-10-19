@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 const distRoots = [
   new URL("../../web/dist/", import.meta.url),
   new URL("../resources/web-dist/", import.meta.url),
-  new URL("../node_modules/@openchamber/web/dist/", import.meta.url),
+  new URL("../node_modules/@devryan/web/dist/", import.meta.url),
 ];
 
 const readDistText = (rootUrl) => {

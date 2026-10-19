@@ -5,8 +5,8 @@ import { createProjectIdFromPath } from '../projects/project-id.js';
 import fs from 'fs';
 import { OPENCODE_CONFIG_DIR } from './shared.js';
 import path from 'path';
-import { clearCursorSdkAuth } from '@openchamber/cursor-sdk-runtime';
-import { resolveProviderPromptTools } from '@openchamber/orchestration-runtime';
+import { clearCursorSdkAuth } from '@devryan/cursor-sdk-runtime';
+import { resolveProviderPromptTools } from '@devryan/orchestration-runtime';
 import {
   GITHUB_COPILOT_PROVIDER_ID,
   getProviderIntegrationLookupIds,

@@ -1,6 +1,6 @@
 import path from 'node:path';
 import {resolveDevRyanDataRoot} from '../shared-runtime/lib/data-root.js';
-import {readNativeShellBundleBinding} from '@openchamber/web/server/lib/opencode/runtime-host/runtime-bundle-root.js';
+import {readNativeShellBundleBinding} from '@devryan/web/server/lib/opencode/runtime-host/runtime-bundle-root.js';
 export {readNativeShellBundleBinding};
 /** Resolve settings from the existing verified native selection without starting
  * a runtime. The shell's service/Bot storage root remains separately captured. */

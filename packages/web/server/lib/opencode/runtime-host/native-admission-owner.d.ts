@@ -1,7 +1,7 @@
 import type { MutationLease, SessionMutationRuntime } from '../../../../../harness-runtime/lib/session-mutations.js';
 import type { OperationPermit, OperationRequest, ShellJobRegistration } from './native-admission-contract.js';
 import type { ManagedTaskRecord } from '../../../../../orchestration-runtime/index.js';
-import type {NativePrimaryContinuationPrompt,NativePromptSelectionReceipt,PrimaryRecoveryExecutionRecord} from '@openchamber/harness-runtime';
+import type {NativePrimaryContinuationPrompt,NativePromptSelectionReceipt,PrimaryRecoveryExecutionRecord} from '@devryan/harness-runtime';
 export interface NativePrimaryContinuationDispatch {readonly sessionID:string;readonly directory:string;readonly messageID:string}
 
 export type NativeManagedTaskDispatch = { readonly taskId: string; readonly leaseToken: string; readonly directory: string } & (

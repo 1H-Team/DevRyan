@@ -1,7 +1,7 @@
 import { describe, expect, test, vi, afterEach } from 'vitest';
 
 import { createWebFilesAPI } from './files';
-import type { FileReadOptions } from '@openchamber/ui/lib/api/types';
+import type { FileReadOptions } from '@devryan/ui/lib/api/types';
 
 const originalFetch = globalThis.fetch;
 const originalDocumentDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'document');

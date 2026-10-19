@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { canApproveBotAction } from '@openchamber/bots-runtime';
+import { canApproveBotAction } from '@devryan/bots-runtime';
 
 import {
   assertExactObject,

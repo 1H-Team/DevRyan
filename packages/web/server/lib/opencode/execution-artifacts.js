@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { verifySessionExecutionLauncher } from '@openchamber/harness-runtime/lib/session-execution.js';
+import { verifySessionExecutionLauncher } from '@devryan/harness-runtime/lib/session-execution.js';
 
 const platform = `${process.platform}-${process.arch}`;
 const extension = process.platform === 'win32' ? '.exe' : '';

@@ -19,15 +19,15 @@ function fixture(files) {
 }
 
 const base = {
-  'packages/web/package.json': { name: '@openchamber/web', main: './server/index.js' },
+  'packages/web/package.json': { name: '@devryan/web', main: './server/index.js' },
   'packages/web/server/index.js': 'export const host = 1;\n',
   'packages/web/server/private.js': 'export const secret = 1;\n',
-  'packages/shared/package.json': { name: '@openchamber/shared', main: './index.js',
+  'packages/shared/package.json': { name: '@devryan/shared', main: './index.js',
     exports: { '.': './index.js', './lib/portable.js': { types: './lib/portable.d.ts', default: './lib/portable.js' } } },
   'packages/shared/index.js': 'export * from "./lib/portable.js";\n',
   'packages/shared/lib/portable.js': 'export const value = 1;\n',
   'packages/shared/lib/node-only.js': 'import fs from "node:fs"; export const read = fs.readFileSync;\n',
-  'packages/library/package.json': { name: '@openchamber/library', main: './index.js' },
+  'packages/library/package.json': { name: '@devryan/library', main: './index.js' },
   'packages/library/index.js': 'export const x = 1;\n',
   'packages/library/lib/deep.js': 'export const y = 1;\n',
   'packages/electron/package.json': { name: '@openchamber/electron' },
@@ -35,11 +35,11 @@ const base = {
 
 test('static, re-export, require and literal dynamic imports of private application files fail', () => {
   const root = fixture({ ...base,
-    'packages/electron/static.mjs': "import { secret } from '@openchamber/web/server/private.js';\n",
+    'packages/electron/static.mjs': "import { secret } from '@devryan/web/server/private.js';\n",
     'packages/electron/reexport.mjs': "export { secret } from '../web/server/private.js';\n",
     'packages/electron/require.cjs': "const { secret } = require('../web/server/private');\n",
-    'packages/electron/dynamic.mjs': "export const load = () => import('@openchamber/web/server/private.js');\n",
-    'packages/electron/allowed.mjs': "import { host } from '@openchamber/web';\nimport { host as again } from '../web/server/index.js';\n",
+    'packages/electron/dynamic.mjs': "export const load = () => import('@devryan/web/server/private.js');\n",
+    'packages/electron/allowed.mjs': "import { host } from '@devryan/web';\nimport { host as again } from '../web/server/index.js';\n",
   });
   const files = ['static.mjs', 'reexport.mjs', 'require.cjs', 'dynamic.mjs', 'allowed.mjs'].map(file => `packages/electron/${file}`);
   const violations = findViolations({ root, files });
@@ -50,20 +50,20 @@ test('static, re-export, require and literal dynamic imports of private applicat
 test('declared exports bind both package-name and relative imports; packages without exports stay open', () => {
   const root = fixture({ ...base,
     'packages/electron/a.mjs': [
-      "import { value } from '@openchamber/shared/lib/portable.js';",
-      "import { read } from '@openchamber/shared/lib/node-only.js';",
+      "import { value } from '@devryan/shared/lib/portable.js';",
+      "import { read } from '@devryan/shared/lib/node-only.js';",
       "import { read as again } from '../shared/lib/node-only.js';",
-      "import { y } from '@openchamber/library/lib/deep.js';",
+      "import { y } from '@devryan/library/lib/deep.js';",
       "import { y as deep } from '../library/lib/deep.js';",
     ].join('\n'),
   });
   const violations = findViolations({ root, files: ['packages/electron/a.mjs'] });
   assert.deepEqual(violations.map(violation => [violation.specifier, violation.rule]), [
-    ['@openchamber/shared/lib/node-only.js', 'unexported-subpath'],
+    ['@devryan/shared/lib/node-only.js', 'unexported-subpath'],
     ['../shared/lib/node-only.js', 'unexported-subpath'],
   ]);
   const packages = loadPackages(root);
-  assert.equal(resolveSpecifier({ root, packages, importer: 'packages/electron/a.mjs', specifier: '@openchamber/shared' }).target, 'packages/shared/index.js');
+  assert.equal(resolveSpecifier({ root, packages, importer: 'packages/electron/a.mjs', specifier: '@devryan/shared' }).target, 'packages/shared/index.js');
   assert.equal(resolveSpecifier({ root, packages, importer: 'packages/electron/a.mjs', specifier: 'react' }), null);
 });
 
@@ -91,12 +91,12 @@ test('exceptions are exact pairs with a stage, and unused ones fail as stale', (
 
 test('an exception never covers a package-name import that the target exports refuse at runtime', () => {
   const exceptionFile = exceptions => ({ 'scripts/import-boundaries.json': { schemaVersion: 1, description: 'fixture', exceptions } });
-  const exported = { ...base, 'packages/web/package.json': { name: '@openchamber/web', main: './server/index.js',
+  const exported = { ...base, 'packages/web/package.json': { name: '@devryan/web', main: './server/index.js',
     exports: { '.': './server/index.js', './server/public.js': './server/public.js' } }, 'packages/web/server/public.js': 'export const value = 1;\n' };
   const files = { ...exported,
-    'packages/electron/by-name.mjs': "import { secret } from '@openchamber/web/server/private.js';\n",
+    'packages/electron/by-name.mjs': "import { secret } from '@devryan/web/server/private.js';\n",
     'packages/electron/relative.mjs': "import { secret } from '../web/server/private.js';\n",
-    'packages/electron/public.mjs': "import { value } from '@openchamber/web/server/public.js';\n" };
+    'packages/electron/public.mjs': "import { value } from '@devryan/web/server/public.js';\n" };
   const listed = ['by-name.mjs', 'relative.mjs'].map(file => ({ importer: `packages/electron/${file}`, target: 'packages/web/server/private.js', stage: 'unscheduled' }));
   const result = checkImportBoundaries({ root: fixture({ ...files, ...exceptionFile(listed) }),
     files: ['by-name.mjs', 'relative.mjs', 'public.mjs'].map(file => `packages/electron/${file}`) });
@@ -106,11 +106,11 @@ test('an exception never covers a package-name import that the target exports re
 
 test('tests may import private files across packages, but never a package-name path exports refuse', () => {
   const root = fixture({ ...base,
-    'packages/web/package.json': { name: '@openchamber/web', main: './server/index.js', exports: { '.': './server/index.js' } },
+    'packages/web/package.json': { name: '@devryan/web', main: './server/index.js', exports: { '.': './server/index.js' } },
     'packages/electron/tests/relative.test.mjs': "import { secret } from '../../web/server/private.js';\n",
     'packages/electron/tests/fixture-main.mjs': "import { secret } from '../../web/server/private.js';\n",
     'packages/electron/parity.spec.ts': "import { secret } from '../web/server/private.js';\n",
-    'packages/electron/tests/by-name.test.mjs': "import { secret } from '@openchamber/web/server/private.js';\n",
+    'packages/electron/tests/by-name.test.mjs': "import { secret } from '@devryan/web/server/private.js';\n",
     'packages/electron/production.mjs': "import { secret } from '../web/server/private.js';\n",
   });
   const files = ['tests/relative.test.mjs', 'tests/fixture-main.mjs', 'parity.spec.ts', 'tests/by-name.test.mjs', 'production.mjs'].map(file => `packages/electron/${file}`);

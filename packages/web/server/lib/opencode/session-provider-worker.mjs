@@ -1,8 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { startReadOnlySessionExecution, verifySessionExecutionLauncher } from '@openchamber/harness-runtime/lib/session-execution.js';
-import { createWindowsPrivateFileOwner } from '@openchamber/harness-runtime/lib/windows-private-files.js';
+import { startReadOnlySessionExecution, verifySessionExecutionLauncher } from '@devryan/harness-runtime/lib/session-execution.js';
+import { createWindowsPrivateFileOwner } from '@devryan/harness-runtime/lib/windows-private-files.js';
 import { prepareClaudeTransportEnvironment } from './claude-credential-projection.js';
 
 const input = JSON.parse(process.env.DEVRYAN_PROVIDER_COMMAND || '{}');

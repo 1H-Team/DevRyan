@@ -1,4 +1,4 @@
-import { fetchOpenCodeGoQuotaAdapter } from '@openchamber/shared-runtime';
+import { fetchOpenCodeGoQuotaAdapter } from '@devryan/shared-runtime';
 
 import { mutateAuthFile, readAuthFile } from '../../opencode/auth.js';
 import { deleteLegacyOpenCodeGoQuotaCredential } from '../credentials/store.js';

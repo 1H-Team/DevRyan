@@ -64,7 +64,7 @@ export async function runNativeInterviewDocumentWorker(){
  await createNativeReadGuard({directory})(target);
  const operation=decodeInterviewOperation(decoded.operation);
  if('record' in operation&&operation.record.markdownPath!==target)throw Error('native_interview_input_invalid');
- const original=await import('@openchamber/agents-core');let result:string|null=null;
+ const original=await import('@devryan/agents-core');let result:string|null=null;
  if(operation.kind==='ensure')await original.ensureInterviewFile(operation.record);
  else if(operation.kind==='read')result=await original.readInterviewDocument(operation.record);
  else if(operation.kind==='claim')result=await original.claimInterviewDocument(target,operation.sessionID,operation.baseMessageCount);

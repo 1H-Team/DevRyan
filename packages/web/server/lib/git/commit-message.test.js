@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createFreeZenCooldowns } from '@openchamber/shared-runtime';
+import { createFreeZenCooldowns } from '@devryan/shared-runtime';
 
 import {
   COMMIT_GENERATION_CHAT_MAX_TOKENS,

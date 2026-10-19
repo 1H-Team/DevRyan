@@ -3,7 +3,7 @@ import yazl from 'yazl';
 import {
   createDiagnosticsExport,
   writeDiagnosticsZip,
-} from '@openchamber/harness-runtime';
+} from '@devryan/harness-runtime';
 
 const CLEAR_RANGE_MS = Object.freeze({
   '24h': 24 * 60 * 60 * 1000,

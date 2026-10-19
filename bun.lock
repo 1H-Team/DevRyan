@@ -44,7 +44,7 @@
       },
     },
     "packages/agents-core": {
-      "name": "@openchamber/agents-core",
+      "name": "@devryan/agents-core",
       "version": "2.1.3",
       "dependencies": {
         "@mozilla/readability": "0.6.0",
@@ -59,23 +59,23 @@
       },
     },
     "packages/bot-computer": {
-      "name": "@openchamber/bot-computer",
+      "name": "@devryan/bot-computer",
       "version": "2.1.3",
     },
     "packages/bot-db": {
-      "name": "@openchamber/bot-db",
+      "name": "@devryan/bot-db",
       "version": "2.1.3",
     },
     "packages/bot-egress": {
-      "name": "@openchamber/bot-egress",
+      "name": "@devryan/bot-egress",
       "version": "2.1.3",
     },
     "packages/bot-engine-proxy": {
-      "name": "@openchamber/bot-engine-proxy",
+      "name": "@devryan/bot-engine-proxy",
       "version": "2.1.3",
     },
     "packages/bot-indexer": {
-      "name": "@openchamber/bot-indexer",
+      "name": "@devryan/bot-indexer",
       "version": "2.1.3",
       "dependencies": {
         "@xenova/transformers": "2.17.2",
@@ -83,15 +83,15 @@
       },
     },
     "packages/bot-supervisor": {
-      "name": "@openchamber/bot-supervisor",
+      "name": "@devryan/bot-supervisor",
       "version": "2.1.3",
     },
     "packages/bots-runtime": {
-      "name": "@openchamber/bots-runtime",
+      "name": "@devryan/bots-runtime",
       "version": "2.1.3",
     },
     "packages/cursor-sdk-runtime": {
-      "name": "@openchamber/cursor-sdk-runtime",
+      "name": "@devryan/cursor-sdk-runtime",
       "version": "2.1.3",
       "dependencies": {
         "@cursor/sdk": "1.0.28",
@@ -112,9 +112,9 @@
       "name": "@openchamber/electron",
       "version": "2.1.3",
       "dependencies": {
-        "@openchamber/bot-db": "workspace:*",
-        "@openchamber/bot-egress": "workspace:*",
-        "@openchamber/web": "workspace:*",
+        "@devryan/bot-db": "workspace:*",
+        "@devryan/bot-egress": "workspace:*",
+        "@devryan/web": "workspace:*",
         "electron-context-menu": "^4.1.2",
         "electron-log": "^5.4.4",
         "ws": "^8.21.3",
@@ -127,25 +127,25 @@
       },
     },
     "packages/harness-runtime": {
-      "name": "@openchamber/harness-runtime",
+      "name": "@devryan/harness-runtime",
       "version": "2.1.3",
       "dependencies": {
-        "@openchamber/shared-runtime": "workspace:*",
+        "@devryan/shared-runtime": "workspace:*",
       },
     },
     "packages/orchestration-runtime": {
-      "name": "@openchamber/orchestration-runtime",
+      "name": "@devryan/orchestration-runtime",
       "version": "2.1.3",
     },
     "packages/shared-runtime": {
-      "name": "@openchamber/shared-runtime",
+      "name": "@devryan/shared-runtime",
       "version": "2.1.3",
       "dependencies": {
         "adm-zip": "^0.6.0",
       },
     },
     "packages/ui": {
-      "name": "@openchamber/ui",
+      "name": "@devryan/ui",
       "version": "2.1.3",
       "dependencies": {
         "@base-ui/react": "^1.8.0",
@@ -170,14 +170,14 @@
         "@codemirror/search": "^6.7.2",
         "@codemirror/state": "^6.7.1",
         "@codemirror/view": "6.39.13",
+        "@devryan/orchestration-runtime": "workspace:*",
+        "@devryan/shared-runtime": "workspace:*",
         "@dnd-kit/core": "^6.3.1",
         "@dnd-kit/sortable": "^10.0.0",
         "@dnd-kit/utilities": "^3.2.2",
         "@fontsource/ibm-plex-mono": "^5.3.0",
         "@fontsource/ibm-plex-sans": "^5.3.0",
         "@lezer/highlight": "^1.2.3",
-        "@openchamber/orchestration-runtime": "workspace:*",
-        "@openchamber/shared-runtime": "workspace:*",
         "@opencode-ai/sdk": "^1.18.33",
         "@pierre/diffs": "1.1.0-beta.13",
         "@remixicon/react": "^4.9.0",
@@ -238,7 +238,7 @@
       },
     },
     "packages/web": {
-      "name": "@openchamber/web",
+      "name": "@devryan/web",
       "version": "2.1.3",
       "bin": {
         "openchamber": "./bin/cli.js",
@@ -246,15 +246,15 @@
       "dependencies": {
         "@ag-ui/core": "0.0.58",
         "@clack/prompts": "^1.7.0",
+        "@devryan/agents-core": "workspace:*",
+        "@devryan/bot-db": "workspace:*",
+        "@devryan/bots-runtime": "workspace:*",
+        "@devryan/cursor-sdk-runtime": "workspace:*",
+        "@devryan/harness-runtime": "workspace:*",
+        "@devryan/orchestration-runtime": "workspace:*",
+        "@devryan/shared-runtime": "workspace:*",
         "@modelcontextprotocol/sdk": "1.29.0",
         "@octokit/rest": "^22.0.1",
-        "@openchamber/agents-core": "workspace:*",
-        "@openchamber/bot-db": "workspace:*",
-        "@openchamber/bots-runtime": "workspace:*",
-        "@openchamber/cursor-sdk-runtime": "workspace:*",
-        "@openchamber/harness-runtime": "workspace:*",
-        "@openchamber/orchestration-runtime": "workspace:*",
-        "@openchamber/shared-runtime": "workspace:*",
         "@opencode-ai/sdk": "^1.18.33",
         "@opencode/ai": "2.0.32",
         "@opencode/core": "2.0.32",
@@ -289,10 +289,10 @@
         "@base-ui/react": "^1.8.0",
         "@codemirror/lang-cpp": "^6.0.3",
         "@codemirror/lang-go": "^6.0.1",
+        "@devryan/ui": "workspace:*",
         "@eslint/js": "^9.39.5",
         "@fontsource/ibm-plex-mono": "^5.3.0",
         "@fontsource/ibm-plex-sans": "^5.3.0",
-        "@openchamber/ui": "workspace:*",
         "@opencode-ai/plugin": "1.18.33",
         "@opencode/simulation": "2.0.32",
         "@remixicon/react": "^4.9.0",
@@ -690,6 +690,34 @@
 
     "@develar/schema-utils": ["@develar/schema-utils@2.6.5", "", { "dependencies": { "ajv": "^6.12.0", "ajv-keywords": "^3.4.1" } }, "sha512-0cp4PsWQ/9avqTVMCtZ+GirikIA36ikvjtHweU4/j8yLtgObI0+JUPhYFScgwlteveGB1rt3Cm8UhN04XayDig=="],
 
+    "@devryan/agents-core": ["@devryan/agents-core@workspace:packages/agents-core"],
+
+    "@devryan/bot-computer": ["@devryan/bot-computer@workspace:packages/bot-computer"],
+
+    "@devryan/bot-db": ["@devryan/bot-db@workspace:packages/bot-db"],
+
+    "@devryan/bot-egress": ["@devryan/bot-egress@workspace:packages/bot-egress"],
+
+    "@devryan/bot-engine-proxy": ["@devryan/bot-engine-proxy@workspace:packages/bot-engine-proxy"],
+
+    "@devryan/bot-indexer": ["@devryan/bot-indexer@workspace:packages/bot-indexer"],
+
+    "@devryan/bot-supervisor": ["@devryan/bot-supervisor@workspace:packages/bot-supervisor"],
+
+    "@devryan/bots-runtime": ["@devryan/bots-runtime@workspace:packages/bots-runtime"],
+
+    "@devryan/cursor-sdk-runtime": ["@devryan/cursor-sdk-runtime@workspace:packages/cursor-sdk-runtime"],
+
+    "@devryan/harness-runtime": ["@devryan/harness-runtime@workspace:packages/harness-runtime"],
+
+    "@devryan/orchestration-runtime": ["@devryan/orchestration-runtime@workspace:packages/orchestration-runtime"],
+
+    "@devryan/shared-runtime": ["@devryan/shared-runtime@workspace:packages/shared-runtime"],
+
+    "@devryan/ui": ["@devryan/ui@workspace:packages/ui"],
+
+    "@devryan/web": ["@devryan/web@workspace:packages/web"],
+
     "@dnd-kit/accessibility": ["@dnd-kit/accessibility@3.1.1", "", { "dependencies": { "tslib": "^2.0.0" }, "peerDependencies": { "react": ">=16.8.0" } }, "sha512-2P+YgaXF+gRsIihwwY1gCsQSYnu9Zyj2py8kY5fFvUM1qm2WA2u639R6YNVfU4GWr+ZM5mqEsfHZZLoRONbemw=="],
 
     "@dnd-kit/core": ["@dnd-kit/core@6.3.1", "", { "dependencies": { "@dnd-kit/accessibility": "^3.1.1", "@dnd-kit/utilities": "^3.2.2", "tslib": "^2.0.0" }, "peerDependencies": { "react": ">=16.8.0", "react-dom": ">=16.8.0" } }, "sha512-xkGBRQQab4RLwgXxoqETICr6S5JlogafbhNsidmrkVv2YRs5MLwpjoF2qpiGjQt8S9AoxtIV603s0GIUpY5eYQ=="],
@@ -1006,37 +1034,9 @@
 
     "@octokit/types": ["@octokit/types@16.0.0", "", { "dependencies": { "@octokit/openapi-types": "^27.0.0" } }, "sha512-sKq+9r1Mm4efXW1FCk7hFSeJo4QKreL/tTbR0rz/qx/r1Oa2VV83LTA/H/MuCOX7uCIJmQVRKBcbmWoySjAnSg=="],
 
-    "@openchamber/agents-core": ["@openchamber/agents-core@workspace:packages/agents-core"],
-
-    "@openchamber/bot-computer": ["@openchamber/bot-computer@workspace:packages/bot-computer"],
-
-    "@openchamber/bot-db": ["@openchamber/bot-db@workspace:packages/bot-db"],
-
-    "@openchamber/bot-egress": ["@openchamber/bot-egress@workspace:packages/bot-egress"],
-
-    "@openchamber/bot-engine-proxy": ["@openchamber/bot-engine-proxy@workspace:packages/bot-engine-proxy"],
-
-    "@openchamber/bot-indexer": ["@openchamber/bot-indexer@workspace:packages/bot-indexer"],
-
-    "@openchamber/bot-supervisor": ["@openchamber/bot-supervisor@workspace:packages/bot-supervisor"],
-
-    "@openchamber/bots-runtime": ["@openchamber/bots-runtime@workspace:packages/bots-runtime"],
-
-    "@openchamber/cursor-sdk-runtime": ["@openchamber/cursor-sdk-runtime@workspace:packages/cursor-sdk-runtime"],
-
     "@openchamber/desktop": ["@openchamber/desktop@workspace:packages/desktop"],
 
     "@openchamber/electron": ["@openchamber/electron@workspace:packages/electron"],
-
-    "@openchamber/harness-runtime": ["@openchamber/harness-runtime@workspace:packages/harness-runtime"],
-
-    "@openchamber/orchestration-runtime": ["@openchamber/orchestration-runtime@workspace:packages/orchestration-runtime"],
-
-    "@openchamber/shared-runtime": ["@openchamber/shared-runtime@workspace:packages/shared-runtime"],
-
-    "@openchamber/ui": ["@openchamber/ui@workspace:packages/ui"],
-
-    "@openchamber/web": ["@openchamber/web@workspace:packages/web"],
 
     "@opencode-ai/plugin": ["@opencode-ai/plugin@1.18.33", "", { "dependencies": { "@ai-sdk/provider": "3.0.8", "@opencode-ai/sdk": "1.18.33", "effect": "4.0.0-beta.83", "zod": "4.1.8" }, "peerDependencies": { "@opentui/core": ">=0.4.5", "@opentui/keymap": ">=0.4.5", "@opentui/solid": ">=0.4.5" }, "optionalPeers": ["@opentui/core", "@opentui/keymap", "@opentui/solid"] }, "sha512-fmhqCBJvNt+Vfbx6ckKP19S3xwMBhUXLCBQaK92R4wnv3wsWTZYkJQwYf2egiWfJNOl47jhs3vP7uQkl0mvHQw=="],
 
@@ -1658,7 +1658,7 @@
 
     "asn1.js": ["asn1.js@5.4.1", "", { "dependencies": { "bn.js": "^4.0.0", "inherits": "^2.0.1", "minimalistic-assert": "^1.0.0", "safer-buffer": "^2.1.0" } }, "sha512-+I//4cYPccV8LdmBLiX8CYvf9Sp3vQsrqu2QNXRcrbiWvcx/UdlFiqUJJzxRQxgsZmvhXhn4cSKeSmoFjVdupA=="],
 
-    "asn1js": ["asn1js@3.0.10", "", { "dependencies": { "pvtsutils": "^1.3.6", "pvutils": "^1.1.5", "tslib": "^2.8.1" } }, "sha512-S2s3aOytiKdFRdulw2qPE51MzjzVOisppcVv7jVFR+Kw0kxwvFrDcYA0h7Ndqbmj0HkMIXYWaoj7fli8kgx1eg=="],
+    "asn1js": ["asn1js@3.0.7", "", { "dependencies": { "pvtsutils": "^1.3.6", "pvutils": "^1.1.3", "tslib": "^2.8.1" } }, "sha512-uLvq6KJu04qoQM6gvBfKFjlh6Gl0vOKQuR5cJMDHQkmwfMOQeN3F3SHCv9SNYSL+CRoHvOGFfllDlVz03GQjvQ=="],
 
     "assert-plus": ["assert-plus@1.0.0", "", {}, "sha512-NfJ4UzBCcQGLDlQq7nHxH+tv3kyZ0hHQqF5BO6J7tNJeP5do1llPr8dZ8zHonfhAu0PHAdMkSo+8o0wxg9lZWw=="],
 
@@ -3744,28 +3744,6 @@
 
     "@parcel/watcher/detect-libc": ["detect-libc@1.0.3", "", { "bin": { "detect-libc": "./bin/detect-libc.js" } }, "sha512-pGjwhsmsp4kL2RTz08wcOlGN83otlqHeD/Z5T8GXZB+/YcpQ/dgo+lbU8ZsGxV0HIvqqxo9l7mqYwyYMD9bKDg=="],
 
-    "@peculiar/asn1-android/asn1js": ["asn1js@3.0.7", "", { "dependencies": { "pvtsutils": "^1.3.6", "pvutils": "^1.1.3", "tslib": "^2.8.1" } }, "sha512-uLvq6KJu04qoQM6gvBfKFjlh6Gl0vOKQuR5cJMDHQkmwfMOQeN3F3SHCv9SNYSL+CRoHvOGFfllDlVz03GQjvQ=="],
-
-    "@peculiar/asn1-cms/asn1js": ["asn1js@3.0.7", "", { "dependencies": { "pvtsutils": "^1.3.6", "pvutils": "^1.1.3", "tslib": "^2.8.1" } }, "sha512-uLvq6KJu04qoQM6gvBfKFjlh6Gl0vOKQuR5cJMDHQkmwfMOQeN3F3SHCv9SNYSL+CRoHvOGFfllDlVz03GQjvQ=="],
-
-    "@peculiar/asn1-csr/asn1js": ["asn1js@3.0.7", "", { "dependencies": { "pvtsutils": "^1.3.6", "pvutils": "^1.1.3", "tslib": "^2.8.1" } }, "sha512-uLvq6KJu04qoQM6gvBfKFjlh6Gl0vOKQuR5cJMDHQkmwfMOQeN3F3SHCv9SNYSL+CRoHvOGFfllDlVz03GQjvQ=="],
-
-    "@peculiar/asn1-ecc/asn1js": ["asn1js@3.0.7", "", { "dependencies": { "pvtsutils": "^1.3.6", "pvutils": "^1.1.3", "tslib": "^2.8.1" } }, "sha512-uLvq6KJu04qoQM6gvBfKFjlh6Gl0vOKQuR5cJMDHQkmwfMOQeN3F3SHCv9SNYSL+CRoHvOGFfllDlVz03GQjvQ=="],
-
-    "@peculiar/asn1-pfx/asn1js": ["asn1js@3.0.7", "", { "dependencies": { "pvtsutils": "^1.3.6", "pvutils": "^1.1.3", "tslib": "^2.8.1" } }, "sha512-uLvq6KJu04qoQM6gvBfKFjlh6Gl0vOKQuR5cJMDHQkmwfMOQeN3F3SHCv9SNYSL+CRoHvOGFfllDlVz03GQjvQ=="],
-
-    "@peculiar/asn1-pkcs8/asn1js": ["asn1js@3.0.7", "", { "dependencies": { "pvtsutils": "^1.3.6", "pvutils": "^1.1.3", "tslib": "^2.8.1" } }, "sha512-uLvq6KJu04qoQM6gvBfKFjlh6Gl0vOKQuR5cJMDHQkmwfMOQeN3F3SHCv9SNYSL+CRoHvOGFfllDlVz03GQjvQ=="],
-
-    "@peculiar/asn1-pkcs9/asn1js": ["asn1js@3.0.7", "", { "dependencies": { "pvtsutils": "^1.3.6", "pvutils": "^1.1.3", "tslib": "^2.8.1" } }, "sha512-uLvq6KJu04qoQM6gvBfKFjlh6Gl0vOKQuR5cJMDHQkmwfMOQeN3F3SHCv9SNYSL+CRoHvOGFfllDlVz03GQjvQ=="],
-
-    "@peculiar/asn1-rsa/asn1js": ["asn1js@3.0.7", "", { "dependencies": { "pvtsutils": "^1.3.6", "pvutils": "^1.1.3", "tslib": "^2.8.1" } }, "sha512-uLvq6KJu04qoQM6gvBfKFjlh6Gl0vOKQuR5cJMDHQkmwfMOQeN3F3SHCv9SNYSL+CRoHvOGFfllDlVz03GQjvQ=="],
-
-    "@peculiar/asn1-schema/asn1js": ["asn1js@3.0.7", "", { "dependencies": { "pvtsutils": "^1.3.6", "pvutils": "^1.1.3", "tslib": "^2.8.1" } }, "sha512-uLvq6KJu04qoQM6gvBfKFjlh6Gl0vOKQuR5cJMDHQkmwfMOQeN3F3SHCv9SNYSL+CRoHvOGFfllDlVz03GQjvQ=="],
-
-    "@peculiar/asn1-x509/asn1js": ["asn1js@3.0.7", "", { "dependencies": { "pvtsutils": "^1.3.6", "pvutils": "^1.1.3", "tslib": "^2.8.1" } }, "sha512-uLvq6KJu04qoQM6gvBfKFjlh6Gl0vOKQuR5cJMDHQkmwfMOQeN3F3SHCv9SNYSL+CRoHvOGFfllDlVz03GQjvQ=="],
-
-    "@peculiar/asn1-x509-attr/asn1js": ["asn1js@3.0.7", "", { "dependencies": { "pvtsutils": "^1.3.6", "pvutils": "^1.1.3", "tslib": "^2.8.1" } }, "sha512-uLvq6KJu04qoQM6gvBfKFjlh6Gl0vOKQuR5cJMDHQkmwfMOQeN3F3SHCv9SNYSL+CRoHvOGFfllDlVz03GQjvQ=="],
-
     "@peculiar/webcrypto/@peculiar/asn1-schema": ["@peculiar/asn1-schema@2.9.4", "", { "dependencies": { "@peculiar/utils": "^2.0.2", "asn1js": "^3.0.10", "tslib": "^2.8.1" } }, "sha512-GjzePcT9Iw8NzeOPf73iNS9xM+TBhd/FilAfP+RQGkTMQJTVWtytN3JHJACCjf/ABNau5S7mS3g+DcuxmRgYEg=="],
 
     "@pierre/diffs/diff": ["diff@8.0.3", "", {}, "sha512-qejHi7bcSD4hQAZE0tNAawRK1ZtafHDmMTMkrrIGgSLl7hTnQHmKCeB45xAcbfTqK2zowkM3j3bHt/4b/ARbYQ=="],
@@ -3839,6 +3817,8 @@
     "app-builder-lib/@electron/rebuild": ["@electron/rebuild@4.2.0", "", { "dependencies": { "@malept/cross-spawn-promise": "^2.0.0", "debug": "^4.1.1", "node-abi": "^4.2.0", "node-api-version": "^0.2.1", "node-gyp": "^12.2.0", "read-binary-file-arch": "^1.0.6" }, "bin": { "electron-rebuild": "lib/cli.js" } }, "sha512-RKL/O+jGoXJMxrx/5771y1n0xTKmFuOYGO3gMmwypBM6rsH0kou0mswwdXA2JrhIkE4xyC7v9vGk0n6NPzgOxQ=="],
 
     "app-builder-lib/ajv": ["ajv@8.18.0", "", { "dependencies": { "fast-deep-equal": "^3.1.3", "fast-uri": "^3.0.1", "json-schema-traverse": "^1.0.0", "require-from-string": "^2.0.2" } }, "sha512-PlXPeEWMXMZ7sPYOHqmDyCJzcfNrUr3fGNKtezX14ykXOEIvyK81d+qydx89KY5O71FKMPaQ2vBfBFI5NHR63A=="],
+
+    "app-builder-lib/asn1js": ["asn1js@3.0.10", "", { "dependencies": { "pvtsutils": "^1.3.6", "pvutils": "^1.1.5", "tslib": "^2.8.1" } }, "sha512-S2s3aOytiKdFRdulw2qPE51MzjzVOisppcVv7jVFR+Kw0kxwvFrDcYA0h7Ndqbmj0HkMIXYWaoj7fli8kgx1eg=="],
 
     "app-builder-lib/ci-info": ["ci-info@4.3.1", "", {}, "sha512-Wdy2Igu8OcBpI2pZePZ5oWjPC38tmDVx5WKUXKwlLYkA0ozo85sLsLvkBbBn/sZaSCMFOGZJ14fvW9t5/d7kdA=="],
 
@@ -4006,6 +3986,8 @@
 
     "pkijs/@noble/hashes": ["@noble/hashes@1.4.0", "", {}, "sha512-V1JJ1WTRUqHHrOSh597hURcMqVKVGL/ea3kv0gSnEdsEZ0/+VyPghM1lMNGc00z7CIQorSvbKpuJkxvuHbvdbg=="],
 
+    "pkijs/asn1js": ["asn1js@3.0.10", "", { "dependencies": { "pvtsutils": "^1.3.6", "pvutils": "^1.1.5", "tslib": "^2.8.1" } }, "sha512-S2s3aOytiKdFRdulw2qPE51MzjzVOisppcVv7jVFR+Kw0kxwvFrDcYA0h7Ndqbmj0HkMIXYWaoj7fli8kgx1eg=="],
+
     "plist/xmlbuilder": ["xmlbuilder@15.1.1", "", {}, "sha512-yMqGBqtXyeN1e3TGYvgNgDVZ3j84W4cwkOXQswghol6APgZWaff9lnbvN7MHYJOiXsvGPXtjTYJEiC9J2wv9Eg=="],
 
     "postject/commander": ["commander@9.5.0", "", {}, "sha512-KRs7WVDKg86PWiuAqhDrAQnTXZKraVcCc6vFdL14qrZ/DcWwuRo7VoiYXalXO7S5GKpqYiVEwCbgFDfxNHKJBQ=="],
@@ -4096,6 +4078,8 @@
 
     "webcrypto-core/@peculiar/asn1-schema": ["@peculiar/asn1-schema@2.9.4", "", { "dependencies": { "@peculiar/utils": "^2.0.2", "asn1js": "^3.0.10", "tslib": "^2.8.1" } }, "sha512-GjzePcT9Iw8NzeOPf73iNS9xM+TBhd/FilAfP+RQGkTMQJTVWtytN3JHJACCjf/ABNau5S7mS3g+DcuxmRgYEg=="],
 
+    "webcrypto-core/asn1js": ["asn1js@3.0.10", "", { "dependencies": { "pvtsutils": "^1.3.6", "pvutils": "^1.1.5", "tslib": "^2.8.1" } }, "sha512-S2s3aOytiKdFRdulw2qPE51MzjzVOisppcVv7jVFR+Kw0kxwvFrDcYA0h7Ndqbmj0HkMIXYWaoj7fli8kgx1eg=="],
+
     "workbox-build/ajv": ["ajv@8.18.0", "", { "dependencies": { "fast-deep-equal": "^3.1.3", "fast-uri": "^3.0.1", "json-schema-traverse": "^1.0.0", "require-from-string": "^2.0.2" } }, "sha512-PlXPeEWMXMZ7sPYOHqmDyCJzcfNrUr3fGNKtezX14ykXOEIvyK81d+qydx89KY5O71FKMPaQ2vBfBFI5NHR63A=="],
 
     "workbox-build/fs-extra": ["fs-extra@9.1.0", "", { "dependencies": { "at-least-node": "^1.0.0", "graceful-fs": "^4.2.0", "jsonfile": "^6.0.1", "universalify": "^2.0.0" } }, "sha512-hcg3ZmepS30/7BSFqRvoo3DOMQu7IjqxO5nCDt+zM9XWjb33Wg7ziNT+Qvqbuc3+gWpzO02JubVyk2G4Zvo1OQ=="],
@@ -4185,6 +4169,8 @@
     "@npmcli/move-file/rimraf/glob": ["glob@7.2.3", "", { "dependencies": { "fs.realpath": "^1.0.0", "inflight": "^1.0.4", "inherits": "2", "minimatch": "^3.1.1", "once": "^1.3.0", "path-is-absolute": "^1.0.0" } }, "sha512-nFR0zLpU2YCaRxwoCJvL6UvCH2JFyFVIvwTLsIf21AuHlMskA1hhTdk+LlYJtOlYt9v6dvszD2BGRqBL+iQK9Q=="],
 
     "@opencode-ai/plugin/effect/ini": ["ini@7.0.0", "", {}, "sha512-ifK0CgjALofS5bkrcTy4RaQ9Vx2Knf/eLeIO+NaswQEpH1UblrtTSCIvN71qQDMq0PeQ/SSPojvEJp9vvvfr+w=="],
+
+    "@peculiar/webcrypto/@peculiar/asn1-schema/asn1js": ["asn1js@3.0.10", "", { "dependencies": { "pvtsutils": "^1.3.6", "pvutils": "^1.1.5", "tslib": "^2.8.1" } }, "sha512-S2s3aOytiKdFRdulw2qPE51MzjzVOisppcVv7jVFR+Kw0kxwvFrDcYA0h7Ndqbmj0HkMIXYWaoj7fli8kgx1eg=="],
 
     "@sigstore/sign/make-fetch-happen/negotiator": ["negotiator@1.0.0", "", {}, "sha512-8Ofs/AUQh8MaEcrlq5xOX0CQ9ypTF5dl78mjlMNfOK08fzpgTHQRQPBxcPlEtIw0yRpws+Zo/3r+5WRby7u3Gg=="],
 

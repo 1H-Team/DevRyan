@@ -1,6 +1,6 @@
 import { BOT_TARGET_OPENCODE_VERSION } from '../opencode/version-policy.js';
 import { setTimeout as delay } from 'node:timers/promises';
-import { classifyProviderTransportFailure } from '@openchamber/orchestration-runtime';
+import { classifyProviderTransportFailure } from '@devryan/orchestration-runtime';
 import { createBotNativeClient } from './native-client.js';
 import { readResponseBody } from '../opencode/opencode-client/envelope.js';
 

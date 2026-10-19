@@ -6,7 +6,7 @@ import {
   hashBotAction,
   resolveBotApprovalClass,
   validateBotActionDescriptor,
-} from '@openchamber/bots-runtime';
+} from '@devryan/bots-runtime';
 
 import {
   assertExactObject,

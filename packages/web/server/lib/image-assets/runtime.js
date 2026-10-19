@@ -3,7 +3,7 @@ import {
   canonicalizeAssistantImageSource,
   extractAssistantImageReferences,
   isSupportedAssistantImageSource,
-} from '@openchamber/shared-runtime';
+} from '@devryan/shared-runtime';
 
 import { openCodeClientErrorStatus, resolveGen2OpenCodeClient } from '../opencode/opencode-client-seam.js';
 

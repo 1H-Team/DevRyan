@@ -1,7 +1,7 @@
 {
-  "name": "openchamber-monorepo",
+  "name": "devryan-monorepo",
   "version": "2.1.3",
-  "description": "OpenChamber monorepo workspace for web, ui, and desktop runtimes",
+  "description": "DevRyan monorepo workspace for web, ui, and desktop runtimes",
   "private": true,
   "type": "module",
   "packageManager": "bun@1.3.14",
@@ -15,7 +15,7 @@
     "opencode",
     "ai",
     "coding",
-    "openchamber",
+    "devryan",
     "cli"
   ],
   "author": "Bohdan Triapitsyn",

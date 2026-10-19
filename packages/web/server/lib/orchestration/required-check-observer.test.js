@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createManagedTaskScheduler } from '@openchamber/orchestration-runtime';
+import { createManagedTaskScheduler } from '@devryan/orchestration-runtime';
 import { createRequiredCheckObserver } from './required-check-observer.js';
 
 describe('canonical required checks against final content', () => {

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { resolveMissedBotRoutineOccurrences } from '@openchamber/bots-runtime';
+import { resolveMissedBotRoutineOccurrences } from '@devryan/bots-runtime';
 import parser from 'cron-parser';
 import { DateTime, IANAZone } from 'luxon';
 

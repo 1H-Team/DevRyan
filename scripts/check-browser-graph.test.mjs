@@ -19,9 +19,9 @@ function fixture(files) {
 }
 
 const packages = {
-  'packages/web/package.json': { name: '@openchamber/web', main: './server/index.js' },
-  'packages/ui/package.json': { name: '@openchamber/ui', main: 'src/main.tsx' },
-  'packages/shared-runtime/package.json': { name: '@openchamber/shared-runtime', main: './index.js',
+  'packages/web/package.json': { name: '@devryan/web', main: './server/index.js' },
+  'packages/ui/package.json': { name: '@devryan/ui', main: 'src/main.tsx' },
+  'packages/shared-runtime/package.json': { name: '@devryan/shared-runtime', main: './index.js',
     exports: { '.': './index.js', './lib/portable.js': './lib/portable.js', './node/safe-archive.js': './lib/safe-archive.js' } },
   'packages/shared-runtime/lib/portable.js': 'export const value = 1;\n',
   'packages/shared-runtime/lib/safe-archive.js': 'export const extract = 1;\n',
@@ -30,10 +30,10 @@ const packages = {
 
 test('a portable graph through aliases, lazy chunks and workers passes', () => {
   const root = fixture({ ...packages,
-    'packages/web/src/main.tsx': "import '@/app';\nimport '@web/shell';\nconst lazy = () => import('@openchamber/ui/lazy');\nnew Worker(new URL('./worker.ts', import.meta.url));\n",
+    'packages/web/src/main.tsx': "import '@/app';\nimport '@web/shell';\nconst lazy = () => import('@devryan/ui/lazy');\nnew Worker(new URL('./worker.ts', import.meta.url));\n",
     'packages/web/src/shell.ts': "import React from 'react';\nexport default React;\n",
     'packages/web/src/worker.ts': 'export {};\n',
-    'packages/ui/src/app.tsx': "import { value } from '@openchamber/shared-runtime/lib/portable.js';\nexport default value;\n",
+    'packages/ui/src/app.tsx': "import { value } from '@devryan/shared-runtime/lib/portable.js';\nexport default value;\n",
     'packages/ui/src/lazy.ts': 'export {};\n',
   });
   const result = walkBrowserGraph({ root, entries: ['packages/web/src/main.tsx'] });
@@ -47,7 +47,7 @@ test('Node builtins, adm-zip and privileged implementations anywhere in the grap
     'packages/ui/src/a.ts': "import fs from 'node:fs';\nimport path from 'path';\n",
     'packages/ui/src/b.ts': "import AdmZip from 'adm-zip';\n",
     'packages/ui/src/c.ts': "export const load = () => import('../../web/server/private.js');\n",
-    'packages/ui/src/d.ts': "import { extract } from '@openchamber/shared-runtime/node/safe-archive.js';\n",
+    'packages/ui/src/d.ts': "import { extract } from '@devryan/shared-runtime/node/safe-archive.js';\n",
   });
   const { violations } = walkBrowserGraph({ root, entries: ['packages/web/src/main.tsx'] });
   assert.deepEqual(violations.map(violation => [violation.importer, violation.target, violation.reason]).sort(), [
