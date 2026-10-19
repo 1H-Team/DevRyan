@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { applyExceptions, checkImportBoundaries, findViolations, loadPackages, readExceptions, resolveSpecifier } from './check-import-boundaries.mjs';
+import { applyExceptions, checkImportBoundaries, findViolations, isTestImporter, loadPackages, readExceptions, resolveSpecifier } from './check-import-boundaries.mjs';
 
 const roots = [];
 after(() => { for (const root of roots) rmSync(root, { recursive: true, force: true }); });
@@ -102,6 +102,24 @@ test('an exception never covers a package-name import that the target exports re
     files: ['by-name.mjs', 'relative.mjs', 'public.mjs'].map(file => `packages/electron/${file}`) });
   assert.deepEqual(result.unexpected.map(violation => [violation.importer, violation.runtimeRefused]), [['packages/electron/by-name.mjs', true]]);
   assert.deepEqual(result.stale, [listed[0]], 'the refused pair is not a usable exception');
+});
+
+test('tests may import private files across packages, but never a package-name path exports refuse', () => {
+  const root = fixture({ ...base,
+    'packages/web/package.json': { name: '@openchamber/web', main: './server/index.js', exports: { '.': './server/index.js' } },
+    'packages/electron/tests/relative.test.mjs': "import { secret } from '../../web/server/private.js';\n",
+    'packages/electron/tests/fixture-main.mjs': "import { secret } from '../../web/server/private.js';\n",
+    'packages/electron/parity.spec.ts': "import { secret } from '../web/server/private.js';\n",
+    'packages/electron/tests/by-name.test.mjs': "import { secret } from '@openchamber/web/server/private.js';\n",
+    'packages/electron/production.mjs': "import { secret } from '../web/server/private.js';\n",
+  });
+  const files = ['tests/relative.test.mjs', 'tests/fixture-main.mjs', 'parity.spec.ts', 'tests/by-name.test.mjs', 'production.mjs'].map(file => `packages/electron/${file}`);
+  assert.deepEqual(findViolations({ root, files }).map(violation => [violation.importer, violation.runtimeRefused]), [
+    ['packages/electron/tests/by-name.test.mjs', true],
+    ['packages/electron/production.mjs', false],
+  ]);
+  assert.equal(isTestImporter('packages/ui/src/sync/session-presentation.integration.test.js'), true);
+  assert.equal(isTestImporter('packages/web/server/lib/testing-helpers.js'), false);
 });
 
 test('the repository has no unlisted private imports and no stale exceptions', () => {

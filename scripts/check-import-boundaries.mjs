@@ -8,6 +8,10 @@
 //   services) exposes only its package entry points (main, exports).
 // - unexported-subpath: a package that declares `exports` exposes only those
 //   targets, whether reached by package name or by relative path.
+// Tests (`*.test.*`/`*.spec.*` files and anything under a `tests/` directory)
+// may reach into another package's private files: parity and integration tests
+// deliberately exercise both sides. They are still refused a package-name import
+// that the target's exports omit, which fails at runtime.
 // Each temporary exception in scripts/import-boundaries.json is one exact
 // importer/target pair with the plan stage that removes it. An exception that no
 // longer matches an import fails the check, so the list only shrinks. No
@@ -31,6 +35,7 @@ const CODE_FILE = /\.(?:[cm]?js|jsx|[cm]?ts|tsx)$/;
 const RESOLVE_SUFFIXES = ['', '.ts', '.tsx', '.js', '.mjs', '.cjs', '/index.ts', '/index.tsx', '/index.js', '/index.mjs'];
 
 const toPosix = value => value.split(path.sep).join('/');
+export const isTestImporter = file => /(?:^|\/)(?:tests?|__tests__)\//.test(file) || /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(file);
 const packageOf = file => /^packages\/([^/]+)\//.exec(file)?.[1] ?? null;
 
 export function loadPackages(root = repositoryRoot) {
@@ -106,6 +111,7 @@ export function findViolations({ root = repositoryRoot, files, packages = loadPa
       const exported = target.entries.has(resolved.target) || resolved.exported === true;
       // Node enforces a declared `exports` on package-name imports at runtime.
       const runtimeRefused = target.hasExports && resolved.via === 'package' && !exported;
+      if (!runtimeRefused && isTestImporter(importer)) continue;
       if (APPLICATION_PACKAGES.includes(to) && !exported) violations.push({ importer, target: resolved.target, specifier, rule: 'private-application-import', runtimeRefused });
       else if (target.hasExports && !exported) violations.push({ importer, target: resolved.target, specifier, rule: 'unexported-subpath', runtimeRefused });
     }

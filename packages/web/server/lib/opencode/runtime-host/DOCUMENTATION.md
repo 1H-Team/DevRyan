@@ -750,6 +750,15 @@ verification and the loaded native bundle, the `globalThis` HMR state, and the
 signal handlers (`signalsAttached`). DevRyan does not support more than one web
 host per process; a selection change still requires a restart or relaunch.
 
+A failed start leaves what it acquired in place, as in v2.1.3, so an in-process
+Startup Retry reuses it and can become ready. A completed graceful shutdown is
+terminal for several of those module-level owners (the native runtime owner's
+`close()`, the session execution host's final drain, the session, orchestration
+and Cursor runtimes): a host started again in the same process constructs but
+cannot start native execution, so recovery after a completed shutdown needs a
+relaunch. Releasing a failed start's resources, or a real in-process restart,
+first requires making those owners per-construction.
+
 `packages/web/package.json` `exports` is the web package's public surface for
 other packages: the server entry (`.` and `./server/index.js`) and the modules the
 Electron shell loads by package name — `runtime-bundle-binding.js`,
