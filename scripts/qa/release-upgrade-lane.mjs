@@ -75,6 +75,26 @@ export function gradeReleaseUpgrade({ hops, candidate, candidateManifestSha256 }
   return { passed: failures.length === 0, failures };
 }
 
+/**
+ * Pure grading of the held-recovery fixture. A selection that requires rollback
+ * reconciliation must start only the recovery composition: health 503 with the
+ * held runtime, a held bundle at the same revision, no readiness, and an
+ * untouched selection. Once the hold is cleared, the candidate must start ready
+ * on the same bundle with the history the aging hops left.
+ */
+export function gradeHeldRecovery({ hops, held, selectionUnchanged, selectedRevision, resumed, candidateManifestSha256 }) {
+  const failures = [];
+  const result = held?.result ?? {}, status = result.held ?? {};
+  if (result.error) failures.push(`Held startup failed: ${result.error.code ?? 'error'}: ${result.error.message}`);
+  if (status.healthStatus !== 503 || status.executionRuntime !== 'held') failures.push('The held selection did not start the recovery composition');
+  if (status.bundleState !== 'held' || status.reconciliationRequired !== true || status.revision !== selectedRevision) failures.push('Recovery did not report the held selection');
+  if (result.ready !== false) failures.push('The held selection reported a ready runtime');
+  if (selectionUnchanged !== true) failures.push('The held start changed the selection');
+  const after = gradeReleaseUpgrade({ hops, candidate: resumed, candidateManifestSha256 });
+  failures.push(...after.failures.map(failure => `After the hold cleared: ${failure}`));
+  return { passed: failures.length === 0, failures };
+}
+
 // Runs inside one release's source tree. Importing server/index.js performs
 // that release's own provisioning or cold startup upgrade, exactly as at launch.
 const HOP_CHILD = `
@@ -96,8 +116,19 @@ try {
     result.selected = { bundleID: selection.selectedBundleID, revision: selection.revision, artifactManifestSha256: descriptor.launch.artifactManifestSha256 };
   }
   server = await application.startWebUiServer({ host: '127.0.0.1', port: 0, attachSignals: false });
-  const deadline = Date.now() + request.readyTimeoutMs;
-  while (!server.isReady() && Date.now() < deadline) await delay(500);
+  if (request.expectHeld) {
+    // The recovery composition never becomes ready; inspect it instead of waiting.
+    const get = async route => {
+      const response = await fetch('http://127.0.0.1:' + server.getPort() + route, { signal: AbortSignal.timeout(30000) });
+      return { status: response.status, body: await response.json() };
+    };
+    const health = await get('/api/health'), bundle = await get('/api/runtime/bundle');
+    result.held = { healthStatus: health.status, executionRuntime: health.body?.executionRuntime?.state ?? null,
+      bundleState: bundle.body?.state ?? null, reconciliationRequired: bundle.body?.reconciliationRequired === true, revision: bundle.body?.revision ?? null };
+  } else {
+    const deadline = Date.now() + request.readyTimeoutMs;
+    while (!server.isReady() && Date.now() < deadline) await delay(500);
+  }
   result.ready = server.isReady();
   if (result.ready) {
     const origin = 'http://127.0.0.1:' + server.getPort(), owner = await server.issueLocalOwnerSession();
@@ -155,11 +186,11 @@ async function prepareReleaseSource(tag, root) {
   return target;
 }
 
-async function runHop({ release, source, artifacts, layout, activity, timeoutMs }) {
+async function runHop({ release, source, artifacts, layout, activity, expectHeld = false, timeoutMs }) {
   const resultPath = path.join(layout.root, `hop-${release}.json`);
   const env = { ...createV200PrepareEnvironment({ home: layout.home }), DEVRYAN_EXECUTION_ARTIFACTS: artifacts,
     GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0', GIT_CEILING_DIRECTORIES: layout.root };
-  const request = { release, workspace: layout.workspace, controlRoot: layout.controlRoot, resultPath, activity, readyTimeoutMs: timeoutMs - 30000,
+  const request = { release, workspace: layout.workspace, controlRoot: layout.controlRoot, resultPath, activity, expectHeld, readyTimeoutMs: timeoutMs - 30000,
     serverModule: pathToFileURL(path.join(source, 'packages/web/server/index.js')).href,
     statusModule: pathToFileURL(path.join(source, 'packages/web/server/lib/opencode/runtime-host/bundle-startup-upgrade-status.js')).href };
   const started = performance.now();
@@ -174,6 +205,30 @@ async function runHop({ release, source, artifacts, layout, activity, timeoutMs 
   let result = null;
   try { result = JSON.parse(await readFile(resultPath, 'utf8')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   return { release, exited, elapsedMs: Math.round(performance.now() - started), result, cleanupErrors, log: result?.ready ? undefined : child.getLog().slice(-4000) };
+}
+
+/**
+ * Held-recovery fixture on the upgraded profile. Marking the selection as
+ * requiring rollback reconciliation is the state a crashed rollback leaves; a
+ * cold start must route to the recovery composition and change nothing. The
+ * fixture then restores the exact selection bytes (the owner's resume needs the
+ * original rollback checkpoint, which no published hop produces) and requires a
+ * normal ready start on the same bundle.
+ */
+async function runHeldRecovery({ hops, layout, artifacts, candidateManifestSha256, timeoutMs }) {
+  const selectionPath = path.join(layout.controlRoot, 'selection.json');
+  const original = await readFile(selectionPath), selection = JSON.parse(original.toString('utf8'));
+  if (selection.reconciliationRequired !== false) throw Object.assign(new Error('The upgraded selection is already held'), { code: 'qa_release_upgrade_held_fixture' });
+  const heldBytes = Buffer.from(JSON.stringify({ ...selection, reconciliationRequired: true }));
+  await writeFile(selectionPath, heldBytes, { mode: 0o600 });
+  let held, selectionUnchanged;
+  try {
+    held = await runHop({ release: 'held-recovery', source: repository, artifacts, layout, activity: false, expectHeld: true, timeoutMs });
+    selectionUnchanged = (await readFile(selectionPath)).equals(heldBytes);
+  } finally { await writeFile(selectionPath, original, { mode: 0o600 }); }
+  const resumed = await runHop({ release: 'held-cleared', source: repository, artifacts, layout, activity: false, timeoutMs });
+  const grade = gradeHeldRecovery({ hops, held, selectionUnchanged, selectedRevision: selection.revision, resumed, candidateManifestSha256 });
+  return { held, selectionUnchanged, resumed, ...grade };
 }
 
 export async function runReleaseUpgradeLane(options) {
@@ -200,9 +255,13 @@ export async function runReleaseUpgradeLane(options) {
       hops.push(await runHop({ release, source, artifacts, layout, activity: true, timeoutMs: options.hopTimeoutMs }));
     }
     const candidate = await runHop({ release: 'candidate', source: repository, artifacts: options.candidateArtifacts, layout, activity: false, timeoutMs: options.hopTimeoutMs });
-    const grade = gradeReleaseUpgrade({ hops, candidate, candidateManifestSha256 });
+    const upgrade = gradeReleaseUpgrade({ hops, candidate, candidateManifestSha256 });
+    const heldRecovery = upgrade.passed ? await runHeldRecovery({ hops, layout, artifacts: options.candidateArtifacts,
+      candidateManifestSha256, timeoutMs: options.hopTimeoutMs }) : { passed: false, failures: ['Not run: the candidate upgrade failed'] };
+    const grade = { passed: upgrade.passed && heldRecovery.passed,
+      failures: [...upgrade.failures, ...heldRecovery.failures.map(failure => `Held recovery: ${failure}`)] };
     const evidence = { schemaVersion: 1, kind: 'release-upgrade-lane', chain, candidateManifestSha256,
-      hops: hops.map(({ log, ...hop }) => hop), candidate, ...grade };
+      hops: hops.map(({ log, ...hop }) => hop), candidate, heldRecovery, ...grade };
     process.stdout.write(`${JSON.stringify(evidence, null, 2)}\n`);
     runRoot.finish(grade.passed ? 'passed' : 'failed');
     return evidence;

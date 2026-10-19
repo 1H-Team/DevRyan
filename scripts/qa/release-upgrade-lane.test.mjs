@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { gradeReleaseUpgrade, parseReleaseUpgradeArgs, selectPreviousReleases } from './release-upgrade-lane.mjs';
+import { gradeHeldRecovery, gradeReleaseUpgrade, parseReleaseUpgradeArgs, selectPreviousReleases } from './release-upgrade-lane.mjs';
 
 test('arguments require absolute candidate artifacts and a distinct tag chain', () => {
   assert.deepEqual(parseReleaseUpgradeArgs(['--candidate-artifacts', '/a', '--chain', 'v2.0.15,v2.1.0', '--keep-artifacts']),
@@ -43,4 +43,23 @@ test('only the candidate hop must upgrade, become ready and keep history', () =>
   }
   assert.match(gradeReleaseUpgrade({ hops: [{ release: 'v2.0.15', result: { provisioned: false } }], candidate, candidateManifestSha256 }).failures.join('\n'),
     /did not provision/);
+});
+
+test('a held selection starts only the recovery composition and resumes once the hold clears', () => {
+  const held = { result: { ready: false, held: { healthStatus: 503, executionRuntime: 'held', bundleState: 'held', reconciliationRequired: true, revision: 4 } } };
+  const input = { hops, held, selectionUnchanged: true, selectedRevision: 4, resumed: candidate, candidateManifestSha256 };
+  assert.deepEqual(gradeHeldRecovery(input), { passed: true, failures: [] });
+  const failing = [
+    [{ held: { result: { ...held.result, error: { code: 'bundle_rollback_reconciliation_required', message: 'refused' } } } }, /Held startup failed/],
+    [{ held: { result: { ...held.result, held: { ...held.result.held, healthStatus: 200, executionRuntime: 'ready' } } } }, /did not start the recovery composition/],
+    [{ held: { result: { ...held.result, held: { ...held.result.held, revision: 5 } } } }, /did not report the held selection/],
+    [{ held: { result: { ...held.result, ready: true } } }, /reported a ready runtime/],
+    [{ selectionUnchanged: false }, /changed the selection/],
+    [{ resumed: { result: { ...candidate.result, sessions: [] } } }, /After the hold cleared: Sessions lost.*ses_a/],
+    [{ resumed: { result: { ...candidate.result, ready: false } } }, /After the hold cleared: .*did not become ready/],
+  ];
+  for (const [override, message] of failing) {
+    const grade = gradeHeldRecovery({ ...input, ...override });
+    assert.equal(grade.passed, false); assert.match(grade.failures.join('\n'), message);
+  }
 });
