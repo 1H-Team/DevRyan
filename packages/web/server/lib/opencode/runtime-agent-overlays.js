@@ -19,7 +19,7 @@ import {
   buildBlockedManagedRuntimeMcpOverlay,
   filterManagedRuntimePluginEntries,
 } from './runtime-surface-policy.js';
-import { getOpenChamberDataDir } from './managed-process-registry.js';
+import { getDevRyanDataDir } from './managed-process-registry.js';
 import {
   applyRuntimeExternalDirectoryPolicy,
   sanitizeAgentSkillPolicy,
@@ -882,7 +882,7 @@ const shouldWriteRuntimePermissionOverlay = (agent, options = {}) => (
 
 const buildRuntimeExternalDirectories = (
   workingDirectory,
-  dataDirectory = getOpenChamberDataDir(),
+  dataDirectory = getDevRyanDataDir(),
   openCodeDataDirectory,
 ) => {
   const dirs = [];

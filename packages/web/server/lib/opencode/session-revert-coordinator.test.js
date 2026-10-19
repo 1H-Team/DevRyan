@@ -35,7 +35,7 @@ it('serves concurrent Revert and Redo through the existing HTTP envelopes withou
       clear: async () => { session = { id: 'a', directory: project }; },
     } }, admissionOwner: { withRevertOperation: async (_input, action) => action(), releaseTransactionHolds: async () => {}, recoverTransactionHolds: async () => {} } });
   const cancellations = [];
-  const coordinator = createScopedRevertCoordinator({ runtime, openchamberDataDir: directory, openCodeClient: client, nativeConversation,
+  const coordinator = createScopedRevertCoordinator({ runtime, devryanDataDir: directory, openCodeClient: client, nativeConversation,
     executions: { isConfined: async () => true, cancelAndWait: async ({ sessions }) => {
       cancellations.push(sessions); return { terminated: true, sessions };
     } } });
@@ -112,7 +112,7 @@ it('keeps imported receipt history inspectable but refuses mutation without a na
       clear: async () => { session = { id: 'L', directory: project }; },
     } }, admissionOwner: { withRevertOperation: async (_input, action) => action(), releaseTransactionHolds: async () => {}, recoverTransactionHolds: async () => {} } });
   const cancellations = [];
-  const coordinator = createScopedRevertCoordinator({ runtime, openchamberDataDir: directory, openCodeClient: client, nativeConversation,
+  const coordinator = createScopedRevertCoordinator({ runtime, devryanDataDir: directory, openCodeClient: client, nativeConversation,
     legacy: { history: (input) => changes.legacyHistory(input), blob: (input) => changes.legacyBlob(input) },
     executions: { isConfined: async () => true, cancelAndWait: async ({ sessions }) => { cancellations.push(sessions); return { terminated: true, sessions }; } } });
   const app = express(); registerScopedSessionRevertRoute(app, { sessionRevertCoordinator: coordinator });
@@ -207,7 +207,7 @@ it('refuses Revert and Redo on generation 2 before any conversation or file muta
   const runtime = createSessionMutationRuntime({ directory: path.join(directory, 'ledger') });
   const client = createFakeClient();
   const cancellations = [];
-  const coordinator = createScopedRevertCoordinator({ runtime, openchamberDataDir: directory, openCodeClient: client,
+  const coordinator = createScopedRevertCoordinator({ runtime, devryanDataDir: directory, openCodeClient: client,
     buildOpenCodeUrl: () => { throw new Error('unexpected raw request'); },
     executions: { isConfined: async () => true, cancelAndWait: async ({ sessions }) => { cancellations.push(sessions); return { terminated: true, sessions }; } } });
   const app = express(); registerScopedSessionRevertRoute(app, { sessionRevertCoordinator: coordinator });

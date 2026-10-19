@@ -113,7 +113,7 @@ const waitForMockCalls = async (mockFn, count = 1) => {
 };
 
 const createCouncilTool = async ({ sessionStates, councillors }) => {
-  const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-council-plugin-'));
+  const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-council-plugin-'));
   await writeCouncilConfig(configDir, councillors);
   process.env.OPENCODE_CONFIG_DIR = configDir;
   const { client, createdSessions } = createClient(sessionStates);
@@ -155,7 +155,7 @@ describe('CouncilSessionPlugin', () => {
   });
 
   it('falls back to legacy Council frontmatter when the companion is absent', async () => {
-    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-council-plugin-legacy-'));
+    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-council-plugin-legacy-'));
     tempDirs.push(configDir);
     await writeCouncilConfig(configDir, [{ model: 'openai/gpt-5.5', variant: 'high' }], { legacy: true });
     process.env.OPENCODE_CONFIG_DIR = configDir;

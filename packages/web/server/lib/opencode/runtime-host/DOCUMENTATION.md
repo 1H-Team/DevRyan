@@ -726,7 +726,7 @@ shell-owned setup, provisions the bundle (including the cold startup upgrade in
 `runtime-bundle-binding.js` or the launcher reads no selection and changes no
 environment: `selectedRuntimeBundle` stays `null` until the explicit call. Modules
 that capture paths at load (`application.js`, `auth.js`, `mcp.js`, `shared.js`,
-`openchamber-sidecar.js` and others) are therefore safe only behind the launcher.
+`devryan-sidecar.js` and others) are therefore safe only behind the launcher.
 Other processes either inspect with the pure `readRuntimeBundleBinding` (Electron's
 shell, package and QA drivers) or, when they are their own launcher, call
 `initializeRuntimeBundleBinding` before importing those owners. A selection change

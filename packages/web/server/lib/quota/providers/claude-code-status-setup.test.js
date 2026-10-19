@@ -13,7 +13,7 @@ import {
 let tempDir = null;
 
 const createPaths = () => {
-  tempDir = mkdtempSync(join(tmpdir(), 'openchamber-claude-status-setup-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'devryan-claude-status-setup-'));
   return {
     settingsPath: join(tempDir, '.claude', 'settings.json'),
     scriptPath: join(tempDir, '.cache', 'openchamber', 'claude-code-status-line.sh'),

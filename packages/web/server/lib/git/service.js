@@ -2108,7 +2108,7 @@ const HUNK_ACTION_FLAGS = {
 };
 
 const writeTempPatchFile = async (patch) => {
-  const tmpPath = path.join(os.tmpdir(), `openchamber-hunk-${Date.now()}-${Math.random().toString(36).slice(2)}.patch`);
+  const tmpPath = path.join(os.tmpdir(), `devryan-hunk-${Date.now()}-${Math.random().toString(36).slice(2)}.patch`);
   await fsp.writeFile(tmpPath, patch, 'utf8');
   return tmpPath;
 };

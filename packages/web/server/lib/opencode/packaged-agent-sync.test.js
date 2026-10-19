@@ -33,7 +33,7 @@ describe('syncPackagedAgents', () => {
   let manifestPath;
 
   beforeEach(async () => {
-    tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-packaged-agent-sync-'));
+    tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-packaged-agent-sync-'));
     packagedAgentDirectory = path.join(tempRoot, 'packaged-agents');
     targetAgentDirectory = path.join(tempRoot, 'runtime-agents');
     manifestPath = path.join(tempRoot, '.openchamber', 'packaged-agents.json');

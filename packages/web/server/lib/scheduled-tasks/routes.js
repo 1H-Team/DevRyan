@@ -28,7 +28,7 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
     sanitizeProjects,
     projectConfigRuntime,
     scheduledTasksRuntime,
-    getOpenChamberEventClients,
+    getDevRyanEventClients,
     writeSseEvent,
     resolveManagedProject,
   } = dependencies;
@@ -312,7 +312,7 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
     res.flushHeaders?.();
 
     res.devryanEventDialect = resolveEventDialect(req);
-    const clients = getOpenChamberEventClients();
+    const clients = getDevRyanEventClients();
     const client = {
       response: res,
       principalId: req.principal?.scope === 'managed' ? req.principal.id : null,

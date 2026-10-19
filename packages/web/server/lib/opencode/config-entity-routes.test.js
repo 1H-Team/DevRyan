@@ -223,7 +223,7 @@ describe('agent backup model routes', () => {
   };
 
   beforeEach(async () => {
-    tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-backup-model-routes-'));
+    tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-backup-model-routes-'));
     projectDirectory = path.join(tempRoot, 'project');
     userConfigPath = path.join(tempRoot, 'opencode-config', 'config.json');
     sidecarPath = path.join(path.dirname(userConfigPath), '.openchamber', 'config.json');
@@ -365,7 +365,7 @@ describe('agent overrides listing route', () => {
   };
 
   beforeEach(async () => {
-    tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-agent-overrides-route-'));
+    tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-agent-overrides-route-'));
     projectDirectory = path.join(tempRoot, 'project');
     userConfigPath = path.join(tempRoot, 'opencode-config', 'config.json');
     slimConfigPath = path.join(path.dirname(userConfigPath), 'oh-my-opencode-slim.json');

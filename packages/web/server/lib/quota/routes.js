@@ -174,7 +174,7 @@ export function registerQuotaRoutes(app, {
   openCodeClient = null,
   getNativeRuntimeOwner = () => null,
   buildAugmentedPath,
-  openchamberDataDir,
+  devryanDataDir,
   resolveClaudeCodeLaunch = resolveClaudeCodeLaunchDefault,
   ownsSession,
   claudeContextUsageClient: claudeContextUsageClientOverride,

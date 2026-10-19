@@ -26,7 +26,7 @@ let pendingDetectedPm = null;
 function getSpawnSyncBaseOptions() {
   return process.platform === 'win32' ? { windowsHide: true } : {};
 }
-function getOpenChamberConfigDir() {
+function getDevRyanConfigDir() {
   if (process.platform === 'win32') {
     const appData = process.env.APPDATA;
     if (appData) {
@@ -45,7 +45,7 @@ function sanitizeInstallScope(scope) {
 }
 
 function getOrCreateInstallId(scope = 'web') {
-  const configDir = getOpenChamberConfigDir();
+  const configDir = getDevRyanConfigDir();
   const normalizedScope = sanitizeInstallScope(scope);
   const idPath = path.join(configDir, `install-id-${normalizedScope}`);
 

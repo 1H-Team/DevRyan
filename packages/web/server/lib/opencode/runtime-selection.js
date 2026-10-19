@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { getOpenChamberDataDir } from './managed-process-registry.js';
+import { getDevRyanDataDir } from './managed-process-registry.js';
 import { resolveOpenCodeDbPath } from './opencode-db-path.js';
 
 export const OPENCODE_RUNTIME_SELECTION_FILE = 'opencode-runtime-selection.json';
@@ -16,7 +16,7 @@ export const OPENCODE_DATABASE_SOURCES = Object.freeze(['OPENCODE_DB', 'channel'
 const nonEmptyString = (value) => (typeof value === 'string' && value.trim().length > 0 ? value : null);
 
 const resolveDataDir = ({ dataDir, env = process.env } = {}) => (
-  nonEmptyString(dataDir) ? path.resolve(dataDir) : getOpenChamberDataDir(env)
+  nonEmptyString(dataDir) ? path.resolve(dataDir) : getDevRyanDataDir(env)
 );
 
 export const getOpenCodeRuntimeSelectionPath = (options = {}) => (

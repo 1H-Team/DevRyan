@@ -120,12 +120,12 @@ describe('local SSE routes', () => {
     expect(clients.has(res)).toBe(false);
   });
 
-  it('serves OpenChamber SSE with nginx-safe headers', () => {
+  it('serves DevRyan SSE with nginx-safe headers', () => {
     const { app, getRoute } = createRouteRegistry();
     const clients = new Set();
 
     registerScheduledTaskRoutes(app, {
-      getOpenChamberEventClients: () => clients,
+      getDevRyanEventClients: () => clients,
       writeSseEvent(res, payload) {
         res.write(`data: ${JSON.stringify(payload)}\n\n`);
       },

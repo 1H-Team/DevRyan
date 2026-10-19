@@ -47,7 +47,7 @@ const dependencies = (tasks) => ({
     deleteScheduledTask: vi.fn(),
   },
   scheduledTasksRuntime: { syncProject: vi.fn(), runNow: vi.fn() },
-  getOpenChamberEventClients: () => new Set(),
+  getDevRyanEventClients: () => new Set(),
   writeSseEvent: vi.fn(),
 });
 

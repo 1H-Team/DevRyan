@@ -11,7 +11,7 @@ import {
 let tempDir = null;
 
 const createTempDir = () => {
-  tempDir = mkdtempSync(join(tmpdir(), 'openchamber-claude-status-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'devryan-claude-status-'));
   return tempDir;
 };
 

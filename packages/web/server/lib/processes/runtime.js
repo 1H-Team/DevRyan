@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import {
-  getOpenChamberDataDir,
+  getDevRyanDataDir,
   isManagedOpenCodeProcessCommand,
   readManagedOpenCodeRegistry,
   terminateManagedOpenCodePid,
@@ -212,7 +212,7 @@ export const createProcessesRuntime = (options = {}) => {
   const env = options.env || process.env;
   const dataDir = typeof options.dataDir === 'string' && options.dataDir.trim()
     ? path.resolve(options.dataDir)
-    : getOpenChamberDataDir(env);
+    : getDevRyanDataDir(env);
   const trackingFilePath = path.join(dataDir, TRACKING_FILE_RELATIVE_PATH);
   const readRegistry = typeof options.readRegistry === 'function'
     ? options.readRegistry

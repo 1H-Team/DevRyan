@@ -40,9 +40,9 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       spawn,
       resolveGitBinaryForSpawn,
       createFsSearchRuntime,
-      openchamberDataDir,
+      devryanDataDir,
       projectIconStore,
-      openchamberUserConfigRoot,
+      devryanUserConfigRoot,
       normalizeDirectoryPath,
       resolveProjectDirectory,
       resolveOptionalProjectDirectory,
@@ -79,7 +79,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       buildAugmentedPath,
       projectConfigRuntime,
       scheduledTasksRuntime,
-      getOpenChamberEventClients,
+      getDevRyanEventClients,
       writeSseEvent,
       emitSyntheticOpenCodeEvent,
       resolveZenModel,
@@ -119,7 +119,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
     });
 
     // Host process inspection (bottom-dock Processes tab, session-delete auto-stop).
-    const processesRuntime = createProcessesRuntime({ dataDir: openchamberDataDir });
+    const processesRuntime = createProcessesRuntime({ dataDir: devryanDataDir });
 
     registerOpenCodeRoutes(app, {
       openCodeClient,
@@ -167,7 +167,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       fsPromises,
       path,
       crypto,
-      openchamberDataDir,
+      devryanDataDir,
       projectIconStore,
       sanitizeProjects,
       readSettingsFromDiskMigrated,
@@ -183,7 +183,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       sanitizeProjects,
       projectConfigRuntime,
       scheduledTasksRuntime,
-      getOpenChamberEventClients,
+      getDevRyanEventClients,
       writeSseEvent,
       resolveManagedProject,
     });
@@ -318,7 +318,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
     });
 
     registerQuotaRoutes(app, {
-      openchamberDataDir,
+      devryanDataDir,
       isProviderAdministrator: routeDependencies.isProviderAdministrator,
       getNativeRuntimeOwner: routeDependencies.getNativeRuntimeOwner,
       openCodeClient,
@@ -345,15 +345,15 @@ export const createFeatureRoutesRuntime = (dependencies) => {
     registerMagicPromptRoutes(app, {
       fsPromises,
       path,
-      openchamberDataDir,
+      devryanDataDir,
     });
     registerSessionFoldersRoutes(app, {
       fsPromises,
       path,
-      openchamberDataDir,
+      devryanDataDir,
     });
     registerSessionPlanRoutes(app, {
-      dataDirectory: openchamberDataDir,
+      dataDirectory: devryanDataDir,
       fsPromises,
       path,
       ownsSession,
@@ -383,7 +383,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       resolveProjectDirectory,
       buildAugmentedPath,
       resolveGitBinaryForSpawn,
-      openchamberUserConfigRoot,
+      devryanUserConfigRoot,
       authorizeImageAssetGrant: imageAssetsRuntime.authorizeAssetGrant,
     });
   };

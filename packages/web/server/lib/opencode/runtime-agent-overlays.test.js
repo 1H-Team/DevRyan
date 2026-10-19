@@ -130,7 +130,7 @@ describe('syncRuntimeAgentOverlays', () => {
   let originalDataDirectory;
 
   beforeEach(async () => {
-    tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-runtime-agent-overlays-'));
+    tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-runtime-agent-overlays-'));
     projectDirectory = path.join(tempRoot, 'project');
     // Give this fixture its own repository boundary even when TMPDIR is inside a checkout.
     await fs.mkdir(path.join(projectDirectory, '.git'), { recursive: true });
@@ -141,7 +141,7 @@ describe('syncRuntimeAgentOverlays', () => {
     targetConfigDirectory = path.join(overlayRoot, crypto.createHash('sha256').update(projectDirectory).digest('hex'));
     originalOpenAIApiKey = process.env.OPENAI_API_KEY;
     originalDataDirectory = process.env.DEVRYAN_DATA_DIR;
-    process.env.DEVRYAN_DATA_DIR = path.join(tempRoot, 'openchamber-data');
+    process.env.DEVRYAN_DATA_DIR = path.join(tempRoot, 'devryan-data');
     await fs.mkdir(process.env.DEVRYAN_DATA_DIR, { recursive: true });
     delete process.env.OPENAI_API_KEY;
     // Keep suite hermetic: real machine Copilot auth must not leak into overlay expectations.

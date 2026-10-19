@@ -20,7 +20,7 @@ const isPathWithinRoot = (resolvedPath, rootPath, path, os) => {
   return true;
 };
 
-const resolveWorkspacePath = ({ targetPath, baseDirectory, path, os, normalizeDirectoryPath, openchamberUserConfigRoot }) => {
+const resolveWorkspacePath = ({ targetPath, baseDirectory, path, os, normalizeDirectoryPath, devryanUserConfigRoot }) => {
   const normalized = normalizeDirectoryPath(targetPath);
   if (!normalized || typeof normalized !== 'string') {
     return { ok: false, error: 'Path is required' };
@@ -33,8 +33,8 @@ const resolveWorkspacePath = ({ targetPath, baseDirectory, path, os, normalizeDi
     return { ok: true, base: resolvedBase, resolved };
   }
 
-  if (isPathWithinRoot(resolved, openchamberUserConfigRoot, path, os)) {
-    return { ok: true, base: path.resolve(openchamberUserConfigRoot), resolved };
+  if (isPathWithinRoot(resolved, devryanUserConfigRoot, path, os)) {
+    return { ok: true, base: path.resolve(devryanUserConfigRoot), resolved };
   }
 
   return { ok: false, error: 'Path is outside of active workspace' };
@@ -73,7 +73,7 @@ const resolveWorkspacePathFromWorktrees = async ({ targetPath, baseDirectory, pa
   return { ok: false, error: 'Path is outside of active workspace' };
 };
 
-const resolveWorkspacePathFromContext = async ({ req, targetPath, resolveProjectDirectory, path, os, normalizeDirectoryPath, openchamberUserConfigRoot }) => {
+const resolveWorkspacePathFromContext = async ({ req, targetPath, resolveProjectDirectory, path, os, normalizeDirectoryPath, devryanUserConfigRoot }) => {
   const resolvedProject = await resolveProjectDirectory(req);
   if (!resolvedProject.directory) {
     return { ok: false, error: resolvedProject.error || 'Active workspace is required' };
@@ -85,7 +85,7 @@ const resolveWorkspacePathFromContext = async ({ req, targetPath, resolveProject
     path,
     os,
     normalizeDirectoryPath,
-    openchamberUserConfigRoot,
+    devryanUserConfigRoot,
   });
   if (resolved.ok || resolved.error !== 'Path is outside of active workspace') {
     return resolved;
@@ -241,7 +241,7 @@ const resolveMutationPathFromContext = async ({
   path,
   os,
   normalizeDirectoryPath,
-  openchamberUserConfigRoot,
+  devryanUserConfigRoot,
   fsPromises,
 }) => {
   const lexical = await resolveWorkspacePathFromContext({
@@ -251,7 +251,7 @@ const resolveMutationPathFromContext = async ({
     path,
     os,
     normalizeDirectoryPath,
-    openchamberUserConfigRoot,
+    devryanUserConfigRoot,
   });
 
   if (!lexical.ok) {
@@ -315,7 +315,7 @@ const resolveExecCwdFromContext = async ({
   path,
   os,
   normalizeDirectoryPath,
-  openchamberUserConfigRoot,
+  devryanUserConfigRoot,
   fsPromises,
 }) => {
   const lexical = await resolveWorkspacePathFromContext({
@@ -325,7 +325,7 @@ const resolveExecCwdFromContext = async ({
     path,
     os,
     normalizeDirectoryPath,
-    openchamberUserConfigRoot,
+    devryanUserConfigRoot,
   });
 
   if (!lexical.ok) {
@@ -354,7 +354,7 @@ const resolveExecCwdFromContext = async ({
   }
 };
 
-const resolveReadPathFromContext = async ({ req, targetPath, resolveProjectDirectory, path, os, normalizeDirectoryPath, openchamberUserConfigRoot }) => {
+const resolveReadPathFromContext = async ({ req, targetPath, resolveProjectDirectory, path, os, normalizeDirectoryPath, devryanUserConfigRoot }) => {
   if (req.query?.allowOutsideWorkspace === 'true') {
     const normalized = normalizeDirectoryPath(targetPath);
     if (!normalized || typeof normalized !== 'string') {
@@ -371,7 +371,7 @@ const resolveReadPathFromContext = async ({ req, targetPath, resolveProjectDirec
     path,
     os,
     normalizeDirectoryPath,
-    openchamberUserConfigRoot,
+    devryanUserConfigRoot,
   });
 };
 
@@ -472,7 +472,7 @@ export const registerFsRoutes = (app, dependencies) => {
     resolveProjectDirectory,
     buildAugmentedPath,
     resolveGitBinaryForSpawn,
-    openchamberUserConfigRoot,
+    devryanUserConfigRoot,
     authorizeImageAssetGrant,
   } = dependencies;
 
@@ -586,7 +586,7 @@ export const registerFsRoutes = (app, dependencies) => {
           path,
           os,
           normalizeDirectoryPath,
-          openchamberUserConfigRoot,
+          devryanUserConfigRoot,
           fsPromises,
         });
         if (!resolved.ok) {
@@ -734,7 +734,7 @@ export const registerFsRoutes = (app, dependencies) => {
         path,
         os,
         normalizeDirectoryPath,
-        openchamberUserConfigRoot,
+        devryanUserConfigRoot,
       });
       if (!resolved.ok) {
         if (optional) {
@@ -798,7 +798,7 @@ export const registerFsRoutes = (app, dependencies) => {
         path,
         os,
         normalizeDirectoryPath,
-        openchamberUserConfigRoot,
+        devryanUserConfigRoot,
       });
       if (!resolved.ok) {
         return res.status(400).json({ error: resolved.error });
@@ -869,7 +869,7 @@ export const registerFsRoutes = (app, dependencies) => {
           path,
           os,
           normalizeDirectoryPath,
-          openchamberUserConfigRoot,
+          devryanUserConfigRoot,
         });
         if (!resolved.ok) {
           return res.status(400).json({ error: resolved.error });
@@ -943,7 +943,7 @@ export const registerFsRoutes = (app, dependencies) => {
         path,
         os,
         normalizeDirectoryPath,
-        openchamberUserConfigRoot,
+        devryanUserConfigRoot,
         fsPromises,
       });
       if (!resolved.ok) {
@@ -978,7 +978,7 @@ export const registerFsRoutes = (app, dependencies) => {
         path,
         os,
         normalizeDirectoryPath,
-        openchamberUserConfigRoot,
+        devryanUserConfigRoot,
         fsPromises,
       });
       if (!resolved.ok) {
@@ -1017,7 +1017,7 @@ export const registerFsRoutes = (app, dependencies) => {
         path,
         os,
         normalizeDirectoryPath,
-        openchamberUserConfigRoot,
+        devryanUserConfigRoot,
         fsPromises,
       });
       if (!resolvedOld.ok) {
@@ -1031,7 +1031,7 @@ export const registerFsRoutes = (app, dependencies) => {
         path,
         os,
         normalizeDirectoryPath,
-        openchamberUserConfigRoot,
+        devryanUserConfigRoot,
         fsPromises,
       });
       if (!resolvedNew.ok) {
@@ -1130,7 +1130,7 @@ export const registerFsRoutes = (app, dependencies) => {
         path,
         os,
         normalizeDirectoryPath,
-        openchamberUserConfigRoot,
+        devryanUserConfigRoot,
         fsPromises,
       });
       if (!resolvedCwdResult.ok) {

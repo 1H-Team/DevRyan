@@ -808,7 +808,7 @@ export function createSessionExecutionHost(options) {
       return { terminated: true, sessions: input.sessions };
     },
   };
-  const rawCoordinator = createScopedRevertCoordinator({ runtime, executions, openchamberDataDir: options.dataDirectory,
+  const rawCoordinator = createScopedRevertCoordinator({ runtime, executions, devryanDataDir: options.dataDirectory,
     windowsOwner: options.windowsOwner, windowsLauncher: options.windowsLauncher,
     nativeConversation: options.nativeExecution?.conversation,
     onDiagnostic: options.onDiagnostic, legacy: options.legacyChanges,

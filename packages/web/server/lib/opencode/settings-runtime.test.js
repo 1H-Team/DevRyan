@@ -6,7 +6,7 @@ import { createProjectIdFromPath } from '../projects/project-id.js';
 import { createSettingsRuntime } from './settings-runtime.js';
 
 const createRuntime = (initialSettings, { projectIconStore } = {}) => {
-  const settingsPath = '/tmp/openchamber/settings.json';
+  const settingsPath = '/tmp/devryan/settings.json';
   const writtenFiles = new Map();
   let settings = { ...initialSettings };
 
@@ -130,7 +130,7 @@ describe('settings runtime', () => {
   it('sweeps only stale leaked settings temporary files, once per runtime', async () => {
     const { runtime, fsPromises } = createRuntime({});
     const entry = (name, isFile = true) => ({ name, isFile: () => isFile });
-    const directory = '/tmp/openchamber';
+    const directory = '/tmp/devryan';
     fsPromises.readdir.mockImplementation(async (target) => {
       if (target !== directory) throw Object.assign(new Error('missing directory'), { code: 'ENOENT' });
       return [

@@ -9,9 +9,9 @@ import {
 } from './shared.js';
 import { listPackagedAgents } from './packaged-agents.js';
 import {
-  applyOpenchamberSidecarToConfig,
-  persistOpenchamberFromConfig,
-} from './openchamber-sidecar.js';
+  applyDevRyanSidecarToConfig,
+  persistDevRyanFromConfig,
+} from './devryan-sidecar.js';
 import {
   SLIM_REPLACED_AGENT_NAMES,
   SLIM_SCOPE,
@@ -158,12 +158,12 @@ function resolveUserConfigPath(options = {}) {
 }
 
 function getAgentOverridesContainer(config) {
-  const openchamber = config?.[DEVRYAN_CONFIG_KEY];
-  if (!openchamber || typeof openchamber !== 'object' || Array.isArray(openchamber)) {
+  const devryanSettings = config?.[DEVRYAN_CONFIG_KEY];
+  if (!devryanSettings || typeof devryanSettings !== 'object' || Array.isArray(devryanSettings)) {
     return {};
   }
 
-  const overrides = openchamber[AGENT_OVERRIDES_CONFIG_KEY];
+  const overrides = devryanSettings[AGENT_OVERRIDES_CONFIG_KEY];
   if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides)) {
     return {};
   }
@@ -172,12 +172,12 @@ function getAgentOverridesContainer(config) {
 }
 
 function getAgentBackupModelsContainer(config) {
-  const openchamber = config?.[DEVRYAN_CONFIG_KEY];
-  if (!openchamber || typeof openchamber !== 'object' || Array.isArray(openchamber)) {
+  const devryanSettings = config?.[DEVRYAN_CONFIG_KEY];
+  if (!devryanSettings || typeof devryanSettings !== 'object' || Array.isArray(devryanSettings)) {
     return {};
   }
 
-  const backupModels = openchamber[AGENT_BACKUP_MODELS_CONFIG_KEY];
+  const backupModels = devryanSettings[AGENT_BACKUP_MODELS_CONFIG_KEY];
   if (!backupModels || typeof backupModels !== 'object' || Array.isArray(backupModels)) {
     return {};
   }
@@ -188,7 +188,7 @@ function getAgentBackupModelsContainer(config) {
 function readUserConfig(options = {}) {
   const userConfigPath = resolveUserConfigPath(options);
   const raw = readConfigFile(userConfigPath);
-  return applyOpenchamberSidecarToConfig(raw, userConfigPath);
+  return applyDevRyanSidecarToConfig(raw, userConfigPath);
 }
 
 function writeUserConfig(config, options = {}) {
@@ -197,7 +197,7 @@ function writeUserConfig(config, options = {}) {
   // writes back to the opencode config file. OpenCode 1.15+ rejects unknown
   // top-level keys, so we must never persist `openchamber` into its config.
   const userConfigPath = resolveUserConfigPath(options);
-  const sanitized = persistOpenchamberFromConfig(config, userConfigPath);
+  const sanitized = persistDevRyanFromConfig(config, userConfigPath);
   writeConfig(sanitized, userConfigPath);
 }
 
@@ -728,13 +728,13 @@ function isOrchestrationRoutedAgent(agentName, workingDirectory, options = {}) {
 
 function writeSidecarAgentOverrides(nextOverrides, options = {}) {
   const config = readUserConfig(options);
-  const openchamber = config[DEVRYAN_CONFIG_KEY] && typeof config[DEVRYAN_CONFIG_KEY] === 'object' && !Array.isArray(config[DEVRYAN_CONFIG_KEY])
+  const devryanSettings = config[DEVRYAN_CONFIG_KEY] && typeof config[DEVRYAN_CONFIG_KEY] === 'object' && !Array.isArray(config[DEVRYAN_CONFIG_KEY])
     ? { ...config[DEVRYAN_CONFIG_KEY] }
     : {};
   writeUserConfig({
     ...config,
     [DEVRYAN_CONFIG_KEY]: {
-      ...openchamber,
+      ...devryanSettings,
       [AGENT_OVERRIDES_CONFIG_KEY]: nextOverrides,
     },
   }, options);
@@ -804,7 +804,7 @@ function writeAgentBackupModel(agentName, rawBackupModel, workingDirectory, opti
   }
 
   const config = readUserConfig(options);
-  const openchamber = config[DEVRYAN_CONFIG_KEY] && typeof config[DEVRYAN_CONFIG_KEY] === 'object' && !Array.isArray(config[DEVRYAN_CONFIG_KEY])
+  const devryanSettings = config[DEVRYAN_CONFIG_KEY] && typeof config[DEVRYAN_CONFIG_KEY] === 'object' && !Array.isArray(config[DEVRYAN_CONFIG_KEY])
     ? { ...config[DEVRYAN_CONFIG_KEY] }
     : {};
   const backupModels = getAgentBackupModelsContainer(config);
@@ -812,7 +812,7 @@ function writeAgentBackupModel(agentName, rawBackupModel, workingDirectory, opti
   writeUserConfig({
     ...config,
     [DEVRYAN_CONFIG_KEY]: {
-      ...openchamber,
+      ...devryanSettings,
       [AGENT_BACKUP_MODELS_CONFIG_KEY]: {
         ...backupModels,
         [agentName]: backupModel,
@@ -825,7 +825,7 @@ function writeAgentBackupModel(agentName, rawBackupModel, workingDirectory, opti
 
 function deleteAgentBackupModel(agentName, options = {}) {
   const config = readUserConfig(options);
-  const openchamber = config[DEVRYAN_CONFIG_KEY] && typeof config[DEVRYAN_CONFIG_KEY] === 'object' && !Array.isArray(config[DEVRYAN_CONFIG_KEY])
+  const devryanSettings = config[DEVRYAN_CONFIG_KEY] && typeof config[DEVRYAN_CONFIG_KEY] === 'object' && !Array.isArray(config[DEVRYAN_CONFIG_KEY])
     ? { ...config[DEVRYAN_CONFIG_KEY] }
     : {};
   const backupModels = { ...getAgentBackupModelsContainer(config) };
@@ -838,7 +838,7 @@ function deleteAgentBackupModel(agentName, options = {}) {
   writeUserConfig({
     ...config,
     [DEVRYAN_CONFIG_KEY]: {
-      ...openchamber,
+      ...devryanSettings,
       [AGENT_BACKUP_MODELS_CONFIG_KEY]: backupModels,
     },
   }, options);

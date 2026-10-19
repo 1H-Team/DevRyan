@@ -14,7 +14,7 @@ import {
 let tempDir = null;
 
 const makeProjectDir = () => {
-  tempDir = mkdtempSync(join(tmpdir(), 'openchamber-provider-config-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'devryan-provider-config-'));
   return tempDir;
 };
 

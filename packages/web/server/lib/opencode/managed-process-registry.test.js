@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  getOpenChamberDataDir,
+  getDevRyanDataDir,
   isManagedOpenCodeProcessCommand,
   readManagedOpenCodeRegistry,
   reapOrphanedManagedOpenCodeProcesses,
@@ -311,8 +311,8 @@ describe('managed OpenCode process registry', () => {
     expect(termCalls).toEqual([-200, 200, 201, 202]);
   });
 
-  it('resolves the OpenChamber data dir from the environment', () => {
-    const dataDir = path.join(tmpdir(), 'openchamber-verify-data');
-    expect(getOpenChamberDataDir({ DEVRYAN_DATA_DIR: dataDir })).toBe(path.resolve(dataDir));
+  it('resolves the DevRyan data dir from the environment', () => {
+    const dataDir = path.join(tmpdir(), 'devryan-verify-data');
+    expect(getDevRyanDataDir({ DEVRYAN_DATA_DIR: dataDir })).toBe(path.resolve(dataDir));
   });
 });

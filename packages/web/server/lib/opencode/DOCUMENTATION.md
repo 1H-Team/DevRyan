@@ -113,7 +113,7 @@ Native writer and shell publication emit scoped `session_execution` finish timin
 - `packages/web/server/lib/opencode/login-shell-env-filter.js`: the single login-shell filter shared with Electron main's merge (`packages/electron/shell-env-inheritance.mjs`). In every runtime it rejects login-shell values that native provisioning refuses (relative or empty `OPENCODE_DB`, any `OPENCODE_HOST` or `OPENCODE_BINARY`, `OPENCODE_SKIP_START`/`DEVRYAN_SKIP_OPENCODE_START` set to `true`, `DEVRYAN_OPENCODE_GENERATION` other than `2`) and any `DEVRYAN_RUNTIME_BUNDLE_ROOT`. Only when `DEVRYAN_PACKAGED_DESKTOP=1` (set by Electron main from `app.isPackaged` before the server import) it also rejects the dev/packaging redirections `DEVRYAN_ELECTRON_DEV`, `DEVRYAN_ELECTRON_USER_DATA_DIR`, `DEVRYAN_EXECUTION_ARTIFACTS` and `DEVRYAN_DEFAULT_CONFIG_ROOT`.
 - `packages/web/server/lib/opencode/env-config.js`: OpenCode-related environment variable parsing and validation (host/port/hostname).
 - `packages/web/server/lib/opencode/hmr-state-runtime.js`: HMR-persistent runtime state initialization, auth-state bootstrap, and HMR sync helpers.
-- `packages/web/server/lib/opencode/bootstrap-runtime.js`: base app bootstrap runtime for status/auth/tts/notification/OpenChamber route wiring.
+- `packages/web/server/lib/opencode/bootstrap-runtime.js`: base app bootstrap runtime for status/auth/tts/notification/DevRyan route wiring.
 - `packages/web/server/lib/opencode/network-runtime.js`: OpenCode URL construction, health-probe readiness checks, and API prefix runtime. URL construction reports a temporarily absent managed port with the stable `managed_runtime_unavailable` code and HTTP-style 503 status so managed-child observers can wait through port transitions.
 - `packages/web/server/lib/opencode/project-directory-runtime.js`: request-scoped and settings-backed project directory resolution/validation runtime.
 - `packages/web/server/lib/opencode/project-icon-store.js`: serialized, atomic storage for project icon images and their versioned manifest under `<DEVRYAN_DATA_DIR>/project-icons`. New uploads record project ID/path, MIME, source, timestamp, and filename so startup can restore settings metadata or migrate the file when deterministic project identity changes. Unmanifested legacy files are deliberately not adopted.
@@ -167,7 +167,7 @@ Superpowers is retired (2026-10). Writing and executing plans guidance lives in 
 - `packages/web/server/lib/opencode/tunnel-wiring-runtime.js`: tunnel service/routes composition runtime and active-port wiring for main server startup.
 - `packages/web/server/lib/opencode/startup-pipeline-runtime.js`: server startup tail orchestration runtime for terminal/proxy/static/start-listen flow.
 - `packages/web/server/lib/opencode/server-utils-runtime.js`: shared server runtime utilities for OpenCode proxy wiring, OpenCode port/readiness helpers, and snapshot fetchers.
-- `packages/web/server/lib/opencode/openchamber-routes.js`: OpenChamber update and models metadata route registration.
+- `packages/web/server/lib/opencode/devryan-routes.js`: DevRyan update and models metadata route registration.
 - `packages/web/server/lib/opencode/pwa-manifest-routes.js`: PWA manifest route registration with recent-session shortcut resolution and short-lived caching.
 - `packages/web/server/lib/opencode/project-icon-routes.js`: project icon upload/read/discovery route registration and icon storage orchestration.
   Managed icon-image persistence delegates to the multi-user project record, which
@@ -356,7 +356,7 @@ Expired preparation returns `session_create_not_dispatched` without contacting
 OpenCode; readiness waits consume the same remaining budget in web.
 
 ## Public exports (managed-process-registry.js)
-- `getOpenChamberDataDir(env?)`: the shared data root from `packages/shared-runtime/lib/data-root.js`: `DEVRYAN_DATA_DIR` (alias `OPENCHAMBER_DATA_DIR`), else `~/.config/devryan`, or the pre-rename `~/.config/openchamber` while it still holds the data.
+- `getDevRyanDataDir(env?)`: the shared data root from `packages/shared-runtime/lib/data-root.js`: `DEVRYAN_DATA_DIR` (alias `OPENCHAMBER_DATA_DIR`), else `~/.config/devryan`, or the pre-rename `~/.config/openchamber` while it still holds the data.
 - `registerManagedOpenCodeProcess(record, options?)` / `reapOrphanedManagedOpenCodeProcesses(options?)`: the per-data-directory orphan registry. Records carry the owner's `ps lstart` start time; the reaper treats an owner PID whose start time differs as dead (PID reuse) and keeps the PID-only check when the start time is unavailable (Windows).
 - `readProcessStartTime(pid, options?)`: returns the process start time, or `null` when it cannot be read.
 
@@ -678,8 +678,8 @@ discard them when the call ends: measured on 2026-09-30 at 10 to 20 seconds and
 - Returned API:
   - `run(options)`
 
-## Public exports (openchamber-routes.js)
-- `registerOpenChamberRoutes(app, dependencies)`: registers OpenChamber endpoints:
+## Public exports (devryan-routes.js)
+- `registerDevRyanRoutes(app, dependencies)`: registers DevRyan endpoints:
   - DevRyan's own routes live under `/api/devryan`; `lib/legacy-api-path.js` rewrites the accepted `/api/openchamber` alias (`req.url` and `req.originalUrl`) as the first middleware of every composition, before any guard.
   - `GET /api/devryan/update-check`
   - `POST /api/devryan/update-install`

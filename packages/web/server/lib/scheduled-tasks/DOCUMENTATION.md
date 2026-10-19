@@ -1,6 +1,6 @@
 # Scheduled Tasks module
 
-Server-owned scheduled task runtime and routes for OpenChamber-only automation.
+Server-owned scheduled task runtime and routes for DevRyan-only automation.
 
 `holdForCheckpoint()` closes new timer, run and mutation admission. Its pending
 set retains the original run promise after a watchdog timeout; timeout of the
@@ -12,7 +12,7 @@ checkpoint until the owner has actually settled, with the hold kept in place.
 - Per-project scheduled task persistence is owned by `packages/web/server/lib/projects/project-config.js`.
 - Version 2 task records optionally contain server-controlled `ownerUserId` and `target.branchName`. Ownerless version 1 tasks remain administrator-owned legacy records.
 - Runtime orchestration and execution is owned by this module.
-- This module is OpenChamber feature logic; it is intentionally separate from OpenCode proxy/runtime internals.
+- This module is DevRyan feature logic; it is intentionally separate from OpenCode proxy/runtime internals.
 - Owner-scoped tasks resolve their execution directory from the owner's live managed project/branch assignment. Ownerless legacy tasks continue to resolve their project path from local settings.
 - Startup synchronization combines local settings projects with active managed project IDs so persisted managed timers survive web/Electron restarts without treating a cached path as authorization.
 
@@ -26,13 +26,13 @@ checkpoint until the owner has actually settled, with the hold kept in place.
   - Session create + prompt_async execution
   - Live owner/grant reload, branch-target preparation, and pre-prompt session ownership registration
   - Active managed-project discovery for restart-safe timer restoration
-  - Emits OpenChamber task-run events
+  - Emits DevRyan task-run events
   - Persists terminal state with a bounded retry and exposes `persistError` when the durable final write still fails
 
 - `packages/web/server/lib/scheduled-tasks/routes.js`
   - Scheduled task CRUD endpoints
   - Manual run endpoint
-  - OpenChamber events SSE stream endpoint
+  - DevRyan events SSE stream endpoint
   - Per-principal task/status/event filtering and assignment enforcement
   - Assignment snapshot registration used to scope project-metadata invalidations
 

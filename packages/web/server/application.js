@@ -107,7 +107,7 @@ import {
   registerCommonRequestMiddleware,
   registerServerStatusRoutes,
 } from './lib/opencode/core-routes.js';
-import { registerOpenChamberRoutes } from './lib/opencode/openchamber-routes.js';
+import { registerDevRyanRoutes } from './lib/opencode/devryan-routes.js';
 import { createServerUtilsRuntime } from './lib/opencode/server-utils-runtime.js';
 import { createStaticRoutesRuntime } from './lib/opencode/static-routes-runtime.js';
 import { createSettingsRuntime } from './lib/opencode/settings-runtime.js';
@@ -263,7 +263,7 @@ async function constructWebHost(options = {}) {
   const DESKTOP_NOTIFY_PREFIX = '[OpenChamberDesktopNotify] ';
   const uiNotificationClients = new Set();
   const uiNotificationWsClients = new Set();
-  const uiOpenChamberEventClients = new Set();
+  const uiDevRyanEventClients = new Set();
   const HEALTH_CHECK_INTERVAL = 15000;
   const SHUTDOWN_TIMEOUT = 10000;
   const MODELS_DEV_API_URL = 'https://models.dev/api.json';
@@ -577,7 +577,7 @@ async function constructWebHost(options = {}) {
 
   const broadcastManagedProjectMetadataChanged = (projectId) => {
     if (typeof projectId !== 'string' || !projectId.trim()) return;
-    for (const client of uiOpenChamberEventClients) {
+    for (const client of uiDevRyanEventClients) {
       if (!canReceiveProjectMetadataEvent(client, projectId)) {
         continue;
       }
@@ -587,7 +587,7 @@ async function constructWebHost(options = {}) {
           properties: { projectId },
         });
       } catch {
-        uiOpenChamberEventClients.delete(client);
+        uiDevRyanEventClients.delete(client);
       }
     }
   };
@@ -606,7 +606,7 @@ async function constructWebHost(options = {}) {
 
   const broadcastBrowserAgentLeasesChanged = (principalId, revision) => {
     if (typeof principalId !== 'string' || !principalId) return;
-    for (const client of uiOpenChamberEventClients) {
+    for (const client of uiDevRyanEventClients) {
       if (client?.principalId !== principalId) continue;
       try {
         writeSseEvent(client.response, {
@@ -614,7 +614,7 @@ async function constructWebHost(options = {}) {
           properties: { revision },
         });
       } catch {
-        uiOpenChamberEventClients.delete(client);
+        uiDevRyanEventClients.delete(client);
       }
     }
   };
@@ -1309,7 +1309,7 @@ async function constructWebHost(options = {}) {
     registerAuthAndAccessRoutes,
     registerTtsRoutes,
     registerNotificationRoutes,
-    registerOpenChamberRoutes,
+    registerDevRyanRoutes,
     express,
   });
   const tunnelWiringRuntime = createTunnelWiringRuntime({
@@ -1806,7 +1806,7 @@ async function constructWebHost(options = {}) {
     resolveTaskExecutionContext: (input) => multiUserRuntime.resolveScheduledTaskExecution?.(input),
     recordTaskSessionOwnership: (input) => multiUserRuntime.recordScheduledTaskSessionOwnership?.(input),
     emitTaskRunEvent: (event) => {
-      for (const client of uiOpenChamberEventClients) {
+      for (const client of uiDevRyanEventClients) {
         const response = client?.response ?? client;
         if (client?.principalId && !client.isAdmin && event.ownerUserId !== client.principalId) {
           continue;
@@ -1823,7 +1823,7 @@ async function constructWebHost(options = {}) {
             },
           });
         } catch {
-          uiOpenChamberEventClients.delete(client);
+          uiDevRyanEventClients.delete(client);
         }
       }
     },
@@ -2423,7 +2423,7 @@ async function constructWebHost(options = {}) {
       path,
       server,
       __dirname,
-      openchamberDataDir: DEVRYAN_DATA_DIR,
+      devryanDataDir: DEVRYAN_DATA_DIR,
       modelsDevApiUrl: MODELS_DEV_API_URL,
       modelsMetadataCacheTtl: MODELS_METADATA_CACHE_TTL,
       fetchFreeZenModels,
@@ -2827,9 +2827,9 @@ async function constructWebHost(options = {}) {
       spawn,
       resolveGitBinaryForSpawn,
       createFsSearchRuntime: createFsSearchRuntimeFactory,
-      openchamberDataDir: DEVRYAN_DATA_DIR,
+      devryanDataDir: DEVRYAN_DATA_DIR,
       projectIconStore,
-      openchamberUserConfigRoot: DEVRYAN_USER_CONFIG_ROOT,
+      devryanUserConfigRoot: DEVRYAN_USER_CONFIG_ROOT,
       normalizeDirectoryPath,
       resolveProjectDirectory,
       resolveOptionalProjectDirectory,
@@ -2873,7 +2873,7 @@ async function constructWebHost(options = {}) {
       buildAugmentedPath,
       projectConfigRuntime,
       scheduledTasksRuntime,
-      getOpenChamberEventClients: () => uiOpenChamberEventClients,
+      getDevRyanEventClients: () => uiDevRyanEventClients,
       writeSseEvent,
       emitSyntheticOpenCodeEvent,
       resolveZenModel,

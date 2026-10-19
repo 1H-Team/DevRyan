@@ -55,7 +55,7 @@ describe('normalizeOpenCodeRuntimeSelection', () => {
 
 describe('write/read round trip', () => {
   it('writes atomically with owner-only mode into the data directory and reads it back', () => {
-    const dataDir = path.join(makeTempDir(), 'nested', 'openchamber');
+    const dataDir = path.join(makeTempDir(), 'nested', 'devryan');
     const selection = derive();
 
     const file = writeOpenCodeRuntimeSelection(selection, { dataDir });

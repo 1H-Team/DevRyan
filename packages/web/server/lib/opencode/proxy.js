@@ -200,7 +200,7 @@ export const registerOpenCodeProxy = (app, deps) => {
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
     openCodeSnapshotRoot: deps.openCodeSnapshotRoot,
-    openchamberDataDir: deps.openchamberDataDir,
+    devryanDataDir: deps.devryanDataDir,
     scopedRevertTimeoutMs: deps.scopedRevertTimeoutMs,
     scopedRevertSlowOperationMs: deps.scopedRevertSlowOperationMs,
     sessionRevertCoordinator: deps.sessionRevertCoordinator,

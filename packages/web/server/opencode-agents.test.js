@@ -20,13 +20,13 @@ const originalOpencodeConfigDir = process.env.OPENCODE_CONFIG_DIR;
 let isolatedOpencodeConfigDir;
 
 const makeTempProject = async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-agents-'));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-agents-'));
   await fs.mkdir(path.join(directory, '.opencode', 'agents'), { recursive: true });
   return directory;
 };
 
 beforeEach(async () => {
-  isolatedOpencodeConfigDir = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-opencode-config-'));
+  isolatedOpencodeConfigDir = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-opencode-config-'));
   process.env.OPENCODE_CONFIG_DIR = isolatedOpencodeConfigDir;
 });
 
@@ -100,7 +100,7 @@ describe('OpenCode agent model normalization', () => {
   });
 
   it('reads packaged model metadata without user config sync', () => {
-    userConfigPath = path.join(os.tmpdir(), `openchamber-agents-${Date.now()}-config.json`);
+    userConfigPath = path.join(os.tmpdir(), `devryan-agents-${Date.now()}-config.json`);
     const result = getAgentConfig('council', null, { userConfigPath });
 
     expect(result.scope).toBe('packaged');
@@ -140,7 +140,7 @@ describe('OpenCode config agent listing', () => {
 
   it('ignores user-global agents even when a matching directory is passed', async () => {
     projectDirectory = await makeTempProject();
-    userAgentDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-user-agents-'));
+    userAgentDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-user-agents-'));
     await fs.writeFile(path.join(userAgentDirectory, 'user-only-test-agent.md'), [
       '---',
       'mode: primary',
@@ -256,7 +256,7 @@ describe('OpenCode user agent model overrides', () => {
 
   beforeEach(async () => {
     projectDirectory = await makeTempProject();
-    userConfigDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-user-agent-overrides-'));
+    userConfigDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-user-agent-overrides-'));
     userConfigPath = path.join(userConfigDirectory, 'config.json');
   });
 
@@ -427,7 +427,7 @@ describe('OpenCode user agent model overrides', () => {
   });
 });
 
-describe('Packaged OpenChamber agents', () => {
+describe('Packaged DevRyan agents', () => {
   it('discovers the packaged primary and subagents', () => {
     const agents = listPackagedAgents();
 

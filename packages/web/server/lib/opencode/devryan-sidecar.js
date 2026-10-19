@@ -28,11 +28,11 @@ function ensureSidecarDir(sidecarPath) {
   }
 }
 
-export function getOpenchamberSidecarPath(userConfigPath) {
+export function getDevRyanSidecarPath(userConfigPath) {
   return resolveSidecarPath(userConfigPath);
 }
 
-export function readOpenchamberSidecar(userConfigPath) {
+export function readDevRyanSidecar(userConfigPath) {
   const sidecarPath = resolveSidecarPath(userConfigPath);
   if (!fs.existsSync(sidecarPath)) return null;
   try {
@@ -41,14 +41,14 @@ export function readOpenchamberSidecar(userConfigPath) {
     const parsed = JSON.parse(text);
     return isPlainObject(parsed) ? parsed : null;
   } catch (error) {
-    console.warn('[openchamber-sidecar] Failed to read sidecar config:', error);
+    console.warn('[devryan-sidecar] Failed to read sidecar config:', error);
     return null;
   }
 }
 
-export function writeOpenchamberSidecar(data, userConfigPath) {
+export function writeDevRyanSidecar(data, userConfigPath) {
   if (!isPlainObject(data)) {
-    throw new Error('Openchamber sidecar data must be a plain object');
+    throw new Error('DevRyan sidecar data must be a plain object');
   }
   const sidecarPath = resolveSidecarPath(userConfigPath);
   ensureSidecarDir(sidecarPath);
@@ -64,15 +64,15 @@ export function writeOpenchamberSidecar(data, userConfigPath) {
  * the key from opencode's config file. opencode hot-reads that file, so leaving
  * the key in place would cause it to error out at runtime on /config.
  */
-export function migrateOpenchamberConfigToSidecar({ configFile, readConfigFile, writeConfig }) {
+export function migrateDevRyanConfigToSidecar({ configFile, readConfigFile, writeConfig }) {
   const config = readConfigFile(configFile);
   if (!isPlainObject(config)) return;
   const legacy = config[DEVRYAN_CONFIG_KEY];
   if (!isPlainObject(legacy)) return;
 
-  const existingSidecar = readOpenchamberSidecar(configFile) || {};
+  const existingSidecar = readDevRyanSidecar(configFile) || {};
   const merged = { ...existingSidecar, ...legacy };
-  writeOpenchamberSidecar(merged, configFile);
+  writeDevRyanSidecar(merged, configFile);
 
   const sanitized = { ...config };
   delete sanitized[DEVRYAN_CONFIG_KEY];
@@ -87,15 +87,15 @@ export function migrateOpenchamberConfigToSidecar({ configFile, readConfigFile, 
  * code paths (agents.js' getAgentOverridesContainer etc.) keep working without
  * caring where the data physically lives.
  */
-export function applyOpenchamberSidecarToConfig(config, userConfigPath) {
-  const sidecar = readOpenchamberSidecar(userConfigPath);
+export function applyDevRyanSidecarToConfig(config, userConfigPath) {
+  const sidecar = readDevRyanSidecar(userConfigPath);
   if (!sidecar) return config;
-  const baseOpenchamber = isPlainObject(config?.[DEVRYAN_CONFIG_KEY])
+  const baseDevRyanConfig = isPlainObject(config?.[DEVRYAN_CONFIG_KEY])
     ? config[DEVRYAN_CONFIG_KEY]
     : {};
   return {
     ...(isPlainObject(config) ? config : {}),
-    [DEVRYAN_CONFIG_KEY]: { ...baseOpenchamber, ...sidecar },
+    [DEVRYAN_CONFIG_KEY]: { ...baseDevRyanConfig, ...sidecar },
   };
 }
 
@@ -104,11 +104,11 @@ export function applyOpenchamberSidecarToConfig(config, userConfigPath) {
  * Returns the config with the openchamber key stripped, so callers can write
  * the remainder back to opencode's config file without poisoning it.
  */
-export function persistOpenchamberFromConfig(config, userConfigPath) {
+export function persistDevRyanFromConfig(config, userConfigPath) {
   if (!isPlainObject(config)) return config;
-  const openchamber = config[DEVRYAN_CONFIG_KEY];
-  if (isPlainObject(openchamber)) {
-    writeOpenchamberSidecar(openchamber, userConfigPath);
+  const devryanSettings = config[DEVRYAN_CONFIG_KEY];
+  if (isPlainObject(devryanSettings)) {
+    writeDevRyanSidecar(devryanSettings, userConfigPath);
   }
   const sanitized = { ...config };
   delete sanitized[DEVRYAN_CONFIG_KEY];

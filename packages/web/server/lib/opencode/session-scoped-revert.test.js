@@ -37,7 +37,7 @@ describe('scoped session revert (generation 2)', () => {
     const fetchImpl = vi.fn(async () => { throw new Error('unexpected raw fetch'); });
     const openCodeClient = createFakeClient();
     const options = { buildOpenCodeUrl: (route) => `http://opencode.test${route}`, fetchImpl, openCodeClient,
-      directory: '/repo', sessionID: 'ses_root', openchamberDataDir: '/unused' };
+      directory: '/repo', sessionID: 'ses_root', devryanDataDir: '/unused' };
 
     await expect(runScopedSessionRevert({ ...options, messageID: 'msg_1' })).rejects.toMatchObject(absent);
     await expect(runScopedSessionUnrevert(options)).rejects.toMatchObject(absent);

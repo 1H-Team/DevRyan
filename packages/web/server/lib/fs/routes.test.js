@@ -28,7 +28,7 @@ const createApp = ({ workspace, configRoot, spawn = vi.fn(), authorizeImageAsset
     resolveProjectDirectory: async () => ({ directory: workspace }),
     buildAugmentedPath: () => process.env.PATH || '',
     resolveGitBinaryForSpawn: () => 'git',
-    openchamberUserConfigRoot: configRoot,
+    devryanUserConfigRoot: configRoot,
     authorizeImageAssetGrant,
   });
   return app;
@@ -55,7 +55,7 @@ const createDirectoryAwareApp = ({ workspace, configRoot, alternateWorkspace }) 
     },
     buildAugmentedPath: () => process.env.PATH || '',
     resolveGitBinaryForSpawn: () => 'git',
-    openchamberUserConfigRoot: configRoot,
+    devryanUserConfigRoot: configRoot,
   });
   return app;
 };

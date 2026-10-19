@@ -88,9 +88,9 @@ export function createScopedRevertConversation({ openCodeClient, nativeConversat
 /** Host adapter. Supply an execution owner only after every mutation path for
  * this directory is captured and confined. Runtime version alone is not proof.
  */
-export function createScopedRevertCoordinator({ runtime, executions, openchamberDataDir,
+export function createScopedRevertCoordinator({ runtime, executions, devryanDataDir,
   onDiagnostic, legacy, openCodeClient, nativeConversation, windowsOwner, windowsLauncher }) {
-  return createSessionRevertCoordinator({ directory: path.join(openchamberDataDir, 'harness', 'revert-transactions'), runtime, executions,
+  return createSessionRevertCoordinator({ directory: path.join(devryanDataDir, 'harness', 'revert-transactions'), runtime, executions,
     onDiagnostic, legacy, windowsOwner, windowsLauncher, conversation: createScopedRevertConversation({
       openCodeClient, nativeConversation,
     }) });

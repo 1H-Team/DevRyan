@@ -74,7 +74,7 @@ const createTestApp = ({ desktopCallbacks = true } = {}) => {
     registerAuthAndAccessRoutes,
     registerTtsRoutes: () => {},
     registerNotificationRoutes: () => {},
-    registerOpenChamberRoutes: () => {},
+    registerDevRyanRoutes: () => {},
     express,
   });
 

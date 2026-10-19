@@ -59,7 +59,7 @@ describe('background Git environment', () => {
 
 describe('getRemotes', () => {
   it('returns an empty remote list for non-git directories without logging noise', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'openchamber-non-git-'));
+    const directory = await mkdtemp(join(tmpdir(), 'devryan-non-git-'));
     tempDirs.push(directory);
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -78,7 +78,7 @@ describe('getWorktrees', () => {
   });
 
   it('does not return worktree registrations Git marks as prunable', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'openchamber-worktrees-'));
+    const directory = await mkdtemp(join(tmpdir(), 'devryan-worktrees-'));
     const staleWorktree = `${directory}-stale`;
     tempDirs.push(directory, staleWorktree);
     const git = simpleGit(directory);
@@ -100,7 +100,7 @@ describe('getWorktrees', () => {
 
 describe('worktree bootstrap compatibility status', () => {
   it('treats an existing non-Git workspace as not applicable and a missing directory as absent', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'openchamber-bootstrap-workspace-'));
+    const directory = await mkdtemp(join(tmpdir(), 'devryan-bootstrap-workspace-'));
     tempDirs.push(directory);
     const runtime = configureWorktreeBootstrapRuntime({
       store: createRecordStore({
@@ -120,7 +120,7 @@ describe('worktree bootstrap compatibility status', () => {
   });
 
   it('preserves user edits when a populated worktree bootstrap is replayed', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'openchamber-bootstrap-replay-'));
+    const directory = await mkdtemp(join(tmpdir(), 'devryan-bootstrap-replay-'));
     tempDirs.push(directory);
     const git = simpleGit(directory);
     await git.init();
@@ -150,7 +150,7 @@ describe('worktree bootstrap compatibility status', () => {
   });
 
   it('populates a newly created no-checkout worktree before treating it as replay-safe', async () => {
-    const parent = await mkdtemp(join(tmpdir(), 'openchamber-bootstrap-populate-'));
+    const parent = await mkdtemp(join(tmpdir(), 'devryan-bootstrap-populate-'));
     tempDirs.push(parent);
     const repository = join(parent, 'repository');
     const worktree = join(parent, 'worktree');
@@ -183,7 +183,7 @@ describe('worktree bootstrap compatibility status', () => {
   });
 
   it.skipIf(process.platform === 'win32')('runs a populated worktree post-checkout hook exactly once', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'openchamber-bootstrap-hook-'));
+    const directory = await mkdtemp(join(tmpdir(), 'devryan-bootstrap-hook-'));
     tempDirs.push(directory);
     const git = simpleGit(directory);
     await git.init();
@@ -240,7 +240,7 @@ describe('worktree bootstrap compatibility status', () => {
 
 describe('file staging', () => {
   const createRepo = async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'openchamber-git-service-'));
+    const directory = await mkdtemp(join(tmpdir(), 'devryan-git-service-'));
     tempDirs.push(directory);
     const git = simpleGit(directory);
     await git.init();
@@ -358,7 +358,7 @@ describe('project directory isolation', () => {
 
 describe('git status remote divergence without upstream tracking', () => {
   const createRepo = async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'openchamber-git-status-'));
+    const directory = await mkdtemp(join(tmpdir(), 'devryan-git-status-'));
     tempDirs.push(directory);
     const git = simpleGit(directory);
     await git.init();
@@ -433,7 +433,7 @@ describe('git log base ref resolution', () => {
   });
 
   it('uses a remote-only origin base for custom log ranges', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'openchamber-git-log-'));
+    const directory = await mkdtemp(join(tmpdir(), 'devryan-git-log-'));
     tempDirs.push(directory);
     const git = simpleGit(directory);
     await git.init();
@@ -459,7 +459,7 @@ describe('git log base ref resolution', () => {
 
 describe('git branch listing', () => {
   const createRepo = async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'openchamber-git-branches-'));
+    const directory = await mkdtemp(join(tmpdir(), 'devryan-git-branches-'));
     tempDirs.push(directory);
     const git = simpleGit(directory);
     await git.init();
@@ -473,7 +473,7 @@ describe('git branch listing', () => {
   };
 
   it('returns an empty branch list for non-git directories without logging noise', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'openchamber-non-git-branches-'));
+    const directory = await mkdtemp(join(tmpdir(), 'devryan-non-git-branches-'));
     tempDirs.push(directory);
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -490,7 +490,7 @@ describe('git branch listing', () => {
     const head = (await git.revparse(['HEAD'])).trim();
     await git.raw(['update-ref', 'refs/remotes/origin/main', head]);
     await git.raw(['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main']);
-    await git.raw(['remote', 'add', 'origin', join(tmpdir(), 'openchamber-missing-remote')]);
+    await git.raw(['remote', 'add', 'origin', join(tmpdir(), 'devryan-missing-remote')]);
 
     const branches = await getBranches(directory);
 
@@ -502,7 +502,7 @@ describe('git branch listing', () => {
 
 describe('worktree canonicalization', () => {
   const createRepo = async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'openchamber-git-canonical-'));
+    const directory = await mkdtemp(join(tmpdir(), 'devryan-git-canonical-'));
     tempDirs.push(directory);
     const git = simpleGit(directory);
     await git.init();
@@ -551,7 +551,7 @@ describe('worktree canonicalization', () => {
 
   it('uses a linked worktree top-level as the canonical worktree root', async () => {
     const { git } = await createRepo();
-    const worktreeParent = await mkdtemp(join(tmpdir(), 'openchamber-linked-worktree-'));
+    const worktreeParent = await mkdtemp(join(tmpdir(), 'devryan-linked-worktree-'));
     tempDirs.push(worktreeParent);
     const worktreeDirectory = join(worktreeParent, 'feature');
     await git.raw(['worktree', 'add', '-b', 'feature', worktreeDirectory]);

@@ -463,7 +463,7 @@ const PREVIEW_BRIDGE_SCRIPT = String.raw`(() => {
     try {
       const root = document.documentElement;
       root.style.colorScheme = next;
-      root.dataset.openchamberPreviewColorScheme = next;
+      root.dataset.devryanPreviewColorScheme = next;
       if (shouldSyncDataTheme()) {
         root.dataset.theme = next;
       }
@@ -743,7 +743,7 @@ const PREVIEW_BRIDGE_SCRIPT = String.raw`(() => {
       }
     };
 
-    function OpenChamberPreviewWebSocket(url, protocols) {
+    function DevRyanPreviewWebSocket(url, protocols) {
       const protocolList = Array.isArray(protocols) ? protocols : [protocols];
       const isViteSocket = protocolList.indexOf('vite-hmr') >= 0;
       const nextUrl = rewriteUrl(url);
@@ -765,10 +765,10 @@ const PREVIEW_BRIDGE_SCRIPT = String.raw`(() => {
       return socket;
     }
 
-    OpenChamberPreviewWebSocket.prototype = NativeWebSocket.prototype;
-    Object.setPrototypeOf(OpenChamberPreviewWebSocket, NativeWebSocket);
-    Object.defineProperty(OpenChamberPreviewWebSocket, 'name', { value: 'WebSocket' });
-    window.WebSocket = OpenChamberPreviewWebSocket;
+    DevRyanPreviewWebSocket.prototype = NativeWebSocket.prototype;
+    Object.setPrototypeOf(DevRyanPreviewWebSocket, NativeWebSocket);
+    Object.defineProperty(DevRyanPreviewWebSocket, 'name', { value: 'WebSocket' });
+    window.WebSocket = DevRyanPreviewWebSocket;
   };
 
   const installAppRequestProxyPatch = () => {
@@ -843,13 +843,13 @@ const PREVIEW_BRIDGE_SCRIPT = String.raw`(() => {
 
     if (typeof window.EventSource === 'function') {
       const NativeEventSource = window.EventSource;
-      function OpenChamberPreviewEventSource(url, eventSourceInitDict) {
+      function DevRyanPreviewEventSource(url, eventSourceInitDict) {
         return new NativeEventSource(proxiedUrl(String(url)), eventSourceInitDict);
       }
-      OpenChamberPreviewEventSource.prototype = NativeEventSource.prototype;
-      Object.setPrototypeOf(OpenChamberPreviewEventSource, NativeEventSource);
-      Object.defineProperty(OpenChamberPreviewEventSource, 'name', { value: 'EventSource' });
-      window.EventSource = OpenChamberPreviewEventSource;
+      DevRyanPreviewEventSource.prototype = NativeEventSource.prototype;
+      Object.setPrototypeOf(DevRyanPreviewEventSource, NativeEventSource);
+      Object.defineProperty(DevRyanPreviewEventSource, 'name', { value: 'EventSource' });
+      window.EventSource = DevRyanPreviewEventSource;
     }
 
     // SPA frameworks frequently create images, scripts, links, and style tags

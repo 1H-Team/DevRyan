@@ -186,7 +186,7 @@ export async function startWebUiServer(options = {}) {
   registerFsRoutes(app, { os, path, fsPromises: fs.promises, spawn, crypto,
     normalizeDirectoryPath: normalizers.normalizeDirectoryPath, resolveProjectDirectory: resolveDirectory,
     buildAugmentedPath: () => process.env.PATH ?? '', resolveGitBinaryForSpawn: () => process.platform === 'win32' ? 'git.exe' : 'git',
-    openchamberUserConfigRoot: path.join(dataDirectory, 'runtime', 'config', 'opencode') });
+    devryanUserConfigRoot: path.join(dataDirectory, 'runtime', 'config', 'opencode') });
   const stream = createOpenCodeV2SseHandler({ globalMessageStreamHub: hub, resolveRequestDirectory: resolveDirectory });
   app.get(['/api/event', '/api/global/event'], stream);
   app.use('/api', (req, res, next) => lifecycle.snapshot().ready ? next() : res.status(503).json({ code: 'opencode_unavailable', retryable: true }));

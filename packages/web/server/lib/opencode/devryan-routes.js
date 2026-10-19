@@ -1,4 +1,4 @@
-export const registerOpenChamberRoutes = (app, dependencies) => {
+export const registerDevRyanRoutes = (app, dependencies) => {
   const {
     fs,
     os,
@@ -6,7 +6,7 @@ export const registerOpenChamberRoutes = (app, dependencies) => {
     process,
     server,
     __dirname,
-    openchamberDataDir,
+    devryanDataDir,
     modelsDevApiUrl,
     modelsMetadataCacheTtl,
     readSettingsFromDiskMigrated,
@@ -153,7 +153,7 @@ export const registerOpenChamberRoutes = (app, dependencies) => {
         }
       }
       const restartCmd = `(${restartCmdPrimary}) || (${restartCmdFallback})`;
-      const updateLogPath = path.join(openchamberDataDir, 'update-install.log');
+      const updateLogPath = path.join(devryanDataDir, 'update-install.log');
       const logPreamble = [
         '',
         `=== DevRyan update ${new Date().toISOString()} ===`,

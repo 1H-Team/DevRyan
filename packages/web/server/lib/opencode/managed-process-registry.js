@@ -7,7 +7,7 @@ import { resolveDevRyanDataRoot } from '@devryan/shared-runtime/node/data-root.j
 const REGISTRY_VERSION = 2;
 const REGISTRY_FILE_NAME = 'managed-opencode-processes.json';
 
-function getOpenChamberDataDir(env = process.env) {
+function getDevRyanDataDir(env = process.env) {
   return resolveDevRyanDataRoot({ env });
 }
 
@@ -15,7 +15,7 @@ function getManagedOpenCodeRegistryPath(options = {}) {
   if (typeof options.registryPath === 'string' && options.registryPath.trim()) {
     return path.resolve(options.registryPath);
   }
-  return path.join(getOpenChamberDataDir(options.env), REGISTRY_FILE_NAME);
+  return path.join(getDevRyanDataDir(options.env), REGISTRY_FILE_NAME);
 }
 
 function normalizePositiveInteger(value) {
@@ -406,7 +406,7 @@ async function reapOrphanedManagedOpenCodeProcesses(options = {}) {
 export {
   readProcessStartTime,
   REGISTRY_FILE_NAME,
-  getOpenChamberDataDir,
+  getDevRyanDataDir,
   getManagedOpenCodeRegistryPath,
   readManagedOpenCodeRegistry,
   writeManagedOpenCodeRegistry,
