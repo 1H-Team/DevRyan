@@ -2,9 +2,14 @@ import { describe, expect, test } from 'bun:test';
 import {
   BackgroundTaskConcurrency,
   BackgroundTaskConcurrencyQueueCancelledError,
+} from './background-task-concurrency';
+// The process-wide scheduler registry is owned by admission-runtime, which
+// imports this module; re-exporting it back made an import cycle that Bun's
+// bundler intermittently failed to resolve.
+import {
   getBackgroundTaskConcurrency,
   resetBackgroundTaskConcurrencyForTests,
-} from './background-task-concurrency';
+} from '../admission-runtime';
 
 const limited = (overrides = {}) =>
   new BackgroundTaskConcurrency({
