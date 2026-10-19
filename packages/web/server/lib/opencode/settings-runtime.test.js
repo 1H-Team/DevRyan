@@ -123,7 +123,7 @@ describe('settings runtime', () => {
     await expect(runtime.writeSettingsToDisk({ themeId: 'x' })).rejects.toMatchObject({ code: 'ENOSPC' });
 
     const temporary = fsPromises.writeFile.mock.calls.at(-1)[0];
-    expect(temporary).toMatch(/^\/tmp\/openchamber\/settings\.json\.tmp-\d+-\d+-[a-z0-9]+$/);
+    expect(temporary).toMatch(/^\/tmp\/devryan\/settings\.json\.tmp-\d+-\d+-[a-z0-9]+$/);
     expect(fsPromises.rm).toHaveBeenCalledWith(temporary, { force: true });
   });
 
