@@ -7,8 +7,9 @@ import { once, EventEmitter } from 'node:events';
 import { userInfo } from 'node:os';
 import { createHash } from 'node:crypto';
 import { qa1ExerciseRequestTimeout, qa1ExerciseHttpFailure, parseHandoffCommand, projectHandoffChildRefusal, assertHandoffUpgradeSettlement, assertHandoffJournalScope, handoffSetup, prepareProviderHandoff, projectHandoffProviderStatus, projectHandoffClaudeStatus, pinProviderHandoff,
-  registerProviderHandoffProfile, readRegisteredProviderHandoff, assertHandoffUpgradeLineage, createHandoffChildLifetime, cleanupHandoffChildResources } from './live-provider-handoff.mjs';
+  registerProviderHandoffProfile, readRegisteredProviderHandoff, assertHandoffUpgradeLineage, createHandoffChildLifetime, cleanupHandoffChildResources, providerHandoffRunParent } from './live-provider-handoff.mjs';
 import { waitLiveOwnerAttendance, createLiveOwnerLink } from './live-credential-owner.mjs';
+import { createRunRoot, scratchParent } from './run-root.mjs';
 import { nativeUpgradeBundleID } from '../../packages/web/server/lib/opencode/runtime-host/runtime-bundle-lifecycle.js';
 import { canonicalJSON } from '../../packages/web/server/lib/opencode/runtime-host/bundle-migration-inventory.js';
 import { isPinnedRun } from '../storage.mjs';
@@ -153,6 +154,23 @@ test('nonsecret fresh handoff setup uses requested provider combination and inde
 
 test('profile preparation rejects any outside-repository source before native/artifact access', async () => {
   await assert.rejects(prepareProviderHandoff({ artifactRoot: '/outside/artifact', root: '/outside/profile' }), /qa_live_private_path_required/);
+});
+
+test('retained handoff profile stays in the private cache across process lifetimes', async () => {
+  assert.equal(providerHandoffRunParent, path.resolve('.cache/qa'));
+  const retained = createRunRoot({ parent: providerHandoffRunParent, prefix: 'handoff-parent-test-', owner: 'scripts/qa/live-provider-handoff.mjs',
+    keepArtifacts: true, signals: false, argv: [], env: {} });
+  const transient = createRunRoot({ parent: scratchParent('qa'), prefix: 'handoff-transient-test-', owner: 'scripts/qa/live-provider-handoff.mjs',
+    signals: false, argv: [], env: {} });
+  try {
+    await pinProviderHandoff(retained.dir);
+    await assert.rejects(pinProviderHandoff(transient.dir), /qa_live_private_path_required/);
+    retained.finish('passed');
+    await pinProviderHandoff(retained.dir);
+  } finally {
+    retained.finish('passed'); transient.finish('passed');
+    await fs.rm(retained.dir, { recursive: true, force: true });
+  }
 });
 
 test('status exposes only fixed provider flags/model counts and incomplete state, never catalog metadata', () => {
