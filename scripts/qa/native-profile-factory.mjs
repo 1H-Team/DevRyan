@@ -12,6 +12,7 @@ import { createSessionExecutionHost } from '../../packages/web/server/lib/openco
 import { createOpenCodeClient } from '../../packages/web/server/lib/opencode/opencode-client/index.js';
 import { createQaNativeInputVerifier } from './native-profile-preparation.mjs';
 import { createQaHostLaunchEnvironment } from './launch-environment.mjs';
+import { isOwnedScratchPath } from './run-root.mjs';
 
 const repository = fileURLToPath(new URL('../../', import.meta.url)).replace(/\/$/, '');
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -30,9 +31,9 @@ async function mirrorPath(root, relative, directory) {
 
 /** Manifest-covered configuration data only; no ambient or installed account
  * discovery. Live account acquisition remains a required original-owner callback. */
-export async function createQaNativePreparationFactory({ preparedInput, mirror, bootstrapCredentials }) {
+export async function createQaNativePreparationFactory({ preparedInput, mirror, bootstrapCredentials, runScope }) {
   if (typeof bootstrapCredentials !== 'function') throw fail('qa_native_credential_prerequisite');
-  const verifier = await createQaNativeInputVerifier(preparedInput);
+  const verifier = await createQaNativeInputVerifier(preparedInput, { runScope });
   if (!mirror || Object.keys(mirror).some(key => !['reviewedNativeFile', 'reviewedPluginFile', 'opencodeConfigDirectory', 'webConfigDirectory', 'homeDirectory'].includes(key))) throw fail('qa_native_mirror_invalid');
   const approved = Object.fromEntries(await Promise.all(Object.entries(mirror).map(async ([key, relative]) => [key,
     await mirrorPath(verifier.input.sourceHome, relative, key.endsWith('Directory'))])));
@@ -41,8 +42,8 @@ export async function createQaNativePreparationFactory({ preparedInput, mirror, 
   const prepareSource = async ({ runtimeRoot, workspace, sourceHome, artifactRoot }) => {
     if (sourceHome !== verifier.input.sourceHome || artifactRoot !== verifier.input.artifactRoot) throw fail('qa_native_input_changed');
     await verifier.verifyInputs();
-    assert.ok(path.isAbsolute(runtimeRoot) && inside(path.join(repository, '.cache'), runtimeRoot) && await fs.realpath(runtimeRoot) === runtimeRoot);
-    assert.ok(path.isAbsolute(workspace) && inside(path.join(repository, '.cache'), workspace) && await fs.realpath(workspace) === workspace);
+    assert.ok(path.isAbsolute(runtimeRoot) && (inside(path.join(repository, '.cache'), runtimeRoot) || isOwnedScratchPath(runtimeRoot, { scope: runScope })) && await fs.realpath(runtimeRoot) === runtimeRoot);
+    assert.ok(path.isAbsolute(workspace) && (inside(path.join(repository, '.cache'), workspace) || isOwnedScratchPath(workspace, { scope: runScope })) && await fs.realpath(workspace) === workspace);
     const manifestPath = path.join(artifactRoot, 'native-bundle.json'), manifestSha256 = hash(await fs.readFile(manifestPath));
     const artifacts = await verifyNativeRuntimeArtifacts({ manifestPath, manifestSha256,
       launcher: path.join(artifactRoot, `DevRyan-execution-${process.platform}-${process.arch}`) });

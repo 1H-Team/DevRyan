@@ -35,10 +35,18 @@ async function ownedFutureDirectory(file, runScope) {
   await ownedPath(parent, { runScope });
 }
 
+async function verifiedInputPath(file, category, runScope) {
+  try { await ownedPath(file, { runScope }); }
+  catch (error) {
+    if (error.code === 'qa_native_input_path_invalid') throw fail(`qa_native_input_${category}_path_invalid`);
+    throw error;
+  }
+}
+
 /** No ambient home or implicit credential files. The manifest covers the whole copied input. */
 export async function verifyQaNativeInput(input, { runScope } = {}) {
   if (!input || Object.keys(input).some(key => !['sourceHome', 'files', 'artifactRoot'].includes(key))) throw fail('qa_native_input_invalid');
-  await ownedPath(input.sourceHome, { runScope }); await ownedPath(input.artifactRoot);
+  await verifiedInputPath(input.sourceHome, 'source_home', runScope); await verifiedInputPath(input.artifactRoot, 'artifact_root');
   if (!Array.isArray(input.files) || !input.files.length || input.files.length > 10000) throw fail('qa_native_input_manifest_invalid');
   const expected = new Map();
   for (const row of input.files) {

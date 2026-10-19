@@ -256,7 +256,7 @@ export async function prepareRuntimeUiProfile({ cell, runtimeRoot, workspace, ta
     const verifier = await createQaNativeInputVerifier(preparedInput, { runScope });
     // This constructor-only refusal is never consulted: source copying is
     // reused separately from live account admission, which remains unchanged.
-    const factory = await createQaNativePreparationFactory({ preparedInput,
+    const factory = await createQaNativePreparationFactory({ preparedInput, runScope,
       mirror: { reviewedNativeFile: 'reviewed-native.json', reviewedPluginFile: 'reviewed-plugins.json', opencodeConfigDirectory: 'opencode', webConfigDirectory: 'web' },
       bootstrapCredentials: async () => { throw fail('qa_runtime_fixture_accounts_forbidden'); } });
     const source = await factory.prepareSource({ runtimeRoot, workspace, sourceHome, artifactRoot });

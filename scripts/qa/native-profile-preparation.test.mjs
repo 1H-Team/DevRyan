@@ -41,9 +41,9 @@ test('native input verifier accepts generated temp source only with its run scop
   try {
     await fs.mkdir(sourceHome, { recursive: true, mode: 0o700 }); await fs.writeFile(path.join(sourceHome, 'config.json'), bytes);
     const input = { sourceHome, artifactRoot, files: [{ path: 'config.json', sha256: createHash('sha256').update(bytes).digest('hex') }] };
-    await assert.rejects(verifyQaNativeInput(input), { code: 'qa_native_input_path_invalid' });
+    await assert.rejects(verifyQaNativeInput(input), { code: 'qa_native_input_source_home_path_invalid' });
     assert.match(await verifyQaNativeInput(input, { runScope: run.scope }), /^[a-f0-9]{64}$/);
-    await assert.rejects(verifyQaNativeInput({ ...input, artifactRoot: run.dir }, { runScope: run.scope }), { code: 'qa_native_input_path_invalid' });
+    await assert.rejects(verifyQaNativeInput({ ...input, artifactRoot: run.dir }, { runScope: run.scope }), { code: 'qa_native_input_artifact_root_path_invalid' });
   } finally { run.finish('passed'); await fs.rm(artifactRoot, { recursive: true, force: true }); }
 });
 
