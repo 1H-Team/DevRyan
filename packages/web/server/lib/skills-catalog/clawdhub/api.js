@@ -31,7 +31,7 @@ async function rateLimitedFetch(url, options = {}) {
       ...options,
       headers: {
         Accept: 'application/json',
-        'User-Agent': 'OpenChamber/1.0',
+        'User-Agent': 'DevRyan/1.0',
         ...options.headers,
       },
     });
@@ -133,7 +133,7 @@ export async function downloadClawdHubSkill(slug, version) {
     timeoutMs: 60_000,
     headers: {
       Accept: 'application/zip',
-      'User-Agent': 'OpenChamber/1.0',
+      'User-Agent': 'DevRyan/1.0',
     },
   });
 }

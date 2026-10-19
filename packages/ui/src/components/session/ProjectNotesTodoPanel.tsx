@@ -22,7 +22,7 @@ import {
   type OpenChamberProjectPlanFileLink,
   type OpenChamberProjectTodoItem,
   type ProjectRef,
-} from '@/lib/openchamberConfig';
+} from '@/lib/devryanConfig';
 import { generateBranchName } from '@/lib/git/branchNameGenerator';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useUIStore } from '@/stores/useUIStore';

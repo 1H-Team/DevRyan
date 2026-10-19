@@ -4,8 +4,8 @@ import { getAuthPrincipal, useAuthPrincipal } from '@/lib/authSession';
 import { canPrepareSettingsSection, usesManagedSettings } from './SettingsView.access';
 import { createPreparedSettingsComponent } from './preparedSettingsComponent';
 import type { SettingsDataBoundaryProps } from './SettingsDataBoundary';
-import { OpenChamberPage } from '@/components/sections/openchamber/OpenChamberPage';
-import { openChamberSectionResources } from '@/components/sections/openchamber/openChamberSectionResources';
+import { OpenChamberPage } from '@/components/sections/devryan/OpenChamberPage';
+import { openChamberSectionResources } from '@/components/sections/devryan/openChamberSectionResources';
 
 export { createPreparedSettingsComponent } from './preparedSettingsComponent';
 import type { SettingsPageSlug } from '@/lib/settings/metadata';
@@ -60,7 +60,7 @@ const magicPromptsPage = createPreparedSettingsComponent(() =>
 const gitPage = createPreparedSettingsComponent(() =>
   import('@/components/sections/git-identities/GitPage').then((module) => ({ default: module.GitPage })));
 const aboutSettings = createPreparedSettingsComponent(() =>
-  import('@/components/sections/openchamber/AboutSettings').then((module) => ({ default: module.AboutSettings })));
+  import('@/components/sections/devryan/AboutSettings').then((module) => ({ default: module.AboutSettings })));
 const userManagementPage = createPreparedSettingsComponent(() =>
   import('@/components/sections/users/UserManagementPage').then((module) => ({ default: module.UserManagementPage })));
 const bugReportsPage = createPreparedSettingsComponent(() =>

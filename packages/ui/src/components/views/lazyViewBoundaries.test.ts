@@ -161,13 +161,13 @@ describe('shared lazy view boundaries', () => {
     expect(settingsView).toContain('visiblePages.map((page) => page.slug)');
     expect(sectionLoaders).toContain('preloadSettingsSectionsWhenIdle');
     expect(sectionLoaders).toContain('resourcesFor(slug).every((resource) => resource.isReady())');
-    const preferences = readSource('components/sections/openchamber/openChamberSectionResources.ts');
+    const preferences = readSource('components/sections/devryan/openChamberSectionResources.ts');
     expect(preferences).toContain("import('./VisualSectionContent')");
     expect(preferences).toContain("import('./KeyboardShortcutsSettings')");
     expect(preferences).toContain("import('./VoiceSettings')");
     expect(sectionLoaders).toContain('const sectionPreloads = new Map');
     expect(settingsView).toContain('<SettingsSectionBoundary>{renderPageContent(settingsSlug)}</SettingsSectionBoundary>');
-    expect(settingsView).not.toContain("import { OpenChamberPage } from '@/components/sections/openchamber/OpenChamberPage'");
+    expect(settingsView).not.toContain("import { OpenChamberPage } from '@/components/sections/devryan/OpenChamberPage'");
     expect(settingsView).not.toContain("import { UserManagementPage } from '@/components/sections/users/UserManagementPage'");
   });
 
@@ -207,7 +207,7 @@ describe('shared lazy view boundaries', () => {
       }
       expect(source).toContain('PreparedSettingsDataBoundary');
     }
-    const page = readSource('components/sections/openchamber/OpenChamberPage.tsx');
+    const page = readSource('components/sections/devryan/OpenChamberPage.tsx');
     for (const section of ['VoiceSettings', 'TunnelSettings', 'OpenChamberVisualSettings']) {
       expect(page).not.toContain(`from './${section}'`);
     }

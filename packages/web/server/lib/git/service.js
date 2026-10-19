@@ -2280,7 +2280,7 @@ async function stashPushUnlocked(directory, options = {}) {
   const git = await createGit(directory);
   const message = typeof options.message === 'string' && options.message.trim()
     ? options.message.trim()
-    : `OpenChamber stash ${new Date().toISOString()}`;
+    : `DevRyan stash ${new Date().toISOString()}`;
   try {
     const output = await withIndexLockRetry(
       () => git.raw(['stash', 'push', '--include-untracked', '-m', message]),

@@ -299,7 +299,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       return next();
     }
 
-    return res.status(400).json({ error: 'Anthropic API key authentication is not supported in OpenChamber. Use Anthropic OAuth instead.' });
+    return res.status(400).json({ error: 'Anthropic API key authentication is not supported in DevRyan. Use Anthropic OAuth instead.' });
   });
 
   const pruneExpiredPendingMcpAuthContexts = () => {

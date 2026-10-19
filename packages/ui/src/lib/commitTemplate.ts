@@ -140,7 +140,7 @@ export function validateCommitMessage(message: string): CommitMessageValidation 
 export function buildCommitMsgHookScript(): string {
   const typeAlternation = ALLOWED_COMMIT_TYPES.join('|');
   return `#!/usr/bin/env bash
-# Conventional Commit validator (managed by OpenChamber)
+# Conventional Commit validator (managed by DevRyan)
 # Installed via global core.hooksPath. Edit at ~/.config/git/hooks/commit-msg.
 set -euo pipefail
 

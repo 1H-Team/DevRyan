@@ -887,10 +887,10 @@ function parseArgs(argv = process.argv.slice(2)) {
         // may still pass this when starting a remote server.
         break;
       case 'try-cf-tunnel':
-        removedFlagErrors.push('`--try-cf-tunnel` was removed. Use: openchamber tunnel start --provider cloudflare --mode quick');
+        removedFlagErrors.push('`--try-cf-tunnel` was removed. Use: devryan tunnel start --provider cloudflare --mode quick');
         break;
       case 'tunnel-qr':
-        removedFlagErrors.push('`--tunnel-qr` was removed. Use: openchamber tunnel start ... --qr');
+        removedFlagErrors.push('`--tunnel-qr` was removed. Use: devryan tunnel start ... --qr');
         break;
       case 'tunnel-password-url':
         removedFlagErrors.push('`--tunnel-password-url` was removed. Use UI password auth directly after tunnel start.');
@@ -901,7 +901,7 @@ function parseArgs(argv = process.argv.slice(2)) {
       case 'tunnel-token':
       case 'tunnel-hostname':
       case 'tunnel':
-        removedFlagErrors.push(`\`--${name}\` was removed from top-level serve flow. Use: openchamber tunnel start ...`);
+        removedFlagErrors.push(`\`--${name}\` was removed from top-level serve flow. Use: devryan tunnel start ...`);
         break;
       default:
         if (!long && name.length === 1) {
@@ -914,7 +914,7 @@ function parseArgs(argv = process.argv.slice(2)) {
   }
 
   const command = positional[0] || 'serve';
-  if(command!=='runtime'&&optionNames.includes('expected-revision'))removedFlagErrors.push('`--expected-revision` requires: openchamber runtime bundle resume');
+  if(command!=='runtime'&&optionNames.includes('expected-revision'))removedFlagErrors.push('`--expected-revision` requires: devryan runtime bundle resume');
   const subcommand = command === 'tunnel' ? (positional[1] || 'help') : null;
   const tunnelAction = command === 'tunnel' ? (positional[2] || null) : null;
 
@@ -936,7 +936,8 @@ function showHelp() {
  DevRyan - Web interface for the OpenCode AI coding agent
 
 USAGE:
-  openchamber [COMMAND] [OPTIONS]
+  devryan [COMMAND] [OPTIONS]
+  (openchamber is an accepted alias for devryan)
 
 COMMANDS:
   serve          Start the web server (daemon default)
@@ -968,11 +969,11 @@ RUNTIME:
   Update DevRyan to update the bundled runtime.
 
 EXAMPLES:
-  openchamber                    # Start in daemon mode on default port 3000 (or free port)
-  openchamber --port 8080        # Start on port 8080 (daemon)
-  openchamber serve --foreground # Start in foreground (for systemd Type=simple)
-  openchamber tunnel help        # Show tunnel lifecycle help
-  openchamber logs               # Follow logs for latest running instance
+  devryan                    # Start in daemon mode on default port 3000 (or free port)
+  devryan --port 8080        # Start on port 8080 (daemon)
+  devryan serve --foreground # Start in foreground (for systemd Type=simple)
+  devryan tunnel help        # Show tunnel lifecycle help
+  devryan logs               # Follow logs for latest running instance
 `);
 }
 
@@ -981,7 +982,7 @@ function showTunnelHelp() {
  Tunnel Lifecycle Commands
 
 USAGE:
-  openchamber tunnel <SUBCOMMAND> [OPTIONS]
+  devryan tunnel <SUBCOMMAND> [OPTIONS]
 
 SUBCOMMANDS:
   help        Show this tunnel help
@@ -1026,31 +1027,31 @@ BEHAVIOR NOTES:
   - Connect links are one-time; generating a new link revokes the previous unused link.
 
 PROFILE USAGE:
-  openchamber tunnel profile list [--provider <id>] [--json]
-  openchamber tunnel profile show --name <name> [--provider <id>] [--json]
-  openchamber tunnel profile add --provider <id> --mode managed-remote --name <name> --hostname <host> --origin-port <port> --token <token> [--force] [--json]
-  openchamber tunnel profile add --provider <id> --mode managed-remote --name <name> --hostname <host> --origin-port <port> --token-file <path> [--force] [--json]
-  openchamber tunnel profile remove --name <name> [--provider <id>] [--json]
+  devryan tunnel profile list [--provider <id>] [--json]
+  devryan tunnel profile show --name <name> [--provider <id>] [--json]
+  devryan tunnel profile add --provider <id> --mode managed-remote --name <name> --hostname <host> --origin-port <port> --token <token> [--force] [--json]
+  devryan tunnel profile add --provider <id> --mode managed-remote --name <name> --hostname <host> --origin-port <port> --token-file <path> [--force] [--json]
+  devryan tunnel profile remove --name <name> [--provider <id>] [--json]
 
 SHELL COMPLETION:
-  openchamber tunnel completion bash   Generate Bash completion script
-  openchamber tunnel completion zsh    Generate Zsh completion script
-  openchamber tunnel completion fish   Generate Fish completion script
+  devryan tunnel completion bash   Generate Bash completion script
+  devryan tunnel completion zsh    Generate Zsh completion script
+  devryan tunnel completion fish   Generate Fish completion script
 
 EXAMPLES:
-  openchamber tunnel providers
-  openchamber tunnel ready --provider cloudflare
-  openchamber tunnel doctor --provider cloudflare
-  openchamber tunnel status
-  openchamber tunnel start --qr
-  openchamber tunnel start --profile prod-main
-  openchamber tunnel start --provider cloudflare --mode managed-remote --token-file ~/.secrets/cf-token --hostname app.example.com --origin-port 3000
-  openchamber tunnel start --provider cloudflare --mode managed-local --config ~/.cloudflared/config.yml
-  openchamber tunnel start --dry-run --provider cloudflare --mode managed-remote --token-file ~/.secrets/cf-token --hostname app.example.com --origin-port 3000
-  echo "$TOKEN" | openchamber tunnel profile add --provider cloudflare --mode managed-remote --name prod-main --hostname app.example.com --origin-port 3000 --token-stdin
-  openchamber tunnel profile list --provider cloudflare
-  openchamber tunnel profile list --json --show-secrets
-  openchamber tunnel stop --port 3000
+  devryan tunnel providers
+  devryan tunnel ready --provider cloudflare
+  devryan tunnel doctor --provider cloudflare
+  devryan tunnel status
+  devryan tunnel start --qr
+  devryan tunnel start --profile prod-main
+  devryan tunnel start --provider cloudflare --mode managed-remote --token-file ~/.secrets/cf-token --hostname app.example.com --origin-port 3000
+  devryan tunnel start --provider cloudflare --mode managed-local --config ~/.cloudflared/config.yml
+  devryan tunnel start --dry-run --provider cloudflare --mode managed-remote --token-file ~/.secrets/cf-token --hostname app.example.com --origin-port 3000
+  echo "$TOKEN" | devryan tunnel profile add --provider cloudflare --mode managed-remote --name prod-main --hostname app.example.com --origin-port 3000 --token-stdin
+  devryan tunnel profile list --provider cloudflare
+  devryan tunnel profile list --json --show-secrets
+  devryan tunnel stop --port 3000
 `);
 }
 
@@ -1058,9 +1059,9 @@ function generateCompletionScript(shell) {
   const normalized = typeof shell === 'string' ? shell.trim().toLowerCase() : '';
 
   if (normalized === 'bash') {
-    return `# Bash completion for openchamber tunnel
-# Add to ~/.bashrc: eval "$(openchamber tunnel completion bash)"
-_openchamber_tunnel() {
+    return `# Bash completion for devryan tunnel
+# Add to ~/.bashrc: eval "$(devryan tunnel completion bash)"
+_devryan_tunnel() {
   local cur prev commands tunnel_commands profile_commands common_flags start_flags
   COMPREPLY=()
   cur="\${COMP_WORDS[COMP_CWORD]}"
@@ -1101,16 +1102,16 @@ _openchamber_tunnel() {
   COMPREPLY=( $(compgen -W "\${common_flags}" -- "\${cur}") )
   return 0
 }
-complete -F _openchamber_tunnel openchamber
+complete -F _devryan_tunnel devryan openchamber
 `;
   }
 
   if (normalized === 'zsh') {
-    return `#compdef openchamber
-# Zsh completion for openchamber tunnel
-# Add to ~/.zshrc: eval "$(openchamber tunnel completion zsh)"
+    return `#compdef devryan openchamber
+# Zsh completion for devryan tunnel
+# Add to ~/.zshrc: eval "$(devryan tunnel completion zsh)"
 
-_openchamber() {
+_devryan() {
   local -a commands tunnel_commands profile_commands
 
   commands=(
@@ -1167,37 +1168,38 @@ _openchamber() {
   esac
 }
 
-compdef _openchamber openchamber
+compdef _devryan devryan openchamber
 `;
   }
 
   if (normalized === 'fish') {
-    return `# Fish completion for openchamber tunnel
-# Save to ~/.config/fish/completions/openchamber.fish
+    return `# Fish completion for devryan tunnel
+# Save to ~/.config/fish/completions/devryan.fish
 
-complete -c openchamber -n '__fish_use_subcommand' -a 'serve' -d 'Start the web server'
-complete -c openchamber -n '__fish_seen_subcommand_from serve' -l foreground -d 'Run in foreground (for systemd/process managers)'
-complete -c openchamber -n '__fish_seen_subcommand_from serve' -l no-daemon -d 'Run in foreground (alias for --foreground)'
-complete -c openchamber -n '__fish_use_subcommand' -a 'stop' -d 'Stop running instance(s)'
-complete -c openchamber -n '__fish_use_subcommand' -a 'restart' -d 'Stop and start the server'
-complete -c openchamber -n '__fish_use_subcommand' -a 'status' -d 'Show server status'
-complete -c openchamber -n '__fish_use_subcommand' -a 'tunnel' -d 'Tunnel lifecycle commands'
-complete -c openchamber -n '__fish_use_subcommand' -a 'logs' -d 'Tail logs'
-complete -c openchamber -n '__fish_use_subcommand' -a 'update' -d 'Check for updates'
+complete -c openchamber --wraps devryan
+complete -c devryan -n '__fish_use_subcommand' -a 'serve' -d 'Start the web server'
+complete -c devryan -n '__fish_seen_subcommand_from serve' -l foreground -d 'Run in foreground (for systemd/process managers)'
+complete -c devryan -n '__fish_seen_subcommand_from serve' -l no-daemon -d 'Run in foreground (alias for --foreground)'
+complete -c devryan -n '__fish_use_subcommand' -a 'stop' -d 'Stop running instance(s)'
+complete -c devryan -n '__fish_use_subcommand' -a 'restart' -d 'Stop and start the server'
+complete -c devryan -n '__fish_use_subcommand' -a 'status' -d 'Show server status'
+complete -c devryan -n '__fish_use_subcommand' -a 'tunnel' -d 'Tunnel lifecycle commands'
+complete -c devryan -n '__fish_use_subcommand' -a 'logs' -d 'Tail logs'
+complete -c devryan -n '__fish_use_subcommand' -a 'update' -d 'Check for updates'
 
-complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'help' -d 'Show tunnel help'
-complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'providers' -d 'Show providers'
-complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'ready' -d 'Check readiness'
-complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'doctor' -d 'Run diagnostics'
-complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'status' -d 'Show tunnel status'
-complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'start' -d 'Start a tunnel'
-complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'stop' -d 'Stop tunnel'
-complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'profile' -d 'Manage profiles'
-complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'completion' -d 'Generate completions'
+complete -c devryan -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'help' -d 'Show tunnel help'
+complete -c devryan -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'providers' -d 'Show providers'
+complete -c devryan -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'ready' -d 'Check readiness'
+complete -c devryan -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'doctor' -d 'Run diagnostics'
+complete -c devryan -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'status' -d 'Show tunnel status'
+complete -c devryan -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'start' -d 'Start a tunnel'
+complete -c devryan -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'stop' -d 'Stop tunnel'
+complete -c devryan -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'profile' -d 'Manage profiles'
+complete -c devryan -n '__fish_seen_subcommand_from tunnel; and not __fish_seen_subcommand_from help providers ready doctor status start stop profile completion' -a 'completion' -d 'Generate completions'
 
-complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and __fish_seen_subcommand_from start' -l provider -d 'Provider id'
-complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and __fish_seen_subcommand_from start' -l mode -d 'Tunnel mode'
-complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and __fish_seen_subcommand_from start' -l profile -d 'Profile name'
+complete -c devryan -n '__fish_seen_subcommand_from tunnel; and __fish_seen_subcommand_from start' -l provider -d 'Provider id'
+complete -c devryan -n '__fish_seen_subcommand_from tunnel; and __fish_seen_subcommand_from start' -l mode -d 'Tunnel mode'
+complete -c devryan -n '__fish_seen_subcommand_from tunnel; and __fish_seen_subcommand_from start' -l profile -d 'Profile name'
 complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and __fish_seen_subcommand_from start' -l config -d 'Config path'
 complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and __fish_seen_subcommand_from start' -l token -d 'Token'
 complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and __fish_seen_subcommand_from start' -l token-file -d 'Token file path'

@@ -9,7 +9,7 @@ import { RiBookletLine, RiChatNewLine, RiAddLine, RiFileCopyLine, RiLoader4Line 
 import { cn } from '@/lib/utils';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { toast } from '@/components/ui';
-import { getProjectNotesAndTodos, saveProjectNotesAndTodos } from '@/lib/openchamberConfig';
+import { getProjectNotesAndTodos, saveProjectNotesAndTodos } from '@/lib/devryanConfig';
 import { resolveProjectForSessionDirectory } from '@/lib/projectResolution';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { summarizeText } from '@/lib/voice/summarize';

@@ -7,7 +7,8 @@ const loadWebAuthn = () => webAuthn ??= import('@simplewebauthn/server');
 
 const DEFAULT_STORE_VERSION = 1;
 const DEFAULT_CHALLENGE_TTL_MS = 5 * 60 * 1000;
-const DEFAULT_RP_NAME = 'OpenChamber';
+// Display name only; the passkey binding is the rpID, which is unchanged.
+const DEFAULT_RP_NAME = 'DevRyan';
 
 const DEVRYAN_DATA_DIR = resolveDevRyanDataRoot();
 
@@ -325,7 +326,7 @@ export const createUiPasskeys = ({
       rpID,
       userID,
       userName: 'openchamber-ui',
-      userDisplayName: 'OpenChamber UI',
+      userDisplayName: 'DevRyan UI',
       attestationType: 'none',
       excludeCredentials: getPasskeysForRpId(store, rpID).map((passkey) => ({
         id: passkey.id,
@@ -465,7 +466,7 @@ export const createUiPasskeys = ({
     const passkey = store.passkeys.find((item) => item.id === response?.id);
 
     if (!passkey) {
-      const error = new Error('That passkey is not registered for this OpenChamber instance');
+      const error = new Error('That passkey is not registered for this DevRyan instance');
       error.statusCode = 404;
       throw error;
     }

@@ -994,3 +994,14 @@ session switching/remounts, explicit Default, model changes and the actual
 optimistic dispatch boundary with controlled transport promises.
 
 Session error notifications persist only bounded classifications and safe display text alongside completion read state. Raw exception stacks and provider bodies are never persisted. Viewing a session does not resolve its failure notice. A newer canonical user turn (including a Plan retry) supersedes proven older same-session failures; live user parts and canonical history pages provide this authority, while optimistic rows and synthetic maintenance wakes do not. Persisted owning user IDs/server timestamps avoid comparing server chronology with renderer receipt clocks. Legacy keyed failures can use canonical history order; uncorrelated legacy notices and uncorrelated delayed error events remain conservative until successful completion. A newer authoritative successful completion also resolves captured older failures.
+
+## DevRyan names
+
+Every stream the UI opens asks for `devryan:*` event names; `lib/eventTypes.ts`
+`canonicalEventType` maps an older host's `openchamber:*` alias at the pipeline
+entry (`normalizeEventType`), the `/api/devryan/events` envelope parser and the
+managed-task store, so consumers compare only `devryan:*`. Browser storage keys
+are `devryan`-prefixed; `lib/legacyStorageMigration.ts` (imported first by every
+web entry, and mirrored by the inline script in `packages/web/index.html`)
+copies each `openchamber`-prefixed key once before stores hydrate and keeps the
+old key. IndexedDB names are unchanged.

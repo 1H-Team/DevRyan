@@ -14,7 +14,7 @@ import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { checkIsGitRepository, previewGitWorktree } from '@/lib/gitApi';
 import { generateBranchName } from '@/lib/git/branchNameGenerator';
 import { getRootBranch } from '@/lib/worktrees/worktreeStatus';
-import { getWorktreeSetupCommands } from '@/lib/openchamberConfig';
+import { getWorktreeSetupCommands } from '@/lib/devryanConfig';
 import {
   removeProjectWorktree,
   type ProjectRef,

@@ -1,7 +1,7 @@
 import React from 'react';
 import { RiCpuLine } from '@remixicon/react';
-import { AgentBrowserControlSettings } from '@/components/sections/openchamber/AgentBrowserControlSettings';
-import { OpenCodeCliSettings } from '@/components/sections/openchamber/OpenCodeCliSettings';
+import { AgentBrowserControlSettings } from '@/components/sections/devryan/AgentBrowserControlSettings';
+import { OpenCodeCliSettings } from '@/components/sections/devryan/OpenCodeCliSettings';
 import { SettingsDetailHeader, SettingsPageLayout } from '@/components/sections/shared';
 import { useAuthPrincipal } from '@/lib/authSession';
 import { useI18n } from '@/lib/i18n';

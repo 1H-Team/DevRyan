@@ -71,6 +71,16 @@ migration and a release note.
   IndexedDB database names and the in-bundle `config/openchamber` folder of
   runtime bundles (sealed into each bundle's descriptor and manifest hash).
 - The `openchamber://` deep-link scheme stays registered.
+- The managed Claude Code status-line script `~/.cache/openchamber/claude-code-status-line.sh`:
+  its path is written into the user's `~/.claude/settings.json` and matched to
+  recognise the managed command.
+- Text naming the globally installed CLI binary (`openchamber update`,
+  `openchamber serve`): the external npm package installs only that binary.
+- The `[OpenChamberDesktopNotify]` stdout prefix and the `openchamber-server`
+  argv match used for the legacy Tauri sidecar.
+- Code identifiers such as `OpenChamberProjectAction` and file names other than
+  `devryanConfig.ts`, `devryanEvents.ts` and `components/sections/devryan/`:
+  they are not user-visible.
 - CLI daemon records `run/openchamber-<port>.{pid,json}`: a newer CLI must find
   daemons an older one started.
 - Environment names sent to an SSH host's DevRyan CLI: `ssh-managed-probe.mjs`

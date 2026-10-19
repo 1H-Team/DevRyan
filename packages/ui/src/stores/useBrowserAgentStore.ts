@@ -6,7 +6,7 @@ import {
   isElectronShell,
   isStandaloneWebRuntime,
 } from '@/lib/desktop';
-import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
+import { subscribeOpenchamberEvents } from '@/lib/devryanEvents';
 import { resolveRootSessionID } from '@/lib/sessionLineage';
 import { useUIStore } from '@/stores/useUIStore';
 

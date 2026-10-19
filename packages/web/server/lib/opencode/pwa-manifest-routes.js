@@ -1,6 +1,6 @@
 import { openCodeClientErrorStatus, resolveGen2OpenCodeClient } from './opencode-client-seam.js';
 
-const DEFAULT_PWA_APP_NAME = 'OpenChamber - AI Coding Assistant';
+const DEFAULT_PWA_APP_NAME = 'DevRyan - AI Coding Assistant';
 const mapPwaOrientationToManifest = (value) => {
   if (value === 'portrait') {
     return 'portrait-primary';

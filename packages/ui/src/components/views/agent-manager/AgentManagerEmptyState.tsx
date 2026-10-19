@@ -23,9 +23,9 @@ import { AgentSelector } from '@/components/multirun/AgentSelector';
 import { CommandAutocomplete, type CommandAutocompleteHandle, type CommandInfo } from '@/components/chat/CommandAutocomplete';
 import { FileMentionAutocomplete, type FileMentionHandle } from '@/components/chat/FileMentionAutocomplete';
 import { isIMECompositionEvent } from '@/lib/ime';
-import { getWorktreeSetupCommands } from '@/lib/openchamberConfig';
+import { getWorktreeSetupCommands } from '@/lib/devryanConfig';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
-import type { ProjectRef } from '@/lib/openchamberConfig';
+import type { ProjectRef } from '@/lib/devryanConfig';
 import type { CreateMultiRunParams, MultiRunFileAttachment } from '@/types/multirun';
 import { useI18n } from '@/lib/i18n';
 

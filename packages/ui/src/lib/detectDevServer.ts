@@ -1,4 +1,4 @@
-import type { OpenChamberProjectAction } from './openchamberConfig';
+import type { OpenChamberProjectAction } from './devryanConfig';
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 
 type DevServerInfo = {

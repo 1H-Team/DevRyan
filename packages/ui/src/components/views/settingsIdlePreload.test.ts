@@ -3,7 +3,7 @@ import { getAuthPrincipal, setAuthPrincipal } from '@/lib/authSession';
 import { withDom } from '@/components/bots/chat/botMountedDom';
 import { isSettingsSectionReady, preloadSettingsSection, preloadSettingsSectionsWhenIdle } from './settingsSectionLoaders';
 
-mock.module('@/components/sections/openchamber/KeyboardShortcutsSettings', () => ({ KeyboardShortcutsSettings: () => null }));
+mock.module('@/components/sections/devryan/KeyboardShortcutsSettings', () => ({ KeyboardShortcutsSettings: () => null }));
 const admin = getAuthPrincipal();
 afterEach(() => setAuthPrincipal(admin));
 const managed = () => ({ ...admin, id: 'idle-preload-test', scope: 'managed' as const, role: 'developer' as const,

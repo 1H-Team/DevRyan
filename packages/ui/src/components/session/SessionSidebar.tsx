@@ -95,7 +95,7 @@ import {
 } from '@/stores/useGlobalSessionsStore';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
-import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
+import { subscribeOpenchamberEvents } from '@/lib/devryanEvents';
 import type { GitHubAuthStatus } from '@/lib/api/types';
 import { markWorktreeBootstrapPending } from '@/lib/worktrees/worktreeBootstrap';
 import { hasAuthCapability, useAuthPrincipal } from '@/lib/authSession';

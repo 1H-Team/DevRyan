@@ -75,7 +75,7 @@ function readJsonFile() {
 function writeJsonFile(payload) {
   ensureStorageDir();
 
-  // Atomic write so multiple OpenChamber instances can safely share the same file.
+  // Atomic write so multiple DevRyan instances can safely share the same file.
   const tmpFile = `${STORAGE_FILE}.${process.pid}.${Date.now()}.tmp`;
   fs.writeFileSync(tmpFile, JSON.stringify(payload, null, 2), 'utf8');
   try {

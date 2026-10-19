@@ -180,7 +180,7 @@ records as a troubleshooting shortcut while work may remain active.
   original permissions and a fresh caller-supplied message ID. No implicit retry
   after uncertain delivery.
 - Ordinary prompt and abort routes use the same controller.
-- `openchamber:primary-recovery`: versioned per-session snapshot event. The UI
+- `openchamber:primary-recovery` (`devryan:primary-recovery` on the wire for the current UI): versioned per-session snapshot event. The UI
   uses a bounded narrow store and refreshes after reconnect and while visible.
 
 Web routes retain normal authentication and session ownership middleware;

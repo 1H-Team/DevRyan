@@ -62,3 +62,14 @@ This module contains the OpenChamber message-stream WebSocket protocol and runti
 - Run `bun test packages/web/server/lib/event-stream/runtime.test.js`
 - Run `bun test packages/web/server/lib/event-stream/canonical-ingestion.test.js`
 - Use the repository impact-based validation policy; runtime changes require `bun run validate:full`.
+
+## Event-name dialect
+
+`event-dialect.js` owns the wire names of host events. Payloads, journals and the
+orchestration contract keep the `openchamber:*` literal. A connection that sends
+`?events=devryan` (WebSocket query, `/api/devryan/events` EventSource) or the
+`X-DevRyan-Events: devryan` header receives `devryan:*`; any other client keeps
+`openchamber:*`. The choice is fixed per connection (`socket.devryanEventDialect`,
+`res.devryanEventDialect`) and applied by `serializeEventPayload(payload, dialect)`
+as a prefix swap on the shared cached JSON, never a re-serialization. See
+[identity compatibility](../../../../../docs/IDENTITY_COMPATIBILITY.md).

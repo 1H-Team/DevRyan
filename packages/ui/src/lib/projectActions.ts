@@ -23,7 +23,7 @@ import {
   DEVRYAN_AUTO_DISCOVER_ACTION_ID,
   type OpenChamberProjectAction,
   type OpenChamberProjectActionPlatform,
-} from '@/lib/openchamberConfig';
+} from '@/lib/devryanConfig';
 import type {
   DesktopSshInstance,
   DesktopSshPortForward,

@@ -2169,7 +2169,7 @@ async function constructWebHost(options = {}) {
       typeof options.getIsWindowFocused === 'function' ? options.getIsWindowFocused : null
     );
 
-    console.log(`Starting OpenChamber on port ${port === 0 ? 'auto' : port}`);
+    console.log(`Starting DevRyan on port ${port === 0 ? 'auto' : port}`);
 
     const startupStartedAt = Date.now();
     const reportStartupPhase = (phase, text) => {

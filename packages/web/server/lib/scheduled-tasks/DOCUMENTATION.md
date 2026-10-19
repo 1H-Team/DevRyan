@@ -87,6 +87,6 @@ route resolves that alias by repository path and persists owner-scoped tasks
 under the authoritative managed project UUID. Unmatched local projects remain
 ownerless local schedules.
 
-The shared OpenChamber event stream also carries `openchamber:project-metadata-changed`
+The shared DevRyan event stream (`/api/devryan/events`) also carries `openchamber:project-metadata-changed` (`devryan:*` for an opted-in client)
 with only a project ID. Administrators receive all such invalidations; managed
 non-admin clients receive them only for project IDs present in their assignment snapshot.

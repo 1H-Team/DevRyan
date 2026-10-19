@@ -37,7 +37,7 @@ import {
   saveProjectActionsState,
   type OpenChamberProjectAction,
   type ProjectRef,
-} from '@/lib/openchamberConfig';
+} from '@/lib/devryanConfig';
 import {
   buildProjectActionDesktopForwardOptions,
   PROJECT_ACTION_ICON_MAP,

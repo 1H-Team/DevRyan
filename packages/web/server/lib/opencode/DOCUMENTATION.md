@@ -680,6 +680,7 @@ discard them when the call ends: measured on 2026-09-30 at 10 to 20 seconds and
 
 ## Public exports (openchamber-routes.js)
 - `registerOpenChamberRoutes(app, dependencies)`: registers OpenChamber endpoints:
+  - DevRyan's own routes live under `/api/devryan`; `lib/legacy-api-path.js` rewrites the accepted `/api/openchamber` alias (`req.url` and `req.originalUrl`) as the first middleware of every composition, before any guard.
   - `GET /api/devryan/update-check`
   - `POST /api/devryan/update-install`
   - `GET /api/devryan/models-metadata`

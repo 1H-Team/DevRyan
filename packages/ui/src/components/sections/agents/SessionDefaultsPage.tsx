@@ -4,7 +4,7 @@ import React from 'react';
 import { RiAiAgentLine, RiArrowRightSLine, RiChatHistoryLine } from '@remixicon/react';
 import type { Agent } from '@opencode-ai/sdk/v2';
 import { AgentSelector } from '@/components/sections/commands/AgentSelector';
-import { SessionCleanupSettings } from '@/components/sections/openchamber/SessionRetentionSettings';
+import { SessionCleanupSettings } from '@/components/sections/devryan/SessionRetentionSettings';
 import {
   SettingsBadge,
   SettingsDetailHeader,
@@ -188,7 +188,7 @@ const NewSessionDefaults: React.FC = () => {
       title={t('settings.sessionDefaults.section.newSessions')}
       meta={isLoading ? null : (
         <>
-          {t('settings.openchamber.defaults.summaryPrefix')}
+          {t('settings.devryan.defaults.summaryPrefix')}
           {' '}
           <span className="text-foreground">
             {resolvedDefaultAgent ? formatAgentDisplayName(resolvedDefaultAgent) : t('settings.commands.agentSelector.notSelected')}
@@ -202,7 +202,7 @@ const NewSessionDefaults: React.FC = () => {
         <div className="divide-y divide-[var(--interactive-border)]/60">
           <div className="flex flex-col gap-2 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
             <div className="flex min-w-0 flex-col gap-0.5">
-              <span className="typography-ui-label text-foreground">{t('settings.openchamber.defaults.field.defaultAgent')}</span>
+              <span className="typography-ui-label text-foreground">{t('settings.devryan.defaults.field.defaultAgent')}</span>
               <span className="typography-meta text-muted-foreground">{t('settings.sessionDefaults.field.defaultAgentDescription')}</span>
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -213,7 +213,7 @@ const NewSessionDefaults: React.FC = () => {
 
           <div className="flex items-start justify-between gap-6 py-2">
             <div className="flex min-w-0 flex-col gap-0.5">
-              <span className="typography-ui-label text-foreground">{t('settings.openchamber.defaults.field.defaultPlanMode')}</span>
+              <span className="typography-ui-label text-foreground">{t('settings.devryan.defaults.field.defaultPlanMode')}</span>
               <span className="typography-meta text-muted-foreground">{t('settings.sessionDefaults.field.planModeDescription')}</span>
             </div>
             <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 pt-0.5">
@@ -221,7 +221,7 @@ const NewSessionDefaults: React.FC = () => {
               <Switch
                 checked={settingsDefaultPlanMode}
                 onCheckedChange={(checked) => handlePlanModeChange(checked)}
-                aria-label={t('settings.openchamber.defaults.field.defaultPlanModeAria')}
+                aria-label={t('settings.devryan.defaults.field.defaultPlanModeAria')}
               />
             </div>
           </div>

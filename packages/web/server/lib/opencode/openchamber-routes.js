@@ -156,7 +156,7 @@ export const registerOpenChamberRoutes = (app, dependencies) => {
       const updateLogPath = path.join(openchamberDataDir, 'update-install.log');
       const logPreamble = [
         '',
-        `=== OpenChamber update ${new Date().toISOString()} ===`,
+        `=== DevRyan update ${new Date().toISOString()} ===`,
         `currentVersion=${updateInfo.currentVersion || 'unknown'}`,
         `targetVersion=${updateInfo.version || 'unknown'}`,
         `packageManager=${pm}`,
@@ -191,7 +191,7 @@ export const registerOpenChamberRoutes = (app, dependencies) => {
             timeout /t 2 /nobreak >nul
             ${updateCmd}
             if %ERRORLEVEL% EQU 0 (
-              echo Update successful, restarting OpenChamber...
+              echo Update successful, restarting DevRyan...
               ${restartCmd}
             ) else (
               echo Update failed
@@ -203,7 +203,7 @@ export const registerOpenChamberRoutes = (app, dependencies) => {
             sleep 2
             ${updateCmd}
             if [ $? -eq 0 ]; then
-              echo "Update successful, restarting OpenChamber..."
+              echo "Update successful, restarting DevRyan..."
               ${restartCmd}
             else
               echo "Update failed"

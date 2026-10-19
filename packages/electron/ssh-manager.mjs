@@ -395,7 +395,7 @@ const waitLocalForwardReady = async (localPort) => {
     await new Promise((resolve) => setTimeout(resolve, pollMs));
     pollMs = Math.min(pollMs * 2, 2000);
   }
-  throw new Error('Timed out waiting for forwarded OpenChamber health');
+  throw new Error('Timed out waiting for forwarded DevRyan health');
 };
 
 const parseVersionToken = (raw) => {
@@ -857,7 +857,7 @@ export class ElectronSshManager {
         lastError = error;
       }
     }
-    throw lastError || new Error('Failed to install OpenChamber on remote host');
+    throw lastError || new Error('Failed to install DevRyan on remote host');
   }
 
   async probeRemoteSystemInfo(parsed, controlPath, port, openchamberPassword) {
@@ -874,15 +874,15 @@ export class ElectronSshManager {
     if (isLivenessHttpStatus(infoStatus)) {
       if (isAuthHttpStatus(infoStatus)) {
         if (openchamberPassword && authStatus !== 200) {
-          throw new Error(`Remote OpenChamber requires UI authentication and configured password was rejected (auth status ${authStatus})`);
+          throw new Error(`Remote DevRyan requires UI authentication and configured password was rejected (auth status ${authStatus})`);
         }
         if (isLivenessHttpStatus(healthStatus)) return {};
-        throw new Error('Remote OpenChamber requires UI authentication on /api/system/info; configure OpenChamber UI password');
+        throw new Error('Remote DevRyan requires UI authentication on /api/system/info; configure the DevRyan UI password');
       }
     } else if (isLivenessHttpStatus(healthStatus)) {
       return {};
     } else {
-      throw new Error(`Remote OpenChamber probe failed (info status ${infoStatus}, health status ${healthStatus})`);
+      throw new Error(`Remote DevRyan probe failed (info status ${infoStatus}, health status ${healthStatus})`);
     }
 
     try {
@@ -956,10 +956,10 @@ export class ElectronSshManager {
   async ensureRemoteServer(instance, parsed, controlPath) {
     if (instance.remoteOpenchamber.mode === 'external') {
       if (!instance.remoteOpenchamber.preferredPort) {
-        throw new Error('External mode requires a preferred remote OpenChamber port');
+        throw new Error('External mode requires a preferred remote DevRyan port');
       }
       const port = instance.remoteOpenchamber.preferredPort;
-      this.setStatus(instance.id, 'server_detecting', 'Probing external OpenChamber server', null, null, port, false, 0, false);
+      this.setStatus(instance.id, 'server_detecting', 'Probing external DevRyan server', null, null, port, false, 0, false);
       await this.probeRemoteSystemInfo(parsed, controlPath, port, this.configuredOpenChamberPassword(instance));
       return { remotePort: port, startedByUs: false };
     }

@@ -70,9 +70,9 @@ const phaseLabelKey = (phase?: string): I18nKey => {
     case 'remote_probe':
       return 'settings.remoteInstances.page.phase.probingRemote';
     case 'installing':
-      return 'settings.remoteInstances.page.phase.installingOpenChamber';
+      return 'settings.remoteInstances.page.phase.installingDevRyan';
     case 'updating':
-      return 'settings.remoteInstances.page.phase.updatingOpenChamber';
+      return 'settings.remoteInstances.page.phase.updatingDevRyan';
     case 'server_detecting':
       return 'settings.remoteInstances.page.phase.detectingServer';
     case 'server_starting':

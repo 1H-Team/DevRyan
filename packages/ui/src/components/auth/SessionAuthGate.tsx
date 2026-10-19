@@ -24,7 +24,7 @@ import { installApiFetchSecurity } from '@/lib/apiSecurity';
 import { initializeInteractionAnalytics } from '@/lib/interactionAnalytics';
 import { startAppearanceAutoSave } from '@/lib/appearanceAutoSave';
 import { startModelPrefsAutoSave } from '@/lib/modelPrefsAutoSave';
-import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
+import { subscribeOpenchamberEvents } from '@/lib/devryanEvents';
 import {
   authStoragePrincipalId,
   hasAuthCapability,

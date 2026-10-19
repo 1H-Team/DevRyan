@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { DEVRYAN_AUTO_DISCOVER_ACTION_ID, type OpenChamberProjectAction } from "./openchamberConfig";
+import { DEVRYAN_AUTO_DISCOVER_ACTION_ID, type OpenChamberProjectAction } from "./devryanConfig";
 import { resolveProjectActionSelection } from "./projectActions";
 
 const autoDiscoverAction: OpenChamberProjectAction = {

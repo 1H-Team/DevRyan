@@ -10,9 +10,9 @@ export const CLAUDE_CODE_SETTINGS_PATH = join(getRuntimeHome(), '.claude', 'sett
 export const CLAUDE_CODE_USAGE_PENDING_CODE = 'claude_code_usage_pending';
 export const CLAUDE_CODE_STATUS_LINE_CUSTOM_CODE = 'claude_code_status_line_custom';
 export const CLAUDE_CODE_STATUS_SETUP_FAILED_CODE = 'claude_code_status_setup_failed';
-export const CLAUDE_CODE_USAGE_PENDING_MESSAGE = 'OpenChamber refreshed Claude Code with the Claude CLI, but Claude Code did not emit usage data yet.';
+export const CLAUDE_CODE_USAGE_PENDING_MESSAGE = 'DevRyan refreshed Claude Code with the Claude CLI, but Claude Code did not emit usage data yet.';
 
-const MANAGED_SCRIPT_HEADER = '# Managed by OpenChamber. Writes Claude Code status-line JSON for usage display.';
+const MANAGED_SCRIPT_HEADER = '# Managed by DevRyan. Writes Claude Code status-line JSON for usage display.';
 
 const shellSingleQuote = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
 
@@ -112,7 +112,7 @@ export const ensureClaudeCodeStatusLineBridge = ({
         scriptPath,
         statusPath,
         command: managedCommand,
-        error: `Claude Code already has a custom statusLine. To show Anthropic usage in OpenChamber, update Claude Code settings to run ${managedCommand} or merge that script into your existing statusLine command.`,
+        error: `Claude Code already has a custom statusLine. To show Anthropic usage in DevRyan, update Claude Code settings to run ${managedCommand} or merge that script into your existing statusLine command.`,
       };
     }
 

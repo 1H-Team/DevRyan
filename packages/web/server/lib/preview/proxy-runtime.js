@@ -1327,7 +1327,7 @@ export const normalizeProxyTargetUrl = (rawUrl) => {
     url.hostname = '127.0.0.1';
   }
 
-  // Only keep origin here; the proxy path is preserved on the OpenChamber side.
+  // Only keep origin here; the proxy path is preserved on the DevRyan side.
   return { ok: true, origin: url.origin };
 };
 
@@ -1973,7 +1973,7 @@ export const createPreviewProxyRuntime = ({
         proxyReq: (proxyReq, req) => {
           applyPreviewPassthroughRequestHeaders(req, proxyReq);
           applyUpstreamNavigationHeaders(proxyReq, req, resolveTargetFromRequest(req));
-          // Keep local dev servers from receiving OpenChamber credentials.
+          // Keep local dev servers from receiving DevRyan credentials.
           const upstreamCookies = buildPreviewUpstreamCookieHeader(req.headers?.cookie);
           if (upstreamCookies) proxyReq.setHeader('cookie', upstreamCookies);
           else proxyReq.removeHeader('cookie');
@@ -1998,7 +1998,7 @@ export const createPreviewProxyRuntime = ({
           // Per-response nonce lets the injected bridge run under the dev
           // server's CSP without dropping its script restrictions wholesale.
           const bridgeNonce = crypto.randomBytes(16).toString('base64');
-          // Allow the dev server response to be framed inside OpenChamber even
+          // Allow the dev server response to be framed inside DevRyan even
           // if it normally sets X-Frame-Options or a CSP frame-ancestors rule.
           // The proxy is same-origin so embedding is otherwise safe.
           stripFrameBustingHeaders(proxyRes.headers, bridgeNonce, res);

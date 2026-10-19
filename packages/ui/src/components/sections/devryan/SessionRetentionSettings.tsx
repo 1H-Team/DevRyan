@@ -1,0 +1,435 @@
+import React from 'react';
+import { RiDeleteBinLine, RiDownloadLine, RiLoaderLine, RiRestartLine } from '@remixicon/react';
+import { toast } from '@/components/ui';
+import { NumberInput } from '@/components/ui/number-input';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
+import { useUIStore } from '@/stores/useUIStore';
+import { useSessionAutoCleanup } from '@/hooks/useSessionAutoCleanup';
+import { useI18n } from '@/lib/i18n';
+import { clearDesktopCache, getDesktopCacheInfo, isDesktopLocalOriginActive, isElectronShell } from '@/lib/desktop';
+import { formatBytes } from '@/lib/formatBytes';
+import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
+import type { DiagnosticsClearRange, DiagnosticsStatus } from '@/lib/api/types';
+import { OpenCodeStorageSettings } from './OpenCodeStorageSettings';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+
+const MIN_DAYS = 1;
+const MAX_DAYS = 365;
+const DEFAULT_RETENTION_DAYS = 30;
+const RETENTION_ACTION_OPTIONS = [
+  { value: 'archive', labelKey: 'settings.devryan.sessionRetention.action.archive' },
+  { value: 'delete', labelKey: 'settings.devryan.sessionRetention.action.delete' },
+] as const;
+const DIAGNOSTIC_CLEAR_RANGE_OPTIONS = [
+  { value: '24h', labelKey: 'settings.devryan.about.diagnostics.clearRange.24h' },
+  { value: '7d', labelKey: 'settings.devryan.about.diagnostics.clearRange.7d' },
+  { value: '14d', labelKey: 'settings.devryan.about.diagnostics.clearRange.14d' },
+  { value: 'all', labelKey: 'settings.devryan.about.diagnostics.clearRange.all' },
+] as const satisfies ReadonlyArray<{ value: DiagnosticsClearRange; labelKey: string }>;
+
+type CacheSizeStatus = 'loading' | 'ready' | 'unavailable';
+
+const DiagnosticDataCleanup: React.FC = () => {
+  const { t } = useI18n();
+  const { diagnostics } = useRuntimeAPIs();
+  const hasDesktopCache = isElectronShell() && isDesktopLocalOriginActive();
+  const [status, setStatus] = React.useState<DiagnosticsStatus | null>(null);
+  const [cacheSizeBytes, setCacheSizeBytes] = React.useState(0);
+  const [cacheSizeStatus, setCacheSizeStatus] = React.useState<CacheSizeStatus>('loading');
+  const [exporting, setExporting] = React.useState(false);
+  const [clearOpen, setClearOpen] = React.useState(false);
+  const [clearRange, setClearRange] = React.useState<DiagnosticsClearRange>('24h');
+  const [clearing, setClearing] = React.useState(false);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    if (!diagnostics) return;
+    void diagnostics.getStatus()
+      .then((nextStatus) => {
+        if (!cancelled) setStatus(nextStatus);
+      })
+      .catch(() => {
+        if (!cancelled) setStatus(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [diagnostics]);
+
+  React.useEffect(() => {
+    if (!hasDesktopCache) return;
+    let cancelled = false;
+    void getDesktopCacheInfo()
+      .then((info) => {
+        if (cancelled) return;
+        if (!info) {
+          setCacheSizeStatus('unavailable');
+          return;
+        }
+        setCacheSizeBytes(info.sizeBytes);
+        setCacheSizeStatus('ready');
+      })
+      .catch((error) => {
+        console.warn('Failed to load application cache size', error);
+        if (!cancelled) setCacheSizeStatus('unavailable');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [hasDesktopCache]);
+
+  const exportDiagnostics = React.useCallback(async () => {
+    if (!diagnostics || exporting) return;
+    setExporting(true);
+    try {
+      const result = await diagnostics.export({ scope: 'runtime' });
+      if (!result.cancelled) {
+        toast.success(t('settings.devryan.about.diagnostics.exported', { fileName: result.fileName }));
+      }
+    } catch (error) {
+      toast.error(t('settings.devryan.about.diagnostics.failed'), {
+        description: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setExporting(false);
+    }
+  }, [diagnostics, exporting, t]);
+
+  const clearDiagnosticData = React.useCallback(async () => {
+    if (!diagnostics || clearing) return;
+    setClearing(true);
+    try {
+      await diagnostics.clear(clearRange);
+      let cacheClearFailed = false;
+      const shouldClearDesktopCache = hasDesktopCache && clearRange === 'all';
+      if (shouldClearDesktopCache) {
+        try {
+          const clearedCache = await clearDesktopCache();
+          if (!clearedCache) throw new Error('Application cache cleanup is unavailable');
+        } catch (error) {
+          cacheClearFailed = true;
+          console.warn('Failed to clear application cache', error);
+        }
+      }
+
+      const refreshedStatus = await diagnostics.getStatus();
+      setStatus(refreshedStatus);
+      if (shouldClearDesktopCache) {
+        try {
+          const cacheInfo = await getDesktopCacheInfo();
+          if (!cacheInfo) throw new Error('Application cache size is unavailable');
+          setCacheSizeBytes(cacheInfo.sizeBytes);
+          setCacheSizeStatus('ready');
+        } catch (error) {
+          cacheClearFailed = true;
+          setCacheSizeStatus('unavailable');
+          console.warn('Failed to refresh application cache size', error);
+        }
+      }
+      setClearOpen(false);
+      if (cacheClearFailed) {
+        toast.error(t('settings.devryan.about.diagnostics.clearPartialFailed'));
+      } else {
+        toast.success(t('settings.devryan.about.diagnostics.cleared'));
+      }
+    } catch (error) {
+      toast.error(t('settings.devryan.about.diagnostics.clearFailed'), {
+        description: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setClearing(false);
+    }
+  }, [clearRange, clearing, diagnostics, hasDesktopCache, t]);
+
+  if (!diagnostics) return null;
+
+  let cacheStatusLabel = '';
+  if (cacheSizeStatus === 'loading') {
+    cacheStatusLabel = t('settings.devryan.about.diagnostics.cacheLoading');
+  } else if (cacheSizeStatus === 'unavailable') {
+    cacheStatusLabel = t('settings.devryan.about.diagnostics.cacheUnavailable');
+  } else {
+    cacheStatusLabel = t('settings.devryan.about.diagnostics.cacheLine', {
+      size: formatBytes(cacheSizeBytes),
+    });
+  }
+
+  return (
+    <>
+      <div className="border-t border-border/40 pt-3 space-y-1">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-8">
+          <div className="flex min-w-0 flex-col sm:w-56 shrink-0">
+            <p className="typography-meta text-foreground font-medium">
+              {t('settings.devryan.about.diagnostics.title')}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 sm:w-fit">
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              onClick={() => { void exportDiagnostics(); }}
+              disabled={exporting || clearing}
+              className="!font-normal normal-case"
+            >
+              {exporting
+                ? <RiLoaderLine className="mr-1 h-3.5 w-3.5 animate-spin" />
+                : <RiDownloadLine className="mr-1 h-3.5 w-3.5" />}
+              {t('settings.devryan.about.diagnostics.export')}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              onClick={() => setClearOpen(true)}
+              disabled={exporting || clearing}
+              className="!font-normal normal-case"
+            >
+              <RiDeleteBinLine className="mr-1 h-3.5 w-3.5" />
+              {t('settings.devryan.about.diagnostics.clearLogs')}
+            </Button>
+          </div>
+        </div>
+        <p className="typography-meta text-muted-foreground">
+          {status
+            ? t('settings.devryan.about.diagnostics.health', {
+                size: formatBytes(status.diskBytes),
+                sessions: status.sessionCount,
+              })
+            : t('settings.devryan.about.diagnostics.collecting')}
+        </p>
+        {hasDesktopCache && (
+          <p className="typography-meta text-muted-foreground">
+            {cacheStatusLabel}
+          </p>
+        )}
+      </div>
+
+      <Dialog open={clearOpen} onOpenChange={(open) => { if (!clearing) setClearOpen(open); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('settings.devryan.about.diagnostics.clearDialog.title')}</DialogTitle>
+            <DialogDescription>
+              {t(hasDesktopCache && clearRange === 'all'
+                ? 'settings.devryan.about.diagnostics.clearDialog.descriptionDesktop'
+                : 'settings.devryan.about.diagnostics.clearDialog.description', {
+                  range: t(DIAGNOSTIC_CLEAR_RANGE_OPTIONS.find((option) => option.value === clearRange)?.labelKey
+                    ?? 'settings.devryan.about.diagnostics.clearRange.all'),
+                })}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <p className="typography-ui-label text-foreground">
+              {t('settings.devryan.about.diagnostics.clearDialog.rangeLabel')}
+            </p>
+            <Select<DiagnosticsClearRange>
+              value={clearRange}
+              onValueChange={setClearRange}
+              disabled={clearing}
+            >
+              <SelectTrigger
+                className="w-full"
+                aria-label={t('settings.devryan.about.diagnostics.clearDialog.rangeAria')}
+              >
+                <SelectValue>
+                  {t(DIAGNOSTIC_CLEAR_RANGE_OPTIONS.find((option) => option.value === clearRange)?.labelKey
+                    ?? 'settings.devryan.about.diagnostics.clearRange.all')}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {DIAGNOSTIC_CLEAR_RANGE_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {t(option.labelKey)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setClearOpen(false)} disabled={clearing}>
+              {t('settings.common.actions.cancel')}
+            </Button>
+            <Button variant="destructive" onClick={() => { void clearDiagnosticData(); }} disabled={clearing}>
+              {clearing
+                ? t('settings.devryan.about.diagnostics.clearing')
+                : t('settings.devryan.about.diagnostics.clearLogs')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+};
+
+/**
+ * Session auto-cleanup rows. Session Defaults supplies the section heading;
+ * the fields are owned by the `sessions` settings permission.
+ */
+export const SessionCleanupSettings: React.FC = () => {
+  const { t } = useI18n();
+  const autoDeleteEnabled = useUIStore((state) => state.autoDeleteEnabled);
+  const autoDeleteAfterDays = useUIStore((state) => state.autoDeleteAfterDays);
+  const sessionRetentionAction = useUIStore((state) => state.sessionRetentionAction);
+  const setAutoDeleteEnabled = useUIStore((state) => state.setAutoDeleteEnabled);
+  const setAutoDeleteAfterDays = useUIStore((state) => state.setAutoDeleteAfterDays);
+  const archivedOnly = useUIStore((state) => state.sessionRetentionArchivedOnly);
+  const setArchivedOnly = useUIStore((state) => state.setSessionRetentionArchivedOnly);
+  const setSessionRetentionAction = useUIStore((state) => state.setSessionRetentionAction);
+
+  const { candidates, isRunning, runCleanup, action } = useSessionAutoCleanup({ autoRun: false });
+  const pendingCount = candidates.length;
+
+  const handleRunCleanup = React.useCallback(async () => {
+    const result = await runCleanup({ force: true });
+
+    if (result.skippedReason && !['no-candidates', 'cooldown'].includes(result.skippedReason)) {
+      toast.message(t('settings.devryan.sessionRetention.skipped'), { description: result.skippedReason });
+      return;
+    }
+    if (result.completedIds.length === 0 && result.failedIds.length === 0) {
+      toast.message(
+        result.action === 'archive'
+          ? t('settings.devryan.sessionRetention.toast.noneEligibleArchive')
+          : t('settings.devryan.sessionRetention.toast.noneEligibleDelete')
+      );
+      return;
+    }
+    if (result.completedIds.length > 0) {
+      toast.success(
+        result.action === 'archive'
+          ? t('settings.devryan.sessionRetention.toast.archivedCount', { count: result.completedIds.length })
+          : t('settings.devryan.sessionRetention.toast.deletedCount', { count: result.completedIds.length })
+      );
+    }
+    if (result.failedIds.length > 0) {
+      toast.error(
+        result.action === 'archive'
+          ? t('settings.devryan.sessionRetention.toast.failedArchiveCount', { count: result.failedIds.length })
+          : t('settings.devryan.sessionRetention.toast.failedDeleteCount', { count: result.failedIds.length })
+      );
+    }
+  }, [runCleanup, t]);
+
+  return (
+    <div className="space-y-0.5">
+      <div className="flex items-start justify-between gap-4 py-1.5">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <span className="typography-ui-label text-foreground">{t('settings.devryan.sessionRetention.field.enableAutoCleanup')}</span>
+          <span className="typography-meta text-muted-foreground">{t('settings.devryan.sessionRetention.field.enableAutoCleanupDescription')}</span>
+        </div>
+        <Switch
+          className="mt-0.5 shrink-0"
+          checked={autoDeleteEnabled}
+          onCheckedChange={setAutoDeleteEnabled}
+          aria-label={t('settings.devryan.sessionRetention.field.enableAutoCleanupAria')}
+        />
+      </div>
+
+      <div className="flex flex-col gap-2 py-1.5 sm:flex-row sm:items-center sm:gap-8">
+        <div className="flex min-w-0 flex-col sm:w-56 shrink-0">
+          <span className="typography-ui-label text-foreground">{t('settings.devryan.sessionRetention.field.retentionPeriod')}</span>
+        </div>
+        <div className="flex items-center gap-2 sm:w-fit">
+          <NumberInput
+            value={autoDeleteAfterDays}
+            onValueChange={setAutoDeleteAfterDays}
+            min={MIN_DAYS}
+            max={MAX_DAYS}
+            step={1}
+            aria-label={t('settings.devryan.sessionRetention.field.retentionPeriodAria')}
+            className="w-20 tabular-nums"
+          />
+          <span className="typography-ui-label text-muted-foreground">{t('settings.devryan.sessionRetention.field.days')}</span>
+          <Button size="sm"
+            type="button"
+            variant="ghost"
+            onClick={() => setAutoDeleteAfterDays(DEFAULT_RETENTION_DAYS)}
+            disabled={autoDeleteAfterDays === DEFAULT_RETENTION_DAYS}
+            className="h-7 w-7 px-0 text-muted-foreground hover:text-foreground"
+            aria-label={t('settings.devryan.sessionRetention.actions.resetRetentionAria')}
+            title={t('settings.common.actions.reset')}
+          >
+            <RiRestartLine className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2 py-1.5 sm:flex-row sm:items-center sm:gap-8">
+        <div className="flex min-w-0 flex-col sm:w-56 shrink-0">
+          <span className="typography-ui-label text-foreground">{t('settings.devryan.sessionRetention.field.whenSessionsExpire')}</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-1 sm:w-fit">
+          {RETENTION_ACTION_OPTIONS.map((option) => (
+            <Button
+              key={option.value}
+              type="button"
+              variant="chip"
+              size="xs"
+              aria-pressed={sessionRetentionAction === option.value}
+              className="!font-normal"
+              onClick={() => setSessionRetentionAction(option.value)}
+            >
+              {t(option.labelKey)}
+            </Button>
+          ))}
+        </div>
+      </div>
+      <div className="flex items-center gap-2 py-1.5">
+        <Checkbox checked={archivedOnly} onChange={setArchivedOnly} disabled={action !== 'delete'}
+          ariaLabel={t('settings.devryan.sessionRetention.archivedOnly')} />
+        <span className="typography-ui-label">{t('settings.devryan.sessionRetention.archivedOnly')}</span>
+      </div>
+
+      <div className="flex flex-col gap-2 pt-1.5 sm:flex-row sm:items-center sm:gap-8">
+        <div className="flex min-w-0 flex-col sm:w-56 shrink-0">
+          <span className="typography-ui-label text-foreground">{t('settings.devryan.sessionRetention.manualCleanup.title')}</span>
+        </div>
+        <div className="flex items-center gap-2 sm:w-fit">
+          <Button
+            type="button"
+            variant="outline"
+            size="xs"
+            onClick={handleRunCleanup}
+            disabled={isRunning || !autoDeleteEnabled}
+            className="!font-normal normal-case"
+          >
+            {isRunning ? t('settings.devryan.sessionRetention.actions.cleaningUp') : t('settings.devryan.sessionRetention.actions.runCleanupNow')}
+          </Button>
+        </div>
+      </div>
+      <p className="pb-1 typography-meta text-muted-foreground">
+        {action === 'archive'
+          ? t('settings.devryan.sessionRetention.manualCleanup.eligibleArchiveNow', { count: pendingCount })
+          : t('settings.devryan.sessionRetention.manualCleanup.eligibleDeleteNow', { count: pendingCount })}
+      </p>
+    </div>
+  );
+};
+
+/** Diagnostic log and OpenCode storage cleanup, shown in About. */
+export const DataStorageSettings: React.FC = () => {
+  const { t } = useI18n();
+  return (
+    <div className="mb-8">
+      <div className="mb-1 px-1">
+        <h3 className="typography-ui-header font-medium text-foreground">
+          {t('settings.devryan.dataStorage.title')}
+        </h3>
+      </div>
+      <div className="space-y-1 px-2 py-1.5 [&>div:first-child]:border-t-0 [&>div:first-child]:pt-0">
+        <DiagnosticDataCleanup />
+        <OpenCodeStorageSettings />
+      </div>
+    </div>
+  );
+};

@@ -25,7 +25,7 @@ import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { EditorView } from '@codemirror/view';
 import { copyTextToClipboard } from '@/lib/clipboard';
-import { parseProjectPlanMarkdown } from '@/lib/openchamberConfig';
+import { parseProjectPlanMarkdown } from '@/lib/devryanConfig';
 import { useI18n } from '@/lib/i18n';
 import { getPlanViewCandidatePaths } from './planViewPaths';
 import type { SessionPlanRevisionIdentity } from '@/lib/api/types';

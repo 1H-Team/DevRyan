@@ -40,7 +40,7 @@ import {
   updateOpenChamberConfig,
   type OpenChamberProjectAction,
   type ProjectRef,
-} from '@/lib/openchamberConfig';
+} from '@/lib/devryanConfig';
 import {
   normalizeProjectActionDirectory,
   PROJECT_ACTIONS_UPDATED_EVENT,

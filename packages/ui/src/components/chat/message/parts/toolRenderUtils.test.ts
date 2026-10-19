@@ -1085,7 +1085,7 @@ describe('tool activity summary extraction', () => {
             'packages/ui/src/stores/useAgentsStore.ts:',
             "Line 5: import { create } from '../lib/state';",
             'packages/ui/src/components/session/SessionSidebar.tsx:',
-            'packages/ui/src/components/sections/openchamber/VoiceSettings.tsx:',
+            'packages/ui/src/components/sections/devryan/VoiceSettings.tsx:',
             "Line 23: import { getSelectableVoiceInputProviders } from './voiceSettingsUtils';",
             'Line 388: && prev.onOpenSettings === next.onOpenSettings',
             'app-icon white.svg',
@@ -1095,7 +1095,7 @@ describe('tool activity summary extraction', () => {
         expect(extractSearchedFilePathsFromToolPart(toolPart('search', { output }))).toEqual([
             'packages/ui/src/stores/useAgentsStore.ts',
             'packages/ui/src/components/session/SessionSidebar.tsx',
-            'packages/ui/src/components/sections/openchamber/VoiceSettings.tsx',
+            'packages/ui/src/components/sections/devryan/VoiceSettings.tsx',
             'app-icon white.svg',
             '.env',
         ]);

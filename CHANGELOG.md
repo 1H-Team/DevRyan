@@ -6,6 +6,9 @@ All notable changes to this project will be documented in this file.
 
 - Move DevRyan's data folder from `~/.config/openchamber` to `~/.config/devryan` at the first start. The folder is renamed in one step, nothing is copied, and `~/.config/openchamber` stays as a link to the new folder so existing paths keep working. A folder that cannot be moved, such as a Docker bind mount, stays in use and the app says so.
 - Rename the `OPENCHAMBER_*` environment variables to `DEVRYAN_*`. The old names are still accepted.
+- Rename the workspace packages to `@devryan/*` and ship a `devryan` command; `openchamber` remains an alias.
+- Use DevRyan names on the wire: `/api/devryan/*` routes, `devryan:*` event types, `X-DevRyan-*` headers, `__DEVRYAN_*__` globals, `devryan:*` desktop channels and `devryan://` links. Older tabs, clients and runtime services that still use the OpenChamber names keep working, and browser settings saved under the old keys are carried over.
+- Replace the remaining user-visible OpenChamber names with DevRyan.
 
 ## [2.1.3] - 2026-10-18
 

@@ -533,7 +533,7 @@ export const dict = {
   'sessions.sidebar.footer.actions.switchToDarkMode': 'Switch to Dark Mode',
   'sessions.sidebar.footer.actions.switchToLightMode': 'Switch to Light Mode',
   'sessions.sidebar.footer.actions.shortcuts': 'Shortcuts',
-  'sessions.sidebar.footer.actions.aboutOpenChamber': 'About DevRyan',
+  'sessions.sidebar.footer.actions.aboutDevRyan': 'About DevRyan',
   'sessions.sidebar.footer.actions.update': 'Update',
   'sessions.sidebar.empty.noSessions.title': 'No sessions yet',
   'sessions.sidebar.empty.noSessions.description': 'Create your first session to start coding.',

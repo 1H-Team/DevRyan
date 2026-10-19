@@ -61,7 +61,7 @@ import {
   waitForWorktreeBootstrap,
 } from '@/lib/worktrees/worktreeBootstrap';
 import { withWorktreeUpstreamDefaults } from '@/lib/worktrees/worktreeCreate';
-import { getWorktreeSetupCommands } from '@/lib/openchamberConfig';
+import { getWorktreeSetupCommands } from '@/lib/devryanConfig';
 import { getRootBranch } from '@/lib/worktrees/worktreeStatus';
 import { generateBranchSlug } from '@/lib/git/branchNameGenerator';
 import { opencodeClient } from '@/lib/opencode/client';

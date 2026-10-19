@@ -30,7 +30,7 @@ import {
 } from '@remixicon/react';
 import { useGitIdentitiesStore, type GitIdentityProfile, type DiscoveredGitCredential } from '@/stores/useGitIdentitiesStore';
 import { useShallow } from 'zustand/react/shallow';
-import { GitSettings } from '@/components/sections/openchamber/GitSettings';
+import { GitSettings } from '@/components/sections/devryan/GitSettings';
 import { GitIdentityEditorDialog } from './GitIdentityEditorDialog';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { cn } from '@/lib/utils';

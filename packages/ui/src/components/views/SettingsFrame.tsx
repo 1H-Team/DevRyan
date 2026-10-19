@@ -8,7 +8,7 @@ import {
 } from '@remixicon/react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
-import type { OpenChamberSection } from '@/components/sections/openchamber/types';
+import type { OpenChamberSection } from '@/components/sections/devryan/types';
 import { useDeviceInfo } from '@/lib/device';
 import { isDesktopShell, isWebRuntime } from '@/lib/desktop';
 import { useI18n } from '@/lib/i18n';
@@ -407,7 +407,7 @@ export const SettingsFrame: React.FC<SettingsFrameProps> = ({ onClose, forceMobi
       case 'tunnel':
         return t('settings.page.tunnel.title');
       case 'about':
-        return t('settings.openchamber.about.title');
+        return t('settings.devryan.about.title');
       case 'home':
       default:
         return t('settings.view.home.title');

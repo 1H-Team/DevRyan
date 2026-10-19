@@ -56,7 +56,7 @@ const TEMPLATE_BODY = `
 `;
 
 const HOOK_SCRIPT = `#!/usr/bin/env bash
-# Conventional Commit validator (managed by OpenChamber)
+# Conventional Commit validator (managed by DevRyan)
 # Installed via global core.hooksPath. Edit at ~/.config/git/hooks/commit-msg.
 set -euo pipefail
 

@@ -82,11 +82,11 @@ export function BundledRuntimeSetup({ onAvailable }: { onAvailable?: () => void 
         }
       })();
     }}>{t(checking ? 'onboarding.localSetup.actions.checking' : 'onboarding.localSetup.actions.checkAndContinue')}</Button>
-    <p className="typography-micro text-muted-foreground">{t('settings.openchamber.about.opencode.bundledUpdates')}</p>
+    <p className="typography-micro text-muted-foreground">{t('settings.devryan.about.opencode.bundledUpdates')}</p>
     <Button variant="outline" disabled={updates.checking} onClick={() => {
       if (updates.available) setUpdateOpen(true);
       else void updates.check().then(() => { if (mounted.current) setUpdateOpen(true); }).catch(() => {});
-    }}>{t(updates.available ? 'settings.openchamber.about.actions.update' : 'settings.openchamber.about.actions.checkUpdates')}</Button>
+    }}>{t(updates.available ? 'settings.devryan.about.actions.update' : 'settings.devryan.about.actions.checkUpdates')}</Button>
     {updates.error && <p role="alert" className="typography-meta text-[var(--status-error)]">{updates.error}</p>}
     <UpdateDialog open={updateOpen} onOpenChange={setUpdateOpen} info={updates.info} downloading={updates.downloading} downloaded={updates.downloaded} progress={updates.progress} error={updates.error} onDownload={updates.download} onRestart={updates.restart} runtimeType={updates.runtimeType} />
   </div>;

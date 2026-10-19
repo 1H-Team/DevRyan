@@ -114,7 +114,7 @@ function isAuditedControlCopyKey(key: string): boolean {
   const isKnownInteractiveItem = /^(?:helpDialog\.item\.|sessions\.sidebar\.session\.menu\.|settings\.magicPrompts\.sidebar\.item\.)/.test(key)
     || /^settings\.agents\.page\.mode\./.test(key)
     || /^terminalView\.tabs\..*Title$/.test(key)
-    || key === 'settings.openchamber.tunnel.option.moreProvidersSoon';
+    || key === 'settings.devryan.tunnel.option.moreProvidersSoon';
 
   return /(?:^|\.)(?:action|actions)\.[^.]+$/.test(key)
     || /\.label$/.test(key)
@@ -399,8 +399,8 @@ describe('control copy', () => {
     expect(dict['sessions.sidebar.header.actions.addProject']).toBe('Add Project');
     expect(dict['directoryExplorerDialog.actions.addProject']).toBe('Add Project');
     expect(dict['settings.projects.sidebar.actions.addProject']).toBe('Add Project');
-    expect(dict['settings.openchamber.tunnel.actions.startTunnel']).toBe('Start Tunnel');
-    expect(dict['settings.openchamber.tunnel.actions.stopTunnel']).toBe('Stop Tunnel');
+    expect(dict['settings.devryan.tunnel.actions.startTunnel']).toBe('Start Tunnel');
+    expect(dict['settings.devryan.tunnel.actions.stopTunnel']).toBe('Stop Tunnel');
     expect(dict['chat.fileAttachment.activeEditor.addFile']).toBe('Add File: {name} to Context');
   });
 
