@@ -39,8 +39,8 @@ function createSseResponse({ blocks = [] } = {}) {
   };
 }
 
-async function waitForAssertion(assertion) {
-  const deadline = Date.now() + 1000;
+async function waitForAssertion(assertion, timeoutMs = 1000) {
+  const deadline = Date.now() + timeoutMs;
   let lastError;
 
   while (Date.now() < deadline) {
@@ -511,11 +511,12 @@ describe('createGlobalMessageStreamHub gen 2 ingress (vectors)', () => {
     hub.publishSyntheticEvent({ eventId: 'before-loss', payload: { type: 'fixture' } });
     hub.start();
     try {
-      await waitForAssertion(() => expect(statuses).toContainEqual({ type: 'gap', scope: 'global', reason: 'frame_too_large' }));
+      // This fixture encodes and reads a real 32 MiB frame on the shared runner.
+      await waitForAssertion(() => expect(statuses).toContainEqual({ type: 'gap', scope: 'global', reason: 'frame_too_large' }), 5_000);
       expect(events.some(event => event.control === 'gap')).toBe(true);
       expect(hub.replayAfter('before-loss').gap).toBe(true);
     } finally { hub.stop(); }
-  });
+  }, 10_000);
   it('projects the data-only 2.0.20 frames 1->n with #k ids, ignores comment frames and sends no Last-Event-ID', async () => {
     const vector = readVector('01-two-step-tool-turn.json');
     const { hub, events, fetchCalls, diagnostics } = createFakeV2Hub({

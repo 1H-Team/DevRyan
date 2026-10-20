@@ -748,7 +748,7 @@ test('real ledger preserves a committed publication across interrupted materiali
     await Promise.allSettled([runtime.drain(), reopened?.drain()]);
     await fs.rm(root, { recursive: true, force: true });
   }
-});
+}, 60_000); // Real Git publication and restart, not a unit-test latency bound.
 
 test('native Council owns the exact reviewed control call and registers its canonical managed child', async () => {
   const f = nativeManagedFixture();

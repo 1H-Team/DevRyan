@@ -513,9 +513,7 @@ describe('standard session title runtime', () => {
 
     const scheduled = runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
     const boundTimer = () => timers.find(({ delay, cleared }) => delay === 30_000 && !cleared);
-    for (let index = 0; index < 20 && !boundTimer(); index += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
+    await vi.waitFor(() => expect(boundTimer()).toBeDefined());
     expect(projected).toEqual([]);
 
     boundTimer().callback();
