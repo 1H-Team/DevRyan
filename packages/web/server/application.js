@@ -261,7 +261,7 @@ onHostStall((stall) => activeHost?.observeHostStall(stall));
 // strands the next construction in the same process.
 async function constructWebHost(options = {}) {
   activeHost = null;
-  const DESKTOP_NOTIFY_PREFIX = '[OpenChamberDesktopNotify] ';
+  const DESKTOP_NOTIFY_PREFIX = '[DevRyanDesktopNotify] ';
   const uiNotificationClients = new Set();
   const uiNotificationWsClients = new Set();
   const uiDevRyanEventClients = new Set();

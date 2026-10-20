@@ -1,10 +1,17 @@
 # Isolated Electron and web QA
 
-QA runs use private data, a Git fixture workspace and loopback fixtures; they never touch the installed app. Passing means the automated checks passed; inspect screenshots yourself before calling a visual change reviewed. Failed runs keep their evidence. Live-account and journal investigation: [Agent runtime verification](AGENT_RUNTIME_VERIFICATION.md). Release steps: [Release pipeline](RELEASE_PIPELINE.md).
+QA runs use private data, a Git fixture workspace and loopback fixtures; they never touch the installed app. Passing means the automated checks passed; inspect screenshots yourself before calling a visual change reviewed. Use `--keep-artifacts` to retain failed-run evidence. Live-account and journal investigation: [Agent runtime verification](AGENT_RUNTIME_VERIFICATION.md). Release steps: [Release pipeline](RELEASE_PIPELINE.md).
 
 ## Run directories and disk use
 
 Runners create one run directory per invocation through `scripts/qa/run-root.mjs`, under `<os tmpdir>/devryan-<family>`, with a `run.json` (`status`: `running`, `passed`, `failed`, `interrupted`; `pinned`). The directory is removed on pass, failure and interruption unless `--keep-artifacts` or `DEVRYAN_KEEP_ARTIFACTS=1` is set; the runner prints the evidence path when it keeps one. The one exception is the QA packager's `.cache/qa/packaged-electron-current` (below). A packaged QA app is about 1.8 GB: check `df -h .` first and see [STORAGE_CLEANUP.md](STORAGE_CLEANUP.md).
+
+A live run carries a constructor-owned scope tied to its canonical directory and
+device/inode through fixture and native preparation. The token cannot authorize
+a sibling run, a replaced root or a symlink escape. Native inputs and compiled
+artifacts retain their pinned repository-owned verification. Retained provider
+handoff profiles use private `.cache/qa`: registration and later resume processes
+need the existing pinned-file readers, rather than an in-memory scope token.
 
 ## Isolated QA runner
 
@@ -121,7 +128,7 @@ bun scripts/qa/native-startup-benchmark.mjs --package-evidence <abs> --artifact-
 bun scripts/qa/native-startup-benchmark.mjs --baseline-package-evidence <abs> --candidate-package-evidence <abs> --artifact-root <abs> [--startup-mode foreground] [--gate no-regression]
 ```
 
-Three fresh packaged launches through usable chat (native catalog, exact fixture model and agent, composer, sessions and the renderer's event-stream readiness), first document only, no reloads. `--baseline-artifact-root` instead measures first launches after a production startup upgrade from the older native artifacts. The second form runs interleaved baseline/candidate pairs and accepts only a median reduction of at least 5% with all pairs faster. With `--gate no-regression` it runs five interleaved pairs, records (rather than restricts) the changed files, and fails when median time to usable chat grows by more than max(5%, 50 ms). Run benchmarks alone, not beside builds or tests. `DEVRYAN_QA_CATALOG_CONFIG` can point at a sanitized `providers.json` to require specific Cursor models in the catalog.
+Three fresh packaged launches through usable chat (native catalog, exact fixture model and agent, sessions and event readiness, plus a trusted pointer click focusing an unobstructed composer and exact unsent draft entry), first document only, no reloads. `--baseline-artifact-root` instead measures first launches after a production startup upgrade from the older native artifacts. The second form runs interleaved baseline/candidate pairs and accepts only a median reduction of at least 5% with all pairs faster. With `--gate no-regression` it runs five interleaved pairs, records (rather than restricts) the changed files, and fails when median time to usable chat grows by more than max(5%, 50 ms). Run benchmarks alone, not beside builds or tests. `DEVRYAN_QA_CATALOG_CONFIG` can point at a sanitized `providers.json` to require specific Cursor models in the catalog.
 
 ### Resource benchmark
 
@@ -134,7 +141,7 @@ bun run perf:reducer:compare -- --baseline <baseline checkout> [--pairs 10]
 
 Private credential-free fixture profiles. Defaults: three runs of `idle`, `one-stream`, `four-stream` and `plan-skeleton`, 5 s warm-up, 30 s measurement, 500 ms sampling. `--scenarios`, `--runs`, `--warmup-ms`, `--measure-ms` and `--output` change that (label shortened runs a smoke), and `--baseline <summary.json>` applies comparison gates. Do not combine `--package-evidence` with `--electron-binary`. Each launch writes `startup.json` with parent-clock milestones. Protocols: `session-memory` loads four 180-turn histories and measures initial, loaded, inactive and deleted states; `interactive` is described in [INTERACTIVE.md](../scripts/perf/INTERACTIVE.md). The opt-in `twelve-stream` scenario seeds eight extra root sessions before launch and streams all twelve. Every streaming run records how many sessions actually streamed through the measurement window and fails when fewer than its workload did.
 
-`perf:resource-gate` is the no-regression gate over separate single-package benchmark runs taken alternately (B C C B …) with identical options, `QA_NATIVE_ARTIFACT_ROOT` set to the verified native artifacts, and the default `--output` under `.cache/perf` (fixture profiles must live in the repository cache; the benchmark removes them). It fails on median total-app CPU growth above max(5%, 1 percentage point) or median/p95 total working-set growth above max(5%, 16 MiB), and refuses mismatched protocols, Chromium runtimes, process types, unpaired or non-interleaved runs. `perf:reducer:compare` runs the reducer benchmark alternately from a baseline checkout (a worktree under `.cache/worktrees/`) and this one, and per scenario allows max(5% of the baseline median p95, 3 × its median absolute deviation); an allowance above 15% is reported as too noisy to qualify. Other profiling tools live in `scripts/perf/`.
+`perf:resource-gate` is the no-regression gate over separate single-package benchmark runs taken alternately (B C C B …) with identical options, `QA_NATIVE_ARTIFACT_ROOT` set to the verified native artifacts, and the default `--output` under `scratchParent('perf')` (fixture profiles carry their exact owned run scope; the benchmark removes them). It fails on median total-app CPU growth above max(5%, 1 percentage point) or median/p95 total working-set growth above max(5%, 16 MiB), and refuses mismatched protocols, Chromium runtimes, process types, unpaired or non-interleaved runs. `perf:reducer:compare` runs the reducer benchmark alternately from a baseline checkout (an isolated worktree, for example under a canonical OS-temp audit root) and this one, and per scenario allows max(5% of the baseline median p95, 3 × its median absolute deviation); an allowance above 15% is reported as too noisy to qualify. Other profiling tools live in `scripts/perf/`.
 
 ## Configured live-provider smoke
 
