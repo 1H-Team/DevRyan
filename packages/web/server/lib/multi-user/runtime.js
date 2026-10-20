@@ -3383,7 +3383,7 @@ export async function createMultiUserRuntime({
     }
     const managedTaskRootSessionId = extractManagedTaskRootSessionId(payload);
     if (managedTaskRootSessionId) return ownsSession(principal, managedTaskRootSessionId);
-    if (MANAGED_TASK_EVENT_TYPES.has(payload?.type)) return false;
+    if (MANAGED_TASK_EVENT_TYPES.has(canonicalDevRyanEventType(payload?.type))) return false;
     const sessionId = extractSessionId(payload);
     if (sessionId) return ownsSession(principal, sessionId);
     if (directory && directory !== 'global') return Boolean(resolveAssignmentForValue(principal, directory));

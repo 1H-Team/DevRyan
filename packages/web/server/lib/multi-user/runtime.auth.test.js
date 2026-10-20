@@ -1051,7 +1051,7 @@ describe('multi-user failure projection runtime', () => {
 });
 
 describe('multi-user authentication runtime', () => {
-  it('filters managed-task events by root-session ownership', async () => {
+  it.each(['devryan', 'openchamber'])('filters %s managed-task events by root-session ownership', async (eventPrefix) => {
     const repositoryPath = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-managed-task-events-'));
     temporaryDirectories.push(repositoryPath);
     const project = {
@@ -1092,7 +1092,7 @@ describe('multi-user authentication runtime', () => {
       directory: 'global',
     });
     const managedTaskEvent = (task) => ({
-      type: 'openchamber:managed-task',
+      type: `${eventPrefix}:managed-task`,
       properties: { owner: 'devryan', task },
     });
 
@@ -1121,7 +1121,7 @@ describe('multi-user authentication runtime', () => {
     ])).resolves.toEqual([true, true, true]);
 
     await expect(filterGlobalEvent({
-      type: 'openchamber:managed-task-removed',
+      type: `${eventPrefix}:managed-task-removed`,
       properties: {
         owner: 'devryan',
         taskId: 'dvr_task_removed',
@@ -1129,7 +1129,7 @@ describe('multi-user authentication runtime', () => {
       },
     })).resolves.toBe(true);
     await expect(filterGlobalEvent({
-      type: 'openchamber:managed-task-removed',
+      type: `${eventPrefix}:managed-task-removed`,
       properties: {
         owner: 'devryan',
         taskId: 'dvr_task_foreign_removed',
@@ -1140,7 +1140,7 @@ describe('multi-user authentication runtime', () => {
     const deniedSyntheticEvents = [
       managedTaskEvent({ taskId: 'dvr_task_foreign', rootSessionId: 'foreign-root', status: 'running' }),
       {
-        type: 'openchamber:managed-task',
+        type: `${eventPrefix}:managed-task`,
         sessionID: 'developer-root',
         properties: {
           owner: 'another-runtime',
@@ -1148,23 +1148,23 @@ describe('multi-user authentication runtime', () => {
         },
       },
       {
-        type: 'openchamber:managed-task',
+        type: `${eventPrefix}:managed-task`,
         sessionID: 'developer-root',
         properties: { owner: 'devryan', task: { taskId: 'dvr_task_missing_root', status: 'running' } },
       },
       {
-        type: 'openchamber:managed-task-removed',
+        type: `${eventPrefix}:managed-task-removed`,
         sessionID: 'developer-root',
         properties: { owner: 'devryan', taskId: 'dvr_task_missing_removed_root' },
       },
-      { type: 'openchamber:synthetic-event', properties: { owner: 'devryan' } },
+      { type: `${eventPrefix}:synthetic-event`, properties: { owner: 'devryan' } },
     ];
     for (const event of deniedSyntheticEvents) {
       await expect(filterGlobalEvent(event)).resolves.toBe(false);
     }
     await expect(harness.runtime.filterEventForPrincipal(principal, {
       payload: {
-        type: 'openchamber:managed-task',
+        type: `${eventPrefix}:managed-task`,
         properties: {
           owner: 'another-runtime',
           task: { taskId: 'dvr_task_assigned_directory', rootSessionId: 'developer-root', status: 'running' },
@@ -1173,7 +1173,7 @@ describe('multi-user authentication runtime', () => {
       directory: repositoryPath,
     })).resolves.toBe(false);
 
-    await expect(filterGlobalEvent({ type: 'openchamber:heartbeat' })).resolves.toBe(true);
+    await expect(filterGlobalEvent({ type: `${eventPrefix}:heartbeat` })).resolves.toBe(true);
     await expect(filterGlobalEvent({ type: 'server.connected' })).resolves.toBe(true);
     await expect(filterGlobalEvent({
       type: 'session.status',

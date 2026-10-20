@@ -17,6 +17,10 @@ behavior without weakening managed-host checks. That compatibility principal is
 never eligible for Managed Remote, which requires separately attributable managed
 accounts before connector startup or public-host API access.
 
+Managed-task events normalize legacy `openchamber:*` types before both root-session
+ownership checks and malformed-event rejection. A legacy type cannot fall through
+to an otherwise authorized top-level session or directory.
+
 `supabase-client.js` bounds REST, RPC and Auth responses to 16 MiB of decoded
 body bytes before JSON parsing. It rejects oversized declared lengths and
 counts streamed chunks independently of compression or missing/incorrect
