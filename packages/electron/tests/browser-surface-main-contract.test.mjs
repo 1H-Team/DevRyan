@@ -136,7 +136,8 @@ describe('main-owned browser surface contract', () => {
     expect(managerSource).toContain("safeString(browserPartition, 256) || BROWSER_WEBVIEW_PARTITION");
     expect(managerSource).toContain('existingWorkspace.browserContextKey !== browserContext.contextKey');
     expect(managerSource).toContain("throw new Error('Browser surface belongs to another authenticated context')");
-    expect(mainSource).toContain('createManualBrowserContext({ origin, principalId: principal.id })');
+    expect(mainSource).toContain("const browserPartitionIdentity = selectBrowserPartitionIdentity({ userDataDirectory: app.getPath('userData') });");
+    expect(mainSource).toContain('createManualBrowserContext({ origin, principalId: principal.id,\n    partitionPrefix: browserPartitionIdentity.manualPrefix })');
     expect(mainSource).toContain("releaseManualForHomeWindow(windowId, 'browser_context_changed')");
   });
 

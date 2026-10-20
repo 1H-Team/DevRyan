@@ -6,6 +6,7 @@ import {
   createManualBrowserContext,
   readAuthorizedBrowserPrincipal,
 } from '../native-browser-context.mjs';
+import { selectBrowserPartitionIdentity } from '../browser-partition-identity.mjs';
 
 test('native Browser authorization requires an authenticated browser-capable principal', () => {
   assert.deepEqual(readAuthorizedBrowserPrincipal({
@@ -32,6 +33,24 @@ test('manual Browser partitions are stable per canonical host and user', () => {
   assert.notEqual(first.partition, otherUser.partition);
   assert.notEqual(first.partition, otherHost.partition);
   assert.doesNotMatch(first.partition, /developer|example/);
+});
+
+test('selected profile partition prefix preserves per-user isolation and legacy storage', () => {
+  const canonical = selectBrowserPartitionIdentity({ userDataDirectory: '/private/@devryan/electron', readDirectory: () => [] });
+  const legacy = selectBrowserPartitionIdentity({ userDataDirectory: '/private/custom',
+    readDirectory: () => ['openchamber-browser-user-old'] });
+  const context = (principalId, partitionPrefix) => createManualBrowserContext({
+    origin: 'https://devryan.example', principalId, partitionPrefix,
+  });
+  const currentUser = context('developer-1', canonical.manualPrefix);
+  const otherUser = context('developer-2', canonical.manualPrefix);
+  const existingUser = context('developer-1', legacy.manualPrefix);
+
+  assert.ok(currentUser.partition.startsWith('persist:devryan-browser-user-'));
+  assert.notEqual(currentUser.partition, otherUser.partition);
+  assert.ok(existingUser.partition.startsWith('persist:openchamber-browser-user-'));
+  assert.equal(existingUser.contextKey, currentUser.contextKey);
+  assert.notEqual(existingUser.partition, currentUser.partition);
 });
 
 test('manual Browser context rejects invalid origins and missing principals', () => {
