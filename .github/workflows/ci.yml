@@ -1,9 +1,7 @@
 name: CI
 
-# The full deterministic suite on every push to main and every pull request.
-# Locally, `bun run validate` is the fast gate; this runs `bun run validate:full`,
-# which builds once, then runs every suite (including every startup-contract file,
-# see scripts/test-startup-contract.mjs) as one bounded concurrent pool.
+# One build, then every deterministic suite on isolated macOS runners.
+# validate:full remains the equivalent complete local gate.
 on:
   push:
     branches: [main]
@@ -18,12 +16,8 @@ concurrency:
 
 jobs:
   checks:
-    # DevRyan ships for macOS only; native runtime tests use darwin-arm64 binaries.
     runs-on: macos-26
-    timeout-minutes: 75
-    env:
-      # Three outer processes fit the hosted runner; nested Node files stay serial.
-      DEVRYAN_TEST_CONCURRENCY: '3'
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -33,17 +27,59 @@ jobs:
         with:
           node-version-file: .nvmrc
       - name: Install dependencies
-        # The Electron install-time prepare (web assets, native helpers, ABI
-        # rebuild) is packaging input; validate:full builds what the suites use.
         env:
           DEVRYAN_SKIP_INSTALL_PREPARE: '1'
         run: bun install --frozen-lockfile
       - name: Restore reviewed Claude executable
-        # Gitignored; native runtime input tests verify it like the release build does.
+        run: node scripts/hydrate-reviewed-claude.mjs
+      - name: Lint, types, docs, build and bundle budgets
+        run: node scripts/validate.mjs checks
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ci-built-assets
+          path: |
+            packages/web/dist/
+            packages/electron/resources/web-dist/
+            packages/electron/dist-bundle/
+          if-no-files-found: error
+          retention-days: 1
+
+  tests:
+    needs: checks
+    runs-on: macos-26
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - lane: web
+            concurrency: '1'
+          - lane: harness
+            concurrency: '1'
+          - lane: core
+            concurrency: '2'
+    env:
+      DEVRYAN_TEST_CONCURRENCY: ${{ matrix.concurrency }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.14'
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Install dependencies
+        env:
+          DEVRYAN_SKIP_INSTALL_PREPARE: '1'
+        run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: ci-built-assets
+          path: packages
+      - name: Restore reviewed Claude executable
         run: node scripts/hydrate-reviewed-claude.mjs
       - name: Build and verify native v2 runtime
-        # Native graph tests run the real session-execution launcher from packages/web/runtime.
         timeout-minutes: 20
         run: bun scripts/build-native-runtime.mjs
-      - name: Lint, type-check, docs, build, bundle budgets and every test suite
-        run: bun run validate:full
+      - name: Run every suite assigned to this lane and check scratch cleanup
+        run: node scripts/validate.mjs ci:${{ matrix.lane }}

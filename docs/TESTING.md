@@ -5,7 +5,7 @@
 | Command | Use |
 | --- | --- |
 | `bun run validate` | The local gate before every push and release tag. Diffs against the upstream branch (override with `VALIDATE_BASE`) and runs only what the change touches. |
-| `bun run validate:full` | Lint, import boundaries, the browser graph, type-check, `docs:validate`, build (once), `bundle:check` and `test:full`. This is what CI runs. |
+| `bun run validate:full` | Lint, import boundaries, the browser graph, type-check, `docs:validate`, build (once), `bundle:check` and `test:full`. CI runs these same checks across its build and test lanes. |
 | `bun run test:startup` | Curated startup and user-data contract. |
 | `bun run test:full` | Scripts, the visual fixture and every package suite, as one bounded concurrent pool (`node scripts/test-full.mjs [--suite=web,ui]`). |
 | `bun run docs:validate` | Markdown links and inline-code paths. |
@@ -30,9 +30,9 @@ A docs-only change runs only `docs:validate`. Both validate modes fail if the ru
 
 ## CI
 
-CI sets `DEVRYAN_TEST_CONCURRENCY=3` for the hosted macOS runner; local runs default to two outer processes. The longest harness, stream-continuation and web shard units start first, so the fixed-port OAuth tests can drain alongside the other suites instead of forming a late serial tail. Node script files remain serial within their outer slot. Every suite and assertion still runs.
+CI isolates web, harness and the remaining suites on three macOS runners. Web uses one outer worker, harness uses one outer worker with its two Bun file workers, and the remaining suites use two outer workers. Local runs still default to two. Heavy Git/native fixtures no longer compete with web tests on one machine. The full inventory and every startup-contract file run exactly once across the lanes; their union is checked against `validate:full`.
 
-`.github/workflows/ci.yml` runs on every push to `main` and every pull request: one job, `checks` (macos-26), installs without the Electron install-time prepare, restores the reviewed Claude executable, builds the native runtime and runs `bun run validate:full`. Every startup-contract file runs there through its owner suite; `scripts/test-suite-contract.test.mjs` proves each one is discovered. The other workflows are `release.yml`, `release-cache.yml` and `supabase-migrate.yml` (see [Release pipeline](RELEASE_PIPELINE.md)).
+`.github/workflows/ci.yml` runs on every push to `main` and every pull request. `checks` runs `node scripts/validate.mjs checks`: lint, types, documentation, the shared build and bundle budgets. It uploads only the built web and Electron assets. Three `tests` lanes download those assets into `packages`, build and verify their own native runtime, and run `node scripts/validate.mjs ci:<lane>`. These internal modes retain the normal scratch guard. `CI_TEST_LANES` in `scripts/test-full.mjs` assigns every suite exactly once; the core lane automatically includes new suites. Release admission requires the whole exact-SHA workflow, including every lane, to pass. `bun run validate:full` remains the equivalent complete local gate. The other workflows are `release.yml`, `release-cache.yml` and `supabase-migrate.yml` (see [Release pipeline](RELEASE_PIPELINE.md)).
 
 ## Startup contract
 

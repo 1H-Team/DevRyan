@@ -36,6 +36,13 @@ export const FULL_TEST_SUITES = Object.freeze([
 /** `bun run --cwd packages/x test` lines of FULL_TEST_SUITES, for inventory checks. */
 export const FULL_TEST_COMMANDS = Object.freeze(FULL_TEST_SUITES.map((suite) => [suite.command, ...suite.args].join(' ')));
 
+// Separate hosted runners keep the large Git/native fixtures off the web runner.
+export const CI_TEST_LANES = Object.freeze({
+  web: Object.freeze(['web']),
+  harness: Object.freeze(['harness']),
+  core: Object.freeze(FULL_TEST_SUITES.map(suite => suite.key).filter(key => !['web', 'harness'].includes(key))),
+});
+
 /** Vitest shards of `packages/web` test:vitest; the long startup files spread across them. */
 export const WEB_VITEST_SHARDS = 3;
 /**

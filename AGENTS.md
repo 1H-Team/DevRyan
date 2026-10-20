@@ -23,7 +23,7 @@ DevRyan is the web and Electron interface to OpenCode over HTTP and SSE. Canonic
 
 ## Verify
 
-- `bun run validate` is the gate before every push and release tag. It lints and type-checks what changed, runs the affected package tests and always the startup contract, and fails if the run left new scratch in `.cache/`. CI runs `bun run validate:full` on every push to `main`.
+- `bun run validate` is the gate before every push and release tag. It lints and type-checks what changed, runs the affected package tests and always the startup contract, and fails if the run left new scratch in `.cache/`. CI runs every check of `bun run validate:full` on every push to `main`, across isolated build and test lanes whose union is verified by the suite contract.
 - Tests and QA delete their scratch on success, failure and interruption. Use the OS temp dir (`scratchParent()` in `scripts/qa/run-root.mjs`); only tools that must stay inside the repository write under `.cache/`. Keep a failed run's files only with `--keep-artifacts` or `DEVRYAN_KEEP_ARTIFACTS=1`. `bun run cache:prune` previews `.cache` cleanup.
 - Fix failures your change causes. Never weaken an assertion or skip a test. Report what passed, what failed and what you could not run.
 - Live, Docker and native checks have their own prerequisites: [TESTING.md](docs/TESTING.md), [QA.md](docs/QA.md). Keep them isolated from the user's running app and data.
