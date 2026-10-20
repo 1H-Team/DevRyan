@@ -192,6 +192,11 @@ function isElectronTestRelevant(file) {
   return ['.js', '.mjs'].includes(path.extname(file)) || file === 'packages/electron/package.json';
 }
 
+function isDesktopTestRelevant(file) {
+  return file === 'packages/desktop/scripts/devryan-managed-orchestration.test.mjs'
+    || file === 'packages/desktop/src-tauri/resources/default-config/plugins/devryan-managed-orchestration.mjs';
+}
+
 function isCursorTestRelevant(file) {
   if (!file.startsWith('packages/cursor-sdk-runtime/')) return false;
   if (testFilePattern.test(file)) return true;
@@ -317,6 +322,7 @@ function affectedTests(files) {
     if (isUiTestRelevant(file)) tests.add('ui');
     if (isWebTestRelevant(file)) tests.add('web');
     if (isElectronTestRelevant(file)) tests.add('electron');
+    if (isDesktopTestRelevant(file)) tests.add('desktop');
     if (isBotsTestRelevant(file)) tests.add('bots');
     if (isBotServiceTestRelevant(file, 'packages/bot-supervisor/')) tests.add('botSupervisor');
     if (isBotServiceTestRelevant(file, 'packages/bot-engine-proxy/')) tests.add('botEngineProxy');

@@ -354,6 +354,20 @@ describe('maintenance validation selection', () => {
     assert.ok(labels.includes('test:web'));
   });
 
+  test('runs the legacy desktop JavaScript contract for its source and test', () => {
+    for (const file of [
+      'packages/desktop/src-tauri/resources/default-config/plugins/devryan-managed-orchestration.mjs',
+      'packages/desktop/scripts/devryan-managed-orchestration.test.mjs',
+    ]) {
+      const plan = buildPlan('fast', [file]);
+      const testCommands = plan.commands.filter((entry) => entry.label.startsWith('test:'));
+      assert.deepEqual(testCommands, [
+        { label: 'test:desktop', executable: 'bun', args: ['run', '--cwd', 'packages/desktop', 'test:managed-orchestration'] },
+        { label: 'test:startup', executable: 'bun', args: ['run', 'test:startup'] },
+      ], file);
+    }
+  });
+
   test('lints and type-checks everything for shared configuration, and re-tests a package for its own manifest', () => {
     for (const file of ['package.json', 'bun.lock', '.opencode/opencode.json']) {
       const labels = buildPlan('fast', [file]).commands.map(c => c.label);
