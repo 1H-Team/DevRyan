@@ -15,6 +15,7 @@
     "paths": {
       "@devryan/ui/*": ["./packages/ui/src/*"],
       "@devryan/web/*": ["./packages/web/src/*"],
+      "@devryan/desktop/*": ["./packages/desktop/src/*"],
       "@openchamber/desktop/*": ["./packages/desktop/src/*"]
     }
   }
