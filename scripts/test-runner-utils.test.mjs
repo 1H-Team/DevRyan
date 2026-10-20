@@ -239,9 +239,11 @@ describe('release workflow', () => {
     );
   });
 
-  test('leaves the frozen legacy Tauri cargo suite out of the full test gate', () => {
+  test('runs only the legacy Tauri JavaScript contract in the full test gate', () => {
     const packageJson = JSON.parse(readFileSync(new URL('package.json', repoRoot), 'utf8'));
-    assert.doesNotMatch(packageJson.scripts['test:full'], /packages\/desktop/);
+    const desktopCommands = packageJson.scripts['test:full'].split(' && ')
+      .filter((command) => command.includes('packages/desktop'));
+    assert.deepEqual(desktopCommands, ['bun run --cwd packages/desktop test:managed-orchestration']);
   });
 
   test('builds Bot images with the input-hashing recipe and publishes only through release.mjs', async () => {

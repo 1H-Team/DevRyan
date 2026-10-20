@@ -38,7 +38,7 @@ describe('full test-suite contract', () => {
     assert.deepEqual(files, [...files].sort());
   });
 
-  // packages/desktop is frozen legacy Tauri: its cargo suite is deliberately not run.
+  // packages/desktop is frozen legacy Tauri: only its JavaScript contract runs in the full gate.
   const excludedFromFull = new Set(['desktop']);
   test('includes every test-owning workspace package in the full gate', () => {
     const rootPackage = JSON.parse(readFileSync(path.join(repositoryRoot, 'package.json'), 'utf8'));
@@ -80,6 +80,11 @@ describe('full test-suite contract', () => {
       'resources',
     ]);
     const allTests = discoverTestFiles(repositoryRoot, repositoryRoot, { ignoredDirectories });
+    const desktopTest = 'packages/desktop/scripts/devryan-managed-orchestration.test.mjs';
+    const desktop = JSON.parse(readFileSync(path.join(repositoryRoot, 'packages/desktop/package.json'), 'utf8'));
+    assert.equal(desktop.scripts['test:managed-orchestration'], 'bun test scripts/devryan-managed-orchestration.test.mjs');
+    assert.deepEqual(allTests.filter((file) => file.startsWith('packages/desktop/')), [desktopTest]);
+    assert.ok(rootPackage.scripts['test:full'].split(' && ').includes('bun run --cwd packages/desktop test:managed-orchestration'));
     const fullGateRoots = [
       '.opencode/agents/',
       '.opencode/plugins/',
@@ -93,6 +98,7 @@ describe('full test-suite contract', () => {
       'packages/bot-supervisor/',
       'packages/bots-runtime/',
       'packages/cursor-sdk-runtime/',
+      'packages/desktop/',
       'packages/electron/',
       'packages/harness-runtime/',
       'packages/orchestration-runtime/',
