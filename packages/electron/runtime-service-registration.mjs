@@ -241,7 +241,11 @@ export const createRuntimeServiceRegistration = ({
 
   const unregisterLegacy = async () => {
     for (const file of [legacyPath, previousLegacyPath]) {
-      if (Number.isSafeInteger(uid) && uid >= 0) {
+      const exists = await fsPromises.lstat(file).then((entry) => entry.isFile(), (error) => {
+        if (error?.code === 'ENOENT') return false;
+        throw error;
+      });
+      if (exists && Number.isSafeInteger(uid) && uid >= 0) {
         await execFile('/bin/launchctl', ['bootout', `gui/${uid}`, file], {
           encoding: 'utf8', maxBuffer: MAX_OUTPUT_BYTES, timeout: 15_000,
         }).catch(() => undefined);

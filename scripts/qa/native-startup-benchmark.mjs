@@ -31,16 +31,20 @@ export const NATIVE_STARTUP_DRAFT = 'DevRyan startup draft remains unsent.';
 /** The endpoint is a real pointer focus and browser text insertion, with no submit action. */
 export async function proveNativeStartupComposer({ read, click, insertText, providerRequestCount, checkAlive = () => {},
   settle = () => pause(100), clock = () => performance.now(), startedAt, expectedTimeOrigin, draft = NATIVE_STARTUP_DRAFT }) {
+  const assertAccessible = snapshot => assert.ok(snapshot?.point && snapshot.hitOwned && snapshot.enabled
+    && snapshot.visibilityState === 'visible' && snapshot.splashAbsent === true,
+  'Startup composer must be enabled, visible, splash-free and unobstructed at the pointer target');
   checkAlive();
   const before = await read();
-  assert.ok(before?.point && before.hitOwned && before.enabled && before.value === '',
-    'Startup composer must be empty, enabled and unobstructed at the pointer target');
+  assertAccessible(before);
+  assert.equal(before.value, '', 'Startup composer must be empty before pointer focus');
   assert.equal(before.timeOrigin, expectedTimeOrigin, 'Composer proof must use the ready document');
   const initialRequests = providerRequestCount();
   const clickedAtMs = clock() - startedAt;
   await click(before.point);
   checkAlive();
   const focused = await read();
+  assertAccessible(focused);
   assert.equal(focused?.focused, true, 'Trusted pointer click must focus the composer');
   assert.equal(focused.timeOrigin, expectedTimeOrigin, 'Composer document changed after pointer focus');
   assert.equal(focused.sessionID, before.sessionID, 'Pointer focus must not navigate to a session');
@@ -48,6 +52,7 @@ export async function proveNativeStartupComposer({ read, click, insertText, prov
   await settle();
   checkAlive();
   const after = await read();
+  assertAccessible(after);
   assert.equal(after?.timeOrigin, expectedTimeOrigin, 'Composer document changed during draft entry');
   assert.equal(after.focused, true, 'Composer lost focus during draft entry');
   assert.equal(after.value, draft, 'Composer must accept the exact fixed draft');
@@ -67,6 +72,7 @@ export async function proveNativeStartupComposerWithCdp({ cdp, checkAlive, start
     let visible=point.x>=0&&point.x<innerWidth&&point.y>=0&&point.y<innerHeight;
     for(let node=e;node;node=node.parentElement){const s=getComputedStyle(node);if(s.display==='none'||s.visibility==='hidden'||Number(s.opacity)<=0)visible=false;}
     return {point,hitOwned:visible&&Boolean(hit&&e.contains(hit)),enabled:!e.disabled&&!e.readOnly,
+      visibilityState:document.visibilityState,splashAbsent:!document.querySelector('#initial-loading,#startup-status,[data-runtime-loading-screen]'),
       focused:document.activeElement===e,value:e.value,sessionID:new URL(location.href).searchParams.get('session'),timeOrigin:performance.timeOrigin};
   })()`);
   const ui = createQaUiDriver(cdp, { checkAlive, timeoutMs: 10000 });

@@ -21,7 +21,8 @@ test('independent startup endpoint uses a pointer to focus, accepts the exact fi
   let value = '', focused = false, requests = 0, now = 100;
   const point = { x: 100, y: 200 }, calls = [];
   const proof = await proveNativeStartupComposer({ startedAt: 50, expectedTimeOrigin: 77, clock: () => now,
-    read: async () => ({ point, hitOwned: true, enabled: true, value, focused, timeOrigin: 77, sessionID: null }),
+    read: async () => ({ point, hitOwned: true, enabled: true, visibilityState: 'visible', splashAbsent: true,
+      value, focused, timeOrigin: 77, sessionID: null }),
     click: async target => { calls.push(['click', target]); focused = true; now += 10; },
     insertText: async text => { calls.push(['insert', text]); value = text; now += 5; },
     providerRequestCount: () => requests, settle: async () => { now += 100; } });
@@ -34,15 +35,22 @@ test('independent startup endpoint uses a pointer to focus, accepts the exact fi
 
 test('startup composer proof rejects interception, failed focus, changed draft, submission and document replacement', async () => {
   const scenario = async (overrides = {}) => {
-    let value = '', focused = false, requests = 0;
+    let value = '', focused = false, requests = 0, reads = 0;
     return proveNativeStartupComposer({ startedAt: 0, expectedTimeOrigin: 77,
-      read: async () => ({ point: { x: 1, y: 2 }, hitOwned: true, enabled: true, value, focused,
-        timeOrigin: 77, sessionID: null, ...overrides.read?.({ focused, value }) }),
+      read: async () => ({ point: { x: 1, y: 2 }, hitOwned: true, enabled: true,
+        visibilityState: 'visible', splashAbsent: true, value, focused,
+        timeOrigin: 77, sessionID: null, ...overrides.read?.({ focused, value, reads: ++reads }) }),
       click: async () => { focused = !overrides.blockFocus; },
       insertText: async text => { value = overrides.changedDraft ? text + '!' : text; if (overrides.submit) requests++; },
       providerRequestCount: () => requests, settle: async () => {} });
   };
   await assert.rejects(scenario({ read: () => ({ hitOwned: false }) }), /unobstructed/);
+  await assert.rejects(scenario({ read: () => ({ splashAbsent: false }) }), /splash-free/);
+  await assert.rejects(scenario({ read: () => ({ visibilityState: 'hidden' }) }), /visible/);
+  await assert.rejects(scenario({ read: ({ focused }) => focused ? { hitOwned: false } : {} }), /unobstructed/);
+  await assert.rejects(scenario({ read: ({ focused }) => focused ? { enabled: false } : {} }), /enabled/);
+  await assert.rejects(scenario({ read: ({ reads }) => reads === 3 ? { hitOwned: false } : {} }), /unobstructed/);
+  await assert.rejects(scenario({ read: ({ reads }) => reads === 3 ? { splashAbsent: false } : {} }), /splash-free/);
   await assert.rejects(scenario({ blockFocus: true }), /pointer click must focus/);
   await assert.rejects(scenario({ changedDraft: true }), /exact fixed draft/);
   await assert.rejects(scenario({ submit: true }), /must not submit/);

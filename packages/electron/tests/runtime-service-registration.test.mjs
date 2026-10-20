@@ -260,7 +260,7 @@ describe('background runtime registration', () => {
     await fs.mkdir(path.dirname(legacyPath), { recursive: true });
     await fs.writeFile(legacyPath, 'legacy', { mode: 0o600 });
     let nativeStatusCalls = 0;
-    let launchctlCalls = 0;
+    const launchctlCalls = [];
     const registration = createRuntimeServiceRegistration({
       platform: 'darwin',
       macosMajor: 15,
@@ -270,7 +270,7 @@ describe('background runtime registration', () => {
       dataDirectory: path.join(root, 'data'),
       homeDirectory: root,
       uid: 501,
-      execFile: async () => { launchctlCalls += 1; return { stdout: '', stderr: '' }; },
+      execFile: async (_file, args) => { launchctlCalls.push(args); return { stdout: '', stderr: '' }; },
       nativeControl: {
         status: async () => {
           nativeStatusCalls += 1;
@@ -283,9 +283,10 @@ describe('background runtime registration', () => {
     assert.equal(registration.mode, 'legacy');
     assert.equal(nativeStatusCalls, 0);
     assert.deepEqual(await registration.register({ allowLegacy: true }), { ok: true, state: 'enabled', code: null });
-    assert.equal(launchctlCalls, 0);
+    assert.deepEqual(launchctlCalls, []);
     await assert.rejects(fs.stat(registration.legacyPath), (error) => error.code === 'ENOENT');
     await registration.unregister();
+    assert.deepEqual(launchctlCalls, [['bootout', 'gui/501', legacyPath]]);
     await assert.rejects(fs.stat(legacyPath), (error) => error.code === 'ENOENT');
   });
 
