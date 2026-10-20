@@ -24,6 +24,7 @@ import { executeNativeContextAssets } from './runtime-host/native-context-assets
 import { executeNativeInterviewDocument } from './runtime-host/native-interview-document.js';
 import { canonicalTarget } from './runtime-host/native-read-paths.js';
 import { createCursorExecutionReceipts } from './cursor-execution-receipts.js';
+import { createNativeSearchOutput } from './native-search-output.js';
 
 const failure = (code, status = 409) => Object.assign(new Error(code), { code, status, statusCode: status });
 // Built-in tools the companion may run with a direct receipt: audited
@@ -36,7 +37,7 @@ const NATIVE_AST_TOOLS = new Set(['ast_grep_search', 'ast_grep_replace']);
 // finishes (cancelled, crashed) is evicted by later admissions.
 const DIRECT_ADMISSIONS_MAX = 1024;
 const identity = (value) => typeof value === 'string' && /^[a-zA-Z0-9_-]{1,512}$/.test(value);
-const guardedNativeReadArgs = (tool, args) => {
+const guardedNativeReadArgs = (tool, args, { projectDirectory, readDirectory }) => {
   if (!Array.isArray(args) || !args.every(arg => typeof arg === 'string')) throw failure('native_execution_input_invalid', 400);
   const separator = args.indexOf('--');
   const flags = separator < 0 ? args.slice(0, -1) : args.slice(0, separator);
@@ -56,7 +57,13 @@ const guardedNativeReadArgs = (tool, args) => {
   // Closed B policy: rg must not read implicit ignore inputs (including their
   // symlink targets). --no-ignore implies all dot/exclude/global/parent/VCS
   // ignore-file closures; explicit --ignore-file flags are rejected above.
-  return [...args.slice(0, index), '--no-ignore', '--iglob=!**/.git', '--iglob=!**/.git/**', ...args.slice(index)];
+  // Expansion is a real, authorized directory scope, never an include glob.
+  // A scoped dependency/cache inspection keeps other expensive trees closed.
+  const scopedComponents = new Set(path.relative(projectDirectory, readDirectory).split(path.sep).map(component => component.toLowerCase()));
+  const defaults = ['node_modules', '.cache', 'dist', '.worktrees', 'generated-worktree', 'generated-worktrees', 'worktrees', '.artifacts'];
+  const exclusions = ['.git', ...defaults.filter(component => !scopedComponents.has(component))]
+    .flatMap(component => [`--iglob=!**/${component}`, `--iglob=!**/${component}/**`]);
+  return [...args.slice(0, index), '--no-ignore', ...exclusions, ...args.slice(index)];
 };
 const nativePublicationResult = (result, publication, lease, tool) => {
   if(result&&tool==='gpt_imagegen'){
@@ -488,8 +495,9 @@ export function createSessionExecutionHost(options) {
       const within = (root) => readDirectory === root || readDirectory.startsWith(`${root}${path.sep}`);
       const containsProtected = protectedRoots.some(root => root.startsWith(`${readDirectory}${path.sep}`));
       if (readDirectory.split(path.sep).some(component => component.toLowerCase() === '.git') || !readRoots.some(within) || protectedRoots.some(within) || containsProtected) throw failure('native_read_root_denied', 403);
-      const readArgs = guardedNativeReadArgs(input.tool, input.args);
+      const readArgs = guardedNativeReadArgs(input.tool, input.args, { projectDirectory: await fs.realpath(input.directory), readDirectory });
       const controller = new AbortController();
+      const searchLimit = new AbortController();
       const job = { input, controller, events: [], cursor: 0, acknowledged: 0, delivered: 0, bytes: 0,
         waiters: new Set(), permissions: new Set(), done: false, child: null, failure: null };
       signal?.throwIfAborted();
@@ -498,15 +506,22 @@ export function createSessionExecutionHost(options) {
         await nativeRecheck(input); signal?.throwIfAborted();
         const env = { ...nativeOptions.workerEnvironment, ...input.env };
         for (const key of Object.keys(env)) if (/TOKEN|SECRET|PASSWORD|API_KEY|CREDENTIAL|AUTHORIZATION|^DEVRYAN_.*URL/i.test(key)) delete env[key];
+        const bounded = createNativeSearchOutput({ tool: input.tool,
+          emit: data => nativeEvent(job, { type: 'output', stream: 'stdout', data: data.toString('base64') }),
+          stop: () => { job.searchTruncated = true; searchLimit.abort(failure('native_search_truncated')); } });
         const started = await startReadOnlySessionExecution({ launcher: launcher(), windowsOwner: options.windowsOwner, storage: path.join(options.dataDirectory, 'harness', 'native-readers'),
           logicalDirectory: readDirectory, command: input.command, args: readArgs, env,
-          socketDirectory: nativeOptions.socketDirectory, workerBrowsers: false, deniedReadDirectories: nativeOptions.deniedReadDirectories, signal: AbortSignal.any([controller.signal, ...(signal ? [signal] : [])]),
-          onOutput: ({ stream, data }) => nativeEvent(job, { type: 'output', stream, data: data.toString('base64') }) });
+          socketDirectory: nativeOptions.socketDirectory, workerBrowsers: false, deniedReadDirectories: nativeOptions.deniedReadDirectories, signal: AbortSignal.any([controller.signal, searchLimit.signal, ...(signal ? [signal] : [])]),
+          onOutput: ({ stream, data }) => stream === 'stdout' ? bounded.write(data) : nativeEvent(job, { type: 'output', stream, data: data.toString('base64') }) });
         job.child = started.child; nativeEvent(job, { type: 'started', pid: started.pid });
         const receipt = await started.result;
+        bounded.finish();
+        await nativeRecheck(input);
         try { nativeOptions.onTermination?.({ sessionID: input.sessionID, messageID: input.messageID, callID: input.callID, receipt }); } catch { /* Observer only. */ }
-        nativeEvent(job, { type: 'settled', ok: receipt.confined && !receipt.cancelled && !job.failure,
-          receipt, ...(job.failure ? { error: { message: job.failure.message } } : {}) }, true);
+        const limited = job.searchTruncated === true && searchLimit.signal.aborted && (receipt.cancelled || receipt.exitCode === 0 || receipt.exitCode === 1)
+          && !controller.signal.aborted && !signal?.aborted && !job.failure;
+        nativeEvent(job, { type: 'settled', ok: receipt.terminated === true && receipt.confined && (!receipt.cancelled || limited) && !controller.signal.aborted && !signal?.aborted && !job.failure,
+          receipt, ...(limited ? { truncated: true, truncation: bounded.metadata() } : {}), ...(job.failure ? { error: { message: job.failure.message } } : {}) }, true);
       })().finally(() => { job.done = true; for (const wake of job.waiters) wake(); job.waiters.clear(); });
       void job.settled.catch((cause) => { nativeReadFailure(input, cause); nativeEvent(job, { type: 'uncertain', error: { code: cause.code ?? 'mutation_termination_unconfirmed' } }, true); });
       return { handle };
@@ -515,7 +530,7 @@ export function createSessionExecutionHost(options) {
     const lease = await runtime.reserve({ ...input, kind: 'process', userMessageID: record.info.parentID,
       parentID: current.parentID, executionFingerprint: fingerprint, ownerID: owner.id });
     if (lease.ownerID !== owner.id || lease.executionKind || lease.state === 'published') throw failure('execution_already_started');
-    const job = { input, lease, controller: new AbortController(), events: [], cursor: 0, acknowledged: 0,
+    const job = { input, lease, partID: call.id, tool: call.tool, controller: new AbortController(), events: [], cursor: 0, acknowledged: 0,
       delivered: 0, bytes: 0, waiters: new Set(), permissions: new Set(), done: false, child: null, failure: null, result: null,
       bindingPending: input.kind === 'shell', browserOperations:new Set(), browserIDs:new Set() };
     job.childReady=new Promise(resolve=>{job.resolveChild=resolve;});
@@ -679,6 +694,7 @@ export function createSessionExecutionHost(options) {
         if (workerInput) started.child.stdin.write(workerInput);
         nativeEvent(job, { type: 'started', pid: started.pid });
         const receipt = await started.result;
+        job.terminationReceipt = receipt;
         if(receipt.cancelled||!receipt.confined||receipt.exitCode!==0||job.failure)job.controller.abort(job.failure??failure('native_worker_terminated',403));
         await Promise.allSettled([...job.browserOperations]);
         pending += decoder.end();
@@ -704,6 +720,7 @@ export function createSessionExecutionHost(options) {
           // Recheck/publication errors occur only after verified termination;
           // missing termination evidence keeps the lease for recovery.
           const receipt = await readSessionExecutionReceipt(job.lease);
+          job.terminationReceipt = receipt;
           // Materialization can fail after its publication decision was committed.
           // The canonical ledger read recovers that intent before success; never
           // cancel or clean a durable publication as though it were a failure.
@@ -1168,7 +1185,29 @@ export function createSessionExecutionHost(options) {
     if (!receipt.terminated || !receipt.confined) throw failure('mutation_termination_unconfirmed', 503);
     return { lease, receipt };
   };
-  return { get retentionReady() { return retentionReady; }, runtime, executions, coordinator, plugin, nativeManagedControl, nativeManagedChild, nativeExecution, nativeContextAssets, nativeInterviewDocument, nativeShellJobReceipt, isConfined, persistCursorRecord, startCursor, assertLegacyRevertAllowed, warmLedger,
+  // Constructor-owned watchdog only; never exposed through the tool RPC.
+  const cancelOwnedCommand = async ({ directory, fingerprint }, { signal } = {}) => {
+    signal?.throwIfAborted();
+    if (typeof directory !== 'string' || !path.isAbsolute(directory) || !fingerprint
+      || !['bash', 'shell'].includes(fingerprint.tool)
+      || ['sessionID', 'messageID', 'callID'].some(key => !identity(fingerprint[key]))
+      || typeof fingerprint.partID !== 'string' || !fingerprint.partID || fingerprint.partID.length > 2048 || /[\u0000-\u001f]/.test(fingerprint.partID)) return false;
+    const matches = [...nativeHandles.values()].filter(job => !job.done && job.input.kind === 'shell'
+      && job.input.directory === directory
+      && job.partID === fingerprint.partID && job.tool === fingerprint.tool
+      && ['sessionID', 'messageID', 'callID'].every(key => job.input[key] === fingerprint[key]));
+    if (matches.length !== 1) return false;
+    const job = matches[0];
+    job.controller.abort(failure('command_deadline_exceeded'));
+    await new Promise((resolve, reject) => {
+      const aborted = () => reject(signal.reason);
+      signal?.addEventListener('abort', aborted, { once: true });
+      if (signal?.aborted) aborted();
+      void job.settled.then(resolve, reject).finally(() => signal?.removeEventListener('abort', aborted));
+    });
+    return job.terminationReceipt?.terminated === true && job.terminationReceipt.confined === true;
+  };
+  return { get retentionReady() { return retentionReady; }, runtime, executions, coordinator, plugin, nativeManagedControl, nativeManagedChild, nativeExecution, nativeContextAssets, nativeInterviewDocument, nativeShellJobReceipt, cancelOwnedCommand, isConfined, persistCursorRecord, startCursor, assertLegacyRevertAllowed, warmLedger,
     recover: async () => {
       retentionReady = false; let failed = false;
       const report = (cause) => {

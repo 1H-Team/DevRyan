@@ -134,8 +134,23 @@ describe('web command deadline adapter on gen 2 (openCodeClient)', () => {
     clock.now = 2_000;
     await runtime.reconcile();
 
-    expect(openCodeClient.sessions.status).toHaveBeenCalledWith({ directory: '/workspace/project' }, { timeoutMs: 5_000 });
+    expect(openCodeClient.sessions.status).toHaveBeenCalledWith({}, { timeoutMs: 5_000 });
     expect(restartOpenCode).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves an active session in another project when considering a whole-host restart', async () => {
+    const stillRunning = { info: { id: 'msg/1', sessionID: 'ses/1' }, parts: [runningPart] };
+    const openCodeClient = createClient({ messages: [stillRunning, stillRunning] });
+    openCodeClient.sessions.status.mockImplementation(async query => ({
+      'ses/1': { type: 'busy' }, ...(query.directory ? {} : { 'ses/other-project': { type: 'busy' } }),
+    }));
+    const restartOpenCode = vi.fn();
+    const { runtime, clock } = createRuntime(openCodeClient, { restartOpenCode });
+    await runtime.observe(event, '/workspace/project'); clock.now = 2_000; await runtime.reconcile();
+    expect(openCodeClient.sessions.status).toHaveBeenCalledWith({}, { timeoutMs: 5_000 });
+    expect(restartOpenCode).not.toHaveBeenCalled();
+    expect(runtime.getStatus().unresolvedCount).toBe(1);
+    await runtime.drain();
   });
 
   it.each([1, 3, null])('refuses unsupported runtime identity %s without fetching or aborting', async (generation) => {

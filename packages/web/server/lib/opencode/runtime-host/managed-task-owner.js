@@ -90,7 +90,7 @@ export function createNativeManagedTaskOwner({ admissionOwner, taskContext, exec
       }}};
     const barrier = async missingTaskID => {
       const snapshot = await barrierRead(()=>authorized(() => ownedRuntime.handleRpc({method:'snapshot',params:scope},context)));
-      if (snapshot?.available !== true || snapshot.bridgeReady !== true || !Array.isArray(snapshot.tasks)
+      if (snapshot?.available !== true || (snapshot.dispatchReady ?? snapshot.bridgeReady) !== true || !Array.isArray(snapshot.tasks)
         || !Array.isArray(snapshot.resultEnvelopes) || snapshot.recoveryWarning != null
         || [...snapshot.tasks,...snapshot.resultEnvelopes].some(value=>value?.rootSessionId!==input.sessionID||value.directory!==input.directory
           || missingTaskID && value.taskId===missingTaskID)) throw fail('native_task_snapshot_invalid');

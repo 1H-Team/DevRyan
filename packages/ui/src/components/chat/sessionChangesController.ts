@@ -3,7 +3,7 @@ import type { Session, SessionStatus } from '@opencode-ai/sdk/v2/client';
 import { toast } from '@/components/ui';
 
 import { useI18n } from '@/lib/i18n';
-import { opencodeClient, ScopedRevertError, type SessionTreeChangedFile } from '@/lib/opencode/client';
+import { opencodeClient, ScopedRevertError, type SessionTreeChangedFile, type SessionChangesCurrent } from '@/lib/opencode/client';
 import {
     getSessionTreeChangesKey,
     refreshSessionTreeChanges,
@@ -171,6 +171,8 @@ export type SessionChangesController = {
     files: GitChangedFile[];
     fileCount: number;
     totalsMode: 'net' | 'recorded';
+    current?: SessionChangesCurrent;
+    coverageBySession?: { sessionID: string; reasons: string[] }[];
     pageIndex: number;
     pageLoading: boolean;
     nextPage?: () => void;
@@ -284,7 +286,8 @@ export const useSessionChangesController = (): SessionChangesController => {
     const statusKey = resolveSessionChangesStatusKey(entry);
     const statusMessage = statusKey ? t(statusKey) : null;
     state.undoDisabled = state.undoDisabled || Boolean(entry?.loading || entry?.error) || entry?.reconciliationState === 'pending'
-        || entry?.coverage !== 'complete' || !entry?.revision || entry?.restoreAvailable !== true;
+        || entry?.coverage !== 'complete' || !entry?.revision || entry?.restoreAvailable !== true
+        || Boolean(!isUndone && entry?.current && (entry.current.state !== 'verified' || entry.current.verifiedFileCount !== entry.fileCount));
 
     const retry = React.useCallback(() => {
         if (!rootSessionId || !directory || entry?.loading) return;
@@ -329,6 +332,8 @@ export const useSessionChangesController = (): SessionChangesController => {
         files,
         fileCount: entry?.fileCount ?? files.length,
         totalsMode: entry?.totalsMode ?? 'net',
+        current: entry?.current,
+        coverageBySession: entry?.coverageBySession,
         pageIndex: visiblePage?.pageIndex ?? 0,
         pageLoading,
         nextPage: visiblePage?.nextCursor ? () => requestPage(visiblePage.nextCursor ?? null) : undefined,

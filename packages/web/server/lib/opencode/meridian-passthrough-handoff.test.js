@@ -197,7 +197,7 @@ describe('durable native checkpoint proof', () => {
 });
 
 it('verifies the exact native file and rejects torn or missing persistence', async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-native-checkpoint-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-native-checkpoint-')));
   try {
     const cwd = (await fs.realpath(root)).normalize('NFC');
     const sessionId = '11111111-1111-4111-8111-111111111111';
@@ -237,4 +237,69 @@ it('does not retain a terminal that arrives after the drain deadline', async () 
   await expect(run()).rejects.toThrow('drain timed out');
   expect(received.some(event => event.type === 'result')).toBe(false);
   expect(query.close).toHaveBeenCalledTimes(1);
+});
+
+it('reads native checkpoints from the transport-owned directory rather than the SDK profile directory', async () => {
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-checkpoint-transport-')));
+  const hook = '__DEVRYAN_CLAUDE_CHECKPOINT_DIRECTORY';
+  const previous = Reflect.get(globalThis, hook);
+  try {
+    const state = path.join(root, 'transport-state');
+    const sessionId = '11111111-1111-4111-8111-111111111111';
+    const assistantUuid = '22222222-2222-4222-8222-222222222222';
+    const directory = path.join(state, 'projects', sdkProjectDirectory(root));
+    await fs.mkdir(directory, { recursive: true });
+    await fs.writeFile(path.join(directory, `${sessionId}.jsonl`), [
+      { uuid: assistantUuid, type: 'assistant', sessionId, cwd: root, message: { id: 'message', content: [{ type: 'tool_use', id: 'call' }] } },
+      { uuid: 'result', parentUuid: assistantUuid, type: 'user', sessionId, cwd: root, message: { content: [{ type: 'tool_result', tool_use_id: 'call' }] } },
+    ].map(row => JSON.stringify(row)).join('\n') + '\n');
+    const resolve = vi.fn(() => state);
+    Reflect.set(globalThis, hook, resolve);
+    expect(await verifyPersistedCheckpoint({ sessionId, assistantUuid, toolCallIds: ['call'] }, {
+      cwd: root, env: { CLAUDE_CONFIG_DIR: path.join(root, 'profile'), DEVRYAN_CLAUDE_DIAGNOSTIC_SCOPE: 'owned-scope' },
+    })).toBe(true);
+    expect(resolve).toHaveBeenCalledWith('owned-scope', root);
+  } finally {
+    if (previous === undefined) Reflect.deleteProperty(globalThis, hook); else Reflect.set(globalThis, hook, previous);
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+it.each(['config', 'projects', 'project', 'transcript'])('refuses a symlinked %s checkpoint path', async level => {
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-checkpoint-symlink-')));
+  try {
+    const config = path.join(root, 'config'), projects = path.join(config, 'projects'), project = path.join(projects, sdkProjectDirectory(root));
+    const sessionId = '11111111-1111-4111-8111-111111111111', assistantUuid = '22222222-2222-4222-8222-222222222222';
+    await fs.mkdir(project, { recursive: true }); const transcript = path.join(project, sessionId + '.jsonl');
+    await fs.writeFile(transcript, [
+      { uuid: assistantUuid, type: 'assistant', sessionId, cwd: root, message: { id: 'message', content: [{ type: 'tool_use', id: 'call' }] } },
+      { uuid: 'result', parentUuid: assistantUuid, type: 'user', sessionId, cwd: root, message: { content: [{ type: 'tool_result', tool_use_id: 'call' }] } },
+    ].map(row => JSON.stringify(row)).join('\n') + '\n');
+    const boundary = { sessionId, assistantUuid, toolCallIds: ['call'] }, options = { cwd: root, env: { CLAUDE_CONFIG_DIR: config } };
+    expect(await verifyPersistedCheckpoint(boundary, options)).toBe(true);
+    const target = { config, projects, project, transcript }[level], moved = path.join(root, 'moved');
+    await fs.rename(target, moved); await fs.symlink(moved, target);
+    expect(await verifyPersistedCheckpoint(boundary, options)).toBe(false);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+it('rechecks native attempt authority after reading a persisted checkpoint', async () => {
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-checkpoint-retired-')));
+  const hook = '__DEVRYAN_CLAUDE_CHECKPOINT_DIRECTORY', previous = Reflect.get(globalThis, hook);
+  try {
+    const sessionId = '11111111-1111-4111-8111-111111111111', assistantUuid = '22222222-2222-4222-8222-222222222222';
+    const project = path.join(root, 'projects', sdkProjectDirectory(root)); await fs.mkdir(project, { recursive: true });
+    await fs.writeFile(path.join(project, sessionId + '.jsonl'), [
+      { uuid: assistantUuid, type: 'assistant', sessionId, cwd: root, message: { id: 'message', content: [{ type: 'tool_use', id: 'call' }] } },
+      { uuid: 'result', parentUuid: assistantUuid, type: 'user', sessionId, cwd: root, message: { content: [{ type: 'tool_result', tool_use_id: 'call' }] } },
+    ].map(row => JSON.stringify(row)).join('\n') + '\n');
+    let reads = 0; Reflect.set(globalThis, hook, () => { if (reads++) throw new Error('attempt retired'); return root; });
+    expect(await verifyPersistedCheckpoint({ sessionId, assistantUuid, toolCallIds: ['call'] }, {
+      cwd: root, env: { DEVRYAN_CLAUDE_DIAGNOSTIC_SCOPE: 'owned' },
+    })).toBe(false);
+    expect(reads).toBe(2);
+  } finally {
+    if (previous === undefined) Reflect.deleteProperty(globalThis, hook); else Reflect.set(globalThis, hook, previous);
+    await fs.rm(root, { recursive: true, force: true });
+  }
 });

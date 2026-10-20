@@ -4,6 +4,7 @@ import { Effect, Layer, Schema, Stream } from 'effect';
 import { Tool } from '@opencode/core/tool';
 import { SessionInstructions } from '@opencode/core/session/instructions';
 import { Environment } from '@opencode/core/environment/index';
+import { Ripgrep } from '@opencode/core/ripgrep';
 import { LayerNode } from '@opencode/util/effect/layer-node';
 import { ChildProcess } from 'effect/process';
 import { createControllerHelper } from '../../packages/web/server/lib/opencode/runtime-host/controller-processes.ts';
@@ -249,7 +250,7 @@ test('actual Environment serves only verified skill files through the current di
   } finally { await routing.close(); await fs.rm(root, { recursive: true, force: true }); }
 });
 
-test('native grep spawns keep ripgrep stderr out of the parsed stdout stream', async () => {
+for (const truncated of [false, true]) test(`native grep keeps stderr separate and ${truncated ? 'reports bounded partial output' : 'preserves complete output'}`, async () => {
   const project = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-grep-streams-')));
   const encode = (text: string) => Buffer.from(text).toString('base64');
   const starts: Array<Record<string, unknown>> = [];
@@ -260,7 +261,8 @@ test('native grep spawns keep ripgrep stderr out of the parsed stdout stream', a
       { cursor: 1, type: 'started', pid: 42 },
       { cursor: 2, type: 'output', stream: 'stderr', data: encode('rg: ./denied: Permission denied (os error 13)\n') },
       { cursor: 3, type: 'output', stream: 'stdout', data: encode('{"type":"summary"}\n') },
-      { cursor: 4, type: 'settled', ok: true, receipt: { terminated: true, confined: true, cancelled: false, exitCode: 0 } }] };
+      { cursor: 4, type: 'settled', ok: true, receipt: { terminated: true, confined: true, cancelled: truncated, exitCode: truncated ? 137 : 0 },
+        ...(truncated ? { truncated: true, truncation: { limitBytes: 65536, limitRecords: 200, returnedBytes: 19, returnedRecords: 1, reason: 'byte_limit' } } : {}) }] };
     return {};
   } });
   try {
@@ -273,10 +275,11 @@ test('native grep spawns keep ripgrep stderr out of the parsed stdout stream', a
         Stream.mkString(Stream.decodeText(child.stderr)), child.exitCode], { concurrency: 'unbounded' });
       return { content: JSON.stringify({ stdout, stderr, exitCode }) };
     })).pipe(Effect.provide(layer), Effect.mapError(error => new Tool.Error({ message: String(error) }))) };
-    const { content } = await Effect.runPromise(routing.executeOwned(call));
+    const { content, metadata } = await Effect.runPromise(routing.executeOwned(call));
     expect(typeof content).toBe('string');
-    const result = JSON.parse(String(content));
+    const result = JSON.parse(String(content).split('\n\nSearch results truncated')[0]!);
     expect(result).toEqual({ stdout: '{"type":"summary"}\n', stderr: 'rg: ./denied: Permission denied (os error 13)\n', exitCode: 0 });
+    if (truncated) { expect(content).toContain('Search results truncated'); expect(metadata).toMatchObject({ truncated: true, searchTruncation: { reason: 'byte_limit' } }); }
     expect(starts).toMatchObject([{ kind: 'read', command: '/fixture/rg', tool: 'grep' }]);
   } finally { await routing.close(); await fs.rm(project, { recursive: true, force: true }); }
 });
@@ -338,3 +341,42 @@ test('fresh private SDK awaits real native write/edit/patch registration', async
     for (const id of ['write', 'edit', 'patch']) expect(ids.filter(value => value === id)).toHaveLength(1);
   } finally { if (child && child.exitCode === null) { child.kill('SIGKILL'); await child.exited; } await fs.rm(root, { recursive: true, force: true }); }
 }, 20_000);
+
+test('native shell rejects a zero timeout before native execution or transport admission', async () => {
+  let executions = 0, requests = 0;
+  const routing = createExecutionRouting({ directory: '/fixture/project', bridge, rpc: async () => { requests++; return {}; } });
+  const call = { ...invocation('shell'), input: { command: 'pwd', timeout: 0 },
+    executeNative: () => { executions++; return Effect.succeed({ content: 'must not execute' }); } };
+  try {
+    await expect(Effect.runPromise(routing.executeOwned(call))).rejects.toThrow('native_shell_timeout_invalid');
+    expect(executions).toBe(0); expect(requests).toBe(0);
+  } finally { await routing.close(); }
+});
+
+test('the actual native ripgrep consumer accepts a bounded match without end or summary records', async () => {
+  const project = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-grep-parser-')));
+  const line = JSON.stringify({ type: 'match', data: { path: { text: 'one.txt' }, lines: { text: 'needle\n' },
+    line_number: 1, absolute_offset: 0, submatches: [{ match: { text: 'needle' }, start: 0, end: 6 }] } }) + '\n';
+  const routing = createExecutionRouting({ directory: project, bridge, rpc: async (method, params) => {
+    if (method.endsWith('direct-admit')) return { token: 'fixture', generation: 2 };
+    if (method.endsWith('.start')) return { handle: 'parser-handle' };
+    if (method.endsWith('.read') && params.cursor === 0) return { cursor: 3, done: true, events: [
+      { cursor: 1, type: 'started', pid: 42 }, { cursor: 2, type: 'output', stream: 'stdout', data: Buffer.from(line).toString('base64') },
+      { cursor: 3, type: 'settled', ok: true, receipt: { terminated: true, confined: true, cancelled: true, exitCode: 137 }, truncated: true,
+        truncation: { limitBytes: 65536, limitRecords: 200, returnedBytes: Buffer.byteLength(line), returnedRecords: 1, reason: 'byte_limit' } }] };
+    if (method.endsWith('.read')) return { cursor: 3, done: true, events: [] };
+    return {};
+  } });
+  try {
+    const location = Schema.decodeUnknownSync(Location.Info)({ directory: project, project: { id: 'global', directory: project, canonical: project } });
+    const layer = LayerNode.compile(Ripgrep.node, { replacements: [...routing.overrides, Location.node.replace(Layer.succeed(Location.Service, location))] });
+    const call = { ...invocation('grep'), location, input: { pattern: 'needle' }, executeNative: () => Effect.gen(function* () {
+      const service = yield* Ripgrep.Service;
+      const matches = yield* service.grep({ cwd: project, pattern: 'needle', limit: 200 });
+      return { output: matches, content: 'Matched needle' };
+    }).pipe(Effect.provide(layer), Effect.mapError(error => new Tool.Error({ message: String(error) }))) };
+    const result = await Effect.runPromise(routing.executeOwned(call));
+    expect(result.output).toMatchObject([{ line: 1, text: 'needle\n' }]);
+    expect(result.content).toContain('Search results truncated'); expect(result.metadata?.truncated).toBe(true);
+  } finally { await routing.close(); await fs.rm(project, { recursive: true, force: true }); }
+});

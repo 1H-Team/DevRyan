@@ -368,6 +368,21 @@ export const createDiagnosticSanitizer = (options = {}) => {
     return output;
   };
 
+  const sanitizeClaudeCheckpointPayload = candidate => {
+    const output = {};
+    const events = new Set(['passthrough.checkpoint_settling', 'passthrough.checkpoint_settled', 'passthrough.checkpoint_rejected', 'passthrough.checkpoint_interrupt_failed', 'passthrough.checkpoint_retained', 'passthrough.checkpoint_replay']);
+    const reasons = new Set(['tool_results_complete', 'invalid_boundary', 'control_failed', 'drain_timeout', 'client_abort', 'sdk_terminal',
+      'missing_terminal', 'unrecognized_sdk_exit', 'incomplete_boundary', 'persisted_boundary_unverified', 'persisted_tool_boundary', 'verified_handoff', 'incomplete_or_mismatched_results']);
+    for (const [field, value] of Object.entries(asObject(candidate) || {})) {
+      if (field === 'event' && events.has(value) || field === 'reason' && reasons.has(value)
+        || field === 'toolCount' && Number.isSafeInteger(value) && value >= 0 && value <= 4096) output[field] = value;
+      else if (field === 'attemptID' && typeof value === 'string' && /^[a-f0-9]{64}$/.test(value)
+        || field === 'providerInstanceID' && typeof value === 'string' && /^[a-f0-9-]{32,64}$/.test(value)) output[field] = redactString(value, { highEntropy: false });
+      else report.droppedFields += 1;
+    }
+    return output;
+  };
+
   const sanitizeTitleDiagnostic = candidate => {
     const output = {};
     for (const [field, value] of Object.entries(asObject(candidate) || {})) {
@@ -507,6 +522,9 @@ export const createDiagnosticSanitizer = (options = {}) => {
         output[key] = sanitizeClaudeProcessPayload(value);
         continue;
       }
+      if (key === 'payload' && type === 'lifecycle' && object.event === 'native_claude_checkpoint') {
+        output[key] = sanitizeClaudeCheckpointPayload(value); continue;
+      }
       if (key === 'payload' && type === 'lifecycle' && object.event === 'opencode_process_exit') {
         const metadata = {};
         for (const [field, nested] of Object.entries(asObject(value) || {})) {
@@ -607,6 +625,9 @@ export const createDiagnosticSanitizer = (options = {}) => {
         if (key === 'payload' && object.type === 'lifecycle' && object.event === 'native_claude_process') {
           output[key] = sanitizeClaudeProcessPayload(nested);
           continue;
+        }
+        if (key === 'payload' && object.type === 'lifecycle' && object.event === 'native_claude_checkpoint') {
+          output[key] = sanitizeClaudeCheckpointPayload(nested); continue;
         }
         if (key === 'payload' && object.type === 'lifecycle' && object.event === 'session_title_generation') {
           output[key] = sanitizeTitleDiagnostic(nested); continue;

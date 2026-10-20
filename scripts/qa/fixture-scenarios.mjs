@@ -102,7 +102,7 @@ export async function prepareQaFixtureProfile({runtimeRoot,workspace,cell,genera
         const settingsPath=path.join(nativeData,'settings.json');
         const settings=JSON.parse(await readFile(settingsPath,'utf8'));
         await writeFile(settingsPath,JSON.stringify({...settings,desktopLocalPort:Number(local.port)}),{mode:0o600});
-        facade=await createQaFixtureHostFacade({fixture,realOrigin,workspace,dataDirectory:nativeData,userConfigPath:path.join(home,'.config/opencode/opencode.json')});
+        facade=await createQaFixtureHostFacade({fixture,realOrigin,workspace,dataDirectory:nativeData,userConfigPath:path.join(home,'.config/opencode/opencode.json'),runScope});
         return facade;
       },
       close:async()=>{const results=await Promise.allSettled([facade?.close(),fixture.close(),nativeProfile.close()]);

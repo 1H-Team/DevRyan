@@ -25,11 +25,14 @@ export const createManagedOperatorAbortRegistry = ({
     }
   };
 
-  const record = ({ sessionId, requestedAt } = {}) => {
+  const record = ({ sessionId, requestedAt, requestId, state, taskId } = {}) => {
     const normalizedSessionId = text(sessionId);
     if (!normalizedSessionId) return null;
     const entry = {
       sessionId: normalizedSessionId,
+      ...(typeof taskId === 'string' ? { taskId } : {}),
+      ...(typeof requestId === 'string' ? { requestId } : {}),
+      ...(['pending', 'accepted'].includes(state) ? { state } : {}),
       requestedAt: Number.isFinite(requestedAt) ? Number(requestedAt) : now(),
     };
     touch(normalizedSessionId, entry);
@@ -37,16 +40,17 @@ export const createManagedOperatorAbortRegistry = ({
   };
 
   // A rejected abort (the runtime did not stop) withdraws only its own request.
-  const withdraw = ({ sessionId, requestedAt } = {}) => {
+  const withdraw = ({ sessionId, requestedAt, requestId } = {}) => {
     const normalizedSessionId = text(sessionId);
     const entry = latestBySession.get(normalizedSessionId);
-    if (!entry || (Number.isFinite(requestedAt) && entry.requestedAt !== requestedAt)) return false;
+    if (!entry || (Number.isFinite(requestedAt) && entry.requestedAt !== requestedAt)
+      || requestId !== undefined && entry.requestId !== requestId) return false;
     return latestBySession.delete(normalizedSessionId);
   };
 
-  const read = ({ sessionId, after = 0 } = {}) => {
+  const read = ({ sessionId, taskId, after = 0 } = {}) => {
     const entry = latestBySession.get(text(sessionId));
-    if (!entry || entry.requestedAt < after) return null;
+    if (!entry || entry.requestedAt < after || taskId && entry.taskId && entry.taskId !== taskId) return null;
     return { ...entry };
   };
 
@@ -61,6 +65,11 @@ export const createManagedOperatorAbortRegistry = ({
   return {
     record,
     withdraw,
+    accept({ sessionId, requestedAt, requestId }) {
+      const entry = latestBySession.get(text(sessionId));
+      if (!entry || entry.requestedAt !== requestedAt || entry.requestId !== requestId) return false;
+      entry.state = 'accepted'; return true;
+    },
     read,
     observe,
     clear: () => latestBySession.clear(),

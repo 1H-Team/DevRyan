@@ -1,0 +1,203 @@
+{
+  "arm": "candidate",
+  "kind": "offline-synthetic-api-real-claude-executable",
+  "claudeExecutable": "<REPOSITORY>/packages/web/runtime/reviewed-inputs/claude-1.8.0/assets/DevRyan-Claude-darwin-arm64",
+  "claudeVersion": "2.1.302",
+  "observedVersions": [
+    "2.1.302"
+  ],
+  "model": "claude-opus-4-8",
+  "effort": "medium",
+  "stream": true,
+  "suppressScratchpad": true,
+  "parallelTools": 2,
+  "steps": 6,
+  "sourceSha256": "ba36ee4bc294afba3f4885f6d88229d4ded5a3fdfd773fa7406a143ad00cb213",
+  "root": "<OWNED_REMOVED_FIXTURE>",
+  "passed": false,
+  "providerRequests": 8,
+  "clientRequests": 8,
+  "hiddenRequests": 0,
+  "checks": [
+    {
+      "step": 0,
+      "system": "a056e43556217c3b5b54087fb624042196bf561ade7df0a51e1241b0239ceafb",
+      "tools": "0ad62780207e46f6e2fd75251b654e51417410c61d1ed40f8eff6161cdad3a52",
+      "systemStable": true,
+      "toolsStable": true,
+      "previousMessagesStable": true,
+      "missingResults": []
+    },
+    {
+      "step": 1,
+      "system": "a056e43556217c3b5b54087fb624042196bf561ade7df0a51e1241b0239ceafb",
+      "tools": "0ad62780207e46f6e2fd75251b654e51417410c61d1ed40f8eff6161cdad3a52",
+      "systemStable": true,
+      "toolsStable": true,
+      "previousMessagesStable": false,
+      "missingResults": []
+    },
+    {
+      "step": 2,
+      "system": "a056e43556217c3b5b54087fb624042196bf561ade7df0a51e1241b0239ceafb",
+      "tools": "0ad62780207e46f6e2fd75251b654e51417410c61d1ed40f8eff6161cdad3a52",
+      "systemStable": true,
+      "toolsStable": true,
+      "previousMessagesStable": false,
+      "missingResults": []
+    },
+    {
+      "step": 3,
+      "system": "a056e43556217c3b5b54087fb624042196bf561ade7df0a51e1241b0239ceafb",
+      "tools": "0ad62780207e46f6e2fd75251b654e51417410c61d1ed40f8eff6161cdad3a52",
+      "systemStable": true,
+      "toolsStable": true,
+      "previousMessagesStable": false,
+      "missingResults": []
+    },
+    {
+      "step": 4,
+      "system": "a056e43556217c3b5b54087fb624042196bf561ade7df0a51e1241b0239ceafb",
+      "tools": "0ad62780207e46f6e2fd75251b654e51417410c61d1ed40f8eff6161cdad3a52",
+      "systemStable": true,
+      "toolsStable": true,
+      "previousMessagesStable": false,
+      "missingResults": []
+    },
+    {
+      "step": 5,
+      "system": "a056e43556217c3b5b54087fb624042196bf561ade7df0a51e1241b0239ceafb",
+      "tools": "0ad62780207e46f6e2fd75251b654e51417410c61d1ed40f8eff6161cdad3a52",
+      "systemStable": true,
+      "toolsStable": true,
+      "previousMessagesStable": false,
+      "missingResults": []
+    },
+    {
+      "step": 6,
+      "system": "a056e43556217c3b5b54087fb624042196bf561ade7df0a51e1241b0239ceafb",
+      "tools": "0ad62780207e46f6e2fd75251b654e51417410c61d1ed40f8eff6161cdad3a52",
+      "systemStable": true,
+      "toolsStable": true,
+      "previousMessagesStable": false,
+      "missingResults": []
+    },
+    {
+      "step": 7,
+      "system": "a056e43556217c3b5b54087fb624042196bf561ade7df0a51e1241b0239ceafb",
+      "tools": "0ad62780207e46f6e2fd75251b654e51417410c61d1ed40f8eff6161cdad3a52",
+      "systemStable": true,
+      "toolsStable": true,
+      "previousMessagesStable": false,
+      "missingResults": []
+    }
+  ],
+  "replies": [
+    {
+      "step": 0,
+      "status": 200,
+      "stopReason": "tool_use"
+    },
+    {
+      "step": 1,
+      "status": 200,
+      "stopReason": "tool_use"
+    },
+    {
+      "step": 2,
+      "status": 200,
+      "stopReason": "tool_use"
+    },
+    {
+      "step": 3,
+      "status": 200,
+      "stopReason": "tool_use"
+    },
+    {
+      "step": 4,
+      "status": 200,
+      "stopReason": "tool_use"
+    },
+    {
+      "step": 5,
+      "status": 200,
+      "stopReason": "tool_use"
+    },
+    {
+      "step": 6,
+      "status": 200,
+      "stopReason": "end_turn"
+    },
+    {
+      "step": 7,
+      "status": 200,
+      "stopReason": "end_turn"
+    }
+  ],
+  "sdkSessions": 7,
+  "overlay": {
+    "jsoncParser": {
+      "version": "3.3.1",
+      "source": "existing repository install; complete UMD closure"
+    },
+    "libsql": {
+      "version": "0.5.29",
+      "source": "original captured DevRyan-libsql-darwin-arm64.node mapped to package index.node",
+      "sha256": "3fd9e58190311b5ee027c3e5452a6a410b31a5d610fd55853d797bb3c9f5db0c"
+    },
+    "originalCaptureModified": false,
+    "dependenciesInstalled": false
+  },
+  "checkpointDiagnostics": [
+    "passthrough.checkpoint_retained reason=verified_handoff tools=2",
+    "passthrough.checkpoint_settled reason=sdk_terminal tools=2",
+    "passthrough.checkpoint_settling reason=tool_results_complete tools=2",
+    "passthrough.checkpoint_retained reason=verified_handoff tools=2",
+    "passthrough.checkpoint_settled reason=sdk_terminal tools=2",
+    "passthrough.checkpoint_settling reason=tool_results_complete tools=2",
+    "passthrough.checkpoint_retained reason=verified_handoff tools=2",
+    "passthrough.checkpoint_settled reason=sdk_terminal tools=2",
+    "passthrough.checkpoint_settling reason=tool_results_complete tools=2",
+    "passthrough.checkpoint_retained reason=verified_handoff tools=2",
+    "passthrough.checkpoint_settled reason=sdk_terminal tools=2",
+    "passthrough.checkpoint_settling reason=tool_results_complete tools=2",
+    "passthrough.checkpoint_retained reason=verified_handoff tools=2",
+    "passthrough.checkpoint_settled reason=sdk_terminal tools=2",
+    "passthrough.checkpoint_settling reason=tool_results_complete tools=2",
+    "passthrough.checkpoint_retained reason=verified_handoff tools=2",
+    "passthrough.checkpoint_settled reason=sdk_terminal tools=2",
+    "passthrough.checkpoint_settling reason=tool_results_complete tools=2"
+  ],
+  "replayWrapperSeen": false,
+  "prefixShapeObservation": [
+    {
+      "step": 1,
+      "identicalPriorTextAfterArrayStringNormalization": true
+    },
+    {
+      "step": 2,
+      "identicalPriorTextAfterArrayStringNormalization": true
+    },
+    {
+      "step": 3,
+      "identicalPriorTextAfterArrayStringNormalization": true
+    },
+    {
+      "step": 4,
+      "identicalPriorTextAfterArrayStringNormalization": true
+    },
+    {
+      "step": 5,
+      "identicalPriorTextAfterArrayStringNormalization": true
+    },
+    {
+      "step": 6,
+      "identicalPriorTextAfterArrayStringNormalization": true
+    },
+    {
+      "step": 7,
+      "identicalPriorTextAfterArrayStringNormalization": true
+    }
+  ],
+  "scope": "Standalone actual CLI synthetic loopback API. Strict original grader fails array-to-identical-string system-message shape; native persisted-boundary fallback not exercised because all six drains produced canonical SDK terminal. SDK session forks expected per pinned passthrough continuation policy; no live provider or quota comparison."
+}

@@ -67,6 +67,7 @@ export function createExecutionRouting(options: { readonly rpc: ExecutionRpc; re
   const handles = new Map<string, { cancel: () => Promise<void>; done: Promise<unknown> }>();
   const shellHandles = new Map<string, string>();
   const callKey = (call: OwnedToolInvocation) => JSON.stringify([call.nativeContext.sessionID, call.nativeContext.messageID, call.nativeContext.id]);
+  const searchTruncations = new Map<string, typeof import('./worker-protocol.js').SearchTruncation.Type>();
   const tickets = new Map<string, { invocation: OwnedToolInvocation; command: string; args: string[];
     cwd: string; env: Record<string, string | undefined> }>();
   const rpc = (action: string, params: Readonly<Record<string, unknown>>) => options.rpc(`execution.native.${action}`, params);
@@ -133,8 +134,15 @@ export function createExecutionRouting(options: { readonly rpc: ExecutionRpc; re
     const result = yield* Effect.exit(execute.pipe(Effect.provideService(TrustedToolInvocationRef, invocation)));
     yield* invocation.recheckPermit();
     yield* Effect.promise(() => rpc('direct-finish', { ...input, ...admission }));
-    return Exit.isSuccess(result) ? result.value : yield* Effect.failCause(result.cause);
-  }).pipe(Effect.catchDefect((cause) => Effect.fail(toolFailure(cause))));
+    if (!Exit.isSuccess(result)) return yield* Effect.failCause(result.cause);
+    const truncation = searchTruncations.get(callKey(invocation));
+    if (!truncation) return result.value;
+    const notice = `Search results truncated at ${truncation.returnedRecords} records / ${truncation.returnedBytes} bytes. Narrow the path or pattern before searching again.`;
+    return { ...result.value, content: typeof result.value.content === 'string' ? `${result.value.content}\n\n${notice}`
+      : [...(result.value.content ?? []), { type: 'text' as const, text: notice }],
+      metadata: { ...result.value.metadata, truncated: true, searchTruncation: truncation } };
+  }).pipe(Effect.ensuring(Effect.sync(() => { searchTruncations.delete(callKey(invocation)); })),
+    Effect.catchDefect((cause) => Effect.fail(toolFailure(cause))));
   const withControl = <A, E, R>(invocation: OwnedToolInvocation, execute: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> => Effect.gen(function* () {
     yield* invocation.recheckPermit();
     const input = { directory: invocation.location.directory, sessionID: invocation.nativeContext.sessionID,
@@ -175,7 +183,13 @@ export function createExecutionRouting(options: { readonly rpc: ExecutionRpc; re
     if (writers.has(invocation.toolID)) {
       return writer(invocation);
     }
-    if (invocation.toolID === 'shell') return invocation.executeNative().pipe(Effect.provideService(TrustedToolInvocationRef, invocation));
+    if (invocation.toolID === 'shell') {
+      const timeout: unknown = invocation.input !== null && typeof invocation.input === 'object' ? Reflect.get(invocation.input, 'timeout') : undefined;
+      if (timeout !== undefined && (typeof timeout !== 'number' || !Number.isSafeInteger(timeout) || timeout <= 0)) {
+        return Effect.fail(new Tool.Error({ message: 'native_shell_timeout_invalid: use a positive integer timeout; zero does not disable the deadline' }));
+      }
+      return invocation.executeNative().pipe(Effect.provideService(TrustedToolInvocationRef, invocation));
+    }
     if (invocation.toolID === 'skill') return Effect.fail(new Tool.Error({ message: 'native_skill_asset_authority_required' }));
     if (!['read', 'glob', 'grep'].includes(invocation.toolID)) return Effect.fail(new Tool.Error({ message: 'owned_tool_capability_unavailable' }));
     return withDirectRead(invocation, invocation.executeNative());
@@ -277,8 +291,10 @@ export function createExecutionRouting(options: { readonly rpc: ExecutionRpc; re
               else if (event.type === 'settled') {
                 done = true; yield* read(handle, cursor);
                 if (!event.ok || !event.receipt?.terminated || !event.receipt.confined) return yield* Effect.fail(platformFailure(new Error(event.error?.message ?? 'native_execution_failed')));
+                if (event.truncated && (!readOnly || !event.truncation)) return yield* Effect.fail(platformFailure(new Error('native_search_truncation_invalid')));
+                if (readOnly && event.truncated && event.truncation) searchTruncations.set(callKey(ticket.invocation), event.truncation);
                 yield* Queue.end(output); if (errors) yield* Queue.end(errors);
-                yield* Deferred.succeed(exit, ExitCode(event.receipt.exitCode));
+                yield* Deferred.succeed(exit, ExitCode(readOnly && event.truncated ? 0 : event.receipt.exitCode));
               }
             }
             if (batch.done && !batch.events.length && !done) return yield* Effect.fail(platformFailure(new Error('native_execution_result_missing')));

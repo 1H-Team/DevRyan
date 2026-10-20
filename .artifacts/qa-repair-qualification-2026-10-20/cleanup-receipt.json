@@ -1,0 +1,125 @@
+{
+  "at": "2026-10-20T17:37:20.010754+00:00",
+  "finalLaunchProcessCleanup": [
+    {
+      "label": "idle-1",
+      "complete": true,
+      "remaining": []
+    },
+    {
+      "label": "idle-2",
+      "complete": true,
+      "remaining": []
+    },
+    {
+      "label": "idle-3",
+      "complete": true,
+      "remaining": []
+    },
+    {
+      "label": "plan-skeleton-1",
+      "complete": true,
+      "remaining": []
+    },
+    {
+      "label": "plan-skeleton-2",
+      "complete": true,
+      "remaining": []
+    },
+    {
+      "label": "plan-skeleton-3",
+      "complete": true,
+      "remaining": []
+    },
+    {
+      "label": "one-stream-1",
+      "complete": true,
+      "remaining": []
+    },
+    {
+      "label": "one-stream-2",
+      "complete": true,
+      "remaining": []
+    },
+    {
+      "label": "one-stream-3",
+      "complete": true,
+      "remaining": []
+    },
+    {
+      "label": "memory-1",
+      "complete": true,
+      "remaining": []
+    },
+    {
+      "label": "memory-2",
+      "complete": true,
+      "remaining": []
+    },
+    {
+      "label": "memory-3",
+      "complete": true,
+      "remaining": []
+    }
+  ],
+  "removedScratch": [
+    {
+      "ownedPath": "owned-os-temp/2026-10-20T16-12-22-773Z-qa-repair-wire-2026-10-20",
+      "removed": true,
+      "bytesRemoved": 2151578613
+    },
+    {
+      "ownedPath": "owned-os-temp/2026-10-20T16-23-10-622Z-qa-repair-preflight-2026-10-20",
+      "removed": true,
+      "bytesRemoved": 1237910599
+    },
+    {
+      "ownedPath": "owned-os-temp/2026-10-20T16-28-56-556Z-qa-repair-v2-preflight-2026-10-20",
+      "removed": true,
+      "bytesRemoved": 1233776570
+    },
+    {
+      "ownedPath": "owned-os-temp/2026-10-20T16-33-58-164Z-qa-repair-memory-preflight-2026-10-20",
+      "removed": true,
+      "bytesRemoved": 309466987
+    },
+    {
+      "ownedPath": "owned-os-temp/2026-10-20T16-37-08-865Z-qa-repair-memory-ledger-preflight-2026-10-20",
+      "removed": true,
+      "bytesRemoved": 309614267
+    },
+    {
+      "ownedPath": "owned-os-temp/2026-10-20T17-08-19-726Z-qa-repair-final-resource-2026-10-20",
+      "removed": true,
+      "bytesRemoved": 2904123316
+    },
+    {
+      "ownedPath": "owned-os-temp/2026-10-20T17-19-52-277Z-qa-repair-final-memory-1-2026-10-20",
+      "removed": true,
+      "bytesRemoved": 309732723
+    },
+    {
+      "ownedPath": "owned-os-temp/2026-10-20T17-24-19-484Z-qa-repair-final-memory-2-2026-10-20",
+      "removed": true,
+      "bytesRemoved": 309732578
+    },
+    {
+      "ownedPath": "owned-os-temp/2026-10-20T17-27-32-190Z-qa-repair-final-memory-3-2026-10-20",
+      "removed": true,
+      "bytesRemoved": 310697406
+    },
+    {
+      "ownedPath": ".cache/qa/repair-qualification-2026-10-20",
+      "removed": true,
+      "bytesRemoved": 569583395
+    },
+    {
+      "ownedPath": ".cache/qa/packaged-electron-current",
+      "removed": true,
+      "bytesRemoved": 1379829445
+    }
+  ],
+  "initialLegacyFailedAttempt": "Removed earlier after bounded export; resource-startup-* evidence retained",
+  "donorAndInstalledApp": "Untouched",
+  "rawTracePolicy": "Removed after bounded hash/event-summary export"
+}

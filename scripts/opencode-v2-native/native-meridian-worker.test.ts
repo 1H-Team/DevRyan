@@ -27,6 +27,7 @@ test('the reviewed spawn hook brokers only live exact scope and finite SDK seman
   const spawn=Reflect.get(globalThis,'__DEVRYAN_CLAUDE_TRANSPORT_SPAWN');
   const abort=new AbortController(),input={command:owned.boot.assets.claude.path,cwd:binding.directory,args:['--model','opus','--effort','medium'],signal:abort.signal,env:{ANTHROPIC_DEFAULT_OPUS_MODEL:'claude-opus-5-5',ENABLE_TOOL_SEARCH:'true',CLAUDE_CODE_OAUTH_TOKEN:'synthetic-private',HOME:'/foreign'}};
   const raw=JSON.stringify({...binding,profileID:'default'}),child=spawn(input,raw);child.on('error',()=>{});
+  expect(Reflect.get(globalThis,'__DEVRYAN_CLAUDE_CHECKPOINT_DIRECTORY')(raw,binding.directory)).toStartWith(path.join(owned.boot.transport.storage,'state')+path.sep);
   expect(frames[0]).toMatchObject({action:'start',...binding,profileID:'default',modelPins:{opus:'claude-opus-5-5'},toolSearch:true,args:input.args});
   expect(JSON.stringify(frames)).not.toContain('synthetic-private');expect(JSON.stringify(frames)).not.toContain('/foreign');
   for(const changed of [{command:'/bin/sh'},{cwd:owned.boot.globals.home}])expect(()=>spawn({...input,...changed},raw)).toThrow('transport_invalid');
@@ -223,6 +224,20 @@ test('compiled provider observation hooks bind finite child receipts to the exac
   expect(receipts).toEqual([{protocol:1,type:'claude-process-diagnostic',instanceID:owned.boot.instanceID,...attempt,
    receipt:{code:1,signalPresent:false,stderrBytes:31,scannedBytes:31,truncated:false,clues:['unsupported_option']}}]);
   expect(JSON.stringify(receipts)).not.toContain('private-secret');
+  const raw=JSON.stringify({...attempt,profileID:'default'});
+  const checkpointDirectory=Reflect.get(globalThis,'__DEVRYAN_CLAUDE_CHECKPOINT_DIRECTORY');
+  expect(()=>checkpointDirectory(raw,attempt.directory)).toThrow('native_claude_transport_invalid');
+  expect(()=>checkpointDirectory(raw,owned.boot.globals.home)).toThrow('native_claude_transport_invalid');
+  const checkpointDiagnostic=Reflect.get(globalThis,'__DEVRYAN_CLAUDE_CHECKPOINT_DIAGNOSTIC');
+  checkpointDiagnostic(raw,'passthrough.checkpoint_rejected',{reason:'persisted_boundary_unverified',toolCount:2});
+  expect(receipts[1]).toEqual({protocol:1,type:'claude-checkpoint-diagnostic',instanceID:owned.boot.instanceID,...attempt,
+    checkpoint:{event:'passthrough.checkpoint_rejected',reason:'persisted_boundary_unverified',toolCount:2}});
+  checkpointDiagnostic(raw,'passthrough.checkpoint_rejected',{reason:'persisted_boundary_unverified',toolCount:2,body:'private'});
+  expect(receipts).toHaveLength(2);
+  await worker.command({protocol:1,id:'retire-checkpoint',action:'release-attempt',...attempt});
+  expect(()=>checkpointDirectory(raw,attempt.directory)).toThrow('native_provider_attempt_invalid');
+  checkpointDiagnostic(raw,'passthrough.checkpoint_settled',{reason:'sdk_terminal',toolCount:2});expect(receipts).toHaveLength(2);
   await worker.close();expect(Reflect.get(globalThis,'__DEVRYAN_CLAUDE_DIAGNOSTIC_SPAWN')).toBeUndefined();expect(Reflect.get(globalThis,'__DEVRYAN_CLAUDE_DIAGNOSTIC_BINDING')).toBeUndefined();
+  expect(Reflect.get(globalThis,'__DEVRYAN_CLAUDE_CHECKPOINT_DIRECTORY')).toBeUndefined();expect(Reflect.get(globalThis,'__DEVRYAN_CLAUDE_CHECKPOINT_DIAGNOSTIC')).toBeUndefined();
  }finally{await owned.cleanup();}
 });

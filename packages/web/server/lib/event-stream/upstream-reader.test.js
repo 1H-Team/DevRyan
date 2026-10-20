@@ -2,6 +2,77 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { createUpstreamSseReader } from './upstream-reader.js';
 
+it.each([
+  ['complete', ['data: ' + 'é'.repeat(40) + '\n\n']],
+  ['partial with a parseable tail', ['data: ' + 'é'.repeat(40), 'data: {"lost":true}\n\n']],
+])('drops an oversized %s frame by bytes and recovers at its boundary', async (_label, oversized) => {
+  const errors = [];
+  const events = [];
+  const controller = new AbortController();
+  const reader = createUpstreamSseReader({
+    buildUrl: () => 'http://fixture.invalid/event', signal: controller.signal,
+    maxFrameBytes: 64,
+    fetchImpl: async () => createSseResponse({ blocks: [...oversized, 'data: {"ok":true}\r', '\n\r', '\n'], signal: controller.signal, holdOpen: true }),
+    onError: (error) => errors.push(error),
+    onEvent: (event) => { events.push(event.payload); controller.abort(); },
+  });
+  await reader.start();
+  expect(errors.map(error => error.type)).toEqual(['frame_too_large']);
+  expect(events).toEqual([{ ok: true }]);
+});
+
+it('does not publish an unterminated frame at EOF', async () => {
+  const controller = new AbortController();
+  const onEvent = vi.fn();
+  const errors = [];
+  const reader = createUpstreamSseReader({
+    buildUrl: () => 'http://fixture.invalid/event', signal: controller.signal,
+    fetchImpl: async () => createSseResponse({ blocks: ['data: {"partial":true}'] }),
+    onEvent,
+    onError: (error) => { errors.push(error); controller.abort(); },
+  });
+  await reader.start();
+  expect(onEvent).not.toHaveBeenCalled();
+  expect(errors.map(error => error.type)).toEqual(['frame_truncated']);
+});
+
+it.each([1, 2, 5, 4096])('preserves UTF-8 split across %s-byte chunks and split CRLF at the exact normalized byte limit', async chunkBytes => {
+  const payload = { text: 'é汉🙂' }, normalized = 'data: ' + JSON.stringify(payload);
+  const wire = new TextEncoder().encode(normalized + '\r\n\r\n');
+  const chunks = [];
+  for (let offset = 0; offset < wire.length; offset += chunkBytes) chunks.push(wire.subarray(offset, offset + chunkBytes));
+  const controller = new AbortController(), errors = [], events = [];
+  const reader = createUpstreamSseReader({ buildUrl: () => 'http://fixture.invalid/event', signal: controller.signal,
+    maxFrameBytes: Buffer.byteLength(normalized),
+    fetchImpl: async () => createSseResponse({ blocks: chunks, signal: controller.signal, holdOpen: true }),
+    onError: error => { errors.push(error); controller.abort(); }, onEvent: event => { events.push(event.payload); controller.abort(); },
+  });
+  await reader.start();
+  expect(events).toEqual([payload]); expect(errors).toEqual([]);
+});
+
+it('rejects a multibyte frame above the byte limit even when its character count fits', async () => {
+  const oversized = 'data: ' + JSON.stringify({ text: '🙂'.repeat(8) });
+  expect(oversized.length).toBeLessThanOrEqual(40); expect(Buffer.byteLength(oversized)).toBeGreaterThan(40);
+  const controller = new AbortController(), errors = [], events = [];
+  const reader = createUpstreamSseReader({ buildUrl: () => 'http://fixture.invalid/event', signal: controller.signal, maxFrameBytes: 40,
+    fetchImpl: async () => createSseResponse({ blocks: [oversized + '\r', '\n\r', '\n', 'data: {"ok":true}\n\n'], signal: controller.signal, holdOpen: true }),
+    onError: error => errors.push(error), onEvent: event => { events.push(event.payload); controller.abort(); },
+  });
+  await reader.start();
+  expect(errors.map(error => error.type)).toEqual(['frame_too_large']); expect(events).toEqual([{ ok: true }]);
+});
+
+it('never interprets the remaining tail of a discarded frame as a new event', async () => {
+  const controller = new AbortController(), errors = [], events = [];
+  const reader = createUpstreamSseReader({ buildUrl: () => 'http://fixture.invalid/event', signal: controller.signal, maxFrameBytes: 32,
+    fetchImpl: async () => createSseResponse({ blocks: ['data: ' + 'x'.repeat(40), '\ndata: {"lost":true}', '\r', '\n\r', '\n', 'data: {"ok":true}\n\n'], signal: controller.signal, holdOpen: true }),
+    onError: error => errors.push(error), onEvent: event => { events.push(event.payload); controller.abort(); },
+  });
+  await reader.start();
+  expect(errors.map(error => error.type)).toEqual(['frame_too_large']); expect(events).toEqual([{ ok: true }]);
+});
+
 it('backs off unavailable upstream attempts, caps the delay, and aborts the wait promptly', async () => {
   vi.useFakeTimers();
   let attempts = 0;
@@ -35,7 +106,8 @@ function createSseResponse({ blocks = [], signal, holdOpen = false }) {
         return {
           async read() {
             if (index < blocks.length) {
-              return { value: encoder.encode(blocks[index++]), done: false };
+              const block = blocks[index++];
+              return { value: typeof block === 'string' ? encoder.encode(block) : block, done: false };
             }
 
             if (!holdOpen) {

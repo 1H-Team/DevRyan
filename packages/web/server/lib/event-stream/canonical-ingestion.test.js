@@ -1,8 +1,38 @@
 import { describe, expect, it, vi } from 'vitest';
+import { createCommandDeadlineController } from '@devryan/harness-runtime';
 
 import { createCanonicalOpenCodeEventProcessor, createSyntheticOpenCodeEventEmitter } from './canonical-ingestion.js';
 
 describe('createCanonicalOpenCodeEventProcessor', () => {
+  it('registers a native shell event whose directory exists only on the outer envelope', async () => {
+    const records = new Map();
+    const fetchMessage = vi.fn(async () => { throw new Error('Deadline must not expire during registration'); });
+    const abortSession = vi.fn(async () => { throw new Error('Registration must not abort the session'); });
+    const controller = createCommandDeadlineController({
+      store: { initialize: async () => {}, listRecords: async () => [],
+        writeRecord: async (key, value) => records.set(key, value), deleteRecord: async key => records.delete(key), drain: async () => {} },
+      fetchMessage,
+      abortSession,
+      now: () => 1000, setTimeout: () => ({ unref() {} }), clearTimeout: () => {},
+    });
+    const observed = [];
+    const processEvent = createCanonicalOpenCodeEventProcessor({
+      processCommandDeadline: (payload, directory) => {
+        const operation = controller.observe(payload, directory); observed.push(operation); return operation;
+      },
+    });
+    const payload = { type: 'message.part.updated', properties: { part: { type: 'tool', tool: 'bash',
+      id: 'part_1', sessionID: 'ses_1', messageID: 'msg_1', callID: 'call_1',
+      state: { status: 'running', input: { timeout: 0 }, time: { start: 1000 } } } } };
+    processEvent(payload, '/fixture/project');
+    await Promise.all(observed);
+    processEvent(payload, '/fixture/project');
+    await Promise.all(observed);
+    expect([...records.values()]).toMatchObject([{ directory: '/fixture/project', deadlineAt: 241000 }]);
+    expect(fetchMessage).not.toHaveBeenCalled();
+    expect(abortSession).not.toHaveBeenCalled();
+    await controller.drain();
+  });
   it('runs every raw-event side effect once and owns deletion cleanup', async () => {
     const callbacks = {
       cacheSessionInfo: vi.fn(),
@@ -35,11 +65,11 @@ describe('createCanonicalOpenCodeEventProcessor', () => {
       properties: { part: { type: 'tool', tool: 'bash', state: { status: 'running' } } },
     };
 
-    processEvent(payload);
+    processEvent(payload, '/fixture/project');
     await Promise.resolve();
 
     expect(processCommandDeadline).toHaveBeenCalledOnce();
-    expect(processCommandDeadline).toHaveBeenCalledWith(payload);
+    expect(processCommandDeadline).toHaveBeenCalledWith(payload, '/fixture/project');
   });
 
   it('forwards authoritative session events to the title runtime', async () => {

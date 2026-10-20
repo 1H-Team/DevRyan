@@ -4,7 +4,6 @@ import {
   isProviderAuthenticationFailure,
   PROVIDER_USAGE_LIMIT_FAILURE_KIND,
   classifyManagedTaskFailure,
-  classifyProviderRetryFailure,
   isDefiniteProviderUsageLimit,
   isProviderConfigurationFailure,
   isManagedTaskModelUnavailable,
@@ -228,6 +227,11 @@ export const validateManagedTaskRecord = (task) => {
     throw new TypeError(`status must be one of ${MANAGED_TASK_STATUSES.join(', ')}`);
   }
   assertNullableString(task.leaseToken, 'leaseToken', { prefix: 'dvr_lease_' });
+  if (task.terminationIntent !== undefined && task.terminationIntent !== null && task.terminationIntent !== 'user_stopped') throw new TypeError('invalid termination intent');
+  if (task.operatorStop !== undefined && task.operatorStop !== null
+    && (!isRecord(task.operatorStop) || !Number.isFinite(task.operatorStop.requestedAt)
+      || task.operatorStop.requestedAt < 0 || typeof task.operatorStop.requestId !== 'string'
+      || task.operatorStop.state !== undefined && !['pending', 'accepted', 'uncertain'].includes(task.operatorStop.state) || task.operatorStop.leaseToken !== task.leaseToken)) throw new TypeError('invalid operator stop');
   assertNullableString(task.failureReason, 'failureReason', {
     maxBytes: MAX_MANAGED_TASK_FAILURE_BYTES,
   });
@@ -290,9 +294,14 @@ export const createManagedTaskRecord = (input) => {
   return validateManagedTaskRecord(task);
 };
 
+export const MANAGED_OPERATOR_STOP_UNCERTAIN_REASON = 'Stop request outcome could not be confirmed';
+export const hasAcceptedUserStop = (task) => task?.terminationIntent === 'user_stopped' || task?.operatorStop?.state === 'accepted';
+export const hasPendingOperatorStop = (task) => Boolean(task?.operatorStop && (task.operatorStop.state === undefined || task.operatorStop.state === 'pending'));
+
 const resolveManagedTaskAgentRetryAvailable = (task, failureKind) => (
   task.mode === 'orchestrator'
   && task.dispatchGroupId !== null
+  && !hasAcceptedUserStop(task) && !task.operatorStop
   && task.attempt < 2
   && failureKind !== PROVIDER_USAGE_LIMIT_FAILURE_KIND
   && failureKind !== MODEL_UNAVAILABLE_FAILURE_KIND
@@ -305,7 +314,7 @@ export const isManagedTaskAgentRetryAvailable = (task) => {
   validateManagedTaskRecord(task);
   return resolveManagedTaskAgentRetryAvailable(
     task,
-    classifyProviderRetryFailure(task.failureReason),
+    classifyManagedTaskFailure(task.failureReason),
   );
 };
 
@@ -314,6 +323,14 @@ export const isManagedTaskAgentRetryAvailable = (task) => {
  * model and thinking level (Model Recovery) before work continues in place.
  * Shared by the scheduler's acknowledgement gate and the auto-resume policy.
  */
+export const isStoppedRecoveryAvailable = (task, envelope) => Boolean(
+  !hasPendingOperatorStop(task)
+  && (task.status === 'aborted' || (hasAcceptedUserStop(task) || task.operatorStop?.state === 'uncertain') && ['failed', 'interrupted'].includes(task.status)) && task.childSessionId
+  && envelope?.resumable && envelope.action === null
+);
+
+export const isUserStoppedRecoveryAvailable = (task, envelope) => hasAcceptedUserStop(task) && isStoppedRecoveryAvailable(task, envelope);
+
 export const requiresManualModelRecovery = (task, resultEnvelope) => Boolean(
   task.childSessionId
   && !isManagedTaskAgentRetryAvailable(task)
@@ -366,13 +383,16 @@ const projectTaskForEvent = (task, resultEnvelope) => {
     firstAssistantPartAt: task.firstAssistantPartAt,
     waitingReason: task.waitingReason ? { ...task.waitingReason } : null,
     transportRecovery: task.transportRecovery ? { ...task.transportRecovery } : null,
+    ...(hasAcceptedUserStop(task) ? { terminationIntent: 'user_stopped',
+      userStoppedRecoveryAvailable: isUserStoppedRecoveryAvailable(task, resultEnvelope) } : {}),
+    ...(isStoppedRecoveryAvailable(task, resultEnvelope) ? { stoppedRecoveryAvailable: true } : {}),
     failureReason: task.failureReason,
     failureKind,
     partial: task.partial,
     recoverablePreview: task.recoverablePreview,
     canonicalRefs: task.canonicalRefs,
     agentRetryAvailable: resolveManagedTaskAgentRetryAvailable(task, failureKind),
-    ...(resultEnvelope ? { manualRecoveryRequired: resultEnvelope.action === null && requiresManualModelRecovery(task, resultEnvelope) } : {}),
+    ...(resultEnvelope ? { manualRecoveryRequired: !hasPendingOperatorStop(task) && resultEnvelope.action === null && requiresManualModelRecovery(task, resultEnvelope) } : {}),
   };
 };
 

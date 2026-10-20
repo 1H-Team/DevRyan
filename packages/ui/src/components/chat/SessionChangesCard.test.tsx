@@ -217,10 +217,24 @@ describe('SessionChangesCardView', () => {
     onOpenFile: () => {},
   };
 
+  test('restored current files are not presented as remaining edits and captured history starts folded', () => {
+    const markup = render(React.createElement(SessionChangesCardView, { ...viewProps,
+      current: { state: 'restored', verifiedFileCount: 0, restoredFileCount: 2, uncertainFileCount: 0,
+        checkedFileCount: 2, observedAt: 1000, reasons: [] },
+      coverageBySession: [{ sessionID: 'child', reasons: ['execution_receipt_unavailable'] }],
+    }));
+    expect(markup).toContain('data-session-changes-current="restored"');
+    expect(markup).toContain('Captured files match their original content');
+    expect(markup).toContain('Show Captured History (2 Files)');
+    expect(countRows(markup)).toBe(0);
+    expect(markup).toContain('Capture gaps in 1 sessions');
+    expect(markup).toContain('child: execution_receipt_unavailable');
+  });
+
   test('renders the card header with the edit count, the Review changes subtitle and an enabled Undo', () => {
     const markup = render(React.createElement(SessionChangesCardView, viewProps));
     expect(markup).toContain('data-session-changes-card="changes"');
-    expect(markup).toContain('<h3 class="truncate typography-ui-label font-semibold text-foreground">Edited 2 files</h3>');
+    expect(markup).toContain('<h3 class="truncate typography-ui-label font-semibold text-foreground">Captured edits in 2 files</h3>');
     expect(markup).toContain('data-session-changes-action="review"');
     expect(markup).toContain(dict['chat.sessionChanges.card.reviewChanges']);
     expect(dict['chat.sessionChanges.card.reviewChanges']).toBe('Review changes');
@@ -236,7 +250,7 @@ describe('SessionChangesCardView', () => {
       totalsMode: 'recorded', undoDisabled: true, disabledReason: dict['chat.sessionChanges.segmentedRestore'],
     }));
     expect(countRows(markup)).toBe(1);
-    expect(markup).toContain('Edited 1 file');
+    expect(markup).toContain('Captured edits in 1 file');
     const header = markup.match(/<header\b[^>]*>([\s\S]*?)<\/header>/)?.[1];
     expect(header).toBeDefined();
     expect(header).not.toContain('Recorded Edits');
@@ -267,7 +281,7 @@ describe('SessionChangesCardView', () => {
   test('shows three rows and a "Show N more files" strip for six files', () => {
     const files = ['a', 'b', 'c', 'd', 'e', 'f'].map((name) => gitFile(`${name}.ts`, 1, 0));
     const markup = render(React.createElement(SessionChangesCardView, { ...viewProps, files }));
-    expect(markup).toContain('Edited 6 files');
+    expect(markup).toContain('Captured edits in 6 files');
     expect(countRows(markup)).toBe(3);
     expect(markup).toContain('data-session-changes-action="show-more"');
     expect(markup).toContain('aria-expanded="false"');
@@ -359,7 +373,7 @@ describe('SessionChangesCard (connected)', () => {
 
   test('renders the tree summary for the current session', () => {
     const markup = renderConnected();
-    expect(markup).toContain('Edited 2 files');
+    expect(markup).toContain('Captured edits in 2 files');
     expect(markup).toContain('data-session-changes-action="undo"');
     expect(countRows(markup)).toBe(2);
     expect(markup).toContain('<span style="color:var(--status-success)">+3</span>');
@@ -375,7 +389,7 @@ describe('SessionChangesCard (connected)', () => {
     seedEntry('ses_root');
     expect(renderConnected()).toBe('');
     sources = { ...sources, statuses: {} };
-    expect(renderConnected()).toContain('Edited 2 files');
+    expect(renderConnected()).toContain('Captured edits in 2 files');
     sources = { ...sources, currentSessionId: 'ses_other', isImplementationSettled: false };
     expect(renderConnected()).toBe('');
   });
@@ -385,7 +399,7 @@ describe('SessionChangesCard (connected)', () => {
     expect(renderConnected()).toBe('');
     seedEntry('ses_child', { sessionCount: 1, files: [{ path: 'child-only.ts', status: 'added', additions: 1, deletions: 0, sessions: ['ses_child'] }] });
     const markup = renderConnected();
-    expect(markup).toContain('Edited 1 file'); expect(markup).toContain('child-only.ts');
+    expect(markup).toContain('Captured edits in 1 file'); expect(markup).toContain('child-only.ts');
     expect(markup).not.toContain('src/a.ts');
   });
 
@@ -396,7 +410,7 @@ describe('SessionChangesCard (connected)', () => {
       })),
     });
     const markup = renderConnected();
-    expect(markup).toContain('Edited 6 files');
+    expect(markup).toContain('Captured edits in 6 files');
     expect(countRows(markup)).toBe(3);
     expect(markup).toContain('Show 3 more files');
   });
@@ -431,7 +445,7 @@ describe('SessionChangesCard (connected)', () => {
     seedEntry('ses_root', { files: [], undone: true });
     expect(renderConnected()).toContain('data-session-changes-action="redo"');
     seedEntry('ses_root', { undone: false });
-    expect(renderConnected()).toContain('Edited 2 files');
+    expect(renderConnected()).toContain('Captured edits in 2 files');
   });
 
   afterEach(() => {
@@ -471,7 +485,7 @@ describe('SessionChangesCard (connected)', () => {
     response = result({ files: [{ path: 'late.ts', status: 'modified', additions: 2, deletions: 1, sessions: ['ses_child'] }] });
     sessionEvents.requestGitRefresh({ directory: '/repo', sessionChanges: true });
     await settle();
-    expect(renderConnected()).toContain('Edited 1 file');
+    expect(renderConnected()).toContain('Captured edits in 1 file');
     expect(renderConnected()).toContain('late.ts');
     release();
   });
@@ -531,7 +545,7 @@ describe('SessionChangesCard (connected)', () => {
   test('disables Undo while a session outside the tree is working', () => {
     sources = { ...sources, statuses: { ses_other: busy } };
     const markup = renderConnected();
-    expect(markup).toContain('Edited 2 files');
+    expect(markup).toContain('Captured edits in 2 files');
     expect(hasDisabledUndo(markup)).toBe(true);
   });
 

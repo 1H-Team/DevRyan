@@ -53,3 +53,15 @@ test('diff requests retain cursor and segment identity and reject mismatched ser
     await expect(opencodeClient.getSessionChangesDiffPage('root', '/fixture', 'revision', 'a.txt', null, undefined, 1)).rejects.toThrow('Session diff identity mismatch');
   } finally { fetch.mockRestore(); }
 });
+
+
+test('current observations and per-session capture gaps remain separate from captured revision totals', () => {
+  const current = { state: 'restored', verifiedFileCount: 0, restoredFileCount: 1, uncertainFileCount: 0,
+    checkedFileCount: 1, observedAt: 1000, reasons: [] };
+  const parsed = parseSessionTreeChanges({ ...summary, current, fileCount: 1,
+    coverageBySession: [{ sessionID: 'child', reasons: ['execution_receipt_unavailable'] }] });
+  expect(parsed.current).toEqual(current);
+  expect(parsed.revision).toBe('revision'); expect(parsed.fileCount).toBe(1);
+  expect(parsed.coverageBySession).toEqual([{ sessionID: 'child', reasons: ['execution_receipt_unavailable'] }]);
+  expect(parseSessionTreeChanges({ ...summary, current: { ...current, checkedFileCount: -1 } }).current).toBeUndefined();
+});

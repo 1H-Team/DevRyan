@@ -1,3 +1,5 @@
+export const USER_STOPPED_RECOVERY = Symbol('user-stopped-recovery');
+
 import { validateRequiredCheckReceipts } from './required-checks.js';
 import {
   MAX_MANAGED_TASK_FAILURE_BYTES,
@@ -5,6 +7,9 @@ import {
   createManagedTaskRecord,
   isTerminalManagedTaskStatus,
   requiresManualModelRecovery,
+  isStoppedRecoveryAvailable,
+  hasPendingOperatorStop,
+  MANAGED_OPERATOR_STOP_UNCERTAIN_REASON,
   toManagedTaskEvent,
   toManagedTaskRemovalEvent,
   truncateManagedText,
@@ -266,6 +271,7 @@ export const createManagedTaskScheduler = (options = {}) => {
   const resultCollectionWaiters = new Map();
   const resultCommitWaiters = new Set();
   const timeoutTimers = new Map();
+  const operatorStopTimers = new Map();
   const startingLeaseTimers = new Map();
   const reconciliationRetryTimers = new Map();
   const providerRecoveryContinuationClaims = new Map();
@@ -838,13 +844,16 @@ export const createManagedTaskScheduler = (options = {}) => {
     return sequence + 1;
   };
 
-  const finishTask = async (taskId, leaseToken, result, fallbackStatus = 'failed', settlementOwner = null) => {
+  const finishTask = async (taskId, leaseToken, result, fallbackStatus = 'failed', settlementOwner = null, expectedStopRequestId = null) => {
     if (shutDown) return;
     let changed = false;
     await runExclusive(async () => {
       const previous = tasks.get(taskId);
       if (!previous || isTerminalManagedTaskStatus(previous.status)) return;
       if (previous.leaseToken !== leaseToken) return;
+      if (expectedStopRequestId !== null && (previous.operatorStop?.requestId !== expectedStopRequestId
+        || previous.operatorStop.state !== 'uncertain')) return;
+      if (hasPendingOperatorStop(previous)) return;
       const owner = cancellationOwners.get(taskId);
       if (settlementOwner && owner !== settlementOwner) return;
       if (owner?.leaseToken === leaseToken && owner !== settlementOwner) {
@@ -866,6 +875,7 @@ export const createManagedTaskScheduler = (options = {}) => {
         status,
         finishedAt: now(),
         failureReason,
+        ...(result?.terminationIntent === 'user_stopped' ? { terminationIntent: 'user_stopped' } : {}),
         partial: Boolean(result?.partial),
         recoverablePreview: typeof result?.recoverablePreview === 'string'
           ? truncateManagedText(result.recoverablePreview, MAX_MANAGED_TASK_PREVIEW_BYTES)
@@ -1737,7 +1747,8 @@ export const createManagedTaskScheduler = (options = {}) => {
 
   const handleTaskTimeout = async (taskId, timeoutAt) => {
     const task = await runExclusive(() => tasks.get(taskId));
-    if (shutDown || !task || isTerminalManagedTaskStatus(task.status) || task.timeoutAt !== timeoutAt) return;
+    if (shutDown || !task || isTerminalManagedTaskStatus(task.status) || task.timeoutAt !== timeoutAt
+      || hasPendingOperatorStop(task)) return;
     const reason = `${MANAGED_TASK_TIMEOUT_REASON_PREFIX}${timeoutAt}`;
     await cancelSingleTask(taskId, {
       reason,
@@ -1788,6 +1799,32 @@ export const createManagedTaskScheduler = (options = {}) => {
       });
     }, delay));
     timeoutTimers.set(task.taskId, timer);
+  };
+
+  const clearOperatorStopExpiry = (taskId) => {
+    if (operatorStopTimers.has(taskId)) cancelTimeout(operatorStopTimers.get(taskId));
+    operatorStopTimers.delete(taskId);
+  };
+  const scheduleOperatorStopExpiry = (task) => {
+    clearOperatorStopExpiry(task.taskId);
+    if (shutDown || !hasPendingOperatorStop(task)) return;
+    const requestId = task.operatorStop.requestId;
+    const timer = unrefTimer(scheduleTimeout(() => {
+      operatorStopTimers.delete(task.taskId);
+      void runExclusive(async () => {
+        const current = tasks.get(task.taskId);
+        if (!current || !hasPendingOperatorStop(current) || current.operatorStop.requestId !== requestId) return null;
+        const next = { ...current, operatorStop: { ...current.operatorStop, state: 'uncertain' } };
+        await commitTaskUpdateLocked(current, next); return cloneTask(next);
+      }).then(async (current) => {
+        if (!current || isTerminalManagedTaskStatus(current.status)) return;
+        await finishTask(current.taskId, current.leaseToken, { status: 'interrupted',
+          failureReason: MANAGED_OPERATOR_STOP_UNCERTAIN_REASON, partial: current.partial,
+          recoverablePreview: current.recoverablePreview, canonicalRefs: current.canonicalRefs,
+          resumable: Boolean(current.childSessionId) }, 'interrupted', null, requestId);
+      }).catch(() => logger.warn?.('[ManagedOrchestration] Pending stop outcome could not be resolved'));
+    }, Math.max(0, task.operatorStop.requestedAt + abortTimeoutMs - now())));
+    operatorStopTimers.set(task.taskId, timer);
   };
 
   // Restart re-arm. Timers are process state, so every persisted active auto-resume
@@ -1929,6 +1966,7 @@ export const createManagedTaskScheduler = (options = {}) => {
         await persistLocked();
       });
 
+      for (const task of tasks.values()) scheduleOperatorStopExpiry(task);
       recovering = true;
       try {
         const active = [...tasks.values()]
@@ -2151,6 +2189,7 @@ export const createManagedTaskScheduler = (options = {}) => {
 
   const cancelSingleTask = async (taskId, {
     reason = 'Cancelled by parent orchestrator',
+    terminationIntent = null,
     terminalStatus = 'aborted',
     resumableOnUnconfirmedAbort = false,
     expectedTimeoutAt,
@@ -2164,12 +2203,19 @@ export const createManagedTaskScheduler = (options = {}) => {
       await ensureInitialized();
       // Wait for any in-flight deadline renewal to commit before deciding
       // whether this timer still owns cancellation.
-      const task = await runExclusive(() => {
+      const task = await runExclusive(async () => {
         const current = tasks.get(taskId);
         if (current && !isTerminalManagedTaskStatus(current.status)
           && (expectedTimeoutAt === undefined || current.timeoutAt === expectedTimeoutAt)) {
+          if (hasPendingOperatorStop(current) && terminationIntent !== 'user_stopped' && !nativeSettled) {
+            throw new ManagedOrchestrationError('operator_stop_pending', 'The stop request outcome is not confirmed');
+          }
           owner = { leaseToken: current.leaseToken, deferred: null, committed: false };
           cancellationOwners.set(taskId, owner);
+          if (terminationIntent === 'user_stopped') {
+            const next = { ...current, terminationIntent, operatorStop: { requestedAt: now(), requestId: createRandomId('stop_'), leaseToken: current.leaseToken, state: 'accepted' } };
+            await commitTaskUpdateLocked(current, next); return next;
+          }
         }
         return current;
       });
@@ -2198,6 +2244,7 @@ export const createManagedTaskScheduler = (options = {}) => {
             status: 'aborted',
             finishedAt: now(),
             failureReason: reason,
+            ...(terminationIntent === 'user_stopped' ? { terminationIntent } : {}),
             waitingReason: null,
           };
           await commitTerminalTaskLocked(previous, next);
@@ -2244,6 +2291,7 @@ export const createManagedTaskScheduler = (options = {}) => {
       }
       await finishTask(taskId, task.leaseToken, {
         status: abortConfirmed ? terminalStatus : 'interrupted',
+        ...(terminationIntent === 'user_stopped' ? { terminationIntent } : {}),
         failureReason: reason,
         partial: typeof recovery.partial === 'boolean'
           ? recovery.partial
@@ -2286,7 +2334,7 @@ export const createManagedTaskScheduler = (options = {}) => {
 
     let owner;
     const cancellation = (async () => {
-      const task = await runExclusive(() => {
+      const task = await runExclusive(async () => {
         const current = tasks.get(taskId);
         if (current && (!isTerminalManagedTaskStatus(current.status)
           || (current.status === 'interrupted' && activeLaunches.has(taskId)))) {
@@ -2819,6 +2867,7 @@ export const createManagedTaskScheduler = (options = {}) => {
       if (shutDown) return;
       shutDown = true;
       for (const taskId of [...timeoutTimers.keys()]) clearTaskTimeout(taskId);
+      for (const taskId of [...operatorStopTimers.keys()]) clearOperatorStopExpiry(taskId);
       for (const taskId of [...startingLeaseTimers.keys()]) clearStartingLease(taskId);
       for (const taskId of [...reconciliationRetryTimers.keys()]) clearReconciliationRetry(taskId);
       for (const taskId of [...autoResumeTimers.keys()]) clearAutoResumeTimer(taskId);
@@ -2909,6 +2958,9 @@ export const createManagedTaskScheduler = (options = {}) => {
     const promise = (async () => {
       const currentEnvelope = resultEnvelopes.get(taskId);
       const sourceTask = tasks.get(taskId);
+      if (hasPendingOperatorStop(sourceTask)) {
+        throw new ManagedOrchestrationError('operator_stop_pending', 'The stop request outcome is not confirmed');
+      }
       if (!currentEnvelope || !sourceTask) {
         throw new ManagedOrchestrationError('result_not_found', `managed task result ${taskId} was not found`);
       }
@@ -2940,12 +2992,18 @@ export const createManagedTaskScheduler = (options = {}) => {
         };
       }
 
+      if (isStoppedRecoveryAvailable(sourceTask, currentEnvelope)
+        && !(actionOptions[USER_STOPPED_RECOVERY] === true && ['retry_in_place', 'continue', 'abandon'].includes(action))) {
+        throw new ManagedOrchestrationError('user_stopped_recovery_required', 'Only an explicit user-selected model may resume a stopped task');
+      }
+
       if (
         requiresManualModelRecovery(sourceTask, currentEnvelope)
         && action !== 'retry_in_place'
         && !(
           action === 'abandon'
-          && actionOptions[AGENT_HANDOFF_MANUAL_RECOVERY_ABANDON] === true
+          && (actionOptions[AGENT_HANDOFF_MANUAL_RECOVERY_ABANDON] === true
+            || isStoppedRecoveryAvailable(sourceTask, currentEnvelope) && actionOptions[USER_STOPPED_RECOVERY] === true)
         )
       ) {
         throw new ManagedOrchestrationError(
@@ -3426,6 +3484,60 @@ export const createManagedTaskScheduler = (options = {}) => {
     initialize,
     submit,
     cancelTask,
+    async recordOperatorStop({ sessionId, directory, requestedAt, requestId = createRandomId('stop_') }) {
+      await ensureInitialized();
+      return runExclusive(async () => {
+        const task = [...tasks.values()].find((entry) => entry.childSessionId === sessionId && (!directory || entry.directory === directory) && ACTIVE_STATUSES.has(entry.status));
+        if (!task) return null;
+        if (task.operatorStop?.requestedAt > requestedAt) return { sessionId, requestedAt, requestId, taskId: task.taskId, leaseToken: task.leaseToken };
+        const operatorStop = { requestedAt, requestId, leaseToken: task.leaseToken, state: 'pending' };
+        await commitTaskUpdateLocked(task, { ...task, operatorStop });
+        scheduleOperatorStopExpiry({ ...task, operatorStop });
+        return { sessionId, requestedAt, requestId, taskId: task.taskId, leaseToken: task.leaseToken };
+      });
+    },
+    async acceptOperatorStop({ taskId, leaseToken, requestedAt, requestId }) {
+      await ensureInitialized();
+      return runExclusive(async () => {
+        const task = tasks.get(taskId);
+        if (!task || task.leaseToken !== leaseToken || task.operatorStop?.requestedAt !== requestedAt
+          || task.operatorStop?.requestId !== requestId) return false;
+        if (task.operatorStop.state === 'accepted') return true;
+        const next = { ...task, ...(isTerminalManagedTaskStatus(task.status) ? {} : { terminationIntent: 'user_stopped' }),
+          operatorStop: { ...task.operatorStop, state: 'accepted' } };
+        await commitTaskUpdateLocked(task, next);
+        clearOperatorStopExpiry(taskId);
+        if (isTerminalManagedTaskStatus(next.status)) {
+          const envelope = resultEnvelopes.get(taskId);
+          if (isAutoResumeActive(envelope)) await disableAutoResumeLocked(next, envelope, 'cancelled');
+        } else { scheduleTaskDeadline(next); scheduleReconciliationRetry(next); }
+        return true;
+      });
+    },
+    async withdrawOperatorStop({ taskId, leaseToken, requestedAt, requestId }) {
+      await ensureInitialized();
+      return runExclusive(async () => {
+        const task = tasks.get(taskId);
+        if (!task || task.leaseToken !== leaseToken || task.operatorStop?.requestedAt !== requestedAt
+          || task.operatorStop?.requestId !== requestId || task.operatorStop.state === 'accepted') return false;
+        const next = { ...task }; delete next.operatorStop;
+        await commitTaskUpdateLocked(task, next);
+        clearOperatorStopExpiry(taskId);
+        if (isTerminalManagedTaskStatus(next.status)) await parkAutoResumeLocked(next);
+        else { scheduleTaskDeadline(next); scheduleReconciliationRetry(next); }
+        return true;
+      });
+    },
+    readOperatorStop({ sessionId, directory, taskId, leaseToken, after = 0 }) {
+      for (const task of tasks.values()) {
+        if (task.childSessionId === sessionId && (!directory || task.directory === directory)
+          && (!taskId || task.taskId === taskId) && (leaseToken === undefined || task.leaseToken === leaseToken)
+          && task.operatorStop?.requestedAt >= after) {
+          return { sessionId, requestedAt: task.operatorStop.requestedAt, state: task.operatorStop.state ?? 'pending', durable: true };
+        }
+      }
+      return null;
+    },
     getRequiredCheckTask(childSessionId, directory) {
       for (const task of tasks.values()) {
         if (task.childSessionId !== childSessionId || task.directory !== directory

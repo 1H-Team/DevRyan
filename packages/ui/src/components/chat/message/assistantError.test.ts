@@ -268,3 +268,10 @@ test("identifies recovery bridge failures as local runtime errors", () => {
   expect(result?.text).not.toContain("The model provider could not complete")
   expect(result?.retryable).toBe(true)
 })
+
+test('canonical user stop overrides Step interrupted provider fallback', () => {
+  const result = classifyAssistantError({name:'UnknownError',data:{message:'Step interrupted'}}, {managedAbortRecovery:{state:'user_stopped'}});
+  expect(result?.text).toContain('Stopped by you');
+  expect(result?.text).not.toContain('provider');
+  expect(result?.abortKind).toBe('manual');
+});

@@ -444,3 +444,18 @@ describe('ManagedTaskRow', () => {
     expect(html).not.toContain('role="checkbox"');
   });
 });
+
+ test('user stopped tasks offer explicit model recovery and stay stopped during independent child work', () => {
+  const stopped = record('dvr_task_stopped', 'aborted', { terminationIntent: 'user_stopped', failureReason: 'Stopped by the user' });
+  const envelope = createManagedTaskResultEnvelope(stopped, { sequence: 1, createdAt: 2000, resumable: true });
+  const task = toManagedTaskEvent(stopped, envelope).properties.task;
+  const html = renderView(<ManagedTaskRowView task={task} onOpenChild={() => undefined} resultEnvelope={envelope} onRetryInPlace={() => undefined} />);
+  expect(html).toContain('Stopped by you');
+  expect(html).toContain('Resume as Task');
+  expect(html).not.toContain('>Error<');
+  expect(html).not.toContain('>Running');
+  const active = renderView(<ManagedTaskRowView task={task} onOpenChild={() => undefined} resultEnvelope={envelope} childActive onRetryInPlace={() => undefined} />);
+  expect(active).toContain('Stopped by you');
+  expect(active).not.toContain('>Running');
+  expect(active).not.toContain('Resume as Task');
+});

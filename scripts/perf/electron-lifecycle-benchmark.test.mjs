@@ -10,11 +10,14 @@ import {
   captureFirstDocumentStartup,
   waitForStartupCatalog,
   captureMemoryCheckpoint,
+  canonicalHistoryPage,
   assertEarlierCanonicalHistory,
   historyCoverage,
   loadOlderHistoryPage,
   observeStartupNavigation,
   prepareMemorySessions,
+  readFixtureCanonicalMessage,
+  revealEarlierHistoryWindow,
   parseStartupPhaseLogs,
   projectRendererMemory,
   selectedFixtureModelIsAvailable,
@@ -73,6 +76,17 @@ test('fixture preparation owns four independent histories without submitting pro
       assert.equal(rows.length, SESSION_MEMORY_FIXTURE.turns * 2);
       assert.equal(rows.at(-1).parts.find(part => part.type === 'text').text.length, SESSION_MEMORY_FIXTURE.textBytes);
       assert.equal(rows[0].info.sessionID, session.id);
+      const beforeWitness = fixture.getState().messagePageRequests.length;
+      const canonical = await readFixtureCanonicalMessage(fixture, session.id, rows[0].info.id);
+      assert.equal(canonical.info.id, rows[0].info.id);
+      assert.equal(canonical.info.sessionID, session.id);
+      assert.deepEqual(canonical.parts, rows[0].parts);
+      const assistant = await readFixtureCanonicalMessage(fixture, session.id, rows[1].info.id);
+      assert.equal(assistant.info.id, rows[1].info.id);
+      assert.equal(assistant.parts.find(part => part.type === 'text').text, rows[1].parts.find(part => part.type === 'text').text);
+      assert.equal(fixture.getState().messagePageRequests.length, beforeWitness, 'Canonical witnesses must not manufacture UI page coverage');
+      assert.equal(historyCoverage(fixture.getState().messagePageRequests.filter(page => page.sessionID === session.id)), session.expectedMessages,
+        'Authenticated v2 pagination must prove the complete exact history');
     }
     assert.equal(fixture.getState().receivedPrompts.length, 0);
   } finally { await fixture.close(); }
@@ -91,18 +105,50 @@ test('history coverage ignores overlapping adaptive snapshots and counts a conti
   assert.equal(historyCoverage([{ before: 'unrelated', returned: 900, firstMessageID: 'm000' }]), 0);
 });
 
+test('v2 history proof follows only actual descending next-cursor anchors and rejects discontinuity', () => {
+  const page = (cursorAnchor, returned, firstMessageID, lastMessageID) => ({ order: 'desc', type: null,
+    cursor: cursorAnchor !== null, cursorAnchor, cursorDirection: cursorAnchor === null ? null : 'next', returned, firstMessageID, lastMessageID });
+  const pages = [page(null, 50, 'm359', 'm310'), page('m310', 200, 'm309', 'm110'), page('m110', 110, 'm109', 'm000')];
+  assert.equal(historyCoverage(pages), 360);
+  assert.equal(canonicalHistoryPage(pages[1]).before, 'm310');
+  assert.equal(canonicalHistoryPage(pages[1]).firstMessageID, 'm110');
+  assert.equal(historyCoverage([pages[0], { ...pages[1], cursorAnchor: 'unrelated' }, pages[2]]), 50);
+  for (const change of [{ cursorDirection: 'previous' }, { order: 'asc' }, { type: 'assistant' }, { cursorAnchor: null }, { cursor: false }]) {
+    assert.equal(historyCoverage([pages[0], { ...pages[1], ...change }, pages[2]]), 50);
+  }
+});
+
+test('a prepended canonical text witness is revealed through trusted input after anchor restoration', async t => {
+  const fixture = await createLoopbackOpenCodeV2Fixture({ directory: path.resolve('.cache/perf/lifecycle-unit-workspace') });
+  t.after(() => fixture.close());
+  fixture.seedHistory('ses_perfparent', { turns: 2, textBytes: 256 });
+  const client = createOpenCodeClient({ getRuntime: () => ({ generation: 2, baseUrl: fixture.origin }), getAuthHeaders: () => fixture.authHeaders });
+  const rows = (await client.sessions.messages('ses_perfparent', { limit: 10 }, { directory: fixture.directory })).records;
+  const older = rows[0], newer = rows[2]; let clicked = false, revealed = false;
+  const cdp = { send: async (_method, { expression }) => ({ result: { value: expression.includes('atTop:true')
+    ? { atTop: true } : clicked ? older.info.id : newer.info.id } }) };
+  const ui = { click: async () => { clicked = true; }, waitFor: async (_label, action) => action(),
+    waitVisibleText: async () => { throw new Error('Canonical text is clipped until trusted reveal'); },
+    revealText: async (text, selector, options) => {
+      assert.equal(text, older.parts.find(part => part.type === 'text').text);
+      assert.ok(selector.includes(older.info.id));
+      assert.deepEqual(options, { scrollContainer: '[data-scrollbar="chat"]', direction: 'up' });
+      revealed = true;
+    } };
+  const result = await revealEarlierHistoryWindow({ session: { id: 'ses_perfparent' }, cdp, ui, fixture });
+  assert.equal(revealed, true);
+  assert.equal(result.beforeMessageID, newer.info.id);
+  assert.equal(result.firstMessageID, older.info.id);
+});
+
 test('Load Older requires this click’s fresh contiguous page and visible canonical row, independent of scroll height', async t => {
-  const session = { id: 'ses_history', expectedMessages: 360 };
+  const session = { id: 'ses_perfparent', expectedMessages: 360 };
   const firstMessageID = 'msg_110';
   const canonicalText = 'History request 56';
-  const server = http.createServer((request, response) => {
-    assert.equal(request.url, `/session/${session.id}/message/${firstMessageID}`);
-    response.setHeader('Content-Type', 'application/json');
-    response.end(JSON.stringify({ info: { id: firstMessageID, sessionID: session.id, role: 'user' },
-      parts: [{ type: 'text', text: canonicalText }] }));
-  });
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  t.after(async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); });
+  const wire = await createLoopbackOpenCodeV2Fixture({ directory: path.resolve('.cache/perf/lifecycle-unit-workspace') });
+  wire.replayRecoveryVisual({ sessionID: session.id, rows: [{ info: { id: firstMessageID, sessionID: session.id, role: 'user', time: { created: 110 } },
+    parts: [{ id: 'prt_historycanonical', sessionID: session.id, messageID: firstMessageID, type: 'text', text: canonicalText }] }] });
+  t.after(() => wire.close());
   for (const failure of [undefined, 'adaptive initial snapshot', 'unrelated after adaptive snapshot', 'HTTP only', 'unchanged page', 'stale page', 'wrong session', 'absent DOM', 'wrong text']) {
     await t.test(failure ?? 'same-height canonical commit', async () => {
       const pages = [
@@ -148,7 +194,7 @@ test('Load Older requires this click’s fresh contiguous page and visible canon
         assert.deepEqual(options, { scrollContainer: '[data-scrollbar="chat"]', direction: 'up' });
         reveals += 1;
       };
-      const fixture = { origin: `http://127.0.0.1:${server.address().port}`,
+      const fixture = { ...wire,
         getState: () => ({ messagePageRequests: structuredClone(pages) }) };
       const run = loadOlderHistoryPage({ session, ui, fixture, messagePageRequestOffset: 1 });
       if (failure && failure !== 'adaptive initial snapshot') await assert.rejects(run, undefined, `${failure} must not count as a UI page commit`);

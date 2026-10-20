@@ -281,22 +281,8 @@ const withRootIds = (
 const isManualRecoveryTask = (
   task: ManagedTaskProjectedRecord,
   envelope: ManagedTaskProjectedEnvelope | undefined,
-) => Boolean(
-  task.childSessionId
-  && !task.agentRetryAvailable
-  && task.failureKind !== 'provider_prompt_rejected'
-  && (
-    task.failureKind === 'provider_usage_limit'
-    || task.failureKind === 'provider_authentication'
-    || task.failureKind === 'provider_configuration'
-    || task.failureKind === 'model_unavailable'
-    || Boolean(task.transportRecovery)
-    || (task.mode === 'orchestrator' && task.dispatchGrouped && task.attempt >= 2)
-  )
-  && (task.status === 'failed' || task.status === 'interrupted')
-  && envelope?.resumable
-  && envelope.action === null
-);
+) => Boolean(task.childSessionId && envelope?.resumable && envelope.action === null
+  && (task.manualRecoveryRequired === true || task.stoppedRecoveryAvailable === true || task.userStoppedRecoveryAvailable === true));
 
 const childIndexMembershipChanged = (
   current: ManagedTaskProjectedRecord | undefined,
@@ -677,7 +663,7 @@ export const createManagedOrchestrationStore = (options: {
                 actionErrorByTaskId: mutableActionErrors ?? state.actionErrorByTaskId,
                 snapshotStateByScope: state.snapshotStateByScope[scopeKey] === 'confirmed'
                   ? state.snapshotStateByScope
-                  : { ...state.snapshotStateByScope, [scopeKey]: snapshot.available && snapshot.bridgeReady && !snapshot.recoveryWarning ? 'confirmed' : 'unavailable' },
+                  : { ...state.snapshotStateByScope, [scopeKey]: snapshot.available && (snapshot.dispatchReady ?? snapshot.bridgeReady) && !snapshot.recoveryWarning ? 'confirmed' : 'unavailable' },
                 available: snapshot.available === true,
                 bridgeReady: snapshot.bridgeReady === true,
                 recoveryWarning: snapshot.recoveryWarning,

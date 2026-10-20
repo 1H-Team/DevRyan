@@ -15,7 +15,7 @@ export interface ManagedTransportRecoveryPresentation {
     state: ManagedTransportRecoveryState;
 }
 
-export type ManagedAbortRecoveryState = 'continuing' | 'recovered' | 'manual_recovery' | 'stopped';
+export type ManagedAbortRecoveryState = 'continuing' | 'recovered' | 'manual_recovery' | 'stopped' | 'user_stopped';
 
 export interface ManagedAbortRecoveryPresentation {
     state: ManagedAbortRecoveryState;

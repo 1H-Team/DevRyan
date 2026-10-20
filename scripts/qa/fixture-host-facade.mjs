@@ -14,6 +14,7 @@ import { createGlobalMessageStreamHub } from '../../packages/web/server/lib/even
 import { registerOpenCodeProxy } from '../../packages/web/server/lib/opencode/proxy.js';
 import { registerConfigEntityRoutes } from '../../packages/web/server/lib/opencode/config-entity-routes.js';
 import { listConfigAgents } from '../../packages/web/server/lib/opencode/agents.js';
+import { isOwnedScratchPath } from './run-root.mjs';
 
 const require = createRequire(new URL('../../packages/web/package.json', import.meta.url));
 const express = require('express');
@@ -31,13 +32,14 @@ const providerReadFeature = req => req.method === 'GET'
 
 /** Disposable UI transport only. Original native binding and local host still
  * boot normally; no fixture ID, permit or receipt is offered to that owner. */
-export async function createQaFixtureHostFacade({ fixture, realOrigin, workspace, dataDirectory, userConfigPath }) {
+export async function createQaFixtureHostFacade({ fixture, realOrigin, workspace, dataDirectory, userConfigPath, runScope }) {
   const upstream = loopback(realOrigin); loopback(fixture.origin);
   const cache=path.join(await fs.realpath(fileURLToPath(new URL('../../',import.meta.url))),'.cache');
   for (const directory of [workspace, dataDirectory, path.dirname(userConfigPath)]) {
     assert.equal(await fs.realpath(directory), directory);
     const relative=path.relative(cache,directory);
-    assert.ok(relative && relative!=='..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
+    assert.ok(relative && relative!=='..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
+      || isOwnedScratchPath(directory, { scope: runScope }));
   }
   assert.equal(fixture.generation, 2);
   const getRuntime = () => ({ generation: 2, version: '2.0.20', baseUrl: fixture.origin, epoch: 1 });

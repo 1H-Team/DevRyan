@@ -1,4 +1,4 @@
-import { MAX_MANAGED_TASK_PREVIEW_BYTES, requiresManualModelRecovery } from './contract.js';
+import { MAX_MANAGED_TASK_PREVIEW_BYTES, requiresManualModelRecovery, isStoppedRecoveryAvailable } from './contract.js';
 import { isAutoResumeActive } from './auto-resume-policy.js';
 import { classifyManagedTaskFailure } from './provider-retry-policy.js';
 
@@ -31,7 +31,7 @@ export const readManagedResultReport = (preview) => {
 export const createCompactResultHeader = ({ task, envelope, checks = [], observedAt }) => {
   if (!envelope || envelope.taskId !== task.taskId || envelope.rootSessionId !== task.rootSessionId) throw new TypeError('Compact result requires a matching durable envelope');
   const restriction = isAutoResumeActive(envelope) ? 'scheduled-recovery'
-    : envelope.action === null && requiresManualModelRecovery(task, envelope) ? 'manual-attention' : null;
+    : envelope.action === null && (requiresManualModelRecovery(task, envelope) || isStoppedRecoveryAvailable(task, envelope)) ? 'manual-attention' : null;
   const reported = readManagedResultReport(envelope.recoverablePreview);
   const bytes = new TextEncoder().encode(envelope.recoverablePreview).length;
   const detailRequired = reported.terminalMarker !== 'complete' || envelope.status !== 'completed'

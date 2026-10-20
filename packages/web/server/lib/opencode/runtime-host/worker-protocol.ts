@@ -55,13 +55,16 @@ export const PermissionReply = Schema.Struct({ id: Schema.String, ok: Schema.Boo
 export type PermissionReply = typeof PermissionReply.Type;
 export const TerminationReceipt = Schema.Struct({ terminated: Schema.Literal(true), confined: Schema.Boolean,
   cancelled: Schema.Boolean, exitCode: Schema.Int });
+export const SearchTruncation = Schema.Struct({ limitBytes: Schema.Int, limitRecords: Schema.Int,
+  returnedBytes: Schema.Int, returnedRecords: Schema.Int, reason: Schema.Literals(['byte_limit', 'record_limit']) });
 export const ExecutionEvent = Schema.Union([
   Schema.Struct({ cursor: Schema.Int, type: Schema.Literal('started'), pid: Schema.Int }),
   Schema.Struct({ cursor: Schema.Int, type: Schema.Literal('output'), stream: Schema.Literals(['stdout', 'stderr']), data: Schema.String }),
   Schema.Struct({ cursor: Schema.Int, type: Schema.Literal('permission'), id: Schema.String, input: Permission.AssertInput }),
   Schema.Struct({ cursor: Schema.Int, type: Schema.Literal('progress'), update: Metadata }),
   Schema.Struct({ cursor: Schema.Int, type: Schema.Literal('settled'), ok: Schema.Boolean,
-    receipt: Schema.optional(TerminationReceipt), result: Schema.optional(NativeResult), error: Schema.optional(WorkerError) }),
+    receipt: Schema.optional(TerminationReceipt), result: Schema.optional(NativeResult), error: Schema.optional(WorkerError),
+    truncated: Schema.optional(Schema.Literal(true)), truncation: Schema.optional(SearchTruncation) }),
   Schema.Struct({ cursor: Schema.Int, type: Schema.Literal('uncertain'), error: Schema.Struct({ code: Schema.String }) }),
 ]);
 export type ExecutionEvent = typeof ExecutionEvent.Type;

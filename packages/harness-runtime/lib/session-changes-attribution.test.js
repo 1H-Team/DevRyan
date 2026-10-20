@@ -99,7 +99,7 @@ test('native patch result metadata is reviewable without fabricated full-file or
   const receipt = sessionChangeReceipt({ tool: 'oc_edit', state: { status: 'completed', input: { path: 'a.txt' }, metadata: { diff: patch } } });
   await runtime.recordReceipt({ ...input(), ...receipt });
   const result = await summary();
-  expect(result).toMatchObject({ coverage: 'complete', totalsMode: 'recorded', restoreAvailable: false });
+  expect(result).toMatchObject({ coverage: 'complete', totalsMode: 'recorded', restoreAvailable: false, current: { state: 'uncertain', uncertainFileCount: 1 } });
   expect(result.files[0]).toMatchObject({ additions: 2, deletions: 1, segmentCount: 1 });
   expect((await runtime.diff({ directory, rootSessionID: 'a', revision: result.revision, file: 'a.txt' })).patch).toBe(patch);
   expect(sessionChangeReceipt({ tool: 'apply_patch', state: { status: 'completed', metadata: { diff: patch, syntheticWorkspacePatch: true } } })).toBeNull();
@@ -127,4 +127,93 @@ test('MultiEdit execution results compose only contiguous full-file receipts', (
   ]);
   part.state.metadata.results[1].filediff.before = 'external';
   expect(sessionChangeReceipt(part)).toBeNull();
+});
+
+
+test('live reconciliation preserves captured history through shell restore and same-path foreign edits', async () => {
+  await edit('base\n', 'own\n');
+  const captured = await summary();
+  expect(captured.current).toMatchObject({ state: 'verified', verifiedFileCount: 1 });
+  await write('a.txt', 'own\nforeign\n');
+  const overlap = await summary();
+  expect(overlap.revision).toBe(captured.revision);
+  expect(overlap.current).toMatchObject({ state: 'uncertain', uncertainFileCount: 1 });
+  await write('a.txt', 'base\n');
+  const restored = await summary();
+  expect(restored.revision).toBe(captured.revision);
+  expect(restored.fileCount).toBe(1);
+  expect(restored.current).toMatchObject({ state: 'restored', restoredFileCount: 1 });
+  expect((await runtime.diff({ directory, rootSessionID: 'a', revision: captured.revision, file: 'a.txt' })).patch).toContain('+own');
+});
+
+
+for (const ancestor of ['symlink', 'file']) {
+  for (const operation of ['added', 'deleted']) {
+    test(`live ${operation} evidence stays uncertain under a ${ancestor} ancestor`, async () => {
+      const parent = path.join(directory, 'nested');
+      await fs.mkdir(parent);
+      const before = operation === 'deleted' ? 'original\n' : null;
+      const after = operation === 'added' ? 'owned\n' : null;
+      if (before !== null) await write('nested/owned.txt', before);
+      const op = input();
+      await runtime.begin(op);
+      if (after !== null) await write('nested/owned.txt', after);
+      else await fs.unlink(path.join(parent, 'owned.txt'));
+      await runtime.finish(op);
+      await runtime.recordReceipt({ ...op, files: [{ path: 'nested/owned.txt', before, after }] });
+      const captured = await summary();
+      expect(captured.current).toMatchObject({ state: 'verified', verifiedFileCount: 1 });
+      await fs.rm(parent, { recursive: true });
+      if (ancestor === 'file') await fs.writeFile(parent, 'foreign parent\n');
+      else {
+        const outside = path.join(base, 'outside');
+        await fs.mkdir(outside);
+        await fs.writeFile(path.join(outside, 'owned.txt'), 'foreign content\n');
+        await fs.symlink(outside, parent);
+      }
+      const observed = await summary();
+      expect(observed.revision).toBe(captured.revision);
+      expect(observed.current).toMatchObject({
+        state: 'uncertain', verifiedFileCount: 0, restoredFileCount: 0,
+        uncertainFileCount: 1, reasons: ['current_path_unavailable'],
+      });
+    });
+  }
+}
+
+test('live refresh writes no snapshot refs and bounded reads remain uncertain', async () => {
+  await edit('base\n', 'own\n');
+  const captured = await summary();
+  const gitDir = path.join(storage, captured.worktreeID, 'git');
+  const refs = () => execFileSync('git', ['--git-dir', gitDir, 'show-ref'], { encoding: 'utf8' });
+  const before = refs();
+  await write('a.txt', 'foreign\n');
+  const observed = await runtime.summaryPage({ directory, rootSessionID: 'a', revision: captured.revision });
+  expect(observed.current.state).toBe('uncertain');
+  expect(refs()).toBe(before);
+  await write('a.txt', Buffer.alloc(8 * 1024 * 1024 + 1));
+  const limited = await summary();
+  expect(limited.current).toMatchObject({ state: 'uncertain', checkedFileCount: 0, uncertainFileCount: 1, reasons: ['current_read_limit'] });
+  expect(limited.revision).toBe(captured.revision);
+});
+
+test('capture gaps retain descendant attribution and current missing files cannot masquerade as restored', async () => {
+  await runtime.registerSession({ directory, sessionID: 'a', userMessageID: 'user' });
+  await edit('base\n', 'child\n', 'child', { parentID: 'a' });
+  const opaque = input('child'); await runtime.begin(opaque); await write('foreign.txt', 'external\n'); await runtime.finish(opaque);
+  await fs.rm(path.join(directory, 'a.txt'));
+  const result = await summary();
+  expect(result.coverageBySession).toContainEqual({ sessionID: 'child', reasons: ['unverified_tool_changes'] });
+  expect(result.files[0].sessions).toEqual(['child']);
+  expect(result.current).toMatchObject({ state: 'uncertain', uncertainFileCount: 1 });
+});
+
+
+test('missing expected execution receipts expose the owning descendant coverage gap', async () => {
+  await runtime.registerSession({ directory, sessionID: 'a', userMessageID: 'user' });
+  const result = await runtime.summarize({ directory, rootSessionID: 'a', sessions: [{ id: 'child' }],
+    expectedCalls: [{ sessionID: 'child', callID: 'missing' }] });
+  expect(result.reasons).toEqual(['missing_capture']);
+  expect(result.coverageBySession).toContainEqual({ sessionID: 'child', reasons: ['missing_capture'] });
+  expect(result.coverageBySession).toContainEqual({ sessionID: 'a', reasons: [] });
 });

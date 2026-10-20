@@ -2098,3 +2098,9 @@ describe('renewed implementation deadlines', () => {
     }
   });
 });
+
+test('native dispatch readiness confirms a snapshot without starting the legacy bridge', async () => {
+ const store=createManagedOrchestrationStore({api:fakeApi({getSnapshot:async()=>emptySnapshot({bridgeReady:false,dispatchReady:true})})});
+ await store.getState().loadSnapshot();
+ expect(managedOrchestrationSelectors.hasConfirmedSnapshotForRoot('ses_root')(store.getState())).toBe(true);
+});

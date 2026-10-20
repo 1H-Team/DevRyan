@@ -17,6 +17,8 @@ import {
   injectPlanSkeleton,
   median,
   parseBenchmarkArguments,
+  preparePerfFixtureLaunch,
+  preparePerfFixtureWindow,
   runElectronResourceBenchmark,
   summarizeMemorySamples,
   summarizeStartupRuns,
@@ -35,6 +37,33 @@ const sample = (tabCpu, gpuCpu, tabMemory, browserMemory = 200) => ({
 });
 
 describe('Electron resource benchmark metrics', () => {
+  it('activates only the owned fixture window and seeds its directory before every scenario document', async () => {
+    const calls = [];
+    const cdp = { send: async (method, parameters) => { calls.push({ method, parameters }); return { result: { value: { focused: true } } }; } };
+    const setup = await preparePerfFixtureWindow(cdp, { workspace: '/owned/workspace' });
+    assert.equal(calls[0].method, 'Runtime.evaluate');
+    assert.match(calls[0].parameters.expression, /desktop_focus_main_window/);
+    assert.equal(calls[1].method, 'Page.addScriptToEvaluateOnNewDocument');
+    assert.match(calls[1].parameters.source, /\/owned\/workspace/);
+    assert.equal(setup.acknowledgement.focused, true);
+    await assert.rejects(preparePerfFixtureWindow({ send: async () => ({ result: { value: { focused: false } } }) },
+      { workspace: '/owned/workspace' }), /acknowledge focus/);
+  });
+  it('boots the owned native host before using its authorized wire facade without legacy runtime flags', async () => {
+    const origins = [];
+    const profile = { env: { DEVRYAN_QA_RUNTIME: 'electron', DEVRYAN_SERVER_URL: 'http://127.0.0.1:9999',
+      DEVRYAN_RUNTIME_BUNDLE_ROOT: '/owned/bundles' }, fixture: { origin: 'http://127.0.0.1:9011' },
+      startFacade: async origin => { origins.push(origin); return { origin: 'http://127.0.0.1:9012' }; } };
+    const launch = await preparePerfFixtureLaunch(profile, { localPort: 9010 });
+    for (const key of ['OPENCODE_HOST', 'OPENCODE_SKIP_START', 'DEVRYAN_SKIP_OPENCODE_START', 'DEVRYAN_SERVER_URL']) {
+      assert.equal(launch.env[key], undefined, `${key} must not bypass native startup`);
+    }
+    assert.deepEqual(origins, ['http://127.0.0.1:9010']);
+    assert.equal(launch.localOrigin, origins[0]);
+    assert.equal(launch.facade.origin, 'http://127.0.0.1:9012');
+    assert.equal(launch.env.DEVRYAN_RUNTIME_BUNDLE_ROOT, '/owned/bundles');
+    assert.equal(launch.env.DEVRYAN_PORT, '9010');
+  });
   it('selects only the v2 fixture explicitly and follows only the verified default target', () => {
     const prior = process.env.DEVRYAN_QA_OPENCODE_VERSION;
     try {
@@ -315,7 +344,8 @@ describe('Electron resource benchmark metrics', () => {
     assert.equal(new Set(identities).size, 4);
     assert.equal(await interactiveProtocolIdentity(undefined, undefined, read), identities[0]);
     for (const changed of ['electron-interactive-benchmark.mjs', 'electron-lifecycle-benchmark.mjs',
-      'fixture-session-seeds.mjs', '../qa/process.mjs', '../qa/process-ownership.mjs', '../dev-child-utils.mjs']) {
+      'fixture-session-seeds.mjs', '../qa/process.mjs', '../qa/process-ownership.mjs', '../dev-child-utils.mjs',
+      '../qa/fixture-host-facade.mjs', '../qa/matrix-runner.mjs', '../qa/run-root.mjs']) {
       assert.notEqual(await interactiveProtocolIdentity('foreground', 'typing', async file => file === changed ? 'changed' : read()), identities[3]);
     }
     await assert.rejects(interactiveProtocolIdentity('unknown', 'typing', read), /startupMode/);

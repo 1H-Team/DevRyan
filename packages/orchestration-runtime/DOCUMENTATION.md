@@ -357,3 +357,13 @@ A provider region/privacy-policy rejection (for example the Go Global-region rej
 New task-event projections use `devryan:*`. The immutable pre-rename golden
 payload remains pinned and is tested through the connection dialect encoder;
 legacy and canonical clients receive identical property bytes.
+
+## Explicit continuation after a user stop
+
+Canonical operator-stop settlement persists `terminationIntent: "user_stopped"` on its immutable terminal task. A retained, resumable, unacknowledged aborted result projects `userStoppedRecoveryAvailable` separately from provider Model Recovery and the agent retry allowance. It is attention, never automatic work. Model RPCs cannot acknowledge or retry that parked result; the authenticated UI supplies a private Symbol grant for explicit resume or dismissal. Resume uses `retry_in_place` with an explicit provider/model/variant and creates one idempotent follow-up in the same child, preserving the assignment and checks. Ordinary child prompts neither mutate the old task nor acknowledge its envelope.
+
+Operator Stop preparation persists a private `pending` request/lease identity before forwarding the native abort. Pending suppresses continuation, settlement, agent retry and automatic recovery; it grants no accepted-stop provenance. A2xx response accepts that exact request and then records `terminationIntent: user_stopped` on an active task. Rejection withdraws only its matching pending/uncertain receipt, preserving earlier accepted intent. Acceptance/withdrawal may resolve the private receipt after an independent terminal outcome without rewriting that outcome or its envelope; `hasAcceptedUserStop` gives all policies one authoritative acceptance predicate.
+
+Pending receipts rearm after restart and expire through the existing `abortTimeoutMs` bound (default5seconds). A lost response becomes `uncertain` and active work settles as resumable `interrupted` with `Stop request outcome could not be confirmed`. It never infers acceptance or re-prompts the provider; only explicit UI-selected Resume/Dismiss may dispose of that result. A late exact response can still resolve its private receipt. New attempts remain isolated by task/lease identity. Legacy aborted/resumable records expose explicit selected-model recovery without claiming user-stop provenance.
+
+Managed child prompts disable `todoread` and `todowrite` alongside provider-native `task` on initial execution and every continuation. The parent retains task tracking; child tracking schemas add no execution authority. Read-only wildcard denial and native admission remain unchanged.

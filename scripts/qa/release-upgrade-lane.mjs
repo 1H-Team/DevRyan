@@ -17,7 +17,16 @@ const repository = fileURLToPath(new URL('../../', import.meta.url)).replace(/\/
 const execFileAsync = promisify(execFile);
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const RELEASE_TAG = /^v\d+\.\d+\.\d+$/;
-const USAGE = 'Usage: node scripts/qa/release-upgrade-lane.mjs --candidate-artifacts <abs dir> [--chain v2.0.12,v2.0.15,v2.1.0] [--hop-timeout-ms 240000] [--keep-artifacts]';
+export const DIRECT_UPGRADE_BASELINES = Object.freeze(['v2.0.2', 'v2.0.15']);
+// These are the shipped releases, not approximations built with today's server.
+// 2.0.2 predates the startup-upgrade status module; readiness and its actual
+// selected descriptor still have to prove that its profile was provisioned.
+export function releaseHopAdapter(release) {
+  if (release === 'v2.0.2') return { statusModule: false };
+  if (/^v2\.0\./.test(release) && !['v2.0.10', 'v2.0.11', 'v2.0.12', 'v2.0.15'].includes(release)) throw new Error(`Unsupported legacy release hop: ${release}`);
+  return { statusModule: true };
+}
+const USAGE = 'Usage: node scripts/qa/release-upgrade-lane.mjs --candidate-artifacts <abs dir> [--chain v2.0.12,v2.0.15,v2.1.0 | --direct-baseline v2.0.2|v2.0.15] [--report <abs JSON>] [--hop-timeout-ms 240000] [--keep-artifacts]';
 const usageError = message => Object.assign(new Error(`${message}\n${USAGE}`), { code: 'qa_release_upgrade_usage' });
 
 export function parseReleaseUpgradeArgs(argv) {
@@ -26,10 +35,16 @@ export function parseReleaseUpgradeArgs(argv) {
     const flag = argv[index];
     if (flag === '--keep-artifacts') continue;
     const value = argv[index + 1];
-    if (!['--candidate-artifacts', '--chain', '--hop-timeout-ms'].includes(flag)) throw usageError(`Unknown argument: ${flag}`);
+    if (!['--candidate-artifacts', '--chain', '--hop-timeout-ms', '--direct-baseline', '--report'].includes(flag)) throw usageError(`Unknown argument: ${flag}`);
     if (value === undefined || value === '' || value.startsWith('--')) throw usageError(`${flag} requires a value`);
     index += 1;
-    if (flag === '--candidate-artifacts') {
+    if (flag === '--report') {
+      if (!path.isAbsolute(value)) throw usageError('--report must be absolute');
+      options.report = value;
+    } else if (flag === '--direct-baseline') {
+      if (!DIRECT_UPGRADE_BASELINES.includes(value)) throw usageError('--direct-baseline must be v2.0.2 or v2.0.15');
+      options.directBaseline = value;
+    } else if (flag === '--candidate-artifacts') {
       if (!path.isAbsolute(value)) throw usageError('--candidate-artifacts must be absolute');
       options.candidateArtifacts = value;
     } else if (flag === '--chain') {
@@ -43,6 +58,7 @@ export function parseReleaseUpgradeArgs(argv) {
     }
   }
   if (!options.candidateArtifacts) throw usageError('--candidate-artifacts is required');
+  if (options.directBaseline && options.chain) throw usageError('--direct-baseline and --chain are mutually exclusive');
   return options;
 }
 
@@ -59,9 +75,12 @@ export function selectPreviousReleases(releases, count = 3) {
  * on the runtime it left. Only the candidate hop must upgrade, verify, become
  * ready and keep the surviving sessions while the deleted ones stay gone.
  */
-export function gradeReleaseUpgrade({ hops, candidate, candidateManifestSha256 }) {
+export function gradeReleaseUpgrade({ hops, candidate, candidateManifestSha256, directBaseline = false }) {
   const failures = [];
   if (!hops.length || hops[0].result?.provisioned !== true) failures.push('The oldest release did not provision a profile');
+  if (directBaseline && (hops.length !== 1 || hops[0].result?.ready !== true || hops[0].result?.kept?.length !== 1 || hops[0].result?.deleted?.length !== 1)) {
+    failures.push('The direct baseline did not become ready and create/delete its retained history fixture');
+  }
   const result = candidate?.result ?? {};
   if (result.error) failures.push(`Candidate startup failed: ${result.error.code ?? 'error'}: ${result.error.message}`);
   if (result.upgradeFailure) failures.push(`Candidate startup upgrade was refused: ${result.upgradeFailure}`);
@@ -137,7 +156,7 @@ const result = { provisioned: false, ready: false, kept: [], deleted: [], sessio
 let server;
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 try {
-  const status = await import(request.statusModule);
+  const status = request.statusModule ? await import(request.statusModule) : {};
   const application = await import(request.serverModule);
   result.upgradeFailure = status.readStartupBundleUpgradeFailure?.() ?? null;
   const selectionPath = path.join(request.controlRoot, 'selection.json');
@@ -224,7 +243,7 @@ async function runHop({ release, source, artifacts, layout, activity, expectHeld
     GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0', GIT_CEILING_DIRECTORIES: layout.root };
   const request = { release, workspace: layout.workspace, controlRoot: layout.controlRoot, resultPath, activity, expectHeld, readyTimeoutMs: timeoutMs - 30000,
     serverModule: pathToFileURL(path.join(source, 'packages/web/server/index.js')).href,
-    statusModule: pathToFileURL(path.join(source, 'packages/web/server/lib/opencode/runtime-host/bundle-startup-upgrade-status.js')).href };
+    statusModule: releaseHopAdapter(release).statusModule ? pathToFileURL(path.join(source, 'packages/web/server/lib/opencode/runtime-host/bundle-startup-upgrade-status.js')).href : null };
   const started = performance.now();
   const child = startOwnedProcess(process.execPath, ['--input-type=module', '-e', HOP_CHILD, JSON.stringify(request)], { cwd: layout.workspace, env });
   const exited = await new Promise(resolve => {
@@ -267,7 +286,7 @@ export async function runReleaseUpgradeLane(options) {
   const runRoot = createRunRoot({ parent: scratchParent('release-upgrade'), owner: 'release-upgrade-lane' });
   try {
     const root = await realpath(runRoot.dir);
-    const chain = options.chain ?? selectPreviousReleases(JSON.parse((await run('gh', ['release', 'list', '--limit', '20',
+    const chain = options.directBaseline ? [options.directBaseline] : options.chain ?? selectPreviousReleases(JSON.parse((await run('gh', ['release', 'list', '--limit', '20',
       '--json', 'tagName,isDraft,isPrerelease,publishedAt'], { cwd: repository })).stdout));
     if (!chain.length) throw Object.assign(new Error('No published release to upgrade from'), { code: 'qa_release_upgrade_no_baseline' });
     const candidateManifestSha256 = digest(await readFile(path.join(options.candidateArtifacts, 'native-bundle.json')));
@@ -295,19 +314,25 @@ export async function runReleaseUpgradeLane(options) {
     const candidate = await runHop({ release: 'candidate', source: repository, artifacts: options.candidateArtifacts, layout, activity: false, timeoutMs: options.hopTimeoutMs });
     const dataRoots = { before: dataRootsBefore, after: await inspectDataRoots(layout.home) };
     const dataRootGrade = gradeDataRootMigration(dataRoots);
-    const releaseGrade = gradeReleaseUpgrade({ hops, candidate, candidateManifestSha256 });
+    const releaseGrade = gradeReleaseUpgrade({ hops, candidate, candidateManifestSha256, directBaseline: Boolean(options.directBaseline) });
     const upgrade = { passed: releaseGrade.passed && dataRootGrade.passed,
       failures: [...releaseGrade.failures, ...dataRootGrade.failures.map(failure => `Data root: ${failure}`)] };
     const heldRecovery = upgrade.passed ? await runHeldRecovery({ hops, layout, artifacts: options.candidateArtifacts,
       candidateManifestSha256, timeoutMs: options.hopTimeoutMs }) : { passed: false, failures: ['Not run: the candidate upgrade failed'] };
     const grade = { passed: upgrade.passed && heldRecovery.passed,
       failures: [...upgrade.failures, ...heldRecovery.failures.map(failure => `Held recovery: ${failure}`)] };
-    const evidence = { schemaVersion: 1, kind: 'release-upgrade-lane', chain, candidateManifestSha256,
+    const evidence = { schemaVersion: 1, kind: 'release-upgrade-lane', sourceRevision: process.env.GITHUB_SHA ?? null, directBaseline: options.directBaseline ?? null, chain, candidateManifestSha256,
       hops: hops.map(({ log, ...hop }) => hop), candidate, dataRoots, heldRecovery, ...grade };
     process.stdout.write(`${JSON.stringify(evidence, null, 2)}\n`);
+    if (options.report) { await mkdir(path.dirname(options.report), { recursive: true }); await writeFile(options.report, `${JSON.stringify(evidence, null, 2)}\n`); }
     runRoot.finish(grade.passed ? 'passed' : 'failed');
     return evidence;
   } catch (error) {
+    if (options.report) {
+      await mkdir(path.dirname(options.report), { recursive: true });
+      await writeFile(options.report, `${JSON.stringify({ schemaVersion: 1, kind: 'release-upgrade-lane', sourceRevision: process.env.GITHUB_SHA ?? null,
+        directBaseline: options.directBaseline ?? null, passed: false, failures: ['Release upgrade lane could not complete'], errorCode: /^[a-z_]+$/.test(error.code ?? '') ? error.code : 'qa_release_upgrade_failed' }, null, 2)}\n`);
+    }
     runRoot.finish('failed');
     throw error;
   }

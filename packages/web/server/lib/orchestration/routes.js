@@ -82,7 +82,7 @@ export const registerManagedOrchestrationRoutes = (app, options = {}) => {
         ...(request.body ?? {}),
         taskId: request.params.taskId,
       },
-    })
+    }, { userStoppedRecovery: true })
   )));
 
   app.post('/api/orchestration/task/:taskId/auto-resume', parseJson, run(async (request) => (
@@ -102,6 +102,6 @@ export const registerManagedOrchestrationRoutes = (app, options = {}) => {
         ...(request.body ?? {}),
         taskId: request.params.taskId,
       },
-    })
+    }, { userStoppedRecovery: true })
   )));
 };

@@ -4,6 +4,10 @@ import { evaluate } from '../qa/cdp.mjs';
 import { readThroughNavigation } from '../qa/navigation-tolerant.mjs';
 import { createQaUiDriver } from '../qa/ui-driver.mjs';
 import { projectQaStartupHealth, waitForQaHostReady } from '../qa/host-readiness.mjs';
+import { createOpenCodeClient } from '../../packages/web/server/lib/opencode/opencode-client/index.js';
+import { createV2AudienceRequester } from '../../packages/web/server/lib/opencode/opencode-client/requester.js';
+import { unwrapData } from '../../packages/web/server/lib/opencode/opencode-client/envelope.js';
+import { projectMessagePage } from '../../packages/web/server/lib/opencode/v2/projection/messages.js';
 
 export const SESSION_MEMORY_FIXTURE = Object.freeze({ sessions: 4, turns: 180, textBytes: 4096 });
 export const MEMORY_SETTLE_MS = 6000;
@@ -257,9 +261,35 @@ export async function prepareMemorySessions(fixture) {
   return sessions;
 }
 
+export async function readFixtureCanonicalMessage(fixture, sessionID, messageID) {
+  const request = createV2AudienceRequester({ getRuntime: () => ({ generation: 2, baseUrl: fixture.origin }),
+    getAuthHeaders: () => fixture.authHeaders }, { audience: 'server' });
+  const body = await request({ method: 'GET', path: `/api/session/${encodeURIComponent(sessionID)}/message/${encodeURIComponent(messageID)}`,
+    directory: fixture.directory, timeoutMs: 5000 });
+  // A full client message lookup may page history to prove turn parents. This
+  // text-only witness must not add pages to the UI's independent coverage proof.
+  const row = projectMessagePage([unwrapData(body)], { sessionID }).records.find(record => record.info.id === messageID);
+  assert.ok(row, 'Mounted history head is absent from canonical storage');
+  return row;
+}
+
 // Count a contiguous newest-to-oldest HTTP page chain, not overlapping adaptive
 // snapshots or the number of virtualized DOM rows.
+export function canonicalHistoryPage(page) {
+  if (!Object.hasOwn(page, 'order')) return page;
+  const { order, cursor, cursorAnchor, cursorDirection, firstMessageID, lastMessageID, ...rest } = page;
+  const initial = cursor === false && cursorAnchor === null && cursorDirection === null;
+  const older = cursor === true && typeof cursorAnchor === 'string' && cursorAnchor && cursorDirection === 'next';
+  const accepted = order === 'desc' && page.type === null && (initial || older);
+  return { ...rest, before: accepted ? initial ? null : cursorAnchor : undefined,
+    firstMessageID: accepted ? lastMessageID : null, lastMessageID: accepted ? firstMessageID : null,
+    wire: { order, cursor, cursorAnchor, cursorDirection, firstMessageID, lastMessageID } };
+}
+
+const fixtureHistoryPages = fixture => fixture.getState().messagePageRequests.map(canonicalHistoryPage);
+
 export function historyCoverage(pages) {
+  pages = pages.map(canonicalHistoryPage);
   const visit = (before, seen) => {
     if (seen.has(before)) return 0;
     const nextSeen = new Set([...seen, before]);
@@ -328,7 +358,7 @@ export async function captureMemoryCheckpoint({ name, cdp, readHostMemory, measu
 }
 
 export async function loadOlderHistoryPage({ session, ui, fixture, messagePageRequestOffset }) {
-  const before = fixture.getState().messagePageRequests;
+  const before = fixtureHistoryPages(fixture);
   assert.ok(Number.isSafeInteger(messagePageRequestOffset) && messagePageRequestOffset >= 0
     && messagePageRequestOffset <= before.length, 'Older history requires an explicit UI page-request offset');
   const previousPages = before.slice(messagePageRequestOffset).filter(page => page.sessionID === session.id);
@@ -336,7 +366,7 @@ export async function loadOlderHistoryPage({ session, ui, fixture, messagePageRe
   assert.ok(previousCoverage > 0, 'Load Older requires this session’s initial UI page');
   await ui.click({ text: 'LOAD OLDER MESSAGES' });
   const committedPage = await ui.waitFor('fresh contiguous older history page', () => {
-    const fresh = fixture.getState().messagePageRequests.slice(before.length)
+    const fresh = fixtureHistoryPages(fixture).slice(before.length)
       .filter(candidate => candidate.sessionID === session.id);
     // A selected session can expand its prefetched 50-message snapshot to 100
     // before servicing this click's cursor page. That fresh snapshot belongs
@@ -352,7 +382,7 @@ export async function loadOlderHistoryPage({ session, ui, fixture, messagePageRe
   }).catch(error => {
     // Keep the failed page-chain witness inspectable without retaining response
     // bodies or relaxing the fresh-request and canonical-visibility checks.
-    const candidates = fixture.getState().messagePageRequests.slice(before.length)
+    const candidates = fixtureHistoryPages(fixture).slice(before.length)
       .filter(candidate => candidate.sessionID === session.id).slice(0, 16);
     throw new Error(`${error.message}; history witness ${JSON.stringify({ sessionID: session.id, previousCoverage,
       requestOffset: before.length, previousPages: previousPages.slice(-16), candidates })}`, { cause: error });
@@ -361,10 +391,7 @@ export async function loadOlderHistoryPage({ session, ui, fixture, messagePageRe
   assert.ok(coveredMessages <= session.expectedMessages, 'Older page exceeds the prescribed history');
   // This single-message read supplies canonical text only; it never contributes
   // to the UI's page-coverage evidence or loads anything into the renderer.
-  const response = await fetch(`${fixture.origin}/session/${session.id}/message/${page.firstMessageID}`,
-    { signal: AbortSignal.timeout(5000) });
-  assert.equal(response.status, 200, 'The returned older-page first message is unavailable');
-  const canonical = await response.json();
+  const canonical = await readFixtureCanonicalMessage(fixture, session.id, page.firstMessageID);
   assert.equal(canonical.info?.id, page.firstMessageID);
   assert.equal(canonical.info?.sessionID, session.id);
   const canonicalText = canonical.parts.filter(part => part.type === 'text').map(part => part.text).join('\n');
@@ -391,22 +418,20 @@ export function assertEarlierCanonicalHistory(before, after, sessionID) {
   assert.ok(after.info.time.created < before.info.time.created, 'Load Older did not advance toward older canonical history');
 }
 
-async function revealEarlierHistoryWindow({ session, cdp, ui, fixture }) {
+export async function revealEarlierHistoryWindow({ session, cdp, ui, fixture }) {
   const readHead = () => evaluate(cdp, `(() => {
     if(new URL(location.href).searchParams.get('session')!==${JSON.stringify(session.id)}) return null;
     return document.querySelector('[data-scrollbar="chat"] [data-message-id]')?.getAttribute('data-message-id') ?? null;
   })()`);
   const canonical = async messageID => {
     assert.ok(messageID, 'Selected history has no mounted canonical head');
-    const response = await fetch(`${fixture.origin}/session/${session.id}/message/${messageID}`, { signal: AbortSignal.timeout(5000) });
-    assert.equal(response.status, 200, 'Mounted history head is absent from canonical storage');
-    const row = await response.json();
+    const row = await readFixtureCanonicalMessage(fixture, session.id, messageID);
     assert.equal(row.info?.id, messageID, 'Canonical lookup returned a different message');
     return row;
   };
   const beforeID = await readHead();
   const before = await canonical(beforeID);
-  const requestOffset = fixture.getState().messagePageRequests.length;
+  const requestOffset = fixtureHistoryPages(fixture).length;
   await ui.click({ text: 'LOAD OLDER MESSAGES' });
   const afterID = await ui.waitFor('older visible history window', async () => {
     await scrollQaHistoryTop(cdp, ui);
@@ -417,15 +442,15 @@ async function revealEarlierHistoryWindow({ session, cdp, ui, fixture }) {
   assertEarlierCanonicalHistory(before, after, session.id);
   const text = after.parts.filter(part => part.type === 'text').map(part => part.text).join('\n');
   const selector = `[data-scrollbar="chat"] [data-message-id=${JSON.stringify(afterID)}]`;
-  await ui.waitVisibleText(text, selector);
-  const freshPages = fixture.getState().messagePageRequests.slice(requestOffset).filter(page => page.sessionID === session.id);
+  await ui.revealText(text, selector, { scrollContainer: '[data-scrollbar="chat"]', direction: 'up' });
+  const freshPages = fixtureHistoryPages(fixture).slice(requestOffset).filter(page => page.sessionID === session.id);
   return { beforeMessageID: beforeID, firstMessageID: afterID, canonicalText: text,
     kind: freshPages.some(page => page.before !== null) ? 'fetched-and-revealed' : 'buffered-reveal', freshPages };
 }
 
 async function loadHistory({ session, cdp, ui, fixture }) {
-  const messagePageRequestOffset = fixture.getState().messagePageRequests.length;
-  const prefetchedPages = fixture.getState().messagePageRequests.filter(page => page.sessionID === session.id);
+  const messagePageRequestOffset = fixtureHistoryPages(fixture).length;
+  const prefetchedPages = fixtureHistoryPages(fixture).filter(page => page.sessionID === session.id);
   await ui.click({ selector: `[data-session-row="${session.id}"] button`, text: session.title });
   await ui.waitExpression('owned session selected', `new URL(location.href).searchParams.get('session') === ${JSON.stringify(session.id)}`);
   await ui.waitVisibleText(`History response ${SESSION_MEMORY_FIXTURE.turns}.`, '[data-scrollbar="chat"]');
@@ -446,7 +471,7 @@ async function loadHistory({ session, cdp, ui, fixture }) {
   // Sidebar prefetch may have supplied this session's initial snapshot before
   // selection. Retain that observed UI response as the start of the chain;
   // every reveal above still requires new canonical visible progress.
-  const pages = [...prefetchedPages, ...fixture.getState().messagePageRequests.slice(messagePageRequestOffset)
+  const pages = [...prefetchedPages, ...fixtureHistoryPages(fixture).slice(messagePageRequestOffset)
     .filter(page => page.sessionID === session.id)];
   const coveredMessages = historyCoverage(pages);
   assert.equal(coveredMessages, session.expectedMessages, 'UI did not materialize the full prescribed history');
@@ -537,8 +562,9 @@ export async function runSessionMemoryScenario({ cdp, fixture, sessions, readHos
     await screenshot(`memory-${name}`);
   };
   const canonical = async session => {
-    const response = await fetch(`${fixture.origin}/session/${session.id}`, { signal: AbortSignal.timeout(5000) });
-    return { status: response.status, session: response.ok ? await response.json() : null };
+    const client = createOpenCodeClient({ getRuntime: () => ({ generation: 2, baseUrl: fixture.origin }), getAuthHeaders: () => fixture.authHeaders });
+    const current = await client.sessions.get(session.id, { directory: fixture.directory, timeoutMs: 5000, allowNotFound: true });
+    return { status: current ? 200 : 404, session: current };
   };
   try {
     await ui.click({ label: 'New Chat' });

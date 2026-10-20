@@ -328,11 +328,11 @@ test.each([undefined, {}, { generation: () => 1 }, { generation: () => 3 }])('un
   expect(fetchImpl).not.toHaveBeenCalled(); expect(mocks.runtime.admitDirect).not.toHaveBeenCalled();
 });
 
-async function nativePublicationFixture(options = {}) {
+async function nativePublicationFixture(options = {}, kind = 'writer') {
   const native = await import('@devryan/harness-runtime/lib/session-execution.js');
   const client = createFakeClient(), terminated = Promise.withResolvers(), launched = Promise.withResolvers(), diagnostics = [];
   client.sessions.message.mockResolvedValue({ info: { id: input.messageID, role: 'assistant', sessionID: input.sessionID, parentID: 'msg_user' },
-    turnOwnership: { source: 'native-sequence', userMessageID: 'msg_user' }, parts: [{ type: 'tool', callID: input.callID, tool: 'write' }] });
+    turnOwnership: { source: 'native-sequence', userMessageID: 'msg_user' }, parts: [{ id: `${input.messageID}:tool:${input.callID}`, type: 'tool', callID: input.callID, tool: kind === 'shell' ? 'bash' : 'write' }] });
   const lease = { token: 'native_publication', ownerID: 'owner_fixture', directory, projectDirectory: directory,
     viewDirectory: path.join(directory, '.cache/unused-native-view/worktree'), workingDirectory: path.join(directory, '.cache/unused-native-view/worktree'),
     scope: { ...input, tool: 'write' }, state: 'ready' };
@@ -340,24 +340,61 @@ async function nativePublicationFixture(options = {}) {
   mocks.runtime.reserve.mockResolvedValue(lease); mocks.runtime.prepare.mockResolvedValue(lease);
   mocks.runtime.finish.mockResolvedValue({ files: [{ path: 'fixture.txt', status: 'added' }], operationID: 'published_fixture' });
   mocks.runtime.leaseForCall.mockResolvedValue(lease); native.readSessionExecutionReceipt.mockResolvedValue(receipt);
-  native.startSessionExecution.mockImplementation(async ({ onOutput }) => {
+  let processSignal;
+  native.startSessionExecution.mockImplementation(async ({ onOutput, signal }) => {
+    processSignal = signal;
     onOutput({ stream: 'stdout', data: Buffer.from(JSON.stringify({ type: 'result', ok: true, result: { content: 'Written fixture' } }) + '\n') });
     launched.resolve(); return { child: { stdin: { write: vi.fn() } }, pid: 200, result: terminated.promise };
   });
   const f = fixture({ openCodeClient: client, admissionSummaryMinMs: 0, ...options,
     onDiagnostic: record => { diagnostics.push(record); options.onDiagnostic?.(record); },
     nativeExecution: { workerCommand: '/fixture/bun', workerArgs: ['worker.ts'], recheckPermit: async () => {} } });
-  const specification = { kind: 'writer', tool: 'write', input: { filePath: 'fixture.txt', content: 'fixture' } };
-  const start = () => f.host.nativeExecution({ ...input, ...specification, action: 'start', agent: 'build',
+  const specification = kind === 'shell'
+    ? { kind: 'shell', command: '/bin/sh', args: ['-c', 'fixture'], env: {}, cwd: directory }
+    : { kind: 'writer', tool: 'write', input: { filePath: 'fixture.txt', content: 'fixture' } };
+  const start = () => f.host.nativeExecution({ ...input, ...specification, ...(kind === 'shell' ? { tool: 'shell' } : {}), action: 'start', agent: 'build',
     argsDigest: createHash('sha256').update(JSON.stringify(specification)).digest('hex') });
   const settled = async handle => {
     let batch, cursor = 0; const events = [];
     do { batch = await f.host.nativeExecution({ action: 'read', handle, cursor }); cursor = batch.cursor; events.push(...batch.events); } while (!batch.done);
     return events.at(-1);
   };
-  return { ...f, diagnostics, lease, receipt, terminated, launched, start, settled,
+  return { ...f, diagnostics, lease, receipt, terminated, launched, start, settled, processSignal: () => processSignal,
     finishes: () => diagnostics.filter(row => row.phase === 'finish') };
 }
+
+test('deadline cancellation matches the exact live shell and waits for termination', async () => {
+  const f = await nativePublicationFixture({}, 'shell');
+  const fingerprint = { sessionID: input.sessionID, messageID: input.messageID, callID: input.callID, partID: `${input.messageID}:tool:${input.callID}`, tool: 'bash' };
+  try {
+    await f.start(); await f.launched.promise;
+    for (const key of ['sessionID', 'messageID', 'callID', 'partID', 'tool']) {
+      expect(await f.host.cancelOwnedCommand({ directory, fingerprint: { ...fingerprint, [key]: 'different' } })).toBe(false);
+    }
+    expect(await f.host.cancelOwnedCommand({ directory: '/other', fingerprint })).toBe(false);
+    expect(f.processSignal().aborted).toBe(false);
+    let settled = false;
+    const cancelled = f.host.cancelOwnedCommand({ directory, fingerprint }).then(result => { settled = true; return result; });
+    await Promise.resolve();
+    expect(f.processSignal().aborted).toBe(true);
+    expect(settled).toBe(false);
+    f.terminated.resolve({ ...f.receipt, cancelled: true, exitCode: 137 });
+    expect(await cancelled).toBe(true);
+    expect(await f.host.cancelOwnedCommand({ directory, fingerprint })).toBe(false);
+  } finally { f.terminated.resolve(f.receipt); await f.host.drain(); }
+});
+
+test('deadline cancellation never attests termination from a resolved task without a confined receipt', async () => {
+  const f = await nativePublicationFixture({}, 'shell');
+  const fingerprint = { sessionID: input.sessionID, messageID: input.messageID, callID: input.callID,
+    partID: `${input.messageID}:tool:${input.callID}`, tool: 'bash' };
+  try {
+    await f.start(); await f.launched.promise;
+    const cancelled = f.host.cancelOwnedCommand({ directory, fingerprint });
+    f.terminated.resolve({ ...f.receipt, terminated: false, confined: false, cancelled: true });
+    expect(await cancelled).toBe(false);
+  } finally { f.terminated.resolve(f.receipt); await f.host.drain(); }
+});
 
 test('native writer finish observation follows durable receipt and precedes independently owned cleanup', async () => {
   const f = await nativePublicationFixture({ onDiagnostic: record => { if (record.phase === 'finish') throw Error('observer unavailable'); } });
@@ -616,11 +653,11 @@ test('native scans enforce Git exclusions, reject follow traversal and protect n
   };
   await invoke('glob', ['--no-config', '--files', '--hidden', '--glob=**/.git/**', '.']);
   expect(native.startReadOnlySessionExecution).toHaveBeenLastCalledWith(expect.objectContaining({
-    args: ['--no-config', '--files', '--hidden', '--glob=**/.git/**', '--no-ignore', '--iglob=!**/.git', '--iglob=!**/.git/**', '.'] }));
+    args: ['--no-config', '--files', '--hidden', '--glob=**/.git/**', '--no-ignore', '--iglob=!**/.git', '--iglob=!**/.git/**', '--iglob=!**/node_modules', '--iglob=!**/node_modules/**', '--iglob=!**/.cache', '--iglob=!**/.cache/**', '--iglob=!**/dist', '--iglob=!**/dist/**', '--iglob=!**/.worktrees', '--iglob=!**/.worktrees/**', '--iglob=!**/generated-worktree', '--iglob=!**/generated-worktree/**', '--iglob=!**/generated-worktrees', '--iglob=!**/generated-worktrees/**', '--iglob=!**/worktrees', '--iglob=!**/worktrees/**', '--iglob=!**/.artifacts', '--iglob=!**/.artifacts/**', '.'] }));
   // A pattern named --follow is positional, so remains a legitimate grep.
   await invoke('grep', ['--no-config', '--json', '--hidden', '--glob=**/*', '--', '--follow', '.']);
   expect(native.startReadOnlySessionExecution).toHaveBeenLastCalledWith(expect.objectContaining({
-    args: ['--no-config', '--json', '--hidden', '--glob=**/*', '--no-ignore', '--iglob=!**/.git', '--iglob=!**/.git/**', '--', '--follow', '.'] }));
+    args: ['--no-config', '--json', '--hidden', '--glob=**/*', '--no-ignore', '--iglob=!**/.git', '--iglob=!**/.git/**', '--iglob=!**/node_modules', '--iglob=!**/node_modules/**', '--iglob=!**/.cache', '--iglob=!**/.cache/**', '--iglob=!**/dist', '--iglob=!**/dist/**', '--iglob=!**/.worktrees', '--iglob=!**/.worktrees/**', '--iglob=!**/generated-worktree', '--iglob=!**/generated-worktree/**', '--iglob=!**/generated-worktrees', '--iglob=!**/generated-worktrees/**', '--iglob=!**/worktrees', '--iglob=!**/worktrees/**', '--iglob=!**/.artifacts', '--iglob=!**/.artifacts/**', '--', '--follow', '.'] }));
   await expect(invoke('glob', ['--no-config', '--files', '--follow', '.'])).rejects.toMatchObject({ code: 'native_read_follow_denied' });
   await expect(invoke('grep', ['--no-config', '--json', '--', 'host', '.'], { protectedRoots: [import.meta.dirname] }))
     .rejects.toMatchObject({ code: 'native_read_root_denied' });
@@ -1062,4 +1099,68 @@ test('read-only execution receives only the host-owned Windows storage authority
   await host.startReadOnly({ command: '/fixture/command', windowsOwner: callerOwner });
   expect(native.startReadOnlySessionExecution).toHaveBeenCalledWith(expect.objectContaining({ windowsOwner }));
   expect(mocks.runtimeOptions.windowsOwner).toBe(windowsOwner);
+});
+
+test.each(['limited', 'unconfined', 'unterminated', 'user-abort', 'overflow'])('native bounded grep %s preserves complete records and authoritative termination', async outcome => {
+  const native = await import('@devryan/harness-runtime/lib/session-execution.js');
+  const client = createFakeClient(), controller = new AbortController();
+  client.sessions.message.mockResolvedValue({ info: { role: 'assistant', sessionID: input.sessionID, parentID: 'msg_user' },
+    turnOwnership: { source: 'native-sequence', userMessageID: 'msg_user' }, parts: [{ type: 'tool', callID: input.callID, tool: 'grep' }] });
+  let launchSignal;
+  native.startReadOnlySessionExecution.mockImplementation(async ({ onOutput, signal }) => {
+    launchSignal = signal;
+    const records = Array.from({ length: 250 }, () => JSON.stringify({ type: 'match', data: {} }) + '\n').join('');
+    onOutput({ stream: 'stdout', data: Buffer.from(records) });
+    if (outcome === 'user-abort') controller.abort(new Error('user stop'));
+    return { child: {}, pid: 42, result: Promise.resolve({ terminated: outcome !== 'unterminated', confined: outcome !== 'unconfined', cancelled: true, exitCode: 137 }) };
+  });
+  const { host } = fixture({ openCodeClient: client, nativeExecution: { recheckPermit: async () => {}, socketDirectory: null,
+    ...(outcome === 'overflow' ? { maxEventBytes: 32 } : {}) } });
+  const specification = { kind: 'read', command: '/fixture/rg', args: ['--no-config', '--json', '--', 'fixture', '.'], cwd: directory };
+  try {
+    const { handle } = await host.nativeExecution({ ...input, ...specification, tool: 'grep', agent: 'build', action: 'start',
+      argsDigest: createHash('sha256').update(JSON.stringify(specification)).digest('hex') }, { signal: controller.signal });
+    let cursor = 0, batch; const events = [];
+    do { batch = await host.nativeExecution({ action: 'read', handle, cursor }); cursor = batch.cursor; events.push(...batch.events); } while (!batch.done);
+    expect(launchSignal.aborted).toBe(true);
+    const terminal = events.at(-1);
+    expect(terminal.ok).toBe(outcome === 'limited');
+    if (outcome === 'limited') {
+      expect(terminal).toMatchObject({ truncated: true, receipt: { cancelled: true, exitCode: 137 }, truncation: { returnedRecords: 200 } });
+      const stdout = events.filter(event => event.type === 'output').map(event => Buffer.from(event.data, 'base64').toString()).join('');
+      expect(stdout.trim().split('\n').map(line => JSON.parse(line))).toHaveLength(200);
+    }
+  } finally { await host.drain(); }
+});
+
+test('default scan exclusions cannot be widened by globs, but exact canonical generated/dependency scopes expand', async () => {
+  const native = await import('@devryan/harness-runtime/lib/session-execution.js');
+  native.startReadOnlySessionExecution.mockResolvedValue({ child: {}, pid: 42,
+    result: Promise.resolve({ terminated: true, confined: true, cancelled: false, exitCode: 0 }) });
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-search-scope-')));
+  const excluded = ['node_modules', '.cache', 'dist', '.worktrees', 'generated-worktree', 'generated-worktrees', 'worktrees', '.artifacts'];
+  const invoke = async cwd => {
+    const client = createFakeClient({ session: { id: input.sessionID, directory: root } });
+    client.sessions.message.mockResolvedValue({ info: { role: 'assistant', sessionID: input.sessionID, parentID: 'msg_user' },
+      turnOwnership: { source: 'native-sequence', userMessageID: 'msg_user' }, parts: [{ type: 'tool', callID: input.callID, tool: 'grep' }] });
+    const { host } = fixture({ openCodeClient: client, nativeExecution: { readRoots: [root], recheckPermit: async () => {}, socketDirectory: null } });
+    const specification = { kind: 'read', command: '/fixture/rg', args: ['--no-config', '--json', '--glob=**/node_modules/**', '--', 'needle', '.'], cwd };
+    try {
+      await host.nativeExecution({ ...input, directory: root, ...specification, tool: 'grep', agent: 'build', action: 'start',
+        argsDigest: createHash('sha256').update(JSON.stringify(specification)).digest('hex') });
+      return native.startReadOnlySessionExecution.mock.calls.at(-1)[0].args;
+    } finally { await host.drain(); }
+  };
+  try {
+    const broad = await invoke(root);
+    for (const name of excluded) expect(broad).toContain(`--iglob=!**/${name}/**`);
+    expect(broad.indexOf('--iglob=!**/node_modules/**')).toBeGreaterThan(broad.indexOf('--glob=**/node_modules/**'));
+    for (const name of excluded) {
+      const scope = path.join(root, ...(name === 'worktrees' ? ['.claude', name] : [name]), 'owned-package'); await fs.mkdir(scope, { recursive: true });
+      const args = await invoke(await fs.realpath(scope));
+      expect(args).not.toContain(`--iglob=!**/${name}/**`);
+      expect(args).toContain('--iglob=!**/.git/**'); expect(args).toContain('--no-ignore');
+      for (const other of excluded.filter(item => item !== name)) expect(args).toContain(`--iglob=!**/${other}/**`);
+    }
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
 });

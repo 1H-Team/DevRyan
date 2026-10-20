@@ -1,4 +1,4 @@
-import { requiresManualModelRecovery } from './contract.js';
+import { requiresManualModelRecovery, hasAcceptedUserStop } from './contract.js';
 import { supportsManagedReadOnlyProvider } from './provider-capabilities.js';
 import { isDefiniteProviderUsageLimit } from './provider-retry-policy.js';
 import { isManagedTransportBackupEligible } from './transport-recovery.js';
@@ -46,6 +46,7 @@ export const createLineageId = (rootTaskId) => {
 
 export const isAutoResumeEligible = (task, envelope) => Boolean(
   envelope
+  && !hasAcceptedUserStop(task) && !task?.operatorStop
   && envelope.action === null
   && task?.transportRecovery?.backupAttempts !== 1
   && (isDefiniteProviderUsageLimit(task?.failureReason) || isManagedTransportBackupEligible(task))

@@ -332,6 +332,18 @@ test('Claude process receipt fields are bounded and scoped to their exact lifecy
  expect(sanitizer.sanitizeRecord({...row,payload:{clues:Array(15).fill('auth'),code:null}}).payload).toEqual({code:null});
 });
 
+test('Claude checkpoint diagnostics keep finite reasons and correlation without provider content', () => {
+  const sanitizer = createDiagnosticSanitizer();
+  const payload = { attemptID: 'a'.repeat(64), providerInstanceID: 'b'.repeat(32), event: 'passthrough.checkpoint_rejected', reason: 'persisted_boundary_unverified', toolCount: 2 };
+  const row = { type: 'lifecycle', event: 'native_claude_checkpoint', payload };
+  expect(sanitizer.sanitizeRecord(row).payload).toEqual(payload);
+  expect(sanitizer.sanitizeExportValue(row).payload).toEqual(payload);
+  const unsafe = { ...row, payload: { ...payload, reason: 'private raw failure', text: 'private prompt', path: '/private', headers: { authorization: 'private' } } };
+  const expected = { ...payload }; delete expected.reason;
+  expect(sanitizer.sanitizeRecord(unsafe).payload).toEqual(expected);
+  expect(sanitizer.sanitizeExportValue(unsafe).payload).toEqual(expected);
+});
+
 test('raw HTTP body timing keeps bounded numeric observations only in its typed timing payload',()=>{
  const sanitizer=createDiagnosticSanitizer(),payload={elapsedMs:20,requestID:'request-safe',transport:'http',kind:'primary',statusCode:200,bytes:42,chunks:3,maxGapMs:9};
  const record=sanitizer.sanitizeRecord({type:'timing',mark:'turn.provider_body_end',payload:{...payload,text:'private',headers:'private',nested:{body:'private'}}});

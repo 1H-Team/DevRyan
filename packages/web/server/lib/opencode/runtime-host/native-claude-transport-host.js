@@ -5,6 +5,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { startReadOnlySessionExecution } from '../../../../../harness-runtime/lib/session-execution.js';
 import { parseProviderBoot, parseProviderCommand, parseProviderCredentialResult } from './native-provider-worker-protocol.js';
 import { parseClaudeTransportRequest, parseClaudeTransportReply, CLAUDE_TRANSPORT_CHUNK_BYTES } from './native-claude-transport-protocol.js';
+import { nativeClaudeStateDirectory } from './native-claude-checkpoint.js';
 const fail = code => Object.assign(new Error(code), { code });
 const binding = input => JSON.stringify([input.attemptID, input.sessionID, input.directory]);
 const inside = (directory, root) => directory === root || directory.startsWith(root + path.sep);
@@ -66,8 +67,7 @@ export function createNativeClaudeTransportHost({ boot: input, environment, reso
       const stateParent = path.join(boot.transport.storage, 'state');
       await fs.mkdir(stateParent, { mode: 0o700 }).catch(cause => { if (cause.code !== 'EEXIST') throw cause; });
       await directory(stateParent); assert(job);
-      const account = profile.claudeConfigDir || path.join(boot.globals.home, '.claude');
-      const state = path.join(stateParent, createHash('sha256').update(JSON.stringify([account, job.input.directory])).digest('hex'));
+      const state = nativeClaudeStateDirectory({ ...boot.transport, home: boot.globals.home, profile, directory: job.input.directory });
       await fs.mkdir(state, { mode: 0o700 }).catch(cause => { if (cause.code !== 'EEXIST') throw cause; });
       await directory(state); assert(job);
       env.CLAUDE_CONFIG_DIR = state; env.DEVRYAN_EXECUTION_WORKER = '1';

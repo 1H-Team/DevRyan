@@ -140,6 +140,10 @@ export async function prepareReviewedNativeInputs(repository,{target='darwin-arm
  const spawnOriginal=await fs.readFile(spawnPath),spawnContents=rewriteReviewedClaudeSpawn(spawnOriginal);
  const httpPath=path.join(root,'claude-1.8.0/node_modules/@rynfar/meridian/dist/devryan-meridian-http-server.js');
  const httpOriginal=await fs.readFile(httpPath),httpContents=rewriteReviewedMeridianHttp(httpOriginal);
+ const checkpointPath=path.join(root,'claude-1.8.0/node_modules/@rynfar/meridian/dist/devryan-meridian-passthrough-handoff.js');
+ const checkpointOriginal=await fs.readFile(checkpointPath);
+ const checkpointOwner=path.join(repository,'packages/web/server/lib/opencode/meridian-passthrough-handoff.js');
+ const checkpointContents=await fs.readFile(checkpointOwner,'utf8');inputFiles.set(checkpointOwner,hash(checkpointContents));
  const credentialPath=path.join(root,'claude-1.8.0/node_modules/@rynfar/meridian/dist/cli-khhjyk04.js');
  const credentialOriginal=await fs.readFile(credentialPath),credentialContents=rewriteReviewedClaudeCredentials(credentialOriginal);
  if(hash(credentialContents)!==REVIEWED_CLAUDE_CREDENTIALS.sha256)throw new Error('Reviewed Claude credential output changed');
@@ -198,9 +202,10 @@ export async function prepareReviewedNativeInputs(repository,{target='darwin-arm
   {path:path.relative(repository,spawnPath),sha256:hash(spawnOriginal),outputSha256:hash(spawnContents),reason:'compiled-original-confined-provider-handoff'},
   {path:path.relative(repository,httpPath),sha256:hash(httpOriginal),outputSha256:hash(httpContents),reason:'worker-owned-http-attempt-admission'}];
  transforms.push({path:path.relative(repository,credentialPath),sha256:hash(credentialOriginal),outputSha256:hash(credentialContents),reason:'sealed-host-selected-claude-renewal'});
+ transforms.push({path:path.relative(repository,checkpointPath),sha256:hash(checkpointOriginal),outputSha256:hash(checkpointContents),reason:'canonical-transport-owned-checkpoint-verification'});
  transforms.push({path:path.relative(repository,jsoncMain),sha256:hash(await fs.readFile(jsoncMain)),outputSha256:hash(await fs.readFile(jsonc.modulePath)),reason:'pinned-jsonc-original-esm-module-resolution'},
   {path:path.relative(repository,xhrPath),sha256:hash(xhrOriginal),outputSha256:hash(xhrContents),reason:'compiled-dom-sync-xhr-lazy-original-worker-resolver'});
- return {inputFiles,resolutions,workspaceResolutions,rewrites:new Map([[imagegenPath,imagegen.contents],[imagegenDebugPath,imagegenDebug],[jsdomPath,jsdomContents],[stylePath,styleContents],[xhrPath,xhrContents],[documentPath,document.contents],[browserPath,browser.contents],[claudePath,claudeContents],[libsqlPath,libsqlContents],[spawnPath,spawnContents],[httpPath,httpContents]]),virtualModules:new Map([[REVIEWED_PONYTAIL_MODULE,ponytail.moduleSource],['devryan:reviewed-claude-startup',`export {startReviewedProxy,checkReviewedProxy,scrubReviewedSystem} from ${JSON.stringify(claudePath)};`],['devryan:reviewed-claude-scrub',`export {scrubOpencodeFingerprints} from ${JSON.stringify(path.join(root,'claude-1.8.0/node_modules/@rynfar/meridian-plugin-opencode-scrub/dist/scrub.js'))};`]]),transforms,claudeAssets,claudeCredentials,
+ return {inputFiles,resolutions,workspaceResolutions,rewrites:new Map([[imagegenPath,imagegen.contents],[imagegenDebugPath,imagegenDebug],[jsdomPath,jsdomContents],[stylePath,styleContents],[xhrPath,xhrContents],[documentPath,document.contents],[browserPath,browser.contents],[claudePath,claudeContents],[libsqlPath,libsqlContents],[spawnPath,spawnContents],[httpPath,httpContents],[checkpointPath,checkpointContents]]),virtualModules:new Map([[REVIEWED_PONYTAIL_MODULE,ponytail.moduleSource],['devryan:reviewed-claude-startup',`export {startReviewedProxy,checkReviewedProxy,scrubReviewedSystem} from ${JSON.stringify(claudePath)};`],['devryan:reviewed-claude-scrub',`export {scrubOpencodeFingerprints} from ${JSON.stringify(path.join(root,'claude-1.8.0/node_modules/@rynfar/meridian-plugin-opencode-scrub/dist/scrub.js'))};`]]),transforms,claudeAssets,claudeCredentials,
   provenance:manifest.inputs.map(({id,version,sourceKind,sourceLocation,license})=>({id,version,sourceKind,sourceLocation,license})),
   ast:{source:astPath,path:REVIEWED_AST_FILENAME,sha256:REVIEWED_AST_ASSET_SHA256}};
 }

@@ -325,3 +325,25 @@ describe('web harness session execution diagnostics', () => {
     expect(runtime.recordSessionExecution({ event: 'session_execution', sessionID: 'ses_late' })).toBe(false);
   });
 });
+
+
+it('awaits mandatory control preparation and fails closed while observers remain advisory', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'devryan-control-prepare-'));
+  temporaryDirectories.push(directory);
+  const runtime = createWebHarnessRuntime({ dataDirectory: directory, runtime: 'test' });
+  const request = { method: 'POST', path: '/abort', params: { sessionID: 'ses_child' }, query: { directory: '/repo' }, headers: { 'x-devryan-abort-source': 'stop_button' } };
+  const next = vi.fn(), order = [];
+  runtime.setControlPreparation(async input => { await Promise.resolve(); order.push(['durable', input.directory]); });
+  runtime.setControlObserver(() => { order.push(['observer']); throw new Error('advisory'); });
+  const accepted = runtime.controlJournalMiddleware(request, createResponse(), () => { order.push(['forward']); next(); });
+  expect(next).not.toHaveBeenCalled();
+  await accepted;
+  expect(order).toEqual([['durable', '/repo'], ['observer'], ['forward']]);
+  runtime.setControlPreparation(async () => { throw new Error('private failure'); });
+  const rejected = createResponse();
+  await runtime.controlJournalMiddleware(request, rejected, next);
+  expect(next).toHaveBeenCalledTimes(1);
+  expect(rejected.statusCode).toBe(503);
+  expect(rejected.body).toEqual({ code: 'control_preparation_failed', error: 'Control request could not be prepared' });
+  await runtime.drain();
+});

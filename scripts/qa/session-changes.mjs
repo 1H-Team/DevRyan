@@ -119,6 +119,10 @@ export async function runSessionChangesQa({ cdp, directory, runtime, prepared, c
     await ui.waitExpression('selected session changes card', `Boolean(document.querySelector('${card}'))`);
     await ui.reveal(`${card} [data-session-changes-card]`, undefined, { scrollContainer: '[data-scrollbar="chat"]', direction: 'down' });
   };
+  const openHistory = async () => {
+    await ui.click({ selector: `${card} [data-session-changes-action="show-more"]` });
+    await ui.waitExpression('captured history expanded', `Boolean(document.querySelector('${card} [data-session-changes-rows]'))`);
+  };
   const result = { externalWriterProcess: true, productionController: true, privateGitStore: true, checkpoints: [] };
   await check('exact summary excludes independent and external writers', async () => {
     const value = await summary(prepared.root);
@@ -130,7 +134,10 @@ export async function runSessionChangesQa({ cdp, directory, runtime, prepared, c
   });
   await check('live exact receipt arrives through SSE without changing an unrelated summary', async () => {
     await select(prepared.unrelated);
-    assert.match(await cardText(), /Edited 1 file/);
+    assert.match(await cardText(), /Captured edits in 1 file/);
+    assert.equal((await summary(prepared.unrelated)).current.state, 'verified');
+    await ui.waitExpression('verified current observation', `Boolean(document.querySelector('${card} [data-session-changes-current="verified"]'))`);
+    await openHistory();
     await prepared.appendLiveEdit(prepared.unrelated, 'independent-live.txt', null, 'live independent content\n');
     await ui.waitExpression('live receipt added to selected card', `document.querySelector('${card}')?.textContent.includes('independent-live.txt')`);
     assert.equal((await summary(prepared.unrelated)).fileCount, 2);
@@ -139,6 +146,7 @@ export async function runSessionChangesQa({ cdp, directory, runtime, prepared, c
   });
   await check('a late exact receipt clears only its repaired error without reloading', async () => {
     await select(prepared.recovery);
+    await openHistory();
     await ui.waitExpression('recoverable capture error', `document.querySelector('${card}')?.textContent.includes('A tool did not provide a complete record')`);
     assert.match(await cardText(), /retained.txt/);
     await screenshot('changes-before-late-recovery');
@@ -189,7 +197,8 @@ export async function runSessionChangesQa({ cdp, directory, runtime, prepared, c
       await check(`${prefix}: completed card while independent writer is busy`, async () => {
         prepared.setStatus(prepared.unrelated, 'busy');
         await select(prepared.root);
-        await ui.waitExpression('recorded totals', `Boolean(document.querySelector('[data-session-changes-totals="recorded"]'))`);
+        await ui.waitExpression('captured history and uncertain current observation', `Boolean(document.querySelector('${card} [data-session-changes-current="uncertain"]')) && document.querySelector('${card}')?.textContent.includes('Captured edits in 4 files')`);
+        assert.equal((await summary(prepared.root)).current.state, 'uncertain');
         assert.match(await cardText(), /4 files/); assert.doesNotMatch(await cardText(), /independent.txt|external-only.txt|unverified|overlapping owners/);
         assert.equal(await evaluate(cdp, `document.documentElement.classList.contains('dark')`), theme === 'dark');
         await ui.click({ selector: `${card} [data-session-changes-action="show-more"]` });
@@ -213,10 +222,13 @@ export async function runSessionChangesQa({ cdp, directory, runtime, prepared, c
       });
       await check(`${prefix}: child selection and reload excludes its parent`, async () => {
         await select(prepared.child);
+        await openHistory();
         await ui.waitExpression('child file', `document.querySelector('${card}')?.textContent.includes('child.txt')`);
         assert.doesNotMatch(await cardText(), /shared.txt|theme.css|Recorded Edits/);
         assert.equal((await summary(prepared.child)).fileCount, 1);
         await ui.reload();
+        await ui.waitExpression('reloaded child changes card', `Boolean(document.querySelector('${card}'))`);
+        await openHistory();
         await ui.reveal(`${card} [data-session-changes-card]`, undefined, { scrollContainer: '[data-scrollbar="chat"]', direction: 'down' });
         await screenshot(`${prefix}-child-reloaded`);
       });

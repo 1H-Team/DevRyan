@@ -31,6 +31,9 @@ export const createWebCommandDeadlineRuntime = (options = {}) => {
   }
   return createCommandDeadlineController({
     store,
+    cancelCommand: typeof options.cancelCommand === 'function'
+      ? (input) => options.cancelCommand(input, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
+      : undefined,
     async fetchMessage(input) {
       return resolveGen2OpenCodeClient(openCodeClient).sessions.message(input.sessionID, input.messageID, {
         directory: input.directory, allowNotFound: true, timeoutMs: REQUEST_TIMEOUT_MS,
@@ -39,8 +42,9 @@ export const createWebCommandDeadlineRuntime = (options = {}) => {
     async abortSession(input) {
       await resolveGen2OpenCodeClient(openCodeClient).sessions.abort(input.sessionID, { directory: input.directory, timeoutMs: REQUEST_TIMEOUT_MS });
     },
-    async listActiveSessions(input) {
-      return activeSessionIDs(await resolveGen2OpenCodeClient(openCodeClient).sessions.status({ directory: input.directory }, { timeoutMs: REQUEST_TIMEOUT_MS }));
+    async listActiveSessions() {
+      // Restart affects the whole native host, including other project locations.
+      return activeSessionIDs(await resolveGen2OpenCodeClient(openCodeClient).sessions.status({}, { timeoutMs: REQUEST_TIMEOUT_MS }));
     },
     restartManagedRuntime: () => restartOpenCode(),
     isExternalRuntime: () => isExternalOpenCode(),

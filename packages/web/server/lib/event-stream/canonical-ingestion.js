@@ -44,7 +44,8 @@ export function createCanonicalOpenCodeEventProcessor({
     callAsync('[ManagedOrchestration] Failed to process OpenCode event',
       (event) => processManagedOrchestration?.(event, directory), payload, logger);
     callAsync('[SessionTitle] Failed to process OpenCode event', processSessionTitle, payload, logger);
-    callAsync('[OpenCode] Failed to observe command deadline', processCommandDeadline, payload, logger);
+    callAsync('[OpenCode] Failed to observe command deadline',
+      (event) => processCommandDeadline?.(event, directory), payload, logger);
 
     if (payload.type !== 'session.deleted') return;
     const deletedSessionId = payload?.properties?.info?.id;

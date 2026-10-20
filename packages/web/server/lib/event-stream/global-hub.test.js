@@ -15,7 +15,7 @@ import {
 } from './global-hub.js';
 import { createGlobalMessageStreamWsBridge } from './global-ws-bridge.js';
 import { isMessageStreamControlPayload, MESSAGE_STREAM_GAP_CONTROL_TYPE } from './protocol.js';
-import { GEN2_UPSTREAM_STALL_TIMEOUT_MS } from './upstream-reader.js';
+import { GEN2_UPSTREAM_STALL_TIMEOUT_MS, MAX_UPSTREAM_FRAME_BYTES } from './upstream-reader.js';
 import { stripEventDiffContent } from '../opencode/diff-summary.js';
 
 function createSseResponse({ blocks = [] } = {}) {
@@ -57,6 +57,18 @@ async function waitForAssertion(assertion) {
 }
 
 describe('createGlobalMessageStreamHub', () => {
+  it('omits oversized replay entries and marks earlier cursors as crossing a gap', () => {
+    const hub = createGlobalMessageStreamHub({ openCodeClient: createProjectedStreamClient(), replayByteBudget: 1024 });
+    const emit = (eventId, text) => hub.publishSyntheticEvent({ eventId, payload: { type: 'fixture', properties: { text } } });
+    emit('before', 'small');
+    emit('oversized', 'é'.repeat(1024));
+    emit('after', 'small');
+    expect(hub.replayAfter('before').gap).toBe(true);
+    expect(hub.replayAfter('before').events.map(event => event.eventId)).toEqual(['after']);
+    expect(hub.replayAfter('oversized').gap).toBe(true);
+    expect(hub.replayAfter('after')).toEqual({ events: [], gap: false });
+    expect(hub.replayAfter('', { unanchored: true }).events.some(event => event.eventId === 'oversized')).toBe(false);
+  });
   it('publishes synthetic events through subscribers and replay', async () => {
     const received = [];
     const hub = createGlobalMessageStreamHub({
@@ -492,6 +504,18 @@ function createFakeV2Hub({ connections, generation = 2, rest = unavailable, ...o
 }
 
 describe('createGlobalMessageStreamHub gen 2 ingress (vectors)', () => {
+  it('turns a discarded upstream frame into a client gap and invalidates earlier cursors', async () => {
+    const { hub, statuses, events } = createFakeV2Hub({
+      connections: [['data: ' + 'x'.repeat(MAX_UPSTREAM_FRAME_BYTES), '\n\n']],
+    });
+    hub.publishSyntheticEvent({ eventId: 'before-loss', payload: { type: 'fixture' } });
+    hub.start();
+    try {
+      await waitForAssertion(() => expect(statuses).toContainEqual({ type: 'gap', scope: 'global', reason: 'frame_too_large' }));
+      expect(events.some(event => event.control === 'gap')).toBe(true);
+      expect(hub.replayAfter('before-loss').gap).toBe(true);
+    } finally { hub.stop(); }
+  });
   it('projects the data-only 2.0.20 frames 1->n with #k ids, ignores comment frames and sends no Last-Event-ID', async () => {
     const vector = readVector('01-two-step-tool-turn.json');
     const { hub, events, fetchCalls, diagnostics } = createFakeV2Hub({

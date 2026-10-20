@@ -42,6 +42,7 @@ const IMMUTABLE_FIELDS = Object.freeze([
 const terminalRecordChanged = (previous, next) => {
   const keys = new Set([...Object.keys(previous), ...Object.keys(next)]);
   for (const key of keys) {
+    if (key === 'operatorStop') continue; // Private control receipt may resolve after terminal settlement.
     if (!Object.is(previous[key], next[key])) return true;
   }
   return false;

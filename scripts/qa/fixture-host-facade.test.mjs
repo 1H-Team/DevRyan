@@ -16,8 +16,31 @@ import { gradeQaManualFixtureSubmission } from './fixture-scenarios.mjs';
 import { isQaKnownSessionSettled } from './submitted-turn.mjs';
 import { createDiagnosticSanitizer } from '../../packages/harness-runtime/lib/sanitizer.js';
 import { registerQuotaRoutes } from '../../packages/web/server/lib/quota/routes.js';
+import { createRunRoot, scratchParent } from './run-root.mjs';
 
 const express = createRequire(new URL('../../packages/web/package.json', import.meta.url))('express');
+
+test('wire facade admits OS-temp paths only through their live constructor-owned run scope', async () => {
+  const run = createRunRoot({ parent: scratchParent('perf'), prefix: 'wire-facade-scope-', owner: 'wire-facade-unit', keepArtifacts: true });
+  let fixture, facade;
+  try {
+    const workspace = path.join(run.dir, 'workspace'), dataDirectory = path.join(run.dir, 'data'), config = path.join(run.dir, 'config');
+    for (const directory of [workspace, dataDirectory, config]) await fs.mkdir(directory);
+    const userConfigPath = path.join(config, 'opencode.json'); await fs.writeFile(userConfigPath, '{}');
+    fixture = await createLoopbackOpenCodeV2Fixture({ directory: workspace });
+    const input = { fixture, realOrigin: 'http://127.0.0.1:9010', workspace, dataDirectory, userConfigPath };
+    await assert.rejects(createQaFixtureHostFacade(input), /assert/i);
+    await assert.rejects(createQaFixtureHostFacade({ ...input, runScope: Object.freeze({}) }), /assert/i);
+    const link = path.join(run.dir, 'linked-workspace'); await fs.symlink(workspace, link);
+    await assert.rejects(createQaFixtureHostFacade({ ...input, workspace: link, runScope: run.scope }), /assert/i);
+    facade = await createQaFixtureHostFacade({ ...input, runScope: run.scope });
+    assert.match(facade.origin, /^http:\/\/127\.0\.0\.1:\d+$/);
+    run.finish('passed');
+    await assert.rejects(createQaFixtureHostFacade({ ...input, runScope: run.scope }), /assert/i);
+  } finally {
+    await facade?.close(); await fixture?.close(); run.finish('failed'); await fs.rm(run.dir, { recursive: true, force: true });
+  }
+});
 
 async function setup({ contextUsage = false } = {}) {
   const cache=fileURLToPath(new URL('../../.cache/qa/',import.meta.url));await fs.mkdir(cache,{recursive:true});

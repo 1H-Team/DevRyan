@@ -262,8 +262,20 @@ describe('release workflow', () => {
 
     // Nothing publishes until the packaged candidate upgrades a profile aged by the previous releases.
     assert.ok(workflow.jobs.publish.needs.includes('upgrade-check'));
+    assert.equal(workflow.concurrency, undefined, 'workflow cancellation must not interrupt production');
+    assert.equal(workflow.jobs.publish.concurrency['cancel-in-progress'], false);
+    assert.equal(workflow.jobs.publish.concurrency.group, 'devryan-production-publication');
+    assert.ok(workflow.jobs.admit.steps.some(step => step.run === 'node scripts/release.mjs trusted-ci'));
+    assert.match(workflow.jobs['verify-published'].if, /outputs.published == 'true'/);
+    assert.equal(workflow.jobs['verify-published'].steps.find(step => step.uses === 'actions/download-artifact@v4').with['run-id'], '${{ needs.admit.outputs.candidate_run_id }}');
+    for (const name of ['web', 'electron-prepare', 'bot-resolve']) assert.match(workflow.jobs[name].if, /outputs.published != 'true'/);
+    assert.deepEqual(workflow.jobs['upgrade-check'].strategy.matrix.baseline, ['aging', 'v2.0.2', 'v2.0.15']);
+    assert.ok(workflow.jobs['final-dmg-smoke']['continue-on-error'].includes('qualified-3-runs'));
+    for (const job of Object.values(workflow.jobs)) for (const step of job.steps ?? []) {
+      if (step.uses === 'actions/upload-artifact@v4') assert.equal(step.with['retention-days'], 14);
+    }
     assert.match(workflow.jobs.publish.if, /needs\.upgrade-check\.result == 'success'/);
-    assert.ok(workflow.jobs['upgrade-check'].steps.some((step) => step.run?.startsWith('node scripts/qa/release-upgrade-lane.mjs --candidate-artifacts ')));
+    assert.ok(workflow.jobs['upgrade-check'].steps.some((step) => step.run?.includes('node scripts/qa/release-upgrade-lane.mjs')));
 
     const steps = workflow.jobs.publish.steps;
     const index = (name) => steps.findIndex((step) => step.name === name);
@@ -273,7 +285,8 @@ describe('release workflow', () => {
     assert.ok(upload >= 0 && upload < supabase && supabase < publish, 'publish order: attach DMG, deploy Supabase, publish');
     assert.equal(steps[upload].run, 'node scripts/release.mjs upload');
     assert.equal(steps[publish].run, 'node scripts/release.mjs publish');
-    for (const step of [steps[supabase], steps[publish]]) assert.equal(step.if, "${{ github.event_name == 'push' }}");
+    assert.equal(steps[supabase].if, "${{ github.event_name == 'push' && steps.upload.outputs.published != 'true' }}");
+    assert.equal(steps[publish].if, "${{ github.event_name == 'push' }}");
     assert.match(steps[supabase].run, /node scripts\/sync-supabase-auth-password-policy\.mjs\n\s*supabase db push --linked --dry-run/);
   });
 });

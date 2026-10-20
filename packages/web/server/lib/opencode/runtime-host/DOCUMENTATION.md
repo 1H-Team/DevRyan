@@ -257,6 +257,22 @@ of a mistyped one. Two or more near IDs refuse. The hashed ID stays the permissi
 resource. A refusal reads `native_skill_unreviewed: ...` and lists the reviewed
 skill names (`reviewedSkillNames`, at most 50) so the model's retry can name one.
 
+## Native Claude checkpoint continuity
+
+Claude checkpoint verification uses `native-claude-checkpoint.js` to derive the
+same private account/location state directory as the physical transport. The
+worker exposes that directory only for the current constructor-authorized
+attempt, session, location and profile; SDK profile environment paths cannot
+select a native transcript. Canonical checkpoint reads reject symlinked state,
+project and transcript paths and recheck attempt authority after the read.
+The canonical helper remains `../meridian-passthrough-handoff.js`; native asset
+preparation embeds it as a recorded rewrite of the hash-checked captured helper.
+Checkpoint settling, settled, rejected, retained and replay observations use a
+finite `claude-checkpoint-diagnostic` frame and `native_claude_checkpoint` journal
+record. Only event/reason enums, bounded tool counts and correlation identities
+cross that boundary. Raw Meridian logging remains disabled; diagnostic failure
+cannot change execution or retention.
+
 ## Native grep and glob execution
 
 OpenCode 2.0.30 and 2.1.0 spawn ripgrep for `grep` and `glob` through `Environment.spawner`.
@@ -1078,3 +1094,9 @@ The coordinator journals `session_removal` outcomes with session/intent IDs,
 stage and bounded error code. Web authorization failures record the same event with stage
 `web_authorization`. Neither
 record contains transcript content, request bodies or exception messages.
+
+### Bounded native search output
+
+Broad native scans exclude `node_modules`, `.cache`, `dist`, `.worktrees`, `worktrees` (including `.claude/worktrees`), `.artifacts` and generated-worktree directories by default. An authorized canonical read directory explicitly inside one such tree expands only that category; user include globs cannot widen it. Git exclusions and `--no-ignore` remain mandatory.
+
+The web execution host caps trusted `grep`/`glob` stdout before its event queue at 64 KiB and 200 grep records or 1,000 glob paths. `native-search-output.js` retains complete newline records; it never inserts prose into ripgrep JSON. At the cap a separate search-limit controller stops the confined producer. Only an exact host-owned limit stop with a terminated, confined receipt and no user/owner abort, permit failure or queue overflow can settle as partial success. The raw cancellation/exit receipt is retained. The typed settled event carries `truncated` and its counts/limits; routing normalizes the native parser's exit code only for this successful limited read, then appends an explicit narrowing notice and `searchTruncation` metadata to the tool result. Writer/shell overflow and uncertain termination remain failures.

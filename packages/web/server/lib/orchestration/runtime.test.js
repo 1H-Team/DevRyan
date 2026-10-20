@@ -3105,3 +3105,15 @@ it('context_state retains authoritative captured readonly children for native Pl
     expect(result.tasks).toEqual([expect.objectContaining({ childSessionId: 'ses_readonly', readOnly: true })]);
   } finally { await runtime.shutdown(); }
 });
+
+it('native dispatch readiness is independent of the legacy bridge and reflects admission holds', async () => {
+  let ready=true,held=false;
+  const runtime=createWebManagedOrchestrationRuntime({persistence:createPersistence(),
+    getNativeDispatchReady:()=>ready,getWorkAdmissionBlock:()=>held?{code:'held',message:'held'}:null,
+    executor:{async start(){throw new Error('not dispatched');},async abort(){return {aborted:true};},async reconcile(){return {state:'unavailable'};},async shutdown(){}}});
+  try {
+    expect(await runtime.getSnapshot()).toMatchObject({available:true,bridgeReady:false,dispatchReady:true});
+    ready=false;expect((await runtime.getSnapshot()).dispatchReady).toBe(false);
+    ready=true;held=true;expect((await runtime.getSnapshot()).dispatchReady).toBe(false);
+  } finally {await runtime.shutdown();}
+});

@@ -13,7 +13,7 @@ import { isTransientError } from '@/sync/retry'
  * and every response is checked against the latest request for its key so a
  * slow, superseded fetch can never overwrite fresher data.
  */
-export type SessionTreeChangesEntry = Pick<SessionTreeChanges, 'fileCount' | 'nextCursor' | 'previousCursor' | 'pageIndex'> & {
+export type SessionTreeChangesEntry = Pick<SessionTreeChanges, 'fileCount' | 'nextCursor' | 'previousCursor' | 'pageIndex' | 'current' | 'coverageBySession'> & {
   revision?: string
   worktreeDirectory?: string
   coverage?: 'complete' | 'partial'
@@ -251,6 +251,8 @@ async function fetchSessionTreeChanges(directory: string, rootSessionID: string)
   transientRetries.delete(key)
   const previous = useSessionTreeChangesStore.getState().entries.get(key)
   patchEntry(key, {
+    current: result.current,
+    coverageBySession: result.coverageBySession,
     revision: result.revision,
     fileCount: result.fileCount,
     nextCursor: result.nextCursor,
@@ -430,7 +432,6 @@ sessionEvents.onGitRefreshHint(({ directory, sessionChanges, sessionID }) => {
     if (splitKey(key).directory !== normalized) continue
     const { rootSessionID } = splitKey(key)
     if (sessionChanges && sessionID && sessionID !== rootSessionID && !sessionIdsByKey.get(key)?.has(sessionID)) continue
-    if (!sessionChanges && useSessionTreeChangesStore.getState().entries.get(key)?.revision) continue
     requestSessionTreeChangesRefresh(directory, rootSessionID)
   }
 })

@@ -3,6 +3,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
+import { constants } from 'node:fs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_CHECKPOINT_BYTES = 4 * 1024 * 1024;
@@ -56,9 +57,27 @@ export async function verifyPersistedCheckpoint(boundary, options = {}) {
   let file;
   try {
     const cwd = (await fs.realpath(options.cwd)).normalize('NFC');
-    const configDirectory = options.env?.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude');
-    file = await fs.open(path.join(configDirectory, 'projects', sdkProjectDirectory(cwd), `${boundary.sessionId}.jsonl`), 'r');
+    const nativeScope = options.env?.DEVRYAN_CLAUDE_DIAGNOSTIC_SCOPE;
+    const resolveNative = Reflect.get(globalThis, '__DEVRYAN_CLAUDE_CHECKPOINT_DIRECTORY');
+    if (nativeScope !== undefined && typeof resolveNative !== 'function') return false;
+    const configDirectory = nativeScope === undefined
+      ? options.env?.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude')
+      : await resolveNative(nativeScope, cwd);
+    if (typeof configDirectory !== 'string' || !path.isAbsolute(configDirectory)) return false;
+    const projects = path.join(configDirectory, 'projects');
+    const project = path.join(projects, sdkProjectDirectory(cwd));
+    const canonical = async () => {
+      for (const directory of [configDirectory, projects, project]) {
+        if (await fs.realpath(directory) !== directory || !(await fs.lstat(directory)).isDirectory()) return false;
+      }
+      return true;
+    };
+    if (!await canonical()) return false;
+    const transcript = path.join(project, `${boundary.sessionId}.jsonl`);
+    if (await fs.realpath(transcript) !== transcript || !(await fs.lstat(transcript)).isFile()) return false;
+    file = await fs.open(transcript, constants.O_RDONLY | constants.O_NOFOLLOW);
     const { size } = await file.stat();
+    if (!(await file.stat()).isFile()) return false;
     const offset = Math.max(0, size - MAX_CHECKPOINT_BYTES);
     const buffer = Buffer.alloc(Math.min(size, MAX_CHECKPOINT_BYTES));
     const { bytesRead } = await file.read(buffer, 0, buffer.length, offset);
@@ -66,7 +85,8 @@ export async function verifyPersistedCheckpoint(boundary, options = {}) {
     if (offset > 0) lines.shift();
     if (lines.at(-1) !== '' || lines.length > 4096) return false;
     const records = lines.filter(Boolean).map(line => JSON.parse(line));
-    return validatePersistedCheckpoint(records, { ...boundary, cwd });
+    if (nativeScope !== undefined && await resolveNative(nativeScope, cwd) !== configDirectory) return false;
+    return await canonical() && await fs.realpath(transcript) === transcript && validatePersistedCheckpoint(records, { ...boundary, cwd });
   } catch {
     return false;
   } finally {
@@ -95,10 +115,14 @@ export async function* settlePassthroughQuery(query, {
   let interrupt;
   let sessionId;
   let boundary;
-  const report = (event, reason) => diagnostic(event, {
-    reason,
-    toolCount: boundary?.toolCallIds.length ?? 0,
-  });
+  const report = (event, reason) => {
+    const detail = { reason, toolCount: boundary?.toolCallIds.length ?? 0 };
+    const observe = Reflect.get(globalThis, '__DEVRYAN_CLAUDE_CHECKPOINT_DIAGNOSTIC');
+    if (typeof observe === 'function') {
+      try { observe(queryOptions?.env?.DEVRYAN_CLAUDE_DIAGNOSTIC_SCOPE, event, detail); } catch { /* Observation only. */ }
+    }
+    diagnostic(event, detail);
+  };
 
   try {
     for await (const message of query) {

@@ -158,6 +158,7 @@ const resolveAbortRecoveryState = (
     task: ManagedTaskEventRecord,
     manualRecoveryTaskId: string | undefined,
 ): ManagedAbortRecoveryState => {
+    if (task.terminationIntent === 'user_stopped' && task.status === 'aborted') return 'user_stopped';
     if (manualRecoveryTaskId) return 'manual_recovery';
     if (task.status === 'queued' || task.status === 'starting' || task.status === 'running') {
         return 'continuing';
@@ -259,7 +260,8 @@ export const projectManagedTransportRecovery = (
         const message = projected[index];
         if (
             resolveSessionId(message) !== latestTask.childSessionId
-            || !isAbortedAssistant(message)
+            || !(isAbortedAssistant(message) || latestTask.terminationIntent === 'user_stopped'
+                && readAssistantMessageError(message.info)?.dataMessage === 'Step interrupted')
         ) continue;
         const presented = message.presentation?.managedAbortRecovery;
         if (

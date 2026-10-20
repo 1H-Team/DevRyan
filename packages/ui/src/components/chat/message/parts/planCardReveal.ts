@@ -76,17 +76,17 @@ export const getPlanCardActionState = ({
   isGenerationSuccessful?: boolean;
   hasTerminalFailure?: boolean;
 }): PlanCardActionState => {
-  if (!isLatestPlan) {
-    return {
-      canImplement: false,
-      disabledReason: 'This plan is no longer current.',
-    };
-  }
-
   if (isImplementationRequested) {
     return {
       canImplement: false,
       disabledReason: 'Implementation already started.',
+    };
+  }
+
+  if (!isLatestPlan) {
+    return {
+      canImplement: false,
+      disabledReason: 'This plan is no longer current.',
     };
   }
 

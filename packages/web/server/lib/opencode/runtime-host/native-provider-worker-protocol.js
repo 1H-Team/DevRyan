@@ -1,4 +1,5 @@
 import {NATIVE_CLAUDE_DIAGNOSTIC_CLUES} from './native-claude-diagnostics.js';
+import {CLAUDE_CHECKPOINT_EVENTS,CLAUDE_CHECKPOINT_REASONS} from './native-claude-checkpoint.js';
 import path from 'node:path';
 const fail=()=>Object.assign(new Error('native_provider_protocol_invalid'),{code:'native_provider_protocol_invalid',status:400});
 const record=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
@@ -63,9 +64,15 @@ export function parseProviderBound(value){
 }
 
 export function parseProviderDiagnostic(value){
- bounded(value,4096);keys(value,['protocol','type','instanceID','attemptID','sessionID','directory','receipt']);
- if(value.protocol!==1||value.type!=='claude-process-diagnostic'||!/^[a-f0-9-]{32,64}$/.test(text(value.instanceID))
+ bounded(value,4096);keys(value,['protocol','type','instanceID','attemptID','sessionID','directory',value?.type==='claude-checkpoint-diagnostic'?'checkpoint':'receipt']);
+ if(value.protocol!==1||!['claude-process-diagnostic','claude-checkpoint-diagnostic'].includes(value.type)||!/^[a-f0-9-]{32,64}$/.test(text(value.instanceID))
   ||!/^[a-f0-9]{64}$/.test(text(value.attemptID))||!/^ses[0-9A-Za-z_-]{1,128}$/.test(text(value.sessionID))||!path.isAbsolute(text(value.directory)))throw fail();
+ if(value.type==='claude-checkpoint-diagnostic'){
+  const detail=value.checkpoint;keys(detail,['event','reason','toolCount']);
+  if(!CLAUDE_CHECKPOINT_EVENTS.includes(detail.event)||!CLAUDE_CHECKPOINT_REASONS.includes(detail.reason)
+   ||!Number.isSafeInteger(detail.toolCount)||detail.toolCount<0||detail.toolCount>4096)throw fail();
+  return structuredClone(value);
+ }
  const receipt=value.receipt;keys(receipt,['code','signalPresent','stderrBytes','scannedBytes','truncated','clues']);
  if(receipt.code!==null&&(!Number.isSafeInteger(receipt.code)||receipt.code<0||receipt.code>255)||typeof receipt.signalPresent!=='boolean'||typeof receipt.truncated!=='boolean'
   ||!Number.isSafeInteger(receipt.stderrBytes)||receipt.stderrBytes<0||receipt.stderrBytes>1048576||!Number.isSafeInteger(receipt.scannedBytes)||receipt.scannedBytes<0||receipt.scannedBytes>32768||receipt.scannedBytes>receipt.stderrBytes

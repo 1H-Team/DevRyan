@@ -1,4 +1,4 @@
-import { isTerminalManagedTaskStatus, requiresManualModelRecovery } from './contract.js';
+import { isTerminalManagedTaskStatus, requiresManualModelRecovery, isStoppedRecoveryAvailable } from './contract.js';
 import { isAutoResumeActive } from './auto-resume-policy.js';
 
 const CURSOR_PREFIX = 'dvr_wait_v2:';
@@ -9,7 +9,7 @@ export const managedResultCollectionState = (task, envelope) => {
   if (!task || !isTerminalManagedTaskStatus(task.status) || !envelope) return 'pending';
   if (envelope.action !== null) return 'dispositioned';
   if (isAutoResumeActive(envelope)) return 'scheduled';
-  if (requiresManualModelRecovery(task, envelope)) return 'attention';
+  if (requiresManualModelRecovery(task, envelope) || isStoppedRecoveryAvailable(task, envelope)) return 'attention';
   return 'ready';
 };
 

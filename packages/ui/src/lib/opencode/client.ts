@@ -382,7 +382,19 @@ export type SessionChangesDiffPage = {
   segment?: { sessionID: string; messageID: string; callID: string; source: string } | null;
 };
 
+export type SessionChangesCurrent = {
+  state: 'restored' | 'verified' | 'uncertain';
+  verifiedFileCount: number;
+  restoredFileCount: number;
+  uncertainFileCount: number;
+  checkedFileCount: number;
+  observedAt: number;
+  reasons: string[];
+};
+
 export type SessionTreeChanges = {
+  current?: SessionChangesCurrent;
+  coverageBySession?: { sessionID: string; reasons: string[] }[];
   fileCount?: number;
   nextCursor?: string | null;
   previousCursor?: string | null;
@@ -657,6 +669,7 @@ const parseCount = (value: unknown): number => (
 export function parseSessionTreeChanges(payload: unknown): SessionTreeChanges {
   const record = isRecord(payload) ? payload : {};
   const files: SessionTreeChangedFile[] = [];
+  const currentRecord = isRecord(record.current) ? record.current : null;
   if (Array.isArray(record.files)) {
     for (const entry of record.files) {
       if (!isRecord(entry) || typeof entry.path !== "string" || entry.path.length === 0) continue;
@@ -697,6 +710,17 @@ export function parseSessionTreeChanges(payload: unknown): SessionTreeChanges {
     restoreAvailable: (record.attributionVersion === 2 || record.attributionVersion === 3) && record.restoreAvailable === true
       && record.coverage === 'complete' && record.reconciliationState !== 'pending',
     restoreReasons: Array.isArray(record.restoreReasons) ? record.restoreReasons.filter((reason): reason is string => typeof reason === 'string') : ['restore_evidence_unavailable'],
+    current: currentRecord && ['restored', 'verified', 'uncertain'].includes(String(currentRecord.state))
+      && ['verifiedFileCount', 'restoredFileCount', 'uncertainFileCount', 'checkedFileCount', 'observedAt'].every((key) =>
+        typeof currentRecord[key] === 'number' && Number.isSafeInteger(currentRecord[key]) && currentRecord[key] >= 0)
+      ? { state: currentRecord.state === 'restored' ? 'restored' : currentRecord.state === 'verified' ? 'verified' : 'uncertain',
+        verifiedFileCount: parseCount(currentRecord.verifiedFileCount), restoredFileCount: parseCount(currentRecord.restoredFileCount),
+        uncertainFileCount: parseCount(currentRecord.uncertainFileCount), checkedFileCount: parseCount(currentRecord.checkedFileCount),
+        observedAt: parseCount(currentRecord.observedAt), reasons: Array.isArray(currentRecord.reasons)
+          ? currentRecord.reasons.filter((reason): reason is string => typeof reason === 'string') : [] } : undefined,
+    coverageBySession: Array.isArray(record.coverageBySession) ? record.coverageBySession.flatMap((entry) =>
+      isRecord(entry) && typeof entry.sessionID === 'string' && Array.isArray(entry.reasons)
+        ? [{ sessionID: entry.sessionID, reasons: entry.reasons.filter((reason): reason is string => typeof reason === 'string') }] : []) : [],
     files,
     ...(typeof record.fileCount === 'number' && Number.isSafeInteger(record.fileCount) && record.fileCount >= files.length ? { fileCount: record.fileCount } : {}),
     ...(typeof record.pageIndex === 'number' && Number.isSafeInteger(record.pageIndex) && record.pageIndex >= 0 ? { pageIndex: record.pageIndex } : {}),

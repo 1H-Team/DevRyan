@@ -280,3 +280,21 @@ automatic settlement without a refresh event and disabled unsafe restore.
 Screenshots require individual visual inspection; result.json alone does not
 establish visual acceptance. This is deterministic adapter QA, not live-provider
 verification.
+
+## Current observations and captured history
+
+Stored revisions, file totals and segmented edits describe immutable captured history.
+Every summary/page also returns a separate `current` observation. Private per-row
+before/after evidence is compared with live raw bytes and modes without writing
+objects, indexes or tree references. Exact original content means `restored`;
+exact captured final content means `verified` only for contiguous net evidence.
+Other content, patch-only receipts, missing legacy evidence, unsafe ancestors, read races and limits
+remain `uncertain`. Matching paths in Git never establish ownership of current hunks.
+The observation examines at most 256 file rows, 8MiB per file and 32MiB total;
+unchecked rows remain uncertain. Current observations never change historical
+revision identity or make an uncertain Undo safe. Coverage reasons are also
+reported per session, including descendants. Git refresh hints refresh these
+observations while historical diffs remain available through their revision.
+The chat card labels captured history explicitly and folds it separately from
+current verification, so shell Undo cannot continue to claim historical totals
+as live edits.

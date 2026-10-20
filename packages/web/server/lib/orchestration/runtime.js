@@ -6,6 +6,7 @@ import {
   createManagedOperatorAbortRegistry,
   createManagedTerminalErrorRegistry,
   createManagedTaskScheduler,
+  USER_STOPPED_RECOVERY,
   createManagedTaskRecord,
   formatManagedAssignmentContext,
   MANAGED_OVERLAP_READ_TOOLS,
@@ -402,7 +403,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     nativeTaskDispatch: options.nativeTaskDispatch,
     ...(openCodeClient === null ? {} : { openCodeClient }),
     readTerminalError: (input) => terminalErrors.read(input),
-    readOperatorAbort: (input) => operatorAborts.read(input),
+    readOperatorAbort: (input) => scheduler.readOperatorStop(input) ?? operatorAborts.read(input),
     readRuntimeStartedAt: options.readRuntimeStartedAt,
     subscribeAssistantActivity: assistantActivity.subscribe,
     bindAssistantActivity: assistantActivity.bind,
@@ -521,6 +522,9 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
 
   const assertWorkAdmission = () => {
     const block = getWorkAdmissionBlock();
+    if (!block && typeof options.getNativeDispatchReady === 'function' && !options.getNativeDispatchReady()) {
+      throw createRuntimeError('native_dispatch_unavailable', 'The native execution controller is not ready', 503);
+    }
     if (!block) return;
     throw createRuntimeError(
       block.code || 'work_admission_blocked',
@@ -1081,6 +1085,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         reserveCommittedReceipt({ taskId: task.taskId, rootSessionId: task.rootSessionId, action: 'cancel' });
         const cancelled = await scheduler.cancelTask(task.taskId, {
           cascade: params.cascade === true,
+          ...(context.userStoppedRecovery === true ? { terminationIntent: 'user_stopped' } : {}),
           ...(typeof params.reason === 'string' && params.reason.trim()
             ? { reason: params.reason.trim() }
             : {}),
@@ -1169,6 +1174,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         const result = await scheduler.acknowledgeResult(task.taskId, {
           action: params.action,
           idempotencyKey: params.idempotencyKey,
+          ...(context.userStoppedRecovery === true ? { [USER_STOPPED_RECOVERY]: true } : {}),
           ...(params.resultContractVersion===2?{acknowledgementIdentity:params.acknowledgementIdentity}:{}),
           ...(params.resultContractVersion===2?{authorize:review.recheck}:{}),
           ...(agentRetryExecution?.providerId
@@ -1271,6 +1277,8 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     return {
       available: true,
       bridgeReady: Boolean(bridgeEnvironment),
+      dispatchReady: Boolean(initialized && ownershipAcquired && !shutdownPromise && !getWorkAdmissionBlock()
+        && (typeof options.getNativeDispatchReady === 'function' ? options.getNativeDispatchReady() : bridgeEnvironment)),
       recoveryWarning: persistence.getDiagnostics?.().recoveryWarning ?? null,
       tasks: tasks.map((task) => projectTask(task, scheduler.getResultEnvelope(task.taskId))),
       resultEnvelopes: scheduler.listResultEnvelopes({ rootSessionId }),
@@ -1376,8 +1384,21 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     },
     // A user Stop of a managed child: its executor must settle the task as
     // aborted instead of continuing or recovering it automatically.
-    recordOperatorAbort: (input) => operatorAborts.record(input),
-    withdrawOperatorAbort: (input) => operatorAborts.withdraw(input),
+    async recordOperatorAbort(input) {
+      const task = scheduler.getChildAssignment(input.sessionId, input.directory);
+      const request = operatorAborts.record({ ...input, ...(task ? { taskId: task.taskId } : {}), requestId: globalThis.crypto.randomUUID(), state: 'pending' });
+      if (!request) return null;
+      try { return { ...request, ...await scheduler.recordOperatorStop({ ...request, directory: input.directory }) }; }
+      catch (error) { operatorAborts.withdraw(request); throw error; }
+    },
+    async acceptOperatorAbort(input) {
+      const accepted = await scheduler.acceptOperatorStop(input);
+      return operatorAborts.accept(input) || accepted;
+    },
+    async withdrawOperatorAbort(input) {
+      const removed = await scheduler.withdrawOperatorStop(input);
+      return operatorAborts.withdraw(input) || removed;
+    },
     shutdown,
     flush: () => scheduler.flush(),
     getDiagnostics() {

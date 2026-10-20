@@ -433,3 +433,27 @@ describe('managed orchestration contract', () => {
     expect(JSON.stringify(event)).not.toContain(task.idempotencyKey);
   });
 });
+
+test('user stopped recovery is explicit and independent of the agent retry allowance', () => {
+  const task = { ...createManagedTaskRecord(validInput()), status: 'aborted', childSessionId: 'ses_child',
+    startedAt: 1100, finishedAt: 1200, failureReason: 'Stopped by the user', terminationIntent: 'user_stopped' };
+  const envelope = { owner: 'devryan', taskId: task.taskId, resumable: true, action: null };
+  expect(contract.isUserStoppedRecoveryAvailable(task, envelope)).toBe(true);
+  const projected = toManagedTaskEvent(task, envelope).properties.task;
+  expect(projected.userStoppedRecoveryAvailable).toBe(true);
+  expect(projected.agentRetryAvailable).toBe(false);
+  expect(contract.requiresManualModelRecovery(task, envelope)).toBe(false);
+  expect(contract.isUserStoppedRecoveryAvailable(task, { ...envelope, action: 'continue' })).toBe(false);
+  expect(contract.isUserStoppedRecoveryAvailable({ ...task, terminationIntent: null }, envelope)).toBe(false);
+});
+
+test('model-not-found uses one server recovery policy for retry allowance and manual model selection', () => {
+  const task = { ...createManagedTaskRecord(validInput()), status: 'failed', childSessionId: 'ses_child',
+    failureReason: 'AI Model Not Found Invalid parameters for registry model: "missing"' };
+  const envelope = { owner: 'devryan', taskId: task.taskId, resumable: true, action: null };
+  expect(contract.isManagedTaskAgentRetryAvailable(task)).toBe(false);
+  expect(contract.requiresManualModelRecovery(task, envelope)).toBe(true);
+  expect(toManagedTaskEvent(task, envelope).properties.task).toMatchObject({
+    failureKind: 'model_unavailable', agentRetryAvailable: false, manualRecoveryRequired: true,
+  });
+});

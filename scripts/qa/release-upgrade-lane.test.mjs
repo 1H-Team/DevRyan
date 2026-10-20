@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { gradeDataRootMigration, gradeHeldRecovery, gradeReleaseUpgrade, parseReleaseUpgradeArgs, selectPreviousReleases } from './release-upgrade-lane.mjs';
+import { gradeDataRootMigration, gradeHeldRecovery, gradeReleaseUpgrade, parseReleaseUpgradeArgs, selectPreviousReleases, releaseHopAdapter, DIRECT_UPGRADE_BASELINES } from './release-upgrade-lane.mjs';
+
+test('supported direct baselines use explicit legacy adapters rather than guessed status imports', () => {
+  assert.deepEqual(DIRECT_UPGRADE_BASELINES, ['v2.0.2', 'v2.0.15']);
+  assert.equal(releaseHopAdapter('v2.0.2').statusModule, false);
+  assert.equal(releaseHopAdapter('v2.0.15').statusModule, true);
+  assert.equal(releaseHopAdapter('candidate').statusModule, true);
+  assert.throws(() => releaseHopAdapter('v2.0.1'), /Unsupported legacy/);
+});
 
 test('arguments require absolute candidate artifacts and a distinct tag chain', () => {
   assert.deepEqual(parseReleaseUpgradeArgs(['--candidate-artifacts', '/a', '--chain', 'v2.0.15,v2.1.0', '--keep-artifacts']),
@@ -43,6 +51,13 @@ test('only the candidate hop must upgrade, become ready and keep history', () =>
   }
   assert.match(gradeReleaseUpgrade({ hops: [{ release: 'v2.0.15', result: { provisioned: false } }], candidate, candidateManifestSha256 }).failures.join('\n'),
     /did not provision/);
+});
+
+test('direct baseline requires actual ready history rather than an empty provisioned profile', () => {
+  assert.equal(gradeReleaseUpgrade({ hops: [hops[0]], candidate, candidateManifestSha256, directBaseline: true }).passed, true);
+  for (const result of [{ provisioned: true, ready: false }, { ...hops[0].result, kept: [] }, { ...hops[0].result, deleted: [] }]) {
+    assert.match(gradeReleaseUpgrade({ hops: [{ result }], candidate, candidateManifestSha256, directBaseline: true }).failures.join('\n'), /direct baseline/);
+  }
 });
 
 test('a held selection starts only the recovery composition and resumes once the hold clears', () => {

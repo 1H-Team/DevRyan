@@ -167,13 +167,17 @@ export function createGlobalMessageStreamHub({
       return;
     }
     const size = approxEventSizeBytes(normalized);
+    if (size > replayByteBudget) {
+      // A later cursor must not claim continuity across an omitted event.
+      replayEpoch += 1;
+      return;
+    }
     replay.push(normalized);
     replaySizes.push(size);
     replayEpochs.push(replayEpoch);
     replayTotalBytes += size;
-    // Always keep at least the newest event, even if it alone busts the budget.
     while (
-      replay.length > 1 &&
+      replay.length > 0 &&
       (replay.length > replayLimit || replayTotalBytes > replayByteBudget)
     ) {
       replay.shift();
@@ -514,6 +518,11 @@ export function createGlobalMessageStreamHub({
       onError(error) {
         if (controller?.signal.aborted) {
           return;
+        }
+        if (error.type === 'frame_too_large' || error.type === 'frame_truncated') {
+          replayEpoch += 1;
+          projector?.handleGap(error.type);
+          broadcastGap(error.type);
         }
 
         notifyStatus({

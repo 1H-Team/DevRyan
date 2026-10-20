@@ -4,6 +4,7 @@ import { measureElement as measureVirtualElement, observeElementOffset, type Vir
 import { useFeatureFlagsStore } from '@/stores/useFeatureFlagsStore';
 
 import ChatMessage from './ChatMessage';
+import { ManagedTaskRow } from './ManagedTaskRow';
 import { PrimaryModelRecovery } from './PrimaryModelRecovery';
 import { areOptionalRenderRelevantMessagesEqual, areRelevantTurnGroupingContextsEqual, areRenderRelevantMessagesEqual } from './message/renderCompare';
 import TurnItem from './components/TurnItem';
@@ -2029,6 +2030,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                                 activeStreamingPhase={activeStreamingPhase}
                             />
                         ) : null}
+                        {manualRecoveryTaskId ? <ManagedTaskRow taskId={manualRecoveryTaskId} onContentChange={() => stableTailContentChange('structural')} /> : null}
                         <PrimaryModelRecovery
                             sessionId={sessionKey}
                             onContentChange={() => stableTailContentChange('structural')}

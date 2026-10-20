@@ -194,3 +194,5 @@ presentation grants implementation authority.
 - Reasoning/justification: `ReasoningPart.tsx`, `ReasoningGroup.tsx`, `reasoningGrouping.ts`, `reasoningDuration.ts`, `reasoningDisclosureKeyboard.ts`, `reasoningDisclosureStatus.ts`, `JustificationBlock.tsx`
 - Status/placeholders: `WorkingPlaceholder.tsx`, `SessionActiveSpinner.tsx`, `MigratingPart.tsx`
 - Utility renderers: `VirtualizedCodeBlock.tsx`, `MinDurationShineText.tsx`, `useNearViewport.ts`
+
+Managed stopped tasks retain their canonical terminal status even while a user continues the child chat independently. A server-advertised stopped-recovery capability shows Resume as task with an explicit model/effort selection in the parent row and opened child. It also allows explicit dismissal, but never offers auto-resume for user cancellation. Canonical stop presentation takes precedence over the provider fallback for a `Step interrupted` assistant error.

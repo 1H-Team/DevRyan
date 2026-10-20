@@ -17,9 +17,7 @@ env:
 permissions:
   contents: read
 
-concurrency:
-  group: release-${{ github.ref_name }}
-  cancel-in-progress: true
+# Cancel obsolete builds, never an in-flight production publication.
 
 jobs:
   admit:
@@ -27,22 +25,59 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: write
+      actions: read
     outputs:
       version: ${{ steps.admit.outputs.version }}
       release_id: ${{ steps.admit.outputs.release_id }}
+      published: ${{ steps.admit.outputs.published }}
+      candidate_run_id: ${{ steps.admit.outputs.candidate_run_id }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Require trusted main CI for this exact source commit
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/release.mjs trusted-ci
       - name: Check version metadata and create or reuse the draft
         id: admit
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/release.mjs admit
 
-  web:
+  verify-published:
     needs: admit
+    if: ${{ needs.admit.outputs.published == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_ID: ${{ needs.admit.outputs.release_id }}
+      RELEASE_ASSET_DIRECTORY: retained-candidate
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: DevRyan-macos-arm64-release
+          run-id: ${{ needs.admit.outputs.candidate_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: retained-candidate
+      - name: Verify original published bytes without rebuilding or deploying
+        run: node scripts/release.mjs verify-published
+
+  web:
+    concurrency:
+      group: release-build-${{ github.ref_name }}-web${{ matrix.baseline || '' }}
+      cancel-in-progress: true
+    needs: admit
+    if: ${{ needs.admit.outputs.published != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -76,10 +111,14 @@ jobs:
           path: artifacts/
           include-hidden-files: true
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 14
 
   electron-prepare:
+    concurrency:
+      group: release-build-${{ github.ref_name }}-electron-prepare${{ matrix.baseline || '' }}
+      cancel-in-progress: true
     needs: admit
+    if: ${{ needs.admit.outputs.published != 'true' }}
     runs-on: macos-26
     # A stalled native build fails the release instead of holding it open.
     timeout-minutes: 35
@@ -121,10 +160,11 @@ jobs:
           path: artifacts/prepared.*
           compression-level: 0
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 14
 
   bot-resolve:
     needs: admit
+    if: ${{ needs.admit.outputs.published != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -146,12 +186,12 @@ jobs:
           name: bot-images-resolved
           path: artifacts
           if-no-files-found: warn
-          retention-days: 1
+          retention-days: 14
 
   bot-build:
     name: bot-build (${{ matrix.image }})
     needs: [admit, bot-resolve]
-    if: ${{ needs.bot-resolve.outputs.build != '[]' }}
+    if: ${{ needs.admit.outputs.published != 'true' && needs.bot-resolve.outputs.build != '[]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -210,7 +250,7 @@ jobs:
           name: bot-images-built-${{ matrix.image }}
           path: artifacts/${{ matrix.image }}.json
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 14
 
   bot-publish:
     needs: [admit, bot-resolve, bot-build]
@@ -247,9 +287,12 @@ jobs:
           name: bot-runtime-images
           path: artifacts/DevRyan-bot-runtime-images-${{ needs.admit.outputs.version }}.json
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 14
 
   electron-package:
+    concurrency:
+      group: release-build-${{ github.ref_name }}-electron-package${{ matrix.baseline || '' }}
+      cancel-in-progress: true
     needs: [admit, web, electron-prepare, bot-publish]
     if: ${{ !cancelled() && needs.web.result == 'success' && needs.electron-prepare.result == 'success' && needs.bot-publish.result == 'success' }}
     runs-on: macos-26
@@ -337,15 +380,22 @@ jobs:
           name: DevRyan-macos-arm64-release
           path: packages/electron/dist/DevRyan-${{ needs.admit.outputs.version }}-arm64.dmg
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 14
 
   upgrade-check:
+    concurrency:
+      group: release-build-${{ github.ref_name }}-upgrade-check${{ matrix.baseline || '' }}
+      cancel-in-progress: true
     # Installed apps upgrade at their first launch. Age a private profile through
     # the previous published releases, then cold-start the packaged candidate.
     needs: [admit, electron-package]
     if: ${{ !cancelled() && needs.electron-package.result == 'success' }}
     runs-on: macos-26
     timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        baseline: [aging, v2.0.2, v2.0.15]
     env:
       GH_TOKEN: ${{ github.token }}
       VERSION: ${{ needs.admit.outputs.version }}
@@ -372,15 +422,101 @@ jobs:
           set -euo pipefail
           MOUNT="$RUNNER_TEMP/candidate-mount"
           mkdir -p "$MOUNT"
+          trap 'hdiutil detach "$MOUNT" -force >/dev/null 2>&1 || true' EXIT
           hdiutil attach -readonly -nobrowse -mountpoint "$MOUNT" "candidate-dmg/DevRyan-${VERSION}-arm64.dmg"
           ditto "$MOUNT/DevRyan.app/Contents/Resources/revert-runtime/darwin-arm64" "$RUNNER_TEMP/candidate-runtime"
           hdiutil detach "$MOUNT" -force
       - name: Upgrade from the previous releases
-        run: node scripts/qa/release-upgrade-lane.mjs --candidate-artifacts "$RUNNER_TEMP/candidate-runtime"
+        env:
+          UPGRADE_BASELINE: ${{ matrix.baseline }}
+        run: |
+          args=(--candidate-artifacts "$RUNNER_TEMP/candidate-runtime" --report "$RUNNER_TEMP/release-reports/upgrade-${UPGRADE_BASELINE}.json")
+          if [ "$UPGRADE_BASELINE" != aging ]; then args+=(--direct-baseline "$UPGRADE_BASELINE"); fi
+          node scripts/qa/release-upgrade-lane.mjs "${args[@]}"
+      - name: Export an incomplete qualification report if setup failed
+        if: ${{ always() }}
+        env:
+          REPORT_PATH: ${{ runner.temp }}/release-reports/upgrade-${{ matrix.baseline }}.json
+          REPORT_KIND: release-upgrade-lane
+        run: |
+          node --input-type=module - <<'NODE'
+          import fs from 'node:fs/promises';
+          import path from 'node:path';
+          const file = process.env.REPORT_PATH;
+          if (!await fs.stat(file).catch(() => null)) {
+            await fs.mkdir(path.dirname(file), { recursive: true });
+            await fs.writeFile(file, JSON.stringify({ schemaVersion: 1, kind: process.env.REPORT_KIND,
+              sourceRevision: process.env.GITHUB_SHA, runID: process.env.GITHUB_RUN_ID,
+              passed: false, failures: ['Qualification did not complete; inspect the failed setup step'] }) + '\n');
+          }
+          NODE
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: release-upgrade-${{ matrix.baseline }}
+          path: ${{ runner.temp }}/release-reports/
+          if-no-files-found: warn
+          retention-days: 14
+
+  final-dmg-smoke:
+    concurrency:
+      group: release-build-${{ github.ref_name }}-final-dmg-smoke
+      cancel-in-progress: true
+    needs: [admit, electron-package]
+    if: ${{ !cancelled() && needs.electron-package.result == 'success' }}
+    runs-on: macos-26
+    timeout-minutes: 12
+    # Enable only after reviewing three distinct qualified-run reports/screenshots.
+    continue-on-error: ${{ vars.DEVRYAN_FINAL_DMG_SMOKE_GATE != 'qualified-3-runs' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.14'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install smoke dependencies
+        env:
+          DEVRYAN_SKIP_INSTALL_PREPARE: '1'
+        run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: DevRyan-macos-arm64-release
+          path: candidate-dmg
+      - name: Observe the unchanged final DMG first launch
+        run: node scripts/qa/release-final-dmg-smoke.mjs --dmg "$PWD/candidate-dmg/DevRyan-${{ needs.admit.outputs.version }}-arm64.dmg" --report "$RUNNER_TEMP/release-smoke/report.json"
+      - name: Export an incomplete qualification report if setup failed
+        if: ${{ always() }}
+        env:
+          REPORT_PATH: ${{ runner.temp }}/release-smoke/report.json
+          REPORT_KIND: release-final-dmg-smoke
+        run: |
+          node --input-type=module - <<'NODE'
+          import fs from 'node:fs/promises';
+          import path from 'node:path';
+          const file = process.env.REPORT_PATH;
+          if (!await fs.stat(file).catch(() => null)) {
+            await fs.mkdir(path.dirname(file), { recursive: true });
+            await fs.writeFile(file, JSON.stringify({ schemaVersion: 1, kind: process.env.REPORT_KIND,
+              sourceRevision: process.env.GITHUB_SHA, runID: process.env.GITHUB_RUN_ID,
+              passed: false, failures: ['Qualification did not complete; inspect the failed setup step'] }) + '\n');
+          }
+          NODE
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: release-final-dmg-smoke
+          path: ${{ runner.temp }}/release-smoke/
+          if-no-files-found: warn
+          retention-days: 14
 
   publish:
-    needs: [admit, electron-package, upgrade-check]
-    if: ${{ !cancelled() && needs.electron-package.result == 'success' && needs.upgrade-check.result == 'success' }}
+    concurrency:
+      group: devryan-production-publication
+      cancel-in-progress: false
+    needs: [admit, electron-package, upgrade-check, final-dmg-smoke]
+    if: ${{ !cancelled() && needs.electron-package.result == 'success' && needs.upgrade-check.result == 'success' && (needs.final-dmg-smoke.result == 'success' || vars.DEVRYAN_FINAL_DMG_SMOKE_GATE != 'qualified-3-runs') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: DevRyan Secrets
@@ -400,14 +536,15 @@ jobs:
           name: DevRyan-macos-arm64-release
           path: release-assets
       - name: Check the DMG and attach it to the draft
+        id: upload
         run: node scripts/release.mjs upload
       - name: Setup Supabase CLI
-        if: ${{ github.event_name == 'push' }}
+        if: ${{ github.event_name == 'push' && steps.upload.outputs.published != 'true' }}
         uses: supabase/setup-cli@v1
         with:
           version: 2.115.0
       - name: Deploy and verify Supabase configuration and migrations
-        if: ${{ github.event_name == 'push' }}
+        if: ${{ github.event_name == 'push' && steps.upload.outputs.published != 'true' }}
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}

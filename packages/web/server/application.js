@@ -1200,7 +1200,7 @@ async function constructWebHost(options = {}) {
     processBrowserLease: (payload) => browserLeaseRuntime?.processOpenCodeEvent(payload),
     processManagedOrchestration: (payload, directory) => managedOrchestrationRuntime?.processOpenCodeEvent?.(payload, directory),
     processSessionTitle: (payload) => standardSessionTitleRuntime.processOpenCodeEvent(payload),
-    processCommandDeadline: (payload) => observeCommandDeadline(payload),
+    processCommandDeadline: (payload, directory) => observeCommandDeadline(payload, directory),
     onSessionDeleted: (deletedSessionId) => {
       sessionRuntime.clearSessionActivity(deletedSessionId);
       const cleanup = cursorSdkRuntime.deleteSessionState(deletedSessionId);
@@ -1543,6 +1543,7 @@ async function constructWebHost(options = {}) {
   const commandDeadlineRuntime = createWebCommandDeadlineRuntime({
     openCodeClient,
     store: harnessRuntime.commandDeadlineStore,
+    cancelCommand: (input, options) => sessionExecutionHost.cancelOwnedCommand(input, options),
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
     fetchImpl: fetch,
@@ -1585,20 +1586,34 @@ async function constructWebHost(options = {}) {
   // explicit user Stop (or an unattributed client) also stops a managed child's
   // executor from continuing or recovering it; automatic UI aborts do not.
   const OPERATOR_STOP_SOURCES = new Set(['stop_button', 'double_escape', 'status_row', 'session_removal', 'unknown']);
-  harnessRuntime.setControlObserver(({ action, sessionID, source, res }) => {
+  harnessRuntime.setControlPreparation(async ({ action, sessionID, directory, source, res }) => {
+    if (action !== 'abort' || !OPERATOR_STOP_SOURCES.has(source)) return;
+    const operatorStop = await managedOrchestrationRuntime?.recordOperatorAbort?.({
+      sessionId: sessionID, directory, requestedAt: Date.now(),
+    });
+    if (!operatorStop) return;
+    res.once('finish', () => {
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        void managedOrchestrationRuntime?.acceptOperatorAbort?.(operatorStop).catch(() => {
+          console.warn('[orchestration] Unable to confirm accepted operator stop');
+        });
+        return;
+      }
+      void managedOrchestrationRuntime?.withdrawOperatorAbort?.(operatorStop).catch(() => {
+        console.warn('[orchestration] Unable to withdraw rejected operator stop');
+      });
+    });
+  });
+  harnessRuntime.setControlObserver(({ action, sessionID, res }) => {
     if (action !== 'abort') return;
     const clearAbortedPresentation = sessionRuntime.captureSessionPresentationClear(sessionID);
     turnTimingRuntime.recordAbortRequested({ sessionID });
-    const operatorStop = OPERATOR_STOP_SOURCES.has(source)
-      ? managedOrchestrationRuntime?.recordOperatorAbort?.({ sessionId: sessionID, requestedAt: Date.now() }) ?? null
-      : null;
     res.once('finish', () => {
       if (res.statusCode >= 200 && res.statusCode < 300) {
         clearAbortedPresentation();
         return;
       }
       turnTimingRuntime.withdrawAbortRequest({ sessionID });
-      if (operatorStop) managedOrchestrationRuntime?.withdrawOperatorAbort?.(operatorStop);
     });
   });
   const harnessFingerprintReader = createHarnessRunFingerprintReader({
@@ -1697,7 +1712,7 @@ async function constructWebHost(options = {}) {
     onLockTiming: (timing) => turnTimingRuntime.recordLedgerLock({ sessionId: timing.sessionID, operation: timing.operation,
       waitMs: timing.waitMs, holdMs: timing.holdMs, failed: timing.failed }),
   });
-  observeCommandDeadline = (payload) => commandDeadlineRuntime.observe(payload);
+  observeCommandDeadline = (payload, directory) => commandDeadlineRuntime.observe(payload, directory);
   if (selectedRuntimeBundle && (ENV_SKIP_OPENCODE_START || ENV_CONFIGURED_OPENCODE_HOST)) {
     throw new Error('Selected runtime bundles require their owned controller');
   }
@@ -2615,6 +2630,7 @@ async function constructWebHost(options = {}) {
       registerExecutionChild: nativeBundle ? input => sessionExecutionHost.nativeManagedChild(input)
         : capturedExecutions ? (input) => sessionExecutionHost.plugin({ ...input, action: 'child' }) : undefined,
       nativeTaskDispatch: nativeBundle ? (input, action) => nativeRuntime.nativeOwner.withManagedTaskDispatch(input, action) : undefined,
+      getNativeDispatchReady: nativeBundle ? () => nativeRuntime.isReady() : undefined,
       publishEvent: emitSyntheticOpenCodeEvent,
       isManagedOpenCode: () => !(
         isExternalOpenCode

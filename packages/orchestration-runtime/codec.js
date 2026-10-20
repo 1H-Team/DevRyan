@@ -261,6 +261,10 @@ const isWireTaskRecord = value => value.owner === MANAGED_TASK_OWNER
   && typeof value.recoverablePreview === 'string'
   && Array.isArray(value.canonicalRefs) && value.canonicalRefs.every(isCanonicalReference)
   && typeof value.agentRetryAvailable === 'boolean'
+  && (value.terminationIntent === undefined || value.terminationIntent === null || value.terminationIntent === 'user_stopped')
+  && (value.stoppedRecoveryAvailable === undefined || typeof value.stoppedRecoveryAvailable === 'boolean')
+  && (value.userStoppedRecoveryAvailable === undefined || typeof value.userStoppedRecoveryAvailable === 'boolean')
+  && (value.manualRecoveryRequired === undefined || typeof value.manualRecoveryRequired === 'boolean')
   // Automatic-recovery fields; absent on older hosts.
   && isOptionalNullableString(value.recoveryLineageId)
   && isOptionalNullableTimestamp(value.childPromptedAt)
@@ -312,6 +316,10 @@ export const decodeTaskEventRecord = (value, options) => {
     recoverablePreview: truncateManagedText(value.recoverablePreview, MAX_MANAGED_TASK_PREVIEW_BYTES),
     canonicalRefs: projectRefs(value.canonicalRefs),
     agentRetryAvailable: value.agentRetryAvailable,
+    ...(value.terminationIntent === undefined ? {} : { terminationIntent: value.terminationIntent }),
+    ...(value.stoppedRecoveryAvailable === undefined ? {} : { stoppedRecoveryAvailable: value.stoppedRecoveryAvailable }),
+    ...(value.userStoppedRecoveryAvailable === undefined ? {} : { userStoppedRecoveryAvailable: value.userStoppedRecoveryAvailable }),
+    ...(value.manualRecoveryRequired === undefined ? {} : { manualRecoveryRequired: value.manualRecoveryRequired }),
     recoveryLineageId: typeof value.recoveryLineageId === 'string' ? bounded(value.recoveryLineageId) : null,
     childPromptedAt: isTimestamp(value.childPromptedAt) ? value.childPromptedAt : null,
     firstAssistantPartAt: isTimestamp(value.firstAssistantPartAt) ? value.firstAssistantPartAt : null,
@@ -394,6 +402,7 @@ const invalidSnapshot = () => new TypeError('Managed orchestration returned an i
 export const decodeSnapshotPayload = (value, options) => {
   const mode = readMode(options);
   if (!isRecord(value) || typeof value.available !== 'boolean' || typeof value.bridgeReady !== 'boolean'
+    || (value.dispatchReady !== undefined && typeof value.dispatchReady !== 'boolean')
     || !isNullableString(value.recoveryWarning) || !Array.isArray(value.tasks) || !Array.isArray(value.resultEnvelopes)) {
     throw invalidSnapshot();
   }
@@ -418,6 +427,7 @@ export const decodeSnapshotPayload = (value, options) => {
   return {
     available: value.available,
     bridgeReady: value.bridgeReady,
+    dispatchReady: value.dispatchReady === undefined ? value.bridgeReady : value.dispatchReady === true,
     recoveryWarning: value.recoveryWarning === null ? null : truncateManagedText(value.recoveryWarning, MAX_MANAGED_TASK_FAILURE_BYTES),
     tasks,
     resultEnvelopes,

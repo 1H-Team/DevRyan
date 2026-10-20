@@ -1,0 +1,137 @@
+[
+  {
+    "label": "qa-repair-wire-2026-10-20",
+    "createdAt": "2026-10-20T16:12:22.789Z",
+    "runsPerScenario": 3,
+    "warmupMs": 5000,
+    "measureMs": 30000,
+    "sampleIntervalMs": 500,
+    "fixtureSha256": "05e54dc4a3574abdfdd9d049b227a7228629c9c056e7e9cc43bab4f2ce0161a4",
+    "lifecycleProtocolSha256": "30a1e647730fc0ce51b84d359d051374ade172b8d6da64454323b44bc5a84f04",
+    "integrity": {
+      "passed": true,
+      "errors": []
+    },
+    "workloadError": "Native startup failed: Timed out: first usable UI after native startup documents"
+  },
+  {
+    "label": "qa-repair-preflight-2026-10-20",
+    "createdAt": "2026-10-20T16:23:10.632Z",
+    "runsPerScenario": 1,
+    "warmupMs": 500,
+    "measureMs": 1000,
+    "sampleIntervalMs": 500,
+    "fixtureSha256": "05e54dc4a3574abdfdd9d049b227a7228629c9c056e7e9cc43bab4f2ce0161a4",
+    "lifecycleProtocolSha256": "0661f5b27e5f5ac2b869821fb56264cadbd41f5b7e7bf63b43b38fe59b4644de",
+    "integrity": {
+      "passed": true,
+      "errors": []
+    },
+    "workloadError": "Mounted history head is absent from canonical storage\n\n401 !== 200\n"
+  },
+  {
+    "label": "qa-repair-v2-preflight-2026-10-20",
+    "createdAt": "2026-10-20T16:28:56.569Z",
+    "runsPerScenario": 1,
+    "warmupMs": 500,
+    "measureMs": 1000,
+    "sampleIntervalMs": 500,
+    "fixtureSha256": "05e54dc4a3574abdfdd9d049b227a7228629c9c056e7e9cc43bab4f2ce0161a4",
+    "lifecycleProtocolSha256": "7331af0fb11aea87210608d426b18a0a55589f063aebcaa46f3cabefa59c7704",
+    "integrity": {
+      "passed": true,
+      "errors": []
+    },
+    "workloadError": "Timed out: visible text History request 149"
+  },
+  {
+    "label": "qa-repair-memory-preflight-2026-10-20",
+    "createdAt": "2026-10-20T16:33:58.176Z",
+    "runsPerScenario": 1,
+    "warmupMs": 500,
+    "measureMs": 1000,
+    "sampleIntervalMs": 500,
+    "fixtureSha256": "05e54dc4a3574abdfdd9d049b227a7228629c9c056e7e9cc43bab4f2ce0161a4",
+    "lifecycleProtocolSha256": "d9f386999d65b80a41491ce7061ec6a8d60f1e62b6257b4793a10aa365645393",
+    "integrity": {
+      "passed": true,
+      "errors": []
+    },
+    "workloadError": "UI did not materialize the full prescribed history\n\n0 !== 360\n"
+  },
+  {
+    "label": "qa-repair-memory-ledger-preflight-2026-10-20",
+    "createdAt": "2026-10-20T16:37:08.876Z",
+    "runsPerScenario": 1,
+    "warmupMs": 500,
+    "measureMs": 1000,
+    "sampleIntervalMs": 500,
+    "fixtureSha256": "1a5a2bcf6f2ab2fcadbeac30dc69b3167263c1ccebc4a625d8abbbb1d0177f3d",
+    "lifecycleProtocolSha256": "287f0db350b9195e2be572eccf89a423cf94b2ebeba3e1a356a735f79a825500",
+    "integrity": {
+      "passed": true,
+      "errors": []
+    },
+    "workloadError": "Timed out: Archive confirmation or authoritative acknowledgement"
+  },
+  {
+    "label": "qa-repair-final-resource-2026-10-20",
+    "createdAt": "2026-10-20T17:08:19.741Z",
+    "runsPerScenario": 3,
+    "warmupMs": 5000,
+    "measureMs": 30000,
+    "sampleIntervalMs": 500,
+    "fixtureSha256": "1a5a2bcf6f2ab2fcadbeac30dc69b3167263c1ccebc4a625d8abbbb1d0177f3d",
+    "lifecycleProtocolSha256": "287f0db350b9195e2be572eccf89a423cf94b2ebeba3e1a356a735f79a825500",
+    "integrity": {
+      "passed": true,
+      "errors": []
+    },
+    "workloadError": null
+  },
+  {
+    "label": "qa-repair-final-memory-1-2026-10-20",
+    "createdAt": "2026-10-20T17:19:52.293Z",
+    "runsPerScenario": 1,
+    "warmupMs": 5000,
+    "measureMs": 30000,
+    "sampleIntervalMs": 500,
+    "fixtureSha256": "1a5a2bcf6f2ab2fcadbeac30dc69b3167263c1ccebc4a625d8abbbb1d0177f3d",
+    "lifecycleProtocolSha256": "287f0db350b9195e2be572eccf89a423cf94b2ebeba3e1a356a735f79a825500",
+    "integrity": {
+      "passed": true,
+      "errors": []
+    },
+    "workloadError": "Timed out: Archive confirmation or authoritative acknowledgement"
+  },
+  {
+    "label": "qa-repair-final-memory-2-2026-10-20",
+    "createdAt": "2026-10-20T17:24:19.500Z",
+    "runsPerScenario": 1,
+    "warmupMs": 5000,
+    "measureMs": 30000,
+    "sampleIntervalMs": 500,
+    "fixtureSha256": "1a5a2bcf6f2ab2fcadbeac30dc69b3167263c1ccebc4a625d8abbbb1d0177f3d",
+    "lifecycleProtocolSha256": "287f0db350b9195e2be572eccf89a423cf94b2ebeba3e1a356a735f79a825500",
+    "integrity": {
+      "passed": true,
+      "errors": []
+    },
+    "workloadError": "Timed out: Archive confirmation or authoritative acknowledgement"
+  },
+  {
+    "label": "qa-repair-final-memory-3-2026-10-20",
+    "createdAt": "2026-10-20T17:27:32.204Z",
+    "runsPerScenario": 1,
+    "warmupMs": 5000,
+    "measureMs": 30000,
+    "sampleIntervalMs": 500,
+    "fixtureSha256": "1a5a2bcf6f2ab2fcadbeac30dc69b3167263c1ccebc4a625d8abbbb1d0177f3d",
+    "lifecycleProtocolSha256": "287f0db350b9195e2be572eccf89a423cf94b2ebeba3e1a356a735f79a825500",
+    "integrity": {
+      "passed": true,
+      "errors": []
+    },
+    "workloadError": "Timed out: Archive confirmation or authoritative acknowledgement"
+  }
+]

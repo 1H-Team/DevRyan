@@ -11,7 +11,7 @@ import {
   supportsManagedReadOnlyAgent,
   supportsManagedReadOnlyProvider,
 } from './provider-capabilities.js';
-import { formatManagedTaskDisplayName, MAX_MANAGED_TASK_PREVIEW_BYTES, truncateManagedText } from './contract.js';
+import { MANAGED_OPERATOR_STOP_UNCERTAIN_REASON, hasAcceptedUserStop, hasPendingOperatorStop, formatManagedTaskDisplayName, MAX_MANAGED_TASK_PREVIEW_BYTES, truncateManagedText } from './contract.js';
 import {
   PROVIDER_USAGE_LIMIT_FAILURE_KIND,
   classifyProviderRetryStatus,
@@ -168,6 +168,9 @@ const resolveTaskPromptTools = (task) => ({
   // Managed tasks are already child sessions. Keep all further delegation
   // root-owned even when project agent permissions expose OpenCode's task tool.
   task: false,
+  // The parent owns task tracking; child-only todo schemas add no authority.
+  todoread: false,
+  todowrite: false,
 });
 
 const normalizeToolStatus = (value) => trimString(value)
@@ -935,9 +938,10 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
   // user message after Stop is deliberate steering, not automatic recovery.
   const readApplicableOperatorAbort = async (task, after) => {
     if (typeof transport.readOperatorAbort !== 'function') return null;
-    const input = { sessionId: task.childSessionId, directory: task.directory, providerId: task.providerId, after };
+    const input = { sessionId: task.childSessionId, directory: task.directory, providerId: task.providerId, taskId: task.taskId, leaseToken: task.leaseToken, after };
     const request = await transport.readOperatorAbort(input);
     if (!request) return null;
+    if (request.state === 'pending' || request.state === 'uncertain') return { request, observation: null };
     const attempt = attemptFor(task);
     if (request.requestedAt === attempt?.steeredAbortAt) return null;
     let observation;
@@ -950,7 +954,10 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     }
     const current = await transport.readOperatorAbort(input);
     if (!current) return null;
-    if (Number.isFinite(observation.latestUserCreatedAt) && observation.latestUserCreatedAt > current.requestedAt) {
+    if (current.durable && Number.isFinite(observation.latestUserCreatedAt) && observation.latestUserCreatedAt > current.requestedAt) {
+      return { request: current, observation, independent: true };
+    }
+    if (!current.durable && Number.isFinite(observation.latestUserCreatedAt) && observation.latestUserCreatedAt > current.requestedAt) {
       if (attempt) {
         attempt.steeredAbortAt = current.requestedAt;
         attempt.steeringUserId = observation.latestUserMessageId;
@@ -1643,11 +1650,15 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
         return null;
       }
       const { observation } = stopped;
+      if (stopped.request.state === 'uncertain') return { ...copyRecovery(attemptFor(task)?.recovery),
+        status: 'interrupted', failureReason: MANAGED_OPERATOR_STOP_UNCERTAIN_REASON, resumable: true };
+      if (stopped.independent) return { ...copyRecovery(attemptFor(task)?.recovery), status: 'aborted',
+        failureReason: 'Stopped by the user', resumable: true, terminationIntent: 'user_stopped' };
       if (!observation) return 'pending';
       if (!LIVE_STATUS_TYPES.has(observation.statusType)) {
         const terminal = toTerminalResult(observation);
         if (terminal?.status === 'completed') return terminal;
-        return transportRecoveryResult(observation, 'Stopped by the user', 'aborted');
+        return { ...transportRecoveryResult(observation, 'Stopped by the user', 'aborted'), terminationIntent: 'user_stopped' };
       }
       // Still live: never continue, recover or re-prompt on the user's behalf.
       operatorAbortSeenAt ??= now();
@@ -2362,6 +2373,10 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
   };
 
   const reconcile = async (task) => {
+    if (hasPendingOperatorStop(task)) return { state: 'live' };
+    if (task.operatorStop?.state === 'uncertain') return { state: 'terminal', result: { status: 'interrupted',
+      failureReason: MANAGED_OPERATOR_STOP_UNCERTAIN_REASON, partial: task.partial, recoverablePreview: task.recoverablePreview,
+      canonicalRefs: task.canonicalRefs, resumable: Boolean(task.childSessionId) } };
     if (!task.childSessionId) {
       return {
         state: 'unavailable',
@@ -2387,6 +2402,10 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
         };
       }
       const observation = await readObservation(task);
+      if (hasAcceptedUserStop(task)) {
+        if (LIVE_STATUS_TYPES.has(observation.statusType)) return { state: 'live' };
+        return { state: 'terminal', result: { ...transportRecoveryResult(observation, 'Stopped by the user', 'aborted'), terminationIntent: 'user_stopped' } };
+      }
       if (task.transportRecovery?.phase === 'backup_pending') return { state: 'relaunch' };
       if (task.transportRecovery) return { state: 'live' };
       const providerUsageLimit = settleProviderUsageLimit(task, observation);

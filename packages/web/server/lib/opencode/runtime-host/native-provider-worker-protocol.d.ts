@@ -13,5 +13,6 @@ export function parseProviderBoot(value:unknown):NativeProviderBoot;
 export function parseProviderBound(value:unknown):NativeProviderBound;
 export function parseProviderCommand(value:unknown):NativeProviderCommand;
 
-export interface NativeProviderDiagnostic {readonly protocol:1;readonly type:'claude-process-diagnostic';readonly instanceID:string;readonly attemptID:string;readonly sessionID:string;readonly directory:string;readonly receipt:import('./native-claude-diagnostics.js').NativeClaudeProcessReceipt}
+interface NativeProviderDiagnosticScope {readonly protocol:1;readonly instanceID:string;readonly attemptID:string;readonly sessionID:string;readonly directory:string}
+export type NativeProviderDiagnostic=NativeProviderDiagnosticScope&({readonly type:'claude-process-diagnostic';readonly receipt:import('./native-claude-diagnostics.js').NativeClaudeProcessReceipt}|{readonly type:'claude-checkpoint-diagnostic';readonly checkpoint:{readonly event:string;readonly reason:string;readonly toolCount:number}});
 export function parseProviderDiagnostic(value:unknown):NativeProviderDiagnostic;

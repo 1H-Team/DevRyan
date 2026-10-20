@@ -1,5 +1,11 @@
 # OpenCode Module Documentation
 
+`session-execution-host.cancelOwnedCommand` is a constructor-only deadline
+recovery boundary, not a tool RPC. It matches a single live shell by canonical
+directory/session/message/call identity and waits for supervised settlement;
+it never resolves processes by name or a caller-supplied PID. The web deadline
+adapter bounds that wait before falling back to existing session recovery.
+
 DevRyan agent settings use the synthetic `devryan` config key and are stored in
 `.devryan/config.json` beside the OpenCode user config. The sidecar reader also
 accepts `.openchamber/config.json` and the former `openchamber` config key;
@@ -810,6 +816,12 @@ tool-use, independent-session and incomplete-result protections remain active;
 stream and non-stream storage gates explicitly reject cancellation.
 The bounded diagnostic ring records settling, retained, rejected and replay
 reasons with tool counts, without prompts, tool arguments or credentials.
+The native provider also forwards these as typed `native_claude_checkpoint`
+journal observations. Its checkpoint reader resolves the transport-owned state
+directory through the current attempt/profile binding, rather than using the
+SDK's original profile directory; exact checkpoint identity checks stay active.
+Native asset preparation embeds this canonical helper as an inventoried rewrite
+while preserving the captured dependency's original hash verification.
 
 `model-default-thinking.js` adds optional display-only `defaultThinkingLevel`
 to provider model metadata. Explicit supported adapter configuration wins;

@@ -39,7 +39,7 @@ const reportsBlocked = (report: ReturnType<typeof readManagedResultReport>, prev
 );
 
 const getStatusPresentation = (
-  task: Pick<ManagedTaskRowTask, 'executionKind' | 'status' | 'childPromptedAt' | 'firstAssistantPartAt' | 'recoverablePreview' | 'partial'>,
+  task: Pick<ManagedTaskRowTask, 'executionKind' | 'status' | 'terminationIntent' | 'childPromptedAt' | 'firstAssistantPartAt' | 'recoverablePreview' | 'partial'>,
   t: ReturnType<typeof useI18n>['t'],
 ) => {
   if (task.status === 'completed') {
@@ -53,7 +53,9 @@ const getStatusPresentation = (
     }
     return { label: t('chat.managedTasks.summary.complete'), className: 'text-[var(--status-success)]' };
   }
-  if (task.status === 'failed' || task.status === 'aborted' || task.status === 'interrupted') {
+  if (task.terminationIntent === 'user_stopped' && task.status === 'aborted') return { label: t('chat.managedTasks.stoppedByYou'), className: 'text-muted-foreground' };
+  if (task.status === 'aborted') return { label: t('chat.managedTasks.stopped'), className: 'text-muted-foreground' };
+  if (task.status === 'failed' || task.status === 'interrupted') {
     return { label: t('chat.managedTasks.summary.error'), className: 'text-[var(--status-error)]' };
   }
   if (task.status === 'queued') {
@@ -292,6 +294,7 @@ export type ManagedTaskRowViewProps = {
   childActive?: boolean;
   actionError?: string | null;
   providers?: ControlledModelPickerProvider[];
+  onDismissStopped?(): void | Promise<void>;
   onRetryInPlace?(selection: ProviderRecoverySelection): void | Promise<void>;
   autoResumePending?: boolean;
   onAutoResumeChange?(enabled: boolean): void | Promise<void>;
@@ -309,33 +312,17 @@ export const ManagedTaskRowView = React.memo(({
   actionError = null,
   providers = [],
   onRetryInPlace,
+  onDismissStopped,
   autoResumePending = false,
   onAutoResumeChange,
 }: ManagedTaskRowViewProps) => {
   const { t } = useI18n();
-  const manualRecoveryRequired = Boolean(
-    resultEnvelope?.resumable
-    && resultEnvelope.action === null
-    && !task.agentRetryAvailable
-    && task.failureKind !== 'provider_prompt_rejected'
-    && (
-      task.failureKind === 'provider_usage_limit'
-      || task.failureKind === 'provider_authentication'
-      || task.failureKind === 'provider_configuration'
-      || task.failureKind === 'model_unavailable'
-      || Boolean(task.transportRecovery)
-      || (task.mode === 'orchestrator' && task.dispatchGrouped && task.attempt >= 2)
-    )
-    && (task.status === 'failed' || task.status === 'interrupted'),
-  );
-  const showRecovery = Boolean(onRetryInPlace && manualRecoveryRequired);
-  const presentedTask = childActive && (
-    task.status === 'failed' || task.status === 'aborted' || task.status === 'interrupted'
-  ) && !manualRecoveryRequired
-    && task.failureKind !== 'provider_usage_limit'
-    && task.failureKind !== 'provider_prompt_rejected'
-    ? { ...task, status: 'running' as const }
-    : task;
+  const userStopped = task.userStoppedRecoveryAvailable === true;
+  const stopped = userStopped || task.stoppedRecoveryAvailable === true;
+  const manualRecoveryRequired = Boolean(resultEnvelope?.resumable && resultEnvelope.action === null
+    && (task.manualRecoveryRequired === true || task.stoppedRecoveryAvailable === true || userStopped));
+  const showRecovery = Boolean(onRetryInPlace && manualRecoveryRequired && (!stopped || !childActive));
+  const presentedTask = task;
   const status = getStatusPresentation(presentedTask, t);
   const providerFailurePresentation = getProviderFailurePresentation({
     task,
@@ -344,7 +331,7 @@ export const ManagedTaskRowView = React.memo(({
     providers,
     t,
   });
-  const autoResume = showRecovery ? deriveAutoResume(task, resultEnvelope, providers) : undefined;
+  const autoResume = showRecovery && !stopped ? deriveAutoResume(task, resultEnvelope, providers) : undefined;
   const [selection, setSelection] = React.useState<ProviderRecoverySelection>(() => ({
     providerId: task.providerId,
     modelId: task.modelId,
@@ -385,9 +372,11 @@ export const ManagedTaskRowView = React.memo(({
           </Button>
         ) : null}
       </div>
+      {stopped && onDismissStopped ? <Button size="xs" variant="ghost" disabled={pending} onClick={onDismissStopped}>{t('chat.managedTasks.dismissStopped')}</Button> : null}
       {showRecovery ? (
         <ModelRecoveryCard
           embedded
+          retryLabel={stopped ? t('chat.managedTasks.resumeAsTask') : undefined}
           title={t(task.failureKind === 'deadline_exceeded'
             ? 'chat.modelRecovery.timeoutSubagentPrompt'
             : 'chat.modelRecovery.subagentPrompt')}
@@ -486,6 +475,7 @@ export const ManagedTaskRow = React.memo(({
         'retry_in_place',
         selection,
       )}
+      onDismissStopped={() => useManagedOrchestrationStore.getState().acknowledgeTask(taskId, 'abandon')}
       autoResumePending={pendingAction === 'auto_resume'}
       onAutoResumeChange={(enabled) => useManagedOrchestrationStore.getState().setAutoResume(
         taskId,

@@ -196,6 +196,18 @@ describe('getPlanCardActionState', () => {
     });
   });
 
+  test('keeps implementation wording when the implementation request supersedes the plan', () => {
+    expect(getPlanCardActionState({
+      streamPhase: 'completed',
+      hasPlanText: true,
+      isImplementationRequested: true,
+      isLatestPlan: false,
+    })).toEqual({
+      canImplement: false,
+      disabledReason: 'Implementation already started.',
+    });
+  });
+
   test('keeps the card disabled while a sibling assistant in the revision is still running', () => {
     expect(getPlanCardActionState({
       streamPhase: 'completed',

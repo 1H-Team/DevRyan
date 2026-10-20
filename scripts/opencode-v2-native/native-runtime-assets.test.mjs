@@ -73,6 +73,15 @@ test('reviewed original closure and exact constructor transforms are inventoried
  assert.equal(reviewed.claudeCredentials.path,'DevRyan-Claude-credentials.mjs');
  assert.equal(reviewed.claudeCredentials.sha256,hash(reviewed.claudeCredentials.contents));
  assert.equal(reviewed.claudeCredentials.mode,0o644);
+ const checkpointOwner=path.join(repository,'packages/web/server/lib/opencode/meridian-passthrough-handoff.js');
+ const checkpointCaptured=path.join(root,'claude-1.8.0/node_modules/@rynfar/meridian/dist/devryan-meridian-passthrough-handoff.js');
+ const checkpointContents=await fs.readFile(checkpointOwner,'utf8');
+ assert.equal(reviewed.rewrites.get(checkpointCaptured),checkpointContents);
+ assert.equal(reviewed.inputFiles.get(checkpointOwner),hash(checkpointContents));
+ assert.ok(reviewed.transforms.some(row=>row.path===path.relative(repository,checkpointCaptured)&&row.reason==='canonical-transport-owned-checkpoint-verification'));
+ const meridian=reviewed.rewrites.get(path.join(root,'claude-1.8.0/node_modules/@rynfar/meridian/dist/cli-wxk8xvd3.js'));
+ assert.match(meridian,/__DEVRYAN_CLAUDE_CHECKPOINT_DIAGNOSTIC/);
+ assert.match(meridian,/passthrough\.checkpoint_replay/);
  assert.match(reviewed.claudeCredentials.contents,/export \{createPlatformCredentialStore, ensureFreshToken, refreshOAuthToken\};/);
  assert.equal(reviewed.ast.path,REVIEWED_AST_FILENAME);
  assert.equal(reviewed.ast.sha256,hash(await fs.readFile(reviewed.ast.source)));
@@ -93,7 +102,7 @@ test('reviewed original closure and exact constructor transforms are inventoried
  assert.equal(reviewed.inputFiles.get(jsoncPackage),hash(await fs.readFile(jsoncPackage)));
  assert.equal(reviewed.transforms.find(item=>item.reason==='pinned-jsonc-original-esm-module-resolution').sha256,hash(await fs.readFile(jsoncMain)));
  const workspaceManifest=new Set([...reviewed.workspaceResolutions.keys()].map(directory=>path.join(directory,'package.json')));
- assert.equal([...reviewed.inputFiles].every(([file])=>file.startsWith(root+path.sep)||file===jsoncPackage||file===path.join(repository,'bun.lock')||workspaceManifest.has(file)
+ assert.equal([...reviewed.inputFiles].every(([file])=>file.startsWith(root+path.sep)||file===jsoncPackage||file===checkpointOwner||file===path.join(repository,'bun.lock')||workspaceManifest.has(file)
   ||file.startsWith(path.join(repository,'node_modules/.bun')+path.sep)&&path.basename(file)==='package.json'
   ||file===path.join(repository,'packages/web/server/default-config/plugins/devryan-document-reader.mjs')||file===path.join(repository,'packages/web/server/default-config/plugins/devryan-document-reader.d.mts')||file===path.join(repository,'packages/web/server/default-config/plugins/devryan-browser.mjs')||file===path.join(repository,'packages/web/server/default-config/plugins/devryan-browser.d.mts')),true);
 });

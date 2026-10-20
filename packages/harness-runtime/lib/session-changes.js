@@ -6,7 +6,7 @@ import { executionStep, timedExecutionStep } from './execution-admission.js';
 import { git, gitToFile, gitTokens, changeError as failure } from './session-changes-git.js';
 import { openChangeStore, changeKey as hash } from './session-changes-store.js';
 import { captureSnapshot, changedEntries, changeTreeEntries, equalEntry as equal,
-  makeChangeTree as makeTree, safeChangePath as safePath, verifyAncestors } from './session-changes-snapshot.js';
+  makeChangeTree as makeTree, safeChangePath as safePath, verifyAncestors, observeChangeEntry } from './session-changes-snapshot.js';
 import { exactSessionChanges, receiptInputFingerprint, receiptPatchesKey, revisionSegmentKey, revisionSegmentsKey, storeSessionChangeReceipt } from './session-changes-receipts.js';
 import { classifySessionChangeTool } from './session-changes-tools.js';
 
@@ -16,6 +16,7 @@ const timelineKey = (op) => `timeline/${String(op.createdAt).padStart(16, '0')}-
 const summaryKey = (id) => `summaries/${hash(id)}.json`;
 const revisionKey = (id, revision) => `revisions/${hash(id)}/${revision}.json`;
 const rowsKey = (id, revision) => `rows/${hash(id)}/${revision}`;
+const evidenceKey = (id, revision) => `current-evidence/${hash(id)}/${revision}`;
 const membersKey = (id, revision) => `members/${hash(id)}/${revision}`;
 const normalizedError = (error) => ['ENOSPC', 'EDQUOT', 'EIO', 'EROFS'].includes(error?.code) ? 'storage_unavailable' : error?.code ?? 'capture_failed';
 const DIFF_BYTES = 64 * 1024;
@@ -407,6 +408,33 @@ export function createSessionChangeRuntime(options) {
     if (!stored) throw failure('summary_detail_expired', 410);
     return stored;
   };
+  const observeCurrent = async (repo, id, stored) => {
+    const result = { state: 'uncertain', verifiedFileCount: 0, restoredFileCount: 0,
+      uncertainFileCount: 0, checkedFileCount: 0, observedAt: Date.now(), reasons: [] };
+    const reasons = new Set(), budget = { bytes: 32 * 1024 * 1024, algorithm: stored.before.length === 64 ? 'sha256' : 'sha1' };
+    let examined = 0;
+    for await (const entry of repo.db.list(evidenceKey(id, stored.summary.revision))) {
+      if (++examined > 256) { reasons.add('current_read_limit'); break; }
+      if (!entry.complete) { result.uncertainFileCount++; reasons.add('current_evidence_unavailable'); continue; }
+      try {
+        let restored = true, verified = entry.reviewMode === 'net';
+        for (const file of entry.paths) {
+          const live = await observeChangeEntry(repo.directory, file.path, budget);
+          restored &&= equal(live, file.before); verified &&= equal(live, file.after);
+        }
+        result.checkedFileCount++;
+        if (restored) result.restoredFileCount++;
+        else if (verified) result.verifiedFileCount++;
+        else { result.uncertainFileCount++; reasons.add('current_content_diverged'); }
+      } catch (error) { result.uncertainFileCount++; reasons.add(error.code ?? 'current_read_unavailable'); }
+    }
+    result.uncertainFileCount = stored.summary.fileCount - result.restoredFileCount - result.verifiedFileCount;
+    if (result.uncertainFileCount && !reasons.size) reasons.add('current_evidence_unavailable');
+    result.state = result.uncertainFileCount ? 'uncertain'
+      : result.restoredFileCount === stored.summary.fileCount ? 'restored' : 'verified';
+    result.reasons = [...reasons].sort();
+    return result;
+  };
   const page = async (repo, id, stored, cursor = null) => {
     const revision = stored.summary.revision;
     let index = 0;
@@ -418,7 +446,7 @@ export function createSessionChangeRuntime(options) {
     const files = await repo.db.get(`${rowsKey(id, revision)}/${String(index).padStart(10, '0')}.json`);
     if (!files && index !== 0) throw failure('invalid_change_cursor', 400);
     const next = await repo.db.get(`${rowsKey(id, revision)}/${String(index + 1).padStart(10, '0')}.json`);
-    return { ...stored.summary, reconciliationState: stored.summary.reconciliationState
+    return { ...stored.summary, current: await observeCurrent(repo, id, stored), reconciliationState: stored.summary.reconciliationState
       ?? (stored.summary.reasons?.some((reason) => ['history_pending', 'capture_pending', 'receipts_pending'].includes(reason)) ? 'pending' : 'settled'),
       files: stored.undone ? [] : files ?? [], undone: stored.undone === true,
       pageIndex: index, previousCursor: index > 1 ? `${revision}:${index - 1}` : null,
@@ -428,7 +456,7 @@ export function createSessionChangeRuntime(options) {
     const directory = await resolveDirectory(requested);
     return serialize(directory, async () => { const repo = await load(directory); return page(repo, rootSessionID, await storedRevision(repo, rootSessionID, revision), cursor); });
   };
-  const summarize = async ({ directory: requestedDirectory, rootSessionID, sessions = [], firstUserMessageID = null, coverageReasons = [], expectedCalls = [], hiddenMessages = [], reverts = [] }) => {
+  const summarize = async ({ directory: requestedDirectory, rootSessionID, sessions = [], firstUserMessageID = null, coverageReasons = [], sessionCoverage = [], expectedCalls = [], hiddenMessages = [], reverts = [] }) => {
     const directory = await resolveDirectory(requestedDirectory);
     return serialize(directory, async () => {
       const repo = await load(directory), saved = await repo.db.get(summaryKey(rootSessionID));
@@ -444,13 +472,16 @@ export function createSessionChangeRuntime(options) {
         }
       }
       const hidden = new Set(hiddenMessages.map((entry) => `${entry.sessionID}\0${entry.messageID}`));
-      const observedCalls = new Set(expectedCalls.map((call) => hash(`${call.sessionID}\0${call.callID}`)));
+      const observedCallSessions = new Map(expectedCalls.map((call) => [hash(`${call.sessionID}\0${call.callID}`), call.sessionID]));
+      const observedCalls = new Set(observedCallSessions.keys());
       for (const id of ids) {
         const revertID = reverts.find((entry) => entry.sessionID === id)?.messageID;
         const boundary = revertID ? await repo.db.get(`history/${hash(id)}/messages/${hash(revertID)}.json`) : null;
         if (revertID && !boundary) throw failure('revert_boundary_unavailable', 503);
         for await (const { value: message } of repo.db.entries(`history/${hash(id)}/messages`)) {
-          for (const callID of message.calls) observedCalls.add(hash(`${id}\0${callID}`));
+          for (const callID of message.calls) {
+            const key = hash(`${id}\0${callID}`); observedCalls.add(key); observedCallSessions.set(key, id);
+          }
           if (boundary && message.createdAt >= boundary.createdAt) hidden.add(`${id}\0${message.id}`);
         }
       }
@@ -461,6 +492,8 @@ export function createSessionChangeRuntime(options) {
       };
       const root = await repo.db.get(sessionKey(rootSessionID));
       const reasons = new Set(coverageReasons);
+      const scopedReasons = new Map([...ids].map((id) => [id, new Set(sessionCoverage.find((entry) => entry.sessionID === id)?.reasons ?? [])]));
+      const addReason = (reason, id) => { reasons.add(reason); scopedReasons.get(id)?.add(reason); };
       for (const id of ids) {
         const entry = await repo.db.get(sessionKey(id));
         for (const reason of entry?.issues ?? []) {
@@ -481,12 +514,12 @@ export function createSessionChangeRuntime(options) {
               continue;
             }
           }
-          reasons.add(reason);
+          addReason(reason, id);
         }
       }
-      if (!root || (firstUserMessageID && root.firstUserMessageID !== firstUserMessageID)) reasons.add('historical_capture_unavailable');
+      if (!root || (firstUserMessageID && root.firstUserMessageID !== firstUserMessageID)) addReason('historical_capture_unavailable', rootSessionID);
       for await (const { value: op } of repo.db.entries('operations')) observedCalls.delete(op.id);
-      if (observedCalls.size) reasons.add('missing_capture');
+      for (const call of observedCalls) addReason('missing_capture', observedCallSessions.get(call));
       const fingerprint = crypto.createHash('sha256');
       const generation = await repo.db.get(`generations/${hash(rootSessionID)}.json`) ?? 0;
       fingerprint.update(JSON.stringify({ attributionVersion: ATTRIBUTION_VERSION, ids: [...ids].sort(), firstUserMessageID, generation, directory: requestedDirectory }));
@@ -495,24 +528,24 @@ export function createSessionChangeRuntime(options) {
       for await (const op of operations()) {
         fingerprint.update(JSON.stringify([op.id, op.state, op.before, op.after, op.historical, op.evidence,
           op.receiptFingerprint, op.restoreVerified, op.receiptComplete, op.receiptConflict, op.createdAt, op.source, op.tool]));
-        if (op.receiptConflict) reasons.add('receipt_conflict');
+        if (op.receiptConflict) addReason('receipt_conflict', op.sessionID);
         if (op.state !== 'complete') {
-          reasons.add(op.state === 'pending' ? 'capture_pending' : op.errorCode ?? 'capture_unavailable');
+          addReason(op.state === 'pending' ? 'capture_pending' : op.errorCode ?? 'capture_unavailable', op.sessionID);
           onlyNoops = false; continue;
         }
         if (op.hasChanges) onlyNoops = false;
         if (op.evidence !== 'exact' && !op.historical) {
-          if (op.hasChanges) reasons.add('unverified_tool_changes');
+          if (op.hasChanges) addReason('unverified_tool_changes', op.sessionID);
           continue;
         }
-        if (op.receiptComplete === false) reasons.add('tool_changes_incomplete');
+        if (op.receiptComplete === false) addReason('tool_changes_incomplete', op.sessionID);
         if (op.hasChanges && op.restoreVerified !== true) restoreReasons.add('restore_evidence_unavailable');
         for await (const change of exactSessionChanges(repo, op)) {
           const previous = files.get(change.file);
           const segmented = Boolean(change.patchOID || previous?.reviewMode === 'segments'
             || previous && !equal(previous.after, change.before));
           files.set(change.file, { before: previous ? previous.before : change.before, after: change.after,
-            reviewMode: segmented ? 'segments' : 'net', segmentCount: (previous?.segmentCount ?? 0) + 1,
+            hasPatch: Boolean(change.patchOID || previous?.hasPatch), reviewMode: segmented ? 'segments' : 'net', segmentCount: (previous?.segmentCount ?? 0) + 1,
             sessions: new Set([...(previous?.sessions ?? []), op.sessionID]) });
         }
       }
@@ -520,7 +553,7 @@ export function createSessionChangeRuntime(options) {
         if (entry.reviewMode === 'net' && equal(entry.before, entry.after)) files.delete(file);
         else if (entry.reviewMode === 'segments') restoreReasons.add('segmented_changes');
       }
-      fingerprint.update(JSON.stringify([...reasons].sort()));
+      fingerprint.update(JSON.stringify({ reasons: [...reasons].sort(), scopedReasons: [...scopedReasons].map(([id, codes]) => [id, [...codes].sort()]) }));
       const sourceFingerprint = fingerprint.digest('hex');
       if (saved?.undone && !reasons.size && onlyNoops) {
         // No-op calls after Undo join the same operation set for Redo.
@@ -587,6 +620,7 @@ export function createSessionChangeRuntime(options) {
       const result = { rootSessionID, directory: requestedDirectory, worktreeDirectory: directory, worktreeID: repo.key,
         attributionVersion: ATTRIBUTION_VERSION, totalsMode, restoreAvailable: !restoreReasons.size && rows.size > 0,
         restoreReasons: [...restoreReasons].sort(),
+        coverageBySession: [...scopedReasons].map(([sessionID, codes]) => ({ sessionID, reasons: [...codes].sort() })),
         sessionCount: ids.size, firstUserMessageID: firstUserMessageID ?? root?.firstUserMessageID ?? null,
         coverage: reasons.size ? 'partial' : 'complete', reasons: [...reasons].sort(), hasUnattributedMutations: false,
         reconciliationState: ['history_pending', 'capture_pending', 'receipts_pending'].some((reason) => reasons.has(reason)) ? 'pending' : 'settled' };
@@ -605,6 +639,12 @@ export function createSessionChangeRuntime(options) {
       const orderedRows = [...rows.values()].sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
       const stored = { summary: { ...result, revision, fileCount: rows.size, additions, deletions }, before, after,
         segmentRevision: totalsMode === 'recorded' ? sourceFingerprint : null, sourceFingerprint, createdAt: Date.now() };
+      await repo.db.setList(evidenceKey(rootSessionID, revision), orderedRows.map((row) => {
+        const entry = files.get(row.path);
+        return { complete: !entry.hasPatch, reviewMode: row.reviewMode,
+          paths: [row.path, ...(row.oldPath ? [row.oldPath] : [])].map((file) => ({ path: file,
+            before: files.get(file)?.before ?? null, after: files.get(file)?.after ?? null })) };
+      }));
       await saveSummary(repo, rootSessionID, stored, orderedRows, members());
       // Explicit opt-in retention remains supported for embedders. The host
       // default retains all revisions until deletion.
@@ -614,7 +654,7 @@ export function createSessionChangeRuntime(options) {
         const previous = revisions.filter((entry) => entry.value.summary.revision !== revision).sort((a, b) => (a.value.createdAt ?? 0) - (b.value.createdAt ?? 0));
         while (previous.length > options.maxRevisions) {
           const old = previous.shift(); repo.db.remove(old.key);
-          for (const prefix of [rowsKey(rootSessionID, old.value.summary.revision), membersKey(rootSessionID, old.value.summary.revision),
+          for (const prefix of [rowsKey(rootSessionID, old.value.summary.revision), evidenceKey(rootSessionID, old.value.summary.revision), membersKey(rootSessionID, old.value.summary.revision),
             ...(old.value.segmentRevision ? [revisionSegmentsKey(rootSessionID, old.value.segmentRevision)] : [])]) {
             for await (const { key } of repo.db.entries(prefix)) repo.db.remove(key);
           }
@@ -711,6 +751,7 @@ export function createSessionChangeRuntime(options) {
         if (current?.summary.revision === revision) {
           const next = { ...selection.stored, undone: !redo, createdAt: Date.now(),
             summary: { ...selection.stored.summary, revision: hash(`${revision}\0${redo}\0${generation}`) } };
+          await repo.db.setList(evidenceKey(rootSessionID, next.summary.revision), repo.db.list(evidenceKey(rootSessionID, revision)));
           await saveSummary(repo, rootSessionID, next, repo.db.list(rowsKey(rootSessionID, revision)), repo.db.list(membersKey(rootSessionID, revision)));
         }
         await repo.db.commit();
@@ -773,6 +814,7 @@ export function createSessionChangeRuntime(options) {
         }
         const next = { ...stored, undone: !redo, createdAt: Date.now(),
           summary: { ...stored.summary, revision: hash(`${revision}\0${redo}\0${generation}`) } };
+        await repo.db.setList(evidenceKey(rootSessionID, next.summary.revision), repo.db.list(evidenceKey(rootSessionID, revision)));
         await saveSummary(repo, rootSessionID, next, repo.db.list(rowsKey(rootSessionID, revision)), repo.db.list(membersKey(rootSessionID, revision)));
         await repo.db.commit();
       } catch (error) {
@@ -876,7 +918,7 @@ export function createSessionChangeRuntime(options) {
         if (retainedParent) repo.db.set(sessionKey(id), { ...session, deleted: true });
         else repo.db.remove(sessionKey(id));
         repo.db.remove(summaryKey(id)); repo.db.remove(`generations/${hash(id)}.json`);
-        for (const prefix of [`revisions/${hash(id)}`, `rows/${hash(id)}`, `members/${hash(id)}`, ...(!retainedParent ? [`history/${hash(id)}`] : []), `segments/${hash(id)}`]) {
+        for (const prefix of [`revisions/${hash(id)}`, `rows/${hash(id)}`, `current-evidence/${hash(id)}`, `members/${hash(id)}`, ...(!retainedParent ? [`history/${hash(id)}`] : []), `segments/${hash(id)}`]) {
           for await (const { key } of repo.db.entries(prefix)) repo.db.remove(key);
         }
       }

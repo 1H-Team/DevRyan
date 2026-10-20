@@ -246,6 +246,8 @@ export interface ManagedTaskRecord {
   firstAssistantPartAt: number | null;
   /** Why a queued task is not launching yet; null once it leaves `queued`. */
   waitingReason: ManagedTaskWaitingReason | null;
+  terminationIntent?: 'user_stopped' | null;
+  operatorStop?: { requestedAt: number; requestId: string; leaseToken: string | null; state?: 'pending' | 'accepted' | 'uncertain' };
   failureReason: string | null;
   partial: boolean;
   recoverablePreview: string;
@@ -259,12 +261,14 @@ export function requiresManualModelRecovery(
 ): boolean;
 
 export type ManagedTaskEventRecord = Omit<ManagedTaskRecord,
-  'prompt' | 'idempotencyKey' | 'dispatchGroupId' | 'dispatchWaveId' | 'readOnly' | 'leaseToken'> & {
+  'operatorStop' | 'prompt' | 'idempotencyKey' | 'dispatchGroupId' | 'dispatchWaveId' | 'readOnly' | 'leaseToken'> & {
     dispatchGrouped: boolean;
     /** Optional on the wire so records from hosts predating the label stay assignable; consumers read absent as null. */
     dispatchWaveId?: string | null;
     failureKind: ManagedTaskFailureKind;
     agentRetryAvailable: boolean;
+    userStoppedRecoveryAvailable?: boolean;
+    stoppedRecoveryAvailable?: boolean;
     /** Authoritative when a result envelope is available; absent on older hosts. */
     manualRecoveryRequired?: boolean;
   };
@@ -282,6 +286,8 @@ export interface ManagedTaskResultEnvelope {
   sequence: number;
   status: ManagedTaskTerminalStatus;
   partial: boolean;
+  terminationIntent?: 'user_stopped' | null;
+
   failureReason: string | null;
   attempt: number;
   priorTaskId: string | null;
@@ -379,6 +385,8 @@ export interface ManagedTaskExecutorResult {
   partial?: boolean;
   recoverablePreview?: string;
   canonicalRefs?: ManagedTaskCanonicalRef[];
+  terminationIntent?: 'user_stopped' | null;
+
   resumable?: boolean;
   providerResetAt?: number | null;
 }
@@ -475,9 +483,11 @@ export interface ManagedOpenCodeTransport {
     statusCode: number | null;
     retryable: boolean | null;
   } | null>;
-  readOperatorAbort?(input: ManagedOpenCodeTransportInput & { after?: number }): Promise<{
+  readOperatorAbort?(input: ManagedOpenCodeTransportInput & { after?: number; taskId?: string; leaseToken?: string | null }): Promise<{
     sessionId: string;
     requestedAt: number;
+    state?: 'pending' | 'accepted' | 'uncertain';
+    durable?: boolean;
   } | null>;
   abortSession(input: ManagedOpenCodeTransportInput & { signal?: AbortSignal }): Promise<boolean>;
   deleteSession(input: ManagedOpenCodeTransportInput): Promise<boolean>;
@@ -750,6 +760,10 @@ export interface ManagedTaskScheduler {
     signal?: AbortSignal; timeoutMs?: number; until?: 'settled' }): Promise<ManagedWaitSnapshot>;
   initialize(): Promise<void>;
   getRequiredCheckTask(childSessionId: string, directory: string): Pick<ManagedTaskRecord, 'taskId' | 'leaseToken' | 'directory' | 'requiredChecks'> | null;
+  recordOperatorStop(input: { sessionId: string; directory?: string; requestedAt: number; requestId?: string }): Promise<{ sessionId: string; taskId: string; leaseToken: string | null; requestedAt: number; requestId: string } | null>;
+  acceptOperatorStop(input: { taskId: string; leaseToken: string | null; requestedAt: number; requestId: string }): Promise<boolean>;
+  withdrawOperatorStop(input: { taskId: string; leaseToken: string | null; requestedAt: number; requestId: string }): Promise<boolean>;
+  readOperatorStop(input: { sessionId: string; directory?: string; taskId?: string; leaseToken?: string | null; after?: number }): { sessionId: string; requestedAt: number; state: 'pending' | 'accepted' | 'uncertain'; durable: true } | null;
   getChildAssignment(childSessionId: string, directory: string): ManagedTaskRecord | null;
   recordRequiredCheck(taskId: string, leaseToken: string, receipt: RequiredCheckReceipt, phase: 'start' | 'bind' | 'complete'): Promise<boolean>;
   recordRequiredChecks(taskId: string, leaseToken: string, receipts: RequiredCheckReceipt[], phase: 'start' | 'bind' | 'complete'): Promise<boolean>;
@@ -1015,8 +1029,9 @@ export function createManagedOperatorAbortRegistry(options?: {
   now?: () => number;
   maximumSessions?: number;
 }): {
-  record(input: { sessionId?: string; requestedAt?: number }): { sessionId: string; requestedAt: number } | null;
-  withdraw(input: { sessionId?: string; requestedAt?: number }): boolean;
+  record(input: { sessionId?: string; requestedAt?: number; requestId?: string; state?: 'pending' | 'accepted' }): { sessionId: string; requestedAt: number } | null;
+  accept(input: { sessionId: string; requestedAt: number; requestId?: string }): boolean;
+  withdraw(input: { sessionId?: string; requestedAt?: number; requestId?: string }): boolean;
   read(input?: { sessionId?: string; after?: number }): { sessionId: string; requestedAt: number } | null;
   observe(payload: unknown): boolean;
   clear(): void;
@@ -1209,7 +1224,7 @@ export function encodeLedgerSnapshot(snapshot: unknown): string;
 export type ManagedWireDecodeMode = 'strict' | 'lenient';
 export interface ManagedWireDecodeOptions { mode?: ManagedWireDecodeMode }
 /** A task record as decoded from a task event or snapshot: absent optional fields read as null. */
-export type DecodedManagedTaskEventRecord = Omit<ManagedTaskEventRecord, 'dispatchWaveId' | 'transportRecovery' | 'manualRecoveryRequired'> & {
+export type DecodedManagedTaskEventRecord = Omit<ManagedTaskEventRecord, 'dispatchWaveId' | 'transportRecovery'> & {
   dispatchWaveId: string | null;
   transportRecovery: ManagedTransportRecovery | null;
 };
@@ -1217,6 +1232,7 @@ export type DecodedManagedTaskResultEnvelope = Omit<ManagedTaskResultEnvelope, '
 export interface DecodedManagedOrchestrationSnapshot {
   available: boolean;
   bridgeReady: boolean;
+  dispatchReady?: boolean;
   recoveryWarning: string | null;
   tasks: DecodedManagedTaskEventRecord[];
   resultEnvelopes: DecodedManagedTaskResultEnvelope[];
@@ -1231,3 +1247,13 @@ export function decodeTaskEventPayload(properties: unknown, options?: ManagedWir
   resultEnvelope: DecodedManagedTaskResultEnvelope | null;
 } | null;
 export function decodeSnapshotPayload(value: unknown, options?: ManagedWireDecodeOptions): DecodedManagedOrchestrationSnapshot;
+
+export const USER_STOPPED_RECOVERY: unique symbol;
+export function isUserStoppedRecoveryAvailable(task: ManagedTaskRecord, envelope: ManagedTaskResultEnvelope | null): boolean;
+
+export function isStoppedRecoveryAvailable(task: ManagedTaskRecord, envelope: ManagedTaskResultEnvelope | null): boolean;
+
+export function hasAcceptedUserStop(task: ManagedTaskRecord): boolean;
+export function hasPendingOperatorStop(task: ManagedTaskRecord): boolean;
+
+export const MANAGED_OPERATOR_STOP_UNCERTAIN_REASON: string;

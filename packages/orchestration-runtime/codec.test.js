@@ -167,3 +167,12 @@ describe('primitives', () => {
     expect(isAutoResumeActive({ autoResume: { enabled: true, state: 'exhausted' } })).toBe(false);
   });
 });
+
+test('wire codec preserves explicit stopped recovery policy and native dispatch readiness', () => {
+  const task = decodeTaskEventRecord({ ...event.properties.task, terminationIntent: 'user_stopped',
+    manualRecoveryRequired: false, userStoppedRecoveryAvailable: true });
+  expect(task).toMatchObject({ terminationIntent: 'user_stopped', manualRecoveryRequired: false, userStoppedRecoveryAvailable: true });
+  expect(decodeTaskEventRecord({ ...event.properties.task, userStoppedRecoveryAvailable: 'true' })).toBeNull();
+  expect(decodeSnapshotPayload({ ...snapshot, bridgeReady: false, dispatchReady: true }).dispatchReady).toBe(true);
+  expect(() => decodeSnapshotPayload({ ...snapshot, dispatchReady: 'true' })).toThrow();
+});

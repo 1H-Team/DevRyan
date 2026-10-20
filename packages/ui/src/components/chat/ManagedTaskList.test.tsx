@@ -216,7 +216,7 @@ describe('managed task presentation', () => {
     expect(html).not.toContain('Abandon');
   });
 
-  test('shows a resumed child as running instead of the stale terminal error', () => {
+  test('preserves terminal task status while its child continues independently', () => {
     const task = terminalTask('failed');
     const projected = toManagedTaskEvent(task).properties.task;
 
@@ -230,8 +230,10 @@ describe('managed task presentation', () => {
       </I18nProvider>,
     );
 
-    expect(html).toContain('Running');
-    expect(html).not.toContain('Error');
+    expect(html).toContain('Error');
+    expect(html).not.toContain('Running');
+    expect(html).toContain('Open Subtask');
+    expect(projected.status).toBe('failed');
   });
 
   test('explains automatic recovery without promising Try Again while the grouped retry remains', () => {

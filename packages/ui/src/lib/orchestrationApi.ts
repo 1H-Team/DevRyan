@@ -16,6 +16,7 @@ import { isRecord } from './decoders/guards';
 export type ManagedOrchestrationSnapshot = {
   available: boolean;
   bridgeReady: boolean;
+  dispatchReady?: boolean;
   recoveryWarning: string | null;
   tasks: ManagedTaskEventRecord[];
   resultEnvelopes: ManagedTaskResultEnvelope[];

@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.6] - 2026-10-20
+
+- Improve managed-task cancellation, recovery and persisted Claude continuation checkpoints, and keep native provider tool handoffs consistent across resumes.
+- Preserve attributed session changes and canonical stream delivery through reconnects, and improve task status, error messages and Plan card reveal behavior.
+- Tighten command deadline handling, sanitize native search output and reduce bundled agent prompt overhead.
+- Qualify direct upgrades from 2.0.2 and 2.0.15, add an observational final-DMG smoke lane, and make published-release verification reuse the original shipped artifact.
+- Record isolated resource measurements and their limits; Archive API and full memory-lifecycle qualification remain unresolved.
+
 ## [2.1.5] - 2026-10-20
 
 - Update the bundled OpenCode host to 2.1.0, including its native compaction APIs, PTY 0.3.1 and reviewed route inventory. Preserve retained runtime compatibility; the Bot image stays on 2.0.30.

@@ -5,10 +5,12 @@ It records sanitized canonical and synthetic OpenCode events, prompt/control
 records, lifecycle transitions, worktree receipts, and evidence transitions.
 The control journal is mounted before primary recovery (which answers a primary
 abort itself) and hands each journaled control to the server's single
-`setControlObserver` callback with its response. For an accepted abort the server
-settles the running turn as `aborted` and, for an explicit user Stop (or an
-unattributed client), records an operator abort for the managed executor; a
-non-2xx response withdraws both. Observer failures never block the request.
+`setControlObserver` callback with its response. The separate awaited
+`setControlPreparation` persists an explicit managed user Stop before forwarding
+the native abort. The response accepts the exact pending receipt on2xx or
+withdraws it on non-2xx; only acceptance establishes user-stop provenance.
+Lost responses expire as uncertain explicit recovery through the scheduler abort bound. Observer failures never block controls,
+while preparation failures return a fixed503 response.
 Shell tool calls are registered with the shared deadline controller without
 persisting command text. Its host adapter performs authenticated, directory-
 scoped exact-message reconciliation, one session abort, and a managed-runtime
@@ -36,3 +38,5 @@ modules (native admission, the native consumer fixture, orchestration private
 host, Claude stderr diagnostics). They run under Bun from the web `test` script
 and are excluded from Vitest, so `@devryan/harness-runtime` tests never
 import the web server.
+
+`setControlPreparation` is mandatory, awaited control admission. Failure returns fixed `control_preparation_failed` HTTP503 before forwarding. It is separate from advisory `setControlObserver`; managed operator Stops persist request-scoped intent through preparation before native abort.

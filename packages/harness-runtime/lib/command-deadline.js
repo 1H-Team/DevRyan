@@ -314,6 +314,26 @@ export const createCommandDeadlineController = (options = {}) => {
       let current = records.get(key);
       if (!current) return;
       if (current.abortRequestedAt === null) {
+        let commandCancelled = false;
+        if (typeof options.cancelCommand === 'function') {
+          try {
+            commandCancelled = await options.cancelCommand({
+              directory: current.directory, fingerprint: current.fingerprint,
+            }) === true;
+          } catch {
+            // An unconfirmed process receipt cannot settle the call. Retain
+            // the bounded session fallback and concurrent-session protection.
+          }
+        }
+        if (commandCancelled) {
+          const deadline = now() + confirmationMs;
+          do {
+            if (await settleFromFetch(key, current, await fetchExact(current), 'authoritative_after_command_cancel')) return;
+            if (now() >= deadline) break;
+            await wait(Math.min(confirmationPollMs, deadline - now()));
+          } while (!draining);
+          if (draining || !records.has(key)) return;
+        }
         current = {
           ...current,
           phase: 'recovering',

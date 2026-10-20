@@ -22,6 +22,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { ContentChangeReason } from '@/hooks/useChatAutoFollow';
 import { useI18n } from '@/lib/i18n';
+import type { SessionChangesCurrent } from '@/lib/opencode/client';
 import { cn } from '@/lib/utils';
 
 import type { ChangedFileEntry, GitChangedFile } from './changedFiles';
@@ -55,6 +56,8 @@ export interface SessionChangesCardViewProps {
     files: GitChangedFile[];
     fileCount?: number;
     totalsMode?: 'net' | 'recorded';
+    current?: SessionChangesCurrent;
+    coverageBySession?: { sessionID: string; reasons: string[] }[];
     pageIndex?: number;
     pageLoading?: boolean;
     onNextPage?: () => void;
@@ -82,6 +85,8 @@ export const SessionChangesCardView: React.FC<SessionChangesCardViewProps> = ({
     files,
     fileCount: totalFileCount,
     totalsMode = 'net',
+    current,
+    coverageBySession,
     pageIndex = 0,
     pageLoading = false,
     onNextPage,
@@ -122,7 +127,11 @@ export const SessionChangesCardView: React.FC<SessionChangesCardViewProps> = ({
 
     const { visibleFiles, hiddenCount } = resolveVisibleChangedFiles(files, isExpanded, initialVisible);
     const canCollapse = isExpanded && fileCount > Math.max(0, initialVisible);
-    const showToggle = mode === 'changes' && (hiddenCount > 0 || canCollapse);
+    const showToggle = mode === 'changes' && (current ? fileCount > 0 : hiddenCount > 0 || canCollapse);
+    const coverageGaps = coverageBySession?.filter((entry) => entry.reasons.length > 0) ?? [];
+    const currentMessage = current ? t(current.state === 'restored' ? 'chat.sessionChanges.current.restored'
+        : current.state === 'verified' ? 'chat.sessionChanges.current.verified' : 'chat.sessionChanges.current.uncertain',
+        { count: current.state === 'verified' ? current.verifiedFileCount : current.uncertainFileCount }) : null;
 
     // Mount, undo/redo flips and expand/collapse all change the height below the
     // last message; stick-to-bottom only stays correct when it hears about them.
@@ -203,7 +212,7 @@ export const SessionChangesCardView: React.FC<SessionChangesCardViewProps> = ({
         <Button size="xs" variant="ghost" disabled={!onNextPage || pageLoading} onClick={onNextPage}>{t('chat.sessionChanges.nextPage')}</Button>
     </nav> : null;
 
-    const hasRows = mode === 'changes' && visibleFiles.length > 0;
+    const hasRows = mode === 'changes' && visibleFiles.length > 0 && (!current || isExpanded);
 
     return (
         <div
@@ -228,6 +237,7 @@ export const SessionChangesCardView: React.FC<SessionChangesCardViewProps> = ({
                         <RiFileEditLine className="mt-0.5 size-3.5 shrink-0 text-[var(--primary-base)]" aria-hidden="true" />
                         <div className="flex min-w-0 flex-1 flex-col">
                             <h3 className="truncate typography-ui-label font-semibold text-foreground">{title}</h3>
+                            {currentMessage ? <p className="typography-meta text-muted-foreground" data-session-changes-current={current?.state}>{currentMessage}</p> : null}
                             {mode === 'changes' && fileCount > 0 ? (
                                 <Popover.Root open={isReviewOpen} onOpenChange={setIsReviewOpen}>
                                     <Popover.Trigger
@@ -283,7 +293,7 @@ export const SessionChangesCardView: React.FC<SessionChangesCardViewProps> = ({
                             ))}
                         </div>
                     ) : null}
-                    {pagination}
+                    {!current || isExpanded ? pagination : null}
                     {showToggle ? (
                         <div className="border-t border-border/70 px-3 py-1.5">
                             <Button
@@ -296,7 +306,8 @@ export const SessionChangesCardView: React.FC<SessionChangesCardViewProps> = ({
                             >
                                 {isExpanded
                                     ? t('chat.sessionChanges.card.showLess')
-                                    : t('chat.sessionChanges.card.showMore', { count: hiddenCount })}
+                                    : current ? t('chat.sessionChanges.card.capturedHistory', { count: fileCount })
+                                        : t('chat.sessionChanges.card.showMore', { count: hiddenCount })}
                                 {isExpanded ? (
                                     <RiArrowUpSLine className="size-3.5" aria-hidden="true" />
                                 ) : (
@@ -305,6 +316,10 @@ export const SessionChangesCardView: React.FC<SessionChangesCardViewProps> = ({
                             </Button>
                         </div>
                     ) : null}
+                    {coverageGaps.length ? <details className="border-t border-border/70 px-3 py-1.5 typography-meta text-muted-foreground">
+                        <summary>{t('chat.sessionChanges.coverageGaps', { count: coverageGaps.length })}</summary>
+                        {coverageGaps.map((entry) => <p key={entry.sessionID}>{entry.sessionID}: {entry.reasons.join(', ')}</p>)}
+                    </details> : null}
                     {statusMessage ? (
                         <p className="border-t border-border/70 px-3 py-1.5 typography-meta text-muted-foreground">
                             {statusMessage}
@@ -366,6 +381,8 @@ const AvailableSessionChangesCard: React.FC<SessionChangesCardProps> = React.mem
             files={controller.files}
             fileCount={controller.fileCount}
             totalsMode={controller.totalsMode}
+            current={controller.current}
+            coverageBySession={controller.coverageBySession}
             pageIndex={controller.pageIndex}
             pageLoading={controller.pageLoading}
             onNextPage={controller.nextPage}

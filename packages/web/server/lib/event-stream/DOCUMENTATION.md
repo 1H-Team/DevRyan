@@ -3,6 +3,14 @@
 ## Purpose
 This module contains the DevRyan message-stream WebSocket protocol and runtime bridge. It keeps the browser-facing WebSocket transport separate from the upstream OpenCode SSE transport.
 
+Upstream frame limits apply to UTF-8 bytes for complete and incomplete frames.
+After an oversized partial frame, the reader discards through its delimiter;
+an unterminated EOF tail is not published. Either loss invalidates replay
+continuity and uses the existing gap/reseed path. Oversized individual replay
+entries are omitted while live delivery remains independent of replay storage.
+Canonical command-deadline observation receives the trusted outer directory,
+including when the native tool part contains no directory of its own.
+
 ## Entrypoints and structure
 - `packages/web/server/lib/event-stream/index.js`: public entrypoint re-exporting protocol and runtime helpers.
 - `packages/web/server/lib/event-stream/global-hub.js`: shared global upstream SSE hub for server-side subscribers and browser WS fan-out.
@@ -42,6 +50,12 @@ This module contains the DevRyan message-stream WebSocket protocol and runtime b
 - DevRyan still fetches OpenCode upstream event streams over SSE.
 - The web server creates one shared global message-stream hub. OpenCode watcher side effects and global WS clients subscribe to that hub, so there is one upstream `/api/event` SSE reader for both server-side processing and browser fan-out.
 - The global hub keeps a bounded local replay buffer keyed by projected event ID so reconnecting browser clients can receive buffered events after their requested `Last-Event-ID`.
+- Replay excludes a single event larger than its byte budget and advances the
+  replay epoch so an earlier cursor cannot imply continuous delivery. Upstream
+  frames are capped by UTF-8 bytes after line-ending normalization, including
+  complete frames and split multibyte/CRLF input; a discarded oversized frame's
+  remaining bytes cannot become a new event. Oversized and unterminated frames
+  issue an explicit gap and make the native projection cold before resync.
 - Directory WS clients subscribe to that same hub with directory and principal filters. No legacy upstream stream is opened.
 - If an upstream SSE stream stalls after the browser WS is already ready, the reader aborts that upstream fetch and reconnects without upstream `Last-Event-ID`, emits a gap, and reconciles active native sessions, keeping the browser WS alive when recovery is fast.
 - Health checks are reserved for initial upstream connect failures and explicit upstream-unavailable responses, not for ordinary stall recovery on an already-established stream.

@@ -350,6 +350,12 @@ export function createSessionChangeHost(options) {
           const firstUserMessageID = histories[0].first;
           const summary = await runtime.summarize({ directory, rootSessionID, sessions, firstUserMessageID,
             reverts: sessions.filter((entry) => entry.revert?.messageID).map((entry) => ({ sessionID: entry.id, messageID: entry.revert.messageID })),
+            sessionCoverage: sessions.map((entry, index) => ({ sessionID: entry.id, reasons: [
+              ...(entry.revert?.messageID ? ['native_revert_active'] : []),
+              ...(!histories[index].complete ? ['history_pending'] : []),
+              ...(receiptStates[index]?.reasons ?? []),
+              ...(receiptStates[index]?.pending || observations.get(entry.id)?.size ? ['receipts_pending'] : []),
+            ] })),
             coverageReasons: [...(sessions.some((entry) => entry.revert?.messageID) ? ['native_revert_active'] : []),
               ...(histories.some((entry) => !entry.complete) ? ['history_pending'] : []),
               ...receiptStates.flatMap((state) => state?.reasons ?? []),

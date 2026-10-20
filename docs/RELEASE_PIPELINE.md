@@ -8,7 +8,7 @@ The public release carries exactly one asset, `DevRyan-<version>-arm64.dmg` (App
 
 1. `node scripts/bump-version.mjs X.Y.Z` updates every package manifest, the legacy Tauri files and the workspace versions in `bun.lock`.
 2. Add a `## [X.Y.Z]` section to `CHANGELOG.md`; it becomes the release notes.
-3. Run `bun run validate`, commit with explicit paths, and push `main`.
+3. Run `bun run validate`, commit with explicit paths, push `main`, and wait for the canonical CI workflow to pass for that exact commit. Admission checks the latest main-push run of `.github/workflows/ci.yml` for the tag SHA; pending, failed, missing and different-source checks refuse the release before builds.
 4. Optional: dry-run the workflow on `main` (`gh workflow run release.yml --ref main`).
 5. `git tag vX.Y.Z && git push origin vX.Y.Z`.
 
@@ -24,17 +24,18 @@ admit ──┬─ web ───────────────────
 
 | Job | What it does |
 | --- | --- |
-| `admit` | Checks that the tag, every version file and `bun.lock` agree, and that `CHANGELOG.md` has notes for the version. Fails if `vX.Y.Z` is already published. Otherwise it creates the draft, or reuses an unpublished draft for the same tag (retargeted, notes rewritten, earlier assets removed). Dry runs make no writes. |
+| `admit` | Requires trusted exact-SHA CI, then checks that the tag and every version file agree, and that `CHANGELOG.md` has notes for the version. Fails if `vX.Y.Z` is already published. Otherwise it creates the draft, or reuses an unpublished draft for the same tag (retargeted, notes rewritten, earlier assets removed). Dry runs make no writes. |
 | `web` | `type-check:ui`, `build:web`, `bundle:check`, then hands `packages/web/dist` to packaging. |
 | `electron-prepare` | Installs darwin dependencies, restores the reviewed Claude executable (`scripts/hydrate-reviewed-claude.mjs`), builds the native v2 runtime (which refuses a core digest outside `REVIEWED_NATIVE_CLONE_RELEASES` for the host pin), native helpers and the main bundle, rebuilds native bindings, and exports the prepared tree. |
 | `bot-resolve` | Hashes each Bot image's inputs and reuses the signed `:in-<digest>` image when it exists and verifies. Lists the images that need building. |
 | `bot-build` | One job per changed image: multi-platform build, push, keyless cosign signature, and the `:in-<digest>` input tag. Skipped when nothing changed. |
 | `bot-publish` | Assembles `DevRyan-bot-runtime-images-<version>.json`, checks anonymous pulls, and smokes the isolated production topology. |
 | `electron-package` | Packages the app with the Bot manifest and runs static checks: Cursor SDK binaries, packaged orchestration config, packaged Bot manifest, and Info.plist usage descriptions. Uploads the DMG. |
-| `upgrade-check` | Ages a private profile through the newest three published releases (each release's own server and DMG runtime, with a session created and one deleted), then cold-starts the packaged candidate runtime with this commit's server. Fails unless the startup upgrade applies, the verifier and native readiness pass and session history survives (`scripts/qa/release-upgrade-lane.mjs`, [QA](QA.md#release-upgrade-lane)). |
+| `upgrade-check` | Three independent profiles: the newest-three aging chain, direct v2.0.2, and direct v2.0.15. Each uses the baseline's own server and DMG runtime, with a session created and one deleted, then cold-starts the packaged candidate runtime with this commit's server. The explicit 2.0.2 adapter omits its absent startup-status module; readiness, selection and history are still required. Fails unless the startup upgrade applies, the verifier and native readiness pass and session history survives (`scripts/qa/release-upgrade-lane.mjs`, [QA](QA.md#release-upgrade-lane)). |
+| `final-dmg-smoke` | Observes the unchanged final DMG on a disposable macOS runner: console prerequisites, ready runtime, visible composer, a credential-free loopback provider read/write/final-response round-trip, screenshot and owned-process shutdown. It makes no paid model request. The lane is nonblocking during qualification; see the rollout below. |
 | `publish` | Checks the DMG against the allowlist and that the tag still points at this run's commit, then uploads it to the draft. Deploys and verifies the hosted Supabase configuration and migrations, publishes the draft, and polls `/releases/latest` until the shipped `discoverDesktopUpdate` (`packages/electron/desktop-updater.mjs`) finds the DMG with the uploaded size and SHA-256. |
 
-That is 8 checks plus one per changed Bot image.
+Upgrade lanes run independently; an unavailable baseline or failed qualification blocks publication. Their sanitized reports and the final-DMG screenshot/report are Actions artifacts, never public release assets.
 
 `scripts/release.mjs` holds the GitHub Release steps (`admit`, `upload`, `publish`). `scripts/release-ci.mjs` holds the artifact handoffs (`web-describe`, `web-stage`, `prepare-export`, `prepare-import`) and the Bot image steps (`image-resolve`, `image-plan`, `image-sign`, `image-assemble`). Every failure throws with its real message, so the job log names the cause.
 
@@ -42,9 +43,20 @@ That is 8 checks plus one per changed Bot image.
 
 A version is used only once it is published. Until then:
 
-- **Infrastructure flake:** `gh run rerun <run-id> --failed`.
-- **Code fix:** push the fix to `main`, then move the tag with `git tag -f vX.Y.Z <fixed-sha> && git push -f origin vX.Y.Z`. The new run cancels the old one (`concurrency: release-<tag>`). `admit` reuses the draft, and `upload` refuses to attach bytes from a commit the tag no longer points at.
-- A published version is final. Bump the patch version instead.
+- **Infrastructure flake:** `gh run rerun <run-id> --failed` within the 14-day artifact retention window. After expiry, rerun the producing jobs as well; a published version must never be rebuilt to replace its bytes.
+- **Published but verification failed:** rerun the failed publish job while its original DMG artifact remains available. Upload verifies the published tag, source, exact one-asset set, size and digest, then skips upload and Supabase deployment. Publication only verifies discovery; if a newer stable release superseded it, verification reports that without changing latest. A full workflow rerun routes published admission to `verify-published`: it locates a retained candidate from this repository's tag-push release workflow at the exact tag/SHA, downloads that original Actions artifact, verifies it against the public asset, and skips every heavy build and deployment job. Missing/expired artifacts or differing source/bytes fail clearly; published bytes are never reconstructed.
+- **Code fix:** push the fix to `main`, then move the tag with `git tag -f vX.Y.Z <fixed-sha> && git push -f origin vX.Y.Z`. The new run cancels obsolete web/native/package/upgrade build jobs for that tag. Workflow-wide cancellation is disabled so it cannot interrupt production publication. `admit` reuses the draft, and `upload` refuses to attach bytes from a commit the tag no longer points at.
+- A published version is final. Changed bytes or source require a new patch version.
+
+The production upload, hosted migration deployment and promotion share the global `devryan-production-publication` job lock with cancellation disabled. Different versions may build concurrently. GitHub concurrency is not a durable FIFO queue: a newer pending job may replace an older pending job; rerun any superseded unpublished release deliberately. Source/tag checks repeat before upload and promotion, and an older candidate cannot replace a newer latest release.
+
+## Final-DMG smoke rollout
+
+The smoke is observational until three **distinct Actions runs** produce passing `release-final-dmg-smoke/report.json` reports for their exact DMG hashes. A maintainer must inspect their `first-ready.png` screenshots and confirm cleanup/prerequisites before setting the repository variable `DEVRYAN_FINAL_DMG_SMOKE_GATE=qualified-3-runs`. This is an explicit rollout decision, not an automatic claim that three executions passed. Once enabled, a failed or unavailable smoke blocks publication. Leave the variable unset during initial qualification. No live GUI runs were performed merely by adding this lane.
+
+This bounded smoke checks packaged startup, the first usable document and a deterministic loopback-provider tool round-trip through ordinary imported custom-provider configuration; it does not claim updater replacement, launchd migration, OS-keychain access or paid-provider behavior. The direct native upgrade lanes cover separate state/history contracts. A smoke prerequisite failure is reported as a failure, never a passing skip.
+
+All intermediate artifacts, the final DMG, and qualification reports have 14-day retention. Reports export before scratch cleanup and upload on failure; setup failures produce an incomplete report. Private homes, credentials and raw subprocess logs are not uploaded. Local QA still removes scratch unless explicitly retained.
 
 ## Dry runs
 
@@ -61,7 +73,7 @@ The app pins every image by digest in `Contents/Resources/bot-runtime/images.rel
 ## Build notes
 
 - Release installs set `DEVRYAN_SKIP_INSTALL_PREPARE=1`. Without it, Bun runs the Electron workspace `prepare` script (a full web build plus native helpers) on every install.
-- `release-cache.yml` rebuilds the native-runtime companion on `main` when its inputs change, so the tag run restores it from cache.
+- `release-cache.yml` verifies reviewed native inputs on `main`; it does not export a reusable cache. Tag runs build and verify their own native runtime.
 - Do not cache the Bun package store: on 2026-09-23 restoring it (~800 MB) was slower than a fresh install.
 - Every job has a timeout, so a stalled native build fails instead of holding the release open.
 

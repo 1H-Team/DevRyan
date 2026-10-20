@@ -1164,6 +1164,7 @@ export const createLoopbackOpenCodeV2Fixture = async ({
     messageRequestCounts.set(sessionID, (messageRequestCounts.get(sessionID) ?? 0) + 1);
     if (cursor) olderMessageRequestCounts.set(sessionID, (olderMessageRequestCounts.get(sessionID) ?? 0) + 1);
     if (messagePageRequests.length < 200) messagePageRequests.push({ sessionID, limit, order, type: types[0] ?? null, cursor: Boolean(cursor),
+      cursorAnchor: cursor?.id ?? null, cursorDirection: cursor?.direction ?? null,
       returned: listed.length, firstMessageID: listed[0]?.id ?? null, lastMessageID: listed.at(-1)?.id ?? null });
     const anchor = (record, direction) => encodeCursor({ id: record.id, order, direction });
     return { data: listed, cursor: listed.length ? { previous: anchor(listed[0], 'previous'), next: anchor(listed.at(-1), 'next') } : { previous: null, next: null } };

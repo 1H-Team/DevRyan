@@ -15,6 +15,14 @@ receipts, sanitized diagnostic journaling/export preparation, and optional Git
 turn-evidence primitives. It also owns the host-neutral persisted command-
 deadline controller used by web/Electron.
 
+The command-deadline controller first requests optional exact-command
+cancellation from its constructor-owned execution host, then confirms the
+canonical tool part. Unavailable or unconfirmed command cancellation retains
+bounded session abort and the existing sole-active-session restart restriction.
+Repeated updates never extend the absolute deadline. New command admission
+rejects zero timeouts; the observer defensively defaults malformed historical
+input to four minutes so it cannot disable recovery.
+
 `lib/atomic-file.js` also exports a dependency-free cross-process lock. Locks
 on POSIX publish a synced private temporary inode with exclusive `link()`, so a
 process killed while writing cannot expose a partial lock. Only explicitly
@@ -146,6 +154,10 @@ in [identity compatibility](../../docs/IDENTITY_COMPATIBILITY.md#data-folder-mig
   settlement. A managed runtime restart is allowed only when that session is
   the sole active operation. Concurrent and external runtimes remain untouched
   and surface an unresolved incident. Commands are never replayed.
+  When the host owns the command process, recovery first cancels that exact
+  session/message/part/call/tool and waits for its confined termination receipt
+  and canonical tool settlement. Whole-host restart eligibility reads active
+  sessions across every project location, rather than only the command's project.
 - `git-post-checkout-hook.js`: bounded cross-host post-checkout runner. It
   resolves the effective `core.hooksPath` (including a global path that shadows
   repository-local hooks), skips absent hooks, and requires Git 2.36+ only when
@@ -415,3 +427,7 @@ record's previous owner or the clone's source bundle is released, as that
 settled controller's own restart would have done; any other hold refuses. It
 preserves removal holds and all terminal decisions; preparing records still
 need a new authorized delete request.
+
+Session change responses separate immutable captured revisions from bounded,
+read-only `current` content observations and per-session `coverageBySession`
+reasons. See `docs/SESSION_CHANGES.md` for verification states and limits.

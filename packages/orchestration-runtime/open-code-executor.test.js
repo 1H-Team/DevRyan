@@ -301,7 +301,7 @@ describe('managed OpenCode executor', () => {
       'Inspect the authentication flow.',
     );
     expect(prompts[0].tools).toEqual({
-      task: false,
+      task: false, todoread: false, todowrite: false,
     });
   });
 
@@ -335,7 +335,7 @@ describe('managed OpenCode executor', () => {
     ].join('\n\n'));
     expect(prompts[0].tools).toMatchObject({
       '*': false,
-      task: false,
+      task: false, todoread: false, todowrite: false,
       read: true,
       glob: true,
       grep: true,
@@ -417,7 +417,7 @@ describe('managed OpenCode executor', () => {
         expect(prompts).toHaveLength(1);
         expect(prompts[0].providerId).toBe('cursor-acp');
         expect(prompts[0].prompt).toStartWith(`${MANAGED_READ_ONLY_PROMPT}\n\n`);
-        expect(prompts[0].tools).toMatchObject({ '*': false, task: false, read: true });
+        expect(prompts[0].tools).toMatchObject({ '*': false, task: false, todoread: false, todowrite: false, read: true });
       });
     }
   }
@@ -934,7 +934,7 @@ describe('managed OpenCode executor', () => {
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,
-        task: false,
+        task: false, todoread: false, todowrite: false,
       },
     }]);
   });
@@ -1003,7 +1003,7 @@ describe('managed OpenCode executor', () => {
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,
-        task: false,
+        task: false, todoread: false, todowrite: false,
       },
     }]);
   });
@@ -1120,7 +1120,7 @@ describe('managed OpenCode executor', () => {
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,
-        task: false,
+        task: false, todoread: false, todowrite: false,
       },
     }]);
   });
@@ -1514,7 +1514,7 @@ describe('managed OpenCode executor', () => {
     expect(prompts[0]).toMatchObject({
       sessionId: 'ses_child',
       prompt: appendManagedAssignment(task(), MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT),
-      tools: { task: false },
+      tools: { task: false, todoread: false, todowrite: false },
     });
   });
 
@@ -2146,7 +2146,7 @@ describe('managed OpenCode executor', () => {
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,
-        task: false,
+        task: false, todoread: false, todowrite: false,
       },
     }]);
   });
@@ -2469,7 +2469,7 @@ describe('managed OpenCode executor', () => {
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,
-        task: false,
+        task: false, todoread: false, todowrite: false,
       },
     });
     expect(result).toEqual({
@@ -3263,7 +3263,7 @@ describe('managed task prompt preamble', () => {
       `${prefix}${MANAGED_RETRY_IN_PLACE_PROMPT}\n\n${MANAGED_MODEL_CONTINUATION_NOTICE_PREFIX}github-copilot/gpt-4.1 · fast to continue the previous task.`,
     ]);
     if (readOnly) for (const entry of prompts) expect(entry.tools).toEqual({
-      '*': false, read: true, glob: true, grep: true, webfetch: true, websearch: true, task: false,
+      '*': false, read: true, glob: true, grep: true, webfetch: true, websearch: true, task: false, todoread: false, todowrite: false,
     });
     expect(hookCalls).toBe(0);
   });
@@ -3487,7 +3487,7 @@ describe('managed task turn budget', () => {
       sessionId: 'ses_child',
       agent: 'designer',
       atRead: 3,
-      tools: { task: false },
+      tools: { task: false, todoread: false, todowrite: false },
     });
     expect(state.reads).toBeGreaterThan(5);
   });
@@ -4322,4 +4322,46 @@ test('semantic progress arriving during an awaited transcript read fences the si
     const result = await executor.observe(task({ childSessionId: 'ses_child', status: 'running', startedAt: 1000, directory: '/repo' }), {});
     expect(result.status).toBe('completed'); expect(aborts).toBe(0);
   } finally { await executor.shutdown(); }
+});
+
+
+test('restart reconciliation honors persisted user stop before transport relaunch or provider recovery', async () => {
+  let prompts = 0;
+  const executor = createManagedOpenCodeExecutor({ transport: {
+    async createSession() { throw new Error('must not create'); }, async promptSession() { prompts++; },
+    async readSession() { return { id: 'ses_child' }; }, async readStatus() { return { type: 'idle' }; },
+    async readMessages() { return []; }, async abortSession() { return true; }, deleteSession,
+  } });
+  try {
+    const result = await executor.reconcile(task({ childSessionId: 'ses_child', status: 'running',
+      terminationIntent: 'user_stopped', transportRecovery: { phase: 'backup_pending' } }));
+    expect(result).toMatchObject({ state: 'terminal', result: { status: 'aborted', terminationIntent: 'user_stopped', resumable: true } });
+    expect(prompts).toBe(0);
+  } finally { await executor.shutdown(); }
+});
+
+
+test('a pending idle Stop never settles before delayed HTTP rejection is withdrawn', async () => {
+  let release, entered, request = { sessionId: 'ses_child', requestedAt: 0, state: 'pending', durable: true };
+  const waiting = new Promise(resolve => { entered = resolve; });
+  const blocked = new Promise(resolve => { release = resolve; });
+  let ready = false, prompts = 0, aborts = 0, settled = false;
+  const executor = createManagedOpenCodeExecutor({ idleStablePolls: 1,
+    sleep: async () => { entered(); await blocked; },
+    transport: {
+      async createSession() { throw new Error('must not create'); }, async promptSession() { prompts++; },
+      async readSession() { return { id: 'ses_child' }; }, async readStatus() { return { type: 'idle' }; },
+      async readMessages() { return ready ? [assistant({ info: { finish: 'stop' }, parts: [{ type: 'text', text: 'ordinary result' }] })] : []; },
+      async readOperatorAbort() { return request; }, async abortSession() { aborts++; return true; }, deleteSession,
+    },
+  });
+  try {
+    const result = executor.observe(task({ childSessionId: 'ses_child', status: 'running', startedAt: 0 }), {}).then(value => { settled = true; return value; });
+    await waiting;
+    expect(settled).toBe(false); expect(prompts).toBe(0); expect(aborts).toBe(0);
+    request = null; ready = true; release();
+    const completed = await result;
+    expect(completed.status).toBe('completed'); expect(completed.terminationIntent).toBeUndefined();
+    expect(prompts).toBe(0); expect(aborts).toBe(0);
+  } finally { release(); await executor.shutdown(); }
 });

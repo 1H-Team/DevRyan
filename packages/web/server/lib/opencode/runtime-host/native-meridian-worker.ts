@@ -1,6 +1,7 @@
 import type {createClaudeTransportChannel} from './native-claude-transport-channel.js';
 import type {ClaudeTransportModelPins} from './native-claude-transport-protocol.js';
 import {observeClaudeProcessDiagnostic} from './native-claude-diagnostics.js';
+import {createNativeClaudeCheckpointOwner} from './native-claude-checkpoint.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createReadStream} from 'node:fs';
@@ -95,6 +96,8 @@ export async function startNativeMeridianWorker(input:unknown,options:{buildId:s
   process.env.DEVRYAN_PROVIDER_TRANSPORT=JSON.stringify({protocol:1,instanceID:boot.instanceID,buildId:boot.buildId,asset:boot.assets.claude,profileRoots:[boot.globals.home,boot.globals.config,boot.globals.data],keychainAccounts:boot.profiles.filter(profile=>profile.claudeConfigDir&&profile.keychainService).map(profile=>({directory:profile.claudeConfigDir,keychainService:profile.keychainService})),...boot.transport});
   Object.defineProperty(globalThis,'__DEVRYAN_LIBSQL_ASSET',{value:boot.assets.libsql.path,configurable:true});
   const authority=createMeridianRequestAuthority(boot);
+  const checkpoints=createNativeClaudeCheckpointOwner({boot,assertAttempt:authority.assert,
+    publish:diagnostic=>options.onDiagnostic?.(parseProviderDiagnostic(diagnostic))});
   Object.defineProperty(globalThis,'__DEVRYAN_MERIDIAN_AUTHORIZATION',{value:authority.authorize,configurable:true});
   const credentials=async(request:Request,profileID:string,purpose:'request'|'authentication-retry',failedFingerprint?:string)=>{
     const binding=authority.binding(request);
@@ -132,10 +135,12 @@ export async function startNativeMeridianWorker(input:unknown,options:{buildId:s
     for(const tier of ['fable','opus','sonnet','haiku'] as const){const value=spawn.env?.[`ANTHROPIC_DEFAULT_${tier.toUpperCase()}_MODEL`];if(value!==undefined)modelPins[tier]=value;}
     const toolSearch=spawn.env?.ENABLE_TOOL_SEARCH;
     if(toolSearch!==undefined&&toolSearch!=='true'&&toolSearch!=='false')throw failure('native_claude_transport_invalid');
+    checkpoints.bindTransport(raw,spawn.cwd);
     const child=options.transport.spawn({...binding,profileID:fields.profileID,args:spawn.args,modelPins,...toolSearch!==undefined?{toolSearch:toolSearch==='true'}:{}},spawn.signal);
     diagnosticSpawn(child,raw);return child;
   };
-  const diagnosticHooks=[['__DEVRYAN_CLAUDE_DIAGNOSTIC_BINDING',diagnosticBinding],['__DEVRYAN_CLAUDE_DIAGNOSTIC_SPAWN',diagnosticSpawn],['__DEVRYAN_CLAUDE_TRANSPORT_SPAWN',transportSpawn]] as const;
+  const diagnosticHooks=[['__DEVRYAN_CLAUDE_DIAGNOSTIC_BINDING',diagnosticBinding],['__DEVRYAN_CLAUDE_DIAGNOSTIC_SPAWN',diagnosticSpawn],['__DEVRYAN_CLAUDE_TRANSPORT_SPAWN',transportSpawn],
+    ['__DEVRYAN_CLAUDE_CHECKPOINT_DIRECTORY',checkpoints.directory],['__DEVRYAN_CLAUDE_CHECKPOINT_DIAGNOSTIC',checkpoints.diagnostic]] as const;
   for(const [name,value] of diagnosticHooks)Object.defineProperty(globalThis,name,{value,configurable:true});
   const removeDiagnostics=()=>{for(const [name,value] of diagnosticHooks)if(Reflect.get(globalThis,name)===value)Reflect.deleteProperty(globalThis,name);};
 
@@ -145,7 +150,7 @@ export async function startNativeMeridianWorker(input:unknown,options:{buildId:s
     proxy=await startup.startReviewedProxy({port:0,profiles:boot.profiles,defaultProfile:boot.defaultProfile,log});
   }catch(error){removeDiagnostics();authority.close();if(Reflect.get(globalThis,'__DEVRYAN_CLAUDE_CREDENTIAL')===credentials)Reflect.deleteProperty(globalThis,'__DEVRYAN_CLAUDE_CREDENTIAL');throw error;}
   let closeWork:Promise<void>|undefined;
-  const close=()=>closeWork??=(async()=>{removeDiagnostics();authority.close();await options.transport?.close();if(Reflect.get(globalThis,'__DEVRYAN_CLAUDE_CREDENTIAL')===credentials)Reflect.deleteProperty(globalThis,'__DEVRYAN_CLAUDE_CREDENTIAL');await proxy.close();})();
+  const close=()=>closeWork??=(async()=>{removeDiagnostics();authority.close();checkpoints.close();await options.transport?.close();if(Reflect.get(globalThis,'__DEVRYAN_CLAUDE_CREDENTIAL')===credentials)Reflect.deleteProperty(globalThis,'__DEVRYAN_CLAUDE_CREDENTIAL');await proxy.close();})();
   const health=async()=>{
     const value=await startup.checkReviewedProxy(proxy.port,log);
     if(value.ok!==true||value.version!==REVIEWED_CLAUDE_STARTUP.meridianVersion)throw failure('native_provider_health_failed');
@@ -161,7 +166,7 @@ export async function startNativeMeridianWorker(input:unknown,options:{buildId:s
         authority.add(command);return null;
       }
       if(command.action==='release-attempt'){
-        authority.remove(command);await options.transport?.release(command.attemptID);return null;
+        authority.remove(command);checkpoints.release(command.attemptID);await options.transport?.release(command.attemptID);return null;
       }
       return {health:await health()};
     }};

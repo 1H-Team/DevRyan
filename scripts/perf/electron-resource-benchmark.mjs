@@ -14,6 +14,8 @@ import { loadQaPackagedArtifact } from '../qa/packaged-artifact.mjs';
 import { prepareQaFixtureProfile } from '../qa/fixture-scenarios.mjs';
 import { createQaHostLaunchEnvironment } from '../qa/launch-environment.mjs';
 import { resolveQaFixtureGeneration } from '../qa/runtime-target.mjs';
+import { waitForQaHostReady } from '../qa/host-readiness.mjs';
+import { navigateQaElectronWireFacade } from '../qa/matrix-runner.mjs';
 export { compareRuntimeUpgradeSummaries } from './runtime-upgrade-comparison.mjs';
 import { assertPerfCleanupComplete, capturePerfJournal, observePerfBrowserErrors } from './electron-run-evidence.mjs';
 import {
@@ -165,6 +167,25 @@ export async function withPerfFixtureSetup(profile, setup) {
   }
 }
 
+export async function preparePerfFixtureLaunch(profile, { localPort }) {
+  const localOrigin = `http://127.0.0.1:${localPort}`;
+  const facade = await profile.startFacade(localOrigin);
+  const env = createQaHostLaunchEnvironment(profile.env, { DEVRYAN_PORT: String(localPort) });
+  delete env.DEVRYAN_SERVER_URL;
+  return { localOrigin, facade, env };
+}
+
+export async function preparePerfFixtureWindow(cdp, { workspace }) {
+  const acknowledgement = await evaluate(cdp, 'window.__TAURI__.core.invoke("desktop_focus_main_window", {})');
+  if (acknowledgement?.focused !== true) throw new Error('Owned Electron fixture window must acknowledge focus');
+  await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `
+    if(location.protocol==='http:'&&location.hostname==='127.0.0.1')for (const principal of ['anonymous', 'local-admin']) {
+      localStorage.setItem('devryan.user.' + principal + ':lastDirectory', ${JSON.stringify(workspace)});
+    }
+  ` });
+  return { method: 'desktop_focus_main_window', acknowledgement };
+}
+
 const waitForRendererOrigin = async (cdp) => {
   const deadline = Date.now() + 45_000;
   while (Date.now() < deadline) {
@@ -273,6 +294,7 @@ export const lifecycleProtocolIdentity = async (readProtocolFile = file => readF
   hash.update(await fixtureProtocolIdentity(generation, readProtocolFile));
   for (const file of ['electron-resource-benchmark.mjs', 'electron-lifecycle-benchmark.mjs', 'electron-run-evidence.mjs', 'fixture-session-seeds.mjs',
     '../journal.mjs', '../qa/cdp.mjs', '../qa/ui-driver.mjs', '../qa/host-readiness.mjs', '../qa/history-scroll.mjs', '../qa/fixture-scenarios.mjs',
+    '../qa/fixture-host-facade.mjs', '../qa/matrix-runner.mjs', '../qa/run-root.mjs',
     '../qa/packaged-artifact.mjs', '../qa/artifact-evidence.mjs', '../qa/project-fixture.mjs', '../qa/isolated-home.mjs',
     '../qa/process.mjs', '../qa/process-ownership.mjs', '../qa/runtime-target.mjs', '../qa/launch-environment.mjs', '../dev-child-utils.mjs']) {
     hash.update(file).update(await readProtocolFile(file));
@@ -465,7 +487,7 @@ const runOnce = async ({ scenario, runIndex, scenarioDirectory, electronBinary, 
     artifactRoot: process.env.QA_NATIVE_ARTIFACT_ROOT, runScope,
     cell: { transport: 'fixture', runtime: 'electron', providerId: 'fixture', modelId: 'fixture-model', agent: 'builder', planMode: false, variant: null, scenarioId: 'core-journey' } });
   let logs = '';
-  const { dataDirectory, fixture, memorySessions, interactiveSessions, debugPort, spawnedAt, ownedProcess } = await withPerfFixtureSetup(profile, async () => {
+  const { dataDirectory, fixture, memorySessions, interactiveSessions, debugPort, spawnedAt, ownedProcess, wireLaunch } = await withPerfFixtureSetup(profile, async () => {
     const dataDirectory = profile.env.DEVRYAN_DATA_DIR;
     const userDataDirectory = profile.env.DEVRYAN_ELECTRON_USER_DATA_DIR;
     await mkdir(dataDirectory, { recursive: true });
@@ -483,6 +505,7 @@ const runOnce = async ({ scenario, runIndex, scenarioDirectory, electronBinary, 
     const interactiveSessions = scenario === 'interactive' ? await prepareInteractiveSessions(fixture) : null;
     if (scenario === 'twelve-stream') fixture.seedStreamSessions();
     const debugPort = await reservePort();
+    const wireLaunch = await preparePerfFixtureLaunch(profile, { localPort: await reservePort() });
     const spawnedAt = performance.now();
     const ownedProcess = startOwnedProcess(electronBinary, [
       `--remote-debugging-port=${debugPort}`,
@@ -490,16 +513,13 @@ const runOnce = async ({ scenario, runIndex, scenarioDirectory, electronBinary, 
       '--force-device-scale-factor=1',
     ], {
       cwd: repositoryRoot,
-      env: createQaHostLaunchEnvironment(profile.env, {
+      env: createQaHostLaunchEnvironment(wireLaunch.env, {
         DEVRYAN_DATA_DIR: dataDirectory,
-        OPENCODE_HOST: fixture.origin,
-        OPENCODE_SKIP_START: 'true',
-        DEVRYAN_SKIP_OPENCODE_START: 'true',
         NO_PROXY: 'localhost,127.0.0.1',
         no_proxy: 'localhost,127.0.0.1',
       }),
     });
-    return { dataDirectory, fixture, memorySessions, interactiveSessions, debugPort, spawnedAt, ownedProcess };
+    return { dataDirectory, fixture, memorySessions, interactiveSessions, debugPort, spawnedAt, ownedProcess, wireLaunch };
   });
   const child = ownedProcess.child;
   child.stdout?.on('data', (chunk) => { logs = appendBoundedLog(logs, chunk); });
@@ -525,11 +545,24 @@ const runOnce = async ({ scenario, runIndex, scenarioDirectory, electronBinary, 
     startupNavigationAudit = observeStartupNavigation(cdp, spawnedAt, target.url);
     browserErrors = observePerfBrowserErrors(cdp, { runDirectory, repositoryRoot });
     await Promise.all([cdp.send('Page.enable'), cdp.send('Runtime.enable'), cdp.send('Log.enable')]);
-    const origin = await waitForRendererOrigin(cdp);
+    const localOrigin = await waitForRendererOrigin(cdp);
+    const localReady = await waitForQaHostReady({ origin: wireLaunch.localOrigin, checkAlive });
     const loopbackOriginMs = performance.now() - spawnedAt;
+    // Native readiness precedes the explicit wire-fixture setup. This is not a
+    // first-document natural startup measurement; resource windows start later.
+    startupNavigationAudit.complete();
+    const windowSetup = await preparePerfFixtureWindow(cdp, { workspace: fixtureDirectory });
+    const wireSetup = await navigateQaElectronWireFacade(cdp, { localOrigin, facadeOrigin: wireLaunch.facade.origin });
+    const fixtureStartedAt = performance.now();
+    startupNavigationAudit = observeStartupNavigation(cdp, fixtureStartedAt, wireLaunch.facade.origin);
+    const origin = wireLaunch.facade.origin;
     startup = await captureFirstDocumentStartup({ cdp, fixture, origin, startedAt: spawnedAt, checkAlive, startupMode,
       readStartupPhases: () => parseStartupPhaseLogs(logs),
       milestones: { cdpTargetMs, loopbackOriginMs }, navigationAudit: startupNavigationAudit });
+    Object.assign(startup, { measurement: 'fixture-ready latency after native readiness and authorized wire navigation; not natural startup latency',
+      scope: 'fresh isolated packaged process; native local host readiness then deterministic external wire fixture',
+      wireSetup: { ...wireSetup, localReady, windowSetup, nativeReadyMs: loopbackOriginMs, fixtureSetupAtMs: fixtureStartedAt - spawnedAt,
+        forcedNavigationsBeforeFixtureReadiness: 1 } });
     await writeFile(path.join(runDirectory, 'startup.json'), JSON.stringify(startup, null, 2));
     if (startup.outcome !== 'passed') throw new Error(`Native startup failed: ${startup.error}`);
     const chromium = await cdp.send('Browser.getVersion');
@@ -564,11 +597,6 @@ const runOnce = async ({ scenario, runIndex, scenarioDirectory, electronBinary, 
       await writeFile(path.join(runDirectory, 'metrics.json'), JSON.stringify(metrics, null, 2));
       return metrics;
     }
-    await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `
-      if(location.protocol==='http:'&&location.hostname==='127.0.0.1')for (const principal of ['anonymous', 'local-admin']) {
-        localStorage.setItem('devryan.user.' + principal + ':lastDirectory', ${JSON.stringify(fixtureDirectory)});
-      }
-    ` });
     const fixtureUrl = `${origin}/?session=${PERF_PARENT_SESSION_ID}`;
     let previousDocument = null;
     if (scenario === 'plan-skeleton') {

@@ -94,6 +94,12 @@ export function classifyAssistantError(
     return undefined
   }
   const detail = stripWrappedJsonQuotes(rawDetail)
+  if (options.managedAbortRecovery?.state === 'user_stopped') return {
+    text: "Stopped by you. Use Resume as task in the parent session to continue with a selected model, or continue this chat independently.",
+    variant: "info",
+    abortKind: "manual",
+  }
+
 
   if (errorName === "SessionRetry") {
     // Retrying cannot restore an expired sign-in; say so instead of "retrying automatically".

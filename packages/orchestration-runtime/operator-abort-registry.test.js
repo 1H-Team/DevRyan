@@ -34,3 +34,15 @@ describe('managed operator abort registry', () => {
     expect(registry.size).toBe(0);
   });
 });
+
+
+test('pending stop acceptance and withdrawal are scoped to a unique request even in the same millisecond', () => {
+  const registry = createManagedOperatorAbortRegistry();
+  registry.record({ sessionId: 's', requestedAt: 1, requestId: 'first', state: 'pending' });
+  registry.record({ sessionId: 's', requestedAt: 1, requestId: 'second', state: 'pending' });
+  expect(registry.accept({ sessionId: 's', requestedAt: 1, requestId: 'first' })).toBe(false);
+  expect(registry.withdraw({ sessionId: 's', requestedAt: 1, requestId: 'first' })).toBe(false);
+  expect(registry.read({ sessionId: 's' }).state).toBe('pending');
+  expect(registry.accept({ sessionId: 's', requestedAt: 1, requestId: 'second' })).toBe(true);
+  expect(registry.read({ sessionId: 's' }).state).toBe('accepted');
+});

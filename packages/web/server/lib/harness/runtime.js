@@ -51,6 +51,7 @@ export const createWebHarnessRuntime = (options = {}) => {
   let nativeSessionIdleObserver = null;
   let sessionChangeHost = null;
   let controlObserver = null;
+  let controlPreparation = null;
   let taskContextRuntime = null;
 
   const initialize = () => {
@@ -180,19 +181,19 @@ export const createWebHarnessRuntime = (options = {}) => {
           ...(action === 'abort' ? { source: readAbortSource(req) } : {}),
         },
       });
-      if (controlObserver && typeof req.params?.sessionID === 'string') {
-        try {
-          controlObserver({
-            action,
-            sessionID: req.params.sessionID,
-            directory: typeof req.query?.directory === 'string' ? req.query.directory : null,
-            source: action === 'abort' ? readAbortSource(req) : null,
-            res,
-          });
-        } catch {
-          // Observers are advisory; a failure must never block the control request.
-        }
+      const input = { action, sessionID: req.params?.sessionID,
+        directory: typeof req.query?.directory === 'string' ? req.query.directory : null,
+        source: action === 'abort' ? readAbortSource(req) : null, res };
+      const notify = () => {
+        if (!controlObserver || typeof input.sessionID !== 'string') return;
+        try { controlObserver(input); } catch { /* Advisory observers never block control. */ }
+      };
+      if (controlPreparation && typeof input.sessionID === 'string') {
+        return Promise.resolve().then(() => controlPreparation(input)).then(() => {
+          notify(); next();
+        }, () => res.status(503).json({ code: 'control_preparation_failed', error: 'Control request could not be prepared' }));
       }
+      notify();
     }
     next();
   };
@@ -301,6 +302,7 @@ export const createWebHarnessRuntime = (options = {}) => {
     setNativeSessionIdleObserver(observer) { nativeSessionIdleObserver = observer; },
     // Receives journaled session controls (with the response, so a rejected
     // request can be withdrawn). Wired by the server, never by a request.
+    setControlPreparation(prepare) { controlPreparation = typeof prepare === 'function' ? prepare : null; },
     setControlObserver(observer) { controlObserver = typeof observer === 'function' ? observer : null; },
     setSessionChangeHost(runtime) { sessionChangeHost = runtime; },
     getWorktreeRuntime: () => worktreeRuntime,

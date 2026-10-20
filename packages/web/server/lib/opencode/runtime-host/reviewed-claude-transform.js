@@ -54,6 +54,13 @@ ${marker}`);
   output=output.replace(diagnosticEnvironment,diagnosticEnvironment+`
         const diagnosticBinding=Reflect.get(globalThis,'__DEVRYAN_CLAUDE_DIAGNOSTIC_BINDING');
         if(typeof diagnosticBinding==='function')try{profileEnv.DEVRYAN_CLAUDE_DIAGNOSTIC_SCOPE=JSON.stringify({...diagnosticBinding(c.req.raw),profileID:profile.id});}catch{}`);
+  const retained='if (checkpointTurn) requestMeta.passthroughHandoff?.diagnostic("passthrough.checkpoint_retained", { reason: "verified_handoff", toolCount: nextPassthroughToolCallIds?.length ?? 0 });';
+  if(output.split(retained).length!==3)throw new Error('native_meridian_source_shape_changed');
+  const checkpointObservation=(event,reason,count)=>`{const observe=Reflect.get(globalThis,'__DEVRYAN_CLAUDE_CHECKPOINT_DIAGNOSTIC');if(typeof observe==='function')try{observe(profileEnv.DEVRYAN_CLAUDE_DIAGNOSTIC_SCOPE,${JSON.stringify(event)},{reason:${JSON.stringify(reason)},toolCount:${count}});}catch{}}`;
+  output=output.replaceAll(retained,`if(checkpointTurn)${checkpointObservation('passthrough.checkpoint_retained','verified_handoff','nextPassthroughToolCallIds?.length ?? 0')}\n${retained}`);
+  const replay='          diagnosticLog2.session(requestMeta.requestId + " passthrough.checkpoint_replay reason=incomplete_or_mismatched_results", requestMeta.requestId);';
+  if(output.split(replay).length!==2)throw new Error('native_meridian_source_shape_changed');
+  output=output.replace(replay,checkpointObservation('passthrough.checkpoint_replay','incomplete_or_mismatched_results','0')+'\n'+replay);
   output=output.replace('        const profileCredentialStore = credentialStoreForProfile(profile);',`        const profileCredentialStore = undefined;
         const renewNativeCredential = async () => {
           const next = await credentialResolver(c.req.raw, profile.id, 'authentication-retry', nativeCredential.fingerprint);

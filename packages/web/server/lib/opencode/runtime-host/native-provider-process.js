@@ -55,7 +55,7 @@ export async function createNativeProviderProcess({binary,cwd,environment,boot:i
         void transports.accept(reply).catch(failed);continue;
       }
       if(reply.type==='provider-bound'){if(bound)throw fail('native_provider_duplicate_bind');bound=parseProviderBound(reply);if(bound.instanceID!==boot.instanceID||bound.buildId!==boot.buildId)throw fail('native_provider_identity_mismatch');resolveBound(bound);continue;}
-      if(reply.type==='claude-process-diagnostic'){
+      if(reply.type==='claude-process-diagnostic'||reply.type==='claude-checkpoint-diagnostic'){
         try{const diagnostic=parseProviderDiagnostic(reply);if(bound&&diagnostic.instanceID===boot.instanceID&&boot.transport.directories.includes(diagnostic.directory))onDiagnostic?.(diagnostic);}
         catch{/* Malformed observations cannot alter provider work. */}continue;
       }

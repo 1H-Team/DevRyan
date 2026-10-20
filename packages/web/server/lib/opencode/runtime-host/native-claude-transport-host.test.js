@@ -6,6 +6,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { PassThrough, Writable } from 'node:stream';
 import { startReadOnlySessionExecution } from '../../../../../harness-runtime/lib/session-execution.js';
 import { createNativeClaudeTransportHost } from './native-claude-transport-host.js';
+import { createNativeClaudeCheckpointOwner } from './native-claude-checkpoint.js';
+import { settlePassthroughQuery, sdkProjectDirectory } from '../meridian-passthrough-handoff.js';
 vi.mock('../../../../../harness-runtime/lib/session-execution.js', () => ({ startReadOnlySessionExecution: vi.fn() }));
 let root, boot, host, frames, runs, credential, sendReply;
 const defer = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
@@ -65,6 +67,58 @@ test('host derives immutable launch, credential and private state; streams only 
   expect(frames.filter(f => f.action === 'stdout').map(f => Buffer.from(f.chunk, 'base64').toString())).toEqual(['owned-output']);
   expect(frames.every(f => f.id === input.id)).toBe(true); expect(JSON.stringify(frames)).not.toContain('owned-access');
   await expect(host.accept(input)).rejects.toMatchObject({ code: 'native_claude_transport_expired' });
+});
+
+test('six native tool handoffs verify the actual transport state with unchanged structured history and prefix', async () => {
+  const hooks = ['__DEVRYAN_CLAUDE_CHECKPOINT_DIRECTORY', '__DEVRYAN_CLAUDE_CHECKPOINT_DIAGNOSTIC'];
+  const previous = hooks.map(key => Reflect.get(globalThis, key));
+  const admitted = new Map(), diagnostics = [], verified = [];
+  const owner = createNativeClaudeCheckpointOwner({ boot, assertAttempt(input) {
+    expect(admitted.get(input.attemptID)).toEqual({ sessionID: input.sessionID, directory: input.directory });
+  }, publish: value => diagnostics.push(value) });
+  Reflect.set(globalThis, hooks[0], owner.directory); Reflect.set(globalThis, hooks[1], owner.diagnostic);
+  const sessionId = randomUUID(), history = [], records = [];
+  const prefix = { system: [{ type: 'text', text: 'Synthetic stable system prefix' }], tools: [{ name: 'read', input_schema: { type: 'object' } }] };
+  let parentUuid;
+  try {
+    for (let turn = 0; turn < 6; turn++) {
+      const input = request(String(turn + 1).repeat(64));
+      admitted.set(input.attemptID, { sessionID: input.sessionID, directory: input.directory }); admit(input); await started(input);
+      owner.bindTransport(JSON.stringify({ attemptID: input.attemptID, sessionID: input.sessionID, directory: input.directory, profileID: input.profileID }), input.directory);
+      const run = runs[turn], assistantUuid = randomUUID(), callIDs = [`call-${turn}-a`, `call-${turn}-b`];
+      const assistant = { type: 'assistant', uuid: assistantUuid, session_id: sessionId,
+        message: { content: callIDs.map(id => ({ type: 'tool_use', id, name: 'read', input: { path: 'fixture.txt' } })) } };
+      const results = { type: 'user', session_id: sessionId,
+        message: { content: callIDs.map(id => ({ type: 'tool_result', tool_use_id: id, content: `actual fixture result ${id}` })) } };
+      records.push({ uuid: assistantUuid, parentUuid, type: 'assistant', sessionId, cwd: input.directory,
+        message: { id: `message-${turn}`, content: assistant.message.content } });
+      parentUuid = randomUUID();
+      records.push({ uuid: parentUuid, parentUuid: assistantUuid, type: 'user', sessionId, cwd: input.directory, message: results.message });
+      const state = run.options.env.CLAUDE_CONFIG_DIR;
+      const project = path.join(state, 'projects', sdkProjectDirectory(input.directory)); await fs.mkdir(project, { recursive: true });
+      await fs.writeFile(path.join(project, sessionId + '.jsonl'), records.map(row => JSON.stringify(row)).join('\n') + '\n');
+      const wire = JSON.stringify({ ...prefix, messages: history });
+      await host.accept(frame(input, 'stdin', { chunk: Buffer.from(wire).toString('base64') }));
+      expect(JSON.parse(run.writes.join(''))).toEqual({ ...prefix, messages: history });
+      const query = (async function* () { yield assistant; yield results; throw new Error('Reached maximum number of turns (4)'); })();
+      query.interrupt = vi.fn(); query.close = vi.fn();
+      const scope = JSON.stringify({ attemptID: input.attemptID, sessionID: input.sessionID, directory: input.directory, profileID: input.profileID });
+      const received = [];
+      for await (const value of settlePassthroughQuery(query, { queryOptions: { cwd: input.directory,
+        env: { CLAUDE_CONFIG_DIR: boot.globals.home, DEVRYAN_CLAUDE_DIAGNOSTIC_SCOPE: scope } },
+        checkpoint: () => ({ assistantUuid, toolCallIds: callIDs }), verified: value => verified.push(value) })) received.push(value);
+      expect(received).toEqual([assistant, results]); expect(received.some(value => value.type === 'result')).toBe(false);
+      history.push(assistant, results);
+      runs[turn].settled.resolve({ terminated: true, confined: true, cancelled: false, exitCode: 0 });
+      await host.release(input); owner.release(input.attemptID); admitted.delete(input.attemptID);
+    }
+    expect(runs).toHaveLength(6); expect(verified).toHaveLength(6);
+    expect(verified.every(value => value.sessionId === sessionId)).toBe(true);
+    expect(diagnostics.filter(value => value.checkpoint.reason === 'persisted_tool_boundary')).toHaveLength(6);
+    expect(JSON.stringify(diagnostics)).not.toMatch(/actual fixture result|Synthetic stable|owned-access|CLAUDE_CONFIG_DIR/);
+  } finally {
+    hooks.forEach((key, index) => previous[index] === undefined ? Reflect.deleteProperty(globalThis, key) : Reflect.set(globalThis, key, previous[index]));
+  }
 });
 
 test('revoked and mismatched attempts cannot start; retirement during credentials prevents launch', async () => {

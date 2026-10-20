@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { VERSION_FILES, admit, publish, releaseNotes, upload } from './release.mjs';
+import { VERSION_FILES, admit, publish, releaseNotes, upload, requireTrustedCI, verifyPublished } from './release.mjs';
 
 const version = '9.8.7';
 const source = 'a'.repeat(40);
@@ -28,7 +28,7 @@ async function fixture(t, { files = { [`DevRyan-${version}-arm64.dmg`]: 'install
 }
 
 // In-memory GitHub REST double covering the endpoints release.mjs calls.
-function fakeGitHub({ releases = [], tagSha = source } = {}) {
+function fakeGitHub({ releases = [], tagSha = source, expired = false } = {}) {
   let nextId = 100;
   const state = { releases: releases.map((release) => ({ assets: [], ...release })), calls: [] };
   const json = (status, body) => new Response(body === undefined ? null : JSON.stringify(body), { status });
@@ -38,6 +38,8 @@ function fakeGitHub({ releases = [], tagSha = source } = {}) {
     const api = pathname.replace(`/repos/${repository}`, '');
     const release = (id) => state.releases.find((row) => row.id === Number(id));
     let match;
+    if (api === '/actions/workflows/release.yml/runs') return json(200, { workflow_runs: [{ id: 22, path: '.github/workflows/release.yml', head_sha: source, event: 'push', head_branch: `v${version}`, repository: { full_name: repository } }] });
+    if (api === '/actions/runs/22/artifacts') return json(200, { artifacts: [{ name: 'DevRyan-macos-arm64-release', expired }] });
     if (method === 'GET' && api === '/releases') return json(200, state.releases);
     if (method === 'POST' && api === '/releases') {
       const created = { id: nextId++, assets: [], ...JSON.parse(body) };
@@ -83,6 +85,37 @@ test('release notes come from the matching CHANGELOG section and must not be emp
   assert.throws(() => releaseNotes(`## [${version}]\n\n## [1.0.0]\n`, version), /empty/);
 });
 
+test('trusted CI requires this repository workflow, main push and exact SHA', async () => {
+  const good = { id: 7, path: '.github/workflows/ci.yml', head_sha: source, head_branch: 'main', event: 'push', status: 'completed', conclusion: 'success', repository: { full_name: repository } };
+  const check = async (runs) => requireTrustedCI({ environment: environment(), fetchImpl: async () => new Response(JSON.stringify({ workflow_runs: runs })), log: quiet });
+  assert.equal((await check([good])).id, 7);
+  for (const override of [{ head_sha: 'b'.repeat(40) }, { head_branch: 'other' }, { event: 'pull_request' }, { path: '.github/workflows/other.yml' }, { conclusion: 'failure' }, { status: 'in_progress' }, { repository: { full_name: 'other/repository' } }]) {
+    await assert.rejects(check([{ ...good, ...override }]), /Trusted CI/);
+  }
+  await assert.rejects(check([good, { ...good, id: 8, conclusion: 'failure' }]), /Trusted CI/);
+});
+
+test('published-identical upload reruns verify without changing assets', async t => {
+  const { root, assets } = await fixture(t);
+  const github = fakeGitHub({ releases: [{ id: 1, tag_name: `v${version}`, draft: true }] });
+  const env = environment({ RELEASE_ID: '1', RELEASE_ASSET_DIRECTORY: assets });
+  await upload({ repositoryRoot: root, environment: env, fetchImpl: github.fetchImpl, log: quiet });
+  github.state.releases[0].draft = false;
+  github.state.releases[0].target_commitish = source;
+  github.state.calls.length = 0;
+  assert.deepEqual(await upload({ repositoryRoot: root, environment: env, fetchImpl: github.fetchImpl, log: quiet }), { published: true });
+  assert.ok(github.state.calls.every(call => call.startsWith('GET ')));
+  github.state.releases[0].assets[0].digest = `sha256:${'f'.repeat(64)}`;
+  await assert.rejects(upload({ repositoryRoot: root, environment: env, fetchImpl: github.fetchImpl, log: quiet }), /Published.*identity/);
+});
+
+test('published-only verification cannot turn a reverted draft back into a release', async t => {
+  const { root, assets } = await fixture(t);
+  const github = fakeGitHub({ releases: [{ id: 1, tag_name: `v${version}`, draft: true }] });
+  await assert.rejects(verifyPublished({ repositoryRoot: root, environment: environment({ RELEASE_ID: '1', RELEASE_ASSET_DIRECTORY: assets }), fetchImpl: github.fetchImpl, log: quiet }), /refuses an unpublished/);
+  assert.ok(github.state.calls.every(call => call.startsWith('GET ')));
+});
+
 test('admit creates a draft, refuses a mismatched tag, and makes no writes in a dry run', async (t) => {
   const { root } = await fixture(t);
   const github = fakeGitHub();
@@ -105,7 +138,7 @@ test('admit creates a draft, refuses a mismatched tag, and makes no writes in a 
     /packages\/ui\/package\.json: 1\.0\.0/);
 });
 
-test('admit reuses an unpublished draft for a moved tag and refuses a published version', async (t) => {
+test('admit reuses a draft and routes published versions to retained-candidate verification', async (t) => {
   const { root } = await fixture(t);
   const github = fakeGitHub({ releases: [
     { id: 1, tag_name: `v${version}`, draft: true, target_commitish: 'b'.repeat(40), assets: [{ id: 7, name: 'stale.dmg' }] },
@@ -115,8 +148,12 @@ test('admit reuses an unpublished draft for a moved tag and refuses a published 
   assert.equal(result.releaseId, '1');
   assert.deepEqual(github.state.releases.map((row) => [row.id, row.target_commitish, row.assets.length]), [[1, source, 0]]);
 
-  const published = fakeGitHub({ releases: [{ id: 3, tag_name: `v${version}`, draft: false, html_url: 'https://example.invalid/r' }] });
-  await assert.rejects(admit({ repositoryRoot: root, environment: environment(), fetchImpl: published.fetchImpl, log: quiet }), /already published/);
+  const release = { id: 3, tag_name: `v${version}`, draft: false, target_commitish: source };
+  const published = fakeGitHub({ releases: [release] });
+  assert.deepEqual(await admit({ repositoryRoot: root, environment: environment(), fetchImpl: published.fetchImpl, log: quiet }), { version, releaseId: '3', published: true, candidateRunId: '22' });
+  assert.ok(published.state.calls.every(call => call.startsWith('GET ')));
+  await assert.rejects(admit({ repositoryRoot: root, environment: environment(), fetchImpl: fakeGitHub({ releases: [release], expired: true }).fetchImpl, log: quiet }), /missing or expired/);
+  await assert.rejects(admit({ repositoryRoot: root, environment: environment(), fetchImpl: fakeGitHub({ releases: [{ ...release, target_commitish: 'b'.repeat(40) }] }).fetchImpl, log: quiet }), /source identity/);
 });
 
 test('upload attaches exactly the DMG, replaces earlier assets, and refuses extras or a moved tag', async (t) => {
@@ -148,4 +185,21 @@ test('publish promotes the draft and waits until the shipped updater discovers t
 
   const wrong = fakeGitHub({ releases: [{ id: 1, tag_name: `v${version}`, draft: true, prerelease: false, assets: [] }] });
   await assert.rejects(publish({ repositoryRoot: root, environment: env, fetchImpl: wrong.fetchImpl, log: quiet, wait: async () => {}, attempts: 2 }));
+  assert.equal(wrong.state.releases[0].draft, true, 'bad assets must never become public');
+});
+
+test('publication never replaces a newer latest and published reruns make no writes', async t => {
+  const { root, assets } = await fixture(t);
+  const github = fakeGitHub({ releases: [{ id: 1, tag_name: `v${version}`, draft: true, target_commitish: source }] });
+  const env = environment({ RELEASE_ID: '1', RELEASE_ASSET_DIRECTORY: assets });
+  await upload({ repositoryRoot: root, environment: env, fetchImpl: github.fetchImpl, log: quiet });
+  github.state.releases.push({ id: 2, tag_name: 'v10.0.0', draft: false, assets: [] });
+  github.state.calls.length = 0;
+  await assert.rejects(upload({ repositoryRoot: root, environment: env, fetchImpl: github.fetchImpl, log: quiet }), /production deployment must not run/);
+  await assert.rejects(publish({ repositoryRoot: root, environment: env, fetchImpl: github.fetchImpl, log: quiet }), /already latest/);
+  assert.ok(github.state.calls.every(call => call.startsWith('GET ')));
+  github.state.releases[0].draft = false;
+  github.state.calls.length = 0;
+  await publish({ repositoryRoot: root, environment: env, fetchImpl: github.fetchImpl, log: quiet });
+  assert.ok(github.state.calls.every(call => call.startsWith('GET ')));
 });

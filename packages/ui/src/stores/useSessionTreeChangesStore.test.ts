@@ -175,17 +175,18 @@ describe('useSessionTreeChangesStore', () => {
     } finally { setAuthPrincipal(principal) }
   })
 
-  test('repository polling does not re-fetch captured history; capture notifications do', async () => {
+  test('repository hints refresh current observations while retaining captured revision', async () => {
     respond = () => Promise.resolve(makeChanges({ revision: 'revision', coverage: 'complete' }))
     const unsubscribe = subscribeSessionTreeChanges('/repo', 'ses_root')
     await wait(0)
     calls.length = 0
     sessionEvents.requestGitRefresh({ directory: '/repo' })
     await wait(DEBOUNCE_MS * 3)
-    expect(calls).toEqual([])
+    expect(calls).toHaveLength(1)
+    expect(useSessionTreeChangesStore.getState().entries.get(getSessionTreeChangesKey('/repo', 'ses_root'))?.revision).toBe('revision')
     sessionEvents.requestGitRefresh({ directory: '/repo', sessionChanges: true })
     await wait(DEBOUNCE_MS * 3)
-    expect(calls).toHaveLength(1)
+    expect(calls).toHaveLength(2)
     unsubscribe()
   })
 

@@ -16,10 +16,11 @@ it.each(['after-prompt', 'during-transcript-read'])('settles a user Stop %s with
   const prompts = [];
   const messages = [];
   let stopRecorded = false;
-  const recordStop = () => {
+  const recordStop = async () => {
     if (stopRecorded) return;
     stopRecorded = true;
-    runtime.recordOperatorAbort({ sessionId: 'ses_stop', requestedAt: clock });
+    const stop = await runtime.recordOperatorAbort({ sessionId: 'ses_stop', requestedAt: clock });
+    await runtime.acceptOperatorAbort(stop);
   };
   const runtime = createWebManagedOrchestrationRuntime({
     now: () => clock,
@@ -46,7 +47,7 @@ it.each(['after-prompt', 'during-transcript-read'])('settles a user Stop %s with
         clock += 100;
         messages.push({ info: { id: 'msg_user', role: 'user', time: { created: clock - 50 } }, parts: body.parts });
         messages.push({ info: { id: 'msg_stopped', parentID: 'msg_user', role: 'assistant', time: { created: clock, completed: clock + 1 } }, parts: [] });
-        if (stopAt === 'after-prompt') recordStop();
+        if (stopAt === 'after-prompt') await recordStop();
         return new Response(null, { status: 204 });
       }
       if (pathname.endsWith('/abort')) return Response.json(true);
@@ -55,7 +56,7 @@ it.each(['after-prompt', 'during-transcript-read'])('settles a user Stop %s with
         const response = Response.json(messages);
         if (stopAt === 'during-transcript-read' && messages.length) {
           await Promise.resolve();
-          recordStop();
+          await recordStop();
         }
         return response;
       }

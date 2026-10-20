@@ -93,6 +93,10 @@ describe('auto-resume policy constants and identities', () => {
     const retired = parkedTask({ failureReason: 'Model not found: opencode/retired' });
     expect(isAutoResumeEligible(retired, parkedEnvelope(retired))).toBe(false);
     expect(isAutoResumeEligible(task, null)).toBe(false);
+    for (const status of ['failed', 'interrupted']) {
+      const stopped = { ...task, status, terminationIntent: 'user_stopped' };
+      expect(isAutoResumeEligible(stopped, parkedEnvelope(stopped))).toBe(false);
+    }
   });
 
   test('active means enabled and still planning, scheduled, or attempting', () => {
