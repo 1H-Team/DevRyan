@@ -34,7 +34,7 @@ A docs-only change runs only `docs:validate`. Both validate modes fail if the ru
 
 ## Suites and runners
 
-`test:full` runs everything below except the frozen legacy Tauri package (`packages/desktop`: lint and types only, its cargo tests are not run).
+`test:full` runs every suite below, including the bundled Plan Mode contract in the frozen legacy Tauri package. Cargo tests are not run because they require native build assets.
 
 | Suite | Command | Runner |
 | --- | --- | --- |
@@ -43,6 +43,7 @@ A docs-only change runs only `docs:validate`. Both validate modes fail if the ru
 | Shared UI | `bun run --cwd packages/ui test` | `scripts/test-ui.mjs`: `bun test`, with global-mock files in isolated processes |
 | Web | `bun run --cwd packages/web test` | `vitest` (one worker), plus three native-host files under `bun test`. Native host scripts: `bun run --cwd packages/web test:native-host`. |
 | Electron | `bun run --cwd packages/electron test` | `scripts/test-electron.mjs` routes by import: `node:test` to Node, `vitest` to Vitest, the rest to `bun test` (isolated when they mock globals) |
+| Legacy Tauri JavaScript contract | `bun run --cwd packages/desktop test:managed-orchestration` | `bun test` |
 | `bots-runtime`, `bot-supervisor`, `bot-engine-proxy`, `bot-egress`, `bot-computer`, `bot-db`, `shared-runtime`, `harness-runtime`, `orchestration-runtime`, `cursor-sdk-runtime` | `bun run --cwd packages/<name> test` | `bun test` |
 | `bot-indexer` | `bun run --cwd packages/bot-indexer test` | `node --test` |
 
