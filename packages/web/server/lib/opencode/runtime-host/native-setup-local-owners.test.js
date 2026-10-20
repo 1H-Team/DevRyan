@@ -142,7 +142,9 @@ test('a crashed start\'s restore lock whose pid a later process reused is reclai
 }),20_000);
 test('a live original restore holder is never reclaimed however old its lock reads, even after a system sleep',async()=>fixture(async root=>{
  // This process and launchd both started before their locks were written.
- for(const [pid,createdAt,clock] of [[process.pid,Date.now(),11*60_000],[1,Date.now()-11*60_000,0]]){
+ // Hosted runners may have booted less than 11 minutes ago. Age the clock
+ // after writing each lock, so its creation always follows the live holder.
+ for(const [pid,createdAt,clock] of [[process.pid,Date.now(),11*60_000],[1,Date.now(),11*60_000]]){
   const target=path.join(root,`target-${pid}`);await snapshot(target,localAdmin);
   const lock=JSON.stringify({ownerToken:'e'.repeat(32),pid,createdAt})+'\n';await fs.writeFile(lockOf(target),lock);
   const now=Date.now,clockJump=vi.spyOn(Date,'now').mockImplementation(()=>now()+clock);
