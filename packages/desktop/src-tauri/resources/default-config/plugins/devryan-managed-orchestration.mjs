@@ -274,7 +274,7 @@ const readSessionMessage = async (client, { sessionId, messageId, directory }) =
   return { available: true, record };
 };
 
-export const isPlanModeUserRecord = (record) => {
+const isPlanModeUserRecord = (record) => {
   if (record?.info?.role !== 'user') return false;
   const mode = typeof record.info.mode === 'string'
     ? record.info.mode.trim().toLowerCase()
