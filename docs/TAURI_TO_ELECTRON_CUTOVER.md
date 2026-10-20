@@ -9,9 +9,10 @@ longer exists and are in git history.
 ## What is already true
 
 - Electron (`packages/electron`) is the only desktop shell that receives
-  features. `packages/desktop` is the legacy Tauri shell, retained only so that
-  already-installed Tauri apps keep a working auto-update path. Add nothing
-  there; see [`packages/desktop/README.md`](../packages/desktop/README.md).
+  features. `packages/desktop` is the legacy Tauri shell, retained for installed
+  app compatibility. Its source identity migration does not establish a working
+  installed-app update path; see
+  [`packages/desktop/README.md`](../packages/desktop/README.md).
 - Releases publish only the branded `DevRyan-<version>-arm64.dmg` (plus the web
   tarball in the `full` scope). The per-architecture update manifests, ZIPs,
   blockmaps and manifest-merge jobs are gone. Release assets are governed by
@@ -24,9 +25,11 @@ longer exists and are in git history.
   so a migrated install keeps its hosts, default host and history. Re-audit
   `settings_file_path` in the Tauri sources against the Electron settings module
   before any cutover; if they diverge, the migration loses user data.
-- The Tauri bundle identifier (`ai.opencode.openchamber`, in
-  `packages/desktop/src-tauri/tauri.conf.json`) and the Electron `appId`
-  (`packages/electron/package.json`) differ.
+- New Tauri and Electron manifests use `dev.devryan.desktop`. Released Tauri
+  apps used `ai.opencode.openchamber`, and released Electron apps used
+  `dev.openchamber.desktop`. Those installed identities remain migration inputs;
+  changing source manifests does not migrate an installed app. See
+  [Identity compatibility](IDENTITY_COMPATIBILITY.md).
 
 ## What a cutover would still need
 
