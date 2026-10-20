@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 const hash=value=>createHash('sha256').update(value).digest('hex');
-export const REVIEWED_DOCUMENT_SOURCE_SHA256='bef4052f50aa08644dd0c2191ee07d6811c9e0cff57f0090afe9613895cf5de4';
+export const REVIEWED_DOCUMENT_SOURCE_SHA256='d6005666db15e676f1df6533be0dd2cbe93a0b684125aa7d73ed7becd067e4f3';
 /** Exact production parser/tool algorithms; I/O authority is constructor-bound per invocation. */
 export function rewriteReviewedDocumentReader(source){
  if(hash(source)!==REVIEWED_DOCUMENT_SOURCE_SHA256)throw new Error('reviewed_document_source_changed');
@@ -26,6 +26,12 @@ export function rewriteReviewedDocumentReader(source){
  replace('owned-document-find','const findAccessibleDocument = async (client, sessionID, directory, documentID) => {','const fitJsonOutput = (value) => {',
   'const findAccessibleDocument = async (client, sessionID, directory, documentID) => requireReviewedDocumentOwner().findAccessibleDocument(sessionID, directory, documentID);\n\n');
  const original=Buffer.from(source).toString('utf8');
+ const publicPluginStart='export const DevRyanDocumentReaderPlugin = async (pluginContext = {}) => {';
+ const publicPluginAt=contents.indexOf(publicPluginStart);
+ if(publicPluginAt<0||contents.split(publicPluginStart).length!==2)throw new Error('reviewed_document_plugin_surface_changed');
+ const publicPlugin=contents.slice(publicPluginAt);
+ contents=contents.slice(0,publicPluginAt);
+ transforms.push({id:'owned-document-plugin-surface',originalSHA256:hash(publicPlugin),outputSHA256:hash('')});
  const cacheStart='const getSessionKey = (sessionID) =>',cacheEnd='const decodeDataUrl = (url) => {';
  const cacheAt=original.indexOf(cacheStart),cacheUntil=original.indexOf(cacheEnd,cacheAt);
  const listStart='const listSessionDocuments = async (sessionID) => {',listEnd='const listAccessibleDocuments = async (client, sessionID, directory) => {';
@@ -33,6 +39,18 @@ export function rewriteReviewedDocumentReader(source){
  if(cacheAt<0||cacheUntil<0||listAt<0||listUntil<0||[cacheStart,cacheEnd,listStart,listEnd].some(anchor=>original.split(anchor).length!==2))throw new Error('reviewed_document_cache_changed');
  const cacheOriginal=original.slice(cacheAt,cacheUntil)+original.slice(listAt,listUntil);
  let cache=cacheOriginal.replaceAll('fs.promises.','cacheFS.');
+ const replaceCacheSegment=(start,end,output)=>{
+  if(cache.split(start).length!==2||cache.split(end).length!==2)throw new Error('reviewed_document_cache_changed');
+  const at=cache.indexOf(start),until=cache.indexOf(end,at+start.length);
+  if(until<0)throw new Error('reviewed_document_cache_changed');
+  cache=cache.slice(0,at)+output+cache.slice(until);
+ };
+ // The reviewed native owner grants one cache root. Public legacy fallback is
+ // deliberately unavailable in this constructor-bound cache.
+ replaceCacheSegment('const getLegacySessionCacheDirectory =', 'const getDocumentPath =',
+  'const getReadableSessionDirectories = (sessionID) => [getSessionCacheDirectory(sessionID)];\n');
+ replaceCacheSegment('const readCachedJSON =', 'const ensurePrivateDirectory =',
+  'const readCachedJSON = async (sessionID, name) => readJsonFile(path.join(getSessionCacheDirectory(sessionID), `${name}.json`));\n\n');
  const detached='void pruneCache().catch(() => undefined);';
  if(cache.split(detached).length!==2)throw new Error('reviewed_document_cache_changed');
  cache=cache.replace(detached,'await pruneCache();');
