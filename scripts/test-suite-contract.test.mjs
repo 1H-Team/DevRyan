@@ -46,6 +46,7 @@ describe('full test-suite contract', () => {
   test('includes every test-owning workspace package in the full gate', () => {
     const rootPackage = JSON.parse(readFileSync(path.join(repositoryRoot, 'package.json'), 'utf8'));
     assert.equal(rootPackage.scripts['test:full'], 'node scripts/test-full.mjs');
+    assert.equal(rootPackage.scripts.build, 'bun run --cwd packages/electron build:web-assets && bun run build:electron');
     const fullCommand = FULL_TEST_COMMANDS.join(' && ');
     const packageDirectories = readdirSync(path.join(repositoryRoot, 'packages'), { withFileTypes: true })
       .filter((entry) => entry.isDirectory())

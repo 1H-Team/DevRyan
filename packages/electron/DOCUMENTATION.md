@@ -1,5 +1,7 @@
 # Electron startup ownership
 
+The repository's `bun run build` builds the web UI through `build:web-assets`, which stages the same assets into `resources/web-dist`, then bundles Electron's main process. Full validation uses this explicit build before tests; it does not rely on install-time preparation for packaged web assets.
+
 Automatic Bot maintenance and catalog acquisition/context reads inspect their
 owned installation state before probing Docker. A profile with no installation
 returns the existing unavailable/setup-required outcome without Docker commands;

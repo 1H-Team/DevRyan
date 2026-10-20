@@ -27,7 +27,7 @@
     "perf:harness": "node ./scripts/perf/harness-resource-benchmark.mjs",
     "perf:compare": "node ./scripts/perf/harness-comparison.mjs",
     "perf:pipeline": "node ./scripts/perf/session-pipeline-profile.mjs",
-    "build": "bun run build:web && bun run build:electron",
+    "build": "bun run --cwd packages/electron build:web-assets && bun run build:electron",
     "build:web": "bun run --cwd packages/web build",
     "build:ui": "bun run type-check:ui",
     "build:desktop": "bun run --cwd packages/desktop build",

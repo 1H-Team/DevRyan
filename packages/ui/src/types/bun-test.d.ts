@@ -2,6 +2,11 @@
 // Only the subset used by our test files is declared.
 
 declare module "bun:test" {
+  export const jest: {
+    useFakeTimers(): void;
+    advanceTimersByTime(milliseconds: number): void;
+    useRealTimers(): void;
+  };
   export function describe(name: string, fn: () => void): void;
   export function test(name: string, fn: () => void | Promise<void>, timeout?: number): void;
   interface Matchers<Result = void> {

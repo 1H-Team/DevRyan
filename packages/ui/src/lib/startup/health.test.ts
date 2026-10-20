@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, jest, test } from 'bun:test';
 import { parseStartupHealth, waitForStartupHealth, watchStartupRecovery, type StartupHealthSnapshot } from './health';
 
 const health = (state: 'starting' | 'ready' | 'failed', attempt = 1): StartupHealthSnapshot => ({
@@ -43,12 +43,18 @@ describe('startup health polling', () => {
     const sequence: (StartupHealthSnapshot | null)[] = Array.from({ length: 40 }, () => health('starting'));
     sequence.push(health('ready'));
     let calls = 0;
-    // 40 polls at >=1 ms each outlive a 10 ms window only because each one reports progress.
-    await waitForStartupHealth(async () => {
-      await new Promise(resolve => setTimeout(resolve, 1));
-      return sequence[calls++] ?? null;
-    }, { ...options(), timeoutMs: 10, maxTimeoutMs: 5_000 });
-    expect(calls).toBe(41);
+    jest.useFakeTimers();
+    try {
+      // Advance beyond the 10 ms window while every poll reports progress.
+      const ready = waitForStartupHealth(async () => sequence[calls++] ?? null,
+        { ...options(), timeoutMs: 10, maxTimeoutMs: 5_000 });
+      for (let elapsed = 0; elapsed < 50; elapsed++) {
+        jest.advanceTimersByTime(1);
+        for (let turn = 0; turn < 20; turn++) await Promise.resolve();
+      }
+      await ready;
+      expect(calls).toBe(41);
+    } finally { jest.useRealTimers(); }
   });
 
   test('still expires when the host stops reporting progress', async () => {

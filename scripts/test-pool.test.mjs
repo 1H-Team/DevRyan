@@ -69,7 +69,11 @@ describe('bounded test pool', () => {
     await runTestUnits([{ name: 'x', ...chatty('x') }, { name: 'y', ...chatty('y') }], { heartbeatMs: 0, concurrency: 2, env,
       log: (line) => output.push(`${line}\n`), write: (text) => output.push(text) });
     const text = output.join('');
-    for (const tag of ['x', 'y']) assert.match(text, new RegExp(`===== ${tag}: passed in \\d+s\\n[^\\n]*\\n${tag}-0\\n${tag}-1\\n${tag}-2\\n${tag}-3\\n${tag}-4\\n===== end ${tag}`));
+    for (const tag of ['x', 'y']) {
+      const start = process.env.GITHUB_ACTIONS === 'true' ? '::group::' : '===== ';
+      const end = process.env.GITHUB_ACTIONS === 'true' ? '::endgroup::' : `===== end ${tag}`;
+      assert.match(text, new RegExp(`${start}${tag}: passed in \\d+s\\n[^\\n]*\\n${tag}-0\\n${tag}-1\\n${tag}-2\\n${tag}-3\\n${tag}-4\\n${end}`));
+    }
   });
 
   test('an interrupt stops every owned process group and removes scratch', async () => {
