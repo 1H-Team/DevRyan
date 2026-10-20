@@ -156,6 +156,15 @@ export async function stopPerfOwnedResources(ownedProcess, fixture) {
   return cleanup;
 }
 
+export async function withPerfFixtureSetup(profile, setup) {
+  try { return await setup(); }
+  catch (error) {
+    try { await profile.close(); }
+    catch (cleanup) { throw new AggregateError([error, cleanup], 'Fixture setup and cleanup failed'); }
+    throw error;
+  }
+}
+
 const waitForRendererOrigin = async (cdp) => {
   const deadline = Date.now() + 45_000;
   while (Date.now() < deadline) {
@@ -455,47 +464,42 @@ const runOnce = async ({ scenario, runIndex, scenarioDirectory, electronBinary, 
   const profile = await prepareQaFixtureProfile({ runtimeRoot: path.join(runDirectory, 'runtime'), workspace: fixtureDirectory, generation,
     artifactRoot: process.env.QA_NATIVE_ARTIFACT_ROOT, runScope,
     cell: { transport: 'fixture', runtime: 'electron', providerId: 'fixture', modelId: 'fixture-model', agent: 'builder', planMode: false, variant: null, scenarioId: 'core-journey' } });
-  const dataDirectory = profile.env.DEVRYAN_DATA_DIR;
-  const userDataDirectory = profile.env.DEVRYAN_ELECTRON_USER_DATA_DIR;
-  await mkdir(dataDirectory, { recursive: true });
-  await mkdir(userDataDirectory, { recursive: true });
-  const settings = JSON.parse(await readFile(path.join(dataDirectory, 'settings.json'), 'utf8'));
-  // Pin only this fresh benchmark profile before launch. Host-managed agent
-  // defaults otherwise may select a production model outside the fixture catalog.
-  await writeFile(path.join(dataDirectory, 'settings.json'), JSON.stringify({ ...settings,
-    defaultModel: 'fixture/fixture-model', defaultAgent: 'build',
-    agentModelSelections: Object.fromEntries(['build', 'builder', 'orchestrator'].map(agent => [agent,
-      { providerId: 'fixture', modelId: 'fixture-model' }])),
-  }, null, 2), { mode: 0o600 });
-
-  const fixture = profile.fixture;
-  const memorySessions = scenario === 'session-memory'
-    ? await prepareMemorySessions(fixture).catch(async error => { await fixture.close(); throw error; })
-    : [];
-  const interactiveSessions = scenario === 'interactive'
-    ? await prepareInteractiveSessions(fixture).catch(async error => { await fixture.close(); throw error; })
-    : null;
-  if (scenario === 'twelve-stream') {
-    // Seed before launch so the extra roots are part of startup, like the default four.
-    try { fixture.seedStreamSessions(); } catch (error) { await fixture.close(); throw error; }
-  }
-  const debugPort = await reservePort();
   let logs = '';
-  const spawnedAt = performance.now();
-  const ownedProcess = startOwnedProcess(electronBinary, [
-    `--remote-debugging-port=${debugPort}`,
-    `--user-data-dir=${userDataDirectory}`,
-    '--force-device-scale-factor=1',
-  ], {
-    cwd: repositoryRoot,
-    env: createQaHostLaunchEnvironment(profile.env, {
-      DEVRYAN_DATA_DIR: dataDirectory,
-      OPENCODE_HOST: fixture.origin,
-      OPENCODE_SKIP_START: 'true',
-      DEVRYAN_SKIP_OPENCODE_START: 'true',
-      NO_PROXY: 'localhost,127.0.0.1',
-      no_proxy: 'localhost,127.0.0.1',
-    }),
+  const { dataDirectory, fixture, memorySessions, interactiveSessions, debugPort, spawnedAt, ownedProcess } = await withPerfFixtureSetup(profile, async () => {
+    const dataDirectory = profile.env.DEVRYAN_DATA_DIR;
+    const userDataDirectory = profile.env.DEVRYAN_ELECTRON_USER_DATA_DIR;
+    await mkdir(dataDirectory, { recursive: true });
+    await mkdir(userDataDirectory, { recursive: true });
+    const settings = JSON.parse(await readFile(path.join(dataDirectory, 'settings.json'), 'utf8'));
+    // Pin only this fresh benchmark profile before launch. Host-managed agent
+    // defaults otherwise may select a production model outside the fixture catalog.
+    await writeFile(path.join(dataDirectory, 'settings.json'), JSON.stringify({ ...settings,
+      defaultModel: 'fixture/fixture-model', defaultAgent: 'build',
+      agentModelSelections: Object.fromEntries(['build', 'builder', 'orchestrator'].map(agent => [agent,
+        { providerId: 'fixture', modelId: 'fixture-model' }])),
+    }, null, 2), { mode: 0o600 });
+    const fixture = profile.fixture;
+    const memorySessions = scenario === 'session-memory' ? await prepareMemorySessions(fixture) : [];
+    const interactiveSessions = scenario === 'interactive' ? await prepareInteractiveSessions(fixture) : null;
+    if (scenario === 'twelve-stream') fixture.seedStreamSessions();
+    const debugPort = await reservePort();
+    const spawnedAt = performance.now();
+    const ownedProcess = startOwnedProcess(electronBinary, [
+      `--remote-debugging-port=${debugPort}`,
+      `--user-data-dir=${userDataDirectory}`,
+      '--force-device-scale-factor=1',
+    ], {
+      cwd: repositoryRoot,
+      env: createQaHostLaunchEnvironment(profile.env, {
+        DEVRYAN_DATA_DIR: dataDirectory,
+        OPENCODE_HOST: fixture.origin,
+        OPENCODE_SKIP_START: 'true',
+        DEVRYAN_SKIP_OPENCODE_START: 'true',
+        NO_PROXY: 'localhost,127.0.0.1',
+        no_proxy: 'localhost,127.0.0.1',
+      }),
+    });
+    return { dataDirectory, fixture, memorySessions, interactiveSessions, debugPort, spawnedAt, ownedProcess };
   });
   const child = ownedProcess.child;
   child.stdout?.on('data', (chunk) => { logs = appendBoundedLog(logs, chunk); });

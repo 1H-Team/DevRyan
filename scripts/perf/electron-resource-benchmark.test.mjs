@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { describe, it } from 'node:test';
 import { runInNewContext } from 'node:vm';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { scratchParent } from '../qa/run-root.mjs';
 
 import {
@@ -20,6 +22,7 @@ import {
   summarizeStartupRuns,
   stopPerfOwnedResources,
   waitForPlanSkeletonDocument,
+  withPerfFixtureSetup,
 } from './electron-resource-benchmark.mjs';
 
 const sample = (tabCpu, gpuCpu, tabMemory, browserMemory = 200) => ({
@@ -53,6 +56,24 @@ describe('Electron resource benchmark metrics', () => {
   it('defaults resource and interactive run output to the owned OS temp family', () => {
     assert.equal(parseBenchmarkArguments([]).outputRoot, scratchParent('perf'));
     assert.equal(parseBenchmarkArguments(['--scenarios', 'interactive', '--package-evidence', '.cache/qa/package-evidence.json']).outputRoot, scratchParent('perf'));
+  });
+
+  it('closes a fixture on setup rejection so an isolated runner exits within its deadline', async () => {
+    const script = `
+      import http from 'node:http';
+      import { withPerfFixtureSetup } from './scripts/perf/electron-resource-benchmark.mjs';
+      const server = http.createServer();
+      await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+      try {
+        await withPerfFixtureSetup({ close: () => new Promise(resolve => server.close(resolve)) },
+          async () => { throw new Error('setup rejected'); });
+        process.exitCode = 2;
+      } catch (error) { if (error.message !== 'setup rejected') process.exitCode = 3; }
+    `;
+    await promisify(execFile)(process.execPath, ['--input-type=module', '--eval', script], { timeout: 3000 });
+    const original = new Error('setup rejected'), cleanup = new Error('fixture close rejected');
+    await assert.rejects(withPerfFixtureSetup({ close: async () => { throw cleanup; } }, async () => { throw original; }),
+      error => error instanceof AggregateError && error.errors[0] === original && error.errors[1] === cleanup);
   });
 
   it('records generation-specific fixture protocol identity and forbids cross-generation optimization comparisons', async () => {
