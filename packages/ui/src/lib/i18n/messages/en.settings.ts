@@ -1818,8 +1818,6 @@ export const settingsDict = {
   'settings.sessionDefaults.agentModels.group.subagents': 'Subagents',
   'settings.sessionDefaults.helper.title': 'Helper Model',
   'settings.sessionDefaults.helper.model': 'Titles, commits, PR drafts and notifications',
-  'settings.sessionDefaults.helper.description': 'Use this model for chat names, Git drafts and notification summaries. Your chat model stays selected.',
-  'settings.sessionDefaults.helper.reasoning': 'Reasoning: Default',
   'settings.sessionDefaults.helper.saveFailed': 'Could not save the helper model. Try again.',
   'settings.sessionDefaults.agentModels.defaultModel': 'OpenCode Default Model',
   'settings.sessionDefaults.agentModels.badge.fallback': 'Fallback',

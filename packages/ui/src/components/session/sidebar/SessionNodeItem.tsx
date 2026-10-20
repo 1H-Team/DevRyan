@@ -766,7 +766,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     event.stopPropagation();
   };
 
-  const subsessionChevron = hasChildren ? (
+  const renderSubsessionChevron = (className: string) => (
     <button
       type="button"
       onClick={(event) => {
@@ -783,44 +783,59 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
           toggleParent(session.id);
         }
       }}
-      className="inline-flex h-3.5 w-full max-w-3.5 items-center justify-center rounded-md text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+      className={cn('h-3.5 w-3.5 items-center justify-center rounded-md text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50', className)}
       aria-label={isExpanded
         ? t('sessions.sidebar.session.subsessions.collapse')
         : t('sessions.sidebar.session.subsessions.expand')}
     >
       <RiArrowDownSLine className={cn('h-3 w-3 transition-transform duration-150 ease-[cubic-bezier(0.33,1,0.68,1)]', isExpanded ? 'rotate-0' : '-rotate-90')} />
     </button>
-  ) : null;
+  );
   const leadingPinMarker = (
     <RiPushpinLine
       className="h-3 w-3 flex-shrink-0 text-primary"
       aria-label={t('sessions.sidebar.session.status.pinned')}
     />
   );
+  // Pointer-hover devices swap the status dot for the chevron in the same slot
+  // while the row is hovered or holds focus; touch devices keep the dot and a
+  // separate chevron. The row's `group/session-row` drives the swap in CSS, so
+  // no hover state reaches React.
+  const leadingStatusSlot = leadingRailLayout.hasChildren ? (
+    <span className="relative inline-flex h-2 w-2 items-center justify-center">
+      <span className="pointer-events-none inline-flex items-center justify-center [:root:not(.mobile-pointer)_&]:group-hover/session-row:hidden [:root:not(.mobile-pointer)_&]:group-focus-within/session-row:hidden">
+        {leadingStatusMarker}
+      </span>
+      {renderSubsessionChevron('absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 [:root:not(.mobile-pointer)_&]:group-hover/session-row:inline-flex [:root:not(.mobile-pointer)_&]:group-focus-within/session-row:inline-flex')}
+    </span>
+  ) : (
+    <span className="pointer-events-none inline-flex h-2 w-2 items-center justify-center">
+      {leadingStatusMarker}
+    </span>
+  );
   const leadingRailSlotContent = {
-    status: leadingStatusMarker,
-    pin: leadingPinMarker,
-    chevron: subsessionChevron,
+    status: leadingStatusSlot,
+    pin: (
+      <span className="pointer-events-none inline-flex h-3.5 w-3.5 items-center justify-center">
+        {leadingPinMarker}
+      </span>
+    ),
   };
   const leadingRail = (
     <span
       data-session-leading-rail
-      className="absolute right-full top-1/2 mr-0.5 grid h-4 w-9 flex-shrink-0 -translate-y-1/2 grid-cols-[minmax(0,4fr)_minmax(0,7fr)_2px_minmax(0,7fr)_1px] items-center justify-items-center"
+      className="absolute right-full top-1/2 mr-1.5 flex h-4 flex-shrink-0 -translate-y-1/2 items-center"
     >
       {leadingRailLayout.slots.map((slot, index) => (
-        <span
-          key={index}
-          className={cn(
-            'inline-flex items-center justify-center',
-            index === 1 && 'justify-self-end',
-            index === 2 && 'col-start-4',
-            slot === 'status' ? 'h-2 w-2' : 'h-3.5 w-full max-w-3.5',
-            slot !== 'chevron' && 'pointer-events-none',
-          )}
-        >
-          {slot ? leadingRailSlotContent[slot] : null}
-        </span>
+        slot ? <React.Fragment key={index}>{leadingRailSlotContent[slot]}</React.Fragment> : null
       ))}
+      {leadingRailLayout.hasChildren ? (
+        // Fixed-size cell: the touch target's 36px minimum overflows it evenly
+        // into the row's leading clearance instead of widening the rail.
+        <span className="relative ml-0.5 hidden h-3.5 w-3.5 [.mobile-pointer_&]:inline-flex">
+          {renderSubsessionChevron('absolute left-1/2 top-1/2 inline-flex -translate-x-1/2 -translate-y-1/2')}
+        </span>
+      ) : null}
     </span>
   );
 
@@ -1114,7 +1129,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
             data-mobile-drawer-drag-lock={mobileVariant ? 'true' : undefined}
             onContextMenu={handleRowContextMenu}
             className={cn(
-              'group relative my-0.5 flex items-center rounded-sm px-1.5 py-1',
+              'group group/session-row relative my-0.5 flex items-center rounded-sm px-1.5 py-1',
               isMissingDirectory ? 'opacity-75' : '',
               depth > 0 && 'pl-[20px]',
               isRowSelected && 'bg-primary/15',

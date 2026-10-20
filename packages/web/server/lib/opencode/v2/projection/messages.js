@@ -442,7 +442,7 @@ export const toV1AssistantParts = (message, context) => {
       // LOSS(text-time): v2 text items carry no time; the step's times stand in.
       const part = textPart(id, sessionID, messageID, typeof item.text === 'string' ? item.text : '', false);
       part.time = partTime(context.created, completed);
-      if (isRecord(item.state)) part.metadata = { providerState: item.state };
+      if (isRecord(item.native ?? item.state)) part.metadata = { providerState: item.native ?? item.state };
       parts.push(part);
       return;
     }
@@ -458,7 +458,7 @@ export const toV1AssistantParts = (message, context) => {
         text: typeof item.text === 'string' ? item.text : '',
         time: partTime(start, end),
       };
-      if (isRecord(item.state)) part.metadata = item.state;
+      if (isRecord(item.native ?? item.state)) part.metadata = item.native ?? item.state;
       parts.push(part);
       return;
     }

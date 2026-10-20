@@ -16,3 +16,13 @@ test('revoked controller blocks helper provider effects before admission and clo
  const handler=createControllerHelperText({isCurrent:()=>current,rename:async()=>{},rpc:async method=>{if(method==='native.helper.assert')current=false;if(method==='native.helper.settled')settled++;},generate:async(_input,_permit,_signal,recheck)=>{await recheck();calls++;return {text:'forbidden'};}});
  const req=request(),response=await runWithRequestPermit(req.headers,()=>handler(req));expect(response.status).toBe(503);expect(calls).toBe(0);expect(settled).toBe(1);
 });
+test('a host refusal reports its bounded native code and status instead of a generic helper failure',async()=>{
+ const refusal=Object.assign(new Error('DevRyan refused provider.openai: native_openai_resolution_proof_required'),{code:'native_openai_resolution_proof_required',status:503});
+ const handler=createControllerHelperText({isCurrent:()=>true,rename:async()=>{},rpc:async()=>{},generate:async()=>{throw refusal;}});
+ const req=request(),response=await runWithRequestPermit(req.headers,()=>handler(req));
+ expect(response.status).toBe(503);expect(await response.json()).toEqual({code:'native_openai_resolution_proof_required'});
+ for(const code of ['Provider said: secret','native_UPPER',`native_${'x'.repeat(200)}`]){
+  const other=createControllerHelperText({isCurrent:()=>true,rename:async()=>{},rpc:async()=>{},generate:async()=>{throw Object.assign(new Error('detail'),{code});}});
+  const next=request(),body=await (await runWithRequestPermit(next.headers,()=>other(next))).json();expect(body).toEqual({code:'native_helper_failed'});
+ }
+});

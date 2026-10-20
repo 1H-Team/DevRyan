@@ -76,7 +76,8 @@ export function createNativeAdmissionOwner(options) {
     const result = await action(); assertController(); return result;
   });
   const remember = (entry) => {
-    if(!entry.recoveredInputCancellation)entry.recoveredInputGrant??=options.assertRecoveredInputOperation?.(entry.request,entry.archiveMetadata?entry:undefined);
+    const terminalDisposal=entry.removal || entry.web?.effects.length===1 && entry.web.effects[0].operation==='session.remove';
+    if(!entry.recoveredInputCancellation)entry.recoveredInputGrant??=options.assertRecoveredInputOperation?.(entry.request,entry.archiveMetadata||terminalDisposal?entry:undefined);
     assertController(); entry.controllerEpoch = controllerEpoch; active.set(entry.permit.token, entry);
   };
   const assertEntry = (entry) => {
@@ -1315,7 +1316,7 @@ export function createNativeAdmissionOwner(options) {
       const chosen = await options.captureHelperSelection(frozen, copy(session));
       if (!chosen?.selection || typeof chosen.recheck !== 'function' || typeof chosen.selection.revision !== 'string' || !chosen.selection.revision) throw fail('native_helper_selection_unavailable',503);
       if (chosen.selection.providerID !== frozen.providerID || chosen.selection.modelID !== frozen.modelID
-        || chosen.selection.variant !== undefined || frozen.variant !== undefined || chosen.selection.revision !== frozen.selectionRevision) throw fail('native_helper_selection_changed',403);
+        || chosen.selection.variant !== frozen.variant || chosen.selection.revision !== frozen.selectionRevision) throw fail('native_helper_selection_changed',403);
       const selectionRecheck = chosen.recheck;
       await reauthorize(); assertController();
       const state = session ? await runtime.nativeAdmissionState({directory:frozen.directory,sessionID:session.id}) : {revision:0,held:false,reverting:false};
@@ -1444,6 +1445,16 @@ export function createNativeAdmissionOwner(options) {
       try { return await context.run(permit, action); }
       catch (cause) { await uncertainCommandPrompt(entry); throw cause; }
       finally { active.delete(permit.token); }
+    }).catch(cause => {
+      if (spec.operation === 'sessions.remove') {
+        try {
+          const web = nativeWebOperation(copy(spec));
+          options.recordDiagnostic?.({ type: 'lifecycle', event: 'session_removal', sessionID: web.sessionID,
+            payload: { stage: 'web_authorization', outcome: 'failed',
+              code: /^[a-z][a-z0-9_]{1,100}$/.test(cause?.code ?? '') ? cause.code : 'native_removal_failed' } });
+        } catch { /* Diagnostics cannot change deletion. */ }
+      }
+      throw cause;
     }),
     handleRpc: (method, input) => inController(async () => { if (typeof method !== 'string' || !method.startsWith('native.admission.')) throw fail('native_admission_rpc_unavailable', 403); const key = method.slice('native.admission.'.length); if (!Object.hasOwn(methods, key)) throw fail('native_admission_rpc_unavailable', 403); return methods[key](input); }),
     releaseTransactionHolds: input => inController(() => releaseTransactionHolds(input)),

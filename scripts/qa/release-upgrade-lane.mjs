@@ -88,17 +88,21 @@ export async function inspectDataRoots(home) {
 
 /**
  * Pure grading of the data-root migration across the candidate start: the aged
- * ~/.config/openchamber must become a link to devryan, and every entry it held
- * must be in ~/.config/devryan.
+ * ~/.config/openchamber must become (or remain) a link to devryan, and every
+ * entry in the aged root must remain in ~/.config/devryan.
  */
 export function gradeDataRootMigration({ before, after }) {
   const failures = [];
-  if (before?.legacy?.kind !== 'directory') failures.push('The aged profile has no ~/.config/openchamber folder to migrate');
-  if (before?.root?.kind !== 'absent') failures.push('~/.config/devryan existed before the candidate start');
+  const alreadyMigrated = before?.legacy?.kind === 'link' && before.legacy.target === 'devryan'
+    && before?.root?.kind === 'directory';
+  if (!alreadyMigrated) {
+    if (before?.legacy?.kind !== 'directory') failures.push('The aged profile has no ~/.config/openchamber folder to migrate');
+    if (before?.root?.kind !== 'absent') failures.push('~/.config/devryan existed before the candidate start without the migration link');
+  }
   if (after?.legacy?.kind !== 'link' || after.legacy.target !== 'devryan') failures.push('~/.config/openchamber is not a link to devryan after the candidate start');
   if (after?.root?.kind !== 'directory') failures.push('~/.config/devryan is not a folder after the candidate start');
   const moved = new Set(after?.root?.entries ?? []);
-  const missing = (before?.legacy?.entries ?? []).filter(name => !moved.has(name));
+  const missing = ((alreadyMigrated ? before.root.entries : before?.legacy?.entries) ?? []).filter(name => !moved.has(name));
   if (missing.length) failures.push(`Entries missing after the move: ${missing.join(', ')}`);
   return { passed: failures.length === 0, failures };
 }

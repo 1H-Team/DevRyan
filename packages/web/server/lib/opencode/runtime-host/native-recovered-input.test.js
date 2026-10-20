@@ -249,3 +249,47 @@ test('queued and cancelled fallback prompt aliases use only the exact validated 
  await expect(owner.action(f.sessionID,'resume-input',scope,{owner:null})).rejects.toThrow('write_failed');
  expect((await owner.snapshot(f.sessionID)).state).toBe('paused');expect(f.calls()).toBe(0);
 });
+
+test.each(['queued','promoted'])('authorized deletion disposes %s recovered input while execution stays fenced',async location=>{
+ const f=await fixture();
+ if(location==='promoted'){f.db.prepare('DELETE FROM session_inbox').run();f.message(f.messageID,'user',1,{text:'retained input'});}
+ const recovered=f.owner();await recovered.install('epoch');
+ const {createSessionMutationRuntime}=await import('../../../../../harness-runtime/lib/session-mutations.js');
+ const {createNativeSessionRemoval}=await import('./native-session-removal.js');
+ const runtime=createSessionMutationRuntime({directory:path.join(f.root,'ledger')});
+ let allowed=true,exists=true;
+ const owner=createNativeAdmissionOwner({directory:f.root,ownerID:'bundle',runtime,
+  getSession:async()=>({id:f.sessionID,parentID:null,directory:f.root}),withSessionLock:async(_id,action)=>action(),
+  authorizeOperation:async()=>{throw Error('unscoped');},
+  captureWebAuthorization:async()=>async()=>{if(!allowed)throw Object.assign(Error('revoked'),{code:'revoked'});},
+  assertRecoveredInputOperation:(request,entry)=>recovered.assertOperation(request,entry)});
+ const authorize=(operation,sessionID,permit,input)=>owner.handleRpc('native.admission.authorize',{operation,sessionID,existingPermit:permit,...input?{input}:{}});
+ const removal=createNativeSessionRemoval({runtime,admissionOwner:owner,ownerID:'bundle',
+  cancelManaged:async input=>({[input.phase==='fence'?'fenced':'settled']:true,sessions:input.sessions}),
+  cancelAndWait:async input=>({terminated:true,sessions:input.sessions}),
+  inspectRemovalOwned:async({sessionID,permit})=>{await authorize('removal.inspect',sessionID,permit);return {
+   members:exists?[{id:sessionID,parentID:null,directory:f.root}]:[],states:[{sessionID,exists,active:false,claimed:false,pendingIDs:[],inboxIDs:exists?[f.messageID]:[]}]};},
+  removeLeafOwned:async({sessionID,permit,intentID})=>{
+   await authorize('removal.delete',sessionID,permit,{intentID});
+   await expect(authorize('execution.wake',sessionID,permit)).rejects.toMatchObject({code:'native_recovered_input_fenced'});
+   f.db.prepare('DELETE FROM session_inbox WHERE session_id=?').run(sessionID);
+   f.db.prepare('DELETE FROM session_message WHERE session_id=?').run(sessionID);
+   f.db.prepare('DELETE FROM session_v2 WHERE id=?').run(sessionID);exists=false;return {removed:true,sessionID};}});
+ const remove=()=>owner.withWebOperation({operation:'sessions.remove',method:'DELETE',path:`/api/session/${f.sessionID}`,directory:f.root},()=>removal.remove({sessionID:f.sessionID,directory:f.root}));
+ try{
+  allowed=false;await expect(remove()).rejects.toMatchObject({code:'revoked'});expect(exists).toBe(true);
+  allowed=true;await expect(remove()).resolves.toBe(true);
+  expect(f.db.prepare('SELECT count(*) AS count FROM session_inbox').get().count).toBe(0);
+  expect(f.calls()).toBe(0);expect(await runtime.nativeRemovals({directory:f.root})).toEqual([]);
+ }finally{owner.dispose();}
+});
+
+
+test('recovery reads retained compaction fields while rejecting unrecognized stored fields',async()=>{
+ const f=await fixture();
+ const data={status:'completed',reason:'auto',summary:'Retained summary',recent:'Retained recent text'};
+ f.message('msg_compact','compaction',1,data);
+ expect(()=>readRecoveredNativeInputs(f.sql)).not.toThrow();
+ f.db.prepare('UPDATE session_message SET data=? WHERE id=?').run(JSON.stringify({time:{created:100},...data,unrecognized:true}),'msg_compact');
+ expect(()=>readRecoveredNativeInputs(f.sql)).toThrow();
+});

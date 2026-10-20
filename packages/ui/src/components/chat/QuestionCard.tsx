@@ -290,6 +290,24 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
   const boundedActiveIndex = Math.min(activeIndex, Math.max(0, totalCount - 1));
   const activeEntry = entries[boundedActiveIndex] ?? null;
   const isLastQuestion = boundedActiveIndex >= totalCount - 1;
+  // Direction of the last step change; the keyed question body replays its
+  // enter animation from that side. Derived during render so the first frame
+  // of the new question already carries it.
+  const activeEntryKey = activeEntry?.entryKey ?? null;
+  const [stepMotion, setStepMotion] = React.useState<{
+    entryKey: string | null;
+    index: number;
+    direction: 'idle' | 'forward' | 'back';
+  }>({ entryKey: activeEntryKey, index: boundedActiveIndex, direction: 'idle' });
+  if (stepMotion.entryKey !== activeEntryKey) {
+    setStepMotion({
+      entryKey: activeEntryKey,
+      index: boundedActiveIndex,
+      direction: stepMotion.entryKey === null || activeEntryKey === null
+        ? 'idle'
+        : boundedActiveIndex < stepMotion.index ? 'back' : 'forward',
+    });
+  }
   const progressLabel = totalCount > 1
     ? t('chat.questionCard.progress', { current: boundedActiveIndex + 1, total: totalCount })
     : null;
@@ -574,7 +592,10 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
     const selected = selectedOptions[entry.entryKey] ?? [];
     const prompt = splitQuestionPrompt(entry.question.question);
     return (
-      <div key={entry.entryKey}>
+      <div
+        key={entry.entryKey}
+        data-question-step={stepMotion.direction === 'idle' ? undefined : stepMotion.direction}
+      >
         {opts.withHeader && entry.question.header?.trim() ? (
           <div className="typography-micro font-medium text-muted-foreground mb-0.5">
             {entry.question.header}

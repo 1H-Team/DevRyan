@@ -352,7 +352,7 @@ export function createPrimaryRecoveryController(options) {
   const nativeStreamContinuation=async(input,authorize)=>{
     await ready;
     const generation=generations.get(input.sessionID)??0;
-    const current=()=>!draining&&ownsRuntime&&storageHealthy&&options.isManaged()&&['2.0.26','2.0.30','2.0.32'].includes(handshake?.version)
+    const current=()=>!draining&&ownsRuntime&&storageHealthy&&options.isManaged()&&['2.0.26','2.0.30','2.0.32','2.1.0'].includes(handshake?.version)
       &&handshake.instanceID===input.instanceID&&(generations.get(input.sessionID)??0)===generation;
     const fence=()=>recoveryError('native_stream_continuation_fenced');
     let allowed=true;

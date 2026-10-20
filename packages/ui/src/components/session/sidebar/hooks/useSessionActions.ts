@@ -186,9 +186,10 @@ export const useSessionActions = (args: Args) => {
           args.onArchiveRequested?.([session.id]);
         }
         const archiveResult = shouldHardDelete ? null : await args.archiveSessions([session.id]);
+        const deleteResult = shouldHardDelete ? await args.deleteSessions([session.id]) : null;
         const success = archiveResult
           ? archiveResult.archivedIds.includes(session.id)
-          : await args.deleteSession(session.id);
+          : deleteResult?.deletedIds.includes(session.id) === true;
         if (success) {
           if (!shouldHardDelete) {
             args.onArchiveSucceeded?.([session.id]);
@@ -201,10 +202,10 @@ export const useSessionActions = (args: Args) => {
           toast.error(shouldHardDelete
             ? t('sessions.sidebar.session.delete.error')
             : t('sessions.sidebar.session.archive.error'), {
-            description: archiveResult ? resolveSessionDeleteFailureDescription(
-              archiveResult.failures,
+            description: resolveSessionDeleteFailureDescription(
+              archiveResult?.failures ?? deleteResult?.failures ?? [],
               t('sessions.sidebar.dialogs.deleteResult.tryAgain'),
-            ) : undefined,
+            ),
           });
         }
         return;
@@ -212,11 +213,13 @@ export const useSessionActions = (args: Args) => {
 
       const ids = [session.id, ...descendants.map((s) => s.id)];
       if (shouldHardDelete) {
-        const { failedIds } = await args.deleteSessions(ids);
+        const { failedIds, failures } = await args.deleteSessions(ids);
         if (failedIds.length > 0) {
           toast.error(failedIds.length === 1
             ? t('sessions.sidebar.bulkActions.failedDeleteSingle', { count: failedIds.length })
-            : t('sessions.sidebar.bulkActions.failedDeletePlural', { count: failedIds.length }));
+            : t('sessions.sidebar.bulkActions.failedDeletePlural', { count: failedIds.length }), {
+            description: resolveSessionDeleteFailureDescription(failures, t('sessions.sidebar.dialogs.deleteResult.tryAgain')),
+          });
         }
         return;
       }

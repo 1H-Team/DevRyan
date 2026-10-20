@@ -111,6 +111,44 @@ export function resolveReviewedSkillAlias(snapshot,directory,requested) {
   return prefixed.size===1?[...prefixed][0]:null;
 }
 
+const REVIEWED_ID_SHAPE=/^devryan-[a-f0-9]{8,64}$/;
+const MAX_ID_EDIT_DISTANCE=2;
+// Bounded Levenshtein distance: stops once every row exceeds the limit.
+const editDistanceWithin=(left,right,limit)=>{
+  if(Math.abs(left.length-right.length)>limit)return false;
+  let previous=Array.from({length:right.length+1},(_,index)=>index);
+  for(let i=1;i<=left.length;i++){
+    const current=[i];let best=i;
+    for(let j=1;j<=right.length;j++){
+      current[j]=Math.min(previous[j]+1,current[j-1]+1,previous[j-1]+(left[i-1]===right[j-1]?0:1));
+      best=Math.min(best,current[j]);
+    }
+    if(best>limit)return false;
+    previous=current;
+  }
+  return previous[right.length]<=limit;
+};
+/** Resolves one skill tool request against this location's reviewed skills
+ * only: the exact ID or alias, then a supplied name, then a single reviewed ID
+ * within a small edit distance of a mistyped `devryan-<hex>` ID. Anything
+ * ambiguous resolves to null; nothing outside the reviewed set can load. */
+export function resolveReviewedSkillRequest(snapshot,directory,{id,name}={}){
+  const exact=resolveReviewedSkillAlias(snapshot,directory,id);
+  if(exact)return exact;
+  const named=typeof name==='string'?resolveReviewedSkillAlias(snapshot,directory,name):null;
+  if(named)return named;
+  const requested=typeof id==='string'?id.trim().toLowerCase():'';
+  const skills=snapshot.locations.find(location=>location.directory===directory)?.skills;
+  if(!skills||!REVIEWED_ID_SHAPE.test(requested))return null;
+  const near=skills.filter(skill=>editDistanceWithin(requested,skill.id,MAX_ID_EDIT_DISTANCE));
+  return near.length===1?near[0].id:null;
+}
+/** Human names for a refusal message, so the model can retry by name. */
+export function reviewedSkillNames(snapshot,directory,limit=50){
+  const skills=snapshot.locations.find(location=>location.directory===directory)?.skills??[];
+  return [...new Set(skills.map(skill=>skill.name.trim()).filter(Boolean))].sort((left,right)=>left.localeCompare(right)).slice(0,limit);
+}
+
 /** Exact path lookup only; this is a grant index, never broad root authorization. */
 export function lookupReviewedSkillResourcePath(snapshot,input){
  if(input.snapshotDigest!==snapshot.digest || typeof input.targetPath!=='string' || !path.isAbsolute(input.targetPath) || git(input.targetPath))return null;

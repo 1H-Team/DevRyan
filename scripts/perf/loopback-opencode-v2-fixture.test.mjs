@@ -1,3 +1,4 @@
+import {SessionLegacy} from '@opencode/schema/session-legacy';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
@@ -20,7 +21,7 @@ import {
 } from './opencode-v2-wire.mjs';
 
 // ---------------------------------------------------------------------------
-// @opencode/schema@2.0.32 validates the retained 2.0.20 vectors. `effect` is resolved from the
+// @opencode/schema@2.1.0 validates the retained 2.0.20 vectors. `effect` is resolved from the
 // schema package's own location because it is not hoisted.
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -174,7 +175,7 @@ const textItems = (record) => record.content.filter((item) => item.type === 'tex
 
 describe('loopback OpenCode 2.0.20 fixture', () => {
   it('pins the schema package and exposes the v2 control API through the generation selector', async () => {
-    assert.equal(schemaPackage.version, '2.0.32');
+    assert.equal(schemaPackage.version, '2.1.0');
     assert.ok(registry.has('Session.Info') && registry.has('Session.Message.Info') && registry.has('Form.Info'));
     for (const [type, version] of OPENCODE_V2_DURABLE_EVENT_VERSIONS) {
       const definition = EventManifest.Latest.get(type);
@@ -499,8 +500,8 @@ describe('loopback OpenCode 2.0.20 fixture', () => {
       }
       const rest = vector.rest.find((entry) => entry.label === label);
       const sessionID = /\/api\/session\/([^/]+)\/message/.exec(rest.path)[1];
-      assert.deepEqual(comparable(store.messages(sessionID)), comparable(rest.body.data), `${file} ${label}`);
-      for (const record of rest.body.data) assert.equal(decodeError(registry.get('Session.Message.Info'), record), null);
+      assert.deepEqual(comparable(store.messages(sessionID)), comparable(rest.body.data.map(record=>SessionLegacy.message(record.type,record))), `${file} ${label}`);
+      for (const record of rest.body.data) assert.equal(decodeError(registry.get('Session.Message.Info'), SessionLegacy.message(record.type,record)), null);
     }
     const sessionCases = [['01-two-step-tool-turn.json', 'session.get'], ['06-permission.json', 'session.get'], ['08-revert.json', 'committed.session.get']];
     for (const [file, label] of sessionCases) {
@@ -595,7 +596,7 @@ describe('loopback OpenCode 2.0.20 fixture', () => {
       assert.deepEqual(assistantContentPartIds(assistantID, assistant.content), domainContent.map((part) => replay.addresses[part.id]));
       assert.deepEqual(assistant.content.map((item) => item.type === 'tool' ? item.state.status : item.text),
         ['Think.', 'Done.', 'completed', 'error', 'running', 'Second text.']);
-      assert.deepEqual(assistant.content[0].state, { reasoningField: 'reasoning_content' });
+      assert.deepEqual(assistant.content[0].native, { reasoningField: 'reasoning_content' });
       assert.deepEqual({ cost: assistant.cost, tokens: assistant.tokens, finish: assistant.finish, created: assistant.time.created, completed: assistant.time.completed },
         { cost: 0.5, tokens: rows[1].info.tokens, finish: 'stop', created: now + 1, completed: now + 9 });
 

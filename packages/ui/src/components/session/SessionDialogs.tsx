@@ -530,7 +530,11 @@ export const SessionDialogs: React.FC = () => {
                             t('sessions.sidebar.dialogs.deleteResult.tryAgain'),
                         )),
                     });
-                    if (deletedIds.length === 0) {
+                    if (!isWorktreeDelete) {
+                        const failed = new Set(failedIds);
+                        setDeleteDialog({ ...deleteDialog, sessions: deleteDialog.sessions.filter(session => failed.has(session.id)) });
+                    }
+                    if (deletedIds.length === 0 || !isWorktreeDelete) {
                         setIsProcessingDelete(false);
                         return;
                     }

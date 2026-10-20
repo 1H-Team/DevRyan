@@ -238,7 +238,7 @@ export const clampIncreasingTimes = (times, previous) => {
 export const readCursorPartID = (metadata, item) => {
   if (!isRecord(metadata) || !isRecord(metadata.devryan) || !isRecord(metadata.devryan.cursor)
     || metadata.devryan.cursor.source !== 'cursor-acp' || !isRecord(item)) return null;
-  const state = item.type === 'tool' ? item.providerState : item.state;
+  const state = item.native ?? (item.type === 'tool' ? item.providerState : item.state);
   if (!isRecord(state) || !isRecord(state.devryan) || !isRecord(state.devryan.cursor)) return null;
   const id = state.devryan.cursor.partID;
   return isNonEmptyString(id) && id.length <= 256 ? id : null;

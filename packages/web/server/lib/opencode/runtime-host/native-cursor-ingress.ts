@@ -37,11 +37,11 @@ const refusal = (code: string) => new HostRefusal(code, 403, 'cursor.record');
 const mapContent = (parts: readonly Readonly<Record<string, unknown>>[], created: number) => parts.map(part => {
   if (typeof part.id !== 'string' || !part.id || part.id.length > 256) throw refusal('native_cursor_part_invalid');
   const identity = { devryan: { cursor: { partID: part.id } } };
-  if (part.type === 'text') return Schema.decodeUnknownSync(SessionMessage.AssistantContentEncoded)({ type: 'text', text: part.text, state: identity });
+  if (part.type === 'text') return Schema.decodeUnknownSync(SessionMessage.AssistantContentEncoded)({ type: 'text', text: part.text, native: identity });
   if (part.type === 'reasoning') {
     const time = Schema.decodeUnknownSync(Schema.Struct({ start: Schema.optional(Schema.Number), end: Schema.optional(Schema.Number) }))(part.time ?? {});
     return Schema.decodeUnknownSync(SessionMessage.AssistantContentEncoded)({ type: 'reasoning', text: part.text,
-      state: identity, time: { created: time.start ?? created, ...(time.end === undefined ? {} : { completed: time.end }) } });
+      native: identity, time: { created: time.start ?? created, ...(time.end === undefined ? {} : { completed: time.end }) } });
   }
   if (part.type !== 'tool') throw refusal('native_cursor_part_invalid');
   const state = Schema.decodeUnknownSync(object)(part.state);
@@ -56,7 +56,7 @@ const mapContent = (parts: readonly Readonly<Record<string, unknown>>[], created
     error: { type: 'CursorToolError', message: typeof state.error === 'string' ? state.error : 'Cursor tool failed' } };
   else throw refusal('native_cursor_part_invalid');
   return Schema.decodeUnknownSync(SessionMessage.AssistantContentEncoded)({ type: 'tool', id: part.callID,
-    name: part.tool, executed: true, providerState: identity, state: nativeState,
+    name: part.tool, executed: true, native: identity, state: nativeState,
     time: { created: time.start ?? created, ...(status === 'running' || status === 'completed' || status === 'error' ? { ran: time.start ?? created } : {}),
       ...(time.end === undefined ? {} : { completed: time.end }) } });
 });

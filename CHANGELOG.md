@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.5] - 2026-10-20
+
+- Update the bundled OpenCode host to 2.1.0, including its native compaction APIs, PTY 0.3.1 and reviewed route inventory. Preserve retained runtime compatibility; the Bot image stays on 2.0.30.
+- Restore credential-backed helper requests and let the Helper Model setting save a reasoning level for session titles, Git drafts and notifications.
+- Recover unfinished archived-session deletions across runtime upgrades while preserving deletion holds and execution fences.
+- Improve reviewed skill lookup and retry feedback, session status indicators, question cards and agent settings navigation.
+
 ## [2.1.4] - 2026-10-20
 
 - Move DevRyan's data folder from `~/.config/openchamber` to `~/.config/devryan` at the first start. The folder is renamed in one step, nothing is copied, and `~/.config/openchamber` stays as a link to the new folder so existing paths keep working. A folder that cannot be moved, such as a Docker bind mount, stays in use and the app says so.

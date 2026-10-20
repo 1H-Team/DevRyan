@@ -284,11 +284,15 @@ export function createRuntimeBundleStore(options) {
       const actual=durable(await treeManifest(root),root,value.launch).filter(row=>row.path!=='prepared.json');
       if (JSON.stringify(actual)!==JSON.stringify(initial)) throw fail('bundle_snapshot_changed');
     }
+    let removalInheritance;
     const db = sqlite(value.launch.opencodeDatabasePath);
     try {
       const baseline=await readBundleJSON(path.join(root,'sources','baseline.json'));
       if (!isRecord(baseline) || !isRecord(baseline.harness) || !Array.isArray(baseline.harness.refs)) throw fail('bundle_manifest_invalid');
       const preservedRefs={checkpointID:value.checkpoint.checkpointID,refs:baseline.harness.refs};
+      if (value.sourceBundleID && value.checkpoint.generation === 2 && value.checkpoint.ownerID === value.sourceBundleID) {
+        removalInheritance = preservedRefs;
+      }
       if (value.generation === 2) {
         const receipt = parseNativeMigrationReceipt(await readBundleJSON(value.migrationReceiptPath));
         let origin={bundleID,databasePath:value.launch.opencodeDatabasePath};
@@ -321,6 +325,7 @@ export function createRuntimeBundleStore(options) {
       }
     } finally { db.raw.close(); }
     const result = {descriptor:value,phase,integrity:'verified',admission:'held'};
+    if (removalInheritance) Object.defineProperty(result, 'removalInheritance', { value: removalInheritance });
     // Keep the fresh signature receipt private; the wire verification contract stays unchanged.
     if (verifiedArtifacts?.manifestPath) Object.defineProperty(result, 'artifacts', { value: verifiedArtifacts });
     return result;

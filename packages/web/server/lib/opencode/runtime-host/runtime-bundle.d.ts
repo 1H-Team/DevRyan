@@ -41,7 +41,9 @@ export interface RuntimeBundleSelection {
   readonly previousBundleID: string | null; readonly transition: 'activate' | 'rollback'; readonly reconciliationRequired: boolean;
   readonly preparedManifestSha256: string;
 }
-export interface RuntimeBundleVerification { readonly descriptor: RuntimeBundleDescriptor; readonly phase: 'prepared' | 'resume'; readonly integrity: 'verified'; readonly admission: 'held'; readonly artifacts?: Awaited<ReturnType<typeof import('./native-artifacts.js').verifyNativeRuntimeArtifacts>> }
+export interface RuntimeBundleVerification { readonly descriptor: RuntimeBundleDescriptor; readonly phase: 'prepared' | 'resume'; readonly integrity: 'verified'; readonly admission: 'held'; readonly artifacts?: Awaited<ReturnType<typeof import('./native-artifacts.js').verifyNativeRuntimeArtifacts>>;
+  readonly removalInheritance?: {readonly checkpointID:string;readonly refs:readonly {readonly directory:string;readonly ref:string;readonly oid:string}[]};
+}
 export interface RuntimeBundleStoreOptions {
   readonly controlRoot: string;
   readonly windowsOwner?:WindowsPrivateFileOwner;

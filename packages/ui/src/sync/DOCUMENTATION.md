@@ -1005,3 +1005,9 @@ are `devryan`-prefixed; `lib/legacyStorageMigration.ts` (imported first by every
 web entry, and mirrored by the inline script in `packages/web/index.html`)
 copies each `openchamber`-prefixed key once before stores hydrate and keeps the
 old key. IndexedDB names are unchanged.
+
+Session mutation failures retain native `code` and `retryable` fields alongside
+message and available HTTP status. Archived deletion restores only failed
+members after optimistic removal. Sidebar bulk selection and deletion dialogs
+retain failed targets after partial success; deletion feedback displays up to
+three distinct failure reasons so a mixed failure does not hide every cause.

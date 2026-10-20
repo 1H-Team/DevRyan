@@ -207,8 +207,9 @@ helper tuple/revision inside current title-owner or exact web-caller grants.
 authorization bound to the canonical session, with a session required and no
 web request principal. `native-admission-owner.js` retains this configured/active
 selection alongside the existing title, commit, PR or notification purpose and
-rechecks it before physical model use. Configured helpers and active fallback
-both omit variant for Default reasoning. Admission requires a captured revision
+rechecks it before physical model use. The helper input's `variant` must equal
+the captured selection's: a configured helper sends its saved reasoning level (none
+for Default), and active fallback sends the session's own variant. Admission requires a captured revision
 and recheck owner; missing authority refuses before provider work, while
 unavailable settings return 503.
 Neither path switches the primary selection or grants tools.
@@ -219,6 +220,17 @@ deny an ambient `session.rename`. Native transaction-local compare-before-rename
 and manual-title priority remain mandatory.
 Cold helpers acquire the original location graph through `LocationServiceMap`
 and await its plugin activation inside a scope held through provider settlement.
+`generateReadyHelper` resolves its model through `SessionContext.resolveModel`, the
+location's `SessionRunnerModel`, as primary turns and webfetch secondaries do. That
+decorated resolve opens the permit-bound credential resolution scope and records
+the selection proof that owned providers (OpenCode Zen, xAI, OpenAI) require at
+`model.request`. A bare `ModelResolver` read skips it and every owned-credential
+helper is refused (`native_*_resolution_proof_required`, HTTP 503); a fixture
+provider without credentials does not detect this, so
+`scripts/opencode-v2-native/native-helper-credentials.graph.test.ts` drives the
+helper through the real OpenAI credential owners. The controller HTTP route
+reports a refusal's bounded `native_*` `code` (not only its message), and title,
+Git and notification diagnostics journal that code.
 They do not create a persisted conversation to initialize native services.
 The constructor composes the scoped helper LLM capture inside the stream
 continuation owner's winning LLM override. LayerNode replacements are last-wins;
@@ -235,9 +247,19 @@ and retains expired/unsettled work until real ACK/exit. Private accepted-input
 verification admits a paused title cycle only for a canonical `origin: human`
 record; body text, synthetic input and replayed ID cannot reopen it.
 
+## Reviewed skill resolution
+
+`native-reviewed-skill-execution.ts` accepts `{ id, name? }` for the native `skill`
+tool and resolves it with `reviewed-skills.js.resolveReviewedSkillRequest` against
+the invocation location's reviewed skills only: the exact ID or alias, then a
+supplied `name`, then a single reviewed `devryan-<hex>` ID within edit distance 2
+of a mistyped one. Two or more near IDs refuse. The hashed ID stays the permission
+resource. A refusal reads `native_skill_unreviewed: ...` and lists the reviewed
+skill names (`reviewedSkillNames`, at most 50) so the model's retry can name one.
+
 ## Native grep and glob execution
 
-OpenCode 2.0.30 and 2.0.32 spawn ripgrep for `grep` and `glob` through `Environment.spawner`.
+OpenCode 2.0.30 and 2.1.0 spawn ripgrep for `grep` and `glob` through `Environment.spawner`.
 `execution-routing.ts` turns that spawn into `execution.native.start` with
 `kind: 'read'`, and the host runs it under the read-only supervisor in
 `session-execution-host.js`. A location's read and protected roots may not exist
@@ -365,7 +387,7 @@ the lightweight retry-decorator tests do not substitute for that graph.
 
 The private `native.stream-continuation` owner binds the exact controller,
 configuration, permit, cancellation generation, physical attempt, original
-objective and canonical failed predecessor. The pinned OpenCode 2.0.32
+objective and canonical failed predecessor. The pinned OpenCode 2.1.0
 Synthetic event supplies its committed event ID, sequence, derived user ID and
 payload fingerprint. The durable pending reservation becomes consumed before
 successor preparation/send; Step adoption consumes its proof once. There are
@@ -392,7 +414,7 @@ Only content-free typed timing fields reach the journal/export. Existing
 unchanged; this path enables no new post-output timer.
 
 API-key Session WebSocket timing is separate from those HTTP limits. In pinned
-2.0.32, connection admission waits 15 seconds before its unsent HTTP fallback.
+2.1.0, connection admission waits 15 seconds before its unsent HTTP fallback.
 The real model resolver passes the provider's explicit `chunkTimeout` to the
 Session WebSocket: a number sets the idle bound, `false` disables it, and an
 omitted setting uses the session transport's 30-minute idle fallback. The model's
@@ -967,7 +989,7 @@ Native configuration translates legacy bash/task/write/patch permission names
 to shell/subagent/edit across ordered native and legacy supported shapes.
 Patterns and allow/deny/ask decisions are preserved; conflicting collapsed
 aliases fail closed. Boolean `tools` maps are translated at global and agent
-scope using pinned 2.0.32 precedence: global tool rules precede explicit rules;
+scope using pinned 2.1.0 precedence: global tool rules precede explicit rules;
 agent write/edit/patch entries merge into edit before explicit legacy action
 overrides. Invalid boolean maps and ambiguous aliases produce typed configuration
 errors. Frontmatter, frozen snapshots and native permission evaluation are
@@ -1037,3 +1059,22 @@ the existing canonical lifecycle and private enrollment directory validator.
 They have no legacy fence to import. Actual legacy/default migration keeps its
 original command backend and inherited HOME.
 Actual OS Keychain behavior remains unverified until the authorized isolated sign-in.
+
+### Archived deletion recovery
+
+Recovered input remains execution-fenced, but an exact `sessions.remove` web grant
+and the private held-tree `removal.inspect`/`removal.delete` permits may dispose of
+it. They never authorize prompt admission, inbox delivery or execution wake.
+Startup inherits unfinished native removals only after full selected-bundle
+verification supplies the checkpoint's preserved state ref and object ID. The
+mutation ledger compares the inherited decision and each member's generation
+and exclusive removal holds under its existing lock before changing `ownerID`.
+Preparing decisions remain fenced until a fresh authorized DELETE; committed
+decisions retain their exact members, dispositions and acknowledgement recovery.
+Foreign or changed records, unrelated holds and missing checkpoint proof refuse
+inheritance. No hold is cleared to recover deletion.
+
+The coordinator journals `session_removal` outcomes with session/intent IDs,
+stage and bounded error code. Web authorization failures record the same event with stage
+`web_authorization`. Neither
+record contains transcript content, request bodies or exception messages.

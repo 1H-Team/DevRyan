@@ -76,3 +76,23 @@ test('data-root grading requires the aged folder to move whole and leave a devry
   ];
   for (const [b, a, failure] of cases) assert.match(gradeDataRootMigration({ before: b, after: a }).failures.join('\n'), failure);
 });
+
+test('data-root grading preserves a profile already migrated by an aging release', () => {
+  const before = { legacy: { kind: 'link', target: 'devryan' },
+    root: { kind: 'directory', entries: ['.devryan-migration.json', 'logs', 'release-upgrade-sentinel.json'] } };
+  assert.deepEqual(gradeDataRootMigration({ before, after: before }), { passed: true, failures: [] });
+  const cases = [
+    [before, { ...before, legacy: { kind: 'link', target: 'elsewhere' } }, /not a link to devryan/],
+    [before, { ...before, root: { kind: 'absent' } }, /not a folder/],
+    [before, { ...before, root: { kind: 'directory', entries: ['.devryan-migration.json', 'logs'] } }, /missing after the move: release-upgrade-sentinel.json/],
+    [before, { ...before, root: { kind: 'directory', entries: ['logs', 'release-upgrade-sentinel.json'] } }, /missing after the move: .devryan-migration.json/],
+    [{ ...before, legacy: { kind: 'link', target: 'elsewhere' } }, before, /without the migration link/],
+    [{ ...before, legacy: { kind: 'absent' } }, before, /without the migration link/],
+    [{ ...before, root: { kind: 'absent' } }, before, /no ~\/.config\/openchamber/],
+  ];
+  for (const [b, a, failure] of cases) {
+    const grade = gradeDataRootMigration({ before: b, after: a });
+    assert.equal(grade.passed, false);
+    assert.match(grade.failures.join('\n'), failure);
+  }
+});

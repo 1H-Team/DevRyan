@@ -51,9 +51,10 @@ Copy Diagnostics never includes raw exceptions, credentials or paths.
 `lib/model-selection-availability.js` inspects exact provider/model/effort catalog evidence without changing the selection. A catalog marked `catalogIncomplete` is unknown, never evidence that a provider or model is missing. Agent settings saves and managed execution admission share this distinction.
 
 `lib/helper-model-selection.js` owns the typed `helperModelSelection` setting:
-`{ providerID, modelID, revision }`. The default is `opencode/deepseek-v4.1-flash`
-with revision `default`. There is no reasoning override: helpers use provider
-Default reasoning. Every explicit selection gets a new revision; personal reset
+`{ providerID, modelID, variant?, revision }`. The default is `opencode/deepseek-v4.1-flash`
+with revision `default` and no `variant`. An absent `variant` means provider
+Default reasoning; a saved `variant` is the reasoning level every helper sends,
+validated like the other identifiers. Every explicit selection gets a new revision; personal reset
 removes the sparse override and inherits the host tuple and revision. UI, web and
 Electron use the same parser. Notification `zenModel` and legacy Git fields have
 separate ownership.
@@ -135,3 +136,6 @@ OpenCode owns refresh. Optional reset failures preserve the main allowance.
 `lib/event-types.js` canonicalises pre-rename `openchamber:*` event identities
 for journal and in-process readers. New synthetic events use `devryan:*`; the
 web stream owner translates only the leading serialized type for older clients.
+
+Compaction event evidence accepts an optional `witness.native` hash/byte count
+for OpenCode 2.1.0, retaining the prior witness keys for stored diagnostics.

@@ -13,6 +13,7 @@ export interface NativeSessionRemovalOptions {
   cancelManaged:(input:NativeRemovalCancellation)=>Promise<{fenced?:true;settled?:true;sessions:readonly string[];taskIDs?:readonly string[]}>;
   cancelAndWait:(input:{directory:string;sessions:string[]})=>Promise<{terminated:true;sessions:readonly string[]}>;
   discardStreamReceipts?:(intent:NativeRemovalIntent)=>Promise<void>;
+  recordDiagnostic?:(record:{type:'lifecycle';event:'session_removal';sessionID:string;payload:{stage:string;outcome:string;intentID?:string;code?:string}})=>void;
 }
 export function createNativeSessionRemoval(options:NativeSessionRemovalOptions):{
   remove:(input:{sessionID:string;directory?:string;quiet?:boolean})=>Promise<true>;

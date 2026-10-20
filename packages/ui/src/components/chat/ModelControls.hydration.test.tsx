@@ -448,8 +448,9 @@ describe('ModelControls delayed user-part hydration', () => {
   }));
 });
 
-test('chat fallback ignores display-only provider metadata and preserves a legacy captured queue', async () => withControls(async (container, remount) => {
-  expect(variantTrigger(container).textContent).toBe('Default');
+test('chat fallback labels but never selects the display-only default and preserves a legacy captured queue', async () => withControls(async (container, remount) => {
+  expect(variantTrigger(container).textContent).toBe('High');
+  expect(currentChoice().variant).toBeNull();
   const queued = { ...currentChoice(), variant: null };
   await choose(container, 'Medium');
   await remount();

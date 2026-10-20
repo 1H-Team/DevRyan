@@ -226,7 +226,10 @@ describe('settings helpers', () => {
     const helpers = createTestHelpers();
     const helperModelSelection = { providerID: 'anthropic', modelID: 'chosen', revision: 'saved-revision' };
     expect(helpers.sanitizeSettingsUpdate({ helperModelSelection })).toEqual({ helperModelSelection });
-    for (const invalid of [{ ...helperModelSelection, variant: 'low' }, { providerID: 'opencode', modelID: 'chosen' }]) {
+    expect(helpers.sanitizeSettingsUpdate({ helperModelSelection: { ...helperModelSelection, variant: 'low' } }))
+      .toEqual({ helperModelSelection: { ...helperModelSelection, variant: 'low' } });
+    for (const invalid of [{ ...helperModelSelection, variant: '' }, { ...helperModelSelection, variant: 'two words' },
+      { ...helperModelSelection, reasoning: 'low' }, { providerID: 'opencode', modelID: 'chosen' }]) {
       expect(helpers.sanitizeSettingsUpdate({ helperModelSelection: invalid })).toEqual({});
     }
   });

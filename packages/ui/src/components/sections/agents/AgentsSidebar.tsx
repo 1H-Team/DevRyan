@@ -87,8 +87,8 @@ export const AgentsSidebar: React.FC<AgentsSidebarProps> = ({ onItemSelect }) =>
           select(entry);
           onItemSelect?.();
         }}
-        icon={<Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
-        className="py-1"
+        icon={<Icon className="h-4 w-4 shrink-0 text-muted-foreground" />}
+        size="comfortable"
       />
     );
   };
@@ -104,11 +104,11 @@ export const AgentsSidebar: React.FC<AgentsSidebarProps> = ({ onItemSelect }) =>
       }}
       icon={(
         <RiAiAgentLine
-          className="h-3.5 w-3.5 shrink-0"
+          className="h-4 w-4 shrink-0"
           style={{ color: `var(${getAgentIconColor(entry.agent.name).var})` }}
         />
       )}
-      className="py-1"
+      size="comfortable"
     />
   );
 
@@ -159,7 +159,7 @@ export const AgentsSidebar: React.FC<AgentsSidebarProps> = ({ onItemSelect }) =>
     >
       {!isSearching && general.length > 0 ? (
         <div className="space-y-0.5 pb-2">
-          <div className="px-1.5 py-1 typography-micro font-semibold uppercase tracking-[0.08em] text-muted-foreground/80">
+          <div className="flex min-h-9 items-center px-1.5 py-1.5 typography-ui-header font-semibold uppercase tracking-[0.08em] text-muted-foreground/80">
             {t('settings.agents.sidebar.section.general')}
           </div>
           {general.map(renderGeneral)}
@@ -185,6 +185,7 @@ export const AgentsSidebar: React.FC<AgentsSidebarProps> = ({ onItemSelect }) =>
               label={t('settings.agents.sidebar.section.builtIn')}
               count={primaryAgents.length}
               storageKey="settings-agents"
+              size="comfortable"
             >
               {primaryAgents.map(renderAgent)}
             </SidebarGroup>
@@ -194,6 +195,7 @@ export const AgentsSidebar: React.FC<AgentsSidebarProps> = ({ onItemSelect }) =>
               label={t('settings.agents.sidebar.section.subagents')}
               count={subagents.length}
               storageKey="settings-agents"
+              size="comfortable"
             >
               {subagents.map(renderAgent)}
             </SidebarGroup>

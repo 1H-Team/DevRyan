@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { afterEach, expect, it } from 'vitest';
 import { createNativeConfigurationSnapshotResolver, nativeCatalogModels, nativeCatalogSelections } from './native-configuration-snapshot.js';
 import { buildRuntimeHelperAgents } from '../runtime-helper-agents.js';
-import { readReviewedSkillResource, resolveReviewedSkillAlias, lookupReviewedSkillResourcePath } from './reviewed-skills.js';
+import { readReviewedSkillResource, resolveReviewedSkillAlias, resolveReviewedSkillRequest, reviewedSkillNames, lookupReviewedSkillResourcePath } from './reviewed-skills.js';
 import {parseMdFile} from '../shared.js';
 import {getAgentConfig} from '../agents.js';
 
@@ -287,6 +287,22 @@ it('preserves names, directory aliases, normalized keys and unambiguous prefixes
   expect(resolveReviewedSkillAlias(duplicate,f.directory,'project-a11y')).toBe(second.id);
   expect(resolveReviewedSkillAlias(duplicate,f.directory,first.id)).toBe(first.id);
   expect(resolveReviewedSkillAlias(duplicate,'unreviewed',first.id)).toBeNull();
+});
+
+it('recovers one near-miss reviewed ID or a supplied name and refuses ambiguous or foreign near misses', async () => {
+  const f=await fixture();
+  const snapshot=await f.resolver(f.input),first=snapshot.locations[0].skills[0];
+  const insert=(id,at,text)=>id.slice(0,at)+text+id.slice(at);
+  expect(resolveReviewedSkillRequest(snapshot,f.directory,{id:insert(first.id,16,'d3')})).toBe(first.id);
+  expect(resolveReviewedSkillRequest(snapshot,f.directory,{id:first.id.slice(0,-1)+(first.id.endsWith('0')?'1':'0')})).toBe(first.id);
+  expect(resolveReviewedSkillRequest(snapshot,f.directory,{id:insert(first.id,16,'d3d')})).toBeNull();
+  expect(resolveReviewedSkillRequest(snapshot,f.directory,{id:'devryan-'+'0'.repeat(32),name:'fixture'})).toBe(first.id);
+  expect(resolveReviewedSkillRequest(snapshot,'unreviewed',{id:insert(first.id,16,'d3')})).toBeNull();
+  expect(resolveReviewedSkillRequest(snapshot,f.directory,{id:'not-a-'+first.id})).toBeNull();
+  const one={...first,id:'devryan-'+'a'.repeat(32)},twin={...first,id:'devryan-'+'a'.repeat(30)+'bb',name:'Twin'};
+  const ambiguous={...snapshot,locations:[{...snapshot.locations[0],skills:[one,twin]}]};
+  expect(resolveReviewedSkillRequest(ambiguous,f.directory,{id:'devryan-'+'a'.repeat(31)+'b'})).toBeNull();
+  expect(reviewedSkillNames(ambiguous,f.directory)).toEqual([first.name,'Twin'].sort((a,b)=>a.localeCompare(b)));
 });
 
 it('retries the entire snapshot when settings change during capture and refuses continuously changing sources',async()=>{

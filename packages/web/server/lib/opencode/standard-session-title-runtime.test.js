@@ -11,6 +11,7 @@ import { toV1UserParts } from './v2/projection/messages.js';
 import { loadPlanModeInstruction } from '../../../../../scripts/agent-evals/plan-mode.mjs';
 import {
   SESSION_TITLE_HELPER_SESSION_TITLE,
+  MAX_DEFERRED_TITLE_RETRIES,
   createStandardSessionTitleRuntime,
   deriveLocalSessionTitle,
   normalizeGeneratedSessionTitle,
@@ -232,6 +233,21 @@ describe('standard session title runtime', () => {
     try{await runtime.schedule({sessionID:'ses_1',directory:'/tmp/project'});await vi.advanceTimersByTimeAsync(10_000);
       expect((await outbox.list())[0]).toMatchObject({state:'pending_idle',attemptCount:0});expect(generator).toHaveBeenCalledTimes(1);
       blocked=false;await vi.advanceTimersByTimeAsync(5_000);expect(await outbox.list()).toEqual([]);expect(generator).toHaveBeenCalledTimes(1);
+    }finally{await runtime.dispose();}
+  });
+  it('a session that stays busy pauses its title job after the deferral bound instead of retrying forever',async()=>{
+    vi.useFakeTimers();const fake=createFakeOpenCode({status:'idle',completed:true}),outbox=createMemorySessionTitleOutbox(),diagnostics=[];
+    const generator=vi.fn(async()=> 'Reliable Session Title Summaries');
+    const renameGeneratedTitle=vi.fn(async()=>{throw new NativeCommandRefusal('native_process_busy',503,'not-dispatched');});
+    const runtime=createRuntime({fake,outbox,diagnostics,watchdogEnabled:true,generateSessionModelTitle:generator,renameGeneratedTitle,busyRecheckDelayMs:1_000});
+    try{
+      await runtime.schedule({sessionID:'ses_1',directory:'/tmp/project'});
+      await vi.advanceTimersByTimeAsync((MAX_DEFERRED_TITLE_RETRIES+5)*1_000);
+      expect((await outbox.list())[0]).toMatchObject({state:'paused',attemptCount:0,deferredRetries:MAX_DEFERRED_TITLE_RETRIES});
+      const calls=renameGeneratedTitle.mock.calls.length;expect(calls).toBeLessThanOrEqual(MAX_DEFERRED_TITLE_RETRIES+1);
+      await vi.advanceTimersByTimeAsync(10*60_000);expect(renameGeneratedTitle).toHaveBeenCalledTimes(calls);
+      expect(diagnostics.filter(row=>row.payload.outcome==='retry_scheduled').length).toBeLessThan(MAX_DEFERRED_TITLE_RETRIES);
+      expect(generator).toHaveBeenCalledOnce();
     }finally{await runtime.dispose();}
   });
   it.each(['absent','false','failed','expired','replaced'])('persistent startup failure with %s readiness authority consumes the original three-cycle budget',async state=>{
@@ -537,8 +553,9 @@ describe('standard session title runtime', () => {
     expect(generator.mock.calls.map(([input]) => [input.selectionMode, input.providerID, input.modelID, input.timeoutMs])).toEqual([
       ['configured', 'opencode', 'flash', 30_000], ['active', 'anthropic', 'active', 23_000],
     ]);
+    // Default helper reasoning stays variant-free; the active fallback keeps the session's own variant.
     expect(generator.mock.calls[0][0]).not.toHaveProperty('variant');
-    expect(generator.mock.calls[1][0]).not.toHaveProperty('variant');
+    expect(generator.mock.calls[1][0]).toHaveProperty('variant', 'high');
     expect(projected[0]).toMatchObject({ title: 'Authorized Active Model Title', source: 'session_model' });
     expect(stageOutcomes(diagnostics, 'session_model')).toEqual(['session_model:failed', 'session_model:complete']);
     await runtime.dispose();
@@ -1384,6 +1401,26 @@ describe('standard session title runtime on OpenCode 2 (openCodeClient)', () => 
       expect(projected[0]).toMatchObject({ title: 'Native Helper Session Title', source: 'session_model' });
       await runtime.dispose();
     }
+  });
+
+  it('forwards the saved helper reasoning variant and journals the helper refusal code', async () => {
+    const resolveHelperSelection = vi.fn(async ({ selectionMode }) => selectionMode === 'configured'
+      ? { providerID: 'openai', modelID: 'gpt-6-astra', variant: 'low', selectionMode, selectionRevision: 'saved' } : null);
+    const generateHelperText = vi.fn(async () => { throw Object.assign(new Error('refused'), { code: 'native_provider_resolution_scope_required', statusCode: 503 }); });
+    const fake = createFakeOpenCode(), projected = [], diagnostics = [];
+    const runtime = createRuntime({ fake, projected, diagnostics, generateSessionModelTitle: null, generateHelperText, resolveHelperSelection,
+      openCodeClient: createFakeOpenCodeClient(fake) });
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    expect(generateHelperText).toHaveBeenCalledWith(expect.objectContaining({ providerID: 'openai', modelID: 'gpt-6-astra', variant: 'low',
+      selectionMode: 'configured', selectionRevision: 'saved', agent: 'devryan-title' }));
+    const failures = diagnostics.map(({ payload }) => payload).filter(payload => ['helper_create', 'session_model'].includes(payload.stage));
+    expect(failures).toEqual(expect.arrayContaining([
+      expect.objectContaining({ stage: 'helper_create', status: 503, code: 'native_provider_resolution_scope_required' }),
+      expect.objectContaining({ stage: 'session_model', outcome: 'failed', code: 'native_provider_resolution_scope_required' }),
+    ]));
+    // Only bounded native identifiers are journaled, never provider text.
+    expect(JSON.stringify(diagnostics)).not.toContain('refused');
+    await runtime.dispose();
   });
 
   it('removes only idle legacy helper sessions through the client', async () => {

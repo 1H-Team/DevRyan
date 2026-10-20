@@ -147,8 +147,7 @@ describe('POST /api/git/pr-description', () => {
     });
     expect(generateTextWithSessionModel).toHaveBeenCalledWith(expect.objectContaining({
       directory: '/repo',
-      providerID: 'anthropic',
-      modelID: 'claude-sonnet',
+      selection: expect.objectContaining({ providerID: 'anthropic', modelID: 'claude-sonnet' }),
       agent: 'devryan-pr',
       prompt: 'Return the Generate PR JSON',
       repairPrompt: expect.stringContaining('{"title": string, "body": string}'),

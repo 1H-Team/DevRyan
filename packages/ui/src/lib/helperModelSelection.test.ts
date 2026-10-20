@@ -15,3 +15,8 @@ it('uses the available UUID facility and preserves its failure for the save fina
   setCrypto({randomUUID:()=> 'selected-revision'});expect(createHelperModelRevision()).toBe('selected-revision');
   setCrypto({randomUUID:()=>{throw Error('UUID unavailable');}});expect(()=>createHelperModelRevision()).toThrow('UUID unavailable');
 });
+it('keeps an explicit helper reasoning variant and leaves Default variant-free',()=>{
+  expect(parseHelperModelSelection({providerID:'fixture',modelID:'selected',variant:'high',revision:'r1'})).toEqual({providerID:'fixture',modelID:'selected',variant:'high',revision:'r1'});
+  expect(Object.hasOwn(parseHelperModelSelection({providerID:'fixture',modelID:'selected',revision:'r1'})??{},'variant')).toBe(false);
+  expect(parseHelperModelSelection({providerID:'fixture',modelID:'selected',variant:'',revision:'r1'})).toBeUndefined();
+});

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { Schema } from 'effect';
 import { SessionInbox } from '@opencode/schema/session-inbox';
 import { SessionMessage } from '@opencode/schema/session-message';
+import { SessionLegacy } from '@opencode/schema/session-legacy';
 import { validatePrimaryRecoveryRecord } from '../../../../../harness-runtime/lib/provider-recovery-policy.js';
 import { isNativeTurnParent, isNativeStatusRecord } from '../../../../../shared-runtime/lib/native-message-status.js';
 import { buildV2PromptContent, buildV2PromptFingerprint, buildDevryanPromptMetadata, validateCanonicalDevryanPromptMetadata } from '../v2/admission.js';
@@ -123,7 +124,7 @@ export async function verifyBundleOwnedContinuations(db,webDataDirectory,{allowU
         const stored=JSON.parse(item.data);
         if (!isRecord(stored) || stored.id!==undefined && stored.id!==item.id || stored.type!==undefined && stored.type!==item.type
           || !Number.isSafeInteger(item.seq)) invalid();
-        const data={...stored,id:item.id,type:item.type};
+        const data=SessionLegacy.message(item.type,{...stored,id:item.id,type:item.type});
         // Decode through the schema, then project the original encoded millis.
         Schema.decodeUnknownSync(SessionMessage.Info)(data);
         return data;

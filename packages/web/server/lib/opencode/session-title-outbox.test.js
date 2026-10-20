@@ -22,6 +22,7 @@ const job = (overrides = {}) => ({
   idleConfirmedAt: 0,
   inactiveObservationCount: 0,
   lastInactiveObservedAt: 0,
+  deferredRetries: 0,
   providerID: 'openai',
   modelID: 'gpt-5.6-sol',
   ...overrides,
@@ -76,9 +77,17 @@ describe('session title outbox', () => {
   it('durably restores paused candidate, original source identity, accepted input identity and failure count', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-title-paused-')); roots.push(root);
     const filePath = path.join(root, 'outbox.json');
-    const candidate = job({ state: 'paused', attemptCount: 3, nextAttemptAt: 0, sourceMessageID: 'msg_original', lastAcceptedInputID: 'msg_next' });
+    const candidate = job({ state: 'paused', attemptCount: 3, deferredRetries: 60, nextAttemptAt: 0, sourceMessageID: 'msg_original', lastAcceptedInputID: 'msg_next' });
     const writer = createFileSessionTitleOutbox({ filePath }); await writer.upsert(candidate); await writer.dispose();
     const reader = createFileSessionTitleOutbox({ filePath }); expect(await reader.list()).toEqual([candidate]); await reader.dispose();
+  });
+
+  it('reads an older job without a deferral count as zero deferrals', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-title-legacy-')); roots.push(root);
+    const filePath = path.join(root, 'outbox.json'), outbox = createFileSessionTitleOutbox({ filePath });
+    const { deferredRetries: _omitted, ...legacy } = job();
+    for (const invalid of [undefined, -1, 1.5, '3']) expect((await outbox.upsert({ ...legacy, deferredRetries: invalid })).deferredRetries).toBe(0);
+    await outbox.dispose();
   });
 
   it('rejects malformed jobs without overwriting valid state', async () => {

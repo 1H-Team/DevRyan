@@ -15,6 +15,11 @@ export function createControllerHelperText(options:{readonly generate:(input:Nat
   const status=reason&&record(reason.http)?reason.http.status:record(error)?error.statusCode:undefined;
   return typeof status==='number'&&Number.isInteger(status)&&status>=400&&status<=599?status:503;
  };
+ // Bounded refusal identifier only. A HostRefusal carries its code beside a
+ // prose message; provider failures never publish their upstream detail.
+ const nativeCode=(value:unknown)=>typeof value==='string'&&/^native_[a-z0-9_]{1,96}$/.test(value)?value:undefined;
+ const failureCode=(error:unknown)=>record(error)&&record(error.reason)?'native_helper_provider_failed'
+  :(record(error)?nativeCode(error.code):undefined)??(error instanceof Error?nativeCode(error.message):undefined)??'native_helper_failed';
  return async(request:Request):Promise<Response>=>{
   if(request.method!=='POST')return Response.json({code:'method_not_allowed'},{status:405});
   const permit=requestPermit();
@@ -34,7 +39,7 @@ export function createControllerHelperText(options:{readonly generate:(input:Nat
    const signal=AbortSignal.any([request.signal,abort.signal,AbortSignal.timeout(input.timeoutMs)]);
    const recheck=async()=>{if(!options.isCurrent())throw Error('native_helper_expired');signal.throwIfAborted();await options.rpc('native.helper.assert',{input,permit});signal.throwIfAborted();};
    await recheck();return Response.json(await options.generate(input,permit,signal,recheck));
-  }catch(error){const status=failureStatus(error);return Response.json({code:record(error)&&record(error.reason)?'native_helper_provider_failed':error instanceof Error&&/^native_[a-z0-9_]+$/.test(error.message)?error.message:'native_helper_failed'},{status});}
+  }catch(error){const status=failureStatus(error);return Response.json({code:failureCode(error)},{status});}
   finally{active.delete(permit.token);await options.rpc('native.helper.settled',{permit});}
  };
 }

@@ -712,19 +712,22 @@ OAuth results identify their own method and expose no usage token. The existing
 source/connection comparison clears old readings on a switch; a missing provider
 window stays absent. No second usage enrollment is owned by the UI.
 
-`useConfigStore.settingsHelperModelSelection` holds the shared typed helper tuple
-and revision, independently of primary selection, notification Zen, and legacy
-Git preferences. Settings → Agents → Session Defaults uses the existing
-`ModelSelector` above Cleanup. Save persists a new revision; personal reset
-removes only this override. Low-frequency settings load and account reset restore
-the host or personal tuple through the shared parser. Helpers use Default
-reasoning and never modify composer selection.
+`useConfigStore.settingsHelperModelSelection` holds the shared typed helper tuple,
+optional reasoning `variant` and revision, independently of primary selection,
+notification Zen, and legacy Git preferences. Settings → Agents → Session Defaults
+uses the session-free chat pickers (`ControlledModelPicker` and
+`ControlledVariantPicker`, with the chat filtering and `ThinkingSlider`) above
+Cleanup. `variant: null` in the picker is Default reasoning and is saved without a
+`variant`; changing the model keeps the variant only if the new model offers it.
+Save persists a new revision; personal reset removes only this override.
+Low-frequency settings load and account reset restore the host or personal tuple
+through the shared parser. Helpers never modify composer selection.
 The revision uses the existing UUID-or-opaque-fallback convention when
 `crypto.randomUUID` is unavailable. Revision creation stays inside the save
 try/finally so a failure releases the disabled selector and uses the existing toast.
 Helper saves use the existing immediate acknowledged settings operation, holding
 the selector disabled through HTTP/runtime settlement. A null response or a
-different model/revision fails before the local selection changes; the general
+different model/variant/revision fails before the local selection changes; the general
 debounced settings writer remains for its existing callers.
 
 Plan file records retain the saved SHA-256 version, canonical content and

@@ -1521,9 +1521,9 @@ test('a step without an observed native request keeps the explicit unavailable i
   expect(prepared).toMatchObject({ providerRequestID: 'unavailable', wireTiming: 'unavailable', transport: 'unverified', requestPreparedAt: 10_000 });
 });
 
-test('native primary runtime conformance accepts exact retained and current releases only',()=>{for(const version of ['2.0.20','2.0.24','2.0.26','2.0.30','2.0.32'])expect(isNativePrimaryRuntimeVersion(version)).toBe(true);for(const version of ['2.0.21','2.0.25','2.0.27','2.0.24-dev','2.0.26-dev',' 2.0.26 ',null,2])expect(isNativePrimaryRuntimeVersion(version)).toBe(false);});
+test('native primary runtime conformance accepts exact retained and current releases only',()=>{for(const version of ['2.0.20','2.0.24','2.0.26','2.0.30','2.0.32','2.1.0'])expect(isNativePrimaryRuntimeVersion(version)).toBe(true);for(const version of ['2.0.21','2.0.25','2.0.27','2.0.24-dev','2.0.26-dev',' 2.0.26 ',null,2])expect(isNativePrimaryRuntimeVersion(version)).toBe(false);});
 test('a native runtime instance cannot change between supported release identities',async()=>{
-  for(const version of ['2.0.20','2.0.24','2.0.26','2.0.30','2.0.32']){
+  for(const version of ['2.0.20','2.0.24','2.0.26','2.0.30','2.0.32','2.1.0']){
     const f=await fixture();
     await f.controller.plugin({action:'hello',policyVersion:1,instanceID:'native-version-owner',version});
     await expect(f.controller.plugin({action:'hello',policyVersion:1,instanceID:'native-version-owner',version:version==='2.0.20'?'2.0.26':'2.0.20'})).rejects.toMatchObject({code:'recovery_owner_mismatch'});

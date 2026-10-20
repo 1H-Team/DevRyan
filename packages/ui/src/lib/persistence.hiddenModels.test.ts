@@ -22,5 +22,7 @@ test('helper setting survives load/save without inheriting legacy Git or notific
   const saved = sanitizeWebSettings({ helperModelSelection, zenModel: 'notification-only', gitModelId: 'legacy' });
   expect(saved?.helperModelSelection).toEqual(helperModelSelection);
   expect(sanitizeWebSettings(saved)?.helperModelSelection).toEqual(helperModelSelection);
-  expect(sanitizeWebSettings({ helperModelSelection: { ...helperModelSelection, variant: 'low' } })?.helperModelSelection).toBeUndefined();
+  expect(sanitizeWebSettings({ helperModelSelection: { ...helperModelSelection, variant: 'low' } })?.helperModelSelection).toEqual({ ...helperModelSelection, variant: 'low' });
+  expect(sanitizeWebSettings({ helperModelSelection: { ...helperModelSelection, variant: '' } })?.helperModelSelection).toBeUndefined();
+  expect(Object.hasOwn(saved?.helperModelSelection ?? {}, 'variant')).toBe(false);
 });

@@ -61,7 +61,7 @@ an HTTP response or event stream does not establish completion.
   - completion suppression while the session's latest todo snapshot contains `pending` or `in_progress` work
   - session parent cache for subtask suppression
   - template resolution and fallback behavior
-  - Helper Model summarization of long last messages through the hidden no-tools `devryan-notify` agent (configured helper selection, 15 s timeout), falling back to plain truncation when the helper is unavailable or fails
+  - Helper Model summarization of long last messages through the hidden no-tools `devryan-notify` agent (configured helper selection including its reasoning variant, 15 s timeout), falling back to plain truncation when the helper is unavailable or fails; a failure logs `[Notification] Helper summary failed:` with only reason, status and bounded `native_*` code
   - generated session-title projections shared with the UI, with meaningful titles preserved across later placeholder snapshots
   - native notification fanout and web push payload fanout
 

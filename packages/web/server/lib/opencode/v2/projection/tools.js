@@ -318,8 +318,8 @@ export const toV1ToolPart = (tool, context) => {
   if (!isRecord(tool) || !isNonEmptyString(tool.id) || typeof tool.name !== 'string') return null;
   const state = toV1ToolState(tool, context);
   if (!state) return null;
-  const metadata = isRecord(tool.providerState)
-    ? { opencodeTool: tool.name, providerState: tool.providerState }
+  const metadata = isRecord(tool.native ?? tool.providerState)
+    ? { opencodeTool: tool.name, providerState: tool.native ?? tool.providerState }
     : { opencodeTool: tool.name };
   return {
     id: assistantToolPartId(context.messageID, tool.id),

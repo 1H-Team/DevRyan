@@ -439,39 +439,43 @@ describe('resolveSubtaskSidebarIndicator', () => {
 });
 
 describe('resolveLeadingRailLayout', () => {
-  test('keeps status, pin, and parent chevron in left-to-right order', () => {
+  test('puts the pin left of status on a pinned parent, status next to the title', () => {
     expect(resolveLeadingRailLayout({
       hasChildren: true,
       isPinnedSession: true,
     })).toEqual({
-      slots: ['status', 'pin', 'chevron'],
+      slots: ['pin', 'status'],
+      hasChildren: true,
     });
   });
 
-  test('keeps status immediately left of the parent chevron without a pin', () => {
+  test('keeps status as the last slot on an unpinned parent', () => {
     expect(resolveLeadingRailLayout({
       hasChildren: true,
       isPinnedSession: false,
     })).toEqual({
-      slots: [null, 'status', 'chevron'],
+      slots: [null, 'status'],
+      hasChildren: true,
     });
   });
 
-  test('uses the middle status slot for an unpinned leaf session', () => {
+  test('keeps status as the last slot on an unpinned leaf session', () => {
     expect(resolveLeadingRailLayout({
       hasChildren: false,
       isPinnedSession: false,
     })).toEqual({
-      slots: [null, 'status', null],
+      slots: [null, 'status'],
+      hasChildren: false,
     });
   });
 
-  test('keeps status and pin in independent slots for a pinned leaf session', () => {
+  test('puts the pin left of status on a pinned leaf session', () => {
     expect(resolveLeadingRailLayout({
       hasChildren: false,
       isPinnedSession: true,
     })).toEqual({
-      slots: ['status', 'pin', null],
+      slots: ['pin', 'status'],
+      hasChildren: false,
     });
   });
 });

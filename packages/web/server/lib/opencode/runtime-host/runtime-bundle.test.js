@@ -1446,3 +1446,28 @@ for (const changed of ['none', 'candidate', 'source', 'live-owner']) test(`cold 
    expect((await store.readSelected()).selection).toMatchObject({revision:2,selectedBundleID:'claude-candidate'});
  }
 });
+
+test('a verified clone supplies immutable proof for adopting an inherited preparing deletion',async()=>{
+ const f=await fixture(),baseline=await f.store.prepare(f.baselineInput);
+ await f.store.select({bundleID:'baseline',expectedRevision:0});
+ const db=resolveSqliteDriver().open(baseline.launch.opencodeDatabasePath,{readonly:true});
+ let row;try{row=db.prepare('SELECT id,directory,parent_id FROM session_v2 WHERE parent_id IS NULL LIMIT 1').get();}finally{db.close();}
+ const {createSessionMutationRuntime}=await import('../../../../../harness-runtime/lib/session-mutations.js');
+ const source=createSessionMutationRuntime({directory:path.join(baseline.launch.webDataDirectory,'harness','session-mutations')});
+ await source.registerNativeSession({directory:row.directory,sessionID:row.id,parentID:row.parent_id});
+ const intent=await source.beginNativeRemoval({directory:row.directory,rootSessionID:row.id,ownerID:'earlier-bundle'});
+ const candidate=await f.store.prepare({...f.baselineInput,bundleID:'removal-successor',source:{kind:'bundle',bundleID:'baseline'}});
+ await f.store.select({bundleID:candidate.bundleID,expectedRevision:1});
+ const verified=await f.store.verify({bundleID:candidate.bundleID,phase:'resume'});
+ expect(Object.keys(verified)).not.toContain('removalInheritance');
+ const proof=verified.removalInheritance;
+ expect(proof.checkpointID).toBe(candidate.checkpoint.checkpointID);
+ const ref=proof.refs.find(value=>value.directory===row.directory&&value.ref==='refs/devryan/state');
+ expect(ref).toBeDefined();
+ const target=createSessionMutationRuntime({directory:path.join(candidate.launch.webDataDirectory,'harness','session-mutations')});
+ const before=await target.nativeAdmissionState({directory:row.directory,sessionID:row.id});
+ expect(await target.recoverNativeRemovalOwnership({directory:row.directory,ownerID:candidate.bundleID,checkpointID:proof.checkpointID,sourceOID:ref.oid})).toBe(1);
+ expect(await target.nativeAdmissionState({directory:row.directory,sessionID:row.id})).toEqual(before);
+ expect(await target.nativeRemoval({directory:row.directory,intentID:intent.id})).toMatchObject({ownerID:candidate.bundleID,state:'preparing',removed:[]});
+ expect(await source.nativeRemoval({directory:row.directory,intentID:intent.id})).toEqual(intent);
+});

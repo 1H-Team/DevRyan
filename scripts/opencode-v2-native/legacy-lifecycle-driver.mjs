@@ -53,7 +53,7 @@ const bundle = await loadNativeRuntimeBundle({ binding, launcher });
 phase('artifact-load', 'completed');
 const nativeVersion = bundle.artifacts.manifest.opencodeVersion;
 const { agents, commands = {}, ...legacy } = input.configuration;
-const resolve = createNativeConfigurationSnapshotResolver({ loadLocation: async () => ({ legacy: structuredClone(legacy),
+const resolve = createNativeConfigurationSnapshotResolver({ resolveSlimAgents:bundle.reviewedConfiguration.resolveSlimAgents, ponytailCommands:bundle.reviewedConfiguration.ponytailCommands, loadLocation: async () => ({ legacy: structuredClone(legacy),
   agents: structuredClone(agents), commands: structuredClone(commands), skills: [], slim: { mergedConfig: {} },
   parseMarkdown: () => { throw new Error('Unexpected restart fixture skill'); } }) });
 const registration = hash(await fs.readFile(binding.descriptor.launch.reviewedPluginManifestPath));

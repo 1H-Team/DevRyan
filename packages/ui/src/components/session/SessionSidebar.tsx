@@ -1568,18 +1568,23 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     try {
       let successfulCount = 0;
       let failedCount = 0;
+      let remainingIds: string[] = [];
       if (bulkScopeIsArchived) {
-        const { deletedIds, failedIds } = await deleteSessions(ids);
+        const { deletedIds, failedIds, failures } = await deleteSessions(ids);
+        remainingIds = failedIds;
         successfulCount = deletedIds.length;
         failedCount = failedIds.length;
         if (failedIds.length > 0) {
           toast.error(failedIds.length === 1
             ? t('sessions.sidebar.bulkActions.failedDeleteSingle', { count: failedIds.length })
-            : t('sessions.sidebar.bulkActions.failedDeletePlural', { count: failedIds.length }));
+            : t('sessions.sidebar.bulkActions.failedDeletePlural', { count: failedIds.length }), {
+            description: resolveSessionDeleteFailureDescription(failures, t('sessions.sidebar.dialogs.deleteResult.tryAgain')),
+          });
         }
       } else {
         recordPendingArchiveRevealSessionIds(ids);
         const { archivedIds, failedIds, failures } = await archiveSessions(ids);
+        remainingIds = failedIds;
         collapseArchivedSessionTrees(archivedIds);
         successfulCount = archivedIds.length;
         failedCount = failedIds.length;
@@ -1598,15 +1603,17 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         }
       }
 
-      // Keep selection active when every item failed so the retry target is preserved.
-      if (successfulCount > 0 || failedCount === 0) {
+      // Preserve exactly the failed targets, including after partial success.
+      if (remainingIds.length > 0) {
+        useSessionMultiSelectStore.getState().replaceAll(remainingIds, derivedSelectionScope);
+      } else if (successfulCount > 0 || failedCount === 0) {
         useSessionMultiSelectStore.getState().clear();
       }
     } finally {
       bulkDeletePendingRef.current = false;
       setBulkDeletePending(false);
     }
-  }, [archiveSessions, bulkScopeIsArchived, collapseArchivedSessionTrees, deleteSessions, discardPendingArchiveRevealSessionIdsFor, recordPendingArchiveRevealSessionIds, selectedIds, t]);
+  }, [archiveSessions, bulkScopeIsArchived, collapseArchivedSessionTrees, deleteSessions, derivedSelectionScope, discardPendingArchiveRevealSessionIdsFor, recordPendingArchiveRevealSessionIds, selectedIds, t]);
 
   const handleBulkDelete = React.useCallback(() => {
     const count = selectedIds.size;

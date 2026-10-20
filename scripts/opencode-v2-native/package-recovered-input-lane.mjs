@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import {readNativeRemovalRows,assertNativeRemovalAbsent} from './removal-lanes.mjs';
 import { createV2MessageId } from '../../packages/web/server/lib/opencode/v2/admission.js';
 import { waitFor } from './process-lanes.mjs';
 import { runCompiledRecoveredShell } from './package-recovered-shell-lane.mjs';
 
 /** Real accepted inputs and compiled controller replacement; no native rows are
  * manufactured. Only the departing runner and actual response ACKs are held. */
-export async function runCompiledRecoveredInputs({ provider, client, managed, runtimeOwner, nativeTransport, getController, directory, databasePath, executionHost, observations, reviewedSetup = false, onCase, onExit, recordDiagnostic }) {
+export async function runCompiledRecoveredInputs({ provider, client, managed, runtimeOwner, nativeTransport, getController, directory, databasePath, executionHost, observations, ownerID, archivedRemovalOnly = false, reviewedSetup = false, onCase, onExit, recordDiagnostic }) {
   const model = { providerID: 'devryan-smoke', modelID: 'smoke-write' };
   const cases = [], exits = [];
   const recordCase = row => { cases.push(row); onCase?.(row); };
@@ -53,7 +56,7 @@ export async function runCompiledRecoveredInputs({ provider, client, managed, ru
   };
   const prompt = (text, messageID = createV2MessageId()) => ({ messageID, agent: 'orchestrator', model,
     variant: 'default', parts: [{ type: 'text', text }] });
-  const queueAndReplace = async (texts, { loseAck = false } = {}) => {
+  const queueAndReplace = async (texts, { loseAck = false, settleClaim = false } = {}) => {
     const session = await client.sessions.create({ title: 'Compiled retained input recovery', agent: 'orchestrator', model }, { directory });
     await managed.admitPrimary(session.id);
     const owner = runtimeOwner.nativeOwner, originalRpc = owner.handleRpc, originalFetch = nativeTransport.fetch;
@@ -88,6 +91,11 @@ export async function runCompiledRecoveredInputs({ provider, client, managed, ru
         const uncertain = await managed.primaryRuntime.readRecord(session.id);
         assert.equal(uncertain.state, 'needs_attention'); assert.equal(uncertain.reason, 'prompt_dispatch_uncertain');
       }
+      if (settleClaim) {
+        // Use the public abort to settle the original native claim before the crash.
+        await client.sessions.abort(session.id, { directory });
+        assert.deepEqual((await inbox(session.id)).map(row => row.id), bodies.map(body => body.messageID));
+      }
       const previous = getController(), exit = await previous.killForRecovery();
       assert.equal(exit.receipt?.terminated, true); assert.equal(exit.receipt?.confined, true); recordExit(exit);
       gate.reject(new Error('fixture_retained_input_controller_closed'));
@@ -100,6 +108,40 @@ export async function runCompiledRecoveredInputs({ provider, client, managed, ru
       owner.handleRpc = originalRpc; nativeTransport.fetch = originalFetch;
     }
   };
+  const verifyArchivedRemoval = async activeSessionID => {
+  // Three recovered-input fences and two unfinished preparations mirror the archive incident.
+  const deletionIDs = [], retainedSeed = await fs.readFile(path.join(directory, 'seed.txt'));
+  for (let index = 0; index < 3; index++) {
+    const retained = await queueAndReplace([`archived input must never run ${index}`], { settleClaim: true });
+    await client.sessions.archive(retained.sessionID, Date.now(), { directory });
+    deletionIDs.push(retained.sessionID);
+  }
+  for (let index = 0; index < 2; index++) {
+    const archived = await client.sessions.create({ title: 'Archived unfinished deletion', agent: 'orchestrator', model }, { directory });
+    await client.sessions.archive(archived.id, Date.now(), { directory });
+    await executionHost.runtime.registerNativeSession({ directory, sessionID: archived.id });
+    await executionHost.runtime.beginNativeRemoval({ directory, rootSessionID: archived.id, ownerID });
+    deletionIDs.push(archived.id);
+  }
+  const beforeDeleteRequests = requests;
+  for (const sessionID of deletionIDs) {
+    assert.ok((await client.sessions.get(sessionID, { directory })).time.archived);
+    assert.equal(await client.sessions.remove(sessionID, { directory }), true);
+    assert.equal(await client.sessions.get(sessionID, { directory, allowNotFound: true }), null);
+  }
+  assertNativeRemovalAbsent(await readNativeRemovalRows({ databasePath, sessions: deletionIDs }));
+  assert.deepEqual(await fs.readFile(path.join(directory, 'seed.txt')), retainedSeed);
+  assert.equal((await client.sessions.get(activeSessionID, { directory })).id, activeSessionID);
+  assert.equal(requests, beforeDeleteRequests, 'Archived deletion executed retained input');
+  recordCase({ id: 'compiled-five-archived-session-removal', status: 'passed', sessions: deletionIDs,
+    source: 'actual-accepted-input-controller-replacement-and-held-preparation-public-delete' });
+  };
+  if (archivedRemovalOnly) {
+    const active = await client.sessions.create({ title: 'Active deletion control', agent: 'orchestrator', model }, { directory });
+    await verifyArchivedRemoval(active.id);
+    provider.check();
+    return { cases, exits };
+  }
   const finish = async (sessionID, body, text) => {
     const before = requests;
     expectedText = text;
@@ -189,6 +231,7 @@ export async function runCompiledRecoveredInputs({ provider, client, managed, ru
   recordCase({ id: 'compiled-retained-input-discard-lost-ack', status: 'passed', sessionID: third.sessionID,
     messageID: pending.body.messageID, freshMessageID: fresh.messageID,
     source: 'real-native-cancel-event-lost-ack-durable-owner-intent-controller-replacement-and-fresh-admission' });
+  await verifyArchivedRemoval(first.sessionID);
   // The first rate limit must precede any Step on its replacement controller.
   if (reviewedSetup) await restart();
   if (reviewedSetup) for (const action of ['resume', 'discard']) {

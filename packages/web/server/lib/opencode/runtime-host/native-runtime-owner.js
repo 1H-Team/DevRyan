@@ -200,6 +200,7 @@ export function createNativeRuntimeOwner(options) {
       return privileged.readUserMessage(scope.sessionID, scope.messageID, { directory: scope.directory });
     }),
     validatePlanImplementation: accepted => taskContext.validatePlanImplementation(accepted),
+    recordDiagnostic: options.recordDiagnostic,
     assertRecoveredInputOperation:(request,entry)=>recoveredInputs?.assertOperation(request,entry),
     verifyRecoveredInputPublication:input=>recoveredInputs.beforePublish(input),
     withRecoveredPrimaryGrant:(input,record,action,originalRecheck)=>recoveredInputs.has(input.sessionID)
@@ -319,6 +320,7 @@ export function createNativeRuntimeOwner(options) {
   };
   const removal = createNativeSessionRemoval({ runtime: executionHost.runtime, admissionOwner: nativeOwner,
     ownerID: descriptor.bundleID,
+    recordDiagnostic: options.recordDiagnostic,
     inspectRemovalOwned: input => active().call({ action: 'inspect-removal-owned', ...input }),
     removeLeafOwned: input => active().call({ action: 'remove-leaf-owned', ...input }),
     cancelManaged: input => getManagedRuntime().cancelSessionsForRemoval(input),
@@ -503,7 +505,7 @@ export function createNativeRuntimeOwner(options) {
       await cursor?.close();
       lastExit = undefined;
       nextStage('verification');
-      await bundle.verify();
+      const verifiedBundle = await bundle.verify();
       const instanceID=randomUUID();
       startupInstanceID = instanceID;
       nextStage('configuration_sync');
@@ -779,6 +781,12 @@ export function createNativeRuntimeOwner(options) {
         phase = 'recovering';
         for (const location of bundle.locations) {
           if (checkpointHeld) throw fail('native_checkpoint_admission_held');
+          const inheritance = verifiedBundle?.removalInheritance;
+          const source = inheritance?.refs.find(row => row.ref === 'refs/devryan/state' && (row.directory === location.directory
+            || descriptor.projectMap.some(mapping => mapping.sourceDirectory === row.directory && mapping.targetDirectory === location.directory)));
+          if (source) await executionHost.runtime.recoverNativeRemovalOwnership({ directory: location.directory,
+            ownerID: descriptor.bundleID, checkpointID: inheritance.checkpointID, sourceOID: source.oid,
+            ...(descriptor.sourceBundleID ? { sourceOwnerID: descriptor.sourceBundleID } : {}) });
           await removal.recover({ directory: location.directory });
           // The new controller has reaped the original registry and verified
           // its clone before opening private recovery. Only the current bundle

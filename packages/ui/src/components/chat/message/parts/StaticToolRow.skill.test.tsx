@@ -29,5 +29,5 @@ for (const [label, state] of [
 test('a hash-only running skill row shows loading without a flashing generic name', () => {
     const markup = renderToStaticMarkup(<StaticToolRow toolName="skill" activities={[activity({ status: 'running', input: { id: HASHED, name: HASHED }, time: { start: 1 } } as ToolPart['state'])]} animateTailText={false} />);
     expect(markup).not.toContain(HASHED);
-    expect(text(markup)).toBe('Loading skill:');
+    expect(text(markup)).toBe('Loading Skill:');
 });

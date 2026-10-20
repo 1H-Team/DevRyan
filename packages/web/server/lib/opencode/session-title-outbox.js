@@ -58,6 +58,10 @@ const normalizeJob = (value, now) => {
       ? value.inactiveObservationCount
       : 0,
     lastInactiveObservedAt: finiteTimestamp(value.lastInactiveObservedAt, 0),
+    // Consecutive busy/held deferrals; the runtime pauses the job at its bound.
+    deferredRetries: Number.isSafeInteger(value.deferredRetries) && value.deferredRetries >= 0
+      ? value.deferredRetries
+      : 0,
     providerID: trimString(value.providerID),
     modelID: trimString(value.modelID),
   };

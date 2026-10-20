@@ -510,6 +510,8 @@ export type SessionMutationFailure = {
   sessionId: string
   message: string
   status?: number
+  code?: string
+  retryable?: boolean
 }
 export type DeleteSessionsResult = {
   deletedIds: string[]
@@ -1248,10 +1250,13 @@ function stringifyErrorMessage(error: unknown): string {
 
 function createSessionMutationFailure(sessionId: string, error: unknown): SessionMutationFailure {
   const status = readErrorStatus(error)
+  const details = error && typeof error === "object" ? error : undefined
   return {
     sessionId,
     message: stringifyErrorMessage(error),
     ...(status !== undefined ? { status } : {}),
+    ...(details && "code" in details && typeof details.code === "string" ? { code: details.code } : {}),
+    ...(details && "retryable" in details && typeof details.retryable === "boolean" ? { retryable: details.retryable } : {}),
   }
 }
 

@@ -1,10 +1,9 @@
 import { generateTextWithSessionModel } from '../opencode/session-model-text.js';
 import { randomUUID } from 'node:crypto';
 
-// Default remains paid Flash; settings select the exact shared helper tuple.
+// Default remains paid Flash; settings select the exact shared helper tuple,
+// including its reasoning variant (absent means provider Default).
 export const GIT_GENERATION_ZEN_MODEL = 'deepseek-v4.1-flash';
-// No explicit variant: helpers use provider Default reasoning.
-export const GIT_GENERATION_ZEN_VARIANT = undefined;
 
 /** Each draft attempt uses the admitted native helper and awaits its actual
  * settlement before repair or another model can start. */
@@ -16,12 +15,15 @@ export const createGitZenTextTransport = ({ buildOpenCodeUrl, getOpenCodeAuthHea
       pending = generateTextWithSessionModel({
         buildOpenCodeUrl, getOpenCodeAuthHeaders, generateHelperText, cursorRuntime, directory, operationID,
         ...(openCodeClient ? { openCodeClient } : {}),
-        providerID: selection?.providerID ?? 'opencode', modelID: selection?.modelID ?? zenModel,
-        ...(sessionID ? { sessionID } : {}),
-        ...(selection ? { selectionMode: selection.selectionMode, selectionRevision: selection.selectionRevision ?? selection.revision } : {}), agent, prompt, timeoutMs, signal,
+        selection: selection ?? { providerID: 'opencode', modelID: zenModel },
+        ...(sessionID ? { sessionID } : {}), agent, prompt, timeoutMs, signal,
         recoverOnError: false, denyTools: true,
       }).then((result) => {
         if (result.ok) return result.text;
+        // Bounded identifiers only: never the prompt, diff or provider text.
+        console.warn('[git] Helper draft attempt failed:', JSON.stringify({ agent, reason: result.reason,
+          status: Number.isFinite(result.status) ? result.status : undefined,
+          code: typeof result.code === 'string' && /^native_[a-z0-9_]{1,96}$/.test(result.code) ? result.code : undefined }));
         const error = new Error(result.reason === 'timeout' ? 'Zen generation timed out' : `Zen generation ${result.reason}`);
         error.status = result.status;
         error.reason = result.reason;

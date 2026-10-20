@@ -59,18 +59,18 @@ test('real helper admission enriches observations only from captured selection, 
   getSession:async()=>session,authorizeOperation:async()=>{},captureWebAuthorization:async()=>async()=>{}});
  try{await expect(legacy.withHelperOperation(request,()=>{throw Error('Unreviewed helper ran');})).rejects.toMatchObject({code:'native_helper_selection_unavailable',status:503});}finally{legacy.dispose();}
 });
-for(const agent of ['devryan-title','devryan-commit','devryan-pr','devryan-notify'])test(`${agent} dispatches the saved helper model with Default reasoning through real admission and controller settlement`,async()=>{
+for(const [agent,variant] of ['devryan-title','devryan-commit','devryan-pr','devryan-notify'].flatMap(agent=>[[agent,undefined],[agent,'low']]))test(`${agent} dispatches the saved helper model with ${variant??'Default'} reasoning through real admission and controller settlement`,async()=>{
  const session={id:'ses_selected',directory:'/fixture',agent:'orchestrator',model:{providerID:'primary',id:'chat',variant:'high'}};
- const selected={providerID:'helper',modelID:'selected',revision:'saved'};
+ const selected={providerID:'helper',modelID:'selected',...variant?{variant}:{},revision:'saved'};
  let helper,dispatches=0,providerEffects=0,selectionChecks=0,selectionCurrent=true;
  const admission=createNativeAdmissionOwner({directory:session.directory,ownerID:'fixture',runtime:{registerNativeSession:async()=>{},nativeAdmissionState:async()=>({revision:0,held:false,reverting:false})},
   getSession:async()=>session,authorizeOperation:async()=>{},captureWebAuthorization:async()=>async()=>{},captureTitleHelperAuthorization:async()=>async()=>{},
   captureHelperSelection:async()=>({selection:selected,recheck:async()=>{selectionChecks++;if(!selectionCurrent)throw Object.assign(Error('native_helper_selection_changed'),{code:'native_helper_selection_changed'});}})});
- const request={directory:session.directory,sessionID:session.id,agent,providerID:selected.providerID,modelID:selected.modelID,selectionMode:'configured',selectionRevision:selected.revision,prompt:'exact helper input'};
+ const request={directory:session.directory,sessionID:session.id,agent,providerID:selected.providerID,modelID:selected.modelID,...variant?{variant}:{},selectionMode:'configured',selectionRevision:selected.revision,prompt:'exact helper input'};
  const handler=createControllerHelperText({isCurrent:()=>true,rename:async()=>{throw Error('No rename');},rpc:async(method,params)=>method==='native.helper.assert'?helper.assert(JSON.parse(JSON.stringify(params))):helper.settled(JSON.parse(JSON.stringify(params))),
   generate:async(actual,permit,signal,recheck)=>admission.withProviderAttempt({directory:session.directory,sessionID:session.id,kind:'generate',permit},async()=>{
    await recheck();signal.throwIfAborted();providerEffects++;
-   expect(actual).toMatchObject(request);expect(Object.hasOwn(actual,'variant')).toBe(false);expect(Object.hasOwn(actual,'reasoning')).toBe(false);expect(Object.hasOwn(actual,'reasoning_effort')).toBe(false);
+   expect(actual).toMatchObject(request);if(variant)expect(actual.variant).toBe(variant);else expect(Object.hasOwn(actual,'variant')).toBe(false);expect(Object.hasOwn(actual,'reasoning')).toBe(false);expect(Object.hasOwn(actual,'reasoning_effort')).toBe(false);
    return {text:'Selected helper output'};
   })});
  const target={instanceID:`selected-${agent}`,url:'http://fixture'};
@@ -80,7 +80,8 @@ for(const agent of ['devryan-title','devryan-commit','devryan-pr','devryan-notif
  try{
   expect(await helper.generate(request)).toEqual({text:'Selected helper output'});expect(dispatches).toBe(1);expect(providerEffects).toBe(1);expect(selectionChecks).toBeGreaterThan(1);
   expect(session.model).toEqual({providerID:'primary',id:'chat',variant:'high'});
-  for(const foreign of [{variant:'high'},{modelID:'foreign'},{selectionRevision:'previous'}])await expect(helper.generate({...request,...foreign})).rejects.toMatchObject({code:'native_helper_selection_changed'});
+  const {variant:_omitted,...defaultRequest}=request;
+  for(const foreign of [{...request,variant:'high'},{...request,modelID:'foreign'},{...request,selectionRevision:'previous'},...variant?[defaultRequest]:[]])await expect(helper.generate(foreign)).rejects.toMatchObject({code:'native_helper_selection_changed'});
   selectionCurrent=false;await expect(helper.generate(request)).rejects.toMatchObject({code:'native_helper_selection_changed'});
   expect(dispatches).toBe(1);expect(providerEffects).toBe(1);
  }finally{await helper.controllerSettled(target.instanceID);admission.dispose();}

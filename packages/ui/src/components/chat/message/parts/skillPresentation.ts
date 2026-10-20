@@ -1,8 +1,9 @@
 import type { ToolPart } from '@opencode-ai/sdk/v2';
 import { describeExecutionFailure } from '@/lib/executionFailure';
 
-/** DevRyan reviewed-skill ids are opaque hashes (`devryan-<32 hex>`), never display names. */
-const REVIEWED_SKILL_ID = /^devryan-[0-9a-f]{32}$/;
+/** DevRyan reviewed-skill ids are opaque hashes (`devryan-<hex>`), never display
+ * names, including a model's mistyped copy of one. */
+const REVIEWED_SKILL_ID = /^devryan-[0-9a-f]+$/i;
 const SKILL_CONTENT_NAME = /<skill_content\s+name="([^"]+)"/;
 const GENERIC_SKILL_NAME = 'Skill';
 
@@ -32,7 +33,7 @@ export function getSkillPresentation(parts: readonly ToolPart[]) {
     const errors = failed.map(part => part.state.status === 'error'
         ? describeExecutionFailure(part.state.error) ?? 'The skill could not be loaded.' : '');
     return {
-        title: running ? 'Loading skill:' : failed.length ? 'Skill failed:' : 'Loaded skill:',
+        title: running ? 'Loading Skill:' : failed.length ? 'Skill Failed:' : 'Loaded Skill:',
         running,
         failed: failed.length > 0,
         explanation: [...new Set(errors)].join(' '),

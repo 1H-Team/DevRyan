@@ -21,7 +21,7 @@ async function fixture(){
  const controller=createPrimaryRecoveryController({directory:path.join(directory,'provider-recovery'),now:()=>time,mode:'observe',isManaged:()=>true,authorize:async()=>authorized,observeTurn:async()=>structuredClone(state),
   abortSession:async()=>{},promptSession:async()=>{throw Error('Legacy recovery must never dispatch');},pollMs:1_000_000,progressTimeoutMs:false});
  await controller.initialize();cleanup.push(()=>controller.drain());
- await controller.plugin({action:'hello',instanceID:'fixture',policyVersion:1,version:'2.0.32'},undefined,undefined,{authorize:async()=>{},isCurrent:()=>true});
+ await controller.plugin({action:'hello',instanceID:'fixture',policyVersion:1,version:'2.1.0'},undefined,undefined,{authorize:async()=>{},isCurrent:()=>true});
  await controller.admit({sessionID:'ses_test',directory:'/project',primary:true,executionGeneration:2,body:{messageID:'msg_original',agent:execution.agent,
   model:{providerID:execution.providerID,modelID:execution.modelID},variant:execution.variant,tools:{read:true}}});
  await controller.plugin({action:'step',sessionID:'ses_test',instanceID:'fixture',userMessageID:'msg_original',assistantMessageID:'msg_first',execution,nativeAttempt:attempt,nativePermitSha256:permitSha256});

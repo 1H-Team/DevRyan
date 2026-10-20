@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { createNativeAuthorization } from './native-authorization.js';
+import { DEFAULT_HELPER_MODEL_SELECTION, parseHelperModelSelection } from '@devryan/shared-runtime';
 import { createSupabaseConnection } from '../../multi-user/supabase-connection.js';
 import { getRequestPrincipal, runWithRequestPrincipal } from '../../multi-user/request-context.js';
 import { createNativeAdmissionOwner } from './native-admission-owner.js';
@@ -226,8 +227,16 @@ test('configured helper authorization binds the exact saved revision and keeps a
   settings = { helperModelSelection: { ...settings.helperModelSelection, revision: 'two' } };
   await expect(configured.recheck()).rejects.toMatchObject({ code: 'native_helper_selection_changed' });
   const active = await authorization.captureHelperSelection({ directory, sessionID: session.id, agent: 'devryan-pr', selectionMode: 'active' }, session);
-  expect(active.selection).toEqual({ providerID: 'anthropic', modelID: 'active', revision: 'active-session' });
+  expect(active.selection).toEqual({ providerID: 'anthropic', modelID: 'active', variant: 'high', revision: 'active-session' });
   expect(session.model.variant).toBe('high');
+  const defaultActive = await authorization.captureHelperSelection({ directory, sessionID: session.id, agent: 'devryan-pr', selectionMode: 'active' },
+    { ...session, model: { providerID: 'anthropic', id: 'active' } });
+  expect(defaultActive.selection).not.toHaveProperty('variant');
+  settings = { helperModelSelection: { providerID: 'openai', modelID: 'reasoner', variant: 'low', revision: 'three' } };
+  const reasoned = await authorization.captureHelperSelection({ directory, sessionID: session.id, agent: 'devryan-commit', selectionMode: 'configured' }, session);
+  expect(reasoned.selection).toEqual(settings.helperModelSelection);
+  settings = { helperModelSelection: { ...settings.helperModelSelection, variant: 'high' } };
+  await expect(reasoned.recheck()).rejects.toMatchObject({ code: 'native_helper_selection_changed' });
   settings = null;
   await expect(authorization.captureHelperSelection({ directory, sessionID: session.id, agent: 'devryan-pr', selectionMode: 'configured' }, session))
     .rejects.toMatchObject({ code: 'native_helper_settings_unavailable', statusCode: 503 });
@@ -251,4 +260,26 @@ test('devryan-notify follows the detached title path: session required, no web p
     .rejects.toMatchObject({ code: 'native_helper_selection_invalid' });
   await expect(authorization.captureHelperSelection({ directory, sessionID: session.id, agent: 'devryan-something', selectionMode: 'configured' }, session))
     .rejects.toMatchObject({ code: 'native_helper_selection_invalid' });
+}));
+
+test('a single-user saved helper model and reasoning level is what every helper captures', () => fixture(async directory => {
+  // The settings write path keeps the exact tuple; the host read returns it.
+  let persisted = {};
+  const save = changes => { const helperModelSelection = parseHelperModelSelection(changes.helperModelSelection); if (helperModelSelection) persisted = { ...persisted, helperModelSelection }; };
+  const principal = { id: 'local-admin', scope: 'local-admin' };
+  const authorization = createNativeAuthorization({ locations: [{ directory }], manifest, getRequestPrincipal: () => principal,
+    captureLocalAuthorization: value => value === principal ? () => true : null,
+    getMultiUserRuntime: () => ({ enabled: false, connection: { configured: false, isLocalAccessActive: () => true } }),
+    readHelperSettings: async () => structuredClone(persisted) });
+  const session = { id: 'ses_saved', directory, model: { providerID: 'openai', id: 'chat', variant: 'high' } };
+  const capture = agent => authorization.captureHelperSelection({ directory, sessionID: session.id, agent, selectionMode: 'configured' }, session);
+  for (const agent of ['devryan-title', 'devryan-notify', 'devryan-commit', 'devryan-pr']) {
+    expect((await capture(agent)).selection).toEqual(DEFAULT_HELPER_MODEL_SELECTION);
+  }
+  save({ helperModelSelection: { providerID: 'xai', modelID: 'grok-4.6', variant: 'low', revision: 'saved-1' } });
+  for (const agent of ['devryan-title', 'devryan-notify', 'devryan-commit', 'devryan-pr']) {
+    const captured = await capture(agent);
+    expect(captured.selection).toEqual({ providerID: 'xai', modelID: 'grok-4.6', variant: 'low', revision: 'saved-1' });
+    await captured.recheck();
+  }
 }));

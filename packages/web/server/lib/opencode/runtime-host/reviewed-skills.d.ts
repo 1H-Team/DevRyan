@@ -6,5 +6,8 @@ export function readReviewedSkillResource(snapshot: SkillResourceSnapshot, input
 export function reviewedSkillAliases(skills: readonly ReviewedSkill[]): readonly {readonly name:string;readonly targetID:string}[];
 export function buildReviewedSkillAliasIndex(skills: readonly ReviewedSkill[]): {readonly canonical:ReadonlyMap<string,string|null>;readonly normalized:ReadonlyMap<string,string|null>};
 export function resolveReviewedSkillAlias(snapshot:SkillResourceSnapshot,directory:string,requested:unknown):string|null;
+/** Exact ID/alias, then supplied name, then one reviewed ID within edit distance 2 of a `devryan-<hex>` ID. */
+export function resolveReviewedSkillRequest(snapshot:SkillResourceSnapshot,directory:string,request:{readonly id?:unknown;readonly name?:unknown}):string|null;
+export function reviewedSkillNames(snapshot:SkillResourceSnapshot,directory:string,limit?:number):readonly string[];
 export interface ReviewedSkillResourceLookup{readonly snapshotDigest:string;readonly directory:string;readonly skillID:string;readonly relativePath:string}
 export function lookupReviewedSkillResourcePath(snapshot:SkillResourceSnapshot,input:{readonly snapshotDigest:string;readonly directory:string;readonly targetPath:unknown}):ReviewedSkillResourceLookup|null;

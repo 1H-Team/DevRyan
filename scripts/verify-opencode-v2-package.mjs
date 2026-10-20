@@ -75,7 +75,7 @@ const errorEvidence = error => ({ name: error.name, code: error.code, message: e
 const nodeHostRequired = 'native_package_node_host_required: Run node scripts/verify-opencode-v2-package.mjs';
 
 /** Qualified production binaries and real web owners; model replies alone are fixture data. */
-export async function runNativePackageAcceptance({ artifactRoot = path.join(repositoryRoot, '.cache/v2-validation/native-artifact'), baselineArtifactRoot, diagnostic = false, reviewedSetup = false, browser = false, preflight = false, skillDataRoot, onParentDeathReady, managedInterval, eventReconcileIntervalMs, managedCorrectness = false, retainedShellDiagnostic = false, managedModelAdmission } = {}) {
+export async function runNativePackageAcceptance({ artifactRoot = path.join(repositoryRoot, '.cache/v2-validation/native-artifact'), baselineArtifactRoot, diagnostic = false, reviewedSetup = false, browser = false, preflight = false, skillDataRoot, onParentDeathReady, managedInterval, eventReconcileIntervalMs, managedCorrectness = false, retainedShellDiagnostic = false, managedModelAdmission, archivedRemovalOnly = false } = {}) {
   if (process.versions.bun) throw Object.assign(new Error(nodeHostRequired), { code: 'native_package_node_host_required' });
   validateEventReconcileInterval(eventReconcileIntervalMs);
   if (managedModelAdmission !== undefined) {
@@ -190,7 +190,7 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
     let nativeURL, epoch = 0, descriptor, currentController, baselineSnapshot;
     const nativeTransport = { fetch: globalThis.fetch };
     const intervalReads = { active: 0, history: 0, total: 0 };
-    const deps = { getRuntime: () => ({ generation: 2, baseUrl: nativeURL, version: '2.0.32', epoch }),
+    const deps = { getRuntime: () => ({ generation: 2, baseUrl: nativeURL, version: '2.1.0', epoch }),
       fetchImpl: (url, input) => {
         if (managedInterval) {
           intervalReads.total++;
@@ -374,7 +374,7 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
       // The baseline and parent-death fixtures use their owned loopback config,
       // through the same snapshot capture as the reviewed setup.
       const { agents, commands = {}, ...legacy } = structuredClone(configuration);
-      const resolve = createNativeConfigurationSnapshotResolver({ loadLocation: async () => ({
+      const resolve = createNativeConfigurationSnapshotResolver({ resolveSlimAgents:bundle.reviewedConfiguration.resolveSlimAgents, ponytailCommands:bundle.reviewedConfiguration.ponytailCommands, loadLocation: async () => ({
         legacy: structuredClone(legacy), agents: structuredClone(agents), commands: structuredClone(commands),
         skills: [], slim: { mergedConfig: {} }, parseMarkdown: () => { throw new Error('Unexpected baseline skill'); },
       }) });
@@ -479,7 +479,7 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
     return runtimeOwner.start();
     };
     const controller = await (imageLane ? imageLane.withCapturedTransport(startController) : startController());
-    if (!preflight && !managedInterval && !managedCorrectness && !managedModelAdmission) {
+    if (!preflight && !managedInterval && !managedCorrectness && !managedModelAdmission && !archivedRemovalOnly) {
       cases.push(...await runCompiledClaudeCredentialBridge({ artifacts, root, controller, environment, observations }));
     }
     imageLane?.captureRestarts(runtimeOwner);
@@ -499,7 +499,17 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
       assert.equal(response.status, 200, 'Compiled plugin catalog unavailable');
       return response.json();
     } }));
-    if (retainedShellDiagnostic) {
+    if (archivedRemovalOnly) {
+      assert.ok(!reviewedSetup && !preflight && !managedInterval && !managedCorrectness && !retainedShellDiagnostic && !managedModelAdmission,
+        'Archived removal is a separate focused qualification');
+      await failureEvents.close();
+      await runCompiledRecoveredInputs({ provider, client, managed, runtimeOwner, nativeTransport, executionHost: host, ownerID: descriptor.bundleID,
+        archivedRemovalOnly: true, databasePath: descriptor.launch.opencodeDatabasePath, observations,
+        getController: () => currentController, directory,
+        recordDiagnostic: row => { diagnostics.push(row); journal.ownerDiagnostic(row); }, onCase: row => cases.push(row) });
+      result = { status: 'archived-removal-passed', qualification: 'compiled-archived-removal-only',
+        artifact: { buildId: artifacts.manifest.buildId, manifestSha256 }, remainingMandatoryGates: ['full-package-qualification'] };
+    } else if (retainedShellDiagnostic) {
       await failureEvents.close();
       cases.push(await runCompiledRecoveredShell({ provider, client, managed, runtimeOwner,
         getController: () => currentController, directory, databasePath: descriptor.launch.opencodeDatabasePath,
@@ -557,13 +567,6 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
         agent,
         model: { providerID: 'devryan-smoke', modelID: scenario.tool === 'patch' ? 'gpt-5-native-smoke' : 'smoke-write' },
         parts: [{ type: 'text', text: turn.marker }, ...(options.parts ?? [])] }, { directory: operationDirectory, origin: 'native_acceptance', timeoutMs: 30_000 });
-      if (scenario.approveExternal) {
-        const requests = await waitFor(() => client.interaction.permissions.list({ directory: operationDirectory }, { sessionID }),
-          rows => rows.some(row => row.sessionID === sessionID && row.tool?.callID === turn.callID), 'Cross-location read never requested its exact native external permission');
-        const request = requests.find(row => row.sessionID === sessionID && row.tool?.callID === turn.callID);
-        assert.equal(request.permission, 'external_directory', 'Compiled read requested a different native permission');
-        await client.interaction.permissions.reply(request.id, { reply: 'once' }, { directory: operationDirectory, sessionID });
-      }
       const settled = await waitFor(async () => {
         const page = await client.sessions.messages(sessionID, {}, { directory: operationDirectory });
         const statuses = await client.sessions.status({ directory: operationDirectory });
@@ -583,7 +586,7 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
           'Compiled read left an unexpected external permission request');
       }
       if (scenario.deniedBeforePermission) {
-        assert.equal(reviewedSetup, true);
+        assert.ok(runtimeOwner.getConfigurationSnapshot().locations.find(row=>row.directory===operationDirectory).activeRegistrationIDs.includes('devryan.slim'));
         assert.equal(scenario.tool, 'read');
         assert.equal(scenario.approveExternal, false);
         const db = resolveSqliteDriver().open(descriptor.launch.opencodeDatabasePath, { readonly: true });
@@ -631,15 +634,15 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
       await invoke({ id: 'second-location-write', tool: 'write', input: { path: 'second-location.txt', content: 'second relocated compiled write\n' } }, { directory: secondDirectory, sessionID: secondSession.id });
       assert.equal(await fs.readFile(path.join(secondDirectory, 'second-location.txt'), 'utf8'), 'second relocated compiled write\n');
       await assert.rejects(fs.stat(path.join(directory, 'second-location.txt')), error => error.code === 'ENOENT');
-      await invoke({ id: 'second-location-read-isolation', tool: 'read', direct: true, approveExternal: !reviewedSetup,
-        deniedBeforePermission: reviewedSetup, expectedError: /native_read_root_denied/, input: { path: path.join(directory, 'seed.txt') } }, { directory: secondDirectory, sessionID: secondSession.id });
+      await invoke({ id: 'second-location-read-isolation', tool: 'read', direct: true, approveExternal: false,
+        deniedBeforePermission: true, expectedError: /native_read_root_denied/, input: { path: path.join(directory, 'seed.txt') } }, { directory: secondDirectory, sessionID: secondSession.id });
     }
     if (mcpLane) cases.push(await mcpLane.run({ invoke, directory, secondDirectory, secondSessionID: secondSession.id }));
     if(reviewedSetup)await runReviewedSetupCommands({provider,client,runtimeOwner,directory,onCase:row=>cases.push(row),waitFor,admitPrimary:managed.admitPrimary,artifacts});
     if(reviewedSetup)await runCompiledSlimInterview({provider,client,runtimeOwner,directory,onCase:row=>cases.push(row),waitFor,
       admitPrimary:managed.admitPrimary,bridge:slimWeb,executionHost:host,observations,databasePath:descriptor.launch.opencodeDatabasePath});
     await failureEvents.close();
-    await runCompiledRecoveredInputs({ provider, client, managed, runtimeOwner, nativeTransport, executionHost: host,
+    await runCompiledRecoveredInputs({ provider, client, managed, runtimeOwner, nativeTransport, executionHost: host, ownerID: descriptor.bundleID,
       databasePath: descriptor.launch.opencodeDatabasePath, observations,
       getController: () => currentController, directory, reviewedSetup,
       recordDiagnostic: row => { diagnostics.push(row); journal.ownerDiagnostic(row); },
@@ -828,7 +831,7 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
     sourceCohort: { valid: changedPaths.length === 0, changedPaths } };
   if (cleanupFailures.length || changedPaths.length) result.status = 'failed';
   await fs.writeFile(path.join(root, 'result.json'), JSON.stringify(result, null, 2) + '\n');
-  run.finish(['passed', 'preflight-passed', 'interval-correctness-passed', 'retained-shell-diagnostic-passed', 'model-admission-passed'].includes(result.status) ? 'passed' : 'failed');
+  run.finish(['passed', 'preflight-passed', 'interval-correctness-passed', 'retained-shell-diagnostic-passed', 'model-admission-passed', 'archived-removal-passed'].includes(result.status) ? 'passed' : 'failed');
   return result;
 }
 
@@ -844,5 +847,5 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     ...(values['baseline-artifact-root'] ? { baselineArtifactRoot: path.resolve(values['baseline-artifact-root']) } : {}),
     ...(values['artifact-root']?{artifactRoot:path.resolve(values['artifact-root'])}:{}),...(values['skill-data']?{skillDataRoot:path.resolve(values['skill-data'])}:{}) });
   process.stdout.write(JSON.stringify({ status: result.status, artifact: path.join(result.root, 'result.json'), cases: result.cases }) + '\n');
-  if (!['passed', 'preflight-passed', 'interval-correctness-passed', 'retained-shell-diagnostic-passed', 'model-admission-passed'].includes(result.status)) process.exitCode = 1;
+  if (!['passed', 'preflight-passed', 'interval-correctness-passed', 'retained-shell-diagnostic-passed', 'model-admission-passed', 'archived-removal-passed'].includes(result.status)) process.exitCode = 1;
 }

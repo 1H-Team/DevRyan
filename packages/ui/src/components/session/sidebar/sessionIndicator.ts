@@ -54,10 +54,10 @@ type ResolveLeadingRailLayoutOptions = {
 
 export type LeadingRailLayout = {
   slots: [
-    'status' | null,
-    'status' | 'pin',
-    'chevron' | null,
+    'pin' | null,
+    'status',
   ];
+  hasChildren: boolean;
 };
 
 type SessionChildIdentity = {
@@ -229,17 +229,15 @@ export function resolveSubtaskSidebarIndicator({
 }
 
 // The status slot is always occupied (colored dot, working blink, or idle
-// ring), so it keeps a fixed position: left of the pin on pinned rows,
-// immediately left of the chevron/title otherwise.
+// ring), so it sits directly next to the title on every row; the pin, when
+// present, goes to its left. Parent rows swap the dot for the expand chevron
+// in the same slot on hover/focus; touch rows draw a separate chevron.
 export function resolveLeadingRailLayout({
   hasChildren,
   isPinnedSession,
 }: ResolveLeadingRailLayoutOptions): LeadingRailLayout {
-  const chevron = hasChildren ? 'chevron' : null;
-
-  if (isPinnedSession) {
-    return { slots: ['status', 'pin', chevron] };
-  }
-
-  return { slots: [null, 'status', chevron] };
+  return {
+    slots: [isPinnedSession ? 'pin' : null, 'status'],
+    hasChildren,
+  };
 }

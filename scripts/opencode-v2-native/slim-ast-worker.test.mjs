@@ -16,11 +16,11 @@ test('actual original AST tools run in supervised private views with permission,
  const inputs=await prepareReviewedNativeInputs(repository);
  const core=await fs.realpath(path.join(repository,'node_modules/@opencode/core'));
  const require=createRequire(path.join(core,'package.json'));
- const pty=path.join(core,'dist/chunks/instance-dajrwvna.js');
+ const pty=path.join(core,'dist/chunks/shell-dajrwvna.js');
  const ptyAsset=path.join(path.dirname(require.resolve('@opencode-ai/pty-darwin-arm64/package.json')),'bin/opencode-pty');
  const photon=require.resolve('@silvia-odwyer/photon-node');
  const rewrites=new Map(inputs.rewrites);
- rewrites.set(pty,rewriteNativeAsset('pty',await fs.readFile(pty),{assetPath:ptyAsset,assetSha256:'becb3b8b346d0d20b898a229ed42b107f1f0e179f50e5de52636bc26a07004fb'}));
+ rewrites.set(pty,rewriteNativeAsset('pty',await fs.readFile(pty),{assetPath:ptyAsset,assetSha256:'b54a98832ec070c22383f8b1695a4850a44d753e8ea99751ccec659b4a598927'}));
  rewrites.set(photon,rewriteNativeAsset('photon',await fs.readFile(photon)));
  try{
   const build=await Bun.build({entrypoints:[path.join(repository,'packages/web/server/lib/opencode/runtime-host/writer-worker.ts')],

@@ -34,9 +34,9 @@ test('each skill call retains its row and static name through later loads and re
             expect(firstName).not.toBeNull();
             parts = [first, activity('second', { status: 'pending', input: {}, raw: '' })];
             await render();
-            const loadingLabel = container.find(node => node.getAttribute('title') === 'Loading skill:');
+            const loadingLabel = container.find(node => node.getAttribute('title') === 'Loading Skill:');
             expect(loadingLabel).not.toBeNull();
-            expect(container.textContent).not.toContain('Loading skill:Skill');
+            expect(container.textContent).not.toContain('Loading Skill:Skill');
             expect(container.find(node => node.textContent === 'Release Checklist')).toBe(firstName);
 
             parts = [first, activity('second', { status: 'running', input: { name: 'Diagnosing Bugs' }, time: { start: 3 } })];
@@ -48,15 +48,15 @@ test('each skill call retains its row and static name through later loads and re
             parts = [first, activity('second', { status: 'completed', input: { name: 'Diagnosing Bugs' },
                 output: 'body', title: '', metadata: {}, time: { start: 3, end: 4 } })];
             await render();
-            expect(container.find(node => node.getAttribute('title') === 'Loaded skill:' && node === loadingLabel)).toBe(loadingLabel);
+            expect(container.find(node => node.getAttribute('title') === 'Loaded Skill:' && node === loadingLabel)).toBe(loadingLabel);
             expect(container.find(node => node.textContent === 'Diagnosing Bugs')).toBe(secondName);
             expect(container.find(node => node.textContent === 'Release Checklist')).toBe(firstName);
-            expect(container.textContent.match(/Loaded skill:/g)).toHaveLength(2);
+            expect(container.textContent.match(/Loaded Skill:/g)).toHaveLength(2);
 
             await act(async () => root.render(null));
             parts = structuredClone(parts);
             await render();
-            expect(container.textContent.match(/Loaded skill:/g)).toHaveLength(2);
+            expect(container.textContent.match(/Loaded Skill:/g)).toHaveLength(2);
             expect(container.textContent).toContain('Release Checklist');
             expect(container.textContent).toContain('Diagnosing Bugs');
         } finally {

@@ -87,7 +87,7 @@ const C3_RULES = [
   // G4 hardening: the credential list returns secret values.
   [PRIVILEGED, /^GET \/api\/credential$/],
   // Not enumerated as a server write in C.3 and unused by DevRyan.
-  [DENY, /^DELETE \/api\/permission\/saved\/\{id\}$/],
+  [DENY, /^(PATCH|DELETE) \/api\/permission\/saved\/\{id\}$/],
 ];
 
 const expectedClass = (key) => C3_RULES.find(([, pattern]) => pattern.test(key))?.[0] ?? SERVER;
@@ -122,13 +122,13 @@ const BODY_FOR = {
 };
 
 describe('route table coverage', () => {
-  it('knows the 143 OpenAPI operations of 2.0.32 plus GET /openapi.json', () => {
-    expect(OPENCODE_V2_ROUTES_VERSION).toBe('2.0.32');
-    expect(OPENCODE_V2_ROUTES).toHaveLength(143);
+  it('knows the 144 OpenAPI operations of 2.1.0 plus GET /openapi.json', () => {
+    expect(OPENCODE_V2_ROUTES_VERSION).toBe('2.1.0');
+    expect(OPENCODE_V2_ROUTES).toHaveLength(144);
     expect(OPENCODE_V2_EXTRA_ROUTES.map(keyOf)).toEqual(['GET /openapi.json']);
     const known = listOpenCodeV2KnownRoutes().map(keyOf);
-    expect(known).toHaveLength(144);
-    expect(new Set(known).size).toBe(144);
+    expect(known).toHaveLength(145);
+    expect(new Set(known).size).toBe(145);
   });
 
   it('classifies every known route explicitly with a valid class and nothing else', () => {
@@ -475,7 +475,7 @@ describe('location binding', () => {
 
 describe('diffLiveSpec', () => {
   it('reports no drift for the vendored document, as an object or as text', () => {
-    expect(diffLiveSpec(vendoredDoc())).toMatchObject({ ok: true, version: '2.0.32', error: null, added: [], removed: [], changed: [] });
+    expect(diffLiveSpec(vendoredDoc())).toMatchObject({ ok: true, version: '2.1.0', error: null, added: [], removed: [], changed: [] });
     expect(diffLiveSpec(VENDORED_TEXT).ok).toBe(true);
   });
 

@@ -14,6 +14,10 @@ const checkedSnapshot = (value, directory) => {
 export function createNativeSessionRemoval(options) {
   const {runtime,admissionOwner,ownerID,inspectRemovalOwned,removeLeafOwned,cancelManaged,cancelAndWait}=options;
   const pending=new Map();
+  const observe=(sessionID,intentID,stage,outcome,cause)=>{
+    try{options.recordDiagnostic?.({type:'lifecycle',event:'session_removal',sessionID,payload:{stage,outcome,
+      ...(intentID?{intentID}:{}),...(cause?{code:/^[a-z][a-z0-9_]{1,100}$/.test(cause.code??'')?cause.code:'native_removal_failed'}:{})}});}catch{/* Diagnostics cannot change disposal. */}
+  };
   const scoped=(intent,sessionID,action)=>admissionOwner.withRemovalOperation({directory:intent.directory,intentID:intent.id,sessionID},action);
   const inspect=(intent,sessionID=intent.rootSessionID)=>scoped(intent,sessionID,permit=>inspectRemovalOwned({sessionID,permit}));
   const settle=async(intent,members,absentSessions=[])=>{
@@ -71,14 +75,17 @@ export function createNativeSessionRemoval(options) {
   };
   const remove=async({sessionID,directory,quiet=false})=>{
     if(pending.has(sessionID)) throw fail('native_removal_in_progress');
+    let intentID,stage='authorization';
     const work=(async()=>{
       const grant=await admissionOwner.captureRemovalAuthorization(sessionID);
       if(directory!==undefined && directory!==grant.session.directory) throw fail('native_session_directory_mismatch');
       directory=grant.session.directory;
       if(quiet&&!grant.quietHold)throw fail('native_retention_hold_required');
+      stage='preparation';
       let intent=await runtime.beginNativeRemoval({directory,rootSessionID:sessionID,ownerID,...(quiet?{quietHold:grant.quietHold}:{})});
+      intentID=intent.id;
       if(quiet){if(!grant.quietHold||!intent.quiet)throw fail('native_retention_hold_required');grant.transferQuietHold(intent.id);}
-      if(intent.state==='committed') return finish(intent);
+      if(intent.state==='committed'){stage='disposal';return finish(intent);}
       // The root hold also fences descendants. Already admitted effects must
       // settle before the final canonical tree can become a durable decision.
       const initial=checkedSnapshot(await inspect(intent),directory);
@@ -90,11 +97,15 @@ export function createNativeSessionRemoval(options) {
       const final=checkedSnapshot(await inspect(intent),directory);
       if(!sameMembers(initial.members,final.members) || final.states.some(state=>state.active || state.claimed || quiet&&(state.inboxIDs.length||state.pendingIDs.length))) throw fail('native_removal_tree_changed');
       await grant.reauthorize();
+      stage='commit';
       intent=await runtime.commitNativeRemoval({directory,intentID:intent.id,ownerID,members:final.members,beforeCommit:grant.reauthorize});
+      stage='disposal';
       return finish(intent);
     })();
     pending.set(sessionID,work);
-    try{return await work;}finally{if(pending.get(sessionID)===work)pending.delete(sessionID);}
+    try{const result=await work;observe(sessionID,intentID,stage,'completed');return result;}
+    catch(cause){observe(sessionID,intentID,stage,'failed',cause);throw cause;}
+    finally{if(pending.get(sessionID)===work)pending.delete(sessionID);}
   };
   return {remove,recover:async({directory})=>{
     for(const intent of await runtime.nativeRemovals({directory})) {

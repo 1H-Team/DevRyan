@@ -258,12 +258,12 @@ describe('toV1ToolState', () => {
 });
 
 describe('toV1ToolPart', () => {
-  it('builds a v1 ToolPart with the synthesized id, v1 name and part metadata', () => {
+  it.each(['providerState','native'])('builds a v1 ToolPart with the synthesized id, v1 name and %s metadata', field => {
     expect(toV1ToolPart({
       type: 'tool',
       id: 'call_1',
       name: 'shell',
-      providerState: { itemId: 'fc_1' },
+      [field]: { itemId: 'fc_1' },
       state: { status: 'running', input: { command: 'ls' }, metadata: {} },
       time: { created: 10, ran: 11 },
     }, context)).toEqual({

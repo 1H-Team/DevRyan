@@ -1,6 +1,7 @@
 import { Schema } from 'effect';
 import { SessionInbox } from '@opencode/schema/session-inbox';
 import { SessionMessage } from '@opencode/schema/session-message';
+import { SessionLegacy } from '@opencode/schema/session-legacy';
 import { resolveSqliteDriver } from '../db-maintenance-core.js';
 import { canonicalJSON, hasMigrationTable, sha256, bundleFailure } from './bundle-migration-inventory.js';
 import { isNativeTurnParent } from '../../../../../shared-runtime/lib/native-message-status.js';
@@ -14,7 +15,7 @@ const fail=code=>{const error=bundleFailure(code);error.statusCode=409;throw err
 const encodedItem=Schema.toEncoded(SessionInbox.Item);
 const encodedMessage=Schema.toEncoded(SessionMessage.Info);
 const decodeItem=value=>Schema.decodeUnknownSync(encodedItem)(value,{onExcessProperty:'error'});
-const decodeMessage=row=>Schema.decodeUnknownSync(encodedMessage)({...JSON.parse(row.data),id:row.id,type:row.type},{onExcessProperty:'error'});
+const decodeMessage=row=>Schema.decodeUnknownSync(encodedMessage)(SessionLegacy.message(row.type,{...JSON.parse(row.data),id:row.id,type:row.type}),{onExcessProperty:'error'});
 const completed=message=>message.type==='assistant'&&Number.isSafeInteger(message.time.completed)&&message.time.completed>=0;
 
 /** Accepted SQLite input is authoritative content, never an execution grant. */
@@ -292,6 +293,12 @@ export function createNativeRecoveredInputOwner({databasePath,primaryRuntime,cap
       if(['execution.interrupt','session.abort','session.stop'].includes(request.operation))return;
       // The admission owner pins this permit to an archive-only metadata change.
       if(entry?.archiveMetadata&&request.sessionID===entry.permit.sessionID&&['web.operation','session.setMetadata'].includes(request.operation))return;
+      // Terminal disposal has its own exact web grant and held-tree capability.
+      // Neither permit admits retained input or any fresh execution.
+      if(request.sessionID===entry?.permit?.sessionID && (
+        entry.removal && ['removal.inspect','removal.delete'].includes(request.operation)
+        || entry.web?.effects?.length===1 && entry.web.effects[0].operation==='session.remove'
+          && ['web.operation','session.remove'].includes(request.operation)))return;
       const grant=grants.get(request.sessionID);
       if(entry?.recoveredInputCancellation&&['inbox.cancel','recovered.input.cancel'].includes(request.operation))return;
       if(!grant||['admission.prompt','admission.command','session.prompt','session.command','session.switchAgent','session.switchModel',

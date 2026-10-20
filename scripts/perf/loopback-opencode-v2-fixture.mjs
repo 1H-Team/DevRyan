@@ -1,3 +1,4 @@
+import {SessionLegacy} from '@opencode/schema/session-legacy';
 // Loopback OpenCode 2.0.20 fixture (gen 2) with the same control API as the gen-1
 // fixture (`fixture-session-seeds.mjs`), so QA scenarios stay generation-agnostic.
 //
@@ -332,7 +333,7 @@ export const createLoopbackOpenCodeV2Fixture = async ({
     envelope.type = type;
     const resolved = location === undefined ? defaultLocation(type, data) : location;
     if (resolved) envelope.location = resolved;
-    envelope.data = structuredClone(data);
+    envelope.data = SessionLegacy.event(type,structuredClone(data));
     const version = OPENCODE_V2_DURABLE_EVENT_VERSIONS.get(type);
     if (version !== undefined) {
       const aggregateID = typeof data.sessionID === 'string' ? data.sessionID : 'global';
@@ -842,10 +843,10 @@ export const createLoopbackOpenCodeV2Fixture = async ({
     publish('session.inbox.enqueued', { sessionID, inboxID: compactionID, item: { type: 'compaction', payload: {}, delivery: 'steer' } }, { created: at });
     if (!executing.has(sessionID)) publish('session.execution.started', { sessionID }, { created: at });
     publish('session.inbox.delivered', { sessionID, inboxID: compactionID }, { created: at });
-    publish('session.compaction.started', { sessionID, reason, recent: '', inputID: compactionID }, { created: at });
+    publish('session.compaction.started', { sessionID, reason, inputID: compactionID }, { created: at });
     publish('session.compaction.delta', { sessionID, text: summaryText }, { created: tick() });
     publish('session.compaction.ended', { sessionID, reason, model: modelRef(selection.model.providerID, selection.model.modelID),
-      text: summaryText, recent: '', cost: 0, tokens: zeroTokens() }, { created: tick() });
+      text: summaryText, cost: 0, tokens: zeroTokens() }, { created: tick() });
     let continuationUserID;
     if (options.autoContinue) {
       continuationUserID = ids.ascending('msg');
@@ -1307,9 +1308,9 @@ export const createLoopbackOpenCodeV2Fixture = async ({
       const text = '## Objective\nFixture compaction.\n\n## Next Move\nWait for the next prompt.';
       publish('session.execution.started', { sessionID });
       publish('session.inbox.delivered', { sessionID, inboxID: id });
-      publish('session.compaction.started', { sessionID, reason: 'manual', recent: '', inputID: id });
+      publish('session.compaction.started', { sessionID, reason: 'manual', inputID: id });
       publish('session.compaction.delta', { sessionID, text });
-      publish('session.compaction.ended', { sessionID, reason: 'manual', model: structuredClone(session.model ?? DEFAULT_MODEL), text, recent: '', cost: 0, tokens: zeroTokens() });
+      publish('session.compaction.ended', { sessionID, reason: 'manual', model: structuredClone(session.model ?? DEFAULT_MODEL), text, cost: 0, tokens: zeroTokens() });
       publish('session.execution.succeeded', { sessionID });
     },
     'POST /api/session/{sessionID}/interrupt': ({ response, sessionID }) => {

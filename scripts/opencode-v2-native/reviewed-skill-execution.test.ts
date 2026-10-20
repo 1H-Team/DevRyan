@@ -52,3 +52,15 @@ test('configured context keeps exact separate instruction bytes and per-location
  appendNativeConfiguredInstructions(f.snapshot,f.root,system);expect(system).toEqual([{type:'text',text:'original'},{type:'text',text:'instructions\n\n'}]);
  expect(()=>appendNativeConfiguredInstructions(f.snapshot,'/unreviewed',system)).toThrow('native_instruction_location_unreviewed');expect(system).toHaveLength(2);
 });
+test('mistyped reviewed IDs and a supplied name resolve only inside the reviewed set; refusals list skill names',async()=>{
+ const f=await fixture();
+ const reviewed='devryan-abe6dadd3fdf0123456789abcdef0123',inserted='devryan-abe6dadd3d3fdf0123456789abcdef0123';
+ const skill=f.snapshot.locations[0].skills[0],snapshot={...f.snapshot,locations:[{...f.snapshot.locations[0],skills:[{...skill,id:reviewed}]}]};
+ const execute=createReviewedSkillExecution({snapshot,withDirectRead:(_invocation,action)=>action});
+ const loaded=await Effect.runPromise(execute({...f.invocation,input:{id:inserted}}));
+ expect(loaded.content).toContain('<skill_content name="Exact Skill">');
+ const byName=await Effect.runPromise(execute({...f.invocation,input:{id:'devryan-ffffffffffffffffffffffffffffffff',name:'Exact Skill'}}));
+ expect(byName.metadata).toEqual({name:'Exact Skill',directory:f.root});
+ await expect(Effect.runPromise(execute({...f.invocation,input:{id:'devryan-ffffffffffffffffffffffffffffffff'}}))).rejects.toThrow('native_skill_unreviewed: no matching skill. Available skills: Exact Skill');
+ await expect(Effect.runPromise(execute({...f.invocation,input:{id:reviewed,path:'/outside'}}))).rejects.toThrow('native_skill_input_invalid');
+});

@@ -99,10 +99,10 @@ const gates = createAdmissionGates(`);
   assert.equal(JSON.stringify(records).includes('fixture.'),false);
   assert.equal(JSON.stringify(records).includes('Owned native primary prompt'),false);
   const trigger=records.find(row=>row.stage==='compaction-trigger'&&row.reason==='manual');assert.ok(trigger?.budget,'Original SDK budget witness missing');
-  assert.equal(trigger.budget.buffer,null);assert.equal(trigger.budget.keep,15000);const window=trigger.budget.limits.input||trigger.budget.limits.context;assert.equal(window,272000);assert.equal(trigger.budget.limits.context,400000);assert.equal(trigger.budget.ceiling,window-Math.max(Math.floor(window*0.1),window>=32000?16000:0));assert.equal(trigger.budget.budget,trigger.budget.ceiling);
+  assert.equal(trigger.budget.buffer,null);assert.equal(trigger.budget.keep,15000);const window=trigger.budget.limits.input||trigger.budget.limits.context;assert.equal(window,272000);assert.equal(trigger.budget.limits.context,400000);assert.equal(trigger.budget.ceiling,window-Math.max(Math.floor(window*0.15),window>=32000?16000:0));assert.equal(trigger.budget.budget,trigger.budget.ceiling);
   assert.equal(trigger.budget.estimateContext,trigger.budget.estimatePrompt.measured+trigger.budget.estimatePrompt.estimated);
   assert.ok(records.some(row=>row.stage==='compaction-outcome'&&row.triggerID===trigger.triggerID&&row.status==='completed'));
-  const ended=records.find(row=>row.stage==='compaction-event'&&row.triggerID===trigger.triggerID&&row.event==='ended');assert.ok(ended?.witness.text.bytes>0);
+  const ended=records.find(row=>row.stage==='compaction-event'&&row.triggerID===trigger.triggerID&&row.event==='ended');assert.ok(ended?.witness.text.bytes>0);assert.equal(ended.witness.native,null);
   const started=records.find(row=>row.stage==='compaction-event'&&row.event==='started'&&row.inputID===trigger.inputID);assert.ok(started,'Actual manual Started witness missing');
   assert.ok(started.sequence<ended.sequence&&started.created<=ended.created);
   assert.equal(diagnosticObservations.some(row=>row.event==='native_observation_gap'),false);
@@ -143,9 +143,9 @@ const gates = createAdmissionGates(`);
     source=source.replace(/from ("file:[^"]+")/g,(_all,specifier:string)=>'from '+JSON.stringify(fileURLToPath(JSON.parse(specifier))));
     const entry = path.join(root, 'fixture.mjs'); await fs.writeFile(entry, source);
     const assetPlugin=await createNativeAssetFixturePlugin(repository);
-    const compactionPlugin: Bun.BunPlugin={name:'pinned-read-only-compaction-observation',setup(builder){builder.onLoad({filter:/instance-1kn978n9\.js$/},async event=>({
+    const compactionPlugin: Bun.BunPlugin={name:'pinned-read-only-compaction-observation',setup(builder){builder.onLoad({filter:/shell-s389npg2\.js$/},async event=>({
       contents:rewriteNativeCompactionObservation(await fs.readFile(event.path,'utf8'),path.join(repository,'packages/web/server/lib/opencode/runtime-host/native-compaction-observation.ts')).contents,loader:'js'}));}};
-    const finalizationPlugin:Bun.BunPlugin={name:'pinned-native-finalization-observation',setup(builder){builder.onLoad({filter:/instance-dy6575tn\.js$/},async event=>({contents:rewriteNativeFinalizationObservation(await fs.readFile(event.path,'utf8'),path.join(repository,'packages/web/server/lib/opencode/runtime-host/native-finalization-observation.ts')).contents,loader:'js'}));}};
+    const finalizationPlugin:Bun.BunPlugin={name:'pinned-native-finalization-observation',setup(builder){builder.onLoad({filter:/shell-4nejsby7\.js$/},async event=>({contents:rewriteNativeFinalizationObservation(await fs.readFile(event.path,'utf8'),path.join(repository,'packages/web/server/lib/opencode/runtime-host/native-finalization-observation.ts')).contents,loader:'js'}));}};
     const enqueueTracePlugin:Bun.BunPlugin={name:'fixture-only-finalization-enqueue-trace',setup(builder){builder.onLoad({filter:/runtime-host\/native-observation\.ts$/},async event=>{
       const original=await fs.readFile(event.path,'utf8');const seam='const queueFinalization=(permit:unknown,observation:Readonly<Record<string,unknown>>,interval:FinalizationInterval)=>{';
       if(original.split(seam).length!==2)throw Error('Native finalization enqueue fixture seam changed');

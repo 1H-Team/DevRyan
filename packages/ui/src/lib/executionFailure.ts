@@ -8,6 +8,7 @@ const explanations: Record<string, string> = {
   execution_owner_unavailable: 'The execution host is unavailable. Reconnect and retry.',
   payload_too_large: 'This request exceeds the execution input limit. Reduce attached context or start a new task.',
   skill_source_mismatch: 'The selected skill changed during preparation. Retry to load its current version.',
+  native_skill_unreviewed: 'This skill isn\'t available in this workspace.',
   storage_unavailable: 'There is not enough available storage to prepare or save this work. Free space and retry.',
   mutation_runtime_missing: 'The paired execution runtime is missing. Repair or update the installation before retrying.',
   mutation_runtime_unsupported: 'This runtime cannot provide the required execution protection. Use a supported runtime.',

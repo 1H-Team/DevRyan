@@ -5,14 +5,15 @@ import {Tool} from '@opencode/core/tool';
 import {Effect,Schema} from 'effect';
 import type {ExecuteOwned,OwnedToolInvocation} from './native-admission-contract.js';
 import type {NativeConfigurationSnapshot} from './native-configuration-snapshot.js';
-import {readReviewedSkillResource,resolveReviewedSkillAlias} from './reviewed-skills.js';
+import {readReviewedSkillResource,resolveReviewedSkillRequest,reviewedSkillNames} from './reviewed-skills.js';
 
 export interface ReviewedSkillExecutionOptions {
   readonly snapshot:NativeConfigurationSnapshot;
   /** Existing direct-admit/direct-finish owner, including actual failure settlement. */
   readonly withDirectRead:(invocation:OwnedToolInvocation,execute:ReturnType<ExecuteOwned>)=>ReturnType<ExecuteOwned>;
 }
-const Input=Schema.Struct({id:Schema.String});
+// `name` is an optional fallback some models send beside a mistyped ID.
+const Input=Schema.Struct({id:Schema.String,name:Schema.optional(Schema.String)});
 const failure=(message:string)=>Effect.fail(new Tool.Error({message}));
 
 /** Actual native formatting over exact reviewed bytes, with no filesystem discovery. */
@@ -24,9 +25,13 @@ export function createReviewedSkillExecution(options:ReviewedSkillExecutionOptio
       yield* invocation.recheckPermit();
       const input=yield* Effect.try({try:()=>Schema.decodeUnknownSync(Input)(invocation.input,{onExcessProperty:'error'}),catch:()=>new Tool.Error({message:'native_skill_input_invalid'})});
       const directory=invocation.location.directory;
-      const id=resolveReviewedSkillAlias(options.snapshot,directory,input.id);
+      const id=resolveReviewedSkillRequest(options.snapshot,directory,input);
       const location=options.snapshot.locations.find(value=>value.directory===directory),skill=location?.skills.find(value=>value.id===id);
-      if(!skill)return yield* failure('native_skill_unreviewed');
+      if(!skill){
+        // List the reviewed names so the model's retry can succeed first time.
+        const names=reviewedSkillNames(options.snapshot,directory);
+        return yield* failure(names.length?`native_skill_unreviewed: no matching skill. Available skills: ${names.join(', ')}`:'native_skill_unreviewed: no skills are available here');
+      }
       // The hashed id stays the permission resource; the human name is display-only.
       yield* invocation.nativeContext.progress({name:skill.name});
       yield* invocation.nativePermissionAssert({action:'skill',resources:[skill.id],save:[skill.id],metadata:{name:skill.name},sessionID:invocation.nativeContext.sessionID,

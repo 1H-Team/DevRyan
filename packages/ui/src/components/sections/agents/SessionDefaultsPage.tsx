@@ -1,5 +1,5 @@
 import { DEFAULT_HELPER_MODEL_SELECTION, createHelperModelRevision, parseHelperModelSelection } from '@/lib/helperModelSelection';
-import { ModelSelector } from './ModelSelector';
+import { ControlledModelPicker, ControlledVariantPicker } from '@/components/chat/ControlledModelPicker';
 import React from 'react';
 import { RiAiAgentLine, RiArrowRightSLine, RiChatHistoryLine } from '@remixicon/react';
 import type { Agent } from '@opencode-ai/sdk/v2';
@@ -32,6 +32,7 @@ import { updateDesktopSettings, saveDesktopSettingsNow } from '@/lib/persistence
 import { getModelDisplayName } from '@/lib/providers/modelIdentity';
 import { filterVisibleAgentSelectorOptions, filterVisibleSettingsAgents, useAgentsStore } from '@/stores/useAgentsStore';
 import { useConfigStore } from '@/stores/useConfigStore';
+import type { ProviderRecoverySelection } from '@/stores/useProviderRecoveryStore';
 import { useUIStore } from '@/stores/useUIStore';
 
 const NewSessionDefaults: React.FC = () => {
@@ -235,17 +236,24 @@ export const HelperModelSettings: React.FC = () => {
   const { t } = useI18n();
   const principal = useAuthPrincipal();
   const selection = useConfigStore((state) => state.settingsHelperModelSelection);
+  const providers = useConfigStore((state) => state.providers);
   const overrideKeys = useConfigStore((state) => state.settingsOverrideKeys);
   const resetOverride = useConfigStore((state) => state.resetPersonalSettingsOverride);
   const isPersonal = principal.scope === 'managed' && principal.role !== 'admin';
   const hasOverride = overrideKeys.includes('helperModelSelection');
   const [saving, setSaving] = React.useState(false);
-  const save = async (providerID: string, modelID: string) => {
+  const chosen = selection ?? DEFAULT_HELPER_MODEL_SELECTION;
+  // The chat pickers' shape; `variant: null` is Default reasoning.
+  const value: ProviderRecoverySelection = { providerId: chosen.providerID, modelId: chosen.modelID, variant: chosen.variant ?? null };
+  const save = async (next: ProviderRecoverySelection) => {
+    if (next.providerId === value.providerId && next.modelId === value.modelId && next.variant === value.variant) return;
     setSaving(true);
     try {
-      const helperModelSelection = { providerID, modelID, revision: createHelperModelRevision() };
+      const helperModelSelection = { providerID: next.providerId, modelID: next.modelId,
+        ...(next.variant ? { variant: next.variant } : {}), revision: createHelperModelRevision() };
       const persisted = parseHelperModelSelection((await saveDesktopSettingsNow({ helperModelSelection }))?.helperModelSelection);
-      if (!persisted || persisted.providerID !== providerID || persisted.modelID !== modelID || persisted.revision !== helperModelSelection.revision) {
+      if (!persisted || persisted.providerID !== helperModelSelection.providerID || persisted.modelID !== helperModelSelection.modelID
+        || persisted.variant !== helperModelSelection.variant || persisted.revision !== helperModelSelection.revision) {
         throw new Error('Helper model save was not acknowledged');
       }
       useConfigStore.setState((state) => ({
@@ -262,21 +270,18 @@ export const HelperModelSettings: React.FC = () => {
     catch { toast.error(t('settings.sessionDefaults.helper.saveFailed')); }
     finally { setSaving(false); }
   };
-  const chosen = selection ?? DEFAULT_HELPER_MODEL_SELECTION;
   return (
     <SettingsDetailSection title={t('settings.sessionDefaults.helper.title')}>
       <div data-helper-model-settings="true" className="flex flex-col gap-2 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <span className="typography-ui-label text-foreground">{t('settings.sessionDefaults.helper.model')}</span>
-          <span className="typography-meta text-muted-foreground">{t('settings.sessionDefaults.helper.description')}</span>
-          <span className="typography-meta text-muted-foreground">{t('settings.sessionDefaults.helper.reasoning')}</span>
-        </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <span className="typography-ui-label text-foreground">{t('settings.sessionDefaults.helper.model')}</span>
+        <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-2">
           {isPersonal ? <>
             <SettingsBadge tone={hasOverride ? 'accent' : 'neutral'}>{t(hasOverride ? 'settings.sessionDefaults.badge.personal' : 'settings.sessionDefaults.badge.inherited')}</SettingsBadge>
             <Button size="xs" variant="outline" disabled={saving || !hasOverride} onClick={() => { void reset(); }}>{t('settings.common.actions.reset')}</Button>
           </> : null}
-          <ModelSelector providerId={chosen.providerID} modelId={chosen.modelID} disabled={saving} onChange={(providerID, modelID) => { void save(providerID, modelID); }} />
+          {/* Same session-free pickers and filtering as the chat input. */}
+          <ControlledModelPicker providers={providers} value={value} disabled={saving} align="end" onChange={(next) => { void save(next); }} />
+          <ControlledVariantPicker providers={providers} value={value} disabled={saving} onChange={(next) => { void save(next); }} />
         </div>
       </div>
     </SettingsDetailSection>

@@ -221,8 +221,9 @@ export async function prepareRuntimeUiProfile({ cell, runtimeRoot, workspace, ta
   assert.equal(targetGeneration, 2);
   assert.equal(cell.transport, 'runtime-fixture');
   const helper = parseHelperModelSelection(helperModelSelection);
+  // This profile qualifies the Default-reasoning helper; a saved helper variant is refused.
   if (helperModelSelection !== undefined && (!helper || helper.providerID !== runtimeUiTuple.providerID
-    || helper.modelID !== runtimeUiTuple.modelID)) throw fail('qa_runtime_fixture_helper_selection_invalid');
+    || helper.modelID !== runtimeUiTuple.modelID || helper.variant !== undefined)) throw fail('qa_runtime_fixture_helper_selection_invalid');
   const layout = runtimeUiBundleLayout(runtimeRoot, startupUpgrade);
   await ownedFutureDirectory(runtimeRoot, runScope); await ownedFutureDirectory(workspace, runScope);
   if (await fs.realpath(workspace) !== workspace || !path.isAbsolute(artifactRoot ?? '')

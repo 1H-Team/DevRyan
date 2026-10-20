@@ -91,6 +91,7 @@ import {
     getCursorAcpBaseModelId,
 } from '@/lib/providers/cursorAcp';
 import {
+    getModelDefaultThinkingLevel,
     getModelVariantDisplayState,
     getModelVariantControlState as getGenericModelVariantControlState,
     getOrderedThinkingVariants,
@@ -3394,7 +3395,10 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         const selectedModel = provider?.models.find(model => model.id === currentModelId);
         const unconfirmed = typeof normalized === 'string' && !Object.hasOwn(selectedModel?.variants ?? {}, normalized);
         if (!levels.length && !fastState?.canToggleFast && !unconfirmed) return null;
-        const display = currentVariant === null ? 'Default' : selected ? formatEffortLabel(selected, { providerId: currentProviderId }) : 'Fast';
+        const defaultLevel = currentVariant === null ? getModelDefaultThinkingLevel(provider, currentModelId) : undefined;
+        const display = currentVariant === null
+            ? defaultLevel ? formatEffortLabel(defaultLevel, { providerId: currentProviderId }) : 'Default'
+            : selected ? formatEffortLabel(selected, { providerId: currentProviderId }) : 'Fast';
         const apply = (updates: { effort?: string; fastEnabled?: boolean }) => {
             const selection = cursor
                 ? resolveCursorAcpVariantSelection(provider, currentModelId, normalized, updates)

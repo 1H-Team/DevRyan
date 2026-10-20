@@ -15,8 +15,8 @@ export const resolveSessionDeleteFailureDescription = (
       .map((failure) => failure.message.trim())
       .filter((message) => !UNKNOWN_FAILURE_MESSAGES.has(message)),
   );
-  if (messages.size !== 1) {
+  if (messages.size === 0) {
     return fallback;
   }
-  return messages.values().next().value ?? fallback;
+  return Array.from(messages).slice(0, 3).join('; ');
 };

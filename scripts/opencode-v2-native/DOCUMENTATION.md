@@ -18,7 +18,7 @@ the canonical selected agent on every invocation, including reviewed setup.
 
 ## Compiled package lanes
 
-`native-stream-continuation.graph.test.ts` runs the real pinned 2.0.32
+`native-stream-continuation.graph.test.ts` runs the real pinned 2.1.0
 publisher, retry loop, Synthetic bus and Step with production constructor
 owners against disposable loopback provider fixtures. Run it with
 `bun test scripts/opencode-v2-native/native-stream-continuation.graph.test.ts`.
@@ -273,8 +273,8 @@ that acceptance.
 for an idle root and child with a busy or retry-suspended grandchild. It retains
 one human queue ID through blocked delivery and an unavailable ancestry wake.
 `native-compaction-checkpoint.graph.test.ts` exercises original committed
-provider-window history across model, provider and configured endpoint changes;
-wrong provenance restores the local transcript without destroying the checkpoint.
+provider-window history across provider and model changes;
+a different provider/model restores the local transcript without destroying the checkpoint.
 It does not claim a physical provider compaction run.
 
 The provider middleware graph checks exact ordered instruction blocks at the
@@ -292,3 +292,13 @@ replace the full compiled package qualification.
 ## Explorer model admission acceptance
 
 `node scripts/opencode-v2-native/package-managed-model-admission-lane.mjs --artifact-root <absolute-native-artifact-directory>` runs two private compiled arms with a synthetic loopback provider and its exact `low`, `high`, `max` reasoning variants. The Low arm requires one completed Explorer child with its real native parent relationship. The Medium arm requires the parent-visible actionable tool error, a correlated and flushed `variant_missing` diagnostic, zero durable tasks and zero native children. Each arm retains the existing compiled artifact/source identity checks and run-root cleanup. `--keep-artifacts` retains evidence explicitly. This narrow acceptance does not replace full package qualification.
+
+Archived-session deletion has a focused compiled qualification:
+`node scripts/verify-archived-session-removal.mjs --artifact-root <compiled-artifact>`.
+It creates three real queued inputs, replaces the controller to establish their
+recovery fences, archives them alongside two held deletion preparations, and
+removes all five through the public client. It asserts no retained input ran,
+all native conversation/input rows disappeared, and an active control session
+and published project file survived. `archived-removal-passed` qualifies this
+lane only; it does not stand in for full package qualification. Inherited bundle
+ownership and invalid checkpoint proofs are covered by the removal owner tests.

@@ -739,10 +739,7 @@ export const createNotificationTriggerRuntime = (deps) => {
       generateHelperText,
       directory,
       sessionID: sessionId,
-      providerID: selection.providerID,
-      modelID: selection.modelID,
-      selectionMode: selection.selectionMode ?? 'configured',
-      selectionRevision: selection.selectionRevision ?? selection.revision,
+      selection: { selectionMode: 'configured', ...selection },
       agent: NOTIFICATION_HELPER_AGENT,
       prompt: buildSummarizationInput(text, summaryLength, 'notification'),
       denyTools: true,
@@ -750,6 +747,10 @@ export const createNotificationTriggerRuntime = (deps) => {
       maxOutputTokens: NOTIFICATION_SUMMARY_MAX_OUTPUT_TOKENS,
     });
     if (!result?.ok || typeof result.value !== 'string' || !result.value.trim()) {
+      // Bounded identifiers only: never the prompt, the summary or provider text.
+      console.warn('[Notification] Helper summary failed:', JSON.stringify({ reason: result?.reason || 'no_output',
+        status: Number.isFinite(result?.status) ? result.status : undefined,
+        code: typeof result?.code === 'string' && /^native_[a-z0-9_]{1,96}$/.test(result.code) ? result.code : undefined }));
       throw new Error(`Notification summary failed: ${result?.reason || 'no output'}`);
     }
     return result.value;

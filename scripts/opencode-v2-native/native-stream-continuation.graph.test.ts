@@ -6,7 +6,7 @@ import {createNativeAssetFixturePlugin,writeNativeFixtureOutputs} from './native
 
 const repository=path.resolve(import.meta.dirname,'../..');
 const cases:Array<{scenario:string;slim:boolean;compiled:boolean;setter?:string}>=[...['continue','exhausted','plain-retry','stop-publication','missing-attempt'].map(scenario=>({scenario,slim:false,compiled:false})),{scenario:'continue',slim:true,compiled:false},{scenario:'exhausted',slim:true,compiled:false},{scenario:'continue',slim:false,compiled:true},{scenario:'missing-attempt',slim:false,compiled:true},{scenario:'silence',slim:false,compiled:false},{scenario:'silence',slim:false,compiled:true},{scenario:'denied-tool',slim:false,compiled:false},{scenario:'denied-tool',slim:false,compiled:true},...['text-start','reasoning-start','tool-input-start','tool-input-error','tool-call'].map(setter=>({scenario:'setter-'+setter,slim:false,compiled:process.env.DEVRYAN_NATIVE_STREAM_COMPILED_SETTERS==='1',setter})),...['late-provider-error','late-content-filter'].flatMap(scenario=>[false,true].map(compiled=>({scenario,slim:false,compiled})))];
-for(const {scenario,slim,compiled,setter} of cases)test('pinned 2.0.32 native stream graph '+scenario+' Slim='+slim+' compiled='+compiled,async()=>{
+for(const {scenario,slim,compiled,setter} of cases)test('pinned 2.1.0 native stream graph '+scenario+' Slim='+slim+' compiled='+compiled,async()=>{
  const root=await fs.mkdtemp(path.join(repository,'.cache/v2-validation/native-stream-'));let child:ReturnType<typeof Bun.spawn>|undefined;
  try{
   const sourcePath=path.join(repository,'scripts/opencode-v2-native/controller-integrations.graph-fixture.mjs');let source=await fs.readFile(sourcePath,'utf8');
@@ -25,7 +25,7 @@ import {primaryStepOverride} from ${JSON.stringify(path.join(repository,'package
 `+source;
   replace('let initialPairReleased=false;','let initialPairReleased=true;');
   replace('let nativeURL, ready = false, handler, map,',`let primaryRuntime,realPrimaryStep,streamOwner,nativeStore,nativeExecution,slimOwner,slimContext;const published=[],streamTransitions=[],bodyTimings=[],transportFailures=[],nativeRetryProposals=[],outputFlags=[];const streamRefusals=[];let primaryRequests=0;let nativeURL, ready = false, handler, map,`);
-  replace('const options = { database:',"const options = { app:{name:'DevRyan native stream graph',version:'2.0.32',channel:'fixture'},database:");
+  replace('const options = { database:',"const options = { app:{name:'DevRyan native stream graph',version:'2.1.0',channel:'fixture'},database:");
   if(scenario==='denied-tool'){
    replace('let result, primaryFailure;','let result, primaryFailure, client;');
    replace('  const client = createOpenCodeClient(', '  client = createOpenCodeClient(');

@@ -5,12 +5,18 @@ import { withDom, type HostElement } from '@/components/bots/chat/botMountedDom'
 import type { HelperModelSelection } from '@/lib/helperModelSelection';
 
 const initial = {providerID:'helper',modelID:'initial',revision:'original'};
-const config = create<{settingsHelperModelSelection:HelperModelSelection;settingsOverrideKeys:string[];resetPersonalSettingsOverride:()=>Promise<void>}>(() => ({settingsHelperModelSelection:initial,settingsOverrideKeys:[],resetPersonalSettingsOverride:async()=>{}}));
+const config = create<{settingsHelperModelSelection:HelperModelSelection;settingsOverrideKeys:string[];providers:unknown[];resetPersonalSettingsOverride:()=>Promise<void>}>(() => ({settingsHelperModelSelection:initial,settingsOverrideKeys:[],providers:[],resetPersonalSettingsOverride:async()=>{}}));
 mock.module('@/stores/useConfigStore',()=>({useConfigStore:config}));
 const auth = await import('@/lib/authSession');
 mock.module('@/lib/authSession',()=>({...auth,useAuthPrincipal:()=>({scope:'local-admin',role:'admin'})}));
 mock.module('@/lib/i18n',()=>({useI18n:()=>({t:(key:string)=>key})}));
-mock.module('./ModelSelector',()=>({ModelSelector:({disabled,onChange}:{disabled:boolean;onChange:(providerID:string,modelID:string)=>void})=><button disabled={disabled} onClick={()=>onChange('helper','chosen')}>Choose helper</button>}));
+type PickerSelection={providerId:string;modelId:string;variant:string|null};
+type PickerProps={disabled:boolean;value:PickerSelection;onChange:(selection:PickerSelection)=>void};
+const pickerValues:PickerSelection[]=[];
+mock.module('@/components/chat/ControlledModelPicker',()=>({
+ ControlledModelPicker:({disabled,value,onChange}:PickerProps)=>{pickerValues.push(value);return <button disabled={disabled} onClick={()=>onChange({providerId:'helper',modelId:'chosen',variant:null})}>Choose helper</button>;},
+ ControlledVariantPicker:({disabled,value,onChange}:PickerProps)=><button disabled={disabled} onClick={()=>onChange({...value,variant:'high'})}>Choose reasoning</button>,
+}));
 const errors:string[]=[];
 const ui = await import('@/components/ui');
 mock.module('@/components/ui',()=>({...ui,toast:{...ui.toast,error:(message:string)=>errors.push(message)}}));
@@ -22,7 +28,7 @@ const cryptoDescriptor=Object.getOwnPropertyDescriptor(globalThis,'crypto');
 let resolveResponse:(response:Response)=>void;
 let requests:Array<{body:{helperModelSelection:HelperModelSelection};method:string;csrf:string|null}>;
 beforeEach(()=>{
- config.setState({settingsHelperModelSelection:initial,settingsOverrideKeys:[]});errors.length=0;requests=[];
+ config.setState({settingsHelperModelSelection:initial,settingsOverrideKeys:[],providers:[]});errors.length=0;requests=[];pickerValues.length=0;
  Object.defineProperty(globalThis,'crypto',{configurable:true,value:undefined});
  globalThis.fetch=Object.assign(mock(async(_input:RequestInfo|URL,init?:RequestInit)=>{
   requests.push({body:JSON.parse(String(init?.body)),method:init?.method??'GET',csrf:new Headers(init?.headers).get('x-devryan-csrf')});
@@ -53,5 +59,24 @@ test('UUID failure reports through the save finally owner without HTTP or a loca
   await act(async()=>root.render(<HelperModelSettings/>));await act(async()=>selector(container)?.click());
   expect(requests).toEqual([]);expect(selector(container)?.hasAttribute('disabled')).toBe(false);
   expect(config.getState().settingsHelperModelSelection).toEqual(initial);expect(errors).toEqual(['settings.sessionDefaults.helper.saveFailed']);
+ }finally{await act(async()=>root.unmount());}
+}));
+const reasoning=(container:HostElement)=>container.find(node=>node.tagName==='BUTTON'&&node.textContent==='Choose reasoning');
+test('a chosen reasoning level is saved with the model and acknowledged exactly; Default stays variant-free',async()=>withDom(async container=>{
+ const {createRoot}=await import('react-dom/client');const root=createRoot(container as unknown as Element);
+ try{
+  await act(async()=>root.render(<HelperModelSettings/>));
+  expect(pickerValues.at(-1)).toEqual({providerId:'helper',modelId:'initial',variant:null});
+  await act(async()=>selector(container)?.click());
+  expect(Object.hasOwn(requests[0].body.helperModelSelection,'variant')).toBe(false);
+  await act(async()=>{resolveResponse(Response.json({helperModelSelection:requests[0].body.helperModelSelection}));});
+  await act(async()=>reasoning(container)?.click());
+  const selection=requests[1].body.helperModelSelection;expect(selection).toMatchObject({providerID:'helper',modelID:'chosen',variant:'high'});
+  await act(async()=>{resolveResponse(Response.json({helperModelSelection:{...selection,variant:'low'}}));});
+  expect(errors).toEqual(['settings.sessionDefaults.helper.saveFailed']);expect(Object.hasOwn(config.getState().settingsHelperModelSelection,'variant')).toBe(false);
+  await act(async()=>reasoning(container)?.click());
+  const retried=requests[2].body.helperModelSelection;
+  await act(async()=>{resolveResponse(Response.json({helperModelSelection:retried}));});
+  expect(config.getState().settingsHelperModelSelection).toEqual(retried);expect(pickerValues.at(-1)).toEqual({providerId:'helper',modelId:'chosen',variant:'high'});
  }finally{await act(async()=>root.unmount());}
 }));

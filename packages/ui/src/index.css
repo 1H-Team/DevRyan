@@ -125,6 +125,50 @@ button,
   }
 }
 
+/* Question card step change: enter-only slide toward the travel direction. */
+@keyframes oc-question-step-forward {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes oc-question-step-back {
+  from {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+[data-question-step="forward"],
+[data-question-step="back"] {
+  animation-duration: 200ms;
+  animation-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1);
+  animation-fill-mode: backwards;
+}
+
+[data-question-step="forward"] {
+  animation-name: oc-question-step-forward;
+}
+
+[data-question-step="back"] {
+  animation-name: oc-question-step-back;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-question-step] {
+    animation: none !important;
+  }
+}
+
 /* Suppress WebKit-specific hover/focus adornments on the chat textarea */
 textarea[data-chat-input="true"] {
   -webkit-appearance: none;

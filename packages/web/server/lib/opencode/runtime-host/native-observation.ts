@@ -293,7 +293,7 @@ export function createNativeObservation(options:{readonly controllerInstanceID:s
       sessionID:raw.data.sessionID,directory:raw.location.directory,triggerID:scope?.triggerID??null,eventID:raw.id,sequence:raw.durable.seq,created:raw.created,
       event:raw.type==='session.compaction.started'?'started':raw.type==='session.compaction.ended'?'ended':'failed',reason:raw.data.reason,inputID,
       messageID:raw.type==='session.compaction.ended'?scope?.messageID??null:null,
-      witness:{recent:'recent' in raw.data?witness(raw.data.recent):null,text:'text' in raw.data?witness(raw.data.text):null,
+      witness:{native:'native' in raw.data?witness(raw.data.native):null,recent:'recent' in raw.data?witness(raw.data.recent):null,text:'text' in raw.data?witness(raw.data.text):null,
         providerState:'providerState' in raw.data?witness(raw.data.providerState):null,providerContext:'providerContext' in raw.data?witness(raw.data.providerContext):null}});
   }).pipe(Effect.catchCause(()=>Effect.logWarning('native_observation_unavailable',{stage:'committed-event'})));
   return {overrides:[requests,compactions,...continuation?[continuation.override]:[]],

@@ -41,6 +41,15 @@ describe('managed Agent settings presentation', () => {
     expect(sessionDefaultsSource).not.toContain('resetAgentModelSelection');
   });
 
+  test('the Helper Model uses the chat input pickers with a reasoning level and no explanatory text', () => {
+    const helperSource = sessionDefaultsSource.slice(sessionDefaultsSource.indexOf('export const HelperModelSettings'), sessionDefaultsSource.indexOf('type AgentModelRow'));
+    expect(helperSource).toContain('<ControlledModelPicker');
+    expect(helperSource).toContain('<ControlledVariantPicker');
+    expect(helperSource).not.toContain('ModelSelector');
+    expect(helperSource).not.toContain('settings.sessionDefaults.helper.description');
+    expect(helperSource).not.toContain('settings.sessionDefaults.helper.reasoning');
+  });
+
   test('offers a host-only backup model row that personal editors see read-only', () => {
     expect(pageSource).toContain("t('settings.agents.page.field.backupModel')");
     expect(pageSource).toContain("t('settings.agents.page.field.backupModelTooltip')");

@@ -241,7 +241,7 @@ describe('session sidebar archive reflow animation wiring', () => {
     expect(source).toContain("display: 'grid'");
     expect(source).toContain('minHeight: 0');
     expect(itemSource).toContain('data-session-leading-rail');
-    expect(itemSource).toContain('grid-cols-[minmax(0,4fr)_minmax(0,7fr)_2px_minmax(0,7fr)_1px]');
+    expect(itemSource).toContain('absolute right-full top-1/2 mr-1.5 flex h-4');
     expect(itemSource).not.toContain('left-[-');
     expect(source).not.toContain('SESSION_LEADING_INDICATOR_CLIP_GUTTER_PX');
     expect(source).not.toContain('marginLeft');
@@ -249,10 +249,14 @@ describe('session sidebar archive reflow animation wiring', () => {
     expect(source).not.toContain('scale');
   });
 
-  test('keeps status left of chevron and chevron left of the session title without shifting titles', () => {
+  test('keeps status next to the title and swaps it for the parent chevron on hover without shifting titles', () => {
     const testDir = dirname(fileURLToPath(import.meta.url));
     const itemSource = readFileSync(join(testDir, 'SessionNodeItem.tsx'), 'utf8');
     const motionSource = readFileSync(join(testDir, 'SessionSidebarMotionRow.tsx'), 'utf8');
+    const statusSlotStart = itemSource.indexOf('const leadingStatusSlot = ');
+    const statusSlotEnd = itemSource.indexOf('const leadingRailSlotContent', statusSlotStart);
+    const statusSlotSource = itemSource.slice(statusSlotStart, statusSlotEnd);
+    const parentStatusSlotSource = statusSlotSource.slice(0, statusSlotSource.indexOf(') : ('));
     const leadingRailStart = itemSource.indexOf('const leadingRail = (');
     const leadingRailEnd = itemSource.indexOf('const streamingIndicator', leadingRailStart);
     const leadingRailSource = itemSource.slice(leadingRailStart, leadingRailEnd);
@@ -270,14 +274,26 @@ describe('session sidebar archive reflow animation wiring', () => {
     expect(leadingRailEnd).toBeGreaterThan(leadingRailStart);
     expect(leadingRailSource).toContain('absolute right-full');
     expect(leadingRailSource).toContain('leadingRailLayout.slots.map');
-    expect(leadingRailSource).toContain("index === 2 && 'col-start-4'");
-    expect(leadingRailSource).toContain("slot === 'status'");
+    expect(statusSlotStart).toBeGreaterThan(-1);
+    expect(statusSlotSource).toContain('leadingRailLayout.hasChildren');
+    // Parent rows draw the dot and the chevron stacked in the same slot.
+    expect(parentStatusSlotSource).toContain('{leadingStatusMarker}');
+    expect(parentStatusSlotSource).toContain('renderSubsessionChevron(');
+    // The hover/focus swap only applies to pointer-hover devices.
+    expect(parentStatusSlotSource).toContain('[:root:not(.mobile-pointer)_&]:group-hover/session-row:hidden');
+    expect(parentStatusSlotSource).toContain('[:root:not(.mobile-pointer)_&]:group-focus-within/session-row:hidden');
+    expect(parentStatusSlotSource).toContain('[:root:not(.mobile-pointer)_&]:group-hover/session-row:inline-flex');
+    expect(parentStatusSlotSource).toContain('[:root:not(.mobile-pointer)_&]:group-focus-within/session-row:inline-flex');
+    expect(itemSource).toContain("'group group/session-row relative my-0.5 flex items-center rounded-sm px-1.5 py-1'");
+    // Touch devices keep a separate chevron after the status slot.
+    expect(leadingRailSource).toContain('relative ml-0.5 hidden h-3.5 w-3.5 [.mobile-pointer_&]:inline-flex');
+    expect(leadingRailSource).toContain("renderSubsessionChevron('absolute left-1/2 top-1/2 inline-flex -translate-x-1/2 -translate-y-1/2')");
+    expect(leadingRailSource.indexOf('leadingRailLayout.slots.map')).toBeLessThan(
+      leadingRailSource.indexOf("[.mobile-pointer_&]:inline-flex"),
+    );
     expect(leadingRailSource).not.toContain('justify-between');
     expect(itemSource).not.toContain('<span className="h-4 w-9 flex-shrink-0" aria-hidden="true" />');
-    expect(itemSource).toContain('status: leadingStatusMarker');
-    expect(itemSource.indexOf('status: leadingStatusMarker')).toBeLessThan(
-      itemSource.indexOf('chevron: subsessionChevron'),
-    );
+    expect(itemSource).toContain('status: leadingStatusSlot');
     expect(leadingRailRenderIndex).toBeGreaterThan(leadingRailEnd);
     expect(rowButtonStart).toBeGreaterThan(-1);
     expect(leadingRailRenderIndex).toBeLessThan(rowButtonStart);
@@ -285,7 +301,7 @@ describe('session sidebar archive reflow animation wiring', () => {
     expect(rowButtonSource).toContain('overflow-hidden rounded-sm text-left');
     expect(rowButtonSource).not.toContain('pl-9');
     expect(rowButtonSource).not.toContain('{leadingStatusSlot}');
-    expect(rowButtonSource).not.toContain('{subsessionChevron}');
+    expect(rowButtonSource).not.toContain('renderSubsessionChevron');
     expect(titleRowStart).toBeGreaterThan(-1);
     expect(agentIconIndex).toBeGreaterThan(-1);
     expect(agentIconIndex).toBeLessThan(titleIndex);

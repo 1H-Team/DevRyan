@@ -529,3 +529,22 @@ test('the loader verifies itself without a hand-off and fails closed on a mismat
     verified:{descriptor:{bundleID:'selected'},phase:'resume',integrity:'verified'}})).rejects.toMatchObject({code:'runtime_bundle_reconciliation_required'});
   expect(verify).not.toHaveBeenCalled();
 });
+
+test('verified inherited removal recovery runs before fresh admission opens',async()=>{
+ const events=[];
+ await fixture(async({owner,runtime,root})=>{
+  let launch,exited=false;
+  transport.create.mockImplementation(async options=>{launch=options;return {bound:{catalog:{asserted:true}},hasExited:()=>exited,
+   call:async input=>{events.push(input.action);return null;},close:async()=>{exited=true;await launch.afterExit({});}};});
+  runtime.recoverNativeRemovalOwnership=vi.fn(async input=>{
+   expect(input).toEqual({directory:root,ownerID:'fixture',checkpointID:'settled-source',sourceOID:'a'.repeat(40)});
+   events.push('inherit');return 2;
+  });
+  await owner.start();
+  expect(events.indexOf('inherit')).toBeGreaterThan(events.indexOf('open-recovery'));
+  expect(events.indexOf('inherit')).toBeLessThan(events.indexOf('open'));
+  await owner.close();
+ },undefined,async(options,root)=>{
+  options.bundle.verify=async()=>({removalInheritance:{checkpointID:'settled-source',refs:[{directory:root,ref:'refs/devryan/state',oid:'a'.repeat(40)}]}});
+ });
+});

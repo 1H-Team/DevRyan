@@ -956,6 +956,49 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     for await (const { value } of repo.db.entries('native-removals')) if (value.state !== 'completed') result.push(value);
     return result;
   });
+  // Constructor recovery uses the immutable ref retained by the verified clone.
+  // A foreign live intent is never sufficient evidence for taking ownership.
+  const recoverNativeRemovalOwnership = input => locked(input.directory, async repo => {
+    if (!validID(input.ownerID) || !validID(input.checkpointID) || !/^[a-f0-9]{40,64}$/.test(input.sourceOID ?? '')
+      || input.sourceOwnerID !== undefined && !validID(input.sourceOwnerID)) throw changeError('native_removal_inheritance_invalid');
+    const ref = `refs/devryan/migration/${input.checkpointID}/state`;
+    const oid = (await git(repo.root, ['--git-dir', repo.gitDir, 'rev-parse', '--verify', ref])).toString().trim();
+    if (oid !== input.sourceOID) throw changeError('native_removal_inheritance_invalid');
+    const inherited = [], released = new Map();
+    for await (const { key: intentKey, value: intent } of repo.db.entries('native-removals')) {
+      if (intent.state === 'completed' || intent.ownerID === input.ownerID) continue;
+      let source;
+      try { source = JSON.parse((await git(repo.root, ['--git-dir', repo.gitDir, 'show', `${ref}:${intentKey}`])).toString()); }
+      catch { throw changeError('native_removal_inheritance_invalid'); }
+      // Relocation changes only directory fields; every terminal decision stays exact.
+      if (!source || !Array.isArray(source.members)) throw changeError('native_removal_inheritance_invalid');
+      source.directory = input.directory;
+      source.members = source.members.map(member => ({ ...member, directory: input.directory }));
+      if (JSON.stringify(source) !== JSON.stringify(intent) || !intent.members.length
+        || !intent.members.some(member => member.id === intent.rootSessionID)) throw changeError('native_removal_inheritance_invalid');
+      // A settled previous controller may have left its own plain admission
+      // hold beside the removal hold; its restart would have released it, so
+      // adoption releases it too. Any other hold still refuses inheritance.
+      const settledOwners = new Set([intent.ownerID, input.sourceOwnerID].filter(Boolean));
+      const isRemovalHold = hold => hold.removalID === intent.id && hold.ownerID === `native-removal:${intent.id}`;
+      const isSettledHold = hold => settledOwners.has(hold.ownerID) && validID(hold.id)
+        && Object.keys(hold).every(name => name === 'id' || name === 'ownerID');
+      for (const member of intent.members) {
+        const session = released.get(member.id) ?? await repo.db.get(key('sessions', member.id));
+        const holds = session?.nativeAdmission?.holds;
+        if (!session || session.pending || session.generation !== member.generation
+          || (session.parentID ?? null) !== member.parentID || !holds?.some(isRemovalHold)
+          || holds.some(hold => !isRemovalHold(hold) && !isSettledHold(hold))) throw changeError('native_removal_inheritance_invalid');
+        const kept = holds.filter(hold => !isSettledHold(hold));
+        if (kept.length !== holds.length) released.set(member.id, { ...session,
+          nativeAdmission: { ...session.nativeAdmission, revision: session.nativeAdmission.revision + 1, holds: kept } });
+      }
+      inherited.push({ intentKey, intent });
+    }
+    for (const [sessionID, session] of released) repo.db.set(key('sessions', sessionID), session);
+    for (const { intentKey, intent } of inherited) repo.db.set(intentKey, { ...intent, ownerID: input.ownerID });
+    return inherited.length;
+  });
   const commitNativeRemoval = input => locked(input.directory, async repo => {
     const intent = await repo.db.get(key('native-removals', input.intentID));
     if (!intent || intent.ownerID !== input.ownerID || intent.state !== 'preparing') throw changeError('native_removal_state_conflict');
@@ -2223,7 +2266,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   };
   const runtime = { projectDirectories, projectDirectory: (input) => locked(input.directory, (repo) => repo.directory),
     assertAdmission, registerNativeSession, nativeAdmissionState, holdNativeAdmission, releaseNativeAdmission, recoverNativeTransientHolds,
-    beginNativeRemoval, abandonQuietNativeRemoval, nativeRetentionHolds, commitNativeRemoval, prepareNativeRemovalMembers: input => commitNativeRemoval({...input,prepareOnly:true}), nativeRemoval, nativeRemovals, stageNativeRemovalMember, acknowledgeNativeRemoval, completeNativeRemoval,
+    beginNativeRemoval, recoverNativeRemovalOwnership, abandonQuietNativeRemoval, nativeRetentionHolds, commitNativeRemoval, prepareNativeRemovalMembers: input => commitNativeRemoval({...input,prepareOnly:true}), nativeRemoval, nativeRemovals, stageNativeRemovalMember, acknowledgeNativeRemoval, completeNativeRemoval,
     deferNativeContinuation, nativeContinuations, nativeShellContinuations, nativeExecutionContinuations, nativeTransactionHolds, acknowledgeNativeContinuation,
     bindNativeShellJob, nativeShellJob, bindNativeShellNotification, acknowledgeNativeShellCompletion,
     registerPrompt, registerChild, reserve, prepare, warm, begin, admitDirect, finishDirect, claimLease, finish, cleanupLease, executionReceipt, aliasCalls, prepareRevert, prepareRedo, prepareFileRestore, settleRevert, leaseForCall,

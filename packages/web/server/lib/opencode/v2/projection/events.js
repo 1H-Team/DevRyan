@@ -1278,7 +1278,7 @@ export function createEventProjector(options = {}) {
       return;
     }
     const part = kind === 'reasoning'
-      ? reasoningPart(state, assistant, partID, '', reasoningStart(assistant, partID, ctx.created), undefined, data.state)
+      ? reasoningPart(state, assistant, partID, '', reasoningStart(assistant, partID, ctx.created), undefined, data.native ?? data.state)
       : textPart(state, assistant, partID, '', undefined, undefined);
     announcePart(ctx, state, assistant, part);
   };
@@ -1309,8 +1309,8 @@ export function createEventProjector(options = {}) {
     const partID = contentPartID(kind, messageID, ordinalOf(data));
     const text = typeof data.text === 'string' ? data.text : '';
     const part = kind === 'reasoning'
-      ? reasoningPart(state, assistant, partID, text, reasoningStart(assistant, partID, ctx.created), ctx.created, data.state)
-      : textPart(state, assistant, partID, text, ctx.created, data.state);
+      ? reasoningPart(state, assistant, partID, text, reasoningStart(assistant, partID, ctx.created), ctx.created, data.native ?? data.state)
+      : textPart(state, assistant, partID, text, ctx.created, data.native ?? data.state);
     assistant.announced.add(partID);
     emit(ctx, 'message.part.updated', { sessionID: state.sessionID, part, time: ctx.created });
   };
@@ -1349,7 +1349,7 @@ export function createEventProjector(options = {}) {
   onTool('session.tool.called', (ctx, state, data, assistant, tool) => {
     tool.state = { status: 'running', input: isRecord(data.input) ? data.input : {} };
     tool.time = { ...tool.time, ran: ctx.created };
-    if (isRecord(data.state)) tool.providerState = data.state;
+    if (isRecord(data.native ?? data.state)) tool.providerState = data.native ?? data.state;
     emitTool(ctx, state, assistant, tool);
   });
 

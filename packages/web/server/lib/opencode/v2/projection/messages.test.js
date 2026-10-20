@@ -1,3 +1,4 @@
+import {SessionLegacy} from '@opencode/schema/session-legacy';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -855,4 +856,10 @@ it.each([['exited', 2, 'error'], ['timeout', undefined, 'error'], ['killed', und
   expect(shell.info.finish).toBe(finish); expect(shell.info.error).toBeDefined();
   expect(shell.parts[0].state).toMatchObject({ status: 'error' });
   expect(shell.parts[0].state.error).toContain('captured fixture output');
+});
+
+
+it('projects 2.1.0 native message fields identically to retained captured messages', () => {
+  const rows=rest('01-two-step-tool-turn.json','session.messages.asc').data;
+  expect(project(SessionLegacy.messages(rows))).toEqual(project(rows));
 });

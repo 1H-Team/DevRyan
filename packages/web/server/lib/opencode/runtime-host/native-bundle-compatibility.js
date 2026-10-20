@@ -13,6 +13,7 @@ export const REVIEWED_NATIVE_CLONE_RELEASES = Object.freeze({
   '2.0.26': '9f5a227676de99f375459ba7b5be9f78a9c215ca62e8d7ffe9cfe920b24ea808',
   '2.0.30': 'fe5b54bf9ab3a5e3d1f5bc952bdff00f81d8ff6635c9ca83fef1c669af4f47e1',
   '2.0.32': '2d0c5bc5ae8f26bb22377f01d6a45584020307731dbb19ea2123af43a9e89c9b',
+  '2.1.0': 'd007cf3b957d5efdd8e9930f7e289d99cf48167bae756df25dea7927640519d6',
 });
 // The later 2.0.26 build adds observation transforms without changing database layout.
 export const REVIEWED_NATIVE_CLONE_REBUILDS = Object.freeze({
@@ -33,9 +34,10 @@ export function assertReviewedNativeCoreDigest(manifest, target = TARGET_OPENCOD
 // 2.0.26 adds the data-only migration 20261007190000_azure_cli_external_credential,
 // whose `external` credential values older releases cannot decode. The DDL layout
 // is unchanged, so a clone never moves a database to a lower migration level.
-export const REVIEWED_NATIVE_CLONE_MIGRATION_LEVEL = Object.freeze({ '2.0.20': 0, '2.0.24': 0, '2.0.26': 1, '2.0.30': 2, '2.0.32': 2 });
+export const REVIEWED_NATIVE_CLONE_MIGRATION_LEVEL = Object.freeze({ '2.0.20': 0, '2.0.24': 0, '2.0.26': 1, '2.0.30': 2, '2.0.32': 2, '2.1.0': 3 });
 // 2.0.30 adds project.time_archived; its migrated database cannot clone backwards.
-// 2.0.32 adds no migration, so 2.0.30 and 2.0.32 databases clone both ways.
+// 2.1.0 writes native compaction windows and drops required legacy message fields.
+// Its logical level 3 prevents clones into older readers despite identical DDL.
 // A layout is the database's structure (`inspectNativeCloneLayout`), not its DDL
 // text: a database created by an earlier release and migrated in place stores
 // `ALTER TABLE … ADD` text with the column last, a fresh one has it inside
@@ -72,6 +74,7 @@ const REVIEWED_SOURCE_LAYOUTS = Object.freeze({
   0: Object.freeze({ legacy: REVIEWED_NATIVE_CLONE_LAYOUT, 'fresh-install': REVIEWED_NATIVE_FRESH_CLONE_LAYOUT }),
   1: Object.freeze({ legacy: REVIEWED_NATIVE_CLONE_LAYOUT, 'fresh-install': REVIEWED_NATIVE_FRESH_CLONE_LAYOUT }),
   2: Object.freeze({ legacy: REVIEWED_NATIVE_PROJECT_ARCHIVE_CLONE_LAYOUT, 'fresh-install': REVIEWED_NATIVE_PROJECT_ARCHIVE_FRESH_CLONE_LAYOUT }),
+  3: Object.freeze({ legacy: REVIEWED_NATIVE_PROJECT_ARCHIVE_CLONE_LAYOUT, 'fresh-install': REVIEWED_NATIVE_PROJECT_ARCHIVE_FRESH_CLONE_LAYOUT }),
 });
 /** The reviewed `kind` ('legacy' | 'fresh-install') layout a source release's database has. */
 export const reviewedNativeCloneSourceLayout = (version, kind) => Object.hasOwn(REVIEWED_NATIVE_CLONE_MIGRATION_LEVEL, version)

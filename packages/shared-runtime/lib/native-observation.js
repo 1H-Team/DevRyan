@@ -108,7 +108,7 @@ function parse(value, journal) {
       if(value.triggerID!==null&&!id(value.triggerID)||!id(value.eventID)||!Number.isSafeInteger(value.sequence)||value.sequence<1||!number(value.created)
         ||!['started','ended','failed'].includes(value.event)||!['auto','manual'].includes(value.reason)
         ||[value.inputID,value.messageID].some(item=>item!==null&&!id(item))||(value.event==='ended')!==(value.messageID!==null)||value.triggerID===null&&(value.reason!=='manual'||value.inputID===null))throw failure();
-      exact(value.witness,['recent','text','providerState','providerContext']);
+      exact(value.witness,['recent','text','providerState','providerContext'],['native']);
       for(const item of Object.values(value.witness)){if(item===null)continue;exact(item,['sha256','bytes']);if(!hash(item.sha256)||!Number.isSafeInteger(item.bytes)||item.bytes<0)throw failure();}
       break;
     default: throw failure();

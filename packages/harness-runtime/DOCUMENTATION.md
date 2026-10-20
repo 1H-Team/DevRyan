@@ -289,7 +289,7 @@ cancellation across web/Electron. OpenAI defaults to observe; Anthropic has a pr
 safety, protocol, storage, rollout and rollback contracts are documented in
 [`docs/PROVIDER_RECOVERY.md`](../../docs/PROVIDER_RECOVERY.md).
 
-For the exact pinned native 2.0.32 controller (and retained 2.0.26/2.0.30), constructor-only
+For the exact pinned native 2.1.0 controller (and retained 2.0.26/2.0.30), constructor-only
 `nativeStreamContinuation` owns interrupted-stream reserve, canonical Synthetic
 binding, successor preparation/send and Step adoption. Pending plus consumed
 reservations never exceed two per original objective; preparation consumes the
@@ -404,3 +404,14 @@ callers follow the actual lock holder's progress, and mandatory commit I/O settl
 before ownership is released.
 
 Read-only lease and outcome queries retain the owner lock and durable recovery checks, but do not stage unchanged metadata or rebuild the Git index. `lock_wait`, `ledger_open`, `ledger_recovery`, `ledger_transaction`, and `ledger_commit` diagnostics identify work inside the lock; they are journaled only when a phase fails or takes at least 250 ms, because every tool call takes this lock. Every confined worker receives its own scratch `HOME`, temporary paths, and execution-worker marker, including Cursor and read-only provider workers. On macOS each execution also gets a short private runtime directory, exported as `XDG_RUNTIME_DIR` and spelled `/tmp/dr-<uid>/<lease digest>`, because the scratch path exceeds the 104-byte Unix socket limit. The agent-browser daemon socket therefore fits with its full lease session name (budget: 26 bytes for the directory). The profile lets the execution create and reach sockets only there, plus the system resolver. Cleanup removes it, and host recovery sweeps orphans older than a day. The parent must be a real directory owned by the user with mode 0700, or preparation fails closed. Every session-scoped execution also gets `DEVRYAN_SESSION_TMP`, `context-cache/session-tmp/<session digest>`: unlike the per-call scratch it survives between the session's calls, so logs and reproduction output remain readable. Preparation never follows a link planted at either level, and directories idle for a week are swept at most hourly per project. `/tmp` itself stays unwritable. Session-scoped executions on macOS can also run headless Chromium (a project's Playwright check): `PLAYWRIGHT_BROWSERS_PATH` names the host's `~/Library/Caches/ms-playwright` (read and execute only; an explicit host value is kept), a `NODE_OPTIONS` preload (`$HOME/.devryan-node-spawn.cjs`) restores the verified spawn adapter that macOS strips when `npm run` passes through `/usr/bin/env` and `/bin/sh`, and the profile allows exactly one mach lookup, `org.chromium.Chromium.MachPortRendezvousServer.<pid>`, which Chromium's helpers need for their IPC ports. Provider transports never get these. `DEVRYAN_WORKER_BROWSERS=0` restores the previous environment and profile exactly. A detached child cannot get its own process group inside the boundary, so a starter that stops it with `process.kill(-pid)` (Playwright's `webServer`, bounded test wrappers) used to signal nothing and wait for an exit that never came. The preload names the group of each detached child in `DEVRYAN_SPAWN_GROUP` and delivers a group signal through the verified launcher's `--signal-group` mode; the spawn adapter does the same for processes that have it. Signals stay inside the execution's own sandbox. `DEVRYAN_WORKER_GROUP_SIGNALS=0` turns this off in the preload and the adapter. WebKit, Firefox, the Google Chrome channel, headed mode and `chromiumSandbox: true` remain unsupported.
+
+`SessionMutationRuntime.recoverNativeRemovalOwnership` is constructor-only clone
+recovery. Its checkpoint ID and source object ID come from complete selected
+bundle verification, not HTTP input. Under the ledger lock it verifies the
+preserved migration ref, unchanged inherited removal decisions, member
+generations and removal holds, then atomically adopts unfinished records for
+the new bundle. A plain admission hold left beside the removal hold by the
+record's previous owner or the clone's source bundle is released, as that
+settled controller's own restart would have done; any other hold refuses. It
+preserves removal holds and all terminal decisions; preparing records still
+need a new authorized delete request.

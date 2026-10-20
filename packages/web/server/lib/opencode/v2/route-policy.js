@@ -163,6 +163,7 @@ export const OPENCODE_V2_ROUTE_CLASSES = Object.freeze({
   'GET /api/permission/saved': S,
   // Not in the C.3 server enumeration and no DevRyan consumer: denied until one exists.
   'DELETE /api/permission/saved/{id}': D,
+  'PATCH /api/permission/saved/{id}': D,
 
   // Integrations and credentials. GET /api/credential returns secret values (G4).
   'GET /api/integration': S,

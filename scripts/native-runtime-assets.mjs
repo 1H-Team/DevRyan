@@ -23,15 +23,15 @@ export const NATIVE_ASSET_SOURCE_SHA=Object.freeze({pty:'fe38312cd4acdfb067f520d
 /** Windows has no approved persistent PTY. Refuse before resolving a command,
  * creating an installation directory, or reading an environment override. */
 export function rewriteUnavailableNativePty(source) {
- if(hash(source)!=='402fd56e8a94f6693b117bf9e8b18e3cf9fc9114ad7b8e2635d4e5c09f47db38')throw new Error('Pinned native PTY resolver changed');
+ if(hash(source)!=='125ed5e9f2c7e858d37bacfdcc832f69d1322ed17d42abe7fe94db392ea4ffb6')throw new Error('Pinned native PTY resolver changed');
  return 'async function resolveBinary(){throw new Error("native_pty_platform_unsupported");}\nexport {resolveBinary};\n';
 }
 /** Build-only transformations require the exact pinned bytes before rewriting. */
 export function rewriteNativeAsset(kind,source,{assetPath,assetSha256}={}) {
  if(!Object.hasOwn(NATIVE_ASSET_SOURCE_SHA,kind)||hash(source)!==NATIVE_ASSET_SOURCE_SHA[kind]) throw new Error('Pinned native asset resolver changed');
  if(kind==='pty') {
-  if(typeof assetPath!=='string'||!assetPath.startsWith('/')||!/^becb3b8b346d0d20b898a229ed42b107f1f0e179f50e5de52636bc26a07004fb$/.test(assetSha256)) throw new Error('Pinned native PTY asset changed');
-  return `import embedded from ${JSON.stringify(assetPath)} with {type:'file'};\nconst pty_binding_default={path:embedded,version:'0.2.0',sha256:${JSON.stringify(assetSha256)}};\nexport {pty_binding_default};\n`;
+  if(typeof assetPath!=='string'||!assetPath.startsWith('/')||!/^b54a98832ec070c22383f8b1695a4850a44d753e8ea99751ccec659b4a598927$/.test(assetSha256)) throw new Error('Pinned native PTY asset changed');
+  return `import embedded from ${JSON.stringify(assetPath)} with {type:'file'};\nconst pty_binding_default={path:embedded,version:'0.3.1',sha256:${JSON.stringify(assetSha256)}};\nexport {pty_binding_default};\n`;
  }
  const original="const path = require('path').join(__dirname, 'photon_rs_bg.wasm');";
  const text=Buffer.from(source).toString('utf8');
@@ -64,10 +64,14 @@ export async function prepareReviewedNativeInputs(repository,{target='darwin-arm
   if(!bytes)continue;const info=JSON.parse(bytes.toString('utf8')),directory=path.dirname(manifestPath),resolved=new Map();
   inputFiles.set(manifestPath,hash(bytes));
   for(const [name,version] of Object.entries(info.dependencies??{})){
-   if(typeof version!=='string'||version.startsWith('workspace:')||name.startsWith('@types/'))continue;
+   if(typeof version!=='string'||name.startsWith('@types/'))continue;
    const packagePath=path.join(directory,'node_modules',name,'package.json');
    const packageBytes=await fs.readFile(packagePath),metadata=JSON.parse(packageBytes.toString('utf8'));
    inputFiles.set(await fs.realpath(packagePath),hash(packageBytes));
+   if(version.startsWith('workspace:'))for(const subpath of Object.keys(metadata.exports??{})){
+    if(!subpath.startsWith('./')||subpath.includes('*'))continue;
+    const specifier=name+subpath.slice(1);resolved.set(specifier,Bun.resolveSync(specifier,directory));
+   }
    // Packages exposing subpaths only have no root import to pre-resolve.
    if(metadata.exports&&typeof metadata.exports==='object'&&!Array.isArray(metadata.exports)
     &&Object.keys(metadata.exports).some(key=>key.startsWith('.'))&&!Object.hasOwn(metadata.exports,'.'))continue;

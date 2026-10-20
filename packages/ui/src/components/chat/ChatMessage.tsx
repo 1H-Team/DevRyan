@@ -42,7 +42,7 @@ import { streamPerfCount, streamPerfObserve } from '@/stores/utils/streamDebug';
 import { areOptionalRenderRelevantMessagesEqual, areRenderRelevantMessagesEqual, areRelevantTurnGroupingContextsEqual } from './message/renderCompare';
 import { resolveMessageHeaderVariantDisplay } from './message/messageHeaderVariant';
 import { isPlanModeUserMessage } from '@/lib/messages/actionablePlan';
-import { getModelVariantDisplayState, getOrderedThinkingVariants } from '@/lib/providers/variantControls';
+import { getModelDefaultThinkingLevel, getModelVariantDisplayState, getOrderedThinkingVariants } from '@/lib/providers/variantControls';
 import { resolveUserMessageRevertSessionId } from './chatMessageActions';
 import { classifyAssistantError, classifySteeredAbortFallback } from './message/assistantError';
 import {
@@ -682,6 +682,10 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
             recordedVariant: headerVariantRaw,
             modelVariantOptions,
             fastEnabled: modelVariantDisplayState?.fastEnabled ?? false,
+            modelDefaultThinkingLevel: getModelDefaultThinkingLevel(
+                providerCatalog,
+                modelVariantDisplayState?.displayModelId ?? modelID ?? undefined,
+            ),
         })
         : { variant: undefined, fastEnabled: false };
 

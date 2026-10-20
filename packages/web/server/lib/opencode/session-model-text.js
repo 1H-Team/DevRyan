@@ -24,8 +24,22 @@ export const classifySessionModelProviderError = (error) => {
   return { reason, status };
 };
 
-/** Every attempt settles its admitted provider/worker before repair or model rotation. */
-export async function generateTextWithSessionModel({ openCodeClient, generateHelperText, cursorRuntime, directory, sessionID,
+/** The helper call fields carried by a resolved helper selection
+ * (`resolveHelperSelection` or the default). One mapping for every caller, so
+ * the admitted tuple, including its reasoning variant, cannot drift per caller. */
+export const helperSelectionFields = selection => selection ? {
+  providerID: selection.providerID, modelID: selection.modelID,
+  ...(typeof selection.variant === 'string' && selection.variant ? { variant: selection.variant } : {}),
+  ...(selection.selectionMode ? { selectionMode: selection.selectionMode, selectionRevision: selection.selectionRevision ?? selection.revision } : {}),
+} : {};
+
+/** Every attempt settles its admitted provider/worker before repair or model rotation.
+ * Pass `selection` (a resolved helper selection) instead of separate model fields. */
+export async function generateTextWithSessionModel({ selection, ...input } = {}) {
+  return generateWithModel({ ...input, ...helperSelectionFields(selection) });
+}
+
+async function generateWithModel({ openCodeClient, generateHelperText, cursorRuntime, directory, sessionID,
   providerID, modelID, variant, selectionMode, selectionRevision, agent, prompt, repairPrompt, system, maxOutputTokens = 2048, operationID = randomUUID(),
   accept = text => text.trim() || null, timeoutMs = SESSION_MODEL_TEXT_TIMEOUT_MS, signal, now = () => Date.now() } = {}) {
   const startedAt = now(); let attempts = 0;

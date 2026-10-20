@@ -90,6 +90,8 @@ export interface MutationTransaction {
 }
 export interface MutationTransactionReference { directory: string; transactionID: string }
 export interface SessionMutationRuntime {
+  /** Constructor only: sourceOID is supplied by full selected-bundle verification. Holds remain fenced. */
+  recoverNativeRemovalOwnership(input: { directory: string; ownerID: string; checkpointID: string; sourceOID: string; sourceOwnerID?: string }): Promise<number>;
   beginNativeRemoval(input: { directory: string; rootSessionID: string; ownerID: string; quietHold?: {id:string;revision:number;retentionInstanceID:string} }): Promise<NativeRemovalIntent>;
   abandonQuietNativeRemoval(input:{directory:string;intentID:string;ownerID:string}):Promise<void>;
   nativeRetentionHolds(input:{directory:string;ownerID:string}):Promise<Array<{id:string;sessionID:string;revision:number;retentionInstanceID:string}>>;

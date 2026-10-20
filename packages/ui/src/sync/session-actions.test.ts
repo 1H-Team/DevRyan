@@ -2242,6 +2242,20 @@ describe("deleteSessions archived behavior", () => {
     expect(store.getState().session.map((item) => item.id)).toEqual(["archived-session"])
   })
 
+  test("preserves native deletion status, code and retryability for mixed bulk failures", async () => {
+    mockGlobalArchivedSessions = ["archived-a", "archived-b"].map(id => ({ ...makeSession(id), directory: "/archived/project", time: { created: 1, updated: 1, archived: 10 } }))
+    sessionDeleteHandler = params => Promise.reject({ status: 409, code: params.sessionID === "archived-a" ? "native_session_held" : "native_recovered_input_fenced", retryable: false, error: "Recovery required" })
+    const { setActionRefs, deleteSessions } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([]), () => "/current/project")
+    const result = await withMutedConsoleError(() => deleteSessions(["archived-a", "archived-b"]))
+    expect(result.failedIds).toEqual(["archived-a", "archived-b"])
+    expect(result.failures).toEqual([
+      { sessionId: "archived-a", message: "Recovery required", status: 409, code: "native_session_held", retryable: false },
+      { sessionId: "archived-b", message: "Recovery required", status: 409, code: "native_recovered_input_fenced", retryable: false },
+    ])
+    expect(new Set(mockGlobalArchivedSessions.map(session => session.id))).toEqual(new Set(["archived-a", "archived-b"]))
+  })
+
   test("keeps successful deletes removed and returns structured details only for real failures", async () => {
     const archivedA = {
       ...makeSession("archived-a"),

@@ -16,7 +16,6 @@ import {OperationPermitRef,type OperationPermit} from './native-admission-contra
 import {nativeHelperInput,type NativeHelperInput} from './native-helper-contract.js';
 import {SessionContext} from '@opencode/core/session/context';
 import {SessionHistory} from '@opencode/core/session/history';
-import {SessionProviderContext} from '@opencode/core/session/provider-context';
 import {SessionModelRequest} from '@opencode/core/session/model-request';
 import {SessionSchema} from '@opencode/core/session/schema';
 import {Model} from '@opencode/schema/model';
@@ -121,7 +120,7 @@ export function createControllerWebfetch(options:ControllerWebfetchOptions){
      const requested=Model.Ref.make({providerID:Provider.ID.make(frozen.model.providerID),id:Model.ID.make(frozen.model.modelID),...(frozen.model.variant?{variant:Model.VariantID.make(frozen.model.variant)}:{})});
      const model=yield* entry.selection.resolveModel({...selected.session,model:requested});
      if(model.ref.providerID!==requested.providerID||model.ref.id!==requested.id||requested.variant!==undefined&&model.ref.variant!==requested.variant)return yield* Effect.die(refuse('native_webfetch_secondary_model_conflict'));
-     const history=yield* SessionHistory.preview(entry.database.db,selected.session.id,selected.instructions,SessionProviderContext.provenance(model)??'local');
+     const history=yield* SessionHistory.preview(entry.database.db,selected.session.id,selected.instructions,model.ref);
      const transcript=SessionModelRequest.baseTranscript({agent:selected.agent.info,model,tools:selected.tools,initial:history.initial,messages:history.messages});
      const prepared=yield* entry.selection.request.generate({session:selected.session,agent:selected.agent.id,model,tools:selected.tools,system:transcript.system,messages:[...transcript.messages,...history.instructionUpdate?[Message.system(history.instructionUpdate)]:[],Message.user(frozen.prompt)]});
      yield* Effect.promise(check);const response=yield* llm.value.generate(prepared.request,prepared.options);yield* Effect.promise(check);return response.text;
@@ -144,8 +143,14 @@ export function createControllerWebfetch(options:ControllerWebfetchOptions){
    // Hook correlation only. This Info is never inserted into SessionStore.
    const session=Schema.decodeUnknownSync(SessionSchema.Info)({id:permit.sessionID,projectID:location.project.id,location:{directory:location.directory,...location.workspaceID?{workspaceID:location.workspaceID}:{}},
     agent:agent.id,model:ref,cost:0,tokens:{input:0,output:0,reasoning:0,cache:{read:0,write:0}},time:{created:Date.now(),updated:Date.now()}});
-   const model=yield* entry.models.resolve(ref);
-   if(!model)return yield* Effect.die(refuse('native_helper_model_unavailable'));
+   // Resolve through the location's SessionRunnerModel, as primary turns and
+   // webfetch secondaries do: it opens the permit-bound credential resolution
+   // scope that owned provider credentials (Zen, xAI, OpenAI) require. A bare
+   // ModelResolver read skips that scope and the provider refuses the request.
+   const unavailable=()=>Effect.die(refuse('native_helper_model_unavailable'));
+   const model=yield* entry.selection.resolveModel(session).pipe(
+    Effect.catchTag('SessionRunnerModel.ModelUnavailableError',unavailable),
+    Effect.catchTag('SessionRunnerModel.ModelNotSelectedError',unavailable));
    if(model.ref.providerID!==ref.providerID||model.ref.id!==ref.id||model.ref.variant!==ref.variant)return yield* Effect.die(refuse('native_helper_model_changed'));
    const prepared=yield* entry.selection.request.generate({session,agent:agent.id,model,system:[...agent.system?[{type:'text' as const,text:agent.system}]:[],...frozen.system?[{type:'text' as const,text:frozen.system}]:[]],messages:[Message.user(frozen.prompt)]}).pipe(Effect.provideService(NativeHelperContextRef,session));
    if(prepared.event.model.providerID!==ref.providerID||prepared.event.model.id!==ref.id||prepared.event.model.variant!==ref.variant)return yield* Effect.die(refuse('native_helper_model_changed'));

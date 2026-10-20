@@ -4,7 +4,7 @@ import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {test} from 'node:test';
 import {rewriteNativeFinalizationObservation,NATIVE_FINALIZATION_SOURCE_SHA256} from './native-finalization-observation-transform.mjs';
-const sourceFile=path.resolve('node_modules/@opencode/core/dist/chunks/instance-dy6575tn.js');
+const sourceFile=path.resolve('node_modules/@opencode/core/dist/chunks/shell-4nejsby7.js');
 const helper=path.resolve('packages/web/server/lib/opencode/runtime-host/native-finalization-observation.ts');
 test('pinned finalization seam wraps original post-model mandatory IO only after tool joins without changing its decisions',async()=>{
  const source=await fs.readFile(sourceFile,'utf8');assert.equal(createHash('sha256').update(source).digest('hex'),NATIVE_FINALIZATION_SOURCE_SHA256);

@@ -1,6 +1,6 @@
 {
   "name": "@devryan/agents-core",
-  "version": "2.1.4",
+  "version": "2.1.5",
   "private": true,
   "type": "module",
   "description": "DevRyan's built-in agent orchestration, derived from Oh My OpenCode Slim (see NOTICE).",

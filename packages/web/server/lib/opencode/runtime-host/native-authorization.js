@@ -87,7 +87,9 @@ export function createNativeAuthorization({ locations, manifest, getRequestPrinc
         await reauthorize();
         if (input.selectionMode === 'active') {
           if (!session?.model?.providerID || !(session.model.id ?? session.model.modelID)) throw fail('native_helper_active_selection_required');
-          return { providerID: session.model.providerID, modelID: session.model.id ?? session.model.modelID, revision: 'active-session' };
+          const variant = session.model.variant;
+          if (variant !== undefined && (typeof variant !== 'string' || !variant)) throw fail('native_helper_active_selection_required');
+          return { providerID: session.model.providerID, modelID: session.model.id ?? session.model.modelID, ...(variant ? { variant } : {}), revision: 'active-session' };
         }
         const multiUser = getMultiUserRuntime();
         if (!multiUser?.enabled && typeof readHelperSettings !== 'function') throw fail('native_helper_settings_unavailable', 503);

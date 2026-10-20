@@ -8,20 +8,20 @@ const skill = (state: ToolPart['state']): ToolPart => ({
 test('skill outcome survives transcript reload and terminal replacement', () => {
     const running = skill({ status: 'running', input: { name: 'Release Checklist' }, time: { start: 1 } });
     const failed = skill({ status: 'error', input: { name: 'Release Checklist' }, error: 'local_execution_timeout', time: { start: 1, end: 2 } });
-    expect(getSkillPresentation([running]).title).toBe('Loading skill:');
+    expect(getSkillPresentation([running]).title).toBe('Loading Skill:');
     for (const part of [failed, JSON.parse(JSON.stringify(failed))]) {
         const result = getSkillPresentation([part]);
-        expect(result.title).toBe('Skill failed:');
+        expect(result.title).toBe('Skill Failed:');
         expect(result.running).toBe(false);
         expect(result.explanation).toContain('workspace');
     }
-    expect(getSkillPresentation([skill({ status: 'completed', input: {}, output: 'body', title: 'Release Checklist', metadata: {}, time: { start: 1, end: 2 } })]).title).toBe('Loaded skill:');
+    expect(getSkillPresentation([skill({ status: 'completed', input: {}, output: 'body', title: 'Release Checklist', metadata: {}, time: { start: 1, end: 2 } })]).title).toBe('Loaded Skill:');
 });
 test('mixed skill outcomes retain failures and never expose raw errors', () => {
     const failed = skill({ status: 'error', input: {}, error: 'secret /private/file', time: { start: 1, end: 2 } });
     const running = skill({ status: 'pending', input: {}, raw: '' });
     const result = getSkillPresentation([failed, running]);
-    expect(result.title).toBe('Loading skill:');
+    expect(result.title).toBe('Loading Skill:');
     expect(result.explanation).toBe('The skill could not be loaded.');
 });
 test('skill display name prefers metadata, then skill_content, then a non-hash input name, never the hashed id', () => {
@@ -34,4 +34,12 @@ test('skill display name prefers metadata, then skill_content, then a non-hash i
     expect(getSkillDisplayName(skill({ status: 'running', input: { id: hashed }, time: { start: 1 } }))).toBe('');
     expect(getSkillDisplayName(skill({ status: 'pending', input: {}, raw: '' }))).toBe('');
     expect(getSkillDisplayName(skill({ status: 'error', input: { name: hashed }, error: 'x', time: { start: 1, end: 2 } }))).toBe('Skill');
+});
+test('an unreviewed skill reports a precise reason and a mistyped hash never becomes the row title', () => {
+    const mistyped = 'devryan-abe6dadd3d3fdf0123456789abcdef0123';
+    const failed = skill({ status: 'error', input: { id: mistyped, name: mistyped },
+        error: 'native_skill_unreviewed: no matching skill. Available skills: Linear', time: { start: 1, end: 2 } });
+    expect(getSkillPresentation([failed]).explanation).toBe('This skill isn\'t available in this workspace. (native_skill_unreviewed)');
+    expect(getSkillDisplayName(failed)).toBe('Skill');
+    expect(getSkillDisplayName(skill({ status: 'running', input: { id: mistyped, name: 'DEVRYAN-ABE6' }, time: { start: 1 } }))).toBe('');
 });

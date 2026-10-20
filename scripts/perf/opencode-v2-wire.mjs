@@ -1,3 +1,4 @@
+import {SessionLegacy} from '@opencode/schema/session-legacy';
 // OpenCode 2.0.20 wire helpers for the gen-2 loopback fixture and its tests.
 //
 // - Frame codec: `data: <json>\n\n` blocks and `: heartbeat` comments, exactly as
@@ -28,7 +29,7 @@ export const OPENCODE_V2_WIRE_VERSION = '2.0.20';
 /** Durable event types and their durable schema version (`@opencode/schema` session-event.js, worktree-event). */
 export const OPENCODE_V2_DURABLE_EVENT_VERSIONS = new Map([
   ['session.created', 1], ['session.agent.selected', 1], ['session.model.selected', 1], ['session.moved', 1],
-  ['session.renamed', 1], ['session.metadata.updated', 1], ['session.permissions', 1], ['session.viewed', 1],
+  ['session.archived', 1], ['session.unarchived', 1], ['session.renamed', 1], ['session.metadata.updated', 1], ['session.permissions', 1], ['session.viewed', 1],
   ['session.deleted', 2], ['session.forked', 2], ['session.inbox.delivered', 1], ['session.inbox.enqueued', 1],
   ['session.inbox.cancelled', 1], ['session.inbox.delivery.changed', 1], ['session.execution.started', 1],
   ['session.execution.succeeded', 1], ['session.execution.failed', 1], ['session.execution.interrupted', 1],
@@ -331,7 +332,7 @@ const wireAssistantEvents = (sessionID, row) => {
       addresses.push([part.id, { messageID, kind, ordinal, projectedID }]);
       const start = isFiniteNumber(part.time?.start) ? part.time.start : created;
       const startedData = { sessionID, assistantMessageID: messageID, ordinal };
-      if (kind === 'reasoning' && isRecord(part.metadata)) startedData.state = clone(part.metadata);
+      if (kind === 'reasoning' && isRecord(part.metadata)) startedData.native = clone(part.metadata);
       events.push({ type: `session.${kind}.started`, created: start, data: startedData });
       const text = typeof part.text === 'string' ? part.text : '';
       if (isOpenPart(row, part)) {
@@ -393,7 +394,7 @@ export const wireEventsForDomainRows = (rows, { sessionID, origin = 'fixture-rep
         const inbox = { sessionID, inboxID: row.info.id };
         events.push({ type: 'session.inbox.enqueued', created, data: { ...inbox, item: { type: 'compaction', payload: {}, delivery: 'steer' } } });
         events.push({ type: 'session.inbox.delivered', created, data: inbox });
-        events.push({ type: 'session.compaction.started', created, data: { sessionID, reason, recent: '', inputID: row.info.id } });
+        events.push({ type: 'session.compaction.started', created, data: { sessionID, reason, inputID: row.info.id } });
         addresses.set(compaction.id, { messageID: row.info.id, kind: 'compaction', projectedID: compaction.id });
         if (summary) {
           const summaryText = textPartsOf(summary.parts ?? []).map((part) => part.text).join('');
@@ -401,7 +402,7 @@ export const wireEventsForDomainRows = (rows, { sessionID, origin = 'fixture-rep
           textPartsOf(summary.parts ?? []).forEach((part, ordinal) => {
             addresses.set(part.id, { messageID: summaryID, kind: 'text', ordinal, projectedID: assistantTextPartId(summaryID, ordinal) });
           });
-          const ended = { sessionID, reason, text: summaryText, recent: '' };
+          const ended = { sessionID, reason, text: summaryText };
           if (isNonEmptyString(summary.info.modelID)) ended.model = modelRefFromV1(summary.info.providerID, summary.info.modelID);
           events.push({ type: 'session.compaction.ended', created: summary.info.time?.completed ?? summary.info.time?.created ?? created, data: ended });
           index += 1;
@@ -528,7 +529,7 @@ export const createV2WireStore = () => {
 
   /** Folds one envelope. Unknown sessions are ignored, as the 2.0.20 projector's updates are no-ops for them. */
   const apply = (event) => {
-    const data = event.data ?? {};
+    const data = SessionLegacy.event(event.type,event.data ?? {});
     const created = event.created;
     if (event.type === 'session.created') {
       if (sessions.has(data.sessionID)) throw new Error(`Session already projected: ${data.sessionID}`);
@@ -611,7 +612,7 @@ export const createV2WireStore = () => {
         if (existing) {
           existing.agent = data.agent;
           existing.model = clone(data.model);
-          for (const key of ['retry', 'error', 'finish', 'rawFinish', 'providerState']) delete existing[key];
+          for (const key of ['retry', 'error', 'finish', 'rawFinish', 'native']) delete existing[key];
           existing.time = { created: data.started };
           return;
         }
@@ -627,7 +628,7 @@ export const createV2WireStore = () => {
           draft.time.completed = created;
           draft.finish = data.finish;
           if (data.rawFinish !== undefined) draft.rawFinish = data.rawFinish; else delete draft.rawFinish;
-          if (data.providerState !== undefined) draft.providerState = clone(data.providerState); else delete draft.providerState;
+          if (data.native !== undefined) draft.native = clone(data.native); else delete draft.native;
           draft.cost = data.cost;
           draft.tokens = clone(data.tokens);
         });
@@ -638,7 +639,7 @@ export const createV2WireStore = () => {
           draft.time.completed = created;
           draft.finish = data.finish ?? 'error';
           if (data.rawFinish !== undefined) draft.rawFinish = data.rawFinish; else delete draft.rawFinish;
-          if (data.providerState !== undefined) draft.providerState = clone(data.providerState); else delete draft.providerState;
+          if (data.native !== undefined) draft.native = clone(data.native); else delete draft.native;
           draft.error = clone(data.error);
           delete draft.retry;
           if (data.cost !== undefined && data.tokens !== undefined) { draft.cost = data.cost; draft.tokens = clone(data.tokens); }
@@ -651,11 +652,11 @@ export const createV2WireStore = () => {
           const match = draft.content.findLast((item) => item.type === 'text');
           if (!match) return;
           match.text = data.text;
-          if (data.state !== undefined) match.state = clone(data.state); else delete match.state;
+          if (data.native !== undefined) match.native = clone(data.native); else delete match.native;
         });
         return;
       case 'session.reasoning.started':
-        owned((draft) => { draft.content.push(omitUndefined({ type: 'reasoning', text: '', state: clone(data.state), time: { created } })); });
+        owned((draft) => { draft.content.push(omitUndefined({ type: 'reasoning', text: '', native: clone(data.native), time: { created } })); });
         return;
       case 'session.reasoning.ended':
         owned((draft) => {
@@ -663,7 +664,7 @@ export const createV2WireStore = () => {
           if (!match) return;
           match.text = data.text;
           match.time = { created: match.time?.created ?? created, completed: created };
-          if (data.state !== undefined) match.state = clone(data.state);
+          if (data.native !== undefined) match.native = clone(data.native);
         });
         return;
       case 'session.tool.input.started':
@@ -680,7 +681,7 @@ export const createV2WireStore = () => {
           const match = latestTool(draft, data.id);
           if (!match) return;
           match.executed = data.executed;
-          if (data.state !== undefined) match.providerState = clone(data.state); else delete match.providerState;
+          if (data.native !== undefined) match.native = clone(data.native); else delete match.native;
           match.time.ran = created;
           match.state = { status: 'running', input: clone(data.input), metadata: {} };
         });
@@ -711,12 +712,12 @@ export const createV2WireStore = () => {
         return;
       case 'session.compaction.started':
         insert(session, seq, { id: data.inputID ?? messageIdFromEventId(event.id), type: 'compaction', status: 'running',
-          metadata: clone(event.metadata), reason: data.reason, summary: '', recent: data.recent ?? '', time: { created } });
+          metadata: clone(event.metadata), reason: data.reason, summary: '', time: { created } });
         return;
       case 'session.compaction.ended': {
         const current = session.messages.findLast((stored) => stored.record.type === 'compaction' && stored.record.status === 'running')?.record;
-        const fields = { status: 'completed', reason: data.reason, model: clone(data.model), providerState: clone(data.providerState),
-          summary: data.text, providerContext: clone(data.providerContext), recent: data.recent, cost: data.cost, tokens: clone(data.tokens) };
+        const fields = { status: 'completed', reason: data.reason, model: clone(data.model), native: clone(data.native),
+          summary: data.text, cost: data.cost, tokens: clone(data.tokens) };
         if (current) {
           Object.assign(current, fields, event.metadata ? { metadata: { ...current.metadata, ...event.metadata } } : {});
           omitUndefined(current);
