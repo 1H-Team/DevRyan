@@ -1,4 +1,4 @@
-import { describeExecutionFailure } from '@/lib/executionFailure';
+import { describeExecutionFailure, describeExecutionRecoveryFailure } from '@/lib/executionFailure';
 import { isLikelyProviderAuthFailure, PROVIDER_AUTH_FAILURE_MESSAGE } from '@/lib/messages/providerAuthError';
 import { isLikelyProviderTokenExpired, PROVIDER_TOKEN_EXPIRED_MESSAGE } from '@/lib/messages/providerTokenExpired';
 export type SessionFailure = {
@@ -16,6 +16,8 @@ export const isSessionCancellation = (error?: SessionFailure): boolean =>
 export function describeSessionFailure(error?: SessionFailure): { code: string; message: string } {
   if (isSessionCancellation(error)) return { code: 'session_cancelled', message: 'Request cancelled.' };
   const text = `${error?.code ?? ''} ${error?.message ?? ''} ${error?.data?.message ?? ''}`;
+  const recovery = describeExecutionRecoveryFailure(text);
+  if (recovery) return recovery;
   const execution = describeExecutionFailure(text);
   if (execution) return { code: 'local_execution_failed', message: execution };
   if (/local_execution_|mutation_runtime_|capture_timeout/.test(text)) return {

@@ -428,6 +428,12 @@ settled controller's own restart would have done; any other hold refuses. It
 preserves removal holds and all terminal decisions; preparing records still
 need a new authorized delete request.
 
+`beginNativeRemoval` checks unfinished descendant decisions under the same
+ledger lock before adding an ancestor hold. A conflict returns
+`native_removal_in_progress` (409), leaving the descendant's original decision
+and authorized retry usable; completed descendant decisions do not block a
+later ancestor removal.
+
 Session change responses separate immutable captured revisions from bounded,
 read-only `current` content observations and per-session `coverageBySession`
 reasons. See `docs/SESSION_CHANGES.md` for verification states and limits.

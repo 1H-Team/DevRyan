@@ -680,7 +680,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     return (
       <div
         key={session.id}
-        className={cn('group relative flex items-center rounded-sm px-1.5 py-1', depth > 0 && 'pl-[20px]')}
+        className="group relative flex items-center rounded-sm px-1.5 py-1"
       >
         <div className="flex min-w-0 flex-1 flex-col gap-0">
           <form
@@ -783,7 +783,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
           toggleParent(session.id);
         }
       }}
-      className={cn('h-3.5 w-3.5 items-center justify-center rounded-md text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50', className)}
+      className={cn('h-3.5 w-3.5 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50', className)}
       aria-label={isExpanded
         ? t('sessions.sidebar.session.subsessions.collapse')
         : t('sessions.sidebar.session.subsessions.expand')}
@@ -824,7 +824,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   const leadingRail = (
     <span
       data-session-leading-rail
-      className="absolute right-full top-1/2 mr-1.5 flex h-4 flex-shrink-0 -translate-y-1/2 items-center"
+      className="absolute right-full top-1/2 mr-[7px] flex h-4 flex-shrink-0 -translate-y-1/2 items-center"
     >
       {leadingRailLayout.slots.map((slot, index) => (
         slot ? <React.Fragment key={index}>{leadingRailSlotContent[slot]}</React.Fragment> : null
@@ -1131,7 +1131,6 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
             className={cn(
               'group group/session-row relative my-0.5 flex items-center rounded-sm px-1.5 py-1',
               isMissingDirectory ? 'opacity-75' : '',
-              depth > 0 && 'pl-[20px]',
               isRowSelected && 'bg-primary/15',
             )}
           >

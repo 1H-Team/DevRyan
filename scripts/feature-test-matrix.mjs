@@ -404,8 +404,8 @@ export const FEATURE_TEST_MATRIX = Object.freeze([
   },
   {
     id: 'validation-and-bundle-budgets',
-    sourcePaths: ['scripts/validate.mjs', 'scripts/check-bundle-budgets.mjs'],
-    testPaths: ['scripts/test-runner-utils.test.mjs', 'scripts/check-bundle-budgets.test.mjs'],
+    sourcePaths: ['scripts/validate.mjs', 'scripts/test-pool.mjs', 'scripts/test-full.mjs', 'scripts/check-bundle-budgets.mjs'],
+    testPaths: ['scripts/test-runner-utils.test.mjs', 'scripts/test-pool.test.mjs', 'scripts/test-suite-contract.test.mjs', 'scripts/check-bundle-budgets.test.mjs'],
   },
   {
     id: 'agent-evaluation-tools',

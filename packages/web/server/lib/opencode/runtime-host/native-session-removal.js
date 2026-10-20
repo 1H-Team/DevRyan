@@ -27,7 +27,18 @@ export function createNativeSessionRemoval(options) {
     const live=sessions.filter(id=>!absentSessions.includes(id));
     const receipt=live.length?await cancelAndWait({directory:intent.directory,sessions:live}):null;
     if(live.length && (receipt?.terminated!==true || live.some(id=>!receipt.sessions?.includes(id)))) throw fail('native_removal_settlement_uncertain');
-    const disposition=await cancelManaged({...scope,phase:'settle',settled:receipt,absentSessions});
+    const verifyRemovedSession=async sessionID=>{
+      const state=await runtime.nativeAdmissionState({directory:intent.directory,sessionID});
+      const hold=state.holds.find(row=>row.sessionID===sessionID && row.removalID && row.ownerID===`native-removal:${row.removalID}`);
+      if(!hold)return false;
+      const previous=await runtime.nativeRemoval({directory:intent.directory,intentID:hold.removalID});
+      const captured=await runtime.capturedSessionState({directory:intent.directory,sessionID});
+      return previous?.state==='completed' && previous.directory===intent.directory
+        && !captured.pending && previous.members.some(member=>member.id===sessionID && member.directory===intent.directory && member.generation===captured.generation)
+        && previous.removed.includes(sessionID) && previous.dispositions.some(row=>row.sessionID===sessionID)
+        && !(await runtime.activeLeases({directory:intent.directory,sessions:[sessionID]})).length;
+    };
+    const disposition=await cancelManaged({...scope,phase:'settle',settled:receipt,absentSessions,verifyRemovedSession});
     if(disposition?.settled!==true || sessions.some(id=>!disposition.sessions?.includes(id))) throw fail('native_removal_managed_unconfirmed');
   };
   const finish=async intent=>{

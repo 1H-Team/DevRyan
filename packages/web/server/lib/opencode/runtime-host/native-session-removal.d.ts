@@ -5,7 +5,7 @@ export interface NativeRemovalIdentity {id:string;parentID:string|null;directory
 export interface NativeRemovalState {sessionID:string;exists:boolean;active:boolean;claimed:boolean;inboxIDs:string[];pendingIDs:string[]}
 export interface NativeRemovalSnapshot {members:NativeRemovalIdentity[];states:NativeRemovalState[]}
 export interface NativeRemovalScope {directory:string;sessions:string[];intentID:string}
-export type NativeRemovalCancellation = NativeRemovalScope & ({phase:'fence'}|{phase:'settle';settled:{terminated:true;sessions:readonly string[]}|null;absentSessions:readonly string[]});
+export type NativeRemovalCancellation = NativeRemovalScope & ({phase:'fence'}|{phase:'settle';settled:{terminated:true;sessions:readonly string[]}|null;absentSessions:readonly string[];verifyRemovedSession:(sessionID:string)=>Promise<boolean>});
 export interface NativeSessionRemovalOptions {
   runtime:SessionMutationRuntime;admissionOwner:NativeAdmissionOwner;ownerID:string;
   inspectRemovalOwned:(input:{sessionID:string;permit:OperationPermit})=>Promise<NativeRemovalSnapshot>;

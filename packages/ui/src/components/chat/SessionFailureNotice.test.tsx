@@ -12,6 +12,30 @@ beforeEach(() => {
   usePrimaryRecoveryStore.setState({ snapshots: {} });
 });
 
+test('a recovery ownership failure stays actionable after bounded persistence', async () => {
+  await withDom(async (container) => {
+    const { createRoot } = await import('react-dom/client');
+    const root = createRoot(container as unknown as Element);
+    try {
+      await act(async () => {
+        useNotificationStore.getState().append({ type: 'error', session: 's', time: Date.now(), viewed: true,
+          error: { name: 'UnknownError', data: { message: 'native_slim_retry_primary_fenced\nprivate stack' } } });
+        root.render(<SessionFailureNotice sessionId="s" />);
+      });
+      expect(container.textContent).toContain('Automatic recovery stopped');
+      expect(container.textContent).toContain('Review the task and its recovery options');
+      expect(container.textContent).not.toContain('Request failed');
+      const persisted = getSafeStorage().getItem('devryan:notification-completions:v1') ?? '';
+      expect(persisted).toContain('execution_recovery_unavailable');
+      expect(persisted).not.toContain('native_slim_retry_primary_fenced');
+      expect(persisted).not.toContain('private stack');
+      await act(async () => useNotificationStore.setState({ list: [{ type: 'error', session: 's', time: Date.now(), viewed: true,
+        error: { code: 'execution_recovery_unavailable' } }] }));
+      expect(container.textContent).toContain('Automatic recovery stopped');
+    } finally { await act(async () => root.unmount()); }
+  });
+});
+
 test('a viewed failure without an assistant stays visible, persists safely, and clears only on newer completion', async () => {
   await withDom(async (container) => {
     const { createRoot } = await import('react-dom/client');

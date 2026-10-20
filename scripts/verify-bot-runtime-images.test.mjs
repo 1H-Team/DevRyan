@@ -22,6 +22,7 @@ import {
   verifyBotRuntimeImagesManifest,
 } from './verify-bot-runtime-images.mjs';
 import { BOT_TARGET_OPENCODE_VERSION } from '../packages/web/server/lib/opencode/version-policy.js';
+import { FULL_TEST_COMMANDS } from './test-full.mjs';
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const currentVersion = JSON.parse(
@@ -350,7 +351,6 @@ describe('Bot runtime release integration', () => {
       workflow,
       bumpScript,
       releaseScript,
-      rootPackageSource,
       electronPackageSource,
       electronManifestStage,
       electronMainBundle,
@@ -358,7 +358,6 @@ describe('Bot runtime release integration', () => {
       fs.readFile(path.join(repositoryRoot, '.github/workflows/release.yml'), 'utf8'),
       fs.readFile(path.join(repositoryRoot, 'scripts/bump-version.mjs'), 'utf8'),
       fs.readFile(path.join(repositoryRoot, 'scripts/release.mjs'), 'utf8'),
-      fs.readFile(path.join(repositoryRoot, 'package.json'), 'utf8'),
       fs.readFile(path.join(repositoryRoot, 'packages/electron/package.json'), 'utf8'),
       fs.readFile(
         path.join(repositoryRoot, 'packages/electron/scripts/stage-bot-manifest.mjs'),
@@ -369,14 +368,13 @@ describe('Bot runtime release integration', () => {
         'utf8',
       ),
     ]);
-    const rootPackage = JSON.parse(rootPackageSource);
     const electronPackage = JSON.parse(electronPackageSource);
     for (const definition of Object.values(BOT_RUNTIME_IMAGE_DEFINITIONS)) {
       assert.equal(releaseScript.includes(`'${definition.packageJson}'`), true);
       assert.equal(bumpScript.includes(`'${definition.packageJson}'`), true);
       const packageDirectory = path.dirname(definition.packageJson);
       assert.equal(
-        rootPackage.scripts['test:full'].includes(`bun run --cwd ${packageDirectory} test`),
+        FULL_TEST_COMMANDS.join(' && ').includes(`bun run --cwd ${packageDirectory} test`),
         true,
       );
     }

@@ -3268,18 +3268,19 @@ export const createManagedTaskScheduler = (options = {}) => {
 
   // Constructor-only host call. The durable removal intent seals these IDs;
   // only its real native/supervisor settlement permits skipping provider abort.
-  const cancelSessionsForRemoval = async ({ directory, sessions, intentID, phase, settled, absentSessions = [] }) => {
+  const cancelSessionsForRemoval = async ({ directory, sessions, intentID, phase, settled, absentSessions = [], verifyRemovedSession }) => {
+    const invalidScope = message => Object.assign(new ManagedOrchestrationError('native_removal_scope_invalid', message), { statusCode: 409 });
     if (typeof directory !== 'string' || !directory || directory.includes('\0')
       || typeof intentID !== 'string' || !intentID || intentID.includes('\0')
       || !Array.isArray(sessions) || !sessions.length || sessions.length > 4096
       || new Set(sessions).size !== sessions.length || sessions.some((id) => typeof id !== 'string' || !/^ses[A-Za-z0-9_-]+$/.test(id))
       || !['fence', 'settle'].includes(phase)) {
-      throw new ManagedOrchestrationError('native_removal_scope_invalid', 'Exact native removal scope is required');
+      throw invalidScope('Exact native removal scope is required');
     }
     const keys = sessions.map((id) => removalKey(directory, id));
     if (keys.some((key) => sessionRemovalHolds.has(key) && sessionRemovalHolds.get(key) !== intentID)
       || (phase === 'settle' && keys.some((key) => sessionRemovalHolds.get(key) !== intentID))) {
-      throw new ManagedOrchestrationError('native_removal_scope_invalid', 'Native removal fence does not match');
+      throw invalidScope('Native removal fence does not match');
     }
     if (phase === 'settle') {
       // Absent IDs are separately proven by canonical native state, staged
@@ -3310,7 +3311,13 @@ export const createManagedTaskScheduler = (options = {}) => {
     for (const taskID of taskIDs) {
       const task = tasks.get(taskID);
       if (task.childSessionId && !sessions.includes(task.childSessionId)) {
-        throw new ManagedOrchestrationError('native_removal_scope_invalid', 'Managed child is outside the settled removal subtree');
+        // Child-first deletion leaves its terminal task in retained history.
+        // Only its durable completed removal can excuse the missing child.
+        if (!isTerminalManagedTaskStatus(task.status) || activeLaunches.has(taskID)
+          || cancellationPromises.has(taskID) || acknowledgementPromises.has(taskID)
+          || typeof verifyRemovedSession !== 'function' || await verifyRemovedSession(task.childSessionId) !== true) {
+          throw invalidScope('Managed child is outside the settled removal subtree');
+        }
       }
       await cancelSingleTask(taskID, { reason: 'Session deleted', nativeSettled: true });
       if (activeLaunches.has(taskID)) {

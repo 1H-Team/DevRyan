@@ -93,3 +93,20 @@ test('restored removal fence precedes scheduler recovery and prevents queued rel
     expect(recovered.getDiagnostics().activeLaunchCount).toBe(0);
   } finally { await recovered.shutdown(); }
 });
+
+test('a proof callback cannot excuse a live child outside the settled subtree', async () => {
+  const run=deferred();let verified=0;
+  const scheduler=createManagedTaskScheduler({executor:{
+    async start(_task,control){await control.setChildSessionId('ses_child_target');await control.markAccepted();return run.promise;},
+    async abort(){run.resolve({status:'aborted'});return {aborted:true};},
+    async reconcile(){throw new Error('Unexpected recovery');},async readRecoverableResult(){return {};}
+  }});
+  try{
+    const task=await scheduler.submit(input('target'));
+    const root={...scope,sessions:['ses_root']};
+    await scheduler.cancelSessionsForRemoval({...root,phase:'fence'});
+    await expect(scheduler.cancelSessionsForRemoval({...settle(root),verifyRemovedSession:async()=>{verified++;return true;}}))
+      .rejects.toMatchObject({code:'native_removal_scope_invalid',statusCode:409});
+    expect(verified).toBe(0);expect(scheduler.getTask(task.taskId).status).toBe('running');
+  }finally{run.resolve({status:'aborted'});await scheduler.shutdown();}
+});

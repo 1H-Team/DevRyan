@@ -188,7 +188,11 @@ describe('managed OpenCode executor', () => {
     } finally { await executor.shutdown(); }
   });
 
-  test('settles an authoritative model error without waiting for an assistant message', async () => {
+  test.each([
+    ['Model not found: opencode/retired-model', null],
+    ['Free usage exceeded, subscribe to Go', 429],
+    ['Invalid API key', 401],
+  ])('settles an authoritative first-request error without an assistant: %s', async (message, statusCode) => {
     const terminalReads = [];
     const transport = {
       async createSession() { return { id: 'ses_child' }; },
@@ -203,9 +207,9 @@ describe('managed OpenCode executor', () => {
           observedAt: 2_100,
           eventId: 'evt_model',
           errorName: 'UnknownError',
-          message: 'Model not found: opencode/retired-model',
+          message,
           code: null,
-          statusCode: null,
+          statusCode,
           retryable: null,
         };
       },
@@ -226,11 +230,12 @@ describe('managed OpenCode executor', () => {
 
     expect(result).toMatchObject({
       status: 'failed',
-      failureReason: 'Model not found: opencode/retired-model',
+      failureReason: message,
       resumable: true,
     });
     expect(terminalReads).toHaveLength(1);
     expect(terminalReads[0].after).toBe(2_000);
+    await executor.shutdown();
   });
 
   test('ignores a terminal error recorded before the current prompt attempt', async () => {

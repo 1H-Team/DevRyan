@@ -39,9 +39,25 @@ describe('describeSessionFailure', () => {
 
   test('restores each classification from its persisted code alone', () => {
     for (const code of ['provider_token_expired', 'provider_auth_failed', 'provider_credentials_changed', 'provider_quota_exceeded',
-      'provider_request_unsupported', 'provider_rate_limited', 'provider_transport_failed', 'session_timeout', 'session_cancelled']) {
+      'provider_request_unsupported', 'provider_rate_limited', 'provider_transport_failed', 'session_timeout', 'session_cancelled',
+      'execution_recovery_unavailable']) {
       expect(describeSessionFailure({ code }).code).toBe(code);
     }
+  });
+
+  test('identifies a recovery ownership fence without provider blame or raw exception details', () => {
+    const described = describeSessionFailure({ name: 'UnknownError', data: {
+      message: 'DevRyan refused retry: native_slim_retry_primary_fenced\nprivate stack with 403',
+      statusCode: 403,
+    } });
+    expect(described).toEqual({
+      code: 'execution_recovery_unavailable',
+      message: 'Automatic recovery could not verify this task\'s execution. Review the task and its recovery options before continuing.',
+    });
+    expect(describeSessionFailure({ code: described.code })).toEqual(described);
+    expect(describeSessionFailure({ code: 'native_slim_retry_primary_fenced' })).toEqual(described);
+    expect(described.message).not.toContain('private stack');
+    expect(describeSessionFailure({ message: 'native_slim_retry_primary_fenced_extra' }).code).toBe('session_failed');
   });
 
   test('uses bounded provider evidence and restores its classification', () => {

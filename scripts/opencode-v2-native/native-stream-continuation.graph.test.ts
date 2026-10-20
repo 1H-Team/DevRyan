@@ -5,6 +5,11 @@ import {prepareReviewedNativeInputs,reviewedNativeInputPlugin} from '../native-r
 import {createNativeAssetFixturePlugin,writeNativeFixtureOutputs} from './native-asset-fixture.mjs';
 
 const repository=path.resolve(import.meta.dirname,'../..');
+// The verified inputs and pinned asset rewrites are read-only plugin state; hashing the
+// 334 MB reviewed-inputs tree once per file, not once per build (28 builds), is enough.
+let reviewedBuildPluginsPromise:Promise<[import('bun').BunPlugin,import('bun').BunPlugin]>|undefined;
+const reviewedBuildPlugins=()=>reviewedBuildPluginsPromise??=Promise.all([createNativeAssetFixturePlugin(repository),
+ prepareReviewedNativeInputs(repository).then(reviewedNativeInputPlugin)]);
 const cases:Array<{scenario:string;slim:boolean;compiled:boolean;setter?:string}>=[...['continue','exhausted','plain-retry','stop-publication','missing-attempt'].map(scenario=>({scenario,slim:false,compiled:false})),{scenario:'continue',slim:true,compiled:false},{scenario:'exhausted',slim:true,compiled:false},{scenario:'continue',slim:false,compiled:true},{scenario:'missing-attempt',slim:false,compiled:true},{scenario:'silence',slim:false,compiled:false},{scenario:'silence',slim:false,compiled:true},{scenario:'denied-tool',slim:false,compiled:false},{scenario:'denied-tool',slim:false,compiled:true},...['text-start','reasoning-start','tool-input-start','tool-input-error','tool-call'].map(setter=>({scenario:'setter-'+setter,slim:false,compiled:process.env.DEVRYAN_NATIVE_STREAM_COMPILED_SETTERS==='1',setter})),...['late-provider-error','late-content-filter'].flatMap(scenario=>[false,true].map(compiled=>({scenario,slim:false,compiled})))];
 for(const {scenario,slim,compiled,setter} of cases)test('pinned 2.1.0 native stream graph '+scenario+' Slim='+slim+' compiled='+compiled,async()=>{
  const root=await fs.mkdtemp(path.join(repository,'.cache/v2-validation/native-stream-'));let child:ReturnType<typeof Bun.spawn>|undefined;
@@ -178,7 +183,7 @@ const gates = createAdmissionGates({executionActivity:inner=>{nativeExecution=in
     return {contents:contents.replace(before,delivery),loader:'ts'};
    });
   }};
-  const built=await Bun.build({entrypoints:[entry],target:'bun',outdir:root,naming:{entry:'stream.mjs',asset:'[name]-[hash].[ext]'},plugins:[rawSetterPlugin,await createNativeAssetFixturePlugin(repository),reviewedNativeInputPlugin(await prepareReviewedNativeInputs(repository))]});
+  const built=await Bun.build({entrypoints:[entry],target:'bun',outdir:root,naming:{entry:'stream.mjs',asset:'[name]-[hash].[ext]'},plugins:[rawSetterPlugin,...await reviewedBuildPlugins()]});
   if(!built.success)throw new AggregateError(built.logs,'Pinned stream continuation graph build failed');await writeNativeFixtureOutputs(built.outputs);
   const home=path.join(root,'home'),tmp=path.join(home,'tmp');await fs.mkdir(tmp,{recursive:true});await fs.writeFile(path.join(tmp,'package.json'),'{"type":"commonjs"}\n');
   let command=[process.execPath,path.join(root,'stream.mjs')];
@@ -186,7 +191,7 @@ const gates = createAdmissionGates({executionActivity:inner=>{nativeExecution=in
    const disk=Bun.spawn(['df','-h',repository],{stdout:'pipe',stderr:'pipe'});if(await disk.exited!==0)throw Error('Disk check unavailable');
    const executable=path.join(root,'DevRyan-native-stream-fixture');
    const compiledBuild=await Bun.build({entrypoints:[entry],target:'bun',compile:{target:'bun-darwin-arm64',outfile:executable,autoloadDotenv:false,autoloadBunfig:false,autoloadTsconfig:false,autoloadPackageJson:false},
-    plugins:[rawSetterPlugin,await createNativeAssetFixturePlugin(repository),reviewedNativeInputPlugin(await prepareReviewedNativeInputs(repository))]});
+    plugins:[rawSetterPlugin,...await reviewedBuildPlugins()]});
    if(!compiledBuild.success)throw new AggregateError(compiledBuild.logs,'Compiled native fixture failed');await fs.chmod(executable,0o755);command=[executable];
   }
   child=Bun.spawn(command,{cwd:repository,env:{PATH:'/usr/bin:/bin',HOME:home,TMPDIR:tmp,XDG_CONFIG_HOME:path.join(home,'config'),XDG_DATA_HOME:path.join(home,'data'),XDG_STATE_HOME:path.join(home,'state'),XDG_CACHE_HOME:path.join(home,'cache'),GIT_CEILING_DIRECTORIES:root,DEVRYAN_INTEGRATION_FIXTURE_ROOT:root},stdout:'pipe',stderr:'pipe'});

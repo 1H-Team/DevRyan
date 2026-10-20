@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.7] - 2026-10-21
+
+- Preserve managed-task recovery ownership after provider failures and explain execution recovery failures in chat.
+- Allow parent-session deletion after a child was safely removed, and prevent overlapping deletion intents from blocking recovery.
+- Keep working-session indicators synchronized when sidebar rows reappear.
+- Run deterministic test suites in a bounded concurrent pool, consolidate upgrade qualification on one runner, and strengthen final-DMG startup smoke checks.
+
 ## [2.1.6] - 2026-10-20
 
 - Improve managed-task cancellation, recovery and persisted Claude continuation checkpoints, and keep native provider tool handoffs consistent across resumes.

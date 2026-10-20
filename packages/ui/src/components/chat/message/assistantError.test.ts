@@ -3,6 +3,19 @@ import { classifyAssistantError, classifySteeredAbortFallback } from "./assistan
 import { PROVIDER_TOKEN_EXPIRED_MESSAGE } from "@/lib/messages/providerTokenExpired"
 
 describe("classifyAssistantError", () => {
+  test("keeps recovery ownership failures out of provider blame and automatic retry guidance", () => {
+    for (const name of ['UnknownError', 'SessionRetry']) {
+      const classification = classifyAssistantError({ name, data: {
+        message: 'native_slim_retry_primary_fenced\nprivate stack',
+      } })
+      expect(classification).toEqual({
+        text: 'Automatic recovery could not verify this task\'s execution. Review the task and its recovery options before continuing.',
+        variant: 'error',
+      })
+      expect(classification?.retryable).toBeUndefined()
+    }
+  })
+
   test("classifies transient provider stream failures as retryable with friendly copy", () => {
     expect(classifyAssistantError({
       name: "UnknownError",

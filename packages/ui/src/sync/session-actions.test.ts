@@ -1979,6 +1979,33 @@ describe("deleteSessions archived behavior", () => {
     expect(globalRemoveCalls[0].ids).toEqual(["archived-parent", "archived-child", "archived-grandchild"])
   })
 
+  test("retries only the failed archived parent after its child was deleted", async () => {
+    const parentSession = makeSession("archived-parent")
+    const parent = { ...parentSession, directory: "/archived/project", time: { ...parentSession.time, archived: 100 } } as Session
+    const childSession = makeSession("archived-child", parent.id)
+    const child = { ...childSession, directory: parent.directory, time: { ...childSession.time, archived: 100 } } as Session
+    mockGlobalArchivedSessions = [parent, child]
+    let failParent = true
+    sessionDeleteHandler = (params) => {
+      if (params.sessionID === parent.id && failParent) {
+        failParent = false
+        return Promise.reject(new Error("Native removal is still settling"))
+      }
+      return Promise.resolve({ data: true })
+    }
+    const { setActionRefs, deleteSessions } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([]), () => "/current/project")
+
+    expect(await withMutedConsoleError(() => deleteSessions([parent.id]))).toEqual({
+      deletedIds: [child.id], failedIds: [parent.id],
+      failures: [{ sessionId: parent.id, message: "Native removal is still settling" }],
+    })
+    expect(mockGlobalArchivedSessions.map((session) => session.id)).toEqual([parent.id])
+    expect(await deleteSessions([parent.id])).toEqual({ deletedIds: [parent.id], failedIds: [], failures: [] })
+    expect(sessionDeleteCalls.map((params) => params.sessionID)).toEqual([child.id, parent.id, parent.id])
+    expect(mockGlobalArchivedSessions).toEqual([])
+  })
+
   test("waits for archived descendants to delete before starting ancestor deletes", async () => {
     const parent = {
       ...makeSession("archived-parent"),

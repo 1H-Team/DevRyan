@@ -12,7 +12,7 @@ export interface NativeAdmissionState {
   revision: number;
   held: boolean;
   reverting: boolean;
-  holds: Array<{ id: string; ownerID: string; sessionID: string; transactionID?: string }>;
+  holds: Array<{ id: string; ownerID: string; sessionID: string; transactionID?: string; removalID?: string }>;
 }
 export interface MutationScope {
   directory: string;

@@ -1,13 +1,24 @@
 import {test,expect} from 'bun:test';
-import fs from 'node:fs/promises';import path from 'node:path';import os from 'node:os';import {pathToFileURL} from 'node:url';
+import fs from 'node:fs/promises';import path from 'node:path';import os from 'node:os';
+import {spawnSync} from 'node:child_process';import {fileURLToPath} from 'node:url';
 import {createManagedTaskScheduler} from '../../packages/orchestration-runtime/index.js';
 import {createPrimaryRecoveryController,createPrimaryRecoveryHost} from '../../packages/harness-runtime/index.js';
 import {createNativeSlimContextOwner} from '../../packages/web/server/lib/opencode/runtime-host/native-slim-context-owner.js';
 import {nativeStepPermitSha256} from '../../packages/web/server/lib/opencode/runtime-host/primary-step-owner.js';
-import {importAgentsCore} from './agents-core-fixture.ts';
-import type * as ReviewedSlim from '../../packages/agents-core/index.js';
 const directory='/workspace';
-async function originalFixture(){const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-slim-owner-')));const originals=await importAgentsCore(root);return {root,originals};}
+async function originalFixture(){
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-slim-owner-')));
+ try{
+  // Bun's test resolver caches package lookups across builds. Keep each real
+  // bundle isolated in a fresh compiler process as well as a fresh import URL.
+  const builder=fileURLToPath(new URL('./agents-core-fixture.ts',import.meta.url));
+  const built=spawnSync(process.execPath,['-e',`import {bundleAgentsCore} from ${JSON.stringify(builder)};console.log(await bundleAgentsCore(process.argv[1]));`,root],
+   {cwd:fileURLToPath(new URL('../../packages/agents-core',import.meta.url)),encoding:'utf8'});
+  if(built.error)throw built.error;
+  if(built.status!==0)throw new Error(built.stderr||'agents-core fixture build failed');
+  const originals:typeof import('../../packages/agents-core/index.js')=await import(built.stdout.trim());return {root,originals};
+ }catch(error){await fs.rm(root,{recursive:true,force:true});throw error;}
+}
 test('Node context owner runs the original taskboard against real terminal envelope CAS without collecting results',async()=>{
  const f=await originalFixture();let saved:unknown,live=true,child=false;
  const scheduler=createManagedTaskScheduler({persistence:{load:async()=>null,save:async value=>{saved=structuredClone(value)}},executor:{start:async(_task,control)=>{await control.setChildSessionId('ses_child');await control.markAccepted();return {status:'completed',recoverablePreview:'Actual completed result'};},abort:async()=>({aborted:true}),reconcile:async()=>({state:'unavailable'}),readRecoverableResult:async()=>{throw new Error('context_cannot_collect_result')}}});
@@ -110,6 +121,31 @@ test('Node retry owner uses actual original chain choice and reserves separate d
  }finally{await primary.drain();await fs.rm(f.root,{recursive:true,force:true});}
 });
 
+test('child retry before its first Step preserves provider failure for managed recovery without primary ownership',async()=>{
+ const f=await originalFixture();let live=true;
+ let session:{id:string;directory:string;parentID?:string;time?:{archived:number};revert?:{messageID:string}}={id:'ses_child',directory,parentID:'ses_root'};
+ const primary=createPrimaryRecoveryController({directory:path.join(f.root,'primary'),isManaged:()=>true,authorize:async()=>true,observeTurn:async()=>null,abortSession:async()=>{},promptSession:async()=>{throw Error('child_cannot_dispatch_primary_recovery');}});
+ try{
+  await primary.initialize();
+  const owner=createNativeSlimContextOwner({originals:f.originals,primaryRuntime:{...primary,
+   reserveNativeFallback:async()=>{throw Error('child_cannot_reserve_primary_fallback');},helloNative:async()=>{throw Error('child_cannot_handshake_primary');}},
+   getManagedRuntime:async()=>{throw Error('retry_hook_cannot_replay_managed_task');},
+   locations:[{directory,compatibility:{slim:{nativeRuntime:{fallback:{enabled:true},runtimeChains:{explorer:['saved/one','saved/two']}}}}}],
+   openCodeClient:{sessions:{get:async()=>structuredClone(session),message:async()=>{throw Error('child_has_no_step');},messages:async()=>{throw Error('child_has_no_assistant');}}},
+   admissionOwner:{captureSessionHookAuthorization:async()=>async()=>{if(!live)throw Error('child_hook_revoked');}}});
+  const input={permit:{token:'d'.repeat(64),revision:0,sessionID:'ses_child'},directory,sessionID:'ses_child',phase:'retry' as const,
+   event:{sessionID:'ses_child',agent:'explorer',model:{providerID:'saved',id:'one'},error:{statusCode:429,message:'Free usage exceeded, subscribe to Go'},attempt:1,decision:{retry:true as const,delay:100}}};
+  const original=structuredClone(input.event);
+  expect(await owner.retry(input)).toEqual({decision:{retry:false}});
+  expect(input.event).toEqual(original);expect(await primary.readRecord('ses_child')).toBeNull();
+  live=false;await expect(owner.retry(input)).rejects.toThrow('child_hook_revoked');live=true;
+  for(const invalid of [{id:'ses_child',directory},{id:'ses_foreign',directory,parentID:'ses_root'},
+   {id:'ses_child',directory:'/foreign',parentID:'ses_root'},{id:'ses_child',directory,parentID:'ses_child'},
+   {id:'ses_child',directory,parentID:'ses_root',time:{archived:1}},{id:'ses_child',directory,parentID:'ses_root',revert:{messageID:'msg_old'}}]){
+   session=invalid;await expect(owner.retry(input)).rejects.toThrow('native_slim_retry_primary_fenced');
+  }
+ }finally{await primary.drain();await fs.rm(f.root,{recursive:true,force:true});}
+});
 test('original retry before a lazy native Step retains an exact choice until the actual assistant is published',async()=>{
  const f=await originalFixture();
  try{

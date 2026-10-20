@@ -92,8 +92,8 @@ jobs:
         env:
           DEVRYAN_SKIP_INSTALL_PREPARE: '1'
         run: bun install --frozen-lockfile
-      - name: Type-check shared UI
-        run: bun run type-check:ui
+      # Admission already required trusted CI for this exact commit, whose
+      # validate:full type-checks every package; this job only builds the artifact.
       - name: Build web assets and check bundle budgets
         env:
           VITE_ENABLE_REACT_SCAN: 'false'
@@ -384,18 +384,17 @@ jobs:
 
   upgrade-check:
     concurrency:
-      group: release-build-${{ github.ref_name }}-upgrade-check${{ matrix.baseline || '' }}
+      group: release-build-${{ github.ref_name }}-upgrade-check
       cancel-in-progress: true
-    # Installed apps upgrade at their first launch. Age a private profile through
-    # the previous published releases, then cold-start the packaged candidate.
+    # Installed apps upgrade at their first launch. One job runs every required
+    # lane at once (aging through the newest three releases, direct v2.0.2 and
+    # direct v2.0.15), each with its own private profile and report, against one
+    # extracted candidate runtime. One runner instead of three: the matrix
+    # queued for scarce macOS runners (v2.1.6: the third lane waited 10 minutes).
     needs: [admit, electron-package]
     if: ${{ !cancelled() && needs.electron-package.result == 'success' }}
     runs-on: macos-26
     timeout-minutes: 40
-    strategy:
-      fail-fast: false
-      matrix:
-        baseline: [aging, v2.0.2, v2.0.15]
     env:
       GH_TOKEN: ${{ github.token }}
       VERSION: ${{ needs.admit.outputs.version }}
@@ -427,33 +426,14 @@ jobs:
           ditto "$MOUNT/DevRyan.app/Contents/Resources/revert-runtime/darwin-arm64" "$RUNNER_TEMP/candidate-runtime"
           hdiutil detach "$MOUNT" -force
       - name: Upgrade from the previous releases
-        env:
-          UPGRADE_BASELINE: ${{ matrix.baseline }}
-        run: |
-          args=(--candidate-artifacts "$RUNNER_TEMP/candidate-runtime" --report "$RUNNER_TEMP/release-reports/upgrade-${UPGRADE_BASELINE}.json")
-          if [ "$UPGRADE_BASELINE" != aging ]; then args+=(--direct-baseline "$UPGRADE_BASELINE"); fi
-          node scripts/qa/release-upgrade-lane.mjs "${args[@]}"
-      - name: Export an incomplete qualification report if setup failed
+        run: node scripts/qa/release-upgrade-lanes.mjs --candidate-artifacts "$RUNNER_TEMP/candidate-runtime" --report-dir "$RUNNER_TEMP/release-reports"
+      - name: Export incomplete qualification reports if setup failed
         if: ${{ always() }}
-        env:
-          REPORT_PATH: ${{ runner.temp }}/release-reports/upgrade-${{ matrix.baseline }}.json
-          REPORT_KIND: release-upgrade-lane
-        run: |
-          node --input-type=module - <<'NODE'
-          import fs from 'node:fs/promises';
-          import path from 'node:path';
-          const file = process.env.REPORT_PATH;
-          if (!await fs.stat(file).catch(() => null)) {
-            await fs.mkdir(path.dirname(file), { recursive: true });
-            await fs.writeFile(file, JSON.stringify({ schemaVersion: 1, kind: process.env.REPORT_KIND,
-              sourceRevision: process.env.GITHUB_SHA, runID: process.env.GITHUB_RUN_ID,
-              passed: false, failures: ['Qualification did not complete; inspect the failed setup step'] }) + '\n');
-          }
-          NODE
+        run: node scripts/qa/release-upgrade-lanes.mjs --report-dir "$RUNNER_TEMP/release-reports" --fallback-reports
       - uses: actions/upload-artifact@v4
         if: ${{ always() }}
         with:
-          name: release-upgrade-${{ matrix.baseline }}
+          name: release-upgrade
           path: ${{ runner.temp }}/release-reports/
           if-no-files-found: warn
           retention-days: 14

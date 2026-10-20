@@ -1,6 +1,6 @@
 {
   "name": "@devryan/web",
-  "version": "2.1.6",
+  "version": "2.1.7",
   "private": false,
   "type": "module",
   "main": "./server/index.js",
@@ -45,7 +45,9 @@
     "build:watch": "vite build --watch",
     "type-check": "tsc --noEmit && tsc -p server/lib/opencode/runtime-host/tsconfig.json",
     "lint": "eslint \"./src/**/*.{ts,tsx}\" --config ../../eslint.config.js --cache --cache-location ../../.cache/eslint/web",
-    "test": "vitest run --no-file-parallelism --maxWorkers=1 --exclude 'runtime/reviewed-inputs/**' --exclude 'server/lib/opencode/runtime-host/native-helper.test.js' --exclude 'server/lib/opencode/runtime-host/native-retention-quiet.test.ts' --exclude 'server/lib/opencode/runtime-host/native-queued-input.test.ts' --exclude 'server/lib/harness/native-integration/**' && bun test server/lib/opencode/runtime-host/native-helper.test.js server/lib/opencode/runtime-host/native-retention-quiet.test.ts server/lib/opencode/runtime-host/native-queued-input.test.ts ./server/lib/harness/native-integration",
+    "test": "bun run test:vitest && bun run test:native",
+    "test:vitest": "vitest run --no-file-parallelism --maxWorkers=1 --exclude 'runtime/reviewed-inputs/**' --exclude 'server/lib/opencode/runtime-host/native-helper.test.js' --exclude 'server/lib/opencode/runtime-host/native-retention-quiet.test.ts' --exclude 'server/lib/opencode/runtime-host/native-queued-input.test.ts' --exclude 'server/lib/harness/native-integration/**'",
+    "test:native": "bun test server/lib/opencode/runtime-host/native-helper.test.js server/lib/opencode/runtime-host/native-retention-quiet.test.ts server/lib/opencode/runtime-host/native-queued-input.test.ts ./server/lib/harness/native-integration",
     "test:native-host": "bun test ../../scripts/opencode-v2-native/*.test.ts",
     "start": "node bin/cli.js serve"
   },

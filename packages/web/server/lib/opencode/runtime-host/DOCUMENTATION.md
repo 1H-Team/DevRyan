@@ -183,7 +183,11 @@ module, `controller-slim.ts`, `controller-webfetch.ts`,
   `native_interview_patch_required`, and `native-interview-owner.js` rethrows
   the original error class so the service's repair flow runs.
 - `native-slim-context-owner.js` maps managed tasks to the 3.x board record
-  (recency from the attempt's timestamps).
+  (recency from the attempt's timestamps). Its primary fallback hook leaves
+  canonical child sessions without a primary objective to the managed executor:
+  native retries stop and publish the original provider failure, preserving
+  managed usage-limit backup and manual recovery policy. Missing primary
+  ownership on a root session remains fenced.
 - Webfetch results may carry inline image attachments, mapped to file parts;
   the host never enables them (`imageRouting` is not `direct`).
 - `REVIEWED_AST_ASSET_SHA256` lives in `reviewed-ast-asset.js`.
@@ -1077,6 +1081,14 @@ original command backend and inherited HOME.
 Actual OS Keychain behavior remains unverified until the authorized isolated sign-in.
 
 ### Archived deletion recovery
+
+Child-first manual bulk deletion can leave a retained terminal managed task
+whose child is no longer in its parent's canonical subtree. The removal owner
+verifies the child's direct ledger removal hold, completed intent, matching
+generation and recorded disposition, and absence of active leases before the
+scheduler may settle that historical reference. Missing proof or live managed
+work still refuses deletion; interrupted child disposal completes before an
+ancestor can begin its own removal decision. No holds are cleared or ownership widened.
 
 Recovered input remains execution-fenced, but an exact `sessions.remove` web grant
 and the private held-tree `removal.inspect`/`removal.delete` permits may dispose of

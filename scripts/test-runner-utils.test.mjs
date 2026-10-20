@@ -10,7 +10,9 @@ import { fileURLToPath } from 'node:url';
 import { discoverTestFiles, isBunTestSource, isIsolatedUiTestSource } from './test-runner-utils.mjs';
 import { discoverElectronTestFiles, planElectronTests } from './test-electron.mjs';
 import { discoverScriptTestFiles } from './test-scripts.mjs';
-import { buildPlan } from './validate.mjs';
+import { FULL_TEST_COMMANDS } from './test-full.mjs';
+import { buildPlan, isVersionOnlyChange, testUnitsForPlan } from './validate.mjs';
+import { STARTUP_CONTRACT_GROUPS } from './test-startup-contract.mjs';
 
 const repoRoot = new URL('..', import.meta.url);
 
@@ -27,7 +29,7 @@ describe('script framework dispatch', () => {
     const environment = { ...process.env };
     delete environment.NODE_TEST_CONTEXT;
     const run = () => spawnSync(process.execPath, ['--input-type=module', '-e',
-      `import { runScriptTests } from ${JSON.stringify(new URL('./test-scripts.mjs', import.meta.url).href)}; process.exit(runScriptTests(process.argv[1]));`, root],
+      `import { runScriptTests } from ${JSON.stringify(new URL('./test-scripts.mjs', import.meta.url).href)}; process.exit(await runScriptTests(process.argv[1]));`, root],
     { encoding: 'utf8', env: environment });
     try {
       mkdirSync(path.join(root, 'scripts'));
@@ -187,25 +189,28 @@ describe('Electron framework dispatch', () => {
 });
 
 describe('release workflow', () => {
-  test('includes the Bots runtime package in the full test gate and version script', () => {
+  test('test:full runs the suite inventory through the concurrent runner', () => {
     const packageJson = JSON.parse(readFileSync(new URL('package.json', repoRoot), 'utf8'));
+    assert.equal(packageJson.scripts['test:full'], 'node scripts/test-full.mjs');
+  });
+
+  test('includes the Bots runtime package in the full test gate and version script', () => {
     const bumpVersionSource = readFileSync(new URL('scripts/bump-version.mjs', repoRoot), 'utf8');
 
     assert.match(
-      packageJson.scripts['test:full'],
+      FULL_TEST_COMMANDS.join(' && '),
       /bun run --cwd packages\/bots-runtime test/,
     );
     assert.match(bumpVersionSource, /packages\/bots-runtime\/package\.json/);
   });
 
   test('versions and runs the confined Bot service packages', () => {
-    const packageJson = JSON.parse(readFileSync(new URL('package.json', repoRoot), 'utf8'));
     const bumpVersionSource = readFileSync(new URL('scripts/bump-version.mjs', repoRoot), 'utf8');
     for (const packageName of [
       'bot-supervisor', 'bot-engine-proxy', 'bot-egress', 'bot-computer', 'bot-indexer', 'bot-db',
     ]) {
       assert.match(
-        packageJson.scripts['test:full'],
+        FULL_TEST_COMMANDS.join(' && '),
         new RegExp(`bun run --cwd packages/${packageName} test`),
       );
       assert.match(bumpVersionSource, new RegExp(`packages/${packageName}/package\\.json`));
@@ -213,35 +218,28 @@ describe('release workflow', () => {
   });
 
   test('includes the Cursor runtime package in the full test gate', () => {
-    const packageJson = JSON.parse(readFileSync(new URL('package.json', repoRoot), 'utf8'));
-
     assert.match(
-      packageJson.scripts['test:full'],
+      FULL_TEST_COMMANDS.join(' && '),
       /bun run --cwd packages\/cursor-sdk-runtime test/,
     );
   });
 
   test('includes the managed orchestration runtime package in the full test gate', () => {
-    const packageJson = JSON.parse(readFileSync(new URL('package.json', repoRoot), 'utf8'));
-
     assert.match(
-      packageJson.scripts['test:full'],
+      FULL_TEST_COMMANDS.join(' && '),
       /bun run --cwd packages\/orchestration-runtime test/,
     );
   });
 
   test('includes the Electron package suite in the full test gate', () => {
-    const packageJson = JSON.parse(readFileSync(new URL('package.json', repoRoot), 'utf8'));
-
     assert.match(
-      packageJson.scripts['test:full'],
+      FULL_TEST_COMMANDS.join(' && '),
       /bun run --cwd packages\/electron test/,
     );
   });
 
   test('runs only the legacy Tauri JavaScript contract in the full test gate', () => {
-    const packageJson = JSON.parse(readFileSync(new URL('package.json', repoRoot), 'utf8'));
-    const desktopCommands = packageJson.scripts['test:full'].split(' && ')
+    const desktopCommands = FULL_TEST_COMMANDS
       .filter((command) => command.includes('packages/desktop'));
     assert.deepEqual(desktopCommands, ['bun run --cwd packages/desktop test:managed-orchestration']);
   });
@@ -269,13 +267,21 @@ describe('release workflow', () => {
     assert.match(workflow.jobs['verify-published'].if, /outputs.published == 'true'/);
     assert.equal(workflow.jobs['verify-published'].steps.find(step => step.uses === 'actions/download-artifact@v4').with['run-id'], '${{ needs.admit.outputs.candidate_run_id }}');
     for (const name of ['web', 'electron-prepare', 'bot-resolve']) assert.match(workflow.jobs[name].if, /outputs.published != 'true'/);
-    assert.deepEqual(workflow.jobs['upgrade-check'].strategy.matrix.baseline, ['aging', 'v2.0.2', 'v2.0.15']);
+    // Every required lane (scripts/qa/release-upgrade-lanes.mjs REQUIRED_UPGRADE_LANES) in one job, never a subset.
+    const upgrade = workflow.jobs['upgrade-check'];
+    assert.equal(upgrade.strategy, undefined);
+    assert.ok(upgrade.steps.some((step) => step.run === 'node scripts/qa/release-upgrade-lanes.mjs --candidate-artifacts "$RUNNER_TEMP/candidate-runtime" --report-dir "$RUNNER_TEMP/release-reports"'));
+    const fallback = upgrade.steps.find((step) => step.run?.includes('--fallback-reports'));
+    assert.equal(fallback.if, '${{ always() }}');
+    assert.equal(upgrade.steps.filter((step) => step.uses === 'actions/download-artifact@v4').length, 1);
+    // Release builds reuse exact-source CI's type-check instead of repeating it.
+    assert.ok(!workflow.jobs.web.steps.some((step) => /type-check/.test(step.run ?? '')));
     assert.ok(workflow.jobs['final-dmg-smoke']['continue-on-error'].includes('qualified-3-runs'));
     for (const job of Object.values(workflow.jobs)) for (const step of job.steps ?? []) {
       if (step.uses === 'actions/upload-artifact@v4') assert.equal(step.with['retention-days'], 14);
     }
     assert.match(workflow.jobs.publish.if, /needs\.upgrade-check\.result == 'success'/);
-    assert.ok(workflow.jobs['upgrade-check'].steps.some((step) => step.run?.includes('node scripts/qa/release-upgrade-lane.mjs')));
+    assert.ok(workflow.jobs['upgrade-check'].steps.some((step) => step.run?.includes('node scripts/qa/release-upgrade-lanes.mjs')));
 
     const steps = workflow.jobs.publish.steps;
     const index = (name) => steps.findIndex((step) => step.name === name);
@@ -374,9 +380,11 @@ describe('maintenance validation selection', () => {
     ]) {
       const plan = buildPlan('fast', [file]);
       const testCommands = plan.commands.filter((entry) => entry.label.startsWith('test:'));
-      assert.deepEqual(testCommands, [
-        { label: 'test:desktop', executable: 'bun', args: ['run', '--cwd', 'packages/desktop', 'test:managed-orchestration'] },
-        { label: 'test:startup', executable: 'bun', args: ['run', 'test:startup'] },
+      assert.deepEqual(testCommands.map((entry) => entry.label), ['test:desktop', 'test:startup'], file);
+      // The desktop suite owns no startup group, so the whole startup contract runs too.
+      assert.deepEqual(testUnitsForPlan(testCommands).map((unit) => [unit.command, unit.args]), [
+        ['bun', ['run', '--cwd', 'packages/desktop', 'test:managed-orchestration']],
+        ...STARTUP_CONTRACT_GROUPS.map((group) => [group.command, group.args]),
       ], file);
     }
   });
@@ -403,5 +411,59 @@ describe('maintenance validation selection', () => {
   test('runs every check in full mode and refuses unknown modes', () => {
     assert.deepEqual(buildPlan('full').commands.map(c => c.label), ['lint:full', 'import-boundaries', 'browser-graph', 'type-check:full', 'docs:validate', 'build', 'bundle:check', 'test:full']);
     assert.throws(() => buildPlan('quick', []), /Unknown validation mode/);
+  });
+});
+
+describe('version-only and startup-covered validation', () => {
+  const manifest = (version, extra = {}) => `${JSON.stringify({ name: '@devryan/ui', version, dependencies: { react: '^19.2.8' }, ...extra }, null, 2)}\n`;
+  const lock = (version, react = '19.2.8') => [
+    '{', '  "workspaces": {', '    "packages/ui": {', '      "name": "@devryan/ui",', `      "version": "${version}",`,
+    '      "dependencies": {', `        "react": "${react}",`, '      },', '    },', '  },', '}', ''].join('\n');
+
+  test('recognizes a bump-version change and nothing else as version-only', () => {
+    assert.equal(isVersionOnlyChange('packages/ui/package.json', manifest('2.1.5'), manifest('2.1.6')), true);
+    assert.equal(isVersionOnlyChange('package.json', manifest('2.1.5'), manifest('2.1.6')), true);
+    assert.equal(isVersionOnlyChange('packages/ui/package.json', manifest('2.1.5'), manifest('2.1.6', { scripts: { test: 'bun test' } })), false);
+    assert.equal(isVersionOnlyChange('packages/ui/package.json', manifest('2.1.5'), manifest('2.1.5', { dependencies: { react: '^19.3.0' } })), false);
+    assert.equal(isVersionOnlyChange('packages/ui/package.json', manifest('2.1.6'), manifest('2.1.6')), false);
+    assert.equal(isVersionOnlyChange('packages/ui/src/index.json', manifest('2.1.5'), manifest('2.1.6')), false);
+    assert.equal(isVersionOnlyChange('bun.lock', lock('2.1.5'), lock('2.1.6')), true);
+    assert.equal(isVersionOnlyChange('bun.lock', lock('2.1.5'), lock('2.1.6', '19.3.0')), false);
+    assert.equal(isVersionOnlyChange('bun.lock', lock('2.1.5'), lock('2.1.5').replace('"react": "19.2.8"', '"react": "19.3.0"')), false);
+    const cargo = (version) => `[package]\nname = "devryan-desktop"\nversion = "${version}"\nedition = "2021"\n`;
+    assert.equal(isVersionOnlyChange('packages/desktop/src-tauri/Cargo.toml', cargo('2.1.5'), cargo('2.1.6')), true);
+    const cargoLock = (own, dependency) => `[[package]]\nname = "devryan-desktop"\nversion = "${own}"\n\n[[package]]\nname = "serde"\nversion = "${dependency}"\n`;
+    assert.equal(isVersionOnlyChange('packages/desktop/src-tauri/Cargo.lock', cargoLock('2.1.5', '1.0.0'), cargoLock('2.1.6', '1.0.0')), true);
+    assert.equal(isVersionOnlyChange('packages/desktop/src-tauri/Cargo.lock', cargoLock('2.1.5', '1.0.0'), cargoLock('2.1.5', '1.0.1')), false);
+  });
+
+  test('a release bump checks version agreement and the startup contract instead of every suite', () => {
+    const bump = ['CHANGELOG.md', 'bun.lock', 'package.json', 'packages/ui/package.json', 'packages/web/package.json', 'packages/desktop/src-tauri/Cargo.toml'];
+    const plan = buildPlan('fast', bump, { versionOnly: new Set(bump.filter((file) => file !== 'CHANGELOG.md')) });
+    assert.deepEqual(plan.commands.map((c) => c.label), ['docs:validate', 'versions', 'test:startup']);
+    assert.deepEqual(plan.commands.find((c) => c.label === 'versions').args, ['scripts/release.mjs', 'check-versions']);
+    // The same files with real manifest changes keep the full shared-configuration plan.
+    const labels = buildPlan('fast', bump).commands.map((c) => c.label);
+    for (const label of ['lint:full', 'type-check:full', 'test:ui', 'test:web', 'test:startup']) assert.ok(labels.includes(label), label);
+    // A version bump alongside code still validates the code.
+    const mixed = buildPlan('fast', [...bump, 'packages/ui/src/lib/executionFailure.ts'], { versionOnly: new Set(bump.filter((file) => file !== 'CHANGELOG.md')) });
+    const mixedLabels = mixed.commands.map((c) => c.label);
+    for (const label of ['versions', 'lint:changed', 'typeCheck:ui', 'typeCheck:web', 'test:ui', 'test:startup']) assert.ok(mixedLabels.includes(label), label);
+    assert.ok(!mixedLabels.includes('lint:full'));
+  });
+
+  test('startup groups whose owner suite runs in the plan are not run twice', () => {
+    const plan = buildPlan('fast', ['packages/web/server/lib/opencode/lifecycle.js']);
+    const startup = plan.commands.find((c) => c.label === 'test:startup');
+    assert.deepEqual(startup.coveredBy, ['web']);
+    const units = testUnitsForPlan(plan.commands.filter((c) => c.label.startsWith('test:')));
+    const startupUnits = units.filter((unit) => unit.suite === 'startup').map((unit) => unit.name);
+    assert.deepEqual(startupUnits, STARTUP_CONTRACT_GROUPS.filter((group) => group.owner !== 'web').map((group) => `startup:${group.name}`));
+    // The web suite itself still runs every Vitest shard and its native files.
+    assert.ok(units.some((unit) => unit.name === 'web:native'));
+    assert.ok(units.filter((unit) => unit.name.startsWith('web:vitest')).length > 1);
+    const alone = buildPlan('fast', ['scripts/release.mjs']).commands.find((c) => c.label === 'test:startup');
+    assert.deepEqual(alone.coveredBy, ['scripts']);
+    assert.deepEqual(buildPlan('fast', []).commands.find((c) => c.label === 'test:startup').coveredBy, []);
   });
 });

@@ -6,10 +6,11 @@ import {createSessionMutationRuntime} from '../../../../../harness-runtime/lib/s
 import {git} from '../../../../../harness-runtime/lib/session-changes-git.js';
 import {createNativeAdmissionOwner} from './native-admission-owner.js';
 import {createNativeSessionRemoval} from './native-session-removal.js';
+import {createManagedTaskScheduler} from '../../../../../orchestration-runtime/scheduler.js';
 
 const roots=[];
 afterEach(async()=>{await Promise.all(roots.splice(0).map(root=>fs.rm(root,{recursive:true,force:true})));});
-async function fixture({discardStreamReceipts,recordDiagnostic}={}){
+async function fixture({discardStreamReceipts,recordDiagnostic,managed=false}={}){
   const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'native-removal-')));roots.push(root);
   const directory=path.join(root,'project'),storage=path.join(root,'ledger');await fs.mkdir(directory);await git(directory,['init','--quiet']);
   await fs.writeFile(path.join(directory,'published.txt'),'published bytes');
@@ -17,8 +18,14 @@ async function fixture({discardStreamReceipts,recordDiagnostic}={}){
   await runtime.registerNativeSession({directory,sessionID:'ses_root'});
   // The idle child intentionally has no existing ledger row.
   const sessions=new Map([['ses_root',{id:'ses_root',parentID:null,directory}],['ses_child',{id:'ses_child',parentID:'ses_root',directory}]]);
-  let allowed=true,failLeaf=false,failPreparation=false,addChild=false,claimed=false;
+  let allowed=true,failLeaf=false,failPreparation=false,failStop=false,addChild=false,claimed=false;
   const removed=[],stopped=[],cancellations=[];
+  const scheduler=managed?createManagedTaskScheduler({executor:{
+    async start(_task,control){await control.setChildSessionId('ses_child');await control.markAccepted();return {status:'completed',summary:'done'};},
+    async abort(){throw new Error('Terminal task must not abort its deleted child');},
+    async reconcile(){throw new Error('Unexpected recovery');},async readRecoverableResult(){return {};}
+  }}):null;
+  if(scheduler){const task=await scheduler.submit({idempotencyKey:'managed-child',rootSessionId:'ses_root',parentTaskId:null,directory,mode:'orchestrator',providerId:'openai',modelId:'fixture',agent:'explorer',variant:null,label:'child',prompt:'child',timeoutAt:null});await scheduler.waitForTask(task.taskId,{timeoutMs:1000});}
   const owner=createNativeAdmissionOwner({runtime,directory,ownerID:'owned-bundle',getSession:async id=>sessions.get(id),recordDiagnostic,
     authorizeOperation:async()=>{throw new Error('Generic policy cannot delete');},withSessionLock:async(_id,action)=>action(),
     captureWebAuthorization:async()=>async()=>{if(!allowed)throw Object.assign(new Error('grant_revoked'),{code:'grant_revoked'});}});
@@ -37,11 +44,14 @@ async function fixture({discardStreamReceipts,recordDiagnostic}={}){
       return {removed:true,sessionID};
     },
     cancelAndWait:async({sessions:ids})=>{
+      if(failStop){failStop=false;throw new Error('Native stop unavailable');}
       expect(ids.every(id=>sessions.has(id))).toBe(true);stopped.push([...ids]);
       return {terminated:true,sessions:ids};
     },
     cancelManaged:async input=>{
-      cancellations.push(structuredClone(input));
+      const {verifyRemovedSession:_verifyRemovedSession,...record}=input;
+      cancellations.push(structuredClone(record));
+      if(scheduler)return scheduler.cancelSessionsForRemoval(input);
       if(input.phase==='fence'){
         if(addChild){addChild=false;sessions.set('ses_racing',{id:'ses_racing',parentID:'ses_root',directory});}
         return {fenced:true,sessions:input.sessions};
@@ -49,11 +59,62 @@ async function fixture({discardStreamReceipts,recordDiagnostic}={}){
       if(failPreparation){failPreparation=false;allowed=false;}
       return {settled:true,sessions:input.sessions};
     }});
-  const remove=()=>owner.withWebOperation({operation:'sessions.remove',method:'DELETE',path:'/api/session/ses_root',directory},()=>coordinator.remove({sessionID:'ses_root',directory}));
-  return {directory,runtime,owner,coordinator,remove,sessions,removed,stopped,cancellations,
+  const removeSession=sessionID=>owner.withWebOperation({operation:'sessions.remove',method:'DELETE',path:`/api/session/${sessionID}`,directory},()=>coordinator.remove({sessionID,directory}));
+  const remove=()=>removeSession('ses_root');
+  return {directory,runtime,owner,coordinator,remove,removeSession,scheduler,sessions,removed,stopped,cancellations,
     setAllowed:value=>{allowed=value;},setClaimed:value=>{claimed=value;},failLeaf:()=>{failLeaf=true;},revokeDuringPreparation:()=>{failPreparation=true;},addRacingChild:()=>{addChild=true;},
+    failStop:()=>{failStop=true;},
     reopen:()=>createSessionMutationRuntime({directory:storage})};
 }
+
+test('real managed settlement permits child-first archived deletion followed by its parent',async()=>{
+  const f=await fixture({managed:true});
+  try{
+    await expect(f.removeSession('ses_child')).resolves.toBe(true);
+    await expect(f.remove()).resolves.toBe(true);
+    expect(f.removed).toEqual(['ses_child','ses_root']);
+    expect(await f.reopen().nativeRemovals({directory:f.directory})).toEqual([]);
+  }finally{await f.scheduler.shutdown();}
+});
+
+test('an interrupted child deletion stays fenced until its committed decision recovers, then parent retry succeeds',async()=>{
+  const f=await fixture({managed:true});
+  try{
+    f.failLeaf();
+    await expect(f.removeSession('ses_child')).rejects.toThrow('lost delete acknowledgement');
+    await expect(f.remove()).rejects.toMatchObject({code:'native_removal_in_progress',status:409});
+    const pending=await f.runtime.nativeRemovals({directory:f.directory});
+    expect(pending.map(row=>row.state)).toEqual(['committed']);
+    await f.coordinator.recover({directory:f.directory});
+    await expect(f.remove()).resolves.toBe(true);
+    expect(f.removed).toEqual(['ses_child','ses_root']);
+    expect(await f.reopen().nativeRemovals({directory:f.directory})).toEqual([]);
+  }finally{await f.scheduler.shutdown();}
+});
+
+test('a missing historical managed child without durable disposal proof still refuses parent deletion',async()=>{
+  const f=await fixture({managed:true});
+  try{
+    f.sessions.delete('ses_child');
+    await expect(f.remove()).rejects.toMatchObject({code:'native_removal_scope_invalid',statusCode:409});
+    expect(f.removed).toEqual([]);
+    expect((await f.runtime.nativeRemovals({directory:f.directory}))[0].state).toBe('preparing');
+  }finally{await f.scheduler.shutdown();}
+});
+
+test('an ancestor cannot add overlapping holds while a descendant deletion is preparing',async()=>{
+  const f=await fixture({managed:true});
+  try{
+    f.failStop();
+    await expect(f.removeSession('ses_child')).rejects.toThrow('Native stop unavailable');
+    await expect(f.remove()).rejects.toMatchObject({code:'native_removal_in_progress',status:409});
+    expect(await f.runtime.nativeRemovals({directory:f.directory})).toHaveLength(1);
+    await expect(f.removeSession('ses_child')).resolves.toBe(true);
+    await expect(f.remove()).resolves.toBe(true);
+    expect(f.removed).toEqual(['ses_child','ses_root']);
+    expect(await f.reopen().nativeRemovals({directory:f.directory})).toEqual([]);
+  }finally{await f.scheduler.shutdown();}
+});
 
 test('exact held subtree deletion registers idle children, disposes pending IDs and preserves published files',async()=>{
   const f=await fixture();await expect(f.remove()).resolves.toBe(true);

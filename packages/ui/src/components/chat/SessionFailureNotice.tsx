@@ -14,10 +14,11 @@ export const SessionFailureNotice = React.memo(({ sessionId }: { sessionId: stri
   const hostFailure = usePrimaryRecoveryStore((state) => state.snapshots[sessionId]?.record?.failureObserved === true);
   if (failure?.type === 'error' && isSessionCancellation(failure.error)) return null;
   if ((!failure || failure.type !== 'error') && !hostFailure) return null;
+  const described = describeSessionFailure(failure?.type === 'error' ? failure.error : undefined);
   return <div className="chat-message-column px-4 py-3"><div role="alert"
     className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 typography-meta">
-    <p className="font-medium">Request failed</p>
-    <p className="mt-1">{describeSessionFailure(failure?.type === 'error' ? failure.error : undefined).message}</p>
+    <p className="font-medium">{described.code === 'execution_recovery_unavailable' ? 'Automatic recovery stopped' : 'Request failed'}</p>
+    <p className="mt-1">{described.message}</p>
   </div></div>;
 });
 SessionFailureNotice.displayName = 'SessionFailureNotice';

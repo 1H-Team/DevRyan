@@ -995,6 +995,13 @@ optimistic dispatch boundary with controlled transport promises.
 
 Session error notifications persist only bounded classifications and safe display text alongside completion read state. Raw exception stacks and provider bodies are never persisted. Viewing a session does not resolve its failure notice. A newer canonical user turn (including a Plan retry) supersedes proven older same-session failures; live user parts and canonical history pages provide this authority, while optimistic rows and synthetic maintenance wakes do not. Persisted owning user IDs/server timestamps avoid comparing server chronology with renderer receipt clocks. Legacy keyed failures can use canonical history order; uncorrelated legacy notices and uncorrelated delayed error events remain conservative until successful completion. A newer authoritative successful completion also resolves captured older failures.
 
+`native_slim_retry_primary_fenced` is the bounded `execution_recovery_unavailable`
+classification, retained across notification persistence. The notice and assistant
+error renderer explain that automatic recovery could not verify task execution;
+they do not attribute this ownership failure to provider authentication or offer
+an unverified retry. The original provider error remains a separate canonical
+failure when the host declines automatic fallback.
+
 ## DevRyan names
 
 Every stream the UI opens asks for `devryan:*` event names; `lib/eventTypes.ts`

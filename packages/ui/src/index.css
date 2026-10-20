@@ -1724,7 +1724,7 @@ input[aria-label="Terminal input"] {
 }
 
 /* Sidebar/mobile session "working" dot: a slow blink. Keep the duration in sync
-   with SESSION_WORKING_BLINK_DURATION_MS (SessionStatusDot.tsx). */
+   with SESSION_WORKING_BLINK_DURATION_MS (sessionWorkingBlink.ts). */
 .animate-session-working-blink {
   animation: oc-busy-pulse 2.4s ease-in-out infinite;
 }

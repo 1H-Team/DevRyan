@@ -833,7 +833,8 @@ export interface ManagedTaskScheduler {
   ): Promise<{ cancelledTaskIds: string[] }>;
   /** Constructor-only; restore the native ledger's fence before recovery. */
   cancelSessionsForRemoval(input: { directory: string; sessions: string[]; intentID: string } & (
-    { phase: 'fence' } | { phase: 'settle'; settled: { terminated: true; sessions: readonly string[] } | null; absentSessions: readonly string[] }
+    { phase: 'fence' } | { phase: 'settle'; settled: { terminated: true; sessions: readonly string[] } | null; absentSessions: readonly string[];
+      verifyRemovedSession?: (sessionID: string) => Promise<boolean> }
   )): Promise<{ fenced: true; sessions: string[] } | { settled: true; sessions: string[]; taskIDs: string[] }>;
   releaseModeLease(rootSessionId: string, mode: ManagedTaskMode): Promise<boolean>;
   flush(): Promise<void>;

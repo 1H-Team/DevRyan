@@ -65,7 +65,7 @@ const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, providerID, agent
                                         className="flex min-w-0 items-center gap-1.5 typography-ui-header font-bold tracking-tight leading-none"
                                     >
                                         <RiAiAgentLine
-                                            className="h-4 w-4 flex-shrink-0 -translate-y-[1px]"
+                                            className="h-4 w-4 flex-shrink-0"
                                             style={{ color: `var(${getAgentIconColor(agentName).var})` }}
                                         />
                                         <span className="min-w-0 max-w-[180px] truncate text-foreground">{formatAgentLabel(agentName)}</span>

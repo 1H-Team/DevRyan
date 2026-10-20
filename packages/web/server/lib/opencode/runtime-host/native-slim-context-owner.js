@@ -142,6 +142,16 @@ export function createNativeSlimContextOwner({admissionOwner,openCodeClient,prim
    if(!record(native)||!record(native.runtimeChains)||!record(native.fallback))throw fail('native_slim_retry_configuration_required');
    if(native.fallback.enabled===false){await authorize();return {decision:event.decision};}
    const primary=await primaryRuntime.readRecord(input.sessionID);
+   if(!primary){
+    const session=await openCodeClient.sessions.get(input.sessionID,{directory:input.directory});
+    await authorize();
+    if(session?.id===input.sessionID&&session.directory===input.directory&&!session.time?.archived&&!session.revert
+     &&typeof session.parentID==='string'&&session.parentID.length>0&&session.parentID!==input.sessionID){
+     // Managed children have no primary objective. Publish their original
+     // provider failure so the managed executor retains recovery ownership.
+     return {decision:{retry:false}};
+    }
+   }
    const instanceID=getInstanceID?.(),attempt=input.attempt;
    if(!primary||primary.executionGeneration!==2||primary.directory!==input.directory||typeof instanceID!=='string'||!instanceID
     ||!record(attempt)||typeof attempt.traceID!=='string'||!attempt.traceID||typeof attempt.spanID!=='string'||!attempt.spanID)throw fail('native_slim_retry_primary_fenced');

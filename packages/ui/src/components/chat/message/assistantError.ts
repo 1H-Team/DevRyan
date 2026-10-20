@@ -11,6 +11,7 @@ import {
 } from "@/lib/messages/transientStreamError"
 import { isClaudeThirdPartyUsageClassificationError } from "@/lib/messages/claudeThirdPartyUsage"
 import { decodeAssistantMessageError } from "@/lib/decoders/assistantMessageError"
+import { describeExecutionRecoveryFailure } from "@/lib/executionFailure"
 import type {
   ManagedAbortRecoveryPresentation,
   ManagedTransportRecoveryPresentation,
@@ -99,6 +100,9 @@ export function classifyAssistantError(
     variant: "info",
     abortKind: "manual",
   }
+
+  const recoveryFailure = describeExecutionRecoveryFailure(detail)
+  if (recoveryFailure) return { text: recoveryFailure.message, variant: "error" }
 
 
   if (errorName === "SessionRetry") {

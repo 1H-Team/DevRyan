@@ -2,7 +2,8 @@ import React from 'react';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { SESSION_WORKING_BLINK_DURATION_MS, SessionStatusDot } from './SessionStatusDot';
+import { SessionStatusDot } from './SessionStatusDot';
+import { SESSION_WORKING_BLINK_DURATION_MS, resolveWorkingBlinkCurrentTimeMs } from './sessionWorkingBlink';
 
 const renderWorkingAt = (nowMs: number): string => {
   const originalDateNow = Date.now;
@@ -58,6 +59,23 @@ describe('SessionStatusDot', () => {
     expect(resolvePhaseAt(parentDelayMs, parentMountedAtMs, childMountedAtMs)).toBe(
       resolvePhaseAt(childDelayMs, childMountedAtMs, childMountedAtMs),
     );
+  });
+
+  test('realigns restarted blinks to the wall-clock phase whatever their mount delay', () => {
+    const parentDelayMs = readAnimationDelayMs(renderWorkingAt(1000));
+    const childDelayMs = readAnimationDelayMs(renderWorkingAt(6500));
+    const restartedAtMs = 9_100;
+    const activeTimeAt = (delayMs: number): number => (
+      resolveWorkingBlinkCurrentTimeMs(restartedAtMs, delayMs) - delayMs
+    ) % SESSION_WORKING_BLINK_DURATION_MS;
+
+    expect(activeTimeAt(parentDelayMs)).toBe(restartedAtMs % SESSION_WORKING_BLINK_DURATION_MS);
+    expect(activeTimeAt(childDelayMs)).toBe(restartedAtMs % SESSION_WORKING_BLINK_DURATION_MS);
+  });
+
+  test('keeps the realigned current time non-negative', () => {
+    expect(resolveWorkingBlinkCurrentTimeMs(100, -2_000)).toBe(500);
+    expect(resolveWorkingBlinkCurrentTimeMs(0, 0)).toBe(0);
   });
 
   test('renders attention states with their status color and label', () => {

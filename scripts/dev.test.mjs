@@ -6,7 +6,7 @@ import { describe, test } from 'node:test';
 import { stopChildTree } from './dev-child-utils.mjs';
 import { resolveDevDataDirectory } from './dev-data-directory.mjs';
 import { shouldRestartDevChild } from './dev-restart-policy.mjs';
-import { buildPlan } from './validate.mjs';
+import { buildPlan, testUnitsForPlan } from './validate.mjs';
 
 function waitForOutput(child, expected) {
   return new Promise((resolve, reject) => {
@@ -130,7 +130,8 @@ describe('affected validation planning', () => {
   test('runs Cursor tests and dependent host validation for Cursor runtime code', () => {
     const plan = buildPlan('fast', ['packages/cursor-sdk-runtime/persistent-worker.mjs']);
     assert.deepEqual(plan.commands.map((entry) => entry.label), ['typeCheck:web', 'import-boundaries', 'browser-graph', 'test:cursor', 'test:web', 'test:startup']);
-    assert.deepEqual(plan.commands.find((entry) => entry.label === 'test:cursor')?.args, ['test', 'packages/cursor-sdk-runtime']);
+    const cursor = testUnitsForPlan([plan.commands.find((entry) => entry.label === 'test:cursor')]);
+    assert.deepEqual(cursor.map((unit) => [unit.command, unit.args]), [['bun', ['run', '--cwd', 'packages/cursor-sdk-runtime', 'test']]]);
   });
 
   test('runs the Electron suite for shell code', () => {

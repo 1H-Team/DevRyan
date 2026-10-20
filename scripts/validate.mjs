@@ -1,11 +1,15 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { cacheGrowthFailure, snapshotCache } from './cache-guard.mjs';
+import { planFullTests } from './test-full.mjs';
+import { formatDuration, runTestUnits, summarizeTestUnits, testConcurrency } from './test-pool.mjs';
+import { planScriptTests, prepareScriptTestEnvironment } from './test-scripts.mjs';
+import { STARTUP_CONTRACT_GROUPS, startupContractGroups } from './test-startup-contract.mjs';
 
 const mode = process.argv[2] ?? 'fast';
 
@@ -13,80 +17,65 @@ const workspaceRoot = process.cwd();
 const tsLikeExtensions = new Set(['.ts', '.tsx']);
 const testFilePattern = /(?:^|[./-])test\.[cm]?[jt]sx?$/;
 
+// Package suites run the same units as `test:full` (scripts/test-full.mjs), keyed by these names.
 const packages = {
   ui: {
     prefix: 'packages/ui/',
     lint: ['bun', ['run', 'lint:ui']],
     typeCheck: ['bun', ['run', 'type-check:ui']],
-    test: ['bun', ['run', '--cwd', 'packages/ui', 'test']],
   },
   web: {
     prefix: 'packages/web/',
     lint: ['bun', ['run', 'lint:web']],
     typeCheck: ['bun', ['run', 'type-check:web']],
-    test: ['bun', ['run', '--cwd', 'packages/web', 'test']],
   },
   electron: {
     prefix: 'packages/electron/',
     lint: ['bun', ['run', 'lint:electron']],
     typeCheck: ['bun', ['run', 'type-check:electron']],
-    test: ['bun', ['run', '--cwd', 'packages/electron', 'test']],
   },
   desktop: {
     // Frozen legacy Tauri package: run JS contract tests; cargo tests need native build assets.
     prefix: 'packages/desktop/',
     lint: ['bun', ['run', 'lint:desktop']],
     typeCheck: ['bun', ['run', 'type-check:desktop']],
-    test: ['bun', ['run', '--cwd', 'packages/desktop', 'test:managed-orchestration']],
   },
   bots: {
     prefix: 'packages/bots-runtime/',
-    test: ['bun', ['run', '--cwd', 'packages/bots-runtime', 'test']],
   },
   botSupervisor: {
     prefix: 'packages/bot-supervisor/',
-    test: ['bun', ['run', '--cwd', 'packages/bot-supervisor', 'test']],
   },
   botEngineProxy: {
     prefix: 'packages/bot-engine-proxy/',
-    test: ['bun', ['run', '--cwd', 'packages/bot-engine-proxy', 'test']],
   },
   botEgress: {
     prefix: 'packages/bot-egress/',
-    test: ['bun', ['run', '--cwd', 'packages/bot-egress', 'test']],
   },
   botComputer: {
     prefix: 'packages/bot-computer/',
-    test: ['bun', ['run', '--cwd', 'packages/bot-computer', 'test']],
   },
   botIndexer: {
     prefix: 'packages/bot-indexer/',
-    test: ['bun', ['run', '--cwd', 'packages/bot-indexer', 'test']],
   },
   botDb: {
     prefix: 'packages/bot-db/',
-    test: ['bun', ['run', '--cwd', 'packages/bot-db', 'test']],
   },
   cursor: {
     prefix: 'packages/cursor-sdk-runtime/',
-    test: ['bun', ['test', 'packages/cursor-sdk-runtime']],
   },
   orchestration: {
     prefix: 'packages/orchestration-runtime/',
-    test: ['bun', ['test', 'packages/orchestration-runtime']],
   },
   shared: {
     prefix: 'packages/shared-runtime/',
-    test: ['bun', ['run', '--cwd', 'packages/shared-runtime', 'test']],
   },
   harness: {
     prefix: 'packages/harness-runtime/',
-    test: ['bun', ['test', 'packages/harness-runtime']],
   },
   agentsCore: {
     prefix: 'packages/agents-core/',
     typeCheck: ['bun', ['run', '--cwd', 'packages/agents-core', 'type-check']],
-    test: ['bun', ['run', '--cwd', 'packages/agents-core', 'test']],
   },
 };
 
@@ -101,6 +90,36 @@ const sharedConfigFiles = new Set([
 ]);
 
 const docsOnlyExtensions = new Set(['.md', '.mdx', '.txt']);
+
+// Files `node scripts/bump-version.mjs` rewrites. A change confined to their
+// version field is release metadata: `versions` checks they agree instead of
+// re-running every package's lint, types and tests (CI still runs everything).
+const versionFiles = new Set(['package.json', 'bun.lock', 'packages/desktop/src-tauri/tauri.conf.json',
+  'packages/desktop/src-tauri/Cargo.toml', 'packages/desktop/src-tauri/Cargo.lock']);
+const isVersionFile = (file) => versionFiles.has(file) || /^packages\/[^/]+\/package\.json$/.test(file);
+
+function withoutVersion(source) {
+  const value = JSON.parse(source);
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  delete value.version;
+  return JSON.stringify(value);
+}
+
+/** True when `after` differs from `before` only in the version metadata bump-version.mjs writes. */
+export function isVersionOnlyChange(file, before, after) {
+  if (!isVersionFile(file) || typeof before !== 'string' || typeof after !== 'string' || before === after) return false;
+  if (file.endsWith('.json')) {
+    try { return withoutVersion(before) === withoutVersion(after); } catch { return false; }
+  }
+  // Line formats: only version lines change, each in place under the same owner line.
+  const left = before.split('\n'), right = after.split('\n');
+  if (left.length !== right.length) return false;
+  const versionLine = file === 'bun.lock' ? /^\s*"version": "[^"]+",$/ : /^version = "[^"]+"$/;
+  const ownerLine = file === 'bun.lock' ? /^\s*"name": "@devryan\/[^"]+",$/
+    : file.endsWith('Cargo.lock') ? /^name = "devryan-desktop"$/ : /^name = "[^"]+"$/;
+  return left.every((line, index) => line === right[index]
+    || (versionLine.test(line) && versionLine.test(right[index]) && index > 0 && ownerLine.test(left[index - 1]) && left[index - 1] === right[index - 1]));
+}
 
 function runGit(args, options = {}) {
   const result = spawnSync('git', args, {
@@ -118,9 +137,25 @@ function runGit(args, options = {}) {
   return result.stdout;
 }
 
-function changedFilesFromGit() {
+function validationBase() {
   // Committed but unpushed work counts: compare with the upstream branch unless VALIDATE_BASE is set.
-  const base = process.env.VALIDATE_BASE || runGit(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'], { ignoreErrors: true }).trim();
+  return process.env.VALIDATE_BASE || runGit(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'], { ignoreErrors: true }).trim();
+}
+
+/** Changed version files whose working-tree content differs from the base only in version metadata. */
+function versionOnlyFilesFromGit(files) {
+  const base = validationBase();
+  const commit = (base && runGit(['merge-base', base, 'HEAD'], { ignoreErrors: true }).trim()) || 'HEAD';
+  return new Set(files.filter(isVersionFile).filter((file) => {
+    const before = runGit(['show', `${commit}:${file}`], { ignoreErrors: true });
+    let after;
+    try { after = readFileSync(path.join(workspaceRoot, file), 'utf8'); } catch { return false; }
+    return Boolean(before) && isVersionOnlyChange(file, before, after);
+  }));
+}
+
+function changedFilesFromGit() {
+  const base = validationBase();
   const outputs = [];
 
   if (base) {
@@ -265,6 +300,17 @@ function packageCommands(packageNames, commandName) {
     .filter(Boolean);
 }
 
+// Test commands name a suite; runTests expands them into pool units.
+function testCommands(suiteNames) {
+  return [...suiteNames].sort().map((name) => ({ ...command(`test:${name}`, 'node', ['scripts/test-full.mjs', `--suite=${name}`]), suite: name }));
+}
+
+function startupCommand(coveredBy) {
+  const covered = STARTUP_CONTRACT_GROUPS.map((group) => group.owner).filter((owner) => coveredBy.has(owner));
+  const unique = [...new Set(covered)].sort();
+  return { ...command('test:startup', 'node', ['scripts/test-startup-contract.mjs', ...(unique.length ? [`--covered-by=${unique.join(',')}`] : [])]), coveredBy: unique };
+}
+
 function affectedTypeCheckPackages(changedPackages, includeDependents) {
   const result = new Set(changedPackages);
   if (includeDependents && changedPackages.has('ui')) {
@@ -337,7 +383,7 @@ function affectedTests(files) {
     // A package manifest or nested lockfile change re-runs that package's tests.
     if (/(?:^|\/)(?:package\.json|package-lock\.json)$/.test(file)) {
       const name = packageForFile(file);
-      if (name && packages[name].test) tests.add(name);
+      if (name) tests.add(name);
     }
   }
   // Dependents: packages whose behaviour runs through the changed one.
@@ -358,32 +404,39 @@ function affectedTests(files) {
  * affected package tests and the scripts suite, and always the startup contract.
  * `full` (`bun run validate:full`, CI): every check including the full test suite.
  */
-export function buildPlan(requestedMode, providedFiles) {
+export function buildPlan(requestedMode, providedFiles, { versionOnly } = {}) {
   if (requestedMode === 'full') {
     return { files: providedFiles ?? [], commands: fullCommands(), reason: 'full validation requested' };
   }
   if (requestedMode !== 'fast') throw new Error(`Unknown validation mode: ${requestedMode} (use fast or full)`);
 
   const files = providedFiles ?? changedFilesFromGit();
-  const codeFiles = files.filter((file) => !isDocsOnlyFile(file));
+  const metadata = versionOnly ?? (providedFiles ? new Set() : versionOnlyFilesFromGit(files));
+  const versionCheck = metadata.size ? [command('versions', 'node', ['scripts/release.mjs', 'check-versions'])] : [];
+  const codeFiles = files.filter((file) => !isDocsOnlyFile(file) && !metadata.has(file));
   const docs = files.some((file) => /\.mdx?$/.test(file)) ? [command('docs:validate', 'bun', ['run', 'docs:validate'])] : [];
-  if (files.length === 0) return { files, commands: [command('test:startup', 'bun', ['run', 'test:startup'])], reason: 'no changed files; startup contract only' };
-  if (codeFiles.length === 0) return { files, commands: docs, reason: 'docs-only changes' };
+  if (files.length === 0) return { files, commands: [startupCommand(new Set())], reason: 'no changed files; startup contract only' };
+  if (codeFiles.length === 0) {
+    if (!metadata.size) return { files, commands: docs, reason: 'docs-only changes' };
+    return { files, commands: [...docs, ...versionCheck, startupCommand(new Set())], reason: 'version metadata and docs only' };
+  }
 
-  const changedPackages = new Set(files.map(packageForFile).filter(Boolean));
-  const shared = files.some(isSharedConfigFile);
-  const commands = [...docs];
+  const changedPackages = new Set(codeFiles.map(packageForFile).filter(Boolean));
+  const shared = codeFiles.some(isSharedConfigFile);
+  const commands = [...docs, ...versionCheck];
   if (shared) {
     commands.push(command('lint:full', 'bun', ['run', 'lint']), command('type-check:full', 'bun', ['run', 'type-check']));
   } else {
-    commands.push(...changedLintCommand(files));
+    commands.push(...changedLintCommand(codeFiles));
     commands.push(...packageCommands(affectedTypeCheckPackages(changedPackages, true), 'typeCheck'));
   }
-  commands.push(...importBoundaryCommands(files));
-  if (files.some(isScriptsFile)) commands.push(command('test:scripts', 'bun', ['run', 'test:scripts']));
-  commands.push(...packageCommands(affectedTests(files), 'test'));
-  commands.push(command('test:startup', 'bun', ['run', 'test:startup']));
-  return { files, commands, reason: shared ? 'shared configuration changed; lint and type-check everything' : 'changed files' };
+  commands.push(...importBoundaryCommands(codeFiles));
+  const suites = affectedTests(codeFiles);
+  if (codeFiles.some(isScriptsFile)) suites.add('scripts');
+  commands.push(...testCommands(suites));
+  commands.push(startupCommand(suites));
+  return { files, commands, reason: shared ? 'shared configuration changed; lint and type-check everything'
+    : metadata.size ? 'changed files; version metadata checked separately' : 'changed files' };
 }
 function printPlan(plan) {
   console.log(`Validation mode: ${mode}`);
@@ -405,18 +458,54 @@ function printPlan(plan) {
   }
 }
 
-function runCommands(commands) {
-  for (const item of commands) {
-    console.log(`\n$ ${[item.executable, ...item.args].join(' ')}`);
-    const result = spawnSync(item.executable, item.args, {
-      cwd: workspaceRoot,
-      stdio: 'inherit',
-      env: process.env,
-    });
+function runStatic(item) {
+  console.log(`\n$ ${[item.executable, ...item.args].join(' ')}`);
+  const started = performance.now();
+  const result = spawnSync(item.executable, item.args, { cwd: workspaceRoot, stdio: 'inherit', env: process.env });
+  return { label: item.label, status: result.status, durationMs: performance.now() - started };
+}
 
-    if (result.status !== 0) {
-      process.exit(result.status ?? 1);
-    }
+/** Pool units for the plan's test commands; each suite's units are those `test:full` runs. */
+export function testUnitsForPlan(commands, { root = workspaceRoot, scriptEnvironment } = {}) {
+  const units = [];
+  for (const item of commands) {
+    if (item.label === 'test:full') units.push(...planFullTests(root, { scriptEnvironment }));
+    else if (item.label === 'test:startup') {
+      units.push(...startupContractGroups({ coveredBy: item.coveredBy ?? [] }).map((group) => ({ ...group, name: `startup:${group.name}`, suite: 'startup' })));
+    } else if (item.suite === 'scripts') units.push(...planScriptTests(root).map((unit) => ({ ...unit, env: scriptEnvironment, suite: 'scripts' })));
+    else if (item.suite) units.push(...planFullTests(root, { scriptEnvironment, suites: [item.suite] }));
+  }
+  return units.map((unit) => ({ ...unit, cwd: unit.cwd ?? root }));
+}
+
+/**
+ * Static checks run in order and stop at the first failure. Test commands then
+ * run as one bounded pool (DEVRYAN_TEST_CONCURRENCY), each failure reported.
+ */
+async function runCommands(commands) {
+  const isTest = (item) => item.label.startsWith('test:');
+  const timings = [];
+  const started = performance.now();
+  const report = () => {
+    console.log(`\nValidation ${formatDuration(performance.now() - started)}:`);
+    for (const row of timings) console.log(`  ${formatDuration(row.durationMs).padStart(7)}  ${row.status === 0 ? 'ok  ' : 'FAIL'}  ${row.label}`);
+  };
+  for (const item of commands.filter((entry) => !isTest(entry))) {
+    const row = runStatic(item);
+    timings.push(row);
+    if (row.status !== 0) { report(); return row.status ?? 1; }
+  }
+  const tests = commands.filter(isTest);
+  if (tests.length === 0) { report(); return 0; }
+  const { env, cleanup } = prepareScriptTestEnvironment(workspaceRoot);
+  try {
+    const outcome = await runTestUnits(testUnitsForPlan(tests, { scriptEnvironment: env }), { concurrency: testConcurrency(), label: 'validate', cwd: workspaceRoot, cleanup });
+    summarizeTestUnits(outcome, { label: 'validate', limit: 20 });
+    timings.push({ label: `tests (${tests.map((item) => item.label).join(', ')})`, status: outcome.passed ? 0 : 1, durationMs: outcome.wallMs });
+    report();
+    return outcome.passed ? 0 : 1;
+  } finally {
+    cleanup();
   }
 }
 
@@ -430,7 +519,8 @@ if (isDirectExecution) {
     const plan = buildPlan(mode);
     printPlan(plan);
     const cacheBefore = snapshotCache(workspaceRoot);
-    runCommands(plan.commands);
+    const status = await runCommands(plan.commands);
+    if (status !== 0) process.exit(status);
     const growth = cacheGrowthFailure(workspaceRoot, cacheBefore);
     if (growth) {
       console.error(`\n${growth}`);

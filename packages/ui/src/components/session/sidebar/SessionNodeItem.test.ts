@@ -241,7 +241,7 @@ describe('session sidebar archive reflow animation wiring', () => {
     expect(source).toContain("display: 'grid'");
     expect(source).toContain('minHeight: 0');
     expect(itemSource).toContain('data-session-leading-rail');
-    expect(itemSource).toContain('absolute right-full top-1/2 mr-1.5 flex h-4');
+    expect(itemSource).toContain('absolute right-full top-1/2 mr-[7px] flex h-4');
     expect(itemSource).not.toContain('left-[-');
     expect(source).not.toContain('SESSION_LEADING_INDICATOR_CLIP_GUTTER_PX');
     expect(source).not.toContain('marginLeft');

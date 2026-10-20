@@ -63,6 +63,26 @@ export async function versionMismatches(repositoryRoot, version) {
   return mismatches;
 }
 
+/** Workspace versions recorded in bun.lock for the version-file packages; a frozen install needs them to match. */
+export async function lockfileVersionMismatches(repositoryRoot, version) {
+  const lock = await fs.readFile(path.join(repositoryRoot, 'bun.lock'), 'utf8');
+  const recorded = new Map([...lock.matchAll(/^ {4}"(packages\/[^"]+)": \{\n {6}"name": "[^"]+",\n {6}"version": "([^"]+)",/gm)].map(match => [match[1], match[2]]));
+  const mismatches = [];
+  for (const file of VERSION_FILES.filter(file => /^packages\/[^/]+\/package\.json$/.test(file))) {
+    const directory = path.dirname(file);
+    if (recorded.get(directory) !== version) mismatches.push(`bun.lock ${directory}: ${recorded.get(directory) ?? 'missing'}`);
+  }
+  return mismatches;
+}
+
+/** `check-versions`: every version file and bun.lock workspace agrees with package.json (no tag needed). */
+export async function checkVersions({ repositoryRoot = root, log = console.log } = {}) {
+  const version = JSON.parse(await fs.readFile(path.join(repositoryRoot, 'package.json'), 'utf8')).version;
+  const mismatches = [...await versionMismatches(repositoryRoot, version), ...await lockfileVersionMismatches(repositoryRoot, version)];
+  if (mismatches.length) throw new Error(`Version ${version} does not match:\n${mismatches.join('\n')}\nRun: node scripts/bump-version.mjs ${version}`);
+  log(`Version files and bun.lock workspaces agree on ${version}.`);
+}
+
 export function releaseNotes(changelog, version) {
   const start = changelog.indexOf(`## [${version}]`);
   if (start === -1) throw new Error(`CHANGELOG.md has no "## [${version}]" section`);
@@ -276,12 +296,12 @@ export async function verifyPublished(options = {}) {
   await publish({ ...options, environment });
 }
 
-const operations = { admit, upload, publish, 'trusted-ci': requireTrustedCI, 'verify-published': verifyPublished };
+const operations = { admit, upload, publish, 'trusted-ci': requireTrustedCI, 'verify-published': verifyPublished, 'check-versions': checkVersions };
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const operation = operations[process.argv[2]];
   if (!operation) {
-    console.error('Usage: release.mjs trusted-ci|admit|upload|publish');
+    console.error('Usage: release.mjs trusted-ci|admit|upload|publish|verify-published|check-versions');
     process.exit(2);
   }
   operation().then(async (result) => {

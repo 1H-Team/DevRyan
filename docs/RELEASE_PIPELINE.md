@@ -8,7 +8,7 @@ The public release carries exactly one asset, `DevRyan-<version>-arm64.dmg` (App
 
 1. `node scripts/bump-version.mjs X.Y.Z` updates every package manifest, the legacy Tauri files and the workspace versions in `bun.lock`.
 2. Add a `## [X.Y.Z]` section to `CHANGELOG.md`; it becomes the release notes.
-3. Run `bun run validate`, commit with explicit paths, push `main`, and wait for the canonical CI workflow to pass for that exact commit. Admission checks the latest main-push run of `.github/workflows/ci.yml` for the tag SHA; pending, failed, missing and different-source checks refuse the release before builds.
+3. Run `bun run validate` (a bump-only change checks version agreement with `node scripts/release.mjs check-versions` instead of every suite), commit with explicit paths, push `main`, and wait for the canonical CI workflow to pass for that exact commit. Do not run `supabase-migrate.yml`: `publish` deploys and verifies migrations. Admission checks the latest main-push run of `.github/workflows/ci.yml` for the tag SHA; pending, failed, missing and different-source checks refuse the release before builds.
 4. Optional: dry-run the workflow on `main` (`gh workflow run release.yml --ref main`).
 5. `git tag vX.Y.Z && git push origin vX.Y.Z`.
 
@@ -17,25 +17,25 @@ Only tags matching `vX.Y.Z` trigger a release.
 ## Graph
 
 ```
-admit ──┬─ web ─────────────────────────────────────────┐
-        ├─ electron-prepare ────────────────────────────┼─ electron-package ── upgrade-check ── publish
-        └─ bot-resolve ── bot-build (changed only) ── bot-publish ─┘
+admit ──┬─ web ─────────────────────────────────────────┐                     ┌─ upgrade-check ──┐
+        ├─ electron-prepare ────────────────────────────┼─ electron-package ──┤                  ├─ publish
+        └─ bot-resolve ── bot-build (changed only) ── bot-publish ─┘          └─ final-dmg-smoke ┘
 ```
 
 | Job | What it does |
 | --- | --- |
 | `admit` | Requires trusted exact-SHA CI, then checks that the tag and every version file agree, and that `CHANGELOG.md` has notes for the version. Fails if `vX.Y.Z` is already published. Otherwise it creates the draft, or reuses an unpublished draft for the same tag (retargeted, notes rewritten, earlier assets removed). Dry runs make no writes. |
-| `web` | `type-check:ui`, `build:web`, `bundle:check`, then hands `packages/web/dist` to packaging. |
+| `web` | `build:web` and `bundle:check`, then hands `packages/web/dist` to packaging. Type-checking is not repeated: admission already required trusted CI for this exact commit, whose `validate:full` type-checks every package. |
 | `electron-prepare` | Installs darwin dependencies, restores the reviewed Claude executable (`scripts/hydrate-reviewed-claude.mjs`), builds the native v2 runtime (which refuses a core digest outside `REVIEWED_NATIVE_CLONE_RELEASES` for the host pin), native helpers and the main bundle, rebuilds native bindings, and exports the prepared tree. |
 | `bot-resolve` | Hashes each Bot image's inputs and reuses the signed `:in-<digest>` image when it exists and verifies. Lists the images that need building. |
 | `bot-build` | One job per changed image: multi-platform build, push, keyless cosign signature, and the `:in-<digest>` input tag. Skipped when nothing changed. |
 | `bot-publish` | Assembles `DevRyan-bot-runtime-images-<version>.json`, checks anonymous pulls, and smokes the isolated production topology. |
 | `electron-package` | Packages the app with the Bot manifest and runs static checks: Cursor SDK binaries, packaged orchestration config, packaged Bot manifest, and Info.plist usage descriptions. Uploads the DMG. |
-| `upgrade-check` | Three independent profiles: the newest-three aging chain, direct v2.0.2, and direct v2.0.15. Each uses the baseline's own server and DMG runtime, with a session created and one deleted, then cold-starts the packaged candidate runtime with this commit's server. The explicit 2.0.2 adapter omits its absent startup-status module; readiness, selection and history are still required. Fails unless the startup upgrade applies, the verifier and native readiness pass and session history survives (`scripts/qa/release-upgrade-lane.mjs`, [QA](QA.md#release-upgrade-lane)). |
+| `upgrade-check` | One job, one candidate download and extraction, three independent profiles run at the same time (`scripts/qa/release-upgrade-lanes.mjs`): the newest-three aging chain, direct v2.0.2, and direct v2.0.15. The lanes share the extracted candidate runtime as read-only input (a before/after tree digest fails the job if it changed) and upload one `release-upgrade` artifact with a report per lane. Each uses the baseline's own server and DMG runtime, with a session created and one deleted, then cold-starts the packaged candidate runtime with this commit's server. The explicit 2.0.2 adapter omits its absent startup-status module; readiness, selection and history are still required. Fails unless the startup upgrade applies, the verifier and native readiness pass and session history survives (`scripts/qa/release-upgrade-lane.mjs`, [QA](QA.md#release-upgrade-lane)). |
 | `final-dmg-smoke` | Observes the unchanged final DMG on a disposable macOS runner: console prerequisites, ready runtime, visible composer, a credential-free loopback provider read/write/final-response round-trip, screenshot and owned-process shutdown. It makes no paid model request. The lane is nonblocking during qualification; see the rollout below. |
 | `publish` | Checks the DMG against the allowlist and that the tag still points at this run's commit, then uploads it to the draft. Deploys and verifies the hosted Supabase configuration and migrations, publishes the draft, and polls `/releases/latest` until the shipped `discoverDesktopUpdate` (`packages/electron/desktop-updater.mjs`) finds the DMG with the uploaded size and SHA-256. |
 
-Upgrade lanes run independently; an unavailable baseline or failed qualification blocks publication. Their sanitized reports and the final-DMG screenshot/report are Actions artifacts, never public release assets.
+Upgrade lanes run independently within their job; an unavailable baseline or failed qualification blocks publication. They were a three-job matrix until v2.1.6, where the third lane waited 10 minutes for a macOS runner; one job needs one runner beside the smoke. Their sanitized reports and the final-DMG screenshot/report are Actions artifacts, never public release assets.
 
 `scripts/release.mjs` holds the GitHub Release steps (`admit`, `upload`, `publish`). `scripts/release-ci.mjs` holds the artifact handoffs (`web-describe`, `web-stage`, `prepare-export`, `prepare-import`) and the Bot image steps (`image-resolve`, `image-plan`, `image-sign`, `image-assemble`). Every failure throws with its real message, so the job log names the cause.
 

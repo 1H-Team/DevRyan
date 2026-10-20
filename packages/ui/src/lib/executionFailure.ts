@@ -17,6 +17,14 @@ const explanations: Record<string, string> = {
   mutation_recovery_pending: 'An interrupted Revert in this project is waiting for the DevRyan companion to finish recovery. Restore it before reverting.',
 };
 
+export function describeExecutionRecoveryFailure(value: string): { code: 'execution_recovery_unavailable'; message: string } | undefined {
+  if (!/\b(?:native_slim_retry_primary_fenced|execution_recovery_unavailable)\b/.test(value)) return undefined;
+  return {
+    code: 'execution_recovery_unavailable',
+    message: 'Automatic recovery could not verify this task\'s execution. Review the task and its recovery options before continuing.',
+  };
+}
+
 /** Add actionable detail for known execution codes without exposing inputs or stacks. */
 export function describeExecutionFailure(value: string): string | undefined {
   for (const [code, message] of Object.entries(explanations)) {

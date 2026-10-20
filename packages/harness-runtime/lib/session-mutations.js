@@ -935,6 +935,16 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         if (value.ownerID !== input.ownerID) throw changeError('native_removal_owner_mismatch');
         return value;
       }
+      if (value.state === 'completed') continue;
+      // Finish a descendant's decision before an ancestor can add a hold that
+      // would prevent that descendant's authorized retry.
+      const seen = new Set();
+      for (let id = value.rootSessionID; id;) {
+        if (id === input.rootSessionID) throw changeError('native_removal_in_progress', 409);
+        if (seen.has(id)) throw changeError('invalid_session_lineage');
+        seen.add(id);
+        id = (await repo.db.get(key('sessions', id)))?.parentID;
+      }
     }
     const quietHold=input.quietHold;
     if(quietHold){
