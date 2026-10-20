@@ -56,6 +56,9 @@ test('runtime window checks real-config hashes even after a failed child, withou
     evidenceDirectory: path.join(root, 'evidence'), realConfigRoots: [config] };
   const failed = await runAuditCommand({ ...common, label: 'failed-child', args: ['-e', 'process.exit(2)'] });
   assert.equal(failed.exitCode, 2); assert.equal(failed.isolation, 'unchanged');
+  const deadline = await runAuditCommand({ ...common, label: 'bounded-child', timeoutMs: 200,
+    args: ['-e', 'process.on("SIGINT", () => process.exit(0)); setInterval(() => {}, 1000)'] });
+  assert.equal(deadline.timedOut, true); assert.equal(deadline.forcedExit, false);
   const changed = path.join(config, 'new');
   await assert.rejects(runAuditCommand({ ...common, label: 'changed-config',
     args: ['-e', 'require("node:fs").writeFileSync(process.argv[1], "fixture")', changed] }), /stop affected/);

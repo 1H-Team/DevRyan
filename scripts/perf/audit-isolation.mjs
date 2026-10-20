@@ -154,8 +154,10 @@ export function gradeAuditHostLoad(samples) {
 }
 
 /** Run only after all audit agents have acknowledged idle. Never signals the user's app. */
-export async function runAuditCommand({ command, args, cwd, environment, evidenceDirectory, label, realConfigRoots = auditConfigRoots() }) {
+export async function runAuditCommand({ command, args, cwd, environment, evidenceDirectory, label,
+  realConfigRoots = auditConfigRoots(), timeoutMs = 15 * 60 * 1000 }) {
   assert.match(label, /^[a-z0-9-]+$/);
+  assert.ok(Number.isSafeInteger(timeoutMs) && timeoutMs > 0, 'A bounded audit deadline is required');
   assert.ok(path.isAbsolute(environment.HOME ?? '') && environment.HOME !== os.homedir(), 'A private runner HOME is required');
   for (const key of ['XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_STATE_HOME', 'XDG_CACHE_HOME', 'TMPDIR']) {
     assert.ok(typeof environment[key] === 'string' && inside(environment.HOME, environment[key]), `${key} must be private`);
@@ -164,7 +166,7 @@ export async function runAuditCommand({ command, args, cwd, environment, evidenc
   const before = await captureAuditConfigManifest(realConfigRoots);
   await writeFile(path.join(evidenceDirectory, `${label}-config-before.json`), JSON.stringify(before), { mode: 0o600 });
   const samples = [], output = [];
-  let overflow = false, observationFailed = false, child;
+  let overflow = false, observationFailed = false, timedOut = false, forcedExit = false, child, deadline, escalation;
   const sample = () => {
     try { samples.push(captureAuditHostLoad({ excludedPids: child?.pid ? [child.pid] : [], previous: samples.at(-1) })); }
     catch { observationFailed = true; }
@@ -174,6 +176,15 @@ export async function runAuditCommand({ command, args, cwd, environment, evidenc
   let result;
   try {
     child = spawn(command, args, { cwd, env: environment, stdio: ['ignore', 'pipe', 'pipe'] });
+    deadline = setTimeout(() => {
+      timedOut = true;
+      // Signal only this exact owned ChildProcess. The inner QA owner's SIGINT
+      // handler drains its app/fixtures before run-root cleanup.
+      child.kill('SIGINT');
+      escalation = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) { forcedExit = true; child.kill('SIGKILL'); }
+      }, 30000);
+    }, timeoutMs);
     let bytes = 0;
     const append = chunk => {
       bytes += chunk.length;
@@ -186,12 +197,13 @@ export async function runAuditCommand({ command, args, cwd, environment, evidenc
       child.once('close', (exitCode, signal) => resolve({ exitCode, signal }));
     });
   } finally {
-    clearInterval(timer); sample();
+    clearInterval(timer); clearTimeout(deadline); clearTimeout(escalation); sample();
     const after = await captureAuditConfigManifest(realConfigRoots);
     await writeFile(path.join(evidenceDirectory, `${label}-config-after.json`), JSON.stringify(after), { mode: 0o600 });
     const isolation = before.sha256 === after.sha256 ? 'unchanged' : 'changed';
     const evidence = { ...result, isolation, hostLoad: observationFailed ? 'unqualified' : gradeAuditHostLoad(samples),
-      contaminationLimits: AUDIT_CONTAMINATION_LIMITS, samples, outputOverflow: overflow };
+      contaminationLimits: AUDIT_CONTAMINATION_LIMITS, samples, outputOverflow: overflow, timedOut, forcedExit,
+      timeoutMs, cleanupQualification: forcedExit ? 'unqualified: runner exceeded cooperative shutdown grace' : 'inner QA owner evidence required' };
     await writeFile(path.join(evidenceDirectory, `${label}-window.json`), JSON.stringify(evidence, null, 2), { mode: 0o600 });
     await writeFile(path.join(evidenceDirectory, `${label}.log`), Buffer.concat(output), { mode: 0o600 });
     assertAuditConfigUnchanged(before, after);
