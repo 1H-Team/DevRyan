@@ -138,14 +138,14 @@ const appendBoundedLog = (current, chunk) => {
   return next.length > MAX_LOG_BYTES ? next.slice(-MAX_LOG_BYTES) : next;
 };
 
-export async function stopPerfOwnedResources(ownedProcess, fixture) {
+export async function stopPerfOwnedResources(ownedProcess, profile) {
   const cleanup = { errors: [], app: { stopped: false }, fixture: { closed: false } };
   try { await ownedProcess.stop(); cleanup.app.stopped = true; }
   catch (error) { cleanup.errors.push(error.message); }
-  try { await fixture.close(); cleanup.fixture = { closed: true, finalState: fixture.getState() }; }
+  try { await profile.close(); cleanup.fixture = { closed: true, finalState: profile.fixture.getState() }; }
   catch (error) { cleanup.errors.push(error.message); }
   // The shared stop already audits before closing tracking. Re-observe after
-  // the fixture closes so detached descendants cannot be hidden by a dead PGID.
+  // the profile closes so detached descendants cannot be hidden by a dead PGID.
   try { await ownedProcess.auditStopped(); }
   catch (error) { cleanup.app.stopped = false; cleanup.errors.push(error.message); }
   const ownership = ownedProcess.getCleanupEvidence();
@@ -672,12 +672,11 @@ const runOnce = async ({ scenario, runIndex, scenarioDirectory, electronBinary, 
     runEvidence.fixture = fixture.getState();
     startupNavigationAudit?.complete();
     cdp?.close();
-    runEvidence.cleanup = await stopPerfOwnedResources(ownedProcess, fixture);
+    runEvidence.cleanup = await stopPerfOwnedResources(ownedProcess, profile);
     runEvidence.journal = await capturePerfJournal(path.join(dataDirectory, 'harness/journal'))
       .catch(error => ({ available: false, complete: false, error: error.message }));
     runEvidence.workloadOutcome = runError ? 'failed' : 'passed';
     runEvidence.workloadError = runError?.message ?? null;
-    runEvidence.cleanup.complete = runEvidence.cleanup.errors.length === 0;
     await writeFile(path.join(runDirectory, 'electron.log'), logs);
     await writeFile(path.join(runDirectory, 'run-evidence.json'), JSON.stringify(runEvidence, null, 2));
     assertPerfCleanupComplete(runEvidence.cleanup, runError);

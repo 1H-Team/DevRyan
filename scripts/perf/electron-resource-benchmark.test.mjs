@@ -188,13 +188,38 @@ describe('Electron resource benchmark metrics', () => {
     const owner = { child: { pid: 123, exitCode: 0, signalCode: null },
       stop: async () => { order.push('stop-with-first-audit'); },
       auditStopped: async () => { order.push('audit-after-fixture'); }, getCleanupEvidence: () => ownership };
-    const fixture = { close: async () => { order.push('close-fixture'); }, getState: () => ({ activePrompts: 0 }) };
-    const cleanup = await stopPerfOwnedResources(owner, fixture);
-    assert.deepEqual(order, ['stop-with-first-audit', 'close-fixture', 'audit-after-fixture']);
+    const profile = { close: async () => { order.push('close-profile'); }, fixture: { getState: () => ({ activePrompts: 0 }) } };
+    const cleanup = await stopPerfOwnedResources(owner, profile);
+    assert.deepEqual(order, ['stop-with-first-audit', 'close-profile', 'audit-after-fixture']);
     assert.equal(cleanup.complete, true);
     assert.equal(cleanup.app.ownership, ownership);
     assert.equal(cleanup.app.escalated, true);
     assert.equal(cleanup.fixture.closed, true);
+  });
+
+  it('closes the full profile after launch so all fixture services release their listeners', async () => {
+    const script = `
+      import http from 'node:http';
+      import { stopPerfOwnedResources } from './scripts/perf/electron-resource-benchmark.mjs';
+      const servers = await Promise.all(Array.from({ length: 3 }, async () => {
+        const server = http.createServer();
+        await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+        return server;
+      }));
+      const close = server => new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+      const profile = {
+        fixture: { close: () => close(servers[0]), getState: () => ({ activePrompts: 0 }) },
+        close: async () => { await Promise.all(servers.map(close)); },
+      };
+      const owner = {
+        child: { pid: 123, exitCode: 0, signalCode: null },
+        stop: async () => {}, auditStopped: async () => {},
+        getCleanupEvidence: () => ({ source: 'test', signals: [], remainingProcessIds: [] }),
+      };
+      const cleanup = await stopPerfOwnedResources(owner, profile);
+      if (!cleanup.complete || servers.some(server => server.listening)) process.exitCode = 2;
+    `;
+    await promisify(execFile)(process.execPath, ['--input-type=module', '--eval', script], { timeout: 3000 });
   });
 
   it('retains every cleanup failure and still closes the fixture and performs the second audit', async () => {
@@ -204,8 +229,8 @@ describe('Electron resource benchmark metrics', () => {
         stop: async () => { order.push('stop'); if (failure === 'stop') throw new Error('stop failed'); },
         auditStopped: async () => { order.push('audit'); if (failure === 'audit') throw new Error('detached child remains'); },
         getCleanupEvidence: () => ({ source: 'retained ownership', signals: [], remainingProcessIds: failure === 'audit' ? [456] : [] }) };
-      const fixture = { close: async () => { order.push('fixture'); if (failure === 'fixture') throw new Error('fixture failed'); }, getState: () => ({}) };
-      const cleanup = await stopPerfOwnedResources(owner, fixture);
+      const profile = { close: async () => { order.push('fixture'); if (failure === 'fixture') throw new Error('fixture failed'); }, fixture: { getState: () => ({}) } };
+      const cleanup = await stopPerfOwnedResources(owner, profile);
       assert.deepEqual(order, ['stop', 'fixture', 'audit']);
       assert.equal(cleanup.complete, false);
       assert.equal(cleanup.errors.length, 1);
