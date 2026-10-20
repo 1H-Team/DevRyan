@@ -1,7 +1,21 @@
+import { daemonRecordPaths } from '../../../bin/cli-records.js';
+import nodePath from 'node:path';
+
+export const readDaemonRestartOptions = async ({ fs, dataDirectory, port }) => {
+  for (const record of daemonRecordPaths(nodePath.join(dataDirectory, 'run'), port)) {
+    try {
+      const parsed = JSON.parse(await fs.promises.readFile(record.instance, 'utf8'));
+      if (parsed && typeof parsed === 'object' && parsed.port === port) return parsed;
+    } catch {
+      // Try the historical daemon record before using the current port.
+    }
+  }
+  return { port, daemon: true };
+};
+
 export const registerDevRyanRoutes = (app, dependencies) => {
   const {
     fs,
-    os,
     path,
     process,
     server,
@@ -104,14 +118,7 @@ export const registerDevRyanRoutes = (app, dependencies) => {
       }
 
       const currentPort = server.address()?.port || 3000;
-      const tmpDir = os.tmpdir();
-      const instanceFilePath = path.join(tmpDir, `openchamber-${currentPort}.json`);
-      let storedOptions = { port: currentPort, daemon: true };
-      try {
-        const content = await fs.promises.readFile(instanceFilePath, 'utf8');
-        storedOptions = JSON.parse(content);
-      } catch {
-      }
+      const storedOptions = await readDaemonRestartOptions({ fs, dataDirectory: devryanDataDir, port: currentPort });
 
       const isWindows = process.platform === 'win32';
       const quotePosix = (value) => `'${String(value).replace(/'/g, "'\\''")}'`;
@@ -129,7 +136,7 @@ export const registerDevRyanRoutes = (app, dependencies) => {
         String(storedOptions.port),
       ];
       let restartCmdPrimary = restartParts.join(' ');
-      let restartCmdFallback = `openchamber serve --port ${storedOptions.port}`;
+      let restartCmdFallback = `devryan serve --port ${storedOptions.port}`;
       if (storedOptions.host) {
         if (isWindows) {
           const escapedHost = storedOptions.host.replace(/"/g, '""');
@@ -166,7 +173,6 @@ export const registerDevRyanRoutes = (app, dependencies) => {
         `globalNodeModulesRoot=${pmDetails.globalNodeModulesRoot || 'unknown'}`,
         `mode=${isContainer ? 'container' : 'restart'}`,
         `updateCommand=${updateCmd}`,
-        `restartCommand=${restartCmd}`,
         `logPath=${updateLogPath}`,
       ].join('\n');
 

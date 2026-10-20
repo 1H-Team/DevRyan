@@ -50,7 +50,7 @@ export function registerLocalOwnerBootstrap(app, { dataDirectory, connection, no
       const actual = JSON.parse(await fs.readFile(consumed, 'utf8'));
       if (actual.tokenHash !== record.tokenHash) return res.sendStatus(403);
       if (actual.allowEnrollment === false && !connection.ownerPrincipal()) {
-        return res.status(403).json({ code: 'local_owner_required', error: 'Run openchamber enroll-owner to enroll this host first' });
+        return res.status(403).json({ code: 'local_owner_required', error: 'Run devryan enroll-owner to enroll this host first' });
       }
       await connection.bootstrapLocalOwner();
       const cookie = await connection.issueLocalOwnerSession();

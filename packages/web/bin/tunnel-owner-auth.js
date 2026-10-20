@@ -20,7 +20,7 @@ export function createOwnerAuthenticatedTunnelFetch({ getDataDirectory, fetchImp
       body: JSON.stringify({ token }),
     });
     const cookie = authenticated.headers.get('set-cookie')?.match(/(?:^|,\s*)devryan_local_owner=[A-Za-z0-9_-]{43}(?=;)/)?.[0].replace(/^,\s*/, '');
-    if (!authenticated.ok || !cookie) throw Object.assign(new Error('Local owner authentication required. Run openchamber enroll-owner on this host and open its local link, then retry.'), { code: 'local_owner_required' });
+    if (!authenticated.ok || !cookie) throw Object.assign(new Error('Local owner authentication required. Run devryan enroll-owner on this host and open its local link, then retry.'), { code: 'local_owner_required' });
     cookies.set(target.origin, cookie);
     return request();
   };

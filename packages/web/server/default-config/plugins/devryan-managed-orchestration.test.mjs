@@ -873,6 +873,14 @@ describe('Plan authority across managed maintenance', () => {
     await expect(harness.dispatch('designer', 'msg_002')).rejects.toMatchObject({ code: 'MANAGED_READ_ONLY_AGENT_UNSUPPORTED' });
   });
 
+  it('lets canonical Plan OFF override a stale legacy Plan flag', async () => {
+    const user = maintenanceUser('msg_001', [{ type: 'text', text: 'Implement the change.' }]);
+    user.info.metadata = { devryanPlanMode: false, openchamberPlanMode: true };
+    const harness = await createWakeHarness({ records: [user, replyingAssistant('msg_002', 'msg_001')] });
+    await harness.dispatch('designer');
+    expect(harness.requests.find(({ method }) => method === 'submit').params.readOnly).toBe(false);
+  });
+
   it.each([
     ['human Plan OFF', { type: 'text', text: 'Proceed with implementation.' }],
     ['ordinary synthetic request', { type: 'text', text: 'Proceed with implementation.', synthetic: true }],

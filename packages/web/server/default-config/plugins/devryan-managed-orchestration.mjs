@@ -377,7 +377,8 @@ const isPlanModeUserRecord = (record) => {
   const mode = typeof record.info.mode === 'string'
     ? record.info.mode.trim().toLowerCase()
     : '';
-  if (mode === 'plan' || record.info.metadata?.devryanPlanMode === true || record.info.metadata?.openchamberPlanMode === true) return true;
+  const planMode = record.info.metadata?.devryanPlanMode ?? record.info.metadata?.openchamberPlanMode;
+  if (mode === 'plan' || planMode === true) return true;
   return Array.isArray(record.parts) && record.parts.some(isPlanInstructionPart);
 };
 

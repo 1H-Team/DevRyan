@@ -11,6 +11,7 @@ This module fetches quota and usage signals for supported providers in the web s
 - `packages/web/server/lib/quota/providers/interface.js`: JSDoc provider contract used as implementation reference.
 - `packages/web/server/lib/quota/credentials/`: allowlisted managed-credential normalization, private atomic storage, and explicit Cursor import.
 - `packages/web/server/lib/quota/providers/google/`: Google/Gemini auth-source API and transform modules. Antigravity quota was removed with the retired Antigravity plugin; its account files are only discovered by the provider disconnect route (`listAntigravityAccountsPaths` in `utils/auth.js`).
+- Antigravity disconnect scans current `.devryan/runtime-agent-overlays` accounts first, then historical `.openchamber/runtime-agent-overlays` accounts.
 - `packages/web/server/lib/quota/utils/`: shared auth, transform, and formatting helpers.
 - `@devryan/shared-runtime/lib/quota-adapters.js`: injected request/parsing contract  for OpenCode Zen, z.ai, Kimi, Codex, xAI, and DeepSeek.
 

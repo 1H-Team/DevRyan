@@ -207,6 +207,20 @@ describe('DevRyan document reader parsing', () => {
 });
 
 describe('DevRyan document reader plugin', () => {
+  it('writes DevRyan cache files and reuses historical OpenChamber cache files', async () => {
+    const parseAttachment = vi.fn(__test.parseAttachmentPayload);
+    const plugin = await DevRyanDocumentReaderPlugin({ parseAttachment });
+    const attachment = () => outputWith([filePart({ name: 'notes.txt', mime: 'text/plain', contents: Buffer.from('retained notes') })]);
+    await plugin['experimental.chat.messages.transform']({}, attachment());
+    const canonical = __test.getSessionCacheDirectory('ses_parent');
+    expect(canonical).toContain(`${path.sep}.devryan${path.sep}`);
+    const historical = path.join(temporaryRoot, '.openchamber', 'document-cache-v1', path.basename(canonical));
+    fs.mkdirSync(path.dirname(historical), { recursive: true });
+    fs.renameSync(canonical, historical);
+    await plugin['experimental.chat.messages.transform']({}, attachment());
+    expect(parseAttachment).toHaveBeenCalledTimes(1);
+    expect(fs.existsSync(canonical)).toBe(false);
+  });
   it('removes a historical ZIP from provider-visible history and reuses its cache', async () => {
     const parseAttachment = vi.fn(__test.parseAttachmentPayload);
     const plugin = await DevRyanDocumentReaderPlugin({ parseAttachment });

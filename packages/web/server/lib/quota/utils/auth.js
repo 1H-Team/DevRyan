@@ -9,19 +9,22 @@ export const ANTIGRAVITY_ACCOUNTS_PATHS = [
   path.join(OPENCODE_DATA_DIR, 'antigravity-accounts.json')
 ];
 
-const RUNTIME_AGENT_OVERLAY_ROOT = path.join(OPENCODE_CONFIG_DIR, '.openchamber', 'runtime-agent-overlays');
+const RUNTIME_AGENT_OVERLAY_ROOTS = ['.devryan', '.openchamber']
+  .map(name => path.join(OPENCODE_CONFIG_DIR, name, 'runtime-agent-overlays'));
 
 // The Antigravity plugin stores accounts under OPENCODE_CONFIG_DIR, which a
 // managed runtime points at its per-project overlay directory, so account files
 // also live one level below the overlay root.
-export const listAntigravityAccountsPaths = ({ overlayRoot = RUNTIME_AGENT_OVERLAY_ROOT } = {}) => {
-  let overlayPaths = [];
-  try {
-    overlayPaths = fs.readdirSync(overlayRoot, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => path.join(overlayRoot, entry.name, 'antigravity-accounts.json'));
-  } catch {
-    overlayPaths = [];
+export const listAntigravityAccountsPaths = ({ overlayRoot, overlayRoots = RUNTIME_AGENT_OVERLAY_ROOTS } = {}) => {
+  const overlayPaths = [];
+  for (const root of overlayRoot ? [overlayRoot] : overlayRoots) {
+    try {
+      overlayPaths.push(...fs.readdirSync(root, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => path.join(root, entry.name, 'antigravity-accounts.json')));
+    } catch {
+      // A missing overlay generation has no accounts to discover.
+    }
   }
   return [...ANTIGRAVITY_ACCOUNTS_PATHS, ...overlayPaths];
 };
