@@ -4086,7 +4086,7 @@ describe('Cursor SDK runtime', () => {
 
     expect(capturedPrompt.startsWith('User has requested to enter plan mode')).toBe(true);
     expect(capturedPrompt).toContain('\n\nmake a plan');
-    expect(records?.[0]?.info?.metadata).toMatchObject({ openchamberPlanMode: true });
+    expect(records?.[0]?.info?.metadata).toMatchObject({ devryanPlanMode: true });
     expect(records?.[0]?.parts?.map((part) => part.text)).toEqual([
       'make a plan',
       'User has requested to enter plan mode.\nProduce an implementation plan only.',

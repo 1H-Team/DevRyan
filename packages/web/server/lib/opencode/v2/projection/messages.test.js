@@ -299,7 +299,7 @@ describe('user records', () => {
       time: { created: 5 },
       agent: 'plan',
       model: { providerID: 'anthropic', modelID: 'claude', variant: '' },
-      metadata: { other: 'kept', openchamberPlanMode: true },
+      metadata: { other: 'kept', devryanPlanMode: true },
     });
     expect(record.parts).toEqual([
       { id: 'prt_pre', sessionID: SID, messageID: 'msg_u', type: 'text', text: 'PREFIX', synthetic: true },
@@ -351,6 +351,7 @@ describe('user records', () => {
     expect(readDevryanPromptSelection(undefined)).toBeNull();
     expect(toV1UserMetadata({ devryan: { kind: 'probe' } })).toEqual({});
     expect(toV1UserMetadata(undefined)).toEqual({});
+    expect(toV1UserMetadata({ openchamberPlanMode: true, other: 'kept' })).toEqual({ openchamberPlanMode: true, other: 'kept' });
   });
 });
 

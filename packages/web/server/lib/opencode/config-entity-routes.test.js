@@ -226,7 +226,7 @@ describe('agent backup model routes', () => {
     tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-backup-model-routes-'));
     projectDirectory = path.join(tempRoot, 'project');
     userConfigPath = path.join(tempRoot, 'opencode-config', 'config.json');
-    sidecarPath = path.join(path.dirname(userConfigPath), '.openchamber', 'config.json');
+    sidecarPath = path.join(path.dirname(userConfigPath), '.devryan', 'config.json');
     await fs.mkdir(path.dirname(userConfigPath), { recursive: true });
     markConfigChange = vi.fn(async () => ({ runtimeApplied: false, requiresApply: true, applyRevision: 1, applyScopes: ['agents'], applyStatus: { state: 'pending' }, requiresReload: false }));
     await writeProjectAgent('builder', ['mode: primary', 'model: anthropic/claude-sonnet-4-5', 'variant: low']);
@@ -258,6 +258,8 @@ describe('agent backup model routes', () => {
     const sidecar = JSON.parse(await fs.readFile(sidecarPath, 'utf8'));
     expect(sidecar.agentBackupModels).toEqual({ builder: { model: 'openai/gpt-5.5', variant: 'high' } });
     expect(sidecar).not.toHaveProperty('agentOverrides');
+    await expect(fs.stat(path.join(path.dirname(userConfigPath), '.openchamber', 'config.json')))
+      .rejects.toMatchObject({ code: 'ENOENT' });
 
     await request(app)
       .get('/api/config/agents')
