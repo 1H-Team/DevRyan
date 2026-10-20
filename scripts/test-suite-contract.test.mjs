@@ -137,6 +137,9 @@ describe('full test-suite contract', () => {
   test('the concurrent full runner expands every suite into units that run its files exactly once', () => {
     const units = planFullTests(repositoryRoot);
     const names = units.map((unit) => unit.name);
+    assert.deepEqual(names.slice(0, 3), ['harness-runtime',
+      'scripts:scripts/opencode-v2-native/native-stream-continuation.graph.test.ts', 'web:vitest 2/3']);
+    assert.match(readFileSync(path.join(repositoryRoot, '.github/workflows/ci.yml'), 'utf8'), /DEVRYAN_TEST_CONCURRENCY: '3'/);
     assert.equal(new Set(names).size, names.length);
     const key = (unit) => JSON.stringify([unit.command, unit.args, unit.cwd ?? null]);
     assert.deepEqual([...new Set(units.map((unit) => unit.suite))].sort(), FULL_TEST_SUITES.map((suite) => suite.key).sort());

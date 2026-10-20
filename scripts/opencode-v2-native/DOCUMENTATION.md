@@ -112,6 +112,8 @@ Completed native startup phases do not reset either deadline. Content-free
 inspection, rollback credential, retention or cleanup wait; exit evidence records
 the chosen limit. Product-owner timeouts and release smoke deadlines are unchanged.
 
+The pending-intent crash probe watches the owned rollback directory and also reads the exact intent every 50 ms within its existing 45-second deadline. Coalesced filesystem notifications cannot hide publication. Only the original validated intent and exact host identity authorize the crash; completion, close and failure stop both observation paths.
+
 The migration fixture contains two independent relocated Git projects, exact
 conversation/tool IDs, compaction dispositions, attachment bytes, ordered
 permissions, and separate web/native configuration trees. A lost import

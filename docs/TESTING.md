@@ -30,6 +30,8 @@ A docs-only change runs only `docs:validate`. Both validate modes fail if the ru
 
 ## CI
 
+CI sets `DEVRYAN_TEST_CONCURRENCY=3` for the hosted macOS runner; local runs default to two outer processes. The longest harness, stream-continuation and web shard units start first, so the fixed-port OAuth tests can drain alongside the other suites instead of forming a late serial tail. Node script files remain serial within their outer slot. Every suite and assertion still runs.
+
 `.github/workflows/ci.yml` runs on every push to `main` and every pull request: one job, `checks` (macos-26), installs without the Electron install-time prepare, restores the reviewed Claude executable, builds the native runtime and runs `bun run validate:full`. Every startup-contract file runs there through its owner suite; `scripts/test-suite-contract.test.mjs` proves each one is discovered. The other workflows are `release.yml`, `release-cache.yml` and `supabase-migrate.yml` (see [Release pipeline](RELEASE_PIPELINE.md)).
 
 ## Startup contract

@@ -1,4 +1,4 @@
-import {afterEach,expect,test} from 'vitest';
+import {afterEach,expect,test,vi} from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -7,6 +7,10 @@ import {git} from '../../../../../harness-runtime/lib/session-changes-git.js';
 import {createNativeAdmissionOwner} from './native-admission-owner.js';
 import {createNativeSessionRemoval} from './native-session-removal.js';
 import {createManagedTaskScheduler} from '../../../../../orchestration-runtime/scheduler.js';
+
+// These tests commit real Git ledgers; the default unit-test budget can expire
+// mid-write on hosted macOS and race cleanup against the still-running commit.
+vi.setConfig({testTimeout:60_000,hookTimeout:60_000});
 
 const roots=[];
 afterEach(async()=>{await Promise.all(roots.splice(0).map(root=>fs.rm(root,{recursive:true,force:true})));});

@@ -73,7 +73,10 @@ export function planFullTests(root = repositoryRoot, { scriptEnvironment, suites
     }
   }
   // Longest first so the pool never ends on one long unit started late.
-  const order = ['web:vitest', 'harness-runtime', 'scripts:node', 'scripts:scripts/opencode-v2-native/native-stream-continuation.graph.test.ts'];
+  // CI timings: harness 8m27s, stream 6m52s, web shard 2 7m46s. Start the
+  // port-owning stream early so its OAuth peers do not become a serial tail.
+  const order = ['harness-runtime', 'scripts:scripts/opencode-v2-native/native-stream-continuation.graph.test.ts',
+    'web:vitest 2/3', 'web:vitest', 'scripts:node'];
   const rank = (unit) => { const index = order.findIndex((prefix) => unit.name.startsWith(prefix)); return index === -1 ? order.length : index; };
   return units.map((unit, index) => ({ unit, index })).sort((left, right) => rank(left.unit) - rank(right.unit) || left.index - right.index).map(({ unit }) => unit);
 }

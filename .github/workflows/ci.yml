@@ -21,6 +21,9 @@ jobs:
     # DevRyan ships for macOS only; native runtime tests use darwin-arm64 binaries.
     runs-on: macos-26
     timeout-minutes: 75
+    env:
+      # Three outer processes fit the hosted runner; nested Node files stay serial.
+      DEVRYAN_TEST_CONCURRENCY: '3'
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2

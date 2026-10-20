@@ -28,6 +28,16 @@ test('pending-intent crash probe kills only its exact original host after real-f
   assert.deepEqual(JSON.parse(await fs.readFile(path.join(f.root,'rollback/intent.json'),'utf8')),f.intent);
  }finally{probe.close();await fs.rm(f.root,{recursive:true,force:true});}
 });
+test('pending-intent crash probe observes exact bytes even when file notifications are lost',async()=>{
+ const f=await fixture(),watcher=new EventEmitter();let closed=false;
+ watcher.close=()=>{closed=true;};
+ const probe=armCompiledRollbackCrash({...f.options,watchDirectory:()=>watcher});
+ try{
+  f.ready();assert.deepEqual(f.signals,[]);await f.publish();
+  const result=await observed(probe.ready);
+  assert.deepEqual(f.signals,['SIGKILL']);assert.equal(result.crashProof.host.pid,f.child.pid);assert.equal(closed,true);
+ }finally{probe.close();await fs.rm(f.root,{recursive:true,force:true});}
+});
 test('foreign original process and missed intent barrier fail without any crash signal',async()=>{
  for(const mode of ['foreign','missed']){
   const f=await fixture(),probe=armCompiledRollbackCrash(f.options);

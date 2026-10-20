@@ -15,11 +15,11 @@ const cli=fileURLToPath(new URL('../../packages/web/bin/cli.js',import.meta.url)
 
 /** Observe the real transition's atomic pending intent and crash its exact host.
  * A missed barrier fails this qualification; no checkpoint or ACK is invented. */
-export function armCompiledRollbackCrash({child,controlRoot,candidate,revision,hostStartIdentity}){
- let watcher,timer,done=false,driverEvidence,resolve,reject;
+export function armCompiledRollbackCrash({child,controlRoot,candidate,revision,hostStartIdentity,watchDirectory=watch}){
+ let watcher,timer,poll,done=false,driverEvidence,resolve,reject;
  const ready=new Promise((yes,no)=>{resolve=yes;reject=no;});void ready.catch(()=>{});
  const finish=(error,result)=>{
-  if(done)return;done=true;watcher?.close();clearTimeout(timer);child.off('message',message);child.off('close',closed);
+  if(done)return;done=true;watcher?.close();clearTimeout(timer);clearInterval(poll);child.off('message',message);child.off('close',closed);
   if(error)reject(error);else resolve(result);
  };
  const check=()=>{
@@ -44,12 +44,15 @@ export function armCompiledRollbackCrash({child,controlRoot,candidate,revision,h
    assert.equal(driverEvidence,undefined);assert.equal(value.result?.mode,'rollback-crash');assert.equal(value.result?.status,'passed');
    assert.equal(value.revision,revision);assert.equal(value.bundleID,candidate.bundleID);
    assert.ok(Buffer.byteLength(JSON.stringify(value))<=65536);driverEvidence=value.result;
-   timer=setTimeout(()=>finish(fail('compiled_rollback_crash_barrier_timeout')),45000);check();
+   timer=setTimeout(()=>finish(fail('compiled_rollback_crash_barrier_timeout')),45000);
+   // fs.watch notifications can coalesce or be lost; only exact intent bytes
+   // authorize the crash, and polling stays inside the original deadline.
+   poll=setInterval(check,50);check();
   }catch(error){finish(error);}
  };
  const closed=()=>finish(fail('compiled_rollback_crash_barrier_missed'));
  child.on('message',message);child.once('close',closed);
- try{watcher=watch(path.dirname(rollbackIntentPath(controlRoot)),(_event,name)=>{if(name==null||name.toString()==='intent.json')check();});watcher.on('error',error=>finish(error));}
+ try{watcher=watchDirectory(path.dirname(rollbackIntentPath(controlRoot)),()=>check());watcher.on('error',error=>finish(error));}
  catch(error){finish(error);}
  return {ready,close:()=>finish(fail('compiled_rollback_crash_probe_closed'))};
 }
