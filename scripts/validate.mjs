@@ -33,10 +33,11 @@ const packages = {
     test: ['bun', ['run', '--cwd', 'packages/electron', 'test']],
   },
   desktop: {
-    // Frozen legacy Tauri package: lint and types only; its cargo tests are not run.
+    // Frozen legacy Tauri package: run JS contract tests; cargo tests need native build assets.
     prefix: 'packages/desktop/',
     lint: ['bun', ['run', 'lint:desktop']],
     typeCheck: ['bun', ['run', 'type-check:desktop']],
+    test: ['bun', ['run', '--cwd', 'packages/desktop', 'test:managed-orchestration']],
   },
   bots: {
     prefix: 'packages/bots-runtime/',

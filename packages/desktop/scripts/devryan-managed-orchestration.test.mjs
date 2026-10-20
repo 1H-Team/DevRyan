@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from 'bun:test';
 
 mock.module('@opencode-ai/plugin', () => ({ tool: () => ({}) }));
-const { isPlanModeUserRecord } = await import('./devryan-managed-orchestration.mjs');
+const { isPlanModeUserRecord } = await import('../src-tauri/resources/default-config/plugins/devryan-managed-orchestration.mjs');
 
 const user = metadata => ({ info: { role: 'user', metadata }, parts: [] });
 
