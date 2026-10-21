@@ -1352,6 +1352,9 @@ test('packing can be switched off', async () => {
 test('maintenance prunes superseded loose objects without waiting for pack consolidation', async () => {
   const f = await fixture({ maintenance: { looseObjects: 5, packs: 1_000, commits: 1_000, pruneExpiry: 'now' } });
   await manyFiles(f, 30);
+  // Finish seed packing before zero-grace pruning can race later transaction writes.
+  await f.runtime.warm({ directory: f.directory });
+  await f.runtime.drain();
   const root = path.join(f.storage, changeKey(await fs.realpath(f.directory))), gitDir = path.join(root, 'git');
   for (const index of [0, 1, 2]) {
     const lease = await f.begin('s', `p${index}`, `c${index}`);
