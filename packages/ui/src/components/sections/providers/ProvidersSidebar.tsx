@@ -275,6 +275,7 @@ const ProviderListItem: React.FC<{
   ).length;
   const isSelected = provider.id === selectedProviderId;
   const providerName = getProviderDisplayName(provider, sources);
+  const showDisconnect = canDisconnect && Boolean(onDisconnect);
 
   return (
     <div
@@ -297,25 +298,28 @@ const ProviderListItem: React.FC<{
           </span>
           <ProviderUsageMeter quotaProviderId={getQuotaProviderIdForProvider(provider.id)} className="mt-1" />
         </span>
+      </button>
+      <div className={cn(
+        'relative flex h-6 flex-shrink-0 items-center justify-end',
+        isDisconnectPending ? 'w-auto' : 'w-7',
+      )}>
         <span className={cn(
-          'typography-micro flex-shrink-0 text-right tabular-nums text-muted-foreground/60',
-          isDisconnectPending ? 'w-auto' : 'w-7',
+          'typography-micro text-right tabular-nums text-muted-foreground/60 transition-opacity',
+          showDisconnect && 'group-hover:opacity-0 group-focus-within:opacity-0',
         )}>
           {isDisconnectPending ? t('settings.providers.page.state.disconnectPendingShort') : modelCount}
         </span>
-      </button>
-      <div className="h-6 w-6 flex-shrink-0">
-        {canDisconnect && onDisconnect ? (
+        {showDisconnect ? (
           <Button
             type="button"
             size="xs"
             variant="ghost"
-            className="h-6 w-6 px-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 hover:text-destructive focus-visible:opacity-100"
+            className="absolute inset-y-0 right-0 h-6 w-6 px-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 hover:text-destructive focus-visible:opacity-100"
             disabled={isDisconnecting}
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
-              onDisconnect();
+              onDisconnect?.();
             }}
             aria-label={t('settings.providers.page.actions.disconnect')}
             title={t('settings.providers.page.actions.disconnect')}
@@ -350,6 +354,5 @@ const UsageOnlyListItem: React.FC<{
         <ProviderUsageMeter quotaProviderId={provider.id} className="mt-1" />
       </span>
     </button>
-    <div className="h-6 w-6 flex-shrink-0" />
   </div>
 );
