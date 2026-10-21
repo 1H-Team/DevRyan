@@ -88,7 +88,7 @@ export const toolTurn = (name, input, caseID, options = {}) => {
   };
 };
 
-// These are native 2.1.0 names/shapes, deliberately different from v1 tools.
+// These are native 2.1.2 names/shapes, deliberately different from v1 tools.
 export const writerCases = Object.freeze([
   { id: 'fresh-write', tool: 'write', input: { path: 'sequential.txt', content: 'first\n' }, expected: { 'sequential.txt': 'first\n' } },
   { id: 'fresh-edit', tool: 'edit', input: { path: 'sequential.txt', oldString: 'first', newString: 'second' }, expected: { 'sequential.txt': 'second\n' } },

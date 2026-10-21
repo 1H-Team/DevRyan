@@ -34,7 +34,7 @@ test('native checkpoint history replays only the exact provider/model and preser
  try {await Effect.runPromise(Effect.scoped(Effect.gen(function*(){
   const bus=yield* Bus.Service,inbox=yield* SessionInbox.Service,database=yield* Database.Service;
   const project=yield* (yield* Project.Service).resolve(AbsolutePath.make(directory)),sessionID=SessionSchema.ID.make('ses_checkpoint');
-  yield* bus.publish(SessionEvent.Created,Schema.decodeUnknownSync(SessionEvent.Created.data)({sessionID,projectID:project.id,location:{directory},slug:'checkpoint',agent:'build',model:{providerID:'owned',id:'fixture-a'},version:'2.1.0'}));
+  yield* bus.publish(SessionEvent.Created,Schema.decodeUnknownSync(SessionEvent.Created.data)({sessionID,projectID:project.id,location:{directory},slug:'checkpoint',agent:'build',model:{providerID:'owned',id:'fixture-a'},version:'2.1.2'}));
   const userID=SessionMessage.ID.make('msg_original');
   yield* inbox.admit({sessionID,id:userID,item:Schema.decodeUnknownSync(SessionInbox.Item)({type:'user',delivery:'queue',payload:{text:'Exact original objective'}})});
   yield* bus.publish(SessionEvent.InboxDelivered,{sessionID,inboxID:userID});

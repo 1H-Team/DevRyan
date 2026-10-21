@@ -146,4 +146,4 @@ for journal and in-process readers. New synthetic events use `devryan:*`; the
 web stream owner translates only the leading serialized type for older clients.
 
 Compaction event evidence accepts an optional `witness.native` hash/byte count
-for OpenCode 2.1.0, retaining the prior witness keys for stored diagnostics.
+for OpenCode 2.1.2, retaining the prior witness keys for stored diagnostics.

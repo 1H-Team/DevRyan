@@ -12,12 +12,12 @@
       },
       "devDependencies": {
         "@babel/core": "^7.29.7",
-        "@opencode/ai": "2.1.0",
-        "@opencode/core": "2.1.0",
-        "@opencode/plugin": "2.1.0",
-        "@opencode/schema": "2.1.0",
-        "@opencode/simulation": "2.1.0",
-        "@opencode/util": "2.1.0",
+        "@opencode/ai": "2.1.2",
+        "@opencode/core": "2.1.2",
+        "@opencode/plugin": "2.1.2",
+        "@opencode/schema": "2.1.2",
+        "@opencode/simulation": "2.1.2",
+        "@opencode/util": "2.1.2",
         "@rolldown/plugin-babel": "^0.2.4",
         "@tailwindcss/postcss": "^4.3.3",
         "@types/dom-speech-recognition": "^0.0.7",
@@ -248,13 +248,13 @@
         "@modelcontextprotocol/sdk": "1.29.0",
         "@octokit/rest": "^22.0.1",
         "@opencode-ai/sdk": "^1.18.33",
-        "@opencode/ai": "2.1.0",
-        "@opencode/core": "2.1.0",
-        "@opencode/plugin": "2.1.0",
-        "@opencode/schema": "2.1.0",
-        "@opencode/sdk": "2.1.0",
-        "@opencode/server": "2.1.0",
-        "@opencode/util": "2.1.0",
+        "@opencode/ai": "2.1.2",
+        "@opencode/core": "2.1.2",
+        "@opencode/plugin": "2.1.2",
+        "@opencode/schema": "2.1.2",
+        "@opencode/sdk": "2.1.2",
+        "@opencode/server": "2.1.2",
+        "@opencode/util": "2.1.2",
         "@simplewebauthn/server": "13.3.0",
         "adm-zip": "^0.6.0",
         "better-sqlite3": "^12.11.1",
@@ -285,7 +285,7 @@
         "@fontsource/ibm-plex-mono": "^5.3.0",
         "@fontsource/ibm-plex-sans": "^5.3.0",
         "@opencode-ai/plugin": "1.18.33",
-        "@opencode/simulation": "2.1.0",
+        "@opencode/simulation": "2.1.2",
         "@remixicon/react": "^4.9.0",
         "@simplewebauthn/browser": "13.3.0",
         "@tailwindcss/postcss": "^4.3.3",
@@ -958,29 +958,29 @@
 
     "@opencode-ai/sdk": ["@opencode-ai/sdk@1.18.33", "", { "dependencies": { "cross-spawn": "7.0.6" } }, "sha512-Nyurky9+AA2tvZ6my8UtO5pxPoXxrNypqjeEqMshBGiR542glOy+KE1Y+3lwWU+Z6HC/hSmrdXNbX81+qiuTzg=="],
 
-    "@opencode/ai": ["@opencode/ai@2.1.0", "", { "dependencies": { "@aws-sdk/credential-providers": "3.1057.0", "@opencode/schema": "2.1.0", "@smithy/eventstream-codec": "4.2.14", "@smithy/util-utf8": "4.2.2", "aws4fetch": "1.0.20", "effect": "4.0.1", "google-auth-library": "10.5.0" } }, "sha512-4pEMrwKlq18OV4ccNkmPbl7tEUhLMql0QNyM0d3zqNKCiRn+LaWCerDaFZ9fQkAcLxNkRuBegPqvZhKl4uIgHQ=="],
+    "@opencode/ai": ["@opencode/ai@2.1.2", "", { "dependencies": { "@aws-sdk/credential-providers": "3.1057.0", "@opencode/schema": "2.1.2", "@smithy/eventstream-codec": "4.2.14", "@smithy/util-utf8": "4.2.2", "aws4fetch": "1.0.20", "effect": "4.0.1", "google-auth-library": "10.5.0" } }, "sha512-I2LeTbMRDmVtSWaIF2B0mwQitEHHg89fL28LdWQVec6z9SeFrx7WpEry5rxvYGKPvut8Mz7Kz+XCnVX/xhhcKg=="],
 
-    "@opencode/client": ["@opencode/client@2.1.0", "", { "dependencies": { "@opencode/protocol": "2.1.0", "@opencode/schema": "2.1.0" }, "peerDependencies": { "effect": "4.0.1", "solid-js": ">=1.9.0" }, "optionalPeers": ["effect", "solid-js"] }, "sha512-2rT2cog3QFMErvWaUvV3M5I9SvBF8p8MWC5PHh+Rno2Z828SiVQRlmXO0BwbxRou3xmAgKk5dHk0573BS2VBTw=="],
+    "@opencode/client": ["@opencode/client@2.1.2", "", { "dependencies": { "@opencode/protocol": "2.1.2", "@opencode/schema": "2.1.2" }, "peerDependencies": { "effect": "4.0.1", "solid-js": ">=1.9.0" }, "optionalPeers": ["effect", "solid-js"] }, "sha512-c7FqI/zMy6HrdVGHynzouiz3y1smokGuimh2+Is2iVWz8I8VzJEty9eTrvQkQzXG1Hj5K2FL1K5fytQ7yJEd9w=="],
 
-    "@opencode/codemode": ["@opencode/codemode@2.1.0", "", { "dependencies": { "acorn": "8.15.0", "effect": "4.0.1" } }, "sha512-dQX3W4+rwXr5BwmXGrh1ty/Zj7+dPCHqZfcq5vajJUhpMewqP0ur6ejsvNjxtDKim95pTnGj6EI8yUY5VdpbNw=="],
+    "@opencode/codemode": ["@opencode/codemode@2.1.2", "", { "dependencies": { "acorn": "8.15.0", "effect": "4.0.1" } }, "sha512-pLpC8iUR3lVJFdrLFfhLXeC5xqrRbkDTnmDniqWUPyIj4rNMorNyh0pyCbqmFzT15nmvxMXy+EYiCKrUtUZMmw=="],
 
-    "@opencode/core": ["@opencode/core@2.1.0", "", { "dependencies": { "@ai-sdk/cohere": "3.0.27", "@ai-sdk/perplexity": "3.0.26", "@ai-sdk/provider": "3.0.8", "@ai-sdk/provider-utils": "4.0.23", "@ai-sdk/vercel": "2.0.39", "@ff-labs/fff-bun": "0.10.5", "@ff-labs/fff-node": "0.10.5", "@lydell/node-pty": "1.2.0-beta.12", "@modelcontextprotocol/client": "2.0.0", "@modelcontextprotocol/core": "2.0.0", "@opencode-ai/pty": "0.3.1", "@opencode/ai": "2.1.0", "@opencode/codemode": "2.1.0", "@opencode/plugin": "2.1.0", "@opencode/plugin-browser": "2.1.0", "@opencode/schema": "2.1.0", "@opencode/util": "2.1.0", "@parcel/watcher": "2.5.1", "@silvia-odwyer/photon-node": "0.3.4", "@standard-schema/spec": "1.1.0", "bun-pty": "0.4.11", "diff": "8.0.4", "drizzle-orm": "1.0.0-rc.5-169397b", "effect": "4.0.1", "fuzzysort": "3.1.0", "gitlab-ai-provider": "6.19.0", "gray-matter": "4.0.3", "htmlparser2": "8.0.2", "http-proxy-agent": "7.0.2", "https-proxy-agent": "7.0.6", "immer": "11.1.4", "jose": "6.0.11", "jsonc-parser": "3.3.1", "mime-types": "3.0.2", "tree-sitter-bash": "0.25.0", "tree-sitter-powershell": "0.25.10", "web-tree-sitter": "0.25.10", "which": "6.0.1", "zod": "4.1.8" } }, "sha512-nsruAgC9F0nJQZ5LtvMSZtNs6rw+pAzc8VQdzf1+/a4Z8SwxUfp7LvH72WL9oggwTtd+wrli64NPmV8TlshDAg=="],
+    "@opencode/core": ["@opencode/core@2.1.2", "", { "dependencies": { "@ai-sdk/cohere": "3.0.27", "@ai-sdk/perplexity": "3.0.26", "@ai-sdk/provider": "3.0.8", "@ai-sdk/provider-utils": "4.0.23", "@ai-sdk/vercel": "2.0.39", "@ff-labs/fff-bun": "0.10.5", "@ff-labs/fff-node": "0.10.5", "@lydell/node-pty": "1.2.0-beta.12", "@modelcontextprotocol/client": "2.0.0", "@modelcontextprotocol/core": "2.0.0", "@opencode-ai/pty": "0.3.1", "@opencode/ai": "2.1.2", "@opencode/codemode": "2.1.2", "@opencode/plugin": "2.1.2", "@opencode/plugin-browser": "2.1.2", "@opencode/schema": "2.1.2", "@opencode/util": "2.1.2", "@parcel/watcher": "2.5.1", "@silvia-odwyer/photon-node": "0.3.4", "@standard-schema/spec": "1.1.0", "bun-pty": "0.4.11", "diff": "8.0.4", "drizzle-orm": "1.0.0-rc.5-169397b", "effect": "4.0.1", "fuzzysort": "3.1.0", "gitlab-ai-provider": "6.19.0", "gray-matter": "4.0.3", "htmlparser2": "8.0.2", "http-proxy-agent": "7.0.2", "https-proxy-agent": "7.0.6", "immer": "11.1.4", "jose": "6.0.11", "jsonc-parser": "3.3.1", "mime-types": "3.0.2", "tree-sitter-bash": "0.25.0", "tree-sitter-powershell": "0.25.10", "web-tree-sitter": "0.25.10", "which": "6.0.1", "zod": "4.1.8" } }, "sha512-CcuIFkf2sVi7C0ffqMszacOWnaPqzu0Q5oqmsz7N8a7Ud1EtHgbdh6ADcXnqRvBF3q/+l9O5kZVWNbvg76wa4A=="],
 
-    "@opencode/plugin": ["@opencode/plugin@2.1.0", "", { "dependencies": { "@ai-sdk/provider": "3.0.8", "@opencode/ai": "2.1.0", "@opencode/client": "2.1.0", "@opencode/protocol": "2.1.0", "@opencode/schema": "2.1.0", "@opencode/util": "2.1.0", "effect": "4.0.1" }, "peerDependencies": { "@opencode/theme": "2.1.0", "@opentui/core": ">=0.6.6", "@opentui/solid": ">=0.6.6", "solid-js": ">=1.9.0" }, "optionalPeers": ["@opencode/theme", "@opentui/core", "@opentui/solid", "solid-js"] }, "sha512-lnBdxgjcKNZgk+sOdOb1RseaOKqV5+1EaLScaK3wYqfnPPk51KvfoXLRT8sQGVvGxgEmRQfKGP5tTxZ6WhGWeQ=="],
+    "@opencode/plugin": ["@opencode/plugin@2.1.2", "", { "dependencies": { "@ai-sdk/provider": "3.0.8", "@opencode/ai": "2.1.2", "@opencode/client": "2.1.2", "@opencode/protocol": "2.1.2", "@opencode/schema": "2.1.2", "@opencode/util": "2.1.2", "effect": "4.0.1" }, "peerDependencies": { "@opencode/theme": "2.1.2", "@opentui/core": ">=0.6.6", "@opentui/solid": ">=0.6.6", "solid-js": ">=1.9.0" }, "optionalPeers": ["@opencode/theme", "@opentui/core", "@opentui/solid", "solid-js"] }, "sha512-vgGoLF/Kb7uyOsRmAHViN7BRPrAl0c3UVqvKQ/ZDl42IKzqsxedpAyoVpwxQHt+3LF6non2sOvi6Y+kKzDHheg=="],
 
-    "@opencode/plugin-browser": ["@opencode/plugin-browser@2.1.0", "", { "dependencies": { "@opencode/plugin": "2.1.0", "@opencode/schema": "2.1.0", "effect": "4.0.1" } }, "sha512-GC6e85tU7T9O+f0ig/umLQJBkHru88AjM62tlck6dr583HTkK6XuP4nHpiGV19rzftX0wThebPDjV2+EY1/8Pw=="],
+    "@opencode/plugin-browser": ["@opencode/plugin-browser@2.1.2", "", { "dependencies": { "@opencode/plugin": "2.1.2", "@opencode/schema": "2.1.2", "effect": "4.0.1" } }, "sha512-o1wLk4zrHc1he0FLSedngux3xFvp2bROfqwkRsvkBkXgsaTikj4mJ5RXO4Pi08/FhcnvxWiCEB+lG/ZBMm6yOQ=="],
 
-    "@opencode/protocol": ["@opencode/protocol@2.1.0", "", { "dependencies": { "@opencode/schema": "2.1.0", "effect": "4.0.1" } }, "sha512-Zo1TDw5Yx41Bi7+I0Djs0b92IcPP7Jg/k+lL6FLm+m46TT27wIG7n8xPV490LTo4sXTtknYddnU4aLpwqaIa3g=="],
+    "@opencode/protocol": ["@opencode/protocol@2.1.2", "", { "dependencies": { "@opencode/schema": "2.1.2", "effect": "4.0.1" } }, "sha512-dNJuZrJlcUnc3mP7GFoawXECpUoUA+1TEbXvXkFKteq9tpZbO5Qsi1AWqocRJH2cIfG8v5rddyBTyX4+0ax9Yw=="],
 
-    "@opencode/schema": ["@opencode/schema@2.1.0", "", { "dependencies": { "@standard-schema/spec": "1.1.0", "effect": "4.0.1" } }, "sha512-Cv1bP3lEDXbRvmlw7pwDhMNFSAOy+Zo8zBs/t0lP1iWZE6tqMhRb1lsvaX6DPI8iwzF3QW2b9dKcixPjlqwAhQ=="],
+    "@opencode/schema": ["@opencode/schema@2.1.2", "", { "dependencies": { "@standard-schema/spec": "1.1.0", "effect": "4.0.1" } }, "sha512-gYbneOINd0Tt41krlC79OWjcXMPlW9EjIR+tmG3EYD8SEA4xCdZh0WhZLrFDlLMKDcb6d9xeHTFwhqGACt0IRg=="],
 
-    "@opencode/sdk": ["@opencode/sdk@2.1.0", "", { "dependencies": { "@opencode/client": "2.1.0", "@opencode/core": "2.1.0", "@opencode/plugin": "2.1.0", "@opencode/schema": "2.1.0", "@opencode/server": "2.1.0", "@opencode/util": "2.1.0", "effect": "4.0.1" } }, "sha512-jPW3mwZPemuoytNBkX6iu5IW7vEE59+ovuJm22UBP3BMNHbAQ/0UeffXSyapsavIQ9XNYBxhLJsIAC9wcCvn3g=="],
+    "@opencode/sdk": ["@opencode/sdk@2.1.2", "", { "dependencies": { "@opencode/client": "2.1.2", "@opencode/core": "2.1.2", "@opencode/plugin": "2.1.2", "@opencode/schema": "2.1.2", "@opencode/server": "2.1.2", "@opencode/util": "2.1.2", "effect": "4.0.1" } }, "sha512-wKCUv3pzdQIj/o+h+KkauDCyUJcBeqcDzt34yFrTegNsruJ8bRhDk2vUTuV2YZ1zcBUWK5jpFarlOQnwgbw4RQ=="],
 
-    "@opencode/server": ["@opencode/server@2.1.0", "", { "dependencies": { "@effect/platform-node": "4.0.1", "@effect/platform-node-shared": "4.0.1", "@opencode/core": "2.1.0", "@opencode/protocol": "2.1.0", "@opencode/schema": "2.1.0", "@opencode/simulation": "2.1.0", "@opencode/util": "2.1.0", "effect": "4.0.1" } }, "sha512-e9L/vjEPnwNoT7dDd9NHxF5rHYlp+rbrr7C7In0RT9eHeZQRVfPRwKdcykOQ3ezV7WeBas3/OpBnyUgTyLYQIQ=="],
+    "@opencode/server": ["@opencode/server@2.1.2", "", { "dependencies": { "@effect/platform-node": "4.0.1", "@effect/platform-node-shared": "4.0.1", "@opencode/core": "2.1.2", "@opencode/protocol": "2.1.2", "@opencode/schema": "2.1.2", "@opencode/simulation": "2.1.2", "@opencode/util": "2.1.2", "effect": "4.0.1" } }, "sha512-7dWZ/5e50YQOSYT+J3XxMA4yZB0qV4ZwvfKEehiyif7Z31lIr4R3Kjqh1HAalM25t3Y/mOzsiZilDQiaSuByKQ=="],
 
-    "@opencode/simulation": ["@opencode/simulation@2.1.0", "", { "dependencies": { "@opencode/ai": "2.1.0", "@opencode/core": "2.1.0", "@opencode/plugin": "2.1.0", "@opencode/protocol": "2.1.0", "@opencode/util": "2.1.0", "@opentui/core": "0.6.6", "effect": "4.0.1", "ws": "8.21.0" } }, "sha512-PRO0SU2HyeiY8rz633L3ePSG1EaVxPlR8JCezdWoNKi1VY1a7Ka3tIRBZPYftUh3RHbWv2ShMnbOMuUxGdnqHA=="],
+    "@opencode/simulation": ["@opencode/simulation@2.1.2", "", { "dependencies": { "@opencode/ai": "2.1.2", "@opencode/core": "2.1.2", "@opencode/plugin": "2.1.2", "@opencode/protocol": "2.1.2", "@opencode/util": "2.1.2", "@opentui/core": "0.6.6", "effect": "4.0.1", "ws": "8.21.0" } }, "sha512-bR9o2G8n6Pgj7MInpwZsXQ97cyi9rMFndBZwqgpgOqZFEkwqCZmCuqHb6aznzYXr39AoSLpFuTz+pW/QGAXBPg=="],
 
-    "@opencode/util": ["@opencode/util@2.1.0", "", { "dependencies": { "@effect/opentelemetry": "4.0.1", "@effect/platform-node": "4.0.1", "@effect/platform-node-shared": "4.0.1", "@npmcli/arborist": "9.4.0", "@npmcli/config": "10.8.1", "@opentelemetry/api": "1.9.0", "@opentelemetry/api-logs": "0.219.0", "@opentelemetry/context-async-hooks": "2.8.0", "@opentelemetry/exporter-trace-otlp-http": "0.219.0", "@opentelemetry/resources": "2.8.0", "@opentelemetry/sdk-logs": "0.219.0", "@opentelemetry/sdk-metrics": "2.8.0", "@opentelemetry/sdk-trace-base": "2.8.0", "@opentelemetry/sdk-trace-node": "2.8.0", "cross-spawn": "7.0.6", "effect": "4.0.1", "glob": "13.0.5", "mime-types": "3.0.2", "minimatch": "10.2.5", "npm-package-arg": "13.0.2", "open": "11.0.4", "pacote": "21.5.1" } }, "sha512-LttLlMxN+FpodiNK2avxm6BZ1U/u3TwB2fU36g2QIN1g/A7pQ4RfsGSBAZBQ0CKkC60Bi6WADrZUJc7a40wQqw=="],
+    "@opencode/util": ["@opencode/util@2.1.2", "", { "dependencies": { "@effect/opentelemetry": "4.0.1", "@effect/platform-node": "4.0.1", "@effect/platform-node-shared": "4.0.1", "@npmcli/arborist": "9.4.0", "@npmcli/config": "10.8.1", "@opentelemetry/api": "1.9.0", "@opentelemetry/api-logs": "0.219.0", "@opentelemetry/context-async-hooks": "2.8.0", "@opentelemetry/exporter-trace-otlp-http": "0.219.0", "@opentelemetry/resources": "2.8.0", "@opentelemetry/sdk-logs": "0.219.0", "@opentelemetry/sdk-metrics": "2.8.0", "@opentelemetry/sdk-trace-base": "2.8.0", "@opentelemetry/sdk-trace-node": "2.8.0", "cross-spawn": "7.0.6", "effect": "4.0.1", "glob": "13.0.5", "mime-types": "3.0.2", "minimatch": "10.2.5", "npm-package-arg": "13.0.2", "open": "11.0.4", "pacote": "21.5.1" } }, "sha512-9uyLAnOSgVRN6NLWEMcwXDmLl+n3FKbXxmAaZVC1l5zBPKEGvc9PKa8KG9Kar7n3iGSPRk6R/JhW/j9s0ciNEQ=="],
 
     "@opentelemetry/api": ["@opentelemetry/api@1.9.0", "", {}, "sha512-3giAOQvZiH5F9bMlMiv8+GSPMeqg0dbaeo58/0SlA9sxSqZhnUtxzX9/2FzyhS9sWQf5S0GJE0AKBrFqjpeYcg=="],
 

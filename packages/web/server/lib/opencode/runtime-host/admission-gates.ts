@@ -703,7 +703,7 @@ export function createAdmissionGates(options: AdmissionGateOptions) {
     if (!execution) throw new HostRefusal('native_execution_unavailable', 503, 'session.hold', sessionID);
     const id = SessionSchema.ID.make(sessionID);
     try {
-      await runControllerEffect(execution.interrupt(id, { awaitSettlement: true }).pipe(Effect.timeout('30 seconds')));
+      await runControllerEffect(execution.interrupt(id).pipe(Effect.timeout('30 seconds')));
       await runControllerEffect(execution.awaitIdle(id).pipe(Effect.timeout('30 seconds')));
       if (await runControllerEffect(execution.isActive(id))) throw new Error('Native execution remained active');
     } catch {

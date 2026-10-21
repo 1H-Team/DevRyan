@@ -15,7 +15,7 @@ for(const compiled of [false,true])test(`pinned native automatic compaction pres
   source=`import {createPrivilegedOpenCodeClient} from ${JSON.stringify(path.join(repository,'packages/web/server/lib/opencode/opencode-client/privileged.js'))};
 import {validateCanonicalPlanSource} from ${JSON.stringify(path.join(repository,'packages/web/server/lib/plans/canonical-source.js'))};\n`+source;
   replace('let initialPairReleased=false;','let initialPairReleased=true;let primaryRequests=0;');
-  replace('const options = { database:',"const options = { app:{name:'DevRyan automatic compaction fixture',version:'2.1.0',channel:'fixture'},database:");
+  replace('const options = { database:',"const options = { app:{name:'DevRyan automatic compaction fixture',version:'2.1.2',channel:'fixture'},database:");
   replace('  withSessionLock: lock,','  readPlanPolicy:async()=>({readOnly:true}),validatePlanImplementation:async()=>{},\n  withSessionLock: lock,');
   const beginOutput='      const output = JSON.stringify(body).includes(\'structured summary\')';
   replace(beginOutput,`      if(kind==='primary'&&++primaryRequests===1){

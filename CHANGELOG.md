@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Update the bundled OpenCode host to 2.1.2, including its native compaction APIs, PTY 0.3.1 and reviewed route inventory. Preserve retained runtime compatibility, including 2.1.0; the Bot image stays on 2.0.30.
+
 ## [2.1.8] - 2026-10-21
 
 - Retire Bot execution across the interface and runtimes while preserving installed data and ordinary scheduled tasks.
