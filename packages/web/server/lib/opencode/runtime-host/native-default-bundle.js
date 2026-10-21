@@ -11,7 +11,7 @@ import {DEVRYAN_MANAGED_PLUGINS} from '../managed-plugins.js';
 import {verifyNativeRuntimeArtifacts,readNativeRuntimeManifest} from './native-artifacts.js';
 import {timeStartupPhase} from '../startup-timing.js';
 import {runNativeMigrationProcess} from './native-migration-process.js';
-import {createRuntimeBundleStore} from './runtime-bundle.js';
+import {createRuntimeBundleStore,recoverRuntimeBundleRebind} from './runtime-bundle.js';
 import {createPrivatePersistenceFromVerifiedArtifacts} from './native-private-persistence.js';
 import {createRuntimeBundleCheckpoint} from './bundle-checkpoint.js';
 import {withCrossProcessFileLock} from '../../../../../harness-runtime/lib/atomic-file.js';
@@ -145,6 +145,8 @@ export async function provisionDefaultNativeBundle({env=process.env,home=os.home
  const provision=async()=>{
   await sweepRemovedNativeSetupSources({controlRoot,sourceRoot,...privatePersistence});
   if(await exists(path.join(controlRoot,'selection.json'))){
+   // A crash inside an artifact rebind leaves documents the binding below refuses.
+   if (!operations.windows) await recoverRuntimeBundleRebind({ controlRoot });
    if (!operations.windows) await recoverClaudeActivationAtStartup({ controlRoot, verifyArtifacts });
    const selected=readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot},{allowHeldInspection:true});
    if(selected.admission==='held'||selected.selection.reconciliationRequired)return controlRoot;

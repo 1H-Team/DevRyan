@@ -244,17 +244,6 @@ test('native startup summaries require all three usable starts and successful cl
   assert.throws(() => summarizeNativeStartupRuns([{ startup: { outcome: 'passed', uiReadyMs: NaN } }, ...runs.slice(1)]), /parent clock/);
 });
 
-test('direct service smoke uses candidate version and labels the limits of three host starts', async () => {
-  const source = await fs.readFile(new URL('./packaged-service-smoke.mjs', import.meta.url), 'utf8');
-  assert.match(source, /version: appVersion/);
-  assert.match(source, /assert\.equal\(descriptor\.appVersion, appVersion\)/);
-  assert.match(source, /iteration < 3/);
-  assert.match(source, /usable-UI/);
-  assert.match(source, /native-model-readiness/);
-  assert.doesNotMatch(source, /descriptor\.appVersion, ['"]2\.0\.2/);
-});
-
-
 test('background startup evidence counts only owned fixed endpoints and cleans up', () => {
   const cdp = fakeCdp(), observer = observeStartupBackgroundWork(cdp, performance.now(), 'http://127.0.0.1:4567');
   const request = url => cdp.emit('Network.requestWillBeSent', { request: { url, postData: 'must never be retained' } });

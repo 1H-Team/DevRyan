@@ -2,18 +2,36 @@
 
 ## Bots retirement
 
-Bots are disabled by the shared product capability. Main refuses Bot IPC and
-manager creation, skips key-store initialization and background preparation,
-and packaging no longer requires or ships Bot manifests, Compose or SQL.
-Existing Bot implementation and data are retained. After normal foreground
-startup and update acceptance, `bot-retirement.mjs` makes one best-effort
-15-second attempt to stop containers labelled for the existing sealed deployment
-identity and disable their Docker restart policy. It never creates a key, starts
-Docker, removes a container/volume, or blocks startup. Failure is a sanitized
-status, not an upgrade failure. Shared runtime-service ownership is unchanged.
+Bots are disabled by the shared product capability. Main wires no Bot IPC,
+runtime manager, key store, recovery dialog or Docker launcher, and packaging no
+longer requires or ships Bot manifests, Compose or SQL. Startup never calls
+Electron `safeStorage`, so no launch reads the "DevRyan Safe Storage" keychain
+item (ad-hoc signed builds otherwise prompt for it after every update).
 
-The older Bot lifecycle descriptions below document the retained implementation;
-they are not active product behavior while Bots are retired.
+After normal foreground startup and update acceptance, `bot-retirement.mjs`
+runs until it succeeds once. If `bots/keys/deployment-key.v1` exists it stops
+containers labelled `devryan.runtime=production-bots`, disables their Docker
+restart policy, deletes `bots/keys` and writes `bots/retired.v1`; without a key,
+or without a Docker CLI, it only writes the marker. It never reads the keychain,
+starts Docker, removes a container/volume, or blocks startup. A stopped Docker
+daemon is a sanitized `unavailable` status retried at the next launch. Later
+launches cost one stat.
+
+The background runtime service (`--runtime-service`) existed only for Bots and
+is retired. The bundle still ships both LaunchAgent plists and
+`DevRyanRuntimeServiceControl.node`: installed 2.x updaters verify them in a
+candidate bundle, and the native bridge also performs the updater's exclusive
+rename/swap. A launch with `--runtime-service` exits 0 in `early-startup.mjs`
+(the plist's `KeepAlive` restarts only on failure). Before the initial URL,
+`retireRuntimeServiceRegistration` (`runtime-service-startup.mjs`) checks
+`runtime-service/retired.v1`; without it, it unregisters an enabled or pending
+registration, proves its owner stopped, clears the old `productionBots*Runtime*`
+settings and writes the marker. Failure is logged and retried next launch.
+`runtime-service.mjs` keeps only the app-bound owner lock and reclaims a stopped
+legacy `service` owner; acquisition deletes the old sealed `handshake.v1.json`.
+
+Older Bot lifecycle descriptions below document the retained Bot implementation
+(server, UI and image tooling); they are not active product behavior.
 
 
 The repository's `bun run build` builds the web UI through `build:web-assets`, which stages the same assets into `resources/web-dist`, then bundles Electron's main process. Full validation uses this explicit build before tests; it does not rely on install-time preparation for packaged web assets.
@@ -26,7 +44,7 @@ their original behavior. Existing installations still get the catalog startup
 needed for retention. The server then suppresses dormant retries after typed
 Docker unavailability while preserving owned active work and explicit controls.
 
-The production package enters `dist-bundle/entry.mjs`. This small Electron and standard-library entry configures the profile and single-instance lock, queues deep links, and shows the existing splash before importing the main-process bundle. Runtime-service and status-probe launches skip window creation. Closing the early splash cancels startup. After showing, the entry yields two renderer animation frames before importing main; this gives the compositor a scheduling opportunity, while actual visible timing remains a native benchmark requirement. Failed foreground imports keep bounded diagnostics and Retry on this window; failed headless imports exit without a dialog. `early-startup.mjs` owns this temporary window until `main.mjs` adopts it and attaches the normal navigation, guest, lifecycle and quit handlers; startup creates only one window.
+The production package enters `dist-bundle/entry.mjs`. This small Electron and standard-library entry configures the profile and single-instance lock, queues deep links, and shows the existing splash before importing the main-process bundle. Retired runtime-service launches exit at once; status-probe launches skip window creation. Closing the early splash cancels startup. After showing, the entry yields two renderer animation frames before importing main; this gives the compositor a scheduling opportunity, while actual visible timing remains a native benchmark requirement. Failed foreground imports keep bounded diagnostics and Retry on this window; failed headless imports exit without a dialog. `early-startup.mjs` owns this temporary window until `main.mjs` adopts it and attaches the normal navigation, guest, lifecycle and quit handlers; startup creates only one window.
 
 `createStartupWindowOptions` is shared by early and ordinary windows so preload isolation and runtime capability arguments remain consistent. Adoption keeps the already committed early splash document instead of loading a second splash. The early splash has no runtime authority: native artifact, ownership, service and renderer readiness gates still run before usable chat. Local theme and retained geometry are applied when the main module takes ownership.
 
@@ -36,17 +54,13 @@ On macOS, an authoritative `bundle_execution_unsettled` startup failure exposes 
 
 `tests/early-startup.test.mjs` covers window adoption, security guards, early close and deferred links. `startup-splash.test.mjs` covers recovery presentation and action authority. Native GUI first-paint and final signed installer verification remain separate acceptance gates.
 
-`main.mjs` first imports `../shared-runtime/lib/adopt-legacy-environment.js` (accepted `OPENCHAMBER_*` aliases), then, after the login-shell data-root merge and before any data-root reader, runs the one-time `~/.config/openchamber` → `~/.config/devryan` move through `@devryan/web`'s `data-root-startup.js`. The host data root comes from the shared resolver. Main and preload use `devryan:*` IPC channels and `--devryan-*` preload flags; preload and the menu also deliver each `devryan:*` desktop event, and the desktop globals, under their `openchamber` aliases for a remote DevRyan of an older version. Both `devryan://` and `openchamber://` deep links are registered and accepted. The quit-risk status probes call `/api/devryan/*` and fall back to the `/api/openchamber/*` alias of an older runtime service. The package is `@devryan/electron`. Before the single-instance lock, `early-startup.mjs` keeps an existing `@openchamber/electron` Chromium profile at its original path so cookies, IndexedDB and Safe Storage metadata remain readable; a fresh install uses `@devryan/electron`. Existing browser partitions keep their old names only when the profile or partition directory predates the rename. Fresh partitions use `persist:devryan-browser*`.
+`main.mjs` first imports `../shared-runtime/lib/adopt-legacy-environment.js` (accepted `OPENCHAMBER_*` aliases), then, after the login-shell data-root merge and before any data-root reader, runs the one-time `~/.config/openchamber` → `~/.config/devryan` move through `@devryan/web`'s `data-root-startup.js`. The host data root comes from the shared resolver. Main and preload use `devryan:*` IPC channels and `--devryan-*` preload flags; preload and the menu also deliver each `devryan:*` desktop event, and the desktop globals, under their `openchamber` aliases for a remote DevRyan of an older version. Both `devryan://` and `openchamber://` deep links are registered and accepted. The quit-risk status probes call `/api/devryan/*` and fall back to the `/api/openchamber/*` alias of an older runtime service. The package is `@devryan/electron`. Before the single-instance lock, `early-startup.mjs` keeps an existing `@openchamber/electron` Chromium profile at its original path so cookies and IndexedDB remain readable; a fresh install uses `@devryan/electron`. Existing browser partitions keep their old names only when the profile or partition directory predates the rename. Fresh partitions use `persist:devryan-browser*`.
 
 The macOS bundle ID and new runtime-service label are `dev.devryan.desktop`. The updater verifier accepts a signed 2.0 bundle with the old ID as the installed source and requires the canonical ID for a newly staged candidate. An old update intent may still recover using its recorded identity. The packaged native bridge can inspect and unregister the old SMAppService registration; the old plist stays in the bundle for that migration. The registration owner must be stopped before the new label is registered. Actual installed-app upgrade remains a release qualification gate.
 
 Relaunch temporarily restores the shell-owned data root (both `DEVRYAN_DATA_DIR` and its alias, exactly) and original explicit runtime root. An automatically injected runtime root is omitted from the child, while an explicitly supplied root is preserved. Parent runtime variables are restored even if scheduling relaunch fails.
 
 Runtime ownership acquisition has a 45-second budget, passed through to each mutation-lock attempt. Only `runtime_service_owner_busy` is retried; each pending acquisition is awaited to settlement. The splash reports “Waiting for the previous DevRyan to finish closing…”. Other ownership failures and the existing forced-exit deadline are unchanged.
-
-Background service is opt-in through `enableBackgroundBots`. Fresh and app-bound startup never register it. Explicit service installations retain upgrade/re-registration and their stored configuration during guarded app-bound recovery. Non-service startup removes a stray registration left by an interrupted handoff and proves its owner stopped before app-bound acquisition. A bundle without a service definition (`not_found`, as in QA packages) has nothing registered and starts app-bound. Uncertain owner absence fails closed. Registration inspection and app-bound startup do not depend on Docker availability.
-
-`runtime-service-connection.mjs` owns the foreground connection to this app's background runtime service: renderer-session bootstrap, the desktop-host broker and lease with its 10-second refresh, reconnecting to a replaced owner and reloading windows attached to it, retiring a service from another app version, and detaching. `main.mjs` builds it with injected dependencies and delegates `connectToRuntimeService` and `stopDesktopHostBroker` to it; it adds no backend process. Each connection has a local generation and an `AbortController`. A new connection or a disconnect aborts the previous connection's in-flight bootstrap and lease requests. After every await the connection rechecks its identity before it installs the renderer cookie, publishes `state.runtimeServiceClient`/`sidecarUrl`, arms the refresh timer, reconnects or calls `loadURL`. A replaced connection rejects with the non-retryable `runtime_service_connection_superseded` and leaves the broker to its replacement. A deferred reconnect keeps refreshing the replaced owner, so the next failed refresh retries it. The remote checks are unchanged: protocol, descriptor owner, app version, the lease handshake's instance, owner generation and protocol, and the reconnect instance. `tests/runtime-service-connection.test.mjs` exercises the owner directly.
 
 The shell imports web code only through `@devryan/web` `exports` (see `packages/web/server/lib/opencode/runtime-host/DOCUMENTATION.md`); `bundle-main.mjs` keeps those imports external, so Node resolves them in the packaged app. It inspects the native selection with the pure `readRuntimeBundleBinding`/`readNativeShellBundleBinding`; only the in-process web launcher binds it.
 

@@ -72,9 +72,11 @@ const sweepUnsealedCandidate = async (controlRoot, bundleID) => {
 /** Cold upgrade of the selected bundle at startup, inside the bootstrap lock and
  * before any data owner, controller or admission exists. It runs only when the
  * selected artifact differs from this application's pinned artifact, and it
- * never downgrades OpenCode. The lifecycle
- * upgrade performs the verified clone, credential capture and selector CAS, and
- * keeps the previous bundle as the rollback target. A failure leaves the
+ * never downgrades OpenCode. When the OpenCode version and core digest are
+ * unchanged the lifecycle rebinds the selected bundle to the new artifacts in
+ * place, without a data copy, and journals the previous launch for rollback.
+ * Otherwise it performs the verified clone, credential capture and selector CAS,
+ * and keeps the previous bundle as the rollback target. A failure leaves the
  * selection unchanged and is recorded, never thrown. When the selected runtime
  * is an older reviewed native release, this process runs it instead of the pin
  * and the upgrade retries at the next start. */
@@ -117,9 +119,12 @@ export async function upgradeSelectedNativeBundleAtStartup({ controlRoot, env = 
       stopProducers: async () => {}, drainStores: async () => {}, executionHost: { drain: async () => {} },
       artifactDirectory, verifyArtifacts, credentialProcess, privatePersistence });
     const result = await lifecycle.upgrade({ expectedRevision: binding.selection.revision });
-    log.info?.(`[runtime-bundle] upgraded the selected runtime from OpenCode ${selected?.version ?? 'unknown'} to ${shipped.version}`);
-    log.info?.('[runtime-bundle] startup phase', { phase: 'bundle_upgrade', outcome: 'completed', elapsedMs: Date.now() - upgradeStartedAt });
-    return { status: 'upgraded', revision: result.revision, from: selected?.version ?? null, to: shipped.version };
+    const mode = result.mode === 'rebind' ? 'rebind' : 'clone';
+    log.info?.(mode === 'rebind'
+      ? `[runtime-bundle] rebound the selected runtime to new artifacts at OpenCode ${shipped.version} without a data copy`
+      : `[runtime-bundle] upgraded the selected runtime from OpenCode ${selected?.version ?? 'unknown'} to ${shipped.version}`);
+    log.info?.('[runtime-bundle] startup phase', { phase: 'bundle_upgrade', outcome: 'completed', mode, elapsedMs: Date.now() - upgradeStartedAt });
+    return { status: 'upgraded', mode, revision: result.revision, from: selected?.version ?? null, to: shipped.version };
   } catch (error) {
     return refused(finiteCode(error), error);
   }

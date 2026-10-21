@@ -4,7 +4,6 @@ import { runStartupPhase } from './runtime-service-startup.mjs';
 import { startupDiagnosticSummary } from '../shared-runtime/startup-diagnostics.js';
 
 import {
-  buildBotStartupAttentionHtml,
   buildStartupErrorHtml,
   buildStartupSplashHtml,
   resolveStartupSplashPalette,
@@ -31,8 +30,8 @@ describe('Electron startup splash', () => {
   });
   it('replaces the splash with the original failure and Retry when selected-bundle settings become unreadable', async () => {
     const source = mainSource();
-    const build = source.slice(source.indexOf('const buildStartupErrorHtml ='), source.indexOf('const buildBotStartupAttentionHtml ='));
-    const show = source.slice(source.indexOf('const showStartupFailure ='), source.indexOf('const showBotStartupAttention ='));
+    const build = source.slice(source.indexOf('const buildStartupErrorHtml ='), source.indexOf('const startupActionForUrl ='));
+    const show = source.slice(source.indexOf('const showStartupFailure ='), source.indexOf('let preparingStartupRebootRecovery ='));
     const calls = [];
     const error = Object.assign(new Error('Runtime preparation failed'), { code: 'runtime_bundle_binding_invalid' });
     const showFailure = new Function('owners', `
@@ -157,43 +156,7 @@ describe('Electron startup splash', () => {
     expect(html).not.toContain('<script>unsafe()</script>');
   });
 
-  it('renders a Bot-only attention screen with retry and launch-scoped continue actions', () => {
-    const html = buildBotStartupAttentionHtml(
-      { themeMode: 'light' },
-      { message: 'Docker is unavailable <private>' },
-    );
-
-    expect(html).toContain('Private Bot runtime needs attention');
-    expect(html).toContain('devryan://retry-bot-runtime');
-    expect(html).toContain('devryan://continue-without-bots');
-    expect(html).toContain('Docker is unavailable &lt;private&gt;');
-    expect(html).not.toContain('devryan://retry-startup');
-  });
-
-  it('activates the local UI before background Bot preparation and retries without restarting the server', () => {
-    const source = mainSource();
-    const startupBlock = source.slice(
-      source.indexOf('const startDesktopRuntime ='),
-      source.indexOf('const updateCacheDirectory ='),
-    );
-    const retryBlock = source.slice(
-      source.indexOf('const retryBotRuntimeStartup ='),
-      source.indexOf('const startDesktopRuntime ='),
-    );
-
-    expect(startupBlock).toContain('if (!runtimeBundleRecoveryRequired && isLocalStartupTarget(startupContext))');
-    expect(startupBlock).not.toContain('await requirePreparedBotRuntime();');
-    expect(startupBlock.indexOf('await activateMainWindow('))
-      .toBeLessThan(startupBlock.indexOf('prepareBotRuntimeInBackground()'));
-    expect(retryBlock).toContain('await requirePreparedBotRuntime();');
-    expect(retryBlock).toContain('await activatePendingBotStartupContext();');
-    expect(retryBlock).not.toContain('killSidecar');
-    expect(source).toContain("if (parsed.hostname === BOT_RUNTIME_CONTINUE_HOST) return 'continue-without-bots'");
-    expect(source).toContain('log.warn(\'[bots] continuing current launch without a ready private Bot runtime\')');
-    expect(source).toContain(': state.botRuntimeOperationSnapshot || getBotRuntimeManager().operationStatus()');
-  });
-
-  it('activates held recovery without resuming native startup, power hooks or Bot preparation', async () => {
+  it('activates held recovery without resuming native startup or power hooks', async () => {
     const source = mainSource();
     const start = source.indexOf('const startDesktopRuntime =');
     const end = source.indexOf('const updateCacheDirectory =', start);
@@ -203,10 +166,10 @@ describe('Electron startup splash', () => {
       let desktopStartupPromise = null, desktopStartupFailed = false;
       const { runtimeBundleRecoveryRequired, shellRuntimeBundleBindingError, state, prepareForegroundRuntime,
         resolveInitialUrl, activateMainWindow, installPowerResumeHook,
-        isLocalStartupTarget, readSettingsRoot, prepareBotRuntimeInBackground,
+        isLocalStartupTarget, stopRetiredBots, dataRootDirectory,
         startupErrorDetails, log, releaseDesktopKeepAwake, killSidecar, showStartupFailure, runStartupPhase } = owners;
       const desktopDmgInstaller = null;
-      const BOTS_ENABLED = true;
+      const BOTS_ENABLED = false, isPreview = false;
       ${source.slice(start, end)}
       return startDesktopRuntime;
     `);
@@ -216,7 +179,7 @@ describe('Electron startup splash', () => {
       const nativeStartup = new Promise(resolve => { releaseNativeStartup = resolve; });
       const context = { initialUrl: 'http://127.0.0.1:41234', localOrigin: 'http://127.0.0.1:41234',
         bootOutcome: { target: 'local', status: 'ok' } };
-      const state = { pendingBotStartupContext: context, serverHandle: {
+      const state = { serverHandle: {
         resumeDeferredOpenCodeStartup: () => { calls.push('resume-native'); return nativeStartup; },
       } };
       const startup = createStartup({
@@ -236,27 +199,27 @@ describe('Electron startup splash', () => {
         },
         installPowerResumeHook: () => calls.push('power-hook'),
         isLocalStartupTarget: value => value === context,
-        readSettingsRoot: () => ({ productionBotsRuntimeMode: 'enabled' }),
-        prepareBotRuntimeInBackground: () => calls.push('prepare-bots'),
+        stopRetiredBots: async () => { calls.push('retire-bots'); return { status: 'retired' }; },
+        dataRootDirectory: () => '/fixture',
       });
       const pending = startup();
       expect(startup()).toBe(pending);
       await pending;
       if (bindingFailed) {
-        expect(state.pendingBotStartupContext).toBe(context);
         expect(calls).toEqual(['runtime_bundle_binding_invalid', 'release-keep-awake', 'cleanup', 'show-failure']);
         releaseNativeStartup();
         continue;
       }
-      expect(state.pendingBotStartupContext).toBeNull();
       expect(calls).toEqual(held
         ? ['prepare-foreground', 'activate']
         : ['prepare-foreground', 'activate', 'power-hook', 'resume-native']);
-      releaseNativeStartup();
-      await nativeStartup;
+      // Retired-Bot cleanup is scheduled after acceptance and never awaited.
+      await new Promise(resolve => setImmediate(resolve));
       expect(calls).toEqual(held
         ? ['prepare-foreground', 'activate']
-        : ['prepare-foreground', 'activate', 'power-hook', 'resume-native', 'prepare-bots']);
+        : ['prepare-foreground', 'activate', 'power-hook', 'resume-native', 'retire-bots']);
+      releaseNativeStartup();
+      await nativeStartup;
     }
   });
 });
@@ -287,7 +250,7 @@ describe('native startup reboot recovery', () => {
 
 it('native restart preparation rejects unrelated failures and derives authority from the selected binding', async () => {
   const source = mainSource();
-  const recovery = source.slice(source.indexOf('let preparingStartupRebootRecovery ='), source.indexOf('const showBotStartupAttention ='))
+  const recovery = source.slice(source.indexOf('let preparingStartupRebootRecovery ='), source.indexOf('const isLocalStartupTarget ='))
     .replace("await import('@devryan/web/server/lib/opencode/runtime-host/native-bundle-reboot-recovery.js')", 'await loadRecovery()');
   const failure = { code: 'native_runtime_artifacts_unverified' };
   const calls = [];
@@ -296,7 +259,7 @@ it('native restart preparation rejects unrelated failures and derives authority 
   const prepare = new Function('owners', `
     const { readNativeShellBundleBinding, loadRecovery, showStartupFailure, startupRecoveryFailure, log } = owners;
     const rebootRecoveryPreparable = code => code === 'bundle_execution_unsettled' || code === 'bundle_reboot_recovery_changed';
-    const isPreview = false, isRuntimeServiceMode = false;
+    const isPreview = false;
     const process = { platform: 'darwin', env: {} }, os = { homedir: () => '/fixture' }, fs = { existsSync: () => true };
     const readRuntimeBundleBinding = () => {};
     const startupErrorDetails = error => ({ code: error.code });

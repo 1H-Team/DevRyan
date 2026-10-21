@@ -33,7 +33,7 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
   stopProducers, drainStores, executionHost, afterExit, beforeControllerStop, requestRecomposition,
   artifactDirectory = executionArtifacts().directory, verifyArtifacts = verifyNativeRuntimeArtifacts,
   credentialProcess = runNativeBundleCredentialProcess, storeFactory = createRuntimeBundleStore,
-  retainArtifacts = retainNativeArtifacts, retainCheckpoint, privatePersistence={}, neverStarted = false,
+  retainArtifacts = retainNativeArtifacts, verifyCompatibility = verifyNativeCloneCompatibility, retainCheckpoint, privatePersistence={}, neverStarted = false,
   waitForClaudeIdle, onClaudePhase = () => {}, createClaude = createClaudeCandidate, checkClaudeRelease = checkLatestClaudeRelease }) {
   if (retainCheckpoint !== undefined && typeof retainCheckpoint !== 'function') throw fail('bundle_checkpoint_grant_invalid');
   // Permanent for this process: the application admission gate never reopens
@@ -66,7 +66,7 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
   };
   const compatible = async ({ source, artifacts }) => {
     const [left, right] = await Promise.all([verifyLaunch(source.launch,'bundle-source'), verifyLaunch(artifacts)]);
-    verifyNativeCloneCompatibility({ left: left.manifest, right: right.manifest, databasePath: source.launch.opencodeDatabasePath });
+    verifyCompatibility({ left: left.manifest, right: right.manifest, databasePath: source.launch.opencodeDatabasePath });
     return { source: left, proof: { status: 'compatible', binding: { protocol: cloneContract, sourceBundleID: source.bundleID,
       sourceManifestSha256: source.launch.artifactManifestSha256, targetManifestSha256: artifacts.artifactManifestSha256 } } };
   };
@@ -116,7 +116,8 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
       restartRequired: !selectedMatches(binding, current), reconciliationRequired: current?.selection.reconciliationRequired === true };
     // Mirrors run(): only an unchecked host with a selector-owned target may roll back.
     snapshot.rollbackAvailable = !checkpointHeld && !transition && !heldAction && !snapshot.restartRequired && ['ready', 'held'].includes(state)
-      && Boolean(snapshot.reconciliationRequired ? current?.selection.selectedBundleID : current?.selection.previousBundleID);
+      && (Boolean(snapshot.reconciliationRequired ? current?.selection.selectedBundleID : current?.selection.previousBundleID)
+        || Boolean(current && !snapshot.reconciliationRequired && await store.rebindRestorable(current.selection)));
     if (!checkUpdates || snapshot.restartRequired || state === 'held' || state === 'transitioning') return snapshot;
     try {
       const candidate = await readCandidate();
@@ -141,7 +142,7 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
         const selection = result.selection ?? result;
         state = 'restart_required'; reason = result.reason ?? null;
         return { ...await inspect(), state, reason, restartRequired: true, restartAvailable: typeof requestRecomposition === 'function',
-          transition: kind, revision: selection.revision };
+          transition: kind, revision: selection.revision, ...(result.mode ? { mode: result.mode } : {}) };
       } catch (error) {
         reason = finiteCode(error);
         // Once a checkpoint closes admission its owner cannot be reused; a
@@ -165,9 +166,16 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
         artifactManifestPath: retained.manifestPath, artifactManifestSha256: retained.manifestSha256,
         reviewedNativeConfigPath: current.descriptor.launch.reviewedNativeConfigPath, reviewedPluginManifestPath };
       const { source: original } = await compatible({ source: current.descriptor, artifacts: launchArtifacts });
-      captureArtifacts = original.manifest.opencodeVersion === retained.manifest.opencodeVersion
-        && original.manifest.inputs.coreDigest === retained.manifest.inputs.coreDigest
-        ? { manifestPath: retained.manifestPath, manifestSha256: retained.manifestSha256 } : undefined;
+      const sameCore = original.manifest.opencodeVersion === retained.manifest.opencodeVersion
+        && original.manifest.inputs.coreDigest === retained.manifest.inputs.coreDigest;
+      // An unchanged core keeps its data in place; only the launch artifacts change.
+      // A Claude update keeps the clone its cold restore of an unstarted candidate needs.
+      if (sameCore && !claudeUpdate && !privatePersistence.windowsOwner) {
+        const selection = await timeStartupPhase('bundle_artifact_rebind', () => store.rebindArtifacts({ bundleID: current.descriptor.bundleID,
+          expectedRevision: input.expectedRevision, launchArtifacts }));
+        return { selection, mode: 'rebind' };
+      }
+      captureArtifacts = sameCore ? { manifestPath: retained.manifestPath, manifestSha256: retained.manifestSha256 } : undefined;
       const bundleID = nativeUpgradeBundleID(retained.manifestSha256, current.selection.revision);
       let releaseIdle;
       if (claudeUpdate) {
@@ -178,7 +186,8 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
       try {
       await timeStartupPhase('bundle_candidate_preparation', () => store.prepare({ bundleID, generation: 2, source: { kind: 'bundle', bundleID: current.descriptor.bundleID },
         projectMap: current.descriptor.projectMap, auxiliary: { kind: 'absent' }, launchArtifacts }));
-      return await timeStartupPhase('bundle_selection', () => store.select({ bundleID, expectedRevision: input.expectedRevision, ...(claudeUpdate ? { claudeUpdate: true } : {}) }));
+      const selection = await timeStartupPhase('bundle_selection', () => store.select({ bundleID, expectedRevision: input.expectedRevision, ...(claudeUpdate ? { claudeUpdate: true } : {}) }));
+      return { selection, mode: 'clone' };
       } finally { releaseIdle?.(); }
   };
   const handle = {
@@ -205,12 +214,16 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
       return applyCandidate(input, current, candidate, true);
     }),
     rollback: input => run('rollback', input, async current => {
+      // A rebind's previous launch is the same bundle, with no credential projection.
+      const rebound = !current.selection.reconciliationRequired && await store.rebindRestorable(current.selection);
       const targetBundleID = current.selection.reconciliationRequired ? current.selection.selectedBundleID : current.selection.previousBundleID;
-      if (!targetBundleID) throw fail('bundle_rollback_target_invalid');
+      if (!rebound && !targetBundleID) throw fail('bundle_rollback_target_invalid');
       let releaseIdle;
       if (waitForClaudeIdle) { onClaudePhase('waiting-for-idle'); releaseIdle = await waitForClaudeIdle(); onClaudePhase('activating'); }
-      try { return await store.rollback({ targetBundleID, expectedRevision: input.expectedRevision }); }
-      finally { releaseIdle?.(); }
+      try {
+        return rebound ? await store.restoreRebind({ expectedRevision: input.expectedRevision })
+          : await store.rollback({ targetBundleID, expectedRevision: input.expectedRevision });
+      } finally { releaseIdle?.(); }
     }),
   };
   if (retainCheckpoint) {

@@ -37,21 +37,8 @@ const currentOrigin = (() => {
   }
 })();
 const isLocalPage = isPrivilegedRendererOrigin(currentOrigin, localOrigin);
-const LOCAL_ONLY_BOT_RUNTIME_COMMANDS = new Set([
-  'desktop_bot_runtime_status',
-  'desktop_bot_runtime_operation_status',
-  'desktop_bot_runtime_setup',
-  'desktop_bot_runtime_repair',
-  'desktop_bot_runtime_update',
-  'desktop_bot_runtime_rollback',
-  'desktop_export_bot_recovery',
-  'desktop_restore_bot_recovery',
-  'desktop_runtime_service_status',
-  'desktop_runtime_service_enable',
-  'desktop_runtime_service_disable',
-  'desktop_runtime_service_open_settings',
+const LOCAL_ONLY_COMMANDS = new Set([
   'desktop_runtime_bundle_resume',
-  'desktop_open_docker_desktop',
 ]);
 
 const invokeMain = (command, args = {}) => {
@@ -59,7 +46,7 @@ const invokeMain = (command, args = {}) => {
   // server chooses its port, leaving this immutable boot argument empty. In
   // that case defer to main.mjs, which authorizes every privileged invocation
   // against the sender's live URL and the now-authoritative local origin.
-  if (localOrigin && !isLocalPage && LOCAL_ONLY_BOT_RUNTIME_COMMANDS.has(command)) {
+  if (localOrigin && !isLocalPage && LOCAL_ONLY_COMMANDS.has(command)) {
     return Promise.reject(new Error('Bot runtime IPC is available only to the local DevRyan UI'));
   }
   return ipcRenderer.invoke('devryan:invoke', command, args);

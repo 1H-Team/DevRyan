@@ -10,7 +10,7 @@ import path from 'node:path';
 import { resolveSqliteDriver } from '../db-maintenance-core.js';
 import { executionArtifacts } from '../execution-artifacts.js';
 import { verifyNativeRuntimeArtifacts } from './native-artifacts.js';
-import { withCrossProcessFileLock } from '../../../../../harness-runtime/lib/atomic-file.js';
+import { withCrossProcessFileLock, writeFileAtomic } from '../../../../../harness-runtime/lib/atomic-file.js';
 import { parseNativeMigrationReceipt } from './native-process-protocol.js';
 import { assertNoPendingMigration, assertBundlePendingInput, bundleFailure, canonicalJSON, captureMigrationInventory, containsPath, isRecord,
   readBundleJSON as readBundleJSONOwned, saveBundleJSON as saveBundleJSONOwned, sha256, verifyMigrationReferences } from './bundle-migration-inventory.js';
@@ -219,6 +219,67 @@ const selection = value => {
     || !validHash(value.preparedManifestSha256)) throw fail('bundle_selection_invalid');
   return value;
 };
+
+// An artifact-only rebind rewrites these launch documents of the selected bundle in
+// place. Its journal keeps byte copies of the previous ones; the selector is the commit.
+const REBIND_PROTOCOL='devryan.bundle.rebind/1';
+const rebindFiles=['descriptor.json','config/reviewed-plugins.json','prepared.json'];
+const rebindRoot=controlRoot=>path.join(controlRoot,'rebind');
+const rebindCopy=(controlRoot,relative)=>path.join(rebindRoot(controlRoot),'previous-'+path.basename(relative));
+const readOwnedBytes=async file=>{
+  const stat=await fs.lstat(file);
+  if(!stat.isFile()||stat.isSymbolicLink())throw fail('bundle_file_invalid');
+  return fs.readFile(file);
+};
+const writeOwnedBytes=(file,bytes)=>writeFileAtomic(file,bytes,{mode:0o600,directoryMode:0o700});
+const readRebindIntent=async controlRoot=>{
+  let value;
+  try{value=await readBundleJSONOwned(path.join(rebindRoot(controlRoot),'intent.json'));}catch(error){if(error.code==='ENOENT')return null;throw error;}
+  if(!isRecord(value)||value.schema!==1||value.protocol!==REBIND_PROTOCOL||!['pending','committed','abandoned','restoring','restored'].includes(value.state)
+    ||!validID(value.bundleID)||!isRecord(value.previous)||!isRecord(value.next)
+    ||rebindFiles.some(file=>!validHash(value.previous[file])||!validHash(value.next[file])))throw fail('bundle_rebind_intent_invalid');
+  selection(value.sourceSelection);selection(value.selection);
+  if(['restoring','restored'].includes(value.state))selection(value.restoreSelection);
+  return value;
+};
+const saveRebindIntent=(controlRoot,value)=>saveBundleJSONOwned(path.join(rebindRoot(controlRoot),'intent.json'),value);
+/** Puts each launch document of the bundle back to its journaled previous bytes. */
+const restoreRebindFiles=async (controlRoot,intent)=>{
+  const root=path.join(controlRoot,'bundles',intent.bundleID);
+  for(const relative of rebindFiles){
+    const file=path.join(root,relative);
+    if(await fileHashOwned(file)===intent.previous[relative])continue;
+    const bytes=await readOwnedBytes(rebindCopy(controlRoot,relative));
+    if(sha256(bytes)!==intent.previous[relative])throw fail('bundle_rebind_recovery_changed');
+    await writeOwnedBytes(file,bytes);
+  }
+};
+
+/** Cold bootstrap only, inside bootstrap.lock and before any binding read. Settles
+ * an artifact rebind or its rollback that a crash interrupted: before the selector
+ * flips a rebind is undone, and an interrupted rollback of one is completed. */
+export async function recoverRuntimeBundleRebind({controlRoot}){
+  absolute(controlRoot);
+  // A settled journal never needs the selector lock a lifecycle may be holding.
+  if(!['pending','restoring'].includes((await readRebindIntent(controlRoot))?.state))return null;
+  return withCrossProcessFileLock(path.join(controlRoot,'selection.lock'),async()=>{
+    const intent=await readRebindIntent(controlRoot);
+    if(!intent||!['pending','restoring'].includes(intent.state))return null;
+    const selected=canonicalJSON(selection(await readBundleJSONOwned(path.join(controlRoot,'selection.json'))));
+    if(intent.state==='pending'){
+      // Every rebound document is written before the selector flips.
+      if(selected===canonicalJSON(intent.selection)){await saveRebindIntent(controlRoot,{...intent,state:'committed'});return 'committed';}
+      if(selected!==canonicalJSON(intent.sourceSelection))throw fail('bundle_rebind_selection_changed');
+      await restoreRebindFiles(controlRoot,intent);
+      await saveRebindIntent(controlRoot,{...intent,state:'abandoned'});return 'abandoned';
+    }
+    if(selected===canonicalJSON(intent.selection)){
+      await restoreRebindFiles(controlRoot,intent);
+      await saveBundleJSONOwned(path.join(controlRoot,'selection.json'),intent.restoreSelection);
+    }else if(selected!==canonicalJSON(intent.restoreSelection))throw fail('bundle_rebind_selection_changed');
+    await saveRebindIntent(controlRoot,{...intent,state:'restored'});return 'restored';
+  });
+}
 
 /** Offline copied bundles and one atomic selector. Admission remains host-owned. */
 export function createRuntimeBundleStore(options) {
@@ -702,5 +763,120 @@ export function createRuntimeBundleStore(options) {
     await saveBundleJSON(path.join(controlRoot, 'claude-activation.json'), { ...intent, state: 'restored' });
     return next;
   });
-  return {prepare,verify,readSelected,select,rollback,resume,restoreUnstartedClaude};
+  const assertRebindable = async current => {
+    if (operations.windows) throw fail('bundle_rebind_unsupported');
+    if (rollbackIntentUnresolved(readRollbackIntentSync(controlRoot), current.selection)) throw fail('bundle_recovery_resume_required');
+    if (current.selection.reconciliationRequired) throw fail('bundle_rollback_reconciliation_required');
+    if (['pending', 'restoring'].includes((await readRebindIntent(controlRoot))?.state)) throw fail('bundle_rebind_recovery_required');
+  };
+  /** Artifact-only upgrade of the selected bundle for an unchanged OpenCode core:
+   * the same data directory, with new launch artifacts and reviewed plugins. Any
+   * other upgrade needs prepare's migration-safe copy. */
+  const rebindArtifacts = async ({ bundleID, expectedRevision, launchArtifacts: artifacts }) => {
+    const current = await readSelected();
+    if (!current || current.descriptor.bundleID !== bundleID) throw fail('bundle_clone_source_not_selected');
+    await assertRebindable(current);
+    let activation;
+    try { activation = await readBundleJSON(path.join(controlRoot, 'claude-activation.json')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    // Its cold restore compares the never-started candidate with its prepared files.
+    if (activation?.state === 'pending' && activation.candidateBundleID === bundleID) throw fail('bundle_claude_activation_pending');
+    const source = current.descriptor;
+    if (!isRecord(artifacts) || !validHash(artifacts.artifactManifestSha256)
+      || await fileHash(absolute(artifacts.artifactManifestPath)) !== artifacts.artifactManifestSha256) throw fail('bundle_artifact_manifest_changed');
+    if (artifacts.artifactManifestSha256 === source.launch.artifactManifestSha256) throw fail('bundle_upgrade_not_available');
+    if (artifacts.reviewedNativeConfigPath !== source.launch.reviewedNativeConfigPath) throw fail('bundle_rebind_configuration_changed');
+    const contracts = (await verifyArtifacts({ generation: 2, launch: artifacts }))?.manifest?.compiledContracts;
+    if (!Array.isArray(contracts) || !contracts.includes(BUNDLE_CREDENTIAL_OWNER_PROTOCOL)) throw fail('bundle_credential_owner_unsupported');
+    if (!contracts.includes(NATIVE_BUNDLE_CREDENTIAL_CONTRACT)) throw fail('bundle_credential_contract_incompatible');
+    const compatibility = { protocol: 'devryan-v2-clone/1', sourceBundleID: source.bundleID,
+      sourceManifestSha256: source.launch.artifactManifestSha256, targetManifestSha256: artifacts.artifactManifestSha256 };
+    const compatible = await options.verifyV2Compatibility?.({ source, artifacts });
+    if (!isRecord(compatible) || compatible.status !== 'compatible' || canonicalJSON(compatible.binding) !== canonicalJSON(compatibility)) throw fail('bundle_v2_upgrade_compatibility_required');
+    await reviewedDocuments(artifacts, source.projectMap, documentOptions);
+    const plugins = await readOwnedBytes(absolute(artifacts.reviewedPluginManifestPath));
+    return options.withQuiescedSource({ kind: 'bundle', bundleID }, async (proof, scope) => {
+      checkpoint(source.launch, 2, proof);
+      await scope?.assertHeld?.();
+      // Held throughout: startup recovery never observes a live rebind.
+      return lock(path.join(controlRoot, 'selection.lock'), async () => {
+        const selected = await readSelected();
+        if (canonicalJSON(selected?.selection) !== canonicalJSON(current.selection) || selected.selection.revision !== expectedRevision) throw fail('bundle_selection_revision_conflict');
+        await assertRebindable(selected);
+        const root = path.join(controlRoot, 'bundles', bundleID);
+        const previous = Object.fromEntries(await Promise.all(rebindFiles.map(async file => [file, await readOwnedBytes(path.join(root, file))])));
+        if (sha256(previous['prepared.json']) !== selected.selection.preparedManifestSha256) throw fail('bundle_selected_evidence_changed');
+        const value = descriptor(controlRoot, bundleID, { ...selected.descriptor, launch: { ...selected.descriptor.launch,
+          controllerBinary: artifacts.controllerBinary, writerBinary: artifacts.writerBinary,
+          artifactManifestPath: artifacts.artifactManifestPath, artifactManifestSha256: artifacts.artifactManifestSha256 } });
+        const descriptorBytes = Buffer.from(canonicalJSON(value) + '\n');
+        const replaced = { 'descriptor.json': sha256(descriptorBytes), 'config/reviewed-plugins.json': sha256(plugins) };
+        const rows = list => list.map(row => replaced[row.path] ? { ...row, sha256: replaced[row.path] } : row);
+        const prepared = JSON.parse(previous['prepared.json'].toString('utf8'));
+        const preparedBytes = Buffer.from(canonicalJSON({ ...prepared, descriptorSha256: replaced['descriptor.json'],
+          artifactFiles: await Promise.all([artifacts.controllerBinary, artifacts.writerBinary, artifacts.artifactManifestPath]
+            .map(async file => ({ path: absolute(file), sha256: await fileHashOwned(file) }))),
+          immutableFiles: rows(prepared.immutableFiles), initialFiles: rows(prepared.initialFiles) }) + '\n');
+        const next = { ...selected.selection, revision: selected.selection.revision + 1, transition: 'activate',
+          reconciliationRequired: false, preparedManifestSha256: sha256(preparedBytes) };
+        const rebound = { 'descriptor.json': descriptorBytes, 'config/reviewed-plugins.json': plugins, 'prepared.json': preparedBytes };
+        const hashes = bytes => Object.fromEntries(rebindFiles.map(file => [file, sha256(bytes[file])]));
+        const intent = { schema: 1, protocol: REBIND_PROTOCOL, state: 'pending', bundleID,
+          sourceSelection: selected.selection, selection: next, previous: hashes(previous), next: hashes(rebound) };
+        await saveRebindIntent(controlRoot, intent);
+        try {
+          for (const file of rebindFiles) await writeOwnedBytes(rebindCopy(controlRoot, file), previous[file]);
+          await scope?.assertHeld?.();
+          for (const file of rebindFiles) await writeOwnedBytes(path.join(root, file), rebound[file]);
+          await verify({ bundleID, phase: 'resume', allowOwnedContinuations: false });
+          await scope?.assertHeld?.();
+        } catch (error) {
+          // Before the selector flips the previous documents still own the bundle.
+          await restoreRebindFiles(controlRoot, intent);
+          await saveRebindIntent(controlRoot, { ...intent, state: 'abandoned' });
+          throw error;
+        }
+        await saveBundleJSON(path.join(controlRoot, 'selection.json'), next);
+        await saveRebindIntent(controlRoot, { ...intent, state: 'committed' });
+        return next;
+      });
+    });
+  };
+  /** Whether `value` is the committed selection of a rebind with a journaled previous launch. */
+  const rebindRestorable = async value => {
+    const intent = await readRebindIntent(controlRoot);
+    return intent?.state === 'committed' && canonicalJSON(intent.selection) === canonicalJSON(value);
+  };
+  /** Rollback of an artifact rebind: the bundle returns to its previous launch documents. */
+  const restoreRebind = async ({ expectedRevision }) => {
+    const current = await readSelected();
+    if (!current) throw fail('bundle_rollback_source_invalid');
+    if (current.selection.revision !== expectedRevision) throw fail('bundle_selection_revision_conflict');
+    await assertRebindable(current);
+    if (!await rebindRestorable(current.selection)) throw fail('bundle_rollback_target_invalid');
+    const previous = JSON.parse((await readOwnedBytes(rebindCopy(controlRoot, 'descriptor.json'))).toString('utf8'));
+    const target = descriptor(controlRoot, current.descriptor.bundleID, previous);
+    await verifyArtifacts({ generation: 2, launch: target.launch, purpose: 'bundle-rollback' });
+    return options.withQuiescedSource({ kind: 'bundle', bundleID: current.descriptor.bundleID }, async (proof, scope) => {
+      checkpoint(current.descriptor.launch, 2, proof);
+      await scope?.assertHeld?.();
+      return lock(path.join(controlRoot, 'selection.lock'), async () => {
+        const selected = await readSelected(), intent = await readRebindIntent(controlRoot);
+        if (canonicalJSON(selected?.selection) !== canonicalJSON(current.selection)) throw fail('bundle_selection_revision_conflict');
+        if (intent?.state !== 'committed' || canonicalJSON(intent.selection) !== canonicalJSON(selected.selection)) throw fail('bundle_rollback_target_invalid');
+        // The data is unchanged; only the journaled bytes must still be the previous launch.
+        await verify({ bundleID: intent.bundleID, phase: 'resume', allowOwnedContinuations: false });
+        for (const file of rebindFiles) if (sha256(await readOwnedBytes(rebindCopy(controlRoot, file))) !== intent.previous[file]) throw fail('bundle_rebind_recovery_changed');
+        const restored = { ...selected.selection, revision: selected.selection.revision + 1, transition: 'rollback',
+          reconciliationRequired: false, preparedManifestSha256: intent.previous['prepared.json'] };
+        await scope?.assertHeld?.();
+        // From here an interrupted restore is completed by startup recovery.
+        await saveRebindIntent(controlRoot, { ...intent, state: 'restoring', restoreSelection: restored });
+        await restoreRebindFiles(controlRoot, intent);
+        await saveBundleJSON(path.join(controlRoot, 'selection.json'), restored);
+        await saveRebindIntent(controlRoot, { ...intent, state: 'restored', restoreSelection: restored });
+        return { selection: restored, admission: 'held', reason: null };
+      });
+    });
+  };
+  return {prepare,verify,readSelected,select,rollback,resume,restoreUnstartedClaude,rebindArtifacts,rebindRestorable,restoreRebind};
 }

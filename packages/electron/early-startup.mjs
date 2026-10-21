@@ -30,8 +30,8 @@ export function configureEarlyStartup({ app, isPreview, WINDOWS_PREVIEW_NAME, AP
     app.setPath('userData', devUserDataDirectory);
   } else if (app.isPackaged && !isPreview) {
     // Electron derives this directory from package.name before setName runs.
-    // Keep an existing Chromium profile in place: its cookies, IndexedDB and
-    // Safe Storage metadata must remain under the same directory on upgrade.
+    // Keep an existing Chromium profile in place: its cookies and IndexedDB
+    // must remain under the same directory on upgrade.
     const appDataDirectory = app.getPath('appData');
     const legacy = path.join(appDataDirectory, '@openchamber/electron');
     const legacyProfileExists = (() => {
@@ -45,9 +45,9 @@ export function configureEarlyStartup({ app, isPreview, WINDOWS_PREVIEW_NAME, AP
     app.setPath('userData', userDataDirectory);
   }
 
-  // The background runtime service and the status probe run from the same app
-  // bundle as the foreground window. Without this, macOS registers them as
-  // regular apps and shows a second "DevRyan" in the Dock.
+  // The status probe runs from the same app bundle as the foreground window.
+  // Without this, macOS registers it as a regular app and shows a second
+  // "DevRyan" in the Dock.
   const hideHeadlessProcessFromDock = () => {
     if (process.platform !== 'darwin') return;
     try {
@@ -60,10 +60,12 @@ export function configureEarlyStartup({ app, isPreview, WINDOWS_PREVIEW_NAME, AP
     hideHeadlessProcessFromDock();
   }
 
+  // The background runtime service is retired. A registration left by an
+  // earlier version may still launch it; a successful exit is not restarted
+  // (KeepAlive SuccessfulExit=false) and the next app launch unregisters it.
   if (isRuntimeServiceMode) {
-    const serviceUserDataDirectory = `${app.getPath('userData')}-runtime-service`;
-    fs.mkdirSync(serviceUserDataDirectory, { recursive: true });
-    app.setPath('userData', serviceUserDataDirectory);
+    app.exit(0);
+    return false;
   }
 
   if (!isRuntimeServiceControlProbe && !app.requestSingleInstanceLock()) {

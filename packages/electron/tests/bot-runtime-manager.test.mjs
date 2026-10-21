@@ -2392,31 +2392,22 @@ describe('Electron-owned Docker Bot runtime manager', () => {
     expect(runner.calls.some(({ args }) => args[0] === 'volume' && args[1] === 'rm')).toBe(false);
   });
 
-  test('wires six local-only IPC verbs and a packaging-time release gate', async () => {
+  test('retired Bots expose no desktop IPC verbs and keep the packaging-time release gate', async () => {
     const mainSource = await fs.readFile(new URL('../main.mjs', import.meta.url), 'utf8');
     const preloadSource = await fs.readFile(new URL('../preload.mjs', import.meta.url), 'utf8');
     const packageJson = JSON.parse(await fs.readFile(new URL('../package.json', import.meta.url), 'utf8'));
-    const remoteCommandsBlock = mainSource.slice(
-      mainSource.indexOf('const COMMANDS_SAFE_FOR_REMOTE'),
-      mainSource.indexOf('const NATIVE_BROWSER_COMMANDS'),
-    );
-    const commands = [
+    for (const command of [
       'desktop_bot_runtime_status',
       'desktop_bot_runtime_operation_status',
       'desktop_bot_runtime_setup',
       'desktop_bot_runtime_repair',
       'desktop_bot_runtime_update',
       'desktop_bot_runtime_rollback',
-    ];
-
-    for (const command of commands) {
-      expect(mainSource).toContain(`case '${command}'`);
-      expect(preloadSource).toContain(`'${command}'`);
-      expect(remoteCommandsBlock).not.toContain(command);
+    ]) {
+      expect(mainSource).not.toContain(`case '${command}'`);
+      expect(preloadSource).not.toContain(`'${command}'`);
     }
-    expect(preloadSource).toContain(
-      'if (localOrigin && !isLocalPage && LOCAL_ONLY_BOT_RUNTIME_COMMANDS.has(command))',
-    );
+    expect(mainSource).not.toContain('getBotRuntimeManager');
     expect(mainSource).toContain(
       'if (!isLocalSender(event.sender) && !COMMANDS_SAFE_FOR_REMOTE.has(command))',
     );

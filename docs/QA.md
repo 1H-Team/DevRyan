@@ -134,15 +134,6 @@ deadline, readiness and retained/deleted history requirements stay unchanged.
 The final-DMG profile pins the Builder model and thinking level through ordinary
 saved agent selections, as well as pinning the helper model, before UI submission.
 
-### Packaged service smoke
-
-```sh
-bun --tsconfig-override "$PWD/packages/ui/tsconfig.json" scripts/qa/packaged-service-smoke.mjs \
-  --package-evidence <abs package-evidence.json> --artifact-root <abs native artifact root>
-```
-
-Three direct headless launches of the packaged `--runtime-service` in a private fixture: PID and start identity, owner and descriptor generation, unauthenticated refusal, physical drain and restart. It never registers a launchd job.
-
 ### Native startup benchmark
 
 ```sh

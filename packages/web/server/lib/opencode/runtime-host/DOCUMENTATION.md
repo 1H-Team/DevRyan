@@ -23,7 +23,12 @@ cannot change context delivery. Direct image routing is unchanged.
 ## Mandatory startup contract
 
 `native-artifacts.js` bounds manifest reads and keeps every integrity check before
-execution. Verification failures retain the public code
+execution. Within one process, a payload's SHA-256 and code-signature results
+are reused while its path, device, inode, size, mode, mtime and ctime are
+unchanged (boot, inspection, native start and spawn otherwise re-read about
+0.5 GB each); a result is recorded only if that identity was stable across the
+read, and every other manifest, inventory, reviewed-asset and launcher check
+runs on each call. Verification failures retain the public code
 `native_runtime_artifacts_unverified` and a sanitized stage, reason, basename and
 verification purpose. The same manifest reader covers first provisioning and
 cold upgrade detection. Early failures emit the safe envelope before a journal
@@ -100,7 +105,7 @@ Existing startup timing records now include manifest payload hashing, signature
 verification, first-install artifact retention/preparation/selection and binding.
 Shell visibility and ownership resolution precede binding/controller readiness;
 renderer directory/session readiness and the global event-stream ACK complete
-the contract. These observations do not bypass checks or cache verification.
+the contract. These observations do not bypass checks; only per-file artifact digests and signatures are reused, as described above.
 The existing matched benchmark still requires at least 5% median improvement and
 every candidate pair faster before retaining a performance optimization.
 
@@ -617,6 +622,27 @@ spawn. Cold upgrades use `upgradeSelectedNativeBundleAtStartup` inside the exist
 bootstrap file lock, before any controller or data owner starts, preserving the
 verified source and credential checkpoint through the ordinary lifecycle.
 
+An upgrade whose shipped manifest keeps the selected `opencodeVersion` and
+`inputs.coreDigest` does not clone (`runtime-bundle-lifecycle.js` `applyCandidate`,
+result `mode: 'rebind'`). Outside a Claude update and on non-Windows hosts it calls
+the store's `rebindArtifacts` under the same checkpoint and `selection.lock`: the
+selected bundle keeps its ID, data and checkpoint; `descriptor.json` gets the new
+controller, writer and artifact manifest, `config/reviewed-plugins.json` the new
+reviewed plugins, and `prepared.json` those hashes. It needs the same verified
+artifact contracts and compatibility proof as a clone, and verifies the rebound
+bundle before the selector flips. The journal under `<controlRoot>/rebind/`
+(`intent.json`, protocol `devryan.bundle.rebind/1`) is written first with byte
+copies of the previous documents; `selection.json` is the commit point. A failure
+before it puts the previous documents back (`abandoned`). Rollback of a committed
+rebind (`rebindRestorable`, `restoreRebind`) restores those bytes with a `rollback`
+transition and needs no credential projection. `recoverRuntimeBundleRebind`, called
+by `provisionDefaultNativeBundle` before the binding read, undoes a `pending`
+rebind whose selector did not flip and completes an interrupted `restoring` one;
+a journal that matches neither selector refuses with
+`bundle_rebind_selection_changed`. Pruning keeps the artifacts the journaled
+previous descriptor names. A different version or core digest keeps the full
+migration-safe clone.
+
 Claude stderr is drained into a finite, constructor-scoped process receipt
 reported as `native_claude_process` through the existing diagnostic journal.
 Receipts retain exit code, signal presence, bounded byte counts and allowlisted
@@ -739,10 +765,13 @@ at 10 seconds and repairs recording (FFmpeg) in the background, so an optional
 download never holds startup. These records contain fixed phase names, monotonic
 elapsed milliseconds and completion/failure outcomes only. Existing journal
 startup/failure records and recovery ordering remain authoritative. The timings
-are observations, never readiness or integrity shortcuts.
+are observations, never readiness or integrity shortcuts. The desktop shell
+registers `setStartupPhaseListener` (exported for `@devryan/electron`) before
+importing the server, and turns phase starts into splash progress text.
 
 Bundle upgrades additionally time artifact verification, artifact retention,
-database checkpointing, data copying, candidate preparation and selection.
+database checkpointing, data copying, candidate preparation and selection, or
+`bundle_artifact_rebind` for an artifact-only rebind.
 These are nested spans, not additive startup durations. Artifact and bundle
 copies request filesystem copy-on-write with ordinary-copy fallback; they never
 share writable inodes. Large file hashes stream through SHA-256 rather than

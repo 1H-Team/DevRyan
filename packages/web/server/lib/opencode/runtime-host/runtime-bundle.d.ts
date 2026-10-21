@@ -75,5 +75,12 @@ export function createRuntimeBundleStore(options: RuntimeBundleStoreOptions): {
   select(input: { readonly bundleID: string; readonly expectedRevision: number; readonly claudeUpdate?: boolean }): Promise<RuntimeBundleSelection>;
   /** Static incompatibility keeps B active. A checkpointed partial projection is held for Resume B recovery. */
   rollback(input: { readonly targetBundleID: string; readonly expectedRevision: number }): Promise<{ readonly selection: RuntimeBundleSelection; readonly admission: 'held'; readonly reason: string | null }>;
+  /** Same OpenCode version and core digest only: rewrites the selected bundle's launch documents in place, without a data copy. */
+  rebindArtifacts(input: { readonly bundleID: string; readonly expectedRevision: number; readonly launchArtifacts: RuntimeBundleArtifacts }): Promise<RuntimeBundleSelection>;
+  rebindRestorable(selection: RuntimeBundleSelection): Promise<boolean>;
+  /** Rollback of a committed rebind to its journaled previous launch documents. */
+  restoreRebind(input: { readonly expectedRevision: number }): Promise<{ readonly selection: RuntimeBundleSelection; readonly admission: 'held'; readonly reason: null }>;
 };
+/** Cold bootstrap only, before any binding read: settles an interrupted rebind or rebind rollback. */
+export function recoverRuntimeBundleRebind(input: { readonly controlRoot: string }): Promise<'committed' | 'abandoned' | 'restored' | null>;
 export function readRuntimeBundleDescriptor(controlRoot: string, bundleID: string, options?:Pick<RuntimeBundleStoreOptions,'windowsOwner'>): Promise<RuntimeBundleDescriptor>;

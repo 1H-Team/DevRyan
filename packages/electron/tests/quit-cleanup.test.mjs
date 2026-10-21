@@ -20,13 +20,14 @@ test('normal desktop restart relaunches only after cleanup, including the bounde
   }
 });
 
-test('desktop restart uses bounded cleanup and detaches background-service clients', () => {
+test('desktop restart uses bounded cleanup and stops the in-process server', () => {
   const source = fs.readFileSync(new URL('../main.mjs', import.meta.url), 'utf8');
   const restart = source.slice(source.indexOf("case 'desktop_restart':"), source.indexOf("case 'desktop_get_lan_address':"));
   assert.match(restart, /performConfirmedQuit\(\{ restart: true \}\)/);
   assert.doesNotMatch(restart, /app\.exit\(0\)/);
   const cleanup = source.slice(source.indexOf('const performConfirmedQuit'), source.indexOf('const requestQuitWithConfirmation'));
-  assert.match(cleanup, /state\.runtimeServiceClient \? stopDesktopHostBroker\(\) : killSidecar\(\)/);
+  assert.match(cleanup, /await Promise\.all\(\[\s+killSidecar\(\),/);
+  assert.doesNotMatch(cleanup, /runtimeServiceClient|stopDesktopHostBroker/);
 });
 
 test('update cleanup lets only the updater request the eventual quit', async () => {

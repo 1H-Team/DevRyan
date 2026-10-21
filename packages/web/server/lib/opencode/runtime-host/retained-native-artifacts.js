@@ -62,6 +62,9 @@ const referencedSets=async (controlRoot,options={})=>{
  const optional=async file=>{try{return await readJSON(file);}catch(error){if(error.code==='ENOENT')return null;throw error;}};
  const intent=await optional(rollbackIntentPath(controlRoot));
  if(intent!==null){if(!isRecord(intent))throw fail();reference(intent.candidateManifestSha256);reference(intent.targetManifestSha256);}
+ // An artifact rebind keeps its previous launch as the selected bundle's rollback.
+ const rebound=await optional(path.join(controlRoot,'rebind','previous-descriptor.json'));
+ if(rebound!==null){if(!isRecord(rebound)||!isRecord(rebound.launch))throw fail();launch(rebound.launch);}
  for(const bundleID of [selection.selectedBundleID,selection.previousBundleID]){
   if(bundleID===null||!/^[a-zA-Z0-9_-]{1,128}$/.test(bundleID))continue;
   const baseline=await optional(path.join(controlRoot,'rollback',bundleID+'.json'));
@@ -138,7 +141,7 @@ export async function retainNativeArtifacts({controlRoot,manifestPath,manifestSh
 
 /** Call only at a safe point of a selected, unheld install, outside any lifecycle
  * operation. Removes retained sets no selected, rollback-target, newer draft, rollback
- * intent or rollback baseline references, plus abandoned `.retaining-*`/`.pruning-*` copies. */
+ * intent, rollback baseline or rebind journal references, plus abandoned `.retaining-*`/`.pruning-*` copies. */
 export async function pruneRetainedNativeArtifacts({controlRoot,now=Date.now,minimumAgeMs=RETAINED_ARTIFACT_MINIMUM_AGE_MS,windowsOwner,windowsLauncher,platform=process.platform}){
  const windows=platform==='win32';
  if(!path.isAbsolute(controlRoot)||path.normalize(controlRoot)!==controlRoot)throw fail();

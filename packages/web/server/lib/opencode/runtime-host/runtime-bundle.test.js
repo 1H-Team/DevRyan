@@ -923,11 +923,12 @@ const pinnedRelease=async(f,version)=>{
   inputs:{reviewedPlugins:[],coreDigest:REVIEWED_NATIVE_CLONE_RELEASES[version]??'0'.repeat(64)},
   compiledContracts:['devryan-v2-clone/1',NATIVE_BUNDLE_CREDENTIAL_CONTRACT,'devryan.bundle.credential-owners/2']})+'\n');return directory;
 };
+const verifyPinned=async({manifestPath,manifestSha256,launcher})=>{const directory=path.dirname(manifestPath);return {directory,manifestPath,manifestSha256,launcher,
+ controller:path.join(directory,'DevRyan-controller'),writer:path.join(directory,'DevRyan-writer'),manifest:JSON.parse(await fs.readFile(manifestPath,'utf8'))};};
 const launchPinned=async(f,home,artifactDirectory,credentialProcess)=>{
  const {provisionDefaultNativeBundle}=await import('./native-default-bundle.js');await fs.mkdir(home,{recursive:true});
  return provisionDefaultNativeBundle({env:{PATH:process.env.PATH},home,cwd:f.seed.projectMap[0].targetDirectory,artifactDirectory,runMigration:f.runMigration,credentialProcess,
-  verifyArtifacts:async({manifestPath,manifestSha256,launcher})=>{const directory=path.dirname(manifestPath);return {directory,manifestPath,manifestSha256,launcher,
-   controller:path.join(directory,'DevRyan-controller'),writer:path.join(directory,'DevRyan-writer'),manifest:JSON.parse(await fs.readFile(manifestPath,'utf8'))};}});
+  verifyArtifacts:verifyPinned});
 };
 const startupUpgradeFixture=async name=>{
  const f=await fixture(),home=path.join(f.root,name),older=await pinnedRelease(f,'2.0.20'),pinned=await pinnedRelease(f,TARGET_OPENCODE_VERSION);
@@ -984,9 +985,11 @@ test('cold owner upgrades the reviewed previous Claude asset while target verifi
  expect(readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot}).selection.revision).toBe(1);
  await writeClaude(target,{...current,sha256:'0'.repeat(64)});expect(await invoke()).toMatchObject({status:'failed'});
  expect(readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot}).selection.revision).toBe(1);
- await writeClaude(target,current);expect(await invoke()).toMatchObject({status:'upgraded',revision:2});
+ await writeClaude(target,current);expect(await invoke()).toMatchObject({status:'upgraded',mode:'rebind',revision:2});
+ // The OpenCode core is unchanged, so the selected bundle keeps its data and only rebinds its artifacts.
  const after=readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot});
- expect(after.selection.previousBundleID).toBe(before.descriptor.bundleID);
+ expect(after.selection).toMatchObject({selectedBundleID:before.descriptor.bundleID,previousBundleID:before.selection.previousBundleID});
+ expect(after.descriptor.launch.opencodeDatabasePath).toBe(before.descriptor.launch.opencodeDatabasePath);
  expect(after.descriptor.launch.artifactManifestSha256).toBe(sha256(await fs.readFile(path.join(target,'native-bundle.json'))));
  const copied=resolveSqliteDriver().open(after.descriptor.launch.opencodeDatabasePath,{readonly:true});
  try{expect(copied.prepare('SELECT id FROM session_v2 ORDER BY id').all()).toEqual(sessions);}finally{copied.close();}
@@ -1038,26 +1041,88 @@ test('default startup upgrades a selected bundle below the version pin through t
  expect(await u.launch(u.pinned,async()=>{throw Error('current selection never upgrades again');})).toBe(u.controlRoot);
  expect(u.binding().selection.revision).toBe(2);
 },60_000);
-test('cold startup activates repaired host artifacts at the same OpenCode version once and retains rollback',async()=>{
- const u=await startupUpgradeFixture('startup-host-repair-home');
- await u.launch(u.pinned);const before=u.binding();
- const manifestPath=path.join(u.pinned,'native-bundle.json'),manifest=JSON.parse(await fs.readFile(manifestPath,'utf8'));
- const controller=manifest.files.find(file=>file.path==='DevRyan-controller');
- const bytes=Buffer.from('fixture repaired controller at unchanged OpenCode version\n');
- await fs.writeFile(path.join(u.pinned,controller.path),bytes);controller.sha256=sha256(bytes);controller.size=bytes.length;
+const artifactFields=({controllerBinary,writerBinary,artifactManifestPath,artifactManifestSha256,...data})=>data;
+const repairPinnedController=async(release,text)=>{
+ const manifestPath=path.join(release,'native-bundle.json'),manifest=JSON.parse(await fs.readFile(manifestPath,'utf8'));
+ const controller=manifest.files.find(file=>file.path==='DevRyan-controller'),bytes=Buffer.from(text);
+ await fs.writeFile(path.join(release,controller.path),bytes);controller.sha256=sha256(bytes);controller.size=bytes.length;
  await fs.writeFile(manifestPath,JSON.stringify(manifest)+'\n');
- const shipped=sha256(await fs.readFile(manifestPath));
- await u.launch(u.pinned);const after=u.binding();
- expect(after.selection).toMatchObject({revision:3,selectedBundleID:nativeUpgradeBundleID(shipped,2),previousBundleID:before.descriptor.bundleID,reconciliationRequired:false});
+ return sha256(await fs.readFile(manifestPath));
+};
+// The cold owner the startup upgrade composes, for an explicit rollback.
+const coldLifecycle=async(u,binding)=>{
+ const {createRuntimeBundleLifecycle}=await import('./runtime-bundle-lifecycle.js');
+ const {assertNoLiveOwner}=await import('./native-bundle-startup-upgrade.js');
+ return createRuntimeBundleLifecycle({binding,neverStarted:true,getController:()=>null,closeAdmission:async()=>{},
+  assertAdmissionClosed:()=>assertNoLiveOwner(binding.descriptor.launch),stopProducers:async()=>{},drainStores:async()=>{},executionHost:{drain:async()=>{}},
+  artifactDirectory:u.pinned,verifyArtifacts:verifyPinned,credentialProcess:async()=>{throw Error('a rebind rollback projects no credentials');}});
+};
+test('cold startup rebinds repaired host artifacts at the same OpenCode version in place once and retains rollback',async()=>{
+ const u=await startupUpgradeFixture('startup-host-repair-home');
+ await u.launch(u.pinned);const before=u.binding(),bundles=await fs.readdir(path.join(u.controlRoot,'bundles'));
+ const shipped=await repairPinnedController(u.pinned,'fixture repaired controller at unchanged OpenCode version\n');
+ const captures=[...u.captures];
+ await u.launch(u.pinned,async()=>{throw Error('An unchanged core is never captured or copied');});
+ const after=u.binding();
+ expect(after.selection).toMatchObject({revision:3,selectedBundleID:before.descriptor.bundleID,previousBundleID:before.selection.previousBundleID,
+  transition:'activate',reconciliationRequired:false});
  expect(after.descriptor.launch.artifactManifestSha256).toBe(shipped);
- expect(await fs.stat(before.descriptor.launch.opencodeDatabasePath).then(stat=>stat.isFile())).toBe(true);
- const captures=[...u.captures];await u.launch(u.pinned,async()=>{throw Error('Identical repaired artifact must not be copied again');});
- expect(u.captures).toEqual(captures);expect(u.binding().selection.revision).toBe(3);
+ expect(artifactFields(after.descriptor.launch)).toEqual(artifactFields(before.descriptor.launch));
+ expect(await fs.readdir(path.join(u.controlRoot,'bundles'))).toEqual(bundles);expect(u.captures).toEqual(captures);
+ await expect(createRuntimeBundleStore({controlRoot:u.controlRoot,allowRecoveredInputStartup:true,runMigration:async()=>{throw Error('fixture no migration');},
+  withQuiescedSource:async()=>{throw Error('fixture no checkpoint');},verifyArtifacts:async()=>{}}).verify({bundleID:before.descriptor.bundleID,phase:'resume'})).resolves.toMatchObject({integrity:'verified'});
+ // Pruning keeps the journaled previous artifacts however old they are.
+ const artifacts=path.join(u.controlRoot,'artifacts'),aged=new Date(Date.now()-2*60*60_000);
+ for(const name of await fs.readdir(artifacts))await fs.utimes(path.join(artifacts,name),aged,aged);
+ await u.launch(u.pinned,async()=>{throw Error('Identical repaired artifact must not be rebound again');});
+ expect(u.binding().selection.revision).toBe(3);
+ expect(await fs.stat(before.descriptor.launch.artifactManifestPath).then(stat=>stat.isFile())).toBe(true);
+ const lifecycle=await coldLifecycle(u,u.binding());
+ expect(await lifecycle.inspect({checkUpdates:false})).toMatchObject({rollbackAvailable:true});
+ expect(await lifecycle.rollback({expectedRevision:3})).toMatchObject({transition:'rollback',revision:4,bundleID:before.descriptor.bundleID});
+ const restored=u.binding();
+ expect(restored.descriptor).toEqual(before.descriptor);
+ expect(restored.selection).toMatchObject({revision:4,transition:'rollback',preparedManifestSha256:before.selection.preparedManifestSha256});
  // A selected same-version rollback is an explicit choice, not a stale host to replace.
- const selectionPath=path.join(u.controlRoot,'selection.json');
- await fs.writeFile(selectionPath,JSON.stringify({...before.selection,revision:4,previousBundleID:after.descriptor.bundleID,transition:'rollback'})+'\n');
  await u.launch(u.pinned,async()=>{throw Error('Explicit rollback must be retained');});
  expect(u.binding().selection).toMatchObject({revision:4,selectedBundleID:before.descriptor.bundleID,transition:'rollback'});
+},60_000);
+test('a rebind killed before its selector flips is undone at the next launch, and one killed after it is kept',async()=>{
+ const {recoverRuntimeBundleRebind}=await import('./runtime-bundle.js');
+ const u=await startupUpgradeFixture('startup-rebind-crash-home');
+ await u.launch(u.pinned);const before=u.binding();
+ await repairPinnedController(u.pinned,'fixture rebound controller\n');
+ await u.launch(u.pinned);const after=u.binding();
+ const journal=path.join(u.controlRoot,'rebind'),intentPath=path.join(journal,'intent.json'),selectionPath=path.join(u.controlRoot,'selection.json');
+ const intent=JSON.parse(await fs.readFile(intentPath,'utf8'));
+ expect(intent).toMatchObject({state:'committed',bundleID:before.descriptor.bundleID,sourceSelection:before.selection,selection:after.selection});
+ const root=path.join(u.controlRoot,'bundles',before.descriptor.bundleID);
+ // Killed after the selector flipped: the rebound documents are already complete.
+ await fs.writeFile(intentPath,JSON.stringify({...intent,state:'pending'})+'\n');
+ expect(await recoverRuntimeBundleRebind({controlRoot:u.controlRoot})).toBe('committed');
+ expect(u.binding().selection).toEqual(after.selection);
+ // Killed between documents: descriptor and plugins rebound, prepared manifest and selector not.
+ await fs.writeFile(path.join(root,'prepared.json'),await fs.readFile(path.join(journal,'previous-prepared.json')));
+ await fs.writeFile(selectionPath,canonicalJSON(before.selection)+'\n');
+ await fs.writeFile(intentPath,JSON.stringify({...intent,state:'pending'})+'\n');
+ expect(()=>u.binding()).toThrow();
+ expect(await recoverRuntimeBundleRebind({controlRoot:u.controlRoot})).toBe('abandoned');
+ expect(u.binding().descriptor).toEqual(before.descriptor);expect(u.binding().selection).toEqual(before.selection);
+ expect(await recoverRuntimeBundleRebind({controlRoot:u.controlRoot})).toBe(null);
+ // The next launch retries the rebind from the restored selection.
+ await u.launch(u.pinned);
+ expect(u.binding().selection).toMatchObject({revision:3,selectedBundleID:before.descriptor.bundleID});
+ expect(u.binding().descriptor).toEqual(after.descriptor);
+ // A rollback killed after it restored one document is completed, never left half-way.
+ const committed=JSON.parse(await fs.readFile(intentPath,'utf8')),current=u.binding().selection;
+ const restoreSelection={...current,revision:current.revision+1,transition:'rollback',preparedManifestSha256:committed.previous['prepared.json']};
+ await fs.writeFile(path.join(root,'descriptor.json'),await fs.readFile(path.join(journal,'previous-descriptor.json')));
+ await fs.writeFile(intentPath,JSON.stringify({...committed,state:'restoring',restoreSelection})+'\n');
+ expect(await recoverRuntimeBundleRebind({controlRoot:u.controlRoot})).toBe('restored');
+ expect(u.binding().descriptor).toEqual(before.descriptor);expect(u.binding().selection).toEqual(restoreSelection);
+ // A journal that no longer matches the selector is refused rather than guessed.
+ await fs.writeFile(intentPath,JSON.stringify({...committed,state:'pending'})+'\n');
+ await expect(recoverRuntimeBundleRebind({controlRoot:u.controlRoot})).rejects.toMatchObject({code:'bundle_rebind_selection_changed'});
 },60_000);
 test('cold upgrade preserves artifact diagnostics and never publishes a failed candidate',async()=>{
  const u=await startupUpgradeFixture('startup-diagnostic-home'),before=u.binding().selection;

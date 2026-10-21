@@ -64,15 +64,17 @@ one `DevRyan-<version>-arm64.dmg`.
 
 Electron selects an existing `@openchamber/electron` Chromium profile before
 acquiring the single-instance lock or initializing its main runtime. New profiles
-use `@devryan/electron`. This preserves the old cookies, localStorage, IndexedDB
-and Safe Storage material in place. Browser partitions likewise use canonical
+use `@devryan/electron`. This preserves the old cookies, localStorage and IndexedDB
+in place. Browser partitions likewise use canonical
 names for new profiles and retain existing legacy partitions when present.
 Changing a spelling never discards a browser session to produce an empty profile.
 
-New runtime-service registrations use the canonical launchd/plist label. The
-bundled old plist and native control's legacy registration lookup remain for
-installed services. An already registered legacy service remains recognized until
-an explicit unregister/re-register operation migrates it. Unit tests inject
+The background runtime service is retired and nothing registers it any more.
+Both plists (`dev.devryan.desktop.runtime-service` and the legacy
+`dev.openchamber.desktop.runtime-service`) and the native control still ship:
+installed 2.x updaters require them in a candidate bundle, and the first launch
+of this version uses the native control's canonical and legacy lookups to
+unregister any remaining registration once (`runtime-service/retired.v1`). Unit tests inject
 native control, keychain, updater and app operations; they do not register an OS
 service or modify an installed app.
 

@@ -137,7 +137,7 @@ test('held recovery navigation stays canonical for existing and newly created wi
 
 function relaunchCallback(environment, relaunch, originalBundleRoot) {
   const start = mainSource.indexOf('const relaunchWithHostDataRoot = () => {');
-  const end = mainSource.indexOf('const firstExistingPath =', start);
+  const end = mainSource.indexOf('const sshManager =', start);
   assert.ok(start >= 0 && end > start);
   return new Function('app', 'process', 'hostDataRootDirectory', 'hostRuntimeBundleRoot', 'setDevRyanEnv', `
     ${mainSource.slice(start, end)}

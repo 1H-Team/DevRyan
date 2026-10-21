@@ -35,6 +35,22 @@ const hashFile = async file => {
   for await (const chunk of createReadStream(file)) hash.update(chunk);
   return hash.digest('hex');
 };
+// One launch verifies the same artifacts at boot, inspection, native start and
+// spawn (about 0.5 GB each time). A file's digest and signature are a function
+// of its content, so results are reused while its inode, size, mode, mtime and
+// ctime are unchanged; any write or replacement changes ctime and is re-read.
+// Only identities that were stable across the whole read are recorded.
+const verifiedFiles = new Map();
+const fileIdentity = (target, stat) => `${target}\0${stat.dev}:${stat.ino}:${stat.size}:${stat.mode}:${stat.mtimeMs}:${stat.ctimeMs}`;
+const remembered = (key) => verifiedFiles.get(key) ?? {};
+const remember = async (target, key, update) => {
+  const after = await fs.lstat(target).catch(() => null);
+  if (!after || fileIdentity(target, after) !== key) return;
+  if (verifiedFiles.size >= 4096 && !verifiedFiles.has(key)) verifiedFiles.clear();
+  verifiedFiles.set(key, Object.freeze({ ...verifiedFiles.get(key), ...update }));
+};
+/** Tests and tools that rewrite artifacts in place within one process reset reuse. */
+export const clearNativeArtifactVerificationCache = () => verifiedFiles.clear();
 
 /** Initial provisioning needs a bounded manifest read before it can pin its digest. */
 export async function readNativeRuntimeManifest(manifestPath, purpose = 'current') {
@@ -108,7 +124,13 @@ export async function verifyNativeRuntimeArtifacts({ manifestPath, manifestSha25
     if (!actual.isFile() || actual.isSymbolicLink() || await fs.realpath(target) !== target) throw fail();
     if (actual.size !== file.size) throw fail('digest_mismatch');
     if (process.platform !== 'win32' && (actual.mode & 0o777) !== file.mode) throw fail('mode_mismatch');
-    if (await timed('artifact_hashing', () => hashFile(target)) !== file.sha256) throw fail('digest_mismatch');
+    const identity = fileIdentity(target, actual);
+    let digest = remembered(identity).sha256;
+    if (!digest) {
+      digest = await timed('artifact_hashing', () => hashFile(target));
+      await remember(target, identity, { sha256: digest });
+    }
+    if (digest !== file.sha256) throw fail('digest_mismatch');
     stage = 'reviewed_asset';
     files.set(file.path, target);
     if (file.path === 'DevRyan-native-configuration.mjs') {
@@ -155,13 +177,18 @@ export async function verifyNativeRuntimeArtifacts({ manifestPath, manifestSha25
       if (process.platform === 'darwin') {
         stage = 'signature';
         if (file.signing.mode === 'unsigned' || file.signing.verified !== true || !/^[a-f0-9]{40,64}$/.test(file.signing.cdhash)) throw fail();
-        await timed('artifact_signatures', () => exec('/usr/bin/codesign', ['--verify', '--strict', target], { timeout: 15_000, maxBuffer: 64 * 1024 }));
-        const info = await timed('artifact_signatures', () => exec('/usr/bin/codesign', ['-d', '--verbose=4', target], { timeout: 15_000, maxBuffer: 64 * 1024 }));
-        if (claudeAsset?.[0] === 'claude' && manifest.claudeInstallation) {
-          await exec('/usr/bin/codesign', ['--verify', '--strict', '-R', `=anchor apple generic and certificate leaf[subject.OU] = "${CLAUDE_TEAM}"`, target], { timeout: 15000, maxBuffer: 65536 });
+        let { signature } = remembered(identity);
+        if (!signature) {
+          await timed('artifact_signatures', () => exec('/usr/bin/codesign', ['--verify', '--strict', target], { timeout: 15_000, maxBuffer: 64 * 1024 }));
+          const info = await timed('artifact_signatures', () => exec('/usr/bin/codesign', ['-d', '--verbose=4', target], { timeout: 15_000, maxBuffer: 64 * 1024 }));
+          signature = Object.freeze({ cdhash: /^CDHash=(.+)$/m.exec(info.stderr)?.[1], teamID: /^TeamIdentifier=(.+)$/m.exec(info.stderr)?.[1] });
+          await remember(target, identity, { signature });
         }
-        const cdhash = /^CDHash=(.+)$/m.exec(info.stderr)?.[1];
-        const teamID = /^TeamIdentifier=(.+)$/m.exec(info.stderr)?.[1];
+        if (claudeAsset?.[0] === 'claude' && manifest.claudeInstallation && !remembered(identity).claudeTeam) {
+          await exec('/usr/bin/codesign', ['--verify', '--strict', '-R', `=anchor apple generic and certificate leaf[subject.OU] = "${CLAUDE_TEAM}"`, target], { timeout: 15000, maxBuffer: 65536 });
+          await remember(target, identity, { claudeTeam: true });
+        }
+        const { cdhash, teamID } = signature;
         if (file.signing.cdhash !== cdhash || (file.signing.mode === 'release' && (!file.signing.teamID || file.signing.teamID === 'not set' || file.signing.teamID !== teamID))) throw fail();
       }
     }

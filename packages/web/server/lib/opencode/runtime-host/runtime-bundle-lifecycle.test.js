@@ -18,7 +18,7 @@ afterEach(async () => { for (const root of roots.splice(0)) await fs.rm(root, { 
 
 async function fixture({ unknownController = false, unsettledController = false, failDrain = false, drainFailures = 0, failProjection = false,
   failRestart = false, failQuiesce = false, failCapture = false, failRetain = false, failStore = null, reconciliationRequired = false,
-  retainCheckpoint, beforeReadSelected, beforeDrain, neverStarted = false, assertOwner, claude = {} } = {}) {
+  retainCheckpoint, beforeReadSelected, beforeDrain, neverStarted = false, assertOwner, claude = {}, sameCore = false, rebound = false } = {}) {
   const root = await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()), 'runtime-bundle-lifecycle-')); roots.push(root);
   const launch = { opencodeDatabasePath: path.join(root, 'a.db'), webDataDirectory: path.join(root, 'web'),
     webConfigDirectory: path.join(root, 'web-config'), opencodeConfigDirectory: path.join(root, 'config'),
@@ -31,6 +31,8 @@ async function fixture({ unknownController = false, unsettledController = false,
   const binding = { controlRoot: root, descriptor, selection: { revision: 1, selectedBundleID: 'A', previousBundleID: 'prior', reconciliationRequired } };
   let selected = structuredClone({ descriptor, selection: binding.selection });
   let exited = false, prepared, callbacks, remainingDrainFailures = drainFailures;
+  // The selection a committed rebind wrote; its rollback restores the previous launch.
+  let rebindSelection = rebound ? binding.selection : undefined;
   const events = [];
   // The real application admission gate, as composed by application.js main().
   const gate = createRuntimeBundleAdmissionGate();
@@ -42,7 +44,9 @@ async function fixture({ unknownController = false, unsettledController = false,
   const artifactDirectory = path.join(root, 'app-resources'); await fs.mkdir(artifactDirectory);
   const bytes = JSON.stringify(manifest); await fs.writeFile(launch.artifactManifestPath, bytes); await fs.writeFile(path.join(artifactDirectory, 'native-bundle.json'), bytes);
   const candidateHash = digest(bytes);
-  const retained = { manifest, manifestSha256: candidateHash, manifestPath: path.join(root, 'artifacts', candidateHash, 'native-bundle.json'),
+  // By default the shipped artifact changes the OpenCode core, which needs the clone.
+  const candidateManifest = sameCore ? manifest : { ...manifest, inputs: { ...manifest.inputs, coreDigest: 'f'.repeat(64) } };
+  const retained = { manifest: candidateManifest, manifestSha256: candidateHash, manifestPath: path.join(root, 'artifacts', candidateHash, 'native-bundle.json'),
     controller: path.join(root, 'new-controller'), writer: path.join(root, 'new-writer') };
   const verifyArtifacts = vi.fn(async input => input.manifestSha256 === 'a'.repeat(64)
     ? { manifest, controller: launch.controllerBinary, writer: launch.writerBinary } : retained);
@@ -74,6 +78,21 @@ async function fixture({ unknownController = false, unsettledController = false,
           selectedBundleID: input.bundleID, previousBundleID: 'A', reconciliationRequired: false } };
         return selected.selection;
       }),
+      rebindArtifacts: async input => options.withQuiescedSource({ kind: 'bundle', bundleID: input.bundleID }, async (_proof, scope) => {
+        await scope.assertHeld(); events.push('rebind');
+        if (failStore === 'rebind') throw injected('bundle_rebind_write_failed');
+        selected = { descriptor: { ...descriptor, launch: { ...launch, ...input.launchArtifacts } }, selection: { revision: input.expectedRevision + 1,
+          selectedBundleID: input.bundleID, previousBundleID: 'prior', reconciliationRequired: false } };
+        rebindSelection = selected.selection;
+        return selected.selection;
+      }),
+      rebindRestorable: async value => rebindSelection?.revision === value.revision,
+      restoreRebind: async input => options.withQuiescedSource({ kind: 'bundle', bundleID: 'A' }, async (_proof, scope) => {
+        await scope.assertHeld(); events.push('restore-rebind');
+        selected = { descriptor, selection: { revision: input.expectedRevision + 1, selectedBundleID: 'A', previousBundleID: 'prior', reconciliationRequired: false } };
+        rebindSelection = undefined;
+        return { selection: selected.selection, admission: 'held', reason: null };
+      }),
       rollback: async input => failStore === 'rollback-precheck' ? Promise.reject(injected('bundle_rollback_target_invalid')) : options.withQuiescedSource({ kind: 'bundle', bundleID: 'A' }, async (proof, scope) => {
         const captured = await options.captureCredentials({ descriptor, checkpoint: proof, assertHeld: scope.assertHeld });
         const target = { ...descriptor, bundleID: input.targetBundleID };
@@ -88,6 +107,8 @@ async function fixture({ unknownController = false, unsettledController = false,
   };
   const restart = vi.fn(async () => { events.push('restart'); if (failRestart) throw new Error('host refused restart'); });
   const lifecycle = createRuntimeBundleLifecycle({ createClaude: async () => ({ artifacts: retained, manifestSha256: candidateHash, manifestPath: retained.manifestPath }), ...claude, binding, artifactDirectory, verifyArtifacts, credentialProcess, storeFactory, retainCheckpoint, neverStarted,
+    // A reviewed cross-core pair needs an actual source database layout; native-bundle-compatibility.test.js owns that policy.
+    verifyCompatibility: ({ right }) => { expect(right).toBe(candidateManifest); },
     retainArtifacts: async () => { events.push('retain'); if (failRetain) throw injected('bundle_retain_failed'); return retained; }, requestRecomposition: restart,
     getController: () => unknownController ? null : controller,
     closeAdmission: async () => { events.push('admission-close'); gate.close(); },
@@ -114,7 +135,9 @@ test('production lifecycle detects only the app artifact and holds the actual or
   expect(result).toMatchObject({ state: 'restart_required', restartRequired: true, previousBundleID: 'A', revision: 2 });
   expect(value.events).toEqual(['retain', 'admission-close', 'quiesce', 'producers-stop', 'credentials-drain', 'controller-close',
     'execution-drain', 'owner-close', 'stores-drain', 'prepare', 'capture', 'capture', 'select']);
-  expect(value.credentialProcess.mock.calls[0][0].captureArtifacts.manifestSha256).toBe(value.candidateHash);
+  expect(result.mode).toBe('clone');
+  // A changed core is captured by the original controller only.
+  expect(value.credentialProcess.mock.calls[0][0]).not.toHaveProperty('captureArtifacts');
   expect(value.verifyArtifacts.mock.calls.filter(([input]) => input.manifestSha256 === 'a'.repeat(64))).toHaveLength(1);
   expect(value.restart).not.toHaveBeenCalled();
   await value.lifecycle.recompose(); expect(value.restart).toHaveBeenCalledOnce();
@@ -146,6 +169,29 @@ test('a never-started cold owner upgrades without a controller and every held st
   foreign = true;
   await expect(refused.lifecycle.upgrade({ expectedRevision: 1 })).rejects.toMatchObject({ code: 'bundle_upgrade_owner_active' });
   expect(refused.events).not.toContain('prepare'); expect(refused.events).not.toContain('select');
+});
+
+test('an unchanged OpenCode core rebinds the selected bundle in place, with no data copy or credential capture', async () => {
+  const value = await fixture({ sameCore: true });
+  const result = await value.lifecycle.upgrade({ expectedRevision: 1 });
+  expect(result).toMatchObject({ state: 'restart_required', restartRequired: true, mode: 'rebind', bundleID: 'A', previousBundleID: 'prior', revision: 2 });
+  expect(value.events).toEqual(['retain', 'admission-close', 'quiesce', 'producers-stop', 'credentials-drain', 'controller-close',
+    'execution-drain', 'owner-close', 'stores-drain', 'rebind']);
+  expect(value.credentialProcess).not.toHaveBeenCalled();
+  // A failed rebind leaves the selection and holds the checkpointed host like a failed clone.
+  const failed = await fixture({ sameCore: true, failStore: 'rebind' });
+  await expect(failed.lifecycle.upgrade({ expectedRevision: 1 })).rejects.toMatchObject({ code: 'bundle_rebind_write_failed' });
+  expect(await failed.lifecycle.inspect()).toMatchObject({ state: 'held', revision: 1, reason: 'bundle_rebind_write_failed' });
+  expect(failed.events).not.toContain('prepare');
+});
+
+test('rollback of a committed rebind restores its previous launch without credential projection', async () => {
+  const value = await fixture({ rebound: true });
+  expect(await value.lifecycle.inspect({ checkUpdates: false })).toMatchObject({ rollbackAvailable: true });
+  const result = await value.lifecycle.rollback({ expectedRevision: 1 });
+  expect(result).toMatchObject({ state: 'restart_required', transition: 'rollback', bundleID: 'A', revision: 2, reason: null });
+  expect(value.events).toContain('restore-rebind');
+  expect(value.credentialProcess).not.toHaveBeenCalled();
 });
 
 test('incompatible credential rollback preserves both identities and publishes held recovery', async () => {
@@ -416,7 +462,7 @@ test('selector change during settlement cannot expose a held credential scope', 
 test.skipIf(process.platform !== 'darwin' || process.arch !== 'arm64')('future Claude update waits for idle before closing admission and uses normal selection', async () => {
   let ready; const wait = new Promise(resolve => { ready = resolve; });
   const phases = [], releaseIdle = vi.fn();
-  const value = await fixture({ claude: { checkClaudeRelease: async () => ({ latestVersion: '9.0.0' }),
+  const value = await fixture({ sameCore: true, claude: { checkClaudeRelease: async () => ({ latestVersion: '9.0.0' }),
     onClaudePhase: phase => phases.push(phase), waitForClaudeIdle: async () => { await wait; return releaseIdle; } } });
   const updating = value.lifecycle.upgradeClaude({ expectedRevision: 1 });
   for (let i = 0; i < 100 && !phases.includes('waiting-for-idle'); i++) await new Promise(resolve => setTimeout(resolve, 2));
@@ -426,6 +472,9 @@ test.skipIf(process.platform !== 'darwin' || process.arch !== 'arm64')('future C
   expect(await updating).toMatchObject({ revision: 2, restartRequired: true, transition: 'claude' });
   expect(phases).toEqual(['waiting-for-idle', 'activating']); expect(releaseIdle).toHaveBeenCalledTimes(1);
   expect(value.events).toContain('select'); expect(value.events.indexOf('admission-close')).toBeLessThan(value.events.indexOf('select'));
+  // An unchanged core still clones for Claude, and the candidate artifacts capture its credentials.
+  expect(value.events).not.toContain('rebind');
+  expect(value.credentialProcess.mock.calls[0][0].captureArtifacts.manifestSha256).toBe(value.candidateHash);
 });
 test.skipIf(process.platform !== 'darwin' || process.arch !== 'arm64')('stale revisions and bad downloads never close admission or change selection', async () => {
   const createClaude = vi.fn(async () => { throw Object.assign(new Error(), { code: 'claude_archive_integrity' }); });

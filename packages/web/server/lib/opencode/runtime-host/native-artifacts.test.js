@@ -81,3 +81,21 @@ test.skipIf(process.platform !== 'darwin')('unsigned controller failures are dis
     await expect(verify()).rejects.toMatchObject({ diagnostic: { stage: 'signature', reason: 'signature_failure', artifact: row.path } });
   });
 });
+
+test('unchanged payloads are hashed once per process and any rewrite is hashed again', async () => fixture(async ({ root, row, verify }) => {
+  const { vi } = await import('vitest');
+  for (const name of [row.path, 'DevRyan-second']) await fs.writeFile(path.join(root, name), 'test', { mode: row.mode });
+  const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+  const hashed = () => info.mock.calls.filter(([, detail]) => String(detail).includes('"artifact_hashing"')).length;
+  try {
+    // Both payloads verify; the fixture has no controller, so inventory fails afterwards.
+    await expect(verify()).rejects.toMatchObject({ diagnostic: { stage: 'inventory' } });
+    expect(hashed()).toBe(1);
+    await expect(verify()).rejects.toMatchObject({ diagnostic: { stage: 'inventory' } });
+    expect(hashed()).toBe(1);
+    // Same size, new content: the changed identity is never served from the cache.
+    await fs.writeFile(path.join(root, row.path), 'evil');
+    await expect(verify()).rejects.toMatchObject({ diagnostic: { reason: 'digest_mismatch', artifact: row.path } });
+    expect(hashed()).toBe(2);
+  } finally { info.mockRestore(); }
+}));
