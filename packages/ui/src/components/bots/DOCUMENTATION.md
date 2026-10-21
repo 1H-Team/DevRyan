@@ -165,6 +165,8 @@ retries at 250ms/1s/2s/5s/15s. A newly available control plane immediately
 opens SSE and replaces the Bot catalog from its authoritative snapshot. Manual
 Retry invokes the capability probe even when no EventSource was created, and
 principal changes dispose both probe and EventSource timers.
+The retained settings page keeps a reported capability error until an explicit
+retry or the connection owner recovers it; its initial probe cannot overwrite it.
 
 Electron Bot runtime progress remains component-local rather than entering a
 broad store. App-bound mode receives immediate IPC events. Background-service

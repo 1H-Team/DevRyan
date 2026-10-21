@@ -4,6 +4,7 @@ import { runUpgradeCommand } from './upgrade-processes.mjs';
 import { withMountedDmg } from './mounted-dmg.mjs';
 
 test('qualification commands collect complete stdout and stop timed-out owned children', async () => {
+  await runUpgradeCommand('/usr/bin/true', []);
   const { stdout } = await runUpgradeCommand(process.execPath, ['-e', "process.stdout.write('identity')"]);
   assert.equal(stdout, 'identity');
   await assert.rejects(runUpgradeCommand(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { timeout: 30 }), /timed out/);

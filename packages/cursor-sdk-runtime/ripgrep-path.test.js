@@ -117,7 +117,7 @@ describe('Cursor SDK ripgrep path resolution', () => {
       env: { CURSOR_SDK_RIPGREP_PATH: envPath },
       pathValue: '',
       platform: 'linux',
-      arch: 'x64',
+      arch: 'unsupported',
       resourcesPath: '',
       requireResolve: () => {
         throw new Error('package unavailable');
@@ -135,7 +135,7 @@ describe('Cursor SDK ripgrep path resolution', () => {
       env: {},
       pathValue: tempDir,
       platform: 'linux',
-      arch: 'x64',
+      arch: 'unsupported',
       resourcesPath: '',
       requireResolve: () => {
         throw new Error('package unavailable');

@@ -329,9 +329,9 @@ const BotsPageContent: React.FC<BotsPageProps> = ({
   }, [selectedBotId]);
 
   React.useEffect(() => {
-    if (capabilityCanCreateBot !== undefined) return;
+    if (capabilityCanCreateBot !== undefined || capabilitiesErrorCode) return;
     void loadCapabilities();
-  }, [capabilityCanCreateBot, loadCapabilities]);
+  }, [capabilitiesErrorCode, capabilityCanCreateBot, loadCapabilities]);
 
   React.useEffect(() => {
     if (!selectedBotId

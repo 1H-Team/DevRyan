@@ -122,6 +122,15 @@ Each `upgrade-<lane>.json` report contains sanitized evidence and phase timings 
 
 The separate `scripts/qa/release-final-dmg-smoke.mjs --dmg <absolute DMG> --report <absolute JSON>` refuses local execution: it launches the production bundle only on a disposable macOS arm64 GitHub runner with the same console user. It mounts the unchanged DMG read-only, uses a private HOME/profile, disables background Bots, and checks ready health plus a visible composer within 120 seconds. It imports an ordinary private custom-provider configuration pointing only to the credential-free loopback fixture, registers the private workspace as a project (Electron starts in HOME, so an unregistered folder is not a native location) and pins the helper model to the fixture, so session titles never reach the default hosted helper. It then requires a real native read, published write, and final assistant response within a further 60 seconds; the fixture answers only the shipped title helper's own prompt outside that tool turn. On failure the report keeps bounded, sanitized evidence: the error code and message (run paths replaced, opaque tokens removed), refusal status codes, provider request and error codes, the session's message and tool states, diagnostic counters, a journal gap count with recent record identifiers, a `failure.png` screenshot, and which cleanup step failed. A fixture failure rethrown by the provider's close is round-trip evidence, not a cleanup failure. A CDP screenshot and physical shutdown are required. It performs no paid model request and uses no constructor-only QA configuration hook. Evidence is uploaded even when prerequisites or setup fail; scratch is removed on normal completion and interruption. This is a startup smoke, not proof of updater installation or native service migration. Its three-run observational rollout and promotion variable are documented in [Release pipeline](RELEASE_PIPELINE.md#final-dmg-smoke-rollout).
 
+Qualification commands wait in a POSIX shell until OS process ownership is
+observed, then exec with the same PID. Even instant commands retain cleanup
+evidence. Failed-command reports include only the executable basename and exit
+code, never subprocess output or arguments.
+The dedicated DMG mount scope owns attach/detach and its disk-image helpers;
+ordinary command cleanup must not stop those helpers before extraction finishes.
+The final-DMG profile pins the Builder model and thinking level through ordinary
+saved agent selections, as well as pinning the helper model, before UI submission.
+
 ### Packaged service smoke
 
 ```sh

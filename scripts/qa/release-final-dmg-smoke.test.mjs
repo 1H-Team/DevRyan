@@ -23,6 +23,7 @@ test('the private profile registers the workspace and pins the helper to the loo
   // Saved without a variant: provider Default reasoning, as the native helper owner requires.
   assert.deepEqual(parseHelperModelSelection(settings.helperModelSelection), { providerID: 'devryan-smoke', modelID: 'smoke-write', revision: 'final-dmg-smoke' });
   assert.equal(settings.defaultModel, 'devryan-smoke/smoke-write');
+  assert.deepEqual(settings.agentModelSelections, { builder: { providerId: 'devryan-smoke', modelId: 'smoke-write', variant: 'high' } });
   assert.equal(settings.enableBackgroundBots, false);
 });
 

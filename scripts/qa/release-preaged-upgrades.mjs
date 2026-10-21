@@ -16,7 +16,7 @@ async function acquireCandidate(root, environment) {
   await mkdir(download); await mkdir(mount);
   for (const name of [CANDIDATE_ARTIFACT, CANDIDATE_IDENTITY_ARTIFACT]) await execute('gh', ['run', 'download', identity.runID, '--repo', '1H-Team/DevRyan', '--name', name, '--dir', download], { timeout: 180_000 });
   const dmg = await verifyCandidate(download, identity);
-  await withMountedDmg(dmg, mount, () => execute('ditto', [path.join(mount, 'DevRyan.app/Contents/Resources/revert-runtime/darwin-arm64'), target], { timeout: 120_000 }), execute);
+  await withMountedDmg(dmg, mount, () => execute('ditto', [path.join(mount, 'DevRyan.app/Contents/Resources/revert-runtime/darwin-arm64'), target], { timeout: 120_000 }));
   return target;
 }
 

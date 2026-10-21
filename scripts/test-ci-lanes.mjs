@@ -8,6 +8,7 @@ export const MAC_WEB_TESTS = [
   'server/default-config/plugins/devryan-browser.test.mjs',
   ...['native-artifacts', 'native-process', 'native-setup-seed', 'runtime-bundle-lifecycle']
     .map(name => `server/lib/opencode/runtime-host/${name}.test.js`),
+  'server/lib/opencode/runtime-host/runtime-bundle.test.js',
 ];
 const nativeHarness = new Set(['session-mutations-inputs.test.js', 'session-execution-local.test.js', 'session-execution.test.js']);
 export function requiresMac(unit) {

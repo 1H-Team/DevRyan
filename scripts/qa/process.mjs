@@ -21,7 +21,7 @@ const waitForOwnedParentExit = (child, timeoutMs = 30000) => new Promise(resolve
 // Keep handles only to children created by this run. Never discover/kill a
 // running user's app by name, port, or executable path.
 export const startOwnedProcess = (command, args, options) => {
-  const child = spawn(command, args, { ...options, detached: useDetachedChildren, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(command, args, { ...options, detached: useDetachedChildren, stdio: options?.stdio ?? ['ignore', 'pipe', 'pipe'] });
   let log = '';
   let spawnError = null;
   const capture = (chunk) => { log = (log + chunk.toString()).slice(-64 * 1024); };
@@ -41,6 +41,7 @@ export const startOwnedProcess = (command, args, options) => {
     getLog: () => log,
     getCleanupEvidence: evidence,
     auditStopped: () => ownership.auditStopped(),
+    observe: () => ownership.refresh(),
     check: () => {
       if (spawnError) throw spawnError;
       if (child.exitCode !== null || child.signalCode !== null) throw new Error(`QA child exited: ${child.exitCode ?? child.signalCode}`);

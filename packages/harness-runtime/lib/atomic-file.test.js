@@ -193,7 +193,7 @@ describe('atomic file primitives', () => {
     let now = (await fs.stat(lockPath)).mtimeMs;
     const start = now;
     await withCrossProcessFileLock(lockPath, () => { expect(now - start).toBe(30000); }, {
-      timeoutMs: 45000, now: () => now, wait: async ms => { now += ms; },
+      timeoutMs: 45000, retryMs: 1000, now: () => now, wait: async ms => { now += ms; },
     });
     expect(await fs.readdir(directory)).toEqual([]);
   });

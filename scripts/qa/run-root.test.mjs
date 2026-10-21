@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -47,7 +47,7 @@ test('only canonical descendants of a live constructor-owned scratch run are adm
     symlinkSync(outsider, path.join(run.dir, 'alias'));
     assert.equal(isOwnedScratchPath(path.join(run.dir, 'alias'), { scope: run.scope, future: true }), false);
     assert.equal(isOwnedScratchPath(path.join(run.dir, 'alias/new'), { scope: run.scope, future: true }), false);
-    rmSync(run.dir, { recursive: true }); mkdirSync(run.dir);
+    renameSync(run.dir, path.join(outsider, 'retired')); mkdirSync(run.dir);
     assert.equal(isOwnedScratchPath(run.dir, { scope: run.scope }), false);
     assert.throws(() => run.finish('passed'), /identity changed/);
   } finally { run.dispose(); rmSync(run.dir, { recursive: true, force: true }); rmSync(outsider, { recursive: true }); }

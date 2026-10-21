@@ -233,7 +233,7 @@ async function fetchReleaseArtifacts(tag, root) {
   const bytes = await readFile(path.join(download, assets[0].name));
   if (bytes.length !== assets[0].size || `sha256:${digest(bytes)}` !== assets[0].digest) throw new Error('Baseline installer digest mismatch');
   const dmg = assets[0].name;
-  await withMountedDmg(path.join(download, dmg), mount, () => run('/usr/bin/ditto', [path.join(mount, 'DevRyan.app/Contents/Resources/revert-runtime/darwin-arm64'), target]), run);
+  await withMountedDmg(path.join(download, dmg), mount, () => run('/usr/bin/ditto', [path.join(mount, 'DevRyan.app/Contents/Resources/revert-runtime/darwin-arm64'), target]));
   return { artifacts: target, installerSha256: assets[0].digest, assetID: assets[0].id, releaseID: release.id };
 }
 
@@ -363,7 +363,9 @@ async function* releaseUpgradePhases(options) {
     if (options.report) {
       await mkdir(path.dirname(options.report), { recursive: true });
       await writeFile(options.report, `${JSON.stringify({ schemaVersion: 1, kind: 'release-upgrade-lane', sourceRevision: process.env.GITHUB_SHA ?? null,
-        directBaseline: options.directBaseline ?? null, timings: timings.phases, passed: false, failures: ['Release upgrade lane could not complete'], errorCode: /^[a-z_]+$/.test(error.code ?? '') ? error.code : 'qa_release_upgrade_failed' }, null, 2)}\n`);
+        directBaseline: options.directBaseline ?? null, timings: timings.phases, passed: false, failures: ['Release upgrade lane could not complete'],
+        ...(error.code === 'qa_release_upgrade_command' ? { command: error.command, exitCode: error.exitCode } : {}),
+        errorCode: /^[a-z_]+$/.test(error.code ?? '') ? error.code : 'qa_release_upgrade_failed' }, null, 2)}\n`);
     }
     throw error;
   } finally {

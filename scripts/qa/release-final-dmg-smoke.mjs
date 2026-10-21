@@ -41,6 +41,7 @@ export function smokeSettings({ port, workspace, tuple }) {
     enableBackgroundBots: false, productionBotsRuntimeMode: 'disabled', lastDirectory: workspace,
     projects: [{ id: 'final-dmg-smoke', path: workspace, label: 'Final DMG smoke' }], activeProjectId: 'final-dmg-smoke',
     helperModelSelection: { providerID: tuple.providerID, modelID: tuple.modelID, revision: 'final-dmg-smoke' },
+    agentModelSelections: { builder: { providerId: tuple.providerID, modelId: tuple.modelID, variant: tuple.variant } },
     defaultAgent: 'builder', defaultModel: `${tuple.providerID}/${tuple.modelID}` };
 }
 
