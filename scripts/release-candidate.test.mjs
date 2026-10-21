@@ -48,3 +48,19 @@ test('a failed-job rerun can reuse the successful producer from an earlier attem
   options.environment = { ...environment, GITHUB_RUN_ATTEMPT: '2' };
   assert.equal((await waitForCandidate(options)).identity.attempt, '1');
 });
+
+test('copied successful jobs retain the actual producer attempt, including after a real rebuild', async () => {
+  for (const rebuilt of [false, true]) {
+    const options = fixture({ source: { ...run, run_attempt: 3 } });
+    options.environment = { ...environment, GITHUB_RUN_ATTEMPT: '3' };
+    const original = { name: 'electron-package', id: 10, run_attempt: 1, status: 'completed', conclusion: 'success',
+      started_at: '2026-10-21T10:00:00Z', completed_at: '2026-10-21T10:05:00Z' };
+    const actual = rebuilt ? { ...original, id: 20, run_attempt: 2,
+      started_at: '2026-10-21T10:10:00Z', completed_at: '2026-10-21T10:15:00Z' } : original;
+    const request = options.request;
+    options.request = (method, url) => url.includes('/jobs?')
+      ? { jobs: [...(rebuilt ? [original] : []), actual, { ...actual, id: 30, run_attempt: 3 }] }
+      : request(method, url);
+    assert.equal((await waitForCandidate(options)).identity.attempt, String(actual.run_attempt));
+  }
+});

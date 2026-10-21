@@ -29,9 +29,9 @@ for (const failure of [null, 'producer', 'candidate', 'cleanup']) test(`pre-agin
     };
     if (failure) await assert.rejects(runPreagedUpgrades(options), /failed/);
     else assert.equal((await runPreagedUpgrades(options)).passed, true);
-    assert.deepEqual(calls.slice(0, 4), ['prepare:aging', 'prepare:v2.0.2', 'prepare:v2.0.15', 'acquire']);
-    assert.deepEqual(calls.filter(call => call.startsWith('cleanup:')), ['cleanup:aging', 'cleanup:v2.0.2', 'cleanup:v2.0.15']);
-    if (!failure) assert.deepEqual(calls.slice(4, 7), ['qualify:aging', 'qualify:v2.0.2', 'qualify:v2.0.15']);
+    assert.deepEqual(calls.slice(0, 4), ['prepare:v2.0.2', 'prepare:aging', 'prepare:v2.0.15', 'acquire']);
+    assert.deepEqual(calls.filter(call => call.startsWith('cleanup:')), ['cleanup:v2.0.2', 'cleanup:aging', 'cleanup:v2.0.15']);
+    if (!failure) assert.deepEqual(calls.slice(4, 7), ['qualify:v2.0.2', 'qualify:aging', 'qualify:v2.0.15']);
     await assert.rejects(fs.stat(scratch), { code: 'ENOENT' });
     assert.equal((await fs.readdir(reportDirectory)).length, 4);
   } finally { await fs.rm(reportDirectory, { recursive: true, force: true }); }
@@ -53,13 +53,13 @@ test('partial profile preparation cleans completed lanes and writes missing repo
   try {
     await assert.rejects(runPreagedUpgrades({ reportDirectory,
       prepare: async options => {
-        if (options.directBaseline) throw new Error('preparation failed');
-        return { cleanup: async () => { cleaned.push('aging'); } };
+        if (options.directBaseline !== 'v2.0.2') throw new Error('preparation failed');
+        return { cleanup: async () => { cleaned.push('v2.0.2'); } };
       },
       acquire: async () => { acquired = true; return '/candidate'; },
     }), /preparation failed/);
     assert.equal(acquired, false);
-    assert.deepEqual(cleaned, ['aging']);
+    assert.deepEqual(cleaned, ['v2.0.2']);
     assert.equal((await fs.readdir(reportDirectory)).length, 4);
     const timings = JSON.parse(await fs.readFile(path.join(reportDirectory, 'qualification-timings.json'), 'utf8'));
     assert.equal(timings.passed, false);

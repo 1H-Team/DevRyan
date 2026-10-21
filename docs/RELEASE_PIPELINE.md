@@ -45,6 +45,12 @@ Qualification reports contain baseline identities and phase durations for downlo
 
 ## Timing acceptance
 
+Upgrade preparation starts with v2.0.2 before the heavier newest-three aging
+inputs. Every lane still uses its unmodified released server and runtime and
+must preserve history. Candidate retries resolve GitHub's copied successful job
+records to the original execution with matching start and completion times;
+the source, producing attempt and exact DMG bytes must still match.
+
 The interim target is **13–15 minutes** and the final target is **at most 10 minutes**, measured from the exact main-push CI workflow's `created_at` through successful updater discovery, including queues, publication and cleanup. Neither target is demonstrated by this implementation. The earlier 70.7-second post-report gap included report writing and synchronous scratch deletion; cleanup is a hypothesis until the new phase measurements establish its cost.
 
 For each of the next three authorized routine releases, retain the main CI/release run IDs, their SHA, main CI creation time, `[release] updater-discovery-verified-at` log timestamp, total elapsed time, job queue/run times and qualification phase reports. Report the interim result first. Claim the final target only if all three totals meet it; otherwise identify the measured remaining bottleneck before proposing more capacity. Manual dry runs validate packaging/qualification only and do not count toward these three observations. Ubuntu execution compatibility still needs its hosted CI run; local macOS tests do not prove it.

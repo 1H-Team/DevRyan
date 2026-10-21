@@ -128,6 +128,9 @@ evidence. Failed-command reports include only the executable basename and exit
 code, never subprocess output or arguments.
 The dedicated DMG mount scope owns attach/detach and its disk-image helpers;
 ordinary command cleanup must not stop those helpers before extraction finishes.
+The v2.0.2 profile is prepared first, before importing the heavier recent-release
+aging inputs, to isolate its original cold-boot deadline. Its source, runtime,
+deadline, readiness and retained/deleted history requirements stay unchanged.
 The final-DMG profile pins the Builder model and thinking level through ordinary
 saved agent selections, as well as pinning the helper model, before UI submission.
 

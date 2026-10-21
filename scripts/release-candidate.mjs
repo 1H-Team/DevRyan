@@ -54,7 +54,12 @@ export async function waitForCandidate({ environment = process.env, request, now
     if (artifact && metadata && producer?.conclusion === 'success') {
       if ([artifact, metadata].some(row => String(row.workflow_run?.id) !== identity.runID || row.workflow_run?.head_sha !== identity.revision)) throw new Error('Candidate artifact belongs to another source/run');
       if (now() >= deadline) break;
-      const producerAttempt = String(producer.run_attempt);
+      // GitHub copies successful jobs into retries with a new ID/attempt but unchanged execution times.
+      const execution = producer.started_at && producer.completed_at
+        ? jobs.filter(job => job.name === producer.name && job.conclusion === 'success'
+          && job.started_at === producer.started_at && job.completed_at === producer.completed_at).sort((a, b) => a.id - b.id)[0]
+        : producer;
+      const producerAttempt = String(execution.run_attempt);
       if (!/^\d+$/.test(producerAttempt) || Number(producerAttempt) > Number(identity.attempt)) throw new Error('Invalid producer attempt');
       return { artifact, identity: { ...identity, attempt: producerAttempt } };
     }

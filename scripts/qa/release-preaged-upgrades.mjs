@@ -28,7 +28,8 @@ export async function runPreagedUpgrades({ reportDirectory, environment = proces
   let passed = false;
   try {
     const prepareInput = createBaselineInputs(root.dir);
-    for (const lane of REQUIRED_UPGRADE_LANES) {
+    // The oldest released controller has a tight boot budget: start it before the larger aging inputs.
+    for (const lane of ['v2.0.2', ...REQUIRED_UPGRADE_LANES.filter(lane => lane !== 'v2.0.2')]) {
       prepared.push(await prepare({ directBaseline: lane === 'aging' ? undefined : lane, hopTimeoutMs: 240_000,
         report: laneReport(reportDirectory, lane), prepareInput }));
     }
