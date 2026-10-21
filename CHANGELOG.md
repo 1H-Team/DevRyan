@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.8] - 2026-10-21
+
+- Retire Bot execution across the interface and runtimes while preserving installed data and ordinary scheduled tasks.
+- Choose thinking levels from the model picker footer and remove providers directly from the provider list.
+- Improve managed-task provider retries, recovery feedback and session history handling.
+- Update the build toolchain and streamline release qualification, with portable CI restoration of the pinned Claude executable.
+
 ## [2.1.7] - 2026-10-21
 
 - Preserve managed-task recovery ownership after provider failures and explain execution recovery failures in chat.

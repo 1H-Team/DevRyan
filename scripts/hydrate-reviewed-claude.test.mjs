@@ -3,10 +3,22 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { hydrateReviewedClaude } from './hydrate-reviewed-claude.mjs';
+import { downloadPinnedClaude, hydrateReviewedClaude } from './hydrate-reviewed-claude.mjs';
 import { REVIEWED_CLAUDE_ASSETS } from '../packages/web/server/lib/opencode/runtime-host/reviewed-claude-transform.js';
 
 const relative = 'packages/web/runtime/reviewed-inputs/claude-1.8.0/assets/DevRyan-Claude-darwin-arm64';
+
+test('portable hydration verifies the pinned archive before writing an executable', async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-hydrate-portable-'));
+  try {
+    await assert.rejects(downloadPinnedClaude(directory, async (url, options) => {
+      assert.equal(url, 'https://registry.npmjs.org/@anthropic-ai/claude-code-darwin-arm64/-/claude-code-darwin-arm64-2.1.302.tgz');
+      assert.equal(options.redirect, 'error');
+      return new Response('corrupt archive');
+    }), /claude_archive_integrity/);
+    assert.deepEqual(await fs.readdir(directory), []);
+  } finally { await fs.rm(directory, { recursive: true, force: true }); }
+});
 
 test('a changed existing binary is preserved and never replaced by a download', async () => {
   const repository = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-hydrate-existing-'));

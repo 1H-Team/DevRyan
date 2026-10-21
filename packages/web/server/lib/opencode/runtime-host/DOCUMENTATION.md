@@ -924,7 +924,10 @@ ARM64 Mach-O executable, and checks Apple's signature chain and Anthropic's
 flags and SDK initialize control response. It sends no prompt, denies network
 and Keychain command access, disables settings and tools, and waits for process
 termination before deleting scratch. `scripts/hydrate-reviewed-claude.mjs` uses
-the same downloader for the packaged fallback.
+the same downloader for the packaged fallback on macOS. Portable CI restores only
+the exact reviewed archive and executable bytes, checking pinned archive integrity,
+executable size and SHA-256 without invoking macOS tools; native packaging retains
+publisher verification and protocol preflight.
 
 `managed-claude-candidate.js` copies the verified artifact inventory, replacing
 only Claude and recording `claudeInstallation` (schema, package, version,
