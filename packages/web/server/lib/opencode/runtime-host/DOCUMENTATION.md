@@ -643,6 +643,23 @@ a journal that matches neither selector refuses with
 previous descriptor names. A different version or core digest keeps the full
 migration-safe clone.
 
+A clone hashes its copied tree several times (preparation record, prepared
+manifest, prepared-phase verification). `runtime-bundle.js` reuses a file's
+SHA-256 within the process while its device, inode, size, mode, mtime and ctime
+are unchanged, and hashes trees with bounded parallelism (8 files) in stable
+order; any modification changes ctime and is re-read.
+
+Each clone leaves its source bundle behind, a full copy of the user's data.
+`sweepSelectedLeftovers` (startup, inside `selection.lock` of an unheld
+selection) calls `pruneSupersededBundles` before artifact pruning. It keeps the
+selected bundle, `previousBundleID`, any bundle created at or after the selected
+one, both bundles of a pending Claude activation's `sourceSelection`, and every
+entry without a valid descriptor; it prunes nothing while a rebind is `pending`
+or `restoring`. Clone origins (`sources/clone.json` `migrationOrigin`) and
+source bundle IDs are only compared as strings, so removing `default-native` or
+an older source is safe. Removal renames to `.stale-*` first; an interrupted
+removal is swept at the next launch. Windows keeps every bundle.
+
 Claude stderr is drained into a finite, constructor-scoped process receipt
 reported as `native_claude_process` through the existing diagnostic journal.
 Receipts retain exit code, signal presence, bounded byte counts and allowlisted

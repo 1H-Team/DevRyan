@@ -27,12 +27,36 @@ const validID = value => typeof value === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.t
 const validHash = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 const fail = bundleFailure;
 const absolute = value => { if (typeof value !== 'string' || !path.isAbsolute(value) || path.normalize(value) !== value) throw fail('bundle_path_invalid'); return value; };
+// A clone hashes its whole copied tree for the preparation record, the prepared
+// manifest and prepared-phase verification (~0.9 GB, 34k files, each pass serial).
+// A digest is reused within this process while the file's device, inode, size,
+// mode, mtime and ctime are unchanged; any write or replacement changes ctime.
+// Only identities stable across the whole read are recorded.
+const hashedFiles = new Map();
+const fileIdentity = (file, stat) => `${file}\0${stat.dev}:${stat.ino}:${stat.size}:${stat.mode}:${stat.mtimeMs}:${stat.ctimeMs}`;
 const fileHashOwned = async file => {
   const stat = await fs.lstat(file);
   if (!stat.isFile() || stat.isSymbolicLink()) throw fail('bundle_file_invalid');
+  const identity = fileIdentity(file, stat), known = hashedFiles.get(identity);
+  if (known) return known;
   const digest = createHash('sha256');
   for await (const bytes of createReadStream(file, { highWaterMark: 1024 * 1024 })) digest.update(bytes);
-  return digest.digest('hex');
+  const value = digest.digest('hex');
+  const after = await fs.lstat(file).catch(() => null);
+  if (after && fileIdentity(file, after) === identity) {
+    if (hashedFiles.size >= 200_000) hashedFiles.clear();
+    hashedFiles.set(identity, value);
+  }
+  return value;
+};
+// Bounded parallel map that keeps input order.
+const HASH_CONCURRENCY = 8;
+const mapBounded = async (items, operation) => {
+  const results = new Array(items.length);
+  let next = 0;
+  const worker = async () => { while (next < items.length) { const index = next++; results[index] = await operation(items[index], index); } };
+  await Promise.all(Array.from({ length: Math.min(HASH_CONCURRENCY, items.length) }, worker));
+  return results;
 };
 const launch = value => {
   if (!isRecord(value) || !isRecord(value.global) || !validHash(value.artifactManifestSha256)) throw fail('bundle_descriptor_invalid');
@@ -152,17 +176,19 @@ const copyHomeSkillsOwned = async (sourceHome,targetHome,options={}) => {
 };
 const treeManifestOwned = async (root,options={}) => {
   if(options.windowsOwner)await options.windowsOwner.tree(root);
-  const rows = [];
+  const files = [];
   const walk = async (directory,relative='') => {
     for (const entry of (await fs.readdir(directory,{withFileTypes:true})).sort((a,b) => a.name.localeCompare(b.name))) {
       if(options.windowsOwner&&isWindowsPrivateControlName(entry.name))continue;
       const file = path.join(directory,entry.name), name = relative ? relative+'/'+entry.name:entry.name;
       if (entry.isDirectory()) await walk(file,name);
-      else if (entry.isFile()) rows.push({path:name,sha256:options.windowsOwner?(await options.windowsOwner.largeFile(file)).token.split(':')[2]:await fileHashOwned(file)});
+      else if (entry.isFile()) files.push({path:name,file});
       else throw fail('bundle_special_file_source');
     }
   };
-  await walk(root); return rows;
+  await walk(root);
+  if(options.windowsOwner){const rows=[];for(const {path:name,file} of files)rows.push({path:name,sha256:(await options.windowsOwner.largeFile(file)).token.split(':')[2]});return rows;}
+  return mapBounded(files,async ({path:name,file})=>({path:name,sha256:await fileHashOwned(file)}));
 };
 // The bundle database's SQLite wal-index (opencode.db-shm) is rebuildable shared memory
 // that every connection, including verify's read-only one, rewrites (read marks), so it
@@ -174,7 +200,13 @@ const durable = (rows,root,launch) => { const shm=path.relative(root,launch.open
 const verifyTreeOwned = async (root,rows,options={}) => {
   if (!Array.isArray(rows)) throw fail('bundle_manifest_invalid');
   for (const row of rows) if (!isRecord(row) || typeof row.path !== 'string' || row.path.split('/').some(part => !part || part === '..')
-    || !validHash(row.sha256) || (options.windowsOwner?(await options.windowsOwner.largeFile(path.join(root,row.path))).token.split(':')[2]:await fileHashOwned(path.join(root,row.path))) !== row.sha256) throw fail('bundle_snapshot_changed');
+    || !validHash(row.sha256)) throw fail('bundle_snapshot_changed');
+  if (options.windowsOwner) {
+    for (const row of rows) if ((await options.windowsOwner.largeFile(path.join(root,row.path))).token.split(':')[2] !== row.sha256) throw fail('bundle_snapshot_changed');
+    return;
+  }
+  const digests = await mapBounded(rows, row => fileHashOwned(path.join(root,row.path)));
+  if (digests.some((digest,index) => digest !== rows[index].sha256)) throw fail('bundle_snapshot_changed');
 };
 const reviewedDocuments = async (value,maps,options={}) => {
   const configuration=await readBundleJSONOwned(value.reviewedNativeConfigPath,options), plugins=await readBundleJSONOwned(value.reviewedPluginManifestPath,options);

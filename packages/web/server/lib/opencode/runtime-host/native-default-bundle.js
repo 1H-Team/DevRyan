@@ -88,6 +88,51 @@ const sweepStaleDrafts=async (controlRoot,options={})=>{
  if(names.length)await owned(bundles,controlRoot);
  for(const name of names){const entry=path.join(bundles,name);await owned(entry,bundles);if(operations.windows)await options.windowsOwner.removeTree(entry,await options.windowsOwner.tree(entry));else await fs.rm(entry,{recursive:true});}
 };
+const optionalJSON=async file=>{try{return await readBundleJSON(file);}catch(error){if(error.code==='ENOENT')return null;throw error;}};
+/** Inside selection.lock of an unheld selection. Each clone upgrade leaves its source
+ * bundle behind (a full copy of the user's data), so bundles nothing can select again
+ * are removed. Kept: the selected bundle, its rollback target (previousBundleID), any
+ * bundle created at or after the selected one (a pending upgrade candidate), both
+ * bundles of a pending Claude activation's source selection (its restore needs them),
+ * and every entry without a valid descriptor (an interrupted or concurrent copy).
+ * Nothing is pruned while a rebind is unsettled. Clone origins and source bundle IDs
+ * are only compared as strings, never opened. Removal renames aside first, so an
+ * interrupted removal is swept as a stale draft at the next launch. */
+export const pruneSupersededBundles=async(controlRoot,options={})=>{
+ if(nativeBundleFileOperations(options).windows)return [];
+ const rebind=await optionalJSON(path.join(controlRoot,'rebind','intent.json'));
+ if(rebind!==null&&(!isRecord(rebind)||['pending','restoring'].includes(rebind.state)))return [];
+ const selection=await readBundleJSON(path.join(controlRoot,'selection.json'));
+ if(!isRecord(selection)||typeof selection.selectedBundleID!=='string'||selection.reconciliationRequired)return [];
+ const keep=new Set([selection.selectedBundleID,selection.previousBundleID].filter(id=>typeof id==='string'));
+ const activation=await optionalJSON(path.join(controlRoot,'claude-activation.json'));
+ if(activation!==null){
+  if(!isRecord(activation))return [];
+  if(activation.state==='pending'){
+   if(!isRecord(activation.sourceSelection))return [];
+   for(const id of [activation.sourceSelection.selectedBundleID,activation.sourceSelection.previousBundleID])if(typeof id==='string')keep.add(id);
+  }
+ }
+ const bundles=path.join(controlRoot,'bundles');
+ const descriptors=new Map();
+ for(const name of (await fs.readdir(bundles)).sort()){
+  if(name.startsWith('.'))continue;
+  try{const value=await readBundleJSON(path.join(bundles,name,'descriptor.json'));
+   if(isRecord(value)&&value.bundleID===name&&Number.isFinite(value.createdAt))descriptors.set(name,value);}
+  catch{}
+ }
+ const selected=descriptors.get(selection.selectedBundleID);
+ if(!selected)return [];
+ const pruned=[];
+ for(const [name,value] of descriptors){
+  if(keep.has(name)||value.createdAt>=selected.createdAt)continue;
+  const entry=path.join(bundles,name);await owned(entry,bundles);
+  const stale=path.join(bundles,`.stale-${randomBytes(8).toString('hex')}`);
+  await fs.rename(entry,stale);await syncDirectory(bundles);await fs.rm(stale,{recursive:true});
+  pruned.push(name);
+ }
+ return pruned;
+};
 /** Inside the bootstrap lock of an unheld selection. It never waits for a lifecycle
  * operation: while one holds selection.lock, a later launch sweeps instead. Storage
  * hygiene never blocks a verified selected launch; its failure is only reported. */
@@ -96,6 +141,8 @@ const sweepSelectedLeftovers=async (controlRoot,privatePersistence={})=>{
   await withCrossProcessFileLock(path.join(controlRoot,'selection.lock'),async()=>{
    if(readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot},{allowHeldInspection:true}).admission==='held')return;
    await sweepStaleDrafts(controlRoot,privatePersistence);
+   const pruned=await pruneSupersededBundles(controlRoot,privatePersistence);
+   if(pruned.length)console.info(`[runtime-bundle] removed ${pruned.length} superseded runtime bundle(s)`);
    await pruneRetainedNativeArtifacts({controlRoot,...privatePersistence});
   },{timeoutMs:0,windowsLauncher:privatePersistence.windowsLauncher});
  }catch(error){
