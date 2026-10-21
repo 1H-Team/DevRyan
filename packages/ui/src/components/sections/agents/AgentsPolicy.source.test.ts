@@ -4,6 +4,7 @@ import { describe, expect, test } from 'bun:test';
 const pageSource = readFileSync(new URL('./AgentsPage.tsx', import.meta.url), 'utf8');
 const entriesSource = readFileSync(new URL('./useAgentsSettingsEntries.ts', import.meta.url), 'utf8');
 const sessionDefaultsSource = readFileSync(new URL('./SessionDefaultsPage.tsx', import.meta.url), 'utf8');
+const controlledPickerSource = readFileSync(new URL('../../chat/ControlledModelPicker.tsx', import.meta.url), 'utf8');
 
 describe('managed Agent settings presentation', () => {
   test('removes Global Behavior and falls back to an individual agent when hidden', () => {
@@ -41,10 +42,11 @@ describe('managed Agent settings presentation', () => {
     expect(sessionDefaultsSource).not.toContain('resetAgentModelSelection');
   });
 
-  test('the Helper Model uses the chat input pickers with a reasoning level and no explanatory text', () => {
+  test('the Helper Model uses the chat input picker with its reasoning footer and no explanatory text', () => {
     const helperSource = sessionDefaultsSource.slice(sessionDefaultsSource.indexOf('export const HelperModelSettings'), sessionDefaultsSource.indexOf('type AgentModelRow'));
     expect(helperSource).toContain('<ControlledModelPicker');
-    expect(helperSource).toContain('<ControlledVariantPicker');
+    expect(helperSource).not.toContain('ControlledVariantPicker');
+    expect(controlledPickerSource).toContain('<ThinkingSlider');
     expect(helperSource).not.toContain('ModelSelector');
     expect(helperSource).not.toContain('settings.sessionDefaults.helper.description');
     expect(helperSource).not.toContain('settings.sessionDefaults.helper.reasoning');

@@ -140,7 +140,8 @@ const prepare = () => {
 };
 
 const variantTrigger = (container: HostElement) => {
-  const trigger = container.find(node => node.getAttribute('class')?.includes('model-controls__variant-trigger') === true);
+  const trigger = container.find(node => node.getAttribute('class')?.includes('model-controls__model-trigger') === true)
+    ?.find(node => node.getAttribute('class')?.includes('model-controls__thinking') === true) ?? null;
   expect(trigger).not.toBeNull();
   return trigger!;
 };
@@ -153,7 +154,7 @@ const withControls = async (run: (container: HostElement, remount: (panel?: Reac
   prepare();
   beforeMount?.();
   let renderKey = 0;
-  const remount = async (panel: React.ComponentProps<typeof ModelControls>['mobilePanel'] = 'variant') => { await act(async () => { root.render(<I18nProvider><AgentHandoffGuardContext value={handoffGuard}><ModelControls key={renderKey++} mobilePanel={panel} onMobilePanelChange={() => {}} /></AgentHandoffGuardContext></I18nProvider>); }); };
+  const remount = async (panel: React.ComponentProps<typeof ModelControls>['mobilePanel'] = 'model') => { await act(async () => { root.render(<I18nProvider><AgentHandoffGuardContext value={handoffGuard}><ModelControls key={renderKey++} mobilePanel={panel} onMobilePanelChange={() => {}} /></AgentHandoffGuardContext></I18nProvider>); }); };
   try {
     await remount();
     await run(container, remount);

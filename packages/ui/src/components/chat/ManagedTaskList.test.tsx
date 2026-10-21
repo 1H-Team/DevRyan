@@ -387,7 +387,7 @@ describe('managed task presentation', () => {
     expect(html).toContain('This subtask ran out of time. Choose a model to continue it:');
     expect(html.match(/at least the original time window/g)).toHaveLength(1);
     expect(html).toContain('model-controls__model-trigger');
-    expect(html).toContain('model-controls__variant-trigger');
+    expect(html).toContain('model-controls__variant-label');
     expect(html).toContain('Try Again');
   });
 
@@ -673,7 +673,7 @@ describe('managed task presentation', () => {
     expect(html).not.toContain('Provider connection ended');
     expect(html).toContain('GitHub Copilot / GPT 4.1');
     expect(html).toContain('model-controls__model-trigger');
-    expect(html).toContain('model-controls__variant-trigger');
+    expect(html).toContain('model-controls__variant-label');
     expect(html).not.toContain('disabled=""');
     expect(html).toContain('Try Again');
   });

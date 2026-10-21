@@ -9,7 +9,7 @@ export type { CursorAcpVariantState } from '@/lib/providers/cursorThinking';
 
 export { shouldHideCursorAcpFastModel } from '@/lib/providers/cursorAcp';
 
-export type MobileControlsPanel = 'model' | 'agent' | 'variant' | null;
+export type MobileControlsPanel = 'model' | 'agent' | null;
 
 export const isPrimaryMode = (mode?: string) => mode === 'primary' || mode === 'all';
 

@@ -17,13 +17,36 @@ const sliceBetween = (code: string, start: string, end: string) => {
 
 describe('ModelControls picker thinking footer', () => {
     test('replaces the keyboard hint footer with the thinking slider', () => {
-        const footer = sliceBetween(source(), '{/* Thinking footer for the selected model */}', '</DropdownMenuContent>');
+        const footer = sliceBetween(source(), '{/* Thinking footer for the selected model, pinned under the model list */}', '</DropdownMenuContent>');
 
         expect(footer).toContain('<ThinkingSlider');
         expect(footer).toContain('thinkingControl.apply({ effort })');
         expect(footer).toContain('thinkingControl.apply({ fastEnabled })');
         expect(source()).not.toContain('chat.modelControls.keyboardHint');
         expect(Object.keys(dict).some((key) => key.startsWith('chat.modelControls.keyboardHint'))).toBe(false);
+    });
+
+    test('pins the thinking footer inside the models column, right of the provider rail', () => {
+        const code = source();
+        const column = sliceBetween(code, '<div className="flex min-h-0 min-w-0 flex-1 flex-col">', '</DropdownMenuContent>');
+        const listEnd = column.indexOf('</ScrollableOverlay>');
+        const footerStart = column.indexOf('{/* Thinking footer for the selected model, pinned under the model list */}');
+
+        expect(listEnd).toBeGreaterThan(-1);
+        expect(footerStart).toBeGreaterThan(listEnd);
+        // The footer is the column's last child: after it only the column and the rail row close.
+        expect(column.slice(footerStart)).toContain('model-controls__picker-thinking shrink-0');
+        expect(/\) : null\}\s*<\/div>\s*<\/div>\s*$/.test(column.slice(footerStart))).toBe(true);
+    });
+
+    test('the thinking level is part of the model trigger, not a second control', () => {
+        const code = source();
+        const trigger = sliceBetween(code, "'model-controls__model-trigger flex items-center gap-1.5 cursor-pointer", '</DropdownMenuTrigger>');
+
+        expect(trigger).toContain('{renderThinkingLabel()}');
+        expect(code).not.toContain('renderVariantSelector');
+        expect(code).not.toContain('ThinkingSliderPopover');
+        expect(code).not.toContain("setActiveMobilePanel('variant')");
     });
 
     test('selecting a picker row keeps the picker open', () => {

@@ -69,12 +69,15 @@ describe('ModelControls Cursor fast-only controls', () => {
         expect(code).not.toContain('<TextLoop interval={2.1} transition={{ duration: 0.25 }} trigger={shouldAnimate} reserveSpace={false}>');
     });
 
-    test('show all providers action opens providers settings without add-provider mode', () => {
+    test('the rail settings action opens providers settings without add-provider mode', () => {
         const code = source();
 
         expect(code).toContain('const openProvidersSettings = React.useCallback(() => {');
         expect(code).toContain("setSettingsPage('providers');");
-        expect(code).toContain("t('chat.modelControls.showAllProviders')");
+        expect(code).toContain("settingsLabel={t('chat.modelControls.providerSettings')}");
+        expect(code).toContain('onOpenSettings={openProvidersSettings}');
+        expect(code).not.toContain('openAddProviderSettings');
+        expect(code).not.toContain('ADD_PROVIDER_ID');
         expect(code).not.toContain('const openProvidersSettings = React.useCallback(() => {\\n        setSelectedProvider(ADD_PROVIDER_ID);');
     });
 

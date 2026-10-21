@@ -11,7 +11,6 @@ import { cn } from '@/lib/utils';
 import type { ProviderRecoverySelection } from '@/stores/useProviderRecoveryStore';
 import {
   ControlledModelPicker,
-  ControlledVariantPicker,
   type ControlledModelPickerProvider,
 } from './ControlledModelPicker';
 
@@ -159,12 +158,6 @@ export function ModelRecoveryCard({
                   onChange={onSelectionChange}
                   disabled={pending}
                   align="end"
-                />
-                <ControlledVariantPicker
-                  providers={providers}
-                  value={selection}
-                  onChange={onSelectionChange}
-                  disabled={pending}
                 />
               </div>
             </div>

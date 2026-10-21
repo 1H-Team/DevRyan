@@ -1,4 +1,4 @@
-import { ThinkingSlider, ThinkingSliderPopover } from './ThinkingSlider';
+import { ThinkingSlider } from './ThinkingSlider';
 import { getChatThinkingState, resolveChatThinkingVariant } from '@/lib/providers/chatThinking';
 import React from 'react';
 import type { ComponentType } from 'react';
@@ -329,7 +329,6 @@ const CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
     minimumFractionDigits: 2,
 });
 
-const ADD_PROVIDER_ID = '__add_provider__';
 
 const formatTokens = (value?: number | null) => {
     if (typeof value !== 'number' || Number.isNaN(value)) {
@@ -418,7 +417,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const currentVariant = useConfigStore((state) => state.currentVariant);
     const currentAgentName = useConfigStore((state) => state.currentAgentName);
     const settingsDefaultAgent = useConfigStore((state) => state.settingsDefaultAgent);
-    const setSelectedProvider = useConfigStore((state) => state.setSelectedProvider);
     const setProviderModel = useConfigStore((state) => state.setProviderModel);
     const setCurrentVariant = useConfigStore((state) => state.setCurrentVariant);
     const getCurrentModelVariants = useConfigStore((state) => state.getCurrentModelVariants);
@@ -526,13 +524,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     // Use global state for model selector (allows Ctrl+M shortcut)
     const agentMenuOpen = isModelSelectorOpen;
     const setAgentMenuOpen = setModelSelectorOpen;
-    const openAddProviderSettings = React.useCallback(() => {
-        setSelectedProvider(ADD_PROVIDER_ID);
-        setSettingsPage('providers');
-        setSettingsDialogOpen(true);
-        setAgentMenuOpen(false);
-        closeMobilePanel();
-    }, [setSelectedProvider, setSettingsPage, setSettingsDialogOpen, setAgentMenuOpen, closeMobilePanel]);
     const openProvidersSettings = React.useCallback(() => {
         setSettingsPage('providers');
         setSettingsDialogOpen(true);
@@ -595,6 +586,13 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     React.useEffect(() => {
         setExpandedMobileModelKey(null);
     }, [mobileModelQuery]);
+
+    // The model panel is the only thinking entry point on mobile, so it opens with the current row's slider expanded.
+    React.useEffect(() => {
+        if (activeMobilePanel === 'model' && currentProviderId && currentModelId) {
+            setExpandedMobileModelKey(buildModelRefKey(currentProviderId, currentModelId));
+        }
+    }, [activeMobilePanel, currentModelId, currentProviderId]);
 
     // Handle model selector close behavior (separate from agent selector)
     const prevModelSelectorOpenRef = React.useRef(isModelSelectorOpen);
@@ -696,7 +694,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const variantLabelAlignmentClass = isDesktop
         ? 'translate-y-[3px]'
         : 'translate-y-[2px]';
-    const variantGroupSpacingClass = '-ml-1';
     const agentLabelAlignmentClass = isDesktop ? undefined : '-translate-y-px';
     const renderEditModeIcon = React.useCallback((mode: EditPermissionMode, iconClass = editToggleIconClass) => {
         const combinedClassName = cn(iconClass, 'flex-shrink-0');
@@ -2369,66 +2366,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         );
     };
 
-    const renderMobileVariantPanel = () => {
-        if (!isCompact) return null;
-
-        const targetProviderId = currentProviderId;
-        const targetModelId = currentModelId;
-        if (!targetProviderId || !targetModelId) return null;
-
-        const selectedVariant = resolveModelVariantSelection(targetProviderId, targetModelId);
-        const targetProvider = providers.find((entry) => entry.id === targetProviderId);
-        const targetVariants = getChatThinkingState(targetProvider, targetModelId, selectedVariant).levels;
-        const cursorVariantState = getCursorAcpVariantState(targetProvider, targetModelId, selectedVariant);
-        const genericVariantState = cursorVariantState ? null : getGenericModelVariantControlState(targetProvider, targetModelId, selectedVariant);
-        if (targetVariants.length === 0 && !cursorVariantState && !genericVariantState) return null;
-
-        const handleSelect = (variant: string | null | undefined) => {
-            const result = applyModelSelectionWithVariant(targetProviderId, targetModelId, variant, undefined, { modelProvenance: 'explicit' });
-            if (result !== 'applied') {
-                return;
-            }
-        };
-
-        const handleCursorSelect = (updates: { fastEnabled?: boolean; thinkingEnabled?: boolean; effort?: string }) => {
-            if (!targetProvider || !cursorVariantState) {
-                return;
-            }
-            const selection = resolveCursorAcpVariantSelection(targetProvider, targetModelId, selectedVariant, updates);
-            const result = applyModelSelectionWithVariant(targetProviderId, selection.modelId, selection.variant, undefined, { modelProvenance: 'explicit' });
-            if (result !== 'applied') {
-                return;
-            }
-        };
-
-        const handleGenericSelect = (updates: { fastEnabled?: boolean; variant?: string }) => {
-            if (!targetProvider || !genericVariantState) {
-                return;
-            }
-            const selection = resolveGenericModelVariantSelection(targetProvider, targetModelId, selectedVariant, updates);
-            const result = applyModelSelectionWithVariant(targetProviderId, selection.modelId, selection.variant, undefined, { modelProvenance: 'explicit' });
-            if (result !== 'applied') {
-                return;
-            }
-        };
-
-        return (
-            <MobileOverlayPanel
-                open={activeMobilePanel === 'variant'}
-                onClose={closeMobilePanel}
-                title=""
-
-            >
-                <ThinkingSlider levels={targetVariants} value={getChatThinkingState(targetProvider, targetModelId, selectedVariant).selected} providerId={targetProviderId}
-                    onChange={(effort) => cursorVariantState ? handleCursorSelect({ effort }) : genericVariantState ? handleGenericSelect({ variant: effort }) : handleSelect(effort)}
-                    fastMode={(cursorVariantState ?? genericVariantState)?.canToggleFast ? {
-                        enabled: (cursorVariantState ?? genericVariantState)?.fastEnabled ?? false,
-                        onChange: (fastEnabled) => cursorVariantState ? handleCursorSelect({ fastEnabled }) : handleGenericSelect({ fastEnabled }),
-                    } : undefined} />
-            </MobileOverlayPanel>
-        );
-    };
-
     const renderMobileAgentPanel = () => {
         if (!isCompact) return null;
 
@@ -2983,6 +2920,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                             </span>
                                         </span>
                                     )}
+                                    {renderThinkingLabel()}
                                 </button>
                             </DropdownMenuTrigger>
                         </TooltipTrigger>
@@ -2993,10 +2931,8 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                 activeTabId={view?.tab?.id ?? null}
                                 dimmed={view?.mode === 'search'}
                                 onSelectTab={selectDesktopPickerTab}
-                                addProviderLabel={t('chat.modelControls.addNewProvider')}
-                                showAllProvidersLabel={t('chat.modelControls.showAllProviders')}
-                                onAddProvider={openAddProviderSettings}
-                                onShowAllProviders={openProvidersSettings}
+                                settingsLabel={t('chat.modelControls.providerSettings')}
+                                onOpenSettings={openProvidersSettings}
                             />
                             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                             {/* Search Input */}
@@ -3083,13 +3019,11 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                     ) : null}
                                 </div>
                             </ScrollableOverlay>
-                            </div>
-                            </div>
 
-                            {/* Thinking footer for the selected model */}
+                            {/* Thinking footer for the selected model, pinned under the model list */}
                             {thinkingControl ? (
                                 <div
-                                    className="model-controls__picker-thinking border-t border-border/40 px-4 pt-2 pb-3"
+                                    className="model-controls__picker-thinking shrink-0 border-t border-border/40 px-4 pt-2 pb-3"
                                     onKeyDown={(event) => event.stopPropagation()}
                                 >
                                     <ThinkingSlider
@@ -3104,6 +3038,8 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                     />
                                 </div>
                             ) : null}
+                            </div>
+                            </div>
                         </DropdownMenuContent>
                     </DropdownMenu>
                 ) : (
@@ -3149,6 +3085,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                         {currentModelDisplayName}
                                     </span>
                                 </span>
+                                {renderThinkingLabel()}
                             </>
                         )}
                     </button>
@@ -3315,27 +3252,21 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         return { provider, normalized, levels, selected, fastState, unconfirmed, apply };
     };
 
-    const renderVariantSelector = () => {
+    // Thinking level shown inside the model trigger; the picker owns the slider, so there is no separate control.
+    const renderThinkingLabel = () => {
         if (!isReady) return null;
         const control = getCurrentThinkingControl();
         if (!control) return null;
-        const { provider, normalized, levels, selected, fastState, unconfirmed, apply } = control;
+        const { provider, normalized, selected, fastState, unconfirmed } = control;
         const defaultLevel = currentVariant === null ? getModelDefaultThinkingLevel(provider, currentModelId) : undefined;
         const display = currentVariant === null
             ? defaultLevel ? formatEffortLabel(defaultLevel, { providerId: currentProviderId }) : 'Default'
             : selected ? formatEffortLabel(selected, { providerId: currentProviderId }) : 'Fast';
-        const trigger = <button type="button" aria-label={t('chat.modelControls.thinking')}
-            title={unconfirmed ? `Saved selection: ${normalized}. Availability is not confirmed by the current catalog.` : undefined}
-            onClick={isCompact ? () => setActiveMobilePanel('variant') : undefined}
-            className={cn('model-controls__variant-trigger flex min-w-0 shrink-0 items-center gap-1 border-0 bg-transparent p-0 text-left text-muted-foreground hover:opacity-70', buttonHeight)}>
+        return <span className="model-controls__thinking ml-0.5 flex min-w-0 shrink-0 items-center gap-1 text-muted-foreground"
+            title={unconfirmed ? `Saved selection: ${normalized}. Availability is not confirmed by the current catalog.` : undefined}>
             <span className={cn('model-controls__variant-label truncate text-[10px] font-medium leading-[14px] -my-[2px] py-[2px]', variantLabelAlignmentClass, isDesktop && 'max-w-[90px]', unconfirmed && 'text-[var(--status-warning)]')}>{display}{unconfirmed ? ' · Unconfirmed' : ''}</span>
             {fastState?.fastEnabled ? <RiFlashlightFill aria-label="Fast Mode" className="h-3.5 w-3.5 text-[var(--status-warning)]" /> : null}
-        </button>;
-        if (isCompact) return trigger;
-        return <ThinkingSliderPopover trigger={trigger}>
-            <ThinkingSlider levels={levels} value={selected} providerId={currentProviderId} onChange={(effort) => apply({ effort })}
-                fastMode={fastState?.canToggleFast ? { enabled: fastState.fastEnabled, onChange: (fastEnabled) => apply({ fastEnabled }) } : undefined} />
-        </ThinkingSliderPopover>;
+        </span>;
     };
 
     const renderAgentSelector = () => {
@@ -3571,17 +3502,14 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                             isMobile && 'overflow-hidden'
                         )}
                     >
-                        {isCompact ? renderVariantSelector() : null}
                         {!isCompact ? renderAgentSelector() : null}
                         {renderModelSelector()}
-                        {!isCompact ? <div className={cn('flex min-w-0 shrink-0', variantGroupSpacingClass)}>{renderVariantSelector()}</div> : null}
                         {isCompact ? renderAgentSelector() : null}
                     </div>
                 </div>
             ) : null}
 
             {renderMobileModelPanel()}
-            {renderMobileVariantPanel()}
             {renderMobileAgentPanel()}
             {renderMobileModelTooltip()}
             {renderMobileAgentTooltip()}

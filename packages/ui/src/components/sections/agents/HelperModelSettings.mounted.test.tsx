@@ -14,8 +14,8 @@ type PickerSelection={providerId:string;modelId:string;variant:string|null};
 type PickerProps={disabled:boolean;value:PickerSelection;onChange:(selection:PickerSelection)=>void};
 const pickerValues:PickerSelection[]=[];
 mock.module('@/components/chat/ControlledModelPicker',()=>({
- ControlledModelPicker:({disabled,value,onChange}:PickerProps)=>{pickerValues.push(value);return <button disabled={disabled} onClick={()=>onChange({providerId:'helper',modelId:'chosen',variant:null})}>Choose helper</button>;},
- ControlledVariantPicker:({disabled,value,onChange}:PickerProps)=><button disabled={disabled} onClick={()=>onChange({...value,variant:'high'})}>Choose reasoning</button>,
+ // One picker owns the model rows and the thinking footer.
+ ControlledModelPicker:({disabled,value,onChange}:PickerProps)=>{pickerValues.push(value);return <><button disabled={disabled} onClick={()=>onChange({providerId:'helper',modelId:'chosen',variant:null})}>Choose helper</button><button disabled={disabled} onClick={()=>onChange({...value,variant:'high'})}>Choose reasoning</button></>;},
 }));
 const errors:string[]=[];
 const ui = await import('@/components/ui');

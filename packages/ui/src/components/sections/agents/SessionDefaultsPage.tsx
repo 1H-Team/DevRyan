@@ -1,5 +1,5 @@
 import { DEFAULT_HELPER_MODEL_SELECTION, createHelperModelRevision, parseHelperModelSelection } from '@/lib/helperModelSelection';
-import { ControlledModelPicker, ControlledVariantPicker } from '@/components/chat/ControlledModelPicker';
+import { ControlledModelPicker } from '@/components/chat/ControlledModelPicker';
 import React from 'react';
 import { RiAiAgentLine, RiArrowRightSLine, RiChatHistoryLine } from '@remixicon/react';
 import type { Agent } from '@opencode-ai/sdk/v2';
@@ -281,7 +281,6 @@ export const HelperModelSettings: React.FC = () => {
           </> : null}
           {/* Same session-free pickers and filtering as the chat input. */}
           <ControlledModelPicker providers={providers} value={value} disabled={saving} align="end" onChange={(next) => { void save(next); }} />
-          <ControlledVariantPicker providers={providers} value={value} disabled={saving} onChange={(next) => { void save(next); }} />
         </div>
       </div>
     </SettingsDetailSection>

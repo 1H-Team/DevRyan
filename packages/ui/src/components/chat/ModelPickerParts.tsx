@@ -1,5 +1,5 @@
 import React from 'react';
-import { RiAddLine, RiArrowLeftSLine, RiArrowRightSLine, RiEyeLine, RiStarFill } from '@remixicon/react';
+import { RiArrowLeftSLine, RiArrowRightSLine, RiSettings3Line, RiStarFill } from '@remixicon/react';
 
 import { ProviderLogo } from '@/components/ui/ProviderLogo';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -50,19 +50,15 @@ export const ModelPickerRail: React.FC<{
     activeTabId: string | null;
     dimmed: boolean;
     onSelectTab: (tabId: string) => void;
-    addProviderLabel: string;
-    showAllProvidersLabel: string;
-    onAddProvider: () => void;
-    onShowAllProviders: () => void;
+    settingsLabel: string;
+    onOpenSettings: () => void;
 }> = ({
     tabs,
     activeTabId,
     dimmed,
     onSelectTab,
-    addProviderLabel,
-    showAllProvidersLabel,
-    onAddProvider,
-    onShowAllProviders,
+    settingsLabel,
+    onOpenSettings,
 }) => {
     const favoritesTab = tabs.find((tab) => tab.kind === 'favorites');
     const providerTabs = tabs.filter((tab) => tab.kind === 'provider');
@@ -99,11 +95,8 @@ export const ModelPickerRail: React.FC<{
                 ))}
             </div>
             <div className="mt-1 flex flex-col items-center gap-1 border-t border-border/40 pt-1.5">
-                <RailButton label={addProviderLabel} onClick={onAddProvider}>
-                    <RiAddLine className="h-4 w-4" />
-                </RailButton>
-                <RailButton label={showAllProvidersLabel} onClick={onShowAllProviders}>
-                    <RiEyeLine className="h-4 w-4" />
+                <RailButton label={settingsLabel} onClick={onOpenSettings}>
+                    <RiSettings3Line className="h-4 w-4" />
                 </RailButton>
             </div>
         </div>

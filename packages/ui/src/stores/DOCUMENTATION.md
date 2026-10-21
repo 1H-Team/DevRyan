@@ -715,8 +715,8 @@ window stays absent. No second usage enrollment is owned by the UI.
 `useConfigStore.settingsHelperModelSelection` holds the shared typed helper tuple,
 optional reasoning `variant` and revision, independently of primary selection,
 notification Zen, and legacy Git preferences. Settings → Agents → Session Defaults
-uses the session-free chat pickers (`ControlledModelPicker` and
-`ControlledVariantPicker`, with the chat filtering and `ThinkingSlider`) above
+uses the session-free chat picker (`ControlledModelPicker`, one control with the
+chat filtering and a `ThinkingSlider` footer for the selected model) above
 Cleanup. `variant: null` in the picker is Default reasoning and is saved without a
 `variant`; changing the model keeps the variant only if the new model offers it.
 Save persists a new revision; personal reset removes only this override.

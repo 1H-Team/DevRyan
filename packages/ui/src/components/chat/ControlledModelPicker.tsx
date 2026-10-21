@@ -1,9 +1,9 @@
 import { getModelVariantControlState, getModelVariantDisplayState, resolveModelVariantSelection } from '@/lib/providers/variantControls';
-import { ThinkingSlider, ThinkingSliderPopover } from './ThinkingSlider';
+import { ThinkingSlider } from './ThinkingSlider';
 import { getChatThinkingState, resolveChatThinkingVariant } from '@/lib/providers/chatThinking';
 import { getCursorAcpVariantState, resolveCursorAcpVariantSelection } from '@/lib/providers/cursorThinking';
 import React from 'react';
-import { RiCheckLine, RiSearchLine } from '@remixicon/react';
+import { RiCheckLine, RiFlashlightFill, RiSearchLine } from '@remixicon/react';
 
 import {
   DropdownMenu,
@@ -76,6 +76,18 @@ export function ControlledModelPicker({
   const selected = options.find((option) => (
     option.providerId === value.providerId && option.modelId === displayModelId
   ));
+  // Thinking for the selected model lives in this picker: label in the trigger, slider under the list.
+  const { levels, selected: activeLevel } = getChatThinkingState(nativeProvider, value.modelId, value.variant);
+  const normalizedVariant = resolveChatThinkingVariant(nativeProvider, value.modelId, value.variant);
+  const cursorThinking = getCursorAcpVariantState(nativeProvider, value.modelId, normalizedVariant);
+  const fastState = cursorThinking ?? getModelVariantControlState(nativeProvider, value.modelId, normalizedVariant);
+  const hasThinking = levels.length > 0 || Boolean(fastState?.canToggleFast);
+  const applyThinking = (updates: { effort?: string; fastEnabled?: boolean }) => {
+    const next = cursorThinking
+      ? resolveCursorAcpVariantSelection(nativeProvider, value.modelId, normalizedVariant, updates)
+      : resolveModelVariantSelection(nativeProvider, value.modelId, normalizedVariant, { variant: updates.effort, fastEnabled: updates.fastEnabled });
+    onChange({ ...value, modelId: next.modelId, variant: next.variant ?? null });
+  };
   const grouped = React.useMemo(() => {
     const groups = new Map<string, { name: string; options: ControlledModelOption[] }>();
     for (const option of ordered) {
@@ -98,7 +110,6 @@ export function ControlledModelPicker({
           : undefined,
       ) ?? null,
     });
-    setOpen(false);
   };
 
   return (
@@ -115,6 +126,12 @@ export function ControlledModelPicker({
         >
           <ProviderLogo providerId={selected?.providerId ?? value.providerId} className="h-[17.3px] w-[17.3px] shrink-0" />
           <span className="max-w-[260px] truncate">{selected?.modelName ?? value.modelId}</span>
+          {hasThinking ? <span className="ml-0.5 flex shrink-0 items-center gap-1 text-muted-foreground">
+            <span className="model-controls__variant-label max-w-[90px] truncate text-[10px] leading-[14px] -my-[2px] py-[2px]">
+              {activeLevel ? formatEffortLabel(activeLevel, { providerId: value.providerId }) : 'Fast'}
+            </span>
+            {fastState?.fastEnabled ? <RiFlashlightFill aria-label="Fast Mode" className="h-3.5 w-3.5 text-[var(--status-warning)]" /> : null}
+          </span> : null}
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="flex w-[min(380px,calc(100vw-2rem))] flex-col p-0" align={align}>
@@ -164,42 +181,13 @@ export function ControlledModelPicker({
             ))}
           </div>
         </ScrollableOverlay>
+        {hasThinking ? (
+          <div className="shrink-0 border-t border-border/40 px-4 pt-2 pb-3" onKeyDown={(event) => event.stopPropagation()}>
+            <ThinkingSlider levels={levels} value={activeLevel} providerId={value.providerId} disabled={disabled} onChange={(effort) => applyThinking({ effort })}
+              fastMode={fastState?.canToggleFast ? { enabled: fastState.fastEnabled, onChange: (fastEnabled) => applyThinking({ fastEnabled }) } : undefined} />
+          </div>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );
-}
-
-export function ControlledVariantPicker({
-  providers,
-  value,
-  onChange,
-  disabled = false,
-}: {
-  providers: ControlledModelPickerProvider[];
-  value: ProviderRecoverySelection;
-  onChange(selection: ProviderRecoverySelection): void;
-  disabled?: boolean;
-}) {
-  const { t } = useI18n();
-  const provider = findControlledModelProvider(providers, value.providerId, value.modelId);
-  const { levels, selected: active } = getChatThinkingState(provider, value.modelId, value.variant);
-  const normalized = resolveChatThinkingVariant(provider, value.modelId, value.variant);
-  const cursor = getCursorAcpVariantState(provider, value.modelId, normalized);
-  const fastState = cursor ?? getModelVariantControlState(provider, value.modelId, normalized);
-  if (!levels.length && !fastState?.canToggleFast) return null;
-  const apply = (updates: { effort?: string; fastEnabled?: boolean }) => {
-    const next = cursor
-      ? resolveCursorAcpVariantSelection(provider, value.modelId, normalized, updates)
-      : resolveModelVariantSelection(provider, value.modelId, normalized, { variant: updates.effort, fastEnabled: updates.fastEnabled });
-    onChange({ ...value, modelId: next.modelId, variant: next.variant ?? null });
-  };
-  return <ThinkingSliderPopover disabled={disabled} trigger={
-    <button type="button" disabled={disabled} aria-label={t('chat.modelControls.thinking')}
-      className="model-controls__variant-trigger flex h-8 min-w-0 shrink-0 items-center border-0 bg-transparent p-0 text-left text-[10px] font-medium leading-[14px] text-muted-foreground hover:opacity-70 disabled:cursor-not-allowed disabled:opacity-50">
-      <span className="max-w-[90px] truncate leading-[14px] -my-[2px] py-[2px]">{active ? formatEffortLabel(active, { providerId: value.providerId }) : 'Fast'}</span>
-    </button>
-  }>
-    <ThinkingSlider levels={levels} value={active} providerId={value.providerId} disabled={disabled} onChange={(effort) => apply({ effort })}
-      fastMode={fastState?.canToggleFast ? { enabled: fastState.fastEnabled, onChange: (fastEnabled) => apply({ fastEnabled }) } : undefined} />
-  </ThinkingSliderPopover>;
 }
