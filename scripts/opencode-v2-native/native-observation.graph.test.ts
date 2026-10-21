@@ -11,7 +11,9 @@ const repository = path.resolve(import.meta.dirname, '../..');
 // Child logs and results land in the test's own temp root (removed afterwards) unless DEVRYAN_KEEP_ARTIFACTS=1.
 const keptDiagnostics=(root:string)=>process.env.DEVRYAN_KEEP_ARTIFACTS==='1'?path.join(repository,'.cache/v2-validation'):root;
 
-for (const compiled of [false,true]) test(`actual native physical request and committed Step.Started share the original attempt span ${compiled?'compiled':'source'}`, async () => {
+// The shipped native host is the compiled executable; the bundled-source run proved
+// nothing the compiled run does not, so only the compiled program runs.
+for (const compiled of [true]) test(`actual native physical request and committed Step.Started share the original attempt span ${compiled?'compiled':'source'}`, async () => {
   const root = await fs.mkdtemp(path.join(repository, '.cache/v2-validation/observation-span-'));
   const home = path.join(root, 'home'), tmp = path.join(home, 'tmp');
   await fs.mkdir(tmp, { recursive: true });

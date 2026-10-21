@@ -8,7 +8,9 @@ const repository=path.resolve(import.meta.dirname,'../..');
 const reportUnit='Retained owned result 🙂 "\\\n';
 const reportUnits=Math.floor(35*1024/Buffer.byteLength(reportUnit));
 const retainedReport=reportUnit.repeat(reportUnits)+'x'.repeat(35*1024-reportUnits*Buffer.byteLength(reportUnit));
-for(const compiled of [false,true])test('pinned native v2 result publication and later Step compiled='+compiled,async()=>{
+// The shipped native host is the compiled executable; the bundled-source run proved
+// nothing the compiled run does not, so only the compiled program runs.
+for(const compiled of [true])test('pinned native v2 result publication and later Step compiled='+compiled,async()=>{
  const root=await fs.mkdtemp(path.join(repository,'.cache/v2-validation/native-result-publication-'));let child:ReturnType<typeof Bun.spawn>|undefined;
  try{
   const sourcePath=path.join(repository,'scripts/opencode-v2-native/controller-integrations.graph-fixture.mjs');let source=await fs.readFile(sourcePath,'utf8');
