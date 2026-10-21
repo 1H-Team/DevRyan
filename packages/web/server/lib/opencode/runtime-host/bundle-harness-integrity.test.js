@@ -205,11 +205,12 @@ test('an unsettled lease or pending lease cleanup refuses as bundle_execution_un
 
 test('a ledger whose key listing exceeds 1 MiB inspects and relocates without buffering the listing',async()=>{
  const f=await fixture({state:'completed',acked:true});let names=0;
- for(let i=0;i<4200;i++){const key=`files/${String(i).padStart(6,'0')}${'a'.repeat(250)}/x.json`;names+=key.length+1;f.db.set(key,{i});}
- await f.db.commit();expect(names).toBeGreaterThan(1024*1024);
- expect((await f.verify()).sessionReferences).toEqual(['ses_removed']);
- const directory=f.member.directory,key=`files/${String(4199).padStart(6,'0')}${'a'.repeat(250)}/x.json`;
- await f.verify({relocate:true,checkpointID:'checkpoint',projectMap:[{sourceDirectory:directory,targetDirectory:directory}]});
+ const listingLimitBytes=32*1024,count=150,storeOptions={listingLimitBytes};
+ for(let i=0;i<count;i++){const key=`files/${String(i).padStart(6,'0')}${'a'.repeat(250)}/x.json`;names+=key.length+1;f.db.set(key,{i});}
+ await f.db.commit();expect(names).toBeGreaterThan(listingLimitBytes);
+ expect((await f.verify({storeOptions})).sessionReferences).toEqual(['ses_removed']);
+ const directory=f.member.directory,key=`files/${String(count-1).padStart(6,'0')}${'a'.repeat(250)}/x.json`;
+ await f.verify({storeOptions,relocate:true,checkpointID:'checkpoint',projectMap:[{sourceDirectory:directory,targetDirectory:directory}]});
  const storage=path.join(f.web,'harness','session-mutations',changeKey(directory)),after=await openChangeStore(storage,path.join(storage,'git'));
- expect(await after.get(key)).toEqual({i:4199});expect(await after.get('meta.json')).toMatchObject({directory});
+ expect(await after.get(key)).toEqual({i:count-1});expect(await after.get('meta.json')).toMatchObject({directory});
 },60_000);

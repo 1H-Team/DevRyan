@@ -124,7 +124,7 @@ async function readIntent(controlRoot) {
 
 /** Trusted native action only; prepares evidence but never reboots the machine. */
 export async function beginNativeBundleRebootRecovery({ controlRoot, expectedRevision, readBootIdentity = readMacosBootIdentity,
-  assertOwnerAbsent = assertNoLiveOwner, verifyArtifacts = verifyNativeRuntimeArtifacts, ownerLost = executionHostOwnerLost }) {
+  assertOwnerAbsent = assertNoLiveOwner, verifyArtifacts = verifyNativeRuntimeArtifacts, ownerLost = executionHostOwnerLost, storeOptions = {} }) { // storeOptions: openChangeStore overrides (tests shrink listingLimitBytes)
   await privateRoot(controlRoot);
   return withCrossProcessFileLock(path.join(controlRoot, 'bootstrap.lock'), () =>
     withCrossProcessFileLock(path.join(controlRoot, 'selection.lock'), async () => {
@@ -137,12 +137,12 @@ export async function beginNativeBundleRebootRecovery({ controlRoot, expectedRev
     const launcher = executionArtifacts(path.dirname(launch.artifactManifestPath)).launcher;
     const artifacts = await verifyArtifacts({ manifestPath: launch.artifactManifestPath, manifestSha256: launch.artifactManifestSha256, launcher, purpose: 'bundle-source' });
     if (artifacts.controller !== launch.controllerBinary) throw fail('bundle_artifact_generation_mismatch');
-    const before = await readBundleLeaseInventory(launch);
+    const before = await readBundleLeaseInventory(launch, { storeOptions });
     return lockLedgers(before, async () => {
       if (prior?.state === 'prepared') {
         let held = false;
         try {
-          const ledgers = await readBundleLeaseInventory(launch, { allRecords: true, intent: prior });
+          const ledgers = await readBundleLeaseInventory(launch, { allRecords: true, intent: prior, storeOptions });
           held = prior.bindingSha256 === bindingHash(binding) && prior.previousBoot === previousBoot && ledgers.inventorySha256 === prior.inventorySha256
             && canonicalJSON(before.map(row => row.root)) === canonicalJSON(ledgers.map(row => row.root));
           if (held) await assertLeasePins(ledgers, prior);
@@ -157,7 +157,7 @@ export async function beginNativeBundleRebootRecovery({ controlRoot, expectedRev
         // fence the current evidence instead of refusing every later launch.
         await fs.rename(intentPath(controlRoot), path.join(controlRoot, 'recovery', `reboot-superseded-${prior.fenceID}.json`));
       }
-      const ledgers = await readBundleLeaseInventory(launch, { allRecords: true });
+      const ledgers = await readBundleLeaseInventory(launch, { allRecords: true, storeOptions });
       if (canonicalJSON(before.map(row => row.root)) !== canonicalJSON(ledgers.map(row => row.root))) throw fail('bundle_reboot_recovery_changed');
       const leases = [];
       for (const ledger of ledgers) for (const row of ledger.records) {
@@ -189,7 +189,7 @@ export async function beginNativeBundleRebootRecovery({ controlRoot, expectedRev
 
 /** Caller holds bootstrap.lock; selection precedes ledger locks, never vice versa. */
 export async function finishNativeBundleRebootRecoveryAtStartup({ controlRoot, readBootIdentity = readMacosBootIdentity,
-  assertOwnerAbsent = assertNoLiveOwner, verifyArtifacts = verifyNativeRuntimeArtifacts, ownerLost = executionHostOwnerLost }) {
+  assertOwnerAbsent = assertNoLiveOwner, verifyArtifacts = verifyNativeRuntimeArtifacts, ownerLost = executionHostOwnerLost, storeOptions = {} }) { // storeOptions: openChangeStore overrides (tests shrink listingLimitBytes)
   await privateRoot(controlRoot);
   const intent = await readIntent(controlRoot);
   if (!intent || intent.state === 'completed') return { status: intent ? 'completed' : 'none' };
@@ -204,9 +204,9 @@ export async function finishNativeBundleRebootRecoveryAtStartup({ controlRoot, r
   const artifacts = await verifyArtifacts({ manifestPath: launch.artifactManifestPath, manifestSha256: launch.artifactManifestSha256,
     launcher, purpose: 'bundle-source' });
   if (artifacts.controller !== launch.controllerBinary) throw fail('bundle_artifact_generation_mismatch');
-  const before = await readBundleLeaseInventory(launch);
+  const before = await readBundleLeaseInventory(launch, { storeOptions });
   return lockLedgers(before, async () => {
-    const ledgers = await readBundleLeaseInventory(launch, { allRecords: true, intent });
+    const ledgers = await readBundleLeaseInventory(launch, { allRecords: true, intent, storeOptions });
     if (canonicalJSON(before.map(row => row.root)) !== canonicalJSON(ledgers.map(row => row.root))
       || ledgers.inventorySha256 !== intent.inventorySha256) throw fail('bundle_reboot_recovery_changed');
     await assertLeasePins(ledgers, intent);

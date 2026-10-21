@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import * as fs from 'node:fs/promises';
 import { createServer } from 'node:http';
 import * as path from 'node:path';
@@ -13,6 +13,17 @@ import {
 import { bindFreePort } from './test-port';
 import type { InterviewAnswer } from './types';
 import { renderInterviewPage } from './ui';
+
+// The service polls for the agent reply every 250 ms (8 attempts). Mock transcripts
+// answer instantly, so run just that backoff on the next tick instead of for 2 s.
+const realSetTimeout = globalThis.setTimeout;
+beforeEach(() => {
+  globalThis.setTimeout = ((handler: TimerHandler, delay?: number, ...args: unknown[]) =>
+    realSetTimeout(handler, delay === 250 ? 0 : delay, ...args)) as unknown as typeof setTimeout;
+});
+afterEach(() => {
+  globalThis.setTimeout = realSetTimeout;
+});
 
 // Intercept getClient calls so service code uses the same session mocks
 // that test assertions inspect.
@@ -513,13 +524,21 @@ describe('interview service', () => {
 
       // Create a prompt that delays to hold the lock
       let promptStarted = false;
+      let promptCalls = 0;
+      let releasePrompt: () => void = () => {};
+      const promptHeld = new Promise<void>((resolve) => {
+        releasePrompt = resolve;
+      });
       const ctx = createMockContext({
         directory: tempDir,
         messagesData,
         promptImpl: async () => {
+          // The first prompt creates the interview; the submission's prompt is held.
+          promptCalls += 1;
+          if (promptCalls === 1) return {};
           promptStarted = true;
-          // Delay to hold the lock during test
-          await new Promise((resolve) => setTimeout(resolve, 200));
+          // Hold the lock until the test has seen the second submission rejected
+          await promptHeld;
           return {};
         },
       });
@@ -572,7 +591,8 @@ describe('interview service', () => {
         ]),
       ).rejects.toThrow('Interview session is busy');
 
-      // Wait for first submission to complete (it will succeed after 200ms delay)
+      // Release the held prompt and wait for the first submission to complete
+      releasePrompt();
       await firstSubmissionPromise;
 
       // Cleanup

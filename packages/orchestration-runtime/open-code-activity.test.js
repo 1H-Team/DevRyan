@@ -110,13 +110,20 @@ test.each([['missed-event', 10], ['reconnect', 60_000], ['missed-event', 750], [
       async readStatus(){return{type:busy?'busy':'idle'};},async readMessages(){reads++;if(busy){firstRead();return [];}return[output()];},
       async abortSession(){return true;},async deleteSession(){return true;}},
   });
+  // Missed-event recovery waits one reconcile interval. Request exactly that wait, then run it on the next tick.
+  const realSetTimeout=globalThis.setTimeout,requested=[];
+  globalThis.setTimeout=(handler,delay,...args)=>{
+    if(mode==='missed-event'&&delay===eventReconcileIntervalMs&&delay>=750){requested.push(delay);return realSetTimeout(handler,0,...args);}
+    return realSetTimeout(handler,delay,...args);
+  };
   const running=executor.observe(task,{});
   try{
     await ready;await flush();busy=false;
     if(mode==='reconnect')registry.observe({type:'server.connected',properties:{}},'/workspace');
     expect((await running).status).toBe('completed');
     expect(reads).toBe(2);expect(prompts).toBe(0);expect(subscriptions).toBe(0);
-  }finally{await executor.shutdown();}
+    if(mode==='missed-event'&&eventReconcileIntervalMs>=750)expect(requested).toContain(eventReconcileIntervalMs);
+  }finally{globalThis.setTimeout=realSetTimeout;await executor.shutdown();}
 });
 
 test.each([60_000, 750, 1500])('shutdown releases an event wait and its subscription without claiming remote settlement (%ims)',async eventReconcileIntervalMs=>{
@@ -239,7 +246,7 @@ test('same-child retry and resume listen before posting and reject inherited out
     const h = harness({
       promptSession: () => { prompted = true; return new Promise((resolve) => { finishPrompt = resolve; }); },
       readMessages: async () => prompted ? [prior, output()] : [prior],
-    });
+    }, { pollIntervalMs: 10 });
     const result = h.executor[method]({ ...task, executionKind: method === 'resume' ? 'resume' : 'retry_in_place' }, h.control);
     // Retry includes teardown/observation checkpoints before prompt submission.
     for (let i = 0; i < 10 && !finishPrompt; i++) await flush();

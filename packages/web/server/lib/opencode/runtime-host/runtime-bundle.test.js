@@ -3,7 +3,7 @@ import {claudeKeychainService} from '../claude-credential-projection.js';
 import {readRollbackIntentSync} from './bundle-rollback-intent.js';
 import {verifyNativeBootMigration} from './native-boot-migration.js';
 import {recoveredInputHash} from './native-recovered-input-hash.js';
-import { afterEach, expect, test, vi } from 'vitest';
+import { afterAll, afterEach, expect, test, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import fsSync from 'node:fs';
 import os from 'node:os';
@@ -35,11 +35,62 @@ vi.setConfig({testTimeout:30_000});
 const emptyCredentialSnapshot={protocol:NATIVE_BUNDLE_CREDENTIAL_CONTRACT,credentials:[],refreshBlockState:null,claudeLifecycle:null};
 const captureCredentials=async()=>({protocol:NATIVE_BUNDLE_CREDENTIAL_CONTRACT,status:'captured',snapshot:emptyCredentialSnapshot,sha256:sha256(canonicalJSON(emptyCredentialSnapshot))});
 const reconciledCredentials=async({credentialBinding})=>({status:'reconciled',credentialReceipt:{protocol:NATIVE_BUNDLE_CREDENTIAL_CONTRACT,status:'projected',...credentialBinding,appliedSha256:credentialBinding.sourceSha256}});
+// Build-once, execute-many: the legacy fixture (two Git repositories, a SQLite
+// database, config sentinels) is immutable setup, so it is created once per file
+// and every test gets a copy-on-write clone at the SAME path. Identical paths keep
+// every embedded absolute path, hash and Git ref valid, and let one warm Bun worker
+// (constant launch environment) run all migrations instead of a cold process each.
+let seedTemplate,migrationRequests=0,worker;
+const cloneTree=async(from,to)=>{try{await execute('/bin/cp',['-cpR',from,to]);}catch{await fs.rm(to,{recursive:true,force:true});await fs.cp(from,to,{recursive:true,verbatimSymlinks:true});}};
+async function seededRoot(){
+  if(!seedTemplate){
+    const parent=path.resolve(import.meta.dirname,'../../../../../../.cache/v2-validation');
+    await fs.mkdir(parent,{recursive:true});
+    const base=await fs.realpath(await fs.mkdtemp(path.join(parent,'runtime-bundle-')));
+    const pristine=`${base}-pristine`;
+    const seed=await createMigrationFixture({root:base});
+    await cloneTree(base,pristine);
+    seedTemplate={base,pristine,seed,used:false};
+  }
+  const {base,pristine,seed}=seedTemplate;
+  if(seedTemplate.used){await fs.rm(base,{recursive:true,force:true});await cloneTree(pristine,base);}
+  seedTemplate.used=true;
+  return {root:base,seed:structuredClone(seed)};
+}
+function migrationWorker(env){
+  if(worker?.alive)return worker;
+  const child=spawn('bun',[path.join(import.meta.dirname,'migration-test-worker.mjs'),path.join(import.meta.dirname,'migration-mode.ts')],{env,stdio:['pipe','pipe','ignore']});
+  const pending=new Map();let nextID=0,buffer='',ready;
+  const handle={alive:true,child,
+    ready:new Promise((resolve,reject)=>{ready=resolve;child.once('error',reject);}),
+    async run(requestFile){
+      await handle.ready;
+      return new Promise((resolve,reject)=>{
+        if(!handle.alive)return reject(Error('migration worker exited'));
+        const id=++nextID;pending.set(id,{resolve,reject});
+        child.stdin.write(JSON.stringify({id,requestFile})+'\n');
+      });
+    }};
+  child.stdout.setEncoding('utf8');
+  child.stdout.on('data',chunk=>{
+    buffer+=chunk;
+    for(let index=buffer.indexOf('\n');index>=0;index=buffer.indexOf('\n')){
+      const line=buffer.slice(0,index);buffer=buffer.slice(index+1);
+      if(line==='ready'){ready();continue;}
+      const message=JSON.parse(line),entry=pending.get(message.id);pending.delete(message.id);
+      if(message.ok)entry.resolve();else entry.reject(Error(message.error));
+    }
+  });
+  child.once('exit',()=>{handle.alive=false;for(const entry of pending.values())entry.reject(Error('migration worker exited'));pending.clear();});
+  worker=handle;return handle;
+}
+afterAll(async()=>{
+  worker?.child.kill();
+  if(seedTemplate)await Promise.all([seedTemplate.base,seedTemplate.pristine].map(directory=>fs.rm(directory,{recursive:true,force:true})));
+});
 afterEach(async () => { await Promise.all(roots.splice(0).map(root=>fs.rm(root,{recursive:true,force:true}))); });
 async function fixture({ compiledContracts = ['devryan.bundle.credential-owners/2',NATIVE_BUNDLE_CREDENTIAL_CONTRACT] } = {}) {
-  await fs.mkdir(path.resolve(import.meta.dirname,'../../../../../../.cache/v2-validation'),{recursive:true});
-  const root=await fs.mkdtemp(path.resolve(import.meta.dirname,'../../../../../../.cache/v2-validation/runtime-bundle-')); roots.push(root);
-  const seed=await createMigrationFixture({root});
+  const {root,seed}=await seededRoot(); roots.push(root);
   const artifacts=path.join(root,'artifacts'); await fs.mkdir(artifacts);
   const controllerBinary=path.join(artifacts,'DevRyan-controller'), writerBinary=path.join(artifacts,'DevRyan-writer');
   await fs.writeFile(controllerBinary,'unit-test artifact bytes\n'); await fs.writeFile(writerBinary,'unit-test writer bytes\n');
@@ -69,11 +120,8 @@ async function fixture({ compiledContracts = ['devryan.bundle.credential-owners/
     try{return await action(checkpoint,{settlement,assertHeld:async()=>{if(!copying)throw Error('fixture_checkpoint_expired');}});}finally{copying=false;}
   };
   const runMigration=async request => {
-    const requestFile=path.join(root,'migration-request.json'); await fs.writeFile(requestFile,JSON.stringify(request));
-    const script=path.join(root,'migration-runner.mjs');
-    await fs.writeFile(script,`import fs from 'node:fs/promises';
-import os from 'node:os'; import {runMigrationRequest} from ${JSON.stringify(path.join(process.cwd(),'server/lib/opencode/runtime-host/migration-mode.ts'))}; await runMigrationRequest(JSON.parse(await fs.readFile(process.argv[2],'utf8')));`);
-    await execute('bun',[script,requestFile],{env:seed.environment,timeout:30_000,maxBuffer:1024*1024});
+    const requestFile=path.join(root,'migration-request-'+(++migrationRequests)+'.json'); await fs.writeFile(requestFile,JSON.stringify(request));
+    await migrationWorker(seed.environment).run(requestFile);
     return JSON.parse(await fs.readFile(request.receiptPath,'utf8'));
   };
   // These tests exercise copied stores with dummy executable bytes. Actual
@@ -1363,12 +1411,20 @@ test('an interrupted fresh-source removal after selection leaves only a sibling 
  expect(await launchDefault(f,home,release,timedOut)).toBe(controlRoot);
  expect((await fs.readdir(state)).sort()).toEqual(['runtime-bundles']);expect(await fs.readFile(path.join(controlRoot,'selection.json'))).toEqual(selection);
 });
+// Counts reads of a lock file: each failed acquisition reads the holder before it waits, so the count is the waiter's poll count.
+const countLockReads=lock=>{const read=fs.readFile;let n=0;const spy=vi.spyOn(fs,'readFile').mockImplementation((file,...rest)=>{if(String(file)===lock)n++;return read.call(fs,file,...rest);});return {count:()=>n,restore:()=>spy.mockRestore()};};
 test('a concurrent first start waits for a live provisioning holder longer than the default lock timeout',async()=>{
  const f=await fixture(),home=path.join(f.root,'concurrent-home'),release=await releaseArtifacts(f,'A');
- const slow=async request=>{await new Promise(resolve=>setTimeout(resolve,5_500));return f.runMigration(request);};
+ let holding,letGo;const inside=new Promise(resolve=>{holding=resolve;}),gate=new Promise(resolve=>{letGo=resolve;});
+ const slow=async request=>{holding();await gate;return f.runMigration(request);};
  const first=launchDefault(f,home,release,slow);
- await new Promise(resolve=>setTimeout(resolve,200));
- const [owner,waiter]=await Promise.all([first,launchDefault(f,home,release,timedOut)]);
+ await inside;
+ const reads=countLockReads(bootstrapLock(home)),waiting=launchDefault(f,home,release,timedOut);
+ // Jump past the 5 s default lock timeout, then require a poll after the jump: the waiter was not timed out by it.
+ const now=Date.now,clockJump=vi.spyOn(Date,'now').mockImplementation(()=>now()+6_000),before=reads.count();
+ try{await vi.waitFor(()=>expect(reads.count()).toBeGreaterThan(before+1));}finally{clockJump.mockRestore();reads.restore();}
+ letGo();
+ const [owner,waiter]=await Promise.all([first,waiting]);
  expect(waiter).toBe(owner);expect(readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:owner}).descriptor.bundleID).toBe('default-native');
 },60_000);
 const bootstrapLock=home=>path.join(home,'.local','state','devryan','runtime-bundles','bootstrap.lock');
@@ -1394,7 +1450,9 @@ test('a live original bootstrap holder is waited for however old its lock reads,
   const now=Date.now,clockJump=vi.spyOn(Date,'now').mockImplementation(()=>now()+clock);
   try{
    let settled=false;const launch=launchDefault(f,home,release).finally(()=>{settled=true;});
-   await new Promise(resolve=>setTimeout(resolve,1_500));expect(settled).toBe(false);
+   const reads=countLockReads(bootstrapLock(home)),before=reads.count();
+   try{await vi.waitFor(()=>expect(reads.count()).toBeGreaterThan(before+2));}finally{reads.restore();}
+   expect(settled).toBe(false);
    expect(await fs.stat(path.join(draftRoot(home))).catch(error=>error.code)).toBe('ENOENT');
    expect(JSON.parse(await fs.readFile(bootstrapLock(home),'utf8'))).toMatchObject({pid,createdAt});
    await fs.rm(bootstrapLock(home));

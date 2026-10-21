@@ -417,7 +417,7 @@ describe('message stream websocket runtime', () => {
     runtime.wsServer.emit('connection', firstSocket, { url: '/api/global/event/ws' });
     runtime.wsServer.emit('connection', secondSocket, { url: '/api/global/event/ws' });
 
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await vi.waitFor(() => { expect(firstSocket.sent).toContainEqual({ type: 'ready', scope: 'global' }); expect(secondSocket.sent).toContainEqual({ type: 'ready', scope: 'global' }); });
 
     expect(fetchCalls).toBe(1);
     expect(firstSocket.sent).toContainEqual({ type: 'ready', scope: 'global' });
@@ -481,13 +481,13 @@ describe('message stream websocket runtime', () => {
     const firstSocket = new FakeSocket();
     runtime.wsServer.emit('connection', firstSocket, { url: '/api/global/event/ws' });
 
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await vi.waitFor(() => expect(firstSocket.sent).toContainEqual({ type: 'ready', scope: 'global' }));
     firstSocket.close();
 
     const secondSocket = new FakeSocket();
     runtime.wsServer.emit('connection', secondSocket, { url: '/api/global/event/ws?lastEventId=evt-1' });
 
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await vi.waitFor(() => expect(secondSocket.sent).toContainEqual(expect.objectContaining({ type: 'event', eventId: 'evt-2' })));
 
     expect(secondSocket.sent).toContainEqual({ type: 'ready', scope: 'global' });
     expect(secondSocket.sent).toContainEqual({
@@ -537,7 +537,7 @@ describe('message stream websocket runtime', () => {
     runtime.wsServer.emit('connection', firstSocket, { url: '/api/event/ws?directory=/tmp/one' });
     runtime.wsServer.emit('connection', secondSocket, { url: '/api/event/ws?directory=/tmp/two' });
 
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await vi.waitFor(() => { expect(firstSocket.sent).toContainEqual({ type: 'ready', scope: 'directory' }); expect(secondSocket.sent).toContainEqual({ type: 'ready', scope: 'directory' }); });
 
     expect(fetchUrls).toEqual(['http://127.0.0.1:4096/api/event']);
     expect(firstSocket.sent).toContainEqual({ type: 'ready', scope: 'directory' });
@@ -584,7 +584,7 @@ describe('message stream websocket runtime', () => {
     const socket = new FakeSocket();
     runtime.wsServer.emit('connection', socket, { url: '/api/global/event/ws' });
 
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await vi.waitFor(() => expect(socket.closeCalls).toHaveLength(1));
 
     expect(socket.sent).toEqual([
       {
@@ -633,7 +633,7 @@ describe('message stream websocket runtime', () => {
     const socket = new FakeSocket();
     runtime.wsServer.emit('connection', socket, { url: '/api/global/event/ws' });
 
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await vi.waitFor(() => expect(socket.closeCalls).toHaveLength(1));
 
     expect(socket.sent).toEqual([
       {

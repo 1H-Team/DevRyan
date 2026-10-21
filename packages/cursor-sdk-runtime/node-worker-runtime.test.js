@@ -594,7 +594,7 @@ describe('Cursor SDK worker runtime config', () => {
     const failure = Object.assign(Error('private fixture detail'), { code: 'native_managed_task_lease_invalid' });
     let cancelled = false, closed = false;
     const runtime = createCursorSdkRuntime({ storageDir: tempDir, env: { CURSOR_API_KEY: 'synthetic-fixture' },
-      useNodeWorkerForPrompts: true, getWorkspaceDiff: async () => '', logger: { error: () => {} },
+      useNodeWorkerForPrompts: true, getWorkspaceDiff: async () => '', logger: { error: () => {} }, finalResultWaitTimeoutMs: 20,
       recordDiagnostic: entry => diagnostics.push(entry),
       ownedPrompt: async () => ({ run: action => action(), close: async () => { closed = true; } }),
       onPersistRecord: async ({ record }) => { if (record.info.time.completed) throw failure; },

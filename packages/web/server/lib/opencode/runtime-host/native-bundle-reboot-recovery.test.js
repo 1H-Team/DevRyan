@@ -52,7 +52,7 @@ async function fixture() {
     generation: 0, scope: { sessionID: 'session', messageID: 'message', userMessageID: 'user', callID: 'call' },
     viewDirectory: path.join(ledgerRoot, 'views', token, 'view'), cleaned: false, cleanupPending: false };
   await fs.mkdir(lease.viewDirectory, { recursive: true, mode: 0o700 }); await fs.writeFile(path.join(lease.viewDirectory, 'proof.txt'), 'unpublished work');
-  const open = () => openChangeStore(ledgerRoot, path.join(ledgerRoot, 'git'));
+  const open = (options) => openChangeStore(ledgerRoot, path.join(ledgerRoot, 'git'), options);
   const db = await open(); db.set('meta.json', { version: 1, directory: project, sequence: 0 }); db.set(key, lease); await db.commit();
   const options = { controlRoot, expectedRevision: 1, readBootIdentity: async () => oldBoot,
     assertOwnerAbsent: async () => {}, ownerLost: async () => true, verifyArtifacts: async () => ({ controller: launch.controllerBinary }) };
@@ -177,18 +177,35 @@ test('both native actions hold selector ownership before observing or mutating l
 });
 
 test('a ledger and view beyond the former inventory caps still prepare, with the released digest', async () => {
+  // The ledger listing bound is shrunk (production: 1 MiB) so ~3.5x-over-bound ledgers need hundreds, not tens of thousands, of records.
+  const storeOptions = { listingLimitBytes: 8192 }, recordCount = 400;
   const f = await fixture(), db = await f.open();
-  for (let index = 0; index < 34000; index++) db.set(`files/${String(index).padStart(6, '0')}.json`, { index, nested: { b: 1, a: [index] } });
+  f.options.storeOptions = storeOptions;
+  for (let index = 0; index < recordCount; index++) db.set(`files/${String(index).padStart(6, '0')}.json`, { index, nested: { b: 1, a: [index] } });
   await db.commit();
   await promisify(execFile)('/usr/bin/mkfifo', [path.join(path.dirname(f.lease.viewDirectory), 'pipe')]);
   const rows = []; for await (const { key, value } of (await f.open()).records()) rows.push({ key, value });
-  expect(rows.length).toBeGreaterThan(32768);
-  const ledgers = await readBundleLeaseInventory(f.launch, { allRecords: true });
+  expect(rows.length).toBeGreaterThan(300);
+  const ledgers = await readBundleLeaseInventory(f.launch, { allRecords: true, storeOptions });
   // Intents prepared by 2.0.9 hashed the materialized list; the digest must not move.
   expect(ledgers.inventorySha256).toBe(rebootRecoveryHash([{ root: f.ledgerRoot, directory: f.lease.directory, records: rows }]));
   expect(ledgers[0].records.map(row => row.key)).toEqual([f.key]);
   expect(await beginNativeBundleRebootRecovery(f.options)).toMatchObject({ status: 'reboot_required', leaseCount: 1 });
   expect(await f.finish()).toMatchObject({ status: 'completed', recoveredLeases: 1 });
+}, 30000);
+
+// The released 2.0.9 inventory stopped at 32768 records; streaming past that count
+// must stay supported. A generous listing bound keeps this on the in-memory path,
+// so only the count is exercised here (the listing bound is covered above).
+test('an inventory beyond the former 32768-record cap streams every record', async () => {
+  const storeOptions = { listingLimitBytes: 64 * 1024 ** 2 };
+  const f = await fixture(), db = await f.open();
+  for (let index = 0; index < 34000; index++) db.set(`files/${String(index).padStart(6, '0')}.json`, { index });
+  await db.commit();
+  const rows = []; for await (const { key, value } of (await f.open(storeOptions)).records()) rows.push({ key, value });
+  expect(rows.length).toBeGreaterThan(32768);
+  const ledgers = await readBundleLeaseInventory(f.launch, { allRecords: true, storeOptions });
+  expect(ledgers.inventorySha256).toBe(rebootRecoveryHash([{ root: f.ledgerRoot, directory: f.lease.directory, records: rows }]));
 }, 120000);
 
 test('a new preparation retires a fence whose evidence changed', async () => {

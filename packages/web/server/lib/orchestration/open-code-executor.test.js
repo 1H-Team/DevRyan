@@ -1,10 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { describe, expect, it, vi } from 'vitest';
 
-import {
-  MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT,
-  MANAGED_TURN_BUDGET_PROMPT,
-} from '@devryan/orchestration-runtime';
+import { MANAGED_TURN_BUDGET_PROMPT } from '@devryan/orchestration-runtime';
 
 import { createOpenCodeClient } from '../opencode/opencode-client/index.js';
 import { createNativeConsumerFixture } from '../opencode/test-native-consumer-client.js';
@@ -355,99 +352,6 @@ describe('web managed OpenCode executor transport', () => {
     });
   });
 
-  it.each([true, false])('recovers a finalized timeout only with the original assignment (available: %s)', async (hasAssignment) => {
-    const requests = [];
-    let statusReads = 0;
-    const timeoutMessage = {
-      info: {
-        id: 'msg_timeout',
-        role: 'assistant',
-        time: { completed: 1_000 },
-        finish: 'error',
-        error: { message: 'The operation timed out.' },
-      },
-      parts: [{ type: 'text', text: 'partial' }],
-    };
-    const fetchImpl = vi.fn(async (url, init = {}) => {
-      requests.push({ url: String(url), init });
-      const pathname = new URL(url).pathname;
-      if (pathname.endsWith('/prompt_async')) return new Response(null, { status: 204 });
-      if (pathname === '/session/status') {
-        statusReads += 1;
-        const type = requests.some(({ url: sent }) => new URL(sent).pathname.endsWith('/prompt_async')) && statusReads === 3 ? 'busy' : 'idle';
-        return jsonResponse({ ses_child: { type } });
-      }
-      if (pathname.endsWith('/message')) {
-        // The recovery message appears once the continuation prompt was sent,
-        // rather than after a fixed number of transcript reads: a live child is
-        // no longer re-read on every poll.
-        const continued = requests.find(({ url: sent }) => (
-          new URL(sent).pathname.endsWith('/prompt_async')
-        ));
-        return jsonResponse(!continued
-          ? [timeoutMessage]
-          : [
-              timeoutMessage,
-              {
-                info: { id: 'msg_done', role: 'assistant', finish: 'stop', parentID: JSON.parse(continued.init.body).messageID },
-                parts: [{ type: 'text', text: 'done' }],
-              },
-            ]);
-      }
-      throw new Error(`Unexpected request ${init.method} ${pathname}`);
-    });
-    const executor = createWebManagedOpenCodeExecutor({
-      buildOpenCodeUrl: (pathname) => `http://127.0.0.1:4096${pathname}`,
-      getOpenCodeAuthHeaders: () => ({ authorization: 'Basic opaque' }),
-      fetchImpl,
-      pollIntervalMs: 0,
-    });
-
-    const result = await executor.observe({
-      taskId: 'dvr_task_1',
-      rootSessionId: 'ses_root',
-      label: 'Inspect project',
-      prompt: hasAssignment ? 'Inspect the project.' : '',
-      childSessionId: 'ses_child',
-      directory: '/workspace',
-      providerId: 'github-copilot',
-      modelId: 'gpt-4.1',
-      agent: 'fixer',
-      variant: 'high',
-    }, { async recordTransportRecovery() { return true; } });
-
-    const promptRequests = requests.filter(({ url }) => (
-      new URL(url).pathname.endsWith('/prompt_async')
-    ));
-    if (!hasAssignment) {
-      expect(result).toMatchObject({ status: 'failed', resumable: false,
-        failureReason: 'Managed continuation requires the original task identity and assignment',
-        recoverablePreview: 'partial' });
-      expect(promptRequests).toHaveLength(0);
-      return;
-    }
-    expect(result.status).toBe('completed');
-    expect(promptRequests).toHaveLength(1);
-    const continuationBody = JSON.parse(promptRequests[0].init.body);
-    expect(continuationBody).toMatchObject({
-      agent: 'fixer',
-      model: { providerID: 'github-copilot', modelID: 'gpt-4.1' },
-      variant: 'high',
-      tools: {
-        'resend_*': false,
-        'mcp__resend__*': false,
-        task: false,
-      },
-      parts: [{ type: 'text', text: expect.stringContaining(MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT) }],
-    });
-    expect(JSON.parse(continuationBody.parts[0].text.split('\n').at(-1))).toEqual({
-      taskId: 'dvr_task_1', rootSessionId: 'ses_root', agent: 'fixer',
-      label: 'Inspect project', prompt: 'Inspect the project.',
-    });
-    // The persisted correlation ID is fresh and sorts like an OpenCode message.
-    expect(continuationBody.messageID).toMatch(/^msg_[0-9a-f]{26}$/);
-  });
-
   it('aborts and deletes a normal-provider child when the scheduler rejects its ownership checkpoint', async () => {
     const requests = [];
     const fetchImpl = vi.fn(async (url, init = {}) => {
@@ -670,10 +574,6 @@ describe('web managed OpenCode executor host hooks', () => {
       'Contract.\n\nInspect the project.',
       expect.stringContaining(MANAGED_TURN_BUDGET_PROMPT),
     ]);
-    expect(JSON.parse(prompts[1].parts[0].text.split('\n').at(-1))).toEqual({
-      taskId: 'dvr_task_hooks', rootSessionId: 'ses_root', agent: 'explorer',
-      label: 'Hooked child', prompt: 'Inspect the project.',
-    });
   });
 });
 

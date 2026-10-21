@@ -801,14 +801,17 @@ const passwordLogin = async (harness, { role = 'developer', trustDevice = false 
 };
 
 const waitForAudit = async (harness, action, targetId = null) => {
-  for (let attempt = 0; attempt < 50; attempt += 1) {
-    const event = harness.auditEvents.find((candidate) => (
-      candidate.action === action && (!targetId || candidate.target_id === targetId)
-    ));
-    if (event) return event;
-    await new Promise((resolve) => setTimeout(resolve, 20));
+  try {
+    return await vi.waitFor(() => {
+      const event = harness.auditEvents.find((candidate) => (
+        candidate.action === action && (!targetId || candidate.target_id === targetId)
+      ));
+      if (!event) throw new Error(`audit ${action} not recorded`);
+      return event;
+    }, { timeout: 1000, interval: 2 });
+  } catch {
+    return null;
   }
-  return null;
 };
 
 describe('multi-user failure projection runtime', () => {
@@ -2112,13 +2115,9 @@ describe('multi-user authentication runtime', () => {
       params: { sessionID: 'partial-delete' },
       principal: admin,
     }, recoveryResponse, vi.fn());
-    for (let attempt = 0; attempt < 50; attempt += 1) {
-      const deleteAudits = harness.auditEvents.filter((event) => (
-        event.action === 'session.deleted' && event.target_id === 'partial-delete'
-      ));
-      if (deleteAudits.length >= 2) break;
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
+    await vi.waitFor(() => expect(harness.auditEvents.filter((event) => (
+      event.action === 'session.deleted' && event.target_id === 'partial-delete'
+    )).length).toBeGreaterThanOrEqual(2), { timeout: 1000, interval: 2 }).catch(() => {});
     const recoveryAudit = harness.auditEvents.filter((event) => (
       event.action === 'session.deleted' && event.target_id === 'partial-delete'
     )).at(-1);
@@ -2229,13 +2228,9 @@ describe('multi-user authentication runtime', () => {
     });
     expect(harness.openCodeDeleteRequests).toHaveLength(2);
     expect(harness.analyticsRetentionLocks.has(USER_IDS.developer)).toBe(true);
-    for (let attempt = 0; attempt < 50; attempt += 1) {
-      const replayAudits = harness.auditEvents.filter((event) => (
-        event.action === 'session.deleted' && event.target_id === 'current-archived'
-      ));
-      if (replayAudits.length >= 2) break;
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
+    await vi.waitFor(() => expect(harness.auditEvents.filter((event) => (
+      event.action === 'session.deleted' && event.target_id === 'current-archived'
+    )).length).toBeGreaterThanOrEqual(2), { timeout: 1000, interval: 2 }).catch(() => {});
     expect(harness.auditEvents.filter((event) => (
       event.action === 'session.deleted' && event.target_id === 'current-archived'
     )).at(-1)?.metadata).toEqual(expect.objectContaining({
@@ -4528,9 +4523,7 @@ describe('multi-user authentication runtime', () => {
       const accepted = makeResponse();
       await promptHandler(request, accepted, () => accepted.status(202).json({ accepted: true }));
     }
-    for (let attempt = 0; attempt < 50 && harness.auditEvents.filter((event) => event.action === 'prompt.sent').length < 1; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
+    await vi.waitFor(() => expect(harness.auditEvents.filter((event) => event.action === 'prompt.sent').length).toBeGreaterThanOrEqual(1), { timeout: 500, interval: 2 }).catch(() => {});
     const prompts = harness.auditEvents.filter((event) => event.action === 'prompt.sent');
     expect(prompts).toHaveLength(1);
     expect(new Set(prompts.map((event) => event.event_id)).size).toBe(1);

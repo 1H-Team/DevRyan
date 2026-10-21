@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createBoundedTaskRunner } from './bounded-task-runner.js';
 
 describe('bounded background task runner', () => {
@@ -25,7 +25,7 @@ describe('bounded background task runner', () => {
     let ran = false;
     runner.run(async () => { throw new Error('boom'); });
     runner.run(async () => { ran = true; });
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await vi.waitFor(() => expect(ran).toBe(true));
     expect(errors).toEqual(['boom']);
     expect(ran).toBe(true);
   });

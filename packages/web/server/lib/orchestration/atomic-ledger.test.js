@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
+import { fileURLToPath } from 'node:url';
 
 import { createManagedTaskRecord } from '@devryan/orchestration-runtime';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -583,5 +584,50 @@ describe('atomic managed orchestration ledger', () => {
     fakeProcess.emit('exit');
 
     await expect(fs.stat(ownerPath)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+});
+
+// The orchestration-runtime golden fixtures, saved through this writer. The
+// package test owns the scheduler's bytes; each writer has its own expected file.
+const goldenFixtures = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../orchestration-runtime/fixtures');
+const goldenFixture = name => fs.readFile(path.join(goldenFixtures, name), 'utf8');
+
+const goldenRoundTripPosix = async (bytes) => {
+  const dataDirectory = await createTemporaryDirectory();
+  const filePath = path.join(dataDirectory, 'ledger.json');
+  await fs.writeFile(filePath, bytes);
+  const ledger = await createOwnedLedger({ dataDirectory, filePath });
+  try {
+    const loaded = await ledger.load();
+    expect(ledger.getDiagnostics().quarantinedPath).toBeNull();
+    await ledger.save(loaded);
+    return await fs.readFile(filePath, 'utf8');
+  } finally { await ledger.releaseOwnership(); }
+};
+
+const goldenRoundTripWindows = async (bytes) => {
+  const fixture = windowsFixture(), ledger = fixture.create();
+  await ledger.acquireOwnership();
+  try {
+    fixture.records.set(ledger.filePath, { identity: { fileId: '0' }, bytes: Buffer.from(bytes) });
+    const loaded = await ledger.load();
+    expect(ledger.getDiagnostics().quarantinedPath).toBeNull();
+    await ledger.save(loaded);
+    return fixture.records.get(ledger.filePath).bytes.toString('utf8');
+  } finally { await ledger.releaseOwnership(); }
+};
+
+describe('golden ledger fixtures through the atomic ledger', () => {
+  const writers = [['POSIX', goldenRoundTripPosix], ['Windows', goldenRoundTripWindows]];
+
+  it.each(writers)('%s: a current ledger saves byte-identical', async (_name, roundTrip) => {
+    const current = await goldenFixture('ledger-current.json');
+    expect(await roundTrip(current)).toBe(current);
+  });
+
+  it.each(writers)('%s: a legacy ledger gains its defaults in the pinned key order, then stays stable', async (_name, roundTrip) => {
+    const saved = await goldenFixture('ledger-legacy.atomic-saved.json');
+    expect(await roundTrip(await goldenFixture('ledger-legacy.json'))).toBe(saved);
+    expect(await roundTrip(saved)).toBe(saved);
   });
 });

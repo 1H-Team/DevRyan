@@ -158,7 +158,10 @@ test('a fresh restore lock held by a live process still serializes',async()=>fix
  const target=path.join(root,'target');await snapshot(target,localAdmin);
  let restore;
  await withCrossProcessFileLock(lockOf(target),async()=>{
-  restore=restoreNativeSetupOwners(target);await new Promise(resolve=>setTimeout(resolve,300));
+  const read=fs.readFile;let polls=0;const spy=vi.spyOn(fs,'readFile').mockImplementation((file,...rest)=>{if(String(file)===lockOf(target))polls++;return read.call(fs,file,...rest);});
+  restore=restoreNativeSetupOwners(target);
+  // Serialized, not merely slow: the restore has read the live holder and re-polled several times without proceeding.
+  try{await vi.waitFor(()=>expect(polls).toBeGreaterThan(3));}finally{spy.mockRestore();}
   expect(await fs.readdir(target)).toContain('native-setup-local-owners.json');
  });
  await restore;expect(await fs.readdir(target)).toContain('native-setup-local-owners.restored.json');

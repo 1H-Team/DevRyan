@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { createWebManagedOrchestrationRuntime as createNativeOrchestrationRuntime } from './runtime.js';
 import { createNativeConsumerFixture } from '../opencode/test-native-consumer-client.js';
 
@@ -81,15 +81,11 @@ it.each(['completed', 'failed', 'unavailable'])('routes live disconnects through
       providerId: 'anthropic', modelId: 'claude-opus-5', agent: 'designer', variant: 'medium',
       label: 'Transport recovery', prompt: 'Finish the existing task',
     } });
-    const deadline = Date.now() + 8_000;
-    let state;
-    for (;;) {
-      state = await runtime.getSnapshot({ rootSessionId: 'ses_root' });
-      const source = state.resultEnvelopes[0];
-      if (['succeeded', 'ended', 'exhausted'].includes(source?.autoResume?.state)) break;
-      if (Date.now() > deadline) throw new Error('Transport recovery fixture did not settle');
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
+    const state = await vi.waitFor(async () => {
+      const snapshot = await runtime.getSnapshot({ rootSessionId: 'ses_root' });
+      if (!['succeeded', 'ended', 'exhausted'].includes(snapshot.resultEnvelopes[0]?.autoResume?.state)) throw new Error('Transport recovery fixture did not settle');
+      return snapshot;
+    }, { timeout: 8_000, interval: 2 });
     expect(creates).toBe(1);
     expect(prompts.map((p) => p.model.providerID)).toEqual(backupOutcome === 'unavailable'
       ? ['anthropic', 'anthropic'] : ['anthropic', 'anthropic', 'openai']);

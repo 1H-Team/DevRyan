@@ -16,6 +16,11 @@ const nativeAssistant = () => ({ info: { id: 'msg_native', sessionID: identity.s
   agent: 'orchestrator', providerID: 'openai', modelID: 'gpt-5.6-sol', variant: 'xhigh', time: {} }, parts: [],
   turnOwnership: { source: 'native-sequence', userMessageID: 'msg_shell' } });
 
+const until = async (condition, attempts = 500) => {
+  for (let attempt = 0; attempt < attempts && !condition(); attempt++) await new Promise((resolve) => setTimeout(resolve, 1));
+  if (!condition()) throw new Error('condition did not hold');
+};
+
 async function fixture(overrides = {}, providerID = 'openai', agent = 'orchestrator', executionGeneration) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-recovery-'));
   cleanups.push(() => fs.rm(directory, { recursive: true, force: true }));
@@ -205,7 +210,16 @@ describe('private receipt-backed native primary continuation', () => {
     const f = await fixture({ verifyOwnedNativeContinuation: () => new Promise(() => {}) });
     delete f.state.messages.at(-1).info.error; await f.controller.plugin({ action: 'step', ...identity });
     appendShell(f); f.state.messages.push(nativeAssistant());
-    await expect(f.controller.adoptOwnedNativeContinuation(nativeShellStep)).rejects.toMatchObject({ code: 'native_continuation_verification_unavailable' });
+    // Record the verifier's bound (5 s) and expire it immediately instead of waiting it out.
+    const realSetTimeout = globalThis.setTimeout, bounds = [];
+    globalThis.setTimeout = (handler, delay, ...args) => {
+      if (delay === 5000) { bounds.push(delay); return realSetTimeout(handler, 0, ...args); }
+      return realSetTimeout(handler, delay, ...args);
+    };
+    try {
+      await expect(f.controller.adoptOwnedNativeContinuation(nativeShellStep)).rejects.toMatchObject({ code: 'native_continuation_verification_unavailable' });
+    } finally { globalThis.setTimeout = realSetTimeout; }
+    expect(bounds.length).toBeGreaterThan(0);
     expect((await f.controller.readRecord(identity.sessionID)).activeUserID).toBeUndefined();
   }, 8000);
 });
@@ -1120,12 +1134,12 @@ test('a replaced runtime sweeps stored objectives once, retires only deleted ses
   // A busy runtime at startup is transient: the objective survives.
   failure = 503;
   await hello('runtime-busy');
-  await new Promise((resolve) => setTimeout(resolve, 50));
+  await until(() => f.incidents.some((entry) => entry.event === 'provider_recovery_sweep_summary'));
   expect((await f.snapshot()).record.state).toBe('observing');
   failure = 404;
   f.advance(1_000);
   await hello('runtime-next');
-  await new Promise((resolve) => setTimeout(resolve, 50));
+  await until(() => f.incidents.filter((entry) => entry.event === 'provider_recovery_sweep_summary').length === 2);
   const retired = (await f.snapshot()).record;
   expect(retired).toMatchObject({ state: 'superseded', reason: 'recovery_runtime_replaced' });
   const summaries = f.incidents.filter((entry) => entry.event === 'provider_recovery_sweep_summary');
@@ -1135,6 +1149,7 @@ test('a replaced runtime sweeps stored objectives once, retires only deleted ses
   expect(f.incidents.some((entry) => entry.event === 'provider_recovery_observation_failed')).toBe(false);
   const seen = observations;
   await hello('runtime-next');
+  // Negative assertion (no further sweep): a short real window is the only observable signal.
   await new Promise((resolve) => setTimeout(resolve, 20));
   expect(observations).toBe(seen);
 });

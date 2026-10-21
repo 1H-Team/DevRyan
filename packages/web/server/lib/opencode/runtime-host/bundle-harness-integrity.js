@@ -129,7 +129,7 @@ const registeredIdentityDirectories=async(readJSON,webDataDirectory,sourceWebDat
 };
 /** Reads/reconciles the existing stores; it never creates an execution ledger. */
 export async function inspectBundleHarness(webDataDirectory,{projectMap=[],relocate=false,checkpointID='checkpoint',sessionIDs,messageIDs,
-  sourceWebDataDirectory=webDataDirectory,preservedRefs,verifiedContinuations=[],windowsOwner,windowsLedgerOwner,gitRunner,nativeFiles,runWindowsInspection}={}) {
+  sourceWebDataDirectory=webDataDirectory,preservedRefs,verifiedContinuations=[],windowsOwner,windowsLedgerOwner,gitRunner,nativeFiles,runWindowsInspection,storeOptions={}}={}) {
   const windows=process.platform==='win32'||windowsOwner!==undefined||nativeFiles!==undefined;
   const documentOptions={windowsOwner:windowsLedgerOwner??windowsOwner};
   const readBundleJSON=nativeFiles?.readJSON??(file=>readBundleJSONOwned(file,documentOptions)),saveBundleJSON=nativeFiles?.saveJSON??((file,value)=>saveBundleJSONOwned(file,value,documentOptions));
@@ -159,7 +159,7 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
     if(windows&&relocate&&!nativeFiles)throw bundleFailure('private_windows_git_relocation_unavailable');
     const root = path.join(storage,entry.name), gitDirectory = path.join(root,'git');
     const before = (await runGit(root,['--git-dir',gitDirectory,'for-each-ref','--format=%(refname) %(objectname)'])).toString().trim().split('\n').filter(Boolean);
-    const db = await openChangeStore(root,gitDirectory,{gitRunner,...nativeFiles?{syncObjects:nativeFiles.deferObjectDurability}:{}});
+    const db = await openChangeStore(root,gitDirectory,{...storeOptions,gitRunner,...nativeFiles?{syncObjects:nativeFiles.deferObjectDurability}:{}});
     if (!db.exists || await db.get('materialization.json')) throw bundleFailure('bundle_materialization_pending');
     const meta = await db.get('meta.json');
     if (!meta || meta.version !== 1 || changeKey(meta.directory) !== entry.name) throw bundleFailure('bundle_harness_layout_invalid');
@@ -179,7 +179,7 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
     const stores = [{store:db,ref:'refs/devryan/state'}];
     if (relocate) for (const ref of before) {
       const name = ref.split(' ')[0];
-      if (/^refs\/devryan\/leases\/[a-f0-9-]{36}$/.test(name)) stores.push({store:await openChangeStore(root,gitDirectory,{ref:name,gitRunner,...nativeFiles?{syncObjects:nativeFiles.deferObjectDurability}:{}}),ref:name});
+      if (/^refs\/devryan\/leases\/[a-f0-9-]{36}$/.test(name)) stores.push({store:await openChangeStore(root,gitDirectory,{...storeOptions,ref:name,gitRunner,...nativeFiles?{syncObjects:nativeFiles.deferObjectDurability}:{}}),ref:name});
     }
     for (const {store,ref} of stores) {
       for await (const {key,value:record} of store.records()) {
@@ -261,7 +261,7 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
       } else await saveBundleJSON(file,next);
     }
   }
-  for(const pin of shellPins){try{const current=await openChangeStore(pin.root,pin.gitDirectory,{ref:pin.ref,gitRunner,...nativeFiles?{syncObjects:nativeFiles.deferObjectDurability}:{}}),record=await current.get(pin.key),session=await current.get(pin.sessionKey);
+  for(const pin of shellPins){try{const current=await openChangeStore(pin.root,pin.gitDirectory,{...storeOptions,ref:pin.ref,gitRunner,...nativeFiles?{syncObjects:nativeFiles.deferObjectDurability}:{}}),record=await current.get(pin.key),session=await current.get(pin.sessionKey);
     if(!record||!session||sha256(canonicalJSON(record))!==pin.recordHash||sha256(canonicalJSON(session))!==pin.sessionHash
       ||sha256(canonicalJSON(await readBundleJSON(pin.file)))!==pin.receiptHash)throw bundleFailure('migration_pending_input_unsupported');
   }catch{throw bundleFailure('migration_pending_input_unsupported');}}

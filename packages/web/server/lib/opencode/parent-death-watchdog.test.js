@@ -8,7 +8,7 @@ const watchdogModule = new URL('./parent-death-watchdog.js', import.meta.url).hr
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 const waitFor = async (predicate, timeoutMs = 8_000) => {
   const started = Date.now();
-  while (Date.now() - started < timeoutMs) { if (predicate()) return true; await new Promise((resolve) => setTimeout(resolve, 50)); }
+  while (Date.now() - started < timeoutMs) { if (predicate()) return true; await new Promise((resolve) => setTimeout(resolve, 10)); }
   return predicate();
 };
 const cleanups = [];
@@ -26,15 +26,15 @@ const startOwner = async ({ port, nativeInstanceID, providerInstanceID, childArg
     const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)', '--', ...${JSON.stringify(childArgs)}],
       { detached: true, stdio: 'ignore' });
     child.unref();
-    startParentDeathWatchdog({ childPid: child.pid, port: ${port}, nativeInstanceID: ${JSON.stringify(nativeInstanceID)}, providerInstanceID: ${JSON.stringify(providerInstanceID)} });
-    process.stdout.write(JSON.stringify({ child: child.pid }) + '\\n');
+    const watchdog = startParentDeathWatchdog({ childPid: child.pid, port: ${port}, nativeInstanceID: ${JSON.stringify(nativeInstanceID)}, providerInstanceID: ${JSON.stringify(providerInstanceID)} });
+    process.stdout.write(JSON.stringify({ child: child.pid, watchdog: watchdog.pid }) + '\\n');
     setInterval(() => {}, 1000);
   `);
   const owner = spawn(process.execPath, [script], { stdio: ['ignore', 'pipe', 'inherit'] });
   const line = await new Promise((resolve) => owner.stdout.once('data', (chunk) => resolve(chunk.toString())));
-  const { child } = JSON.parse(line);
+  const { child, watchdog } = JSON.parse(line);
   cleanups.push(() => { try { process.kill(-child, 'SIGKILL'); } catch { /* Gone. */ } });
-  return { owner, child };
+  return { owner, child, watchdog };
 };
 
 describe.skipIf(process.platform === 'win32')('managed OpenCode parent-death watchdog', () => {
@@ -66,9 +66,10 @@ describe.skipIf(process.platform === 'win32')('managed OpenCode parent-death wat
   });
 
   it('never signals a process it cannot identify as the owned server', async () => {
-    const { owner, child } = await startOwner({ port: 47124, childArgs: ['serve', '--port', '47125'] });
+    const { owner, child, watchdog } = await startOwner({ port: 47124, childArgs: ['serve', '--port', '47125'] });
     owner.kill('SIGKILL');
-    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    // The watchdog exits without signalling when it cannot identify the child; wait for that verdict, not for time.
+    expect(await waitFor(() => !alive(watchdog))).toBe(true);
     expect(alive(child)).toBe(true);
   }, 15_000);
 
@@ -79,7 +80,7 @@ describe.skipIf(process.platform === 'win32')('managed OpenCode parent-death wat
     expect(await waitFor(() => !alive(child))).toBe(true);
     const other = await startOwner({ nativeInstanceID, childArgs: ['serve', '--native-instance', 'b'.repeat(32)] });
     other.owner.kill('SIGKILL');
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    expect(await waitFor(() => !alive(other.watchdog))).toBe(true);
     expect(alive(other.child)).toBe(true);
   }, 15_000);
 });

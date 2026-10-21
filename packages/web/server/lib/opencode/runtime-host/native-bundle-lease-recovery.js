@@ -26,7 +26,7 @@ const needsRecovery = lease => unsettled(lease) || ['published', 'cancelled'].in
  * hash of `[{ directory, records: [{ key, value }], root }]`, without retaining
  * them: a ledger holds several records per project file. A lease this `intent`
  * already recovered is digested as its original. Only leases are returned. */
-export async function readBundleLeaseInventory(launch, { allRecords = false, intent } = {}) {
+export async function readBundleLeaseInventory(launch, { allRecords = false, intent, storeOptions = {} } = {}) {
   const storage = path.join(launch.webDataDirectory, 'harness', 'session-mutations');
   let names;
   try { names = await fs.readdir(storage, { withFileTypes: true }); }
@@ -40,7 +40,7 @@ export async function readBundleLeaseInventory(launch, { allRecords = false, int
     const gitDirectory = path.join(root, 'git'), gitStat = await fs.lstat(gitDirectory);
     if (!gitStat.isDirectory() || gitStat.isSymbolicLink() || await fs.realpath(gitDirectory) !== gitDirectory)
       throw Object.assign(Error('bundle_path_invalid'), { code: 'bundle_path_invalid' });
-    const db = await openChangeStore(root, gitDirectory);
+    const db = await openChangeStore(root, gitDirectory, storeOptions);
     if (!db.exists || await db.get('materialization.json')) throw Object.assign(Error('bundle_materialization_pending'), { code: 'bundle_materialization_pending' });
     const meta = await db.get('meta.json');
     if (meta?.version !== 1 || !path.isAbsolute(meta.directory ?? '') || changeKey(meta.directory) !== entry.name)

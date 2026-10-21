@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -3116,4 +3117,19 @@ it('native dispatch readiness is independent of the legacy bridge and reflects a
     ready=false;expect((await runtime.getSnapshot()).dispatchReady).toBe(false);
     ready=true;held=true;expect((await runtime.getSnapshot()).dispatchReady).toBe(false);
   } finally {await runtime.shutdown();}
+});
+
+it('the HTTP snapshot of the golden ledger is byte-identical to the pinned fixture', async () => {
+  const fixtures = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../orchestration-runtime/fixtures');
+  const read = name => fs.readFile(path.join(fixtures, name), 'utf8');
+  const current = await read('ledger-current.json');
+  const runtime = createWebManagedOrchestrationRuntime({
+    now: () => 1_760_000_100_000,
+    persistence: { load: async () => JSON.parse(current), save: async () => {} },
+    executor: { start: async () => { throw new Error('golden fixtures never launch'); } },
+  });
+  try {
+    await runtime.initialize();
+    expect(`${JSON.stringify(await runtime.getSnapshot({ rootSessionId: 'ses_golden_root' }))}\n`).toBe(await read('snapshot.json'));
+  } finally { await runtime.shutdown(); }
 });

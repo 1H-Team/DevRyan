@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { createWebManagedOrchestrationRuntime as createNativeOrchestrationRuntime } from './runtime.js';
 import { createNativeConsumerFixture } from '../opencode/test-native-consumer-client.js';
 
@@ -71,14 +71,11 @@ it.each(['after-prompt', 'during-transcript-read'])('settles a user Stop %s with
       providerId: 'anthropic', modelId: 'claude-opus-5', agent: 'designer', variant: 'medium',
       label: 'Operator stop', prompt: 'Do the work',
     } });
-    const deadline = Date.now() + 8_000;
-    let state;
-    for (;;) {
-      state = await runtime.getSnapshot({ rootSessionId: 'ses_root' });
-      if (['completed', 'failed', 'aborted', 'interrupted'].includes(state.tasks[0]?.status)) break;
-      if (Date.now() > deadline) throw new Error('Operator stop fixture did not settle');
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
+    const state = await vi.waitFor(async () => {
+      const snapshot = await runtime.getSnapshot({ rootSessionId: 'ses_root' });
+      if (!['completed', 'failed', 'aborted', 'interrupted'].includes(snapshot.tasks[0]?.status)) throw new Error('Operator stop fixture did not settle');
+      return snapshot;
+    }, { timeout: 8_000, interval: 2 });
     expect(state.tasks[0]).toMatchObject({ status: 'aborted', failureReason: 'Stopped by the user',
       providerId: 'anthropic', modelId: 'claude-opus-5', agent: 'designer', variant: 'medium' });
     expect(prompts).toHaveLength(1);

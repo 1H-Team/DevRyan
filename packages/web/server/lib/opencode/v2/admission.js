@@ -658,6 +658,9 @@ export const createOpenCodeAdmission = (deps, options = {}) => {
   if (!isRecord(deps) || typeof deps.getRuntime !== 'function') throw new TypeError('getRuntime is required');
   const defaultDelivery = options.defaultDelivery ?? ADMISSION_DEFAULT_DELIVERY;
   if (!ADMISSION_DELIVERIES.includes(defaultDelivery)) throw new TypeError('defaultDelivery must be queue or steer');
+  // Admitted identities kept in memory; tests shrink it to reach eviction quickly.
+  const dedupeLimit = options.dedupeLimit ?? ADMISSION_DEDUPE_LIMIT;
+  if (!Number.isSafeInteger(dedupeLimit) || dedupeLimit < 1) throw new TypeError('dedupeLimit must be a positive integer');
   const recordDiagnostic = typeof deps.recordDiagnostic === 'function' ? deps.recordDiagnostic : () => {};
   const ownedDeps = options.nativeOwner ? { ...deps, getAuthHeaders: async () => ({
     ...await deps.getAuthHeaders?.(), ...options.nativeOwner.requestHeaders(),
@@ -754,7 +757,7 @@ export const createOpenCodeAdmission = (deps, options = {}) => {
   const rememberAdmitted = (messageID, entry) => {
     admitted.delete(messageID);
     admitted.set(messageID, entry);
-    if (admitted.size > ADMISSION_DEDUPE_LIMIT) admitted.delete(admitted.keys().next().value);
+    if (admitted.size > dedupeLimit) admitted.delete(admitted.keys().next().value);
   };
 
   const reusedId = (id) => createOpenCodeClientError(C.conflict, 409,

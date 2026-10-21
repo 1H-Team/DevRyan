@@ -1,9 +1,12 @@
-import {afterEach,expect,test,vi} from 'vitest';
+import {afterAll,afterEach,expect,test,vi} from 'vitest';
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {createSessionMutationRuntime} from '../../../../../harness-runtime/lib/session-mutations.js';
 import {git} from '../../../../../harness-runtime/lib/session-changes-git.js';
+import {initGitRepository} from '../../../../../../scripts/test-git-template.mjs';
 import {createNativeAdmissionOwner} from './native-admission-owner.js';
 import {createNativeSessionRemoval} from './native-session-removal.js';
 import {createManagedTaskScheduler} from '../../../../../orchestration-runtime/scheduler.js';
@@ -14,12 +17,28 @@ vi.setConfig({testTimeout:60_000,hookTimeout:60_000});
 
 const roots=[];
 afterEach(async()=>{await Promise.all(roots.splice(0).map(root=>fs.rm(root,{recursive:true,force:true})));});
+const execute=promisify(execFile);
+// Build once, execute many: the project repository and the ledger holding the registered
+// root session are immutable setup. They are built once per file and each test gets a
+// copy-on-write clone at the SAME path, so every path recorded in the ledger stays valid.
+let template;
+const cloneTree=async(from,to)=>{try{await execute('/bin/cp',['-cpR',from,to]);}catch{await fs.rm(to,{recursive:true,force:true});await fs.cp(from,to,{recursive:true,verbatimSymlinks:true});}};
+async function seededRoot(){
+  if(!template){
+    const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'native-removal-')));
+    const directory=path.join(root,'project'),storage=path.join(root,'ledger');await fs.mkdir(directory);await initGitRepository(directory);
+    await fs.writeFile(path.join(directory,'published.txt'),'published bytes');
+    await createSessionMutationRuntime({directory:storage}).registerNativeSession({directory,sessionID:'ses_root'});
+    template={root,pristine:`${root}-pristine`,used:false};await cloneTree(root,template.pristine);
+  }
+  if(template.used){await fs.rm(template.root,{recursive:true,force:true});await cloneTree(template.pristine,template.root);}
+  template.used=true;return template.root;
+}
+afterAll(async()=>{if(template)await Promise.all([template.root,template.pristine].map(directory=>fs.rm(directory,{recursive:true,force:true})));});
 async function fixture({discardStreamReceipts,recordDiagnostic,managed=false}={}){
-  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'native-removal-')));roots.push(root);
-  const directory=path.join(root,'project'),storage=path.join(root,'ledger');await fs.mkdir(directory);await git(directory,['init','--quiet']);
-  await fs.writeFile(path.join(directory,'published.txt'),'published bytes');
+  const root=await seededRoot();roots.push(root);
+  const directory=path.join(root,'project'),storage=path.join(root,'ledger');
   const runtime=createSessionMutationRuntime({directory:storage});
-  await runtime.registerNativeSession({directory,sessionID:'ses_root'});
   // The idle child intentionally has no existing ledger row.
   const sessions=new Map([['ses_root',{id:'ses_root',parentID:null,directory}],['ses_child',{id:'ses_child',parentID:'ses_root',directory}]]);
   let allowed=true,failLeaf=false,failPreparation=false,failStop=false,addChild=false,claimed=false;

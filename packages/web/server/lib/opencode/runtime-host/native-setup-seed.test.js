@@ -201,7 +201,7 @@ it('skips VCS/dependency trees and over-budget files, pinning only what verifySe
  await fs.mkdir(controlRoot,{recursive:true});await protectNativeSetupSource({controlRoot,sourceRoot});
  await f.text(path.join(skills,'g','SKILL.md'),'git skill');await f.text(path.join(skills,'g','.git','objects','pack','pack-x.pack'),Buffer.alloc(NATIVE_SETUP_SEED_MAX_FILE_BYTES+1));
  const modules=path.join(f.source.home,'.agents','skills','n','scripts','node_modules');await f.text(path.join(f.source.home,'.agents','skills','n','SKILL.md'),'n');
- for(let index=0;index<4200;index++)await f.text(path.join(modules,'p'+index%50,'f'+index+'.js'),'x');
+ await Promise.all(Array.from({length:4200},(_,index)=>f.text(path.join(modules,'p'+index%50,'f'+index+'.js'),'x')));
  await f.text(path.join(skills,'d','data','big.json'),Buffer.alloc(NATIVE_SETUP_SEED_MAX_FILE_BYTES+1,32));await f.text(path.join(skills,'d','data','exact.json'),Buffer.alloc(NATIVE_SETUP_SEED_MAX_FILE_BYTES,32));
  for(let index=0;index<20;index++)await f.text(path.join(skills,'fonts','f'+String(index).padStart(2,'0')+'.ttf'),Buffer.alloc(900*1024,index));
  const marker=await seedNativeSetup({source:f.source,target});
@@ -217,7 +217,7 @@ it('pins at most the verifySeed row budget, generated rows first, with a marker 
  const f=await fixture(),{controlRoot,sourceRoot,target}=production(f),many=path.join(f.source.opencodeConfigDirectory,'skills','many'),prefix='n'.repeat(200);
  await fs.mkdir(controlRoot,{recursive:true});await protectNativeSetupSource({controlRoot,sourceRoot});
  await f.write(path.join(f.source.webDataDirectory,'settings.json'),{themeId:'dark'});await f.write(path.join(f.source.opencodeDataDirectory,'auth.json'),{fixture:{type:'api',key:'synthetic'}});
- for(let index=0;index<NATIVE_SETUP_SEED_MAX_FILES+4;index++)await f.text(path.join(many,prefix+String(index).padStart(5,'0')),'x');
+ await Promise.all(Array.from({length:NATIVE_SETUP_SEED_MAX_FILES+4},(_,index)=>f.text(path.join(many,prefix+String(index).padStart(5,'0')),'x')));
  const captureLogicalSetup=async()=>({localOwners:{'bots-local-owner':{id:'10000000-0000-4000-8000-000000000001',createdAt:'2026-01-01T00:00:00Z'}}});
  const marker=await seedNativeSetup({source:f.source,target,captureLogicalSetup});
  expect(marker.files).toHaveLength(NATIVE_SETUP_SEED_MAX_FILES);expect(marker.skipped.every(row=>row.reason==='file_limit')).toBe(true);expect(marker.skippedCount).toBe(7);

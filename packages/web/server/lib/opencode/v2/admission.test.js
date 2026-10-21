@@ -38,7 +38,6 @@ const MODEL = Object.freeze({ providerID: 'fixture', modelID: 'fixture-model' })
 const b64 = (text) => Buffer.from(text, 'utf8').toString('base64');
 const PNG_URL = `data:image/png;base64,${Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).toString('base64')}`;
 
-const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 
 /** Builds an admission wired the way the server wires it (client.getAdmission -> admission). */
 const harness = (fixture, { options = {}, deps: extraDeps = {}, generation = 2 } = {}) => {
@@ -82,13 +81,9 @@ const harness = (fixture, { options = {}, deps: extraDeps = {}, generation = 2 }
 
 const writes = (calls) => calls.filter((call) => call.method !== 'GET').map((call) => `${call.method} ${call.path}`);
 
-const waitForIdle = async (fixture, sessionID, timeoutMs = 5_000) => {
-  const deadline = Date.now() + timeoutMs;
-  while (fixture.getState().executingSessions.includes(sessionID)) {
-    if (Date.now() > deadline) throw new Error(`session ${sessionID} did not settle`);
-    await sleep(10);
-  }
-};
+const waitForIdle = (fixture, sessionID, timeoutMs = 5_000) => vi.waitFor(() => {
+  if (fixture.getState().executingSessions.includes(sessionID)) throw new Error(`session ${sessionID} did not settle`);
+}, { timeout: timeoutMs, interval: 2 });
 
 const quickPrompt = (fixture, sessionID) => fixture.configureNextPrompt(sessionID, { chunks: 1, intervalMs: 10 });
 
@@ -1089,12 +1084,13 @@ describe('durable accepted-operation identity and native permissions', () => {
 
   it('reconciles from durable metadata after bounded cache eviction', async () => {
     const store = nativeAdmissionStore();
-    const admission = store.fresh();
+    const dedupeLimit = 16;
+    const admission = store.fresh({ dedupeLimit });
     await admission.prompt(store.session.id, original(), originalOptions());
-    for (let index = 0; index < 512; index += 1) {
+    for (let index = 0; index < dedupeLimit; index += 1) {
       await admission.prompt(store.session.id, { messageID: `msg_eviction${index}`, noReply: true, parts: [{ type: 'text', text: `${index}` }] });
     }
-    expect(admission.inspect().admittedCount).toBe(512);
+    expect(admission.inspect().admittedCount).toBe(dedupeLimit);
     store.calls.length = 0;
     await expect(admission.prompt(store.session.id, original(), originalOptions())).resolves.toBeNull();
     expect(store.calls).toHaveLength(1);

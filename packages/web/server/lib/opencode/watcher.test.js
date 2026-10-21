@@ -58,9 +58,7 @@ describe('createOpenCodeWatcherRuntime', () => {
 
     const watcher = createOpenCodeWatcherRuntime({
       openCodeClient: createProjectedStreamClient(),
-      waitForOpenCodePort: async () => {
-        await new Promise((resolve) => setTimeout(resolve, 1));
-      },
+      waitForOpenCodePort: async () => {},
       buildOpenCodeUrl: (path) => `http://127.0.0.1:4096${path}`,
       getOpenCodeAuthHeaders: () => ({ Authorization: 'Bearer test-token' }),
       onPayload(payload, directory) {
@@ -79,9 +77,8 @@ describe('createOpenCodeWatcherRuntime', () => {
     });
 
     await watcher.start();
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await vi.waitFor(() => expect(directories).toEqual(['/tmp/project']));
 
-    expect(directories).toEqual(['/tmp/project']);
     expect(fetchCalls).toEqual([
       {
         url: 'http://127.0.0.1:4096/api/event',
@@ -181,9 +178,8 @@ describe('createOpenCodeWatcherRuntime', () => {
     });
 
     await watcher.start();
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await vi.waitFor(() => expect(payloads).toEqual(['server.connected', 'session.updated']));
 
-    expect(payloads).toEqual(['server.connected', 'session.updated']);
     expect(fetchLastEventIds.slice(0, 2)).toEqual([null, null]);
   });
 
@@ -237,7 +233,7 @@ describe('createOpenCodeWatcherRuntime', () => {
         },
       },
     });
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await vi.waitFor(() => expect(payloads).toHaveLength(1));
 
     globalEventHub.stop();
     expect(hubFetchCalls).toBe(1);
@@ -329,20 +325,7 @@ describe('createOpenCodeWatcherRuntime gen 2', () => {
     if (directory) rmSync(directory, { recursive: true, force: true });
   });
 
-  const waitFor = async (assertion) => {
-    const deadline = Date.now() + 2000;
-    let lastError;
-    while (Date.now() < deadline) {
-      try {
-        assertion();
-        return;
-      } catch (error) {
-        lastError = error;
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      }
-    }
-    throw lastError;
-  };
+  const waitFor = (assertion) => vi.waitFor(assertion, { timeout: 2000, interval: 2 });
 
   const runtimeDeps = () => {
     const fetchPaths = [];
@@ -461,16 +444,21 @@ describe('createOpenCodeWatcherRuntime gen 2', () => {
       openCodeClient: createOpenCodeClient({ getRuntime: () => ({ generation, baseUrl: 'http://127.0.0.1:4096' }) }),
       onPayload() {},
     });
-    const started = watcher.start();
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(fetchImpl).not.toHaveBeenCalled();
-    expect(warn).toHaveBeenCalled();
-    generation = 1;
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(fetchImpl).not.toHaveBeenCalled();
-    generation = 2;
-    await started;
-    await waitFor(() => expect(fetchImpl).toHaveBeenCalledWith('http://127.0.0.1:4096/api/event', expect.any(Object)));
-    watcher.stop();
+    // Fake clock: the retry delay (5 ms) elapses several times per window without real waiting.
+    vi.useFakeTimers();
+    try {
+      const started = watcher.start();
+      await vi.advanceTimersByTimeAsync(20);
+      expect(fetchImpl).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalled();
+      generation = 1;
+      await vi.advanceTimersByTimeAsync(20);
+      expect(fetchImpl).not.toHaveBeenCalled();
+      generation = 2;
+      await vi.advanceTimersByTimeAsync(10);
+      await started;
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledWith('http://127.0.0.1:4096/api/event', expect.any(Object)));
+      watcher.stop();
+    } finally { vi.useRealTimers(); }
   });
 });

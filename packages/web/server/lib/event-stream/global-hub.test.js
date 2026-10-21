@@ -39,21 +39,8 @@ function createSseResponse({ blocks = [] } = {}) {
   };
 }
 
-async function waitForAssertion(assertion, timeoutMs = 1000) {
-  const deadline = Date.now() + timeoutMs;
-  let lastError;
-
-  while (Date.now() < deadline) {
-    try {
-      assertion();
-      return;
-    } catch (error) {
-      lastError = error;
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-  }
-
-  throw lastError;
+function waitForAssertion(assertion, timeoutMs = 1000) {
+  return vi.waitFor(assertion, { timeout: timeoutMs, interval: 2 });
 }
 
 describe('createGlobalMessageStreamHub', () => {

@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { createOpenCodeClient } from '../opencode/opencode-client/index.js';
 import { acceptDirectoryMessageStreamWsConnection } from './directory-ws-bridge.js';
@@ -64,19 +64,8 @@ function createSseResponse({ blocks, signal, holdOpen }) {
   };
 }
 
-async function waitFor(assertion) {
-  const deadline = Date.now() + 1000;
-  let lastError;
-  while (Date.now() < deadline) {
-    try {
-      assertion();
-      return;
-    } catch (error) {
-      lastError = error;
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    }
-  }
-  throw lastError;
+function waitFor(assertion) {
+  return vi.waitFor(assertion, { timeout: 1000, interval: 2 });
 }
 
 /** A hub over a fake upstream: `connections[n]` is the n-th stream's blocks; REST answers 503. */

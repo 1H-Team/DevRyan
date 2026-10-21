@@ -81,7 +81,7 @@ const fixture = `
         onDelta({type:'text-delta',text:'Earlier step.'});
         onDelta({type:'thinking-delta',text:'callback thought'});
         onDelta({type:'tool-call-completed',callId:'duplicate-tool',toolCall:{name:'read',result:'callback'}});
-        await new Promise(resolve=>setTimeout(resolve,30));
+        await new Promise(resolve=>setTimeout(resolve,1));
         yield {type:'status',status:'FINISHED'};
         yield assistant(' tail');
         onDelta({type:'text-delta',text:'last tail'});

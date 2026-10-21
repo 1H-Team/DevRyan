@@ -98,7 +98,7 @@ worker processes without live providers or installed-app state.
 `stream-contract.test.js` runs the real direct, persistent and one-shot adapters
 through repetition, whitespace, Unicode pipe chunks, delayed mirrored callbacks,
 reasoning closure, final-result replacement, cancellation and partial failures.
-The web adapter suite is `packages/web/server/lib/opencode/cursor-sdk-runtime.test.js`.
+`direct-adapter.test.js` is the direct (non-worker) adapter suite: SDK event sequences through `createCursorSdkRuntime` covering plan cards, apply_patch synthesis, Council refusal, subagent tasks, thinking order, partial drains, aborts and stale agents.
 `fixtures/pinned-accumulator.js` executes the shipped SDK 1.0.28 accumulator source
 offline for both final-result and adapter fixtures. Conversation witnesses come
 from independent interaction traces, including running-tool and empty-reasoning

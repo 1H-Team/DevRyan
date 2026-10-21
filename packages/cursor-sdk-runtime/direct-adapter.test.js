@@ -2,10 +2,10 @@ import { mkdtempSync, rmSync } from 'fs';
 import { writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'bun:test';
 
-import { createCursorSdkRuntime } from '@devryan/cursor-sdk-runtime';
-import { collectSanitizedTools } from '../../../../../scripts/agent-evals/client.mjs';
+import { createCursorSdkRuntime } from './index.js';
+import { collectSanitizedTools } from '../../scripts/agent-evals/client.mjs';
 
 const waitFor = async (predicate) => {
   for (let index = 0; index < 25; index += 1) {

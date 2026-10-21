@@ -10,6 +10,7 @@ const blobs = new Map();
 let blobBytes = 0;
 const listings = new Map();
 const oversizedStores = new Set();
+const LISTING_LIMIT_BYTES = 1024 * 1024;
 const lowerBound = (rows, key) => {
   let low = 0, high = rows.length;
   while (low < high) { const middle = (low + high) >>> 1; if (rows[middle].key < key) low = middle + 1; else high = middle; }
@@ -29,7 +30,8 @@ const validKey = (key) => typeof key === 'string' && /^[a-zA-Z0-9/_-]+\.json$/.t
 // Git's tree is the on-disk index: one small blob per entity, fixed-size pages
 // for lists, and one atomic ref update for the entire transaction. Old readers
 // retain their tree identity. No lifetime-sized JSON document is rewritten.
-export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,syncObjects=syncPendingObjectDirectory } = {}) {
+export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,syncObjects=syncPendingObjectDirectory,listingLimitBytes=LISTING_LIMIT_BYTES } = {}) {
+  if (!Number.isSafeInteger(listingLimitBytes) || listingLimitBytes <= 0) throw changeError('invalid_change_record');
   if (ref !== STATE_REF && !/^refs\/devryan\/leases\/[a-f0-9-]{36}$/.test(ref)) throw changeError('invalid_change_record');
   const args = ['--git-dir', gitDir];
   const runGit=gitRunner?.git??git,runTokens=gitRunner?.gitTokens??gitTokens,runRecords=gitRunner?.gitRecords??gitRecords;
@@ -66,7 +68,7 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,s
         const rows = []; let bytes = 0;
         for await (const row of runTokens(cwd, [...args, 'ls-tree', '-r', '-l', '-z', snapshot])) {
           bytes += Buffer.byteLength(row);
-          if (bytes > 1024 * 1024) { oversizedStores.add(gitDir); return null; } // Larger ledgers stay paged from Git.
+          if (bytes > listingLimitBytes) { oversizedStores.add(gitDir); return null; } // Larger ledgers stay paged from Git.
           rows.push(parseRow(row));
         }
         return rows.sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0);

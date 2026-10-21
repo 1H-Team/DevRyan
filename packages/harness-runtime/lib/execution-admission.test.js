@@ -67,17 +67,17 @@ test('idle admission survives progressing work, expires idle work, and keeps an 
   const { executionProgress } = await import('./execution-admission.js');
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   await expect(withExecutionAdmission({ sessionID: 'progressing' }, async () => {
-    for (let i = 0; i < 8; i++) { await sleep(30); executionProgress(); }
+    for (let i = 0; i < 12; i++) { await sleep(10); executionProgress(); } // 120 ms of work, past the 100 ms idle window
     return 'done';
   }, { timeoutMs: 2_000, idleMs: 100 })).resolves.toBe('done');
   const idleStarted = Date.now();
-  await expect(withExecutionAdmission({ sessionID: 'idle' }, () => executionPhase('work', () => sleep(400)),
+  await expect(withExecutionAdmission({ sessionID: 'idle' }, () => executionPhase('work', () => sleep(160)),
     { timeoutMs: 2_000, idleMs: 100 })).rejects.toMatchObject({ code: 'local_execution_timeout' });
-  expect(Date.now() - idleStarted).toBeGreaterThanOrEqual(390); // Ownership retained until settled.
+  expect(Date.now() - idleStarted).toBeGreaterThanOrEqual(150); // Ownership retained until settled.
   await expect(withExecutionAdmission({ sessionID: 'capped' }, async () => {
-    for (let i = 0; i < 20; i++) { await sleep(30); executionProgress(); }
+    for (let i = 0; i < 20; i++) { await sleep(10); executionProgress(); }
     return 'late';
-  }, { timeoutMs: 200, idleMs: 100 })).rejects.toMatchObject({ code: 'local_execution_timeout' });
+  }, { timeoutMs: 150, idleMs: 100 })).rejects.toMatchObject({ code: 'local_execution_timeout' });
 });
 
 test('a caller leaving a long queue is credited with progress before its own work', async () => {
@@ -85,16 +85,16 @@ test('a caller leaving a long queue is credited with progress before its own wor
   const holder = { progress: Date.now(), waiters: 0 };
   const queueMeter = { progress: Date.now(), waiters: 0, following: holder };
   let release; const previous = new Promise((resolve) => { release = resolve; });
-  const ticker = setInterval(() => { holder.progress = Date.now(); }, 20);
-  setTimeout(() => { clearInterval(ticker); queueMeter.following = undefined; queueMeter.progress = Date.now(); release(); }, 1_200);
+  const ticker = setInterval(() => { holder.progress = Date.now(); }, 10);
+  setTimeout(() => { clearInterval(ticker); queueMeter.following = undefined; queueMeter.progress = Date.now(); release(); }, 400); // queue wait well past idleMs
   await expect(withExecutionAdmission({ sessionID: 'queued' }, async () => {
     await waitForExecutionQueue(previous, queueMeter);
     // Deterministic: the credit is visible immediately, not only if an idle
     // tick happens to land before the work finishes.
     expect(Date.now() - executionProgressMeter().progress).toBeLessThan(100);
-    await sleep(150);
+    await sleep(40);
     return 'completed';
-  }, { timeoutMs: 10_000, idleMs: 400 })).resolves.toBe('completed');
+  }, { timeoutMs: 10_000, idleMs: 120 })).resolves.toBe('completed');
 });
 
 test('a summarized admission journals one record with per-phase steps, and nothing when fast', async () => {

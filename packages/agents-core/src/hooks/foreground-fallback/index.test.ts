@@ -20,6 +20,21 @@ import {
   isPermanentQuotaBillingError,
 } from './index';
 
+// The manager sleeps up to its default 500 ms retryDelayMs between consecutive
+// fallbacks. Tests that are not about that spacing collapse it so they do not wait.
+function collapseRetryBackoff(): () => void {
+  const realSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = ((handler: TimerHandler, delay?: number, ...args: unknown[]) =>
+    realSetTimeout(
+      handler,
+      delay !== undefined && delay >= 100 && delay <= 500 ? 0 : delay,
+      ...args,
+    )) as unknown as typeof setTimeout;
+  return () => {
+    globalThis.setTimeout = realSetTimeout;
+  };
+}
+
 // ACCEPTANCE GAP: config() hook behaviour is not covered by CI — verify live.
 
 // Shared session reference so our mock.module for getClient returns the
@@ -3150,29 +3165,34 @@ describe('ForegroundFallbackManager session.error', () => {
   });
 
   test('falls back to abort+retry when promptAsync fails on busy session', async () => {
-    const { mocks } = createMockClient({
-      promptAsyncImpl: async () => {
-        throw new Error('session busy');
-      },
-      abortImpl: async () => {
-        // abort succeeds on first call
-      },
-    });
-    const mgr = new ForegroundFallbackManager(makeChains(), true, {
-      directory: '/test',
-    } as any);
+    const restoreTimers = collapseRetryBackoff();
+    try {
+      const { mocks } = createMockClient({
+        promptAsyncImpl: async () => {
+          throw new Error('session busy');
+        },
+        abortImpl: async () => {
+          // abort succeeds on first call
+        },
+      });
+      const mgr = new ForegroundFallbackManager(makeChains(), true, {
+        directory: '/test',
+      } as any);
 
-    await mgr.handleEvent({
-      type: 'session.error',
-      properties: {
-        sessionID: 'sess-busy',
-        error: { message: 'Rate limit exceeded' },
-      },
-    });
+      await mgr.handleEvent({
+        type: 'session.error',
+        properties: {
+          sessionID: 'sess-busy',
+          error: { message: 'Rate limit exceeded' },
+        },
+      });
 
-    // First promptAsync attempt failed → abort called, then promptAsync retried
-    expect(mocks.abort).toHaveBeenCalledTimes(1);
-    expect(mocks.promptAsync).toHaveBeenCalledTimes(2);
+      // First promptAsync attempt failed → abort called, then promptAsync retried
+      expect(mocks.abort).toHaveBeenCalledTimes(1);
+      expect(mocks.promptAsync).toHaveBeenCalledTimes(2);
+    } finally {
+      restoreTimers();
+    }
   });
 
   test('promptAsync is invoked bound: a this-reading implementation must not throw', async () => {
@@ -6195,30 +6215,35 @@ describe('ForegroundFallbackManager deduplication', () => {
   });
 
   test('distinct failure incidents on the same turn and model are not time-deduped', async () => {
-    const { mocks } = createMockClient({
-      promptAsyncImpl: async () => ({
-        data: { error: { message: 'replay admission rejected' } },
-      }),
-    });
-    const mgr = new ForegroundFallbackManager(
-      { orchestrator: ['test/a', 'test/b', 'test/c'] },
-      true,
-      { directory: '/test' } as any,
-    );
-    const errorEvent = (incidentID: string) => ({
-      type: 'session.error',
-      properties: {
-        sessionID: 'same-model-incidents',
-        info: { id: incidentID },
-        error: { message: 'rate limit' },
-      },
-    });
+    const restoreTimers = collapseRetryBackoff();
+    try {
+      const { mocks } = createMockClient({
+        promptAsyncImpl: async () => ({
+          data: { error: { message: 'replay admission rejected' } },
+        }),
+      });
+      const mgr = new ForegroundFallbackManager(
+        { orchestrator: ['test/a', 'test/b', 'test/c'] },
+        true,
+        { directory: '/test' } as any,
+      );
+      const errorEvent = (incidentID: string) => ({
+        type: 'session.error',
+        properties: {
+          sessionID: 'same-model-incidents',
+          info: { id: incidentID },
+          error: { message: 'rate limit' },
+        },
+      });
 
-    await mgr.handleEvent(redoEvents.assistant('same-model-incidents'));
-    await mgr.handleEvent(errorEvent('failure-one'));
-    await mgr.handleEvent(errorEvent('failure-two'));
+      await mgr.handleEvent(redoEvents.assistant('same-model-incidents'));
+      await mgr.handleEvent(errorEvent('failure-one'));
+      await mgr.handleEvent(errorEvent('failure-two'));
 
-    expect(mocks.promptAsync).toHaveBeenCalledTimes(2);
+      expect(mocks.promptAsync).toHaveBeenCalledTimes(2);
+    } finally {
+      restoreTimers();
+    }
   });
 
   test('different sessions are not deduplicated against each other', async () => {
@@ -6240,62 +6265,67 @@ describe('ForegroundFallbackManager deduplication', () => {
   });
 
   test('cascade continues when second error arrives within dedup window after model switch', async () => {
-    const { mocks } = createMockClient();
-    const mgr = new ForegroundFallbackManager(makeChains(), true, {
-      directory: '/test',
-    } as any);
+    const restoreTimers = collapseRetryBackoff();
+    try {
+      const { mocks } = createMockClient();
+      const mgr = new ForegroundFallbackManager(makeChains(), true, {
+        directory: '/test',
+      } as any);
 
-    // Seed session: current model is first entry in orchestrator chain
-    await mgr.handleEvent({
-      type: 'message.updated',
-      properties: {
-        info: {
-          sessionID: 'sess-cascade',
-          providerID: 'anthropic',
-          modelID: 'claude-opus-4-5',
+      // Seed session: current model is first entry in orchestrator chain
+      await mgr.handleEvent({
+        type: 'message.updated',
+        properties: {
+          info: {
+            sessionID: 'sess-cascade',
+            providerID: 'anthropic',
+            modelID: 'claude-opus-4-5',
+          },
         },
-      },
-    });
+      });
 
-    // First error - model A fails, falls back to model B (openai/gpt-4o)
-    await mgr.handleEvent({
-      type: 'session.error',
-      properties: {
-        sessionID: 'sess-cascade',
-        error: { message: 'Rate limit exceeded' },
-      },
-    });
+      // First error - model A fails, falls back to model B (openai/gpt-4o)
+      await mgr.handleEvent({
+        type: 'session.error',
+        properties: {
+          sessionID: 'sess-cascade',
+          error: { message: 'Rate limit exceeded' },
+        },
+      });
 
-    expect(mocks.promptAsync).toHaveBeenCalledTimes(1);
-    expect(mocks.promptAsync.mock.calls[0][0]).toEqual(
-      expect.objectContaining({
-        body: expect.objectContaining({
-          model: { providerID: 'openai', modelID: 'gpt-4o' },
+      expect(mocks.promptAsync).toHaveBeenCalledTimes(1);
+      expect(mocks.promptAsync.mock.calls[0][0]).toEqual(
+        expect.objectContaining({
+          body: expect.objectContaining({
+            model: { providerID: 'openai', modelID: 'gpt-4o' },
+          }),
         }),
-      }),
-    );
+      );
 
-    // Second error - model B also fails within the 5s dedup window.
-    // This is a DIFFERENT incident (new model), so dedup is bypassed
-    // because the current model differs from lastTriggerModel.
-    await mgr.handleEvent({
-      type: 'session.error',
-      properties: {
-        sessionID: 'sess-cascade',
-        error: { message: 'Monthly usage limit reached' },
-      },
-    });
+      // Second error - model B also fails within the 5s dedup window.
+      // This is a DIFFERENT incident (new model), so dedup is bypassed
+      // because the current model differs from lastTriggerModel.
+      await mgr.handleEvent({
+        type: 'session.error',
+        properties: {
+          sessionID: 'sess-cascade',
+          error: { message: 'Monthly usage limit reached' },
+        },
+      });
 
-    // Should trigger a second fallback despite being within the original
-    // 5-second dedup window, because the model changed (modelChanged bypass).
-    expect(mocks.promptAsync).toHaveBeenCalledTimes(2);
-    expect(mocks.promptAsync.mock.calls[1][0]).toEqual(
-      expect.objectContaining({
-        body: expect.objectContaining({
-          model: { providerID: 'google', modelID: 'gemini-2.5-pro' },
+      // Should trigger a second fallback despite being within the original
+      // 5-second dedup window, because the model changed (modelChanged bypass).
+      expect(mocks.promptAsync).toHaveBeenCalledTimes(2);
+      expect(mocks.promptAsync.mock.calls[1][0]).toEqual(
+        expect.objectContaining({
+          body: expect.objectContaining({
+            model: { providerID: 'google', modelID: 'gemini-2.5-pro' },
+          }),
         }),
-      }),
-    );
+      );
+    } finally {
+      restoreTimers();
+    }
   });
 });
 

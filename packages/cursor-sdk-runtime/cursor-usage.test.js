@@ -71,7 +71,7 @@ const sdkFixture = `
           run.usage=usage;
           onDelta({type:'turn-ended',usage});
           yield {type:'usage',usage};
-          await new Promise(resolve=>setTimeout(resolve,20));
+          await new Promise(resolve=>setTimeout(resolve,2));
           if(cancelling){const keepAlive=setInterval(()=>{},1000);try{await complete;}finally{clearInterval(keepAlive);}return;}
         }
         run.usage=total; run.status=failing?'error':'finished'; finish();
@@ -134,7 +134,7 @@ for (const mode of ['direct', 'persistent', 'fallback']) {
         } });
         if (cancelling) {
           for (let attempt = 0; attempt < 500 && !observations.some(row => row.tokens); attempt++) {
-            await new Promise(resolve => setTimeout(resolve, 10));
+            await new Promise(resolve => setTimeout(resolve, 2));
           }
           expect(observations.some(row => row.tokens)).toBe(true);
           await runtime.abortSession('ses_fixture');
@@ -143,7 +143,7 @@ for (const mode of ['direct', 'persistent', 'fallback']) {
         for (let attempt = 0; attempt < 500; attempt++) {
           assistant = (await runtime.getSessionMessages('ses_fixture')).find(row => row.info.role === 'assistant' && row.info.finish);
           if (assistant) break;
-          await new Promise(resolve => setTimeout(resolve, 10));
+          await new Promise(resolve => setTimeout(resolve, 2));
         }
         expect(assistant).toBeDefined();
         expect(correlations.at(-1)).toEqual({ sessionID: 'ses_fixture', messageID: assistant.info.id, userMessageID: 'msg_fixture', directory });

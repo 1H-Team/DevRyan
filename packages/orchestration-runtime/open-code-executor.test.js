@@ -946,6 +946,34 @@ describe('managed OpenCode executor', () => {
     }]);
   });
 
+  test('fails a finalized timeout without a continuation when the task has no original assignment', async () => {
+    const prompts = [];
+    const timeoutMessage = assistant({
+      info: { id: 'msg_timeout', finish: 'error', error: { message: 'The operation timed out.' } },
+      parts: [{ type: 'text', text: 'partial' }],
+    });
+    const transport = {
+      async createSession() { throw new Error('must not create'); },
+      async promptSession(input) { prompts.push(input); },
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() { return { type: 'idle' }; },
+      async readMessages() { return [timeoutMessage]; },
+      async abortSession() { throw new Error('must not abort'); },
+      deleteSession,
+    };
+    const executor = createManagedOpenCodeExecutor({ transport, sleep: async () => undefined });
+
+    const result = await executor.observe(task({ childSessionId: 'ses_child', status: 'running', prompt: '' }), recoveryControl());
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      resumable: false,
+      failureReason: 'Managed continuation requires the original task identity and assignment',
+      recoverablePreview: 'partial',
+    });
+    expect(prompts).toHaveLength(0);
+  });
+
   test('continues once in the same child after the Claude connection closes mid-response', async () => {
     const prompts = [];
     const statuses = [{ type: 'busy' }, { type: 'idle' }];
