@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { resolveSqliteDriver } from '../../packages/web/server/lib/opencode/db-maintenance-core.js';
+import { resolveSqliteDriver } from '../../packages/web/server/lib/opencode/sqlite-driver.js';
 import { NATIVE_BUNDLE_CREDENTIAL_CONTRACT, nativeBundleCredentialFingerprint as fingerprint, parseNativeBundleCredentialBoot } from '../../packages/web/server/lib/opencode/runtime-host/native-bundle-credential-contract.js';
 import { runSelectedNativeLifecycle } from './package-rollback-lane.mjs';
 import { emptyClaudeLifecycle } from '../../packages/web/server/lib/opencode/runtime-host/native-claude-lifecycle.js';

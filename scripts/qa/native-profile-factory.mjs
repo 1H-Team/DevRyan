@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Effect } from 'effect';
 import initialMigration from '@opencode/core/database/migration/20260127222353_familiar_lady_ursula';
-import { resolveSqliteDriver } from '../../packages/web/server/lib/opencode/db-maintenance-core.js';
+import { resolveSqliteDriver } from '../../packages/web/server/lib/opencode/sqlite-driver.js';
 import { verifyNativeRuntimeArtifacts } from '../../packages/web/server/lib/opencode/runtime-host/native-artifacts.js';
 import { runNativeMigrationProcess } from '../../packages/web/server/lib/opencode/runtime-host/native-migration-process.js';
 import { createSessionExecutionHost } from '../../packages/web/server/lib/opencode/session-execution-host.js';

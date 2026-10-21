@@ -6,7 +6,7 @@ import path from 'node:path';
 import os from 'node:os';
 import {createHash,randomBytes} from 'node:crypto';
 import {executionArtifacts} from '../execution-artifacts.js';
-import {resolveSqliteDriver} from '../db-maintenance-core.js';
+import {resolveSqliteDriver} from '../sqlite-driver.js';
 import {DEVRYAN_MANAGED_PLUGINS} from '../managed-plugins.js';
 import {verifyNativeRuntimeArtifacts,readNativeRuntimeManifest} from './native-artifacts.js';
 import {timeStartupPhase} from '../startup-timing.js';

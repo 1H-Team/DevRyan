@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { resolveSqliteDriver } from '../db-maintenance-core.js';
+import { resolveSqliteDriver } from '../sqlite-driver.js';
 import { TARGET_OPENCODE_VERSION } from '../version-policy.js';
 
 const fail = () => Object.assign(new Error('bundle_v2_upgrade_compatibility_required'), { code: 'bundle_v2_upgrade_compatibility_required', status: 503 });

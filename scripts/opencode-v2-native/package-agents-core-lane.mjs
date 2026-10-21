@@ -6,7 +6,7 @@ import {createServer} from 'node:http';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {scratchParent} from '../qa/run-root.mjs';
-import {resolveSqliteDriver} from '../../packages/web/server/lib/opencode/db-maintenance-core.js';
+import {resolveSqliteDriver} from '../../packages/web/server/lib/opencode/sqlite-driver.js';
 
 const repository=fileURLToPath(new URL('../../',import.meta.url)).replace(/\/$/,'');
 const sha256=bytes=>createHash('sha256').update(bytes).digest('hex');

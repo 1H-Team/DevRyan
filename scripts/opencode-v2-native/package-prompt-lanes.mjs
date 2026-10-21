@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { resolveSqliteDriver } from '../../packages/web/server/lib/opencode/db-maintenance-core.js';
+import { resolveSqliteDriver } from '../../packages/web/server/lib/opencode/sqlite-driver.js';
 import { parseNativeObservation } from '../../packages/shared-runtime/lib/native-observation.js';
 import { waitFor } from './process-lanes.mjs';
 

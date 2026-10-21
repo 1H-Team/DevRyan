@@ -46,8 +46,7 @@ tools still use confined views. The exemption is never based on a tool's name.
 
 The built-in `read`, `glob` and `grep` run as control operations in the
 companion process on the published project, with no private view or worker.
-Each implementation was audited to read only (see
-[companion/SEAMS.md](../packages/web/server/lib/opencode/companion/SEAMS.md)):
+Each implementation was audited to read only:
 - `read` keeps its LSP warm-up disabled there.
 - `grep` and `glob` use read-only ripgrep.
 

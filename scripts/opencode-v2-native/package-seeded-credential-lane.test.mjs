@@ -3,7 +3,7 @@ import test from 'node:test';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { resolveSqliteDriver } from '../../packages/web/server/lib/opencode/db-maintenance-core.js';
+import { resolveSqliteDriver } from '../../packages/web/server/lib/opencode/sqlite-driver.js';
 import { writeNativeSetupSeed, assertNativeSetupSeedConsumed, NATIVE_SETUP_CREDENTIAL_STAMP, SEEDED_INTEGRATION_ID } from './package-seeded-credential-lane.mjs';
 
 const withRoot = async action => {

@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { resolveSqliteDriver } from '../db-maintenance-core.js';
+import { resolveSqliteDriver } from '../sqlite-driver.js';
 import { assertReviewedNativeCoreDigest, inspectNativeCloneLayout, isReviewedNativeClonePair, REVIEWED_NATIVE_CLONE_RELEASES, REVIEWED_NATIVE_CLONE_LAYOUT,
   REVIEWED_NATIVE_FRESH_CLONE_LAYOUT, REVIEWED_NATIVE_CLONE_MIGRATION_LEVEL, REVIEWED_NATIVE_CLONE_REBUILDS, REVIEWED_NATIVE_PROJECT_ARCHIVE_CLONE_LAYOUT,
   REVIEWED_NATIVE_PROJECT_ARCHIVE_FRESH_CLONE_LAYOUT, reviewedNativeCloneSourceLayout, verifyNativeCloneCompatibility } from './native-bundle-compatibility.js';

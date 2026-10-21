@@ -10,7 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
-import { resolveSqliteDriver } from '../db-maintenance-core.js';
+import { resolveSqliteDriver } from '../sqlite-driver.js';
 import { verifyBundleOwnedContinuations } from './bundle-owned-continuations.js';
 import { inspectBundleHarness } from './bundle-harness-integrity.js';
 import { buildV2PromptContent, buildV2PromptFingerprint, buildDevryanPromptMetadata } from '../v2/admission.js';

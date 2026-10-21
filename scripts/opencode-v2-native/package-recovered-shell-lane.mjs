@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { resolveSqliteDriver } from '../../packages/web/server/lib/opencode/db-maintenance-core.js';
+import { resolveSqliteDriver } from '../../packages/web/server/lib/opencode/sqlite-driver.js';
 import { createV2MessageId } from '../../packages/web/server/lib/opencode/v2/admission.js';
 import { recoveredInputHash } from '../../packages/web/server/lib/opencode/runtime-host/native-recovered-input-hash.js';
 import { assertWriterOutcome, backgroundShellTurn, snapshotFiles } from './assertions.mjs';

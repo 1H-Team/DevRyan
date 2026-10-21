@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import {afterEach,expect,test} from 'vitest';
-import {resolveSqliteDriver} from '../db-maintenance-core.js';
+import {resolveSqliteDriver} from '../sqlite-driver.js';
 import {readRecoveredNativeInputs,createNativeRecoveredInputOwner,recoveredInputHash,nativeInputCancellation} from './native-recovered-input.js';
 import {verifyBundleRecoveredInputs} from './bundle-recovered-inputs.js';
 import {inspectBundleHarness} from './bundle-harness-integrity.js';

@@ -8,7 +8,7 @@ import {repositoryRoot,captureNativeAcceptanceSource} from './opencode-v2-native
 import {fixtureSha256} from './opencode-v2-native/migration-fixture.mjs';
 import {createV2MessageId} from '../packages/web/server/lib/opencode/v2/admission.js';
 import {readSessionExecutionReceipt} from '../packages/harness-runtime/lib/session-execution.js';
-import {resolveSqliteDriver} from '../packages/web/server/lib/opencode/db-maintenance-core.js';
+import {resolveSqliteDriver} from '../packages/web/server/lib/opencode/sqlite-driver.js';
 import {waitFor} from './opencode-v2-native/process-lanes.mjs';
 import {createRunRoot} from './qa/run-root.mjs';
 

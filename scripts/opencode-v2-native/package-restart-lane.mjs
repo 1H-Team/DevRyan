@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { resolveSqliteDriver } from '../../packages/web/server/lib/opencode/db-maintenance-core.js';
+import { resolveSqliteDriver } from '../../packages/web/server/lib/opencode/sqlite-driver.js';
 import { createV2MessageId } from '../../packages/web/server/lib/opencode/v2/admission.js';
 import { assertWriterOutcome, snapshotFiles } from './assertions.mjs';
 import { waitFor } from './process-lanes.mjs';

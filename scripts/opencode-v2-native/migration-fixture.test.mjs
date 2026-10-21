@@ -4,7 +4,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { createMigrationFixture, createEmptyRuntimeFixture, createFreshInstallSource, createMigrationRefusalCopy, fixtureSha256 } from './migration-fixture.mjs';
 import { repositoryRoot } from './artifacts.mjs';
-import { resolveSqliteDriver } from '../../packages/web/server/lib/opencode/db-maintenance-core.js';
+import { resolveSqliteDriver } from '../../packages/web/server/lib/opencode/sqlite-driver.js';
 import { captureMigrationInventory } from '../../packages/web/server/lib/opencode/runtime-host/bundle-migration-inventory.js';
 
 const temporaryRoot = path.join(repositoryRoot, '.cache/v2-validation/tmp');

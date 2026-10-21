@@ -8,7 +8,7 @@ import { createSessionExecutionHost } from '../packages/web/server/lib/opencode/
 import { createNativeRevertConversation } from '../packages/web/server/lib/opencode/session-revert-coordinator.js';
 import { createOpenCodeClient } from '../packages/web/server/lib/opencode/opencode-client/index.js';
 import { createOpenCodeAdmission, createV2MessageId } from '../packages/web/server/lib/opencode/v2/admission.js';
-import { resolveSqliteDriver } from '../packages/web/server/lib/opencode/db-maintenance-core.js';
+import { resolveSqliteDriver } from '../packages/web/server/lib/opencode/sqlite-driver.js';
 import { createRuntimeBundleStore } from '../packages/web/server/lib/opencode/runtime-host/runtime-bundle.js';
 import { resumeRuntimeBundle } from '../packages/web/server/lib/opencode/runtime-host/runtime-bundle-resume.js';
 import { readRollbackIntentSync, rollbackIntentPath, assertRollbackPhysicalExit } from '../packages/web/server/lib/opencode/runtime-host/bundle-rollback-intent.js';

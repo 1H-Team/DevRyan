@@ -1375,8 +1375,8 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   };
   // Read-only callers share one parsed listing per immutable `files` tree;
   // they never mutate these records, so no copy is made.
-  // Direct receipts for built-in read, glob, grep and skill (read-only by audit;
-  // see companion/SEAMS.md). Admission is a snapshot read with no commit, the
+  // Direct receipts for built-in read, glob, grep and skill (read-only by
+  // audit). Admission is a snapshot read with no commit, the
   // tool runs in the control process, and `finishDirect` then records the
   // reservation and its publication in one locked commit, fenced by the
   // admitted generation and by cancellation, idempotent per (session, call).

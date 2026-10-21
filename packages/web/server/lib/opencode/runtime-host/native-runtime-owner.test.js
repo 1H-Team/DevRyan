@@ -4,7 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import {createHash} from 'node:crypto';
 import {verifyNativeBootMigration} from './native-boot-migration.js';
-import {resolveSqliteDriver} from '../db-maintenance-core.js';
+import {resolveSqliteDriver} from '../sqlite-driver.js';
 import { createNativeRuntimeOwner, loadNativeRuntimeBundle } from './native-runtime-owner.js';
 import * as nativeArtifacts from './native-artifacts.js';
 import { createNativeCursorRecovery } from './native-cursor-recovery.js';

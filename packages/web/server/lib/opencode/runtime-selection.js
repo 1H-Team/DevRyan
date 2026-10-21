@@ -1,10 +1,8 @@
-// Native launch observation. Legacy database discovery below is read-only.
+// Native launch observation.
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 
 import { getDevRyanDataDir } from './managed-process-registry.js';
-import { resolveOpenCodeDbPath } from './opencode-db-path.js';
 
 export const OPENCODE_RUNTIME_SELECTION_FILE = 'opencode-runtime-selection.json';
 export const OPENCODE_RUNTIME_SELECTION_VERSION = 1;
@@ -22,12 +20,6 @@ const resolveDataDir = ({ dataDir, env = process.env } = {}) => (
 export const getOpenCodeRuntimeSelectionPath = (options = {}) => (
   path.join(resolveDataDir(options), OPENCODE_RUNTIME_SELECTION_FILE)
 );
-
-/** OpenCode's data directory for `env` (mirrors `git/service.js` `getOpenCodeDataPath`). */
-export const resolveOpenCodeDataDirectory = (env = process.env, { homeDirectory = os.homedir() } = {}) => {
-  const xdgDataHome = nonEmptyString(env?.XDG_DATA_HOME) || path.join(homeDirectory, '.local', 'share');
-  return path.join(xdgDataHome, 'opencode');
-};
 
 /** A validated copy of `raw`, or null when it is not a version-1 selection. */
 export const normalizeOpenCodeRuntimeSelection = (raw) => {
@@ -78,7 +70,7 @@ export const writeOpenCodeRuntimeSelection = (selection, options = {}) => {
   return file;
 };
 
-/** Removes the manifest (storage writers then refuse to mutate). Missing is fine. */
+/** Removes the manifest. Missing is fine. */
 export const clearOpenCodeRuntimeSelection = (options = {}) => {
   fs.rmSync(getOpenCodeRuntimeSelectionPath(options), { force: true });
 };
@@ -102,25 +94,4 @@ export const readOpenCodeRuntimeSelection = (options = {}) => {
   } catch {
     return null;
   }
-};
-
-/**
- * The database storage code should act on. `selection` when a manifest
- * written by `ownerPid` (this server by default) exists; otherwise
- * `legacy-newest` (newest of the known files by mtime), which callers may use
- * for read-only inspection only. A record from another process describes a
- * runtime this server did not launch and is ignored.
- */
-export const resolveOpenCodeDatabaseSelection = ({
-  dataDir,
-  env = process.env,
-  opencodeDataPath,
-  ownerPid = process.pid,
-} = {}) => {
-  const selection = readOpenCodeRuntimeSelection({ dataDir, env });
-  if (selection && selection.ownerPid === ownerPid) {
-    return { path: selection.opencode.databasePath, source: 'selection', selection };
-  }
-  const dataPath = nonEmptyString(opencodeDataPath) || resolveOpenCodeDataDirectory(env);
-  return { path: resolveOpenCodeDbPath(dataPath), source: 'legacy-newest', selection: null };
 };

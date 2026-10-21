@@ -8,7 +8,7 @@ import { promisify } from 'node:util';
 import { Effect, Schema } from 'effect';
 import initialMigration from '@opencode/core/database/migration/20260127222353_familiar_lady_ursula';
 import * as SessionV1 from '@opencode/schema/v1/session';
-import { resolveSqliteDriver } from '../../packages/web/server/lib/opencode/db-maintenance-core.js';
+import { resolveSqliteDriver } from '../../packages/web/server/lib/opencode/sqlite-driver.js';
 import { createQaHostLaunchEnvironment } from '../qa/launch-environment.mjs';
 import { repositoryPath } from './artifacts.mjs';
 

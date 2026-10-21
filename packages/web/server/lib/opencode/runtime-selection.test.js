@@ -10,8 +10,6 @@ import {
   getOpenCodeRuntimeSelectionPath,
   normalizeOpenCodeRuntimeSelection,
   readOpenCodeRuntimeSelection,
-  resolveOpenCodeDatabaseSelection,
-  resolveOpenCodeDataDirectory,
   writeOpenCodeRuntimeSelection,
 } from './runtime-selection.js';
 
@@ -126,58 +124,4 @@ describe('write/read round trip', () => {
   });
 });
 
-describe('resolveOpenCodeDatabaseSelection', () => {
-  it('prefers the manifest over the newest file on disk', () => {
-    const dataDir = makeTempDir();
-    const opencodeDataPath = makeTempDir();
-    fs.writeFileSync(path.join(opencodeDataPath, 'opencode.db'), 'x');
-    const selection = derive({ env: { XDG_DATA_HOME: path.dirname(opencodeDataPath) } });
-    writeOpenCodeRuntimeSelection(selection, { dataDir });
-
-    const resolved = resolveOpenCodeDatabaseSelection({ dataDir, opencodeDataPath, ownerPid: selection.ownerPid });
-
-    expect(resolved).toEqual({ path: selection.opencode.databasePath, source: 'selection', selection });
-    expect(resolved.path.endsWith('opencode.db')).toBe(true);
-  });
-
-  it('ignores a record written by another server process (external or restarted runtime)', () => {
-    const dataDir = makeTempDir();
-    const opencodeDataPath = makeTempDir();
-    fs.writeFileSync(path.join(opencodeDataPath, 'opencode.db'), 'x');
-    const selection = derive({ env: { XDG_DATA_HOME: path.dirname(opencodeDataPath) } });
-    writeOpenCodeRuntimeSelection(selection, { dataDir });
-
-    expect(resolveOpenCodeDatabaseSelection({ dataDir, opencodeDataPath, ownerPid: selection.ownerPid + 1 })).toEqual({
-      path: path.join(opencodeDataPath, 'opencode.db'),
-      source: 'legacy-newest',
-      selection: null,
-    });
-    // The default owner is this process.
-    expect(resolveOpenCodeDatabaseSelection({ dataDir, opencodeDataPath }).source)
-      .toBe(selection.ownerPid === process.pid ? 'selection' : 'legacy-newest');
-  });
-
-  it('falls back to the legacy newest-by-mtime resolver without a manifest', () => {
-    const dataDir = makeTempDir();
-    const opencodeDataPath = makeTempDir();
-    fs.writeFileSync(path.join(opencodeDataPath, 'opencode.db'), 'x');
-
-    expect(resolveOpenCodeDatabaseSelection({ dataDir, opencodeDataPath })).toEqual({
-      path: path.join(opencodeDataPath, 'opencode.db'),
-      source: 'legacy-newest',
-      selection: null,
-    });
-  });
-
-  it('derives the OpenCode data path from env when none is given', () => {
-    const dataDir = makeTempDir();
-    const xdg = makeTempDir();
-    expect(resolveOpenCodeDatabaseSelection({ dataDir, env: { XDG_DATA_HOME: xdg } })).toEqual({
-      path: path.join(xdg, 'opencode', 'opencode.db'),
-      source: 'legacy-newest',
-      selection: null,
-    });
-  });
-});
-
-it("stale generation-one manifests never authorize writable native data",()=>{const dataDir=makeTempDir(),legacy={...derive(),runtime:{...derive().runtime,generation:1}};fs.writeFileSync(getOpenCodeRuntimeSelectionPath({dataDir}),JSON.stringify(legacy));expect(readOpenCodeRuntimeSelection({dataDir})).toBeNull();expect(resolveOpenCodeDatabaseSelection({dataDir,ownerPid:legacy.ownerPid}).source).toBe("legacy-newest");expect(()=>writeOpenCodeRuntimeSelection(legacy,{dataDir})).toThrow(TypeError);});
+it("stale generation-one manifests never authorize writable native data",()=>{const dataDir=makeTempDir(),legacy={...derive(),runtime:{...derive().runtime,generation:1}};fs.writeFileSync(getOpenCodeRuntimeSelectionPath({dataDir}),JSON.stringify(legacy));expect(readOpenCodeRuntimeSelection({dataDir})).toBeNull();expect(()=>writeOpenCodeRuntimeSelection(legacy,{dataDir})).toThrow(TypeError);});

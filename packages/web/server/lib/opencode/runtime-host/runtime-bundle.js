@@ -7,7 +7,7 @@ import { createReadStream } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { timeStartupPhase } from '../startup-timing.js';
 import path from 'node:path';
-import { resolveSqliteDriver } from '../db-maintenance-core.js';
+import { resolveSqliteDriver } from '../sqlite-driver.js';
 import { executionArtifacts } from '../execution-artifacts.js';
 import { verifyNativeRuntimeArtifacts } from './native-artifacts.js';
 import { withCrossProcessFileLock, writeFileAtomic } from '../../../../../harness-runtime/lib/atomic-file.js';

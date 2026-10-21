@@ -12,7 +12,6 @@ import { clearDesktopCache, getDesktopCacheInfo, isDesktopLocalOriginActive, isE
 import { formatBytes } from '@/lib/formatBytes';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import type { DiagnosticsClearRange, DiagnosticsStatus } from '@/lib/api/types';
-import { OpenCodeStorageSettings } from './OpenCodeStorageSettings';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Dialog,
@@ -428,7 +427,6 @@ export const DataStorageSettings: React.FC = () => {
       </div>
       <div className="space-y-1 px-2 py-1.5 [&>div:first-child]:border-t-0 [&>div:first-child]:pt-0">
         <DiagnosticDataCleanup />
-        <OpenCodeStorageSettings />
       </div>
     </div>
   );

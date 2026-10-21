@@ -28,7 +28,7 @@ import { createNativeSearchOutput } from './native-search-output.js';
 
 const failure = (code, status = 409) => Object.assign(new Error(code), { code, status, statusCode: status });
 // Built-in tools the companion may run with a direct receipt: audited
-// read-only (companion/SEAMS.md). The companion selects them by object
+// read-only. The companion selects them by object
 // identity; the name check here is defense in depth.
 const DIRECT_RECEIPT_TOOLS = new Set(['read', 'glob', 'grep', 'skill']);
 const NATIVE_AST_TOOLS = new Set(['ast_grep_search', 'ast_grep_replace']);

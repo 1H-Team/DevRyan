@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { assertCompletedRemoval, assertNativeRemovalAbsent, readNativeRemovalRows, stageIndependentRemovalRace } from './removal-lanes.mjs';
 import { managedTaskTurn } from './assertions.mjs';
-import { resolveSqliteDriver } from '../../packages/web/server/lib/opencode/db-maintenance-core.js';
+import { resolveSqliteDriver } from '../../packages/web/server/lib/opencode/sqlite-driver.js';
 
 const sessions = ['ses_root', 'ses_child'];
 test('competing child creation keeps its own request scope when removal releases the rendezvous', async () => {

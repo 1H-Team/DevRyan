@@ -934,101 +934,11 @@ export interface DiagnosticsExportResult {
 
 export type DiagnosticsClearRange = '24h' | '7d' | '14d' | 'all';
 
-// OpenCode database maintenance (Settings → Data Retention → OpenCode Storage).
-// Served by `GET /api/storage/opencode-db` / `POST /api/storage/opencode-db/compact`.
-export type OpenCodeStorageVacuumReason =
-  | 'not_evaluated'
-  | 'not_requested'
-  | 'other_opencode_process'
-  | 'free_disk_unknown'
-  | 'insufficient_free_disk'
-  | 'forced'
-  | 'freelist_above_threshold'
-  | 'freelist_below_threshold'
-  | 'time_budget_exhausted';
-
-export interface OpenCodeStorageSnapshot {
-  dbBytes: number;
-  walBytes: number;
-  pageSize: number;
-  pageCount: number;
-  freelistPages: number;
-  reclaimableBytes: number;
-  eventRows: number;
-}
-
-export interface OpenCodeStorageRunSummary {
-  at: number;
-  reason: string;
-  dryRun: boolean;
-  status: 'ok' | 'skipped' | 'error';
-  schema?: 'ok' | 'mismatch' | 'unknown';
-  /** Which OpenCode generation wrote the database (2 is never maintained). */
-  generation?: 1 | 2 | 'unknown';
-  /** How the database was selected: the recorded runtime selection, or the legacy newest-file guess. */
-  dbSource?: 'selection' | 'legacy-newest';
-  runtimeGeneration?: 1 | 2 | null;
-  driver?: string | null;
-  durationMs: number;
-  deletedEvents: number;
-  deletedOrphanEvents: number;
-  deletedOrphanSequences: number;
-  prunedEvents: number;
-  prunedSessions: number;
-  candidateSessions: number;
-  orphanEvents: number;
-  prunableEvents: number;
-  partial: boolean;
-  vacuum: { requested: 'never' | 'auto' | 'force'; decided: boolean; reason: OpenCodeStorageVacuumReason } | null;
-  vacuumed: boolean;
-  vacuumDurationMs: number;
-  before: OpenCodeStorageSnapshot | null;
-  after: OpenCodeStorageSnapshot | null;
-  error: string | null;
-}
-
-export interface OpenCodeStorageMaintenanceSettings {
-  enabled: boolean;
-  idleHours: number;
-  keepSeqPerAggregate: number;
-}
-
-export interface OpenCodeStorageStatus {
-  dbPath: string;
-  dbSource?: 'selection' | 'legacy-newest';
-  runtimeGeneration?: 1 | 2 | null;
-  generation?: 1 | 2 | 'unknown';
-  exists: boolean;
-  schema: 'ok' | 'mismatch' | 'unknown';
-  dbBytes: number;
-  walBytes: number;
-  reclaimableBytes: number;
-  pageSize: number;
-  pageCount: number;
-  freelistPages: number;
-  eventRows: number;
-  orphanEventRows: number;
-  error: string | null;
-  lastRun: OpenCodeStorageRunSummary | null;
-  lastDryRun: OpenCodeStorageRunSummary | null;
-  running: boolean;
-  maintenance: OpenCodeStorageMaintenanceSettings;
-}
-
-// Only `{ dryRun: true }` is served; any other request answers 409 `maintenance_not_applicable`.
-export interface OpenCodeStorageCompactResult {
-  dryRun?: boolean;
-  run?: OpenCodeStorageRunSummary;
-}
-
 export interface DiagnosticsAPI {
   getStatus(): Promise<DiagnosticsStatus>;
   export(scope: DiagnosticsExportScope): Promise<DiagnosticsExportResult>;
   sanitizeText(text: string): Promise<string>;
   clear(range?: DiagnosticsClearRange): Promise<DiagnosticsStatus>;
-  // Optional: only the web/Electron runtime serves OpenCode storage maintenance.
-  getOpenCodeStorage?(): Promise<OpenCodeStorageStatus>;
-  compactOpenCodeStorage?(options?: { dryRun?: boolean }): Promise<OpenCodeStorageCompactResult>;
 }
 
 export interface EvidenceProjectSetting {

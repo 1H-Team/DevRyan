@@ -187,11 +187,6 @@ import { getPublicRuntimePort } from './lib/runtime-port-visibility.js';
 import { configureWorktreeBootstrapRuntime } from './lib/git/service.js';
 import { buildGitGenerationTimingRecord } from './lib/git/generation-diagnostics.js';
 import { stripEventDiffContent } from './lib/opencode/diff-summary.js';
-import {
-  createOpenCodeDbMaintenance,
-  normalizeOpenCodeDbMaintenanceSettings,
-} from './lib/opencode/db-maintenance.js';
-import { registerOpenCodeDbMaintenanceRoutes } from './lib/opencode/db-maintenance-routes.js';
 import { createProxyMiddleware, responseInterceptor } from 'http-proxy-middleware';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1409,14 +1404,6 @@ async function constructWebHost(options = {}) {
   });
   const openAiOAuthBridge = createOpenAiOAuthBridge({ coordinator: openAiOAuthCoordinator });
 
-  const openCodeDbMaintenance = createOpenCodeDbMaintenance({
-    dataDir: DEVRYAN_DATA_DIR,
-    journal: (entry) => harnessRuntime.record(entry),
-  });
-  const readOpenCodeDbMaintenanceSettings = async () => normalizeOpenCodeDbMaintenanceSettings(
-    (await readSettingsFromDisk())?.opencodeDbMaintenance,
-  );
-
   const userProfileProvisioning = createUserProfileProvisioningRuntime({
     configDirectory: selectedRuntimeBundle?.descriptor.launch.opencodeConfigDirectory, homedir: getRuntimeHome,
     configRoot: defaultConfigRoot,
@@ -2562,10 +2549,6 @@ async function constructWebHost(options = {}) {
       getAppMetrics: typeof options.getAppMetrics === 'function' ? options.getAppMetrics : null,
     });
     registerEvidenceRoutes(app, { runtime: evidenceRuntime });
-    registerOpenCodeDbMaintenanceRoutes(app, {
-      maintenance: openCodeDbMaintenance,
-      readMaintenanceSettings: readOpenCodeDbMaintenanceSettings,
-    });
     await harnessInitialization;
 
     const providerResetProbe = createMeridianProviderResetProbe({

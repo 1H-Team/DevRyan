@@ -2,7 +2,7 @@ import { Schema } from 'effect';
 import { SessionInbox } from '@opencode/schema/session-inbox';
 import { SessionMessage } from '@opencode/schema/session-message';
 import { SessionLegacy } from '@opencode/schema/session-legacy';
-import { resolveSqliteDriver } from '../db-maintenance-core.js';
+import { resolveSqliteDriver } from '../sqlite-driver.js';
 import { canonicalJSON, hasMigrationTable, sha256, bundleFailure } from './bundle-migration-inventory.js';
 import { isNativeTurnParent } from '../../../../../shared-runtime/lib/native-message-status.js';
 import {nativeInputCancellation,nativeInputEnqueue} from './native-input-cancellation.js';
