@@ -116,12 +116,15 @@ test('unsupported platforms retain the existing app update action', async () => 
 }));
 test('waiting and restart progress keep the running version until the next runtime answers', async () => withDom(async container => {
   status = { ...status, phase: 'waiting-for-idle', busy: true };
+  const ticks: Array<() => void> = [], realSetInterval = globalThis.setInterval;
+  globalThis.setInterval = ((handler: () => void) => { ticks.push(handler); return ticks.length; }) as unknown as typeof setInterval;
   const { createRoot } = await import('react-dom/client'); const root = createRoot(container as unknown as Element);
   try {
     await act(async () => root.render(<ClaudeCodeVersionSection onCheckAppUpdates={async () => {}} />));
     expect(container.textContent).toContain('Waiting for active work'); expect(container.textContent).toContain('2.1.302');
     status = { ...status, phase: 'restarting', restartRequired: true };
-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 1600)); });
+    // Fire the component's poll tick directly instead of sleeping past its 1.5 s interval.
+    await act(async () => { for (const tick of ticks) tick(); await new Promise(resolve => setTimeout(resolve, 0)); });
     expect(container.textContent).toContain('Restarting the runtime'); expect(container.textContent).toContain('2.1.302');
-  } finally { await act(async () => root.unmount()); }
+  } finally { globalThis.setInterval = realSetInterval; await act(async () => root.unmount()); }
 }));

@@ -1,12 +1,30 @@
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
+
+import { sanitizeWebSettings } from '@/lib/persistence';
+import { settingsDict } from '@/lib/i18n/messages/en.settings';
+import { useQuotaStore } from '@/stores/useQuotaStore';
+import { getVisibleUsageProviders } from './usage-provider-visibility';
+// Server-side sanitizer, exercised here beside its UI twin.
+// @ts-expect-error -- untyped server module
+import { createSettingsHelpers } from '../../../../../web/server/lib/opencode/settings-helpers.js';
 
 const testDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(testDir, '../../../../../..');
 const source = (fileName: string) => readFileSync(resolve(testDir, fileName), 'utf8');
 const repoSource = (relativePath: string) => readFileSync(resolve(repoRoot, relativePath), 'utf8');
+
+const identity = (value: unknown) => value;
+const serverDependencies = {
+  normalizePathForPersistence: identity, normalizeDirectoryPath: identity, normalizeTunnelBootstrapTtlMs: identity,
+  normalizeTunnelSessionTtlMs: identity, normalizeTunnelProvider: identity, normalizeTunnelMode: identity,
+  normalizeOptionalPath: identity, normalizeManagedRemoteTunnelHostname: identity,
+  normalizeManagedRemoteTunnelPresets: () => undefined, normalizeManagedRemoteTunnelPresetTokens: () => undefined,
+  sanitizeTypographySizesPartial: () => undefined, normalizeStringArray: identity, sanitizeModelRefs: () => undefined,
+  sanitizeSkillCatalogs: () => undefined, sanitizeHiddenSkills: () => undefined, sanitizeProjects: () => undefined,
+};
 
 describe('Provider usage panel rows', () => {
   test('uses shared Claude window ordering and provider-aware labels for overall usage rows', () => {
@@ -23,28 +41,18 @@ describe('Provider usage panel rows', () => {
     expect(pageSource).toContain('<ProviderUsagePanel key={selectedProviderId} quotaProviderId={selectedProviderId} variant="page" />');
   });
 
+  // UsageCard's displayTitle/subtitle and description rendering: UsageCard.render.test.tsx.
   test('shows model names as model row titles while keeping window labels for calculations', () => {
-    const cardSource = source('UsageCard.tsx');
     const pageSource = source('ProviderUsagePanel.tsx');
 
-    expect(cardSource).toContain('displayTitle?: string');
     expect(pageSource).toContain('displayTitle={modelDisplay.displayName}');
     expect(pageSource).toContain('subtitle={modelDisplay.contextLabel}');
   });
 
-  test('renders optional usage window descriptions below usage titles', () => {
-    const cardSource = source('UsageCard.tsx');
-
-    expect(cardSource).toContain('description?: string');
-    expect(cardSource).toContain('window.description');
-  });
-
-  test('retains provider rows while rendering non-fatal warnings and hides value-only progress', () => {
-    const cardSource = source('UsageCard.tsx');
+  // Value-only rows hide progress: UsageCard.render.test.tsx.
+  test('retains provider rows while rendering non-fatal warnings', () => {
     const pageSource = source('ProviderUsagePanel.tsx');
 
-    expect(cardSource).toContain('hasUsageProgress(window)');
-    expect(cardSource).toContain('showProgress ? (');
     expect(pageSource).toContain('result?.warnings ?? []');
     expect(pageSource).toContain('providerWarnings.map');
   });
@@ -57,22 +65,21 @@ describe('Provider usage panel rows', () => {
     expect(pageSource).toContain('<UsageResetCreditsList resetCredits={usage?.resetCredits ?? null} />');
   });
 
+  // The success-toned card itself: UsageSidebar.test.tsx 'supports an always-green OpenCode Credits card'.
   test('forces only the OpenCode Credits progress row to use the success tone', () => {
     const pageSource = source('ProviderUsagePanel.tsx');
-    const cardSource = source('UsageCard.tsx');
 
     expect(pageSource).toContain("quotaProviderId === 'opencode' && label === 'credits' ? 'success' : 'adaptive'");
-    expect(cardSource).toContain("progressTone?: 'adaptive' | 'success'");
-    expect(cardSource).toContain('tone={progressTone}');
   });
 
   test('keeps Cursor selectable in Usage while its usage token is missing', () => {
     const pageSource = source('UsagePage.tsx');
-    const visibilitySource = source('usage-provider-visibility.ts');
 
     expect(pageSource).toContain("selectedProviderId === 'cursor-acp'");
-    expect(visibilitySource).toContain("provider.id === 'cursor-acp'");
-    expect(visibilitySource).toContain('configuredByProviderId.has(provider.id)');
+    const ids = (results: Parameters<typeof getVisibleUsageProviders>[0]) => getVisibleUsageProviders(results).map((provider) => provider.id);
+    expect(ids([{ providerId: 'cursor-acp', configured: false }])).toContain('cursor-acp');
+    expect(ids([{ providerId: 'claude', configured: false }])).not.toContain('claude');
+    expect(ids([])).not.toContain('cursor-acp');
   });
 
   test('renders every provider through model families without a retired flat-row path', () => {
@@ -80,14 +87,6 @@ describe('Provider usage panel rows', () => {
 
     expect(pageSource).toContain('renderModelCard(model)');
     expect(pageSource).not.toContain("'antigravity'");
-  });
-
-  test('Usage card source gates PaceIndicator on prediction visibility', () => {
-    const cardSource = source('UsageCard.tsx');
-
-    expect(cardSource).toContain('showPredictionValues');
-    expect(cardSource).toContain('showPredictionValues && displayState.paceInfo');
-    expect(cardSource).toContain('<PaceIndicator paceInfo={displayState.paceInfo} displayMode={displayMode} />');
   });
 
   test('usage options menu persists usageShowPredValues', () => {
@@ -101,36 +100,45 @@ describe('Provider usage panel rows', () => {
     expect(source('ProviderUsagePanel.tsx')).toContain('<UsageOptionsMenu');
   });
 
-  test('quota store source defaults prediction visibility to true', () => {
-    const storeSource = repoSource('packages/ui/src/stores/useQuotaStore.ts');
+  describe('prediction visibility setting', () => {
+    const originalFetch = globalThis.fetch;
+    const initialQuota = useQuotaStore.getState();
+    afterEach(() => { globalThis.fetch = originalFetch; useQuotaStore.setState(initialQuota, true); });
 
-    expect(storeSource).toContain('showPredictionValues: boolean');
-    expect(storeSource).toContain('data?.usageShowPredValues');
-    expect(storeSource).toContain(': true');
+    const loadWith = async (settings: Record<string, unknown>): Promise<boolean> => {
+      globalThis.fetch = Object.assign(async () => Response.json(settings), { preconnect: () => {} });
+      useQuotaStore.setState({ showPredictionValues: !('usageShowPredValues' in settings && settings.usageShowPredValues === true) });
+      await useQuotaStore.getState().loadSettings();
+      return useQuotaStore.getState().showPredictionValues;
+    };
+
+    test('the quota store defaults prediction visibility to true and honours a saved boolean', async () => {
+      expect(await loadWith({})).toBe(true);
+      expect(await loadWith({ usageShowPredValues: false })).toBe(false);
+      expect(await loadWith({ usageShowPredValues: true })).toBe(true);
+      expect(await loadWith({ usageShowPredValues: 'no' })).toBe(true);
+    });
   });
 
   test('sanitizers accept boolean usageShowPredValues', () => {
-    const webSettingsSource = repoSource('packages/web/server/lib/opencode/settings-helpers.js');
-    const persistenceSource = repoSource('packages/ui/src/lib/persistence.ts');
-
-    expect(webSettingsSource).toContain('typeof candidate.usageShowPredValues === \'boolean\'');
-    expect(webSettingsSource).toContain('result.usageShowPredValues = candidate.usageShowPredValues');
-    expect(persistenceSource).toContain('typeof candidate.usageShowPredValues === \'boolean\'');
-    expect(persistenceSource).toContain('result.usageShowPredValues = candidate.usageShowPredValues');
+    const server = createSettingsHelpers(serverDependencies);
+    for (const value of [true, false]) {
+      expect(sanitizeWebSettings({ usageShowPredValues: value })?.usageShowPredValues).toBe(value);
+      expect(server.sanitizeSettingsUpdate({ usageShowPredValues: value }).usageShowPredValues).toBe(value);
+    }
   });
 
   test('sanitizers reject non-boolean usageShowPredValues', () => {
-    const webSettingsSource = repoSource('packages/web/server/lib/opencode/settings-helpers.js');
-    const persistenceSource = repoSource('packages/ui/src/lib/persistence.ts');
-
-    expect(webSettingsSource).not.toContain('result.usageShowPredValues = candidate.usageShowPredValues ??');
-    expect(persistenceSource).not.toContain('result.usageShowPredValues = candidate.usageShowPredValues ??');
+    const server = createSettingsHelpers(serverDependencies);
+    for (const value of ['true', 1, null, {}]) {
+      expect(sanitizeWebSettings({ usageShowPredValues: value })?.usageShowPredValues).toBeUndefined();
+      expect('usageShowPredValues' in server.sanitizeSettingsUpdate({ usageShowPredValues: value })).toBe(false);
+    }
   });
 
   test('Providers page uses the reusable managed quota credential controls', () => {
     const providersPageSource = repoSource('packages/ui/src/components/sections/providers/ProvidersPage.tsx');
     const managedCredentialsSource = repoSource('packages/ui/src/components/sections/providers/ManagedQuotaCredentials.tsx');
-    const messages = repoSource('packages/ui/src/lib/i18n/messages/en.settings.ts');
 
     expect(providersPageSource).toContain('ManagedQuotaCredentials');
     expect(managedCredentialsSource).toContain('/api/quota/credentials/');
@@ -139,6 +147,6 @@ describe('Provider usage panel rows', () => {
     expect(managedCredentialsSource).toContain('<OpenCodeZenCredentials />');
     expect(managedCredentialsSource).not.toContain('opencode-zen-auth-cookie');
     expect(managedCredentialsSource).not.toContain('opencode-go-usage-auth-cookie');
-    expect(messages).toContain('settings.providers.page.auth.ollamaCloudUsageTitle');
+    expect((settingsDict as Record<string, string>)['settings.providers.page.auth.ollamaCloudUsageTitle']).toBeTruthy();
   });
 });

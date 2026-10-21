@@ -166,10 +166,9 @@ describe('managed task compaction continuity', () => {
     expect(continuityIndex).toBeGreaterThan(blockerIndex);
     expect(statusIndex).toBeGreaterThan(continuityIndex);
     expect(chatContainerSource).toContain('getLatestCompactionBoundaryAt(sessionMessages)');
-    expect(continuitySource).toContain('data-managed-task-continuity="compaction"');
+    // Wrapper, list and selector memoization are covered by ManagedTaskCompactionContinuity.test.tsx;
+    // the structural-change callback only fires from a layout effect, which static rendering skips.
     expect(continuitySource).toContain("onContentChange('structural')");
-    expect(continuitySource).toContain('<ManagedTaskList');
-    expect(continuitySource).toContain('useShallow');
   });
 
   test('recognizes native and exact-command compaction boundaries', () => {

@@ -75,7 +75,7 @@ describe('overlay scrollbar desktop persistence', () => {
     })).toEqual({ length: 0, offset: 0 });
   });
 
-  test('preserves horizontal metrics, dragging, mutation observation, and intent-gated chat wiring', () => {
+  test('preserves horizontal thumb metrics', () => {
     const horizontal = calculateOverlayScrollbarThumb({
       scrollLength: 1000,
       clientLength: 400,
@@ -84,15 +84,15 @@ describe('overlay scrollbar desktop persistence', () => {
     });
     expect(horizontal.length > 0).toBe(true);
     expect(horizontal.offset > 0).toBe(true);
+  });
 
-    const component = readFileSync('src/components/ui/OverlayScrollbar.tsx', 'utf8');
+  // Dragging, pointer capture, mutation observation and intent gating are exercised by
+  // OverlayScrollbar.mounted.test.tsx. The call sites below live in surfaces that cannot be
+  // rendered in isolation, so their wiring stays a source pin.
+  test('is wired into the chat, terminal and changes scroll surfaces', () => {
     const chat = readFileSync('src/components/chat/ChatContainer.tsx', 'utf8');
     const terminal = readFileSync('src/components/terminal/TerminalViewport.tsx', 'utf8');
     const changes = readFileSync('src/components/views/git/ChangesSection.tsx', 'utf8');
-    expect(component).toContain('setPointerCapture(event.pointerId)');
-    expect(component).toContain('releasePointerCapture(event.pointerId)');
-    expect(component).toContain('new MutationObserver');
-    expect(component).toContain('axis === "horizontal"');
     expect(chat).toContain('suppressVisibility={isProgrammaticFollowActive} userIntentOnly');
     expect(terminal).toContain('<OverlayScrollbar');
     expect(changes).toContain('<OverlayScrollbar');

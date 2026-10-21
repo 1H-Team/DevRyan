@@ -22,13 +22,12 @@ describe('Header usage dropdown', () => {
   test('surfaces refresh failures without removing retained usage rows', () => {
     const source = headerSource();
     const desktopSource = readFileSync(resolve(testDir, 'DesktopRightChromeActions.tsx'), 'utf8');
-    const panelSource = readFileSync(resolve(testDir, 'usage/UsageProviderPanel.tsx'), 'utf8');
 
     for (const layoutSource of [source, desktopSource]) {
       expect(layoutSource).toContain('providerRefreshState');
       expect(layoutSource).toContain('refreshError');
     }
-    expect(panelSource).toContain('group.error ?');
-    expect(panelSource).toContain('status-warning-background');
+    // The panel's rendering of that error (warning styling, retained rows) is covered by
+    // usage/UsageProviderPanel.test.tsx 'shows the server error text for a configured provider without windows'.
   });
 });

@@ -18,7 +18,7 @@ import {
   useSessionTreeChangesStore,
 } from './useSessionTreeChangesStore'
 
-const DEBOUNCE_MS = 20
+const DEBOUNCE_MS = 10
 
 const makeChanges = (overrides: Partial<SessionTreeChanges> = {}): SessionTreeChanges => ({
   files: [],
@@ -415,7 +415,7 @@ describe('useSessionTreeChangesStore', () => {
     const release = subscribeSessionTreeChanges('/repo', 'ses_root')
     await waitUntil(() => calls.length === 2)
     await wait(5)
-    // The second 503 has scheduled the 40-ms test backoff, and no fetch is
+    // The second 503 has scheduled the 2x-debounce test backoff, and no fetch is
     // active. Real ambient hints must leave that very timer intact.
     const schedule = spyOn(globalThis, 'setTimeout')
     const cancel = spyOn(globalThis, 'clearTimeout')

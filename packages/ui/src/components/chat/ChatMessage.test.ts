@@ -1,6 +1,4 @@
 import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'bun:test';
 import {
     getAssistantMessageBottomPaddingClass,
@@ -132,11 +130,6 @@ describe('shouldHideAssistantAbortArtifact', () => {
     });
 });
 
-const chatMessageSource = () => readFileSync(
-    resolve(dirname(fileURLToPath(import.meta.url)), 'ChatMessage.tsx'),
-    'utf8',
-);
-
 const header = (overrides: Partial<Parameters<typeof resolveShouldShowAssistantHeader>[0]> = {}) => (
     resolveShouldShowAssistantHeader({
         isUser: false,
@@ -182,18 +175,10 @@ describe('resolveShouldShowAssistantHeader', () => {
 });
 
 describe('assistant header wiring', () => {
-    test('keeps the suppression flag out of the sticky streaming latch and in the comparator', () => {
-        const source = chatMessageSource();
-
-        expect(source).toContain('if (isUser || suppressAssistantHeader || !headerMessageId');
-        expect(source).toContain('prev.suppressAssistantHeader === next.suppressAssistantHeader');
-    });
-
     test('shares the part projection with MessageBody rather than inlining it', () => {
-        const source = chatMessageSource();
+        const source = readFileSync(new URL('./ChatMessage.tsx', import.meta.url), 'utf8');
 
         expect(source).toContain("import { projectAssistantDisplayParts } from './message/assistantRowContent';");
         expect(source).toContain('projectAssistantDisplayParts({');
-        expect(source).not.toContain('filterVisibleParts(normalizedParts');
     });
 });

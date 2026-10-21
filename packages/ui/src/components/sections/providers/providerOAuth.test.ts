@@ -54,15 +54,22 @@ describe('provider OAuth helpers', () => {
 
   test('polls pending auto attempts and aborts without another request', async () => {
     const controller = new AbortController(); let calls = 0;
-    const fetchImpl: ProviderOAuthFetch = async () => { calls++; return {ok:true,json:async()=>({status:'pending'})}; };
+    let firstPoll!: () => void; const polled = new Promise<void>(resolve => { firstPoll = resolve; });
+    const fetchImpl: ProviderOAuthFetch = async () => { calls++; firstPoll(); return {ok:true,json:async()=>({status:'pending'})}; };
     const result = requestProviderOAuthCallback({providerId:'openai',methodIndex:0,fallbackError:'failed',signal:controller.signal,fetchImpl});
-    await new Promise(resolve=>setTimeout(resolve,10)); controller.abort();
+    await polled; await new Promise(resolve=>setTimeout(resolve,0)); controller.abort(); // let the poll reach its 1.5 s wait first
     await expect(result).rejects.toBeDefined(); expect(calls).toBe(1);
   });
   test('returns only when the automatic attempt completes', async () => {
     let calls = 0;
     const fetchImpl: ProviderOAuthFetch = async () => ({ok:true,json:async()=>({status:++calls===1?'pending':'complete'})});
-    await requestProviderOAuthCallback({providerId:'openai',methodIndex:0,fallbackError:'failed',fetchImpl});
+    // The helper waits 1.5 s between polls; run exactly that wait on the next tick.
+    const realSetTimeout = globalThis.setTimeout;
+    globalThis.setTimeout = ((handler: TimerHandler, delay?: number, ...args: unknown[]) =>
+      realSetTimeout(handler, delay === 1500 ? 0 : delay, ...args)) as unknown as typeof setTimeout;
+    try {
+      await requestProviderOAuthCallback({providerId:'openai',methodIndex:0,fallbackError:'failed',fetchImpl});
+    } finally { globalThis.setTimeout = realSetTimeout; }
     expect(calls).toBe(2);
   });
   for (const status of ['failed','expired']) test(`reports terminal ${status} attempts`,async()=>{

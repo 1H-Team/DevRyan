@@ -176,6 +176,10 @@ function createDeferred<T>() {
 const userMessage = { id: "msg-user", sessionID: "session-a", role: "user", time: { created: 1 } } as unknown as Message
 const assistantMessage = { id: "msg-assistant", sessionID: "session-a", role: "assistant", time: { created: 2 } } as unknown as Message
 
+const goIdle = (store: StoreApi<DirectoryStore>) => {
+  store.setState({ session_status: { "session-a": { type: "idle" } as SessionStatus } })
+}
+
 async function setupBusySession(status: SessionStatus = { type: "busy" } as SessionStatus) {
   const store = createStore([makeSession("session-a")])
   store.setState({
@@ -185,6 +189,11 @@ async function setupBusySession(status: SessionStatus = { type: "busy" } as Sess
   const childStores = createChildStores([["/test/project", store]])
   const actions = await import("./session-actions")
   actions.setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+  // The server acknowledges an abort by going idle, so the post-abort idle wait resolves at once.
+  sessionAbortHandler = () => {
+    goIdle(store)
+    return Promise.resolve({ data: true })
+  }
   return { store, actions }
 }
 
@@ -241,7 +250,7 @@ describe("steered interrupt for queued sends", () => {
   })
 
   test("beginQueuedSendInterrupt returns a gate that settles only once the abort is confirmed", async () => {
-    const { actions } = await setupBusySession()
+    const { actions, store } = await setupBusySession()
     const acknowledgement = createDeferred<unknown>()
     sessionAbortHandler = () => acknowledgement.promise
 
@@ -253,6 +262,7 @@ describe("steered interrupt for queued sends", () => {
     expect(await settled(gate, 30)).toBe("pending")
     expect(mockSessionAbortFlags.get("session-a")).toBe(undefined)
 
+    goIdle(store)
     acknowledgement.resolve({ data: true })
     await gate
     expect(mockSessionAbortFlags.get("session-a")?.reason).toBe("steered")

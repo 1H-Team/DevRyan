@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { existsSync, readFileSync } from 'node:fs';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { SessionSidebarMotionRow } from './SessionSidebarMotionRow';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Session } from '@opencode-ai/sdk/v2';
@@ -228,25 +231,33 @@ describe('session sidebar archive reflow animation wiring', () => {
     expect(motionRowClose).toBeGreaterThan(childrenAnimatePresence);
   });
 
-  test('collapses entering and exiting rows without scale animation', () => {
+  test('collapses entering and exiting rows through a clipped grid track without scale animation', () => {
+    const markup = renderToStaticMarkup(createElement(SessionSidebarMotionRow, null, createElement('b', null, 'row')));
+    const outerStyle = /^<div style="([^"]*)"/.exec(markup)?.[1] ?? '';
+    const innerStyle = /<div style="([^"]*)"><b>/.exec(markup)?.[1] ?? '';
+
+    // A new row starts collapsed and transparent, and grows from there.
+    expect(outerStyle).toContain('grid-template-rows:0fr');
+    expect(outerStyle).toContain('opacity:0');
+    expect(outerStyle).toContain('display:grid');
+    expect(outerStyle).toContain('overflow-x:visible');
+    expect(outerStyle).toContain('overflow-y:clip');
+    expect(outerStyle).toContain('min-width:0');
+    expect(outerStyle).toContain('width:100%');
+    expect(/scale|transform|margin-left|padding-left/.test(outerStyle)).toBe(false);
+    expect(innerStyle).toContain('min-height:0');
+    expect(innerStyle).toContain('min-width:0');
+    expect(innerStyle).toContain('width:100%');
+    expect(markup).toContain('<b>row</b>');
+  });
+
+  test('keeps the leading rail outside the animated row boundary', () => {
     const testDir = dirname(fileURLToPath(import.meta.url));
-    const source = readFileSync(join(testDir, 'SessionSidebarMotionRow.tsx'), 'utf8');
     const itemSource = readFileSync(join(testDir, 'SessionNodeItem.tsx'), 'utf8');
 
-    expect(source).toContain("initial={{ gridTemplateRows: '0fr', opacity: 0 }}");
-    expect(source).toContain("animate={{ gridTemplateRows: '1fr', opacity: 1 }}");
-    expect(source).toContain("exit={{ gridTemplateRows: '0fr', opacity: 0 }}");
-    expect(source).toContain("overflowX: 'visible'");
-    expect(source).toContain("overflowY: 'clip'");
-    expect(source).toContain("display: 'grid'");
-    expect(source).toContain('minHeight: 0');
     expect(itemSource).toContain('data-session-leading-rail');
     expect(itemSource).toContain('absolute right-full top-1/2 mr-[7px] flex h-4');
     expect(itemSource).not.toContain('left-[-');
-    expect(source).not.toContain('SESSION_LEADING_INDICATOR_CLIP_GUTTER_PX');
-    expect(source).not.toContain('marginLeft');
-    expect(source).not.toContain('paddingLeft');
-    expect(source).not.toContain('scale');
   });
 
   test('keeps status next to the title and swaps it for the parent chevron on hover without shifting titles', () => {

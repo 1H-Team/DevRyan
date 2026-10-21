@@ -46,7 +46,7 @@ mock.module('./SessionRetentionSettings', () => ({ DataStorageSettings: () => nu
 mock.module('./DesktopKeepAwakeSettings', () => ({ DesktopKeepAwakeSettings: () => null }));
 mock.module('./DesktopNetworkSettings', () => ({ DesktopNetworkSettings: () => null }));
 mock.module('./DesktopBotHostStatus', () => ({ DesktopBotHostStatus: () => null }));
-mock.module('./OpenCodeVersionSection', () => ({ OpenCodeVersionSection: () => null }));
+mock.module('./OpenCodeVersionSection', () => ({ OpenCodeVersionSection: ({ compact }: { compact?: boolean }) => <span>{compact ? '[opencode-version:compact]' : '[opencode-version:full]'}</span> }));
 mock.module('./ClaudeCodeVersionSection', () => ({ ClaudeCodeVersionSection: ({ onCheckAppUpdates }: { onCheckAppUpdates: () => Promise<void> }) => { checkClaudeUpdates = onCheckAppUpdates; return null; } }));
 const { AboutSettings } = await import('./AboutSettings');
 const originalFetch = globalThis.fetch;
@@ -154,5 +154,31 @@ for (const isMobile of [false, true]) test(`Claude update delivery opens the exi
     updateOutcome = 'available';
     await act(async () => { await checkClaudeUpdates?.(); });
     expect(updateDialogOpen).toBe(true);
+  } finally { await act(async () => root.unmount()); }
+}));
+
+test('renders the compact OpenCode version section below the mobile links', async () => withDom(async (container) => {
+  mobile = true;
+  installFetch(async () => Response.json({ openchamberVersion: '2.0.6' }));
+  const root = await mount(container);
+  try {
+    const text = container.textContent;
+    expect(text).toContain('[opencode-version:compact]');
+    expect(text).not.toContain('[opencode-version:full]');
+    expect(text.indexOf('GitHub')).toBeGreaterThan(-1);
+    expect(text.indexOf('[opencode-version:compact]')).toBeGreaterThan(text.indexOf('GitHub'));
+  } finally { await act(async () => root.unmount()); }
+}));
+
+test('renders the full OpenCode version section after the desktop GitHub row', async () => withDom(async (container) => {
+  mobile = false;
+  installFetch(async () => Response.json({ openchamberVersion: '2.0.6' }));
+  const root = await mount(container);
+  try {
+    const text = container.textContent;
+    expect(text).toContain('[opencode-version:full]');
+    expect(text).not.toContain('[opencode-version:compact]');
+    expect(text.indexOf('GitHub')).toBeGreaterThan(-1);
+    expect(text.indexOf('[opencode-version:full]')).toBeGreaterThan(text.indexOf('GitHub'));
   } finally { await act(async () => root.unmount()); }
 }));

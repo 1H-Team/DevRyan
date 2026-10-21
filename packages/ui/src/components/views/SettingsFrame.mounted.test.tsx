@@ -217,6 +217,49 @@ describe('immediately available Settings frames', () => {
     });
   });
 
+  test('orders Providers before the Plugins hub in managed navigation', async () => {
+    setAuthPrincipal(developer(['*']));
+    ui.setState({ settingsPage: 'providers' });
+    await mounted(true, async (container) => {
+      const providers = container.textContent.indexOf('settings.page.providers.title');
+      const plugins = container.textContent.indexOf('settings.page.plugins.title');
+      expect(providers).toBeGreaterThan(-1);
+      expect(plugins).toBeGreaterThan(providers);
+    });
+  });
+
+  test('shows Providers without a Usage item or tab when Providers is readable', async () => {
+    setAuthPrincipal(developer(['providers', 'usage']));
+    ui.setState({ settingsPage: 'providers' });
+    await mounted(true, async (container) => {
+      expect(button(container, 'settings.page.providers.title')?.getAttribute('aria-current')).toBe('page');
+      expect(button(container, 'settings.page.usage.title')).toBeNull();
+      expect(container.textContent).toContain('ProvidersPage');
+      expect(container.textContent).not.toContain('UsagePage');
+    });
+  });
+
+  test('redirects a stored Usage destination to Providers when Providers is readable', async () => {
+    setAuthPrincipal(developer(['providers', 'usage']));
+    ui.setState({ settingsPage: 'usage' });
+    await mounted(true, async (container) => {
+      expect(button(container, 'settings.page.providers.title')?.getAttribute('aria-current')).toBe('page');
+      expect(container.textContent).toContain('ProvidersPage');
+      expect(container.textContent).not.toContain('UsagePage');
+    });
+  });
+
+  test('keeps Usage reachable under the Providers destination when only Usage is readable', async () => {
+    setAuthPrincipal(developer(['usage']));
+    ui.setState({ settingsPage: 'providers' });
+    await mounted(true, async (container) => {
+      expect(button(container, 'settings.page.providers.title')?.getAttribute('aria-current')).toBe('page');
+      expect(container.textContent).toContain('UsageSidebar');
+      expect(container.textContent).toContain('UsagePage');
+      expect(container.textContent).not.toContain('ProvidersPage');
+    });
+  });
+
   test('external store navigation uses the same staged path and unmount cancels commit', async () => {
     let commitCount = 0;
     const Probe = () => {

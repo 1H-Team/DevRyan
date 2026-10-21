@@ -28,39 +28,9 @@ const mainLayoutSource = readFileSync(
 );
 
 describe('plan presentation', () => {
-  test('opens each plan as rendered Markdown while keeping editing temporary', () => {
-    expect(planViewSource).toContain("useState<'preview' | 'edit'>('preview')");
-    expect(planViewSource).toContain("setMdViewMode('preview')");
-    expect(planViewSource).toContain('[currentSessionId, sessionPlanPath, targetPath]');
-    expect(planViewSource).not.toContain('openchamber:plan:md-viewer-mode');
-    expect(planViewSource).toContain("mdViewMode === 'preview'");
-    expect(planViewSource).toContain('<SimpleMarkdownRenderer content={content}');
-    expect(planViewSource).toContain('<PreviewToggleButton');
-    expect(planViewSource).toContain("setMdViewMode(mdViewMode === 'preview' ? 'edit' : 'preview')");
-    expect(planViewSource).toContain('runtimeApis.sessionPlans.readRevision(sessionPlanIdentity)');
-    expect(planViewSource).toContain('runtimeApis.sessionPlans.updateRevision({ ...identity, markdown, expectedVersion })');
-  });
-
-  test('wires baseline autosave and full-identity live refresh without discarding drafts', () => {
-    expect(planViewSource).toContain('createPlanRevisionDraft');
-    expect(planViewSource).toContain('void draft.save()');
-    expect(planViewSource).toContain('sessionEvents.onPlanUpdated');
-    expect(planViewSource).toContain('identity.directory !== event.directory');
-    expect(planViewSource).toContain('identity.sessionCreated !== event.sessionCreated');
-    expect(planViewSource).toContain('identity.sessionSlug !== event.sessionSlug');
-    expect(planViewSource).toContain('active.draft.observe(event.version)');
-    expect(planViewSource).toContain('revisionDrafts.set(key, { draft, identity })');
-    expect(planViewSource).toContain('activeDraftRef.current?.draft.edit(text)');
-    expect(planViewSource).toContain('role="alert"');
+  // Autosave, live refresh and draft retention: PlanView.behavior.test.tsx. Alerts: PlanView.presentation.mounted.test.tsx.
+  test('saves the plan card against the canonical revision directory', () => {
     expect(planCardSource).toContain('projectDirectory: currentPlanFileRecord?.revisionIdentity?.directory');
-  });
-
-  test('uses the saved canonical revision identity and exposes scoped read failures for retry', () => {
-    expect(planViewSource).toContain('sessionPlanFileRecord?.revisionIdentity ?? null');
-    expect(planViewSource).toContain('runtimeApis.sessionPlans.readRevision(sessionPlanIdentity)');
-    expect(planViewSource).toContain('setLoadError(canonicalReadError)');
-    expect(planViewSource).toContain("t('planView.error.loadFailed')");
-    expect(planViewSource).toContain('setLoadRetryNonce((nonce) => nonce + 1)');
   });
 
   test('hides the saved success label while retaining actionable save states', () => {
@@ -81,15 +51,10 @@ describe('plan presentation', () => {
     expect(planCardSource).toContain('isPlanFileReady');
   });
 
-  test('keeps the remaining context-panel plan actions ahead of the panel controls without changing the standalone view', () => {
-    expect(planViewSource).toContain("presentation?: 'standalone' | 'context-panel'");
-    expect(planViewSource).toContain("presentation === 'context-panel'");
+  // The action group's contents and mobile/context-panel header: PlanView.presentation.mounted.test.tsx.
+  test('portals the context-panel plan actions ahead of the panel controls without changing the standalone view', () => {
     expect(planViewSource).toContain('createPortal(planActions, headerActionsTarget)');
     expect(planViewSource).toContain('data-plan-view-actions="true"');
-    expect(planViewSource).not.toContain("t('planView.actions.improvePlanAria')");
-    expect(planViewSource).not.toContain("t('planView.actions.implementPlanAria')");
-    expect(planViewSource).toContain('<PreviewToggleButton');
-    expect(planViewSource).toContain("t('planView.actions.copyPlanContents')");
 
     const planActionsSlotIndex = contextPanelSource.indexOf('data-context-plan-actions="true"');
     const expandPanelButtonIndex = contextPanelSource.indexOf("t('contextPanel.actions.expandPanel')");
@@ -97,29 +62,7 @@ describe('plan presentation', () => {
     expect(expandPanelButtonIndex).toBeGreaterThan(planActionsSlotIndex);
     expect(contextPanelSource).toContain('presentation="context-panel"');
     expect(contextPanelSource).toContain('headerActionsTarget={planHeaderActionsTarget}');
-
-    expect(planViewSource).toContain("presentation === 'standalone'");
-    expect(planViewSource).toContain(": parsedTitle}");
     expect(mainLayoutSource).toContain('<LazyPlanView />');
-  });
-
-  test('keeps save failures visible when the context-panel title row is suppressed', () => {
-    expect(planViewSource).toContain("presentation === 'standalone' ? (");
-    expect(planViewSource.match(/t\('planView\.error\.saveFailed'\)/g)?.length ?? 0).toBeGreaterThan(1);
-    expect(planViewSource).toContain('flex-shrink-0 truncate border-b border-border/40 px-3 py-1');
-  });
-
-  test('uses the compact mobile Plan header with Close immediately before the action group', () => {
-    const standaloneHeader = planViewSource.slice(planViewSource.indexOf("presentation === 'standalone' ? ("));
-    const closeIndex = standaloneHeader.indexOf('data-plan-view-close="true"');
-    const actionIndex = standaloneHeader.indexOf('{planActions}');
-
-    expect(planViewSource).toContain('RiCloseLine');
-    expect(planViewSource).toContain("isMobile ? t('layout.mainTab.plan') : parsedTitle");
-    expect(planViewSource).toContain("t('planView.actions.closePlanAria')");
-    expect(planViewSource).toContain('onClick={routeToChat}');
-    expect(closeIndex).toBeGreaterThan(-1);
-    expect(actionIndex).toBeGreaterThan(closeIndex);
   });
 
   test('removes improve and implement actions from the plan viewer', () => {

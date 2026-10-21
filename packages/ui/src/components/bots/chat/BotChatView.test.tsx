@@ -16,6 +16,7 @@ import { BotMessageList } from './BotMessageList';
 import { BotMessageRow } from './BotMessageRow';
 import { BotRunFailureNotice } from './BotRunFailureNotice';
 import { BotTypingIndicator } from './BotTypingIndicator';
+import { BotIdentityHeader } from './BotIdentityHeader';
 
 const testDir = dirname(fileURLToPath(import.meta.url));
 
@@ -96,13 +97,38 @@ const governedAction = (runId: string): BotActionAttempt => ({
 
 describe('BotChatView', () => {
   test('keeps revisions, checkpoints, tools, and timeline chrome out of the transcript', () => {
-    const source = readFileSync(resolve(testDir, 'BotMessageList.tsx'), 'utf8');
-    expect(source).not.toContain('opencodeSegment');
-    expect(source).not.toContain('segmentId');
-    expect(source).not.toContain('revisionMarkers');
-    expect(source).not.toContain('checkpoint');
-    expect(source).not.toContain('tool');
-    expect(source).not.toContain('border-l');
+    const messages = [
+      message('user-1', 1, 'run-1'),
+      { ...message('assistant-1', 2, 'run-1'), body: { text: 'Done.', attachmentIds: [] } },
+    ];
+    const channelInitialState = useBotChannelStore.getInitialState();
+    const previous = {
+      messagesById: useBotChannelStore.getState().messagesById,
+      messageIdsByChannelId: useBotChannelStore.getState().messageIdsByChannelId,
+      initialMessagesById: channelInitialState.messagesById,
+      initialMessageIdsByChannelId: channelInitialState.messageIdsByChannelId,
+    };
+    const messagesById = Object.fromEntries(messages.map((entry) => [entry.id, entry]));
+    const messageIdsByChannelId = { channel: messages.map((entry) => entry.id) };
+    useBotChannelStore.setState({ messagesById, messageIdsByChannelId });
+    Object.assign(channelInitialState, { messagesById, messageIdsByChannelId });
+
+    try {
+      const markup = renderToStaticMarkup(
+        <I18nProvider><BotMessageList bot={bot} channelId="channel" typingRunId={null} /></I18nProvider>,
+      );
+
+      expect(markup).toContain('data-bot-message-id="user-1"');
+      expect(markup).toContain('data-bot-message-id="assistant-1"');
+      expect(/checkpoint|revision|segment/i.test(markup)).toBe(false);
+      expect(markup).not.toContain('border-l');
+    } finally {
+      useBotChannelStore.setState({ messagesById: previous.messagesById, messageIdsByChannelId: previous.messageIdsByChannelId });
+      Object.assign(channelInitialState, {
+        messagesById: previous.initialMessagesById,
+        messageIdsByChannelId: previous.initialMessageIdsByChannelId,
+      });
+    }
   });
 
   test('offers setup, update, or repair only for local desktop-advertised actions', () => {
@@ -652,53 +678,36 @@ describe('BotChatView', () => {
     expect(markup).toContain('motion-reduce:animate-none');
   });
 
-  test('follows intrinsic transcript growth while pinned and keeps a non-observer fallback', () => {
+  // Following, the observer fallback and per-channel reset are covered by
+  // BotMessageList.follow.mounted.test.tsx. Prepending older history needs a paged API fixture.
+  test('preserves the viewport when older messages prepend', () => {
     const listSource = readFileSync(resolve(testDir, 'BotMessageList.tsx'), 'utf8');
-    expect(listSource.match(/new ResizeObserver/g)).toHaveLength(1);
-    expect(listSource).toContain('observer.observe(content)');
-    expect(listSource).toContain('if (!element || !pinnedRef.current) return;');
-    expect(listSource).toContain('if (!resizeObserverAvailableRef.current) scrollToBottom();');
-    expect(listSource).toContain("style={{ overflowAnchor: 'none' }}");
-  });
-
-  test('resets following per channel and preserves the viewport when older messages prepend', () => {
-    const listSource = readFileSync(resolve(testDir, 'BotMessageList.tsx'), 'utf8');
-    expect(listSource).toContain('pinnedRef.current = true;');
-    expect(listSource).toContain('[channelId, scrollToBottom]');
     expect(listSource).toContain('restoreBotPrependScrollTop({');
     expect(listSource).toContain('pinnedRef.current = false;');
     expect(listSource).toContain('isWithinBotAutoFollowThreshold(');
   });
 
-  test('uses a content-driven Bot identity header without sidebar controls', () => {
-    const header = readFileSync(resolve(testDir, '../../layout/Header.tsx'), 'utf8');
-    const identityHeader = readFileSync(resolve(testDir, 'BotIdentityHeader.tsx'), 'utf8');
-    const botHeader = header.slice(header.indexOf('const renderBotDesktop'), header.indexOf('const renderBotMobile'));
-    const mobileBotHeader = header.slice(header.indexOf('const renderBotMobile'), header.indexOf('const renderDesktop'));
+  test('renders a content-driven Bot identity header without sidebar controls', () => {
+    const desktop = renderToStaticMarkup(<I18nProvider><BotIdentityHeader bot={bot} mobile={false} /></I18nProvider>);
+    const mobile = renderToStaticMarkup(<I18nProvider><BotIdentityHeader bot={bot} mobile /></I18nProvider>);
+    const placeholder = renderToStaticMarkup(<I18nProvider><BotIdentityHeader bot={null} mobile={false} /></I18nProvider>);
 
-    expect(botHeader).toContain('<BotIdentityHeader');
-    expect(botHeader).not.toContain('macosHeaderSizeClass');
-    expect(botHeader).not.toContain('SidebarLeft');
-    expect(botHeader).not.toContain('SidebarRight');
-    expect(botHeader).not.toContain('HeaderIconActionButton');
-
-    expect(mobileBotHeader).toContain('<BotIdentityHeader');
-    expect(mobileBotHeader).not.toContain('<button');
-    expect(mobileBotHeader).not.toContain('SidebarLeft');
-    expect(mobileBotHeader).not.toContain('SidebarRight');
-
-    expect(identityHeader).toContain('min-h-[88px]');
-    expect(/\sh-\[88px\]\s/.test(identityHeader)).toBe(false);
-    expect(identityHeader).toContain('data-bot-identity-header="desktop"');
-    expect(identityHeader).toContain('data-bot-identity-header="mobile"');
-    expect(identityHeader).toContain('<BotAvatar bot={bot} className="h-16 w-16 shrink-0 rounded-full');
-    expect(identityHeader).toContain('flex min-h-16 min-w-0 flex-1 flex-col justify-center');
-    expect(identityHeader).toContain('line-clamp-2 break-words');
-    expect(identityHeader).toContain('{bot?.name');
-    expect(identityHeader).toContain('{bot.title}');
-    expect(identityHeader).not.toContain('<button');
-    expect(identityHeader).not.toContain('RiRobot');
-    expect(identityHeader).not.toContain('Private channel');
+    expect(desktop).toContain('data-bot-identity-header="desktop"');
+    expect(mobile).toContain('data-bot-identity-header="mobile"');
+    // Height follows content: a minimum, never a fixed height.
+    expect(desktop).toContain('min-h-[88px]');
+    expect(/\sh-\[88px\]\s/.test(desktop)).toBe(false);
+    expect(desktop).toContain('h-16 w-16 shrink-0 rounded-full');
+    expect(desktop).toContain('flex min-h-16 min-w-0 flex-1 flex-col justify-center');
+    expect(desktop).toContain('line-clamp-2 break-words');
+    expect(desktop).toContain('Release Steward');
+    expect(desktop).toContain('Release operations lead');
+    expect(mobile).toContain('Release Steward');
+    expect(placeholder).not.toContain('Release Steward');
+    for (const markup of [desktop, mobile, placeholder]) {
+      expect(markup).not.toContain('<button');
+      expect(markup).not.toContain('Private channel');
+    }
   });
 
   test('uses Electron operation progress for runtime recovery without local pending state', () => {

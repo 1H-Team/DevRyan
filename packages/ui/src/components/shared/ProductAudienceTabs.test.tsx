@@ -1,9 +1,9 @@
-import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import * as runtimeCapabilities from '@/lib/opencode/runtime-capabilities';
-import React from 'react';
+import React, { act } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+import { withDom, type HostElement } from '@/components/bots/chat/botMountedDom';
 import { I18nProvider } from '@/lib/i18n';
 import { setAuthPrincipal } from '@/lib/authSession';
 import { useMainSidebarAudienceStore } from '@/stores/useMainSidebarAudienceStore';
@@ -60,19 +60,55 @@ describe('ProductAudienceTabs', () => {
     expect(markup.match(/<svg/g)).toHaveLength(2);
   });
 
-  test('supports standard tablist arrow, Home, and End keyboard navigation', () => {
-    const source = readFileSync(new URL('./ProductAudienceTabs.tsx', import.meta.url), 'utf8');
-    expect(source).toContain("event.key === 'ArrowRight'");
-    expect(source).toContain("event.key === 'ArrowLeft'");
-    expect(source).toContain("event.key === 'Home'");
-    expect(source).toContain("event.key === 'End'");
-    expect(source).toContain('selectAndFocus(nextIndex)');
-  });
+  test('supports standard tablist arrow, Home, and End keyboard navigation', async () => {
+    await withDom(async (container) => {
+      const { createRoot } = await import('react-dom/client');
+      const root = createRoot(container as unknown as Element);
+      const selections: string[] = [];
+      const tab = (id: string) => container.find((node) => node.getAttribute('id') === id) as HostElement;
+      const press = async (from: string, key: string) => {
+        let prevented = false;
+        await act(async () => {
+          for (const listener of container.listeners.get('keydown') ?? []) {
+            listener({ type: 'keydown', key, target: tab(from), bubbles: true, preventDefault() { prevented = true; }, stopPropagation() {} });
+          }
+        });
+        return prevented;
+      };
+      try {
+        await act(async () => {
+          root.render(
+            <I18nProvider>
+              <ProductAudienceTabs audience="coding-agents" onAudienceChange={(audience) => selections.push(audience)} idPrefix="kb" panelId="panel" />
+            </I18nProvider>,
+          );
+        });
+        const agents = 'kb-coding-agents-tab';
+        const bots = 'kb-bots-tab';
 
-  test('uses equal-width columns for the sidebar audience tabs', () => {
-    const source = readFileSync(new URL('./ProductAudienceTabs.tsx', import.meta.url), 'utf8');
-    expect(source).not.toContain('grid-cols-[minmax(0,1.35fr)_minmax(0,0.65fr)]');
-    expect(source).toContain("sidebar\n          ? 'mb-1 grid-cols-2'");
+        expect(await press(agents, 'ArrowRight')).toBe(true);
+        expect(selections.splice(0)).toEqual(['bots']);
+        expect(container.ownerDocument.activeElement).toBe(tab(bots));
+
+        // Navigation wraps in both directions.
+        expect(await press(bots, 'ArrowRight')).toBe(true);
+        expect(selections.splice(0)).toEqual(['coding-agents']);
+        expect(await press(agents, 'ArrowLeft')).toBe(true);
+        expect(selections.splice(0)).toEqual(['bots']);
+
+        expect(await press(bots, 'Home')).toBe(true);
+        expect(selections.splice(0)).toEqual(['coding-agents']);
+        expect(await press(agents, 'End')).toBe(true);
+        expect(selections.splice(0)).toEqual(['bots']);
+        expect(container.ownerDocument.activeElement).toBe(tab(bots));
+
+        // Other keys are left alone.
+        expect(await press(agents, 'a')).toBe(false);
+        expect(selections).toEqual([]);
+      } finally {
+        await act(async () => { root.unmount(); });
+      }
+    });
   });
 
   test('defaults cold starts to Coding Agents and retains the last in-session audience', () => {

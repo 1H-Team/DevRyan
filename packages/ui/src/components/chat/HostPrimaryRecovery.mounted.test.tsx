@@ -1,6 +1,5 @@
 import React, { act } from 'react';
 import { expect, mock, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import type { RecoveredInputDetails } from '@/lib/primaryRecoveryApi';
 import { usePrimaryRecoveryStore, type PrimaryRecoverySnapshot } from '@/stores/usePrimaryRecoveryStore';
@@ -71,9 +70,6 @@ const details = (sessionID = 'ses_root'): RecoveredInputDetails => ({ messageID:
 test('first retained input is visible without history or watchdog, with lazy details and exact actions', async () => {
   requests.length = 0; inputActions.length = 0; detailRequests.length = 0;
   respond = async () => {}; loadDetails = async () => details();
-  const source = readFileSync(new URL('./ChatContainer.tsx', import.meta.url), 'utf8');
-  const emptyBranch = source.slice(source.indexOf('if (sessionMessages.length === 0 && !sessionIsWorking)'), source.indexOf('currentSessionId={currentSessionId}'));
-  expect(emptyBranch.match(/<HostPrimaryRecovery /g)).toHaveLength(1);
   await withDom(async container => {
     const { createRoot } = await import('react-dom/client');
     const root = createRoot(container as unknown as Element);
@@ -108,6 +104,7 @@ test('first retained input is visible without history or watchdog, with lazy det
 
 test('late detail responses cannot appear after switching sessions', async () => {
   let finish: (value: RecoveredInputDetails) => void = () => {};
+  respond = async () => {};
   loadDetails = () => new Promise(resolve => { finish = resolve; });
   detailRequests.length = 0;
   await withDom(async container => {
@@ -181,6 +178,14 @@ test('discarded input offers a new message while ordinary cancelled recovery kee
 test('partial event refresh coalesces and resumes after an input action finishes', async () => {
   requests.length = 0; inputActions.length = 0; respond = async () => {};
   let finish: () => void = () => {};
+  // The component debounces partial refreshes by 200 ms; capture that timer and fire it on demand.
+  const debounced: Array<() => void> = [], realSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = ((handler: TimerHandler, delay?: number, ...args: unknown[]) => {
+    if (typeof handler === 'function' && delay === 200) { debounced.push(() => handler(...args)); return 0; }
+    return realSetTimeout(handler, delay, ...args);
+  }) as unknown as typeof setTimeout;
+  const flush = () => new Promise(resolve => realSetTimeout(resolve, 0));
+  const elapse = async () => { await flush(); for (const fire of debounced.splice(0)) fire(); await flush(); };
   await withDom(async container => {
     const listeners = new Map<string, (event: Event) => void>();
     Object.defineProperty(window, 'addEventListener', { value: (name: string, listener: (event: Event) => void) => listeners.set(name, listener) });
@@ -195,16 +200,16 @@ test('partial event refresh coalesces and resumes after an input action finishes
         recovery: { ...retained(), recoveredInput: undefined, recoveredInputPartial: true } } } });
       await act(async () => {
         for (let index = 0; index < 3; index++) listeners.get('devryan:primary-recovery')?.(event);
-        await new Promise(resolve => setTimeout(resolve, 250));
+        await elapse();
       });
       expect(requests).toEqual([['ses_root']]);
       expect(container.textContent).toContain('Saved request for ses_root');
       respond = async () => { usePrimaryRecoveryStore.getState().accept('ses_root', { ...retained(), recoveredInput: undefined }); };
-      await act(async () => { finish(); await new Promise(resolve => setTimeout(resolve, 250)); });
+      await act(async () => { finish(); await elapse(); });
       expect(requests).toEqual([['ses_root'], ['ses_root']]);
       expect(inputActions).toHaveLength(1);
       expect(usePrimaryRecoveryStore.getState().snapshots.ses_root.recoveredInput).toBeUndefined();
-    } finally { await act(async () => root.unmount()); usePrimaryRecoveryStore.setState({ snapshots: {} }); }
+    } finally { globalThis.setTimeout = realSetTimeout; await act(async () => root.unmount()); usePrimaryRecoveryStore.setState({ snapshots: {} }); }
   });
 });
 

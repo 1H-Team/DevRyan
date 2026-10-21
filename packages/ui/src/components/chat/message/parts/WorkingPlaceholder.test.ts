@@ -1,16 +1,61 @@
 import { readFileSync } from 'node:fs';
-import React from 'react';
+import React, { act } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, test } from 'bun:test';
-import { StatusShimmerText } from './WorkingPlaceholder';
+import { afterEach, describe, expect, setSystemTime, test } from 'bun:test';
+import { withDom, type HostElement } from '../../../bots/chat/botMountedDom';
+import { StatusShimmerText, WorkingPlaceholder } from './WorkingPlaceholder';
 
-const source = readFileSync(new URL('./WorkingPlaceholder.tsx', import.meta.url), 'utf8');
+type PlaceholderProps = React.ComponentProps<typeof WorkingPlaceholder>;
+
+const mountPlaceholder = async (
+    initial: PlaceholderProps,
+    run: (api: {
+        container: HostElement;
+        rerender: (next: PlaceholderProps) => Promise<void>;
+    }) => Promise<void>,
+) => {
+    await withDom(async (container) => {
+        const { createRoot } = await import('react-dom/client');
+        const root = createRoot(container as unknown as Element);
+        const rerender = async (next: PlaceholderProps) => {
+            await act(async () => root.render(React.createElement(WorkingPlaceholder, next)));
+        };
+        try {
+            await rerender(initial);
+            await run({ container, rerender });
+        } finally {
+            await act(async () => root.unmount());
+        }
+    });
+};
+
+const working: PlaceholderProps = { isWorking: true, statusText: 'reading files' };
+const statusRegion = (container: HostElement) => container.find((node) => node.getAttribute('role') === 'status');
+const shimmers = (container: HostElement) => {
+    const found: HostElement[] = [];
+    const walk = (node: HostElement) => {
+        if (node.getAttribute('data-live-status-shimmer') === 'true') found.push(node);
+        for (const child of node.childNodes) if ('attributes' in child) walk(child as HostElement);
+    };
+    walk(container);
+    return found;
+};
+
+afterEach(() => setSystemTime());
 
 describe('WorkingPlaceholder status presentation', () => {
-    test('uses shimmering text without the legacy trailing dots', () => {
-        expect(source).not.toContain('BusyDots');
-        expect(source).not.toContain("`${retryText}...`");
-        expect(source.match(/<StatusShimmerText/g)?.length ?? 0).toBe(2);
+    test('uses shimmering text without the legacy trailing dots', async () => {
+        await mountPlaceholder(working, async ({ container, rerender }) => {
+            expect(shimmers(container)).toHaveLength(1);
+            expect(container.textContent).toBe('Reading files');
+            expect(container.textContent).not.toContain('...');
+
+            await rerender({ isWorking: true, statusText: null, retryInfo: { attempt: 2, message: 'Rate limited' } });
+            expect(shimmers(container)).toHaveLength(1);
+            expect(container.textContent).toContain('Retrying (attempt 2)');
+            expect(container.textContent).toContain('Rate limited');
+            expect(container.textContent).not.toContain('...');
+        });
     });
 
     test('keeps one accessible label in flow beneath the visual shimmer layer', () => {
@@ -27,6 +72,7 @@ describe('WorkingPlaceholder status presentation', () => {
     });
 
     test('keeps the gradient sweep decorative so the status is announced only once', () => {
+        // CSS has no runtime in bun:test; the stylesheet text is the contract.
         const styles = readFileSync(new URL('../../../../index.css', import.meta.url), 'utf8');
         const shimmerRule = styles.slice(
             styles.indexOf('@keyframes oc-text-shimmer'),
@@ -51,14 +97,20 @@ describe('WorkingPlaceholder status presentation', () => {
         expect(reducedMotionRule).toContain('background-image: none;');
     });
 
-    test('keeps the live region and visual label mounted without keyed layout transitions', () => {
-        const statusWrapper = source.indexOf('role="status"', source.indexOf('const label ='));
-        const shimmer = source.indexOf('<StatusShimmerText', statusWrapper);
+    test('keeps the live region and visual label mounted without keyed layout transitions', async () => {
+        await mountPlaceholder(working, async ({ container, rerender }) => {
+            const region = statusRegion(container);
+            const shimmer = shimmers(container)[0];
+            expect(region).not.toBeNull();
+            expect(region?.contains(shimmer)).toBe(true);
 
-        expect(statusWrapper).toBeGreaterThan(-1);
-        expect(shimmer).toBeGreaterThan(statusWrapper);
-        expect(source).not.toContain('AnimatePresence');
-        expect(source).not.toContain('motion.span');
-        expect(source).not.toContain('key={label}');
+            // Past the minimum display time the new label replaces the old one in place.
+            setSystemTime(new Date(Date.now() + 5_000));
+            await rerender({ isWorking: true, statusText: 'editing files' });
+
+            expect(container.textContent).toBe('Editing files');
+            expect(statusRegion(container)).toBe(region);
+            expect(shimmers(container)[0]).toBe(shimmer);
+        });
     });
 });

@@ -95,10 +95,20 @@ const setManagedDeveloper = () => setAuthPrincipal({
   assignments: [],
 })
 
+const initialSessionUIState = useSessionUIStore.getState()
+
 describe("useConfigStore default agent selection", () => {
   beforeEach(() => {
     setAuthPrincipal(null)
-    useSessionUIStore.setState({ currentSessionId: null, currentDraftId: null })
+    // Tests seed draftsById/newSessionDraft send configs; applyDefaultsToCurrent reads them
+    // as explicit model intent, so every test starts from the pristine draft state.
+    useSessionUIStore.setState({
+      currentSessionId: null,
+      currentDraftId: null,
+      draftsById: initialSessionUIState.draftsById,
+      draftOrder: initialSessionUIState.draftOrder,
+      newSessionDraft: initialSessionUIState.newSessionDraft,
+    })
     useSelectionStore.setState((state) => ({
       ...state,
       sessionModelSelections: new Map(),

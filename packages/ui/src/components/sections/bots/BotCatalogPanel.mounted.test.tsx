@@ -128,6 +128,12 @@ test('polls pending hosted discovery until completion and keeps failures separat
   let calls = 0;
   let checking = true;
   let failed = false;
+  // Drive the 2 s poll deterministically instead of sleeping past it.
+  const intervals = new Map<number, () => void>();
+  let nextInterval = 1;
+  const realSetInterval = globalThis.setInterval, realClearInterval = globalThis.clearInterval;
+  globalThis.setInterval = ((handler: () => void) => { const id = nextInterval++; intervals.set(id, handler); return id; }) as unknown as typeof setInterval;
+  globalThis.clearInterval = ((id: number) => { intervals.delete(id); }) as unknown as typeof clearInterval;
   const api: BotsApi = { ...botsApi, getCatalogStatus: async () => {
     calls += 1;
     return status({ import: { checking, cloud: checking ? null : { hasBots: !failed, checkedAt: '', code: failed ? 'bot_import_source_unavailable' : null }, pending: !checking && !failed, import: null } });
@@ -136,17 +142,19 @@ test('polls pending hosted discovery until completion and keeps failures separat
     await act(async () => { root.render(<I18nProvider><BotCatalogPanel api={api} /></I18nProvider>); });
     expect(container.textContent).toContain('Checking for Hosted Bots');
     checking = false;
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 2_100)); });
+    expect(intervals.size).toBe(1);
+    await act(async () => { for (const tick of [...intervals.values()]) tick(); await new Promise((resolve) => setTimeout(resolve, 0)); });
     expect(calls).toBe(2);
     expect(container.textContent).toContain('Hosted Bots Can Be Imported');
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 2_100)); });
+    // Polling has stopped: no interval remains, so no further status request can fire.
+    expect(intervals.size).toBe(0);
     expect(calls).toBe(2);
     failed = true;
     await act(async () => { root.render(<I18nProvider><BotCatalogPanel api={api} capabilityState="ready" /></I18nProvider>); });
     expect(container.textContent).toContain('Could Not Check Hosted Bots');
     expect(container.textContent).toContain('Bots already on this computer remain available');
     expect(container.textContent).toContain('bot_import_source_unavailable');
-  } finally { await act(async () => { root.unmount(); });  }
+  } finally { globalThis.setInterval = realSetInterval; globalThis.clearInterval = realClearInterval; await act(async () => { root.unmount(); });  }
 }), 10_000);
 
 test('asks the hosted workspace only when the owner does', async () => withDom(async (container) => {

@@ -2,7 +2,7 @@ import React from 'react';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { Message, Session, SessionStatus } from '@opencode-ai/sdk/v2/client';
 
@@ -41,6 +41,8 @@ let sources: SessionChangesFooterSources = {
   isImplementationSettled: true,
 };
 let rootMessages: Record<string, Message[]> = { ses_root: [userMessage('msg_1', 'ses_root')] };
+const initialSources = sources;
+const initialRootMessages = rootMessages;
 
 mock.module('./sessionChangesFooterSources', () => ({
   useSessionChangesFooterSources: () => sources,
@@ -59,6 +61,13 @@ mock.module('@/stores/useSessionTreeChangesStore', () => ({
     storeModule.useSessionTreeChangesStore,
   ),
 }));
+
+// Every test starts from the same sources, messages and store, whatever ran before it.
+beforeEach(() => {
+  sources = initialSources;
+  rootMessages = initialRootMessages;
+  storeModule.resetSessionTreeChangesForTests();
+});
 
 const {
   useSessionChangesController,
@@ -583,10 +592,23 @@ describe('mount points', () => {
   });
 
   test('the card reports structural changes to the auto-follow controller', () => {
-    // Static rendering never runs layout effects, so pin the contract at the source.
-    const source = readSource('./SessionChangesCard.tsx');
-    expect(source).toContain("onContentChange?.('structural');");
-    expect(source).toContain('React.useLayoutEffect(() => {\n        onContentChange?.(\'structural\');');
+    // Static rendering never runs layout effects, so capture them and run them as React would on commit.
+    const effects: Array<() => unknown> = [];
+    const spy = spyOn(React, 'useLayoutEffect').mockImplementation(((effect: () => unknown) => {
+      effects.push(effect);
+    }) as unknown as typeof React.useLayoutEffect);
+    const reasons: Array<string | undefined> = [];
+    seedEntry('ses_root');
+    try {
+      render(React.createElement(SessionChangesCard, {
+        isMobile: false,
+        onContentChange: (reason?: string) => { reasons.push(reason); },
+      }));
+      for (const effect of effects) effect();
+    } finally {
+      spy.mockRestore();
+    }
+    expect(reasons).toContain('structural');
   });
 });
 

@@ -8,11 +8,10 @@ const chatInputSource = readFileSync(
 );
 
 describe('ChatInput queued message tab', () => {
-    test('passes suppressTab={hasQueuedMessages} and no longer references QueuedMessageChips', () => {
+    test('passes suppressTab={hasQueuedMessages} to the queued message tab', () => {
         expect(chatInputSource).toContain('suppressTab={hasQueuedMessages}');
         expect(chatInputSource).toContain('import { QueuedMessageTab } from \'./QueuedMessageTab\'');
         expect(chatInputSource).toContain('<QueuedMessageTab');
-        expect(chatInputSource).not.toContain('QueuedMessageChips');
     });
 });
 

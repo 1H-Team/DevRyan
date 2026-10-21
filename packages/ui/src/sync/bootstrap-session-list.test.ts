@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import type { OpencodeClient, SessionStatus } from "@opencode-ai/sdk/v2/client"
 
 import { registerManualAbortGuard, resetAbortGuardState, setAbortGuardExecutor } from "./abort-retry-guard"
@@ -34,6 +34,16 @@ const createState = (): State => ({
   lsp: [],
   message: {},
   part: {},
+})
+
+// retry() backs off 500 ms then 1 s between attempts. Run just those waits on the next tick; every other timer stays real.
+const realSetTimeout = globalThis.setTimeout
+beforeEach(() => {
+  globalThis.setTimeout = ((handler: TimerHandler, delay?: number, ...args: unknown[]) =>
+    realSetTimeout(handler, delay === 500 || delay === 1000 ? 0 : delay, ...args)) as unknown as typeof setTimeout
+})
+afterEach(() => {
+  globalThis.setTimeout = realSetTimeout
 })
 
 describe("bootstrapDirectory session list readiness", () => {

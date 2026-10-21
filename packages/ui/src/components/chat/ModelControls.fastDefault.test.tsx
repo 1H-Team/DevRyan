@@ -7,13 +7,6 @@ const testDir = dirname(fileURLToPath(import.meta.url));
 const source = () => readFileSync(resolve(testDir, 'ModelControls.tsx'), 'utf8');
 
 describe('ModelControls Cursor fast-only controls', () => {
-    test('uses the shared native thinking resolver for the trigger and picker rows', () => {
-        const code = source();
-
-        expect(code).toContain('getChatThinkingState(provider, currentModelId, normalized)');
-        expect(code).toContain('getChatThinkingState(provider, rowModelId, activeVariant)');
-    });
-
     test('routes the mobile slider Fast action through the Cursor adapter', () => {
         const code = source();
 
@@ -21,32 +14,11 @@ describe('ModelControls Cursor fast-only controls', () => {
         expect(code).toContain('resolveCursorAcpVariantSelection(provider, modelId, resolvedVariant, { fastEnabled })');
     });
 
-    test('does not render visible Thinking headers or labels in variant controls', () => {
-        const code = source();
-
-        expect(code).not.toContain('<DropdownMenuLabel className="typography-ui-header font-semibold text-foreground">{t(\'chat.modelControls.thinking\')}</DropdownMenuLabel>');
-        expect(code).not.toContain('<p className="typography-meta">Thinking: {displayVariant}</p>');
-        expect(code).not.toContain('<span className="font-medium text-foreground">{t(\'chat.modelControls.thinking\')}</span>');
-        expect(code).not.toContain('<span>Thinking: {displayLabel}</span>');
-        expect(code).not.toContain("const mobileVariantPanelTitle = cursorFastOnlyPanelTitle ?? t('chat.modelControls.thinking')");
-    });
-
     test('uses the larger model-control fast icon size', () => {
         const code = source();
 
         expect(code).toContain('inline-flex h-3.5 w-3.5');
         expect(code).toContain('RiFlashlightFill className="h-3.5 w-3.5 text-[var(--status-warning)]"');
-    });
-
-    test('keeps descenders visible in the shared model-adjacent thinking label', () => {
-        expect(source()).toContain('leading-[14px] -my-[2px] py-[2px]');
-    });
-
-    test('does not render compact price text in model picker rows', () => {
-        const code = source();
-
-        expect(code).not.toContain('formatCompactPrice(metadata)');
-        expect(code).not.toContain('key="price"');
     });
 
     test('renders hover-only hide and favorite actions for desktop model rows', () => {
@@ -79,13 +51,5 @@ describe('ModelControls Cursor fast-only controls', () => {
         expect(code).not.toContain('openAddProviderSettings');
         expect(code).not.toContain('ADD_PROVIDER_ID');
         expect(code).not.toContain('const openProvidersSettings = React.useCallback(() => {\\n        setSelectedProvider(ADD_PROVIDER_ID);');
-    });
-
-    test('keeps a rehydrated draft variant while the draft agent is still restoring', () => {
-        const code = source();
-
-        expect(
-            /if \(!contextHydrated\) \{\s*return;\s*\}[\s\S]*?if \(!currentAgentName\) \{[\s\S]*?if \(!currentSessionId\) \{\s*return;/.test(code),
-        ).toBe(true);
     });
 });

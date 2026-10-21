@@ -91,6 +91,22 @@ describe('UsageProviderPanel quota warnings and value rows', () => {
     expect(markup).not.toContain('role="progressbar"');
   });
 
+  test('surfaces a refresh failure in warning styling without removing retained usage rows', () => {
+    const markup = renderPanel({
+      providerId: 'deepseek',
+      providerName: 'DeepSeek',
+      entries: [['USD', valueOnlyWindow]],
+      error: 'Refresh failed: provider timed out',
+    });
+
+    expect(markup).toContain('Refresh failed: provider timed out');
+    expect(markup).toContain('border-[var(--status-warning-border)] bg-[var(--status-warning-background)]');
+    expect(markup).toContain('text-[var(--status-warning)]');
+    // The last good rows stay on screen next to the error.
+    expect(markup).toContain('USD 12.50');
+    expect(markup.indexOf('Refresh failed')).toBeLessThan(markup.indexOf('USD 12.50'));
+  });
+
   test('still renders progress for a reported zero-percent window', () => {
     const markup = renderPanel({
       providerId: 'xai',

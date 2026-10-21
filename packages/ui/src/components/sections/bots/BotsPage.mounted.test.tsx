@@ -1,5 +1,5 @@
 import React, { act } from 'react';
-import { expect, spyOn, test } from 'bun:test';
+import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test';
 import { withDom, type HostElement } from '@/components/bots/chat/botMountedDom';
 import { getAuthPrincipal, setAuthPrincipal } from '@/lib/authSession';
 import { botsApi, BotsApiError, type BotsApi, type BotCapabilities } from '@/lib/botsApi';
@@ -10,7 +10,34 @@ import { BotsPage } from './BotsPage';
 import { managementDetail } from './botManagementTestFixtures';
 
 const desktopApi = { ...botsDesktopApi, isAvailable: () => false, runtimeServiceStatus: undefined };
-const pause = () => new Promise((resolve) => setTimeout(resolve, 300));
+// The catalog connection backs off on these delays. Capture them and fire them
+// on demand ("let the backoff elapse") instead of sleeping real time.
+const RETRY_DELAYS_MS = new Set([250, 1_000, 2_000, 5_000, 15_000]);
+const realSetTimeout = globalThis.setTimeout, realClearTimeout = globalThis.clearTimeout;
+const retryTimers = new Map<number, () => void>();
+let nextRetryTimer = 1_000_000;
+beforeEach(() => {
+  retryTimers.clear();
+  globalThis.setTimeout = ((handler: TimerHandler, delay?: number, ...args: unknown[]) => {
+    if (typeof handler === 'function' && delay !== undefined && RETRY_DELAYS_MS.has(delay)) {
+      const id = nextRetryTimer++;
+      retryTimers.set(id, () => handler(...args));
+      return id;
+    }
+    return realSetTimeout(handler, delay, ...args);
+  }) as unknown as typeof setTimeout;
+  globalThis.clearTimeout = ((id?: number) => {
+    if (typeof id === 'number' && retryTimers.delete(id)) return;
+    realClearTimeout(id);
+  }) as unknown as typeof clearTimeout;
+});
+afterEach(() => { globalThis.setTimeout = realSetTimeout; globalThis.clearTimeout = realClearTimeout; retryTimers.clear(); });
+const pause = async () => {
+  const due = [...retryTimers.values()];
+  retryTimers.clear();
+  for (const fire of due) fire();
+  await new Promise((resolve) => realSetTimeout(resolve, 0));
+};
 const starting = () => new BotsApiError('Bots are still starting', { code: 'bots_starting', status: 503, retryable: true });
 const ready = { available: false, catalogAvailable: true, state: 'healthy', code: null, owner: 'electron', canManageRuntime: true, canCreateBot: true };
 const mount = async (container: HostElement, overrides: Partial<BotsApi>, capabilities: BotCapabilities = ready) => {

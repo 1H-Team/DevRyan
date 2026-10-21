@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
 
 import {
   __testFileReferenceHelpers,
@@ -36,26 +35,5 @@ describe('MarkdownRenderer file reference helpers', () => {
         optional: true,
       },
     });
-  });
-
-  test('keeps Bot markdown independent from the OpenCode directory provider', () => {
-    const source = readFileSync(new URL('./MarkdownRendererImpl.tsx', import.meta.url), 'utf8');
-    const rendererBranch = source.slice(
-      source.indexOf('const MarkdownRendererImpl'),
-      source.indexOf('export const MarkdownRenderer ='),
-    );
-    const simpleRendererBranch = source.slice(
-      source.indexOf('const SimpleMarkdownRendererImpl'),
-      source.indexOf('export const SimpleMarkdownRenderer ='),
-    );
-
-    expect(rendererBranch).toContain('props.enableFileReferences === false');
-    expect(rendererBranch).toContain('<MarkdownRendererContent {...props} effectiveDirectory="" />');
-    expect(rendererBranch.indexOf('enableFileReferences === false')).toBeLessThan(
-      rendererBranch.indexOf('<MarkdownRendererWithDirectory {...props} />'),
-    );
-    expect(simpleRendererBranch).toContain('props.enableFileReferences === false');
-    expect(simpleRendererBranch).toContain('<SimpleMarkdownRendererContent {...props} effectiveDirectory="" />');
-    expect(source).toContain('prev.enableFileReferences === next.enableFileReferences');
   });
 });

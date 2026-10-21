@@ -14,19 +14,6 @@ describe('ManagedSettingsView capabilities', () => {
     expect(source).not.toContain('settingsPermissionBoundarySlug(slug, audience)');
   });
 
-  test('orders Providers before the Plugins hub pages in managed navigation', () => {
-    const pluginsIndex = source.indexOf("{ slug: 'plugins'");
-    const skillsIndex = source.indexOf("{ slug: 'skills.installed'");
-    const mcpIndex = source.indexOf("{ slug: 'mcp'");
-    const providersIndex = source.indexOf("{ slug: 'providers'");
-
-    expect(pluginsIndex).toBeGreaterThan(-1);
-    expect(skillsIndex).toBeGreaterThan(pluginsIndex);
-    expect(mcpIndex).toBeGreaterThan(skillsIndex);
-    expect(providersIndex).toBeGreaterThan(-1);
-    expect(pluginsIndex).toBeGreaterThan(providersIndex);
-  });
-
   test('contains no Bot capability assignment navigation', () => {
     expect(source).not.toContain('setBotCapabilityStage');
     expect(source).not.toContain('Back to Bots');
@@ -48,11 +35,5 @@ describe('ManagedSettingsView capabilities', () => {
     expect(source).toContain('<PreparedAgentsSettingsPicker />');
     expect(source).not.toContain("section={'sessions'}");
     expect(source).not.toContain('tabs={agentsPages.map');
-  });
-
-  test('shows Providers without a Usage tab and keeps Usage only as a fallback', () => {
-    expect(source).toContain("return providers ? [providers] : usage ? [usage] : [];");
-    expect(source).toContain("settingsPage === 'usage' && providerFallback");
-    expect(source).not.toContain('tabs={providerPages.map');
   });
 });

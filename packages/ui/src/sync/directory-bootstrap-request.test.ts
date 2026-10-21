@@ -1,5 +1,16 @@
-import { expect, test } from "bun:test"
+import { afterEach, beforeEach, expect, test } from "bun:test"
 import { directoryBootstrapRequest } from "./directory-bootstrap-request"
+
+// retry() backs off 500 ms then 1 s between attempts. Run just those waits on the next tick;
+// every other timer stays real.
+const realSetTimeout = globalThis.setTimeout
+beforeEach(() => {
+  globalThis.setTimeout = ((handler: TimerHandler, delay?: number, ...args: unknown[]) =>
+    realSetTimeout(handler, delay === 500 || delay === 1000 ? 0 : delay, ...args)) as unknown as typeof setTimeout
+})
+afterEach(() => {
+  globalThis.setTimeout = realSetTimeout
+})
 
 test("bounds a hung transport, aborts it and records a bounded failure measure", async () => {
   let requestSignal: AbortSignal | undefined

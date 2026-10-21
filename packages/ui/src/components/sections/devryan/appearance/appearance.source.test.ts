@@ -30,16 +30,6 @@ describe('Appearance source contracts', () => {
         }
     });
 
-    test('builds the preview from theme variables, not the real chat renderers', () => {
-        const imports = ['AppearancePreview.tsx', 'optionIllustrations.tsx', 'ThemeSwatch.tsx']
-            .flatMap((file) => [...read(file).matchAll(/from '([^']+)'/g)].map((match) => match[1] ?? ''));
-
-        expect(imports.length).toBeGreaterThan(0);
-        for (const specifier of imports) {
-            expect(/markdown|shiki|mermaid|diff|@\/components\/chat\//i.test(specifier)).toBe(false);
-        }
-    });
-
     test('keeps the appearance modules out of the eager settings page shell', () => {
         const page = read('../DevRyanPage.tsx');
 

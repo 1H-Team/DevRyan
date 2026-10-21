@@ -15,6 +15,8 @@ const sliceBetween = (code: string, start: string, end: string) => {
     return code.slice(startIndex, endIndex);
 };
 
+// Desktop dropdown content cannot be mounted in the host DOM; the trigger
+// placement and mobile picker are asserted in ModelControls.behavior.test.tsx.
 describe('ModelControls picker thinking footer', () => {
     test('replaces the keyboard hint footer with the thinking slider', () => {
         const footer = sliceBetween(source(), '{/* Thinking footer for the selected model, pinned under the model list */}', '</DropdownMenuContent>');
@@ -37,16 +39,6 @@ describe('ModelControls picker thinking footer', () => {
         // The footer is the column's last child: after it only the column and the rail row close.
         expect(column.slice(footerStart)).toContain('model-controls__picker-thinking shrink-0');
         expect(/\) : null\}\s*<\/div>\s*<\/div>\s*$/.test(column.slice(footerStart))).toBe(true);
-    });
-
-    test('the thinking level is part of the model trigger, not a second control', () => {
-        const code = source();
-        const trigger = sliceBetween(code, "'model-controls__model-trigger flex items-center gap-1.5 cursor-pointer", '</DropdownMenuTrigger>');
-
-        expect(trigger).toContain('{renderThinkingLabel()}');
-        expect(code).not.toContain('renderVariantSelector');
-        expect(code).not.toContain('ThinkingSliderPopover');
-        expect(code).not.toContain("setActiveMobilePanel('variant')");
     });
 
     test('selecting a picker row keeps the picker open', () => {

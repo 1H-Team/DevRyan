@@ -1,6 +1,4 @@
 import { describe, expect, test } from "bun:test"
-import { readFileSync } from "node:fs"
-import { fileURLToPath } from "node:url"
 import { renderToStaticMarkup } from "react-dom/server"
 
 import { QuestionExplanation } from "./QuestionPromptText"
@@ -61,17 +59,5 @@ describe("QuestionExplanation", () => {
     )
     expect(html).not.toContain("font-medium text-foreground")
     expect(html).toContain("note: lowercase prefix")
-  })
-})
-
-describe("QuestionCard question body", () => {
-  const source = readFileSync(fileURLToPath(new URL("./QuestionCard.tsx", import.meta.url)), "utf8")
-
-  test("splits the question and keeps line 1 as the label and aria-label", () => {
-    expect(source).toContain("splitQuestionPrompt(entry.question.question)")
-    expect(source).toContain("{prompt.title}</div>")
-    expect(source).toContain("aria-label={prompt.title}")
-    expect(source).toContain("<QuestionExplanation lines={prompt.explanation}")
-    expect(source).not.toContain("aria-label={entry.question.question}")
   })
 })

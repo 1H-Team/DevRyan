@@ -7,6 +7,7 @@ declare module "bun:test" {
     advanceTimersByTime(milliseconds: number): void;
     useRealTimers(): void;
   };
+  export function setSystemTime(now?: Date | number): void;
   export function describe(name: string, fn: () => void): void;
   export function test(name: string, fn: () => void | Promise<void>, timeout?: number): void;
   interface Matchers<Result = void> {
@@ -20,6 +21,8 @@ declare module "bun:test" {
     toBeDefined(): Result;
     toThrow(expected?: string | RegExp): Result;
     toContain(expected: unknown): Result;
+    toContainEqual(expected: unknown): Result;
+    toMatch(expected: string | RegExp): Result;
     toBeGreaterThan(expected: number): Result;
     toBeLessThan(expected: number): Result;
     toHaveLength(expected: number): Result;
@@ -37,13 +40,17 @@ declare module "bun:test" {
     mockImplementationOnce(implementation: Fn): Spy<Fn>;
     mockResolvedValue(value: Awaited<ReturnType<Fn>>): Spy<Fn>;
     mockRestore(): void;
+    mock: { calls: Parameters<Fn>[]; results: { type: string; value: unknown }[] };
   };
   export function spyOn<T extends object, K extends keyof T>(object: T, key: K):
     T[K] extends (...args: never[]) => unknown ? Spy<T[K]> : never;
   export function beforeEach(fn: () => void | Promise<void>): void;
   export function afterEach(fn: () => void | Promise<void>): void;
+  export function beforeAll(fn: () => void | Promise<void>): void;
+  export function afterAll(fn: () => void | Promise<void>): void;
   export function mock<T extends (...args: never[]) => unknown>(fn?: T): T;
   export namespace mock {
     function module(moduleName: string, factory: () => Record<string, unknown>): void;
+    function restore(): void;
   }
 }

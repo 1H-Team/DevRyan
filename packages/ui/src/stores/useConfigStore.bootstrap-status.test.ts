@@ -1,5 +1,5 @@
 import { getChatThinkingState } from "@/lib/providers/chatThinking"
-import { beforeEach, describe, expect, mock, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import type { Model } from "@opencode-ai/sdk/v2"
 
 let getProvidersImpl: (options?: { directory?: string | null }) => Promise<unknown>
@@ -81,6 +81,16 @@ const prepareSelectionCatalog = () => {
     ],
   })
 }
+
+// The store retries failed catalog reads after 200, 400 and 600 ms. Run just those waits on the next tick; every other timer stays real.
+const realSetTimeout = globalThis.setTimeout
+beforeEach(() => {
+  globalThis.setTimeout = ((handler: TimerHandler, delay?: number, ...args: unknown[]) =>
+    realSetTimeout(handler, delay === 200 || delay === 400 || delay === 600 ? 0 : delay, ...args)) as unknown as typeof setTimeout
+})
+afterEach(() => {
+  globalThis.setTimeout = realSetTimeout
+})
 
 describe("useConfigStore startup load status", () => {
   beforeEach(() => {

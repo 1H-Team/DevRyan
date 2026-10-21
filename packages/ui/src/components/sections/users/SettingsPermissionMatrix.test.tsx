@@ -37,4 +37,15 @@ describe('Settings permission matrices', () => {
     expect(markup).toContain('Bots read override: Inherit (Off)');
     expect(markup).toContain('Bots edit override: Inherit (Off)');
   });
+
+  test('states the inherited value as On or Off, never an ambiguous dot form', () => {
+    const inherited = { appearance: { read: true, edit: false } } as SettingsPermissions;
+    const markup = renderToStaticMarkup(
+      <SettingsPermissionOverrideMatrix overrides={{}} effective={inherited} inherited={inherited} onChange={() => undefined} />,
+    );
+
+    expect(markup).toContain('Appearance read override: Inherit (On)');
+    expect(markup).toContain('Appearance edit override: Inherit (Off)');
+    expect(markup).not.toContain('Inherit ·');
+  });
 });

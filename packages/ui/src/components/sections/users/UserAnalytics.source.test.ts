@@ -4,10 +4,6 @@ import { describe, expect, test } from 'bun:test';
 const detailSource = readFileSync(new URL('./UserDetail.tsx', import.meta.url), 'utf8');
 const analyticsSource = readFileSync(new URL('./UserAnalytics.tsx', import.meta.url), 'utf8');
 const activitySource = readFileSync(new URL('./ActivitySection.tsx', import.meta.url), 'utf8');
-const chartSource = readFileSync(new URL('./MetricTrendChart.tsx', import.meta.url), 'utf8');
-const scrubberSource = readFileSync(new URL('./DayScrubber.tsx', import.meta.url), 'utf8');
-const presentationSource = readFileSync(new URL('./userAnalyticsPresentation.ts', import.meta.url), 'utf8');
-const permissionsSource = readFileSync(new URL('./SettingsPermissionMatrix.tsx', import.meta.url), 'utf8');
 
 describe('user detail tabs and analytics source contract', () => {
   test('keeps drafts mounted under the ordered accessible tab list', () => {
@@ -31,10 +27,7 @@ describe('user detail tabs and analytics source contract', () => {
   });
 
   test('renders every inherited permission and capability with its effective On or Off value', () => {
-    expect(permissionsSource).toContain("`Inherit (${safeInherited[slug].read ? 'On' : 'Off'})`");
-    expect(permissionsSource).toContain("`Inherit (${safeInherited[slug].edit ? 'On' : 'Off'})`");
     expect(detailSource).toContain("`Inherit (${policyDraft.inheritedCapabilities[key] ? 'On' : 'Off'})`");
-    expect(permissionsSource).not.toContain('Inherit ·');
   });
 
   test('centers the detail tabs in a content-width container', () => {
@@ -75,9 +68,6 @@ describe('user detail tabs and analytics source contract', () => {
     expect(analyticsSource).toContain("formatPromptAgentLabel(metadataString(event, 'agent'))");
     expect(analyticsSource).toContain("formatPromptThinkingLabel(metadataString(event, 'variant'), provider)");
     expect(analyticsSource).toContain('formatPromptModelLabel(provider, model)');
-    expect(presentationSource).toContain('formatAgentDisplayName');
-    expect(presentationSource).toContain('formatEffortLabel');
-    expect(presentationSource).toContain("'Default Agent'");
   });
 
   test('renders a range control with presets and a theme-aware metric chart', () => {
@@ -88,9 +78,6 @@ describe('user detail tabs and analytics source contract', () => {
     expect(analyticsSource).toContain('onClick={() => setShowCustom(true)}');
     expect(analyticsSource).toContain('{customActive ? (');
     expect(analyticsSource).toContain('<Button variant="outline" onClick={() => setReloadNonce');
-    expect(chartSource).toContain('role="img"');
-    expect(chartSource).toContain('var(--chart-1)');
-    expect(chartSource).toContain('aria-pressed={active}');
   });
 
   test('title-cases section headings and de-duplicates prompt metadata', () => {
@@ -116,13 +103,6 @@ describe('user detail tabs and analytics source contract', () => {
     expect(analyticsSource).toContain('loadedDetailScope !== detailScopeKey');
     expect(analyticsSource).toContain('events={prompts}');
     expect(analyticsSource).toContain('interactionEvents.map');
-    // The chart highlights one selected day and resolves hover identity by date.
-    expect(chartSource).toContain('selectedDate');
-    expect(chartSource).toContain('resolveMetricTrendHover(series, hoveredDate)');
-    expect(chartSource).toContain('var(--primary-base)');
-    // The scrubber is an accessible group of day selectors, not look-alike data cards.
-    expect(scrubberSource).toContain('role="group"');
-    expect(scrubberSource).toContain('aria-pressed={selected}');
   });
 
   test('attaches the day scrubber beneath the chart in the same chronological order', () => {

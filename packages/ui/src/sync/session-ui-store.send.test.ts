@@ -600,10 +600,43 @@ const PLAN_MESSAGE_STATE_STORAGE_KEY = "devryan_plan_message_state"
 
 bunTestHooks.afterEach(() => {
   restoreOpencodeClientMock()
+  restoreSettleTimers()
 })
 
+// The completion indicator settles on a 250 ms module timer. Capture exactly that timer and
+// fire it on demand instead of sleeping real time; all other timers stay real.
+const settleTimers = new Map<number, () => void>()
+const realSetTimeout = globalThis.setTimeout
+const realClearTimeout = globalThis.clearTimeout
+let nextSettleTimer = 1_000_000
+const installSettleTimers = () => {
+  settleTimers.clear()
+  globalThis.setTimeout = ((handler: TimerHandler, delay?: number, ...args: unknown[]) => {
+    if (typeof handler === "function" && delay === SESSION_COMPLETION_INDICATOR_SETTLE_MS) {
+      const id = nextSettleTimer++
+      settleTimers.set(id, () => handler(...args))
+      return id
+    }
+    return realSetTimeout(handler, delay, ...args)
+  }) as unknown as typeof setTimeout
+  globalThis.clearTimeout = ((id?: number) => {
+    if (typeof id === "number" && settleTimers.delete(id)) return
+    realClearTimeout(id)
+  }) as unknown as typeof clearTimeout
+}
+const restoreSettleTimers = () => {
+  globalThis.setTimeout = realSetTimeout
+  globalThis.clearTimeout = realClearTimeout
+  settleTimers.clear()
+}
+
+beforeEach(installSettleTimers)
+
 const waitForCompletionIndicatorSettlement = async () => {
-  await new Promise((resolve) => setTimeout(resolve, SESSION_COMPLETION_INDICATOR_SETTLE_MS + 20))
+  await new Promise((resolve) => realSetTimeout(resolve, 0))
+  const due = [...settleTimers.values()]
+  settleTimers.clear()
+  for (const fire of due) fire()
 }
 
 const expectPlanModeInstructionContract = (text: string) => {

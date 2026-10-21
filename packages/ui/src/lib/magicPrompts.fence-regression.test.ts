@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { readFileSync } from "node:fs"
+import { buildPlanModeSyntheticInstruction } from "@/sync/session-ui-store"
 import { MAGIC_PROMPT_DEFINITIONS } from "./magicPrompts"
 
 // Regression guard: when the legacy plan-card markdown parser was removed,
@@ -28,7 +28,8 @@ describe("plan-mode prompts no longer require ```plan.md fences", () => {
   })
 
   test("session-ui-store synthetic plan prompt does not instruct fenced plan output", () => {
-    const source = readFileSync(new URL("../sync/session-ui-store.ts", import.meta.url), "utf8")
+    const source = buildPlanModeSyntheticInstruction()
+    expect(source).toContain("plan mode")
     for (const pattern of FORBIDDEN_FENCE_PATTERNS) {
       expect(pattern.test(source)).toBe(false)
     }

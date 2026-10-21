@@ -1,11 +1,13 @@
 import React, { act } from 'react';
-import { expect, mock, test } from 'bun:test';
+import { beforeEach, expect, mock, test } from 'bun:test';
 import { create } from 'zustand';
 import { withDom } from '../bots/chat/botMountedDom';
 import type { ChatMessageEntry, TurnGroupingContext } from './lib/turns/types';
 import { resolveUserMessageVariant } from '@/sync/subtask-agent';
 
 const config = create(() => ({ providers: [{ id: 'openai', models: [{ id: 'gpt-6-sol', name: 'GPT-6 Sol', variants: {} }] }], currentVariant: 'medium' }));
+const initialConfig = config.getState();
+beforeEach(() => config.setState(initialConfig, true));
 mock.module('@/stores/useConfigStore', () => ({ useConfigStore: config }));
 mock.module('@/stores/useFeatureFlagsStore', () => ({ useFeatureFlagsStore: create(() => ({ planModeEnabled: false })) }));
 mock.module('@/stores/useUIStore', () => ({ useUIStore: create(() => ({ showReasoningTraces: true, stickyUserHeader: false })) }));

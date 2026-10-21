@@ -21,7 +21,6 @@ const bunTestHooks = (await import("bun:test")) as unknown as {
 // Mock SDK client that records permission.reply / question.reply calls
 const replyCalls: Array<{ method: string; params: Record<string, unknown> }> = []
 let questionSettlementConfirmed = true
-beforeEach(() => { questionSettlementConfirmed = true })
 const sessionCreateCalls: Array<Record<string, unknown>> = []
 const sessionUpdateCalls: Array<Record<string, unknown>> = []
 const sessionDeleteCalls: Array<Record<string, unknown>> = []
@@ -91,6 +90,26 @@ let nextMembershipMutationVersion = 0
 let mockGlobalActiveSessions: Session[] = []
 let mockGlobalArchivedSessions: Session[] = []
 let mockConfigStoreState: Record<string, unknown> = {}
+const defaultHandlers = {
+  sessionCreateHandler, sessionUpdateHandler, sessionDeleteHandler, sessionAbortHandler, sessionMessagesHandler,
+  sessionUnrevertHandler, sessionForkHandler, scopedRevertHandler, scopedUnrevertHandler, treeChangesHandler,
+}
+
+// Reset shared mock state so no test depends on what an earlier one left behind
+// (a leaked disconnected config store makes every later send wait out its 2s probe).
+beforeEach(() => {
+  questionSettlementConfirmed = true
+  mockConfigStoreState = {}
+  ;({
+    sessionCreateHandler, sessionUpdateHandler, sessionDeleteHandler, sessionAbortHandler, sessionMessagesHandler,
+    sessionUnrevertHandler, sessionForkHandler, scopedRevertHandler, scopedUnrevertHandler, treeChangesHandler,
+  } = defaultHandlers)
+  mockCurrentSessionId = null
+  mockSessionAbortFlags = new Map()
+  mockAbortControllers = new Map()
+  mockSessionCompletionIndicator = new Map()
+  mockPendingCompletionIndicatorSessions = new Set()
+})
 
 const applyThrowOnErrorOption = async (
   resultPromise: Promise<unknown>,
@@ -665,12 +684,13 @@ describe("waitForConnectionOrThrow", () => {
     const startedAt = Date.now()
     let thrown: unknown = null
     try {
-      await waitForConnectionOrThrow()
+      await waitForConnectionOrThrow(100)
     } catch (error) {
       thrown = error
     }
 
-    expect(Date.now() - startedAt).toBeGreaterThan(1900)
+    // The whole (shortened) grace window is spent probing before the error is raised.
+    expect(Date.now() - startedAt).toBeGreaterThan(94)
     expect(thrown instanceof Error ? thrown.message : "").toContain("ws_closed_before_ready")
   })
 })
@@ -4245,6 +4265,11 @@ describe("revertToMessage recovery behavior", () => {
     store.setState({
       session_status: { "session-a": { type: "busy" } as SessionStatus },
     })
+    // The server acknowledges the abort by going idle, so the post-abort idle wait resolves at once.
+    sessionAbortHandler = () => {
+      store.setState({ session_status: { "session-a": { type: "idle" } as SessionStatus } })
+      return Promise.resolve({ data: true })
+    }
     const childStores = createChildStores([["/test/project", store]])
 
     const { interruptCurrentOperationForQueuedSend, setActionRefs } = await import("./session-actions")
@@ -4273,6 +4298,11 @@ describe("revertToMessage recovery behavior", () => {
       message: { "session-a": [userMessage, assistantMessage] },
       session_status: { "session-a": { type: "busy" } as SessionStatus },
     })
+    // The server acknowledges the abort by going idle, so the post-abort idle wait resolves at once.
+    sessionAbortHandler = () => {
+      store.setState({ session_status: { "session-a": { type: "idle" } as SessionStatus } })
+      return Promise.resolve({ data: true })
+    }
     const childStores = createChildStores([["/test/project", store]])
 
     const { interruptCurrentOperationForQueuedSend, setActionRefs } = await import("./session-actions")
@@ -4305,6 +4335,11 @@ describe("revertToMessage recovery behavior", () => {
       message: { "session-a": [userMessage, assistantMessage] },
       session_status: { "session-a": { type: "busy" } as SessionStatus },
     })
+    // The server acknowledges the abort by going idle, so the post-abort idle wait resolves at once.
+    sessionAbortHandler = () => {
+      store.setState({ session_status: { "session-a": { type: "idle" } as SessionStatus } })
+      return Promise.resolve({ data: true })
+    }
     const childStores = createChildStores([["/test/project", store]])
 
     const { interruptCurrentOperationForSteeredSend, setActionRefs } = await import("./session-actions")
