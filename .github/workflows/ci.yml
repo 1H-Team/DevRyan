@@ -1,9 +1,9 @@
 name: CI
 
-# Static checks, one Ubuntu build, one macOS native-runtime build, four
-# portable test workers and two native macOS test workers. Test lanes wait
-# only for the artifacts they consume; static checks run beside them and
-# still gate the workflow. validate:full remains the equivalent local gate.
+# Static checks and one Ubuntu build, two portable test workers that use the
+# built assets, and two native macOS workers that start at once and build the
+# native runtime themselves. Static checks run beside the tests and still gate
+# the workflow. validate:full remains the equivalent local gate.
 on:
   push:
     branches: [main]
@@ -65,36 +65,6 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  native-runtime:
-    runs-on: macos-26
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: '1.4.3'
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .nvmrc
-      - name: Install dependencies
-        env:
-          DEVRYAN_SKIP_INSTALL_PREPARE: '1'
-        run: bun install --frozen-lockfile
-      - name: Restore reviewed Claude executable
-        run: node scripts/hydrate-reviewed-claude.mjs
-      - name: Build and verify native v2 runtime
-        timeout-minutes: 20
-        run: bun scripts/build-native-runtime.mjs
-      # A tar keeps executable modes and symlinks, which artifacts drop.
-      - name: Pack native runtime
-        run: tar -cf native-runtime.tar -C packages/web runtime/darwin-arm64
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ci-native-runtime
-          path: native-runtime.tar
-          if-no-files-found: error
-          retention-days: 1
-
   tests:
     needs: build
     runs-on: ubuntu-latest
@@ -107,12 +77,6 @@ jobs:
             runner: ubuntu-latest
             concurrency: '2'
           - lane: portable-2
-            runner: ubuntu-latest
-            concurrency: '2'
-          - lane: portable-3
-            runner: ubuntu-latest
-            concurrency: '2'
-          - lane: portable-4
             runner: ubuntu-latest
             concurrency: '2'
     env:
@@ -150,7 +114,8 @@ jobs:
           retention-days: 30
 
   native-tests:
-    needs: [build, native-runtime]
+    # macOS-only suites need neither the web build nor each other: they start
+    # at once and build the native runtime in-lane (cheaper than shipping it).
     runs-on: macos-26
     timeout-minutes: 45
     strategy:
@@ -178,17 +143,11 @@ jobs:
         env:
           DEVRYAN_SKIP_INSTALL_PREPARE: '1'
         run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@v4
-        with:
-          name: ci-built-assets
-          path: packages
-      - uses: actions/download-artifact@v4
-        with:
-          name: ci-native-runtime
-      - name: Unpack native v2 runtime
-        run: tar -xf native-runtime.tar -C packages/web && rm native-runtime.tar
       - name: Restore reviewed Claude executable
         run: node scripts/hydrate-reviewed-claude.mjs
+      - name: Build and verify native v2 runtime
+        timeout-minutes: 20
+        run: bun scripts/build-native-runtime.mjs
       - name: Run every suite assigned to this lane and check scratch cleanup
         env:
           DEVRYAN_TEST_TIMINGS: ${{ runner.temp }}/test-timings/${{ matrix.lane }}.json

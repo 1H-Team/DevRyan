@@ -191,7 +191,9 @@ describe('full test-suite contract', () => {
     assert.equal(workflow.concurrency['cancel-in-progress'], "${{ github.event_name == 'pull_request' }}");
     // Lanes wait only for the artifacts they consume; static checks run beside them.
     assert.equal(workflow.jobs.tests.needs, 'build');
-    assert.deepEqual(workflow.jobs['native-tests'].needs, ['build', 'native-runtime']);
+    assert.equal(workflow.jobs['native-tests'].needs, undefined);
+    assert.ok(workflow.jobs['native-tests'].steps.some(step => step.run === 'bun scripts/build-native-runtime.mjs'));
+    assert.ok(!workflow.jobs['native-tests'].steps.some(step => step.uses === 'actions/download-artifact@v4'));
     for (const job of testJobs) {
       assert.equal(job.strategy['fail-fast'], false);
       assert.ok(job.steps.some(step => step.run === 'node scripts/validate.mjs ci:${{ matrix.lane }}'));
@@ -202,9 +204,7 @@ describe('full test-suite contract', () => {
     const nonTest = buildPlan('full').commands.filter(item => item.label !== 'test:full').map(item => item.label);
     assert.deepEqual(buildPlan('checks').commands.map(item => item.label), nonTest);
     assert.deepEqual([...buildPlan('static').commands, ...buildPlan('build').commands].map(item => item.label).sort(), [...nonTest].sort());
-    const nativeUpload = workflow.jobs['native-runtime'].steps.find(step => step.uses === 'actions/upload-artifact@v4').with;
-    assert.ok(workflow.jobs['native-tests'].steps.some(step => step.uses === 'actions/download-artifact@v4' && step.with.name === nativeUpload.name));
-    assert.ok(workflow.jobs['native-runtime'].steps.some(step => step.run === 'bun scripts/build-native-runtime.mjs'));
+
     const key = unit => JSON.stringify([unit.name, unit.command, unit.args, unit.cwd]);
     const laneUnits = CI_LANES.flatMap(lane => testUnitsForPlan(buildPlan(`ci:${lane}`).commands));
     assert.deepEqual(laneUnits.map(key).sort(), ciTestInventory(repositoryRoot).map(unit => key({ ...unit, cwd: unit.cwd ?? repositoryRoot })).sort());
@@ -235,10 +235,8 @@ describe('full test-suite contract', () => {
       testUnitsForPlan(buildPlan('full').commands).filter(unit => !split.has(unit.suite)).map(key).sort());
     assert.throws(() => buildPlan('ci:unknown'), /Unknown CI test lane/);
     const upload = workflow.jobs.build.steps.find(step => step.uses === 'actions/upload-artifact@v4').with;
-    for (const job of testJobs) {
-      const download = job.steps.find(step => step.uses === 'actions/download-artifact@v4' && step.with.name === upload.name).with;
-      assert.equal(download.path, 'packages');
-    }
+    const download = workflow.jobs.tests.steps.find(step => step.uses === 'actions/download-artifact@v4' && step.with.name === upload.name).with;
+    assert.equal(download.path, 'packages');
     for (const directory of ['packages/web/dist/', 'packages/electron/resources/web-dist/', 'packages/electron/dist-bundle/']) assert.ok(upload.path.split('\n').includes(directory));
   });
 

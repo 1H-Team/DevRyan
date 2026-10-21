@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { discoverTestFiles } from './test-runner-utils.mjs';
 import { planFullTests } from './test-full.mjs';
 
-export const CI_LANES = Object.freeze(['portable-1', 'portable-2', 'portable-3', 'portable-4', 'native-1', 'native-2']);
+export const CI_LANES = Object.freeze(['portable-1', 'portable-2', 'native-1', 'native-2']);
 export const MAC_WEB_TESTS = [
   'server/lib/opencode/native-readonly-shell.test.js',
   'server/default-config/plugins/devryan-browser.test.mjs',

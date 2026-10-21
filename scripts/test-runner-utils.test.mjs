@@ -286,14 +286,14 @@ describe('release workflow', () => {
     }
     assert.match(workflow.jobs.publish.if, /needs\.upgrade-check\.result == 'success'/);
     const ci = YAML.parse(readFileSync(new URL('.github/workflows/ci.yml', repoRoot), 'utf8'));
-    // The native-runtime build finishes before native-tests start, so at most two macOS CI jobs run at once.
+    // Two native macOS lanes, each building the native runtime in-lane.
     const nativeCI = ci.jobs['native-tests'].strategy.matrix.include.filter(row => row.runner === 'macos-26').length;
-    assert.deepEqual(ci.jobs['native-tests'].needs, ['build', 'native-runtime']);
+    assert.equal(ci.jobs['native-tests'].needs, undefined);
     assert.equal(nativeCI, 2);
     assert.deepEqual(Object.entries(workflow.jobs).filter(([, job]) => job['runs-on'] === 'macos-26').map(([name]) => name), ['electron-package', 'upgrade-check', 'final-dmg-smoke']);
     assert.ok(workflow.jobs['final-dmg-smoke'].needs.includes('electron-package'));
     assert.equal(nativeCI + 2, 4, 'smoke replaces package; qualification keeps the other release slot');
-    assert.equal(ci.jobs.tests.strategy.matrix.include.length + nativeCI + 3, 9, 'CI workers plus package, qualification and CI wait stay below the total limit');
+    assert.ok(ci.jobs.tests.strategy.matrix.include.length + nativeCI + 3 <= 9, 'CI workers plus package, qualification and CI wait stay within the total limit');
     assert.equal(YAML.parse(readFileSync(new URL('.github/workflows/release-cache.yml', repoRoot), 'utf8')).on.push, undefined);
     assert.ok(!JSON.stringify(workflow).includes('devryan_bot_schema_version'));
     assert.ok(!JSON.stringify(workflow).includes('PRODUCTION_BOTS_MIGRATION'));
