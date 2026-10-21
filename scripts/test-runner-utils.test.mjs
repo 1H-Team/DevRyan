@@ -270,7 +270,7 @@ describe('release workflow', () => {
     // Every required lane (scripts/qa/release-upgrade-lanes.mjs REQUIRED_UPGRADE_LANES) in one job, never a subset.
     const upgrade = workflow.jobs['upgrade-check'];
     assert.equal(upgrade.strategy, undefined);
-    assert.ok(upgrade.steps.some((step) => step.run === 'node scripts/qa/release-upgrade-lanes.mjs --candidate-artifacts "$RUNNER_TEMP/candidate-runtime" --report-dir "$RUNNER_TEMP/release-reports"'));
+    assert.ok(upgrade.steps.some((step) => step.run === 'node scripts/qa/release-upgrade-lanes.mjs --candidate-artifacts "$RUNNER_TEMP/candidate-runtime" --report-dir "$RUNNER_TEMP/release-reports" --sequential'));
     const fallback = upgrade.steps.find((step) => step.run?.includes('--fallback-reports'));
     assert.equal(fallback.if, '${{ always() }}');
     assert.equal(upgrade.steps.filter((step) => step.uses === 'actions/download-artifact@v4').length, 1);

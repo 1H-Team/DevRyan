@@ -387,7 +387,7 @@ jobs:
       group: release-build-${{ github.ref_name }}-upgrade-check
       cancel-in-progress: true
     # Installed apps upgrade at their first launch. One job runs every required
-    # lane at once (aging through the newest three releases, direct v2.0.2 and
+    # lane in sequence (aging through the newest three releases, direct v2.0.2 and
     # direct v2.0.15), each with its own private profile and report, against one
     # extracted candidate runtime. One runner instead of three: the matrix
     # queued for scarce macOS runners (v2.1.6: the third lane waited 10 minutes).
@@ -426,7 +426,9 @@ jobs:
           ditto "$MOUNT/DevRyan.app/Contents/Resources/revert-runtime/darwin-arm64" "$RUNNER_TEMP/candidate-runtime"
           hdiutil detach "$MOUNT" -force
       - name: Upgrade from the previous releases
-        run: node scripts/qa/release-upgrade-lanes.mjs --candidate-artifacts "$RUNNER_TEMP/candidate-runtime" --report-dir "$RUNNER_TEMP/release-reports"
+        # Released 2.0.2 has a tight native boot budget; isolate each profile's
+        # startup rather than contending with two other cold native runtimes.
+        run: node scripts/qa/release-upgrade-lanes.mjs --candidate-artifacts "$RUNNER_TEMP/candidate-runtime" --report-dir "$RUNNER_TEMP/release-reports" --sequential
       - name: Export incomplete qualification reports if setup failed
         if: ${{ always() }}
         run: node scripts/qa/release-upgrade-lanes.mjs --report-dir "$RUNNER_TEMP/release-reports" --fallback-reports
