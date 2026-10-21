@@ -20,3 +20,10 @@ test('recorded timings refresh only from passed units and stay sorted', () => {
   assert.throws(() => mergeUnitTimings({}, [{ units: [] }]), /Unsupported timing recording/);
   assert.ok(Object.values(readUnitTimings()).every((ms) => Number.isSafeInteger(ms) && ms >= 0));
 });
+
+test('units sharing an exclusive resource spread across lanes before the rest', () => {
+  const units = [{ name: 'big' }, { name: 'g1', resource: 'native-graph' }, { name: 'g2', resource: 'native-graph' }, { name: 'small' }];
+  const lanes = packLanes(units, ['one', 'two'], { big: 300, g1: 100, g2: 90, small: 10 });
+  assert.deepEqual(Object.fromEntries(Object.entries(lanes).map(([lane, rows]) => [lane, rows.map((row) => row.name)])),
+    { one: ['g1', 'small'], two: ['g2', 'big'] });
+});

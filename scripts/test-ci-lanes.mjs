@@ -50,6 +50,8 @@ export function readUnitTimings(file = TIMINGS_FILE) {
 
 /**
  * Pack units onto lanes longest first, each onto the least-loaded lane.
+ * Units that share an exclusive pool resource run one at a time within a
+ * lane, so they are packed first and spread evenly before the rest fill in.
  * Units without a recording cost the median recorded duration. Ties break by
  * name and lane order, so the assignment is deterministic.
  */
@@ -58,7 +60,8 @@ export function packLanes(units, lanes, timings) {
   const median = recorded.length ? recorded[Math.floor(recorded.length / 2)] : 1;
   const cost = unit => timings[unit.name] ?? median;
   const loads = lanes.map(() => 0), assignments = Object.fromEntries(lanes.map(lane => [lane, []]));
-  const ordered = [...units].sort((left, right) => cost(right) - cost(left) || left.name.localeCompare(right.name));
+  const ordered = [...units].sort((left, right) => Number(Boolean(right.resource)) - Number(Boolean(left.resource))
+    || cost(right) - cost(left) || left.name.localeCompare(right.name));
   for (const unit of ordered) {
     const index = loads.indexOf(Math.min(...loads));
     loads[index] += cost(unit);
