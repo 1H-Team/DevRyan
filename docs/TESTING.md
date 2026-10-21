@@ -12,8 +12,8 @@
 
 `bun run validate` runs:
 
-- ESLint on changed files;
-- type-check of changed packages and their dependents (everything when root `package.json`, `bun.lock`, `eslint.config.js`, `tsconfig.json`, `vite-theme-plugin.ts` or `.opencode/opencode.json` change);
+- oxlint on changed files;
+- type-check of changed packages and their dependents (everything when root `package.json`, `bun.lock`, `.oxlintrc.json`, `tsconfig.json`, `vite-theme-plugin.ts` or `.opencode/opencode.json` change);
 - tests of changed packages and their dependents;
 - `test:scripts` when `scripts/`, `.github/` or `.opencode/agents|plugins` change;
 - `docs:validate` when Markdown changes;

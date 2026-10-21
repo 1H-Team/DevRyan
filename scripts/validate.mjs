@@ -84,7 +84,7 @@ const packages = {
 const sharedConfigFiles = new Set([
   'package.json',
   'bun.lock',
-  'eslint.config.js',
+  '.oxlintrc.json',
   'tsconfig.json',
   'vite-theme-plugin.ts',
   '.opencode/opencode.json',
@@ -342,10 +342,8 @@ function changedLintCommand(files) {
   if (lintableFiles.length === 0) return [];
 
   return [command('lint:changed', 'bunx', [
-    'eslint',
-    '--cache',
-    '--cache-location', '.cache/eslint/changed',
-    '--config', 'eslint.config.js',
+    'oxlint',
+    '--config', '.oxlintrc.json',
     ...lintableFiles,
   ])];
 }

@@ -1153,6 +1153,8 @@ export const createDiagnosticJournal = (options = {}) => {
     if (clearPromise) await clearPromise;
     await flushInternal({ rotate: true });
     closed = true;
+    // Records admitted while the first rotation ran may have reopened a segment.
+    await flushInternal({ rotate: true });
     if (sweepTimer) clearInterval(sweepTimer);
     if (metadataTimer) clearTimeout(metadataTimer);
     sweepTimer = null;

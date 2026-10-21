@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { isReviewedPreviousClaudeAsset, REVIEWED_PREVIOUS_CLAUDE_ASSET, verifyNativeRuntimeArtifacts } from './native-artifacts.js';
+import { isAcceptedBundleBunVersion, isReviewedPreviousClaudeAsset, NATIVE_BUNDLE_BUN_VERSION, REVIEWED_PREVIOUS_CLAUDE_ASSET, verifyNativeRuntimeArtifacts } from './native-artifacts.js';
 import { REVIEWED_CLAUDE_ASSETS } from './reviewed-claude-transform.js';
 
 test('the previous reviewed Claude identity is source/rollback only and never a default or new target pin', async () => {
@@ -15,6 +15,14 @@ test('the previous reviewed Claude identity is source/rollback only and never a 
   await expect(verifyNativeRuntimeArtifacts({ purpose: 'unknown' })).rejects.toMatchObject({ code: 'native_runtime_artifacts_unverified' });
 });
 
+test('installed bundles built by the previous Bun are source/rollback only, never the current bundle', () => {
+  expect(NATIVE_BUNDLE_BUN_VERSION).toBe('1.4.3');
+  for (const purpose of ['current', 'bundle-source', 'bundle-rollback']) expect(isAcceptedBundleBunVersion('1.4.3', purpose)).toBe(true);
+  for (const purpose of ['bundle-source', 'bundle-rollback']) expect(isAcceptedBundleBunVersion('1.3.14', purpose)).toBe(true);
+  for (const purpose of [undefined, 'current', 'target']) expect(isAcceptedBundleBunVersion('1.3.14', purpose)).toBe(false);
+  for (const version of [undefined, '', '1.3.13', '1.4.2', '1.4.3 ']) expect(isAcceptedBundleBunVersion(version, 'bundle-source')).toBe(false);
+});
+
 // These fixtures never launch a controller or read installed application state.
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -24,7 +32,7 @@ const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const fixture = async operation => {
   const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-artifact-diagnostics-')));
   const row = { path: 'DevRyan-test', role: 'asset', size: 4, mode: 0o600, sha256: digest('test'), signing: { mode: 'unsigned' } };
-  const manifest = { schema: 1, buildId: 'a'.repeat(64), opencodeVersion: '2.0.26', bunVersion: '1.3.14', target: `bun-${process.platform}-${process.arch}`,
+  const manifest = { schema: 1, buildId: 'a'.repeat(64), opencodeVersion: '2.0.26', bunVersion: '1.4.3', target: `bun-${process.platform}-${process.arch}`,
     inputs: { coreDigest: 'a'.repeat(64), lockSha256: 'a'.repeat(64), reviewedPlugins: [], nativeRegistrations: [{ id: 'test', manifestDigest: 'a'.repeat(64), capabilities: [] }] },
     files: [row, { ...row, path: 'DevRyan-second' }] };
   const manifestPath = path.join(root, 'native-bundle.json');

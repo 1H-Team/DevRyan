@@ -25,7 +25,7 @@ const productionOutput=path.join(repository,'packages/web/runtime',`${process.pl
 const output=windowsCandidate?path.join(repository,'.cache/windows-native',process.arch,'runtime-candidate'):path.resolve(outputIndex<0?productionOutput:args[outputIndex+1]);
 const replaceProduction=outputIndex<0&&!windowsCandidate;
 if(!output.startsWith(repository+path.sep))throw new Error('Owned output root required');
-if(Bun.version!=='1.3.14' || (windowsCandidate?process.platform!=='win32'||!['x64','arm64'].includes(process.arch):process.platform!=='darwin'||process.arch!=='arm64')) throw new Error('Native build requires pinned Bun 1.3.14 and a supported native host');
+if(Bun.version!=='1.4.3' || (windowsCandidate?process.platform!=='win32'||!['x64','arm64'].includes(process.arch):process.platform!=='darwin'||process.arch!=='arm64')) throw new Error('Native build requires pinned Bun 1.4.3 and a supported native host');
 const target=`${process.platform}-${process.arch}`,compileTarget=windowsCandidate?`bun-windows-${process.arch}`:'bun-darwin-arm64';
 const host=path.join(repository,'packages/web/server/lib/opencode/runtime-host');
 const buildSources=await Promise.all(['scripts/build-native-runtime.mjs','scripts/native-runtime-assets.mjs',

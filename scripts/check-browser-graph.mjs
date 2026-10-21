@@ -34,7 +34,7 @@ const WORKER_URL = /new\s+URL\(\s*(['"])([^'"]+)\1\s*,\s*import\.meta\.url\s*\)/
 
 let typescript;
 function specifiersOf(source) {
-  typescript ??= createRequire(path.join(repositoryRoot, 'package.json'))('typescript');
+  typescript ??= createRequire(path.join(repositoryRoot, 'package.json'))('@typescript/typescript6');
   const specifiers = typescript.preProcessFile(source, true, true).importedFiles.map(entry => entry.fileName);
   for (const match of source.matchAll(WORKER_URL)) specifiers.push(match[2]);
   return specifiers;

@@ -7,7 +7,7 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder('ascii', { fatal: true });
 
 export type BotMjpegFrame = {
-  bytes: Uint8Array;
+  bytes: Uint8Array<ArrayBuffer>;
   width: number;
   height: number;
   deviceScaleFactor: number;
@@ -37,7 +37,7 @@ const sequenceIndex = (haystack: Uint8Array, needle: Uint8Array): number => {
   return -1;
 };
 
-const concatenate = (left: Uint8Array, right: Uint8Array): Uint8Array => {
+const concatenate = (left: Uint8Array, right: Uint8Array): Uint8Array<ArrayBuffer> => {
   if (left.byteLength === 0) return right.slice();
   const combined = new Uint8Array(left.byteLength + right.byteLength);
   combined.set(left, 0);

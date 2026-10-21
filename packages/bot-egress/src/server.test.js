@@ -43,6 +43,20 @@ const start = async (overrides = {}) => {
   return { server, port: server.address().port };
 };
 
+// Bun 1.4 frames `response.end(body)` as chunked rather than setting Content-Length.
+const decodeChunked = (raw) => {
+  let body = '';
+  let rest = raw;
+  for (;;) {
+    const lineEnd = rest.indexOf('\r\n');
+    const size = Number.parseInt(rest.slice(0, lineEnd), 16);
+    if (lineEnd < 0 || !Number.isInteger(size)) throw new Error('Malformed chunked response');
+    if (size === 0) return body;
+    body += rest.slice(lineEnd + 2, lineEnd + 2 + size);
+    rest = rest.slice(lineEnd + 2 + size + 2);
+  }
+};
+
 const proxyRequest = ({ port, target, token = TOKEN, basic = false, cookie = null }) => new Promise((resolve, reject) => {
   const socket = net.connect({ host: '127.0.0.1', port });
   const chunks = [];
@@ -50,14 +64,16 @@ const proxyRequest = ({ port, target, token = TOKEN, basic = false, cookie = nul
   socket.on('data', (chunk) => chunks.push(chunk));
   socket.once('end', () => {
     const raw = Buffer.concat(chunks).toString('utf8');
-    const [head, body = ''] = raw.split('\r\n\r\n', 2);
+    const headEnd = raw.indexOf('\r\n\r\n');
+    const head = headEnd < 0 ? raw : raw.slice(0, headEnd);
+    const body = headEnd < 0 ? '' : raw.slice(headEnd + 4);
     const lines = head.split('\r\n');
     const statusCode = Number(lines[0].split(' ')[1]);
     const headers = Object.fromEntries(lines.slice(1).map((line) => {
       const separator = line.indexOf(':');
       return [line.slice(0, separator).toLowerCase(), line.slice(separator + 1).trim()];
     }));
-    resolve({ statusCode, headers, body });
+    resolve({ statusCode, headers, body: headers['transfer-encoding'] === 'chunked' ? decodeChunked(body) : body });
   });
   socket.once('connect', () => {
     const credential = basic

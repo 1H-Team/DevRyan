@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+#!/usr/bin/env bun
 
 /*
  * Port OpenCode themes into full DevRyan theme JSON files.
@@ -137,7 +137,7 @@ const DEFAULT_CONFIG = {
 const usage = () => {
   console.error(
     [
-      'Usage: tsx scripts/port-opencode-theme.ts [options] <theme-id|path> [...more]',
+      'Usage: bun scripts/port-opencode-theme.ts [options] <theme-id|path> [...more]',
       '',
       'Options:',
       '  --opencode-root <path>  OpenCode repo root (default: ~/projects/opencode)',

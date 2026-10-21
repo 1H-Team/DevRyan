@@ -844,12 +844,12 @@ function restoreOptimisticallyUnarchivedDirectorySessions(
   }
 
   for (const snapshot of snapshots) {
-    const store = _childStores.children.get(snapshot.directory)
+    const store: StoreApi<DirectoryStore> | undefined = _childStores.children.get(snapshot.directory)
     if (!store) {
       continue
     }
 
-    const current = store.getState().session
+    const current: Session[] = store.getState().session
     let next = current
     for (const entry of snapshot.entries) {
       if (!ids.has(entry.sessionId)) {

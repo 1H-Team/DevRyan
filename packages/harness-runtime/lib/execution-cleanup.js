@@ -6,7 +6,8 @@ import path from 'node:path';
 // Symlinks are removed, never followed to chmod dependency/project inputs.
 export async function removeExecutionDirectory(directory) {
   try { await fs.rm(directory, { recursive: true, force: true }); return; }
-  catch (cause) { if (!['EACCES', 'EPERM'].includes(cause.code)) throw cause; }
+  // Bun 1.4 reports a read-only subdirectory as ENOTEMPTY on the root instead of EACCES.
+  catch (cause) { if (!['EACCES', 'EPERM', 'ENOTEMPTY'].includes(cause.code)) throw cause; }
   const writable = async (target) => {
     const stat = await fs.lstat(target).catch((cause) => { if (cause.code === 'ENOENT') return null; throw cause; });
     if (!stat?.isDirectory()) return;

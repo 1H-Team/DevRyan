@@ -78,6 +78,16 @@ export const resolveVendorChunkName = (id: string): string | undefined => {
   return undefined;
 };
 
+// Rolldown pulls every dependency of a captured module into that module's
+// group, so the lazy Markdown group would claim the shared markup utilities.
+// Their higher-priority group takes them first.
+export const vendorCodeSplitting = {
+  groups: [
+    { name: 'vendor-markup-utils', test: (id: string) => resolveVendorChunkName(id) === 'vendor-markup-utils', priority: 2 },
+    { name: (id: string) => resolveVendorChunkName(id) ?? null, priority: 1 },
+  ],
+};
+
 const isPackageSegment = (segment: string | undefined): segment is string => (
   Boolean(segment)
   && segment !== '.'

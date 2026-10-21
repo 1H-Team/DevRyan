@@ -39,7 +39,7 @@ test('finds the packaged host origin from its actual CDP page and fails on perma
   });
 });
 
-test('Bun retries its ConnectionRefused startup error until the owned host listens', async () => {
+test('Bun retries its connection-refused startup error until the owned host listens', async () => {
   const script = `
     import http from 'node:http';
     import { waitForQaHostReady } from ${JSON.stringify(new URL('./host-readiness.mjs', import.meta.url).href)};
@@ -57,7 +57,8 @@ test('Bun retries its ConnectionRefused startup error until the owned host liste
   `;
   const { stdout } = await promisify(execFile)('bun', ['--eval', script], { timeout: 5000 });
   const result = JSON.parse(stdout);
-  assert.equal(result.initialCode, 'ConnectionRefused');
+  // Bun 1.4 reports the Node code; earlier Bun reported ConnectionRefused.
+  assert.equal(result.initialCode, 'ECONNREFUSED');
   assert.equal(result.openCodeVersion, 'fixture');
 });
 

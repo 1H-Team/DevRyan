@@ -7,10 +7,9 @@
     "jsx": "react-jsx",
     "strict": true,
     "skipLibCheck": true,
-    "baseUrl": "../..",
     "paths": {
-      "@/*": ["packages/ui/src/*"],
-      "@devryan/ui/*": ["packages/ui/src/*"]
+      "@/*": ["../../packages/ui/src/*"],
+      "@devryan/ui/*": ["../../packages/ui/src/*"]
     },
     "noEmit": true
   },

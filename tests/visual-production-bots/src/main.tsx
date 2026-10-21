@@ -89,9 +89,9 @@ window.__DEVRYAN_VISUAL_SCREEN_STREAMS__ = { starts: 0, active: 0, stops: 0, max
 
 const VISUAL_STREAM_PATH = '/__devryan_visual_bot_stream__';
 const originalFetch = window.fetch.bind(window);
-let visualJpegPromise: Promise<Uint8Array> | null = null;
+let visualJpegPromise: Promise<Uint8Array<ArrayBuffer>> | null = null;
 
-const visualJpeg = (): Promise<Uint8Array> => {
+const visualJpeg = (): Promise<Uint8Array<ArrayBuffer>> => {
   if (visualJpegPromise) return visualJpegPromise;
   visualJpegPromise = new Promise((resolveJpeg, rejectJpeg) => {
     const canvas = document.createElement('canvas');

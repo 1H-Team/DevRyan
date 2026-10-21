@@ -4,6 +4,7 @@ import { build } from 'vite';
 import {
   resolveDependencyPackageName,
   resolveVendorChunkName,
+  vendorCodeSplitting,
 } from './vite-chunking';
 
 describe('resolveDependencyPackageName', () => {
@@ -57,8 +58,9 @@ it.each([
       globalThis.value = value;
       globalThis.loadMarkdown = () => import('${markdownId}');
     `,
-    [sharedId]: 'export const value = 42;',
-    [markdownId]: `import { value } from '${sharedId}'; export const render = () => value + 1;`,
+    // A mutable object keeps Rolldown from inlining the shared export into its importers.
+    [sharedId]: 'export const value = { count: 42 };',
+    [markdownId]: `import { value } from '${sharedId}'; export const render = () => value.count + 1;`,
   };
   const result = await build({
     configFile: false,
@@ -71,7 +73,7 @@ it.each([
     build: {
       write: false,
       minify: false,
-      rollupOptions: { input: entryId, output: { manualChunks: resolveVendorChunkName } },
+      rolldownOptions: { input: entryId, output: { codeSplitting: vendorCodeSplitting } },
     },
   });
   if (Array.isArray(result) || !('output' in result)) {

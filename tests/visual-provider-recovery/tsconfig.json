@@ -8,10 +8,9 @@
     "skipLibCheck": true,
     "allowImportingTsExtensions": true,
     "noEmit": true,
-    "baseUrl": "../..",
     "paths": {
       "@/*": [
-        "packages/ui/src/*"
+        "../../packages/ui/src/*"
       ]
     }
   },

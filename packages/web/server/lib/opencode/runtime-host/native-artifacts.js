@@ -24,6 +24,12 @@ export const isReviewedPreviousClaudeAsset = (file, purpose, platform = process.
   ['bundle-source', 'bundle-rollback'].includes(purpose) && platform === 'darwin' && arch === 'arm64'
   && file?.role === 'asset' && REVIEWED_PREVIOUS_CLAUDE_ASSETS.some(asset => (file.version === undefined || file.version === asset.version)
     && ['path', 'sha256', 'size', 'mode'].every(key => file[key] === asset[key]));
+// Bundles are compiled with this Bun. Installed bundles built by the previous pin stay readable as
+// migration/rollback sources, never as the current bundle.
+export const NATIVE_BUNDLE_BUN_VERSION = '1.4.3';
+export const REVIEWED_PREVIOUS_BUNDLE_BUN_VERSIONS = Object.freeze(['1.3.14']);
+export const isAcceptedBundleBunVersion = (version, purpose) => version === NATIVE_BUNDLE_BUN_VERSION
+  || ['bundle-source', 'bundle-rollback'].includes(purpose) && REVIEWED_PREVIOUS_BUNDLE_BUN_VERSIONS.includes(version);
 const hashFile = async file => {
   const hash = createHash('sha256');
   for await (const chunk of createReadStream(file)) hash.update(chunk);
@@ -70,7 +76,7 @@ export async function verifyNativeRuntimeArtifacts({ manifestPath, manifestSha25
   if (createHash('sha256').update(bytes).digest('hex') !== manifestSha256) throw fail('digest_mismatch');
   if (manifest.target !== `bun-${process.platform}-${process.arch}`) throw fail('unsupported_platform');
   if (manifest.admission === false || manifest.status === 'unqualified' || manifest.schema !== 1 || !digestPattern.test(manifest.buildId) || !isNativeOpenCodeVersion(manifest.opencodeVersion)
-    || manifest.bunVersion !== '1.3.14' || manifest.target !== `bun-${process.platform}-${process.arch}`
+    || !isAcceptedBundleBunVersion(manifest.bunVersion, purpose) || manifest.target !== `bun-${process.platform}-${process.arch}`
     || !digestPattern.test(manifest.inputs?.coreDigest) || !digestPattern.test(manifest.inputs?.lockSha256)
     || !Array.isArray(manifest.inputs.reviewedPlugins) || !Array.isArray(manifest.inputs.nativeRegistrations) || !manifest.inputs.nativeRegistrations.length
     || [...manifest.inputs.nativeRegistrations, ...manifest.inputs.reviewedPlugins].some(origin => !origin || typeof origin.id !== 'string' || !origin.id

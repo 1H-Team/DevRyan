@@ -29,7 +29,10 @@ verification purpose. The same manifest reader covers first provisioning and
 cold upgrade detection. Early failures emit the safe envelope before a journal
 exists; composed native failures add it to the bundle/controller journal event.
 `bundle-startup-upgrade-status.js` carries it to lifecycle health, including a
-failed repair at the same OpenCode version.
+failed repair at the same OpenCode version. A current bundle must be compiled
+with `NATIVE_BUNDLE_BUN_VERSION`; an installed bundle built with a
+`REVIEWED_PREVIOUS_BUNDLE_BUN_VERSIONS` entry is accepted only as a
+`bundle-source` or `bundle-rollback`, so upgrades can still read it.
 
 ### What refuses startup and what is isolated
 

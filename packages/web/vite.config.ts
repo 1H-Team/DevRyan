@@ -1,11 +1,12 @@
 import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
+import react, { reactCompilerPreset } from '@vitejs/plugin-react';
+import babel from '@rolldown/plugin-babel';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 import { VitePWA } from 'vite-plugin-pwa';
 import { themeStoragePlugin } from '../../vite-theme-plugin';
-import { resolveVendorChunkName } from './vite-chunking';
+import { vendorCodeSplitting } from './vite-chunking';
 import { terminalAssetsPlugin } from './vite-terminal-assets';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -18,11 +19,8 @@ export default defineConfig({
   root: path.resolve(__dirname, '.'),
   plugins: [
     terminalAssetsPlugin(path.resolve(__dirname, '../ui/src/lib/ghostty')),
-    react({
-      babel: {
-        plugins: ['babel-plugin-react-compiler'],
-      },
-    }),
+    react(),
+    babel({ presets: [reactCompilerPreset()] }),
     {
       name: 'inject-react-scan-script',
       transformIndexHtml() {
@@ -104,7 +102,7 @@ export default defineConfig({
     emptyOutDir: true,
     manifest: true,
     chunkSizeWarningLimit: 500,
-    rollupOptions: {
+    rolldownOptions: {
       input: {
         main: path.resolve(__dirname, 'index.html'),
         miniChat: path.resolve(__dirname, 'mini-chat.html'),
@@ -112,7 +110,7 @@ export default defineConfig({
       },
       external: ['node:child_process', 'node:fs', 'node:path', 'node:url'],
       output: {
-        manualChunks: resolveVendorChunkName,
+        codeSplitting: vendorCodeSplitting,
       },
     },
   },

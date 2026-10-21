@@ -107,7 +107,7 @@ const normalizeWebSocketPath = (pathValue: string): string => {
   return `${protocol}//${window.location.host}${normalizedPath}`;
 };
 
-const encodeControlFrame = (payload: TerminalControlMessage): Uint8Array => {
+const encodeControlFrame = (payload: TerminalControlMessage): Uint8Array<ArrayBuffer> => {
   const jsonBytes = textEncoder.encode(JSON.stringify(payload));
   const bytes = new Uint8Array(jsonBytes.length + 1);
   bytes[0] = CONTROL_TAG_JSON;

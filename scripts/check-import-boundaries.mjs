@@ -91,7 +91,7 @@ export function resolveSpecifier({ root = repositoryRoot, packages, importer, sp
 
 let typescript;
 function importSpecifiers(source) {
-  typescript ??= createRequire(path.join(repositoryRoot, 'package.json'))('typescript');
+  typescript ??= createRequire(path.join(repositoryRoot, 'package.json'))('@typescript/typescript6');
   return typescript.preProcessFile(source, true, true).importedFiles.map(entry => entry.fileName);
 }
 
