@@ -82,6 +82,7 @@ export type ManagedTaskExecutionKind = 'start' | 'retry' | 'resume' | 'recover_i
 export type ManagedTaskResultAction = 'continue' | 'resume' | 'retry' | 'recover_in_place' | 'retry_in_place' | 'abandon';
 export type ManagedTaskFailureKind =
   | 'provider_configuration'
+  | 'runtime_capability'
   | 'provider_transport'
   | 'provider_usage_limit'
   | 'provider_authentication'
@@ -478,6 +479,7 @@ export interface ManagedOpenCodeTransport {
     observedAt: number;
     eventId: string | null;
     errorName: string;
+    v2Type?: string | null;
     message: string;
     code: string | null;
     statusCode: number | null;
@@ -1017,6 +1019,7 @@ export function createManagedTerminalErrorRegistry(options?: {
     observedAt: number;
     eventId: string | null;
     errorName: string;
+    v2Type?: string | null;
     message: string;
     code: string | null;
     statusCode: number | null;
@@ -1258,3 +1261,6 @@ export function hasAcceptedUserStop(task: ManagedTaskRecord): boolean;
 export function hasPendingOperatorStop(task: ManagedTaskRecord): boolean;
 
 export const MANAGED_OPERATOR_STOP_UNCERTAIN_REASON: string;
+
+export function formatManagedTaskFailureReason(error: unknown): string;
+export function isManagedTaskCapabilityFailure(value: unknown): boolean;

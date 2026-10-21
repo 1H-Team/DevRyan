@@ -36,6 +36,7 @@ export const dict = {
   'chat.managedTasks.titleUnavailable': 'The subtask title is not available yet. You can open the subtask to check its progress.',
   'chat.managedTasks.summary.startingModel': 'Starting model…',
   'chat.managedTasks.providerLimit.reached': '{provider} rate limit reached for {model}.',
+  'chat.managedTasks.runtime.unavailable': 'The runtime could not admit this task because a required tool permission is unavailable. Repair or update the runtime before retrying.',
   'chat.managedTasks.authentication.required': 'Provider sign-in failed. Reconnect the provider or choose an available model to resume.',
   'chat.managedTasks.providerLimit.recovered': 'Recovered with {model} · {thinking}',
   'chat.managedTasks.providerLimit.continued': 'Continued on {model} · {thinking} after the usage limit',

@@ -5,12 +5,18 @@ import { createStore } from 'zustand/vanilla';
 import { useStore } from 'zustand';
 import { I18nProvider } from '@/lib/i18n';
 import { RuntimeAPIProvider } from '@/contexts/RuntimeAPIProvider';
-import { useUserMessageHistory } from '@/sync/sync-context';
+import { useSessions, useUserMessageHistory } from '@/sync/sync-context';
+import { useChatSearchDirectory } from '@/hooks/useChatSearchDirectory';
+import { useSessionUIStore } from '@/sync/session-ui-store';
 import { INITIAL_STATE } from '@/sync/types';
 import { buildUserMessageHistory } from '@/sync/user-message-history';
 import { useUIStore } from '@/stores/useUIStore';
 import MessageBody from '@/components/chat/message/MessageBody';
 import ToolPart from '@/components/chat/message/parts/ToolPart';
+import PlanCard from '@/components/chat/message/parts/PlanCard';
+import { PlanTurnTraceContext } from '@/components/chat/PlanTurnTraceContext';
+import { ManagedTaskRowView } from '@/components/chat/ManagedTaskRow';
+import { getPlanCardImplementationKey } from '@/components/chat/message/parts/planCardReveal';
 import { RawPatchFallback } from '@/components/chat/message/parts/RawPatchFallback';
 import { getMessageCopyText } from '@/lib/messages/messageCopyText';
 import { copyTextToClipboard } from '@/lib/clipboard';
@@ -21,6 +27,8 @@ import './style.css';
 const text = (id, value, messageID = 'user') => ({ id, messageID, sessionID: 'session', type: 'text', text: value });
 const info = (id, role = 'user') => ({ id, sessionID: 'session', role, time: { created: 1 } });
 const store = createStore(() => ({ ...INITIAL_STATE,
+    session: [{ id: 'session', directory: '/fixture', title: 'Selected', time: { created: 1, updated: 1 } },
+        { id: 'other', directory: '/fixture', title: 'Other', time: { created: 1, updated: 1 } }],
     message: { session: [info('user'), info('assistant', 'assistant')] },
     part: { user: [text('p', 'Initial prompt')], assistant: [] },
 }));
@@ -34,7 +42,7 @@ const childStores = {
 // The production module shares this context across chunks. Supply only isolated fixture state.
 const FixtureSyncContext = globalThis.__devryan_sync_context__;
 const sync = { childStores, directory: '/fixture' };
-const counts = { history: 0, broad: 0 };
+const counts = { history: 0, broad: 0, directory: 0, broadDirectory: 0 };
 const huge = '--- a/example.txt\r\n+++ b/example.txt\r\n@@ -1 +1 @@\r\n-old\r\n+' + 'x'.repeat(262144) + '\r\nFULL SOURCE TAIL\r\n';
 const write = 'new file line\r\n'.repeat(2100);
 const markdown = '  paragraph\r\n\r\n```ts\r\n  const x = 1;\r\n```\r\n\r\n    indented code\r\n';
@@ -71,8 +79,27 @@ function BroadBaseline() {
     React.useLayoutEffect(() => { counts.broad += 1; });
     return <span hidden>{history.join(' | ')}</span>;
 }
+function SearchDirectory() {
+    const directory = useChatSearchDirectory();
+    React.useLayoutEffect(() => { counts.directory += 1; });
+    return <output id="search-directory">{directory}</output>;
+}
+function BroadDirectoryBaseline() {
+    const sessions = useSessions('/fixture');
+    React.useLayoutEffect(() => { counts.broadDirectory += 1; });
+    return <span hidden>{sessions.find(session => session.id === 'session')?.directory}</span>;
+}
 const tool = (name, state, id = name) => ({ id, type: 'tool', messageID: 'assistant', sessionID: 'session', callID: id, tool: name, state });
 const noop = () => {};
+const planEntry = { sessionId: 'session', planVersion: 1, turnId: 'user', userMessageId: 'user',
+    memberTurnIds: ['user'], sourceTurnId: 'user', intent: 'plan', isPlanModeRevision: true,
+    assistantSourceMessageId: 'fixture-plan', assistantParentMessageId: 'user', completedAt: null,
+    isLatestPlan: true, isSuperseded: false, isSettled: false, hasTerminalError: false, isActionable: false };
+const planIndex = { entries: [planEntry], byTurnId: new Map([['user', planEntry]]),
+    bySourceMessageId: new Map([['fixture-plan', planEntry]]), messageRoleById: new Map(), suppressedTurnIds: new Set() };
+const failedTask = (taskId, label, failureKind, failureReason) => ({ taskId, rootSessionId: 'session', parentTaskId: null,
+    childSessionId: 'child', status: 'failed', agent: 'fixer', providerId: 'openai', modelId: 'fixture', variant: null,
+    label, failureKind, failureReason, agentRetryAvailable: false, manualRecoveryRequired: false });
 function Fixture() {
     const [diffStage, setDiffStage] = React.useState('oversized');
     const patchSource = diffStage === 'error' ? '--- a/fixture-renderer-error\n+++ b/fixture-renderer-error\n@@ -1 +1 @@\n-old\n+new' : huge;
@@ -88,11 +115,15 @@ function Fixture() {
     const completed = ['answered', 'failed'].includes(stage);
     React.useEffect(() => {
         useUIStore.setState({ chatRenderMode: 'sorted' });
+        useSessionUIStore.setState({ currentSessionId: 'session' });
         window.__chatFixture = {
             setStage, setDiffStage, setDirectory, setSession, counts, store, urls, sourceOperations,
+            markPlanStarted: () => useSessionUIStore.getState().markPlanImplementationRequested(getPlanCardImplementationKey('session', 'fixture-plan')),
             sources: { huge, write, markdown },
             setMode: (chatRenderMode) => useUIStore.setState({ chatRenderMode }),
             stream: (index) => flushSync(() => store.setState({ part: { ...store.getState().part, assistant: [text('stream', `token ${index}`, 'assistant')] } })),
+            updateSession: (id, patch) => flushSync(() => store.setState({ session: store.getState().session.map(session =>
+                session.id === id ? { ...session, ...patch } : session) })),
             editUser: () => store.setState({ part: { ...store.getState().part, user: [text('p', 'Edited prompt')] } }),
             clipboard: () => clipboard,
             denyCopy: (value) => { denyClipboard = value; },
@@ -116,6 +147,18 @@ function Fixture() {
             setCopyResult(result.ok ? 'Copied' : 'Copy failed');
         }}>Copy Markdown</button><output id="copy-result">{copyResult}</output>
         <Composer directory={directory} sessionID={sessionID} /><BroadBaseline />
+        <SearchDirectory /><BroadDirectoryBaseline />
+        <section id="plan-controls"><PlanTurnTraceContext.Provider value={planIndex}>
+            <PlanCard sessionId="session" sourceMessageId="fixture-plan" streamPhase="streaming"
+                planText={'# Fixture plan\n\n1. Preserve completion and duplicate-start safeguards.'}
+                projectPath={null} sessionDirectory="/fixture" sessionCreated={null} sessionSlug={null} />
+        </PlanTurnTraceContext.Provider></section>
+        <section id="dispatch-errors">
+            <ManagedTaskRowView task={failedTask('capability', 'Implementation admission failure', 'runtime_capability',
+                'admission.prompt: the native permission action for tool todoread is unavailable')} onOpenChild={noop} />
+            <ManagedTaskRowView task={failedTask('authentication', 'Provider access failure', 'provider_authentication',
+                'Upstream request failed: An active OpenCode Go subscription is required to use Go models.')} onOpenChild={noop} />
+        </section>
         <output id="stage" data-stage={stage}>{stage}</output>
     </main>;
 }

@@ -70,7 +70,10 @@ export function prepareScriptTestEnvironment(root = repositoryRoot, environment 
   const parent = environment.TMPDIR || os.tmpdir();
   mkdirSync(parent, { recursive: true });
   const temporary = mkdtempSync(path.join(parent, 'devryan-script-tests-'));
-  return { env: { ...environment, TMPDIR: temporary }, cleanup: () => rmSync(temporary, { recursive: true, force: true }) };
+  const env = { ...environment, TMPDIR: temporary };
+  delete env.DEVRYAN_MUTATION_TEST_SHARD;
+  delete env.DEVRYAN_STREAM_TEST_SHARD;
+  return { env, cleanup: () => rmSync(temporary, { recursive: true, force: true }) };
 }
 
 export async function runScriptTests(root = repositoryRoot) {

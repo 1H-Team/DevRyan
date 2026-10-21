@@ -11,6 +11,8 @@ import { describeWebArtifact, stageWebArtifact, hash, releaseIdentity, verifyPre
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const env = process.env;
 const identity = await releaseIdentity(root, env.GITHUB_SHA);
+const webIdentity = { ...identity, runID: env.GITHUB_RUN_ID };
+if (env.RELEASE_OPERATION?.startsWith('web-') && !/^\d+$/.test(webIdentity.runID ?? '')) throw new Error('Web artifact requires exact workflow run identity');
 const output = path.resolve(env.RELEASE_ARTIFACT_DIR || path.join(root, 'artifacts'));
 const write = async (name, value) => {
   await fs.mkdir(output, { recursive: true });
@@ -66,10 +68,10 @@ switch (env.RELEASE_OPERATION) {
     break;
   }
   case 'web-describe':
-    await write('web.json', await describeWebArtifact(path.join(output, 'web'), identity));
+    await write('web.json', await describeWebArtifact(path.join(output, 'web'), webIdentity));
     break;
   case 'web-stage':
-    await stageWebArtifact({ source: path.join(output, 'web'), metadata: await read('web.json'), identity,
+    await stageWebArtifact({ source: path.join(output, 'web'), metadata: await read('web.json'), identity: webIdentity,
       destination: path.join(root, env.RELEASE_WEB_TARGET === 'electron' ? 'packages/electron/resources/web-dist' : 'packages/web/dist') });
     break;
   case 'prepare-export': {

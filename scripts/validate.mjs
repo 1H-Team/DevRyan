@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { CI_LANES, planCITests } from './test-ci-lanes.mjs';
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
@@ -6,7 +7,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { cacheGrowthFailure, snapshotCache } from './cache-guard.mjs';
-import { CI_TEST_LANES, planFullTests } from './test-full.mjs';
+import { planFullTests } from './test-full.mjs';
 import { formatDuration, runTestUnits, summarizeTestUnits, testConcurrency } from './test-pool.mjs';
 import { planScriptTests, prepareScriptTestEnvironment } from './test-scripts.mjs';
 import { STARTUP_CONTRACT_GROUPS, startupContractGroups } from './test-startup-contract.mjs';
@@ -407,9 +408,9 @@ function affectedTests(files) {
 export function buildPlan(requestedMode, providedFiles, { versionOnly } = {}) {
   if (requestedMode === 'checks') return { files: providedFiles ?? [], commands: fullCommands().filter(item => item.label !== 'test:full'), reason: 'CI build and static checks' };
   if (requestedMode.startsWith('ci:')) {
-    const suites = CI_TEST_LANES[requestedMode.slice(3)];
-    if (!suites) throw new Error(`Unknown CI test lane: ${requestedMode}`);
-    return { files: providedFiles ?? [], commands: [{ ...command('test:full', 'node', ['scripts/test-full.mjs', `--suite=${suites.join(',')}`]), suites }], reason: `CI test lane ${requestedMode.slice(3)}` };
+    const lane = requestedMode.slice(3);
+    if (!CI_LANES.includes(lane)) throw new Error(`Unknown CI test lane: ${requestedMode}`);
+    return { files: providedFiles ?? [], commands: [{ ...command('test:full', 'node', ['scripts/validate.mjs', requestedMode]), lane }], reason: `CI test lane ${requestedMode.slice(3)}` };
   }
   if (requestedMode === 'full') {
     return { files: providedFiles ?? [], commands: fullCommands(), reason: 'full validation requested' };
@@ -475,13 +476,13 @@ function runStatic(item) {
 export function testUnitsForPlan(commands, { root = workspaceRoot, scriptEnvironment } = {}) {
   const units = [];
   for (const item of commands) {
-    if (item.label === 'test:full') units.push(...planFullTests(root, { scriptEnvironment, suites: item.suites }));
+    if (item.label === 'test:full') units.push(...(item.lane ? planCITests(root, item.lane, { scriptEnvironment }) : planFullTests(root, { scriptEnvironment, suites: item.suites })));
     else if (item.label === 'test:startup') {
       units.push(...startupContractGroups({ coveredBy: item.coveredBy ?? [] }).map((group) => ({ ...group, name: `startup:${group.name}`, suite: 'startup' })));
     } else if (item.suite === 'scripts') units.push(...planScriptTests(root).map((unit) => ({ ...unit, env: scriptEnvironment, suite: 'scripts' })));
     else if (item.suite) units.push(...planFullTests(root, { scriptEnvironment, suites: [item.suite] }));
   }
-  return units.map((unit) => ({ ...unit, cwd: unit.cwd ?? root }));
+  return units.map((unit) => ({ ...unit, env: unit.env ?? scriptEnvironment, cwd: unit.cwd ?? root }));
 }
 
 /**

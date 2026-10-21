@@ -2,6 +2,8 @@
 
 This folder contains renderers for chat message parts (text, tools, reasoning, placeholders) and shared tool presentation helpers.
 
+`PlanCard` keeps its unfinished-response and already-started disabled reasons available through the button's accessible description and tooltip, but hides these duplicate status labels visually. Completion, saved-source validation, duplicate-start protection, and actionable failure messages are unchanged. The isolated chat fixture checks both states with the real component.
+
 Use this doc when you ask an agent to change tool/header/description behavior.
 
 ## Tool diff preview budget

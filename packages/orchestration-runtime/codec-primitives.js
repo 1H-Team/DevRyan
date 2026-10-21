@@ -21,6 +21,7 @@ export const MANAGED_TASK_TERMINAL_STATUSES = Object.freeze(['completed', 'faile
 
 export const MANAGED_TASK_FAILURE_KINDS = Object.freeze([
   'provider_configuration',
+  'runtime_capability',
   'provider_transport',
   'provider_usage_limit',
   'provider_authentication',

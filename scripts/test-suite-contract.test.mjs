@@ -1,3 +1,5 @@
+import { CI_LANES, ciTestInventory, requiresMac, MAC_WEB_TESTS } from './test-ci-lanes.mjs';
+import { testCaseShard } from './test-case-shard.mjs';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
@@ -8,7 +10,7 @@ import YAML from 'yaml';
 import { FEATURE_TEST_MATRIX } from './feature-test-matrix.mjs';
 import { discoverElectronTestFiles } from './test-electron.mjs';
 import { discoverScriptTestFiles, planScriptTests } from './test-scripts.mjs';
-import { CI_TEST_LANES, FULL_TEST_COMMANDS, FULL_TEST_SUITES, HARNESS_WORKERS, WEB_VITEST_SHARDS, planFullTests } from './test-full.mjs';
+import { FULL_TEST_COMMANDS, FULL_TEST_SUITES, HARNESS_WORKERS, WEB_VITEST_SHARDS, planFullTests } from './test-full.mjs';
 import { buildPlan, testUnitsForPlan } from './validate.mjs';
 import { discoverTestFiles } from './test-runner-utils.mjs';
 import { discoverUiTestFiles } from './test-ui.mjs';
@@ -175,22 +177,55 @@ describe('full test-suite contract', () => {
   test('isolated CI lanes run the full inventory exactly once after the shared build', () => {
     const workflow = YAML.parse(readFileSync(path.join(repositoryRoot, '.github/workflows/ci.yml'), 'utf8'));
     const matrix = workflow.jobs.tests.strategy.matrix.include;
-    assert.deepEqual(matrix.map(row => row.lane).sort(), Object.keys(CI_TEST_LANES).sort());
-    assert.deepEqual(matrix.map(row => [row.lane, row.concurrency]), [['web', '1'], ['harness', '1'], ['core', '2']]);
+    assert.deepEqual(matrix.map(row => row.lane).sort(), [...CI_LANES].sort());
+    assert.equal(matrix.filter(row => row.runner === 'macos-26').length, 2);
+    assert.equal(matrix.filter(row => row.runner === 'ubuntu-latest').length, 4);
+    assert.equal(workflow.jobs.checks['runs-on'], 'ubuntu-latest');
+    assert.match(workflow.concurrency.group, /github.sha/);
+    assert.equal(workflow.concurrency['cancel-in-progress'], "${{ github.event_name == 'pull_request' }}");
     assert.equal(workflow.jobs.tests.needs, 'checks');
     assert.equal(workflow.jobs.tests.strategy['fail-fast'], false);
     assert.ok(workflow.jobs.checks.steps.some(step => step.run === 'node scripts/validate.mjs checks'));
     assert.ok(workflow.jobs.tests.steps.some(step => step.run === 'node scripts/validate.mjs ci:${{ matrix.lane }}'));
     assert.deepEqual(buildPlan('checks').commands.map(item => item.label), buildPlan('full').commands.filter(item => item.label !== 'test:full').map(item => item.label));
     const key = unit => JSON.stringify([unit.name, unit.command, unit.args, unit.cwd]);
-    const laneUnits = Object.keys(CI_TEST_LANES).flatMap(lane => testUnitsForPlan(buildPlan(`ci:${lane}`).commands));
-    assert.deepEqual(laneUnits.map(key).sort(), testUnitsForPlan(buildPlan('full').commands).map(key).sort());
+    const laneUnits = CI_LANES.flatMap(lane => testUnitsForPlan(buildPlan(`ci:${lane}`).commands));
+    assert.deepEqual(laneUnits.map(key).sort(), ciTestInventory(repositoryRoot).map(unit => key({ ...unit, cwd: unit.cwd ?? repositoryRoot })).sort());
+    assert.equal(new Set(laneUnits.map(unit => unit.name)).size, laneUnits.length);
+    for (const lane of CI_LANES) for (const unit of testUnitsForPlan(buildPlan(`ci:${lane}`).commands)) {
+      assert.equal(requiresMac(unit), lane.startsWith('native'), unit.name);
+    }
+    const scriptFiles = laneUnits.filter(unit => unit.suite === 'scripts').flatMap(unit => unit.args.filter(arg => /test\.[cm]?[jt]sx?$/.test(arg)).map(arg => arg.replace(/^\.\//, '')));
+    assert.deepEqual([...new Set(scriptFiles)].sort(), discoverScriptTestFiles(repositoryRoot));
+    const harnessFiles = laneUnits.filter(unit => unit.suite === 'harness').flatMap(unit => unit.args.filter(arg => /test\.js$/.test(arg)).map(arg => arg.replace(/^\.\//, '')));
+    assert.deepEqual([...new Set(harnessFiles)].sort(), discoverTestFiles(path.join(repositoryRoot, 'packages/harness-runtime'), repositoryRoot));
+    for (const [suite, variable, count] of [['harness', 'DEVRYAN_MUTATION_TEST_SHARD', 4], ['scripts', 'DEVRYAN_STREAM_TEST_SHARD', 2]]) {
+      const shards = laneUnits.filter(unit => unit.suite === suite && unit.env?.[variable]).map(unit => unit.env[variable]);
+      assert.deepEqual(shards.sort(), Array.from({ length: count }, (_, index) => `${index + 1}/${count}`));
+      for (let index = 0; index < 1000; index++) assert.equal(shards.filter(shard => testCaseShard(index, shard)).length, 1);
+    }
+    for (const file of MAC_WEB_TESTS) {
+      assert.ok(laneUnits.find(unit => unit.name === 'web:macos').args.includes(file));
+      for (const unit of laneUnits.filter(unit => unit.name.startsWith('web:vitest'))) assert.ok(unit.args.includes(file));
+    }
+    const split = new Set(['scripts', 'harness', 'web']);
+    assert.deepEqual(laneUnits.filter(unit => !split.has(unit.suite)).map(key).sort(),
+      testUnitsForPlan(buildPlan('full').commands).filter(unit => !split.has(unit.suite)).map(key).sort());
     assert.throws(() => buildPlan('ci:unknown'), /Unknown CI test lane/);
     const upload = workflow.jobs.checks.steps.find(step => step.uses === 'actions/upload-artifact@v4').with;
     const download = workflow.jobs.tests.steps.find(step => step.uses === 'actions/download-artifact@v4').with;
     assert.equal(download.name, upload.name);
     assert.equal(download.path, 'packages');
     for (const directory of ['packages/web/dist/', 'packages/electron/resources/web-dist/', 'packages/electron/dist-bundle/']) assert.ok(upload.path.split('\n').includes(directory));
+  });
+
+  test('platform-gated web checks remain on macOS rather than silently skipping on Ubuntu', () => {
+    const guarded = /skipIf\([^\n]*darwin|if\s*\(process\.platform\s*===?\s*['"]darwin|skipIf\(!caseInsensitive|skipIf\(!launcherPresent/;
+    for (const file of discoverTestFiles(path.join(repositoryRoot, 'packages/web/server'), repositoryRoot)) {
+      if (guarded.test(readFileSync(path.join(repositoryRoot, file), 'utf8'))) {
+        assert.ok(MAC_WEB_TESTS.includes(file.replace('packages/web/', '')), `macOS coverage moved off platform: ${file}`);
+      }
+    }
   });
 
   test('every startup contract file also runs in its owner suite of the full gate', () => {

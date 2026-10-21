@@ -928,6 +928,10 @@ only Claude and recording `claudeInstallation` (schema, package, version,
 platform, archive URL/integrity, executable hash/size and signature evidence).
 The manifest digest binds this record; `native-artifacts.js` verifies the actual
 publisher and bytes on every launch. Other assets retain their exact pins.
+The reviewed configuration and reviewed Claude credentials modules are executed
+from the bytes that passed their digest check, through
+`verified-module-import.js`: a `data:` URL on Node, an in-memory `blob:` URL on
+Bun (which rejects module names over about 4 KiB). The file is not read again.
 The candidate uses the existing bundle retention, checkpoint, selector CAS and
 host recomposition lifecycle. Download/check failures leave admission open;
 activation reserves idle admission before checkpointing and never replaces a

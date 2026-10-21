@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { appendManagedAssignment, stripManagedAssignment } from './continuation-assignment.js';
 import { createManagedAssistantActivityRegistry } from './assistant-activity.js';
+import { classifyManagedTaskFailure } from './provider-retry-policy.js';
+import { createManagedTerminalErrorRegistry } from './terminal-error-registry.js';
 
 import {
   createManagedOpenCodeExecutor,
@@ -4369,4 +4371,30 @@ test('a pending idle Stop never settles before delayed HTTP rejection is withdra
     expect(completed.status).toBe('completed'); expect(completed.terminationIntent).toBeUndefined();
     expect(prompts).toBe(0); expect(aborts).toBe(0);
   } finally { release(); await executor.shutdown(); }
+});
+
+
+test.each(['event', 'transcript'])('preserves structured auth before transport recovery via %s', async (source) => {
+  const registry = createManagedTerminalErrorRegistry({ now: () => 2100 });
+  registry.observe({ type: 'session.error', properties: { sessionID: 'ses_child', error: {
+    name: 'ProviderAuthError', data: { v2Type: 'provider.auth', statusCode: 403, message: 'Upstream request failed: account is inactive' },
+  } } });
+  let prompts = 0;
+  const executor = createManagedOpenCodeExecutor({ now: () => 2000, idleStablePolls: 1, transport: {
+    async createSession() { return { id: 'ses_child' }; },
+    async promptSession() { prompts++; },
+    async readSession() { return { id: 'ses_child' }; },
+    async readStatus() { return { type: 'idle' }; },
+    async readTerminalError(input) { return source === 'event' ? registry.read(input) : null; },
+    async readMessages() { return source === 'event' ? [] : [assistant({ info: { error: {
+      name: 'ProviderAuthError', data: { v2Type: 'provider.auth', statusCode: 403, message: 'Upstream request failed: account is inactive' },
+    } } })]; },
+    async abortSession() { throw new Error('must not abort a settled authentication failure'); }, deleteSession,
+  } });
+  try {
+    const result = await executor.start(task(), { async setChildSessionId() { return true; }, async markAccepted() { return true; } });
+    expect(result.status).toBe('failed');
+    expect(classifyManagedTaskFailure(result.failureReason)).toBe('provider_authentication');
+    expect(prompts).toBe(1);
+  } finally { await executor.shutdown(); }
 });

@@ -2,6 +2,7 @@ import { validateRequiredChecks, validateRequiredCheckReceipts } from './require
 import {
   MODEL_UNAVAILABLE_FAILURE_KIND,
   isProviderAuthenticationFailure,
+  isManagedTaskCapabilityFailure,
   PROVIDER_USAGE_LIMIT_FAILURE_KIND,
   classifyManagedTaskFailure,
   isDefiniteProviderUsageLimit,
@@ -307,6 +308,7 @@ const resolveManagedTaskAgentRetryAvailable = (task, failureKind) => (
   && failureKind !== MODEL_UNAVAILABLE_FAILURE_KIND
   && !isProviderAuthenticationFailure(task.failureReason)
   && !isProviderConfigurationFailure(task.failureReason)
+  && !isManagedTaskCapabilityFailure(task.failureReason)
   && !task.transportRecovery
 );
 

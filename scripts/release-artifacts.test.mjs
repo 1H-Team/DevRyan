@@ -6,7 +6,7 @@ import path from 'node:path';
 import { describeWebArtifact, stageWebArtifact, verifyWebArtifact, verifyPreparedMetadata, assertReleaseWritesAllowed } from './release-artifacts.mjs';
 import { packagePrepared } from '../packages/electron/scripts/package-prepared.mjs';
 
-const identity = { revision: 'a'.repeat(40), release: '1.2.3', lockfile: 'b'.repeat(64) };
+const identity = { revision: 'a'.repeat(40), release: '1.2.3', lockfile: 'b'.repeat(64), runID: '123' };
 test('dry runs refuse external publication', () => {
   assertReleaseWritesAllowed({});
   assertReleaseWritesAllowed({ RELEASE_DRY_RUN: 'false' });
@@ -23,6 +23,7 @@ test('web handoff preserves hidden manifests and rejects changed identity, missi
     await stageWebArtifact({ source, metadata, identity, destination: path.join(root, 'staged') });
     await verifyWebArtifact(path.join(root, 'staged'), metadata, identity);
     await assert.rejects(verifyWebArtifact(source, metadata, { ...identity, revision: 'c'.repeat(40) }), /mismatch/);
+    await assert.rejects(verifyWebArtifact(source, metadata, { ...identity, runID: '124' }), /mismatch/);
     await fs.writeFile(path.join(source, 'sw.js'), 'corrupt');
     await assert.rejects(verifyWebArtifact(source, metadata, identity), /mismatch/);
     await fs.rm(path.join(source, 'index.html'));

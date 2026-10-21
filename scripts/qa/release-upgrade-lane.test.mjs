@@ -111,3 +111,10 @@ test('data-root grading preserves a profile already migrated by an aging release
     assert.match(grade.failures.join('\n'), failure);
   }
 });
+
+
+test('aging cannot qualify an empty history or an unclean hop', () => {
+  assert.equal(gradeReleaseUpgrade({ hops: [{ result: { provisioned: true, kept: [], deleted: [] } }],
+    candidate, candidateManifestSha256 }).passed, false);
+  assert.equal(gradeReleaseUpgrade({ hops, candidate: { ...candidate, cleanupErrors: ['Owned process survived'] }, candidateManifestSha256 }).passed, false);
+});

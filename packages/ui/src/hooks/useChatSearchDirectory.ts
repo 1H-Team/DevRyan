@@ -3,13 +3,12 @@ import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSessionWorktreeStore } from '@/sync/session-worktree-store';
 import { getAttachedSessionDirectory } from '@/sync/session-worktree-contract';
-import { useSessions } from '@/sync/sync-context';
-import type { Session } from '@opencode-ai/sdk/v2';
+import { useSessionDirectory } from '@/sync/sync-context';
 import { resolveDraftEffectiveDirectory } from './useEffectiveDirectory';
 
 export const useChatSearchDirectory = (): string | undefined => {
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
-  const sessions = useSessions();
+  const currentSessionDirectory = useSessionDirectory(currentSessionId);
   const worktreeAttachment = useSessionWorktreeStore((state) =>
     currentSessionId ? state.getAttachment(currentSessionId) : undefined
   );
@@ -31,10 +30,8 @@ export const useChatSearchDirectory = (): string | undefined => {
       return worktreeMetadata.path;
     }
 
-    type SessionWithDirectory = Session & { directory?: string };
-    const currentSession = sessions.find((session) => session.id === currentSessionId) as SessionWithDirectory | undefined;
-    if (currentSession?.directory) {
-      return currentSession.directory;
+    if (currentSessionDirectory) {
+      return currentSessionDirectory;
     }
   }
 

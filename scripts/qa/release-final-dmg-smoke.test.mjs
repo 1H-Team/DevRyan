@@ -6,9 +6,14 @@ import { TITLE_HELPER_PROMPT, boundedDiagnostic, createSmokeResponder, gradeFina
 import { createRuntimeUiResponder, runtimeUiToolPrompt, runtimeUiTuple } from './native-backend-ui-diagnostic.mjs';
 
 test('a qualified immutable DMG smoke requires prerequisites, ready UI, screenshot and physical shutdown', () => {
-  const complete = { prerequisites: true, ready: true, composer: true, toolRoundTrip: true, screenshot: true, stopped: true };
+  const complete = { prerequisites: true, ready: true, composer: true, rendererSubmitted: true, rendererResponse: true, toolRoundTrip: true, screenshot: true, stopped: true };
   assert.deepEqual(gradeFinalDmgSmoke(complete), { passed: true, failures: [] });
   for (const key of Object.keys(complete)) assert.deepEqual(gradeFinalDmgSmoke({ ...complete, [key]: false }), { passed: false, failures: [key] });
+});
+
+test('backend completion alone cannot qualify a renderer smoke', () => {
+  const backendOnly = { prerequisites: true, ready: true, composer: true, toolRoundTrip: true, screenshot: true, stopped: true };
+  assert.deepEqual(gradeFinalDmgSmoke(backendOnly), { passed: false, failures: ['rendererSubmitted', 'rendererResponse'] });
 });
 
 test('the private profile registers the workspace and pins the helper to the loopback fixture', () => {

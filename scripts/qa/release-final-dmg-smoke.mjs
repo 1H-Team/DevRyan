@@ -9,10 +9,11 @@ import { fileURLToPath } from 'node:url';
 import { createRunRoot, scratchParent } from './run-root.mjs';
 import { reservePort, startOwnedProcess } from './process.mjs';
 import { qaPlatformEnvironment } from './launch-environment.mjs';
+import { createQaUiDriver } from './ui-driver.mjs';
 
 const execute = promisify(execFile);
-export function gradeFinalDmgSmoke({ prerequisites, ready, composer, toolRoundTrip, screenshot, stopped }) {
-  const failures = Object.entries({ prerequisites, ready, composer, toolRoundTrip, screenshot, stopped }).filter(([, passed]) => passed !== true).map(([name]) => name);
+export function gradeFinalDmgSmoke({ prerequisites, ready, composer, rendererSubmitted, rendererResponse, toolRoundTrip, screenshot, stopped }) {
+  const failures = Object.entries({ prerequisites, ready, composer, rendererSubmitted, rendererResponse, toolRoundTrip, screenshot, stopped }).filter(([, passed]) => passed !== true).map(([name]) => name);
   return { passed: failures.length === 0, failures };
 }
 
@@ -89,7 +90,8 @@ export async function smokeFinalDmg({ dmg, report, timeoutMs = 120000 }) {
   if (!path.isAbsolute(dmg || '') || !path.isAbsolute(report || '') || !Number.isSafeInteger(timeoutMs) || timeoutMs < 10000 || timeoutMs > 180000) throw new Error('Absolute --dmg and --report paths and a bounded timeout are required');
   const evidence = { schemaVersion: 1, kind: 'release-final-dmg-smoke', sourceRevision: process.env.GITHUB_SHA ?? null,
     runID: process.env.GITHUB_RUN_ID ?? null, runAttempt: process.env.GITHUB_RUN_ATTEMPT ?? null,
-    prerequisites: false, ready: false, composer: false, toolRoundTrip: false, screenshot: false, stopped: false, phase: 'prerequisites', observational: true };
+    prerequisites: false, ready: false, composer: false, rendererSubmitted: false, rendererResponse: false,
+    toolRoundTrip: false, screenshot: false, stopped: false, phase: 'prerequisites', observational: true };
   let root, app, cdp, provider, sessionID, home, workspace, evaluate, mounted = false;
   const capture = async (connection, name) => {
     const shot = await connection.send('Page.captureScreenshot', { format: 'png' }, { timeoutMs: 5000 });
@@ -160,32 +162,41 @@ export async function smokeFinalDmg({ dmg, report, timeoutMs = 120000 }) {
       await new Promise(resolve => setTimeout(resolve, 250));
     }
     if (evidence.ready && evidence.composer) {
-      evidence.phase = 'tool-round-trip';
-      sessionID = await evaluate(cdp, `(async()=>{const q='?directory='+encodeURIComponent(${JSON.stringify(workspace)});
-        const headers={'content-type':'application/json','x-devryan-csrf':'1'};
-        const created=await fetch('/api/session'+q,{method:'POST',headers,body:'{}'});
-        const refused=async(code,response)=>{let detail='';try{const body=await response.json();detail=String(body?.code??body?.error?.code??body?.error??'').slice(0,80);}catch{}return Error(code+':'+response.status+(detail?':'+detail:''));};
-        if(!created.ok)throw await refused('fixture_session_refused',created);const session=await created.json();
-        const sent=await fetch('/api/session/'+encodeURIComponent(session.id)+'/prompt_async'+q,{method:'POST',headers,
-          body:JSON.stringify({agent:'builder',variant:'high',model:${JSON.stringify({ providerID: runtimeUiTuple.providerID, modelID: runtimeUiTuple.modelID })},parts:[{type:'text',text:${JSON.stringify(runtimeUiToolPrompt)}}]})});
-        if(!sent.ok)throw await refused('fixture_prompt_refused',sent);return session.id;})()`, { timeoutMs: 10000 });
+      await capture(cdp, 'first-ready.png');
+      evidence.phase = 'renderer-submit';
+      const ui = createQaUiDriver(cdp, { timeoutMs: 60000, checkAlive: () => { app.check(); provider.check(); } });
+      // Native input and the shipped Send control exercise React's ordinary
+      // composer/session/subscription path. API requests below only observe it.
+      await ui.send(runtimeUiToolPrompt);
+      evidence.rendererSubmitted = true;
+      sessionID = await ui.waitExpression('UI-created session', `new URL(location.href).searchParams.get('session')`);
       evidence.sessionCreated = true;
+      evidence.phase = 'tool-round-trip';
+      let responseMessageID = null;
       const toolDeadline = Date.now() + 60000;
       while (Date.now() < toolDeadline) {
         app.check(); provider.check();
         const completed = await evaluate(cdp, `(async()=>{const r=await fetch('/api/session/'+encodeURIComponent(${JSON.stringify(sessionID)})+'/message?directory='+encodeURIComponent(${JSON.stringify(workspace)}));
           if(!r.ok)return false;const rows=await r.json();const parts=rows.flatMap(row=>row.parts??[]);
-          return ['read','write'].every(tool=>parts.some(p=>p.type==='tool'&&p.tool===tool&&p.state?.status==='completed'))
-            && rows.some(row=>row.info?.role==='assistant'&&row.info?.time?.completed&&row.parts?.some(p=>p.type==='text'&&p.text?.includes('DevRyan tools complete.')));})()`, { timeoutMs: 5000 });
+          const final=rows.find(row=>row.info?.role==='assistant'&&row.info?.time?.completed&&row.parts?.some(p=>p.type==='text'&&p.text?.includes('DevRyan tools complete.')));
+          return final&&rows.some(row=>row.info?.role==='user'&&row.parts?.some(p=>p.type==='text'&&p.text===${JSON.stringify(runtimeUiToolPrompt)}))
+            && ['read','write'].every(tool=>parts.some(p=>p.type==='tool'&&p.tool===tool&&p.state?.status==='completed'))?final.info.id:null;})()`, { timeoutMs: 5000 });
         if (completed) {
           evidence.toolRoundTrip = await fs.readFile(path.join(workspace, 'runtime-ui-proof.txt'), 'utf8').catch(() => '') === 'DevRyan actual backend publication\n';
-          if (evidence.toolRoundTrip) break;
+          if (evidence.toolRoundTrip) { responseMessageID = completed; break; }
         }
         await new Promise(resolve => setTimeout(resolve, 250));
       }
       if (!evidence.toolRoundTrip) evidence.errorCode = 'fixture_tool_round_trip_incomplete';
+      if (responseMessageID) {
+        evidence.phase = 'renderer-response';
+        // The user's prompt contains the final phrase too: require the actual
+        // completed assistant row to be visible, not a body-wide text match.
+        await ui.waitVisibleText('DevRyan tools complete.', `[data-message-id=${JSON.stringify(responseMessageID)}]`);
+        evidence.rendererResponse = true;
+      }
       evidence.phase = 'screenshot';
-      await capture(cdp, 'first-ready.png');
+      await capture(cdp, 'conversation.png');
       evidence.screenshot = true;
     }
   } catch (error) {
@@ -193,7 +204,7 @@ export async function smokeFinalDmg({ dmg, report, timeoutMs = 120000 }) {
       : evidence.phase === 'tool-round-trip' ? 'fixture_tool_round_trip_failed' : `release_dmg_${evidence.phase.replaceAll('-', '_')}_failed`;
     evidence.error = { name: boundedDiagnostic(error?.name), code: boundedDiagnostic(error?.code ?? ''), message: boundedDiagnostic(error?.message, root?.dir) };
   } finally {
-    const failed = !(evidence.ready && evidence.composer && evidence.toolRoundTrip && evidence.screenshot);
+    const failed = !(evidence.ready && evidence.composer && evidence.rendererSubmitted && evidence.rendererResponse && evidence.toolRoundTrip && evidence.screenshot);
     if (cdp && failed) {
       // Bounded evidence from the still-running app: what it showed, the session's
       // turns and tool states, and its diagnostic counters.

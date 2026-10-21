@@ -36,13 +36,6 @@ export const FULL_TEST_SUITES = Object.freeze([
 /** `bun run --cwd packages/x test` lines of FULL_TEST_SUITES, for inventory checks. */
 export const FULL_TEST_COMMANDS = Object.freeze(FULL_TEST_SUITES.map((suite) => [suite.command, ...suite.args].join(' ')));
 
-// Separate hosted runners keep the large Git/native fixtures off the web runner.
-export const CI_TEST_LANES = Object.freeze({
-  web: Object.freeze(['web']),
-  harness: Object.freeze(['harness']),
-  core: Object.freeze(FULL_TEST_SUITES.map(suite => suite.key).filter(key => !['web', 'harness'].includes(key))),
-});
-
 /** Vitest shards of `packages/web` test:vitest; the long startup files spread across them. */
 export const WEB_VITEST_SHARDS = 3;
 /**
@@ -91,7 +84,7 @@ export function planFullTests(root = repositoryRoot, { scriptEnvironment, suites
 export async function runFullTests(root = repositoryRoot, { concurrency = testConcurrency(), suites } = {}) {
   const { env, cleanup } = prepareScriptTestEnvironment(root);
   try {
-    const units = planFullTests(root, { scriptEnvironment: env, suites }).map((unit) => ({ ...unit, cwd: unit.cwd ?? root }));
+    const units = planFullTests(root, { scriptEnvironment: env, suites }).map((unit) => ({ ...unit, env: unit.env ?? env, cwd: unit.cwd ?? root }));
     const outcome = await runTestUnits(units, { concurrency, label: 'test:full', cwd: root, cleanup });
     summarizeTestUnits(outcome, { label: 'test:full', limit: 20 });
     return outcome.passed ? 0 : 1;

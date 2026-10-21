@@ -373,3 +373,21 @@ Operator Stop preparation persists a private `pending` request/lease identity be
 Pending receipts rearm after restart and expire through the existing `abortTimeoutMs` bound (default5seconds). A lost response becomes `uncertain` and active work settles as resumable `interrupted` with `Stop request outcome could not be confirmed`. It never infers acceptance or re-prompts the provider; only explicit UI-selected Resume/Dismiss may dispose of that result. A late exact response can still resolve its private receipt. New attempts remain isolated by task/lease identity. Legacy aborted/resumable records expose explicit selected-model recovery without claiming user-stop provenance.
 
 Managed child prompts disable `todoread` and `todowrite` alongside provider-native `task` on initial execution and every continuation. The parent retains task tracking; child tracking schemas add no execution authority. Read-only wildcard denial and native admission remain unchanged.
+
+
+### Failure categories and specialist handoffs
+
+Terminal error registry entries retain `v2Type`. Managed execution preserves
+structured `provider.auth`, `ProviderAuthError`, and untyped HTTP 401/403 evidence
+before reducing errors to persisted failure text; transport-looking messages cannot
+turn those permanent access failures into automatic connection recovery. Historical
+OpenCode Go subscription refusals remain classified as authentication failures.
+Native permission capability refusals project `failureKind: runtime_capability`.
+They allow result collection/abandonment but refuse model retry and continuation
+attempts: repair/update the runtime, then start new work. UI explains that repair
+instead of presenting a bare Error or suggesting provider connection recovery.
+
+Managed specialist contracts request narrow searches and relevant source ranges,
+reuse of supplied findings, and concise evidence handoffs naming owners, callers,
+checks and unresolved questions. Rereading decisive source for verification stays
+allowed; no tool-count or context-size limit substitutes for a grounded answer.

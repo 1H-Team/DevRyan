@@ -14,6 +14,7 @@ import {
 import { MANAGED_OPERATOR_STOP_UNCERTAIN_REASON, hasAcceptedUserStop, hasPendingOperatorStop, formatManagedTaskDisplayName, MAX_MANAGED_TASK_PREVIEW_BYTES, truncateManagedText } from './contract.js';
 import {
   PROVIDER_USAGE_LIMIT_FAILURE_KIND,
+  formatManagedTaskFailureReason,
   classifyProviderRetryStatus,
   classifyProviderTransportFailure,
   isDefiniteProviderUsageLimit,
@@ -223,7 +224,7 @@ const extractFailureReason = (error) => {
   ];
   for (const candidate of candidates) {
     const value = trimString(candidate);
-    if (value) return value;
+    if (value) return formatManagedTaskFailureReason(error);
   }
   try {
     const serialized = JSON.stringify(error);
@@ -1005,7 +1006,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       // The terminal event is authoritative even if the final transcript/status
       // snapshot is no longer readable. Preserve the last successful snapshot.
     }
-    const message = trimString(error.message) || 'Managed child session failed';
+    const message = formatManagedTaskFailureReason(error);
     const classifiedFailure = [error.errorName, error.code, message]
       .map(trimString)
       .filter(Boolean)

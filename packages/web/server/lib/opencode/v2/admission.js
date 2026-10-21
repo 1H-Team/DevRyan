@@ -476,6 +476,8 @@ export const toV2PermissionRuleset = (rules) => {
 const PINNED_TOOL_PERMISSION_ACTIONS = new Set([
   'read', 'glob', 'grep', 'shell', 'write', 'edit', 'patch', 'subagent',
   'skill', 'question', 'webfetch', 'websearch', 'execute',
+  // The reviewed harness-context plugin registers both under their own actions.
+  'todoread', 'todowrite',
 ]);
 
 const normalizeToolOverrides = (tools, operation) => {

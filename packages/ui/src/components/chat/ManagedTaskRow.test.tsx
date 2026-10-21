@@ -459,3 +459,14 @@ describe('ManagedTaskRow', () => {
   expect(active).not.toContain('>Running');
   expect(active).not.toContain('Resume as Task');
 });
+
+
+test('runtime admission failures explain repair without claiming a connection interruption', () => {
+  const failed = record('dvr_task_capability', 'failed', {
+    failureReason: 'admission.prompt: the native permission action for tool todoread is unavailable',
+  });
+  const html = renderView(<ManagedTaskRowView task={toManagedTaskEvent(failed).properties.task} onOpenChild={() => undefined} />);
+  expect(html).toContain('required tool permission is unavailable');
+  expect(html).toContain('Repair or update the runtime');
+  expect(html).not.toContain('model connection was interrupted');
+});

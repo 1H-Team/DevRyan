@@ -22,6 +22,8 @@ The pipeline passes ordered batches to `event-batch.ts`. Contiguous materialized
 
 History retains transcript order reversed (newest first), the first nonempty text part of each user message, and the effective local/server revert boundary. Late user parts, older pages, rollback, deletion, and store/session switches refresh the snapshot. The isolated `tests/visual-chat-improvements/` fixture measures committed history-consumer renders against a broad-subscription control.
 
+`useChatSearchDirectory` uses the existing `useSessionDirectory` leaf subscription rather than the whole session collection. Session title/activity updates leave its directory snapshot unchanged; actual session-directory changes still update attachment search. The same isolated fixture compares 120 session updates against a broad collection subscriber and verifies a real directory change afterward.
+
 ## Scope
 
 This document covers the current client-side session/data architecture in `packages/ui/src/sync` and the rules for updating stores safely.

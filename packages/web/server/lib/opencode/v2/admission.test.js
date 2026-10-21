@@ -1020,11 +1020,62 @@ describe('durable accepted-operation identity and native permissions', () => {
         { action: '*', resource: '*', effect: 'deny' },
         ...['glob', 'grep', 'read'].map(action => ({ action, resource: '*', effect: 'allow' })),
         { action: 'subagent', resource: '*', effect: 'deny' },
+        ...['todoread', 'todowrite'].map(action => ({ action, resource: '*', effect: 'deny' })),
         ...['webfetch', 'websearch'].map(action => ({ action, resource: '*', effect: 'allow' })),
       ]);
       expect(store.turns.size).toBe(1);
       expect(progress).toContainEqual({ childPromptedAt: expect.any(Number) });
       expect(progress).toContainEqual({ firstAssistantPartAt: expect.any(Number) });
+    } finally { await executor.shutdown(); }
+  });
+
+  it.each(['fixer', 'designer'])('admits writable %s children with parent-owned TODO tracking through the native bridge', async agent => {
+    const store = nativeAdmissionStore();
+    store.session.parentID = 'ses_root';
+    store.session.permissions = [{ action: 'edit', resource: '*', effect: 'allow' }];
+    let interrupted = false;
+    const nativeFetch = store.deps.fetchImpl;
+    store.deps.fetchImpl = async (url, init = {}) => {
+      const pathname = new URL(url).pathname;
+      if (pathname === '/devryan/session' && init.method === 'POST') return Response.json({ data: store.session });
+      if (pathname === `/api/session/${store.session.id}/message`) {
+        const created = Date.now() + 1_000;
+        const turns = [...store.turns.values()];
+        return Response.json({ data: turns.flatMap((turn, index) => [
+          { id: turn.id, type: 'user', time: { created }, ...turn.payload },
+          { id: `msg_done${index}`, type: 'assistant', agent, model: store.session.model,
+            time: { created: created + 1, completed: created + 2 }, finish: 'stop',
+            ...(interrupted && index === 0 ? { finish: 'error', error: { type: 'aborted' } } : {}),
+            content: [{ type: 'text', text: 'Implemented and verified the change.' }] },
+        ]).reverse() });
+      }
+      return nativeFetch(url, init);
+    };
+    let admission = store.fresh();
+    const client = createOpenCodeClient({ ...store.deps, getAdmission: () => admission });
+    const executor = createWebManagedOpenCodeExecutor({ openCodeClient: client,
+      nativeTaskDispatch: async (_scope, action) => action(), pollIntervalMs: 0, idleStablePolls: 1 });
+    const progress = [];
+    const control = { setChildSessionId: async () => true, markAccepted: async () => true,
+      recordProgress: async value => { progress.push(value); return true; } };
+    const task = { taskId: `dvr_task_${agent}`, leaseToken: 'lease_writable',
+      rootSessionId: 'ses_root', directory: '/workspace', dispatchCallId: 'call_writable', childSessionId: null,
+      providerId: 'xai', modelId: 'grok-4.6', agent, variant: 'high', readOnly: false,
+      label: 'Implement', prompt: 'Implement and verify the change.' };
+    try {
+      await expect(executor.start(task, control)).resolves.toMatchObject({ status: 'completed' });
+      const denied = ['subagent', 'todoread', 'todowrite'].map(action => ({ action, resource: '*', effect: 'deny' }));
+      expect(store.session.permissions).toEqual([{ action: 'edit', resource: '*', effect: 'allow' }, ...denied]);
+      expect(progress).toContainEqual({ childPromptedAt: expect.any(Number) });
+
+      // Reopened admission must retain the same child restrictions for a new continuation.
+      admission = store.fresh();
+      interrupted = true;
+      await expect(executor.resume({ ...task, childSessionId: store.session.id, executionKind: 'resume' }, control))
+        .resolves.toMatchObject({ status: 'completed' });
+      expect(store.session.permissions).toEqual([{ action: 'edit', resource: '*', effect: 'allow' }, ...denied]);
+      expect(store.turns.size).toBe(2);
+      expect(store.calls.filter(call => call.method === 'PATCH')).toHaveLength(1);
     } finally { await executor.shutdown(); }
   });
 

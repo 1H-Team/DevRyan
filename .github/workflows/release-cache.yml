@@ -1,15 +1,6 @@
 name: Verify native release inputs
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - packages/web/server/lib/opencode/runtime-host/**
-      - packages/harness-runtime/native/**
-      - scripts/build-native-runtime.mjs
-      - scripts/native-runtime-assets.mjs
-      - bun.lock
-      - .github/workflows/release-cache.yml
   workflow_dispatch:
 
 permissions:

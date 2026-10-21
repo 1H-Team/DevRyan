@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
+import {importVerifiedModuleBytes} from './verified-module-import.js';
 
 const fail=()=>Object.assign(new Error('native_reviewed_configuration_unverified'),{code:'native_reviewed_configuration_unverified',status:503});
 const record=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
@@ -18,7 +19,7 @@ export async function loadNativeReviewedConfiguration({reviewedConfiguration:ass
   if(createHash('sha256').update(bytes).digest('hex')!==asset.sha256)throw fail();
   // Import the bytes that passed the digest check; a later path replacement
   // cannot switch the module between validation and execution.
-  const loaded=await import('data:text/javascript;base64,'+bytes.toString('base64'));
+  const loaded=await importVerifiedModuleBytes(bytes);
   if(!record(loaded.reviewedImagegenOriginals)||['withReviewedImagegenOwner','callReviewedImagegenResponses'].some(key=>typeof loaded.reviewedImagegenOriginals[key]!=='function')
     ||loaded.nativeBuildID!==manifest.buildId||typeof loaded.resolveSlimAgents!=='function'||typeof loaded.createReviewedDocumentCache!=='function'
     ||!record(loaded.reviewedSlimInterviewOriginals)||['createInterviewService','createInterviewHandler','resolveExistingInterviewPath','InterviewDocumentOwnershipError','InterviewPatchApplyError','InterviewPatchRequiredError'].some(key=>typeof loaded.reviewedSlimInterviewOriginals[key]!=='function')

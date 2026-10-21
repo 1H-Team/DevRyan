@@ -1,3 +1,4 @@
+import { testCaseShard } from '../test-case-shard.mjs';
 import {expect,test} from 'bun:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -11,7 +12,7 @@ let reviewedBuildPluginsPromise:Promise<[import('bun').BunPlugin,import('bun').B
 const reviewedBuildPlugins=()=>reviewedBuildPluginsPromise??=Promise.all([createNativeAssetFixturePlugin(repository),
  prepareReviewedNativeInputs(repository).then(reviewedNativeInputPlugin)]);
 const cases:Array<{scenario:string;slim:boolean;compiled:boolean;setter?:string}>=[...['continue','exhausted','plain-retry','stop-publication','missing-attempt'].map(scenario=>({scenario,slim:false,compiled:false})),{scenario:'continue',slim:true,compiled:false},{scenario:'exhausted',slim:true,compiled:false},{scenario:'continue',slim:false,compiled:true},{scenario:'missing-attempt',slim:false,compiled:true},{scenario:'silence',slim:false,compiled:false},{scenario:'silence',slim:false,compiled:true},{scenario:'denied-tool',slim:false,compiled:false},{scenario:'denied-tool',slim:false,compiled:true},...['text-start','reasoning-start','tool-input-start','tool-input-error','tool-call'].map(setter=>({scenario:'setter-'+setter,slim:false,compiled:process.env.DEVRYAN_NATIVE_STREAM_COMPILED_SETTERS==='1',setter})),...['late-provider-error','late-content-filter'].flatMap(scenario=>[false,true].map(compiled=>({scenario,slim:false,compiled})))];
-for(const {scenario,slim,compiled,setter} of cases)test('pinned 2.1.0 native stream graph '+scenario+' Slim='+slim+' compiled='+compiled,async()=>{
+for(const {scenario,slim,compiled,setter} of cases.filter((_, index) => testCaseShard(index, process.env.DEVRYAN_STREAM_TEST_SHARD)))test('pinned 2.1.0 native stream graph '+scenario+' Slim='+slim+' compiled='+compiled,async()=>{
  const root=await fs.mkdtemp(path.join(repository,'.cache/v2-validation/native-stream-'));let child:ReturnType<typeof Bun.spawn>|undefined;
  try{
   const sourcePath=path.join(repository,'scripts/opencode-v2-native/controller-integrations.graph-fixture.mjs');let source=await fs.readFile(sourcePath,'utf8');

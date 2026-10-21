@@ -151,6 +151,10 @@ test('real SDK activates managed and Council registrations with reviewed per-loc
         {overrides:[...configurationOverrides({}),Global.node.replace(Global.layerWith({home:scratch,data:scratch+'/data',cache:scratch+'/cache',config:scratch+'/config',state:scratch+'/state',tmp:scratch+'/tmp',bin:scratch+'/bin',log:scratch+'/log',repos:scratch+'/repos'})),trustedPluginOverride({plugins:reviewed,additionalOrigins:[],nativePlugins:new Map()}),...gates.overrides,capture]});
       yield* sdk.agent.list({location:{directory}});yield* plugins.awaitActivation;
       const snapshot=yield* tools.snapshot([{action:'*',resource:'*',effect:'allow'}]);
+      const childSnapshot=yield* tools.snapshot([{action:'*',resource:'*',effect:'allow'},
+        ...['todoread','todowrite'].map(action=>({action,resource:'*',effect:'deny' as const}))]);
+      if(!['todoread','todowrite'].every(name=>snapshot.definitions.some(tool=>tool.name===name))
+        ||childSnapshot.definitions.some(tool=>['todoread','todowrite'].includes(tool.name)))throw Error('Managed TODO permission action drift');
       const session=yield* sdk.sessions.create({location:{directory}});
       for(const call of [{name:'devryan_task',input:{action:'wait_any',task_ids:['dvr_task_one']}},{name:'devryan_task',input:{action:'plan_update',expected_version:'version',text:'# Progress'}},{name:'council_session',input:{prompt:'Compare',preset:'default'}},{name:'todoread',input:{}},{name:'todowrite',input:{todos:[{id:'one',content:'Verify',status:'in_progress',priority:'high'}]}}])
         yield* snapshot.execute({sessionID:session.id,messageID:'msg_graph',agent:'orchestrator',call:{type:'tool-call',id:'call_graph',...call}});

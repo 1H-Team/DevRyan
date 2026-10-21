@@ -1000,3 +1000,21 @@ for (const response of ['accepted', 'rejected']) test(`a late ${response} respon
     else expect(current.operatorStop).toBeUndefined();
   } finally { await scheduler.shutdown(); }
 });
+
+
+test('native capability refusal cannot enter model retry or automatic continuation', async () => {
+  const { scheduler, original, starts, resumes, inPlaceRetries } = await createTerminalHarness({
+    failureReason: 'admission.prompt: the native permission action for tool todoread is unavailable',
+  });
+  try {
+    for (const action of ['retry', 'resume', 'retry_in_place', 'recover_in_place']) {
+      await expect(scheduler.acknowledgeResult(original.taskId, { action, idempotencyKey: `capability-${action}`,
+        providerId: 'openai', modelId: 'replacement', prompt: 'Retry the assignment',
+      })).rejects.toMatchObject({ code: 'runtime_capability_repair_required' });
+    }
+    expect(starts).toHaveLength(1);
+    expect(resumes).toHaveLength(0);
+    expect(inPlaceRetries).toHaveLength(0);
+    await scheduler.acknowledgeResult(original.taskId, { action: 'continue', idempotencyKey: 'capability-collected' });
+  } finally { await scheduler.shutdown(); }
+});

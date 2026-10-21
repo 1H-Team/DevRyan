@@ -4,6 +4,7 @@ import {
   DEADLINE_EXCEEDED_FAILURE_KIND,
   MANAGED_TASK_TIMEOUT_REASON_PREFIX,
   classifyManagedTaskFailure,
+  formatManagedTaskFailureReason,
   classifyProviderRetryFailure,
   classifyProviderRetryStatus,
   classifyProviderTransportFailure,
@@ -209,3 +210,33 @@ describe('provider queue failures', () => {
    expect(classifyProviderTransportFailure('UnknownError', '{"type":"upstream_timeout","message":"request timeout"}')).toBeNull();
    expect(classifyProviderTransportFailure('AbortError', '{"type":"upstream_timeout","message":"Upstream stalled: no data for 208771ms"}')).toBeNull();
  });
+
+
+describe('structured managed failure categories', () => {
+  it.each([
+    { name: 'ProviderAuthError', data: { message: 'Upstream request failed: subscription required', v2Type: 'provider.auth', statusCode: 403 } },
+    { errorName: 'UnknownError', message: 'Upstream request failed', statusCode: 401 },
+    { errorName: 'UnknownError', message: 'Upstream request failed', statusCode: 403 },
+  ])('retains permanent authentication evidence instead of transport recovery', (error) => {
+    const reason = formatManagedTaskFailureReason(error);
+    expect(classifyManagedTaskFailure(reason)).toBe('provider_authentication');
+    expect(classifyProviderTransportFailure(null, reason)).toBeNull();
+  });
+  it('keeps native capability admission distinct from provider failures', () => {
+    for (const error of [
+      new Error('admission.prompt: the native permission action for tool todoread is unavailable'),
+      Object.assign(new Error('fetch failed while checking required action'), { code: 'capability_unavailable' }),
+    ]) {
+      const reason = formatManagedTaskFailureReason(error);
+      expect(classifyManagedTaskFailure(reason)).toBe('runtime_capability');
+      expect(classifyProviderTransportFailure(null, reason)).toBeNull();
+    }
+  });
+  it('retains actual connection failures and user aborts without inventing authentication', () => {
+    const network = formatManagedTaskFailureReason({ name: 'UnknownError', data: { v2Type: 'provider.transport', message: 'fetch failed' } });
+    expect(classifyManagedTaskFailure(network)).toBe('provider_transport');
+    const abort = formatManagedTaskFailureReason({ name: 'MessageAbortedError', data: { v2Type: 'aborted', message: 'fetch failed' } });
+    expect(classifyManagedTaskFailure(abort)).toBeNull();
+    expect(classifyProviderTransportFailure(null, abort)).toBeNull();
+  });
+});

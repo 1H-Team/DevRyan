@@ -44,6 +44,7 @@ export async function verifyWebArtifact(directory, metadata, identity) {
   if (metadata?.version !== actual.version || metadata.kind !== 'web'
     || metadata.revision !== actual.revision || metadata.release !== actual.release
     || metadata.lockfile !== actual.lockfile
+    || metadata.runID !== actual.runID
     || JSON.stringify(metadata.options) !== JSON.stringify(actual.options)
     || JSON.stringify(metadata.files) !== JSON.stringify(actual.files)) {
     throw new Error('Web artifact identity or content mismatch');

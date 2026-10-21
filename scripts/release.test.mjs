@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { VERSION_FILES, admit, publish, releaseNotes, upload, requireTrustedCI, verifyPublished } from './release.mjs';
+import { VERSION_FILES, admit, publish, releaseNotes, upload, requireTrustedCI, verifyPublished, verifyPublicInstaller } from './release.mjs';
 
 const version = '9.8.7';
 const source = 'a'.repeat(40);
@@ -30,10 +30,14 @@ async function fixture(t, { files = { [`DevRyan-${version}-arm64.dmg`]: 'install
 // In-memory GitHub REST double covering the endpoints release.mjs calls.
 function fakeGitHub({ releases = [], tagSha = source, expired = false } = {}) {
   let nextId = 100;
-  const state = { releases: releases.map((release) => ({ assets: [], ...release })), calls: [] };
+  const state = { releases: releases.map((release) => ({ assets: [], ...release })), calls: [], downloads: new Map(), tagSha };
   const json = (status, body) => new Response(body === undefined ? null : JSON.stringify(body), { status });
   const fetchImpl = async (url, { method = 'GET', body } = {}) => {
     const { pathname, searchParams } = new URL(url);
+    if (new URL(url).hostname === 'github.com') {
+      state.calls.push(`GET ${pathname}`);
+      return new Response(state.downloads.get(url) ?? 'installer bytes');
+    }
     state.calls.push(`${method} ${pathname}`);
     const api = pathname.replace(`/repos/${repository}`, '');
     const release = (id) => state.releases.find((row) => row.id === Number(id));
@@ -71,13 +75,13 @@ function fakeGitHub({ releases = [], tagSha = source, expired = false } = {}) {
       for (const row of state.releases) row.assets = row.assets.filter((asset) => asset.id !== Number(match[1]));
       return json(204);
     }
-    if (api === `/git/ref/tags/v${version}`) return tagSha ? json(200, { object: { type: 'commit', sha: tagSha } }) : json(404, {});
+    if (api === `/git/ref/tags/v${version}`) return state.tagSha ? json(200, { object: { type: 'commit', sha: state.tagSha } }) : json(404, {});
     return json(500, { message: `unhandled ${method} ${api}` });
   };
   return { state, fetchImpl };
 }
 
-const environment = (extra = {}) => ({ GITHUB_REF: `refs/tags/v${version}`, GITHUB_SHA: source, GITHUB_TOKEN: 'fixture-token', GITHUB_REPOSITORY: repository, ...extra });
+const environment = (extra = {}) => ({ GITHUB_REF: `refs/tags/v${version}`, GITHUB_SHA: source, GITHUB_TOKEN: 'fixture-token', RELEASE_PUBLICATION_LOCK: 'devryan-production-publication', GITHUB_REPOSITORY: repository, ...extra });
 
 test('release notes come from the matching CHANGELOG section and must not be empty', () => {
   assert.equal(releaseNotes(`## [${version}]\n\n- A\n\n## [1.0.0]\n- B\n`, version), '- A');
@@ -103,7 +107,7 @@ test('published-identical upload reruns verify without changing assets', async t
   github.state.releases[0].draft = false;
   github.state.releases[0].target_commitish = source;
   github.state.calls.length = 0;
-  assert.deepEqual(await upload({ repositoryRoot: root, environment: env, fetchImpl: github.fetchImpl, log: quiet }), { published: true });
+  assert.deepEqual(await upload({ repositoryRoot: root, environment: env, fetchImpl: github.fetchImpl, log: quiet }), { published: true, releaseId: '1' });
   assert.ok(github.state.calls.every(call => call.startsWith('GET ')));
   github.state.releases[0].assets[0].digest = `sha256:${'f'.repeat(64)}`;
   await assert.rejects(upload({ repositoryRoot: root, environment: env, fetchImpl: github.fetchImpl, log: quiet }), /Published.*identity/);
@@ -116,15 +120,14 @@ test('published-only verification cannot turn a reverted draft back into a relea
   assert.ok(github.state.calls.every(call => call.startsWith('GET ')));
 });
 
-test('admit creates a draft, refuses a mismatched tag, and makes no writes in a dry run', async (t) => {
+test('admission is read-only, refuses a mismatched tag, and makes no API calls in a dry run', async (t) => {
   const { root } = await fixture(t);
   const github = fakeGitHub();
   const result = await admit({ repositoryRoot: root, environment: environment(), fetchImpl: github.fetchImpl, log: quiet });
   assert.equal(result.version, version);
-  const [draft] = github.state.releases;
-  assert.equal(String(draft.id), result.releaseId);
-  assert.deepEqual([draft.tag_name, draft.target_commitish, draft.name, draft.draft], [`v${version}`, source, `DevRyan v${version}`, true]);
-  assert.match(draft.body, /Fixed things/);
+  assert.equal(result.releaseId, '');
+  assert.deepEqual(github.state.releases, []);
+  assert.ok(github.state.calls.every(call => call.startsWith('GET ')));
 
   const dry = fakeGitHub();
   await admit({ repositoryRoot: root, environment: environment({ RELEASE_DRY_RUN: 'true', GITHUB_REF: 'refs/heads/main' }), fetchImpl: dry.fetchImpl, log: quiet });
@@ -138,15 +141,16 @@ test('admit creates a draft, refuses a mismatched tag, and makes no writes in a 
     /packages\/ui\/package\.json: 1\.0\.0/);
 });
 
-test('admit reuses a draft and routes published versions to retained-candidate verification', async (t) => {
+test('admission leaves every draft unchanged and routes published versions to retained-candidate verification', async (t) => {
   const { root } = await fixture(t);
   const github = fakeGitHub({ releases: [
     { id: 1, tag_name: `v${version}`, draft: true, target_commitish: 'b'.repeat(40), assets: [{ id: 7, name: 'stale.dmg' }] },
     { id: 2, tag_name: `v${version}`, draft: true, assets: [] },
   ] });
   const result = await admit({ repositoryRoot: root, environment: environment(), fetchImpl: github.fetchImpl, log: quiet });
-  assert.equal(result.releaseId, '1');
-  assert.deepEqual(github.state.releases.map((row) => [row.id, row.target_commitish, row.assets.length]), [[1, source, 0]]);
+  assert.equal(result.releaseId, '');
+  assert.deepEqual(github.state.releases.map((row) => [row.id, row.target_commitish, row.assets.length]), [[1, 'b'.repeat(40), 1], [2, undefined, 0]]);
+  assert.ok(github.state.calls.every(call => call.startsWith('GET ')));
 
   const release = { id: 3, tag_name: `v${version}`, draft: false, target_commitish: source };
   const published = fakeGitHub({ releases: [release] });
@@ -202,4 +206,175 @@ test('publication never replaces a newer latest and published reruns make no wri
   github.state.calls.length = 0;
   await publish({ repositoryRoot: root, environment: env, fetchImpl: github.fetchImpl, log: quiet });
   assert.ok(github.state.calls.every(call => call.startsWith('GET ')));
+});
+
+test('admission paused on a draft cannot demote or delete a concurrently published release', async t => {
+  const { root, assets } = await fixture(t);
+  const github = fakeGitHub({ releases: [{ id: 1, tag_name: `v${version}`, draft: true }] });
+  const env = environment({ RELEASE_ID: '1', RELEASE_ASSET_DIRECTORY: assets });
+  await upload({ repositoryRoot: root, environment: env, fetchImpl: github.fetchImpl, log: quiet });
+  const admissionCalls = [];
+  let interleaved = false;
+  const fetchImpl = async (url, options) => {
+    admissionCalls.push(options.method);
+    const response = await github.fetchImpl(url, options);
+    if (!interleaved && new URL(url).pathname === `/repos/${repository}/releases`) {
+      interleaved = true;
+      await publish({ repositoryRoot: root, environment: env, fetchImpl: github.fetchImpl, log: quiet, wait: async () => {} });
+    }
+    return response;
+  };
+  await admit({ repositoryRoot: root, environment: env, fetchImpl, log: quiet });
+  assert.equal(interleaved, true);
+  assert.ok(admissionCalls.every(method => method === 'GET'));
+  assert.equal(github.state.releases[0].draft, false);
+  assert.equal(github.state.releases[0].assets.length, 1);
+});
+
+test('locked upload creates and reconciles drafts; without the lock it cannot mutate', async t => {
+  const { root, assets } = await fixture(t);
+  const github = fakeGitHub();
+  const env = environment({ RELEASE_ASSET_DIRECTORY: assets });
+  await assert.rejects(upload({ repositoryRoot: root, environment: { ...env, RELEASE_PUBLICATION_LOCK: '' }, fetchImpl: github.fetchImpl, log: quiet }), /publication lock/);
+  assert.ok(github.state.calls.every(call => call.startsWith('GET ')));
+  const result = await upload({ repositoryRoot: root, environment: env, fetchImpl: github.fetchImpl, log: quiet });
+  assert.equal(result.releaseId, String(github.state.releases[0].id));
+  assert.equal(github.state.releases[0].target_commitish, source);
+  assert.equal(github.state.releases[0].assets.length, 1);
+  assert.match(github.state.releases[0].body, /Fixed things/);
+});
+
+test('upload rechecks a draft after lookup and refuses a release published in between', async t => {
+  const { root, assets } = await fixture(t);
+  const github = fakeGitHub({ releases: [{ id: 1, tag_name: `v${version}`, draft: true }] });
+  const fetchImpl = async (url, options) => {
+    const response = await github.fetchImpl(url, options);
+    if (new URL(url).pathname.endsWith('/releases/latest')) github.state.releases[0].draft = false;
+    return response;
+  };
+  await assert.rejects(upload({ repositoryRoot: root, environment: environment({ RELEASE_ASSET_DIRECTORY: assets }), fetchImpl, log: quiet }), /became published/);
+  assert.ok(github.state.calls.every(call => call.startsWith('GET ')));
+  assert.equal(github.state.releases[0].draft, false);
+});
+
+test('tag movement after initial upload qualification refuses all mutations', async t => {
+  const { root, assets } = await fixture(t);
+  const github = fakeGitHub();
+  const fetchImpl = async (url, options) => {
+    const response = await github.fetchImpl(url, options);
+    if (new URL(url).pathname.endsWith('/releases/latest')) github.state.tagSha = 'b'.repeat(40);
+    return response;
+  };
+  await assert.rejects(upload({ repositoryRoot: root, environment: environment({ RELEASE_ASSET_DIRECTORY: assets }), fetchImpl, log: quiet }), /now points at/);
+  assert.ok(github.state.calls.every(call => call.startsWith('GET ')));
+});
+
+test('promotion repeats source validation immediately before changing latest', async t => {
+  const { root, assets } = await fixture(t);
+  const github = fakeGitHub({ releases: [{ id: 1, tag_name: `v${version}`, draft: true }] });
+  const env = environment({ RELEASE_ID: '1', RELEASE_ASSET_DIRECTORY: assets });
+  await upload({ repositoryRoot: root, environment: env, fetchImpl: github.fetchImpl, log: quiet });
+  github.state.calls.length = 0;
+  const fetchImpl = async (url, options) => {
+    const response = await github.fetchImpl(url, options);
+    if (new URL(url).pathname.endsWith('/releases/latest')) github.state.tagSha = 'b'.repeat(40);
+    return response;
+  };
+  await assert.rejects(publish({ repositoryRoot: root, environment: env, fetchImpl, log: quiet }), /now points at/);
+  assert.ok(github.state.calls.every(call => call.startsWith('GET ')));
+  assert.equal(github.state.releases[0].draft, true);
+});
+
+test('public byte verification rejects corrupt, truncated, oversized and unavailable downloads', async () => {
+  const update = { name: 'DevRyan-9.8.7-arm64.dmg', url: 'https://github.com/public.dmg', size: 4, sha256: crypto.createHash('sha256').update('good').digest('hex') };
+  let headers;
+  await verifyPublicInstaller(update, { fetchImpl: async (_url, options) => { headers = options.headers; return new Response('good'); } });
+  assert.deepEqual(headers, { 'Accept-Encoding': 'identity' }, 'public download must not send the GitHub API token');
+  for (const bytes of ['evil', 'goo', 'good!']) await assert.rejects(verifyPublicInstaller(update, { fetchImpl: async () => new Response(bytes) }), /verification failed|expected size/);
+  await assert.rejects(verifyPublicInstaller(update, { fetchImpl: async () => new Response('unavailable', { status: 503 }) }), /download failed \(503\)/);
+});
+
+test('published CDN failure preserves original bytes and a retry performs verification only', async t => {
+  const { root, assets } = await fixture(t);
+  const github = fakeGitHub({ releases: [{ id: 1, tag_name: `v${version}`, draft: true }] });
+  const env = environment({ RELEASE_ID: '1', RELEASE_ASSET_DIRECTORY: assets });
+  await upload({ repositoryRoot: root, environment: env, fetchImpl: github.fetchImpl, log: quiet });
+  const original = structuredClone(github.state.releases[0].assets);
+  const url = original[0].browser_download_url;
+  github.state.downloads.set(url, 'corrupted bytes');
+  await assert.rejects(publish({ repositoryRoot: root, environment: env, fetchImpl: github.fetchImpl, log: quiet, attempts: 1 }), /Published.*public verification failed.*never rebuild or replace/);
+  assert.equal(github.state.releases[0].draft, false);
+  assert.deepEqual(github.state.releases[0].assets, original);
+  github.state.downloads.delete(url);
+  github.state.calls.length = 0;
+  await verifyPublished({ repositoryRoot: root, environment: env, fetchImpl: github.fetchImpl, log: quiet });
+  assert.ok(github.state.calls.every(call => call.startsWith('GET ')));
+  assert.deepEqual(github.state.releases[0].assets, original);
+});
+
+test('promotion needs the production lock and matching draft source', async t => {
+  const { root, assets } = await fixture(t);
+  const github = fakeGitHub({ releases: [{ id: 1, tag_name: `v${version}`, draft: true }] });
+  const env = environment({ RELEASE_ID: '1', RELEASE_ASSET_DIRECTORY: assets });
+  await upload({ repositoryRoot: root, environment: env, fetchImpl: github.fetchImpl, log: quiet });
+  github.state.calls.length = 0;
+  await assert.rejects(publish({ repositoryRoot: root, environment: { ...env, RELEASE_PUBLICATION_LOCK: '' }, fetchImpl: github.fetchImpl, log: quiet }), /publication lock/);
+  github.state.releases[0].target_commitish = 'b'.repeat(40);
+  await assert.rejects(publish({ repositoryRoot: root, environment: env, fetchImpl: github.fetchImpl, log: quiet }), /identity does not match the source/);
+  assert.ok(github.state.calls.every(call => call.startsWith('GET ')));
+  assert.equal(github.state.releases[0].draft, true);
+});
+
+test('post-publication discovery polls every five seconds and stops at sixty without replacing bytes', async t => {
+  const { root, assets } = await fixture(t);
+  const github = fakeGitHub({ releases: [{ id: 1, tag_name: `v${version}`, draft: true }] });
+  const env = environment({ RELEASE_ID: '1', RELEASE_ASSET_DIRECTORY: assets });
+  await upload({ repositoryRoot: root, environment: env, fetchImpl: github.fetchImpl, log: quiet });
+  const original = structuredClone(github.state.releases[0].assets);
+  let time = 0, polls = 0;
+  const waits = [];
+  const fetchImpl = async (url, init) => {
+    if (url.endsWith('/releases/latest') && github.state.releases[0].draft === false) {
+      polls++;
+      assert.ok(init.signal instanceof AbortSignal);
+      return Response.json({ tag_name: 'v1.0.0', draft: false, assets: [] });
+    }
+    return github.fetchImpl(url, init);
+  };
+  await assert.rejects(publish({ repositoryRoot: root, environment: env, fetchImpl, log: quiet,
+    now: () => time, wait: async ms => { waits.push(ms); time += ms; } }), /Published.*60-second discovery deadline.*never rebuild or replace/);
+  assert.equal(time, 60_000);
+  assert.equal(polls, 12);
+  assert.ok(waits.every(ms => ms === 5_000));
+  assert.equal(github.state.releases[0].draft, false);
+  assert.deepEqual(github.state.releases[0].assets, original);
+  github.state.calls.length = 0;
+  await verifyPublished({ repositoryRoot: root, environment: env, fetchImpl: github.fetchImpl, log: quiet });
+  assert.ok(github.state.calls.every(call => call.startsWith('GET ')));
+});
+
+test('a slow discovery response consumes the deadline instead of adding another full retry window', async t => {
+  const { root, assets } = await fixture(t);
+  const github = fakeGitHub({ releases: [{ id: 1, tag_name: `v${version}`, draft: true }] });
+  const env = environment({ RELEASE_ID: '1', RELEASE_ASSET_DIRECTORY: assets });
+  await upload({ repositoryRoot: root, environment: env, fetchImpl: github.fetchImpl, log: quiet });
+  let time = 0;
+  await assert.rejects(publish({ repositoryRoot: root, environment: env, log: quiet, now: () => time,
+    wait: async () => assert.fail('No retry after the deadline'), fetchImpl: async (url, init) => {
+      const response = await github.fetchImpl(url, init);
+      if (url.endsWith('/releases/latest') && github.state.releases[0].draft === false) time = 60_000;
+      return response;
+    } }), /deadline/);
+  assert.ok(!github.state.calls.some(call => call.includes('/releases/download/')));
+});
+
+test('public download honors the remaining discovery timeout', async () => {
+  const update = { name: 'DevRyan-9.8.7-arm64.dmg', url: 'https://github.com/fixture', size: 4, sha256: 'a'.repeat(64) };
+  await assert.rejects(verifyPublicInstaller(update, { timeoutMs: 5, fetchImpl: async (_url, { signal }) => {
+    // Keep the fixture alive just as a real pending socket would.
+    return new Promise((resolve, reject) => {
+      const keepAlive = setTimeout(() => reject(new Error('timeout did not abort request')), 1000);
+      signal.addEventListener('abort', () => { clearTimeout(keepAlive); reject(new Error('bounded download aborted')); }, { once: true });
+    });
+  } }), /bounded download aborted/);
 });

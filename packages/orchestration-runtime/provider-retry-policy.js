@@ -17,7 +17,30 @@ export const PROVIDER_AUTHENTICATION_FAILURE_KIND = 'provider_authentication';
 // Sign-in failures cannot heal by retrying. `authentication_error` is the
 // Anthropic/Meridian type; "not logged in" is Claude Code's own wording.
 export const isProviderAuthenticationFailure = (value) => typeof value === 'string'
-  && /\b(?:authentication(?:_?error)?|authorization(?:error)?|unauthorized|forbidden|invalid (?:api key|credentials?|access token)|missing api key|expired (?:access |refresh )?token|(?:oauth |access |refresh )?token (?:has |is )?expired|not logged in|http[ :]+401)\b/i.test(value);
+  && /\b(?:authentication(?:_?error)?|authorization(?:error)?|unauthorized|forbidden|invalid (?:api key|credentials?|access token)|missing api key|expired (?:access |refresh )?token|(?:oauth |access |refresh )?token (?:has |is )?expired|not logged in|http[ :]+40[13]|an active opencode go subscription is required)\b/i.test(value);
+// Keep structured terminal categories before reducing errors to persisted text.
+export const formatManagedTaskFailureReason = (error) => {
+  if (typeof error === 'string') return error.trim();
+  if (!error || typeof error !== 'object') return String(error ?? '');
+  const data = error.data && typeof error.data === 'object' ? error.data : {};
+  const message = [data.message, error.message, error.name].find((value) => typeof value === 'string' && value.trim())?.trim() || 'Managed child session failed';
+  const type = data.v2Type ?? error.v2Type;
+  const name = error.errorName ?? error.name;
+  if (type === 'aborted' || (!type && /^(?:MessageAbortedError|AbortError)$/.test(name ?? ''))) {
+    return /\babort(?:ed)?\b/i.test(message) ? message : `Aborted: ${message}`;
+  }
+  if (type === 'provider.auth' || (!type && name === 'ProviderAuthError')
+    || (!type && [401, 403].includes(data.statusCode ?? error.statusCode))) {
+    return isProviderAuthenticationFailure(message) ? message : `Provider authentication failed: ${message}`;
+  }
+  if (error.code === 'capability_unavailable' || data.code === 'capability_unavailable') {
+    return `Runtime capability unavailable: ${message}`;
+  }
+  return message;
+};
+export const isManagedTaskCapabilityFailure = (value) => typeof value === 'string'
+  && /^(?:Runtime capability unavailable:|admission\.prompt: the native permission action for tool [a-zA-Z0-9_.:-]+ is unavailable$)/.test(value);
+
 export const PROVIDER_PROMPT_REJECTED_FAILURE_KIND = 'provider_prompt_rejected';
 export const MODEL_UNAVAILABLE_FAILURE_KIND = 'model_unavailable';
 export const DEADLINE_EXCEEDED_FAILURE_KIND = 'deadline_exceeded';
@@ -92,7 +115,8 @@ export const classifyProviderTransportFailure = (name, detail) => {
   const normalizedName = normalizeTransportFailureText(name);
   const normalizedDetail = normalizeTransportFailureText(detail);
   const combined = [normalizedName, normalizedDetail].filter(Boolean).join(': ');
-  if (isProviderAuthenticationFailure(combined) || isProviderConfigurationFailure(normalizedDetail)) return null;
+  if (isProviderAuthenticationFailure(combined) || isProviderConfigurationFailure(normalizedDetail)
+    || isManagedTaskCapabilityFailure(normalizedDetail)) return null;
   const compactName = normalizedName.replace(/[^a-z0-9]+/gi, '');
   // Checked first: these strings can legitimately contain "abort"/"cancelled".
   if (combined && PROVIDER_QUEUE_FAILURE_PATTERN.test(combined)) {
@@ -182,6 +206,7 @@ export const isManagedTaskModelUnavailable = (value) => (
 
 export const classifyManagedTaskFailure = (value) => (
   (isProviderAuthenticationFailure(value) ? PROVIDER_AUTHENTICATION_FAILURE_KIND : null)
+  ?? (isManagedTaskCapabilityFailure(value) ? 'runtime_capability' : null)
   ?? (isProviderConfigurationFailure(value) ? PROVIDER_CONFIGURATION_FAILURE_KIND : null)
   ?? classifyProviderRetryFailure(value)
   ?? (isManagedTaskModelUnavailable(value) ? MODEL_UNAVAILABLE_FAILURE_KIND : null)

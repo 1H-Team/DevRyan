@@ -466,7 +466,10 @@ const PlanCard: React.FC<PlanCardProps> = ({
             </>
           ) : null}
           {implementDisabledReason ? (
-            <span id={disabledReasonId} className="text-muted-foreground">
+            <span
+              id={disabledReasonId}
+              className={implementDisabledReason === 'The response is still finishing.' || isImplementationRequested ? 'sr-only' : 'text-muted-foreground'}
+            >
               {implementDisabledReason}
             </span>
           ) : null}

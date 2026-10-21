@@ -1,3 +1,4 @@
+import { testCaseShard } from '../../../scripts/test-case-shard.mjs';
 import { afterEach, describe, expect, spyOn, test as bunTest } from 'bun:test';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
@@ -10,7 +11,8 @@ import { openChangeStore, changeKey } from './session-changes-store.js';
 import { withExecutionAdmission } from './execution-admission.js';
 
 const roots = [];
-const test = (name, body) => bunTest(name, body, 60_000);
+let caseIndex = 0;
+const test = (name, body) => { if (testCaseShard(caseIndex++, process.env.DEVRYAN_MUTATION_TEST_SHARD)) bunTest(name, body, 60_000); };
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true }))); });
 async function fixture(options = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-mutations-')); roots.push(root);

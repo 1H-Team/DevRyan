@@ -1,22 +1,28 @@
 #!/usr/bin/env node
 // GitHub Release steps for .github/workflows/release.yml.
 //
-//   admit    check version metadata and notes, then create or reuse the draft for vX.Y.Z
+//   admit    read-only qualification and published-candidate recovery routing
 //   upload   check the packaged DMG against the asset allowlist and attach it to the draft
 //   publish  publish the draft and confirm the shipped updater discovers the new DMG
 //
 // A version is used up only once it is published: a failed attempt re-runs, or the
-// tag moves to a fixed commit and `admit` reuses the unpublished draft.
+// tag moves to a fixed commit and locked `upload` reuses the unpublished draft.
 // RELEASE_DRY_RUN=true makes no GitHub writes (admit prints, upload checks local files).
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { RELEASE_REPOSITORY, RELEASE_VERSION_PATTERN, releaseAssetName } from '../packages/electron/release-assets.mjs';
-import { discoverDesktopUpdate } from '../packages/electron/desktop-updater.mjs';
+import { RELEASE_REPOSITORY, RELEASE_VERSION_PATTERN, releaseAssetName, releaseAssetDownloadUrl } from '../packages/electron/release-assets.mjs';
+import { discoverDesktopUpdate, verifyDownloadedUpdate } from '../packages/electron/desktop-updater.mjs';
 import { describeDirectoryAssets, verifyReleaseAssets } from './verify-release-assets.mjs';
+import { createRunRoot, scratchParent } from './qa/run-root.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SCOPE = 'desktop-macos-arm64';
+const PUBLICATION_LOCK = 'devryan-production-publication';
+
+function requirePublicationLock(environment) {
+  if (environment.RELEASE_PUBLICATION_LOCK !== PUBLICATION_LOCK) throw new Error('Release mutations require the workflow production publication lock');
+}
 
 export const VERSION_FILES = [
   'package.json',
@@ -96,10 +102,11 @@ export function releaseNotes(changelog, version) {
 export function githubClient({ token, fetchImpl = fetch, repository = RELEASE_REPOSITORY }) {
   if (!token) throw new Error('GITHUB_TOKEN is required');
   const headers = { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' };
-  const request = async (method, url, { body, contentType, allowNotFound = false } = {}) => {
+  const request = async (method, url, { body, contentType, allowNotFound = false, signal } = {}) => {
     const target = url.startsWith('https://') ? url : `https://api.github.com/repos/${repository}${url}`;
     const response = await fetchImpl(target, {
       method,
+      ...(signal ? { signal } : {}),
       headers: { ...headers, ...(body !== undefined ? { 'Content-Type': contentType ?? 'application/json' } : {}) },
       body: body === undefined || Buffer.isBuffer(body) ? body : JSON.stringify(body),
     });
@@ -180,18 +187,9 @@ export async function admit({ repositoryRoot = root, environment = process.env, 
     log(`Published ${tag}: recover the original candidate from run ${candidateRunId} and verify only.`);
     return { version, releaseId: String(published.id), published: true, candidateRunId };
   }
-  const [draft, ...extra] = matching;
-  for (const stale of extra) await client.request('DELETE', `/releases/${stale.id}`);
-  const fields = { tag_name: tag, target_commitish: source, name: `DevRyan ${tag}`, body: `${notes}\n`, draft: true, prerelease: false };
-  if (!draft) {
-    const created = await client.request('POST', '/releases', { body: fields });
-    log(`Created draft ${tag} (${created.id}) at ${source}.`);
-    return { version, releaseId: String(created.id) };
-  }
-  await client.request('PATCH', `/releases/${draft.id}`, { body: fields });
-  for (const asset of await releaseAssets(client, draft.id)) await client.request('DELETE', `/releases/assets/${asset.id}`);
-  log(`Reused draft ${tag} (${draft.id}) at ${source}; removed its earlier assets.`);
-  return { version, releaseId: String(draft.id) };
+  await assertTagAtSource(client, tag, source);
+  log(`Qualified ${tag} at ${source}; draft reconciliation waits for the production publication lock.`);
+  return { version, releaseId: '' };
 }
 
 async function localInstaller(directory, version) {
@@ -221,18 +219,36 @@ export async function upload({ repositoryRoot = root, environment = process.env,
   const client = githubClient({ token: environment.GITHUB_TOKEN, fetchImpl, repository: environment.GITHUB_REPOSITORY || RELEASE_REPOSITORY });
   const tag = `v${version}`;
   await assertTagAtSource(client, tag, environment.GITHUB_SHA);
-  const releaseId = environment.RELEASE_ID;
-  const release = await client.request('GET', `/releases/${releaseId}`);
+  const matching = await findReleases(client, tag);
+  let release = matching.find(candidate => !candidate.draft) ?? matching[0];
+  if (environment.RELEASE_VERIFY_PUBLISHED === 'true' && !release) throw new Error('Published verification refuses an unpublished release');
   if (environment.RELEASE_VERIFY_PUBLISHED === 'true' && release.draft) throw new Error('Published verification refuses an unpublished release');
-  if (!release.draft) {
+  if (release && !release.draft) {
     if (release.target_commitish !== environment.GITHUB_SHA) throw new Error('Published release identity does not match the source commit');
     await verifyRemoteInstaller(client, release, version, asset, digests);
     log(`Published ${tag} already has the identical candidate; verification only.`);
-    return { published: true };
+    return { published: true, releaseId: String(release.id) };
   }
   const latest = await client.request('GET', '/releases/latest', { allowNotFound: true });
   const latestVersion = latest?.tag_name?.match(/^v(\d+\.\d+\.\d+)$/)?.[1];
   if (latestVersion && compareVersions(latestVersion, version) > 0) throw new Error(`Refusing to upload ${tag}: v${latestVersion} is already latest; production deployment must not run`);
+  requirePublicationLock(environment);
+  await assertTagAtSource(client, tag, environment.GITHUB_SHA);
+  const notes = releaseNotes(await fs.readFile(path.join(repositoryRoot, 'CHANGELOG.md'), 'utf8'), version);
+  const fields = { tag_name: tag, target_commitish: environment.GITHUB_SHA, name: `DevRyan ${tag}`, body: `${notes}\n`, draft: true, prerelease: false };
+  // All callers that can mutate a release share the workflow's production lock.
+  // Admission never touches drafts, including when it overlaps this promotion.
+  if (release) {
+    release = await client.request('GET', `/releases/${release.id}`);
+    if (!release.draft) throw new Error('Release became published before draft reconciliation; rerun verification only');
+    await client.request('PATCH', `/releases/${release.id}`, { body: fields });
+  } else release = await client.request('POST', '/releases', { body: fields });
+  const releaseId = String(release.id);
+  for (const stale of matching.filter(candidate => String(candidate.id) !== releaseId)) {
+    const current = await client.request('GET', `/releases/${stale.id}`);
+    if (!current.draft) throw new Error('Refusing to remove a published duplicate release');
+    await client.request('DELETE', `/releases/${current.id}`);
+  }
   for (const existing of await releaseAssets(client, releaseId)) await client.request('DELETE', `/releases/assets/${existing.id}`);
   const bytes = await fs.readFile(path.join(directory, asset.name));
   await client.request('POST', `https://uploads.github.com/repos/${client.repository}/releases/${releaseId}/assets?name=${encodeURIComponent(asset.name)}`,
@@ -240,11 +256,36 @@ export async function upload({ repositoryRoot = root, environment = process.env,
   const failures = verifyReleaseAssets(await releaseAssets(client, releaseId), { version, scope: SCOPE, digests });
   if (failures.length) throw new Error(`Draft ${tag} assets failed verification after upload:\n${failures.join('\n')}`);
   log(`Uploaded ${asset.name} (${asset.size} bytes, ${asset.digest}) to draft ${tag}.`);
-  return { published: false };
+  return { published: false, releaseId };
+}
+
+/** Download the unauthenticated public URL and use the shipped updater's byte verifier. */
+export async function verifyPublicInstaller(update, { fetchImpl = fetch, timeoutMs = 180_000 } = {}) {
+  const controller = new AbortController();
+  const run = createRunRoot({ parent: scratchParent('release-download'), owner: 'release-public-download', onInterrupt: () => controller.abort() });
+  let passed = false;
+  const timer = setTimeout(() => controller.abort(), Math.max(1, timeoutMs));
+  timer.unref();
+  try {
+    const response = await fetchImpl(update.url, { signal: controller.signal, headers: { 'Accept-Encoding': 'identity' } });
+    if (!response.ok || !response.body) throw new Error(`Public installer download failed (${response.status})`);
+    const file = path.join(run.dir, update.name);
+    const handle = await fs.open(file, 'wx', 0o600);
+    try {
+      let size = 0;
+      for await (const chunk of response.body) {
+        size += chunk.byteLength;
+        if (size > update.size) { controller.abort(); throw new Error('Public installer exceeds the expected size'); }
+        await handle.writeFile(chunk);
+      }
+    } finally { await handle.close(); }
+    await verifyDownloadedUpdate(file, update);
+    passed = true;
+  } finally { clearTimeout(timer); run.finish(passed ? 'passed' : 'failed'); }
 }
 
 export async function publish({ repositoryRoot = root, environment = process.env, fetchImpl = fetch, log = console.log,
-  wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), attempts = 6 } = {}) {
+  wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), attempts = Infinity, now = Date.now } = {}) {
   const version = await releaseVersion(repositoryRoot, environment);
   const directory = path.resolve(environment.RELEASE_ASSET_DIRECTORY ?? '');
   const { asset, digests } = await localInstaller(directory, version);
@@ -255,31 +296,44 @@ export async function publish({ repositoryRoot = root, environment = process.env
   const release = await client.request('GET', `/releases/${releaseId}`);
   if (environment.RELEASE_VERIFY_PUBLISHED === 'true' && release.draft) throw new Error('Published verification refuses an unpublished release');
   await verifyRemoteInstaller(client, release, version, asset, digests);
-  if (!release.draft && release.target_commitish !== environment.GITHUB_SHA) throw new Error('Published release identity does not match the source commit');
+  if (release.target_commitish !== environment.GITHUB_SHA) throw new Error('Release identity does not match the source commit');
   const latestBefore = await client.request('GET', '/releases/latest', { allowNotFound: true });
   const latestVersion = latestBefore?.tag_name?.match(/^v(\d+\.\d+\.\d+)$/)?.[1];
   if (latestVersion && compareVersions(latestVersion, version) > 0) {
     if (release.draft) throw new Error(`Refusing to promote ${tag}: v${latestVersion} is already latest`);
+    await verifyPublicInstaller({ name: asset.name, url: releaseAssetDownloadUrl('macos-arm64', version), sha256: asset.digest.slice(7), size: asset.size }, { fetchImpl });
     log(`Verified identical published ${tag}; superseded by v${latestVersion}. Latest is unchanged.`);
     return;
   }
-  if (release.draft) await client.request('PATCH', `/releases/${releaseId}`, { body: { draft: false, make_latest: 'true' } });
+  if (release.draft) {
+    requirePublicationLock(environment);
+    await assertTagAtSource(client, tag, environment.GITHUB_SHA);
+    await client.request('PATCH', `/releases/${releaseId}`, { body: { draft: false, make_latest: 'true' } });
+  }
   const expected = { version, name: releaseAssetName('macos-arm64', version), sha256: asset.digest.slice('sha256:'.length), size: asset.size };
-  for (let attempt = 1; ; attempt++) {
+  const discoveryDeadline = now() + 60_000;
+  let lastError = new Error('Updater discovery deadline expired (60 seconds)');
+  for (let attempt = 1; attempt <= attempts && now() < discoveryDeadline; attempt++) {
     try {
-      const latest = await client.request('GET', '/releases/latest');
+      const latest = await client.request('GET', '/releases/latest', { signal: AbortSignal.timeout(Math.max(1, discoveryDeadline - now())) });
       const update = discoverDesktopUpdate(latest, { currentVersion: '0.0.0', platform: 'darwin', arch: 'arm64' });
       const found = { version: update?.version, name: update?.name, sha256: update?.sha256, size: update?.size };
       if (JSON.stringify(found) !== JSON.stringify(expected)) {
         throw new Error(`Updater discovery found ${JSON.stringify(found)}, expected ${JSON.stringify(expected)}`);
       }
-      log(`Published ${tag}; the in-app updater discovers ${expected.name} (${expected.size} bytes, sha256:${expected.sha256}).`);
+      if (now() >= discoveryDeadline) throw new Error('Updater discovery deadline expired (60 seconds)');
+      await verifyPublicInstaller(update, { fetchImpl, timeoutMs: discoveryDeadline - now() });
+      if (now() >= discoveryDeadline) throw new Error('Public verification deadline expired (60 seconds)');
+      log(`Published ${tag}; the in-app updater discovers ${expected.name} (${expected.size} bytes, sha256:${expected.sha256}); public download bytes verified.`);
+      log(`[release] updater-discovery-verified-at=${new Date(now()).toISOString()}`);
       return;
     } catch (error) {
-      if (attempt >= attempts) throw error;
-      await wait(5_000);
+      lastError = error;
+      if (attempt >= attempts || now() >= discoveryDeadline) break;
+      await wait(Math.min(5_000, discoveryDeadline - now()));
     }
   }
+  throw new Error(`Published ${tag} but public verification failed within the 60-second discovery deadline: ${lastError.message}. Retry verification with the original candidate; never rebuild or replace published bytes.`, { cause: lastError });
 }
 
 export function compareVersions(left, right) {
@@ -292,8 +346,8 @@ export function compareVersions(left, right) {
 
 export async function verifyPublished(options = {}) {
   const environment = { ...(options.environment ?? process.env), RELEASE_VERIFY_PUBLISHED: 'true' };
-  await upload({ ...options, environment });
-  await publish({ ...options, environment });
+  const uploaded = await upload({ ...options, environment });
+  await publish({ ...options, environment: { ...environment, RELEASE_ID: uploaded.releaseId } });
 }
 
 const operations = { admit, upload, publish, 'trusted-ci': requireTrustedCI, 'verify-published': verifyPublished, 'check-versions': checkVersions };
@@ -306,7 +360,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   }
   operation().then(async (result) => {
     if (result && process.env.GITHUB_OUTPUT) {
-      const fields = result.version ? `version=${result.version}\nrelease_id=${result.releaseId}\npublished=${result.published === true}\ncandidate_run_id=${result.candidateRunId ?? ''}\n` : typeof result.published === 'boolean' ? `published=${result.published}\n` : '';
+      const fields = result.version ? `version=${result.version}\nrelease_id=${result.releaseId}\npublished=${result.published === true}\ncandidate_run_id=${result.candidateRunId ?? ''}\n` : typeof result.published === 'boolean' ? `published=${result.published}\nrelease_id=${result.releaseId}\n` : '';
       await fs.appendFile(process.env.GITHUB_OUTPUT, fields);
     }
   }).catch((error) => {

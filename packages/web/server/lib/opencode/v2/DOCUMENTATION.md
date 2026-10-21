@@ -141,6 +141,10 @@ has not been qualified.
 Tool restrictions preserve unrelated permission rules. Native write/edit/patch
 share the `edit` action: partial writer grants and contradictory aliases are
 explicitly unavailable until the native host enforces per-executor restrictions.
+The reviewed `devryan.harness-context` tools `todoread` and `todowrite` each use
+their own permission action. Admission preserves managed children's explicit
+denies for both while leaving their editing grants intact; unknown plugin
+permission mappings still fail closed.
 Permission changes while busy are rejected before selection or prompt effects.
 The integrated host must seal admission metadata authorship and enforce these
 decisions atomically against direct and in-process native callers.

@@ -346,7 +346,7 @@ describe('Bot runtime image build metadata', () => {
 });
 
 describe('Bot runtime release integration', () => {
-  test('keeps package versions, full tests, signing, and branded assets in the release gate', async () => {
+  test('retains legacy package versions and tests while excluding retired Bot publication and resources', async () => {
     const [
       workflow,
       bumpScript,
@@ -378,11 +378,10 @@ describe('Bot runtime release integration', () => {
         true,
       );
     }
-    assert.match(workflow, /id-token: write/);
-    assert.match(workflow, /docker\/setup-qemu-action@v4/);
-    assert.match(workflow, /cosign-installer@v4\.1\.2/);
-    assert.match(workflow, /--check-anonymous/);
-    assert.match(workflow, /DevRyan-bot-runtime-images-\$\{\{ needs\.admit\.outputs\.version \}\}\.json/);
+    assert.doesNotMatch(workflow, /id-token: write|docker\/setup-qemu-action|cosign-installer|--check-anonymous/);
+    assert.doesNotMatch(workflow, /DevRyan-bot-runtime-images-/);
+    assert.doesNotMatch(JSON.stringify(electronPackage.build), /bot-runtime|bot-db/);
+    assert.match(electronManifestStage, /if \(!BOTS_ENABLED\) return/);
     assert.equal(electronPackage.scripts['package:prepared'], 'node ./scripts/package-prepared.mjs');
     assert.match(electronManifestStage, /stageVerifiedBotRuntimeImagesManifest/);
     assert.match(electronManifestStage, /readAndVerifyBotRuntimeImagesManifest/);

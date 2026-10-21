@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,11 +8,14 @@ import { createServer } from 'vite';
 import { CdpConnection, discoverPageTarget, evaluate } from '../../scripts/qa/cdp.mjs';
 import { reservePort, startOwnedProcess } from '../../scripts/qa/process.mjs';
 import { createDiagnosticSanitizer } from '../../packages/harness-runtime/lib/sanitizer.js';
+import { createRunRoot, scratchParent } from '../../scripts/qa/run-root.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const requireElectron = createRequire(new URL('../../packages/electron/package.json', import.meta.url));
-await mkdir(path.join(root, '.cache/qa'), { recursive: true });
-const output = await mkdtemp(path.join(root, '.cache/qa/chat-improvements-'));
+let server, host, cdp;
+const run = createRunRoot({ parent: scratchParent('qa'), prefix: 'chat-improvements-', owner: 'chat-improvements',
+    onInterrupt: async () => { cdp?.close(); await host?.stop(); await server?.close(); } });
+const output = run.dir;
 const profile = path.join(output, 'profile');
 const downloads = path.join(output, 'downloads');
 await mkdir(downloads);
@@ -22,13 +25,13 @@ const evidence = { runtime: 'production-web-components-in-electron-chromium', ou
     checks: [], consoleErrors: [], cleanupErrors: [], sourceHashes: {}, screenshots: [],
     limitations: ['Synthetic sync context; no installed app or provider', 'Clipboard permission and storage simulated in renderer; system clipboard untouched', 'Development Chromium host; packaged native Electron not checked'],
     startedAt: new Date().toISOString() };
-for (const file of ['sync/user-message-history.ts', 'sync/sync-context.tsx', 'components/chat/message/MessageBody.tsx',
+for (const file of ['sync/user-message-history.ts', 'sync/sync-context.tsx', 'hooks/useChatSearchDirectory.ts',
+    'components/chat/message/parts/PlanCard.tsx', 'components/chat/message/MessageBody.tsx',
     'components/chat/message/parts/ToolPart.tsx', 'components/chat/message/parts/toolDiffPreview.ts', 'lib/messages/messageCopyText.ts',
     'components/chat/message/parts/tool-activity/targets.ts', 'components/chat/message/parts/RawPatchFallback.tsx',
     'components/chat/message/parts/toolDiffDownload.ts', 'components/chat/message/parts/toolPartDiffEntries.ts', 'components/chat/message/questionContext.ts']) {
     evidence.sourceHashes[file] = createHash('sha256').update(await readFile(path.join(root, 'packages/ui/src', file))).digest('hex');
 }
-let server, host, cdp;
 const waitFor = async (expression) => {
     const start = performance.now();
     while (performance.now() - start < 45_000) {
@@ -50,7 +53,8 @@ const screenshot = async (name) => {
     evidence.screenshots.push(name + '.png');
 };
 try {
-    server = await createServer({ configFile: path.join(root, 'tests/visual-chat-improvements/vite.config.ts'), server: { port: await reservePort() } });
+    server = await createServer({ configFile: path.join(root, 'tests/visual-chat-improvements/vite.config.ts'),
+        cacheDir: path.join(output, 'vite-cache'), server: { port: await reservePort() } });
     await server.listen();
     const origin = `http://127.0.0.1:${server.httpServer.address().port}`;
     const debugPort = await reservePort();
@@ -146,6 +150,41 @@ try {
         await evaluate(cdp, "window.__chatFixture.setSession('deleted')");
         await waitFor("document.querySelector('#composer output').textContent === ''");
     });
+    await check('composer directory ignores session activity but follows an actual directory change', async () => {
+        await waitFor("document.querySelector('#search-directory').textContent === '/fixture'");
+        const before = await evaluate(cdp, '({...window.__chatFixture.counts})');
+        for (let index = 0; index < 120; index += 1) {
+            await evaluate(cdp, `window.__chatFixture.updateSession(${JSON.stringify(index % 2 ? 'session' : 'other')}, {title: 'Activity ${index}', time: {created: 1, updated: ${index + 2}}})`);
+        }
+        const after = await evaluate(cdp, '({...window.__chatFixture.counts})');
+        evidence.directoryRenderCounts = { updates: 120, commits: after.directory - before.directory,
+            broadBaselineCommits: after.broadDirectory - before.broadDirectory };
+        assert.equal(evidence.directoryRenderCounts.commits, 0);
+        assert.equal(evidence.directoryRenderCounts.broadBaselineCommits, 120);
+        await evaluate(cdp, "window.__chatFixture.updateSession('session', {directory: '/fixture/moved'})");
+        await waitFor("document.querySelector('#search-directory').textContent === '/fixture/moved'");
+    });
+    await check('redundant plan status is visually hidden while action guards and descriptions remain', async () => {
+        for (const [started, reason] of [[false, 'The response is still finishing.'], [true, 'Implementation already started.']]) {
+            if (started) await evaluate(cdp, 'window.__chatFixture.markPlanStarted()');
+            await waitFor(`document.querySelector('#plan-controls .oc-plan-implement-btn')?.getAttribute('title') === ${JSON.stringify(reason)}`);
+            await page(`(() => {
+                const button = document.querySelector('#plan-controls .oc-plan-implement-btn');
+                const description = document.getElementById(button.getAttribute('aria-describedby'));
+                return button.disabled && description?.textContent === ${JSON.stringify(reason)}
+                    && description.classList.contains('sr-only') && description.getBoundingClientRect().width <= 1;
+            })()`, 'Description stays accessible without visible duplicate status or an enabled action');
+            await evaluate(cdp, "document.querySelector('#plan-controls').scrollIntoView({block: 'center', behavior: 'instant'})");
+            await screenshot(started ? 'plan-started' : 'plan-finishing');
+        }
+    });
+    await check('dispatch failures explain capability and authentication without transient transport advice', async () => {
+        await page("document.querySelector('[data-managed-task-id=capability] [role=alert]').textContent.includes('Repair or update the runtime')", 'Capability repair is visible');
+        await page("document.querySelector('[data-managed-task-id=authentication] [role=alert]').textContent.includes('Reconnect the provider')", 'Authentication guidance is visible');
+        await page("!document.querySelector('#dispatch-errors').textContent.includes('connection was interrupted')", 'Permanent failures do not suggest interrupted transport');
+        await evaluate(cdp, "document.querySelector('#dispatch-errors').scrollIntoView({block: 'center', behavior: 'instant'})");
+        await screenshot('dispatch-errors');
+    });
     await screenshot('desktop-composer');
     await evaluate(cdp, "document.querySelector('h1').scrollIntoView({ block: 'start', behavior: 'instant' })");
     await screenshot('desktop-preview');
@@ -171,4 +210,5 @@ try {
     await writeFile(path.join(output, 'result.json'), JSON.stringify(evidence, null, 2));
 }
 console.log(JSON.stringify({ outcome: evidence.outcome, evidence: path.join(output, 'result.json'), error: evidence.error }));
+run.finish(evidence.outcome);
 process.exitCode = evidence.outcome === 'passed' ? 0 : 1;

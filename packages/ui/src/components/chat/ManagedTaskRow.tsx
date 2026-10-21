@@ -146,6 +146,9 @@ const getProviderFailurePresentation = ({
       role: 'status' as const,
     };
   }
+  if (task.failureKind === 'runtime_capability') {
+    return { message: t('chat.managedTasks.runtime.unavailable'), className: 'text-[var(--status-warning)]', role: 'alert' as const };
+  }
   if (task.failureKind === 'provider_configuration') {
     return { message: task.failureReason, className: 'text-[var(--status-warning)]', role: 'alert' as const };
   }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import vm from 'node:vm';
-import { createQaManagedTaskReadModel, createQaManagedTaskFetchScript, installQaManagedTaskReadModel, resolveQaManagedTaskRead } from './fixture-managed-tasks.mjs';
+import { createQaManagedTaskReadModel, projectQaManagedTaskUpdates, createQaManagedTaskFetchScript, installQaManagedTaskReadModel, resolveQaManagedTaskRead } from './fixture-managed-tasks.mjs';
 import { createLoopbackOpenCodeV2Fixture, PERF_PARENT_SESSION_ID } from '../perf/loopback-opencode-v2-fixture.mjs';
 import { createOpenCodeClient } from '../../packages/web/server/lib/opencode/opencode-client/index.js';
 
@@ -128,5 +128,78 @@ test('managed visual tool parts require owned canonical child/root/assistant and
     append(data.records[1]);
     const saved = (await rows(PERF_PARENT_SESSION_ID)).at(-1);
     assert.equal(saved.parts.filter(part => part.type === 'tool' && part.tool === 'devryan_task').length, 2);
+  } finally { await fixture.close(); }
+});
+
+
+test('visual model updates use canonical upserts and exact removals without native event projection', () => {
+  const previous = model(), next = { ...previous, records: previous.records.slice(1) };
+  const frames = projectQaManagedTaskUpdates(previous, next);
+  assert.deepEqual(frames.map(frame => frame.payload.type), ['devryan:managed-task', 'devryan:managed-task-removed']);
+  assert.equal(frames[1].payload.properties.taskId, previous.records[0].task.taskId);
+  assert.equal(frames[0].directory, '/fixture');
+  assert.throws(() => projectQaManagedTaskUpdates(previous, { ...next, rootSessionID: 'foreign' }), /retain its root/);
+  assert.throws(() => projectQaManagedTaskUpdates(previous, { ...next, records: [{ task: { ...next.records[0].task, directory: '/foreign' } }] }), /directory and root/);
+});
+
+test('isolated app WebSocket relay forwards canonical frames and stops on close or cleanup', () => {
+  const origin = 'http://127.0.0.1:32100';
+  class NativeSocket extends EventTarget { readyState = 1; }
+  const page = createPage(origin);
+  Object.assign(page.context, { WebSocket: NativeSocket, MessageEvent });
+  vm.runInContext(createQaManagedTaskFetchScript({ transport: 'fixture', origin, model: model() }), page.context);
+  const socket = new page.context.WebSocket('ws://127.0.0.1:32100/api/global/event/ws?clientID=fixture');
+  const unrelated = new page.context.WebSocket('ws://127.0.0.1:32100/other');
+  const foreign = new page.context.WebSocket('ws://127.0.0.1:32101/api/global/event/ws');
+  const messages = [], extra = [];
+  socket.addEventListener('message', event => messages.push(JSON.parse(event.data)));
+  unrelated.addEventListener('message', event => extra.push(event)); foreign.addEventListener('message', event => extra.push(event));
+  const state = page.context.__devryanQaManagedReadFixture;
+  const frames = projectQaManagedTaskUpdates(model(), { ...model(), records: model().records.slice(1) });
+  state.publish(frames);
+  assert.deepEqual(messages, frames.map(frame => ({ type: 'event', ...frame })));
+  assert.deepEqual(extra, []);
+  socket.dispatchEvent(new Event('close'));state.publish(frames);assert.equal(messages.length, 2);
+  const second = new page.context.WebSocket('ws://127.0.0.1:32100/api/global/event/ws');
+  second.addEventListener('message', event => extra.push(event));
+  state.restore();state.publish(frames);
+  assert.equal(page.context.WebSocket, NativeSocket);assert.equal(state.wsSockets.size, 0);assert.deepEqual(extra, []);
+});
+
+test('SSE relay preserves partial native frames, scopes injection and releases cancellation', async () => {
+  const origin = 'http://127.0.0.1:32100', page = createPage(origin), encoder = new TextEncoder();
+  let nativeController, cancelled = false;
+  const nativeBody = new ReadableStream({ start(controller) { nativeController = controller; }, cancel() { cancelled = true; } });
+  Object.assign(page.context, { ReadableStream, TextEncoder, TextDecoder,
+    fetch: async () => new Response(nativeBody, { headers: { 'Content-Type': 'text/event-stream' } }) });
+  vm.runInContext(createQaManagedTaskFetchScript({ transport: 'fixture', origin, model: model() }), page.context);
+  const response = await page.context.fetch('/api/global/event');
+  const reader = response.body.getReader(), state = page.context.__devryanQaManagedReadFixture;
+  nativeController.enqueue(encoder.encode('data: {"native":'));
+  const frames = projectQaManagedTaskUpdates(model(), { ...model(), records: model().records.slice(1) });
+  state.publish(frames);
+  const decoder = new TextDecoder();
+  for (const frame of frames) assert.equal(decoder.decode((await reader.read()).value), 'data: ' + JSON.stringify(frame) + '\n\n');
+  nativeController.enqueue(encoder.encode('true}\n\n'));
+  assert.equal(decoder.decode((await reader.read()).value), 'data: {"native":true}\n\n');
+  await reader.cancel();assert.equal(cancelled, true);assert.equal(state.sseSinks.size, 0);
+  state.restore();state.publish(frames);assert.equal(state.relayedFrames, 2);
+});
+
+
+test('a running recovery child retains its finished introductory text through canonical HTTP reads', async () => {
+  const directory = '/qa-recovery-child', fixture = await createLoopbackOpenCodeV2Fixture({ directory });
+  const client = createOpenCodeClient({ getRuntime: () => ({ generation: 2, baseUrl: fixture.origin }), getAuthHeaders: () => fixture.authHeaders });
+  try {
+    const session = await client.sessions.create({ parentID: PERF_PARENT_SESSION_ID, title: 'Recovery child' }, { directory });
+    const text = 'Recovered child: inspecting shared calendar and appointment details.';
+    fixture.replayRecoveryVisual({ sessionID: session.id, status: 'busy', rows: [
+      { info: { id: 'msg_recoveryuser', sessionID: session.id, role: 'user', time: { created: 100 } }, parts: [] },
+      { info: { id: 'msg_recoveryassistant', sessionID: session.id, parentID: 'msg_recoveryuser', role: 'assistant', agent: 'build', providerID: 'fixture', modelID: 'fixture-model', time: { created: 101 } },
+        parts: [{ id: 'prt_recoverytext', sessionID: session.id, messageID: 'msg_recoveryassistant', type: 'text', text, time: { start: 101, end: 102 } }] },
+    ] });
+    const rows = (await client.sessions.messages(session.id, {}, { directory })).records;
+    assert.equal(rows.at(-1).parts.find(part => part.type === 'text').text, text);
+    assert.equal(rows.at(-1).info.time.completed, undefined, 'The child must remain running');
   } finally { await fixture.close(); }
 });

@@ -457,3 +457,11 @@ test('model-not-found uses one server recovery policy for retry allowance and ma
     failureKind: 'model_unavailable', agentRetryAvailable: false, manualRecoveryRequired: true,
   });
 });
+
+
+test('runtime capability failures are visible and cannot be retried by an agent', () => {
+  const task = createManagedTaskRecord(validInput());
+  task.status = 'failed';
+  task.failureReason = 'admission.prompt: the native permission action for tool todoread is unavailable';
+  expect(toManagedTaskEvent(task).properties.task).toMatchObject({ failureKind: 'runtime_capability', agentRetryAvailable: false });
+});

@@ -35,6 +35,8 @@ import {
 } from './persistence.js';
 import {
   MANAGED_TASK_TIMEOUT_REASON_PREFIX,
+  formatManagedTaskFailureReason,
+  isManagedTaskCapabilityFailure,
   isDefiniteProviderUsageLimit,
   isProviderPromptRejected,
 } from './provider-retry-policy.js';
@@ -1445,7 +1447,7 @@ export const createManagedTaskScheduler = (options = {}) => {
       } catch (error) {
         await finishTask(task.taskId, leaseToken, {
           status: 'failed',
-          failureReason: error instanceof Error ? error.message : String(error),
+          failureReason: formatManagedTaskFailureReason(error),
         });
       }
     })();
@@ -1470,7 +1472,7 @@ export const createManagedTaskScheduler = (options = {}) => {
       } catch (error) {
         await finishTask(task.taskId, leaseToken, {
           status: 'interrupted',
-          failureReason: error instanceof Error ? error.message : String(error),
+          failureReason: formatManagedTaskFailureReason(error),
         }, 'interrupted');
       }
     })();
@@ -1506,7 +1508,7 @@ export const createManagedTaskScheduler = (options = {}) => {
     } catch (error) {
       reconciliation = {
         state: 'unavailable',
-        failureReason: error instanceof Error ? error.message : String(error),
+        failureReason: formatManagedTaskFailureReason(error),
       };
     }
 
@@ -3010,6 +3012,11 @@ export const createManagedTaskScheduler = (options = {}) => {
           'manual_model_recovery_required',
           'managed task recovery requires a user-selected model and thinking level',
         );
+      }
+
+      if (isManagedTaskCapabilityFailure(sourceTask.failureReason) && !['continue', 'abandon'].includes(action)) {
+        throw new ManagedOrchestrationError('runtime_capability_repair_required',
+          'Repair or update the runtime capability before starting a new task; model retries cannot repair admission');
       }
 
       const providerPromptRejected = isProviderPromptRejected(sourceTask.failureReason);

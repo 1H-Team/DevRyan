@@ -30,7 +30,7 @@ export async function runQaRecoveryCards({ fixture, cdp, directory, dataDirector
   const parentRows = [user(root, ids.human, now, [text(root, ids.human, 'Plan the calendar and booking detail fix.'), text(root, ids.human, 'User has requested to enter plan mode.', true)], true),
     assistant(root, ids.dispatch, ids.human, now + 1, [text(root, ids.dispatch, 'I will collect the Explorer result before writing the plan.'), originalPart])];
   const childRows = [user(child, ids.childUser, now, [text(child, ids.childUser, 'Locate the calendar and booking detail components.')]),
-    assistant(child, ids.childAssistant, ids.childUser, now + 1, [text(child, ids.childAssistant, 'Recovered child: inspecting shared calendar and appointment details.')], false)];
+    assistant(child, ids.childAssistant, ids.childUser, now + 1, [{ ...text(child, ids.childAssistant, 'Recovered child: inspecting shared calendar and appointment details.'), time: { start: now + 1, end: now + 2 } }], false)];
   fixture.replayRecoveryVisual({ sessionID: root, rows: parentRows });
   fixture.replayRecoveryVisual({ sessionID: child, rows: childRows, status: 'busy' });
   const transport = await installQaManagedTaskReadModel({ transport: 'fixture', origin, cdp, model: model([failed]) });
