@@ -136,28 +136,6 @@
           "to": "native"
         },
         {
-          "from": "../../docker/bots/compose.yml",
-          "to": "bot-runtime/compose.yml"
-        },
-        {
-          "from": "resources/bot-runtime/images.release.json",
-          "to": "bot-runtime/images.release.json"
-        },
-        {
-          "from": "../../supabase/migrations",
-          "to": "bot-db/supabase-migrations",
-          "filter": [
-            "*.sql"
-          ]
-        },
-        {
-          "from": "../bot-db/sql",
-          "to": "bot-db/sql",
-          "filter": [
-            "**/*.sql"
-          ]
-        },
-        {
           "from": "../web/runtime",
           "to": "revert-runtime",
           "filter": [

@@ -1,3 +1,4 @@
+import { BOTS_ENABLED } from '@devryan/shared-runtime/lib/product-capabilities.js';
 import { normalizeNotificationTemplates } from '../opencode/notification-settings.js';
 
 export const ROLE_NAMES = Object.freeze(['admin', 'senior_developer', 'developer']);
@@ -567,7 +568,7 @@ export function publicPrincipal(principal) {
     displayName: principal.displayName,
     role: principal.role,
     scope: principal.scope,
-    policy: principal.policy,
+    policy: { ...principal.policy, bots: BOTS_ENABLED && principal.policy?.bots === true },
     assignments: (principal.assignments || []).map(({
       repositoryPath: _repositoryPath,
       worktreeContainerPath: _worktreeContainerPath,

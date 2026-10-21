@@ -1,3 +1,5 @@
+import { stopRetiredBots } from './bot-retirement.mjs';
+import { BOTS_ENABLED, assertBotsEnabled } from '../shared-runtime/lib/product-capabilities.js';
 // First: adopt OPENCHAMBER_* aliases before any module reads its environment.
 import '../shared-runtime/lib/adopt-legacy-environment.js';
 import { adoptLegacyEnvironment, setDevRyanEnv } from '../shared-runtime/lib/legacy-environment.js';
@@ -642,6 +644,7 @@ const getDockerDesktopLauncher = () => {
 };
 
 const getBotRuntimeManager = () => {
+  assertBotsEnabled();
   if (state.botRuntimeManager) return state.botRuntimeManager;
   state.botRuntimeManager = createBotRuntimeManager({
     composePath: botRuntimeComposePath(),
@@ -898,7 +901,7 @@ const startLocalServer = async () => {
   if (!isPreview) await runStartupPhase('ownership_resolved', () => acquireRuntimeOwner(isRuntimeServiceMode ? 'service' : 'app_bound'), log);
 
   const settings = readSettingsRoot();
-  const productionBotsExecutionDisabled = isPreview || settings.productionBotsRuntimeMode === 'disabled';
+  const productionBotsExecutionDisabled = !BOTS_ENABLED || isPreview || settings.productionBotsRuntimeMode === 'disabled';
   // NOTE: We intentionally do NOT call preflightMacosProtectedDirectoryAccess
   // here. Stat'ing a path under ~/Documents/Desktop/Downloads triggers the
   // macOS TCC prompt before the user has any UI context for why. Defer to
@@ -965,7 +968,7 @@ const startLocalServer = async () => {
   delete process.env.DEVRYAN_BROWSER_CDP_TOKEN;
   delete process.env.DEVRYAN_AGENT_BROWSER_BIN;
 
-  if (!isPreview && !runtimeBundleRecoveryRequired && !state.botSecretStore) {
+  if (BOTS_ENABLED && !isPreview && !runtimeBundleRecoveryRequired && !state.botSecretStore) {
     try {
       state.botSecretStore = await createBotSecretStore({
         dataDirectory: dataRootDirectory(),
@@ -1118,8 +1121,8 @@ const startLocalServer = async () => {
     runtimeServiceBotRuntimeControl: isRuntimeServiceMode
       ? {
           status: () => getBotRuntimeManager().status(),
-          operationStatus: () => state.botRuntimeOperationSnapshot
-            || getBotRuntimeManager().operationStatus(),
+          operationStatus: () => { assertBotsEnabled(); return state.botRuntimeOperationSnapshot
+            || getBotRuntimeManager().operationStatus(); },
           setup: () => getBotRuntimeManager().setup({ onProgress: publishBotRuntimeProgress }),
           repair: () => getBotRuntimeManager().repair({ onProgress: publishBotRuntimeProgress }),
           update: () => getBotRuntimeManager().update({ onProgress: publishBotRuntimeProgress }),
@@ -1580,6 +1583,7 @@ const waitForRuntimeServiceConnection = () => retryRuntimeServiceConnection({
 });
 
 const enableBackgroundBots = async ({ allowLegacy = false } = {}) => {
+  assertBotsEnabled();
   if (state.runtimeServiceClient) return runtimeServiceStatus();
   await mutateSettingsRoot((root) => {
     delete root.productionBotsRuntimeServiceOptOut;
@@ -3601,7 +3605,7 @@ const retryBotRuntimeStartup = () => {
 };
 
 const prepareBotRuntimeInBackground = () => {
-  if (isPreview || runtimeBundleRecoveryRequired || state.botRuntimeRetryPromise || typeof state.serverHandle?.prepareBotRuntime !== 'function') {
+  if (!BOTS_ENABLED || isPreview || runtimeBundleRecoveryRequired || state.botRuntimeRetryPromise || typeof state.serverHandle?.prepareBotRuntime !== 'function') {
     return;
   }
   const current = requirePreparedBotRuntime().catch((error) => {
@@ -3667,11 +3671,18 @@ const startDesktopRuntime = () => {
         void openCodeStartup.catch((error) => {
           log.error('[electron] deferred OpenCode startup failed', startupErrorDetails(error));
         });
-        if (readSettingsRoot().productionBotsRuntimeMode !== 'disabled') {
+        if (BOTS_ENABLED && readSettingsRoot().productionBotsRuntimeMode !== 'disabled') {
           void openCodeStartup.then(() => prepareBotRuntimeInBackground()).catch(() => undefined);
         }
       }
       await desktopDmgInstaller?.acceptStartup();
+      if (!BOTS_ENABLED && !isPreview && !runtimeBundleRecoveryRequired && isLocalStartupTarget(startupContext)) {
+        setImmediate(() => {
+          void stopRetiredBots({ dataDirectory: dataRootDirectory(), safeStorage })
+            .then(({ status }) => log.info('[bots] retirement cleanup', { status }))
+            .catch(() => log.warn('[bots] retirement cleanup unavailable'));
+        });
+      }
     } catch (error) {
       if (desktopDmgInstaller?.isCandidateStartup()) { await desktopDmgInstaller.refuseStartup();return; }
       desktopStartupFailed = true;
@@ -3954,6 +3965,8 @@ const runSpecChain = (specs, appName) => {
 };
 
 const handleInvoke = async (browserWindow, command, args = {}) => {
+  if (command.startsWith('desktop_bot_') || ['desktop_export_bot_recovery', 'desktop_restore_bot_recovery',
+    'desktop_open_docker_desktop', 'desktop_runtime_service_enable'].includes(command)) assertBotsEnabled();
   if (isPreview && isPreviewUnsupportedCommand(command)) {
     throw new Error('windows_preview_feature_unavailable');
   }

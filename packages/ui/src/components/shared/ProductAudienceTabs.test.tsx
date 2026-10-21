@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
+import * as runtimeCapabilities from '@/lib/opencode/runtime-capabilities';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
@@ -9,6 +10,11 @@ import { useMainSidebarAudienceStore } from '@/stores/useMainSidebarAudienceStor
 import { ProductAudienceTabs } from './ProductAudienceTabs';
 
 describe('ProductAudienceTabs', () => {
+  // Preserve coverage of the retained component under its historical capability.
+  const originalFeatureAvailable = runtimeCapabilities.isRuntimeFeatureAvailable;
+  let featureSpy: ReturnType<typeof spyOn<typeof runtimeCapabilities, 'isRuntimeFeatureAvailable'>>;
+  beforeEach(() => { featureSpy = spyOn(runtimeCapabilities, 'isRuntimeFeatureAvailable').mockImplementation((key, snapshot) => key === 'bots' || originalFeatureAvailable(key, snapshot)); });
+  afterEach(() => featureSpy.mockRestore());
   test('renders an accessible, mutually exclusive Coding Agents and Bots settings tablist', () => {
     const markup = renderToStaticMarkup(
       <I18nProvider>

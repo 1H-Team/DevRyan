@@ -4822,7 +4822,7 @@ describe('multi-user authentication runtime', () => {
     expect(JSON.stringify(harness.auditEvents)).not.toContain('must be rejected');
   });
 
-  it('composes the focused Bots runtime with Electron-only host capabilities', async () => {
+  it('retires the Bot composition before Electron capabilities or local owner enrollment', async () => {
     const getStatus = vi.fn(async () => ({
       ok: true,
       state: 'healthy',
@@ -4841,21 +4841,11 @@ describe('multi-user authentication runtime', () => {
     });
     await harness.runtime.botsRuntime.start();
     const handlers = registerAdminRoutes(harness);
-    const response = makeResponse();
-
-    await handlers.get('GET /api/bots/capabilities')({}, response);
-
-    expect(harness.runtime.botsRuntime.enabled).toBe(true);
-    expect(response.payload).toMatchObject({
-      available: false,
-      catalogAvailable: false,
-      database: { state: 'setup_required', code: 'bot_runtime_setup_required' },
-      owner: 'electron',
-      canManageRuntime: true,
-    });
-    expect(catalog.ensure).toHaveBeenCalled();
-    expect(harness.runtime.botOwner.id).toMatch(/^[0-9a-f-]{36}$/);
-    // Passive capabilities reuse the typed setup blocker without probing dormant Docker.
+    expect(handlers.has('GET /api/bots/capabilities')).toBe(false);
+    expect(harness.runtime.botsRuntime.enabled).toBe(false);
+    expect(harness.runtime.botOwner).toBeNull();
+    expect(catalog.ensure).not.toHaveBeenCalled();
+    expect(catalog.getContext).not.toHaveBeenCalled();
     expect(getStatus).not.toHaveBeenCalled();
   });
 });

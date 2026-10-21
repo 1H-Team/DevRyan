@@ -1,3 +1,4 @@
+import { BOTS_ENABLED } from '@devryan/shared-runtime/lib/product-capabilities.js';
 import React from 'react';
 import QRCode from 'qrcode';
 import { botsApi, type BotSummary } from '@/lib/botsApi';
@@ -355,6 +356,7 @@ export const TunnelSettings: React.FC = () => {
   const [grantBotsUnavailable, setGrantBotsUnavailable] = React.useState(false);
   React.useEffect(() => {
     let disposed = false;
+    if (!BOTS_ENABLED) return;
     void botsApi.listBots().then(({ bots }) => { if (!disposed) setGrantBots(bots); })
       .catch(() => { if (!disposed) setGrantBotsUnavailable(true); });
     return () => { disposed = true; };
@@ -1291,7 +1293,7 @@ export const TunnelSettings: React.FC = () => {
         )}
       </div>
 
-      {tunnelMode !== 'managed-remote' && <fieldset className="space-y-2 rounded-lg border border-border p-3">
+      {BOTS_ENABLED && tunnelMode !== 'managed-remote' && <fieldset className="space-y-2 rounded-lg border border-border p-3">
         <legend className="typography-ui-label">Bots allowed by the connection link</legend>
         <p className="typography-meta text-muted-foreground">Select Bot workspaces to create a link. Links expire after 15 minutes; connected sessions last seven days. You can start the connector with no link.</p>
         {grantBotsUnavailable && <p role="status" className="typography-meta text-muted-foreground">Bots are unavailable in the current connection mode.</p>}
@@ -2064,7 +2066,7 @@ export const TunnelSettings: React.FC = () => {
                   {copied ? t('settings.devryan.tunnel.actions.copied') : t('settings.devryan.tunnel.actions.copyUrl')}
                 </Button>
               </>}
-              {(accessPolicy === 'owner-link' || (botOnlyLinks && activeTunnelMode !== 'managed-remote')) && <Button
+              {(accessPolicy === 'owner-link' || (BOTS_ENABLED && botOnlyLinks && activeTunnelMode !== 'managed-remote')) && <Button
                 size="sm" variant="outline" onClick={handleCreateLink}
                 disabled={isCreatingLink || (accessPolicy !== 'owner-link' && selectedBotIds.length === 0) || state === 'stopping' || isManagedRemoteDegraded || !runtimeReady}
               >{t('settings.devryan.tunnel.actions.newConnectLink')}</Button>}

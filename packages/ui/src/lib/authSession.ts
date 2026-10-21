@@ -155,6 +155,7 @@ export const useAuthPrincipal = (): AuthPrincipal => React.useSyncExternalStore(
 );
 
 export const canReadSettingsPage = (principal: AuthPrincipal, slug: string): boolean => {
+  if (slug === 'bots' && !isRuntimeFeatureAvailable('bots')) return false;
   if (slug === 'home' || principal.scope === 'local-admin' || principal.role === 'admin') return true;
   const canonical = canonicalSettingsPermissionSlug(slug);
   if (!canonical) return false;
@@ -164,6 +165,7 @@ export const canReadSettingsPage = (principal: AuthPrincipal, slug: string): boo
 };
 
 export const canEditSettingsPage = (principal: AuthPrincipal, slug: string): boolean => {
+  if (slug === 'bots' && !isRuntimeFeatureAvailable('bots')) return false;
   if (slug === 'home' || principal.scope === 'local-admin' || principal.role === 'admin') return true;
   const canonical = canonicalSettingsPermissionSlug(slug);
   if (!canonical) return false;

@@ -78,6 +78,10 @@
     "./testing/jsonc-config-fixtures.js": {
       "types": "./testing/jsonc-config-fixtures.d.ts",
       "default": "./testing/jsonc-config-fixtures.js"
+    },
+    "./lib/product-capabilities.js": {
+      "types": "./lib/product-capabilities.d.ts",
+      "default": "./lib/product-capabilities.js"
     }
   },
   "scripts": {

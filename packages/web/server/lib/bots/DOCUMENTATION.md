@@ -1,5 +1,16 @@
 # Production Bots server control plane
 
+## Product retirement
+
+`product-runtime.js` is the production composition entrypoint. With Bots retired
+it does not construct the retained `runtime.js` control plane: no catalog,
+retention, Docker, schema, integration, or dispatcher startup occurs. All Bot
+route families return HTTP 410 `bots_retired`; lifecycle callbacks remain idle
+and tunnel Bot grants are refused. The retained runtime and its unit tests
+remain available for deliberate restoration. The lifecycle described below
+applies only to that retained implementation. No stored Bot data is deleted.
+
+
 Ordinary capability GETs are passive metadata demand. They may reuse only an
 actual previously probed `docker_unavailable` status beyond the normal status
 TTL, and do not automatically retry failed execution startup. A typed stopped,

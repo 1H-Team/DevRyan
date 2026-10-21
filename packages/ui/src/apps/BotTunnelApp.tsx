@@ -1,3 +1,4 @@
+import { BOTS_ENABLED } from '@devryan/shared-runtime/lib/product-capabilities.js';
 import React from 'react';
 import type { RuntimeAPIs } from '@/lib/api/types';
 import { RuntimeAPIProvider } from '@/contexts/RuntimeAPIProvider';
@@ -10,6 +11,7 @@ import { BotsEventOwner } from './BotsEventOwner';
 // A remote Bot grant mounts only Bot state and its event owner. Host project,
 // OpenCode session, terminal, settings and native integrations never mount.
 export function BotTunnelApp({ apis }: { apis: RuntimeAPIs }) {
+  if (!BOTS_ENABLED) return <main className="p-6 typography-ui text-foreground">Bots are retired.</main>;
   return <RuntimeAPIProvider apis={apis}>
     <TooltipProvider>
       <BotsEventOwner />

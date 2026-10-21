@@ -1,5 +1,15 @@
 # Production Bot UI
 
+## Product retirement
+
+Bots are disabled by `shared-runtime/lib/product-capabilities.js` through the
+runtime-feature and settings-access boundaries. Bot navigation, settings and
+event owners are not mounted in the product; standalone tunnel views show a
+retirement notice. About and tunnel settings do not probe the Bot runtime.
+Retained component tests may explicitly exercise the old capability in isolation;
+there is no user, role, environment or persisted-settings override.
+
+
 The availability, Docker recovery, privacy, and incident runbook is
 `docs/BOTS_RUNTIME.md`. This document owns renderer behavior and performance.
 

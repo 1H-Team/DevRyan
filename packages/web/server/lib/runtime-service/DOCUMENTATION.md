@@ -1,5 +1,12 @@
 # Local runtime-service HTTP contract
 
+## Retired Bot controls
+
+Authenticated Bot runtime-control routes return HTTP 410 `bots_retired` before
+invoking any injected handler. The shared runtime-service bootstrap, ownership,
+ordinary host operations and authentication remain active.
+
+
 This module exposes the narrow loopback control plane used when the signed
 Electron executable runs as a launchd-owned Production Bots service. Ownership,
 descriptor persistence, protocol generations, and OS-sealed token rotation live

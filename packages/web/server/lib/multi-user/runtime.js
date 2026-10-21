@@ -1,3 +1,4 @@
+import { BOTS_ENABLED } from '@devryan/shared-runtime/lib/product-capabilities.js';
 import express from 'express';
 import crypto from 'node:crypto';
 import { resolveGen2OpenCodeClient } from '../opencode/opencode-client-seam.js';
@@ -128,7 +129,7 @@ import {
   resolveManagedAgentExecution,
   validatePersonalAgentDefault,
 } from './managed-agent-defaults.js';
-import { createBotsRuntime } from '../bots/index.js';
+import { createProductBotsRuntime } from '../bots/product-runtime.js';
 import { createLocalBotOwner } from '../bots/local-owner.js';
 
 const APP_SESSION_COOKIE = 'oc_app_session';
@@ -543,7 +544,7 @@ export async function createMultiUserRuntime({
   config.enabled = connection.enabled;
   // The workstation owner's immutable local Bot identity, independent of
   // every Supabase state (On, Off, absent, unreachable or revoked).
-  const botOwner = await createLocalBotOwner({ vault: connection.vault });
+  const botOwner = BOTS_ENABLED ? await createLocalBotOwner({ vault: connection.vault }) : null;
   // The hosted catalog stays readable for a one-time import even while Off;
   // an import never enables Supabase and never writes to it. While Off it is
   // read only on the owner's request, never in the background.
@@ -632,7 +633,7 @@ export async function createMultiUserRuntime({
   if (!config.enabled) {
     // Bots live in the local catalog whatever the Supabase state. Without a
     // cloud connection only the workstation owner can use them.
-    const botsRuntime = createBotsRuntime({
+    const botsRuntime = createProductBotsRuntime({
       oauthCoordinator,
       localOwner: botOwner,
       readCloudSource: readBotCloudSource,
@@ -1093,7 +1094,7 @@ export async function createMultiUserRuntime({
     });
     return Array.isArray(rows) ? rows : [];
   };
-  const botsRuntime = createBotsRuntime({
+  const botsRuntime = createProductBotsRuntime({
     oauthCoordinator,
     localOwner: botOwner,
     searchCloudDirectory: searchBotDirectory,

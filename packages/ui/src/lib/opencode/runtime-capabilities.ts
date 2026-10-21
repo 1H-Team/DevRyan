@@ -1,3 +1,4 @@
+import { BOTS_ENABLED } from '@devryan/shared-runtime/lib/product-capabilities.js';
 import React from 'react';
 import { create } from 'zustand';
 
@@ -285,7 +286,7 @@ const unavailableSnapshot = (previous: RuntimeCapabilitySnapshot): RuntimeCapabi
 
 export const isRuntimeFeatureAvailable = (key: RuntimeFeatureKey,
   snapshot = useRuntimeCapabilityStore.getState().snapshot): boolean =>
-  snapshot.runtimeMode !== 'standard-preview' || snapshot.features?.[key] === true;
+  (key !== 'bots' || BOTS_ENABLED) && (snapshot.runtimeMode !== 'standard-preview' || snapshot.features?.[key] === true);
 
 export const assertRuntimeFeatureAvailable = (key: RuntimeFeatureKey): void => {
   if (!isRuntimeFeatureAvailable(key)) throw Object.assign(new Error(`${key} is unavailable in Standard Preview.`), {
@@ -296,7 +297,7 @@ export const assertRuntimeFeatureAvailable = (key: RuntimeFeatureKey): void => {
 export const useRuntimeFeature = (key: RuntimeFeatureKey): boolean => {
   const available = useRuntimeCapabilityStore(state => isRuntimeFeatureAvailable(key, state.snapshot));
   const status = useRuntimeCapabilityStore(state => state.status);
-  React.useEffect(() => { if (status === 'idle') void loadRuntimeCapabilities(); }, [status]);
+  React.useEffect(() => { if ((key !== 'bots' || BOTS_ENABLED) && status === 'idle') void loadRuntimeCapabilities(); }, [key, status]);
   return available;
 };
 

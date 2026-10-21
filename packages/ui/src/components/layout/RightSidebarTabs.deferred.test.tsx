@@ -1,5 +1,5 @@
 import React, { act } from 'react';
-import { expect, mock, test } from 'bun:test';
+import { expect, mock, spyOn, test } from 'bun:test';
 import { withDom } from '@/components/bots/chat/botMountedDom';
 
 let requested = 0;
@@ -39,6 +39,10 @@ const { RightSidebarTabs } = await import('./RightSidebarTabs');
 test('operations code loads only for an open authorized Bots rail and never mounts after a hidden pending import', async () => withDom(async (container) => {
   const { createRoot } = await import('react-dom/client');
   const root = createRoot(container as unknown as Element);
+  // Exercise the retained rail lifecycle with its capability explicitly enabled.
+  const capabilities = await import('@/lib/opencode/runtime-capabilities');
+  const originalFeatureAvailable = capabilities.isRuntimeFeatureAvailable;
+  const featureSpy = spyOn(capabilities, 'isRuntimeFeatureAvailable').mockImplementation((key, snapshot) => key === 'bots' || originalFeatureAvailable(key, snapshot));
   const originalPrincipal = getAuthPrincipal();
   const principal = { ...originalPrincipal, id: 'rail-member', scope: 'managed' as const, policy: { ...originalPrincipal.policy, bots: true } };
   setAuthPrincipal(principal);
@@ -74,6 +78,7 @@ test('operations code loads only for an open authorized Bots rail and never moun
     expect(container.find((node) => node.hasAttribute('data-loaded-operations'))).toBeNull();
   } finally {
     await act(async () => { root.unmount(); });
+    featureSpy.mockRestore();
     setAuthPrincipal(originalPrincipal);
     useBotsStore.getState().resetPrincipal(null);
     useBotChannelStore.getState().resetPrincipal(null);

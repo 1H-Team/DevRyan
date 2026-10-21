@@ -1,5 +1,6 @@
 import React, { act } from 'react';
-import { describe, expect, spyOn, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
+import * as runtimeCapabilities from '@/lib/opencode/runtime-capabilities';
 import { BotMessageList } from '@/components/bots/chat/BotMessageList';
 import { withDom } from '@/components/bots/chat/botMountedDom';
 import { RuntimeAPIContext } from '@/contexts/runtimeAPIContext';
@@ -41,6 +42,12 @@ const Transcript = ({ owner = false, channelId = channel.id }: { owner?: boolean
 );
 
 describe('normalized Bot events through the mounted transcript', () => {
+  // Exercise the retained owner independently of the retired product surface.
+  const originalFeatureAvailable = runtimeCapabilities.isRuntimeFeatureAvailable;
+  let featureSpy: ReturnType<typeof spyOn<typeof runtimeCapabilities, 'isRuntimeFeatureAvailable'>>;
+  beforeEach(() => { featureSpy = spyOn(runtimeCapabilities, 'isRuntimeFeatureAvailable')
+    .mockImplementation((key, snapshot) => key === 'bots' || originalFeatureAvailable(key, snapshot)); });
+  afterEach(() => featureSpy.mockRestore());
   test('catalog discovery waits for availability and manual recovery loads once while execution is unavailable', async () => withDom(async (container) => {
     const { createRoot } = await import('react-dom/client');
     const root = createRoot(container as unknown as Element);

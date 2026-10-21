@@ -1,3 +1,4 @@
+import { BOTS_ENABLED } from '../../shared-runtime/lib/product-capabilities.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,6 +18,7 @@ const resourcesDir = path.join(electronDir, 'resources');
 const releaseManifestPath = path.join(resourcesDir, 'bot-runtime', 'images.release.json');
 
 export const prepareBotRuntimeReleaseManifest = async ({ required = true } = {}) => {
+  if (!BOTS_ENABLED) return;
   const sourcePath = process.env.DEVRYAN_BOT_RUNTIME_MANIFEST_PATH?.trim();
   const sourceUrl = process.env.DEVRYAN_BOT_RUNTIME_MANIFEST_URL?.trim();
   if (sourcePath && sourceUrl) {

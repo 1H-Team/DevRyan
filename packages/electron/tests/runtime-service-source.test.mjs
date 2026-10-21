@@ -29,7 +29,7 @@ describe('runtime-service desktop bootstrap source contract', () => {
     let fail;
     const pending = new Promise((_, reject) => { fail = reject; });
     const prepare = new Function('state', 'requirePreparedBotRuntime', 'log', `
-      const isPreview = false, runtimeBundleRecoveryRequired = false;
+      const BOTS_ENABLED = true, isPreview = false, runtimeBundleRecoveryRequired = false;
       const startupErrorDetails = error => ({ code: error.code, message: error.message });
       ${mainSource.slice(start, end)}
       return prepareBotRuntimeInBackground;

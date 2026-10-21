@@ -206,6 +206,7 @@ describe('Electron startup splash', () => {
         isLocalStartupTarget, readSettingsRoot, prepareBotRuntimeInBackground,
         startupErrorDetails, log, releaseDesktopKeepAwake, killSidecar, showStartupFailure, runStartupPhase } = owners;
       const desktopDmgInstaller = null;
+      const BOTS_ENABLED = true;
       ${source.slice(start, end)}
       return startDesktopRuntime;
     `);

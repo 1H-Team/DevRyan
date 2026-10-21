@@ -1,5 +1,16 @@
 # Multi-user control plane
 
+## Retired Bots
+
+Production composition uses `createProductBotsRuntime` rather than constructing
+the Bot control plane. Public principal policy reports Bots unavailable even
+for administrators. Core Supabase reconnect still checks administrator access
+but no longer calls the Bot schema marker; its Bot schema status is `disabled`.
+The retained Bot-only `productionBotsMigrationFailurePayload` mapper is never
+reached by retired production Bot routes, which return 410 `bots_retired` before
+any schema work. Ordinary authentication failures retain their original handling.
+
+
 ## Purpose
 
 This module provides the server-only Supabase identity and authorization layer

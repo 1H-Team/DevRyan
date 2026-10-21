@@ -1,3 +1,4 @@
+import { useRuntimeFeature } from '@/lib/opencode/runtime-capabilities';
 import { SupabaseConnectionSettings } from './SupabaseConnectionSettings';
 import React from 'react';
 import { RiDiscordFill, RiDownloadLine, RiGithubFill, RiLoaderLine } from '@remixicon/react';
@@ -25,12 +26,13 @@ declare const __APP_VERSION__: string | undefined;
 
 /** App-level switches for the local desktop shell (display sleep and LAN access). */
 const DesktopAppSettings: React.FC = () => {
+  const bots = useRuntimeFeature('bots');
   if (!isDesktopShell() || !isDesktopLocalOriginActive()) return null;
   return (
     <div className="border-t border-border/40 pt-6">
       <DesktopKeepAwakeSettings />
       <DesktopNetworkSettings />
-      <DesktopBotHostStatus />
+      {bots ? <DesktopBotHostStatus /> : null}
     </div>
   );
 };

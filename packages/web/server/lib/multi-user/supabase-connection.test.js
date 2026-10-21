@@ -246,14 +246,15 @@ describe('principal request coalescing', () => {
     ['a missing Bots schema function', async (url) => url.includes('/rpc/')
       ? new Response(JSON.stringify({ message: 'function not found' }), { status: 404 })
       : new Response(JSON.stringify([{ id: 'owner', role: 'admin', status: 'active' }]))],
-  ])('reconnects the core with %s and reports Bots as migration required', async (_label, implementation) => {
+  ])('reconnects the core with %s without probing the retired Bot schema', async (_label, implementation) => {
     const { connection, fetchImpl } = await fixture(false);
     await enroll(connection);
     connection.configureDriver({ getBlockers: vi.fn().mockResolvedValue(['active_chats']), prepare: vi.fn(), restart: vi.fn(),
       pauseAdmissions: vi.fn(), resumeAdmissions: vi.fn() });
     fetchImpl.mockImplementation(implementation);
     await connection.change(true);
-    expect(connection.status()).toMatchObject({ desiredEnabled: true, errorCode: null, state: 'connecting', botsSchema: 'migration_required' });
+    expect(connection.status()).toMatchObject({ desiredEnabled: true, errorCode: null, state: 'connecting', botsSchema: 'disabled' });
+    expect(fetchImpl.mock.calls.some(([url]) => String(url).includes('/rpc/devryan_bot_schema_version'))).toBe(false);
   });
 
   it('still refuses to reconnect when the saved administrator lost access', async () => {

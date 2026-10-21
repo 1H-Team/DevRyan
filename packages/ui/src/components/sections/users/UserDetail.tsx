@@ -1,3 +1,4 @@
+import { BOTS_ENABLED } from '@devryan/shared-runtime/lib/product-capabilities.js';
 import * as React from 'react';
 import {
   RiArrowDownSLine,
@@ -856,7 +857,7 @@ export const UserDetail: React.FC<UserDetailProps> = ({
               </div>
             </Collapsible>
 
-            <label className="flex items-start gap-2 rounded-xl border border-border/60 bg-[var(--surface-subtle)]/25 px-3 py-3 typography-meta text-foreground">
+            {BOTS_ENABLED && <label className="flex items-start gap-2 rounded-xl border border-border/60 bg-[var(--surface-subtle)]/25 px-3 py-3 typography-meta text-foreground">
               <Checkbox
                 checked={botsAccessAllowed}
                 disabled={!isAdmin || policyLoading || busy || user.role === 'admin'}
@@ -880,7 +881,7 @@ export const UserDetail: React.FC<UserDetailProps> = ({
                   {' '}Inherited: {policyDraft.inheritedCapabilities.bots ? 'On' : 'Off'}.
                 </span>
               </span>
-            </label>
+            </label>}
 
             <Collapsible open={capabilityPolicyOpen} onOpenChange={setCapabilityPolicyOpen}>
               <div className="rounded-xl border border-border/60 bg-[var(--surface-subtle)]/25">

@@ -1,5 +1,13 @@
 # Shared runtime
 
+## Product retirement
+
+`./lib/product-capabilities.js` owns `BOTS_ENABLED` and the stable
+`bots_retired` error. Bots are retired in every host. Saved settings, roles,
+environment aliases and runtime health cannot override this product boundary.
+The module is portable and shared by UI, web and Electron.
+
+
 `@devryan/shared-runtime` contains dependency-light host logic that must behave identically in the web/Electron runtimes.
 
 ## Entry points

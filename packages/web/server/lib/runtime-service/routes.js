@@ -1,3 +1,4 @@
+import { BOTS_ENABLED, BOTS_RETIRED } from '@devryan/shared-runtime/lib/product-capabilities.js';
 import express from 'express';
 
 import { hasTunnelBoundaryAuthorization } from '../tunnels/access-control.js';
@@ -206,6 +207,7 @@ export const registerRuntimeServiceRoutes = (app, {
   });
   for (const [operation, contract] of Object.entries(runtimeOperations)) {
     app[contract.method.toLowerCase()](`/api/runtime-service/bot-runtime/${operation}`, async (_req, res) => {
+      if (!BOTS_ENABLED) return res.status(410).json(BOTS_RETIRED);
       const handler = botRuntimeControl?.[contract.handler];
       if (typeof handler !== 'function') {
         return res.status(503).json({

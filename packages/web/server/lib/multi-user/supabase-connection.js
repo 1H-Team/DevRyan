@@ -1,3 +1,4 @@
+import { BOTS_ENABLED } from '@devryan/shared-runtime/lib/product-capabilities.js';
 import crypto from 'node:crypto';
 import { createSessionVault } from './vault.js';
 import { writeSupabaseConnectionPreference } from './connection-preference.js';
@@ -105,7 +106,7 @@ export async function createSupabaseConnection({ config, fetchImpl = fetch, now 
     if (profile?.role !== 'admin' || profile.status !== 'active') throw failure('The saved administrator no longer has access', 'supabase_owner_revoked', 403);
     // Bots-only schema lag makes Bots unavailable; it never takes the core
     // connection (auth, orchestration policy, error logs) offline.
-    botsSchema = await client.rpc('devryan_bot_schema_version').then((version) => (
+    botsSchema = !BOTS_ENABLED ? 'disabled' : await client.rpc('devryan_bot_schema_version').then((version) => (
       typeof version === 'string' && /^\d{14}$/.test(version) && version >= PRODUCTION_BOTS_MIGRATION ? 'ready' : 'migration_required'
     ), (error) => (Number(error?.status) === 404 ? 'migration_required' : 'unknown'));
   };

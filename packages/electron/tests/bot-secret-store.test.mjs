@@ -8,8 +8,11 @@ import {
   BOT_DEPLOYMENT_KEY_ID,
   BotSecretStoreError,
   createBotSecretStore,
+  readExistingBotDeploymentId,
   replaceBotEncryptionKeyAndRepair,
 } from '../bot-secret-store.mjs';
+
+import { deriveBotRuntimeServiceEnvironment } from '../bot-runtime-manager.mjs';
 
 const temporaryDirectories = [];
 
@@ -183,4 +186,16 @@ describe('Electron Bot deployment-key store', () => {
     for (const key of repairs) key.fill(0);
     previous.fill(0);
   });
+});
+
+test('retirement reads the existing deployment identity without enrolling or rewriting credentials', async () => {
+  const dataDirectory = await createTemporaryDirectory();
+  const safeStorage = createFakeSafeStorage();
+  expect(await readExistingBotDeploymentId({ dataDirectory, safeStorage: safeStorage.api })).toBeNull();
+  expect(await fs.readdir(dataDirectory)).toEqual([]);
+  const store = await createBotSecretStore({ dataDirectory, safeStorage: safeStorage.api });
+  const before = await fs.readFile(store.paths.keyPath);
+  const expected = deriveBotRuntimeServiceEnvironment(store.getBotEncryptionKey()).DEVRYAN_BOT_DEPLOYMENT_ID;
+  expect(await readExistingBotDeploymentId({ dataDirectory, safeStorage: safeStorage.api })).toBe(expected);
+  expect(await fs.readFile(store.paths.keyPath)).toEqual(before);
 });

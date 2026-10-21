@@ -1,5 +1,21 @@
 # Electron startup ownership
 
+## Bots retirement
+
+Bots are disabled by the shared product capability. Main refuses Bot IPC and
+manager creation, skips key-store initialization and background preparation,
+and packaging no longer requires or ships Bot manifests, Compose or SQL.
+Existing Bot implementation and data are retained. After normal foreground
+startup and update acceptance, `bot-retirement.mjs` makes one best-effort
+15-second attempt to stop containers labelled for the existing sealed deployment
+identity and disable their Docker restart policy. It never creates a key, starts
+Docker, removes a container/volume, or blocks startup. Failure is a sanitized
+status, not an upgrade failure. Shared runtime-service ownership is unchanged.
+
+The older Bot lifecycle descriptions below document the retained implementation;
+they are not active product behavior while Bots are retired.
+
+
 The repository's `bun run build` builds the web UI through `build:web-assets`, which stages the same assets into `resources/web-dist`, then bundles Electron's main process. Full validation uses this explicit build before tests; it does not rely on install-time preparation for packaged web assets.
 
 Automatic Bot maintenance and catalog acquisition/context reads inspect their

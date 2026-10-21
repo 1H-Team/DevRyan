@@ -2436,12 +2436,9 @@ describe('Electron-owned Docker Bot runtime manager', () => {
     // The database volume is created and ownership-checked by the host only.
     expect(compose).toMatch(/bot-database-data:\n\s+name: [^\n]+\n\s+external: true/);
     expect(compose).not.toMatch(/\bdown\b|--volumes|-v\b/);
-    // Packaged apps ship the reviewed SQL beside the compose file.
+    // Retired builds preserve the packages but do not ship Bot runtime resources.
     expect(packageJson.dependencies['@devryan/bot-db']).toBe('workspace:*');
-    expect(packageJson.build.mac.extraResources).toEqual(expect.arrayContaining([
-      expect.objectContaining({ from: '../../supabase/migrations', to: 'bot-db/supabase-migrations' }),
-      expect.objectContaining({ from: '../bot-db/sql', to: 'bot-db/sql' }),
-    ]));
+    expect(packageJson.build.mac.extraResources.some(resource => /^(bot-db|bot-runtime)\//.test(resource.to))).toBe(false);
   });
 });
 

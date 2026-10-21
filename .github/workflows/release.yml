@@ -360,13 +360,12 @@ jobs:
           ARTIFACT_ROOT="$EXTRACT_ROOT/node_modules/@devryan/web/server/default-config"
           node scripts/verify-default-config-artifact.mjs --source packages/web/server/default-config --artifact-root "$ARTIFACT_ROOT"
           node scripts/smoke-packaged-orchestration-config.mjs --config-root "$ARTIFACT_ROOT"
-      - name: Check packaged Bot runtime manifest
+      - name: Check retired Bots packaging
         run: |
           set -euo pipefail
           APP_PATH=$(find "$APP_DIR" -maxdepth 2 -name "*.app" -print -quit)
-          PACKAGED="$APP_PATH/Contents/Resources/bot-runtime/images.release.json"
-          cmp "$RUNNER_TEMP/bot-runtime-images/DevRyan-bot-runtime-images-${VERSION}.json" "$PACKAGED"
-          node scripts/verify-bot-runtime-images.mjs --manifest "$PACKAGED" --version "$VERSION" --revision "$GITHUB_SHA" --repository-prefix ghcr.io/1h-team
+          test ! -e "$APP_PATH/Contents/Resources/bot-runtime/images.release.json"
+          test ! -e "$APP_PATH/Contents/Resources/bot-runtime/compose.production.yml"
       - name: Check macOS usage descriptions
         run: |
           set -euo pipefail
@@ -544,23 +543,12 @@ jobs:
           supabase db push --linked --dry-run
           supabase db push --linked --yes
           MIGRATION_STATUS_PATH="${RUNNER_TEMP}/supabase-migrations.json"
-          SCHEMA_STATUS_PATH="${RUNNER_TEMP}/supabase-bot-schema.json"
           supabase migration list --linked --output-format json > "$MIGRATION_STATUS_PATH"
-          supabase db query --linked --agent=no --output json \
-            "select public.devryan_bot_schema_version() as schema_version;" \
-            > "$SCHEMA_STATUS_PATH"
-          MIGRATION_STATUS_PATH="$MIGRATION_STATUS_PATH" SCHEMA_STATUS_PATH="$SCHEMA_STATUS_PATH" node - <<'NODE'
+          MIGRATION_STATUS_PATH="$MIGRATION_STATUS_PATH" node - <<'NODE'
           const fs = require('fs');
           const migrations = JSON.parse(fs.readFileSync(process.env.MIGRATION_STATUS_PATH, 'utf8'));
           const drift = (migrations.migrations || []).filter((entry) => !entry.local || !entry.remote || entry.local !== entry.remote);
           if (drift.length > 0) throw new Error(`Supabase migration history diverged for ${drift.length} migration(s).`);
-          const source = fs.readFileSync('packages/web/server/lib/multi-user/auth-compat.js', 'utf8');
-          const expected = source.match(/PRODUCTION_BOTS_MIGRATION = '(\d{14})'/)?.[1];
-          const schema = JSON.parse(fs.readFileSync(process.env.SCHEMA_STATUS_PATH, 'utf8'));
-          const actual = (Array.isArray(schema) ? schema : schema.rows)?.[0]?.schema_version;
-          if (!expected || actual !== expected) {
-            throw new Error(`Production Bot schema marker mismatch: expected ${expected || 'missing'}, received ${actual || 'missing'}.`);
-          }
           NODE
       - name: Publish and confirm the in-app updater discovers the DMG
         if: ${{ github.event_name == 'push' }}

@@ -29,7 +29,7 @@ describe('Standard Preview capability contract', () => {
   test('native health retains existing behavior and unchanged preview reads retain references', async () => {
     const native = parseRuntimeCapabilitySnapshot({ openCode: { generation: 2, capabilities: { sessionShell: true } } });
     expect(native.capabilities.sessionShell).toBe(true);
-    for (const key of RUNTIME_FEATURE_KEYS) expect(isRuntimeFeatureAvailable(key, native)).toBe(true);
+    for (const key of RUNTIME_FEATURE_KEYS) expect(isRuntimeFeatureAvailable(key, native)).toBe(key !== 'bots');
     const initial = activate(), principal = getAuthPrincipal();
     const refreshed = await loadRuntimeCapabilities({ force: true, fetchImpl: async () => Response.json(previewHealth) });
     expect(refreshed).toBe(initial);

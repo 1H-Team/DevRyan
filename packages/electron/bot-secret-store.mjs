@@ -162,6 +162,19 @@ export async function replaceBotEncryptionKeyAndRepair({ secretStore, replacemen
   }
 }
 
+// Retirement reads an existing identity only: never enroll or replace a key.
+export async function readExistingBotDeploymentId({ dataDirectory, safeStorage, fsPromises = fs }) {
+  let sealed;
+  try { sealed = await fsPromises.readFile(path.join(dataDirectory, 'bots', 'keys', 'deployment-key.v1')); }
+  catch (error) { if (error?.code === 'ENOENT') return null; throw error; }
+  validateSafeStorage(safeStorage);
+  const key = unsealKey(sealed, safeStorage);
+  try {
+    return `deployment-${crypto.createHmac('sha256', key)
+      .update('devryan-production-bots/deployment-id/v1', 'utf8').digest('hex').slice(0, 24)}`;
+  } finally { key.fill(0); sealed.fill(0); }
+}
+
 export async function createBotSecretStore({
   dataDirectory,
   safeStorage,
