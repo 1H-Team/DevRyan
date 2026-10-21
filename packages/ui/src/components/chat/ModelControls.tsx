@@ -548,8 +548,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const pendingModelPickerScrollRef = React.useRef<ModelPickerScrollSnapshot | null>(null);
     const keyboardOwnsModelSelectionRef = React.useRef(false);
     const lastModelPointerPositionRef = React.useRef<{ x: number; y: number } | null>(null);
-    const [pendingThinkingVariants, setPendingThinkingVariants] = React.useState<Map<string, string | null | undefined>>(new Map());
-    const [adjustedThinkingModels, setAdjustedThinkingModels] = React.useState<Set<string>>(new Set());
     const favoriteRowSensors = useSensors(
         useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     );
@@ -611,8 +609,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             setModelSelectedIndex(0);
             keyboardOwnsModelSelectionRef.current = false;
             lastModelPointerPositionRef.current = null;
-            setPendingThinkingVariants(new Map());
-            setAdjustedThinkingModels(new Set());
 
             // Restore focus to chat input when model selector closes
             if (wasOpen && !isCompact) {
@@ -1597,7 +1593,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const handleProviderAndModelChange = (
         providerId: string,
         modelId: string,
-        options?: { applyVariant?: boolean; variant?: string | null | undefined; agentName?: string | null },
+        options?: { applyVariant?: boolean; variant?: string | null | undefined; agentName?: string | null; keepOpen?: boolean },
     ) => {
         try {
             const effectiveAgentName = options?.agentName ?? resolveLiveAgentName() ?? undefined;
@@ -1615,6 +1611,11 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 } else if (result === 'model-missing') {
                     console.error('[ModelControls] Model not available for selection:', { providerId, modelId });
                 }
+                return;
+            }
+            // The desktop picker stays open so the thinking level can be set in its footer;
+            // closing it restores chat input focus.
+            if (options?.keepOpen) {
                 return;
             }
             setAgentMenuOpen(false);
@@ -2630,38 +2631,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         );
         const isFavorite = isFavoriteModel(providerID, modelID);
         const hiddenRefs = getHiddenModelRefsForProviderModel(providerID, model);
-
-        // Check if model supports thinking variants - variants are on the model object, not metadata
-        const modelVariants = (model as { variants?: Record<string, unknown> } | undefined)?.variants;
-        const hasThinkingVariants = modelVariants && Object.keys(modelVariants).length > 0;
-        const mapKey = buildModelRefKey(providerID, modelID);
-        const wasAdjusted = adjustedThinkingModels.has(mapKey);
-        const pendingVariant = pendingThinkingVariants.get(mapKey);
-        const effectiveVariant = pendingVariant !== undefined ? pendingVariant : (isSelected ? currentVariant : undefined);
-        const rowProvider = providers.find((entry) => entry.id === providerID);
-        const cursorRowVariantState = getCursorAcpVariantState(rowProvider, modelID, effectiveVariant);
-        const genericRowVariantState = cursorRowVariantState ? null : getGenericModelVariantControlState(rowProvider, modelID, effectiveVariant);
-        const genericRowVariantDisplayState = cursorRowVariantState ? null : getModelVariantDisplayState(rowProvider, modelID, effectiveVariant);
-
-        // Build thinking variant display - only show for models that were adjusted with arrow keys
-        let thinkingDisplay: React.ReactNode = null;
-        if (hasThinkingVariants && wasAdjusted && (isHighlighted || isSelected)) {
-            const level = getChatThinkingState(rowProvider, modelID, effectiveVariant).selected;
-            const displayLabel = level ? formatEffortLabel(level, { providerId: providerID }) : 'Fast';
-            const rowFastIcon = (cursorRowVariantState?.fastEnabled || genericRowVariantDisplayState?.fastEnabled || genericRowVariantState?.fastEnabled) ? (
-                <span className="inline-flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center" aria-label="Fast Mode" title="Fast Mode">
-                    <RiFlashlightFill className="h-3.5 w-3.5 text-[var(--status-warning)]" />
-                </span>
-            ) : null;
-            thinkingDisplay = (
-                <span key="thinking" className="typography-micro flex items-center gap-1 text-muted-foreground whitespace-nowrap">
-                    <span>{displayLabel}</span>
-                    {rowFastIcon}
-                </span>
-            );
-        }
-
-        const shouldShowThinking = hasThinkingVariants && wasAdjusted;
         const handlePointerActivity = createModelRowPointerHandler(flatIndex);
         const shortcutNumber = flatIndex < 9 ? flatIndex + 1 : null;
 
@@ -2673,7 +2642,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                     "typography-meta group/model-row flex items-center gap-2.5 px-2.5 py-2 rounded-lg cursor-pointer",
                      isHighlighted ? "bg-interactive-selection" : "hover:bg-interactive-hover/50"
                 )}
-                onClick={() => handleProviderAndModelChange(providerID, modelID)}
+                onClick={() => handleProviderAndModelChange(providerID, modelID, { keepOpen: true })}
                 onMouseEnter={handlePointerActivity}
                 onMouseMove={handlePointerActivity}
             >
@@ -2712,11 +2681,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                     </div>
                 </div>
                 <div className="flex items-center gap-1.5 flex-shrink-0">
-                    {shouldShowThinking && (isHighlighted || isSelected) ? (
-                        <div className="sr-only">
-                            {thinkingDisplay}
-                        </div>
-                    ) : null}
                     {isSelected && (
                         <RiCheckLine className="h-4 w-4 text-primary" />
                     )}
@@ -2828,33 +2792,36 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         } = modelSelectorData;
         const legacyEntryHighlighted = showLegacyEntry && modelSelectedIndex === legacyEntryIndex;
 
-        // Check if currently highlighted model supports thinking variants
-        const highlightedItem = flatModelList[modelSelectedIndex];
-        const highlightedSupportsThinking = highlightedItem ? (() => {
-            const modelVariants = (highlightedItem.model as { variants?: Record<string, unknown> } | undefined)?.variants;
-            const highlightedProvider = providers.find((entry) => entry.id === highlightedItem.providerID);
-            const cursorVariantState = getCursorAcpVariantState(highlightedProvider, highlightedItem.modelID, undefined);
-            const genericVariantState = cursorVariantState ? null : getGenericModelVariantControlState(highlightedProvider, highlightedItem.modelID, undefined);
-            return cursorVariantState
-                ? cursorVariantState.visibleVariantOptions.length > 0
-                : genericVariantState
-                    ? genericVariantState.visibleVariantOptions.length > 0 || genericVariantState.canToggleFast
-                    : modelVariants && getOrderedThinkingVariants(
-                        modelVariants,
-                        { providerId: highlightedItem.providerID },
-                    ).length > 0;
-        })() : false;
+        const thinkingControl = getCurrentThinkingControl();
 
-        // Apply a row, carrying a thinking level picked with ←/→ while it was highlighted.
+        // Selecting a row keeps the picker open so its thinking level can be set in the footer.
         const applyPickerItem = ({ providerID, modelID }: { providerID: string; modelID: string }) => {
-            const mapKey = buildModelRefKey(providerID, modelID);
-            const pendingVariant = pendingThinkingVariants.get(mapKey);
-            const wasAdjusted = adjustedThinkingModels.has(mapKey);
-            const effectiveAgentName = resolveLiveAgentName();
+            handleProviderAndModelChange(providerID, modelID, { agentName: resolveLiveAgentName(), keepOpen: true });
+        };
 
-            handleProviderAndModelChange(providerID, modelID, wasAdjusted
-                ? { applyVariant: true, variant: pendingVariant, agentName: effectiveAgentName }
-                : { agentName: effectiveAgentName });
+        // ←/→ selects the highlighted row and steps its thinking level in one move.
+        const stepPickerItemThinking = ({ providerID, modelID }: { providerID: string; modelID: string }, direction: 1 | -1) => {
+            const provider = providers.find((entry) => entry.id === providerID);
+            const isCurrent = currentProviderId === providerID && (
+                currentModelId === modelID
+                || isCursorAcpSelectedModelMatch(providerID, modelID, currentProviderId, currentModelId)
+            );
+            const rowModelId = isCurrent ? currentModelId : modelID;
+            const activeVariant = isCurrent ? currentVariant : resolveModelVariantSelection(providerID, modelID);
+            const { levels, selected } = getChatThinkingState(provider, rowModelId, activeVariant);
+            if (levels.length === 0) return;
+
+            const currentIndex = Math.max(0, levels.indexOf(selected ?? ''));
+            const effort = levels[Math.min(levels.length - 1, Math.max(0, currentIndex + direction))];
+            const selection = getCursorAcpVariantState(provider, rowModelId, activeVariant)
+                ? resolveCursorAcpVariantSelection(provider, rowModelId, activeVariant, { effort })
+                : resolveGenericModelVariantSelection(provider, rowModelId, activeVariant, { variant: effort });
+            handleProviderAndModelChange(providerID, selection.modelId, {
+                applyVariant: true,
+                variant: selection.variant ?? null,
+                agentName: resolveLiveAgentName(),
+                keepOpen: true,
+            });
         };
 
         // Handle keyboard navigation
@@ -2924,68 +2891,9 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
                 e.preventDefault();
                 const selectedItem = flatModelList[modelSelectedIndex];
-                if (!selectedItem) return;
-
-                const { providerID, modelID, model } = selectedItem;
-                const modelVariants = (model as { variants?: Record<string, unknown> } | undefined)?.variants;
-                if (!modelVariants) return;
-
-                const mapKey = buildModelRefKey(providerID, modelID);
-                const currentPending = pendingThinkingVariants.get(mapKey);
-                const activeModelVariant = currentPending !== undefined ? currentPending : (currentProviderId === providerID && currentModelId === modelID ? currentVariant : undefined);
-                const provider = providers.find((entry) => entry.id === providerID);
-                const cursorVariantState = getCursorAcpVariantState(provider, modelID, activeModelVariant);
-                if (cursorVariantState) {
-                    const effortOptions = cursorVariantState.visibleVariantOptions;
-                    if (effortOptions.length === 0) return;
-
-                    const currentEffortIndex = effortOptions.indexOf(getChatThinkingState(provider, modelID, activeModelVariant).selected ?? '');
-                    const safeCurrentEffortIndex = currentEffortIndex >= 0 ? currentEffortIndex : 0;
-                    const direction = e.key === 'ArrowRight' ? 1 : -1;
-                    const nextEffortIndex = Math.min(
-                        effortOptions.length - 1,
-                        Math.max(0, safeCurrentEffortIndex + direction),
-                    );
-                    const selection = resolveCursorAcpVariantSelection(provider, modelID, activeModelVariant, {
-                        effort: effortOptions[nextEffortIndex],
-                    });
-
-                    setPendingThinkingVariants((prev) => {
-                        const next = new Map(prev);
-                        next.set(mapKey, selection.variant);
-                        return next;
-                    });
-                    setAdjustedThinkingModels((prev) => {
-                        const next = new Set(prev);
-                        next.add(mapKey);
-                        return next;
-                    });
-                    return;
+                if (selectedItem) {
+                    stepPickerItemThinking(selectedItem, e.key === 'ArrowRight' ? 1 : -1);
                 }
-
-                const variantKeys = getOrderedThinkingVariants(modelVariants, { providerId: providerID });
-                if (variantKeys.length === 0) return;
-
-                const resolvedActiveVariant = getChatThinkingState(provider, modelID, activeModelVariant).selected;
-                const currentVariantIndex = resolvedActiveVariant ? variantKeys.indexOf(resolvedActiveVariant) : -1;
-                const safeCurrentIndex = currentVariantIndex >= 0 ? currentVariantIndex : 0;
-                const direction = e.key === 'ArrowRight' ? 1 : -1;
-                const nextVariantIndex = Math.min(
-                    variantKeys.length - 1,
-                    Math.max(0, safeCurrentIndex + direction),
-                );
-                const nextVariant = variantKeys[nextVariantIndex];
-
-                setPendingThinkingVariants((prev) => {
-                    const next = new Map(prev);
-                    next.set(mapKey, nextVariant);
-                    return next;
-                });
-                setAdjustedThinkingModels((prev) => {
-                    const next = new Set(prev);
-                    next.add(mapKey);
-                    return next;
-                });
             } else if (e.key === 'Enter') {
                 e.preventDefault();
                 const selectedItem = flatModelList[modelSelectedIndex];
@@ -3022,7 +2930,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             setAgentMenuOpen(nextOpen);
         };
 
-        const modifierLabel = getModifierLabel();
         const handleLegacyEntryPointer = createModelRowPointerHandler(legacyEntryIndex);
 
         return (
@@ -3179,20 +3086,24 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                             </div>
                             </div>
 
-                            {/* Keyboard hints footer */}
-                            <div className="px-3 pt-1 pb-1.5 border-t border-border/40 typography-micro text-muted-foreground">
-                                <div className="flex items-center gap-x-2 whitespace-nowrap overflow-hidden">
-                                    <span>{t('chat.modelControls.keyboardHintNavigate')}</span>
-                                    <span aria-hidden="true">|</span>
-                                    <span>{t('chat.modelControls.keyboardHintSelect', { modifier: modifierLabel === '⌘' ? '⌘' : `${modifierLabel}+` })}</span>
-                                    <span aria-hidden="true">|</span>
-                                    <span>{t('chat.modelControls.keyboardHintSwitchAgent')}</span>
-                                    <span className={cn('inline-flex items-center gap-x-2', !highlightedSupportsThinking && 'invisible')}>
-                                        <span aria-hidden="true">|</span>
-                                        <span>{t('chat.modelControls.keyboardHintThinking')}</span>
-                                    </span>
+                            {/* Thinking footer for the selected model */}
+                            {thinkingControl ? (
+                                <div
+                                    className="model-controls__picker-thinking border-t border-border/40 px-4 pt-2 pb-3"
+                                    onKeyDown={(event) => event.stopPropagation()}
+                                >
+                                    <ThinkingSlider
+                                        levels={thinkingControl.levels}
+                                        value={thinkingControl.selected}
+                                        providerId={currentProviderId}
+                                        onChange={(effort) => thinkingControl.apply({ effort })}
+                                        fastMode={thinkingControl.fastState?.canToggleFast ? {
+                                            enabled: thinkingControl.fastState.fastEnabled,
+                                            onChange: (fastEnabled) => thinkingControl.apply({ fastEnabled }),
+                                        } : undefined}
+                                    />
                                 </div>
-                            </div>
+                            ) : null}
                         </DropdownMenuContent>
                     </DropdownMenu>
                 ) : (
@@ -3384,8 +3295,8 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         );
     };
 
-    const renderVariantSelector = () => {
-        if (!isReady) return null;
+    // Thinking state and apply for the current model, shared by the composer popover and the model picker footer.
+    const getCurrentThinkingControl = () => {
         const provider = providers.find((entry) => entry.id === currentProviderId);
         const normalized = currentVariant === null ? null : resolveChatThinkingVariant(provider, currentModelId, currentVariant);
         const cursor = getCursorAcpVariantState(provider, currentModelId, normalized);
@@ -3395,16 +3306,24 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         const selectedModel = provider?.models.find(model => model.id === currentModelId);
         const unconfirmed = typeof normalized === 'string' && !Object.hasOwn(selectedModel?.variants ?? {}, normalized);
         if (!levels.length && !fastState?.canToggleFast && !unconfirmed) return null;
-        const defaultLevel = currentVariant === null ? getModelDefaultThinkingLevel(provider, currentModelId) : undefined;
-        const display = currentVariant === null
-            ? defaultLevel ? formatEffortLabel(defaultLevel, { providerId: currentProviderId }) : 'Default'
-            : selected ? formatEffortLabel(selected, { providerId: currentProviderId }) : 'Fast';
         const apply = (updates: { effort?: string; fastEnabled?: boolean }) => {
             const selection = cursor
                 ? resolveCursorAcpVariantSelection(provider, currentModelId, normalized, updates)
                 : resolveGenericModelVariantSelection(provider, currentModelId, normalized, { variant: updates.effort, fastEnabled: updates.fastEnabled });
             applyModelSelectionWithVariant(currentProviderId, selection.modelId, selection.variant, undefined, { modelProvenance: 'explicit' });
         };
+        return { provider, normalized, levels, selected, fastState, unconfirmed, apply };
+    };
+
+    const renderVariantSelector = () => {
+        if (!isReady) return null;
+        const control = getCurrentThinkingControl();
+        if (!control) return null;
+        const { provider, normalized, levels, selected, fastState, unconfirmed, apply } = control;
+        const defaultLevel = currentVariant === null ? getModelDefaultThinkingLevel(provider, currentModelId) : undefined;
+        const display = currentVariant === null
+            ? defaultLevel ? formatEffortLabel(defaultLevel, { providerId: currentProviderId }) : 'Default'
+            : selected ? formatEffortLabel(selected, { providerId: currentProviderId }) : 'Fast';
         const trigger = <button type="button" aria-label={t('chat.modelControls.thinking')}
             title={unconfirmed ? `Saved selection: ${normalized}. Availability is not confirmed by the current catalog.` : undefined}
             onClick={isCompact ? () => setActiveMobilePanel('variant') : undefined}

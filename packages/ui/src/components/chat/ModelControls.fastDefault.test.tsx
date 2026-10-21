@@ -11,7 +11,7 @@ describe('ModelControls Cursor fast-only controls', () => {
         const code = source();
 
         expect(code).toContain('getChatThinkingState(provider, currentModelId, normalized)');
-        expect(code).toContain('getChatThinkingState(rowProvider, modelID, effectiveVariant)');
+        expect(code).toContain('getChatThinkingState(provider, rowModelId, activeVariant)');
     });
 
     test('routes the mobile slider Fast action through the Cursor adapter', () => {
