@@ -230,6 +230,8 @@ in [identity compatibility](../../docs/IDENTITY_COMPATIBILITY.md#data-folder-mig
 
 ## Operational limits
 
+- `createSessionMutationRuntime({ batching: { install, initialInstall } })` overrides rows per install transaction (defaults 128 and 1024 for a first build; validated positive integers); tests pass small values to cross batch boundaries with ~150 files.
+- `openChangeStore(..., { listingLimitBytes })` overrides the 1 MiB in-memory key-listing bound (validated positive integer; default unchanged); tests pass a small value to cross it with a few hundred records.
 - Whole-ledger listings must stream. `openChangeStore().records()` yields every
   `{key, oid, value}` of a snapshot through `gitTokens` plus batched
   `gitRecords`, ignoring pending writes so callers may `set()` while iterating.

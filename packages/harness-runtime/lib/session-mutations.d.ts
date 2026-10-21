@@ -162,6 +162,8 @@ export function createSessionMutationRuntime(options: {
   directory: string;
   windowsOwner?:WindowsPrivateFileOwner;
   windowsLauncher?:string;
+  /** Rows per install transaction (defaults 128 and, for a first build, 1024). Tests shrink them. */
+  batching?: { install?: number; initialInstall?: number };
   onChange?(input: MutationPublication & { directory: string }): void | Promise<void>;
   onMaterialize?(row: { path: string; before: unknown; after: unknown }): void | Promise<void>;
   /** Background failures (ledger maintenance, input classification); codes only. */

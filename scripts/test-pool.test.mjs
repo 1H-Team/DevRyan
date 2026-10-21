@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, test } from 'node:test';
 
-import { runTestUnits, summarizeTestUnits, testConcurrency } from './test-pool.mjs';
+import { recordTestTimings, runTestUnits, summarizeTestUnits, testConcurrency } from './test-pool.mjs';
 
 const node = (source) => ({ command: process.execPath, args: ['-e', source] });
 // Children must not inherit the node:test reporting channel of this file.
@@ -112,5 +112,19 @@ describe('bounded test pool', () => {
     assert.ok(testConcurrency({}) <= 2);
     assert.throws(() => testConcurrency({ DEVRYAN_TEST_CONCURRENCY: '0' }), /positive integer/);
     await assert.rejects(runTestUnits([{ name: 'a', ...node('') }, { name: 'a', ...node('') }], quiet), /Duplicate test unit/);
+  });
+  test('records unit timings only where DEVRYAN_TEST_TIMINGS points', () => {
+    const scratch = mkdtempSync(path.join(os.tmpdir(), 'devryan-test-timings-'));
+    try {
+      const outcome = { wallMs: 1234.4, results: [{ name: 'a', status: 'passed', durationMs: 1000.6 }, { name: 'b', status: 'failed', durationMs: 20 }] };
+      const units = [{ name: 'a', suite: 'ui' }, { name: 'b' }];
+      assert.equal(recordTestTimings(outcome, units, { environment: {} }), null);
+      const file = path.join(scratch, 'nested', 'lane.json');
+      assert.equal(recordTestTimings(outcome, units, { label: 'ci', environment: { DEVRYAN_TEST_TIMINGS: file } }), file);
+      const record = JSON.parse(readFileSync(file, 'utf8'));
+      assert.equal(record.schemaVersion, 1);
+      assert.equal(record.wallMs, 1234);
+      assert.deepEqual(record.units, [{ name: 'a', suite: 'ui', status: 'passed', ms: 1001 }, { name: 'b', suite: null, status: 'failed', ms: 20 }]);
+    } finally { rmSync(scratch, { recursive: true, force: true }); }
   });
 });

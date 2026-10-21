@@ -8,7 +8,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { cacheGrowthFailure, snapshotCache } from './cache-guard.mjs';
 import { planFullTests } from './test-full.mjs';
-import { formatDuration, runTestUnits, summarizeTestUnits, testConcurrency } from './test-pool.mjs';
+import { formatDuration, recordTestTimings, runTestUnits, summarizeTestUnits, testConcurrency } from './test-pool.mjs';
 import { planScriptTests, prepareScriptTestEnvironment } from './test-scripts.mjs';
 import { STARTUP_CONTRACT_GROUPS, startupContractGroups } from './test-startup-contract.mjs';
 
@@ -404,7 +404,12 @@ function affectedTests(files) {
  * `full` (`bun run validate:full`, CI): every check including the full test suite.
  */
 export function buildPlan(requestedMode, providedFiles, { versionOnly } = {}) {
+  // CI splits the non-test checks: `static` (no build output needed) beside
+  // `build` (the assets test lanes download, then their bundle budgets).
+  const BUILD_LABELS = new Set(['build', 'bundle:check']);
   if (requestedMode === 'checks') return { files: providedFiles ?? [], commands: fullCommands().filter(item => item.label !== 'test:full'), reason: 'CI build and static checks' };
+  if (requestedMode === 'static') return { files: providedFiles ?? [], commands: fullCommands().filter(item => item.label !== 'test:full' && !BUILD_LABELS.has(item.label)), reason: 'CI static checks' };
+  if (requestedMode === 'build') return { files: providedFiles ?? [], commands: fullCommands().filter(item => BUILD_LABELS.has(item.label)), reason: 'CI build and bundle budgets' };
   if (requestedMode.startsWith('ci:')) {
     const lane = requestedMode.slice(3);
     if (!CI_LANES.includes(lane)) throw new Error(`Unknown CI test lane: ${requestedMode}`);
@@ -484,18 +489,28 @@ export function testUnitsForPlan(commands, { root = workspaceRoot, scriptEnviron
 }
 
 /**
- * Static checks run in order and stop at the first failure. Test commands then
- * run as one bounded pool (DEVRYAN_TEST_CONCURRENCY), each failure reported.
+ * Independent static checks (lint, boundaries, type-check, docs, versions) run
+ * concurrently and all report; then the build and its bundle budgets run in
+ * order. Any static failure stops before tests. Test commands then run as one
+ * bounded pool (DEVRYAN_TEST_CONCURRENCY), each failure reported.
  */
 async function runCommands(commands) {
   const isTest = (item) => item.label.startsWith('test:');
+  const isBuildChain = (item) => item.label === 'build' || item.label === 'bundle:check';
   const timings = [];
   const started = performance.now();
   const report = () => {
     console.log(`\nValidation ${formatDuration(performance.now() - started)}:`);
     for (const row of timings) console.log(`  ${formatDuration(row.durationMs).padStart(7)}  ${row.status === 0 ? 'ok  ' : 'FAIL'}  ${row.label}`);
   };
-  for (const item of commands.filter((entry) => !isTest(entry))) {
+  const independent = commands.filter((entry) => !isTest(entry) && !isBuildChain(entry));
+  if (independent.length) {
+    const outcome = await runTestUnits(independent.map((item) => ({ name: item.label, command: item.executable, args: item.args })),
+      { concurrency: independent.length, label: 'checks', cwd: workspaceRoot, heartbeatMs: 0 });
+    for (const row of outcome.results) timings.push({ label: row.name, status: row.status === 'passed' ? 0 : 1, durationMs: row.durationMs });
+    if (!outcome.passed) { report(); return 1; }
+  }
+  for (const item of commands.filter(isBuildChain)) {
     const row = runStatic(item);
     timings.push(row);
     if (row.status !== 0) { report(); return row.status ?? 1; }
@@ -504,8 +519,10 @@ async function runCommands(commands) {
   if (tests.length === 0) { report(); return 0; }
   const { env, cleanup } = prepareScriptTestEnvironment(workspaceRoot);
   try {
-    const outcome = await runTestUnits(testUnitsForPlan(tests, { scriptEnvironment: env }), { concurrency: testConcurrency(), label: 'validate', cwd: workspaceRoot, cleanup });
+    const units = testUnitsForPlan(tests, { scriptEnvironment: env });
+    const outcome = await runTestUnits(units, { concurrency: testConcurrency(), label: 'validate', cwd: workspaceRoot, cleanup });
     summarizeTestUnits(outcome, { label: 'validate', limit: 20 });
+    recordTestTimings(outcome, units, { label: `validate:${mode}` });
     timings.push({ label: `tests (${tests.map((item) => item.label).join(', ')})`, status: outcome.passed ? 0 : 1, durationMs: outcome.wallMs });
     report();
     return outcome.passed ? 0 : 1;

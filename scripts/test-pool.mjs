@@ -9,7 +9,7 @@
 // SIGTERM the runner signals every owned process group, removes its temp dir
 // and exits 130/143.
 import { spawn } from 'node:child_process';
-import { closeSync, mkdtempSync, openSync, readFileSync, rmSync } from 'node:fs';
+import { closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
@@ -162,4 +162,27 @@ export function summarizeTestUnits({ results, wallMs }, { label = 'tests', limit
     log(`[${label}] FAILED: ${row.name} (${row.signal ? `signal ${row.signal}` : `exit ${row.code}`})`);
   }
   for (const row of results.filter((entry) => entry.status === 'not-run')) log(`[${label}] NOT RUN: ${row.name}`);
+}
+
+/**
+ * Persist one run's unit timings as JSON when DEVRYAN_TEST_TIMINGS names a file
+ * (CI uploads it; lane balancing and `bun run test:timings` read it). Nothing is
+ * written otherwise, so local runs leave no files behind.
+ */
+export function recordTestTimings({ results, wallMs }, units, { label = 'tests', environment = process.env } = {}) {
+  const file = environment.DEVRYAN_TEST_TIMINGS;
+  if (!file) return null;
+  const byName = new Map(units.map((unit) => [unit.name, unit]));
+  const record = {
+    schemaVersion: 1,
+    label,
+    recordedAt: new Date().toISOString(),
+    host: { platform: process.platform, arch: process.arch, cores: os.availableParallelism() },
+    toolchain: { node: process.versions.node, bun: process.versions.bun ?? null },
+    wallMs: Math.round(wallMs),
+    units: results.map((row) => ({ name: row.name, suite: byName.get(row.name)?.suite ?? null, status: row.status, ms: Math.round(row.durationMs) })),
+  };
+  mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
+  writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`);
+  return file;
 }

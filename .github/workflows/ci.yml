@@ -1,7 +1,9 @@
 name: CI
 
-# One Ubuntu build, four portable workers and two native macOS workers.
-# validate:full remains the equivalent complete local gate.
+# Static checks, one Ubuntu build, one macOS native-runtime build, four
+# portable test workers and two native macOS test workers. Test lanes wait
+# only for the artifacts they consume; static checks run beside them and
+# still gate the workflow. validate:full remains the equivalent local gate.
 on:
   push:
     branches: [main]
@@ -15,7 +17,25 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  checks:
+  static:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.3'
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Install dependencies
+        env:
+          DEVRYAN_SKIP_INSTALL_PREPARE: '1'
+        run: bun install --frozen-lockfile
+      - name: Lint, import boundaries, types and docs
+        run: node scripts/validate.mjs static
+
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -32,8 +52,8 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Restore reviewed Claude executable
         run: node scripts/hydrate-reviewed-claude.mjs
-      - name: Lint, types, docs, build and bundle budgets
-        run: node scripts/validate.mjs checks
+      - name: Build and bundle budgets
+        run: node scripts/validate.mjs build
       - uses: actions/upload-artifact@v4
         with:
           name: ci-built-assets
@@ -45,9 +65,39 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  native-runtime:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.3'
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Install dependencies
+        env:
+          DEVRYAN_SKIP_INSTALL_PREPARE: '1'
+        run: bun install --frozen-lockfile
+      - name: Restore reviewed Claude executable
+        run: node scripts/hydrate-reviewed-claude.mjs
+      - name: Build and verify native v2 runtime
+        timeout-minutes: 20
+        run: bun scripts/build-native-runtime.mjs
+      # A tar keeps executable modes and symlinks, which artifacts drop.
+      - name: Pack native runtime
+        run: tar -cf native-runtime.tar -C packages/web runtime/darwin-arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ci-native-runtime
+          path: native-runtime.tar
+          if-no-files-found: error
+          retention-days: 1
+
   tests:
-    needs: checks
-    runs-on: ${{ matrix.runner }}
+    needs: build
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -65,14 +115,10 @@ jobs:
           - lane: portable-4
             runner: ubuntu-latest
             concurrency: '2'
-          - lane: native-1
-            runner: macos-26
-            concurrency: '2'
-          - lane: native-2
-            runner: macos-26
-            concurrency: '2'
     env:
       DEVRYAN_TEST_CONCURRENCY: ${{ matrix.concurrency }}
+      DEVRYAN_TEST_SEED: ${{ github.run_id }}
+      DEVRYAN_TEST_TIMINGS: ${{ github.workspace }}/../test-timings/${{ matrix.lane }}.json
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -91,9 +137,65 @@ jobs:
           path: packages
       - name: Restore reviewed Claude executable
         run: node scripts/hydrate-reviewed-claude.mjs
-      - name: Build and verify native v2 runtime
-        if: ${{ matrix.runner == 'macos-26' }}
-        timeout-minutes: 20
-        run: bun scripts/build-native-runtime.mjs
       - name: Run every suite assigned to this lane and check scratch cleanup
         run: node scripts/validate.mjs ci:${{ matrix.lane }}
+      - name: Upload unit timings for lane balancing
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-timings-${{ matrix.lane }}
+          path: ${{ github.workspace }}/../test-timings/
+          if-no-files-found: ignore
+          retention-days: 30
+
+  native-tests:
+    needs: [build, native-runtime]
+    runs-on: macos-26
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - lane: native-1
+            runner: macos-26
+            concurrency: '2'
+          - lane: native-2
+            runner: macos-26
+            concurrency: '2'
+    env:
+      DEVRYAN_TEST_CONCURRENCY: ${{ matrix.concurrency }}
+      DEVRYAN_TEST_SEED: ${{ github.run_id }}
+      DEVRYAN_TEST_TIMINGS: ${{ github.workspace }}/../test-timings/${{ matrix.lane }}.json
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.3'
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Install dependencies
+        env:
+          DEVRYAN_SKIP_INSTALL_PREPARE: '1'
+        run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: ci-built-assets
+          path: packages
+      - uses: actions/download-artifact@v4
+        with:
+          name: ci-native-runtime
+      - name: Unpack native v2 runtime
+        run: tar -xf native-runtime.tar -C packages/web && rm native-runtime.tar
+      - name: Restore reviewed Claude executable
+        run: node scripts/hydrate-reviewed-claude.mjs
+      - name: Run every suite assigned to this lane and check scratch cleanup
+        run: node scripts/validate.mjs ci:${{ matrix.lane }}
+      - name: Upload unit timings for lane balancing
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-timings-${{ matrix.lane }}
+          path: ${{ github.workspace }}/../test-timings/
+          if-no-files-found: ignore
+          retention-days: 30

@@ -7,7 +7,7 @@ import { describe, test } from 'node:test';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-import { discoverTestFiles, isBunTestSource, isIsolatedUiTestSource } from './test-runner-utils.mjs';
+import { bunTestArgs, bunTestWorkers, discoverTestFiles, isBunTestSource } from './test-runner-utils.mjs';
 import { discoverElectronTestFiles, planElectronTests } from './test-electron.mjs';
 import { discoverScriptTestFiles } from './test-scripts.mjs';
 import { FULL_TEST_COMMANDS } from './test-full.mjs';
@@ -49,24 +49,19 @@ describe('script framework dispatch', () => {
   });
 });
 
-describe('isIsolatedUiTestSource', () => {
-  test('isolates source that mutates global window through supported patterns', () => {
-    assert.equal(isIsolatedUiTestSource('globalThis.window = {}'), true);
-    assert.equal(isIsolatedUiTestSource('globalWithWindow.window = previousWindow'), true);
-    assert.equal(isIsolatedUiTestSource('(globalThis as Record<string, unknown>).window = w'), true);
-    assert.equal(isIsolatedUiTestSource("Object.defineProperty(globalThis, 'window', { value: {} })"), true);
+describe('Bun package runs', () => {
+  test('give each package run the cores the outer pool leaves it, at least two workers', () => {
+    assert.equal(bunTestWorkers({}, 16), 8);
+    assert.equal(bunTestWorkers({ DEVRYAN_TEST_CONCURRENCY: '4' }, 16), 4);
+    assert.equal(bunTestWorkers({ DEVRYAN_TEST_CONCURRENCY: '4' }, 4), 2);
+    assert.equal(bunTestWorkers({ DEVRYAN_TEST_WORKERS: '3' }, 16), 3);
+    assert.throws(() => bunTestWorkers({ DEVRYAN_TEST_WORKERS: '0' }, 16), /DEVRYAN_TEST_WORKERS/);
   });
 
-  test('isolates module mocks and mutable browser globals', () => {
-    assert.equal(isIsolatedUiTestSource("mock.module('@/lib/opencode/client', () => ({}))"), true);
-    assert.equal(isIsolatedUiTestSource('globalThis.sessionStorage = storage'), true);
-    assert.equal(isIsolatedUiTestSource('Object.defineProperty(globalThis, "sessionStorage", { value: storage })'), true);
-    assert.equal(isIsolatedUiTestSource('globalThis.FileReader = MockFileReader'), true);
-    assert.equal(isIsolatedUiTestSource('Object.defineProperty(globalThis, "FileReader", { value: MockFileReader })'), true);
-  });
-
-  test('does not isolate plain window reads', () => {
-    assert.equal(isIsolatedUiTestSource('globalThis.window.addEventListener("x", listener)'), false);
+  test('randomize order only with a reproducible seed', () => {
+    assert.deepEqual(bunTestArgs(['src'], { DEVRYAN_TEST_WORKERS: '2' }), ['test', '--parallel=2', 'src']);
+    assert.deepEqual(bunTestArgs(['src'], { DEVRYAN_TEST_WORKERS: '2', DEVRYAN_TEST_SEED: '42' }), ['test', '--parallel=2', '--randomize', '--seed=42', 'src']);
+    assert.throws(() => bunTestArgs(['src'], { DEVRYAN_TEST_SEED: 'x' }), /DEVRYAN_TEST_SEED/);
   });
 });
 
@@ -172,8 +167,8 @@ describe('Electron framework dispatch', () => {
         test('explicit macOS native prerequisite', () => { throw new Error('Native acceptance was not requested'); });`);
       const plan = planElectronTests(root, {});
       assert.deepEqual(plan.node, ['nested.test.mjs']);
-      assert.deepEqual(plan.isolatedBun, ['a.mock.test.mjs']);
-      assert.deepEqual(plan.bun, ['b.clean.test.mjs']);
+      // One parallel Bun run isolates each file, so the mock cannot reach b.clean.
+      assert.deepEqual(plan.bun, ['a.mock.test.mjs', 'b.clean.test.mjs']);
       assert.deepEqual(plan.optional, ['tests/bot-catalog.docker.test.mjs', 'tests/desktop-update-install-native.test.mjs']);
       assert.ok(planElectronTests(root, { DEVRYAN_RUN_BOT_DB_DOCKER_TESTS: '1' }).bun.includes('tests/bot-catalog.docker.test.mjs'));
       assert.ok(planElectronTests(root, { DEVRYAN_RUN_DMG_INSTALLER_NATIVE_TESTS: '1' }).node.includes('tests/desktop-update-install-native.test.mjs'));
@@ -183,7 +178,7 @@ describe('Electron framework dispatch', () => {
       writeFileSync(path.join(root, 'nested.test.mjs'), `import { test } from 'node:test'; test('failure propagates', () => { throw new Error('expected fixture failure'); });`);
       assert.notEqual(run().status, 0, 'A failing framework must fail the combined runner');
       writeFileSync(path.join(root, 'splash.test.mjs'), "import { test } from 'vitest'; test('splash', () => {});");
-      assert.deepEqual(planElectronTests(root, {}).vitest, ['splash.test.mjs']);
+      assert.throws(() => planElectronTests(root, {}), /No supported test framework declared in splash\.test\.mjs/);
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 });
@@ -290,12 +285,14 @@ describe('release workflow', () => {
     }
     assert.match(workflow.jobs.publish.if, /needs\.upgrade-check\.result == 'success'/);
     const ci = YAML.parse(readFileSync(new URL('.github/workflows/ci.yml', repoRoot), 'utf8'));
-    const nativeCI = ci.jobs.tests.strategy.matrix.include.filter(row => row.runner === 'macos-26').length;
+    // The native-runtime build finishes before native-tests start, so at most two macOS CI jobs run at once.
+    const nativeCI = ci.jobs['native-tests'].strategy.matrix.include.filter(row => row.runner === 'macos-26').length;
+    assert.deepEqual(ci.jobs['native-tests'].needs, ['build', 'native-runtime']);
     assert.equal(nativeCI, 2);
     assert.deepEqual(Object.entries(workflow.jobs).filter(([, job]) => job['runs-on'] === 'macos-26').map(([name]) => name), ['electron-package', 'upgrade-check', 'final-dmg-smoke']);
     assert.ok(workflow.jobs['final-dmg-smoke'].needs.includes('electron-package'));
     assert.equal(nativeCI + 2, 4, 'smoke replaces package; qualification keeps the other release slot');
-    assert.equal(ci.jobs.tests.strategy.matrix.include.length + 3, 9, 'CI workers plus package, qualification and CI wait stay below the total limit');
+    assert.equal(ci.jobs.tests.strategy.matrix.include.length + nativeCI + 3, 9, 'CI workers plus package, qualification and CI wait stay below the total limit');
     assert.equal(YAML.parse(readFileSync(new URL('.github/workflows/release-cache.yml', repoRoot), 'utf8')).on.push, undefined);
     assert.ok(!JSON.stringify(workflow).includes('devryan_bot_schema_version'));
     assert.ok(!JSON.stringify(workflow).includes('PRODUCTION_BOTS_MIGRATION'));
@@ -477,7 +474,7 @@ describe('version-only and startup-covered validation', () => {
     const units = testUnitsForPlan(plan.commands.filter((c) => c.label.startsWith('test:')));
     const startupUnits = units.filter((unit) => unit.suite === 'startup').map((unit) => unit.name);
     assert.deepEqual(startupUnits, STARTUP_CONTRACT_GROUPS.filter((group) => group.owner !== 'web').map((group) => `startup:${group.name}`));
-    // The web suite itself still runs every Vitest shard and its native files.
+    // The web suite itself still runs every Vitest project and its native files.
     assert.ok(units.some((unit) => unit.name === 'web:native'));
     assert.ok(units.filter((unit) => unit.name.startsWith('web:vitest')).length > 1);
     const alone = buildPlan('fast', ['scripts/release.mjs']).commands.find((c) => c.label === 'test:startup');

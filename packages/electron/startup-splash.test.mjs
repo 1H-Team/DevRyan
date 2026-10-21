@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { runStartupPhase } from './runtime-service-startup.mjs';
 import { startupDiagnosticSummary } from '../shared-runtime/startup-diagnostics.js';

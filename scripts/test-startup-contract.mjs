@@ -25,7 +25,7 @@ export const STARTUP_CONTRACT_GROUPS = Object.freeze([
     'src/sync/global-sync-store.test.ts',
     'src/sync/input-subscription.mounted.test.tsx',
     'src/components/ui/RuntimeLoadingScreen.test.tsx', 'src/components/ui/RuntimeLoadingScreen.mounted.test.tsx'] },
-  { name: 'web', owner: 'web', command: 'bun', args: ['run', '--cwd', 'packages/web', 'vitest', 'run', '--no-file-parallelism', '--maxWorkers=1',
+  { name: 'web', owner: 'web', command: 'bun', args: ['run', '--cwd', 'packages/web', 'vitest', 'run',
     'server/lib/opencode/execution-helper-command.test.js', 'server/lib/opencode/session-execution-host.test.js',
     'server/lib/opencode/lifecycle.test.js', 'server/lib/opencode/runtime-host/native-artifacts.test.js',
     'server/lib/opencode/runtime-host/bundle-startup-upgrade-status.test.js',

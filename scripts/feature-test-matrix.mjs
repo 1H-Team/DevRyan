@@ -9,7 +9,7 @@ export const FEATURE_TEST_MATRIX = Object.freeze([
       'packages/harness-runtime/native/session-execution-windows.c', 'packages/harness-runtime/native/session-spawn-darwin.c',
       'packages/harness-runtime/native/session-group-darwin.h',
       'packages/web/server/lib/opencode/session-revert-coordinator.js', 'packages/web/server/lib/opencode/session-scoped-revert.js'],
-    testPaths: ['packages/harness-runtime/lib/session-mutations.test.js', 'packages/harness-runtime/lib/session-mutation-text.test.js',
+    testPaths: ['packages/harness-runtime/lib/session-mutations.revert-restore.test.js', 'packages/harness-runtime/lib/session-mutations.lease-ownership.test.js', 'packages/harness-runtime/lib/session-mutation-text.test.js',
       'packages/harness-runtime/lib/session-revert-coordinator.test.js', 'packages/harness-runtime/lib/session-execution.test.js',
       'packages/web/server/lib/opencode/execution-artifacts.test.js', 'scripts/verify-revert-runtime-artifacts.test.mjs',
       'packages/web/server/lib/opencode/session-revert-coordinator.test.js', 'packages/web/server/opencode-proxy.test.js',
@@ -360,7 +360,7 @@ export const FEATURE_TEST_MATRIX = Object.freeze([
       'packages/electron/tests/browser-lease-main-contract.test.mjs',
       'packages/electron/tests/browser-surface-main-contract.test.mjs',
       'packages/ui/src/stores/useBrowserAgentStore.test.ts',
-      'packages/ui/src/components/layout/browserGuestLifecycle.test.ts',
+      'packages/ui/src/components/layout/browserGuestLifecycle.test.tsx',
     ],
   },
   {

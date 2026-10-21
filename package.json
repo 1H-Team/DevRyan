@@ -42,6 +42,7 @@
     "test": "bun run test:full",
     "test:scripts": "node scripts/test-scripts.mjs",
     "test:startup": "node scripts/test-startup-contract.mjs",
+    "test:timings:update": "node scripts/update-test-timings.mjs",
     "test:visual-fixture": "bun test tests/visual-production-bots/matrix.test.mjs",
     "test:full": "node scripts/test-full.mjs",
     "validate": "node scripts/validate.mjs fast",

@@ -47,7 +47,7 @@
     "type-check": "tsc --noEmit && tsc -p server/lib/opencode/runtime-host/tsconfig.json",
     "lint": "oxlint --config ../../.oxlintrc.json src",
     "test": "bun run test:vitest && bun run test:native",
-    "test:vitest": "vitest run --no-file-parallelism --maxWorkers=1 --exclude 'runtime/reviewed-inputs/**' --exclude 'server/lib/opencode/runtime-host/native-helper.test.js' --exclude 'server/lib/opencode/runtime-host/native-retention-quiet.test.ts' --exclude 'server/lib/opencode/runtime-host/native-queued-input.test.ts' --exclude 'server/lib/harness/native-integration/**'",
+    "test:vitest": "vitest run",
     "test:native": "bun test server/lib/opencode/runtime-host/native-helper.test.js server/lib/opencode/runtime-host/native-retention-quiet.test.ts server/lib/opencode/runtime-host/native-queued-input.test.ts ./server/lib/harness/native-integration",
     "test:native-host": "bun test ../../scripts/opencode-v2-native/*.test.ts",
     "start": "node bin/cli.js serve"

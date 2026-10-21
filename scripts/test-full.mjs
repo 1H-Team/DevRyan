@@ -9,7 +9,8 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { runTestUnits, summarizeTestUnits, testConcurrency } from './test-pool.mjs';
+import { recordTestTimings, runTestUnits, summarizeTestUnits, testConcurrency } from './test-pool.mjs';
+import { bunTestWorkers } from './test-runner-utils.mjs';
 import { planScriptTests, prepareScriptTestEnvironment } from './test-scripts.mjs';
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -36,14 +37,17 @@ export const FULL_TEST_SUITES = Object.freeze([
 /** `bun run --cwd packages/x test` lines of FULL_TEST_SUITES, for inventory checks. */
 export const FULL_TEST_COMMANDS = Object.freeze(FULL_TEST_SUITES.map((suite) => [suite.command, ...suite.args].join(' ')));
 
-/** Vitest shards of `packages/web` test:vitest; the long startup files spread across them. */
-export const WEB_VITEST_SHARDS = 3;
 /**
- * Bun file workers for the harness suite (same 47-file inventory as plain
- * `bun test`). One file, session-mutations.test.js, bounds its wall time, so a
- * second worker runs the rest beside it; more only oversubscribes the pool.
+ * Vitest projects of `packages/web` (vitest.config.ts): the file-parallel
+ * server suite, and the native runtime-host suite with its own small worker cap.
  */
-export const HARNESS_WORKERS = 2;
+export const WEB_VITEST_PROJECTS = Object.freeze(['web', 'web-runtime-host']);
+/**
+ * Bun file workers for the harness suite (same inventory as plain `bun test`).
+ * The ledger suites split by concern (session-mutations.*.test.js), so several
+ * workers share the long files; Bun starts the slowest recorded files first.
+ */
+export const HARNESS_WORKERS = 4;
 
 /**
  * Expand the inventory into pool units. Every suite keeps its own runner and
@@ -61,9 +65,9 @@ export function planFullTests(root = repositoryRoot, { scriptEnvironment, suites
     if (key === 'scripts') {
       planScriptTests(root).forEach((unit) => add({ ...unit, env: scriptEnvironment }));
     } else if (key === 'web') {
-      for (let shard = 1; shard <= WEB_VITEST_SHARDS; shard++) {
-        add({ name: `web:vitest ${shard}/${WEB_VITEST_SHARDS}`, command: 'bun',
-          args: ['run', '--cwd', 'packages/web', 'test:vitest', `--shard=${shard}/${WEB_VITEST_SHARDS}`] });
+      for (const project of WEB_VITEST_PROJECTS) {
+        add({ name: `web:vitest ${project}`, command: 'bun',
+          args: ['run', '--cwd', 'packages/web', 'test:vitest', `--project=${project}`, ...(project === 'web' ? [`--maxWorkers=${bunTestWorkers()}`] : [])] });
       }
       add({ name: 'web:native', command: 'bun', args: ['run', '--cwd', 'packages/web', 'test:native'] });
     } else if (key === 'harness') {
@@ -72,11 +76,11 @@ export function planFullTests(root = repositoryRoot, { scriptEnvironment, suites
       add(suite);
     }
   }
-  // Longest first so the pool never ends on one long unit started late.
-  // CI timings: harness 8m27s, stream 6m52s, web shard 2 7m46s. Start the
-  // port-owning stream early so its OAuth peers do not become a serial tail.
-  const order = ['harness-runtime', 'scripts:scripts/opencode-v2-native/native-stream-continuation.graph.test.ts',
-    'web:vitest 2/3', 'web:vitest', 'scripts:node'];
+  // Longest first so the pool never ends on one long unit started late
+  // (local baseline 2026-10-21). Start the port-owning stream early so its
+  // OAuth peers do not become a serial tail.
+  const order = ['web:vitest web-runtime-host', 'scripts:scripts/opencode-v2-native/native-stream-continuation.graph.test.ts',
+    'harness-runtime', 'scripts:node', 'web:vitest'];
   const rank = (unit) => { const index = order.findIndex((prefix) => unit.name.startsWith(prefix)); return index === -1 ? order.length : index; };
   return units.map((unit, index) => ({ unit, index })).sort((left, right) => rank(left.unit) - rank(right.unit) || left.index - right.index).map(({ unit }) => unit);
 }
@@ -87,6 +91,7 @@ export async function runFullTests(root = repositoryRoot, { concurrency = testCo
     const units = planFullTests(root, { scriptEnvironment: env, suites }).map((unit) => ({ ...unit, env: unit.env ?? env, cwd: unit.cwd ?? root }));
     const outcome = await runTestUnits(units, { concurrency, label: 'test:full', cwd: root, cleanup });
     summarizeTestUnits(outcome, { label: 'test:full', limit: 20 });
+    recordTestTimings(outcome, units, { label: 'test:full' });
     return outcome.passed ? 0 : 1;
   } finally {
     cleanup();

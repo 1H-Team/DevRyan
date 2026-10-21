@@ -1,12 +1,8 @@
 import { existsSync, readdirSync, statSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 export const testFilePattern = /(?:^|[./-])test\.[cm]?[jt]sx?$/;
-
-const mockModulePattern = /\bmock\.module\s*\(/;
-const globalWindowMutationPattern = /(?:global(?:This|WithWindow)|\([^)]*globalThis[^)]*\))\.window\s*=|Object\.defineProperty\s*\(\s*globalThis\s*,\s*['"]window['"]|delete\s+(?:global(?:This|WithWindow)|\([^)]*globalThis[^)]*\))\.window/;
-const globalSessionStorageMutationPattern = /(?:global(?:This|WithWindow)|\([^)]*globalThis[^)]*\))\.sessionStorage\s*=|Object\.defineProperty\s*\(\s*globalThis\s*,\s*['"]sessionStorage['"]|delete\s+(?:global(?:This|WithWindow)|\([^)]*globalThis[^)]*\))\.sessionStorage/;
-const globalFileReaderMutationPattern = /(?:global(?:This|WithWindow)|\([^)]*globalThis[^)]*\))\.FileReader\s*=|Object\.defineProperty\s*\(\s*globalThis\s*,\s*['"]FileReader['"]|delete\s+(?:global(?:This|WithWindow)|\([^)]*globalThis[^)]*\))\.FileReader/;
 
 export function isBunTestSource(source) {
   // Node runner tests may contain Bun imports inside generated fixture source.
@@ -15,11 +11,30 @@ export function isBunTestSource(source) {
     && /\bfrom\s*['"]bun:test['"]/.test(source);
 }
 
-export function isIsolatedUiTestSource(source) {
-  return mockModulePattern.test(source)
-    || globalWindowMutationPattern.test(source)
-    || globalSessionStorageMutationPattern.test(source)
-    || globalFileReaderMutationPattern.test(source);
+/**
+ * Bun workers for one package run: the cores left to it by the outer pool
+ * (DEVRYAN_TEST_CONCURRENCY units at a time), at least two.
+ * DEVRYAN_TEST_WORKERS overrides it.
+ */
+export function bunTestWorkers(environment = process.env, cores = os.availableParallelism()) {
+  const explicit = environment.DEVRYAN_TEST_WORKERS;
+  if (explicit !== undefined && explicit !== '') {
+    if (!/^[1-9]\d*$/.test(explicit)) throw new Error('DEVRYAN_TEST_WORKERS must be a positive integer');
+    return Number(explicit);
+  }
+  const outer = Number(environment.DEVRYAN_TEST_CONCURRENCY) || Math.min(2, cores);
+  return Math.max(2, Math.floor(cores / outer));
+}
+
+/**
+ * `bun test` arguments for a package run: isolated parallel workers, and
+ * randomized order when DEVRYAN_TEST_SEED is set (CI sets it and prints it;
+ * reproduce a failure with the same seed).
+ */
+export function bunTestArgs(targets, environment = process.env) {
+  const seed = environment.DEVRYAN_TEST_SEED;
+  if (seed !== undefined && seed !== '' && !/^\d+$/.test(seed)) throw new Error('DEVRYAN_TEST_SEED must be a non-negative integer');
+  return ['test', `--parallel=${bunTestWorkers(environment)}`, ...(seed ? ['--randomize', `--seed=${seed}`] : []), ...targets];
 }
 
 export function discoverTestFiles(directory, rootDirectory, options = {}) {

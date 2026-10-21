@@ -17,8 +17,7 @@
   "devDependencies": {
     "@electron/rebuild": "^4.2.1",
     "electron": "41.2.1",
-    "electron-builder": "^26.15.3",
-    "vitest": "^5.0.5"
+    "electron-builder": "^26.15.3"
   },
   "desktopPrerequisites": [
     "Electron runtime dependencies installed via bun install",

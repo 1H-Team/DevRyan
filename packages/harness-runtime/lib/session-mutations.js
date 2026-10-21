@@ -152,8 +152,12 @@ const mapBounded = async (items, fn, limit = FILE_CONCURRENCY) => {
  * Adapters must enforce write confinement and stop every writer before finish.
  * The private Git metadata store pages histories and commits accepted intent
  * with an atomic ref update before the publication transaction writes files. */
-export function createSessionMutationRuntime({ directory: storage, onChange = () => {}, onMaterialize, onDiagnostic = () => {}, onLockTiming, maintenance: maintenanceOptions, windowsOwner, windowsLauncher } = {}) {
+export function createSessionMutationRuntime({ directory: storage, onChange = () => {}, onMaterialize, onDiagnostic = () => {}, onLockTiming, maintenance: maintenanceOptions, batching = {}, windowsOwner, windowsLauncher } = {}) {
   if (!path.isAbsolute(storage ?? '')) throw new TypeError('Absolute mutation storage directory is required');
+  // Rows per install transaction. Tests shrink both to cross batch boundaries
+  // with a few hundred files instead of thousands; production keeps the defaults.
+  const { install: installBatch = INSTALL_BATCH, initialInstall: initialInstallBatch = INITIAL_INSTALL_BATCH } = batching;
+  if (![installBatch, initialInstallBatch].every((value) => Number.isSafeInteger(value) && value > 0)) throw new TypeError('Install batch sizes must be positive integers');
   // Background failures outside any admission context (codes only).
   const diagnostic = (record) => { try { onDiagnostic(record); } catch { /* Observer only. */ } };
   // Every owner-lock acquisition, with or without an execution context:
@@ -761,8 +765,8 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         inputs = walk.inputs;
         if (names.size > maxFiles) { skipped = 'too-large'; break; }
         const fast = fastIngest(), restamp = fast && (!warm || refresh) && restampBatching();
-        const batchRows = fast && (paths.size === 0 || restamp) ? INITIAL_INSTALL_BATCH : INSTALL_BATCH;
-        const changedBatchRows = fast && paths.size === 0 ? INITIAL_INSTALL_BATCH : INSTALL_BATCH;
+        const batchRows = fast && (paths.size === 0 || restamp) ? initialInstallBatch : installBatch;
+        const changedBatchRows = fast && paths.size === 0 ? initialInstallBatch : installBatch;
         // The walk just listed these directories; each is checked for symlinks
         // once per pass instead of once per file below it. Advisory only: the
         // install below re-stamps every changed file without this memo.
