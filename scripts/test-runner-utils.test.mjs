@@ -62,6 +62,7 @@ describe('Bun package runs', () => {
     assert.deepEqual(bunTestArgs(['src'], { DEVRYAN_TEST_WORKERS: '2' }), ['test', '--parallel=2', 'src']);
     assert.deepEqual(bunTestArgs(['src'], { DEVRYAN_TEST_WORKERS: '2', DEVRYAN_TEST_SEED: '42' }), ['test', '--parallel=2', '--randomize', '--seed=42', 'src']);
     assert.throws(() => bunTestArgs(['src'], { DEVRYAN_TEST_SEED: 'x' }), /DEVRYAN_TEST_SEED/);
+    assert.throws(() => bunTestArgs(['src'], { DEVRYAN_TEST_SEED: '39673413952' }), /DEVRYAN_TEST_SEED/);
   });
 });
 

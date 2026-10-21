@@ -9,7 +9,7 @@ import YAML from 'yaml';
 
 import { FEATURE_TEST_MATRIX } from './feature-test-matrix.mjs';
 import { discoverElectronTestFiles } from './test-electron.mjs';
-import { discoverScriptTestFiles, planScriptTests } from './test-scripts.mjs';
+import { NATIVE_GRAPH_RESOURCE, discoverScriptTestFiles, planScriptTests } from './test-scripts.mjs';
 import { FULL_TEST_COMMANDS, FULL_TEST_SUITES, HARNESS_WORKERS, WEB_VITEST_PROJECTS, planFullTests } from './test-full.mjs';
 import { buildPlan, testUnitsForPlan } from './validate.mjs';
 import { discoverTestFiles } from './test-runner-utils.mjs';
@@ -152,7 +152,7 @@ describe('full test-suite contract', () => {
     for (const unit of scriptUnits) {
       const file = unit.args.at(-1)?.replace(/^\.\//, '');
       if (file && readFileSync(path.join(repositoryRoot, file), 'utf8').includes('controller-integrations.graph-fixture.mjs')) {
-        assert.equal(unit.resource, 'native-oauth-callback:1455', `${file} shares the native callback port`);
+        assert.equal(unit.resource, NATIVE_GRAPH_RESOURCE, `${file} shares the native graph resource (callback port 1455)`);
       }
     }
     assert.deepEqual(scriptUnits.map(key).sort(), planScriptTests(repositoryRoot).map(key).sort());
@@ -195,7 +195,7 @@ describe('full test-suite contract', () => {
     for (const job of testJobs) {
       assert.equal(job.strategy['fail-fast'], false);
       assert.ok(job.steps.some(step => step.run === 'node scripts/validate.mjs ci:${{ matrix.lane }}'));
-      assert.equal(job.env.DEVRYAN_TEST_SEED, '${{ github.run_id }}');
+      assert.equal(job.env.DEVRYAN_TEST_SEED, '${{ github.run_number }}');
     }
     assert.ok(workflow.jobs.static.steps.some(step => step.run === 'node scripts/validate.mjs static'));
     assert.ok(workflow.jobs.build.steps.some(step => step.run === 'node scripts/validate.mjs build'));

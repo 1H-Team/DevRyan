@@ -10,6 +10,8 @@ import { discoverTestFiles, isBunTestSource } from './test-runner-utils.mjs';
 import { runTestUnits, summarizeTestUnits, testConcurrency } from './test-pool.mjs';
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+/** Exclusive pool resource shared by native graph files (see planScriptTests). */
+export const NATIVE_GRAPH_RESOURCE = 'native-graph';
 
 export function discoverScriptTestFiles(root = repositoryRoot) {
   return [
@@ -31,11 +33,12 @@ export function discoverScriptTestFiles(root = repositoryRoot) {
  * listed first so a bounded pool starts the longest processes early.
  */
 export function planScriptTests(root = repositoryRoot, environment = process.env) {
-  const bun = [], node = [], callbackFixtures = new Set();
+  const bun = [], node = [], heavyNative = new Set();
   for (const file of discoverScriptTestFiles(root)) {
     const source = readFileSync(path.join(root, file), 'utf8');
-    // The real native browser OAuth flow binds localhost:1455 in this fixture.
-    if (source.includes('controller-integrations.graph-fixture.mjs')) callbackFixtures.add(file);
+    // Native graph files build and spawn the pinned runtime (CPU-heavy, and the
+    // shared fixture's real OAuth flow binds localhost:1455): one at a time.
+    if (/\.graph\.test\.[cm]?[jt]s$/.test(file) || source.includes('controller-integrations.graph-fixture.mjs')) heavyNative.add(file);
     if (isBunTestSource(source)) bun.push(file);
     else node.push(file);
   }
@@ -52,7 +55,7 @@ export function planScriptTests(root = repositoryRoot, environment = process.env
   return [
     ...(node.length ? [{ name: 'scripts:node', command: process.execPath, args: [...args, ...node], cwd: root }] : []),
     ...graphFirst.map((file) => ({ name: `scripts:${file}`, command: 'bun', args: ['test', `./${file}`], cwd: root,
-      ...(callbackFixtures.has(file) ? { resource: 'native-oauth-callback:1455' } : {}) })),
+      ...(heavyNative.has(file) ? { resource: NATIVE_GRAPH_RESOURCE } : {}) })),
   ];
 }
 

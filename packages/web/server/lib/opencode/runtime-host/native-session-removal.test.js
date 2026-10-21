@@ -22,7 +22,8 @@ const execute=promisify(execFile);
 // root session are immutable setup. They are built once per file and each test gets a
 // copy-on-write clone at the SAME path, so every path recorded in the ledger stays valid.
 let template;
-const cloneTree=async(from,to)=>{try{await execute('/bin/cp',['-cpR',from,to]);}catch{await fs.rm(to,{recursive:true,force:true});await fs.cp(from,to,{recursive:true,verbatimSymlinks:true});}};
+// APFS clone on macOS (-c); GNU cp -a elsewhere. Both keep modes and timestamps, which snapshot fingerprints include.
+const cloneTree=async(from,to)=>{try{await execute('/bin/cp',['-cpR',from,to]);}catch{await fs.rm(to,{recursive:true,force:true});await execute('cp',['-a',from,to]);}};
 async function seededRoot(){
   if(!template){
     const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'native-removal-')));

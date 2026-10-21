@@ -117,7 +117,7 @@ jobs:
             concurrency: '2'
     env:
       DEVRYAN_TEST_CONCURRENCY: ${{ matrix.concurrency }}
-      DEVRYAN_TEST_SEED: ${{ github.run_id }}
+      DEVRYAN_TEST_SEED: ${{ github.run_number }}
       DEVRYAN_TEST_TIMINGS: ${{ github.workspace }}/../test-timings/${{ matrix.lane }}.json
     steps:
       - uses: actions/checkout@v4
@@ -164,7 +164,7 @@ jobs:
             concurrency: '2'
     env:
       DEVRYAN_TEST_CONCURRENCY: ${{ matrix.concurrency }}
-      DEVRYAN_TEST_SEED: ${{ github.run_id }}
+      DEVRYAN_TEST_SEED: ${{ github.run_number }}
       DEVRYAN_TEST_TIMINGS: ${{ github.workspace }}/../test-timings/${{ matrix.lane }}.json
     steps:
       - uses: actions/checkout@v4

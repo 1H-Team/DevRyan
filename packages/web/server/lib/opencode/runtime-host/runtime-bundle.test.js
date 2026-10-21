@@ -41,7 +41,8 @@ const reconciledCredentials=async({credentialBinding})=>({status:'reconciled',cr
 // every embedded absolute path, hash and Git ref valid, and let one warm Bun worker
 // (constant launch environment) run all migrations instead of a cold process each.
 let seedTemplate,migrationRequests=0,worker;
-const cloneTree=async(from,to)=>{try{await execute('/bin/cp',['-cpR',from,to]);}catch{await fs.rm(to,{recursive:true,force:true});await fs.cp(from,to,{recursive:true,verbatimSymlinks:true});}};
+// APFS clone on macOS (-c); GNU cp -a elsewhere. Both keep modes and timestamps, which snapshot fingerprints include.
+const cloneTree=async(from,to)=>{try{await execute('/bin/cp',['-cpR',from,to]);}catch{await fs.rm(to,{recursive:true,force:true});await execute('cp',['-a',from,to]);}};
 async function seededRoot(){
   if(!seedTemplate){
     const parent=path.resolve(import.meta.dirname,'../../../../../../.cache/v2-validation');

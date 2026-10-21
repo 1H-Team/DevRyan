@@ -33,7 +33,8 @@ export function bunTestWorkers(environment = process.env, cores = os.availablePa
  */
 export function bunTestArgs(targets, environment = process.env) {
   const seed = environment.DEVRYAN_TEST_SEED;
-  if (seed !== undefined && seed !== '' && !/^\d+$/.test(seed)) throw new Error('DEVRYAN_TEST_SEED must be a non-negative integer');
+  // Bun accepts 32-bit seeds; CI passes the workflow run number.
+  if (seed !== undefined && seed !== '' && !(/^\d+$/.test(seed) && Number(seed) <= 0xffffffff)) throw new Error('DEVRYAN_TEST_SEED must be an integer from 0 to 4294967295');
   return ['test', `--parallel=${bunTestWorkers(environment)}`, ...(seed ? ['--randomize', `--seed=${seed}`] : []), ...targets];
 }
 
