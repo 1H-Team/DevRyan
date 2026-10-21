@@ -16,18 +16,22 @@ const notVitest = [
 ];
 // Native runtime-host suites copy bundles, ledgers and databases and spawn
 // processes; they get few workers so filesystem contention cannot push their
-// real-I/O tests past their timeouts. Everything else runs file-parallel.
+// real-I/O tests past their timeouts. Everything else runs file-parallel; when
+// both projects run in one invocation, runtime-host runs after (groupOrder 1).
 const runtimeHost = ['server/lib/opencode/runtime-host/**'];
+// Files a CI lane must not run (comma-separated, e.g. the macOS-only suites on
+// Ubuntu). Vitest applies CLI --exclude only to the root, never to projects.
+const laneExclude = (process.env.DEVRYAN_VITEST_EXCLUDE ?? '').split(',').filter(Boolean);
 
 export default defineConfig({
   ...resolution,
   test: {
-    exclude: [...configDefaults.exclude, ...notVitest],
+    exclude: [...configDefaults.exclude, ...notVitest, ...laneExclude],
     projects: [
       // File-parallel: real git and process work in some tests runs slower under
       // load than it did serially, so the per-test hang budget is 15 s, not 5 s.
       { extends: true, test: { name: 'web', exclude: runtimeHost, testTimeout: 15_000 } },
-      { extends: true, test: { name: 'web-runtime-host', include: runtimeHost.map((glob) => `${glob}/*.test.{js,mjs,ts}`), maxWorkers: 2 } },
+      { extends: true, test: { name: 'web-runtime-host', include: runtimeHost.map((glob) => `${glob}/*.test.{js,mjs,ts}`), maxWorkers: 2, sequence: { groupOrder: 1 } } },
     ],
   },
 });

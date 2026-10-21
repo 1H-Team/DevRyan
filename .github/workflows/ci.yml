@@ -118,7 +118,6 @@ jobs:
     env:
       DEVRYAN_TEST_CONCURRENCY: ${{ matrix.concurrency }}
       DEVRYAN_TEST_SEED: ${{ github.run_number }}
-      DEVRYAN_TEST_TIMINGS: ${{ github.workspace }}/../test-timings/${{ matrix.lane }}.json
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -138,13 +137,15 @@ jobs:
       - name: Restore reviewed Claude executable
         run: node scripts/hydrate-reviewed-claude.mjs
       - name: Run every suite assigned to this lane and check scratch cleanup
+        env:
+          DEVRYAN_TEST_TIMINGS: ${{ runner.temp }}/test-timings/${{ matrix.lane }}.json
         run: node scripts/validate.mjs ci:${{ matrix.lane }}
       - name: Upload unit timings for lane balancing
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: test-timings-${{ matrix.lane }}
-          path: ${{ github.workspace }}/../test-timings/
+          path: ${{ runner.temp }}/test-timings/
           if-no-files-found: ignore
           retention-days: 30
 
@@ -165,7 +166,6 @@ jobs:
     env:
       DEVRYAN_TEST_CONCURRENCY: ${{ matrix.concurrency }}
       DEVRYAN_TEST_SEED: ${{ github.run_number }}
-      DEVRYAN_TEST_TIMINGS: ${{ github.workspace }}/../test-timings/${{ matrix.lane }}.json
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -190,12 +190,14 @@ jobs:
       - name: Restore reviewed Claude executable
         run: node scripts/hydrate-reviewed-claude.mjs
       - name: Run every suite assigned to this lane and check scratch cleanup
+        env:
+          DEVRYAN_TEST_TIMINGS: ${{ runner.temp }}/test-timings/${{ matrix.lane }}.json
         run: node scripts/validate.mjs ci:${{ matrix.lane }}
       - name: Upload unit timings for lane balancing
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: test-timings-${{ matrix.lane }}
-          path: ${{ github.workspace }}/../test-timings/
+          path: ${{ runner.temp }}/test-timings/
           if-no-files-found: ignore
           retention-days: 30

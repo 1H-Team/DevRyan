@@ -29,7 +29,8 @@ export function ciTestInventory(root, options = {}) {
     if (unit.name.endsWith('/native-stream-continuation.graph.test.ts')) return Array.from({ length: 2 }, (_, index) => ({ ...unit,
       name: `${unit.name}:${index + 1}/2`, env: { ...(unit.env ?? options.scriptEnvironment ?? process.env), DEVRYAN_STREAM_TEST_SHARD: `${index + 1}/2` } }));
     if (unit.name.startsWith('web:vitest')) {
-      const excluded = { ...unit, args: [...unit.args, ...MAC_WEB_TESTS.flatMap(file => ['--exclude', file])] };
+      // Vitest ignores CLI --exclude inside projects; vitest.config.ts reads this list.
+      const excluded = { ...unit, env: { ...(unit.env ?? options.scriptEnvironment ?? process.env), DEVRYAN_VITEST_EXCLUDE: MAC_WEB_TESTS.join(',') } };
       // The runtime-host project is the longest unit; two Vitest shards balance it across lanes.
       return unit.name === 'web:vitest web-runtime-host' ? Array.from({ length: 2 }, (_, index) => ({ ...excluded,
         name: `${unit.name} ${index + 1}/2`, args: [...excluded.args, `--shard=${index + 1}/2`] })) : [excluded];

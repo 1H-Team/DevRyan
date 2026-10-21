@@ -228,7 +228,7 @@ describe('full test-suite contract', () => {
     }
     for (const file of MAC_WEB_TESTS) {
       assert.ok(laneUnits.find(unit => unit.name === 'web:macos').args.includes(file));
-      for (const unit of laneUnits.filter(unit => unit.name.startsWith('web:vitest'))) assert.ok(unit.args.includes(file));
+      for (const unit of laneUnits.filter(unit => unit.name.startsWith('web:vitest'))) assert.ok(unit.env.DEVRYAN_VITEST_EXCLUDE.split(',').includes(file));
     }
     const split = new Set(['scripts', 'harness', 'web']);
     assert.deepEqual(laneUnits.filter(unit => !split.has(unit.suite)).map(key).sort(),
