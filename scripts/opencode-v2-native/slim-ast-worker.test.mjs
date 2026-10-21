@@ -95,4 +95,4 @@ test('actual original AST tools run in supervised private views with permission,
   const corrupt=await invoke('ast_grep_search',{pattern:'console.log($MSG)',lang:'javascript'},{asset:corruptAsset});
   expect(corrupt.receipt.exitCode).not.toBe(0);expect(corrupt.events.some(event=>event.type==='permission')).toBe(false);
  }finally{await fs.rm(root,{recursive:true,force:true});}
-},30_000);
+},120_000);

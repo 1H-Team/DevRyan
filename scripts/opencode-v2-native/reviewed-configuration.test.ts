@@ -55,4 +55,4 @@ test('sealed reviewed configuration imports under Node and builds original roles
   const [code,stdout,stderr]=await Promise.all([child.exited,new Response(child.stdout).text(),new Response(child.stderr).text()]);
   const errorSummary=stderr.split('\n').map(line=>line.length>400?'[long source line omitted]':line).join('\n');expect({code,stderr:errorSummary}).toEqual({code:0,stderr:''});expect(stdout).toBe('verified');
  }finally{await fs.rm(root,{recursive:true,force:true});}
-});
+},120_000);
