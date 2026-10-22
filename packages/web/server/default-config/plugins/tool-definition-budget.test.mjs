@@ -1,15 +1,22 @@
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { runInNewContext } from 'node:vm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import { DevRyanManagedOrchestrationPlugin } from './devryan-managed-orchestration.mjs';
 import { DevRyanDocumentReaderPlugin } from './devryan-document-reader.mjs';
+import { DevRyanBrowserPlugin } from './devryan-browser.mjs';
 import { CouncilSessionPlugin } from './council-session.js';
+import { ast_grep_replace, ast_grep_search } from '../../../../agents-core/src/tools/ast-grep/tools.ts';
+import { rewriteReviewedImagegen } from '../../lib/opencode/runtime-host/reviewed-imagegen-transform.js';
 
 // Bundled tool definitions (description plus argument schema) are sent with
 // every request, like packaged prompts. Same ratchet as prompt-budget.test.js:
 // raising a ceiling needs a rationale; a shrink must lower the ceiling.
-// devryan-browser.mjs exposes its tools only with a live browser context, so
-// it is measured by the runtime context budget instead.
+// Runtime-registered definitions (the managed-install browser, Slim's built-in
+// ast-grep tools and the reviewed image tool) are measured separately below.
 const MAX_SLACK_RATIO = 0.1;
 const TOOL_DEFINITION_BUDGETS = {
   devryan_task: { maxBytes: 3165, rationale: 'Measured 2026-10-11 with default-off waitAny and context projection (3014 bytes) plus ~5% headroom; tightened after capability filtering.' },
@@ -40,6 +47,14 @@ const TOOL_DEFINITION_VARIANT_BUDGETS = {
   },
 };
 const POLICY_ENV_KEYS = ['DEVRYAN_MANAGED_WAIT_ANY', 'DEVRYAN_TASK_CONTEXT_PROJECTION', 'DEVRYAN_CAPABILITY_TOOL_SCHEMA'];
+// Definitions registered by the runtime rather than by a default plugin factory.
+const RUNTIME_TOOL_DEFINITION_BUDGETS = {
+  devryan_browser: { maxBytes: 1564, rationale: 'Measured 2026-10-22 with the managed install layout present (1489 bytes) plus ~5% headroom.' },
+  ast_grep_search: { maxBytes: 941, rationale: 'Slim built-in definition measured 2026-10-22 (896 bytes) plus ~5% headroom.' },
+  ast_grep_replace: { maxBytes: 819, rationale: 'Slim built-in definition measured 2026-10-22 (780 bytes) plus ~5% headroom.' },
+  gpt_imagegen: { maxBytes: 1812, rationale: 'Reviewed imagegen 0.1.12 schema with the native API-key description, measured 2026-10-22 (1725 bytes) plus ~5% headroom.' },
+};
+const BROWSER_ENV_KEYS = ['DEVRYAN_BROWSER_CDP_DISCOVERY_URL', 'DEVRYAN_BROWSER_CDP_TOKEN', 'DEVRYAN_AGENT_BROWSER_BIN', 'DEVRYAN_EXECUTION_WORKER'];
 
 const definitionBytes = (definition) => Buffer.byteLength(definition.description)
   + Buffer.byteLength(JSON.stringify(z.toJSONSchema(z.object(definition.args))));
@@ -53,6 +68,46 @@ const measureTools = async () => {
   ];
   return Object.fromEntries(plugins.flatMap((plugin) => Object.entries(plugin?.tool ?? {}))
     .map(([id, definition]) => [id, definitionBytes(definition)]));
+};
+
+// The browser plugin registers its tool only inside the managed install layout.
+const measureBrowserTool = async () => {
+  const saved = Object.fromEntries(BROWSER_ENV_KEYS.map((key) => [key, process.env[key]]));
+  const root = mkdtempSync(join(tmpdir(), 'devryan-tool-budget-'));
+  try {
+    const binary = join(root, 'node_modules', 'agent-browser', 'bin', 'agent-browser');
+    mkdirSync(join(root, 'node_modules', 'agent-browser', 'bin'), { recursive: true });
+    writeFileSync(join(root, 'devryan-agent-browser.json'), '{}');
+    delete process.env.DEVRYAN_EXECUTION_WORKER;
+    Object.assign(process.env, { DEVRYAN_BROWSER_CDP_DISCOVERY_URL: 'http://127.0.0.1:9/api/desktop/browser-cdp',
+      DEVRYAN_BROWSER_CDP_TOKEN: 'fixture-token', DEVRYAN_AGENT_BROWSER_BIN: binary });
+    return (await DevRyanBrowserPlugin({})).tool;
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    rmSync(root, { recursive: true, force: true });
+  }
+};
+
+// The native registration reuses the pinned reviewed schema and rewrites one
+// sentence of its description (native-imagegen-plugin.ts); measure exactly that.
+const measureImagegenTool = () => {
+  const source = readFileSync(new URL('../../../runtime/reviewed-inputs/imagegen-0.1.12/dist/index.js', import.meta.url));
+  const exported = /\nexport const reviewedImagegenDescription=([\s\S]*?);\nconst reviewedImagegenArguments=([\s\S]*?);\nexport const reviewedImagegenInputSchema=/
+    .exec(rewriteReviewedImagegen(source).contents);
+  expect(exported, 'reviewed imagegen export shape changed').not.toBeNull();
+  const [description, args] = runInNewContext(`[${exported[1]}, ${exported[2]}]`, { tool: { schema: z } });
+  const plugin = readFileSync(new URL('../../lib/opencode/runtime-host/native-imagegen-plugin.ts', import.meta.url), 'utf8');
+  const replacement = /reviewedImagegenDescription\.replace\('([^']*)',\s*'([^']*)'\)/.exec(plugin);
+  expect(replacement && description.includes(replacement[1]), 'native imagegen description rewrite changed').toBe(true);
+  return { description: description.replace(replacement[1], replacement[2]), args };
+};
+
+const measureRuntimeTools = async () => {
+  const definitions = { ...await measureBrowserTool(), ast_grep_search, ast_grep_replace, gpt_imagegen: measureImagegenTool() };
+  return Object.fromEntries(Object.entries(definitions).map(([id, definition]) => [id, definitionBytes(definition)]));
 };
 
 const expectWithinBudget = (id, bytes, budget) => {
@@ -82,6 +137,14 @@ describe('bundled tool definition budgets', () => {
     expect(Object.keys(measured).sort()).toEqual(Object.keys(TOOL_DEFINITION_BUDGETS).sort());
     for (const [id, bytes] of Object.entries(measured)) {
       expectWithinBudget(id, bytes, TOOL_DEFINITION_BUDGETS[id]);
+    }
+  });
+
+  it('keeps every runtime-registered tool definition within its budget and close to it', async () => {
+    const measured = await measureRuntimeTools();
+    expect(Object.keys(measured).sort()).toEqual(Object.keys(RUNTIME_TOOL_DEFINITION_BUDGETS).sort());
+    for (const [id, bytes] of Object.entries(measured)) {
+      expectWithinBudget(id, bytes, RUNTIME_TOOL_DEFINITION_BUDGETS[id]);
     }
   });
 

@@ -42,7 +42,8 @@ export async function prepareManagedResultMetadata(value){
       const envelope={envelopeId,taskId,rootSessionId:task.rootSessionId,directory:task.directory,status:task.status,
         action:value.resultEnvelope.action,partial:value.resultEnvelope.partial,resumable:value.resultEnvelope.resumable,
         ...(value.resultEnvelope.autoResume?{autoResume:{enabled:value.resultEnvelope.autoResume.enabled,state:value.resultEnvelope.autoResume.state}}:{})};
-      return {task,resultEnvelope:envelope,...resultReference?{resultReference}:{},metadataReference:page(0,0,maxPageBytes),
+      // The recovery instruction is the next-action guidance; keep it outside the paged metadata.
+      return {task,resultEnvelope:envelope,...resultReference?{resultReference}:{},...typeof value.instruction==='string'?{instruction:value.instruction}:{},metadataReference:page(0,0,maxPageBytes),
         resultContractVersion:2};
     },
     read(resultCursor,maxPageBytes){

@@ -1,4 +1,4 @@
-import { createCompactResultHeader } from '@devryan/orchestration-runtime';
+import { createCompactResultHeader, managedRecoveryInstruction } from '@devryan/orchestration-runtime';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createRequiredCheckObserver } from './required-check-observer.js';
 import {
@@ -707,12 +707,14 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
       result.resultHeader = createCompactResultHeader({ task, envelope,
         checks: await requiredCheckObserver.project(task), observedAt: now() });
     }
+    const instruction = managedRecoveryInstruction(task, envelope);
+    if (instruction) result.instruction = instruction;
     const capabilities = Object.values(harnessPolicies).some(Boolean) ? { capabilities: policyProjection() } : {};
     const metadata=resultContractVersion===2&&envelope?await prepareManagedResultMetadata({...result,...capabilities,resultContractVersion:2}):null;
     if (maxOutputBytes === undefined) return { ...result, ...capabilities,...resultContractVersion===2?{resultContractVersion:2}:{} };
     return fitManagedToolOutput(pageBytes => {
       const full={...projectManagedTaskResultForMode(projectTask(task,envelope),envelope,resultMode,pageBytes),
-        ...(result.resultHeader?{resultHeader:result.resultHeader}:{}),...capabilities,...resultContractVersion===2?{resultContractVersion:2}:{}};
+        ...(result.resultHeader?{resultHeader:result.resultHeader}:{}),...(instruction?{instruction}:{}),...capabilities,...resultContractVersion===2?{resultContractVersion:2}:{}};
       try{return assertManagedToolOutputSize(full,maxOutputBytes);}
       catch(error){if(error.code!=='managed_tool_output_metadata_too_large')throw error;return metadata?metadata.project(pageBytes,full.resultReference):full;}
     },maxOutputBytes,resultContractVersion===2?MANAGED_RESULT_V2_PAGE_MAX_BYTES:MANAGED_RESULT_PAGE_MAX_BYTES);

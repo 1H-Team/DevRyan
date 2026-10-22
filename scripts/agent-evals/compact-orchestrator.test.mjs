@@ -15,5 +15,11 @@ test('candidate preserves persistent permissions, routing, recovery and startup 
   assert.ok(prompt.includes(GUIDANCE_NAME));
   assert.ok(skill.includes('Review target: final implementation/task result'));
   assert.ok(skill.includes('exactly one terminal status marker'));
-  assert.ok(Buffer.byteLength(prompt) < Buffer.byteLength(source) * 0.85);
+  // The packaged source itself was compacted on 2026-10-22, so a fixed ratio no longer
+  // measures the candidate. The brief templates must move into the skill instead.
+  for (const moved of ['Implementation briefs:', 'Explorer briefs:', 'Parallel delegation readiness gate']) {
+    assert.ok(!prompt.includes(moved), moved);
+    assert.ok(skill.includes(moved), moved);
+  }
+  assert.ok(Buffer.byteLength(source) - Buffer.byteLength(prompt) >= 3 * 1024);
 });

@@ -13,6 +13,7 @@ import {
 } from './agents.js';
 import { sanitizeAgentSkillPolicy } from './skill-policy.js';
 import { RELEASED_PACKAGED_AGENT_HASHES } from './packaged-agent-baselines.js';
+import { renderAgentPromptPolicies } from './packaged-agents.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_CONFIG_DIR = path.resolve(__dirname, '../../default-config');
@@ -293,9 +294,10 @@ const applySkillPolicyToPackagedAgent = (agent, skillPolicy) => {
 
 const applyAgentOverridesToPackagedAgent = (agent, options) => {
   const { frontmatter, body } = parseAgentMarkdownContent(agent.content);
+  // Runtime agent files carry the rendered prompt, never harness policy markers.
   const content = formatAgentMarkdownContent(
     getEffectivePackagedAgentRuntimeFrontmatter(agent.name, frontmatter, options),
-    body,
+    renderAgentPromptPolicies(body),
   );
 
   return {

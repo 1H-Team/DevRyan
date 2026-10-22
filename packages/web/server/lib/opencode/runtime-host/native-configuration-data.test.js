@@ -9,12 +9,12 @@ it('captures planning format in visible primary prefixes and explicit native too
  const configuration=translateNativeConfiguration({legacy:{},agents:{orchestrator:{mode:'primary',prompt:'Own orchestration.'},
   builder:{mode:'primary',prompt:'Own implementation.'},explorer:{mode:'subagent',prompt:'Inspect.'},
   hidden:{mode:'primary',hidden:true,prompt:'Title helper.'},plan:{mode:'primary',prompt:'Plan owns its format.'}}});
- expect(configuration.tool_output).toEqual({max_bytes:51200,max_lines:2000});
+ expect(configuration.tool_output).toEqual({max_bytes:32768,max_lines:1000});
  for(const name of ['orchestrator','builder']) expect(configuration.agents[name].system).toContain(PLAN_MODE_SYSTEM_INSTRUCTIONS);
  expect(configuration.agents.explorer.system).toBe('Inspect.');
  expect(configuration.agents.hidden.system).toBe('Title helper.');
  expect(configuration.agents.plan.system).toBe('Plan owns its format.');
- expect(translateNativeConfiguration({legacy:{tool_output:{max_bytes:10000}},agents:{}}).tool_output).toEqual({max_bytes:10000,max_lines:2000});
+ expect(translateNativeConfiguration({legacy:{tool_output:{max_bytes:10000}},agents:{}}).tool_output).toEqual({max_bytes:10000,max_lines:1000});
  expect(()=>translateNativeConfiguration({legacy:{tool_output:{max_lines:0}},agents:{}})).toThrow('native_tool_output_limits_invalid');
 });
 import {ConfigCompaction} from '@opencode/schema/config/compaction';
