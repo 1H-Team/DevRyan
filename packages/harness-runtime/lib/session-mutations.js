@@ -368,7 +368,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         } else await fs.mkdir(root, { recursive: true, mode: 0o700 });
         try { await fs.access(path.join(gitDir, 'HEAD')); }
         catch (error) { if (error.code !== 'ENOENT') throw error; await git(root, ['init', '--bare', '--quiet', gitDir]); }
-        const db = await quietExecutionPhase('ledger_open', () => openChangeStore(root, gitDir, { syncObjects }));
+        const db = await quietExecutionPhase('ledger_open', () => openChangeStore(root, gitDir, { syncObjects, persistentIndex: true }));
         const storedMeta = await db.get('meta.json');
         const originalMeta = JSON.stringify(storedMeta);
         const meta = storedMeta ?? { version: 1, directory, sequence: 0 };
