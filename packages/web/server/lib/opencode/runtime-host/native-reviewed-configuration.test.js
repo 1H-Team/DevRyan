@@ -14,10 +14,9 @@ test('configuration import executes only sealed bytes and validates its exact na
  export const createOwnedNativeDocument=()=>({});export const reviewedSlimInterviewOriginals={createInterviewService(){},createInterviewHandler(){},resolveExistingInterviewPath(){},InterviewDocumentOwnershipError:class{},InterviewPatchApplyError:class{},InterviewPatchRequiredError:class{}};export const reviewedDocumentOriginals={createDocumentTool(){},processFilePart(){},withReviewedDocumentOwner(){}};
  export const createReviewedSlimTaskBoardRenderer=()=>({});export const formatReviewedSlimTaskBoard=()=>'';export const isReviewedSlimFailoverError=()=>false;export const selectReviewedSlimFallback=()=>({});
  export const slimCommandDeclarations=Object.fromEntries(['deepwork','loop','reflect'].map(name=>[name,{template:name,description:name}]));
- export const ponytailInstructions={lite:'lite',full:'full',ultra:'ultra',review:'review'};
- export const ponytailCommands=Object.fromEntries(['ponytail','ponytail-audit','ponytail-debt','ponytail-gain','ponytail-help','ponytail-review'].map(name=>[name,{template:name,description:name}]));
  export const interviewCommandDeclaration={template:'<omos-interview-command>$ARGUMENTS</omos-interview-command>',description:'Original interview'};
- export const ponytailCommandDeclaration={template:'original',description:'original'};`;
+ // A configuration asset from an earlier release still exports the retired Ponytail declarations; they are ignored.
+ export const ponytailInstructions={lite:'lite',full:'full',ultra:'ultra',review:'review'};export const ponytailCommandDeclaration={template:'original',description:'original'};`;
  const asset={path:filename,size:Buffer.byteLength(source),sha256:createHash('sha256').update(source).digest('hex')};
  try{
   await fs.writeFile(filename,source,{mode:0o644});
@@ -26,6 +25,7 @@ test('configuration import executes only sealed bytes and validates its exact na
   expect(Object.isFrozen(loaded.reviewedImagegenOriginals)).toBe(true);
   expect(typeof loaded.reviewedImagegenOriginals.callReviewedImagegenResponses).toBe('function');
   expect(Object.keys(loaded.slimCommandDeclarations)).toEqual(['deepwork','loop','reflect']);
+  for(const key of ['ponytailInstructions','ponytailCommands','ponytailCommandDeclaration'])expect(loaded).not.toHaveProperty(key);
   await expect(loadNativeReviewedConfiguration({reviewedConfiguration:asset,manifest:{buildId:'b'.repeat(64)}})).rejects.toMatchObject({code:'native_reviewed_configuration_unverified'});
   await fs.writeFile(filename,source.replace('original','modified'));
   await expect(loadNativeReviewedConfiguration({reviewedConfiguration:asset,manifest:{buildId}})).rejects.toMatchObject({code:'native_reviewed_configuration_unverified'});

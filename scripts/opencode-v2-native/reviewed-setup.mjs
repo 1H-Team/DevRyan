@@ -10,7 +10,6 @@ import {runCompiledSlimCommands} from './package-agents-core-lane.mjs';
  * come exclusively from the verified compiled manifest/configuration asset. The
  * built-in agent orchestration (`slim`) has no spec: no plugin entry selects it. */
 export const reviewedSetupFamilies=Object.freeze([
- ['ponytail','./node_modules/@dietrichgebert/ponytail/.opencode/plugins/ponytail.mjs',['devryan.ponytail']],
  ['cursor','./plugins/devryan-open-cursor.mjs',['devryan.provider-compat']],
  ['claude','./node_modules/opencode-with-claude/dist/index.js',['devryan.provider-compat']],
  ['slim',null,['devryan.slim','devryan.slim-commands','devryan.slim-lifecycle']],
@@ -19,6 +18,9 @@ export const reviewedSetupFamilies=Object.freeze([
  ['imagegen','./node_modules/opencode-gpt-imagegen/dist/index.js',['opencode-gpt-imagegen']],
 ].map(([family,spec,origins])=>Object.freeze({family,spec,origins:Object.freeze(origins)})));
 const browserSpec='./plugins/devryan-browser.mjs';
+/** A saved configured command the fixture declares; it runs through the native
+ * configured-command path with loopback inference. */
+export const reviewedSetupCheckCommand=Object.freeze({name:'setup-check',description:'Compiled setup check',template:'Report that the compiled setup check ran.'});
 export function reviewedSetupRegistrations(origins,{browser=false}={}){
  const mapped=origins.map(origin=>({...origin,legacySpecs:[...reviewedSetupFamilies.filter(row=>row.spec&&row.origins.includes(origin.id)).map(row=>row.spec),
   ...browser&&origin.id==='devryan.browser'?[browserSpec]:[]]}));
@@ -32,7 +34,7 @@ export function reviewedSetupRegistrations(origins,{browser=false}={}){
 export function attachReviewedSetup({bundle,binding,registrationBytes,configuration,skillData,councilMembers,browser=false,remoteMcp,explorerVariant}){
  assert.ok(explorerVariant===undefined||['low','medium'].includes(explorerVariant),'Invalid Explorer admission fixture variant');
  const original=bundle.reviewedConfiguration;
- assert.equal(typeof original?.resolveSlimAgents,'function');assert.equal(typeof original?.ponytailCommands?.ponytail?.template,'string');
+ assert.equal(typeof original?.resolveSlimAgents,'function');
  const roles=['orchestrator','fixer','designer','council','oracle','explorer','librarian','builder'];
  const agents={...structuredClone(configuration.agents??{}),...Object.fromEntries(roles.map(name=>[name,{model:'devryan-smoke/smoke-write',variant:name==='explorer'&&explorerVariant?explorerVariant:'default',mode:name==='orchestrator'||name==='builder'?'primary':'subagent',
   ...(typeof configuration.agents?.[name]?.temperature==='number'?{temperature:configuration.agents[name].temperature}:{}),
@@ -43,7 +45,7 @@ export function attachReviewedSetup({bundle,binding,registrationBytes,configurat
  }
  // Slim/interview declarations belong to their actual SDK factories. Treating
  // them as saved commands suppresses the original execution-before behavior.
- const commands={...structuredClone(configuration.commands??{}),...original.ponytailCommands};
+ const commands={...structuredClone(configuration.commands??{}),[reviewedSetupCheckCommand.name]:{description:reviewedSetupCheckCommand.description,template:reviewedSetupCheckCommand.template}};
  const legacy={...structuredClone(configuration),agent:agents,command:commands,plugin:[...reviewedSetupFamilies.flatMap(row=>row.spec?[row.spec]:[]),...browser?[browserSpec]:[]],default_agent:'orchestrator'};
  if(remoteMcp!==undefined)legacy.mcp=structuredClone(remoteMcp);
  // The full original tools/skills prompt exceeds the small baseline model.
@@ -59,7 +61,7 @@ export function attachReviewedSetup({bundle,binding,registrationBytes,configurat
  // lane invokes the original saved-chain fallback behavior.
  mergedConfig.agents.orchestrator.model=['devryan-smoke/smoke-write','devryan-smoke/gpt-5-native-smoke'];
  mergedConfig.fallback={enabled:true,maxRetries:0,initialRetryDelayMs:0,retryDelayMs:0};
- const resolver=createNativeConfigurationSnapshotResolver({resolveSlimAgents:original.resolveSlimAgents,ponytailCommands:original.ponytailCommands,
+ const resolver=createNativeConfigurationSnapshotResolver({resolveSlimAgents:original.resolveSlimAgents,
   loadLocation:async({launch})=>({legacy:structuredClone(legacy),agents:structuredClone(agents),commands:structuredClone(commands),skills:skillData?packageSkillsForLaunch(skillData,launch):[],
    slim:{mergedConfig:structuredClone(mergedConfig)},parseMarkdown:parseMdFile})});
  bundle.resolveConfiguration=revision=>resolver({binding,revision,expectedRegistrationDigest:createHash('sha256').update(registrationBytes).digest('hex')});
@@ -72,8 +74,7 @@ export async function assertReviewedSetupBoot({runtimeOwner,controller,client,on
   for(const family of reviewedSetupFamilies)for(const id of family.origins)assert.ok(location.activeRegistrationIDs.includes(id),`Inactive required family: ${family.family}`);
   if(browser)assert.ok(location.activeRegistrationIDs.includes('devryan.browser'),'Inactive required browser facility');
   const commands=await client.catalog.commands({directory:location.directory});
-  for(const name of ['deepwork','reflect','loop','interview','ponytail','ponytail-help'])assert.ok(commands.some(command=>command.name===name&&typeof command.template==='string'),`Missing original command ${name}`);
-  assert.equal(location.compatibility.ponytail.defaultMode,'full');
+  for(const name of ['deepwork','reflect','loop','interview',reviewedSetupCheckCommand.name])assert.ok(commands.some(command=>command.name===name&&typeof command.template==='string'),`Missing original command ${name}`);
  }
  assert.equal(controller.bound.catalog.asserted,true);
  const row={id:'compiled-reviewed-setup-active',status:'passed',families:reviewedSetupFamilies.map(row=>row.family),locations:snapshot.locations.length,
@@ -94,7 +95,7 @@ export async function createReviewedSetupSession({client,directory,input,admitPr
 export async function runReviewedSetupCommands({provider,client,runtimeOwner,directory,onCase,waitFor,admitPrimary,artifacts}){
  const session=await createReviewedSetupSession({client,directory,admitPrimary,input:{title:'Compiled original active commands',agent:'orchestrator',model:{providerID:'devryan-smoke',modelID:'smoke-write'}}});
  const snapshot=runtimeOwner.getConfigurationSnapshot().locations.find(row=>row.directory===directory);
- for(const command of ['ponytail-help']){
+ for(const command of [reviewedSetupCheckCommand.name]){
   const prepared=snapshot.configuration.commands[command];assert.equal(typeof prepared?.template,'string');let requests=0;
   const output=`compiled original ${command} completed`;
   await provider.setResponder(request=>{requests++;assert.equal(requests,1,'Original command duplicated inference');

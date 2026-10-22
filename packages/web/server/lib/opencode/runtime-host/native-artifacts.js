@@ -194,8 +194,7 @@ export async function verifyNativeRuntimeArtifacts({ manifestPath, manifestSha25
     }
   }
   stage = 'inventory'; artifact = 'native-bundle.json';
-  if (!controller || !writer || manifest.inputs.reviewedPlugins.some(origin => origin.id === 'devryan.slim') && !reviewedAst
-    || manifest.inputs.reviewedPlugins.some(origin => ['devryan.slim','devryan.ponytail'].includes(origin.id)) && !reviewedConfiguration) throw fail();
+  if (!controller || !writer || manifest.inputs.reviewedPlugins.some(origin => origin.id === 'devryan.slim') && (!reviewedAst || !reviewedConfiguration)) throw fail();
   stage = 'launcher'; artifact = path.basename(launcher);
   if (!await verifySessionExecutionLauncher({ launcher })) throw fail();
   stage = 'reviewed_asset'; artifact = 'native-bundle.json';

@@ -44,7 +44,8 @@ it('preserves setup and credentials but excludes conversation authority, journal
  expect((await fs.readdir(f.target.webDataDirectory)).sort()).toEqual(['native-setup-seed.json','settings.json']);
  expect(await fs.readdir(f.target.opencodeDataDirectory)).toEqual([]);
  expect(JSON.parse(await fs.readFile(path.join(f.target.opencodeConfigDirectory,'native-setup-credentials.json'),'utf8')).credentials[0].value).toEqual({type:'oauth',methodID:'chatgpt-browser',access:'fixture-access',refresh:'fixture-refresh',expires:123,metadata:{accountID:'fixture-account'}});
- expect(JSON.parse(await fs.readFile(path.join(f.target.opencodeConfigDirectory,'ponytail','config.json'),'utf8'))).toEqual({enabled:true});
+ // Retired Ponytail settings are not seeded into a fresh setup.
+ await expect(fs.stat(path.join(f.target.opencodeConfigDirectory,'ponytail'))).rejects.toMatchObject({code:'ENOENT'});
  const first=await seedNativeSetup(f);await f.write(path.join(f.source.webDataDirectory,'settings.json'),{themeId:'changed'});expect(await seedNativeSetup(f)).toEqual(first);
  await f.write(path.join(f.target.webDataDirectory,'settings.json'),{themeId:'tampered'});await expect(seedNativeSetup(f)).rejects.toMatchObject({code:'native_setup_seed_changed'});
 });
@@ -494,10 +495,10 @@ it('layers OPENCODE_CONFIG_DIR over the global config directory instead of repla
  await f.text(path.join(overlay,'skills','s','SKILL.md'),'overlay');await f.write(path.join(overlay,'oh-my-opencode-slim.json'),{overlay:true});
  const source={...f.source,opencodeConfigOverlayDirectory:overlay},config=f.target.opencodeConfigDirectory,read=relative=>fs.readFile(path.join(config,relative),'utf8');
  const marker=await seedNativeSetup({...f,source});expect(marker.skipped).toEqual([]);
- expect((await fs.readdir(config)).sort()).toEqual(['AGENTS.md','agents','oh-my-opencode-slim.json','opencode.json','ponytail','skills']);
+ expect((await fs.readdir(config)).sort()).toEqual(['AGENTS.md','agents','oh-my-opencode-slim.json','opencode.json','skills']);
  // OpenCode's order: global config.json, opencode.json, opencode.jsonc, then the OPENCODE_CONFIG_DIR files; plugin/instructions concatenate.
  expect(JSON.parse(await read('opencode.json'))).toEqual({a:1,provider:{x:{model:'g',key2:'o'}},plugin:['g-plugin','o-plugin'],theme:'overlay',instructions:['g.md','o.md']});
- expect(await read('AGENTS.md')).toBe('global rules');expect(JSON.parse(await read('ponytail/config.json'))).toEqual({g:true});
+ expect(await read('AGENTS.md')).toBe('global rules');
  expect(JSON.parse(await read('oh-my-opencode-slim.json'))).toEqual({overlay:true});
  expect((await fs.readdir(path.join(config,'agents'))).sort()).toEqual(['g.md','o.md','shared.md']);expect(await read('agents/shared.md')).toBe('overlay');
  // A same-named overlay entry replaces the whole global entry (a skill folder is one skill).

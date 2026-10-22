@@ -177,7 +177,7 @@ export const readRuntimeProcessStartIdentity = async (pid, {
   if (!Number.isSafeInteger(pid) || pid <= 0) return null;
   try {
     if (platform === 'darwin') {
-      // ponytail: ps has second precision; same-second PID reuse stays blocked.
+      // Known limit: ps has second precision; same-second PID reuse stays blocked.
       // Use native microsecond start metadata if that conservative limit matters.
       const stdout = await new Promise((resolve, reject) => {
         execute('/bin/ps', ['-p', String(pid), '-o', 'lstart='], {

@@ -223,11 +223,11 @@ it('derives separate model requirements from each effective project configuratio
 
 it('captures active local configured skill data below selected node_modules with coherent resource stamps',async()=>{
  const f=await fixture(),config=f.input.binding.descriptor.launch.opencodeConfigDirectory;
- const folder=path.join(config,'node_modules','@dietrichgebert','ponytail','skills','ponytail');
+ const folder=path.join(config,'node_modules','@fixture','skill-pack','skills','local-guide');
  await fs.mkdir(folder,{recursive:true});await fs.writeFile(path.join(folder,'SKILL.md'),'configured body\n');await fs.writeFile(path.join(folder,'reference.txt'),'support v1');
  f.loaded.legacy.skills={paths:[path.dirname(folder)],urls:[]};
- f.loaded.parseMarkdown=file=>({body:file.startsWith(folder)?'configured body\n':'exact skill body\n',frontmatter:file.startsWith(folder)?{name:'ponytail'}:{}});
- const first=await f.resolver(f.input),skill=first.locations[0].skills.find(value=>value.name==='ponytail');
+ f.loaded.parseMarkdown=file=>({body:file.startsWith(folder)?'configured body\n':'exact skill body\n',frontmatter:file.startsWith(folder)?{name:'local-guide'}:{}});
+ const first=await f.resolver(f.input),skill=first.locations[0].skills.find(value=>value.name==='local-guide');
  expect(skill.path).toBe(path.join(folder,'SKILL.md'));expect(skill.content).toBe('configured body\n');
  expect(await readReviewedSkillResource(first,{snapshotDigest:first.digest,directory:f.directory,skillID:skill.id,relativePath:'reference.txt'})).toEqual(Buffer.from('support v1'));
  await fs.writeFile(path.join(folder,'reference.txt'),'support v2');
@@ -373,16 +373,31 @@ it('captures original Slim prompt inputs before the shared snapshot digest and r
  const second=await resolver({...f.input,revision:2});expect(second.digest).not.toBe(first.digest);expect(captured.prompts.builder.appendPrompt).toBe('CHANGED APPEND\n');
 });
 
-it('uses exact per-location active registrations and original Ponytail command overwrite precedence',async()=>{
- const f=await fixture(),launch=f.input.binding.descriptor.launch;
- const manifest=JSON.stringify({schema:1,plugins:[{id:'devryan.ponytail',legacySpecs:['@dietrichgebert/ponytail']},{id:'devryan.document-reader',legacySpecs:['./plugins/devryan-document-reader.mjs']}]});
- await fs.writeFile(launch.reviewedPluginManifestPath,manifest);f.input.expectedRegistrationDigest=createHash('sha256').update(manifest).digest('hex');f.loaded.legacy.plugin=['@dietrichgebert/ponytail'];f.loaded.commands.ponytail={template:'saved override'};
- const {renderReviewedPonytailInstructions}=await import('./reviewed-ponytail-instructions.js'),{commands}=await renderReviewedPonytailInstructions();
- const loadLocation=async()=>({...structuredClone({...f.loaded,parseMarkdown:undefined}),parseMarkdown:f.loaded.parseMarkdown});
- await expect(createNativeConfigurationSnapshotResolver({loadLocation})(f.input)).rejects.toMatchObject({code:'native_ponytail_commands_owner_required'});
- const result=await createNativeConfigurationSnapshotResolver({loadLocation,ponytailCommands:commands,ponytailDefaultMode:'LITE'})(f.input);
- expect(result.locations[0].activeRegistrationIDs).toEqual(['devryan.ponytail']);expect(result.locations[0].requiredCatalogs.plugins).toEqual(['devryan.ponytail']);expect(result.locations[0].configuration.commands.ponytail.template).toBe(commands.ponytail.template);
- expect(result.locations[0].compatibility.commands.ponytail).toEqual(commands.ponytail);expect(result.locations[0].compatibility.ponytail.defaultMode).toBe('lite');
+it('uses exact per-location active registrations and ignores retired Ponytail registrations, commands and stored mode files',async()=>{
+ const f=await fixture(),launch=f.input.binding.descriptor.launch,config=launch.opencodeConfigDirectory;
+ // An installed registration manifest from an earlier release still lists the retired origin with its specs.
+ const ponytailSpec='./node_modules/@dietrichgebert/ponytail/.opencode/plugins/ponytail.mjs';
+ const manifest=JSON.stringify({schema:1,plugins:[{id:'devryan.ponytail',legacySpecs:[ponytailSpec,'@dietrichgebert/ponytail']},{id:'devryan.document-reader',legacySpecs:['./plugins/devryan-document-reader.mjs']}]});
+ await fs.writeFile(launch.reviewedPluginManifestPath,manifest);f.input.expectedRegistrationDigest=createHash('sha256').update(manifest).digest('hex');
+ f.loaded.legacy.plugin=[ponytailSpec,'@dietrichgebert/ponytail','./plugins/devryan-document-reader.mjs'];f.loaded.commands.ponytail={template:'saved override'};
+ // Stored mode state an earlier release wrote is never read: an unreadable symlinked default and a mode file stay untouched.
+ const outside=path.join(f.root,'outside.json');await fs.writeFile(outside,'{"defaultMode":"ultra"}');
+ await fs.mkdir(path.join(config,'ponytail'));await fs.symlink(outside,path.join(config,'ponytail','config.json'));
+ await fs.writeFile(path.join(config,'.ponytail-active'),'ultra');
+ const previous=process.env.PONYTAIL_DEFAULT_MODE;process.env.PONYTAIL_DEFAULT_MODE='ultra';
+ try{
+  const loadLocation=async()=>({...structuredClone({...f.loaded,parseMarkdown:undefined}),parseMarkdown:f.loaded.parseMarkdown});
+  const result=await createNativeConfigurationSnapshotResolver({loadLocation})(f.input),location=result.locations[0];
+  expect(location.activePlugins).toEqual(['./plugins/devryan-document-reader.mjs']);
+  expect(location.activeRegistrationIDs).toEqual(['devryan.document-reader']);expect(location.requiredCatalogs.plugins).toEqual(['devryan.document-reader']);
+  // A saved command keeps its own definition; no reviewed declaration overwrites it.
+  expect(location.compatibility.commands.ponytail).toEqual({template:'saved override'});expect(location.configuration.commands.ponytail.template).toBe('saved override');
+  expect(Object.keys(location.compatibility).sort()).toEqual(['agents','commands','legacy','mcp','slim']);
+  expect(location.textReferences.some(reference=>reference.path.includes('ponytail'))).toBe(false);
+  expect(JSON.stringify(location.instructions??[])).not.toMatch(/PONYTAIL/i);
+  expect(await fs.readFile(path.join(config,'.ponytail-active'),'utf8')).toBe('ultra');
+  expect(await fs.readFile(outside,'utf8')).toBe('{"defaultMode":"ultra"}');
+ }finally{if(previous===undefined)delete process.env.PONYTAIL_DEFAULT_MODE;else process.env.PONYTAIL_DEFAULT_MODE=previous;}
 });
 
 it('uses only constructor-owned canonical registered locations and seals their fresh settings',async()=>{

@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Remove Ponytail: its mode instructions, `/ponytail` commands and skills no longer reach any session. Setups that still list the Ponytail plugin start normally, and a stored Ponytail mode or default file is left untouched and never read.
+
 ## [2.1.9] - 2026-10-22
 
 - Update the bundled OpenCode host to 2.1.2, including its native compaction APIs, PTY 0.3.1 and reviewed route inventory. Preserve retained runtime compatibility, including 2.1.0; the Bot image stays on 2.0.30.

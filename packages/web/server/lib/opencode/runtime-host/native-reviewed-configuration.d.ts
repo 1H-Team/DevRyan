@@ -1,4 +1,4 @@
-import type {resolveSlimAgents,slimCommandDeclarations,ponytailInstructions,ponytailCommandDeclaration,ponytailCommands,createReviewedDocumentCache,interviewCommandDeclaration} from './reviewed-configuration-entry.js';
+import type {resolveSlimAgents,slimCommandDeclarations,createReviewedDocumentCache,interviewCommandDeclaration} from './reviewed-configuration-entry.js';
 export interface NativeReviewedConfiguration {
  readonly reviewedImagegenOriginals:Pick<import("./native-imagegen.js").NativeImagegenOriginals,"withReviewedImagegenOwner"|"callReviewedImagegenResponses">;
  readonly reviewedSlimInterviewOriginals:import('./native-interview-owner.js').NativeInterviewOriginals;
@@ -12,8 +12,5 @@ export interface NativeReviewedConfiguration {
  readonly resolveSlimAgents:typeof resolveSlimAgents;
  readonly interviewCommandDeclaration:typeof interviewCommandDeclaration;
  readonly slimCommandDeclarations:typeof slimCommandDeclarations;
- readonly ponytailInstructions:typeof ponytailInstructions;
- readonly ponytailCommandDeclaration:typeof ponytailCommandDeclaration;
- readonly ponytailCommands:typeof ponytailCommands;
 }
 export function loadNativeReviewedConfiguration(artifacts:{readonly reviewedConfiguration?:{readonly path:string;readonly size:number;readonly sha256:string};readonly manifest:{readonly buildId:string}}):Promise<NativeReviewedConfiguration|undefined>;

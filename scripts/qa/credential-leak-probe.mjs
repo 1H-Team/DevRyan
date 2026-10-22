@@ -21,7 +21,7 @@ export function createCredentialLeakProbe(){
       const bytes=Buffer.from(form),length=Math.min(16,bytes.length);
       if(!windows.has(length))windows.set(length,{probes:new Set(),powers:powers(length)});
       const probes=windows.get(length).probes;
-      // ponytail: 16-byte stride detects whole values and fragments >=32 bytes;
+      // Known limit: 16-byte stride detects whole values and fragments >=32 bytes;
       // use every offset only if shorter fragment coverage becomes a gate.
       // Nonoverlapping windows plus the tail detect whole values and any
       // fragment of at least 32 bytes, regardless of its evidence alignment.

@@ -2,110 +2,6 @@
   "schema": 1,
   "inputs": [
     {
-      "id": "ponytail-4.10.0",
-      "version": "4.10.0",
-      "sourceKind": "repository-owned-reviewed-capture",
-      "sourceLocation": ".cache/v2-spike/research/plugin-api/tp/_dietrichgebert_ponytail_4.10.0/package",
-      "files": [
-        {
-          "path": ".opencode/command/ponytail-audit.md",
-          "sha256": "6278f820b117a6a57e4c0b013906e06fe4719652e6adc4b9a1b868d6bd1ba6f2",
-          "size": 587
-        },
-        {
-          "path": ".opencode/command/ponytail-debt.md",
-          "sha256": "ddbadb1f484a1ecc54ed577b80aa3f7b326ccd1ae2a35159652a52221eb31301",
-          "size": 689
-        },
-        {
-          "path": ".opencode/command/ponytail-gain.md",
-          "sha256": "33514a67319e30072e1daeef336b4f4af8de31ef25595a23353f0719004189b2",
-          "size": 897
-        },
-        {
-          "path": ".opencode/command/ponytail-help.md",
-          "sha256": "3052afd5cc1ea528d9405729b2620d1b81c36ca3287ec1ae964a68d6feb4c178",
-          "size": 1141
-        },
-        {
-          "path": ".opencode/command/ponytail-review.md",
-          "sha256": "ff09bd42b1d23bd3e3919c6b7ab4710c0a71b04e23c0fc30fb3c1b1b50451485",
-          "size": 510
-        },
-        {
-          "path": ".opencode/command/ponytail.md",
-          "sha256": "800919b5c7b53f05e9adb96e5978818f3b5cd9137bc2df35b1575590d5464f14",
-          "size": 547
-        },
-        {
-          "path": ".opencode/plugins/ponytail-frontmatter.cjs",
-          "sha256": "36073b0749a62bebadb22c01b7fc018d063fb20b337591269008051151a1513d",
-          "size": 1054
-        },
-        {
-          "path": ".opencode/plugins/ponytail.mjs",
-          "sha256": "e9e2214149ace3e589a584a27136bf5bd9da558fbad948f8cf1d3bc2c50d3828",
-          "size": 3773
-        },
-        {
-          "path": "LICENSE",
-          "sha256": "fb1bc6909ac3ef82d5c22106e32ef682b0cff66788fa915fb9b53b15c9d2f3ab",
-          "size": 1071
-        },
-        {
-          "path": "hooks/ponytail-config.js",
-          "sha256": "0a8daf96cf9ac703dc4cb7b5065253567e513c951d60b8eb94a0fe727514aeca",
-          "size": 5881
-        },
-        {
-          "path": "hooks/ponytail-instructions.js",
-          "sha256": "23c050103f28dbe6bad953ae21d98cd06d720a20f33d4716e9de419f947d495e",
-          "size": 5487
-        },
-        {
-          "path": "package.json",
-          "sha256": "2a45fda7a379871c5e6e49636989766f304a5dd77931cd70869669272401e3c5",
-          "size": 1283
-        },
-        {
-          "path": "skills/ponytail-audit/SKILL.md",
-          "sha256": "5560b8e383dbe2ddfddc873a1e2bf2e586e23e0cd7d995537482b2315331f6d1",
-          "size": 1652
-        },
-        {
-          "path": "skills/ponytail-debt/SKILL.md",
-          "sha256": "c84fba75f0ca12bfe83f9a78ea02fd125c5dd3f1fbb18124105a489937f284e6",
-          "size": 1703
-        },
-        {
-          "path": "skills/ponytail-gain/SKILL.md",
-          "sha256": "24e01d1c9715cb136ba1c4f1e52a95940c0193558b876828e537736480d6408b",
-          "size": 1973
-        },
-        {
-          "path": "skills/ponytail-help/SKILL.md",
-          "sha256": "2264d1615117b02b0fd5a69ec84cd2757006471a78e4d6c22eed6d581c1d37a4",
-          "size": 2796
-        },
-        {
-          "path": "skills/ponytail-review/SKILL.md",
-          "sha256": "40df33b58fc6ef889b93585733feb9566b76e9586efa7f376785c1e995197ac0",
-          "size": 2383
-        },
-        {
-          "path": "skills/ponytail/SKILL.md",
-          "sha256": "1316a2f3f95741d2300b116fe0c2d81ce4a9568656ed0a62643f54aaf09957f2",
-          "size": 6637
-        }
-      ],
-      "closureSHA256": "e63c80d8b45776273ed9ca8496f5a3c7f8b57a2f4d1d74ce8529a1ce95a69164",
-      "license": {
-        "declared": "MIT",
-        "path": "LICENSE",
-        "sha256": "fb1bc6909ac3ef82d5c22106e32ef682b0cff66788fa915fb9b53b15c9d2f3ab"
-      }
-    },
-    {
       "id": "ast-grep-0.45.3",
       "version": "0.45.3",
       "sourceKind": "repository-owned-reviewed-capture",
@@ -6857,7 +6753,6 @@
   ],
   "runtimeDisposition": {
     "AgentsCore": "Built-in @devryan/agents-core (owned source derived from Oh My OpenCode Slim v3.0.4) compiled from the workspace. Static native setup import with constructor-frozen data, allowlisted registrations and owned invocation routing. AST definitions and formatters run only in the confined worker.",
-    "Ponytail": "Exact shared builder instructions embedded at build; existing selected state file accessed by the host-owned command adapter. Ambient plugin retained as inactive original data.",
     "AST": "Only branded captured platform executable, manifest-verified by host and bound inside private-view worker. No PATH/download fallback."
   },
   "delegatedBehaviors": [

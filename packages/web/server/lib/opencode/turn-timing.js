@@ -522,7 +522,7 @@ function createTurnTimingRuntime(options = {}) {
       latestToolCall: null,
       toolCallOrdinal: 0,
       lastTextDeltaSignaturesByPart: {},
-      // ponytail: 64 announced parts until answer text; an evicted type leaves
+      // Known limit: 64 announced parts until answer text; an evicted type leaves
       // delta timing unavailable rather than guessing from its part ID.
       outputPartTypes: new Map(),
       pendingTerminalFailure: null,

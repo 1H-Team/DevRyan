@@ -150,6 +150,14 @@ const RETIRED_SLIM_PACKAGE_SPECS = Object.freeze([
   'oh-my-opencode-slim@2.2.24',
   'oh-my-opencode-slim@2.2.25',
 ]);
+// Ponytail (removed 2026-10): its mode instructions, `/ponytail` commands and skills
+// are gone, so every spec an upgraded setup still lists loads nothing.
+const RETIRED_PONYTAIL_REGISTRATION_PATH = './node_modules/@dietrichgebert/ponytail/.opencode/plugins/ponytail.mjs';
+const RETIRED_PONYTAIL_PACKAGE_SPECS = Object.freeze([
+  '@dietrichgebert/ponytail',
+  '@dietrichgebert/ponytail@latest',
+  '@dietrichgebert/ponytail@4.10.0',
+]);
 
 export const RETIRED_DEVRYAN_PLUGIN_SPECS = Object.freeze([
   'cursor-acp',
@@ -164,6 +172,8 @@ export const RETIRED_DEVRYAN_PLUGIN_SPECS = Object.freeze([
   'superpowers@git+https://github.com/obra/superpowers.git',
   ...RETIRED_SLIM_PACKAGE_SPECS,
   RETIRED_SLIM_REGISTRATION_PATH,
+  ...RETIRED_PONYTAIL_PACKAGE_SPECS,
+  RETIRED_PONYTAIL_REGISTRATION_PATH,
 ]);
 
 // Registration paths also retired in absolute or file:// form (matched by path suffix).
@@ -173,6 +183,7 @@ const RETIRED_DEVRYAN_PLUGIN_REGISTRATION_SUFFIXES = Object.freeze([
   RETIRED_SUPERPOWERS_REGISTRATION_PATH.replace(/^\.\//, '/'),
   RETIRED_SLIM_REGISTRATION_PATH.replace(/^\.\//, '/'),
   '/node_modules/oh-my-opencode-slim/dist/index.js',
+  RETIRED_PONYTAIL_REGISTRATION_PATH.replace(/^\.\//, '/'),
 ]);
 
 // Profile dependencies DevRyan pinned and now removes, keyed by package name with the exact pinned version.

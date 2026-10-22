@@ -27,17 +27,11 @@ export async function loadNativeReviewedConfiguration({reviewedConfiguration:ass
     ||['createDocumentTool','processFilePart','withReviewedDocumentOwner'].some(key=>typeof loaded.reviewedDocumentOriginals[key]!=='function')
     ||['createReviewedSlimTaskBoardRenderer','formatReviewedSlimTaskBoard','isReviewedSlimFailoverError','selectReviewedSlimFallback'].some(key=>typeof loaded[key]!=='function')
     ||!record(loaded.slimCommandDeclarations)||Object.keys(loaded.slimCommandDeclarations).sort().join(',')!=='deepwork,loop,reflect'
-    ||!Object.values(loaded.slimCommandDeclarations).every(command)||!command(loaded.interviewCommandDeclaration)||!command(loaded.ponytailCommandDeclaration)
-    ||!record(loaded.ponytailCommands)||Object.keys(loaded.ponytailCommands).sort().join(',')!=='ponytail,ponytail-audit,ponytail-debt,ponytail-gain,ponytail-help,ponytail-review'
-    ||!Object.values(loaded.ponytailCommands).every(command)
-    ||!record(loaded.ponytailInstructions)||Object.keys(loaded.ponytailInstructions).sort().join(',')!=='full,lite,review,ultra'
-    ||!Object.values(loaded.ponytailInstructions).every(value=>typeof value==='string'&&value.length>0))throw fail();
+    ||!Object.values(loaded.slimCommandDeclarations).every(command)||!command(loaded.interviewCommandDeclaration))throw fail();
   return Object.freeze({reviewedImagegenOriginals:Object.freeze({...loaded.reviewedImagegenOriginals}),resolveSlimAgents:loaded.resolveSlimAgents,createReviewedDocumentCache:loaded.createReviewedDocumentCache,
     reviewedSlimInterviewOriginals:loaded.reviewedSlimInterviewOriginals,
     createOwnedNativeDocument:loaded.createOwnedNativeDocument,reviewedDocumentOriginals:loaded.reviewedDocumentOriginals,
     createReviewedSlimTaskBoardRenderer:loaded.createReviewedSlimTaskBoardRenderer,formatReviewedSlimTaskBoard:loaded.formatReviewedSlimTaskBoard,
     isReviewedSlimFailoverError:loaded.isReviewedSlimFailoverError,selectReviewedSlimFallback:loaded.selectReviewedSlimFallback,
-    slimCommandDeclarations:structuredClone(loaded.slimCommandDeclarations),interviewCommandDeclaration:structuredClone(loaded.interviewCommandDeclaration),ponytailInstructions:structuredClone(loaded.ponytailInstructions),
-    ponytailCommands:structuredClone(loaded.ponytailCommands),
-    ponytailCommandDeclaration:structuredClone(loaded.ponytailCommandDeclaration)});
+    slimCommandDeclarations:structuredClone(loaded.slimCommandDeclarations),interviewCommandDeclaration:structuredClone(loaded.interviewCommandDeclaration)});
 }

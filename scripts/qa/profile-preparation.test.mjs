@@ -362,16 +362,16 @@ test('personal plugin classification keeps only entries provisioning does not ow
     const sourceConfig = '/synthetic-home/.config/opencode';
     const provisioned = ['./plugins/devryan-open-cursor.mjs', './node_modules/opencode-with-claude/dist/index.js'];
     const { personal, managed } = classifyQaPersonalPluginEntries([
-        './node_modules/@synthetic/ponytail/.opencode/plugins/ponytail.mjs',
+        './node_modules/@synthetic/packaged-plugin/.opencode/plugins/packaged-plugin.mjs',
         './plugins/devryan-open-cursor.mjs', 'opencode-with-claude', 'oh-my-opencode-slim@2.2.25',
         `file://${sourceConfig}/plugins/devryan-skill-context.mjs`,
         'opencode-antigravity-auth@1.6.0', 'cursor-acp',
         `${sourceConfig}/plugins/personal.mjs`, './plugins/personal.mjs',
         ['@synthetic/tuple', { apiKey: 'synthetic-option' }], 'synthetic-package@1.0.0',
-        ' ./node_modules/@synthetic/ponytail/.opencode/plugins/ponytail.mjs ',
+        ' ./node_modules/@synthetic/packaged-plugin/.opencode/plugins/packaged-plugin.mjs ',
     ], { provisioned, sourceConfig });
     assert.deepEqual(personal.map(({ spec, kind, hasOptions }) => ({ spec, kind, hasOptions })), [
-        { spec: './node_modules/@synthetic/ponytail/.opencode/plugins/ponytail.mjs', kind: 'node-modules', hasOptions: false },
+        { spec: './node_modules/@synthetic/packaged-plugin/.opencode/plugins/packaged-plugin.mjs', kind: 'node-modules', hasOptions: false },
         { spec: './plugins/personal.mjs', kind: 'config-path', hasOptions: false },
         { spec: '@synthetic/tuple', kind: 'package', hasOptions: true },
         { spec: 'synthetic-package@1.0.0', kind: 'package', hasOptions: false },
@@ -387,16 +387,16 @@ test('personal plugin classification keeps only entries provisioning does not ow
     for (const entry of [42, null, '', [], [7], ['a', {}, 'extra']]) {
         assert.throws(() => classifyQaPersonalPluginEntries([entry], { provisioned, sourceConfig }), /specs or \[spec, options\] tuples/);
     }
-    assert.throws(() => classifyQaPersonalPluginEntries('ponytail', { provisioned, sourceConfig }), /must be arrays/);
+    assert.throws(() => classifyQaPersonalPluginEntries('packaged-plugin', { provisioned, sourceConfig }), /must be arrays/);
 });
 
 test('mirrored plugin order follows the owner\'s registration order', () => {
     const provisioned = ['./plugins/devryan-open-cursor.mjs', './node_modules/opencode-with-claude/dist/index.js'];
     const sourceConfig = '/synthetic-home/.config/opencode';
-    const { ordered } = classifyQaPersonalPluginEntries(['./node_modules/@synthetic/ponytail/index.mjs', 'oh-my-opencode-slim@2.2.25',
+    const { ordered } = classifyQaPersonalPluginEntries(['./node_modules/@synthetic/packaged-plugin/index.mjs', 'oh-my-opencode-slim@2.2.25',
         './plugins/devryan-open-cursor.mjs', './plugins/personal.mjs', './plugins/devryan-open-cursor.mjs'], { provisioned, sourceConfig });
     // The retired Slim registration is owned by DevRyan but no longer provisioned.
-    assert.deepEqual(orderQaMirroredPlugins(provisioned, ordered), ['./node_modules/@synthetic/ponytail/index.mjs',
+    assert.deepEqual(orderQaMirroredPlugins(provisioned, ordered), ['./node_modules/@synthetic/packaged-plugin/index.mjs',
         './plugins/devryan-open-cursor.mjs', './plugins/personal.mjs',
         './node_modules/opencode-with-claude/dist/index.js']);
     assert.deepEqual(orderQaMirroredPlugins(provisioned, []), provisioned);
@@ -445,8 +445,8 @@ test('personal setup mirroring copies personal plugins, skills, MCP definitions,
             await mkdir(path.dirname(file), { recursive: true });
             await writeFile(file, content);
         };
-        const ponytail = './node_modules/@synthetic/ponytail/.opencode/plugins/ponytail.mjs';
-        const sourceOpencode = { plugin: [ponytail, './plugins/devryan-open-cursor.mjs', './node_modules/opencode-with-claude/dist/index.js',
+        const packagedPlugin = './node_modules/@synthetic/packaged-plugin/.opencode/plugins/packaged-plugin.mjs';
+        const sourceOpencode = { plugin: [packagedPlugin, './plugins/devryan-open-cursor.mjs', './node_modules/opencode-with-claude/dist/index.js',
             'opencode-antigravity-auth@1.6.0', pathToFileURL(path.join(sourceConfig, 'plugins/personal.mjs')).href,
             ['@synthetic/tuple', { apiKey: 'synthetic-option' }]],
         mcp: { remote: { type: 'remote', url: 'https://mcp.invalid/synthetic', enabled: true, oauth: { clientId: 'synthetic-client' } },
@@ -471,7 +471,7 @@ test('personal setup mirroring copies personal plugins, skills, MCP definitions,
         await write(path.join(sourceHome, '.claude/skills/synced/SKILL.md'), '# synced\n');
         await symlink('synced', path.join(sourceHome, '.claude/skills/alias'));
         await write(path.join(config, 'plugins/devryan-open-cursor.mjs'), 'provisioned\n');
-        await write(path.join(config, ponytail));
+        await write(path.join(config, packagedPlugin));
         const provisioned = { plugin: ['./plugins/devryan-open-cursor.mjs', './node_modules/opencode-with-claude/dist/index.js'],
             agent: { explore: { disable: true }, general: { disable: true } }, lsp: true };
         const sourceConfigs = [sourceOpencode, sourceLegacy, {}];
@@ -480,14 +480,14 @@ test('personal setup mirroring copies personal plugins, skills, MCP definitions,
         const options = normalizeQaMirrorPersonalSetup(true, { preserveOrchestration: true });
         const result = await mirrorQaPersonalSetup({ options, sourceHome, home, config, sourceConfigs, provisioned });
 
-        // Source order is kept: ponytail loads first, as in the owner's profile; provisioned
+        // Source order is kept: the packaged plugin loads first, as in the owner's profile; provisioned
         // entries the owner never listed come last.
-        assert.deepEqual(result.plugin, [ponytail, './plugins/devryan-open-cursor.mjs', './node_modules/opencode-with-claude/dist/index.js',
+        assert.deepEqual(result.plugin, [packagedPlugin, './plugins/devryan-open-cursor.mjs', './node_modules/opencode-with-claude/dist/index.js',
             './plugins/personal.mjs', ['@synthetic/tuple', { apiKey: 'synthetic-option' }]]);
-        assert.deepEqual(result.evidence.pluginOrder, [ponytail, './plugins/devryan-open-cursor.mjs', './node_modules/opencode-with-claude/dist/index.js',
+        assert.deepEqual(result.evidence.pluginOrder, [packagedPlugin, './plugins/devryan-open-cursor.mjs', './node_modules/opencode-with-claude/dist/index.js',
             './plugins/personal.mjs', '@synthetic/tuple']);
         assert.deepEqual(result.evidence.plugins, [
-            { entry: ponytail, kind: 'node-modules', hasOptions: false },
+            { entry: packagedPlugin, kind: 'node-modules', hasOptions: false },
             { entry: './plugins/personal.mjs', kind: 'config-path', hasOptions: false },
             { entry: '@synthetic/tuple', kind: 'package', hasOptions: true },
         ]);
@@ -523,10 +523,10 @@ test('personal setup mirroring copies personal plugins, skills, MCP definitions,
 
         // Mirrored package entries are wrapped exactly like provisioned ones.
         await write(path.join(config, 'node_modules/opencode-with-claude/dist/index.js'));
-        await write(path.join(config, ponytail));
+        await write(path.join(config, packagedPlugin));
         await wrapQaPackagePluginEntries(config, result.plugin);
-        assert.equal(await readFile(path.join(config, ponytail.replace(/\.mjs$/, '.qa-original.mjs')), 'utf8'), 'export default () => ({});\n');
-        assert.match(await readFile(path.join(config, ponytail), 'utf8'), /isolated-home\.mjs/);
+        assert.equal(await readFile(path.join(config, packagedPlugin.replace(/\.mjs$/, '.qa-original.mjs')), 'utf8'), 'export default () => ({});\n');
+        assert.match(await readFile(path.join(config, packagedPlugin), 'utf8'), /isolated-home\.mjs/);
         await write(path.join(scratch, 'outside.mjs'));
         await mkdir(path.join(config, 'node_modules/escape'), { recursive: true });
         await symlink(path.join(scratch, 'outside.mjs'), path.join(config, 'node_modules/escape/index.mjs'));

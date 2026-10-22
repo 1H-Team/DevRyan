@@ -9,14 +9,13 @@ import type * as ReviewedSlim from '@devryan/agents-core';
 import type {NativeConfigurationSnapshot,NativeConfigurationLocation} from './native-configuration-snapshot.js';
 import {nativeSlimPlugin,REVIEWED_SLIM_HOOK_INVENTORY} from './native-slim.js';
 import {nativeSlimCommandBehaviorsPlugin,reviewedSlimCommandDeclarations} from './native-slim-commands.js';
-import type {NativeSlimCommandOptions,NativeSlimCommandInput} from './native-slim-commands.js';
+import type {NativeSlimCommandOptions} from './native-slim-commands.js';
 import {createOwnedSlimWebfetch,parseReviewedWebfetchInput} from './native-slim-webfetch.js';
 import type {OwnedSlimWebfetchOwners} from './native-slim-webfetch.js';
 import type {ExecuteOwned,OwnedToolInvocation} from './native-admission-contract.js';
 import {OperationPermitRef} from './native-admission-contract.js';
 import {RegistrationOriginRef,type RegistrationOrigin} from './registration-origin.js';
 import type {OperationPermit} from './native-admission-contract.js';
-import type {NativePonytailOwner} from './native-ponytail.js';
 import {currentNativeAttemptIdentity,type NativeAttemptIdentity} from './native-observation.js';
 
 export interface NativeSlimHookAuthority {
@@ -39,7 +38,6 @@ export interface NativeSlimLocationOwners {
  readonly interviewBridge:ReviewedSlim.ReviewedSlimHostBinding['interviewBridge'];
  readonly webfetch:{readonly binaryDirectory:string;readonly ownersFor:(invocation:OwnedToolInvocation,context:ReviewedSlim.ReviewedWebfetchContext)=>Promise<OwnedSlimWebfetchOwners>};
  readonly commands:Pick<NativeSlimCommandOptions,'assertCommand'|'executeCommand'>;
- readonly ponytail:{readonly contextInstructions:NativePonytailOwner['contextInstructions'];readonly applyCommand:(input:NativeSlimCommandInput)=>Effect.Effect<void,unknown>};
  /** Fresh actual native hook permit/canonical scope, including cached header paths. */
  readonly assertContext:(input:{readonly directory:string;readonly sessionID:string})=>Promise<void>;
  readonly readMessage:(input:{readonly directory:string;readonly sessionID:string;readonly messageID:string})=>Promise<{readonly parts:readonly unknown[]}>;
@@ -57,7 +55,6 @@ export interface NativeSlimRuntimeOptions {
  readonly snapshot:NativeConfigurationSnapshot;
  readonly originals:NativeSlimOriginals;
  readonly origin:RegistrationOrigin;
- readonly ponytailCommand:{readonly description:string;readonly template:string};
  readonly executeOwned:ExecuteOwned;
  readonly withControl:<A,E,R>(invocation:OwnedToolInvocation,execute:Effect.Effect<A,E,R>)=>Effect.Effect<A,E,R>;
  readonly forDirectory:(location:NativeConfigurationLocation)=>NativeSlimLocationOwners;
@@ -88,11 +85,11 @@ export function createNativeSlimRuntime(options:NativeSlimRuntimeOptions){
  if(options.origin.kind!=='plugin'||options.origin.id!=='devryan.slim'||!options.origin.capabilities.includes('network'))throw new Error('native_slim_origin_required');
  const owners=new Map<string,NativeSlimLocationOwners>();
  for(const location of options.snapshot.locations){
-  if(location.activeRegistrationIDs&&!location.activeRegistrationIDs.some(id=>id==='devryan.slim'||id==='devryan.ponytail'))continue;
+  if(location.activeRegistrationIDs&&!location.activeRegistrationIDs.includes('devryan.slim'))continue;
   const owner=options.forDirectory(location);
   required(owner,['log','assertContext','readMessage','observeLifecycle','observePrompt','retry','beforePaths','transformMessages','dispose']);
   required(owner.interviewBridge,['registerCommand','handleContext','handleEvent','dispose']);
-  required(owner.webfetch,['ownersFor']);required(owner.commands,['assertCommand','executeCommand']);required(owner.ponytail,['contextInstructions','applyCommand']);
+  required(owner.webfetch,['ownersFor']);required(owner.commands,['assertCommand','executeCommand']);
   if(owners.has(location.directory))throw new Error('native_slim_location_duplicate');
   owners.set(location.directory,{...owner,
    assertContext:input=>runNativeSlimOwnedHook(()=>owner.assertContext(input)),
@@ -101,7 +98,6 @@ export function createNativeSlimRuntime(options:NativeSlimRuntimeOptions){
    retry:event=>runNativeSlimOwnedHook(()=>owner.retry(event)),
    beforePaths:(input,output)=>runNativeSlimOwnedHook(()=>owner.beforePaths(input,output)),
    transformMessages:(input,output)=>runNativeSlimOwnedHook(()=>owner.transformMessages(input,output)),
-   ponytail:{...owner.ponytail,contextInstructions:directory=>runNativeSlimOwnedHook(()=>owner.ponytail.contextInstructions(directory))},
    interviewBridge:{...owner.interviewBridge,handleContext:event=>runNativeSlimOwnedHook(()=>owner.interviewBridge.handleContext(event)),handleEvent:event=>runNativeSlimOwnedHook(()=>owner.interviewBridge.handleEvent(event))},
   });
  }
@@ -179,15 +175,6 @@ export function createNativeSlimRuntime(options:NativeSlimRuntimeOptions){
   const owner=ownerFor(context.location.directory);
   yield* context.session.hook('retry',event=>Effect.tryPromise({try:async()=>{await owner.assertContext({directory:context.location.directory,sessionID:event.sessionID});await owner.retry(event);await owner.assertContext({directory:context.location.directory,sessionID:event.sessionID});},catch:error=>error}).pipe(Effect.orDie));
  })};
- const ponytail:Plugin={id:'devryan.ponytail',effect:context=>Effect.gen(function*(){
-  const directory=context.location.directory,location=locationFor(directory);if(location.activeRegistrationIDs&&!location.activeRegistrationIDs.includes('devryan.ponytail'))return;const owner=ownerFor(directory);
-  yield* context.session.hook('context',event=>Effect.tryPromise({try:async()=>{await owner.assertContext({directory,sessionID:event.sessionID});const text=await owner.ponytail.contextInstructions(directory);await owner.assertContext({directory,sessionID:event.sessionID});if(text)event.system.push({type:'text',text});},catch:error=>error}).pipe(Effect.orDie));
-  if(!Object.hasOwn(location.compatibility.commands,'ponytail'))yield* context.command.transform(editor=>editor.add({name:'ponytail',description:options.ponytailCommand.description,execute:invocation=>Effect.gen(function*(){
-   const permit=yield* OperationPermitRef;if(!permit)return yield* Effect.die(new Error('native_ponytail_permit_required'));
-   const input:NativeSlimCommandInput={directory,name:'ponytail',invocation};yield* owner.commands.assertCommand(input);
-   yield* owner.ponytail.applyCommand(input);
-  })}));
- })};
  const executeOwned:ExecuteOwned=invocation=>{
   if(invocation.provenance.id!==options.origin.id)return options.executeOwned(invocation);
   if(!sameOrigin(invocation.provenance,options.origin))return Effect.fail(new Tool.Error({message:'native_slim_origin_mismatch'}));
@@ -246,5 +233,5 @@ export function createNativeSlimRuntime(options:NativeSlimRuntimeOptions){
    return Exit.isSuccess(exit)?exit.value:yield* Effect.failCause(exit.cause);
   }),
  });
- return {plugin,commands,lifecycle,ponytail,executeOwned,decorateHooks,commandDeclarations:Object.freeze({...reviewedSlimCommandDeclarations(definitions(options)),interview:options.originals.reviewedSlimInterviewCommandDeclaration}),ponytailCommandDeclaration:Object.freeze({...options.ponytailCommand})};
+ return {plugin,commands,lifecycle,executeOwned,decorateHooks,commandDeclarations:Object.freeze({...reviewedSlimCommandDeclarations(definitions(options)),interview:options.originals.reviewedSlimInterviewCommandDeclaration})};
 }

@@ -1,12 +1,13 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';import path from 'node:path';import os from 'node:os';import {createHash} from 'node:crypto';
-import {createReviewedSetupSession,reviewedSetupFamilies,reviewedSetupRegistrations,assertReviewedSetupBoot,attachReviewedSetup} from './reviewed-setup.mjs';
+import {createReviewedSetupSession,reviewedSetupFamilies,reviewedSetupRegistrations,assertReviewedSetupBoot,attachReviewedSetup,reviewedSetupCheckCommand} from './reviewed-setup.mjs';
 import {createHttpProviderConfiguration} from './http-provider.mjs';
 import {compiledHelperAgentIDs,createCompiledHelperAgentFixture} from './package-helper-agent-fixture.mjs';
 import {PLAN_MODE_SYSTEM_INSTRUCTIONS} from '../../packages/orchestration-runtime/index.js';
-test('all seven families map to existing compiled owners without losing manifest provenance',()=>{
+test('all six families map to existing compiled owners without losing manifest provenance',()=>{
  const ids=[...new Set(reviewedSetupFamilies.flatMap(row=>row.origins))];const origins=ids.map(id=>({id,manifestDigest:'a'.repeat(64),capabilities:['control']}));
- const rows=reviewedSetupRegistrations(origins);assert.equal(reviewedSetupFamilies.length,7);assert.equal(rows.length,origins.length);
+ const rows=reviewedSetupRegistrations(origins);assert.equal(reviewedSetupFamilies.length,6);assert.equal(rows.length,origins.length);
+ assert.equal(ids.includes('devryan.ponytail'),false);
  // Built-in agent orchestration has no plugin spec; every other family has its exact spec.
  const builtIn=new Set(reviewedSetupFamilies.filter(row=>row.spec===null).flatMap(row=>row.origins));
  assert.deepEqual([...builtIn].sort(),['devryan.slim','devryan.slim-commands','devryan.slim-lifecycle']);
@@ -14,7 +15,7 @@ test('all seven families map to existing compiled owners without losing manifest
  assert.throws(()=>reviewedSetupRegistrations(origins.filter(row=>row.id!=='devryan.document-reader')),/Required compiled family unavailable/);
 });
 test('active boot evidence refuses a missing required original command or family',async()=>{
- const names=['deepwork','reflect','loop','interview','ponytail','ponytail-help'];const location={directory:'/owned/project',activeRegistrationIDs:[...new Set(reviewedSetupFamilies.flatMap(row=>row.origins))],configuration:{commands:{}},compatibility:{ponytail:{defaultMode:'full'}}};
+ const names=['deepwork','reflect','loop','interview',reviewedSetupCheckCommand.name];const location={directory:'/owned/project',activeRegistrationIDs:[...new Set(reviewedSetupFamilies.flatMap(row=>row.origins))],configuration:{commands:{}},compatibility:{}};
  const runtimeOwner={getConfigurationSnapshot:()=>({locations:[location]})};const controller={bound:{catalog:{asserted:true}}};const rows=[];
  const client={catalog:{commands:async input=>{assert.deepEqual(input,{directory:location.directory});return names.map(name=>({name,template:'actual registered original'}));}}};
  await assertReviewedSetupBoot({runtimeOwner,controller,client,onCase:row=>rows.push(row)});assert.equal(rows[0].personalProviderParity,false);
@@ -25,7 +26,7 @@ test('browser is explicit fixture activation, never an added saved personal fami
  const origins=[...new Set(reviewedSetupFamilies.flatMap(row=>row.origins)),'devryan.browser'].map(id=>({id,manifestDigest:'b'.repeat(64),capabilities:['control']}));
  assert.deepEqual(reviewedSetupRegistrations(origins).find(row=>row.id==='devryan.browser').legacySpecs,[]);
  assert.deepEqual(reviewedSetupRegistrations(origins,{browser:true}).find(row=>row.id==='devryan.browser').legacySpecs,['./plugins/devryan-browser.mjs']);
- assert.equal(reviewedSetupFamilies.length,7);
+ assert.equal(reviewedSetupFamilies.length,6);
  assert.throws(()=>reviewedSetupRegistrations(origins.filter(row=>row.id!=='devryan.browser'),{browser:true}),/compiled browser unavailable/);
 });
 
@@ -39,8 +40,7 @@ test('snapshot preserves genuine saved overrides but does not self-shadow Slim/i
   const reviewedPluginManifestPath=path.join(root,'plugins.json'),reviewedNativeConfigPath=path.join(root,'policy.json');
   await fs.writeFile(reviewedPluginManifestPath,registrationBytes);
   await fs.writeFile(reviewedNativeConfigPath,JSON.stringify({schema:1,locations:[{directory}],catalogRequirements:{agents:[],plugins:[],tools:[],models:[]}}));
-  const ponytailCommands=Object.fromEntries(['ponytail','ponytail-help','ponytail-audit','ponytail-debt','ponytail-gain','ponytail-review'].map(name=>[name,{template:'actual Ponytail '+name,description:name}]));
-  const bundle={reviewedConfiguration:{ponytailCommands,slimCommandDeclarations:{deepwork:{template:'static only'},loop:{template:'static only'}},interviewCommandDeclaration:{template:'static marker'},
+  const bundle={reviewedConfiguration:{slimCommandDeclarations:{deepwork:{template:'static only'},loop:{template:'static only'}},interviewCommandDeclaration:{template:'static marker'},
    resolveSlimAgents:async input=>({agents:input.hostConfiguration.agent})}};
   const configuration=createHttpProviderConfiguration('http://127.0.0.1:1/v1');configuration.commands={reviewed:{template:'Saved custom $ARGUMENTS'},reflect:{template:'Genuine saved override'}};
   const helperFixture=await createCompiledHelperAgentFixture({root});Object.assign(configuration.agents,helperFixture.agents);
@@ -71,7 +71,8 @@ test('snapshot preserves genuine saved overrides but does not self-shadow Slim/i
   assert.equal(snapshot.registrationManifestDigest,createHash('sha256').update(registrationBytes).digest('hex'));
   for(const name of ['deepwork','loop','interview']){assert.equal(location.compatibility.commands[name],undefined);assert.equal(location.configuration.commands[name],undefined);}
   assert.equal(location.configuration.commands.reflect.template,'Genuine saved override');assert.equal(location.configuration.commands.reviewed.template,'Saved custom $ARGUMENTS');
-  assert.equal(location.configuration.commands['ponytail-help'].template,'actual Ponytail ponytail-help');
+  assert.equal(location.configuration.commands[reviewedSetupCheckCommand.name].template,reviewedSetupCheckCommand.template);
+  assert.equal(Object.keys(location.configuration.commands).some(name=>name.startsWith('ponytail')),false);
   assert.ok(location.activeRegistrationIDs.includes('devryan.browser'));
   assert.equal(location.compatibility.mcp.compiled.url,'http://127.0.0.1:1/mcp');assert.deepEqual(location.requiredCatalogs.mcp,['compiled']);
   assert.deepEqual(location.compatibility.slim.mergedConfig.disabled_mcps,['websearch','context7','grep_app']);

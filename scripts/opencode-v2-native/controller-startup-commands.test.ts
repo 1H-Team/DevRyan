@@ -6,7 +6,7 @@ import {prepareReviewedNativeInputs,reviewedNativeInputPlugin} from '../native-r
 import {createNativeAssetFixturePlugin,writeNativeFixtureOutputs} from './native-asset-fixture.mjs';
 
 const repository=path.resolve(import.meta.dirname,'../..');
-test('production controller forwards actual reviewed Slim and Ponytail declarations to native command gates',async()=>{
+test('production controller forwards actual reviewed Slim declarations to native command gates',async()=>{
  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-controller-commands-')));
  let child:ReturnType<typeof Bun.spawn>|undefined;
  try{
@@ -26,8 +26,7 @@ let networkCalls=0;globalThis.fetch=async()=>{networkCalls++;throw new Error('fi
 const {startNativeController}=await import(${JSON.stringify(path.join(host,'controller-startup.ts'))});
 const {reviewedSlimCommandDeclarations}=await import(${JSON.stringify(path.join(host,'native-slim-commands.ts'))});
 const originals=await import(${JSON.stringify(path.join(repository,'packages/agents-core/src/devryan/index.ts'))});
-const {command:ponytail}=await import('devryan:reviewed-ponytail-instructions');
-const ids=['devryan.slim','devryan.slim-commands','devryan.slim-lifecycle','devryan.ponytail'];
+const ids=['devryan.slim','devryan.slim-commands','devryan.slim-lifecycle'];
 const origins=ids.map((id,index)=>({id,manifestDigest:String(index+1).repeat(64),capabilities:id==='devryan.slim'?['read','write','network','process']:['control']}));
 const configuration={agents:{builder:{model:{providerID:'fixture',model:'m1'}}},default_agent:'builder',plugins:[],commands:{},warming:false};
 const snapshot={schema:1,revision:1,digest:'a'.repeat(64),registrationManifestDigest:'b'.repeat(64),locations:[{
@@ -41,10 +40,13 @@ catch(error){assert.equal(error.message,'fixture_host_options_captured');}
 assert.ok(captured);
 const declarations={...reviewedSlimCommandDeclarations({deepwork:originals.createDeepworkCommandHook,loop:originals.createLoopCommandHook,reflect:originals.createReflectCommandHook}),interview:originals.reviewedSlimInterviewCommandDeclaration};
 const expected=Object.entries(declarations).map(([name,definition])=>({origin:{kind:'plugin',...origins[1]},name,definition}));
-expected.push({origin:{kind:'plugin',...origins[3]},name:'ponytail',definition:ponytail});
 assert.deepEqual(captured.reviewedBehaviorCommands,expected);
-assert.deepEqual(captured.reviewedBehaviorCommands.map(row=>row.name).sort(),['deepwork','interview','loop','ponytail','reflect']);
+assert.deepEqual(captured.reviewedBehaviorCommands.map(row=>row.name).sort(),['deepwork','interview','loop','reflect']);
 for(const row of captured.reviewedBehaviorCommands)assert.ok(captured.plugins.some(plugin=>JSON.stringify(plugin.origin)===JSON.stringify(row.origin)));
+// The retired Ponytail origin has no plugin: a registration still listing it is refused, never loaded.
+const retired=[...origins,{id:'devryan.ponytail',manifestDigest:'9'.repeat(64),capabilities:['control']}];
+await assert.rejects(startNativeController({...boot,reviewedPlugins:retired,catalogRequirements:{...boot.catalogRequirements,plugins:retired.map(row=>row.id)}},
+ {coreDigest:'e'.repeat(64),hostDigest:'f'.repeat(64),reviewedPlugins:retired,migration:'not-needed'}),/native_reviewed_plugin_unavailable/);
 assert.equal(networkCalls,0);
 process.stdout.write('verified');
 `);
