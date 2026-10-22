@@ -97,7 +97,8 @@ export async function runControllerCrashHold({ begin, invoke, restartNative, get
   executionHost, client, directory, sessionID, observations }) {
   const id = 'controller-crash';
   const before = await snapshotFiles(directory, ['crash-unpublished.txt']);
-  await begin({ id, tool: 'shell', input: { command: "printf 'DEVRYAN_CONTROLLER_CRASH_READY\\n'; sleep 60; printf 'must not publish\\n' > crash-unpublished.txt", timeout: 0 } });
+  // timeout 0 is refused by the routing owner; the lane kills the controller itself.
+  await begin({ id, tool: 'shell', input: { command: "printf 'DEVRYAN_CONTROLLER_CRASH_READY\\n'; sleep 60; printf 'must not publish\\n' > crash-unpublished.txt", timeout: 600_000 } });
   await waitFor(async () => observations.filter(value => value.callID === `native_${id}` && value.phase === 'execution_output')
     .map(value => value.text).join(''), text => text.includes('DEVRYAN_CONTROLLER_CRASH_READY'), 'Native crash fixture command never started');
   await admissionOwner.handleRpc('native.admission.hold', { sessionID });

@@ -164,7 +164,9 @@ export async function runEscapedDescendantCancellation({ begin, nativeControl, e
   // Darwin deliberately refuses posix_spawn so libuv falls back to fork/exec
   // inside the same policy. Bun cannot perform that fallback; actual Node can.
   const command = `'${node.replaceAll("'", "'\\''")}' escaped-descendant.mjs`;
-  await begin({ id, tool: 'shell', input: { command, timeout: 0 } });
+  // The routing owner refuses timeout 0 (it never disabled the deadline); the
+  // lane cancels explicitly, so any deadline longer than the lane will do.
+  await begin({ id, tool: 'shell', input: { command, timeout: 600_000 } });
   const output = await waitFor(async () => observations.filter(value => value.callID === `native_${id}` && value.phase === 'execution_output')
     .map(value => value.text).join(''), value => /DEVRYAN_ESCAPE_PID:\d+/.test(value), 'Escaped native descendant did not start');
   const pid = Number(output.match(/DEVRYAN_ESCAPE_PID:(\d+)/)[1]);
