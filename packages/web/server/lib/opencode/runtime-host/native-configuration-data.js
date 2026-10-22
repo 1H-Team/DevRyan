@@ -2,6 +2,8 @@ import {ConfigProvider} from '@opencode/schema/config/provider';
 import {ConfigCompaction} from '@opencode/schema/config/compaction';
 import {Schema} from 'effect';
 import {nativeToolOutputLimits,PLAN_MODE_SYSTEM_INSTRUCTIONS} from '@devryan/orchestration-runtime';
+
+export const NATIVE_LOCATION_IDLE_TIMEOUT = '15 minutes';
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const fail = code => Object.assign(new Error(code), { code, status: 503 });
 
@@ -215,5 +217,8 @@ export function translateNativeConfiguration({ legacy, agents, commands = {} }) 
     }
     return [name, info];
   }));
+  // OpenCode keeps an idle location (and the MCP servers it started) loaded for
+  // 60 minutes. Running sessions and background jobs still keep it loaded.
+  configuration.experimental = { location_idle_timeout: NATIVE_LOCATION_IDLE_TIMEOUT };
   return { ...configuration, snapshots: false, warming: false, update: 'disable', share: 'disabled', plugins: [] };
 }

@@ -1210,3 +1210,14 @@ record contains transcript content, request bodies or exception messages.
 Broad native scans exclude `node_modules`, `.cache`, `dist`, `.worktrees`, `worktrees` (including `.claude/worktrees`), `.artifacts` and generated-worktree directories by default. An authorized canonical read directory explicitly inside one such tree expands only that category; user include globs cannot widen it. Git exclusions and `--no-ignore` remain mandatory.
 
 The web execution host caps trusted `grep`/`glob` stdout before its event queue at 64 KiB and 200 grep records or 1,000 glob paths. `native-search-output.js` retains complete newline records; it never inserts prose into ripgrep JSON. At the cap a separate search-limit controller stops the confined producer. Only an exact host-owned limit stop with a terminated, confined receipt and no user/owner abort, permit failure or queue overflow can settle as partial success. The raw cancellation/exit receipt is retained. The typed settled event carries `truncated` and its counts/limits; routing normalizes the native parser's exit code only for this successful limited read, then appends an explicit narrowing notice and `searchTruncation` metadata to the tool result. Writer/shell overflow and uncertain termination remain failures.
+
+### Idle location release
+
+`translateNativeConfiguration` (`native-configuration-data.js`) sets
+`experimental.location_idle_timeout` to `NATIVE_LOCATION_IDLE_TIMEOUT`
+(15 minutes) for every native location. OpenCode's location activity sweep
+then invalidates a location's services, including the MCP servers it started,
+after 15 minutes without durable session activity instead of its 60-minute
+default. Running sessions, pending questions and background jobs still keep a
+location loaded; the next request rebuilds the services. Eviction itself is the
+same OpenCode path that previously ran at 60 minutes.

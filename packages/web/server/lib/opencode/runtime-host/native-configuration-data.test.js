@@ -118,3 +118,14 @@ it('preserves the packaged Explorer/Librarian shell and delegation denies in nat
  expect(configuration.agents.plan.permissions.filter(rule=>rule.action==='edit')).toEqual(
   Object.entries(agents.plan.permission.edit).map(([resource,effect])=>({action:'edit',resource,effect})));
 });
+
+import {Config as NativeConfigSchema} from '@opencode/schema/config';
+import {Duration} from 'effect';
+import {NATIVE_LOCATION_IDLE_TIMEOUT} from './native-configuration-data.js';
+it('releases idle locations after the reviewed native idle timeout, decoded by the native schema',()=>{
+ const configuration=translateNativeConfiguration({legacy:{},agents:{}});
+ expect(configuration.experimental).toEqual({location_idle_timeout:NATIVE_LOCATION_IDLE_TIMEOUT});
+ const info=Schema.decodeUnknownSync(NativeConfigSchema.Info)(configuration,{onExcessProperty:'error'});
+ const timeout=info.experimental?.location_idle_timeout;
+ expect(timeout===false||timeout===undefined?null:Duration.toMillis(timeout)).toBe(15*60*1000);
+});
