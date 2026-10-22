@@ -154,7 +154,7 @@ export function createPrimaryRecoveryHost(options) {
     const blockedByRequests = [...permissions.data, ...questions.data].some((p) => p.sessionID === record.sessionID);
     const failedCalls = messages.filter(message => message.info.role === 'assistant')
       .flatMap(message => message.parts.filter(part => part.type === 'tool' && part.state?.status === 'error')
-        .map(part => ({ messageID: message.info.id, callID: part.callID })));
+        .map(part => ({ messageID: message.info.id, callID: part.callID, ...(typeof part.tool === 'string' ? { tool: part.tool } : {}) })));
     // Missing/expired evidence leaves the existing uncertainty fence intact;
     // evidence that could not be READ (e.g. a busy ledger) is reported so a
     // collection is retried instead of fenced permanently.

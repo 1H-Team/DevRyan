@@ -31,6 +31,8 @@ const neverStartedCall = ({ directory, sessionID, messageID, callID, pointer, le
       && lease.scope.callID === callID && lease.state === 'cancelled' && !lease.rebootRecovery
       && lease.cleaned === true && !lease.cleanupPending && (lease.cancelledBeforeStart === true || !lease.executionKind));
 const scopeFields = ['sessionID', 'messageID', 'userMessageID', 'callID'];
+// Built-in tools the host records as direct receipts (read-only by audit).
+const READ_ONLY_DIRECT_TOOLS = new Set(['read', 'glob', 'grep', 'skill']);
 const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
 // Dependency inputs: see execution-inputs.js. Ignored output folders among
 // them are written through on macOS; the ledger still never ingests them.
@@ -2092,12 +2094,16 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   });
   // Read only host-owned durable evidence. A tool error or a missing lease is
   // never proof that a command did not execute. Batch one transcript per lock.
+  // A call the caller observed as a built-in read-only direct tool (`tool`)
+  // has no side effect to attest: unless a lease shows it ran another way, it
+  // is complete whether or not its receipt committed.
   // Negative proof must not observe a guarded CAS awaiting owner recheck or
   // rollback. Share the writer's owner lock, including across processes.
   const executionOutcomes = (input) => locked(input.directory, async (repo) => {
     if (!validID(input.sessionID) || !Array.isArray(input.calls) || input.calls.length > 10_000
-      || input.calls.some(call => !validID(call.callID) || !validID(call.messageID))) throw changeError('invalid_capture_identity');
-    if (!repo) return input.calls.map(call => ({ sessionID: input.sessionID, messageID: call.messageID, callID: call.callID, outcome: 'uncertain' }));
+      || input.calls.some(call => !validID(call.callID) || !validID(call.messageID) || call.tool !== undefined && typeof call.tool !== 'string')) throw changeError('invalid_capture_identity');
+    const readOnly = call => READ_ONLY_DIRECT_TOOLS.has(call.tool);
+    if (!repo) return input.calls.map(call => ({ sessionID: input.sessionID, messageID: call.messageID, callID: call.callID, outcome: readOnly(call) ? 'finished' : 'uncertain' }));
     const outcomes = [];
     for (const call of input.calls) {
       const scopeKey = `${input.sessionID}\0${call.callID}`;
@@ -2111,6 +2117,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       }
       if (outcome !== 'finished' && neverStartedCall({ ...call, sessionID: input.sessionID,
         directory: repo.logicalDirectory, pointer, lease, cancelled })) outcome = 'never_started';
+      if (outcome === 'uncertain' && readOnly(call) && (!lease || lease.direct === true)) outcome = 'finished';
       outcomes.push({ sessionID: input.sessionID, messageID: call.messageID, callID: call.callID, outcome });
     }
     return outcomes;

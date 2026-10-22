@@ -200,6 +200,25 @@ describe('direct receipts for native read-only tools', () => {
     await expect(f.runtime.executionReceipt({ directory: f.directory, token: randomUUID() })).rejects.toMatchObject({ code: 'execution_unavailable' });
   });
 
+  test('outcomes treat read-only direct tools as complete unless a lease shows another execution', async () => {
+    const f = await fixture(); await f.runtime.registerPrompt(scope(f, 'seed'));
+    const outcomes = calls => f.runtime.executionOutcomes({ directory: f.directory, sessionID: 's', calls });
+    // Admitted, then its receipt never committed.
+    await f.runtime.admitDirect(scope(f, 'lost'));
+    expect((await outcomes([{ messageID: 'pd-assistant', callID: 'lost', tool: 'read' }]))[0].outcome).toBe('finished');
+    expect((await outcomes([{ messageID: 'pd-assistant', callID: 'lost' }]))[0].outcome).toBe('uncertain');
+    expect((await outcomes([{ messageID: 'pd-assistant', callID: 'lost', tool: 'bash' }]))[0].outcome).toBe('uncertain');
+    // A confined lease for the same call keeps its own evidence.
+    const lease = await f.runtime.reserve({ ...scope(f, 'confined'), kind: 'process' });
+    expect((await outcomes([{ messageID: 'pd-assistant', callID: 'confined', tool: 'grep' }]))[0].outcome).toBe('uncertain');
+    await f.runtime.cancelLease({ directory: f.directory, token: lease.token });
+    expect((await outcomes([{ messageID: 'pd-assistant', callID: 'confined', tool: 'grep' }]))[0].outcome).toBe('uncertain');
+    // Without a ledger at all.
+    const empty = await fixture();
+    expect((await empty.runtime.executionOutcomes({ directory: empty.directory, sessionID: 's',
+      calls: [{ messageID: 'm', callID: 'c', tool: 'glob' }, { messageID: 'm', callID: 'd' }] })).map(row => row.outcome)).toEqual(['finished', 'uncertain']);
+  });
+
   test('a failed shared commit acknowledges no call and all original tokens remain retryable', async () => {
     const f = await fixture(); await f.runtime.registerPrompt(scope(f, 'seed'));
     const inputs = ['c1', 'c2'].map(call => ({ ...scope(f, call), token: randomUUID(), generation: 0, executionFingerprint: digest }));
