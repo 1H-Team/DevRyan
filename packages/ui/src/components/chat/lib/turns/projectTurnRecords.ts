@@ -215,6 +215,60 @@ const canReusePreviousTurn = (previous: TurnRecord, next: TurnRecord): boolean =
         && previous.durationMs === next.durationMs;
 };
 
+type TurnDerivation = Pick<
+    TurnRecord,
+    'summary' | 'summaryText' | 'diffStats' | 'activityParts' | 'activitySegments' | 'hasTools' | 'hasReasoning' | 'stream'
+>;
+
+interface CachedTurnDerivation {
+    assistantMessages: ChatMessageEntry[];
+    isPlanModeTurn: boolean;
+    derivation: TurnDerivation;
+}
+
+// A turn's summary, activity and stream state depend only on its user entry,
+// its assistant entries and its plan-mode flag. Message records keep their
+// identity while unchanged, so keying on the user entry means each store commit
+// re-derives only the live turn (or a turn whose messages actually changed),
+// across remounts and session switches as well.
+const turnDerivationCache = new WeakMap<ChatMessageEntry, CachedTurnDerivation>();
+
+const deriveTurn = (turn: TurnRecord, isPlanModeTurn: boolean): TurnDerivation => {
+    const cached = turnDerivationCache.get(turn.userMessage);
+    if (
+        cached
+        && cached.isPlanModeTurn === isPlanModeTurn
+        && areMessageRefsEqual(cached.assistantMessages, turn.assistantMessages)
+    ) {
+        return cached.derivation;
+    }
+
+    const summary = projectTurnSummary(turn.assistantMessages);
+    const activity = projectTurnActivity({
+        turnId: turn.turnId,
+        assistantMessages: turn.assistantMessages,
+        summarySourceMessageId: summary.sourceMessageId,
+        summarySourcePartId: summary.sourcePartId,
+        isPlanModeTurn,
+    });
+    const derivation: TurnDerivation = {
+        summary,
+        summaryText: summary.text ?? getUserSummaryBody(turn.userMessage),
+        diffStats: projectTurnDiffStats(turn.userMessage),
+        activityParts: activity.activityParts,
+        activitySegments: activity.activitySegments,
+        hasTools: activity.hasTools,
+        hasReasoning: activity.hasReasoning,
+        stream: buildTurnStreamState(turn.userMessage, turn.assistantMessages),
+    };
+    turnDerivationCache.set(turn.userMessage, {
+        assistantMessages: turn.assistantMessages,
+        isPlanModeTurn,
+        derivation,
+    });
+    return derivation;
+};
+
 interface ProjectTurnRecordsOptions {
     sourceIdentity?: SessionPlanSourceIdentity;
     canonicalContent?: string;
@@ -312,27 +366,20 @@ export const projectTurnRecords = (
     });
 
     turns.forEach((turn) => {
-        turn.summary = projectTurnSummary(turn.assistantMessages);
-        turn.summaryText = turn.summary.text ?? getUserSummaryBody(turn.userMessage);
-        turn.diffStats = projectTurnDiffStats(turn.userMessage);
-
-        const activity = projectTurnActivity({
-            turnId: turn.turnId,
-            assistantMessages: turn.assistantMessages,
-            summarySourceMessageId: turn.summary.sourceMessageId,
-            summarySourcePartId: turn.summary.sourcePartId,
-            isPlanModeTurn: isPlanModeUserMessage(
-                turn.userMessage.info,
-                turn.userMessage.parts,
-                effectiveOptions.recordedPlanModeMessageIds?.has(turn.userMessage.info.id) ?? false,
-            ),
-        });
-        turn.activityParts = activity.activityParts;
-        turn.activitySegments = activity.activitySegments;
-        turn.hasTools = activity.hasTools;
-        turn.hasReasoning = activity.hasReasoning;
-
-        turn.stream = buildTurnStreamState(turn.userMessage, turn.assistantMessages);
+        const isPlanModeTurn = isPlanModeUserMessage(
+            turn.userMessage.info,
+            turn.userMessage.parts,
+            effectiveOptions.recordedPlanModeMessageIds?.has(turn.userMessage.info.id) ?? false,
+        );
+        const derivation = deriveTurn(turn, isPlanModeTurn);
+        turn.summary = derivation.summary;
+        turn.summaryText = derivation.summaryText;
+        turn.diffStats = derivation.diffStats;
+        turn.activityParts = derivation.activityParts;
+        turn.activitySegments = derivation.activitySegments;
+        turn.hasTools = derivation.hasTools;
+        turn.hasReasoning = derivation.hasReasoning;
+        turn.stream = derivation.stream;
         turn.startedAt = turn.stream.startedAt;
         turn.completedAt = turn.stream.completedAt;
         turn.durationMs = turn.stream.durationMs;

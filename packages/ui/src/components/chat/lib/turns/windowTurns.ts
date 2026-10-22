@@ -204,15 +204,80 @@ export const buildTurnWindowModel = (messages: ChatMessageEntry[]): TurnWindowMo
     };
 };
 
-export const getInitialTurnStart = (
-    turnCount: number,
-    initialTurns = TURN_WINDOW_DEFAULTS.initialTurns,
+const isWindowRowPart = (part: ChatMessageEntry['parts'][number]): boolean => (
+    part?.type === 'tool' || part?.type === 'text' || part?.type === 'reasoning'
+);
+
+/** Rows one turn renders: its prompt plus each tool call, text and reasoning part. */
+export const countTurnRows = (
+    messages: ChatMessageEntry[],
+    model: Pick<TurnWindowModel, 'turnMessageStartIndexes'>,
+    turnIndex: number,
 ): number => {
+    const start = model.turnMessageStartIndexes[turnIndex] ?? messages.length;
+    const end = model.turnMessageStartIndexes[turnIndex + 1] ?? messages.length;
+    let rows = 0;
+    for (let index = start; index < end; index += 1) {
+        const message = messages[index];
+        if (!message) continue;
+        if (resolveMessageRole(message) === 'user') {
+            rows += 1;
+            continue;
+        }
+        for (const part of message.parts ?? []) {
+            if (isWindowRowPart(part)) rows += 1;
+        }
+    }
+    return Math.max(rows, 1);
+};
+
+// Moves the window start back from `fromTurn` over whole turns while they fit
+// `rowBudget` rows and `turnBudget` turns; always moves at least one turn.
+const extendTurnStartByRows = (
+    messages: ChatMessageEntry[],
+    model: Pick<TurnWindowModel, 'turnMessageStartIndexes'>,
+    fromTurn: number,
+    rowBudget: number,
+    turnBudget: number,
+): number => {
+    let start = fromTurn;
+    let rows = 0;
+    while (start > 0 && fromTurn - start < turnBudget) {
+        const turnRows = countTurnRows(messages, model, start - 1);
+        if (start < fromTurn && rows + turnRows > rowBudget) break;
+        rows += turnRows;
+        start -= 1;
+    }
+    return start;
+};
+
+/** First mounted turn of a session opened at its end (see TURN_WINDOW_DEFAULTS). */
+export const getInitialTurnStartByRows = (
+    messages: ChatMessageEntry[],
+    model: Pick<TurnWindowModel, 'turnMessageStartIndexes' | 'turnCount'>,
+): number => {
+    const { turnCount } = model;
     if (turnCount <= 0) {
         return 0;
     }
-    return turnCount > initialTurns ? turnCount - initialTurns : 0;
+    if (turnCount <= TURN_WINDOW_DEFAULTS.initialTurns) {
+        let rows = 0;
+        for (let turn = 0; turn < turnCount && rows <= TURN_WINDOW_DEFAULTS.maxRowsBeforeWindowing; turn += 1) {
+            rows += countTurnRows(messages, model, turn);
+        }
+        if (rows <= TURN_WINDOW_DEFAULTS.maxRowsBeforeWindowing) {
+            return 0;
+        }
+    }
+    return extendTurnStartByRows(messages, model, turnCount, TURN_WINDOW_DEFAULTS.initialRows, TURN_WINDOW_DEFAULTS.initialTurns);
 };
+
+/** Window start after revealing one more batch of older turns. */
+export const getRevealTurnStartByRows = (
+    messages: ChatMessageEntry[],
+    model: Pick<TurnWindowModel, 'turnMessageStartIndexes'>,
+    turnStart: number,
+): number => extendTurnStartByRows(messages, model, turnStart, TURN_WINDOW_DEFAULTS.batchRows, TURN_WINDOW_DEFAULTS.batchTurns);
 
 export const clampTurnStart = (turnStart: number, turnCount: number): number => {
     if (turnCount <= 0) {

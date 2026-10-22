@@ -21,7 +21,7 @@ import {
   responsivenessPerfCount,
   responsivenessPerfObserve,
 } from "@/stores/utils/streamDebug"
-import { appendStreamingTextDelta } from "./part-delta"
+import { appendStreamingFieldDelta } from "./part-delta"
 import { sessionEvents } from "@/lib/sessionEvents"
 import { usePrimaryRecoveryStore } from "@/stores/usePrimaryRecoveryStore"
 import { canonicalEventType, DEVRYAN_EVENT_DIALECT } from "@/lib/eventTypes"
@@ -375,7 +375,7 @@ function isPermanentClientErrorStatus(status: number | undefined): boolean {
 
 export function coalescePartDeltaValue(field: string, previousDelta: string, incomingDelta: string): string {
   if (field === "text" || field === "output") {
-    return appendStreamingTextDelta(previousDelta, incomingDelta)
+    return appendStreamingFieldDelta(field, previousDelta, incomingDelta)
   }
 
   return previousDelta + incomingDelta

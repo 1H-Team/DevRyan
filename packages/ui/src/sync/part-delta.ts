@@ -278,17 +278,54 @@ export function normalizeAssistantPartText(value: string, partType: string | und
     : normalizeAssistantVisibleText(value)
 }
 
+// Start of the line before the last line of `value`: the earliest line a new
+// delta can pair with as an adjacent repeat.
+function streamingRepeatTailStart(value: string): number {
+  const lastBreak = value.lastIndexOf("\n")
+  if (lastBreak <= 0) return 0
+  return value.lastIndexOf("\n", lastBreak - 1) + 1
+}
+
+// Cursor ACP models can replay a complete text/output frame as the next delta.
+// Keep the guard long-frame-only so intentional short repeats like "haha"
+// remain valid assistant output.
+function isFullFrameReplay(existing: string, delta: string): boolean {
+  return delta.length >= MIN_FULL_FRAME_DUPLICATE_LENGTH && existing.endsWith(delta)
+}
+
 export function appendStreamingTextDelta(existingValue: string | undefined, delta: string) {
   const existing = existingValue ?? ""
   if (delta.length === 0) return existing
   if (existing.length === 0) return collapseExactAdjacentTextRepeats(delta)
+  if (isFullFrameReplay(existing, delta)) return existing
 
-  // Cursor ACP models can replay a complete text/output frame as the next delta.
-  // Keep the guard long-frame-only so intentional short repeats like "haha"
-  // remain valid assistant output.
-  if (delta.length >= MIN_FULL_FRAME_DUPLICATE_LENGTH && existing.endsWith(delta)) {
-    return existing
+  const combined = existing + delta
+  if (combined.length <= MAX_JAMMED_DUPLICATE_SCAN_LENGTH) {
+    return collapseExactAdjacentTextRepeats(combined)
   }
 
-  return collapseExactAdjacentTextRepeats(existing + delta)
+  // Past the jammed-scan limit only adjacent line repeats collapse, and the
+  // existing value was collapsed as it streamed: a new repeat can only pair the
+  // delta with the last two lines. Rescanning the whole value on every delta
+  // made a long reply quadratic.
+  const tailStart = streamingRepeatTailStart(existing)
+  const tail = combined.slice(tailStart)
+  const collapsedTail = collapseLineRepeats(tail)
+  if (collapsedTail.length === tail.length) return combined
+  syncDebug.partDelta.repeatCollapsed("collapseLineRepeats", tail.length - collapsedTail.length)
+  return existing.slice(0, tailStart) + collapsedTail
+}
+
+// Tool output is program output: logs and tables legitimately repeat lines, so
+// only a replayed full frame is dropped, never a collapsed repeat.
+export function appendStreamingOutputDelta(existingValue: string | undefined, delta: string) {
+  const existing = existingValue ?? ""
+  if (delta.length === 0 || isFullFrameReplay(existing, delta)) return existing
+  return existing + delta
+}
+
+export function appendStreamingFieldDelta(field: string, existingValue: string | undefined, delta: string) {
+  return field === "output"
+    ? appendStreamingOutputDelta(existingValue, delta)
+    : appendStreamingTextDelta(existingValue, delta)
 }

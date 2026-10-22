@@ -22,7 +22,7 @@ import type { FileDiff, GlobalState, State } from "./types"
 import { dropSessionCaches } from "./session-cache"
 import { stripSessionDiffSnapshots } from "./sanitize"
 import { syncDebug } from "./debug"
-import { appendNonOverlappingDelta, appendStreamingTextDelta, normalizeAssistantPartText } from "./part-delta"
+import { appendNonOverlappingDelta, appendStreamingFieldDelta, normalizeAssistantPartText } from "./part-delta"
 import { isTerminalAssistantMessage } from "./session-working"
 import {
   updateSessionUserActivityFromMessage,
@@ -862,7 +862,7 @@ export function applyDirectoryEvent(
           field: props.field,
         })
         : DELTA_OVERLAP_FIELDS.includes(props.field as typeof DELTA_OVERLAP_FIELDS[number])
-          ? appendStreamingTextDelta(existingValue, props.delta)
+          ? appendStreamingFieldDelta(props.field, existingValue, props.delta)
           : (existingValue ?? "") + props.delta
       const nextValue = shouldSanitizeAssistantText && !exactCursorText
         ? normalizeAssistantPartText(appendedValue, typeof existing.type === "string" ? existing.type : undefined)

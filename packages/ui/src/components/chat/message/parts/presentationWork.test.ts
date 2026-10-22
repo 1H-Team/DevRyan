@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { withDom, type HostElement } from '../../../bots/chat/botMountedDom';
 import PlanCardSkeleton from './PlanCardSkeleton';
 import { WorkingPlaceholder } from './WorkingPlaceholder';
-import { useDurationTickerNow } from './useDurationTicker';
+import { SHARED_BLINK_ATTRIBUTE, useDurationTickerNow, useSharedBlink } from './useDurationTicker';
 import {
   formatRetryCountdown,
   getRetryCountdownBoundaryDelayMs,
@@ -47,20 +47,17 @@ afterEach(() => {
 });
 
 describe('mounted presentation work', () => {
-  test('the plan skeleton owns one container animation and no line animations', async () => {
+  test('the plan skeleton steps on the shared tick and owns no animation', async () => {
     // CSS has no runtime in bun:test; the stylesheet text is the contract.
     const styles = readFileSync(new URL('../../../../index.css', import.meta.url), 'utf8');
-    const containerRule = styles.slice(
-      styles.indexOf('.oc-plan-skeleton-lines[data-animation-state="running"]'),
-      styles.indexOf('.oc-plan-skeleton-line {'),
-    );
-    const lineRule = styles.slice(
-      styles.indexOf('.oc-plan-skeleton-line {'),
+    const skeletonRules = styles.slice(
+      styles.indexOf('.oc-plan-skeleton-lines {'),
       styles.indexOf('.oc-plan-skeleton-line:nth-child'),
     );
 
-    expect(containerRule.match(/animation:/g)?.length).toBe(1);
-    expect(lineRule).not.toContain('animation:');
+    expect(skeletonRules).toContain('html[data-tick-blink="off"] .oc-plan-skeleton-lines[data-animation-state="running"] {');
+    expect(skeletonRules).not.toMatch(/\banimation(-[a-z]+)?:/);
+    expect(styles).not.toContain('@keyframes oc-plan-skeleton-pulse');
 
     await mountElement(() => React.createElement(PlanCardSkeleton, { lineCount: 3 }), async (container) => {
       const lines = container.find((node) => node.getAttribute('data-animation-state') !== null);
@@ -113,12 +110,18 @@ describe('mounted presentation work', () => {
       useDurationTickerNow(active, 123);
       return null;
     };
+    const originalSetInterval = globalThis.setInterval;
+    const originalClearInterval = globalThis.clearInterval;
     const patchWindow = () => {
-      Reflect.set(globalThis.window, 'setInterval', (_handler: unknown, ms: number) => {
+      globalThis.setInterval = ((_handler: unknown, ms: number) => {
         intervals.push(ms);
         return 1;
-      });
-      Reflect.set(globalThis.window, 'clearInterval', () => {});
+      }) as unknown as typeof setInterval;
+      globalThis.clearInterval = (() => {}) as typeof clearInterval;
+    };
+    const restoreTimers = () => {
+      globalThis.setInterval = originalSetInterval;
+      globalThis.clearInterval = originalClearInterval;
     };
 
     await withDom(async (container) => {
@@ -142,6 +145,67 @@ describe('mounted presentation work', () => {
         expect(intervals).toEqual([]);
         await act(async () => root.unmount());
       });
+    }
+    restoreTimers();
+  });
+
+  test('working indicators share one blink tick that stops with the last holder', async () => {
+    const intervals: Array<{ ms: number; tick: () => void; cleared: boolean }> = [];
+    const originalSetInterval = globalThis.setInterval;
+    const originalClearInterval = globalThis.clearInterval;
+    globalThis.setInterval = ((handler: () => void, ms: number) => {
+      intervals.push({ ms, tick: handler, cleared: false });
+      return intervals.length;
+    }) as unknown as typeof setInterval;
+    globalThis.clearInterval = ((id: number) => {
+      const interval = intervals[id - 1];
+      if (interval) interval.cleared = true;
+    }) as unknown as typeof clearInterval;
+    const Holder = ({ active }: { active: boolean }) => {
+      useSharedBlink(active);
+      return null;
+    };
+    const Holders = ({ count }: { count: number }) => React.createElement(React.Fragment, null,
+      ...Array.from({ length: count }, (_, index) => React.createElement(Holder, { key: index, active: true })));
+
+    try {
+      await withDom(async (container) => {
+        Reflect.set(globalThis.document, 'visibilityState', 'visible');
+        const html = globalThis.document.documentElement;
+        const { createRoot } = await import('react-dom/client');
+        const root = createRoot(container as unknown as Element);
+        await act(async () => root.render(React.createElement(Holders, { count: 12 })));
+        // Twelve working indicators, one one-second interval, no per-indicator work.
+        expect(intervals.map(({ ms }) => ms)).toEqual([1_000]);
+        expect(html.getAttribute(SHARED_BLINK_ATTRIBUTE)).toBe('on');
+        await act(async () => intervals[0]!.tick());
+        expect(html.getAttribute(SHARED_BLINK_ATTRIBUTE)).toBe('off');
+        await act(async () => intervals[0]!.tick());
+        expect(html.getAttribute(SHARED_BLINK_ATTRIBUTE)).toBe('on');
+
+        await act(async () => root.render(React.createElement(Holders, { count: 1 })));
+        expect(intervals[0]!.cleared).toBe(false);
+        await act(async () => root.render(React.createElement(Holders, { count: 0 })));
+        // The last holder stops the tick and leaves the indicators at rest.
+        expect(intervals[0]!.cleared).toBe(true);
+        expect(html.getAttribute(SHARED_BLINK_ATTRIBUTE)).toBeNull();
+        await act(async () => root.unmount());
+      });
+
+      intervals.length = 0;
+      await withDom(async (container) => {
+        Reflect.set(globalThis.document, 'visibilityState', 'hidden');
+        const { createRoot } = await import('react-dom/client');
+        const root = createRoot(container as unknown as Element);
+        await act(async () => root.render(React.createElement(Holders, { count: 3 })));
+        // A hidden document never starts the tick.
+        expect(intervals).toEqual([]);
+        expect(globalThis.document.documentElement.getAttribute(SHARED_BLINK_ATTRIBUTE)).toBeNull();
+        await act(async () => root.unmount());
+      });
+    } finally {
+      globalThis.setInterval = originalSetInterval;
+      globalThis.clearInterval = originalClearInterval;
     }
   });
 });

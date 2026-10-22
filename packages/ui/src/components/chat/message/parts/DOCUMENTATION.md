@@ -59,7 +59,8 @@ updates an existing header without replaying messages or changing the model.
   - Precedence is structured diff/diagnostics, formatted input, provider output, provider failure, then an explicit no-details state.
   - Empty-state copy is terminal-only; partial output may render while a tool is still running.
 
-- `TaskToolSummary.tsx` + `taskToolUtils.ts`
+- `TaskToolSummary.tsx` + `taskToolUtils.ts` + `TaskChildSessionSummary.tsx`
+  - A collapsed sub-agent (`task`) card renders from its tool part alone: prompt, status, duration, the summary entries in its metadata, the result and the Open Subtask link. It subscribes to no child messages, so running sub-agents never re-render or retain the parent transcript's cards. Opening the card mounts `TaskChildSessionSummary`, which loads, follows and polls the child session's tool activity until the card closes. Managed dispatch rows (`ManagedTaskList`) render from the managed-task projection and never load child messages.
   - Preserve provider-native subagent output across failure and cancellation.
   - Failed or cancelled output is labelled as partial, retains its provider status/reason, and never receives a success check.
   - The observed Cursor-native Agent Dispatch row reuses this bounded summary renderer for nested activity and terminal output. `MessageBody.tsx` suppresses the ordinary raw task row only when the runtime-owned, versioned Cursor projection is valid; malformed or unprojected task tools keep the standard expandable renderer.
@@ -129,14 +130,21 @@ read canonical state rather than the paint projection.
 
 ### Presentation animation ownership
 
-`PlanCardSkeleton.tsx` keeps the existing 8–48 line layout reservation, but the
-line group owns one opacity animation instead of every line owning pulse and
-sweep animations. `useDocumentAnimationState()` is a module-level external
-store with one shared document-visibility listener and one shared
-reduced-motion listener. It is not Zustand state. The bottom status keeps its
-accessible label in flow while the proven foreground-gradient text layer
-supplies the shimmer sweep; status changes update that stable node without a
-keyed vertical transition. The plan skeleton, bottom status shimmer, retry
+Always-visible working chrome never runs an infinite CSS animation, which
+draws every frame (the idle "Waiting for subagent output" view drew about 100
+frames per second). The bottom status shimmer, sidebar and mobile working dots,
+plan skeleton, active reasoning header, composer context-usage loader and mobile
+sub-session indicators hold `useSharedBlink` (`useDurationTicker.ts`): one
+one-second tick on the shared ticker flips `html[data-tick-blink]`, and
+`.oc-tick-blink` plus the shimmer and skeleton rules in `index.css` step between
+two states, so every indicator stays in unison and no component re-renders.
+Without a holder (nothing working, the window hidden, reduced motion) the
+attribute is absent and indicators rest in their readable static state.
+`PlanCardSkeleton.tsx` keeps the existing 8–48 line layout reservation.
+`useDocumentAnimationState()` is a module-level external store with one shared
+document-visibility listener and one shared reduced-motion listener. It is not
+Zustand state. The bottom status keeps one accessible label in flow; status
+changes update that stable node without a keyed vertical transition. The plan skeleton, bottom status shimmer, retry
 countdown, and active duration labels pause while hidden; labels recompute on
 foreground. Reduced-motion presentation remains readable without a long-lived
 animation; the reasoning disclosure also disables both its panel animation and

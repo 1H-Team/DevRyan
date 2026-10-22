@@ -635,6 +635,34 @@ export const resolveMessagePlanCardResolution = (
   options: ResolveMessagePlanCardOptions = {},
 ): MessagePlanCardResolution | null => {
   if (options.turnIntent === 'implement' || options.turnIntent === 'maintenance') return null;
+  // The turn projection, plan revisions and the message body all resolve the
+  // same message on every store commit. Published part arrays are immutable,
+  // so the array identity plus the plan-mode flag determines the result.
+  const isPlanModeSource = options.isPlanModeSource === true;
+  const cached = planCardResolutionCache.get(parts);
+  if (cached && (isPlanModeSource ? cached.planMode : cached.other) !== undefined) {
+    return (isPlanModeSource ? cached.planMode : cached.other) ?? null;
+  }
+  const resolution = computeMessagePlanCardResolution(parts, isPlanModeSource);
+  const entry = cached ?? {};
+  if (isPlanModeSource) entry.planMode = resolution;
+  else entry.other = resolution;
+  if (!cached) planCardResolutionCache.set(parts, entry);
+  return resolution;
+};
+
+type PlanCardResolutionCacheEntry = {
+  planMode?: MessagePlanCardResolution | null;
+  other?: MessagePlanCardResolution | null;
+};
+
+const planCardResolutionCache = new WeakMap<readonly Part[], PlanCardResolutionCacheEntry>();
+
+const computeMessagePlanCardResolution = (
+  parts: readonly Part[],
+  isPlanModeSource: boolean,
+): MessagePlanCardResolution | null => {
+  const options: ResolveMessagePlanCardOptions = { isPlanModeSource };
   const textParts = collectAssistantTextParts(parts);
   if (textParts.length === 0 && options.isPlanModeSource !== true) return null;
 

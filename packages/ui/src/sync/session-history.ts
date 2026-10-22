@@ -6,6 +6,7 @@ import { Binary } from "./binary"
 import { retry } from "./retry"
 import { SESSION_CACHE_LIMIT } from "./types"
 import { dropSessionCaches, getProtectedSessionCacheIds, pickSessionCacheEvictions } from "./session-cache"
+import { getEffectiveSessionRevertMessageID } from "./revert-transactions"
 import { unwrapSdkResult } from "./sdk-result"
 import {
   normalizeChatOwnedDiffSummary,
@@ -19,6 +20,32 @@ import { mergeSessionPreservingMeaningfulTitle } from "@/lib/sessionTitles"
 // Debounce for the background-session message trim so rapid session flips
 // don't thrash trim/reload cycles.
 const BACKGROUND_TRIM_DEBOUNCE_MS = 5_000
+// Retained transcript of the open session once settled (see trimViewedSession).
+export const VIEWED_TRIM_KEEP_PROMPTS = 10
+export const VIEWED_TRIM_MAX_RECORDS = 300
+
+const isUserMessage = (message: Message): boolean => {
+  const candidate = message as Message & { clientRole?: unknown }
+  return (typeof candidate.clientRole === "string" ? candidate.clientRole : message.role) === "user"
+}
+
+/**
+ * Index of the first retained message once the transcript exceeds either
+ * bound: the oldest of the newest prompts that fit both, always a prompt so
+ * turns stay whole, and at least the newest prompt. Zero when within bounds.
+ */
+export function resolveViewedTrimStart(messages: readonly Message[]): number {
+  let keepFrom = -1
+  let prompts = 0
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (!isUserMessage(messages[index]!)) continue
+    prompts += 1
+    const fits = prompts <= VIEWED_TRIM_KEEP_PROMPTS && messages.length - index <= VIEWED_TRIM_MAX_RECORDS
+    if (!fits) return keepFrom >= 0 ? keepFrom : index
+    keepFrom = index
+  }
+  return 0
+}
 const MAX_SEEN_DIRS = 30
 export const ARCHIVED_OFFLOAD_TTL_MS = 20 * 60 * 1000
 
@@ -123,7 +150,39 @@ export class SessionHistory {
 
   hasMore(target: SessionMessageTarget): boolean {
     const state = this.options.loader.getSnapshot(target)
-    return !state.complete && Boolean(state.cursor)
+    return !state.complete && Boolean(state.cursor || state.tailAnchorMessageID)
+  }
+
+  /**
+   * Bounds the open session's retained transcript once it has settled: keeps
+   * the newest VIEWED_TRIM_KEEP_PROMPTS prompts (fewer when they exceed
+   * VIEWED_TRIM_MAX_RECORDS records), whole turns only, and re-anchors
+   * pagination so scrolling up reloads what was dropped. The caller invokes it
+   * only while the reader is pinned to the end; this refuses anything live or in
+   * flux: busy/retrying, unanswered permission or question, an unfinished
+   * assistant (a stream gap), a revert marker or transaction, an optimistic
+   * send, or a page load in flight.
+   */
+  trimViewedSession(target: SessionMessageTarget): boolean {
+    if (!target.directory || !target.sessionID || this.disposed) return false
+    const store = this.options.childStores.getChild(target.directory)
+    if (!store) return false
+    const state = store.getState()
+    const { sessionID } = target
+    if (getProtectedSessionCacheIds(state).has(sessionID)) return false
+    if (state.revert_transaction[sessionID] || getEffectiveSessionRevertMessageID(state, sessionID)) return false
+    const loader = this.options.loader
+    if (loader.hasOptimistic(target) || loader.getSnapshot(target).status === "loading") return false
+
+    const messages = state.message[sessionID]
+    const keepFrom = messages ? resolveViewedTrimStart(messages) : 0
+    if (!messages || keepFrom <= 0) return false
+    if (!loader.trimToTail(target, messages[keepFrom]!.id)) return false
+
+    const part = { ...state.part }
+    for (const message of messages.slice(0, keepFrom)) delete part[message.id]
+    store.setState({ message: { ...state.message, [sessionID]: messages.slice(keepFrom) }, part })
+    return true
   }
 
   isLoading(target: SessionMessageTarget): boolean {

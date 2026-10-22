@@ -853,3 +853,44 @@ describe('plan-mode recorded only locally (Grok, 2026-08-22)', () => {
         expect(findActivity(projection, 'a1-plan-tail')).toBe(undefined);
     });
 });
+
+describe('per-turn derivation cache', () => {
+    test('re-derives only the live turn, even without a previous projection', () => {
+        const settled = Array.from({ length: 30 }, (_, turn) => [
+            createMessageEntry({ id: `u${turn}`, role: 'user', createdAt: turn * 10 + 1 }),
+            createMessageEntry({
+                id: `a${turn}`, role: 'assistant', parentID: `u${turn}`, createdAt: turn * 10 + 2, completedAt: turn * 10 + 3, finish: 'stop',
+                parts: [createTextPart(`a${turn}`, `t${turn}`, `Settled answer ${turn}.`)],
+            }),
+        ]).flat();
+        const live = (text: string) => createMessageEntry({
+            id: 'a-live', role: 'assistant', parentID: 'u-live', createdAt: 1_000,
+            parts: [createTextPart('a-live', 't-live', text)],
+        });
+        const liveUser = createMessageEntry({ id: 'u-live', role: 'user', createdAt: 999 });
+
+        const first = projectTurnRecords([...settled, liveUser, live('Working')]);
+        // A remounted hook passes no previous projection.
+        const next = projectTurnRecords([...settled, liveUser, live('Working on it')]);
+
+        for (let turn = 0; turn < 30; turn += 1) {
+            expect(next.turns[turn]!.activityParts).toBe(first.turns[turn]!.activityParts);
+            expect(next.turns[turn]!.summary).toBe(first.turns[turn]!.summary);
+        }
+        expect(next.turns[30]!.activityParts).not.toBe(first.turns[30]!.activityParts);
+        expect(next.turns[30]!.stream.isStreaming).toBe(true);
+    });
+
+    test('re-derives a turn whose plan-mode flag changes', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = createMessageEntry({
+            id: 'a1', role: 'assistant', parentID: 'u1', createdAt: 2, completedAt: 3, finish: 'stop',
+            parts: [createPlanPart('a1', 'Plan')],
+        });
+
+        const ordinary = projectTurnRecords([user, assistant]);
+        const recordedPlan = projectTurnRecords([user, assistant], { recordedPlanModeMessageIds: new Set(['u1']) });
+
+        expect(recordedPlan.turns[0]!.activityParts).not.toBe(ordinary.turns[0]!.activityParts);
+    });
+});

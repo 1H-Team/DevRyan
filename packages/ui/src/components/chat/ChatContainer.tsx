@@ -387,6 +387,12 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
         (sessionId: string, _direction: 'up' | 'down') => sync.loadMore(sessionId, { directory: currentSessionDirectory }),
         [sync, currentSessionDirectory],
     );
+    const trimSettledHistory = React.useCallback(
+        (sessionId: string) => {
+            sync.trimViewedSession(sessionId, { directory: currentSessionDirectory });
+        },
+        [sync, currentSessionDirectory],
+    );
 
     // UI store
     const isExpandedInput = useUIStore((state) => state.isExpandedInput);
@@ -591,6 +597,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
         scrollRef,
         messageListRef,
         loadMoreMessages,
+        trimSettledHistory,
         goToBottom,
         releaseAutoFollow,
         isPinned,

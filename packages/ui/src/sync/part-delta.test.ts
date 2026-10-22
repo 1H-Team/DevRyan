@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import {
   appendNonOverlappingDelta,
+  appendStreamingFieldDelta,
+  appendStreamingOutputDelta,
   appendStreamingTextDelta,
   collapseExactAdjacentTextRepeats,
   normalizeAssistantReasoningText,
@@ -189,6 +191,84 @@ describe("appendStreamingTextDelta", () => {
     const frame = "Continuing implementation: creating the hook and history section, then wiring them into the shell."
 
     expect(appendStreamingTextDelta("", `${frame}\n${frame}\n`)).toBe(`${frame}\n`)
+  })
+
+  test("still collapses a repeated line streamed onto a reply past the jammed-scan limit", () => {
+    const head = Array.from({ length: 80 }, (_, index) => `Paragraph ${index} explains a distinct part of the change.`).join("\n")
+    const line = "Continuing implementation: creating the hook and history section."
+    let value = `${head}\n${line}`
+    expect(value.length).toBeGreaterThan(2_048)
+    for (const chunk of ["\nContinuing implementation: ", "creating the hook and history section.\n", "Next step."]) {
+      value = appendStreamingTextDelta(value, chunk)
+    }
+
+    expect(value).toBe(`${head}\n${line}\nNext step.`)
+  })
+
+  test("scans only the tail of a long reply on each delta", () => {
+    const sentence = "Each streamed sentence is distinct because it carries its own index "
+    const deltas = Array.from({ length: 1_500 }, (_, index) => `${sentence}${index}.${index % 4 === 3 ? "\n" : " "}`)
+    // Line scanning walks the value with indexOf("\n"); count those probes.
+    const originalIndexOf = String.prototype.indexOf
+    const stream = (append: (existing: string, delta: string) => string) => {
+      let lineProbes = 0
+      String.prototype.indexOf = function (this: string, search: string, position?: number) {
+        if (search === "\n") lineProbes += 1
+        return originalIndexOf.call(this, search, position)
+      }
+      let value = ""
+      try {
+        for (const delta of deltas) value = append(value, delta)
+      } finally {
+        String.prototype.indexOf = originalIndexOf
+      }
+      return { value, lineProbes }
+    }
+    // The previous implementation: collapse the whole value on every delta.
+    const wholeValue = stream((existing, delta) => existing.length === 0
+      ? collapseExactAdjacentTextRepeats(delta)
+      : collapseExactAdjacentTextRepeats(existing + delta))
+    const tailOnly = stream(appendStreamingTextDelta)
+
+    expect(tailOnly.value).toBe(wholeValue.value)
+    expect(tailOnly.value.length).toBeGreaterThan(100_000)
+    expect(wholeValue.lineProbes).toBeGreaterThan(250_000)
+    // A few probes per delta, independent of the reply length.
+    expect(tailOnly.lineProbes).toBeLessThan(deltas.length * 4)
+    // The whole-value reference alone is quadratic; allow for a loaded host.
+  }, 30_000)
+
+  test("matches a whole-value collapse when streamed in chunks past the scan limit", () => {
+    const lines = Array.from({ length: 120 }, (_, index) => index % 7 === 3
+      ? "This exact status line is replayed by the provider twice."
+      : `Line ${index} carries a unique explanation of the edit in progress.`)
+    const text = lines.flatMap((line, index) => index % 7 === 3 ? [line, line] : [line]).join("\n")
+    let streamed = ""
+    for (let start = 0; start < text.length; start += 37) {
+      streamed = appendStreamingTextDelta(streamed, text.slice(start, start + 37))
+    }
+
+    expect(streamed).toBe(collapseExactAdjacentTextRepeats(text))
+    expect(streamed).not.toContain("twice.\nThis exact status line is replayed by the provider twice.")
+  })
+})
+
+describe("appendStreamingOutputDelta", () => {
+  test("keeps repeated tool output lines byte for byte", () => {
+    const line = "PASS src/components/chat/message/parts/ToolPart.test.tsx (12 tests)"
+    const output = appendStreamingOutputDelta(`${line}\n`, `${line}\n${line}\nDone.`)
+
+    expect(output).toBe(`${line}\n${line}\n${line}\nDone.`)
+    expect(appendStreamingFieldDelta("output", `${line}\n`, `${line}\n${line}\nDone.`)).toBe(output)
+    // The text path collapses the same chunk.
+    expect(appendStreamingFieldDelta("text", `${line}\n`, `${line}\n${line}\nDone.`)).not.toBe(output)
+  })
+
+  test("still drops a replayed full output frame", () => {
+    const frame = 'Skipped malformed tool call "edit": Invalid arguments for tool "edit".'
+
+    expect(appendStreamingOutputDelta(frame, frame)).toBe(frame)
+    expect(appendStreamingFieldDelta("text", "", `${frame}\n${frame}\n`)).toBe(`${frame}\n`)
   })
 })
 
