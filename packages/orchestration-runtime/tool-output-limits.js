@@ -3,10 +3,10 @@ import { MANAGED_RESULT_COMPACTED_FIELDS } from './codec-primitives.js';
 
 // OpenCode applies one global tool_output limit to every tool, devryan_task included:
 // a truncated managed reply fails native publication. Managed replies therefore fit
-// managedToolOutputBudget(limits) (42 KiB at these defaults), never the 48 KiB ceiling.
-// 44 KiB is the smallest default that still settles an 8-child wave in 3 Steps.
+// managedToolOutputBudget(limits) (48 KiB at these defaults, less under a smaller
+// configured limit), never more. A lower max_bytes costs settled waves extra Steps.
 // Native devryan_task emits minified JSON (one line), so max_lines never binds it.
-export const NATIVE_TOOL_OUTPUT_DEFAULTS = Object.freeze({ max_bytes: 45_056, max_lines: 1_000 });
+export const NATIVE_TOOL_OUTPUT_DEFAULTS = Object.freeze({ max_bytes: 51_200, max_lines: 1_000 });
 export const MANAGED_TOOL_OUTPUT_MAX_BYTES = 48 * 1024;
 const fail = code => Object.assign(new Error(code), { code, statusCode: 409 });
 const bytes = value => new TextEncoder().encode(JSON.stringify(value)).byteLength;
