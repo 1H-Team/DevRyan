@@ -296,7 +296,7 @@ export function createNativeRecoveredInputOwner({databasePath,primaryRuntime,cap
       // Terminal disposal has its own exact web grant and held-tree capability.
       // Neither permit admits retained input or any fresh execution.
       if(request.sessionID===entry?.permit?.sessionID && (
-        entry.removal && ['removal.inspect','removal.delete'].includes(request.operation)
+        entry.removal && ['removal.inspect','removal.delete','removal.release-claim'].includes(request.operation)
         || entry.web?.effects?.length===1 && entry.web.effects[0].operation==='session.remove'
           && ['web.operation','session.remove'].includes(request.operation)))return;
       const grant=grants.get(request.sessionID);

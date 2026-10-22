@@ -258,6 +258,7 @@ export async function startNativeController(boot:NativeProcessBoot,identity:{cor
       case 'queued-primary-idle-owned':return host.queuedPrimaryIdleOwned(input);
       case 'inspect-removal-owned':return host.inspectRemovalOwned(input);
       case 'remove-leaf-owned':return host.removeLeafOwned(input);
+      case 'release-removal-claim-owned':return host.releaseRemovalClaimOwned(input);
       case 'wake-owned':return runWithRequestPermit(new Headers({'x-devryan-native-permit':JSON.stringify(input.permit)}),()=>host.wakeOwned(input));
       case 'wake-deferred-owned':return runWithRequestPermit(new Headers({'x-devryan-native-permit':JSON.stringify(input.permit)}),()=>host.wakeDeferredOwned(input));
       case 'reconcile-shell-owned':return runWithRequestPermit(new Headers({'x-devryan-native-permit':JSON.stringify(input.permit)}),()=>host.reconcileShellOwned(input));

@@ -10,6 +10,7 @@ export interface NativeSessionRemovalOptions {
   runtime:SessionMutationRuntime;admissionOwner:NativeAdmissionOwner;ownerID:string;
   inspectRemovalOwned:(input:{sessionID:string;permit:OperationPermit})=>Promise<NativeRemovalSnapshot>;
   removeLeafOwned:(input:{intentID:string;sessionID:string;permit:OperationPermit})=>Promise<{removed:true;sessionID:string}>;
+  releaseClaimOwned:(input:{sessionID:string;permit:OperationPermit})=>Promise<{released:boolean;sessionID:string}>;
   cancelManaged:(input:NativeRemovalCancellation)=>Promise<{fenced?:true;settled?:true;sessions:readonly string[];taskIDs?:readonly string[]}>;
   cancelAndWait:(input:{directory:string;sessions:string[]})=>Promise<{terminated:true;sessions:readonly string[]}>;
   discardStreamReceipts?:(intent:NativeRemovalIntent)=>Promise<void>;

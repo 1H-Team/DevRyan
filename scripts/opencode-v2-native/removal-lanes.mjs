@@ -71,6 +71,7 @@ export async function runNativeRemovalCases({ client, admissionOwner, ownerID, e
       const result = (await getNativeControl().call({ action: 'remove-leaf-owned', ...input })).result;
       await removeLeaf?.(input, result); return result;
     },
+    releaseClaimOwned: async input => (await getNativeControl().call({ action: 'release-removal-claim-owned', ...input })).result,
     cancelManaged: input => managed.getManagedRuntime().cancelSessionsForRemoval(input),
     cancelAndWait: input => executionHost.executions.cancelAndWait(input),
   });

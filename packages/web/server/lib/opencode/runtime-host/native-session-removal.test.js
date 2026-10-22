@@ -42,8 +42,8 @@ async function fixture({discardStreamReceipts,recordDiagnostic,managed=false}={}
   const runtime=createSessionMutationRuntime({directory:storage});
   // The idle child intentionally has no existing ledger row.
   const sessions=new Map([['ses_root',{id:'ses_root',parentID:null,directory}],['ses_child',{id:'ses_child',parentID:'ses_root',directory}]]);
-  let allowed=true,failLeaf=false,failPreparation=false,failStop=false,addChild=false,claimed=false;
-  const removed=[],stopped=[],cancellations=[];
+  let allowed=true,failLeaf=false,failPreparation=false,failStop=false,addChild=false,claimed=false,claimRefused=false;
+  const removed=[],stopped=[],cancellations=[],releasedClaims=[];
   const scheduler=managed?createManagedTaskScheduler({executor:{
     async start(_task,control){await control.setChildSessionId('ses_child');await control.markAccepted();return {status:'completed',summary:'done'};},
     async abort(){throw new Error('Terminal task must not abort its deleted child');},
@@ -67,6 +67,12 @@ async function fixture({discardStreamReceipts,recordDiagnostic,managed=false}={}
       if(failLeaf){failLeaf=false;throw new Error('lost delete acknowledgement');}
       return {removed:true,sessionID};
     },
+    releaseClaimOwned:async({sessionID,permit})=>{
+      await rpc('authorize',{operation:'removal.release-claim',sessionID,existingPermit:permit});
+      if(claimRefused)throw Object.assign(new Error('native_removal_settlement_uncertain'),{code:'native_removal_settlement_uncertain',status:409});
+      const released=claimed;claimed=false;if(released)releasedClaims.push(sessionID);
+      return {released,sessionID};
+    },
     cancelAndWait:async({sessions:ids})=>{
       if(failStop){failStop=false;throw new Error('Native stop unavailable');}
       expect(ids.every(id=>sessions.has(id))).toBe(true);stopped.push([...ids]);
@@ -85,8 +91,8 @@ async function fixture({discardStreamReceipts,recordDiagnostic,managed=false}={}
     }});
   const removeSession=sessionID=>owner.withWebOperation({operation:'sessions.remove',method:'DELETE',path:`/api/session/${sessionID}`,directory},()=>coordinator.remove({sessionID,directory}));
   const remove=()=>removeSession('ses_root');
-  return {directory,runtime,owner,coordinator,remove,removeSession,scheduler,sessions,removed,stopped,cancellations,
-    setAllowed:value=>{allowed=value;},setClaimed:value=>{claimed=value;},failLeaf:()=>{failLeaf=true;},revokeDuringPreparation:()=>{failPreparation=true;},addRacingChild:()=>{addChild=true;},
+  return {directory,runtime,owner,coordinator,remove,removeSession,scheduler,sessions,removed,stopped,cancellations,releasedClaims,
+    setAllowed:value=>{allowed=value;},setClaimed:value=>{claimed=value;},refuseClaimRelease:value=>{claimRefused=value;},failLeaf:()=>{failLeaf=true;},revokeDuringPreparation:()=>{failPreparation=true;},addRacingChild:()=>{addChild=true;},
     failStop:()=>{failStop=true;},
     reopen:()=>createSessionMutationRuntime({directory:storage})};
 }
@@ -314,8 +320,29 @@ test('authorization failure journals its code without the exception text',async(
 
 
 test('an unresolved native claim stays fenced and is never disposed as idle recovered input',async()=>{
- const f=await fixture();f.setClaimed(true);
- await expect(f.remove()).rejects.toMatchObject({code:'native_removal_tree_changed'});
+ const f=await fixture();f.setClaimed(true);f.refuseClaimRelease(true);
+ await expect(f.remove()).rejects.toMatchObject({code:'native_removal_settlement_uncertain'});
  expect(f.removed).toEqual([]);
  expect((await f.runtime.nativeRemovals({directory:f.directory}))[0].state).toBe('preparing');
+});
+
+test('a settled stale claim is released so an archived subagent child and then its parent are removed',async()=>{
+ const f=await fixture();f.setClaimed(true);
+ await expect(f.removeSession('ses_child')).resolves.toBe(true);
+ expect(f.releasedClaims).toEqual(['ses_child']);
+ expect(f.stopped[0]).toEqual(['ses_child']);
+ await expect(f.remove()).resolves.toBe(true);
+ expect(f.removed).toEqual(['ses_child','ses_root']);
+ expect(await f.reopen().nativeRemovals({directory:f.directory})).toEqual([]);
+});
+
+test('a removal stranded in preparation by a stale claim completes on retry and unblocks its parent',async()=>{
+ const f=await fixture();f.setClaimed(true);f.refuseClaimRelease(true);
+ await expect(f.removeSession('ses_child')).rejects.toMatchObject({code:'native_removal_settlement_uncertain'});
+ await expect(f.remove()).rejects.toMatchObject({code:'native_removal_in_progress'});
+ f.refuseClaimRelease(false);
+ await expect(f.removeSession('ses_child')).resolves.toBe(true);
+ await expect(f.remove()).resolves.toBe(true);
+ expect(f.removed).toEqual(['ses_child','ses_root']);
+ expect(await f.reopen().nativeRemovals({directory:f.directory})).toEqual([]);
 });

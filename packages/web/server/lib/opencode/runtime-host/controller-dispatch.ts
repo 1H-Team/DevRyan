@@ -11,7 +11,7 @@ export function createNativeCommandDispatcher(options:{ readonly run:(command:Na
     dispatch(command:NativeProcessCommand) {
       if(active.has(command.id)) { fail(command.id,'native_command_duplicate',409);return; }
       if(active.size>=NATIVE_PROCESS_LIMITS.inFlight) { fail(command.id,'native_command_capacity',503);return; }
-      if(closing && ['open','open-recovery','release','recover-shell-owned','remove-leaf-owned','openai-cas-selected-owned','credential-commit-owned','credential-operation-owned','claude-lifecycle-read-owned','claude-lifecycle-transition-owned'].includes(command.action)) {fail(command.id,'native_controller_stopping',409);return;}
+      if(closing && ['open','open-recovery','release','recover-shell-owned','remove-leaf-owned','release-removal-claim-owned','openai-cas-selected-owned','credential-commit-owned','credential-operation-owned','claude-lifecycle-read-owned','claude-lifecycle-transition-owned'].includes(command.action)) {fail(command.id,'native_controller_stopping',409);return;}
       if(command.action==='close') closing=true;
       if(['close','quiesce','close-startup'].includes(command.action)) options.closeStartup();
       const task=Promise.resolve().then(()=>options.run(command)).then(result=>options.respond(command.id,{ok:true,result}),error=>{

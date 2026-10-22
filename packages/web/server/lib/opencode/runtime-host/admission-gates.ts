@@ -821,6 +821,23 @@ export function createAdmissionGates(options: AdmissionGateOptions) {
       const members=all.filter(row=>ids.has(row.id)).map(row=>({id:row.id,parentID:row.parentID??null,directory:row.location.directory}));
       return {members,states:await Promise.all([...ids].map(removalObservation))};
     }),
+    // A claim whose execution settlement already proved inactive is only a
+    // restart-resume marker. Restart cannot resume a removal-held session, so
+    // removal releases the marker it is about to dispose of.
+    releaseRemovalClaimOwned: async ({sessionID,permit}:{readonly sessionID:string;readonly permit:OperationPermit})=>withRemovalPermit({operation:'removal.release-claim',sessionID},permit,async()=>{
+      if(!store) throw new HostRefusal('native_session_unavailable',503,'removal.release-claim',sessionID);
+      const nativeID=SessionSchema.ID.make(sessionID),ownedStore=store;
+      return runControllerEffect(SessionInbox.serialized(nativeID,Effect.gen(function*(){
+        const before=yield* checked(()=>removalObservation(sessionID),'removal.release-claim',sessionID);
+        if(before.active) return yield* refuseHost(new HostRefusal('native_removal_settlement_uncertain',409,'removal.release-claim',sessionID));
+        if(!before.claimed) return {released:false as const,sessionID};
+        yield* checked(()=>bridge.recheck(permit,{operation:'removal.release-claim',sessionID}),'removal.release-claim',sessionID);
+        yield* ownedStore.release(nativeID);
+        const after=yield* checked(()=>removalObservation(sessionID),'removal.release-claim',sessionID);
+        if(after.active || after.claimed) return yield* refuseHost(new HostRefusal('native_removal_settlement_uncertain',409,'removal.release-claim',sessionID));
+        return {released:true as const,sessionID};
+      })));
+    }),
     removeLeafOwned: async ({intentID,sessionID,permit}:{readonly intentID:string;readonly sessionID:string;readonly permit:OperationPermit})=>withRemovalPermit({operation:'removal.delete',sessionID,input:{intentID}},permit,async()=>{
       if(!store || !removalSession) throw new HostRefusal('native_session_unavailable',503,'removal.delete',sessionID);
       const nativeID=SessionSchema.ID.make(sessionID),inner=removalSession,ownedStore=store;

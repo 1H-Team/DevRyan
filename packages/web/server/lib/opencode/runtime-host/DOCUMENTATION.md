@@ -1149,6 +1149,13 @@ ancestor can begin its own removal decision. No holds are cleared or ownership w
 Recovered input remains execution-fenced, but an exact `sessions.remove` web grant
 and the private held-tree `removal.inspect`/`removal.delete` permits may dispose of
 it. They never authorize prompt admission, inbox delivery or execution wake.
+A native execution claim (`time_suspended`) is only a restart-resume marker, and
+restart cannot resume a removal-held session. After a non-quiet removal has
+settled a member (managed fence plus `cancelAndWait` termination), an inactive
+claim on that member is released through the held-tree `removal.release-claim`
+permit (`release-removal-claim-owned`); an active member or a member that was not
+settled is never released and still refuses deletion. Quiet retention removal
+keeps refusing any claim.
 Startup inherits unfinished native removals only after full selected-bundle
 verification supplies the checkpoint's preserved state ref and object ID. The
 mutation ledger compares the inherited decision and each member's generation

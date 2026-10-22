@@ -349,7 +349,7 @@ export function createNativeAdmissionOwner(options) {
       assertEntry(entry);
       if (!intent || intent.ownerID !== ownerID || intent.state === 'completed'
         || request.sessionID !== entry.permit.sessionID
-        || !['removal.inspect', 'removal.delete'].includes(request.operation)
+        || !['removal.inspect', 'removal.delete', 'removal.release-claim'].includes(request.operation)
         || (request.operation === 'removal.delete' && (intent.state !== 'committed' || request.input?.intentID !== intent.id))) {
         throw fail('native_removal_capability_required', 403);
       }
@@ -561,7 +561,7 @@ export function createNativeAdmissionOwner(options) {
       if(!entry?.retention)throw fail('native_retention_capability_required',403);
       await assertRequest(entry,request);return entry.permit;
     }
-    if (['removal.inspect', 'removal.delete'].includes(request.operation)) {
+    if (['removal.inspect', 'removal.delete', 'removal.release-claim'].includes(request.operation)) {
       const entry = request.existingPermit && entryFor(request.existingPermit);
       if (!entry?.removal) throw fail('native_removal_capability_required', 403);
       await assertRequest(entry, request); return entry.permit;

@@ -33,6 +33,7 @@ export type NativeProcessCommand = {readonly protocol:1;readonly id:string} & (
   {readonly action:'queued-primary-idle-owned';readonly sessionID:string;readonly messageID?:string;readonly permit:NativeWirePermit} |
   {readonly action:'inspect-removal-owned';readonly sessionID:string;readonly permit:NativeWirePermit} |
   {readonly action:'remove-leaf-owned';readonly intentID:string;readonly sessionID:string;readonly permit:NativeWirePermit} |
+  {readonly action:'release-removal-claim-owned';readonly sessionID:string;readonly permit:NativeWirePermit} |
   {readonly action:'credential-commit-owned';readonly callID:string;readonly controllerInstanceID:string;readonly bindingFingerprint:string} |
   {readonly action:'credential-operation-owned';readonly directory:string;readonly controllerInstanceID:string;readonly requestAuthorization:string;readonly mutation:NativeCredentialOperation} |
   {readonly action:'credential-metadata-owned';readonly directory:string;readonly controllerInstanceID:string;readonly integrationID:string} |

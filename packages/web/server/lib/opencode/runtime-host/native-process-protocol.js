@@ -142,6 +142,7 @@ export function parseNativeCommand(value) {
     'wake-owned': ['sessionID', 'permit'], 'wake-deferred-owned': ['sessionID', 'permit'],
     'acquire-retention-owned':['sessionID','permit'],'archive-retention-owned':['sessionID','permit','at'],
     'queued-primary-idle-owned':['sessionID','messageID','permit'], 'inspect-removal-owned': ['sessionID', 'permit'], 'remove-leaf-owned': ['intentID', 'sessionID', 'permit'],
+    'release-removal-claim-owned': ['sessionID', 'permit'],
     'credential-commit-owned': ['callID', 'controllerInstanceID', 'bindingFingerprint'],
     'credential-operation-owned': ['directory', 'controllerInstanceID', 'requestAuthorization', 'mutation'],
     'credential-metadata-owned': ['directory', 'controllerInstanceID', 'integrationID'],

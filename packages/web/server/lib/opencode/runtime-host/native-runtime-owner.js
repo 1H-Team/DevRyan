@@ -323,6 +323,7 @@ export function createNativeRuntimeOwner(options) {
     recordDiagnostic: options.recordDiagnostic,
     inspectRemovalOwned: input => active().call({ action: 'inspect-removal-owned', ...input }),
     removeLeafOwned: input => active().call({ action: 'remove-leaf-owned', ...input }),
+    releaseClaimOwned: input => active().call({ action: 'release-removal-claim-owned', ...input }),
     cancelManaged: input => getManagedRuntime().cancelSessionsForRemoval(input),
     cancelAndWait: input => executionHost.executions.cancelAndWait(input),
     discardStreamReceipts:intent=>primaryRuntime.discardNativeStreamContinuationReceipts({directory:intent.directory,sessions:intent.members.map(member=>member.id)},async()=>{

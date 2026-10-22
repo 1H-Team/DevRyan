@@ -175,6 +175,7 @@ export async function createNativeRuntimeHost(options: NativeRuntimeHostOptions)
       cancelRecoveredInputOwned:gates.controls.cancelRecoveredInputOwned,
       recoverShellOwned: gates.controls.recoverShellOwned,
       retentionOwned:gates.controls.retentionOwned, inspectRemovalOwned: gates.controls.inspectRemovalOwned, removeLeafOwned: gates.controls.removeLeafOwned,
+      releaseRemovalClaimOwned: gates.controls.releaseRemovalClaimOwned,
       recoverPendingShellOwned: gates.controls.recoverPendingShellOwned,
       interviewActionOwned:gates.controls.interviewActionOwned,
       assertHelperTitleCAS:gates.controls.assertHelperTitleCAS,renameHelperTitleOwned:gates.controls.renameHelperTitleOwned,

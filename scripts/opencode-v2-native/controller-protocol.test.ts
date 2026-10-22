@@ -37,6 +37,9 @@ test('shared protocol separates artifact identity from mutable data and refuses 
  const removal={protocol:1 as const,id:'remove',action:'remove-leaf-owned' as const,intentID:'owned-intent',sessionID:'ses_fixture',permit:{token:'a'.repeat(64),sessionID:'ses_fixture',revision:1}};
  expect(parseNativeCommand(removal)).toEqual(removal);
  for(const mutation of [()=>({...removal,intentID:''}),()=>({...removal,permit:undefined}),()=>({...removal,sessionID:'ses_other'}),()=>({...removal,recursive:true})]) expect(()=>parseNativeCommand(mutation())).toThrow();
+ const claimRelease={protocol:1 as const,id:'release-claim',action:'release-removal-claim-owned' as const,sessionID:'ses_fixture',permit:{token:'a'.repeat(64),sessionID:'ses_fixture',revision:1}};
+ expect(parseNativeCommand(claimRelease)).toEqual(claimRelease);
+ for(const mutation of [()=>({...claimRelease,permit:undefined}),()=>({...claimRelease,sessionID:'ses_other'}),()=>({...claimRelease,intentID:'owned-intent'})]) expect(()=>parseNativeCommand(mutation())).toThrow();
  expect(()=>parseNativeMigrationRequest({protocol:'devryan-native-migration/1',requestID:'request',bundleID:'data-bundle',candidateDatabasePath:'relative',isolatedRoot:'/owned',receiptPath:'/owned/receipt',auxiliary:{kind:'absent'},projectMap:[]})).toThrow();
 });
 test('clone boot accepts only canonical sealed prepared proof, never a caller supplied origin',()=>{

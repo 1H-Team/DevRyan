@@ -152,11 +152,12 @@ try {
       } else if (command.action === 'recover-shell-owned') {
         await host.recoverShellOwned({ sessionID: string(command.sessionID, 'sessionID'), jobID: string(command.jobID, 'jobID') });
         write({ id: command.id, ok: true });
-      } else if (command.action === 'inspect-removal-owned' || command.action === 'remove-leaf-owned') {
+      } else if (command.action === 'inspect-removal-owned' || command.action === 'remove-leaf-owned' || command.action === 'release-removal-claim-owned') {
         const removalHost = host;
         const result = await runWithRequestPermit(new Headers({ 'x-devryan-native-permit': JSON.stringify(command.permit) }), async () => {
           const permit = requestPermit(); if (!permit) throw new Error('Owned removal permit required');
           const sessionID = string(command.sessionID, 'sessionID');
+          if (command.action === 'release-removal-claim-owned') return removalHost.releaseRemovalClaimOwned({ sessionID, permit });
           return command.action === 'inspect-removal-owned'
             ? removalHost.inspectRemovalOwned({ sessionID, permit })
             : removalHost.removeLeafOwned({ sessionID, intentID: string(command.intentID, 'intentID'), permit });

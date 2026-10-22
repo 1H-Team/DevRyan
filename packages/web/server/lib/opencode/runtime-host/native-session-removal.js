@@ -12,7 +12,7 @@ const checkedSnapshot = (value, directory) => {
 /** Owns an exact terminal decision in the existing mutation ledger. Native
  * removal owns conversation disposal; this coordinator never removes files. */
 export function createNativeSessionRemoval(options) {
-  const {runtime,admissionOwner,ownerID,inspectRemovalOwned,removeLeafOwned,cancelManaged,cancelAndWait}=options;
+  const {runtime,admissionOwner,ownerID,inspectRemovalOwned,removeLeafOwned,releaseClaimOwned,cancelManaged,cancelAndWait}=options;
   const pending=new Map();
   const observe=(sessionID,intentID,stage,outcome,cause)=>{
     try{options.recordDiagnostic?.({type:'lifecycle',event:'session_removal',sessionID,payload:{stage,outcome,
@@ -20,6 +20,18 @@ export function createNativeSessionRemoval(options) {
   };
   const scoped=(intent,sessionID,action)=>admissionOwner.withRemovalOperation({directory:intent.directory,intentID:intent.id,sessionID},action);
   const inspect=(intent,sessionID=intent.rootSessionID)=>scoped(intent,sessionID,permit=>inspectRemovalOwned({sessionID,permit}));
+  // Only after settlement: an inactive claim under the removal hold is a
+  // restart marker that restart cannot honour, so it would fence removal forever.
+  const releaseSettledClaims=async(intent,snapshot,settled)=>{
+    let released=false;
+    for(const state of snapshot.states) {
+      if(!settled.some(member=>member.id===state.sessionID) || !state.exists || state.active || !state.claimed) continue;
+      const result=await scoped(intent,state.sessionID,permit=>releaseClaimOwned({sessionID:state.sessionID,permit}));
+      if(result?.sessionID!==state.sessionID) throw fail('native_removal_settlement_uncertain');
+      released||=result.released===true;
+    }
+    return released;
+  };
   const settle=async(intent,members,absentSessions=[])=>{
     const sessions=members.map(member=>member.id),scope={directory:intent.directory,sessions,intentID:intent.id};
     const fence=await cancelManaged({...scope,phase:'fence'});
@@ -66,7 +78,8 @@ export function createNativeSessionRemoval(options) {
       seen.add(member.id);member=byID.get(member.parentID);count++;
     }return count;};
     for(const member of [...survivors].sort((a,b)=>depth(b)-depth(a))) {
-      const observed=checkedSnapshot(await inspect(intent,member.id),intent.directory);
+      let observed=checkedSnapshot(await inspect(intent,member.id),intent.directory);
+      if(!intent.quiet && await releaseSettledClaims(intent,observed,intent.members)) observed=checkedSnapshot(await inspect(intent,member.id),intent.directory);
       if(observed.members.some(row=>row.id!==member.id) || observed.states.some(state=>state.active || state.claimed)) throw fail('native_removal_tree_changed');
       const state=observed.states.find(row=>row.sessionID===member.id);
       if(!state) throw fail('native_removal_observation_unavailable');
@@ -105,7 +118,8 @@ export function createNativeSessionRemoval(options) {
       if(quiet){if(initial.states.some(row=>row.active||row.claimed||row.inboxIDs.length||row.pendingIDs.length))throw fail('native_retention_session_active');}
       else await settle(intent,initial.members);
       await grant.drain();
-      const final=checkedSnapshot(await inspect(intent),directory);
+      let final=checkedSnapshot(await inspect(intent),directory);
+      if(!quiet && await releaseSettledClaims(intent,final,initial.members)) final=checkedSnapshot(await inspect(intent),directory);
       if(!sameMembers(initial.members,final.members) || final.states.some(state=>state.active || state.claimed || quiet&&(state.inboxIDs.length||state.pendingIDs.length))) throw fail('native_removal_tree_changed');
       await grant.reauthorize();
       stage='commit';
