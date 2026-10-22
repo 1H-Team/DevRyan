@@ -4,7 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { discoverTestFiles } from './test-runner-utils.mjs';
 import { planFullTests } from './test-full.mjs';
 
-export const CI_LANES = Object.freeze(['portable-1', 'portable-2', 'native-1', 'native-2']);
+export const CI_LANES = Object.freeze(['portable-1', 'portable-2', 'native-1', 'native-2', 'native-3']);
+/** Tests of the built assets: they run in the CI build job, right after the build, not in a lane. */
+export const BUILD_JOB_TESTS = Object.freeze(['scripts/built-web-assets.test.mjs']);
 export const MAC_WEB_TESTS = [
   'server/lib/opencode/native-readonly-shell.test.js',
   'server/default-config/plugins/devryan-browser.test.mjs',
@@ -22,7 +24,7 @@ export function requiresMac(unit) {
 /** Expand opaque batches before assignment, retaining their original test runner. */
 export function ciTestInventory(root, options = {}) {
   return planFullTests(root, options).flatMap(unit => {
-    if (unit.name === 'scripts:node') return unit.args.filter(arg => /test\.[cm]?js$/.test(arg))
+    if (unit.name === 'scripts:node') return unit.args.filter(arg => /test\.[cm]?js$/.test(arg) && !BUILD_JOB_TESTS.includes(arg))
       .map(file => ({ ...unit, name: `scripts:${file}`, args: ['--test', file] }));
     if (unit.suite === 'harness') return discoverTestFiles(path.join(root, 'packages/harness-runtime'), root)
       .map(file => ({ ...unit, cwd: root, name: `harness:${file}`, args: ['test', `./${file}`] }));

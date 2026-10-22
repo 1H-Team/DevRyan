@@ -1,4 +1,4 @@
-import { CI_LANES, ciTestInventory, requiresMac, MAC_WEB_TESTS } from './test-ci-lanes.mjs';
+import { BUILD_JOB_TESTS, CI_LANES, ciTestInventory, requiresMac, MAC_WEB_TESTS } from './test-ci-lanes.mjs';
 import { testCaseShard } from './test-case-shard.mjs';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
@@ -190,10 +190,10 @@ describe('full test-suite contract', () => {
     assert.match(workflow.concurrency.group, /github.sha/);
     assert.equal(workflow.concurrency['cancel-in-progress'], "${{ github.event_name == 'pull_request' }}");
     // Lanes wait only for the artifacts they consume; static checks run beside them.
-    assert.equal(workflow.jobs.tests.needs, 'build');
-    assert.equal(workflow.jobs['native-tests'].needs, undefined);
+    // No job waits for another; no test lane reads the build's output.
+    for (const job of Object.values(workflow.jobs)) assert.equal(job.needs, undefined);
     assert.ok(workflow.jobs['native-tests'].steps.some(step => step.run === 'bun scripts/build-native-runtime.mjs'));
-    assert.ok(!workflow.jobs['native-tests'].steps.some(step => step.uses === 'actions/download-artifact@v4'));
+    assert.ok(!JSON.stringify(workflow).includes('actions/download-artifact'));
     for (const job of testJobs) {
       assert.equal(job.strategy['fail-fast'], false);
       assert.ok(job.steps.some(step => step.run === 'node scripts/validate.mjs ci:${{ matrix.lane }}'));
@@ -203,7 +203,7 @@ describe('full test-suite contract', () => {
     assert.ok(workflow.jobs.build.steps.some(step => step.run === 'node scripts/validate.mjs build'));
     const nonTest = buildPlan('full').commands.filter(item => item.label !== 'test:full').map(item => item.label);
     assert.deepEqual(buildPlan('checks').commands.map(item => item.label), nonTest);
-    assert.deepEqual([...buildPlan('static').commands, ...buildPlan('build').commands].map(item => item.label).sort(), [...nonTest].sort());
+    assert.deepEqual([...buildPlan('static').commands, ...buildPlan('build').commands].map(item => item.label).filter(label => label !== 'built-assets').sort(), [...nonTest].sort());
 
     const key = unit => JSON.stringify([unit.name, unit.command, unit.args, unit.cwd]);
     const laneUnits = CI_LANES.flatMap(lane => testUnitsForPlan(buildPlan(`ci:${lane}`).commands));
@@ -213,7 +213,10 @@ describe('full test-suite contract', () => {
       assert.equal(requiresMac(unit), lane.startsWith('native'), unit.name);
     }
     const scriptFiles = laneUnits.filter(unit => unit.suite === 'scripts').flatMap(unit => unit.args.filter(arg => /test\.[cm]?[jt]sx?$/.test(arg)).map(arg => arg.replace(/^\.\//, '')));
-    assert.deepEqual([...new Set(scriptFiles)].sort(), discoverScriptTestFiles(repositoryRoot));
+    // Lanes plus the build job's built-asset tests run every script test exactly once.
+    assert.deepEqual([...new Set([...scriptFiles, ...BUILD_JOB_TESTS])].sort(), discoverScriptTestFiles(repositoryRoot));
+    for (const file of BUILD_JOB_TESTS) assert.ok(!scriptFiles.includes(file), `${file} runs in the build job, not a lane`);
+    assert.deepEqual(buildPlan('build').commands.at(-1).args, ['--test', ...BUILD_JOB_TESTS]);
     const harnessFiles = laneUnits.filter(unit => unit.suite === 'harness').flatMap(unit => unit.args.filter(arg => /test\.js$/.test(arg)).map(arg => arg.replace(/^\.\//, '')));
     assert.deepEqual([...new Set(harnessFiles)].sort(), discoverTestFiles(path.join(repositoryRoot, 'packages/harness-runtime'), repositoryRoot));
     for (const [suite, variable, count] of [['scripts', 'DEVRYAN_STREAM_TEST_SHARD', 2]]) {
@@ -234,10 +237,7 @@ describe('full test-suite contract', () => {
     assert.deepEqual(laneUnits.filter(unit => !split.has(unit.suite)).map(key).sort(),
       testUnitsForPlan(buildPlan('full').commands).filter(unit => !split.has(unit.suite)).map(key).sort());
     assert.throws(() => buildPlan('ci:unknown'), /Unknown CI test lane/);
-    const upload = workflow.jobs.build.steps.find(step => step.uses === 'actions/upload-artifact@v4').with;
-    const download = workflow.jobs.tests.steps.find(step => step.uses === 'actions/download-artifact@v4' && step.with.name === upload.name).with;
-    assert.equal(download.path, 'packages');
-    for (const directory of ['packages/web/dist/', 'packages/electron/resources/web-dist/', 'packages/electron/dist-bundle/']) assert.ok(upload.path.split('\n').includes(directory));
+    assert.ok(!workflow.jobs.build.steps.some(step => step.uses === 'actions/upload-artifact@v4'));
   });
 
   test('platform-gated web checks remain on macOS rather than silently skipping on Ubuntu', () => {

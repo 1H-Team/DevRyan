@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { CI_LANES, planCITests } from './test-ci-lanes.mjs';
+import { BUILD_JOB_TESTS, CI_LANES, planCITests } from './test-ci-lanes.mjs';
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
@@ -407,9 +407,11 @@ export function buildPlan(requestedMode, providedFiles, { versionOnly } = {}) {
   // CI splits the non-test checks: `static` (no build output needed) beside
   // `build` (the assets test lanes download, then their bundle budgets).
   const BUILD_LABELS = new Set(['build', 'bundle:check']);
+  // The build job also runs the tests of what it built, so no test lane needs its output.
+  const builtAssetTests = command('built-assets', 'node', ['--test', ...BUILD_JOB_TESTS]);
   if (requestedMode === 'checks') return { files: providedFiles ?? [], commands: fullCommands().filter(item => item.label !== 'test:full'), reason: 'CI build and static checks' };
   if (requestedMode === 'static') return { files: providedFiles ?? [], commands: fullCommands().filter(item => item.label !== 'test:full' && !BUILD_LABELS.has(item.label)), reason: 'CI static checks' };
-  if (requestedMode === 'build') return { files: providedFiles ?? [], commands: fullCommands().filter(item => BUILD_LABELS.has(item.label)), reason: 'CI build and bundle budgets' };
+  if (requestedMode === 'build') return { files: providedFiles ?? [], commands: [...fullCommands().filter(item => BUILD_LABELS.has(item.label)), builtAssetTests], reason: 'CI build, bundle budgets and built-asset tests' };
   if (requestedMode.startsWith('ci:')) {
     const lane = requestedMode.slice(3);
     if (!CI_LANES.includes(lane)) throw new Error(`Unknown CI test lane: ${requestedMode}`);
@@ -496,7 +498,7 @@ export function testUnitsForPlan(commands, { root = workspaceRoot, scriptEnviron
  */
 async function runCommands(commands) {
   const isTest = (item) => item.label.startsWith('test:');
-  const isBuildChain = (item) => item.label === 'build' || item.label === 'bundle:check';
+  const isBuildChain = (item) => item.label === 'build' || item.label === 'bundle:check' || item.label === 'built-assets';
   const timings = [];
   const started = performance.now();
   const report = () => {

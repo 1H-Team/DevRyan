@@ -30,12 +30,12 @@ A docs-only change runs only `docs:validate`. Both validate modes fail if the ru
 
 ## CI
 
-`.github/workflows/ci.yml` runs on every main push and pull request. Jobs wait only for the artifacts they consume:
+`.github/workflows/ci.yml` runs on every main push and pull request. Every job starts at once; none waits for another and no artifacts move between them:
 
 - `static` (Ubuntu): `node scripts/validate.mjs static` — lint, import boundaries, the browser graph, type-check and `docs:validate`, run concurrently.
-- `build` (Ubuntu): `node scripts/validate.mjs build` — the build and bundle budgets; uploads the built web/Electron assets.
-- `tests` (two Ubuntu lanes, after `build`): `node scripts/validate.mjs ci:<lane>` with the normal scratch guard. Tests of the built assets (`scripts/built-web-assets.test.mjs`) run here.
-- `native-tests` (two macOS lanes, no dependencies): start at once, build and verify the native v2 runtime in-lane (cheaper than shipping it between jobs), then run their lane. No macOS-only suite reads the web build.
+- `build` (Ubuntu): `node scripts/validate.mjs build` — the build, bundle budgets and the tests of the built assets (`BUILD_JOB_TESTS` in `scripts/test-ci-lanes.mjs`, such as `scripts/built-web-assets.test.mjs`).
+- `tests` (two Ubuntu lanes): `node scripts/validate.mjs ci:<lane>` with the normal scratch guard.
+- `native-tests` (three macOS lanes): build and verify the native v2 runtime in-lane (cheaper than shipping it between jobs), then run their lane. GitHub Free runs five macOS jobs at a time and a release holds two while it waits for CI, so three is the most CI may use.
 
 `scripts/test-ci-lanes.mjs` expands the full suite into files before assigning platforms; it keeps macOS sandbox, native binary, case-insensitive filesystem and platform-gated checks on macOS. Units are packed onto lanes longest first from the recorded durations in `scripts/test-unit-timings.json` (a unit without a recording costs the median); the web runtime-host Vitest project runs as two shards. Every lane uploads its unit timings as the `test-timings-<lane>` artifact; refresh the recordings with `bun run test:timings:update <files...>`. The native-stream file has two disjoint case shards (ordinary local runs register every case); `test-suite-contract.test.mjs` checks the complete inventory and shard union, and that a case-sharded file registers every test through its shard filter. CI runs Bun package suites in randomized order seeded with the workflow run number (`DEVRYAN_TEST_SEED`). Main-push concurrency is unique to the commit SHA and never cancels a different main commit; superseded PRs still cancel. Release preparation overlaps CI, but publication requires the exact main-push workflow to pass. `bun run validate:full` remains the equivalent complete local gate. `release-cache.yml` is manual-only; see [Release pipeline](RELEASE_PIPELINE.md).
 

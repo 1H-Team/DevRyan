@@ -286,13 +286,15 @@ describe('release workflow', () => {
     }
     assert.match(workflow.jobs.publish.if, /needs\.upgrade-check\.result == 'success'/);
     const ci = YAML.parse(readFileSync(new URL('.github/workflows/ci.yml', repoRoot), 'utf8'));
-    // Two native macOS lanes, each building the native runtime in-lane.
+    // Native macOS lanes each build the native runtime in-lane.
     const nativeCI = ci.jobs['native-tests'].strategy.matrix.include.filter(row => row.runner === 'macos-26').length;
     assert.equal(ci.jobs['native-tests'].needs, undefined);
-    assert.equal(nativeCI, 2);
+    assert.equal(nativeCI, 3);
     assert.deepEqual(Object.entries(workflow.jobs).filter(([, job]) => job['runs-on'] === 'macos-26').map(([name]) => name), ['electron-package', 'upgrade-check', 'final-dmg-smoke']);
     assert.ok(workflow.jobs['final-dmg-smoke'].needs.includes('electron-package'));
-    assert.equal(nativeCI + 2, 4, 'smoke replaces package; qualification keeps the other release slot');
+    // GitHub Free runs at most five macOS jobs at once. A release holds two (smoke
+    // replaces package; qualification keeps the other) while it waits for CI.
+    assert.ok(nativeCI + 2 <= 5, 'CI macOS lanes plus the release macOS jobs fit the Free plan macOS concurrency');
     assert.ok(ci.jobs.tests.strategy.matrix.include.length + nativeCI + 3 <= 9, 'CI workers plus package, qualification and CI wait stay within the total limit');
     assert.equal(YAML.parse(readFileSync(new URL('.github/workflows/release-cache.yml', repoRoot), 'utf8')).on.push, undefined);
     assert.ok(!JSON.stringify(workflow).includes('devryan_bot_schema_version'));
