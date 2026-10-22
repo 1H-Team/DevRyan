@@ -123,7 +123,7 @@ describe('Codex quota provider reset credits', () => {
 
     expect(result.ok).toBe(true);
     expect(result.usage?.windows.credits).toBeUndefined();
-    expect(result.usage?.windows['extra-usage']).toMatchObject({ valueLabel: '$12.34 available' });
+    expect(result.usage?.windows['extra-usage']).toMatchObject({ valueLabel: '12 credits available' });
     expect(result.usage?.resetCredits).toMatchObject({
       availableCount: 2,
       totalEarnedCount: 3,
@@ -158,7 +158,7 @@ describe('Codex quota provider reset credits', () => {
 
     expect(result.ok).toBe(true);
     expect(result.usage?.windows.credits).toBeUndefined();
-    expect(result.usage?.windows['extra-usage']).toMatchObject({ valueLabel: '$12.34 available' });
+    expect(result.usage?.windows['extra-usage']).toMatchObject({ valueLabel: '12 credits available' });
     expect(result.usage?.resetCredits).toMatchObject({
       availableCount: 2,
       credits: [],
@@ -180,7 +180,7 @@ describe('Codex quota provider reset credits', () => {
     expect(result.usage?.resetCredits).toBeUndefined();
     expect(result.usage?.windows['extra-usage']).toMatchObject({
       usedPercent: null,
-      valueLabel: '$12.34 available',
+      valueLabel: '12 credits available',
     });
   });
 });

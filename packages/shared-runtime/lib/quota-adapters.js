@@ -631,6 +631,7 @@ const normalizeCodexWindow = (windowValue, fallbackLabel, now, warnings) => {
 };
 
 const formatMoney = (value) => value.toFixed(2);
+const formatCodexCredits = (value) => `${Math.floor(value).toLocaleString('en-US')} credits`;
 
 const buildCodexExtraUsage = (payload, now) => {
   const credits = asObject(payload?.credits);
@@ -645,12 +646,12 @@ const buildCodexExtraUsage = (payload, now) => {
   if (reached === true) valueLabel = 'Spend limit reached';
   else if (unlimited === true) valueLabel = 'Unlimited';
   else if (available === false) valueLabel = 'Unavailable';
-  else if (balance !== null) valueLabel = `$${formatMoney(balance)} available`;
+  else if (balance !== null) valueLabel = `${formatCodexCredits(balance)} available`;
   else if (available === true) valueLabel = 'Available';
   else valueLabel = 'No credit balance reported';
 
   const details = [];
-  if (reached === true && balance !== null) details.push(`Reported balance: $${formatMoney(balance)}.`);
+  if (reached === true && balance !== null) details.push(`Reported balance: ${formatCodexCredits(balance)}.`);
   if (available === false) details.push('Extra usage is not currently available.');
   return toSharedUsageWindow({
     usedPercent: null,

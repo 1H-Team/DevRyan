@@ -583,7 +583,8 @@ describe('ChatGPT shared quota adapter', () => {
   });
 
   test.each([
-    [{ credits: { balance: '4.5', available: true } }, '$4.50 available'],
+    [{ credits: { balance: '4.5', available: true } }, '4 credits available'],
+    [{ credits: { balance: '5534.23' } }, '5,534 credits available'],
     [{ credits: { unlimited: true } }, 'Unlimited'],
     [{ credits: { available: false } }, 'Unavailable'],
     [{ credits: {} }, 'No credit balance reported'],
