@@ -64,7 +64,7 @@ describe('packaged agent prompt budgets', () => {
 // sent with each saved-plan implementation turn. Same ratchet as above.
 const SHARED_PROMPT_BUDGETS = {
   planModeSuffix: { maxBytes: 4824, rationale: 'Measured 2026-10-22 as appended to a visible primary system prefix (4683 bytes) plus ~3% headroom.' },
-  implementTemplate: { maxBytes: 7639, rationale: 'plan.implement.instructions default template measured 2026-10-22 (7416 bytes) plus ~3% headroom.' },
+  implementTemplate: { maxBytes: 8106, rationale: 'plan.implement.instructions default template measured 2026-10-23 (7870 bytes: parallel-phase start and the Class 1 frontend carve-out matching orchestrator.md) plus ~3% headroom.' },
 };
 
 const measureSharedPrompts = () => {

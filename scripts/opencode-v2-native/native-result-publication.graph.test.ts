@@ -6,8 +6,10 @@ import {createNativeAssetFixturePlugin,writeNativeFixtureOutputs} from './native
 
 const repository=path.resolve(import.meta.dirname,'../..');
 const reportUnit='Retained owned result 🙂 "\\\n';
-const reportUnits=Math.floor(35*1024/Buffer.byteLength(reportUnit));
-const retainedReport=reportUnit.repeat(reportUnits)+'x'.repeat(35*1024-reportUnits*Buffer.byteLength(reportUnit));
+// 60 KiB keeps three report pages after the 24 KiB v2 page inlined in the wait result.
+const REPORT_BYTES=60*1024;
+const reportUnits=Math.floor(REPORT_BYTES/Buffer.byteLength(reportUnit));
+const retainedReport=reportUnit.repeat(reportUnits)+'x'.repeat(REPORT_BYTES-reportUnits*Buffer.byteLength(reportUnit));
 // The shipped native host is the compiled executable; the bundled-source run proved
 // nothing the compiled run does not, so only the compiled program runs.
 for(const compiled of [true])test('pinned native v2 result publication and later Step compiled='+compiled,async()=>{
@@ -95,7 +97,7 @@ const gates = createAdmissionGates({executionActivity:inner=>{nativeExecution=in
   assert.equal(ledger.resultEnvelopes[0].action,'continue');assert.equal(typeof ledger.resultEnvelopes[0].acknowledgementIdentity,'string');
   const first=managedCalls.find(row=>row.input.input.action==='continue'),last=managedCalls.findLast(row=>row.input.input.action==='continue');
   assert.ok(first.code&&['native_task_result_not_published','native_task_later_review_step_required'].includes(first.code),'Same-Step disposition must fail closed');
-  assert.equal(last.code,undefined);assert.equal(last.answer.resultEnvelope.action,'continue');
+  assert.equal(last.code,undefined);assert.equal(last.answer.committed,true);assert.equal(last.answer.action,'continue');assert.equal(last.answer.taskId,taskID);
   const delivered=messages.filter(row=>row.parts.some(part=>part.type==='tool'&&part.tool==='devryan_task'&&part.state.status==='completed'));
   assert.ok(delivered.length>=3);assert.ok(messages.indexOf(delivered.at(-1))>messages.indexOf(delivered[1]));
   const canonical=messages.flatMap(row=>row.parts.filter(part=>part.type==='tool'&&part.tool==='devryan_task'&&part.state.status==='completed'));
@@ -105,7 +107,8 @@ const gates = createAdmissionGates({executionActivity:inner=>{nativeExecution=in
   assert.ok(pages.length>=3);for(const page of pages){const bytes=Buffer.byteLength(page.text);assert.ok(bytes<=24*1024);returnedBytes+=bytes;assert.equal(page.returnedBytes,returnedBytes);assert.equal(page.totalBytes,Buffer.byteLength(task.recoverablePreview));}
   assert.equal(pages.at(-1).nextCursor,null);assert.equal(pages.map(page=>page.text).join(''),task.recoverablePreview);
   const largestPageBytes=Math.max(...pages.map(page=>Buffer.byteLength(page.text)));assert.ok(largestPageBytes>8*1024);
-  assert.equal(outputs.at(-1).resultEnvelope.action,'continue');
+  // v2 continue returns its committed receipt only; the ledger above proves the acknowledged envelope.
+  assert.equal(outputs.at(-1).committed,true);assert.equal(outputs.at(-1).action,'continue');
   result={compiled:${compiled},sameStepCode:first.code,primaryRequests,publishedTools:delivered.length,acknowledged:true,reportBytes:returnedBytes,largestPageBytes,maxOutputBytes:Math.max(...canonical.map(part=>Buffer.byteLength(part.state.output))),nativeTruncationAbsent:true};
 `+source.slice(end);
   replace('  await cleanup(() => runtime.drain());','  await cleanup(()=>managedRuntime?.shutdown());await cleanup(()=>primaryRuntime?.drain());await cleanup(() => runtime.drain());');
@@ -122,7 +125,7 @@ const gates = createAdmissionGates({executionActivity:inner=>{nativeExecution=in
   if(!child.stdout||typeof child.stdout==='number'||!child.stderr||typeof child.stderr==='number')throw Error('Owned pipes required');
   const [stdout,stderr,code]=await Promise.all([new Response(child.stdout).text(),new Response(child.stderr).text(),child.exited]);
   if(code!==0)throw Error(JSON.stringify({code,stderr,errors:await fs.readFile(path.join(root,'rpc-errors.jsonl'),'utf8').catch(()=>''),causes:await fs.readFile(path.join(root,'native-causes.jsonl'),'utf8').catch(()=>''),root}));
-  const proof=JSON.parse(stdout);expect(proof).toMatchObject({compiled,acknowledged:true,reportBytes:35*1024,nativeTruncationAbsent:true});expect(proof.largestPageBytes).toBeGreaterThan(8*1024);expect(proof.largestPageBytes).toBeLessThanOrEqual(24*1024);expect(proof.maxOutputBytes).toBeLessThanOrEqual(48*1024);
+  const proof=JSON.parse(stdout);expect(proof).toMatchObject({compiled,acknowledged:true,reportBytes:REPORT_BYTES,nativeTruncationAbsent:true});expect(proof.largestPageBytes).toBeGreaterThan(8*1024);expect(proof.largestPageBytes).toBeLessThanOrEqual(24*1024);expect(proof.maxOutputBytes).toBeLessThanOrEqual(48*1024);
   console.log('Native managed result publication proof '+JSON.stringify(proof));
  }finally{if(child&&child.exitCode===null){child.kill();await child.exited;}await fs.rm(root,{recursive:true,force:true});}
 },180000);
